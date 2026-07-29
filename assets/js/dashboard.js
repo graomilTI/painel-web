@@ -259,8 +259,7 @@ function injectDashStyles() {
     .db-donut-sub { font-size:10px; font-weight:800; fill:#6b7280; letter-spacing:.04em; }
     .db-donut-status { text-align:center; font-size:11px; font-weight:900; margin-top:6px; }
 
-    .db-donut-row { display:flex; gap:10px; }
-    .db-donut-mini { flex:1; display:flex; flex-direction:column; align-items:center; padding:10px 6px; border-radius:16px; cursor:pointer; transition:background .18s ease, transform .18s ease; }
+    .db-donut-mini { display:flex; flex-direction:column; align-items:center; padding:10px 6px; border-radius:16px; cursor:pointer; transition:background .18s ease, transform .18s ease; }
     .db-donut-mini.is-clickable:hover { background:rgba(255,255,255,.035); transform:translateY(-1px); }
     .db-donut-mini.is-clickable:focus-visible { outline:2px solid rgba(45,212,160,.85); outline-offset:2px; }
 
@@ -281,12 +280,13 @@ function injectDashStyles() {
     .db-delta-inline { }
     .db-stat-sep { height:1px; background:rgba(255,255,255,.06); }
 
-    .db-prod-grid2x2 { display:grid; grid-template-columns:1fr 1fr; column-gap:18px; row-gap:16px; }
-    .db-prod-grid2x2 > *:nth-child(odd) { border-right:1px solid rgba(255,255,255,.06); padding-right:18px; }
-    .db-prod-grid2x2 > *:nth-child(3), .db-prod-grid2x2 > *:nth-child(4) { border-top:1px solid rgba(255,255,255,.06); padding-top:14px; }
-    @media(max-width:480px) { .db-prod-grid2x2 { grid-template-columns:1fr; } .db-prod-grid2x2 > *:nth-child(odd) { border-right:0; padding-right:0; } .db-prod-grid2x2 > *:nth-child(2) { border-top:1px solid rgba(255,255,255,.06); padding-top:14px; } }
+    .db-prod-cols { display:grid; grid-template-columns:1fr 1fr; column-gap:18px; }
+    .db-prod-col { display:flex; flex-direction:column; gap:12px; }
+    .db-prod-col:first-child { border-right:1px solid rgba(255,255,255,.06); padding-right:18px; }
+    @media(max-width:480px) { .db-prod-cols { grid-template-columns:1fr; row-gap:12px; } .db-prod-col:first-child { border-right:0; padding-right:0; border-bottom:1px solid rgba(255,255,255,.06); padding-bottom:12px; } }
 
-    .db-chart-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:6px; }
+    .db-day-value-row { display:flex; align-items:baseline; gap:8px; margin-top:6px; }
+    .db-day-value-sm { font-size:16px; }
     .db-chart-bar { cursor:pointer; }
     .db-chart-bar-fill { fill:rgba(0,200,122,.35); transition:fill .15s ease; }
     .db-chart-bar.is-selected .db-chart-bar-fill { fill:rgba(0,200,122,.90); }
@@ -437,6 +437,7 @@ async function fetchGestorDataLive(ctx) {
                         .or('status_gestor.is.null,status_gestor.eq.AGUARDAR').is('configurada_em',null);
   let osAtendBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true}).eq('status_gestor','ATENDER');
   let osTotalBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true});
+  let veiculosBase  = supabase.from('frotas_veiculos').select('id').neq('status', 'INATIVO');
 
   if (!isMaster && coordenacao) {
     patriBase     = patriBase.eq('coordenacao', coordenacao);
@@ -444,9 +445,15 @@ async function fetchGestorDataLive(ctx) {
     osPendBase    = osPendBase.eq('coordenacao', coordenacao);
     osAtendBase   = osAtendBase.eq('coordenacao', coordenacao);
     osTotalBase   = osTotalBase.eq('coordenacao', coordenacao);
+    veiculosBase  = veiculosBase.eq('coordenacao', coordenacao);
   }
 
-  const [metaRes, prodRows, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes] =
+  const makeChecklistsQuery = () => supabase
+    .from('frotas_checklists')
+    .select('veiculo_id,proxima_data,data_execucao')
+    .order('data_execucao', { ascending: false });
+
+  const [metaRes, prodRows, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
     await Promise.all([
       supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
       fetchAllRows(makeProdQuery),
@@ -455,7 +462,25 @@ async function fetchGestorDataLive(ctx) {
       osPendBase,
       osAtendBase,
       osTotalBase,
+      veiculosBase,
+      fetchAllRows(makeChecklistsQuery),
     ]);
+
+  // Um veículo está "em dia" se o checklist mais recente dele (a primeira
+  // ocorrência já que checklistRows vem ordenado por data_execucao desc) tem
+  // proxima_data ainda não vencida. Veículo sem nenhum checklist registrado
+  // não conta como em dia.
+  const veiculoIds = new Set((veiculosRes.data || []).map(v => v.id));
+  const proximaPorVeiculo = new Map();
+  for (const row of checklistRows) {
+    if (!veiculoIds.has(row.veiculo_id) || proximaPorVeiculo.has(row.veiculo_id)) continue;
+    proximaPorVeiculo.set(row.veiculo_id, row.proxima_data);
+  }
+  const veiculosTotal = veiculoIds.size;
+  let veiculosEmDia = 0;
+  for (const proxima of proximaPorVeiculo.values()) {
+    if (proxima && proxima >= dataHoje) veiculosEmDia += 1;
+  }
 
   const produzido    = prodRows.reduce((s, r) => s + Number(r.tons || 0), 0);
   const diasComDados = new Set(prodRows.map(r => r.data)).size || 1;
@@ -497,6 +522,8 @@ async function fetchGestorDataLive(ctx) {
     osPendentes: osPendRes.count ?? 0,
     osAtender:   osAtendRes.count ?? 0,
     osTotal:     osTotalRes.count ?? 0,
+    veiculosTotal,
+    veiculosEmDia,
   };
 }
 
@@ -664,25 +691,30 @@ function renderGestorSkeleton() {
         <div class="db-prod-body">
           <div class="db-prod-left"><div class="db-skel db-skel-map"></div></div>
           <div class="db-prod-right">
-            <div class="db-prod-grid2x2">
-              <div class="db-stat-block">
-                <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
-                <div class="db-skel" style="width:110px;height:22px"></div>
+            <div class="db-prod-cols">
+              <div class="db-prod-col">
+                <div class="db-stat-block">
+                  <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
+                  <div class="db-skel" style="width:110px;height:22px"></div>
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-stat-block">
+                  <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+                  <div class="db-skel" style="width:120px;height:22px"></div>
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-stat-block">
+                  <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+                  <div class="db-skel" style="width:100%;height:44px"></div>
+                </div>
               </div>
-              <div class="db-skel" style="width:100%;height:62px"></div>
-              <div class="db-stat-block">
-                <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
-                <div class="db-skel" style="width:120px;height:22px"></div>
+              <div class="db-prod-col">
+                <div class="db-skel" style="height:88px;border-radius:16px"></div>
+                <div class="db-stat-sep"></div>
+                <div class="db-skel" style="height:88px;border-radius:16px"></div>
+                <div class="db-stat-sep"></div>
+                <div class="db-skel" style="height:88px;border-radius:16px"></div>
               </div>
-              <div class="db-stat-block">
-                <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
-                <div class="db-skel" style="width:100px;height:22px"></div>
-              </div>
-            </div>
-            <div class="db-stat-sep"></div>
-            <div style="display:flex;gap:10px">
-              <div class="db-skel" style="flex:1;height:110px;border-radius:16px"></div>
-              <div class="db-skel" style="flex:1;height:110px;border-radius:16px"></div>
             </div>
           </div>
         </div>
@@ -692,7 +724,7 @@ function renderGestorSkeleton() {
 }
 
 function renderGestorDashboard(container, data) {
-  const { ano, mes, coordenacao, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal } = data;
+  const { ano, mes, coordenacao, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal, veiculosTotal, veiculosEmDia } = data;
   const now = new Date();
   const diaAtual    = now.getDate();
   const diasNoMes   = new Date(ano, mes, 0).getDate();
@@ -706,6 +738,8 @@ function renderGestorDashboard(container, data) {
   const patriOk     = patriTotal - patriAtrasados;
   const patriPct    = patriTotal > 0 ? (patriOk / patriTotal * 100) : 100;
   const osAtendPct  = osTotal > 0 ? ((osTotal - osPendentes) / osTotal * 100) : 100;
+  const veiculosPct = veiculosTotal > 0 ? (veiculosEmDia / veiculosTotal * 100) : 100;
+  const veiculosPendentes = veiculosTotal - veiculosEmDia;
   const miniChart   = renderMiniChart(daily7);
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
@@ -731,45 +765,58 @@ function renderGestorDashboard(container, data) {
             ${renderStateFill({ pct, onTrack, estado, mapaEstados })}
           </div>
           <div class="db-prod-right">
-            <div class="db-prod-grid2x2">
-              <div class="db-stat-block">
-                <div class="db-stat-label">Meta do mês</div>
-                <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
-              </div>
-              <div>
-                <div class="db-chart-label">Últimos 7 dias</div>
-                ${miniChart.html}
-              </div>
-              <div class="db-stat-block">
-                <div class="db-stat-label">Produção atual</div>
-                <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
-                <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
-                ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
-              </div>
-              <div class="db-stat-block">
-                <div class="db-stat-label">Produção do dia</div>
-                <div class="db-stat-value" id="dbDayValue">${fmtTons(miniChart.defaultTons)}</div>
-                <div class="db-stat-sub" id="dbDayDate">${miniChart.defaultLabel}</div>
-              </div>
-            </div>
-            <div class="db-stat-sep"></div>
-            <div class="db-donut-row">
-              <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
-                <div class="db-mini-eyebrow">Leitura</div>
-                ${renderDonut(patriPct, { size: 86, colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}
-                <div class="db-donut-status">
-                  ${patriAtrasados > 0
-                    ? `<span class="db-status-late">${patriAtrasados} em atraso</span>`
-                    : '<span class="db-status-ok">Tudo em dia ✓</span>'}
+            <div class="db-prod-cols">
+              <div class="db-prod-col">
+                <div class="db-stat-block">
+                  <div class="db-stat-label">Meta do mês</div>
+                  <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-stat-block">
+                  <div class="db-stat-label">Produção atual</div>
+                  <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
+                  <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
+                  ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-stat-block">
+                  <div class="db-stat-label">Produção do dia</div>
+                  ${miniChart.html}
+                  <div class="db-day-value-row">
+                    <span class="db-stat-value db-day-value-sm" id="dbDayValue">${fmtTons(miniChart.defaultTons)}</span>
+                    <span class="db-stat-sub" id="dbDayDate">${miniChart.defaultLabel}</span>
+                  </div>
                 </div>
               </div>
-              <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
-                <div class="db-mini-eyebrow">Atendimento</div>
-                ${renderDonut(osAtendPct, { size: 86, colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}
-                <div class="db-donut-status">
-                  ${osPendentes > 0
-                    ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
-                    : '<span class="db-status-ok">Tudo em dia ✓</span>'}
+              <div class="db-prod-col">
+                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
+                  <div class="db-mini-eyebrow">Leitura</div>
+                  ${renderDonut(patriPct, { size: 78, colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}
+                  <div class="db-donut-status">
+                    ${patriAtrasados > 0
+                      ? `<span class="db-status-late">${patriAtrasados} em atraso</span>`
+                      : `<span class="db-status-ok">Tudo em dia</span>`}
+                  </div>
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
+                  <div class="db-mini-eyebrow">Atendimento</div>
+                  ${renderDonut(osAtendPct, { size: 78, colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}
+                  <div class="db-donut-status">
+                    ${osPendentes > 0
+                      ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
+                      : `<span class="db-status-ok">Tudo em dia</span>`}
+                  </div>
+                </div>
+                <div class="db-stat-sep"></div>
+                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Checklists de Frotas" onclick="window.location.href='${buildPanelHref('frotas-checklists')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('frotas-checklists')}';}">
+                  <div class="db-mini-eyebrow">Veículos</div>
+                  ${renderDonut(veiculosPct, { size: 78, colorClass: veiculosPendentes===0 ? 'is-green' : 'is-amber', label: `${veiculosEmDia}/${veiculosTotal}` })}
+                  <div class="db-donut-status">
+                    ${veiculosPendentes > 0
+                      ? `<span class="db-status-late">${veiculosPendentes} sem checklist</span>`
+                      : `<span class="db-status-ok">Tudo em dia</span>`}
+                  </div>
                 </div>
               </div>
             </div>
