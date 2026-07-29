@@ -114,11 +114,14 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES"]),
+      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
       item("frotas_excesso_velocidade", "Excesso de Velocidade", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
       item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
       item("frotas_motoristas", "Motoristas", "frotas-motoristas", ["FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_VEICULOS", "VEICULOS"]),
       item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
+      item("frotas_manutencao", "Manutenção", "frotas-manutencao", ["FROTAS_MANUTENCAO", "MANUTENCAO"]),
+      item("frotas_troca_oleo", "Troca de Óleo", "frotas-troca-oleo", ["FROTAS_TROCA_OLEO", "TROCA_OLEO"]),
+      item("frotas_checklists", "Checklists", "frotas-checklists", ["FROTAS_CHECKLISTS", "CHECKLISTS"]),
       item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"]),
       item("frotas_rastreadores", "Rastreadores", "frotas-rastreadores", ["FROTAS_RASTREADORES", "RASTREADORES"])
     ]
