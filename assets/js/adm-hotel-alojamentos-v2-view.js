@@ -29,7 +29,7 @@ function compactService(label, value, kind) {
 function renderListRow(row) {
   const status = String(row.status || 'ATIVO').toLowerCase();
   return `<div class="aloj-v2-list-row" data-id="${esc(row.id)}">
-    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button><button type="button" class="aloj-v2-icon-btn aloj-v2-obs-btn" data-aloj-v2-action="obs" data-id="${esc(row.id)}" aria-label="Observações de ${esc(row.nome || 'alojamento')}" title="Observações">${icon('notes')}</button></div>
+    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button><button type="button" class="aloj-v2-icon-btn aloj-v2-obs-btn" data-aloj-v2-action="obs" data-id="${esc(row.id)}" aria-label="Observações de ${esc(row.nome || 'alojamento')}" title="Observações">${icon('notes')}</button><button type="button" class="aloj-v2-icon-btn aloj-v2-delete-btn" data-aloj-v2-action="delete" data-id="${esc(row.id)}" aria-label="Excluir ${esc(row.nome || 'alojamento')}" title="Excluir">${icon('trash')}</button></div>
     <div class="aloj-v2-list-identity">
       <div class="aloj-v2-list-home">${icon('home')}</div>
       <div class="aloj-v2-list-title"><strong>${esc(row.nome || 'Alojamento sem nome')}</strong><span>${esc(row.tipo || 'CASA')} · ${esc([row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado')}</span></div>

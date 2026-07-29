@@ -66,6 +66,67 @@ function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
 }
 
+async function ensureExportLib(url, globalName) {
+  if (window[globalName]) return;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = url;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Não foi possível carregar ${globalName}.`));
+    document.head.appendChild(script);
+  });
+}
+
+function downloadBlobUrl(filename, dataUrl) {
+  const anchor = Object.assign(document.createElement('a'), { href: dataUrl, download: filename });
+  anchor.click();
+}
+
+// #49: "gerar imagem do relatório" -- captura o node já renderizado (título +
+// resumo + tabela) como PNG via html2canvas, mesma lib/padrão já usado em
+// patrimonioRelatorios.js.
+async function gerarImagemRelatorio(node, filenameBase, setMessage) {
+  try {
+    setMessage('Gerando imagem...');
+    await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
+    const canvas = await window.html2canvas(node, { scale: 2, backgroundColor: '#0d0d18', useCORS: true, logging: false });
+    downloadBlobUrl(`${filenameBase}.png`, canvas.toDataURL('image/png'));
+    setMessage('');
+  } catch (error) {
+    console.error('[relatorio-hospedagem] gerarImagemRelatorio', error);
+    setMessage(`Erro ao gerar imagem: ${error.message || error}`);
+  }
+}
+
+// #50: "botão gera relatório em PDF" -- mesma captura via html2canvas,
+// embutida numa página jsPDF (padrão já usado em contato-cliente.js /
+// programacao-pdf-tipo-fix.js).
+async function gerarPdfRelatorio(node, filenameBase, setMessage) {
+  try {
+    setMessage('Gerando PDF...');
+    await Promise.all([
+      ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas'),
+      ensureExportLib('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js', 'jspdf'),
+    ]);
+    const canvas = await window.html2canvas(node, { scale: 2, backgroundColor: '#0d0d18', useCORS: true, logging: false });
+    const { jsPDF } = window.jspdf;
+    const imgData = canvas.toDataURL('image/png');
+    const pageWidth = 210;
+    const imgHeight = (canvas.height * pageWidth) / canvas.width;
+    const doc = new jsPDF({ orientation: imgHeight > 297 ? 'portrait' : 'landscape', unit: 'mm', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const ratio = Math.min(pageW / canvas.width, pageH / canvas.height);
+    doc.addImage(imgData, 'PNG', 0, 0, canvas.width * ratio, canvas.height * ratio);
+    doc.save(`${filenameBase}.pdf`);
+    setMessage('');
+  } catch (error) {
+    console.error('[relatorio-hospedagem] gerarPdfRelatorio', error);
+    setMessage(`Erro ao gerar PDF: ${error.message || error}`);
+  }
+}
+
 function injectStyles() {
   if (document.getElementById('hotelRelV2Styles')) return;
   const style = document.createElement('style');
@@ -78,8 +139,8 @@ function injectStyles() {
     .hr-filter{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
     .hr-ff{display:flex;flex-direction:column;gap:5px}
     .hr-ff label{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-    .hr-ff input{border:1px solid rgba(255,255,255,.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 13px;outline:none;color-scheme:dark;font-size:13px}
-    .hr-ff input:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}
+    .hr-ff input,.hr-ff select{border:1px solid rgba(255,255,255,.08);background:#15152a;color:var(--text);border-radius:12px;padding:10px 13px;outline:none;color-scheme:dark;font-size:13px}
+    .hr-ff input:focus,.hr-ff select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}
     .hr-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}
     .hr-tbl{width:100%;border-collapse:collapse;min-width:780px;background:#15152a}
     .hr-tbl.compact{min-width:420px}
@@ -245,6 +306,7 @@ function renderHotelRows(rows, de, ate, elements) {
   elements.output.innerHTML = '';
   elements.summary.style.display = 'none';
   elements.exportButton.style.display = 'none';
+  elements.imageButton.style.display = 'none';
 
   if (!rows.length) {
     elements.message.textContent = 'Nenhuma hospedagem em hotel encontrada no período selecionado.';
@@ -260,6 +322,7 @@ function renderHotelRows(rows, de, ate, elements) {
     <div class="hr-kpi" style="color:#fca5a5">${noProduction}<small>sem produção</small></div>
   `;
   elements.exportButton.style.display = '';
+  elements.imageButton.style.display = '';
 
   elements.output.innerHTML = `
     <div class="hr-wrap"><table class="hr-tbl">
@@ -272,7 +335,7 @@ function renderHotelRows(rows, de, ate, elements) {
         const noneFound = row.production.length > 0 && row.production.every((item) => !item.found);
         let productionCell = '<span class="hbadge warn">Sem datas</span>';
         if (allFound) productionCell = `<span class="hbadge ok">Sim${isRange ? ` (${row.production.length}d)` : ''}</span>`;
-        else if (noneFound) productionCell = '<span class="hbadge err">Não encontrada</span>';
+        else if (noneFound) productionCell = '<span class="hbadge err">Sem produção</span>';
         else if (row.production.length) {
           const found = row.production.filter((item) => item.found).length;
           productionCell = `<span class="hbadge warn">${found}/${row.production.length} dias</span>`;
@@ -350,20 +413,34 @@ async function loadAccommodationRows(de, ate, setMessage) {
     || a.collaborator.localeCompare(b.collaborator, 'pt-BR'));
 }
 
+function filterAccommodationRows(rows, accommodationName) {
+  return accommodationName ? rows.filter((row) => row.accommodation === accommodationName) : rows;
+}
+
 function renderAccommodationRows(rows, elements) {
   elements.message.textContent = '';
   elements.output.innerHTML = '';
   elements.summary.style.display = 'none';
   elements.exportButton.style.display = 'none';
+  elements.pdfButton.style.display = 'none';
 
-  if (!rows.length) {
-    elements.message.textContent = 'Nenhum colaborador foi marcado com alojamento na Programação no período selecionado.';
+  // #50: repopula o filtro por alojamento com as opções deste período,
+  // preservando a seleção atual quando ela ainda existir na nova lista.
+  const previousFilter = elements.filterSelect.value;
+  const uniqueNames = [...new Set(rows.map((row) => row.accommodation))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  elements.filterSelect.innerHTML = `<option value="">Todos</option>${uniqueNames.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}`;
+  if (uniqueNames.includes(previousFilter)) elements.filterSelect.value = previousFilter;
+
+  const filtered = filterAccommodationRows(rows, elements.filterSelect.value);
+
+  if (!filtered.length) {
+    elements.message.textContent = rows.length ? 'Nenhuma marcação para o alojamento selecionado.' : 'Nenhum colaborador foi marcado com alojamento na Programação no período selecionado.';
     return;
   }
 
-  const uniqueCollaborators = new Set(rows.map((row) => normalizeStr(row.collaborator))).size;
+  const uniqueCollaborators = new Set(filtered.map((row) => normalizeStr(row.collaborator))).size;
   const groups = new Map();
-  rows.forEach((row) => {
+  filtered.forEach((row) => {
     const key = normalizeStr(row.accommodation);
     if (!groups.has(key)) groups.set(key, { name: row.accommodation, rows: [] });
     groups.get(key).rows.push(row);
@@ -374,9 +451,10 @@ function renderAccommodationRows(rows, elements) {
   elements.summary.innerHTML = `
     <div class="hr-kpi">${sortedGroups.length}<small>alojamentos</small></div>
     <div class="hr-kpi" style="color:#bbf7d0">${uniqueCollaborators}<small>colaboradores</small></div>
-    <div class="hr-kpi">${rows.length}<small>marcações</small></div>
+    <div class="hr-kpi">${filtered.length}<small>marcações</small></div>
   `;
   elements.exportButton.style.display = '';
+  elements.pdfButton.style.display = '';
   elements.output.innerHTML = `<div class="ar-groups">${sortedGroups.map((group) => `
     <section class="ar-group">
       <header class="ar-group-head"><h3>${esc(group.name)}</h3><span class="ar-group-count">${group.rows.length}</span></header>
@@ -410,22 +488,29 @@ export function renderContent(content) {
         <div class="hr-ff"><label>Até</label><input id="hotelRelAte" type="date" value="${today}"></div>
         <button class="btn btn-primary" id="hotelRelBuscar" type="button" style="margin-bottom:0;align-self:flex-end">Buscar</button>
         <button class="btn btn-secondary" id="hotelRelExportar" type="button" style="margin-bottom:0;align-self:flex-end;display:none">Exportar CSV</button>
+        <button class="btn btn-secondary" id="hotelRelImagem" type="button" style="margin-bottom:0;align-self:flex-end;display:none">Gerar imagem</button>
       </div>
-      <div id="hotelRelSummary" class="hr-summary" style="display:none"></div>
       <div id="hotelRelMsg" style="font-size:13px;color:var(--muted);padding:8px 0">Carregando relatório de hotéis...</div>
-      <div id="hotelRelOut"></div>
+      <div id="hotelRelCapture" style="padding:2px">
+        <div id="hotelRelSummary" class="hr-summary" style="display:none"></div>
+        <div id="hotelRelOut"></div>
+      </div>
     </article>
 
     <article class="card hr-panel" id="hrPanelAlojamentos">
       <div class="hr-filter">
         <div class="hr-ff"><label>De</label><input id="alojRelDe" type="date" value="${today}"></div>
         <div class="hr-ff"><label>Até</label><input id="alojRelAte" type="date" value="${today}"></div>
+        <div class="hr-ff"><label>Alojamento</label><select id="alojRelFiltro"><option value="">Todos</option></select></div>
         <button class="btn btn-primary" id="alojRelBuscar" type="button" style="margin-bottom:0;align-self:flex-end">Buscar</button>
         <button class="btn btn-secondary" id="alojRelExportar" type="button" style="margin-bottom:0;align-self:flex-end;display:none">Exportar CSV</button>
+        <button class="btn btn-secondary" id="alojRelPdf" type="button" style="margin-bottom:0;align-self:flex-end;display:none">Gerar PDF</button>
       </div>
-      <div id="alojRelSummary" class="hr-summary" style="display:none"></div>
       <div id="alojRelMsg" style="font-size:13px;color:var(--muted);padding:8px 0">Carregando marcações da Programação...</div>
-      <div id="alojRelOut"></div>
+      <div id="alojRelCapture" style="padding:2px">
+        <div id="alojRelSummary" class="hr-summary" style="display:none"></div>
+        <div id="alojRelOut"></div>
+      </div>
     </article>
   `;
 
@@ -434,12 +519,17 @@ export function renderContent(content) {
     summary: content.querySelector('#hotelRelSummary'),
     output: content.querySelector('#hotelRelOut'),
     exportButton: content.querySelector('#hotelRelExportar'),
+    imageButton: content.querySelector('#hotelRelImagem'),
+    captureNode: content.querySelector('#hotelRelCapture'),
   };
   const accommodationElements = {
     message: content.querySelector('#alojRelMsg'),
     summary: content.querySelector('#alojRelSummary'),
     output: content.querySelector('#alojRelOut'),
     exportButton: content.querySelector('#alojRelExportar'),
+    pdfButton: content.querySelector('#alojRelPdf'),
+    captureNode: content.querySelector('#alojRelCapture'),
+    filterSelect: content.querySelector('#alojRelFiltro'),
   };
 
   function setTab(tab) {
@@ -457,6 +547,7 @@ export function renderContent(content) {
     hotelElements.output.innerHTML = '';
     hotelElements.summary.style.display = 'none';
     hotelElements.exportButton.style.display = 'none';
+    hotelElements.imageButton.style.display = 'none';
     try {
       state.hotelRows = await loadHotelRows(de, ate, (message) => { hotelElements.message.textContent = message; });
       renderHotelRows(state.hotelRows, de, ate, hotelElements);
@@ -472,6 +563,7 @@ export function renderContent(content) {
     accommodationElements.output.innerHTML = '';
     accommodationElements.summary.style.display = 'none';
     accommodationElements.exportButton.style.display = 'none';
+    accommodationElements.pdfButton.style.display = 'none';
     try {
       state.accommodationRows = await loadAccommodationRows(de, ate, (message) => { accommodationElements.message.textContent = message; });
       renderAccommodationRows(state.accommodationRows, accommodationElements);
@@ -497,7 +589,17 @@ export function renderContent(content) {
   });
   content.querySelector('#alojRelExportar').addEventListener('click', () => {
     const de = content.querySelector('#alojRelDe').value || today;
-    downloadCSV(`alojamentos-${de}.csv`, ['Alojamento', 'Data', 'Colaborador'], state.accommodationRows.map((row) => [row.accommodation, row.date, row.collaborator]));
+    const filtered = filterAccommodationRows(state.accommodationRows, accommodationElements.filterSelect.value);
+    downloadCSV(`alojamentos-${de}.csv`, ['Alojamento', 'Data', 'Colaborador'], filtered.map((row) => [row.accommodation, row.date, row.collaborator]));
+  });
+  accommodationElements.filterSelect.addEventListener('change', () => renderAccommodationRows(state.accommodationRows, accommodationElements));
+  hotelElements.imageButton.addEventListener('click', () => {
+    const de = content.querySelector('#hotelRelDe').value || today;
+    gerarImagemRelatorio(hotelElements.captureNode, `relatorio-hoteis-${de}`, (message) => { hotelElements.message.textContent = message; });
+  });
+  accommodationElements.pdfButton.addEventListener('click', () => {
+    const de = content.querySelector('#alojRelDe').value || today;
+    gerarPdfRelatorio(accommodationElements.captureNode, `relatorio-alojamentos-${de}`, (message) => { accommodationElements.message.textContent = message; });
   });
 
   setTab(initialTab);
