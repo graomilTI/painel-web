@@ -208,36 +208,6 @@ function injectDashStyles() {
       background: linear-gradient(90deg,transparent,rgba(45,212,160,.45),transparent);
     }
     .db-prod-eyebrow { font-size:10px; font-weight:950; letter-spacing:.14em; text-transform:uppercase; color:#6b7280; margin-bottom:16px; }
-    .db-prod-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:20px; }
-    .db-prod-main { flex:1; min-width:0; }
-    .db-prod-value {
-      font-size:clamp(42px,5.5vw,60px); font-weight:1000; letter-spacing:-.05em; line-height:.9;
-      font-variant-numeric:tabular-nums; color:#e2e2f0; transition:color .3s;
-    }
-    .db-prod-value.is-green { color:#00c87a; text-shadow:0 0 28px rgba(0,200,122,.28); }
-    .db-prod-value.is-amber { color:#fde68a; }
-    .db-prod-sublabel { font-size:10px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-top:8px; }
-    .db-prod-aside { display:flex; flex-direction:column; gap:10px; align-items:flex-end; flex-shrink:0; }
-    .db-aside-block { text-align:right; }
-    .db-aside-value { font-size:19px; font-weight:1000; letter-spacing:-.04em; font-variant-numeric:tabular-nums; color:#e2e2f0; line-height:1; }
-    .db-aside-value.is-green { color:#00c87a; }
-    .db-aside-value.is-red   { color:#f87171; }
-    .db-aside-label { font-size:9px; font-weight:950; letter-spacing:.10em; text-transform:uppercase; color:#6b7280; margin-top:3px; }
-    .db-aside-sep { height:1px; width:100%; background:rgba(255,255,255,.07); }
-
-    .db-meter { position:relative; height:12px; border-radius:999px; background:rgba(255,255,255,.07); overflow:visible; margin-bottom:8px; }
-    .db-meter-fill {
-      position:absolute; top:0; left:0; bottom:0; border-radius:999px; max-width:100%;
-      background:linear-gradient(90deg,#065f46,#00c87a,#2dd4a0);
-      box-shadow:0 0 14px rgba(0,200,122,.40);
-      animation:db-fill-in .7s .15s cubic-bezier(.22,1,.36,1) both;
-    }
-    .db-meter-fill.is-warn { background:linear-gradient(90deg,#78350f,#d97706,#fde68a); box-shadow:0 0 10px rgba(253,230,138,.25); }
-    .db-meter-cursor { position:absolute; top:50%; transform:translate(-50%,-50%); width:3px; height:22px; border-radius:3px; background:rgba(255,255,255,.85); box-shadow:0 0 6px rgba(255,255,255,.35); pointer-events:none; z-index:2; }
-    .db-meter-meta { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px; }
-    .db-meter-pct { font-size:26px; font-weight:1000; letter-spacing:-.05em; font-variant-numeric:tabular-nums; color:#e2e2f0; }
-    .db-meter-pct small { font-size:13px; font-weight:800; color:#6b7280; margin-left:1px; }
-    .db-meter-day { font-size:10px; font-weight:900; letter-spacing:.08em; color:#6b7280; }
 
     .db-pace-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
     .db-pace-badge { display:inline-flex; align-items:center; gap:7px; border-radius:999px; padding:7px 14px; font-size:11px; font-weight:950; letter-spacing:.03em; }
@@ -253,7 +223,7 @@ function injectDashStyles() {
     .db-status-ok   { color:#00c87a; }
     .db-status-late { color:#f87171; }
 
-    .db-donut-value { font-size:24px; font-weight:1000; letter-spacing:-.04em; fill:#e2e2f0; font-variant-numeric:tabular-nums; }
+    .db-donut-value { font-family:'Syne',system-ui,sans-serif; font-size:22px; font-weight:800; letter-spacing:-.03em; fill:#e2e2f0; font-variant-numeric:tabular-nums; }
     .db-donut-value.is-green { fill:#00c87a; }
     .db-donut-value.is-amber { fill:#fde68a; }
     .db-donut-sub { font-size:10px; font-weight:800; fill:#6b7280; letter-spacing:.04em; }
@@ -265,28 +235,39 @@ function injectDashStyles() {
 
     .db-loading { padding:32px; text-align:center; color:#6b7280; font-size:13px; }
 
-    .db-prod-body { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:center; margin-bottom:18px; }
-    @media(max-width:640px) { .db-prod-body { grid-template-columns:1fr; } }
-    .db-prod-left { }
-    .db-prod-right { display:flex; flex-direction:column; gap:12px; }
-    .db-stat-block { }
-    .db-stat-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:5px; }
-    .db-stat-value { font-size:clamp(20px,2.4vw,28px); font-weight:1000; letter-spacing:-.04em; font-variant-numeric:tabular-nums; color:#e2e2f0; line-height:1; }
+    .db-prod-layout {
+      display:grid; grid-template-columns:minmax(200px,240px) minmax(360px,1fr) minmax(200px,240px);
+      grid-template-areas:"left center right"; gap:22px; align-items:stretch; margin-bottom:18px;
+    }
+    .db-prod-side { display:flex; flex-direction:column; gap:14px; min-width:0; }
+    .db-prod-side-left  { grid-area:left; }
+    .db-prod-side-right { grid-area:right; }
+    .db-prod-center { grid-area:center; display:flex; align-items:center; justify-content:center; min-width:0; }
+    @media(max-width:1100px) { .db-prod-layout { grid-template-columns:1fr 1fr; grid-template-areas:"center center" "left right"; } }
+    @media(max-width:640px)  { .db-prod-layout { grid-template-columns:1fr; grid-template-areas:"center" "left" "right"; } }
+
+    .db-stat-block, .db-donut-mini {
+      border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:16px;
+      background:linear-gradient(160deg,rgba(255,255,255,.03),rgba(255,255,255,0) 55%),rgba(255,255,255,.015);
+      transition:border-color .18s ease, transform .18s ease, background .18s ease;
+    }
+    .db-donut-mini { display:flex; flex-direction:column; align-items:center; text-align:center; cursor:pointer; }
+    .db-donut-mini.is-clickable:hover {
+      border-color:rgba(0,200,122,.32); transform:translateY(-1px);
+      background:linear-gradient(160deg,rgba(0,200,122,.07),rgba(255,255,255,0) 55%),rgba(255,255,255,.015);
+    }
+    .db-donut-mini.is-clickable:focus-visible { outline:2px solid rgba(45,212,160,.85); outline-offset:2px; }
+
+    .db-stat-label { font-size:9px; font-weight:950; letter-spacing:.12em; text-transform:uppercase; color:#6b7280; margin-bottom:8px; }
+    .db-stat-value { font-family:'Syne',system-ui,sans-serif; font-size:26px; font-weight:800; letter-spacing:-.03em; font-variant-numeric:tabular-nums; color:#e2e2f0; line-height:1; }
     .db-stat-value.is-green { color:#00c87a; }
     .db-stat-value.is-amber { color:#fde68a; }
     .db-stat-sub { font-size:10px; font-weight:700; color:#6b7280; margin-top:4px; }
     .db-stat-sub.is-pos { color:#00c87a; }
     .db-stat-sub.is-neg { color:#fde68a; }
-    .db-delta-inline { }
-    .db-stat-sep { height:1px; background:rgba(255,255,255,.06); }
 
-    .db-prod-cols { display:grid; grid-template-columns:1fr 1fr; column-gap:18px; }
-    .db-prod-col { display:flex; flex-direction:column; gap:12px; }
-    .db-prod-col:first-child { border-right:1px solid rgba(255,255,255,.06); padding-right:18px; }
-    @media(max-width:480px) { .db-prod-cols { grid-template-columns:1fr; row-gap:12px; } .db-prod-col:first-child { border-right:0; padding-right:0; border-bottom:1px solid rgba(255,255,255,.06); padding-bottom:12px; } }
-
-    .db-day-value-row { display:flex; align-items:baseline; gap:8px; margin-top:6px; }
-    .db-day-value-sm { font-size:16px; }
+    .db-day-value-row { display:flex; align-items:baseline; gap:8px; margin-top:10px; justify-content:center; }
+    .db-day-value-sm { font-size:17px; }
     .db-chart-bar { cursor:pointer; }
     .db-chart-bar-fill { fill:rgba(0,200,122,.35); transition:fill .15s ease; }
     .db-chart-bar.is-selected .db-chart-bar-fill { fill:rgba(0,200,122,.90); }
@@ -622,7 +603,7 @@ function selectChartBar(bar) {
   const svg = bar.closest('.db-mini-chart-svg');
   svg?.querySelectorAll('.db-chart-bar.is-selected').forEach((el) => el.classList.remove('is-selected'));
   bar.classList.add('is-selected');
-  const prodRight = svg?.closest('.db-prod-right');
+  const prodRight = svg?.closest('.db-prod-side-right');
   const valueEl = prodRight?.querySelector('#dbDayValue');
   const dateEl  = prodRight?.querySelector('#dbDayDate');
   if (valueEl) valueEl.textContent = fmtTons(bar.dataset.tons);
@@ -688,33 +669,25 @@ function renderGestorSkeleton() {
       </div>
       <div class="db-prod-card">
         <div class="db-skel" style="width:140px;height:12px;margin-bottom:14px"></div>
-        <div class="db-prod-body">
-          <div class="db-prod-left"><div class="db-skel db-skel-map"></div></div>
-          <div class="db-prod-right">
-            <div class="db-prod-cols">
-              <div class="db-prod-col">
-                <div class="db-stat-block">
-                  <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
-                  <div class="db-skel" style="width:110px;height:22px"></div>
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-stat-block">
-                  <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
-                  <div class="db-skel" style="width:120px;height:22px"></div>
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-stat-block">
-                  <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
-                  <div class="db-skel" style="width:100%;height:44px"></div>
-                </div>
-              </div>
-              <div class="db-prod-col">
-                <div class="db-skel" style="height:88px;border-radius:16px"></div>
-                <div class="db-stat-sep"></div>
-                <div class="db-skel" style="height:88px;border-radius:16px"></div>
-                <div class="db-stat-sep"></div>
-                <div class="db-skel" style="height:88px;border-radius:16px"></div>
-              </div>
+        <div class="db-prod-layout">
+          <div class="db-prod-side db-prod-side-left">
+            <div class="db-skel" style="height:112px;border-radius:16px"></div>
+            <div class="db-skel" style="height:112px;border-radius:16px"></div>
+            <div class="db-skel" style="height:112px;border-radius:16px"></div>
+          </div>
+          <div class="db-prod-center"><div class="db-skel db-skel-map"></div></div>
+          <div class="db-prod-side db-prod-side-right">
+            <div class="db-stat-block">
+              <div class="db-skel" style="width:80px;height:11px;margin-bottom:8px"></div>
+              <div class="db-skel" style="width:110px;height:22px"></div>
+            </div>
+            <div class="db-stat-block">
+              <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+              <div class="db-skel" style="width:120px;height:22px"></div>
+            </div>
+            <div class="db-stat-block">
+              <div class="db-skel" style="width:90px;height:11px;margin-bottom:8px"></div>
+              <div class="db-skel" style="width:100%;height:44px"></div>
             </div>
           </div>
         </div>
@@ -760,64 +733,58 @@ function renderGestorDashboard(container, data) {
 
       <div class="db-prod-card ${onTrack ? 'is-on-track' : 'is-off-track'}">
         <div class="db-prod-eyebrow">Produtividade do Mês</div>
-        <div class="db-prod-body">
-          <div class="db-prod-left">
+        <div class="db-prod-layout">
+          <div class="db-prod-side db-prod-side-left">
+            <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
+              <div class="db-mini-eyebrow">Leitura</div>
+              ${renderDonut(patriPct, { size: 78, colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}
+              <div class="db-donut-status">
+                ${patriAtrasados > 0
+                  ? `<span class="db-status-late">${patriAtrasados} em atraso</span>`
+                  : `<span class="db-status-ok">Tudo em dia</span>`}
+              </div>
+            </div>
+            <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
+              <div class="db-mini-eyebrow">Atendimento</div>
+              ${renderDonut(osAtendPct, { size: 78, colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}
+              <div class="db-donut-status">
+                ${osPendentes > 0
+                  ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
+                  : `<span class="db-status-ok">Tudo em dia</span>`}
+              </div>
+            </div>
+            <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Checklists de Frotas" onclick="window.location.href='${buildPanelHref('frotas-checklists')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('frotas-checklists')}';}">
+              <div class="db-mini-eyebrow">Veículos</div>
+              ${renderDonut(veiculosPct, { size: 78, colorClass: veiculosPendentes===0 ? 'is-green' : 'is-amber', label: `${veiculosEmDia}/${veiculosTotal}` })}
+              <div class="db-donut-status">
+                ${veiculosPendentes > 0
+                  ? `<span class="db-status-late">${veiculosPendentes} sem checklist</span>`
+                  : `<span class="db-status-ok">Tudo em dia</span>`}
+              </div>
+            </div>
+          </div>
+
+          <div class="db-prod-center">
             ${renderStateFill({ pct, onTrack, estado, mapaEstados })}
           </div>
-          <div class="db-prod-right">
-            <div class="db-prod-cols">
-              <div class="db-prod-col">
-                <div class="db-stat-block">
-                  <div class="db-stat-label">Meta do mês</div>
-                  <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-stat-block">
-                  <div class="db-stat-label">Produção atual</div>
-                  <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
-                  <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
-                  ${meta > 0 ? `<div class="db-stat-sub db-delta-inline ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-stat-block">
-                  <div class="db-stat-label">Produção do dia</div>
-                  ${miniChart.html}
-                  <div class="db-day-value-row">
-                    <span class="db-stat-value db-day-value-sm" id="dbDayValue">${fmtTons(miniChart.defaultTons)}</span>
-                    <span class="db-stat-sub" id="dbDayDate">${miniChart.defaultLabel}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="db-prod-col">
-                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir painel Leitura de Patrimônios" onclick="window.location.href='${patrimonioLeituraUrl}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${patrimonioLeituraUrl}';}">
-                  <div class="db-mini-eyebrow">Leitura</div>
-                  ${renderDonut(patriPct, { size: 78, colorClass: patriAtrasados===0 ? 'is-green' : 'is-amber', label: `${patriOk}/${patriTotal}` })}
-                  <div class="db-donut-status">
-                    ${patriAtrasados > 0
-                      ? `<span class="db-status-late">${patriAtrasados} em atraso</span>`
-                      : `<span class="db-status-ok">Tudo em dia</span>`}
-                  </div>
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Programação" onclick="window.location.href='${buildPanelHref('programacao')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('programacao')}';}">
-                  <div class="db-mini-eyebrow">Atendimento</div>
-                  ${renderDonut(osAtendPct, { size: 78, colorClass: osPendentes===0 ? 'is-green' : 'is-amber', label: `${osAtender}/${osTotal}` })}
-                  <div class="db-donut-status">
-                    ${osPendentes > 0
-                      ? `<span class="db-status-late">${osPendentes} pendente${osPendentes===1?'':'s'}</span>`
-                      : `<span class="db-status-ok">Tudo em dia</span>`}
-                  </div>
-                </div>
-                <div class="db-stat-sep"></div>
-                <div class="db-donut-mini is-clickable" role="button" tabindex="0" title="Abrir Checklists de Frotas" onclick="window.location.href='${buildPanelHref('frotas-checklists')}'" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.location.href='${buildPanelHref('frotas-checklists')}';}">
-                  <div class="db-mini-eyebrow">Veículos</div>
-                  ${renderDonut(veiculosPct, { size: 78, colorClass: veiculosPendentes===0 ? 'is-green' : 'is-amber', label: `${veiculosEmDia}/${veiculosTotal}` })}
-                  <div class="db-donut-status">
-                    ${veiculosPendentes > 0
-                      ? `<span class="db-status-late">${veiculosPendentes} sem checklist</span>`
-                      : `<span class="db-status-ok">Tudo em dia</span>`}
-                  </div>
-                </div>
+
+          <div class="db-prod-side db-prod-side-right">
+            <div class="db-stat-block">
+              <div class="db-stat-label">Meta do mês</div>
+              <div class="db-stat-value">${meta > 0 ? fmtTons(meta) : '—'}</div>
+            </div>
+            <div class="db-stat-block">
+              <div class="db-stat-label">Produção atual</div>
+              <div class="db-stat-value ${onTrack ? 'is-green' : 'is-amber'}">${fmtTons(produzido)}</div>
+              <div class="db-stat-sub">${pct.toFixed(0)}% da meta &middot; DIA ${diaAtual}/${diasNoMes}</div>
+              ${meta > 0 ? `<div class="db-stat-sub ${onTrack ? 'is-pos' : 'is-neg'}">${fmtDelta(delta)} vs ritmo do dia</div>` : ''}
+            </div>
+            <div class="db-stat-block">
+              <div class="db-stat-label">Produção do dia</div>
+              ${miniChart.html}
+              <div class="db-day-value-row">
+                <span class="db-stat-value db-day-value-sm" id="dbDayValue">${fmtTons(miniChart.defaultTons)}</span>
+                <span class="db-stat-sub" id="dbDayDate">${miniChart.defaultLabel}</span>
               </div>
             </div>
           </div>
