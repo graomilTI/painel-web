@@ -87,6 +87,9 @@ function getStyles() {
 .tic-toast{position:fixed;right:20px;bottom:20px;background:rgba(22,101,52,.96);color:#dcfce7;border:1px solid rgba(134,239,172,.3);border-radius:14px;padding:12px 16px;font-weight:900;font-size:13px;box-shadow:0 14px 40px rgba(0,0,0,.35);z-index:99999;opacity:0;transform:translateY(8px);pointer-events:none;transition:.2s ease}
 .tic-toast.err{background:rgba(127,29,29,.96);color:#fecaca;border-color:rgba(239,68,68,.3)}
 .tic-toast.show{opacity:1;transform:translateY(0)}
+.tic-colab-results{position:absolute;z-index:20;top:100%;left:0;margin-top:4px;width:100%;max-height:200px;overflow:auto;border:1px solid rgba(34,197,94,.28);border-radius:14px;background:#0d0d18;box-shadow:0 20px 45px rgba(0,0,0,.45)}
+.tic-colab-results button{display:block;width:100%;text-align:left;padding:9px 12px;border:0;background:transparent;color:#e2e2f0;cursor:pointer;font-size:12px}
+.tic-colab-results button:hover{background:rgba(22,101,52,.3)}
 @media(max-width:600px){.tic-hero{flex-direction:column;align-items:flex-start}.tic-cards{grid-template-columns:1fr}}
 </style>`;
 }
@@ -205,12 +208,40 @@ function renderList(root, query = '') {
     btn.addEventListener('click', () => toggleAtivo(root, btn.dataset.toggle, btn.dataset.ativo === 'true')));
 }
 
+function onlyDigits(v) { return String(v || '').replace(/\D/g, ''); }
+
+async function buscarColaborador(root, termo) {
+  const wrap = root.querySelector('[data-tic-colab-results]');
+  if (!wrap) return;
+  if (!termo || termo.trim().length < 3) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  const { data, error } = await supabase
+    .from('colaboradores_atuais')
+    .select('nome,cpf,whatsapp')
+    .ilike('nome', `%${termo.trim()}%`)
+    .limit(8);
+  if (error || !data?.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
+  wrap.innerHTML = data.map((c, idx) => `<button type="button" data-colab-idx="${idx}">${esc(c.nome)}</button>`).join('');
+  wrap.style.display = 'block';
+  wrap.querySelectorAll('[data-colab-idx]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = data[Number(btn.dataset.colabIdx)];
+      root.querySelector('[data-tic-nome]').value = c.nome || '';
+      root.querySelector('[data-tic-telefone]').value = onlyDigits(c.whatsapp);
+      root.querySelector('[data-tic-cpf]').value = onlyDigits(c.cpf);
+      wrap.innerHTML = ''; wrap.style.display = 'none';
+      root.querySelector('[data-tic-buscar-colab]').value = '';
+    });
+  });
+}
+
 function openModal(root, editId = null) {
   state.editId = editId;
   const c = editId ? state.contatos.find(x => x.id === editId) : null;
 
   const overlay = root.querySelector('[data-tic-overlay]');
   overlay.querySelector('[data-tic-modal-title]').textContent = c ? 'Editar contato' : 'Novo contato';
+  overlay.querySelector('[data-tic-buscar-colab]').value = '';
+  overlay.querySelector('[data-tic-colab-results]').style.display = 'none';
   overlay.querySelector('[data-tic-nome]').value = c?.nome || '';
   overlay.querySelector('[data-tic-telefone]').value = c?.telefone || '';
   overlay.querySelector('[data-tic-cpf]').value = c?.cpf || '';
@@ -330,6 +361,11 @@ function render(root) {
             ${EVENTOS.map(e => `<option value="${esc(e.value)}">${esc(e.label)}</option>`).join('')}
           </select>
         </div>
+        <div class="tic-field" style="position:relative">
+          <label>Buscar colaborador pra preencher automaticamente</label>
+          <input class="tic-input" data-tic-buscar-colab placeholder="Digite o nome do colaborador" autocomplete="off">
+          <div class="tic-colab-results" data-tic-colab-results style="display:none"></div>
+        </div>
         <div class="tic-field">
           <label>Nome do responsável</label>
           <input class="tic-input" data-tic-nome placeholder="Ex.: João Silva" autocomplete="off">
@@ -366,6 +402,17 @@ function render(root) {
   root.querySelector('[data-tic-overlay]').addEventListener('click', e => { if (e.target === root.querySelector('[data-tic-overlay]')) closeModal(root); });
   root.querySelector('[data-tic-save]').addEventListener('click', () => saveContato(root));
   root.querySelector('[data-tic-search]').addEventListener('input', e => renderList(root, e.target.value));
+
+  let colabDebounce;
+  root.querySelector('[data-tic-buscar-colab]').addEventListener('input', e => {
+    clearTimeout(colabDebounce);
+    const termo = e.target.value;
+    colabDebounce = setTimeout(() => buscarColaborador(root, termo), 250);
+  });
+  document.addEventListener('click', e => {
+    const wrap = root.querySelector('[data-tic-colab-results]');
+    if (wrap && !wrap.contains(e.target) && e.target !== root.querySelector('[data-tic-buscar-colab]')) wrap.style.display = 'none';
+  });
 }
 
 export async function renderContent(content) {
