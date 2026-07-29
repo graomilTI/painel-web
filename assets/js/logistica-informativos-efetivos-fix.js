@@ -6,6 +6,9 @@ let applying = false;
 let scheduled = false;
 let historyCache = null;
 let historyCacheAt = 0;
+let productionCache = null;
+let productionCacheKey = '';
+let productionCacheAt = 0;
 
 function clean(value) {
   return String(value ?? '').trim();
@@ -18,6 +21,17 @@ function norm(value) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
+}
+
+function numberValue(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  const text = clean(value);
+  if (!text || norm(text) === 'NHE') return 0;
+  const normalized = text.includes(',')
+    ? text.replace(/\./g, '').replace(',', '.')
+    : text;
+  const parsed = Number(normalized.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 async function fetchAll(table, select, maxRows = 50000) {
@@ -35,6 +49,24 @@ async function fetchAll(table, select, maxRows = 50000) {
   return rows;
 }
 
+async function fetchProductionRange(from, to, maxRows = 50000) {
+  const rows = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const { data, error } = await supabase
+      .from('producao_snapshot')
+      .select('funcionario,data,cargas,tons')
+      .gte('data', from)
+      .lte('data', to)
+      .order('data', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
+}
+
 async function loadStatusHistory() {
   const now = Date.now();
   if (historyCache && now - historyCacheAt < 60_000) return historyCache;
@@ -44,6 +76,25 @@ async function loadStatusHistory() {
   );
   historyCacheAt = now;
   return historyCache;
+}
+
+async function loadProductionNames(from, to) {
+  const cacheKey = `${from}|${to}`;
+  const now = Date.now();
+  if (productionCache && productionCacheKey === cacheKey && now - productionCacheAt < 60_000) {
+    return productionCache;
+  }
+
+  const rows = await fetchProductionRange(from, to);
+  productionCache = new Set(
+    rows
+      .filter((row) => numberValue(row.cargas) > 0 || numberValue(row.tons) > 0)
+      .map((row) => norm(row.funcionario))
+      .filter(Boolean),
+  );
+  productionCacheKey = cacheKey;
+  productionCacheAt = now;
+  return productionCache;
 }
 
 function latestStatusByNameAtDate(history, referenceDate) {
@@ -103,10 +154,10 @@ function forceSupervisionIndicator(reportPages) {
   });
 }
 
-function updateValidationText(reportPages, removedCount) {
+function updateValidationText(reportPages, inactiveCount, productionCount) {
   reportPages.querySelectorAll('.li-report-head p').forEach((paragraph) => {
     const base = clean(paragraph.textContent).replace(/\s*·\s*Validação da base:.*$/i, '');
-    paragraph.textContent = `${base} · Validação da base: ${removedCount} não ativo${removedCount === 1 ? '' : 's'} removido${removedCount === 1 ? '' : 's'} pelo histórico dos relatórios de colaboradores.`;
+    paragraph.textContent = `${base} · Validação da base: ${inactiveCount} não ativo${inactiveCount === 1 ? '' : 's'} removido${inactiveCount === 1 ? '' : 's'} pelo histórico dos relatórios de colaboradores; ${productionCount} com carga${productionCount === 1 ? '' : 's'} registrada${productionCount === 1 ? '' : 's'} na Produção Diária removido${productionCount === 1 ? '' : 's'}.`;
   });
 }
 
@@ -116,26 +167,43 @@ async function applyEffectiveFix() {
   const reportCount = document.getElementById('liReportCount');
   const feedback = document.getElementById('liFeedback');
   const reportFrom = document.getElementById('liEfetivosDateFrom')?.value;
-  if (!reportPages || !reportCount || !reportFrom) return;
+  const reportTo = document.getElementById('liEfetivosDateTo')?.value;
+  if (!reportPages || !reportCount || !reportFrom || !reportTo) return;
 
   const currentRows = collectReportRows(reportPages);
   if (!currentRows.length) return;
 
   applying = true;
   try {
-    const history = await loadStatusHistory();
+    const [historyResult, productionResult] = await Promise.allSettled([
+      loadStatusHistory(),
+      loadProductionNames(reportFrom, reportTo),
+    ]);
+
+    if (historyResult.status === 'rejected' && productionResult.status === 'rejected') {
+      throw new Error(`Histórico: ${historyResult.reason?.message || historyResult.reason}; Produção Diária: ${productionResult.reason?.message || productionResult.reason}`);
+    }
+
+    const history = historyResult.status === 'fulfilled' ? historyResult.value : [];
+    const productionNames = productionResult.status === 'fulfilled' ? productionResult.value : new Set();
     const statusByName = latestStatusByNameAtDate(history, reportFrom);
-    const removed = [];
+    const removedInactive = [];
+    const removedProduction = [];
 
     const filtered = currentRows.filter(({ cells }) => {
-      const status = statusByName.get(norm(cells[0]));
+      const nameKey = norm(cells[0]);
+      const status = statusByName.get(nameKey);
       if (status && status.ativo_novo === false) {
-        removed.push({
+        removedInactive.push({
           name: cells[0],
           status: status.situacao_nova,
           effectiveDate: status.data_efetiva,
           source: status.fonte,
         });
+        return false;
+      }
+      if (productionNames.has(nameKey)) {
+        removedProduction.push(cells[0]);
         return false;
       }
       return true;
@@ -148,20 +216,25 @@ async function applyEffectiveFix() {
     ));
 
     if (!filtered.length) {
-      reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas ou estavam não ativos/indisponíveis no período.</div>';
+      reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas, na Produção Diária ou estavam não ativos/indisponíveis no período.</div>';
     } else {
       distributeRows(reportPages, filtered);
       forceSupervisionIndicator(reportPages);
-      updateValidationText(reportPages, removed.length);
+      updateValidationText(reportPages, removedInactive.length, removedProduction.length);
     }
     reportCount.textContent = `${filtered.length} registro${filtered.length === 1 ? '' : 's'}`;
 
     if (feedback) {
-      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removed.length} não ativo(s) removido(s) conforme a mudança registrada entre relatórios de colaboradores.`;
+      const warnings = [];
+      if (historyResult.status === 'rejected') warnings.push('histórico de colaboradores indisponível');
+      if (productionResult.status === 'rejected') warnings.push('Produção Diária indisponível');
+      const warningText = warnings.length ? ` Atenção: ${warnings.join(' e ')}.` : '';
+      feedback.textContent = `Conferência concluída: ${filtered.length} efetivo(s) sem cargas; ${removedProduction.length} com carga(s) na Produção Diária e ${removedInactive.length} não ativo(s) removido(s).${warningText}`;
     }
-    if (removed.length) console.info('[informativos/efetivos] não ativos removidos pelo histórico', removed);
+    if (removedInactive.length) console.info('[informativos/efetivos] não ativos removidos pelo histórico', removedInactive);
+    if (removedProduction.length) console.info('[informativos/efetivos] colaboradores removidos por carga na Produção Diária', removedProduction);
   } catch (error) {
-    console.warn('[informativos/efetivos] histórico de situação indisponível', error);
+    console.warn('[informativos/efetivos] validações complementares indisponíveis', error);
     const rows = collectReportRows(reportPages).sort((a, b) => (
       PT.compare(a.cells[2] || '', b.cells[2] || '')
       || PT.compare(a.cells[1] || '', b.cells[1] || '')
@@ -170,7 +243,7 @@ async function applyEffectiveFix() {
     distributeRows(reportPages, rows);
     forceSupervisionIndicator(reportPages);
     if (feedback) {
-      feedback.textContent = `A ordenação foi aplicada, mas o histórico dos relatórios de colaboradores não pôde ser consultado: ${error.message || error}`;
+      feedback.textContent = `A ordenação foi aplicada, mas as validações complementares não puderam ser consultadas: ${error.message || error}`;
     }
   } finally {
     window.setTimeout(() => { applying = false; }, 0);
@@ -196,6 +269,8 @@ function install() {
   document.addEventListener('change', (event) => {
     if (event.target?.matches?.('#liEfetivosDateFrom, #liEfetivosDateTo')) {
       historyCache = null;
+      productionCache = null;
+      productionCacheKey = '';
       scheduleApply();
     }
   });
