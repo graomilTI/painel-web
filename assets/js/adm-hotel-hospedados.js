@@ -6,11 +6,19 @@
 // grava por colaborador/dia (programacao_estadia, tipo_estadia='alojamento'),
 // a mesma fonte que já alimenta o KPI agregado "Em uso hoje" em
 // adm-hotel-separacao-modulos.js e a aba Alojamento de Gestor > Hospedagem.
+//
+// 2026-07-30: migrada do sistema antigo de abas (.adm-hosp-tabs, "Hotéis")
+// pro shell moderno de Alojamentos (.aloj-v2-shell), como uma 3ª aba ao lado
+// de "Alojamentos"/"Pagamentos" (adm-hotel-alojamentos-pagamentos.js). Motivo:
+// esse era o pedido original do usuário ("em Hospedagem > Hotéis, remove a
+// janela Hospedados e coloca em Hospedagem > alojamentos") e também corrige
+// um bug de navegação — adm-hotel-separacao-modulos.js força
+// `.adm-hosp-tabs{display:none}` inteiro quando o modo é "alojamentos", então
+// a aba antiga ficava inacessível na URL #alojamentos (o caso comum).
 import { supabase } from './supabaseClient.js';
 import { esc, brDate } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
 
-const TAB_ID = 'hospedados';
-const state = { date: '', busca: '', carregando: false, ultimasLinhas: [] };
+const state = { date: '', busca: '', carregando: false, ultimasLinhas: [], mounted: false, timer: null };
 
 function normalizeText(value) {
   return String(value ?? '')
@@ -36,6 +44,10 @@ function ensureStyles() {
   const style = document.createElement('style');
   style.id = 'admHotelHospedadosCss';
   style.textContent = `
+    .aloj-v2-shell.aloj-hosp-mode>.aloj-v2-head,.aloj-v2-shell.aloj-hosp-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-hosp-mode>#alojV2List{display:none!important}
+    .aloj-v2-shell.aloj-hosp-mode>.aloj-pay-panel{display:none!important}
+    .aloj-hosp-panel{display:none}
+    .aloj-v2-shell.aloj-hosp-mode>.aloj-hosp-panel{display:grid;gap:14px}
     .hosp-v-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
     .hosp-v-toolbar input{height:38px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;color-scheme:dark}
     .hosp-v-toolbar input[type="search"]{flex:1 1 240px}
@@ -53,46 +65,51 @@ function ensureStyles() {
 }
 
 function tabButtonHtml() {
-  return `<button class="adm-hosp-tab" data-tab="${TAB_ID}" type="button">Hospedados</button>`;
+  return `<button type="button" class="aloj-pay-tab" data-aloj-hosp-tab="1">Hospedados</button>`;
 }
 
 function panelHtml() {
-  return `<section id="tab-${TAB_ID}" class="adm-hosp-panel">
-    <article class="card">
-      <div class="section-head">
-        <div><h3>Hospedados</h3><p class="muted">Quem da equipe está hospedado em cada alojamento, dia a dia.</p></div>
-      </div>
-      <div class="hosp-v-toolbar">
-        <input type="date" id="hospVData" />
-        <input type="search" id="hospVBusca" placeholder="Buscar colaborador ou alojamento..." />
-      </div>
-      <div class="hosp-v-table-wrap">
-        <table class="hosp-v-table">
-          <thead><tr><th>Alojamento</th><th>Colaborador</th><th>Check-in</th><th>Check-out</th></tr></thead>
-          <tbody id="hospVTbody"><tr><td colspan="4" class="hosp-v-empty">Carregando...</td></tr></tbody>
-        </table>
-      </div>
-    </article>
+  return `<section class="aloj-hosp-panel" id="tab-hospedados">
+    <div class="aloj-pay-head"><div><div class="aloj-v2-eyebrow">Alojamentos</div><h3>Hospedados</h3><p>Quem da equipe está hospedado em cada alojamento, dia a dia.</p></div></div>
+    <div class="hosp-v-toolbar">
+      <input type="date" id="hospVData" />
+      <input type="search" id="hospVBusca" placeholder="Buscar colaborador ou alojamento..." />
+    </div>
+    <div class="hosp-v-table-wrap">
+      <table class="hosp-v-table">
+        <thead><tr><th>Alojamento</th><th>Colaborador</th><th>Check-in</th><th>Check-out</th></tr></thead>
+        <tbody id="hospVTbody"><tr><td colspan="4" class="hosp-v-empty">Carregando...</td></tr></tbody>
+      </table>
+    </div>
   </section>`;
 }
 
 function garantirDom() {
-  const tabs = document.querySelector('.adm-hosp-tabs');
-  const panelsHost = document.getElementById('tab-alojamentos')?.parentElement;
-  if (!tabs || !panelsHost) return false;
-  if (!tabs.querySelector(`[data-tab="${TAB_ID}"]`)) {
+  const shell = document.querySelector('.aloj-v2-shell');
+  const tabs = shell?.querySelector('.aloj-pay-tabs');
+  if (!shell || !tabs) return false;
+  if (!tabs.querySelector('[data-aloj-hosp-tab]')) {
     tabs.insertAdjacentHTML('beforeend', tabButtonHtml());
   }
-  if (!document.getElementById(`tab-${TAB_ID}`)) {
-    document.getElementById('tab-alojamentos').insertAdjacentHTML('afterend', panelHtml());
+  if (!document.getElementById('tab-hospedados')) {
+    shell.insertAdjacentHTML('beforeend', panelHtml());
     bindPanel();
   }
   return true;
 }
 
-function ativarTab() {
-  document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === TAB_ID));
-  document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.toggle('active', p.id === `tab-${TAB_ID}`));
+function activarAba() {
+  const shell = document.querySelector('.aloj-v2-shell');
+  if (!shell) return;
+  shell.classList.remove('aloj-pay-mode');
+  shell.classList.add('aloj-hosp-mode');
+  document.querySelectorAll('[data-aloj-pay-mode]').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('[data-aloj-hosp-tab]').forEach((b) => b.classList.add('active'));
+}
+
+function desativarAba() {
+  document.querySelector('.aloj-v2-shell')?.classList.remove('aloj-hosp-mode');
+  document.querySelectorAll('[data-aloj-hosp-tab]').forEach((b) => b.classList.remove('active'));
 }
 
 function alojamentoKey(row) {
@@ -129,7 +146,6 @@ async function carregar() {
     const idsCadastrados = new Set((alojamentosRes.data || []).map((a) => String(a.id)));
 
     const linhas = estadiaRows.map((row) => {
-      const key = alojamentoKey(row);
       const cadastro = nomePorAlojamentoId.get(String(row.alojamento_id));
       return {
         alojamentoNome: cadastro?.nome || row.alojamento_nome || 'Alojamento não cadastrado',
@@ -190,15 +206,25 @@ function bindPanel() {
   });
 }
 
+function scheduleGarantirDom() {
+  clearTimeout(state.timer);
+  state.timer = setTimeout(() => garantirDom(), 60);
+}
+
 function boot() {
-  const observer = new MutationObserver(() => garantirDom());
+  ensureStyles();
+  const observer = new MutationObserver(scheduleGarantirDom);
   observer.observe(document.body, { childList: true, subtree: true });
-  garantirDom();
+  scheduleGarantirDom();
 
   document.addEventListener('click', (event) => {
-    if (event.target.closest(`[data-tab="${TAB_ID}"]`)) {
-      ativarTab();
+    if (event.target.closest('[data-aloj-hosp-tab]')) {
+      activarAba();
       carregar();
+      return;
+    }
+    if (event.target.closest('[data-aloj-pay-mode]')) {
+      desativarAba();
     }
   }, true);
 }
