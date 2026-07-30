@@ -412,12 +412,20 @@ Deno.serve(async (req) => {
                 if (step.type === 'pickup') paradas.push({ ordem, tipo: 'colaborador', os_id: p.os_id, colaborador_nome: p.colaborador_nome, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: p.embarque, lat: p.lat, lng: p.lng, ...trecho });
                 else paradas.push({ ordem, tipo: 'embarque', os_id: p.os_id, colaborador_nome: null, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: '', lat: p.ponto._lat, lng: p.ponto._lng, ...trecho });
               }
+              // Geometria real (seguindo estrada) pro trajeto completo do veículo — VROOM só
+              // devolve distância/duração por trecho, não o desenho da via. Reaproveita o mesmo
+              // osrmRoute() da trilha reembolso_km; se o OSRM não responder a tempo (orçamento
+              // de 40s da function), o Mapa cai no fallback de linha reta entre os pontos.
+              const pontosRotaFrota: Point[] = [{ lat: veiculo.lat, lng: veiculo.lng }, ...paradas.map((p) => ({ lat: p.lat, lng: p.lng }))];
+              const rotaInfo = await osrmRoute(pontosRotaFrota);
+              if (rotaInfo) await sleep(200);
+
               rotasParaGravar.push({
                 tipo: 'frota', veiculo_id: veiculo.id, placa: veiculo.placa, motorista_nome: veiculo.motorista,
                 colaborador_nome: null, colaborador_cpf: null,
                 origem_latitude: veiculo.lat, origem_longitude: veiculo.lng, origem_tipo: null,
                 km_total_estimado: round2(prevDist / 1000), duracao_estimada_min: round1(prevDur / 60),
-                geometria: null, paradas,
+                geometria: rotaInfo?.geometry || null, paradas,
               });
             }
           }

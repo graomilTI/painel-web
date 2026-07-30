@@ -37,6 +37,10 @@ import { getCurrentUser } from './auth.js';
     // Rotas calculadas (operacional_mapa_rotas, geradas ao Gestor salvar a Programação) —
     // frota = linha sólida, reembolso_km = tracejada.
     mostrarRotas: true, rotasMapa: [],
+    // Local inicial do colaborador (casa/hotel/alojamento, já resolvido pela Edge Function) e
+    // posição atual do veículo (frotas_posicoes, buscada à parte pra ficar sempre em cima da
+    // hora — a rota é calculada 1x ao salvar a Programação, mas o veículo continua andando).
+    mostrarOrigens: true, mostrarVeiculos: true, veiculosLive: [],
     // Escopo por regional: gestor vê só a própria supervisão; sem regional cadastrada (admin/master)
     // vê tudo — mesmo padrão de getMinhasRegionais() em logistica.js/hospedagem.js.
     minhasRegionais: [], minhasRegionaisCarregadas: false,
@@ -165,11 +169,21 @@ import { getCurrentUser } from './auth.js';
     return rotas.map(r => ({ ...r, paradas: paradasPorRota.get(String(r.id)) || [] }));
   }
 
+  // Posição atual do veículo — sincronizada via API (frotas_posicoes) a cada carregamento do
+  // Mapa, separada da rota (que é um cálculo pontual de quando o Gestor salvou a Programação).
+  async function loadVeiculosLive(placas) {
+    if (!placas.length) return [];
+    const rows = await sel('frotas_posicoes', 'placa,latitude,longitude,motorista,reportado_em,atualizado_em', q => q.in('placa', placas));
+    return rows.filter(geo);
+  }
+
   async function load(root) {
     const [{ os, pontos }, rotasMapa] = await Promise.all([loadOsEPontos(), loadRotasMapa()]);
     st.os = os;
     st.pontos = pontos;
     st.rotasMapa = rotasMapa;
+    const placas = [...new Set(rotasMapa.filter(r => r.tipo === 'frota' && r.placa).map(r => r.placa))];
+    st.veiculosLive = await loadVeiculosLive(placas);
     if (root) render(root, true);
   }
 
@@ -256,12 +270,21 @@ import { getCurrentUser } from './auth.js';
       .mo-marker-toggle.off .mo-dot{box-shadow:none}
       .mo-marker-toggle[data-toggle-marker="os"] .mo-dot{background:var(--mo-green);color:var(--mo-green)}
       .mo-marker-toggle[data-toggle-marker="rotas"] .mo-dot{background:var(--mo-amber);color:var(--mo-amber)}
+      .mo-marker-toggle[data-toggle-marker="origens"] .mo-dot{background:#38bdf8;color:#38bdf8}
+      .mo-marker-toggle[data-toggle-marker="veiculos"] .mo-dot{background:#f5a524;color:#f5a524}
       .mo-marker-toggle:hover{border-color:var(--mo-line-2)}
       .mo-marker-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,165,36,.35);background:rgba(245,165,36,.08);color:#ffd98a;border-radius:999px;padding:7px 13px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
       .mk-wrap{width:20px;height:20px;display:flex;align-items:center;justify-content:center}
       .mk-ring{position:absolute;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--mo-green,#3fe08a);opacity:0;animation:moRadar 2.6s ease-out infinite}
       .mk-core{position:relative;width:10px;height:10px;border-radius:50%;background:#3fe08a;border:1.5px solid #eafff2;box-shadow:0 0 10px rgba(63,224,138,.9),0 0 2px rgba(0,0,0,.4)}
       @keyframes moRadar{0%{transform:scale(.3);opacity:.65}100%{transform:scale(2.3);opacity:0}}
+      .mk-colab-wrap{width:14px;height:14px;display:flex;align-items:center;justify-content:center}
+      .mk-colab{width:11px;height:11px;border-radius:50%;background:#38bdf8;border:1.5px solid #eafff2;box-shadow:0 0 9px rgba(56,189,248,.85)}
+      .mk-veic-wrap{width:24px;height:24px;display:flex;align-items:center;justify-content:center;position:relative}
+      .mk-veic-pulse{position:absolute;inset:0;border-radius:8px;background:rgba(245,165,36,.35);animation:moVeicPulse 1.6s ease-out infinite}
+      @keyframes moVeicPulse{0%{transform:scale(.7);opacity:.8}100%{transform:scale(1.6);opacity:0}}
+      .mk-veic{position:relative;width:22px;height:22px;border-radius:8px;background:linear-gradient(160deg,#ffcc66,#f5a524);border:1.5px solid #fff8e8;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(245,165,36,.8)}
+      .mk-veic svg{display:block}
       .mo-load{padding:40px 20px;text-align:center;color:var(--mo-muted);font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.04em}
       .mo-load::before{content:'';display:block;width:26px;height:26px;margin:0 auto 12px;border-radius:50%;border:2px solid rgba(63,224,138,.18);border-top-color:var(--mo-green);animation:moSpin .8s linear infinite}
       @keyframes moSpin{to{transform:rotate(360deg)}}
@@ -296,12 +319,27 @@ import { getCurrentUser } from './auth.js';
   function addCss(h, id) { if (document.getElementById(id)) return; const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = h; l.id = id; document.head.appendChild(l); }
   function scriptTag(src, id) { return new Promise((res, rej) => { if (document.getElementById(id)) return res(); const s = document.createElement('script'); s.src = src; s.id = id; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
+  // Destino: O.S. Atender — radar pulsante.
   function icon() {
     return window.L.divIcon({
       className: '',
       html: '<div class="mk-wrap"><span class="mk-ring"></span><span class="mk-ring" style="animation-delay:.9s"></span><span class="mk-core"></span></div>',
       iconSize: [20, 20],
       iconAnchor: [10, 10],
+    });
+  }
+  // Local inicial do colaborador (casa/hotel/alojamento).
+  function iconColab() {
+    return window.L.divIcon({ className: '', html: '<div class="mk-colab-wrap"><span class="mk-colab"></span></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
+  }
+  // Posição atual do veículo (frotas_posicoes, sincronizada via API a cada carregamento).
+  const VEICULO_SVG = '<svg viewBox="0 0 24 24" width="12" height="12"><path fill="#3a2405" d="M4 11l1.4-4.2A2 2 0 0 1 7.3 5.5h9.4a2 2 0 0 1 1.9 1.3L20 11h.5a1.5 1.5 0 0 1 1.5 1.5V16a1 1 0 0 1-1 1h-1.2a2.3 2.3 0 0 1-4.6 0H8.8a2.3 2.3 0 0 1-4.6 0H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11z"/></svg>';
+  function iconVeiculo() {
+    return window.L.divIcon({
+      className: '',
+      html: `<div class="mk-veic-wrap"><span class="mk-veic-pulse"></span><span class="mk-veic">${VEICULO_SVG}</span></div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
     });
   }
 
@@ -353,13 +391,15 @@ import { getCurrentUser } from './auth.js';
           </div>
           <div class="mo-legend">
             <span class="mo-marker-badge">Hoje · Atender</span>
-            <button class="mo-marker-toggle ${st.mostrarOs ? '' : 'off'}" data-toggle-marker="os"><span class="mo-dot"></span>O.S.</button>
+            <button class="mo-marker-toggle ${st.mostrarOs ? '' : 'off'}" data-toggle-marker="os" title="Local final (O.S.)"><span class="mo-dot"></span>O.S.</button>
+            <button class="mo-marker-toggle ${st.mostrarOrigens ? '' : 'off'}" data-toggle-marker="origens" title="Local inicial do colaborador (casa/hotel/alojamento)"><span class="mo-dot"></span>Colaborador</button>
+            <button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos" title="Posição atual do veículo, sincronizada via API"><span class="mo-dot"></span>Veículo</button>
             <button class="mo-marker-toggle ${st.mostrarRotas ? '' : 'off'}" data-toggle-marker="rotas" title="Frota = linha sólida · Reembolso km = tracejada"><span class="mo-dot"></span>Rotas</button>
           </div>
         </div>
         <div class="mo-body">
           <div class="mo-map-wrap"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa</div></div><div class="mo-map-glow" aria-hidden="true"></div></div>
-          <div class="mo-kpis">${kpiBox('O.S. Atender hoje', st.os.length, 'os')}${kpiBox('Rotas de frota', frotaCount, 'frota')}${kpiBox('Rotas reembolso km', reembolsoCount, 'reembolso')}</div>
+          <div class="mo-kpis">${kpiBox('O.S. Atender hoje', st.os.length, 'os')}${kpiBox('Rotas de frota', frotaCount, 'frota')}${kpiBox('Rotas reembolso km', reembolsoCount, 'reembolso')}${kpiBox('Veículos ao vivo', st.veiculosLive.length, 'veiculos')}</div>
         </div>
       </section></div>`;
   }
@@ -379,6 +419,8 @@ import { getCurrentUser } from './auth.js';
         const alvo = el.dataset.toggleMarker;
         if (alvo === 'os') st.mostrarOs = !st.mostrarOs;
         if (alvo === 'rotas') st.mostrarRotas = !st.mostrarRotas;
+        if (alvo === 'origens') st.mostrarOrigens = !st.mostrarOrigens;
+        if (alvo === 'veiculos') st.mostrarVeiculos = !st.mostrarVeiculos;
         render(root);
       };
     });
@@ -413,13 +455,32 @@ import { getCurrentUser } from './auth.js';
     return `<strong>${quem}</strong><br>Origem: ${esc(origemLabel)}<br>${fmtKm(r.km_total_estimado)} · ${Number(r.duracao_estimada_min || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} min`;
   }
 
+  function fmtHora(v) {
+    if (!v) return '—';
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+  }
+
+  // Desenha a rota seguindo a via de verdade (r.geometria, GeoJSON LineString vindo do OSRM) —
+  // sem isso, a linha ligava só os pontos em linha reta e cortava por cima de fazenda/mata,
+  // o que deixava o mapa "estranho". Sem geometria (OSRM fora do ar no cálculo), cai pro
+  // traço reto entre os pontos, melhor que não desenhar nada.
+  function pontosDaRota(r) {
+    const coordsGeo = r.geometria?.coordinates;
+    if (Array.isArray(coordsGeo) && coordsGeo.length > 1) {
+      return coordsGeo.map(([lngPt, latPt]) => [latPt, lngPt]);
+    }
+    if (!Number.isFinite(Number(r.origem_latitude)) || !Number.isFinite(Number(r.origem_longitude))) return [];
+    const pontosRota = [[Number(r.origem_latitude), Number(r.origem_longitude)]];
+    (r.paradas || []).forEach(p => {
+      if (Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))) pontosRota.push([Number(p.latitude), Number(p.longitude)]);
+    });
+    return pontosRota;
+  }
+
   function drawRotas(L, bounds) {
     st.rotasMapa.forEach(r => {
-      if (!Number.isFinite(Number(r.origem_latitude)) || !Number.isFinite(Number(r.origem_longitude))) return;
-      const pontosRota = [[Number(r.origem_latitude), Number(r.origem_longitude)]];
-      (r.paradas || []).forEach(p => {
-        if (Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))) pontosRota.push([Number(p.latitude), Number(p.longitude)]);
-      });
+      const pontosRota = pontosDaRota(r);
       if (pontosRota.length < 2) return;
       const frota = r.tipo === 'frota';
       L.polyline(pontosRota, {
@@ -428,8 +489,43 @@ import { getCurrentUser } from './auth.js';
         opacity: 0.9,
         dashArray: frota ? null : '7,6',
         className: frota ? 'mo-route-frota' : 'mo-route-reembolso',
+        lineJoin: 'round', lineCap: 'round',
       }).bindTooltip(rotaTooltip(r), { className: 'mo-tip' }).addTo(st.layer);
-      pontosRota.forEach(p => bounds.push(p));
+      bounds.push(pontosRota[0], pontosRota[pontosRota.length - 1]);
+    });
+  }
+
+  // Local inicial: origem do próprio colaborador (reembolso km) ou de cada colaborador
+  // embarcado ao longo da rota de frota (paradas tipo "colaborador").
+  function drawOrigens(L, bounds) {
+    st.rotasMapa.forEach(r => {
+      if (r.tipo === 'reembolso_km') {
+        if (!Number.isFinite(Number(r.origem_latitude)) || !Number.isFinite(Number(r.origem_longitude))) return;
+        const origemLabel = r.origem_tipo === 'hotel' ? 'Hotel' : r.origem_tipo === 'alojamento' ? 'Alojamento' : 'Casa';
+        L.marker([r.origem_latitude, r.origem_longitude], { icon: iconColab() })
+          .bindTooltip(`<strong>${esc(r.colaborador_nome || 'Colaborador')}</strong><br>Local inicial · ${esc(origemLabel)}`, { className: 'mo-tip' })
+          .addTo(st.layer);
+        bounds.push([r.origem_latitude, r.origem_longitude]);
+        return;
+      }
+      (r.paradas || []).filter(p => p.tipo === 'colaborador').forEach(p => {
+        if (!Number.isFinite(Number(p.latitude)) || !Number.isFinite(Number(p.longitude))) return;
+        L.marker([p.latitude, p.longitude], { icon: iconColab() })
+          .bindTooltip(`<strong>${esc(p.colaborador_nome || 'Colaborador')}</strong><br>Local inicial · embarque na rota de ${esc(r.placa || 'frota')}`, { className: 'mo-tip' })
+          .addTo(st.layer);
+        bounds.push([p.latitude, p.longitude]);
+      });
+    });
+  }
+
+  // Posição atual do veículo — sincronizada via API (frotas_posicoes), independente de quando
+  // a rota foi calculada.
+  function drawVeiculosLive(L, bounds) {
+    st.veiculosLive.forEach(v => {
+      L.marker([lat(v), lng(v)], { icon: iconVeiculo() })
+        .bindTooltip(`<strong>${esc(v.placa)}</strong>${v.motorista ? `<br>${esc(v.motorista)}` : ''}<br>Atualizado ${esc(fmtHora(v.reportado_em || v.atualizado_em))}`, { className: 'mo-tip' })
+        .addTo(st.layer);
+      bounds.push([lat(v), lng(v)]);
     });
   }
 
@@ -444,11 +540,13 @@ import { getCurrentUser } from './auth.js';
         const qtd = osPorPonto(p).length;
         if (!qtd) return;
         const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade)</em>' : '';
-        L.marker([p.lat, p.lng], { icon: icon() }).bindTooltip(`<strong>${esc(p.nome_local)}</strong><br>${esc(p.cidade)}/${esc(p.uf)} · ${qtd} O.S. Atender${aviso}`, { className: 'mo-tip' }).addTo(st.layer);
+        L.marker([p.lat, p.lng], { icon: icon() }).bindTooltip(`<strong>${esc(p.nome_local)}</strong><br>Local final (O.S.) · ${esc(p.cidade)}/${esc(p.uf)} · ${qtd} O.S. Atender${aviso}`, { className: 'mo-tip' }).addTo(st.layer);
         b.push([p.lat, p.lng]);
       });
     }
     if (st.mostrarRotas) drawRotas(L, b);
+    if (st.mostrarOrigens) drawOrigens(L, b);
+    if (st.mostrarVeiculos) drawVeiculosLive(L, b);
 
     if (b.length && ajustarZoom) st.map.fitBounds(b, { padding: [34, 34], maxZoom: st.estado || st.ponto ? 9 : 10 });
   }
