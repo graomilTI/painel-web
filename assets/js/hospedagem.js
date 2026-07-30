@@ -162,15 +162,15 @@ function injectStyles() {
     .hosp-field{display:flex;flex-direction:column;gap:5px;min-width:0}
     .hosp-field.full{grid-column:1/-1}.hosp-field.col-3{grid-column:span 3}.hosp-field.col-4{grid-column:span 4}.hosp-field.col-5{grid-column:span 5}.hosp-field.col-6{grid-column:span 6}.hosp-field.col-7{grid-column:span 7}.hosp-field.col-8{grid-column:span 8}.hosp-field.col-9{grid-column:span 9}
     .hosp-field label{font-size:10.5px;color:#67a383;font-weight:750}
-    .hosp-field input,.hosp-field textarea,.hosp-field select,.hosp-colab-row input{width:100%;min-height:36px;border:1px solid rgba(34,197,94,.23);background:#092117;color:#eafff3;border-radius:0;padding:8px 10px;outline:none;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
+    .hosp-field input,.hosp-field textarea,.hosp-field select,.hosp-colab-row input{width:100%;min-height:36px;border:1px solid rgba(34,197,94,.23);background:#092117;color:#eafff3;border-radius:10px;padding:8px 10px;outline:none;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
     .hosp-field input:focus,.hosp-field textarea:focus,.hosp-field select:focus,.hosp-colab-row input:focus{border-color:#2dd778;box-shadow:0 0 0 1px rgba(45,215,120,.15)}
     .hosp-field textarea{min-height:76px;resize:vertical}
-    .hosp-diarias-badge{display:inline-flex;align-items:center;margin-left:auto;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.15);color:#7bf2ad;padding:4px 8px;font-size:9.5px;font-weight:850;letter-spacing:0;text-transform:none;white-space:nowrap}
+    .hosp-diarias-badge{display:inline-flex;align-items:center;margin-left:auto;border:1px solid rgba(34,197,94,.35);background:rgba(22,101,52,.15);color:#7bf2ad;padding:4px 10px;border-radius:999px;font-size:9.5px;font-weight:850;letter-spacing:0;text-transform:none;white-space:nowrap}
     .hosp-colab-box{display:flex;flex-direction:column;gap:8px}
     .hosp-colab-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:7px;align-items:center}
-    .hosp-colab-type{display:none;align-items:center;min-height:34px;border:1px solid rgba(34,197,94,.22);background:rgba(22,101,52,.14);color:#9df2bd;padding:0 9px;font-size:10.5px;white-space:nowrap}
+    .hosp-colab-type{display:none;align-items:center;min-height:34px;border:1px solid rgba(34,197,94,.22);background:rgba(22,101,52,.14);color:#9df2bd;padding:0 9px;border-radius:10px;font-size:10.5px;white-space:nowrap}
     .hosp-colab-type.show{display:flex}
-    .hosp-remove{width:36px!important;height:36px!important;min-width:36px!important;margin:0!important;padding:0!important;border-radius:0!important;border:1px solid rgba(239,68,68,.25)!important;background:transparent!important;color:#d58b8b!important}
+    .hosp-remove{width:36px!important;height:36px!important;min-width:36px!important;margin:0!important;padding:0!important;border-radius:10px!important;border:1px solid rgba(239,68,68,.25)!important;background:transparent!important;color:#d58b8b!important}
     .hosp-remove:hover{border-color:rgba(248,113,113,.55)!important;color:#fecaca!important}
     .hosp-add-colab{width:auto;align-self:flex-start;margin-top:8px;border:0;background:transparent;color:#2cdb79;padding:4px 0;cursor:pointer;font-weight:800;font-size:11.5px}
     .hosp-add-colab:hover{color:#86efac}
@@ -181,7 +181,7 @@ function injectStyles() {
     .hosp-ac-item:last-child{border-bottom:0}.hosp-ac-item:hover{background:rgba(45,215,120,.12)}
     .hosp-ac-item small{display:block;color:#6c9e82;font-size:10px;margin-top:2px}.hosp-ac-empty{padding:10px 11px;font-size:11.5px;color:#6c9e82;text-align:center}
     .hosp-form-actions{display:flex;align-items:center;gap:10px;margin-top:auto;padding:15px 0 0;border-top:1px solid rgba(34,197,94,.18);flex-wrap:wrap}
-    .hosp-form-actions .btn{width:auto!important;margin:0!important;border-radius:0!important;min-height:38px;padding:0 14px;font-size:11.5px}
+    .hosp-form-actions .btn{width:auto!important;margin:0!important;border-radius:12px!important;min-height:38px;padding:0 14px;font-size:11.5px}
     .hosp-submit{background:rgba(22,101,52,.2)!important;border-color:rgba(45,215,120,.35)!important;color:#77eda8!important}
     .hosp-feedback{flex:1 1 100%;color:#6c9e82;font-size:11.5px}.hosp-feedback.ok{color:#86efac}.hosp-feedback.err{color:#fecaca}
     .hosp-list-pane{min-width:0;display:flex;flex-direction:column;background:rgba(3,20,12,.62)}
@@ -189,20 +189,20 @@ function injectStyles() {
     .hosp-stats{display:flex;align-items:stretch;min-width:0}
     .hosp-stat{min-width:110px;padding:14px 20px;border-right:1px solid rgba(34,197,94,.12);display:flex;flex-direction:column;justify-content:center}
     .hosp-stat span{font-size:8.5px;color:#4f9670;text-transform:uppercase;letter-spacing:.18em;font-weight:800}.hosp-stat strong{font-size:24px;color:#eafff3;margin-top:7px;font-weight:500;line-height:1}
-    .hosp-refresh-wrap{display:flex;align-items:center;padding:0 18px}.hosp-refresh{width:auto!important;margin:0!important;border-radius:0!important;background:transparent!important;color:#65ad82!important;border-color:rgba(34,197,94,.25)!important;font-size:11px!important;padding:8px 13px!important}
+    .hosp-refresh-wrap{display:flex;align-items:center;padding:0 18px}.hosp-refresh{width:auto!important;margin:0!important;border-radius:12px!important;background:transparent!important;color:#65ad82!important;border-color:rgba(34,197,94,.25)!important;font-size:11px!important;padding:8px 13px!important}
     .hosp-table-wrap{overflow:auto;flex:1;min-height:320px}
     .hosp-table{width:100%;border-collapse:collapse;min-width:880px}
     .hosp-table th,.hosp-table td{padding:14px 16px;border-bottom:1px solid rgba(34,197,94,.14);text-align:left;vertical-align:top;font-size:12px}
     .hosp-table th{position:sticky;top:0;z-index:2;background:#082117;color:#4f9670;font-size:8.5px;text-transform:uppercase;letter-spacing:.18em;font-weight:850}
     .hosp-table tr:hover td{background:rgba(45,215,120,.035)}
     .hosp-table td{color:#e9fff2}.hosp-help{font-size:10px;color:#4b996d}.hosp-empty{padding:24px!important;color:#5c8d70!important;text-align:center}
-    .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid rgba(34,197,94,.24);font-size:10px;font-weight:750;white-space:nowrap}
+    .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(34,197,94,.24);font-size:10px;font-weight:750;white-space:nowrap}
     .hosp-status::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
     .hosp-status.solicitada{color:#48e78d;background:rgba(22,101,52,.18)}
     .hosp-status.em_analise,.hosp-status.em_cotacao{color:#facc15;background:rgba(161,98,7,.17);border-color:rgba(250,204,21,.3)}
     .hosp-status.reservada,.hosp-status.concluida{color:#32df79;background:rgba(22,101,52,.23)}
     .hosp-status.cancelada{color:#f87171;background:rgba(127,29,29,.17);border-color:rgba(248,113,113,.28)}
-    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;padding:9px 10px;margin-top:9px;font-size:11.5px}
+    .hosp-alert{border:1px solid rgba(245,158,11,.24);background:rgba(245,158,11,.08);color:#fde68a;border-radius:12px;padding:9px 10px;margin-top:9px;font-size:11.5px}
     .hosp-row-actions{display:flex;flex-direction:column;gap:5px;min-width:104px}
     .hosp-row-actions button{border:1px solid rgba(34,197,94,.25);background:transparent;color:#65ad82;padding:5px 8px;font-size:10.5px;font-weight:750;cursor:pointer;text-align:left;white-space:nowrap}
     .hosp-row-actions button:hover{border-color:rgba(45,215,120,.55);color:#9df2bd}
@@ -212,10 +212,11 @@ function injectStyles() {
     @media(max-width:1180px){.hosp-workspace-body{grid-template-columns:1fr}.hosp-form-pane{border-right:0;border-bottom:1px solid var(--line)}.hosp-form{max-width:none}.hosp-list-pane{min-height:520px}}
     @media(max-width:700px){.hosp-grid{grid-template-columns:1fr 1fr}.hosp-grid .hosp-field{grid-column:1/-1}.hosp-field.col-3,.hosp-field.col-4,.hosp-field.col-5,.hosp-field.col-6,.hosp-field.col-7,.hosp-field.col-8,.hosp-field.col-9{grid-column:span 1}.hosp-list-head{flex-direction:column}.hosp-stats{width:100%}.hosp-stat{flex:1;min-width:0}.hosp-refresh-wrap{padding:10px 14px}.hosp-colab-row{grid-template-columns:minmax(0,1fr) auto}.hosp-colab-type{grid-column:1/-1;grid-row:2}}
 
-    .hosp-tabs-bar{display:flex;gap:8px;margin-bottom:14px}
-    .hosp-tab-btn{border:1px solid var(--line);background:rgba(3,18,12,.72);color:var(--muted);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;transition:.15s}
-    .hosp-tab-btn:hover{border-color:var(--line-2);color:var(--text)}
-    .hosp-tab-btn.active{background:linear-gradient(135deg,var(--green-3),var(--green));border-color:var(--green-2);color:#f0fff7}
+    /* Tab bar padronizada com as etapas de Gestor > Programação (mesmas
+       classes .steps-wrap/.stepbtn/.stepbtn-letter, estilizadas por
+       programacao-redesign.css agora também linkado aqui) — pedido da
+       usuária pra deixar Hospedagem/Alojamento com a mesma cara. */
+    .hosp-tabs-bar{margin-bottom:14px}
     .hosp-tab-panel[hidden]{display:none}
 
     .hospA-addbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
@@ -250,9 +251,9 @@ export function renderContent(content, userContext) {
   };
 
   content.innerHTML = `
-    <div class="hosp-tabs-bar">
-      <button class="hosp-tab-btn active" type="button" data-hosp-tab="hotel">Hotel</button>
-      <button class="hosp-tab-btn" type="button" data-hosp-tab="alojamento">Alojamento</button>
+    <div class="hosp-tabs-bar steps-wrap prog-steps-compact">
+      <button class="hosp-tab-btn stepbtn active" type="button" data-hosp-tab="hotel"><span class="stepbtn-letter">1</span><span class="stepbtn-label"> · Hotel</span></button>
+      <button class="hosp-tab-btn stepbtn" type="button" data-hosp-tab="alojamento"><span class="stepbtn-letter">2</span><span class="stepbtn-label"> · Alojamento</span></button>
     </div>
     <div id="hospPanelHotel" class="hosp-tab-panel active">
     <section class="hosp-workspace">
