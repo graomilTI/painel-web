@@ -127,14 +127,35 @@ Compartilhe a pasta `1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e` com o `client_email` da
 | palavra-chave GASOLINA/ETANOL/DIESEL/COMBUSTÍVEL | COMBUSTIVEIS E LUBRIFICANTES | COMBUSTIVEL |
 | `RH` (padrão) | DESPESAS RH | *(definida por palavra-chave ou JSON lateral)* |
 | palavra-chave UNIFORME/CRACHÁ | DESPESAS RH | UNIFORME/CRACHA |
+| palavra-chave SOFTWARE/SISTEMA/LICENÇA/ASSINATURA | DESPESAS ADMINISTRATIVAS | SOFTWARE/SISTEMA |
+| palavra-chave INTERNET/TELEFONIA | DESPESAS ADMINISTRATIVAS | INTERNET/TELEFONE |
+| palavra-chave ENERGIA ELÉTRICA | DESPESAS ADMINISTRATIVAS | ENERGIA ELETRICA |
+| palavra-chave MATERIAL DE EXPEDIENTE/PAPELARIA | DESPESAS ADMINISTRATIVAS | MATERIAL EXPEDIENTE |
 
 **Atenção:** o GRM não tem categorias separadas "UNIFORME" e "CRACHA" — existe só uma categoria combinada `UNIFORME/CRACHA`. Uma versão anterior deste config usava os nomes errados; já corrigido.
 
-Ainda falta preencher a pasta `COMPRAS`: ela não tem um Grupo/Categoria único no GRM (pode cair em MATERIAL EXPEDIENTE, PATRIMONIO, etc. dependendo do item), então ficou com o placeholder `PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM` de propósito — notas dessa pasta ficam em `AGUARDANDO_CLASSIFICACAO` até você decidir se quer uma regra por palavra-chave ou exigir sempre o JSON lateral (`config/exemplo-metadados-nota.json` como modelo).
+As 4 palavras-chave novas (Software, Internet, Energia, Material de Expediente) vieram da mineração do extrato completo "Lista de Rateios" do GRM (5.352 lançamentos históricos, arquivo fornecido em 30/07/2026) — são os padrões mais recorrentes de despesas administrativas/compras que não são veículo, hospedagem nem RH.
+
+**Pasta `COMPRAS` continua sem um Grupo/Categoria único de propósito.** Ela não tem um padrão fixo no GRM — pode cair em DESPESAS ADMINISTRATIVAS (a maioria) ou em PATRIMONIO (equipamento/imobilizado acima de R$500, ex.: `IMOBILIZADO (MAIOR QUE 500,00)`) dependendo do item e do valor, e essa distinção por valor não dá pra automatizar com segurança sem risco de classificar errado. Notas que baterem em uma das 4 palavras-chave acima são classificadas automaticamente; as demais ficam em `AGUARDANDO_CLASSIFICACAO` até você revisar e, se for um item recorrente, adicionar uma nova regra — ou usar o JSON lateral (`config/exemplo-metadados-nota.json`) pra informar `grupo_categoria`/`categoria` nota a nota.
 
 O agente não tenta adivinhar grupo contábil. Sem preenchimento, a nota fica como `AGUARDANDO_CLASSIFICACAO` e não é lançada.
 
-Confirme também `empresa_cnpj` em `config/grm-lancar-notas-fiscais.json` → `defaults` (hoje vazio). Esse campo é usado para diferenciar o CNPJ da GRAOMIL do CNPJ do fornecedor ao extrair texto de PDF/imagem via OCR; sem ele, um documento que traga o CNPJ da própria empresa pode ser lido por engano como CNPJ do fornecedor.
+### Empresa (CNPJ/CPF lido de cada nota — não é mais fixo)
+
+O GRM tem **6 empresas cadastradas** em Contas a Pagar → Nova Conta → Empresa: `GRAOMIL LTDA`, `BV GRAIN`, `EXCELENCIA`, `CAR1000`, `ELIZEU MOTA`, `DOUGLAS HENRIQUE MOTA 09987821901`. O agente decide qual delas usar pelo **CNPJ/CPF do destinatário lido do próprio arquivo** (tag `dest` do XML da NF-e, ou o segundo CNPJ/CPF encontrado no texto do PDF/imagem) — nunca por um valor fixo, porque lançar uma conta na empresa errada é um erro contábil real.
+
+Isso é configurado em `config/grm-lancar-notas-fiscais.json` → `empresas`:
+
+```json
+"empresas": [
+  { "documento": "29666679000134", "nome": "GRAOMIL LTDA" },
+  { "documento": "09987821901", "nome": "DOUGLAS HENRIQUE MOTA 09987821901" }
+]
+```
+
+Já preenchi **2 das 6**: o CNPJ da GRAOMIL LTDA (29.666.679/0001-34, confirmado no rodapé do relatório "Lista de Rateios" que você enviou) e o CPF da Douglas Henrique Mota (09987821901, que já aparece no próprio nome dela na lista de Empresas do GRM). **Faltam os documentos de BV GRAIN, EXCELENCIA, CAR1000 e ELIZEU MOTA** — não encontrei em nenhum arquivo local nem em tela do GRM que eu tenha acesso; me passe o CNPJ (ou CPF, se for pessoa física/MEI) de cada uma, ou me diga onde consultar.
+
+Enquanto uma empresa não tiver o documento cadastrado aqui, qualquer nota endereçada a ela fica em `AGUARDANDO_DADOS` (campo `empresa` ausente) — o agente nunca lança sob a empresa errada por falta de configuração; ele só espera.
 
 ### Metadado lateral opcional
 

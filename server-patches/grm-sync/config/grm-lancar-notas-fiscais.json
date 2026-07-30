@@ -1,7 +1,14 @@
 {
+  "_comentario_empresas": "empresa é resolvida pelo CNPJ/CPF do destinatário lido de cada nota (nunca um valor fixo) — preencher 'documento' com os dígitos de CNPJ/CPF de cada empresa cadastrada no GRM. Sem entrada correspondente aqui, a nota fica em AGUARDANDO_DADOS em vez de cair errada numa empresa por padrão.",
+  "empresas": [
+    { "documento": "29666679000134", "nome": "GRAOMIL LTDA" },
+    { "documento": "09987821901", "nome": "DOUGLAS HENRIQUE MOTA 09987821901" },
+    { "documento": "PREENCHER_CNPJ_OU_CPF", "nome": "BV GRAIN" },
+    { "documento": "PREENCHER_CNPJ_OU_CPF", "nome": "EXCELENCIA" },
+    { "documento": "PREENCHER_CNPJ_OU_CPF", "nome": "CAR1000" },
+    { "documento": "PREENCHER_CNPJ_OU_CPF", "nome": "ELIZEU MOTA" }
+  ],
   "defaults": {
-    "empresa": "GRAOMIL LTDA",
-    "empresa_cnpj": "",
     "tipo_favorecido": "Fornecedor",
     "tipo_documento": "DANFe",
     "intervalo_cobranca": "Não Parcelar",
@@ -73,6 +80,22 @@
     {
       "keywords": ["UNIFORME", "CRACHÁ", "CRACHA"],
       "set": { "grupo_categoria": "DESPESAS RH", "categoria": "UNIFORME/CRACHA" }
+    },
+    {
+      "keywords": ["SOFTWARE", "SISTEMA", "LICENÇA DE USO", "LICENCA DE USO", "ASSINATURA MENSAL", "EMAIL CORPORATIVO"],
+      "set": { "grupo_categoria": "DESPESAS ADMINISTRATIVAS", "categoria": "SOFTWARE/SISTEMA" }
+    },
+    {
+      "keywords": ["INTERNET", "TELEFONIA", "PLANO MOVEL", "PLANO EMPRESARIAL MOVEL"],
+      "set": { "grupo_categoria": "DESPESAS ADMINISTRATIVAS", "categoria": "INTERNET/TELEFONE" }
+    },
+    {
+      "keywords": ["ENERGIA ELETRICA", "ENERGIA ELÉTRICA", "FATURA DE ENERGIA"],
+      "set": { "grupo_categoria": "DESPESAS ADMINISTRATIVAS", "categoria": "ENERGIA ELETRICA" }
+    },
+    {
+      "keywords": ["MATERIAL DE EXPEDIENTE", "MATERIAL EXPEDIENTE", "PAPELARIA"],
+      "set": { "grupo_categoria": "DESPESAS ADMINISTRATIVAS", "categoria": "MATERIAL EXPEDIENTE" }
     }
   ]
 }
