@@ -35,13 +35,13 @@ Ele preenche os campos vistos nas telas do GRM:
 
 ## Limitação encontrada no acesso ao Drive
 
-A pasta informada não ficou acessível pela conexão Google Drive desta conversa. No servidor, o agente usa uma **conta de serviço Google**. Compartilhe a pasta com o e-mail `client_email` existente em `google-service-account.json`, como **Leitor**. Para mover arquivos após o lançamento, compartilhe como **Editor**.
+A pasta informada não ficou acessível pela conexão Google Drive desta conversa. No servidor, o agente usa uma **conta de serviço Google só para o Drive** (ver seção "Google Drive" abaixo). Compartilhe a pasta com o e-mail `client_email` existente em `google-service-account.json`, como **Leitor**. Para mover arquivos após o lançamento, compartilhe como **Editor**.
 
 ## Prioridade de leitura
 
 1. XML da NF-e;
 2. texto interno do PDF usando `pdftotext`;
-3. OCR do PDF/imagem pelo Google Cloud Vision.
+3. OCR do PDF/imagem via **Groq** (mesmo provedor da edge function `ocr-comprovante`, que já lê CNPJ/valor/data de comprovantes financeiros) — não usa Google Cloud Vision. Basta a `GROQ_API_KEY` já usada em outros pontos do projeto (edge function `ocr-comprovante`, `email-worker`); não precisa criar nada novo pra isso.
 
 ## Dependência do servidor
 
@@ -100,20 +100,21 @@ As tabelas criadas são:
 - `grm_nf_lancamentos`;
 - `grm_nf_lancamento_execucoes`.
 
-## 3. Configurar o Google
+## 3. Configurar o Google Drive
 
-Coloque a credencial em:
+**Não existe ainda** um `google-service-account.json` no servidor (confirmado em 30/07/2026 — o arquivo não existe em `/home/grao100/painel-scripts/grm-sync/`). É só pra acesso ao Drive agora (o OCR usa Groq, não Google Cloud Vision — ver seção 5).
+
+1. Google Cloud Console → criar um projeto (ou reaproveitar um que a Grão 1000 já tenha) para essa automação.
+2. Ativar **Google Drive API** nesse projeto (não precisa mais de Cloud Vision API).
+3. IAM e Admin → Contas de Serviço → criar uma conta de serviço.
+4. Nessa conta → aba Chaves → Adicionar chave → Criar nova chave → JSON.
+5. Enviar o arquivo baixado para:
 
 ```text
 /home/grao100/painel-scripts/grm-sync/google-service-account.json
 ```
 
-Ative no mesmo projeto Google Cloud:
-
-- Google Drive API;
-- Cloud Vision API.
-
-Compartilhe a pasta `1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e` com o `client_email` da conta de serviço.
+6. Compartilhar a pasta `1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e` com o `client_email` dessa conta de serviço, como Leitor.
 
 ## 4. Configurar categorias
 
@@ -179,6 +180,8 @@ Copie as linhas de:
 ```text
 env-grm-lancar-notas-fiscais.example
 ```
+
+Preencha `GROQ_API_KEY` com o mesmo valor já usado pela edge function `ocr-comprovante` (Supabase → Edge Functions → Secrets) ou pelo `email-worker` — é só pro fallback de OCR de imagem/PDF escaneado; XML e PDF com texto embutido funcionam sem ela.
 
 Mantenha inicialmente:
 

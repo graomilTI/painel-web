@@ -209,6 +209,7 @@ function assertConfig() {
   if (!fs.existsSync(CREDENTIALS_PATH)) throw new Error(`Credencial Google não encontrada: ${CREDENTIALS_PATH}`);
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
   if (!GRM_USER || !GRM_PASSWORD) throw new Error('Configure GRMSERVER_USER e GRMSERVER_PASSWORD.');
+  if (!GROQ_API_KEY) log('WARN', 'GROQ_API_KEY não configurada: PDFs escaneados/imagens sem texto ficarão em ERRO (o XML e o pdftotext continuam funcionando normalmente).');
   config = loadJson(CONFIG_PATH, true);
   if (!config.defaults) config.defaults = {};
   if (!Array.isArray(config.folder_rules)) config.folder_rules = [];
@@ -462,17 +463,46 @@ async function extractPdfText(pdfPath) {
   }
 }
 
-async function visionOcrImage(imagePath) {
+// OCR via Groq (mesmo provedor já usado pela edge function ocr-comprovante,
+// que já lê CNPJ/valor/data de comprovantes financeiros) — evita depender do
+// Google Cloud Vision só pra esse fallback de imagem/PDF escaneado.
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_OCR_MODEL = process.env.GRM_LANCAR_NF_GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+
+async function groqOcrImage(imagePath) {
+  if (!GROQ_API_KEY) throw new Error('Configure GROQ_API_KEY para o OCR de imagem/PDF escaneado (mesma chave usada pela edge function ocr-comprovante).');
+  const ext = extensionOf(imagePath).replace('.', '') || 'png';
+  const mimeType = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[ext] || 'image/png';
   const content = fs.readFileSync(imagePath).toString('base64');
-  const response = await googleApiJson('vision.googleapis.com', '/v1/images:annotate', 'POST', {
-    requests: [{ image: { content }, features: [{ type: 'DOCUMENT_TEXT_DETECTION' }] }],
+  const prompt = 'Transcreva literalmente todo o texto visível neste documento fiscal (nota fiscal, DANFe ou NFS-e), sem resumir e sem interpretar nada. Responda apenas com o texto transcrito, sem markdown e sem comentários.';
+  const body = JSON.stringify({
+    model: GROQ_OCR_MODEL,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${content}` } },
+      ],
+    }],
+    temperature: 0,
+    max_tokens: 4096,
   });
-  const item = response.responses && response.responses[0];
-  if (item && item.error) throw new Error(`Google Vision: ${item.error.message || safeJson(item.error)}`);
-  return item?.fullTextAnnotation?.text || item?.textAnnotations?.[0]?.description || '';
+  const response = await httpRequest({
+    method: 'POST',
+    hostname: 'api.groq.com',
+    path: '/openai/v1/chat/completions',
+    headers: {
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(body),
+    },
+  }, body, 'json');
+  const text = response?.choices?.[0]?.message?.content || '';
+  if (!text) throw new Error(`Groq não retornou texto para ${path.basename(imagePath)}.`);
+  return text;
 }
 
-async function visionOcrPdf(pdfPath, workDir) {
+async function ocrPdf(pdfPath, workDir) {
   if (!await commandExists('pdftoppm')) throw new Error('PDF sem texto e comando pdftoppm indisponível. Instale poppler-utils.');
   const prefix = path.join(workDir, 'pagina');
   await execFile('pdftoppm', ['-f', '1', '-l', String(OCR_PDF_MAX_PAGES), '-r', '160', '-png', pdfPath, prefix], { maxBuffer: 20 * 1024 * 1024 });
@@ -480,7 +510,7 @@ async function visionOcrPdf(pdfPath, workDir) {
     .filter((name) => /^pagina-\d+\.png$/i.test(name))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const texts = [];
-  for (const image of images) texts.push(await visionOcrImage(path.join(workDir, image)));
+  for (const image of images) texts.push(await groqOcrImage(path.join(workDir, image)));
   return texts.join('\n\n');
 }
 
@@ -582,14 +612,14 @@ async function extractFileData(filePath, file) {
     let text = await extractPdfText(filePath);
     let source = 'PDF_TEXTO';
     if (normalizeText(text).length < 120) {
-      text = await visionOcrPdf(filePath, path.dirname(filePath));
-      source = 'PDF_OCR_VISION';
+      text = await ocrPdf(filePath, path.dirname(filePath));
+      source = 'PDF_OCR_GROQ';
     }
     const data = extractFromText(text, '.pdf');
     data.origem_extracao = source;
     return data;
   }
-  const text = await visionOcrImage(filePath);
+  const text = await groqOcrImage(filePath);
   return extractFromText(text, ext);
 }
 
