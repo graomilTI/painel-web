@@ -34,8 +34,14 @@ function injectStyle() {
        Fixed+body escapa desse recorte sem mexer no CSS global do .card (que
        outras telas dependem pro efeito visual). Posição calculada em JS
        (posicionarLista) a partir do input; z-index bem alto pra ficar acima
-       de qualquer card/stacking context comum. */
-    .ssel-list{position:fixed;max-height:260px;overflow-y:auto;background:#0d0d18;border:1px solid rgba(45,212,160,.28);border-radius:12px;z-index:9999;box-shadow:0 12px 32px rgba(0,0,0,.5)}
+       de qualquer card/stacking context comum — mas 9999 não bastava pra
+       selects DENTRO de modal (vários modais no painel usam z-index de
+       10010 a 100000, ex. adm-hotel-alojamentos-pagamentos.js,
+       financeiro-adiantamentos-lote.js), então a lista renderizava
+       corretamente no DOM só que atrás do próprio modal, invisível pro
+       usuário (achado 30/07 ao adicionar o campo Supervisão no cadastro de
+       Alojamentos). 200000 fica acima de todo z-index já usado no projeto. */
+    .ssel-list{position:fixed;max-height:260px;overflow-y:auto;background:#0d0d18;border:1px solid rgba(45,212,160,.28);border-radius:12px;z-index:200000;box-shadow:0 12px 32px rgba(0,0,0,.5)}
     .ssel-item{padding:9px 14px;font-size:13px;color:#e2e2f0;cursor:pointer}
     .ssel-item:hover,.ssel-item.is-active{background:rgba(45,212,160,.14);color:#fff}
     .ssel-empty{padding:10px 14px;font-size:13px;color:#7d8aa3;text-align:center}
