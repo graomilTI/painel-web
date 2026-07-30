@@ -88,6 +88,8 @@
   min-height: 44px !important;
   border-radius: 13px !important;
   font-weight: 700 !important;
+  margin-top: 0 !important;
+  width: auto !important;
 }
 /* O hotfix do combobox de supervisão (programacao-gestor-ajustes.js) deixa
    .prog-tfield-sup com flex-grow (cresce até 520px) pra sobrar espaço pro

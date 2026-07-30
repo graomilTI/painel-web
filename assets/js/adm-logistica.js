@@ -2074,9 +2074,15 @@ export async function renderContent(content) {
       oslogOk.disabled = true;
       oslogOk.textContent = '...';
       const now = new Date().toISOString();
+      // atualizar_resolvido_* é só um sinal aditivo pra aba "Atualizar" do Gestor >
+      // Logística (logistica.js) saber que a Logística ADM concluiu a solicitação e
+      // destacar o item em verde com um botão "OK" até o gestor confirmar — não
+      // interfere em nada do resto do fluxo (observacao_logistica/status_gestor
+      // continuam sendo a fonte de verdade operacional, como sempre foram).
+      const resolvido = { atualizar_resolvido_tipo: type === 'kg' ? 'saldo' : 'finalizar', atualizar_resolvido_em: now, atualizar_resolvido_por: state.user?.id || null };
       const patch = type === 'kg'
-        ? { observacao_logistica: null, updated_at: now }
-        : { status_gestor: 'AGUARDAR', status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now };
+        ? { observacao_logistica: null, updated_at: now, ...resolvido }
+        : { status_gestor: 'AGUARDAR', status_logistica: 'FINALIZADA', finalizado_em: now, updated_at: now, ...resolvido };
       const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
       if (error) { alert(error.message); oslogOk.disabled = false; oslogOk.textContent = 'OK'; return; }
       state.osLog = state.osLog.filter((r) => String(r.id) !== String(id));
@@ -2128,7 +2134,15 @@ export async function renderContent(content) {
       const previous = row.observacao_logistica;
       row.observacao_logistica = null;
       renderConferenciasLaudos();
-      const { error } = await supabase.from('operacional_os').update({ observacao_logistica: null, updated_at: now }).eq('id', id);
+      // Ver comentário em oslogOk: só marca atualizar_resolvido_* (sinal aditivo pra
+      // aba "Atualizar" do Gestor), sem mudar o comportamento já existente.
+      const { error } = await supabase.from('operacional_os').update({
+        observacao_logistica: null,
+        updated_at: now,
+        atualizar_resolvido_tipo: 'conferencia',
+        atualizar_resolvido_em: now,
+        atualizar_resolvido_por: state.user?.id || null,
+      }).eq('id', id);
       if (error) {
         row.observacao_logistica = previous;
         renderConferenciasLaudos();

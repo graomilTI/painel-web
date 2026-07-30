@@ -15,8 +15,9 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
-const TABS = ['abrir_os', 'conferencia', 'ajuste', 'finalizar'];
-const TAB_LABELS = { abrir_os: 'Abrir OS', conferencia: 'Conferência', ajuste: 'Ajuste de saldo', finalizar: 'Finalizar' };
+const TABS = ['abrir_os', 'atualizar'];
+const TAB_LABELS = { abrir_os: 'Abrir OS', atualizar: 'Atualizar' };
+const ACAO_LABELS = { conferencia: 'Conferir', saldo: 'Saldo', finalizar: 'Finalizar' };
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
@@ -32,7 +33,9 @@ const state = {
   aberturaSaving: false,
   osRegional: [],
   osRegionalLoading: false,
-  loading: false
+  loading: false,
+  atualizarAberto: {}, // { [osId]: 'conferencia'|'saldo'|'finalizar' } — ação em edição no momento
+  atualizarFiltros: { os: '', cliente: '', cidade: '', local: '' }
 };
 
 function getUserField(ctx, ...paths) {
@@ -50,7 +53,7 @@ function getMinhasRegionais(ctx) {
   return [...new Set(String(raw).split(/[,;|\n]+/).map((s) => normalizeText(s)).filter(Boolean))];
 }
 
-const REGIONAL_TABS = ['conferencia', 'ajuste', 'finalizar'];
+const REGIONAL_TABS = ['atualizar'];
 
 export async function renderContent(content, userContext) {
   injectStyles();
@@ -97,6 +100,30 @@ export async function renderContent(content, userContext) {
 
     const finalBtn = e.target.closest('[data-final-send]');
     if (finalBtn) { await handleEnviarFinalizacao(finalBtn.dataset.finalSend, content); return; }
+
+    const atzToggle = e.target.closest('[data-atualizar-toggle]');
+    if (atzToggle) {
+      const id = atzToggle.dataset.atualizarToggle;
+      const tipo = atzToggle.dataset.atualizarTipo;
+      state.atualizarAberto[id] = state.atualizarAberto[id] === tipo ? null : tipo;
+      render(content);
+      return;
+    }
+
+    const atzOk = e.target.closest('[data-atualizar-ok]');
+    if (atzOk) { await handleAtualizarOk(atzOk.dataset.atualizarOk, content); return; }
+
+    if (e.target.closest('#atualizarReload')) { await loadOsRegional(state.ctx); render(content); return; }
+  });
+
+  content.addEventListener('input', (e) => {
+    const map = { 'atz-f-os': 'os', 'atz-f-cliente': 'cliente', 'atz-f-cidade': 'cidade', 'atz-f-local': 'local' };
+    const chave = map[e.target.id];
+    if (!chave) return;
+    state.atualizarFiltros[chave] = e.target.value;
+    render(content);
+    const campo = content.querySelector(`#${e.target.id}`);
+    if (campo) { campo.focus(); const len = campo.value.length; campo.setSelectionRange(len, len); }
   });
 
   if (state.tab === 'abrir_os') await loadAberturaOs();
@@ -185,8 +212,8 @@ async function loadAberturaOs() {
   state.aberturaLoading = false;
 }
 
-// OS da regional do gestor, base compartilhada pelas 3 abas de submissão
-// (Conferência/Ajuste de saldo/Finalizar). Últimos 90 dias, filtrado por
+// OS da regional do gestor, base compartilhada pela aba "Atualizar" (Conferir/
+// Saldo/Finalizar reunidos numa lista só). Últimos 90 dias, filtrado por
 // supervisão/coordenação do usuário (mesmo padrão de getMinhasRegionais em
 // hospedagem.js); sem regional cadastrada, mostra tudo (fallback).
 async function loadOsRegional(ctx) {
@@ -194,7 +221,7 @@ async function loadOsRegional(ctx) {
   const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 90); return d.toISOString().slice(0,10); })();
   const { data, error } = await supabase
     .from('operacional_os')
-    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,status_gestor,status_logistica,observacao_logistica')
+    .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,status_gestor,status_logistica,observacao_logistica,atualizar_resolvido_tipo,atualizar_resolvido_em')
     .gte('data_os', cutoff)
     .order('data_os', { ascending: false })
     .limit(500);
@@ -222,9 +249,7 @@ function render(content) {
   if (!el) return;
   if (state.tab === 'os') { el.innerHTML = renderOsTab(); return; }
   if (state.tab === 'abrir_os') { el.innerHTML = renderAbrirOsTab(); return; }
-  if (state.tab === 'conferencia') { el.innerHTML = renderConferenciaTab(); return; }
-  if (state.tab === 'ajuste') { el.innerHTML = renderAjusteTab(); return; }
-  if (state.tab === 'finalizar') { el.innerHTML = renderFinalizarTab(); return; }
+  if (state.tab === 'atualizar') { el.innerHTML = renderAtualizarTab(); return; }
   el.innerHTML = `<section class="card mt-16"><div class="log-empty">Módulo <strong>${TAB_LABELS[state.tab]}</strong> em desenvolvimento.</div></section>`;
 }
 
@@ -413,105 +438,115 @@ function osCellHtml(row) {
     <td data-label="Remanescente"><span class="log-chip ${Number(row.remanescente)<=0?'warn':'ok'}">${fmt(row.remanescente)}</span></td>`;
 }
 
-function renderConferenciaTab() {
-  const loading = osRegionalHead();
-  if (loading) return `<section class="card mt-16">${loading}</section>`;
-
-  const rows = state.osRegional.filter((r) => Number(r.remanescente) < 0 || String(r.observacao_logistica||'').startsWith('LAUDO:'));
-  return `
-    <section class="card mt-16">
-      <div class="section-head">
-        <div><h3>Conferência</h3><p class="muted">O.S. da sua regional com remanescente negativo — anexe o relatório de correção para a Logística conferir.</p></div>
-      </div>
-      <div class="log-table-wrap">
-        <table class="log-table">
-          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Anexo</th><th>Ação</th></tr></thead>
-          <tbody>
-            ${rows.length ? rows.map((row) => {
-              const enviado = String(row.observacao_logistica||'').startsWith('LAUDO:');
-              return `<tr data-os-row="${esc(row.id)}">
-                ${osCellHtml(row)}
-                <td colspan="2">
-                  ${enviado
-                    ? '<span class="log-chip ok">Laudo enviado — aguardando conferência</span>'
-                    : `<input type="file" id="conf-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
-                       <button type="button" class="log-btn-ok mt-8" data-conf-send="${esc(row.id)}">Enviar</button>`}
-                </td>
-              </tr>`;
-            }).join('') : `<tr><td class="log-empty" colspan="5" style="text-align:center;padding:24px">Nenhuma O.S. com remanescente negativo na sua regional.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
+// Substitui as antigas 3 abas separadas (Conferência / Ajuste de saldo /
+// Finalizar) — mesma base de dados (state.osRegional) e mesmas ações de envio
+// (handleEnviarConferencia/handleEnviarAjuste/handleEnviarFinalizacao), só que
+// numa lista única com filtro e 3 botões de ação por linha. Ver [[painel-web-logistica-atualizar-unificada]].
+function filtrarOsRegional() {
+  const f = state.atualizarFiltros;
+  const norm = (v) => normalizeText(v);
+  return state.osRegional.filter((row) => {
+    if (f.os && !norm(row.numero_os).includes(norm(f.os))) return false;
+    if (f.cliente && !norm(row.cliente).includes(norm(f.cliente))) return false;
+    if (f.cidade && !norm(row.embarque).includes(norm(f.cidade)) && !norm(row.destino).includes(norm(f.cidade))) return false;
+    if (f.local && !norm(row.embarque).includes(norm(f.local)) && !norm(row.destino).includes(norm(f.local))) return false;
+    return true;
+  });
 }
 
-function renderAjusteTab() {
+function acaoPainelHtml(row) {
+  const id = esc(row.id);
+  const aberta = state.atualizarAberto[row.id];
+
+  if (aberta === 'conferencia') {
+    return `<div class="atz-painel">
+      <input type="file" id="conf-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+      <button type="button" class="log-btn-ok mt-8" data-conf-send="${id}">Enviar</button>
+    </div>`;
+  }
+  if (aberta === 'saldo') {
+    const regra = precisaAnexoSaldo(row);
+    return `<div class="atz-painel atz-painel-saldo">
+      <input type="number" min="1" id="ajuste-kg-${id}" class="log-input" placeholder="KG">
+      <input type="file" id="ajuste-file-${id}" class="log-file-input" accept="image/*,.pdf" multiple>
+      <small class="${regra.precisaAnexo ? 'log-anexo-required' : 'muted'}">${regra.precisaAnexo ? `Cliente ${esc(regra.cliente || row.cliente || '')} exige anexo` : 'Anexo opcional'}</small>
+      <button type="button" class="log-btn-ok mt-8" data-ajuste-send="${id}">Enviar</button>
+    </div>`;
+  }
+  if (aberta === 'finalizar') {
+    return `<div class="atz-painel">
+      <input type="file" id="final-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+      <button type="button" class="log-btn-ok mt-8" data-final-send="${id}">Enviar</button>
+    </div>`;
+  }
+  return '';
+}
+
+function renderAtualizarTab() {
   const loading = osRegionalHead();
   if (loading) return `<section class="card mt-16">${loading}</section>`;
 
-  const rows = state.osRegional;
+  const rows = filtrarOsRegional();
+  const f = state.atualizarFiltros;
+
   return `
     <section class="card mt-16">
       <div class="section-head">
-        <div><h3>Ajuste de saldo</h3><p class="muted">Solicite aumento de KG para O.S. da sua regional. Alguns clientes exigem anexo de comprovante.</p></div>
+        <div><h3>Atualizar</h3><p class="muted">O.S. abertas da sua supervisão — conferir, solicitar saldo ou finalizar num só lugar.</p></div>
+        <button class="btn btn-secondary" id="atualizarReload" type="button">↻ Atualizar</button>
+      </div>
+      <div class="atz-filtros">
+        <input class="log-input" id="atz-f-os" placeholder="O.S." value="${esc(f.os)}">
+        <input class="log-input" id="atz-f-cliente" placeholder="Cliente" value="${esc(f.cliente)}">
+        <input class="log-input" id="atz-f-cidade" placeholder="Cidade" value="${esc(f.cidade)}">
+        <input class="log-input" id="atz-f-local" placeholder="Local" value="${esc(f.local)}">
       </div>
       <div class="log-table-wrap">
         <table class="log-table">
-          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>KG a somar</th><th>Anexo</th><th>Ação</th></tr></thead>
+          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Ações</th></tr></thead>
           <tbody>
             ${rows.length ? rows.map((row) => {
-              const enviado = String(row.observacao_logistica||'').startsWith('KG solicitado');
-              if (enviado) {
-                return `<tr data-os-row="${esc(row.id)}">${osCellHtml(row)}<td colspan="3"><span class="log-chip ok">${esc(row.observacao_logistica)}</span></td></tr>`;
+              const id = esc(row.id);
+              const resolvidoTipo = row.atualizar_resolvido_tipo;
+              const resolvidoEm = row.atualizar_resolvido_em;
+
+              if (resolvidoEm) {
+                return `<tr data-os-row="${id}">
+                  ${osCellHtml(row)}
+                  <td colspan="2">
+                    <div class="atz-resolvido">
+                      <span class="log-chip ok atz-resolvido-chip">✔ ${esc(ACAO_LABELS[resolvidoTipo] || 'Solicitação')} concluído pela Logística</span>
+                      <button type="button" class="log-btn-ok" data-atualizar-ok="${id}">OK</button>
+                    </div>
+                  </td>
+                </tr>`;
               }
-              const regra = precisaAnexoSaldo(row);
-              return `<tr data-os-row="${esc(row.id)}">
-                ${osCellHtml(row)}
-                <td><input type="number" min="1" id="ajuste-kg-${esc(row.id)}" class="log-input" placeholder="KG" style="max-width:110px"></td>
-                <td>
-                  <input type="file" id="ajuste-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf" multiple>
-                  <small class="${regra.precisaAnexo ? 'log-anexo-required' : 'muted'}">${regra.precisaAnexo ? `Cliente ${esc(regra.cliente || row.cliente || '')} exige anexo` : 'Opcional'}</small>
-                </td>
-                <td><button type="button" class="log-btn-ok" data-ajuste-send="${esc(row.id)}">Enviar</button></td>
-              </tr>`;
-            }).join('') : `<tr><td class="log-empty" colspan="6" style="text-align:center;padding:24px">Nenhuma O.S. encontrada na sua regional.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  `;
-}
 
-function renderFinalizarTab() {
-  const loading = osRegionalHead();
-  if (loading) return `<section class="card mt-16">${loading}</section>`;
-
-  const rows = state.osRegional;
-  return `
-    <section class="card mt-16">
-      <div class="section-head">
-        <div><h3>Finalizar</h3><p class="muted">Envie a O.S. da sua regional para a Logística finalizar, com o relatório de correção anexado.</p></div>
-      </div>
-      <div class="log-table-wrap">
-        <table class="log-table">
-          <thead><tr><th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Anexo</th><th>Ação</th></tr></thead>
-          <tbody>
-            ${rows.length ? rows.map((row) => {
+              const laudoEnviado = String(row.observacao_logistica||'').startsWith('LAUDO:');
+              const saldoEnviado = String(row.observacao_logistica||'').startsWith('KG solicitado');
               const finalizada = row.status_logistica === 'FINALIZADA';
-              const enviada = !finalizada && row.status_gestor === 'FINALIZAR';
-              return `<tr data-os-row="${esc(row.id)}">
+              const finalizarEnviado = !finalizada && row.status_gestor === 'FINALIZAR';
+
+              const acaoBtn = (tipo, label, enviado) => {
+                const aberta = state.atualizarAberto[row.id] === tipo;
+                const cls = ['atz-acao-btn'];
+                if (aberta) cls.push('open');
+                if (enviado) cls.push('sent');
+                return `<button type="button" class="${cls.join(' ')}" data-atualizar-toggle="${id}" data-atualizar-tipo="${tipo}">${enviado ? '✔ ' : ''}${label}</button>`;
+              };
+
+              return `<tr data-os-row="${id}">
                 ${osCellHtml(row)}
-                <td colspan="2">
-                  ${finalizada
-                    ? '<span class="log-chip ok">Finalizada</span>'
-                    : enviada
-                      ? '<span class="log-chip blue">Enviada — aguardando finalização</span>'
-                      : `<input type="file" id="final-file-${esc(row.id)}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
-                         <button type="button" class="log-btn-ok mt-8" data-final-send="${esc(row.id)}">Enviar</button>`}
+                <td>
+                  <div class="atz-acoes">
+                    ${acaoBtn('conferencia', 'Conferir', laudoEnviado)}
+                    ${acaoBtn('saldo', 'Saldo', saldoEnviado)}
+                    ${acaoBtn('finalizar', 'Finalizar', finalizada || finalizarEnviado)}
+                  </div>
+                  ${acaoPainelHtml(row)}
                 </td>
               </tr>`;
-            }).join('') : `<tr><td class="log-empty" colspan="5" style="text-align:center;padding:24px">Nenhuma O.S. encontrada na sua regional.</td></tr>`}
+            }).join('') : `<tr><td class="log-empty" colspan="4" style="text-align:center;padding:24px">Nenhuma O.S. encontrada para este filtro.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -665,6 +700,7 @@ async function handleEnviarConferencia(osId, content) {
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
   try {
     await anexarLaudoComGeolocalizacao(osId, files, { origem: 'logistica_gestor_conferencia', usuario: currentUsuario() });
+    state.atualizarAberto[osId] = null;
     await loadOsRegional(state.ctx);
     render(content);
   } catch (error) {
@@ -691,6 +727,7 @@ async function handleEnviarAjuste(osId, content) {
   try {
     if (files.length) await anexarAnexoSaldo(osId, files, { usuario: currentUsuario() });
     await registrarSaldoKg(osId, kg);
+    state.atualizarAberto[osId] = null;
     await loadOsRegional(state.ctx);
     render(content);
   } catch (error) {
@@ -712,12 +749,35 @@ async function handleEnviarFinalizacao(osId, content) {
   try {
     await uploadAnexoLogistica(osId, files, 'logistica_gestor_finalizacao');
     await atualizarStatusOsCore(row, 'FINALIZAR', state.ctx?.user?.id || null);
+    state.atualizarAberto[osId] = null;
     await loadOsRegional(state.ctx);
     render(content);
   } catch (error) {
     alert(error.message || 'Erro ao enviar para finalização.');
     if (btn) { btn.disabled = false; btn.textContent = 'Enviar'; }
   }
+}
+
+// A Logística ADM já resolveu (marcou atualizar_resolvido_*, ver adm-logistica.js) --
+// aqui o Gestor só confirma que viu, limpando o sinal. O trabalho operacional em si
+// (observacao_logistica/status_gestor/status_logistica) já foi feito pela ADM.
+async function handleAtualizarOk(osId, content) {
+  const btn = content.querySelector(`[data-atualizar-ok="${osId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  const { error } = await supabase.from('operacional_os').update({
+    atualizar_resolvido_tipo: null,
+    atualizar_resolvido_em: null,
+    atualizar_resolvido_por: null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', osId);
+  if (error) {
+    alert(error.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'OK'; }
+    return;
+  }
+  const row = state.osRegional.find((r) => String(r.id) === String(osId));
+  if (row) { row.atualizar_resolvido_tipo = null; row.atualizar_resolvido_em = null; row.atualizar_resolvido_por = null; }
+  render(content);
 }
 
 function injectStyles() {
@@ -762,6 +822,17 @@ function injectStyles() {
     .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:16px;background:rgba(2,6,23,.18);padding:14px;margin-top:14px}.abrir-os-card h4{margin:0 0 10px;color:#bbf7d0;font-size:14px}.abrir-os-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px}.abrir-os-grid label{font-size:11px;color:#8fa1b5;font-weight:800}.abrir-os-grid .log-input{margin-top:4px}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
     .fob-list{display:flex;flex-direction:column;gap:10px}.fob-row{display:grid;grid-template-columns:1fr 1.7fr 1.4fr 1.2fr .9fr 1.5fr;gap:12px;align-items:center;border:1px solid rgba(52,211,153,.12);background:rgba(15,23,42,.26);border-radius:18px;padding:14px}.fob-row.unseen{background:linear-gradient(90deg,rgba(148,163,184,.14),rgba(15,23,42,.25));border-color:rgba(148,163,184,.22)}.fob-row.valid{border-color:rgba(34,197,94,.26)}.fob-row.invalid{border-color:rgba(239,68,68,.26)}.fob-cell strong{display:block;color:#e5e7eb;font-weight:950}.fob-cell span{display:block;color:#8fa1b5;font-size:12px;margin-top:3px;line-height:1.35}.fob-cell.status .log-chip,.fob-cell.view .log-chip{display:inline-flex}.fob-tons{font-weight:800}.fob-cell.actions{display:grid;grid-template-columns:1fr 52px 52px;gap:8px}.fob-obs{min-width:170px}.fob-icon{border:0;border-radius:14px;min-height:44px;font-size:22px;font-weight:950;cursor:pointer}.fob-icon.ok{background:linear-gradient(135deg,#16a34a,#34d399);color:#052e16}.fob-icon.bad{background:rgba(127,29,29,.9);color:#fecaca}.fob-icon:hover{opacity:.88}
     .log-os-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.log-os-filter-btn{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.5);color:#8fa1b5;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:900;cursor:pointer}.log-os-filter-btn.active{background:rgba(22,101,52,.32);border-color:rgba(34,197,94,.4);color:#bbf7d0}.log-os-count{display:inline-flex;align-items:center;justify-content:center;background:rgba(148,163,184,.14);border-radius:999px;padding:2px 7px;font-size:11px;margin-left:4px}
+    .atz-filtros{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}
+    .atz-acoes{display:flex;gap:6px;flex-wrap:wrap}
+    .atz-acao-btn{border:1px solid rgba(52,211,153,.22);background:rgba(15,23,42,.6);color:#8fa1b5;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:900;cursor:pointer;white-space:nowrap}
+    .atz-acao-btn:hover{background:rgba(22,101,52,.16);color:#bbf7d0}
+    .atz-acao-btn.open{background:rgba(59,130,246,.2);border-color:rgba(96,165,250,.45);color:#bfdbfe}
+    .atz-acao-btn.sent{background:rgba(22,163,74,.18);border-color:rgba(34,197,94,.4);color:#bbf7d0}
+    .atz-painel{margin-top:10px;padding:10px;border:1px dashed rgba(96,165,250,.3);border-radius:12px;background:rgba(15,23,42,.35);display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    .atz-painel-saldo input[type=number]{max-width:110px}
+    .atz-resolvido{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .atz-resolvido-chip{background:rgba(22,163,74,.28)!important;border-color:rgba(34,197,94,.6)!important;color:#dcfce7!important;font-weight:950;animation:atzResolvidoPulse 1.4s ease infinite}
+    @keyframes atzResolvidoPulse{50%{box-shadow:0 0 0 4px rgba(34,197,94,.16)}}
     .log-os-actions{display:flex;gap:6px}.log-os-status-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(52,211,153,.2);background:rgba(15,23,42,.6);color:#8fa1b5;border-radius:10px;width:36px;height:36px;cursor:pointer;transition:background .15s}.log-os-status-btn.yellow.active,.log-os-status-btn.yellow:hover{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.35);color:#fde68a}.log-os-status-btn.blue.active,.log-os-status-btn.blue:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#bfdbfe}.log-os-status-btn.green.active,.log-os-status-btn.green:hover{background:rgba(22,163,74,.22);border-color:rgba(34,197,94,.4);color:#bbf7d0}
     @media(max-width:1100px){.abrir-os-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
     @media(max-width:820px){.abrir-os-grid{grid-template-columns:1fr 1fr}}

@@ -41,35 +41,26 @@ function injetarStyles() {
     .pso-card.pso-rh-locked .pso-obs{
       opacity:.68!important;
     }
-    .pso-rh-lock-note{
-      grid-column:1/-1;
-      display:flex;
-      align-items:center;
-      gap:6px;
-      margin-top:2px;
-      padding:7px 10px;
-      border:1px solid rgba(245,158,11,.3);
-      border-radius:10px;
-      background:rgba(120,53,15,.16);
-      color:#fde68a;
-      font-size:10.5px;
-      font-weight:800;
-      line-height:1.35;
+    .pso-rh-status.locked{
+      background:rgba(245,158,11,.14)!important;
+      color:#fde68a!important;
+      border:1px solid rgba(245,158,11,.35)!important;
+      cursor:help;
     }
-    .pso-rh-lock-note.pulse{animation:psoRhLockPulse .45s ease}
+    .pso-rh-status.locked.pulse{animation:psoRhLockPulse .45s ease}
     @keyframes psoRhLockPulse{
-      50%{background:rgba(245,158,11,.3);transform:scale(1.01)}
+      50%{background:rgba(245,158,11,.3);transform:scale(1.05)}
     }
   `;
   document.head.appendChild(style);
 }
 
 function mostrarBloqueio(card) {
-  const note = card?.querySelector('.pso-rh-lock-note');
-  if (!note) return;
-  note.classList.remove('pulse');
-  void note.offsetWidth;
-  note.classList.add('pulse');
+  const el = card?.querySelector('[data-rh-status]');
+  if (!el) return;
+  el.classList.remove('pulse');
+  void el.offsetWidth;
+  el.classList.add('pulse');
 }
 
 function bloquearCard(card) {
@@ -93,15 +84,11 @@ function bloquearCard(card) {
     obs.title = 'Indisponibilidade definida pelo RH. A observação não pode ser alterada pelo Gestor.';
   }
 
-  let note = card.querySelector('.pso-rh-lock-note');
-  if (!note) {
-    note = document.createElement('div');
-    note.className = 'pso-rh-lock-note';
-    const anchor = obs || card.querySelector('.pso-situacoes');
-    if (anchor) anchor.insertAdjacentElement('afterend', note);
-    else card.appendChild(note);
-  }
-  note.textContent = `🔒 ${statusLabel(status)} definido pelo RH. Alterações somente em RH > Indisponibilidade.`;
+  const el = card.querySelector('[data-rh-status]');
+  if (!el) return;
+  el.className = 'pso-rh-status locked';
+  el.textContent = `🔒 ${statusLabel(status)}`;
+  el.title = `${statusLabel(status)} definido pelo RH. Alterações somente em RH > Indisponibilidade.`;
 }
 
 function processarCards() {

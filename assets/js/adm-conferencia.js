@@ -293,12 +293,17 @@ function renderStyles() {
       .conf-hero{display:flex;justify-content:space-between;gap:14px;align-items:center;background:radial-gradient(circle at top right,rgba(34,197,94,.15),transparent 32%),linear-gradient(180deg,rgba(8,22,17,.95),rgba(6,19,14,.95));border:1px solid var(--line);border-radius:18px;padding:12px 16px;box-shadow:var(--shadow)}
       .conf-hero h2{font-size:19px;margin:0;display:inline}.conf-hero p{margin:2px 0 0;color:var(--muted);font-size:12px}
       .conf-hero .eyebrow{display:inline;margin-right:8px}
+      /* Sem título próprio (já tem no cabeçalho da página) — abas ficam à esquerda,
+         no padrão das outras telas (ex.: logistica-os-entry.js), ações à direita. */
+      .conf-hero-compact{padding:10px 14px;flex-wrap:wrap}
+      .conf-hero-compact .conf-tabs{flex:1 1 auto}
+      .conf-table-subtitle-compact{margin:0 0 12px;color:var(--muted);font-size:13px}
       .conf-header-band{margin-top:10px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:18px;padding:10px 14px;box-shadow:var(--shadow-soft)}
       .conf-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.conf-btn{border:1px solid rgba(111,208,165,.22);background:rgba(15,23,42,.78);color:#eef7f2;border-radius:12px;padding:8px 12px;font-weight:800;cursor:pointer;font-size:13px}.conf-btn:hover{background:rgba(22,101,52,.28)}.conf-btn-primary{background:#3fa878;color:#04130d}.conf-btn-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}
       .conf-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:8px;margin-top:10px}.conf-card{display:flex;align-items:baseline;gap:8px;background:rgba(8,22,17,.68);border:1px solid var(--line);border-radius:14px;padding:8px 12px;box-shadow:var(--shadow-soft)}.conf-card h3{margin:0;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:800;order:2}.conf-metric{font-size:20px;line-height:1;font-weight:900;color:#dcfce7;margin:0;order:1}.conf-card p{display:none}
       .conf-panel{margin-top:16px;background:rgba(8,22,17,.72);border:1px solid var(--line);border-radius:24px;padding:18px;box-shadow:var(--shadow-soft)}.conf-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.conf-panel-head h3{margin:0 0 6px}.conf-panel-head p{margin:0;color:var(--muted)}
       .conf-tabs{display:flex;gap:10px;flex-wrap:wrap}.conf-tab{border:1px solid rgba(111,208,165,.22);background:#15152a;color:#e2e2f0;border-radius:999px;padding:10px 14px;font-weight:800;cursor:pointer}.conf-tab.active{background:rgba(34,197,94,.22);border-color:rgba(111,208,165,.45);color:#dcfce7}
-      .conf-filters{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}.conf-field{flex:1;min-width:110px}.conf-field-sm{flex:0 0 122px}.conf-field label{display:block;font-size:11px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:#15152a;color:#e2e2f0;padding:7px 10px;font-size:13px;color-scheme:dark;box-sizing:border-box}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+      .conf-filters{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap}.conf-field{flex:1;min-width:110px}.conf-field-sm{flex:0 0 122px}.conf-field-md{flex:0 0 190px}.conf-field label{display:block;font-size:11px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px}.conf-field input,.conf-field select{width:100%;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:#15152a;color:#e2e2f0;padding:7px 10px;font-size:13px;color-scheme:dark;box-sizing:border-box}.conf-field option{background:#0d0d18;color:#e2e2f0}.conf-filter-actions{display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
       .conf-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;background:#081611}
       .conf-table{width:100%;border-collapse:collapse;min-width:1180px}.conf-table-despesas{min-width:1220px}
       .conf-table th,.conf-table td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.12);text-align:left;vertical-align:top}
@@ -327,10 +332,13 @@ function renderShell(content) {
 
   content.innerHTML = `
     ${renderStyles()}
-    <section class="conf-hero">
-      <div>
-        <span class="eyebrow">Operação ADM</span><h2>Conferência operacional</h2>
-        <p>Despesas da programação, auditoria, Uber e produção do período em um só lugar.</p>
+    <section class="conf-hero conf-hero-compact">
+      <div class="conf-tabs">
+        <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
+        <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
+        <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
+        <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
+        <button class="conf-tab" data-tab="localizacao" type="button">Localização</button>
       </div>
       <div class="conf-actions">
         <button class="conf-btn" id="conf-export-csv" type="button">Exportar CSV</button>
@@ -349,7 +357,7 @@ function renderShell(content) {
           <label for="conf-fim">Até</label>
           <input id="conf-fim" type="date" value="${escapeHtml(state.filters.fim)}" />
         </div>
-        <div class="conf-field">
+        <div class="conf-field conf-field-md">
           <label for="conf-regional">Supervisão / Regional</label>
           <select id="conf-regional"><option value="">Todas</option></select>
         </div>
@@ -378,19 +386,7 @@ function renderShell(content) {
     </section>
 
     <section class="conf-panel">
-      <div class="conf-panel-head">
-        <div>
-          <h3>Fila de conferência</h3>
-          <p id="conf-table-subtitle">Resumo por colaborador: alimentação, deslocamento e extras.</p>
-        </div>
-        <div class="conf-tabs">
-          <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
-          <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
-          <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
-          <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
-          <button class="conf-tab" data-tab="localizacao" type="button">Localização</button>
-        </div>
-      </div>
+      <p id="conf-table-subtitle" class="conf-table-subtitle-compact">Resumo por colaborador: alimentação, deslocamento e extras.</p>
       <div id="conf-table"></div>
     </section>
   `;

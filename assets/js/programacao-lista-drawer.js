@@ -13,6 +13,7 @@
 import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 import { getCurrentUser } from './auth.js';
+import { confirmar } from './core/ui.js';
 import {
   loadOsRelevantes, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
   loadColaboradoresRegional, loadIndisponiveisNaData, loadPontos, loadCandidatosPorOs,
@@ -956,7 +957,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     if (removerBtn) {
       const os = osAtual();
       if (!os || !removerBtn.dataset.removerColab) return;
-      if (!confirm('Remover este colaborador da O.S.?')) return;
+      if (!(await confirmar({ titulo: 'Remover colaborador', mensagem: 'Remover este colaborador da O.S.?' }))) return;
       try {
         await removerConfirmacao(programacaoIdParaOs(os, programacaoId, programacaoIdMap), removerBtn.dataset.removerColab);
         await refreshAposAcao(os, { equipe: true });
