@@ -811,7 +811,7 @@ export function renderContent(content, userContext) {
   });
 
   function alojamentoOcupanteFiltro(row, hoje) {
-    if (normalizeText(row.tipo_estadia) !== 'ALOJAMENTO') return false;
+    if (normalizeText(row.tipo_estadia) !== 'alojamento') return false;
     if (row.tem_estadia === false) return false;
     if (!row.alojamento_id) return false;
     const referencia = row.data_referencia || row.checkin || '';
