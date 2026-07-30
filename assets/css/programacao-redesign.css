@@ -83,7 +83,8 @@
   pointer-events: none !important;
   overflow: hidden !important;
 }
-.app-shell #progLoadContext {
+.app-shell #progLoadContext,
+.app-shell #progGerarPdf {
   min-height: 44px !important;
   border-radius: 13px !important;
   font-weight: 700 !important;

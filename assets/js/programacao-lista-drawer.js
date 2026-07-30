@@ -182,20 +182,22 @@ function injectStyles() {
     .pld-acao-btn[disabled]{opacity:.4;cursor:not-allowed}
     .pld-lock{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:20px;text-align:center;color:#8ba79a;font-size:12.5px;line-height:1.5}
     .pld-lock b{color:#cbd5e1}
-    /* Candidato sugerido sempre visível (nome/tag/km/custo, ver
-       candCardHtml) ao lado de um botão de confirmar em ícone — antes o
-       card ficava escondido (só "Confirmar"/"Outro" em texto) e o gestor
-       confirmava sem saber quem estava sendo sugerido (pedido do usuário,
-       2026-07-22). align-items:flex-start (em vez de center) ancora o
-       botão no topo do card em vez de flutuar sozinho no meio de uma
-       caixa bem mais alta — sem isso parecia "um adesivo colado" ao lado
-       do card (reportado pela usuária com print, 2026-07-22). Fontes do
-       card em si compactadas junto com o resto do painel lateral, ver
+    /* Candidato sugerido sempre visível (nome/tag/veículo, ver candCardHtml)
+       ao lado dos botões de confirmar/recusar — antes o card ficava
+       escondido (só "Confirmar"/"Outro" em texto) e o gestor confirmava sem
+       saber quem estava sendo sugerido (pedido do usuário, 2026-07-22).
+       sub-linha (km/score) e barra de score escondidas e botões viraram
+       quadrado arredondado lado a lado (em vez de círculo empilhado), pra
+       casar com o padrão visual das tags do próprio colaborador (pedido
+       29/07) — card ficou de 1 linha só, então align-items:center já
+       encaixa sem precisar ancorar no topo. Fontes do card em si
+       compactadas junto com o resto do painel lateral, ver
        #pldOverlayRoot .peqb-cand-* em programacao-lista-drawer-fixo.js. */
-    .pld-cand-wrap{display:flex;align-items:flex-start;gap:8px;margin-bottom:10px}
+    .pld-cand-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
-    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
-    .pld-cand-confirm,.pld-cand-reject{width:34px;height:34px;border-radius:50%;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-wrap .peqb-cand-sub,.pld-cand-wrap .peqb-score,.pld-cand-wrap .peqb-cand-cost{display:none}
+    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:row;gap:6px}
+    .pld-cand-confirm,.pld-cand-reject{width:34px;height:34px;border-radius:13px;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pld-cand-confirm{border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}
     .pld-cand-confirm:hover{filter:brightness(1.08)}
     .pld-cand-reject{border:1px solid rgba(248,113,113,.4);background:rgba(127,29,29,.18);color:#fca5a5}
