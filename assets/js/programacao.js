@@ -2094,6 +2094,21 @@ export function renderContent(content) {
         }
       } catch (_) {}
 
+      // Dispara o cálculo das rotas do Mapa Operacional (Operacional > Mapa)
+      // pra cada supervisão salva — não bloqueia o feedback de sucesso acima
+      // nem impede o gestor de continuar editando se a chamada falhar (fica
+      // pra próxima vez que ele salvar). Ver operacional-mapa-rotas/index.ts.
+      try {
+        const ctx = state.userContext || {};
+        await Promise.all(idsPorSupervisao.map(([sup, pid]) => {
+          const supervisaoReal = sup && sup !== TODAS_SUPERVISOES ? sup : firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');
+          if (!supervisaoReal) return null;
+          return supabase.functions.invoke('operacional-mapa-rotas', {
+            body: { programacaoId: pid, supervisao: supervisaoReal, dataReferencia: state.dataReferencia },
+          }).catch((err) => console.warn('[programacao] operacional-mapa-rotas:', err));
+        }));
+      } catch (_) {}
+
     } catch (error) {
       console.error(error);
       setFeedback(error.message || 'Falha ao salvar programação.', 'error');

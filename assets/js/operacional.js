@@ -98,10 +98,16 @@ import { getCurrentUser } from './auth.js';
     estado: '', ponto: '', tab: 'mapa', mapaBase: 'escuro',
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
-    // "Só hoje": recorte opcional (item #51) — OS marcada como Atender pelo gestor pra hoje,
-    // colaboradores vinculados a elas, frotas desses colaboradores e hotéis com reserva hoje.
-    // Desligado por padrão pra não mudar o comportamento de referência já em uso (mostrar tudo).
-    somenteHoje: false, mostrarAlojamentos: false, alojamentosComCoord: [],
+    // "Só hoje": recorte fixo (pedido da usuária, 2026-07-30) — só entra OS marcada Atender pelo
+    // gestor pra hoje, colaboradores vinculados a elas, frotas desses colaboradores e hotéis com
+    // reserva hoje. Deixou de ser opcional (item #51 antigo) — sempre ligado, sem toggle na UI.
+    somenteHoje: true, mostrarAlojamentos: false, alojamentosComCoord: [],
+    // Rotas calculadas (operacional_mapa_rotas, geradas ao Gestor salvar a Programação) —
+    // desenhadas por cima dos marcadores; frota = linha sólida, reembolso_km = tracejada.
+    mostrarRotas: true, rotasMapa: [],
+    // Escopo por regional: gestor vê só a própria supervisão; sem regional cadastrada (admin/master)
+    // vê tudo — mesmo padrão de getMinhasRegionais() em logistica.js/hospedagem.js.
+    minhasRegionais: [], minhasRegionaisCarregadas: false,
     // Só relevante com somenteHoje ligado: colaboradores fora do recorte de hoje ficam ocultos
     // por padrão, mas o gestor pode religar um específico manualmente na lista de "não escalados".
     colaboradoresExtras: new Set(), reservasHotelHoje: { porId: new Set(), porNome: new Set() },
@@ -164,6 +170,28 @@ import { getCurrentUser } from './auth.js';
   // de distância vira ~R$13mil numa única rota). Além do raio, assume-se custo de carro (mais realista).
   function uberOuCarroIdaVolta(distKmUmaVia) {
     return (Number(distKmUmaVia) || 0) <= UBER_RAIO_MAX_KM ? uberIdaVolta(distKmUmaVia) : combustivelIdaVolta(distKmUmaVia);
+  }
+
+  // Escopo por regional (mesmo padrão de getMinhasRegionais em logistica.js/hospedagem.js):
+  // gestor com supervisão/coordenação cadastrada só vê a própria regional; sem regional
+  // (admin/master) vê tudo — fallback pra "mostrar tudo" quando a lista fica vazia.
+  function getUserField(ctx, ...paths) {
+    for (const path of paths) {
+      const parts = path.split('.');
+      let cur = ctx;
+      for (const part of parts) cur = cur?.[part];
+      if (cur !== undefined && cur !== null && String(cur).trim() !== '') return cur;
+    }
+    return null;
+  }
+  function getMinhasRegionais(ctx) {
+    const raw = getUserField(ctx, 'supervisao', 'user.supervisao', 'coordenacao', 'user.coordenacao') || '';
+    return [...new Set(String(raw).split(/[,;|\n]+/).map((s) => norm(s)).filter(Boolean))];
+  }
+  function passaRegional(supervisao) {
+    if (!st.minhasRegionais.length) return true;
+    const s = norm(supervisao);
+    return st.minhasRegionais.some((m) => s.includes(m) || m.includes(s));
   }
 
   function splitEmbarque(t) {
@@ -277,6 +305,25 @@ import { getCurrentUser } from './auth.js';
       porOs.set(String(v.os_id), arr);
     });
     return porOs;
+  }
+
+  // Rotas calculadas (operacional_mapa_rotas), publicadas pela Edge Function
+  // operacional-mapa-rotas quando o Gestor salva a Programação — sempre hoje,
+  // já filtradas por regional no mesmo passaRegional() usado nas O.S.
+  async function loadRotasMapa() {
+    const hoje = hojeISO();
+    const rotasRaw = await sel('operacional_mapa_rotas', '*', q => q.eq('data_referencia', hoje));
+    const rotas = rotasRaw.filter(r => passaRegional(r.supervisao));
+    if (!rotas.length) return [];
+    const ids = rotas.map(r => r.id);
+    const paradasRaw = await sel('operacional_mapa_rotas_paradas', '*', q => q.in('rota_id', ids).order('ordem', { ascending: true }));
+    const paradasPorRota = new Map();
+    paradasRaw.forEach(p => {
+      const arr = paradasPorRota.get(String(p.rota_id)) || [];
+      arr.push(p);
+      paradasPorRota.set(String(p.rota_id), arr);
+    });
+    return rotas.map(r => ({ ...r, paradas: paradasPorRota.get(String(r.id)) || [] }));
   }
 
   async function loadModoHabitual() {
@@ -576,13 +623,17 @@ import { getCurrentUser } from './auth.js';
     const { abertas, pontos, osPorId } = await loadOsEPontos();
     st.osPorId = osPorId;
     st.pontos = pontos;
-    st.osTodas = abertas;
-    st.os = abertas.filter(o => o.__saldo > 0);
+    // Escopo por regional: gestor só vê a O.S. da própria supervisão (getMinhasRegionais acima);
+    // sem regional cadastrada (admin/master), passaRegional() sempre retorna true (mostra tudo).
+    const escopo = abertas.filter(o => passaRegional(o.supervisao));
+    st.osTodas = escopo;
+    st.os = escopo.filter(o => o.__saldo > 0);
     if (root) render(root, true);
 
-    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades, alertasLaudo, reservasHotelHoje] = await Promise.all([
-      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(), loadAlertasLaudo(), loadReservasHotelHoje(),
+    const [colaboradores, vinculosPorOs, modoHabitual, veiculoProprio, frotaAtual, hospedagem, irregularidades, alertasLaudo, reservasHotelHoje, rotasMapa] = await Promise.all([
+      loadColaboradores(), loadVinculos(), loadModoHabitual(), loadVeiculoProprio(), loadFrotaAtual(), loadHospedagem(), loadIrregularidades(), loadAlertasLaudo(), loadReservasHotelHoje(), loadRotasMapa(),
     ]);
+    st.rotasMapa = rotasMapa;
     st.irregularidades = irregularidades;
     st.alertasLaudo = alertasLaudo;
     st.reservasHotelHoje = reservasHotelHoje;
@@ -762,7 +813,7 @@ import { getCurrentUser } from './auth.js';
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .agua{background:#14b8a6}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.colab-fora{background:#ef4444}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.hotel{background:#a855f7}.mk.alojamento{background:#14b8a6}.mk-ico{width:18px;height:18px;border-width:2px;display:flex;align-items:center;justify-content:center;line-height:0}.mk-ico svg{display:block}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
+      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}.mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}.mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}.mo h2,.mo h3{margin:0;color:#fff}.mo h2{font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}.mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}.mo-btn.off{background:#334155;border-color:rgba(148,163,184,.35)}.mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}.mo-map-select{width:180px}.mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}.mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}.mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}.mo-below{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px}.mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}.mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}.mo-kpi.clicavel{cursor:pointer}.mo-kpi.clicavel:hover{border-color:rgba(34,197,94,.5)}.mo-kpi.active{border-color:#facc15;box-shadow:0 0 0 1px rgba(250,204,21,.5);background:rgba(120,53,15,.18)}.mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-list{max-height:420px;overflow:auto;padding:10px}.mo-row{border:1px solid rgba(148,163,184,.14);border-radius:15px;background:rgba(15,23,42,.62);padding:10px;margin-bottom:8px;cursor:pointer}.mo-row.active,.mo-row:hover{border-color:#22c55e;background:rgba(22,101,52,.13)}.mo-row.sem{border-color:rgba(248,113,113,.35)}.mo-row strong{display:block;color:#fff;font-size:13px}.mo-row small{display:block;color:#94a3b8;margin-top:4px}.mo-pill{display:inline-flex;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;background:rgba(15,23,42,.8);border:1px solid rgba(148,163,184,.2);margin-right:4px}.ok{color:#bbf7d0}.warn{color:#fde68a}.bad{color:#fecaca}.info{color:#bfdbfe}.mo-detail{padding:14px;border-top:1px solid rgba(148,163,184,.12);display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.mo-mini{border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.mo-mini span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;font-weight:900}.mo-mini strong{display:block;color:#fff;margin-top:4px;font-size:13px}.mo-alerts{border-top:1px solid rgba(251,191,36,.18);border-bottom:1px solid rgba(251,191,36,.12);background:rgba(120,53,15,.12)}.mo-alert{padding:7px 16px;color:#fde68a;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mo-alert+.mo-alert{border-top:1px solid rgba(251,191,36,.12)}.mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}.mo-rota-real{color:#facc15;font-weight:700}.mo-rota-real:empty{display:none}.mo-rota-real.mo-rota-alerta{color:#f87171}.mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}.mo-legend .azul{background:#3b82f6}.mo-legend .verde{background:#22c55e}.mo-legend .vermelho{background:#ef4444}.mo-legend .veiculo{background:#06b6d4}.mo-legend .roxo{background:#a855f7}.mo-legend .laranja{background:#f59e0b}.mo-legend .agua{background:#14b8a6}.mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}.mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}.mo-marker-badge{border:1px solid rgba(250,204,21,.35);background:rgba(120,53,15,.25);color:#fde68a;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900}.mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}.mk-irreg{width:19px;height:19px;border-radius:50%;background:#f59e0b;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#451a03;font-weight:900;font-size:12px;line-height:1}.mk-irreg.sel{box-shadow:0 0 0 3px rgba(250,204,21,.6)}.mk.os-ok{background:#22c55e}.mk.os-zero{background:#ef4444}.mk.colab{background:#3b82f6}.mk.colab-fora{background:#ef4444}.mk.veic-mov{background:#06b6d4}.mk.veic-park{background:#f59e0b}.mk.hotel{background:#a855f7}.mk.alojamento{background:#14b8a6}.mk-ico{width:18px;height:18px;border-width:2px;display:flex;align-items:center;justify-content:center;line-height:0}.mk-ico svg{display:block}.mk.sel{box-shadow:0 0 0 3px rgba(250,204,21,.45)}.mk.aprox{border-style:dashed;border-width:2px;border-color:#fde68a}.mo-load{padding:28px;text-align:center;color:#94a3b8}.mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}.mo-colabs-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:hidden;margin:0 16px 16px}.mo-colabs-head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12)}.mo-colabs-head strong{color:#fff;font-size:14px}.mo-colabs-head span{color:#94a3b8;font-size:12px}.mo-colabs-table{width:100%;border-collapse:collapse;font-size:12px}.mo-colabs-table th,.mo-colabs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-colabs-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55)}.mo-colabs-table td:nth-child(4),.mo-colabs-table td:nth-child(5),.mo-colabs-table td:nth-child(6){text-align:right}.mo-colabs-table tbody tr{cursor:pointer}.mo-colabs-table tbody tr:hover{background:rgba(63,168,120,.1)}.mo-colabs-table tbody tr.active{background:rgba(22,101,52,.22)}.mo-colabs-table tbody tr.active td:first-child{color:#facc15;font-weight:800}.mo-tag{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:900;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.8)}.mo-tag.frota,.mo-tag.carona{color:#bbf7d0}.mo-tag.reembolso{color:#bfdbfe}.mo-tag.uber,.mo-tag[class*="a-definir"]{color:#fde68a}.mo-tag.local{color:#e9d5ff}.mo-tabs{display:flex;gap:8px;padding:0 16px 8px;position:relative;z-index:20}.mo-tab-btn{border:1px solid rgba(148,163,184,.2);background:transparent;color:#94a3b8;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-size:12.5px}.mo-tab-btn.active{background:#166534;border-color:rgba(34,197,94,.4);color:#ecfdf5}.mo-comp-table{width:100%;border-collapse:collapse;font-size:12px}.mo-comp-table th,.mo-comp-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#cbd5e1}.mo-comp-table th{color:#93c5fd;text-transform:uppercase;font-size:10px;letter-spacing:.03em;background:rgba(15,23,42,.55);position:sticky;top:0}.mo-comp-table td.num{text-align:right;white-space:nowrap}.mo-comp-wrap{max-height:520px;overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:16px}.mo-pill.concorda{color:#bbf7d0}.mo-pill.diverge{color:#fecaca}.mo-pill.sem-registro{color:#94a3b8}@media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-below{grid-template-columns:1fr}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
     `;
     document.head.appendChild(s);
   }
@@ -798,7 +849,7 @@ import { getCurrentUser } from './auth.js';
     const k = kpis(), estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
     return `
         <div class="mo-map-tools"><div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com OS aberta</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
-        <div class="mo-legend"><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarAlojamentos ? '' : 'off'}" data-toggle-marker="alojamentos"><i class="agua"></i>Alojamentos ${st.mostrarAlojamentos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.somenteHoje ? '' : 'off'}" data-toggle-marker="somente-hoje" title="OS marcadas Atender pra hoje + colaboradores/frotas vinculados a elas + hotéis com reserva hoje">Só hoje ${st.somenteHoje ? 'On' : 'Off'}</button></div></div>
+        <div class="mo-legend"><span class="mo-marker-badge" title="O mapa sempre mostra só as O.S. marcadas Atender pra hoje, com os colaboradores/frotas/rotas vinculados a elas">📍 Hoje · Atender</span><button class="mo-marker-toggle ${st.mostrarVeiculos ? '' : 'off'}" data-toggle-marker="veiculos"><i class="veiculo"></i>Veículos ${st.mostrarVeiculos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarColaboradores ? '' : 'off'}" data-toggle-marker="colaboradores"><i class="azul"></i>Colaboradores ${st.mostrarColaboradores ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarRotas ? '' : 'off'}" data-toggle-marker="rotas" title="Frota = linha sólida · Reembolso km = tracejada"><i class="verde"></i>Rotas ${st.mostrarRotas ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsComSaldo ? '' : 'off'}" data-toggle-marker="os-com-saldo"><i class="verde"></i>OS com saldo ${st.mostrarOsComSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarOsSemSaldo ? '' : 'off'}" data-toggle-marker="os-sem-saldo"><i class="vermelho"></i>OS sem saldo ${st.mostrarOsSemSaldo ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarHoteis ? '' : 'off'}" data-toggle-marker="hoteis"><i class="roxo"></i>Hotéis ${st.mostrarHoteis ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarAlojamentos ? '' : 'off'}" data-toggle-marker="alojamentos"><i class="agua"></i>Alojamentos ${st.mostrarAlojamentos ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarIrregularidades ? '' : 'off'}" data-toggle-marker="irregularidades"><i class="laranja"></i>Irregularidades ${st.mostrarIrregularidades ? 'On' : 'Off'}</button></div></div>
         <div class="mo-body">
           <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
           <div class="mo-kpis">${kpiBox('OS com saldo', k.os)}${kpiBox('OS sem saldo', k.osSemSaldo)}</div>
@@ -981,12 +1032,7 @@ import { getCurrentUser } from './auth.js';
         if (alvo === 'hoteis') st.mostrarHoteis = !st.mostrarHoteis;
         if (alvo === 'alojamentos') st.mostrarAlojamentos = !st.mostrarAlojamentos;
         if (alvo === 'irregularidades') st.mostrarIrregularidades = !st.mostrarIrregularidades;
-        if (alvo === 'somente-hoje') {
-          st.somenteHoje = !st.somenteHoje;
-          // Lista de "não escalados" só existe dentro do modo Só hoje — sem isso, ligar de novo
-          // depois reaproveitaria toggles manuais de uma sessão anterior sem contexto visível.
-          if (!st.somenteHoje) st.colaboradoresExtras.clear();
-        }
+        if (alvo === 'rotas') st.mostrarRotas = !st.mostrarRotas;
         render(root);
       };
     });
@@ -1147,6 +1193,35 @@ import { getCurrentUser } from './auth.js';
     });
   }
 
+  // Rotas de operacional_mapa_rotas (geradas ao Gestor salvar a Programação, ver
+  // operacional-mapa-rotas/index.ts): frota = veículo rastreado, otimizado via VROOM (linha
+  // sólida); reembolso_km = colaborador com carro próprio, rota individual (linha tracejada,
+  // pedido da usuária pra "aparecer visualmente a diferença").
+  function rotaTooltip(r) {
+    const quem = r.tipo === 'frota' ? `${esc(r.placa || 'Veículo')}${r.motorista_nome ? ` · ${esc(r.motorista_nome)}` : ''}` : `${esc(r.colaborador_nome || 'Colaborador')} · Reemb. km`;
+    const origemLabel = r.origem_tipo === 'hotel' ? 'hotel' : r.origem_tipo === 'alojamento' ? 'alojamento' : 'casa';
+    return `<strong>${quem}</strong><br>Origem: ${esc(origemLabel)}<br>${fmtKm(r.km_total_estimado)} · ${Number(r.duracao_estimada_min || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} min`;
+  }
+
+  function drawRotas(L, bounds) {
+    st.rotasMapa.forEach(r => {
+      if (!Number.isFinite(Number(r.origem_latitude)) || !Number.isFinite(Number(r.origem_longitude))) return;
+      const pontosRota = [[Number(r.origem_latitude), Number(r.origem_longitude)]];
+      (r.paradas || []).forEach(p => {
+        if (Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude))) pontosRota.push([Number(p.latitude), Number(p.longitude)]);
+      });
+      if (pontosRota.length < 2) return;
+      const frota = r.tipo === 'frota';
+      L.polyline(pontosRota, {
+        color: frota ? '#22c55e' : '#f59e0b',
+        weight: frota ? 3 : 2.5,
+        opacity: 0.85,
+        dashArray: frota ? null : '7,6',
+      }).bindTooltip(rotaTooltip(r)).addTo(st.layer);
+      pontosRota.forEach(p => bounds.push(p));
+    });
+  }
+
   function iconIrreg() { return window.L.divIcon({ className: '', html: '<div class="mk-irreg">!</div>', iconSize: [19, 19], iconAnchor: [9.5, 9.5] }); }
 
   function irregTooltip(i) {
@@ -1212,6 +1287,7 @@ import { getCurrentUser } from './auth.js';
     if (st.mostrarVeiculos) drawVeiculos(L, b, hojeKeys);
     if (st.mostrarHoteis) drawHoteis(L, b);
     if (st.mostrarAlojamentos) drawAlojamentos(L, b);
+    if (st.mostrarRotas) drawRotas(L, b);
     if (st.mostrarIrregularidades) drawIrregularidades(L, b);
 
     // Todos os classificadores ativos com coordenada (casa do colaborador), filtrados por estado
@@ -1262,8 +1338,20 @@ import { getCurrentUser } from './auth.js';
   }
   function renderErro(root, err) { root.innerHTML = `<div class="mo"><section class="mo-card"><div class="mo-load">Não foi possível carregar o mapa operacional.<br><small>${esc(err?.message || err || 'Erro desconhecido')}</small></div></section></div>`; }
 
-  async function openHome(root) {
+  async function openHome(root, opts) {
     css();
+    // Escopo por regional: gestor com supervisão/coordenação cadastrada só vê a própria; sem
+    // regional (admin/master) vê tudo. adm-operacional.js repassa o userContext do requireAuth()
+    // via opts; getCurrentUser() é o fallback (sessão/user_metadata) se aquele não tiver o campo.
+    if (!st.minhasRegionaisCarregadas) {
+      st.minhasRegionaisCarregadas = true;
+      let ctx = opts?.userContext || null;
+      if (!getUserField(ctx, 'supervisao', 'user.supervisao', 'coordenacao', 'user.coordenacao')) {
+        const authUser = await getCurrentUser().catch(() => null);
+        ctx = { ...ctx, user: { ...(ctx?.user || {}), ...(authUser?.user_metadata || {}) } };
+      }
+      st.minhasRegionais = getMinhasRegionais(ctx);
+    }
     // Só monta a casca do zero na primeira vez — num recarregar (botão Atualizar) o mapa já
     // montado continua visível (em qualquer aba) com os dados antigos enquanto os novos chegam,
     // preenchidos em fases por load(root) em vez de sumir numa tela de "carregando" e reaparecer.
