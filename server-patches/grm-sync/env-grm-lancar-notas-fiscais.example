@@ -1,0 +1,23 @@
+# Pasta informada pelo usuário
+GRM_LANCAR_NF_FOLDER_ID=1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e
+GRM_LANCAR_NF_RECURSIVE=true
+
+# Segurança: mantenha false/true até concluir o teste manual.
+GRM_LANCAR_NF_AGENDAR=false
+GRM_LANCAR_NF_DRY_RUN=true
+GRM_LANCAR_NF_MAX_POR_EXECUCAO=1
+GRM_LANCAR_NF_INTERVALO_MINUTOS=10
+
+# Configuração e credencial Google
+GOOGLE_APPLICATION_CREDENTIALS=/home/grao100/painel-scripts/grm-sync/google-service-account.json
+GRM_LANCAR_NF_CONFIG=/home/grao100/painel-scripts/grm-sync/config/grm-lancar-notas-fiscais.json
+
+# Anexo, OCR e diagnóstico
+GRM_LANCAR_NF_EXIGIR_ANEXO=true
+GRM_LANCAR_NF_OCR_PDF_MAX_PAGINAS=4
+GRM_LANCAR_NF_DEBUG=true
+GRM_LANCAR_NF_DEBUG_DIR=/home/grao100/painel-scripts/grm-sync/logs/grm-lancar-notas-fiscais-debug
+
+# Opcional: mover os arquivos após lançamento confirmado.
+GRM_LANCAR_NF_MOVER_APOS_SUCESSO=false
+GRM_LANCAR_NF_PASTA_LANCADOS_ID=
