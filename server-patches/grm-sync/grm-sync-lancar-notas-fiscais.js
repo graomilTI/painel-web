@@ -4,13 +4,15 @@
 /*
  * GRM Server - Lançamento automático de Notas Fiscais / Contas a Pagar
  *
- * Origem: pasta do Google Drive.
+ * Origem: upload direto no painel (bucket 'notas-fiscais' do Supabase Storage,
+ * via a página Enviar Notas Fiscais), fila controlada pela própria tabela
+ * grm_nf_lancamentos (status = 'NOVO').
  * Destino: https://www.grmserver.com.br/finance/payInvoice
  *
  * Segurança operacional:
  * - dry-run por padrão;
  * - valida todos os campos antes de abrir o GRM;
- * - não relança o mesmo arquivo do Drive;
+ * - não reprocessa o mesmo arquivo enviado (status sai de NOVO ao ser pego);
  * - não relança a mesma NF pelo fingerprint CNPJ+número+data+valor;
  * - registra execução, extração, erros e código retornado pelo GRM no Supabase;
  * - arquivos sem categoria, vencimento ou forma de pagamento ficam pendentes.
@@ -31,7 +33,6 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
-const querystring = require('querystring');
 const childProcess = require('child_process');
 const util = require('util');
 const puppeteer = require('puppeteer-extra');
@@ -46,15 +47,9 @@ const GRM_URL = 'https://www.grmserver.com.br/finance/payInvoice';
 const LOGIN_URL = 'https://www.grmserver.com.br/login';
 const TABLE_ITEMS = process.env.GRM_LANCAR_NF_TABLE || 'grm_nf_lancamentos';
 const TABLE_RUNS = process.env.GRM_LANCAR_NF_RUNS_TABLE || 'grm_nf_lancamento_execucoes';
-const DEFAULT_FOLDER_ID = '1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e';
-const FOLDER_ID = process.env.GRM_LANCAR_NF_FOLDER_ID || DEFAULT_FOLDER_ID;
 const CONFIG_PATH = process.env.GRM_LANCAR_NF_CONFIG || path.join(__dirname, 'config', 'grm-lancar-notas-fiscais.json');
-const CREDENTIALS_PATH = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, 'google-service-account.json');
 const MAX_PER_RUN = positiveInt(process.env.GRM_LANCAR_NF_MAX_POR_EXECUCAO, 5);
-const RECURSIVE = envBool('GRM_LANCAR_NF_RECURSIVE', true);
 const REQUIRE_ATTACHMENT = envBool('GRM_LANCAR_NF_EXIGIR_ANEXO', true);
-const MOVE_AFTER_SUCCESS = envBool('GRM_LANCAR_NF_MOVER_APOS_SUCESSO', false);
-const SUCCESS_FOLDER_ID = process.env.GRM_LANCAR_NF_PASTA_LANCADOS_ID || '';
 const DEBUG = envBool('GRM_LANCAR_NF_DEBUG', false);
 const DEBUG_DIR = process.env.GRM_LANCAR_NF_DEBUG_DIR || path.join(os.tmpdir(), 'grm-lancar-notas-fiscais-debug');
 const OCR_PDF_MAX_PAGES = positiveInt(process.env.GRM_LANCAR_NF_OCR_PDF_MAX_PAGINAS, 4);
@@ -70,7 +65,6 @@ const DRY_RUN = args.dryRun ? true : (args.real ? false : dryRunEnv);
 const LIMIT = args.limit || MAX_PER_RUN;
 
 let browserAtual = null;
-let googleTokenCache = null;
 let config = null;
 let supabase = null;
 
@@ -86,7 +80,7 @@ function envBool(name, fallback) {
 }
 
 function parseArgs(argv) {
-  const out = { dryRun: false, real: false, force: false, debug: false, limit: null, fileId: null };
+  const out = { dryRun: false, real: false, force: false, debug: false, limit: null, uploadId: null };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--dry-run') out.dryRun = true;
@@ -94,7 +88,7 @@ function parseArgs(argv) {
     else if (a === '--force') out.force = true;
     else if (a === '--debug') out.debug = true;
     else if (a === '--limit') out.limit = positiveInt(argv[++i], null);
-    else if (a === '--file-id') out.fileId = argv[++i] || null;
+    else if (a === '--upload-id') out.uploadId = argv[++i] || null;
   }
   return out;
 }
@@ -205,14 +199,12 @@ function loadJson(filePath, required) {
 }
 
 function assertConfig() {
-  if (!FOLDER_ID) throw new Error('Configure GRM_LANCAR_NF_FOLDER_ID.');
-  if (!fs.existsSync(CREDENTIALS_PATH)) throw new Error(`Credencial Google não encontrada: ${CREDENTIALS_PATH}`);
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
   if (!GRM_USER || !GRM_PASSWORD) throw new Error('Configure GRMSERVER_USER e GRMSERVER_PASSWORD.');
   if (!GROQ_API_KEY) log('WARN', 'GROQ_API_KEY não configurada: PDFs escaneados/imagens sem texto ficarão em ERRO (o XML e o pdftotext continuam funcionando normalmente).');
   config = loadJson(CONFIG_PATH, true);
   if (!config.defaults) config.defaults = {};
-  if (!Array.isArray(config.folder_rules)) config.folder_rules = [];
+  if (!Array.isArray(config.setor_rules)) config.setor_rules = [];
   if (!Array.isArray(config.keyword_rules)) config.keyword_rules = [];
   if (!Array.isArray(config.payment_rules)) config.payment_rules = [];
   if (!Array.isArray(config.empresas)) config.empresas = [];
@@ -220,10 +212,6 @@ function assertConfig() {
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-function base64url(value) {
-  return Buffer.from(value).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 }
 
 function httpRequest(options, body, responseType) {
@@ -248,139 +236,13 @@ function httpRequest(options, body, responseType) {
   });
 }
 
-async function getGoogleAccessToken() {
-  if (googleTokenCache && Date.now() < googleTokenCache.expiresAt - 60000) return googleTokenCache.token;
-  const sa = loadJson(CREDENTIALS_PATH, true);
-  if (!sa.client_email || !sa.private_key) throw new Error('JSON da conta de serviço Google inválido: client_email/private_key ausentes.');
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const payload = base64url(JSON.stringify({
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/cloud-platform',
-    aud: sa.token_uri || 'https://oauth2.googleapis.com/token',
-    exp: now + 3600,
-    iat: now,
-  }));
-  const unsigned = `${header}.${payload}`;
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(unsigned);
-  signer.end();
-  const signature = signer.sign(sa.private_key).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const assertion = `${unsigned}.${signature}`;
-  const form = querystring.stringify({
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion,
-  });
-  const tokenUrl = new URL(sa.token_uri || 'https://oauth2.googleapis.com/token');
-  const response = await httpRequest({
-    method: 'POST',
-    hostname: tokenUrl.hostname,
-    path: tokenUrl.pathname,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Content-Length': Buffer.byteLength(form),
-    },
-  }, form, 'json');
-  if (!response.access_token) throw new Error(`Google OAuth não retornou access_token: ${safeJson(response)}`);
-  googleTokenCache = { token: response.access_token, expiresAt: Date.now() + Number(response.expires_in || 3600) * 1000 };
-  return googleTokenCache.token;
-}
-
-async function googleApiJson(hostname, apiPath, method, payload) {
-  const token = await getGoogleAccessToken();
-  const body = payload == null ? null : JSON.stringify(payload);
-  return httpRequest({
-    method: method || 'GET',
-    hostname,
-    path: apiPath,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {}),
-    },
-  }, body, 'json');
-}
-
-async function listDriveChildren(folderId) {
-  const files = [];
-  let pageToken = '';
-  do {
-    const q = `'${String(folderId).replace(/'/g, "\\'")}' in parents and trashed=false`;
-    const params = new URLSearchParams({
-      q,
-      pageSize: '1000',
-      orderBy: 'name_natural',
-      fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,parents,md5Checksum,webViewLink)',
-      supportsAllDrives: 'true',
-      includeItemsFromAllDrives: 'true',
-    });
-    if (pageToken) params.set('pageToken', pageToken);
-    const response = await googleApiJson('www.googleapis.com', `/drive/v3/files?${params.toString()}`, 'GET');
-    files.push(...(response.files || []));
-    pageToken = response.nextPageToken || '';
-  } while (pageToken);
-  return files;
-}
-
-async function listDriveFilesRecursive(folderId, folderPath) {
-  const children = await listDriveChildren(folderId);
-  const out = [];
-  for (const item of children) {
-    if (item.mimeType === 'application/vnd.google-apps.folder') {
-      if (RECURSIVE) out.push(...await listDriveFilesRecursive(item.id, `${folderPath}/${item.name}`));
-      continue;
-    }
-    out.push({ ...item, folderId, folderPath });
-  }
-  return out;
-}
-
-async function downloadDriveFile(file, targetPath) {
-  const token = await getGoogleAccessToken();
-  const apiPath = `/drive/v3/files/${encodeURIComponent(file.id)}?alt=media&supportsAllDrives=true`;
-  const buffer = await httpRequest({
-    method: 'GET', hostname: 'www.googleapis.com', path: apiPath,
-    headers: { Authorization: `Bearer ${token}` },
-  }, null, 'buffer');
+async function downloadFromStorage(row, targetPath) {
+  const { data, error } = await supabase.storage.from(row.storage_bucket || 'notas-fiscais').download(row.storage_path);
+  if (error) throw new Error(`Falha ao baixar "${row.storage_path}" do Storage: ${error.message}`);
+  const buffer = Buffer.from(await data.arrayBuffer());
   ensureDir(path.dirname(targetPath));
   fs.writeFileSync(targetPath, buffer);
   return targetPath;
-}
-
-async function moveDriveFile(fileId, sourceFolderId, destinationFolderId) {
-  if (!destinationFolderId) return;
-  const params = new URLSearchParams({
-    addParents: destinationFolderId,
-    removeParents: sourceFolderId || '',
-    supportsAllDrives: 'true',
-    fields: 'id,parents',
-  });
-  await googleApiJson('www.googleapis.com', `/drive/v3/files/${encodeURIComponent(fileId)}?${params.toString()}`, 'PATCH', {});
-}
-
-function supportedPrimary(file) {
-  const ext = extensionOf(file.name);
-  return ['.xml', '.pdf', '.png', '.jpg', '.jpeg', '.webp'].includes(ext);
-}
-
-function groupDriveFiles(files) {
-  const sidecars = new Map();
-  const groups = new Map();
-  for (const file of files) {
-    const ext = extensionOf(file.name);
-    const key = `${file.folderId}|${normalizeText(stemOf(file.name))}`;
-    if (ext === '.json') sidecars.set(key, file);
-  }
-  for (const file of files.filter(supportedPrimary)) {
-    const key = `${file.folderId}|${normalizeText(stemOf(file.name))}`;
-    if (!groups.has(key)) groups.set(key, { key, files: [], sidecar: sidecars.get(key) || null });
-    groups.get(key).files.push(file);
-  }
-  const priority = { '.xml': 1, '.pdf': 2, '.png': 3, '.jpg': 3, '.jpeg': 3, '.webp': 3 };
-  return Array.from(groups.values()).map((group) => {
-    group.files.sort((a, b) => (priority[extensionOf(a.name)] || 99) - (priority[extensionOf(b.name)] || 99));
-    group.primary = group.files[0];
-    return group;
-  });
 }
 
 function decodeXml(value) {
@@ -632,19 +494,18 @@ function deepMerge(base, override) {
   return out;
 }
 
-function applyRules(extracted, group, sidecar) {
+function applyRules(extracted, row) {
   let data = deepMerge(config.defaults, extracted);
-  const folderText = normalizeText(group.primary.folderPath || '');
-  const sourceText = normalizeText([extracted.texto_extraido, extracted.natureza_operacao, group.primary.name].filter(Boolean).join(' '));
-  for (const rule of config.folder_rules || []) {
-    const contains = normalizeText(rule.folder_contains || rule.contains || '');
-    if (contains && folderText.includes(contains)) data = deepMerge(data, rule.set || rule);
+  const setorText = normalizeText(row.setor || '');
+  const sourceText = normalizeText([extracted.texto_extraido, extracted.natureza_operacao, row.arquivo_nome].filter(Boolean).join(' '));
+  for (const rule of config.setor_rules || []) {
+    const contains = normalizeText(rule.setor_contains || rule.contains || '');
+    if (contains && setorText.includes(contains)) data = deepMerge(data, rule.set || rule);
   }
   for (const rule of config.keyword_rules || []) {
     const keywords = rule.keywords || [];
     if (keywords.some((keyword) => sourceText.includes(normalizeText(keyword)))) data = deepMerge(data, rule.set || rule);
   }
-  data = deepMerge(data, sidecar || {});
   if (!data.data_conta) data.data_conta = data.data_emissao;
   if (!data.data_vencimento && Array.isArray(data.parcelas) && data.parcelas.length === 1) data.data_vencimento = data.parcelas[0].vencimento;
   if (!data.forma_pagamento && extracted.forma_pagamento_codigo) {
@@ -657,8 +518,8 @@ function applyRules(extracted, group, sidecar) {
   data.tipo_favorecido = data.tipo_favorecido || 'Fornecedor';
   data.intervalo_cobranca = data.intervalo_cobranca || 'Não Parcelar';
   data.tipo_documento = data.tipo_documento || 'DANFe';
-  data.identificacao = data.identificacao || `NF ${data.numero_documento || data.numero_nf || stemOf(group.primary.name)} - ${data.fornecedor || 'FORNECEDOR'}`;
-  data.descricao = data.descricao || data.natureza_operacao || `Lançamento automático a partir do Google Drive: ${group.primary.name}`;
+  data.identificacao = data.identificacao || `NF ${data.numero_documento || data.numero_nf || stemOf(row.arquivo_nome)} - ${data.fornecedor || 'FORNECEDOR'}`;
+  data.descricao = data.descricao || data.natureza_operacao || `Lançamento automático a partir do upload: ${row.arquivo_nome}`;
   data.rateio = deepMerge({
     data_participacao: data.data_conta,
     tipo_participacao: 'Coordenação',
@@ -674,7 +535,7 @@ function applyRules(extracted, group, sidecar) {
   data.data_vencimento = toBrDate(data.data_vencimento);
   data.data_emissao = toBrDate(data.data_emissao || data.data_conta);
   data.fingerprint = fingerprintOf(data);
-  data.folder_path = group.primary.folderPath;
+  data.setor = row.setor || null;
   return data;
 }
 
@@ -706,9 +567,8 @@ async function createRun() {
   const payload = {
     status: 'INICIADO',
     dry_run: DRY_RUN,
-    folder_id: FOLDER_ID,
     iniciado_em: isoNow(),
-    resumo: { limit: LIMIT, recursive: RECURSIVE, file_id: args.fileId || null },
+    resumo: { limit: LIMIT, upload_id: args.uploadId || null },
   };
   const { data, error } = await supabase.from(TABLE_RUNS).insert(payload).select('id').single();
   if (error) {
@@ -729,16 +589,10 @@ async function finishRun(runId, status, stats, errorMessage) {
   if (error) log('WARN', `Não consegui finalizar execução: ${error.message}`);
 }
 
-async function getItemByDriveId(driveFileId) {
-  const { data, error } = await supabase.from(TABLE_ITEMS).select('*').eq('drive_file_id', driveFileId).maybeSingle();
-  if (error) throw error;
-  return data;
-}
-
 async function findLaunchedFingerprint(fingerprint) {
   if (!fingerprint) return null;
   const { data, error } = await supabase.from(TABLE_ITEMS)
-    .select('id,drive_file_id,arquivo_nome,status,grm_codigo,grm_grupo,lancado_em')
+    .select('id,arquivo_nome,status,grm_codigo,grm_grupo,lancado_em')
     .eq('fingerprint', fingerprint)
     .in('status', ['LANCADO', 'DRY_RUN_OK'])
     .order('created_at', { ascending: false })
@@ -747,30 +601,14 @@ async function findLaunchedFingerprint(fingerprint) {
   return data?.[0] || null;
 }
 
-async function upsertItem(group, patch) {
-  const primary = group.primary;
-  const existing = await getItemByDriveId(primary.id);
-  const payload = {
-    drive_file_id: primary.id,
-    drive_folder_id: primary.folderId,
-    drive_web_view_link: primary.webViewLink || null,
-    arquivo_nome: primary.name,
-    arquivo_mime_type: primary.mimeType || null,
-    arquivo_md5: primary.md5Checksum || null,
-    arquivo_modificado_em: primary.modifiedTime || null,
-    pasta_caminho: primary.folderPath || null,
-    tentativas: Number(existing?.tentativas || 0),
-    updated_at: isoNow(),
-    ...patch,
-  };
-  const { data, error } = await supabase.from(TABLE_ITEMS).upsert(payload, { onConflict: 'drive_file_id' }).select('*').single();
+async function updateItem(id, patch) {
+  const { data, error } = await supabase.from(TABLE_ITEMS)
+    .update({ updated_at: isoNow(), ...patch })
+    .eq('id', id)
+    .select('*')
+    .single();
   if (error) throw error;
   return data;
-}
-
-async function incrementAttempt(group, patch) {
-  const existing = await getItemByDriveId(group.primary.id);
-  return upsertItem(group, { tentativas: Number(existing?.tentativas || 0) + 1, ...patch });
 }
 
 async function loginGrm(page) {
@@ -1148,40 +986,23 @@ async function launchBrowserIfNeeded() {
   return browserAtual;
 }
 
-async function processGroup(page, group, runId) {
-  const primary = group.primary;
-  const existing = await getItemByDriveId(primary.id);
-  if (existing?.status === 'LANCADO' && !args.force) {
-    log('INFO', `${primary.name}: já lançado, ignorando.`);
-    return 'ignorado';
-  }
-
+async function processUpload(page, row, runId) {
   const workDir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'grm-nf-'));
-  const localPaths = [];
+  const localPath = path.join(workDir, sanitizeFileName(row.arquivo_nome));
   try {
-    await incrementAttempt(group, { status: 'PROCESSANDO', execucao_id: runId, erro: null, processado_em: isoNow() });
-    let extracted = null;
-    for (const file of group.files) {
-      const localPath = path.join(workDir, sanitizeFileName(file.name));
-      await downloadDriveFile(file, localPath);
-      localPaths.push(localPath);
-      if (!extracted) {
-        try { extracted = await extractFileData(localPath, file); }
-        catch (error) { log('WARN', `${file.name}: extração falhou (${error.message}); tentando o próximo arquivo do grupo.`); }
-      }
-    }
-    if (!extracted) throw new Error('Nenhum arquivo do grupo pôde ser interpretado.');
+    await updateItem(row.id, {
+      status: 'PROCESSANDO',
+      execucao_id: runId,
+      tentativas: Number(row.tentativas || 0) + 1,
+      erro: null,
+      processado_em: isoNow(),
+    });
 
-    let sidecar = null;
-    if (group.sidecar) {
-      const sidecarPath = path.join(workDir, sanitizeFileName(group.sidecar.name));
-      await downloadDriveFile(group.sidecar, sidecarPath);
-      sidecar = loadJson(sidecarPath, true);
-    }
-
-    const data = applyRules(extracted, group, sidecar);
+    await downloadFromStorage(row, localPath);
+    const extracted = await extractFileData(localPath, { name: row.arquivo_nome });
+    const data = applyRules(extracted, row);
     const validation = validateData(data);
-    await upsertItem(group, {
+    await updateItem(row.id, {
       status: validation.ok ? 'VALIDADO' : (validation.classificationMissing.length ? 'AGUARDANDO_CLASSIFICACAO' : 'AGUARDANDO_DADOS'),
       execucao_id: runId,
       fingerprint: data.fingerprint,
@@ -1201,25 +1022,25 @@ async function processGroup(page, group, runId) {
     });
 
     if (!validation.ok) {
-      log('WARN', `${primary.name}: não será lançado. Pendências: ${[...validation.missing, ...validation.classificationMissing].join(', ')}`);
+      log('WARN', `${row.arquivo_nome}: não será lançado. Pendências: ${[...validation.missing, ...validation.classificationMissing].join(', ')}`);
       return validation.classificationMissing.length ? 'aguardando_classificacao' : 'aguardando_dados';
     }
 
     const duplicate = await findLaunchedFingerprint(data.fingerprint);
-    if (duplicate && duplicate.drive_file_id !== primary.id && !args.force) {
-      await upsertItem(group, {
+    if (duplicate && duplicate.id !== row.id && !args.force) {
+      await updateItem(row.id, {
         status: 'DUPLICADO',
         execucao_id: runId,
-        erro: `Fingerprint já processado no arquivo ${duplicate.arquivo_nome || duplicate.drive_file_id}.`,
+        erro: `Fingerprint já processado no arquivo ${duplicate.arquivo_nome || duplicate.id}.`,
       });
-      log('WARN', `${primary.name}: duplicado de ${duplicate.arquivo_nome || duplicate.drive_file_id}.`);
+      log('WARN', `${row.arquivo_nome}: duplicado de ${duplicate.arquivo_nome || duplicate.id}.`);
       return 'duplicado';
     }
 
-    log('INFO', `${primary.name}: ${DRY_RUN ? 'validando no GRM (dry-run)' : 'lançando no GRM'} - NF ${data.numero_documento}, ${data.fornecedor || data.fornecedor_cnpj}, R$ ${formatMoneyInput(data.valor_total)}.`);
-    const result = await fillAndSaveAccount(page, data, localPaths);
+    log('INFO', `${row.arquivo_nome}: ${DRY_RUN ? 'validando no GRM (dry-run)' : 'lançando no GRM'} - NF ${data.numero_documento}, ${data.fornecedor || data.fornecedor_cnpj}, R$ ${formatMoneyInput(data.valor_total)}.`);
+    const result = await fillAndSaveAccount(page, data, [localPath]);
     const finalStatus = DRY_RUN ? 'DRY_RUN_OK' : 'LANCADO';
-    await upsertItem(group, {
+    await updateItem(row.id, {
       status: finalStatus,
       execucao_id: runId,
       lancado_em: DRY_RUN ? null : isoNow(),
@@ -1227,20 +1048,15 @@ async function processGroup(page, group, runId) {
       erro: null,
     });
 
-    if (!DRY_RUN && MOVE_AFTER_SUCCESS && SUCCESS_FOLDER_ID) {
-      for (const file of group.files) await moveDriveFile(file.id, file.folderId, SUCCESS_FOLDER_ID);
-      if (group.sidecar) await moveDriveFile(group.sidecar.id, group.sidecar.folderId, SUCCESS_FOLDER_ID);
-    }
-
-    log('SUCCESS', `${primary.name}: ${DRY_RUN ? 'formulário validado sem salvar' : 'lançamento salvo'}.`);
+    log('SUCCESS', `${row.arquivo_nome}: ${DRY_RUN ? 'formulário validado sem salvar' : 'lançamento salvo'}.`);
     return DRY_RUN ? 'dry_run' : 'lancado';
   } catch (error) {
     if (page) {
-      await saveDebug(page, `erro-${primary.id}-${primary.name}`);
+      await saveDebug(page, `erro-${row.id}-${row.arquivo_nome}`);
       await closeDialogBestEffort(page);
     }
-    await upsertItem(group, { status: 'ERRO', execucao_id: runId, erro: String(error.message || error).slice(0, 4000) });
-    log('ERROR', `${primary.name}: ${error.message}`);
+    await updateItem(row.id, { status: 'ERRO', execucao_id: runId, erro: String(error.message || error).slice(0, 4000) });
+    log('ERROR', `${row.arquivo_nome}: ${error.message}`);
     return 'erro';
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* noop */ }
@@ -1252,33 +1068,23 @@ async function main() {
   const stats = { encontrados: 0, selecionados: 0, lancados: 0, dry_run: 0, aguardando_dados: 0, aguardando_classificacao: 0, duplicados: 0, ignorados: 0, erros: 0 };
   try {
     assertConfig();
-    if (!scheduledEnabled && !args.force && !args.fileId && !args.real && !args.dryRun) {
+    if (!scheduledEnabled && !args.force && !args.uploadId && !args.real && !args.dryRun) {
       log('INFO', 'GRM_LANCAR_NF_AGENDAR=false: execução automática desativada. Use --force/--dry-run/--real para teste manual.');
       return;
     }
     runId = await createRun();
     log('INFO', `=== Agente de lançamento de NF iniciado (${DRY_RUN ? 'DRY-RUN' : 'REAL'}, limite=${LIMIT}) ===`);
-    log('INFO', `Pasta Drive: ${FOLDER_ID}`);
 
-    let files = await listDriveFilesRecursive(FOLDER_ID, 'ORIGEM');
-    if (args.fileId) files = files.filter((file) => file.id === args.fileId);
-    const groups = groupDriveFiles(files);
-    stats.encontrados = groups.length;
+    let query = supabase.from(TABLE_ITEMS).select('*').order('created_at', { ascending: true }).limit(LIMIT);
+    if (args.uploadId) query = supabase.from(TABLE_ITEMS).select('*').eq('id', args.uploadId);
+    else if (!args.force) query = query.eq('status', 'NOVO');
+    const { data: rows, error: listError } = await query;
+    if (listError) throw listError;
+    stats.encontrados = rows.length;
+    stats.selecionados = rows.length;
 
-    const selected = [];
-    for (const group of groups) {
-      const existing = await getItemByDriveId(group.primary.id);
-      if (existing?.status === 'LANCADO' && !args.force) {
-        stats.ignorados += 1;
-        continue;
-      }
-      selected.push(group);
-      if (selected.length >= LIMIT) break;
-    }
-    stats.selecionados = selected.length;
-
-    if (!selected.length) {
-      log('INFO', 'Nenhum arquivo novo elegível na pasta.');
+    if (!rows.length) {
+      log('INFO', 'Nenhum arquivo novo na fila.');
       await finishRun(runId, 'SUCESSO', stats, null);
       return;
     }
@@ -1292,14 +1098,13 @@ async function main() {
     });
     await loginGrm(page);
 
-    for (const group of selected) {
-      const result = await processGroup(page, group, runId);
+    for (const row of rows) {
+      const result = await processUpload(page, row, runId);
       if (result === 'lancado') stats.lancados += 1;
       else if (result === 'dry_run') stats.dry_run += 1;
       else if (result === 'aguardando_dados') stats.aguardando_dados += 1;
       else if (result === 'aguardando_classificacao') stats.aguardando_classificacao += 1;
       else if (result === 'duplicado') stats.duplicados += 1;
-      else if (result === 'ignorado') stats.ignorados += 1;
       else if (result === 'erro') stats.erros += 1;
     }
 

@@ -32,33 +32,29 @@
     { "keywords": ["BOLETO", "LINHA DIGITÁVEL"], "forma_pagamento": "Boleto" },
     { "keywords": ["TRANSFERÊNCIA", "TED", "DADOS BANCÁRIOS"], "forma_pagamento": "Transferência" }
   ],
-  "folder_rules": [
+  "setor_rules": [
     {
-      "folder_contains": "HOSPEDAGEM",
+      "setor_contains": "HOSPEDAGEM",
       "set": {
-        "setor": "HOSPEDAGEM",
         "grupo_categoria": "DESPESAS OPERACIONAIS",
         "categoria": "HOSPEDAGEM"
       }
     },
     {
-      "folder_contains": "FROTAS",
+      "setor_contains": "FROTAS",
       "set": {
-        "setor": "FROTAS",
         "grupo_categoria": "DESPESAS COM VEICULOS"
       }
     },
     {
-      "folder_contains": "RH",
+      "setor_contains": "RH",
       "set": {
-        "setor": "RH",
         "grupo_categoria": "DESPESAS RH"
       }
     },
     {
-      "folder_contains": "COMPRAS",
+      "setor_contains": "COMPRAS",
       "set": {
-        "setor": "COMPRAS",
         "grupo_categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM",
         "categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM"
       }

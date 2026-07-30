@@ -50,6 +50,7 @@ const SOFT_NAV_PAGES = new Map([
   ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],
   ['metas', { title: 'METAS', module: () => import('./metas.js') }],
   ['notas-fiscais', { title: 'Notas Fiscais', module: () => import('./notas-fiscais.js') }],
+  ['upload-notas-fiscais', { title: 'Enviar Notas Fiscais', module: () => import('./upload-notas-fiscais.js') }],
   ['patrimonio-status', { title: 'Status de Patrimônios', module: () => import('./patrimonioStatus.js') }],
   ['plantao', { title: 'Plantão', module: () => import('./plantao.js') }],
   ['telegrama', { title: 'Telegrama', module: () => import('./telegrama.js') }],
