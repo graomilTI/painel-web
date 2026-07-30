@@ -1,9 +1,8 @@
 import { initProtectedPage } from './pageInit.js';
-import './operacional-os-ativas-patch.js?v=20260707-lista-os';
-import './operacional-motorista-placa-patch.js?v=20260703-fix-fetch-url';
-import './operacional-rotas-inteligentes.js?v=20260723-sem-motor-sugestao';
-import './operacional-irregularidades-acoes.js?v=20260702-1430';
-import './operacional-filtros-click-fix.js?v=20260702-1735';
+// Mapa Operacional simplificado (2026-07-30): só O.S. Atender + rotas, ver operacional.js.
+// Os patches antigos (placa por motorista, carona/custo, irregularidades, filtros de camadas
+// removidas) só faziam sentido em cima das abas/camadas retiradas do mapa — removidos junto.
+import './operacional.js?v=20260730-mapa-simplificado1';
 
 export function renderContent(content, userContext) {
   if (window.OPERACIONAL?.openHome) {
