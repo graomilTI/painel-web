@@ -190,18 +190,25 @@ function injectStyles() {
        arredondado (em vez de círculo) pra casar com o padrão visual das
        tags do próprio colaborador (pedido 29/07), EMPILHADOS um sobre o
        outro (não lado a lado) pra sobrar mais largura horizontal pro
-       card do nome (pedido 29/07). Fontes do card em si compactadas junto
+       card do nome (pedido 29/07). align-items:stretch (em vez de center)
+       + botões com flex:1 (em vez de altura fixa) fazem a coluna de ações
+       ocupar exatamente a altura do card, nunca mais nem menos — antes os
+       dois botões de 34px empilhados ultrapassavam a altura do card em
+       cards de 1 linha só (pedido 30/07). Confirmar/recusar viram o MESMO
+       "layout" de cor (gradiente diagonal + borda na mesma tonalidade),
+       só trocando verde por vermelho, em vez de um sólido e outro
+       translúcido (pedido 30/07). Fontes do card em si compactadas junto
        com o resto do painel lateral, ver #pldOverlayRoot .peqb-cand-* em
        programacao-lista-drawer-fixo.js. */
-    .pld-cand-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .pld-cand-wrap{display:flex;align-items:stretch;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
     .pld-cand-wrap .peqb-cand-sub,.pld-cand-wrap .peqb-score,.pld-cand-wrap .peqb-cand-cost{display:none}
-    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
-    .pld-cand-confirm,.pld-cand-reject{width:34px;height:34px;border-radius:13px;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
+    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;width:34px}
+    .pld-cand-confirm,.pld-cand-reject{flex:1 1 0;min-height:0;border-radius:13px;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pld-cand-confirm{border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}
     .pld-cand-confirm:hover{filter:brightness(1.08)}
-    .pld-cand-reject{border:1px solid rgba(248,113,113,.4);background:rgba(127,29,29,.18);color:#fca5a5}
-    .pld-cand-reject:hover{background:rgba(127,29,29,.32)}
+    .pld-cand-reject{border:1px solid rgba(252,165,165,.5);background:linear-gradient(135deg,#b91c1c,#fca5a5);color:#450a0a}
+    .pld-cand-reject:hover{filter:brightness(1.08)}
     .pld-cand-confirm:disabled{opacity:.5;cursor:not-allowed;filter:grayscale(.4)}
     .pld-colab-card{border:1px solid rgba(52,211,153,.18);border-radius:14px;background:rgba(2,6,23,.3);padding:12px 14px;margin-bottom:12px}
     .pld-colab-card .peqd-card{border:0;padding:0;background:transparent}
