@@ -1,15 +1,16 @@
-// Aba "Hospedados" em Hospedagem > Alojamentos: pra cada alojamento, mostra
-// quem da equipe está hospedado lá numa data escolhida. Não tem tabela própria
-// de ocupação — cruza o cadastro de alojamentos (hospedagem_alojamentos) com a
-// estadia que a Programação já grava por colaborador/dia (programacao_estadia,
-// tipo_estadia='alojamento'), a mesma fonte que já alimenta o KPI agregado
-// "Em uso hoje" em adm-hotel-separacao-modulos.js — aqui é o detalhamento por
-// pessoa em vez de só a contagem.
+// Aba "Hospedados" em Hospedagem > Alojamentos: lista, numa tabela (não mais
+// em blocos por alojamento — pedido do usuário, 2026-07-30, precisa mostrar
+// colaborador + data), quem da equipe está hospedado em cada alojamento numa
+// data escolhida. Não tem tabela própria de ocupação — cruza o cadastro de
+// alojamentos (hospedagem_alojamentos) com a estadia que a Programação já
+// grava por colaborador/dia (programacao_estadia, tipo_estadia='alojamento'),
+// a mesma fonte que já alimenta o KPI agregado "Em uso hoje" em
+// adm-hotel-separacao-modulos.js e a aba Alojamento de Gestor > Hospedagem.
 import { supabase } from './supabaseClient.js';
-import { esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+import { esc, brDate } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
 
 const TAB_ID = 'hospedados';
-const state = { date: '', busca: '', carregando: false, ultimosGrupos: [] };
+const state = { date: '', busca: '', carregando: false, ultimasLinhas: [] };
 
 function normalizeText(value) {
   return String(value ?? '')
@@ -39,20 +40,14 @@ function ensureStyles() {
     .hosp-v-toolbar input{height:38px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;color-scheme:dark}
     .hosp-v-toolbar input[type="search"]{flex:1 1 240px}
     .hosp-v-toolbar input[type="date"]{flex:0 0 auto}
-    .hosp-v-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
-    .hosp-v-card{border:1px solid rgba(52,211,153,.16);background:rgba(2,6,23,.28);border-radius:16px;padding:16px}
-    .hosp-v-card.empty{opacity:.6}
-    .hosp-v-card.orfao{border-color:rgba(245,158,11,.35)}
-    .hosp-v-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px}
-    .hosp-v-nome{font-weight:900;color:#f8fafc;font-size:15px;line-height:1.2}
-    .hosp-v-local{font-size:12px;color:#9fb7aa;margin-top:2px}
-    .hosp-v-count{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:900;background:rgba(59,130,246,.14);color:#bfdbfe;border:1px solid rgba(59,130,246,.35);white-space:nowrap}
-    .hosp-v-count.cheio{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.35)}
-    .hosp-v-lista{display:flex;flex-direction:column;gap:6px}
-    .hosp-v-pessoa{font-size:13px;color:#e2e2f0;padding:6px 10px;border-radius:9px;background:rgba(148,163,184,.06)}
-    .hosp-v-vazio{font-size:12.5px;color:#6b7a86;font-style:italic}
-    .hosp-v-tag-orfao{display:inline-block;margin-top:8px;font-size:10.5px;font-weight:800;color:#fde68a;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.35);border-radius:999px;padding:2px 8px}
-    .hosp-v-empty-state{grid-column:1/-1;text-align:center;color:var(--muted);padding:30px}
+    .hosp-v-table-wrap{overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:16px}
+    .hosp-v-table{width:100%;border-collapse:collapse;min-width:640px}
+    .hosp-v-table th,.hosp-v-table td{padding:12px 14px;border-bottom:1px solid rgba(52,211,153,.12);text-align:left;font-size:12.5px}
+    .hosp-v-table th{position:sticky;top:0;background:#0a1710;color:#4f9670;font-size:9.5px;text-transform:uppercase;letter-spacing:.14em;font-weight:850}
+    .hosp-v-table td{color:#e2e2f0}
+    .hosp-v-table tr:hover td{background:rgba(45,215,120,.035)}
+    .hosp-v-empty{padding:26px!important;color:#6b7a86!important;text-align:center;font-style:italic}
+    .hosp-v-tag-orfao{display:inline-block;margin-left:8px;font-size:9.5px;font-weight:800;color:#fde68a;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.35);border-radius:999px;padding:2px 7px;white-space:nowrap}
   `;
   document.head.appendChild(style);
 }
@@ -71,7 +66,12 @@ function panelHtml() {
         <input type="date" id="hospVData" />
         <input type="search" id="hospVBusca" placeholder="Buscar colaborador ou alojamento..." />
       </div>
-      <div class="hosp-v-grid" id="hospVGrid"><div class="hosp-v-empty-state">Carregando...</div></div>
+      <div class="hosp-v-table-wrap">
+        <table class="hosp-v-table">
+          <thead><tr><th>Alojamento</th><th>Colaborador</th><th>Check-in</th><th>Check-out</th></tr></thead>
+          <tbody id="hospVTbody"><tr><td colspan="4" class="hosp-v-empty">Carregando...</td></tr></tbody>
+        </table>
+      </div>
     </article>
   </section>`;
 }
@@ -102,8 +102,8 @@ function alojamentoKey(row) {
 async function carregar() {
   if (state.carregando) return;
   state.carregando = true;
-  const grid = document.getElementById('hospVGrid');
-  if (grid) grid.innerHTML = '<div class="hosp-v-empty-state">Carregando...</div>';
+  const tbody = document.getElementById('hospVTbody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="hosp-v-empty">Carregando...</td></tr>';
 
   try {
     const date = state.date || todayInSaoPaulo();
@@ -125,77 +125,51 @@ async function carregar() {
       return referencia <= date && (!checkout || checkout >= date);
     });
 
-    const pessoasPorAlojamento = new Map();
-    estadiaRows.forEach((row) => {
+    const nomePorAlojamentoId = new Map((alojamentosRes.data || []).map((a) => [String(a.id), a]));
+    const idsCadastrados = new Set((alojamentosRes.data || []).map((a) => String(a.id)));
+
+    const linhas = estadiaRows.map((row) => {
       const key = alojamentoKey(row);
-      const nome = String(row.nome_colaborador || row.colaborador_id || 'Colaborador').trim();
-      if (!pessoasPorAlojamento.has(key)) pessoasPorAlojamento.set(key, []);
-      pessoasPorAlojamento.get(key).push(nome);
-    });
-
-    const alojamentosCadastrados = alojamentosRes.data || [];
-    const idsUsados = new Set();
-    const grupos = alojamentosCadastrados.map((aloj) => {
-      idsUsados.add(String(aloj.id));
+      const cadastro = nomePorAlojamentoId.get(String(row.alojamento_id));
       return {
-        id: aloj.id,
-        nome: aloj.nome || 'Alojamento sem nome',
-        local: [aloj.cidade, aloj.uf].filter(Boolean).join('/'),
-        capacidade: aloj.capacidade || 0,
-        pessoas: pessoasPorAlojamento.get(String(aloj.id)) || [],
-        orfao: false,
+        alojamentoNome: cadastro?.nome || row.alojamento_nome || 'Alojamento não cadastrado',
+        alojamentoLocal: cadastro ? [cadastro.cidade, cadastro.uf].filter(Boolean).join('/') : '',
+        orfao: !row.alojamento_id || !idsCadastrados.has(String(row.alojamento_id)),
+        colaborador: String(row.nome_colaborador || row.colaborador_id || 'Colaborador').trim(),
+        checkin: row.checkin || row.data_referencia || null,
+        checkout: row.checkout || null,
       };
-    });
+    }).sort((a, b) => a.alojamentoNome.localeCompare(b.alojamentoNome, 'pt-BR') || a.colaborador.localeCompare(b.colaborador, 'pt-BR'));
 
-    // Estadia pode referenciar um alojamento que não bate com nenhum id
-    // cadastrado (registrado só pelo nome, ou cadastro excluído depois) —
-    // mostra separado em vez de esconder silenciosamente quem está lá.
-    pessoasPorAlojamento.forEach((pessoas, key) => {
-      if (key.startsWith('nome:') || !idsUsados.has(key)) {
-        const nomeAlojamento = estadiaRows.find((r) => alojamentoKey(r) === key)?.alojamento_nome || 'Alojamento não cadastrado';
-        grupos.push({ id: key, nome: nomeAlojamento, local: '', capacidade: 0, pessoas, orfao: true });
-      }
-    });
-
-    grupos.sort((a, b) => (b.pessoas.length - a.pessoas.length) || a.nome.localeCompare(b.nome, 'pt-BR'));
-
-    renderGrupos(grupos);
+    renderLinhas(linhas);
   } catch (error) {
     console.error('[hospedados] carregar:', error);
-    if (grid) grid.innerHTML = `<div class="hosp-v-empty-state">Não foi possível carregar: ${esc(error.message || 'erro desconhecido')}</div>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="hosp-v-empty">Não foi possível carregar: ${esc(error.message || 'erro desconhecido')}</td></tr>`;
   } finally {
     state.carregando = false;
   }
 }
 
-function renderGrupos(grupos) {
-  const grid = document.getElementById('hospVGrid');
-  if (!grid) return;
-  state.ultimosGrupos = grupos;
+function renderLinhas(linhas) {
+  const tbody = document.getElementById('hospVTbody');
+  if (!tbody) return;
+  state.ultimasLinhas = linhas;
   const busca = normalizeText(state.busca);
-  const filtrados = !busca ? grupos : grupos.filter((g) => normalizeText(`${g.nome} ${g.pessoas.join(' ')}`).includes(busca));
+  const filtradas = !busca ? linhas : linhas.filter((l) => normalizeText(`${l.alojamentoNome} ${l.colaborador}`).includes(busca));
 
-  if (!filtrados.length) {
-    grid.innerHTML = '<div class="hosp-v-empty-state">Nenhum alojamento ou colaborador encontrado.</div>';
+  if (!filtradas.length) {
+    tbody.innerHTML = `<tr><td colspan="4" class="hosp-v-empty">${busca ? 'Nenhum alojamento ou colaborador encontrado.' : 'Nenhum colaborador hospedado nesta data.'}</td></tr>`;
     return;
   }
 
-  grid.innerHTML = filtrados.map((g) => {
-    const cheio = g.capacidade > 0 && g.pessoas.length >= g.capacidade;
-    const contagem = g.capacidade > 0 ? `${g.pessoas.length}/${g.capacidade}` : String(g.pessoas.length);
-    return `<article class="hosp-v-card ${g.pessoas.length ? '' : 'empty'} ${g.orfao ? 'orfao' : ''}">
-      <div class="hosp-v-head">
-        <div><div class="hosp-v-nome">${esc(g.nome)}</div>${g.local ? `<div class="hosp-v-local">${esc(g.local)}</div>` : ''}</div>
-        <span class="hosp-v-count ${cheio ? 'cheio' : ''}">${esc(contagem)}</span>
-      </div>
-      <div class="hosp-v-lista">
-        ${g.pessoas.length
-          ? g.pessoas.map((nome) => `<div class="hosp-v-pessoa">${esc(nome)}</div>`).join('')
-          : '<div class="hosp-v-vazio">Nenhum colaborador hospedado nesta data.</div>'}
-      </div>
-      ${g.orfao ? '<span class="hosp-v-tag-orfao">Alojamento não está no cadastro</span>' : ''}
-    </article>`;
-  }).join('');
+  tbody.innerHTML = filtradas.map((l) => `
+    <tr>
+      <td>${esc(l.alojamentoNome)}${l.alojamentoLocal ? ` <span style="color:#6b7a86">· ${esc(l.alojamentoLocal)}</span>` : ''}${l.orfao ? '<span class="hosp-v-tag-orfao">não cadastrado</span>' : ''}</td>
+      <td>${esc(l.colaborador)}</td>
+      <td>${brDate(l.checkin)}</td>
+      <td>${l.checkout ? brDate(l.checkout) : 'Em aberto'}</td>
+    </tr>
+  `).join('');
 }
 
 function bindPanel() {
@@ -212,7 +186,7 @@ function bindPanel() {
   });
   buscaInput?.addEventListener('input', () => {
     state.busca = buscaInput.value;
-    renderGrupos(state.ultimosGrupos);
+    renderLinhas(state.ultimasLinhas);
   });
 }
 

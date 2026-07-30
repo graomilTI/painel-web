@@ -218,35 +218,20 @@ function injectStyles() {
     .hosp-tab-btn.active{background:linear-gradient(135deg,var(--green-3),var(--green));border-color:var(--green-2);color:#f0fff7}
     .hosp-tab-panel[hidden]{display:none}
 
-    .hospA-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
-    .hospA-toolbar input[type="search"]{flex:1 1 240px;height:38px;border:1px solid var(--line-2);background:#092117;color:#eafff3;border-radius:11px;padding:0 12px;color-scheme:dark}
-    .hospA-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-    .hospA-card{border:1px solid rgba(52,211,153,.18);background:rgba(2,6,23,.32);border-radius:16px;padding:16px}
-    .hospA-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px}
-    .hospA-nome{font-weight:900;color:#f8fafc;font-size:15px;line-height:1.2}
-    .hospA-local{font-size:12px;color:#9fb7aa;margin-top:2px}
-    .hospA-count{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:900;background:rgba(59,130,246,.14);color:#bfdbfe;border:1px solid rgba(59,130,246,.35);white-space:nowrap}
-    .hospA-count.cheio{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.35)}
-    .hospA-lista{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
-    .hospA-pessoa{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:#e2e2f0;padding:6px 10px;border-radius:9px;background:rgba(148,163,184,.06)}
-    .hospA-pessoa button{border:0;background:transparent;color:#d58b8b;font-size:11px;font-weight:800;cursor:pointer;padding:2px 6px;white-space:nowrap}
-    .hospA-pessoa button:hover{color:#fecaca}
-    .hospA-vazio{font-size:12.5px;color:#6b7a86;font-style:italic;margin-bottom:10px}
-    .hospA-add-btn{width:100%;border:1px dashed rgba(45,215,120,.35);background:transparent;color:#2cdb79;border-radius:10px;padding:8px;font-size:12px;font-weight:800;cursor:pointer}
-    .hospA-add-btn:hover{background:rgba(45,215,120,.08)}
-    .hospA-add-form{margin-top:10px;display:none;gap:8px;flex-direction:column}
-    .hospA-add-form.show{display:flex}
-    .hospA-ac{position:relative;width:100%}
-    .hospA-ac input{width:100%;height:36px;border:1px solid rgba(45,215,120,.3);background:#092117;color:#eafff3;border-radius:9px;padding:0 10px;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
+    .hospA-addbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+    .hospA-addbar select{height:38px;min-width:220px;border:1px solid rgba(45,215,120,.3);background:#092117;color:#eafff3;border-radius:11px;padding:0 10px;color-scheme:dark;font-size:12.5px}
+    .hospA-addbar .btn{width:auto!important;min-height:38px!important;margin:0!important;padding:0 16px;font-size:12.5px}
+    .hospA-add-feedback{font-size:11px;color:#6c9e82;margin:-4px 0 12px}.hospA-add-feedback.err{color:#fecaca}.hospA-add-feedback.ok{color:#86efac}
+    .hospA-search{width:100%;height:38px;border:1px solid var(--line-2);background:#092117;color:#eafff3;border-radius:11px;padding:0 12px;color-scheme:dark;margin-bottom:16px;box-sizing:border-box}
+    .hospA-ac{position:relative;flex:1 1 240px;min-width:220px}
+    .hospA-ac input{width:100%;height:38px;border:1px solid rgba(45,215,120,.3);background:#092117;color:#eafff3;border-radius:11px;padding:0 10px;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
     .hospA-ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#092117;border:1px solid rgba(45,215,120,.35);overflow:hidden;z-index:20;max-height:200px;overflow-y:auto;border-radius:9px;box-shadow:0 14px 35px rgba(0,0,0,.5)}
     .hospA-ac-item{padding:8px 10px;cursor:pointer;font-size:12px;color:#eafff3;border-bottom:1px solid rgba(255,255,255,.05)}
     .hospA-ac-item:last-child{border-bottom:0}.hospA-ac-item:hover{background:rgba(45,215,120,.12)}
     .hospA-ac-item small{display:block;color:#6c9e82;font-size:10px;margin-top:2px}
     .hospA-ac-empty{padding:8px 10px;font-size:11.5px;color:#6c9e82;text-align:center}
-    .hospA-add-actions{display:flex;gap:8px;align-items:center}
-    .hospA-add-actions .btn{width:auto!important;min-height:34px;padding:0 14px;font-size:12px}
-    .hospA-add-feedback{font-size:11px;color:#6c9e82}.hospA-add-feedback.err{color:#fecaca}.hospA-add-feedback.ok{color:#86efac}
-    .hospA-empty-state{grid-column:1/-1;text-align:center;color:var(--muted);padding:30px}
+    .hospA-encerrar{border:0;background:transparent;color:#d58b8b;font-size:11px;font-weight:800;cursor:pointer;padding:2px 6px;white-space:nowrap}
+    .hospA-encerrar:hover{color:#fecaca}
   `;
   document.head.appendChild(style);
 }
@@ -261,7 +246,7 @@ export function renderContent(content, userContext) {
     cidades: [],
     clientes: [],
     alojamentos: [],
-    ocupantes: new Map(),
+    ocupantes: [],
   };
 
   content.innerHTML = `
@@ -353,10 +338,24 @@ export function renderContent(content, userContext) {
       <section class="hosp-workspace">
         <header class="hosp-workspace-head">Alojamentos da sua regional</header>
         <div style="padding:18px">
-          <div class="hospA-toolbar">
-            <input type="search" id="hospABusca" placeholder="Buscar alojamento ou colaborador..." />
+          <div class="hospA-addbar">
+            <select id="hospAAlojSelect"><option value="">Selecione o alojamento...</option></select>
+            <div class="hospA-ac">
+              <input type="text" id="hospABuscaColab" placeholder="Nome do colaborador..." autocomplete="off" spellcheck="false" />
+              <div class="hospA-ac-list" hidden></div>
+            </div>
+            <button type="button" class="btn hosp-submit" id="hospAAddBtn">＋ Adicionar</button>
           </div>
-          <div class="hospA-grid" id="hospAGrid"><div class="hospA-empty-state">Carregando...</div></div>
+          <div class="hospA-add-feedback" id="hospAAddFeedback"></div>
+
+          <input type="search" id="hospABusca" class="hospA-search" placeholder="Buscar alojamento ou colaborador..." />
+
+          <div class="hosp-table-wrap">
+            <table class="hosp-table">
+              <thead><tr><th>Alojamento</th><th>Colaborador</th><th>Desde</th><th>Ações</th></tr></thead>
+              <tbody id="hospATbody"><tr><td colspan="4" class="hosp-empty">Carregando...</td></tr></tbody>
+            </table>
+          </div>
         </div>
       </section>
     </div>
@@ -819,74 +818,71 @@ export function renderContent(content, userContext) {
     return referencia <= hoje && (!checkout || checkout >= hoje);
   }
 
+  // state.ocupantes é uma lista achatada (1 linha por hóspede, não mais
+  // agrupada em card por alojamento) — cada linha carrega o nome do
+  // alojamento e a data de check-in, pra caber numa tabela em vez de blocos
+  // (pedido do usuário, 2026-07-30: precisa mostrar colaborador + data).
   async function carregarOcupantesAlojamentos() {
     const hoje = todayISO();
     const ids = state.alojamentos.map((a) => a.id);
-    state.ocupantes = new Map();
+    state.ocupantes = [];
     if (!ids.length) return;
     const [atual, legado] = await Promise.all([
       supabase.from('programacao_estadia').select('id,colaborador_id,nome_colaborador,alojamento_id,checkin,checkout,data_referencia,tipo_estadia,tem_estadia').eq('data_referencia', hoje).in('alojamento_id', ids),
       supabase.from('programacao_estadia').select('id,colaborador_id,nome_colaborador,alojamento_id,checkin,checkout,data_referencia,tipo_estadia,tem_estadia').is('data_referencia', null).in('alojamento_id', ids),
     ]);
+    const alojPorId = new Map(state.alojamentos.map((a) => [String(a.id), a]));
     const rows = [...(atual.data || []), ...(legado.data || [])].filter((row) => alojamentoOcupanteFiltro(row, hoje));
-    rows.forEach((row) => {
-      const key = String(row.alojamento_id);
-      if (!state.ocupantes.has(key)) state.ocupantes.set(key, []);
-      state.ocupantes.get(key).push({ id: row.id, nome: row.nome_colaborador || 'Colaborador' });
-    });
+    state.ocupantes = rows.map((row) => {
+      const aloj = alojPorId.get(String(row.alojamento_id));
+      return {
+        id: row.id,
+        nome: row.nome_colaborador || 'Colaborador',
+        checkin: row.checkin || row.data_referencia || null,
+        alojamentoId: row.alojamento_id,
+        alojamentoNome: aloj?.nome || 'Alojamento',
+      };
+    }).sort((a, b) => a.alojamentoNome.localeCompare(b.alojamentoNome, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }
+
+  function renderAlojamentoSelect() {
+    const select = document.getElementById('hospAAlojSelect');
+    if (!select) return;
+    const atual = select.value;
+    select.innerHTML = `<option value="">Selecione o alojamento...</option>${state.alojamentos
+      .map((a) => `<option value="${esc(a.id)}">${esc(a.nome)}${a.cidade ? ` — ${esc(a.cidade)}/${esc(a.uf || '')}` : ''}</option>`)
+      .join('')}`;
+    if (atual) select.value = atual;
   }
 
   function renderAlojamentos() {
-    const grid = document.getElementById('hospAGrid');
-    if (!grid) return;
+    const tbody = document.getElementById('hospATbody');
+    if (!tbody) return;
     const busca = normalizeText(document.getElementById('hospABusca')?.value || '');
-    const filtrados = state.alojamentos.filter((a) => {
-      if (!busca) return true;
-      const pessoas = (state.ocupantes.get(String(a.id)) || []).map((p) => p.nome).join(' ');
-      return normalizeText(`${a.nome} ${pessoas}`).includes(busca);
-    });
+    const filtrados = !busca ? state.ocupantes : state.ocupantes.filter((o) => normalizeText(`${o.alojamentoNome} ${o.nome}`).includes(busca));
 
     if (!state.alojamentos.length) {
-      grid.innerHTML = '<div class="hospA-empty-state">Nenhum alojamento cadastrado na sua regional ainda. Fale com o time de Hospedagem para vincular um alojamento à sua supervisão.</div>';
+      tbody.innerHTML = '<tr><td colspan="4" class="hosp-empty">Nenhum alojamento cadastrado na sua regional ainda. Fale com o time de Hospedagem para vincular um alojamento à sua supervisão.</td></tr>';
       return;
     }
     if (!filtrados.length) {
-      grid.innerHTML = '<div class="hospA-empty-state">Nenhum alojamento ou colaborador encontrado para essa busca.</div>';
+      tbody.innerHTML = `<tr><td colspan="4" class="hosp-empty">${busca ? 'Nenhum alojamento ou colaborador encontrado para essa busca.' : 'Nenhum colaborador hospedado no momento.'}</td></tr>`;
       return;
     }
 
-    grid.innerHTML = filtrados.map((a) => {
-      const pessoas = state.ocupantes.get(String(a.id)) || [];
-      const cheio = a.capacidade > 0 && pessoas.length >= a.capacidade;
-      const contagem = a.capacidade > 0 ? `${pessoas.length}/${a.capacidade}` : String(pessoas.length);
-      return `<article class="hospA-card" data-aloj-id="${esc(a.id)}" data-aloj-nome="${esc(a.nome)}" data-aloj-cidade="${esc(a.cidade || '')}" data-aloj-uf="${esc(a.uf || '')}">
-        <div class="hospA-head">
-          <div><div class="hospA-nome">${esc(a.nome)}</div><div class="hospA-local">${esc([a.cidade, a.uf].filter(Boolean).join('/') || 'Local não informado')}</div></div>
-          <span class="hospA-count ${cheio ? 'cheio' : ''}">${esc(contagem)}</span>
-        </div>
-        <div class="hospA-lista">
-          ${pessoas.length
-            ? pessoas.map((p) => `<div class="hospA-pessoa"><span>${esc(p.nome)}</span><button type="button" data-encerrar-estadia="${esc(p.id)}">Encerrar</button></div>`).join('')
-            : '<div class="hospA-vazio">Nenhum colaborador hospedado.</div>'}
-        </div>
-        <button type="button" class="hospA-add-btn" data-toggle-add="${esc(a.id)}">＋ Adicionar colaborador</button>
-        <div class="hospA-add-form" id="hospAAddForm-${esc(a.id)}">
-          <div class="hospA-ac">
-            <input type="text" class="hospA-ac-input" data-busca-colab placeholder="Nome do colaborador..." autocomplete="off" spellcheck="false" />
-            <div class="hospA-ac-list" hidden></div>
-          </div>
-          <div class="hospA-add-actions">
-            <button type="button" class="btn hosp-submit" data-confirmar-add>Adicionar</button>
-            <span class="hospA-add-feedback"></span>
-          </div>
-        </div>
-      </article>`;
-    }).join('');
+    tbody.innerHTML = filtrados.map((o) => `
+      <tr>
+        <td>${esc(o.alojamentoNome)}</td>
+        <td>${esc(o.nome)}</td>
+        <td>${brDate(o.checkin)}</td>
+        <td><div class="hosp-row-actions"><button type="button" class="hospA-encerrar" data-encerrar-estadia="${esc(o.id)}">Encerrar</button></div></td>
+      </tr>
+    `).join('');
   }
 
   async function carregarAlojamentosRegional() {
-    const grid = document.getElementById('hospAGrid');
-    if (grid) grid.innerHTML = '<div class="hospA-empty-state">Carregando...</div>';
+    const tbody = document.getElementById('hospATbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="hosp-empty">Carregando...</td></tr>';
     const minhasRegionais = getMinhasRegionais();
     const { data, error } = await supabase
       .from('hospedagem_alojamentos')
@@ -895,90 +891,70 @@ export function renderContent(content, userContext) {
       .order('cidade', { ascending: true })
       .order('nome', { ascending: true });
     if (error) {
-      if (grid) grid.innerHTML = `<div class="hospA-empty-state">Não foi possível carregar: ${esc(error.message)}</div>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="hosp-empty">Não foi possível carregar: ${esc(error.message)}</td></tr>`;
       return;
     }
     const todos = data || [];
     state.alojamentos = minhasRegionais.length
       ? todos.filter((a) => minhasRegionais.includes(normalizeText(a.supervisao)))
       : todos;
+    renderAlojamentoSelect();
     await carregarOcupantesAlojamentos();
     renderAlojamentos();
   }
 
-  function fecharTodosAcAlojamento() {
-    document.querySelectorAll('#hospAGrid .hospA-ac-list').forEach((el) => { el.hidden = true; el.innerHTML = ''; });
+  const alojColabInput = document.getElementById('hospABuscaColab');
+  const alojAcList = alojColabInput.nextElementSibling;
+  const alojAddFeedback = document.getElementById('hospAAddFeedback');
+
+  function setAlojFeedback(msg, type = '') {
+    alojAddFeedback.textContent = msg || '';
+    alojAddFeedback.className = `hospA-add-feedback ${type}`.trim();
   }
 
-  const alojGrid = document.getElementById('hospAGrid');
-  alojGrid.addEventListener('input', (event) => {
-    const input = event.target.closest('[data-busca-colab]');
-    if (!input) return;
-    delete input.dataset.selectedId;
-    const acList = input.closest('.hospA-ac').querySelector('.hospA-ac-list');
-    const matches = buscarColaboradores(input.value);
-    if (!input.value.trim()) { acList.hidden = true; acList.innerHTML = ''; return; }
-    acList.innerHTML = matches.length
+  alojColabInput.addEventListener('input', () => {
+    delete alojColabInput.dataset.selectedId;
+    const matches = buscarColaboradores(alojColabInput.value);
+    if (!alojColabInput.value.trim()) { alojAcList.hidden = true; alojAcList.innerHTML = ''; return; }
+    alojAcList.innerHTML = matches.length
       ? matches.map((c, i) => `<div class="hospA-ac-item" data-idx="${i}">${esc(c.nome)}<small>${esc([c.tipo, c.supervisao].filter(Boolean).join(' · '))}</small></div>`).join('')
       : '<div class="hospA-ac-empty">Nenhum colaborador ativo encontrado</div>';
-    acList.hidden = false;
+    alojAcList.hidden = false;
   });
-  alojGrid.addEventListener('focusin', (event) => {
-    const input = event.target.closest('[data-busca-colab]');
-    if (input && input.value.trim()) input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  alojGrid.addEventListener('focusout', (event) => {
-    if (!event.target.closest('[data-busca-colab]')) return;
-    setTimeout(fecharTodosAcAlojamento, 180);
-  });
-
-  alojGrid.addEventListener('click', (event) => {
-    const acItem = event.target.closest('.hospA-ac-item');
-    if (acItem && acItem.dataset.idx != null) {
-      const input = acItem.closest('.hospA-ac').querySelector('[data-busca-colab]');
-      const matches = buscarColaboradores(input.value);
-      const selected = matches[Number(acItem.dataset.idx)];
-      if (selected) {
-        input.value = selected.nome;
-        input.dataset.selectedId = selected.id || '';
-        input.dataset.selectedCpf = selected.cpf || '';
-      }
-      acItem.closest('.hospA-ac-list').hidden = true;
-      return;
-    }
-
-    const toggleBtn = event.target.closest('[data-toggle-add]');
-    if (toggleBtn) {
-      const form = document.getElementById(`hospAAddForm-${toggleBtn.dataset.toggleAdd}`);
-      form?.classList.toggle('show');
-      if (form?.classList.contains('show')) form.querySelector('[data-busca-colab]')?.focus();
-      return;
-    }
-
-    const confirmBtn = event.target.closest('[data-confirmar-add]');
-    if (confirmBtn) {
-      const card = confirmBtn.closest('.hospA-card');
-      const input = card.querySelector('[data-busca-colab]');
-      const feedbackEl = card.querySelector('.hospA-add-feedback');
-      const nome = input.value.trim();
-      if (!nome) { feedbackEl.textContent = 'Digite o nome do colaborador.'; feedbackEl.className = 'hospA-add-feedback err'; return; }
-      const found = state.colaboradores.find((c) => normalizeText(c.nome) === normalizeText(nome));
-      if (!found) { feedbackEl.textContent = 'Selecione um colaborador da lista de sugestões.'; feedbackEl.className = 'hospA-add-feedback err'; return; }
-      adicionarColaboradorAlojamento(card, found, feedbackEl, confirmBtn);
-      return;
-    }
-
-    const encerrarBtn = event.target.closest('[data-encerrar-estadia]');
-    if (encerrarBtn) {
-      if (!window.confirm('Confirmar o encerramento desta estadia?')) return;
-      encerrarEstadiaAlojamento(encerrarBtn.dataset.encerrarEstadia);
-    }
+  alojColabInput.addEventListener('focus', () => { if (alojColabInput.value.trim()) alojColabInput.dispatchEvent(new Event('input')); });
+  alojColabInput.addEventListener('blur', () => setTimeout(() => { alojAcList.hidden = true; }, 180));
+  alojAcList.addEventListener('mousedown', (event) => {
+    const item = event.target.closest('.hospA-ac-item');
+    if (!item || item.dataset.idx == null) return;
+    const matches = buscarColaboradores(alojColabInput.value);
+    const selected = matches[Number(item.dataset.idx)];
+    if (selected) alojColabInput.value = selected.nome;
+    alojAcList.hidden = true;
   });
 
-  async function adicionarColaboradorAlojamento(card, colaborador, feedbackEl, confirmBtn) {
-    confirmBtn.disabled = true;
-    feedbackEl.textContent = 'Adicionando...';
-    feedbackEl.className = 'hospA-add-feedback';
+  document.getElementById('hospAAddBtn').addEventListener('click', async () => {
+    const alojId = document.getElementById('hospAAlojSelect').value;
+    if (!alojId) { setAlojFeedback('Selecione o alojamento.', 'err'); return; }
+    const nome = alojColabInput.value.trim();
+    if (!nome) { setAlojFeedback('Digite o nome do colaborador.', 'err'); return; }
+    const found = state.colaboradores.find((c) => normalizeText(c.nome) === normalizeText(nome));
+    if (!found) { setAlojFeedback('Selecione um colaborador da lista de sugestões.', 'err'); return; }
+    const aloj = state.alojamentos.find((a) => String(a.id) === String(alojId));
+    if (!aloj) { setAlojFeedback('Alojamento inválido.', 'err'); return; }
+    await adicionarColaboradorAlojamento(aloj, found);
+  });
+
+  document.getElementById('hospATbody').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-encerrar-estadia]');
+    if (!btn) return;
+    if (!window.confirm('Confirmar o encerramento desta estadia?')) return;
+    encerrarEstadiaAlojamento(btn.dataset.encerrarEstadia);
+  });
+
+  async function adicionarColaboradorAlojamento(aloj, colaborador) {
+    const addBtn = document.getElementById('hospAAddBtn');
+    addBtn.disabled = true;
+    setAlojFeedback('Adicionando...');
 
     const cpf = colaborador.cpf ? String(colaborador.cpf).replace(/\D/g, '') : '';
     const colaboradorId = cpf || normalizeText(colaborador.nome) || colaborador.nome;
@@ -992,21 +968,21 @@ export function renderContent(content, userContext) {
       checkin: hoje,
       checkout: null,
       data_referencia: null,
-      alojamento_id: card.dataset.alojId,
-      alojamento_nome: card.dataset.alojNome,
-      cidade: card.dataset.alojCidade || null,
-      uf: card.dataset.alojUf || null,
+      alojamento_id: aloj.id,
+      alojamento_nome: aloj.nome,
+      cidade: aloj.cidade || null,
+      uf: aloj.uf || null,
     };
 
     const { error } = await supabase.from('programacao_estadia').insert(payload);
-    confirmBtn.disabled = false;
+    addBtn.disabled = false;
     if (error) {
-      feedbackEl.textContent = error.message || 'Não foi possível adicionar.';
-      feedbackEl.className = 'hospA-add-feedback err';
+      setAlojFeedback(error.message || 'Não foi possível adicionar.', 'err');
       return;
     }
-    card.querySelector('[data-busca-colab]').value = '';
-    card.querySelector('.hospA-add-form').classList.remove('show');
+    alojColabInput.value = '';
+    document.getElementById('hospAAlojSelect').value = '';
+    setAlojFeedback(`${colaborador.nome} adicionado a ${aloj.nome}.`, 'ok');
     await carregarOcupantesAlojamentos();
     renderAlojamentos();
   }
