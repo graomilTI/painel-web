@@ -214,6 +214,8 @@ function assertConfig() {
   if (!Array.isArray(config.folder_rules)) config.folder_rules = [];
   if (!Array.isArray(config.keyword_rules)) config.keyword_rules = [];
   if (!Array.isArray(config.payment_rules)) config.payment_rules = [];
+  if (!Array.isArray(config.empresas)) config.empresas = [];
+  if (!config.empresas.length) log('WARN', 'config.empresas está vazio: nenhuma nota será lançada até haver ao menos 1 empresa cadastrada (cnpj/cpf -> nome exato no GRM).');
   supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -495,6 +497,26 @@ function allCnpjs(text) {
   return Array.from(new Set(matches.map(onlyDigits).filter((v) => v.length === 14)));
 }
 
+function allCpfs(text) {
+  const matches = String(text || '').match(/\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2}\b/g) || [];
+  return Array.from(new Set(matches.map(onlyDigits).filter((v) => v.length === 11)));
+}
+
+// CNPJ ou CPF do "Empresa" que recebeu a nota (não do fornecedor) — decidido pelo
+// documento gravado no próprio arquivo, nunca fixo, porque o GRM tem 6 empresas
+// diferentes (GRAOMIL LTDA, BV GRAIN, EXCELENCIA, CAR1000, ELIZEU MOTA, DOUGLAS
+// HENRIQUE MOTA) e lançar sob a empresa errada é um erro contábil real.
+function ownDocumentos() {
+  return new Set((config.empresas || []).map((e) => onlyDigits(e.documento)).filter(Boolean));
+}
+
+function resolveEmpresa(documento) {
+  const alvo = onlyDigits(documento || '');
+  if (!alvo) return null;
+  const entry = (config.empresas || []).find((e) => onlyDigits(e.documento) === alvo);
+  return entry ? entry.nome : null;
+}
+
 function inferPaymentMethod(text) {
   const normalized = normalizeText(text);
   for (const rule of config.payment_rules || []) {
@@ -509,9 +531,10 @@ function inferPaymentMethod(text) {
 
 function extractFromText(text, mimeOrExt) {
   const normalizedText = String(text || '').replace(/\r/g, '');
-  const ownCnpj = onlyDigits(config.defaults.empresa_cnpj || process.env.GRM_LANCAR_NF_EMPRESA_CNPJ || '');
-  const cnpjs = allCnpjs(normalizedText);
-  const supplierCnpj = cnpjs.find((cnpj) => !ownCnpj || cnpj !== ownCnpj) || cnpjs[0] || null;
+  const ownDocs = ownDocumentos();
+  const documentos = [...allCnpjs(normalizedText), ...allCpfs(normalizedText)];
+  const destinatarioDoc = documentos.find((doc) => ownDocs.has(doc)) || null;
+  const supplierCnpj = documentos.find((doc) => doc !== destinatarioDoc) || documentos[0] || null;
   const numero = firstMatch(normalizedText, [
     /(?:NFS[-\s]?E|NF[-\s]?E|NOTA\s+FISCAL|N[ÚU]MERO\s+DA\s+NOTA|N[ÚU]MERO\s+NF)\s*(?:N[º°.]|NRO\.?|N[ÚU]MERO)?\s*[:#-]?\s*(\d{1,12})/i,
     /(?:N[º°.]|NRO\.?|N[ÚU]MERO)\s*[:#-]\s*(\d{3,12})/i,
@@ -545,6 +568,7 @@ function extractFromText(text, mimeOrExt) {
     valor_total: parseMoney(valorRaw),
     fornecedor: fornecedor ? fornecedor.replace(/\s{2,}.*/, '').trim() : null,
     fornecedor_cnpj: supplierCnpj,
+    destinatario_cnpj: destinatarioDoc,
     forma_pagamento: inferPaymentMethod(normalizedText),
     tipo_documento: isNfse ? 'NFS-e' : 'DANFe',
     parcelas: [],
@@ -597,7 +621,9 @@ function applyRules(extracted, group, sidecar) {
     const codeMap = config.payment_code_map || {};
     data.forma_pagamento = codeMap[String(extracted.forma_pagamento_codigo)] || null;
   }
-  data.empresa = data.empresa || 'GRAOMIL LTDA';
+  // Empresa é decidida pelo CNPJ/CPF do destinatário lido do próprio documento
+  // (nunca por um padrão fixo) — o GRM tem 6 empresas diferentes cadastradas.
+  data.empresa = data.empresa || resolveEmpresa(data.destinatario_cnpj) || null;
   data.tipo_favorecido = data.tipo_favorecido || 'Fornecedor';
   data.intervalo_cobranca = data.intervalo_cobranca || 'Não Parcelar';
   data.tipo_documento = data.tipo_documento || 'DANFe';
