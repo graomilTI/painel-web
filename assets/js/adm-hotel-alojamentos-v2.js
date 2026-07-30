@@ -1,9 +1,9 @@
 import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
 import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
-import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260721-obs1';
+import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260730-supervisao1';
 
-const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null };
+const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null, supervisoes: [] };
 const obsState = { alojamentoId: null, year: 0, month: 0, selectedDate: '' };
 let toastTimer = null;
 
@@ -26,6 +26,20 @@ function toast(message, type = '') {
   toastTimer = setTimeout(() => { el.className = 'aloj-v2-toast'; }, 3200);
 }
 
+async function loadSupervisoes() {
+  if (state.supervisoes.length) return;
+  const select = document.getElementById('alojV2Supervisao');
+  const { data, error } = await supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true });
+  if (error) {
+    if (select) select.innerHTML = '<option value="">Não foi possível carregar</option>';
+    return;
+  }
+  state.supervisoes = (data || []).map((row) => row.nome).filter(Boolean);
+  if (select) {
+    select.innerHTML = `<option value="">Não informado</option>${state.supervisoes.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('')}`;
+  }
+}
+
 function resetForm() {
   state.editingId = null;
   document.getElementById('alojV2Form')?.reset();
@@ -46,7 +60,7 @@ function openModal(row = null) {
     const values = {
       alojV2Nome: row.nome, alojV2Tipo: row.tipo || 'CASA', alojV2Status: row.status || 'ATIVO', alojV2Responsavel: row.responsavel,
       alojV2Contato: row.contato, alojV2Aluguel: row.valor_aluguel, alojV2Capacidade: row.capacidade, alojV2Quartos: row.quartos,
-      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
+      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2Supervisao: row.supervisao || '', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
       alojV2ContratoFim: row.contrato_fim, alojV2Logradouro: row.endereco_logradouro || row.endereco, alojV2Numero: row.endereco_numero,
       alojV2Complemento: row.endereco_complemento, alojV2Bairro: row.bairro, alojV2Cidade: row.cidade, alojV2Uf: row.uf,
       alojV2Cep: row.cep, alojV2Referencia: row.referencia, alojV2Localizacao: row.link_localizacao,
@@ -208,6 +222,7 @@ function readForm() {
     nome: getValue('alojV2Nome').trim(), tipo: getValue('alojV2Tipo') || 'CASA', status: getValue('alojV2Status') || 'ATIVO',
     responsavel: getValue('alojV2Responsavel').trim(), contato: getValue('alojV2Contato').trim(), valor_aluguel: getValue('alojV2Aluguel'),
     capacidade: getValue('alojV2Capacidade'), quartos: getValue('alojV2Quartos'), prioridade: getValue('alojV2Prioridade') || 'NORMAL',
+    supervisao: getValue('alojV2Supervisao').trim(),
     contrato_url: getValue('alojV2ContratoUrl').trim(), contrato_inicio: getValue('alojV2ContratoInicio'), contrato_fim: getValue('alojV2ContratoFim'),
     endereco_logradouro: getValue('alojV2Logradouro').trim(), endereco_numero: getValue('alojV2Numero').trim(), endereco_complemento: getValue('alojV2Complemento').trim(),
     bairro: getValue('alojV2Bairro').trim(), cidade: getValue('alojV2Cidade').trim(), uf: getValue('alojV2Uf').trim().toUpperCase().slice(0, 2),
@@ -272,6 +287,7 @@ async function saveRecord(event) {
     endereco: [data.endereco_logradouro, data.endereco_numero].filter(Boolean).join(', ') || null,
     capacidade: data.capacidade ? Number(data.capacidade) : null, quartos: data.quartos ? Number(data.quartos) : null,
     responsavel: data.responsavel || null, contato: data.contato || null, status: data.status, prioridade: data.prioridade,
+    supervisao: data.supervisao || null,
     valor_aluguel: data.valor_aluguel ? Number(data.valor_aluguel) : null,
     agua: data.agua_inclusa === null ? null : data.agua_inclusa ? 'INCLUSO' : 'PAGO',
     energia: data.energia_inclusa === null ? null : data.energia_inclusa ? 'INCLUSO' : 'PAGO',
@@ -371,7 +387,7 @@ async function mount() {
   panel.innerHTML = panelHtml();
   state.query = '';
   bindPanel(panel);
-  await loadRows();
+  await Promise.all([loadRows(), loadSupervisoes()]);
 }
 
 function scheduleMount() {
