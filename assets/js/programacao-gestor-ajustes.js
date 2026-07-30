@@ -17,6 +17,7 @@ let supComboState = { input: null, onSelect: null };
 const STEP_LABELS = {
   '1': { label: 'Programação de O.S.', title: 'O.S.' },
   '2': { label: 'Colaboradores sem O.S.', title: 'Sem O.S.' },
+  '3': { label: 'Despesas recusadas pela conferência', title: 'Recusas' },
 };
 
 function debounce(fn, wait) {
@@ -251,6 +252,7 @@ function configureSteps() {
   const layout = [
     { ui: '1', label: STEP_LABELS['1'].title },
     { ui: '2', label: STEP_LABELS['2'].title },
+    { ui: '3', label: STEP_LABELS['3'].title },
   ];
 
   layout.forEach((step, index) => {
