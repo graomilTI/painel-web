@@ -117,6 +117,65 @@ function normalizeText(value) {
     .trim();
 }
 
+// Cabeçalhos ordenáveis (mesmo padrão de adm-conferencia.js: botão dentro do
+// <th>, seta indicando coluna/direção ativa, alterna asc/desc no clique).
+function sortIcon(sortState, kind, column) {
+  const current = sortState[kind];
+  if (current.column !== column) return '<span class="hosp-sort-icon">↕</span>';
+  return `<span class="hosp-sort-icon active">${current.direction === 'asc' ? '↑' : '↓'}</span>`;
+}
+
+function sortableTh(sortState, kind, column, label) {
+  return `<th><button class="hosp-sort-btn" type="button" data-sort-kind="${esc(kind)}" data-sort-column="${esc(column)}">${esc(label)} ${sortIcon(sortState, kind, column)}</button></th>`;
+}
+
+function sortRows(sortState, kind, rows, getValue) {
+  const { column, direction } = sortState[kind] || {};
+  if (!column) return rows;
+  const factor = direction === 'desc' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const av = getValue(a, column);
+    const bv = getValue(b, column);
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * factor;
+    return normalizeText(String(av ?? '')).localeCompare(normalizeText(String(bv ?? '')), 'pt-BR', { numeric: true }) * factor;
+  });
+}
+
+function minhasTheadHtml(state) {
+  return [
+    sortableTh(state.sort, 'minhas', 'codigo', 'Código'),
+    sortableTh(state.sort, 'minhas', 'colaboradores', 'Colaboradores'),
+    sortableTh(state.sort, 'minhas', 'cidade', 'Cidade'),
+    sortableTh(state.sort, 'minhas', 'embarque', 'Embarque'),
+    sortableTh(state.sort, 'minhas', 'periodo', 'Período'),
+    sortableTh(state.sort, 'minhas', 'hotel', 'Hotel'),
+    sortableTh(state.sort, 'minhas', 'status', 'Status'),
+    '<th>Ações</th>',
+  ].join('');
+}
+
+function minhasSortValue(row, column) {
+  switch (column) {
+    case 'codigo': return row.codigo || '';
+    case 'colaboradores': return row.colaboradores || '';
+    case 'cidade': return [row.cidade, row.uf].filter(Boolean).join('/');
+    case 'embarque': return row.local_embarque || '';
+    case 'periodo': return row.data_checkin_prevista || '';
+    case 'hotel': return row.hotel || '';
+    case 'status': return STATUS_SOLICITACAO[row.status_solicitacao] || row.status_solicitacao || '';
+    default: return '';
+  }
+}
+
+function alojTheadHtml(state) {
+  return [
+    sortableTh(state.sort, 'alojamento', 'alojamento', 'Alojamento'),
+    sortableTh(state.sort, 'alojamento', 'colaborador', 'Colaborador'),
+    sortableTh(state.sort, 'alojamento', 'desde', 'Desde'),
+    '<th>Ações</th>',
+  ].join('');
+}
+
 function getUserField(ctx, ...paths) {
   for (const path of paths) {
     const parts = path.split('.');
@@ -198,6 +257,8 @@ function injectStyles() {
     .hosp-table{width:100%;border-collapse:collapse;min-width:880px}
     .hosp-table th,.hosp-table td{padding:14px 16px;border-bottom:1px solid rgba(34,197,94,.14);text-align:left;vertical-align:top;font-size:12px}
     .hosp-table th{position:sticky;top:0;z-index:2;background:#082117;color:#4f9670;font-size:8.5px;text-transform:uppercase;letter-spacing:.18em;font-weight:850}
+    .hosp-sort-btn{width:100%;display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:#4f9670;font:inherit;text-transform:uppercase;letter-spacing:.18em;text-align:left;cursor:pointer;padding:0}
+    .hosp-sort-btn:hover{color:#7bf2ad}.hosp-sort-icon{font-size:12px;opacity:.55}.hosp-sort-icon.active{opacity:1;color:#2dd778}
     .hosp-table th:first-child{border-top-left-radius:15px}.hosp-table th:last-child{border-top-right-radius:15px}
     .hosp-table tr:last-child td{border-bottom:0}
     .hosp-table tr:hover td{background:rgba(45,215,120,.035)}
@@ -254,6 +315,10 @@ export function renderContent(content, userContext) {
     clientes: [],
     alojamentos: [],
     ocupantes: [],
+    sort: {
+      minhas: { column: '', direction: 'asc' },
+      alojamento: { column: '', direction: 'asc' },
+    },
   };
 
   content.innerHTML = `
@@ -332,7 +397,7 @@ export function renderContent(content, userContext) {
 
           <div class="hosp-table-wrap">
             <table class="hosp-table">
-              <thead><tr><th>Código</th><th>Colaboradores</th><th>Cidade</th><th>Embarque</th><th>Período</th><th>Hotel</th><th>Status</th><th>Ações</th></tr></thead>
+              <thead><tr id="minhasTheadRow">${minhasTheadHtml(state)}</tr></thead>
               <tbody id="minhasTbody"><tr><td colspan="8" class="hosp-empty">Carregando...</td></tr></tbody>
             </table>
           </div>
@@ -359,7 +424,7 @@ export function renderContent(content, userContext) {
 
           <div class="hosp-table-wrap">
             <table class="hosp-table">
-              <thead><tr><th>Alojamento</th><th>Colaborador</th><th>Desde</th><th>Ações</th></tr></thead>
+              <thead><tr id="hospATheadRow">${alojTheadHtml(state)}</tr></thead>
               <tbody id="hospATbody"><tr><td colspan="4" class="hosp-empty">Carregando...</td></tr></tbody>
             </table>
           </div>
@@ -684,12 +749,19 @@ export function renderContent(content, userContext) {
     document.getElementById('statOpen').textContent = state.solicitacoes.filter((row) => ['SOLICITADA', 'EM_ANALISE', 'EM_COTACAO'].includes(row.status_solicitacao)).length;
     document.getElementById('statReserved').textContent = state.solicitacoes.filter((row) => row.status_solicitacao === 'RESERVADA').length;
 
+    renderMinhasTbody();
+  }
+
+  function renderMinhasTbody() {
+    const tbody = document.getElementById('minhasTbody');
+    if (!tbody) return;
     if (!state.solicitacoes.length) {
       tbody.innerHTML = '<tr><td colspan="8" class="hosp-empty">Nenhuma solicitação encontrada.</td></tr>';
       return;
     }
 
-    tbody.innerHTML = state.solicitacoes.map((row) => {
+    const rows = sortRows(state.sort, 'minhas', state.solicitacoes, minhasSortValue);
+    tbody.innerHTML = rows.map((row) => {
       const encerrada = ['CANCELADA', 'CONCLUIDA'].includes(row.status_solicitacao);
       return `
       <tr>
@@ -774,6 +846,16 @@ export function renderContent(content, userContext) {
   document.getElementById('addColabBtn').addEventListener('click', () => addColabRow());
   document.getElementById('clearBtn').addEventListener('click', resetForm);
   document.getElementById('refreshBtn').addEventListener('click', () => loadSolicitacoes());
+  document.getElementById('minhasTheadRow').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-sort-column]');
+    if (!btn) return;
+    const kind = btn.dataset.sortKind;
+    const column = btn.dataset.sortColumn;
+    const current = state.sort[kind];
+    state.sort[kind] = { column, direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc' };
+    document.getElementById('minhasTheadRow').innerHTML = minhasTheadHtml(state);
+    renderMinhasTbody();
+  });
   document.getElementById('minhasTbody').addEventListener('click', (event) => {
     const btn = event.target.closest('[data-act]');
     if (!btn || btn.disabled) return;
@@ -877,7 +959,14 @@ export function renderContent(content, userContext) {
       return;
     }
 
-    tbody.innerHTML = filtrados.map((o) => `
+    const ordenados = sortRows(state.sort, 'alojamento', filtrados, (o, column) => {
+      if (column === 'alojamento') return o.alojamentoNome || '';
+      if (column === 'colaborador') return o.nome || '';
+      if (column === 'desde') return o.checkin || '';
+      return '';
+    });
+
+    tbody.innerHTML = ordenados.map((o) => `
       <tr>
         <td>${esc(o.alojamentoNome)}</td>
         <td>${esc(o.nome)}</td>
@@ -951,6 +1040,16 @@ export function renderContent(content, userContext) {
     await adicionarColaboradorAlojamento(aloj, found);
   });
 
+  document.getElementById('hospATheadRow').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-sort-column]');
+    if (!btn) return;
+    const kind = btn.dataset.sortKind;
+    const column = btn.dataset.sortColumn;
+    const current = state.sort[kind];
+    state.sort[kind] = { column, direction: current.column === column && current.direction === 'asc' ? 'desc' : 'asc' };
+    document.getElementById('hospATheadRow').innerHTML = alojTheadHtml(state);
+    renderAlojamentos();
+  });
   document.getElementById('hospATbody').addEventListener('click', (event) => {
     const btn = event.target.closest('[data-encerrar-estadia]');
     if (!btn) return;
