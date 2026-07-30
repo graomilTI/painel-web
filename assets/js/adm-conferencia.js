@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { confirmar } from './core/ui.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1105,11 +1106,27 @@ function confirmarReautorizacao(id) {
   return window.confirm(`Esta despesa já foi conferida/autorizada em ${quando}. Autorizar novamente mesmo assim?`);
 }
 
-async function updateDespesaStatus(id, status) {
+// X (Recusar) precisa do motivo pra alimentar Gestor > Programação > Recusas
+// com algo além de "Não informado." — sem isso o gestor não sabia o que
+// contestar (pedido da usuária).
+async function abrirRecusaComMotivo(id) {
+  const motivo = await confirmar({
+    titulo: 'Recusar despesa',
+    mensagem: 'Essa despesa vai para Gestor > Programação > Recusas. Explique o motivo da recusa:',
+    confirmarLabel: 'Recusar',
+    justificativa: true,
+    justificativaMin: 5,
+    justificativaPlaceholder: 'Ex.: valor divergente do comprovante...',
+  });
+  if (!motivo) return;
+  await updateDespesaStatus(id, 'PENDENCIA', motivo);
+}
+
+async function updateDespesaStatus(id, status, motivo = null) {
   const row = state.despesas.find((item) => String(item.id) === String(id));
   if (!row) return;
 
-  const note = row.observacao_conferencia || '';
+  const note = motivo !== null ? motivo : (row.observacao_conferencia || '');
   setFeedback('Salvando conferência...');
 
   const payload = {
@@ -1274,6 +1291,11 @@ function bindEvents() {
     const btn = event.target.closest('[data-action][data-id]');
     if (!btn) return;
     if (isDespesaJaAutorizada(btn.dataset.id, btn.dataset.action) && !confirmarReautorizacao(btn.dataset.id)) return;
+
+    if (btn.dataset.action === 'PENDENCIA') {
+      abrirRecusaComMotivo(btn.dataset.id);
+      return;
+    }
     updateDespesaStatus(btn.dataset.id, btn.dataset.action);
   });
 }
