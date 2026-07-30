@@ -1,0 +1,299 @@
+# Agente de lançamento de Notas Fiscais no GRM
+
+## O que foi implementado
+
+O agente lê XML, PDF e imagens da pasta do Google Drive, extrai os dados da nota e abre **Financeiro → Contas a Pagar → Nova Conta** em:
+
+`https://www.grmserver.com.br/finance/payInvoice`
+
+Ele preenche os campos vistos nas telas do GRM:
+
+- Empresa;
+- Identificação;
+- Data da Conta;
+- Tipo Favorecido e Fornecedor;
+- Grupo de Categoria e Categoria;
+- Data de Vencimento;
+- Valor Total;
+- Intervalo de Cobrança e quantidade de parcelas, quando configurados;
+- Tipo e número do documento;
+- Forma de Pagamento;
+- Descrição;
+- Rateio por Coordenação, com `GERAL` como padrão;
+- anexo do documento original.
+
+## Proteções
+
+- começa em `dry-run`;
+- nunca salva uma nota com campo obrigatório faltando;
+- categoria e grupo precisam corresponder exatamente ao texto do GRM;
+- trava duplicidade por arquivo do Drive e por `CNPJ + número + data + valor`;
+- registra toda execução no Supabase;
+- devolve código de saída diferente de zero quando houver erro técnico;
+- salva screenshot e HTML em caso de falha;
+- processa no máximo 1 arquivo inicialmente; depois pode subir para 5.
+
+## Limitação encontrada no acesso ao Drive
+
+A pasta informada não ficou acessível pela conexão Google Drive desta conversa. No servidor, o agente usa uma **conta de serviço Google**. Compartilhe a pasta com o e-mail `client_email` existente em `google-service-account.json`, como **Leitor**. Para mover arquivos após o lançamento, compartilhe como **Editor**.
+
+## Prioridade de leitura
+
+1. XML da NF-e;
+2. texto interno do PDF usando `pdftotext`;
+3. OCR do PDF/imagem pelo Google Cloud Vision.
+
+## Dependência do servidor
+
+No AlmaLinux 8:
+
+```bash
+sudo dnf install -y poppler-utils
+```
+
+Não há nova dependência NPM. O agente utiliza os pacotes que já existem no projeto: `dotenv`, `@supabase/supabase-js`, `puppeteer-extra` e `puppeteer-extra-plugin-stealth`.
+
+## Arquivos do pacote
+
+```text
+grm-sync-lancar-notas-fiscais.js
+patch-grm-lancar-notas-fiscais.js
+env-grm-lancar-notas-fiscais.example
+config/grm-lancar-notas-fiscais.json
+config/exemplo-metadados-nota.json
+sql/20260730010000_grm_nf_lancamentos.sql
+```
+
+## 1. Instalação
+
+Copie os arquivos para:
+
+```text
+/home/grao100/painel-scripts/grm-sync
+```
+
+Mantenha a estrutura `config/` e `sql/`.
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+
+chown -R grao100:grao100 \
+  grm-sync-lancar-notas-fiscais.js \
+  patch-grm-lancar-notas-fiscais.js \
+  config/grm-lancar-notas-fiscais.json
+
+chmod 750 \
+  grm-sync-lancar-notas-fiscais.js \
+  patch-grm-lancar-notas-fiscais.js
+```
+
+## 2. Banco Supabase
+
+Execute no SQL Editor:
+
+```text
+sql/20260730010000_grm_nf_lancamentos.sql
+```
+
+As tabelas criadas são:
+
+- `grm_nf_lancamentos`;
+- `grm_nf_lancamento_execucoes`.
+
+## 3. Configurar o Google
+
+Coloque a credencial em:
+
+```text
+/home/grao100/painel-scripts/grm-sync/google-service-account.json
+```
+
+Ative no mesmo projeto Google Cloud:
+
+- Google Drive API;
+- Cloud Vision API.
+
+Compartilhe a pasta `1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e` com o `client_email` da conta de serviço.
+
+## 4. Configurar categorias
+
+`config/grm-lancar-notas-fiscais.json` já vem preenchido com os textos reais conferidos ao vivo no GRM (Contas a Pagar → filtro Grupo de Categoria/Categoria) em 30/07/2026:
+
+| Pasta/palavra-chave | Grupo de Categoria | Categoria |
+|---|---|---|
+| `HOSPEDAGEM` | DESPESAS OPERACIONAIS | HOSPEDAGEM |
+| `FROTAS` (padrão) | DESPESAS COM VEICULOS | *(definida por palavra-chave ou JSON lateral)* |
+| palavra-chave PNEU/PNEUS | DESPESAS COM VEICULOS | PNEUS AQUISICAO |
+| palavra-chave GASOLINA/ETANOL/DIESEL/COMBUSTÍVEL | COMBUSTIVEIS E LUBRIFICANTES | COMBUSTIVEL |
+| `RH` (padrão) | DESPESAS RH | *(definida por palavra-chave ou JSON lateral)* |
+| palavra-chave UNIFORME/CRACHÁ | DESPESAS RH | UNIFORME/CRACHA |
+
+**Atenção:** o GRM não tem categorias separadas "UNIFORME" e "CRACHA" — existe só uma categoria combinada `UNIFORME/CRACHA`. Uma versão anterior deste config usava os nomes errados; já corrigido.
+
+Ainda falta preencher a pasta `COMPRAS`: ela não tem um Grupo/Categoria único no GRM (pode cair em MATERIAL EXPEDIENTE, PATRIMONIO, etc. dependendo do item), então ficou com o placeholder `PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM` de propósito — notas dessa pasta ficam em `AGUARDANDO_CLASSIFICACAO` até você decidir se quer uma regra por palavra-chave ou exigir sempre o JSON lateral (`config/exemplo-metadados-nota.json` como modelo).
+
+O agente não tenta adivinhar grupo contábil. Sem preenchimento, a nota fica como `AGUARDANDO_CLASSIFICACAO` e não é lançada.
+
+Confirme também `empresa_cnpj` em `config/grm-lancar-notas-fiscais.json` → `defaults` (hoje vazio). Esse campo é usado para diferenciar o CNPJ da GRAOMIL do CNPJ do fornecedor ao extrair texto de PDF/imagem via OCR; sem ele, um documento que traga o CNPJ da própria empresa pode ser lido por engano como CNPJ do fornecedor.
+
+### Metadado lateral opcional
+
+Para garantir 100% dos dados de uma nota, crie um JSON com o mesmo nome-base do arquivo:
+
+```text
+nota-220000.pdf
+nota-220000.json
+```
+
+Use `config/exemplo-metadados-nota.json` como modelo. O JSON sobrescreve os dados extraídos por XML/PDF/OCR.
+
+## 5. Adicionar variáveis ao `.env`
+
+Copie as linhas de:
+
+```text
+env-grm-lancar-notas-fiscais.example
+```
+
+Mantenha inicialmente:
+
+```dotenv
+GRM_LANCAR_NF_AGENDAR=false
+GRM_LANCAR_NF_DRY_RUN=true
+GRM_LANCAR_NF_MAX_POR_EXECUCAO=1
+```
+
+## 6. Integrar ao worker e scheduler
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+
+/home/grao100/bin/node \
+  patch-grm-lancar-notas-fiscais.js \
+  /home/grao100/painel-scripts/grm-sync
+```
+
+O patch adiciona:
+
+```text
+sync-lancar-notas-fiscais → grm-sync-lancar-notas-fiscais.js
+```
+
+O scheduler só agenda o agente quando `GRM_LANCAR_NF_AGENDAR=true`.
+
+## 7. Validar sintaxe
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+
+/home/grao100/bin/node --check grm-sync-lancar-notas-fiscais.js
+/home/grao100/bin/node --check patch-grm-lancar-notas-fiscais.js
+/home/grao100/bin/node --check worker/grm-sync-job-worker.js
+/home/grao100/bin/node --check worker/grm-sync-auto-scheduler.js
+```
+
+## 8. Primeiro teste em dry-run
+
+O dry-run abre e preenche a Nova Conta, adiciona o rateio e cancela antes de salvar.
+
+```bash
+runuser -u grao100 -- bash -c '
+  cd /home/grao100/painel-scripts/grm-sync &&
+
+  env \
+    HOME=/home/grao100 \
+    TMP=/home/grao100/chrome-runtime/tmp \
+    TEMP=/home/grao100/chrome-runtime/tmp \
+    TMPDIR=/home/grao100/chrome-runtime/tmp \
+    XDG_RUNTIME_DIR=/home/grao100/chrome-runtime/tmp \
+    XDG_CACHE_HOME=/home/grao100/chrome-runtime/cache \
+    XDG_CONFIG_HOME=/home/grao100/chrome-runtime/config \
+    GRM_HEADLESS=true \
+    /home/grao100/bin/node grm-sync-lancar-notas-fiscais.js \
+      --dry-run \
+      --limit 1 \
+      --debug \
+      --force
+'
+```
+
+Resultado esperado:
+
+```text
+DRY_RUN_OK
+formulário validado sem salvar
+```
+
+## 9. Primeiro lançamento real
+
+Confira no Supabase o registro `DRY_RUN_OK`. Depois altere temporariamente:
+
+```dotenv
+GRM_LANCAR_NF_DRY_RUN=false
+```
+
+Execute apenas uma nota:
+
+```bash
+runuser -u grao100 -- bash -c '
+  cd /home/grao100/painel-scripts/grm-sync &&
+
+  env \
+    HOME=/home/grao100 \
+    TMP=/home/grao100/chrome-runtime/tmp \
+    TEMP=/home/grao100/chrome-runtime/tmp \
+    TMPDIR=/home/grao100/chrome-runtime/tmp \
+    XDG_RUNTIME_DIR=/home/grao100/chrome-runtime/tmp \
+    XDG_CACHE_HOME=/home/grao100/chrome-runtime/cache \
+    XDG_CONFIG_HOME=/home/grao100/chrome-runtime/config \
+    GRM_HEADLESS=true \
+    GRM_LANCAR_NF_DRY_RUN=false \
+    /home/grao100/bin/node grm-sync-lancar-notas-fiscais.js \
+      --real \
+      --limit 1 \
+      --debug \
+      --force
+'
+```
+
+Confirme no GRM pelo número do documento e código/grupo criado.
+
+## 10. Ativar o agendamento
+
+Depois de dois lançamentos reais corretos:
+
+```dotenv
+GRM_LANCAR_NF_AGENDAR=true
+GRM_LANCAR_NF_DRY_RUN=false
+GRM_LANCAR_NF_MAX_POR_EXECUCAO=5
+GRM_LANCAR_NF_INTERVALO_MINUTOS=10
+```
+
+O agente entra na mesma fila serializada dos demais agentes Puppeteer.
+
+## Status possíveis
+
+| Status | Significado |
+|---|---|
+| `PROCESSANDO` | arquivo em leitura |
+| `AGUARDANDO_DADOS` | faltou vencimento, valor, fornecedor, documento ou pagamento |
+| `AGUARDANDO_CLASSIFICACAO` | grupo/categoria ainda não foram definidos |
+| `VALIDADO` | dados prontos para abrir o GRM |
+| `DRY_RUN_OK` | formulário foi preenchido e cancelado |
+| `LANCADO` | salvo no GRM |
+| `DUPLICADO` | mesma NF já processada |
+| `ERRO` | falha técnica ou rejeição do GRM |
+
+## Observação sobre parcelas
+
+Quando o XML contém mais de uma duplicata, o agente não inventa o intervalo. É necessário informar no JSON lateral:
+
+```json
+{
+  "intervalo_cobranca": "Mensal",
+  "qtd_parcelas": 3,
+  "data_vencimento": "30/08/2026"
+}
+```
+
+Os textos das opções devem ser exatamente os exibidos pelo GRM.
