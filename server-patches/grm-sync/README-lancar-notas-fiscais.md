@@ -2,13 +2,13 @@
 
 ## O que foi implementado
 
-O agente lê XML, PDF e imagens da pasta do Google Drive, extrai os dados da nota e abre **Financeiro → Contas a Pagar → Nova Conta** em:
+O agente lê a fila de notas enviadas pela página **Enviar Notas Fiscais** do painel-web (upload direto, sem Google Drive), extrai os dados de cada uma e abre **Financeiro → Contas a Pagar → Nova Conta** em:
 
 `https://www.grmserver.com.br/finance/payInvoice`
 
 Ele preenche os campos vistos nas telas do GRM:
 
-- Empresa;
+- Empresa (decidida pelo CNPJ/CPF do destinatário lido da própria nota);
 - Identificação;
 - Data da Conta;
 - Tipo Favorecido e Fornecedor;
@@ -27,21 +27,21 @@ Ele preenche os campos vistos nas telas do GRM:
 - começa em `dry-run`;
 - nunca salva uma nota com campo obrigatório faltando;
 - categoria e grupo precisam corresponder exatamente ao texto do GRM;
-- trava duplicidade por arquivo do Drive e por `CNPJ + número + data + valor`;
+- trava duplicidade por `CNPJ + número + data + valor` (fingerprint);
 - registra toda execução no Supabase;
 - devolve código de saída diferente de zero quando houver erro técnico;
 - salva screenshot e HTML em caso de falha;
 - processa no máximo 1 arquivo inicialmente; depois pode subir para 5.
 
-## Limitação encontrada no acesso ao Drive
+## Origem dos arquivos: upload no painel, não Google Drive
 
-A pasta informada não ficou acessível pela conexão Google Drive desta conversa. No servidor, o agente usa uma **conta de serviço Google só para o Drive** (ver seção "Google Drive" abaixo). Compartilhe a pasta com o e-mail `client_email` existente em `google-service-account.json`, como **Leitor**. Para mover arquivos após o lançamento, compartilhe como **Editor**.
+A versão original deste pacote lia de uma pasta do Google Drive, o que exigia criar uma conta de serviço Google só pra isso. Trocado por um upload direto no painel-web: a página **Enviar Notas Fiscais** (`upload-notas-fiscais.html`, menu "NOTAS FISCAIS") sobe o arquivo pro bucket `notas-fiscais` do Supabase Storage e cria a linha correspondente em `grm_nf_lancamentos` com `status = 'NOVO'`. O agente só lê essa fila — não precisa de Google Cloud, Drive API nem service account.
 
 ## Prioridade de leitura
 
 1. XML da NF-e;
 2. texto interno do PDF usando `pdftotext`;
-3. OCR do PDF/imagem via **Groq** (mesmo provedor da edge function `ocr-comprovante`, que já lê CNPJ/valor/data de comprovantes financeiros) — não usa Google Cloud Vision. Basta a `GROQ_API_KEY` já usada em outros pontos do projeto (edge function `ocr-comprovante`, `email-worker`); não precisa criar nada novo pra isso.
+3. OCR do PDF/imagem via **Groq** (mesmo provedor da edge function `ocr-comprovante`, que já lê CNPJ/valor/data de comprovantes financeiros) — não usa Google Cloud Vision. Basta a `GROQ_API_KEY` já usada em outros pontos do projeto (edge function `ocr-comprovante`, `email-worker`).
 
 ## Dependência do servidor
 
@@ -60,9 +60,10 @@ grm-sync-lancar-notas-fiscais.js
 patch-grm-lancar-notas-fiscais.js
 env-grm-lancar-notas-fiscais.example
 config/grm-lancar-notas-fiscais.json
-config/exemplo-metadados-nota.json
 sql/20260730010000_grm_nf_lancamentos.sql
 ```
+
+No repositório painel-web, além disso: `upload-notas-fiscais.html` e `assets/js/upload-notas-fiscais.js` (a página de envio) — esses fazem parte do deploy normal do site (GitHub Pages), não precisam ir pro servidor de scripts.
 
 ## 1. Instalação
 
@@ -97,83 +98,41 @@ sql/20260730010000_grm_nf_lancamentos.sql
 
 As tabelas criadas são:
 
-- `grm_nf_lancamentos`;
+- `grm_nf_lancamentos` — inclui `storage_bucket`, `storage_path`, `setor` e `enviado_por` (quem subiu o arquivo pela página do painel), além da policy de INSERT que permite o próprio usuário autenticado criar a linha ao enviar.
 - `grm_nf_lancamento_execucoes`.
 
-## 3. Configurar o Google Drive
-
-**Não existe ainda** um `google-service-account.json` no servidor (confirmado em 30/07/2026 — o arquivo não existe em `/home/grao100/painel-scripts/grm-sync/`). É só pra acesso ao Drive agora (o OCR usa Groq, não Google Cloud Vision — ver seção 5).
-
-1. Google Cloud Console → criar um projeto (ou reaproveitar um que a Grão 1000 já tenha) para essa automação.
-2. Ativar **Google Drive API** nesse projeto (não precisa mais de Cloud Vision API).
-3. IAM e Admin → Contas de Serviço → criar uma conta de serviço.
-4. Nessa conta → aba Chaves → Adicionar chave → Criar nova chave → JSON.
-5. Enviar o arquivo baixado para:
-
-```text
-/home/grao100/painel-scripts/grm-sync/google-service-account.json
-```
-
-6. Compartilhar a pasta `1j6Yem3_fr2FWO0s7SiUWj9N1_CQeKut5e` com o `client_email` dessa conta de serviço, como Leitor.
-
-## 4. Configurar categorias
+## 3. Configurar categorias
 
 `config/grm-lancar-notas-fiscais.json` já vem preenchido com os textos reais conferidos ao vivo no GRM (Contas a Pagar → filtro Grupo de Categoria/Categoria) em 30/07/2026:
 
-| Pasta/palavra-chave | Grupo de Categoria | Categoria |
+| Setor (escolhido no upload) | Grupo de Categoria | Categoria |
 |---|---|---|
 | `HOSPEDAGEM` | DESPESAS OPERACIONAIS | HOSPEDAGEM |
-| `FROTAS` (padrão) | DESPESAS COM VEICULOS | *(definida por palavra-chave ou JSON lateral)* |
+| `FROTAS` (padrão) | DESPESAS COM VEICULOS | *(definida por palavra-chave)* |
 | palavra-chave PNEU/PNEUS | DESPESAS COM VEICULOS | PNEUS AQUISICAO |
 | palavra-chave GASOLINA/ETANOL/DIESEL/COMBUSTÍVEL | COMBUSTIVEIS E LUBRIFICANTES | COMBUSTIVEL |
-| `RH` (padrão) | DESPESAS RH | *(definida por palavra-chave ou JSON lateral)* |
+| `RH` (padrão) | DESPESAS RH | *(definida por palavra-chave)* |
 | palavra-chave UNIFORME/CRACHÁ | DESPESAS RH | UNIFORME/CRACHA |
 | palavra-chave SOFTWARE/SISTEMA/LICENÇA/ASSINATURA | DESPESAS ADMINISTRATIVAS | SOFTWARE/SISTEMA |
 | palavra-chave INTERNET/TELEFONIA | DESPESAS ADMINISTRATIVAS | INTERNET/TELEFONE |
 | palavra-chave ENERGIA ELÉTRICA | DESPESAS ADMINISTRATIVAS | ENERGIA ELETRICA |
 | palavra-chave MATERIAL DE EXPEDIENTE/PAPELARIA | DESPESAS ADMINISTRATIVAS | MATERIAL EXPEDIENTE |
 
-**Atenção:** o GRM não tem categorias separadas "UNIFORME" e "CRACHA" — existe só uma categoria combinada `UNIFORME/CRACHA`. Uma versão anterior deste config usava os nomes errados; já corrigido.
+**Atenção:** o GRM não tem categorias separadas "UNIFORME" e "CRACHA" — existe só uma categoria combinada `UNIFORME/CRACHA`.
 
-As 4 palavras-chave novas (Software, Internet, Energia, Material de Expediente) vieram da mineração do extrato completo "Lista de Rateios" do GRM (5.352 lançamentos históricos, arquivo fornecido em 30/07/2026) — são os padrões mais recorrentes de despesas administrativas/compras que não são veículo, hospedagem nem RH.
+As 4 palavras-chave de despesas administrativas vieram da mineração do extrato completo "Lista de Rateios" do GRM (5.352 lançamentos históricos) — são os padrões mais recorrentes de despesas que não são veículo, hospedagem nem RH.
 
-**Pasta `COMPRAS` continua sem um Grupo/Categoria único de propósito.** Ela não tem um padrão fixo no GRM — pode cair em DESPESAS ADMINISTRATIVAS (a maioria) ou em PATRIMONIO (equipamento/imobilizado acima de R$500, ex.: `IMOBILIZADO (MAIOR QUE 500,00)`) dependendo do item e do valor, e essa distinção por valor não dá pra automatizar com segurança sem risco de classificar errado. Notas que baterem em uma das 4 palavras-chave acima são classificadas automaticamente; as demais ficam em `AGUARDANDO_CLASSIFICACAO` até você revisar e, se for um item recorrente, adicionar uma nova regra — ou usar o JSON lateral (`config/exemplo-metadados-nota.json`) pra informar `grupo_categoria`/`categoria` nota a nota.
+**Setor `COMPRAS` continua sem um Grupo/Categoria único de propósito.** Não tem um padrão fixo no GRM — pode cair em DESPESAS ADMINISTRATIVAS (a maioria) ou em PATRIMONIO (equipamento/imobilizado acima de R$500, ex.: `IMOBILIZADO (MAIOR QUE 500,00)`) dependendo do item e do valor, e essa distinção por valor não dá pra automatizar com segurança. Notas que baterem em uma das palavras-chave acima são classificadas automaticamente; as demais ficam em `AGUARDANDO_CLASSIFICACAO` até revisão manual.
 
 O agente não tenta adivinhar grupo contábil. Sem preenchimento, a nota fica como `AGUARDANDO_CLASSIFICACAO` e não é lançada.
 
-### Empresa (CNPJ/CPF lido de cada nota — não é mais fixo)
+### Empresa (CNPJ/CPF lido de cada nota — não é fixo)
 
-O GRM tem **6 empresas cadastradas** em Contas a Pagar → Nova Conta → Empresa: `GRAOMIL LTDA`, `BV GRAIN`, `EXCELENCIA`, `CAR1000`, `ELIZEU MOTA`, `DOUGLAS HENRIQUE MOTA 09987821901`. O agente decide qual delas usar pelo **CNPJ/CPF do destinatário lido do próprio arquivo** (tag `dest` do XML da NF-e, ou o segundo CNPJ/CPF encontrado no texto do PDF/imagem) — nunca por um valor fixo, porque lançar uma conta na empresa errada é um erro contábil real.
+O GRM tem **6 empresas cadastradas** em Contas a Pagar → Nova Conta → Empresa: `GRAOMIL LTDA`, `BV GRAIN`, `EXCELENCIA`, `CAR1000`, `ELIZEU MOTA`, `DOUGLAS HENRIQUE MOTA 09987821901`. O agente decide qual delas usar pelo **CNPJ/CPF do destinatário lido do próprio arquivo** (tag `dest` do XML da NF-e, ou o CNPJ/CPF encontrado no texto do PDF/imagem que bate com um dos cadastrados) — nunca por um valor fixo.
 
-Isso é configurado em `config/grm-lancar-notas-fiscais.json` → `empresas`:
+Já configurado em `config/grm-lancar-notas-fiscais.json` → `empresas`, com os 6 documentos preenchidos. Se uma nota trouxer um CNPJ/CPF de destinatário que não bater com nenhuma das 6 entradas, ela fica em `AGUARDANDO_DADOS` (campo `empresa` ausente) em vez de cair na empresa errada — sinal de uma 7ª empresa nova, ou de documento ilegível.
 
-```json
-"empresas": [
-  { "documento": "29666679000134", "nome": "GRAOMIL LTDA" },
-  { "documento": "09987821901", "nome": "DOUGLAS HENRIQUE MOTA 09987821901" },
-  { "documento": "32202416000189", "nome": "BV GRAIN" },
-  { "documento": "36514493000125", "nome": "EXCELENCIA" },
-  { "documento": "35134829000161", "nome": "CAR1000" },
-  { "documento": "04429697000171", "nome": "ELIZEU MOTA" }
-]
-```
-
-**As 6 empresas já estão preenchidas** (confirmado 30/07/2026): GRAOMIL LTDA (CNPJ do rodapé do relatório "Lista de Rateios"), DOUGLAS HENRIQUE MOTA (CPF, já aparece no próprio nome dela no GRM), e BV GRAIN/EXCELENCIA/CAR1000/ELIZEU MOTA (CNPJs informados por você).
-
-Se uma nota trouxer um CNPJ/CPF de destinatário que não bater com nenhuma dessas 6 entradas, ela fica em `AGUARDANDO_DADOS` (campo `empresa` ausente) em vez de cair na empresa errada — sinal de que é uma 7ª empresa nova, ou de que o documento veio ilegível.
-
-### Metadado lateral opcional
-
-Para garantir 100% dos dados de uma nota, crie um JSON com o mesmo nome-base do arquivo:
-
-```text
-nota-220000.pdf
-nota-220000.json
-```
-
-Use `config/exemplo-metadados-nota.json` como modelo. O JSON sobrescreve os dados extraídos por XML/PDF/OCR.
-
-## 5. Adicionar variáveis ao `.env`
+## 4. Adicionar variáveis ao `.env`
 
 Copie as linhas de:
 
@@ -191,7 +150,7 @@ GRM_LANCAR_NF_DRY_RUN=true
 GRM_LANCAR_NF_MAX_POR_EXECUCAO=1
 ```
 
-## 6. Integrar ao worker e scheduler
+## 5. Integrar ao worker e scheduler
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
@@ -209,7 +168,7 @@ sync-lancar-notas-fiscais → grm-sync-lancar-notas-fiscais.js
 
 O scheduler só agenda o agente quando `GRM_LANCAR_NF_AGENDAR=true`.
 
-## 7. Validar sintaxe
+## 6. Validar sintaxe
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
@@ -220,7 +179,9 @@ cd /home/grao100/painel-scripts/grm-sync
 /home/grao100/bin/node --check worker/grm-sync-auto-scheduler.js
 ```
 
-## 8. Primeiro teste em dry-run
+## 7. Primeiro teste em dry-run
+
+Envie um arquivo de teste pela página **Enviar Notas Fiscais** no painel antes de rodar isso — o agente só processa o que estiver com `status = 'NOVO'` em `grm_nf_lancamentos`.
 
 O dry-run abre e preenche a Nova Conta, adiciona o rateio e cancela antes de salvar.
 
@@ -252,7 +213,9 @@ DRY_RUN_OK
 formulário validado sem salvar
 ```
 
-## 9. Primeiro lançamento real
+Pra testar uma nota específica (por exemplo, uma que já foi processada antes), use `--upload-id <id da linha em grm_nf_lancamentos>` no lugar de `--limit`.
+
+## 8. Primeiro lançamento real
 
 Confira no Supabase o registro `DRY_RUN_OK`. Depois altere temporariamente:
 
@@ -286,7 +249,7 @@ runuser -u grao100 -- bash -c '
 
 Confirme no GRM pelo número do documento e código/grupo criado.
 
-## 10. Ativar o agendamento
+## 9. Ativar o agendamento
 
 Depois de dois lançamentos reais corretos:
 
@@ -303,8 +266,9 @@ O agente entra na mesma fila serializada dos demais agentes Puppeteer.
 
 | Status | Significado |
 |---|---|
+| `NOVO` | enviado pela página, ainda não pego pelo agente |
 | `PROCESSANDO` | arquivo em leitura |
-| `AGUARDANDO_DADOS` | faltou vencimento, valor, fornecedor, documento ou pagamento |
+| `AGUARDANDO_DADOS` | faltou vencimento, valor, fornecedor, documento, pagamento ou empresa não reconhecida |
 | `AGUARDANDO_CLASSIFICACAO` | grupo/categoria ainda não foram definidos |
 | `VALIDADO` | dados prontos para abrir o GRM |
 | `DRY_RUN_OK` | formulário foi preenchido e cancelado |
@@ -312,16 +276,4 @@ O agente entra na mesma fila serializada dos demais agentes Puppeteer.
 | `DUPLICADO` | mesma NF já processada |
 | `ERRO` | falha técnica ou rejeição do GRM |
 
-## Observação sobre parcelas
-
-Quando o XML contém mais de uma duplicata, o agente não inventa o intervalo. É necessário informar no JSON lateral:
-
-```json
-{
-  "intervalo_cobranca": "Mensal",
-  "qtd_parcelas": 3,
-  "data_vencimento": "30/08/2026"
-}
-```
-
-Os textos das opções devem ser exatamente os exibidos pelo GRM.
+Esses status aparecem na própria página **Enviar Notas Fiscais** do painel, na tabela de envios recentes.

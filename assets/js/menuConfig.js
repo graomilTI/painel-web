@@ -142,7 +142,8 @@ export const MENU_CONFIG = [
   {
     grupo: "NOTAS FISCAIS",
     itens: [
-      item("notas_fiscais", "Painel de Notas Fiscais", "notas-fiscais", ["NOTAS_FISCAIS", "NF", "NFS", "FINANCEIRO_NOTAS_FISCAIS"])
+      item("notas_fiscais", "Painel de Notas Fiscais", "notas-fiscais", ["NOTAS_FISCAIS", "NF", "NFS", "FINANCEIRO_NOTAS_FISCAIS"]),
+      item("upload_notas_fiscais", "Enviar Notas Fiscais", "upload-notas-fiscais", ["NOTAS_FISCAIS", "NF", "NFS", "FINANCEIRO_NOTAS_FISCAIS"])
     ]
   },
 
