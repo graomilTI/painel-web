@@ -12,6 +12,7 @@ import { getCurrentUser } from './auth.js';
   'use strict';
 
   const STYLE_ID = 'mapa-operacional-style';
+  const FONTS_ID = 'mapa-operacional-fonts';
   const LEAFLET_CSS = 'leaflet-css-mapaop';
   const LEAFLET_JS = 'leaflet-js-mapaop';
   const TILE_LAYERS = {
@@ -178,38 +179,111 @@ import { getCurrentUser } from './auth.js';
   function passaFiltroPonto(p) { if (!p) return false; if (st.estado && p.uf !== st.estado) return false; if (st.ponto && p.__key !== st.ponto) return false; return true; }
   function osPorPonto(ponto) { return st.os.filter(o => o.__pontoKey === ponto.__key); }
 
+  function fonts() {
+    if (document.getElementById(FONTS_ID)) return;
+    const l = document.createElement('link');
+    l.id = FONTS_ID;
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap';
+    document.head.appendChild(l);
+  }
+
+  // "Console de despacho" — tema escuro técnico com Chakra Petch (títulos/rótulos, cara de HUD
+  // angular) + IBM Plex Mono (números/leituras, reforça "dado operacional ao vivo"). Pedido da
+  // usuária (2026-07-30): o visual anterior (herdado do resto do painel) estava "bruto" demais
+  // pra uma tela cujo produto final É o mapa — aqui ele vira o protagonista.
   function css() {
     if (document.getElementById(STYLE_ID)) return;
+    fonts();
     const s = document.createElement('style');
     s.id = STYLE_ID;
     s.textContent = `
-      .mo{color:#e2e8f0;display:flex;flex-direction:column;gap:12px}
-      .mo-card{border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.9));overflow:visible;position:relative;isolation:isolate}
-      .mo-head{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:12px;position:relative;z-index:30}
-      .mo h2{margin:0;color:#fff;font-size:24px;line-height:1}.mo p{color:#94a3b8;margin:5px 0 0;font-size:12px}
+      .mo{
+        --mo-green:#3fe08a; --mo-green-dim:#1c7a4d; --mo-amber:#f5a524;
+        --mo-bg:#050b09; --mo-panel:#0a1512; --mo-line:rgba(63,224,138,.16); --mo-line-2:rgba(63,224,138,.3);
+        --mo-text:#eafff2; --mo-muted:#7fa596;
+        font-family:'Chakra Petch',ui-sans-serif,system-ui,sans-serif;color:var(--mo-text);
+        display:flex;flex-direction:column;gap:14px;
+      }
+      .mo-mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+      .mo-card{
+        position:relative;isolation:isolate;overflow:hidden;border-radius:20px;
+        border:1px solid var(--mo-line);background:var(--mo-panel);
+        box-shadow:0 24px 60px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.03);
+      }
+      .mo-card::before{
+        content:'';position:absolute;inset:0;z-index:0;pointer-events:none;
+        background:
+          radial-gradient(680px 380px at 108% -12%, rgba(63,224,138,.16), transparent 60%),
+          radial-gradient(520px 320px at -8% 118%, rgba(245,165,36,.08), transparent 60%);
+      }
+      .mo-card::after{
+        content:'';position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.5;
+        background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.025) 0 1px, transparent 1px 3px);
+      }
+      .mo-head{position:relative;z-index:2;padding:20px 22px 14px;display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+      .mo-eyebrow{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--mo-green)}
+      .mo-live-dot{width:7px;height:7px;border-radius:50%;background:var(--mo-green);box-shadow:0 0 0 0 rgba(63,224,138,.6);animation:moPulseDot 1.8s ease-out infinite}
+      @keyframes moPulseDot{0%{box-shadow:0 0 0 0 rgba(63,224,138,.55)}70%{box-shadow:0 0 0 8px rgba(63,224,138,0)}100%{box-shadow:0 0 0 0 rgba(63,224,138,0)}}
+      .mo h2{margin:6px 0 0;font-size:26px;font-weight:700;letter-spacing:.01em;line-height:1.05}
+      .mo p{color:var(--mo-muted);margin:6px 0 0;font-size:12.5px;max-width:52ch;line-height:1.5}
       .mo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-      .mo-btn{border:1px solid rgba(34,197,94,.35);border-radius:12px;background:#166534;color:#ecfdf5;font-weight:900;padding:8px 12px;cursor:pointer}
-      .mo-select{height:38px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:#0d0d18;color:#e2e8f0;padding:0 12px;width:100%}
-      .mo-map-select{width:180px}
-      .mo-map-tools{position:relative;z-index:2500;padding:0 16px 10px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
-      .mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px}
-      .mo-body{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}
-      .mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;border:1px solid rgba(148,163,184,.14);border-radius:18px;background:#0d1117;z-index:1}
-      .mo-kpis{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
-      .mo-kpi{flex:1 0 126px;min-width:0;border:1px solid rgba(34,197,94,.18);border-radius:12px;padding:8px;background:rgba(2,6,23,.35)}
-      .mo-kpi span{display:block;font-size:8.5px;color:#94a3b8;font-weight:900;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .mo-kpi strong{display:block;color:#fff;font-size:16px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .mo-legend{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;color:#94a3b8;font-size:12px}
-      .mo-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid #fff;vertical-align:-2px;margin-right:5px}
-      .mo-legend .verde{background:#22c55e}
-      .mo-marker-toggle{border:1px solid rgba(34,197,94,.28);background:rgba(6,78,59,.45);color:#ecfdf5;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900;cursor:pointer}
-      .mo-marker-toggle.off{background:rgba(15,23,42,.72);border-color:rgba(148,163,184,.22);color:#94a3b8}
-      .mo-marker-badge{border:1px solid rgba(250,204,21,.35);background:rgba(120,53,15,.25);color:#fde68a;border-radius:999px;padding:6px 10px;font-size:11px;font-weight:900}
-      .mk{position:relative;width:13px;height:13px;border-radius:50%;border:1.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.25)}
-      .mk.os-ok{background:#22c55e}
-      .mo-load{padding:28px;text-align:center;color:#94a3b8}
-      .mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}.mo-map .leaflet-control{z-index:10!important}
-      @media(max-width:1100px){.mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}.mo-legend{justify-content:flex-start}.mo-map{height:560px;min-height:420px}.mo-filter{grid-template-columns:1fr}.mo-kpis{flex-wrap:nowrap}.mo-map-select{width:100%}}
+      .mo-seg{display:inline-flex;border:1px solid var(--mo-line);border-radius:11px;padding:3px;gap:2px;background:rgba(0,0,0,.25)}
+      .mo-seg button{border:0;background:transparent;color:var(--mo-muted);font:inherit;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:7px 11px;border-radius:8px;cursor:pointer;transition:background .15s,color .15s}
+      .mo-seg button:hover{color:var(--mo-text)}
+      .mo-seg button.active{background:var(--mo-green-dim);color:#eafff2;box-shadow:inset 0 0 0 1px var(--mo-line-2)}
+      .mo-btn{border:1px solid var(--mo-line-2);border-radius:11px;background:linear-gradient(180deg,rgba(63,224,138,.18),rgba(63,224,138,.06));color:#eafff2;font:inherit;font-weight:600;font-size:12.5px;letter-spacing:.02em;padding:9px 14px;cursor:pointer;transition:filter .15s,transform .05s}
+      .mo-btn:hover{filter:brightness(1.18)}.mo-btn:active{transform:translateY(1px)}
+      .mo-select-wrap{position:relative}
+      .mo-select{appearance:none;height:38px;border:1px solid var(--mo-line);border-radius:11px;background:#081310;color:var(--mo-text);padding:0 30px 0 12px;width:100%;font:inherit;font-size:12.5px;cursor:pointer}
+      .mo-select:focus{outline:none;border-color:var(--mo-green);box-shadow:0 0 0 3px rgba(63,224,138,.14)}
+      .mo-select-wrap::after{content:'';position:absolute;right:11px;top:50%;width:7px;height:7px;border-right:1.5px solid var(--mo-muted);border-bottom:1.5px solid var(--mo-muted);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+      .mo-map-tools{position:relative;z-index:2;padding:2px 22px 14px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}
+      .mo-filter{display:grid;grid-template-columns:180px 1fr;gap:8px;flex:1;min-width:280px}
+      .mo-body{position:relative;z-index:2;display:flex;flex-direction:column;gap:14px;padding:0 22px 22px}
+      .mo-map-wrap{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--mo-line);box-shadow:0 0 0 1px rgba(0,0,0,.4),0 20px 50px rgba(0,0,0,.5)}
+      .mo-map{height:calc(100vh - 300px);min-height:500px;max-height:760px;background:#060a09;z-index:1}
+      .mo-map-glow{position:absolute;inset:0;z-index:400;pointer-events:none;box-shadow:inset 0 0 90px rgba(0,0,0,.55),inset 0 0 0 1px rgba(63,224,138,.06)}
+      .mo-kpis{display:flex;gap:10px;flex-wrap:wrap}
+      .mo-kpi{position:relative;flex:1 1 160px;min-width:150px;border:1px solid var(--mo-line);border-radius:14px;padding:12px 14px 12px 16px;background:linear-gradient(160deg,rgba(63,224,138,.07),rgba(0,0,0,.2));overflow:hidden}
+      .mo-kpi::before{content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--mo-green);box-shadow:0 0 10px rgba(63,224,138,.7)}
+      .mo-kpi span{display:block;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--mo-muted);font-weight:600;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap}
+      .mo-kpi strong{display:block;font-family:'IBM Plex Mono',monospace;color:#fff;font-size:26px;font-weight:600;margin-top:5px;line-height:1;letter-spacing:.01em}
+      .mo-legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+      .mo-marker-toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--mo-line);background:rgba(255,255,255,.02);color:var(--mo-text);border-radius:999px;padding:7px 13px 7px 9px;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s}
+      .mo-marker-toggle .mo-dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 8px currentColor}
+      .mo-marker-toggle.off{opacity:.45;border-color:rgba(255,255,255,.08)}
+      .mo-marker-toggle.off .mo-dot{box-shadow:none}
+      .mo-marker-toggle[data-toggle-marker="os"] .mo-dot{background:var(--mo-green);color:var(--mo-green)}
+      .mo-marker-toggle[data-toggle-marker="rotas"] .mo-dot{background:var(--mo-amber);color:var(--mo-amber)}
+      .mo-marker-toggle:hover{border-color:var(--mo-line-2)}
+      .mo-marker-badge{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(245,165,36,.35);background:rgba(245,165,36,.08);color:#ffd98a;border-radius:999px;padding:7px 13px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+      .mk-wrap{width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+      .mk-ring{position:absolute;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--mo-green,#3fe08a);opacity:0;animation:moRadar 2.6s ease-out infinite}
+      .mk-core{position:relative;width:10px;height:10px;border-radius:50%;background:#3fe08a;border:1.5px solid #eafff2;box-shadow:0 0 10px rgba(63,224,138,.9),0 0 2px rgba(0,0,0,.4)}
+      @keyframes moRadar{0%{transform:scale(.3);opacity:.65}100%{transform:scale(2.3);opacity:0}}
+      .mo-load{padding:40px 20px;text-align:center;color:var(--mo-muted);font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.04em}
+      .mo-load::before{content:'';display:block;width:26px;height:26px;margin:0 auto 12px;border-radius:50%;border:2px solid rgba(63,224,138,.18);border-top-color:var(--mo-green);animation:moSpin .8s linear infinite}
+      @keyframes moSpin{to{transform:rotate(360deg)}}
+      .mo-map .leaflet-pane,.mo-map .leaflet-top,.mo-map .leaflet-bottom{z-index:1!important}
+      .mo-map .leaflet-control{z-index:10!important}
+      .mo-map .leaflet-control-zoom a{background:#0a1512!important;color:#eafff2!important;border-color:var(--mo-line)!important}
+      .mo-map .leaflet-control-zoom a:hover{background:#12241d!important}
+      .mo-route-frota{filter:drop-shadow(0 0 5px rgba(63,224,138,.65))}
+      .mo-route-reembolso{filter:drop-shadow(0 0 4px rgba(245,165,36,.55))}
+      .leaflet-tooltip.mo-tip{
+        background:#0a1512;color:#eafff2;border:1px solid var(--mo-line-2);border-radius:10px;
+        font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:1.55;padding:8px 11px;
+        box-shadow:0 12px 28px rgba(0,0,0,.5);
+      }
+      .leaflet-tooltip.mo-tip strong{font-family:'Chakra Petch',sans-serif;font-size:12.5px;color:#fff}
+      .leaflet-tooltip.mo-tip em{color:var(--mo-amber);font-style:normal}
+      .leaflet-tooltip.mo-tip.mo-tip-before::before{border-top-color:var(--mo-line-2)!important}
+      @media(max-width:1100px){
+        .mo-head{flex-direction:column}.mo-map-tools{flex-direction:column;align-items:stretch}
+        .mo-filter{grid-template-columns:1fr;min-width:0}.mo-legend{justify-content:flex-start}
+        .mo-map{height:560px;min-height:420px}
+      }
     `;
     document.head.appendChild(s);
   }
@@ -222,27 +296,70 @@ import { getCurrentUser } from './auth.js';
   function addCss(h, id) { if (document.getElementById(id)) return; const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = h; l.id = id; document.head.appendChild(l); }
   function scriptTag(src, id) { return new Promise((res, rej) => { if (document.getElementById(id)) return res(); const s = document.createElement('script'); s.src = src; s.id = id; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
-  function icon(t) {
-    return window.L.divIcon({ className: '', html: `<div class="mk ${t}"></div>`, iconSize: [13, 13], iconAnchor: [6.5, 6.5] });
+  function icon() {
+    return window.L.divIcon({
+      className: '',
+      html: '<div class="mk-wrap"><span class="mk-ring"></span><span class="mk-ring" style="animation-delay:.9s"></span><span class="mk-core"></span></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
   }
 
-  function kpiBox(label, valor) {
-    return `<div class="mo-kpi"><span>${esc(label)}</span><strong>${valor}</strong></div>`;
+  function kpiBox(label, valor, key) {
+    return `<div class="mo-kpi"><span>${esc(label)}</span><strong class="mo-kpi-val" data-kpi="${esc(key)}" data-target="${valor}">0</strong></div>`;
+  }
+
+  // Contagem animada (0 -> valor) só na 1ª pintura de cada KPI — reforça a sensação de "painel
+  // ao vivo" sem re-animar toda vez que o gestor só troca um filtro (checa se o valor já bateu).
+  function animateKpis(root) {
+    root.querySelectorAll('[data-kpi]').forEach(el => {
+      const target = Number(el.dataset.target) || 0;
+      const atual = Number(el.textContent.replace(/\D/g, '')) || 0;
+      if (atual === target) return;
+      const inicio = performance.now();
+      const dur = 550;
+      const passo = (t) => {
+        const p = Math.min(1, (t - inicio) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(target * eased);
+        if (p < 1) requestAnimationFrame(passo);
+      };
+      requestAnimationFrame(passo);
+    });
   }
 
   function html() {
     const estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
+    const BASES = [['escuro', 'Escuro'], ['real', 'Satélite'], ['padrao', 'Padrão']];
+    const frotaCount = st.rotasMapa.filter(r => r.tipo === 'frota').length;
+    const reembolsoCount = st.rotasMapa.filter(r => r.tipo === 'reembolso_km').length;
     return `
       <div class="mo"><section class="mo-card">
-        <div class="mo-head"><div><h2>Mapa operacional</h2><p>O.S. marcadas Atender pra hoje e rotas otimizadas dos colaboradores que as atendem.</p></div>
-          <div class="mo-actions"><select class="mo-select mo-map-select" data-map-base><option value="escuro" ${st.mapaBase === 'escuro' ? 'selected' : ''}>Mapa escuro</option><option value="real" ${st.mapaBase === 'real' ? 'selected' : ''}>Visualização real</option><option value="padrao" ${st.mapaBase === 'padrao' ? 'selected' : ''}>Mapa padrão</option></select><button class="mo-btn" data-reload>Atualizar</button></div>
+        <div class="mo-head">
+          <div>
+            <div class="mo-eyebrow"><span class="mo-live-dot"></span>Operacional · tempo real</div>
+            <h2>Mapa de despacho</h2>
+            <p>O.S. marcadas Atender pra hoje e as rotas otimizadas de quem vai atendê-las.</p>
+          </div>
+          <div class="mo-actions">
+            <div class="mo-seg" data-map-base>${BASES.map(([v, l]) => `<button type="button" data-base="${v}" class="${st.mapaBase === v ? 'active' : ''}">${esc(l)}</button>`).join('')}</div>
+            <button class="mo-btn" data-reload>↻ Atualizar</button>
+          </div>
         </div>
-        <div class="mo-map-tools"><div class="mo-filter"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select><select class="mo-select" data-ponto><option value="">Todos os pontos com O.S. Atender</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
-          <div class="mo-legend"><span class="mo-marker-badge" title="O mapa sempre mostra só as O.S. marcadas Atender pra hoje">📍 Hoje · Atender</span><button class="mo-marker-toggle ${st.mostrarOs ? '' : 'off'}" data-toggle-marker="os"><i class="verde"></i>O.S. ${st.mostrarOs ? 'On' : 'Off'}</button><button class="mo-marker-toggle ${st.mostrarRotas ? '' : 'off'}" data-toggle-marker="rotas" title="Frota = linha sólida · Reembolso km = tracejada"><i class="verde"></i>Rotas ${st.mostrarRotas ? 'On' : 'Off'}</button></div>
+        <div class="mo-map-tools">
+          <div class="mo-filter">
+            <div class="mo-select-wrap"><select class="mo-select" data-estado><option value="">Todos os estados</option>${estados.map(uf => `<option value="${esc(uf)}" ${st.estado === uf ? 'selected' : ''}>${esc(uf)}</option>`).join('')}</select></div>
+            <div class="mo-select-wrap"><select class="mo-select" data-ponto><option value="">Todos os pontos com O.S. Atender</option>${pontosFiltrados.map(p => `<option value="${esc(p.__key)}" ${st.ponto === p.__key ? 'selected' : ''}>${esc(p.cidade || p.nome_local)}/${esc(p.uf)} · ${esc(p.nome_local || 'Ponto')}</option>`).join('')}</select></div>
+          </div>
+          <div class="mo-legend">
+            <span class="mo-marker-badge">Hoje · Atender</span>
+            <button class="mo-marker-toggle ${st.mostrarOs ? '' : 'off'}" data-toggle-marker="os"><span class="mo-dot"></span>O.S.</button>
+            <button class="mo-marker-toggle ${st.mostrarRotas ? '' : 'off'}" data-toggle-marker="rotas" title="Frota = linha sólida · Reembolso km = tracejada"><span class="mo-dot"></span>Rotas</button>
+          </div>
         </div>
         <div class="mo-body">
-          <div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa...</div></div>
-          <div class="mo-kpis">${kpiBox('O.S. Atender hoje', st.os.length)}${kpiBox('Rotas', st.rotasMapa.length)}</div>
+          <div class="mo-map-wrap"><div id="moMap" class="mo-map"><div class="mo-load">Carregando mapa</div></div><div class="mo-map-glow" aria-hidden="true"></div></div>
+          <div class="mo-kpis">${kpiBox('O.S. Atender hoje', st.os.length, 'os')}${kpiBox('Rotas de frota', frotaCount, 'frota')}${kpiBox('Rotas reembolso km', reembolsoCount, 'reembolso')}</div>
         </div>
       </section></div>`;
   }
@@ -250,7 +367,13 @@ import { getCurrentUser } from './auth.js';
   function bind(root) {
     root.querySelector('[data-estado]')?.addEventListener('change', e => { st.estado = e.target.value; st.ponto = ''; render(root, true); });
     root.querySelector('[data-ponto]')?.addEventListener('change', e => { st.ponto = e.target.value; render(root, true); });
-    root.querySelector('[data-map-base]')?.addEventListener('change', e => { st.mapaBase = TILE_LAYERS[e.target.value] ? e.target.value : 'escuro'; applyBaseLayer(); });
+    root.querySelectorAll('[data-map-base] [data-base]').forEach(btn => {
+      btn.onclick = () => {
+        st.mapaBase = TILE_LAYERS[btn.dataset.base] ? btn.dataset.base : 'escuro';
+        root.querySelectorAll('[data-map-base] [data-base]').forEach(b => b.classList.toggle('active', b === btn));
+        applyBaseLayer();
+      };
+    });
     root.querySelectorAll('[data-toggle-marker]').forEach(el => {
       el.onclick = () => {
         const alvo = el.dataset.toggleMarker;
@@ -300,11 +423,12 @@ import { getCurrentUser } from './auth.js';
       if (pontosRota.length < 2) return;
       const frota = r.tipo === 'frota';
       L.polyline(pontosRota, {
-        color: frota ? '#22c55e' : '#f59e0b',
-        weight: frota ? 3 : 2.5,
-        opacity: 0.85,
+        color: frota ? '#3fe08a' : '#f5a524',
+        weight: frota ? 3.5 : 2.5,
+        opacity: 0.9,
         dashArray: frota ? null : '7,6',
-      }).bindTooltip(rotaTooltip(r)).addTo(st.layer);
+        className: frota ? 'mo-route-frota' : 'mo-route-reembolso',
+      }).bindTooltip(rotaTooltip(r), { className: 'mo-tip' }).addTo(st.layer);
       pontosRota.forEach(p => bounds.push(p));
     });
   }
@@ -319,8 +443,8 @@ import { getCurrentUser } from './auth.js';
       pontosVisiveis.forEach(p => {
         const qtd = osPorPonto(p).length;
         if (!qtd) return;
-        const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade — fazenda/armazém específico não localizado)</em>' : '';
-        L.marker([p.lat, p.lng], { icon: icon('os-ok') }).bindTooltip(`O.S. Atender · ${esc(p.nome_local)} · ${esc(p.cidade)}/${esc(p.uf)} · ${qtd} O.S.${aviso}`).addTo(st.layer);
+        const aviso = p.aproximado ? ' · <em>posição aproximada (nível de cidade)</em>' : '';
+        L.marker([p.lat, p.lng], { icon: icon() }).bindTooltip(`<strong>${esc(p.nome_local)}</strong><br>${esc(p.cidade)}/${esc(p.uf)} · ${qtd} O.S. Atender${aviso}`, { className: 'mo-tip' }).addTo(st.layer);
         b.push([p.lat, p.lng]);
       });
     }
@@ -333,6 +457,7 @@ import { getCurrentUser } from './auth.js';
     const mapEl = st.map && st.mapEl ? st.mapEl : null;
     root.innerHTML = html();
     bind(root);
+    animateKpis(root);
     if (mapEl) {
       root.querySelector('#moMap').replaceWith(mapEl);
       draw(root, ajustarZoom);
