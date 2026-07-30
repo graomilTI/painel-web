@@ -186,17 +186,17 @@ function injectStyles() {
        ao lado dos botões de confirmar/recusar — antes o card ficava
        escondido (só "Confirmar"/"Outro" em texto) e o gestor confirmava sem
        saber quem estava sendo sugerido (pedido do usuário, 2026-07-22).
-       sub-linha (km/score) e barra de score escondidas e botões viraram
-       quadrado arredondado lado a lado (em vez de círculo empilhado), pra
-       casar com o padrão visual das tags do próprio colaborador (pedido
-       29/07) — card ficou de 1 linha só, então align-items:center já
-       encaixa sem precisar ancorar no topo. Fontes do card em si
-       compactadas junto com o resto do painel lateral, ver
-       #pldOverlayRoot .peqb-cand-* em programacao-lista-drawer-fixo.js. */
+       sub-linha (km/score) e barra de score escondidas; botões em quadrado
+       arredondado (em vez de círculo) pra casar com o padrão visual das
+       tags do próprio colaborador (pedido 29/07), EMPILHADOS um sobre o
+       outro (não lado a lado) pra sobrar mais largura horizontal pro
+       card do nome (pedido 29/07). Fontes do card em si compactadas junto
+       com o resto do painel lateral, ver #pldOverlayRoot .peqb-cand-* em
+       programacao-lista-drawer-fixo.js. */
     .pld-cand-wrap{display:flex;align-items:center;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
     .pld-cand-wrap .peqb-cand-sub,.pld-cand-wrap .peqb-score,.pld-cand-wrap .peqb-cand-cost{display:none}
-    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:row;gap:6px}
+    .pld-cand-actions{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
     .pld-cand-confirm,.pld-cand-reject{width:34px;height:34px;border-radius:13px;font-size:14px;font-weight:950;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pld-cand-confirm{border:1px solid rgba(134,239,172,.5);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16}
     .pld-cand-confirm:hover{filter:brightness(1.08)}
