@@ -149,13 +149,17 @@ Isso é configurado em `config/grm-lancar-notas-fiscais.json` → `empresas`:
 ```json
 "empresas": [
   { "documento": "29666679000134", "nome": "GRAOMIL LTDA" },
-  { "documento": "09987821901", "nome": "DOUGLAS HENRIQUE MOTA 09987821901" }
+  { "documento": "09987821901", "nome": "DOUGLAS HENRIQUE MOTA 09987821901" },
+  { "documento": "32202416000189", "nome": "BV GRAIN" },
+  { "documento": "36514493000125", "nome": "EXCELENCIA" },
+  { "documento": "35134829000161", "nome": "CAR1000" },
+  { "documento": "04429697000171", "nome": "ELIZEU MOTA" }
 ]
 ```
 
-Já preenchi **2 das 6**: o CNPJ da GRAOMIL LTDA (29.666.679/0001-34, confirmado no rodapé do relatório "Lista de Rateios" que você enviou) e o CPF da Douglas Henrique Mota (09987821901, que já aparece no próprio nome dela na lista de Empresas do GRM). **Faltam os documentos de BV GRAIN, EXCELENCIA, CAR1000 e ELIZEU MOTA** — não encontrei em nenhum arquivo local nem em tela do GRM que eu tenha acesso; me passe o CNPJ (ou CPF, se for pessoa física/MEI) de cada uma, ou me diga onde consultar.
+**As 6 empresas já estão preenchidas** (confirmado 30/07/2026): GRAOMIL LTDA (CNPJ do rodapé do relatório "Lista de Rateios"), DOUGLAS HENRIQUE MOTA (CPF, já aparece no próprio nome dela no GRM), e BV GRAIN/EXCELENCIA/CAR1000/ELIZEU MOTA (CNPJs informados por você).
 
-Enquanto uma empresa não tiver o documento cadastrado aqui, qualquer nota endereçada a ela fica em `AGUARDANDO_DADOS` (campo `empresa` ausente) — o agente nunca lança sob a empresa errada por falta de configuração; ele só espera.
+Se uma nota trouxer um CNPJ/CPF de destinatário que não bater com nenhuma dessas 6 entradas, ela fica em `AGUARDANDO_DADOS` (campo `empresa` ausente) em vez de cair na empresa errada — sinal de que é uma 7ª empresa nova, ou de que o documento veio ilegível.
 
 ### Metadado lateral opcional
 
