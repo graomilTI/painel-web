@@ -63,9 +63,28 @@ function injectFixedLayoutStyles() {
         padding-right:9px;
       }
       #pldShell.pld-fixed-layout .pld-row td {font-size:11.5px}
+      /* table-layout:fixed + largura garantida por coluna — sem isso, Cliente/
+         Local (texto longo) espremiam a coluna Remanescente até cortar o
+         valor (ex.: "840.460,00" virava "84"), a coluna ficando parcialmente
+         escondida atrás do painel lateral fixo (reportado pela usuária,
+         2026-07-30: "as informações da OS não podem ficar cobertas"). Cliente/
+         Local agora quebram em várias linhas (aumentando a altura da linha)
+         em vez de empurrar Remanescente pra fora da área visível. */
+      #pldShell.pld-fixed-layout .pld-table {table-layout:fixed}
+      #pldShell.pld-fixed-layout .pld-table th[data-sort-campo="numero_os"],
+      #pldShell.pld-fixed-layout .pld-table td:nth-child(1) {width:20%}
+      #pldShell.pld-fixed-layout .pld-table th[data-sort-campo="cliente"],
+      #pldShell.pld-fixed-layout .pld-table td:nth-child(2) {width:24%}
+      #pldShell.pld-fixed-layout .pld-table th[data-sort-campo="embarque"],
+      #pldShell.pld-fixed-layout .pld-table td:nth-child(3) {width:28%}
+      #pldShell.pld-fixed-layout .pld-table th[data-sort-campo="remanescente"],
+      #pldShell.pld-fixed-layout .pld-table td:nth-child(4) {width:22%}
+      #pldShell.pld-fixed-layout .pld-table th:last-child,
+      #pldShell.pld-fixed-layout .pld-table td:nth-child(5) {width:22px}
       #pldShell.pld-fixed-layout .pld-cliente {
-        min-width:130px;
+        min-width:0;
         line-height:1.3;
+        overflow-wrap:break-word;
       }
       #pldShell.pld-fixed-layout .pld-local-uf {
         font-size:11px;
