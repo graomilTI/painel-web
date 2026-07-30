@@ -94,7 +94,7 @@ import { getCurrentUser } from './auth.js';
   const OS_GRANDE_KG = 400000;
 
   const st = {
-    os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [],
+    os: [], osTodas: [], pontos: [], colaboradores: [], veiculos: [], vinculosPorOs: new Map(),
     estado: '', ponto: '', tab: 'mapa', mapaBase: 'escuro',
     mostrarVeiculos: true, mostrarColaboradores: true, mostrarOsComSaldo: true, mostrarOsSemSaldo: true, mostrarHoteis: false,
     mostrarIrregularidades: true, irregularidades: [], ufPorNumeroOs: new Map(),
