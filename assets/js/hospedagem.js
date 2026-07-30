@@ -147,7 +147,7 @@ function injectStyles() {
   style.id = 'hospedagemGestorStyles';
   style.textContent = `
     .hosp-workspace{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:rgba(3,18,12,.72);min-height:calc(100vh - 150px)}
-    .hosp-workspace-head{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--green-2);font-size:10px;font-weight:900;letter-spacing:.17em;text-transform:uppercase;background:rgba(7,28,18,.78)}
+    .hosp-workspace-head{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--green-2);font-size:10px;font-weight:900;letter-spacing:.17em;text-transform:uppercase;background:rgba(7,28,18,.78);border-top-left-radius:17px;border-top-right-radius:17px}
     .hosp-workspace-head::before{content:'▣';font-size:13px;margin-right:10px;color:#22c55e}
     .hosp-workspace-body{display:grid;grid-template-columns:minmax(320px,360px) minmax(0,1fr);min-height:calc(100vh - 193px)}
     .hosp-form-pane{border-right:1px solid var(--line);background:rgba(5,25,16,.78);min-width:0;display:flex;flex-direction:column}
@@ -184,16 +184,22 @@ function injectStyles() {
     .hosp-form-actions .btn{width:auto!important;margin:0!important;border-radius:12px!important;min-height:38px;padding:0 14px;font-size:11.5px}
     .hosp-submit{background:rgba(22,101,52,.2)!important;border-color:rgba(45,215,120,.35)!important;color:#77eda8!important}
     .hosp-feedback{flex:1 1 100%;color:#6c9e82;font-size:11.5px}.hosp-feedback.ok{color:#86efac}.hosp-feedback.err{color:#fecaca}
-    .hosp-list-pane{min-width:0;display:flex;flex-direction:column;background:rgba(3,20,12,.62)}
-    .hosp-list-head{min-height:72px;display:flex;align-items:stretch;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px}
-    .hosp-stats{display:flex;align-items:stretch;min-width:0}
-    .hosp-stat{min-width:110px;padding:14px 20px;border-right:1px solid rgba(34,197,94,.12);display:flex;flex-direction:column;justify-content:center}
+    .hosp-list-pane{min-width:0;display:flex;flex-direction:column;background:rgba(3,20,12,.62);padding:16px 18px 18px;gap:14px}
+    .hosp-list-head{min-height:auto;display:flex;align-items:stretch;justify-content:space-between;border-bottom:0;gap:12px;flex-wrap:wrap}
+    .hosp-stats{display:flex;align-items:stretch;min-width:0;gap:10px;flex-wrap:wrap}
+    /* Chips individuais arredondados (mesmo padrão de .conf-card em
+       adm-conferencia.js) em vez da faixa com divisores retos — pedido da
+       usuária pra "a tela em si" não ficar quadrada mesmo com os botões já
+       arredondados. */
+    .hosp-stat{min-width:110px;padding:12px 18px;border:1px solid rgba(34,197,94,.16);border-radius:14px;background:rgba(8,22,17,.6);display:flex;flex-direction:column;justify-content:center}
     .hosp-stat span{font-size:8.5px;color:#4f9670;text-transform:uppercase;letter-spacing:.18em;font-weight:800}.hosp-stat strong{font-size:24px;color:#eafff3;margin-top:7px;font-weight:500;line-height:1}
-    .hosp-refresh-wrap{display:flex;align-items:center;padding:0 18px}.hosp-refresh{width:auto!important;margin:0!important;border-radius:12px!important;background:transparent!important;color:#65ad82!important;border-color:rgba(34,197,94,.25)!important;font-size:11px!important;padding:8px 13px!important}
-    .hosp-table-wrap{overflow:auto;flex:1;min-height:320px}
+    .hosp-refresh-wrap{display:flex;align-items:center}.hosp-refresh{width:auto!important;margin:0!important;border-radius:12px!important;background:transparent!important;color:#65ad82!important;border-color:rgba(34,197,94,.25)!important;font-size:11px!important;padding:8px 13px!important}
+    .hosp-table-wrap{overflow:auto;flex:1;min-height:320px;border:1px solid var(--line);border-radius:16px;background:rgba(8,22,17,.4)}
     .hosp-table{width:100%;border-collapse:collapse;min-width:880px}
     .hosp-table th,.hosp-table td{padding:14px 16px;border-bottom:1px solid rgba(34,197,94,.14);text-align:left;vertical-align:top;font-size:12px}
     .hosp-table th{position:sticky;top:0;z-index:2;background:#082117;color:#4f9670;font-size:8.5px;text-transform:uppercase;letter-spacing:.18em;font-weight:850}
+    .hosp-table th:first-child{border-top-left-radius:15px}.hosp-table th:last-child{border-top-right-radius:15px}
+    .hosp-table tr:last-child td{border-bottom:0}
     .hosp-table tr:hover td{background:rgba(45,215,120,.035)}
     .hosp-table td{color:#e9fff2}.hosp-help{font-size:10px;color:#4b996d}.hosp-empty{padding:24px!important;color:#5c8d70!important;text-align:center}
     .hosp-status{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid rgba(34,197,94,.24);font-size:10px;font-weight:750;white-space:nowrap}
