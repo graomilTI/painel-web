@@ -276,10 +276,10 @@ function injectDashStyles() {
     .db-chart-bar.is-selected .db-chart-bar-label { fill:rgba(255,255,255,.7); }
 
     .db-state-wrap {
-      margin: 0;
+      margin: 0; width: 100%; max-width: 480px;
     }
     .db-state-svg {
-      width: 100%; height: auto; max-height: 380px; display: block; overflow: visible;
+      width: 100%; height: auto; display: block; overflow: visible;
     }
     .db-state-fill-rect {
       transform-box: fill-box;
