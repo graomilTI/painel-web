@@ -3,13 +3,13 @@ import {
   loadColaboradoresRegional,
   loadCruzamentoTipoContrato,
   tipoContratoLetra,
-} from './programacao-equipe.js?v=20260723-fix3';
+} from './programacao-equipe.js?v=20260730-indisp-legado';
 import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
-} from './programacao-despesas.js?v=20260723-fix1';
-import { loadCustos } from './programacao-equipe.js?v=20260723-fix3';
+} from './programacao-despesas.js?v=20260730-indisp-legado';
+import { loadCustos } from './programacao-equipe.js?v=20260730-indisp-legado';
 
 function normalizeText(value) {
   return String(value ?? '')

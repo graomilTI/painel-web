@@ -605,7 +605,7 @@ export async function loadIndisponiveisNaData(dataReferencia) {
   const vazio = { chavesRpc: [], match: () => false, motivo: () => null };
   const dia = String(dataReferencia || todayIso()).slice(0, 10);
   try {
-    const [ferias, atestados] = await Promise.all([
+    const [ferias, atestados, legado] = await Promise.all([
       supabase.from('rh_ferias')
         .select('colaborador_id,colaborador_nome')
         .in('status', ['programada', 'em_gozo'])
@@ -614,12 +614,39 @@ export async function loadIndisponiveisNaData(dataReferencia) {
         .select('colaborador_id,colaborador_nome')
         .in('status', ['lancado', 'aprovado'])
         .lte('data_inicio', dia).gte('data_fim', dia),
+      // Tabela legada `indisponibilidades` (colaborador_cpf/colaborador_nome,
+      // sem colaborador_id) — cadastro avulso feito direto na tela de
+      // Programação (programacao-indisponibilidade-sync.js), separado do
+      // fluxo oficial de RH acima. Um colaborador cadastrado só aqui (caso
+      // real: atestado registrado nessa tabela mas nunca lançado em
+      // rh_atestados) passava batido por este filtro e virava sugestão da
+      // Etapa 2 mesmo indisponível — só era bloqueado DEPOIS, na hora de
+      // confirmar (pedido do usuário, 2026-07-30: não pode nem aparecer
+      // como sugestão). Motivo textual livre; mapeado pra um rótulo fixo.
+      supabase.from('indisponibilidades')
+        .select('colaborador_cpf,colaborador_nome,motivo')
+        .lte('data_inicio', dia)
+        .or(`data_fim.is.null,data_fim.gte.${dia}`),
     ]);
     if (ferias.error) throw ferias.error;
     if (atestados.error) throw atestados.error;
+    if (legado.error) throw legado.error;
+    const motivoLegado = (m) => {
+      const n = normalizeText(m);
+      if (n.includes('FERI')) return 'Férias';
+      if (n.includes('FALTA')) return 'Falta';
+      if (n.includes('FOLGA')) return 'Folga';
+      return 'Atestado';
+    };
     const rows = [
       ...(ferias.data || []).map((r) => ({ ...r, motivoLabel: 'Férias' })),
       ...(atestados.data || []).map((r) => ({ ...r, motivoLabel: 'Atestado' })),
+      ...(legado.data || []).map((r) => ({
+        colaborador_id: null,
+        colaborador_nome: r.colaborador_nome,
+        colaborador_cpf: r.colaborador_cpf,
+        motivoLabel: motivoLegado(r.motivo),
+      })),
     ];
     if (!rows.length) return vazio;
 
@@ -636,7 +663,7 @@ export async function loadIndisponiveisNaData(dataReferencia) {
     rows.forEach((r) => {
       const cadastro = r.colaborador_id ? porUuid.get(String(r.colaborador_id)) : null;
       const registra = (k) => { if (k && !motivoPorChave.has(k)) motivoPorChave.set(k, r.motivoLabel); };
-      registra(cpfNorm(cadastro?.cpf));
+      registra(cpfNorm(cadastro?.cpf ?? r.colaborador_cpf));
       registra(r.colaborador_id ? String(r.colaborador_id) : '');
       [cadastro?.nome, r.colaborador_nome].forEach((nome) => {
         const cru = String(nome || '').trim();
