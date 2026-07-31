@@ -313,7 +313,10 @@ Deno.serve(async (req) => {
 
     const resolveLinkCpf = (link: Record<string, unknown>) => {
       const direct = digits(link.colaborador_cpf ?? link.colaborador_key);
-      if (direct.length === 11 && staffByCpf.has(direct)) return { cpf: direct, error: null };
+      // Um CPF explícito e válido no vínculo é a fonte mais confiável. A
+      // validação de ativo e regional acontece logo abaixo, pelo mapa
+      // regionalStaffByCpf; não deve ser antecipada aqui como "não localizado".
+      if (direct.length === 11) return { cpf: direct, error: null };
       const candidates = staffByName.get(norm(link.colaborador_nome ?? link.colaborador_key)) || [];
       if (candidates.length === 1) {
         const cpf = digits(candidates[0].cpf);
