@@ -194,6 +194,13 @@ function ensureSettingsStyles() {
     .usm-btn-secondary{background:#15152a;color:#e2e2f0}
     .usm-feedback{display:none;margin-top:14px;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:#15152a}
     .usm-feedback.is-error{border-color:#7f1d1d;background:rgba(127,29,29,.15)}
+    .usm-apelido-form{margin-top:12px;padding-top:12px;border-top:1px solid rgba(51,65,85,.45);display:flex;flex-direction:column;gap:8px}
+    .usm-apelido-form label{font-size:12px;opacity:.72}
+    .usm-apelido-row{display:flex;gap:8px}
+    .usm-apelido-row input{flex:1;min-width:0;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 11px;outline:none}
+    .usm-apelido-row input:focus{border-color:rgba(45,212,160,0.40);box-shadow:0 0 0 3px rgba(45,212,160,0.10)}
+    .usm-apelido-save{padding:9px 14px;flex-shrink:0}
+    .usm-apelido-form .usm-feedback{margin-top:4px}
     @media (max-width: 760px){.usm-grid,.usm-form{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
@@ -222,6 +229,14 @@ function ensureSettingsModal() {
           <div class="usm-row"><span>Nome</span><span id="usmNome">-</span></div>
           <div class="usm-row"><span>Email</span><span id="usmEmail">-</span></div>
           <div class="usm-row"><span>ID</span><span id="usmId">-</span></div>
+          <form id="usmApelidoForm" class="usm-apelido-form">
+            <label for="usmApelido">Como prefere ser chamado?</label>
+            <div class="usm-apelido-row">
+              <input id="usmApelido" type="text" maxlength="40" placeholder="Nome exibido no topo" autocomplete="off" />
+              <button type="submit" class="usm-btn usm-btn-primary usm-apelido-save" id="usmApelidoSave">Salvar</button>
+            </div>
+            <div class="usm-feedback" id="usmApelidoFeedback"></div>
+          </form>
         </section>
 
         <section class="usm-box">
@@ -229,14 +244,8 @@ function ensureSettingsModal() {
           <div class="usm-row"><span>Setor</span><span id="usmSetor">-</span></div>
           <div class="usm-row"><span>Perfil</span><span id="usmPerfil">-</span></div>
           <div class="usm-row"><span>Status</span><span id="usmStatus">-</span></div>
-          <div class="usm-row"><span>Módulos</span><span id="usmModCount">0</span></div>
         </section>
       </div>
-
-      <section class="usm-box">
-        <h4>Módulos liberados</h4>
-        <div class="usm-mods" id="usmModulos"></div>
-      </section>
 
       <section class="usm-box" style="margin-top:18px;">
         <h4>Alterar senha</h4>
@@ -271,6 +280,36 @@ function ensureSettingsModal() {
   overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
   overlay.querySelector('#userSettingsClose').addEventListener('click', close);
   overlay.querySelector('#userSettingsCancel').addEventListener('click', close);
+
+  overlay.querySelector('#usmApelidoForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const input = document.getElementById('usmApelido');
+    const fb = document.getElementById('usmApelidoFeedback');
+    const btn = document.getElementById('usmApelidoSave');
+    const apelido = input.value.trim();
+
+    const showFeedback = (msg, isError = false) => {
+      fb.style.display = 'block';
+      fb.textContent = msg;
+      fb.classList.toggle('is-error', !!isError);
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+    try {
+      const { error } = await supabase.auth.updateUser({ data: { apelido } });
+      if (error) throw error;
+      showFeedback('Nome de exibição atualizado.');
+      const nameEl = document.getElementById('topbarWelcomeName');
+      const fullName = document.getElementById('usmNome')?.textContent || '';
+      if (nameEl) nameEl.textContent = apelido || fullName || nameEl.textContent;
+    } catch (err) {
+      showFeedback(err?.message || 'Não foi possível atualizar o nome de exibição.', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Salvar';
+    }
+  });
 
   overlay.querySelector('#userSettingsForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -328,18 +367,23 @@ function ensureSettingsButton() {
   return button;
 }
 
-function fillSettingsModal(userContext) {
-  const modules = Array.isArray(userContext?.modules) ? userContext.modules : [];
+async function fillSettingsModal(userContext) {
   document.getElementById('usmNome').innerHTML = esc(userContext?.user?.name || '-');
   document.getElementById('usmEmail').innerHTML = esc(userContext?.user?.email || '-');
   document.getElementById('usmId').innerHTML = esc(userContext?.user?.id || '-');
   document.getElementById('usmSetor').innerHTML = esc(userContext?.department?.name || userContext?.department?.code || '-');
   document.getElementById('usmPerfil').innerHTML = esc(userContext?.user?.is_master ? 'MASTER' : (userContext?.user?.role || '-'));
   document.getElementById('usmStatus').innerHTML = esc(userContext?.user?.status || '-');
-  document.getElementById('usmModCount').innerHTML = esc(String(modules.length));
-  document.getElementById('usmModulos').innerHTML = modules.length
-    ? modules.map((mod) => `<span class="usm-chip">${esc(mod.name || mod.code || 'Módulo')}</span>`).join('')
-    : '<span style="opacity:.75;">Sem módulos liberados.</span>';
+
+  const apelidoInput = document.getElementById('usmApelido');
+  if (apelidoInput) {
+    try {
+      const session = await getSession();
+      apelidoInput.value = session?.user?.user_metadata?.apelido || '';
+    } catch {
+      apelidoInput.value = '';
+    }
+  }
 }
 
 async function bindSettingsButton(userContext) {
@@ -351,7 +395,7 @@ async function bindSettingsButton(userContext) {
     try {
       const session = await getSession();
       if (!session?.access_token) throw new Error('Sessão expirada. Faça login novamente.');
-      fillSettingsModal(userContext);
+      await fillSettingsModal(userContext);
       modal._open();
     } catch (err) {
       alert(err?.message || 'Não foi possível abrir as configurações.');
@@ -378,24 +422,6 @@ function ensureTopbarTitleClass() {
   if (titleDiv && !titleDiv.classList.contains('topbar-title')) {
     titleDiv.classList.add('topbar-title');
   }
-}
-
-function ensureSearchBar() {
-  const topbar = document.querySelector('.topbar');
-  if (!topbar || document.getElementById('topbarSearch')) return;
-
-  const wrap = document.createElement('div');
-  wrap.className = 'topbar-search';
-  wrap.innerHTML = `
-    <span class="topbar-search-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    </span>
-    <input type="search" id="topbarSearch" class="topbar-search-input" placeholder="Pesquisar..." autocomplete="off" />
-  `;
-
-  const actions = topbar.querySelector('.topbar-actions');
-  if (actions) topbar.insertBefore(wrap, actions);
-  else topbar.appendChild(wrap);
 }
 
 // ---------- ícones SVG das notificações ----------
@@ -551,15 +577,6 @@ function ensureTopbarIconButtons() {
   wrap.appendChild(badge);
   wrap.appendChild(dropdown);
 
-  const appsBtn = document.createElement('button');
-  appsBtn.type = 'button';
-  appsBtn.id = 'topbarAppsBtn';
-  appsBtn.className = 'topbar-icon-btn';
-  appsBtn.setAttribute('aria-label', 'Aplicativos');
-  appsBtn.setAttribute('title', 'Aplicativos');
-  appsBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
-
-  actions.prepend(appsBtn);
   actions.prepend(wrap);
 
   // Toggle dropdown ao clicar no sino
@@ -601,31 +618,37 @@ async function initNotifBell(userContext) {
   }
 }
 
-function ensureUserAvatar(userContext) {
+async function getDisplayName(userContext) {
+  try {
+    const session = await getSession();
+    const apelido = session?.user?.user_metadata?.apelido;
+    if (apelido && String(apelido).trim()) return String(apelido).trim();
+  } catch {}
+  return userContext?.user?.name || 'Usuário';
+}
+
+function ensureWelcomeBlock() {
   const actions = document.querySelector('.topbar-actions');
-  if (!actions || document.getElementById('topbarUserAvatar')) return;
+  if (!actions) return null;
 
-  const name = userContext?.user?.name || '';
-  const parts = name.trim().split(/\s+/);
-  const initials = parts.length >= 2
-    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
-    : (name[0] || '?').toUpperCase();
+  let block = document.getElementById('topbarWelcomeBlock');
+  if (!block) {
+    block = document.createElement('div');
+    block.id = 'topbarWelcomeBlock';
+    block.className = 'topbar-welcome';
+    block.innerHTML = `
+      <span class="topbar-welcome-label">Bem-vindo</span>
+      <span class="topbar-welcome-name" id="topbarWelcomeName">-</span>
+    `;
+    actions.prepend(block);
+  }
+  return block;
+}
 
-  const avatar = document.createElement('button');
-  avatar.type = 'button';
-  avatar.id = 'topbarUserAvatar';
-  avatar.className = 'topbar-avatar';
-  avatar.setAttribute('title', name || 'Usuário');
-  avatar.textContent = initials;
-
-  avatar.addEventListener('click', () => {
-    const settingsBtn = document.getElementById('userSettingsBtn');
-    if (settingsBtn) settingsBtn.click();
-  });
-
-  const signOutBtn = document.getElementById('signOutBtn');
-  if (signOutBtn) actions.insertBefore(avatar, signOutBtn);
-  else actions.appendChild(avatar);
+async function updateWelcomeBlockName(userContext) {
+  const nameEl = document.getElementById('topbarWelcomeName');
+  if (!nameEl) return;
+  nameEl.textContent = await getDisplayName(userContext);
 }
 
 function ensureSidebarFooter() {
@@ -710,25 +733,21 @@ export function renderAppLayout({ userContext, currentPageTitle = 'Painel' }) {
   }
 
   const welcome = document.getElementById('welcomeUser');
-  if (welcome) welcome.textContent = `Olá, ${userContext.user.name}`;
+  if (welcome && !document.getElementById('agentUpdateStatus')) welcome.textContent = '';
 
   const pageTitle = document.getElementById('pageTitle');
   if (pageTitle) pageTitle.textContent = currentPageTitle;
 
   const roleBadge = document.getElementById('roleBadge');
-  if (roleBadge) {
-    roleBadge.textContent = userContext.user.is_master
-      ? 'MASTER'
-      : (userContext.department?.name || userContext.user.role || 'USUÁRIO').toUpperCase();
-  }
+  if (roleBadge) roleBadge.remove();
 
   bindSettingsButton(userContext);
 
   // Flowbite-style topbar & sidebar enhancements
   ensureTopbarTitleClass();
-  ensureSearchBar();
   ensureTopbarIconButtons();
-  ensureUserAvatar(userContext);
+  ensureWelcomeBlock();
+  updateWelcomeBlockName(userContext);
   ensureSidebarFooter();
 
   // Motor de notificações (apenas na primeira renderização por página)

@@ -113,9 +113,8 @@ function injectStyles() {
 }
 
 function ensurePill() {
-  const actions = document.querySelector('.topbar-actions');
-  const topbar = document.querySelector('.topbar');
-  if (!actions && !topbar) return null;
+  const meta = document.getElementById('welcomeUser');
+  if (!meta) return null;
 
   let pill = document.getElementById('agentUpdateStatus');
   if (pill) return pill;
@@ -126,10 +125,8 @@ function ensurePill() {
   pill.textContent = 'Atualização...';
   pill.setAttribute('aria-live', 'polite');
 
-  const roleBadge = document.getElementById('roleBadge');
-  if (actions && roleBadge) actions.insertBefore(pill, roleBadge);
-  else if (actions) actions.prepend(pill);
-  else topbar.appendChild(pill);
+  meta.textContent = '';
+  meta.appendChild(pill);
 
   return pill;
 }
