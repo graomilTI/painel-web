@@ -269,9 +269,17 @@ export async function sincronizarPatrimoniosDoAgente() {
       }
 
       try {
-        await supabase.rpc('sincronizar_frotas_veiculos_patrimonios');
+        const { error: syncError } = await supabase.rpc('sincronizar_frotas_veiculos_patrimonios');
+        if (syncError) throw syncError;
+
+        // O trigger da RPC enfileira cada troca de motorista. Drena a fila agora
+        // para que o BFleet acompanhe a leitura sem aguardar o cron de contingência.
+        const { error: bfleetError } = await supabase.functions.invoke('update-bfleet-condutores', {
+          body: { mode: 'pending', limit: 200, auto_associar_patrimonios: false },
+        });
+        if (bfleetError) throw bfleetError;
       } catch (error) {
-        console.warn('[patrimonios-agente] falha ao associar patrimônios aos veículos', error);
+        console.warn('[patrimonios-agente] falha ao associar patrimônios/BFleet aos veículos', error);
       }
 
       console.info(`[patrimonios-agente] sincronização automática: ${mapped.length} patrimônios, ${veiculosAtualizados} regionais de veículo ajustadas.`);

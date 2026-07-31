@@ -46,3 +46,4 @@ select cron.schedule(
   '20 9 * * *',
   $$select public.cron_trigger_sync_multas_detran_full()$$
 );
+;
