@@ -18,7 +18,13 @@ import { getCurrentUser } from './auth.js';
   const TILE_LAYERS = {
     escuro: {
       url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      options: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM' },
+      options: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM &copy; CARTO' },
+    },
+    // Voyager (CARTO) — mesma infra gratuita/sem chave do "Escuro", só troca o estilo: visual
+    // colorido e limpo, mais "bonito" que o OSM padrão puro (pedido da usuária, 2026-07-30).
+    voyager: {
+      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      options: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM &copy; CARTO' },
     },
     real: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -368,7 +374,7 @@ import { getCurrentUser } from './auth.js';
 
   function html() {
     const estados = estadosDisponiveis(), pontosFiltrados = st.pontos.filter(p => !st.estado || p.uf === st.estado);
-    const BASES = [['escuro', 'Escuro'], ['real', 'Satélite'], ['padrao', 'Padrão']];
+    const BASES = [['escuro', 'Escuro'], ['voyager', 'Colorido'], ['real', 'Satélite'], ['padrao', 'Padrão']];
     const frotaCount = st.rotasMapa.filter(r => r.tipo === 'frota').length;
     const reembolsoCount = st.rotasMapa.filter(r => r.tipo === 'reembolso_km').length;
     return `
