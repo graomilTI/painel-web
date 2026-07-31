@@ -1,0 +1,19 @@
+# Agente Programação do Gestor -> Regras de Caixa Operacional no GRM
+# Comece SEMPRE em diagnóstico. O modo real só deve ser ativado depois de
+# validar um CPF e confirmar os nomes das categorias na tabela de configuração.
+GRM_LIBERACAO_DESPESAS_DRY_RUN=true
+GRM_LIBERACAO_DESPESAS_MAX_POR_EXECUCAO=1
+GRM_LIBERACAO_DESPESAS_DEBUG=true
+GRM_LIBERACAO_DESPESAS_TIMEOUT_MS=45000
+GRM_LIBERACAO_DESPESAS_SCREENSHOT_DIR=/home/grao100/painel-scripts/grm-sync/logs/liberacao-despesas
+GRM_LIBERACAO_DESPESAS_URL=https://www.grmserver.com.br/adm/team/staff
+
+# Credenciais já usadas pelos demais agentes
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+GRMSERVER_USER=
+GRMSERVER_PASSWORD=
+
+# Chromium/Puppeteer no cPanel, se o ambiente não descobrir automaticamente
+PUPPETEER_EXECUTABLE_PATH=
+GRM_HEADLESS=true
