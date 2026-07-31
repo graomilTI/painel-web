@@ -57,3 +57,6 @@ verify_jwt = true
 # Sem pasta local em supabase/functions/ hoje — se recriar o source, manter este bloco.
 [functions.google-contacts-sync]
 verify_jwt = false
+
+[functions.grm-liberacao-despesas-publicar]
+verify_jwt = true
