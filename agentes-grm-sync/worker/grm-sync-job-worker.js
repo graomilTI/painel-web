@@ -59,6 +59,7 @@ const SCRIPT_MAP = {
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',
+  'sync-liberacao-despesas': 'grm-sync-liberacao-despesas.js',
 };
 
 function getSupabase() {
