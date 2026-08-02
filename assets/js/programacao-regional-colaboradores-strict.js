@@ -1,11 +1,10 @@
 import { supabase } from './supabaseClient.js';
 
-// Programação: a lista de candidatos deve respeitar a supervisão exata do
-// colaborador em colaboradores_atuais. Não usamos aproximação por coordenação,
-// substring ou tokens, pois isso fazia MT2 - Sul compartilhar pessoas com
-// outras regionais e permitia confirmar o mesmo CPF fora da sua regional.
+// Programação: mantém a RPC oficial como fonte principal da regional e aplica
+// o filtro estrito somente no fallback de colaboradores_atuais. A versão
+// anterior filtrava novamente o retorno da RPC por colaboradores_atuais e
+// acabava reduzindo algumas regionais a apenas um colaborador.
 
-const originalRpc = supabase.rpc.bind(supabase);
 const originalFrom = supabase.from.bind(supabase);
 const rosterCache = new Map();
 const CACHE_MS = 30_000;
@@ -76,26 +75,6 @@ function rowBelongsToRoster(row, roster) {
   if (cpf.length === 11 && roster.byCpf.has(cpf)) return true;
   return roster.byName.has(norm(row?.nome ?? row?.nome_colaborador ?? row?.colaborador_nome));
 }
-
-supabase.rpc = async function strictRegionalRpc(fn, args = {}, options) {
-  const result = await originalRpc(fn, args, options);
-  if (result?.error || !Array.isArray(result?.data)) return result;
-  if (!['programacao_colaboradores_supervisao', 'programacao_etapa_b_candidatos'].includes(fn)) {
-    return result;
-  }
-
-  const supervisao = clean(args?.p_supervisao);
-  const roster = await loadExactRoster(supervisao);
-  const data = result.data.filter((row) => rowBelongsToRoster(row, roster));
-
-  if (data.length !== result.data.length) {
-    console.warn(
-      '[programacao-regional-strict] candidatos fora da supervisão removidos',
-      { supervisao, recebidos: result.data.length, permitidos: data.length },
-    );
-  }
-  return { ...result, data };
-};
 
 function wrapBuilder(builder, context) {
   return new Proxy(builder, {
