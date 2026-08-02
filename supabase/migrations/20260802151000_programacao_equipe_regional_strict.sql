@@ -21,7 +21,7 @@ begin
 
   select
     p.data_referencia,
-    coalesce(nullif(trim(p.supervisao), ''), nullif(trim(p.regional), ''))
+    nullif(trim(p.supervisao), '')
   into v_data, v_supervisao_programacao
   from public.programacao_dia p
   where p.id = new.programacao_id;
@@ -34,8 +34,8 @@ begin
   into v_supervisoes
   from public.colaboradores_atuais c
   where c.ativo is distinct from false
-    and coalesce(trim(c.desligamento), '') = ''
-    and upper(coalesce(c.situacao, '')) not in (
+    and coalesce(c.desligamento::text, '') = ''
+    and upper(coalesce(c.situacao::text, '')) not in (
       'NAO ATIVO', 'NAO ATIVA', 'INATIVO', 'INATIVA',
       'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA'
     )
@@ -70,7 +70,7 @@ begin
     where e.confirmado = true
       and e.os_id is not null
       and p.data_referencia = v_data
-      and upper(trim(coalesce(p.supervisao, p.regional, ''))) <> upper(trim(v_supervisao_programacao))
+      and upper(trim(coalesce(p.supervisao, ''))) <> upper(trim(v_supervisao_programacao))
       and e.id is distinct from new.id
       and (
         (length(v_cpf) = 11 and regexp_replace(coalesce(e.colaborador_id, ''), '\D', '', 'g') = v_cpf)
@@ -93,8 +93,8 @@ with cadastro_unico as (
     min(trim(c.supervisao)) as supervisao
   from public.colaboradores_atuais c
   where c.ativo is distinct from false
-    and coalesce(trim(c.desligamento), '') = ''
-    and upper(coalesce(c.situacao, '')) not in (
+    and coalesce(c.desligamento::text, '') = ''
+    and upper(coalesce(c.situacao::text, '')) not in (
       'NAO ATIVO', 'NAO ATIVA', 'INATIVO', 'INATIVA',
       'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA'
     )
@@ -113,7 +113,7 @@ where p.id = e.programacao_id
   and e.confirmado = true
   and e.os_id is not null
   and regexp_replace(coalesce(e.colaborador_id, ''), '\D', '', 'g') = c.cpf
-  and upper(trim(coalesce(p.supervisao, p.regional, ''))) <> upper(trim(c.supervisao));
+  and upper(trim(coalesce(p.supervisao, ''))) <> upper(trim(c.supervisao));
 
 drop trigger if exists programacao_equipe_validar_regional_trg
   on public.programacao_equipe;
