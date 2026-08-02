@@ -1,9 +1,19 @@
 import { supabase } from './supabaseClient.js';
 
-// Programação: mantém a RPC oficial como fonte principal da regional e aplica
-// o filtro estrito somente no fallback de colaboradores_atuais. A versão
-// anterior filtrava novamente o retorno da RPC por colaboradores_atuais e
-// acabava reduzindo algumas regionais a apenas um colaborador.
+// Programação: mantém a RPC oficial como fonte principal e completa a lista
+// com colaboradores_atuais respeitando a hierarquia da regional.
+//
+// Exemplo:
+//   programação: MATO GROSSO MT2 - Sul
+//   coordenação: MATO GROSSO MT2
+//
+// São aceitos:
+// - supervisão exatamente MATO GROSSO MT2 - Sul;
+// - cadastro legado sem subdivisão, com supervisão/coordenação MATO GROSSO MT2.
+//
+// Não são aceitos colaboradores explicitamente vinculados a outra subdivisão,
+// como MATO GROSSO MT2 - Leste. Isso evita misturar regionais sem reduzir a
+// lista somente aos poucos cadastros que já receberam o sufixo novo.
 
 const originalFrom = supabase.from.bind(supabase);
 const rosterCache = new Map();
@@ -26,6 +36,16 @@ function norm(value) {
     .trim();
 }
 
+function regionalBase(value) {
+  const raw = clean(value);
+  if (!raw) return '';
+  return clean(raw.split(/\s+[-–—|/]\s+/)[0] || raw);
+}
+
+function hasSubdivision(value) {
+  return /\s+[-–—|/]\s+/.test(clean(value));
+}
+
 function isActive(row) {
   if (row?.ativo === false) return false;
   if (clean(row?.desligamento)) return false;
@@ -42,7 +62,29 @@ function selectedSupervisao() {
   return value;
 }
 
-async function loadExactRoster(supervisao) {
+function belongsToRegional(row, supervisao) {
+  if (!isActive(row)) return false;
+
+  const target = norm(supervisao);
+  const base = norm(regionalBase(supervisao));
+  const rowSupervisaoRaw = clean(row?.supervisao);
+  const rowSupervisao = norm(rowSupervisaoRaw);
+  const rowCoordenacao = norm(row?.coordenacao);
+
+  if (!target) return false;
+
+  // Cadastro já atualizado com a subdivisão exata.
+  if (rowSupervisao === target) return true;
+
+  // Uma subdivisão explícita diferente nunca pode entrar por coincidência da
+  // coordenação. Ex.: "MT2 - Leste" não aparece em "MT2 - Sul".
+  if (rowSupervisaoRaw && hasSubdivision(rowSupervisaoRaw)) return false;
+
+  // Compatibilidade com cadastros ainda vinculados apenas à coordenação/base.
+  return !!base && rowCoordenacao === base && (!rowSupervisao || rowSupervisao === base);
+}
+
+async function loadRegionalRoster(supervisao) {
   const target = norm(supervisao);
   if (!target) return { byCpf: new Set(), byName: new Set(), rows: [] };
 
@@ -58,14 +100,19 @@ async function loadExactRoster(supervisao) {
     return { byCpf: new Set(), byName: new Set(), rows: [] };
   }
 
-  const rows = (data || []).filter((row) =>
-    isActive(row) && norm(row.supervisao) === target,
-  );
+  const rows = (data || []).filter((row) => belongsToRegional(row, supervisao));
   const value = {
     rows,
     byCpf: new Set(rows.map((row) => digits(row.cpf)).filter((cpf) => cpf.length === 11)),
     byName: new Set(rows.map((row) => norm(row.nome)).filter(Boolean)),
   };
+
+  console.info('[programacao-regional-strict] colaboradores liberados', {
+    supervisao,
+    base: regionalBase(supervisao),
+    quantidade: rows.length,
+  });
+
   rosterCache.set(target, { at: Date.now(), value });
   return value;
 }
@@ -92,7 +139,7 @@ function wrapBuilder(builder, context) {
 
             const supervisao = selectedSupervisao();
             if (!supervisao) return result;
-            const roster = await loadExactRoster(supervisao);
+            const roster = await loadRegionalRoster(supervisao);
             return {
               ...result,
               data: result.data.filter((row) => rowBelongsToRoster(row, roster)),
