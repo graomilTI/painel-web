@@ -339,13 +339,28 @@ Deno.serve(async (req) => {
     const pickupsReembolso: Pickup[] = [];
     const semGeocodificacao: any[] = [];
     const semPontoEmbarque: any[] = [];
+    const rotasParaGravar: any[] = [];
 
     for (const [, v] of vinculoPorColaborador) {
       const osRow = osById.get(v.os_id);
       if (!osRow) continue;
       const desloc = deslocPorCpf.get(v.cpf) || null;
       const tipo = desloc?.tipo || '';
-      if (tipo !== 'MOTORISTA FROTA' && tipo !== 'CARONA FROTA' && tipo !== 'REEMBOLSO KM') continue; // NÃO PRECISA/UBER: sem rota a desenhar
+      if (tipo !== 'MOTORISTA FROTA' && tipo !== 'CARONA FROTA' && tipo !== 'REEMBOLSO KM') {
+        // NÃO PRECISA/UBER/ainda sem Etapa D preenchida: sem rota a desenhar,
+        // mas o colaborador continua aparecendo no mapa (marcador "local"),
+        // usando o endereço de casa/hotel/alojamento já geocodificado.
+        const origemLocal = origemColaborador(v);
+        if (origemLocal) {
+          rotasParaGravar.push({
+            tipo: 'local', veiculo_id: null, placa: null, motorista_nome: null,
+            colaborador_nome: v.colaborador_nome, colaborador_cpf: v.cpf || null,
+            origem_latitude: origemLocal.geo.lat, origem_longitude: origemLocal.geo.lng, origem_tipo: origemLocal.tipo,
+            km_total_estimado: 0, duracao_estimada_min: 0, geometria: null, paradas: [],
+          });
+        }
+        continue;
+      }
 
       const origem = origemColaborador(v);
       if (!origem) { semGeocodificacao.push({ colaborador_nome: v.colaborador_nome, os_id: v.os_id }); continue; }
@@ -360,8 +375,6 @@ Deno.serve(async (req) => {
       if (tipo === 'REEMBOLSO KM') pickupsReembolso.push(pickup);
       else pickupsFrota.push(pickup);
     }
-
-    const rotasParaGravar: any[] = [];
 
     // 7) Trilha frota: VROOM multi-veículo (mesmo modelo de frotas-roteirizar)
     if (pickupsFrota.length) {
@@ -481,6 +494,7 @@ Deno.serve(async (req) => {
       supervisao, data_referencia: dataReferencia, rotas: rotasParaGravar.length,
       frota: rotasParaGravar.filter((r) => r.tipo === 'frota').length,
       reembolso_km: rotasParaGravar.filter((r) => r.tipo === 'reembolso_km').length,
+      local: rotasParaGravar.filter((r) => r.tipo === 'local').length,
       sem_geocodificacao: semGeocodificacao.length,
       sem_ponto_embarque: semPontoEmbarque.length,
     });
