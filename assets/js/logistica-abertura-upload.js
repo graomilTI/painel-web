@@ -202,16 +202,15 @@ function isProviderConfigurationError(message) {
     || text.includes('secret');
 }
 
-async function tryOnlineOcr(file) {
+async function tryOnlineOcr(prepared, fileName) {
   if (onlineProviderUnavailable) return null;
 
-  const prepared = await prepareFile(file);
   const base64 = await blobToBase64(prepared.blob);
   const { data, error } = await supabase.functions.invoke('logistica-os-autopreencher', {
     body: {
       base64,
       tipo: prepared.tipo,
-      nome_arquivo: file.name,
+      nome_arquivo: fileName,
     },
   });
 
@@ -238,14 +237,24 @@ async function processFile(file) {
   document.querySelectorAll('.os-upload-filled').forEach((field) => field.classList.remove('os-upload-filled'));
 
   let onlineError = null;
+  // Preparado 1x e reaproveitado nos dois caminhos (online e fallback local)
+  // — evita comprimir a imagem duas vezes e, principalmente, evita rodar o
+  // OCR local (Tesseract) na foto/print ORIGINAL sem redimensionar, que era
+  // bem mais lento em fotos de celular grandes sem ganho nenhum de exatidão.
+  let prepared = null;
+  try {
+    prepared = await prepareFile(file);
+  } catch (error) {
+    console.warn('[logistica-abertura-upload] Falha ao preparar arquivo; usando original.', error);
+  }
 
   try {
     let result = null;
 
-    if (!onlineProviderUnavailable) {
+    if (!onlineProviderUnavailable && prepared) {
       try {
         setStatus(`${file.name} · tentando leitura automática`, 'loading');
-        result = await tryOnlineOcr(file);
+        result = await tryOnlineOcr(prepared, file.name);
       } catch (error) {
         onlineError = error;
         console.warn('[logistica-abertura-upload] OCR online indisponível; usando navegador.', error);
@@ -254,7 +263,10 @@ async function processFile(file) {
 
     if (!result?.campos) {
       setStatus(`${file.name} · lendo localmente no navegador`, 'loading');
-      result = await browserOcrFile(file, (progress) => {
+      // prepared.blob já vem redimensionado/comprimido (mesmo preparo usado
+      // pro caminho online) — pra PDF, prepared.blob é o próprio arquivo
+      // original (prepareFile não mexe em PDF, só em imagem).
+      result = await browserOcrFile(prepared?.blob ?? file, (progress) => {
         setStatus(`${file.name} · ${progress}`, 'loading');
       });
     }
