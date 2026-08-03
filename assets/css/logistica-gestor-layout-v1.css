@@ -1,0 +1,502 @@
+/*
+ * Layout visual da tela Gestor > Logística.
+ * Mantém o fluxo e os componentes existentes; altera somente apresentação.
+ */
+
+body.logistica-gestor-page {
+  --log-bg: #03140e;
+  --log-bg-deep: #02110c;
+  --log-panel: rgba(4, 28, 19, 0.92);
+  --log-panel-soft: rgba(5, 34, 23, 0.76);
+  --log-field: #071d17;
+  --log-field-hover: #09251c;
+  --log-line: rgba(22, 215, 144, 0.20);
+  --log-line-strong: rgba(22, 215, 144, 0.42);
+  --log-accent: #16d790;
+  --log-accent-hover: #14c885;
+  --log-accent-active: #11b97a;
+  --log-accent-text: #07251a;
+  --log-text: #eef8f3;
+  --log-muted: #8ba89a;
+  --log-muted-2: #657f73;
+  background:
+    radial-gradient(circle at 82% 0%, rgba(22, 215, 144, 0.055), transparent 30%),
+    var(--log-bg-deep);
+  color: var(--log-text);
+}
+
+body.logistica-gestor-page .app-shell {
+  grid-template-columns: 236px minmax(0, 1fr);
+  background: transparent;
+}
+
+body.logistica-gestor-page .sidebar {
+  padding: 0 14px 24px;
+  border-right: 1px solid var(--log-line);
+  background:
+    linear-gradient(180deg, rgba(4, 31, 21, 0.98), rgba(2, 19, 13, 0.99));
+  box-shadow: 12px 0 36px rgba(0, 0, 0, 0.14);
+}
+
+body.logistica-gestor-page .sidebar-brand {
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  margin: 0 0 12px;
+  padding: 18px 14px;
+  border-bottom: 1px solid var(--log-line);
+}
+
+body.logistica-gestor-page .sidebar-brand h2 {
+  color: var(--log-text);
+  font-size: 19px;
+}
+
+body.logistica-gestor-page .sidebar-brand p {
+  color: var(--log-muted-2);
+}
+
+body.logistica-gestor-page .menu-section {
+  margin-bottom: 12px;
+}
+
+body.logistica-gestor-page .menu-section h4 {
+  margin: 12px 8px 7px;
+  color: var(--log-muted-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+body.logistica-gestor-page .menu-list {
+  gap: 3px;
+}
+
+body.logistica-gestor-page .menu-list a {
+  position: relative;
+  min-height: 38px;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #98ada2;
+  font-size: 13px;
+  transition: background .16s ease, border-color .16s ease, color .16s ease;
+}
+
+body.logistica-gestor-page .menu-list a:hover {
+  background: rgba(22, 215, 144, 0.06);
+  border-color: rgba(22, 215, 144, 0.12);
+  color: #d9eee4;
+}
+
+body.logistica-gestor-page .menu-list a.active {
+  background: linear-gradient(90deg, rgba(22, 215, 144, 0.16), rgba(22, 215, 144, 0.055));
+  border-color: rgba(22, 215, 144, 0.32);
+  color: #e9fff5;
+  box-shadow: inset 3px 0 0 var(--log-accent), 0 8px 24px rgba(0, 0, 0, 0.10);
+}
+
+body.logistica-gestor-page .content-wrap {
+  min-width: 0;
+  background:
+    radial-gradient(circle at 90% 8%, rgba(22, 215, 144, 0.035), transparent 24%),
+    var(--log-bg);
+}
+
+body.logistica-gestor-page .topbar {
+  min-height: 90px;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--log-line);
+  background: rgba(2, 20, 14, 0.92);
+  box-shadow: none;
+  backdrop-filter: blur(14px);
+}
+
+body.logistica-gestor-page .topbar h1 {
+  margin: 0;
+  color: var(--log-text);
+  font-size: 21px;
+  letter-spacing: -0.025em;
+}
+
+body.logistica-gestor-page .topbar .meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin-top: 7px;
+  padding: 5px 12px;
+  border: 1px solid rgba(22, 215, 144, 0.26);
+  border-radius: 999px;
+  background: rgba(22, 215, 144, 0.07);
+  color: #c6e7d8;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.logistica-gestor-page .topbar .meta::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--log-accent);
+  box-shadow: 0 0 12px rgba(22, 215, 144, 0.75);
+}
+
+body.logistica-gestor-page .topbar-actions {
+  gap: 10px;
+}
+
+body.logistica-gestor-page .topbar-actions .badge,
+body.logistica-gestor-page .topbar-actions .btn {
+  border: 1px solid rgba(22, 215, 144, 0.20);
+  background: rgba(4, 30, 20, 0.76);
+}
+
+body.logistica-gestor-page .page-main {
+  min-width: 0;
+  padding: 14px 24px 30px;
+}
+
+/* Barra Abrir OS / Atualizar */
+body.logistica-gestor-page #pageContent > section.card:first-child {
+  margin-top: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--log-line);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(4, 34, 23, 0.91), rgba(3, 24, 17, 0.94));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.12);
+}
+
+body.logistica-gestor-page .log-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+body.logistica-gestor-page .log-tab {
+  min-width: 116px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border: 1px solid rgba(22, 215, 144, 0.18);
+  border-radius: 13px;
+  background: #071d17;
+  color: #8da399;
+  font-size: 13px;
+  font-weight: 800;
+  transition: background .16s ease, color .16s ease, border-color .16s ease, transform .16s ease;
+}
+
+body.logistica-gestor-page .log-tab:hover:not(.active) {
+  background: #09271d;
+  border-color: rgba(22, 215, 144, 0.34);
+  color: #d7eee3;
+}
+
+body.logistica-gestor-page .log-tab.active,
+body.logistica-gestor-page #pageContent .log-tab[data-tab="abrir_os"].active {
+  background: var(--log-accent) !important;
+  color: var(--log-accent-text) !important;
+  border-color: var(--log-accent) !important;
+  box-shadow: 0 8px 22px rgba(22, 215, 144, 0.19) !important;
+}
+
+body.logistica-gestor-page .log-tab.active:hover,
+body.logistica-gestor-page #pageContent .log-tab[data-tab="abrir_os"].active:hover {
+  background: var(--log-accent-hover) !important;
+  border-color: var(--log-accent-hover) !important;
+}
+
+body.logistica-gestor-page .log-tab:active {
+  transform: scale(.98);
+}
+
+/* Card principal da aba */
+body.logistica-gestor-page #logContent > section.card {
+  margin-top: 14px;
+  padding: 18px;
+  overflow: hidden;
+  border: 1px solid var(--log-line);
+  border-radius: 20px;
+  background:
+    linear-gradient(145deg, rgba(4, 31, 21, 0.96), rgba(2, 22, 15, 0.97));
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.14);
+}
+
+body.logistica-gestor-page #logContent > section.card > .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px !important;
+}
+
+body.logistica-gestor-page #logContent > section.card > .section-head h3 {
+  margin: 0 !important;
+  color: var(--log-text);
+  font-size: 18px;
+}
+
+body.logistica-gestor-page #abrirOsReload,
+body.logistica-gestor-page #atualizarReload,
+body.logistica-gestor-page #logReload {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid rgba(22, 215, 144, 0.22);
+  border-radius: 11px;
+  background: #08251b;
+  color: #d7ede2;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+body.logistica-gestor-page #abrirOsReload:hover,
+body.logistica-gestor-page #atualizarReload:hover,
+body.logistica-gestor-page #logReload:hover {
+  background: #0a3022;
+  border-color: rgba(22, 215, 144, 0.42);
+}
+
+/* KPIs */
+body.logistica-gestor-page .fob-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+body.logistica-gestor-page .fob-kpi {
+  min-height: 64px;
+  padding: 11px 14px;
+  border: 1px solid rgba(22, 215, 144, 0.18);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(5, 35, 24, 0.88), rgba(4, 26, 18, 0.92));
+}
+
+body.logistica-gestor-page .fob-kpi strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #eef8f3;
+  font-size: 22px;
+  line-height: 1;
+}
+
+body.logistica-gestor-page .fob-kpi.ok strong {
+  color: #79edbb;
+}
+
+body.logistica-gestor-page .fob-kpi span {
+  color: var(--log-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Formulário */
+body.logistica-gestor-page .abrir-os-card {
+  margin-top: 0;
+  padding: 16px;
+  border: 1px solid rgba(22, 215, 144, 0.18);
+  border-radius: 16px;
+  background: rgba(3, 26, 18, 0.72);
+}
+
+body.logistica-gestor-page .abrir-os-card h4 {
+  margin: 0 0 13px;
+  color: var(--log-text);
+  font-size: 14px;
+  letter-spacing: -0.015em;
+}
+
+body.logistica-gestor-page .abrir-os-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 11px 10px;
+}
+
+body.logistica-gestor-page .abrir-os-grid label {
+  min-width: 0;
+  color: #9eb5aa;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+body.logistica-gestor-page .abrir-os-grid .log-input {
+  min-height: 41px;
+  margin-top: 5px;
+  padding: 9px 11px;
+  border: 1px solid rgba(90, 148, 124, 0.30);
+  border-radius: 11px;
+  background: var(--log-field);
+  color: var(--log-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.012);
+  font-size: 12px;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+body.logistica-gestor-page .abrir-os-grid .log-input:hover {
+  background: var(--log-field-hover);
+  border-color: rgba(22, 215, 144, 0.28);
+}
+
+body.logistica-gestor-page .abrir-os-grid .log-input:focus {
+  border-color: rgba(22, 215, 144, 0.72);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(22, 215, 144, 0.09);
+}
+
+body.logistica-gestor-page .abrir-os-grid .log-input::placeholder {
+  color: #6f877c;
+  opacity: 1;
+}
+
+body.logistica-gestor-page .abrir-os-grid select.log-input {
+  color: #e5f1eb;
+}
+
+body.logistica-gestor-page #abrirOsSalvarBtn {
+  min-height: 42px;
+  padding: 10px 20px;
+  border: 1px solid rgba(22, 215, 144, 0.42);
+  border-radius: 11px;
+  background: var(--log-accent);
+  color: var(--log-accent-text);
+  box-shadow: 0 9px 24px rgba(22, 215, 144, 0.16);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+body.logistica-gestor-page #abrirOsSalvarBtn:hover {
+  background: var(--log-accent-hover);
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+body.logistica-gestor-page #abrirOsSalvarBtn:active {
+  background: var(--log-accent-active);
+  transform: translateY(0);
+}
+
+/* Histórico */
+body.logistica-gestor-page .abrir-os-card + .mt-16 {
+  margin-top: 14px;
+  padding: 15px 16px 16px;
+  border: 1px solid rgba(22, 215, 144, 0.18);
+  border-radius: 16px;
+  background: rgba(3, 25, 17, 0.70);
+}
+
+body.logistica-gestor-page .log-subtitle {
+  margin: 0 0 12px;
+  color: var(--log-text);
+  font-size: 16px;
+}
+
+body.logistica-gestor-page .log-table-wrap {
+  margin-top: 0;
+  overflow: auto;
+  border: 1px solid rgba(22, 215, 144, 0.16);
+  border-radius: 13px;
+  background: rgba(2, 20, 14, 0.72);
+}
+
+body.logistica-gestor-page .log-table th {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(22, 215, 144, 0.18);
+  background: #062219;
+  color: #72ddb0;
+  font-size: 10px;
+}
+
+body.logistica-gestor-page .log-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(22, 215, 144, 0.08);
+  background: rgba(3, 26, 18, 0.48);
+  color: #dbeae3;
+  font-size: 12px;
+}
+
+body.logistica-gestor-page .log-table tr:hover td {
+  background: rgba(9, 47, 33, 0.52);
+}
+
+body.logistica-gestor-page .log-empty {
+  border-color: rgba(22, 215, 144, 0.17);
+  background: rgba(3, 24, 17, 0.55);
+  color: var(--log-muted);
+}
+
+/* Aba Atualizar no mesmo sistema visual */
+body.logistica-gestor-page .atz-filtros {
+  gap: 10px;
+}
+
+body.logistica-gestor-page .atz-filtros .log-input,
+body.logistica-gestor-page .atz-painel .log-input {
+  border-color: rgba(90, 148, 124, 0.30);
+  background: var(--log-field);
+}
+
+body.logistica-gestor-page .atz-acao-btn,
+body.logistica-gestor-page .log-os-filter-btn {
+  border-color: rgba(22, 215, 144, 0.18);
+  background: #071d17;
+  color: #91aa9e;
+}
+
+body.logistica-gestor-page .atz-acao-btn:hover,
+body.logistica-gestor-page .log-os-filter-btn:hover {
+  border-color: rgba(22, 215, 144, 0.34);
+  background: #09271d;
+  color: #d7eee3;
+}
+
+body.logistica-gestor-page .log-os-filter-btn.active {
+  border-color: rgba(22, 215, 144, 0.44);
+  background: rgba(22, 215, 144, 0.13);
+  color: #bff3db;
+}
+
+@media (max-width: 1280px) {
+  body.logistica-gestor-page .abrir-os-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  body.logistica-gestor-page .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  body.logistica-gestor-page .sidebar {
+    position: relative;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--log-line);
+  }
+
+  body.logistica-gestor-page .page-main {
+    padding: 14px;
+  }
+}
+
+@media (max-width: 680px) {
+  body.logistica-gestor-page .topbar {
+    padding: 12px 14px;
+  }
+
+  body.logistica-gestor-page .fob-kpis,
+  body.logistica-gestor-page .abrir-os-grid,
+  body.logistica-gestor-page .atz-filtros {
+    grid-template-columns: 1fr;
+  }
+
+  body.logistica-gestor-page .log-tab {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  body.logistica-gestor-page #abrirOsSalvarBtn {
+    width: 100%;
+  }
+}
