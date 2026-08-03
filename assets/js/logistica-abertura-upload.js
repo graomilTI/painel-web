@@ -320,8 +320,8 @@ function ensureUploadButton() {
   wrap.className = 'abrir-os-upload-wrap';
   wrap.innerHTML = `
     <input id="abrirOsUploadInput" type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" hidden>
-    <span id="abrirOsUploadStatus" class="abrir-os-upload-status" data-tone="muted">Anexe PDF ou print; a IA identifica os campos mesmo em formatos diferentes.</span>
-    <button id="abrirOsUploadBtn" class="btn btn-secondary abrir-os-upload-btn" type="button" title="Anexar PDF ou imagem para leitura automática">
+    <span id="abrirOsUploadStatus" class="abrir-os-upload-status" data-tone="muted">Anexe, cole (Ctrl+V) ou arraste um PDF/print; a IA identifica os campos mesmo em formatos diferentes.</span>
+    <button id="abrirOsUploadBtn" class="btn btn-secondary abrir-os-upload-btn" type="button" title="Anexar PDF ou imagem para leitura automática (também aceita colar com Ctrl+V)">
       <span aria-hidden="true">⇧</span> UPLOAD
     </button>
   `;
@@ -343,8 +343,25 @@ function scheduleEnsure() {
   requestAnimationFrame(ensureUploadButton);
 }
 
+// Cola (Ctrl+V) uma captura de tela direto na aba Abrir OS — mesmo fluxo de
+// leitura automática do botão UPLOAD, sem precisar salvar o print em
+// arquivo antes. Só age se a área de transferência tiver uma IMAGEM; colar
+// texto normal em qualquer campo continua funcionando igual.
+function handlePaste(event) {
+  if (!isLogisticaPage() || location.hash.replace('#', '') !== 'abrir_os') return;
+  if (!document.getElementById(UPLOAD_ID)) return;
+  const items = [...(event.clipboardData?.items || [])];
+  const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+  if (!imageItem) return;
+  const file = imageItem.getAsFile();
+  if (!file) return;
+  event.preventDefault();
+  processFile(file);
+}
+
 injectStyles();
 new MutationObserver(scheduleEnsure).observe(document.documentElement, { childList: true, subtree: true });
 window.addEventListener('hashchange', scheduleEnsure);
+document.addEventListener('paste', handlePaste);
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleEnsure, { once: true });
 else scheduleEnsure();
