@@ -505,7 +505,7 @@ import { getCurrentUser } from './auth.js';
   // embarcado ao longo da rota de frota (paradas tipo "colaborador").
   function drawOrigens(L, bounds) {
     st.rotasMapa.forEach(r => {
-      if (r.tipo === 'reembolso_km') {
+      if (r.tipo === 'reembolso_km' || r.tipo === 'local') {
         if (!Number.isFinite(Number(r.origem_latitude)) || !Number.isFinite(Number(r.origem_longitude))) return;
         const origemLabel = r.origem_tipo === 'hotel' ? 'Hotel' : r.origem_tipo === 'alojamento' ? 'Alojamento' : 'Casa';
         L.marker([r.origem_latitude, r.origem_longitude], { icon: iconColab() })
