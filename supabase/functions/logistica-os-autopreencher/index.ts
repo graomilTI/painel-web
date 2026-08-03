@@ -7,12 +7,30 @@ const CORS = {
 };
 const MAX_BASE64_LENGTH = Math.ceil(15 * 1024 * 1024 * 4 / 3) + 64;
 const OCR_ENDPOINT = "https://api.ocr.space/parse/image";
-const TYPES: Record<string, { mime: string; provider: string }> = {
+const TYPES: Record<string, { mime: string; provider?: string }> = {
   jpg: { mime: "image/jpeg", provider: "JPG" },
   jpeg: { mime: "image/jpeg", provider: "JPG" },
   png: { mime: "image/png", provider: "PNG" },
   gif: { mime: "image/gif", provider: "GIF" },
+  webp: { mime: "image/webp" },
   pdf: { mime: "application/pdf", provider: "PDF" },
+};
+
+type Campos = {
+  contratante_cliente: string;
+  filial_pagadora: string;
+  produtor: string;
+  armazem_embarque: string;
+  cidade_embarque: string;
+  cidade_destino: string;
+  local_destino: string;
+  numero_contrato: string;
+  produto: string;
+  tipo_produto: string;
+  servico: string;
+  volume_inicial: number | null;
+  regional: string;
+  troca_notas: string;
 };
 
 type OcrPage = { ParsedText?: string | null; ErrorMessage?: unknown; ErrorDetails?: unknown };
@@ -70,6 +88,150 @@ async function authorize(req: Request) {
   return { ok: true, status: 200 };
 }
 
+function clean(value: unknown): string {
+  return String(value ?? "")
+    .replace(/^[\s*:#=\-–—]+/, "")
+    .replace(/[\s|]+$/, "")
+    .trim();
+}
+
+function emptyCampos(): Campos {
+  return {
+    contratante_cliente: "",
+    filial_pagadora: "",
+    produtor: "",
+    armazem_embarque: "",
+    cidade_embarque: "",
+    cidade_destino: "",
+    local_destino: "",
+    numero_contrato: "",
+    produto: "",
+    tipo_produto: "",
+    servico: "",
+    volume_inicial: null,
+    regional: "",
+    troca_notas: "",
+  };
+}
+
+function normalizeCampos(raw: Record<string, unknown> | null | undefined): Campos {
+  const out = emptyCampos();
+  for (const key of Object.keys(out) as Array<keyof Campos>) {
+    if (key === "volume_inicial") {
+      const value = raw?.[key];
+      const parsed = typeof value === "number"
+        ? value
+        : Number(String(value ?? "").replace(/\./g, "").replace(",", ".").replace(/[^0-9.-]/g, ""));
+      out[key] = Number.isFinite(parsed) ? parsed : null;
+      continue;
+    }
+    out[key] = clean(raw?.[key]);
+  }
+  if (out.troca_notas) {
+    out.troca_notas = ["sim", "s", "yes", "true", "1"].includes(normalize(out.troca_notas)) ? "SIM" : "NAO";
+  }
+  return out;
+}
+
+function promptJson(): string {
+  return `Analise este documento ou print de solicitação de abertura de O.S. logística.
+Retorne SOMENTE JSON válido, sem markdown, com exatamente estes campos:
+{
+  "contratante_cliente": "",
+  "filial_pagadora": "",
+  "produtor": "",
+  "armazem_embarque": "",
+  "cidade_embarque": "",
+  "cidade_destino": "",
+  "local_destino": "",
+  "numero_contrato": "",
+  "produto": "",
+  "tipo_produto": "",
+  "servico": "",
+  "volume_inicial": null,
+  "regional": "",
+  "troca_notas": ""
+}
+Regras: não invente dados; use string vazia quando não localizar; volume_inicial deve ser número em toneladas; troca_notas deve ser SIM, NAO ou vazio; preserve nomes de clientes, locais, cidades, contratos e supervisões como aparecem no documento.`;
+}
+
+function parseJsonText(text: string): Record<string, unknown> {
+  const cleaned = String(text || "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start < 0 || end <= start) throw new Error("O serviço não retornou JSON válido.");
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+async function callGroq(base64: string, mime: string, apiKey: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: Deno.env.get("GROQ_OCR_MODEL") || "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: promptJson() },
+          { type: "image_url", image_url: { url: `data:${mime};base64,${base64}` } },
+        ],
+      }],
+      temperature: 0,
+      response_format: { type: "json_object" },
+      max_tokens: 1600,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`Groq API ${response.status}: ${raw.slice(0, 500)}`);
+  const result = JSON.parse(raw);
+  const text = result?.choices?.[0]?.message?.content || "";
+  return { campos: normalizeCampos(parseJsonText(text)), texto: text, provider: "groq" };
+}
+
+function outputText(result: any): string {
+  if (typeof result?.output_text === "string" && result.output_text.trim()) return result.output_text.trim();
+  for (const item of result?.output ?? []) {
+    if (item?.type !== "message") continue;
+    for (const content of item?.content ?? []) {
+      if (content?.type === "output_text" && typeof content?.text === "string" && content.text.trim()) return content.text.trim();
+    }
+  }
+  return "";
+}
+
+async function callOpenAI(base64: string, extension: string, mime: string, apiKey: string) {
+  const part = extension === "pdf"
+    ? { type: "input_file", filename: "abertura-os.pdf", file_data: base64 }
+    : { type: "input_image", image_url: `data:${mime};base64,${base64}`, detail: "high" };
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: Deno.env.get("OPENAI_OCR_MODEL") || "gpt-4.1-mini",
+      store: false,
+      input: [{ role: "user", content: [{ type: "input_text", text: promptJson() }, part] }],
+      max_output_tokens: 1800,
+    }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`OpenAI API ${response.status}: ${raw.slice(0, 500)}`);
+  const result = JSON.parse(raw);
+  const text = outputText(result);
+  return { campos: normalizeCampos(parseJsonText(text)), texto: text, provider: "openai" };
+}
+
 function listMessages(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(listMessages);
   const text = String(value ?? "").trim();
@@ -87,19 +249,8 @@ function errorsFrom(result: OcrResult): string[] {
   ].filter((value, index, array) => array.indexOf(value) === index);
 }
 
-function clean(value: unknown): string {
-  return String(value ?? "")
-    .replace(/^[\s*:#=\-–—]+/, "")
-    .replace(/[\s|]+$/, "")
-    .trim();
-}
-
 function lines(text: string): string[] {
-  return text
-    .replace(/\r/g, "")
-    .split("\n")
-    .map((line) => line.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
+  return text.replace(/\r/g, "").split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 }
 
 function inlineValue(line: string, label: string): string {
@@ -111,34 +262,20 @@ function inlineValue(line: string, label: string): string {
     const first = separators[0];
     return clean(line.slice(first.position + first.token.length));
   }
-
-  const normalizedLine = normalize(line);
-  const normalizedLabel = normalize(label);
-  const position = normalizedLine.indexOf(normalizedLabel);
-  if (position < 0) return "";
-  return clean(line.slice(Math.min(line.length, position + label.length)));
+  const position = normalize(line).indexOf(normalize(label));
+  return position < 0 ? "" : clean(line.slice(Math.min(line.length, position + label.length)));
 }
 
 function extract(source: string[], labels: string[], rejects: string[] = []): string {
   const wanted = labels.map(normalize);
   const blocked = rejects.map(normalize);
-
   for (let index = 0; index < source.length; index += 1) {
     const current = normalize(source[index]);
     if (blocked.some((term) => current.includes(term))) continue;
-
-    const matched = wanted.findIndex((label) =>
-      current === label
-      || current.startsWith(`${label}:`)
-      || current.startsWith(`${label}=`)
-      || current.startsWith(`${label} `)
-      || current.startsWith(`${label}-`)
-    );
+    const matched = wanted.findIndex((label) => current === label || current.startsWith(`${label}:`) || current.startsWith(`${label}=`) || current.startsWith(`${label} `) || current.startsWith(`${label}-`));
     if (matched < 0) continue;
-
     const sameLine = inlineValue(source[index], labels[matched]);
     if (sameLine && normalize(sameLine) !== wanted[matched]) return sameLine;
-
     const nextLine = clean(source[index + 1]);
     if (nextLine && !wanted.some((label) => normalize(nextLine).startsWith(label))) return nextLine;
   }
@@ -148,13 +285,8 @@ function extract(source: string[], labels: string[], rejects: string[] = []): st
 function parseNumber(value: unknown): number | null {
   let text = String(value ?? "").replace(/\s/g, "").replace(/[^0-9,.-]/g, "");
   if (!text) return null;
-  if (text.includes(",") && text.includes(".")) {
-    text = text.lastIndexOf(",") > text.lastIndexOf(".")
-      ? text.replace(/\./g, "").replace(",", ".")
-      : text.replace(/,/g, "");
-  } else if (text.includes(",")) {
-    text = text.replace(/\./g, "").replace(",", ".");
-  }
+  if (text.includes(",") && text.includes(".")) text = text.lastIndexOf(",") > text.lastIndexOf(".") ? text.replace(/\./g, "").replace(",", ".") : text.replace(/,/g, "");
+  else if (text.includes(",")) text = text.replace(/\./g, "").replace(",", ".");
   const number = Number(text);
   return Number.isFinite(number) ? number : null;
 }
@@ -164,27 +296,17 @@ function infer(text: string, options: string[]): string {
   return options.find((option) => whole.includes(normalize(option))) || "";
 }
 
-function structure(text: string) {
+function structure(text: string): Campos {
   const source = lines(text);
   let produto = extract(source, ["Produto", "Cultura", "Mercadoria"]);
   if (!produto) produto = infer(text, ["Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
-
   let tipoProduto = extract(source, ["Tipo de produto", "Tipo produto", "Tecnologia", "Variedade"]);
-  if (!tipoProduto) tipoProduto = infer(text, [
-    "Aflatoxina Negativo", "Declarado Intacta", "Intacta Negativo", "Intacta Positivo",
-    "Não Definido", "OS com teste", "Participante", "Transgênico", "Convencional",
-  ]);
-
+  if (!tipoProduto) tipoProduto = infer(text, ["Aflatoxina Negativo", "Declarado Intacta", "Intacta Negativo", "Intacta Positivo", "Não Definido", "OS com teste", "Participante", "Transgênico", "Convencional"]);
   let servico = extract(source, ["Serviço", "Tipo de serviço", "Operação"]);
-  if (!servico) servico = infer(text, [
-    "CLASSIFICAÇÃO TRANSB. SAÍDA", "CLASSIFICAÇÃO TRANSB. ENTRADA",
-    "ACOMPANHAMENTO DE EMBARQUE", "AUDITORIA", "FOB", "CIF",
-  ]);
-
+  if (!servico) servico = infer(text, ["CLASSIFICAÇÃO TRANSB. SAÍDA", "CLASSIFICAÇÃO TRANSB. ENTRADA", "ACOMPANHAMENTO DE EMBARQUE", "AUDITORIA", "FOB", "CIF"]);
   let trocaNotas = extract(source, ["Troca de notas", "Troca notas", "Troca NF"]);
   if (trocaNotas) trocaNotas = ["sim", "s", "yes", "true", "1"].includes(normalize(trocaNotas)) ? "SIM" : "NAO";
-
-  return {
+  return normalizeCampos({
     contratante_cliente: extract(source, ["Contratante / Cliente", "Contratante", "Cliente nacional", "Cliente"], ["cliente final", "filial", "cidade"]),
     filial_pagadora: extract(source, ["Filial pagadora", "Cliente final / filial", "Cliente final", "Filial"]),
     produtor: extract(source, ["Produtor", "Nome do produtor"]),
@@ -199,21 +321,32 @@ function structure(text: string) {
     volume_inicial: parseNumber(extract(source, ["Volume inicial (Tons)", "Volume inicial", "Volume", "Quantidade", "Toneladas"])),
     regional: extract(source, ["Supervisão", "Supervisao", "Regional", "Coordenação", "Coordenacao"]),
     troca_notas: trocaNotas,
-  };
+  });
 }
 
-function planHint(errors: string[]): string | null {
-  const text = normalize(errors.join(" "));
-  if (text.includes("file size") || text.includes("maximum size") || text.includes("too large")) {
-    return "O OCR gratuito aceita arquivos pequenos. Reduza o PDF ou envie um print da página principal.";
-  }
-  if (text.includes("page") && (text.includes("limit") || text.includes("maximum"))) {
-    return "O OCR gratuito processa poucas páginas por PDF. Divida o documento ou envie um print.";
-  }
-  if (text.includes("rate limit") || text.includes("quota") || text.includes("limit exceeded")) {
-    return "O limite do OCR foi atingido. Aguarde alguns minutos e tente novamente.";
-  }
-  return null;
+async function callOcrSpace(base64: string, type: { mime: string; provider?: string }, apiKey: string) {
+  if (!type.provider) throw new Error("Formato não suportado pelo OCR.Space.");
+  const engine = ["1", "2", "3"].includes(Deno.env.get("OCR_SPACE_ENGINE") || "") ? String(Deno.env.get("OCR_SPACE_ENGINE")) : "2";
+  const language = Deno.env.get("OCR_SPACE_LANGUAGE") || (engine === "3" ? "auto" : "por");
+  const form = new FormData();
+  form.set("base64Image", `data:${type.mime};base64,${base64}`);
+  form.set("language", language);
+  form.set("filetype", type.provider);
+  form.set("isOverlayRequired", "false");
+  form.set("detectOrientation", "true");
+  form.set("scale", "true");
+  form.set("isTable", "true");
+  form.set("OCREngine", engine);
+  const response = await fetch(Deno.env.get("OCR_SPACE_ENDPOINT") || OCR_ENDPOINT, { method: "POST", headers: { apikey: apiKey }, body: form, signal: AbortSignal.timeout(120_000) });
+  const raw = await response.text();
+  let result: OcrResult;
+  try { result = JSON.parse(raw) as OcrResult; }
+  catch { throw new Error(`O OCR.Space devolveu resposta inválida (${response.status}).`); }
+  const providerErrors = errorsFrom(result);
+  if (!response.ok || result.IsErroredOnProcessing || !result.ParsedResults?.length) throw new Error(providerErrors[0] || `Erro no OCR.Space (${response.status}).`);
+  const texto = result.ParsedResults.map((page) => clean(page.ParsedText)).filter(Boolean).join("\n\n");
+  if (!texto) throw new Error("O arquivo foi processado, mas nenhum texto foi reconhecido.");
+  return { campos: structure(texto), texto, provider: "ocr.space", engine, language };
 }
 
 serve(async (req) => {
@@ -226,75 +359,41 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const base64 = String(body?.base64 || "");
+    const base64 = String(body?.base64 || "").replace(/^data:[^;]+;base64,/, "");
     const extension = String(body?.tipo || "").toLowerCase();
     if (!base64) return json({ error: "Arquivo não enviado.", request_id: requestId }, 400);
     if (base64.length > MAX_BASE64_LENGTH) return json({ error: "O arquivo excede o limite técnico de 15 MB.", request_id: requestId }, 413);
-
     const type = TYPES[extension];
-    if (!type) return json({ error: "Formato não suportado. Envie PDF, JPG, PNG ou GIF.", request_id: requestId }, 400);
+    if (!type) return json({ error: "Formato não suportado. Envie PDF, JPG, PNG, GIF ou WEBP.", request_id: requestId }, 400);
 
-    const apiKey = Deno.env.get("OCR_SPACE_API_KEY") || "";
-    if (!apiKey) return json({ error: "OCR_SPACE_API_KEY não configurada nas Edge Function Secrets.", request_id: requestId }, 500);
+    const groqKey = Deno.env.get("GROQ_API_KEY") || "";
+    const openaiKey = Deno.env.get("OPENAI_API_KEY") || "";
+    const ocrSpaceKey = Deno.env.get("OCR_SPACE_API_KEY") || "";
 
-    const engine = ["1", "2", "3"].includes(Deno.env.get("OCR_SPACE_ENGINE") || "")
-      ? String(Deno.env.get("OCR_SPACE_ENGINE"))
-      : "2";
-    const language = Deno.env.get("OCR_SPACE_LANGUAGE") || (engine === "3" ? "auto" : "por");
-    const form = new FormData();
-    form.set("base64Image", base64.startsWith("data:") ? base64 : `data:${type.mime};base64,${base64}`);
-    form.set("language", language);
-    form.set("filetype", type.provider);
-    form.set("isOverlayRequired", "false");
-    form.set("detectOrientation", "true");
-    form.set("scale", "true");
-    form.set("isTable", "true");
-    form.set("OCREngine", engine);
-
-    const response = await fetch(Deno.env.get("OCR_SPACE_ENDPOINT") || OCR_ENDPOINT, {
-      method: "POST",
-      headers: { apikey: apiKey },
-      body: form,
-      signal: AbortSignal.timeout(120_000),
-    });
-    const raw = await response.text();
-    let result: OcrResult;
-    try {
-      result = JSON.parse(raw) as OcrResult;
-    } catch {
-      return json({ error: `O serviço de OCR devolveu uma resposta inválida (${response.status}).`, request_id: requestId }, 502);
+    let result;
+    if (extension !== "pdf" && groqKey) {
+      result = await callGroq(base64, type.mime, groqKey);
+    } else if (openaiKey) {
+      result = await callOpenAI(base64, extension, type.mime, openaiKey);
+    } else if (ocrSpaceKey) {
+      result = await callOcrSpace(base64, type, ocrSpaceKey);
+    } else if (extension === "pdf") {
+      return json({ error: "Para ler PDF, configure OPENAI_API_KEY ou OCR_SPACE_API_KEY. Enquanto isso, envie um print da página principal.", request_id: requestId }, 500);
+    } else {
+      return json({ error: "Nenhum provedor de leitura está configurado. Configure GROQ_API_KEY, OPENAI_API_KEY ou OCR_SPACE_API_KEY nas Edge Function Secrets.", request_id: requestId }, 500);
     }
 
-    const providerErrors = errorsFrom(result);
-    if (!response.ok || result.IsErroredOnProcessing || !result.ParsedResults?.length) {
-      return json({
-        error: planHint(providerErrors) || providerErrors[0] || `Erro no serviço de OCR (${response.status}).`,
-        detalhe: providerErrors,
-        request_id: requestId,
-      }, 502);
-    }
-
-    const texto = result.ParsedResults.map((page) => clean(page.ParsedText)).filter(Boolean).join("\n\n");
-    if (!texto) return json({ error: "O arquivo foi processado, mas nenhum texto foi reconhecido.", request_id: requestId }, 422);
-
-    const campos = structure(texto);
-    const identificados = Object.values(campos).filter((value) => value !== null && clean(value) !== "").length;
+    const identificados = Object.values(result.campos).filter((value) => value !== null && clean(value) !== "").length;
     return json({
-      campos,
-      texto,
+      ...result,
       campos_identificados: identificados,
-      provider: "ocr.space",
-      engine,
-      language,
-      paginas_lidas: result.ParsedResults.length,
-      tempo_ms: Number(result.ProcessingTimeInMilliseconds || 0) || null,
       request_id: requestId,
     });
   } catch (error) {
     const timeout = error instanceof DOMException && error.name === "TimeoutError";
     console.error("[logistica-os-autopreencher]", { requestId, error });
     return json({
-      error: timeout ? "O OCR excedeu o tempo máximo de 120 segundos." : error instanceof Error ? error.message : String(error),
+      error: timeout ? "A leitura excedeu o tempo máximo de 120 segundos." : error instanceof Error ? error.message : String(error),
       request_id: requestId,
     }, timeout ? 504 : 500);
   }
