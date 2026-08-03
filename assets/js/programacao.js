@@ -2007,8 +2007,9 @@ export function renderContent(content) {
       if (disp === 'SEM EMBARQUE' || disp === 'INDISPONIVEL') return;
 
       const est = state.maps.estadia.get(String(colab.id)) || {};
+      // Em branco = Casa (mesma leitura que o hint "Casa (nenhuma opção
+      // selecionada)" já mostra na etapa B) — não bloqueia o salvamento.
       const tipoEstadia = normalizeText((draftValueFromDom('programacao_estadia', colab.id, 'tipo_estadia') ?? est.tipo_estadia) || '');
-      if (!tipoEstadia) problemas.push(`${colab.nome}: selecione o tipo de hospedagem na etapa B.`);
       const cidade = String((draftValueFromDom('programacao_estadia', colab.id, 'cidade') ?? est.cidade) || '').trim();
       const uf = normalizeUF((draftValueFromDom('programacao_estadia', colab.id, 'uf') ?? est.uf) || '');
       const alojamentoId = (draftValueFromDom('programacao_estadia', colab.id, 'alojamento_id') ?? est.alojamento_id) || '';
