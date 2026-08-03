@@ -5,35 +5,22 @@ const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
 const MAX_BASE64_LENGTH = Math.ceil(15 * 1024 * 1024 * 4 / 3) + 64;
 const OCR_ENDPOINT = "https://api.ocr.space/parse/image";
-const MIME_TYPES: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  gif: "image/gif",
-  pdf: "application/pdf",
-};
-const OCR_FILE_TYPES: Record<string, string> = {
-  jpg: "JPG",
-  jpeg: "JPG",
-  png: "PNG",
-  gif: "GIF",
-  pdf: "PDF",
+const TYPES: Record<string, { mime: string; provider: string }> = {
+  jpg: { mime: "image/jpeg", provider: "JPG" },
+  jpeg: { mime: "image/jpeg", provider: "JPG" },
+  png: { mime: "image/png", provider: "PNG" },
+  gif: { mime: "image/gif", provider: "GIF" },
+  pdf: { mime: "application/pdf", provider: "PDF" },
 };
 
-type OcrPage = {
-  ParsedText?: string | null;
-  ErrorMessage?: string | string[] | null;
-  ErrorDetails?: string | string[] | null;
-};
-
-type OcrResponse = {
+type OcrPage = { ParsedText?: string | null; ErrorMessage?: unknown; ErrorDetails?: unknown };
+type OcrResult = {
   ParsedResults?: OcrPage[];
   IsErroredOnProcessing?: boolean;
-  ErrorMessage?: string | string[] | null;
-  ErrorDetails?: string | string[] | null;
+  ErrorMessage?: unknown;
+  ErrorDetails?: unknown;
   ProcessingTimeInMilliseconds?: string | number;
 };
 
@@ -60,108 +47,105 @@ function asBoolean(value: unknown): boolean {
 }
 
 async function authorize(req: Request) {
-  const authHeader = req.headers.get("Authorization") ?? "";
-  if (!authHeader.startsWith("Bearer ")) {
-    return { ok: false, status: 401, error: "Token de autenticação ausente." };
-  }
+  const authorization = req.headers.get("Authorization") ?? "";
+  if (!authorization.startsWith("Bearer ")) return { ok: false, status: 401, error: "Token de autenticação ausente." };
 
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   if (!url || !anonKey) return { ok: false, status: 500, error: "Configuração de autenticação indisponível." };
 
   const client = createClient(url, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+    global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData?.user) return { ok: false, status: 401, error: "Sessão inválida ou expirada." };
 
   const { data, error } = await client.rpc("rpc_get_user_context");
   if (error) return { ok: false, status: 403, error: `Não foi possível validar as permissões: ${error.message}` };
-
   const context = (Array.isArray(data) ? data[0] : data) as Record<string, any> | null;
   const active = asBoolean(context?.user?.active ?? context?.user?.ativo ?? context?.active ?? context?.ativo)
     || ["ativo", "active"].includes(normalize(context?.user?.status ?? context?.status));
   if (!context || !active) return { ok: false, status: 403, error: "Usuário inativo ou sem contexto de acesso." };
-
-  return { ok: true, status: 200, userId: userData.user.id };
+  return { ok: true, status: 200 };
 }
 
-function messages(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(messages);
+function listMessages(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(listMessages);
   const text = String(value ?? "").trim();
   return text ? [text] : [];
 }
 
-function providerErrors(result: OcrResponse): string[] {
+function errorsFrom(result: OcrResult): string[] {
   return [
-    ...messages(result.ErrorMessage),
-    ...messages(result.ErrorDetails),
+    ...listMessages(result.ErrorMessage),
+    ...listMessages(result.ErrorDetails),
     ...(result.ParsedResults ?? []).flatMap((page) => [
-      ...messages(page.ErrorMessage),
-      ...messages(page.ErrorDetails),
+      ...listMessages(page.ErrorMessage),
+      ...listMessages(page.ErrorDetails),
     ]),
-  ].filter((value, index, list) => list.indexOf(value) === index);
+  ].filter((value, index, array) => array.indexOf(value) === index);
 }
 
-function cleanValue(value: string): string {
+function clean(value: unknown): string {
   return String(value ?? "")
     .replace(/^[\s*:#=\-–—]+/, "")
     .replace(/[\s|]+$/, "")
     .trim();
 }
 
-function linesFromText(text: string): string[] {
-  return String(text ?? "")
+function lines(text: string): string[] {
+  return text
     .replace(/\r/g, "")
     .split("\n")
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
 }
 
-function valueAfterLabel(line: string, label: string): string {
+function inlineValue(line: string, label: string): string {
+  const separators = [":", "=", " - ", " – ", " — "]
+    .map((token) => ({ token, position: line.indexOf(token) }))
+    .filter((item) => item.position >= 0)
+    .sort((a, b) => a.position - b.position);
+  if (separators.length) {
+    const first = separators[0];
+    return clean(line.slice(first.position + first.token.length));
+  }
+
   const normalizedLine = normalize(line);
   const normalizedLabel = normalize(label);
-  const index = normalizedLine.indexOf(normalizedLabel);
-  if (index < 0) return "";
-
-  const separators = [line.indexOf(":"), line.indexOf("="), line.indexOf(" - "), line.indexOf(" – "), line.indexOf(" — ")]
-    .filter((position) => position >= 0)
-    .sort((a, b) => a - b);
-  if (separators.length) return cleanValue(line.slice(separators[0] + (line.slice(separators[0], separators[0] + 3).includes(" ") ? 3 : 1)));
-
-  const approximateStart = Math.min(line.length, index + label.length);
-  return cleanValue(line.slice(approximateStart));
+  const position = normalizedLine.indexOf(normalizedLabel);
+  if (position < 0) return "";
+  return clean(line.slice(Math.min(line.length, position + label.length)));
 }
 
-function extractField(lines: string[], labels: string[], reject: string[] = []): string {
-  const normalizedLabels = labels.map(normalize);
-  const normalizedReject = reject.map(normalize);
+function extract(source: string[], labels: string[], rejects: string[] = []): string {
+  const wanted = labels.map(normalize);
+  const blocked = rejects.map(normalize);
 
-  for (let index = 0; index < lines.length; index += 1) {
-    const normalizedLine = normalize(lines[index]);
-    if (normalizedReject.some((term) => normalizedLine.includes(term))) continue;
+  for (let index = 0; index < source.length; index += 1) {
+    const current = normalize(source[index]);
+    if (blocked.some((term) => current.includes(term))) continue;
 
-    const labelIndex = normalizedLabels.findIndex((label) =>
-      normalizedLine === label
-      || normalizedLine.startsWith(`${label}:`)
-      || normalizedLine.startsWith(`${label} `)
-      || normalizedLine.startsWith(`${label}-`)
-      || normalizedLine.startsWith(`${label} -`)
+    const matched = wanted.findIndex((label) =>
+      current === label
+      || current.startsWith(`${label}:`)
+      || current.startsWith(`${label}=`)
+      || current.startsWith(`${label} `)
+      || current.startsWith(`${label}-`)
     );
-    if (labelIndex < 0) continue;
+    if (matched < 0) continue;
 
-    const inline = valueAfterLabel(lines[index], labels[labelIndex]);
-    if (inline && normalize(inline) !== normalizedLabels[labelIndex]) return inline;
+    const sameLine = inlineValue(source[index], labels[matched]);
+    if (sameLine && normalize(sameLine) !== wanted[matched]) return sameLine;
 
-    const next = cleanValue(lines[index + 1] || "");
-    if (next && !normalizedLabels.some((label) => normalize(next).startsWith(label))) return next;
+    const nextLine = clean(source[index + 1]);
+    if (nextLine && !wanted.some((label) => normalize(nextLine).startsWith(label))) return nextLine;
   }
   return "";
 }
 
-function parsePtNumber(value: string): number | null {
+function parseNumber(value: unknown): number | null {
   let text = String(value ?? "").replace(/\s/g, "").replace(/[^0-9,.-]/g, "");
   if (!text) return null;
   if (text.includes(",") && text.includes(".")) {
@@ -175,89 +159,50 @@ function parsePtNumber(value: string): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function inferFromText(text: string, options: string[]): string {
-  const normalizedText = normalize(text);
-  return options.find((option) => normalizedText.includes(normalize(option))) || "";
+function infer(text: string, options: string[]): string {
+  const whole = normalize(text);
+  return options.find((option) => whole.includes(normalize(option))) || "";
 }
 
-function structuredFields(text: string) {
-  const lines = linesFromText(text);
+function structure(text: string) {
+  const source = lines(text);
+  let produto = extract(source, ["Produto", "Cultura", "Mercadoria"]);
+  if (!produto) produto = infer(text, ["Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
 
-  const contratante = extractField(lines, [
-    "Contratante / Cliente",
-    "Contratante",
-    "Cliente nacional",
-    "Cliente",
-  ], ["cliente final", "filial", "cidade"]);
-
-  const filial = extractField(lines, [
-    "Filial pagadora",
-    "Cliente final / filial",
-    "Cliente final",
-    "Filial",
+  let tipoProduto = extract(source, ["Tipo de produto", "Tipo produto", "Tecnologia", "Variedade"]);
+  if (!tipoProduto) tipoProduto = infer(text, [
+    "Aflatoxina Negativo", "Declarado Intacta", "Intacta Negativo", "Intacta Positivo",
+    "Não Definido", "OS com teste", "Participante", "Transgênico", "Convencional",
   ]);
 
-  const volumeRaw = extractField(lines, [
-    "Volume inicial (Tons)",
-    "Volume inicial",
-    "Volume",
-    "Quantidade",
-    "Toneladas",
+  let servico = extract(source, ["Serviço", "Tipo de serviço", "Operação"]);
+  if (!servico) servico = infer(text, [
+    "CLASSIFICAÇÃO TRANSB. SAÍDA", "CLASSIFICAÇÃO TRANSB. ENTRADA",
+    "ACOMPANHAMENTO DE EMBARQUE", "AUDITORIA", "FOB", "CIF",
   ]);
 
-  let produto = extractField(lines, ["Produto", "Cultura", "Mercadoria"]);
-  if (!produto) produto = inferFromText(text, ["Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
-
-  let tipoProduto = extractField(lines, ["Tipo de produto", "Tipo produto", "Tecnologia", "Variedade"]);
-  if (!tipoProduto) {
-    tipoProduto = inferFromText(text, [
-      "Aflatoxina Negativo",
-      "Declarado Intacta",
-      "Intacta Negativo",
-      "Intacta Positivo",
-      "Não Definido",
-      "OS com teste",
-      "Participante",
-      "Transgênico",
-      "Convencional",
-    ]);
-  }
-
-  let servico = extractField(lines, ["Serviço", "Tipo de serviço", "Operação"]);
-  if (!servico) {
-    servico = inferFromText(text, [
-      "CLASSIFICAÇÃO TRANSB. SAÍDA",
-      "CLASSIFICAÇÃO TRANSB. ENTRADA",
-      "ACOMPANHAMENTO DE EMBARQUE",
-      "AUDITORIA",
-      "FOB",
-      "CIF",
-    ]);
-  }
-
-  let trocaNotas = extractField(lines, ["Troca de notas", "Troca notas", "Troca NF"]);
-  const trocaNorm = normalize(trocaNotas);
-  if (trocaNorm) trocaNotas = ["sim", "s", "yes", "true", "1"].includes(trocaNorm) ? "SIM" : "NAO";
+  let trocaNotas = extract(source, ["Troca de notas", "Troca notas", "Troca NF"]);
+  if (trocaNotas) trocaNotas = ["sim", "s", "yes", "true", "1"].includes(normalize(trocaNotas)) ? "SIM" : "NAO";
 
   return {
-    contratante_cliente: contratante,
-    filial_pagadora: filial,
-    produtor: extractField(lines, ["Produtor", "Nome do produtor"]),
-    armazem_embarque: extractField(lines, ["Armazém de embarque", "Armazem de embarque", "Local de embarque", "Ponto de embarque"]),
-    cidade_embarque: extractField(lines, ["Cidade de embarque", "Município de embarque", "Municipio de embarque", "Origem cidade"]),
-    cidade_destino: extractField(lines, ["Cidade destino", "Cidade de destino", "Município destino", "Municipio destino"]),
-    local_destino: extractField(lines, ["Local de destino", "Destino final", "Ponto de destino"]),
-    numero_contrato: extractField(lines, ["Número contrato", "Numero contrato", "Nº contrato", "Contrato"]),
+    contratante_cliente: extract(source, ["Contratante / Cliente", "Contratante", "Cliente nacional", "Cliente"], ["cliente final", "filial", "cidade"]),
+    filial_pagadora: extract(source, ["Filial pagadora", "Cliente final / filial", "Cliente final", "Filial"]),
+    produtor: extract(source, ["Produtor", "Nome do produtor"]),
+    armazem_embarque: extract(source, ["Armazém de embarque", "Armazem de embarque", "Local de embarque", "Ponto de embarque"]),
+    cidade_embarque: extract(source, ["Cidade de embarque", "Município de embarque", "Municipio de embarque", "Origem cidade"]),
+    cidade_destino: extract(source, ["Cidade destino", "Cidade de destino", "Município destino", "Municipio destino"]),
+    local_destino: extract(source, ["Local de destino", "Destino final", "Ponto de destino"]),
+    numero_contrato: extract(source, ["Número contrato", "Numero contrato", "Nº contrato", "Contrato"]),
     produto,
     tipo_produto: tipoProduto,
     servico,
-    volume_inicial: parsePtNumber(volumeRaw),
-    regional: extractField(lines, ["Supervisão", "Supervisao", "Regional", "Coordenação", "Coordenacao"]),
+    volume_inicial: parseNumber(extract(source, ["Volume inicial (Tons)", "Volume inicial", "Volume", "Quantidade", "Toneladas"])),
+    regional: extract(source, ["Supervisão", "Supervisao", "Regional", "Coordenação", "Coordenacao"]),
     troca_notas: trocaNotas,
   };
 }
 
-function freePlanHint(errors: string[]): string | null {
+function planHint(errors: string[]): string | null {
   const text = normalize(errors.join(" "));
   if (text.includes("file size") || text.includes("maximum size") || text.includes("too large")) {
     return "O OCR gratuito aceita arquivos pequenos. Reduza o PDF ou envie um print da página principal.";
@@ -286,9 +231,8 @@ serve(async (req) => {
     if (!base64) return json({ error: "Arquivo não enviado.", request_id: requestId }, 400);
     if (base64.length > MAX_BASE64_LENGTH) return json({ error: "O arquivo excede o limite técnico de 15 MB.", request_id: requestId }, 413);
 
-    const mediaType = MIME_TYPES[extension];
-    const fileType = OCR_FILE_TYPES[extension];
-    if (!mediaType || !fileType) return json({ error: "Formato não suportado. Envie PDF, JPG, PNG ou GIF.", request_id: requestId }, 400);
+    const type = TYPES[extension];
+    if (!type) return json({ error: "Formato não suportado. Envie PDF, JPG, PNG ou GIF.", request_id: requestId }, 400);
 
     const apiKey = Deno.env.get("OCR_SPACE_API_KEY") || "";
     if (!apiKey) return json({ error: "OCR_SPACE_API_KEY não configurada nas Edge Function Secrets.", request_id: requestId }, 500);
@@ -297,11 +241,10 @@ serve(async (req) => {
       ? String(Deno.env.get("OCR_SPACE_ENGINE"))
       : "2";
     const language = Deno.env.get("OCR_SPACE_LANGUAGE") || (engine === "3" ? "auto" : "por");
-
     const form = new FormData();
-    form.set("base64Image", base64.startsWith("data:") ? base64 : `data:${mediaType};base64,${base64}`);
+    form.set("base64Image", base64.startsWith("data:") ? base64 : `data:${type.mime};base64,${base64}`);
     form.set("language", language);
-    form.set("filetype", fileType);
+    form.set("filetype", type.provider);
     form.set("isOverlayRequired", "false");
     form.set("detectOrientation", "true");
     form.set("scale", "true");
@@ -314,30 +257,28 @@ serve(async (req) => {
       body: form,
       signal: AbortSignal.timeout(120_000),
     });
-
     const raw = await response.text();
-    let result: OcrResponse;
+    let result: OcrResult;
     try {
-      result = JSON.parse(raw) as OcrResponse;
+      result = JSON.parse(raw) as OcrResult;
     } catch {
       return json({ error: `O serviço de OCR devolveu uma resposta inválida (${response.status}).`, request_id: requestId }, 502);
     }
 
-    const errors = providerErrors(result);
+    const providerErrors = errorsFrom(result);
     if (!response.ok || result.IsErroredOnProcessing || !result.ParsedResults?.length) {
       return json({
-        error: freePlanHint(errors) || errors[0] || `Erro no serviço de OCR (${response.status}).`,
-        detalhe: errors,
+        error: planHint(providerErrors) || providerErrors[0] || `Erro no serviço de OCR (${response.status}).`,
+        detalhe: providerErrors,
         request_id: requestId,
       }, 502);
     }
 
-    const texto = result.ParsedResults.map((page) => String(page.ParsedText || "").trim()).filter(Boolean).join("\n\n");
+    const texto = result.ParsedResults.map((page) => clean(page.ParsedText)).filter(Boolean).join("\n\n");
     if (!texto) return json({ error: "O arquivo foi processado, mas nenhum texto foi reconhecido.", request_id: requestId }, 422);
 
-    const campos = structuredFields(texto);
-    const identificados = Object.values(campos).filter((value) => value !== null && String(value).trim() !== "").length;
-
+    const campos = structure(texto);
+    const identificados = Object.values(campos).filter((value) => value !== null && clean(value) !== "").length;
     return json({
       campos,
       texto,
