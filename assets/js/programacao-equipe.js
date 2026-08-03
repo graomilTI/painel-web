@@ -1051,13 +1051,18 @@ export async function confirmarCandidato(programacaoId, os, cand) {
 
   // Colaborador que já é motorista de um veículo cadastrado (colaborador_cruzamento.veiculo_id)
   // entra como "Logística" em vez de "OK", mesma convenção usada em programacao.js/ensureDefaultRows.
+  //
+  // supervisao/coordenacao vêm da própria O.S. (sempre carregada nesse ponto),
+  // não do candidato — a lista de candidatos pode ter sido montada antes da
+  // O.S. terminar de resolver esses campos, gravando null no espelho em ~15%
+  // dos casos num dia (achado em auditoria de dados, 2026-08-03).
   const espelho = {
     programacao_id: programacaoId,
     colaborador_id: cand.colaboradorId,
     nome_colaborador: cand.nome,
     cargo: cand.cargo || null,
-    coordenacao: cand.coordenacao || null,
-    supervisao: cand.supervisao || null,
+    coordenacao: os.coordenacao || cand.coordenacao || null,
+    supervisao: os.supervisao || cand.supervisao || null,
     disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
@@ -1096,8 +1101,8 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome,
       cargo: cand.cargo || null,
-      coordenacao: cand.coordenacao || null,
-      supervisao: cand.supervisao || null,
+      coordenacao: os.coordenacao || cand.coordenacao || null,
+      supervisao: os.supervisao || cand.supervisao || null,
       disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
     }, { onConflict: 'programacao_id,colaborador_id' }),
   ]);
