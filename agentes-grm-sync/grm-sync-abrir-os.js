@@ -129,15 +129,22 @@ function norm(s) {
  * Campos de toggle (Habilitar OCC?, Teste Aflatoxina, etc.) não são tocados
  * por este agente — ficam no padrão que o GRM já preenche.
  *
- * RISCO AINDA NÃO CONFIRMADO AO VIVO: no --discover, Cliente Final, Cidade,
- * Local do Serviço, Supervisão e Produtor apareceram com a classe
- * v-input--disabled (mesmo padrão de cascata do modal Adicionar NHE em
- * grm-sync-lancar-nhe.js — um campo pai libera o(s) filho(s)). A ordem
- * abaixo tenta Local do Serviço ANTES de Cidade/Supervisão/Produtor
- * (aposta: selecionar o Local já popula os demais); se um campo continuar
- * desabilitado no momento de preencher, preencherCampo detecta isso e pula
- * com WARN em vez de tentar digitar — não quebra o agente, só deixa esse
- * campo em branco na O.S. criada.
+ * CAUSA CONFIRMADA da cascata (2ª rodada de --discover, 03/08): Cidade,
+ * Local do Serviço, Supervisão e Produtor (DADOS DO EMBARQUE) só habilitam
+ * depois de "Tipo do Local" e "UF" serem escolhidos — e nenhum dos dois tem
+ * coluna em logistica_abertura_os (nunca foram pedidos ao solicitante).
+ * Resolvidos em tempo de execução por lookup em operacional_pontos_embarque
+ * (colunas tipo_local/uf/cidade/nome_local), casando por armazem_embarque
+ * primeiro e caindo pra cidade_embarque — ver buscarLocalEmbarque, chamada
+ * no início de preencherFormulario, ANTES do loop do LABEL_MAP. Sem essa
+ * dupla, os campos abaixo ficam desabilitados pra sempre e preencherCampo
+ * só ia pular com WARN (o que resolvia o crash mas deixava a O.S. sempre
+ * incompleta nesses campos).
+ * "UF de Destino" (que da mesma forma trava "Cidade de Destino") NÃO tem
+ * nenhuma fonte de dado hoje — cidade_destino/local_destino são texto livre
+ * do solicitante, sem tabela de referência com UF. Esse gap continua aberto
+ * (Cidade de Destino fica desabilitada e é pulada com WARN); "Destino" em si
+ * é campo de texto livre independente e não é afetado.
  * ---------------------------------------------------------------------- */
 var LABEL_MAP = [
   { campo: 'contratante_cliente', labels: ['CLIENTE NACIONAL'] },
@@ -145,8 +152,8 @@ var LABEL_MAP = [
   { campo: 'numero_contrato', labels: ['CONTRATO'] },
   { campo: 'servico', labels: ['SERVICO'] },
   { campo: 'volume_inicial', labels: ['TAMANHO DO LOTE'] },
-  { campo: 'armazem_embarque', labels: ['LOCAL DO SERVICO'] },
   { campo: 'cidade_embarque', labels: ['CIDADE'] },
+  { campo: 'armazem_embarque', labels: ['LOCAL DO SERVICO'] },
   { campo: 'regional', labels: ['SUPERVISAO'] },
   { campo: 'produtor', labels: ['PRODUTOR'] },
   { campo: 'cidade_destino', labels: ['CIDADE DE DESTINO'] },
@@ -492,7 +499,53 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   }
 }
 
+// "Tipo do Local" e "UF" (embarque) não têm coluna em logistica_abertura_os
+// (nunca foram pedidos ao solicitante) — sem eles, Cidade/Local do
+// Serviço/Supervisão/Produtor ficam desabilitados pra sempre (ver comentário
+// do LABEL_MAP). Deriva os dois via lookup em operacional_pontos_embarque:
+// tenta casar pelo nome do armazém primeiro (mais específico), cai pra casar
+// só pela cidade se não achar.
+async function buscarLocalEmbarque(armazemEmbarque, cidadeEmbarque) {
+  try {
+    if (armazemEmbarque) {
+      var termo = String(armazemEmbarque).replace(/[%,()]/g, ' ').trim();
+      if (termo) {
+        var porNome = await supabase
+          .from('operacional_pontos_embarque')
+          .select('tipo_local, uf, cidade, nome_local')
+          .or('nome_local.ilike.%' + termo + '%,embarque_label.ilike.%' + termo + '%')
+          .eq('ativo', true)
+          .limit(1);
+        if (porNome.error) throw porNome.error;
+        if (porNome.data && porNome.data.length) return porNome.data[0];
+      }
+    }
+    if (cidadeEmbarque) {
+      var porCidade = await supabase
+        .from('operacional_pontos_embarque')
+        .select('tipo_local, uf, cidade, nome_local')
+        .ilike('cidade', String(cidadeEmbarque).trim())
+        .eq('ativo', true)
+        .limit(1);
+      if (porCidade.error) throw porCidade.error;
+      if (porCidade.data && porCidade.data.length) return porCidade.data[0];
+    }
+  } catch (e) {
+    log('WARN', 'Falha ao buscar UF/Tipo do Local em operacional_pontos_embarque: ' + e.message);
+  }
+  return null;
+}
+
 async function preencherFormulario(page, solicitacao) {
+  var localEmbarque = await buscarLocalEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque);
+  if (localEmbarque) {
+    log('INFO', 'Local de embarque resolvido via operacional_pontos_embarque: tipo_local="' + localEmbarque.tipo_local + '", uf="' + localEmbarque.uf + '" (match: ' + (localEmbarque.nome_local || localEmbarque.cidade) + ').');
+    await preencherCampo(page, 'tipo_local_embarque', ['TIPO DO LOCAL'], localEmbarque.tipo_local);
+    await preencherCampo(page, 'uf_embarque', ['UF'], localEmbarque.uf);
+  } else {
+    log('WARN', 'Não achei UF/Tipo do Local em operacional_pontos_embarque pra "' + solicitacao.armazem_embarque + '" / "' + solicitacao.cidade_embarque + '" — Cidade/Local do Serviço/Supervisão/Produtor provavelmente ficarão desabilitados e serão pulados.');
+  }
+
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
     await preencherCampo(page, item.campo, item.labels, solicitacao[item.campo]);
