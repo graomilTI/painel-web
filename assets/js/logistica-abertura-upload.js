@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { browserOcrFile } from './logistica-browser-ocr.js?v=20260803-browser-ocr1';
+import { enhanceLogisticaOsFields } from './logistica-os-ai-structurer.js?v=20260803-ai-fields1';
 
 const UPLOAD_ID = 'abrirOsUploadWrap';
 const MAX_TECHNICAL_BYTES = 15 * 1024 * 1024;
@@ -237,13 +238,22 @@ async function processFile(file) {
       });
     }
 
+    if (result?.texto) {
+      setStatus(`${file.name} · IA organizando os campos`, 'loading');
+      result.campos = await enhanceLogisticaOsFields(
+        result.texto,
+        result.campos || {},
+        (progress) => setStatus(`${file.name} · ${progress}`, 'loading'),
+      );
+    }
+
     const filled = applyFields(result?.campos || {});
     if (!filled) {
       setStatus('Arquivo lido, mas nenhum campo foi identificado. Preencha manualmente ou use outro print.', 'warn');
       return;
     }
 
-    const localLabel = result?.provider === 'tesseract-browser' ? ' · leitura local' : '';
+    const localLabel = result?.provider === 'tesseract-browser' ? ' · leitura local + IA' : ' · IA';
     setStatus(`${file.name} · ${filled} campo${filled === 1 ? '' : 's'} preenchido${filled === 1 ? '' : 's'}${localLabel}. Confira antes de enviar.`, 'ok');
   } catch (error) {
     console.error('[logistica-abertura-upload]', { error, onlineError });
@@ -289,7 +299,7 @@ function ensureUploadButton() {
   wrap.className = 'abrir-os-upload-wrap';
   wrap.innerHTML = `
     <input id="abrirOsUploadInput" type="file" accept="application/pdf,image/jpeg,image/png,image/gif,image/webp" hidden>
-    <span id="abrirOsUploadStatus" class="abrir-os-upload-status" data-tone="muted">Anexe PDF ou print para autopreencher os campos.</span>
+    <span id="abrirOsUploadStatus" class="abrir-os-upload-status" data-tone="muted">Anexe PDF ou print; a IA identifica os campos mesmo em formatos diferentes.</span>
     <button id="abrirOsUploadBtn" class="btn btn-secondary abrir-os-upload-btn" type="button" title="Anexar PDF ou imagem para leitura automática">
       <span aria-hidden="true">⇧</span> UPLOAD
     </button>
