@@ -1,8 +1,10 @@
 import { supabase } from './supabaseClient.js';
+import { browserOcrFile } from './logistica-browser-ocr.js?v=20260803-browser-ocr1';
 
 const UPLOAD_ID = 'abrirOsUploadWrap';
 const MAX_TECHNICAL_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGE_SIDE = 1800;
+let onlineProviderUnavailable = false;
 
 const FIELD_IDS = {
   contratante_cliente: 'osContratante',
@@ -67,7 +69,16 @@ function applyField(id, value) {
     if (!option) return false;
     field.value = option.value;
   } else if (field.type === 'number') {
-    const parsed = Number(String(value).replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, ''));
+    const raw = String(value).trim();
+    let normalizedNumber = raw.replace(/\s/g, '').replace(/[^0-9,.-]/g, '');
+    if (normalizedNumber.includes(',') && normalizedNumber.includes('.')) {
+      normalizedNumber = normalizedNumber.lastIndexOf(',') > normalizedNumber.lastIndexOf('.')
+        ? normalizedNumber.replace(/\./g, '').replace(',', '.')
+        : normalizedNumber.replace(/,/g, '');
+    } else if (normalizedNumber.includes(',')) {
+      normalizedNumber = normalizedNumber.replace(/\./g, '').replace(',', '.');
+    }
+    const parsed = Number(normalizedNumber);
     if (!Number.isFinite(parsed)) return false;
     field.value = String(parsed);
   } else {
@@ -90,10 +101,11 @@ function applyFields(fields) {
 
 function extensionFromFile(file) {
   const nameExtension = String(file.name || '').split('.').pop()?.toLowerCase() || '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'pdf'].includes(nameExtension)) return nameExtension;
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(nameExtension)) return nameExtension;
   if (file.type === 'application/pdf') return 'pdf';
   if (file.type === 'image/png') return 'png';
   if (file.type === 'image/gif') return 'gif';
+  if (file.type === 'image/webp') return 'webp';
   return 'jpg';
 }
 
@@ -127,7 +139,11 @@ async function compressImage(file) {
     context.drawImage(image, 0, 0, width, height);
 
     const blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Não foi possível compactar a imagem.')), 'image/jpeg', 0.88);
+      canvas.toBlob(
+        (result) => result ? resolve(result) : reject(new Error('Não foi possível compactar a imagem.')),
+        'image/jpeg',
+        0.88,
+      );
     });
     return { blob, tipo: 'jpg' };
   } finally {
@@ -155,6 +171,40 @@ async function readFunctionError(error) {
   return error?.message || 'Não foi possível processar o arquivo.';
 }
 
+function isProviderConfigurationError(message) {
+  const text = normalize(message);
+  return text.includes('nenhum provedor')
+    || text.includes('api_key')
+    || text.includes('api key')
+    || text.includes('nao configurad')
+    || text.includes('secret');
+}
+
+async function tryOnlineOcr(file) {
+  if (onlineProviderUnavailable) return null;
+
+  const prepared = await prepareFile(file);
+  const base64 = await blobToBase64(prepared.blob);
+  const { data, error } = await supabase.functions.invoke('logistica-os-autopreencher', {
+    body: {
+      base64,
+      tipo: prepared.tipo,
+      nome_arquivo: file.name,
+    },
+  });
+
+  if (error) {
+    const message = await readFunctionError(error);
+    if (isProviderConfigurationError(message)) onlineProviderUnavailable = true;
+    throw new Error(message);
+  }
+  if (data?.error) {
+    if (isProviderConfigurationError(data.error)) onlineProviderUnavailable = true;
+    throw new Error(data.error);
+  }
+  return data;
+}
+
 async function processFile(file) {
   const button = document.getElementById('abrirOsUploadBtn');
   if (!button) return;
@@ -162,36 +212,43 @@ async function processFile(file) {
   button.disabled = true;
   button.dataset.originalText ||= button.textContent;
   button.textContent = 'Lendo arquivo...';
-  setStatus(`${file.name} · preparando OCR`, 'loading');
-
+  setStatus(`${file.name} · preparando leitura`, 'loading');
   document.querySelectorAll('.os-upload-filled').forEach((field) => field.classList.remove('os-upload-filled'));
 
+  let onlineError = null;
+
   try {
-    const prepared = await prepareFile(file);
-    const base64 = await blobToBase64(prepared.blob);
-    setStatus(`${file.name} · interpretando dados`, 'loading');
+    let result = null;
 
-    const { data, error } = await supabase.functions.invoke('logistica-os-autopreencher', {
-      body: {
-        base64,
-        tipo: prepared.tipo,
-        nome_arquivo: file.name,
-      },
-    });
+    if (!onlineProviderUnavailable) {
+      try {
+        setStatus(`${file.name} · tentando leitura automática`, 'loading');
+        result = await tryOnlineOcr(file);
+      } catch (error) {
+        onlineError = error;
+        console.warn('[logistica-abertura-upload] OCR online indisponível; usando navegador.', error);
+      }
+    }
 
-    if (error) throw new Error(await readFunctionError(error));
-    if (data?.error) throw new Error(data.error);
+    if (!result?.campos) {
+      setStatus(`${file.name} · lendo localmente no navegador`, 'loading');
+      result = await browserOcrFile(file, (progress) => {
+        setStatus(`${file.name} · ${progress}`, 'loading');
+      });
+    }
 
-    const filled = applyFields(data?.campos || {});
+    const filled = applyFields(result?.campos || {});
     if (!filled) {
       setStatus('Arquivo lido, mas nenhum campo foi identificado. Preencha manualmente ou use outro print.', 'warn');
       return;
     }
 
-    setStatus(`${file.name} · ${filled} campo${filled === 1 ? '' : 's'} preenchido${filled === 1 ? '' : 's'}. Confira antes de enviar.`, 'ok');
+    const localLabel = result?.provider === 'tesseract-browser' ? ' · leitura local' : '';
+    setStatus(`${file.name} · ${filled} campo${filled === 1 ? '' : 's'} preenchido${filled === 1 ? '' : 's'}${localLabel}. Confira antes de enviar.`, 'ok');
   } catch (error) {
-    console.error('[logistica-abertura-upload]', error);
-    setStatus(error?.message || 'Falha ao interpretar o arquivo.', 'error');
+    console.error('[logistica-abertura-upload]', { error, onlineError });
+    const detail = error?.message || 'Falha ao interpretar o arquivo.';
+    setStatus(`Não foi possível ler automaticamente: ${detail}`, 'error');
   } finally {
     button.disabled = false;
     button.textContent = button.dataset.originalText || 'UPLOAD';
@@ -207,7 +264,7 @@ function injectStyles() {
     .abrir-os-upload-btn{display:inline-flex;align-items:center;gap:7px;background:rgba(22,163,74,.18)!important;border-color:rgba(74,222,128,.42)!important;color:#bbf7d0!important;font-weight:900!important}
     .abrir-os-upload-btn:hover{background:rgba(22,163,74,.3)!important;border-color:rgba(74,222,128,.7)!important}
     .abrir-os-upload-btn:disabled{opacity:.65;cursor:wait}
-    .abrir-os-upload-status{max-width:420px;color:#7f968b;font-size:11px;line-height:1.35;text-align:right}
+    .abrir-os-upload-status{max-width:460px;color:#7f968b;font-size:11px;line-height:1.35;text-align:right}
     .abrir-os-upload-status[data-tone="loading"]{color:#93c5fd}
     .abrir-os-upload-status[data-tone="ok"]{color:#86efac}
     .abrir-os-upload-status[data-tone="warn"]{color:#fde68a}
