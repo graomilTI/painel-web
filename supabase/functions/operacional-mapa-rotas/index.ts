@@ -377,6 +377,13 @@ Deno.serve(async (req) => {
     }
 
     // 7) Trilha frota: VROOM multi-veículo (mesmo modelo de frotas-roteirizar)
+    // frotaAtendidos rastreia quem entrou de fato numa rota calculada — sobra
+    // pra quem tem MOTORISTA/CARONA FROTA mas o veículo não tem posição GPS
+    // ao vivo (frotas_posicoes) ou o VROOM não respondeu: sem isso o
+    // colaborador simplesmente sumia do mapa sem nenhum aviso (achado em
+    // auditoria, 2026-08-03) — cai pro marcador "local" (endereço de casa/
+    // hotel/alojamento já resolvido) igual quem não precisa de deslocamento.
+    const frotaAtendidos = new Set<number>();
     if (pickupsFrota.length) {
       const { data: veiculosRaw } = await supabase.from('frotas_veiculos').select('id,placa,motorista_atual,status').eq('status', 'ATIVO');
       const { data: posicoesRaw } = await supabase.from('frotas_posicoes').select('placa,veiculo_id,latitude,longitude,motorista');
@@ -419,10 +426,11 @@ Deno.serve(async (req) => {
                 const trecho = { distancia_km_trecho: round2((dist - prevDist) / 1000), duracao_min_trecho: round1((dur - prevDur) / 60) };
                 prevDist = dist; prevDur = dur;
                 if (step.type !== 'pickup' && step.type !== 'delivery') continue;
-                const p = pickupsFrota[Math.floor(Number(step.id) / 2)];
+                const pickupIndex = Math.floor(Number(step.id) / 2);
+                const p = pickupsFrota[pickupIndex];
                 if (!p) continue;
                 ordem += 1;
-                if (step.type === 'pickup') paradas.push({ ordem, tipo: 'colaborador', os_id: p.os_id, colaborador_nome: p.colaborador_nome, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: p.embarque, lat: p.lat, lng: p.lng, ...trecho });
+                if (step.type === 'pickup') { frotaAtendidos.add(pickupIndex); paradas.push({ ordem, tipo: 'colaborador', os_id: p.os_id, colaborador_nome: p.colaborador_nome, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: p.embarque, lat: p.lat, lng: p.lng, ...trecho }); }
                 else paradas.push({ ordem, tipo: 'embarque', os_id: p.os_id, colaborador_nome: null, ponto_nome: p.ponto.nome_local || p.ponto.tipo_local || 'Ponto operacional', embarque_texto: '', lat: p.ponto._lat, lng: p.ponto._lng, ...trecho });
               }
               // Geometria real (seguindo estrada) pro trajeto completo do veículo — VROOM só
@@ -445,6 +453,18 @@ Deno.serve(async (req) => {
         }
       }
     }
+
+    // 7b) Quem ficou de fora da rota de frota (sem veículo com GPS ao vivo,
+    // ou VROOM indisponível) ainda aparece no mapa como marcador "local".
+    pickupsFrota.forEach((p, i) => {
+      if (frotaAtendidos.has(i)) return;
+      rotasParaGravar.push({
+        tipo: 'local', veiculo_id: null, placa: null, motorista_nome: null,
+        colaborador_nome: p.colaborador_nome, colaborador_cpf: p.colaborador_cpf || null,
+        origem_latitude: p.lat, origem_longitude: p.lng, origem_tipo: p.origemTipo,
+        km_total_estimado: 0, duracao_estimada_min: 0, geometria: null, paradas: [],
+      });
+    });
 
     // 8) Trilha reembolso km: 1 rota individual por colaborador (origem já
     // resolvida — casa, hotel ou alojamento — até o ponto de embarque da OS).
