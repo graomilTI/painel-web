@@ -984,6 +984,8 @@ h3, h4 {
 #sidebarMenu {
   display: grid;
   gap: 2px;
+  align-content: start;
+  align-items: start;
 }
 
 /* =========================
