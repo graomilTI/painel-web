@@ -1,14 +1,8 @@
 // assets/js/upload-notas-fiscais.js
-// Página simples pra enviar NF/comprovante (PDF, XML ou imagem) que alimentam
-// o agente de lançamento automático em Contas a Pagar no GRM. Solução
-// provisória: os arquivos iam pra uma pasta do Google Drive, mas isso exigia
-// criar uma conta de serviço Google só pra isso — agora vão direto pro bucket
-// 'notas-fiscais' do Supabase (mesmo bucket já usado por adm-compras.js e
-// comprovante-mobile.js) e o agente lê a fila pela tabela grm_nf_lancamentos.
-//
-// Separada de assets/js/modules/notas-fiscais/ de propósito: aquela página
-// controla compras_itens e "lançar" lá é só uma flag interna, sem relação
-// com o GRM.
+// Entrada única para documentos financeiros que alimentam o agente do GRM.
+// O upload vai para o bucket 'notas-fiscais' e cria uma linha em
+// grm_nf_lancamentos. O agente identifica automaticamente se o arquivo é
+// holerite ou documento fiscal e aplica o fluxo correspondente.
 
 import { initProtectedPage } from './pageInit.js';
 import {
@@ -21,6 +15,7 @@ const TABELA = 'grm_nf_lancamentos';
 const ACCEPT = '.pdf,.xml,.png,.jpg,.jpeg,.webp';
 
 const SETORES = [
+  { valor: 'AUTO', label: 'Reconhecimento automático' },
   { valor: 'HOSPEDAGEM', label: 'Hospedagem' },
   { valor: 'FROTAS', label: 'Frotas' },
   { valor: 'RH', label: 'RH' },
@@ -41,8 +36,8 @@ const STATUS_BADGE = {
 };
 
 const STATUS_LABEL = {
-  NOVO: 'Novo',
-  PROCESSANDO: 'Processando',
+  NOVO: 'Aguardando leitura',
+  PROCESSANDO: 'Reconhecendo documento',
   VALIDADO: 'Validado',
   DRY_RUN_OK: 'Testado (dry-run)',
   LANCADO: 'Lançado no GRM',
@@ -64,7 +59,36 @@ function dataHora(value) {
   if (!value) return '-';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function fluxoDocumento(row) {
+  return String(row?.extraido_json?.tipo_documento_fluxo || '').toUpperCase();
+}
+
+function documentoBadge(row) {
+  const fluxo = fluxoDocumento(row);
+  if (fluxo === 'HOLERITE') return badge('Holerite', 'ok');
+  if (fluxo === 'NOTA_FISCAL') {
+    return badge(row?.extraido_json?.tipo_documento || 'Documento fiscal', 'neutral');
+  }
+  if (row.status === 'NOVO' || row.status === 'PROCESSANDO') return badge('A identificar', 'neutral');
+  return badge('Não identificado', 'warn');
+}
+
+function detalhesDocumento(row) {
+  if (row.erro) return esc(row.erro);
+  if (fluxoDocumento(row) === 'HOLERITE') {
+    const funcionario = row?.extraido_json?.funcionario_nome || '-';
+    const competencia = row?.extraido_json?.competencia || '-';
+    return `${esc(funcionario)} · ${esc(competencia)}`;
+  }
+  const fornecedor = row?.extraido_json?.fornecedor || row?.extraido_json?.fornecedor_nome;
+  const numero = row?.extraido_json?.numero_documento;
+  if (fornecedor || numero) return [fornecedor, numero && `Doc. ${numero}`].filter(Boolean).map(esc).join(' · ');
+  return '-';
 }
 
 async function uploadArquivo(file, setor, userId) {
@@ -91,10 +115,11 @@ function renderLinhas(linhas) {
   return linhas.map((r) => `
     <tr>
       <td>${esc(r.arquivo_nome)}</td>
+      <td>${documentoBadge(r)}</td>
       <td>${esc(SETORES.find((s) => s.valor === r.setor)?.label || r.setor || '-')}</td>
       <td>${esc(dataHora(r.created_at))}</td>
       <td>${badge(STATUS_LABEL[r.status] || r.status, STATUS_BADGE[r.status] || 'neutral')}</td>
-      <td>${r.erro ? esc(r.erro) : '-'}</td>
+      <td>${detalhesDocumento(r)}</td>
     </tr>`).join('');
 }
 
@@ -104,7 +129,7 @@ async function carregarTabela() {
   alvo.innerHTML = loadingState('Carregando envios recentes...');
   try {
     const { rows } = await listar(TABELA, {
-      select: 'id,arquivo_nome,setor,status,erro,created_at',
+      select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json',
       ordenar: [{ coluna: 'created_at', asc: false }],
       porPagina: 100,
     });
@@ -113,14 +138,15 @@ async function carregarTabela() {
       ? table({
         colunas: [
           { id: 'arquivo', label: 'Arquivo' },
-          { id: 'tipo', label: 'Tipo' },
+          { id: 'documento', label: 'Documento reconhecido' },
+          { id: 'tipo', label: 'Setor auxiliar' },
           { id: 'enviado_em', label: 'Enviado em' },
           { id: 'status', label: 'Status' },
-          { id: 'erro', label: 'Detalhes' },
+          { id: 'detalhes', label: 'Detalhes' },
         ],
         linhasHtml: renderLinhas(rows),
       })
-      : emptyState('Nenhuma nota enviada ainda.');
+      : emptyState('Nenhum documento enviado ainda.');
   } catch (error) {
     if (!raiz) return;
     alvo.innerHTML = errorState(mensagemDeErro(error, TABELA), { retryId: 'unfRetry' });
@@ -133,20 +159,22 @@ function render() {
   raiz.innerHTML = `
     <section style="display:grid;gap:18px">
       ${pageHeader({
-        titulo: 'Enviar Notas Fiscais',
-        subtitulo: 'Envie XML, PDF ou imagem da nota/comprovante. O agente lê a fila e lança em Contas a Pagar no GRM automaticamente.',
+        titulo: 'Enviar Notas Fiscais e Holerites',
+        subtitulo: 'Envie XML, PDF ou imagem. O agente reconhece automaticamente o tipo do documento e usa o fluxo correto no Contas a Pagar do GRM.',
       })}
 
       <article class="ds-card" style="display:grid;gap:14px">
         <div class="ds-field">
-          <label for="unfTipo">Tipo de despesa</label>
+          <label for="unfTipo">Setor auxiliar</label>
           <select id="unfTipo">
             ${SETORES.map((s) => `<option value="${esc(s.valor)}">${esc(s.label)}</option>`).join('')}
           </select>
+          <small style="opacity:.72">Para holerites, mantenha Reconhecimento automático. Para notas fiscais, o setor ajuda na classificação contábil.</small>
         </div>
         <div class="ds-field">
           <label for="unfArquivos">Arquivos (XML, PDF ou imagem)</label>
           <input id="unfArquivos" type="file" multiple accept="${ACCEPT}">
+          <small style="opacity:.72">Holerite: envie um arquivo por funcionário. Duas vias do mesmo funcionário no mesmo PDF são aceitas.</small>
         </div>
         <div>
           <button class="ds-btn ds-btn-primary" id="unfEnviar" type="button">Enviar</button>
@@ -194,7 +222,7 @@ async function aoEnviar() {
     }
   }
 
-  if (sucesso) toast(`${sucesso} arquivo(s) enviado(s).`, 'ok');
+  if (sucesso) toast(`${sucesso} arquivo(s) enviado(s) para reconhecimento.`, 'ok');
   enviando = false;
   if (botao) { botao.disabled = false; botao.textContent = 'Enviar'; }
   if (input) input.value = '';
@@ -210,4 +238,4 @@ export async function renderContent(content) {
   if (meuBoot !== bootId) return;
 }
 
-initProtectedPage('Enviar Notas Fiscais', renderContent);
+initProtectedPage('Enviar Notas Fiscais e Holerites', renderContent);
