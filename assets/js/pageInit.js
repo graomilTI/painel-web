@@ -9,6 +9,7 @@ import { initRouter } from './router.js';
 import './painel-design-system.js?v=20260724-layout1';
 import './searchableSelect.js?v=20260730-zindexfix1';
 import './logistica-saldo-filtros.js?v=20260803-saldo-filtros1';
+import './logistica-abertura-upload.js?v=20260803-upload-autofill1';
 import './pwa-register.js?v=20260713-cache-v10';
 import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 
