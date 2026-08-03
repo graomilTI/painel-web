@@ -95,8 +95,9 @@ function norm(s) {
 /* ---------------------------------------------------------------------- *
  * Mapa campo Supabase -> rótulos candidatos no formulário do GRM.
  *
- * Confirmado ao vivo em 03/08 (print do diálogo "ADICIONAR ORDEM DE SERVIÇO"
- * enviado pela usuária, logada como graomil.juliana@gmail.com):
+ * Confirmado ao vivo em 03/08 via node grm-sync-abrir-os.js --discover
+ * (rótulos reais dos 82 elementos .v-input/.v-field do diálogo "ADICIONAR
+ * ORDEM DE SERVIÇO", logada como graomil.juliana@gmail.com):
  *   Cliente Nacional | Cliente Regional | Cliente Final
  *   Dados do Cliente (colapsável)
  *   DETALHES DA ORDEM DE SERVIÇO: Data da Solicitação | Contrato | Número
@@ -112,9 +113,12 @@ function norm(s) {
  *     Teste Aflatoxina | Teste Intacta | Teste Soja GMO Free · Teste
  *     Vomitoxina | Teste Falling Number | Teste Falling Number (nº)
  *   ITENS DE CLASSIFICAÇÃO: Permitir Insetos Vivos/Mortos, Odor Estranho,
- *     Sementes Tóxicas (não vimos "Troca de Notas" — pode estar mais abaixo,
- *     ainda não confirmado; se --discover não achar, o campo é só pulado
- *     com WARN, não quebra o agente).
+ *     Sementes Tóxicas
+ *
+ * NÃO existe campo "Troca de Notas" nesse formulário (confirmado — não está
+ * nos 82 campos listados pelo --discover) — essa informação vai dentro do
+ * campo livre "Outras Informações" (ver preencherFormulario), não tem
+ * entrada própria no LABEL_MAP.
  *
  * "Cliente Nacional"/"Cliente Final" e não "Contratante"/"Filial" — mapeado
  * conferindo com os rótulos que a função logistica-os-autopreencher (OCR/IA
@@ -124,22 +128,31 @@ function norm(s) {
  * "Cliente Regional" não tem coluna equivalente no painel — fica em branco.
  * Campos de toggle (Habilitar OCC?, Teste Aflatoxina, etc.) não são tocados
  * por este agente — ficam no padrão que o GRM já preenche.
+ *
+ * RISCO AINDA NÃO CONFIRMADO AO VIVO: no --discover, Cliente Final, Cidade,
+ * Local do Serviço, Supervisão e Produtor apareceram com a classe
+ * v-input--disabled (mesmo padrão de cascata do modal Adicionar NHE em
+ * grm-sync-lancar-nhe.js — um campo pai libera o(s) filho(s)). A ordem
+ * abaixo tenta Local do Serviço ANTES de Cidade/Supervisão/Produtor
+ * (aposta: selecionar o Local já popula os demais); se um campo continuar
+ * desabilitado no momento de preencher, preencherCampo detecta isso e pula
+ * com WARN em vez de tentar digitar — não quebra o agente, só deixa esse
+ * campo em branco na O.S. criada.
  * ---------------------------------------------------------------------- */
 var LABEL_MAP = [
   { campo: 'contratante_cliente', labels: ['CLIENTE NACIONAL'] },
   { campo: 'filial_pagadora', labels: ['CLIENTE FINAL'] },
-  { campo: 'produtor', labels: ['PRODUTOR'] },
+  { campo: 'numero_contrato', labels: ['CONTRATO'] },
+  { campo: 'servico', labels: ['SERVICO'] },
+  { campo: 'volume_inicial', labels: ['TAMANHO DO LOTE'] },
   { campo: 'armazem_embarque', labels: ['LOCAL DO SERVICO'] },
   { campo: 'cidade_embarque', labels: ['CIDADE'] },
+  { campo: 'regional', labels: ['SUPERVISAO'] },
+  { campo: 'produtor', labels: ['PRODUTOR'] },
   { campo: 'cidade_destino', labels: ['CIDADE DE DESTINO'] },
   { campo: 'local_destino', labels: ['DESTINO'] },
-  { campo: 'numero_contrato', labels: ['CONTRATO'] },
   { campo: 'produto', labels: ['PRODUTO'] },
-  { campo: 'tipo_produto', labels: ['TIPO DO PRODUTO'] },
-  { campo: 'volume_inicial', labels: ['TAMANHO DO LOTE'] },
-  { campo: 'regional', labels: ['SUPERVISAO'] },
-  { campo: 'troca_notas', labels: ['TROCA DE NOTAS', 'TROCA NOTAS'] },
-  { campo: 'servico', labels: ['SERVICO'] }
+  { campo: 'tipo_produto', labels: ['TIPO DO PRODUTO'] }
 ];
 
 // Botão "Adicionar" (tooltip confirmado ao vivo) — ícone "+" no canto direito
@@ -151,8 +164,6 @@ var BOTAO_NOVA_OS_CLASSES = [
   '.serviceOrder-act-add', '.serviceOrder-act-new', '.serviceOrder-act-nova', '.serviceOrder-act-cadastrar'
 ];
 var BOTAO_NOVA_OS_TEXTOS = ['NOVA O.S', 'NOVA ORDEM', 'ADICIONAR', 'CADASTRAR O.S', '+ O.S', 'NOVO'];
-
-var DIALOG_TITULOS = ['ADICIONAR ORDEM DE SERVICO', 'NOVA ORDEM DE SERVICO', 'NOVA O.S', 'CADASTRAR ORDEM DE SERVICO', 'ORDEM DE SERVICO'];
 
 /* ---------------------------------------------------------------------- *
  * Puppeteer: login (mesmo padrão de todos os outros agentes deste repo)
@@ -320,16 +331,7 @@ async function abrirDialogoNovaOs(page) {
 }
 
 function findDialog(page) {
-  return page.evaluate(function (titulos) {
-    function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active')).reverse();
-    for (var t = 0; t < titulos.length; t++) {
-      var alvo = titulos[t];
-      var dialog = overlays.find(function (d) { return normJs(d.innerText || '').indexOf(alvo) !== -1; });
-      if (dialog) return true;
-    }
-    return overlays.length > 0;
-  }, DIALOG_TITULOS);
+  return overlayFormularioAtivo(page);
 }
 
 /* ---------------------------------------------------------------------- *
@@ -375,12 +377,15 @@ async function localizarCampoBox(page, labels) {
     var dialog = overlays[overlays.length - 1];
     if (!dialog) return null;
     var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
+    function isDisabled(f) {
+      return f.className.indexOf('--disabled') !== -1 || !!(f.querySelector('input') || {}).disabled;
+    }
     for (var i = 0; i < labels.length; i++) {
       var alvo = labels[i];
       var f = fields.find(function (field) { return normJs(field.innerText || '') === alvo; });
       if (f) {
         var r = f.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: labels[i] };
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: labels[i], disabled: isDisabled(f) };
       }
     }
     for (var j = 0; j < labels.length; j++) {
@@ -388,7 +393,7 @@ async function localizarCampoBox(page, labels) {
       var f2 = fields.find(function (field) { return normJs(field.innerText || '').indexOf(alvo2) !== -1; });
       if (f2) {
         var r2 = f2.getBoundingClientRect();
-        return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2, label: labels[j] };
+        return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2, label: labels[j], disabled: isDisabled(f2) };
       }
     }
     return null;
@@ -441,6 +446,7 @@ async function preencherCampo(page, campo, labels, valorBruto) {
 
   var box = await localizarCampoBox(page, labels);
   if (!box) { log('WARN', 'Campo "' + campo + '" (rótulos: ' + labels.join(' / ') + ') não encontrado no formulário — verifique LABEL_MAP com --discover.'); return; }
+  if (box.disabled) { log('WARN', 'Campo "' + campo + '" ("' + box.label + '") está desabilitado (provável cascata — depende de outro campo escolhido antes) — pulando, a O.S. ficará sem esse valor.'); return; }
 
   await page.mouse.click(box.x, box.y);
   await wait(400);
@@ -490,6 +496,11 @@ async function preencherFormulario(page, solicitacao) {
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
     await preencherCampo(page, item.campo, item.labels, solicitacao[item.campo]);
+  }
+  // Não existe campo próprio de "Troca de Notas" neste formulário (confirmado
+  // via --discover) — registra a informação no campo livre "Outras Informações".
+  if (solicitacao.troca_notas) {
+    await preencherCampo(page, 'troca_notas', ['OUTRAS INFORMACOES'], 'Troca de notas: ' + solicitacao.troca_notas);
   }
 }
 
