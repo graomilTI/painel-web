@@ -97,7 +97,28 @@ function applyFields(fields) {
   Object.entries(FIELD_IDS).forEach(([key, id]) => {
     if (applyField(id, fields?.[key])) filled += 1;
   });
+  filled += applyTestes(fields?.testes);
   return filled;
+}
+
+// O checkbox de cada teste só existe no DOM depois que #osProduto dispara
+// "input" (applyField acima já dispara isso) e assets/js/logistica.js
+// re-renderiza mostrando o bloco condicional — como esse listener roda de
+// forma síncrona, os checkboxes já estão prontos aqui. Marcar via
+// checked=true + dispatchEvent (não mexe direto no estado interno do outro
+// módulo) é o mesmo padrão usado por logistica-abertura-os-correcao.js.
+function applyTestes(testes) {
+  const keys = Array.isArray(testes) ? testes : [];
+  let marcados = 0;
+  keys.forEach((key) => {
+    const chk = document.querySelector(`[data-teste-key="${CSS.escape(String(key))}"]`);
+    if (!chk || chk.checked) return;
+    chk.checked = true;
+    chk.dispatchEvent(new Event('change', { bubbles: true }));
+    chk.closest('.abrir-os-teste-chip')?.classList.add('os-upload-filled');
+    marcados += 1;
+  });
+  return marcados;
 }
 
 function extensionFromFile(file) {

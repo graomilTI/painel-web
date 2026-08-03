@@ -31,7 +31,20 @@ type Campos = {
   volume_inicial: number | null;
   regional: string;
   troca_notas: string;
+  testes: string[];
 };
+
+// Mesmo vocabulário de assets/js/logistica.js:TESTES_POR_PRODUTO — qual
+// teste é válido depende do produto (Milho/Sorgo: intensidade de Aflatoxina;
+// Soja: Intacta e/ou GMO Free; Trigo: Vomitoxina).
+const TESTES_VOCAB = new Set([
+  "AFLATOXINA_QUALITATIVO",
+  "AFLATOXINA_QUANTITATIVO",
+  "AFLATOXINA_QUALI_QUANTI",
+  "INTACTA",
+  "GMO_FREE",
+  "VOMITOXINA",
+]);
 
 type OcrPage = { ParsedText?: string | null; ErrorMessage?: unknown; ErrorDetails?: unknown };
 type OcrResult = {
@@ -111,7 +124,18 @@ function emptyCampos(): Campos {
     volume_inicial: null,
     regional: "",
     troca_notas: "",
+    testes: [],
   };
+}
+
+function normalizeTestes(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [];
+  const out: string[] = [];
+  for (const item of list) {
+    const key = String(item ?? "").trim().toUpperCase().replace(/\s+/g, "_");
+    if (TESTES_VOCAB.has(key) && !out.includes(key)) out.push(key);
+  }
+  return out;
 }
 
 function normalizeCampos(raw: Record<string, unknown> | null | undefined): Campos {
@@ -123,6 +147,10 @@ function normalizeCampos(raw: Record<string, unknown> | null | undefined): Campo
         ? value
         : Number(String(value ?? "").replace(/\./g, "").replace(",", ".").replace(/[^0-9.-]/g, ""));
       out[key] = Number.isFinite(parsed) ? parsed : null;
+      continue;
+    }
+    if (key === "testes") {
+      out.testes = normalizeTestes(raw?.testes);
       continue;
     }
     out[key] = clean(raw?.[key]);
@@ -150,9 +178,15 @@ Retorne SOMENTE JSON válido, sem markdown, com exatamente estes campos:
   "servico": "",
   "volume_inicial": null,
   "regional": "",
-  "troca_notas": ""
+  "troca_notas": "",
+  "testes": []
 }
-Regras: não invente dados; use string vazia quando não localizar; volume_inicial deve ser número em toneladas; troca_notas deve ser SIM, NAO ou vazio; preserve nomes de clientes, locais, cidades, contratos e supervisões como aparecem no documento.`;
+Regras: não invente dados; use string vazia quando não localizar; volume_inicial deve ser número em toneladas; troca_notas deve ser SIM, NAO ou vazio; preserve nomes de clientes, locais, cidades, contratos e supervisões como aparecem no documento.
+Regras para "testes" (array de strings, só os valores abaixo, vazio se não mencionado): o teste válido depende do produto.
+- Se produto for Milho ou Sorgo e o documento mencionar teste de Aflatoxina: use "AFLATOXINA_QUALITATIVO", "AFLATOXINA_QUANTITATIVO" ou "AFLATOXINA_QUALI_QUANTI" (qualitativo e quantitativo juntos).
+- Se produto for Soja: use "INTACTA" e/ou "GMO_FREE" se mencionados (pode ter os dois).
+- Se produto for Trigo e o documento mencionar teste de Vomitoxina: use "VOMITOXINA".
+- Não inclua nenhum teste que não esteja explicitamente mencionado no documento.`;
 }
 
 function parseJsonText(text: string): Record<string, unknown> {
@@ -296,6 +330,32 @@ function infer(text: string, options: string[]): string {
   return options.find((option) => whole.includes(normalize(option))) || "";
 }
 
+// Heurística por palavra-chave pro caminho sem IA (OCR.space) — mesma regra
+// de negócio do promptJson()/TESTES_POR_PRODUTO, só que sem modelo pra
+// interpretar; se o documento não mencionar claramente qualitativo/
+// quantitativo pro teste de Aflatoxina, não arrisca marcar nenhum dos três
+// (evita falso positivo melhor do que evita falso negativo aqui).
+function inferTestes(text: string, produto: string): string[] {
+  const whole = normalize(text);
+  const cat = normalize(produto);
+  const out: string[] = [];
+  if (cat.includes("milho") || cat.includes("sorgo")) {
+    if (whole.includes("aflatoxina")) {
+      const quali = whole.includes("qualitativo");
+      const quanti = whole.includes("quantitativo");
+      if (quali && quanti) out.push("AFLATOXINA_QUALI_QUANTI");
+      else if (quali) out.push("AFLATOXINA_QUALITATIVO");
+      else if (quanti) out.push("AFLATOXINA_QUANTITATIVO");
+    }
+  } else if (cat.includes("soja")) {
+    if (whole.includes("intacta")) out.push("INTACTA");
+    if (whole.includes("gmo") || whole.includes("transgenico livre") || whole.includes("livre de transgenico")) out.push("GMO_FREE");
+  } else if (cat.includes("trigo")) {
+    if (whole.includes("vomitoxina")) out.push("VOMITOXINA");
+  }
+  return out;
+}
+
 function structure(text: string): Campos {
   const source = lines(text);
   let produto = extract(source, ["Produto", "Cultura", "Mercadoria"]);
@@ -307,6 +367,7 @@ function structure(text: string): Campos {
   let trocaNotas = extract(source, ["Troca de notas", "Troca notas", "Troca NF"]);
   if (trocaNotas) trocaNotas = ["sim", "s", "yes", "true", "1"].includes(normalize(trocaNotas)) ? "SIM" : "NAO";
   return normalizeCampos({
+    testes: inferTestes(text, produto),
     contratante_cliente: extract(source, ["Contratante / Cliente", "Contratante", "Cliente nacional", "Cliente"], ["cliente final", "filial", "cidade"]),
     filial_pagadora: extract(source, ["Filial pagadora", "Cliente final / filial", "Cliente final", "Filial"]),
     produtor: extract(source, ["Produtor", "Nome do produtor"]),
