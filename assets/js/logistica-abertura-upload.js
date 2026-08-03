@@ -307,7 +307,12 @@ function injectStyles() {
 }
 
 function ensureUploadButton() {
-  if (!isLogisticaPage() || location.hash.replace('#', '') !== 'abrir_os') return;
+  // Não confiar só em location.hash === '#abrir_os': quem abre /painel/logistica
+  // direto (sem hash na URL, ex.: favorito ou link colado) já cai na aba Abrir
+  // OS por padrão (state.tab em logistica.js), mas o hash fica vazio até o
+  // usuário clicar na aba manualmente — checar a presença do card é o sinal
+  // confiável de que estamos na aba certa, com ou sem hash.
+  if (!isLogisticaPage()) return;
   if (document.getElementById(UPLOAD_ID)) return;
 
   const formCard = document.querySelector('.abrir-os-card');
@@ -348,7 +353,7 @@ function scheduleEnsure() {
 // arquivo antes. Só age se a área de transferência tiver uma IMAGEM; colar
 // texto normal em qualquer campo continua funcionando igual.
 function handlePaste(event) {
-  if (!isLogisticaPage() || location.hash.replace('#', '') !== 'abrir_os') return;
+  if (!isLogisticaPage()) return;
   if (!document.getElementById(UPLOAD_ID)) return;
   const items = [...(event.clipboardData?.items || [])];
   const imageItem = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
