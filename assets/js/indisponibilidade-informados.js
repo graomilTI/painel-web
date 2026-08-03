@@ -51,9 +51,16 @@ function styles() {
     .inf-toolbar input,.inf-toolbar select{height:38px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 11px;color-scheme:dark}
     .inf-toolbar input{flex:1 1 240px}.inf-toolbar select{min-width:150px}
     .inf-status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:900;border:1px solid rgba(148,163,184,.18)}
-    .inf-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .inf-obs-rh{width:180px;min-height:34px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:9px;padding:7px 9px;box-sizing:border-box}
+    .inf-actions{display:grid;grid-template-columns:minmax(150px,1fr) 40px 40px;gap:6px;align-items:center;min-width:244px}
+    .inf-obs-rh{width:100%;min-width:0;min-height:36px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:9px;padding:7px 9px;box-sizing:border-box}
+    .inf-action-icon{display:inline-grid!important;place-items:center;width:40px!important;min-width:40px!important;height:36px!important;min-height:36px!important;padding:0!important;margin:0!important;border-radius:10px!important;font-size:18px!important;font-weight:950!important;line-height:1!important}
+    .inf-action-icon.processar{background:#16d790!important;color:#07251a!important;border:1px solid #16d790!important}
+    .inf-action-icon.processar:hover{background:#14c885!important;border-color:#14c885!important}
+    .inf-action-icon.cancelar{background:rgba(127,29,29,.24)!important;color:#fca5a5!important;border:1px solid rgba(239,68,68,.34)!important}
+    .inf-action-icon.cancelar:hover{background:rgba(153,27,27,.42)!important;border-color:rgba(248,113,113,.56)!important;color:#fecaca!important}
+    .inf-action-icon:disabled{opacity:.45!important;cursor:wait!important}
     .inf-origin{font-size:11px;color:var(--muted);margin-top:3px}
+    @media(max-width:900px){.inf-actions{grid-template-columns:1fr 40px 40px;min-width:220px}}
   `;
   document.head.appendChild(style);
 }
@@ -124,8 +131,8 @@ function renderTabela() {
     <td>${statusPill(r.status)}</td>
     <td>${r.status === 'PENDENTE' ? `<div class="inf-actions">
       <input class="inf-obs-rh" data-inf-obs="${esc(r.id)}" placeholder="Observação do RH">
-      <button class="btn btn-small btn-primary" data-inf-processar="${esc(r.id)}" type="button">Processar</button>
-      <button class="btn btn-small btn-secondary" data-inf-cancelar="${esc(r.id)}" type="button">Cancelar</button>
+      <button class="btn btn-small inf-action-icon processar" data-inf-processar="${esc(r.id)}" type="button" title="Processar" aria-label="Processar">✔</button>
+      <button class="btn btn-small inf-action-icon cancelar" data-inf-cancelar="${esc(r.id)}" type="button" title="Cancelar" aria-label="Cancelar">✕</button>
     </div>` : `<span class="inf-origin">${esc(r.processado_por_nome || '-')}<br>${brDateTime(r.processado_em)}</span>`}</td>
   </tr>`).join('');
 
