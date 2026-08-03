@@ -215,33 +215,49 @@ async function abrirDialogoNovaOs(page) {
   // Estratégia primária (confirmada ao vivo 03/08): o botão "+" (tooltip
   // "Adicionar") é o ÚLTIMO botão da barra que contém o campo
   // input[placeholder="Filtrar Pesquisa"] — mesmo selector de referência já
-  // validado em grm-sync-lista-os.js.
-  var achouPorToolbar = await page.evaluate(function () {
+  // validado em grm-sync-lista-os.js. Precisa ser um clique de mouse "de
+  // verdade" (page.mouse.click) — um .click() sintético via DOM não abre
+  // nada aqui (confirmado ao vivo 03/08: mesmo comportamento já visto com
+  // os v-autocomplete do modal Adicionar NHE em grm-sync-lancar-nhe.js).
+  var boxToolbar = await page.evaluate(function () {
     var input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
-    if (!input) return false;
+    if (!input) return null;
     var toolbar = input.closest('div');
     for (var i = 0; i < 4 && toolbar; i++) {
       var botoes = Array.from(toolbar.querySelectorAll('button')).filter(function (b) {
         return !b.disabled && b.getAttribute('aria-disabled') !== 'true';
       });
-      if (botoes.length) { botoes[botoes.length - 1].click(); return true; }
+      if (botoes.length) {
+        var r = botoes[botoes.length - 1].getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
       toolbar = toolbar.parentElement;
     }
-    return false;
+    return null;
   });
-  if (achouPorToolbar) { log('INFO', 'Botão "Adicionar" (+) aberto via barra do campo Filtrar Pesquisa.'); await wait(1200); return true; }
-
-  for (var i = 0; i < BOTAO_NOVA_OS_CLASSES.length; i++) {
-    var achou = await page.evaluate(function (sel) {
-      var el = document.querySelector(sel);
-      if (!el) return false;
-      (el.tagName === 'BUTTON' ? el : el.querySelector('button') || el).click();
-      return true;
-    }, BOTAO_NOVA_OS_CLASSES[i]);
-    if (achou) { log('INFO', 'Botão "Nova O.S." aberto via classe ' + BOTAO_NOVA_OS_CLASSES[i]); await wait(1200); return true; }
+  if (boxToolbar) {
+    await page.mouse.click(boxToolbar.x, boxToolbar.y);
+    var abriuToolbar = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
+    if (abriuToolbar) { log('INFO', 'Botão "Adicionar" (+) aberto via barra do campo Filtrar Pesquisa.'); await wait(800); return true; }
+    log('WARN', 'Clique no botão "+" da barra não abriu diálogo — tentando fallbacks.');
   }
 
-  var achouPorTexto = await page.evaluate(function (textos) {
+  for (var i = 0; i < BOTAO_NOVA_OS_CLASSES.length; i++) {
+    var boxClasse = await page.evaluate(function (sel) {
+      var el = document.querySelector(sel);
+      if (!el) return null;
+      var btn = el.tagName === 'BUTTON' ? el : el.querySelector('button') || el;
+      var r = btn.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, BOTAO_NOVA_OS_CLASSES[i]);
+    if (boxClasse) {
+      await page.mouse.click(boxClasse.x, boxClasse.y);
+      var abriuClasse = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
+      if (abriuClasse) { log('INFO', 'Botão "Nova O.S." aberto via classe ' + BOTAO_NOVA_OS_CLASSES[i]); await wait(800); return true; }
+    }
+  }
+
+  var boxTexto = await page.evaluate(function (textos) {
     function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
     var candidatos = Array.from(document.querySelectorAll('button, a, [role="button"]'));
     for (var t = 0; t < textos.length; t++) {
@@ -251,20 +267,23 @@ async function abrirDialogoNovaOs(page) {
         var texto = normJs(c.innerText || c.textContent || c.getAttribute('aria-label') || '');
         return texto.indexOf(alvo) !== -1;
       });
-      if (el) { el.click(); return alvo; }
+      if (el) { var r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, via: alvo }; }
     }
     // Último recurso: botão flutuante com ícone "+" (mdi-plus / lord-icon "plus"/"add").
     var fab = candidatos.find(function (c) {
       if (c.disabled || c.getAttribute('aria-disabled') === 'true') return false;
       return !!c.querySelector('.mdi-plus, lord-icon[src*="plus"], lord-icon[src*="add"]');
     });
-    if (fab) { fab.click(); return 'icone +'; }
+    if (fab) { var rf = fab.getBoundingClientRect(); return { x: rf.x + rf.width / 2, y: rf.y + rf.height / 2, via: 'icone +' }; }
     return null;
   }, BOTAO_NOVA_OS_TEXTOS);
 
-  if (!achouPorTexto) return false;
-  log('INFO', 'Botão "Nova O.S." aberto via fallback texto/ícone (' + achouPorTexto + ')');
-  await wait(1200);
+  if (!boxTexto) return false;
+  await page.mouse.click(boxTexto.x, boxTexto.y);
+  var abriuTexto = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
+  if (!abriuTexto) return false;
+  log('INFO', 'Botão "Nova O.S." aberto via fallback texto/ícone (' + boxTexto.via + ')');
+  await wait(800);
   return true;
 }
 
