@@ -208,39 +208,72 @@ async function shot(page, name) {
  * Abrir o diálogo "Nova O.S."
  * ---------------------------------------------------------------------- */
 
+// Vuetify 3 usa a MESMA classe .v-overlay--active pra tooltip E pra diálogo
+// (confirmado ao vivo 03/08: passar o mouse por cima de um ícone da barra já
+// deixa o tooltip dele com essa classe, o que dava falso positivo em "abriu
+// diálogo"). Só conta como aberto um overlay que pareça de fato um
+// formulário (vários campos), não qualquer overlay ativo.
+function overlayFormularioAtivo(page) {
+  return page.evaluate(function () {
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    return overlays.some(function (o) { return o.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field').length > 3; });
+  });
+}
+
+async function esperarFormulario(page, timeout) {
+  return page.waitForFunction(function () {
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    return overlays.some(function (o) { return o.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field').length > 3; });
+  }, { timeout: timeout || 2500 }).then(function () { return true; }).catch(function () { return false; });
+}
+
+async function fecharOverlaysTransitorios(page) {
+  await page.keyboard.press('Escape').catch(function () {});
+  await wait(300);
+}
+
+// Em vez de adivinhar QUAL botão da barra é o "+", tenta cada um (da direita
+// pra esquerda, já que visualmente o "+" fica por último) e só considera
+// sucesso se abrir de fato um overlay com formulário — clique errado num
+// ícone vizinho (ex.: lupa de Pesquisar) não engana mais esse teste.
+async function tentarBotoesToolbar(page) {
+  var botoes = await page.evaluate(function () {
+    var input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
+    if (!input) return [];
+    var toolbar = input.closest('div');
+    for (var i = 0; i < 4 && toolbar; i++) {
+      var lista = Array.from(toolbar.querySelectorAll('button')).filter(function (b) {
+        return !b.disabled && b.getAttribute('aria-disabled') !== 'true';
+      });
+      if (lista.length) {
+        return lista.map(function (b) {
+          var r = b.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2, texto: (b.innerText || b.getAttribute('aria-label') || '').trim() };
+        });
+      }
+      toolbar = toolbar.parentElement;
+    }
+    return [];
+  });
+  if (!botoes.length) { log('WARN', 'Nenhum botão encontrado na barra do campo Filtrar Pesquisa.'); return false; }
+  log('INFO', botoes.length + ' botão(ões) na barra do Filtrar Pesquisa — testando um a um (da direita pra esquerda).');
+
+  for (var i = botoes.length - 1; i >= 0; i--) {
+    var b = botoes[i];
+    await page.mouse.click(b.x, b.y);
+    var abriu = await esperarFormulario(page, 2500);
+    if (abriu) { log('INFO', 'Formulário aberto no botão de índice ' + i + ' da barra (texto/aria-label: "' + b.texto + '").'); return true; }
+    await fecharOverlaysTransitorios(page);
+  }
+  return false;
+}
+
 async function abrirDialogoNovaOs(page) {
   await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2500);
 
-  // Estratégia primária (confirmada ao vivo 03/08): o botão "+" (tooltip
-  // "Adicionar") é o ÚLTIMO botão da barra que contém o campo
-  // input[placeholder="Filtrar Pesquisa"] — mesmo selector de referência já
-  // validado em grm-sync-lista-os.js. Precisa ser um clique de mouse "de
-  // verdade" (page.mouse.click) — um .click() sintético via DOM não abre
-  // nada aqui (confirmado ao vivo 03/08: mesmo comportamento já visto com
-  // os v-autocomplete do modal Adicionar NHE em grm-sync-lancar-nhe.js).
-  var boxToolbar = await page.evaluate(function () {
-    var input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
-    if (!input) return null;
-    var toolbar = input.closest('div');
-    for (var i = 0; i < 4 && toolbar; i++) {
-      var botoes = Array.from(toolbar.querySelectorAll('button')).filter(function (b) {
-        return !b.disabled && b.getAttribute('aria-disabled') !== 'true';
-      });
-      if (botoes.length) {
-        var r = botoes[botoes.length - 1].getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      }
-      toolbar = toolbar.parentElement;
-    }
-    return null;
-  });
-  if (boxToolbar) {
-    await page.mouse.click(boxToolbar.x, boxToolbar.y);
-    var abriuToolbar = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
-    if (abriuToolbar) { log('INFO', 'Botão "Adicionar" (+) aberto via barra do campo Filtrar Pesquisa.'); await wait(800); return true; }
-    log('WARN', 'Clique no botão "+" da barra não abriu diálogo — tentando fallbacks.');
-  }
+  if (await tentarBotoesToolbar(page)) { await wait(500); return true; }
+  log('WARN', 'Nenhum botão da barra abriu o formulário — tentando fallbacks (classes/texto/ícone).');
 
   for (var i = 0; i < BOTAO_NOVA_OS_CLASSES.length; i++) {
     var boxClasse = await page.evaluate(function (sel) {
@@ -252,8 +285,8 @@ async function abrirDialogoNovaOs(page) {
     }, BOTAO_NOVA_OS_CLASSES[i]);
     if (boxClasse) {
       await page.mouse.click(boxClasse.x, boxClasse.y);
-      var abriuClasse = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
-      if (abriuClasse) { log('INFO', 'Botão "Nova O.S." aberto via classe ' + BOTAO_NOVA_OS_CLASSES[i]); await wait(800); return true; }
+      if (await esperarFormulario(page, 2500)) { log('INFO', 'Botão "Nova O.S." aberto via classe ' + BOTAO_NOVA_OS_CLASSES[i]); await wait(500); return true; }
+      await fecharOverlaysTransitorios(page);
     }
   }
 
@@ -280,10 +313,9 @@ async function abrirDialogoNovaOs(page) {
 
   if (!boxTexto) return false;
   await page.mouse.click(boxTexto.x, boxTexto.y);
-  var abriuTexto = await page.waitForSelector('.v-overlay--active', { timeout: 5000 }).then(function () { return true; }).catch(function () { return false; });
-  if (!abriuTexto) return false;
+  if (!(await esperarFormulario(page, 2500))) return false;
   log('INFO', 'Botão "Nova O.S." aberto via fallback texto/ícone (' + boxTexto.via + ')');
-  await wait(800);
+  await wait(500);
   return true;
 }
 
