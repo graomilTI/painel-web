@@ -333,8 +333,22 @@ function mergeFields(existing, ai, explicit) {
   return canonicalize(result);
 }
 
+// produtor é o único campo opcional do formulário — tolera ele (e mais um)
+// faltando antes de considerar "já tá bom o suficiente".
+const CAMPOS_MINIMOS_SEM_IA_LOCAL = KEYS.length - 2;
+
 export async function enhanceLogisticaOsFields(text, existingFields = {}, onProgress) {
   const explicit = parseExplicitLabels(text);
+
+  // A IA local do Chrome (Gemini Nano) é a parte mais lenta do pipeline —
+  // pode baixar dezenas de MB na primeira vez que roda no navegador. Antes
+  // de pagar esse custo, tenta só com o que já veio do provedor online (se
+  // houve) + leitura por rótulo explícito (regex, instantâneo); só recorre
+  // à IA local quando sobra pouco preenchido.
+  const semIaLocal = mergeFields(existingFields, null, explicit);
+  const preenchidos = KEYS.filter((key) => hasValue(semIaLocal[key])).length;
+  if (preenchidos >= CAMPOS_MINIMOS_SEM_IA_LOCAL) return semIaLocal;
+
   const ai = await chromeAiFields(text, onProgress);
-  return mergeFields(existingFields, ai, explicit);
+  return mergeFields(semIaLocal, ai, explicit);
 }
