@@ -400,6 +400,114 @@ async function extractPdfText(pdfPath) {
   }
 }
 
+async function pdfPageCount(pdfPath) {
+  try {
+    const result = await execFile('pdfinfo', [pdfPath]);
+    const match = String(result.stdout || '').match(/^Pages:\s*(\d+)/im);
+    return match ? Number(match[1]) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function extractPdfPageTexts(pdfPath) {
+  if (!await commandExists('pdftotext')) return [];
+  try {
+    // pdftotext separa páginas com form-feed (\f) por padrão (sem -nopgbrk),
+    // mas também deixa um \f sobrando no fim do output — sem descartar esse
+    // pedaço extra (vazio), o array fica com 1 "página" a mais do que o PDF
+    // realmente tem, e qpdf quebra tentando extrair uma página que não existe.
+    const result = await execFile('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-'], {
+      maxBuffer: 30 * 1024 * 1024,
+    });
+    const pages = String(result.stdout || '').split('\f');
+    const realCount = await pdfPageCount(pdfPath);
+    if (realCount && pages.length === realCount + 1 && !pages[pages.length - 1].trim()) {
+      pages.pop();
+    }
+    return pages;
+  } catch (error) {
+    log('WARN', `pdftotext (por página) falhou para ${path.basename(pdfPath)}: ${error.message}`);
+    return [];
+  }
+}
+
+async function extractPdfPageRange(pdfPath, from, to, outPath) {
+  await execFile('qpdf', ['--empty', '--pages', pdfPath, `${from}-${to}`, '--', outPath]);
+  return outPath;
+}
+
+// Arquivo de lote (ex.: holerite de todos os funcionários num PDF só) — divide por
+// página em um arquivo por funcionário, usando o cabeçalho "Código Nome do
+// Funcionário" (payrollEmployees) pra descobrir onde cada holerite começa. Páginas
+// sem funcionário identificado (ex.: verso, continuação de descontos) entram no
+// bloco do funcionário anterior.
+async function splitPayrollByEmployee(pdfPath, workDir) {
+  const pageTexts = await extractPdfPageTexts(pdfPath);
+  if (pageTexts.length < 2) return null;
+
+  const blocks = [];
+  for (let i = 0; i < pageTexts.length; i += 1) {
+    const employee = payrollEmployees(pageTexts[i])[0] || null;
+    if (employee) {
+      blocks.push({ employee, from: i + 1, to: i + 1 });
+    } else if (blocks.length) {
+      blocks[blocks.length - 1].to = i + 1;
+    }
+  }
+  if (blocks.length < 2) return null;
+
+  const results = [];
+  for (const block of blocks) {
+    const outPath = path.join(workDir, `holerite-${sanitizeFileName(block.employee.registration)}.pdf`);
+    await extractPdfPageRange(pdfPath, block.from, block.to, outPath);
+    results.push({ ...block, filePath: outPath });
+  }
+  return results;
+}
+
+async function uploadToStorage(bucket, storagePath, filePath, contentType) {
+  const buffer = fs.readFileSync(filePath);
+  const { error } = await supabase.storage.from(bucket).upload(storagePath, buffer, {
+    contentType: contentType || 'application/octet-stream',
+    upsert: false,
+  });
+  if (error) throw new Error(`Falha ao enviar "${storagePath}" pro Storage: ${error.message}`);
+}
+
+async function insertQueueItem(payload) {
+  const { data, error } = await supabase.from(TABLE_ITEMS).insert(payload).select('id,arquivo_nome').single();
+  if (error) throw error;
+  return data;
+}
+
+// Sobe cada PDF individual pro Storage e cria uma linha NOVO na fila, pra cada uma
+// seguir o fluxo padrão (1 arquivo = 1 funcionário = 1 lançamento) no próximo ciclo
+// do agente — não lança dentro dessa mesma execução, então erro em um funcionário
+// não trava nem reprocessa os demais.
+async function createSplitPayslipRows(row, split) {
+  const created = [];
+  for (const block of split) {
+    const suffix = sanitizeFileName(`${block.employee.registration}-${block.employee.name}`);
+    const dir = path.dirname(row.storage_path || '');
+    const storagePath = `${dir && dir !== '.' ? `${dir}/` : ''}split-${suffix}-${crypto.randomUUID()}.pdf`;
+    const arquivoNome = `HOLERITE ${block.employee.registration} - ${block.employee.name}.pdf`;
+    await uploadToStorage(row.storage_bucket || 'notas-fiscais', storagePath, block.filePath, 'application/pdf');
+    const inserted = await insertQueueItem({
+      storage_bucket: row.storage_bucket || 'notas-fiscais',
+      storage_path: storagePath,
+      arquivo_nome: arquivoNome,
+      arquivo_mime_type: 'application/pdf',
+      setor: row.setor || 'RH',
+      enviado_por: row.enviado_por || null,
+      status: 'NOVO',
+      origem_extracao: `SPLIT_DE_${row.id}`,
+    });
+    created.push(inserted);
+  }
+  return created;
+}
+
 async function groqOcrImage(imagePath) {
   if (!GROQ_API_KEY) throw new Error('Configure GROQ_API_KEY para OCR de imagem/PDF escaneado.');
   const ext = extensionOf(imagePath).replace('.', '') || 'png';
@@ -2231,6 +2339,28 @@ async function processUpload(page, row, runId) {
     await downloadFromStorage(row, localPath);
     const extracted = await extractFileData(localPath, { name: row.arquivo_nome });
     const documentKind = detectDocumentKind(extracted, row);
+
+    // Arquivo único com o holerite de vários funcionários (lote de RH) — divide em
+    // 1 PDF por funcionário e recoloca cada um na fila; essa linha original não é
+    // lançada, só marcada como dividida.
+    if (documentKind === 'HOLERITE' && extensionOf(row.arquivo_nome) === '.pdf'
+      && payrollEmployees(extracted.texto_extraido || '').length > 1) {
+      const split = await splitPayrollByEmployee(localPath, workDir);
+      if (split && split.length > 1) {
+        const created = await createSplitPayslipRows(row, split);
+        await updateItem(row.id, {
+          status: 'DIVIDIDO',
+          execucao_id: runId,
+          erro: null,
+          origem_extracao: 'HOLERITE_LOTE',
+          extraido_json: { funcionarios_encontrados: split.map((b) => b.employee) },
+        });
+        log('SUCCESS', `${row.arquivo_nome}: lote com ${split.length} funcionário(s) — dividido em ${created.length} arquivo(s) individuais, ficam pro próximo ciclo.`);
+        return 'dividido';
+      }
+      log('WARN', `${row.arquivo_nome}: ${payrollEmployees(extracted.texto_extraido || '').length} funcionários detectados no texto, mas não foi possível dividir o PDF por página.`);
+    }
+
     const data = documentKind === 'HOLERITE'
       ? applyPayslipRules(extracted, row)
       : applyInvoiceRules(extracted, row);
@@ -2333,6 +2463,7 @@ async function main() {
     dry_run: 0,
     aguardando_dados: 0,
     aguardando_classificacao: 0,
+    divididos: 0,
     duplicados: 0,
     ignorados: 0,
     erros: 0,
@@ -2384,6 +2515,7 @@ async function main() {
       else if (result === 'dry_run') stats.dry_run += 1;
       else if (result === 'aguardando_dados') stats.aguardando_dados += 1;
       else if (result === 'aguardando_classificacao') stats.aguardando_classificacao += 1;
+      else if (result === 'dividido') stats.divididos += 1;
       else if (result === 'duplicado') stats.duplicados += 1;
       else if (result === 'erro') stats.erros += 1;
     }
