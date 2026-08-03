@@ -380,7 +380,34 @@ Deno.serve(async (req) => {
       atualizados += part.length;
     }
 
-    const result = { ok: true, total: rows.length, atualizados, sem_placa: semPlaca, gerado_em: nowIso };
+    // Trilha (breadcrumb) pro Mapa Operacional reconstruir a rota REALIZADA de cada
+    // veículo — ao contrário do upsert acima (1 linha por placa, sempre sobrescrita),
+    // aqui é append-only: cada sincronização insere uma linha nova. Só quem tem
+    // coordenada entra (sem isso o trajeto ganharia "buracos" sem sentido no mapa).
+    const historicoRows = upsertRows
+      .filter((r: any) => Number.isFinite(Number(r.latitude)) && Number.isFinite(Number(r.longitude)))
+      .map((r: any) => ({
+        placa: r.placa,
+        veiculo_id: r.veiculo_id,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        velocidade_kmh: r.velocidade_kmh,
+        motorista: r.motorista,
+        reportado_em: r.reportado_em || nowIso,
+      }));
+    for (let i = 0; i < historicoRows.length; i += 400) {
+      const part = historicoRows.slice(i, i + 400);
+      const { error } = await supabase.from('frotas_posicoes_historico').insert(part);
+      if (error) console.warn('[bfleet-posicoes] historico:', error.message);
+    }
+    // Retenção: mantém só ~7 dias de trilha (o Mapa só usa "hoje") pra não crescer sem limite.
+    await supabase
+      .from('frotas_posicoes_historico')
+      .delete()
+      .lt('reportado_em', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .then(({ error }: any) => { if (error) console.warn('[bfleet-posicoes] retenção histórico:', error.message); });
+
+    const result = { ok: true, total: rows.length, atualizados, historico: historicoRows.length, sem_placa: semPlaca, gerado_em: nowIso };
     await cronLogFinish(supabase, cronLogId, 'success', result);
     return json(result);
   } catch (err) {
