@@ -1,5 +1,4 @@
 const STYLE_ID = 'metas-compacto-2026-style';
-const TITLEBAR_CLASS = 'metas-compact-titlebar';
 
 function injectStyle() {
   if (document.getElementById(STYLE_ID)) return;
@@ -7,68 +6,15 @@ function injectStyle() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    .metas-page {
-      max-width: 1500px !important;
-    }
+    .metas-page { max-width: 1500px !important; }
 
     .metas-header,
     .metas-guide-strip,
     .metas-filter-intro,
-    .metas-nav-desc {
+    .metas-nav-desc,
+    .metas-compact-titlebar,
+    [data-metas-auto-notice] {
       display: none !important;
-    }
-
-    .${TITLEBAR_CLASS} {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      min-height: 58px;
-      margin-bottom: 12px;
-      padding: 4px 2px;
-    }
-
-    .${TITLEBAR_CLASS}__title {
-      margin: 0;
-      color: #f8fafc;
-      font-size: clamp(22px, 2vw, 30px);
-      line-height: 1.05;
-      letter-spacing: -.035em;
-      font-weight: 900;
-      white-space: nowrap;
-    }
-
-    .${TITLEBAR_CLASS}__period {
-      display: inline-flex;
-      align-items: center;
-      min-height: 34px;
-      padding: 0 13px;
-      border: 1px solid rgba(74, 222, 128, .25);
-      border-radius: 12px;
-      background: rgba(21, 128, 61, .14);
-      color: #86efac;
-      font-size: 12px;
-      font-weight: 900;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .${TITLEBAR_CLASS}__updated {
-      color: #94a3b8;
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .${TITLEBAR_CLASS}__actions {
-      display: flex;
-      gap: 9px;
-      margin-left: auto;
-    }
-
-    .${TITLEBAR_CLASS}__actions .metas-btn {
-      min-height: 38px !important;
-      padding: 8px 14px !important;
-      border-radius: 12px !important;
-      font-size: 12px !important;
     }
 
     .metas-filter-card {
@@ -81,22 +27,10 @@ function injectStyle() {
       border-radius: 18px !important;
     }
 
-    .metas-month-section {
-      min-width: 0;
-      margin: 0 !important;
-    }
-
-    .metas-month-title {
-      margin-bottom: 7px !important;
-    }
-
-    .metas-month-title strong {
-      font-size: 11px !important;
-    }
-
-    .metas-month-title span {
-      display: none !important;
-    }
+    .metas-month-section { min-width: 0; margin: 0 !important; }
+    .metas-month-title { margin-bottom: 7px !important; }
+    .metas-month-title strong { font-size: 11px !important; }
+    .metas-month-title span { display: none !important; }
 
     .metas-month-bar {
       display: flex !important;
@@ -125,7 +59,9 @@ function injectStyle() {
 
     .metas-field label {
       margin-bottom: 5px !important;
+      color: #94a3b8 !important;
       font-size: 10px !important;
+      font-weight: 900 !important;
       letter-spacing: .07em !important;
     }
 
@@ -154,18 +90,10 @@ function injectStyle() {
       gap: 8px !important;
     }
 
-    .metas-nav-group {
-      gap: 5px !important;
-    }
-
-    .metas-nav-group + .metas-nav-group {
-      padding-left: 9px !important;
-    }
-
+    .metas-nav-group { gap: 5px !important; }
+    .metas-nav-group + .metas-nav-group { padding-left: 9px !important; }
     .metas-nav-group > strong,
-    .metas-nav-group > span:not(.metas-tab-icon) {
-      display: none !important;
-    }
+    .metas-nav-group > span:not(.metas-tab-icon) { display: none !important; }
 
     .metas-tab {
       min-height: 36px !important;
@@ -185,66 +113,45 @@ function injectStyle() {
       border-radius: 18px !important;
     }
 
-    .metas-card-label {
-      font-size: 10px !important;
-    }
-
+    .metas-card-label { font-size: 10px !important; }
     .metas-card-value {
       margin-top: 8px !important;
       font-size: clamp(27px, 2.5vw, 36px) !important;
       line-height: 1 !important;
     }
-
-    .metas-card-sub {
-      margin-top: 7px !important;
-      font-size: 11px !important;
-    }
+    .metas-card-sub { margin-top: 7px !important; font-size: 11px !important; }
 
     .metas-table-card,
     .metas-card,
     .metas-history-card,
-    .metas-chart-card {
-      border-radius: 18px !important;
+    .metas-chart-card { border-radius: 18px !important; }
+
+    .metas-sortable-header {
+      cursor: pointer !important;
+      user-select: none;
+      white-space: nowrap;
     }
 
-    @media (max-width: 1250px) {
-      .metas-filter-card {
-        grid-template-columns: 1fr !important;
-      }
+    .metas-sortable-header:hover { color: #86efac !important; }
+    .metas-sortable-header::after {
+      content: ' ⇅';
+      color: #64748b;
+      font-size: 10px;
+    }
+    .metas-sortable-header[data-sort-direction='asc']::after { content: ' ↑'; color: #4ade80; }
+    .metas-sortable-header[data-sort-direction='desc']::after { content: ' ↓'; color: #4ade80; }
 
-      .metas-month-bar {
-        flex-wrap: wrap;
-      }
+    @media (max-width: 1250px) {
+      .metas-filter-card { grid-template-columns: 1fr !important; }
+      .metas-month-bar { flex-wrap: wrap; }
     }
 
     @media (max-width: 760px) {
-      .${TITLEBAR_CLASS} {
-        align-items: flex-start;
-        flex-wrap: wrap;
-      }
-
-      .${TITLEBAR_CLASS}__updated {
-        width: 100%;
-      }
-
-      .${TITLEBAR_CLASS}__actions {
-        margin-left: 0;
-      }
-
-      .metas-filters {
-        grid-template-columns: 1fr !important;
-      }
-
-      .metas-month-btn {
-        flex-basis: calc(25% - 6px);
-      }
-
-      .metas-kpis {
-        grid-template-columns: 1fr 1fr !important;
-      }
+      .metas-filters { grid-template-columns: 1fr !important; }
+      .metas-month-btn { flex-basis: calc(25% - 6px); }
+      .metas-kpis { grid-template-columns: 1fr 1fr !important; }
     }
   `;
-
   document.head.appendChild(style);
 }
 
@@ -252,56 +159,131 @@ function textOf(element) {
   return String(element?.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
-function ensureTitlebar(container) {
-  const page = container.querySelector('.metas-page');
-  const oldHeader = page?.querySelector('.metas-header');
-  if (!page || !oldHeader) return;
-
-  let titlebar = page.querySelector(`.${TITLEBAR_CLASS}`);
-  if (!titlebar) {
-    titlebar = document.createElement('div');
-    titlebar.className = TITLEBAR_CLASS;
-    page.insertBefore(titlebar, page.firstChild);
-  }
-
-  const title = textOf(oldHeader.querySelector('h1')) || 'Metas de Produção';
-  const period = textOf(oldHeader.querySelector('.metas-period-chip')) || textOf(container.querySelector('.metas-period-chip'));
-  const updated = textOf(document.querySelector('[data-last-update], .topbar .metas-status, .topbar .meta'));
-  const actions = oldHeader.querySelector('.metas-actions');
-
-  titlebar.innerHTML = `
-    <h1 class="${TITLEBAR_CLASS}__title">${title}</h1>
-    ${period ? `<span class="${TITLEBAR_CLASS}__period">${period}</span>` : ''}
-    ${updated ? `<span class="${TITLEBAR_CLASS}__updated">${updated}</span>` : ''}
-    <div class="${TITLEBAR_CLASS}__actions"></div>
-  `;
-
-  if (actions) titlebar.querySelector(`.${TITLEBAR_CLASS}__actions`).appendChild(actions);
-}
-
-function isOverview(container) {
+function activeTabText(container) {
   const active = Array.from(container.querySelectorAll('.metas-tab.active, .metas-tab[aria-selected="true"]'))
     .find((element) => element.offsetParent !== null);
-  return /visão geral/i.test(textOf(active));
+  return textOf(active);
 }
 
-function reorderOverview(container) {
-  if (!isOverview(container)) return;
+function removeRedundantHeaders(container) {
+  container.querySelectorAll('.metas-compact-titlebar').forEach((element) => element.remove());
 
   const page = container.querySelector('.metas-page');
-  const kpis = page?.querySelector('.metas-kpis');
-  const filter = page?.querySelector('.metas-filter-card');
-  if (!page || !kpis || !filter) return;
+  if (!page) return;
 
-  if (filter.previousElementSibling !== kpis) {
-    page.insertBefore(kpis, filter);
+  Array.from(page.children).forEach((element) => {
+    const text = textOf(element);
+    if (/metas com atualização automática/i.test(text)) {
+      element.setAttribute('data-metas-auto-notice', '1');
+    }
+  });
+}
+
+function placeKpisBelowNavigation(container) {
+  const page = container.querySelector('.metas-page');
+  const nav = page?.querySelector('.metas-nav');
+  const kpis = page?.querySelector('.metas-kpis');
+  if (!page || !nav || !kpis) return;
+
+  if (nav.nextElementSibling !== kpis) {
+    nav.insertAdjacentElement('afterend', kpis);
   }
+}
+
+function findRegionalTableCards(container) {
+  return Array.from(container.querySelectorAll('.metas-table-card, .metas-card, section, article'))
+    .filter((card) => {
+      const heading = card.querySelector('h1, h2, h3, .metas-table-title, .metas-card-title');
+      const title = textOf(heading);
+      return /^metas por regional$/i.test(title) || /^consolidado por regional$/i.test(title);
+    });
+}
+
+function hideOverviewRegionalDuplicate(container) {
+  const isOverview = /visão geral/i.test(activeTabText(container));
+  findRegionalTableCards(container).forEach((card) => {
+    card.style.display = isOverview ? 'none' : '';
+  });
+}
+
+function parseSortableValue(value) {
+  const text = String(value || '').trim();
+  if (!text) return { type: 'text', value: '' };
+
+  const cleaned = text
+    .replace(/\s+/g, ' ')
+    .replace(/R\$/gi, '')
+    .replace(/t\b/gi, '')
+    .replace(/%/g, '')
+    .trim();
+
+  if (/^-?[\d.]+(?:,\d+)?$/.test(cleaned)) {
+    const number = Number(cleaned.replace(/\./g, '').replace(',', '.'));
+    if (Number.isFinite(number)) return { type: 'number', value: number };
+  }
+
+  return { type: 'text', value: cleaned.toLocaleLowerCase('pt-BR') };
+}
+
+function compareValues(a, b, direction) {
+  if (a.type === 'number' && b.type === 'number') {
+    return direction === 'asc' ? a.value - b.value : b.value - a.value;
+  }
+  const result = String(a.value).localeCompare(String(b.value), 'pt-BR', { numeric: true, sensitivity: 'base' });
+  return direction === 'asc' ? result : -result;
+}
+
+function makeRegionalHeadersSortable(container) {
+  findRegionalTableCards(container).forEach((card) => {
+    const table = card.querySelector('table');
+    if (!table) return;
+
+    const headers = Array.from(table.querySelectorAll('thead th'));
+    headers.forEach((header, columnIndex) => {
+      if (header.dataset.metasSortBound === '1') return;
+      const label = textOf(header);
+      if (!label || /ação|ações/i.test(label)) return;
+
+      header.dataset.metasSortBound = '1';
+      header.classList.add('metas-sortable-header');
+      header.setAttribute('role', 'button');
+      header.setAttribute('tabindex', '0');
+      header.setAttribute('aria-label', `Ordenar por ${label}`);
+
+      const sort = () => {
+        const tbody = table.tBodies[0];
+        if (!tbody) return;
+
+        const nextDirection = header.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+        headers.forEach((item) => delete item.dataset.sortDirection);
+        header.dataset.sortDirection = nextDirection;
+
+        const rows = Array.from(tbody.rows);
+        rows.sort((rowA, rowB) => {
+          const a = parseSortableValue(rowA.cells[columnIndex]?.textContent);
+          const b = parseSortableValue(rowB.cells[columnIndex]?.textContent);
+          return compareValues(a, b, nextDirection);
+        });
+        rows.forEach((row) => tbody.appendChild(row));
+      };
+
+      header.addEventListener('click', sort);
+      header.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          sort();
+        }
+      });
+    });
+  });
 }
 
 function enhance(container) {
   if (!container?.querySelector('.metas-page')) return;
-  ensureTitlebar(container);
-  reorderOverview(container);
+  removeRedundantHeaders(container);
+  placeKpisBelowNavigation(container);
+  hideOverviewRegionalDuplicate(container);
+  makeRegionalHeadersSortable(container);
 }
 
 export function initMetasCompacto2026(container = document) {
@@ -321,7 +303,12 @@ export function initMetasCompacto2026(container = document) {
 
   if (container.__metasCompacto2026Observer) return;
   const observer = new MutationObserver(run);
-  observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-selected'] });
+  observer.observe(container, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'aria-selected']
+  });
   container.__metasCompacto2026Observer = observer;
 }
 
