@@ -118,7 +118,7 @@ async function buscarTodasOsExistentes() {
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from('operacional_os')
-      .select('numero_os,status_gestor,status_conferencia')
+      .select('numero_os,status_gestor,status_conferencia,data_os')
       .order('numero_os', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
@@ -344,11 +344,22 @@ export async function sincronizarListaOsDoAgente() {
 
       const payload = [...uniqueMap.values()].map((row) => {
         const existente = statusExistente.get(row.numero_os);
+        // data_os é a data em que a O.S. está sendo atendida, não a de abertura
+        // no GRM — ela pode ser aberta dias atrás e só ser atendida dias à
+        // frente (esclarecido pelo usuário, 2026-08-03). Uma vez que o gestor
+        // marcou Atender/Finalizar, essa data já foi movida de propósito
+        // (ver programacao-equipe.js/atualizarStatusOsCore e o trigger
+        // programacao_equipe_marca_os_atender) — preservar aqui, senão esse
+        // resync (disparado sempre que alguém abre Logística > Distribuir O.S.)
+        // reverte silenciosamente pra data original do GRM e a O.S. some do
+        // Mapa Operacional (que filtra por data_os = hoje).
+        const preservarData = existente && ['ATENDER', 'FINALIZAR'].includes(existente.status_gestor);
         return {
           ...row,
           // preserva o trabalho do gestor para O.S. que já existiam; novas entram como antes (null/PENDENTE).
           status_gestor: existente ? existente.status_gestor : null,
           status_conferencia: existente ? existente.status_conferencia : 'PENDENTE',
+          data_os: preservarData ? existente.data_os : row.data_os,
         };
       });
 
