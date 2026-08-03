@@ -150,8 +150,38 @@ function parseNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+const ALL_ALIASES = FIELD_ALIASES.flatMap(([, aliases]) => aliases);
+
+// Falha de leitura já vista ao vivo: a IA/OCR devolve o próprio texto dos
+// RÓTULOS dos campos como se fosse valor (ex.: produto = "Tipo de produto *
+// Serviço * Volume inicial ("), normalmente quando o documento lido é a
+// própria tela de Abrir OS ou tem várias etiquetas coladas sem separador
+// que o parser reconheça. Um valor de verdade não contém 2+ nomes de OUTROS
+// campos — se contiver, é lixo de leitura, não dado real.
+function looksLikeLabelBleed(value) {
+  const text = normalize(value);
+  if (!text) return false;
+  let hits = 0;
+  for (const alias of ALL_ALIASES) {
+    if (text.includes(normalize(alias))) {
+      hits += 1;
+      if (hits >= 2) return true;
+    }
+  }
+  return false;
+}
+
+function discardLabelBleed(fields) {
+  const result = { ...fields };
+  for (const key of KEYS) {
+    if (key === 'volume_inicial') continue;
+    if (looksLikeLabelBleed(result[key])) result[key] = '';
+  }
+  return result;
+}
+
 function canonicalize(fields, wholeText = '') {
-  const result = { ...blankFields(), ...(fields || {}) };
+  const result = { ...blankFields(), ...discardLabelBleed(fields || {}) };
   result.produto = canonicalProduct(result.produto, wholeText);
   result.tipo_produto = canonicalProductType(result.tipo_produto);
   result.servico = canonicalService(result.servico);
