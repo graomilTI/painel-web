@@ -21,6 +21,41 @@ const ACAO_LABELS = { conferencia: 'Conferir', saldo: 'Saldo', finalizar: 'Final
 
 const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 'Atender', FINALIZAR: 'Finalizar' };
 
+// Testes exigidos na abertura variam por produto (regra passada pela
+// operação 03/08): Milho/Sorgo pedem intensidade do teste de Aflatoxina;
+// Soja pode pedir Intacta e/ou GMO Free (independentes); Trigo pede
+// Vomitoxina. As chaves aqui (ex.: AFLATOXINA_QUALITATIVO) são o vocabulário
+// usado em logistica_abertura_os.testes.opcoes e em grm-sync-abrir-os.js.
+const TESTES_POR_PRODUTO = {
+  MILHO: [
+    { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
+    { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
+    { key: 'AFLATOXINA_QUALI_QUANTI', label: 'Teste Aflatoxina — Qualitativo e Quantitativo' },
+  ],
+  SORGO: [
+    { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
+    { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
+    { key: 'AFLATOXINA_QUALI_QUANTI', label: 'Teste Aflatoxina — Qualitativo e Quantitativo' },
+  ],
+  SOJA: [
+    { key: 'INTACTA', label: 'Teste Intacta' },
+    { key: 'GMO_FREE', label: 'Teste GMO Free' },
+  ],
+  TRIGO: [
+    { key: 'VOMITOXINA', label: 'Teste Vomitoxina' },
+  ],
+};
+
+function categoriaProduto(valor) {
+  const t = normalizeText(valor);
+  if (!t) return null;
+  if (t.includes('MILHO')) return 'MILHO';
+  if (t.includes('SORGO')) return 'SORGO';
+  if (t.includes('SOJA')) return 'SOJA';
+  if (t.includes('TRIGO')) return 'TRIGO';
+  return null;
+}
+
 const state = {
   tab: (() => { const h = location.hash.replace('#',''); return TABS.includes(h) ? h : 'abrir_os'; })(),
   rows: [],
@@ -31,6 +66,8 @@ const state = {
   aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
   aberturaLoading: false,
   aberturaSaving: false,
+  aberturaProdutoAtual: '',
+  aberturaTestesSelecionados: [],
   osRegional: [],
   osRegionalLoading: false,
   loading: false,
@@ -119,11 +156,32 @@ export async function renderContent(content, userContext) {
   content.addEventListener('input', (e) => {
     const map = { 'atz-f-os': 'os', 'atz-f-cliente': 'cliente', 'atz-f-cidade': 'cidade', 'atz-f-local': 'local' };
     const chave = map[e.target.id];
-    if (!chave) return;
-    state.atualizarFiltros[chave] = e.target.value;
-    render(content);
-    const campo = content.querySelector(`#${e.target.id}`);
-    if (campo) { campo.focus(); const len = campo.value.length; campo.setSelectionRange(len, len); }
+    if (chave) {
+      state.atualizarFiltros[chave] = e.target.value;
+      render(content);
+      const campo = content.querySelector(`#${e.target.id}`);
+      if (campo) { campo.focus(); const len = campo.value.length; campo.setSelectionRange(len, len); }
+      return;
+    }
+
+    if (e.target.id === 'osProduto') {
+      state.aberturaProdutoAtual = e.target.value;
+      const categoria = categoriaProduto(e.target.value);
+      const chaves = categoria ? TESTES_POR_PRODUTO[categoria].map(o => o.key) : [];
+      state.aberturaTestesSelecionados = state.aberturaTestesSelecionados.filter(k => chaves.includes(k));
+      render(content);
+      const campo = content.querySelector('#osProduto');
+      if (campo) { campo.focus(); const len = campo.value.length; campo.setSelectionRange(len, len); }
+    }
+  });
+
+  content.addEventListener('change', (e) => {
+    const chk = e.target.closest('[data-teste-key]');
+    if (!chk) return;
+    const key = chk.dataset.testeKey;
+    state.aberturaTestesSelecionados = chk.checked
+      ? [...new Set([...state.aberturaTestesSelecionados, key])]
+      : state.aberturaTestesSelecionados.filter(k => k !== key);
   });
 
   if (state.tab === 'abrir_os') await loadAberturaOs();
@@ -343,6 +401,19 @@ function renderOsTab() {
 }
 
 
+function renderTestesBlock() {
+  const categoria = categoriaProduto(state.aberturaProdutoAtual);
+  const opcoes = categoria ? TESTES_POR_PRODUTO[categoria] : null;
+  if (!opcoes) return '';
+  return `
+    <div class="abrir-os-testes mt-16">
+      <span class="abrir-os-testes-label">Testes *</span>
+      <div class="abrir-os-testes-opcoes">
+        ${opcoes.map(o => `<label class="abrir-os-teste-chip"><input type="checkbox" data-teste-key="${esc(o.key)}" ${state.aberturaTestesSelecionados.includes(o.key) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}
+      </div>
+    </div>`;
+}
+
 function renderAbrirOsTab() {
   if (state.aberturaLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando abertura de O.S...</p></section>`;
 
@@ -362,25 +433,20 @@ function renderAbrirOsTab() {
         <div class="fob-kpi ok"><strong>${cadastradas}</strong><span>Cadastradas</span></div>
       </div>
 
-      <datalist id="abrirOsClientes">${opts(state.aberturaRefs.clientes)}</datalist>
-      <datalist id="abrirOsFiliais">${opts(state.aberturaRefs.filiais)}</datalist>
-      <datalist id="abrirOsArmazens">${opts(state.aberturaRefs.armazens)}</datalist>
-      <datalist id="abrirOsLocaisDestino">${opts(state.aberturaRefs.locaisDestino)}</datalist>
-      <datalist id="abrirOsRegionais">${opts(state.aberturaRefs.regionais)}</datalist>
       <datalist id="abrirOsProdutos"><option value="Soja"></option><option value="Trigo"></option><option value="Milho"></option><option value="Sorgo"></option></datalist>
 
       <div class="abrir-os-card">
         <h4>Dados da solicitação</h4>
         <div class="abrir-os-grid">
-          <label>Contratante / Cliente *<input id="osContratante" class="log-input" list="abrirOsClientes" placeholder="Digite o cliente"></label>
-          <label>Filial pagadora *<input id="osFilialPagadora" class="log-input" list="abrirOsFiliais" placeholder="Cliente final / filial"></label>
+          <label>Contratante / Cliente *<select id="osContratante" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.clientes.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
+          <label>Filial pagadora *<select id="osFilialPagadora" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.filiais.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
-          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
+          <label>Armazém de embarque *<select id="osArmazemEmbarque" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
-          <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
+          <label>Local de destino *<select id="osLocalDestino" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Número contrato *<input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
-          <label>Produto *<input id="osProduto" class="log-input" list="abrirOsProdutos" placeholder="Soja, trigo, milho, sorgo..."></label>
+          <label>Produto *<input id="osProduto" class="log-input" list="abrirOsProdutos" placeholder="Soja, trigo, milho, sorgo..." value="${esc(state.aberturaProdutoAtual)}"></label>
           <label>Tipo de produto *
             <select id="osTipoProduto" class="log-input">
               <option value="">Selecione</option>
@@ -404,6 +470,7 @@ function renderAbrirOsTab() {
             <select id="osTrocaNotas" class="log-input"><option value="">Selecione</option><option value="SIM">Sim</option><option value="NAO">Não</option></select>
           </label>
         </div>
+        ${renderTestesBlock()}
         <div class="mt-16"><button id="abrirOsSalvarBtn" class="log-btn-ok" type="button">Confirmar e enviar para Logística ADM</button></div>
       </div>
 
@@ -415,6 +482,15 @@ function renderAbrirOsTab() {
   `;
 }
 
+function testesResumo(testes) {
+  const categoria = testes?.categoria;
+  const opcoes = Array.isArray(testes?.opcoes) ? testes.opcoes : [];
+  if (!categoria || !opcoes.length) return '';
+  const catalogo = TESTES_POR_PRODUTO[categoria] || [];
+  const labels = opcoes.map(key => catalogo.find(o => o.key === key)?.label || key);
+  return `<br><small class="muted">Testes: ${esc(labels.join(', '))}</small>`;
+}
+
 function renderAberturaOsHistorico() {
   if (!state.aberturaRows.length) return `<div class="log-empty">Nenhuma solicitação de abertura de O.S. encontrada.</div>`;
   return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => `
@@ -422,7 +498,7 @@ function renderAberturaOsHistorico() {
       <td data-label="Data">${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
       <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
       <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
-      <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small></td>
+      <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small>${testesResumo(r.testes)}</td>
       <td data-label="Status"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
@@ -578,8 +654,15 @@ function rowHtml(row) {
 function valById(content, id) { return content.querySelector(`#${id}`)?.value?.trim() || ''; }
 function parseNum(v) { return Number(String(v ?? '').replace(/\./g,'').replace(',','.')) || 0; }
 
+function buildTestesPayload(produto) {
+  const categoria = categoriaProduto(produto);
+  if (!categoria) return {};
+  return { categoria, opcoes: [...state.aberturaTestesSelecionados] };
+}
+
 async function handleSalvarAberturaOs(content) {
   if (state.aberturaSaving) return;
+  const produto = valById(content, 'osProduto');
   const payload = {
     contratante_cliente: valById(content, 'osContratante'),
     filial_pagadora: valById(content, 'osFilialPagadora'),
@@ -589,12 +672,13 @@ async function handleSalvarAberturaOs(content) {
     cidade_destino: valById(content, 'osCidadeDestino'),
     local_destino: valById(content, 'osLocalDestino'),
     numero_contrato: valById(content, 'osNumeroContrato'),
-    produto: valById(content, 'osProduto'),
+    produto,
     tipo_produto: valById(content, 'osTipoProduto'),
     volume_inicial: parseNum(valById(content, 'osVolumeInicial')),
     regional: valById(content, 'osRegional'),
     troca_notas: valById(content, 'osTrocaNotas'),
     servico: valById(content, 'osServico'),
+    testes: buildTestesPayload(produto),
     status: 'PENDENTE',
     raw: {}
   };
@@ -608,12 +692,15 @@ async function handleSalvarAberturaOs(content) {
     ['Serviço', payload.servico]
   ];
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
+  if (categoriaProduto(produto) && !payload.testes.opcoes.length) faltando.push('Testes');
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
 
   state.aberturaSaving = true;
   const { error } = await supabase.from('logistica_abertura_os').insert(payload);
   state.aberturaSaving = false;
   if (error) { alert(`${error.message}. Rode o SQL de abertura de OS no Supabase.`); return; }
+  state.aberturaProdutoAtual = '';
+  state.aberturaTestesSelecionados = [];
   await loadAberturaOs();
   render(content);
   alert('Solicitação enviada para a Logística ADM.');
@@ -819,7 +906,7 @@ function injectStyles() {
     .fob-kpi strong{display:block;font-size:20px;color:#e5e7eb;line-height:1.1}.fob-kpi span{color:#8fa1b5;font-size:11px;font-weight:800}.fob-kpi.ok strong{color:#86efac}.fob-kpi.bad strong{color:#fca5a5}.fob-kpi.gray strong{color:#cbd5e1}
     .fob-add{border:1px solid rgba(52,211,153,.14);border-radius:18px;background:rgba(2,6,23,.18);padding:14px;margin-bottom:16px}.fob-add summary{cursor:pointer;color:#bbf7d0;font-weight:950}.fob-add-grid{display:grid;grid-template-columns:1.2fr .7fr 1fr 1.5fr;gap:12px;margin:14px 0}.fob-add label{font-size:12px;color:#8fa1b5;font-weight:900}.fob-os-line{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:6px}.fob-add label>.log-input,.fob-add label textarea,.fob-add label input[list]{margin-top:6px}
     .fob-os-found{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:10px;border:1px solid rgba(34,197,94,.18);background:rgba(22,101,52,.12);border-radius:16px;padding:12px;margin:12px 0}.fob-os-found small{display:block;color:#8fa1b5;font-size:11px}.fob-os-found strong{display:block;color:#e5e7eb;margin-top:3px}
-    .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:16px;background:rgba(2,6,23,.18);padding:14px;margin-top:14px}.abrir-os-card h4{margin:0 0 10px;color:#bbf7d0;font-size:14px}.abrir-os-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px}.abrir-os-grid label{font-size:11px;color:#8fa1b5;font-weight:800}.abrir-os-grid .log-input{margin-top:4px}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
+    .abrir-os-card{border:1px solid rgba(52,211,153,.14);border-radius:16px;background:rgba(2,6,23,.18);padding:14px;margin-top:14px}.abrir-os-card h4{margin:0 0 10px;color:#bbf7d0;font-size:14px}.abrir-os-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px}.abrir-os-grid label{font-size:11px;color:#8fa1b5;font-weight:800}.abrir-os-grid .log-input{margin-top:4px}.abrir-os-testes{border:1px solid rgba(250,204,21,.28);border-radius:12px;background:rgba(113,63,18,.12);padding:10px 12px}.abrir-os-testes-label{display:block;font-size:11px;color:#fde68a;font-weight:800;margin-bottom:8px}.abrir-os-testes-opcoes{display:flex;flex-wrap:wrap;gap:8px}.abrir-os-teste-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#e5e7eb;background:rgba(15,23,42,.4);border:1px solid rgba(250,204,21,.2);border-radius:999px;padding:6px 12px;cursor:pointer}.abrir-os-teste-chip input{accent-color:#facc15}.log-subtitle{color:#bbf7d0;margin:0 0 12px;font-weight:950}
     .fob-list{display:flex;flex-direction:column;gap:10px}.fob-row{display:grid;grid-template-columns:1fr 1.7fr 1.4fr 1.2fr .9fr 1.5fr;gap:12px;align-items:center;border:1px solid rgba(52,211,153,.12);background:rgba(15,23,42,.26);border-radius:18px;padding:14px}.fob-row.unseen{background:linear-gradient(90deg,rgba(148,163,184,.14),rgba(15,23,42,.25));border-color:rgba(148,163,184,.22)}.fob-row.valid{border-color:rgba(34,197,94,.26)}.fob-row.invalid{border-color:rgba(239,68,68,.26)}.fob-cell strong{display:block;color:#e5e7eb;font-weight:950}.fob-cell span{display:block;color:#8fa1b5;font-size:12px;margin-top:3px;line-height:1.35}.fob-cell.status .log-chip,.fob-cell.view .log-chip{display:inline-flex}.fob-tons{font-weight:800}.fob-cell.actions{display:grid;grid-template-columns:1fr 52px 52px;gap:8px}.fob-obs{min-width:170px}.fob-icon{border:0;border-radius:14px;min-height:44px;font-size:22px;font-weight:950;cursor:pointer}.fob-icon.ok{background:linear-gradient(135deg,#16a34a,#34d399);color:#052e16}.fob-icon.bad{background:rgba(127,29,29,.9);color:#fecaca}.fob-icon:hover{opacity:.88}
     .log-os-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.log-os-filter-btn{border:1px solid rgba(52,211,153,.18);background:rgba(15,23,42,.5);color:#8fa1b5;border-radius:10px;padding:7px 14px;font-size:12px;font-weight:900;cursor:pointer}.log-os-filter-btn.active{background:rgba(22,101,52,.32);border-color:rgba(34,197,94,.4);color:#bbf7d0}.log-os-count{display:inline-flex;align-items:center;justify-content:center;background:rgba(148,163,184,.14);border-radius:999px;padding:2px 7px;font-size:11px;margin-left:4px}
     .atz-filtros{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}

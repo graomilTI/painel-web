@@ -492,11 +492,58 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   }
 }
 
+// Mapa logistica_abertura_os.testes.opcoes -> campo/opção do GRM. Os RÓTULOS
+// dos campos (ex.: "Teste Aflatoxina") foram confirmados ao vivo via
+// --discover (todos vieram v-input--disabled no diálogo vazio — mesma
+// cascata dos outros campos condicionais; só destravam depois de Produto
+// selecionado, por isso esta função roda DEPOIS do loop do LABEL_MAP). Já o
+// TEXTO das opções dentro de cada dropdown (ex.: se é "Qualitativo" mesmo,
+// ou se Intacta/GMO Free/Vomitoxina usam "Sim"/"Realizar"/outro texto) NÃO
+// foi confirmado — ajustar aqui depois de abrir um desses campos ao vivo.
+var TESTES_GRM_MAP = {
+  AFLATOXINA_QUALITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Qualitativo' },
+  AFLATOXINA_QUANTITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Quantitativo' },
+  AFLATOXINA_QUALI_QUANTI: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Qualitativo e Quantitativo' },
+  INTACTA: { campo: ['TESTE INTACTA'], opcaoSubstring: ['SIM', 'REALIZAR', 'INTACTA'] },
+  GMO_FREE: { campo: ['TESTE SOJA GMO FREE'], opcaoSubstring: ['SIM', 'REALIZAR', 'GMO'] },
+  VOMITOXINA: { campo: ['TESTE VOMITOXINA'], opcaoSubstring: ['SIM', 'REALIZAR', 'VOMITOXINA'] },
+};
+
+async function preencherTestes(page, solicitacao) {
+  var opcoes = (solicitacao.testes && Array.isArray(solicitacao.testes.opcoes)) ? solicitacao.testes.opcoes : [];
+  for (var i = 0; i < opcoes.length; i++) {
+    var key = opcoes[i];
+    var mapa = TESTES_GRM_MAP[key];
+    if (!mapa) { log('WARN', 'Teste "' + key + '" sem mapeamento pro campo do GRM — pulando.'); continue; }
+
+    var box = await localizarCampoBox(page, mapa.campo);
+    if (!box) { log('WARN', 'Campo do teste "' + key + '" (' + mapa.campo.join('/') + ') não encontrado no formulário.'); continue; }
+    if (box.disabled) { log('WARN', 'Campo do teste "' + key + '" está desabilitado — pulando (confira se Produto foi selecionado antes).'); continue; }
+
+    await page.mouse.click(box.x, box.y);
+    var escolhida = null;
+    if (mapa.opcaoExata) {
+      escolhida = await selecionarOpcaoAberta(page, mapa.opcaoExata, 'exata');
+    } else {
+      for (var s = 0; s < mapa.opcaoSubstring.length && !escolhida; s++) {
+        escolhida = await selecionarOpcaoAberta(page, mapa.opcaoSubstring[s], 'substring');
+      }
+    }
+    if (!escolhida) {
+      log('WARN', 'Não achei opção pro teste "' + key + '" no dropdown "' + mapa.campo[0] + '" — texto das opções não confirmado ao vivo, ajuste TESTES_GRM_MAP.');
+      await page.keyboard.press('Escape').catch(function () {});
+      continue;
+    }
+    log('INFO', 'Teste "' + key + '" selecionado: ' + escolhida);
+  }
+}
+
 async function preencherFormulario(page, solicitacao) {
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
     await preencherCampo(page, item.campo, item.labels, solicitacao[item.campo]);
   }
+  await preencherTestes(page, solicitacao);
   // Não existe campo próprio de "Troca de Notas" neste formulário (confirmado
   // via --discover) — registra a informação no campo livre "Outras Informações".
   if (solicitacao.troca_notas) {
