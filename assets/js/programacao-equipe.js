@@ -889,10 +889,15 @@ export function embarqueHtml(embarque) {
 // (dependiam de osComCandidatosAtual/carregarERenderizar, já removidas). Extraído pra ser
 // reaproveitado pelo painel lateral novo (programacao-lista-drawer.js), que
 // não tem acesso a esses closures — mesma tabela/mesmo patch, sem UI.
-export async function atualizarStatusOsCore(os, nextStatus, currentUserId) {
+export async function atualizarStatusOsCore(os, nextStatus, currentUserId, dataReferencia) {
   const agoraIso = new Date().toISOString();
   const kgAtivo = String(os?.observacao_logistica || '').startsWith('KG solicitado');
   const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+  // data_os é quando a O.S. está sendo atendida, não quando foi aberta — ela
+  // pode ter sido aberta dias atrás e só ser atendida dias à frente, conforme
+  // a necessidade do cliente (esclarecido pelo usuário, 2026-08-03). Move
+  // junto com o "Atender" pra bater com o filtro de data do Mapa Operacional.
+  if (nextStatus === 'ATENDER' && dataReferencia) patch.data_os = dataReferencia;
   if (!kgAtivo) patch.observacao_logistica = null;
   if (nextStatus === 'FINALIZAR') {
     patch.status_logistica = 'PENDENTE';
@@ -1051,13 +1056,18 @@ export async function confirmarCandidato(programacaoId, os, cand) {
 
   // Colaborador que já é motorista de um veículo cadastrado (colaborador_cruzamento.veiculo_id)
   // entra como "Logística" em vez de "OK", mesma convenção usada em programacao.js/ensureDefaultRows.
+  //
+  // supervisao/coordenacao vêm da própria O.S. (sempre carregada nesse ponto),
+  // não do candidato — a lista de candidatos pode ter sido montada antes da
+  // O.S. terminar de resolver esses campos, gravando null no espelho em ~15%
+  // dos casos num dia (achado em auditoria de dados, 2026-08-03).
   const espelho = {
     programacao_id: programacaoId,
     colaborador_id: cand.colaboradorId,
     nome_colaborador: cand.nome,
     cargo: cand.cargo || null,
-    coordenacao: cand.coordenacao || null,
-    supervisao: cand.supervisao || null,
+    coordenacao: os.coordenacao || cand.coordenacao || null,
+    supervisao: os.supervisao || cand.supervisao || null,
     disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
@@ -1096,8 +1106,8 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome,
       cargo: cand.cargo || null,
-      coordenacao: cand.coordenacao || null,
-      supervisao: cand.supervisao || null,
+      coordenacao: os.coordenacao || cand.coordenacao || null,
+      supervisao: os.supervisao || cand.supervisao || null,
       disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
     }, { onConflict: 'programacao_id,colaborador_id' }),
   ]);

@@ -398,7 +398,7 @@ export function renderContent(content) {
           <label for="progSearch">Buscar</label>
           <input id="progSearch" type="text" placeholder="Nome, cargo ou supervisão..." />
         </div>
-        <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação">Salvar programação</button>
+        <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação. Para a O.S. aparecer no Mapa Operacional, marque-a como &quot;Atender&quot; na etapa de equipe e programe para a data de hoje.">Salvar programação</button>
       </div>
 
       <div class="prog-toolbar-row prog-toolbar-row-steps">
@@ -2007,8 +2007,9 @@ export function renderContent(content) {
       if (disp === 'SEM EMBARQUE' || disp === 'INDISPONIVEL') return;
 
       const est = state.maps.estadia.get(String(colab.id)) || {};
+      // Em branco = Casa (mesma leitura que o hint "Casa (nenhuma opção
+      // selecionada)" já mostra na etapa B) — não bloqueia o salvamento.
       const tipoEstadia = normalizeText((draftValueFromDom('programacao_estadia', colab.id, 'tipo_estadia') ?? est.tipo_estadia) || '');
-      if (!tipoEstadia) problemas.push(`${colab.nome}: selecione o tipo de hospedagem na etapa B.`);
       const cidade = String((draftValueFromDom('programacao_estadia', colab.id, 'cidade') ?? est.cidade) || '').trim();
       const uf = normalizeUF((draftValueFromDom('programacao_estadia', colab.id, 'uf') ?? est.uf) || '');
       const alojamentoId = (draftValueFromDom('programacao_estadia', colab.id, 'alojamento_id') ?? est.alojamento_id) || '';
@@ -2098,15 +2099,25 @@ export function renderContent(content) {
       // pra cada supervisão salva — não bloqueia o feedback de sucesso acima
       // nem impede o gestor de continuar editando se a chamada falhar (fica
       // pra próxima vez que ele salvar). Ver operacional-mapa-rotas/index.ts.
+      // Falha aqui era só um console.warn silencioso — o gestor via "salvo
+      // com sucesso" e o Mapa Operacional ficava sem a rota/O.S. sem nenhum
+      // aviso. Agora contamos falhas e avisamos por cima do feedback de ok.
       try {
         const ctx = state.userContext || {};
+        const falhasMapa = [];
         await Promise.all(idsPorSupervisao.map(([sup, pid]) => {
           const supervisaoReal = sup && sup !== TODAS_SUPERVISOES ? sup : firstFilled(ctx?.supervisao, ctx?.user?.supervisao, '');
           if (!supervisaoReal) return null;
           return supabase.functions.invoke('operacional-mapa-rotas', {
             body: { programacaoId: pid, supervisao: supervisaoReal, dataReferencia: state.dataReferencia },
-          }).catch((err) => console.warn('[programacao] operacional-mapa-rotas:', err));
+          }).catch((err) => {
+            console.warn('[programacao] operacional-mapa-rotas:', err);
+            falhasMapa.push(supervisaoReal);
+          });
         }));
+        if (falhasMapa.length) {
+          setFeedback(`Programação salva, mas o Mapa Operacional não pôde ser atualizado agora para: ${falhasMapa.join(', ')}. Tente salvar novamente em instantes.`, 'warn');
+        }
       } catch (_) {}
 
     } catch (error) {

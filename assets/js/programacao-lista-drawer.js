@@ -878,10 +878,11 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       statusBtn.disabled = true;
       try {
         const novoStatus = statusBtn.dataset.acaoStatus;
-        await atualizarStatusOsCore(os, novoStatus, currentUser?.id);
+        await atualizarStatusOsCore(os, novoStatus, currentUser?.id, options.dataReferencia);
         // Patcheia o objeto local em vez de refazer a lista inteira do banco.
         os.status_gestor = novoStatus;
         os.configurada_em = new Date().toISOString();
+        if (novoStatus === 'ATENDER' && options.dataReferencia) os.data_os = options.dataReferencia;
         await refreshAposAcao(os);
       } catch (error) {
         alert(error.message || 'Não foi possível atualizar a O.S.');
