@@ -19,6 +19,7 @@ const ALLOWED_MODULES = [
   "logistica_adm",
   "logistica_conferencias",
 ];
+const ADMIN_LEVEL_ROLES = new Set(["adm", "admin", "socio"]);
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -124,9 +125,13 @@ async function authorizeRequest(req: Request): Promise<AuthorizationResult> {
     return { ok: false, status: 403, error: "Usuário inativo ou sem contexto de acesso." };
   }
 
-  const isMaster = asBoolean(context?.user?.is_master ?? context?.is_master)
-    || normalize(context?.user?.role ?? context?.perfil_codigo ?? context?.perfil_nome) === "master";
+  const role = normalize(context?.user?.role ?? context?.perfil_codigo ?? context?.perfil_nome);
+  const isMaster = asBoolean(context?.user?.is_master ?? context?.is_master) || role === "master";
   if (isMaster) {
+    return { ok: true, status: 200, userId: userData.user.id, context };
+  }
+
+  if (ADMIN_LEVEL_ROLES.has(role)) {
     return { ok: true, status: 200, userId: userData.user.id, context };
   }
 

@@ -11,6 +11,7 @@ const ALLOWED_MODULES = new Set([
   "logistica_adm",
   "logistica_conferencias",
 ]);
+const ADMIN_LEVEL_ROLES = new Set(["adm", "admin", "socio"]);
 const ALLOWED_TYPES = new Set(["jpg", "jpeg", "png", "gif", "webp", "pdf"]);
 const MAX_INSTRUCTION_LENGTH = 3000;
 const RECENT_JOB_HOURS = 6;
@@ -115,10 +116,15 @@ async function authorize(req: Request): Promise<AuthResult> {
     return { ok: false, status: 403, error: "Usuário inativo ou sem contexto de acesso." };
   }
 
-  const isMaster = asBoolean(context?.user?.is_master ?? context?.is_master)
-    || normalize(context?.user?.role ?? context?.perfil_codigo ?? context?.perfil_nome) === "master";
+  const role = normalize(context?.user?.role ?? context?.perfil_codigo ?? context?.perfil_nome);
+  const isMaster = asBoolean(context?.user?.is_master ?? context?.is_master) || role === "master";
   if (isMaster) {
     return { ok: true, status: 200, userId: userData.user.id, isMaster: true };
+  }
+
+  const isAdminLevel = ADMIN_LEVEL_ROLES.has(role);
+  if (isAdminLevel) {
+    return { ok: true, status: 200, userId: userData.user.id, isMaster: false };
   }
 
   const modules = Array.isArray(context?.modules) ? context.modules : [];
