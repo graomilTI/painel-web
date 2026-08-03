@@ -94,36 +94,65 @@ function norm(s) {
 
 /* ---------------------------------------------------------------------- *
  * Mapa campo Supabase -> rótulos candidatos no formulário do GRM.
- * AJUSTAR aqui se o --discover mostrar um rótulo diferente do previsto.
+ *
+ * Confirmado ao vivo em 03/08 (print do diálogo "ADICIONAR ORDEM DE SERVIÇO"
+ * enviado pela usuária, logada como graomil.juliana@gmail.com):
+ *   Cliente Nacional | Cliente Regional | Cliente Final
+ *   Dados do Cliente (colapsável)
+ *   DETALHES DA ORDEM DE SERVIÇO: Data da Solicitação | Contrato | Número
+ *     Lote | Serviço · Tipo do Embarque | Tamanho do Lote (Ton) | Tipo do
+ *     Transporte · Habilitar OCC? | Bloquear ao Completar Lote? | Habilitar
+ *     Módulo Integra? | Solicitar Dados do Motorista? · Arquivos Adicionais ·
+ *     Transportadora(s) trabalhando na O.S. · Outras Informações
+ *   DADOS DO EMBARQUE: Tipo do Local | UF | Cidade · Local do Serviço (+) |
+ *     Supervisão · Produtor (+) | Inscrição Estadual · Desabilitar Bloqueio
+ *     de Distância?
+ *   DADOS DE DESTINO: UF de Destino | Cidade de Destino | Destino (+)
+ *   PRODUTO E TESTES: Produto | Tipo do Produto | Perm. Alteração T. Prod.? ·
+ *     Teste Aflatoxina | Teste Intacta | Teste Soja GMO Free · Teste
+ *     Vomitoxina | Teste Falling Number | Teste Falling Number (nº)
+ *   ITENS DE CLASSIFICAÇÃO: Permitir Insetos Vivos/Mortos, Odor Estranho,
+ *     Sementes Tóxicas (não vimos "Troca de Notas" — pode estar mais abaixo,
+ *     ainda não confirmado; se --discover não achar, o campo é só pulado
+ *     com WARN, não quebra o agente).
+ *
+ * "Cliente Nacional"/"Cliente Final" e não "Contratante"/"Filial" — mapeado
+ * conferindo com os rótulos que a função logistica-os-autopreencher (OCR/IA
+ * do upload, mesma tela) já usa pra extrair pro mesmo par de colunas:
+ * contratante_cliente casa com "Cliente nacional" e filial_pagadora casa com
+ * "Cliente final" (ver supabase/functions/logistica-os-autopreencher).
+ * "Cliente Regional" não tem coluna equivalente no painel — fica em branco.
+ * Campos de toggle (Habilitar OCC?, Teste Aflatoxina, etc.) não são tocados
+ * por este agente — ficam no padrão que o GRM já preenche.
  * ---------------------------------------------------------------------- */
 var LABEL_MAP = [
-  { campo: 'contratante_cliente', labels: ['CONTRATANTE/CLIENTE', 'CONTRATANTE', 'CLIENTE'] },
-  { campo: 'filial_pagadora', labels: ['FILIAL PAGADORA', 'FILIAL'] },
+  { campo: 'contratante_cliente', labels: ['CLIENTE NACIONAL'] },
+  { campo: 'filial_pagadora', labels: ['CLIENTE FINAL'] },
   { campo: 'produtor', labels: ['PRODUTOR'] },
-  { campo: 'armazem_embarque', labels: ['ARMAZEM DE EMBARQUE', 'ARMAZEM EMBARQUE', 'LOCAL DE EMBARQUE', 'EMBARQUE'] },
-  { campo: 'cidade_embarque', labels: ['CIDADE DE EMBARQUE', 'CIDADE EMBARQUE'] },
-  { campo: 'cidade_destino', labels: ['CIDADE DE DESTINO', 'CIDADE DESTINO'] },
-  { campo: 'local_destino', labels: ['LOCAL DE DESTINO', 'DESTINO'] },
-  { campo: 'numero_contrato', labels: ['NUMERO DO CONTRATO', 'CONTRATO'] },
+  { campo: 'armazem_embarque', labels: ['LOCAL DO SERVICO'] },
+  { campo: 'cidade_embarque', labels: ['CIDADE'] },
+  { campo: 'cidade_destino', labels: ['CIDADE DE DESTINO'] },
+  { campo: 'local_destino', labels: ['DESTINO'] },
+  { campo: 'numero_contrato', labels: ['CONTRATO'] },
   { campo: 'produto', labels: ['PRODUTO'] },
-  { campo: 'tipo_produto', labels: ['TIPO DE PRODUTO', 'TIPO PRODUTO'] },
-  { campo: 'volume_inicial', labels: ['VOLUME INICIAL', 'VOLUME'] },
-  { campo: 'regional', labels: ['REGIONAL', 'COORDENACAO', 'SUPERVISAO'] },
+  { campo: 'tipo_produto', labels: ['TIPO DO PRODUTO'] },
+  { campo: 'volume_inicial', labels: ['TAMANHO DO LOTE'] },
+  { campo: 'regional', labels: ['SUPERVISAO'] },
   { campo: 'troca_notas', labels: ['TROCA DE NOTAS', 'TROCA NOTAS'] },
   { campo: 'servico', labels: ['SERVICO'] }
 ];
 
-// Candidatos de botão para abrir "Nova O.S." — tentados em ordem. Convenção
-// de classe já vista neste repo é "<tela>-act-<acao>" (ex.:
-// .sOrderloads-act-add-nhe, .serviceOrder-act-search), então tentamos essa
-// família primeiro; o fallback por texto/ícone cobre o caso de a classe real
-// ser outra.
+// Botão "Adicionar" (tooltip confirmado ao vivo) — ícone "+" no canto direito
+// da MESMA barra de ferramentas do campo "Filtrar Pesquisa" (selector já
+// usado em grm-sync-lista-os.js), depois da lupa e do filtro. Usar essa
+// referência de vizinhança é mais robusto do que adivinhar a classe do botão
+// (não confirmada ao vivo).
 var BOTAO_NOVA_OS_CLASSES = [
   '.serviceOrder-act-add', '.serviceOrder-act-new', '.serviceOrder-act-nova', '.serviceOrder-act-cadastrar'
 ];
 var BOTAO_NOVA_OS_TEXTOS = ['NOVA O.S', 'NOVA ORDEM', 'ADICIONAR', 'CADASTRAR O.S', '+ O.S', 'NOVO'];
 
-var DIALOG_TITULOS = ['NOVA ORDEM DE SERVICO', 'NOVA O.S', 'ADICIONAR ORDEM DE SERVICO', 'CADASTRAR ORDEM DE SERVICO', 'ORDEM DE SERVICO'];
+var DIALOG_TITULOS = ['ADICIONAR ORDEM DE SERVICO', 'NOVA ORDEM DE SERVICO', 'NOVA O.S', 'CADASTRAR ORDEM DE SERVICO', 'ORDEM DE SERVICO'];
 
 /* ---------------------------------------------------------------------- *
  * Puppeteer: login (mesmo padrão de todos os outros agentes deste repo)
@@ -182,6 +211,25 @@ async function shot(page, name) {
 async function abrirDialogoNovaOs(page) {
   await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2500);
+
+  // Estratégia primária (confirmada ao vivo 03/08): o botão "+" (tooltip
+  // "Adicionar") é o ÚLTIMO botão da barra que contém o campo
+  // input[placeholder="Filtrar Pesquisa"] — mesmo selector de referência já
+  // validado em grm-sync-lista-os.js.
+  var achouPorToolbar = await page.evaluate(function () {
+    var input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
+    if (!input) return false;
+    var toolbar = input.closest('div');
+    for (var i = 0; i < 4 && toolbar; i++) {
+      var botoes = Array.from(toolbar.querySelectorAll('button')).filter(function (b) {
+        return !b.disabled && b.getAttribute('aria-disabled') !== 'true';
+      });
+      if (botoes.length) { botoes[botoes.length - 1].click(); return true; }
+      toolbar = toolbar.parentElement;
+    }
+    return false;
+  });
+  if (achouPorToolbar) { log('INFO', 'Botão "Adicionar" (+) aberto via barra do campo Filtrar Pesquisa.'); await wait(1200); return true; }
 
   for (var i = 0; i < BOTAO_NOVA_OS_CLASSES.length; i++) {
     var achou = await page.evaluate(function (sel) {
@@ -264,19 +312,32 @@ async function descobrirCampos(page) {
  * hora, sem precisar saber de antemão qual é qual (não confirmado ao vivo).
  * ---------------------------------------------------------------------- */
 
+// Rótulos curtos se repetem em mais de uma seção do formulário (ex.: "Destino"
+// vs. "UF de Destino"/"Cidade de Destino"; "Cidade" vs. "Cidade de Destino") —
+// por isso tenta IGUALDADE exata do texto do campo primeiro (elimina essas
+// colisões, já que o texto de um .v-input vazio é só o rótulo) e só cai pra
+// substring se nenhum campo bater exatamente.
 async function localizarCampoBox(page, labels) {
   return page.evaluate(function (labels) {
-    function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim(); }
     var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
     var dialog = overlays[overlays.length - 1];
     if (!dialog) return null;
     var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
     for (var i = 0; i < labels.length; i++) {
       var alvo = labels[i];
-      var f = fields.find(function (field) { return normJs(field.innerText || '').indexOf(alvo) !== -1; });
+      var f = fields.find(function (field) { return normJs(field.innerText || '') === alvo; });
       if (f) {
         var r = f.getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2, label: labels[i] };
+      }
+    }
+    for (var j = 0; j < labels.length; j++) {
+      var alvo2 = labels[j];
+      var f2 = fields.find(function (field) { return normJs(field.innerText || '').indexOf(alvo2) !== -1; });
+      if (f2) {
+        var r2 = f2.getBoundingClientRect();
+        return { x: r2.x + r2.width / 2, y: r2.y + r2.height / 2, label: labels[j] };
       }
     }
     return null;
@@ -312,7 +373,8 @@ function formatarValor(campo, valor) {
   if (campo === 'volume_inicial') {
     var n = Number(valor);
     if (!isFinite(n)) return String(valor);
-    return n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+    // Placeholder do campo "Tamanho do Lote" mostra 3 casas decimais (0,000 Ton).
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
   }
   return String(valor);
 }
@@ -332,21 +394,19 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   await page.mouse.click(box.x, box.y);
   await wait(400);
 
-  // Busca o <input> de fato sob o box clicado pra digitar nele (mesmo campo,
-  // não confiar em document.activeElement — técnica já validada em
-  // grm-sync-lancar-nhe.js).
+  // Acha o <input> de fato sob o PONTO já clicado (box.x/box.y), não
+  // reabrindo a busca por rótulo — rótulos curtos (ex.: "Cidade", "Destino")
+  // colidem por substring com outros campos ("Cidade de Destino"), então
+  // reusar as coordenadas exatas evita digitar no campo errado. Não confiar
+  // em document.activeElement — técnica já validada em grm-sync-lancar-nhe.js.
   var digitou = await page.evaluate(function (payload) {
-    function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
-    var dialog = overlays[overlays.length - 1];
-    if (!dialog) return false;
-    var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
-    var f = fields.find(function (field) { return normJs(field.innerText || '').indexOf(payload.label) !== -1; });
-    var input = f && (f.querySelector('input') || f.querySelector('textarea'));
+    var el = document.elementFromPoint(payload.x, payload.y);
+    var field = el && el.closest('.v-input, .v-select, .v-autocomplete, .v-field');
+    var input = field && (field.querySelector('input') || field.querySelector('textarea'));
     if (!input) return false;
     input.focus();
     return true;
-  }, { label: box.label });
+  }, { x: box.x, y: box.y });
 
   if (digitou) {
     await page.keyboard.down('Control');
