@@ -1950,18 +1950,73 @@ async function selectMarkedControl(page, field, target, options = {}) {
     await page.keyboard.press('Backspace');
     await page.keyboard.type(String(options.search || targets[0]), { delay: 30 });
     await wait(Number(options.searchWaitMs || 1200));
-    await page.keyboard.press('ArrowDown');
-    await wait(150);
-    await page.keyboard.press('Enter');
-    await wait(700);
 
-    const afterKeyboard = await readCurrentSelection();
-    const afterCandidates = afterKeyboard
-      ? [afterKeyboard.selectedText, afterKeyboard.inputValue].filter(Boolean)
-      : [];
-    if (afterCandidates.some(matchesTarget)) {
-      selected = afterKeyboard.selectedText || afterKeyboard.inputValue || targets[0];
-      log('DEBUG', `Opção "${selected}" selecionada por teclado${field.actualId ? ` no campo #${field.actualId}` : ''}.`);
+    // O texto digitado sempre fica no input mesmo sem nenhuma opção real na lista
+    // (ex.: "No data available") — sem essa checagem, o Enter abaixo "seleciona"
+    // o próprio texto digitado e gera falso positivo (GRM recusa depois com
+    // "Campos Inválidos" porque o valor nunca foi de fato escolhido na lista).
+    // Escopado ao overlay/listbox do próprio campo (igual selectOptionOpen) —
+    // sem escopo, `.v-list-item` também pega o menu lateral (sempre visível).
+    const hasVisibleOptions = await page.evaluate((selector) => {
+      const norm = (s) => String(s || '').trim().toUpperCase();
+      const visible = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        const st = getComputedStyle(el);
+        return r.width > 2 && r.height > 2 && st.display !== 'none' && st.visibility !== 'hidden';
+      };
+      const roots = [];
+      const addRoot = (el) => { if (el && !roots.includes(el)) roots.push(el); };
+      const control = document.querySelector(selector);
+      if (control) {
+        const wrapper = control.closest('.v-field,[role="combobox"],.v-input') || control.parentElement;
+        const controlsId = control.getAttribute('aria-controls') || wrapper?.getAttribute('aria-controls');
+        if (controlsId) addRoot(document.getElementById(controlsId));
+      }
+      Array.from(document.querySelectorAll(
+        '.v-overlay--active, [role="listbox"], .menuable__content__active, .v-overlay__content'
+      )).filter(visible).forEach(addRoot);
+      if (!roots.length) return false;
+      const items = roots.flatMap((root) => Array.from(root.querySelectorAll('[role="option"], .v-list-item')))
+        .filter(visible);
+      return items.some((el) => {
+        const text = norm(el.innerText || el.textContent);
+        return text && !text.includes('NO DATA') && !text.includes('NENHUM RESULTADO') && !text.includes('SEM RESULTADO');
+      });
+    }, field.selector);
+
+    if (hasVisibleOptions) {
+      await page.keyboard.press('ArrowDown');
+      await wait(150);
+      await page.keyboard.press('Enter');
+      await wait(700);
+
+      const afterKeyboard = await readCurrentSelection();
+      const afterCandidates = afterKeyboard
+        ? [afterKeyboard.selectedText, afterKeyboard.inputValue].filter(Boolean)
+        : [];
+      if (afterCandidates.some(matchesTarget)) {
+        selected = afterKeyboard.selectedText || afterKeyboard.inputValue || targets[0];
+        log('DEBUG', `Opção "${selected}" selecionada por teclado${field.actualId ? ` no campo #${field.actualId}` : ''}.`);
+      }
+    } else {
+      try { await page.keyboard.press('Escape'); } catch (_) { /* noop */ }
+    }
+
+    // Sem seleção confirmada, o texto digitado (ex.: "1138") fica preso no input e
+    // engana a checagem de "já selecionado" da próxima tentativa (outro termo de
+    // busca) — limpa pra não herdar um falso positivo na chamada seguinte.
+    if (!selected) {
+      await page.evaluate((selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return;
+        const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor?.set) descriptor.set.call(el, '');
+        else el.value = '';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }, field.selector);
+      await wait(150);
     }
   }
 
