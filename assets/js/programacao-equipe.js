@@ -889,10 +889,15 @@ export function embarqueHtml(embarque) {
 // (dependiam de osComCandidatosAtual/carregarERenderizar, já removidas). Extraído pra ser
 // reaproveitado pelo painel lateral novo (programacao-lista-drawer.js), que
 // não tem acesso a esses closures — mesma tabela/mesmo patch, sem UI.
-export async function atualizarStatusOsCore(os, nextStatus, currentUserId) {
+export async function atualizarStatusOsCore(os, nextStatus, currentUserId, dataReferencia) {
   const agoraIso = new Date().toISOString();
   const kgAtivo = String(os?.observacao_logistica || '').startsWith('KG solicitado');
   const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+  // data_os é quando a O.S. está sendo atendida, não quando foi aberta — ela
+  // pode ter sido aberta dias atrás e só ser atendida dias à frente, conforme
+  // a necessidade do cliente (esclarecido pelo usuário, 2026-08-03). Move
+  // junto com o "Atender" pra bater com o filtro de data do Mapa Operacional.
+  if (nextStatus === 'ATENDER' && dataReferencia) patch.data_os = dataReferencia;
   if (!kgAtivo) patch.observacao_logistica = null;
   if (nextStatus === 'FINALIZAR') {
     patch.status_logistica = 'PENDENTE';
