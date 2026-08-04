@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
 import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
-import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260730-supervisao1';
+import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260804-multisupervisao1';
 
 const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null, supervisoes: [] };
 const obsState = { alojamentoId: null, year: 0, month: 0, selectedDate: '' };
@@ -9,6 +9,22 @@ let toastTimer = null;
 
 function getValue(id) { return document.getElementById(id)?.value ?? ''; }
 function setValue(id, value) { const el = document.getElementById(id); if (el) el.value = value ?? ''; }
+function getValues(id) {
+  const el = document.getElementById(id);
+  return el ? [...el.selectedOptions].map((option) => option.value).filter(Boolean) : [];
+}
+function setValues(id, values = []) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const selected = new Set(values.map((value) => String(value || '').trim()).filter(Boolean));
+  [...el.options].forEach((option) => { option.selected = selected.has(option.value); });
+}
+function rowSupervisoes(row = {}) {
+  return [...new Set([
+    ...(Array.isArray(row.supervisoes) ? row.supervisoes : []),
+    row.supervisao,
+  ].map((value) => String(value || '').trim()).filter(Boolean))];
+}
 
 function feedback(message, type = '') {
   const el = document.getElementById('alojV2Feedback');
@@ -31,12 +47,12 @@ async function loadSupervisoes() {
   const select = document.getElementById('alojV2Supervisao');
   const { data, error } = await supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true });
   if (error) {
-    if (select) select.innerHTML = '<option value="">Não foi possível carregar</option>';
+    if (select) select.innerHTML = '<option value="" disabled>Não foi possível carregar</option>';
     return;
   }
   state.supervisoes = (data || []).map((row) => row.nome).filter(Boolean);
   if (select) {
-    select.innerHTML = `<option value="">Não informado</option>${state.supervisoes.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('')}`;
+    select.innerHTML = state.supervisoes.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('');
   }
 }
 
@@ -60,7 +76,7 @@ function openModal(row = null) {
     const values = {
       alojV2Nome: row.nome, alojV2Tipo: row.tipo || 'CASA', alojV2Status: row.status || 'ATIVO', alojV2Responsavel: row.responsavel,
       alojV2Contato: row.contato, alojV2Aluguel: row.valor_aluguel, alojV2Capacidade: row.capacidade, alojV2Quartos: row.quartos,
-      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2Supervisao: row.supervisao || '', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
+      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
       alojV2ContratoFim: row.contrato_fim, alojV2Logradouro: row.endereco_logradouro || row.endereco, alojV2Numero: row.endereco_numero,
       alojV2Complemento: row.endereco_complemento, alojV2Bairro: row.bairro, alojV2Cidade: row.cidade, alojV2Uf: row.uf,
       alojV2Cep: row.cep, alojV2Referencia: row.referencia, alojV2Localizacao: row.link_localizacao,
@@ -70,6 +86,7 @@ function openModal(row = null) {
       alojV2EmpresaInternet: row.empresa_internet, alojV2GasTitular: row.gas_titular, alojV2GasPagamento: row.gas_forma_pagamento, alojV2Observacoes: row.observacoes_limpa
     };
     Object.entries(values).forEach(([id, value]) => setValue(id, value));
+    setValues('alojV2Supervisao', rowSupervisoes(row));
     document.getElementById('alojV2ModalTitle').textContent = 'Editar alojamento';
     document.getElementById('alojV2Save').textContent = 'Salvar alterações';
   }
@@ -222,7 +239,8 @@ function readForm() {
     nome: getValue('alojV2Nome').trim(), tipo: getValue('alojV2Tipo') || 'CASA', status: getValue('alojV2Status') || 'ATIVO',
     responsavel: getValue('alojV2Responsavel').trim(), contato: getValue('alojV2Contato').trim(), valor_aluguel: getValue('alojV2Aluguel'),
     capacidade: getValue('alojV2Capacidade'), quartos: getValue('alojV2Quartos'), prioridade: getValue('alojV2Prioridade') || 'NORMAL',
-    supervisao: getValue('alojV2Supervisao').trim(),
+    supervisoes: getValues('alojV2Supervisao'),
+    supervisao: getValues('alojV2Supervisao')[0] || '',
     contrato_url: getValue('alojV2ContratoUrl').trim(), contrato_inicio: getValue('alojV2ContratoInicio'), contrato_fim: getValue('alojV2ContratoFim'),
     endereco_logradouro: getValue('alojV2Logradouro').trim(), endereco_numero: getValue('alojV2Numero').trim(), endereco_complemento: getValue('alojV2Complemento').trim(),
     bairro: getValue('alojV2Bairro').trim(), cidade: getValue('alojV2Cidade').trim(), uf: getValue('alojV2Uf').trim().toUpperCase().slice(0, 2),
@@ -270,6 +288,7 @@ async function saveRecord(event) {
   event.preventDefault();
   const data = readForm();
   if (!data.nome || !data.cidade || !data.uf) return feedback('Informe nome, cidade e UF.', 'err');
+  if (!data.supervisoes.length) return feedback('Selecione pelo menos uma supervisão.', 'err');
 
   const current = state.rows.find((row) => String(row.id) === String(state.editingId));
   const userId = loadUserContext()?.user?.id || null;
@@ -297,6 +316,7 @@ async function saveRecord(event) {
   };
   const enhanced = {
     ...legacy, ...meta,
+    supervisoes: data.supervisoes,
     endereco_logradouro: meta.endereco_logradouro, endereco_numero: meta.endereco_numero, endereco_complemento: meta.endereco_complemento
   };
   if (!state.editingId) { legacy.criado_por = userId; enhanced.criado_por = userId; }
