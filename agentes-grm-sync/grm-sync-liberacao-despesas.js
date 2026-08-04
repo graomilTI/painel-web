@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const AGENT_VERSION = 'V10-DATA';
+
 require('dotenv').config();
 
 const fs = require('fs');
@@ -11,38 +13,70 @@ const { createClient } = require('@supabase/supabase-js');
 
 puppeteer.use(StealthPlugin());
 
-const STAFF_URL = process.env.GRM_LIBERACAO_DESPESAS_URL || 'https://www.grmserver.com.br/adm/team/staff';
-const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.br/login';
-const DRY_RUN = String(process.env.GRM_LIBERACAO_DESPESAS_DRY_RUN ?? 'true').toLowerCase() !== 'false';
-const HEADLESS = String(process.env.GRM_HEADLESS ?? 'true').toLowerCase() !== 'false';
-const DEBUG = String(process.env.GRM_LIBERACAO_DESPESAS_DEBUG ?? 'false').toLowerCase() === 'true';
-const MAX_PER_RUN = Math.max(1, Number(process.env.GRM_LIBERACAO_DESPESAS_MAX_POR_EXECUCAO || 5));
+const STAFF_URL = process.env.GRM_LIBERACAO_DESPESAS_URL
+  || 'https://www.grmserver.com.br/adm/team/staff';
+const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL
+  || 'https://www.grmserver.com.br/login';
+
+const DRY_RUN = String(
+  process.env.GRM_LIBERACAO_DESPESAS_DRY_RUN ?? 'true',
+).toLowerCase() !== 'false';
+
+const HEADLESS = String(
+  process.env.GRM_HEADLESS ?? 'true',
+).toLowerCase() !== 'false';
+
+const DEBUG = String(
+  process.env.GRM_LIBERACAO_DESPESAS_DEBUG ?? 'false',
+).toLowerCase() === 'true';
+
+const MAX_PER_RUN = Math.max(
+  1,
+  Number(process.env.GRM_LIBERACAO_DESPESAS_MAX_POR_EXECUCAO || 5),
+);
+
 const SCREENSHOT_DIR = process.env.GRM_LIBERACAO_DESPESAS_SCREENSHOT_DIR
   || '/home/grao100/painel-scripts/grm-sync/logs/liberacao-despesas';
-const DEFAULT_TIMEOUT = Math.max(15000, Number(process.env.GRM_LIBERACAO_DESPESAS_TIMEOUT_MS || 45000));
+
+const DEFAULT_TIMEOUT = Math.max(
+  15000,
+  Number(process.env.GRM_LIBERACAO_DESPESAS_TIMEOUT_MS || 45000),
+);
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SB_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
   || process.env.SUPABASE_SERVICE_KEY
   || process.env.SB_SERVICE_KEY
   || process.env.SUPABASE_KEY;
+
 const GRM_USER = process.env.GRMSERVER_USER;
 const GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 
-if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
-if (!GRM_USER || !GRM_PASSWORD) throw new Error('Configure GRMSERVER_USER e GRMSERVER_PASSWORD.');
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
+}
+if (!GRM_USER || !GRM_PASSWORD) {
+  throw new Error('Configure GRMSERVER_USER e GRMSERVER_PASSWORD.');
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+  },
 });
+
+function safeJson(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
 function log(level, message, extra) {
   const suffix = extra === undefined ? '' : ` ${safeJson(extra)}`;
   console.log(`[${level}] ${new Date().toISOString()} - ${message}${suffix}`);
-}
-
-function safeJson(value) {
-  try { return JSON.stringify(value); } catch { return String(value); }
 }
 
 function sleep(ms) {
@@ -62,8 +96,45 @@ function norm(value) {
     .trim();
 }
 
+function todaySaoPaulo() {
+  return new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+  });
+}
+
+async function activateTodayQueue() {
+  const { data, error } = await supabase.rpc(
+    'ativar_grm_despesas_do_dia',
+  );
+
+  if (error) throw error;
+
+  log('INFO', 'Ativação da fila diária concluída.', data || {});
+  return data || {};
+}
+
+function autoObrigatorioPorTipo(tipo) {
+  const key = norm(tipo);
+
+  return key === 'ALMOCO'
+    || key === 'SALARIO DE INTERMITENTE'
+    || key === 'SERVICOS TERCEIRIZADOS';
+}
+
+function desiredRules(rules) {
+  return canonicalRules(
+    (Array.isArray(rules) ? rules : []).map((rule) => ({
+      ...rule,
+      auto: autoObrigatorioPorTipo(rule?.tipo_despesa)
+        ? true
+        : rule?.auto === true,
+    })),
+  );
+}
+
 function canonicalRules(rules) {
   const unique = new Map();
+
   for (const raw of Array.isArray(rules) ? rules : []) {
     const rule = {
       tipo_despesa: String(raw.tipo_despesa || '').trim(),
@@ -73,13 +144,19 @@ function canonicalRules(rules) {
       carga_nhe: raw.carga_nhe !== false,
       max_mov_dia: Math.max(0, Number(raw.max_mov_dia ?? 1) || 0),
     };
-    if (rule.tipo_despesa) unique.set(norm(rule.tipo_despesa), rule);
+
+    if (rule.tipo_despesa) {
+      unique.set(norm(rule.tipo_despesa), rule);
+    }
   }
-  return [...unique.values()].sort((a, b) => a.tipo_despesa.localeCompare(b.tipo_despesa, 'pt-BR'));
+
+  return [...unique.values()].sort((a, b) =>
+    a.tipo_despesa.localeCompare(b.tipo_despesa, 'pt-BR'));
 }
 
-function rulesEqual(a, b) {
-  return JSON.stringify(canonicalRules(a)) === JSON.stringify(canonicalRules(b));
+function rulesEqual(current, desired) {
+  return JSON.stringify(canonicalRules(current))
+    === JSON.stringify(desiredRules(desired));
 }
 
 function ensureDir(dir) {
@@ -89,13 +166,20 @@ function ensureDir(dir) {
 function screenshotPath(job, label) {
   ensureDir(SCREENSHOT_DIR);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  return path.join(SCREENSHOT_DIR, `${stamp}_${digits(job.cpf)}_${label}.png`);
+  return path.join(
+    SCREENSHOT_DIR,
+    `${stamp}_${digits(job.cpf)}_${label}.png`,
+  );
 }
 
 async function takeScreenshot(page, job, label) {
   const file = screenshotPath(job, label);
+
   try {
-    await page.screenshot({ path: file, fullPage: true });
+    await page.screenshot({
+      path: file,
+      fullPage: true,
+    });
     return file;
   } catch (error) {
     log('WARN', `Falha ao salvar screenshot ${file}: ${error.message}`);
@@ -107,7 +191,10 @@ async function launchBrowser() {
   const launchOptions = {
     headless: HEADLESS,
     dumpio: DEBUG,
-    defaultViewport: { width: 1920, height: 1440 },
+    defaultViewport: {
+      width: 1920,
+      height: 1440,
+    },
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -127,177 +214,753 @@ async function launchBrowser() {
       '--disable-site-isolation-trials',
     ],
   };
+
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
   }
+
   return puppeteer.launch(launchOptions);
 }
 
 async function login(page) {
   log('INFO', 'Abrindo login do GRM.');
-  await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+
+  await page.goto(LOGIN_URL, {
+    waitUntil: 'networkidle2',
+    timeout: 60000,
+  });
 
   const userSelector = 'input#input-v-2';
   const passwordSelector = 'input#input-v-5';
-  await page.waitForSelector(userSelector, { timeout: DEFAULT_TIMEOUT });
-  await page.waitForSelector(passwordSelector, { timeout: DEFAULT_TIMEOUT });
+
+  await page.waitForSelector(userSelector, {
+    timeout: DEFAULT_TIMEOUT,
+  });
+  await page.waitForSelector(passwordSelector, {
+    timeout: DEFAULT_TIMEOUT,
+  });
+
   await page.click(userSelector, { clickCount: 3 });
   await page.type(userSelector, GRM_USER, { delay: 15 });
+
   await page.click(passwordSelector, { clickCount: 3 });
   await page.type(passwordSelector, GRM_PASSWORD, { delay: 15 });
 
   await Promise.allSettled([
-    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
+    page.waitForNavigation({
+      waitUntil: 'networkidle2',
+      timeout: 60000,
+    }),
     page.click('button.submit-btn'),
   ]);
+
   await sleep(1500);
   log('SUCCESS', 'Login concluído.');
 }
 
 async function openStaffPage(page) {
-  await page.goto(STAFF_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await page.goto(STAFF_URL, {
+    waitUntil: 'networkidle2',
+    timeout: 60000,
+  });
+
   await page.waitForFunction(() => {
     const text = document.body?.innerText || '';
-    return /CONTROLE DE FUNCION[ÁA]RIOS/i.test(text) || /Nome, Email ou CPF/i.test(text);
-  }, { timeout: DEFAULT_TIMEOUT });
+    return /CONTROLE DE FUNCION[ÁA]RIOS/i.test(text)
+      || /Nome, Email ou CPF/i.test(text);
+  }, {
+    timeout: DEFAULT_TIMEOUT,
+  });
 }
 
 async function setSearchCpf(page, cpf) {
   const found = await page.evaluate((cpfValue) => {
-    const normalize = (value) => String(value || '').replace(/\D/g, '');
+    const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
     const inputs = [...document.querySelectorAll('input')];
-    const input = inputs.find((el) => /nome.*email.*cpf/i.test(el.getAttribute('placeholder') || ''))
-      || inputs.find((el) => /cpf/i.test(el.getAttribute('placeholder') || ''));
+
+    const input = inputs.find((el) =>
+      /nome.*email.*cpf/i.test(el.getAttribute('placeholder') || ''))
+      || inputs.find((el) =>
+        /cpf/i.test(el.getAttribute('placeholder') || ''));
+
     if (!input) return false;
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (setter) setter.call(input, normalize(cpfValue));
-    else input.value = normalize(cpfValue);
+
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )?.set;
+
+    if (setter) setter.call(input, onlyDigits(cpfValue));
+    else input.value = onlyDigits(cpfValue);
+
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     input.focus();
+
     return true;
   }, cpf);
-  if (!found) throw new Error('Campo de busca Nome, Email ou CPF não localizado.');
+
+  if (!found) {
+    throw new Error('Campo de busca Nome, Email ou CPF não localizado.');
+  }
+
   await sleep(1200);
 }
 
 async function selectExactStaffRow(page, cpf) {
   const cpfDigits = digits(cpf);
-  await page.waitForFunction((targetCpf) => {
-    const normalize = (value) => String(value || '').replace(/\D/g, '');
-    return [...document.querySelectorAll('tr')].some((row) => normalize(row.innerText).includes(targetCpf));
-  }, { timeout: DEFAULT_TIMEOUT }, cpfDigits);
 
-  const result = await page.evaluate((targetCpf) => {
-    const normalize = (value) => String(value || '').replace(/\D/g, '');
-    const rows = [...document.querySelectorAll('tr')]
-      .filter((row) => normalize(row.innerText).includes(targetCpf));
-    if (rows.length !== 1) return { ok: false, matches: rows.length };
-    const row = rows[0];
-    const cpfCells = [...row.querySelectorAll('td')].filter((cell) => normalize(cell.innerText) === targetCpf);
-    if (!cpfCells.length) return { ok: false, matches: rows.length, reason: 'CPF não apareceu de forma exata na linha.' };
-    const checkbox = row.querySelector('input[type="checkbox"]');
-    if (!checkbox) return { ok: false, matches: rows.length, reason: 'Checkbox da linha não encontrado.' };
-    if (!checkbox.checked) checkbox.click();
-    return { ok: true, text: row.innerText };
+  await page.waitForFunction((targetCpf) => {
+    const onlyDigits = (value) =>
+      String(value || '').replace(/\D/g, '');
+
+    return [...document.querySelectorAll('tr')]
+      .some((row) => onlyDigits(row.innerText).includes(targetCpf));
+  }, {
+    timeout: DEFAULT_TIMEOUT,
   }, cpfDigits);
-  if (!result.ok) throw new Error(`Funcionário não localizado de forma única pelo CPF (${safeJson(result)}).`);
-  await sleep(300);
-  return result;
+
+  const prepared = await page.evaluate((targetCpf) => {
+    const onlyDigits = (value) =>
+      String(value || '').replace(/\D/g, '');
+
+    const rows = [...document.querySelectorAll('tr')]
+      .filter((row) => onlyDigits(row.innerText).includes(targetCpf));
+
+    if (rows.length !== 1) {
+      return {
+        ok: false,
+        matches: rows.length,
+      };
+    }
+
+    const row = rows[0];
+
+    const cpfCells = [...row.querySelectorAll('td')]
+      .filter((cell) => onlyDigits(cell.innerText) === targetCpf);
+
+    if (!cpfCells.length) {
+      return {
+        ok: false,
+        matches: rows.length,
+        reason: 'CPF não apareceu de forma exata na linha.',
+      };
+    }
+
+    const checkbox = row.querySelector('input[type="checkbox"]');
+
+    if (!checkbox) {
+      return {
+        ok: false,
+        matches: rows.length,
+        reason: 'Checkbox da linha não encontrado.',
+      };
+    }
+
+    row.dataset.grmAgentExactStaffRow = 'true';
+    checkbox.dataset.grmAgentStaffCheckbox = 'true';
+
+    return {
+      ok: true,
+      checked: !!checkbox.checked,
+      text: row.innerText,
+    };
+  }, cpfDigits);
+
+  if (!prepared.ok) {
+    throw new Error(
+      `Funcionário não localizado de forma única pelo CPF (${safeJson(prepared)}).`,
+    );
+  }
+
+  const checkboxSelector = '[data-grm-agent-staff-checkbox="true"]';
+
+  const isChecked = await page.$eval(
+    checkboxSelector,
+    (checkbox) => !!checkbox.checked,
+  );
+
+  if (!isChecked) {
+    await page.click(checkboxSelector);
+  }
+
+  await page.waitForFunction((selector) => {
+    const checkbox = document.querySelector(selector);
+    if (!checkbox) return false;
+
+    const row = checkbox.closest('tr');
+    const icon = row?.querySelector('.v-selection-control__input i');
+
+    return checkbox.checked === true
+      || /checkbox-marked|mdi-checkbox-marked/i.test(
+        icon?.className || '',
+      );
+  }, {
+    timeout: 5000,
+  }, checkboxSelector);
+
+  await sleep(500);
+
+  return prepared;
 }
 
-async function clickEdit(page) {
-  const clicked = await page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-    const buttons = [...document.querySelectorAll('button, [role="button"]')]
-      .filter((el) => el.getClientRects().length > 0);
-    const exact = buttons.find((el) => {
-      const label = normalize([
-        el.getAttribute('title'), el.getAttribute('aria-label'), el.textContent,
-      ].filter(Boolean).join(' '));
-      return label === 'EDITAR' || label.includes('EDITAR FUNCIONARIO');
-    });
-    if (!exact) return false;
-    exact.click();
-    return true;
-  });
-  if (!clicked) throw new Error('Botão Editar não localizado após selecionar o funcionário.');
+async function waitEditModal(page, timeoutMs = 6000) {
+  try {
+    await page.waitForFunction(() => {
+      const visible = (el) =>
+        !!el
+        && el.getClientRects().length > 0
+        && getComputedStyle(el).visibility !== 'hidden'
+        && getComputedStyle(el).display !== 'none';
 
-  await page.waitForFunction(() => {
-    const text = document.body?.innerText || '';
-    return /EDITAR FUNCION[ÁA]RIO/i.test(text);
-  }, { timeout: DEFAULT_TIMEOUT });
-  await sleep(500);
+      const containers = [
+        ...document.querySelectorAll(
+          '[role="dialog"], .v-overlay__content, .v-dialog, '
+          + '[class*="modal"], [class*="dialog"]',
+        ),
+      ].filter(visible);
+
+      return containers.some((container) => {
+        const text = container.innerText || '';
+        return /EDITAR FUNCION[ÁA]RIO/i.test(text)
+          || /MOBILE\s*-\s*CONFIGURAÇÕES E PERMISSÕES/i.test(text)
+          || /REGRAS DE CAIXA OPERACIONAL/i.test(text);
+      });
+    }, {
+      timeout: timeoutMs,
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function clickEdit(page, cpf) {
+  const targetCpf = digits(cpf);
+
+  // Fluxo real do GRM:
+  // 1. seleciona a linha pelo checkbox;
+  // 2. clica no ícone de lápis "Editar" da barra superior.
+  //
+  // O ícone do olho na última coluna apenas abre visualização e não serve
+  // para editar as Regras de Caixa Operacional.
+  const toolbarEdit = await page.evaluate((cpfValue) => {
+    const onlyDigits = (value) =>
+      String(value || '').replace(/\D/g, '');
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const rows = [...document.querySelectorAll('tr')]
+      .filter((row) => onlyDigits(row.innerText).includes(cpfValue));
+
+    if (rows.length !== 1) {
+      return {
+        clicked: false,
+        reason: 'ROW_NOT_UNIQUE',
+        matches: rows.length,
+      };
+    }
+
+    const row = rows[0];
+    const checkbox = row.querySelector('input[type="checkbox"]');
+
+    if (!checkbox) {
+      return {
+        clicked: false,
+        reason: 'CHECKBOX_NOT_FOUND',
+      };
+    }
+
+    const searchInput = [...document.querySelectorAll('input')]
+      .find((input) =>
+        /nome.*email.*cpf/i.test(
+          input.getAttribute('placeholder') || '',
+        ));
+
+    if (!searchInput) {
+      return {
+        clicked: false,
+        reason: 'SEARCH_INPUT_NOT_FOUND',
+      };
+    }
+
+    // Sobe a partir do campo de busca até encontrar a barra que contém
+    // vários botões de ação, mantendo o menor contêiner possível.
+    let toolbar = searchInput.parentElement;
+    let best = null;
+
+    while (toolbar && toolbar !== document.body) {
+      const buttons = [
+        ...toolbar.querySelectorAll('button, [role="button"]'),
+      ].filter(visible);
+
+      if (buttons.length >= 3) {
+        best = {
+          element: toolbar,
+          buttons,
+        };
+        break;
+      }
+
+      toolbar = toolbar.parentElement;
+    }
+
+    if (!best) {
+      return {
+        clicked: false,
+        reason: 'TOOLBAR_NOT_FOUND',
+      };
+    }
+
+    const searchRect = searchInput.getBoundingClientRect();
+
+    const candidates = best.buttons
+      .filter((button) =>
+        !button.disabled
+        && button.getAttribute('aria-disabled') !== 'true')
+      .filter((button) => {
+        const rect = button.getBoundingClientRect();
+
+        return rect.right <= searchRect.left + 20
+          && Math.abs(rect.top - searchRect.top) < 100;
+      })
+      .sort((a, b) =>
+        a.getBoundingClientRect().left
+        - b.getBoundingClientRect().left);
+
+    if (!candidates.length) {
+      return {
+        clicked: false,
+        reason: 'EDIT_CANDIDATE_NOT_FOUND',
+        toolbarHtml: best.element.outerHTML.slice(0, 16000),
+      };
+    }
+
+    // Na interface atual, o primeiro botão ativo à esquerda do campo de
+    // busca é o lápis Editar. Os seguintes são XLS, mapa, banco etc.
+    const editButton = candidates[0];
+
+    editButton.dataset.grmAgentEditButton = 'true';
+
+    const rect = editButton.getBoundingClientRect();
+
+    return {
+      clicked: false,
+      prepared: true,
+      selector: '[data-grm-agent-edit-button="true"]',
+      checked: checkbox.checked,
+      candidates: candidates.length,
+      x: rect.left,
+      y: rect.top,
+      className: typeof editButton.className === 'string'
+        ? editButton.className
+        : '',
+      html: editButton.outerHTML.slice(0, 5000),
+    };
+  }, targetCpf);
+
+  if (toolbarEdit.prepared) {
+    await page.click(toolbarEdit.selector);
+    await sleep(800);
+
+    if (await waitEditModal(page, 10000)) {
+      log(
+        'INFO',
+        'Cadastro aberto pelo botão Editar da barra superior.',
+        toolbarEdit,
+      );
+
+      return {
+        ...toolbarEdit,
+        clicked: true,
+        method: 'TOP_TOOLBAR_EDIT',
+      };
+    }
+  }
+
+  // Fallback por coordenadas do primeiro botão ativo na barra superior.
+  const coordinateResult = await page.evaluate(() => {
+    const searchInput = [...document.querySelectorAll('input')]
+      .find((input) =>
+        /nome.*email.*cpf/i.test(
+          input.getAttribute('placeholder') || '',
+        ));
+
+    if (!searchInput) return null;
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    let toolbar = searchInput.parentElement;
+
+    while (toolbar && toolbar !== document.body) {
+      const buttons = [
+        ...toolbar.querySelectorAll('button, [role="button"]'),
+      ].filter(visible);
+
+      if (buttons.length >= 3) {
+        const searchRect = searchInput.getBoundingClientRect();
+
+        const candidates = buttons
+          .filter((button) =>
+            !button.disabled
+            && button.getAttribute('aria-disabled') !== 'true')
+          .filter((button) => {
+            const rect = button.getBoundingClientRect();
+
+            return rect.right <= searchRect.left + 20
+              && Math.abs(rect.top - searchRect.top) < 100;
+          })
+          .sort((a, b) =>
+            a.getBoundingClientRect().left
+            - b.getBoundingClientRect().left);
+
+        if (!candidates.length) return null;
+
+        const rect = candidates[0].getBoundingClientRect();
+
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          html: candidates[0].outerHTML.slice(0, 5000),
+        };
+      }
+
+      toolbar = toolbar.parentElement;
+    }
+
+    return null;
+  });
+
+  if (coordinateResult) {
+    await page.mouse.click(
+      coordinateResult.x,
+      coordinateResult.y,
+    );
+
+    await sleep(800);
+
+    if (await waitEditModal(page, 10000)) {
+      log(
+        'INFO',
+        'Cadastro aberto pelo botão Editar via coordenadas.',
+        coordinateResult,
+      );
+
+      return {
+        clicked: true,
+        method: 'TOP_TOOLBAR_EDIT_COORDINATES',
+        ...coordinateResult,
+      };
+    }
+  }
+
+  const diagnostic = await page.evaluate((cpfValue) => {
+    const onlyDigits = (value) =>
+      String(value || '').replace(/\D/g, '');
+
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const rows = [...document.querySelectorAll('tr')]
+      .filter((row) => onlyDigits(row.innerText).includes(cpfValue));
+
+    const row = rows.length === 1 ? rows[0] : null;
+    const checkbox = row?.querySelector('input[type="checkbox"]');
+
+    const searchInput = [...document.querySelectorAll('input')]
+      .find((input) =>
+        /nome.*email.*cpf/i.test(
+          input.getAttribute('placeholder') || '',
+        ));
+
+    let toolbar = searchInput?.parentElement || null;
+    let toolbarData = null;
+
+    while (toolbar && toolbar !== document.body) {
+      const buttons = [
+        ...toolbar.querySelectorAll('button, [role="button"]'),
+      ].filter(visible);
+
+      if (buttons.length >= 3) {
+        toolbarData = {
+          html: toolbar.outerHTML.slice(0, 20000),
+          buttons: buttons.map((button, index) => ({
+            index,
+            disabled: !!button.disabled,
+            ariaDisabled: button.getAttribute('aria-disabled'),
+            text: normalize(button.textContent).slice(0, 100),
+            title: button.getAttribute('title'),
+            aria: button.getAttribute('aria-label'),
+            cls: typeof button.className === 'string'
+              ? button.className.slice(0, 250)
+              : '',
+            rect: (() => {
+              const rect = button.getBoundingClientRect();
+
+              return {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+              };
+            })(),
+            html: button.outerHTML.slice(0, 5000),
+          })),
+        };
+
+        break;
+      }
+
+      toolbar = toolbar.parentElement;
+    }
+
+    return {
+      url: location.href,
+      rowMatches: rows.length,
+      rowText: row?.innerText?.slice(0, 2000) || null,
+      checkboxChecked: checkbox?.checked ?? null,
+      checkboxHtml: checkbox?.outerHTML?.slice(0, 2000) || null,
+      toolbar: toolbarData,
+      dialogs: [
+        ...document.querySelectorAll(
+          '[role="dialog"], .v-overlay__content, .v-dialog, '
+          + '[class*="modal"], [class*="dialog"]',
+        ),
+      ]
+        .filter(visible)
+        .map((dialog) => ({
+          text: dialog.innerText?.slice(0, 6000) || '',
+          html: dialog.outerHTML.slice(0, 12000),
+        }))
+        .slice(0, 10),
+    };
+  }, targetCpf);
+
+  throw new Error(
+    'Botão Editar da barra superior não abriu o funcionário. '
+    + `Diagnóstico: ${safeJson(diagnostic)}`,
+  );
 }
 
 async function closeModal(page) {
   await page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-    const modalText = [...document.querySelectorAll('*')].find((el) => normalize(el.textContent) === 'EDITAR FUNCIONARIO');
-    const modal = modalText?.closest('[role="dialog"], .modal, .v-dialog, [class*="modal"], [class*="dialog"]')
-      || modalText?.parentElement?.parentElement?.parentElement;
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const dialogs = [
+      ...document.querySelectorAll(
+        '[role="dialog"], .v-overlay__content, .v-dialog, '
+        + '[class*="modal"], [class*="dialog"]',
+      ),
+    ].filter(visible);
+
+    const modal = dialogs.find((container) => {
+      const text = normalize(container.innerText);
+
+      return text.includes('EDITAR FUNCIONARIO')
+        || text.includes('MOBILE CONFIGURACOES E PERMISSOES')
+        || text.includes('REGRAS DE CAIXA OPERACIONAL');
+    }) || dialogs[dialogs.length - 1];
+
     if (!modal) return;
-    const buttons = [...modal.querySelectorAll('button, [role="button"]')];
-    const cancel = buttons.find((el) => normalize(el.textContent) === 'CANCELAR');
-    if (cancel) cancel.click();
-    else {
-      const close = buttons.find((el) => ['FECHAR', 'CLOSE', '×', 'X'].includes(normalize(el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent)));
-      close?.click();
+
+    const buttons = [
+      ...modal.querySelectorAll('button, [role="button"]'),
+    ].filter(visible);
+
+    const cancel = buttons.find((el) =>
+      normalize(el.textContent) === 'CANCELAR');
+
+    if (cancel) {
+      cancel.click();
+      return;
     }
+
+    const close = buttons.find((el) => {
+      const key = normalize([
+        el.getAttribute('aria-label'),
+        el.getAttribute('title'),
+        el.textContent,
+        typeof el.className === 'string' ? el.className : '',
+      ].filter(Boolean).join(' '));
+
+      return /\bFECHAR\b|\bCLOSE\b|\bV ICON CLOSE\b|\bMDI CLOSE\b/.test(key);
+    });
+
+    close?.click();
   });
-  await sleep(300);
+
+  await sleep(400);
 }
 
 async function openCashRulesSection(page) {
   const found = await page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
     const labels = [...document.querySelectorAll('*')]
-      .filter((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+      .filter((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
     const label = labels.find((el) => el.getClientRects().length > 0);
+
     if (!label) return false;
-    label.scrollIntoView({ block: 'center' });
-    const clickable = label.closest('button, [role="button"]') || label.parentElement;
-    if (clickable) clickable.click();
+
+    label.scrollIntoView({
+      block: 'center',
+    });
+
+    const clickable = label.closest(
+      'button, [role="button"]',
+    ) || label.parentElement;
+
+    clickable?.click();
     return true;
   });
-  if (!found) throw new Error('Seção Regras de Caixa Operacional não localizada.');
+
+  if (!found) {
+    throw new Error('Seção Regras de Caixa Operacional não localizada.');
+  }
 
   await page.waitForFunction(() => {
     const text = document.body?.innerText || '';
+
     return /TIPO DE DESPESA/i.test(text)
-      || /ESTE USU[ÁA]RIO AINDA N[ÃA]O POSSUI REGRAS DE CAIXA OPERACIONAL/i.test(text);
-  }, { timeout: DEFAULT_TIMEOUT });
+      || /ESTE USU[ÁA]RIO AINDA N[ÃA]O POSSUI REGRAS DE CAIXA OPERACIONAL/i
+        .test(text);
+  }, {
+    timeout: DEFAULT_TIMEOUT,
+  });
+
   await sleep(400);
+}
+
+async function locateCashSection(page) {
+  return page.evaluateHandle(() => {
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
+    const label = [...document.querySelectorAll('*')]
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
+    if (!label) return null;
+
+    let section = label.parentElement;
+
+    while (section && section.parentElement) {
+      const text = normalize(section.innerText);
+      const hasTarget = text.includes('REGRAS DE CAIXA OPERACIONAL');
+      const hasContent = text.includes('TIPO DE DESPESA')
+        || text.includes('AINDA NAO POSSUI REGRAS');
+
+      if (
+        hasTarget
+        && hasContent
+        && section.getBoundingClientRect().height < window.innerHeight * 0.9
+      ) {
+        break;
+      }
+
+      section = section.parentElement;
+    }
+
+    return section || null;
+  });
 }
 
 async function getCashSectionDiagnostic(page) {
   return page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
     if (!label) return null;
+
     let section = label.parentElement;
+
     while (section && section.parentElement) {
       const text = normalize(section.innerText);
       const hasTarget = text.includes('REGRAS DE CAIXA OPERACIONAL');
-      const hasContent = text.includes('TIPO DE DESPESA') || text.includes('AINDA NAO POSSUI REGRAS');
-      if (hasTarget && hasContent && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+      const hasContent = text.includes('TIPO DE DESPESA')
+        || text.includes('AINDA NAO POSSUI REGRAS');
+
+      if (
+        hasTarget
+        && hasContent
+        && section.getBoundingClientRect().height < window.innerHeight * 0.9
+      ) {
+        break;
+      }
+
       section = section.parentElement;
     }
+
     if (!section) return null;
+
     return {
       text: section.innerText.slice(0, 6000),
       inputs: section.querySelectorAll('input').length,
       selects: section.querySelectorAll('select').length,
-      buttons: [...section.querySelectorAll('button')].map((button) => ({
-        text: button.innerText,
-        title: button.getAttribute('title'),
-        aria: button.getAttribute('aria-label'),
-      })).slice(0, 40),
+      buttons: [...section.querySelectorAll('button')]
+        .map((button) => ({
+          text: button.innerText,
+          title: button.getAttribute('title'),
+          aria: button.getAttribute('aria-label'),
+        }))
+        .slice(0, 40),
       html: section.outerHTML.slice(0, 12000),
     };
   });
@@ -305,314 +968,1068 @@ async function getCashSectionDiagnostic(page) {
 
 async function readCashRules(page) {
   return page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
     const parseNumber = (value) => {
       const raw = String(value ?? '').trim();
       if (!raw) return 0;
+
       const cleaned = raw.includes(',')
         ? raw.replace(/\./g, '').replace(',', '.')
         : raw;
+
       const number = Number(cleaned.replace(/[^0-9.-]/g, ''));
       return Number.isFinite(number) ? number : 0;
     };
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
     if (!label) throw new Error('Seção de regras não encontrada.');
+
     let section = label.parentElement;
     while (section && section.parentElement) {
-      const text = normalize(section.innerText);
-      if (text.includes('TIPO DE DESPESA') && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+      const sectionText = normalize(section.innerText);
+      if (
+        sectionText.includes('TIPO DE DESPESA')
+        && section.getBoundingClientRect().height < window.innerHeight * 0.9
+      ) break;
       section = section.parentElement;
     }
-    if (!section || normalize(section.innerText).includes('AINDA NAO POSSUI REGRAS')) return [];
 
-    const candidates = [...section.querySelectorAll('tr, [role="row"]')]
-      .filter((row) => row.querySelector('input, select, [role="combobox"]'));
+    if (!section || normalize(section.innerText).includes('AINDA NAO POSSUI REGRAS')) {
+      return [];
+    }
+
+    const rows = [...section.querySelectorAll('tr, [role="row"]')]
+      .filter((row) => {
+        const cells = row.querySelectorAll('td, [role="cell"]');
+        return cells.length >= 6
+          && row.querySelector('input, select, [role="combobox"]');
+      });
+
     const rules = [];
-    for (const row of candidates) {
-      const fields = [...row.querySelectorAll('input, select, [role="combobox"]')]
-        .filter((field) => field.getClientRects().length > 0);
-      if (!fields.length) continue;
-      const typeField = fields.find((field) => field.tagName === 'SELECT' || field.getAttribute('role') === 'combobox')
-        || fields.find((field) => field.type === 'text');
+
+    for (const row of rows) {
+      const cells = [...row.querySelectorAll('td, [role="cell"]')];
+      if (cells.length < 6) continue;
+
+      const textInput = (cell) => [...cell.querySelectorAll(
+        'input:not([type="checkbox"]), textarea, select, [role="combobox"]',
+      )].find(visible);
+
+      const checkbox = (cell) => [...cell.querySelectorAll('input[type="checkbox"]')]
+        .find(visible);
+
+      const typeField = textInput(cells[0]);
       let type = '';
-      if (typeField?.tagName === 'SELECT') type = typeField.selectedOptions?.[0]?.textContent || typeField.value || '';
-      else type = typeField?.value || typeField?.textContent || '';
+      if (typeField?.tagName === 'SELECT') {
+        type = typeField.selectedOptions?.[0]?.textContent || typeField.value || '';
+      } else {
+        type = typeField?.value || typeField?.textContent || cells[0].innerText || '';
+      }
       type = String(type).trim();
       if (!type || normalize(type).includes('TIPO DE DESPESA')) continue;
 
-      const checkboxes = fields.filter((field) => field.type === 'checkbox');
-      const numbers = fields.filter((field) => field !== typeField && field.type !== 'checkbox');
-      const money = numbers.find((field) => /valor|maximo|money|currency/i.test(`${field.name} ${field.id} ${field.placeholder}`)) || numbers[0];
-      const maxMov = numbers.find((field) => /mov|dia/i.test(`${field.name} ${field.id} ${field.placeholder}`)) || numbers[numbers.length - 1];
+      const moneyField = textInput(cells[2]);
+      const maxMovField = textInput(cells[5]);
+
       rules.push({
         tipo_despesa: type,
-        exibir: checkboxes[0] ? checkboxes[0].checked : true,
-        valor_maximo: parseNumber(money?.value),
-        auto: checkboxes[1] ? checkboxes[1].checked : false,
-        carga_nhe: checkboxes[2] ? checkboxes[2].checked : true,
-        max_mov_dia: Math.max(0, Math.trunc(parseNumber(maxMov?.value) || 0)),
+        exibir: checkbox(cells[1])?.checked ?? true,
+        valor_maximo: parseNumber(
+          moneyField?.value
+          || moneyField?.getAttribute?.('value')
+          || cells[2].innerText,
+        ),
+        auto: checkbox(cells[3])?.checked ?? false,
+        carga_nhe: checkbox(cells[4])?.checked ?? true,
+        max_mov_dia: Math.max(0, Math.trunc(parseNumber(
+          maxMovField?.value
+          || maxMovField?.getAttribute?.('value')
+          || cells[5].innerText,
+        ) || 0)),
       });
     }
+
     return rules;
   });
 }
 
 async function getCashRowsCount(page) {
   return page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
     if (!label) return -1;
+
     let section = label.parentElement;
+
     while (section && section.parentElement) {
       const text = normalize(section.innerText);
-      if (text.includes('TIPO DE DESPESA') && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+
+      if (
+        text.includes('TIPO DE DESPESA')
+        && section.getBoundingClientRect().height < window.innerHeight * 0.9
+      ) {
+        break;
+      }
+
       section = section.parentElement;
     }
-    if (!section || normalize(section.innerText).includes('AINDA NAO POSSUI REGRAS')) return 0;
+
+    if (
+      !section
+      || normalize(section.innerText).includes('AINDA NAO POSSUI REGRAS')
+    ) {
+      return 0;
+    }
+
     return [...section.querySelectorAll('tr, [role="row"]')]
-      .filter((row) => row.querySelector('input, select, [role="combobox"]')).length;
+      .filter((row) =>
+        row.querySelector('input, select, [role="combobox"]'))
+      .length;
   });
 }
 
 async function deleteAllCashRules(page) {
   let guard = 0;
-  while (guard++ < 100) {
-    const count = await getCashRowsCount(page);
-    if (count <= 0) return;
 
-    const clicked = await page.evaluate(() => {
-      const normalize = (value) => String(value || '')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  while (guard++ < 100) {
+    const before = await getCashRowsCount(page);
+
+    if (before <= 0) return;
+
+    const prepared = await page.evaluate(() => {
+      const normalize = (value) =>
+        String(value || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, ' ')
+          .trim();
+
+      const visible = (el) =>
+        !!el
+        && el.getClientRects().length > 0
+        && getComputedStyle(el).visibility !== 'hidden'
+        && getComputedStyle(el).display !== 'none';
+
       const label = [...document.querySelectorAll('*')]
-        .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
-      if (!label) return false;
+        .find((el) =>
+          el.children.length === 0
+          && normalize(el.textContent)
+            === 'REGRAS DE CAIXA OPERACIONAL');
+
+      if (!label) {
+        return { ok: false, reason: 'SECTION_NOT_FOUND' };
+      }
+
       let section = label.parentElement;
+
       while (section && section.parentElement) {
-        const text = normalize(section.innerText);
-        if (text.includes('TIPO DE DESPESA') && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+        const sectionText = normalize(section.innerText);
+
+        if (
+          sectionText.includes('TIPO DE DESPESA')
+          && section.getBoundingClientRect().height
+            < window.innerHeight * 0.9
+        ) {
+          break;
+        }
+
         section = section.parentElement;
       }
-      if (!section) return false;
+
+      if (!section) {
+        return { ok: false, reason: 'SECTION_CONTAINER_NOT_FOUND' };
+      }
+
       const rows = [...section.querySelectorAll('tr, [role="row"]')]
-        .filter((row) => row.querySelector('input, select, [role="combobox"]'));
+        .filter((row) =>
+          row.querySelector('input, select, [role="combobox"]'));
+
       const row = rows[rows.length - 1];
-      if (!row) return false;
-      const buttons = [...row.querySelectorAll('button, [role="button"]')].filter((button) => button.getClientRects().length > 0);
-      const remove = buttons.find((button) => {
-        const labelText = normalize([
-          button.getAttribute('title'), button.getAttribute('aria-label'), button.textContent,
-          button.className,
+
+      if (!row) {
+        return { ok: false, reason: 'RULE_ROW_NOT_FOUND' };
+      }
+
+      const cells = [...row.querySelectorAll('td')];
+      const lastCell = cells[cells.length - 1] || row;
+
+      const buttons = [
+        ...lastCell.querySelectorAll('button, [role="button"]'),
+      ].filter((button) =>
+        visible(button)
+        && !button.disabled
+        && button.getAttribute('aria-disabled') !== 'true');
+
+      let remove = buttons.find((button) => {
+        const key = normalize([
+          button.getAttribute('title'),
+          button.getAttribute('aria-label'),
+          button.getAttribute('data-testid'),
+          typeof button.className === 'string'
+            ? button.className
+            : '',
+          button.textContent,
+          ...[...button.querySelectorAll('lord-icon, svg, use, i')]
+            .map((icon) => [
+              icon.getAttribute('src'),
+              icon.getAttribute('href'),
+              icon.getAttribute('data-icon'),
+              typeof icon.className === 'string'
+                ? icon.className
+                : '',
+            ].filter(Boolean).join(' ')),
         ].filter(Boolean).join(' '));
-        return /EXCLUIR|REMOVER|DELETE|TRASH|LIXEIRA/.test(labelText);
+
+        return /EXCLUIR|REMOVER|DELETE|TRASH|LIXEIRA/.test(key);
       });
-      if (!remove) return false;
-      remove.click();
-      return true;
+
+      if (!remove && buttons.length === 1) {
+        remove = buttons[0];
+      }
+
+      if (!remove) {
+        return {
+          ok: false,
+          reason: 'UNIQUE_DELETE_BUTTON_NOT_FOUND',
+          buttons: buttons.length,
+          rowText: row.innerText?.slice(0, 2000) || '',
+          lastCellHtml: lastCell.outerHTML.slice(0, 10000),
+        };
+      }
+
+      remove.dataset.grmAgentDeleteRule = 'true';
+
+      return {
+        ok: true,
+        selector: '[data-grm-agent-delete-rule="true"]',
+        rowText: row.innerText?.slice(0, 1000) || '',
+        buttonHtml: remove.outerHTML.slice(0, 5000),
+      };
     });
-    if (!clicked) throw new Error('Botão seguro de exclusão da regra não foi localizado; nenhuma ação aleatória foi executada.');
+
+    if (!prepared.ok) {
+      throw new Error(
+        'Botão seguro de exclusão da regra não foi localizado. '
+        + `Diagnóstico: ${safeJson(prepared)}`,
+      );
+    }
+
+    await page.click(prepared.selector);
+    await sleep(350);
+
+    const after = await getCashRowsCount(page);
+
+    if (after >= before) {
+      throw new Error(
+        'A lixeira foi acionada, mas a quantidade de regras '
+        + `não diminuiu (${before} -> ${after}).`,
+      );
+    }
+
+    log(
+      'INFO',
+      `Regra removida com segurança (${before} -> ${after}).`,
+      { row: prepared.rowText },
+    );
+
     await sleep(250);
   }
-  throw new Error('Limite de segurança excedido ao remover regras de Caixa Operacional.');
+
+  throw new Error(
+    'Limite de segurança excedido ao remover regras de Caixa Operacional.',
+  );
 }
 
 async function addCashRuleRow(page) {
   const before = await getCashRowsCount(page);
-  const clicked = await page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9+]+/g, ' ').trim();
+
+  const prepared = await page.evaluate(() => {
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9+]+/g, ' ')
+        .trim();
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
-    if (!label) return false;
-    let section = label.parentElement;
-    while (section && section.parentElement) {
-      const text = normalize(section.innerText);
-      const buttons = [...section.querySelectorAll('button, [role="button"]')];
-      if (text.includes('REGRAS DE CAIXA OPERACIONAL') && buttons.length && section.getBoundingClientRect().height < window.innerHeight * 0.9) {
-        const add = buttons.find((button) => {
-          const key = normalize([button.textContent, button.getAttribute('title'), button.getAttribute('aria-label')].filter(Boolean).join(' '));
-          return key === '+' || key.includes('ADICIONAR') || key.includes('NOVA REGRA');
-        });
-        if (add) { add.click(); return true; }
-      }
-      section = section.parentElement;
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent)
+          === 'REGRAS DE CAIXA OPERACIONAL');
+
+    if (!label) {
+      return { ok: false, reason: 'SECTION_LABEL_NOT_FOUND' };
     }
-    return false;
+
+    let header = label.parentElement;
+    let chosen = null;
+
+    while (header && header !== document.body) {
+      const buttons = [
+        ...header.querySelectorAll('button, [role="button"]'),
+      ].filter((button) =>
+        visible(button)
+        && !button.disabled
+        && button.getAttribute('aria-disabled') !== 'true');
+
+      const plus = buttons.find((button) => {
+        const key = normalize([
+          button.textContent,
+          button.getAttribute('title'),
+          button.getAttribute('aria-label'),
+          typeof button.className === 'string'
+            ? button.className
+            : '',
+          ...[...button.querySelectorAll('lord-icon, svg, use, i')]
+            .map((icon) => [
+              icon.getAttribute('src'),
+              icon.getAttribute('href'),
+              icon.getAttribute('data-icon'),
+              typeof icon.className === 'string'
+                ? icon.className
+                : '',
+            ].filter(Boolean).join(' ')),
+        ].filter(Boolean).join(' '));
+
+        return key === '+'
+          || /ADICIONAR|NOVA REGRA|PLUS|\bADD\b/.test(key);
+      });
+
+      if (plus) {
+        chosen = plus;
+        break;
+      }
+
+      if (
+        buttons.length >= 1
+        && normalize(header.innerText)
+          .includes('REGRAS DE CAIXA OPERACIONAL')
+        && header.getBoundingClientRect().height < 150
+      ) {
+        chosen = buttons[0];
+        break;
+      }
+
+      header = header.parentElement;
+    }
+
+    if (!chosen) {
+      return { ok: false, reason: 'ADD_BUTTON_NOT_FOUND' };
+    }
+
+    chosen.dataset.grmAgentAddRule = 'true';
+
+    return {
+      ok: true,
+      selector: '[data-grm-agent-add-rule="true"]',
+      html: chosen.outerHTML.slice(0, 5000),
+    };
   });
-  if (!clicked) throw new Error('Botão + de Regras de Caixa Operacional não localizado.');
-  await page.waitForFunction((oldCount) => {
-    const text = document.body?.innerText || '';
-    if (!/TIPO DE DESPESA/i.test(text)) return false;
-    const rows = [...document.querySelectorAll('tr, [role="row"]')]
-      .filter((row) => row.querySelector('input, select, [role="combobox"]'));
-    return rows.length > oldCount;
-  }, { timeout: DEFAULT_TIMEOUT }, Math.max(0, before));
+
+  if (!prepared.ok) {
+    throw new Error(
+      'Botão + de Regras de Caixa Operacional não localizado. '
+      + `Diagnóstico: ${safeJson(prepared)}`,
+    );
+  }
+
+  await page.click(prepared.selector);
+  await sleep(400);
+
+  const after = await getCashRowsCount(page);
+
+  if (after <= before) {
+    throw new Error(
+      'O botão + foi acionado, mas nenhuma nova regra apareceu '
+      + `(${before} -> ${after}).`,
+    );
+  }
+
   await sleep(250);
 }
 
 async function chooseRuleType(page, rowIndex, typeText) {
   const descriptor = await page.evaluate((index) => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
+
     if (!label) return null;
+
     let section = label.parentElement;
+
     while (section && section.parentElement) {
-      if (normalize(section.innerText).includes('TIPO DE DESPESA') && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+      if (
+        normalize(section.innerText).includes('TIPO DE DESPESA')
+        && section.getBoundingClientRect().height < window.innerHeight * 0.9
+      ) {
+        break;
+      }
+
       section = section.parentElement;
     }
+
     const rows = [...section.querySelectorAll('tr, [role="row"]')]
-      .filter((row) => row.querySelector('input, select, [role="combobox"]'));
+      .filter((row) =>
+        row.querySelector('input, select, [role="combobox"]'));
+
     const row = rows[index];
+
     if (!row) return null;
+
     const native = row.querySelector('select');
+
     if (native) {
       native.dataset.grmAgentTarget = `type-${index}`;
-      return { kind: 'select', selector: `[data-grm-agent-target="type-${index}"]` };
+
+      return {
+        kind: 'select',
+        selector: `[data-grm-agent-target="type-${index}"]`,
+      };
     }
-    const combo = row.querySelector('[role="combobox"], input[type="text"]');
+
+    const combo = row.querySelector(
+      '[role="combobox"], input[type="text"]',
+    );
+
     if (!combo) return null;
+
     combo.dataset.grmAgentTarget = `type-${index}`;
-    return { kind: 'custom', selector: `[data-grm-agent-target="type-${index}"]` };
+
+    return {
+      kind: 'custom',
+      selector: `[data-grm-agent-target="type-${index}"]`,
+    };
   }, rowIndex);
-  if (!descriptor) throw new Error(`Campo Tipo de Despesa não localizado na linha ${rowIndex + 1}.`);
+
+  if (!descriptor) {
+    throw new Error(
+      `Campo Tipo de Despesa não localizado na linha ${rowIndex + 1}.`,
+    );
+  }
 
   if (descriptor.kind === 'select') {
-    const options = await page.$eval(descriptor.selector, (select) => [...select.options].map((option) => ({ value: option.value, text: option.textContent })));
-    const match = options.find((option) => norm(option.text) === norm(typeText));
-    if (!match) throw new Error(`Tipo de despesa "${typeText}" não existe no seletor do GRM.`);
+    const options = await page.$eval(
+      descriptor.selector,
+      (select) => [...select.options].map((option) => ({
+        value: option.value,
+        text: option.textContent,
+      })),
+    );
+
+    const match = options.find((option) =>
+      norm(option.text) === norm(typeText));
+
+    if (!match) {
+      throw new Error(
+        `Tipo de despesa "${typeText}" não existe no seletor do GRM.`,
+      );
+    }
+
     await page.select(descriptor.selector, match.value);
     return;
   }
 
   await page.click(descriptor.selector);
   await sleep(200);
+
   const input = await page.$(descriptor.selector);
-  await input?.press('Control+A');
-  await input?.type(typeText, { delay: 20 });
-  await sleep(350);
-  const selected = await page.evaluate((expected) => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-    const options = [...document.querySelectorAll('[role="option"], li, .v-list-item, [class*="option"]')]
-      .filter((el) => el.getClientRects().length > 0);
-    const exact = options.find((el) => normalize(el.textContent) === normalize(expected));
-    if (!exact) return false;
-    exact.click();
-    return true;
-  }, typeText);
-  if (!selected) throw new Error(`Opção exata "${typeText}" não apareceu no dropdown do GRM.`);
+
+  if (!input) {
+    throw new Error(
+      `Campo do tipo de despesa não permaneceu disponível para ${typeText}.`,
+    );
+  }
+
+  await input.focus();
+
+  await page.keyboard.down('Control');
+  try {
+    await page.keyboard.press('A');
+  } finally {
+    await page.keyboard.up('Control');
+  }
+
+  await input.type(typeText, {
+    delay: 20,
+  });
+
+  let selected = false;
+  for (let attempt = 0; attempt < 4 && !selected; attempt += 1) {
+    await sleep(attempt === 0 ? 350 : 500);
+
+    selected = await page.evaluate((expected) => {
+      const normalize = (value) =>
+        String(value || '')
+          .normalize('NFD')
+          .replace(/[̀-ͯ]/g, '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9]+/g, ' ')
+          .trim();
+
+      const options = [
+        ...document.querySelectorAll(
+          '[role="option"], li, .v-list-item, [class*="option"]',
+        ),
+      ].filter((el) => el.getClientRects().length > 0);
+
+      const exact = options.find((el) =>
+        normalize(el.textContent) === normalize(expected));
+
+      if (!exact) return false;
+
+      exact.click();
+      return true;
+    }, typeText);
+  }
+
+  if (!selected) {
+    throw new Error(
+      `Opção exata "${typeText}" não apareceu no dropdown do GRM.`,
+    );
+  }
 }
 
 async function fillCashRuleRow(page, rowIndex, rule) {
   await chooseRuleType(page, rowIndex, rule.tipo_despesa);
-  const result = await page.evaluate((index, desired) => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-    const setInput = (input, value) => {
-      const prototype = input instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLSelectElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-      if (setter) setter.call(input, String(value));
-      else input.value = String(value);
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    const setCheckbox = (input, value) => {
-      if (input.checked !== !!value) input.click();
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    };
+
+  const descriptor = await page.evaluate((index) => {
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ')
+        .trim();
+
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const firstInput = (cell) => [
+      ...cell.querySelectorAll(
+        'input:not([type="checkbox"]), textarea',
+      ),
+    ].find(visible);
+
+    const firstCheckbox = (cell) => [
+      ...cell.querySelectorAll('input[type="checkbox"]'),
+    ].find(visible);
+
     const label = [...document.querySelectorAll('*')]
-      .find((el) => el.children.length === 0 && normalize(el.textContent) === 'REGRAS DE CAIXA OPERACIONAL');
-    if (!label) return { ok: false, reason: 'section' };
+      .find((el) =>
+        el.children.length === 0
+        && normalize(el.textContent)
+          === 'REGRAS DE CAIXA OPERACIONAL');
+
+    if (!label) {
+      return {
+        ok: false,
+        reason: 'SECTION_NOT_FOUND',
+      };
+    }
+
     let section = label.parentElement;
+
     while (section && section.parentElement) {
-      if (normalize(section.innerText).includes('TIPO DE DESPESA') && section.getBoundingClientRect().height < window.innerHeight * 0.9) break;
+      if (
+        normalize(section.innerText)
+          .includes('TIPO DE DESPESA')
+        && section.getBoundingClientRect().height
+          < window.innerHeight * 0.9
+      ) {
+        break;
+      }
+
       section = section.parentElement;
     }
-    const rows = [...section.querySelectorAll('tr, [role="row"]')]
-      .filter((row) => row.querySelector('input, select, [role="combobox"]'));
+
+    const rows = [
+      ...section.querySelectorAll('tr, [role="row"]'),
+    ].filter((row) => {
+      const cells = row.querySelectorAll(
+        'td, [role="cell"]',
+      );
+
+      return cells.length >= 6
+        && row.querySelector(
+          'input, select, [role="combobox"]',
+        );
+    });
+
     const row = rows[index];
-    if (!row) return { ok: false, reason: 'row' };
-    const fields = [...row.querySelectorAll('input, select, [role="combobox"]')]
-      .filter((field) => field.getClientRects().length > 0);
-    const typeField = fields.find((field) => field.tagName === 'SELECT' || field.getAttribute('role') === 'combobox')
-      || fields.find((field) => field.type === 'text');
-    const checkboxes = fields.filter((field) => field.type === 'checkbox');
-    const writable = fields.filter((field) => field !== typeField && field.type !== 'checkbox' && !field.disabled);
-    const money = writable.find((field) => /valor|maximo|money|currency/i.test(`${field.name} ${field.id} ${field.placeholder}`)) || writable[0];
-    const maxMov = writable.find((field) => /mov|dia/i.test(`${field.name} ${field.id} ${field.placeholder}`)) || writable[writable.length - 1];
-    if (!money || !maxMov) return { ok: false, reason: 'numeric-fields', fields: writable.length };
-    setInput(money, Number(desired.valor_maximo || 0).toFixed(2).replace('.', ','));
-    setInput(maxMov, Math.max(0, Number(desired.max_mov_dia || 0)));
-    if (checkboxes[0]) setCheckbox(checkboxes[0], desired.exibir !== false);
-    if (checkboxes[1]) setCheckbox(checkboxes[1], desired.auto === true);
-    if (checkboxes[2]) setCheckbox(checkboxes[2], desired.carga_nhe !== false);
-    return { ok: true };
-  }, rowIndex, rule);
-  if (!result.ok) throw new Error(`Não foi possível preencher a regra ${rule.tipo_despesa}: ${safeJson(result)}`);
-  await sleep(150);
+
+    if (!row) {
+      return {
+        ok: false,
+        reason: 'ROW_NOT_FOUND',
+        rows: rows.length,
+      };
+    }
+
+    const cells = [
+      ...row.querySelectorAll('td, [role="cell"]'),
+    ];
+
+    if (cells.length < 6) {
+      return {
+        ok: false,
+        reason: 'COLUMN_COUNT_INVALID',
+        cells: cells.length,
+        rowHtml: row.outerHTML.slice(0, 16000),
+      };
+    }
+
+    const money = firstInput(cells[2]);
+    const maxMov = firstInput(cells[5]);
+    const exibir = firstCheckbox(cells[1]);
+    const auto = firstCheckbox(cells[3]);
+    const carga = firstCheckbox(cells[4]);
+
+    if (!money || !maxMov || money === maxMov) {
+      return {
+        ok: false,
+        reason: money === maxMov
+          ? 'SAME_NUMERIC_FIELD'
+          : 'NUMERIC_FIELDS_NOT_FOUND',
+        moneyFound: !!money,
+        maxMovFound: !!maxMov,
+        rowHtml: row.outerHTML.slice(0, 16000),
+      };
+    }
+
+    money.dataset.grmAgentMoney = `money-${index}`;
+    maxMov.dataset.grmAgentMaxMov = `max-${index}`;
+
+    if (exibir) {
+      exibir.dataset.grmAgentExibir = `exibir-${index}`;
+    }
+    if (auto) {
+      auto.dataset.grmAgentAuto = `auto-${index}`;
+    }
+    if (carga) {
+      carga.dataset.grmAgentCarga = `carga-${index}`;
+    }
+
+    return {
+      ok: true,
+      moneySelector:
+        `[data-grm-agent-money="money-${index}"]`,
+      maxSelector:
+        `[data-grm-agent-max-mov="max-${index}"]`,
+      exibirSelector: exibir
+        ? `[data-grm-agent-exibir="exibir-${index}"]`
+        : null,
+      autoSelector: auto
+        ? `[data-grm-agent-auto="auto-${index}"]`
+        : null,
+      cargaSelector: carga
+        ? `[data-grm-agent-carga="carga-${index}"]`
+        : null,
+      moneyDisabled: !!money.disabled || !!money.readOnly,
+      maxDisabled: !!maxMov.disabled || !!maxMov.readOnly,
+      exibirDisabled: exibir
+        ? !!exibir.disabled
+          || exibir.getAttribute('aria-disabled') === 'true'
+        : null,
+      autoDisabled: auto
+        ? !!auto.disabled
+          || auto.getAttribute('aria-disabled') === 'true'
+        : null,
+      cargaDisabled: carga
+        ? !!carga.disabled
+          || carga.getAttribute('aria-disabled') === 'true'
+        : null,
+    };
+  }, rowIndex);
+
+  if (!descriptor.ok) {
+    throw new Error(
+      `Não foi possível identificar os campos da regra `
+      + `${rule.tipo_despesa}: ${safeJson(descriptor)}`,
+    );
+  }
+
+  const parseBrowserNumber = (value) => {
+    const raw = String(value ?? '').trim();
+
+    const cleaned = raw.includes(',')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : raw;
+
+    const number = Number(
+      cleaned.replace(/[^0-9.-]/g, ''),
+    );
+
+    return Number.isFinite(number) ? number : 0;
+  };
+
+  const readNumber = async (selector) => page.$eval(
+    selector,
+    (field) =>
+      field.value
+      || field.getAttribute('value')
+      || '',
+  ).then(parseBrowserNumber);
+
+  const readCheckbox = async (selector) => {
+    if (!selector) return null;
+
+    return page.$eval(
+      selector,
+      (field) => !!field.checked,
+    );
+  };
+
+  const selectAll = async (selector) => {
+    await page.click(selector, {
+      clickCount: 3,
+    });
+
+    await page.keyboard.down('Control');
+
+    try {
+      await page.keyboard.press('A');
+    } finally {
+      await page.keyboard.up('Control');
+    }
+  };
+
+  const setTextAndVerify = async (
+    selector,
+    candidates,
+    expected,
+  ) => {
+    let observed = null;
+
+    for (const candidate of candidates) {
+      await selectAll(selector);
+
+      await page.keyboard.type(
+        String(candidate),
+        { delay: 25 },
+      );
+
+      await page.keyboard.press('Tab');
+      await sleep(300);
+
+      observed = await readNumber(selector);
+
+      if (Math.abs(observed - expected) < 0.001) {
+        return observed;
+      }
+    }
+
+    throw new Error(
+      `Campo ${selector} ficou com ${observed}; `
+      + `esperado ${expected}.`,
+    );
+  };
+
+  const expectedMoney = Number(
+    rule.valor_maximo || 0,
+  );
+
+  if (descriptor.moneyDisabled) {
+    const currentMoney = await readNumber(
+      descriptor.moneySelector,
+    );
+
+    if (
+      Math.abs(currentMoney - expectedMoney) >= 0.001
+    ) {
+      throw new Error(
+        `Valor Máximo está bloqueado em ${currentMoney}; `
+        + `esperado ${expectedMoney}.`,
+      );
+    }
+  } else {
+    const moneyCandidates = [
+      expectedMoney.toFixed(2).replace('.', ','),
+      String(Math.round(expectedMoney * 100)),
+      expectedMoney.toFixed(2),
+    ];
+
+    await setTextAndVerify(
+      descriptor.moneySelector,
+      moneyCandidates,
+      expectedMoney,
+    );
+  }
+
+  const expectedMaxMov = Math.max(
+    0,
+    Number(rule.max_mov_dia || 0),
+  );
+
+  if (descriptor.maxDisabled) {
+    const currentMax = await readNumber(
+      descriptor.maxSelector,
+    );
+
+    if (
+      Math.abs(currentMax - expectedMaxMov) >= 0.001
+    ) {
+      throw new Error(
+        `Máx. Mov./Dia está bloqueado em ${currentMax}; `
+        + `esperado ${expectedMaxMov}.`,
+      );
+    }
+  } else {
+    await setTextAndVerify(
+      descriptor.maxSelector,
+      [String(expectedMaxMov)],
+      expectedMaxMov,
+    );
+  }
+
+  const setCheckbox = async (
+    selector,
+    desired,
+    disabled,
+    label,
+  ) => {
+    if (!selector) return;
+
+    const checked = await readCheckbox(selector);
+
+    if (disabled) {
+      if (checked !== desired) {
+        throw new Error(
+          `${label} está bloqueado em ${checked}; `
+          + `esperado ${desired}.`,
+        );
+      }
+
+      return;
+    }
+
+    if (checked !== desired) {
+      await page.click(selector);
+      await sleep(150);
+    }
+
+    const confirmed = await readCheckbox(selector);
+
+    if (confirmed !== desired) {
+      throw new Error(
+        `${label} ficou em ${confirmed}; `
+        + `esperado ${desired}.`,
+      );
+    }
+  };
+
+  await setCheckbox(
+    descriptor.exibirSelector,
+    rule.exibir !== false,
+    descriptor.exibirDisabled,
+    'Exibir',
+  );
+
+  await setCheckbox(
+    descriptor.autoSelector,
+    rule.auto === true,
+    descriptor.autoDisabled,
+    'AUTO',
+  );
+
+  await setCheckbox(
+    descriptor.cargaSelector,
+    rule.carga_nhe !== false,
+    descriptor.cargaDisabled,
+    'Carga/NHE',
+  );
+
+  const finalMoney = await readNumber(
+    descriptor.moneySelector,
+  );
+
+  const finalMax = await readNumber(
+    descriptor.maxSelector,
+  );
+
+  if (
+    Math.abs(finalMoney - expectedMoney) >= 0.001
+    || Math.abs(finalMax - expectedMaxMov) >= 0.001
+  ) {
+    throw new Error(
+      `Valores do formulário divergentes: `
+      + `dinheiro=${finalMoney}, máx/dia=${finalMax}.`,
+    );
+  }
+
+  await sleep(250);
 }
 
 async function saveEmployee(page) {
   const clicked = await page.evaluate(() => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-    const buttons = [...document.querySelectorAll('button, [role="button"]')]
-      .filter((el) => el.getClientRects().length > 0);
-    const save = buttons.find((el) => normalize(el.textContent) === 'SALVAR');
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+
+    const buttons = [
+      ...document.querySelectorAll('button, [role="button"]'),
+    ].filter((el) => el.getClientRects().length > 0);
+
+    const save = buttons.find((el) =>
+      normalize(el.textContent) === 'SALVAR');
+
     if (!save) return false;
+
     save.click();
     return true;
   });
-  if (!clicked) throw new Error('Botão SALVAR do funcionário não localizado.');
-  await page.waitForFunction(() => !/EDITAR FUNCION[ÁA]RIO/i.test(document.body?.innerText || ''), { timeout: 60000 });
+
+  if (!clicked) {
+    throw new Error('Botão SALVAR do funcionário não localizado.');
+  }
+
+  await page.waitForFunction(() =>
+    !/EDITAR FUNCION[ÁA]RIO/i.test(document.body?.innerText || ''), {
+    timeout: 60000,
+  });
+
   await sleep(800);
 }
 
 async function inspectEmployee(page, job) {
   await openStaffPage(page);
   await setSearchCpf(page, job.cpf);
+
   const selected = await selectExactStaffRow(page, job.cpf);
-  await clickEdit(page);
+
+  await clickEdit(page, job.cpf);
   await openCashRulesSection(page);
-  const currentRules = canonicalRules(await readCashRules(page));
+
+  const currentRules = canonicalRules(
+    await readCashRules(page),
+  );
+
   const diagnostic = await getCashSectionDiagnostic(page);
-  return { selected, currentRules, diagnostic };
+
+  return {
+    selected,
+    currentRules,
+    diagnostic,
+  };
 }
 
 async function applyEmployeeRules(page, job) {
-  const desired = canonicalRules(job.regras);
+  const desired = desiredRules(job.regras);
   const inspection = await inspectEmployee(page, job);
-  log('INFO', `CPF ${job.cpf}: regras atuais=${inspection.currentRules.length}, desejadas=${desired.length}, ação=${job.acao}.`);
+
+  log(
+    'INFO',
+    `CPF ${job.cpf}: regras atuais=${inspection.currentRules.length}, `
+      + `desejadas=${desired.length}, ação=${job.acao}.`,
+  );
 
   if (rulesEqual(inspection.currentRules, desired)) {
     await closeModal(page);
-    return { changed: false, currentRules: inspection.currentRules, verifiedRules: inspection.currentRules };
+
+    return {
+      changed: false,
+      currentRules: inspection.currentRules,
+      verifiedRules: inspection.currentRules,
+    };
   }
 
   await deleteAllCashRules(page);
-  for (let i = 0; i < desired.length; i += 1) {
-    await addCashRuleRow(page);
-    await fillCashRuleRow(page, i, desired[i]);
-  }
-  await saveEmployee(page);
 
-  // Verificação real: reabre pelo CPF e lê novamente o que o GRM gravou.
-  const verification = await inspectEmployee(page, job);
-  await closeModal(page);
-  if (!rulesEqual(verification.currentRules, desired)) {
-    const error = new Error('GRM ficou divergente depois de salvar as Regras de Caixa Operacional.');
-    error.code = 'DIVERGENTE';
+  for (let index = 0; index < desired.length; index += 1) {
+    await addCashRuleRow(page);
+    await fillCashRuleRow(page, index, desired[index]);
+  }
+
+  const formRules = canonicalRules(await readCashRules(page));
+
+  if (!rulesEqual(formRules, desired)) {
+    const error = new Error(
+      'Formulário do GRM ficou divergente antes de salvar; salvamento cancelado.',
+    );
+    error.code = 'FORM_DIVERGENTE';
     error.currentRules = inspection.currentRules;
-    error.verifiedRules = verification.currentRules;
+    error.verifiedRules = formRules;
     throw error;
   }
 
-  return { changed: true, currentRules: inspection.currentRules, verifiedRules: verification.currentRules };
+  log('INFO', `CPF ${job.cpf}: formulário conferido antes de salvar.`, {
+    regras: formRules,
+  });
+
+  await saveEmployee(page);
+
+  const verification = await inspectEmployee(page, job);
+
+  await closeModal(page);
+
+  if (!rulesEqual(verification.currentRules, desired)) {
+    const error = new Error(
+      'GRM ficou divergente depois de salvar as Regras de Caixa Operacional.',
+    );
+
+    error.code = 'DIVERGENTE';
+    error.currentRules = inspection.currentRules;
+    error.verifiedRules = verification.currentRules;
+
+    throw error;
+  }
+
+  return {
+    changed: true,
+    currentRules: inspection.currentRules,
+    verifiedRules: verification.currentRules,
+  };
 }
 
 async function getLatestState(cpf) {
@@ -621,13 +2038,17 @@ async function getLatestState(cpf) {
     .select('*')
     .eq('cpf', digits(cpf))
     .maybeSingle();
+
   if (error) throw error;
   return data;
 }
 
 async function claimNext() {
-  const { data, error } = await supabase.rpc('claim_next_grm_despesa_fila');
+  const { data, error } = await supabase
+    .rpc('claim_next_grm_despesa_fila');
+
   if (error) throw error;
+
   return data && data.id ? data : null;
 }
 
@@ -636,14 +2057,23 @@ async function listDryRunJobs() {
     .from('grm_despesas_fila')
     .select('*')
     .in('status', ['PENDENTE', 'ERRO'])
-    .order('created_at', { ascending: true })
+    .eq('data_referencia', todaySaoPaulo())
+    .order('created_at', {
+      ascending: true,
+    })
     .limit(MAX_PER_RUN);
+
   if (error) throw error;
+
   return data || [];
 }
 
 async function updateQueue(id, patch) {
-  const { error } = await supabase.from('grm_despesas_fila').update(patch).eq('id', id);
+  const { error } = await supabase
+    .from('grm_despesas_fila')
+    .update(patch)
+    .eq('id', id);
+
   if (error) throw error;
 }
 
@@ -654,6 +2084,7 @@ async function updateStateIfCurrent(job, patch) {
     .eq('cpf', digits(job.cpf))
     .eq('hash_desejado', job.hash_desejado)
     .eq('versao_desejada_id', job.versao_id);
+
   if (error) throw error;
 }
 
@@ -673,8 +2104,12 @@ async function markSuperseded(job, state) {
 }
 
 async function markSuccess(job, result, screenshot) {
-  const finalStatus = canonicalRules(job.regras).length ? 'APLICADO' : 'LIMPO';
+  const finalStatus = desiredRules(job.regras).length
+    ? 'APLICADO'
+    : 'LIMPO';
+
   const now = new Date().toISOString();
+
   await updateQueue(job.id, {
     status: finalStatus,
     locked_at: null,
@@ -687,6 +2122,7 @@ async function markSuccess(job, result, screenshot) {
       regras_confirmadas: result.verifiedRules,
     },
   });
+
   await updateStateIfCurrent(job, {
     hash_aplicado: job.hash_desejado,
     status_aplicacao: finalStatus,
@@ -698,7 +2134,11 @@ async function markFailure(job, error, screenshot) {
   const attempts = Number(job.tentativas || 0);
   const maxAttempts = Number(job.max_tentativas || 3);
   const exhausted = attempts >= maxAttempts;
-  const status = exhausted && error.code === 'DIVERGENTE' ? 'DIVERGENTE' : 'ERRO';
+
+  const status = exhausted && error.code === 'DIVERGENTE'
+    ? 'DIVERGENTE'
+    : 'ERRO';
+
   await updateQueue(job.id, {
     status,
     locked_at: null,
@@ -712,7 +2152,10 @@ async function markFailure(job, error, screenshot) {
       regras_confirmadas: error.verifiedRules || null,
     },
   });
-  await updateStateIfCurrent(job, { status_aplicacao: status });
+
+  await updateStateIfCurrent(job, {
+    status_aplicacao: status,
+  });
 }
 
 async function recordDryRun(job, inspection, screenshot) {
@@ -721,7 +2164,7 @@ async function recordDryRun(job, inspection, screenshot) {
       dry_run: true,
       validado_em: new Date().toISOString(),
       regras_atuais: inspection.currentRules,
-      regras_desejadas: canonicalRules(job.regras),
+      regras_desejadas: desiredRules(job.regras),
       iguais: rulesEqual(inspection.currentRules, job.regras),
       secao: DEBUG ? inspection.diagnostic : undefined,
     },
@@ -731,137 +2174,302 @@ async function recordDryRun(job, inspection, screenshot) {
 
 async function enqueueFollowupIfNeeded() {
   if (DRY_RUN) return;
+
   const { data: remainingRows, error: remainingError } = await supabase
     .from('grm_despesas_fila')
-    .select('id,status,tentativas,max_tentativas')
+    .select('id,status,tentativas,max_tentativas,data_referencia')
     .in('status', ['PENDENTE', 'ERRO'])
+    .eq('data_referencia', todaySaoPaulo())
     .limit(200);
+
   if (remainingError) {
-    log('WARN', `Não foi possível conferir fila restante: ${remainingError.message}`);
+    log(
+      'WARN',
+      `Não foi possível conferir fila restante: ${remainingError.message}`,
+    );
     return;
   }
+
   const hasRemaining = (remainingRows || []).some((row) =>
-    row.status === 'PENDENTE' || (row.status === 'ERRO' && Number(row.tentativas || 0) < Number(row.max_tentativas || 3))
-  );
+    row.status === 'PENDENTE'
+    || (
+      row.status === 'ERRO'
+      && Number(row.tentativas || 0)
+        < Number(row.max_tentativas || 3)
+    ));
+
   if (!hasRemaining) return;
 
-  // O job atual ainda está RODANDO enquanto este script executa. Conferimos
-  // somente outro PENDENTE para poder deixar o próximo ciclo já enfileirado.
   const { data: pendingJob, error: pendingError } = await supabase
     .from('grm_sync_jobs')
     .select('id')
     .eq('agente_id', 'sync-liberacao-despesas')
     .eq('status', 'pendente')
     .limit(1);
+
   if (pendingError) return;
+
   if (!pendingJob?.length) {
-    const { error } = await supabase.from('grm_sync_jobs').insert({
-      agente_id: 'sync-liberacao-despesas',
-      status: 'pendente',
-    });
-    if (error) log('WARN', `Falha ao enfileirar continuação: ${error.message}`);
+    const { error } = await supabase
+      .from('grm_sync_jobs')
+      .insert({
+        agente_id: 'sync-liberacao-despesas',
+        status: 'pendente',
+      });
+
+    if (error) {
+      log(
+        'WARN',
+        `Falha ao enfileirar continuação: ${error.message}`,
+      );
+    }
   }
 }
 
 async function processDryRun(page) {
   const jobs = await listDryRunJobs();
+
   if (!jobs.length) {
-    log('INFO', 'DRY_RUN: nenhuma alteração pendente para validar.');
-    return { processed: 0, errors: 0 };
+    log(
+      'INFO',
+      'DRY_RUN: nenhuma alteração pendente para validar.',
+    );
+
+    return {
+      processed: 0,
+      errors: 0,
+    };
   }
+
   let errors = 0;
+
   for (const job of jobs) {
     let screenshot = null;
+
     try {
       const state = await getLatestState(job.cpf);
-      if (!state || state.hash_desejado !== job.hash_desejado || state.versao_desejada_id !== job.versao_id) {
-        log('INFO', `DRY_RUN: job ${job.id} está superado; será ignorado apenas em execução real.`);
+
+      if (
+        !state
+        || state.hash_desejado !== job.hash_desejado
+        || state.versao_desejada_id !== job.versao_id
+      ) {
+        log(
+          'INFO',
+          `DRY_RUN: job ${job.id} está superado; `
+            + 'será ignorado apenas em execução real.',
+        );
         continue;
       }
+
       const inspection = await inspectEmployee(page, job);
-      screenshot = DEBUG ? await takeScreenshot(page, job, 'dry-run') : null;
+
+      screenshot = DEBUG
+        ? await takeScreenshot(page, job, 'dry-run')
+        : null;
+
       await closeModal(page);
       await recordDryRun(job, inspection, screenshot);
-      log('SUCCESS', `DRY_RUN CPF ${job.cpf}: leitura concluída; nenhuma alteração feita.`, {
-        atuais: inspection.currentRules,
-        desejadas: canonicalRules(job.regras),
-      });
+
+      log(
+        'SUCCESS',
+        `DRY_RUN CPF ${job.cpf}: leitura concluída; nenhuma alteração feita.`,
+        {
+          atuais: inspection.currentRules,
+          desejadas: desiredRules(job.regras),
+        },
+      );
     } catch (error) {
       errors += 1;
-      screenshot = await takeScreenshot(page, job, 'dry-run-erro');
+
+      screenshot = await takeScreenshot(
+        page,
+        job,
+        'dry-run-erro',
+      );
+
       await updateQueue(job.id, {
-        diagnostico: { dry_run: true, erro: error.message, stack: String(error.stack || '').slice(0, 8000) },
+        diagnostico: {
+          dry_run: true,
+          erro: error.message,
+          stack: String(error.stack || '').slice(0, 8000),
+        },
         screenshot_path: screenshot,
       });
-      log('ERROR', `DRY_RUN CPF ${job.cpf}: ${error.message}`);
-      try { await closeModal(page); } catch (_) {}
+
+      log(
+        'ERROR',
+        `DRY_RUN CPF ${job.cpf}: ${error.message}`,
+      );
+
+      try {
+        await closeModal(page);
+      } catch (_) {
+        // Modal já estava fechado ou não chegou a abrir.
+      }
     }
   }
-  return { processed: jobs.length, errors };
+
+  return {
+    processed: jobs.length,
+    errors,
+  };
 }
 
 async function processReal(page) {
   let processed = 0;
   let errors = 0;
-  for (let i = 0; i < MAX_PER_RUN; i += 1) {
+
+  for (let index = 0; index < MAX_PER_RUN; index += 1) {
     const job = await claimNext();
+
     if (!job) break;
+
+    const today = todaySaoPaulo();
+    const jobDate = String(job.data_referencia || '').slice(0, 10);
+    if (jobDate !== today) {
+      await updateQueue(job.id, {
+        status: jobDate > today ? 'AGENDADO' : 'EXPIRADO',
+        locked_at: null,
+        finalizado_em: jobDate < today ? new Date().toISOString() : null,
+        ultimo_erro: `Bloqueado por data: fila ${jobDate || 'sem data'}; hoje ${today}.`,
+      });
+      log('WARN', `Job ${job.id} bloqueado pela regra de data.`, {
+        data_referencia: jobDate,
+        hoje: today,
+      });
+      continue;
+    }
+
     processed += 1;
     let screenshot = null;
+
     try {
       const state = await getLatestState(job.cpf);
-      if (!state || state.hash_desejado !== job.hash_desejado || state.versao_desejada_id !== job.versao_id) {
+
+      if (
+        !state
+        || state.hash_desejado !== job.hash_desejado
+        || state.versao_desejada_id !== job.versao_id
+      ) {
         await markSuperseded(job, state);
-        log('INFO', `Job ${job.id} ignorado: versão superada.`);
+
+        log(
+          'INFO',
+          `Job ${job.id} ignorado: versão superada.`,
+        );
+
         continue;
       }
 
       const result = await applyEmployeeRules(page, job);
-      screenshot = DEBUG ? await takeScreenshot(page, job, 'aplicado') : null;
+
+      screenshot = DEBUG
+        ? await takeScreenshot(page, job, 'aplicado')
+        : null;
+
       await markSuccess(job, result, screenshot);
-      log('SUCCESS', `CPF ${job.cpf}: ${canonicalRules(job.regras).length ? 'regras aplicadas' : 'regras limpas'} e verificadas.`);
+
+      log(
+        'SUCCESS',
+        `CPF ${job.cpf}: ${
+          desiredRules(job.regras).length
+            ? 'regras aplicadas'
+            : 'regras limpas'
+        } e verificadas.`,
+      );
     } catch (error) {
       errors += 1;
+
       screenshot = await takeScreenshot(page, job, 'erro');
+
       await markFailure(job, error, screenshot);
-      log('ERROR', `CPF ${job.cpf}: ${error.message}`);
-      try { await closeModal(page); } catch (_) {}
+
+      log(
+        'ERROR',
+        `CPF ${job.cpf}: ${error.message}`,
+      );
+
+      try {
+        await closeModal(page);
+      } catch (_) {
+        // Modal já estava fechado ou não chegou a abrir.
+      }
     }
   }
-  await enqueueFollowupIfNeeded();
-  return { processed, errors };
+
+  // Execução independente por cron próprio.
+  // Não reenviar este agente para a fila global grm_sync_jobs.
+  // await enqueueFollowupIfNeeded();
+
+  return {
+    processed,
+    errors,
+  };
 }
 
 async function main() {
   ensureDir(SCREENSHOT_DIR);
-  log('INFO', `Iniciando agente de liberação de despesas (dry_run=${DRY_RUN}, max=${MAX_PER_RUN}).`);
+
+  log(
+    'INFO',
+    `Iniciando agente de liberação de despesas ${AGENT_VERSION} `
+      + `(data=${todaySaoPaulo()}, dry_run=${DRY_RUN}, max=${MAX_PER_RUN}).`,
+  );
+
   let browser;
+
   try {
+    await activateTodayQueue();
     browser = await launchBrowser();
+
     const page = await browser.newPage();
+
     page.setDefaultTimeout(DEFAULT_TIMEOUT);
     page.setDefaultNavigationTimeout(60000);
+
     page.on('console', (message) => {
-      if (DEBUG) log('BROWSER', message.text());
+      if (DEBUG) {
+        log('BROWSER', message.text());
+      }
     });
+
     page.on('pageerror', (error) => {
-      if (DEBUG) log('BROWSER_ERROR', error.message);
+      if (DEBUG) {
+        log('BROWSER_ERROR', error.message);
+      }
     });
 
     await login(page);
-    const result = DRY_RUN ? await processDryRun(page) : await processReal(page);
-    log(result.errors ? 'ERROR' : 'SUCCESS', 'Agente concluído.', result);
 
-    // Em modo real, qualquer falha técnica precisa chegar ao worker como erro.
-    // Isso evita o falso "sucesso" quando todas as alterações individuais
-    // falharam. Em DRY_RUN, o job é apenas diagnóstico e não muda a fila.
-    if (!DRY_RUN && result.errors > 0) process.exitCode = 1;
+    const result = DRY_RUN
+      ? await processDryRun(page)
+      : await processReal(page);
+
+    log(
+      result.errors ? 'ERROR' : 'SUCCESS',
+      'Agente concluído.',
+      result,
+    );
+
+    if (!DRY_RUN && result.errors > 0) {
+      process.exitCode = 1;
+    }
   } finally {
-    if (browser) await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
 main().catch((error) => {
-  log('ERROR', `Erro fatal: ${error.message}`, { stack: error.stack });
+  log(
+    'ERROR',
+    `Erro fatal: ${error.message}`,
+    {
+      stack: error.stack,
+    },
+  );
+
   process.exitCode = 1;
 });
