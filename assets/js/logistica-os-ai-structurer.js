@@ -113,7 +113,10 @@ function canonicalProductType(value) {
   const text = normalize(value);
   if (!text) return '';
   if (text.includes('aflatox') && text.includes('neg')) return 'Aflatoxina Negativo';
-  if (text.includes('intacta') && (text.includes('declar') || text.includes('nf'))) return 'Declarado Intacta';
+  // "Declarada" sozinho já significa "Declarado Intacta" no vocabulário da
+  // operação (confirmado pelo usuário 04/08) — não precisa da palavra
+  // "intacta" junto pra bater.
+  if (text.includes('declar') || (text.includes('intacta') && text.includes('nf'))) return 'Declarado Intacta';
   if (text.includes('intacta') && text.includes('neg')) return 'Intacta Negativo';
   if (text.includes('intacta') && text.includes('pos')) return 'Intacta Positivo';
   if (text.includes('teste')) return 'OS com teste';
