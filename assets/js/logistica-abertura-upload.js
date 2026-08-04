@@ -204,7 +204,11 @@ function isProviderConfigurationError(message) {
 
 const VPS_OCR_FUNCTION = 'ocr-documento-local';
 const VPS_OCR_BUCKET = 'os-laudos';
-const VPS_OCR_POLL_TIMEOUT_MS = 45000;
+// Visto ao vivo 04/08: o modelo "server" do PaddleOCR em CPU levou 86-101s
+// pra uma única imagem — 45s (chute inicial) desistia cedo demais e caía
+// pro próximo provedor no meio do processamento, criando um job novo a
+// cada tentativa (parecia "loop" pro usuário). 3min dá folga confortável.
+const VPS_OCR_POLL_TIMEOUT_MS = 180000;
 const OCR_PROMPT_ABERTURA = 'Leia esta solicitação de abertura de O.S. logística e devolva todo o texto visível.';
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
