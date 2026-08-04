@@ -1107,10 +1107,24 @@ export async function loadFrotasMotoristas() {
 
 export async function adicionarFrotaOs(programacaoId, os, motorista) {
   const equipeRow = await adicionarColaboradorOs(programacaoId, os, motorista);
+
+  // adicionarColaboradorOs só marca disponibilidade: 'LOGISTICA' quando o
+  // candidato já vem com veiculoId preenchido (colaborador com veículo
+  // cruzado em colaborador_cruzamento) — não é o caso do motorista de Frota,
+  // que entra sem esse cruzamento e cairia em 'OK' por padrão, contando como
+  // atendimento normal em qualquer tela que use essa convenção. Corrige aqui
+  // por cima, sem mexer em adicionarColaboradorOs (usado por colaboradores
+  // de verdade).
+  const { error: espelhoErr } = await supabase.from('programacao_colaboradores')
+    .update({ disponibilidade: 'LOGISTICA' })
+    .eq('programacao_id', programacaoId)
+    .eq('colaborador_id', motorista.colaboradorId);
+  if (espelhoErr) console.warn('[programacao-equipe] falha ao marcar motorista de frota como LOGISTICA.', espelhoErr);
+
   // Pré-marca o deslocamento como "Frota - Motorista" pra já abrir o card
   // nesse tipo — a placa fica pro gestor preencher no próprio card (mesmo
   // campo usado por qualquer colaborador com deslocamento de frota/carona).
-  const { error } = await supabase.from('programacao_deslocamento').upsert({
+  const { error: deslocErr } = await supabase.from('programacao_deslocamento').upsert({
     programacao_id: programacaoId,
     colaborador_id: motorista.colaboradorId,
     nome_colaborador: motorista.nome,
@@ -1118,7 +1132,8 @@ export async function adicionarFrotaOs(programacaoId, os, motorista) {
     km: 0,
     valor: 0,
   }, { onConflict: 'programacao_id,colaborador_id', ignoreDuplicates: true });
-  if (error) console.warn('[programacao-equipe] falha ao pré-marcar deslocamento do motorista de frota.', error);
+  if (deslocErr) console.warn('[programacao-equipe] falha ao pré-marcar deslocamento do motorista de frota.', deslocErr);
+
   return equipeRow;
 }
 
