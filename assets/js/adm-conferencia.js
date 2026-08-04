@@ -171,13 +171,6 @@ function yesNoChip(value) {
     : '<span class="conf-chip conf-chip-neutral">Não</span>';
 }
 
-function grmSyncBadge(row) {
-  if (row.grm_status_aplicacao !== 'APLICADO') return '';
-  const quando = row.grm_aplicado_em ? brDateTime(row.grm_aplicado_em) : '';
-  const title = `Sincronizado com o GRM${quando ? ` em ${quando}` : ''}`;
-  return `<span class="conf-grm-sync" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></span>`;
-}
-
 function getRegional(row) {
   return row.supervisao || row.regional || row.coordenacao || '-';
 }
@@ -479,10 +472,14 @@ function despesasTableHead() {
 
 function despesasRowHtml(row, mode = 'fila') {
   const isConferido = mode === 'conferidos';
+  const grmSynced = row.grm_status_aplicacao === 'APLICADO';
+  const grmTitle = grmSynced
+    ? `Sincronizado com o GRM${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`
+    : '';
   return `
-    <tr class="${isConferido ? 'conf-row-conferido' : ''}">
+    <tr class="${isConferido ? 'conf-row-conferido' : ''} ${grmSynced ? 'conf-row-grm-synced' : ''}" ${grmSynced ? `title="${escapeHtml(grmTitle)}"` : ''}>
       <td>
-        <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>${grmSyncBadge(row)}
+        <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
         <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
       </td>
       <td class="conf-td-regional">
