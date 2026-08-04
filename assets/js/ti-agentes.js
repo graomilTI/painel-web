@@ -43,6 +43,7 @@ const AGENTES = [
   { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
   { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min', table: 'operacional_os', direction: 'saida' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 09h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
+  { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
 ];
 
 const STATUS_META = {
