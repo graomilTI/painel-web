@@ -53,6 +53,12 @@ const AGENTES_CONTINUOS = [
 // só um intervalo mínimo). Agendamento próprio via pg_cron, ver migration
 // 20260722120000_cron_sync_lancar_nhe_09h.sql (mesmo padrão do sync-login-alimentacao).
 const AGENTES_DIARIOS = [
+  {
+    agente_id: 'sync-despesas-retroativas',
+    nome: 'Despesas retroativas por programação e produção',
+    intervalo_minutos: 1440,
+    ativo: true,
+  },
   { agente_id: 'sync-despesas', intervalo_minutos: 60 },
   {
     agente_id: 'sync-cargas-geofence',
