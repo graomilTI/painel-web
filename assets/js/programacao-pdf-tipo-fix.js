@@ -361,3 +361,103 @@ document.addEventListener('click', (event) => {
   event.stopImmediatePropagation();
   void gerarPdfComTipo(button);
 }, true);
+
+// Mesma leitura de dados do PDF (roster + custos + resumo de O.S.), só que
+// agrupada em texto pra compartilhar: por Local (quem atende ali) e por
+// Motorista de Frota (quem pega carona com ele, casado pela placa gravada em
+// programacao_deslocamento — mesmo campo que o card de despesas já usa pra
+// "Frota - Motorista"/"Frota - Carona").
+async function montarTextoCompartilhar() {
+  const programacaoIdMap = window.__progGetProgramacaoIdMap?.();
+  const programacaoId = window.__progGetProgramacaoId?.();
+  const temMapa = programacaoIdMap instanceof Map && programacaoIdMap.size > 0;
+  if (!programacaoId && !temMapa) throw new Error('Carregue um contexto antes de compartilhar.');
+
+  const programacaoIdQuery = temMapa ? [...programacaoIdMap.values()] : programacaoId;
+  const dataReferencia = document.getElementById('progDataRef')?.value || todayIso();
+
+  const roster = await loadRosterDoDia(programacaoIdQuery);
+  if (!roster.length) throw new Error('Nenhum colaborador confirmado nesta programação ainda.');
+
+  const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
+  const [custos, osResumoPorId] = await Promise.all([
+    loadCustos(programacaoIdQuery),
+    loadOsResumo(osIds),
+  ]);
+
+  const locais = new Map(); // "cidade|local" -> { cidade, local, nomes: [] }
+  const motoristasPorPlaca = new Map(); // placa -> nome
+  const caronasPorPlaca = new Map(); // placa -> [nome]
+
+  for (const row of roster) {
+    const des = custos.des.get(row.colaboradorId) || {};
+    const tipoDesl = normalizeText(des.tipo_deslocamento || '');
+    const placa = String(des.placa_veiculo || '').trim().toUpperCase();
+
+    if (tipoDesl === 'MOTORISTA FROTA') {
+      if (placa) motoristasPorPlaca.set(placa, row.nome);
+      continue; // motorista de frota não atende O.S., não entra em "Colaboradores".
+    }
+    if (tipoDesl === 'CARONA FROTA' && placa) {
+      caronasPorPlaca.set(placa, [...(caronasPorPlaca.get(placa) || []), row.nome]);
+    }
+
+    for (const osId of row.osIds) {
+      const os = osResumoPorId.get(String(osId));
+      if (!os) continue;
+      const { cidade, local } = parseEmbarqueDetalhes(os.embarque);
+      const key = `${cidade}|${local}`;
+      const grupo = locais.get(key) || { cidade, local, nomes: [] };
+      if (!grupo.nomes.includes(row.nome)) grupo.nomes.push(row.nome);
+      locais.set(key, grupo);
+    }
+  }
+
+  const blocosLocal = [...locais.values()].map(({ cidade, local, nomes }) => {
+    const rotulo = [local, cidade].filter(Boolean).join(' - ') || '-';
+    return `Local: ${rotulo}\nColaboradores:\n${nomes.length ? nomes.join('\n') : '-'}`;
+  });
+
+  const placas = new Set([...motoristasPorPlaca.keys(), ...caronasPorPlaca.keys()]);
+  const blocosMotorista = [...placas].map((placa) => {
+    const nomeMotorista = motoristasPorPlaca.get(placa) || `Placa ${placa} (motorista não cadastrado nesta O.S.)`;
+    const caronas = caronasPorPlaca.get(placa) || [];
+    return `Motorista: ${nomeMotorista}\nCaronas:\n${caronas.length ? caronas.join('\n') : '-'}`;
+  });
+
+  const partes = [`📋 Programação — ${brDate(dataReferencia)}`, ...blocosLocal];
+  if (blocosMotorista.length) partes.push(...blocosMotorista);
+  return partes.join('\n\n');
+}
+
+async function compartilharPrograma(button) {
+  const textoOriginal = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Montando...';
+  try {
+    const texto = await montarTextoCompartilhar();
+    if (navigator.share) {
+      await navigator.share({ text: texto });
+    } else {
+      await navigator.clipboard.writeText(texto);
+      setFeedback('Compartilhamento não suportado neste navegador — texto copiado pra área de transferência.', 'warn');
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError') return; // gestor cancelou o compartilhamento, não é erro.
+    console.error(error);
+    setFeedback(error.message || 'Falha ao montar a mensagem de compartilhamento.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = textoOriginal;
+  }
+}
+
+document.addEventListener('click', (event) => {
+  const button = event.target.closest?.('#progCompartilhar');
+  if (!button) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  void compartilharPrograma(button);
+}, true);

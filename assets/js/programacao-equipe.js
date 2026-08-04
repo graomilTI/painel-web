@@ -1074,6 +1074,54 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
 }
 
+let frotasMotoristasCache = null;
+const FROTAS_MOTORISTAS_CACHE_TTL_MS = 60000;
+
+// Motorista de Frota: entra na O.S. pelo mesmo pipeline de colaborador
+// (programacao_equipe/operacional_os_colaboradores/programacao_colaboradores),
+// só que a busca vem do cadastro de Frotas > Motoristas em vez da base
+// regional — ele leva colaboradores até a O.S., mas não atende ela. O card
+// de despesas já entende MOTORISTA FROTA como um tipo de deslocamento
+// normal, então ele ganha as mesmas opções (Almoço/Estadia/Extras) de quem
+// atende.
+export async function loadFrotasMotoristas() {
+  const agora = Date.now();
+  if (frotasMotoristasCache && (agora - frotasMotoristasCache.ts) < FROTAS_MOTORISTAS_CACHE_TTL_MS) {
+    return frotasMotoristasCache.promise;
+  }
+  const promise = (async () => {
+    const { data, error } = await supabase
+      .from('frotas_motoristas')
+      .select('id,nome,cpf,status')
+      .eq('status', 'ATIVO')
+      .not('cpf', 'is', null)
+      .order('nome');
+    if (error) throw error;
+    return (data || [])
+      .map((r) => ({ colaboradorId: cpfNorm(r.cpf), nome: r.nome }))
+      .filter((r) => r.colaboradorId && r.nome);
+  })();
+  frotasMotoristasCache = { promise, ts: agora };
+  return promise;
+}
+
+export async function adicionarFrotaOs(programacaoId, os, motorista) {
+  const equipeRow = await adicionarColaboradorOs(programacaoId, os, motorista);
+  // Pré-marca o deslocamento como "Frota - Motorista" pra já abrir o card
+  // nesse tipo — a placa fica pro gestor preencher no próprio card (mesmo
+  // campo usado por qualquer colaborador com deslocamento de frota/carona).
+  const { error } = await supabase.from('programacao_deslocamento').upsert({
+    programacao_id: programacaoId,
+    colaborador_id: motorista.colaboradorId,
+    nome_colaborador: motorista.nome,
+    tipo_deslocamento: 'MOTORISTA FROTA',
+    km: 0,
+    valor: 0,
+  }, { onConflict: 'programacao_id,colaborador_id', ignoreDuplicates: true });
+  if (error) console.warn('[programacao-equipe] falha ao pré-marcar deslocamento do motorista de frota.', error);
+  return equipeRow;
+}
+
 export async function adicionarColaboradorOs(programacaoId, os, cand) {
   const payload = {
     programacao_id: programacaoId,
