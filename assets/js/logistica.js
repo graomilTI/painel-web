@@ -232,6 +232,14 @@ async function loadAberturaRefs() {
     if (!txt) return;
     if (!arr.some(x => normalizeText(x) === normalizeText(txt))) arr.push(txt);
   };
+  // operacional_os.cliente guarda "RAZÃO SOCIAL - FILIAL" junto (padrão já
+  // visto em outras telas deste painel) — só o prefixo é o Cliente Nacional;
+  // o sufixo (quando existe) é a Filial Pagadora, aproveitado também.
+  const splitClienteFilial = (v) => {
+    const txt = String(v ?? '').trim();
+    const idx = txt.indexOf(' - ');
+    return idx < 0 ? { nacional: txt, filial: '' } : { nacional: txt.slice(0, idx).trim(), filial: txt.slice(idx + 3).trim() };
+  };
 
   safe(prod.data).forEach(r => {
     add(refs.clientes, r.cliente_nacional);
@@ -241,7 +249,9 @@ async function loadAberturaRefs() {
     add(refs.locaisDestino, r.destino);
   });
   safe(os.data).forEach(r => {
-    add(refs.clientes, r.cliente);
+    const { nacional, filial } = splitClienteFilial(r.cliente);
+    add(refs.clientes, nacional);
+    if (filial) add(refs.filiais, filial);
     add(refs.armazens, r.embarque);
     add(refs.locaisDestino, r.destino);
     add(refs.regionais, r.supervisao);
