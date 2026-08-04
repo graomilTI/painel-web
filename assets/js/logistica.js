@@ -407,7 +407,7 @@ function renderTestesBlock() {
   if (!opcoes) return '';
   return `
     <div class="abrir-os-testes mt-16">
-      <span class="abrir-os-testes-label">Testes *</span>
+      <span class="abrir-os-testes-label">Testes</span>
       <div class="abrir-os-testes-opcoes">
         ${opcoes.map(o => `<label class="abrir-os-teste-chip"><input type="checkbox" data-teste-key="${esc(o.key)}" ${state.aberturaTestesSelecionados.includes(o.key) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}
       </div>
@@ -434,6 +434,8 @@ function renderAbrirOsTab() {
       </div>
 
       <datalist id="abrirOsProdutos"><option value="Soja"></option><option value="Trigo"></option><option value="Milho"></option><option value="Sorgo"></option></datalist>
+      <datalist id="abrirOsArmazens">${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <datalist id="abrirOsLocaisDestino">${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
 
       <div class="abrir-os-card">
         <h4>Dados da solicitação</h4>
@@ -441,10 +443,10 @@ function renderAbrirOsTab() {
           <label>Contratante / Cliente *<select id="osContratante" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.clientes.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Filial pagadora *<select id="osFilialPagadora" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.filiais.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
-          <label>Armazém de embarque *<select id="osArmazemEmbarque" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
+          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
-          <label>Local de destino *<select id="osLocalDestino" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
+          <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
           <label>Número contrato *<input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
           <label>Produto *<input id="osProduto" class="log-input" list="abrirOsProdutos" placeholder="Soja, trigo, milho, sorgo..." value="${esc(state.aberturaProdutoAtual)}"></label>
           <label>Tipo de produto *
@@ -692,7 +694,6 @@ async function handleSalvarAberturaOs(content) {
     ['Serviço', payload.servico]
   ];
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
-  if (categoriaProduto(produto) && !payload.testes.opcoes.length) faltando.push('Testes');
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
 
   state.aberturaSaving = true;
