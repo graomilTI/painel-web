@@ -204,7 +204,13 @@ function buildRulesForStaff(args: {
       || (!!rowName && rowName === name);
   });
   for (const extra of staffExtras) {
-    requireConfig(configKeyExtra(extra.tipo_despesa), true, Number(extra.valor ?? 0));
+    // "Outros" é um campo livre do painel para o gestor descrever uma
+    // necessidade fora das categorias padrão; não existe categoria
+    // correspondente no GRM, então essa seleção nunca gera regra de Caixa
+    // Operacional nem bloqueia a publicação da regional.
+    const key = configKeyExtra(extra.tipo_despesa);
+    if (key === 'EXTRA_OUTROS') continue;
+    requireConfig(key, true, Number(extra.valor ?? 0));
   }
 
   return { rules: canonicalRules(rules), pendingConfig: [...new Set(pendingConfig)] };
