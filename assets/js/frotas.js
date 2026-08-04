@@ -6,6 +6,20 @@ import { installPreviousWeekDefaults } from './frotas-periodo-semana-anterior.js
 import { installIntuitiveFleetLayout } from './frotas-layout-intuitivo.js?v=20260804a';
 import './modules/frotas.js';
 
+function installFleetHeaderCleanup(root = document) {
+  if (root.getElementById('frotasHeaderCleanupStyles')) return;
+
+  const style = root.createElement('style');
+  style.id = 'frotasHeaderCleanupStyles';
+  style.textContent = `
+    .frotas-header {
+      display: none !important;
+    }
+  `;
+  root.head.appendChild(style);
+}
+
+installFleetHeaderCleanup(document);
 installDailyDriverResolution(supabase);
 installPrintDriverValidation(supabase);
 installPreviousWeekDefaults(document, supabase);
