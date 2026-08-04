@@ -26,8 +26,8 @@ jobs:
 
       - name: Aplicar ajuste
         run: |
-          git apply --check .patches/alojamento-multisupervisoes.patch
-          git apply .patches/alojamento-multisupervisoes.patch
+          git apply --recount --check .patches/alojamento-multisupervisoes.patch
+          git apply --recount .patches/alojamento-multisupervisoes.patch
 
       - name: Validar JavaScript
         run: |
