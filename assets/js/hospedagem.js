@@ -290,7 +290,7 @@ function injectStyles() {
     .hospA-addbar select{height:38px;min-width:220px;border:1px solid rgba(45,215,120,.3);background:#092117;color:#eafff3;border-radius:11px;padding:0 10px;color-scheme:dark;font-size:12.5px}
     .hospA-addbar .btn{width:auto!important;min-height:38px!important;margin:0!important;padding:0 16px;font-size:12.5px}
     .hospA-add-feedback{font-size:11px;color:#6c9e82;margin:-4px 0 12px}.hospA-add-feedback.err{color:#fecaca}.hospA-add-feedback.ok{color:#86efac}
-    .hospA-search{width:100%;height:38px;border:1px solid var(--line-2);background:#092117;color:#eafff3;border-radius:11px;padding:0 12px;color-scheme:dark;margin-bottom:16px;box-sizing:border-box}
+    .hospA-search{flex:1 1 220px;min-width:180px;height:38px;border:1px solid var(--line-2);background:#092117;color:#eafff3;border-radius:11px;padding:0 12px;color-scheme:dark;box-sizing:border-box}
     .hospA-ac{position:relative;flex:1 1 240px;min-width:220px}
     .hospA-ac input{width:100%;height:38px;border:1px solid rgba(45,215,120,.3);background:#092117;color:#eafff3;border-radius:11px;padding:0 10px;color-scheme:dark;font-size:12.5px;box-sizing:border-box}
     .hospA-ac-list{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#092117;border:1px solid rgba(45,215,120,.35);overflow:hidden;z-index:20;max-height:200px;overflow-y:auto;border-radius:9px;box-shadow:0 14px 35px rgba(0,0,0,.5)}
@@ -417,10 +417,9 @@ export function renderContent(content, userContext) {
               <div class="hospA-ac-list" hidden></div>
             </div>
             <button type="button" class="btn hosp-submit" id="hospAAddBtn">＋ Adicionar</button>
+            <input type="search" id="hospABusca" class="hospA-search" placeholder="Buscar alojamento ou colaborador..." />
           </div>
           <div class="hospA-add-feedback" id="hospAAddFeedback"></div>
-
-          <input type="search" id="hospABusca" class="hospA-search" placeholder="Buscar alojamento ou colaborador..." />
 
           <div class="hosp-table-wrap">
             <table class="hosp-table">
