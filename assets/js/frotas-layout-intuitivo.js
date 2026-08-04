@@ -152,7 +152,7 @@ function enhanceScreen(root = document) {
   if (refreshButton) refreshButton.title = 'Recarregar registros já sincronizados';
 
   const importButton = panels[0].querySelector('[data-infleet-import-btn]');
-  setText(importButton, 'Importar XLSX');
+  if (importButton) importButton.title = 'Importar planilha Infleet (XLSX)';
 
   const pasteTitle = panels[1].querySelector('.paste-zone strong');
   setText(pasteTitle, 'Cole ou arraste os prints aqui');
