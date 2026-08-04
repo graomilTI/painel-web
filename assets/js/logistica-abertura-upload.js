@@ -94,7 +94,16 @@ function applyField(id, value) {
 
 function applyFields(fields) {
   let filled = 0;
+  // "produto" tem que ser o PRIMEIRO campo aplicado: seu evento "input"
+  // dispara um re-render da aba inteira em logistica.js (pra mostrar o
+  // bloco de Testes certo pro produto) — visto ao vivo 04/08: preencher
+  // produto no meio/fim do loop apagava todo campo já aplicado antes dele
+  // (a re-render troca os elementos do DOM por outros novos e vazios).
+  // Aplicando produto primeiro, a única re-render acontece antes de
+  // qualquer outro campo ser tocado.
+  if (applyField(FIELD_IDS.produto, fields?.produto)) filled += 1;
   Object.entries(FIELD_IDS).forEach(([key, id]) => {
+    if (key === 'produto') return;
     if (applyField(id, fields?.[key])) filled += 1;
   });
   filled += applyTestes(fields?.testes);
