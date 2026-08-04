@@ -1,0 +1,157 @@
+diff --git a/assets/js/adm-hotel-alojamentos-v2.js b/assets/js/adm-hotel-alojamentos-v2.js
+index 73bfd93..0000000 100644
+--- a/assets/js/adm-hotel-alojamentos-v2.js
++++ b/assets/js/adm-hotel-alojamentos-v2.js
+@@ -1,6 +1,6 @@
+ import { supabase } from './supabaseClient.js';
+ import { loadUserContext } from './sessionStore.js';
+ import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+-import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260730-supervisao1';
++import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260804-multisupervisao1';
+ 
+ const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null, supervisoes: [] };
+@@ -9,6 +9,22 @@ let toastTimer = null;
+ 
+ function getValue(id) { return document.getElementById(id)?.value ?? ''; }
+ function setValue(id, value) { const el = document.getElementById(id); if (el) el.value = value ?? ''; }
++function getValues(id) {
++  const el = document.getElementById(id);
++  return el ? [...el.selectedOptions].map((option) => option.value).filter(Boolean) : [];
++}
++function setValues(id, values = []) {
++  const el = document.getElementById(id);
++  if (!el) return;
++  const selected = new Set(values.map((value) => String(value || '').trim()).filter(Boolean));
++  [...el.options].forEach((option) => { option.selected = selected.has(option.value); });
++}
++function rowSupervisoes(row = {}) {
++  return [...new Set([
++    ...(Array.isArray(row.supervisoes) ? row.supervisoes : []),
++    row.supervisao,
++  ].map((value) => String(value || '').trim()).filter(Boolean))];
++}
+ 
+ function feedback(message, type = '') {
+@@ -29,12 +45,12 @@ async function loadSupervisoes() {
+   const { data, error } = await supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true });
+   if (error) {
+-    if (select) select.innerHTML = '<option value="">Não foi possível carregar</option>';
++    if (select) select.innerHTML = '<option value="" disabled>Não foi possível carregar</option>';
+     return;
+   }
+   state.supervisoes = (data || []).map((row) => row.nome).filter(Boolean);
+   if (select) {
+-    select.innerHTML = `<option value="">Não informado</option>${state.supervisoes.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('')}`;
++    select.innerHTML = state.supervisoes.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('');
+   }
+ }
+@@ -50,7 +66,7 @@ function openModal(row = null) {
+       alojV2Nome: row.nome, alojV2Tipo: row.tipo || 'CASA', alojV2Status: row.status || 'ATIVO', alojV2Responsavel: row.responsavel,
+       alojV2Contato: row.contato, alojV2Aluguel: row.valor_aluguel, alojV2Capacidade: row.capacidade, alojV2Quartos: row.quartos,
+-      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2Supervisao: row.supervisao || '', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
++      alojV2Prioridade: row.prioridade || 'NORMAL', alojV2ContratoUrl: row.contrato_url, alojV2ContratoInicio: row.contrato_inicio,
+       alojV2ContratoFim: row.contrato_fim, alojV2Logradouro: row.endereco_logradouro || row.endereco, alojV2Numero: row.endereco_numero,
+       alojV2Complemento: row.endereco_complemento, alojV2Bairro: row.bairro, alojV2Cidade: row.cidade, alojV2Uf: row.uf,
+@@ -60,6 +76,7 @@ function openModal(row = null) {
+       alojV2EmpresaInternet: row.empresa_internet, alojV2GasTitular: row.gas_titular, alojV2GasPagamento: row.gas_forma_pagamento, alojV2Observacoes: row.observacoes_limpa
+     };
+     Object.entries(values).forEach(([id, value]) => setValue(id, value));
++    setValues('alojV2Supervisao', rowSupervisoes(row));
+     document.getElementById('alojV2ModalTitle').textContent = 'Editar alojamento';
+     document.getElementById('alojV2Save').textContent = 'Salvar alterações';
+@@ -223,7 +240,8 @@ function readForm() {
+     nome: getValue('alojV2Nome').trim(), tipo: getValue('alojV2Tipo') || 'CASA', status: getValue('alojV2Status') || 'ATIVO',
+     responsavel: getValue('alojV2Responsavel').trim(), contato: getValue('alojV2Contato').trim(), valor_aluguel: getValue('alojV2Aluguel'),
+     capacidade: getValue('alojV2Capacidade'), quartos: getValue('alojV2Quartos'), prioridade: getValue('alojV2Prioridade') || 'NORMAL',
+-    supervisao: getValue('alojV2Supervisao').trim(),
++    supervisoes: getValues('alojV2Supervisao'),
++    supervisao: getValues('alojV2Supervisao')[0] || '',
+     contrato_url: getValue('alojV2ContratoUrl').trim(), contrato_inicio: getValue('alojV2ContratoInicio'), contrato_fim: getValue('alojV2ContratoFim'),
+@@ -267,6 +285,7 @@ async function saveRecord(event) {
+   event.preventDefault();
+   const data = readForm();
+   if (!data.nome || !data.cidade || !data.uf) return feedback('Informe nome, cidade e UF.', 'err');
++  if (!data.supervisoes.length) return feedback('Selecione pelo menos uma supervisão.', 'err');
+ 
+@@ -297,6 +316,7 @@ async function saveRecord(event) {
+   const enhanced = {
+     ...legacy, ...meta,
++    supervisoes: data.supervisoes,
+     endereco_logradouro: meta.endereco_logradouro, endereco_numero: meta.endereco_numero, endereco_complemento: meta.endereco_complemento
+   };
+diff --git a/assets/js/adm-hotel-alojamentos-v2-view.js b/assets/js/adm-hotel-alojamentos-v2-view.js
+index 0000000..0000000 100644
+--- a/assets/js/adm-hotel-alojamentos-v2-view.js
++++ b/assets/js/adm-hotel-alojamentos-v2-view.js
+@@ -25,6 +25,14 @@ function compactService(label, value, kind) {
+   return `<span class="aloj-v2-mini-service ${className}" title="${esc(label)}: ${esc(state)}"><i class="${esc(kind)}"></i>${esc(label)} ${esc(state)}</span>`;
+ }
+ 
++function supervisoesLabel(row = {}) {
++  const values = [
++    ...(Array.isArray(row.supervisoes) ? row.supervisoes : []),
++    row.supervisao,
++  ].map((value) => String(value || '').trim()).filter(Boolean);
++  return [...new Set(values)].join(' · ') || 'Não informado';
++}
++
+ function renderListRow(row) {
+@@ -67,7 +75,7 @@ export function renderDetailsContent(row) {
+       <div class="aloj-v2-info"><span>Responsável</span><strong title="${esc(row.responsavel || '')}">${esc(row.responsavel || 'Não informado')}</strong></div>
+       <div class="aloj-v2-info rent"><span>Aluguel mensal</span><strong>${row.valor_aluguel ? money(row.valor_aluguel) : 'Não informado'}</strong></div>
+       <div class="aloj-v2-info"><span>Estrutura</span><strong>${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</strong></div>
+-      <div class="aloj-v2-info"><span>Supervisão</span><strong>${esc(row.supervisao || 'Não informado')}</strong></div>
++      <div class="aloj-v2-info"><span>Supervisões autorizadas</span><strong title="${esc(supervisoesLabel(row))}">${esc(supervisoesLabel(row))}</strong></div>
+     </div>
+@@ -99,7 +107,8 @@ function modalHtml() {
+         <div class="aloj-v2-field span-2"><label>Nome do alojamento *</label><input id="alojV2Nome" required placeholder="Ex.: Alojamento Boa Vista"></div>
+         <div class="aloj-v2-field"><label>Tipo</label><select id="alojV2Tipo"><option value="CASA">Casa</option><option value="APARTAMENTO">Apartamento</option><option value="POUSADA">Pousada</option><option value="ESCRITORIO">Escritório</option><option value="OUTRO">Outro</option></select></div>
+         <div class="aloj-v2-field"><label>Status</label><select id="alojV2Status"><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option><option value="BLOQUEADO">Bloqueado</option></select></div>
+-        <div class="aloj-v2-field"><label>Supervisão</label><select id="alojV2Supervisao"><option value="">Carregando...</option></select></div>
++        <div class="aloj-v2-field span-2"><label>Supervisões autorizadas *</label><select id="alojV2Supervisao" multiple size="6" required><option value="" disabled>Carregando...</option></select><small style="color:#718179;font-size:10px;line-height:1.35">Selecione uma ou mais supervisões. Use Ctrl (Windows) ou Cmd (Mac) para marcar opções separadas.</small></div>
+         <div class="aloj-v2-field span-2"><label>Responsável</label><input id="alojV2Responsavel"></div><div class="aloj-v2-field"><label>Contato</label><input id="alojV2Contato" placeholder="Telefone ou WhatsApp"></div>
+diff --git a/assets/js/hospedagem.js b/assets/js/hospedagem.js
+index 11101df..0000000 100644
+--- a/assets/js/hospedagem.js
++++ b/assets/js/hospedagem.js
+@@ -986,7 +986,7 @@ export function renderContent(content, userContext) {
+     const minhasRegionais = getMinhasRegionais();
+     const { data, error } = await supabase
+       .from('hospedagem_alojamentos')
+-      .select('id,nome,cidade,uf,capacidade,status,supervisao')
++      .select('*')
+       .neq('status', 'INATIVO')
+@@ -999,9 +999,13 @@ export function renderContent(content, userContext) {
+     }
+     const todos = data || [];
++    const supervisoesDoAlojamento = (alojamento) => [...new Set([
++      ...(Array.isArray(alojamento.supervisoes) ? alojamento.supervisoes : []),
++      alojamento.supervisao,
++    ].map(normalizeText).filter(Boolean))];
+     state.alojamentos = minhasRegionais.length
+-      ? todos.filter((a) => minhasRegionais.includes(normalizeText(a.supervisao)))
++      ? todos.filter((alojamento) => supervisoesDoAlojamento(alojamento).some((supervisao) => minhasRegionais.includes(supervisao)))
+       : todos;
+     renderAlojamentoSelect();
+diff --git a/adm-hotel.html b/adm-hotel.html
+index cbb41c1..0000000 100644
+--- a/adm-hotel.html
++++ b/adm-hotel.html
+@@ -38,7 +38,7 @@
+   <script type="module" src="./assets/js/adm-hotel-fluxo-v2.js?v=20260713-fluxo-v2"></script>
+   <script type="module" src="./assets/js/adm-hotel-fluxo-v2-history.js?v=20260713-history-cards1"></script>
+   <script type="module" src="./assets/js/adm-hotel-nf-alert.js?v=20260713-nf-alert2"></script>
+-  <script type="module" src="./assets/js/adm-hotel-alojamentos-v2.js?v=20260730-supervisao1"></script>
++  <script type="module" src="./assets/js/adm-hotel-alojamentos-v2.js?v=20260804-multisupervisao1"></script>
+   <script type="module" src="./assets/js/adm-hotel-separacao-modulos.js?v=20260720-alojamentos-kpis1"></script>
+diff --git a/hospedagem.html b/hospedagem.html
+index 60a4de8..0000000 100644
+--- a/hospedagem.html
++++ b/hospedagem.html
+@@ -34,6 +34,6 @@
+     </div>
+   </div>
+-  <script type="module" src="./assets/js/hospedagem.js?v=20260730-tabela1"></script>
++  <script type="module" src="./assets/js/hospedagem.js?v=20260804-multisupervisao1"></script>
+ </body>
+ </html>
