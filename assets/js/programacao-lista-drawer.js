@@ -21,6 +21,7 @@ import {
   ordenarCandidatosPorEmbarque, candCardHtml, tipoTone, avatarBadgeHtml, embarqueHtml,
   brl, statusNorm, isDataPassada,
   confirmarCandidato, adicionarColaboradorOs, removerConfirmacao,
+  loadFrotasMotoristas, adicionarFrotaOs,
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
@@ -230,6 +231,9 @@ function injectStyles() {
     .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
     .pld-add-box select{flex:1 1 auto;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px;color-scheme:dark}
     .pld-add-box button{height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe;font-size:11.5px;font-weight:850;cursor:pointer}
+    .pld-add-box-frota{border-color:rgba(217,119,6,.32);margin-top:-4px}
+    .pld-add-box-frota select{border-color:rgba(217,119,6,.35)}
+    .pld-add-box-frota button{border-color:rgba(217,119,6,.5);background:rgba(180,83,9,.2);color:#fde68a}
     .pld-loading{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:18px;font-size:12.5px}
     .pld-spinner{width:20px;height:20px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:pldSpin .75s linear infinite}
     @keyframes pldSpin{to{transform:rotate(360deg)}}
@@ -565,12 +569,15 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   function colaboradorRowWrapHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab, escaladoEmOutra) {
     const cpf = String(row.colaboradorId || '').replace(/\D/g, '');
     const tipoLabelTexto = tipoContratoPorCpf.get(cpf) || 'Não informado';
+    const ehFrotaMotorista = normalizeText(custos.des.get(row.colaboradorId)?.tipo_deslocamento || '') === 'MOTORISTA FROTA';
     const cardHtml = colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab);
     return `<div class="pld-colab-card${escaladoEmOutra ? ' ja-outra-os' : ''}" data-colab-wrap="${esc(row.colaboradorId)}" data-equipe-row-id="${esc(row.equipeRowId || '')}">
       <div class="pld-colab-head">
         ${avatarBadgeHtml(row.nome, row.colaboradorId)}
         <span class="pld-colab-nome">${esc(row.nome)}</span>
-        <span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}</span>
+        ${ehFrotaMotorista
+          ? '<span class="pld-colab-tag t-info" title="Leva colaboradores até a O.S., não atende">🚚 Frota</span>'
+          : `<span class="pld-colab-tag t-${tipoTone(tipoLabelTexto)}">${esc(tipoLabelTexto)}</span>`}
         ${escaladoEmOutra ? '<span class="pld-colab-outra-os-badge" title="Este colaborador também está confirmado em outra O.S. hoje">♻ Outra O.S.</span>' : ''}
         <button type="button" class="pld-colab-remover" data-remover-colab="${esc(row.equipeRowId || '')}" title="Remover da O.S.">✕</button>
       </div>
@@ -604,8 +611,13 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
             <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
             <button type="button" data-add-colab-confirm>Adicionar</button>
           </div>
+          <div class="pld-add-box pld-add-box-frota" data-add-frota-box>
+            <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
+            <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
+          </div>
         `;
         await popularAddBox(os, []);
+        await popularAddFrotaBox(os, []);
         return;
       }
 
@@ -623,6 +635,10 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
           <button type="button" data-add-colab-confirm>Adicionar</button>
         </div>
+        <div class="pld-add-box pld-add-box-frota" data-add-frota-box>
+          <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
+          <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
+        </div>
       `;
       wireDespesasCards(progBody, {
         getDataReferencia: () => options.dataReferencia,
@@ -630,6 +646,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         isReadOnly: () => readOnly,
       });
       await popularAddBox(os, rows);
+      await popularAddFrotaBox(os, rows);
     } catch (error) {
       console.error('[programacao-lista-drawer] montarProgramacaoBody:', error);
       progBody.innerHTML = `<div class="pld-empty">${esc(error.message || 'Erro ao carregar a equipe desta O.S.')}</div>`;
@@ -651,6 +668,21 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const estilo = jaEmOutra ? ' style="color:#16a34a;font-weight:700"' : '';
       return `<option value="${esc(id)}" data-nome="${esc(c.nome)}"${estilo}>${jaEmOutra ? '♻ ' : ''}${esc(c.nome)}</option>`;
     }).join('');
+  }
+
+  async function popularAddFrotaBox(os, rowsAtuais) {
+    const sel = progBodyFrotaSelectAtual();
+    if (!sel) return;
+    const jaNaOs = new Set(rowsAtuais.map((r) => String(r.colaborador_id)));
+    const motoristas = await loadFrotasMotoristas();
+    const opcoes = motoristas.filter((m) => m.colaboradorId && !jaNaOs.has(String(m.colaboradorId)));
+    sel.innerHTML = '<option value="">Escolha um motorista de Frota…</option>' + opcoes.map((m) =>
+      `<option value="${esc(m.colaboradorId)}" data-nome="${esc(m.nome)}">${esc(m.nome)}</option>`
+    ).join('');
+  }
+
+  function progBodyFrotaSelectAtual() {
+    return drawerEl.querySelector('[data-add-frota-select]');
   }
 
   function progBodySelectAtual() {
@@ -950,6 +982,25 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         } finally {
           addConfirmBtn.disabled = false;
         }
+      }
+      return;
+    }
+
+    const addFrotaConfirmBtn = event.target.closest('[data-add-frota-confirm]');
+    if (addFrotaConfirmBtn) {
+      const os = osAtual();
+      const sel = progBodyFrotaSelectAtual();
+      if (!os || !sel || !sel.value) return;
+      const opt = sel.selectedOptions[0];
+      const motorista = { colaboradorId: sel.value, nome: opt?.dataset.nome || sel.value };
+      addFrotaConfirmBtn.disabled = true;
+      try {
+        await adicionarFrotaOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, motorista);
+        await refreshAposAcao(os, { equipe: true });
+      } catch (error) {
+        alert(error.message || 'Não foi possível adicionar o motorista de Frota.');
+      } finally {
+        addFrotaConfirmBtn.disabled = false;
       }
       return;
     }

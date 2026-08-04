@@ -391,6 +391,7 @@ export function renderContent(content) {
         </div>
         <button class="btn btn-primary" type="button" id="progLoadContext" title="Carregar colaboradores da supervisão/data selecionada">Carregar</button>
         <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
+        <button class="btn" type="button" id="progCompartilhar" title="Monta a mensagem de locais/colaboradores e motoristas/caronas do dia para compartilhar no WhatsApp">📤 Compartilhar</button>
 
         <div class="prog-toolbar-spacer"></div>
 
