@@ -171,6 +171,13 @@ function yesNoChip(value) {
     : '<span class="conf-chip conf-chip-neutral">Não</span>';
 }
 
+function grmSyncBadge(row) {
+  if (row.grm_status_aplicacao !== 'APLICADO') return '';
+  const quando = row.grm_aplicado_em ? brDateTime(row.grm_aplicado_em) : '';
+  const title = `Sincronizado com o GRM${quando ? ` em ${quando}` : ''}`;
+  return `<span class="conf-grm-sync" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"></span>`;
+}
+
 function getRegional(row) {
   return row.supervisao || row.regional || row.coordenacao || '-';
 }
@@ -475,7 +482,7 @@ function despesasRowHtml(row, mode = 'fila') {
   return `
     <tr class="${isConferido ? 'conf-row-conferido' : ''}">
       <td>
-        <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
+        <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>${grmSyncBadge(row)}
         <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
       </td>
       <td class="conf-td-regional">
@@ -923,6 +930,23 @@ async function loadDespesas() {
     row.conferencia_status_id = r.id;
     row.conferido_em = r.conferido_em || null;
   });
+
+  const colaboradorIds = [...new Set([...rows.values()].map((r) => r.colaborador_id).filter(Boolean))];
+  if (colaboradorIds.length) {
+    const { data: grmStatus, error: grmError } = await supabase.rpc('grm_despesas_status_por_colaborador', {
+      p_colaborador_ids: colaboradorIds,
+    });
+    if (grmError) {
+      console.warn('[Conferência] status de sincronização GRM indisponível:', grmError.message);
+    } else {
+      const grmMap = new Map((grmStatus || []).map((r) => [r.colaborador_id, r]));
+      for (const row of rows.values()) {
+        const grm = grmMap.get(row.colaborador_id);
+        row.grm_status_aplicacao = grm?.status_aplicacao || null;
+        row.grm_aplicado_em = grm?.aplicado_em || null;
+      }
+    }
+  }
 
   state.despesas = [...rows.values()].sort((a, b) => {
     const d = String(b.data_referencia || '').localeCompare(String(a.data_referencia || ''));
