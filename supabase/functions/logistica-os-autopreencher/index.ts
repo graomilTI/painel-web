@@ -208,7 +208,12 @@ async function callGroq(base64: string, mime: string, apiKey: string) {
       "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: Deno.env.get("GROQ_OCR_MODEL") || "meta-llama/llama-4-scout-17b-16e-instruct",
+      // "meta-llama/llama-4-scout-17b-16e-instruct" (default antigo) passou a
+      // devolver 404 "model_not_found" (visto ao vivo 03/08) — a Groq trocou
+      // o modelo de visão recomendado/disponível pra qwen/qwen3.6-27b (ver
+      // https://console.groq.com/docs/vision). Ajustável via GROQ_OCR_MODEL
+      // sem precisar reimplantar, caso a Groq troque de novo.
+      model: Deno.env.get("GROQ_OCR_MODEL") || "qwen/qwen3.6-27b",
       messages: [{
         role: "user",
         content: [
