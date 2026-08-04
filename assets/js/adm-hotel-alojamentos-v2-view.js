@@ -26,6 +26,14 @@ function compactService(label, value, kind) {
   return `<span class="aloj-v2-mini-service ${className}" title="${esc(label)}: ${esc(state)}"><i class="${esc(kind)}"></i>${esc(label)} ${esc(state)}</span>`;
 }
 
+function supervisoesLabel(row = {}) {
+  const values = [
+    ...(Array.isArray(row.supervisoes) ? row.supervisoes : []),
+    row.supervisao,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  return [...new Set(values)].join(' · ') || 'Não informado';
+}
+
 function renderListRow(row) {
   const status = String(row.status || 'ATIVO').toLowerCase();
   return `<div class="aloj-v2-list-row" data-id="${esc(row.id)}">
@@ -61,7 +69,7 @@ export function renderDetailsContent(row) {
       <div class="aloj-v2-info"><span>Responsável</span><strong title="${esc(row.responsavel || '')}">${esc(row.responsavel || 'Não informado')}</strong></div>
       <div class="aloj-v2-info rent"><span>Aluguel mensal</span><strong>${row.valor_aluguel ? money(row.valor_aluguel) : 'Não informado'}</strong></div>
       <div class="aloj-v2-info"><span>Estrutura</span><strong>${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</strong></div>
-      <div class="aloj-v2-info"><span>Supervisão</span><strong>${esc(row.supervisao || 'Não informado')}</strong></div>
+      <div class="aloj-v2-info"><span>Supervisões autorizadas</span><strong title="${esc(supervisoesLabel(row))}">${esc(supervisoesLabel(row))}</strong></div>
     </div>
     <div class="aloj-v2-services">
       ${serviceCard('water', 'Água', row.agua_inclusa, row.agua_matricula, '', row.agua_titular)}
@@ -95,7 +103,7 @@ function modalHtml() {
         <div class="aloj-v2-field span-2"><label>Nome do alojamento *</label><input id="alojV2Nome" required placeholder="Ex.: Alojamento Boa Vista"></div>
         <div class="aloj-v2-field"><label>Tipo</label><select id="alojV2Tipo"><option value="CASA">Casa</option><option value="APARTAMENTO">Apartamento</option><option value="POUSADA">Pousada</option><option value="ESCRITORIO">Escritório</option><option value="OUTRO">Outro</option></select></div>
         <div class="aloj-v2-field"><label>Status</label><select id="alojV2Status"><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option><option value="BLOQUEADO">Bloqueado</option></select></div>
-        <div class="aloj-v2-field"><label>Supervisão</label><select id="alojV2Supervisao"><option value="">Carregando...</option></select></div>
+        <div class="aloj-v2-field span-2"><label>Supervisões autorizadas *</label><select id="alojV2Supervisao" multiple size="6" required><option value="" disabled>Carregando...</option></select><small style="color:#718179;font-size:10px;line-height:1.35">Selecione uma ou mais supervisões. Use Ctrl (Windows) ou Cmd (Mac) para marcar opções separadas.</small></div>
         <div class="aloj-v2-field span-2"><label>Responsável</label><input id="alojV2Responsavel"></div><div class="aloj-v2-field"><label>Contato</label><input id="alojV2Contato" placeholder="Telefone ou WhatsApp"></div>
         <div class="aloj-v2-field"><label>Aluguel mensal (R$)</label><input id="alojV2Aluguel" type="number" min="0" step="0.01"></div><div class="aloj-v2-field"><label>Capacidade</label><input id="alojV2Capacidade" type="number" min="0" step="1"></div>
         <div class="aloj-v2-field"><label>Quartos</label><input id="alojV2Quartos" type="number" min="0" step="1"></div><div class="aloj-v2-field"><label>Prioridade</label><select id="alojV2Prioridade"><option value="NORMAL">Normal</option><option value="PREFERENCIAL">Preferencial</option><option value="EVITAR">Evitar</option></select></div>
