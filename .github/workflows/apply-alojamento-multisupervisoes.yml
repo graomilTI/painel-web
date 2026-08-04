@@ -6,12 +6,16 @@ on:
       - agent/alojamento-multisupervisoes
     paths:
       - .github/workflows/apply-alojamento-multisupervisoes.yml
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   apply:
+    if: github.head_ref == 'agent/alojamento-multisupervisoes' || github.ref_name == 'agent/alojamento-multisupervisoes'
     runs-on: ubuntu-latest
     steps:
       - name: Baixar branch
