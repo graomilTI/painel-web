@@ -202,6 +202,69 @@ function isProviderConfigurationError(message) {
     || text.includes('secret');
 }
 
+const VPS_OCR_FUNCTION = 'ocr-documento-local';
+const VPS_OCR_BUCKET = 'os-laudos';
+const VPS_OCR_POLL_TIMEOUT_MS = 45000;
+const OCR_PROMPT_ABERTURA = 'Leia esta solicitação de abertura de O.S. logística e devolva todo o texto visível.';
+
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+async function uploadForVpsOcr(prepared) {
+  const ext = prepared.tipo === 'pdf' ? 'pdf' : 'jpg';
+  const path = `abertura-os-ocr/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(VPS_OCR_BUCKET).upload(path, prepared.blob, {
+    upsert: true,
+    contentType: prepared.blob.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(VPS_OCR_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function invokeVpsOcr(body) {
+  const { data, error } = await supabase.functions.invoke(VPS_OCR_FUNCTION, { body });
+  if (error) throw new Error(await readFunctionError(error));
+  if (data?.error) throw new Error(data.error);
+  return data || {};
+}
+
+// Leitor local (PaddleOCR) já instalado no VPS, reaproveitando a mesma fila
+// assíncrona de Logística > O.S. > Conferências (document_type='texto_livre'
+// pula a exigência de achar placa, que só faz sentido pra cargas). Sem custo
+// por página e sem enviar o documento pra fora — por isso é o primeiro
+// caminho tentado, antes do provedor online (Groq) e do OCR local no
+// navegador. Se o worker do VPS estiver offline ou demorar mais que
+// VPS_OCR_POLL_TIMEOUT_MS, cai pro próximo provedor da cadeia.
+async function tryVpsOcr(prepared, fileName, onProgress) {
+  const url = await uploadForVpsOcr(prepared);
+  let state = await invokeVpsOcr({
+    action: 'submit',
+    url,
+    tipo: prepared.tipo,
+    document_type: 'texto_livre',
+    instrucao: OCR_PROMPT_ABERTURA,
+  });
+  if (state.worker_online === false) throw new Error('O worker PaddleOCR do VPS está offline.');
+
+  const jobId = Number(state.job_id);
+  if (!Number.isInteger(jobId)) throw new Error('O servidor não devolveu o job do OCR local.');
+  const startedAt = Date.now();
+
+  while (state.status !== 'CONCLUIDO') {
+    if (['ERRO', 'CANCELADO'].includes(String(state.status))) {
+      throw new Error(state.error || 'Falha no OCR local do VPS.');
+    }
+    if (Date.now() - startedAt > VPS_OCR_POLL_TIMEOUT_MS) {
+      throw new Error('O OCR local do VPS demorou demais.');
+    }
+    onProgress?.(`lendo no servidor (PaddleOCR) · ${Math.round(Number(state.progress || 0))}%`);
+    await sleep(Number(state.poll_after_ms || 2000));
+    state = await invokeVpsOcr({ action: 'status', job_id: jobId });
+  }
+
+  return { texto: state.raw_text || '', campos: {}, provider: 'paddleocr-vps' };
+}
+
 async function tryOnlineOcr(prepared, fileName) {
   if (onlineProviderUnavailable) return null;
 
@@ -251,7 +314,16 @@ async function processFile(file) {
   try {
     let result = null;
 
-    if (!onlineProviderUnavailable && prepared) {
+    if (prepared) {
+      try {
+        setStatus(`${file.name} · tentando leitura no servidor (PaddleOCR)`, 'loading');
+        result = await tryVpsOcr(prepared, file.name, (msg) => setStatus(`${file.name} · ${msg}`, 'loading'));
+      } catch (error) {
+        console.warn('[logistica-abertura-upload] OCR do VPS indisponível; tentando outro provedor.', error);
+      }
+    }
+
+    if (!result?.texto && !onlineProviderUnavailable && prepared) {
       try {
         setStatus(`${file.name} · tentando leitura automática`, 'loading');
         result = await tryOnlineOcr(prepared, file.name);
@@ -286,7 +358,8 @@ async function processFile(file) {
       return;
     }
 
-    const localLabel = result?.provider === 'tesseract-browser' ? ' · leitura local + IA' : ' · IA';
+    const localLabel = result?.provider === 'paddleocr-vps' ? ' · PaddleOCR (servidor) + IA'
+      : result?.provider === 'tesseract-browser' ? ' · leitura local + IA' : ' · IA';
     setStatus(`${file.name} · ${filled} campo${filled === 1 ? '' : 's'} preenchido${filled === 1 ? '' : 's'}${localLabel}. Confira antes de enviar.`, 'ok');
   } catch (error) {
     console.error('[logistica-abertura-upload]', { error, onlineError });

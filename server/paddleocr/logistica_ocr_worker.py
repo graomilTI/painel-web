@@ -581,6 +581,11 @@ def handle_job(db: SupabaseRest, processor: PaddleProcessor, worker_id: str, job
     job_id = int(job["id"])
     file_type = str(job.get("file_type") or "").lower()
     document_url = str(job.get("document_url") or "")
+    # "cargas" (padrão, Pré-Conferência de O.S.) exige achar ao menos 1 placa
+    # pra considerar sucesso. "texto_livre" (ex.: leitura do print de
+    # solicitação na Abertura de O.S.) não tem placa nenhuma pra achar — só
+    # interessa o texto reconhecido em si.
+    document_type = str(job.get("document_type") or "cargas").lower()
     max_bytes = int(os.getenv("OCR_MAX_FILE_MB", "100")) * 1024 * 1024
     started_monotonic = time.monotonic()
 
@@ -622,8 +627,10 @@ def handle_job(db: SupabaseRest, processor: PaddleProcessor, worker_id: str, job
         raw_text = "\n\n".join(f"--- Página {page['pagina']} ---\n{page['texto']}" for page in raw_pages)
         elapsed_ms = round((time.monotonic() - started_monotonic) * 1000)
 
-        if not merged:
+        if document_type == "cargas" and not merged:
             raise RuntimeError("O PaddleOCR leu o documento, mas não identificou nenhuma placa válida.")
+        if document_type == "texto_livre" and not raw_text.strip():
+            raise RuntimeError("O PaddleOCR não reconheceu nenhum texto no documento.")
 
         db.update_job(
             job_id,

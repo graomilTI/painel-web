@@ -10,6 +10,9 @@ const ALLOWED_MODULES = new Set([
   "logistica_os",
   "logistica_adm",
   "logistica_conferencias",
+  // Página do Gestor (logistica.html, aba Abrir OS) usa este código —
+  // ver menuConfig.js:34 — diferente do "logistica_os" da tela do ADM.
+  "logistica_gestor",
 ]);
 const ALLOWED_TYPES = new Set(["jpg", "jpeg", "png", "gif", "webp", "pdf"]);
 const MAX_INSTRUCTION_LENGTH = 3000;
@@ -30,6 +33,7 @@ type JobRow = {
   numero_os: string | null;
   document_url: string;
   file_type: string;
+  document_type: "cargas" | "texto_livre";
   status: "PENDENTE" | "PROCESSANDO" | "CONCLUIDO" | "ERRO" | "CANCELADO";
   progress: number;
   page_current: number | null;
@@ -37,6 +41,7 @@ type JobRow = {
   attempts: number;
   worker_id: string | null;
   result: Record<string, unknown> | null;
+  raw_text: string | null;
   error: string | null;
   created_at: string;
   started_at: string | null;
@@ -182,6 +187,10 @@ function publicJob(job: JobRow, worker: Awaited<ReturnType<typeof workerState>>)
   if (job.status === "CONCLUIDO") {
     payload.resultado = job.result ?? { cargas: [] };
     payload.texto = JSON.stringify(job.result ?? { cargas: [] });
+    // raw_text é o texto bruto reconhecido pelo PaddleOCR, independente do
+    // document_type — jobs "texto_livre" (Abertura de O.S.) usam isso, não
+    // "texto"/"resultado" (que são específicos da estrutura de cargas).
+    payload.raw_text = job.raw_text || "";
   }
   if (job.status === "ERRO") payload.error = job.error || "Falha não especificada no worker local.";
   if (job.status === "CANCELADO") payload.error = "Processamento cancelado.";
@@ -192,6 +201,7 @@ async function submitJob(client: SupabaseClient, auth: AuthResult, body: Record<
   const url = String(body.url ?? "").trim();
   const fileType = String(body.tipo ?? "").toLowerCase().trim();
   const instruction = String(body.instrucao ?? "").trim();
+  const documentType = normalize(body.document_type) === "texto_livre" ? "texto_livre" : "cargas";
 
   if (!url) return json({ error: "Envie a URL do relatório.", code: "DOCUMENT_MISSING", request_id: requestId }, 400);
   if (!isAllowedDocumentUrl(url)) {
@@ -229,6 +239,7 @@ async function submitJob(client: SupabaseClient, auth: AuthResult, body: Record<
     numero_os: body.numero_os == null ? null : String(body.numero_os),
     document_url: url,
     file_type: fileType,
+    document_type: documentType,
     instruction: instruction || null,
     status: "PENDENTE",
     priority: Number.isFinite(Number(body.priority)) ? Math.max(0, Math.min(1000, Number(body.priority))) : 100,
