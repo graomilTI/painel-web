@@ -164,17 +164,24 @@ function buildRulesForStaff(args: {
   const rules: Record<string, unknown>[] = [];
   const { staff, linkKeys, alimentacao, deslocamento, extras, configByKey } = args;
 
-  const requireConfig = (key: string, selected: boolean, overrideValue?: number | null) => {
+  const requireConfig = (
+    key: string,
+    selected: boolean,
+    overrideValue?: number | null,
+    allowZero = false,
+  ) => {
     if (!selected) return;
     const config = configByKey.get(key);
     if (!config || config.ativo !== true || !clean(config.tipo_grm)) {
       pendingConfig.push(key);
       return;
     }
-    const value = overrideValue != null && Number(overrideValue) > 0
-      ? Number(overrideValue)
-      : Number(config.valor_padrao ?? 0);
-    if (!(value > 0)) {
+    const overrideNumber = Number(overrideValue);
+    const hasValidOverride = overrideValue != null
+      && Number.isFinite(overrideNumber)
+      && (allowZero ? overrideNumber >= 0 : overrideNumber > 0);
+    const value = hasValidOverride ? overrideNumber : Number(config.valor_padrao ?? 0);
+    if (!Number.isFinite(value) || (allowZero ? value < 0 : !(value > 0))) {
       pendingConfig.push(`${key}:VALOR`);
       return;
     }
@@ -192,10 +199,15 @@ function buildRulesForStaff(args: {
   const des = sourceRowForStaff(deslocamento, staff, linkKeys);
   const desKey = configKeyDeslocamento(des?.tipo_deslocamento);
   const displacementValue = Number(des?.valor ?? 0);
-  // Seleções de deslocamento podem existir antes do cálculo do valor. Sem
-  // limite monetário não há regra segura a publicar no Caixa Operacional.
-  if (desKey && displacementValue > 0) {
-    requireConfig(desKey, true, displacementValue);
+  if (desKey) {
+    // Reembolso KM deve abrir a categoria mesmo antes de o valor calculado
+    // estar disponível; o GRM aceita a regra inicial com limite zero.
+    requireConfig(
+      desKey,
+      true,
+      displacementValue,
+      desKey === 'DESLOCAMENTO_REEMBOLSO_KM',
+    );
   }
 
   const cpf = digits(staff.cpf);
@@ -221,8 +233,11 @@ function buildRulesForStaff(args: {
     );
     if (key === 'EXTRA_OUTROS') continue;
     const extraValue = Number(extra.valor ?? 0);
-    // Linhas zeradas são placeholders visuais, não autorizações financeiras.
-    if (extraValue > 0) requireConfig(key, true, extraValue);
+    // Lavanderia também deve abrir mesmo quando o gestor ainda não informou
+    // valor. As demais categorias continuam exigindo limite positivo.
+    if (extraValue > 0 || key === 'EXTRA_LAVANDERIA') {
+      requireConfig(key, true, extraValue, key === 'EXTRA_LAVANDERIA');
+    }
   }
 
   return { rules: canonicalRules(rules), pendingConfig: [...new Set(pendingConfig)] };
