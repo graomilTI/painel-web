@@ -182,6 +182,7 @@ function injectCleanLayoutStyles() {
     .conf-row-actions button[data-action="PENDENCIA"]{background:rgba(239,68,68,.09)!important;border-color:rgba(248,113,113,.17)!important;color:#ff7272!important}
     .conf-row-actions button[data-action="EM_ANALISE"]{display:none!important}
     .conf-producao-sem{color:#ff6b6b!important}
+    .conf-grm-sync{display:inline-block!important;width:6px!important;height:6px!important;border-radius:50%!important;background:#34d399!important;margin-left:7px!important;vertical-align:middle!important;box-shadow:0 0 0 2px rgba(52,211,153,.15)!important;cursor:help!important}
     .conf-table td:nth-last-child(2){font-weight:700!important}
     @media(max-width:1180px){
       .conf-filters{grid-template-columns:repeat(2,minmax(180px,1fr))!important}
