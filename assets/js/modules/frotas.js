@@ -999,6 +999,8 @@
     state.records = mapped.length ? mapped : [{ data: '', velocidade: '' }];
     renderRecords(root);
     renderImportedExcessos(root);
+    const editModal = root.querySelector('[data-edit-modal]');
+    if (editModal) editModal.hidden = false;
     toast('Registros importados aplicados na notificação. Revise e clique em Gerar ✉️.');
   }
 
@@ -2304,18 +2306,25 @@
                   <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
                   <p class="speed-hint">Ao clicar em uma sugestão, o painel considera automaticamente somente a maior velocidade de cada data.</p>
                 </div>
-                <h3>Dados da notificação</h3>
-                <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
-                <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
-                <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
-                <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
-                <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
-                <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar e copiar mensagem</button><p class="speed-hint">Depois de gerar, a sugestão fica marcada como <strong>GERADA/COPIADA</strong> para não confundir na sequência.</p></div>
-                <div class="speed-divider"></div>
-                <h3>Mensagem gerada</h3>
-                <textarea class="speed-input speed-textarea speed-message small" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea>
               </div>
             </div>
+          </div>
+        </div>
+        <div class="speed-modal-overlay" data-edit-modal hidden>
+          <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Editar notificação">
+            <div class="speed-modal-head">
+              <div><h3>Dados da notificação</h3><span class="speed-step-pill">maior velocidade por data</span></div>
+              <button class="speed-modal-close" type="button" data-edit-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
+            </div>
+            <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
+            <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
+            <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
+            <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
+            <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
+            <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar e copiar mensagem</button><p class="speed-hint">Depois de gerar, a sugestão fica marcada como <strong>GERADA/COPIADA</strong> para não confundir na sequência.</p></div>
+            <div class="speed-divider"></div>
+            <h3>Mensagem gerada</h3>
+            <textarea class="speed-input speed-textarea speed-message small" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea>
           </div>
         </div>
         <button class="speed-fab" type="button" data-open-prints-modal title="Anexar prints" aria-label="Anexar prints">${ICO_PAPERCLIP} Anexar prints</button>
@@ -2359,6 +2368,11 @@
     container.querySelector('[data-open-prints-modal]')?.addEventListener('click', openPrintsModal);
     container.querySelector('[data-prints-modal-close]')?.addEventListener('click', closePrintsModal);
     printsModal?.addEventListener('click', (ev) => { if (ev.target === printsModal) closePrintsModal(); });
+
+    const editModal = container.querySelector('[data-edit-modal]');
+    const closeEditModal = () => { if (editModal) editModal.hidden = true; };
+    container.querySelector('[data-edit-modal-close]')?.addEventListener('click', closeEditModal);
+    editModal?.addEventListener('click', (ev) => { if (ev.target === editModal) closeEditModal(); });
 
     const importedSearchInput = container.querySelector('[data-imported-search]');
     const importedStatusSelect = container.querySelector('[data-imported-status-filter]');
