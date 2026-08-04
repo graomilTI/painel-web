@@ -1,15 +1,35 @@
 #!/usr/bin/env node
 'use strict';
 
-const AGENT_VERSION = 'V10-DATA';
+const AGENT_VERSION = 'V11-CATEGORIAS';
 
 require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
+// O cPanel ainda executa Node 16. Versões recentes do supabase-js esperam as
+// classes Fetch globais que só vêm nativas no Node 18+. O pacote já é
+// dependência transitiva do próprio Supabase e mantém o agente compatível sem
+// alterar o runtime dos demais workers.
+if (typeof globalThis.Headers === 'undefined') {
+  let nodeFetch;
+  try {
+    nodeFetch = require('node-fetch');
+  } catch (_) {
+    nodeFetch = require(require('path').join(
+      __dirname,
+      'node_modules/puppeteer/node_modules/node-fetch',
+    ));
+  }
+  globalThis.fetch = nodeFetch;
+  globalThis.Headers = nodeFetch.Headers;
+  globalThis.Request = nodeFetch.Request;
+  globalThis.Response = nodeFetch.Response;
+}
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
@@ -63,6 +83,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
+  },
+  realtime: {
+    transport: WebSocket,
   },
 });
 
@@ -1466,9 +1489,14 @@ async function chooseRuleType(page, rowIndex, typeText) {
       norm(option.text) === norm(typeText));
 
     if (!match) {
-      throw new Error(
-        `Tipo de despesa "${typeText}" não existe no seletor do GRM.`,
+      const error = new Error(
+        `Tipo de despesa "${typeText}" não existe no seletor do GRM. `
+          + `Opções disponíveis: ${options.map((option) => option.text).filter(Boolean).join(' | ') || 'nenhuma'}.`,
       );
+      error.code = 'CATEGORIA_NAO_MAPEADA';
+      error.requestedType = typeText;
+      error.availableTypes = options.map((option) => option.text).filter(Boolean);
+      throw error;
     }
 
     await page.select(descriptor.selector, match.value);
@@ -1500,10 +1528,11 @@ async function chooseRuleType(page, rowIndex, typeText) {
   });
 
   let selected = false;
+  let availableTypes = [];
   for (let attempt = 0; attempt < 4 && !selected; attempt += 1) {
     await sleep(attempt === 0 ? 350 : 500);
 
-    selected = await page.evaluate((expected) => {
+    const lookup = await page.evaluate((expected) => {
       const normalize = (value) =>
         String(value || '')
           .normalize('NFD')
@@ -1521,17 +1550,40 @@ async function chooseRuleType(page, rowIndex, typeText) {
       const exact = options.find((el) =>
         normalize(el.textContent) === normalize(expected));
 
-      if (!exact) return false;
+      const labels = [...new Set(options
+        .map((el) => String(el.textContent || '').trim())
+        .filter(Boolean))];
+
+      if (!exact) return { selected: false, labels };
 
       exact.click();
-      return true;
+      return { selected: true, labels };
     }, typeText);
+
+    selected = lookup.selected;
+    availableTypes = lookup.labels;
   }
 
   if (!selected) {
-    throw new Error(
-      `Opção exata "${typeText}" não apareceu no dropdown do GRM.`,
+    const error = new Error(
+      `Opção exata "${typeText}" não apareceu no dropdown do GRM. `
+        + `Opções visíveis: ${availableTypes.join(' | ') || 'nenhuma'}.`,
     );
+    error.code = 'CATEGORIA_NAO_MAPEADA';
+    error.requestedType = typeText;
+    error.availableTypes = availableTypes;
+    throw error;
+  }
+}
+
+// Confirma todos os nomes no seletor antes de remover qualquer regra atual.
+// As linhas criadas aqui ficam somente no formulário e nunca são salvas: em
+// sucesso, deleteAllCashRules() as remove junto com as linhas antigas; em erro,
+// o modal é fechado e o cadastro do funcionário permanece intacto no GRM.
+async function preflightDesiredRuleTypes(page, desired, currentCount) {
+  for (let index = 0; index < desired.length; index += 1) {
+    await addCashRuleRow(page);
+    await chooseRuleType(page, currentCount + index, desired[index].tipo_despesa);
   }
 }
 
@@ -1984,6 +2036,12 @@ async function applyEmployeeRules(page, job) {
     };
   }
 
+  await preflightDesiredRuleTypes(
+    page,
+    desired,
+    inspection.currentRules.length,
+  );
+
   await deleteAllCashRules(page);
 
   for (let index = 0; index < desired.length; index += 1) {
@@ -2133,14 +2191,17 @@ async function markSuccess(job, result, screenshot) {
 async function markFailure(job, error, screenshot) {
   const attempts = Number(job.tentativas || 0);
   const maxAttempts = Number(job.max_tentativas || 3);
-  const exhausted = attempts >= maxAttempts;
+  const categoryNotMapped = error.code === 'CATEGORIA_NAO_MAPEADA';
+  const exhausted = categoryNotMapped || attempts >= maxAttempts;
 
-  const status = exhausted && error.code === 'DIVERGENTE'
+  const status = categoryNotMapped
+    || (exhausted && error.code === 'DIVERGENTE')
     ? 'DIVERGENTE'
     : 'ERRO';
 
   await updateQueue(job.id, {
     status,
+    tentativas: categoryNotMapped ? maxAttempts : attempts,
     locked_at: null,
     finalizado_em: exhausted ? new Date().toISOString() : null,
     ultimo_erro: error.message,
@@ -2150,6 +2211,8 @@ async function markFailure(job, error, screenshot) {
       stack: String(error.stack || '').slice(0, 8000),
       regras_antes: error.currentRules || null,
       regras_confirmadas: error.verifiedRules || null,
+      categoria_solicitada: error.requestedType || null,
+      categorias_disponiveis: error.availableTypes || null,
     },
   });
 
@@ -2264,6 +2327,12 @@ async function processDryRun(page) {
 
       const inspection = await inspectEmployee(page, job);
 
+      await preflightDesiredRuleTypes(
+        page,
+        desiredRules(job.regras),
+        inspection.currentRules.length,
+      );
+
       screenshot = DEBUG
         ? await takeScreenshot(page, job, 'dry-run')
         : null;
@@ -2292,6 +2361,9 @@ async function processDryRun(page) {
         diagnostico: {
           dry_run: true,
           erro: error.message,
+          code: error.code || null,
+          categoria_solicitada: error.requestedType || null,
+          categorias_disponiveis: error.availableTypes || null,
           stack: String(error.stack || '').slice(0, 8000),
         },
         screenshot_path: screenshot,
@@ -2319,6 +2391,7 @@ async function processDryRun(page) {
 async function processReal(page) {
   let processed = 0;
   let errors = 0;
+  let configurationWarnings = 0;
 
   for (let index = 0; index < MAX_PER_RUN; index += 1) {
     const job = await claimNext();
@@ -2379,14 +2452,18 @@ async function processReal(page) {
         } e verificadas.`,
       );
     } catch (error) {
-      errors += 1;
+      if (error.code === 'CATEGORIA_NAO_MAPEADA') {
+        configurationWarnings += 1;
+      } else {
+        errors += 1;
+      }
 
       screenshot = await takeScreenshot(page, job, 'erro');
 
       await markFailure(job, error, screenshot);
 
       log(
-        'ERROR',
+        error.code === 'CATEGORIA_NAO_MAPEADA' ? 'WARN' : 'ERROR',
         `CPF ${job.cpf}: ${error.message}`,
       );
 
@@ -2405,6 +2482,7 @@ async function processReal(page) {
   return {
     processed,
     errors,
+    configurationWarnings,
   };
 }
 
@@ -2447,7 +2525,7 @@ async function main() {
       : await processReal(page);
 
     log(
-      result.errors ? 'ERROR' : 'SUCCESS',
+      result.errors ? 'ERROR' : (result.configurationWarnings ? 'WARN' : 'SUCCESS'),
       'Agente concluído.',
       result,
     );

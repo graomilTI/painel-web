@@ -55,10 +55,6 @@ function regionalMatches(row: Record<string, unknown>, regional: string): boolea
   return fields.some((field) => field === target || field.includes(target) || target.includes(field));
 }
 
-function todaySaoPaulo(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-}
-
 function chunk<T>(rows: T[], size = 300): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
@@ -124,11 +120,14 @@ function sourceRowForStaff(
   return index.byName.get(norm(staff.nome)) || null;
 }
 
-function configKeyExtra(value: unknown): string {
+function configKeyExtra(value: unknown, description?: unknown): string {
   const key = norm(value);
   if (key === 'RECARGA') return 'EXTRA_RECARGA';
   if (key === 'LAVANDERIA') return 'EXTRA_LAVANDERIA';
   if (key === 'LAVAGEM DE VEICULO') return 'EXTRA_LAVAGEM_VEICULO';
+  if (key === 'OUTROS' && norm(description).includes('COMBUSTIVEL')) {
+    return 'EXTRA_COMBUSTIVEL';
+  }
   return 'EXTRA_OUTROS';
 }
 
@@ -184,12 +183,20 @@ function buildRulesForStaff(args: {
 
   const ali = sourceRowForStaff(alimentacao, staff, linkKeys);
   requireConfig('ALIMENTACAO_CAFE', ali?.cafe === true);
-  requireConfig('ALIMENTACAO_ALMOCO', ali?.almoco === true);
+  // A própria Programação e a Conferência exibem almoço=SIM quando ainda não
+  // existe linha em programacao_alimentacao. A publicação precisa repetir o
+  // mesmo padrão para não mostrar uma despesa que nunca chega ao GRM.
+  requireConfig('ALIMENTACAO_ALMOCO', ali ? ali.almoco !== false : true);
   requireConfig('ALIMENTACAO_JANTA', ali?.janta === true);
 
   const des = sourceRowForStaff(deslocamento, staff, linkKeys);
   const desKey = configKeyDeslocamento(des?.tipo_deslocamento);
-  if (desKey) requireConfig(desKey, true, Number(des?.valor ?? 0));
+  const displacementValue = Number(des?.valor ?? 0);
+  // Seleções de deslocamento podem existir antes do cálculo do valor. Sem
+  // limite monetário não há regra segura a publicar no Caixa Operacional.
+  if (desKey && displacementValue > 0) {
+    requireConfig(desKey, true, displacementValue);
+  }
 
   const cpf = digits(staff.cpf);
   const name = norm(staff.nome);
@@ -208,9 +215,14 @@ function buildRulesForStaff(args: {
     // necessidade fora das categorias padrão; não existe categoria
     // correspondente no GRM, então essa seleção nunca gera regra de Caixa
     // Operacional nem bloqueia a publicação da regional.
-    const key = configKeyExtra(extra.tipo_despesa);
+    const key = configKeyExtra(
+      extra.tipo_despesa,
+      `${clean(extra.descricao)} ${clean(extra.observacao)}`,
+    );
     if (key === 'EXTRA_OUTROS') continue;
-    requireConfig(key, true, Number(extra.valor ?? 0));
+    const extraValue = Number(extra.valor ?? 0);
+    // Linhas zeradas são placeholders visuais, não autorizações financeiras.
+    if (extraValue > 0) requireConfig(key, true, extraValue);
   }
 
   return { rules: canonicalRules(rules), pendingConfig: [...new Set(pendingConfig)] };
@@ -296,14 +308,16 @@ Deno.serve(async (req) => {
       if (name) staffByName.set(name, [...(staffByName.get(name) || []), staff]);
     }
 
-    // Uma liberação é mantida quando houver qualquer O.S. ATENDER de hoje em
-    // diante, mesmo que ela pertença a outra regional. Assim uma regional não
-    // apaga a regra necessária para outra.
+    // Uma liberação só é mantida quando houver uma O.S. ATENDER na mesma data
+    // publicada, mesmo que ela pertença a outra regional. Uma O.S. futura não
+    // pode preservar despesas antigas de quem ficou sem alocação no dia que o
+    // gestor acabou de editar.
+    const groupDates = [...new Set([...groups.values()].map((group) => group.date))];
     const { data: globalOsRows, error: globalOsError } = await service
       .from('operacional_os')
-      .select('id')
+      .select('id,data_os')
       .eq('status_gestor', 'ATENDER')
-      .gte('data_os', todaySaoPaulo())
+      .in('data_os', groupDates)
       .limit(20000);
     if (globalOsError) throw globalOsError;
     const globalOsIds = (globalOsRows || []).map((row) => clean(row.id)).filter(Boolean);
@@ -332,10 +346,16 @@ Deno.serve(async (req) => {
       return { cpf: '', error: 'COLABORADOR_NAO_LOCALIZADO' };
     };
 
-    const globalCpfsWithOs = new Set<string>();
+    const osDateById = new Map(
+      (globalOsRows || []).map((row) => [clean(row.id), clean(row.data_os).slice(0, 10)]),
+    );
+    const cpfsWithOsByDate = new Map<string, Set<string>>();
     for (const link of globalLinks) {
       const resolved = resolveLinkCpf(link);
-      if (resolved.cpf) globalCpfsWithOs.add(resolved.cpf);
+      const date = osDateById.get(clean(link.os_id));
+      if (!resolved.cpf || !date) continue;
+      if (!cpfsWithOsByDate.has(date)) cpfsWithOsByDate.set(date, new Set());
+      cpfsWithOsByDate.get(date)!.add(resolved.cpf);
     }
 
     const overall = {
@@ -351,6 +371,7 @@ Deno.serve(async (req) => {
     };
 
     for (const group of groups.values()) {
+      const cpfsWithOsOnDate = cpfsWithOsByDate.get(group.date) || new Set<string>();
       const regionalStaff = allStaff.filter((staff) => regionalMatches(staff, group.regional));
       const regionalStaffByCpf = new Map(
         regionalStaff
@@ -472,7 +493,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (!globalCpfsWithOs.has(cpf)) {
+        if (!cpfsWithOsOnDate.has(cpf)) {
           const rules: ReturnType<typeof canonicalRules> = [];
           const hash = await sha256({ cpf, action: 'LIMPAR', rules });
           desired.set(cpf, { staff, action: 'LIMPAR', rules, hash });
@@ -524,12 +545,34 @@ Deno.serve(async (req) => {
         (data || []).forEach((row) => existingByCpf.set(clean(row.cpf), row));
       }
 
+      // status_aplicacao sozinho não é confiável: um item da fila pode ter sido
+      // marcado IGNORADO_VERSAO_SUPERADA (ou similar) sem que o estado do
+      // colaborador tenha sido atualizado, deixando status_aplicacao=PENDENTE
+      // "mentindo" que ainda existe um job vivo. Por isso confirmamos que hoje
+      // existe mesmo um item PENDENTE/PROCESSANDO com esse hash antes de pular.
+      const liveHashesByCpf = new Map<string, Set<string>>();
+      for (const cpfChunk of chunk(cpfs)) {
+        const { data, error } = await service
+          .from('grm_despesas_fila')
+          .select('cpf,hash_desejado')
+          .in('cpf', cpfChunk)
+          .in('status', ['PENDENTE', 'PROCESSANDO']);
+        if (error) throw error;
+        (data || []).forEach((row) => {
+          const key = clean(row.cpf);
+          if (!liveHashesByCpf.has(key)) liveHashesByCpf.set(key, new Set());
+          liveHashesByCpf.get(key)!.add(clean(row.hash_desejado));
+        });
+      }
+
       for (const [cpf, item] of desired) {
         const previous = existingByCpf.get(cpf);
         const alreadyApplied = previous?.hash_aplicado === item.hash
           && ['APLICADO', 'LIMPO'].includes(clean(previous?.status_aplicacao));
+        const hasLiveQueueItem = liveHashesByCpf.get(cpf)?.has(item.hash) ?? false;
         const alreadyDesired = previous?.hash_desejado === item.hash
-          && ['PENDENTE', 'PROCESSANDO'].includes(clean(previous?.status_aplicacao));
+          && ['PENDENTE', 'PROCESSANDO'].includes(clean(previous?.status_aplicacao))
+          && hasLiveQueueItem;
 
         if (alreadyApplied || alreadyDesired) {
           overall.sem_alteracao += 1;
