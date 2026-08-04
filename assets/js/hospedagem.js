@@ -981,7 +981,7 @@ export function renderContent(content, userContext) {
     const minhasRegionais = getMinhasRegionais();
     const { data, error } = await supabase
       .from('hospedagem_alojamentos')
-      .select('id,nome,cidade,uf,capacidade,status,supervisao')
+      .select('*')
       .neq('status', 'INATIVO')
       .order('cidade', { ascending: true })
       .order('nome', { ascending: true });
@@ -990,8 +990,12 @@ export function renderContent(content, userContext) {
       return;
     }
     const todos = data || [];
+    const supervisoesDoAlojamento = (alojamento) => [...new Set([
+      ...(Array.isArray(alojamento.supervisoes) ? alojamento.supervisoes : []),
+      alojamento.supervisao,
+    ].map(normalizeText).filter(Boolean))];
     state.alojamentos = minhasRegionais.length
-      ? todos.filter((a) => minhasRegionais.includes(normalizeText(a.supervisao)))
+      ? todos.filter((alojamento) => supervisoesDoAlojamento(alojamento).some((supervisao) => minhasRegionais.includes(supervisao)))
       : todos;
     renderAlojamentoSelect();
     await carregarOcupantesAlojamentos();
