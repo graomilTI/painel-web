@@ -59,7 +59,7 @@ function setAddEditorOpen(box, open) {
   if (editor) {
     editor.hidden = !open;
     if (toggle) {
-      toggle.textContent = open ? '− Fechar seleção' : '＋ Adicionar colaborador';
+      toggle.textContent = open ? '− Fechar seleção' : (toggle.dataset.openLabel || '＋ Adicionar colaborador');
       toggle.setAttribute('aria-expanded', String(open));
     }
     if (open) {

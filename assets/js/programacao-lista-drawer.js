@@ -231,9 +231,6 @@ function injectStyles() {
     .pld-add-box{display:flex;gap:8px;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(15,23,42,.72);border-radius:11px;padding:8px;margin-bottom:12px}
     .pld-add-box select{flex:1 1 auto;height:34px;border:1px solid rgba(56,189,248,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:0 8px;font-size:12px;color-scheme:dark}
     .pld-add-box button{height:34px;padding:0 12px;border-radius:8px;border:1px solid rgba(56,189,248,.42);background:rgba(14,116,144,.2);color:#bfdbfe;font-size:11.5px;font-weight:850;cursor:pointer}
-    .pld-add-box-frota{border-color:rgba(217,119,6,.32);margin-top:-4px}
-    .pld-add-box-frota select{border-color:rgba(217,119,6,.35)}
-    .pld-add-box-frota button{border-color:rgba(217,119,6,.5);background:rgba(180,83,9,.2);color:#fde68a}
     .pld-loading{display:flex;align-items:center;gap:10px;color:#94a3b8;padding:18px;font-size:12.5px}
     .pld-spinner{width:20px;height:20px;border-radius:999px;border:3px solid rgba(111,208,165,.18);border-top-color:#6fd0a5;flex:0 0 auto;animation:pldSpin .75s linear infinite}
     @keyframes pldSpin{to{transform:rotate(360deg)}}
@@ -611,7 +608,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
             <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
             <button type="button" data-add-colab-confirm>Adicionar</button>
           </div>
-          <div class="pld-add-box pld-add-box-frota" data-add-frota-box>
+          <div class="pld-add-box" data-add-frota-box>
             <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
             <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
           </div>
@@ -635,7 +632,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           <select data-add-colab-select><option value="">Escolha um colaborador…</option></select>
           <button type="button" data-add-colab-confirm>Adicionar</button>
         </div>
-        <div class="pld-add-box pld-add-box-frota" data-add-frota-box>
+        <div class="pld-add-box" data-add-frota-box>
           <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
           <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
         </div>

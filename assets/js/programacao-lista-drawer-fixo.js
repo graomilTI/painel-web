@@ -392,11 +392,17 @@ function ensureDesktopPanel(shell, overlayRoot) {
   if (!drawer.innerHTML.trim()) drawer.innerHTML = fixedPlaceholderHtml();
 }
 
+// Colaborador e Frota usam a mesma caixa/patch — só mudam os atributos do
+// select/confirm e o texto do link recolhido.
+const ADD_BOX_VARIANTS = [
+  { selectAttr: 'data-add-colab-select', confirmAttr: 'data-add-colab-confirm', label: '＋ Adicionar colaborador' },
+  { selectAttr: 'data-add-frota-select', confirmAttr: 'data-add-frota-confirm', label: '＋ Adicionar Frota' },
+];
+
 function enhanceAddBoxes(root = document) {
   root.querySelectorAll('.pld-add-box:not([data-fixed-enhanced])').forEach((box) => {
-    const select = box.querySelector('[data-add-colab-select]');
-    const confirm = box.querySelector('[data-add-colab-confirm]');
-    if (!select || !confirm) return;
+    const variant = ADD_BOX_VARIANTS.find((v) => box.querySelector(`[${v.selectAttr}]`) && box.querySelector(`[${v.confirmAttr}]`));
+    if (!variant) return;
 
     box.dataset.fixedEnhanced = '1';
 
@@ -404,7 +410,8 @@ function enhanceAddBoxes(root = document) {
     toggle.type = 'button';
     toggle.className = 'pld-add-toggle';
     toggle.dataset.pldAddToggle = '1';
-    toggle.textContent = '＋ Adicionar colaborador';
+    toggle.dataset.openLabel = variant.label;
+    toggle.textContent = variant.label;
 
     const editor = document.createElement('div');
     editor.className = 'pld-add-editor';
@@ -497,7 +504,7 @@ document.addEventListener('click', (event) => {
   if (!editor) return;
 
   editor.hidden = !editor.hidden;
-  toggle.textContent = editor.hidden ? '＋ Adicionar colaborador' : '− Fechar seleção';
+  toggle.textContent = editor.hidden ? (toggle.dataset.openLabel || '＋ Adicionar colaborador') : '− Fechar seleção';
   if (!editor.hidden) editor.querySelector('select')?.focus();
 });
 
