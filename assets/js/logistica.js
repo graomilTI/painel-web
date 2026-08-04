@@ -242,8 +242,10 @@ async function loadAberturaRefs() {
   };
 
   safe(prod.data).forEach(r => {
+    // cliente_nacional é o único que deve alimentar "Contratante/Cliente" —
+    // cliente_regional (ex.: "AMAGGI EXP. E IMP. - GO") é o cliente nacional
+    // com a regional/filial já embutida no nome, não um cliente à parte.
     add(refs.clientes, r.cliente_nacional);
-    add(refs.clientes, r.cliente_regional);
     add(refs.filiais, r.cliente_final);
     add(refs.armazens, r.local_embarque);
     add(refs.locaisDestino, r.destino);
