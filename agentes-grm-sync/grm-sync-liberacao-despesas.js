@@ -542,6 +542,31 @@ async function clickEdit(page, cpf) {
 
     const searchRect = searchInput.getBoundingClientRect();
 
+    // Confirmado por diagnóstico real (CPF 00037200127, 2026-08-05): a barra
+    // pode reordenar ou ocultar botões conforme o tipo/status do colaborador,
+    // e o botão mais à esquerda às vezes é XLS, não Editar -- clicar nele só
+    // abre um tooltip e o agente trava esperando um modal que nunca abre.
+    // Excluímos aqui os wrappers de ações que já confirmamos NÃO serem
+    // Editar (algumas potencialmente destrutivas, como desativar), em vez de
+    // assumir posição fixa.
+    const NON_EDIT_WRAPPER_CLASSES = [
+      'act-staff-xls', 'act-staff-unavailable', 'act-checkin',
+      'act-operational-flow', 'staff-history', 'staff-act-deactivate',
+      'staff-act-upload', 'staff-act-add', 'staff-act-config',
+      'staff-act-filter', 'staff-act-search',
+    ];
+    const hasNonEditWrapper = (button) => {
+      let node = button;
+      while (node && node !== best.element) {
+        if (
+          typeof node.className === 'string'
+          && NON_EDIT_WRAPPER_CLASSES.some((cls) => node.className.includes(cls))
+        ) return true;
+        node = node.parentElement;
+      }
+      return false;
+    };
+
     const candidates = best.buttons
       .filter((button) =>
         !button.disabled
@@ -552,6 +577,7 @@ async function clickEdit(page, cpf) {
         return rect.right <= searchRect.left + 20
           && Math.abs(rect.top - searchRect.top) < 100;
       })
+      .filter((button) => !hasNonEditWrapper(button))
       .sort((a, b) =>
         a.getBoundingClientRect().left
         - b.getBoundingClientRect().left);
@@ -564,8 +590,9 @@ async function clickEdit(page, cpf) {
       };
     }
 
-    // Na interface atual, o primeiro botão ativo à esquerda do campo de
-    // busca é o lápis Editar. Os seguintes são XLS, mapa, banco etc.
+    // Dos botões restantes (já sem os wrappers conhecidos como não-Editar),
+    // o mais à esquerda continua sendo o candidato mais provável ao lápis
+    // Editar.
     const editButton = candidates[0];
 
     editButton.dataset.grmAgentEditButton = 'true';
@@ -632,6 +659,24 @@ async function clickEdit(page, cpf) {
       if (buttons.length >= 3) {
         const searchRect = searchInput.getBoundingClientRect();
 
+        const NON_EDIT_WRAPPER_CLASSES = [
+          'act-staff-xls', 'act-staff-unavailable', 'act-checkin',
+          'act-operational-flow', 'staff-history', 'staff-act-deactivate',
+          'staff-act-upload', 'staff-act-add', 'staff-act-config',
+          'staff-act-filter', 'staff-act-search',
+        ];
+        const hasNonEditWrapper = (button) => {
+          let node = button;
+          while (node && node !== toolbar) {
+            if (
+              typeof node.className === 'string'
+              && NON_EDIT_WRAPPER_CLASSES.some((cls) => node.className.includes(cls))
+            ) return true;
+            node = node.parentElement;
+          }
+          return false;
+        };
+
         const candidates = buttons
           .filter((button) =>
             !button.disabled
@@ -642,6 +687,7 @@ async function clickEdit(page, cpf) {
             return rect.right <= searchRect.left + 20
               && Math.abs(rect.top - searchRect.top) < 100;
           })
+          .filter((button) => !hasNonEditWrapper(button))
           .sort((a, b) =>
             a.getBoundingClientRect().left
             - b.getBoundingClientRect().left);
@@ -779,9 +825,21 @@ async function clickEdit(page, cpf) {
     };
   }, targetCpf);
 
+  const wrongButtonTooltip = (diagnostic.dialogs || [])
+    .map((dialog) => dialog.text)
+    .find((text) => /\bXLS\b/i.test(text) || /exportar/i.test(text));
+
+  const hint = wrongButtonTooltip
+    ? ` Provável causa: o clique caiu num botão diferente de Editar `
+      + `(tooltip visível: "${wrongButtonTooltip.slice(0, 120)}"). `
+      + 'A barra de ações deste colaborador pode ter Editar oculto/reordenado '
+      + 'no GRM; revisar NON_EDIT_WRAPPER_CLASSES em clickEdit().'
+    : '';
+
   throw new Error(
-    'Botão Editar da barra superior não abriu o funcionário. '
-    + `Diagnóstico: ${safeJson(diagnostic)}`,
+    'Botão Editar da barra superior não abriu o funcionário.'
+    + hint
+    + ` Diagnóstico: ${safeJson(diagnostic)}`,
   );
 }
 
