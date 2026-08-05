@@ -255,7 +255,7 @@ function injectMobileStyles() {
       }
 
       #pldShell .pld-filters-row > :first-child {
-        grid-column: 1 / -1 !important;
+        grid-column: auto !important;
       }
 
       #pldShell .pld-toggle {
@@ -699,7 +699,19 @@ function injectMobileStyles() {
     }
 
     body.mobile-gestor-mode #pldShell .pld-filters-row > :first-child {
-      grid-column: 1 / -1 !important;
+      grid-column: auto !important;
+    }
+
+    body.mobile-gestor-mode #pldShell .pld-filters-row input,
+    body.mobile-gestor-mode #pldShell .pld-filters-row select,
+    body.mobile-gestor-mode #pldShell .pld-filters-row .ssel-wrap,
+    body.mobile-gestor-mode #pldShell .pld-filters-row .ssel-input {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      height: 40px !important;
+      font-size: 11.5px !important;
+      text-overflow: ellipsis !important;
     }
 
     body.mobile-gestor-mode #pldShell .pld-count-row {
