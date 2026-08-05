@@ -6,6 +6,13 @@ function injectMobileStyles() {
   style.id = STYLE_ID;
   style.textContent = `
     @media (max-width: 900px) {
+      /* O redesign usa zoom:1.15 no desktop. Em celulares isso aumenta a
+         largura calculada de toda a aplicação e fazia a lista/nav parecerem
+         cortadas. O tamanho mobile já é definido abaixo, sem zoom global. */
+      .app-shell {
+        zoom: 1 !important;
+      }
+
       html, body {
         width: 100%;
         max-width: 100%;
@@ -104,6 +111,7 @@ function injectMobileStyles() {
         z-index: 45 !important;
         background: rgba(13, 13, 24, .98) !important;
         backdrop-filter: blur(14px) !important;
+        display: block !important;
       }
 
       body.mobile-gestor-mode .prog-toolbar {
@@ -111,21 +119,44 @@ function injectMobileStyles() {
         top: 0 !important;
       }
 
-      .prog-toolbar-row {
+      .prog-toolbar .prog-toolbar-row {
         display: grid !important;
         grid-template-columns: 1fr 1fr !important;
         gap: 10px !important;
         align-items: stretch !important;
       }
 
+      .prog-toolbar .prog-toolbar-row + .prog-toolbar-row {
+        margin-top: 10px !important;
+        padding-top: 10px !important;
+      }
+
       .prog-tfield-sup,
       .prog-tfield-search,
-      #progLoadContext,
       .prog-save-main {
         grid-column: 1 / -1 !important;
         width: 100% !important;
         max-width: none !important;
         flex: none !important;
+      }
+
+      .prog-toolbar #progLoadContext,
+      .prog-toolbar #progGerarPdf,
+      .prog-toolbar #progCompartilhar {
+        width: 100% !important;
+        min-width: 0 !important;
+        min-height: 44px !important;
+        margin: 0 !important;
+        padding: 0 10px !important;
+        font-size: 13px !important;
+        white-space: nowrap !important;
+      }
+
+      .prog-toolbar #progLoadContext { grid-column: 1 !important; }
+      .prog-toolbar #progCompartilhar { grid-column: 2 !important; }
+      .prog-toolbar #progGerarPdf {
+        grid-column: 1 / -1 !important;
+        order: initial !important;
       }
 
       .prog-tfield-date,
@@ -192,6 +223,122 @@ function injectMobileStyles() {
 
       .prog-list-card {
         margin-top: 10px !important;
+      }
+
+      /* Lista de O.S. do fluxo atual (lista + drawer). A implementação
+         desktop é uma tabela larga; no celular cada linha vira um cartão
+         sem alterar o DOM nem os listeners de clique. */
+      #pldShell,
+      #pldShell .pld-list-col,
+      #pldListaBody,
+      #pldShell .pld-table-wrap {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+      }
+
+      #pldShell .pld-filters {
+        gap: 10px !important;
+      }
+
+      #pldShell .pld-filters-row {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 8px !important;
+        width: 100% !important;
+      }
+
+      #pldShell .pld-filters-row > * {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+      }
+
+      #pldShell .pld-filters-row > :first-child {
+        grid-column: 1 / -1 !important;
+      }
+
+      #pldShell .pld-toggle {
+        white-space: normal !important;
+        line-height: 1.35 !important;
+        align-items: flex-start !important;
+      }
+
+      #pldShell .pld-table-wrap {
+        max-height: none !important;
+        overflow: visible !important;
+        border: 0 !important;
+        background: transparent !important;
+      }
+
+      #pldShell .pld-table,
+      #pldShell .pld-table tbody {
+        display: block !important;
+        width: 100% !important;
+      }
+
+      #pldShell .pld-table thead {
+        display: none !important;
+      }
+
+      #pldShell .pld-row {
+        position: relative !important;
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto !important;
+        gap: 8px 12px !important;
+        width: 100% !important;
+        margin-bottom: 9px !important;
+        padding: 13px 38px 13px 14px !important;
+        border: 1px solid rgba(52,211,153,.14) !important;
+        border-radius: 16px !important;
+        background: rgba(2,6,23,.34) !important;
+      }
+
+      #pldShell .pld-row td {
+        display: block !important;
+        width: auto !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+        overflow-wrap: anywhere !important;
+      }
+
+      #pldShell .pld-row td:nth-child(1),
+      #pldShell .pld-row td:nth-child(2),
+      #pldShell .pld-row td:nth-child(3) {
+        grid-column: 1 !important;
+      }
+
+      #pldShell .pld-row td:nth-child(4) {
+        grid-column: 2 !important;
+        grid-row: 1 / span 2 !important;
+        align-self: center !important;
+        text-align: right !important;
+      }
+
+      #pldShell .pld-row td:nth-child(5) {
+        position: absolute !important;
+        right: 13px !important;
+        top: 50% !important;
+        transform: translateY(-50%) !important;
+      }
+
+      #pldShell .pld-os-num { font-size: 16px !important; }
+      #pldShell .pld-cliente {
+        font-size: 13px !important;
+        line-height: 1.3 !important;
+      }
+      #pldShell .pld-local-uf { font-size: 11px !important; }
+      #pldShell .pld-rem {
+        max-width: 110px !important;
+        font-size: 12px !important;
+        color: #86efac !important;
+      }
+
+      #pldOverlayRoot .pld-drawer {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding: max(16px, env(safe-area-inset-top)) 16px calc(82px + env(safe-area-inset-bottom)) !important;
       }
 
       /* KPIs (Total filtrado, Na tela, Para atender...) só fazem sentido no desktop */
