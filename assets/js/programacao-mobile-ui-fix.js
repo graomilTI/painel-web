@@ -578,7 +578,7 @@ function injectMobileStyles() {
 
     body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row {
       display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
       gap: 9px !important;
       width: 100% !important;
       min-width: 0 !important;
@@ -595,14 +595,21 @@ function injectMobileStyles() {
 
     body.mobile-gestor-mode .prog-toolbar .prog-tfield-sup,
     body.mobile-gestor-mode .prog-toolbar .prog-tfield-date {
-      display: grid !important;
-      grid-template-columns: 82px minmax(0, 1fr) !important;
-      align-items: center !important;
-      gap: 8px !important;
-      grid-column: 1 / -1 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 5px !important;
       width: 100% !important;
       min-width: 0 !important;
       max-width: none !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar .prog-tfield-sup {
+      grid-column: 1 / span 3 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar .prog-tfield-date {
+      grid-column: 4 / span 3 !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar .prog-tfield label {
@@ -620,15 +627,14 @@ function injectMobileStyles() {
     }
 
     body.mobile-gestor-mode .prog-toolbar #progLoadContext,
+    body.mobile-gestor-mode .prog-toolbar #progGerarPdf,
     body.mobile-gestor-mode .prog-toolbar #progCompartilhar {
-      grid-column: auto !important;
-      width: 100% !important;
-    }
-
-    body.mobile-gestor-mode .prog-toolbar #progGerarPdf {
-      grid-column: 1 / -1 !important;
+      grid-column: span 2 !important;
       width: 100% !important;
       order: initial !important;
+      min-width: 0 !important;
+      padding-inline: 4px !important;
+      font-size: 11.5px !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar-spacer,
