@@ -25,7 +25,15 @@ function toText(value) {
 function toNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const s = String(value).trim().replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+  // O agente já envia números como string em formato padrão ("698.3600"), não
+  // no formato brasileiro. Só reinterpretar '.' como separador de milhar quando
+  // houver vírgula decimal explícita (ex.: "1.234,56") — do contrário o ponto
+  // decimal é removido e o valor é inflado (bug 05/08: tons virava 10000x maior).
+  let s = String(value).trim();
+  if (s.includes(',')) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  }
+  s = s.replace(/[^\d.-]/g, '');
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
