@@ -1,13 +1,19 @@
 #!/usr/bin/env node
 
-// Ambiente fixo para Chromium/Puppeteer no cPanel.
+const laneArg = process.argv.find((arg) => arg.startsWith('--lane='));
+const workerArg = process.argv.find((arg) => arg.startsWith('--worker-id='));
+const WORKER_LANE = laneArg ? laneArg.split('=')[1] : (process.env.GRM_SYNC_WORKER_LANE || 'fixed');
+const WORKER_ID = workerArg ? workerArg.split('=')[1] : (process.env.GRM_SYNC_WORKER_ID || `${WORKER_LANE}-${process.pid}`);
+const WORKER_RUNTIME = `/home/grao100/chrome-runtime/${WORKER_ID}`;
+
+// Ambiente isolado por worker para Chromium/Puppeteer no cPanel.
 // Evita erro de partition_address_space e permission denied em /home/grao100/tmp.
 process.env.HOME = process.env.HOME || '/home/grao100';
-process.env.TMP = '/home/grao100/chrome-runtime/tmp';
-process.env.TEMP = '/home/grao100/chrome-runtime/tmp';
-process.env.TMPDIR = '/home/grao100/chrome-runtime/tmp';
-process.env.XDG_RUNTIME_DIR = '/home/grao100/chrome-runtime/tmp';
-process.env.XDG_CACHE_HOME = '/home/grao100/chrome-runtime/cache';
+process.env.TMP = `${WORKER_RUNTIME}/tmp`;
+process.env.TEMP = `${WORKER_RUNTIME}/tmp`;
+process.env.TMPDIR = `${WORKER_RUNTIME}/tmp`;
+process.env.XDG_RUNTIME_DIR = `${WORKER_RUNTIME}/tmp`;
+process.env.XDG_CACHE_HOME = `${WORKER_RUNTIME}/cache`;
 process.env.MALLOC_ARENA_MAX = '2';
 
 /*
@@ -24,15 +30,18 @@ process.env.MALLOC_ARENA_MAX = '2';
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const { spawn } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const NODE_BIN = process.env.GRM_SYNC_NODE_BIN || '/home/grao100/bin/node';
-const SAFE_TMP = process.env.GRM_SYNC_TMPDIR || '/home/grao100/chrome-runtime/tmp';
+const SAFE_TMP = process.env.GRM_SYNC_TMPDIR || `${WORKER_RUNTIME}/tmp`;
 const POLL_MS = Number(process.env.GRM_SYNC_JOB_POLL_MS || 15000);
 const MAX_OUTPUT = 30000;
-const FIXED_AGENTS = require('./grm-sync-fixed-agents');
+
+fs.mkdirSync(`${WORKER_RUNTIME}/tmp`, { recursive: true });
+fs.mkdirSync(`${WORKER_RUNTIME}/cache`, { recursive: true });
 
 const SCRIPT_MAP = {
   'sync-colaboradores': 'grmserver-colaboradores-sync-snapshot.js',
@@ -100,7 +109,10 @@ async function claimNextJob() {
   // sync-colaboradores, cron de sync-login-alimentacao). Isso serializa todos
   // os agentes entre si e também evita que dois processos --once concorrentes
   // (cron de 1min disparando antes do anterior terminar) rodem jobs em paralelo.
-  const { data, error } = await supabase.rpc('claim_next_grm_sync_job');
+  const { data, error } = await supabase.rpc('claim_next_grm_sync_job', {
+    p_lane: WORKER_LANE,
+    p_worker_id: WORKER_ID,
+  });
 
   if (error) throw error;
   return data;
@@ -115,25 +127,25 @@ async function updateJob(id, patch) {
   if (error) throw error;
 }
 
-async function enqueueNextFixedAgent(agentId) {
-  const index = FIXED_AGENTS.indexOf(agentId);
-  if (index < 0) return;
-  const nextAgent = FIXED_AGENTS[(index + 1) % FIXED_AGENTS.length];
-  const { data: openJob, error: openError } = await supabase
-    .from('grm_sync_jobs')
-    .select('id')
-    .eq('agente_id', nextAgent)
-    .in('status', ['pendente', 'rodando'])
-    .limit(1)
-    .maybeSingle();
-  if (openError) throw openError;
-  if (openJob) {
-    log(`${nextAgent}: já está pendente/rodando; próximo agente não foi duplicado.`);
-    return;
-  }
-  const { error } = await supabase.from('grm_sync_jobs').insert({ agente_id: nextAgent, status: 'pendente' });
+async function enqueueNextFixedAgent(job) {
+  if (job.lane !== 'fixed' || job.pipeline_seq == null) return;
+  const { data, error } = await supabase.rpc('enqueue_next_grm_fixed_job');
   if (error) throw error;
-  log(`${nextAgent}: próximo agente fixo enfileirado.`);
+  log(`${data?.agente_id || 'próximo agente fixo'}: sequência ${data?.pipeline_seq || '?'} enfileirada.`);
+}
+
+function startHeartbeat(jobId) {
+  const renew = async () => {
+    const now = new Date();
+    const lease = new Date(now.getTime() + 10 * 60 * 1000);
+    const { error } = await supabase.from('grm_sync_jobs').update({
+      heartbeat_at: now.toISOString(),
+      lease_expires_at: lease.toISOString(),
+    }).eq('id', jobId).eq('status', 'rodando').eq('worker_id', WORKER_ID);
+    if (error) log(`Heartbeat de ${jobId} falhou: ${error.message}`);
+  };
+  const timer = setInterval(() => renew().catch((error) => log(`Heartbeat falhou: ${error.message}`)), 60_000);
+  return () => clearInterval(timer);
 }
 
 function runScript(scriptName) {
@@ -150,11 +162,11 @@ function runScript(scriptName) {
       env: {
         ...process.env,
         HOME: process.env.HOME || '/home/grao100',
-        TMP: '/home/grao100/chrome-runtime/tmp',
-        TEMP: '/home/grao100/chrome-runtime/tmp',
-        TMPDIR: '/home/grao100/chrome-runtime/tmp',
-        XDG_RUNTIME_DIR: '/home/grao100/chrome-runtime/tmp',
-        XDG_CACHE_HOME: '/home/grao100/chrome-runtime/cache',
+        TMP: `${WORKER_RUNTIME}/tmp`,
+        TEMP: `${WORKER_RUNTIME}/tmp`,
+        TMPDIR: `${WORKER_RUNTIME}/tmp`,
+        XDG_RUNTIME_DIR: `${WORKER_RUNTIME}/tmp`,
+        XDG_CACHE_HOME: `${WORKER_RUNTIME}/cache`,
         MALLOC_ARENA_MAX: '2',
       },
       shell: false,
@@ -216,7 +228,9 @@ async function processOne() {
     return true;
   }
 
+  const stopHeartbeat = startHeartbeat(job.id);
   const result = await runScript(scriptName);
+  stopHeartbeat();
 
   await updateJob(job.id, {
     status: result.ok ? 'sucesso' : 'erro',
@@ -229,10 +243,12 @@ async function processOne() {
       stderr: result.stderr,
     },
     erro: result.error || null,
+    heartbeat_at: new Date().toISOString(),
+    lease_expires_at: null,
   });
 
   log(`Job ${job.id} finalizado: ${result.ok ? 'sucesso' : 'erro'}`);
-  await enqueueNextFixedAgent(job.agente_id);
+  await enqueueNextFixedAgent(job);
   return true;
 }
 
