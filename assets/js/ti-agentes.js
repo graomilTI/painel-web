@@ -20,7 +20,7 @@ const CARGAS_AGENT_ID = 'sync-cargas-geofence';
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
 const AGENTES = [
-  { id: 'sync-colaboradores', name: 'Colaboradores', freq: '5 min', table: 'colaboradores' },
+  { id: 'sync-colaboradores', name: 'Colaboradores', freq: '30 min', table: 'colaboradores' },
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: '1h', table: 'grm_producao_diaria_importacoes' },
   { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: '1h', table: 'grm_locais_embarque_importacoes' },
   { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: '1h', table: 'grm_resultado_diario_importacoes' },
@@ -32,7 +32,7 @@ const AGENTES = [
   { id: 'sync-contas-receber', name: 'Contas a Receber', freq: '1h', table: 'grm_contas_receber_importacoes' },
   { id: 'sync-auditorias', name: 'Auditorias', freq: '1h', table: 'grm_auditorias_importacoes' },
   { id: 'sync-nhe', name: 'NHE', freq: '1h', table: 'grm_nhe_importacoes' },
-  { id: 'sync-lista-os', name: 'Lista de OS', freq: '1h', table: 'grm_lista_os_importacoes' },
+  { id: 'sync-lista-os', name: 'Lista de OS', freq: '30 min', table: 'grm_lista_os_importacoes' },
   { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'contínuo', table: 'operacional_os' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: '1h', table: 'grm_distribuicao_os_importacoes' },
   { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: '1h', table: 'grm_cargas_importacoes' },

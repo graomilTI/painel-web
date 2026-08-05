@@ -23,9 +23,8 @@ const supabase = createClient(url, key, {
   },
 });
 
-// sync-colaboradores tem agendamento próprio via pg_cron (job "sync-colaboradores-5min",
-// a cada 5min, ver migration 20260703140000_cron_sync_colaboradores_job_queue.sql) — não
-// entra no round-robin pra não ser escolhido em duplicidade.
+// sync-colaboradores e sync-lista-os têm agendamento próprio via pg_cron, a cada
+// 30min — não entram no round-robin pra não serem escolhidos em duplicidade.
 // sync-login-alimentacao também saiu daqui: precisa rodar várias vezes SÓ entre 11h-12h30
 // (jobs "sync-login-alimentacao-11h"/"-12h", ver migration
 // 20260712140000_cron_sync_login_alimentacao_janela.sql) pra capturar login tardio do
@@ -34,7 +33,6 @@ const supabase = createClient(url, key, {
 const AGENTES_CONTINUOS = [
   'sync-mapa-embarque',
   'sync-nhe',
-  'sync-lista-os',
   'sync-operacional-os',
   'sync-distribuicao-os',
   'sync-locais-embarque',
@@ -103,9 +101,9 @@ async function liberarJobTravado(job) {
 
 async function existeJobAberto() {
   // sync-colaboradores e sync-login-alimentacao são agendados direto pelo pg_cron (fora
-  // deste round-robin) — sync-colaboradores roda a cada 5min o dia todo, sync-login-alimentacao
+  // deste round-robin) — sync-colaboradores roda a cada 30min o dia todo, sync-login-alimentacao
   // roda em rajadas na janela 11h-12h30 (ver migration 20260712140000_cron_sync_login_alimentacao_janela.sql).
-  // Ignorar os dois aqui pra não bloquear a vez dos 14 agentes contínuos (ex.: sync-mapa-embarque)
+  // Ignorar os dois aqui pra não bloquear a vez dos agentes contínuos (ex.: sync-mapa-embarque)
   // enquanto um deles está rodando — antes só sync-colaboradores era ignorado, e o
   // sync-login-alimentacao segurava o agendador travado durante suas rajadas.
   const { data, error } = await supabase
