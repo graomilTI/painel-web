@@ -48,10 +48,10 @@ const AGENTES_CONTINUOS = [
   'sync-resultado-diario',
 ];
 
-// sync-lancar-nhe também saiu daqui: usuária pediu horário fixo (09h Brasília, não
+// sync-lancar-nhe também saiu daqui: usuária pediu horário fixo (02h Brasília, não
 // "24h desde a última execução" — o round-robin deste array não garante clock fixo,
 // só um intervalo mínimo). Agendamento próprio via pg_cron, ver migration
-// 20260722120000_cron_sync_lancar_nhe_09h.sql (mesmo padrão do sync-login-alimentacao).
+// 20260805111600_cron_sync_lancar_nhe_02h.sql (mesmo padrão do sync-login-alimentacao).
 const AGENTES_DIARIOS = [
   {
     agente_id: 'sync-despesas-retroativas',
