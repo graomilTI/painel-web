@@ -1,0 +1,240 @@
+/* Ajustes finais de renderização do App Gestor em celulares e PWA. */
+
+html {
+  min-width: 0;
+  width: 100%;
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+}
+
+body,
+.gestor-app {
+  width: 100%;
+  min-width: 0;
+  min-height: 100dvh;
+}
+
+.app-topbar {
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+.app-main {
+  width: 100%;
+  min-width: 0;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+}
+
+.brand,
+.brand > div,
+.db-prod-left,
+.db-prod-right,
+.db-row-2 > *,
+.section-title > div {
+  min-width: 0;
+}
+
+.brand strong,
+.brand small {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-actions {
+  flex: 0 0 auto;
+}
+
+.ux-sheet-panel {
+  overscroll-behavior: contain;
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+
+@media (max-width: 520px) {
+  .app-topbar {
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .brand img {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand strong {
+    font-size: 15px;
+  }
+
+  .brand small {
+    font-size: 11px;
+  }
+
+  .top-actions {
+    gap: 6px;
+  }
+
+  .icon-btn,
+  .ux-menu-btn {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+  }
+
+  .ux-menu-btn {
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+  }
+
+  .ux-menu-btn::before {
+    content: '☰';
+    color: var(--soft);
+    font-size: 19px;
+    line-height: 1;
+  }
+
+  .db-region {
+    max-width: 58%;
+    padding: 6px 10px;
+    overflow-wrap: anywhere;
+  }
+
+  .section-title {
+    align-items: center;
+  }
+
+  .kpi-strip {
+    overflow-x: auto;
+  }
+
+  .kpi-item {
+    min-width: 92px;
+  }
+
+  .os-head,
+  .install-banner.is-visible {
+    align-items: flex-start;
+  }
+
+  .os-number {
+    font-size: clamp(21px, 7vw, 25px);
+  }
+}
+
+@media (max-width: 390px) {
+  .app-topbar {
+    padding-left: max(9px, env(safe-area-inset-left));
+    padding-right: max(9px, env(safe-area-inset-right));
+  }
+
+  .brand img {
+    width: 30px;
+    height: 30px;
+  }
+
+  .brand small {
+    max-width: 112px;
+  }
+
+  .top-actions {
+    gap: 4px;
+  }
+
+  .icon-btn,
+  .ux-menu-btn {
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    border-radius: 12px;
+  }
+
+  .app-main {
+    padding: 10px max(9px, env(safe-area-inset-right)) 18px max(9px, env(safe-area-inset-left)) !important;
+  }
+
+  .db-topbar {
+    align-items: flex-start;
+  }
+
+  .db-region {
+    max-width: 62%;
+    font-size: 9px;
+  }
+
+  .db-prod-body {
+    grid-template-columns: 1fr !important;
+  }
+
+  .db-prod-left {
+    display: flex;
+    justify-content: center;
+  }
+
+  .db-state-svg {
+    width: min(72%, 230px) !important;
+    max-height: 210px !important;
+  }
+
+  .db-prod-right {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px !important;
+  }
+
+  .db-prod-right .db-stat-sep {
+    display: none;
+  }
+
+  .db-prod-right > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .db-stat-value {
+    font-size: 18px !important;
+  }
+
+  .db-pace-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .db-row-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ux-menu-grid,
+  .quick-grid,
+  .os-metrics {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ux-menu-card {
+    min-height: 82px;
+  }
+
+  .kg-overlay {
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .app-topbar {
+    position: relative;
+  }
+
+  .ux-sheet-panel {
+    max-height: 96dvh;
+  }
+}
