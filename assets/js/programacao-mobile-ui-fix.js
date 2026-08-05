@@ -541,6 +541,165 @@ function injectMobileStyles() {
         font-size: 18px !important;
       }
     }
+
+    /* Camada determinística para o App Gestor. Diversos módulos desta página
+       injetam CSS assíncrono; ancorar no estado do shell impede que um patch
+       desktop carregado depois reconstrua o cabeçalho como display:contents. */
+    body.mobile-gestor-mode {
+      min-width: 0 !important;
+      overflow-x: clip !important;
+      background: #06130e !important;
+    }
+
+    body.mobile-gestor-mode .app-shell {
+      width: 100% !important;
+      min-width: 0 !important;
+      zoom: 1 !important;
+      background: #06130e !important;
+    }
+
+    body.mobile-gestor-mode .page-main {
+      width: 100% !important;
+      min-width: 0 !important;
+      padding-inline: 10px !important;
+      background: #06130e !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar {
+      display: block !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      margin: 0 0 10px !important;
+      padding: 12px !important;
+      overflow: hidden !important;
+      background: #0a1a12 !important;
+      border: 1px solid rgba(111,208,165,.2) !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 9px !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row + .prog-toolbar-row {
+      margin-top: 10px !important;
+      padding-top: 10px !important;
+      border-top: 1px solid rgba(111,208,165,.12) !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar .prog-tfield-sup,
+    body.mobile-gestor-mode .prog-toolbar .prog-tfield-date {
+      display: grid !important;
+      grid-template-columns: 82px minmax(0, 1fr) !important;
+      align-items: center !important;
+      gap: 8px !important;
+      grid-column: 1 / -1 !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar .prog-tfield label {
+      margin: 0 !important;
+      white-space: nowrap !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progSupCombo,
+    body.mobile-gestor-mode .prog-toolbar #progDataRef {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      height: 44px !important;
+      margin: 0 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progLoadContext,
+    body.mobile-gestor-mode .prog-toolbar #progCompartilhar {
+      grid-column: auto !important;
+      width: 100% !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progGerarPdf {
+      grid-column: 1 / -1 !important;
+      width: 100% !important;
+      order: initial !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar-spacer,
+    body.mobile-gestor-mode #progSearchWrap,
+    body.mobile-gestor-mode #progSaveProgramacao {
+      display: none !important;
+    }
+
+    body.mobile-gestor-mode #progSteps {
+      display: grid !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      gap: 7px !important;
+      grid-column: 1 / -1 !important;
+      width: 100% !important;
+      min-width: 0 !important;
+    }
+
+    body.mobile-gestor-mode #progSteps .stepbtn {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 4px !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: 42px !important;
+      padding: 7px 5px !important;
+      overflow: hidden !important;
+    }
+
+    body.mobile-gestor-mode #progSteps .stepbtn-label {
+      display: inline !important;
+      min-width: 0 !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      font-size: 10px !important;
+    }
+
+    body.mobile-gestor-mode #progCtxFeedback {
+      grid-column: 1 / -1 !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 2px 0 0 !important;
+      text-align: left !important;
+      white-space: normal !important;
+    }
+
+    body.mobile-gestor-mode .prog-list-card,
+    body.mobile-gestor-mode #progList,
+    body.mobile-gestor-mode #pldShell,
+    body.mobile-gestor-mode #pldShell .pld-list-col {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: 100% !important;
+      background: #06130e !important;
+    }
+
+    body.mobile-gestor-mode #pldShell .pld-filters-row {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 8px !important;
+    }
+
+    body.mobile-gestor-mode #pldShell .pld-filters-row > :first-child {
+      grid-column: 1 / -1 !important;
+    }
+
+    body.mobile-gestor-mode #pldShell .pld-count-row {
+      gap: 8px !important;
+      flex-wrap: wrap !important;
+    }
   `;
   document.head.appendChild(style);
 }
