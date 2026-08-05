@@ -64,7 +64,10 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
-var MAX_LANCAMENTOS_POR_EXECUCAO = Number(process.env.NHE_LANCAMENTO_LOTE || 10);
+// Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
+// execução conclua antes do watchdog; os restantes são enfileirados pela
+// continuação automática já existente.
+var MAX_LANCAMENTOS_POR_EXECUCAO = Math.min(8, Math.max(1, Number(process.env.NHE_LANCAMENTO_LOTE) || 8));
 var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
 var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';
 
@@ -1259,7 +1262,7 @@ if (require.main === module) {
     log('ERROR', 'Timeout geral do agente atingido.');
     if (browserAtual) browserAtual.close().catch(function () {});
     process.exit(1);
-  }, Number(process.env.NHE_LANCAMENTO_TIMEOUT_MS || 480000)).unref();
+  }, Number(process.env.NHE_LANCAMENTO_TIMEOUT_MS || 720000)).unref();
 }
 
 module.exports = {

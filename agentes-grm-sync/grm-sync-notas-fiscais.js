@@ -126,6 +126,52 @@ async function downloadReport(page) {
   throw lastError;
 }
 
+async function fetchReportData(page) {
+  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  log('INFO', `Consultando API: ${dateRange.from} até ${dateRange.to}`);
+  const rows = await page.evaluate(async (payload) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try {
+        const value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value?.userToken) token = value.userToken;
+      } catch (_) {}
+    }
+    const response = await fetch('/api/reports/finance/invoices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.result) throw new Error(json.message || `HTTP ${response.status}`);
+    return json.searchData || [];
+  }, {
+    biiDateFrom: dateRange.from,
+    biiDateTo: dateRange.to,
+    bilDateFrom: dateRange.from,
+    bilDateTo: dateRange.to,
+  });
+
+  const data = rows.map((row) => ({
+    'Fatura': row.bilCode,
+    'Data da Fatura': row.bilDate,
+    'Situação': row.bilStatus,
+    'Empresa': row.scpName,
+    'Cliente Nacional': row.cliName,
+    'Coordenação': row.olcName,
+    'Número NF': row.biiNumber,
+    'Data N.F.': row.biiDate,
+    'Valor Total': row.biiFinalValue,
+    'Valor Bruto': row.biiMainValue,
+    'Desconto': row.biiDiscountValue,
+    'Acréscimo': row.biiIncreaseValue,
+    'Imposto': row.biiTaxWithholdingValue,
+    'Tons': row.tons,
+  }));
+  log('SUCCESS', `${data.length} linhas recebidas pela API`);
+  return data;
+}
+
 async function parseXLS(filePath) {
   log('INFO', `Parseando arquivo: ${filePath}`);
   const data = XLSX.utils.sheet_to_json(XLSX.readFile(filePath).Sheets[XLSX.readFile(filePath).SheetNames[0]]);
@@ -136,7 +182,7 @@ async function parseXLS(filePath) {
 async function upsertData(data) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
   const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
-  const records = data.map(row => ({
+  const mappedRecords = data.map(row => ({
     data_nota_de: toIso(dateRange.from),
     data_nota_ate: toIso(dateRange.to),
     data_fatura_de: toIso(dateRange.from),
@@ -147,10 +193,19 @@ async function upsertData(data) {
     dados_json: row,
     data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
   }));
+  // A API pode repetir uma NF em mais de uma linha de faturamento, enquanto a
+  // tabela mantém uma linha por número de nota.
+  const byInvoice = new Map();
+  const withoutInvoice = [];
+  for (const record of mappedRecords) {
+    if (record.numero_nf == null || record.numero_nf === '') withoutInvoice.push(record);
+    else byInvoice.set(String(record.numero_nf), record);
+  }
+  const records = [...byInvoice.values(), ...withoutInvoice];
 
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'id' });
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'numero_nf' });
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
@@ -191,8 +246,7 @@ async function main() {
     const page = await browser.newPage();
     page.setViewport({ width: 1366, height: 768 });
     await login(page);
-    const filePath = await downloadReport(page);
-    const data = await parseXLS(filePath);
+    const data = await fetchReportData(page);
     await upsertData(data);
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {
