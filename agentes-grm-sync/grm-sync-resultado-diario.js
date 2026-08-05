@@ -103,6 +103,64 @@ async function login(page) {
   log('SUCCESS', 'Login realizado');
 }
 
+async function fetchReportApi(page) {
+  const dateRange = calculateDateRange();
+  log('INFO', `Consultando API de Resultado Diário: ${dateRange.from} até ${dateRange.to}`);
+  const payload = await page.evaluate(async ({ from, to }) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
+    }
+    const response = await fetch('/api/reports/classification/getDailyResultReport', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ requestDateFrom: from, requestDateTo: to, addValues: 'S' }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.result) throw new Error(json.message || `HTTP ${response.status}`);
+    return json.searchData || [];
+  }, { from: dateRange.from, to: dateRange.to });
+
+  const data = payload.map((row) => ({
+    'O.S.': row.sorCode,
+    Contrato: row.sorContract,
+    Produto: row.proName,
+    Data: row.loaDate,
+    'Funcionário': row.staName,
+    'Coordenação': row.olcName,
+    'Supervisão': row.olsName,
+    'Cliente Nacional': row.clnName,
+    'Cliente Regional': row.clrName,
+    'Cliente Final': row.cliName,
+    'Local de Embarque': row.splName,
+    Destino: [row.citNameDestiny, row.staAbreviationDestiny, row.sorDestination].filter(Boolean).join(' - '),
+    Cargas: row.qtdLoads,
+    Toneladas: row.loaWeight,
+    'R$/Ton': row.tonUnitValue,
+    'Cadência': row.cadence,
+    'Tons Cadência': row.cadenceTons,
+    Embarcado: row.embTons,
+    'Valor Embarcado': row.embTonsValue,
+    'Valor Afla': row.aflaUnitValue,
+    'Total Afla': row.aflaTotalValue,
+    'Valor Vomitoxina': row.vomitoxinUnitValue,
+    'Total Vomitoxina': row.vomitoxinTotalValue,
+    'Valor Falling Number': row.fallingNumberUnitValue,
+    'Total Falling Number': row.fallingNumberTotalValue,
+    'Valor Intacta': row.intactaUnitValue,
+    'Total Intacta': row.intactaTotalValue,
+    'Valor GMO': row.gmoUnitValue,
+    'Total GMO': row.gmoTotalValue,
+    'Total Embarcado + Teste': row.totalValue,
+    Remanescente: row.sorRemainLot,
+    'Motivo NHE': row.nheReason,
+    'Observações NHE': row.nheObs,
+    _api: row,
+  }));
+  log('SUCCESS', `${data.length} linhas recebidas pela API`);
+  return data;
+}
+
 async function ensureAddValuesSim(page) {
   const field = REPORT_CONFIG.incluirValoresField;
 
@@ -374,8 +432,7 @@ async function main() {
     const page = await browser.newPage();
     page.setViewport({ width: 1920, height: 1440 });
     await login(page);
-    const filePath = await downloadReport(page);
-    const data = await parseXLS(filePath);
+    const data = await fetchReportApi(page);
     await upsertData(data);
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {

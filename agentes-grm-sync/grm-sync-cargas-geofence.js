@@ -200,6 +200,69 @@ async function login(page) {
   log('SUCCESS', 'Login realizado');
 }
 
+async function buscarRelatorioCargasApi(page, dataYmd) {
+  var dataBr = ymdToBr(dataYmd);
+  log('INFO', 'Consultando API do Relatório de Cargas em ' + dataBr + '...');
+  var groups = await page.evaluate(async function (dateValue) {
+    var token = '';
+    for (var t = 0; t < localStorage.length; t++) {
+      try { var value = JSON.parse(localStorage.getItem(localStorage.key(t))); if (value && value.userToken) token = value.userToken; } catch (e) {}
+    }
+    var response = await fetch('/api/reports/classification/loads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({
+        loaDateFrom: dateValue,
+        loaDateTo: dateValue,
+        loaType: 'EMB',
+        includeTotal: 'N',
+        addStaffInfo: 'S',
+        addLocalInfo: 'S',
+        addTestsInfo: 'N',
+        addSchedulesInfo: 'N',
+        joinCItems: 'N'
+      })
+    });
+    var json = await response.json();
+    if (!response.ok || !json.result) throw new Error(json.message || ('HTTP ' + response.status));
+    return json.searchData || [];
+  }, dataBr);
+
+  var rows = [];
+  for (var g = 0; g < groups.length; g++) {
+    var loads = groups[g].loads || [];
+    for (var i = 0; i < loads.length; i++) {
+      var r = loads[i];
+      rows.push({
+        data_classificacao: toYmd(r.loaDate),
+        hora_cadastro: onlyTime(r.loaRegisterDate),
+        situacao: r.bilCode > 0 ? 'Faturada' : 'Não Faturada',
+        cliente: clean(r.cliName),
+        coordenacao: clean(r.olcName),
+        supervisao: clean(r.olsName),
+        os: normalizeOs(r.sorCode),
+        servico: clean(r.serName),
+        contrato: clean(r.sorContract),
+        laudo: clean(r.loaLaudo),
+        tipo_carga: clean(r.loaType),
+        // A API retorna o peso em kg; o XLS histórico expunha toneladas.
+        tons: parseNumber(r.loaWeight) === null ? null : parseNumber(r.loaWeight) / 1000,
+        produto: clean(r.proName),
+        tipo_produto: clean(r.ptyName),
+        placa: clean(r.loaLicensePlate),
+        nota_fiscal: clean(r.loaInvoice),
+        lat_lancamento: parseNumber(r.loaLat),
+        lng_lancamento: parseNumber(r.loaLon),
+        colaborador: clean(r.staName),
+        observacao: clean(r.loaNotes),
+        raw: r
+      });
+    }
+  }
+  log('SUCCESS', rows.length + ' cargas recebidas pela API');
+  return rows;
+}
+
 async function clearAndType(page, selector, value) {
   await page.waitForSelector(selector, { timeout: 30000 });
   await page.focus(selector);
@@ -1121,8 +1184,22 @@ async function main() {
     log('INFO', '=== ' + REPORT_CONFIG.name + ' | ' + dataYmd + ' ===');
     runId = await criarExecucao(dataYmd);
 
-    var filePath = args.xlsx || process.env.CARGAS_XLSX_PATH || await baixarRelatorioCargasHoje(dataYmd, debug);
-    var linhas = lerRelatorioCargas(filePath, dataYmd);
+    var linhas;
+    var xlsxPath = args.xlsx || process.env.CARGAS_XLSX_PATH;
+    if (xlsxPath) {
+      linhas = lerRelatorioCargas(xlsxPath, dataYmd);
+    } else {
+      var browser = await puppeteer.launch({ headless: HEADLESS, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+      browserAtual = browser;
+      try {
+        var page = await browser.newPage();
+        await login(page);
+        linhas = await buscarRelatorioCargasApi(page, dataYmd);
+      } finally {
+        browserAtual = null;
+        await browser.close();
+      }
+    }
     await salvarImportacao(linhas);
 
     var cacheOs = Object.create(null);
@@ -1175,7 +1252,7 @@ async function main() {
         raio_m: RAIO_M,
         total_dentro_raio: totalDentroRaio,
         lookup_tables: REPORT_CONFIG.osLookupTables,
-        arquivo: filePath
+        arquivo: xlsxPath || 'api:reports/classification/loads'
       }
     });
 
