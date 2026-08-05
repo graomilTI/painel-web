@@ -139,23 +139,25 @@ async function setDateField(page, selector, value) {
 // corpo da resposta (uma tabela pivot agrupada pelos 2 campos escolhidos acima).
 async function fetchReportForMonth(page, month) {
   log('INFO', `Buscando despesas de ${pad2(month.month0 + 1)}/${month.year} (${month.from} a ${month.to})...`);
-  await setDateField(page, REPORT_CONFIG.dateFields.from, month.from);
-  await setDateField(page, REPORT_CONFIG.dateFields.to, month.to);
-
-  const [response] = await Promise.all([
-    page.waitForResponse(
-      (res) => res.url().includes('/api/reports/expenses') && res.request().method() === 'POST',
-      { timeout: 60000 }
-    ),
-    (async () => {
-      const gerarBtn = await page.evaluateHandle(() =>
-        Array.from(document.querySelectorAll('button')).find((btn) => btn.textContent.includes('GERAR RELATÓRIO'))
-      );
-      await page.evaluate((btn) => btn?.click(), gerarBtn);
-    })(),
-  ]);
-
-  const json = await response.json();
+  const json = await page.evaluate(async ({ from, to }) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
+    }
+    const response = await fetch('/api/reports/expenses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        olcCode: null, olsCode: null, staCode: null, supCode: null,
+        picParent: null, picCode: null, pipDateFrom: from, pipDateTo: to,
+        selectRow: 'olcCode', selectColumn: 'picParent', selectSubColumn: '',
+        useOperatingFlowMoviment: 'S',
+      }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(JSON.stringify(body).slice(0, 500));
+    return body;
+  }, { from: month.from, to: month.to });
   if (!json || json.result !== true) {
     throw new Error(`Resposta inesperada da API de despesas (${month.from}-${month.to}): ${JSON.stringify(json).slice(0, 300)}`);
   }

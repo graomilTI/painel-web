@@ -37,6 +37,19 @@ async function downloadReport(page) {
   const tempDir = setupDownloadDir('nhe');
   return triggerAndWaitForDownload(page, REPORT_CONFIG.xlsSelector, tempDir);
 }
+async function fetchReportApi(page) {
+  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  return page.evaluate(async (body) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
+    }
+    const response = await fetch('/api/reports/classification/nhe', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    const json = await response.json();
+    if (!response.ok || json.result === false) throw new Error(JSON.stringify(json).slice(0, 500));
+    return json.searchData || [];
+  }, { lnsDateFrom: dateRange.from, lnsDateTo: dateRange.to });
+}
 async function parseXLS(filePath) {
   const data = XLSX.utils.sheet_to_json(XLSX.readFile(filePath).Sheets[XLSX.readFile(filePath).SheetNames[0]]);
   log('SUCCESS', `${data.length} linhas parseadas`);
@@ -82,7 +95,7 @@ async function main() {
     const page = await browser.newPage();
     page.setViewport({ width: 1366, height: 768 });
     await login(page);
-    const data = await parseXLS(await downloadReport(page));
+    const data = await fetchReportApi(page);
     await upsertData(data);
     log('SUCCESS', `${data.length} registros sincronizados`);
     log('SUCCESS', 'Concluído');

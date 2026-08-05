@@ -91,6 +91,21 @@ async function downloadReport(page) {
   }
 }
 
+async function fetchReportApi(page) {
+  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  log('INFO', `Consultando API: ${dateRange.from} até ${dateRange.to}`);
+  return page.evaluate(async (body) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
+    }
+    const response = await fetch('/api/reports/classification/servicePlaces', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+    const json = await response.json();
+    if (!response.ok || json.result === false) throw new Error(JSON.stringify(json).slice(0, 500));
+    return json.searchData || [];
+  }, { requestDateFrom: dateRange.from, requestDateTo: dateRange.to });
+}
+
 async function parseXLS(filePath) {
   log('INFO', `Parseando arquivo: ${filePath}`);
   const data = XLSX.utils.sheet_to_json(XLSX.readFile(filePath).Sheets[XLSX.readFile(filePath).SheetNames[0]]);
@@ -104,12 +119,12 @@ async function upsertData(data) {
   const records = data.map(row => ({
     data_solicitacao_de: toIso(dateRange.from),
     data_solicitacao_ate: toIso(dateRange.to),
-    cliente_nacional: row['Cliente Nacional'] || null,
+    cliente_nacional: row['Cliente Nacional'] || row.clnName || null,
     produto: row['Produto'] || null,
     coordenacao: row['Coordenação'] || null,
     servico: row['Serviço'] || null,
-    local_tipo_servico: row['Tipo Local de Serviço'] || null,
-    uf: row['UF'] || null,
+    local_tipo_servico: row['Tipo Local de Serviço'] || row.sptName || null,
+    uf: row['UF'] || row.splCitUF || null,
     dados_json: row,
     data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
   }));
@@ -155,8 +170,7 @@ async function main() {
     const page = await browser.newPage();
     page.setViewport({ width: 1920, height: 1440 });
     await login(page);
-    const filePath = await downloadReport(page);
-    const data = await parseXLS(filePath);
+    const data = await fetchReportApi(page);
     await upsertData(data);
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {

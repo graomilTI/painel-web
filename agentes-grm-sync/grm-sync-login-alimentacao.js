@@ -78,6 +78,7 @@ var REPORT_CONFIG = {
   tableExecucoes: process.env.LOGIN_REPORT_RUNS_TABLE || 'grm_login_alimentacao_execucoes',
   origem: 'grm_relatorio_login',
   dateFromSelectors: splitEnv(process.env.LOGIN_REPORT_DATE_FROM_SELECTORS || [
+    '#stlDateFrom',
     '#requestDateFrom',
     '#loginDateFrom',
     '#staffLoginDateFrom',
@@ -87,6 +88,7 @@ var REPORT_CONFIG = {
     'input[name="requestDateFrom"]'
   ].join(',')),
   dateToSelectors: splitEnv(process.env.LOGIN_REPORT_DATE_TO_SELECTORS || [
+    '#stlDateTo',
     '#requestDateTo',
     '#loginDateTo',
     '#staffLoginDateTo',
@@ -129,11 +131,11 @@ var ALIASES = {
   cidade: splitEnv('Cidade de Embarque,Cidade Embarque,Cidade,cidade,cidade_embarque'),
   local: splitEnv('Local de Serviço,Local de Servico,Local Serviço,Local Servico,Local de Embarque,Local Embarque,Local,Armazém,Armazem,local_servico,embarque,ponto1_nome'),
   dataHora: splitEnv('Data/Hora,Data e Hora,Data Hora,Data do Login,Data Login,Data do Movimento,Data Movimento,Data Registro,Data de Registro,Login,Data Acesso,Data do Acesso,createdAt,created_at,loginDateTime,movementDateTime,staLoginDate'),
-  data: splitEnv('Data,Data Login,Data do Login,Data Movimento,Data do Movimento,Data Registro,Data de Registro,Dia,loginDate,movementDate,staDate'),
-  hora: splitEnv('Hora,Horário,Horario,Hora Login,Hora do Login,Hora Movimento,Hora do Movimento,Hora Registro,Hora Cad.,Hora Cadastro,loginTime,movementTime,staTime'),
-  latitude: splitEnv('Latitude,Lat,latitude,lat,Latitude Login,Latitude do Login,Latitude Movimento,Latitude do Movimento,loginLatitude,movementLatitude,staLatitude,gpsLatitude'),
-  longitude: splitEnv('Longitude,Lng,Long,longitude,lng,long,Longitude Login,Longitude do Login,Longitude Movimento,Longitude do Movimento,loginLongitude,movementLongitude,staLongitude,gpsLongitude'),
-  possuiMovimento: splitEnv('Possui Movimento,Possui Movimento?,Movimento,Tem Movimento,Com Movimento,possui_movimento,hasMovement,movement,staMovement'),
+  data: splitEnv('Data,Data Login,Data do Login,Data Movimento,Data do Movimento,Data Registro,Data de Registro,Dia,loginDate,movementDate,staDate,stlDate'),
+  hora: splitEnv('Hora,Horário,Horario,Hora Login,Hora do Login,Hora Movimento,Hora do Movimento,Hora Registro,Hora Cad.,Hora Cadastro,loginTime,movementTime,staTime,stlHour'),
+  latitude: splitEnv('Latitude,Lat,latitude,lat,Latitude Login,Latitude do Login,Latitude Movimento,Latitude do Movimento,loginLatitude,movementLatitude,staLatitude,gpsLatitude,stlLat'),
+  longitude: splitEnv('Longitude,Lng,Long,longitude,lng,long,Longitude Login,Longitude do Login,Longitude Movimento,Longitude do Movimento,loginLongitude,movementLongitude,staLongitude,gpsLongitude,stlLon'),
+  possuiMovimento: splitEnv('Possui Movimento,Possui Movimento?,Movimento,Tem Movimento,Com Movimento,possui_movimento,hasMovement,movement,staMovement,haveMovement'),
   tipoMovimento: splitEnv('Tipo Movimento,Tipo de Movimento,Evento,Ação,Acao,Tipo,Tipo Login,movementType,eventType'),
   dispositivo: splitEnv('Dispositivo,Aparelho,Device,deviceName,device_id,deviceId'),
   precisao: splitEnv('Precisão,Precisao,Accuracy,accuracy,Precisão GPS,Precisao GPS')
@@ -1673,6 +1675,21 @@ async function collectReport(fromYmd, toYmd, debug) {
     captured = startApiCapture(page);
 
     await login(page);
+    var directRows = await page.evaluate(async function (body) {
+      var token = '';
+      for (var i = 0; i < localStorage.length; i += 1) {
+        try { var value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value && value.userToken) token = value.userToken; } catch (_) {}
+      }
+      var response = await fetch('/api/reports/classification/staff/loginReport', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(body)
+      });
+      var json = await response.json();
+      if (!response.ok || json.result === false) throw new Error(JSON.stringify(json).slice(0, 500));
+      return json.searchData || [];
+    }, { stlDateFrom: ymdToBr(fromYmd), stlDateTo: ymdToBr(toYmd) });
+    if (directRows.length) return directRows;
     log('INFO', 'Abrindo ' + REPORT_CONFIG.url);
     await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2', timeout: 60000 });
     await wait(2500);
