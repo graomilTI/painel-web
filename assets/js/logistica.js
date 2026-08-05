@@ -1,4 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
+import { getSession } from './auth.js';
 import { supabase } from './supabaseClient.js';
 import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
@@ -677,7 +678,13 @@ function buildTestesPayload(produto) {
 async function handleSalvarAberturaOs(content) {
   if (state.aberturaSaving) return;
   const produto = valById(content, 'osProduto');
+  const session = await getSession().catch(() => null);
+  const apelido = session?.user?.user_metadata?.apelido;
+  const solicitanteNome = (apelido && String(apelido).trim()) || state.ctx?.user?.name || null;
+  const solicitanteId = state.ctx?.user?.id || session?.user?.id || null;
   const payload = {
+    solicitante_id: solicitanteId,
+    solicitante_nome: solicitanteNome,
     contratante_cliente: valById(content, 'osContratante'),
     filial_pagadora: valById(content, 'osFilialPagadora'),
     produtor: valById(content, 'osProdutor') || null,
