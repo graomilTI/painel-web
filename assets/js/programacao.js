@@ -1014,11 +1014,20 @@ export function renderContent(content) {
       return;
     }
 
+    // Checagem por chave normalizada (não só valor exato) porque
+    // programacao-gestor-filtro-fix.js roda em paralelo (MutationObserver +
+    // window.load) e pode inserir opções no MESMO <select> nesta janela entre
+    // o innerHTML de reset acima e este forEach — sem isso, a mesma
+    // supervisão aparecia duplicada no dropdown (ex.: "SP - Avaré" 2x).
+    const existing = new Set([...el.sup.options].map((opt) => normalizeAccessText(opt.value || opt.textContent)));
     supervisoes.forEach((sup) => {
+      const key = normalizeAccessText(sup);
+      if (key && existing.has(key)) return;
       const option = document.createElement('option');
       option.value = sup;
       option.textContent = sup;
       el.sup.appendChild(option);
+      if (key) existing.add(key);
     });
 
     if (supervisoes.length === 1) {
