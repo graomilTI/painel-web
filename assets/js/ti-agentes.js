@@ -41,7 +41,7 @@ const AGENTES = [
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa' },
   { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores' },
   { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
-  { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min', table: 'operacional_os', direction: 'saida' },
+  { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: 'desativado', table: 'operacional_os', direction: 'saida' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
 ];
