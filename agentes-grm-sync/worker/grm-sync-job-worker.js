@@ -32,6 +32,7 @@ const NODE_BIN = process.env.GRM_SYNC_NODE_BIN || '/home/grao100/bin/node';
 const SAFE_TMP = process.env.GRM_SYNC_TMPDIR || '/home/grao100/chrome-runtime/tmp';
 const POLL_MS = Number(process.env.GRM_SYNC_JOB_POLL_MS || 15000);
 const MAX_OUTPUT = 30000;
+const FIXED_AGENTS = require('./grm-sync-fixed-agents');
 
 const SCRIPT_MAP = {
   'sync-colaboradores': 'grmserver-colaboradores-sync-snapshot.js',
@@ -61,6 +62,7 @@ const SCRIPT_MAP = {
   'sync-abrir-os': 'grm-sync-abrir-os.js',
   'sync-liberacao-despesas': 'grm-sync-liberacao-despesas.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
+  'botconversa-sync': 'grm-sync-botconversa.js',
 };
 
 function getSupabase() {
@@ -111,6 +113,27 @@ async function updateJob(id, patch) {
     .eq('id', id);
 
   if (error) throw error;
+}
+
+async function enqueueNextFixedAgent(agentId) {
+  const index = FIXED_AGENTS.indexOf(agentId);
+  if (index < 0) return;
+  const nextAgent = FIXED_AGENTS[(index + 1) % FIXED_AGENTS.length];
+  const { data: openJob, error: openError } = await supabase
+    .from('grm_sync_jobs')
+    .select('id')
+    .eq('agente_id', nextAgent)
+    .in('status', ['pendente', 'rodando'])
+    .limit(1)
+    .maybeSingle();
+  if (openError) throw openError;
+  if (openJob) {
+    log(`${nextAgent}: já está pendente/rodando; próximo agente não foi duplicado.`);
+    return;
+  }
+  const { error } = await supabase.from('grm_sync_jobs').insert({ agente_id: nextAgent, status: 'pendente' });
+  if (error) throw error;
+  log(`${nextAgent}: próximo agente fixo enfileirado.`);
 }
 
 function runScript(scriptName) {
@@ -209,6 +232,7 @@ async function processOne() {
   });
 
   log(`Job ${job.id} finalizado: ${result.ok ? 'sucesso' : 'erro'}`);
+  await enqueueNextFixedAgent(job.agente_id);
   return true;
 }
 
