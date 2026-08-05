@@ -183,6 +183,37 @@ function deslocamentoResumo(row) {
   return valor > 0 ? `${tipo} • ${money(valor)}` : tipo;
 }
 
+// Espelha a regra do agente automático (configKeyExtra em
+// supabase/functions/grm-liberacao-despesas-publicar/index.ts): despesa tipo
+// "OUTROS" só ganha mapeamento pro GRM quando a descrição/observação cita
+// "combustível" explicitamente. Fora isso, o agente nunca lança essa despesa
+// no GRM (skip proposital, não é bug) -- precisa ser feita manualmente.
+function isExtraOutrosNaoMapeado(item) {
+  const tipo = normalizeText(item?.tipo_despesa || '');
+  if (tipo !== 'OUTROS') return false;
+  const descricao = normalizeText(`${item?.descricao || ''} ${item?.observacao || ''}`);
+  return !descricao.includes('COMBUSTIVEL');
+}
+
+function getExtrasOutrosNaoMapeados(row) {
+  return (Array.isArray(row.extras_itens) ? row.extras_itens : []).filter(isExtraOutrosNaoMapeado);
+}
+
+function isPendenciaAgenteGrm(row) {
+  return getStatus(row) !== 'CONFERIDO' && getStatus(row) !== 'CANCELADO' && getExtrasOutrosNaoMapeados(row).length > 0;
+}
+
+function getPendenciasAgente() {
+  return state.despesas.filter(isPendenciaAgenteGrm);
+}
+
+function pendenciaAgenteResumo(row) {
+  const itens = getExtrasOutrosNaoMapeados(row);
+  return itens
+    .map((item) => `${money(asNumber(item.valor))}${item.descricao || item.observacao ? ` — ${[item.descricao, item.observacao].filter(Boolean).join(' | ')}` : ''}`)
+    .join('; ');
+}
+
 function extrasResumo(row) {
   const total = getDespesaValor(row);
   const itens = Array.isArray(row.extras_itens) ? row.extras_itens : [];
@@ -336,6 +367,7 @@ function renderShell(content) {
     <section class="conf-hero conf-hero-compact">
       <div class="conf-tabs">
         <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
+        <button class="conf-tab" data-tab="pendentes" type="button">Pendentes</button>
         <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
         <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
         <button class="conf-tab" data-tab="justificativas" type="button">Justificativas</button>
@@ -433,18 +465,21 @@ function renderActiveTab() {
   if (subtitle) {
     subtitle.textContent = state.tab === 'despesas'
       ? 'Resumo por colaborador: alimentação, deslocamento e extras.'
-      : state.tab === 'auditoria'
-        ? 'Ocorrências e divergências registradas na auditoria.'
-        : state.tab === 'resultado'
-          ? 'Produção importada para comparação operacional.'
-          : state.tab === 'justificativas'
-            ? 'Motivo registrado pelo gestor ao escalar mais de 1 colaborador no mesmo ponto de embarque.'
-            : state.tab === 'localizacao'
-              ? 'Ponto de embarque mais próximo da casa do colaborador, 1 registro por dia/O.S.'
-              : 'Produção importada para comparação operacional.';
+      : state.tab === 'pendentes'
+        ? 'Despesas "Outros" que o agente automático não consegue lançar no GRM (sem categoria correspondente) — faça o lançamento manualmente e depois confira aqui.'
+        : state.tab === 'auditoria'
+          ? 'Ocorrências e divergências registradas na auditoria.'
+          : state.tab === 'resultado'
+            ? 'Produção importada para comparação operacional.'
+            : state.tab === 'justificativas'
+              ? 'Motivo registrado pelo gestor ao escalar mais de 1 colaborador no mesmo ponto de embarque.'
+              : state.tab === 'localizacao'
+                ? 'Ponto de embarque mais próximo da casa do colaborador, 1 registro por dia/O.S.'
+                : 'Produção importada para comparação operacional.';
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
+  if (state.tab === 'pendentes') return renderPendentesAgenteTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
   if (state.tab === 'justificativas') return renderJustificativasTable();
   if (state.tab === 'localizacao') return renderLocalizacaoTable();
@@ -565,6 +600,61 @@ function renderDespesasTable() {
           </tbody>
         </table>
       </div>
+    </div>
+  `;
+}
+
+function renderPendentesAgenteTable() {
+  const rows = sortRows(applyLocalFilters(getPendenciasAgente(), 'despesas'), 'despesas');
+  const target = document.getElementById('conf-table');
+
+  if (!rows.length) {
+    target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa "Outros" pendente de lançamento manual no GRM.</td></tr></tbody></table></div>`;
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="conf-subsection-head">
+      <div>
+        <h4>Lançar manualmente no GRM</h4>
+        <p>${escapeHtml('O agente automático pula despesas "Outros" (sem descrição de combustível) porque não existe categoria correspondente em Regras de Caixa Operacional. Lance no GRM e depois clique em Conferir para tirar da lista.')}</p>
+      </div>
+      <span class="conf-counter">${rows.length} pendência(s)</span>
+    </div>
+    <div class="conf-table-wrap">
+      <table class="conf-table conf-table-despesas">
+        <thead>
+          <tr>
+            ${sortableTh('colaborador', 'Colaborador')}
+            ${sortableTh('regional', 'Regional')}
+            ${sortableTh('status', 'Status')}
+            <th>Despesa "Outros"</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
+                <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
+              </td>
+              <td class="conf-td-regional">
+                ${escapeHtml(getRegional(row))}
+                <small>${escapeHtml(row.coordenacao || '')}</small>
+              </td>
+              <td>${statusChip(getStatus(row))}</td>
+              <td class="conf-td-extras">${escapeHtml(pendenciaAgenteResumo(row))}</td>
+              <td>
+                <div class="conf-row-actions">
+                  <button class="conf-btn conf-row-icon-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button" title="Analisar"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
+                  <button class="conf-btn conf-btn-primary conf-row-icon-btn" data-action="CONFERIDO" data-id="${escapeHtml(row.id)}" type="button" title="Já lancei manualmente no GRM — Conferir"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
     </div>
   `;
 }
@@ -1186,13 +1276,15 @@ async function updateDespesaStatus(id, status, motivo = null) {
 function exportCsv() {
   const rows = state.tab === 'despesas'
     ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
-    : state.tab === 'auditoria'
-      ? applyLocalFilters(state.auditoria, 'auditoria')
-      : state.tab === 'justificativas'
-        ? applyJustificativasFilters(state.justificativas)
-        : state.tab === 'localizacao'
-          ? applyLocalizacaoFilters(state.localizacao)
-          : applyLocalFilters(state.resultado, 'resultado');
+    : state.tab === 'pendentes'
+      ? sortRows(applyLocalFilters(getPendenciasAgente(), 'despesas'), 'despesas')
+      : state.tab === 'auditoria'
+        ? applyLocalFilters(state.auditoria, 'auditoria')
+        : state.tab === 'justificativas'
+          ? applyJustificativasFilters(state.justificativas)
+          : state.tab === 'localizacao'
+            ? applyLocalizacaoFilters(state.localizacao)
+            : applyLocalFilters(state.resultado, 'resultado');
 
   if (!rows.length) {
     setFeedback('Não há dados para exportar.', true);
@@ -1212,6 +1304,15 @@ function exportCsv() {
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
       extrasResumo(row),
+    ]);
+  } else if (state.tab === 'pendentes') {
+    headers = ['Colaborador', 'Regional', 'Status', 'Data', 'Despesa "Outros"'];
+    csvRows = rows.map((row) => [
+      row.colaborador || row.nome_colaborador || '',
+      getRegional(row),
+      STATUS_LABELS[getStatus(row)] || getStatus(row),
+      brDate(row.data_referencia),
+      pendenciaAgenteResumo(row),
     ]);
   } else if (state.tab === 'justificativas') {
     headers = ['Data/Hora', 'Cliente', 'OS', 'Regional', 'Colaboradores no ponto', 'Motivo', 'Registrado por', 'E-mail'];
