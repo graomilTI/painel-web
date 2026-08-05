@@ -64,6 +64,7 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
+var MAX_LANCAMENTOS_POR_EXECUCAO = Number(process.env.NHE_LANCAMENTO_LOTE || 10);
 var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
 var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';
 
@@ -683,6 +684,24 @@ async function finalizarExecucao(runId, patch) {
   if (result.error) log('WARN', 'Falha ao finalizar execução: ' + result.error.message);
 }
 
+async function enfileirarContinuacao() {
+  var aberto = await supabase
+    .from('grm_sync_jobs')
+    .select('id')
+    .eq('agente_id', 'sync-lancar-nhe')
+    .eq('status', 'pendente')
+    .limit(1);
+  if (aberto.error) throw aberto.error;
+  if (aberto.data && aberto.data.length) return false;
+  var result = await supabase.from('grm_sync_jobs').insert({
+    agente_id: 'sync-lancar-nhe',
+    status: 'pendente',
+    payload: { continuacao: true }
+  });
+  if (result.error) throw result.error;
+  return true;
+}
+
 /* ---------------------------------------------------------------------- *
  * Puppeteer: login + lançamento do NHE
  * ---------------------------------------------------------------------- */
@@ -791,10 +810,18 @@ async function abrirOsEModalCargas(page, numeroOs) {
   await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2500);
 
+  var filterButton = await page.$('.serviceOrder-act-filter button, .serviceOrder-act-filter');
+  if (filterButton) {
+    await filterButton.click();
+    await wait(400);
+  }
+
   var osFilled = await page.evaluate(function (numeroOs) {
     var input = Array.from(document.querySelectorAll('input')).find(function (i) {
       var lbl = (i.closest('.v-input') || {}).innerText || '';
       return lbl.trim().indexOf('O.S') === 0;
+    }) || Array.from(document.querySelectorAll('input')).find(function (i) {
+      return String(i.placeholder || '').trim().toUpperCase() === 'FILTRAR PESQUISA';
     });
     if (!input) return false;
     input.focus();
@@ -806,6 +833,8 @@ async function abrirOsEModalCargas(page, numeroOs) {
     return Array.from(document.querySelectorAll('input')).find(function (i) {
       var lbl = (i.closest('.v-input') || {}).innerText || '';
       return lbl.trim().indexOf('O.S') === 0;
+    }) || Array.from(document.querySelectorAll('input')).find(function (i) {
+      return String(i.placeholder || '').trim().toUpperCase() === 'FILTRAR PESQUISA';
     });
   });
   await osInputHandle.asElement().click({ clickCount: 3 });
@@ -813,7 +842,10 @@ async function abrirOsEModalCargas(page, numeroOs) {
   await osInputHandle.asElement().type(String(numeroOs), { delay: 30 });
   await wait(400);
 
-  var searchClicked = await page.evaluate(function () {
+  var buscaGlobal = await osInputHandle.asElement().evaluate(function (input) {
+    return String(input.placeholder || '').trim().toUpperCase() === 'FILTRAR PESQUISA';
+  });
+  var searchClicked = buscaGlobal || await page.evaluate(function () {
     var btn = document.querySelector('.serviceOrder-act-search button, .serviceOrder-act-search');
     if (!btn) return false;
     (btn.tagName === 'BUTTON' ? btn : btn.querySelector('button') || btn).click();
@@ -845,12 +877,13 @@ async function abrirOsEModalCargas(page, numeroOs) {
   await wait(1800);
 
   var nheClicked = await page.evaluate(function () {
-    var el = document.querySelector('.sOrderloads-act-add-nhe button, .sOrderloads-act-add-nhe');
-    if (!el) return false;
-    (el.tagName === 'BUTTON' ? el : el.querySelector('button') || el).click();
-    return true;
+    var buttons = Array.from(document.querySelectorAll('.sOrderloads-act-add-nhe button'));
+    buttons.forEach(function (button) { button.click(); });
+    return buttons.length > 0;
   });
-  if (!nheClicked) throw new Error('Botão "+NHE" (.sOrderloads-act-add-nhe) não encontrado.');
+  if (!nheClicked) {
+    throw new Error('A ação "+NHE" não está disponível para a conta de automação na tela atual do Graint.');
+  }
   await wait(1200);
 
   var modalAberto = await page.evaluate(function () {
@@ -1140,6 +1173,12 @@ async function main() {
     stats.candidatos = candidatos.length;
     log('SUCCESS', candidatos.length + ' candidato(s) elegível(is) para lançamento automático.');
 
+    var totalCandidatos = candidatos.length;
+    if (MAX_LANCAMENTOS_POR_EXECUCAO > 0 && candidatos.length > MAX_LANCAMENTOS_POR_EXECUCAO) {
+      candidatos = candidatos.slice(0, MAX_LANCAMENTOS_POR_EXECUCAO);
+      log('INFO', 'Processando lote de ' + candidatos.length + '/' + totalCandidatos + ' candidato(s) para respeitar o tempo do worker.');
+    }
+
     if (candidatos.length) {
       var browser = await puppeteer.launch({
         headless: process.env.GRM_HEADLESS === 'new' ? 'new' : true,
@@ -1185,6 +1224,14 @@ async function main() {
       if (stats.sucesso > 0 && !dryRun) {
         await atualizarRelatorioNhe();
       }
+    }
+
+    var restantes = Math.max(0, totalCandidatos - candidatos.length);
+    if (!dryRun && restantes > 0 && stats.sucesso > 0) {
+      var criada = await enfileirarContinuacao();
+      log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
+    } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
+      log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
     }
 
     await finalizarExecucao(runId, {

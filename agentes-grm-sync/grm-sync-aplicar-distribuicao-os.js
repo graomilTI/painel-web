@@ -25,6 +25,14 @@ function normalize(value) {
 }
 function dateKey(value) { return String(value || '').slice(0, 10); }
 function toBrDate(iso) { const [y, m, d] = String(iso).slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : null; }
+function dataAceitaNoGraint(iso) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const limite = new Date(hoje);
+  limite.setDate(limite.getDate() + 3);
+  const data = new Date(`${iso}T00:00:00`);
+  return !Number.isNaN(data.getTime()) && data >= hoje && data <= limite;
+}
 function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regional || row.supervisao || ''; }
 function safe(data) { return Array.isArray(data) ? data : []; }
 
@@ -71,7 +79,8 @@ async function carregarGruposPendentes() {
     if (!vinculados.length) continue; // sem colaborador indicado — precisa triagem manual, não é alvo deste agente
     const data = dateKey(row.configurada_em || row.data_os);
     const coord = coordOf(row);
-    if (!data || !coord) continue;
+    // O Graint passou a aceitar distribuição somente entre hoje e os próximos 3 dias.
+    if (!data || !coord || !dataAceitaNoGraint(data)) continue;
     for (const a of vinculados) {
       const nome = a.colaborador_nome || '';
       if (!nome) continue;
@@ -114,10 +123,37 @@ async function selecionarSupervisao(page, coordenacao) {
 async function ajustarData(page, dataIso) {
   const dataBr = toBrDate(dataIso);
   if (!dataBr) return;
-  const atual = await page.$eval('#sodDate', (el) => el.value).catch(() => null);
+  const seletor = await page.evaluate(() => {
+    const inputs = Array.from(document.querySelectorAll('input'));
+    const input = document.querySelector('#sodDate') || inputs.find((el) => {
+      const contexto = `${el.getAttribute('aria-label') || ''} ${el.getAttribute('placeholder') || ''} ${el.closest('.v-input')?.textContent || ''}`;
+      return /\bDATA\b/i.test(contexto) || el.type === 'date';
+    });
+    if (!input) return null;
+    if (input.id) return `#${CSS.escape(input.id)}`;
+    input.setAttribute('data-agent-date', 'true');
+    return 'input[data-agent-date="true"]';
+  });
+  if (!seletor) {
+    const diagnostico = await page.evaluate(() => ({
+      url: location.href,
+      titulo: document.title,
+      texto: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 500),
+      inputs: Array.from(document.querySelectorAll('input')).slice(0, 12).map((el) => ({
+        id: el.id, type: el.type, placeholder: el.placeholder, ariaLabel: el.getAttribute('aria-label'),
+      })),
+      buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map((el) => ({
+        text: el.textContent?.trim(), title: el.title, ariaLabel: el.getAttribute('aria-label'), className: String(el.className),
+        parentClass: String(el.parentElement?.className || ''), icon: el.querySelector('lord-icon')?.getAttribute('src') || '',
+      })),
+    }));
+    throw new Error(`Campo de Data não encontrado na nova tela de Distribuição de OS: ${JSON.stringify(diagnostico)}`);
+  }
+  const atual = await page.$eval(seletor, (el) => el.value).catch(() => null);
   if (atual === dataBr) return;
-  log('WARN', `Data do Graint (${atual}) difere do grupo (${dataBr}) — ajustando #sodDate.`);
-  const input = await page.$('#sodDate');
+  log('WARN', `Data do Graint (${atual}) difere do grupo (${dataBr}) — ajustando ${seletor}.`);
+  const input = await page.$(seletor);
+  if (!input) throw new Error('Campo de Data desapareceu antes do preenchimento.');
   await input.click({ clickCount: 3 });
   await page.keyboard.press('Backspace');
   await input.type(dataBr, { delay: 40 });
@@ -137,13 +173,35 @@ async function localizarLiDaOs(page, numeroOs) {
 }
 
 async function associarColaborador(page, li, colaboradorNome) {
-  const input = await li.$('input[role="combobox"]');
-  if (!input) throw new Error('Campo de colaborador não encontrado na linha da OS.');
-  await input.click();
+  // A nova tela deixa o seletor recolhido até a linha da OS ser aberta.
+  await li.click();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const inputs = await li.$$('input[role="combobox"]');
+  let input = null;
+  for (const candidato of inputs) {
+    const caixa = await candidato.boundingBox();
+    if (caixa && caixa.width > 0 && caixa.height > 0) { input = candidato; break; }
+  }
+  // O Vuetify atual mantém o input do autocomplete com caixa zero, mas ele ainda aceita foco e digitação.
+  if (!input && inputs.length) input = inputs[0];
+  if (!input) {
+    const diagnostico = await li.evaluate((el) => ({
+      texto: (el.innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+      inputs: Array.from(el.querySelectorAll('input')).map((item) => ({ id: item.id, role: item.getAttribute('role'), type: item.type, className: item.className })),
+    }));
+    throw new Error(`Campo de colaborador não encontrado na linha da OS: ${JSON.stringify(diagnostico)}`);
+  }
+  const campoVisual = await li.$('.v-autocomplete .v-field, .v-select .v-field');
+  if (campoVisual) await campoVisual.evaluate((el) => el.click());
+  await input.focus();
   await input.type(colaboradorNome, { delay: 30 });
   await page.waitForFunction((nome) => {
     return Array.from(document.querySelectorAll('.v-list-item-title')).some((el) => el.offsetParent !== null && el.textContent.trim().toUpperCase() === nome.toUpperCase());
-  }, { timeout: 6000 }, colaboradorNome).catch(() => { throw new Error(`Colaborador "${colaboradorNome}" não encontrado na lista do Graint.`); });
+  }, { timeout: 6000 }, colaboradorNome).catch(async () => {
+    const disponiveis = await page.evaluate(() => Array.from(document.querySelectorAll('.v-list-item-title'))
+      .filter((el) => el.offsetParent !== null).slice(0, 12).map((el) => el.textContent.trim()));
+    throw new Error(`Colaborador "${colaboradorNome}" não encontrado na lista do Graint. Opções visíveis: ${disponiveis.join(' | ') || 'nenhuma'}.`);
+  });
 
   const clicou = await page.evaluate((nome) => {
     const items = Array.from(document.querySelectorAll('.v-list-item-title')).filter((el) => el.offsetParent !== null);
@@ -156,7 +214,12 @@ async function associarColaborador(page, li, colaboradorNome) {
   await new Promise((r) => setTimeout(r, 400));
 
   const chipOk = await li.evaluate((el, nome) => {
-    return Array.from(el.querySelectorAll('.v-chip__content')).some((c) => c.textContent.trim().toUpperCase() === nome.toUpperCase());
+    const alvo = nome.trim().toUpperCase();
+    const chip = Array.from(el.querySelectorAll('.v-chip__content')).some((c) => c.textContent.trim().toUpperCase() === alvo);
+    const valor = Array.from(el.querySelectorAll('input[role="combobox"]')).some((item) => item.value.trim().toUpperCase() === alvo);
+    const selecao = Array.from(el.querySelectorAll('.v-select__selection-text, .v-autocomplete__selection-text'))
+      .some((item) => item.textContent.trim().toUpperCase() === alvo);
+    return chip || valor || selecao;
   }, colaboradorNome);
   if (!chipOk) throw new Error(`Chip de "${colaboradorNome}" não apareceu na OS após seleção.`);
 }
@@ -239,6 +302,22 @@ async function main() {
     if (headless) await page.setViewport({ width: 1920, height: 1440 });
     await login(page);
     await page.goto(SO_ORDER_DISTRIBUTION_URL, { waitUntil: 'networkidle2' });
+    let abriuFiltro = false;
+    const botaoFiltro = await page.$('.v-badge__wrapper button');
+    if (botaoFiltro) {
+      await botaoFiltro.click();
+      abriuFiltro = true;
+    } else abriuFiltro = await page.evaluate(() => {
+      const direto = document.querySelector('.sOrderDistribution-act-filter');
+      if (direto) { direto.click(); return true; }
+      const botao = Array.from(document.querySelectorAll('button')).find((el) => {
+        const contexto = `${el.textContent || ''} ${el.title || ''} ${el.getAttribute('aria-label') || ''} ${el.className || ''}`;
+        return /FILT(RAR|RO)|PESQUISAR|TOGGLESEARCH/i.test(contexto);
+      });
+      if (botao) { botao.click(); return true; }
+      return false;
+    });
+    if (abriuFiltro) await new Promise((resolve) => setTimeout(resolve, 500));
 
     for (const grupo of grupos) {
       try {
