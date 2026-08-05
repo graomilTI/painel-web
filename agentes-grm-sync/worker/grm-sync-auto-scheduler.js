@@ -122,26 +122,10 @@ async function escolherProximoAgenteFixo() {
 }
 
 async function main() {
-  log('Iniciando agendador automático');
-
-  const aberto = await existeJobAberto();
-
-  if (aberto) {
-    log(`Já existe job ${aberto.status} (${aberto.agente_id}), aguardando terminar.`);
-    log('Agendador finalizado');
-    return;
-  }
-
-  const proximo = await escolherProximoAgenteFixo();
-
-  if (!proximo) {
-    log('Nenhum agente disponível para executar.');
-    log('Agendador finalizado');
-    return;
-  }
-
-  await criarJob(proximo);
-  log(`${proximo}: job automático criado.`);
+  log('Garantindo capacidade da esteira fixa de duas lanes');
+  const { data, error } = await supabase.rpc('ensure_grm_fixed_pipeline_capacity');
+  if (error) throw error;
+  log(`${data || 0} job(s) criado(s) para completar as duas posições da esteira.`);
   log('Agendador finalizado');
 }
 
