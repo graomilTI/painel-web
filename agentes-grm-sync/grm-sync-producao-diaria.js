@@ -120,6 +120,47 @@ async function downloadReport(page) {
   return filePath;
 }
 
+async function fetchReportData(page) {
+  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  log('INFO', `Consultando API: ${dateRange.from} até ${dateRange.to}`);
+  const rows = await page.evaluate(async (payload) => {
+    let token = '';
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try {
+        const value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value?.userToken) token = value.userToken;
+      } catch (_) {}
+    }
+    const response = await fetch('/api/reports/classification/staff/dailyProductionReport', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.result) throw new Error(json.message || `HTTP ${response.status}`);
+    return json.searchData || [];
+  }, { loaDateFrom: dateRange.from, loaDateTo: dateRange.to, orderBy: 'SDO' });
+
+  const data = rows.map((row) => ({
+    'Coordenação': row.olcName,
+    'Supervisão': row.olsName,
+    'Funcionário': row.staName,
+    'Tipo': row.staType === 'D' ? 'Diarista' : row.staType === 'I' ? 'Intermitente' : 'Efetivo',
+    'Data': row.loaDate,
+    'O.S.': row.sorCode,
+    'Cliente': row.cliName,
+    'Serviço': row.serName,
+    'Cidade': row.citName,
+    'Local de Embarque': row.splName,
+    'Check-in': row.initHour,
+    'Check-out': row.endHour,
+    'Cargas': row.countLoads,
+    'Tons': row.tons,
+  }));
+  log('SUCCESS', `${data.length} linhas recebidas pela API`);
+  return data;
+}
+
 async function parseXLS(filePath) {
   log('INFO', `Parseando arquivo: ${filePath}`);
   const workbook = XLSX.readFile(filePath);
@@ -270,8 +311,7 @@ async function main() {
     page.setViewport({ width: 1366, height: 768 });
 
     await login(page);
-    const filePath = await downloadReport(page);
-    const data = await parseXLS(filePath);
+    const data = await fetchReportData(page);
     await upsertData(data);
     await syncProducaoSnapshot(data);
 
