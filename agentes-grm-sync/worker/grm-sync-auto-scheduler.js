@@ -22,55 +22,13 @@ const supabase = createClient(url, key, {
     autoRefreshToken: false,
   },
 });
+const AGENTES_FIXOS = require('./grm-sync-fixed-agents');
 
-// sync-colaboradores e sync-lista-os têm agendamento próprio via pg_cron, a cada
-// 30min — não entram no round-robin pra não serem escolhidos em duplicidade.
 // sync-login-alimentacao também saiu daqui: precisa rodar várias vezes SÓ entre 11h-12h30
 // (jobs "sync-login-alimentacao-11h"/"-12h", ver migration
 // 20260712140000_cron_sync_login_alimentacao_janela.sql) pra capturar login tardio do
 // colaborador antes do fechamento da janela de elegibilidade — o round-robin de 60min
 // roda em qualquer horário do dia, o que não serve pra esse caso.
-const AGENTES_CONTINUOS = [
-  'sync-mapa-embarque',
-  'sync-nhe',
-  'sync-operacional-os',
-  'sync-distribuicao-os',
-  'sync-locais-embarque',
-  'sync-auditorias',
-  'sync-btg-relatorios',
-  'sync-patrimonios',
-  'sync-contas-pagar',
-  'sync-contas-receber',
-  'sync-notas-fiscais',
-  'sync-producao-diaria',
-  'sync-resultado-diario',
-];
-
-// sync-lancar-nhe também saiu daqui: usuária pediu horário fixo (02h Brasília, não
-// "24h desde a última execução" — o round-robin deste array não garante clock fixo,
-// só um intervalo mínimo). Agendamento próprio via pg_cron, ver migration
-// 20260805111600_cron_sync_lancar_nhe_02h.sql (mesmo padrão do sync-login-alimentacao).
-const AGENTES_DIARIOS = [
-  {
-    agente_id: 'sync-despesas-retroativas',
-    nome: 'Despesas retroativas por programação e produção',
-    intervalo_minutos: 1440,
-    ativo: true,
-  },
-  { agente_id: 'sync-despesas', intervalo_minutos: 60 },
-  {
-    agente_id: 'sync-cargas-geofence',
-    nome: 'Relatório de Cargas - Geofence',
-    intervalo_minutos: 60,
-    ativo: true,
-  },
-  {
-    agente_id: 'sync-adiantamentos',
-    nome: 'Adiantamentos - Solicitações Caixa Operacional',
-    intervalo_minutos: 15,
-    ativo: true,
-  },
-];
 
 // Nenhum dos 14 agentes historicamente passa de ~10min rodando; acima disso é job travado (processo morto sem atualizar status).
 const TIMEOUT_JOB_TRAVADO_MIN = 20;
@@ -100,17 +58,13 @@ async function liberarJobTravado(job) {
 }
 
 async function existeJobAberto() {
-  // sync-colaboradores e sync-login-alimentacao são agendados direto pelo pg_cron (fora
-  // deste round-robin) — sync-colaboradores roda a cada 30min o dia todo, sync-login-alimentacao
-  // roda em rajadas na janela 11h-12h30 (ver migration 20260712140000_cron_sync_login_alimentacao_janela.sql).
-  // Ignorar os dois aqui pra não bloquear a vez dos agentes contínuos (ex.: sync-mapa-embarque)
-  // enquanto um deles está rodando — antes só sync-colaboradores era ignorado, e o
-  // sync-login-alimentacao segurava o agendador travado durante suas rajadas.
+  // Somente sync-login-alimentacao fica fora da esteira fixa: ele roda em
+  // janelas próprias e não deve impedir a recuperação/continuidade da fila.
   const { data, error } = await supabase
     .from('grm_sync_jobs')
     .select('id,agente_id,status,solicitado_em,iniciado_em,created_at')
     .in('status', ['pendente', 'rodando'])
-    .not('agente_id', 'in', '(sync-colaboradores,sync-login-alimentacao)')
+    .neq('agente_id', 'sync-login-alimentacao')
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -152,38 +106,19 @@ async function criarJob(agente_id) {
   if (error) throw error;
 }
 
-async function escolherAgenteDiarioVencido() {
-  for (const agente of AGENTES_DIARIOS) {
-    const ultimo = await ultimoJob(agente.agente_id);
-    const referencia = ultimo?.finalizado_em || ultimo?.created_at;
-    const minutos = minutosDesde(referencia);
-
-    if (!ultimo || minutos >= agente.intervalo_minutos) {
-      return agente.agente_id;
-    }
-
-    log(`${agente.agente_id}: último job há ${minutos.toFixed(1)} min, aguardando 24h.`);
-  }
-
-  return null;
-}
-
-async function escolherAgenteContinuo() {
-  const candidatos = [];
-
-  for (const agente_id of AGENTES_CONTINUOS) {
-    const ultimo = await ultimoJob(agente_id);
-    const referencia = ultimo?.finalizado_em || ultimo?.created_at;
-    const minutos = minutosDesde(referencia);
-
-    candidatos.push({
-      agente_id,
-      minutos,
-    });
-  }
-
-  candidatos.sort((a, b) => b.minutos - a.minutos);
-  return candidatos[0]?.agente_id || null;
+async function escolherProximoAgenteFixo() {
+  const { data, error } = await supabase
+    .from('grm_sync_jobs')
+    .select('agente_id,finalizado_em,created_at')
+    .in('agente_id', AGENTES_FIXOS)
+    .in('status', ['sucesso', 'erro'])
+    .order('finalizado_em', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return AGENTES_FIXOS[0];
+  const index = AGENTES_FIXOS.indexOf(data.agente_id);
+  return AGENTES_FIXOS[(index + 1) % AGENTES_FIXOS.length];
 }
 
 async function main() {
@@ -197,8 +132,7 @@ async function main() {
     return;
   }
 
-  const diario = await escolherAgenteDiarioVencido();
-  const proximo = diario || await escolherAgenteContinuo();
+  const proximo = await escolherProximoAgenteFixo();
 
   if (!proximo) {
     log('Nenhum agente disponível para executar.');
