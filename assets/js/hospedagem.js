@@ -171,7 +171,8 @@ function alojTheadHtml(state) {
   return [
     sortableTh(state.sort, 'alojamento', 'alojamento', 'Alojamento'),
     sortableTh(state.sort, 'alojamento', 'colaborador', 'Colaborador'),
-    sortableTh(state.sort, 'alojamento', 'desde', 'Desde'),
+    sortableTh(state.sort, 'alojamento', 'desde', 'Entrada'),
+    sortableTh(state.sort, 'alojamento', 'saida', 'Saída'),
     '<th>Ações</th>',
   ].join('');
 }
@@ -300,6 +301,11 @@ function injectStyles() {
     .hospA-ac-empty{padding:8px 10px;font-size:11.5px;color:#6c9e82;text-align:center}
     .hospA-encerrar{border:0;background:transparent;color:#d58b8b;font-size:11px;font-weight:800;cursor:pointer;padding:2px 6px;white-space:nowrap}
     .hospA-encerrar:hover{color:#fecaca}
+    .hospA-modebar{display:flex;gap:8px;margin-bottom:12px}
+    .hospA-mode-btn{border:1px solid rgba(34,197,94,.22);background:transparent;color:#65ad82;padding:7px 13px;border-radius:10px;font-size:11.5px;font-weight:800;cursor:pointer}
+    .hospA-mode-btn:hover{border-color:rgba(45,215,120,.5);color:#9df2bd}
+    .hospA-mode-btn.active{background:rgba(22,101,52,.2);border-color:rgba(45,215,120,.4);color:#7bf2ad}
+    .hospA-saida-atual{color:#4f9670;font-style:italic}
   `;
   document.head.appendChild(style);
 }
@@ -315,6 +321,9 @@ export function renderContent(content, userContext) {
     clientes: [],
     alojamentos: [],
     ocupantes: [],
+    ocupantesHistorico: [],
+    hospAModo: 'atual',
+    hospAHistoricoCarregado: false,
     sort: {
       minhas: { column: '', direction: 'asc' },
       alojamento: { column: '', direction: 'asc' },
@@ -421,10 +430,15 @@ export function renderContent(content, userContext) {
           </div>
           <div class="hospA-add-feedback" id="hospAAddFeedback"></div>
 
+          <div class="hospA-modebar">
+            <button type="button" class="hospA-mode-btn active" data-hosp-a-mode="atual">Hospedados agora</button>
+            <button type="button" class="hospA-mode-btn" data-hosp-a-mode="historico">Histórico (entradas e saídas)</button>
+          </div>
+
           <div class="hosp-table-wrap">
             <table class="hosp-table">
               <thead><tr id="hospATheadRow">${alojTheadHtml(state)}</tr></thead>
-              <tbody id="hospATbody"><tr><td colspan="4" class="hosp-empty">Carregando...</td></tr></tbody>
+              <tbody id="hospATbody"><tr><td colspan="5" class="hosp-empty">Carregando...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -933,6 +947,51 @@ export function renderContent(content, userContext) {
     }).sort((a, b) => a.alojamentoNome.localeCompare(b.alojamentoNome, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
+  const HOSP_A_HISTORICO_DIAS = 180;
+
+  // Histórico (entradas e saídas): diferente de carregarOcupantesAlojamentos
+  // (que só traz quem está hospedado hoje), aqui buscamos todos os registros
+  // de programacao_estadia da regional, sem filtrar por data ativa — tanto os
+  // "legado" (criados pelo botão Adicionar/Encerrar desta página, sem
+  // data_referencia, com checkin/checkout abertos) quanto os "snapshot"
+  // diários gerados pela Programação (data_referencia por dia). Um snapshot
+  // de um dia passado é tratado como uma entrada encerrada naquele mesmo dia.
+  async function carregarHistoricoOcupantesAlojamentos() {
+    const hoje = todayISO();
+    const desde = addDaysISO(hoje, -HOSP_A_HISTORICO_DIAS);
+    const ids = state.alojamentos.map((a) => a.id);
+    state.ocupantesHistorico = [];
+    state.hospAHistoricoCarregado = false;
+    if (!ids.length) { state.hospAHistoricoCarregado = true; return; }
+
+    const [legado, snapshots] = await Promise.all([
+      supabase.from('programacao_estadia').select('id,colaborador_id,nome_colaborador,alojamento_id,checkin,checkout,data_referencia,tipo_estadia,tem_estadia').is('data_referencia', null).in('alojamento_id', ids),
+      supabase.from('programacao_estadia').select('id,colaborador_id,nome_colaborador,alojamento_id,checkin,checkout,data_referencia,tipo_estadia,tem_estadia').gte('data_referencia', desde).in('alojamento_id', ids),
+    ]);
+
+    const alojPorId = new Map(state.alojamentos.map((a) => [String(a.id), a]));
+    const rows = [...(legado.data || []), ...(snapshots.data || [])].filter((row) => {
+      if (normalizeText(row.tipo_estadia) !== 'alojamento') return false;
+      if (row.tem_estadia === false) return false;
+      return !!row.alojamento_id;
+    });
+
+    state.ocupantesHistorico = rows.map((row) => {
+      const aloj = alojPorId.get(String(row.alojamento_id));
+      const checkout = row.checkout || (row.data_referencia && row.data_referencia < hoje ? row.data_referencia : null);
+      return {
+        id: row.id,
+        nome: row.nome_colaborador || 'Colaborador',
+        checkin: row.checkin || row.data_referencia || null,
+        checkout,
+        alojamentoId: row.alojamento_id,
+        alojamentoNome: aloj?.nome || 'Alojamento',
+      };
+    }).sort((a, b) => (b.checkin || '').localeCompare(a.checkin || ''));
+
+    state.hospAHistoricoCarregado = true;
+  }
+
   function renderAlojamentoSelect() {
     const select = document.getElementById('hospAAlojSelect');
     if (!select) return;
@@ -946,15 +1005,24 @@ export function renderContent(content, userContext) {
   function renderAlojamentos() {
     const tbody = document.getElementById('hospATbody');
     if (!tbody) return;
+    const historico = state.hospAModo === 'historico';
+    const origem = historico ? state.ocupantesHistorico : state.ocupantes;
     const busca = normalizeText(document.getElementById('hospABusca')?.value || '');
-    const filtrados = !busca ? state.ocupantes : state.ocupantes.filter((o) => normalizeText(`${o.alojamentoNome} ${o.nome}`).includes(busca));
+    const filtrados = !busca ? origem : origem.filter((o) => normalizeText(`${o.alojamentoNome} ${o.nome}`).includes(busca));
 
     if (!state.alojamentos.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="hosp-empty">Nenhum alojamento cadastrado na sua regional ainda. Fale com o time de Hospedagem para vincular um alojamento à sua supervisão.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="hosp-empty">Nenhum alojamento cadastrado na sua regional ainda. Fale com o time de Hospedagem para vincular um alojamento à sua supervisão.</td></tr>';
+      return;
+    }
+    if (historico && !state.hospAHistoricoCarregado) {
+      tbody.innerHTML = '<tr><td colspan="5" class="hosp-empty">Carregando histórico...</td></tr>';
       return;
     }
     if (!filtrados.length) {
-      tbody.innerHTML = `<tr><td colspan="4" class="hosp-empty">${busca ? 'Nenhum alojamento ou colaborador encontrado para essa busca.' : 'Nenhum colaborador hospedado no momento.'}</td></tr>`;
+      const vazio = busca
+        ? 'Nenhum alojamento ou colaborador encontrado para essa busca.'
+        : (historico ? 'Nenhuma entrada registrada nos últimos meses.' : 'Nenhum colaborador hospedado no momento.');
+      tbody.innerHTML = `<tr><td colspan="5" class="hosp-empty">${vazio}</td></tr>`;
       return;
     }
 
@@ -962,6 +1030,7 @@ export function renderContent(content, userContext) {
       if (column === 'alojamento') return o.alojamentoNome || '';
       if (column === 'colaborador') return o.nome || '';
       if (column === 'desde') return o.checkin || '';
+      if (column === 'saida') return o.checkout || '';
       return '';
     });
 
@@ -970,14 +1039,15 @@ export function renderContent(content, userContext) {
         <td>${esc(o.alojamentoNome)}</td>
         <td>${esc(o.nome)}</td>
         <td>${brDate(o.checkin)}</td>
-        <td><div class="hosp-row-actions"><button type="button" class="hospA-encerrar" data-encerrar-estadia="${esc(o.id)}">Encerrar</button></div></td>
+        <td>${o.checkout ? brDate(o.checkout) : '<span class="hospA-saida-atual">Hospedado atualmente</span>'}</td>
+        <td><div class="hosp-row-actions">${o.checkout ? '' : `<button type="button" class="hospA-encerrar" data-encerrar-estadia="${esc(o.id)}">Encerrar</button>`}</div></td>
       </tr>
     `).join('');
   }
 
   async function carregarAlojamentosRegional() {
     const tbody = document.getElementById('hospATbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="hosp-empty">Carregando...</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="hosp-empty">Carregando...</td></tr>';
     const minhasRegionais = getMinhasRegionais();
     const { data, error } = await supabase
       .from('hospedagem_alojamentos')
@@ -986,7 +1056,7 @@ export function renderContent(content, userContext) {
       .order('cidade', { ascending: true })
       .order('nome', { ascending: true });
     if (error) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="4" class="hosp-empty">Não foi possível carregar: ${esc(error.message)}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="hosp-empty">Não foi possível carregar: ${esc(error.message)}</td></tr>`;
       return;
     }
     const todos = data || [];
@@ -1092,7 +1162,9 @@ export function renderContent(content, userContext) {
     alojColabInput.value = '';
     document.getElementById('hospAAlojSelect').value = '';
     setAlojFeedback(`${colaborador.nome} adicionado a ${aloj.nome}.`, 'ok');
+    state.hospAHistoricoCarregado = false;
     await carregarOcupantesAlojamentos();
+    if (state.hospAModo === 'historico') await carregarHistoricoOcupantesAlojamentos();
     renderAlojamentos();
   }
 
@@ -1102,11 +1174,27 @@ export function renderContent(content, userContext) {
       .update({ checkout: addDaysISO(todayISO(), -1) })
       .eq('id', estadiaId);
     if (error) { window.alert(`Erro ao encerrar estadia: ${error.message}`); return; }
+    state.hospAHistoricoCarregado = false;
     await carregarOcupantesAlojamentos();
+    if (state.hospAModo === 'historico') await carregarHistoricoOcupantesAlojamentos();
     renderAlojamentos();
   }
 
   document.getElementById('hospABusca').addEventListener('input', renderAlojamentos);
+
+  document.querySelector('.hospA-modebar')?.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-hosp-a-mode]');
+    if (!btn) return;
+    const modo = btn.dataset.hospAMode;
+    if (modo === state.hospAModo) return;
+    state.hospAModo = modo;
+    document.querySelectorAll('.hospA-mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    if (modo === 'historico' && !state.hospAHistoricoCarregado) {
+      renderAlojamentos();
+      await carregarHistoricoOcupantesAlojamentos();
+    }
+    renderAlojamentos();
+  });
 
   (async function boot() {
     await loadColaboradores();
