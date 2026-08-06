@@ -55,7 +55,20 @@ const STATUS_META = {
   sem_job: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando' },
 };
 
-const state = { agentes: [], loading: false, selectedAgent: null, botconversaFailures: [], cargasKpi: null, activeTab: 'entrada' };
+const state = {
+  agentes: [],
+  loading: false,
+  selectedAgent: null,
+  botconversaFailures: [],
+  cargasKpi: null,
+  activeTab: 'entrada',
+  executions: [],
+  executionsLoading: false,
+  executionPeriod: '3d',
+  executionStatus: 'problemas',
+  executionSearch: '',
+  executionsUpdatedAt: null,
+};
 
 function getDirection(agenteDef) {
   return agenteDef?.direction === 'saida' ? 'saida' : 'entrada';
@@ -72,6 +85,9 @@ function getStyles() {
   return `<style id="agentes-style">
 .ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
 .ag-tabs{display:flex;gap:8px;margin-top:18px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:0}.ag-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-weight:900;font-size:13px;padding:10px 4px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-tab:hover{color:#cbd5e1}.ag-tab.active{color:#f8fafc;border-bottom-color:#3b82f6}.ag-tab-count{background:rgba(148,163,184,.14);color:#cbd5e1;border-radius:999px;padding:1px 8px;font-size:11px}.ag-tab.active .ag-tab-count{background:rgba(59,130,246,.22);color:#bfdbfe}.ag-dir-badge{font-size:10px;font-weight:900;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}.ag-dir-badge.entrada{background:rgba(34,197,94,.13);color:#86efac}.ag-dir-badge.saida{background:rgba(251,146,60,.15);color:#fdba74}
+.ag-exec{display:grid;gap:14px}.ag-exec-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ag-exec-kpi{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(8,15,29,.9));border:1px solid rgba(148,163,184,.13);border-radius:17px;padding:15px 16px}.ag-exec-kpi::after{content:"";position:absolute;inset:auto -24px -38px auto;width:92px;height:92px;border-radius:50%;background:var(--glow,rgba(59,130,246,.12));filter:blur(2px)}.ag-exec-kpi span{display:block;color:#94a3b8;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.ag-exec-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:25px;line-height:1;font-weight:950}.ag-exec-kpi small{display:block;margin-top:7px;color:#64748b;font-size:10px}.ag-exec-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:10px}.ag-exec-search{min-width:220px;flex:1;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#e2e8f0;padding:10px 12px;outline:none}.ag-exec-search:focus{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 3px rgba(59,130,246,.1)}.ag-exec-filter{background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#cbd5e1;padding:9px 11px}.ag-exec-refresh{border:1px solid rgba(96,165,250,.26);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:11px;padding:9px 12px;font-weight:850;cursor:pointer}.ag-exec-refresh:hover{background:rgba(59,130,246,.18)}.ag-exec-updated{margin-left:auto;color:#64748b;font-size:10px}.ag-exec-list{display:grid;gap:8px}.ag-exec-row{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.11);border-left:3px solid var(--status-color,#64748b);border-radius:14px;padding:11px 13px;color:#cbd5e1}.ag-exec-row:hover{background:rgba(15,23,42,.86);border-color:rgba(148,163,184,.2);border-left-color:var(--status-color,#64748b)}.ag-exec-icon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--status-color) 14%,transparent);color:var(--status-color);font-weight:950}.ag-exec-agent strong{display:block;color:#f8fafc;font-size:12px}.ag-exec-agent code{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-time strong,.ag-exec-duration strong{display:block;color:#cbd5e1;font-size:11px}.ag-exec-time span,.ag-exec-duration span{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-error{min-width:0;color:#94a3b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-chevron{color:#64748b;text-align:center}.ag-exec-detail{grid-column:1/-1;margin:2px 0 0;padding:12px;background:rgba(2,6,23,.72);border-radius:10px;border:1px solid rgba(148,163,184,.1);white-space:pre-wrap;word-break:break-word;font:10px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#94a3b8}.ag-exec-empty{text-align:center;padding:52px 20px;border:1px dashed rgba(148,163,184,.17);border-radius:16px;color:#64748b}.ag-exec-empty strong{display:block;color:#cbd5e1;margin-bottom:5px}.ag-exec-health{display:flex;align-items:center;gap:8px;font-size:11px;color:#94a3b8}.ag-exec-health-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 9px rgba(34,197,94,.55)}
+@media(max-width:980px){.ag-exec-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ag-exec-row{grid-template-columns:40px 1fr 1fr}.ag-exec-duration,.ag-exec-error{grid-column:2/-1}.ag-exec-chevron{position:absolute;right:14px}.ag-exec-row{position:relative}}
+@media(max-width:560px){.ag-exec-summary{grid-template-columns:1fr 1fr}.ag-exec-row{grid-template-columns:38px 1fr}.ag-exec-time,.ag-exec-duration,.ag-exec-error{grid-column:2}.ag-exec-toolbar>*{width:100%}.ag-exec-updated{margin-left:0;text-align:center}}
 </style>`;
 }
 
@@ -242,10 +258,134 @@ async function loadCargasKpi() {
   render();
 }
 
+function getAgentDefinition(agentId) {
+  return AGENTES.find((agent) => getAgentIds(agent).includes(agentId));
+}
+
+function getExecutionAgentName(agentId) {
+  return getAgentDefinition(agentId)?.name || agentId || 'Agente não identificado';
+}
+
+function getExecutionDuration(job) {
+  if (Number(job?.duration_ms) > 0) return Number(job.duration_ms);
+  const start = new Date(job?.iniciado_em || job?.created_at || 0).getTime();
+  const end = new Date(job?.finalizado_em || Date.now()).getTime();
+  return start > 0 && end >= start ? end - start : 0;
+}
+
+function isStuckExecution(job) {
+  return String(job?.status || '').toLowerCase() === 'rodando'
+    && getExecutionDuration(job) > 20 * 60 * 1000;
+}
+
+function getExecutionProblem(job) {
+  const status = String(job?.status || '').toLowerCase();
+  return status === 'erro' || status === 'parcial' || isStuckExecution(job);
+}
+
+function getPeriodStart(period = state.executionPeriod) {
+  const hours = period === '6h' ? 6 : period === '24h' ? 24 : 24 * 3;
+  return Date.now() - hours * 60 * 60 * 1000;
+}
+
+function getFilteredExecutions() {
+  const start = getPeriodStart();
+  const term = state.executionSearch.trim().toLowerCase();
+
+  return state.executions.filter((job) => {
+    if (new Date(job.created_at || 0).getTime() < start) return false;
+    const status = String(job.status || '').toLowerCase();
+    if (state.executionStatus === 'problemas' && !getExecutionProblem(job)) return false;
+    if (state.executionStatus !== 'todos' && state.executionStatus !== 'problemas' && status !== state.executionStatus) return false;
+    if (!term) return true;
+    return [job.agente_id, getExecutionAgentName(job.agente_id), job.erro, job.output?.script]
+      .some((value) => String(value || '').toLowerCase().includes(term));
+  });
+}
+
+function getExecutionStatusMeta(job) {
+  if (isStuckExecution(job)) return { label: 'Travado', icon: '!', color: '#fb923c' };
+  const status = String(job?.status || '').toLowerCase();
+  if (status === 'erro') return { label: 'Falhou', icon: '×', color: '#ef4444' };
+  if (status === 'parcial') return { label: 'Parcial', icon: '!', color: '#f59e0b' };
+  if (status === 'rodando') return { label: 'Executando', icon: '↻', color: '#3b82f6' };
+  if (status === 'pendente') return { label: 'Aguardando', icon: '·', color: '#eab308' };
+  return { label: 'Concluído', icon: '✓', color: '#22c55e' };
+}
+
+function getExecutionError(job) {
+  if (isStuckExecution(job)) return 'Execução acima de 20 minutos; pode estar impedindo a atualização das informações.';
+  return job?.erro || job?.output?.stderr || (String(job?.status).toLowerCase() === 'parcial' ? 'Execução concluída parcialmente.' : 'Sem falha registrada.');
+}
+
+function renderExecutions() {
+  const rows = getFilteredExecutions();
+  const periodRows = state.executions.filter((job) => new Date(job.created_at || 0).getTime() >= getPeriodStart());
+  const failures = periodRows.filter((job) => ['erro', 'parcial'].includes(String(job.status || '').toLowerCase()));
+  const affected = new Set(failures.map((job) => job.agente_id)).size;
+  const stuck = periodRows.filter(isStuckExecution).length;
+  const completed = periodRows.filter((job) => ['sucesso', 'erro', 'parcial'].includes(String(job.status || '').toLowerCase()));
+  const success = completed.filter((job) => String(job.status || '').toLowerCase() === 'sucesso').length;
+  const successRate = completed.length ? Math.round((success / completed.length) * 100) : 100;
+
+  const cards = `
+    <div class="ag-exec-summary">
+      <div class="ag-exec-kpi" style="--glow:rgba(239,68,68,.18)"><span>Falhas no período</span><strong style="color:${failures.length ? '#f87171' : '#86efac'}">${formatInt(failures.length)}</strong><small>${affected} agente(s) afetado(s)</small></div>
+      <div class="ag-exec-kpi" style="--glow:rgba(251,146,60,.18)"><span>Execuções travadas</span><strong style="color:${stuck ? '#fb923c' : '#86efac'}">${formatInt(stuck)}</strong><small>Acima de 20 minutos</small></div>
+      <div class="ag-exec-kpi" style="--glow:rgba(34,197,94,.16)"><span>Taxa de sucesso</span><strong style="color:${successRate >= 95 ? '#4ade80' : '#fbbf24'}">${successRate}%</strong><small>${completed.length} execução(ões) encerrada(s)</small></div>
+      <div class="ag-exec-kpi" style="--glow:rgba(59,130,246,.16)"><span>Volume monitorado</span><strong>${formatInt(periodRows.length)}</strong><small>Jobs dentro do período</small></div>
+    </div>`;
+
+  const toolbar = `
+    <div class="ag-exec-toolbar">
+      <input class="ag-exec-search" type="search" value="${esc(state.executionSearch)}" placeholder="Buscar agente ou mensagem de erro" oninput="filterExecutions({ search: this.value })" />
+      <select class="ag-exec-filter" onchange="filterExecutions({ status: this.value })">
+        <option value="problemas" ${state.executionStatus === 'problemas' ? 'selected' : ''}>Somente problemas</option>
+        <option value="todos" ${state.executionStatus === 'todos' ? 'selected' : ''}>Todos os status</option>
+        <option value="erro" ${state.executionStatus === 'erro' ? 'selected' : ''}>Falhas</option>
+        <option value="rodando" ${state.executionStatus === 'rodando' ? 'selected' : ''}>Executando</option>
+        <option value="sucesso" ${state.executionStatus === 'sucesso' ? 'selected' : ''}>Sucesso</option>
+      </select>
+      <select class="ag-exec-filter" onchange="filterExecutions({ period: this.value })">
+        <option value="6h" ${state.executionPeriod === '6h' ? 'selected' : ''}>Últimas 6 horas</option>
+        <option value="24h" ${state.executionPeriod === '24h' ? 'selected' : ''}>Últimas 24 horas</option>
+        <option value="3d" ${state.executionPeriod === '3d' ? 'selected' : ''}>Últimos 3 dias</option>
+      </select>
+      <button class="ag-exec-refresh" type="button" onclick="refreshExecutions()">↻ Atualizar</button>
+      <span class="ag-exec-updated">Atualizado ${formatDate(state.executionsUpdatedAt)}</span>
+    </div>`;
+
+  const list = state.executionsLoading
+    ? '<div class="ag-exec-empty"><strong>Consultando execuções…</strong>Buscando o histórico mais recente dos agentes.</div>'
+    : rows.length
+      ? `<div class="ag-exec-list">${rows.map((job) => {
+        const meta = getExecutionStatusMeta(job);
+        const error = getExecutionError(job);
+        const output = [job.erro, job.output?.stderr, job.output?.stdout].filter(Boolean).join('\n\n').slice(-6000);
+        return `<details class="ag-exec-row" style="--status-color:${meta.color}">
+          <summary style="display:contents;cursor:pointer">
+            <div class="ag-exec-icon">${meta.icon}</div>
+            <div class="ag-exec-agent"><strong>${esc(getExecutionAgentName(job.agente_id))}</strong><code>${esc(job.agente_id)}</code></div>
+            <div class="ag-exec-time"><strong>${esc(meta.label)}</strong><span>${formatDate(job.created_at)}</span></div>
+            <div class="ag-exec-duration"><strong>${esc(formatDuration(getExecutionDuration(job)))}</strong><span>${job.finalizado_em ? 'encerrada' : 'em andamento'}</span></div>
+            <div class="ag-exec-error" title="${esc(error)}">${esc(error)}</div>
+            <div class="ag-exec-chevron">⌄</div>
+          </summary>
+          <div class="ag-exec-detail">Job: ${esc(job.id)}\nCriado: ${formatDate(job.created_at)}\nIniciado: ${formatDate(job.iniciado_em)}\nFinalizado: ${formatDate(job.finalizado_em)}\n\n${esc(output || error)}</div>
+        </details>`;
+      }).join('')}</div>`
+      : '<div class="ag-exec-empty"><strong>Nenhum problema encontrado</strong>Os agentes não apresentam falhas ou travamentos para os filtros selecionados.</div>';
+
+  return `<section class="ag-exec" aria-label="Relatório de execuções dos agentes">${cards}${toolbar}<div class="ag-exec-health"><span class="ag-exec-health-dot"></span>Monitoramento automático a cada 30 segundos</div>${list}</section>`;
+}
+
 function renderAgentes() {
   const entrada = AGENTES.filter((a) => getDirection(a) === 'entrada');
   const saida = AGENTES.filter((a) => getDirection(a) === 'saida');
   const visiveis = state.activeTab === 'saida' ? saida : entrada;
+  const recentProblems = state.executions.filter((job) =>
+    new Date(job.created_at || 0).getTime() >= Date.now() - 24 * 60 * 60 * 1000
+    && getExecutionProblem(job)).length;
 
   const statusCount = {
     online: visiveis.filter((a) => getAgenteStatus(state.agentes.find((x) => x.id === a.id)) === 'online').length,
@@ -260,15 +400,22 @@ function renderAgentes() {
       <div class="ag-tabs">
         <button class="ag-tab ${state.activeTab === 'entrada' ? 'active' : ''}" onclick="setTab('entrada')" type="button">⬇️ Entrada <span class="ag-tab-count">${entrada.length}</span></button>
         <button class="ag-tab ${state.activeTab === 'saida' ? 'active' : ''}" onclick="setTab('saida')" type="button">⬆️ Saída <span class="ag-tab-count">${saida.length}</span></button>
+        <button class="ag-tab ${state.activeTab === 'execucoes' ? 'active' : ''}" onclick="setTab('execucoes')" type="button">◉ Execuções <span class="ag-tab-count">${recentProblems}</span></button>
       </div>
-      <div class="ag-stats">
+      ${state.activeTab === 'execucoes' ? '' : `<div class="ag-stats">
         <div class="ag-stat"><div class="ag-stat-val">${visiveis.length}</div><div class="ag-stat-lbl">Agentes nesta aba</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
-      </div>
+      </div>`}
       ${state.activeTab === 'entrada' ? renderBtgKpi() : ''}
       ${state.activeTab === 'entrada' ? renderCargasKpi() : ''}
     </div>`;
+
+  if (state.activeTab === 'execucoes') {
+    html += renderExecutions();
+    html += '</div>';
+    return html;
+  }
 
   if (state.selectedAgent) html += renderAgentDetails(state.selectedAgent);
 
@@ -352,10 +499,19 @@ async function loadBotConversaFailures(jobId) {
 }
 
 window.setTab = (tab) => {
-  state.activeTab = tab === 'saida' ? 'saida' : 'entrada';
+  state.activeTab = ['entrada', 'saida', 'execucoes'].includes(tab) ? tab : 'entrada';
   state.selectedAgent = null;
   render();
 };
+
+window.filterExecutions = ({ search, status, period } = {}) => {
+  if (search !== undefined) state.executionSearch = search;
+  if (status !== undefined) state.executionStatus = status;
+  if (period !== undefined) state.executionPeriod = period;
+  render();
+};
+
+window.refreshExecutions = () => loadExecutions(true);
 
 window.selectAgent = (agentId) => {
   const agente = AGENTES.find((a) => a.id === agentId);
@@ -553,6 +709,47 @@ async function loadAgentes() {
   }
 }
 
+async function loadExecutions(forceRender = false) {
+  if (state.executionsLoading) return;
+  state.executionsLoading = true;
+  if (forceRender) render();
+
+  try {
+    const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, erro';
+    const pageStarts = [0, 1000, 2000, 3000];
+    const [jobPages, problemDetailsRes] = await Promise.all([
+      Promise.all(pageStarts.map((start) => supabase
+        .from('grm_sync_jobs')
+        .select(baseFields)
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .range(start, start + 999))),
+      supabase
+        .from('grm_sync_jobs')
+        .select(`${baseFields}, output`)
+        .gte('created_at', since)
+        .in('status', ['erro', 'parcial'])
+        .order('created_at', { ascending: false })
+        .limit(500),
+    ]);
+
+    const failedPage = jobPages.find((page) => page.error);
+    if (failedPage?.error) throw failedPage.error;
+    if (problemDetailsRes.error) throw problemDetailsRes.error;
+
+    const jobs = jobPages.flatMap((page) => page.data || []);
+    const detailsById = new Map((problemDetailsRes.data || []).map((job) => [job.id, job]));
+    state.executions = jobs.map((job) => detailsById.get(job.id) || job);
+    state.executionsUpdatedAt = new Date().toISOString();
+  } catch (error) {
+    console.error('Erro carregando relatório de execuções:', error);
+  } finally {
+    state.executionsLoading = false;
+    render();
+  }
+}
+
 function render() {
   const pageContent = document.getElementById('pageContent');
   if (pageContent) pageContent.innerHTML = renderAgentes();
@@ -560,11 +757,12 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await Promise.all([loadAgentes(), loadCargasKpi()]);
+  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions()]);
 }
 
 init();
 setInterval(() => {
   loadAgentes();
   loadCargasKpi();
+  loadExecutions();
 }, 30000);
