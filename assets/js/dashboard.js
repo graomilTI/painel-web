@@ -716,7 +716,7 @@ function renderGestorDashboard(container, data) {
   const miniChart   = renderMiniChart(daily7);
   const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
-  const patrimonioLeituraUrl = toPanelUrl('patrimonio-status');
+  const patrimonioLeituraUrl = toPanelUrl('patrimonios');
 
   container.innerHTML = `
     <div class="db-section">
