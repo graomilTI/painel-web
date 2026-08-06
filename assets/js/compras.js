@@ -520,8 +520,9 @@ function styles(){return `<style>
 export async function renderContent(content, userContext){
   await loadColaboradores();
   content.innerHTML=`${styles()}
-  <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3><p class="muted" style="margin:2px 0 0">Solicitante: <b>${esc(solicitanteNome(userContext))}</b></p></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button></div></div>
-    <div class="cmp-grid"><div class="cmp-field"><label>Data da solicitação</label><input id="cmpData" type="date" value="${today()}" min="${today()}"></div><div class="cmp-field"><label>Solicitante</label><input value="${esc(solicitanteNome(userContext))}" readonly></div><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div></div>
+  <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button></div></div>
+    <input id="cmpData" type="hidden" value="${today()}">
+    <div class="cmp-grid"><div class="cmp-field cmp-full"><label>Observações</label><textarea id="cmpObs" rows="2" placeholder="Informações adicionais, urgência ou destino."></textarea></div></div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
