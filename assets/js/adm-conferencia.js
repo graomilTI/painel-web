@@ -505,10 +505,9 @@ function despesasTableHead() {
   `;
 }
 
-function despesasRowHtml(row, mode = 'fila') {
-  const isConferido = mode === 'conferidos';
+function grmVisualForRow(row) {
   const grmStatus = row.grm_status_aplicacao || 'NAO_PROCESSADO';
-  const grmVisual = {
+  return {
     APLICADO: row.grm_houve_alteracao === false
       ? { label: 'Sem alteração', kind: 'noop', title: 'Conferido no GRM; as regras já estavam corretas' }
       : { label: 'Aplicado', kind: 'applied', title: 'Regras atualizadas e conferidas no GRM' },
@@ -521,6 +520,46 @@ function despesasRowHtml(row, mode = 'fila') {
     PROCESSANDO: { label: 'Processando', kind: 'pending', title: 'Sincronização com o GRM em andamento' },
     NAO_PROCESSADO: { label: 'Não processado', kind: 'neutral', title: 'Nenhuma sincronização registrada para este funcionário' },
   }[grmStatus] || { label: grmStatus, kind: 'neutral', title: 'Status da sincronização com o GRM' };
+}
+
+function grmOverviewHtml(rows) {
+  const order = ['noop', 'applied', 'clean', 'pending', 'error', 'neutral'];
+  const labels = {
+    noop: 'Sem alteração',
+    applied: 'Aplicado',
+    clean: 'Limpo / corrigido',
+    pending: 'Pendente',
+    error: 'Erro',
+    neutral: 'Não processado',
+  };
+  const counts = Object.fromEntries(order.map((kind) => [kind, 0]));
+  rows.forEach((row) => {
+    const kind = grmVisualForRow(row).kind;
+    counts[kind] = (counts[kind] || 0) + 1;
+  });
+
+  return `
+    <div class="conf-grm-overview" aria-label="Resumo da sincronização com o GRM">
+      <div class="conf-grm-overview-title">
+        <strong>Retorno do GRM</strong>
+        <span>As cores abaixo são as mesmas usadas nas linhas.</span>
+      </div>
+      <div class="conf-grm-overview-items">
+        ${order.map((kind) => `
+          <span class="conf-grm-overview-item conf-grm-overview-${kind}">
+            <i aria-hidden="true"></i>
+            ${escapeHtml(labels[kind])}
+            <strong>${counts[kind] || 0}</strong>
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function despesasRowHtml(row, mode = 'fila') {
+  const isConferido = mode === 'conferidos';
+  const grmVisual = grmVisualForRow(row);
   const grmTitle = `${grmVisual.title}${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`;
   return `
     <tr class="${isConferido ? 'conf-row-conferido' : ''} conf-row-grm-${grmVisual.kind}">
@@ -576,6 +615,7 @@ function renderDespesasTable() {
   }
 
   target.innerHTML = `
+    ${grmOverviewHtml(rows)}
     <div class="conf-subsection-head">
       <div>
         <h4>Itens para conferir</h4>

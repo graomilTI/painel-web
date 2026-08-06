@@ -194,6 +194,19 @@ function injectCleanLayoutStyles() {
     .conf-grm-status-error{background:rgba(239,68,68,.11)!important;border-color:rgba(248,113,113,.2)!important;color:#ff8585!important}
     .conf-grm-status-pending{background:rgba(234,179,8,.1)!important;border-color:rgba(250,204,21,.2)!important;color:#f5d761!important}
     .conf-grm-status-neutral{background:rgba(148,163,184,.08)!important;border-color:rgba(148,163,184,.12)!important;color:#9fb0a7!important}
+    .conf-grm-overview{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:18px!important;margin:0 0 14px!important;padding:12px 14px!important;border:1px solid rgba(110,231,183,.12)!important;border-radius:14px!important;background:rgba(4,28,20,.72)!important}
+    .conf-grm-overview-title{display:flex!important;flex-direction:column!important;gap:2px!important;min-width:max-content!important}
+    .conf-grm-overview-title strong{color:#edf9f3!important;font-size:12px!important}
+    .conf-grm-overview-title span{color:#789487!important;font-size:10px!important}
+    .conf-grm-overview-items{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;flex-wrap:wrap!important}
+    .conf-grm-overview-item{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:5px 8px!important;border:1px solid rgba(148,163,184,.1)!important;border-radius:999px!important;background:rgba(15,23,42,.28)!important;color:#afbeb7!important;font-size:10px!important;font-weight:700!important;white-space:nowrap!important}
+    .conf-grm-overview-item i{width:7px!important;height:7px!important;border-radius:50%!important;background:#94a3b8!important;box-shadow:0 0 8px rgba(148,163,184,.35)!important}
+    .conf-grm-overview-item strong{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-width:18px!important;height:18px!important;padding:0 5px!important;border-radius:999px!important;background:rgba(255,255,255,.06)!important;color:inherit!important;font-size:10px!important}
+    .conf-grm-overview-noop{color:#93c5fd!important;border-color:rgba(96,165,250,.18)!important}.conf-grm-overview-noop i{background:#60a5fa!important;box-shadow:0 0 9px rgba(96,165,250,.52)!important}
+    .conf-grm-overview-applied{color:#72efb1!important;border-color:rgba(52,211,153,.18)!important}.conf-grm-overview-applied i{background:#34d399!important;box-shadow:0 0 9px rgba(52,211,153,.52)!important}
+    .conf-grm-overview-clean{color:#6ee7d6!important;border-color:rgba(45,212,191,.18)!important}.conf-grm-overview-clean i{background:#2dd4bf!important;box-shadow:0 0 9px rgba(45,212,191,.52)!important}
+    .conf-grm-overview-pending{color:#f5d761!important;border-color:rgba(250,204,21,.18)!important}.conf-grm-overview-pending i{background:#facc15!important;box-shadow:0 0 9px rgba(250,204,21,.48)!important}
+    .conf-grm-overview-error{color:#ff8585!important;border-color:rgba(248,113,113,.18)!important}.conf-grm-overview-error i{background:#f87171!important;box-shadow:0 0 9px rgba(248,113,113,.5)!important}
     .conf-table td:nth-last-child(2){font-weight:700!important}
     @media(max-width:1180px){
       .conf-filters{grid-template-columns:repeat(2,minmax(180px,1fr))!important}
@@ -204,6 +217,8 @@ function injectCleanLayoutStyles() {
       .conf-hero-compact{align-items:flex-start!important;padding:0 10px!important}
       .conf-actions{padding-top:10px!important}
       .conf-filters{grid-template-columns:1fr!important}
+      .conf-grm-overview{align-items:flex-start!important;flex-direction:column!important}
+      .conf-grm-overview-items{justify-content:flex-start!important}
     }
   `;
   document.head.appendChild(style);
