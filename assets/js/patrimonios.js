@@ -85,33 +85,49 @@ function renderHistorico(){
     if(va>vb) return dir==='asc'?1:-1;
     return 0;
   });
-  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach(btn=>{
-    btn.classList.toggle('sort-active', btn.dataset.sortKey===key);
-    btn.dataset.sortDir = btn.dataset.sortKey===key ? dir : '';
-  });
   if(!groups.length){grid.innerHTML='<p class="pat-empty">Nenhum patrimônio encontrado.</p>';return;}
-  grid.innerHTML=groups.map((g)=>{
+
+  const thClass=(k)=>`pat-th-sort${key===k?' sort-active':''}`;
+  const thDir=(k)=>key===k?dir:'';
+
+  const bodyRows=groups.map((g)=>{
     const open=state.histExpanded.has(g.funcionario);
     const items=[...g.items].sort((a,b)=>(b.dias_sem_leitura??-1)-(a.dias_sem_leitura??-1));
     const detailRows=items.map(r=>{
       const inativo=/n.o\s*ativo|inativo|desligado|demitido/i.test(normalize(r.situacao||''));
       return `<tr class="${inativo?'pat-row-inativo':''}"><td>${esc(r.patrimonio_codigo||'-')}</td><td>${esc(r.identificacao||'-')}</td><td class="${(r.dias_sem_leitura??0)>30 && !inativo?'dias-alerta':''}">${r.dias_sem_leitura??'-'}</td></tr>`;
     }).join('');
-    return `<div class="pat-hist-item">
-      <button class="pat-hist-item-row ${g.inativo?'pat-row-inativo':''} ${open?'pat-hist-item-open':''}" data-colaborador="${esc(g.funcionario)}" type="button">
-        <span class="pat-hist-item-arrow">${open?'▾':'▸'}</span>
-        <span class="pat-hist-item-name">${esc(g.funcionario)}</span>
-        <span class="pat-hist-item-badge">${g.items.length} ${g.items.length===1?'material':'materiais'}</span>
-        <span class="pat-hist-item-dias ${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias+' dias s/ leitura':'-'}</span>
-      </button>
-      ${open?`<div class="pat-hist-item-detail"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody>${detailRows}</tbody></table></div>`:''}
-    </div>`;
+    const mainRow=`<tr class="pat-hist-row ${g.inativo?'pat-row-inativo':''}" data-colaborador="${esc(g.funcionario)}">
+        <td><span class="pat-hist-name-cell"><span class="pat-hist-arrow">${open?'▾':'▸'}</span>${esc(g.funcionario)}</span></td>
+        <td>${g.items.length}</td>
+        <td class="${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias:'-'}</td>
+        <td><button class="pat-hist-dl-btn" data-dl-colaborador="${esc(g.funcionario)}" type="button" title="Baixar CSV de ${esc(g.funcionario)}">↓</button></td>
+      </tr>`;
+    const detailRow=open?`<tr class="pat-hist-detail-row"><td colspan="4"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody>${detailRows}</tbody></table></td></tr>`:'';
+    return mainRow+detailRow;
   }).join('');
-  grid.querySelectorAll('[data-colaborador]').forEach(row=>row.onclick=()=>{
+
+  grid.innerHTML=`<div class="pat-table-wrap"><table class="pat-table pat-hist-table">
+    <thead><tr>
+      <th class="${thClass('funcionario')}" data-sort-key="funcionario" data-sort-dir="${thDir('funcionario')}">Colaborador</th>
+      <th class="${thClass('qtd')}" data-sort-key="qtd" data-sort-dir="${thDir('qtd')}">Un.</th>
+      <th class="${thClass('maxDias')}" data-sort-key="maxDias" data-sort-dir="${thDir('maxDias')}">Dias s/ Leitura</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table></div>`;
+
+  grid.querySelectorAll('[data-sort-key]').forEach(th=>th.addEventListener('click', ()=>setHistSort(th.dataset.sortKey)));
+  grid.querySelectorAll('[data-colaborador]').forEach(row=>row.addEventListener('click', (e)=>{
+    if(e.target.closest('[data-dl-colaborador]')) return;
     const nome=row.dataset.colaborador;
     if(state.histExpanded.has(nome)) state.histExpanded.delete(nome); else state.histExpanded.add(nome);
     renderHistorico();
-  });
+  }));
+  grid.querySelectorAll('[data-dl-colaborador]').forEach(btn=>btn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    downloadColaboradorRow(btn.dataset.dlColaborador);
+  }));
 }
 
 function csvEscape(v){
@@ -156,6 +172,21 @@ function downloadHistorico(tipo){
     filtered.map((r)=>[r.patrimonio_codigo||'', r.identificacao||'', r.funcionario||'', r.supervisao||'', r.dias_sem_leitura??'']));
 }
 
+function downloadColaboradorRow(nome){
+  const {num,material}=state.histFilters;
+  const rows=state.histRows.filter((r)=>{
+    if(r.funcionario!==nome) return false;
+    if(num && !normalize(r.patrimonio_codigo||'').includes(normalize(num)) && !normalize(r.funcionario||'').includes(normalize(num))) return false;
+    if(material && !normalize(r.identificacao||'').includes(normalize(material))) return false;
+    return true;
+  });
+  const stamp=new Date().toISOString().slice(0,10);
+  const slug=normalize(nome).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+  downloadCsv(`patrimonios-${slug||'colaborador'}-${stamp}.csv`,
+    ['Nº Patrimônio','Material','Dias sem leitura'],
+    rows.map((r)=>[r.patrimonio_codigo||'', r.identificacao||'', r.dias_sem_leitura??'']));
+}
+
 function setHistSort(key){
   const cur=state.histSort;
   state.histSort = cur.key===key ? {key, dir: cur.dir==='asc'?'desc':'asc'} : {key, dir: key==='funcionario'?'asc':'desc'};
@@ -188,42 +219,29 @@ function styles(){return `<style>
 .pat-hist-card{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:transparent;cursor:pointer;color:var(--muted);transition:background-color .15s ease,border-color .15s ease,color .15s ease;font-size:12px;font-weight:800;text-align:left}
 .pat-hist-card:hover{border-color:rgba(129,140,248,.4);color:#e2e2f0}
 .pat-hist-card-active{border-color:#818cf8;background:rgba(129,140,248,.14);color:#e2e2f0}
-.pat-actions{display:flex;gap:10px;flex-wrap:wrap}
+.pat-actions{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
 .pat-actions .btn,.pat-table .btn{width:auto;margin-top:0}
 .pat-hist-icon{font-size:14px}
 .pat-hist-text{display:flex;flex-direction:column;gap:0;text-align:left;min-width:0}
 .pat-hist-text strong{font-size:12px}
 .pat-hist-text small{display:none}
-.pat-hist-filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.pat-hist-filters input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-width:220px}
-.pat-hist-sortbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-.pat-hist-sortbar-label{font-size:12px;color:var(--muted)}
-.pat-sort-chip{border:1px solid rgba(148,163,184,.24);background:transparent;color:#e2e2f0;border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer}
-.pat-sort-chip::after{content:'⇅';margin-left:6px;opacity:.4;font-size:10px}
-.pat-sort-chip.sort-active{border-color:#818cf8;background:rgba(129,140,248,.16)}
-.pat-sort-chip.sort-active::after{opacity:1}
-.pat-sort-chip.sort-active[data-sort-dir="asc"]::after{content:'▲'}
-.pat-sort-chip.sort-active[data-sort-dir="desc"]::after{content:'▼'}
-.pat-hist-grid{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;overflow:hidden}
-.pat-hist-item{border-bottom:1px solid var(--line)}
-.pat-hist-item:last-child{border-bottom:none}
-.pat-hist-item-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;border:none;background:transparent;padding:14px 16px;cursor:pointer;color:#e2e2f0;font:inherit;transition:background-color .15s ease}
-.pat-hist-item-row:hover{background:rgba(129,140,248,.1)}
-.pat-hist-item-row.pat-hist-item-open{background:rgba(129,140,248,.08)}
-.pat-hist-item-row.pat-row-inativo .pat-hist-item-name{color:#f87171}
-.pat-hist-item-name{font-weight:800;font-size:14px;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pat-hist-item-badge{flex:none;border:1px solid rgba(148,163,184,.24);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted)}
-.pat-hist-item-dias{flex:none;font-size:12px;color:var(--muted);min-width:130px;text-align:right}
-.pat-hist-item-arrow{flex:none;color:var(--muted);font-size:12px;width:14px}
-.pat-hist-item-detail{padding:0 16px 14px 44px;background:rgba(13,13,24,.6)}
-.pat-hist-item-detail .pat-table{min-width:0}
-.pat-hist-item-detail .pat-table th,.pat-hist-item-detail .pat-table td{padding:8px 10px}
-@media(max-width:640px){
-  .pat-hist-item-row{flex-wrap:wrap;row-gap:6px}
-  .pat-hist-item-name{flex:1 1 calc(100% - 32px);white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word}
-  .pat-hist-item-badge{order:1;margin-left:28px}
-  .pat-hist-item-dias{order:2;min-width:0;text-align:left}
-}
+.pat-hist-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pat-hist-controls input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;min-width:200px}
+.pat-th-sort{cursor:pointer;user-select:none;white-space:nowrap}
+.pat-th-sort:hover{color:#e2e2f0}
+.pat-th-sort::after{content:'⇅';margin-left:6px;opacity:.35;font-size:10px}
+.pat-th-sort.sort-active::after{opacity:1}
+.pat-th-sort.sort-active[data-sort-dir="asc"]::after{content:'▲'}
+.pat-th-sort.sort-active[data-sort-dir="desc"]::after{content:'▼'}
+.pat-hist-row{cursor:pointer}
+.pat-hist-row:hover{background:rgba(129,140,248,.08)}
+.pat-hist-name-cell{display:flex;align-items:center;gap:8px;font-weight:800}
+.pat-hist-arrow{color:var(--muted);font-size:11px;width:12px;display:inline-block}
+.pat-hist-dl-btn{border:1px solid rgba(148,163,184,.24);background:transparent;color:#e2e2f0;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px;line-height:1}
+.pat-hist-dl-btn:hover{border-color:rgba(129,140,248,.4);background:rgba(129,140,248,.12)}
+.pat-hist-detail-row td{padding:0 12px 14px 32px;background:rgba(13,13,24,.6)}
+.pat-hist-detail-row .pat-table{min-width:0}
+.pat-hist-detail-row .pat-table th,.pat-hist-detail-row .pat-table td{padding:8px 10px}
 </style>`}
 
 export async function renderContent(content, userContext){
@@ -248,21 +266,17 @@ export async function renderContent(content, userContext){
       </div>
       <div class="pat-content">
         <section class="card" id="patCadastrarSection">
-          <div class="section-head"><div><h3>Compras aguardando número de patrimônio</h3><p class="muted">Cada item comprado como Patrimônio entra aqui em uma linha. É possível salvar individualmente ou em lote.</p></div><div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div></div>
+          <div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div>
           <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Data</th><th>Material</th><th>Marca</th><th>Coordenação</th><th>Nº</th><th>Obs.</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
           <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
         </section>
         <section class="card" id="patHistoricoSection" style="display:none">
-          <div class="section-head"><div><h3>Histórico de patrimônios</h3><p class="muted">Patrimônios já cadastrados na regional, com os dias desde a última leitura do agente.</p></div><div class="pat-actions"><select class="pat-download-select" id="patDownloadTipo"><option value="total">Total</option><option value="atraso">Por atraso (&gt;30 dias)</option><option value="colaborador">Por colaborador</option></select><button class="btn btn-secondary" id="patDownloadBtn" type="button">↓ Baixar</button><button class="btn btn-secondary" id="patHistRefresh" type="button">↻ Atualizar</button></div></div>
-          <div class="pat-hist-filters">
+          <div class="pat-hist-controls">
+            <select class="pat-download-select" id="patDownloadTipo"><option value="total">Total</option><option value="atraso">Por atraso (&gt;30 dias)</option><option value="colaborador">Por colaborador</option></select>
             <input id="patHistFilterNum" type="text" placeholder="Filtrar por Nº ou colaborador">
             <input id="patHistFilterMaterial" type="text" placeholder="Filtrar por material">
-          </div>
-          <div class="pat-hist-sortbar">
-            <span class="pat-hist-sortbar-label">Ordenar por:</span>
-            <button class="pat-sort-chip" data-sort-key="funcionario" type="button">Colaborador</button>
-            <button class="pat-sort-chip" data-sort-key="maxDias" type="button">Dias s/ Leitura</button>
-            <button class="pat-sort-chip" data-sort-key="qtd" type="button">Qtd. Materiais</button>
+            <button class="btn btn-secondary" id="patDownloadBtn" type="button">↓ Baixar</button>
+            <button class="btn btn-secondary" id="patHistRefresh" type="button">↻ Atualizar</button>
           </div>
           <div class="pat-hist-grid" id="patHistoricoGrid"></div>
         </section>
@@ -275,7 +289,6 @@ export async function renderContent(content, userContext){
   document.getElementById('patDownloadBtn').onclick=()=>downloadHistorico(document.getElementById('patDownloadTipo').value);
   document.getElementById('patHistFilterNum').addEventListener('input', (e)=>{state.histFilters.num=e.target.value; renderHistorico();});
   document.getElementById('patHistFilterMaterial').addEventListener('input', (e)=>{state.histFilters.material=e.target.value; renderHistorico();});
-  document.querySelectorAll('#patHistoricoSection [data-sort-key]').forEach((btn)=>btn.addEventListener('click', () => setHistSort(btn.dataset.sortKey)));
   document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.addEventListener('click', () => setActiveTab(btn.dataset.patTab)));
   setActiveTab('cadastrar');
   await loadCadastrar();
