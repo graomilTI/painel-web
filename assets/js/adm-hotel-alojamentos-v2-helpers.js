@@ -70,7 +70,7 @@ export function icon(name) {
 export function ensureStyles() {
   const styles = [
     { id: 'admAlojamentosV2Css', file: '../css/adm-hotel-alojamentos-v2.css?v=20260721-obs1' },
-    { id: 'admAlojamentosListaCss', file: '../css/adm-hotel-alojamentos-lista.css?v=20260720-lista1' }
+    { id: 'admAlojamentosListaCss', file: '../css/adm-hotel-alojamentos-lista.css?v=20260806-acoes1' }
   ];
   styles.forEach(({ id, file }) => {
     if (document.getElementById(id)) return;
