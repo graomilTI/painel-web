@@ -126,14 +126,50 @@ function todaySaoPaulo() {
 }
 
 async function activateTodayQueue() {
-  const { data, error } = await supabase.rpc(
-    'ativar_grm_despesas_do_dia',
-  );
+  const today = todaySaoPaulo();
+  const now = new Date().toISOString();
 
-  if (error) throw error;
+  // A RPC antiga também inferia LIMPAR para colaboradores ausentes da fila da
+  // versão mais recente. Em publicações parciais isso podia apagar regras que
+  // continuavam desejadas. O worker agora apenas promove itens já publicados
+  // para hoje e expira itens antigos; somente a Edge Function pode criar ações.
+  const { data: activated, error: activateError } = await supabase
+    .from('grm_despesas_fila')
+    .update({
+      status: 'PENDENTE',
+      locked_at: null,
+      finalizado_em: null,
+      ultimo_erro: null,
+    })
+    .eq('status', 'AGENDADO')
+    .eq('data_referencia', today)
+    .select('id');
 
-  log('INFO', 'Ativação da fila diária concluída.', data || {});
-  return data || {};
+  if (activateError) throw activateError;
+
+  const { data: expired, error: expireError } = await supabase
+    .from('grm_despesas_fila')
+    .update({
+      status: 'EXPIRADO',
+      locked_at: null,
+      finalizado_em: now,
+      ultimo_erro: `Bloqueado por data: fila anterior a ${today}.`,
+    })
+    .in('status', ['PENDENTE', 'ERRO', 'PROCESSANDO', 'AGENDADO'])
+    .lt('data_referencia', today)
+    .select('id');
+
+  if (expireError) throw expireError;
+
+  const result = {
+    hoje_sao_paulo: today,
+    agendados_ativados: activated?.length || 0,
+    expirados: expired?.length || 0,
+    limpezas_geradas: 0,
+  };
+
+  log('INFO', 'Ativação segura da fila diária concluída.', result);
+  return result;
 }
 
 function autoObrigatorioPorTipo(tipo) {

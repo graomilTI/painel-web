@@ -73,6 +73,15 @@ function isCoordenacaoBloqueada(value) {
   return coord === 'GERAL' || coord.endsWith(' GERAL');
 }
 
+// Exceção pontual pedida pela usuária (2026-08-06): a supervisão "GERAL -
+// Administrativo" existe justamente pra escalar pessoal administrativo em
+// O.S. (uso interno/teste), então os colaboradores dela ficam de fora do
+// bloqueio de cargo/coordenação acima — que continua valendo pra qualquer
+// outra supervisão.
+function isSupervisaoExcecaoBloqueioCargo(supervisao) {
+  return normalizeText(supervisao) === 'GERAL ADMINISTRATIVO';
+}
+
 function isColaboradorInativo(row) {
   if (row?.ativo === false) return true;
   if (String(row?.desligamento || '').trim()) return true;
@@ -536,7 +545,7 @@ async function loadColaboradoresRegionalFresh(supervisao) {
   const seenIds = new Set();
   const seenNomes = new Set();
   return fontes
-    .filter((r) => !isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao) && !isColaboradorInativo(r))
+    .filter((r) => (isSupervisaoExcecaoBloqueioCargo(r.supervisao) || (!isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao))) && !isColaboradorInativo(r))
     .sort((a, b) => (b._scoreRegional || 0) - (a._scoreRegional || 0) || colaboradorNome(a).localeCompare(colaboradorNome(b), 'pt-BR'))
     .map((r) => ({
       colaboradorId: colaboradorKey(r),
@@ -741,7 +750,7 @@ async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
     // candidato pra atender O.S. — a RPC (banco) não filtra cargo, e o
     // patch que fazia isso no mapa não cobria as opções de troca/adicionar
     // aqui na Etapa 2 (pedido do usuário, 2026-07-17: filtrar na fonte).
-    if (isCargoBloqueado(row.cargo)) return;
+    if (!isSupervisaoExcecaoBloqueioCargo(row.supervisao) && isCargoBloqueado(row.cargo)) return;
     const lista = porOs.get(row.os_id) || [];
     lista.push({
       nome: row.nome,
