@@ -44,6 +44,7 @@ const AGENTES = [
   { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: 'desativado', table: 'operacional_os', direction: 'saida' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
+  { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
 ];
 
 const STATUS_META = {
