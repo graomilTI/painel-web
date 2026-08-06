@@ -59,7 +59,10 @@ async function refreshToken() {
 
 function shouldMarkDirty(target, eventType) {
   if (!(target instanceof Element)) return false;
-  if (!target.closest('#pageContent')) return false;
+  // O drawer de Lista de OS é montado diretamente no <body>, fora de
+  // #pageContent. As ações mais importantes (ATENDER e vincular colaborador)
+  // acontecem nele e antes não armavam a publicação após 5 minutos.
+  if (!target.closest('#pageContent, #pldDrawer')) return false;
   if (target.closest('#progSearch, #progGerarPdf, #progLoadContext')) return false;
   if (target.closest('a[href]')) return false;
 
@@ -77,6 +80,11 @@ function shouldMarkDirty(target, eventType) {
     '.peqd-chip',
     '.peqb-row-btn',
     '.prog-mini-btn',
+    '[data-acao-status]',
+    '[data-confirmar-candidato]',
+    '[data-add-colab-confirm]',
+    '[data-add-frota-confirm]',
+    '[data-remover-colab]',
   ].join(','));
 }
 

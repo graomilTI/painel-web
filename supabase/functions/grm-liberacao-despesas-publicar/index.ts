@@ -243,6 +243,10 @@ function buildRulesForStaff(args: {
   return { rules: canonicalRules(rules), pendingConfig: [...new Set(pendingConfig)] };
 }
 
+// Chave operacional mantida explícita para permitir uma pausa emergencial sem
+// remover a proteção que adia regionais cuja Lista de OS ainda não sincronizou.
+const AGENTE_LIBERACAO_DESPESAS_PAUSADO = false;
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
@@ -382,6 +386,7 @@ Deno.serve(async (req) => {
       limpar: 0,
       sem_alteracao: 0,
       preservados_por_outra_regional: 0,
+      grupos_adiados_sem_os: 0,
       avisos: [] as string[],
     };
 
@@ -402,6 +407,20 @@ Deno.serve(async (req) => {
         .limit(5000);
       if (osError) throw osError;
       const groupOs = (osRows || []).filter((row) => regionalMatches(row, group.regional));
+
+      // Ausência total de O.S. ATENDER não é evidência suficiente para apagar
+      // as regras de todos os colaboradores da regional. A Lista de OS e a
+      // Programação são atualizadas por fluxos independentes e podem ficar
+      // momentaneamente fora de sincronia. Nessa situação, adia a regional e
+      // preserva o GRM até uma publicação posterior encontrar a origem pronta.
+      if (!groupOs.length) {
+        overall.grupos_adiados_sem_os += 1;
+        overall.avisos.push(
+          `${group.regional} em ${group.date}: nenhuma O.S. ATENDER encontrada; limpeza adiada por segurança.`,
+        );
+        continue;
+      }
+
       const osIds = groupOs.map((row) => clean(row.id));
 
       const currentLinks: Record<string, unknown>[] = [];
@@ -633,7 +652,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (overall.enfileirados > 0) {
+    if (overall.enfileirados > 0 && !AGENTE_LIBERACAO_DESPESAS_PAUSADO) {
       const { data: existingJob, error: jobCheckError } = await service
         .from('grm_sync_jobs')
         .select('id')
@@ -650,7 +669,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, motivo: reason, ...overall });
+    return json({
+      ok: true,
+      motivo: reason,
+      agente_pausado: AGENTE_LIBERACAO_DESPESAS_PAUSADO,
+      ...overall,
+    });
   } catch (error) {
     console.error('[grm-liberacao-despesas-publicar]', error);
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
