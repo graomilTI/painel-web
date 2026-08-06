@@ -61,6 +61,27 @@ function chunk<T>(rows: T[], size = 300): T[][] {
   return out;
 }
 
+function jwtRole(token: string): string {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return '';
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='));
+    return clean(JSON.parse(decoded)?.role);
+  } catch {
+    return '';
+  }
+}
+
+function todayInSaoPaulo(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
 function canonicalRule(rule: Record<string, unknown>) {
   return {
     tipo_despesa: clean(rule.tipo_despesa),
@@ -269,8 +290,14 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const { data: userData, error: userError } = await userClient.auth.getUser();
-    if (userError || !userData?.user) return json({ error: 'Sessão inválida.' }, 401);
+    const bearerToken = authorization.replace(/^Bearer\s+/i, '').trim();
+    const internalReconciliation = bearerToken === serviceKey || jwtRole(bearerToken) === 'service_role';
+    const { data: userData, error: userError } = internalReconciliation
+      ? { data: { user: null }, error: null }
+      : await userClient.auth.getUser();
+    if (!internalReconciliation && (userError || !userData?.user)) {
+      return json({ error: 'Sessão inválida.' }, 401);
+    }
 
     const body = await readBody(req) as Record<string, unknown>;
     const programacaoIds = [...new Set(
@@ -286,7 +313,8 @@ Deno.serve(async (req) => {
 
     // Esta consulta usa o JWT do gestor. Portanto a própria RLS da
     // programacao_dia impede publicar uma regional que ele não pode acessar.
-    const { data: programacoes, error: progError } = await userClient
+    const programacaoClient = internalReconciliation ? service : userClient;
+    const { data: programacoes, error: progError } = await programacaoClient
       .from('programacao_dia')
       .select('*')
       .in('id', programacaoIds);
@@ -327,27 +355,32 @@ Deno.serve(async (req) => {
       if (name) staffByName.set(name, [...(staffByName.get(name) || []), staff]);
     }
 
-    // Uma liberação só é mantida quando houver uma O.S. ATENDER na mesma data
-    // publicada, mesmo que ela pertença a outra regional. Uma O.S. futura não
-    // pode preservar despesas antigas de quem ficou sem alocação no dia que o
-    // gestor acabou de editar.
-    const groupDates = [...new Set([...groups.values()].map((group) => group.date))];
-    const { data: globalOsRows, error: globalOsError } = await service
-      .from('operacional_os')
-      .select('id,data_os')
-      .eq('status_gestor', 'ATENDER')
-      .in('data_os', groupDates)
+    // Uma programação futura já representa uma janela válida de despesas.
+    // Como o GRM mantém a regra por colaborador (sem data de vigência), nenhuma
+    // publicação pode limpar hoje quem possui O.S. ATENDER hoje ou no futuro.
+    // A proteção expira naturalmente à meia-noite de São Paulo após a data da
+    // O.S.; a partir daí uma reconciliação posterior pode gerar a limpeza.
+    const activeWindowStart = todayInSaoPaulo();
+    const { data: activePrograms, error: globalOsError } = await service
+      .from('programacao_dia')
+      .select('id,data_referencia')
+      .gte('data_referencia', activeWindowStart)
       .limit(20000);
     if (globalOsError) throw globalOsError;
-    const globalOsIds = (globalOsRows || []).map((row) => clean(row.id)).filter(Boolean);
+    const globalOsIds = (activePrograms || []).map((row) => clean(row.id)).filter(Boolean);
     const globalLinks: Record<string, unknown>[] = [];
     for (const ids of chunk(globalOsIds)) {
       const { data, error } = await service
-        .from('operacional_os_colaboradores')
-        .select('os_id,colaborador_key,colaborador_nome,colaborador_cpf,created_at')
-        .in('os_id', ids);
+        .from('programacao_equipe')
+        .select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado,created_at')
+        .in('programacao_id', ids)
+        .eq('confirmado', true);
       if (error) throw error;
-      globalLinks.push(...(data || []));
+      globalLinks.push(...(data || []).map((row) => ({
+        ...row,
+        colaborador_key: row.colaborador_id,
+        colaborador_cpf: row.colaborador_id,
+      })));
     }
 
     const resolveLinkCpf = (link: Record<string, unknown>) => {
@@ -366,12 +399,12 @@ Deno.serve(async (req) => {
     };
 
     const osDateById = new Map(
-      (globalOsRows || []).map((row) => [clean(row.id), clean(row.data_os).slice(0, 10)]),
+      (activePrograms || []).map((row) => [clean(row.id), clean(row.data_referencia).slice(0, 10)]),
     );
     const cpfsWithOsByDate = new Map<string, Set<string>>();
     for (const link of globalLinks) {
       const resolved = resolveLinkCpf(link);
-      const date = osDateById.get(clean(link.os_id));
+      const date = osDateById.get(clean(link.programacao_id));
       if (!resolved.cpf || !date) continue;
       if (!cpfsWithOsByDate.has(date)) cpfsWithOsByDate.set(date, new Set());
       cpfsWithOsByDate.get(date)!.add(resolved.cpf);
@@ -382,6 +415,7 @@ Deno.serve(async (req) => {
       versoes: [] as string[],
       avaliados: 0,
       enfileirados: 0,
+      enfileirados_na_janela: 0,
       aplicar: 0,
       limpar: 0,
       sem_alteracao: 0,
@@ -399,56 +433,30 @@ Deno.serve(async (req) => {
           .filter(([cpf]) => cpf.length === 11),
       );
 
-      const { data: osRows, error: osError } = await service
-        .from('operacional_os')
-        .select('id,numero_os,supervisao,data_os,status_gestor')
-        .eq('status_gestor', 'ATENDER')
-        .eq('data_os', group.date)
-        .limit(5000);
+      const { data: teamRows, error: osError } = await service
+        .from('programacao_equipe')
+        .select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado,created_at')
+        .in('programacao_id', group.ids)
+        .eq('confirmado', true);
       if (osError) throw osError;
-      const groupOs = (osRows || []).filter((row) => regionalMatches(row, group.regional));
+      const currentLinks = (teamRows || []).filter((row) => clean(row.os_id)).map((row) => ({
+        ...row,
+        colaborador_key: row.colaborador_id,
+        colaborador_cpf: row.colaborador_id,
+      }));
 
-      // Ausência total de O.S. ATENDER não é evidência suficiente para apagar
-      // as regras de todos os colaboradores da regional. A Lista de OS e a
-      // Programação são atualizadas por fluxos independentes e podem ficar
-      // momentaneamente fora de sincronia. Nessa situação, adia a regional e
-      // preserva o GRM até uma publicação posterior encontrar a origem pronta.
-      if (!groupOs.length) {
+      // Sem vínculo O.S. -> colaborador não existe autorização a publicar,
+      // mas isso também nunca é evidência suficiente para limpar a regional.
+      if (!currentLinks.length) {
         overall.grupos_adiados_sem_os += 1;
         overall.avisos.push(
-          `${group.regional} em ${group.date}: nenhuma O.S. ATENDER encontrada; limpeza adiada por segurança.`,
+          `${group.regional} em ${group.date}: nenhum colaborador confirmado em O.S.; limpeza adiada por segurança.`,
         );
         continue;
       }
 
-      const osIds = groupOs.map((row) => clean(row.id));
-
-      const currentLinks: Record<string, unknown>[] = [];
-      for (const ids of chunk(osIds)) {
-        const { data, error } = await service
-          .from('operacional_os_colaboradores')
-          .select('os_id,colaborador_key,colaborador_nome,colaborador_cpf,created_at')
-          .in('os_id', ids);
-        if (error) throw error;
-        currentLinks.push(...(data || []));
-      }
-
-      const linksByOs = new Map<string, Record<string, unknown>[]>();
-      for (const link of currentLinks) {
-        const osId = clean(link.os_id);
-        linksByOs.set(osId, [...(linksByOs.get(osId) || []), link]);
-      }
-      const missingOs = groupOs.filter((row) => !(linksByOs.get(clean(row.id)) || []).length);
-      if (missingOs.length) {
-        return json({
-          error: 'Existem O.S. ATENDER sem colaborador associado.',
-          regional: group.regional,
-          data_referencia: group.date,
-          os: missingOs.map((row) => row.numero_os ?? row.id),
-        }, 422);
-      }
-
       const linkKeysByCpf = new Map<string, string[]>();
+      const linkedStaffFallbackByCpf = new Map<string, Record<string, unknown>>();
       const currentCpfs = new Set<string>();
       const linkProblems: Record<string, unknown>[] = [];
       for (const link of currentLinks) {
@@ -461,23 +469,22 @@ Deno.serve(async (req) => {
           });
           continue;
         }
-        if (!regionalStaffByCpf.has(resolved.cpf)) {
-          linkProblems.push({
-            os_id: link.os_id,
-            colaborador: link.colaborador_nome ?? link.colaborador_key,
-            cpf: resolved.cpf,
-            problema: 'INATIVO_OU_FORA_DA_REGIONAL',
-          });
-          continue;
-        }
         currentCpfs.add(resolved.cpf);
+        if (!staffByCpf.has(resolved.cpf)) {
+          linkedStaffFallbackByCpf.set(resolved.cpf, {
+            id: clean(link.colaborador_key) || resolved.cpf,
+            colaborador_id: clean(link.colaborador_key) || resolved.cpf,
+            cpf: resolved.cpf,
+            nome: clean(link.colaborador_nome ?? link.colaborador_key) || resolved.cpf,
+          });
+        }
         const keys = new Set(linkKeysByCpf.get(resolved.cpf) || []);
         [link.colaborador_key, link.colaborador_cpf].map(clean).filter(Boolean).forEach((key) => keys.add(key));
         linkKeysByCpf.set(resolved.cpf, [...keys]);
       }
       if (linkProblems.length) {
         return json({
-          error: 'A programação possui colaborador sem CPF válido, inativo ou fora da regional.',
+          error: 'A programação possui colaborador sem CPF válido ou não localizado.',
           regional: group.regional,
           data_referencia: group.date,
           detalhes: linkProblems,
@@ -504,7 +511,17 @@ Deno.serve(async (req) => {
       }>();
       const configProblems: Record<string, unknown>[] = [];
 
-      for (const staff of regionalStaff) {
+      // A O.S. ATENDER é a fonte operacional da equipe do dia. Colaboradores
+      // ativos podem ser emprestados entre regionais; eles devem receber as
+      // despesas da O.S. mesmo que o cadastro ainda aponte outra regional.
+      // Para LIMPAR, a abrangência continua restrita ao quadro da regional.
+      const staffForGroupByCpf = new Map(regionalStaffByCpf);
+      for (const cpf of currentCpfs) {
+        const linkedStaff = staffByCpf.get(cpf) || linkedStaffFallbackByCpf.get(cpf);
+        if (linkedStaff) staffForGroupByCpf.set(cpf, linkedStaff);
+      }
+
+      for (const staff of staffForGroupByCpf.values()) {
         const cpf = digits(staff.cpf);
         if (cpf.length !== 11) continue;
         overall.avaliados += 1;
@@ -520,6 +537,9 @@ Deno.serve(async (req) => {
           });
           if (built.pendingConfig.length) {
             configProblems.push({ cpf, nome: staff.nome, pendencias: built.pendingConfig });
+            overall.avisos.push(
+              `${staff.nome || cpf}: despesas não enfileiradas por falta de configuração (${built.pendingConfig.join(', ')}).`,
+            );
             continue;
           }
           const hash = await sha256({ cpf, action: 'APLICAR', rules: built.rules });
@@ -527,6 +547,9 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // A decisão de limpeza é estritamente diária. Uma O.S. futura não
+        // pode manter hoje uma autorização que não pertence à programação de
+        // hoje; a versão futura será aplicada somente na própria janela.
         if (!cpfsWithOsOnDate.has(cpf)) {
           const rules: ReturnType<typeof canonicalRules> = [];
           const hash = await sha256({ cpf, action: 'LIMPAR', rules });
@@ -536,31 +559,23 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Não existe sincronização parcial: se uma despesa selecionada ainda não
-      // tem nome/valor confirmado no GRM, nenhuma regra desta regional é
-      // substituída. Isso evita apagar uma categoria que o gestor selecionou.
-      if (configProblems.length) {
-        return json({
-          error: 'Existem despesas selecionadas sem mapeamento ativo e valor confirmado para o GRM.',
-          regional: group.regional,
-          data_referencia: group.date,
-          detalhes: configProblems,
-          tabela_configuracao: 'grm_despesas_tipos_config',
-        }, 422);
-      }
+      // Uma configuração financeira ausente bloqueia somente o colaborador
+      // afetado. Os demais seguem para a fila, e a pendência fica explícita no
+      // retorno para não transformar um caso isolado em atraso da regional.
 
       const { data: version, error: versionError } = await service
         .from('grm_despesas_versoes')
         .insert({
-          gestor_id: userData.user.id,
+          gestor_id: userData.user?.id ?? null,
           regional: group.regional,
           data_referencia: group.date,
           motivo: reason,
           programacao_ids: group.ids,
           resumo: {
-            os_atender: groupOs.length,
+            os_atender: new Set(currentLinks.map((row) => clean(row.os_id))).size,
             colaboradores_com_os: currentCpfs.size,
             colaboradores_regionais_ativos: regionalStaff.length,
+            colaboradores_emprestados: Math.max(0, staffForGroupByCpf.size - regionalStaffByCpf.size),
           },
         })
         .select('id')
@@ -574,7 +589,8 @@ Deno.serve(async (req) => {
         const { data, error } = await service
           .from('grm_despesas_estado_colaborador')
           .select('*')
-          .in('cpf', cpfChunk);
+          .in('cpf', cpfChunk)
+          .eq('data_referencia', group.date);
         if (error) throw error;
         (data || []).forEach((row) => existingByCpf.set(clean(row.cpf), row));
       }
@@ -590,6 +606,7 @@ Deno.serve(async (req) => {
           .from('grm_despesas_fila')
           .select('cpf,hash_desejado')
           .in('cpf', cpfChunk)
+          .eq('data_referencia', group.date)
           .in('status', ['PENDENTE', 'PROCESSANDO']);
         if (error) throw error;
         (data || []).forEach((row) => {
@@ -615,6 +632,7 @@ Deno.serve(async (req) => {
 
         const statePayload = {
           cpf,
+          data_referencia: group.date,
           colaborador_id: clean(item.staff.id ?? item.staff.colaborador_id) || cpf,
           nome: clean(item.staff.nome),
           regional_origem: group.regional,
@@ -626,7 +644,7 @@ Deno.serve(async (req) => {
         };
         const { error: stateError } = await service
           .from('grm_despesas_estado_colaborador')
-          .upsert(statePayload, { onConflict: 'cpf' });
+          .upsert(statePayload, { onConflict: 'cpf,data_referencia' });
         if (stateError) throw stateError;
 
         const { error: queueError } = await service.from('grm_despesas_fila').insert({
@@ -646,13 +664,17 @@ Deno.serve(async (req) => {
         if (queueError && queueError.code !== '23505') throw queueError;
         if (!queueError) {
           overall.enfileirados += 1;
+          if (group.date <= activeWindowStart) overall.enfileirados_na_janela += 1;
           if (item.action === 'APLICAR') overall.aplicar += 1;
           else overall.limpar += 1;
         }
       }
     }
 
-    if (overall.enfileirados > 0 && !AGENTE_LIBERACAO_DESPESAS_PAUSADO) {
+    // Itens futuros ficam preparados na fila, mas o worker só é acordado
+    // quando a data já entrou na janela. O cron diário das 01:00 inicia os
+    // itens que viraram elegíveis durante a madrugada.
+    if (overall.enfileirados_na_janela > 0 && !AGENTE_LIBERACAO_DESPESAS_PAUSADO) {
       const { data: existingJob, error: jobCheckError } = await service
         .from('grm_sync_jobs')
         .select('id')

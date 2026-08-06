@@ -1374,15 +1374,10 @@ async function getCashRowsCount(page) {
   });
 }
 
-async function deleteAllCashRules(page) {
-  let guard = 0;
-
-  while (guard++ < 100) {
+async function deleteCashRuleAtIndex(page, rowIndex) {
     const before = await getCashRowsCount(page);
-
-    if (before <= 0) return;
-
-    const prepared = await page.evaluate(() => {
+    if (before <= 0 || rowIndex < 0 || rowIndex >= before) return;
+    const prepared = await page.evaluate((requestedIndex) => {
       const normalize = (value) =>
         String(value || '')
           .normalize('NFD')
@@ -1431,7 +1426,7 @@ async function deleteAllCashRules(page) {
         .filter((row) =>
           row.querySelector('input, select, [role="combobox"]'));
 
-      const row = rows[rows.length - 1];
+      const row = rows[requestedIndex];
 
       if (!row) {
         return { ok: false, reason: 'RULE_ROW_NOT_FOUND' };
@@ -1492,7 +1487,7 @@ async function deleteAllCashRules(page) {
         rowText: row.innerText?.slice(0, 1000) || '',
         buttonHtml: remove.outerHTML.slice(0, 5000),
       };
-    });
+    }, rowIndex);
 
     if (!prepared.ok) {
       throw new Error(
@@ -1520,6 +1515,14 @@ async function deleteAllCashRules(page) {
     );
 
     await sleep(250);
+}
+
+async function deleteAllCashRules(page) {
+  let guard = 0;
+  while (guard++ < 100) {
+    const before = await getCashRowsCount(page);
+    if (before <= 0) return;
+    await deleteCashRuleAtIndex(page, before - 1);
   }
 
   throw new Error(
@@ -2271,20 +2274,43 @@ async function applyEmployeeRules(page, job) {
     };
   }
 
-  await preflightDesiredRuleTypes(
-    page,
-    desired,
-    inspection.currentRules.length,
+  const desiredByType = new Map(
+    desired.map((rule) => [norm(rule.tipo_despesa), rule]),
   );
 
-  await deleteAllCashRules(page);
+  // Remova de baixo para cima somente as categorias que deixaram de fazer
+  // parte da programação desta data. Assim os índices restantes não mudam
+  // antes de serem processados.
+  let formRules = await readCashRules(page);
+  const obsoleteIndexes = formRules
+    .map((rule, index) => ({ rule, index }))
+    .filter(({ rule }) => !desiredByType.has(norm(rule.tipo_despesa)))
+    .map(({ index }) => index)
+    .sort((a, b) => b - a);
 
-  for (let index = 0; index < desired.length; index += 1) {
-    await addCashRuleRow(page);
-    await fillCashRuleRow(page, index, desired[index]);
+  for (const index of obsoleteIndexes) {
+    await deleteCashRuleAtIndex(page, index);
   }
 
-  const formRules = canonicalRules(await readCashRules(page));
+  // Atualize somente linhas divergentes e acrescente apenas categorias novas.
+  for (const rule of desired) {
+    formRules = await readCashRules(page);
+    const index = formRules.findIndex((current) =>
+      norm(current.tipo_despesa) === norm(rule.tipo_despesa));
+
+    if (index >= 0) {
+      if (!rulesEqual([formRules[index]], [rule])) {
+        await fillCashRuleRow(page, index, rule);
+      }
+      continue;
+    }
+
+    await addCashRuleRow(page);
+    const newIndex = await getCashRowsCount(page) - 1;
+    await fillCashRuleRow(page, newIndex, rule);
+  }
+
+  formRules = canonicalRules(await readCashRules(page));
 
   if (!rulesEqual(formRules, desired)) {
     const error = new Error(
@@ -2325,11 +2351,12 @@ async function applyEmployeeRules(page, job) {
   };
 }
 
-async function getLatestState(cpf) {
+async function getLatestState(cpf, dataReferencia) {
   const { data, error } = await supabase
     .from('grm_despesas_estado_colaborador')
     .select('*')
     .eq('cpf', digits(cpf))
+    .eq('data_referencia', String(dataReferencia || '').slice(0, 10))
     .maybeSingle();
 
   if (error) throw error;
@@ -2377,6 +2404,7 @@ async function updateStateIfCurrent(job, patch) {
     .from('grm_despesas_estado_colaborador')
     .update(patch)
     .eq('cpf', digits(job.cpf))
+    .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
     .eq('hash_desejado', job.hash_desejado)
     .eq('versao_desejada_id', job.versao_id);
 
@@ -2549,7 +2577,7 @@ async function processDryRun(page) {
     let screenshot = null;
 
     try {
-      const state = await getLatestState(job.cpf);
+      const state = await getLatestState(job.cpf, job.data_referencia);
 
       if (
         !state
@@ -2661,7 +2689,7 @@ async function processReal(page) {
     let screenshot = null;
 
     try {
-      const state = await getLatestState(job.cpf);
+      const state = await getLatestState(job.cpf, job.data_referencia);
 
       if (
         !state
