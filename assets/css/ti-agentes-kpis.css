@@ -6,7 +6,8 @@
 }
 
 .ag-hero > h2,
-.ag-hero > p {
+.ag-hero > p,
+.ag-hero > .ag-tabs {
   grid-column: 1 / -1;
 }
 
