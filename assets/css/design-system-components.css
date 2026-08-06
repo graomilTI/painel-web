@@ -39,6 +39,8 @@
 .ds-btn-danger{background:rgba(220,72,72,.14);border-color:rgba(220,72,72,.45);color:#f3b7b7}
 .ds-btn-danger:hover:not(:disabled){background:rgba(220,72,72,.32);color:#fff}
 .ds-btn-retry{margin-top:10px}
+.ds-btn-icon{border:1px solid rgba(220,72,72,.35);border-radius:10px;background:rgba(220,72,72,.1);color:#f3b7b7;width:28px;height:28px;line-height:1;font-size:13px;font-weight:700;cursor:pointer}
+.ds-btn-icon:hover{background:rgba(220,72,72,.28);color:#fff}
 
 /* ── estados ── */
 .ds-state{display:grid;justify-items:center;gap:8px;text-align:center;color:#94a3b8;padding:28px 16px;border:1px dashed rgba(148,163,184,.18);border-radius:18px;background:rgba(2,6,23,.3)}

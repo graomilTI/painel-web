@@ -6,9 +6,11 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, badge, toast, loadingState, emptyState, errorState, esc,
+  pageHeader, table, badge, toast, confirmar, loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
-import { supabase, listar, inserir, mensagemDeErro } from './core/supabaseService.js';
+import {
+  supabase, listar, inserir, atualizar, mensagemDeErro,
+} from './core/supabaseService.js';
 
 const BUCKET = 'notas-fiscais';
 const TABELA = 'grm_nf_lancamentos';
@@ -113,6 +115,16 @@ async function uploadArquivo(file, setor, userId) {
   });
 }
 
+const STATUS_CANCELAVEIS = new Set([
+  'NOVO', 'PROCESSANDO', 'VALIDADO', 'DRY_RUN_OK',
+  'AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'DUPLICADO', 'ERRO',
+]);
+
+function acaoCancelar(row) {
+  if (!STATUS_CANCELAVEIS.has(row.status)) return '';
+  return `<button class="ds-btn-icon" data-unf-cancelar="${esc(row.id)}" data-unf-arquivo="${esc(row.arquivo_nome)}" type="button" title="Cancelar envio">✕</button>`;
+}
+
 function renderLinhas(linhas) {
   return linhas.map((r) => `
     <tr>
@@ -122,7 +134,29 @@ function renderLinhas(linhas) {
       <td>${esc(dataHora(r.created_at))}</td>
       <td>${badge(STATUS_LABEL[r.status] || r.status, STATUS_BADGE[r.status] || 'neutral')}</td>
       <td>${detalhesDocumento(r)}</td>
+      <td>${acaoCancelar(r)}</td>
     </tr>`).join('');
+}
+
+async function cancelarLancamento(id, nomeArquivo) {
+  const ok = await confirmar({
+    titulo: 'Cancelar envio',
+    mensagem: `Cancelar "${nomeArquivo}"? O agente não vai mais processar esse arquivo.`,
+    confirmarLabel: 'Cancelar envio',
+    cancelarLabel: 'Voltar',
+  });
+  if (!ok) return;
+  try {
+    await atualizar(TABELA, [{ coluna: 'id', valor: id }], {
+      status: 'CANCELADO',
+      erro: 'Cancelado manualmente pelo painel.',
+      updated_at: new Date().toISOString(),
+    });
+    toast('Envio cancelado.', 'ok');
+    await carregarTabela();
+  } catch (error) {
+    toast(mensagemDeErro(error, TABELA), 'danger', 6000);
+  }
 }
 
 async function carregarTabela() {
@@ -145,10 +179,14 @@ async function carregarTabela() {
           { id: 'enviado_em', label: 'Enviado em' },
           { id: 'status', label: 'Status' },
           { id: 'detalhes', label: 'Detalhes' },
+          { id: 'acoes', label: '' },
         ],
         linhasHtml: renderLinhas(rows),
       })
       : emptyState('Nenhum documento enviado ainda.');
+    alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
+      btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
+    });
   } catch (error) {
     if (!raiz) return;
     alvo.innerHTML = errorState(mensagemDeErro(error, TABELA), { retryId: 'unfRetry' });
