@@ -33,6 +33,7 @@ const STATUS_BADGE = {
   AGUARDANDO_CLASSIFICACAO: 'warn',
   DUPLICADO: 'warn',
   ERRO: 'danger',
+  CANCELADO: 'neutral',
 };
 
 const STATUS_LABEL = {
@@ -45,6 +46,7 @@ const STATUS_LABEL = {
   AGUARDANDO_CLASSIFICACAO: 'Falta classificar',
   DUPLICADO: 'Duplicado',
   ERRO: 'Erro',
+  CANCELADO: 'Cancelado',
 };
 
 let raiz = null;

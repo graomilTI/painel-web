@@ -15,6 +15,7 @@ let escala = {};
 let modeloPlantao = [];
 let currentUserContext = null;
 let setorAtivo = DEFAULT_SETORES[0];
+let setorConfigMap = new Map();
 
 function esc(value) {
   return String(value ?? '')
@@ -113,13 +114,37 @@ function buildDateOptions(selected = '') {
   return datas.map((iso) => `<option value="${esc(iso)}" ${iso === value ? 'selected' : ''}>${esc(weekdayBR(iso))} · ${esc(formatDateBR(iso))}</option>`).join('');
 }
 
-function getHorarioPadrao() {
+function canEditSetor(setor) {
+  if (currentUserContext?.user?.is_master) return true;
+  return !!setorConfigMap.get(setor)?.pode_editar;
+}
+
+function getHorarioPadrao(setor = '') {
+  const config = setor ? setorConfigMap.get(setor) : null;
+  if (config) {
+    return {
+      hora_inicio: timeValue(config.hora_inicio) || '08:00',
+      hora_fim: timeValue(config.hora_fim) || '12:00',
+      hora_inicio_2: timeValue(config.hora_inicio_2),
+      hora_fim_2: timeValue(config.hora_fim_2),
+    };
+  }
   return {
     hora_inicio: document.getElementById('plantaoPadraoInicio1')?.value || '08:00',
     hora_fim: document.getElementById('plantaoPadraoFim1')?.value || '12:00',
     hora_inicio_2: document.getElementById('plantaoPadraoInicio2')?.value || '13:30',
     hora_fim_2: document.getElementById('plantaoPadraoFim2')?.value || '18:00',
   };
+}
+
+function timeValue(value) {
+  return value ? String(value).slice(0, 5) : '';
+}
+
+async function loadSetorAcessos() {
+  const { data, error } = await supabase.rpc('rh_plantao_setores_acesso');
+  if (error) throw error;
+  setorConfigMap = new Map((data || []).map((item) => [item.setor, item]));
 }
 
 function applyHorarioPadraoToForms() {
@@ -377,6 +402,7 @@ async function loadSetores() {
   if (!error && Array.isArray(data) && data.length) {
     setores = [...new Set([...data.map((r) => r.nome).filter(Boolean), ...extra])];
   }
+  setores = [...new Set([...setores, ...setorConfigMap.keys()])];
 }
 
 async function loadColaboradores() {
@@ -524,7 +550,9 @@ async function loadModeloPlantao() {
 
 async function salvarModeloPlantao() {
   const feedback = document.getElementById('plantaoProgramacaoFeedback');
+  const setoresPermitidos = new Set(setores.filter(canEditSetor));
   const rows = getAllEscalaRows()
+    .filter((r) => setoresPermitidos.has(r.setor))
     .filter((r) => r.nome && r.hora_inicio && r.hora_fim)
     .map((r, idx) => ({
       setor: r.setor,
@@ -542,8 +570,12 @@ async function salvarModeloPlantao() {
       ordem: idx + 1,
     }));
 
+  if (!setoresPermitidos.size) {
+    alert('Seu usuário não possui setor liberado para editar o modelo do Plantão.');
+    return;
+  }
   if (!rows.length) {
-    alert('Monte pelo menos uma escala com horário antes de salvar como modelo.');
+    alert('Monte pelo menos uma escala com horário em um setor autorizado antes de salvar como modelo.');
     return;
   }
 
@@ -560,7 +592,8 @@ async function salvarModeloPlantao() {
     const { error: delError } = await supabase
       .from('rh_plantao_modelos')
       .delete()
-      .eq('nome_modelo', 'Padrão');
+      .eq('nome_modelo', 'Padrão')
+      .in('setor', [...setoresPermitidos]);
     if (delError) throw delError;
 
     const payload = rows.map((r) => ({
@@ -990,14 +1023,16 @@ function renderSetores() {
 
   const setor = setorAtivo;
   const rows = escala[setor] || [];
+  const podeEditarSetor = canEditSetor(setor);
+  const horarioSetor = getHorarioPadrao(setor);
   holder.innerHTML = navHtml + `
     <section class="plantao-setor" data-setor="${esc(setor)}">
       <div class="plantao-setor-head">
         <div>
           <h3>${esc(setor)}</h3>
-          <p class="plantao-hint">Busque o colaborador, defina a data e os horários para adicionar à escala.</p>
+          <p class="plantao-hint">${podeEditarSetor ? 'Busque o colaborador, defina a data e os horários para adicionar à escala.' : 'Somente leitura — a edição deste setor é restrita aos usuários liberados em Equipe › Plantão.'}</p>
         </div>
-        ${DEFAULT_SETORES.includes(setor) ? '' : `<button type="button" class="plantao-btn danger sm" data-remove-setor="${esc(setor)}">Remover setor</button>`}
+        ${DEFAULT_SETORES.includes(setor) || !podeEditarSetor ? '' : `<button type="button" class="plantao-btn danger sm" data-remove-setor="${esc(setor)}">Remover setor</button>`}
       </div>
 
       <div class="plantao-add-area">
@@ -1006,38 +1041,38 @@ function renderSetores() {
         <div class="plantao-add-row1">
           <div class="plantao-suggest-wrap">
             <label class="plantao-label">Colaborador</label>
-            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome para buscar..." autocomplete="off" />
+            <input class="plantao-input plantao-colab-input" data-setor="${esc(setor)}" placeholder="Digite o nome para buscar..." autocomplete="off" ${podeEditarSetor ? '' : 'disabled'} />
             <div class="plantao-suggestions"></div>
           </div>
           <div>
             <label class="plantao-label">Data do plantão</label>
-            <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}">${buildDateOptions()}</select>
+            <select class="plantao-select" data-field="data_plantao" data-setor="${esc(setor)}" ${podeEditarSetor ? '' : 'disabled'}>${buildDateOptions()}</select>
           </div>
         </div>
 
         <div class="plantao-add-times">
           <div>
             <label class="plantao-label">Entrada 1</label>
-            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_inicio)}" />
+            <input class="plantao-input" type="time" data-field="hora_inicio" data-setor="${esc(setor)}" value="${esc(horarioSetor.hora_inicio)}" ${podeEditarSetor ? '' : 'disabled'} />
           </div>
           <div>
             <label class="plantao-label">Saída 1</label>
-            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(getHorarioPadrao().hora_fim)}" />
+            <input class="plantao-input" type="time" data-field="hora_fim" data-setor="${esc(setor)}" value="${esc(horarioSetor.hora_fim)}" ${podeEditarSetor ? '' : 'disabled'} />
           </div>
           <div>
             <label class="plantao-label">Entrada 2 <span class="plantao-opt">(opc.)</span></label>
-            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="" />
+            <input class="plantao-input" type="time" data-field="hora_inicio_2" data-setor="${esc(setor)}" value="${esc(horarioSetor.hora_inicio_2)}" ${podeEditarSetor ? '' : 'disabled'} />
           </div>
           <div>
             <label class="plantao-label">Saída 2 <span class="plantao-opt">(opc.)</span></label>
-            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="" />
+            <input class="plantao-input" type="time" data-field="hora_fim_2" data-setor="${esc(setor)}" value="${esc(horarioSetor.hora_fim_2)}" ${podeEditarSetor ? '' : 'disabled'} />
           </div>
-          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}" style="align-self:end">Adicionar</button>
+          <button type="button" class="plantao-btn primary" data-add="${esc(setor)}" style="align-self:end" ${podeEditarSetor ? '' : 'disabled'}>Adicionar</button>
         </div>
 
         <div style="margin-top:10px;max-width:360px;">
           <label class="plantao-label">Apelido / nome social <span class="plantao-opt">(exibido na arte — deixe vazio para usar o nome completo)</span></label>
-          <input class="plantao-input plantao-apelido-input" data-setor="${esc(setor)}" placeholder="Nome curto para a arte de divulgação" />
+          <input class="plantao-input plantao-apelido-input" data-setor="${esc(setor)}" placeholder="Nome curto para a arte de divulgação" ${podeEditarSetor ? '' : 'disabled'} />
         </div>
       </div>
 
@@ -1058,7 +1093,7 @@ function renderSetores() {
               <span>Horário</span>
               <strong>${esc(buildHorario(row) || '—')}</strong>
             </div>
-            <button type="button" class="plantao-btn danger sm" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>
+            ${podeEditarSetor ? `<button type="button" class="plantao-btn danger sm" data-remove-row="${idx}" data-setor="${esc(setor)}">Remover</button>` : ''}
           </div>
         `).join('') : `
           <div class="plantao-empty">
@@ -1121,6 +1156,10 @@ function renderSetores() {
 }
 
 function addFromSetorForm(setor) {
+  if (!canEditSetor(setor)) {
+    alert(`Você não possui permissão para editar o plantão do setor ${setor}.`);
+    return;
+  }
   const section = document.querySelector(`.plantao-setor[data-setor="${CSS.escape(setor)}"]`);
   const input = section.querySelector('.plantao-colab-input');
   let selected = null;
@@ -1150,7 +1189,7 @@ function addFromSetorForm(setor) {
 
   const getField    = (name) => section.querySelector(`[data-field="${name}"]`)?.value || '';
   const getFieldRaw = (name) => section.querySelector(`[data-field="${name}"]`)?.value ?? '';
-  const padrao = getHorarioPadrao();
+  const padrao = getHorarioPadrao(setor);
   const data_plantao  = getField('data_plantao') || document.getElementById('plantaoData').value;
   const hora_inicio   = getField('hora_inicio')  || padrao.hora_inicio;
   const hora_fim      = getField('hora_fim')     || padrao.hora_fim;
@@ -1191,8 +1230,10 @@ async function saveEscala() {
   const evento = document.getElementById('plantaoEvento').value.trim();
   const observacoes = document.getElementById('plantaoObs').value.trim();
 
+  const setoresPermitidos = new Set(setores.filter(canEditSetor));
   const rows = [];
   Object.entries(escala).forEach(([setor, pessoas]) => {
+    if (!setoresPermitidos.has(setor)) return;
     pessoas.forEach((p, idx) => {
       rows.push({
         data_plantao: p.data_plantao || dataIni,
@@ -1216,8 +1257,8 @@ async function saveEscala() {
     });
   });
 
-  if (!rows.length) {
-    alert('Adicione pelo menos um plantonista antes de salvar.');
+  if (!setoresPermitidos.size) {
+    alert('Seu usuário não possui setor liberado para edição do Plantão.');
     return;
   }
 
@@ -1230,15 +1271,17 @@ async function saveEscala() {
       .from('rh_plantao_escalas')
       .delete()
       .gte('data_plantao', dataIni)
-      .lte('data_plantao', dataFim);
+      .lte('data_plantao', dataFim)
+      .in('setor', [...setoresPermitidos]);
 
     if (delError) throw delError;
 
-    const { error: insertError } = await supabase
-      .from('rh_plantao_escalas')
-      .insert(rows);
-
-    if (insertError) throw insertError;
+    if (rows.length) {
+      const { error: insertError } = await supabase
+        .from('rh_plantao_escalas')
+        .insert(rows);
+      if (insertError) throw insertError;
+    }
 
     feedback.textContent = `Plantão salvo com ${rows.length} plantonista(s), separado por ${new Set(rows.map((r) => r.data_plantao)).size} data(s).`;
     if (document.getElementById('plantaoConsultaLista')) consultarDatasPlantao().catch(() => null);
@@ -2411,6 +2454,7 @@ export async function renderContent(content, userContext) {
   const feedback = document.getElementById('plantaoFeedback');
   try {
     feedback.textContent = 'Carregando colaboradores, contatos e setores...';
+    await loadSetorAcessos();
     await Promise.all([loadSetores(), loadColaboradores(), loadContatos(), loadModeloPlantao()]);
     buildEmptyEscala();
     renderSetores();
