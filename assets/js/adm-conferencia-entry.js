@@ -182,7 +182,18 @@ function injectCleanLayoutStyles() {
     .conf-row-actions button[data-action="PENDENCIA"]{background:rgba(239,68,68,.09)!important;border-color:rgba(248,113,113,.17)!important;color:#ff7272!important}
     .conf-row-actions button[data-action="EM_ANALISE"]{display:none!important}
     .conf-producao-sem{color:#ff6b6b!important}
-    .conf-row-grm-synced{box-shadow:inset 3px 0 0 rgba(52,211,153,.55)!important;cursor:help!important}
+    .conf-row-grm-applied{box-shadow:inset 3px 0 0 rgba(52,211,153,.72)!important}
+    .conf-row-grm-clean{box-shadow:inset 3px 0 0 rgba(45,212,191,.65)!important}
+    .conf-row-grm-noop{box-shadow:inset 3px 0 0 rgba(96,165,250,.55)!important}
+    .conf-row-grm-error{box-shadow:inset 3px 0 0 rgba(248,113,113,.72)!important}
+    .conf-row-grm-pending{box-shadow:inset 3px 0 0 rgba(250,204,21,.58)!important}
+    .conf-grm-status{display:inline-flex!important;align-items:center!important;width:max-content!important;margin-top:7px!important;padding:3px 7px!important;border:1px solid transparent!important;border-radius:999px!important;font-size:9.5px!important;font-weight:800!important;letter-spacing:.025em!important;line-height:1.2!important;cursor:help!important}
+    .conf-grm-status-applied{background:rgba(16,185,129,.13)!important;border-color:rgba(52,211,153,.2)!important;color:#72efb1!important}
+    .conf-grm-status-clean{background:rgba(20,184,166,.12)!important;border-color:rgba(45,212,191,.2)!important;color:#6ee7d6!important}
+    .conf-grm-status-noop{background:rgba(59,130,246,.11)!important;border-color:rgba(96,165,250,.2)!important;color:#93c5fd!important}
+    .conf-grm-status-error{background:rgba(239,68,68,.11)!important;border-color:rgba(248,113,113,.2)!important;color:#ff8585!important}
+    .conf-grm-status-pending{background:rgba(234,179,8,.1)!important;border-color:rgba(250,204,21,.2)!important;color:#f5d761!important}
+    .conf-grm-status-neutral{background:rgba(148,163,184,.08)!important;border-color:rgba(148,163,184,.12)!important;color:#9fb0a7!important}
     .conf-table td:nth-last-child(2){font-weight:700!important}
     @media(max-width:1180px){
       .conf-filters{grid-template-columns:repeat(2,minmax(180px,1fr))!important}
