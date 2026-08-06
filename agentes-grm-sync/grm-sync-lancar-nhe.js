@@ -343,7 +343,7 @@ async function resolverCoordenadasEmLote(numerosOs) {
     var chunk = unique.slice(i, i + pageSize);
     var result = await supabase
       .from('operacional_os')
-      .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao')
+      .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,observacao_logistica')
       .in('numero_os', chunk)
       .lte('data_os', referenceIso())
       .order('data_os', { ascending: false });
@@ -362,7 +362,11 @@ async function resolverCoordenadasEmLote(numerosOs) {
         servico: row.servico,
         supervisao: row.supervisao,
         cliente: row.cliente,
-        local: row.ponto1_nome || row.embarque
+        local: row.ponto1_nome || row.embarque,
+        // Laudo anexado (remanescente negativo, ver os.js:openLaudoModal) marca
+        // observacao_logistica='LAUDO:'+urls — conta como cobertura do ponto
+        // igual um NHE já lançado (pedido do usuário 06/08).
+        temLaudo: typeof row.observacao_logistica === 'string' && row.observacao_logistica.indexOf('LAUDO:') === 0
       };
     });
   }
@@ -428,10 +432,24 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
 
   var base = brutos.filter(function (item) { return servicoValido(item.os); });
 
-  // Um ponto é identificado por DUAS chaves em paralelo:
+  // Local de Embarque com hífen + nome (ex.: "3C ARMAZENS GERAIS LTDA -
+  // ANGELO F CABRAL") é o MESMO local de embarque, só com o produtor
+  // definido — considera-se o texto antes do " - " (mesmo padrão já usado
+  // pra separar Coordenação de Supervisão em osCoord.supervisao). Pedido do
+  // usuário 06/08.
+  function localBaseName(text) {
+    var norm = normText(text);
+    var idx = norm.indexOf(' - ');
+    return idx === -1 ? norm : norm.slice(0, idx).trim();
+  }
+
+  // Um ponto é identificado por TRÊS chaves em paralelo:
   // - Cliente + coordenada aproximada (~100m), para nomes com sufixos diferentes;
   // - Cliente + texto normalizado do local, para não separar o mesmo armazém
-  //   quando duas O.S. possuem coordenadas divergentes ou incompletas.
+  //   quando duas O.S. possuem coordenadas divergentes ou incompletas;
+  // - Cliente + nome-base do local (texto antes do " - "), para tratar
+  //   "LOCAL" e "LOCAL - PRODUTOR X" como o mesmo local de embarque mesmo sem
+  //   coordenada batendo.
   // Basta qualquer uma das chaves coincidir para uma carga bloquear o ponto.
   function clusterKeys(item) {
     var info = coordPorOs[item.os] || {};
@@ -440,14 +458,17 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
     if (cliente && info.lat !== null && info.lat !== undefined && info.lng !== null && info.lng !== undefined) {
       keys.push(cliente + '|geo:' + (Math.round(info.lat * 1000) / 1000) + ',' + (Math.round(info.lng * 1000) / 1000));
     }
-    var local = normText(item.local || info.local);
+    var localRaw = item.local || info.local;
+    var local = normText(localRaw);
     if (cliente && local) keys.push(cliente + '|txt:' + local);
+    var base = localBaseName(localRaw);
+    if (cliente && base) keys.push(cliente + '|base:' + base);
     return Array.from(new Set(keys));
   }
 
   var grupos = {};
   function grupo(key) {
-    if (!grupos[key]) grupos[key] = { temCargaReal: false, temNhe: false };
+    if (!grupos[key]) grupos[key] = { temCargaReal: false, temNhe: false, temLaudo: false };
     return grupos[key];
   }
   function marcarPonto(item, tipo) {
@@ -471,6 +492,14 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
     if (info) marcarPonto({ os: os, cliente: info.cliente, local: info.local }, 'temNhe');
   });
 
+  // Laudo anexado em qualquer O.S. do mesmo cliente+local também conta como
+  // cobertura do ponto (pedido do usuário 06/08) — não precisa de outro
+  // lançamento de NHE se já existe laudo ali.
+  Object.keys(coordPorOs).forEach(function (os) {
+    var info = coordPorOs[os];
+    if (info && info.temLaudo) marcarPonto({ os: os, cliente: info.cliente, local: info.local }, 'temLaudo');
+  });
+
   var pendentes = [];
   var bloqueadasCargaMesmoPonto = 0;
   base.forEach(function (item) {
@@ -485,7 +514,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
       return;
     }
 
-    var status = relacionados.some(function (g) { return g.temNhe; }) ? 'DOIS EMBARQUES' : 'PENDENTE';
+    var status = relacionados.some(function (g) { return g.temNhe || g.temLaudo; }) ? 'DOIS EMBARQUES' : 'PENDENTE';
     if (status !== 'PENDENTE') return;
     if (!item.funcionario) return;
     pendentes.push({
