@@ -380,12 +380,21 @@ async function selectExactStaffRow(page, cpf) {
       };
     }
 
+    const selectionControl = checkbox.closest(
+      '.v-selection-control, .v-checkbox, label',
+    ) || checkbox.parentElement;
+
     row.dataset.grmAgentExactStaffRow = 'true';
     checkbox.dataset.grmAgentStaffCheckbox = 'true';
+
+    if (selectionControl) {
+      selectionControl.dataset.grmAgentStaffSelectionControl = 'true';
+    }
 
     return {
       ok: true,
       checked: !!checkbox.checked,
+      hasSelectionControl: !!selectionControl,
       text: row.innerText,
     };
   }, cpfDigits);
@@ -397,6 +406,8 @@ async function selectExactStaffRow(page, cpf) {
   }
 
   const checkboxSelector = '[data-grm-agent-staff-checkbox="true"]';
+  const selectionControlSelector =
+    '[data-grm-agent-staff-selection-control="true"]';
 
   const isChecked = await page.$eval(
     checkboxSelector,
@@ -404,7 +415,16 @@ async function selectExactStaffRow(page, cpf) {
   );
 
   if (!isChecked) {
-    await page.click(checkboxSelector);
+    const selectionControl = await page.$(selectionControlSelector);
+
+    // Vuetify mantém a seleção da tabela no componente que envolve o input.
+    // Clicar somente no <input> pode alterar checkbox.checked sem atualizar o
+    // model da tabela; nesse estado o GRM não exibe a ação Editar.
+    if (selectionControl) {
+      await page.click(selectionControlSelector);
+    } else {
+      await page.click(checkboxSelector);
+    }
   }
 
   await page.waitForFunction((selector) => {
@@ -422,7 +442,43 @@ async function selectExactStaffRow(page, cpf) {
     timeout: 5000,
   }, checkboxSelector);
 
-  await sleep(500);
+  // A ação de edição é renderizada somente depois que o estado de seleção do
+  // Vuetify foi atualizado. Esperar por ela também impede que um input apenas
+  // visualmente marcado seja tratado como uma seleção válida.
+  await page.waitForFunction(() => {
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const normalize = (value) =>
+      String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+
+    return [...document.querySelectorAll('button, [role="button"]')]
+      .filter(visible)
+      .some((button) => {
+        const wrapperClass = typeof button.parentElement?.className === 'string'
+          ? button.parentElement.className
+          : '';
+        const label = normalize([
+          button.getAttribute('title'),
+          button.getAttribute('aria-label'),
+          button.textContent,
+          wrapperClass,
+        ].filter(Boolean).join(' '));
+
+        return /(^|\s|-)EDIT(AR)?($|\s|-)/.test(label)
+          || /STAFF.*EDIT|EDIT.*STAFF/.test(label);
+      });
+  }, {
+    timeout: DEFAULT_TIMEOUT,
+  });
+
+  await sleep(300);
 
   return prepared;
 }
@@ -461,6 +517,91 @@ async function waitEditModal(page, timeoutMs = 6000) {
 
 async function clickEdit(page, cpf) {
   const targetCpf = digits(cpf);
+
+  // Na interface atual o lápis Editar fica imediatamente antes do contêiner
+  // .act-overflow. Portanto, subir a partir da busca até o menor ancestral com
+  // vários botões encontra XLS e as demais ações, mas deixa o lápis de fora.
+  // Localize primeiro o botão na barra completa pela posição e pelo ícone.
+  const directEdit = await page.evaluate(() => {
+    const visible = (el) =>
+      !!el
+      && el.getClientRects().length > 0
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none';
+
+    const searchInput = [...document.querySelectorAll('input')]
+      .find((input) =>
+        /nome.*email.*cpf/i.test(
+          input.getAttribute('placeholder') || '',
+        ));
+
+    if (!searchInput) return null;
+
+    const searchRect = searchInput.getBoundingClientRect();
+    const buttons = [
+      ...document.querySelectorAll('button, [role="button"]'),
+    ].filter(visible);
+
+    const candidates = buttons
+      .filter((button) =>
+        !button.disabled
+        && button.getAttribute('aria-disabled') !== 'true')
+      .filter((button) => {
+        const rect = button.getBoundingClientRect();
+
+        return rect.right <= searchRect.left + 20
+          && rect.left > 240
+          && Math.abs(rect.top - searchRect.top) < 100;
+      })
+      .filter((button) => {
+        const ancestry = [];
+        let node = button;
+
+        for (let depth = 0; node && depth < 4; depth += 1) {
+          ancestry.push(
+            typeof node.className === 'string' ? node.className : '',
+          );
+          node = node.parentElement;
+        }
+
+        const html = button.outerHTML;
+        const signature = `${ancestry.join(' ')} ${html}`.toLowerCase();
+
+        return /staff.*edit|edit.*staff|pencil|edit-outline/.test(signature);
+      })
+      .sort((a, b) =>
+        a.getBoundingClientRect().left
+        - b.getBoundingClientRect().left);
+
+    if (!candidates.length) return null;
+
+    const button = candidates[0];
+    const rect = button.getBoundingClientRect();
+
+    button.dataset.grmAgentDirectEdit = 'true';
+
+    return {
+      selector: '[data-grm-agent-direct-edit="true"]',
+      x: rect.left,
+      y: rect.top,
+      html: button.outerHTML.slice(0, 5000),
+    };
+  });
+
+  if (directEdit) {
+    await page.click(directEdit.selector);
+    await sleep(800);
+
+    if (await waitEditModal(page, 10000)) {
+      log('INFO', 'Cadastro aberto pelo lápis Editar.', directEdit);
+
+      return {
+        clicked: true,
+        method: 'DIRECT_PENCIL_EDIT',
+        ...directEdit,
+      };
+    }
+  }
 
   // Fluxo real do GRM:
   // 1. seleciona a linha pelo checkbox;
