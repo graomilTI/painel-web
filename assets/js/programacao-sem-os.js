@@ -6,8 +6,35 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260730-indisp-legado';
+import { anexoFieldHtml, resolverAnexo } from './rhShared.js';
+import { getColaboradores } from './colaboradoresCache.js';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
+
+const cpfNorm = (value) => String(value || '').replace(/\D/g, '');
+const diasEntre = (ini, fim) => Math.max(1, Math.round((new Date(`${fim}T00:00:00`) - new Date(`${ini}T00:00:00`)) / 86400000) + 1);
+
+// Ao marcar Atestado aqui o gestor não tem acesso ao RH > Indisponibilidade,
+// então o atestado nunca era formalizado (só virava um texto solto em
+// programacao_colaboradores.disponibilidade) — pedido da usuária, 2026-08-06:
+// abrir a mesma caixa de anexo do RH e gravar direto em rh_atestados, pra
+// aparecer lá também. resolverColaboradorRh tenta achar o uuid/cpf reais em
+// colaboradores (cache) pra casar certinho com loadIndisponiveisNaData depois;
+// segue sem eles (nome basta pro match) se não achar.
+async function resolverColaboradorRh(colab) {
+  try {
+    const lista = await getColaboradores();
+    const cpfAlvo = cpfNorm(colab.colaboradorId);
+    if (cpfAlvo.length >= 9) {
+      const porCpf = lista.find((c) => cpfNorm(c.cpf) === cpfAlvo);
+      if (porCpf) return porCpf;
+    }
+    const nomeAlvo = normalizeText(colab.nome);
+    return lista.find((c) => normalizeText(c.nome) === nomeAlvo) || null;
+  } catch {
+    return null;
+  }
+}
 
 function esc(value) {
   return String(value ?? '')
@@ -88,6 +115,11 @@ function injectStyles() {
     .pso-modal-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
     .pso-modal-fb{display:block;margin-top:8px;font-weight:700;font-size:12.5px}
     .pso-modal-fb.err{color:#fca5a5}
+    .pso-ate-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .pso-ate-grid label{font-size:12px;color:var(--muted)}
+    .pso-ate-grid input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:8px 10px;margin-top:4px;color-scheme:dark}
+    .pso-modal-card label[for],.pso-modal-card label{font-size:12.5px}
+    .pso-modal-card input[type=file]{display:block;width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:8px 10px;margin-top:6px;font-size:12px}
   `;
   document.head.appendChild(style);
 }
@@ -213,6 +245,60 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     };
   }
 
+  function abrirModalAtestado(colab, colaboradorId) {
+    const hoje = options.dataReferencia || todayIso();
+    modalEl.innerHTML = `<div class="pso-modal-card">
+      <h3>Atestado de ${esc(colab.nome)}</h3>
+      <p class="muted" style="margin:0">Anexe o atestado médico — fica disponível em Recursos Humanos &gt; Indisponibilidade &gt; Atestados.</p>
+      <div class="pso-ate-grid">
+        <label>Início *<input id="psoAteInicio" type="date" value="${esc(hoje)}"></label>
+        <label>Fim *<input id="psoAteFim" type="date" value="${esc(hoje)}"></label>
+      </div>
+      ${anexoFieldHtml('psoAteAnexo', { label: 'Atestado digitalizado (PDF/foto) *' })}
+      <div class="pso-modal-actions">
+        <button type="button" class="btn btn-primary" id="psoAteConfirmar">Confirmar</button>
+        <button type="button" class="btn btn-secondary" id="psoAteCancelar">Cancelar</button>
+      </div>
+      <span class="pso-modal-fb" id="psoAteFb"></span>
+    </div>`;
+    modalEl.classList.add('open');
+    modalEl.querySelector('#psoAteCancelar').onclick = fecharModal;
+    modalEl.querySelector('#psoAteConfirmar').onclick = async () => {
+      const fb = modalEl.querySelector('#psoAteFb');
+      fb.classList.remove('err');
+      const inicio = modalEl.querySelector('#psoAteInicio').value;
+      const fim = modalEl.querySelector('#psoAteFim').value;
+      if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do atestado.'; fb.classList.add('err'); return; }
+      if (fim < inicio) { fb.textContent = 'O fim não pode ser antes do início.'; fb.classList.add('err'); return; }
+      if (!modalEl.querySelector('#psoAteAnexo')?.files?.[0]) { fb.textContent = 'Anexe o atestado digitalizado.'; fb.classList.add('err'); return; }
+      const btn = modalEl.querySelector('#psoAteConfirmar');
+      btn.disabled = true;
+      fb.textContent = 'Enviando...';
+      try {
+        const anexo = await resolverAnexo(modalEl, 'psoAteAnexo', 'atestados');
+        const cadastro = await resolverColaboradorRh(colab);
+        const { error } = await supabase.from('rh_atestados').insert({
+          colaborador_id: cadastro?.id || null,
+          colaborador_nome: colab.nome,
+          data_inicio: inicio,
+          data_fim: fim,
+          dias: diasEntre(inicio, fim),
+          anexo_url: anexo,
+          status: 'lancado',
+          created_by: currentUser?.id || null,
+        });
+        if (error) throw error;
+        fecharModal();
+        await salvar(colaboradorId, { disponibilidade: 'ATESTADO' });
+        await carregar({ silent: true });
+      } catch (error) {
+        fb.textContent = error.message || 'Não foi possível registrar o atestado.';
+        fb.classList.add('err');
+        btn.disabled = false;
+      }
+    };
+  }
+
   async function carregar({ silent = false } = {}) {
     const scroller = silent ? scrollParentDe(listEl) : null;
     const scrollPos = scroller ? scroller.scrollTop : 0;
@@ -325,6 +411,11 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     const colaboradorId = card?.dataset.colabId;
     if (!colaboradorId) return;
     const jaAtivo = btn.classList.contains('on');
+    if (!jaAtivo && btn.dataset.situacao === 'ATESTADO') {
+      const colab = colabsAtual.find((c) => c.colaboradorId === colaboradorId);
+      if (colab) abrirModalAtestado(colab, colaboradorId);
+      return;
+    }
     card.querySelectorAll('[data-situacao]').forEach((b) => b.classList.remove('on'));
     if (!jaAtivo) btn.classList.add('on');
     salvar(colaboradorId, { disponibilidade: jaAtivo ? null : btn.dataset.situacao });
