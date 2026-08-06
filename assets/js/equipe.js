@@ -8,6 +8,9 @@ import {
 } from './rhShared.js';
 
 const TABS = [
+  { id: 'gestores', label: 'Gestores' },
+  { id: 'administracao', label: 'Administração' },
+  { id: 'plantao', label: 'Plantão' },
   { id: 'admissoes', label: 'Admissões' },
   { id: 'integracao', label: 'Integração' },
   { id: 'graint', label: 'Cadastro no Graint' },
@@ -28,7 +31,7 @@ const STATUS_ADMISSAO = {
 
 const STATUS_INTEGRACAO = { em_andamento: { label: 'Em andamento' }, concluida: { label: 'Concluída' } };
 
-const state = { tab: 'admissoes', admissoes: [], integracoes: [], inativacoes: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
+const state = { tab: 'gestores', admissoes: [], integracoes: [], inativacoes: [], gestores: [], administracao: [], usuarios: [], plantaoConfig: [], plantaoEditores: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
 
 function statusPill(status, map) {
   const label = map?.[status]?.label || status || '-';
@@ -44,6 +47,7 @@ function styles() {
     .eq-table{width:100%;border-collapse:collapse;min-width:720px}
     .eq-table th,.eq-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
     .eq-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
+    .eq-table tbody tr:hover{background:rgba(255,255,255,.025)}
     .eq-empty{text-align:center;color:var(--muted)}
     .eq-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
     .eq-modal.open{display:flex}
@@ -66,6 +70,9 @@ function styles() {
     .eq-inativ-motivo{margin:8px 0 0;color:#e2e2f0;font-size:13.5px;line-height:1.4}
     .eq-inativ-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
     .eq-inativ-obs{flex:1;min-width:180px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;font-size:12.5px}
+    .eq-person{display:flex;align-items:center;gap:10px;min-width:190px}.eq-avatar{width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border-radius:11px;background:rgba(34,197,94,.12);border:1px solid rgba(74,222,128,.22);color:#86efac;font-size:12px;font-weight:900}.eq-person small{display:block;color:var(--muted);margin-top:2px}.eq-sector{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.1);border:1px solid rgba(96,165,250,.2);color:#bfdbfe;font-size:12px;font-weight:800}.eq-structure-intro{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.eq-structure-intro h3{margin:0 0 5px}.eq-structure-intro p{margin:0}.eq-row-actions{display:flex;gap:6px;white-space:nowrap}.eq-row-actions .btn{padding:7px 10px}.eq-form-help{font-size:12px;color:var(--muted);margin-top:5px;display:block}
+    .eq-duty-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.eq-duty-card{border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:18px;background:rgba(2,6,23,.28)}.eq-duty-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.eq-duty-head h4{margin:0;font-size:18px}.eq-duty-lock{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;padding:5px 8px;border-radius:999px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.22);color:#fcd34d}.eq-duty-lock.can{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.22);color:#86efac}.eq-duty-times{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}.eq-duty-times label{font-size:11px;color:var(--muted)}.eq-duty-times input{width:100%;box-sizing:border-box;margin-top:5px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}.eq-duty-editors{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.eq-duty-editor{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;background:#10101e;border:1px solid rgba(255,255,255,.08);font-size:12px}.eq-duty-editor button{border:0;background:transparent;color:#fca5a5;cursor:pointer;padding:0}.eq-duty-add{display:flex;gap:8px;margin-top:10px}.eq-duty-add select{flex:1;min-width:0;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}
+    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}}@media(max-width:760px){.eq-grid{grid-template-columns:1fr}.eq-full{grid-column:auto}.eq-structure-intro{grid-template-columns:1fr}.eq-structure-intro .btn{width:100%}.eq-duty-times{grid-template-columns:repeat(2,1fr)}}
     ${filtrosStyle()}
   </style>`;
 }
@@ -614,6 +621,240 @@ async function renderContatosTab(area) {
   window.CONTATOS.openHome(area, { supabase, auth: state.ctx, user: state.ctx?.user || null });
 }
 
+// ---------- Estrutura da equipe (Gestores e Administração) ----------
+
+function usuario(id) {
+  return state.usuarios.find((item) => String(item.id) === String(id)) || null;
+}
+
+function iniciais(nome = '') {
+  return String(nome).trim().split(/\s+/).slice(0, 2).map((parte) => parte[0] || '').join('').toUpperCase() || '?';
+}
+
+function pessoaHtml(id, vazio = 'Não definido') {
+  const item = usuario(id);
+  if (!item) return `<span class="muted">${esc(vazio)}</span>`;
+  return `<div class="eq-person"><span class="eq-avatar">${esc(iniciais(item.nome || item.email))}</span><span><b>${esc(item.nome || item.email || '-')}</b><small>${esc(item.email || item.setor || '')}</small></span></div>`;
+}
+
+function usuarioOptions(selectedId = '', filtro = null) {
+  const lista = filtro ? state.usuarios.filter(filtro) : state.usuarios;
+  return `<option value="">Selecione...</option>${lista.map((item) => `<option value="${esc(item.id)}" ${String(selectedId) === String(item.id) ? 'selected' : ''}>${esc(item.nome || item.email)}${item.setor ? ` — ${esc(item.setor)}` : ''}</option>`).join('')}`;
+}
+
+async function loadEstrutura() {
+  const [usuariosRes, gestoresRes, administracaoRes] = await Promise.all([
+    supabase.rpc('equipe_listar_usuarios'),
+    supabase.from('equipe_gestores_regionais').select('*').order('regional'),
+    supabase.from('equipe_administracao_usuarios').select('*').order('setor').order('funcao'),
+  ]);
+  if (usuariosRes.error) throw usuariosRes.error;
+  if (gestoresRes.error) throw gestoresRes.error;
+  if (administracaoRes.error) throw administracaoRes.error;
+  state.usuarios = usuariosRes.data || [];
+  state.gestores = gestoresRes.data || [];
+  state.administracao = administracaoRes.data || [];
+}
+
+function openGestorModal(row = null) {
+  const modal = document.getElementById('eqModal');
+  modal.innerHTML = `<div class="eq-modal-card">
+    <div class="section-head"><div><h3>${row ? 'Editar regional' : 'Relacionar regional'}</h3><p class="muted">Defina quem responde pela supervisão e pelo suporte desta regional.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="eq-grid mt-16">
+      <label class="eq-full">Regional *<input id="egRegional" type="text" maxlength="120" value="${esc(row?.regional || '')}" placeholder="Ex.: MATO GROSSO MT2"></label>
+      <label>Supervisor<select id="egSupervisor">${usuarioOptions(row?.supervisor_usuario_id)}</select></label>
+      <label>Suporte<select id="egSuporte">${usuarioOptions(row?.suporte_usuario_id)}</select></label>
+    </div>
+    <span class="eq-form-help">É necessário informar ao menos um responsável.</span>
+    <div class="eq-actions mt-16"><button class="btn btn-primary" id="egSalvar" type="button">Salvar relação</button><button class="btn btn-secondary" id="egCancelar" type="button">Cancelar</button></div>
+    <span class="eq-feedback mt-8" id="egFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  const close = () => modal.classList.remove('open');
+  modal.querySelector('#mClose').onclick = close;
+  modal.querySelector('#egCancelar').onclick = close;
+  modal.querySelector('#egSalvar').onclick = async () => {
+    const fb = modal.querySelector('#egFeedback');
+    const payload = {
+      regional: modal.querySelector('#egRegional').value.trim(),
+      supervisor_usuario_id: modal.querySelector('#egSupervisor').value || null,
+      suporte_usuario_id: modal.querySelector('#egSuporte').value || null,
+    };
+    if (!payload.regional || (!payload.supervisor_usuario_id && !payload.suporte_usuario_id)) {
+      fb.textContent = 'Informe a regional e ao menos um responsável.'; fb.classList.add('err'); return;
+    }
+    try {
+      const query = row
+        ? supabase.from('equipe_gestores_regionais').update(payload).eq('id', row.id)
+        : supabase.from('equipe_gestores_regionais').insert(payload);
+      const { error } = await query;
+      if (error) throw error;
+      close();
+      await renderGestoresTab(document.getElementById('eqTabContent'));
+    } catch (e) { fb.textContent = e.code === '23505' ? 'Esta regional já está cadastrada.' : e.message; fb.classList.add('err'); }
+  };
+}
+
+async function renderGestoresTab(area) {
+  area.innerHTML = '<div class="eq-empty mt-16">Carregando estrutura...</div>';
+  try { await loadEstrutura(); } catch (e) { area.innerHTML = `<div class="eq-empty mt-16">Não foi possível carregar: ${esc(e.message)}</div>`; return; }
+  area.innerHTML = `<section class="card mt-16">
+    <div class="eq-structure-intro"><div><h3>Gestores regionais</h3><p class="muted">Relação oficial de Supervisor e Suporte responsável por cada regional.</p></div><button class="btn btn-primary" id="egNovo" type="button">+ Relacionar regional</button></div>
+    <div class="eq-table-wrap mt-16"><table class="eq-table"><thead><tr><th>Regional</th><th>Supervisor</th><th>Suporte</th><th>Ações</th></tr></thead><tbody>
+      ${state.gestores.length ? state.gestores.map((row) => `<tr><td><b>${esc(row.regional)}</b></td><td>${pessoaHtml(row.supervisor_usuario_id)}</td><td>${pessoaHtml(row.suporte_usuario_id)}</td><td><div class="eq-row-actions"><button class="btn btn-small btn-secondary" data-eg-edit="${esc(row.id)}" type="button">Editar</button><button class="btn btn-small btn-secondary" data-eg-del="${esc(row.id)}" type="button">Excluir</button></div></td></tr>`).join('') : '<tr><td colspan="4" class="eq-empty">Nenhuma regional relacionada.</td></tr>'}
+    </tbody></table></div>
+  </section>`;
+  area.querySelector('#egNovo').onclick = () => openGestorModal();
+  area.querySelectorAll('[data-eg-edit]').forEach((btn) => btn.onclick = () => openGestorModal(state.gestores.find((row) => String(row.id) === btn.dataset.egEdit)));
+  area.querySelectorAll('[data-eg-del]').forEach((btn) => btn.onclick = async () => {
+    const row = state.gestores.find((item) => String(item.id) === btn.dataset.egDel);
+    if (!row || !confirm(`Excluir a relação da regional ${row.regional}?`)) return;
+    const { error } = await supabase.from('equipe_gestores_regionais').delete().eq('id', row.id);
+    if (error) return alert(error.message);
+    renderGestoresTab(area);
+  });
+}
+
+function openAdministracaoModal(row = null) {
+  const modal = document.getElementById('eqModal');
+  const setores = [...new Set([...state.administracao.map((item) => item.setor), ...state.usuarios.map((item) => item.setor)].filter(Boolean))].sort();
+  modal.innerHTML = `<div class="eq-modal-card">
+    <div class="section-head"><div><h3>${row ? 'Editar integrante' : 'Adicionar integrante'}</h3><p class="muted">Relacione o usuário ao setor e descreva sua função.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="eq-grid mt-16">
+      <label>Setor *<input id="eaSetor" type="text" list="eaSetores" maxlength="100" value="${esc(row?.setor || '')}" placeholder="Ex.: Financeiro"><datalist id="eaSetores">${setores.map((setor) => `<option value="${esc(setor)}">`).join('')}</datalist></label>
+      <label>Usuário *<select id="eaUsuario">${usuarioOptions(row?.usuario_id)}</select></label>
+      <label class="eq-full">Função *<input id="eaFuncao" type="text" maxlength="120" value="${esc(row?.funcao || '')}" placeholder="Ex.: Analista financeiro"></label>
+    </div>
+    <div class="eq-actions mt-16"><button class="btn btn-primary" id="eaSalvar" type="button">Salvar integrante</button><button class="btn btn-secondary" id="eaCancelar" type="button">Cancelar</button></div>
+    <span class="eq-feedback mt-8" id="eaFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  const close = () => modal.classList.remove('open');
+  modal.querySelector('#mClose').onclick = close;
+  modal.querySelector('#eaCancelar').onclick = close;
+  modal.querySelector('#eaSalvar').onclick = async () => {
+    const fb = modal.querySelector('#eaFeedback');
+    const payload = { setor: modal.querySelector('#eaSetor').value.trim(), usuario_id: modal.querySelector('#eaUsuario').value || null, funcao: modal.querySelector('#eaFuncao').value.trim() };
+    if (!payload.setor || !payload.usuario_id || !payload.funcao) { fb.textContent = 'Preencha setor, usuário e função.'; fb.classList.add('err'); return; }
+    try {
+      const query = row
+        ? supabase.from('equipe_administracao_usuarios').update(payload).eq('id', row.id)
+        : supabase.from('equipe_administracao_usuarios').insert(payload);
+      const { error } = await query;
+      if (error) throw error;
+      close();
+      await renderAdministracaoTab(document.getElementById('eqTabContent'));
+    } catch (e) { fb.textContent = e.code === '23505' ? 'Este usuário já está relacionado ao setor.' : e.message; fb.classList.add('err'); }
+  };
+}
+
+async function renderAdministracaoTab(area) {
+  area.innerHTML = '<div class="eq-empty mt-16">Carregando estrutura...</div>';
+  try { await loadEstrutura(); } catch (e) { area.innerHTML = `<div class="eq-empty mt-16">Não foi possível carregar: ${esc(e.message)}</div>`; return; }
+  area.innerHTML = `<section class="card mt-16">
+    <div class="eq-structure-intro"><div><h3>Administração</h3><p class="muted">Usuários organizados por setor, com a função exercida por cada integrante.</p></div><button class="btn btn-primary" id="eaNovo" type="button">+ Adicionar integrante</button></div>
+    <div class="eq-table-wrap mt-16"><table class="eq-table"><thead><tr><th>Setor</th><th>Usuário</th><th>Função</th><th>Ações</th></tr></thead><tbody>
+      ${state.administracao.length ? state.administracao.map((row) => `<tr><td><span class="eq-sector">${esc(row.setor)}</span></td><td>${pessoaHtml(row.usuario_id, 'Usuário indisponível')}</td><td><b>${esc(row.funcao)}</b></td><td><div class="eq-row-actions"><button class="btn btn-small btn-secondary" data-ea-edit="${esc(row.id)}" type="button">Editar</button><button class="btn btn-small btn-secondary" data-ea-del="${esc(row.id)}" type="button">Excluir</button></div></td></tr>`).join('') : '<tr><td colspan="4" class="eq-empty">Nenhum integrante relacionado.</td></tr>'}
+    </tbody></table></div>
+  </section>`;
+  area.querySelector('#eaNovo').onclick = () => openAdministracaoModal();
+  area.querySelectorAll('[data-ea-edit]').forEach((btn) => btn.onclick = () => openAdministracaoModal(state.administracao.find((row) => String(row.id) === btn.dataset.eaEdit)));
+  area.querySelectorAll('[data-ea-del]').forEach((btn) => btn.onclick = async () => {
+    const row = state.administracao.find((item) => String(item.id) === btn.dataset.eaDel);
+    if (!row || !confirm(`Remover ${usuario(row.usuario_id)?.nome || 'este usuário'} do setor ${row.setor}?`)) return;
+    const { error } = await supabase.from('equipe_administracao_usuarios').delete().eq('id', row.id);
+    if (error) return alert(error.message);
+    renderAdministracaoTab(area);
+  });
+}
+
+function timeValue(value) {
+  return value ? String(value).slice(0, 5) : '';
+}
+
+async function loadPlantaoConfig() {
+  if (!state.usuarios.length) {
+    const { data, error } = await supabase.rpc('equipe_listar_usuarios');
+    if (error) throw error;
+    state.usuarios = data || [];
+  }
+  const [configRes, editoresRes] = await Promise.all([
+    supabase.rpc('rh_plantao_setores_acesso'),
+    supabase.from('rh_plantao_setor_editores').select('*').order('setor'),
+  ]);
+  if (configRes.error) throw configRes.error;
+  if (editoresRes.error) throw editoresRes.error;
+  state.plantaoConfig = configRes.data || [];
+  state.plantaoEditores = editoresRes.data || [];
+}
+
+async function salvarHorarioSetor(card, config) {
+  const payload = {
+    hora_inicio: card.querySelector('[data-duty-time="hora_inicio"]').value,
+    hora_fim: card.querySelector('[data-duty-time="hora_fim"]').value,
+    hora_inicio_2: card.querySelector('[data-duty-time="hora_inicio_2"]').value || null,
+    hora_fim_2: card.querySelector('[data-duty-time="hora_fim_2"]').value || null,
+    updated_at: new Date().toISOString(),
+  };
+  const feedback = card.querySelector('[data-duty-feedback]');
+  try {
+    const { error } = await supabase.from('rh_plantao_setor_config').update(payload).eq('setor', config.setor);
+    if (error) throw error;
+    feedback.textContent = 'Horário padrão atualizado.';
+    feedback.classList.remove('err');
+  } catch (e) { feedback.textContent = e.message; feedback.classList.add('err'); }
+}
+
+function openNovoSetorPlantaoModal() {
+  const modal = document.getElementById('eqModal');
+  modal.innerHTML = `<div class="eq-modal-card"><div class="section-head"><div><h3>Novo setor no Plantão</h3><p class="muted">Cadastre o horário padrão; depois libere os usuários responsáveis.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="eq-grid mt-16"><label class="eq-full">Setor *<input id="dutySetor" maxlength="100" placeholder="Ex.: Financeiro"></label><label>Entrada 1<input id="dutyI1" type="time" value="08:00"></label><label>Saída 1<input id="dutyF1" type="time" value="12:00"></label><label>Entrada 2<input id="dutyI2" type="time" value="13:30"></label><label>Saída 2<input id="dutyF2" type="time" value="18:00"></label></div><div class="eq-actions mt-16"><button class="btn btn-primary" id="dutyCreate" type="button">Criar setor</button><button class="btn btn-secondary" id="dutyCancel" type="button">Cancelar</button></div><span class="eq-feedback mt-8" id="dutyFb"></span></div>`;
+  modal.classList.add('open');
+  const close = () => modal.classList.remove('open');
+  modal.querySelector('#mClose').onclick = close;
+  modal.querySelector('#dutyCancel').onclick = close;
+  modal.querySelector('#dutyCreate').onclick = async () => {
+    const fb = modal.querySelector('#dutyFb');
+    const payload = { setor: modal.querySelector('#dutySetor').value.trim(), hora_inicio: modal.querySelector('#dutyI1').value, hora_fim: modal.querySelector('#dutyF1').value, hora_inicio_2: modal.querySelector('#dutyI2').value || null, hora_fim_2: modal.querySelector('#dutyF2').value || null };
+    if (!payload.setor || !payload.hora_inicio || !payload.hora_fim) { fb.textContent = 'Informe o setor e o primeiro período.'; fb.classList.add('err'); return; }
+    const { error } = await supabase.from('rh_plantao_setor_config').insert(payload);
+    if (error) { fb.textContent = error.code === '23505' ? 'Este setor já existe.' : error.message; fb.classList.add('err'); return; }
+    close();
+    renderPlantaoTab(document.getElementById('eqTabContent'));
+  };
+}
+
+async function renderPlantaoTab(area) {
+  area.innerHTML = '<div class="eq-empty mt-16">Carregando configurações do Plantão...</div>';
+  try { await loadPlantaoConfig(); } catch (e) { area.innerHTML = `<div class="eq-empty mt-16">Não foi possível carregar: ${esc(e.message)}</div>`; return; }
+  const isMaster = !!state.ctx?.user?.is_master;
+  area.innerHTML = `<section class="card mt-16"><div class="eq-structure-intro"><div><h3>Plantão por setor</h3><p class="muted">Configure o horário padrão e controle exatamente quem pode editar a escala de cada setor.</p></div><div class="eq-actions"><a class="btn btn-secondary" href="./plantao.html">Abrir escala completa</a>${isMaster ? '<button class="btn btn-primary" id="dutyNewSector" type="button">+ Novo setor</button>' : ''}</div></div><div class="eq-duty-grid mt-16">
+    ${state.plantaoConfig.map((config) => {
+      const editores = state.plantaoEditores.filter((item) => item.setor === config.setor);
+      const disabled = config.pode_editar ? '' : 'disabled';
+      const disponiveis = state.usuarios.filter((item) => !editores.some((editor) => String(editor.app_usuario_id) === String(item.id)));
+      return `<article class="eq-duty-card" data-duty-card="${esc(config.setor)}"><div class="eq-duty-head"><div><h4>${esc(config.setor)}</h4><small class="muted">Horário usado ao adicionar plantonistas</small></div><span class="eq-duty-lock ${config.pode_editar ? 'can' : ''}">${config.pode_editar ? 'Pode editar' : 'Somente leitura'}</span></div><div class="eq-duty-times"><label>Entrada 1<input type="time" data-duty-time="hora_inicio" value="${esc(timeValue(config.hora_inicio))}" ${disabled}></label><label>Saída 1<input type="time" data-duty-time="hora_fim" value="${esc(timeValue(config.hora_fim))}" ${disabled}></label><label>Entrada 2<input type="time" data-duty-time="hora_inicio_2" value="${esc(timeValue(config.hora_inicio_2))}" ${disabled}></label><label>Saída 2<input type="time" data-duty-time="hora_fim_2" value="${esc(timeValue(config.hora_fim_2))}" ${disabled}></label></div>${config.pode_editar ? '<button class="btn btn-small btn-secondary mt-8" data-duty-save type="button">Salvar horário</button>' : ''}<span class="eq-feedback mt-8" data-duty-feedback></span><div class="eq-duty-editors">${editores.length ? editores.map((editor) => { const user = usuario(editor.app_usuario_id); return `<span class="eq-duty-editor">${esc(user?.nome || user?.email || 'Usuário')}${isMaster ? `<button type="button" title="Remover acesso" data-duty-remove-editor="${esc(editor.id)}">×</button>` : ''}</span>`; }).join('') : '<span class="muted">Nenhum editor liberado.</span>'}</div>${isMaster ? `<div class="eq-duty-add"><select data-duty-user>${usuarioOptions('', (item) => disponiveis.some((u) => String(u.id) === String(item.id)))}</select><button class="btn btn-small btn-secondary" data-duty-add-editor type="button">Liberar edição</button></div>` : ''}</article>`;
+    }).join('') || '<div class="eq-empty">Nenhum setor configurado.</div>'}
+  </div></section>`;
+  area.querySelector('#dutyNewSector')?.addEventListener('click', openNovoSetorPlantaoModal);
+  area.querySelectorAll('[data-duty-card]').forEach((card) => {
+    const config = state.plantaoConfig.find((item) => item.setor === card.dataset.dutyCard);
+    card.querySelector('[data-duty-save]')?.addEventListener('click', () => salvarHorarioSetor(card, config));
+    card.querySelector('[data-duty-add-editor]')?.addEventListener('click', async () => {
+      const app_usuario_id = card.querySelector('[data-duty-user]').value;
+      if (!app_usuario_id) return;
+      const { error } = await supabase.from('rh_plantao_setor_editores').insert({ setor: config.setor, app_usuario_id, created_by: state.ctx?.user?.id || null });
+      if (error) return alert(error.message);
+      renderPlantaoTab(area);
+    });
+  });
+  area.querySelectorAll('[data-duty-remove-editor]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm('Remover a permissão de edição deste usuário?')) return;
+    const { error } = await supabase.from('rh_plantao_setor_editores').delete().eq('id', btn.dataset.dutyRemoveEditor);
+    if (error) return alert(error.message);
+    renderPlantaoTab(area);
+  }));
+}
+
 // ---------- Boot ----------
 
 async function renderTab(container) {
@@ -622,7 +863,10 @@ async function renderTab(container) {
   if (!area) return;
   state.filtros = null;
   area.innerHTML = `<div class="eq-empty mt-16">Carregando...</div>`;
-  if (state.tab === 'admissoes') renderAdmissoesTab(area);
+  if (state.tab === 'gestores') renderGestoresTab(area);
+  else if (state.tab === 'administracao') renderAdministracaoTab(area);
+  else if (state.tab === 'plantao') renderPlantaoTab(area);
+  else if (state.tab === 'admissoes') renderAdmissoesTab(area);
   else if (state.tab === 'integracao') renderIntegracaoTab(area);
   else if (state.tab === 'graint') renderGraintTab(area);
   else if (state.tab === 'inativacoes') renderInativacoesTab(area, container);
@@ -632,7 +876,7 @@ async function renderTab(container) {
 
 export async function renderContent(content, userContext) {
   state.ctx = userContext;
-  content.innerHTML = `${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>Equipe</h2><p>Admissões, integração de colaboradores e cadastros da equipe.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section>
+  content.innerHTML = `${styles()}<section class="hero-card"><div><div class="eyebrow">Pessoas & estrutura</div><h2>Equipe</h2><p>Responsáveis regionais, setores administrativos e rotinas de Recursos Humanos.</p></div><div class="hero-badge-wrap"><span class="hero-badge">Equipe</span></div></section>
   ${tabsHtml()}
   <div id="eqTabContent"></div>
   <div class="eq-modal" id="eqModal"></div>`;

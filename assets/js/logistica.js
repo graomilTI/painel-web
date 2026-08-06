@@ -27,34 +27,34 @@ const OS_STATUS_LABELS = { PENDENTE: 'Pendente', AGUARDAR: 'Aguardar', ATENDER: 
 // Soja pode pedir Intacta e/ou GMO Free (independentes); Trigo pede
 // Vomitoxina. As chaves aqui (ex.: AFLATOXINA_QUALITATIVO) são o vocabulário
 // usado em logistica_abertura_os.testes.opcoes e em grm-sync-abrir-os.js.
-const TESTES_POR_PRODUTO = {
-  MILHO: [
+const CATALOGO_PRODUTOS = {
+  MILHO: { label: 'Milho', tipos: ['Exportação', 'Tipo Exportação'], testes: [
     { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
     { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
-    { key: 'AFLATOXINA_QUALI_QUANTI', label: 'Teste Aflatoxina — Qualitativo e Quantitativo' },
-  ],
-  SORGO: [
+  ] },
+  TRIGUILHO: { label: 'Triguilho', tipos: ['Não Definido'], testes: [] },
+  SORGO: { label: 'Sorgo', tipos: ['Não Definido'], testes: [
     { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
     { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
-    { key: 'AFLATOXINA_QUALI_QUANTI', label: 'Teste Aflatoxina — Qualitativo e Quantitativo' },
-  ],
-  SOJA: [
+  ] },
+  SOJA: { label: 'Soja', tipos: ['Participante', 'Declarada Intacta', 'Não Definido', 'Convencional', 'Intacta Positivo', 'Intacta Negativo'], testes: [
     { key: 'INTACTA', label: 'Teste Intacta' },
     { key: 'GMO_FREE', label: 'Teste GMO Free' },
-  ],
-  TRIGO: [
+  ] },
+  CANOLA: { label: 'Canola', tipos: ['Não Definido'], testes: [] },
+  FARELO_POLPA_CITRICA: { label: 'Farelo de Polpa Cítrica', tipos: ['Não Definido'], testes: [] },
+  ARROZ_CASCA_NATURAL_TIPO_1: { label: 'Arroz em Casca Natural Tipo 1', tipos: ['Não Definido'], testes: [] },
+  MILHETO: { label: 'Milheto', tipos: ['Não Definido'], testes: [] },
+  TRITICALE: { label: 'Triticale', tipos: ['Não Definido'], testes: [] },
+  TRIGO: { label: 'Trigo', tipos: ['Não Definido'], testes: [
     { key: 'VOMITOXINA', label: 'Teste Vomitoxina' },
-  ],
+  ] },
 };
 
 function categoriaProduto(valor) {
   const t = normalizeText(valor);
   if (!t) return null;
-  if (t.includes('MILHO')) return 'MILHO';
-  if (t.includes('SORGO')) return 'SORGO';
-  if (t.includes('SOJA')) return 'SOJA';
-  if (t.includes('TRIGO')) return 'TRIGO';
-  return null;
+  return Object.entries(CATALOGO_PRODUTOS).find(([, config]) => normalizeText(config.label) === t)?.[0] || null;
 }
 
 const state = {
@@ -64,7 +64,7 @@ const state = {
   allOsFilter: 'TODAS',
   allOsLoading: false,
   aberturaRows: [],
-  aberturaRefs: { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] },
+  aberturaRefs: { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] },
   aberturaLoading: false,
   aberturaSaving: false,
   aberturaProdutoAtual: '',
@@ -168,15 +168,26 @@ export async function renderContent(content, userContext) {
     if (e.target.id === 'osProduto') {
       state.aberturaProdutoAtual = e.target.value;
       const categoria = categoriaProduto(e.target.value);
-      const chaves = categoria ? TESTES_POR_PRODUTO[categoria].map(o => o.key) : [];
+      const chaves = categoria ? CATALOGO_PRODUTOS[categoria].testes.map(o => o.key) : [];
       state.aberturaTestesSelecionados = state.aberturaTestesSelecionados.filter(k => chaves.includes(k));
-      render(content);
-      const campo = content.querySelector('#osProduto');
-      if (campo) { campo.focus(); const len = campo.value.length; campo.setSelectionRange(len, len); }
+      const tipo = content.querySelector('#osTipoProduto');
+      if (tipo) tipo.innerHTML = `<option value="">${categoria ? 'Selecione' : 'Selecione o produto primeiro'}</option>${(CATALOGO_PRODUTOS[categoria]?.tipos || []).map(v => `<option>${esc(v)}</option>`).join('')}`;
+      const testes = content.querySelector('#abrirOsTestesContainer');
+      if (testes) testes.innerHTML = renderTestesBlock();
     }
   });
 
   content.addEventListener('change', (e) => {
+    if (e.target.id === 'osContratante') {
+      const cliente = normalizeText(e.target.value);
+      const filiais = state.aberturaRefs.filiaisPorCliente[cliente] || [];
+      const select = content.querySelector('#osFilialPagadora');
+      if (select) {
+        select.innerHTML = `<option value="">${cliente ? (filiais.length ? 'Selecione' : 'Nenhum Cliente Final associado') : 'Selecione o cliente primeiro'}</option>${filiais.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}`;
+        select.disabled = !filiais.length;
+      }
+      return;
+    }
     const chk = e.target.closest('[data-teste-key]');
     if (!chk) return;
     const key = chk.dataset.testeKey;
@@ -220,7 +231,7 @@ async function loadAllOs() {
 }
 
 async function loadAberturaRefs() {
-  const refs = { clientes: [], filiais: [], armazens: [], destinos: [], locaisDestino: [], regionais: [] };
+  const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
   const [prod, os, sup] = await Promise.all([
     supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
@@ -247,21 +258,25 @@ async function loadAberturaRefs() {
     // cliente_regional (ex.: "AMAGGI EXP. E IMP. - GO") é o cliente nacional
     // com a regional/filial já embutida no nome, não um cliente à parte.
     add(refs.clientes, r.cliente_nacional);
-    add(refs.filiais, r.cliente_final);
+    const clienteKey = normalizeText(r.cliente_nacional);
+    if (clienteKey) {
+      refs.filiaisPorCliente[clienteKey] ||= [];
+      add(refs.filiaisPorCliente[clienteKey], r.cliente_final);
+    }
     add(refs.armazens, r.local_embarque);
     add(refs.locaisDestino, r.destino);
   });
   safe(os.data).forEach(r => {
     const { nacional, filial } = splitClienteFilial(r.cliente);
     add(refs.clientes, nacional);
-    if (filial) add(refs.filiais, filial);
     add(refs.armazens, r.embarque);
     add(refs.locaisDestino, r.destino);
     add(refs.regionais, r.supervisao);
   });
   safe(sup.data).forEach(r => add(refs.regionais, r.nome));
 
-  Object.keys(refs).forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
+  ['clientes', 'armazens', 'destinos', 'locaisDestino', 'regionais'].forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
+  Object.values(refs.filiaisPorCliente).forEach(list => list.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   state.aberturaRefs = refs;
 }
 
@@ -416,11 +431,11 @@ function renderOsTab() {
 
 function renderTestesBlock() {
   const categoria = categoriaProduto(state.aberturaProdutoAtual);
-  const opcoes = categoria ? TESTES_POR_PRODUTO[categoria] : null;
-  if (!opcoes) return '';
+  const opcoes = categoria ? CATALOGO_PRODUTOS[categoria].testes : null;
+  if (!opcoes?.length) return '';
   return `
     <div class="abrir-os-testes mt-16">
-      <span class="abrir-os-testes-label">Testes</span>
+      <span class="abrir-os-testes-label">Testes <small>(opcional — selecione quantos precisar)</small></span>
       <div class="abrir-os-testes-opcoes">
         ${opcoes.map(o => `<label class="abrir-os-teste-chip"><input type="checkbox" data-teste-key="${esc(o.key)}" ${state.aberturaTestesSelecionados.includes(o.key) ? 'checked' : ''}> ${esc(o.label)}</label>`).join('')}
       </div>
@@ -446,7 +461,6 @@ function renderAbrirOsTab() {
         <div class="fob-kpi ok"><strong>${cadastradas}</strong><span>Cadastradas</span></div>
       </div>
 
-      <datalist id="abrirOsProdutos"><option value="Soja"></option><option value="Trigo"></option><option value="Milho"></option><option value="Sorgo"></option></datalist>
       <datalist id="abrirOsArmazens">${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
       <datalist id="abrirOsLocaisDestino">${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
 
@@ -454,18 +468,18 @@ function renderAbrirOsTab() {
         <h4>Dados da solicitação</h4>
         <div class="abrir-os-grid">
           <label>Contratante / Cliente *<select id="osContratante" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.clientes.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
-          <label>Filial pagadora *<select id="osFilialPagadora" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.filiais.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
+          <label>Filial pagadora *<select id="osFilialPagadora" class="log-input" disabled><option value="">Selecione o cliente primeiro</option></select></label>
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
           <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
           <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
           <label>Número contrato *<input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
-          <label>Produto *<input id="osProduto" class="log-input" list="abrirOsProdutos" placeholder="Soja, trigo, milho, sorgo..." value="${esc(state.aberturaProdutoAtual)}"></label>
+          <label>Produto *<select id="osProduto" class="log-input"><option value="">Selecione</option>${Object.values(CATALOGO_PRODUTOS).map(p => `<option value="${esc(p.label)}" ${p.label === state.aberturaProdutoAtual ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
           <label>Tipo de produto *
             <select id="osTipoProduto" class="log-input">
-              <option value="">Selecione</option>
-              <option>Aflatoxina Negativo</option><option>Convencional</option><option>Declarado Intacta</option><option>Intacta Negativo</option><option>Intacta Positivo</option><option>Não Definido</option><option>OS com teste</option><option>Participante</option><option>Transgênico</option>
+              <option value="">${state.aberturaProdutoAtual ? 'Selecione' : 'Selecione o produto primeiro'}</option>
+              ${(CATALOGO_PRODUTOS[categoriaProduto(state.aberturaProdutoAtual)]?.tipos || []).map(tipo => `<option>${esc(tipo)}</option>`).join('')}
             </select>
           </label>
           <label>Serviço *
@@ -485,7 +499,7 @@ function renderAbrirOsTab() {
             <select id="osTrocaNotas" class="log-input"><option value="">Selecione</option><option value="SIM">Sim</option><option value="NAO">Não</option></select>
           </label>
         </div>
-        ${renderTestesBlock()}
+        <div id="abrirOsTestesContainer">${renderTestesBlock()}</div>
         <div class="mt-16"><button id="abrirOsSalvarBtn" class="log-btn-ok" type="button">Confirmar e enviar para Logística ADM</button></div>
       </div>
 
@@ -501,7 +515,7 @@ function testesResumo(testes) {
   const categoria = testes?.categoria;
   const opcoes = Array.isArray(testes?.opcoes) ? testes.opcoes : [];
   if (!categoria || !opcoes.length) return '';
-  const catalogo = TESTES_POR_PRODUTO[categoria] || [];
+  const catalogo = CATALOGO_PRODUTOS[categoria]?.testes || [];
   const labels = opcoes.map(key => catalogo.find(o => o.key === key)?.label || key);
   return `<br><small class="muted">Testes: ${esc(labels.join(', '))}</small>`;
 }
