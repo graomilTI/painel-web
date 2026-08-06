@@ -24,13 +24,10 @@ create table if not exists public.logistica_nhe_lancamentos_auto (
   criado_em timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_logistica_nhe_lancamentos_auto_data
   on public.logistica_nhe_lancamentos_auto (data_referencia);
-
 create index if not exists idx_logistica_nhe_lancamentos_auto_status
   on public.logistica_nhe_lancamentos_auto (status);
-
 create table if not exists public.logistica_nhe_lancamentos_execucoes (
   id uuid primary key default gen_random_uuid(),
   data_referencia date,
@@ -47,16 +44,13 @@ create table if not exists public.logistica_nhe_lancamentos_execucoes (
   iniciado_em timestamptz not null default now(),
   finalizado_em timestamptz
 );
-
 alter table public.logistica_nhe_lancamentos_auto enable row level security;
 alter table public.logistica_nhe_lancamentos_execucoes enable row level security;
-
 drop policy if exists "logistica_nhe_lancamentos_auto_select_authenticated" on public.logistica_nhe_lancamentos_auto;
 create policy "logistica_nhe_lancamentos_auto_select_authenticated"
   on public.logistica_nhe_lancamentos_auto for select
   to authenticated
   using (true);
-
 drop policy if exists "logistica_nhe_lancamentos_execucoes_select_authenticated" on public.logistica_nhe_lancamentos_execucoes;
 create policy "logistica_nhe_lancamentos_execucoes_select_authenticated"
   on public.logistica_nhe_lancamentos_execucoes for select

@@ -10,12 +10,9 @@ create table if not exists public.frotas_veiculos_historico (
   data_fim timestamptz,
   criado_em timestamptz not null default now()
 );
-
 create index if not exists idx_frotas_veiculos_historico_veiculo
   on public.frotas_veiculos_historico(veiculo_id, data_inicio desc);
-
 alter table public.frotas_veiculos_historico enable row level security;
-
 do $$
 begin
   if not exists (
@@ -32,7 +29,6 @@ begin
       with check (true);
   end if;
 end $$;
-
 -- Backfill: cria o registro do estado atual de cada veículo com motorista
 -- definido. data_inicio é fixada bem no passado (não temos a data real da
 -- última troca), servindo como fallback para multas antigas até que o
@@ -45,7 +41,6 @@ where v.motorista_atual is not null
   and not exists (
     select 1 from public.frotas_veiculos_historico h where h.veiculo_id = v.id
   );
-
 -- Trigger: ao mudar (ou definir por primeira vez) o motorista_atual de um
 -- veículo, encerra o registro de histórico em aberto e abre um novo.
 create or replace function public.registrar_troca_motorista_veiculo()
@@ -65,12 +60,10 @@ begin
   return new;
 end;
 $$ language plpgsql;
-
 drop trigger if exists trg_frotas_veiculos_motorista_historico on public.frotas_veiculos;
 create trigger trg_frotas_veiculos_motorista_historico
 after update on public.frotas_veiculos
 for each row execute function public.registrar_troca_motorista_veiculo();
-
 -- Função auxiliar: motorista do veículo numa data específica (fallback para
 -- o motorista_atual quando não há registro de histórico cobrindo a data).
 create or replace function public.frotas_motorista_em_data(p_veiculo_id uuid, p_data date)

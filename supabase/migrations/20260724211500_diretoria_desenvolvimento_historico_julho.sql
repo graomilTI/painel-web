@@ -298,7 +298,6 @@ WHERE NOT EXISTS (
   FROM public.diretoria_desenvolvimento d
   WHERE lower(trim(d.titulo)) = lower(trim(s.titulo))
 );
-
 -- Registra uma primeira ocorrência na linha do tempo para que os cartões
 -- importados já tenham contexto ao serem abertos pela Diretoria.
 INSERT INTO public.diretoria_desenvolvimento_atualizacoes (

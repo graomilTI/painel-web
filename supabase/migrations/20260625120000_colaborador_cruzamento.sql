@@ -3,7 +3,6 @@
 -- Programação (causava travamento: .find() colaborador x veículo no JS).
 
 create extension if not exists unaccent;
-
 create table if not exists public.colaborador_cruzamento (
   colaborador_id uuid primary key references public.colaboradores(id) on delete cascade,
   cpf text,
@@ -21,17 +20,14 @@ create table if not exists public.colaborador_cruzamento (
   auditorias_180d_peso numeric not null default 0,
   atualizado_em timestamptz not null default now()
 );
-
 create index if not exists idx_colaborador_cruzamento_cpf on public.colaborador_cruzamento (cpf);
 create index if not exists idx_colaborador_cruzamento_nome_chave on public.colaborador_cruzamento (nome_chave);
 create index if not exists idx_colaborador_cruzamento_supervisao on public.colaborador_cruzamento (supervisao);
 create index if not exists idx_colaborador_cruzamento_veiculo on public.colaborador_cruzamento (veiculo_id);
-
 alter table public.colaborador_cruzamento enable row level security;
 drop policy if exists colaborador_cruzamento_select_auth on public.colaborador_cruzamento;
 create policy colaborador_cruzamento_select_auth on public.colaborador_cruzamento
   for select to authenticated using (true);
-
 create or replace function public.refresh_colaborador_cruzamento()
 returns void
 language plpgsql
@@ -114,9 +110,7 @@ begin
     and coalesce(c.desligamento, '') = '';
 end;
 $$;
-
 select cron.unschedule('refresh-colaborador-cruzamento') where exists (select 1 from cron.job where jobname = 'refresh-colaborador-cruzamento');
-
 select cron.schedule(
   'refresh-colaborador-cruzamento', '*/30 * * * *',
   $$select public.refresh_colaborador_cruzamento()$$

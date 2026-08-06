@@ -163,3 +163,4 @@ comment on table public.rh_plantao_setor_config is
   'Horários padrão do plantão configurados individualmente por setor.';
 comment on table public.rh_plantao_setor_editores is
   'Usuários explicitamente autorizados a editar o plantão de cada setor.';
+;

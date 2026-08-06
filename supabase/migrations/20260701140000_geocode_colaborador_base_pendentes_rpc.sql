@@ -59,6 +59,5 @@ as $$
   select id, cpf_norm, nome, nc, cep, cidade, estado, endereco, bairro
   from dedup;
 $$;
-
 revoke execute on function public.geocode_colaborador_base_pendentes() from public, anon, authenticated;
 grant execute on function public.geocode_colaborador_base_pendentes() to service_role;

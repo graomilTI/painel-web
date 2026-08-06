@@ -6,7 +6,6 @@ update public.email_regras set prioridade = 8, updated_at = now() where nome = '
 update public.email_regras set prioridade = 9, updated_at = now() where nome = 'Logística / OS / contrato';
 update public.email_regras set prioridade = 15, updated_at = now() where nome = 'Notas fiscais e XML';
 update public.email_regras set prioridade = 20, updated_at = now() where nome = 'Financeiro / comprovantes';
-
 -- O padrão de assunto mais comum do o9solutions.com ("PROGRAMAÇÃO {código} - Grao1000")
 -- não contém "embarque" em lugar nenhum, então nunca batia com as palavras-chave da regra
 -- de Logística. Como 100% do histórico desse remetente é conteúdo de logística/frete, uma

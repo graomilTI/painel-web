@@ -17,8 +17,6 @@ create table if not exists public.email_mailbox_states (
   updated_at timestamptz not null default now(),
   unique(account_id, mailbox_path)
 );
-
 create index if not exists idx_email_mailbox_states_account
   on public.email_mailbox_states(account_id);
-
 alter table public.email_mailbox_states enable row level security;

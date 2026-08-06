@@ -17,29 +17,23 @@ create table if not exists public.logistica_pre_conferencia_os (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists logistica_pre_conferencia_os_numero_idx
   on public.logistica_pre_conferencia_os (numero_os);
-
 create index if not exists logistica_pre_conferencia_os_status_idx
   on public.logistica_pre_conferencia_os (status, updated_at desc);
-
 alter table public.logistica_pre_conferencia_os enable row level security;
-
 drop policy if exists "logistica_pre_conferencia_select" on public.logistica_pre_conferencia_os;
 create policy "logistica_pre_conferencia_select"
   on public.logistica_pre_conferencia_os
   for select
   to authenticated
   using (true);
-
 drop policy if exists "logistica_pre_conferencia_insert" on public.logistica_pre_conferencia_os;
 create policy "logistica_pre_conferencia_insert"
   on public.logistica_pre_conferencia_os
   for insert
   to authenticated
   with check (auth.uid() = criado_por or criado_por is null);
-
 drop policy if exists "logistica_pre_conferencia_update" on public.logistica_pre_conferencia_os;
 create policy "logistica_pre_conferencia_update"
   on public.logistica_pre_conferencia_os
@@ -47,6 +41,5 @@ create policy "logistica_pre_conferencia_update"
   to authenticated
   using (true)
   with check (auth.uid() = atualizado_por or atualizado_por is null);
-
 grant select, insert, update on public.logistica_pre_conferencia_os to authenticated;
 grant usage, select on sequence public.logistica_pre_conferencia_os_id_seq to authenticated;

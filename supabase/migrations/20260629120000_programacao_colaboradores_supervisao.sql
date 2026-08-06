@@ -30,7 +30,6 @@ as $$
   from base
   order by nome;
 $$;
-
 -- Só usuários logados (o painel é autenticado); SECURITY DEFINER não deve ser
 -- chamável sem login (advisor "Public Can Execute SECURITY DEFINER Function").
 revoke execute on function public.programacao_colaboradores_supervisao(text) from public;

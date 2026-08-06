@@ -40,25 +40,19 @@ create table if not exists public.operacional_laudos (
   revisado_por_nome text,
   observacao_revisao text
 );
-
 create index if not exists idx_operacional_laudos_os on public.operacional_laudos (os_id);
 create index if not exists idx_operacional_laudos_suspeito on public.operacional_laudos (suspeito);
 create index if not exists idx_operacional_laudos_enviado_em on public.operacional_laudos (enviado_em desc);
-
 alter table public.operacional_laudos enable row level security;
-
 drop policy if exists operacional_laudos_select_auth on public.operacional_laudos;
 create policy operacional_laudos_select_auth on public.operacional_laudos
   for select to authenticated using (true);
-
 drop policy if exists operacional_laudos_insert_auth on public.operacional_laudos;
 create policy operacional_laudos_insert_auth on public.operacional_laudos
   for insert to authenticated with check (true);
-
 drop policy if exists operacional_laudos_update_auth on public.operacional_laudos;
 create policy operacional_laudos_update_auth on public.operacional_laudos
   for update to authenticated using (true) with check (true);
-
 create or replace function public.operacional_laudos_calcular_suspeita()
 returns trigger
 language plpgsql
@@ -117,12 +111,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_operacional_laudos_suspeita on public.operacional_laudos;
 create trigger trg_operacional_laudos_suspeita
 before insert on public.operacional_laudos
 for each row execute function public.operacional_laudos_calcular_suspeita();
-
 -- View "seam" para os próximos detectores da Central de Alertas (desvio de
 -- rota de frota, alocação de equipe fora do ideal) — hoje só expõe laudos;
 -- quando os outros existirem, cada um ganha tabela própria e isto vira UNION ALL.

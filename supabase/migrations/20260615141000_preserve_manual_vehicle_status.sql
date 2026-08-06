@@ -3,10 +3,8 @@
 
 alter table public.frotas_veiculos
   add column if not exists status_manual boolean not null default false;
-
 alter table public.frotas_veiculos
   add column if not exists status_manual_em timestamptz;
-
 -- Os veículos que já estavam fora do status ATIVO antes desta proteção
 -- são considerados decisões manuais e não devem ser reativados por sincronização.
 update public.frotas_veiculos
@@ -15,7 +13,6 @@ set
   status_manual_em = coalesce(status_manual_em, now())
 where upper(coalesce(status, '')) <> 'ATIVO'
   and status_manual = false;
-
 create or replace function public.preservar_status_manual_frotas_veiculos()
 returns trigger
 language plpgsql
@@ -48,17 +45,13 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_preservar_status_manual_frotas_veiculos
   on public.frotas_veiculos;
-
 create trigger trg_preservar_status_manual_frotas_veiculos
 before update on public.frotas_veiculos
 for each row
 execute function public.preservar_status_manual_frotas_veiculos();
-
 comment on column public.frotas_veiculos.status_manual is
   'Indica que o status foi definido manualmente e deve ser preservado nas sincronizações.';
-
 comment on function public.preservar_status_manual_frotas_veiculos() is
   'Evita que sincronizações DETRAN ou BFleet reativem veículos com status definido manualmente.';

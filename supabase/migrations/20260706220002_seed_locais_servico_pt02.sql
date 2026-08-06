@@ -304,7 +304,6 @@ values
   ('0aa2ea33-dbcb-459f-b38e-8f151b60bce0', 'Armazém / Silo', 'ARMAZEM AGRO MAVI - Fernando Inácio Cardoso e Outros', 'MT', 'TORIXORÉU', -16.3213531, -52.741528, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:43:07.282813+00:00', '2026-07-02T19:43:07.282813+00:00'),
   ('192f810b-fb1f-4f79-81fe-0680e5ecee87', 'Armazém / Silo', 'ARMAZEM AGRO MAVI - ELIDA BORGES DO NASCIMENTO', 'MT', 'TORIXORÉU', -16.3190967, -52.7415313, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:43:07.282813+00:00', '2026-07-02T19:43:07.282813+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('8b1ca3ac-3c7b-46bb-9c69-0c4fb0143d54', 'Armazém / Silo', 'ARMAZEM GRASEL - ENTRE RIOS DO OESTE', 'PR', 'ENTRE RIOS DO OESTE', -24.7101986, -54.247536, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:43:52.546021+00:00', '2026-07-02T19:43:52.546021+00:00'),
   ('bd269714-20e4-4b36-a0bf-495edbdea1f5', 'Armazém / Silo', 'ARMAZEM GRAOS DE OURO LTDA', 'MS', 'CAARAPÓ', -22.6090394, -54.8195636, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:43:52.546021+00:00', '2026-07-02T19:43:52.546021+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

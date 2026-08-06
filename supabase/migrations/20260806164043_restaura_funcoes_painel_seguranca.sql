@@ -68,3 +68,4 @@ revoke all on function public.painel_has_module(text[], boolean) from public;
 grant execute on function public.painel_current_context() to authenticated;
 grant execute on function public.painel_is_master() to authenticated;
 grant execute on function public.painel_has_module(text[], boolean) to authenticated;
+;

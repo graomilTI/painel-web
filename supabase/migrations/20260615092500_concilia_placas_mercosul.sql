@@ -17,15 +17,11 @@ as $$
   end
   from normalizada;
 $$;
-
 comment on function public.frotas_placa_chave_mercosul(text) is
   'Converte a placa Mercosul para a chave equivalente no padrao antigo: A-J na quinta posicao equivalem a 0-9.';
-
 create index if not exists idx_frotas_veiculos_placa_mercosul
   on public.frotas_veiculos (public.frotas_placa_chave_mercosul(placa));
-
 drop function if exists public.sincronizar_frotas_veiculos_patrimonios();
-
 create function public.sincronizar_frotas_veiculos_patrimonios()
 returns jsonb
 language plpgsql
@@ -120,7 +116,6 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.sincronizar_frotas_veiculos_patrimonios() from public;
 grant execute on function public.sincronizar_frotas_veiculos_patrimonios() to authenticated;
 grant execute on function public.frotas_placa_chave_mercosul(text) to authenticated;

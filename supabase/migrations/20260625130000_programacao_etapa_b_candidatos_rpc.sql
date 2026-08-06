@@ -150,5 +150,4 @@ where rn <= 8
 order by os_id, score desc, km asc nulls last
 ;
 $$;
-
 grant execute on function public.programacao_etapa_b_candidatos(text, text[], jsonb) to authenticated;

@@ -6,7 +6,6 @@
 -- e também quando houve uma eventual reativação/readmissão.
 
 create extension if not exists pgcrypto;
-
 create table if not exists public.colaboradores_status_historico (
   id uuid primary key default gen_random_uuid(),
   colaborador_id uuid null,
@@ -22,33 +21,25 @@ create table if not exists public.colaboradores_status_historico (
   relatorio_referencia timestamptz null,
   metadata jsonb not null default '{}'::jsonb
 );
-
 create index if not exists idx_colab_status_hist_cpf_data
   on public.colaboradores_status_historico (cpf, data_efetiva desc, detectado_em desc);
-
 create index if not exists idx_colab_status_hist_nome_data
   on public.colaboradores_status_historico (nome, data_efetiva desc, detectado_em desc);
-
 create index if not exists idx_colab_status_hist_ativo_data
   on public.colaboradores_status_historico (ativo_novo, data_efetiva desc);
-
 -- Evita gravar o mesmo estado efetivo repetidamente em cada execução do agente.
 create unique index if not exists uq_colab_status_hist_estado
   on public.colaboradores_status_historico
   (cpf, ativo_novo, data_efetiva, (coalesce(situacao_nova, '')));
-
 alter table public.colaboradores_status_historico enable row level security;
-
 drop policy if exists "colaboradores_status_historico_select" on public.colaboradores_status_historico;
 create policy "colaboradores_status_historico_select"
   on public.colaboradores_status_historico
   for select
   to authenticated
   using (true);
-
 grant select on public.colaboradores_status_historico to authenticated;
 grant all on public.colaboradores_status_historico to service_role;
-
 -- Backfill inicial: aproveita qualquer colaborador que já esteja como não ativo
 -- na base atual. A tabela colaboradores mantém admissão/desligamento como TEXT,
 -- então convertemos somente formatos reconhecidos para DATE.
@@ -122,7 +113,6 @@ select
   )
 from inativos
 on conflict do nothing;
-
 comment on table public.colaboradores_status_historico is
   'Mudanças de situação detectadas pela comparação entre relatórios sucessivos de colaboradores do GRM.';
 comment on column public.colaboradores_status_historico.data_efetiva is

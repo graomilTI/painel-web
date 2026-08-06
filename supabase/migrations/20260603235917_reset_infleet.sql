@@ -1,0 +1,3 @@
+-- Historical data repair removed intentionally.
+-- Migrations must be deterministic and must not overwrite live tracker state.
+-- Any future Infleet reconciliation must run through an audited admin job.;

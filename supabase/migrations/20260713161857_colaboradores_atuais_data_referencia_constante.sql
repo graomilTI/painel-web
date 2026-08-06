@@ -29,4 +29,4 @@ select
   cidade,
   estado,
   cep
-from public.colaboradores;
+from public.colaboradores;;

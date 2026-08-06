@@ -31,16 +31,13 @@ create table if not exists public.conferencia_localizacao_colaboradores (
   atualizado_em timestamptz not null default now(),
   unique (data_referencia, colaborador_key, os_id)
 );
-
 create index if not exists idx_conferencia_localizacao_data on public.conferencia_localizacao_colaboradores (data_referencia);
 create index if not exists idx_conferencia_localizacao_colaborador on public.conferencia_localizacao_colaboradores (colaborador_key);
 create index if not exists idx_conferencia_localizacao_os on public.conferencia_localizacao_colaboradores (os_id);
-
 alter table public.conferencia_localizacao_colaboradores enable row level security;
 drop policy if exists conferencia_localizacao_select_auth on public.conferencia_localizacao_colaboradores;
 create policy conferencia_localizacao_select_auth on public.conferencia_localizacao_colaboradores
   for select to authenticated using (true);
-
 create or replace function public.registrar_localizacao_diaria_colaboradores(p_data date default current_date)
 returns void
 language plpgsql
@@ -120,12 +117,9 @@ begin
     atualizado_em = now();
 end;
 $$;
-
 revoke execute on function public.registrar_localizacao_diaria_colaboradores(date) from public, anon;
 grant execute on function public.registrar_localizacao_diaria_colaboradores(date) to authenticated;
-
 select cron.unschedule('registrar-localizacao-diaria-colaboradores') where exists (select 1 from cron.job where jobname = 'registrar-localizacao-diaria-colaboradores');
-
 -- 20h Brasília (23h UTC, mesmo dia — evita virar a data em current_date, que
 -- é calculado no fuso do banco/UTC) — roda perto do fim do dia, quando a
 -- equipe da OS já deve estar confirmada em operacional_os_colaboradores.
@@ -134,6 +128,5 @@ select cron.schedule(
   '0 23 * * *',
   $$select public.registrar_localizacao_diaria_colaboradores(current_date)$$
 );
-
 -- Backfill imediato do dia corrente, pra tela não nascer vazia.
 select public.registrar_localizacao_diaria_colaboradores(current_date);

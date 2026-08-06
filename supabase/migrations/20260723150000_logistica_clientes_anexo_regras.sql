@@ -24,16 +24,13 @@ create table if not exists public.logistica_clientes_anexo_regras (
   updated_at timestamptz not null default now(),
   constraint logistica_clientes_anexo_regras_cliente_key unique (cliente)
 );
-
 alter table public.logistica_clientes_anexo_regras enable row level security;
-
 drop policy if exists "logistica_clientes_anexo_regras_select" on public.logistica_clientes_anexo_regras;
 create policy "logistica_clientes_anexo_regras_select"
   on public.logistica_clientes_anexo_regras
   for select
   to authenticated
   using (true);
-
 drop policy if exists "logistica_clientes_anexo_regras_all" on public.logistica_clientes_anexo_regras;
 create policy "logistica_clientes_anexo_regras_all"
   on public.logistica_clientes_anexo_regras
@@ -41,9 +38,7 @@ create policy "logistica_clientes_anexo_regras_all"
   to authenticated
   using (true)
   with check (true);
-
 grant select, insert, update, delete on public.logistica_clientes_anexo_regras to authenticated;
-
 insert into public.logistica_clientes_anexo_regras (cliente, aliases, precisa_anexo, excecao_origem_igual_cliente, observacao) values
   ('ALIANÇA AGRICOLA', '{"ALIANCA AGRICOLA"}', false, false, null),
   ('VERDE AGRICOLA', '{}', false, false, null),

@@ -60,7 +60,6 @@ begin
   using p_scan, p_dias;
 end;
 $$;
-
 revoke all on function public.fob_lote_recente(text, int, int) from public;
 revoke all on function public.fob_lote_recente(text, int, int) from anon;
 grant execute on function public.fob_lote_recente(text, int, int) to authenticated;

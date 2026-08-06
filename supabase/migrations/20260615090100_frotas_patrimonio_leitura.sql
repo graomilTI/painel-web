@@ -5,19 +5,15 @@ alter table public.frotas_veiculos
   add column if not exists patrimonio_funcionario text,
   add column if not exists patrimonio_coordenacao text,
   add column if not exists patrimonio_supervisao text;
-
 comment on column public.frotas_veiculos.patrimonio_codigo is
   'Codigo do patrimonio associado pela placa durante a importacao de relatorios.';
 comment on column public.frotas_veiculos.patrimonio_ultima_leitura is
   'Data da ultima leitura recebida na planilha de patrimonios.';
 comment on column public.frotas_veiculos.patrimonio_dias_sem_leitura is
   'Quantidade de dias sem leitura recebida na planilha de patrimonios.';
-
 create index if not exists idx_frotas_veiculos_patrimonio_codigo
   on public.frotas_veiculos (patrimonio_codigo);
-
 drop function if exists public.sincronizar_frotas_veiculos_patrimonios();
-
 create function public.sincronizar_frotas_veiculos_patrimonios()
 returns jsonb
 language plpgsql
@@ -115,6 +111,5 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.sincronizar_frotas_veiculos_patrimonios() from public;
 grant execute on function public.sincronizar_frotas_veiculos_patrimonios() to authenticated;

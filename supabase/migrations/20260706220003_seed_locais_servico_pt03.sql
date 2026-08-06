@@ -304,7 +304,6 @@ values
   ('b6a4139c-c50c-44dd-a101-f65b29207601', 'Armazém / Silo', 'COCAMAR - ÁGUA BOA', 'MT', 'ÁGUA BOA', -14.0554875, -52.3875781, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:03.443499+00:00', '2026-07-02T19:44:03.443499+00:00'),
   ('a47074cd-cbe5-4ea4-bf6b-5b3bf6037282', 'Armazém / Silo', 'DARCI PONTELLI - NHU PORA', 'RS', 'SÃO BORJA', -28.8601858, -55.9294247, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:03.443499+00:00', '2026-07-02T19:44:03.443499+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('12fa85f4-a45e-4486-b1e1-0691dcdd6f58', 'Armazém / Silo', 'REALIZA ARMAZENS GERAIS', 'MG', 'COROMANDEL', -18.4576625, -47.1946406, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:09.16215+00:00', '2026-07-02T19:44:09.16215+00:00'),
   ('9df434c3-08f2-47b8-8d6c-ca3461ce724e', 'Armazém / Silo', 'RECANTO FELIZ', 'MT', 'ALTO BOA VISTA', -11.703046, -51.3855758, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:09.16215+00:00', '2026-07-02T19:44:09.16215+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

@@ -5,7 +5,6 @@
 alter table if exists public.programacao_estadia
   add column if not exists hotel_id uuid,
   add column if not exists nome_hotel text;
-
 create or replace function public.programacao_etapa_b_candidatos(
   p_supervisao text,
   p_excluir_colaborador_ids text[],
@@ -173,6 +172,5 @@ order by
   score desc
 ;
 $$;
-
 revoke execute on function public.programacao_etapa_b_candidatos(text, text[], jsonb) from public, anon;
 grant execute on function public.programacao_etapa_b_candidatos(text, text[], jsonb) to authenticated;

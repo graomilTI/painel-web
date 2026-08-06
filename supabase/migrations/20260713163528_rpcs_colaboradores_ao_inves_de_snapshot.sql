@@ -171,4 +171,4 @@ from top8
 where rn <= 8
 order by os_id, score desc, km asc nulls last
 ;
-$function$;
+$function$;;

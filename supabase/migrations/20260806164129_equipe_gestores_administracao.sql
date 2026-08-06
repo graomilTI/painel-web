@@ -130,3 +130,4 @@ comment on table public.equipe_gestores_regionais is
   'Relaciona cada regional aos usuários responsáveis por Supervisão e Suporte.';
 comment on table public.equipe_administracao_usuarios is
   'Relaciona setores administrativos, usuários do painel e a função exercida.';
+;

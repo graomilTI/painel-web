@@ -128,10 +128,8 @@ begin
   return jsonb_build_object('aso_marcados_vencidos', v_aso_marcados, 'notificacoes_criadas', v_total);
 end;
 $$;
-
 -- Só o cron (postgres) precisa executar — não expor via RPC pública.
 revoke execute on function public.rh_gerar_alertas_vencimento() from public, anon, authenticated;
-
 -- Cron diário às 10:00 UTC (07:00 Brasília)
 do $$
 begin

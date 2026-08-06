@@ -15,4 +15,4 @@
 --   select job_name, started_at, status, result, error_msg
 --   from public.cron_exec_logs
 --   order by started_at desc
---   limit 50;
+--   limit 50;;

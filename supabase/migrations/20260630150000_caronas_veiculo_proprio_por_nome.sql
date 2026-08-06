@@ -50,6 +50,5 @@ as $$
    and regexp_replace(coalesce(e.colaborador_id, ''), '\D', '', 'g') <> ''
   where e.programacao_id = p_programacao_id and e.confirmado = true;
 $$;
-
 revoke execute on function public.programacao_caronas_dados(uuid) from public;
 grant execute on function public.programacao_caronas_dados(uuid) to authenticated;

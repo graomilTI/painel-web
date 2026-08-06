@@ -14,7 +14,6 @@ select cron.schedule(
     );
   $$
 );
-
 select cron.schedule(
   'sync-login-alimentacao-07h',
   '0,15,30 10 * * *',
@@ -27,7 +26,6 @@ select cron.schedule(
     );
   $$
 );
-
 select cron.schedule(
   'sync-login-alimentacao-19h',
   '0,15,30,45 22 * * *',
@@ -40,7 +38,6 @@ select cron.schedule(
     );
   $$
 );
-
 select cron.schedule(
   'sync-login-alimentacao-20h',
   '0,15,30 23 * * *',

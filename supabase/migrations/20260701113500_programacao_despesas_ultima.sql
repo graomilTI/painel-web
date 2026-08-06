@@ -19,20 +19,16 @@ select pd.*
 from public.programacao_dia pd
 join ranked r on r.id = pd.id
 where r.rn = 1;
-
 comment on view public.programacao_dia_ultima is
   'Última programação por data e supervisão. Usar como base para despesas consolidadas.';
-
 create or replace view public.programacao_colaboradores_ultima as
 select c.*
 from public.programacao_colaboradores c
 join public.programacao_dia_ultima pd on pd.id = c.programacao_id;
-
 create or replace view public.programacao_equipe_ultima as
 select e.*
 from public.programacao_equipe e
 join public.programacao_dia_ultima pd on pd.id = e.programacao_id;
-
 -- Para relatórios de custo por colaborador/dia, esta é a visão segura:
 -- uma única linha por colaborador dentro da última programação vigente.
 create or replace view public.programacao_equipe_colaborador_ultima as
@@ -51,27 +47,22 @@ select e.*
 from public.programacao_equipe e
 join ranked r on r.id = e.id
 where r.rn = 1;
-
 create or replace view public.programacao_estadia_ultima as
 select e.*
 from public.programacao_estadia e
 join public.programacao_dia_ultima pd on pd.id = e.programacao_id;
-
 create or replace view public.programacao_alimentacao_ultima as
 select a.*
 from public.programacao_alimentacao a
 join public.programacao_dia_ultima pd on pd.id = a.programacao_id;
-
 create or replace view public.programacao_deslocamento_ultima as
 select d.*
 from public.programacao_deslocamento d
 join public.programacao_dia_ultima pd on pd.id = d.programacao_id;
-
 create or replace view public.programacao_extras_ultima as
 select x.*
 from public.programacao_extras x
 join public.programacao_dia_ultima pd on pd.id = x.programacao_id;
-
 comment on view public.programacao_equipe_colaborador_ultima is
   'Equipe confirmada deduplicada por colaborador dentro da última programação vigente.';
 comment on view public.programacao_estadia_ultima is

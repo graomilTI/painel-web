@@ -16,9 +16,7 @@ create table if not exists public.grm_despesas_retroativas_auditoria (
   diagnostico jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create index if not exists grm_despesas_retroativas_auditoria_data_cpf_idx
   on public.grm_despesas_retroativas_auditoria (data_referencia desc, cpf);
-
 alter table public.grm_despesas_retroativas_auditoria enable row level security;
 revoke all on table public.grm_despesas_retroativas_auditoria from anon, authenticated;

@@ -1,5 +1,4 @@
 drop function if exists public.sincronizar_frotas_veiculos_patrimonios();
-
 create function public.sincronizar_frotas_veiculos_patrimonios()
 returns jsonb
 language plpgsql
@@ -97,6 +96,5 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.sincronizar_frotas_veiculos_patrimonios() from public;
 grant execute on function public.sincronizar_frotas_veiculos_patrimonios() to authenticated;

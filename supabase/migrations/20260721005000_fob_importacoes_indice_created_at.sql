@@ -15,6 +15,5 @@
 -- lock breve durante a criação não é um problema real.
 create index if not exists idx_grm_producao_diaria_importacoes_created_at
   on public.grm_producao_diaria_importacoes using btree (created_at desc);
-
 create index if not exists idx_grm_nhe_importacoes_created_at
   on public.grm_nhe_importacoes using btree (created_at desc);

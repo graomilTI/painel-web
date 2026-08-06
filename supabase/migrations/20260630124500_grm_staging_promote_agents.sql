@@ -39,19 +39,14 @@ begin
   execute format('alter table public.%I enable row level security', v_staging);
 end;
 $$;
-
 select public.grm_create_staging_table('relatorio_resultado_diario')
 where to_regclass('public.relatorio_resultado_diario') is not null;
-
 select public.grm_create_staging_table('producao_snapshot')
 where to_regclass('public.producao_snapshot') is not null;
-
 select public.grm_create_staging_table('colaborador_cruzamento')
 where to_regclass('public.colaborador_cruzamento') is not null;
-
 select public.grm_create_staging_table('logistica_btg_solicitacoes')
 where to_regclass('public.logistica_btg_solicitacoes') is not null;
-
 create or replace function public.grm_limpar_staging(p_table text)
 returns jsonb
 language plpgsql
@@ -85,7 +80,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.grm_promover_staging(p_table text, p_min_rows bigint default 1)
 returns jsonb
 language plpgsql
@@ -132,7 +126,6 @@ begin
   );
 end;
 $$;
-
 create or replace function public.grm_staging_status()
 returns table (
   tabela text,
@@ -176,7 +169,6 @@ begin
   end loop;
 end;
 $$;
-
 grant execute on function public.grm_create_staging_table(text) to service_role;
 grant execute on function public.grm_limpar_staging(text) to service_role;
 grant execute on function public.grm_promover_staging(text, bigint) to service_role;

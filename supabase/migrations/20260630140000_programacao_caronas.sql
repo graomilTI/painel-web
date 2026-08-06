@@ -12,13 +12,11 @@ create table if not exists public.programacao_veiculo_proprio (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table public.programacao_veiculo_proprio enable row level security;
 drop policy if exists programacao_veiculo_proprio_rw on public.programacao_veiculo_proprio;
 create policy programacao_veiculo_proprio_rw on public.programacao_veiculo_proprio
   for all to authenticated using (true) with check (true);
 grant select, insert, update, delete on public.programacao_veiculo_proprio to authenticated;
-
 -- 2) Dados para o cálculo de caronas: por colaborador CONFIRMADO, traz coords,
 --    se tem frota, placa, o ponto de embarque (com coords) e se está na relação
 --    de veículo próprio. SECURITY DEFINER para ler colaborador_cruzamento (RLS).
@@ -66,6 +64,5 @@ as $$
     on vp.colaborador_id = e.colaborador_id and vp.ativo
   where e.programacao_id = p_programacao_id and e.confirmado = true;
 $$;
-
 revoke execute on function public.programacao_caronas_dados(uuid) from public;
 grant execute on function public.programacao_caronas_dados(uuid) to authenticated;

@@ -13,7 +13,6 @@ alter table if exists public.logistica_abertura_os
   add column if not exists processamento_finalizado_em timestamptz,
   add column if not exists erro_agente text,
   add column if not exists tentativas_agente integer not null default 0;
-
 do $$
 declare
   r record;
@@ -30,14 +29,11 @@ begin
 exception
   when undefined_table then null;
 end $$;
-
 alter table if exists public.logistica_abertura_os
   add constraint logistica_abertura_os_status_check
   check (status in ('PENDENTE','APROVADO','PROCESSANDO','CORRIGIR','RECUSADO','CADASTRADO','ERRO'));
-
 create index if not exists idx_logistica_abertura_os_status_created
   on public.logistica_abertura_os (status, created_at);
-
 create table if not exists public.grm_abertura_os_execucoes (
   id uuid primary key default gen_random_uuid(),
   abertura_os_id uuid not null references public.logistica_abertura_os(id) on delete cascade,
@@ -50,19 +46,15 @@ create table if not exists public.grm_abertura_os_execucoes (
   finalizado_em timestamptz,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_grm_abertura_os_execucoes_solicitacao
   on public.grm_abertura_os_execucoes (abertura_os_id, created_at desc);
-
 alter table public.grm_abertura_os_execucoes enable row level security;
-
 drop policy if exists grm_abertura_os_execucoes_select_authenticated on public.grm_abertura_os_execucoes;
 create policy grm_abertura_os_execucoes_select_authenticated
   on public.grm_abertura_os_execucoes
   for select
   to authenticated
   using (true);
-
 create or replace function public.decidir_abertura_os(
   p_id uuid,
   p_acao text,
@@ -163,13 +155,10 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.decidir_abertura_os(uuid, text, text) from public;
 grant execute on function public.decidir_abertura_os(uuid, text, text) to authenticated;
-
 comment on function public.decidir_abertura_os(uuid, text, text) is
   'Decisão ADM da abertura de O.S. OK enfileira sync-abrir-os; Corrigir e Recusar nunca criam job.';
-
 create or replace function public.reenviar_abertura_os_corrigida(
   p_id uuid,
   p_payload jsonb
@@ -226,6 +215,5 @@ begin
   return jsonb_build_object('ok', true, 'status', 'PENDENTE', 'abertura_os_id', p_id);
 end;
 $$;
-
 revoke all on function public.reenviar_abertura_os_corrigida(uuid, jsonb) from public;
 grant execute on function public.reenviar_abertura_os_corrigida(uuid, jsonb) to authenticated;

@@ -11,7 +11,6 @@
 -- migration depois da criação da função e antes dos lotes 01–05.
 
 begin;
-
 create or replace function public.hospedagem_conciliar_hotel(
   p_nome text,
   p_cidade text,
@@ -46,5 +45,4 @@ as $$
     p_observacoes
   );
 $$;
-
 commit;

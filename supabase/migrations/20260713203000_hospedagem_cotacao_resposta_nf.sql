@@ -4,10 +4,8 @@
 -- base do fluxo v2 ainda não tiver sido aplicada no ambiente.
 
 create extension if not exists pgcrypto;
-
 alter table if exists public.hospedagem_hoteis
   add column if not exists emite_nota_fiscal boolean not null default true;
-
 create table if not exists public.hospedagem_cotacoes (
   id uuid primary key default gen_random_uuid(),
   solicitacao_id uuid not null,
@@ -39,24 +37,20 @@ create table if not exists public.hospedagem_cotacoes (
   updated_at timestamptz not null default now(),
   unique (solicitacao_id, hotel_id)
 );
-
 alter table public.hospedagem_cotacoes
   add column if not exists disponibilidade boolean,
   add column if not exists resposta_dados jsonb,
   add column if not exists resposta_flow_id text;
-
 create index if not exists idx_hosp_cotacoes_solicitacao
   on public.hospedagem_cotacoes(solicitacao_id);
 create index if not exists idx_hosp_cotacoes_hotel
   on public.hospedagem_cotacoes(hotel_id);
 create index if not exists idx_hosp_cotacoes_status
   on public.hospedagem_cotacoes(status);
-
 comment on column public.hospedagem_hoteis.emite_nota_fiscal is
   'Indica se o hotel emite nota fiscal. Quando falso, Hospedagem e Financeiro exibem alerta.';
 comment on column public.hospedagem_cotacoes.resposta_dados is
   'Payload bruto recebido do fluxo de cotação do BotConversa para auditoria e reprocessamento.';
-
 alter table public.hospedagem_cotacoes enable row level security;
 drop policy if exists hospedagem_cotacoes_auth_all on public.hospedagem_cotacoes;
 create policy hospedagem_cotacoes_auth_all
@@ -65,9 +59,7 @@ create policy hospedagem_cotacoes_auth_all
   to authenticated
   using (true)
   with check (true);
-
 grant select, insert, update, delete on public.hospedagem_cotacoes to authenticated;
-
 create or replace function public.hospedagem_touch_updated_at()
 returns trigger
 language plpgsql
@@ -77,12 +69,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_hosp_cotacoes_updated_at on public.hospedagem_cotacoes;
 create trigger trg_hosp_cotacoes_updated_at
 before update on public.hospedagem_cotacoes
 for each row execute function public.hospedagem_touch_updated_at();
-
 create or replace function public.hospedagem_aplicar_alerta_nf_financeiro()
 returns trigger
 language plpgsql
@@ -119,7 +109,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.hospedagem_sincronizar_alerta_nf_existente()
 returns trigger
 language plpgsql
@@ -155,7 +144,6 @@ begin
   return new;
 end;
 $$;
-
 -- Os alertas financeiros dependem das tabelas operacionais de reserva e pagamento.
 -- Em ambientes onde elas ainda não existem, a migration continua normalmente e os
 -- gatilhos serão criados quando a migration for executada novamente após a base.

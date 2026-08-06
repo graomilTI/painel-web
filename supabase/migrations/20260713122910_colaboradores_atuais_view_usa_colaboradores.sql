@@ -41,4 +41,4 @@ select
   cep
 from public.colaboradores;
 
-grant select on public.colaboradores_atuais to authenticated;
+grant select on public.colaboradores_atuais to authenticated;;

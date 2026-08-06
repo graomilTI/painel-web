@@ -304,7 +304,6 @@ values
   ('9b3524dd-f7bc-4a6e-9a51-aa53bc5dabc7', 'Fazenda', 'FAZENDA SAO CRISTOVAO', 'MT', 'CAMPO NOVO DO PARECIS', -14.0195032, -57.7398777, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:38.826539+00:00', '2026-07-02T19:44:38.826539+00:00'),
   ('6b7b9e51-c964-4eb9-a2c9-4c819c10352c', 'Fazenda', 'FAZENDA SAO CRISTOVAO - GILMAR DOMINGOS PASCOAL', 'MT', 'QUERÊNCIA', -12.7680937, -52.2268908, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:38.826539+00:00', '2026-07-02T19:44:38.826539+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('6113c6aa-9ea9-49d4-8cc8-b32dc89a66e1', 'Fazenda', 'FAZENDA VEREDA', 'GO', 'SILVÂNIA', -16.6740084, -48.6216426, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:44.22901+00:00', '2026-07-02T19:44:44.22901+00:00'),
   ('f0a187f6-5952-4987-b612-b23c8ba408b4', 'Fazenda', 'FAZENDA VEREDA - CLÁUDIA A RODRIGUES', 'GO', 'SILVÂNIA', -16.7087624, -48.6142814, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:44.22901+00:00', '2026-07-02T19:44:44.22901+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

@@ -304,7 +304,6 @@ values
   ('5be26da5-4531-4959-86a8-98ca5f3c1410', 'Armazém / Silo', 'DUAS PONTES', 'GO', 'ALEXÂNIA', -16.0834, -48.5076, 'GOIAS 3 - PONTALINA', 'GOIAS', 'importar_relatorios', true, '2026-05-04T20:58:58.354127+00:00', '2026-06-24T20:33:20.706854+00:00'),
   ('c5aaa16f-ec03-48fa-8ec3-01600ccf1cb0', 'Armazém / Silo', 'AGRICOLA VASSOLER', 'PR', 'BORRAZÓPOLIS', -23.9272527, -51.5953257, 'MARINGA E TERMINAIS', 'MARINGA E TERMINAIS', 'planilha_locais_servico_2026-07-02', true, '2026-05-04T20:58:58.354127+00:00', '2026-07-02T19:43:07.282813+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('20a368ce-4caa-4411-bd40-9bd8d0179141', 'Armazém / Silo', 'AGRICOLA GRAO DE OURO', 'MT', 'TABAPORÃ', -11.3007, -56.8312, 'MATO GROSSO MT1 - SINOP', 'MATO GROSSO MT1', 'importar_relatorios', true, '2026-05-04T20:58:58.904044+00:00', '2026-06-24T20:33:20.706854+00:00'),
   ('48202993-bd13-4d88-a247-d2818575ffbd', 'Armazém / Silo', 'AGRONEGOCIOS TRENNEPOHL LTDA', 'RS', 'PEJUÇARA', -28.4374678, -53.5517599, 'RIO GRANDE DO SUL - NOROESTE', 'RIO GRANDE DO SUL', 'planilha_locais_servico_2026-07-02', true, '2026-05-04T20:58:58.904044+00:00', '2026-07-02T19:43:07.282813+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

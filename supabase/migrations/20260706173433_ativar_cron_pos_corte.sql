@@ -1,0 +1,9 @@
+select cron.alter_job(1, active := true);
+select cron.alter_job(2, active := true);
+select cron.alter_job(3, active := true);
+select cron.alter_job(4, active := true);
+select cron.alter_job(5, active := true);
+select cron.alter_job(6, active := true);
+select cron.alter_job(7, active := true);
+select cron.alter_job(8, active := true);
+select cron.alter_job(9, active := true);;

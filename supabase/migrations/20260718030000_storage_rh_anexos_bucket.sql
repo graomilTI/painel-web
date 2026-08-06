@@ -5,26 +5,22 @@
 insert into storage.buckets (id, name, public)
 values ('rh-anexos', 'rh-anexos', false)
 on conflict (id) do nothing;
-
 drop policy if exists "rh_anexos_insert_authenticated" on storage.objects;
 create policy "rh_anexos_insert_authenticated"
 on storage.objects for insert
 to authenticated
 with check (bucket_id = 'rh-anexos');
-
 drop policy if exists "rh_anexos_select_authenticated" on storage.objects;
 create policy "rh_anexos_select_authenticated"
 on storage.objects for select
 to authenticated
 using (bucket_id = 'rh-anexos');
-
 drop policy if exists "rh_anexos_update_authenticated" on storage.objects;
 create policy "rh_anexos_update_authenticated"
 on storage.objects for update
 to authenticated
 using (bucket_id = 'rh-anexos')
 with check (bucket_id = 'rh-anexos');
-
 drop policy if exists "rh_anexos_delete_authenticated" on storage.objects;
 create policy "rh_anexos_delete_authenticated"
 on storage.objects for delete

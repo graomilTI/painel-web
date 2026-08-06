@@ -16,7 +16,6 @@ select cron.schedule(
     );
   $$
 );
-
 select cron.schedule(
   'sync-login-alimentacao-12h',
   '0,15,30 15 * * *',

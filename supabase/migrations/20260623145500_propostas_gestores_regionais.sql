@@ -1,5 +1,4 @@
 create extension if not exists pgcrypto;
-
 create table if not exists public.propostas_gestores_regionais (
   id uuid primary key default gen_random_uuid(),
   regional text not null,
@@ -11,42 +10,34 @@ create table if not exists public.propostas_gestores_regionais (
   updated_at timestamptz not null default now(),
   constraint propostas_gestores_regionais_unique unique (regional, supervisor, contato)
 );
-
 create index if not exists propostas_gestores_regionais_ativo_ordem_idx
   on public.propostas_gestores_regionais (ativo, ordem, regional);
-
 alter table public.propostas_gestores_regionais enable row level security;
-
 drop policy if exists propostas_gestores_regionais_select on public.propostas_gestores_regionais;
 drop policy if exists propostas_gestores_regionais_insert on public.propostas_gestores_regionais;
 drop policy if exists propostas_gestores_regionais_update on public.propostas_gestores_regionais;
 drop policy if exists propostas_gestores_regionais_delete on public.propostas_gestores_regionais;
-
 create policy propostas_gestores_regionais_select
   on public.propostas_gestores_regionais
   for select
   to authenticated
   using (true);
-
 create policy propostas_gestores_regionais_insert
   on public.propostas_gestores_regionais
   for insert
   to authenticated
   with check (true);
-
 create policy propostas_gestores_regionais_update
   on public.propostas_gestores_regionais
   for update
   to authenticated
   using (true)
   with check (true);
-
 create policy propostas_gestores_regionais_delete
   on public.propostas_gestores_regionais
   for delete
   to authenticated
   using (true);
-
 insert into public.propostas_gestores_regionais (ordem, regional, supervisor, contato, ativo) values
   (10, 'BAHIA', 'DOUGLAS CANDIDO', '(77) 9 9999-3585', true),
   (20, 'GOIAS', 'DILSON REBAU', '(64) 9 9344-0641', true),

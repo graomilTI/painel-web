@@ -66,5 +66,4 @@ begin
     order by 1;
 end;
 $$;
-
 grant execute on function public.programacao_listar_supervisoes() to authenticated;

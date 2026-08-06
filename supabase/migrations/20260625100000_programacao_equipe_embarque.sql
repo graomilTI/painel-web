@@ -7,13 +7,10 @@
 alter table public.operacional_pontos_embarque
   add column if not exists embarque_label text generated always as
     (coalesce(uf, '') || ' - ' || coalesce(cidade, '') || ' (' || coalesce(nome_local, '') || ')') stored;
-
 -- 2) Vínculo persistido OS -> ponto de embarque
 alter table public.operacional_os
   add column if not exists ponto_embarque_id uuid references public.operacional_pontos_embarque(id) on delete set null;
-
 create index if not exists idx_operacional_os_ponto_embarque on public.operacional_os (ponto_embarque_id);
-
 -- Backfill: replica o score de matching textual hoje usado em runtime
 -- (UF +50 / Cidade +80 / Local +120 / Cliente +30 / Supervisão +15; aceita score >= 120)
 with normalizado as (
@@ -51,7 +48,6 @@ update public.operacional_os os
 set ponto_embarque_id = melhor.ponto_id
 from melhor
 where os.id = melhor.os_id;
-
 -- 3) Candidatos/confirmações de equipe por OS (etapa B)
 create table if not exists public.programacao_equipe (
   id uuid primary key default gen_random_uuid(),
@@ -70,16 +66,13 @@ create table if not exists public.programacao_equipe (
   updated_at timestamptz not null default now(),
   unique (programacao_id, os_id, colaborador_id)
 );
-
 create index if not exists idx_programacao_equipe_programacao on public.programacao_equipe (programacao_id);
 create index if not exists idx_programacao_equipe_os on public.programacao_equipe (os_id);
 create index if not exists idx_programacao_equipe_colaborador on public.programacao_equipe (programacao_id, colaborador_id);
-
 alter table public.programacao_equipe enable row level security;
 drop policy if exists programacao_equipe_auth_all on public.programacao_equipe;
 create policy programacao_equipe_auth_all on public.programacao_equipe
   for all to authenticated using (true) with check (true);
-
 drop trigger if exists trg_programacao_equipe_updated on public.programacao_equipe;
 create trigger trg_programacao_equipe_updated
   before update on public.programacao_equipe

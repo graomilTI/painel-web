@@ -6,7 +6,6 @@
 
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
-
 select cron.schedule(
   'sync-colaboradores-5min',
   '*/5 * * * *',

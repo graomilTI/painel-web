@@ -80,5 +80,4 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.grm_promover_staging_periodo(text, text, bigint) to service_role;

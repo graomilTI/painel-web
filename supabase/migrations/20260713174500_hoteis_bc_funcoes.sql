@@ -1,6 +1,5 @@
 -- Funções de apoio para conciliar a base de hotéis sem apagar dados já válidos.
 begin;
-
 create or replace function public.hospedagem_normalizar_texto(valor text)
 returns text
 language sql
@@ -18,7 +17,6 @@ as $$
     'g'
   );
 $$;
-
 create or replace function public.hospedagem_normalizar_telefone(valor text)
 returns text
 language sql
@@ -27,7 +25,6 @@ parallel safe
 as $$
   select regexp_replace(coalesce(valor, ''), '[^0-9]+', '', 'g');
 $$;
-
 create or replace function public.hospedagem_conciliar_hotel(
   p_nome text,
   p_cidade text,
@@ -147,5 +144,4 @@ begin
   return v_id;
 end;
 $$;
-
 commit;

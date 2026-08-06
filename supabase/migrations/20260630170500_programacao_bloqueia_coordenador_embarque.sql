@@ -22,9 +22,7 @@ as $$
       or cargo like 'COORDENACAO %'
   from norm;
 $$;
-
 grant execute on function public.programacao_cargo_bloqueado_embarque(text) to authenticated;
-
 with ref as (
   select max(data_referencia) as data_referencia
   from public.colaborador_snapshot
@@ -49,7 +47,6 @@ alvo as (
 delete from public.programacao_equipe pe
 using alvo
 where pe.id = alvo.id;
-
 with ref as (
   select max(data_referencia) as data_referencia
   from public.colaborador_snapshot
@@ -74,7 +71,6 @@ delete from public.operacional_os_colaboradores o
 using alvo
 where o.os_id = alvo.os_id
   and coalesce(o.colaborador_key, '') = coalesce(alvo.colaborador_key, '');
-
 with ref as (
   select max(data_referencia) as data_referencia
   from public.colaborador_snapshot

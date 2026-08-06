@@ -21,9 +21,7 @@ as $$
     ) like '%AUDITOR%'
   );
 $$;
-
 grant execute on function public.programacao_cargo_bloqueado_embarque(text) to authenticated;
-
 -- Remove confirmações de equipe que já tenham sido criadas para cargos bloqueados.
 with ref as (
   select max(data_referencia) as data_referencia
@@ -49,7 +47,6 @@ alvo as (
 delete from public.programacao_equipe pe
 using alvo
 where pe.id = alvo.id;
-
 -- Remove o espelho OS x colaborador usado por relatórios/roteirização, quando
 -- também aponta para Supervisor/Auditor.
 with ref as (
@@ -76,7 +73,6 @@ delete from public.operacional_os_colaboradores o
 using alvo
 where o.os_id = alvo.os_id
   and coalesce(o.colaborador_key, '') = coalesce(alvo.colaborador_key, '');
-
 -- Reverte disponibilidade espelhada para esses cargos, quando o auto-preencher
 -- já havia marcado como OK/LOGISTICA.
 with ref as (

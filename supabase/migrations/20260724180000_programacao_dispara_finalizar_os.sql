@@ -69,9 +69,7 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.solicitar_finalizacao_os_gestor(text) from public;
 grant execute on function public.solicitar_finalizacao_os_gestor(text) to authenticated;
-
 comment on function public.solicitar_finalizacao_os_gestor(text) is
   'Enfileira sync-finalizar-os quando existem OS marcadas FINALIZAR na Programação, sem duplicar job pendente/rodando.';

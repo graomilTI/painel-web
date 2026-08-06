@@ -22,15 +22,12 @@ CREATE TABLE IF NOT EXISTS grm_adiantamentos_importacoes (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
 ALTER TABLE grm_adiantamentos_importacoes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY grm_adiantamentos_importacoes_select_authenticated ON grm_adiantamentos_importacoes FOR SELECT TO authenticated USING (true);
 CREATE POLICY grm_adiantamentos_importacoes_insert_authenticated ON grm_adiantamentos_importacoes FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY grm_adiantamentos_importacoes_update_authenticated ON grm_adiantamentos_importacoes FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY grm_adiantamentos_importacoes_delete_authenticated ON grm_adiantamentos_importacoes FOR DELETE TO authenticated USING (true);
-
 CREATE INDEX IF NOT EXISTS idx_grm_adiantamentos_importacoes_status ON grm_adiantamentos_importacoes(ofr_status);
-
 -- Tabela: financeiro_adiantamentos_decisoes (decisão local do painel: ✓ ok / ✗ recusado com
 -- motivo para histórico; não altera nada no GRM. Vira 'pago' quando entra numa execução do
 -- botão PAGAR, ver financeiro_pagamentos_execucoes)
@@ -46,11 +43,9 @@ CREATE TABLE IF NOT EXISTS financeiro_adiantamentos_decisoes (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
 ALTER TABLE financeiro_adiantamentos_decisoes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY financeiro_adiantamentos_decisoes_select_authenticated ON financeiro_adiantamentos_decisoes FOR SELECT TO authenticated USING (true);
 CREATE POLICY financeiro_adiantamentos_decisoes_insert_authenticated ON financeiro_adiantamentos_decisoes FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY financeiro_adiantamentos_decisoes_update_authenticated ON financeiro_adiantamentos_decisoes FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY financeiro_adiantamentos_decisoes_delete_authenticated ON financeiro_adiantamentos_decisoes FOR DELETE TO authenticated USING (true);
-
 CREATE INDEX IF NOT EXISTS idx_financeiro_adiantamentos_decisoes_status ON financeiro_adiantamentos_decisoes(status);

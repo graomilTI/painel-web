@@ -23,7 +23,6 @@ create table if not exists public.programacao_frota_vinculos (
     or (alvo_tipo = 'COLABORADOR' and alvo_colaborador_id is not null)
   )
 );
-
 create index if not exists programacao_frota_vinculos_programacao_idx
   on public.programacao_frota_vinculos(programacao_id);
 create index if not exists programacao_frota_vinculos_frota_idx
@@ -33,9 +32,7 @@ create index if not exists programacao_frota_vinculos_os_idx
 create index if not exists programacao_frota_vinculos_alvo_idx
   on public.programacao_frota_vinculos(programacao_id, alvo_colaborador_id)
   where alvo_colaborador_id is not null;
-
 alter table public.programacao_frota_vinculos enable row level security;
-
 drop policy if exists programacao_frota_vinculos_rw
   on public.programacao_frota_vinculos;
 create policy programacao_frota_vinculos_rw
@@ -43,7 +40,6 @@ create policy programacao_frota_vinculos_rw
   for all to authenticated
   using (true)
   with check (true);
-
 grant select, insert, update, delete
   on public.programacao_frota_vinculos
   to authenticated;

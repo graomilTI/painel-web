@@ -11,23 +11,18 @@ create table if not exists public.programacao_usuario_supervisoes (
   updated_at timestamptz not null default now(),
   constraint programacao_usuario_supervisoes_usuario_check check (app_usuario_id is not null or auth_user_id is not null)
 );
-
 create unique index if not exists programacao_usuario_supervisoes_auth_sup_uidx
   on public.programacao_usuario_supervisoes(auth_user_id, upper(trim(supervisao)))
   where auth_user_id is not null;
-
 create unique index if not exists programacao_usuario_supervisoes_app_sup_uidx
   on public.programacao_usuario_supervisoes(app_usuario_id, upper(trim(supervisao)))
   where app_usuario_id is not null;
-
 create index if not exists programacao_usuario_supervisoes_auth_idx
   on public.programacao_usuario_supervisoes(auth_user_id)
   where ativo = true;
-
 create index if not exists programacao_usuario_supervisoes_app_idx
   on public.programacao_usuario_supervisoes(app_usuario_id)
   where ativo = true;
-
 create or replace function public.programacao_usuario_supervisoes_touch()
 returns trigger
 language plpgsql
@@ -37,21 +32,17 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_programacao_usuario_supervisoes_touch on public.programacao_usuario_supervisoes;
 create trigger trg_programacao_usuario_supervisoes_touch
 before update on public.programacao_usuario_supervisoes
 for each row execute function public.programacao_usuario_supervisoes_touch();
-
 alter table public.programacao_usuario_supervisoes enable row level security;
-
 drop policy if exists "programacao_usuario_supervisoes_select_self" on public.programacao_usuario_supervisoes;
 create policy "programacao_usuario_supervisoes_select_self"
 on public.programacao_usuario_supervisoes
 for select
 to authenticated
 using (auth_user_id = auth.uid());
-
 -- Backfill inicial a partir do campo legado app_usuarios.supervisao.
 insert into public.programacao_usuario_supervisoes (app_usuario_id, auth_user_id, supervisao, ativo)
 select
@@ -64,7 +55,6 @@ cross join lateral regexp_split_to_table(coalesce(u.supervisao, ''), '[,;|\n]+')
 where u.auth_user_id is not null
   and trim(sup) <> ''
 on conflict do nothing;
-
 -- Função usada pelo painel. Retorna a relação do usuário; se for master/admin,
 -- retorna a tabela geral public.supervisoes. Fallback mantém compatibilidade com
 -- o campo legado app_usuarios.supervisao.
@@ -124,6 +114,5 @@ begin
     order by 1;
 end;
 $$;
-
 grant execute on function public.programacao_listar_supervisoes() to authenticated;
 grant select on public.programacao_usuario_supervisoes to authenticated;

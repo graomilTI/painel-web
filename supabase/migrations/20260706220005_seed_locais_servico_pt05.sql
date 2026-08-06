@@ -304,7 +304,6 @@ values
   ('be8cd816-34e5-4dec-bd91-42444069c4a7', 'Fazenda', 'FAZENDA GOBBI', 'MT', 'TABAPORÃ', -11.1480924, -56.3198872, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:24.748952+00:00', '2026-07-02T19:44:24.748952+00:00'),
   ('930bbfc9-44b7-421b-8788-e8a4aa2d7a73', 'Fazenda', 'FAZENDA GOIANIA', 'MT', 'QUERÊNCIA', -12.7912899, -52.165045, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:24.748952+00:00', '2026-07-02T19:44:24.748952+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('27e491a0-6037-4354-8e04-34f6a879ed2d', 'Fazenda', 'FAZENDA PARAISO - VINICIUS TEODORO MICHELS', 'MT', 'RIBEIRÃOZINHO', -16.4519624, -52.7504921, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:33.326258+00:00', '2026-07-02T19:44:33.326258+00:00'),
   ('4a70097c-bebe-4fa8-9ada-77597c4ef5ad', 'Fazenda', 'FAZENDA PARAISO DO GIRASSOL', 'MT', 'NOVO MUNDO', -9.9179202, -55.4582106, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:33.326258+00:00', '2026-07-02T19:44:33.326258+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

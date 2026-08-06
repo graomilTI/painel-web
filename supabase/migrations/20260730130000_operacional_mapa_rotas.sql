@@ -25,13 +25,10 @@ create table if not exists public.operacional_mapa_rotas (
   gerado_por uuid,
   created_at timestamptz not null default now()
 );
-
 create index if not exists idx_operacional_mapa_rotas_sup_data on public.operacional_mapa_rotas (supervisao, data_referencia);
 create index if not exists idx_operacional_mapa_rotas_data on public.operacional_mapa_rotas (data_referencia);
 create index if not exists idx_operacional_mapa_rotas_programacao on public.operacional_mapa_rotas (programacao_id);
-
 comment on table public.operacional_mapa_rotas is 'Rotas calculadas pro Mapa Operacional (Operacional > Mapa), disparadas quando o Gestor clica Salvar programação. tipo=frota usa VROOM multi-veículo (frotas_veiculos/frotas_posicoes); tipo=reembolso_km é rota individual ponto-a-ponto de colaborador com carro próprio (programacao_deslocamento.tipo_deslocamento=REEMBOLSO KM). Separada de frotas_rotas (que é dono de outro fluxo, Frotas > Roteirização).';
-
 create table if not exists public.operacional_mapa_rotas_paradas (
   id uuid primary key default gen_random_uuid(),
   rota_id uuid not null references public.operacional_mapa_rotas(id) on delete cascade,
@@ -46,17 +43,13 @@ create table if not exists public.operacional_mapa_rotas_paradas (
   distancia_km_trecho numeric,
   duracao_min_trecho numeric
 );
-
 create index if not exists idx_operacional_mapa_rotas_paradas_rota on public.operacional_mapa_rotas_paradas (rota_id);
-
 alter table public.operacional_mapa_rotas enable row level security;
 alter table public.operacional_mapa_rotas_paradas enable row level security;
-
 drop policy if exists "mapa_rotas_select_auth" on public.operacional_mapa_rotas;
 create policy "mapa_rotas_select_auth" on public.operacional_mapa_rotas for select to authenticated using (true);
 drop policy if exists "mapa_rotas_write_auth" on public.operacional_mapa_rotas;
 create policy "mapa_rotas_write_auth" on public.operacional_mapa_rotas for all to authenticated using (true) with check (true);
-
 drop policy if exists "mapa_rotas_paradas_select_auth" on public.operacional_mapa_rotas_paradas;
 create policy "mapa_rotas_paradas_select_auth" on public.operacional_mapa_rotas_paradas for select to authenticated using (true);
 drop policy if exists "mapa_rotas_paradas_write_auth" on public.operacional_mapa_rotas_paradas;

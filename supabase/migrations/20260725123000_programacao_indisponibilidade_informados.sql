@@ -24,25 +24,19 @@ create table if not exists public.programacao_indisponibilidade_informados (
   constraint programacao_indisponibilidade_informados_dia_colaborador_key
     unique (data_referencia, colaborador_id)
 );
-
 create index if not exists idx_prog_indisp_informados_status
   on public.programacao_indisponibilidade_informados (status, informado_em desc);
-
 create index if not exists idx_prog_indisp_informados_data
   on public.programacao_indisponibilidade_informados (data_referencia desc);
-
 alter table public.programacao_indisponibilidade_informados enable row level security;
-
 drop policy if exists "programacao_indisponibilidade_informados_authenticated_all"
   on public.programacao_indisponibilidade_informados;
-
 create policy "programacao_indisponibilidade_informados_authenticated_all"
   on public.programacao_indisponibilidade_informados
   for all
   to authenticated
   using (true)
   with check (true);
-
 grant select, insert, update, delete
   on public.programacao_indisponibilidade_informados
   to authenticated;

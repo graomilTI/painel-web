@@ -20,14 +20,11 @@ create table if not exists public.email_regionais_keywords (
   updated_at timestamptz not null default now(),
   unique (regional, palavra)
 );
-
 alter table public.email_regionais_keywords enable row level security;
-
 drop policy if exists email_regionais_keywords_select on public.email_regionais_keywords;
 drop policy if exists email_regionais_keywords_insert on public.email_regionais_keywords;
 drop policy if exists email_regionais_keywords_update on public.email_regionais_keywords;
 drop policy if exists email_regionais_keywords_delete on public.email_regionais_keywords;
-
 create policy email_regionais_keywords_select
   on public.email_regionais_keywords for select to authenticated using (true);
 create policy email_regionais_keywords_insert
@@ -36,7 +33,6 @@ create policy email_regionais_keywords_update
   on public.email_regionais_keywords for update to authenticated using (true) with check (true);
 create policy email_regionais_keywords_delete
   on public.email_regionais_keywords for delete to authenticated using (true);
-
 -- Semente: mesmo conjunto que estava fixo no código do worker (ordem preservada
 -- pela coluna prioridade — quanto menor, mais cedo é testada).
 insert into public.email_regionais_keywords (regional, palavra, prioridade) values
@@ -87,16 +83,13 @@ insert into public.email_regionais_keywords (regional, palavra, prioridade) valu
   ('TOCANTINS', 'palmas', 180),
   ('TOCANTINS', 'gurupi', 180)
 on conflict (regional, palavra) do nothing;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 2. Encaminhamento automático (opt-in em dois níveis: conta E regra)
 -- ─────────────────────────────────────────────────────────────────────────────
 alter table public.email_regras
   add column if not exists auto_encaminhar boolean not null default false;
-
 alter table public.email_accounts
   add column if not exists auto_encaminhar boolean not null default false;
-
 -- A view pública usada pelo painel precisa expor a coluna nova da conta.
 drop view if exists public.email_accounts_public;
 create view public.email_accounts_public as
@@ -107,9 +100,7 @@ select
   ultima_uid, ultima_sync_em, ultima_sync_status, ultima_sync_erro,
   created_at, updated_at
 from public.email_accounts;
-
 grant select on public.email_accounts_public to authenticated;
-
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 3. Índices de listagem/filtragem do painel
 -- ─────────────────────────────────────────────────────────────────────────────

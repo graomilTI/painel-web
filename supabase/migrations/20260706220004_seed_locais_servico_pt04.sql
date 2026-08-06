@@ -304,7 +304,6 @@ values
   ('fae7d602-98db-412a-9883-e3bf6b490112', 'Fazenda', 'FAZ. DOIS CORAÇÕES - MATOSUL', 'TO', 'CASEARA', -9.2766574, -49.9404943, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:14.457663+00:00', '2026-07-02T19:44:14.457663+00:00'),
   ('39f27bde-91a3-406c-a3c6-d1ecd4695262', 'Fazenda', 'FAZ. MARINEZ', 'MT', 'TANGARÁ DA SERRA', -14.438457, -58.0388921, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:14.457663+00:00', '2026-07-02T19:44:14.457663+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values
@@ -609,7 +608,6 @@ values
   ('1db9e64c-6903-4338-bb71-380f5f9f5828', 'Fazenda', 'FAZENDA CABECEIRA DO RIO VERDE', 'GO', 'MINEIROS', -17.4493683, -52.8033583, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:19.494162+00:00', '2026-07-02T19:44:19.494162+00:00'),
   ('ad823f29-bdf4-4af6-ba2d-c569c86e3e5e', 'Fazenda', 'FAZENDA CABECEIRA VERDE - OFIBRA', 'TO', 'CAMPOS LINDOS', -8.0895875, -46.6607656, null, null, 'planilha_locais_servico_2026-07-02', true, '2026-07-02T19:44:19.494162+00:00', '2026-07-02T19:44:19.494162+00:00')
 on conflict (nome_local, cidade, uf) do nothing;
-
 insert into public.operacional_pontos_embarque
   (id, tipo_local, nome_local, uf, cidade, latitude, longitude, supervisao, coordenacao, origem, ativo, created_at, updated_at)
 values

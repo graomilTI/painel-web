@@ -28,7 +28,6 @@ create table if not exists public.logistica_ocr_jobs (
   updated_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '30 days')
 );
-
 create index if not exists logistica_ocr_jobs_queue_idx
   on public.logistica_ocr_jobs (status, priority desc, created_at asc);
 create index if not exists logistica_ocr_jobs_user_idx
@@ -37,19 +36,15 @@ create index if not exists logistica_ocr_jobs_os_idx
   on public.logistica_ocr_jobs (numero_os, created_at desc);
 create index if not exists logistica_ocr_jobs_expiry_idx
   on public.logistica_ocr_jobs (expires_at);
-
 alter table public.logistica_ocr_jobs enable row level security;
-
 drop policy if exists "logistica_ocr_jobs_select_own" on public.logistica_ocr_jobs;
 create policy "logistica_ocr_jobs_select_own"
   on public.logistica_ocr_jobs
   for select
   to authenticated
   using (auth.uid() = request_user_id);
-
 grant select on public.logistica_ocr_jobs to authenticated;
 grant usage, select on sequence public.logistica_ocr_jobs_id_seq to authenticated;
-
 create table if not exists public.logistica_ocr_workers (
   worker_id text primary key,
   hostname text null,
@@ -62,21 +57,16 @@ create table if not exists public.logistica_ocr_workers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists logistica_ocr_workers_last_seen_idx
   on public.logistica_ocr_workers (last_seen desc);
-
 alter table public.logistica_ocr_workers enable row level security;
-
 drop policy if exists "logistica_ocr_workers_select" on public.logistica_ocr_workers;
 create policy "logistica_ocr_workers_select"
   on public.logistica_ocr_workers
   for select
   to authenticated
   using (true);
-
 grant select on public.logistica_ocr_workers to authenticated;
-
 -- Retira atomicamente um job da fila. SKIP LOCKED permite mais de um worker no futuro.
 create or replace function public.claim_logistica_ocr_job(p_worker_id text)
 returns setof public.logistica_ocr_jobs
@@ -118,10 +108,8 @@ begin
     select * from public.logistica_ocr_jobs where id = v_job_id;
 end;
 $$;
-
 revoke all on function public.claim_logistica_ocr_job(text) from public, anon, authenticated;
 grant execute on function public.claim_logistica_ocr_job(text) to service_role;
-
 comment on table public.logistica_ocr_jobs is
   'Fila assíncrona de documentos processados pelo PaddleOCR no VPS da Grão 1000.';
 comment on function public.claim_logistica_ocr_job(text) is

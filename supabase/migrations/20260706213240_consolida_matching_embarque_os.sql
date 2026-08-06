@@ -7,7 +7,6 @@
 -- automaticamente por trigger; os consumidores (JS, Edge Function) só leem.
 
 create extension if not exists unaccent;
-
 create or replace function public.normalizar_embarque_texto(txt text)
 returns text
 language sql
@@ -15,7 +14,6 @@ stable
 as $$
   select unaccent(upper(coalesce(txt, '')));
 $$;
-
 create or replace function public.parse_embarque(txt text)
 returns table(uf text, cidade text, local text)
 language plpgsql
@@ -32,7 +30,6 @@ begin
   end if;
 end;
 $$;
-
 create or replace function public.match_ponto_embarque(p_embarque text, p_cliente text, p_supervisao text)
 returns uuid
 language plpgsql
@@ -72,7 +69,6 @@ begin
   return v_ponto_id;
 end;
 $$;
-
 create or replace function public.trg_operacional_os_resolver_ponto()
 returns trigger
 language plpgsql
@@ -102,12 +98,10 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_operacional_os_resolver_ponto on public.operacional_os;
 create trigger trg_operacional_os_resolver_ponto
   before insert or update of embarque, cliente, supervisao on public.operacional_os
   for each row execute function public.trg_operacional_os_resolver_ponto();
-
 -- Força o trigger a rodar pra todas as OS existentes (corrige tanto as nunca
 -- resolvidas quanto as que o backfill antigo (sem unaccent) errou por acento).
 update public.operacional_os set embarque = embarque where embarque is not null;

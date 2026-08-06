@@ -1,6 +1,5 @@
 -- Lote 3 da conciliação de hotéis da planilha "bc hoteis.xlsx".
 begin;
-
 select public.hospedagem_conciliar_hotel(
   v.nome,
   v.cidade,
@@ -79,5 +78,4 @@ values
   prioridade,
   observacoes
 );
-
 commit;

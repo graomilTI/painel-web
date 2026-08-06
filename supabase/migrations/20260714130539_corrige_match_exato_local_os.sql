@@ -212,3 +212,4 @@ $$;
 update public.operacional_os
 set embarque = embarque
 where embarque is not null;
+;

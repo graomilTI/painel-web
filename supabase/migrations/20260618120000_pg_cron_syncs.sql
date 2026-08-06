@@ -13,13 +13,10 @@ create table if not exists public.cron_exec_logs (
   result      jsonb,
   error_msg   text
 );
-
 create index if not exists idx_cron_exec_logs_job     on public.cron_exec_logs (job_name);
 create index if not exists idx_cron_exec_logs_started on public.cron_exec_logs (started_at desc);
 create index if not exists idx_cron_exec_logs_status  on public.cron_exec_logs (status);
-
 alter table public.cron_exec_logs enable row level security;
-
 do $$ begin
   if not exists (
     select 1 from pg_policies
@@ -30,7 +27,6 @@ do $$ begin
       to authenticated using (true);
   end if;
 end $$;
-
 -- ─── 2. Função para marcar log como concluído ────────────────────────────────
 create or replace function public.cron_log_finish(
   p_log_id  uuid,
@@ -45,16 +41,13 @@ begin
   where id = p_log_id;
 end;
 $$;
-
 grant execute on function public.cron_log_finish to authenticated;
-
 -- ─── 3. Jobs de frota (remove versões anteriores se existirem) ───────────────
 
 select cron.unschedule('sync-bfleet-posicoes')   where exists (select 1 from cron.job where jobname = 'sync-bfleet-posicoes');
 select cron.unschedule('sync-detran-multas')      where exists (select 1 from cron.job where jobname = 'sync-detran-multas');
 select cron.unschedule('sync-detran-veiculos')    where exists (select 1 from cron.job where jobname = 'sync-detran-veiculos');
 select cron.unschedule('cleanup-cron-logs')       where exists (select 1 from cron.job where jobname = 'cleanup-cron-logs');
-
 -- BFleet: posições a cada 2 minutos
 select cron.schedule(
   'sync-bfleet-posicoes', '*/2 * * * *',
@@ -64,7 +57,6 @@ select cron.schedule(
     body    := '{}'
   )$$
 );
-
 -- DETRAN multas: a cada 30 minutos
 select cron.schedule(
   'sync-detran-multas', '*/30 * * * *',
@@ -74,7 +66,6 @@ select cron.schedule(
     body    := '{"limit":25,"offset":0}'
   )$$
 );
-
 -- DETRAN veículos: 1x/dia às 03h Brasília (06h UTC)
 select cron.schedule(
   'sync-detran-veiculos', '0 6 * * *',
@@ -84,15 +75,13 @@ select cron.schedule(
     body    := '{}'
   )$$
 );
-
 -- Limpeza de logs antigos: diário às 05h UTC
 select cron.schedule(
   'cleanup-cron-logs', '0 5 * * *',
   $$delete from public.cron_exec_logs where started_at < now() - interval '30 days'$$
 );
-
 -- ─── 4. Configurar URL e service_role_key no banco ───────────────────────────
 -- Execute manualmente no SQL Editor (não commitar com valores reais):
 --
 -- alter database postgres set app.supabase_url    = 'https://xyzpnuumdqhegxakkyws.supabase.co';
--- alter database postgres set app.service_role_key = 'SEU_SERVICE_ROLE_KEY';
+-- alter database postgres set app.service_role_key = 'SEU_SERVICE_ROLE_KEY';;

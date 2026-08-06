@@ -3,7 +3,6 @@
 -- execução (respeita o limite de 1 req/s do Nominatim); some sozinho quando
 -- não houver mais pendência (função retorna rápido sem custo de rede).
 select cron.unschedule('geocode-colaborador-base') where exists (select 1 from cron.job where jobname = 'geocode-colaborador-base');
-
 select cron.schedule(
   'geocode-colaborador-base',
   '*/2 * * * *',

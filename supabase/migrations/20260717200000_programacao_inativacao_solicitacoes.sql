@@ -21,12 +21,9 @@ create table if not exists public.programacao_inativacao_solicitacoes (
   processado_em timestamptz,
   observacao_rh text
 );
-
 create index if not exists idx_programacao_inativacao_status on public.programacao_inativacao_solicitacoes (status);
 create index if not exists idx_programacao_inativacao_colaborador on public.programacao_inativacao_solicitacoes (colaborador_id);
-
 alter table public.programacao_inativacao_solicitacoes enable row level security;
-
 create policy programacao_inativacao_solicitacoes_auth_all
   on public.programacao_inativacao_solicitacoes
   for all
