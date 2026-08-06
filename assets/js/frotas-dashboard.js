@@ -209,7 +209,7 @@ function renderFrotasDashboard(container, opts = {}) {
   <!-- TABS -->
   <nav class="fd-tabs">
     <button class="fd-tab active">Dashboard</button>
-    <button class="fd-tab" data-nav="frotas">Excesso de Velocidade</button>
+    <button class="fd-tab" data-nav="frotas">Notificação</button>
     <button class="fd-tab" data-nav="frotas-veiculos">Veículos</button>
     <button class="fd-tab" data-nav="frotas-multas">Multas</button>
     <button class="fd-tab" data-nav="frotas-historico">Histórico</button>

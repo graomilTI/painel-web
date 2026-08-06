@@ -101,9 +101,8 @@ function renderHistorico(){
         <td><span class="pat-hist-name-cell"><span class="pat-hist-arrow">${open?'▾':'▸'}</span>${esc(g.funcionario)}</span></td>
         <td>${g.items.length}</td>
         <td class="${g.maxDias>30 && !g.inativo?'dias-alerta':''}">${g.maxDias>=0?g.maxDias:'-'}</td>
-        <td><button class="pat-hist-dl-btn" data-dl-colaborador="${esc(g.funcionario)}" type="button" title="Baixar CSV de ${esc(g.funcionario)}">↓</button></td>
       </tr>`;
-    const detailRow=open?`<tr class="pat-hist-detail-row"><td colspan="4"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody>${detailRows}</tbody></table></td></tr>`:'';
+    const detailRow=open?`<tr class="pat-hist-detail-row"><td colspan="3"><table class="pat-table"><thead><tr><th>Nº</th><th>Material</th><th>Dias s/ Leitura</th></tr></thead><tbody>${detailRows}</tbody></table></td></tr>`:'';
     return mainRow+detailRow;
   }).join('');
 
@@ -112,21 +111,15 @@ function renderHistorico(){
       <th class="${thClass('funcionario')}" data-sort-key="funcionario" data-sort-dir="${thDir('funcionario')}">Colaborador</th>
       <th class="${thClass('qtd')}" data-sort-key="qtd" data-sort-dir="${thDir('qtd')}">Un.</th>
       <th class="${thClass('maxDias')}" data-sort-key="maxDias" data-sort-dir="${thDir('maxDias')}">Dias s/ Leitura</th>
-      <th></th>
     </tr></thead>
     <tbody>${bodyRows}</tbody>
   </table></div>`;
 
   grid.querySelectorAll('[data-sort-key]').forEach(th=>th.addEventListener('click', ()=>setHistSort(th.dataset.sortKey)));
-  grid.querySelectorAll('[data-colaborador]').forEach(row=>row.addEventListener('click', (e)=>{
-    if(e.target.closest('[data-dl-colaborador]')) return;
+  grid.querySelectorAll('[data-colaborador]').forEach(row=>row.addEventListener('click', ()=>{
     const nome=row.dataset.colaborador;
     if(state.histExpanded.has(nome)) state.histExpanded.delete(nome); else state.histExpanded.add(nome);
     renderHistorico();
-  }));
-  grid.querySelectorAll('[data-dl-colaborador]').forEach(btn=>btn.addEventListener('click', (e)=>{
-    e.stopPropagation();
-    downloadColaboradorRow(btn.dataset.dlColaborador);
   }));
 }
 
@@ -170,21 +163,6 @@ function downloadHistorico(tipo){
   downloadCsv(`patrimonios-${tipo==='atraso'?'atraso':'total'}-${stamp}.csv`,
     ['Nº Patrimônio','Material','Colaborador','Supervisão','Dias sem leitura'],
     filtered.map((r)=>[r.patrimonio_codigo||'', r.identificacao||'', r.funcionario||'', r.supervisao||'', r.dias_sem_leitura??'']));
-}
-
-function downloadColaboradorRow(nome){
-  const {num,material}=state.histFilters;
-  const rows=state.histRows.filter((r)=>{
-    if(r.funcionario!==nome) return false;
-    if(num && !normalize(r.patrimonio_codigo||'').includes(normalize(num)) && !normalize(r.funcionario||'').includes(normalize(num))) return false;
-    if(material && !normalize(r.identificacao||'').includes(normalize(material))) return false;
-    return true;
-  });
-  const stamp=new Date().toISOString().slice(0,10);
-  const slug=normalize(nome).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
-  downloadCsv(`patrimonios-${slug||'colaborador'}-${stamp}.csv`,
-    ['Nº Patrimônio','Material','Dias sem leitura'],
-    rows.map((r)=>[r.patrimonio_codigo||'', r.identificacao||'', r.dias_sem_leitura??'']));
 }
 
 function setHistSort(key){
@@ -237,8 +215,6 @@ function styles(){return `<style>
 .pat-hist-row:hover{background:rgba(129,140,248,.08)}
 .pat-hist-name-cell{display:flex;align-items:center;gap:8px;font-weight:800}
 .pat-hist-arrow{color:var(--muted);font-size:11px;width:12px;display:inline-block}
-.pat-hist-dl-btn{border:1px solid rgba(148,163,184,.24);background:transparent;color:#e2e2f0;border-radius:8px;padding:4px 10px;cursor:pointer;font-size:13px;line-height:1}
-.pat-hist-dl-btn:hover{border-color:rgba(129,140,248,.4);background:rgba(129,140,248,.12)}
 .pat-hist-detail-row td{padding:0 12px 14px 32px;background:rgba(13,13,24,.6)}
 .pat-hist-detail-row .pat-table{min-width:0}
 .pat-hist-detail-row .pat-table th,.pat-hist-detail-row .pat-table td{padding:8px 10px}
@@ -252,8 +228,7 @@ export async function renderContent(content, userContext){
   ].filter(Boolean);
   state.allowedSupervisoes = new Set(rawSupervisoes.map(normalize));
 
-  content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Gestor</div><h2>Patrimônios</h2><p>Histórico de leituras e cadastro dos números patrimoniais dos itens comprados pelo setor de compras.</p></div><div class="hero-badge-wrap"><span class="hero-badge">GESTOR</span></div></section>
-    <div class="pat-layout">
+  content.innerHTML=`${styles()}<div class="pat-layout">
       <div class="pat-tabs">
         <button class="pat-hist-card pat-hist-card-active" data-pat-tab="cadastrar" type="button">
           <span class="pat-hist-icon">📝</span>

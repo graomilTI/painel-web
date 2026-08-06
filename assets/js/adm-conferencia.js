@@ -505,17 +505,68 @@ function despesasTableHead() {
   `;
 }
 
+function grmVisualForRow(row) {
+  const grmStatus = row.grm_status_aplicacao || 'NAO_PROCESSADO';
+  return {
+    APLICADO: row.grm_houve_alteracao === false
+      ? { label: 'Sem alteração', kind: 'noop', title: 'Conferido no GRM; as regras já estavam corretas' }
+      : { label: 'Aplicado', kind: 'applied', title: 'Regras atualizadas e conferidas no GRM' },
+    LIMPO: row.grm_houve_alteracao === false
+      ? { label: 'Sem alteração', kind: 'noop', title: 'Conferido no GRM; não havia liberações para remover' }
+      : { label: 'Limpo', kind: 'clean', title: 'Liberações removidas e conferidas no GRM' },
+    ERRO: { label: 'Erro no GRM', kind: 'error', title: 'A sincronização com o GRM falhou' },
+    DIVERGENTE: { label: 'Divergente', kind: 'error', title: 'O GRM não confirmou as regras esperadas' },
+    PENDENTE: { label: 'Pendente', kind: 'pending', title: 'Aguardando sincronização com o GRM' },
+    PROCESSANDO: { label: 'Processando', kind: 'pending', title: 'Sincronização com o GRM em andamento' },
+    NAO_PROCESSADO: { label: 'Não processado', kind: 'neutral', title: 'Nenhuma sincronização registrada para este funcionário' },
+  }[grmStatus] || { label: grmStatus, kind: 'neutral', title: 'Status da sincronização com o GRM' };
+}
+
+function grmOverviewHtml(rows) {
+  const order = ['noop', 'applied', 'clean', 'pending', 'error', 'neutral'];
+  const labels = {
+    noop: 'Sem alteração',
+    applied: 'Aplicado',
+    clean: 'Limpo / corrigido',
+    pending: 'Pendente',
+    error: 'Erro',
+    neutral: 'Não processado',
+  };
+  const counts = Object.fromEntries(order.map((kind) => [kind, 0]));
+  rows.forEach((row) => {
+    const kind = grmVisualForRow(row).kind;
+    counts[kind] = (counts[kind] || 0) + 1;
+  });
+
+  return `
+    <div class="conf-grm-overview" aria-label="Resumo da sincronização com o GRM">
+      <div class="conf-grm-overview-title">
+        <strong>Retorno do GRM</strong>
+        <span>As cores abaixo são as mesmas usadas nas linhas.</span>
+      </div>
+      <div class="conf-grm-overview-items">
+        ${order.map((kind) => `
+          <span class="conf-grm-overview-item conf-grm-overview-${kind}">
+            <i aria-hidden="true"></i>
+            ${escapeHtml(labels[kind])}
+            <strong>${counts[kind] || 0}</strong>
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function despesasRowHtml(row, mode = 'fila') {
   const isConferido = mode === 'conferidos';
-  const grmSynced = row.grm_status_aplicacao === 'APLICADO';
-  const grmTitle = grmSynced
-    ? `Sincronizado com o GRM${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`
-    : '';
+  const grmVisual = grmVisualForRow(row);
+  const grmTitle = `${grmVisual.title}${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`;
   return `
-    <tr class="${isConferido ? 'conf-row-conferido' : ''} ${grmSynced ? 'conf-row-grm-synced' : ''}" ${grmSynced ? `title="${escapeHtml(grmTitle)}"` : ''}>
+    <tr class="${isConferido ? 'conf-row-conferido' : ''} conf-row-grm-${grmVisual.kind}">
       <td>
         <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
         <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
+        <span class="conf-grm-status conf-grm-status-${grmVisual.kind}" title="${escapeHtml(grmTitle)}">GRM: ${escapeHtml(grmVisual.label)}</span>
       </td>
       <td class="conf-td-regional">
         ${escapeHtml(getRegional(row))}
@@ -564,6 +615,7 @@ function renderDespesasTable() {
   }
 
   target.innerHTML = `
+    ${grmOverviewHtml(rows)}
     <div class="conf-subsection-head">
       <div>
         <h4>Itens para conferir</h4>
@@ -1031,6 +1083,7 @@ async function loadDespesas() {
         const grm = grmMap.get(row.colaborador_id);
         row.grm_status_aplicacao = grm?.status_aplicacao || null;
         row.grm_aplicado_em = grm?.aplicado_em || null;
+        row.grm_houve_alteracao = typeof grm?.houve_alteracao === 'boolean' ? grm.houve_alteracao : null;
       }
     }
   }

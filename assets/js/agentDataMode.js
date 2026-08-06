@@ -13,7 +13,6 @@ const ROUTES_WITH_AGENT_DATA = new Set([
   'notas-fiscais',
   'financeiro',
   'adm-patrimonio',
-  'patrimonios',
 ]);
 
 const ROUTE_LABELS = {
@@ -26,7 +25,6 @@ const ROUTE_LABELS = {
   'consultar-colaboradores': 'Colaboradores',
   'consultar-producao': 'Produção',
   'logistica-informativos': 'Informativos de Logística',
-  patrimonios: 'Patrimônios',
   'adm-patrimonio': 'Patrimônios',
 };
 

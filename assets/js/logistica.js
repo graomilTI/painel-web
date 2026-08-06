@@ -233,11 +233,15 @@ async function loadAllOs() {
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
-  const [prod, os, sup] = await Promise.all([
+  const [prod, os, sup, nacInativos] = await Promise.all([
     supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
     supabase.from('operacional_os').select('cliente,embarque,destino,supervisao').limit(5000),
     supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }).limit(1000),
+    supabase.from('clientes_nacionais').select('nome').eq('ativo', false).limit(1000),
   ]);
+  // Clientes Nacionais inativos no GRM (roster sincronizado manualmente em
+  // clientes_nacionais) não devem aparecer no Contratante/Cliente da Abertura.
+  const clientesInativos = new Set(safe(nacInativos.data).map(r => normalizeText(r.nome)));
 
   const add = (arr, v) => {
     const txt = String(v ?? '').trim();
@@ -274,6 +278,8 @@ async function loadAberturaRefs() {
     add(refs.regionais, r.supervisao);
   });
   safe(sup.data).forEach(r => add(refs.regionais, r.nome));
+
+  refs.clientes = refs.clientes.filter(c => !clientesInativos.has(normalizeText(c)));
 
   ['clientes', 'armazens', 'destinos', 'locaisDestino', 'regionais'].forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   Object.values(refs.filiaisPorCliente).forEach(list => list.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));

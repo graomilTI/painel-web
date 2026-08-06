@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const AGENT_VERSION = 'V11-CATEGORIAS';
+const AGENT_VERSION = 'V12-LOTES-RESILIENTES';
 
 require('dotenv').config();
 
@@ -52,7 +52,7 @@ const DEBUG = String(
 
 const MAX_PER_RUN = Math.max(
   1,
-  Number(process.env.GRM_LIBERACAO_DESPESAS_MAX_POR_EXECUCAO || 5),
+  Number(process.env.GRM_LIBERACAO_DESPESAS_MAX_POR_EXECUCAO || 2),
 );
 
 const SCREENSHOT_DIR = process.env.GRM_LIBERACAO_DESPESAS_SCREENSHOT_DIR
@@ -1374,15 +1374,10 @@ async function getCashRowsCount(page) {
   });
 }
 
-async function deleteAllCashRules(page) {
-  let guard = 0;
-
-  while (guard++ < 100) {
+async function deleteCashRuleAtIndex(page, rowIndex) {
     const before = await getCashRowsCount(page);
-
-    if (before <= 0) return;
-
-    const prepared = await page.evaluate(() => {
+    if (before <= 0 || rowIndex < 0 || rowIndex >= before) return;
+    const prepared = await page.evaluate((requestedIndex) => {
       const normalize = (value) =>
         String(value || '')
           .normalize('NFD')
@@ -1431,7 +1426,7 @@ async function deleteAllCashRules(page) {
         .filter((row) =>
           row.querySelector('input, select, [role="combobox"]'));
 
-      const row = rows[rows.length - 1];
+      const row = rows[requestedIndex];
 
       if (!row) {
         return { ok: false, reason: 'RULE_ROW_NOT_FOUND' };
@@ -1492,7 +1487,7 @@ async function deleteAllCashRules(page) {
         rowText: row.innerText?.slice(0, 1000) || '',
         buttonHtml: remove.outerHTML.slice(0, 5000),
       };
-    });
+    }, rowIndex);
 
     if (!prepared.ok) {
       throw new Error(
@@ -1520,6 +1515,14 @@ async function deleteAllCashRules(page) {
     );
 
     await sleep(250);
+}
+
+async function deleteAllCashRules(page) {
+  let guard = 0;
+  while (guard++ < 100) {
+    const before = await getCashRowsCount(page);
+    if (before <= 0) return;
+    await deleteCashRuleAtIndex(page, before - 1);
   }
 
   throw new Error(
@@ -2271,20 +2274,43 @@ async function applyEmployeeRules(page, job) {
     };
   }
 
-  await preflightDesiredRuleTypes(
-    page,
-    desired,
-    inspection.currentRules.length,
+  const desiredByType = new Map(
+    desired.map((rule) => [norm(rule.tipo_despesa), rule]),
   );
 
-  await deleteAllCashRules(page);
+  // Remova de baixo para cima somente as categorias que deixaram de fazer
+  // parte da programação desta data. Assim os índices restantes não mudam
+  // antes de serem processados.
+  let formRules = await readCashRules(page);
+  const obsoleteIndexes = formRules
+    .map((rule, index) => ({ rule, index }))
+    .filter(({ rule }) => !desiredByType.has(norm(rule.tipo_despesa)))
+    .map(({ index }) => index)
+    .sort((a, b) => b - a);
 
-  for (let index = 0; index < desired.length; index += 1) {
-    await addCashRuleRow(page);
-    await fillCashRuleRow(page, index, desired[index]);
+  for (const index of obsoleteIndexes) {
+    await deleteCashRuleAtIndex(page, index);
   }
 
-  const formRules = canonicalRules(await readCashRules(page));
+  // Atualize somente linhas divergentes e acrescente apenas categorias novas.
+  for (const rule of desired) {
+    formRules = await readCashRules(page);
+    const index = formRules.findIndex((current) =>
+      norm(current.tipo_despesa) === norm(rule.tipo_despesa));
+
+    if (index >= 0) {
+      if (!rulesEqual([formRules[index]], [rule])) {
+        await fillCashRuleRow(page, index, rule);
+      }
+      continue;
+    }
+
+    await addCashRuleRow(page);
+    const newIndex = await getCashRowsCount(page) - 1;
+    await fillCashRuleRow(page, newIndex, rule);
+  }
+
+  formRules = canonicalRules(await readCashRules(page));
 
   if (!rulesEqual(formRules, desired)) {
     const error = new Error(
@@ -2325,20 +2351,23 @@ async function applyEmployeeRules(page, job) {
   };
 }
 
-async function getLatestState(cpf) {
+async function getLatestState(cpf, dataReferencia) {
   const { data, error } = await supabase
     .from('grm_despesas_estado_colaborador')
     .select('*')
     .eq('cpf', digits(cpf))
+    .eq('data_referencia', String(dataReferencia || '').slice(0, 10))
     .maybeSingle();
 
   if (error) throw error;
   return data;
 }
 
-async function claimNext() {
+async function claimNext(excludedIds = []) {
   const { data, error } = await supabase
-    .rpc('claim_next_grm_despesa_fila');
+    .rpc('claim_next_grm_despesa_fila', {
+      p_excluir_ids: excludedIds,
+    });
 
   if (error) throw error;
 
@@ -2375,6 +2404,7 @@ async function updateStateIfCurrent(job, patch) {
     .from('grm_despesas_estado_colaborador')
     .update(patch)
     .eq('cpf', digits(job.cpf))
+    .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
     .eq('hash_desejado', job.hash_desejado)
     .eq('versao_desejada_id', job.versao_id);
 
@@ -2470,33 +2500,35 @@ async function recordDryRun(job, inspection, screenshot) {
   });
 }
 
-async function enqueueFollowupIfNeeded() {
+async function enqueueFollowupIfNeeded(force = false) {
   if (DRY_RUN) return;
 
-  const { data: remainingRows, error: remainingError } = await supabase
-    .from('grm_despesas_fila')
-    .select('id,status,tentativas,max_tentativas,data_referencia')
-    .in('status', ['PENDENTE', 'ERRO'])
-    .eq('data_referencia', todaySaoPaulo())
-    .limit(200);
+  if (!force) {
+    const { data: remainingRows, error: remainingError } = await supabase
+      .from('grm_despesas_fila')
+      .select('id,status,tentativas,max_tentativas,data_referencia')
+      .in('status', ['PENDENTE', 'ERRO'])
+      .eq('data_referencia', todaySaoPaulo())
+      .limit(200);
 
-  if (remainingError) {
-    log(
-      'WARN',
-      `Não foi possível conferir fila restante: ${remainingError.message}`,
-    );
-    return;
+    if (remainingError) {
+      log(
+        'WARN',
+        `Não foi possível conferir fila restante: ${remainingError.message}`,
+      );
+      return;
+    }
+
+    const hasRemaining = (remainingRows || []).some((row) =>
+      row.status === 'PENDENTE'
+      || (
+        row.status === 'ERRO'
+        && Number(row.tentativas || 0)
+          < Number(row.max_tentativas || 3)
+      ));
+
+    if (!hasRemaining) return;
   }
-
-  const hasRemaining = (remainingRows || []).some((row) =>
-    row.status === 'PENDENTE'
-    || (
-      row.status === 'ERRO'
-      && Number(row.tentativas || 0)
-        < Number(row.max_tentativas || 3)
-    ));
-
-  if (!hasRemaining) return;
 
   const { data: pendingJob, error: pendingError } = await supabase
     .from('grm_sync_jobs')
@@ -2545,7 +2577,7 @@ async function processDryRun(page) {
     let screenshot = null;
 
     try {
-      const state = await getLatestState(job.cpf);
+      const state = await getLatestState(job.cpf, job.data_referencia);
 
       if (
         !state
@@ -2627,11 +2659,15 @@ async function processReal(page) {
   let processed = 0;
   let errors = 0;
   let configurationWarnings = 0;
+  const attemptedIds = [];
 
   for (let index = 0; index < MAX_PER_RUN; index += 1) {
-    const job = await claimNext();
+    // Um item com erro só pode ser tentado uma vez por execução. Assim ele
+    // não consome o lote inteiro nem impede que os próximos CPFs avancem.
+    const job = await claimNext(attemptedIds);
 
     if (!job) break;
+    attemptedIds.push(job.id);
 
     const today = todaySaoPaulo();
     const jobDate = String(job.data_referencia || '').slice(0, 10);
@@ -2653,7 +2689,7 @@ async function processReal(page) {
     let screenshot = null;
 
     try {
-      const state = await getLatestState(job.cpf);
+      const state = await getLatestState(job.cpf, job.data_referencia);
 
       if (
         !state
@@ -2710,9 +2746,11 @@ async function processReal(page) {
     }
   }
 
-  // Execução independente por cron próprio.
-  // Não reenviar este agente para a fila global grm_sync_jobs.
-  // await enqueueFollowupIfNeeded();
+  // Cada execução trata um lote curto para não disputar o limite de 20 min do
+  // worker. Enquanto houver itens elegíveis, deixa o próximo lote enfileirado.
+  await enqueueFollowupIfNeeded(
+    processed === MAX_PER_RUN || errors > 0,
+  );
 
   return {
     processed,
