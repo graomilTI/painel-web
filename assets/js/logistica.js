@@ -235,15 +235,26 @@ async function loadAllOs() {
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
-  const [prod, os, sup, nacInativos] = await Promise.all([
+  const [prod, os, sup, nacInativos, aliases] = await Promise.all([
     supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
     supabase.from('operacional_os').select('cliente,embarque,destino,supervisao').limit(5000),
     supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }).limit(1000),
     supabase.from('clientes_nacionais').select('nome').eq('ativo', false).limit(1000),
+    supabase.from('logistica_clientes_nacionais_aliases').select('alias_normalizado,canonical').limit(1000),
   ]);
   // Clientes Nacionais inativos no GRM (roster sincronizado manualmente em
   // clientes_nacionais) não devem aparecer no Contratante/Cliente da Abertura.
   const clientesInativos = new Set(safe(nacInativos.data).map(r => normalizeText(r.nome)));
+
+  // Nomes de cliente nacional chegam com variações (abreviações digitadas
+  // diferente no GRM ao longo do tempo p/ o mesmo cliente); essa tabela
+  // colapsa essas variações no nome canônico antes de alimentar o dropdown.
+  const aliasMap = new Map(safe(aliases.data).map(a => [normalizeText(a.alias_normalizado), a.canonical]));
+  const canonicalizeCliente = (v) => {
+    const txt = String(v ?? '').trim();
+    if (!txt) return txt;
+    return aliasMap.get(normalizeText(txt)) || txt;
+  };
 
   const add = (arr, v) => {
     const txt = String(v ?? '').trim();
@@ -263,8 +274,9 @@ async function loadAberturaRefs() {
     // cliente_nacional é o único que deve alimentar "Contratante/Cliente" —
     // cliente_regional (ex.: "AMAGGI EXP. E IMP. - GO") é o cliente nacional
     // com a regional/filial já embutida no nome, não um cliente à parte.
-    add(refs.clientes, r.cliente_nacional);
-    const clienteKey = normalizeText(r.cliente_nacional);
+    const clienteNacional = canonicalizeCliente(r.cliente_nacional);
+    add(refs.clientes, clienteNacional);
+    const clienteKey = normalizeText(clienteNacional);
     if (clienteKey) {
       refs.filiaisPorCliente[clienteKey] ||= [];
       add(refs.filiaisPorCliente[clienteKey], r.cliente_final);
@@ -274,7 +286,7 @@ async function loadAberturaRefs() {
   });
   safe(os.data).forEach(r => {
     const { nacional, filial } = splitClienteFilial(r.cliente);
-    add(refs.clientes, nacional);
+    add(refs.clientes, canonicalizeCliente(nacional));
     add(refs.armazens, r.embarque);
     add(refs.locaisDestino, r.destino);
     add(refs.regionais, r.supervisao);
