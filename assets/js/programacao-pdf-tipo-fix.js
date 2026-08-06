@@ -436,14 +436,13 @@ async function compartilharPrograma(button) {
   button.textContent = 'Montando...';
   try {
     const texto = await montarTextoCompartilhar();
-    if (navigator.share) {
-      await navigator.share({ text: texto });
-    } else {
-      await navigator.clipboard.writeText(texto);
-      setFeedback('Compartilhamento não suportado neste navegador — texto copiado pra área de transferência.', 'warn');
-    }
+    // montarTextoCompartilhar faz consultas assíncronas. Ao final delas, a
+    // ativação transitória do clique já pode ter expirado e navigator.share()
+    // passa a lançar NotAllowedError em vários navegadores móveis. O link do
+    // WhatsApp não depende dessa ativação e funciona com a mesma mensagem.
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.location.assign(whatsappUrl);
   } catch (error) {
-    if (error?.name === 'AbortError') return; // gestor cancelou o compartilhamento, não é erro.
     console.error(error);
     setFeedback(error.message || 'Falha ao montar a mensagem de compartilhamento.', 'error');
   } finally {
