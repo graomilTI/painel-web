@@ -507,15 +507,27 @@ function despesasTableHead() {
 
 function despesasRowHtml(row, mode = 'fila') {
   const isConferido = mode === 'conferidos';
-  const grmSynced = row.grm_status_aplicacao === 'APLICADO';
-  const grmTitle = grmSynced
-    ? `Sincronizado com o GRM${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`
-    : '';
+  const grmStatus = row.grm_status_aplicacao || 'NAO_PROCESSADO';
+  const grmVisual = {
+    APLICADO: row.grm_houve_alteracao === false
+      ? { label: 'Sem alteração', kind: 'noop', title: 'Conferido no GRM; as regras já estavam corretas' }
+      : { label: 'Aplicado', kind: 'applied', title: 'Regras atualizadas e conferidas no GRM' },
+    LIMPO: row.grm_houve_alteracao === false
+      ? { label: 'Sem alteração', kind: 'noop', title: 'Conferido no GRM; não havia liberações para remover' }
+      : { label: 'Limpo', kind: 'clean', title: 'Liberações removidas e conferidas no GRM' },
+    ERRO: { label: 'Erro no GRM', kind: 'error', title: 'A sincronização com o GRM falhou' },
+    DIVERGENTE: { label: 'Divergente', kind: 'error', title: 'O GRM não confirmou as regras esperadas' },
+    PENDENTE: { label: 'Pendente', kind: 'pending', title: 'Aguardando sincronização com o GRM' },
+    PROCESSANDO: { label: 'Processando', kind: 'pending', title: 'Sincronização com o GRM em andamento' },
+    NAO_PROCESSADO: { label: 'Não processado', kind: 'neutral', title: 'Nenhuma sincronização registrada para este funcionário' },
+  }[grmStatus] || { label: grmStatus, kind: 'neutral', title: 'Status da sincronização com o GRM' };
+  const grmTitle = `${grmVisual.title}${row.grm_aplicado_em ? ` em ${brDateTime(row.grm_aplicado_em)}` : ''}`;
   return `
-    <tr class="${isConferido ? 'conf-row-conferido' : ''} ${grmSynced ? 'conf-row-grm-synced' : ''}" ${grmSynced ? `title="${escapeHtml(grmTitle)}"` : ''}>
+    <tr class="${isConferido ? 'conf-row-conferido' : ''} conf-row-grm-${grmVisual.kind}">
       <td>
         <strong>${escapeHtml(row.colaborador || row.nome_colaborador || '-')}</strong>
         <small>${brDate(row.data_referencia)}${row.cargo ? ` • ${escapeHtml(row.cargo)}` : ''}</small>
+        <span class="conf-grm-status conf-grm-status-${grmVisual.kind}" title="${escapeHtml(grmTitle)}">GRM: ${escapeHtml(grmVisual.label)}</span>
       </td>
       <td class="conf-td-regional">
         ${escapeHtml(getRegional(row))}
@@ -1031,6 +1043,7 @@ async function loadDespesas() {
         const grm = grmMap.get(row.colaborador_id);
         row.grm_status_aplicacao = grm?.status_aplicacao || null;
         row.grm_aplicado_em = grm?.aplicado_em || null;
+        row.grm_houve_alteracao = typeof grm?.houve_alteracao === 'boolean' ? grm.houve_alteracao : null;
       }
     }
   }
