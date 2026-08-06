@@ -367,8 +367,9 @@ function renderItensList(){
   });
 }
 function uniformRow(c){
-  const cor=isClassificador(c)?'Verde':'Cinza';
-  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td>${esc(c.nome)}</td><td>${esc(c.tipo||c.cargo||'-')}</td><td><b>${cor}</b></td><td><select class="uni-tam">${UNIFORME_TAMANHOS.map(t=>`<option>${t}</option>`).join('')}</select></td><td><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
+  const cor=c._uniformeCor||(isClassificador(c)?'Verde':'Cinza');
+  const tamanho=c._uniformeTamanho||'M';
+  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td>${esc(c.nome)}</td><td>${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><b class="uni-cor">${esc(cor)}</b></td><td data-label="Tamanho"><b class="uni-tam">${esc(tamanho)}</b></td><td><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
 }
 function renderUniformes(){
   const body=document.getElementById('cmpUniformeBody');
@@ -378,17 +379,28 @@ function renderUniformes(){
 function addAllColaboradores(ctx){
   const coord=norm(solicitanteCoord(ctx));
   const base=state.colaboradores.filter(c=>!coord || norm(c.coordenacao||c.supervisao).includes(coord) || coord.includes(norm(c.coordenacao||c.supervisao)));
-  state.uniformes = dedupeColaboradores(base.length ? base : state.colaboradores);
+  state.uniformes = dedupeColaboradores(base.length ? base : state.colaboradores).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza'}));
   renderUniformes();
 }
 function setupColabSearch(){
   const input=document.getElementById('cmpColabBusca'); const box=document.getElementById('cmpColabSug');
+  let selecionado=null;
   input.addEventListener('input',()=>{
+    selecionado=null;
     const q=norm(input.value); if(q.length<2){box.innerHTML='';return;}
     const list=dedupeColaboradores(state.colaboradores.filter(c=>norm(c.nome).includes(q))).slice(0,10);
     box.innerHTML=list.map(c=>`<button type="button" data-add-colab="${esc(colaboradorKey(c))}">${esc(c.nome)} <small>${esc(c.tipo||c.cargo||'')}</small></button>`).join('');
-    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ const c=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab); if(c) pushUniforme(c); input.value=''; box.innerHTML=''; renderUniformes(); });
+    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ selecionado=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab)||null; if(!selecionado)return; input.value=selecionado.nome; document.getElementById('cmpUniCor').value=isClassificador(selecionado)?'Verde':'Cinza'; box.innerHTML=''; });
   });
+  document.getElementById('cmpAddUniforme').onclick=()=>{
+    if(!selecionado){ setMsg('cmpFeedback','Selecione um colaborador pelo nome antes de adicionar.',true); return; }
+    const item={...selecionado,_uniformeTamanho:document.getElementById('cmpUniTamanho').value,_uniformeCor:document.getElementById('cmpUniCor').value};
+    const key=colaboradorKey(item);
+    state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==key);
+    state.uniformes.push(item);
+    input.value=''; selecionado=null; box.innerHTML='';
+    renderUniformes(); setMsg('cmpFeedback','Uniforme adicionado à lista.');
+  };
 }
 function isSchemaColumnError(error){
   const msg=String(error?.message||error?.details||error?.hint||'').toLowerCase();
@@ -470,7 +482,7 @@ async function submitItens(ctx, overrideItems=null){
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
-  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam').value, colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:isClassificador(c)?'Verde':'Cinza'}; });
+  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:c._uniformeCor||(isClassificador(c)?'Verde':'Cinza')}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;
@@ -499,10 +511,12 @@ function styles(){return `<style>
 .cmp-tabs,.cmp-actions{display:flex;gap:8px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important;border:1px solid var(--line)!important;background:var(--bg-card)!important;color:var(--muted)!important;border-radius:12px!important;padding:9px 16px!important;font-weight:700;font-size:13px}.cmp-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;color:#f0fff7!important;border-color:var(--green-2)!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}.cmp-table{width:100%;border-collapse:collapse;min-width:680px}.cmp-table th,.cmp-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}.cmp-table th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;background:rgba(13,32,24,.5)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field select,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;color-scheme:dark;min-height:40px;font-size:14px}.cmp-table input:focus,.cmp-table select:focus,.cmp-field input:focus,.cmp-field select:focus,.cmp-field textarea:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}.cmp-field label{font-size:11px;color:var(--muted);font-weight:700}.cmp-field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23cbd5e1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}.cmp-field select:disabled,.cmp-table select:disabled,.cmp-field input:disabled,.cmp-table input:disabled,.cmp-field textarea:disabled{opacity:.72;cursor:not-allowed}.cmp-field{display:flex;flex-direction:column;gap:5px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmp-add-box{display:grid;grid-template-columns:90px 1.4fr 1fr 1fr auto;gap:10px;align-items:start}.cmp-add-box .cmp-field small.muted{display:block;font-size:11px;line-height:1.3;margin-top:2px}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-autocomplete-wrap{position:relative}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px;cursor:pointer}.cmp-item-suggest{position:absolute;top:100%;left:0;right:0;z-index:50;background:#0a1e17;border:1px solid var(--line-2);border-radius:12px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:260px;overflow:auto}.cmp-item-suggest:empty{display:none}.cmp-item-suggest button{display:flex;justify-content:space-between;align-items:center;gap:10px}.cmp-item-suggest small{color:var(--muted);font-weight:800}.cmp-no-sug{color:var(--muted);padding:10px 12px;font-weight:700}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf,.cmp-status.aguardando_termo{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}
 .cmp-cel-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.cmp-cel-modal.open{display:flex}.cmp-cel-card{width:min(600px,100%);max-height:90vh;overflow:auto;background:var(--bg-card);border:1px solid var(--line-2);border-radius:18px;padding:20px;color:var(--text)}
 .cmp-workspace{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:16px;align-items:start}.cmp-request-card,.cmp-history-card{min-width:0}.cmp-request-card{position:sticky;top:16px}.cmp-request-card .section-head{align-items:flex-start;flex-direction:column}.cmp-request-card .cmp-tabs{order:-1}.cmp-request-card .cmp-grid{grid-template-columns:1fr}.cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr)}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3){grid-column:1}.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:2}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-request-card .cmp-add-action label{display:none}.cmp-request-card .cmp-add-action .btn,.cmp-request-card #cmpSolicitar{width:100%}.cmp-request-card .cmp-table{min-width:560px}.cmp-request-card .cmp-table-wrap{max-height:260px}.cmp-request-card #panel-uniformes .cmp-actions{display:grid}.cmp-request-card #panel-uniformes .cmp-field{min-width:0!important}.cmp-history-head{align-items:flex-end}.cmp-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.cmp-history-filter{width:auto!important;margin:0!important;border-radius:999px!important;padding:8px 16px!important}.cmp-history-filter.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;border-color:var(--green-2)!important;color:#f0fff7!important}.cmp-history-card .cmp-table-wrap{border-radius:16px}.cmp-history-card .cmp-table td{padding-top:16px;padding-bottom:16px}.cmp-items-cell{display:grid;gap:5px}.cmp-items-cell span{display:block}.cmp-items-cell small{color:var(--muted);margin-left:4px}.cmp-request-card .form-actions{display:grid;gap:10px}.cmp-feedback{line-height:1.45}
+.cmp-uniforme-add{display:grid;grid-template-columns:minmax(0,1fr) 92px 100px;gap:10px;align-items:end}.cmp-uniforme-add .cmp-field:first-child{grid-column:1/-1}.cmp-uniforme-add .cmp-add-action{grid-column:1/-1}.cmp-uniforme-add .cmp-add-action .btn{width:100%}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}}
 @media(max-width:960px){.cmp-workspace{grid-template-columns:1fr}.cmp-request-card{position:static}.cmp-request-card .cmp-add-box{grid-template-columns:110px 1.4fr 1fr 1fr}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3),.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:auto}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-history-head{align-items:flex-start}}
 @media(max-width:760px){
   .cmp-grid,.cmp-add-box,.cmp-request-card .cmp-add-box{grid-template-columns:1fr}
+  .cmp-uniforme-add{grid-template-columns:1fr}.cmp-uniforme-add .cmp-field,.cmp-uniforme-add .cmp-add-action{grid-column:1!important}
   .cmp-request-card .cmp-add-box .cmp-field{grid-column:1!important}
   .cmp-history-filters{width:100%}.cmp-history-filter{flex:1;padding-inline:10px!important}
   .cmp-table-wrap{overflow:visible;border:0}
@@ -534,7 +548,7 @@ export async function renderContent(content, userContext){
       <p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p>
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
-    <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-actions"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button><div class="cmp-field" style="min-width:280px"><label>Adicionar colaborador</label><input id="cmpColabBusca" placeholder="Digite o nome"><div class="cmp-suggest" id="cmpColabSug"></div></div></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome do colaborador" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option>Verde</option><option selected>Cinza</option></select></div><div class="cmp-field cmp-add-action"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button></div></div><div class="cmp-actions mt-12"><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos os colaboradores</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
