@@ -847,16 +847,26 @@ export function renderContent(content) {
     if (!target) return;
     target.className = 'pat-desligados-empty';
     target.textContent = 'Carregando colaboradores e materiais...';
-    const { data, error } = await supabase
-      .from('programacao_inativacao_solicitacoes')
-      .select('id,colaborador_id,nome_colaborador,cargo,coordenacao,supervisao,motivo,solicitado_em,solicitado_por_nome')
-      .eq('status', 'PENDENTE')
-      .order('solicitado_em', { ascending: false })
-      .limit(1000);
-    if (error) {
-      target.textContent = error.message || 'Não foi possível carregar os desligados.';
+    const [requestsResult, freshPatrimoniosResult] = await Promise.allSettled([
+      supabase
+        .from('programacao_inativacao_solicitacoes')
+        .select('id,colaborador_id,nome_colaborador,cargo,coordenacao,supervisao,motivo,solicitado_em,solicitado_por_nome')
+        .eq('status', 'PENDENTE')
+        .order('solicitado_em', { ascending: false })
+        .limit(1000),
+      loadSnapshotRows(),
+    ]);
+    if (requestsResult.status === 'rejected' || requestsResult.value.error) {
+      const error = requestsResult.status === 'rejected' ? requestsResult.reason : requestsResult.value.error;
+      target.textContent = error?.message || 'Não foi possível carregar os desligados.';
       return;
     }
+    if (freshPatrimoniosResult.status === 'rejected') {
+      target.textContent = freshPatrimoniosResult.reason?.message || 'Não foi possível atualizar a base de patrimônios.';
+      return;
+    }
+    const data = requestsResult.value.data || [];
+    const freshPatrimonios = freshPatrimoniosResult.value;
     const latestByName = new Map();
     (data || []).forEach((request) => {
       const key = normalizeKey(request.nome_colaborador);
@@ -864,7 +874,7 @@ export function renderContent(content) {
     });
     const entries = [...latestByName.entries()].map(([key, request]) => ({
       request,
-      rows: state.allRows.filter((row) => normalizeKey(row.funcionario) === key),
+      rows: freshPatrimonios.filter((row) => normalizeKey(row.funcionario) === key),
     })).filter((entry) => entry.rows.length);
     if (!entries.length) {
       target.textContent = 'Nenhum colaborador com solicitação de inativação pendente possui patrimônio em seu nome.';
