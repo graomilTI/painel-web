@@ -1238,7 +1238,7 @@
       const period = periodOverride || readForaHorarioReportPeriod(root);
       let query = supabase
         .from('frotas_fora_horario')
-        .select('id,data_evento,hora_evento,placa,motorista_planilha,patrimonio_funcionario,endereco,mapa_url,created_at');
+        .select('id,data_evento,hora_evento,placa,motorista_planilha,patrimonio_funcionario,endereco,latitude,longitude,mapa_url,created_at');
       if (period.start) query = query.gte('data_evento', period.start);
       if (period.end) query = query.lte('data_evento', period.end);
       const { data, error } = await query
@@ -1282,13 +1282,43 @@
       return;
     }
 
+    const routeGroups = new Map();
+    rows.forEach((row) => {
+      const key = `${onlyPlate(row.placa)}|${normalizeDateForMatch(row.data_evento)}`;
+      if (!routeGroups.has(key)) routeGroups.set(key, []);
+      routeGroups.get(key).push(row);
+    });
+    const routeByGroup = new Map();
+    routeGroups.forEach((groupRows, key) => {
+      const points = groupRows
+        .slice()
+        .sort((a, b) => String(a.hora_evento || '').localeCompare(String(b.hora_evento || '')))
+        .map((item) => {
+          const lat = Number(item.latitude);
+          const lng = Number(item.longitude);
+          if (item.latitude !== null && item.latitude !== '' && item.longitude !== null && item.longitude !== '' && Number.isFinite(lat) && Number.isFinite(lng)) return `${lat},${lng}`;
+          const match = String(item.mapa_url || '').match(/[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i);
+          return match ? `${match[1]},${match[2]}` : '';
+        })
+        .filter((point, index, list) => point && point !== list[index - 1]);
+      if (!points.length) return;
+      if (points.length === 1) {
+        routeByGroup.set(key, { url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(points[0])}`, count: 1 });
+        return;
+      }
+      const params = new URLSearchParams({ api: '1', origin: points[0], destination: points[points.length - 1], travelmode: 'driving' });
+      if (points.length > 2) params.set('waypoints', points.slice(1, -1).join('|'));
+      routeByGroup.set(key, { url: `https://www.google.com/maps/dir/?${params.toString()}`, count: points.length });
+    });
+
     tbody.innerHTML = rows.map((row) => {
       const placa = escapeHtml(onlyPlate(row.placa) || '-');
       const motorista = escapeHtml(row.patrimonio_funcionario || row.motorista_planilha || 'Não identificado');
       const horario = escapeHtml(`${row.data_evento ? formatDateBR(row.data_evento) : ''} ${row.hora_evento || ''}`.trim() || '-');
-      const mapaUrl = String(row.mapa_url || '').trim();
-      const rota = /^https?:\/\//i.test(mapaUrl)
-        ? `<a href="${escapeHtml(mapaUrl)}" target="_blank" rel="noopener noreferrer">Ver rota</a>`
+      const routeKey = `${onlyPlate(row.placa)}|${normalizeDateForMatch(row.data_evento)}`;
+      const route = routeByGroup.get(routeKey);
+      const rota = route
+        ? `<a href="${escapeHtml(route.url)}" target="_blank" rel="noopener noreferrer" title="Rota cronológica com ${route.count} ponto(s)">Ver rota · ${route.count} ponto(s)</a>`
         : '<span style="color:#6b7280">Sem link</span>';
       return `<tr><td>${placa}</td><td>${motorista}</td><td>${horario}</td><td>${rota}</td></tr>`;
     }).join('');
