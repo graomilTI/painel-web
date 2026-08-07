@@ -31,7 +31,7 @@ const STATUS_ADMISSAO = {
 
 const STATUS_INTEGRACAO = { em_andamento: { label: 'Em andamento' }, concluida: { label: 'Concluída' } };
 
-const state = { tab: 'gestores', admissoes: [], integracoes: [], inativacoes: [], tiposContratoInativacoes: new Map(), gestores: [], administracao: [], usuarios: [], plantaoConfig: [], plantaoEditores: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
+const state = { tab: 'gestores', admissoes: [], integracoes: [], inativacoes: [], tiposContratoInativacoes: new Map(), inativacoesSort: { key: null, dir: 'asc' }, gestores: [], administracao: [], usuarios: [], plantaoConfig: [], plantaoEditores: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
 
 function statusPill(status, map) {
   const label = map?.[status]?.label || status || '-';
@@ -65,13 +65,14 @@ function styles() {
     .eq-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900}
     .eq-doc-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px}
     .eq-doc-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .eq-inativ-grid{overflow:hidden;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.2)}
+    .eq-inativ-grid{overflow:hidden;border:1px solid rgba(52,211,153,.2);border-radius:16px;background:#02140e;box-shadow:inset 0 1px rgba(255,255,255,.025),0 12px 35px rgba(0,0,0,.12)}
     .eq-inativ-grid-head,.eq-inativ-card{display:grid;grid-template-columns:minmax(240px,1.25fr) minmax(120px,.65fr) minmax(150px,.8fr) minmax(220px,1.2fr) 48px 48px;align-items:center;min-width:0}
-    .eq-inativ-grid-head{min-height:34px;background:rgba(255,255,255,.025);border-bottom:1px solid rgba(148,163,184,.16);color:#8ca397;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}
-    .eq-inativ-grid-head>span,.eq-inativ-cell{min-width:0;padding:8px 12px;border-right:1px solid rgba(148,163,184,.1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .eq-inativ-grid-head>span:last-child,.eq-inativ-cell:last-child{border-right:0}
-    .eq-inativ-card{min-height:44px;border-bottom:1px solid rgba(148,163,184,.1);color:#dbe7e1;font-size:12.5px;transition:background .15s ease}
-    .eq-inativ-card:last-child{border-bottom:0}.eq-inativ-card:hover{background:rgba(34,197,94,.035)}
+    .eq-inativ-grid-head{min-height:40px;background:#031b13;border-bottom:1px solid rgba(52,211,153,.18);color:#6ee7b7;font-size:10px;font-weight:900;letter-spacing:.075em;text-transform:uppercase}
+    .eq-inativ-grid-head>span,.eq-inativ-sort,.eq-inativ-cell{min-width:0;padding:9px 12px;border-right:1px solid rgba(52,211,153,.055);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .eq-inativ-grid-head>*:last-child,.eq-inativ-cell:last-child{border-right:0}
+    .eq-inativ-sort{height:100%;display:flex;align-items:center;justify-content:space-between;gap:7px;border-width:0 1px 0 0;border-color:rgba(52,211,153,.055);background:transparent;color:inherit;font:inherit;font-weight:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer;text-align:left}.eq-inativ-sort:hover{color:#d8f3e5;background:rgba(34,197,94,.07)}.eq-inativ-sort.active{color:#a7f3d0;background:rgba(16,185,129,.06)}.eq-inativ-sort-icon{font-size:11px;letter-spacing:0;opacity:.75}
+    .eq-inativ-card{min-height:50px;border-bottom:1px solid rgba(52,211,153,.075);background:#031811;color:#dbe7e1;font-size:12.5px;box-shadow:inset 3px 0 rgba(52,211,153,.18);transition:background .15s ease,box-shadow .15s ease}
+    .eq-inativ-card:nth-child(odd){background:#041d15}.eq-inativ-card:last-child{border-bottom:0}.eq-inativ-card:hover{background:#07271c;box-shadow:inset 3px 0 #34d399}
     .eq-inativ-name{color:#f8fafc;font-weight:850}.eq-inativ-type{color:#b7d7c7}.eq-inativ-reason{color:#cbd5e1}
     .eq-inativ-action{display:grid;place-items:center;padding:4px}
     .eq-inativ-icon-btn{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;border:1px solid rgba(148,163,184,.18);background:rgba(255,255,255,.025);font:inherit;font-size:17px;font-weight:900;cursor:pointer;transition:.15s ease}
@@ -79,7 +80,7 @@ function styles() {
     .eq-inativ-result{font-size:17px;font-weight:900}.eq-inativ-result.ok{color:#86efac}.eq-inativ-result.cancel{color:#fca5a5}.eq-inativ-result.muted{color:#64748b}
     .eq-person{display:flex;align-items:center;gap:10px;min-width:190px}.eq-avatar{width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border-radius:11px;background:rgba(34,197,94,.12);border:1px solid rgba(74,222,128,.22);color:#86efac;font-size:12px;font-weight:900}.eq-person small{display:block;color:var(--muted);margin-top:2px}.eq-sector{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.1);border:1px solid rgba(96,165,250,.2);color:#bfdbfe;font-size:12px;font-weight:800}.eq-structure-intro{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.eq-structure-intro h3{margin:0 0 5px}.eq-structure-intro p{margin:0}.eq-row-actions{display:flex;gap:6px;white-space:nowrap}.eq-row-actions .btn{padding:7px 10px}.eq-form-help{font-size:12px;color:var(--muted);margin-top:5px;display:block}
     .eq-duty-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.eq-duty-card{border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:18px;background:rgba(2,6,23,.28)}.eq-duty-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.eq-duty-head h4{margin:0;font-size:18px}.eq-duty-lock{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;padding:5px 8px;border-radius:999px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.22);color:#fcd34d}.eq-duty-lock.can{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.22);color:#86efac}.eq-duty-times{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}.eq-duty-times label{font-size:11px;color:var(--muted)}.eq-duty-times input{width:100%;box-sizing:border-box;margin-top:5px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}.eq-duty-editors{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.eq-duty-editor{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;background:#10101e;border:1px solid rgba(255,255,255,.08);font-size:12px}.eq-duty-editor button{border:0;background:transparent;color:#fca5a5;cursor:pointer;padding:0}.eq-duty-add{display:flex;gap:8px;margin-top:10px}.eq-duty-add select{flex:1;min-width:0;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}
-    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-grid-head{display:none}.eq-inativ-grid{border:0;background:transparent;overflow:visible}.eq-inativ-card{grid-template-columns:1fr 1fr 42px 42px;margin-bottom:8px;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(2,6,23,.28)}.eq-inativ-cell{border-right:0}.eq-inativ-name,.eq-inativ-reason{grid-column:1/-1}.eq-inativ-cell::before{content:attr(data-label);display:block;margin-bottom:3px;color:#71877c;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.eq-inativ-action::before{display:none}}
+    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-grid-head{display:none}.eq-inativ-grid{border:0;background:transparent;box-shadow:none;overflow:visible}.eq-inativ-card,.eq-inativ-card:nth-child(odd){grid-template-columns:1fr 1fr 42px 42px;margin-bottom:8px;border:1px solid rgba(52,211,153,.16);border-radius:12px;background:#041b13}.eq-inativ-cell{border-right:0}.eq-inativ-name,.eq-inativ-reason{grid-column:1/-1}.eq-inativ-cell::before{content:attr(data-label);display:block;margin-bottom:3px;color:#71877c;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.eq-inativ-action::before{display:none}}
     @media(max-width:760px){.eq-grid{grid-template-columns:1fr}.eq-full{grid-column:auto}.eq-structure-intro{grid-template-columns:1fr}.eq-structure-intro .btn{width:100%}.eq-duty-times{grid-template-columns:repeat(2,1fr)}}
     ${filtrosStyle()}
   </style>`;
@@ -539,16 +540,35 @@ async function loadInativacoes() {
 }
 
 function renderInativacoesList(area) {
-  const pendentes = state.inativacoes.filter((r) => r.status === 'PENDENTE');
-  const processadas = state.inativacoes.filter((r) => r.status !== 'PENDENTE').slice(0, 20);
-  const gridHead = `<div class="eq-inativ-grid-head"><span>Colaborador</span><span>Tipo</span><span>Supervisão</span><span>Motivo</span><span title="Processar">✓</span><span title="Cancelar">×</span></div>`;
+  function tipoInativacao(r) {
+    const raw = state.tiposContratoInativacoes.get(String(r.colaborador_id || '').replace(/\D/g, '')) || '';
+    const norm = String(raw).toUpperCase();
+    return norm.includes('INTERMITENTE') ? 'Intermitente' : norm.includes('DIARISTA') ? 'Diarista' : norm.includes('EFETIVO') ? 'Efetivo' : 'Não informado';
+  }
+
+  function supervisaoInativacao(r) { return r.supervisao || r.coordenacao || 'Não informada'; }
+
+  function ordenarInativacoes(rows) {
+    const { key, dir } = state.inativacoesSort;
+    if (!key) return rows;
+    const value = (r) => key === 'nome' ? r.nome_colaborador : key === 'tipo' ? tipoInativacao(r) : key === 'supervisao' ? supervisaoInativacao(r) : r.motivo;
+    return [...rows].sort((a, b) => String(value(a) || '').localeCompare(String(value(b) || ''), 'pt-BR', { sensitivity: 'base', numeric: true }) * (dir === 'asc' ? 1 : -1));
+  }
+
+  const pendentes = ordenarInativacoes(state.inativacoes.filter((r) => r.status === 'PENDENTE'));
+  const processadas = ordenarInativacoes(state.inativacoes.filter((r) => r.status !== 'PENDENTE').slice(0, 20));
+  const sortHead = (key, label) => {
+    const active = state.inativacoesSort.key === key;
+    const icon = active ? (state.inativacoesSort.dir === 'asc' ? '↑' : '↓') : '↕';
+    const ariaSort = active ? (state.inativacoesSort.dir === 'asc' ? 'ascending' : 'descending') : 'none';
+    return `<button class="eq-inativ-sort${active ? ' active' : ''}" data-inativ-sort="${key}" type="button" role="columnheader" aria-sort="${ariaSort}"><span>${label}</span><span class="eq-inativ-sort-icon" aria-hidden="true">${icon}</span></button>`;
+  };
+  const gridHead = `<div class="eq-inativ-grid-head">${sortHead('nome', 'Colaborador')}${sortHead('tipo', 'Tipo')}${sortHead('supervisao', 'Supervisão')}${sortHead('motivo', 'Motivo')}<span title="Processar">✓</span><span title="Cancelar">×</span></div>`;
 
   function cardHtml(r) {
     const isPendente = r.status === 'PENDENTE';
-    const tipoRaw = state.tiposContratoInativacoes.get(String(r.colaborador_id || '').replace(/\D/g, '')) || '';
-    const tipoNorm = String(tipoRaw).toUpperCase();
-    const tipo = tipoNorm.includes('INTERMITENTE') ? 'Intermitente' : tipoNorm.includes('DIARISTA') ? 'Diarista' : tipoNorm.includes('EFETIVO') ? 'Efetivo' : 'Não informado';
-    const supervisao = r.supervisao || r.coordenacao || 'Não informada';
+    const tipo = tipoInativacao(r);
+    const supervisao = supervisaoInativacao(r);
     return `<div class="eq-inativ-card">
       <div class="eq-inativ-cell eq-inativ-name" data-label="Colaborador" title="${esc(r.nome_colaborador)}">${esc(r.nome_colaborador)}</div>
       <div class="eq-inativ-cell eq-inativ-type" data-label="Tipo">${esc(tipo)}</div>
@@ -565,6 +585,14 @@ function renderInativacoesList(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Inativações solicitadas</h3><p class="muted">Pedidos de inativação feitos pelo gestor na Programação (Etapa "Sem O.S."). O clique do gestor não desliga ninguém — processe aqui e realize a inativação no cadastro/GRM.</p></div></div>
   <div class="mt-16">${pendentes.length ? `<div class="eq-inativ-grid">${gridHead}${pendentes.map(cardHtml).join('')}</div>` : '<p class="eq-empty">Nenhuma solicitação pendente.</p>'}</div>
   ${processadas.length ? `<div class="section-head mt-16"><div><h3>Histórico recente</h3></div></div><div class="mt-16 eq-inativ-grid">${gridHead}${processadas.map(cardHtml).join('')}</div>` : ''}`;
+
+  area.querySelectorAll('[data-inativ-sort]').forEach((button) => button.onclick = () => {
+    const key = button.dataset.inativSort;
+    state.inativacoesSort = state.inativacoesSort.key === key
+      ? { key, dir: state.inativacoesSort.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'asc' };
+    renderInativacoesList(area);
+  });
 
   area.querySelectorAll('[data-processar]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.processar;
