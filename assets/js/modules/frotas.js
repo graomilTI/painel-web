@@ -1051,7 +1051,19 @@
     }
     const { data, error } = await supabase.functions.invoke(name, { body });
     if (error) {
-      const msg = error.context?.error || error.context?.message || error.message || `Falha na function ${name}`;
+      let detail = '';
+      const context = error.context;
+      if (context && typeof context.clone === 'function') {
+        try {
+          const payload = await context.clone().json();
+          detail = payload?.error || payload?.message || '';
+        } catch {
+          try { detail = await context.clone().text(); } catch { detail = ''; }
+        }
+      } else {
+        detail = context?.error || context?.message || '';
+      }
+      const msg = detail || error.message || `Falha na function ${name}`;
       throw new Error(msg);
     }
     if (data?.error) throw new Error(data.error);
