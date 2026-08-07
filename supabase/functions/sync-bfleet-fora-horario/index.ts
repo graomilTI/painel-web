@@ -184,7 +184,11 @@ function rowsFromArrayMatrix(rows: any[], columns: any): any[] {
   if (!headers.length) return [];
   return rows.map((arr: any[]) => {
     const obj: Record<string, string> = {};
-    headers.forEach((h, idx) => obj[h] = stripHtml(arr[idx] ?? ""));
+    headers.forEach((h, idx) => {
+      const cell = arr[idx] ?? "";
+      const key = normalizeKey(h);
+      obj[h] = key.startsWith("VER_MAPA") ? (extractLinkFromHtml(cell) || stripHtml(cell)) : stripHtml(cell);
+    });
     return obj;
   });
 }
@@ -689,6 +693,11 @@ function mapReportRow(row: any, arquivoNome = "BFleet API") {
   return mapped;
 }
 
+function isBrasiliaOutsideHours(row: any) {
+  const time = parseTimeText(row?.hora_evento);
+  return Boolean(time && time >= "00:00:00" && time < "05:00:00");
+}
+
 async function loadVehicleMap(supabase: any, placas: string[]) {
   const desired = new Set((placas || []).map((p) => onlyPlate(p)).filter(Boolean));
   const map = new Map<string, any>();
@@ -768,7 +777,8 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     }
   }
 
-  const mapped = report.rows.map((r: any) => mapReportRow(r, `BFleet · relatório ${cfg.reportId}`)).filter(Boolean) as any[];
+  const mappedAll = report.rows.map((r: any) => mapReportRow(r, `BFleet · relatório ${cfg.reportId}`)).filter(Boolean) as any[];
+  const mapped = mappedAll.filter(isBrasiliaOutsideHours);
 
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
@@ -799,17 +809,32 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     insertedOrUpdated += batch.length;
   }
 
+  const importedDates = Array.from(new Set(mappedAll.map((r) => r.data_evento).filter(Boolean)));
+  if (importedDates.length) {
+    const { error: cleanupError } = await supabase
+      .from("frotas_fora_horario")
+      .delete()
+      .eq("origem", "bfleet_api")
+      .in("data_evento", importedDates)
+      .or("hora_evento.is.null,hora_evento.gte.05:00:00");
+    if (cleanupError) throw new Error(cleanupError.message || "Falha ao remover registros fora da janela de 00h às 05h.");
+  }
+
   return {
     ok: true,
     endpoint: report.endpoint,
     periodo_inicio: cfg.dataInicial || cfg.rangeTimeVal || "yesterday",
     periodo_fim: cfg.dataFinal || cfg.rangeTimeVal || "yesterday",
     total: mapped.length,
+    total_origem: mappedAll.length,
+    descartados_fora_da_janela: mappedAll.length - mapped.length,
+    janela_horario_brasilia: "00:00:00-04:59:59",
     upserted: insertedOrUpdated,
     inserted: insertedOrUpdated,
     updated: 0,
     identificados: cruzados.filter((r) => r.patrimonio_funcionario).length,
     pendentes: cruzados.filter((r) => !r.patrimonio_funcionario).length,
+    mapas_validos: cruzados.filter((r) => /^https?:\/\//i.test(asString(r.mapa_url))).length,
     placas: placas.length,
     web_fallback_error: webError || null,
   };
