@@ -6,7 +6,8 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, badge, kpis, toast, confirmar, loadingState, emptyState, errorState, esc,
+  pageHeader, table, pagination, tabs, badge, kpis, toast, confirmar,
+  loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
 import {
   supabase, listar, inserir, atualizar, mensagemDeErro,
@@ -53,11 +54,27 @@ const STATUS_LABEL = {
   CANCELADO: 'Cancelado',
 };
 
+const JANELA_STATUS = {
+  pendente: ['NOVO', 'VALIDADO', 'DRY_RUN_OK', 'AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO'],
+  processando: ['PROCESSANDO'],
+  erro: ['ERRO'],
+  concluido: ['LANCADO', 'CANCELADO', 'DUPLICADO'],
+};
+
+const JANELAS = [
+  { id: 'pendente', label: 'Pendente' },
+  { id: 'processando', label: 'Processando' },
+  { id: 'erro', label: 'Erro' },
+  { id: 'concluido', label: 'Concluído' },
+];
+
 let raiz = null;
 let bootId = 0;
 let enviando = false;
 let disparando = false;
 let resumo = { pendentes: 0, erros: 0, lancados: 0, jobAtivo: null };
+let contagens = { pendente: 0, processando: 0, erro: 0, concluido: 0 };
+let tabelaEstado = { janela: 'pendente', pagina: 1, porPagina: 25 };
 
 function safeFileName(name) {
   return String(name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
@@ -157,27 +174,48 @@ async function cancelarLancamento(id, nomeArquivo) {
       updated_at: new Date().toISOString(),
     });
     toast('Envio cancelado.', 'ok');
-    await carregarTabela();
     await carregarResumo();
-    if (raiz) renderResumo();
+    if (raiz) { renderResumo(); renderJanelas(); }
+    await carregarTabela();
   } catch (error) {
     toast(mensagemDeErro(error, TABELA), 'danger', 6000);
   }
 }
 
+function renderJanelas() {
+  const alvo = raiz?.querySelector('#unfJanelas');
+  if (!alvo) return;
+  alvo.innerHTML = tabs({
+    itens: JANELAS.map((j) => ({ ...j, badge: contagens[j.id] })),
+    ativo: tabelaEstado.janela,
+    attr: 'data-unf-janela',
+  });
+  alvo.querySelectorAll('[data-unf-janela]').forEach((b) => {
+    b.addEventListener('click', () => {
+      if (b.dataset.unfJanela === tabelaEstado.janela) return;
+      tabelaEstado = { ...tabelaEstado, janela: b.dataset.unfJanela, pagina: 1 };
+      renderJanelas();
+      carregarTabela();
+    });
+  });
+}
+
 async function carregarTabela() {
   const alvo = raiz?.querySelector('#unfTabela');
   if (!alvo) return;
-  alvo.innerHTML = loadingState('Carregando envios recentes...');
+  alvo.innerHTML = loadingState('Carregando envios...');
   try {
-    const { rows } = await listar(TABELA, {
+    const statusDaJanela = JANELA_STATUS[tabelaEstado.janela] || [];
+    const { rows, total } = await listar(TABELA, {
       select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json',
+      filtros: [{ coluna: 'status', valor: statusDaJanela, op: 'in' }],
       ordenar: [{ coluna: 'created_at', asc: false }],
-      porPagina: 100,
+      pagina: tabelaEstado.pagina,
+      porPagina: tabelaEstado.porPagina,
     });
     if (!raiz) return;
     alvo.innerHTML = rows.length
-      ? table({
+      ? `${table({
         colunas: [
           { id: 'arquivo', label: 'Arquivo' },
           { id: 'documento', label: 'Documento reconhecido' },
@@ -188,10 +226,18 @@ async function carregarTabela() {
           { id: 'acoes', label: '' },
         ],
         linhasHtml: renderLinhas(rows),
-      })
-      : emptyState('Nenhum documento enviado ainda.');
+      })}${pagination({ pagina: tabelaEstado.pagina, porPagina: tabelaEstado.porPagina, total, attr: 'data-unf-pagina' })}`
+      : emptyState('Nenhum documento nessa janela.');
     alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
       btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
+    });
+    alvo.querySelectorAll('[data-unf-pagina]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const pagina = Number(btn.dataset.unfPagina);
+        if (!Number.isFinite(pagina) || pagina < 1) return;
+        tabelaEstado = { ...tabelaEstado, pagina };
+        carregarTabela();
+      });
     });
   } catch (error) {
     if (!raiz) return;
@@ -201,7 +247,10 @@ async function carregarTabela() {
 }
 
 async function carregarResumo() {
-  const [{ total: pendentes }, { total: erros }, { total: lancados }, { rows: jobsAtivos }] = await Promise.all([
+  const [
+    { total: pendentes }, { total: erros }, { total: lancados }, { rows: jobsAtivos },
+    { total: cPendente }, { total: cProcessando }, { total: cConcluido },
+  ] = await Promise.all([
     listar(TABELA, { filtros: [{ coluna: 'status', valor: 'NOVO' }], porPagina: 1, head: true }),
     listar(TABELA, { filtros: [{ coluna: 'status', valor: 'ERRO' }], porPagina: 1, head: true }),
     listar(TABELA, { filtros: [{ coluna: 'status', valor: 'LANCADO' }], porPagina: 1, head: true }),
@@ -211,8 +260,14 @@ async function carregarResumo() {
       ordenar: [{ coluna: 'created_at', asc: false }],
       porPagina: 1,
     }).catch(() => ({ rows: [] })),
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: JANELA_STATUS.pendente, op: 'in' }], porPagina: 1, head: true }),
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: JANELA_STATUS.processando, op: 'in' }], porPagina: 1, head: true }),
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: JANELA_STATUS.concluido, op: 'in' }], porPagina: 1, head: true }),
   ]);
   resumo = { pendentes, erros, lancados, jobAtivo: jobsAtivos?.[0] || null };
+  contagens = {
+    pendente: cPendente, processando: cProcessando, erro: erros, concluido: cConcluido,
+  };
 }
 
 function renderResumo() {
@@ -303,13 +358,15 @@ function render() {
       <article class="ds-card" style="display:grid;gap:14px" id="unfResumo"></article>
 
       <article class="ds-card" style="display:grid;gap:14px">
-        <h3 style="margin:0">Envios recentes</h3>
+        <h3 style="margin:0">Envios</h3>
+        <div id="unfJanelas"></div>
         <div id="unfTabela"></div>
       </article>
     </section>`;
 
   raiz.querySelector('#unfEnviar').addEventListener('click', aoEnviar);
   renderResumo();
+  renderJanelas();
 }
 
 async function aoEnviar() {
@@ -349,9 +406,11 @@ async function aoEnviar() {
   if (botao) { botao.disabled = false; botao.textContent = 'Enviar'; }
   if (input) input.value = '';
   if (!falhas || sucesso) {
-    await carregarTabela();
     await carregarResumo();
-    if (raiz) renderResumo();
+    if (!raiz) return;
+    renderResumo();
+    renderJanelas();
+    await carregarTabela();
   }
 }
 
@@ -363,6 +422,7 @@ export async function renderContent(content) {
   await Promise.all([carregarTabela(), carregarResumo()]);
   if (meuBoot !== bootId) return;
   renderResumo();
+  renderJanelas();
 }
 
 initProtectedPage('Enviar Notas Fiscais e Holerites', renderContent);
