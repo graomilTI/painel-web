@@ -21,6 +21,12 @@ verify_jwt = false
 [functions.bfleet-posicoes]
 verify_jwt = false
 
+[functions.sync-bfleet-excesso-velocidade]
+verify_jwt = true
+
+[functions.sync-bfleet-fora-horario]
+verify_jwt = true
+
 [functions.frotas-roteirizar]
 verify_jwt = true
 
