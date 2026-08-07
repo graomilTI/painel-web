@@ -4,7 +4,7 @@ import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.
 import { installPrintDriverValidation } from './frotas-validacao-condutor-print.js?v=20260615a';
 import { installPreviousWeekDefaults } from './frotas-periodo-semana-anterior.js?v=20260615d';
 import { installIntuitiveFleetLayout } from './frotas-layout-intuitivo.js?v=20260804b';
-import './modules/frotas.js';
+import './modules/frotas.js?v=20260807a';
 
 function installFleetHeaderCleanup(root = document) {
   if (root.getElementById('frotasHeaderCleanupStyles')) return;
