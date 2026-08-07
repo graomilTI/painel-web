@@ -1279,8 +1279,9 @@
       const placa = escapeHtml(onlyPlate(row.placa) || '-');
       const motorista = escapeHtml(row.patrimonio_funcionario || row.motorista_planilha || 'Não identificado');
       const horario = escapeHtml(`${row.data_evento ? formatDateBR(row.data_evento) : ''} ${row.hora_evento || ''}`.trim() || '-');
-      const rota = row.mapa_url
-        ? `<a href="${escapeHtml(row.mapa_url)}" target="_blank" rel="noopener noreferrer">Ver rota</a>`
+      const mapaUrl = String(row.mapa_url || '').trim();
+      const rota = /^https?:\/\//i.test(mapaUrl)
+        ? `<a href="${escapeHtml(mapaUrl)}" target="_blank" rel="noopener noreferrer">Ver rota</a>`
         : '<span style="color:#6b7280">Sem link</span>';
       return `<tr><td>${placa}</td><td>${motorista}</td><td>${horario}</td><td>${rota}</td></tr>`;
     }).join('');
