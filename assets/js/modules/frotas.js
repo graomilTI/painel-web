@@ -1064,7 +1064,10 @@
         detail = context?.error || context?.message || '';
       }
       const msg = detail || error.message || `Falha na function ${name}`;
-      throw new Error(msg);
+      if (/connection refused|failed to send a request|failed to fetch|connecterror/i.test(msg)) {
+        throw new Error('A BFleet está temporariamente indisponível. Aguarde alguns instantes e tente sincronizar novamente.');
+      }
+      throw new Error(msg.length > 360 ? `${msg.slice(0, 357)}...` : msg);
     }
     if (data?.error) throw new Error(data.error);
     return data || {};
@@ -1209,7 +1212,7 @@
       const total = Number(res?.total || res?.total_registros || res?.linhas || inserted + updated || 0);
       const errors = Number(res?.errors || res?.erros || 0);
       toast(`BFleet sincronizado: ${total || 'N'} registro(s) lido(s), ${inserted} novo(s), ${updated} atualizado(s)${errors ? ` · ${errors} erro(s)` : ''}.`, errors ? 'error' : 'success');
-      await fetchForaHorario(root, opts);
+      await fetchForaHorario(root, opts, isPeriod ? readForaHorarioReportPeriod(root) : null);
     } catch (err) {
       console.error('[FROTAS] Sync BFleet fora do horário:', err);
       toast(err.message || 'Falha ao sincronizar relatório Fora do horário da BFleet.', 'error');
@@ -1221,7 +1224,7 @@
     }
   }
 
-  async function fetchForaHorario(root, opts = {}) {
+  async function fetchForaHorario(root, opts = {}, periodOverride = null) {
     const supabase = resolveSupabase(opts);
     if (!supabase || typeof supabase.from !== 'function') {
       state.foraHorarioLoaded = true;
@@ -1232,9 +1235,13 @@
     try {
       state.foraHorarioLoaded = false;
       renderForaHorarioList(root);
-      const { data, error } = await supabase
+      const period = periodOverride || readForaHorarioReportPeriod(root);
+      let query = supabase
         .from('frotas_fora_horario')
-        .select('id,data_evento,hora_evento,placa,motorista_planilha,patrimonio_funcionario,endereco,mapa_url,created_at')
+        .select('id,data_evento,hora_evento,placa,motorista_planilha,patrimonio_funcionario,endereco,mapa_url,created_at');
+      if (period.start) query = query.gte('data_evento', period.start);
+      if (period.end) query = query.lte('data_evento', period.end);
+      const { data, error } = await query
         .order('data_evento', { ascending: false })
         .order('hora_evento', { ascending: false })
         .limit(500);
