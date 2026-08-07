@@ -2450,27 +2450,32 @@
               </div>
             </div>
             <div data-notif-panel="fora_horario" hidden>
-              <div class="speed-grid">
-                <div class="speed-panel">
-                  <div class="speed-step-title"><h3>Fora do horário</h3><span class="speed-step-pill">relatório BFleet · ID 85075</span></div>
-                  <div class="speed-import-card">
-                    <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-fora-horario>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-icon-btn" type="button" data-refresh-fora-horario title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button></div></div>
-                    <p class="speed-hint" data-fora-horario-count>Nenhum registro carregado</p>
-                    <div class="print-status-box">
-                      <strong>Sincronizar relatório da BFleet</strong>
-                      <p>Relatório <strong>Fora do horário</strong> (ID 85075). Use <strong>Sincronizar ontem</strong> para o padrão diário. Para ajustar manualmente a data que vem da API, informe o período abaixo.</p>
-                      <div class="speed-sync-range">
-                        <div class="speed-field"><label>Data inicial do relatório</label><input class="speed-input" type="date" data-fora-horario-report-start value="${yesterdayInputDate()}"></div>
-                        <div class="speed-field"><label>Data final do relatório</label><input class="speed-input" type="date" data-fora-horario-report-end value="${yesterdayInputDate()}"></div>
-                      </div>
-                      <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-sync-bfleet-fora-horario-periodo>Sincronizar período</button>
-                    </div>
-                    <div class="speed-import-search">
-                      <div class="speed-search-field">${ICO_SEARCH}<input class="speed-input" type="text" placeholder="Buscar motorista ou placa" data-fora-horario-search></div>
-                    </div>
-                    <div class="hist-table-wrap"><table class="hist-table"><thead><tr><th>Placa</th><th>Motorista</th><th>Horário</th><th>Rota visual</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="4" class="speed-import-empty">Carregando registros...</td></tr></tbody></table></div>
-                  </div>
+              <style>
+                .fora-horario-layout{display:grid;gap:20px;width:100%}
+                .fora-horario-toolbar{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;padding:0 0 18px;border-bottom:1px solid rgba(148,163,184,.14)}
+                .fora-horario-date{width:205px;margin:0}
+                .fora-horario-date label{min-height:30px;color:#dbeafe;line-height:1.35}
+                .fora-horario-date .speed-input{height:64px;border-radius:18px;font-size:16px;font-weight:900;padding:0 16px}
+                .fora-horario-sync{height:64px;min-width:248px;border-radius:0;padding:0 28px}
+                .fora-horario-refresh{width:64px;height:64px;min-height:64px;border-radius:18px;padding:0}
+                .fora-horario-table{border-color:rgba(34,197,94,.20);border-radius:20px;background:rgba(2,6,23,.30)}
+                .fora-horario-table .hist-table{min-width:720px}
+                .fora-horario-table .hist-table th{height:58px;padding:0 18px;color:#34d399;background:rgba(2,44,30,.76);font-size:12px}
+                .fora-horario-table .hist-table td{padding:18px;color:#f8fafc;font-size:13px}
+                .fora-horario-table .speed-import-empty{border:0;border-radius:0;background:transparent;color:#f8fafc}
+                .fora-horario-count{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+                @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}
+                @media(max-width:520px){.fora-horario-toolbar{grid-template-columns:1fr 54px}.fora-horario-date{grid-column:1}.fora-horario-sync{grid-column:1}.fora-horario-refresh{grid-column:2;grid-row:1/4;width:54px}.fora-horario-date .speed-input{font-size:14px}}
+              </style>
+              <div class="fora-horario-layout">
+                <div class="fora-horario-toolbar">
+                  <div class="speed-field fora-horario-date"><label>Data inicial do<br>relatório</label><input class="speed-input" type="date" data-fora-horario-report-start value="${yesterdayInputDate()}"></div>
+                  <div class="speed-field fora-horario-date"><label>Data final do<br>relatório</label><input class="speed-input" type="date" data-fora-horario-report-end value="${yesterdayInputDate()}"></div>
+                  <button class="speed-btn speed-btn-soft fora-horario-sync" type="button" data-sync-bfleet-fora-horario-periodo>Sincronizar período</button>
+                  <button class="speed-btn speed-btn-soft fora-horario-refresh" type="button" data-refresh-fora-horario title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button>
                 </div>
+                <p class="fora-horario-count" data-fora-horario-count>Nenhum registro carregado</p>
+                <div class="hist-table-wrap fora-horario-table"><table class="hist-table"><thead><tr><th>Placa</th><th>Motorista</th><th>Horário</th><th>Rota visual</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="4" class="speed-import-empty">Carregando registros...</td></tr></tbody></table></div>
               </div>
             </div>
           </div>
