@@ -6,7 +6,7 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, pagination, tabs, badge, kpis, toast, confirmar,
+  pageHeader, table, pagination, tabs, badge, toast, confirmar,
   loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
 import {
@@ -271,27 +271,15 @@ async function carregarResumo() {
 }
 
 function renderResumo() {
-  const alvo = raiz?.querySelector('#unfResumo');
-  if (!alvo) return;
+  const botao = raiz?.querySelector('#unfProcessar');
+  if (!botao) return;
   const emAndamento = Boolean(resumo.jobAtivo);
-  alvo.innerHTML = `
-    ${kpis([
-      { label: 'Pendentes de lançamento', valor: String(resumo.pendentes) },
-      { label: 'Com erro', valor: String(resumo.erros) },
-      { label: 'Lançados no GRM', valor: String(resumo.lancados) },
-    ])}
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <button class="ds-btn ds-btn-primary" id="unfProcessar" type="button" ${resumo.pendentes === 0 ? 'disabled' : ''}>
-        ${emAndamento ? 'Processamento em andamento…' : 'Processar pendentes agora'}
-      </button>
-      <small style="opacity:.72">
-        ${emAndamento
+  botao.disabled = resumo.pendentes === 0;
+  botao.textContent = emAndamento ? 'Processando…' : `Processamento (${resumo.pendentes})`;
+  botao.title = emAndamento
     ? 'O agente já está rodando ou na fila — aguarde terminar antes de disparar de novo.'
-    : 'Lança até 5 notas/holerites pendentes de verdade no GRM (não é teste). Roda em alguns minutos.'}
-      </small>
-    </div>`;
-  const botao = alvo.querySelector('#unfProcessar');
-  if (botao) botao.addEventListener('click', dispararAgente);
+    : `Lança até 5 das ${resumo.pendentes} notas/holerites pendentes de verdade no GRM (não é teste).`;
+  botao.onclick = dispararAgente;
 }
 
 async function dispararAgente() {
@@ -337,25 +325,21 @@ function render() {
         subtitulo: 'Envie XML, PDF ou imagem. O agente reconhece automaticamente o tipo do documento e usa o fluxo correto no Contas a Pagar do GRM.',
       })}
 
-      <article class="ds-card" style="display:grid;gap:14px">
-        <div class="ds-field">
-          <label for="unfTipo">Setor auxiliar</label>
-          <select id="unfTipo">
+      <article class="ds-card" style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+        <div class="ds-field" style="min-width:200px">
+          <label for="unfTipo">Setor</label>
+          <select id="unfTipo" title="Para holerites, mantenha Reconhecimento automático. Para notas fiscais, o setor ajuda na classificação contábil.">
             ${SETORES.map((s) => `<option value="${esc(s.valor)}">${esc(s.label)}</option>`).join('')}
           </select>
-          <small style="opacity:.72">Para holerites, mantenha Reconhecimento automático. Para notas fiscais, o setor ajuda na classificação contábil.</small>
         </div>
-        <div class="ds-field">
-          <label for="unfArquivos">Arquivos (XML, PDF ou imagem)</label>
-          <input id="unfArquivos" type="file" multiple accept="${ACCEPT}">
-          <small style="opacity:.72">Holerite: envie um arquivo por funcionário. Duas vias do mesmo funcionário no mesmo PDF são aceitas.</small>
+        <div class="ds-field" style="flex:1;min-width:240px">
+          <label for="unfArquivos">Upload</label>
+          <input id="unfArquivos" type="file" multiple accept="${ACCEPT}"
+                 title="Holerite: envie um arquivo por funcionário. Duas vias do mesmo funcionário no mesmo PDF são aceitas.">
         </div>
-        <div>
-          <button class="ds-btn ds-btn-primary" id="unfEnviar" type="button">Enviar</button>
-        </div>
+        <button class="ds-btn ds-btn-primary" id="unfEnviar" type="button">Enviar</button>
+        <button class="ds-btn ds-btn-primary" id="unfProcessar" type="button">Processamento</button>
       </article>
-
-      <article class="ds-card" style="display:grid;gap:14px" id="unfResumo"></article>
 
       <article class="ds-card" style="display:grid;gap:14px">
         <h3 style="margin:0">Envios</h3>
