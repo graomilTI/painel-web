@@ -146,6 +146,11 @@ function acaoCancelar(row) {
   return `<button class="ds-btn-icon" data-unf-cancelar="${esc(row.id)}" data-unf-arquivo="${esc(row.arquivo_nome)}" type="button" title="Cancelar envio">✕</button>`;
 }
 
+function acaoRelancar(row) {
+  if (row.status !== 'ERRO') return '';
+  return `<button class="ds-btn-icon" data-unf-relancar="${esc(row.id)}" data-unf-arquivo="${esc(row.arquivo_nome)}" type="button" title="Relançar (volta pra fila)" style="border-color:rgba(63,168,120,.45);background:rgba(63,168,120,.12);color:#9fe6c0">↻</button>`;
+}
+
 function renderLinhas(linhas) {
   return linhas.map((r) => `
     <tr>
@@ -155,7 +160,7 @@ function renderLinhas(linhas) {
       <td>${esc(dataHora(r.created_at))}</td>
       <td>${badge(STATUS_LABEL[r.status] || r.status, STATUS_BADGE[r.status] || 'neutral')}</td>
       <td>${detalhesDocumento(r)}</td>
-      <td>${acaoCancelar(r)}</td>
+      <td style="display:flex;gap:6px">${acaoRelancar(r)}${acaoCancelar(r)}</td>
     </tr>`).join('');
 }
 
@@ -174,6 +179,29 @@ async function cancelarLancamento(id, nomeArquivo) {
       updated_at: new Date().toISOString(),
     });
     toast('Envio cancelado.', 'ok');
+    await carregarResumo();
+    if (raiz) { renderResumo(); renderJanelas(); }
+    await carregarTabela();
+  } catch (error) {
+    toast(mensagemDeErro(error, TABELA), 'danger', 6000);
+  }
+}
+
+async function relancarLancamento(id, nomeArquivo) {
+  const ok = await confirmar({
+    titulo: 'Relançar envio',
+    mensagem: `Voltar "${nomeArquivo}" pra fila? O agente tenta lançar de novo no próximo ciclo.`,
+    confirmarLabel: 'Relançar',
+    cancelarLabel: 'Voltar',
+  });
+  if (!ok) return;
+  try {
+    await atualizar(TABELA, [{ coluna: 'id', valor: id }], {
+      status: 'NOVO',
+      erro: null,
+      updated_at: new Date().toISOString(),
+    });
+    toast('Envio voltou pra fila.', 'ok');
     await carregarResumo();
     if (raiz) { renderResumo(); renderJanelas(); }
     await carregarTabela();
@@ -230,6 +258,9 @@ async function carregarTabela() {
       : emptyState('Nenhum documento nessa janela.');
     alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
       btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
+    });
+    alvo.querySelectorAll('[data-unf-relancar]').forEach((btn) => {
+      btn.addEventListener('click', () => relancarLancamento(btn.dataset.unfRelancar, btn.dataset.unfArquivo));
     });
     alvo.querySelectorAll('[data-unf-pagina]').forEach((btn) => {
       btn.addEventListener('click', () => {
