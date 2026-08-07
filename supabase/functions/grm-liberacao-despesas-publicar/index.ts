@@ -175,6 +175,7 @@ function ruleFromConfig(config: Record<string, unknown>, overrideValue?: number 
 
 function buildRulesForStaff(args: {
   staff: Record<string, unknown>;
+  contract?: Record<string, unknown> | null;
   linkKeys: string[];
   alimentacao: ReturnType<typeof indexSourceRows>;
   deslocamento: ReturnType<typeof indexSourceRows>;
@@ -183,7 +184,7 @@ function buildRulesForStaff(args: {
 }) {
   const pendingConfig: string[] = [];
   const rules: Record<string, unknown>[] = [];
-  const { staff, linkKeys, alimentacao, deslocamento, extras, configByKey } = args;
+  const { staff, contract, linkKeys, alimentacao, deslocamento, extras, configByKey } = args;
 
   const requireConfig = (
     key: string,
@@ -208,6 +209,24 @@ function buildRulesForStaff(args: {
     }
     rules.push(ruleFromConfig(config, value));
   };
+
+  // A despesa do vínculo é nativa do embarque e acompanha a associação do
+  // colaborador à O.S., independentemente das despesas escolhidas pelo gestor.
+  // O valor diário vem do cruzamento vigente do colaborador no GRM.
+  const contractType = norm(contract?.tipo_contrato ?? staff.tipo_contrato);
+  const contractValue = Number(contract?.salario ?? staff.salario ?? 0);
+  requireConfig(
+    'VINCULO_SALARIO_INTERMITENTE',
+    contractType === 'INTERMITENTE',
+    contractValue,
+    true,
+  );
+  requireConfig(
+    'VINCULO_SERVICOS_TERCEIRIZADOS',
+    contractType === 'DIARISTA',
+    contractValue,
+    true,
+  );
 
   const ali = sourceRowForStaff(alimentacao, staff, linkKeys);
   requireConfig('ALIMENTACAO_CAFE', ali?.cafe === true);
@@ -353,6 +372,19 @@ Deno.serve(async (req) => {
       if (cpf.length === 11) staffByCpf.set(cpf, staff);
       const name = norm(staff.nome);
       if (name) staffByName.set(name, [...(staffByName.get(name) || []), staff]);
+    }
+
+    const { data: contractRows, error: contractError } = await service
+      .from('colaborador_cruzamento')
+      .select('cpf,tipo_contrato,salario,atualizado_em')
+      .order('atualizado_em', { ascending: false })
+      .limit(20000);
+    if (contractError) throw contractError;
+    const contractByCpf = new Map<string, Record<string, unknown>>();
+    for (const contract of contractRows || []) {
+      const cpf = digits(contract.cpf);
+      // A ordenação decrescente garante que o primeiro registro seja o vigente.
+      if (cpf.length === 11 && !contractByCpf.has(cpf)) contractByCpf.set(cpf, contract);
     }
 
     // Uma programação futura já representa uma janela válida de despesas.
@@ -529,6 +561,7 @@ Deno.serve(async (req) => {
         if (currentCpfs.has(cpf)) {
           const built = buildRulesForStaff({
             staff,
+            contract: contractByCpf.get(cpf) || null,
             linkKeys: linkKeysByCpf.get(cpf) || [],
             alimentacao: aliIndex,
             deslocamento: desIndex,
