@@ -3,13 +3,13 @@ import {
   loadColaboradoresRegional,
   loadCruzamentoTipoContrato,
   tipoContratoLetra,
-} from './programacao-equipe.js?v=20260730-indisp-legado';
+} from './programacao-equipe.js?v=20260807-papel-os1';
 import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
 } from './programacao-despesas.js?v=20260730-indisp-legado';
-import { loadCustos } from './programacao-equipe.js?v=20260730-indisp-legado';
+import { loadCustos } from './programacao-equipe.js?v=20260807-papel-os1';
 
 function normalizeText(value) {
   return String(value ?? '')
@@ -380,12 +380,27 @@ async function montarTextoCompartilhar() {
   if (!roster.length) throw new Error('Nenhum colaborador confirmado nesta programação ainda.');
 
   const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
-  const [custos, osResumoPorId] = await Promise.all([
+  const [custos, osResumoPorId, vinculosRes] = await Promise.all([
     loadCustos(programacaoIdQuery),
     loadOsResumo(osIds),
+    supabase
+      .from('operacional_os_colaboradores')
+      .select('os_id,colaborador_key,colaborador_cpf,origem_sugestao')
+      .in('os_id', osIds),
   ]);
+  if (vinculosRes.error) throw vinculosRes.error;
 
-  const locais = new Map(); // "cidade|local" -> { cidade, local, nomes: [] }
+  const papelPorVinculo = new Map();
+  (vinculosRes.data || []).forEach((vinculo) => {
+    const colaborador = firstFilled(vinculo.colaborador_key, vinculo.colaborador_cpf);
+    if (!colaborador) return;
+    papelPorVinculo.set(
+      `${String(vinculo.os_id)}|${normalizeCpf(colaborador) || colaborador}`,
+      normalizeText(vinculo.origem_sugestao) === 'PROGRAMACAO FROTA LOGISTICA' ? 'LOGISTICA' : 'ATENDIMENTO',
+    );
+  });
+
+  const locais = new Map(); // "cliente|cidade|local" -> { cliente, cidade, local, nomes: [] }
   const motoristasPorPlaca = new Map(); // placa -> nome
   const caronasPorPlaca = new Map(); // placa -> [nome]
 
@@ -394,28 +409,35 @@ async function montarTextoCompartilhar() {
     const tipoDesl = normalizeText(des.tipo_deslocamento || '');
     const placa = String(des.placa_veiculo || '').trim().toUpperCase();
 
-    if (tipoDesl === 'MOTORISTA FROTA') {
+    const osAtendidas = [...row.osIds].filter((osId) => {
+      const key = `${String(osId)}|${normalizeCpf(row.colaboradorId) || row.colaboradorId}`;
+      return papelPorVinculo.get(key) !== 'LOGISTICA';
+    });
+    const somenteLogistica = row.osIds.size > 0 && osAtendidas.length === 0;
+
+    if (somenteLogistica) {
       if (placa) motoristasPorPlaca.set(placa, row.nome);
-      continue; // motorista de frota não atende O.S., não entra em "Colaboradores".
+      continue;
     }
     if (tipoDesl === 'CARONA FROTA' && placa) {
       caronasPorPlaca.set(placa, [...(caronasPorPlaca.get(placa) || []), row.nome]);
     }
 
-    for (const osId of row.osIds) {
+    for (const osId of osAtendidas) {
       const os = osResumoPorId.get(String(osId));
       if (!os) continue;
       const { cidade, local } = parseEmbarqueDetalhes(os.embarque);
-      const key = `${cidade}|${local}`;
-      const grupo = locais.get(key) || { cidade, local, nomes: [] };
+      const cliente = String(os.cliente || '').trim();
+      const key = `${cliente}|${cidade}|${local}`;
+      const grupo = locais.get(key) || { cliente, cidade, local, nomes: [] };
       if (!grupo.nomes.includes(row.nome)) grupo.nomes.push(row.nome);
       locais.set(key, grupo);
     }
   }
 
-  const blocosLocal = [...locais.values()].map(({ cidade, local, nomes }) => {
+  const blocosLocal = [...locais.values()].map(({ cliente, cidade, local, nomes }) => {
     const rotulo = [local, cidade].filter(Boolean).join(' - ') || '-';
-    return `Local: ${rotulo}\nColaboradores:\n${nomes.length ? nomes.join('\n') : '-'}`;
+    return `Cliente: ${cliente || '-'}\nLocal: ${rotulo}\nColaboradores:\n${nomes.length ? nomes.join('\n') : '-'}`;
   });
 
   const placas = new Set([...motoristasPorPlaca.keys(), ...caronasPorPlaca.keys()]);
