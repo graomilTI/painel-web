@@ -1101,9 +1101,14 @@ async function loadDespesas() {
     if (grmError) {
       console.warn('[Conferência] status de sincronização GRM indisponível:', grmError.message);
     } else {
-      const grmMap = new Map((grmStatus || []).map((r) => [r.colaborador_id, r]));
+      const grmMap = new Map((grmStatus || []).map((r) => [
+        `${r.colaborador_id}|${String(r.data_referencia || '').slice(0, 10)}`,
+        r,
+      ]));
       for (const row of rows.values()) {
-        const grm = grmMap.get(row.colaborador_id);
+        const grm = grmMap.get(
+          `${row.colaborador_id}|${String(row.data_referencia || '').slice(0, 10)}`,
+        );
         row.grm_status_aplicacao = grm?.status_aplicacao || null;
         row.grm_aplicado_em = grm?.aplicado_em || null;
         row.grm_houve_alteracao = typeof grm?.houve_alteracao === 'boolean' ? grm.houve_alteracao : null;
