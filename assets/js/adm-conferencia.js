@@ -192,6 +192,9 @@ function isExtraOutrosNaoMapeado(item) {
   const tipo = normalizeText(item?.tipo_despesa || '');
   if (!['OUTRO', 'OUTROS'].includes(tipo)) return false;
   const descricao = normalizeText(`${item?.descricao || item?.extras_descricao || item?.detalhamento || ''} ${item?.observacao || item?.observacoes || ''}`);
+  // O botão Adicionar cria primeiro um rascunho vazio. Se o gestor não o
+  // preencher, ele não representa uma despesa e não deve virar pendência.
+  if (!descricao && asNumber(item?.valor) <= 0) return false;
   return !descricao.includes('COMBUSTIVEL');
 }
 
