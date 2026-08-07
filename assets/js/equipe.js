@@ -31,7 +31,7 @@ const STATUS_ADMISSAO = {
 
 const STATUS_INTEGRACAO = { em_andamento: { label: 'Em andamento' }, concluida: { label: 'Concluída' } };
 
-const state = { tab: 'gestores', admissoes: [], integracoes: [], inativacoes: [], gestores: [], administracao: [], usuarios: [], plantaoConfig: [], plantaoEditores: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
+const state = { tab: 'gestores', admissoes: [], integracoes: [], inativacoes: [], tiposContratoInativacoes: new Map(), gestores: [], administracao: [], usuarios: [], plantaoConfig: [], plantaoEditores: [], inativacoesPendentesCount: 0, ctx: null, filtros: null };
 
 function statusPill(status, map) {
   const label = map?.[status]?.label || status || '-';
@@ -65,20 +65,21 @@ function styles() {
     .eq-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900}
     .eq-doc-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px}
     .eq-doc-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .eq-inativ-card{display:grid;grid-template-columns:minmax(250px,1.25fr) minmax(150px,.65fr) minmax(190px,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid rgba(248,113,113,.22);background:rgba(2,6,23,.28);border-radius:14px;padding:10px 12px;margin-bottom:8px;min-width:0}
-    .eq-inativ-card:not(.is-pendente){grid-template-columns:minmax(250px,1.25fr) minmax(160px,.8fr) minmax(180px,1fr) auto auto}
-    .eq-inativ-person,.eq-inativ-copy{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .eq-inativ-person b{font-size:13px}.eq-inativ-person .muted{font-size:12px}
-    .eq-inativ-motivo{margin:0;color:#e2e2f0;font-size:13px;line-height:1.35}
-    .eq-inativ-motivo b{color:#86efac}
+    .eq-inativ-card{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid rgba(248,113,113,.22);background:rgba(2,6,23,.28);border-radius:14px;padding:10px 12px;margin-bottom:8px;min-width:0}
+    .eq-inativ-info{display:grid;gap:7px;min-width:0}
+    .eq-inativ-line{display:flex;align-items:center;gap:7px;min-width:0;font-size:12.5px;white-space:nowrap}
+    .eq-inativ-line strong{color:#f8fafc;font-size:13px;overflow:hidden;text-overflow:ellipsis}
+    .eq-inativ-line b{color:#86efac}.eq-inativ-sep{color:#3f6657;font-weight:900}
+    .eq-inativ-regional,.eq-inativ-contract,.eq-inativ-reason,.eq-inativ-history-obs{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .eq-inativ-reason{color:#e2e8f0}.eq-inativ-contract{color:#cbd5e1}
     .eq-inativ-status{display:flex;align-items:center;justify-content:center;white-space:nowrap}
     .eq-inativ-processed{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .eq-inativ-obs{width:100%;min-width:0;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;font-size:12.5px}
+    .eq-inativ-obs{flex:1;width:auto;min-width:150px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:9px;padding:7px 9px;font-size:12px}
     .eq-inativ-card>.btn{height:36px;padding:0 13px;white-space:nowrap}
     .eq-person{display:flex;align-items:center;gap:10px;min-width:190px}.eq-avatar{width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border-radius:11px;background:rgba(34,197,94,.12);border:1px solid rgba(74,222,128,.22);color:#86efac;font-size:12px;font-weight:900}.eq-person small{display:block;color:var(--muted);margin-top:2px}.eq-sector{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.1);border:1px solid rgba(96,165,250,.2);color:#bfdbfe;font-size:12px;font-weight:800}.eq-structure-intro{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.eq-structure-intro h3{margin:0 0 5px}.eq-structure-intro p{margin:0}.eq-row-actions{display:flex;gap:6px;white-space:nowrap}.eq-row-actions .btn{padding:7px 10px}.eq-form-help{font-size:12px;color:var(--muted);margin-top:5px;display:block}
     .eq-duty-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.eq-duty-card{border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:18px;background:rgba(2,6,23,.28)}.eq-duty-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.eq-duty-head h4{margin:0;font-size:18px}.eq-duty-lock{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;padding:5px 8px;border-radius:999px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.22);color:#fcd34d}.eq-duty-lock.can{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.22);color:#86efac}.eq-duty-times{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}.eq-duty-times label{font-size:11px;color:var(--muted)}.eq-duty-times input{width:100%;box-sizing:border-box;margin-top:5px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}.eq-duty-editors{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.eq-duty-editor{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;background:#10101e;border:1px solid rgba(255,255,255,.08);font-size:12px}.eq-duty-editor button{border:0;background:transparent;color:#fca5a5;cursor:pointer;padding:0}.eq-duty-add{display:flex;gap:8px;margin-top:10px}.eq-duty-add select{flex:1;min-width:0;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}
-    @media(max-width:1180px){.eq-inativ-card,.eq-inativ-card:not(.is-pendente){grid-template-columns:minmax(240px,1fr) minmax(160px,.7fr) minmax(200px,1fr) auto}.eq-inativ-card>.btn{grid-row:2}.eq-inativ-card>.btn[data-processar]{grid-column:3}.eq-inativ-card>.btn[data-cancelar]{grid-column:4}}
-    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-card,.eq-inativ-card:not(.is-pendente){grid-template-columns:1fr auto}.eq-inativ-copy,.eq-inativ-obs,.eq-inativ-processed{grid-column:1/-1}.eq-inativ-card>.btn,.eq-inativ-card>.btn[data-processar],.eq-inativ-card>.btn[data-cancelar]{grid-row:auto;grid-column:auto}.eq-inativ-card>.btn[data-processar]{grid-column:1}.eq-inativ-card>.btn[data-cancelar]{grid-column:2}}
+    @media(max-width:1080px){.eq-inativ-card{grid-template-columns:minmax(0,1fr) auto auto}.eq-inativ-status{grid-column:2;grid-row:1}.eq-inativ-card>.btn[data-processar]{grid-column:2}.eq-inativ-card>.btn[data-cancelar]{grid-column:3}}
+    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-card{grid-template-columns:1fr auto}.eq-inativ-info{grid-column:1/-1}.eq-inativ-line{flex-wrap:wrap;white-space:normal}.eq-inativ-obs{flex-basis:100%}.eq-inativ-status{grid-column:2;grid-row:2}.eq-inativ-card>.btn[data-processar]{grid-column:1}.eq-inativ-card>.btn[data-cancelar]{grid-column:2}.eq-inativ-processed{grid-column:1/-1}}
     @media(max-width:760px){.eq-grid{grid-template-columns:1fr}.eq-full{grid-column:auto}.eq-structure-intro{grid-template-columns:1fr}.eq-structure-intro .btn{width:100%}.eq-duty-times{grid-template-columns:repeat(2,1fr)}}
     ${filtrosStyle()}
   </style>`;
@@ -530,6 +531,11 @@ async function refreshInativacoesBadge(container) {
 
 async function loadInativacoes() {
   state.inativacoes = await safe(() => supabase.from('programacao_inativacao_solicitacoes').select('*').order('solicitado_em', { ascending: false }).limit(200));
+  const cpfs = [...new Set(state.inativacoes.map((r) => String(r.colaborador_id || '').replace(/\D/g, '')).filter(Boolean))];
+  const contratos = cpfs.length
+    ? await safe(() => supabase.from('colaborador_cruzamento').select('cpf,tipo_contrato').in('cpf', cpfs))
+    : [];
+  state.tiposContratoInativacoes = new Map(contratos.map((r) => [String(r.cpf || '').replace(/\D/g, ''), r.tipo_contrato]));
 }
 
 function renderInativacoesList(area) {
@@ -539,15 +545,27 @@ function renderInativacoesList(area) {
   function cardHtml(r) {
     const isPendente = r.status === 'PENDENTE';
     const statusLabel = r.status === 'PROCESSADA' ? 'Processada' : r.status === 'CANCELADA' ? 'Cancelada' : 'Pendente';
-    return `<div class="eq-inativ-card${isPendente ? ' is-pendente' : ''}">
-      <div class="eq-inativ-person" title="${esc(r.nome_colaborador)}">
-        <b>${esc(r.nome_colaborador)}</b>
-        <span class="muted"> · ${esc(r.cargo || 'Colaborador')} · ${esc(r.coordenacao || r.supervisao || '-')} · ${brDate(r.solicitado_em)}</span>
+    const tipoRaw = state.tiposContratoInativacoes.get(String(r.colaborador_id || '').replace(/\D/g, '')) || '';
+    const tipoNorm = String(tipoRaw).toUpperCase();
+    const tipo = tipoNorm.includes('INTERMITENTE') ? 'Intermitente' : tipoNorm.includes('DIARISTA') ? 'Diarista' : tipoNorm.includes('EFETIVO') ? 'Efetivo' : 'Não informado';
+    const regional = r.coordenacao || r.supervisao || 'Não informada';
+    return `<div class="eq-inativ-card">
+      <div class="eq-inativ-info">
+        <div class="eq-inativ-line">
+          <strong title="${esc(r.nome_colaborador)}">${esc(r.nome_colaborador)}</strong>
+          <span class="eq-inativ-sep">—</span>
+          <span class="eq-inativ-regional"><b>Regional:</b> ${esc(regional)}</span>
+          <span class="eq-inativ-sep">—</span>
+          ${isPendente
+            ? `<input type="text" class="eq-inativ-obs" data-obs-rh="${esc(r.id)}" placeholder="Observação (opcional)">`
+            : `<span class="eq-inativ-history-obs" title="${esc(r.observacao_rh || 'Sem observação')}"><b>Observação:</b> ${esc(r.observacao_rh || 'Sem observação')}</span>`}
+        </div>
+        <div class="eq-inativ-line">
+          <span class="eq-inativ-contract"><b>Tipo:</b> ${esc(tipo)}</span>
+          <span class="eq-inativ-sep">—</span>
+          <span class="eq-inativ-reason" title="${esc(r.motivo)}"><b>Motivo:</b> ${esc(r.motivo)}</span>
+        </div>
       </div>
-      <p class="eq-inativ-motivo eq-inativ-copy" title="Motivo: ${esc(r.motivo)}"><b>Motivo:</b> ${esc(r.motivo)}</p>
-      ${isPendente
-        ? `<input type="text" class="eq-inativ-obs" data-obs-rh="${esc(r.id)}" placeholder="Observação (opcional)">`
-        : `<p class="eq-inativ-motivo eq-inativ-copy" title="Observação RH: ${esc(r.observacao_rh || 'Sem observação')}"><b>Obs. RH:</b> ${esc(r.observacao_rh || 'Sem observação')}</p>`}
       <div class="eq-inativ-status">${statusPill(r.status, { PENDENTE: { label: 'Pendente' }, PROCESSADA: { label: 'Processada' }, CANCELADA: { label: 'Cancelada' } })}</div>
       ${isPendente
         ? `<button class="btn btn-small btn-primary" data-processar="${esc(r.id)}" type="button">Marcar como processada</button>
