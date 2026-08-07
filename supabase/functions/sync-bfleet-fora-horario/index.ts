@@ -409,12 +409,18 @@ function getSetCookieHeaders(headers: Headers) {
   return single ? [single] : [];
 }
 
-function extractPhpSession(setCookies: string[]) {
-  for (const cookie of setCookies) {
-    const match = cookie.match(/PHPSESSID=([^;\s]+)/i);
-    if (match?.[1]) return match[1];
+function mergeCookieHeader(current: string, setCookies: string[]) {
+  const jar = new Map<string, string>();
+  for (const pair of asString(current).split(/;\s*/)) {
+    const separator = pair.indexOf("=");
+    if (separator > 0) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
   }
-  return "";
+  for (const setCookie of setCookies) {
+    const pair = asString(setCookie).split(";", 1)[0];
+    const separator = pair.indexOf("=");
+    if (separator > 0) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+  }
+  return Array.from(jar.entries()).map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
 function configuredWebCookie(cfg: any) {
@@ -431,10 +437,10 @@ async function resolveWebCookie(cfg: any) {
   const base = cfg.webBaseUrl || "https://relatorios.bfleet.com.br";
   const loginUrl = joinUrl(base, "/login");
   const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome Safari";
-  let session = "";
+  let cookie = fallback;
   try {
     const pre = await fetch(loginUrl, { method: "GET", redirect: "manual", headers: { Accept: "text/html", "User-Agent": userAgent } });
-    session = extractPhpSession(getSetCookieHeaders(pre.headers));
+    cookie = mergeCookieHeader(cookie, getSetCookieHeaders(pre.headers));
   } catch { /* POST ainda pode funcionar sem a sessão inicial. */ }
 
   const body = new URLSearchParams({ nick: username, passwd: password, cbLang: asString(cfg.webLang || "pt") || "pt" });
@@ -447,13 +453,12 @@ async function resolveWebCookie(cfg: any) {
       Origin: base,
       Referer: loginUrl,
       "User-Agent": userAgent,
-      ...(session ? { Cookie: `PHPSESSID=${session}` } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
     },
     body: body.toString(),
   });
-  session = extractPhpSession(getSetCookieHeaders(res.headers)) || session;
-  if (!session) return fallback;
-  return `PHPSESSID=${session}`;
+  cookie = mergeCookieHeader(cookie, getSetCookieHeaders(res.headers));
+  return cookie || fallback;
 }
 
 function formatBrDate(date: Date) {
@@ -536,10 +541,24 @@ async function fetchWebReport(cfg: any) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Endpoint web BFleet ${url}: HTTP ${res.status} ${text.slice(0, 300)}`);
+  const reportCookie = mergeCookieHeader(cookie, getSetCookieHeaders(res.headers));
   let rows = parseWebRows(text, dataJson.caja_multisel_columnas);
   let endpoint = url;
   if (!rows.length && text.includes("/reportesback/flotaFueraHorario")) {
     const dataUrl = joinUrl(cfg.webBaseUrl, "/reportesback/flotaFueraHorario");
+    const runtimeDataMatch = text.match(/dataJson\s*=\s*(\{[\s\S]*?\});\/\/se cambian/);
+    let runtimeData = dataJson;
+    if (runtimeDataMatch?.[1]) {
+      try { runtimeData = JSON.parse(runtimeDataMatch[1]); } catch { runtimeData = dataJson; }
+    }
+    const savedReportIds = Array.from(text.matchAll(/idreporte_guardado\s*=\s*(\d+)/g)).map((match) => match[1]).filter((id) => id !== "0");
+    const uniqueIds = Array.from(text.matchAll(/uniq_id\s*=\s*["']([^"']+)["']/g)).map((match) => match[1]).filter(Boolean);
+    const savedReportId = savedReportIds[savedReportIds.length - 1] || String(cfg.reportId);
+    const uniqueId = uniqueIds[uniqueIds.length - 1] || "painel_sync";
+    const dataParams = new URLSearchParams();
+    appendNestedForm(dataParams, "dataJson", runtimeData);
+    dataParams.set("idreporte_guardado", savedReportId);
+    dataParams.set("uniq_id", uniqueId);
     const dataResponse = await fetch(dataUrl, {
       method: "POST",
       headers: {
@@ -549,13 +568,13 @@ async function fetchWebReport(cfg: any) {
         Referer: joinUrl(cfg.webBaseUrl, "/new-reports"),
         "X-Requested-With": "XMLHttpRequest",
         "User-Agent": "Mozilla/5.0 Chrome Safari",
-        Cookie: cookie,
+        Cookie: reportCookie,
       },
-      body: "",
+      body: dataParams.toString(),
     });
     const dataText = await dataResponse.text();
     if (!dataResponse.ok) throw new Error(`Endpoint web BFleet ${dataUrl}: HTTP ${dataResponse.status} ${dataText.slice(0, 300)}`);
-    rows = parseWebRows(dataText, dataJson.caja_multisel_columnas);
+    rows = parseWebRows(dataText, runtimeData.caja_multisel_columnas || dataJson.caja_multisel_columnas);
     endpoint = dataUrl;
     const emptyPayload = dataText.trim();
     if (!rows.length && ["", "[]", "{}", "null"].includes(emptyPayload)) return { rows: [], endpoint };
