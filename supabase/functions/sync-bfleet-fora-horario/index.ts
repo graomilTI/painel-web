@@ -406,6 +406,23 @@ function joinUrl(base: string, path: string) {
   return `${String(base || "").replace(/\/+$/, "")}/${String(path || "").replace(/^\/+/, "")}`;
 }
 
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 3) {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (![502, 503, 504].includes(response.status) || attempt === attempts) return response;
+      try { await response.body?.cancel(); } catch { /* resposta será descartada antes da nova tentativa */ }
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+  }
+  throw lastError instanceof Error ? lastError : new Error("Falha ao conectar à BFleet.");
+}
+
 function getSetCookieHeaders(headers: Headers) {
   const extended = headers as Headers & { getSetCookie?: () => string[] };
   if (typeof extended.getSetCookie === "function") return extended.getSetCookie().map(String);
@@ -443,12 +460,12 @@ async function resolveWebCookie(cfg: any) {
   const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome Safari";
   let cookie = fallback;
   try {
-    const pre = await fetch(loginUrl, { method: "GET", redirect: "manual", headers: { Accept: "text/html", "User-Agent": userAgent } });
+    const pre = await fetchWithRetry(loginUrl, { method: "GET", redirect: "manual", headers: { Accept: "text/html", "User-Agent": userAgent } });
     cookie = mergeCookieHeader(cookie, getSetCookieHeaders(pre.headers));
   } catch { /* POST ainda pode funcionar sem a sessão inicial. */ }
 
   const body = new URLSearchParams({ nick: username, passwd: password, cbLang: asString(cfg.webLang || "pt") || "pt" });
-  const res = await fetch(loginUrl, {
+  const res = await fetchWithRetry(loginUrl, {
     method: "POST",
     redirect: "manual",
     headers: {
@@ -496,7 +513,7 @@ function parseWebRows(text: string, columns: any) {
 
 async function loadSavedWebReport(cfg: any, cookie: string) {
   const url = joinUrl(cfg.webBaseUrl, "/ReportesFront/getDataReporteGuardado");
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: {
       Accept: "application/json",
@@ -530,7 +547,7 @@ async function fetchWebReport(cfg: any) {
   const params = new URLSearchParams();
   appendNestedForm(params, "data", dataJson);
   const url = joinUrl(cfg.webBaseUrl, "/reportesfront/resultadoreporte");
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: {
       Accept: "*/*",
@@ -563,7 +580,7 @@ async function fetchWebReport(cfg: any) {
     appendNestedForm(dataParams, "dataJson", runtimeData);
     dataParams.set("idreporte_guardado", savedReportId);
     dataParams.set("uniq_id", uniqueId);
-    const dataResponse = await fetch(dataUrl, {
+    const dataResponse = await fetchWithRetry(dataUrl, {
       method: "POST",
       headers: {
         Accept: "*/*",
