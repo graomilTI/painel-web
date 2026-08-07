@@ -190,8 +190,8 @@ function deslocamentoResumo(row) {
 // no GRM (skip proposital, não é bug) -- precisa ser feita manualmente.
 function isExtraOutrosNaoMapeado(item) {
   const tipo = normalizeText(item?.tipo_despesa || '');
-  if (tipo !== 'OUTROS') return false;
-  const descricao = normalizeText(`${item?.descricao || ''} ${item?.observacao || ''}`);
+  if (!['OUTRO', 'OUTROS'].includes(tipo)) return false;
+  const descricao = normalizeText(`${item?.descricao || item?.extras_descricao || item?.detalhamento || ''} ${item?.observacao || item?.observacoes || ''}`);
   return !descricao.includes('COMBUSTIVEL');
 }
 
@@ -210,8 +210,28 @@ function getPendenciasAgente() {
 function pendenciaAgenteResumo(row) {
   const itens = getExtrasOutrosNaoMapeados(row);
   return itens
-    .map((item) => `${money(asNumber(item.valor))}${item.descricao || item.observacao ? ` — ${[item.descricao, item.observacao].filter(Boolean).join(' | ')}` : ''}`)
+    .map((item) => {
+      const descricao = item.descricao || item.extras_descricao || item.detalhamento || '';
+      const observacao = item.observacao || item.observacoes || '';
+      return [descricao || 'Descrição não informada', observacao, money(asNumber(item.valor))]
+        .filter(Boolean)
+        .join(' | ');
+    })
     .join('; ');
+}
+
+function pendenciaAgenteHtml(row) {
+  return getExtrasOutrosNaoMapeados(row).map((item) => {
+    const descricao = item.descricao || item.extras_descricao || item.detalhamento || 'Descrição não informada';
+    const observacao = item.observacao || item.observacoes || '';
+    return `
+      <div class="conf-outros-detail">
+        <strong>${escapeHtml(descricao)}</strong>
+        ${observacao ? `<small>${escapeHtml(observacao)}</small>` : ''}
+        <span>${escapeHtml(money(asNumber(item.valor)))}</span>
+      </div>
+    `;
+  }).join('');
 }
 
 function extrasResumo(row) {
@@ -345,7 +365,7 @@ function renderStyles() {
       .conf-table td{color:#e2e2f0}.conf-table small{display:block;color:var(--muted);margin-top:4px}.conf-empty{text-align:center;color:var(--muted);padding:24px!important}
       .conf-row-actions{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;white-space:nowrap}.conf-row-actions button{font-size:12px;padding:8px 10px;border-radius:12px;flex-shrink:0}
       .conf-row-icon-btn{display:inline-flex;align-items:center;justify-content:center;padding:8px!important;border-radius:10px!important;line-height:1}
-      .conf-td-regional{font-size:11px;white-space:nowrap}.conf-td-extras{max-width:160px;word-break:break-word;line-height:1.35}.conf-producao-sem{color:#f87171;font-weight:800}
+      .conf-td-regional{font-size:11px;white-space:nowrap}.conf-td-extras{max-width:260px;word-break:break-word;line-height:1.35}.conf-outros-detail{display:grid;gap:3px;padding:8px 10px;border:1px solid rgba(245,158,11,.22);border-radius:10px;background:rgba(245,158,11,.07)}.conf-outros-detail+.conf-outros-detail{margin-top:7px}.conf-outros-detail strong{color:#f8fafc;font-size:12px}.conf-outros-detail small{display:block;color:#aab6cc;font-size:11px}.conf-outros-detail span{color:#fbbf24;font-size:11px;font-weight:800}.conf-producao-sem{color:#f87171;font-weight:800}
       .conf-chip{display:inline-flex;align-items:center;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;border:1px solid rgba(148,163,184,.18)}.conf-chip-ok{background:rgba(34,197,94,.16);color:#bbf7d0;border-color:rgba(34,197,94,.28)}.conf-chip-warn{background:rgba(234,179,8,.14);color:#fde68a;border-color:rgba(234,179,8,.28)}.conf-chip-danger{background:rgba(220,38,38,.16);color:#fecaca;border-color:rgba(248,113,113,.32)}.conf-chip-info{background:rgba(59,130,246,.16);color:#bfdbfe;border-color:rgba(96,165,250,.30)}.conf-chip-neutral{background:rgba(148,163,184,.12);color:#cbd5e1}
       .conf-note{width:100%;min-height:74px;border:1px solid rgba(96,165,250,.22);border-radius:14px;background:#15152a;color:#e2e2f0;padding:12px;resize:vertical}.conf-feedback{min-height:20px;margin-top:10px;color:var(--muted)}
       .conf-subsection-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin:0 0 12px}.conf-subsection-head h4{margin:0;color:#f8fafc;font-size:17px;font-weight:900}.conf-subsection-head p{margin:4px 0 0;color:var(--muted);font-size:13px}.conf-counter{display:inline-flex;align-items:center;white-space:nowrap;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:999px;padding:8px 12px;font-size:12px;font-weight:900}.conf-counter-ok{background:rgba(34,197,94,.14);border-color:rgba(34,197,94,.30);color:#bbf7d0}.conf-conferidos-box{margin-top:22px;padding:16px;border:1px solid rgba(34,197,94,.22);border-radius:20px;background:rgba(4,24,18,.58)}.conf-table-wrap-conferidos{border-color:rgba(34,197,94,.24)}.conf-row-conferido{background:rgba(34,197,94,.045)}
@@ -696,7 +716,7 @@ function renderPendentesAgenteTable() {
                 <small>${escapeHtml(row.coordenacao || '')}</small>
               </td>
               <td>${statusChip(getStatus(row))}</td>
-              <td class="conf-td-extras">${escapeHtml(pendenciaAgenteResumo(row))}</td>
+              <td class="conf-td-extras">${pendenciaAgenteHtml(row)}</td>
               <td>
                 <div class="conf-row-actions">
                   <button class="conf-btn conf-row-icon-btn" data-action="EM_ANALISE" data-id="${escapeHtml(row.id)}" type="button" title="Analisar"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></button>
