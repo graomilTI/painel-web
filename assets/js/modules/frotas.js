@@ -2456,7 +2456,7 @@
                 .fora-horario-date{width:205px;margin:0}
                 .fora-horario-date label{min-height:30px;color:#dbeafe;line-height:1.35}
                 .fora-horario-date .speed-input{height:64px;border-radius:18px;font-size:16px;font-weight:900;padding:0 16px}
-                .fora-horario-sync{height:64px;min-width:248px;border-radius:0;padding:0 28px}
+                .fora-horario-sync{height:64px;min-width:248px;border-radius:18px;padding:0 28px}
                 .fora-horario-refresh{width:64px;height:64px;min-height:64px;border-radius:18px;padding:0}
                 .fora-horario-table{border-color:rgba(34,197,94,.20);border-radius:20px;background:rgba(2,6,23,.30)}
                 .fora-horario-table .hist-table{min-width:720px}
