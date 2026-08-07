@@ -142,7 +142,27 @@ import { getCurrentUser } from './auth.js';
   // "somente as OS marcadas como Atender carregam no mapa".
   async function loadOsEPontos() {
     const hoje = hojeISO();
-    const osRaw = await sel('operacional_os', '*', q => q.eq('status_gestor', 'ATENDER').eq('data_os', hoje));
+    // A fonte do mapa é a data selecionada pelo gestor na Programação. O
+    // relatório de Lista de O.S. mantém em data_os a data operacional de sua
+    // própria origem e pode sobrescrevê-la depois; por isso data_os não pode
+    // decidir se uma O.S. programada hoje aparece ou não no mapa.
+    const programasHoje = await sel('programacao_dia', 'id,data_referencia', q => q.eq('data_referencia', hoje));
+    const programacaoIds = programasHoje.map(row => row.id).filter(Boolean);
+    if (!programacaoIds.length) return { os: [], pontos: [] };
+
+    const equipeHoje = await sel(
+      'programacao_equipe',
+      'programacao_id,os_id,confirmado',
+      q => q.in('programacao_id', programacaoIds).eq('confirmado', true),
+      20000,
+    );
+    const osIds = [...new Set(equipeHoje.map(row => row.os_id).filter(Boolean))];
+    if (!osIds.length) return { os: [], pontos: [] };
+
+    const osRaw = [];
+    for (let index = 0; index < osIds.length; index += 300) {
+      osRaw.push(...await sel('operacional_os', '*', q => q.in('id', osIds.slice(index, index + 300)), 300));
+    }
     const osEscopo = osRaw.filter(o => passaRegional(o.supervisao));
     const pontosPorChave = new Map();
     const os = osEscopo.map(o => {
