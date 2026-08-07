@@ -340,7 +340,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260805-pendentesouros1')
+import('./adm-conferencia.js?v=20260807-loginmaisproximo')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();
