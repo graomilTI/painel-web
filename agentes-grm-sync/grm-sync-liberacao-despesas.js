@@ -214,8 +214,19 @@ function canonicalRules(rules) {
 }
 
 function rulesEqual(current, desired) {
-  return JSON.stringify(canonicalRules(current))
-    === JSON.stringify(desiredRules(desired));
+  // Exibir e Carga/NHE são definidos e, em algumas categorias, bloqueados
+  // pelo próprio GRM. Eles não fazem parte do contrato deste agente: não são
+  // alterados e também não podem transformar uma aplicação válida em
+  // divergência. A conferência cobre somente os campos sob nossa gestão.
+  const comparable = (rules) => canonicalRules(rules).map((rule) => ({
+    tipo_despesa: rule.tipo_despesa,
+    valor_maximo: rule.valor_maximo,
+    auto: rule.auto,
+    max_mov_dia: rule.max_mov_dia,
+  }));
+
+  return JSON.stringify(comparable(current))
+    === JSON.stringify(comparable(desiredRules(desired)));
 }
 
 function ensureDir(dir) {
@@ -2157,24 +2168,10 @@ async function fillCashRuleRow(page, rowIndex, rule) {
   };
 
   await setCheckbox(
-    descriptor.exibirSelector,
-    rule.exibir !== false,
-    descriptor.exibirDisabled,
-    'Exibir',
-  );
-
-  await setCheckbox(
     descriptor.autoSelector,
     rule.auto === true,
     descriptor.autoDisabled,
     'AUTO',
-  );
-
-  await setCheckbox(
-    descriptor.cargaSelector,
-    rule.carga_nhe !== false,
-    descriptor.cargaDisabled,
-    'Carga/NHE',
   );
 
   const finalMoney = await readNumber(
