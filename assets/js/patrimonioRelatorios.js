@@ -7,7 +7,7 @@ const EXPORT_W = 1920;
 const EXPORT_H = 1080;
 const EXPORT_SCALE = 2;
 const DEFAULT_ROWS_PER_PAGE = 18;
-const TABLE_ROWS_PER_PAGE = 50;
+const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
 const RELAT_CACHE_KEY = 'grao1000:patrimonio-relat:v1';
@@ -106,34 +106,6 @@ function injectVisualStyles() {
       font-size: 13.5px;
     }
     .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
-    .patrimonio-relatorios-page .grid-cards {
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .patrimonio-relatorios-page .grid-cards .card {
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      background: linear-gradient(180deg, rgba(3, 19, 17, 0.88), rgba(4, 28, 24, 0.92));
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-      padding: 10px 14px;
-    }
-    .patrimonio-relatorios-page .grid-cards .card h3 {
-      margin: 0;
-      font-size: .78rem;
-      font-weight: 700;
-      letter-spacing: .02em;
-      color: rgba(226, 232, 240, .75);
-      order: 2;
-    }
-    .patrimonio-relatorios-page .hero-metric {
-      font-size: 1.35rem;
-      line-height: 1;
-      margin-top: 0;
-      order: 1;
-    }
     @media (max-width: 1080px) {
       .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -265,6 +237,21 @@ function injectVisualStyles() {
       color: #e2e8f0;
       font-size: .9rem;
     }
+    .pat-pagination { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; white-space:nowrap; }
+    .pat-pagination .base-button { width:auto; min-width:92px; margin:0; }
+    .pat-group-row { cursor:pointer; }
+    .pat-group-row td { background:rgba(52,211,153,.045); }
+    .pat-group-name { display:flex; align-items:center; gap:9px; }
+    .pat-group-arrow { width:12px; color:#6fd0a5; font-size:.8rem; }
+    .pat-group-detail td { padding:0 12px 14px 34px; background:rgba(2,12,10,.72); }
+    .pat-group-detail table { width:100%; border-collapse:collapse; }
+    .pat-group-detail th,.pat-group-detail td { padding:9px 10px; background:transparent; }
+    .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; }
+    .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(52,211,153,.12); color:#bbf7d0; font-weight:800; }
+    .pat-view[hidden] { display:none !important; }
+    .patrimonio-relatorios-page .inline-nav button { width:auto; min-height:42px; margin:0; padding:9px 16px; border-radius:12px; }
+    .pat-desligados-empty { padding:34px; text-align:center; color:rgba(226,232,240,.68); }
+    .pat-alert { border-color:rgba(251,146,60,.28); background:rgba(124,45,18,.12); }
     @media (max-width: 900px) {
       .patrimonio-table-card { padding: 14px; }
       .patrimonio-table-toolbar { align-items: flex-start; }
@@ -278,13 +265,11 @@ function renderThead(sortState) {
   const thead = document.getElementById('patrimonioThead');
   if (!thead) return;
   thead.innerHTML = `<tr>
-    ${sortableTh(sortState, 'patrimonio', 'Patrimônio')}
-    ${sortableTh(sortState, 'regional', 'Regional')}
-    ${sortableTh(sortState, 'supervisao', 'Supervisão')}
-    ${sortableTh(sortState, 'funcionario', 'Funcionário')}
-    ${sortableTh(sortState, 'identificacao', 'Identificação')}
-    ${sortableTh(sortState, 'ultima_leitura', 'Última leitura')}
-    ${sortableTh(sortState, 'dias', 'Dias')}
+    <th colspan="3">Colaborador</th>
+    <th>Materiais</th>
+    <th>Supervisão</th>
+    <th>Regional</th>
+    <th>Maior atraso</th>
   </tr>`;
 }
 
@@ -590,7 +575,18 @@ async function loadSnapshotRows() {
   return all;
 }
 
-function renderTableRows(rows, page = 1) {
+function groupRowsByColaborador(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const funcionario = normalizeText(row.funcionario) || 'Sem colaborador';
+    const key = normalizeKey(funcionario);
+    if (!groups.has(key)) groups.set(key, { funcionario, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return [...groups.values()];
+}
+
+function renderTableRows(rows, page = 1, expanded = new Set()) {
   const tbody = document.getElementById('patrimonioRows');
   if (!tbody) return;
 
@@ -599,48 +595,30 @@ function renderTableRows(rows, page = 1) {
     return;
   }
 
+  const groups = groupRowsByColaborador(rows);
   const start = (page - 1) * TABLE_ROWS_PER_PAGE;
-  const pageRows = rows.slice(start, start + TABLE_ROWS_PER_PAGE);
+  const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
 
-  tbody.innerHTML = pageRows.map((row) => {
-    const diasInfo = getDiasInfo(row);
-    const diasLabel = diasInfo.hasValue ? String(diasInfo.value) : '-';
-    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > 10 ? 'danger' : 'ok';
-    const situacao = normalizeText(row.situacao) || 'Sem situação';
-
-    return `
-      <tr>
-        <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
-        <td>
-          <div class="pat-cell-stack">
-            <span class="pat-regional-badge">${escapeHtml(getRegional(row))}</span>
-            <span class="pat-secondary">${escapeHtml(situacao)}</span>
-          </div>
-        </td>
-        <td>
-          <div class="pat-cell-stack">
-            <span class="pat-primary">${escapeHtml(row.supervisao || '-')}</span>
-          </div>
-        </td>
-        <td>
-          <div class="pat-cell-stack">
-            <span class="pat-primary">${escapeHtml(row.funcionario || '-')}</span>
-          </div>
-        </td>
-        <td>
-          <div class="pat-cell-stack">
-            <span class="pat-primary">${escapeHtml(row.identificacao || '-')}</span>
-          </div>
-        </td>
-        <td>
-          <div class="pat-cell-stack">
-            <span class="pat-primary">${escapeHtml(row.ultima_leitura_fmt || '-')}</span>
-            <span class="pat-secondary">${diasInfo.hasValue ? 'Dias calculados' : 'Sem dias informados'}</span>
-          </div>
-        </td>
-        <td><span class="pat-tag ${tagClass}">${escapeHtml(diasLabel)}</span></td>
-      </tr>
-    `;
+  tbody.innerHTML = pageGroups.map((group) => {
+    const key = normalizeKey(group.funcionario);
+    const open = expanded.has(key);
+    const first = group.rows[0];
+    const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
+    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
+    const details = group.rows.map((row) => `<tr>
+      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+      <td>${escapeHtml(row.identificacao || '-')}</td>
+      <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
+      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
+      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
+    </tr>`).join('');
+    return `<tr class="pat-group-row" data-colaborador="${escapeHtml(key)}">
+      <td colspan="3"><span class="pat-group-name"><span class="pat-group-arrow">${open ? '▾' : '▸'}</span><span class="pat-primary">${escapeHtml(group.funcionario)}</span></span></td>
+      <td><span class="pat-count-badge">${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</span></td>
+      <td><span class="pat-secondary">${escapeHtml(first.supervisao || '-')}</span></td>
+      <td><span class="pat-regional-badge">${escapeHtml(getRegional(first))}</span></td>
+      <td><span class="pat-tag ${tagClass}">${maxDias >= 0 ? maxDias : '-'}</span></td>
+    </tr>${open ? `<tr class="pat-group-detail"><td colspan="7"><table><thead><tr><th>Patrimônio</th><th>Material</th><th>Situação</th><th>Última leitura</th><th>Dias</th></tr></thead><tbody>${details}</tbody></table></td></tr>` : ''}`;
   }).join('');
 }
 
@@ -668,16 +646,17 @@ function updateSummary(rows) {
 }
 
 function updatePagination(totalRows, page) {
-  const totalPages = Math.max(1, Math.ceil(totalRows / TABLE_ROWS_PER_PAGE));
+  const totalGroups = groupRowsByColaborador(totalRows).length;
+  const totalPages = Math.max(1, Math.ceil(totalGroups / TABLE_ROWS_PER_PAGE));
   const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = totalRows ? ((safePage - 1) * TABLE_ROWS_PER_PAGE) + 1 : 0;
-  const end = Math.min(safePage * TABLE_ROWS_PER_PAGE, totalRows);
+  const start = totalGroups ? ((safePage - 1) * TABLE_ROWS_PER_PAGE) + 1 : 0;
+  const end = Math.min(safePage * TABLE_ROWS_PER_PAGE, totalGroups);
 
   const info = document.getElementById('paginationInfo');
   const prev = document.getElementById('btnPrevPage');
   const next = document.getElementById('btnNextPage');
 
-  if (info) info.textContent = totalRows ? `Página ${safePage}/${totalPages} • exibindo ${start}-${end} de ${totalRows}` : 'Página 1/1 • sem registros';
+  if (info) info.textContent = totalGroups ? `Página ${safePage}/${totalPages} • colaboradores ${start}-${end} de ${totalGroups}` : 'Página 1/1 • sem colaboradores';
   if (prev) prev.disabled = safePage <= 1;
   if (next) next.disabled = safePage >= totalPages;
 
@@ -730,17 +709,11 @@ export function renderContent(content) {
           <a href="${relatoriosUrl}" class="active">Relatórios</a>
           <a href="${importarUrl}">Importar arquivo</a>
           <a href="${statusUrl}">Status</a>
+          <button class="base-button secondary" id="btnDesligados" type="button">Desligados</button>
         </div>
       </div>
 
-      <div class="grid-cards">
-        <article class="card"><h3>Total filtrado</h3><div class="hero-metric" id="sumRegistros">0</div></article>
-        <article class="card"><h3>Em dia</h3><div class="hero-metric" id="sumEmDia">0</div></article>
-        <article class="card"><h3>Em atraso</h3><div class="hero-metric" id="sumAtrasados">0</div></article>
-        <article class="card"><h3>Sem dias</h3><div class="hero-metric" id="sumSemDias">0</div></article>
-        <article class="card"><h3>% em dia</h3><div class="hero-metric" id="sumPercentual">0%</div></article>
-      </div>
-
+      <div class="pat-view" id="patRelatoriosView">
       <article class="base-card">
         <div class="pat-filtros-grid">
           <div class="base-field">
@@ -788,9 +761,9 @@ export function renderContent(content) {
         <div class="patrimonio-table-toolbar">
           <div class="patrimonio-table-title">
             <strong>Lista de patrimônios</strong>
-            <span class="patrimonio-table-subtitle">Visualização organizada por patrimônio, regional, supervisão e status de leitura.</span>
+            <span class="patrimonio-table-subtitle">Visualização agrupada por colaborador; clique em um nome para ver os patrimônios.</span>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div class="pat-pagination">
             <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
             <span id="paginationInfo" class="pagination-chip">Página 1/1</span>
             <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
@@ -815,6 +788,17 @@ export function renderContent(content) {
           </div>
         </div>
       </article>
+      </div>
+
+      <div class="pat-view" id="patDesligadosView" hidden>
+        <article class="base-card patrimonio-table-card pat-alert">
+          <div class="patrimonio-table-title">
+            <strong>Desligados com materiais a recolher</strong>
+            <span class="patrimonio-table-subtitle">Solicitações de inativação pendentes feitas em Gestor &gt; Programação &gt; Sem O.S.</span>
+          </div>
+          <div id="patDesligadosList" class="pat-desligados-empty">Carregando...</div>
+        </article>
+      </div>
     </section>
   `;
 
@@ -822,7 +806,8 @@ export function renderContent(content) {
     allRows: [],
     filteredRows: [],
     page: 1,
-    sort: { column: '', direction: 'asc' }
+    sort: { column: '', direction: 'asc' },
+    expanded: new Set()
   };
 
   renderThead(state.sort);
@@ -849,13 +834,74 @@ export function renderContent(content) {
 
   const applyAndRender = () => {
     state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderTableRows(state.filteredRows, state.page);
+    state.page = updatePagination(state.filteredRows, state.page);
+    renderTableRows(state.filteredRows, state.page, state.expanded);
     updateSummary(state.filteredRows);
 
     const stats = computeStats(state.filteredRows);
     setFeedback(`${state.filteredRows.length} registro(s) exibido(s) na tela. | Com dias informados: ${stats.emDia + stats.atrasados} | Sem dias informados: ${stats.semDias}`);
   };
+
+  async function loadDesligados() {
+    const target = document.getElementById('patDesligadosList');
+    if (!target) return;
+    target.className = 'pat-desligados-empty';
+    target.textContent = 'Carregando colaboradores e materiais...';
+    const { data, error } = await supabase
+      .from('programacao_inativacao_solicitacoes')
+      .select('id,colaborador_id,nome_colaborador,cargo,coordenacao,supervisao,motivo,solicitado_em,solicitado_por_nome')
+      .eq('status', 'PENDENTE')
+      .order('solicitado_em', { ascending: false })
+      .limit(1000);
+    if (error) {
+      target.textContent = error.message || 'Não foi possível carregar os desligados.';
+      return;
+    }
+    const latestByName = new Map();
+    (data || []).forEach((request) => {
+      const key = normalizeKey(request.nome_colaborador);
+      if (key && !latestByName.has(key)) latestByName.set(key, request);
+    });
+    const entries = [...latestByName.entries()].map(([key, request]) => ({
+      request,
+      rows: state.allRows.filter((row) => normalizeKey(row.funcionario) === key),
+    })).filter((entry) => entry.rows.length);
+    if (!entries.length) {
+      target.textContent = 'Nenhum colaborador com solicitação de inativação pendente possui patrimônio em seu nome.';
+      return;
+    }
+    target.className = 'table-shell';
+    target.innerHTML = `<div class="table-scroll-x"><table class="patrimonio-table"><thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Solicitado em</th><th>Motivo</th></tr></thead><tbody>${entries.map(({ request, rows }) => `<tr>
+      <td><div class="pat-cell-stack"><span class="pat-primary">${escapeHtml(request.nome_colaborador)}</span><span class="pat-secondary">${escapeHtml(request.cargo || 'Colaborador')}</span></div></td>
+      <td><div class="pat-cell-stack"><span class="pat-count-badge">${rows.length} ${rows.length === 1 ? 'item' : 'itens'}</span><span class="pat-secondary">${rows.map((row) => `${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`).map(escapeHtml).join('<br>')}</span></div></td>
+      <td>${escapeHtml(request.supervisao || request.coordenacao || '-')}</td>
+      <td>${escapeHtml(formatDateTime(request.solicitado_em))}</td>
+      <td>${escapeHtml(request.motivo || '-')}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  document.getElementById('btnDesligados')?.addEventListener('click', async () => {
+    document.getElementById('patRelatoriosView').hidden = true;
+    document.getElementById('patDesligadosView').hidden = false;
+    document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.classList.remove('active');
+    document.getElementById('btnDesligados').classList.add('active');
+    await loadDesligados();
+  });
+  document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.addEventListener('click', (event) => {
+    event.preventDefault();
+    document.getElementById('patDesligadosView').hidden = true;
+    document.getElementById('patRelatoriosView').hidden = false;
+    event.currentTarget.classList.add('active');
+    document.getElementById('btnDesligados').classList.remove('active');
+  });
+
+  document.getElementById('patrimonioRows')?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-colaborador]');
+    if (!row) return;
+    const key = row.dataset.colaborador;
+    if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
+    renderTableRows(state.filteredRows, state.page, state.expanded);
+  });
 
   const refreshSupervisoes = () => {
     const coord = document.getElementById('fCoordenacao')?.value || '';
@@ -892,14 +938,14 @@ export function renderContent(content) {
 
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderTableRows(state.filteredRows, state.page);
+    state.page = updatePagination(state.filteredRows, state.page);
+    renderTableRows(state.filteredRows, state.page, state.expanded);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
-    const maxPage = Math.max(1, Math.ceil(state.filteredRows.length / TABLE_ROWS_PER_PAGE));
+    const maxPage = Math.max(1, Math.ceil(groupRowsByColaborador(state.filteredRows).length / TABLE_ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderTableRows(state.filteredRows, state.page);
+    state.page = updatePagination(state.filteredRows, state.page);
+    renderTableRows(state.filteredRows, state.page, state.expanded);
   });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
