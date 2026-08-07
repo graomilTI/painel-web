@@ -22,7 +22,9 @@ const STATUS_CLASS = {
   CANCELADO: 'neutral',
 };
 
-const LOCALIZACAO_DISTANCIA_ATENCAO_KM = 50;
+// Raio de tolerância do login vs. a O.S. — mesmo padrão de 2km já usado no
+// geofence de NHE/alimentação (agentes-grm-sync/grm-sync-lancar-nhe.js).
+const LOCALIZACAO_LOGIN_DISTANCIA_ATENCAO_KM = 2;
 
 const state = {
   tab: 'despesas',
@@ -820,9 +822,9 @@ function applyLocalizacaoFilters(rows) {
 }
 
 function localizacaoDistanciaChip(row) {
-  const km = Number(row.distancia_km);
-  if (!Number.isFinite(km)) return '<span class="conf-chip conf-chip-neutral">Sem coordenada</span>';
-  const cls = km > LOCALIZACAO_DISTANCIA_ATENCAO_KM ? 'conf-chip-warn' : 'conf-chip-ok';
+  const km = Number(row.login_distancia_km);
+  if (!Number.isFinite(km)) return '<span class="conf-chip conf-chip-neutral">Sem login</span>';
+  const cls = km > LOCALIZACAO_LOGIN_DISTANCIA_ATENCAO_KM ? 'conf-chip-warn' : 'conf-chip-ok';
   return `<span class="conf-chip ${cls}">${km.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km</span>`;
 }
 
@@ -836,13 +838,13 @@ function renderLocalizacaoTable() {
   target.innerHTML = `
     <div class="conf-table-wrap">
       <table class="conf-table">
-        <thead><tr><th>Colaborador</th><th>OS</th><th>Local</th><th>Distância</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Colaborador</th><th>OS</th><th>Login</th><th>Distância até a O.S.</th><th>Ações</th></tr></thead>
         <tbody>
           ${rows.map((row) => `
             <tr>
               <td><strong>${escapeHtml(row.nome_colaborador || '-')}</strong><small>${brDate(row.data_referencia)} • ${escapeHtml(row.supervisao || '-')}</small></td>
               <td><strong>${escapeHtml(row.numero_os || '-')}</strong><small>${escapeHtml(row.cliente || '-')}</small></td>
-              <td>${escapeHtml(row.ponto_embarque_nome || '-')}</td>
+              <td>${row.login_hora ? escapeHtml(String(row.login_hora).slice(0, 5)) : '-'}</td>
               <td>${localizacaoDistanciaChip(row)}</td>
               <td>
                 <div class="conf-row-actions">
@@ -1207,8 +1209,8 @@ async function loadJustificativas() {
 }
 
 // Localização: 1 registro/dia por colaborador+OS, gerado pelo cron
-// registrar_localizacao_diaria_colaboradores (comparando a casa do
-// colaborador com o ponto de embarque mais próximo). A tela só lê.
+// registrar_localizacao_diaria_colaboradores (compara casa do colaborador,
+// local da O.S. e o login mais próximo da O.S. na data). A tela só lê.
 async function loadLocalizacao() {
   let query = supabase
     .from('conferencia_localizacao_colaboradores')
@@ -1657,11 +1659,11 @@ function abrirModalDespesa() {
 }
 
 // ---------- Modal "Ver Rota" (Localização) ----------
-// Só mostra os 3 pontos (casa do colaborador, O.S. programada, ponto de
-// embarque mais próximo) num mapa — não calcula rota real, é só pra
-// visualizar a divergência entre o ponto oficial da O.S. e o mais próximo
-// de casa. Reaproveita o padrão de mapa (vendor local + divIcon) usado em
-// assets/js/programacao-mapa-gestor.js / programacao-equipe.js.
+// Só mostra os 3 pontos (casa do colaborador, O.S. programada, login mais
+// próximo da O.S. registrado na data) num mapa — não calcula rota real, é
+// só pra visualizar se o colaborador realmente logou perto da O.S. que
+// estava programada pra ele. Reaproveita o padrão de mapa (vendor local +
+// divIcon) usado em assets/js/programacao-mapa-gestor.js / programacao-equipe.js.
 const VRM_LEAFLET_CSS_HREF = './assets/vendor/leaflet/leaflet.css';
 const VRM_LEAFLET_JS_SRC = './assets/vendor/leaflet/leaflet.js';
 
@@ -1751,7 +1753,7 @@ function abrirModalVerRota(row) {
       <div class="vrm-legend">
         <span><i style="background:#60a5fa"></i>Casa do colaborador</span>
         <span><i style="background:#ef4444"></i>O.S. programada (${escapeHtml(row.os_ponto_nome || '-')})</span>
-        <span><i style="background:#f59e0b"></i>Ponto de embarque mais próximo (${escapeHtml(row.ponto_embarque_nome || '-')} · ${row.distancia_km ?? '-'} km)</span>
+        <span><i style="background:#22c55e"></i>Login mais próximo da O.S. (${row.login_hora ? escapeHtml(String(row.login_hora).slice(0, 5)) : 'sem login'} · ${row.login_distancia_km ?? '-'} km)</span>
       </div>
       <div class="vrm-map" id="vrmMap"></div>
       <div class="vrm-empty" id="vrmEmpty" style="display:none"></div>
@@ -1790,10 +1792,11 @@ async function desenharVerRotaMapa(row) {
     subdomains: 'abcd',
   }).addTo(map);
 
+  const loginTitulo = row.login_hora ? `Login mais próximo: ${String(row.login_hora).slice(0, 5)} (${row.login_distancia_km ?? '-'} km)` : 'Login mais próximo: sem login na data';
   const pontos = [
     { lat: row.colaborador_latitude, lng: row.colaborador_longitude, cor: '#60a5fa', titulo: 'Casa do colaborador' },
     { lat: row.os_latitude, lng: row.os_longitude, cor: '#ef4444', titulo: `O.S. programada: ${row.os_ponto_nome || '-'}` },
-    { lat: row.ponto_embarque_latitude, lng: row.ponto_embarque_longitude, cor: '#f59e0b', titulo: `Ponto mais próximo: ${row.ponto_embarque_nome || '-'}` },
+    { lat: row.login_latitude, lng: row.login_longitude, cor: '#22c55e', titulo: loginTitulo },
   ];
 
   const bounds = [];
