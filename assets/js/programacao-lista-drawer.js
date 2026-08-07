@@ -25,7 +25,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260730-indisp-legado';
+} from './programacao-equipe.js?v=20260807-papel-os1';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260730-indisp-legado';
 
 function esc(value) {
@@ -609,7 +609,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
             <button type="button" data-add-colab-confirm>Adicionar</button>
           </div>
           <div class="pld-add-box" data-add-frota-box>
-            <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
+            <select data-add-frota-select data-searchable-select><option value="">Escolha um motorista de Frota…</option></select>
             <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
           </div>
         `;
@@ -633,7 +633,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           <button type="button" data-add-colab-confirm>Adicionar</button>
         </div>
         <div class="pld-add-box" data-add-frota-box>
-          <select data-add-frota-select><option value="">Escolha um motorista de Frota…</option></select>
+          <select data-add-frota-select data-searchable-select><option value="">Escolha um motorista de Frota…</option></select>
           <button type="button" data-add-frota-confirm>+ Adicionar Frota</button>
         </div>
       `;

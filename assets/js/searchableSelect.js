@@ -61,7 +61,10 @@ function injectStyle() {
 function buildCombobox(select) {
   if (!select || select.dataset[FLAG] === '1') return;
   if (select.multiple) return;
-  if (select.options.length <= THRESHOLD) return;
+  // Alguns fluxos precisam da lista customizada mesmo com poucas opções para
+  // não abrir o picker nativo de tela cheia no celular.
+  const forced = select.hasAttribute('data-searchable-select');
+  if (!forced && select.options.length <= THRESHOLD) return;
 
   select.dataset[FLAG] = '1';
   injectStyle();

@@ -1,5 +1,5 @@
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260806-atestado-anexo';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260730-indisp-legado';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260807-frota-combo1';
 import { renderProgramacaoRecusas } from './programacao-recusas.js?v=20260730-recusas1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 

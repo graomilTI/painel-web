@@ -1051,8 +1051,8 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   });
   if (vinculoErr) console.warn('[programacao-equipe] falha ao gravar vínculo OS<->colaborador.', vinculoErr);
 
-  // Colaborador que já é motorista de um veículo cadastrado (colaborador_cruzamento.veiculo_id)
-  // entra como "Logística" em vez de "OK", mesma convenção usada em programacao.js/ensureDefaultRows.
+  // Quem é aceito como sugestão atende a O.S., mesmo que também tenha veículo
+  // cadastrado. Somente a ação explícita "Adicionar Frota" marca LOGISTICA.
   //
   // supervisao/coordenacao vêm da própria O.S. (sempre carregada nesse ponto),
   // não do candidato — a lista de candidatos pode ter sido montada antes da
@@ -1065,7 +1065,7 @@ export async function confirmarCandidato(programacaoId, os, cand) {
     cargo: cand.cargo || null,
     coordenacao: os.coordenacao || cand.coordenacao || null,
     supervisao: os.supervisao || cand.supervisao || null,
-    disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
+    disponibilidade: 'OK',
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
@@ -1104,6 +1104,14 @@ export async function loadFrotasMotoristas() {
 
 export async function adicionarFrotaOs(programacaoId, os, motorista) {
   const equipeRow = await adicionarColaboradorOs(programacaoId, os, motorista);
+
+  // Persiste a intenção no vínculo da O.S. para relatórios/Compartilhar não
+  // inferirem o papel pelo tipo de deslocamento ou pelo cadastro do motorista.
+  const { error: vinculoPapelErr } = await supabase.from('operacional_os_colaboradores')
+    .update({ origem_sugestao: 'PROGRAMACAO_FROTA_LOGISTICA' })
+    .eq('os_id', os.id)
+    .eq('colaborador_key', motorista.colaboradorId);
+  if (vinculoPapelErr) console.warn('[programacao-equipe] falha ao marcar vínculo de Frota.', vinculoPapelErr);
 
   // adicionarColaboradorOs só marca disponibilidade: 'LOGISTICA' quando o
   // candidato já vem com veiculoId preenchido (colaborador com veículo
@@ -1168,7 +1176,9 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
       cargo: cand.cargo || null,
       coordenacao: os.coordenacao || cand.coordenacao || null,
       supervisao: os.supervisao || cand.supervisao || null,
-      disponibilidade: cand.veiculoId ? 'LOGISTICA' : 'OK',
+      // "Adicionar colaborador" significa atendimento. Ter veículo cadastrado
+      // não transforma automaticamente essa associação em apoio logístico.
+      disponibilidade: 'OK',
     }, { onConflict: 'programacao_id,colaborador_id' }),
   ]);
   if (vinculoRes?.error) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoRes.error);
