@@ -10,6 +10,7 @@ const ROOTS = [
   '/home/grao100/chrome-runtime/fixed-a/tmp',
   '/home/grao100/chrome-runtime/fixed-b/tmp',
   '/home/grao100/chrome-runtime/alteracoes/tmp',
+  '/home/grao100/chrome-runtime/despesas-distribuicao/tmp',
 ];
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
