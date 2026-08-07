@@ -6,7 +6,7 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, badge, toast, confirmar, loadingState, emptyState, errorState, esc,
+  pageHeader, table, badge, kpis, toast, confirmar, loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
 import {
   supabase, listar, inserir, atualizar, mensagemDeErro,
@@ -14,6 +14,8 @@ import {
 
 const BUCKET = 'notas-fiscais';
 const TABELA = 'grm_nf_lancamentos';
+const TABELA_JOBS = 'grm_sync_jobs';
+const AGENTE_ID = 'sync-lancar-notas-fiscais';
 const ACCEPT = '.pdf,.xml,.png,.jpg,.jpeg,.webp';
 
 const SETORES = [
@@ -54,6 +56,8 @@ const STATUS_LABEL = {
 let raiz = null;
 let bootId = 0;
 let enviando = false;
+let disparando = false;
+let resumo = { pendentes: 0, erros: 0, lancados: 0, jobAtivo: null };
 
 function safeFileName(name) {
   return String(name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
@@ -154,6 +158,8 @@ async function cancelarLancamento(id, nomeArquivo) {
     });
     toast('Envio cancelado.', 'ok');
     await carregarTabela();
+    await carregarResumo();
+    if (raiz) renderResumo();
   } catch (error) {
     toast(mensagemDeErro(error, TABELA), 'danger', 6000);
   }
@@ -194,6 +200,79 @@ async function carregarTabela() {
   }
 }
 
+async function carregarResumo() {
+  const [{ total: pendentes }, { total: erros }, { total: lancados }, { rows: jobsAtivos }] = await Promise.all([
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: 'NOVO' }], porPagina: 1, head: true }),
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: 'ERRO' }], porPagina: 1, head: true }),
+    listar(TABELA, { filtros: [{ coluna: 'status', valor: 'LANCADO' }], porPagina: 1, head: true }),
+    listar(TABELA_JOBS, {
+      select: 'id,status,created_at',
+      filtros: [{ coluna: 'agente_id', valor: AGENTE_ID }, { coluna: 'status', valor: ['pendente', 'rodando'], op: 'in' }],
+      ordenar: [{ coluna: 'created_at', asc: false }],
+      porPagina: 1,
+    }).catch(() => ({ rows: [] })),
+  ]);
+  resumo = { pendentes, erros, lancados, jobAtivo: jobsAtivos?.[0] || null };
+}
+
+function renderResumo() {
+  const alvo = raiz?.querySelector('#unfResumo');
+  if (!alvo) return;
+  const emAndamento = Boolean(resumo.jobAtivo);
+  alvo.innerHTML = `
+    ${kpis([
+      { label: 'Pendentes de lançamento', valor: String(resumo.pendentes) },
+      { label: 'Com erro', valor: String(resumo.erros) },
+      { label: 'Lançados no GRM', valor: String(resumo.lancados) },
+    ])}
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <button class="ds-btn ds-btn-primary" id="unfProcessar" type="button" ${resumo.pendentes === 0 ? 'disabled' : ''}>
+        ${emAndamento ? 'Processamento em andamento…' : 'Processar pendentes agora'}
+      </button>
+      <small style="opacity:.72">
+        ${emAndamento
+    ? 'O agente já está rodando ou na fila — aguarde terminar antes de disparar de novo.'
+    : 'Lança até 5 notas/holerites pendentes de verdade no GRM (não é teste). Roda em alguns minutos.'}
+      </small>
+    </div>`;
+  const botao = alvo.querySelector('#unfProcessar');
+  if (botao) botao.addEventListener('click', dispararAgente);
+}
+
+async function dispararAgente() {
+  if (disparando || !raiz) return;
+  if (resumo.jobAtivo) {
+    toast('Já existe um processamento em andamento para este agente.', 'warn');
+    return;
+  }
+  const confirmado = await confirmar({
+    titulo: 'Processar pendentes agora',
+    mensagem: `Isso vai lançar de verdade no GRM até 5 das ${resumo.pendentes} notas/holerites pendentes (sem revisão manual por item). Confirmar?`,
+    confirmarLabel: 'Processar agora',
+  });
+  if (!confirmado) return;
+
+  disparando = true;
+  const botao = raiz.querySelector('#unfProcessar');
+  if (botao) { botao.disabled = true; botao.textContent = 'Disparando…'; }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    await inserir(TABELA_JOBS, {
+      agente_id: AGENTE_ID,
+      status: 'pendente',
+      lane: 'alteracoes',
+      solicitado_por: session?.user?.email || session?.user?.id || null,
+    });
+    toast('Processamento disparado. O agente roda em até 1 minuto e leva alguns minutos por lote.', 'ok', 6000);
+    await carregarResumo();
+    if (raiz) renderResumo();
+  } catch (error) {
+    toast(mensagemDeErro(error, TABELA_JOBS), 'danger', 6000);
+  } finally {
+    disparando = false;
+  }
+}
+
 function render() {
   if (!raiz) return;
   raiz.innerHTML = `
@@ -221,6 +300,8 @@ function render() {
         </div>
       </article>
 
+      <article class="ds-card" style="display:grid;gap:14px" id="unfResumo"></article>
+
       <article class="ds-card" style="display:grid;gap:14px">
         <h3 style="margin:0">Envios recentes</h3>
         <div id="unfTabela"></div>
@@ -228,6 +309,7 @@ function render() {
     </section>`;
 
   raiz.querySelector('#unfEnviar').addEventListener('click', aoEnviar);
+  renderResumo();
 }
 
 async function aoEnviar() {
@@ -266,7 +348,11 @@ async function aoEnviar() {
   enviando = false;
   if (botao) { botao.disabled = false; botao.textContent = 'Enviar'; }
   if (input) input.value = '';
-  if (!falhas || sucesso) await carregarTabela();
+  if (!falhas || sucesso) {
+    await carregarTabela();
+    await carregarResumo();
+    if (raiz) renderResumo();
+  }
 }
 
 export async function renderContent(content) {
@@ -274,8 +360,9 @@ export async function renderContent(content) {
   const meuBoot = bootId;
   raiz = content;
   render();
-  await carregarTabela();
+  await Promise.all([carregarTabela(), carregarResumo()]);
   if (meuBoot !== bootId) return;
+  renderResumo();
 }
 
 initProtectedPage('Enviar Notas Fiscais e Holerites', renderContent);
