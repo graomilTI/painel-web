@@ -4,8 +4,9 @@
 //    O fluxo automático antigo enviava colaborador_nome/colaborador_cpf, mas o
 //    módulo de Hospedagem e a view usam nome_colaborador/cpf.
 //
-// 2) Programação → Embarque: Supervisor, Coordenador e Auditor não podem entrar
-//    como sugestão/candidato de O.S. A regra atua em 4 pontos:
+// 2) Programação → Embarque: Auditor e Administrativo não podem entrar como
+//    sugestão/candidato de O.S. Suporte, Supervisor e Coordenador da regional
+//    permanecem autorizáveis. A regra atua em 4 pontos:
 //    - filtra a RPC de candidatos antes do auto-preencher;
 //    - se o top da RPC ficar vazio após o filtro, injeta colaboradores elegíveis
 //      da regional para o gestor sempre conseguir escolher alguém;
@@ -18,7 +19,7 @@
 //    endereço textual, tenta geocodificar em memória para calcular a distância.
 import { supabase } from './supabaseClient.js';
 
-const PATCH_FLAG = '__programacaoAjustesPontuaisFixV5';
+const PATCH_FLAG = '__programacaoAjustesPontuaisFixV6';
 const colaboradoresElegiveisCache = new Map();
 const alojamentosDistanciaCache = { rows: null, loading: null };
 const geocodeCache = new Map();
@@ -44,12 +45,7 @@ function colaboradorKey(row) {
 
 function isCargoBloqueadoEmbarque(value) {
   const cargo = normalizeText(value);
-  return cargo.includes('SUPERVISOR')
-    || cargo.includes('AUDITOR')
-    || cargo.includes('COORDENADOR')
-    || cargo.includes('COORDENADORA')
-    || cargo === 'COORDENACAO'
-    || cargo.startsWith('COORDENACAO ');
+  return cargo.includes('AUDITOR') || cargo.includes('ADMINISTRATIVO');
 }
 
 function isSituacaoInativa(value) {

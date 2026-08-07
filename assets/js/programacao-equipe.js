@@ -59,18 +59,7 @@ function cpfNorm(value) { return String(value || '').replace(/\D/g, ''); }
 
 function isCargoBloqueado(value) {
   const cargo = normalizeText(value);
-  return cargo.includes('SUPERVISOR')
-    || cargo.includes('AUDITOR')
-    || cargo.includes('COORDENADOR')
-    || cargo.includes('COORDENADORA')
-    || cargo.includes('ADMINISTRATIVO')
-    || cargo === 'COORDENACAO'
-    || cargo.startsWith('COORDENACAO ');
-}
-
-function isCoordenacaoBloqueada(value) {
-  const coord = normalizeText(value);
-  return coord === 'GERAL' || coord.endsWith(' GERAL');
+  return cargo.includes('AUDITOR') || cargo.includes('ADMINISTRATIVO');
 }
 
 // Exceção pontual pedida pela usuária (2026-08-06): a supervisão "GERAL -
@@ -545,7 +534,7 @@ async function loadColaboradoresRegionalFresh(supervisao) {
   const seenIds = new Set();
   const seenNomes = new Set();
   return fontes
-    .filter((r) => (isSupervisaoExcecaoBloqueioCargo(r.supervisao) || (!isCargoBloqueado(r.cargo) && !isCoordenacaoBloqueada(r.coordenacao))) && !isColaboradorInativo(r))
+    .filter((r) => (isSupervisaoExcecaoBloqueioCargo(r.supervisao) || !isCargoBloqueado(r.cargo)) && !isColaboradorInativo(r))
     .sort((a, b) => (b._scoreRegional || 0) - (a._scoreRegional || 0) || colaboradorNome(a).localeCompare(colaboradorNome(b), 'pt-BR'))
     .map((r) => ({
       colaboradorId: colaboradorKey(r),
@@ -746,10 +735,9 @@ async function loadCandidatosPorOsUnico(supervisao, osComPonto, excluirIds) {
 
   const porOs = new Map();
   (data || []).forEach((row) => {
-    // Auditor/supervisor/coordenador/administrativo não pode aparecer como
-    // candidato pra atender O.S. — a RPC (banco) não filtra cargo, e o
-    // patch que fazia isso no mapa não cobria as opções de troca/adicionar
-    // aqui na Etapa 2 (pedido do usuário, 2026-07-17: filtrar na fonte).
+    // Suportes, supervisores e coordenadores da própria regional podem ser
+    // autorizados na O.S. Auditor e administrativo continuam fora da equipe
+    // operacional, salvo a supervisão administrativa explicitamente liberada.
     if (!isSupervisaoExcecaoBloqueioCargo(row.supervisao) && isCargoBloqueado(row.cargo)) return;
     const lista = porOs.get(row.os_id) || [];
     lista.push({
