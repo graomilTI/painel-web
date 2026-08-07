@@ -222,6 +222,11 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       fb.textContent = 'Enviando...';
       fb.classList.remove('err');
       try {
+        const patrimonioPromise = supabase
+          .from('patrimonios_snapshot')
+          .select('patrimonio_codigo,identificacao')
+          .ilike('funcionario', colab.nome)
+          .limit(100);
         const { error } = await supabase.from('programacao_inativacao_solicitacoes').insert({
           colaborador_id: colab.colaboradorId,
           nome_colaborador: colab.nome,
@@ -235,8 +240,23 @@ export async function renderProgramacaoSemOs(content, options = {}) {
           solicitado_por_nome: currentUser?.email || currentUser?.user_metadata?.nome || null,
         });
         if (error) throw error;
-        fecharModal();
-        await carregar({ silent: true });
+        const { data: patrimonios, error: patrimonioError } = await patrimonioPromise;
+        if (patrimonioError) console.warn('[sem-os] consulta de patrimônios para recolhimento:', patrimonioError);
+        if (patrimonios?.length) {
+          modalEl.innerHTML = `<div class="pso-modal-card">
+            <h3>Materiais precisam ser recolhidos</h3>
+            <p class="muted" style="margin:0">A solicitação de inativação de <strong>${esc(colab.nome)}</strong> foi registrada, mas existem ${patrimonios.length} ${patrimonios.length === 1 ? 'patrimônio' : 'patrimônios'} em seu nome. Providencie o recolhimento:</p>
+            <div style="margin:14px 0;padding:12px;border:1px solid rgba(251,146,60,.35);border-radius:12px;background:rgba(124,45,18,.16);max-height:220px;overflow:auto">${patrimonios.map((item) => `<div style="padding:5px 0"><strong>${esc(item.patrimonio_codigo || '-')}</strong> — ${esc(item.identificacao || 'Material sem identificação')}</div>`).join('')}</div>
+            <div class="pso-modal-actions"><button type="button" class="btn btn-primary" id="psoEntendi">Entendi, vou recolher</button></div>
+          </div>`;
+          modalEl.querySelector('#psoEntendi').onclick = async () => {
+            fecharModal();
+            await carregar({ silent: true });
+          };
+        } else {
+          fecharModal();
+          await carregar({ silent: true });
+        }
       } catch (error) {
         fb.textContent = error.message || 'Não foi possível registrar a solicitação.';
         fb.classList.add('err');
