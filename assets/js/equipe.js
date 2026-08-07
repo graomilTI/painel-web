@@ -65,21 +65,21 @@ function styles() {
     .eq-tab-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#dc2626;color:#fff;font-size:11px;font-weight:900}
     .eq-doc-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px}
     .eq-doc-acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .eq-inativ-card{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:center;border:1px solid rgba(248,113,113,.22);background:rgba(2,6,23,.28);border-radius:14px;padding:10px 12px;margin-bottom:8px;min-width:0}
-    .eq-inativ-info{display:grid;gap:7px;min-width:0}
-    .eq-inativ-line{display:flex;align-items:center;gap:7px;min-width:0;font-size:12.5px;white-space:nowrap}
-    .eq-inativ-line strong{color:#f8fafc;font-size:13px;overflow:hidden;text-overflow:ellipsis}
-    .eq-inativ-line b{color:#86efac}.eq-inativ-sep{color:#3f6657;font-weight:900}
-    .eq-inativ-regional,.eq-inativ-contract,.eq-inativ-reason,.eq-inativ-history-obs{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .eq-inativ-reason{color:#e2e8f0}.eq-inativ-contract{color:#cbd5e1}
-    .eq-inativ-status{display:flex;align-items:center;justify-content:center;white-space:nowrap}
-    .eq-inativ-processed{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .eq-inativ-obs{flex:1;width:auto;min-width:150px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:9px;padding:7px 9px;font-size:12px}
-    .eq-inativ-card>.btn{height:36px;padding:0 13px;white-space:nowrap}
+    .eq-inativ-grid{overflow:hidden;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.2)}
+    .eq-inativ-grid-head,.eq-inativ-card{display:grid;grid-template-columns:minmax(240px,1.25fr) minmax(120px,.65fr) minmax(150px,.8fr) minmax(220px,1.2fr) 48px 48px;align-items:center;min-width:0}
+    .eq-inativ-grid-head{min-height:34px;background:rgba(255,255,255,.025);border-bottom:1px solid rgba(148,163,184,.16);color:#8ca397;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}
+    .eq-inativ-grid-head>span,.eq-inativ-cell{min-width:0;padding:8px 12px;border-right:1px solid rgba(148,163,184,.1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .eq-inativ-grid-head>span:last-child,.eq-inativ-cell:last-child{border-right:0}
+    .eq-inativ-card{min-height:44px;border-bottom:1px solid rgba(148,163,184,.1);color:#dbe7e1;font-size:12.5px;transition:background .15s ease}
+    .eq-inativ-card:last-child{border-bottom:0}.eq-inativ-card:hover{background:rgba(34,197,94,.035)}
+    .eq-inativ-name{color:#f8fafc;font-weight:850}.eq-inativ-type{color:#b7d7c7}.eq-inativ-reason{color:#cbd5e1}
+    .eq-inativ-action{display:grid;place-items:center;padding:4px}
+    .eq-inativ-icon-btn{width:30px;height:30px;display:grid;place-items:center;border-radius:8px;border:1px solid rgba(148,163,184,.18);background:rgba(255,255,255,.025);font:inherit;font-size:17px;font-weight:900;cursor:pointer;transition:.15s ease}
+    .eq-inativ-icon-btn.process{color:#86efac}.eq-inativ-icon-btn.cancel{color:#fca5a5}.eq-inativ-icon-btn:hover{transform:translateY(-1px);background:rgba(255,255,255,.06)}.eq-inativ-icon-btn:disabled{cursor:wait;opacity:.5}
+    .eq-inativ-result{font-size:17px;font-weight:900}.eq-inativ-result.ok{color:#86efac}.eq-inativ-result.cancel{color:#fca5a5}.eq-inativ-result.muted{color:#64748b}
     .eq-person{display:flex;align-items:center;gap:10px;min-width:190px}.eq-avatar{width:34px;height:34px;display:grid;place-items:center;flex:0 0 auto;border-radius:11px;background:rgba(34,197,94,.12);border:1px solid rgba(74,222,128,.22);color:#86efac;font-size:12px;font-weight:900}.eq-person small{display:block;color:var(--muted);margin-top:2px}.eq-sector{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(59,130,246,.1);border:1px solid rgba(96,165,250,.2);color:#bfdbfe;font-size:12px;font-weight:800}.eq-structure-intro{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}.eq-structure-intro h3{margin:0 0 5px}.eq-structure-intro p{margin:0}.eq-row-actions{display:flex;gap:6px;white-space:nowrap}.eq-row-actions .btn{padding:7px 10px}.eq-form-help{font-size:12px;color:var(--muted);margin-top:5px;display:block}
     .eq-duty-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.eq-duty-card{border:1px solid rgba(148,163,184,.18);border-radius:18px;padding:18px;background:rgba(2,6,23,.28)}.eq-duty-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.eq-duty-head h4{margin:0;font-size:18px}.eq-duty-lock{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em;padding:5px 8px;border-radius:999px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.22);color:#fcd34d}.eq-duty-lock.can{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.22);color:#86efac}.eq-duty-times{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}.eq-duty-times label{font-size:11px;color:var(--muted)}.eq-duty-times input{width:100%;box-sizing:border-box;margin-top:5px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}.eq-duty-editors{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.eq-duty-editor{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;background:#10101e;border:1px solid rgba(255,255,255,.08);font-size:12px}.eq-duty-editor button{border:0;background:transparent;color:#fca5a5;cursor:pointer;padding:0}.eq-duty-add{display:flex;gap:8px;margin-top:10px}.eq-duty-add select{flex:1;min-width:0;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:9px;color-scheme:dark}
-    @media(max-width:1080px){.eq-inativ-card{grid-template-columns:minmax(0,1fr) auto auto}.eq-inativ-status{grid-column:2;grid-row:1}.eq-inativ-card>.btn[data-processar]{grid-column:2}.eq-inativ-card>.btn[data-cancelar]{grid-column:3}}
-    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-card{grid-template-columns:1fr auto}.eq-inativ-info{grid-column:1/-1}.eq-inativ-line{flex-wrap:wrap;white-space:normal}.eq-inativ-obs{flex-basis:100%}.eq-inativ-status{grid-column:2;grid-row:2}.eq-inativ-card>.btn[data-processar]{grid-column:1}.eq-inativ-card>.btn[data-cancelar]{grid-column:2}.eq-inativ-processed{grid-column:1/-1}}
+    @media(max-width:900px){.eq-duty-grid{grid-template-columns:1fr}.eq-inativ-grid-head{display:none}.eq-inativ-grid{border:0;background:transparent;overflow:visible}.eq-inativ-card{grid-template-columns:1fr 1fr 42px 42px;margin-bottom:8px;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(2,6,23,.28)}.eq-inativ-cell{border-right:0}.eq-inativ-name,.eq-inativ-reason{grid-column:1/-1}.eq-inativ-cell::before{content:attr(data-label);display:block;margin-bottom:3px;color:#71877c;font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.eq-inativ-action::before{display:none}}
     @media(max-width:760px){.eq-grid{grid-template-columns:1fr}.eq-full{grid-column:auto}.eq-structure-intro{grid-template-columns:1fr}.eq-structure-intro .btn{width:100%}.eq-duty-times{grid-template-columns:repeat(2,1fr)}}
     ${filtrosStyle()}
   </style>`;
@@ -541,51 +541,37 @@ async function loadInativacoes() {
 function renderInativacoesList(area) {
   const pendentes = state.inativacoes.filter((r) => r.status === 'PENDENTE');
   const processadas = state.inativacoes.filter((r) => r.status !== 'PENDENTE').slice(0, 20);
+  const gridHead = `<div class="eq-inativ-grid-head"><span>Colaborador</span><span>Tipo</span><span>Supervisão</span><span>Motivo</span><span title="Processar">✓</span><span title="Cancelar">×</span></div>`;
 
   function cardHtml(r) {
     const isPendente = r.status === 'PENDENTE';
-    const statusLabel = r.status === 'PROCESSADA' ? 'Processada' : r.status === 'CANCELADA' ? 'Cancelada' : 'Pendente';
     const tipoRaw = state.tiposContratoInativacoes.get(String(r.colaborador_id || '').replace(/\D/g, '')) || '';
     const tipoNorm = String(tipoRaw).toUpperCase();
     const tipo = tipoNorm.includes('INTERMITENTE') ? 'Intermitente' : tipoNorm.includes('DIARISTA') ? 'Diarista' : tipoNorm.includes('EFETIVO') ? 'Efetivo' : 'Não informado';
-    const regional = r.coordenacao || r.supervisao || 'Não informada';
+    const supervisao = r.supervisao || r.coordenacao || 'Não informada';
     return `<div class="eq-inativ-card">
-      <div class="eq-inativ-info">
-        <div class="eq-inativ-line">
-          <strong title="${esc(r.nome_colaborador)}">${esc(r.nome_colaborador)}</strong>
-          <span class="eq-inativ-sep">—</span>
-          <span class="eq-inativ-regional"><b>Regional:</b> ${esc(regional)}</span>
-          <span class="eq-inativ-sep">—</span>
-          ${isPendente
-            ? `<input type="text" class="eq-inativ-obs" data-obs-rh="${esc(r.id)}" placeholder="Observação (opcional)">`
-            : `<span class="eq-inativ-history-obs" title="${esc(r.observacao_rh || 'Sem observação')}"><b>Observação:</b> ${esc(r.observacao_rh || 'Sem observação')}</span>`}
-        </div>
-        <div class="eq-inativ-line">
-          <span class="eq-inativ-contract"><b>Tipo:</b> ${esc(tipo)}</span>
-          <span class="eq-inativ-sep">—</span>
-          <span class="eq-inativ-reason" title="${esc(r.motivo)}"><b>Motivo:</b> ${esc(r.motivo)}</span>
-        </div>
-      </div>
-      <div class="eq-inativ-status">${statusPill(r.status, { PENDENTE: { label: 'Pendente' }, PROCESSADA: { label: 'Processada' }, CANCELADA: { label: 'Cancelada' } })}</div>
+      <div class="eq-inativ-cell eq-inativ-name" data-label="Colaborador" title="${esc(r.nome_colaborador)}">${esc(r.nome_colaborador)}</div>
+      <div class="eq-inativ-cell eq-inativ-type" data-label="Tipo">${esc(tipo)}</div>
+      <div class="eq-inativ-cell" data-label="Supervisão" title="${esc(supervisao)}">${esc(supervisao)}</div>
+      <div class="eq-inativ-cell eq-inativ-reason" data-label="Motivo" title="${esc(r.motivo)}">${esc(r.motivo)}</div>
       ${isPendente
-        ? `<button class="btn btn-small btn-primary" data-processar="${esc(r.id)}" type="button">Marcar como processada</button>
-          <button class="btn btn-small btn-secondary" data-cancelar="${esc(r.id)}" type="button">Cancelar pedido</button>`
-        : `<div class="muted eq-inativ-processed" title="${r.processado_por_nome ? `${statusLabel} por ${esc(r.processado_por_nome)} em ${brDate(r.processado_em)}` : statusLabel}">${r.processado_por_nome ? `${statusLabel} por ${esc(r.processado_por_nome)} em ${brDate(r.processado_em)}` : statusLabel}</div>`}
+        ? `<div class="eq-inativ-cell eq-inativ-action"><button class="eq-inativ-icon-btn process" data-processar="${esc(r.id)}" type="button" title="Marcar como processada" aria-label="Marcar ${esc(r.nome_colaborador)} como processada">✓</button></div>
+          <div class="eq-inativ-cell eq-inativ-action"><button class="eq-inativ-icon-btn cancel" data-cancelar="${esc(r.id)}" type="button" title="Cancelar pedido" aria-label="Cancelar pedido de ${esc(r.nome_colaborador)}">×</button></div>`
+        : `<div class="eq-inativ-cell eq-inativ-action"><span class="eq-inativ-result ${r.status === 'PROCESSADA' ? 'ok' : 'muted'}" title="${r.status === 'PROCESSADA' ? 'Processada' : 'Não processada'}">${r.status === 'PROCESSADA' ? '✓' : '—'}</span></div>
+          <div class="eq-inativ-cell eq-inativ-action"><span class="eq-inativ-result ${r.status === 'CANCELADA' ? 'cancel' : 'muted'}" title="${r.status === 'CANCELADA' ? 'Cancelada' : 'Não cancelada'}">${r.status === 'CANCELADA' ? '×' : '—'}</span></div>`}
     </div>`;
   }
 
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Inativações solicitadas</h3><p class="muted">Pedidos de inativação feitos pelo gestor na Programação (Etapa "Sem O.S."). O clique do gestor não desliga ninguém — processe aqui e realize a inativação no cadastro/GRM.</p></div></div>
-  <div class="mt-16">${pendentes.length ? pendentes.map(cardHtml).join('') : '<p class="eq-empty">Nenhuma solicitação pendente.</p>'}</div>
-  ${processadas.length ? `<div class="section-head mt-16"><div><h3>Histórico recente</h3></div></div><div class="mt-16">${processadas.map(cardHtml).join('')}</div>` : ''}`;
+  <div class="mt-16">${pendentes.length ? `<div class="eq-inativ-grid">${gridHead}${pendentes.map(cardHtml).join('')}</div>` : '<p class="eq-empty">Nenhuma solicitação pendente.</p>'}</div>
+  ${processadas.length ? `<div class="section-head mt-16"><div><h3>Histórico recente</h3></div></div><div class="mt-16 eq-inativ-grid">${gridHead}${processadas.map(cardHtml).join('')}</div>` : ''}`;
 
   area.querySelectorAll('[data-processar]').forEach((b) => b.onclick = async () => {
     const id = b.dataset.processar;
-    const obs = area.querySelector(`[data-obs-rh="${id}"]`)?.value?.trim() || null;
     b.disabled = true;
     try {
       const { error } = await supabase.from('programacao_inativacao_solicitacoes').update({
         status: 'PROCESSADA',
-        observacao_rh: obs,
         processado_por: state.ctx?.user?.id || null,
         processado_por_nome: state.ctx?.user?.email || null,
         processado_em: new Date().toISOString(),
@@ -598,12 +584,10 @@ function renderInativacoesList(area) {
   area.querySelectorAll('[data-cancelar]').forEach((b) => b.onclick = async () => {
     if (!confirm('Cancelar esta solicitação de inativação?')) return;
     const id = b.dataset.cancelar;
-    const obs = area.querySelector(`[data-obs-rh="${id}"]`)?.value?.trim() || null;
     b.disabled = true;
     try {
       const { error } = await supabase.from('programacao_inativacao_solicitacoes').update({
         status: 'CANCELADA',
-        observacao_rh: obs,
         processado_por: state.ctx?.user?.id || null,
         processado_por_nome: state.ctx?.user?.email || null,
         processado_em: new Date().toISOString(),
