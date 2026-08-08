@@ -7,7 +7,7 @@ const CATALOGO = [
 ].map(([material,tipo])=>({material,tipo}));
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[] };
+const state = { pageTab:'solicitacao', mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[] };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return y&&m&&d?`${d}/${m}/${y}`:'-'; };
@@ -531,7 +531,7 @@ function styles(){return `<style>
 }
 </style>`}
 
-export async function renderContent(content, userContext){
+async function renderSolicitacaoTab(content, userContext){
   await loadColaboradores();
   content.innerHTML=`${styles()}
   <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button></div></div>
@@ -581,6 +581,39 @@ export async function renderContent(content, userContext){
     doSolicitar();
   };
   await loadMinhas(userId);
+}
+
+// Aba "EPI": módulo separado, carregado sob demanda (mesmo padrão de
+// segurancaTrabalho.js:renderEpisTab ao importar epiRh.js) — evita que o
+// initProtectedPage() de compras-epi-gestor.js reinicialize a página toda.
+async function renderEpiTab(area, userContext){
+  area.innerHTML = `<div class="cmp-empty mt-16">Carregando...</div>`;
+  document.documentElement.classList.add('is-route-transitioning');
+  try{
+    const mod = await import('./compras-epi-gestor.js');
+    area.innerHTML = '';
+    await mod.renderContent(area, userContext);
+  } finally {
+    document.documentElement.classList.remove('is-route-transitioning');
+  }
+}
+
+function pageTabsStyles(){return `<style>.cmp-page-tabs{display:flex;gap:8px;flex-wrap:wrap}.cmp-page-tab{width:auto!important;margin:0!important;border:1px solid var(--line)!important;background:var(--bg-card)!important;color:var(--muted)!important;border-radius:12px!important;padding:9px 16px!important;font-weight:700;font-size:13px}.cmp-page-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;color:#f0fff7!important;border-color:var(--green-2)!important}</style>`}
+
+export async function renderContent(content, userContext){
+  content.innerHTML = `${pageTabsStyles()}
+    <div class="cmp-page-tabs"><button class="btn btn-secondary cmp-page-tab active" data-page-tab="solicitacao" type="button">Solicitação</button><button class="btn btn-secondary cmp-page-tab" data-page-tab="epi" type="button">EPI</button></div>
+    <div id="cmpTabArea" class="mt-16"></div>`;
+  const area = document.getElementById('cmpTabArea');
+  const tabButtons = [...content.querySelectorAll('[data-page-tab]')];
+  async function ativarPageTab(tab){
+    state.pageTab = tab;
+    tabButtons.forEach(b=>b.classList.toggle('active', b.dataset.pageTab===tab));
+    if(tab==='epi') await renderEpiTab(area, userContext);
+    else await renderSolicitacaoTab(area, userContext);
+  }
+  tabButtons.forEach(btn=>btn.onclick=()=>{ if(state.pageTab!==btn.dataset.pageTab) ativarPageTab(btn.dataset.pageTab); });
+  await ativarPageTab('solicitacao');
 }
 
 initProtectedPage('Compras', renderContent);
