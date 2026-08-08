@@ -20,7 +20,7 @@ const EMPREGADOR_EPI = {
   endereco:'AV BRASIL, nº 2732, APT 01, SAO CRISTOVAO, Cascavel - PR, CEP 85816-294',
 };
 
-const state = { solicitacoes:[], solFilter:'pendente' };
+const state = { solicitacoes:[], solFilter:'aguardando_gestor' };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-';};
@@ -111,17 +111,6 @@ function dadosColaboradorSolicitacao(s={},itens=[]){
   };
 }
 
-async function notifyCompras(message){
-  const cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
-  for(const cfg of cfgs){
-    if(!cfg.telefone) continue;
-    try{
-      const tel=String(cfg.telefone).replace(/\D/g,'');
-      await supabase.functions.invoke('botconversa-send',{body:{phone:tel,message,nome:cfg.nome||''}});
-    }catch(e){console.warn('[notifyCompras]',e);}
-  }
-}
-
 async function loadSolicitacoes(){
   state.solicitacoes=await safe(()=>supabase.from('compras_solicitacoes').select('*, compras_itens(*)').eq('tipo_solicitacao','epi_rh').order('created_at',{ascending:false}).limit(200));
   renderSolicitacoes();
@@ -132,11 +121,12 @@ function solBucket(s){
   if(s.status==='cancelado') return 'cancelado';
   if(s.status==='comprado') return 'comprado';
   if(s.status==='recusado') return 'recusado';
+  if(s.status==='aguardando_gestor') return 'aguardando_gestor';
   return 'pendente';
 }
 
 function statusPill(s){
-  const map={pendente:['#fde68a','rgba(245,158,11,.1)','Pendente'],ok:['#bbf7d0','rgba(22,101,52,.18)','Confirmado'],em_cotacao:['#93c5fd','rgba(59,130,246,.12)','Em cotação'],em_analise:['#c4b5fd','rgba(139,92,246,.12)','Em análise'],pendente_pagamento:['#fde68a','rgba(245,158,11,.1)','Pend. Pagamento'],aguardando_nf:['#fde68a','rgba(245,158,11,.1)','Aguard. NF'],aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguard. Termo'],comprado:['#bbf7d0','rgba(22,101,52,.18)','Comprado'],concluido:['#a5b4fc','rgba(99,102,241,.14)','Concluído'],recusado:['#fecaca','rgba(220,38,38,.12)','Recusado'],cancelado:['#fecaca','rgba(220,38,38,.12)','Cancelado']};
+  const map={aguardando_gestor:['#fde68a','rgba(245,158,11,.1)','Aguardando Gestor'],pendente:['#fde68a','rgba(245,158,11,.1)','Pendente'],ok:['#bbf7d0','rgba(22,101,52,.18)','Confirmado'],em_cotacao:['#93c5fd','rgba(59,130,246,.12)','Em cotação'],em_analise:['#c4b5fd','rgba(139,92,246,.12)','Em análise'],pendente_pagamento:['#fde68a','rgba(245,158,11,.1)','Pend. Pagamento'],aguardando_nf:['#fde68a','rgba(245,158,11,.1)','Aguard. NF'],aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguard. Termo'],comprado:['#bbf7d0','rgba(22,101,52,.18)','Comprado'],concluido:['#a5b4fc','rgba(99,102,241,.14)','Concluído'],recusado:['#fecaca','rgba(220,38,38,.12)','Recusado'],cancelado:['#fecaca','rgba(220,38,38,.12)','Cancelado']};
   const [color,bg,label]=map[s]||['#cbd5e1','rgba(148,163,184,.1)',s||'-'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${color};background:${bg};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
 }
@@ -265,21 +255,20 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
     if(!checkedEpis.length) throw new Error('Marque pelo menos um EPI antes de solicitar.');
     const obs=modal.querySelector('#solObs')?.value?.trim()||null;
     const u=userContext?.user||{};
-    const header={data_solicitacao:today(),solicitante:u.name||u.email||'RH',solicitante_id:u.id||null,tipo_solicitacao:'epi_rh',status:'pendente',observacoes:obs,coordenacao:colab.coordenacao||'RH',supervisao:colab.supervisao||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,created_by:u.id||null};
+    const header={data_solicitacao:today(),solicitante:u.name||u.email||'RH',solicitante_id:u.id||null,tipo_solicitacao:'epi_rh',status:'aguardando_gestor',observacoes:obs,coordenacao:colab.coordenacao||'RH',supervisao:colab.supervisao||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,created_by:u.id||null};
     let {data:sol,error:solErr}=await supabase.from('compras_solicitacoes').insert(header).select('id').single();
     if(solErr){
       const limpo={data_solicitacao:header.data_solicitacao,solicitante:header.solicitante,tipo_solicitacao:header.tipo_solicitacao,status:header.status,coordenacao:header.coordenacao,observacoes:header.observacoes};
       const r2=await supabase.from('compras_solicitacoes').insert(limpo).select('id').single();
       if(r2.error) throw r2.error; sol=r2.data;
     }
-    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:'pendente'}));
+    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:'aguardando_gestor'}));
     const {error:itensErr}=await supabase.from('compras_itens').insert(itens);
     if(itensErr){
-      const fallback=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:'pendente'}));
+      const fallback=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:'aguardando_gestor'}));
       const r2=await supabase.from('compras_itens').insert(fallback); if(r2.error) throw r2.error;
     }
-    await notifyCompras(`Nova solicitação de EPI — RH\nColaborador: ${colab.nome}\nSupervisão: ${colab.supervisao||'Não informada'}\nItens: ${checkedEpis.map(e=>e.material+(e.tamanho?` (${e.tamanho})`:'')).join(', ')}`);
-    modal.classList.remove('open'); setSolMsg('Solicitação enviada ao setor de Compras.'); await loadSolicitacoes();
+    modal.classList.remove('open'); setSolMsg('Solicitação enviada para aprovação do gestor da supervisão.'); await loadSolicitacoes();
   }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
   finally{btn.disabled=false;}
 }
@@ -287,7 +276,7 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
 function styles(){return `<style>.epi-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.epi-table{width:100%;border-collapse:collapse;min-width:760px}.epi-table th,.epi-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.epi-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.epi-empty{text-align:center;color:var(--muted)}.epi-acoes{display:flex;gap:8px;flex-wrap:wrap}.epi-link{color:#86efac;text-decoration:underline;font-size:12px}.epi-feedback{font-weight:700;display:block}.epi-feedback.err{color:#fecaca}.epi-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.epi-modal.open{display:flex}.epi-modal-card{width:min(760px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,.06);border-radius:22px;padding:24px;color:#e2e2f0}.epi-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.epi-detail-grid>div{display:flex;flex-direction:column;gap:4px}.epi-detail-grid .muted{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.epi-filter-tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}.epi-filter-tabs-group{display:flex;gap:8px;flex-wrap:wrap}.epi-filter-tabs .active{background:#166534!important;color:#fff!important}.epi-icon-btn{width:38px;height:38px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;font-size:17px;line-height:1;flex:0 0 38px}.mt-20{margin-top:20px}.mt-8{margin-top:8px}.mt-16{margin-top:16px}.epi-check-row:hover{background:#12122a!important;border-color:rgba(74,222,128,.3)!important}.epi-colab-info{margin-top:8px;padding:10px 12px;border:1px solid rgba(74,222,128,.25);background:rgba(22,101,52,.12);border-radius:12px;color:#d1fae5}.epi-colab-info small{color:#bbf7d0}.epi-colab-sug{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:220px;overflow:auto;margin-top:4px}.epi-colab-sug button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px;cursor:pointer;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}.epi-colab-sug button small{color:var(--muted);font-weight:800}@media(max-width:640px){.epi-detail-grid{grid-template-columns:1fr}}</style>`;}
 
 export async function renderContent(content, userContext){
-  content.innerHTML=`${styles()}<section class="card"><div class="section-head"><div><h3>Solicitações de Compra EPI</h3><p class="muted">Solicitações do RH ao setor de Compras. A supervisão do colaborador acompanha a solicitação.</p></div></div><div class="epi-filter-tabs mt-16"><div class="epi-filter-tabs-group"><button class="btn btn-secondary active" data-sf="pendente" type="button">Pendentes</button><button class="btn btn-secondary" data-sf="comprado" type="button">Comprados</button><button class="btn btn-secondary" data-sf="concluido" type="button">Concluído</button><button class="btn btn-secondary" data-sf="cancelado" type="button">Cancelados</button><button class="btn btn-secondary" data-sf="todos" type="button">Todos</button></div><div class="epi-filter-tabs-group"><button class="btn btn-primary epi-icon-btn" id="epiNovaSol" type="button" title="Adicionar solicitação" aria-label="Adicionar solicitação">+</button><button class="btn btn-secondary epi-icon-btn" id="epiSolRefresh" type="button" title="Atualizar solicitações" aria-label="Atualizar solicitações">↻</button></div></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th>EPIs / CA</th><th>Status</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="6" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section><div class="epi-modal" id="epiModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card"><div class="section-head"><div><h3>Solicitações de Compra EPI</h3><p class="muted">Solicitações do RH, sujeitas à aprovação do gestor da supervisão antes de irem para Compras.</p></div></div><div class="epi-filter-tabs mt-16"><div class="epi-filter-tabs-group"><button class="btn btn-secondary active" data-sf="aguardando_gestor" type="button">Aguardando Gestor</button><button class="btn btn-secondary" data-sf="pendente" type="button">Pendentes</button><button class="btn btn-secondary" data-sf="comprado" type="button">Comprados</button><button class="btn btn-secondary" data-sf="concluido" type="button">Concluído</button><button class="btn btn-secondary" data-sf="cancelado" type="button">Cancelados</button><button class="btn btn-secondary" data-sf="todos" type="button">Todos</button></div><div class="epi-filter-tabs-group"><button class="btn btn-primary epi-icon-btn" id="epiNovaSol" type="button" title="Adicionar solicitação" aria-label="Adicionar solicitação">+</button><button class="btn btn-secondary epi-icon-btn" id="epiSolRefresh" type="button" title="Atualizar solicitações" aria-label="Atualizar solicitações">↻</button></div></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th>EPIs / CA</th><th>Status</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="6" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section><div class="epi-modal" id="epiModal"></div>`;
   document.getElementById('epiNovaSol').onclick=()=>openNovasSolicitacaoModal(userContext);
   document.getElementById('epiSolRefresh').onclick=loadSolicitacoes;
   document.querySelectorAll('[data-sf]').forEach(b=>b.onclick=()=>{state.solFilter=b.dataset.sf; document.querySelectorAll('[data-sf]').forEach(x=>x.classList.toggle('active',x===b)); renderSolicitacoes();});
