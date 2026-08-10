@@ -64,6 +64,7 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
+var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_DIAS) || 3);
 // Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
 // execução conclua antes do watchdog; os restantes são enfileirados pela
 // continuação automática já existente.
@@ -101,6 +102,7 @@ function parseArgs(argv) {
   var out = {};
   for (var i = 0; i < argv.length; i++) {
     if (argv[i] === '--os') out.os = argv[++i];
+    else if (argv[i] === '--data') out.data = argv[++i];
     else if (argv[i] === '--debug') out.debug = true;
     else if (argv[i] === '--dry-run') out.dryRun = true;
     else if (argv[i] === '--funcionario') out.funcionario = argv[++i];
@@ -494,7 +496,6 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
 
     var status = relacionados.some(function (g) { return g.temNhe || g.temLaudo; }) ? 'DOIS EMBARQUES' : 'PENDENTE';
     if (status !== 'PENDENTE') return;
-    if (!item.funcionario) return;
     pendentes.push({
       data: item.date,
       data_br: brDate(item.date),
@@ -523,6 +524,43 @@ async function buscarPendentes() {
   return pendentes;
 }
 
+async function buscarPendenciasAnteriores(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var result = await supabase
+    .from(TABLE_RESULTADOS)
+    .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
+    .gte('data_referencia', ymd(inicio))
+    .lt('data_referencia', dataReferencia)
+    .in('status', ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO'])
+    .order('data_referencia', { ascending: true });
+  if (result.error) throw result.error;
+  return (result.data || []).map(function (row) {
+    return {
+      data: row.data_referencia,
+      data_br: brDate(row.data_referencia),
+      os: normOs(row.numero_os),
+      cliente: row.cliente,
+      supervisao: row.supervisao,
+      // Em lançamentos via gestor, `funcionario` guarda quem seria escolhido
+      // no modal; para refazer a geofence precisamos do colaborador original.
+      funcionario: row.raw && row.raw.colaborador_original ? row.raw.colaborador_original : row.funcionario,
+      osCoord: undefined,
+      reprocessamento: true,
+      statusAnterior: row.status
+    };
+  });
+}
+
+function combinarPendentes(atuais, anteriores) {
+  var porChave = {};
+  (anteriores || []).concat(atuais || []).forEach(function (item) {
+    if (!item || !item.os || !item.data) return;
+    porChave[chaveUnica(item.data, item.os)] = item;
+  });
+  return Object.keys(porChave).map(function (key) { return porChave[key]; });
+}
+
 /* ---------------------------------------------------------------------- *
  * Coordenada da O.S. + login do colaborador dentro do raio
  * ---------------------------------------------------------------------- */
@@ -544,12 +582,32 @@ function isValidCoord(lat, lng) {
 // Versão avulsa de resolverCoordenadasEmLote, usada só no modo manual (--os).
 // Mesmo critério: só considera operacional_os com data_os <= data de
 // referência (não pega reabertura futura do mesmo número de O.S.).
-async function resolverCoordenadaOs(numeroOs) {
-  var mapa = await resolverCoordenadasEmLote([numeroOs]);
-  return mapa[numeroOs] || null;
+async function resolverCoordenadaOs(numeroOs, dataReferencia) {
+  var result = await supabase
+    .from('operacional_os')
+    .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,observacao_logistica')
+    .eq('numero_os', numeroOs)
+    .lte('data_os', dataReferencia || referenceIso())
+    .order('data_os', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  var row = result.data;
+  if (!row) return null;
+  return {
+    lat: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_latitude) : null,
+    lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
+    servico: row.servico,
+    supervisao: row.supervisao,
+    cliente: row.cliente,
+    embarque: row.embarque,
+    local: row.ponto1_nome || row.embarque,
+    temLaudo: typeof row.observacao_logistica === 'string' && row.observacao_logistica.indexOf('LAUDO:') === 0
+  };
 }
 
 var gestoresCache = null;
+var loginsPorDataCache = {};
 
 async function carregarGestores() {
   if (gestoresCache) return gestoresCache;
@@ -595,14 +653,23 @@ async function buscarLoginColaborador(dataYmd, funcionario, osCoord) {
   var wanted = normText(funcionario);
   if (!wanted) return null;
 
-  var result = await supabase
-    .from(TABLE_LOGIN)
-    .select('colaborador,colaborador_chave,latitude,longitude,hora_movimento,coordenacao,supervisao')
-    .eq('data_movimento', dataYmd)
-    .limit(5000);
-  if (result.error) throw result.error;
+  // Não usar apenas .limit(5000): o limite máximo do PostgREST do projeto é
+  // menor e truncava dias movimentados (07/08 teve 2.705 linhas), fazendo um
+  // login existente como o da O.S. 88709 virar SEM_LOGIN. Pagina até o fim.
+  var rows = loginsPorDataCache[dataYmd];
+  if (!rows) {
+    rows = await fetchPaged(function (from, to) {
+      return supabase
+        .from(TABLE_LOGIN)
+        .select('colaborador,colaborador_chave,latitude,longitude,hora_movimento,coordenacao,supervisao')
+        .eq('data_movimento', dataYmd)
+        .order('id', { ascending: true })
+        .range(from, to);
+    }, 20000);
+    loginsPorDataCache[dataYmd] = rows;
+  }
 
-  var candidatos = (result.data || []).filter(function (row) {
+  var candidatos = rows.filter(function (row) {
     return normText(row.colaborador) === wanted && isValidCoord(row.latitude, row.longitude);
   });
   if (!candidatos.length) return null;
@@ -637,14 +704,17 @@ function chaveUnica(dataReferencia, numeroOs) {
 }
 
 async function carregarJaLancadas(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
   var result = await supabase
     .from(TABLE_RESULTADOS)
-    .select('numero_os,status')
-    .eq('data_referencia', dataReferencia)
+    .select('data_referencia,numero_os,status')
+    .gte('data_referencia', ymd(inicio))
+    .lte('data_referencia', dataReferencia)
     .eq('status', 'SUCESSO');
   if (result.error) throw result.error;
   var set = {};
-  (result.data || []).forEach(function (row) { set[row.numero_os] = true; });
+  (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
   return set;
 }
 
@@ -1093,20 +1163,27 @@ async function main() {
   var dryRun = args.dryRun || DRY_RUN;
   var runId = null;
 
-  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
     var dataReferencia = referenceIso();
     runId = await criarExecucao(dataReferencia);
 
-    var pendentes = await buscarPendentes();
+    var pendentesAtuais = await buscarPendentes();
+    var pendenciasAnteriores = await buscarPendenciasAnteriores(dataReferencia);
+    var pendentes = combinarPendentes(pendentesAtuais, pendenciasAnteriores);
+    if (pendenciasAnteriores.length) {
+      log('INFO', pendenciasAnteriores.length + ' pendência(s) dos últimos ' + REPROCESSAR_DIAS + ' dias incluída(s) para nova tentativa.');
+    }
     if (args.os) {
       var osSolicitada = normOs(args.os);
-      pendentes = pendentes.filter(function (item) { return item.os === osSolicitada; });
+      pendentes = pendentes.filter(function (item) {
+        return item.os === osSolicitada && (!args.data || item.data === ymd(args.data));
+      });
       if (pendentes.length && args.funcionario) pendentes[0].funcionario = args.funcionario;
       if (!pendentes.length) {
-        log('WARN', 'O.S. ' + osSolicitada + ' não é elegível: pode existir carga/NHE no mesmo ponto, serviço fora do escopo ou ausência de informativo. --forcar não ignora esta regra.');
+        log('WARN', 'O.S. ' + osSolicitada + (args.data ? ' em ' + args.data : '') + ' não é elegível: pode existir carga/NHE no mesmo ponto, serviço fora do escopo ou ausência de informativo. --forcar não ignora esta regra.');
       }
     }
     stats.pendentes = pendentes.length;
@@ -1116,12 +1193,18 @@ async function main() {
 
     for (var i = 0; i < pendentes.length; i++) {
       var p = pendentes[i];
-      if (jaLancadas[p.os]) continue;
+      if (jaLancadas[chaveUnica(p.data, p.os)]) continue;
+
+      if (!p.funcionario) {
+        stats.semFuncionario++;
+        await salvarResultado(p, { status: 'SEM_FUNCIONARIO', erro: 'Informativo sem valor no campo Atualizado por/Funcionário.' });
+        continue;
+      }
 
       // pendentes vindos de calcularPendentes já trazem osCoord resolvido; o
       // modo manual (--os) não passa por calcularPendentes, então resolve na
       // hora (mesmo critério: data_os <= referência).
-      var osCoord = p.osCoord !== undefined ? p.osCoord : await resolverCoordenadaOs(p.os);
+      var osCoord = p.osCoord !== undefined ? p.osCoord : await resolverCoordenadaOs(p.os, p.data);
       if (!osCoord) {
         stats.semCoordenadaOs++;
         await salvarResultado(p, { status: 'SEM_COORDENADA_OS' });
@@ -1244,8 +1327,9 @@ async function main() {
       log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
     }
 
+    var totalFalhas = stats.erro + stats.semLogin + stats.semFuncionario + stats.foraDoRaio + stats.semCoordenadaOs;
     await finalizarExecucao(runId, {
-      status: 'SUCESSO',
+      status: totalFalhas > 0 ? 'PARCIAL' : 'SUCESSO',
       total_pendentes: stats.pendentes,
       total_candidatos: stats.candidatos,
       total_sucesso: stats.sucesso,
@@ -1278,6 +1362,9 @@ module.exports = {
   normOs: normOs,
   normText: normText,
   buscarPendentes: buscarPendentes,
+  buscarPendenciasAnteriores: buscarPendenciasAnteriores,
+  combinarPendentes: combinarPendentes,
+  buscarLoginColaborador: buscarLoginColaborador,
   resolverCoordenadaOs: resolverCoordenadaOs,
   buscarGestorRegional: buscarGestorRegional
 };
