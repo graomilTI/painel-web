@@ -1624,6 +1624,15 @@ export function renderContent(content, userContext) {
     if(hotel?.pix_chave)setTimeout(()=>document.getElementById('btnGerarPix')?.click(),80);
   }
 
+  window.__abrirPagamentoHospedagem=(solicitacaoId)=>{
+    const row=state.rows.find((item)=>String(item.solicitacao_id)===String(solicitacaoId));
+    if(!row)return;
+    state.selected=row;
+    const extras=document.getElementById('checkoutExtrasList');
+    if(extras)extras.innerHTML='';
+    openModalPagar();
+  };
+
   async function confirmarPagamento() {
     const fornecedor=document.getElementById('pagarFornecedor')?.value.trim();
     const valor=Number(document.getElementById('pagarValor')?.value||0);
