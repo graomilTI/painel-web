@@ -16,6 +16,7 @@ const BTG_AGENT_ALIASES = [
 ];
 
 const CARGAS_AGENT_ID = 'sync-cargas-geofence';
+const DISTRIBUICAO_OS_AGENT_ID = 'aplicar-distribuicao-os';
 
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
@@ -41,7 +42,7 @@ const AGENTES = [
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa' },
   { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores' },
   { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
-  { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: 'desativado', table: 'operacional_os', direction: 'saida' },
+  { id: DISTRIBUICAO_OS_AGENT_ID, name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min (por supervisão)', table: 'operacional_os', direction: 'saida' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
@@ -61,6 +62,7 @@ const state = {
   loading: false,
   selectedAgent: null,
   botconversaFailures: [],
+  supervisoesDistribuicao: [],
   cargasKpi: null,
   activeTab: 'entrada',
   executions: [],
@@ -470,6 +472,7 @@ function renderAgentDetails(agente) {
     </div>
     <div><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
     ${agente.source === 'botconversa' ? renderBotConversaFailures() : ''}
+    ${agente.id === DISTRIBUICAO_OS_AGENT_ID ? renderDistribuicaoSupervisoes() : ''}
     <div style="margin-top:16px">
       <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>
       <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 ${agente.source === 'botconversa' ? 'Onde ver os logs' : 'Ver Log cPanel'}</button>
@@ -487,6 +490,39 @@ function renderBotConversaFailures() {
   }
   const lines = rows.map((r) => `<div class="ag-log-error">${esc(formatDate(r.created_at))} · ${esc(r.nome || '-')} (${esc(r.telefone || '-')}): ${esc(r.erro || 'erro desconhecido')}</div>`).join('');
   return `<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Contatos com falha (últimas ${rows.length}):</strong></p><div class="ag-log-box">${lines}</div></div>`;
+}
+
+function renderDistribuicaoSupervisoes() {
+  const rows = state.supervisoesDistribuicao;
+  if (rows === null) {
+    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Supervisões com distribuição automática:</strong></p><div class="ag-log-box">Carregando...</div></div>';
+  }
+  const ativas = rows.filter((s) => s.distribuicao_os_automatica).length;
+  const itens = rows.map((s) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:5px 0;color:#e2e2f0;font-size:12px;cursor:pointer">
+      <input type="checkbox" ${s.distribuicao_os_automatica ? 'checked' : ''} onchange="toggleDistribuicaoSupervisao('${esc(s.id)}', this.checked)" />
+      ${esc(s.nome)}
+    </label>`).join('') || '<div class="ag-log-line">Nenhuma supervisão cadastrada em public.supervisoes.</div>';
+  return `<div style="margin-top:16px">
+    <p style="margin-bottom:4px"><strong>Supervisões com distribuição automática (${ativas}/${rows.length}):</strong></p>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px">Marque só as supervisões cujo gestor já usa a tela "Distribuir O.S" do painel — nas demais o agente ignora as O.S. e a associação continua sendo feita manualmente no Graint.</p>
+    <div class="ag-log-box" style="max-height:280px">${itens}</div>
+  </div>`;
+}
+
+async function loadSupervisoesDistribuicao() {
+  try {
+    const { data, error } = await supabase
+      .from('supervisoes')
+      .select('id, nome, distribuicao_os_automatica')
+      .order('nome');
+    if (error) throw error;
+    state.supervisoesDistribuicao = data || [];
+  } catch (e) {
+    console.error('Erro carregando supervisões da distribuição de OS:', e);
+    state.supervisoesDistribuicao = [];
+  }
+  render();
 }
 
 async function loadBotConversaFailures(jobId) {
@@ -529,8 +565,10 @@ window.selectAgent = (agentId) => {
   const agenteData = state.agentes.find((a) => a.id === agentId);
   state.selectedAgent = { ...agente, ...agenteData };
   state.botconversaFailures = [];
+  state.supervisoesDistribuicao = null;
   render();
   if (agente?.source === 'botconversa') loadBotConversaFailures(state.selectedAgent.job_id);
+  if (agentId === DISTRIBUICAO_OS_AGENT_ID) loadSupervisoesDistribuicao();
 };
 
 window.closeDetails = () => {
@@ -571,6 +609,21 @@ window.executeAgent = async (agentId) => {
     await loadAgentes();
   } catch (e) {
     alert(`❌ Erro ao enfileirar agente: ${e.message}`);
+  }
+};
+
+window.toggleDistribuicaoSupervisao = async (supervisaoId, checked) => {
+  const row = (state.supervisoesDistribuicao || []).find((s) => String(s.id) === String(supervisaoId));
+  if (row) row.distribuicao_os_automatica = checked;
+  render();
+  const { error } = await supabase
+    .from('supervisoes')
+    .update({ distribuicao_os_automatica: checked })
+    .eq('id', supervisaoId);
+  if (error) {
+    alert(`❌ Erro ao salvar: ${error.message}`);
+    if (row) row.distribuicao_os_automatica = !checked;
+    render();
   }
 };
 

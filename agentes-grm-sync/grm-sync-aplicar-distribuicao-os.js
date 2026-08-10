@@ -46,8 +46,20 @@ async function login(page) {
   ]);
 }
 
+// --- Ativação controlada por supervisão ---
+// Nem todo gestor já usa a tela Distribuir O.S do painel; pra esses, a indicação de
+// colaborador em operacional_os_colaboradores pode não existir ou não ser confiável,
+// então este agente só deve escrever no Graint pras supervisões que TI marcar como
+// prontas (tabela public.supervisoes, coluna distribuicao_os_automatica). Controlado
+// em TI > Agentes > Aplicar Distribuição de OS.
+async function carregarSupervisoesAtivas() {
+  const { data, error } = await supabase.from('supervisoes').select('nome').eq('distribuicao_os_automatica', true);
+  if (error) throw new Error(`Falha ao consultar supervisoes ativas: ${error.message}`);
+  return new Set(safe(data).map((s) => normalize(s.nome)));
+}
+
 // --- Coleta e agrupamento das OS pendentes (mesma lógica de assets/js/distribuir-os.js) ---
-async function carregarGruposPendentes() {
+async function carregarGruposPendentes(supervisoesAtivas) {
   const { data: osRows, error: osError } = await supabase
     .from('operacional_os')
     .select('*')
@@ -74,6 +86,7 @@ async function carregarGruposPendentes() {
   }
 
   const grupos = new Map();
+  let ignoradasPorSupervisao = 0;
   for (const row of rows) {
     const vinculados = atribPorOs.get(String(row.id)) || [];
     if (!vinculados.length) continue; // sem colaborador indicado — precisa triagem manual, não é alvo deste agente
@@ -81,6 +94,7 @@ async function carregarGruposPendentes() {
     const coord = coordOf(row);
     // O Graint passou a aceitar distribuição somente entre hoje e os próximos 3 dias.
     if (!data || !coord || !dataAceitaNoGraint(data)) continue;
+    if (!supervisoesAtivas.has(normalize(coord))) { ignoradasPorSupervisao += 1; continue; }
     for (const a of vinculados) {
       const nome = a.colaborador_nome || '';
       if (!nome) continue;
@@ -88,6 +102,9 @@ async function carregarGruposPendentes() {
       if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, colaborador_nome: nome, os: [] });
       grupos.get(key).os.push(row);
     }
+  }
+  if (ignoradasPorSupervisao > 0) {
+    log('INFO', `${ignoradasPorSupervisao} O.S. ignorada(s) — supervisão ainda sem distribuição automática habilitada.`);
   }
   return [...grupos.values()];
 }
@@ -275,7 +292,13 @@ async function main() {
   let falhas = 0;
   try {
     log('INFO', `=== Aplicar Distribuição de OS no Graint${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
-    let grupos = await carregarGruposPendentes();
+    const supervisoesAtivas = await carregarSupervisoesAtivas();
+    if (!supervisoesAtivas.size) {
+      log('SUCCESS', 'Nenhuma supervisão habilitada para distribuição automática (TI > Agentes). Nada a fazer.');
+      return;
+    }
+    log('INFO', `${supervisoesAtivas.size} supervisão(ões) habilitada(s) para distribuição automática.`);
+    let grupos = await carregarGruposPendentes(supervisoesAtivas);
     log('INFO', `${grupos.length} grupo(s) pendente(s) com colaborador indicado.`);
     if (LIMIT > 0 && grupos.length > LIMIT) {
       grupos = grupos.slice(0, LIMIT);
