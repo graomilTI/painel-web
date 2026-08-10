@@ -37,6 +37,7 @@ const state = {
   localizacao: [],
   producaoPorColaboradorData: new Map(),
   loading: false,
+  reloadRequested: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
   },
@@ -1288,8 +1289,15 @@ async function loadUber() {
 }
 
 async function loadAll() {
-  if (state.loading) return;
+  // Alterar os dois campos de data dispara dois submits em sequência. Se uma
+  // consulta já estiver em andamento, não descarte o filtro mais recente:
+  // execute-o logo depois com os valores atuais dos campos.
+  if (state.loading) {
+    state.reloadRequested = true;
+    return;
+  }
   state.loading = true;
+  state.reloadRequested = false;
   setFeedback('Carregando dados da conferência...');
   try {
     await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores()]);
@@ -1299,6 +1307,11 @@ async function loadAll() {
     setFeedback(error.message || 'Erro ao carregar conferência.', true);
   } finally {
     state.loading = false;
+    if (state.reloadRequested) {
+      state.reloadRequested = false;
+      await loadAll();
+      return;
+    }
     renderActiveTab();
   }
 }
