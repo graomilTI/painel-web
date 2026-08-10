@@ -38,9 +38,9 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'hospV2HistoryStyles';
   style.textContent = `
-    .hosp-v2-people{display:flex;align-items:flex-start;gap:7px;margin-top:9px;color:#d8eee3;font-size:11.5px;line-height:1.35}
-    .hosp-v2-people-names{display:flex;gap:5px 7px;flex-wrap:wrap;min-width:0}
-    .hosp-v2-person{display:inline-flex;align-items:center;max-width:100%;padding:3px 7px;border:1px solid rgba(74,222,128,.18);border-radius:999px;background:rgba(22,101,52,.13);color:#d8ffe5;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hosp-v2-people{display:block;margin-top:9px;color:#d8eee3;font-size:11.5px;line-height:1.35}
+    .hosp-v2-people-names{display:inline;min-width:0}
+    .hosp-v2-person{display:inline;max-width:100%;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font-weight:800;white-space:normal}
     .hosp-v2-history-list{display:grid;gap:8px;margin-top:14px}
     #tab-historico .adm-hosp-table-wrap{display:none!important}
     .hosp-v2-history-row{position:relative;display:grid;grid-template-columns:minmax(190px,.9fr) minmax(270px,1.35fr) minmax(190px,.8fr) minmax(190px,.8fr);overflow:hidden;border:1px solid rgba(34,197,94,.28);border-radius:15px;background:linear-gradient(100deg,rgba(5,27,20,.98),rgba(2,16,12,.98));box-shadow:0 10px 28px rgba(0,0,0,.18);transition:.16s ease}
@@ -210,7 +210,7 @@ function decorateCards() {
         if (payCondition) payCondition.insertAdjacentElement('beforebegin', people);
         else middleCell?.appendChild(people);
       }
-      people.innerHTML = `<span class="hosp-v2-people-names">${names.map((name) => `<span class="hosp-v2-person" title="${esc(name)}">${esc(name)}</span>`).join('')}</span>`;
+      people.innerHTML = `<span class="hosp-v2-people-names">${names.map((name) => `<span class="hosp-v2-person" title="${esc(name)}">${esc(name)}</span>`).join(', ')}</span>`;
     });
   });
 }
