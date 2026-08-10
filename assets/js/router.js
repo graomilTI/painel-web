@@ -79,16 +79,11 @@ const SOFT_NAV_PAGES = new Map([
   ['notificacoes', { title: 'Notificações', module: () => import('./notificacoes.js') }],
   // Fase 2 — Categoria B (padrão próprio, verificado individualmente)
   ['admin-configuracoes', { title: 'Configurações', module: () => import('./admin-configuracoes.js') }],
-  ['adm-hotel', { title: 'Módulo Hospedagem', module: () => import('./adm-hotel.js'), extraModules: [
-    () => import('./adm-hotel-fluxo-v2-bootstrap.js'),
-    () => import('./adm-hotel-fluxo-v2.js'),
-    () => import('./adm-hotel-fluxo-v2-history.js'),
-    () => import('./adm-hotel-nf-alert.js'),
-    () => import('./adm-hotel-alojamentos-v2.js'),
-    () => import('./adm-hotel-separacao-modulos.js'),
-    () => import('./adm-hotel-alojamentos-pagamentos.js'),
-    () => import('./adm-hotel-hospedados.js'),
-  ] }],
+  // adm-hotel fica fora da navegação suave: a tela é composta por vários
+  // módulos que observam e remodelam o mesmo DOM. Reutilizá-los depois de outra
+  // rota preserva guards/observers da montagem anterior e deixa Alojamentos com o
+  // layout incompleto até um hard refresh. O carregamento completo é tratado em
+  // pageInit.js, inclusive na troca entre #hoteis e #alojamentos pelo menu lateral.
   ['contatos', { title: 'Contatos', module: () => import('./contatos.js') }],
   ['ti-integracoes', { title: 'TI · Integrações', module: () => import('./ti-integracoes.js') }],
   ['distribuir-os', { title: 'Distribuir O.S', module: () => import('./distribuir-os.js') }],
