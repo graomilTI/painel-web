@@ -39,7 +39,6 @@ function injectStyles() {
   style.id = 'hospV2HistoryStyles';
   style.textContent = `
     .hosp-v2-people{display:flex;align-items:flex-start;gap:7px;margin-top:9px;color:#d8eee3;font-size:11.5px;line-height:1.35}
-    .hosp-v2-people-label{color:#7fa294;font-weight:850;white-space:nowrap}
     .hosp-v2-people-names{display:flex;gap:5px 7px;flex-wrap:wrap;min-width:0}
     .hosp-v2-person{display:inline-flex;align-items:center;max-width:100%;padding:3px 7px;border:1px solid rgba(74,222,128,.18);border-radius:999px;background:rgba(22,101,52,.13);color:#d8ffe5;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .hosp-v2-history-list{display:grid;gap:8px;margin-top:14px}
@@ -211,7 +210,7 @@ function decorateCards() {
         if (payCondition) payCondition.insertAdjacentElement('beforebegin', people);
         else middleCell?.appendChild(people);
       }
-      people.innerHTML = `<span class="hosp-v2-people-label">Colaboradores:</span><span class="hosp-v2-people-names">${names.map((name) => `<span class="hosp-v2-person" title="${esc(name)}">${esc(name)}</span>`).join('')}</span>`;
+      people.innerHTML = `<span class="hosp-v2-people-names">${names.map((name) => `<span class="hosp-v2-person" title="${esc(name)}">${esc(name)}</span>`).join('')}</span>`;
     });
   });
 }
