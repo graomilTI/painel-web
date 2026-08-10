@@ -216,14 +216,15 @@ export function renderContent(content, userContext) {
 
     <div class="adm-hosp-tabs">
       <button class="adm-hosp-tab active" data-tab="dashboard" type="button">Dashboard</button>
-      <button class="adm-hosp-tab" data-tab="historico" type="button">Histórico <small id="cntHistorico">0</small></button>
       <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitado <small id="cntSolicitadas">0</small></button>
       <button class="adm-hosp-tab" data-tab="andamento" type="button">Em andamento <small id="cntAndamento">0</small></button>
-      <button class="adm-hosp-tab" data-tab="concluidos" type="button">Concluído <small id="cntConcluidos">0</small></button>
+      <button class="adm-hosp-tab" data-tab="pagar" type="button">À Pagar</button>
+      <button class="adm-hosp-tab" data-tab="nf" type="button">NF</button>
       <span class="adm-hosp-tabs-sep" aria-hidden="true"></span>
       <span class="adm-hosp-tabs-label">Cadastros</span>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
       <button class="adm-hosp-tab" data-tab="alojamentos" type="button">Alojamentos</button>
+      <button class="adm-hosp-tab" data-tab="historico" type="button">Histórico <small id="cntHistorico">0</small></button>
     </div>
 
     <section id="tab-dashboard" class="adm-hosp-panel active">
@@ -271,6 +272,9 @@ export function renderContent(content, userContext) {
       </article>
     </section>
 
+    <section id="tab-pagar" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
+    <section id="tab-nf" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
+
     <section id="tab-concluidos" class="adm-hosp-panel">
       <article class="card">
         <div class="section-head"><div><h3>Concluídos</h3><p class="muted">Hospedagens pagas e encerradas.</p></div></div>
@@ -294,8 +298,7 @@ export function renderContent(content, userContext) {
         <div class="adm-hosp-form mt-16">
           <div class="adm-hosp-field"><label>Check-in *</label><input id="resCheckin" type="date" /></div>
           <div class="adm-hosp-field"><label>Check-out *</label><input id="resCheckout" type="date" /></div>
-          <div class="adm-hosp-field"><label>Hotel *</label><select id="resHotel"></select><span id="resHotelHint" class="adm-hosp-select-hint"></span></div>
-          <div class="adm-hosp-field"><label>Nome manual (se não cadastrado)</label><input id="resHotelNome" placeholder="Ex.: Hotel das Flores" /></div>
+          <div class="adm-hosp-field"><label>Hotel *</label><input id="resHotelNome" list="resHotelOptions" placeholder="Digite ou selecione um hotel" autocomplete="off" /><datalist id="resHotelOptions"></datalist><select id="resHotel" hidden></select><span id="resHotelHint" class="adm-hosp-select-hint">Se não existir, o hotel será cadastrado automaticamente.</span></div>
           <div class="adm-hosp-field"><label>Confirmado com</label><input id="resConfirmado" /></div>
           <div class="adm-hosp-field"><label>Contato de confirmação</label><input id="resContato" /></div>
         </div>
@@ -306,7 +309,7 @@ export function renderContent(content, userContext) {
             <div class="adm-room-mini"><label>Tipo</label><select id="roomTipo"><option value="INDIVIDUAL">Individual</option><option value="DUPLO">Duplo</option><option value="TRIPLO">Triplo</option><option value="QUADRUPLO">Quádruplo</option></select></div>
             <div class="adm-room-mini"><label>Qtd.</label><input id="roomQtd" type="number" min="1" step="1" value="1" /></div>
             <div class="adm-room-mini"><label>Valor/noite</label><input id="roomDiaria" type="number" min="0" step="0.01" value="0" /></div>
-            <button class="btn btn-secondary adm-hosp-btn" type="button" id="roomAdd">Adicionar</button>
+            <button class="btn btn-secondary adm-hosp-btn" type="button" id="roomAdd">Adicionar quarto</button>
           </div>
           <div class="adm-room-list" id="roomList"><div class="adm-room-empty">Nenhum quarto adicionado.</div></div>
           <div class="adm-room-summary" id="roomSummary">Informe a composição dos quartos.</div>
@@ -1041,7 +1044,7 @@ export function renderContent(content, userContext) {
   // ─── Tab navigation ────────────────────────────────────────────────────────
 
   function setTab(tab) {
-    const valid=['dashboard','historico','solicitadas','andamento','concluidos','hoteis','alojamentos'];
+    const valid=['dashboard','historico','solicitadas','andamento','pagar','nf','concluidos','hoteis','alojamentos'];
     const t=valid.includes(tab)?tab:'dashboard';
     state.tab=t;
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
@@ -1086,6 +1089,8 @@ export function renderContent(content, userContext) {
       const rates=[ind?`Ind. ${money(ind)}`:'',dup?`Dup. ${money(dup)}`:''].filter(Boolean).join(' · ');
       return `<option value="${esc(h.id)}" data-nome="${esc(h.nome)}" data-cidade="${esc(h.cidade||'')}" data-uf="${esc(h.uf||'')}">${esc(h.nome)} · ${esc(h.cidade||'-')}/${esc(h.uf||'')}${rates?` · ${rates}`:''}</option>`;
     }).join('');
+    const datalist=document.getElementById('resHotelOptions');
+    if (datalist) datalist.innerHTML=rows.map((h) => `<option value="${esc(h.nome)}">${esc([h.cidade,h.uf].filter(Boolean).join('/'))}</option>`).join('');
     if (hint) {
       if (rows.length) { hint.textContent=`${rows.length} hotel(is) encontrado(s) para ${cidadeUf||'a cidade solicitada'}.`; hint.className='adm-hosp-select-hint'; }
       else { hint.textContent=`Nenhum hotel ativo cadastrado para ${cidadeUf||'a cidade'}. Use o campo manual.`; hint.className='adm-hosp-select-hint warn'; }
@@ -1279,7 +1284,9 @@ export function renderContent(content, userContext) {
 
   function openModalReservar(row) {
     state.selected=row;
-    const colabs=getColaboradoresDetalhados(row);
+    const groupedIds=Array.isArray(window.__hospedagemSolicitacoesAgrupadas)?window.__hospedagemSolicitacoesAgrupadas:[];
+    const groupedRows=state.rows.filter((item) => groupedIds.includes(item.solicitacao_id));
+    const colabs=(groupedRows.length>1?groupedRows.flatMap(getColaboradoresDetalhados):getColaboradoresDetalhados(row));
     state.reservarColabs=colabs.map((c) => ({...c,excluido:false}));
     document.getElementById('reservarSub').textContent=`${colabs.map((c) => c.nome_colaborador||c.nome).join(', ')} · ${[row.cidade,row.uf].filter(Boolean).join('/')}`;
     renderReservarColabs();
@@ -1312,10 +1319,20 @@ export function renderContent(content, userContext) {
   async function saveReservarModal() {
     if (!state.selected) return;
     const hotelSelect=document.getElementById('resHotel');
+    const typedName=document.getElementById('resHotelNome')?.value.trim()||'';
+    const typedHotel=state.hoteis.find((h) => normalizeText(h.nome)===normalizeText(typedName));
+    if (typedHotel && hotelSelect) hotelSelect.value=typedHotel.id;
     const opt=hotelSelect?.selectedOptions[0];
-    const hotelId=hotelSelect?.value||null;
+    let hotelId=hotelSelect?.value||null;
     const hotelManual=document.getElementById('resHotelNome')?.value.trim()||'';
     if (!hotelId&&!hotelManual) { setFeedback('reservarFeedback','Selecione ou informe o hotel.','err'); return; }
+    let hotelRecord=state.hoteis.find((h) => normalizeText(h.nome)===normalizeText(hotelManual));
+    if (hotelRecord) hotelId=hotelRecord.id;
+    if (!hotelId) {
+      const created=await supabase.from('hospedagem_hoteis').insert({nome:hotelManual,cidade:state.selected.cidade||null,uf:state.selected.uf||null,status:'ATIVO'}).select('*').single();
+      if (created.error) { setFeedback('reservarFeedback',`Não foi possível cadastrar o hotel: ${created.error.message}`,'err'); return; }
+      hotelRecord=created.data; hotelId=created.data.id; state.hoteis.push(created.data);
+    }
     const comp=getComposicaoFromForm();
     const calc=calcularComposicao(comp);
     if (!calc.quartos||!calc.totalDia) { setFeedback('reservarFeedback','Informe a composição dos quartos.','err'); return; }
@@ -1330,7 +1347,7 @@ export function renderContent(content, userContext) {
     const totalPrevisto=calc.totalDia*diarias;
     const payload={
       solicitacao_id:state.selected.solicitacao_id,hotel_id:hotelId,
-      nome_hotel:hotelManual||opt?.dataset?.nome||state.selected.hotel||null,
+      nome_hotel:hotelRecord?.nome||hotelManual||opt?.dataset?.nome||state.selected.hotel||null,
       cidade_hotel:opt?.dataset?.cidade||state.selected.cidade||null,uf_hotel:opt?.dataset?.uf||state.selected.uf||null,
       valor_diaria:diariaMedia,quantidade_diarias:diarias,quantidade_quartos:calc.quartos,tipo_quarto:'OUTRO',
       valor_total_previsto:totalPrevisto,data_checkin:checkin,data_checkout:checkout,
@@ -1350,9 +1367,27 @@ export function renderContent(content, userContext) {
       return;
     }
     await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).eq('id',state.selected.solicitacao_id);
+    const reservaId=state.selected.reserva_id||result.data?.id||null;
+    const groupedIds=Array.isArray(window.__hospedagemSolicitacoesAgrupadas)?window.__hospedagemSolicitacoesAgrupadas:[];
+    const grouped=state.rows.filter((item) => groupedIds.includes(item.solicitacao_id));
+    if (reservaId&&grouped.length>1) {
+      await supabase.from('hospedagem_reserva_solicitacoes').upsert(grouped.map((item) => ({reserva_id:reservaId,solicitacao_id:item.solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
+      await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',grouped.map((item) => item.solicitacao_id));
+    }
+    await enviarBoasVindasReserva(state.selected,hotelRecord||state.hoteis.find((h) => String(h.id)===String(hotelId))||{},reservaId);
     setFeedback('reservarFeedback','Reserva salva com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalReservar').classList.remove('open'),800);
+  }
+
+  async function enviarBoasVindasReserva(row,hotel,reservaId) {
+    const titulo=[hotel.nome||row.hotel||'Hotel',hotel.localizacao||hotel.maps_url||hotel.link_maps||''].filter(Boolean).join('\t ');
+    const message=`${titulo}\n\nOlá!\n\n🏨 Quando estiver hospedado...\n\n🚭 Não fume nas dependências do hotel;\n💸 Não deixe para pagar consumo apenas na saída;\n💍 Não deixe objetos de valor nos quartos;\n🧳 Mantenha seus pertences sempre organizados na mala se por acaso precisar sair antes do previsto;\n🔑 Se o hotel tiver recepção, sempre deixe a chave do quarto com o responsável;\n🕒 Fique atento aos horários de checkout;\n⚠️ Não deixe diárias reservadas para outros dias sem solicitação do supervisor;\n🚫 Não faça alteração de quarto sem autorização do seu supervisor;\n👖 Para serviço de lavanderia consulte antes o seu supervisor;\n🛫 Na saída, faça o checkout na recepção. Nunca saia sem avisar o hotel.\n\nBOA ESTADIA!!`;
+    const recipients=(state.reservarColabs||[]).filter((c) => !c.excluido).map((c) => ({nome:c.nome_colaborador||c.nome||'Colaborador',phone:c.whatsapp||c.telefone||c.celular||c.telefone_colaborador})).filter((c) => c.phone);
+    await Promise.allSettled(recipients.map(async (recipient) => {
+      const {data,error}=await supabase.functions.invoke('botconversa-send',{body:{phone:String(recipient.phone).replace(/\D/g,''),nome:recipient.nome,message}});
+      await supabase.from('hospedagem_mensagens').insert({solicitacao_id:row.solicitacao_id,reserva_id:reservaId,hotel_id:hotel.id||null,direcao:'SAIDA',tipo:'BOAS_VINDAS',canal:'BOTCONVERSA',destinatario:recipient.phone,conteudo:message,status:error||data?.ok===false?'ERRO':'ENVIADA',erro:error?.message||data?.error||null,enviado_em:error||data?.ok===false?null:new Date().toISOString()});
+    }));
   }
 
   // ─── Modal: Estender ───────────────────────────────────────────────────────
@@ -1584,14 +1619,17 @@ export function renderContent(content, userContext) {
     if (!fornecedor||!valor) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
     if (!state.selected?.reserva_id) { setFeedback('pagarFeedback','Reserva não encontrada.','err'); return; }
     setFeedback('pagarFeedback','Registrando pagamento...');
-    const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:'PAGO',valor_total:valor,data_pagamento:new Date().toISOString().slice(0,10)};
+    const total=calcularTotalCheckout();
+    if (valor>total) { setFeedback('pagarFeedback','O valor pago não pode ser maior que o saldo.','err'); return; }
+    const parcial=valor<total;
+    const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:parcial?'PARCIAL':'PAGO',valor_original:total,valor_total:total,valor_pago:valor,saldo:Math.max(0,total-valor),pagamento_parcial:parcial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString()};
     if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
     else await supabase.from('hospedagem_financeiro').insert(finPayload);
     await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:'CHECKOUT_REALIZADO',valor_total_previsto:valor,
+      status_hospedagem:'CHECKOUT_REALIZADO',valor_total_previsto:total,
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
-    setFeedback('pagarFeedback','Pagamento registrado.','ok');
+    setFeedback('pagarFeedback',parcial?`Pagamento parcial registrado. Saldo: ${money(total-valor)}.`:'Pagamento registrado.','ok');
     await loadRows();
     setTimeout(() => { document.getElementById('modalPagar').classList.remove('open'); document.getElementById('modalCheckout').classList.remove('open'); },1200);
   }
