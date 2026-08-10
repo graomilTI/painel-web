@@ -9,6 +9,7 @@ const state = {
   extras: [],
   documents: [],
   collaborators: new Map(),
+  selectedRequests: new Set(),
   selectedId: null,
   requestSort: { field: 'data', direction: 'desc' },
   mounted: false,
@@ -67,8 +68,8 @@ function injectStyles() {
     .hosp-v2-kpi{position:relative;display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center;min-height:76px;padding:12px 14px;border-radius:15px;background:linear-gradient(145deg,rgba(5,29,21,.96),rgba(2,17,13,.96));border:1px solid rgba(34,197,94,.25);overflow:hidden}
     .hosp-v2-kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--kpi,#4ade80),transparent);opacity:.8}.hosp-v2-kpi-ico{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(74,222,128,.09);color:var(--kpi,#4ade80)}.hosp-v2-kpi-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.hosp-v2-kpi small{display:block;color:#91a89e;font-size:11px;font-weight:800}.hosp-v2-kpi strong{display:block;color:#f4fff9;font-size:25px;line-height:1;margin-top:4px}.hosp-v2-kpi em{display:block;color:var(--kpi,#4ade80);font-size:11px;font-weight:850;font-style:normal;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .adm-hosp-tabs{padding:4px!important;border:1px solid rgba(34,197,94,.22)!important;border-radius:15px!important;background:rgba(2,15,11,.88)!important;margin:0 0 8px!important;align-items:center}.adm-hosp-tab{border:0!important;background:transparent!important;border-radius:11px!important;color:#a9bbb3!important;padding:9px 18px!important}.adm-hosp-tab.active{background:linear-gradient(180deg,rgba(22,101,52,.48),rgba(9,55,35,.5))!important;color:#b9ffd1!important;box-shadow:inset 0 0 0 1px rgba(74,222,128,.22),0 7px 22px rgba(0,0,0,.18)!important}.adm-hosp-tabs-sep,.adm-hosp-tabs-label{display:none!important}.adm-hosp-tabs>#refreshPainel{margin-left:auto!important;padding:9px 15px!important}.adm-hosp-panel>.card{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}.adm-hosp-panel>.card>.section-head{display:none!important}.adm-hosp-filterbar{margin:0 0 8px!important;border-radius:0!important;border-left:0!important;border-right:0!important;padding:9px 10px!important;background:#07151d!important}.adm-hosp-filter-meta{display:none!important}
-    .hosp-v2-hide-base{display:none!important}.hosp-v2-list{display:grid;gap:7px;overflow-x:auto}.hosp-v2-list-head{display:grid;grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(390px,1.9fr);min-width:1220px;padding:0 10px;color:#91a89e;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.hosp-v2-sort{display:flex;align-items:center;justify-content:flex-start;gap:6px;width:100%;padding:5px 9px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;border-radius:7px;text-align:left}.hosp-v2-sort:hover{color:#d8ffe4;background:rgba(74,222,128,.07)}.hosp-v2-sort.is-active{color:#86efac}.hosp-v2-sort-arrow{font-size:12px;line-height:1;color:#4ade80}.hosp-v2-list-head-label{padding:5px 9px}
-    .hosp-v2-row.hosp-v2-request-row{grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(390px,1.9fr);min-width:1220px;border-radius:4px}.hosp-v2-request-row .hosp-v2-cell{padding:10px 12px;display:flex;align-items:center}.hosp-v2-request-row .hosp-v2-cell.actions{padding:5px}.hosp-v2-request-row .hosp-v2-city{display:flex;gap:7px;align-items:center;font-size:12px;font-weight:900;color:#effff5}.hosp-v2-request-row .hosp-v2-city svg,.hosp-v2-request-row .hosp-v2-date svg{width:14px;height:14px;fill:none;stroke:#4ade80;stroke-width:1.9;flex:0 0 auto}.hosp-v2-request-row .hosp-v2-date{display:flex;gap:7px;align-items:center;font-size:11.5px;font-weight:850;white-space:nowrap}.hosp-v2-people{display:flex;flex-wrap:wrap;gap:5px}.hosp-v2-person{display:inline-flex;padding:5px 8px;border-radius:999px;background:rgba(22,101,52,.3);border:1px solid rgba(74,222,128,.28);color:#d6ffe2;font-size:9px;font-weight:900;text-transform:uppercase}.hosp-v2-supervision{font-size:11px;font-weight:800;color:#c8dbd2}.hosp-v2-request-row .hosp-v2-hotel{font-size:11px}.hosp-v2-request-row .hosp-v2-actions{display:grid;grid-template-columns:repeat(6,minmax(58px,1fr));width:100%;gap:5px}.hosp-v2-request-row .hosp-v2-btn{min-height:39px;font-size:8.5px;border-radius:9px}.hosp-v2-request-row .hosp-v2-btn svg{width:15px;height:15px}
+    .hosp-v2-hide-base{display:none!important}.hosp-v2-list{display:grid;gap:7px;overflow-x:auto}.hosp-v2-list-head{display:grid;grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(230px,1.2fr);min-width:1080px;padding:0 10px;color:#91a89e;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.hosp-v2-sort{display:flex;align-items:center;justify-content:flex-start;gap:6px;width:100%;padding:5px 9px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;border-radius:7px;text-align:left}.hosp-v2-sort:hover{color:#d8ffe4;background:rgba(74,222,128,.07)}.hosp-v2-sort.is-active{color:#86efac}.hosp-v2-sort-arrow{font-size:12px;line-height:1;color:#4ade80}.hosp-v2-list-head-label{padding:5px 9px}
+    .hosp-v2-row.hosp-v2-request-row{grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(230px,1.2fr);min-width:1080px;border-radius:4px}.hosp-v2-request-row .hosp-v2-cell{padding:10px 12px;display:flex;align-items:center}.hosp-v2-request-row .hosp-v2-cell.actions{padding:5px}.hosp-v2-request-row .hosp-v2-city{display:flex;gap:7px;align-items:center;font-size:12px;font-weight:900;color:#effff5}.hosp-v2-request-row .hosp-v2-city svg,.hosp-v2-request-row .hosp-v2-date svg{width:14px;height:14px;fill:none;stroke:#4ade80;stroke-width:1.9;flex:0 0 auto}.hosp-v2-request-row .hosp-v2-date{display:flex;gap:7px;align-items:center;font-size:11.5px;font-weight:850;white-space:nowrap}.hosp-v2-select{display:flex;gap:9px;align-items:center;cursor:pointer}.hosp-v2-select input{width:17px;height:17px;accent-color:#4ade80}.hosp-v2-select span{display:flex;gap:7px;align-items:center}.hosp-v2-select svg{width:14px;height:14px;fill:none;stroke:#4ade80;stroke-width:1.9}.hosp-v2-people{display:block;color:#d8eee3;font-size:11px;font-weight:800;line-height:1.4}.hosp-v2-person{display:inline;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;text-transform:none}.hosp-v2-supervision{font-size:11px;font-weight:800;color:#c8dbd2}.hosp-v2-request-row .hosp-v2-hotel{font-size:11px}.hosp-v2-request-row .hosp-v2-actions{display:grid;grid-template-columns:repeat(3,minmax(64px,1fr));width:100%;gap:5px}.hosp-v2-request-row .hosp-v2-btn{min-height:39px;font-size:8.5px;border-radius:9px}.hosp-v2-request-row .hosp-v2-btn svg{width:15px;height:15px}
     .hosp-v2-row{position:relative;display:grid;grid-template-columns:minmax(190px,.9fr) minmax(310px,1.6fr) minmax(185px,.85fr) minmax(248px,1fr);gap:0;border:1px solid rgba(34,197,94,.28);border-radius:15px;background:linear-gradient(100deg,rgba(5,27,20,.98),rgba(2,16,12,.98));box-shadow:0 10px 28px rgba(0,0,0,.18);overflow:hidden;transition:.16s ease}
     .hosp-v2-row::before{content:"";position:absolute;left:4px;top:28px;width:3px;height:28px;border-radius:999px;background:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.65)}.hosp-v2-row:hover,.hosp-v2-row.is-selected{border-color:rgba(74,222,128,.78);box-shadow:0 0 0 1px rgba(74,222,128,.15),0 16px 40px rgba(0,0,0,.28)}
     .hosp-v2-cell{padding:14px 15px;border-right:1px solid rgba(74,222,128,.11);min-width:0}.hosp-v2-cell:last-child{border-right:0}.hosp-v2-code{font-size:15px;font-weight:950;color:#f5fff9}.hosp-v2-sub{display:block;color:#91a89e;font-size:11.5px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hosp-v2-mainline{display:flex;gap:18px;align-items:center;flex-wrap:wrap;color:#f0fff7;font-size:12.5px;font-weight:800}.hosp-v2-mainline span{display:inline-flex;gap:6px;align-items:center}.hosp-v2-mainline svg{width:15px;height:15px;fill:none;stroke:#4ade80;stroke-width:1.9}.hosp-v2-meta{display:flex;gap:8px 14px;flex-wrap:wrap;margin-top:11px;color:#b6c9c0;font-size:11.5px}.hosp-v2-paycond{margin-top:8px;font-size:11.5px;color:#d3e5dc}
@@ -89,10 +90,14 @@ function bucket(row) {
   const nf = String(row.status_nota || 'NAO_SOLICITADA').toUpperCase();
   const hosp = String(row.status_hospedagem || '').toUpperCase();
   const sol = String(row.status_solicitacao || '').toUpperCase();
-  if (fin === 'PAGO' || nf === 'LANCADO' || sol === 'CONCLUIDA') return 'concluidos';
+  const docs = getDocuments(row);
+  const hasProof = docs.some((d) => String(d.tipo).toUpperCase() === 'COMPROVANTE');
+  const hasNf = docs.some((d) => String(d.tipo).toUpperCase() === 'NFSE');
+  if ((fin === 'PAGO' || sol === 'CONCLUIDA') && hasProof && hasNf) return 'concluidos';
+  if (fin === 'PAGO') return 'nf';
   if (sol === 'CANCELADA') return 'cancelada';
-  if (fin === 'ENVIADO_AO_FINANCEIRO' || row.pendencia_financeira || row.pendencia_nf) return 'financeiro';
-  if (row.checkout_hoje || row.checkout_vencido || ['CHECKOUT_HOJE', 'RENOVACAO_NECESSARIA', 'CHECKOUT_REALIZADO'].includes(hosp)) return 'checkout';
+  if (fin === 'ENVIADO_AO_FINANCEIRO' || row.pendencia_financeira || row.pendencia_nf) return 'pagar';
+  if (row.checkout_hoje || row.checkout_vencido || ['CHECKOUT_HOJE', 'RENOVACAO_NECESSARIA', 'CHECKOUT_REALIZADO'].includes(hosp)) return 'pagar';
   if (sol === 'RESERVADA' || ['CHECKIN_PREVISTO', 'HOSPEDADO'].includes(hosp)) return 'reservados';
   return 'solicitadas';
 }
@@ -137,7 +142,7 @@ function mountShell() {
   tabs.parentElement.insertBefore(kpis, tabs);
   const refresh = $('#refreshPainel');
   if (refresh) tabs.appendChild(refresh);
-  [['tab-solicitadas', 'hospV2Solicitadas'], ['tab-andamento', 'hospV2Andamento'], ['tab-concluidos', 'hospV2Concluidos']].forEach(([tabId, listId]) => {
+  [['tab-solicitadas', 'hospV2Solicitadas'], ['tab-andamento', 'hospV2Andamento'], ['tab-pagar', 'hospV2Pagar'], ['tab-nf', 'hospV2Nf']].forEach(([tabId, listId]) => {
     const panel = document.getElementById(tabId);
     const card = panel?.querySelector('.card');
     const table = panel?.querySelector('.adm-hosp-table-wrap');
@@ -158,7 +163,7 @@ function drawerHtml() {
 }
 function modalsHtml() {
   return `<div class="hosp-v2-modal" id="hospV2QuoteModal"><div class="hosp-v2-modal-card"><div class="hosp-v2-modal-head"><div><h3>Solicitar cotação</h3><p id="hospV2QuoteSub"></p></div><button type="button" class="hosp-v2-modal-close" data-v2-close="hospV2QuoteModal">Fechar</button></div><div id="hospV2QuoteHotels" class="hosp-v2-mini-list"></div><div class="hosp-v2-field full" style="margin-top:12px"><label>Mensagem que será enviada</label><textarea id="hospV2QuoteMessage"></textarea></div><div class="hosp-v2-modal-actions"><span id="hospV2QuoteFeedback" class="hosp-v2-feedback"></span><button class="hosp-v2-secondary" type="button" data-v2-close="hospV2QuoteModal">Cancelar</button><button class="hosp-v2-primary" type="button" id="hospV2SendQuote">Enviar para os hotéis</button></div></div></div>
-  <div class="hosp-v2-modal" id="hospV2ExtraModal"><div class="hosp-v2-modal-card"><div class="hosp-v2-modal-head"><div><h3>Custos adicionais</h3><p id="hospV2ExtraSub"></p></div><button type="button" class="hosp-v2-modal-close" data-v2-close="hospV2ExtraModal">Fechar</button></div><div id="hospV2ExtraList" class="hosp-v2-mini-list"></div><div class="hosp-v2-form"><div class="hosp-v2-field"><label>Categoria</label><select id="hospV2ExtraType"><option>ALIMENTACAO</option><option>FRIGOBAR</option><option>LAVANDERIA</option><option>ESTACIONAMENTO</option><option>DIARIA_ADICIONAL</option><option>QUARTO_ADICIONAL</option><option>TAXA</option><option>DANOS</option><option>DESCONTO</option><option>OUTROS</option></select></div><div class="hosp-v2-field"><label>Descrição</label><input id="hospV2ExtraDescription" /></div><div class="hosp-v2-field"><label>Quantidade</label><input id="hospV2ExtraQty" type="number" min="0.01" step="0.01" value="1" /></div><div class="hosp-v2-field"><label>Valor unitário</label><input id="hospV2ExtraUnit" type="number" min="0" step="0.01" /></div></div><div class="hosp-v2-modal-actions"><span id="hospV2ExtraFeedback" class="hosp-v2-feedback"></span><button class="hosp-v2-primary" type="button" id="hospV2SaveExtra">Adicionar custo</button></div></div></div>
+  <div class="hosp-v2-modal" id="hospV2ExtraModal"><div class="hosp-v2-modal-card"><div class="hosp-v2-modal-head"><div><h3>Custos adicionais</h3><p id="hospV2ExtraSub"></p></div><button type="button" class="hosp-v2-modal-close" data-v2-close="hospV2ExtraModal">Fechar</button></div><div id="hospV2ExtraList" class="hosp-v2-mini-list"></div><div class="hosp-v2-form"><div class="hosp-v2-field"><label>Categoria</label><select id="hospV2ExtraType"><option>ALIMENTACAO</option><option>FRIGOBAR</option><option>LAVANDERIA</option><option>ESTACIONAMENTO</option><option>DIARIA_ADICIONAL</option><option>QUARTO_ADICIONAL</option><option>TAXA</option><option>DANOS</option><option>DESCONTO</option><option>OUTROS</option></select></div><div class="hosp-v2-field"><label>Item</label><input id="hospV2ExtraDescription" /></div><div class="hosp-v2-field"><label>Quantidade</label><input id="hospV2ExtraQty" type="number" min="0.01" step="0.01" value="1" /></div><div class="hosp-v2-field"><label>Valor unitário</label><input id="hospV2ExtraUnit" type="number" min="0" step="0.01" /></div><label class="hosp-v2-field full" style="display:flex;grid-template-columns:auto 1fr;align-items:center"><input id="hospV2ExtraConference" type="checkbox" style="width:17px"><span>Enviar para conferência</span></label></div><div class="hosp-v2-modal-actions"><span id="hospV2ExtraFeedback" class="hosp-v2-feedback"></span><button class="hosp-v2-primary" type="button" id="hospV2SaveExtra">Adicionar custo</button></div></div></div>
   <div class="hosp-v2-modal" id="hospV2DocumentModal"><div class="hosp-v2-modal-card"><div class="hosp-v2-modal-head"><div><h3>Documentos da hospedagem</h3><p id="hospV2DocumentSub"></p></div><button type="button" class="hosp-v2-modal-close" data-v2-close="hospV2DocumentModal">Fechar</button></div><div id="hospV2DocumentList" class="hosp-v2-mini-list"></div><div class="hosp-v2-form"><div class="hosp-v2-field"><label>Tipo</label><select id="hospV2DocumentType"><option value="COMPROVANTE">Comprovante de pagamento</option><option value="NFSE">NFS-e</option><option value="COTACAO">Cotação</option><option value="OUTRO">Outro</option></select></div><div class="hosp-v2-field"><label>Arquivo</label><input id="hospV2DocumentFile" type="file" accept="application/pdf,image/*" /></div><div class="hosp-v2-field full"><label>Ou URL HTTPS</label><input id="hospV2DocumentUrl" placeholder="https://..." /></div><label class="hosp-v2-field full" style="display:flex;grid-template-columns:auto 1fr;align-items:center"><input id="hospV2DocumentAutoSend" type="checkbox" checked style="width:17px"><span>Enviar automaticamente ao hotel quando for comprovante</span></label></div><div class="hosp-v2-modal-actions"><span id="hospV2DocumentFeedback" class="hosp-v2-feedback"></span><button class="hosp-v2-primary" type="button" id="hospV2SaveDocument">Anexar documento</button></div></div></div>`;
 }
 
@@ -183,6 +188,11 @@ function bindEvents() {
       renderAll();
       return;
     }
+    const selector = event.target.closest('[data-v2-select]');
+    if (selector) {
+      selector.checked ? state.selectedRequests.add(selector.value) : state.selectedRequests.delete(selector.value);
+      renderAll(); return;
+    }
     const action = event.target.closest('[data-v2-action]');
     if (!action) return;
     const row = state.rows.find((r) => String(r.solicitacao_id) === String(action.dataset.id));
@@ -192,12 +202,22 @@ function bindEvents() {
     else if (action.dataset.v2Action === 'quote') openQuoteModal(row);
     else if (action.dataset.v2Action === 'extra') openExtraModal(row);
     else if (action.dataset.v2Action === 'document') openDocumentModal(row);
-    else if (action.dataset.v2Action === 'reserve') triggerBaseAction('reservar', row);
+    else if (action.dataset.v2Action === 'reserve') {
+      const selected = filteredRequestedRows().filter((item) => state.selectedRequests.has(String(item.solicitacao_id)));
+      window.__hospedagemSolicitacoesAgrupadas = selected.length > 1 ? selected.map((item) => item.solicitacao_id) : [];
+      triggerBaseAction('reservar', row);
+    }
     else if (action.dataset.v2Action === 'extend') triggerBaseAction('estender', row);
     else if (action.dataset.v2Action === 'payment' || action.dataset.v2Action === 'finance') triggerBaseAction('enviar-pagamento', row);
     else if (action.dataset.v2Action === 'pay-local') openLocalPayment(row);
     else if (action.dataset.v2Action === 'checkout') await checkoutOnly(row);
     else if (action.dataset.v2Action === 'quote-edit') await editQuote(action.dataset.quoteId, row);
+    else if (action.dataset.v2Action === 'cancel') {
+      if (window.confirm(`Cancelar a solicitação ${row.codigo || ''}?`)) {
+        await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'CANCELADA' }).eq('id', row.solicitacao_id);
+        await loadData();
+      }
+    }
   });
   $('#hospV2SendQuote')?.addEventListener('click', sendQuoteBatch);
   $('#hospV2SaveExtra')?.addEventListener('click', saveExtra);
@@ -246,8 +266,9 @@ async function loadData() {
 function renderAll() {
   renderKpis();
   renderList('hospV2Solicitadas', filteredRequestedRows(), true);
-  renderList('hospV2Andamento', state.rows.filter((r) => ['reservados', 'checkout', 'financeiro'].includes(bucket(r))));
-  renderList('hospV2Concluidos', state.rows.filter((r) => bucket(r) === 'concluidos'));
+  renderList('hospV2Andamento', state.rows.filter((r) => bucket(r) === 'reservados'), false, 'andamento');
+  renderList('hospV2Pagar', state.rows.filter((r) => bucket(r) === 'pagar'), false, 'pagar');
+  renderList('hospV2Nf', state.rows.filter((r) => bucket(r) === 'nf'), false, 'nf');
   if (state.selectedId) { const selected = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (selected && $('#hospV2Drawer')?.classList.contains('open')) renderDetails(selected); }
 }
 function renderKpis() {
@@ -268,6 +289,7 @@ function requestedValues(row) {
     data: String(row.data_solicitacao || '').slice(0,10),
     checkin: String(row.data_checkin || row.data_checkin_prevista || '').slice(0,10),
     hotel: row.hotel || getHotel(row)?.nome || '',
+    gestor: row.solicitado_por_nome || row.gestor_nome || row.gestor || row.criado_por_nome || '',
   };
 }
 function filteredRequestedRows() {
@@ -286,11 +308,11 @@ function filteredRequestedRows() {
   });
   return rows.sort((a,b) => String(requestedValues(a)[order] || '').localeCompare(String(requestedValues(b)[order] || ''),'pt-BR',{numeric:true,sensitivity:'base'}) * direction);
 }
-function renderList(id, rows, requested = false) {
+function renderList(id, rows, requested = false, stage = '') {
   const root = document.getElementById(id); if (!root) return;
   if (!rows.length) { root.innerHTML = '<div class="hosp-v2-empty">Nenhuma hospedagem nesta etapa.</div>'; return; }
-  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Check-out')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('hotel','Hotel')}<span class="hosp-v2-list-head-label">Ações</span></div>` : '';
-  root.innerHTML = head + rows.map(requested ? requestedRowHtml : cardHtml).join('');
+  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : '';
+  root.innerHTML = head + rows.map(requested ? requestedRowHtml : (row) => cardHtml(row, stage)).join('');
 }
 function sortHeader(field,label) {
   const active = state.requestSort.field === field;
@@ -302,33 +324,26 @@ function requestedRowHtml(row) {
   const people = getPeople(row), quotes = getQuotes(row);
   const hotel = row.hotel || getHotel(row)?.nome || (quotes.length ? `${quotes.length} hotel(is) cotado(s)` : 'A definir');
   const supervisors = [...new Set(people.map((p) => p.supervisao).filter(Boolean))];
-  const actions = [
-    button('quote',row,'quote','Cotação','amber'), button('reserve',row,'reserve','Reservar'),
-    button('pay-local',row,'pay','Pagar','amber',true), button('document',row,'attach','Anexos','purple',true),
-    button('extra',row,'extra','Custos','',true), button('detail',row,'detail','Detalhes'),
-  ];
+  const actions = [button('quote',row,'quote','Cotação','amber'), button('reserve',row,'reserve','Reservar'), button('cancel',row,'checkout','Cancelar','purple')];
   return `<article class="hosp-v2-row hosp-v2-request-row ${String(state.selectedId)===String(row.solicitacao_id)?'is-selected':''}">
-    <div class="hosp-v2-cell"><div class="hosp-v2-city">${icon('hotel')}<span>${esc([row.cidade,row.uf].filter(Boolean).join('/')||'-')}</span></div></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} a ${brDate(row.data_checkout||row.data_checkout_prevista)}</span></div></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-people">${people.length?people.map((p)=>`<span class="hosp-v2-person">${esc(p.nome_colaborador||'-')}</span>`).join(''):`<span class="hosp-v2-person">${esc(row.colaborador||row.colaboradores||'-')}</span>`}</div></div>
+    <div class="hosp-v2-cell"><label class="hosp-v2-select"><input type="checkbox" data-v2-select value="${esc(row.solicitacao_id)}" ${state.selectedRequests.has(String(row.solicitacao_id))?'checked':''}><span>${icon('hotel')}${esc([row.cidade,row.uf].filter(Boolean).join('/')||'-')}</span></label></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)</span></div></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-people">${people.length?people.map((p)=>`<span class="hosp-v2-person">${esc(p.nome_colaborador||'-')}</span>`).join(', '):`<span class="hosp-v2-person">${esc(row.colaborador||row.colaboradores||'-')}</span>`}</div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-supervision">${esc(supervisors.join(', ')||row.supervisao||'-')}</div></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(hotel)}</div></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(row.solicitado_por_nome||row.gestor_nome||row.gestor||row.criado_por_nome||'-')}</div></div>
     <div class="hosp-v2-cell actions"><div class="hosp-v2-actions">${actions.join('')}</div></div>
   </article>`;
 }
-function cardHtml(row) {
+function cardHtml(row, stage = '') {
   const people = getPeople(row), quotes = getQuotes(row), docs = getDocuments(row), extras = getExtras(row), status = statusMeta(row), b = bucket(row), hasReservation = Boolean(row.reserva_id);
   const hotel = row.hotel || getHotel(row)?.nome || (quotes.length ? `${quotes.length} hotel(is) cotado(s)` : 'Hotel ainda não definido');
   const os = row.numero_os || row.os || row.codigo_os || '';
   const totalExtras = extras.reduce((sum, e) => sum + (String(e.tipo).toUpperCase() === 'DESCONTO' ? -1 : 1) * Number(e.valor_total ?? Number(e.quantidade || 1) * Number(e.valor_unitario || 0)), 0);
   const proofSent = docs.some((d) => String(d.tipo).toUpperCase() === 'COMPROVANTE' && d.botconversa_enviado_em), nfReceived = docs.some((d) => String(d.tipo).toUpperCase() === 'NFSE');
   const actions = [];
-  if (b === 'solicitadas') { actions.push(button('quote', row, 'quote', 'Cotação', 'amber')); actions.push(button('reserve', row, 'reserve', 'Reservar')); }
-  else { actions.push(button('checkout', row, 'checkout', 'Check-out', 'blue', !hasReservation)); actions.push(button('extend', row, 'extend', 'Estender', '', !hasReservation || b === 'financeiro')); }
-  actions.push(button('pay-local', row, 'pay', 'Pagar', 'amber', !hasReservation || String(row.status_financeiro).toUpperCase() === 'PAGO'));
-  actions.push(button('document', row, 'attach', 'Anexos', 'purple', !hasReservation));
-  if (hasReservation && String(row.status_financeiro).toUpperCase() !== 'PAGO') actions.push(button('finance', row, 'finance', 'Enviar p/ Financeiro', 'purple wide'));
-  actions.push(button('extra', row, 'extra', 'Custos', '', !hasReservation)); actions.push(button('detail', row, 'detail', 'Detalhes'));
+  if (stage === 'andamento') { actions.push(button('extend', row, 'extend', 'Estender')); actions.push(button('checkout', row, 'checkout', 'Checkout', 'blue')); }
+  else if (stage === 'pagar') { actions.push(button('pay-local', row, 'pay', 'Pagar', 'amber')); actions.push(button('extra', row, 'extra', 'Custos')); }
+  else if (stage === 'nf') { actions.push(button('document', row, 'attach', 'Anexar NF', 'purple')); actions.push(button('detail', row, 'detail', 'Detalhes')); }
   return `<article class="hosp-v2-row ${String(state.selectedId) === String(row.solicitacao_id) ? 'is-selected' : ''}"><div class="hosp-v2-cell"><div class="hosp-v2-code">${esc(row.codigo || row.solicitacao_id || '-')}</div><span class="hosp-v2-sub">Cliente: ${esc(row.cliente || '-')}</span>${os ? `<span class="hosp-v2-sub">OS: ${esc(os)}</span>` : ''}<span class="hosp-v2-sub">Origem: ${esc(row.origem || row.tipo_origem || 'Solicitação')}</span></div><div class="hosp-v2-cell"><div class="hosp-v2-mainline"><span>${icon('hotel')}${esc([row.cidade, row.uf].filter(Boolean).join('/') || '-')}</span><span>${icon('reserve')}${brDate(row.data_checkin || row.data_checkin_prevista)} a ${brDate(row.data_checkout || row.data_checkout_prevista)}</span></div><div class="hosp-v2-meta"><span>Equipe: <b>${people.length || row.quantidade_pessoas || '-'}</b></span><span>Quartos: <b>${esc(roomsLabel(row))}</b></span><span>Diárias: <b>${esc(row.quantidade_diarias || row.quantidade_diarias_prevista || '-')}</b></span>${totalExtras ? `<span>Extras: <b>${money(totalExtras)}</b></span>` : ''}</div><div class="hosp-v2-paycond">${esc(paymentCondition(row))}</div>${proofSent ? `<div class="hosp-v2-note">${icon('file')} Comprovante anexado • enviado via BotConversa</div>` : nfReceived ? `<div class="hosp-v2-note">${icon('file')} NFS-e recebida automaticamente via WhatsApp</div>` : ''}</div><div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(hotel)}</div><span class="hosp-v2-status ${status.cls}">${esc(status.label)}</span><span class="hosp-v2-sub">${quotes.length ? `${quotes.length} cotação(ões)` : `Check-in: ${brDate(row.data_checkin || row.data_checkin_prevista)}`}</span><span class="hosp-v2-sub">Valor: ${(row.valor_financeiro || row.valor_total_previsto) ? money(row.valor_financeiro || row.valor_total_previsto) : 'a confirmar'}</span></div><div class="hosp-v2-cell actions"><div class="hosp-v2-actions">${actions.join('')}</div></div></article>`;
 }
 function button(action, row, ico, label, cls = '', disabled = false) { return `<button type="button" class="hosp-v2-btn ${cls}" data-v2-action="${action}" data-id="${esc(row.solicitacao_id)}" ${disabled ? 'disabled' : ''}>${icon(ico)}<span>${esc(label)}</span></button>`; }
@@ -368,7 +383,7 @@ async function sendQuoteBatch() {
 async function editQuote(quoteId, row) { if (!state.tables.quotes) return window.alert('A migration do novo fluxo de hospedagem ainda não foi aplicada.'); const quote = state.quotes.find((q) => String(q.id) === String(quoteId)); if (!quote) return; const daily = window.prompt('Valor da diária:', quote.valor_diaria || ''); if (daily === null) return; const total = window.prompt('Valor total da cotação:', quote.valor_total || ''); if (total === null) return; const checkout = window.confirm('O hotel aceita pagamento no checkout?\nOK = Sim | Cancelar = Não'); const note = window.prompt('Observação da cotação:', quote.observacoes || '') ?? quote.observacoes; const { error } = await supabase.from('hospedagem_cotacoes').update({ valor_diaria: Number(String(daily).replace(',', '.')) || null, valor_total: Number(String(total).replace(',', '.')) || null, aceita_pagamento_checkout: checkout, observacoes: note || null, status: 'RESPONDIDA', respondido_em: new Date().toISOString(), resposta_texto: note || null }).eq('id', quote.id); if (error) return window.alert(error.message); await loadData(); openDetails(row); }
 function openExtraModal(row) { state.selectedId = row.solicitacao_id; $('#hospV2ExtraSub').textContent = `${row.codigo || ''} · ${row.hotel || '-'}`; renderExtraModal(row); setFeedback('hospV2ExtraFeedback', ''); openModal('hospV2ExtraModal'); }
 function renderExtraModal(row) { const extras = getExtras(row); $('#hospV2ExtraList').innerHTML = extras.length ? extras.map((e) => `<div class="hosp-v2-mini-item"><div><strong>${esc(e.descricao || e.tipo)}</strong><small>${esc(e.tipo)} · ${money(e.valor_total ?? Number(e.quantidade || 1) * Number(e.valor_unitario || 0))}</small></div><button type="button" data-v2-delete-extra="${esc(e.id)}">Excluir</button></div>`).join('') : '<div class="hosp-v2-empty">Nenhum custo adicional.</div>'; $$('[data-v2-delete-extra]', $('#hospV2ExtraList')).forEach((btn) => btn.addEventListener('click', async () => { if (!window.confirm('Excluir este custo?')) return; await supabase.from('hospedagem_custos_extras').delete().eq('id', btn.dataset.v2DeleteExtra); await loadData(); renderExtraModal(row); })); }
-async function saveExtra() { const row = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (!row) return; if (!state.tables.extras) return setFeedback('hospV2ExtraFeedback', 'A migration do fluxo v2 ainda não foi aplicada.', 'err'); const type = $('#hospV2ExtraType').value, description = $('#hospV2ExtraDescription').value.trim(), qty = Number($('#hospV2ExtraQty').value || 1), unit = Number($('#hospV2ExtraUnit').value || 0); if (!description || !unit) return setFeedback('hospV2ExtraFeedback', 'Informe descrição e valor.', 'err'); const { error } = await supabase.from('hospedagem_custos_extras').insert({ solicitacao_id: row.solicitacao_id, reserva_id: row.reserva_id || null, tipo: type, descricao: description, quantidade: qty, valor_unitario: unit, valor_total: qty * unit, data_custo: todayIso() }); if (error) return setFeedback('hospV2ExtraFeedback', error.message, 'err'); $('#hospV2ExtraDescription').value = ''; $('#hospV2ExtraUnit').value = ''; setFeedback('hospV2ExtraFeedback', 'Custo adicionado.', 'ok'); await loadData(); renderExtraModal(row); }
+async function saveExtra() { const row = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (!row) return; if (!state.tables.extras) return setFeedback('hospV2ExtraFeedback', 'A migration do fluxo v2 ainda não foi aplicada.', 'err'); const type = $('#hospV2ExtraType').value, description = $('#hospV2ExtraDescription').value.trim(), qty = Number($('#hospV2ExtraQty').value || 1), unit = Number($('#hospV2ExtraUnit').value || 0), conference = Boolean($('#hospV2ExtraConference')?.checked); if (!description || !unit) return setFeedback('hospV2ExtraFeedback', 'Informe item e valor.', 'err'); const { error } = await supabase.from('hospedagem_custos_extras').insert({ solicitacao_id: row.solicitacao_id, reserva_id: row.reserva_id || null, tipo: type, descricao: description, quantidade: qty, valor_unitario: unit, valor_total: qty * unit, data_custo: todayIso(), enviar_conferencia: conference, status_conferencia: conference ? 'PENDENTE' : 'NAO_ENVIADO' }); if (error) return setFeedback('hospV2ExtraFeedback', error.message, 'err'); $('#hospV2ExtraDescription').value = ''; $('#hospV2ExtraUnit').value = ''; if ($('#hospV2ExtraConference')) $('#hospV2ExtraConference').checked = false; setFeedback('hospV2ExtraFeedback', 'Custo adicionado.', 'ok'); await loadData(); renderExtraModal(row); }
 function openDocumentModal(row) { state.selectedId = row.solicitacao_id; $('#hospV2DocumentSub').textContent = `${row.codigo || ''} · ${row.hotel || '-'}`; renderDocumentModal(row); setFeedback('hospV2DocumentFeedback', ''); openModal('hospV2DocumentModal'); }
 function renderDocumentModal(row) { const docs = getDocuments(row); $('#hospV2DocumentList').innerHTML = docs.length ? docs.map((d) => `<div class="hosp-v2-mini-item"><div><strong>${esc(d.tipo || 'Documento')}</strong><small>${esc(d.origem || 'PAINEL')} · ${brDate(d.recebido_em || d.created_at)}${d.botconversa_enviado_em ? ' · enviado ao hotel' : ''}</small></div><a class="hosp-v2-linkbtn" href="${esc(d.arquivo_url)}" target="_blank" rel="noopener">Abrir</a></div>`).join('') : '<div class="hosp-v2-empty">Nenhum documento anexado.</div>'; }
 async function saveDocument() {
