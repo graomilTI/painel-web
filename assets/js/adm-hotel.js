@@ -47,6 +47,7 @@ function injectStyles() {
     .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="andamento"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
     .adm-hosp-tabs-sep{width:1px;align-self:stretch;background:var(--line-2);margin:0 4px}
     .adm-hosp-tabs-label{align-self:center;font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
+    .adm-hosp-filterbar{margin:16px 0 14px;padding:14px;border:1px solid rgba(111,208,165,.16);border-radius:18px;background:linear-gradient(135deg,rgba(111,208,165,.055),rgba(21,21,42,.72))}.adm-hosp-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) minmax(150px,.8fr) auto;gap:10px;align-items:end}.adm-hosp-filter-field{display:grid;gap:6px}.adm-hosp-filter-field label{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#9ca3af}.adm-hosp-filter-field input,.adm-hosp-filter-field select{width:100%;min-width:0;border:1px solid rgba(255,255,255,.1);background:#101024;color:var(--text);border-radius:12px;padding:10px 11px;font-size:13px;outline:none;color-scheme:dark}.adm-hosp-filter-field input:focus,.adm-hosp-filter-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.1)}.adm-hosp-filter-actions{display:flex;gap:7px;align-items:center}.adm-hosp-sort-direction{width:42px!important;height:40px;padding:0!important;font-size:18px!important}.adm-hosp-filter-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;color:var(--muted);font-size:12px}.adm-hosp-filter-count{color:#bbf7d0;font-weight:800}
     .adm-hosp-chip-bar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
     .adm-hosp-stage{display:flex;align-items:center;gap:4px}
     .adm-hosp-stage-step{display:flex;flex-direction:column;align-items:center;gap:3px;opacity:.45}
@@ -86,7 +87,9 @@ function injectStyles() {
     .dash-upcoming-date{font-size:11px;font-weight:900;color:#fde68a;flex-shrink:0;min-width:46px}
     .dash-upcoming-name{flex:1;font-size:12px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .dash-upcoming-city{font-size:10px;color:var(--muted);flex-shrink:0}
+    @media(max-width:1100px){.adm-hosp-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.adm-hosp-filter-actions{grid-column:span 2}}
     @media(max-width:900px){.adm-hosp-form{grid-template-columns:1fr}.adm-room-add,.adm-room-row{grid-template-columns:1fr}.adm-extra-row{grid-template-columns:1fr 1fr auto}.adm-hosp-search{min-width:0;width:100%}.adm-hosp-action-grid{grid-template-columns:1fr}.dash-main-grid,.dash-bottom-grid{grid-template-columns:1fr}.dash-kpi-grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.adm-hosp-filter-grid{grid-template-columns:1fr}.adm-hosp-filter-actions{grid-column:auto}.adm-hosp-filter-meta{align-items:flex-start;flex-direction:column}}
     .br-state{transition:filter .12s,opacity .12s;cursor:pointer}
     .br-state:hover{filter:brightness(1.7) saturate(1.2)}
     .br-state.br-selected{stroke:#fde68a!important;stroke-width:2.5!important;filter:brightness(1.4)}
@@ -109,7 +112,8 @@ export function renderContent(content, userContext) {
     editingHotel: null, editingAlojamento: null,
     tab: 'dashboard', selected: null,
     reservarColabs: [], estenderColabs: [],
-    dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos'
+    dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos',
+    solicitadasFiltros: { colaborador: '', cidade: '', supervisao: '', data: '', ordenar: 'data', direcao: 'desc' }
   };
   function getHotelById(id) { return state.hoteis.find((h) => String(h.id) === String(id)); }
 
@@ -239,6 +243,17 @@ export function renderContent(content, userContext) {
     <section id="tab-solicitadas" class="adm-hosp-panel">
       <article class="card">
         <div class="section-head"><div><h3>Aguardando reserva</h3><p class="muted">Solicitações abertas sem reserva definida.</p></div><button class="btn btn-secondary adm-hosp-btn" id="refreshPainel" type="button">↻ Atualizar</button></div>
+        <div class="adm-hosp-filterbar" aria-label="Filtros das solicitações">
+          <div class="adm-hosp-filter-grid">
+            <div class="adm-hosp-filter-field"><label for="solFiltroColaborador">Colaborador</label><input id="solFiltroColaborador" type="search" placeholder="Buscar nome..." autocomplete="off" /></div>
+            <div class="adm-hosp-filter-field"><label for="solFiltroCidade">Cidade</label><input id="solFiltroCidade" type="search" placeholder="Buscar cidade..." autocomplete="off" /></div>
+            <div class="adm-hosp-filter-field"><label for="solFiltroSupervisao">Supervisão</label><input id="solFiltroSupervisao" type="search" placeholder="Buscar supervisão..." autocomplete="off" /></div>
+            <div class="adm-hosp-filter-field"><label for="solFiltroData">Data</label><input id="solFiltroData" type="date" /></div>
+            <div class="adm-hosp-filter-field"><label for="solOrdenar">Organizar por</label><select id="solOrdenar"><option value="data">Data da solicitação</option><option value="checkin">Check-in</option><option value="colaborador">Colaborador</option><option value="cidade">Cidade</option><option value="supervisao">Supervisão</option><option value="hotel">Hotel</option></select></div>
+            <div class="adm-hosp-filter-actions"><button class="btn btn-secondary adm-hosp-small adm-hosp-sort-direction" id="solDirecao" type="button" title="Ordem decrescente" aria-label="Alternar direção da ordenação">↓</button><button class="btn btn-secondary adm-hosp-small" id="solLimparFiltros" type="button">Limpar</button></div>
+          </div>
+          <div class="adm-hosp-filter-meta"><span>Os filtros podem ser combinados.</span><span id="solFiltroResultado" class="adm-hosp-filter-count">0 solicitações</span></div>
+        </div>
         <div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><thead><tr><th>Data / Código</th><th>Colaboradores</th><th>Gestor</th><th>Cidade / UF</th><th>Período</th><th>Status</th><th>Ações</th></tr></thead><tbody id="tbodySolicitadas"><tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div>
       </article>
     </section>
@@ -900,11 +915,53 @@ export function renderContent(content, userContext) {
     (fns[state.tab]||renderTabDashboard)();
   }
 
+  function solicitadaValores(row) {
+    const detalhados=Array.isArray(row?._colaboradoresDetalhados)?row._colaboradoresDetalhados:[];
+    const colaboradores=detalhados.map((c) => c.nome_colaborador).filter(Boolean);
+    const supervisoes=detalhados.map((c) => c.supervisao).filter(Boolean);
+    return {
+      colaborador: colaboradores.join(' ')||row?.colaboradores||row?.colaborador||'',
+      cidade: [row?.cidade,row?.uf].filter(Boolean).join(' '),
+      supervisao: supervisoes.join(' ')||row?.supervisao||'',
+      data: String(row?.data_solicitacao||'').slice(0,10),
+      checkin: String(row?.data_checkin||row?.data_checkin_prevista||'').slice(0,10),
+      hotel: row?.hotel||''
+    };
+  }
+
+  function filtrarEOrdenarSolicitadas(rows) {
+    const filtros=state.solicitadasFiltros;
+    const filtradas=(rows||[]).filter((row) => {
+      const valores=solicitadaValores(row);
+      return (!filtros.colaborador||normalizeText(valores.colaborador).includes(normalizeText(filtros.colaborador)))
+        && (!filtros.cidade||normalizeText(valores.cidade).includes(normalizeText(filtros.cidade)))
+        && (!filtros.supervisao||normalizeText(valores.supervisao).includes(normalizeText(filtros.supervisao)))
+        && (!filtros.data||valores.data===filtros.data);
+    });
+    const campo=filtros.ordenar||'data';
+    const direcao=filtros.direcao==='asc'?1:-1;
+    return filtradas.sort((a,b) => {
+      const av=solicitadaValores(a)[campo]||'';
+      const bv=solicitadaValores(b)[campo]||'';
+      return String(av).localeCompare(String(bv),'pt-BR',{numeric:true,sensitivity:'base'})*direcao;
+    });
+  }
+
+  function atualizarResumoFiltrosSolicitadas(exibidas,total) {
+    const el=document.getElementById('solFiltroResultado');
+    if (!el) return;
+    el.textContent=exibidas===total
+      ? `${total} ${total===1?'solicitação':'solicitações'}`
+      : `${exibidas} de ${total} solicitações`;
+  }
+
   function renderTabSolicitadas() {
     const tbody=document.getElementById('tbodySolicitadas');
     if (!tbody) return;
-    const rows=state.rows.filter((r) => painelBucket(r)==='solicitadas');
-    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">Nenhuma solicitação aguardando reserva.</td></tr>`; return; }
+    const todas=state.rows.filter((r) => painelBucket(r)==='solicitadas');
+    const rows=filtrarEOrdenarSolicitadas(todas);
+    atualizarResumoFiltrosSolicitadas(rows.length,todas.length);
+    if (!rows.length) { tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${todas.length?'Nenhuma solicitação corresponde aos filtros.':'Nenhuma solicitação aguardando reserva.'}</td></tr>`; return; }
     tbody.innerHTML=rows.map((r) => `<tr>
       <td><strong>${esc(r.codigo||'-')}</strong><span class="adm-hosp-row-note">${brDate(r.data_solicitacao)}</span></td>
       <td>${renderColaboradoresCell(r)}</td>
@@ -1574,6 +1631,29 @@ export function renderContent(content, userContext) {
 
   document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
   ['refreshPainel','refreshAndamento'].forEach((id) => document.getElementById(id)?.addEventListener('click',loadRows));
+  const solicitadaCampos={solFiltroColaborador:'colaborador',solFiltroCidade:'cidade',solFiltroSupervisao:'supervisao',solFiltroData:'data'};
+  Object.entries(solicitadaCampos).forEach(([id,campo]) => document.getElementById(id)?.addEventListener('input',(ev) => {
+    state.solicitadasFiltros[campo]=ev.target.value;
+    renderTabSolicitadas();
+  }));
+  document.getElementById('solOrdenar')?.addEventListener('change',(ev) => {
+    state.solicitadasFiltros.ordenar=ev.target.value;
+    renderTabSolicitadas();
+  });
+  document.getElementById('solDirecao')?.addEventListener('click',(ev) => {
+    const asc=state.solicitadasFiltros.direcao!=='asc';
+    state.solicitadasFiltros.direcao=asc?'asc':'desc';
+    ev.currentTarget.textContent=asc?'↑':'↓';
+    ev.currentTarget.title=asc?'Ordem crescente':'Ordem decrescente';
+    renderTabSolicitadas();
+  });
+  document.getElementById('solLimparFiltros')?.addEventListener('click',() => {
+    state.solicitadasFiltros={colaborador:'',cidade:'',supervisao:'',data:'',ordenar:'data',direcao:'desc'};
+    Object.keys(solicitadaCampos).forEach((id) => { const el=document.getElementById(id); if (el) el.value=''; });
+    const ordenar=document.getElementById('solOrdenar'); if (ordenar) ordenar.value='data';
+    const direcao=document.getElementById('solDirecao'); if (direcao) { direcao.textContent='↓'; direcao.title='Ordem decrescente'; }
+    renderTabSolicitadas();
+  });
   document.getElementById('refreshHistorico')?.addEventListener('click',loadHistoricoRows);
   document.getElementById('historicoSearch')?.addEventListener('input',renderHistorico);
   document.getElementById('andamentoFiltros')?.addEventListener('click',(ev) => {
