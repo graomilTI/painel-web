@@ -5,6 +5,7 @@ const state = {
   panelRows: new Map(),
   history: [],
   historyError: '',
+  sort: { field: 'data', direction: 'desc' },
   mounted: false,
   loading: false,
 };
@@ -42,6 +43,7 @@ function injectStyles() {
     .hosp-v2-people-names{display:inline;min-width:0}
     .hosp-v2-person{display:inline;max-width:100%;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font-weight:800;white-space:normal}
     .hosp-v2-history-list{display:grid;gap:8px;margin-top:14px}
+    .hosp-v2-history-head{display:grid;grid-template-columns:minmax(190px,.9fr) minmax(270px,1.35fr) minmax(190px,.8fr) minmax(190px,.8fr);padding:0 10px;color:#91a89e}.hosp-v2-history-sort{display:flex;align-items:center;gap:6px;padding:7px 9px;border:0;border-radius:7px;background:transparent;color:inherit;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;cursor:pointer;text-align:left}.hosp-v2-history-sort:hover,.hosp-v2-history-sort.active{color:#86efac;background:rgba(74,222,128,.07)}
     #tab-historico .adm-hosp-table-wrap{display:none!important}
     .hosp-v2-history-row{position:relative;display:grid;grid-template-columns:minmax(190px,.9fr) minmax(270px,1.35fr) minmax(190px,.8fr) minmax(190px,.8fr);overflow:hidden;border:1px solid rgba(34,197,94,.28);border-radius:15px;background:linear-gradient(100deg,rgba(5,27,20,.98),rgba(2,16,12,.98));box-shadow:0 10px 28px rgba(0,0,0,.18);transition:.16s ease}
     .hosp-v2-history-row::before{content:"";position:absolute;left:4px;top:24px;width:3px;height:28px;border-radius:999px;background:#4ade80;box-shadow:0 0 14px rgba(74,222,128,.6)}
@@ -151,14 +153,17 @@ function renderHistory() {
       row.situacao_pagamento, row.cliente, row.nfs,
     ].filter(Boolean).join(' ')).includes(query));
   }
-  rows = rows.slice(0, 250);
+  const sortValue=(row) => state.sort.field==='hotel'?row.hotel||'':state.sort.field==='quarto'?row.tipo_quarto||'':state.sort.field==='valor'?Number(row.valor_diaria||0):row.data||'';
+  const direction=state.sort.direction==='asc'?1:-1;
+  rows=[...rows].sort((a,b) => typeof sortValue(a)==='number'?(sortValue(a)-sortValue(b))*direction:String(sortValue(a)).localeCompare(String(sortValue(b)),'pt-BR',{numeric:true,sensitivity:'base'})*direction).slice(0,250);
 
   if (!rows.length) {
     root.innerHTML = '<div class="hosp-v2-history-empty">Nenhum histórico de hospedagem localizado.</div>';
     return;
   }
 
-  root.innerHTML = rows.map((row) => {
+  const historyHeader=(field,label) => `<button type="button" class="hosp-v2-history-sort ${state.sort.field===field?'active':''}" data-history-sort="${field}">${label}${state.sort.field===field?` ${state.sort.direction==='asc'?'↑':'↓'}`:''}</button>`;
+  root.innerHTML = `<div class="hosp-v2-history-head">${historyHeader('data','Data / Colaborador')}${historyHeader('hotel','Hotel / Cidade')}${historyHeader('quarto','Quarto / Status')}${historyHeader('valor','Valor / Pagamento')}</div>`+rows.map((row) => {
     const status = historyStatus(row);
     const local = [row.cidade, row.uf].filter(Boolean).join('/');
     return `<article class="hosp-v2-history-row">
@@ -261,6 +266,8 @@ function bindEvents() {
     if (event.target?.id === 'historicoSearch') renderHistory();
   });
   document.addEventListener('click', (event) => {
+    const sort=event.target?.closest('[data-history-sort]');
+    if(sort){const field=sort.dataset.historySort;state.sort={field,direction:state.sort.field===field&&state.sort.direction==='asc'?'desc':'asc'};renderHistory();return;}
     if (event.target?.closest('#refreshHistorico')) setTimeout(loadData, 60);
     if (event.target?.closest('.adm-hosp-tab[data-tab="historico"]')) setTimeout(renderHistory, 80);
   });
