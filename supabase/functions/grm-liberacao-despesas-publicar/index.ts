@@ -240,13 +240,13 @@ function buildRulesForStaff(args: {
   const desKey = configKeyDeslocamento(des?.tipo_deslocamento);
   const displacementValue = Number(des?.valor ?? 0);
   if (desKey) {
-    // Reembolso KM deve abrir a categoria mesmo antes de o valor calculado
-    // estar disponível; o GRM aceita a regra inicial com limite zero.
+    // Reembolso KM e Táxi/Uber devem abrir a categoria mesmo sem valor
+    // calculado; o GRM aceita ambas as regras com limite inicial zero.
     requireConfig(
       desKey,
       true,
       displacementValue,
-      desKey === 'DESLOCAMENTO_REEMBOLSO_KM',
+      ['DESLOCAMENTO_REEMBOLSO_KM', 'DESLOCAMENTO_UBER_TAXI'].includes(desKey),
     );
   }
 
