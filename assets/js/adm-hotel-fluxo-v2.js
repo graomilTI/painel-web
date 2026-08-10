@@ -13,6 +13,8 @@ const state = {
   selectedId: null,
   requestSort: { field: 'data', direction: 'desc' },
   stageSort: { andamento: { field: 'data', direction: 'asc' }, pagar: { field: 'data', direction: 'asc' }, nf: { field: 'data', direction: 'desc' } },
+  stageFilters: { colaborador:'', cidade:'', supervisao:'', hotel:'' },
+  requesters: new Map(),
   mounted: false,
   loading: false,
   tables: { quotes: true, extras: true, documents: true, messages: true },
@@ -83,6 +85,7 @@ function injectStyles() {
     .hosp-v2-modal{position:fixed;z-index:10010;inset:0;display:none;place-items:center;padding:16px;background:rgba(0,8,5,.82);backdrop-filter:blur(5px)}.hosp-v2-modal.open{display:grid}.hosp-v2-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#041a12;border:1px solid rgba(74,222,128,.35);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55);padding:18px}.hosp-v2-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hosp-v2-modal-head h3{margin:0;color:#f0fff6}.hosp-v2-modal-head p{margin:4px 0 0;color:#86a095;font-size:12px}.hosp-v2-modal-close{border:1px solid rgba(255,255,255,.12);background:transparent;color:#e5f5ed;border-radius:9px;padding:8px 11px;cursor:pointer}.hosp-v2-form{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}.hosp-v2-field{display:grid;gap:6px}.hosp-v2-field.full{grid-column:1/-1}.hosp-v2-field label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#91aa9f;font-weight:900}.hosp-v2-field input,.hosp-v2-field select,.hosp-v2-field textarea{width:100%;box-sizing:border-box;background:#071f17;border:1px solid rgba(74,222,128,.2);color:#eafff2;border-radius:11px;padding:10px 11px;outline:none;color-scheme:dark}.hosp-v2-field textarea{min-height:82px;resize:vertical}.hosp-v2-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.hosp-v2-primary{border:1px solid rgba(74,222,128,.5);background:rgba(22,101,52,.5);color:#d8ffe4;border-radius:10px;padding:10px 15px;font-weight:900;cursor:pointer}.hosp-v2-secondary{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#d9ebe2;border-radius:10px;padding:10px 15px;font-weight:850;cursor:pointer}.hosp-v2-feedback{font-size:11.5px;color:#9bb0a6;margin-right:auto;align-self:center}.hosp-v2-feedback.ok{color:#72f3a0}.hosp-v2-feedback.err{color:#fca5a5}.hosp-v2-mini-list{display:grid;gap:7px;margin-top:12px}.hosp-v2-mini-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(74,222,128,.16);border-radius:11px;background:rgba(2,16,12,.5)}.hosp-v2-mini-item strong{color:#eafff2;font-size:11.5px}.hosp-v2-mini-item small{display:block;color:#81998e;margin-top:2px}.hosp-v2-mini-item button{border:1px solid rgba(248,113,113,.25);background:rgba(127,29,29,.18);color:#fecaca;border-radius:8px;padding:6px 8px;cursor:pointer}
     @media(max-width:1280px){.hosp-v2-kpis{grid-template-columns:repeat(3,1fr)}.hosp-v2-row:not(.hosp-v2-request-row){grid-template-columns:minmax(180px,.8fr) minmax(300px,1.5fr) minmax(180px,.8fr)}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-cell.actions{grid-column:1/-1;border-top:1px solid rgba(74,222,128,.11);border-right:0}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-actions{grid-template-columns:repeat(7,minmax(70px,1fr))}}
     @media(max-width:820px){.hosp-v2-kpis{grid-template-columns:1fr 1fr}.hosp-v2-row{grid-template-columns:1fr}.hosp-v2-cell{border-right:0;border-bottom:1px solid rgba(74,222,128,.1)}.hosp-v2-actions{grid-template-columns:repeat(4,1fr)}.hosp-v2-form{grid-template-columns:1fr}.hosp-v2-field.full{grid-column:auto}}
+    #andamentoFiltros{display:none!important}.hosp-v2-stage-filterbar{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:0 0 10px;padding:11px;border:1px solid rgba(34,197,94,.2);border-radius:12px;background:#07151d}.hosp-v2-stage-filterbar label{display:grid;gap:5px;color:#91a89e;font-size:9.5px;font-weight:900;text-transform:uppercase}.hosp-v2-stage-filterbar select{padding:9px;border:1px solid rgba(74,222,128,.2);border-radius:9px;background:#061d15;color:#eafff2}.hosp-v2-stage-head,.hosp-v2-stage-row{grid-template-columns:minmax(185px,1.1fr) minmax(135px,.75fr) minmax(155px,.85fr) minmax(230px,1.35fr) minmax(105px,.6fr) minmax(90px,.5fr) minmax(75px,.42fr) minmax(170px,.9fr);min-width:1220px}.hosp-v2-mass-check{display:flex;align-items:center;gap:7px}.hosp-v2-mass-check input{width:16px;height:16px;accent-color:#4ade80}.hosp-v2-dot-status{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:850}.hosp-v2-dot-status::before{content:"";width:9px;height:9px;border-radius:50%;background:#facc15}.hosp-v2-dot-status.paid::before{background:#4ade80}.hosp-v2-dot-status.partial::before{background:#38bdf8}
   `;
   document.head.appendChild(style);
 }
@@ -155,6 +158,8 @@ function mountShell() {
     list.className = 'hosp-v2-list';
     card.appendChild(list);
   });
+  const andamentoList=$('#hospV2Andamento');
+  if(andamentoList) andamentoList.insertAdjacentHTML('beforebegin','<div class="hosp-v2-stage-filterbar" id="hospV2StageFilters"></div>');
   document.body.insertAdjacentHTML('beforeend', drawerHtml() + modalsHtml());
   bindEvents();
   observeBaseChanges();
@@ -203,14 +208,18 @@ function bindEvents() {
       selector.checked ? state.selectedRequests.add(selector.value) : state.selectedRequests.delete(selector.value);
       renderAll(); return;
     }
+    const selectAll=event.target.closest('[data-v2-select-all]');
+    if(selectAll){const rows=selectAll.dataset.stage==='andamento'?filteredStageRows(state.rows.filter((r)=>bucket(r)==='reservados')):state.rows.filter((r)=>bucket(r)===selectAll.dataset.stage);rows.forEach((r)=>selectAll.checked?state.selectedRequests.add(String(r.solicitacao_id)):state.selectedRequests.delete(String(r.solicitacao_id)));renderAll();return;}
     const action = event.target.closest('[data-v2-action]');
     if (!action) return;
     const row = state.rows.find((r) => String(r.solicitacao_id) === String(action.dataset.id));
     if (!row) return;
+    const selectedRows=state.rows.filter((r)=>state.selectedRequests.has(String(r.solicitacao_id)));
+    const targets=state.selectedRequests.has(String(row.solicitacao_id))&&selectedRows.length?selectedRows:[row];
     state.selectedId = row.solicitacao_id;
     if (action.dataset.v2Action === 'detail') openDetails(row);
     else if (action.dataset.v2Action === 'quote') openQuoteModal(row);
-    else if (action.dataset.v2Action === 'extra') openExtraModal(row);
+    else if (action.dataset.v2Action === 'extra') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openExtraModal(row);}
     else if (action.dataset.v2Action === 'document') openDocumentModal(row);
     else if (action.dataset.v2Action === 'reserve') {
       const selected = filteredRequestedRows().filter((item) => state.selectedRequests.has(String(item.solicitacao_id)));
@@ -219,8 +228,8 @@ function bindEvents() {
     }
     else if (action.dataset.v2Action === 'extend') triggerBaseAction('estender', row);
     else if (action.dataset.v2Action === 'payment' || action.dataset.v2Action === 'finance') triggerBaseAction('enviar-pagamento', row);
-    else if (action.dataset.v2Action === 'pay-local') openLocalPayment(row);
-    else if (action.dataset.v2Action === 'checkout') await checkoutOnly(row);
+    else if (action.dataset.v2Action === 'pay-local') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openLocalPayment(row);}
+    else if (action.dataset.v2Action === 'checkout') {if(targets.length>1&&!window.confirm(`Confirmar checkout de ${targets.length} hospedagens selecionadas?`))return;for(const target of targets) await checkoutOnly(target,targets.length>1);}
     else if (action.dataset.v2Action === 'quote-edit') await editQuote(action.dataset.quoteId, row);
     else if (action.dataset.v2Action === 'cancel') {
       if (window.confirm(`Cancelar a solicitação ${row.codigo || ''}?`)) {
@@ -239,6 +248,7 @@ function bindEvents() {
   $('#solOrdenar')?.addEventListener('change',(event) => { state.requestSort.field = event.target.value; queueMicrotask(renderAll); });
   $('#solDirecao')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort.direction = $('#solDirecao')?.textContent?.trim() === '↑' ? 'asc' : 'desc'; renderAll(); }));
   $('#solLimparFiltros')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort = { field:'data', direction:'desc' }; renderAll(); }));
+  document.addEventListener('change',(event)=>{const field=event.target?.dataset?.stageFilter;if(field){state.stageFilters[field]=event.target.value;renderAll();}});
 }
 
 function observeBaseChanges() {
@@ -258,16 +268,19 @@ async function loadData() {
   if (state.loading || !state.mounted) return;
   state.loading = true;
   try {
-    const [rowsRes, hotelsRes, peopleRes, quotesRes, extrasRes, docsRes] = await Promise.all([
+    const [rowsRes, hotelsRes, peopleRes, requestersRes, quotesRes, extrasRes, docsRes] = await Promise.all([
       supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
       supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true }),
       supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
+      supabase.from('hospedagem_solicitacoes').select('id,solicitado_por_nome'),
       loadOptional('hospedagem_cotacoes'), loadOptional('hospedagem_custos_extras'), loadOptional('hospedagem_documentos'),
     ]);
     if (rowsRes.error) throw rowsRes.error;
     state.rows = rowsRes.data || []; state.hotels = hotelsRes.data || []; state.quotes = quotesRes.data || []; state.extras = extrasRes.data || []; state.documents = docsRes.data || [];
     state.tables.quotes = !quotesRes.missing; state.tables.extras = !extrasRes.missing; state.tables.documents = !docsRes.missing;
     state.collaborators.clear();
+    state.requesters.clear();
+    (requestersRes.data||[]).forEach((item)=>state.requesters.set(String(item.id),item.solicitado_por_nome||''));
     (peopleRes.data || []).forEach((person) => { const key = String(person.solicitacao_id || ''); if (!state.collaborators.has(key)) state.collaborators.set(key, []); state.collaborators.get(key).push(person); });
     renderAll();
   } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; }
@@ -276,11 +289,16 @@ async function loadData() {
 function renderAll() {
   renderKpis();
   renderList('hospV2Solicitadas', filteredRequestedRows(), true);
-  renderList('hospV2Andamento', sortedStageRows(state.rows.filter((r) => bucket(r) === 'reservados'),'andamento'), false, 'andamento');
+  const andamento=filteredStageRows(state.rows.filter((r) => bucket(r) === 'reservados'));
+  renderStageFilters(andamento);
+  renderList('hospV2Andamento', sortedStageRows(andamento,'andamento'), false, 'andamento');
   renderList('hospV2Pagar', sortedStageRows(state.rows.filter((r) => bucket(r) === 'pagar'),'pagar'), false, 'pagar');
   renderList('hospV2Nf', sortedStageRows(state.rows.filter((r) => bucket(r) === 'nf'),'nf'), false, 'nf');
   if (state.selectedId) { const selected = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (selected && $('#hospV2Drawer')?.classList.contains('open')) renderDetails(selected); }
 }
+function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitado_por_nome||'-';}
+function filteredStageRows(rows){const f=state.stageFilters;return rows.filter((row)=>{const people=getPeople(row);return(!f.colaborador||people.some((p)=>String(p.nome_colaborador||'')===f.colaborador))&&(!f.cidade||String(row.cidade||'')===f.cidade)&&(!f.supervisao||people.some((p)=>String(p.supervisao||'')===f.supervisao))&&(!f.hotel||String(row.hotel||getHotel(row)?.nome||'')===f.hotel);});}
+function renderStageFilters(visible){const root=$('#hospV2StageFilters');if(!root)return;const all=state.rows.filter((r)=>bucket(r)==='reservados');const choices=(values)=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));const fields={colaborador:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.nome_colaborador))),cidade:choices(all.map((r)=>r.cidade)),supervisao:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.supervisao))),hotel:choices(all.map((r)=>r.hotel||getHotel(r)?.nome))};root.innerHTML=Object.entries(fields).map(([key,values])=>`<label>${key}<select data-stage-filter="${key}"><option value="">Todos</option>${values.map((v)=>`<option value="${esc(v)}" ${state.stageFilters[key]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`).join('');root.dataset.visibleIds=visible.map((r)=>r.solicitacao_id).join(',');}
 function renderKpis() {
   const counts = { requests: state.rows.filter((r) => bucket(r) === 'solicitadas').length, quotes: state.rows.filter((r) => String(r.status_solicitacao).toUpperCase() === 'EM_COTACAO').length, reserved: state.rows.filter((r) => bucket(r) === 'reservados').length, pay: state.rows.filter((r) => ['checkout', 'financeiro'].includes(bucket(r)) && String(r.status_financeiro).toUpperCase() !== 'PAGO').length, nf: state.rows.filter((r) => !getDocuments(r).some((d) => String(d.tipo).toUpperCase() === 'NFSE') && !['LANCADO', 'DISPENSADO'].includes(String(r.status_nota).toUpperCase())).length };
   const quoteValue = state.quotes.reduce((sum, q) => sum + Number(q.valor_total || 0), 0);
@@ -299,7 +317,7 @@ function requestedValues(row) {
     data: String(row.data_solicitacao || '').slice(0,10),
     checkin: String(row.data_checkin || row.data_checkin_prevista || '').slice(0,10),
     hotel: row.hotel || getHotel(row)?.nome || '',
-    gestor: row.solicitado_por_nome || row.gestor_nome || row.gestor || row.criado_por_nome || '',
+    gestor: requesterName(row),
   };
 }
 function filteredRequestedRows() {
@@ -322,7 +340,8 @@ function renderList(id, rows, requested = false, stage = '') {
   const root = document.getElementById(id); if (!root) return;
   if (!rows.length) { root.innerHTML = '<div class="hosp-v2-empty">Nenhuma hospedagem nesta etapa.</div>'; return; }
   const operational = ['andamento','pagar','nf'].includes(stage);
-  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : operational ? `<div class="hosp-v2-stage-head">${stageSortHeader(stage,'hotel','Hotel')}${stageSortHeader(stage,'cidade','Cidade')}${stageSortHeader(stage,'data','Data')}${stageSortHeader(stage,'colaboradores','Colaboradores')}${stageSortHeader(stage,'valor','Valor')}<span>Ações</span></div>` : '';
+  const visibleIds=rows.map((row)=>String(row.solicitacao_id));const allSelected=visibleIds.length&&visibleIds.every((id)=>state.selectedRequests.has(id));
+  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : operational ? `<div class="hosp-v2-stage-head">${stageSortHeader(stage,'hotel','Hotel')}<div class="hosp-v2-mass-check"><input type="checkbox" data-v2-select-all data-stage="${stage}" ${allSelected?'checked':''}><span>${stageSortHeader(stage,'cidade','Cidade')}</span></div>${stageSortHeader(stage,'data','Data')}${stageSortHeader(stage,'colaboradores','Colaboradores')}${stageSortHeader(stage,'valor','Valor')}<span>Status $</span><span>NF</span><span>Ações</span></div>` : '';
   root.innerHTML = head + rows.map(requested ? requestedRowHtml : operational ? (row) => operationalRowHtml(row,stage) : (row) => cardHtml(row, stage)).join('');
 }
 
@@ -352,10 +371,11 @@ function operationalRowHtml(row,stage) {
   const checkin=row.data_checkin||row.data_checkin_prevista;
   const checkout=row.data_checkout||row.data_checkout_prevista;
   const value=row.valor_financeiro||row.valor_total_previsto;
+  const fin=String(row.status_financeiro||'').toUpperCase();const paid=fin==='PAGO';const partial=fin==='PARCIAL'||Number(row.valor_pago||0)>0;const hasNf=getDocuments(row).some((d)=>String(d.tipo).toUpperCase()==='NFSE');
   const actions=stage==='pagar'
     ? `${button('pay-local',row,'pay','Pagar','amber')}${button('extra',row,'extra','Custos')}`
     : stage==='nf' ? `${button('document',row,'attach','Anexar NF','purple')}${button('detail',row,'detail','Detalhes')}`
-    : `${button('extend',row,'extend','Estender')}${button('checkout',row,'checkout','Checkout','blue')}`;
+    : `${button('pay-local',row,'pay','Pagar','amber')}${button('checkout',row,'checkout','Checkout','blue')}`;
   const selected=state.selectedRequests.has(String(row.solicitacao_id));
   return `<article class="hosp-v2-stage-row ${selected?'is-selected':''}">
     <div class="hosp-v2-stage-cell"><label class="hosp-v2-stage-hotel"><input type="checkbox" data-v2-select value="${esc(row.solicitacao_id)}" ${selected?'checked':''} aria-label="Selecionar ${esc(hotel)}"><span title="${esc(hotel)}">${esc(hotel)}</span></label></div>
@@ -363,6 +383,8 @@ function operationalRowHtml(row,stage) {
     <div class="hosp-v2-stage-cell"><strong>${brDate(checkin)}</strong><small>até ${brDate(checkout)}</small></div>
     <div class="hosp-v2-stage-cell people"><strong>${esc(people.join(', ')||row.colaboradores||row.colaborador||'-')}</strong></div>
     <div class="hosp-v2-stage-cell value"><strong>${value?money(value):'A confirmar'}</strong></div>
+    <div class="hosp-v2-stage-cell"><span class="hosp-v2-dot-status ${paid?'paid':partial?'partial':''}">${paid?'Pago':partial?'Parcial':'Pendente'}</span></div>
+    <div class="hosp-v2-stage-cell"><span class="hosp-v2-dot-status ${hasNf?'paid':''}">${hasNf?'Anexada':'Pendente'}</span></div>
     <div class="hosp-v2-stage-cell"><div class="hosp-v2-stage-actions">${actions}</div></div>
   </article>`;
 }
@@ -382,7 +404,7 @@ function requestedRowHtml(row) {
     <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)</span></div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-people">${people.length?people.map((p)=>`<span class="hosp-v2-person">${esc(p.nome_colaborador||'-')}</span>`).join(', '):`<span class="hosp-v2-person">${esc(row.colaborador||row.colaboradores||'-')}</span>`}</div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-supervision">${esc(supervisors.join(', ')||row.supervisao||'-')}</div></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(row.solicitado_por_nome||row.gestor_nome||row.gestor||row.criado_por_nome||'-')}</div></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(requesterName(row))}</div></div>
     <div class="hosp-v2-cell actions"><div class="hosp-v2-actions">${actions.join('')}</div></div>
   </article>`;
 }
