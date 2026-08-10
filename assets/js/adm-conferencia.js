@@ -299,16 +299,7 @@ function isPedidoHospedagem(row) {
 }
 
 function estadiaResumo(row) {
-  if (!isPedidoHospedagem(row)) return 'Não precisa';
-  const local = [row.estadia_cidade, row.estadia_uf].filter(Boolean).join('/');
-  return local ? `${row.estadia_tipo} • ${local}` : row.estadia_tipo;
-}
-
-function estadiaPeriodoResumo(row) {
-  if (!isPedidoHospedagem(row)) return '';
-  const periodo = (row.checkin || row.checkout) ? `${brDate(row.checkin)} → ${brDate(row.checkout)}` : '';
-  const diarias = row.hotel_dias ? `${row.hotel_dias} diária(s)` : '';
-  return [periodo, diarias].filter(Boolean).join(' • ');
+  return isPedidoHospedagem(row) ? row.estadia_tipo : 'Não precisa';
 }
 
 function isPedidoDeslocamento(row) {
@@ -620,10 +611,7 @@ function despesasRowHtml(row, mode = 'fila') {
         ${escapeHtml(deslocamentoResumo(row))}
         <small>${escapeHtml(row.deslocamento_obs || '')}</small>
       </td>
-      <td>
-        ${escapeHtml(estadiaResumo(row))}
-        <small>${escapeHtml(estadiaPeriodoResumo(row))}</small>
-      </td>
+      <td>${escapeHtml(estadiaResumo(row))}</td>
       <td class="conf-td-extras">
         <strong>${escapeHtml(extrasResumo(row))}</strong>
         <small>${escapeHtml(row.extras_obs || '')}</small>
@@ -1417,7 +1405,7 @@ function exportCsv() {
       row.almoco_valor ? 'Sim' : 'Não',
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
-      [estadiaResumo(row), estadiaPeriodoResumo(row)].filter(Boolean).join(' - '),
+      estadiaResumo(row),
       extrasResumo(row),
     ]);
   } else if (state.tab === 'pendentes') {
