@@ -297,6 +297,19 @@ function isPedidoHospedagem(row) {
   return row.estadia_tipo && !['NÃO PRECISA', 'NAO PRECISA', 'CASA'].includes(normalizeText(row.estadia_tipo));
 }
 
+function estadiaResumo(row) {
+  if (!isPedidoHospedagem(row)) return 'Não precisa';
+  const local = [row.estadia_cidade, row.estadia_uf].filter(Boolean).join('/');
+  return local ? `${row.estadia_tipo} • ${local}` : row.estadia_tipo;
+}
+
+function estadiaPeriodoResumo(row) {
+  if (!isPedidoHospedagem(row)) return '';
+  const periodo = (row.checkin || row.checkout) ? `${brDate(row.checkin)} → ${brDate(row.checkout)}` : '';
+  const diarias = row.hotel_dias ? `${row.hotel_dias} diária(s)` : '';
+  return [periodo, diarias].filter(Boolean).join(' • ');
+}
+
 function isPedidoDeslocamento(row) {
   return row.deslocamento_tipo && !['NÃO PRECISA', 'NAO PRECISA'].includes(normalizeText(row.deslocamento_tipo));
 }
@@ -522,6 +535,7 @@ function despesasTableHead() {
         <th>Almoço</th>
         <th>Janta</th>
         <th>Deslocamento</th>
+        <th>Estadia</th>
         <th>Extras</th>
         <th>Produção</th>
         <th>Ações</th>
@@ -605,6 +619,10 @@ function despesasRowHtml(row, mode = 'fila') {
         ${escapeHtml(deslocamentoResumo(row))}
         <small>${escapeHtml(row.deslocamento_obs || '')}</small>
       </td>
+      <td>
+        ${escapeHtml(estadiaResumo(row))}
+        <small>${escapeHtml(estadiaPeriodoResumo(row))}</small>
+      </td>
       <td class="conf-td-extras">
         <strong>${escapeHtml(extrasResumo(row))}</strong>
         <small>${escapeHtml(row.extras_obs || '')}</small>
@@ -654,7 +672,7 @@ function renderDespesasTable() {
         <tbody>
           ${filaRows.length
             ? filaRows.map((row) => despesasRowHtml(row, 'fila')).join('')
-            : '<tr><td class="conf-empty" colspan="10">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
+            : '<tr><td class="conf-empty" colspan="11">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -673,7 +691,7 @@ function renderDespesasTable() {
           <tbody>
             ${conferidosRows.length
               ? conferidosRows.map((row) => despesasRowHtml(row, 'conferidos')).join('')
-              : '<tr><td class="conf-empty" colspan="10">Nenhum registro conferido nos filtros atuais.</td></tr>'}
+              : '<tr><td class="conf-empty" colspan="11">Nenhum registro conferido nos filtros atuais.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -1377,7 +1395,7 @@ function exportCsv() {
   let headers;
   let csvRows;
   if (state.tab === 'despesas') {
-    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Extras'];
+    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Estadia', 'Extras'];
     csvRows = rows.map((row) => [
       row.colaborador || row.nome_colaborador || '',
       getRegional(row),
@@ -1386,6 +1404,7 @@ function exportCsv() {
       row.almoco_valor ? 'Sim' : 'Não',
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
+      [estadiaResumo(row), estadiaPeriodoResumo(row)].filter(Boolean).join(' - '),
       extrasResumo(row),
     ]);
   } else if (state.tab === 'pendentes') {
