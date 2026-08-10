@@ -547,12 +547,10 @@ export async function renderProgramacaoDespesas(content, options = {}) {
 
 // Programação → Hospedagem > Hotel: ao escolher HOTEL na estadia, cria a
 // solicitação automaticamente (pedido do usuário, 2026-07-23) — mesma tabela
-// e mesmos campos da criação manual em hospedagem.js. Sem coluna de vínculo
-// no banco ligando de volta à Programação, a checagem de "já existe" é por
-// nome do colaborador + data de check-in (mesmo critério usado no backfill
-// de 20260630161000) — não é à prova de 2 colaboradores homônimos check-in no
-// mesmo dia, mas evita duplicar ao reabrir/editar a estadia depois de já
-// ter HOTEL selecionado. Colunas normalizadas automaticamente por
+// e mesmos campos da criação manual em hospedagem.js. Pessoas da mesma
+// programação, período, cidade e supervisão compartilham uma solicitação;
+// assim Hospedagem > Hotéis recebe um único KPI e consegue montar quartos
+// duplos, triplos etc. Colunas normalizadas automaticamente por
 // programacao-hospedagem-colaboradores-fix.js (patch global no supabase.from).
 async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
   const badge = card.querySelector('[data-hotel-badge]');
@@ -566,36 +564,64 @@ async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
     const checkout = addDaysIso(dataCheckin, dias);
     const cidade = card.querySelector('[data-fld="cidade"]')?.value?.trim() || cidadeFromEmbarque(embarque);
     const uf = ufFromEmbarque(embarque);
+    const programacaoId = card.dataset.programacaoId || null;
+    const ctx = await getUserContext().catch(() => null);
+    const user = ctx?.user || {};
+    const supervisao = user.supervisao || '';
 
-    const { data: solsNoDia, error: errSols } = await supabase
+    let solicitacoesQuery = supabase
       .from('hospedagem_solicitacoes')
-      .select('id')
-      .eq('data_checkin_prevista', dataCheckin);
+      .select('id,codigo,cidade,uf,supervisao,programacao_id,observacao_gestor')
+      .eq('data_checkin_prevista', dataCheckin)
+      .eq('data_checkout_prevista', checkout)
+      .eq('status_solicitacao', 'SOLICITADA');
+    if (programacaoId) solicitacoesQuery = solicitacoesQuery.or(`programacao_id.eq.${programacaoId},programacao_id.is.null`);
+    const { data: solicitacoesCompativeis, error: errSols } = await solicitacoesQuery;
     if (errSols) throw errSols;
-    const idsNoDia = (solsNoDia || []).map((s) => s.id);
+
+    const mesmaChave = (solicitacoesCompativeis || []).find((s) => {
+      const origemProgramacao = s.programacao_id === programacaoId
+        || (!s.programacao_id && normalizeText(s.observacao_gestor).includes('solicitacao automatica via programacao'));
+      return origemProgramacao
+        && normalizeText(s.cidade) === normalizeText(cidade)
+        && normalizeText(s.uf) === normalizeText(uf)
+        && (s.programacao_id === programacaoId || normalizeText(s.supervisao) === normalizeText(supervisao));
+    });
+
+    let solicitacaoId = mesmaChave?.id || null;
+    let codigo = mesmaChave?.codigo || null;
     let jaExiste = false;
-    if (idsNoDia.length) {
-      const { data: colabsNoDia, error: errColabs } = await supabase
+    if (solicitacaoId) {
+      const { data: colabsDoGrupo, error: errColabs } = await supabase
         .from('hospedagem_solicitacao_colaboradores')
-        .select('nome_colaborador')
-        .in('solicitacao_id', idsNoDia);
+        .select('nome_colaborador,cpf')
+        .eq('solicitacao_id', solicitacaoId);
       if (errColabs) throw errColabs;
-      jaExiste = (colabsNoDia || []).some((c) => normalizeText(c.nome_colaborador) === normalizeText(nome));
+      const cpfDigits = String(colabId || '').replace(/\D/g, '');
+      jaExiste = (colabsDoGrupo || []).some((c) => (
+        (cpfDigits.length === 11 && String(c.cpf || '').replace(/\D/g, '') === cpfDigits)
+        || normalizeText(c.nome_colaborador) === normalizeText(nome)
+      ));
+      if (!mesmaChave.programacao_id && programacaoId) {
+        const { error: vinculoError } = await supabase
+          .from('hospedagem_solicitacoes')
+          .update({ programacao_id: programacaoId })
+          .eq('id', solicitacaoId);
+        if (vinculoError) throw vinculoError;
+      }
     }
 
-    let codigo = null;
-    if (!jaExiste) {
-      const ctx = await getUserContext().catch(() => null);
-      const user = ctx?.user || {};
+    if (!solicitacaoId) {
       const payload = {
+        programacao_id: programacaoId,
         data_solicitacao: dataCheckin,
         solicitante_id: user.id || null,
         solicitante_nome: user.name || null,
         solicitante_email: user.email || null,
         empresa: user.empresa || null,
         coordenacao: user.coordenacao || null,
-        supervisao: user.supervisao || null,
-        regional: user.supervisao || null,
+        supervisao: supervisao || user.supervisao || null,
+        regional: supervisao || user.supervisao || null,
         cidade: cidade || embarque || '',
         uf: uf || null,
         cliente,
@@ -608,24 +634,31 @@ async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
       };
       const { data: sol, error } = await supabase.from('hospedagem_solicitacoes').insert(payload).select('id,codigo').single();
       if (error) throw error;
+      solicitacaoId = sol.id;
       codigo = sol.codigo;
+    }
+
+    if (!jaExiste) {
       // colaboradorId chega às vezes como CPF puro, às vezes formatado com
       // pontuação (ver painel-web-endereco-colaboradores) — extrai só os dígitos.
       const cpfDigits = String(colabId || '').replace(/\D/g, '');
       const cpf = cpfDigits.length === 11 ? cpfDigits : null;
       const { error: colabError } = await supabase.from('hospedagem_solicitacao_colaboradores').insert({
-        solicitacao_id: sol.id,
+        solicitacao_id: solicitacaoId,
         nome_colaborador: nome,
         cpf,
+        supervisao: supervisao || null,
         status_colaborador: 'ATIVO',
       });
       if (colabError) throw colabError;
       await supabase.from('hospedagem_eventos').insert({
-        solicitacao_id: sol.id,
+        solicitacao_id: solicitacaoId,
         usuario_id: user.id || null,
         usuario_nome: user.name || null,
-        tipo_evento: 'SOLICITACAO_CRIADA',
-        descricao: 'Solicitação criada automaticamente pela Programação.',
+        tipo_evento: mesmaChave ? 'COLABORADOR_ADICIONADO' : 'SOLICITACAO_CRIADA',
+        descricao: mesmaChave
+          ? `Colaborador ${nome} agrupado automaticamente pela Programação.`
+          : 'Solicitação criada automaticamente pela Programação.',
         status_novo: 'SOLICITADA',
       });
     }
