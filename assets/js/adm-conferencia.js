@@ -37,6 +37,7 @@ const state = {
   localizacao: [],
   producaoPorColaboradorData: new Map(),
   loading: false,
+  reloadRequested: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
   },
@@ -297,6 +298,10 @@ function isPedidoHospedagem(row) {
   return row.estadia_tipo && !['NÃO PRECISA', 'NAO PRECISA', 'CASA'].includes(normalizeText(row.estadia_tipo));
 }
 
+function estadiaResumo(row) {
+  return isPedidoHospedagem(row) ? row.estadia_tipo : 'Não precisa';
+}
+
 function isPedidoDeslocamento(row) {
   return row.deslocamento_tipo && !['NÃO PRECISA', 'NAO PRECISA'].includes(normalizeText(row.deslocamento_tipo));
 }
@@ -522,6 +527,7 @@ function despesasTableHead() {
         <th>Almoço</th>
         <th>Janta</th>
         <th>Deslocamento</th>
+        <th>Estadia</th>
         <th>Extras</th>
         <th>Produção</th>
         <th>Ações</th>
@@ -605,6 +611,7 @@ function despesasRowHtml(row, mode = 'fila') {
         ${escapeHtml(deslocamentoResumo(row))}
         <small>${escapeHtml(row.deslocamento_obs || '')}</small>
       </td>
+      <td>${escapeHtml(estadiaResumo(row))}</td>
       <td class="conf-td-extras">
         <strong>${escapeHtml(extrasResumo(row))}</strong>
         <small>${escapeHtml(row.extras_obs || '')}</small>
@@ -654,7 +661,7 @@ function renderDespesasTable() {
         <tbody>
           ${filaRows.length
             ? filaRows.map((row) => despesasRowHtml(row, 'fila')).join('')
-            : '<tr><td class="conf-empty" colspan="10">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
+            : '<tr><td class="conf-empty" colspan="11">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -673,7 +680,7 @@ function renderDespesasTable() {
           <tbody>
             ${conferidosRows.length
               ? conferidosRows.map((row) => despesasRowHtml(row, 'conferidos')).join('')
-              : '<tr><td class="conf-empty" colspan="10">Nenhum registro conferido nos filtros atuais.</td></tr>'}
+              : '<tr><td class="conf-empty" colspan="11">Nenhum registro conferido nos filtros atuais.</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -1270,8 +1277,15 @@ async function loadUber() {
 }
 
 async function loadAll() {
-  if (state.loading) return;
+  // Alterar os dois campos de data dispara dois submits em sequência. Se uma
+  // consulta já estiver em andamento, não descarte o filtro mais recente:
+  // execute-o logo depois com os valores atuais dos campos.
+  if (state.loading) {
+    state.reloadRequested = true;
+    return;
+  }
   state.loading = true;
+  state.reloadRequested = false;
   setFeedback('Carregando dados da conferência...');
   try {
     await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores()]);
@@ -1281,6 +1295,11 @@ async function loadAll() {
     setFeedback(error.message || 'Erro ao carregar conferência.', true);
   } finally {
     state.loading = false;
+    if (state.reloadRequested) {
+      state.reloadRequested = false;
+      await loadAll();
+      return;
+    }
     renderActiveTab();
   }
 }
@@ -1377,7 +1396,7 @@ function exportCsv() {
   let headers;
   let csvRows;
   if (state.tab === 'despesas') {
-    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Extras'];
+    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Estadia', 'Extras'];
     csvRows = rows.map((row) => [
       row.colaborador || row.nome_colaborador || '',
       getRegional(row),
@@ -1386,6 +1405,7 @@ function exportCsv() {
       row.almoco_valor ? 'Sim' : 'Não',
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
+      estadiaResumo(row),
       extrasResumo(row),
     ]);
   } else if (state.tab === 'pendentes') {

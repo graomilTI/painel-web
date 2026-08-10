@@ -16,6 +16,7 @@ const BTG_AGENT_ALIASES = [
 ];
 
 const CARGAS_AGENT_ID = 'sync-cargas-geofence';
+const DISTRIBUICAO_OS_AGENT_ID = 'aplicar-distribuicao-os';
 
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
@@ -41,7 +42,7 @@ const AGENTES = [
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa' },
   { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores' },
   { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
-  { id: 'aplicar-distribuicao-os', name: 'Aplicar Distribuição de OS (Graint)', freq: 'desativado', table: 'operacional_os', direction: 'saida' },
+  { id: DISTRIBUICAO_OS_AGENT_ID, name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min (por supervisão)', table: 'operacional_os', direction: 'saida' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
@@ -61,6 +62,7 @@ const state = {
   loading: false,
   selectedAgent: null,
   botconversaFailures: [],
+  supervisoesDistribuicao: [],
   cargasKpi: null,
   activeTab: 'entrada',
   executions: [],
@@ -69,6 +71,13 @@ const state = {
   executionStatus: 'problemas',
   executionSearch: '',
   executionsUpdatedAt: null,
+  queue: [],
+  queueLoading: false,
+  queueSaving: false,
+  queueComposerOpen: false,
+  queueSelection: [],
+  agentSettings: [],
+  settingsEditor: null,
 };
 
 function getDirection(agenteDef) {
@@ -86,9 +95,14 @@ function getStyles() {
   return `<style id="agentes-style">
 .ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
 .ag-tabs{display:flex;gap:8px;margin-top:18px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:0}.ag-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-weight:900;font-size:13px;padding:10px 4px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-tab:hover{color:#cbd5e1}.ag-tab.active{color:#f8fafc;border-bottom-color:#3b82f6}.ag-tab-count{background:rgba(148,163,184,.14);color:#cbd5e1;border-radius:999px;padding:1px 8px;font-size:11px}.ag-tab.active .ag-tab-count{background:rgba(59,130,246,.22);color:#bfdbfe}.ag-dir-badge{font-size:10px;font-weight:900;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}.ag-dir-badge.entrada{background:rgba(34,197,94,.13);color:#86efac}.ag-dir-badge.saida{background:rgba(251,146,60,.15);color:#fdba74}
+.ag-queue{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:16px}.ag-queue-panel{background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(7,13,26,.94));border:1px solid rgba(148,163,184,.13);border-radius:19px;padding:18px}.ag-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.ag-queue-head h3{margin:0;color:#f8fafc;font-size:15px}.ag-queue-head p{margin:4px 0 0;color:#64748b;font-size:11px}.ag-queue-actions{display:flex;gap:8px}.ag-queue-item{display:grid;grid-template-columns:35px 42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:11px 10px;border-bottom:1px solid rgba(148,163,184,.09)}.ag-queue-item:last-child{border-bottom:0}.ag-queue-pos{color:#475569;font-weight:950;font-size:11px;text-align:center}.ag-queue-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:rgba(59,130,246,.11);color:#60a5fa}.ag-queue-name strong{display:block;color:#f1f5f9;font-size:12px}.ag-queue-name span{display:block;color:#64748b;font-size:9px;margin-top:3px}.ag-queue-move{display:flex;gap:5px}.ag-icon-btn{width:29px;height:29px;border-radius:8px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.45);color:#94a3b8;cursor:pointer}.ag-icon-btn:hover:not(:disabled){border-color:#3b82f6;color:#bfdbfe}.ag-icon-btn:disabled{opacity:.25;cursor:default}.ag-running{border:1px solid rgba(34,197,94,.18);background:rgba(34,197,94,.04);border-radius:13px;margin-bottom:8px}.ag-running .ag-queue-icon{background:rgba(34,197,94,.12);color:#4ade80}.ag-queue-empty{padding:34px 16px;text-align:center;color:#64748b;font-size:12px}.ag-queue-side{position:sticky;top:16px;align-self:start}.ag-lane-card{padding:13px;border:1px solid rgba(148,163,184,.11);border-radius:13px;margin-bottom:10px}.ag-lane-card span{display:block;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.ag-lane-card strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.ag-composer{grid-column:1/-1;background:rgba(2,6,23,.88);border:1px solid rgba(96,165,250,.25);border-radius:19px;padding:18px}.ag-composer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin:14px 0}.ag-agent-choice{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid rgba(148,163,184,.12);border-radius:11px;color:#cbd5e1;font-size:11px;cursor:pointer}.ag-agent-choice:has(input:checked){border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.09);color:#eff6ff}.ag-composer-footer{display:flex;justify-content:flex-end;gap:8px}
 .ag-exec{display:grid;gap:14px}.ag-exec-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ag-exec-kpi{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(8,15,29,.9));border:1px solid rgba(148,163,184,.13);border-radius:17px;padding:15px 16px}.ag-exec-kpi::after{content:"";position:absolute;inset:auto -24px -38px auto;width:92px;height:92px;border-radius:50%;background:var(--glow,rgba(59,130,246,.12));filter:blur(2px)}.ag-exec-kpi span{display:block;color:#94a3b8;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.ag-exec-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:25px;line-height:1;font-weight:950}.ag-exec-kpi small{display:block;margin-top:7px;color:#64748b;font-size:10px}.ag-exec-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:10px}.ag-exec-search{min-width:220px;flex:1;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#e2e8f0;padding:10px 12px;outline:none}.ag-exec-search:focus{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 3px rgba(59,130,246,.1)}.ag-exec-filter{background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#cbd5e1;padding:9px 11px}.ag-exec-refresh{border:1px solid rgba(96,165,250,.26);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:11px;padding:9px 12px;font-weight:850;cursor:pointer}.ag-exec-refresh:hover{background:rgba(59,130,246,.18)}.ag-exec-updated{margin-left:auto;color:#64748b;font-size:10px}.ag-exec-list{display:grid;gap:8px}.ag-exec-row{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.11);border-left:3px solid var(--status-color,#64748b);border-radius:14px;padding:11px 13px;color:#cbd5e1}.ag-exec-row:hover{background:rgba(15,23,42,.86);border-color:rgba(148,163,184,.2);border-left-color:var(--status-color,#64748b)}.ag-exec-icon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--status-color) 14%,transparent);color:var(--status-color);font-weight:950}.ag-exec-agent strong{display:block;color:#f8fafc;font-size:12px}.ag-exec-agent code{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-time strong,.ag-exec-duration strong{display:block;color:#cbd5e1;font-size:11px}.ag-exec-time span,.ag-exec-duration span{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-error{min-width:0;color:#94a3b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-chevron{color:#64748b;text-align:center}.ag-exec-detail{grid-column:1/-1;margin:2px 0 0;padding:12px;background:rgba(2,6,23,.72);border-radius:10px;border:1px solid rgba(148,163,184,.1);white-space:pre-wrap;word-break:break-word;font:10px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#94a3b8}.ag-exec-empty{text-align:center;padding:52px 20px;border:1px dashed rgba(148,163,184,.17);border-radius:16px;color:#64748b}.ag-exec-empty strong{display:block;color:#cbd5e1;margin-bottom:5px}.ag-exec-health{display:flex;align-items:center;gap:8px;font-size:11px;color:#94a3b8}.ag-exec-health-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 9px rgba(34,197,94,.55)}
 @media(max-width:980px){.ag-exec-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ag-exec-row{grid-template-columns:40px 1fr 1fr}.ag-exec-duration,.ag-exec-error{grid-column:2/-1}.ag-exec-chevron{position:absolute;right:14px}.ag-exec-row{position:relative}}
 @media(max-width:560px){.ag-exec-summary{grid-template-columns:1fr 1fr}.ag-exec-row{grid-template-columns:38px 1fr}.ag-exec-time,.ag-exec-duration,.ag-exec-error{grid-column:2}.ag-exec-toolbar>*{width:100%}.ag-exec-updated{margin-left:0;text-align:center}}
+@media(max-width:900px){.ag-queue{grid-template-columns:1fr}.ag-queue-side{position:static}.ag-queue-item{grid-template-columns:28px 36px minmax(0,1fr) auto}}
+.ag-queue-board{display:grid;gap:14px}.ag-q-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid rgba(148,163,184,.13);border-radius:16px;background:rgba(15,23,42,.7)}.ag-q-toolbar>div:first-child strong,.ag-q-toolbar>div:first-child span{display:block}.ag-q-toolbar>div:first-child strong{color:#f8fafc;font-size:14px}.ag-q-toolbar>div:first-child span{margin-top:3px;color:#64748b;font-size:10px}.ag-q-toolbar>div:last-child{display:flex;gap:8px}.ag-q-lane{--lane:#3b82f6;overflow:hidden;border:1px solid color-mix(in srgb,var(--lane) 24%,rgba(148,163,184,.1));border-radius:19px;background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(5,11,22,.96));box-shadow:inset 3px 0 0 var(--lane)}.ag-q-lane.cyan{--lane:#06b6d4}.ag-q-lane.orange{--lane:#f97316}.ag-q-lane.green{--lane:#22c55e}.ag-q-lane>header{display:grid;grid-template-columns:minmax(180px,1fr) 150px 150px auto;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:linear-gradient(90deg,color-mix(in srgb,var(--lane) 10%,transparent),transparent 45%)}.ag-q-lane>header>div:first-child span,.ag-q-lane>header>div:first-child strong{display:block}.ag-q-lane>header>div:first-child span{color:var(--lane);font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.ag-q-lane>header>div:first-child strong{margin-top:3px;color:#e2e8f0;font-size:13px}.ag-q-lane>header em{color:#64748b;font-size:10px;font-style:normal;text-align:right}.ag-q-lane-kpi{padding-left:13px;border-left:1px solid rgba(148,163,184,.12)}.ag-q-lane-kpi small,.ag-q-lane-kpi b{display:block}.ag-q-lane-kpi small{color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:.05em}.ag-q-lane-kpi b{margin-top:3px;color:#f8fafc;font-size:13px}.ag-q-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:9px;padding:11px}.ag-q-card{min-width:0;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(7,15,29,.78);padding:12px;transition:.15s ease}.ag-q-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--lane) 40%,transparent);background:rgba(10,20,37,.94)}.ag-q-card.rodando{border-color:rgba(59,130,246,.38);box-shadow:0 0 0 1px rgba(59,130,246,.08)}.ag-q-card.pendente{border-color:rgba(234,179,8,.26)}.ag-q-card-top{display:grid;grid-template-columns:minmax(0,1fr) 8px auto auto;align-items:center;gap:7px}.ag-q-card-top>div strong,.ag-q-card-top>div code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ag-q-card-top>div strong{color:#f8fafc;font-size:12px}.ag-q-card-top>div code{margin-top:3px;color:#475569;font-size:8px}.ag-q-card-top b{font-size:10px}.ag-q-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:11px}.ag-q-kpis span{min-width:0;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.04em}.ag-q-kpis strong{display:block;margin-top:3px;color:#cbd5e1;font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-q-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid rgba(148,163,184,.08)}.ag-q-card-footer small{color:#64748b;font-size:9px}.ag-q-card-footer>div{display:flex;gap:5px}.ag-q-priority{border:1px solid color-mix(in srgb,var(--lane) 30%,transparent);border-radius:8px;background:color-mix(in srgb,var(--lane) 10%,transparent);color:#cbd5e1;padding:5px 8px;font-size:9px;font-weight:850;cursor:pointer}.ag-q-priority:hover{background:color-mix(in srgb,var(--lane) 20%,transparent);color:#fff}
+.ag-q-card{position:relative}.ag-q-edit{position:absolute;top:8px;right:8px;width:25px;height:25px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.14);border-radius:8px;background:rgba(2,6,23,.72);color:#94a3b8;cursor:pointer;font-size:12px;z-index:2}.ag-q-edit:hover{color:#fff;border-color:var(--lane)}.ag-q-card-top{padding-right:27px}.ag-q-schedule{color:var(--lane)!important}.ag-settings-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(1,4,12,.78);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px}.ag-settings-modal{width:min(470px,100%);border:1px solid rgba(96,165,250,.3);border-radius:20px;background:linear-gradient(145deg,#0f172a,#050b16);box-shadow:0 28px 80px rgba(0,0,0,.55);padding:20px}.ag-settings-modal header{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px}.ag-settings-modal h3{margin:0;color:#f8fafc;font-size:16px}.ag-settings-modal header span{display:block;margin-top:4px;color:#64748b;font-size:10px}.ag-settings-close{border:0;background:transparent;color:#94a3b8;font-size:20px;cursor:pointer}.ag-settings-field{display:block;margin-top:13px}.ag-settings-field>span{display:block;margin-bottom:6px;color:#94a3b8;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.ag-settings-field select{width:100%;border:1px solid rgba(148,163,184,.16);border-radius:11px;background:#08111f;color:#e2e8f0;padding:11px 12px;outline:none}.ag-settings-hint{margin:14px 0 0;padding:10px 12px;border-radius:11px;background:rgba(59,130,246,.08);color:#94a3b8;font-size:10px;line-height:1.5}.ag-settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+@media(max-width:760px){.ag-q-toolbar{align-items:flex-start;flex-direction:column}.ag-q-toolbar>div:last-child{width:100%}.ag-q-toolbar button{flex:1}.ag-q-lane>header{grid-template-columns:1fr 1fr}.ag-q-lane>header>div:first-child{grid-column:1/-1}.ag-q-lane>header em{grid-column:1/-1;text-align:left}.ag-q-cards{grid-template-columns:1fr}}
 /* O <details> precisa ser o contêiner; somente o <summary> compõe a grade. */
 .ag-exec-row{display:block;padding:0;overflow:hidden}
 .ag-exec-row>summary{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;padding:11px 13px;cursor:pointer;list-style:none}
@@ -128,6 +142,35 @@ function formatDuration(ms) {
 
 function formatInt(value) {
   return Number(value || 0).toLocaleString('pt-BR');
+}
+
+function formatMs(value) {
+  const ms = Number(value || 0);
+  return ms > 0 ? `${Math.round(ms).toLocaleString('pt-BR')} ms` : 'Sem histórico';
+}
+
+function formatMemory(value) {
+  const mb = Number(value || 0);
+  return mb > 0 ? `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : 'Aguardando medição';
+}
+
+function formatInterval(minutes) {
+  const value = Number(minutes || 0);
+  if (value < 60) return `${value} min`;
+  if (value % 1440 === 0) return `${value / 1440} dia${value === 1440 ? '' : 's'}`;
+  if (value % 60 === 0) return `${value / 60}h`;
+  return `${Math.floor(value / 60)}h ${value % 60}min`;
+}
+
+function renderSettingsEditor() {
+  const editor = state.settingsEditor;
+  if (!editor) return '';
+  const agent = AGENTES.find((item) => item.id === editor.agent_id);
+  const intervals = [0, 5, 10, 15, 30, 60, 120, 360, 720, 1440, 2880, 10080];
+  return `<div class="ag-settings-backdrop" onclick="if(event.target===this)closeAgentSettings()"><form class="ag-settings-modal" onsubmit="saveAgentSettings(event)"><header><div><h3>Editar agente</h3><span>${esc(agent?.name || editor.agent_id)}</span></div><button class="ag-settings-close" type="button" onclick="closeAgentSettings()">×</button></header>
+    <label class="ag-settings-field"><span>Fila de execução</span><select name="queue_lane"><option value="fixed_a" ${editor.queue_lane === 'fixed_a' ? 'selected' : ''}>Entrada 1 · fixed-a</option><option value="fixed_b" ${editor.queue_lane === 'fixed_b' ? 'selected' : ''}>Entrada 2 · fixed-b</option><option value="alteracoes" ${editor.queue_lane === 'alteracoes' ? 'selected' : ''}>Saída 1 · alterações</option><option value="despesas_distribuicao" ${editor.queue_lane === 'despesas_distribuicao' ? 'selected' : ''}>Saída 2 · despesas/distribuição</option></select></label>
+    <label class="ag-settings-field"><span>Intervalo de execução</span><select name="interval_minutes">${intervals.map((value) => `<option value="${value}" ${Number(editor.interval_minutes) === value ? 'selected' : ''}>${value === 0 ? 'Manual / sob demanda' : `A cada ${formatInterval(value)}`}</option>`).join('')}</select></label>
+    <p class="ag-settings-hint">A alteração afeta os próximos jobs. Se o agente estiver executando, ele termina normalmente; jobs pendentes migram para a nova fila.</p><div class="ag-settings-actions"><button class="ag-btn ag-btn-danger" type="button" onclick="closeAgentSettings()">Cancelar</button><button class="ag-btn ag-btn-primary" type="submit" ${state.queueSaving ? 'disabled' : ''}>${state.queueSaving ? 'Salvando…' : 'Salvar configuração'}</button></div></form></div>`;
 }
 
 function unique(values) {
@@ -390,6 +433,58 @@ function renderExecutions() {
   return `<section class="ag-exec" aria-label="Relatório de execuções dos agentes">${cards}${toolbar}<div class="ag-exec-health"><span class="ag-exec-health-dot"></span>Monitoramento automático a cada 30 segundos</div>${list}</section>`;
 }
 
+function renderQueue() {
+  const entryAgents = AGENTES.filter((a) => getDirection(a) === 'entrada');
+  const settingFor = (agentId) => state.agentSettings.find((item) => item.agent_id === agentId);
+  const inConfiguredLane = (agent, lane, fallback) => settingFor(agent.id)?.queue_lane ? settingFor(agent.id).queue_lane === lane : fallback;
+  const laneDefs = [
+    { id: 'entrada-1', title: 'Entrada 1', subtitle: 'Worker fixed-a', lane: 'fixed_a', agents: AGENTES.filter((a) => inConfiguredLane(a, 'fixed_a', getDirection(a) === 'entrada' && entryAgents.indexOf(a) % 2 === 0)), tone: 'blue' },
+    { id: 'entrada-2', title: 'Entrada 2', subtitle: 'Worker fixed-b', lane: 'fixed_b', agents: AGENTES.filter((a) => inConfiguredLane(a, 'fixed_b', getDirection(a) === 'entrada' && entryAgents.indexOf(a) % 2 === 1)), tone: 'cyan' },
+    { id: 'saida-1', title: 'Saída 1', subtitle: 'Alterações no GRM', lane: 'alteracoes', agents: AGENTES.filter((a) => inConfiguredLane(a, 'alteracoes', getDirection(a) === 'saida' && !['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id))), tone: 'orange' },
+    { id: 'saida-2', title: 'Saída 2', subtitle: 'Despesas e distribuição', lane: 'despesas_distribuicao', agents: AGENTES.filter((a) => inConfiguredLane(a, 'despesas_distribuicao', ['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id))), tone: 'green' },
+  ];
+  const historyFor = (agentId) => state.executions.filter((job) => job.agente_id === agentId && Number(job.duration_ms) > 0 && ['sucesso', 'erro', 'parcial'].includes(String(job.status)));
+  const metricsFor = (agentId) => {
+    const history = historyFor(agentId).slice(0, 20);
+    const memoryRows = history.filter((job) => Number(job.memory_peak_mb) > 0);
+    return {
+      avgMs: history.length ? history.reduce((sum, job) => sum + Number(job.duration_ms), 0) / history.length : 0,
+      avgMemory: memoryRows.length ? memoryRows.reduce((sum, job) => sum + Number(job.memory_peak_mb), 0) / memoryRows.length : 0,
+    };
+  };
+  const openJobFor = (agentId) => state.queue.find((job) => job.agente_id === agentId && job.status === 'rodando') || state.queue.find((job) => job.agente_id === agentId && job.status === 'pendente');
+  const card = (agent, lane) => {
+    const data = state.agentes.find((item) => item.id === agent.id);
+    const job = openJobFor(agent.id);
+    const meta = job?.status === 'rodando' ? STATUS_META.rodando : job?.status === 'pendente' ? STATUS_META.pendente : getAgenteMeta(data);
+    const metrics = metricsFor(agent.id);
+    const lanePending = state.queue.filter((item) => item.lane === lane && item.status === 'pendente');
+    const queueIndex = job?.status === 'pendente' ? lanePending.findIndex((item) => item.id === job.id) : -1;
+    const setting = settingFor(agent.id);
+    const intervalLabel = !setting || Number(setting.interval_minutes) === 0 ? 'Manual / sob demanda' : `A cada ${formatInterval(setting.interval_minutes)}`;
+    return `<article class="ag-q-card ${job?.status || ''}">
+      <button class="ag-q-edit" type="button" onclick="openAgentSettings('${agent.id}')" title="Editar fila e intervalo" aria-label="Editar ${esc(agent.name)}">✎</button>
+      <div class="ag-q-card-top"><div><strong>${esc(agent.name)}</strong><code>${esc(agent.id)}</code></div><span class="ag-status-dot ${meta.ui}"></span><b style="color:${meta.color}">${meta.label}</b><span class="ag-dir-badge ${getDirection(agent)}">${getDirection(agent)}</span></div>
+      <div class="ag-q-kpis"><span>Total<strong>${formatInt(data?.total_records)}</strong></span><span>Última sync<strong>${formatDate(data?.ultima_sync)}</strong></span><span>${job?.status === 'rodando' ? 'Memória em uso' : 'Memória média'}<strong>${formatMemory(job?.status === 'rodando' ? job.memory_peak_mb : metrics.avgMemory)}</strong></span><span>Média de execução<strong>${formatMs(metrics.avgMs)}</strong></span></div>
+      <div class="ag-q-card-footer"><small><span class="ag-q-schedule">${esc(intervalLabel)}</span> · ${job?.status === 'rodando' ? `Executando em ${esc(job.worker_id || lane)}` : job?.status === 'pendente' ? `Posição ${queueIndex + 1}` : 'Fora da fila atual'}</small><div>${job?.status === 'pendente' ? `<button class="ag-icon-btn" ${queueIndex === 0 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',-1)" title="Subir na fila">↑</button><button class="ag-icon-btn" ${queueIndex === lanePending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',1)" title="Descer na fila">↓</button>` : `<button class="ag-q-priority" onclick="event.stopPropagation();executeAgent('${agent.id}')">Priorizar</button>`}</div></div>
+    </article>`;
+  };
+  const lane = (definition) => {
+    const metricRows = definition.agents.map((agent) => metricsFor(agent.id));
+    const runningJobs = state.queue.filter((job) => job.lane === definition.lane && job.status === 'rodando');
+    const runningMemory = runningJobs.reduce((sum, job) => sum + Number(job.memory_peak_mb || 0), 0);
+    const memoryEstimate = metricRows.reduce((sum, item) => sum + item.avgMemory, 0);
+    const memoryTotal = runningMemory || memoryEstimate;
+    const timed = metricRows.filter((item) => item.avgMs > 0);
+    const avgMs = timed.length ? timed.reduce((sum, item) => sum + item.avgMs, 0) / timed.length : 0;
+    const open = state.queue.filter((job) => job.lane === definition.lane);
+    return `<section class="ag-q-lane ${definition.tone}"><header><div><span>${esc(definition.title)}</span><strong>${esc(definition.subtitle)}</strong></div><div class="ag-q-lane-kpi"><small>${runningMemory ? 'Memória em uso' : 'Memória estimada'}</small><b>${formatMemory(memoryTotal)}</b></div><div class="ag-q-lane-kpi"><small>Média MS</small><b>${formatMs(avgMs)}</b></div><em>${open.filter((j) => j.status === 'rodando').length} rodando · ${open.filter((j) => j.status === 'pendente').length} aguardando</em></header><div class="ag-q-cards">${definition.agents.map((agent) => card(agent, definition.lane)).join('')}</div></section>`;
+  };
+  const choices = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).map((agent) => `<label class="ag-agent-choice"><input type="checkbox" value="${esc(agent.id)}" ${state.queueSelection.includes(agent.id) ? 'checked' : ''} onchange="toggleQueueAgent('${esc(agent.id)}',this.checked)"><span>${esc(agent.name)}</span></label>`).join('');
+  const composer = state.queueComposerOpen ? `<div class="ag-composer"><div class="ag-queue-head"><div><h3>Montar nova fila</h3><p>Selecione um ou mais agentes. Eles entram na ordem apresentada, depois dos jobs atuais.</p></div></div><div class="ag-composer-grid">${choices}</div><div class="ag-composer-footer"><button class="ag-btn ag-btn-danger" onclick="closeQueueComposer()">Cancelar</button><button class="ag-btn ag-btn-primary" ${!state.queueSelection.length || state.queueSaving ? 'disabled' : ''} onclick="createQueue()">${state.queueSaving ? 'Criando…' : `Abrir fila (${state.queueSelection.length})`}</button></div></div>` : '';
+  return `<section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>KPIs por agente e consumo consolidado por worker</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}${renderSettingsEditor()}</section>`;
+}
+
 function renderAgentes() {
   const entrada = AGENTES.filter((a) => getDirection(a) === 'entrada');
   const saida = AGENTES.filter((a) => getDirection(a) === 'saida');
@@ -412,8 +507,9 @@ function renderAgentes() {
         <button class="ag-tab ${state.activeTab === 'entrada' ? 'active' : ''}" onclick="setTab('entrada')" type="button">⬇️ Entrada <span class="ag-tab-count">${entrada.length}</span></button>
         <button class="ag-tab ${state.activeTab === 'saida' ? 'active' : ''}" onclick="setTab('saida')" type="button">⬆️ Saída <span class="ag-tab-count">${saida.length}</span></button>
         <button class="ag-tab ${state.activeTab === 'execucoes' ? 'active' : ''}" onclick="setTab('execucoes')" type="button">◉ Execuções <span class="ag-tab-count">${recentProblems}</span></button>
+        <button class="ag-tab ${state.activeTab === 'fila' ? 'active' : ''}" onclick="setTab('fila')" type="button">☷ Fila <span class="ag-tab-count">${state.queue.filter((j) => j.status === 'pendente').length}</span></button>
       </div>
-      ${state.activeTab === 'execucoes' ? '' : `<div class="ag-stats">
+      ${['execucoes', 'fila'].includes(state.activeTab) ? '' : `<div class="ag-stats">
         <div class="ag-stat"><div class="ag-stat-val">${visiveis.length}</div><div class="ag-stat-lbl">Agentes nesta aba</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
@@ -424,6 +520,11 @@ function renderAgentes() {
 
   if (state.activeTab === 'execucoes') {
     html += renderExecutions();
+    html += '</div>';
+    return html;
+  }
+  if (state.activeTab === 'fila') {
+    html += renderQueue();
     html += '</div>';
     return html;
   }
@@ -470,6 +571,7 @@ function renderAgentDetails(agente) {
     </div>
     <div><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
     ${agente.source === 'botconversa' ? renderBotConversaFailures() : ''}
+    ${agente.id === DISTRIBUICAO_OS_AGENT_ID ? renderDistribuicaoSupervisoes() : ''}
     <div style="margin-top:16px">
       <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>
       <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 ${agente.source === 'botconversa' ? 'Onde ver os logs' : 'Ver Log cPanel'}</button>
@@ -487,6 +589,39 @@ function renderBotConversaFailures() {
   }
   const lines = rows.map((r) => `<div class="ag-log-error">${esc(formatDate(r.created_at))} · ${esc(r.nome || '-')} (${esc(r.telefone || '-')}): ${esc(r.erro || 'erro desconhecido')}</div>`).join('');
   return `<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Contatos com falha (últimas ${rows.length}):</strong></p><div class="ag-log-box">${lines}</div></div>`;
+}
+
+function renderDistribuicaoSupervisoes() {
+  const rows = state.supervisoesDistribuicao;
+  if (rows === null) {
+    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Supervisões com distribuição automática:</strong></p><div class="ag-log-box">Carregando...</div></div>';
+  }
+  const ativas = rows.filter((s) => s.distribuicao_os_automatica).length;
+  const itens = rows.map((s) => `
+    <label style="display:flex;align-items:center;gap:8px;padding:5px 0;color:#e2e2f0;font-size:12px;cursor:pointer">
+      <input type="checkbox" ${s.distribuicao_os_automatica ? 'checked' : ''} onchange="toggleDistribuicaoSupervisao('${esc(s.id)}', this.checked)" />
+      ${esc(s.nome)}
+    </label>`).join('') || '<div class="ag-log-line">Nenhuma supervisão cadastrada em public.supervisoes.</div>';
+  return `<div style="margin-top:16px">
+    <p style="margin-bottom:4px"><strong>Supervisões com distribuição automática (${ativas}/${rows.length}):</strong></p>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px">Marque só as supervisões cujo gestor já usa a tela "Distribuir O.S" do painel — nas demais o agente ignora as O.S. e a associação continua sendo feita manualmente no Graint.</p>
+    <div class="ag-log-box" style="max-height:280px">${itens}</div>
+  </div>`;
+}
+
+async function loadSupervisoesDistribuicao() {
+  try {
+    const { data, error } = await supabase
+      .from('supervisoes')
+      .select('id, nome, distribuicao_os_automatica')
+      .order('nome');
+    if (error) throw error;
+    state.supervisoesDistribuicao = data || [];
+  } catch (e) {
+    console.error('Erro carregando supervisões da distribuição de OS:', e);
+    state.supervisoesDistribuicao = [];
+  }
+  render();
 }
 
 async function loadBotConversaFailures(jobId) {
@@ -510,9 +645,85 @@ async function loadBotConversaFailures(jobId) {
 }
 
 window.setTab = (tab) => {
-  state.activeTab = ['entrada', 'saida', 'execucoes'].includes(tab) ? tab : 'entrada';
+  state.activeTab = ['entrada', 'saida', 'execucoes', 'fila'].includes(tab) ? tab : 'entrada';
   state.selectedAgent = null;
   render();
+  if (state.activeTab === 'fila') loadQueue();
+};
+
+window.loadQueue = (showLoading = false) => loadQueue(showLoading);
+window.openAgentSettings = (agentId) => {
+  const fallbackIndex = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).findIndex((a) => a.id === agentId);
+  const current = state.agentSettings.find((item) => item.agent_id === agentId) || {
+    agent_id: agentId,
+    queue_lane: getDirection(AGENTES.find((item) => item.id === agentId)) === 'entrada' ? (fallbackIndex % 2 === 0 ? 'fixed_a' : 'fixed_b') : 'alteracoes',
+    interval_minutes: 0,
+  };
+  state.settingsEditor = { ...current };
+  render();
+};
+window.closeAgentSettings = () => { state.settingsEditor = null; render(); };
+window.saveAgentSettings = async (event) => {
+  event.preventDefault();
+  if (!state.settingsEditor || state.queueSaving) return;
+  const form = event.currentTarget;
+  state.queueSaving = true;
+  render();
+  try {
+    const { data, error } = await supabase.rpc('update_grm_sync_agent_setting', {
+      p_agent_id: state.settingsEditor.agent_id,
+      p_queue_lane: form.elements.queue_lane.value,
+      p_interval_minutes: Number(form.elements.interval_minutes.value),
+    });
+    if (error) throw error;
+    state.agentSettings = state.agentSettings.filter((item) => item.agent_id !== data.agent_id).concat(data);
+    state.settingsEditor = null;
+    await loadQueue();
+  } catch (error) {
+    alert(`Não foi possível salvar a configuração: ${error.message}`);
+  } finally { state.queueSaving = false; render(); }
+};
+window.openQueueComposer = () => { state.queueComposerOpen = true; state.queueSelection = []; render(); };
+window.closeQueueComposer = () => { state.queueComposerOpen = false; state.queueSelection = []; render(); };
+window.toggleQueueAgent = (agentId, checked) => {
+  state.queueSelection = checked ? unique([...state.queueSelection, agentId]) : state.queueSelection.filter((id) => id !== agentId);
+  render();
+};
+window.moveQueueJob = async (jobId, direction) => {
+  if (state.queueSaving) return;
+  const current = state.queue.find((job) => job.id === jobId && job.status === 'pendente');
+  if (!current) return;
+  const pending = state.queue.filter((job) => job.status === 'pendente' && job.lane === current.lane);
+  const index = pending.findIndex((job) => job.id === jobId);
+  const target = index + direction;
+  if (target < 0 || target >= pending.length) return;
+  [pending[index], pending[target]] = [pending[target], pending[index]];
+  const order = new Map(pending.map((job, i) => [job.id, i]));
+  state.queue.sort((a, b) => a.lane === current.lane && b.lane === current.lane ? (order.get(a.id) ?? -1) - (order.get(b.id) ?? -1) : 0);
+  state.queueSaving = true;
+  render();
+  try {
+    const { error } = await supabase.rpc('reorder_grm_sync_queue', { p_job_ids: pending.map((job) => job.id) });
+    if (error) throw error;
+    await loadQueue();
+  } catch (error) {
+    alert(`Não foi possível salvar a nova ordem: ${error.message}`);
+    await loadQueue();
+  } finally { state.queueSaving = false; }
+};
+window.createQueue = async () => {
+  if (!state.queueSelection.length || state.queueSaving) return;
+  state.queueSaving = true;
+  render();
+  try {
+    const { error } = await supabase.rpc('enqueue_grm_sync_queue', { p_agent_ids: state.queueSelection });
+    if (error) throw error;
+    state.queueComposerOpen = false;
+    state.queueSelection = [];
+    await Promise.all([loadQueue(), loadAgentes()]);
+  } catch (error) {
+    alert(`Não foi possível abrir a fila: ${error.message}`);
+  } finally { state.queueSaving = false; render(); }
 };
 
 window.filterExecutions = ({ search, status, period } = {}) => {
@@ -529,8 +740,10 @@ window.selectAgent = (agentId) => {
   const agenteData = state.agentes.find((a) => a.id === agentId);
   state.selectedAgent = { ...agente, ...agenteData };
   state.botconversaFailures = [];
+  state.supervisoesDistribuicao = null;
   render();
   if (agente?.source === 'botconversa') loadBotConversaFailures(state.selectedAgent.job_id);
+  if (agentId === DISTRIBUICAO_OS_AGENT_ID) loadSupervisoesDistribuicao();
 };
 
 window.closeDetails = () => {
@@ -571,6 +784,21 @@ window.executeAgent = async (agentId) => {
     await loadAgentes();
   } catch (e) {
     alert(`❌ Erro ao enfileirar agente: ${e.message}`);
+  }
+};
+
+window.toggleDistribuicaoSupervisao = async (supervisaoId, checked) => {
+  const row = (state.supervisoesDistribuicao || []).find((s) => String(s.id) === String(supervisaoId));
+  if (row) row.distribuicao_os_automatica = checked;
+  render();
+  const { error } = await supabase
+    .from('supervisoes')
+    .update({ distribuicao_os_automatica: checked })
+    .eq('id', supervisaoId);
+  if (error) {
+    alert(`❌ Erro ao salvar: ${error.message}`);
+    if (row) row.distribuicao_os_automatica = !checked;
+    render();
   }
 };
 
@@ -727,7 +955,7 @@ async function loadExecutions(forceRender = false) {
 
   try {
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, erro';
+    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, memory_peak_mb, erro';
     const pageStarts = [0, 1000, 2000, 3000];
     const [jobPages, problemDetailsRes] = await Promise.all([
       Promise.all(pageStarts.map((start) => supabase
@@ -761,6 +989,35 @@ async function loadExecutions(forceRender = false) {
   }
 }
 
+async function loadQueue(showLoading = false) {
+  if (state.queueLoading) return;
+  state.queueLoading = true;
+  if (showLoading) render();
+  try {
+    const { data, error } = await supabase.from('grm_sync_jobs')
+      .select('id,agente_id,status,lane,pipeline_seq,worker_id,created_at,iniciado_em,duration_ms,memory_peak_mb')
+      .in('status', ['pendente', 'rodando'])
+      .order('pipeline_seq', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    state.queue = data || [];
+  } catch (error) {
+    console.error('Erro carregando fila:', error);
+  } finally { state.queueLoading = false; render(); }
+}
+
+async function loadAgentSettings() {
+  try {
+    const { data, error } = await supabase.from('grm_sync_agent_settings')
+      .select('agent_id,queue_lane,interval_minutes,enabled,updated_at')
+      .order('agent_id');
+    if (error) throw error;
+    state.agentSettings = data || [];
+  } catch (error) {
+    console.error('Erro carregando configuração dos agentes:', error);
+  }
+}
+
 function render() {
   const pageContent = document.getElementById('pageContent');
   if (pageContent) pageContent.innerHTML = renderAgentes();
@@ -768,7 +1025,7 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions()]);
+  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions(), loadQueue(), loadAgentSettings()]);
 }
 
 init();
@@ -776,4 +1033,6 @@ setInterval(() => {
   loadAgentes();
   loadCargasKpi();
   loadExecutions();
+  loadQueue();
+  loadAgentSettings();
 }, 30000);
