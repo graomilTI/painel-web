@@ -128,7 +128,7 @@ async function updateJob(id, patch) {
 }
 
 async function enqueueNextFixedAgent(job) {
-  if (job.lane !== 'fixed' || job.pipeline_seq == null) return;
+  if (!String(job.lane || '').startsWith('fixed_') || job.pipeline_seq == null) return;
   const { data, error } = await supabase.rpc('enqueue_next_grm_fixed_job');
   if (error) throw error;
   log(`${data?.agente_id || 'próximo agente fixo'}: sequência ${data?.pipeline_seq || '?'} enfileirada.`);
