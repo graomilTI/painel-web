@@ -98,6 +98,8 @@ function getStyles() {
 @media(max-width:980px){.ag-exec-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ag-exec-row{grid-template-columns:40px 1fr 1fr}.ag-exec-duration,.ag-exec-error{grid-column:2/-1}.ag-exec-chevron{position:absolute;right:14px}.ag-exec-row{position:relative}}
 @media(max-width:560px){.ag-exec-summary{grid-template-columns:1fr 1fr}.ag-exec-row{grid-template-columns:38px 1fr}.ag-exec-time,.ag-exec-duration,.ag-exec-error{grid-column:2}.ag-exec-toolbar>*{width:100%}.ag-exec-updated{margin-left:0;text-align:center}}
 @media(max-width:900px){.ag-queue{grid-template-columns:1fr}.ag-queue-side{position:static}.ag-queue-item{grid-template-columns:28px 36px minmax(0,1fr) auto}}
+.ag-queue-board{display:grid;gap:14px}.ag-q-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid rgba(148,163,184,.13);border-radius:16px;background:rgba(15,23,42,.7)}.ag-q-toolbar>div:first-child strong,.ag-q-toolbar>div:first-child span{display:block}.ag-q-toolbar>div:first-child strong{color:#f8fafc;font-size:14px}.ag-q-toolbar>div:first-child span{margin-top:3px;color:#64748b;font-size:10px}.ag-q-toolbar>div:last-child{display:flex;gap:8px}.ag-q-lane{--lane:#3b82f6;overflow:hidden;border:1px solid color-mix(in srgb,var(--lane) 24%,rgba(148,163,184,.1));border-radius:19px;background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(5,11,22,.96));box-shadow:inset 3px 0 0 var(--lane)}.ag-q-lane.cyan{--lane:#06b6d4}.ag-q-lane.orange{--lane:#f97316}.ag-q-lane.green{--lane:#22c55e}.ag-q-lane>header{display:grid;grid-template-columns:minmax(180px,1fr) 150px 150px auto;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:linear-gradient(90deg,color-mix(in srgb,var(--lane) 10%,transparent),transparent 45%)}.ag-q-lane>header>div:first-child span,.ag-q-lane>header>div:first-child strong{display:block}.ag-q-lane>header>div:first-child span{color:var(--lane);font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.ag-q-lane>header>div:first-child strong{margin-top:3px;color:#e2e8f0;font-size:13px}.ag-q-lane>header em{color:#64748b;font-size:10px;font-style:normal;text-align:right}.ag-q-lane-kpi{padding-left:13px;border-left:1px solid rgba(148,163,184,.12)}.ag-q-lane-kpi small,.ag-q-lane-kpi b{display:block}.ag-q-lane-kpi small{color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:.05em}.ag-q-lane-kpi b{margin-top:3px;color:#f8fafc;font-size:13px}.ag-q-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:9px;padding:11px}.ag-q-card{min-width:0;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(7,15,29,.78);padding:12px;transition:.15s ease}.ag-q-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--lane) 40%,transparent);background:rgba(10,20,37,.94)}.ag-q-card.rodando{border-color:rgba(59,130,246,.38);box-shadow:0 0 0 1px rgba(59,130,246,.08)}.ag-q-card.pendente{border-color:rgba(234,179,8,.26)}.ag-q-card-top{display:grid;grid-template-columns:minmax(0,1fr) 8px auto auto;align-items:center;gap:7px}.ag-q-card-top>div strong,.ag-q-card-top>div code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ag-q-card-top>div strong{color:#f8fafc;font-size:12px}.ag-q-card-top>div code{margin-top:3px;color:#475569;font-size:8px}.ag-q-card-top b{font-size:10px}.ag-q-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:11px}.ag-q-kpis span{min-width:0;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.04em}.ag-q-kpis strong{display:block;margin-top:3px;color:#cbd5e1;font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-q-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid rgba(148,163,184,.08)}.ag-q-card-footer small{color:#64748b;font-size:9px}.ag-q-card-footer>div{display:flex;gap:5px}.ag-q-priority{border:1px solid color-mix(in srgb,var(--lane) 30%,transparent);border-radius:8px;background:color-mix(in srgb,var(--lane) 10%,transparent);color:#cbd5e1;padding:5px 8px;font-size:9px;font-weight:850;cursor:pointer}.ag-q-priority:hover{background:color-mix(in srgb,var(--lane) 20%,transparent);color:#fff}
+@media(max-width:760px){.ag-q-toolbar{align-items:flex-start;flex-direction:column}.ag-q-toolbar>div:last-child{width:100%}.ag-q-toolbar button{flex:1}.ag-q-lane>header{grid-template-columns:1fr 1fr}.ag-q-lane>header>div:first-child{grid-column:1/-1}.ag-q-lane>header em{grid-column:1/-1;text-align:left}.ag-q-cards{grid-template-columns:1fr}}
 /* O <details> precisa ser o contêiner; somente o <summary> compõe a grade. */
 .ag-exec-row{display:block;padding:0;overflow:hidden}
 .ag-exec-row>summary{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;padding:11px 13px;cursor:pointer;list-style:none}
@@ -137,6 +139,16 @@ function formatDuration(ms) {
 
 function formatInt(value) {
   return Number(value || 0).toLocaleString('pt-BR');
+}
+
+function formatMs(value) {
+  const ms = Number(value || 0);
+  return ms > 0 ? `${Math.round(ms).toLocaleString('pt-BR')} ms` : 'Sem histórico';
+}
+
+function formatMemory(value) {
+  const mb = Number(value || 0);
+  return mb > 0 ? `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : 'Aguardando medição';
 }
 
 function unique(values) {
@@ -400,26 +412,51 @@ function renderExecutions() {
 }
 
 function renderQueue() {
-  const running = state.queue.filter((job) => job.status === 'rodando');
-  const pending = state.queue.filter((job) => job.status === 'pendente');
-  const row = (job, index, movable = false) => {
-    const def = AGENTES.find((agent) => agent.id === job.agente_id);
-    return `<div class="ag-queue-item ${job.status === 'rodando' ? 'ag-running' : ''}">
-      <div class="ag-queue-pos">${job.status === 'rodando' ? '●' : String(index + 1).padStart(2, '0')}</div>
-      <div class="ag-queue-icon">${job.status === 'rodando' ? '↻' : '☷'}</div>
-      <div class="ag-queue-name"><strong>${esc(def?.name || job.agente_id)}</strong><span>${job.status === 'rodando' ? `Em execução · ${formatDate(job.iniciado_em)}` : `Aguardando · ${esc(job.lane || 'fixed')}`}</span></div>
-      ${movable ? `<div class="ag-queue-move"><button class="ag-icon-btn" ${index === 0 ? 'disabled' : ''} onclick="moveQueueJob(${index},-1)" title="Subir">↑</button><button class="ag-icon-btn" ${index === pending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob(${index},1)" title="Descer">↓</button></div>` : ''}
-    </div>`;
+  const fixedAgents = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa'));
+  const outputAgents = AGENTES.filter((a) => getDirection(a) === 'saida');
+  const laneDefs = [
+    { id: 'entrada-1', title: 'Entrada 1', subtitle: 'Worker fixed-a', lane: 'fixed', agents: fixedAgents.filter((_, i) => i % 2 === 0), tone: 'blue' },
+    { id: 'entrada-2', title: 'Entrada 2', subtitle: 'Worker fixed-b', lane: 'fixed', agents: fixedAgents.filter((_, i) => i % 2 === 1), tone: 'cyan' },
+    { id: 'saida-1', title: 'Saída 1', subtitle: 'Alterações no GRM', lane: 'alteracoes', agents: outputAgents.filter((a) => !['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id)), tone: 'orange' },
+    { id: 'saida-2', title: 'Saída 2', subtitle: 'Despesas e distribuição', lane: 'despesas_distribuicao', agents: outputAgents.filter((a) => ['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id)), tone: 'green' },
+  ];
+  const historyFor = (agentId) => state.executions.filter((job) => job.agente_id === agentId && Number(job.duration_ms) > 0 && ['sucesso', 'erro', 'parcial'].includes(String(job.status)));
+  const metricsFor = (agentId) => {
+    const history = historyFor(agentId).slice(0, 20);
+    const memoryRows = history.filter((job) => Number(job.memory_peak_mb) > 0);
+    return {
+      avgMs: history.length ? history.reduce((sum, job) => sum + Number(job.duration_ms), 0) / history.length : 0,
+      avgMemory: memoryRows.length ? memoryRows.reduce((sum, job) => sum + Number(job.memory_peak_mb), 0) / memoryRows.length : 0,
+    };
+  };
+  const openJobFor = (agentId) => state.queue.find((job) => job.agente_id === agentId && job.status === 'rodando') || state.queue.find((job) => job.agente_id === agentId && job.status === 'pendente');
+  const card = (agent, lane) => {
+    const data = state.agentes.find((item) => item.id === agent.id);
+    const job = openJobFor(agent.id);
+    const meta = job?.status === 'rodando' ? STATUS_META.rodando : job?.status === 'pendente' ? STATUS_META.pendente : getAgenteMeta(data);
+    const metrics = metricsFor(agent.id);
+    const lanePending = state.queue.filter((item) => item.lane === lane && item.status === 'pendente');
+    const queueIndex = job?.status === 'pendente' ? lanePending.findIndex((item) => item.id === job.id) : -1;
+    return `<article class="ag-q-card ${job?.status || ''}">
+      <div class="ag-q-card-top"><div><strong>${esc(agent.name)}</strong><code>${esc(agent.id)}</code></div><span class="ag-status-dot ${meta.ui}"></span><b style="color:${meta.color}">${meta.label}</b><span class="ag-dir-badge ${getDirection(agent)}">${getDirection(agent)}</span></div>
+      <div class="ag-q-kpis"><span>Total<strong>${formatInt(data?.total_records)}</strong></span><span>Última sync<strong>${formatDate(data?.ultima_sync)}</strong></span><span>${job?.status === 'rodando' ? 'Memória em uso' : 'Memória média'}<strong>${formatMemory(job?.status === 'rodando' ? job.memory_peak_mb : metrics.avgMemory)}</strong></span><span>Média de execução<strong>${formatMs(metrics.avgMs)}</strong></span></div>
+      <div class="ag-q-card-footer"><small>${job?.status === 'rodando' ? `Executando em ${esc(job.worker_id || lane)}` : job?.status === 'pendente' ? `Posição ${queueIndex + 1} na fila` : 'Fora da fila atual'}</small><div>${job?.status === 'pendente' ? `<button class="ag-icon-btn" ${queueIndex === 0 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',-1)" title="Subir na fila">↑</button><button class="ag-icon-btn" ${queueIndex === lanePending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',1)" title="Descer na fila">↓</button>` : `<button class="ag-q-priority" onclick="event.stopPropagation();executeAgent('${agent.id}')">Priorizar</button>`}</div></div>
+    </article>`;
+  };
+  const lane = (definition) => {
+    const metricRows = definition.agents.map((agent) => metricsFor(agent.id));
+    const runningJobs = state.queue.filter((job) => job.lane === definition.lane && job.status === 'rodando');
+    const runningMemory = runningJobs.reduce((sum, job) => sum + Number(job.memory_peak_mb || 0), 0);
+    const memoryEstimate = metricRows.reduce((sum, item) => sum + item.avgMemory, 0);
+    const memoryTotal = runningMemory || memoryEstimate;
+    const timed = metricRows.filter((item) => item.avgMs > 0);
+    const avgMs = timed.length ? timed.reduce((sum, item) => sum + item.avgMs, 0) / timed.length : 0;
+    const open = state.queue.filter((job) => job.lane === definition.lane);
+    return `<section class="ag-q-lane ${definition.tone}"><header><div><span>${esc(definition.title)}</span><strong>${esc(definition.subtitle)}</strong></div><div class="ag-q-lane-kpi"><small>${runningMemory ? 'Memória em uso' : 'Memória estimada'}</small><b>${formatMemory(memoryTotal)}</b></div><div class="ag-q-lane-kpi"><small>Média MS</small><b>${formatMs(avgMs)}</b></div><em>${open.filter((j) => j.status === 'rodando').length} rodando · ${open.filter((j) => j.status === 'pendente').length} aguardando</em></header><div class="ag-q-cards">${definition.agents.map((agent) => card(agent, definition.lane)).join('')}</div></section>`;
   };
   const choices = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).map((agent) => `<label class="ag-agent-choice"><input type="checkbox" value="${esc(agent.id)}" ${state.queueSelection.includes(agent.id) ? 'checked' : ''} onchange="toggleQueueAgent('${esc(agent.id)}',this.checked)"><span>${esc(agent.name)}</span></label>`).join('');
   const composer = state.queueComposerOpen ? `<div class="ag-composer"><div class="ag-queue-head"><div><h3>Montar nova fila</h3><p>Selecione um ou mais agentes. Eles entram na ordem apresentada, depois dos jobs atuais.</p></div></div><div class="ag-composer-grid">${choices}</div><div class="ag-composer-footer"><button class="ag-btn ag-btn-danger" onclick="closeQueueComposer()">Cancelar</button><button class="ag-btn ag-btn-primary" ${!state.queueSelection.length || state.queueSaving ? 'disabled' : ''} onclick="createQueue()">${state.queueSaving ? 'Criando…' : `Abrir fila (${state.queueSelection.length})`}</button></div></div>` : '';
-  return `<section class="ag-queue" aria-label="Gerenciamento da fila de agentes">
-    <div class="ag-queue-panel"><div class="ag-queue-head"><div><h3>Esteira de execução</h3><p>Os dois primeiros jobs podem rodar em paralelo. Reordene apenas o que ainda está aguardando.</p></div><div class="ag-queue-actions"><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>
-      ${state.queueLoading ? '<div class="ag-queue-empty">Consultando a fila…</div>' : `${running.map((j, i) => row(j, i)).join('')}${pending.map((j, i) => row(j, i, true)).join('') || '<div class="ag-queue-empty">Nenhum job aguardando. Você pode abrir uma nova fila.</div>'}`}
-    </div>
-    <aside class="ag-queue-panel ag-queue-side"><div class="ag-queue-head"><div><h3>Capacidade agora</h3><p>Leitura ao vivo do worker</p></div></div><div class="ag-lane-card"><span>Em execução</span><strong>${running.length} / 2</strong></div><div class="ag-lane-card"><span>Aguardando</span><strong>${pending.length}</strong></div><div class="ag-lane-card"><span>Próximo agente</span><strong style="font-size:13px">${esc(AGENTES.find((a) => a.id === pending[0]?.agente_id)?.name || 'Fila livre')}</strong></div></aside>
-    ${composer}
-  </section>`;
+  return `<section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>KPIs por agente e consumo consolidado por worker</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}</section>`;
 }
 
 function renderAgentes() {
@@ -446,7 +483,7 @@ function renderAgentes() {
         <button class="ag-tab ${state.activeTab === 'execucoes' ? 'active' : ''}" onclick="setTab('execucoes')" type="button">◉ Execuções <span class="ag-tab-count">${recentProblems}</span></button>
         <button class="ag-tab ${state.activeTab === 'fila' ? 'active' : ''}" onclick="setTab('fila')" type="button">☷ Fila <span class="ag-tab-count">${state.queue.filter((j) => j.status === 'pendente').length}</span></button>
       </div>
-      ${state.activeTab === 'execucoes' ? '' : `<div class="ag-stats">
+      ${['execucoes', 'fila'].includes(state.activeTab) ? '' : `<div class="ag-stats">
         <div class="ag-stat"><div class="ag-stat-val">${visiveis.length}</div><div class="ag-stat-lbl">Agentes nesta aba</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#22c55e">${statusCount.online}</div><div class="ag-stat-lbl">Online</div></div>
         <div class="ag-stat"><div class="ag-stat-val" style="color:#ef4444">${statusCount.error}</div><div class="ag-stat-lbl">Com Erro</div></div>
@@ -595,13 +632,17 @@ window.toggleQueueAgent = (agentId, checked) => {
   state.queueSelection = checked ? unique([...state.queueSelection, agentId]) : state.queueSelection.filter((id) => id !== agentId);
   render();
 };
-window.moveQueueJob = async (index, direction) => {
+window.moveQueueJob = async (jobId, direction) => {
   if (state.queueSaving) return;
-  const pending = state.queue.filter((job) => job.status === 'pendente');
+  const current = state.queue.find((job) => job.id === jobId && job.status === 'pendente');
+  if (!current) return;
+  const pending = state.queue.filter((job) => job.status === 'pendente' && job.lane === current.lane);
+  const index = pending.findIndex((job) => job.id === jobId);
   const target = index + direction;
   if (target < 0 || target >= pending.length) return;
   [pending[index], pending[target]] = [pending[target], pending[index]];
-  state.queue = [...state.queue.filter((job) => job.status === 'rodando'), ...pending];
+  const order = new Map(pending.map((job, i) => [job.id, i]));
+  state.queue.sort((a, b) => a.lane === current.lane && b.lane === current.lane ? (order.get(a.id) ?? -1) - (order.get(b.id) ?? -1) : 0);
   state.queueSaving = true;
   render();
   try {
@@ -857,7 +898,7 @@ async function loadExecutions(forceRender = false) {
 
   try {
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, erro';
+    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, memory_peak_mb, erro';
     const pageStarts = [0, 1000, 2000, 3000];
     const [jobPages, problemDetailsRes] = await Promise.all([
       Promise.all(pageStarts.map((start) => supabase
@@ -897,9 +938,8 @@ async function loadQueue(showLoading = false) {
   if (showLoading) render();
   try {
     const { data, error } = await supabase.from('grm_sync_jobs')
-      .select('id,agente_id,status,lane,pipeline_seq,created_at,iniciado_em')
+      .select('id,agente_id,status,lane,pipeline_seq,worker_id,created_at,iniciado_em,duration_ms,memory_peak_mb')
       .in('status', ['pendente', 'rodando'])
-      .eq('lane', 'fixed')
       .order('pipeline_seq', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: true });
     if (error) throw error;

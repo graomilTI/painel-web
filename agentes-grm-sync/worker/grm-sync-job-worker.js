@@ -31,7 +31,7 @@ require('dotenv').config();
 
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { createClient } = require('@supabase/supabase-js');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -148,12 +148,14 @@ function startHeartbeat(jobId) {
   return () => clearInterval(timer);
 }
 
-function runScript(scriptName) {
+function runScript(scriptName, jobId) {
   return new Promise((resolve) => {
     const scriptPath = path.join(PROJECT_ROOT, scriptName);
     const started = Date.now();
     let stdout = '';
     let stderr = '';
+    let memoryPeakMb = 0;
+    let lastReportedMemoryMb = 0;
 
     log(`Executando ${scriptName}`);
 
@@ -172,6 +174,41 @@ function runScript(scriptName) {
       shell: false,
     });
 
+    // Soma o RSS do processo do agente e de toda a árvore Chromium/Puppeteer.
+    // A leitura é leve (a cada 2s) e falhas do `ps` não interrompem o job.
+    const sampleMemory = () => {
+      if (!child.pid) return;
+      execFile('ps', ['-eo', 'pid=,ppid=,rss='], { timeout: 1500 }, (error, output) => {
+        if (error) return;
+        const rows = String(output || '').trim().split('\n').map((line) => line.trim().split(/\s+/).map(Number));
+        const children = new Map();
+        const rssByPid = new Map();
+        rows.forEach(([pid, ppid, rss]) => {
+          rssByPid.set(pid, rss || 0);
+          if (!children.has(ppid)) children.set(ppid, []);
+          children.get(ppid).push(pid);
+        });
+        const stack = [child.pid];
+        const seen = new Set();
+        let rssKb = 0;
+        while (stack.length) {
+          const pid = stack.pop();
+          if (seen.has(pid)) continue;
+          seen.add(pid);
+          rssKb += rssByPid.get(pid) || 0;
+          stack.push(...(children.get(pid) || []));
+        }
+        memoryPeakMb = Math.max(memoryPeakMb, rssKb / 1024);
+        if (memoryPeakMb >= lastReportedMemoryMb + 5) {
+          lastReportedMemoryMb = memoryPeakMb;
+          updateJob(jobId, { memory_peak_mb: Number(memoryPeakMb.toFixed(2)) })
+            .catch((updateError) => log(`Falha ao atualizar memória do job ${jobId}: ${updateError.message}`));
+        }
+      });
+    };
+    sampleMemory();
+    const memoryTimer = setInterval(sampleMemory, 5000);
+
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
@@ -185,6 +222,7 @@ function runScript(scriptName) {
     });
 
     child.on('error', (error) => {
+      clearInterval(memoryTimer);
       resolve({
         ok: false,
         code: -1,
@@ -192,10 +230,12 @@ function runScript(scriptName) {
         stdout: trimOutput(stdout),
         stderr: trimOutput(stderr),
         error: error.message,
+        memory_peak_mb: Number(memoryPeakMb.toFixed(2)) || null,
       });
     });
 
     child.on('close', (code) => {
+      clearInterval(memoryTimer);
       resolve({
         ok: code === 0,
         code,
@@ -203,6 +243,7 @@ function runScript(scriptName) {
         stdout: trimOutput(stdout),
         stderr: trimOutput(stderr),
         error: code === 0 ? null : `Script saiu com código ${code}`,
+        memory_peak_mb: Number(memoryPeakMb.toFixed(2)) || null,
       });
     });
   });
@@ -229,13 +270,14 @@ async function processOne() {
   }
 
   const stopHeartbeat = startHeartbeat(job.id);
-  const result = await runScript(scriptName);
+  const result = await runScript(scriptName, job.id);
   stopHeartbeat();
 
   await updateJob(job.id, {
     status: result.ok ? 'sucesso' : 'erro',
     finalizado_em: new Date().toISOString(),
     duration_ms: result.duration_ms,
+    memory_peak_mb: result.memory_peak_mb,
     output: {
       script: scriptName,
       code: result.code,
