@@ -76,6 +76,8 @@ const state = {
   queueSaving: false,
   queueComposerOpen: false,
   queueSelection: [],
+  agentSettings: [],
+  settingsEditor: null,
 };
 
 function getDirection(agenteDef) {
@@ -99,6 +101,7 @@ function getStyles() {
 @media(max-width:560px){.ag-exec-summary{grid-template-columns:1fr 1fr}.ag-exec-row{grid-template-columns:38px 1fr}.ag-exec-time,.ag-exec-duration,.ag-exec-error{grid-column:2}.ag-exec-toolbar>*{width:100%}.ag-exec-updated{margin-left:0;text-align:center}}
 @media(max-width:900px){.ag-queue{grid-template-columns:1fr}.ag-queue-side{position:static}.ag-queue-item{grid-template-columns:28px 36px minmax(0,1fr) auto}}
 .ag-queue-board{display:grid;gap:14px}.ag-q-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid rgba(148,163,184,.13);border-radius:16px;background:rgba(15,23,42,.7)}.ag-q-toolbar>div:first-child strong,.ag-q-toolbar>div:first-child span{display:block}.ag-q-toolbar>div:first-child strong{color:#f8fafc;font-size:14px}.ag-q-toolbar>div:first-child span{margin-top:3px;color:#64748b;font-size:10px}.ag-q-toolbar>div:last-child{display:flex;gap:8px}.ag-q-lane{--lane:#3b82f6;overflow:hidden;border:1px solid color-mix(in srgb,var(--lane) 24%,rgba(148,163,184,.1));border-radius:19px;background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(5,11,22,.96));box-shadow:inset 3px 0 0 var(--lane)}.ag-q-lane.cyan{--lane:#06b6d4}.ag-q-lane.orange{--lane:#f97316}.ag-q-lane.green{--lane:#22c55e}.ag-q-lane>header{display:grid;grid-template-columns:minmax(180px,1fr) 150px 150px auto;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:linear-gradient(90deg,color-mix(in srgb,var(--lane) 10%,transparent),transparent 45%)}.ag-q-lane>header>div:first-child span,.ag-q-lane>header>div:first-child strong{display:block}.ag-q-lane>header>div:first-child span{color:var(--lane);font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.ag-q-lane>header>div:first-child strong{margin-top:3px;color:#e2e8f0;font-size:13px}.ag-q-lane>header em{color:#64748b;font-size:10px;font-style:normal;text-align:right}.ag-q-lane-kpi{padding-left:13px;border-left:1px solid rgba(148,163,184,.12)}.ag-q-lane-kpi small,.ag-q-lane-kpi b{display:block}.ag-q-lane-kpi small{color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:.05em}.ag-q-lane-kpi b{margin-top:3px;color:#f8fafc;font-size:13px}.ag-q-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:9px;padding:11px}.ag-q-card{min-width:0;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(7,15,29,.78);padding:12px;transition:.15s ease}.ag-q-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--lane) 40%,transparent);background:rgba(10,20,37,.94)}.ag-q-card.rodando{border-color:rgba(59,130,246,.38);box-shadow:0 0 0 1px rgba(59,130,246,.08)}.ag-q-card.pendente{border-color:rgba(234,179,8,.26)}.ag-q-card-top{display:grid;grid-template-columns:minmax(0,1fr) 8px auto auto;align-items:center;gap:7px}.ag-q-card-top>div strong,.ag-q-card-top>div code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ag-q-card-top>div strong{color:#f8fafc;font-size:12px}.ag-q-card-top>div code{margin-top:3px;color:#475569;font-size:8px}.ag-q-card-top b{font-size:10px}.ag-q-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:11px}.ag-q-kpis span{min-width:0;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.04em}.ag-q-kpis strong{display:block;margin-top:3px;color:#cbd5e1;font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-q-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid rgba(148,163,184,.08)}.ag-q-card-footer small{color:#64748b;font-size:9px}.ag-q-card-footer>div{display:flex;gap:5px}.ag-q-priority{border:1px solid color-mix(in srgb,var(--lane) 30%,transparent);border-radius:8px;background:color-mix(in srgb,var(--lane) 10%,transparent);color:#cbd5e1;padding:5px 8px;font-size:9px;font-weight:850;cursor:pointer}.ag-q-priority:hover{background:color-mix(in srgb,var(--lane) 20%,transparent);color:#fff}
+.ag-q-card{position:relative}.ag-q-edit{position:absolute;top:8px;right:8px;width:25px;height:25px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.14);border-radius:8px;background:rgba(2,6,23,.72);color:#94a3b8;cursor:pointer;font-size:12px;z-index:2}.ag-q-edit:hover{color:#fff;border-color:var(--lane)}.ag-q-card-top{padding-right:27px}.ag-q-schedule{color:var(--lane)!important}.ag-settings-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(1,4,12,.78);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px}.ag-settings-modal{width:min(470px,100%);border:1px solid rgba(96,165,250,.3);border-radius:20px;background:linear-gradient(145deg,#0f172a,#050b16);box-shadow:0 28px 80px rgba(0,0,0,.55);padding:20px}.ag-settings-modal header{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px}.ag-settings-modal h3{margin:0;color:#f8fafc;font-size:16px}.ag-settings-modal header span{display:block;margin-top:4px;color:#64748b;font-size:10px}.ag-settings-close{border:0;background:transparent;color:#94a3b8;font-size:20px;cursor:pointer}.ag-settings-field{display:block;margin-top:13px}.ag-settings-field>span{display:block;margin-bottom:6px;color:#94a3b8;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.ag-settings-field select{width:100%;border:1px solid rgba(148,163,184,.16);border-radius:11px;background:#08111f;color:#e2e8f0;padding:11px 12px;outline:none}.ag-settings-hint{margin:14px 0 0;padding:10px 12px;border-radius:11px;background:rgba(59,130,246,.08);color:#94a3b8;font-size:10px;line-height:1.5}.ag-settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 @media(max-width:760px){.ag-q-toolbar{align-items:flex-start;flex-direction:column}.ag-q-toolbar>div:last-child{width:100%}.ag-q-toolbar button{flex:1}.ag-q-lane>header{grid-template-columns:1fr 1fr}.ag-q-lane>header>div:first-child{grid-column:1/-1}.ag-q-lane>header em{grid-column:1/-1;text-align:left}.ag-q-cards{grid-template-columns:1fr}}
 /* O <details> precisa ser o contêiner; somente o <summary> compõe a grade. */
 .ag-exec-row{display:block;padding:0;overflow:hidden}
@@ -149,6 +152,25 @@ function formatMs(value) {
 function formatMemory(value) {
   const mb = Number(value || 0);
   return mb > 0 ? `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : 'Aguardando medição';
+}
+
+function formatInterval(minutes) {
+  const value = Number(minutes || 0);
+  if (value < 60) return `${value} min`;
+  if (value % 1440 === 0) return `${value / 1440} dia${value === 1440 ? '' : 's'}`;
+  if (value % 60 === 0) return `${value / 60}h`;
+  return `${Math.floor(value / 60)}h ${value % 60}min`;
+}
+
+function renderSettingsEditor() {
+  const editor = state.settingsEditor;
+  if (!editor) return '';
+  const agent = AGENTES.find((item) => item.id === editor.agent_id);
+  const intervals = [0, 5, 10, 15, 30, 60, 120, 360, 720, 1440, 2880, 10080];
+  return `<div class="ag-settings-backdrop" onclick="if(event.target===this)closeAgentSettings()"><form class="ag-settings-modal" onsubmit="saveAgentSettings(event)"><header><div><h3>Editar agente</h3><span>${esc(agent?.name || editor.agent_id)}</span></div><button class="ag-settings-close" type="button" onclick="closeAgentSettings()">×</button></header>
+    <label class="ag-settings-field"><span>Fila de execução</span><select name="queue_lane"><option value="fixed_a" ${editor.queue_lane === 'fixed_a' ? 'selected' : ''}>Entrada 1 · fixed-a</option><option value="fixed_b" ${editor.queue_lane === 'fixed_b' ? 'selected' : ''}>Entrada 2 · fixed-b</option><option value="alteracoes" ${editor.queue_lane === 'alteracoes' ? 'selected' : ''}>Saída 1 · alterações</option><option value="despesas_distribuicao" ${editor.queue_lane === 'despesas_distribuicao' ? 'selected' : ''}>Saída 2 · despesas/distribuição</option></select></label>
+    <label class="ag-settings-field"><span>Intervalo de execução</span><select name="interval_minutes">${intervals.map((value) => `<option value="${value}" ${Number(editor.interval_minutes) === value ? 'selected' : ''}>${value === 0 ? 'Manual / sob demanda' : `A cada ${formatInterval(value)}`}</option>`).join('')}</select></label>
+    <p class="ag-settings-hint">A alteração afeta os próximos jobs. Se o agente estiver executando, ele termina normalmente; jobs pendentes migram para a nova fila.</p><div class="ag-settings-actions"><button class="ag-btn ag-btn-danger" type="button" onclick="closeAgentSettings()">Cancelar</button><button class="ag-btn ag-btn-primary" type="submit" ${state.queueSaving ? 'disabled' : ''}>${state.queueSaving ? 'Salvando…' : 'Salvar configuração'}</button></div></form></div>`;
 }
 
 function unique(values) {
@@ -412,13 +434,14 @@ function renderExecutions() {
 }
 
 function renderQueue() {
-  const fixedAgents = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa'));
-  const outputAgents = AGENTES.filter((a) => getDirection(a) === 'saida');
+  const entryAgents = AGENTES.filter((a) => getDirection(a) === 'entrada');
+  const settingFor = (agentId) => state.agentSettings.find((item) => item.agent_id === agentId);
+  const inConfiguredLane = (agent, lane, fallback) => settingFor(agent.id)?.queue_lane ? settingFor(agent.id).queue_lane === lane : fallback;
   const laneDefs = [
-    { id: 'entrada-1', title: 'Entrada 1', subtitle: 'Worker fixed-a', lane: 'fixed', agents: fixedAgents.filter((_, i) => i % 2 === 0), tone: 'blue' },
-    { id: 'entrada-2', title: 'Entrada 2', subtitle: 'Worker fixed-b', lane: 'fixed', agents: fixedAgents.filter((_, i) => i % 2 === 1), tone: 'cyan' },
-    { id: 'saida-1', title: 'Saída 1', subtitle: 'Alterações no GRM', lane: 'alteracoes', agents: outputAgents.filter((a) => !['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id)), tone: 'orange' },
-    { id: 'saida-2', title: 'Saída 2', subtitle: 'Despesas e distribuição', lane: 'despesas_distribuicao', agents: outputAgents.filter((a) => ['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id)), tone: 'green' },
+    { id: 'entrada-1', title: 'Entrada 1', subtitle: 'Worker fixed-a', lane: 'fixed_a', agents: AGENTES.filter((a) => inConfiguredLane(a, 'fixed_a', getDirection(a) === 'entrada' && entryAgents.indexOf(a) % 2 === 0)), tone: 'blue' },
+    { id: 'entrada-2', title: 'Entrada 2', subtitle: 'Worker fixed-b', lane: 'fixed_b', agents: AGENTES.filter((a) => inConfiguredLane(a, 'fixed_b', getDirection(a) === 'entrada' && entryAgents.indexOf(a) % 2 === 1)), tone: 'cyan' },
+    { id: 'saida-1', title: 'Saída 1', subtitle: 'Alterações no GRM', lane: 'alteracoes', agents: AGENTES.filter((a) => inConfiguredLane(a, 'alteracoes', getDirection(a) === 'saida' && !['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id))), tone: 'orange' },
+    { id: 'saida-2', title: 'Saída 2', subtitle: 'Despesas e distribuição', lane: 'despesas_distribuicao', agents: AGENTES.filter((a) => inConfiguredLane(a, 'despesas_distribuicao', ['aplicar-distribuicao-os', 'sync-liberacao-despesas'].includes(a.id))), tone: 'green' },
   ];
   const historyFor = (agentId) => state.executions.filter((job) => job.agente_id === agentId && Number(job.duration_ms) > 0 && ['sucesso', 'erro', 'parcial'].includes(String(job.status)));
   const metricsFor = (agentId) => {
@@ -437,10 +460,13 @@ function renderQueue() {
     const metrics = metricsFor(agent.id);
     const lanePending = state.queue.filter((item) => item.lane === lane && item.status === 'pendente');
     const queueIndex = job?.status === 'pendente' ? lanePending.findIndex((item) => item.id === job.id) : -1;
+    const setting = settingFor(agent.id);
+    const intervalLabel = !setting || Number(setting.interval_minutes) === 0 ? 'Manual / sob demanda' : `A cada ${formatInterval(setting.interval_minutes)}`;
     return `<article class="ag-q-card ${job?.status || ''}">
+      <button class="ag-q-edit" type="button" onclick="openAgentSettings('${agent.id}')" title="Editar fila e intervalo" aria-label="Editar ${esc(agent.name)}">✎</button>
       <div class="ag-q-card-top"><div><strong>${esc(agent.name)}</strong><code>${esc(agent.id)}</code></div><span class="ag-status-dot ${meta.ui}"></span><b style="color:${meta.color}">${meta.label}</b><span class="ag-dir-badge ${getDirection(agent)}">${getDirection(agent)}</span></div>
       <div class="ag-q-kpis"><span>Total<strong>${formatInt(data?.total_records)}</strong></span><span>Última sync<strong>${formatDate(data?.ultima_sync)}</strong></span><span>${job?.status === 'rodando' ? 'Memória em uso' : 'Memória média'}<strong>${formatMemory(job?.status === 'rodando' ? job.memory_peak_mb : metrics.avgMemory)}</strong></span><span>Média de execução<strong>${formatMs(metrics.avgMs)}</strong></span></div>
-      <div class="ag-q-card-footer"><small>${job?.status === 'rodando' ? `Executando em ${esc(job.worker_id || lane)}` : job?.status === 'pendente' ? `Posição ${queueIndex + 1} na fila` : 'Fora da fila atual'}</small><div>${job?.status === 'pendente' ? `<button class="ag-icon-btn" ${queueIndex === 0 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',-1)" title="Subir na fila">↑</button><button class="ag-icon-btn" ${queueIndex === lanePending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',1)" title="Descer na fila">↓</button>` : `<button class="ag-q-priority" onclick="event.stopPropagation();executeAgent('${agent.id}')">Priorizar</button>`}</div></div>
+      <div class="ag-q-card-footer"><small><span class="ag-q-schedule">${esc(intervalLabel)}</span> · ${job?.status === 'rodando' ? `Executando em ${esc(job.worker_id || lane)}` : job?.status === 'pendente' ? `Posição ${queueIndex + 1}` : 'Fora da fila atual'}</small><div>${job?.status === 'pendente' ? `<button class="ag-icon-btn" ${queueIndex === 0 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',-1)" title="Subir na fila">↑</button><button class="ag-icon-btn" ${queueIndex === lanePending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob('${job.id}',1)" title="Descer na fila">↓</button>` : `<button class="ag-q-priority" onclick="event.stopPropagation();executeAgent('${agent.id}')">Priorizar</button>`}</div></div>
     </article>`;
   };
   const lane = (definition) => {
@@ -456,7 +482,7 @@ function renderQueue() {
   };
   const choices = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).map((agent) => `<label class="ag-agent-choice"><input type="checkbox" value="${esc(agent.id)}" ${state.queueSelection.includes(agent.id) ? 'checked' : ''} onchange="toggleQueueAgent('${esc(agent.id)}',this.checked)"><span>${esc(agent.name)}</span></label>`).join('');
   const composer = state.queueComposerOpen ? `<div class="ag-composer"><div class="ag-queue-head"><div><h3>Montar nova fila</h3><p>Selecione um ou mais agentes. Eles entram na ordem apresentada, depois dos jobs atuais.</p></div></div><div class="ag-composer-grid">${choices}</div><div class="ag-composer-footer"><button class="ag-btn ag-btn-danger" onclick="closeQueueComposer()">Cancelar</button><button class="ag-btn ag-btn-primary" ${!state.queueSelection.length || state.queueSaving ? 'disabled' : ''} onclick="createQueue()">${state.queueSaving ? 'Criando…' : `Abrir fila (${state.queueSelection.length})`}</button></div></div>` : '';
-  return `<section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>KPIs por agente e consumo consolidado por worker</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}</section>`;
+  return `<section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>KPIs por agente e consumo consolidado por worker</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}${renderSettingsEditor()}</section>`;
 }
 
 function renderAgentes() {
@@ -626,6 +652,37 @@ window.setTab = (tab) => {
 };
 
 window.loadQueue = (showLoading = false) => loadQueue(showLoading);
+window.openAgentSettings = (agentId) => {
+  const fallbackIndex = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).findIndex((a) => a.id === agentId);
+  const current = state.agentSettings.find((item) => item.agent_id === agentId) || {
+    agent_id: agentId,
+    queue_lane: getDirection(AGENTES.find((item) => item.id === agentId)) === 'entrada' ? (fallbackIndex % 2 === 0 ? 'fixed_a' : 'fixed_b') : 'alteracoes',
+    interval_minutes: 0,
+  };
+  state.settingsEditor = { ...current };
+  render();
+};
+window.closeAgentSettings = () => { state.settingsEditor = null; render(); };
+window.saveAgentSettings = async (event) => {
+  event.preventDefault();
+  if (!state.settingsEditor || state.queueSaving) return;
+  const form = event.currentTarget;
+  state.queueSaving = true;
+  render();
+  try {
+    const { data, error } = await supabase.rpc('update_grm_sync_agent_setting', {
+      p_agent_id: state.settingsEditor.agent_id,
+      p_queue_lane: form.elements.queue_lane.value,
+      p_interval_minutes: Number(form.elements.interval_minutes.value),
+    });
+    if (error) throw error;
+    state.agentSettings = state.agentSettings.filter((item) => item.agent_id !== data.agent_id).concat(data);
+    state.settingsEditor = null;
+    await loadQueue();
+  } catch (error) {
+    alert(`Não foi possível salvar a configuração: ${error.message}`);
+  } finally { state.queueSaving = false; render(); }
+};
 window.openQueueComposer = () => { state.queueComposerOpen = true; state.queueSelection = []; render(); };
 window.closeQueueComposer = () => { state.queueComposerOpen = false; state.queueSelection = []; render(); };
 window.toggleQueueAgent = (agentId, checked) => {
@@ -949,6 +1006,18 @@ async function loadQueue(showLoading = false) {
   } finally { state.queueLoading = false; render(); }
 }
 
+async function loadAgentSettings() {
+  try {
+    const { data, error } = await supabase.from('grm_sync_agent_settings')
+      .select('agent_id,queue_lane,interval_minutes,enabled,updated_at')
+      .order('agent_id');
+    if (error) throw error;
+    state.agentSettings = data || [];
+  } catch (error) {
+    console.error('Erro carregando configuração dos agentes:', error);
+  }
+}
+
 function render() {
   const pageContent = document.getElementById('pageContent');
   if (pageContent) pageContent.innerHTML = renderAgentes();
@@ -956,7 +1025,7 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions(), loadQueue()]);
+  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions(), loadQueue(), loadAgentSettings()]);
 }
 
 init();
@@ -965,4 +1034,5 @@ setInterval(() => {
   loadCargasKpi();
   loadExecutions();
   loadQueue();
+  loadAgentSettings();
 }, 30000);
