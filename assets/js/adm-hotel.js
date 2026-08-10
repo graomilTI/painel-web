@@ -249,7 +249,7 @@ export function renderContent(content, userContext) {
             <div class="adm-hosp-filter-field"><label for="solFiltroCidade">Cidade</label><input id="solFiltroCidade" type="search" placeholder="Buscar cidade..." autocomplete="off" /></div>
             <div class="adm-hosp-filter-field"><label for="solFiltroSupervisao">Supervisão</label><input id="solFiltroSupervisao" type="search" placeholder="Buscar supervisão..." autocomplete="off" /></div>
             <div class="adm-hosp-filter-field"><label for="solFiltroData">Data</label><input id="solFiltroData" type="date" /></div>
-            <div class="adm-hosp-filter-field"><label for="solOrdenar">Organizar por</label><select id="solOrdenar"><option value="data">Data</option><option value="colaborador">Colaborador</option><option value="cidade">Cidade</option><option value="supervisao">Supervisão</option></select></div>
+            <div class="adm-hosp-filter-field"><label for="solOrdenar">Organizar por</label><select id="solOrdenar"><option value="data">Data da solicitação</option><option value="checkin">Check-in</option><option value="colaborador">Colaborador</option><option value="cidade">Cidade</option><option value="supervisao">Supervisão</option><option value="hotel">Hotel</option></select></div>
             <div class="adm-hosp-filter-actions"><button class="btn btn-secondary adm-hosp-small adm-hosp-sort-direction" id="solDirecao" type="button" title="Ordem decrescente" aria-label="Alternar direção da ordenação">↓</button><button class="btn btn-secondary adm-hosp-small" id="solLimparFiltros" type="button">Limpar</button></div>
           </div>
           <div class="adm-hosp-filter-meta"><span>Os filtros podem ser combinados.</span><span id="solFiltroResultado" class="adm-hosp-filter-count">0 solicitações</span></div>
@@ -923,7 +923,9 @@ export function renderContent(content, userContext) {
       colaborador: colaboradores.join(' ')||row?.colaboradores||row?.colaborador||'',
       cidade: [row?.cidade,row?.uf].filter(Boolean).join(' '),
       supervisao: supervisoes.join(' ')||row?.supervisao||'',
-      data: String(row?.data_solicitacao||'').slice(0,10)
+      data: String(row?.data_solicitacao||'').slice(0,10),
+      checkin: String(row?.data_checkin||row?.data_checkin_prevista||'').slice(0,10),
+      hotel: row?.hotel||''
     };
   }
 
