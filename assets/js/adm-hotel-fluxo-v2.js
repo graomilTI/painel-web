@@ -469,4 +469,5 @@ async function saveDocument() {
   $('#hospV2DocumentFile').value = ''; $('#hospV2DocumentUrl').value = ''; setFeedback('hospV2DocumentFeedback', 'Documento anexado com sucesso.', 'ok'); await loadData(); renderDocumentModal(row);
 }
 function boot() { injectStyles(); const start = () => { mountShell(); if (state.mounted) loadData(); }; start(); const observer = new MutationObserver(start); observer.observe(document.documentElement, { childList: true, subtree: true }); setTimeout(() => observer.disconnect(), 15000); window.addEventListener('hashchange', () => setTimeout(loadData, 300)); document.addEventListener('visibilitychange', () => { if (!document.hidden) loadData(); }); }
+window.__abrirHospedagemAcao=(action,solicitacaoId)=>{const row=state.rows.find((item)=>String(item.solicitacao_id)===String(solicitacaoId));if(!row)return;if(action==='extra')openExtraModal(row);if(action==='document')openDocumentModal(row);};
 boot();
