@@ -8,7 +8,7 @@ import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
-} from './programacao-despesas.js?v=20260730-indisp-legado';
+} from './programacao-despesas.js?v=20260810-agrupar-hoteis';
 import { loadCustos } from './programacao-equipe.js?v=20260807-papel-os1';
 
 function normalizeText(value) {
