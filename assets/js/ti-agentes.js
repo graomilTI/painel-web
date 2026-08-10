@@ -71,6 +71,11 @@ const state = {
   executionStatus: 'problemas',
   executionSearch: '',
   executionsUpdatedAt: null,
+  queue: [],
+  queueLoading: false,
+  queueSaving: false,
+  queueComposerOpen: false,
+  queueSelection: [],
 };
 
 function getDirection(agenteDef) {
@@ -88,9 +93,11 @@ function getStyles() {
   return `<style id="agentes-style">
 .ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
 .ag-tabs{display:flex;gap:8px;margin-top:18px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:0}.ag-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-weight:900;font-size:13px;padding:10px 4px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-tab:hover{color:#cbd5e1}.ag-tab.active{color:#f8fafc;border-bottom-color:#3b82f6}.ag-tab-count{background:rgba(148,163,184,.14);color:#cbd5e1;border-radius:999px;padding:1px 8px;font-size:11px}.ag-tab.active .ag-tab-count{background:rgba(59,130,246,.22);color:#bfdbfe}.ag-dir-badge{font-size:10px;font-weight:900;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}.ag-dir-badge.entrada{background:rgba(34,197,94,.13);color:#86efac}.ag-dir-badge.saida{background:rgba(251,146,60,.15);color:#fdba74}
+.ag-queue{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:16px}.ag-queue-panel{background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(7,13,26,.94));border:1px solid rgba(148,163,184,.13);border-radius:19px;padding:18px}.ag-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.ag-queue-head h3{margin:0;color:#f8fafc;font-size:15px}.ag-queue-head p{margin:4px 0 0;color:#64748b;font-size:11px}.ag-queue-actions{display:flex;gap:8px}.ag-queue-item{display:grid;grid-template-columns:35px 42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:11px 10px;border-bottom:1px solid rgba(148,163,184,.09)}.ag-queue-item:last-child{border-bottom:0}.ag-queue-pos{color:#475569;font-weight:950;font-size:11px;text-align:center}.ag-queue-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:rgba(59,130,246,.11);color:#60a5fa}.ag-queue-name strong{display:block;color:#f1f5f9;font-size:12px}.ag-queue-name span{display:block;color:#64748b;font-size:9px;margin-top:3px}.ag-queue-move{display:flex;gap:5px}.ag-icon-btn{width:29px;height:29px;border-radius:8px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.45);color:#94a3b8;cursor:pointer}.ag-icon-btn:hover:not(:disabled){border-color:#3b82f6;color:#bfdbfe}.ag-icon-btn:disabled{opacity:.25;cursor:default}.ag-running{border:1px solid rgba(34,197,94,.18);background:rgba(34,197,94,.04);border-radius:13px;margin-bottom:8px}.ag-running .ag-queue-icon{background:rgba(34,197,94,.12);color:#4ade80}.ag-queue-empty{padding:34px 16px;text-align:center;color:#64748b;font-size:12px}.ag-queue-side{position:sticky;top:16px;align-self:start}.ag-lane-card{padding:13px;border:1px solid rgba(148,163,184,.11);border-radius:13px;margin-bottom:10px}.ag-lane-card span{display:block;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.ag-lane-card strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.ag-composer{grid-column:1/-1;background:rgba(2,6,23,.88);border:1px solid rgba(96,165,250,.25);border-radius:19px;padding:18px}.ag-composer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin:14px 0}.ag-agent-choice{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid rgba(148,163,184,.12);border-radius:11px;color:#cbd5e1;font-size:11px;cursor:pointer}.ag-agent-choice:has(input:checked){border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.09);color:#eff6ff}.ag-composer-footer{display:flex;justify-content:flex-end;gap:8px}
 .ag-exec{display:grid;gap:14px}.ag-exec-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ag-exec-kpi{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(8,15,29,.9));border:1px solid rgba(148,163,184,.13);border-radius:17px;padding:15px 16px}.ag-exec-kpi::after{content:"";position:absolute;inset:auto -24px -38px auto;width:92px;height:92px;border-radius:50%;background:var(--glow,rgba(59,130,246,.12));filter:blur(2px)}.ag-exec-kpi span{display:block;color:#94a3b8;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.ag-exec-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:25px;line-height:1;font-weight:950}.ag-exec-kpi small{display:block;margin-top:7px;color:#64748b;font-size:10px}.ag-exec-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:10px}.ag-exec-search{min-width:220px;flex:1;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#e2e8f0;padding:10px 12px;outline:none}.ag-exec-search:focus{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 3px rgba(59,130,246,.1)}.ag-exec-filter{background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#cbd5e1;padding:9px 11px}.ag-exec-refresh{border:1px solid rgba(96,165,250,.26);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:11px;padding:9px 12px;font-weight:850;cursor:pointer}.ag-exec-refresh:hover{background:rgba(59,130,246,.18)}.ag-exec-updated{margin-left:auto;color:#64748b;font-size:10px}.ag-exec-list{display:grid;gap:8px}.ag-exec-row{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.11);border-left:3px solid var(--status-color,#64748b);border-radius:14px;padding:11px 13px;color:#cbd5e1}.ag-exec-row:hover{background:rgba(15,23,42,.86);border-color:rgba(148,163,184,.2);border-left-color:var(--status-color,#64748b)}.ag-exec-icon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;background:color-mix(in srgb,var(--status-color) 14%,transparent);color:var(--status-color);font-weight:950}.ag-exec-agent strong{display:block;color:#f8fafc;font-size:12px}.ag-exec-agent code{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-time strong,.ag-exec-duration strong{display:block;color:#cbd5e1;font-size:11px}.ag-exec-time span,.ag-exec-duration span{display:block;margin-top:3px;color:#64748b;font-size:9px}.ag-exec-error{min-width:0;color:#94a3b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-chevron{color:#64748b;text-align:center}.ag-exec-detail{grid-column:1/-1;margin:2px 0 0;padding:12px;background:rgba(2,6,23,.72);border-radius:10px;border:1px solid rgba(148,163,184,.1);white-space:pre-wrap;word-break:break-word;font:10px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#94a3b8}.ag-exec-empty{text-align:center;padding:52px 20px;border:1px dashed rgba(148,163,184,.17);border-radius:16px;color:#64748b}.ag-exec-empty strong{display:block;color:#cbd5e1;margin-bottom:5px}.ag-exec-health{display:flex;align-items:center;gap:8px;font-size:11px;color:#94a3b8}.ag-exec-health-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 9px rgba(34,197,94,.55)}
 @media(max-width:980px){.ag-exec-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ag-exec-row{grid-template-columns:40px 1fr 1fr}.ag-exec-duration,.ag-exec-error{grid-column:2/-1}.ag-exec-chevron{position:absolute;right:14px}.ag-exec-row{position:relative}}
 @media(max-width:560px){.ag-exec-summary{grid-template-columns:1fr 1fr}.ag-exec-row{grid-template-columns:38px 1fr}.ag-exec-time,.ag-exec-duration,.ag-exec-error{grid-column:2}.ag-exec-toolbar>*{width:100%}.ag-exec-updated{margin-left:0;text-align:center}}
+@media(max-width:900px){.ag-queue{grid-template-columns:1fr}.ag-queue-side{position:static}.ag-queue-item{grid-template-columns:28px 36px minmax(0,1fr) auto}}
 /* O <details> precisa ser o contêiner; somente o <summary> compõe a grade. */
 .ag-exec-row{display:block;padding:0;overflow:hidden}
 .ag-exec-row>summary{display:grid;grid-template-columns:44px minmax(190px,1.25fr) minmax(120px,.7fr) minmax(130px,.8fr) minmax(250px,1.6fr) 26px;gap:12px;align-items:center;padding:11px 13px;cursor:pointer;list-style:none}
@@ -392,6 +399,29 @@ function renderExecutions() {
   return `<section class="ag-exec" aria-label="Relatório de execuções dos agentes">${cards}${toolbar}<div class="ag-exec-health"><span class="ag-exec-health-dot"></span>Monitoramento automático a cada 30 segundos</div>${list}</section>`;
 }
 
+function renderQueue() {
+  const running = state.queue.filter((job) => job.status === 'rodando');
+  const pending = state.queue.filter((job) => job.status === 'pendente');
+  const row = (job, index, movable = false) => {
+    const def = AGENTES.find((agent) => agent.id === job.agente_id);
+    return `<div class="ag-queue-item ${job.status === 'rodando' ? 'ag-running' : ''}">
+      <div class="ag-queue-pos">${job.status === 'rodando' ? '●' : String(index + 1).padStart(2, '0')}</div>
+      <div class="ag-queue-icon">${job.status === 'rodando' ? '↻' : '☷'}</div>
+      <div class="ag-queue-name"><strong>${esc(def?.name || job.agente_id)}</strong><span>${job.status === 'rodando' ? `Em execução · ${formatDate(job.iniciado_em)}` : `Aguardando · ${esc(job.lane || 'fixed')}`}</span></div>
+      ${movable ? `<div class="ag-queue-move"><button class="ag-icon-btn" ${index === 0 ? 'disabled' : ''} onclick="moveQueueJob(${index},-1)" title="Subir">↑</button><button class="ag-icon-btn" ${index === pending.length - 1 ? 'disabled' : ''} onclick="moveQueueJob(${index},1)" title="Descer">↓</button></div>` : ''}
+    </div>`;
+  };
+  const choices = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).map((agent) => `<label class="ag-agent-choice"><input type="checkbox" value="${esc(agent.id)}" ${state.queueSelection.includes(agent.id) ? 'checked' : ''} onchange="toggleQueueAgent('${esc(agent.id)}',this.checked)"><span>${esc(agent.name)}</span></label>`).join('');
+  const composer = state.queueComposerOpen ? `<div class="ag-composer"><div class="ag-queue-head"><div><h3>Montar nova fila</h3><p>Selecione um ou mais agentes. Eles entram na ordem apresentada, depois dos jobs atuais.</p></div></div><div class="ag-composer-grid">${choices}</div><div class="ag-composer-footer"><button class="ag-btn ag-btn-danger" onclick="closeQueueComposer()">Cancelar</button><button class="ag-btn ag-btn-primary" ${!state.queueSelection.length || state.queueSaving ? 'disabled' : ''} onclick="createQueue()">${state.queueSaving ? 'Criando…' : `Abrir fila (${state.queueSelection.length})`}</button></div></div>` : '';
+  return `<section class="ag-queue" aria-label="Gerenciamento da fila de agentes">
+    <div class="ag-queue-panel"><div class="ag-queue-head"><div><h3>Esteira de execução</h3><p>Os dois primeiros jobs podem rodar em paralelo. Reordene apenas o que ainda está aguardando.</p></div><div class="ag-queue-actions"><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>
+      ${state.queueLoading ? '<div class="ag-queue-empty">Consultando a fila…</div>' : `${running.map((j, i) => row(j, i)).join('')}${pending.map((j, i) => row(j, i, true)).join('') || '<div class="ag-queue-empty">Nenhum job aguardando. Você pode abrir uma nova fila.</div>'}`}
+    </div>
+    <aside class="ag-queue-panel ag-queue-side"><div class="ag-queue-head"><div><h3>Capacidade agora</h3><p>Leitura ao vivo do worker</p></div></div><div class="ag-lane-card"><span>Em execução</span><strong>${running.length} / 2</strong></div><div class="ag-lane-card"><span>Aguardando</span><strong>${pending.length}</strong></div><div class="ag-lane-card"><span>Próximo agente</span><strong style="font-size:13px">${esc(AGENTES.find((a) => a.id === pending[0]?.agente_id)?.name || 'Fila livre')}</strong></div></aside>
+    ${composer}
+  </section>`;
+}
+
 function renderAgentes() {
   const entrada = AGENTES.filter((a) => getDirection(a) === 'entrada');
   const saida = AGENTES.filter((a) => getDirection(a) === 'saida');
@@ -414,6 +444,7 @@ function renderAgentes() {
         <button class="ag-tab ${state.activeTab === 'entrada' ? 'active' : ''}" onclick="setTab('entrada')" type="button">⬇️ Entrada <span class="ag-tab-count">${entrada.length}</span></button>
         <button class="ag-tab ${state.activeTab === 'saida' ? 'active' : ''}" onclick="setTab('saida')" type="button">⬆️ Saída <span class="ag-tab-count">${saida.length}</span></button>
         <button class="ag-tab ${state.activeTab === 'execucoes' ? 'active' : ''}" onclick="setTab('execucoes')" type="button">◉ Execuções <span class="ag-tab-count">${recentProblems}</span></button>
+        <button class="ag-tab ${state.activeTab === 'fila' ? 'active' : ''}" onclick="setTab('fila')" type="button">☷ Fila <span class="ag-tab-count">${state.queue.filter((j) => j.status === 'pendente').length}</span></button>
       </div>
       ${state.activeTab === 'execucoes' ? '' : `<div class="ag-stats">
         <div class="ag-stat"><div class="ag-stat-val">${visiveis.length}</div><div class="ag-stat-lbl">Agentes nesta aba</div></div>
@@ -426,6 +457,11 @@ function renderAgentes() {
 
   if (state.activeTab === 'execucoes') {
     html += renderExecutions();
+    html += '</div>';
+    return html;
+  }
+  if (state.activeTab === 'fila') {
+    html += renderQueue();
     html += '</div>';
     return html;
   }
@@ -546,9 +582,50 @@ async function loadBotConversaFailures(jobId) {
 }
 
 window.setTab = (tab) => {
-  state.activeTab = ['entrada', 'saida', 'execucoes'].includes(tab) ? tab : 'entrada';
+  state.activeTab = ['entrada', 'saida', 'execucoes', 'fila'].includes(tab) ? tab : 'entrada';
   state.selectedAgent = null;
   render();
+  if (state.activeTab === 'fila') loadQueue();
+};
+
+window.loadQueue = (showLoading = false) => loadQueue(showLoading);
+window.openQueueComposer = () => { state.queueComposerOpen = true; state.queueSelection = []; render(); };
+window.closeQueueComposer = () => { state.queueComposerOpen = false; state.queueSelection = []; render(); };
+window.toggleQueueAgent = (agentId, checked) => {
+  state.queueSelection = checked ? unique([...state.queueSelection, agentId]) : state.queueSelection.filter((id) => id !== agentId);
+  render();
+};
+window.moveQueueJob = async (index, direction) => {
+  if (state.queueSaving) return;
+  const pending = state.queue.filter((job) => job.status === 'pendente');
+  const target = index + direction;
+  if (target < 0 || target >= pending.length) return;
+  [pending[index], pending[target]] = [pending[target], pending[index]];
+  state.queue = [...state.queue.filter((job) => job.status === 'rodando'), ...pending];
+  state.queueSaving = true;
+  render();
+  try {
+    const { error } = await supabase.rpc('reorder_grm_sync_queue', { p_job_ids: pending.map((job) => job.id) });
+    if (error) throw error;
+    await loadQueue();
+  } catch (error) {
+    alert(`Não foi possível salvar a nova ordem: ${error.message}`);
+    await loadQueue();
+  } finally { state.queueSaving = false; }
+};
+window.createQueue = async () => {
+  if (!state.queueSelection.length || state.queueSaving) return;
+  state.queueSaving = true;
+  render();
+  try {
+    const { error } = await supabase.rpc('enqueue_grm_sync_queue', { p_agent_ids: state.queueSelection });
+    if (error) throw error;
+    state.queueComposerOpen = false;
+    state.queueSelection = [];
+    await Promise.all([loadQueue(), loadAgentes()]);
+  } catch (error) {
+    alert(`Não foi possível abrir a fila: ${error.message}`);
+  } finally { state.queueSaving = false; render(); }
 };
 
 window.filterExecutions = ({ search, status, period } = {}) => {
@@ -814,6 +891,24 @@ async function loadExecutions(forceRender = false) {
   }
 }
 
+async function loadQueue(showLoading = false) {
+  if (state.queueLoading) return;
+  state.queueLoading = true;
+  if (showLoading) render();
+  try {
+    const { data, error } = await supabase.from('grm_sync_jobs')
+      .select('id,agente_id,status,lane,pipeline_seq,created_at,iniciado_em')
+      .in('status', ['pendente', 'rodando'])
+      .eq('lane', 'fixed')
+      .order('pipeline_seq', { ascending: true, nullsFirst: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    state.queue = data || [];
+  } catch (error) {
+    console.error('Erro carregando fila:', error);
+  } finally { state.queueLoading = false; render(); }
+}
+
 function render() {
   const pageContent = document.getElementById('pageContent');
   if (pageContent) pageContent.innerHTML = renderAgentes();
@@ -821,7 +916,7 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions()]);
+  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions(), loadQueue()]);
 }
 
 init();
@@ -829,4 +924,5 @@ setInterval(() => {
   loadAgentes();
   loadCargasKpi();
   loadExecutions();
+  loadQueue();
 }, 30000);
