@@ -220,7 +220,6 @@ export function renderContent(content, userContext) {
       <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitações <small id="cntSolicitadas">0</small></button>
       <button class="adm-hosp-tab" data-tab="andamento" type="button">Reservas <small id="cntAndamento">0</small></button>
       <button class="adm-hosp-tab" data-tab="pagar" type="button">Pagamentos</button>
-      <button class="adm-hosp-tab" data-tab="nf" type="button">Notas fiscais</button>
       <span class="adm-hosp-tabs-sep" aria-hidden="true"></span>
       <span class="adm-hosp-tabs-label">Cadastros</span>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
@@ -274,7 +273,6 @@ export function renderContent(content, userContext) {
     </section>
 
     <section id="tab-pagar" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
-    <section id="tab-nf" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
 
     <section id="tab-concluidos" class="adm-hosp-panel">
       <article class="card">
@@ -349,7 +347,7 @@ export function renderContent(content, userContext) {
           <div><h3>Fechamento da hospedagem</h3><p class="muted" id="checkoutSub"></p></div>
           <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalCheckoutClose">Fechar</button>
         </div>
-        <div class="adm-section-block"><div class="adm-section-label">Colaboradores</div><div id="checkoutColabList" class="adm-colab-chips"></div></div>
+        <div class="adm-section-block"><div class="adm-section-label">Quem fará checkout? Marque toda a equipe ou somente quem sairá.</div><div id="checkoutColabList" class="adm-colab-check-list"></div></div>
         <div class="adm-checkout-totals mt-16">
           <div class="adm-checkout-line"><span>Valor total das diárias</span><strong id="checkoutValorDiarias">R$ 0,00</strong></div>
         </div>
@@ -382,8 +380,9 @@ export function renderContent(content, userContext) {
           <div class="adm-hosp-field full"><label>Chave PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
         </div>
         <div class="adm-payment-extras"><div><strong>Extras</strong><span>Inclua custos adicionais e envie para Conferência quando necessário.</span></div><button class="btn btn-secondary" type="button" id="btnPagarExtra">+ ADICIONAR EXTRA</button></div>
-        <fieldset class="adm-payment-choice"><legend>Pagamento</legend><label><input type="radio" name="pagarTipo" value="TOTAL" checked><span><strong>Total</strong><small>Quitar o valor integral</small></span></label><label><input type="radio" name="pagarTipo" value="PARCIAL"><span><strong>Parcial</strong><small>Manter saldo em aberto</small></span></label></fieldset>
+        <label class="adm-payment-choice"><input id="pagarTaxaBancaria" type="checkbox"><span><strong>Incluir taxa bancária</strong><small>O hotel recebe o valor informado e o comprovante inclui R$ 2,00.</small></span></label>
         <div class="adm-hosp-form-actions adm-payment-actions mt-16">
+          <button class="btn btn-primary" type="button" id="btnConfirmarPagamento">CONFIRMAR PAGAMENTO</button>
           <button class="btn btn-primary" type="button" id="btnGerarPix">▦ PAGAR COM QR CODE</button>
           <button class="btn btn-secondary" type="button" id="btnPagarFinanceiro">ENVIAR AO FINANCEIRO</button>
           <button class="btn btn-secondary" type="button" id="btnPagarComprovante">ANEXAR COMPROVANTE</button>
@@ -1375,10 +1374,12 @@ export function renderContent(content, userContext) {
     const reservaId=state.selected.reserva_id||result.data?.id||null;
     const groupedIds=Array.isArray(window.__hospedagemSolicitacoesAgrupadas)?window.__hospedagemSolicitacoesAgrupadas:[];
     const grouped=state.rows.filter((item) => groupedIds.includes(item.solicitacao_id));
-    if (reservaId&&grouped.length>1) {
+    if (reservaId&&grouped.length) {
       await supabase.from('hospedagem_reserva_solicitacoes').upsert(grouped.map((item) => ({reserva_id:reservaId,solicitacao_id:item.solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
       await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',grouped.map((item) => item.solicitacao_id));
     }
+    const reservados=(state.reservarColabs||[]).filter((c)=>!c.excluido&&c.id);
+    if(reservaId&&reservados.length) await supabase.from('hospedagem_reserva_colaboradores').upsert(reservados.map((c)=>({reserva_id:reservaId,solicitacao_colaborador_id:c.id,status:'HOSPEDADO'})),{onConflict:'reserva_id,solicitacao_colaborador_id'});
     await enviarBoasVindasReserva(state.selected,hotelRecord||state.hoteis.find((h) => String(h.id)===String(hotelId))||{},reservaId);
     setFeedback('reservarFeedback','Reserva salva com sucesso.','ok');
     await loadRows();
@@ -1403,7 +1404,10 @@ export function renderContent(content, userContext) {
     state.estenderColabs=colabs.map((c) => ({...c,fica:true}));
     document.getElementById('estenderSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}`;
     renderEstenderColabs();
-    document.getElementById('estenderNovoCheckout').value=row.data_checkout||row.data_checkout_prevista||'';
+    const extensionIds=Array.isArray(window.__hospedagemExtensaoSolicitacoes)?window.__hospedagemExtensaoSolicitacoes:[];
+    const extensionRows=state.rows.filter((item)=>extensionIds.includes(String(item.solicitacao_id)));
+    const requestedCheckout=extensionRows.map((item)=>item.data_checkout||item.data_checkout_prevista).filter(Boolean).sort().at(-1);
+    document.getElementById('estenderNovoCheckout').value=requestedCheckout||row.data_checkout||row.data_checkout_prevista||'';
     document.getElementById('estenderObs').value='';
     setFeedback('estenderFeedback','');
     document.getElementById('modalEstender').classList.add('open');
@@ -1433,7 +1437,7 @@ export function renderContent(content, userContext) {
     const {error}=await supabase.from('hospedagem_reservas').update({
       data_checkout:novoCheckout,
       quantidade_diarias:diffDays(state.selected.data_checkin||state.selected.data_checkin_prevista,novoCheckout),
-      status_hospedagem:'RENOVACAO_NECESSARIA',
+      status_hospedagem:'HOSPEDADO',
       observacao_hospedagem:appendObservacaoProcesso(state.selected,'Extensão de reserva',[
         `Novo checkout: ${brDate(novoCheckout)}`,
         ficam.length?`Ficam: ${ficam.join(', ')}`:'',
@@ -1443,6 +1447,12 @@ export function renderContent(content, userContext) {
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
     if (error) { setFeedback('estenderFeedback',error.message,'err'); return; }
+    const extensionIds=Array.isArray(window.__hospedagemExtensaoSolicitacoes)?window.__hospedagemExtensaoSolicitacoes:[];
+    if(extensionIds.length){
+      await supabase.from('hospedagem_reserva_solicitacoes').upsert(extensionIds.map((solicitacao_id)=>({reserva_id:state.selected.reserva_id,solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
+      await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',extensionIds);
+      window.__hospedagemExtensaoSolicitacoes=[];
+    }
     setFeedback('estenderFeedback','Extensão salva com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalEstender').classList.remove('open'),800);
@@ -1455,11 +1465,11 @@ export function renderContent(content, userContext) {
     const colabs=getColaboradoresDetalhados(row);
     const stageLabel=ANDAMENTO_STAGES.find((s) => s.bucket===painelBucket(row))?.label||'';
     document.getElementById('checkoutSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}${stageLabel?` · Estágio: ${stageLabel}`:''}`;
-    document.getElementById('checkoutColabList').innerHTML=colabs.map((c) => {
+    document.getElementById('checkoutColabList').innerHTML=colabs.map((c,index) => {
       const nome=c.nome_colaborador||c.nome||'-';
-      return `<div class="adm-colab-chip"><span class="cn">${esc(nome)}</span></div>`;
+      return `<label class="adm-colab-check"><input type="checkbox" data-checkout-colab="${index}" checked><span>${esc(nome)}</span></label>`;
     }).join('')||'<span class="muted">Nenhum colaborador</span>';
-    document.getElementById('checkoutValorDiarias').textContent=money(Number(row.valor_total_previsto||0));
+    document.getElementById('checkoutValorDiarias').textContent=money(calcularValorDiarias(row));
     document.getElementById('checkoutExtrasList').innerHTML='';
     document.getElementById('checkoutObs').value='';
     updateCheckoutTotal();
@@ -1489,23 +1499,39 @@ export function renderContent(content, userContext) {
   }
 
   function updateCheckoutTotal() {
-    const base=Number(state.selected?.valor_total_previsto||0);
+    const base=calcularValorDiarias(state.selected);
     const extras=getCheckoutExtrasData().reduce((s,e) => s+(e.tipo==='desconto'?-e.valor:e.valor),0);
     const total=document.getElementById('checkoutTotal');
     if (total) total.textContent=money(base+extras);
   }
 
   function calcularTotalCheckout() {
-    const base=Number(state.selected?.valor_total_previsto||0);
+    const base=calcularValorDiarias(state.selected);
     return base+getCheckoutExtrasData().reduce((s,e) => s+(e.tipo==='desconto'?-e.valor:e.valor),0);
+  }
+
+  function calcularValorDiarias(row) {
+    if (!row) return 0;
+    const inicio=row.data_checkin||row.data_checkin_prevista;
+    const fim=row.data_checkout||row.data_checkout_prevista;
+    const dias=Math.max(1,diffDays(inicio,fim));
+    const quartos=Math.max(1,Number(row.quantidade_quartos||1));
+    const diaria=Number(row.valor_diaria||0);
+    return diaria>0?diaria*quartos*dias:Number(row.valor_total_previsto||0);
   }
 
   async function enviarFinanceiroCheckout() {
     if (!state.selected?.reserva_id) { setFeedback('checkoutFeedback','Reserva não encontrada.','err'); return; }
-    const total=calcularTotalCheckout();
+    const allColabs=getColaboradoresDetalhados(state.selected);
+    const selectedColabs=allColabs.filter((_,index)=>document.querySelector(`[data-checkout-colab="${index}"]`)?.checked);
+    if(!selectedColabs.length){setFeedback('checkoutFeedback','Selecione ao menos um colaborador para o checkout.','err');return;}
+    const proportion=allColabs.length?selectedColabs.length/allColabs.length:1;
     const extras=getCheckoutExtrasData();
+    const valorDiarias=calcularValorDiarias(state.selected)*proportion;
+    const valorExtras=extras.reduce((s,e)=>s+(e.tipo==='desconto'?-e.valor:e.valor),0);
+    const total=valorDiarias+valorExtras;
     const obs=document.getElementById('checkoutObs')?.value.trim()||'';
-    const colabs=getColaboradoresDetalhados(state.selected).map((c) => c.nome_colaborador||c.nome).filter(Boolean).join(', ');
+    const colabs=selectedColabs.map((c) => c.nome_colaborador||c.nome).filter(Boolean).join(', ');
     const destino=[state.selected.cidade,state.selected.uf].filter(Boolean).join('/');
     const checkin=state.selected.data_checkin||state.selected.data_checkin_prevista;
     const checkout=state.selected.data_checkout||state.selected.data_checkout_prevista;
@@ -1524,13 +1550,16 @@ export function renderContent(content, userContext) {
     const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:'ENVIADO_AO_FINANCEIRO',valor_total:total};
     if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
     else await supabase.from('hospedagem_financeiro').insert(finPayload);
+    const {data:lote}=await supabase.from('hospedagem_checkout_lotes').insert({reserva_id:state.selected.reserva_id,hotel_id:state.selected.hotel_id||null,data_checkout:new Date().toISOString().slice(0,10),valor_diarias:valorDiarias,valor_extras:valorExtras,valor_total:total,status:'PENDENTE',observacoes:obs||null}).select('id').single();
+    if(lote?.id) await supabase.from('hospedagem_checkout_lote_colaboradores').insert(selectedColabs.map((c)=>({lote_id:lote.id,reserva_colaborador_id:c.id||null,nome_colaborador:c.nome_colaborador||c.nome||'-'})));
+    if(extras.length) await supabase.from('hospedagem_custos_extras').insert(extras.map((extra)=>({solicitacao_id:state.selected.solicitacao_id,reserva_id:state.selected.reserva_id,tipo:extra.tipo==='desconto'?'DESCONTO':'OUTROS',descricao:extra.descricao,quantidade:1,valor_unitario:extra.valor,valor_total:extra.valor})));
+    const parcial=selectedColabs.length<allColabs.length;
     await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:'CHECKOUT_REALIZADO',
-      valor_total_previsto:total,
+      status_hospedagem:parcial?'HOSPEDADO':'CHECKOUT_REALIZADO',
       observacao_hospedagem:appendObservacaoProcesso(state.selected,'Enviado ao financeiro',[money(total),extras.length?extras.map((e) => `${e.tipo==='desconto'?'Desconto':'Extra'}: ${e.descricao} ${money(e.valor)}`).join('; '):'',obs]),
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
-    setFeedback('checkoutFeedback','Enviado ao financeiro com sucesso.','ok');
+    setFeedback('checkoutFeedback',parcial?'Checkout parcial registrado; os demais colaboradores permanecem hospedados.':'Checkout da equipe registrado com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalCheckout').classList.remove('open'),800);
   }
@@ -1600,20 +1629,28 @@ export function renderContent(content, userContext) {
 
   // ─── Modal: Pagar ──────────────────────────────────────────────────────────
 
-  function openModalPagar() {
+  async function openModalPagar() {
     const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
     const selectedRows=state.rows.filter((row)=>ids.includes(row.solicitacao_id));
     const batch=selectedRows.length?selectedRows:[state.selected];
-    const total=batch.reduce((sum,row)=>sum+Number(row?.valor_financeiro||row?.valor_total_previsto||0),0)||calcularTotalCheckout();
+    const total=batch.reduce((sum,row)=>sum+Number(row?.valor_financeiro||calcularValorDiarias(row)||0),0)||calcularTotalCheckout();
     const hotel=getHotelById(state.selected?.hotel_id);
     document.getElementById('pagarSub').textContent=`${state.selected?.hotel||'-'} · ${money(total)}`;
     document.getElementById('pagarCnpj').value=hotel?.cnpj_cpf||'';
     document.getElementById('pagarFornecedor').value=state.selected?.hotel||'';
-    document.getElementById('pagarValor').value=total.toFixed(2);
+    let credito=0;
+    state.adiantamentosAplicaveis=[];
+    if(state.selected?.hotel_id){
+      const {data:adiantamentos}=await supabase.from('hospedagem_adiantamentos').select('*').eq('hotel_id',state.selected.hotel_id).eq('status','DISPONIVEL').gt('saldo',0).order('created_at');
+      state.adiantamentosAplicaveis=adiantamentos||[];
+      credito=Math.min(total,state.adiantamentosAplicaveis.reduce((sum,item)=>sum+Number(item.saldo||0),0));
+    }
+    document.getElementById('pagarValor').value=Math.max(0,total-credito).toFixed(2);
     document.getElementById('pagarPix').value=hotel?.pix_chave||'';
     const dates=batch.flatMap((row)=>[row?.data_checkin||row?.data_checkin_prevista,row?.data_checkout||row?.data_checkout_prevista]).filter(Boolean).sort();
     const names=[...new Set(batch.flatMap((row)=>getColaboradoresDetalhados(row).map((c)=>c.nome_colaborador||c.nome).filter(Boolean)))];
-    document.getElementById('pagarResumoSelecao').textContent=`${brDate(dates[0])} até ${brDate(dates.at(-1))} · ${names.join(', ')||'Sem colaboradores'} · ${batch.length} hospedagem(ns)`;
+    document.getElementById('pagarResumoSelecao').textContent=`${brDate(dates[0])} até ${brDate(dates.at(-1))} · ${names.join(', ')||'Sem colaboradores'} · ${batch.length} hospedagem(ns)${credito?` · ${money(credito)} de adiantamento aplicado`:''}`;
+    const taxa=document.getElementById('pagarTaxaBancaria'); if(taxa) taxa.checked=false;
     const pixBox=document.getElementById('pixQrBox');
     pixBox?.classList.remove('open');
     const pixCopia=document.getElementById('pixCopiaCola');
@@ -1636,17 +1673,27 @@ export function renderContent(content, userContext) {
   async function confirmarPagamento() {
     const fornecedor=document.getElementById('pagarFornecedor')?.value.trim();
     const valor=Number(document.getElementById('pagarValor')?.value||0);
-    if (!fornecedor||!valor) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
+    if (!fornecedor||valor<0) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
     if (!state.selected?.reserva_id) { setFeedback('pagarFeedback','Reserva não encontrada.','err'); return; }
     setFeedback('pagarFeedback','Registrando pagamento...');
     const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
     const batch=state.rows.filter((row)=>ids.includes(row.solicitacao_id)&&row.reserva_id);
     const targets=batch.length?batch:[state.selected];
-    const total=targets.reduce((sum,row)=>sum+Number(row.valor_financeiro||row.valor_total_previsto||0),0)||calcularTotalCheckout();
-    if (valor>total) { setFeedback('pagarFeedback','O valor pago não pode ser maior que o saldo.','err'); return; }
-    const parcial=document.querySelector('input[name="pagarTipo"]:checked')?.value==='PARCIAL'||valor<total;
-    for(const target of targets){const targetTotal=Number(target.valor_financeiro||target.valor_total_previsto||0);const paid=Math.min(targetTotal,total?valor*(targetTotal/total):valor);const targetPartial=parcial||paid<targetTotal;const finPayload={reserva_id:target.reserva_id,status_financeiro:targetPartial?'PARCIAL':'PAGO',valor_original:targetTotal,valor_total:targetTotal,valor_pago:paid,saldo:Math.max(0,targetTotal-paid),pagamento_parcial:targetPartial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString()};if(target.financeiro_id)await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',target.financeiro_id);else await supabase.from('hospedagem_financeiro').insert(finPayload);await supabase.from('hospedagem_reservas').update({status_hospedagem:'CHECKOUT_REALIZADO',atualizado_por:userContext?.user?.id||null}).eq('id',target.reserva_id);}
-    setFeedback('pagarFeedback',parcial?`Pagamento parcial registrado. Saldo: ${money(total-valor)}.`:'Pagamento registrado.','ok');
+    const total=targets.reduce((sum,row)=>sum+Number(row.valor_financeiro||calcularValorDiarias(row)||0),0)||calcularTotalCheckout();
+    let creditoAplicado=0;
+    for(const adiantamento of (state.adiantamentosAplicaveis||[])){
+      const uso=Math.min(Number(adiantamento.saldo||0),Math.max(0,total-creditoAplicado)); if(!uso)continue;
+      const saldo=Number(adiantamento.saldo)-uso;
+      await supabase.from('hospedagem_adiantamentos').update({saldo,status:saldo>0?'DISPONIVEL':'UTILIZADO',updated_at:new Date().toISOString()}).eq('id',adiantamento.id);
+      await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:adiantamento.id,reserva_id:state.selected.reserva_id,tipo:'DEBITO',valor:uso,observacoes:'Débito automático em nova hospedagem',criado_por:userContext?.user?.id||null});
+      creditoAplicado+=uso;
+    }
+    const recebido=valor+creditoAplicado, excedente=Math.max(0,recebido-total), pagoReserva=Math.min(total,recebido);
+    const classificacao=excedente>0?'ADIANTAMENTO':pagoReserva<total?'PARCIAL':'TOTAL';
+    const taxa=document.getElementById('pagarTaxaBancaria')?.checked?2:0;
+    for(const target of targets){const targetTotal=calcularValorDiarias(target)||Number(target.valor_financeiro||target.valor_total_previsto||0);const paid=Math.min(targetTotal,total?pagoReserva*(targetTotal/total):pagoReserva);const targetPartial=paid<targetTotal;const finPayload={reserva_id:target.reserva_id,status_financeiro:targetPartial?'PARCIAL':'PAGO',valor_original:targetTotal,valor_total:targetTotal,valor_pago:paid,saldo:Math.max(0,targetTotal-paid),pagamento_parcial:targetPartial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString(),taxa_bancaria:taxa,valor_comprovante:valor+taxa,classificacao_pagamento:classificacao,adiantamento_gerado:excedente};if(target.financeiro_id)await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',target.financeiro_id);else await supabase.from('hospedagem_financeiro').insert(finPayload);await supabase.from('hospedagem_reservas').update({status_hospedagem:'CHECKOUT_REALIZADO',atualizado_por:userContext?.user?.id||null}).eq('id',target.reserva_id);}
+    if(excedente>0&&state.selected.hotel_id){const {data:advance}=await supabase.from('hospedagem_adiantamentos').insert({hotel_id:state.selected.hotel_id,reserva_origem_id:state.selected.reserva_id,valor_creditado:excedente,saldo:excedente,status:'DISPONIVEL',observacoes:'Crédito gerado por pagamento superior ao total',criado_por:userContext?.user?.id||null}).select('id').single();if(advance?.id)await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:advance.id,reserva_id:state.selected.reserva_id,tipo:'CREDITO',valor:excedente,observacoes:'Adiantamento recebido',criado_por:userContext?.user?.id||null});}
+    setFeedback('pagarFeedback',classificacao==='PARCIAL'?`Pagamento parcial registrado. Saldo: ${money(total-pagoReserva)}.`:classificacao==='ADIANTAMENTO'?`Pagamento registrado e ${money(excedente)} lançado como adiantamento.`:`Pagamento registrado${taxa?' com comprovante acrescido de R$ 2,00 de taxa':''}.`,'ok');
     await loadRows();
     setTimeout(() => { document.getElementById('modalPagar').classList.remove('open'); document.getElementById('modalCheckout').classList.remove('open'); },1200);
   }
