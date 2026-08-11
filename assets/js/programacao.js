@@ -64,6 +64,12 @@ function todayIso() {
   return new Date(now.getTime() - tz).toISOString().slice(0, 10);
 }
 
+function brDate(iso) {
+  if (!iso) return '-';
+  const [ano, mes, dia] = String(iso).slice(0, 10).split('-');
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : String(iso);
+}
+
 function normalizeCpf(value) {
   return String(value || '').replace(/\D/g, '');
 }
@@ -370,6 +376,11 @@ function injectProgramacaoStyles() {
     .prog-os-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px}.prog-os-modal-head h3{margin:0;color:#f8fafc;font-size:22px}.prog-os-modal-head p{margin:6px 0 0;color:#6b7280}
     .prog-os-list{display:grid;gap:10px}.prog-os-card{border:1px solid rgba(52,211,153,.16);background:rgba(15,23,42,.62);border-radius:18px;padding:14px}.prog-os-card.zero{box-shadow:inset 4px 0 0 #facc15}.prog-os-title{font-weight:950;color:#f8fafc}.prog-os-meta{font-size:12px;color:#6b7280;margin-top:4px}.prog-os-rem{display:inline-flex;border-radius:999px;padding:5px 10px;margin-top:8px;font-size:12px;font-weight:950;border:1px solid rgba(250,204,21,.25);color:#fde68a;background:rgba(113,63,18,.22)}
     .prog-os-modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.prog-os-close{border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.72);color:#e2e2f0;border-radius:13px;padding:10px 14px;font-weight:900;cursor:pointer}.prog-os-go{border:1px solid rgba(187,247,208,.32);background:linear-gradient(135deg,#16a34a,#86efac);color:#052e16;border-radius:13px;padding:10px 14px;font-weight:950;cursor:pointer}
+    .prog-duplicate-backdrop[hidden]{display:none}.prog-duplicate-backdrop{position:fixed;inset:0;z-index:9992;display:grid;place-items:center;padding:18px;background:rgba(1,8,5,.78);backdrop-filter:blur(9px)}
+    .prog-duplicate-modal{width:min(560px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(111,208,165,.3);border-radius:24px;background:linear-gradient(155deg,#0d241a,#07120d 70%);box-shadow:0 30px 90px rgba(0,0,0,.58);padding:22px;color:#e8f6ee}
+    .prog-duplicate-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.prog-duplicate-head h3{margin:0;font-size:20px}.prog-duplicate-head p{margin:6px 0 0;color:#8ba79a;font-size:12px}.prog-duplicate-close{width:34px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:rgba(2,6,23,.35);color:#b8ccc0;font-size:20px;cursor:pointer}
+    .prog-duplicate-source{margin:16px 0 14px;padding:11px 13px;border:1px solid rgba(111,208,165,.15);border-radius:13px;background:rgba(63,168,120,.08);color:#b8ccc0;font-size:11px}.prog-duplicate-dates{display:grid;gap:8px}.prog-duplicate-date{display:grid;grid-template-columns:28px 1fr 34px;align-items:center;gap:9px}.prog-duplicate-date span{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:rgba(63,168,120,.16);color:#6fd0a5;font-size:10px;font-weight:900}.prog-duplicate-date input{width:100%;min-height:42px;padding:8px 11px;border:1px solid rgba(111,208,165,.24);border-radius:12px;background:#081a12;color:#eef7f2;color-scheme:dark}.prog-duplicate-remove{height:34px;border:0;border-radius:9px;background:rgba(239,68,68,.1);color:#fca5a5;cursor:pointer}.prog-duplicate-add{margin-top:10px;border:1px dashed rgba(111,208,165,.28);border-radius:11px;background:transparent;color:#9edcbd;padding:9px 12px;font-weight:800;cursor:pointer}.prog-duplicate-add:disabled{opacity:.35;cursor:not-allowed}
+    .prog-duplicate-note{margin-top:13px;color:#789486;font-size:10px;line-height:1.5}.prog-duplicate-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.prog-duplicate-actions button{min-height:40px;padding:0 15px;border-radius:12px;font-weight:900;cursor:pointer}.prog-duplicate-cancel{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.45);color:#cbd5e1}.prog-duplicate-confirm{border:1px solid rgba(111,208,165,.35);background:linear-gradient(135deg,#23865a,#6fd0a5);color:#042d1c}.prog-duplicate-confirm:disabled{opacity:.5;cursor:wait}
     @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}.prog-estadia-selector{grid-template-columns:repeat(3,minmax(70px,1fr));min-width:220px}}
   `;
   document.head.appendChild(style);
@@ -381,17 +392,17 @@ export function renderContent(content) {
   content.innerHTML = `
     <section class="card prog-toolbar">
       <div class="prog-toolbar-row">
-        <div class="prog-tfield prog-tfield-sup">
-          <label for="progSup">Supervisão</label>
-          <select id="progSup"></select>
+        <div class="prog-context-group">
+          <div class="prog-tfield prog-tfield-sup">
+            <label for="progSup">Supervisão</label>
+            <select id="progSup"></select>
+          </div>
+          <div class="prog-tfield prog-tfield-date">
+            <label for="progDataRef">Data</label>
+            <input id="progDataRef" type="date" />
+          </div>
+          <button class="btn btn-primary" type="button" id="progLoadContext" title="Carregar colaboradores da supervisão/data selecionada">Carregar</button>
         </div>
-        <div class="prog-tfield prog-tfield-date">
-          <label for="progDataRef">Data</label>
-          <input id="progDataRef" type="date" />
-        </div>
-        <button class="btn btn-primary" type="button" id="progLoadContext" title="Carregar colaboradores da supervisão/data selecionada">Carregar</button>
-        <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
-        <button class="btn" type="button" id="progCompartilhar" title="Monta a mensagem de locais/colaboradores e motoristas/caronas do dia para compartilhar no WhatsApp">📤 Compartilhar</button>
 
         <div class="prog-toolbar-spacer"></div>
 
@@ -400,6 +411,13 @@ export function renderContent(content) {
           <input id="progSearch" type="text" placeholder="Nome, cargo ou supervisão..." />
         </div>
         <button class="prog-save-main" type="button" id="progSaveProgramacao" disabled title="As alterações já são salvas automaticamente — este botão confirma e finaliza a programação. Para a O.S. aparecer no Mapa Operacional, marque-a como &quot;Atender&quot; na etapa de equipe e programe para a data de hoje.">Salvar programação</button>
+        <div class="prog-actions-block">
+          <div class="prog-action-row">
+            <button class="btn" type="button" id="progGerarPdf" title="Gera um PDF com OS, colaborador, deslocamento, estadia, refeições e extras do dia">📄 Gerar PDF</button>
+            <button class="btn" type="button" id="progCompartilhar" title="Monta a mensagem de locais/colaboradores e motoristas/caronas do dia para compartilhar no WhatsApp">📤 Compartilhar</button>
+          </div>
+          <button class="btn prog-duplicate-btn" type="button" id="progDuplicar" title="Copia esta programação para até cinco datas">⧉ Duplicar</button>
+        </div>
       </div>
 
       <div class="prog-toolbar-row prog-toolbar-row-steps">
@@ -413,6 +431,16 @@ export function renderContent(content) {
     <section class="card mt-16 prog-list-card">
       <div class="prog-list" id="progList"></div>
     </section>
+    <div class="prog-duplicate-backdrop" id="progDuplicateModal" hidden>
+      <section class="prog-duplicate-modal" role="dialog" aria-modal="true" aria-labelledby="progDuplicateTitle">
+        <header class="prog-duplicate-head"><div><h3 id="progDuplicateTitle">Selecione as datas para duplicar</h3><p>Você pode copiar a programação para até 5 dias.</p></div><button class="prog-duplicate-close" type="button" data-duplicate-close aria-label="Fechar">×</button></header>
+        <div class="prog-duplicate-source" id="progDuplicateSource"></div>
+        <div class="prog-duplicate-dates" id="progDuplicateDates"></div>
+        <button class="prog-duplicate-add" id="progDuplicateAdd" type="button">＋ Adicionar outra data</button>
+        <div class="prog-duplicate-note">Equipe por O.S., disponibilidade, hospedagem, alimentação, despesas e frota serão copiadas. Datas que já possuem programação serão preservadas.</div>
+        <footer class="prog-duplicate-actions"><button class="prog-duplicate-cancel" type="button" data-duplicate-close>Cancelar</button><button class="prog-duplicate-confirm" id="progDuplicateConfirm" type="button">Duplicar programação</button></footer>
+      </section>
+    </div>
   `;
 
   const el = {
@@ -425,6 +453,12 @@ export function renderContent(content) {
     search: document.getElementById('progSearch'),
     saveBtn: document.getElementById('progSaveProgramacao'),
     pdfBtn: document.getElementById('progGerarPdf'),
+    duplicateBtn: document.getElementById('progDuplicar'),
+    duplicateModal: document.getElementById('progDuplicateModal'),
+    duplicateSource: document.getElementById('progDuplicateSource'),
+    duplicateDates: document.getElementById('progDuplicateDates'),
+    duplicateAdd: document.getElementById('progDuplicateAdd'),
+    duplicateConfirm: document.getElementById('progDuplicateConfirm'),
     statTotal: document.getElementById('progStatTotal'),
     statBlocked: document.getElementById('progStatBlocked'),
     currentStep: document.getElementById('progCurrentStep'),
@@ -504,6 +538,20 @@ export function renderContent(content) {
     });
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.pdfBtn.addEventListener('click', gerarPdfProgramacao);
+    el.duplicateBtn.addEventListener('click', openDuplicateModal);
+    el.duplicateAdd.addEventListener('click', () => addDuplicateDate());
+    el.duplicateConfirm.addEventListener('click', duplicateProgramacao);
+    el.duplicateModal.addEventListener('click', (event) => {
+      if (event.target === el.duplicateModal || event.target.closest('[data-duplicate-close]')) closeDuplicateModal();
+      const remove = event.target.closest('[data-duplicate-remove]');
+      if (remove) {
+        remove.closest('.prog-duplicate-date')?.remove();
+        renumberDuplicateDates();
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !el.duplicateModal.hidden) closeDuplicateModal();
+    });
     el.search.addEventListener('input', debounce(() => {
       state.search = el.search.value.trim().toLowerCase();
       renderRows();
@@ -516,6 +564,85 @@ export function renderContent(content) {
     el.list.addEventListener('change', handleTableChange);
     el.list.addEventListener('input', handleTableInput);
     el.list.addEventListener('click', handleTableClick);
+  }
+
+  function addDaysIso(iso, days) {
+    const date = new Date(`${iso}T12:00:00`);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function renumberDuplicateDates() {
+    const rows = [...el.duplicateDates.querySelectorAll('.prog-duplicate-date')];
+    rows.forEach((row, index) => { row.querySelector('span').textContent = index + 1; });
+    el.duplicateAdd.disabled = rows.length >= 5;
+    rows.forEach((row) => { row.querySelector('[data-duplicate-remove]').hidden = rows.length === 1; });
+  }
+
+  function addDuplicateDate(value = '') {
+    if (el.duplicateDates.children.length >= 5) return;
+    const row = document.createElement('div');
+    row.className = 'prog-duplicate-date';
+    row.innerHTML = `<span></span><input type="date" min="${todayIso()}" value="${escapeHtml(value)}" aria-label="Data para duplicar"><button class="prog-duplicate-remove" type="button" data-duplicate-remove aria-label="Remover data">×</button>`;
+    el.duplicateDates.appendChild(row);
+    renumberDuplicateDates();
+    row.querySelector('input')?.focus();
+  }
+
+  function openDuplicateModal() {
+    if (!state.programacaoId || state.programacaoIdMap.size) {
+      setFeedback(state.programacaoIdMap.size ? 'Selecione uma única supervisão para duplicar a programação.' : 'Carregue uma programação antes de duplicar.', 'warn');
+      return;
+    }
+    el.duplicateDates.innerHTML = '';
+    addDuplicateDate(addDaysIso(state.dataReferencia, 1));
+    el.duplicateSource.textContent = `Origem: ${state.supervisao} · ${brDate(state.dataReferencia)}`;
+    el.duplicateModal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeDuplicateModal() {
+    el.duplicateModal.hidden = true;
+    document.body.style.overflow = '';
+    el.duplicateConfirm.disabled = false;
+    el.duplicateConfirm.textContent = 'Duplicar programação';
+  }
+
+  async function duplicateProgramacao() {
+    const datas = [...el.duplicateDates.querySelectorAll('input[type="date"]')].map((input) => input.value).filter(Boolean);
+    const unicas = [...new Set(datas)];
+    if (!unicas.length) {
+      setFeedback('Selecione ao menos uma data para duplicar.', 'warn');
+      return;
+    }
+    if (unicas.length !== datas.length) {
+      setFeedback('Remova as datas repetidas antes de continuar.', 'warn');
+      return;
+    }
+    if (unicas.includes(state.dataReferencia)) {
+      setFeedback('A data de destino deve ser diferente da data de origem.', 'warn');
+      return;
+    }
+    try {
+      el.duplicateConfirm.disabled = true;
+      el.duplicateConfirm.textContent = 'Duplicando...';
+      const { data, error } = await supabase.rpc('duplicar_programacao_dia', {
+        p_programacao_id: state.programacaoId,
+        p_datas: unicas,
+      });
+      if (error) throw error;
+      const copiadas = Array.isArray(data?.copiadas) ? data.copiadas : [];
+      const ignoradas = Array.isArray(data?.ignoradas) ? data.ignoradas : [];
+      closeDuplicateModal();
+      const resumo = copiadas.length ? `Programação duplicada para ${copiadas.map(brDate).join(', ')}.` : 'Nenhuma programação foi duplicada.';
+      const preservadas = ignoradas.length ? ` Datas já preenchidas e preservadas: ${ignoradas.map(brDate).join(', ')}.` : '';
+      setFeedback(`${resumo}${preservadas}`, copiadas.length ? 'ok' : 'warn');
+    } catch (error) {
+      console.error('[programacao] duplicar:', error);
+      el.duplicateConfirm.disabled = false;
+      el.duplicateConfirm.textContent = 'Duplicar programação';
+      setFeedback(error.message || 'Não foi possível duplicar a programação.', 'error');
+    }
   }
 
 
