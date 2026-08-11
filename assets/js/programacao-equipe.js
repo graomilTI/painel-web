@@ -863,6 +863,40 @@ export function candCardHtml(cand, selected, minCustoId) {
 
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 
+const AGENTE_DISTRIBUICAO_OS = 'aplicar-distribuicao-os';
+
+async function enfileirarDistribuicaoOs() {
+  const { data: jobAtivo, error: consultaError } = await supabase
+    .from('grm_sync_jobs')
+    .select('id')
+    .eq('agente_id', AGENTE_DISTRIBUICAO_OS)
+    .in('status', ['pendente', 'rodando'])
+    .limit(1)
+    .maybeSingle();
+  if (consultaError) throw new Error(`A O.S. voltou para a fila, mas não foi possível verificar o disparo do agente: ${consultaError.message}`);
+  if (jobAtivo) return;
+
+  const { error: disparoError } = await supabase
+    .from('grm_sync_jobs')
+    .insert({ agente_id: AGENTE_DISTRIBUICAO_OS, status: 'pendente' });
+  if (disparoError) throw new Error(`A O.S. voltou para a fila, mas o novo disparo do agente falhou: ${disparoError.message}`);
+}
+
+async function reabrirDistribuicaoOs(osId, updatedAt = new Date().toISOString()) {
+  if (!osId) return;
+  const { error } = await supabase
+    .from('operacional_os')
+    .update({
+      status_conferencia: 'PENDENTE',
+      conferido_por: null,
+      conferido_em: null,
+      updated_at: updatedAt,
+    })
+    .eq('id', osId);
+  if (error) throw new Error(`A O.S. foi alterada, mas não voltou para a fila de distribuição: ${error.message}`);
+  await enfileirarDistribuicaoOs();
+}
+
 // Embarque vem como "UF – CIDADE (FAZENDA…)". Divide em 2 linhas: a 1ª com
 // UF - Cidade (UF destacada) e a 2ª com o local em si (o que vier entre
 // parênteses, ou o restante do texto quando não houver parênteses).
@@ -889,7 +923,14 @@ export function embarqueHtml(embarque) {
 export async function atualizarStatusOsCore(os, nextStatus, currentUserId, dataReferencia) {
   const agoraIso = new Date().toISOString();
   const kgAtivo = String(os?.observacao_logistica || '').startsWith('KG solicitado');
-  const patch = { status_gestor: nextStatus, configurada_em: agoraIso, updated_at: agoraIso };
+  const patch = {
+    status_gestor: nextStatus,
+    configurada_em: agoraIso,
+    status_conferencia: 'PENDENTE',
+    conferido_por: null,
+    conferido_em: null,
+    updated_at: agoraIso,
+  };
   // data_os é quando a O.S. está sendo atendida, não quando foi aberta — ela
   // pode ter sido aberta dias atrás e só ser atendida dias à frente, conforme
   // a necessidade do cliente (esclarecido pelo usuário, 2026-08-03). Move
@@ -907,6 +948,7 @@ export async function atualizarStatusOsCore(os, nextStatus, currentUserId, dataR
   }
   const { error } = await supabase.from('operacional_os').update(patch).eq('id', os.id);
   if (error) throw error;
+  if (nextStatus === 'ATENDER') await enfileirarDistribuicaoOs();
 }
 
 export async function registrarSaldoKg(osId, kg) {
@@ -1069,6 +1111,7 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   };
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
+  await reabrirDistribuicaoOs(os.id);
 }
 
 let frotasMotoristasCache = null;
@@ -1183,6 +1226,7 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
   ]);
   if (vinculoRes?.error) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoRes.error);
   if (espelhoRes?.error) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoRes.error);
+  await reabrirDistribuicaoOs(os.id);
 
   return upsertRows?.[0] || { ...payload, id: null };
 }
@@ -1203,6 +1247,7 @@ export async function removerConfirmacao(programacaoId, equipeRowId) {
       .eq('os_id', osId)
       .eq('colaborador_key', colaboradorId);
     if (vinculoErr) console.warn('[programacao-equipe] falha ao remover vínculo OS<->colaborador.', vinculoErr);
+    await reabrirDistribuicaoOs(osId);
   }
 
   if (colaboradorId) {
