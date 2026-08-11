@@ -383,8 +383,8 @@ function operationalRowHtml(row,stage) {
     <div class="hosp-v2-stage-cell"><strong>${brDate(checkin)}</strong><small>até ${brDate(checkout)}</small></div>
     <div class="hosp-v2-stage-cell people"><strong>${esc(people.join(', ')||row.colaboradores||row.colaborador||'-')}</strong></div>
     <div class="hosp-v2-stage-cell value"><strong>${value?money(value):'A confirmar'}</strong></div>
-    <div class="hosp-v2-stage-cell"><span class="hosp-v2-dot-status ${paid?'paid':partial?'partial':''}">${paid?'Pago':partial?'Parcial':'Pendente'}</span></div>
-    <div class="hosp-v2-stage-cell"><span class="hosp-v2-dot-status ${hasNf?'paid':''}">${hasNf?'Anexada':'Pendente'}</span></div>
+    <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${paid?'paid':partial?'partial':''}" title="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}" role="img" aria-label="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}"></span></div>
+    <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${hasNf?'paid':''}" title="${hasNf?'NF anexada':'NF pendente'}" role="img" aria-label="${hasNf?'NF anexada':'NF pendente'}"></span></div>
     <div class="hosp-v2-stage-cell"><div class="hosp-v2-stage-actions">${actions}</div></div>
   </article>`;
 }
