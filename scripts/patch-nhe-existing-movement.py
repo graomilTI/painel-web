@@ -40,11 +40,11 @@ if s.count(anchor) != 1:
     raise SystemExit('anchor nheRealPorChaveCache nao encontrado exatamente uma vez')
 s = s.replace(anchor, insert, 1)
 
-# 2) Status terminal adicional.
-old = ".in('status', ['JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);"
-new = ".in('status', ['JA_EXISTIA_GRM', 'JA_EXISTIA_MOVIMENTO_GRM', 'SALVO_NAO_CONFIRMADO']);"
+# 2) Status terminal adicional no guard atual.
+old = "var statusesResolvidos = ['JA_EXISTIA_GRM'];"
+new = "var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_MOVIMENTO_GRM'];"
 if s.count(old) != 1:
-    raise SystemExit('lista de status resolvidos nao encontrada exatamente uma vez')
+    raise SystemExit('statusesResolvidos nao encontrado exatamente uma vez')
 s = s.replace(old, new, 1)
 
 # 3) Estatística.
