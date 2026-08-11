@@ -74,6 +74,8 @@ var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() ===
 // Em recuperação manual, permite processar lotes sequenciais sem criar um job
 // concorrente no worker (use NHE_LANCAMENTO_AUTO_CONTINUACAO=false).
 var AUTO_CONTINUACAO = String(process.env.NHE_LANCAMENTO_AUTO_CONTINUACAO || 'true').toLowerCase() !== 'false';
+// Somente diagnóstico manual: permite repetir SALVO_NAO_CONFIRMADO de uma O.S. explícita.
+var REPETIR_NAO_CONFIRMADO = String(process.env.NHE_LANCAMENTO_REPETIR_NAO_CONFIRMADO || 'false').toLowerCase() === 'true';
 
 var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
 var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
@@ -531,12 +533,14 @@ async function buscarPendentes() {
 async function buscarPendenciasAnteriores(dataReferencia) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
   inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO'];
+  if (REPETIR_NAO_CONFIRMADO) statusesHistoricos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
     .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
     .gte('data_referencia', ymd(inicio))
     .lt('data_referencia', dataReferencia)
-    .in('status', ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO'])
+    .in('status', statusesHistoricos)
     .order('data_referencia', { ascending: true });
   if (result.error) throw result.error;
   return (result.data || []).map(function (row) {
@@ -740,12 +744,14 @@ async function existeNheReal(dataReferencia, numeroOs) {
 async function carregarJaLancadas(dataReferencia) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
   inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesResolvidos = ['JA_EXISTIA_GRM'];
+  if (!REPETIR_NAO_CONFIRMADO) statusesResolvidos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
     .select('data_referencia,numero_os,status')
     .gte('data_referencia', ymd(inicio))
     .lte('data_referencia', dataReferencia)
-    .in('status', ['JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);
+    .in('status', statusesResolvidos);
   if (result.error) throw result.error;
   var set = {};
   (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
@@ -1202,6 +1208,40 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     return;
   }
 
+  // Diagnóstico da atualização do GRM: captura XHR/fetch disparados pelo Salvar.
+  // Não registra headers/tokens; somente método, URL, status, payload e resposta limitada.
+  var respostasSalvar = [];
+  var falhasSalvar = [];
+  var promessasSalvar = [];
+  function onResponseSalvar(response) {
+    try {
+      var req = response.request();
+      var tipo = req.resourceType();
+      if (tipo !== 'xhr' && tipo !== 'fetch') return;
+      if (response.url().indexOf('/api/') === -1) return;
+      var promessa = response.text().catch(function () { return ''; }).then(function (body) {
+        respostasSalvar.push({
+          metodo: req.method(),
+          url: response.url(),
+          status: response.status(),
+          payload: String(req.postData() || '').slice(0, 1500),
+          resposta: String(body || '').slice(0, 1500)
+        });
+      });
+      promessasSalvar.push(promessa);
+    } catch (_) {}
+  }
+  function onFalhaSalvar(request) {
+    try {
+      var tipo = request.resourceType();
+      if ((tipo === 'xhr' || tipo === 'fetch') && request.url().indexOf('/api/') !== -1) {
+        falhasSalvar.push({ metodo: request.method(), url: request.url(), erro: request.failure() });
+      }
+    } catch (_) {}
+  }
+  page.on('response', onResponseSalvar);
+  page.on('requestfailed', onFalhaSalvar);
+
   var salvo = await page.evaluate(function () {
     var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
     var dialog = dialogs.reverse().find(function (d) { return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1; });
@@ -1210,8 +1250,27 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     btn.click();
     return true;
   });
-  if (!salvo) throw new Error('Botão "Salvar" não encontrado no modal Adicionar NHE.');
-  await wait(2000);
+  if (!salvo) {
+    page.removeListener('response', onResponseSalvar);
+    page.removeListener('requestfailed', onFalhaSalvar);
+    throw new Error('Botão "Salvar" não encontrado no modal Adicionar NHE.');
+  }
+  await wait(4000);
+  page.removeListener('response', onResponseSalvar);
+  page.removeListener('requestfailed', onFalhaSalvar);
+  await Promise.allSettled(promessasSalvar);
+
+  var mensagensUi = await page.evaluate(function () {
+    var seletores = '.v-snackbar--active,.v-alert,[role="alert"],.v-messages__message';
+    return Array.from(document.querySelectorAll(seletores))
+      .map(function (el) { return String(el.innerText || el.textContent || '').trim(); })
+      .filter(Boolean)
+      .slice(-20);
+  }).catch(function () { return []; });
+
+  log('INFO', 'DIAGNOSTICO_SALVAR_HTTP=' + JSON.stringify(respostasSalvar));
+  if (falhasSalvar.length) log('WARN', 'DIAGNOSTICO_SALVAR_FALHAS=' + JSON.stringify(falhasSalvar));
+  if (mensagensUi.length) log('INFO', 'DIAGNOSTICO_SALVAR_UI=' + JSON.stringify(mensagensUi));
 }
 
 // Depois de lançar NHE de verdade no GRM, o painel FOB (logistica-fob-page-v9.js)
