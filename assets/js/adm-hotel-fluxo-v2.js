@@ -11,6 +11,8 @@ const state = {
   collaborators: new Map(),
   selectedRequests: new Set(),
   selectedId: null,
+  requestStatus: 'todas',
+  reservationStatus: 'todas',
   requestSort: { field: 'data', direction: 'desc' },
   stageSort: { andamento: { field: 'data', direction: 'asc' }, pagar: { field: 'data', direction: 'asc' }, nf: { field: 'data', direction: 'desc' } },
   stageFilters: { colaborador:'', cidade:'', supervisao:'', hotel:'' },
@@ -71,6 +73,7 @@ function injectStyles() {
     .hosp-v2-kpi{position:relative;display:grid;grid-template-columns:40px 1fr;gap:10px;align-items:center;min-height:76px;padding:12px 14px;border-radius:15px;background:linear-gradient(145deg,rgba(5,29,21,.96),rgba(2,17,13,.96));border:1px solid rgba(34,197,94,.25);overflow:hidden}
     .hosp-v2-kpi::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--kpi,#4ade80),transparent);opacity:.8}.hosp-v2-kpi-ico{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(74,222,128,.09);color:var(--kpi,#4ade80)}.hosp-v2-kpi-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.hosp-v2-kpi small{display:block;color:#91a89e;font-size:11px;font-weight:800}.hosp-v2-kpi strong{display:block;color:#f4fff9;font-size:25px;line-height:1;margin-top:4px}.hosp-v2-kpi em{display:block;color:var(--kpi,#4ade80);font-size:11px;font-weight:850;font-style:normal;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .adm-hosp-tabs{padding:4px!important;border:1px solid rgba(34,197,94,.22)!important;border-radius:15px!important;background:rgba(2,15,11,.88)!important;margin:0 0 8px!important;align-items:center}.adm-hosp-tab{border:0!important;background:transparent!important;border-radius:11px!important;color:#a9bbb3!important;padding:9px 18px!important}.adm-hosp-tab.active{background:linear-gradient(180deg,rgba(22,101,52,.48),rgba(9,55,35,.5))!important;color:#b9ffd1!important;box-shadow:inset 0 0 0 1px rgba(74,222,128,.22),0 7px 22px rgba(0,0,0,.18)!important}.adm-hosp-tabs-sep,.adm-hosp-tabs-label{display:none!important}.adm-hosp-tabs>#refreshPainel{margin-left:auto!important;padding:9px 15px!important}.adm-hosp-panel>.card{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}.adm-hosp-panel>.card>.section-head{display:none!important}.adm-hosp-filterbar{margin:0 0 8px!important;border-radius:0!important;border-left:0!important;border-right:0!important;padding:9px 10px!important;background:#07151d!important}.adm-hosp-filter-meta{display:none!important}
+    .hosp-v2-view-tools{display:flex;align-items:center;gap:7px;overflow-x:auto;margin:0 0 10px;padding:2px;scrollbar-width:none}.hosp-v2-view-tools::-webkit-scrollbar{display:none}.hosp-v2-filter{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;border:1px solid rgba(74,222,128,.17);border-radius:999px;background:rgba(2,18,13,.65);color:#91a89e;padding:7px 11px;font-size:10.5px;font-weight:850;cursor:pointer}.hosp-v2-filter b{display:grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:rgba(255,255,255,.06);color:#c9ddd3;font-size:9.5px}.hosp-v2-filter.active{border-color:rgba(74,222,128,.48);background:rgba(22,101,52,.34);color:#d9ffe6}.hosp-v2-filter.active b{background:#4ade80;color:#052814}.hosp-v2-kpi{cursor:pointer;transition:.16s ease}.hosp-v2-kpi:hover{border-color:rgba(74,222,128,.55);transform:translateY(-1px)}.hosp-v2-pay-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:10px}.hosp-v2-pay-metric{padding:14px 16px;border:1px solid rgba(74,222,128,.2);border-radius:14px;background:linear-gradient(145deg,rgba(5,29,21,.95),rgba(2,17,13,.95))}.hosp-v2-pay-metric small{display:block;color:#8da59a;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}.hosp-v2-pay-metric strong{display:block;margin-top:7px;color:#f0fff6;font-size:21px}.hosp-v2-pay-metric.pending strong{color:#fbbf24}.hosp-v2-pay-metric.finance strong{color:#c4b5fd}
     .hosp-v2-hide-base{display:none!important}.hosp-v2-list{display:grid;gap:7px;overflow-x:auto}.hosp-v2-list-head{display:grid;grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(230px,1.2fr);min-width:1080px;padding:0 10px;color:#91a89e;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.hosp-v2-sort{display:flex;align-items:center;justify-content:flex-start;gap:6px;width:100%;padding:5px 9px;border:0;background:transparent;color:inherit;font:inherit;text-transform:inherit;letter-spacing:inherit;cursor:pointer;border-radius:7px;text-align:left}.hosp-v2-sort:hover{color:#d8ffe4;background:rgba(74,222,128,.07)}.hosp-v2-sort.is-active{color:#86efac}.hosp-v2-sort-arrow{font-size:12px;line-height:1;color:#4ade80}.hosp-v2-list-head-label{padding:5px 9px}
     .hosp-v2-row.hosp-v2-request-row{grid-template-columns:minmax(150px,.9fr) minmax(190px,1.05fr) minmax(240px,1.35fr) minmax(150px,.9fr) minmax(150px,.9fr) minmax(230px,1.2fr);min-width:1080px;border-radius:4px}.hosp-v2-request-row .hosp-v2-cell{padding:10px 12px;display:flex;align-items:center}.hosp-v2-request-row .hosp-v2-cell.actions{padding:5px}.hosp-v2-request-row .hosp-v2-city{display:flex;gap:7px;align-items:center;font-size:12px;font-weight:900;color:#effff5}.hosp-v2-request-row .hosp-v2-city svg,.hosp-v2-request-row .hosp-v2-date svg{width:14px;height:14px;fill:none;stroke:#4ade80;stroke-width:1.9;flex:0 0 auto}.hosp-v2-request-row .hosp-v2-date{display:flex;gap:7px;align-items:center;font-size:11.5px;font-weight:850;white-space:nowrap}.hosp-v2-select{display:flex;gap:9px;align-items:center;cursor:pointer}.hosp-v2-select input{width:17px;height:17px;accent-color:#4ade80}.hosp-v2-select span{display:flex;gap:7px;align-items:center}.hosp-v2-select svg{width:14px;height:14px;fill:none;stroke:#4ade80;stroke-width:1.9}.hosp-v2-people{display:block;color:#d8eee3;font-size:11px;font-weight:800;line-height:1.4}.hosp-v2-person{display:inline;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;text-transform:none}.hosp-v2-supervision{font-size:11px;font-weight:800;color:#c8dbd2}.hosp-v2-request-row .hosp-v2-hotel{font-size:11px}.hosp-v2-request-row .hosp-v2-actions{display:grid;grid-template-columns:repeat(3,minmax(64px,1fr));width:100%;gap:5px}.hosp-v2-request-row .hosp-v2-btn{min-height:39px;font-size:8.5px;border-radius:9px}.hosp-v2-request-row .hosp-v2-btn svg{width:15px;height:15px}
     .hosp-v2-row{position:relative;display:grid;grid-template-columns:minmax(190px,.9fr) minmax(310px,1.6fr) minmax(185px,.85fr) minmax(248px,1fr);gap:0;border:1px solid rgba(34,197,94,.28);border-radius:15px;background:linear-gradient(100deg,rgba(5,27,20,.98),rgba(2,16,12,.98));box-shadow:0 10px 28px rgba(0,0,0,.18);overflow:hidden;transition:.16s ease}
@@ -156,6 +159,18 @@ function mountShell() {
     const list = document.createElement('div');
     list.id = listId;
     list.className = 'hosp-v2-list';
+    if (tabId === 'tab-solicitadas' || tabId === 'tab-andamento') {
+      const tools = document.createElement('div');
+      tools.id = tabId === 'tab-solicitadas' ? 'hospV2RequestFilters' : 'hospV2ReservationFilters';
+      tools.className = 'hosp-v2-view-tools';
+      card.appendChild(tools);
+    }
+    if (tabId === 'tab-pagar') {
+      const summary = document.createElement('section');
+      summary.id = 'hospV2PaymentSummary';
+      summary.className = 'hosp-v2-pay-summary';
+      card.appendChild(summary);
+    }
     card.appendChild(list);
   });
   const andamentoList=$('#hospV2Andamento');
@@ -183,6 +198,14 @@ function bindEvents() {
     const close = event.target.closest('[data-v2-close]');
     if (close) { closeModal(close.dataset.v2Close); return; }
     if (event.target.closest('[data-v2-close-drawer]')) { $('#hospV2Drawer')?.classList.remove('open'); return; }
+    const tabShortcut = event.target.closest('[data-v2-tab]');
+    if (tabShortcut) { document.querySelector(`.adm-hosp-tab[data-tab="${tabShortcut.dataset.v2Tab}"]`)?.click(); return; }
+    const statusFilter = event.target.closest('[data-v2-status-filter]');
+    if (statusFilter) {
+      if (statusFilter.dataset.v2FilterScope === 'requests') state.requestStatus = statusFilter.dataset.v2StatusFilter;
+      if (statusFilter.dataset.v2FilterScope === 'reservations') state.reservationStatus = statusFilter.dataset.v2StatusFilter;
+      renderAll(); return;
+    }
     const sort = event.target.closest('[data-v2-sort]');
     if (sort) {
       const field = sort.dataset.v2Sort;
@@ -249,6 +272,7 @@ function bindEvents() {
   $('#solDirecao')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort.direction = $('#solDirecao')?.textContent?.trim() === '↑' ? 'asc' : 'desc'; renderAll(); }));
   $('#solLimparFiltros')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort = { field:'data', direction:'desc' }; renderAll(); }));
   document.addEventListener('change',(event)=>{const field=event.target?.dataset?.stageFilter;if(field){state.stageFilters[field]=event.target.value;renderAll();}});
+  document.addEventListener('keydown',(event)=>{const shortcut=event.target?.closest?.('[data-v2-tab]');if(shortcut&&['Enter',' '].includes(event.key)){event.preventDefault();shortcut.click();}});
 }
 
 function observeBaseChanges() {
@@ -286,10 +310,49 @@ async function loadData() {
   } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; }
 }
 
+function requestStage(row) {
+  const sol = String(row.status_solicitacao || '').toUpperCase(), b = bucket(row);
+  if (sol === 'EM_COTACAO' || getQuotes(row).length) return 'cotadas';
+  if (b === 'reservados') return String(row.status_hospedagem || '').toUpperCase() === 'HOSPEDADO' ? 'ativas' : 'reservadas';
+  if (['pagar','nf','concluidos'].includes(b)) return 'ativas';
+  return 'pendentes';
+}
+function reservationStage(row) {
+  const b = bucket(row), hosp = String(row.status_hospedagem || '').toUpperCase();
+  if (b === 'concluidos' || String(row.status_solicitacao || '').toUpperCase() === 'CONCLUIDA') return 'concluidas';
+  if (['pagar','nf'].includes(b) || hosp.includes('CHECKOUT')) return 'checkout';
+  if (hosp === 'HOSPEDADO') return 'ativas';
+  return 'reservadas';
+}
+function renderFilterBar(id, scope, options, active) {
+  const root = document.getElementById(id); if (!root) return;
+  root.innerHTML = options.map(([value,label,count]) => `<button type="button" class="hosp-v2-filter${active===value?' active':''}" data-v2-filter-scope="${scope}" data-v2-status-filter="${value}">${esc(label)} <b>${count}</b></button>`).join('');
+}
+function renderRequestFilters() {
+  const rows = state.rows.filter((row) => bucket(row) !== 'cancelada'), count = (stage) => rows.filter((row) => requestStage(row) === stage).length;
+  renderFilterBar('hospV2RequestFilters','requests',[['todas','Todas',rows.length],['pendentes','Pendentes',count('pendentes')],['cotadas','Cotadas',count('cotadas')],['reservadas','Reservadas',count('reservadas')],['ativas','Ativas',count('ativas')]],state.requestStatus);
+}
+function reservationRows() { return state.rows.filter((row) => row.reserva_id && bucket(row) !== 'cancelada'); }
+function filteredReservationRows() { const rows=reservationRows(); return state.reservationStatus==='todas'?rows:rows.filter((row)=>reservationStage(row)===state.reservationStatus); }
+function renderReservationFilters() {
+  const rows=reservationRows(), count=(stage)=>rows.filter((row)=>reservationStage(row)===stage).length;
+  renderFilterBar('hospV2ReservationFilters','reservations',[['todas','Todas',rows.length],['reservadas','Reservadas',count('reservadas')],['ativas','Ativas',count('ativas')],['checkout','Checkout',count('checkout')],['concluidas','Concluídas',count('concluidas')]],state.reservationStatus);
+}
+function renderPaymentSummary() {
+  const rows=state.rows.filter((row)=>row.reserva_id), total=(items)=>items.reduce((sum,row)=>sum+Number(row.valor_financeiro||row.valor_total_previsto||0),0);
+  const paid=total(rows.filter((row)=>String(row.status_financeiro||'').toUpperCase()==='PAGO'));
+  const finance=total(rows.filter((row)=>String(row.status_financeiro||'').toUpperCase()==='ENVIADO_AO_FINANCEIRO'));
+  const pending=total(rows.filter((row)=>!['PAGO','SEM_COBRANCA'].includes(String(row.status_financeiro||'').toUpperCase())));
+  const root=$('#hospV2PaymentSummary'); if(!root)return;
+  root.innerHTML=`<article class="hosp-v2-pay-metric"><small>Total pago</small><strong>${money(paid)}</strong></article><article class="hosp-v2-pay-metric finance"><small>Enviado ao Financeiro</small><strong>${money(finance)}</strong></article><article class="hosp-v2-pay-metric pending"><small>Pendente de quitação</small><strong>${money(pending)}</strong></article>`;
+}
 function renderAll() {
   renderKpis();
+  renderRequestFilters();
+  renderReservationFilters();
+  renderPaymentSummary();
   renderList('hospV2Solicitadas', filteredRequestedRows(), true);
-  const andamento=filteredStageRows(state.rows.filter((r) => bucket(r) === 'reservados'));
+  const andamento=filteredStageRows(filteredReservationRows());
   renderStageFilters(andamento);
   renderList('hospV2Andamento', sortedStageRows(andamento,'andamento'), false, 'andamento');
   renderList('hospV2Pagar', sortedStageRows(state.rows.filter((r) => bucket(r) === 'pagar'),'pagar'), false, 'pagar');
@@ -298,7 +361,7 @@ function renderAll() {
 }
 function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitado_por_nome||'-';}
 function filteredStageRows(rows){const f=state.stageFilters;return rows.filter((row)=>{const people=getPeople(row);return(!f.colaborador||people.some((p)=>String(p.nome_colaborador||'')===f.colaborador))&&(!f.cidade||String(row.cidade||'')===f.cidade)&&(!f.supervisao||people.some((p)=>String(p.supervisao||'')===f.supervisao))&&(!f.hotel||String(row.hotel||getHotel(row)?.nome||'')===f.hotel);});}
-function renderStageFilters(visible){const root=$('#hospV2StageFilters');if(!root)return;const all=state.rows.filter((r)=>bucket(r)==='reservados');const choices=(values)=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));const fields={colaborador:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.nome_colaborador))),cidade:choices(all.map((r)=>r.cidade)),supervisao:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.supervisao))),hotel:choices(all.map((r)=>r.hotel||getHotel(r)?.nome))};root.innerHTML=Object.entries(fields).map(([key,values])=>`<label>${key}<select data-stage-filter="${key}"><option value="">Todos</option>${values.map((v)=>`<option value="${esc(v)}" ${state.stageFilters[key]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`).join('');root.dataset.visibleIds=visible.map((r)=>r.solicitacao_id).join(',');}
+function renderStageFilters(visible){const root=$('#hospV2StageFilters');if(!root)return;const all=reservationRows();const choices=(values)=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));const fields={colaborador:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.nome_colaborador))),cidade:choices(all.map((r)=>r.cidade)),supervisao:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.supervisao))),hotel:choices(all.map((r)=>r.hotel||getHotel(r)?.nome))};root.innerHTML=Object.entries(fields).map(([key,values])=>`<label>${key}<select data-stage-filter="${key}"><option value="">Todos</option>${values.map((v)=>`<option value="${esc(v)}" ${state.stageFilters[key]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`).join('');root.dataset.visibleIds=visible.map((r)=>r.solicitacao_id).join(',');}
 function renderKpis() {
   const counts = { requests: state.rows.filter((r) => bucket(r) === 'solicitadas').length, quotes: state.rows.filter((r) => String(r.status_solicitacao).toUpperCase() === 'EM_COTACAO').length, reserved: state.rows.filter((r) => bucket(r) === 'reservados').length, pay: state.rows.filter((r) => ['checkout', 'financeiro'].includes(bucket(r)) && String(r.status_financeiro).toUpperCase() !== 'PAGO').length, nf: state.rows.filter((r) => !getDocuments(r).some((d) => String(d.tipo).toUpperCase() === 'NFSE') && !['LANCADO', 'DISPENSADO'].includes(String(r.status_nota).toUpperCase())).length };
   const quoteValue = state.quotes.reduce((sum, q) => sum + Number(q.valor_total || 0), 0);
@@ -306,7 +369,8 @@ function renderKpis() {
   const payValue = state.rows.filter((r) => ['checkout', 'financeiro'].includes(bucket(r))).reduce((sum, r) => sum + Number(r.valor_financeiro || r.valor_total_previsto || 0), 0);
   const cards = [['Solicitações', counts.requests, `${state.rows.length} no fluxo`, 'quote', '#4ade80'], ['Em cotação', counts.quotes, quoteValue ? money(quoteValue) : 'Aguardando respostas', 'quote', '#facc15'], ['Reservados', counts.reserved, reservedValue ? money(reservedValue) : 'Reservas ativas', 'reserve', '#4ade80'], ['A pagar', counts.pay, payValue ? money(payValue) : 'Sem saldo calculado', 'pay', '#fb923c'], ['NFS-e pendentes', counts.nf, `${state.documents.filter((d) => String(d.tipo).toUpperCase() === 'NFSE').length} recebidas`, 'file', '#a78bfa']];
   const root = $('#hospV2Kpis'); if (!root) return;
-  root.innerHTML = cards.map(([label, value, note, ico, color]) => `<article class="hosp-v2-kpi" style="--kpi:${color}"><div class="hosp-v2-kpi-ico">${icon(ico)}</div><div><small>${esc(label)}</small><strong>${esc(value)}</strong><em>${esc(note)}</em></div></article>`).join('');
+  const destinations=['solicitadas','solicitadas','andamento','pagar','nf'];
+  root.innerHTML = cards.map(([label, value, note, ico, color],index) => `<article class="hosp-v2-kpi" style="--kpi:${color}" data-v2-tab="${destinations[index]}" role="button" tabindex="0"><div class="hosp-v2-kpi-ico">${icon(ico)}</div><div><small>${esc(label)}</small><strong>${esc(value)}</strong><em>${esc(note)}</em></div></article>`).join('');
 }
 function requestedValues(row) {
   const people = getPeople(row);
@@ -327,7 +391,7 @@ function filteredRequestedRows() {
   };
   const order = state.requestSort.field;
   const direction = state.requestSort.direction === 'asc' ? 1 : -1;
-  const rows = state.rows.filter((row) => bucket(row) === 'solicitadas').filter((row) => {
+  const rows = state.rows.filter((row) => bucket(row) !== 'cancelada').filter((row) => state.requestStatus === 'todas' || requestStage(row) === state.requestStatus).filter((row) => {
     const item = requestedValues(row);
     return (!values.colaborador || norm(item.colaborador).includes(norm(values.colaborador)))
       && (!values.cidade || norm(item.cidade).includes(norm(values.cidade)))
@@ -398,7 +462,9 @@ function requestedRowHtml(row) {
   const people = getPeople(row), quotes = getQuotes(row);
   const hotel = row.hotel || getHotel(row)?.nome || (quotes.length ? `${quotes.length} hotel(is) cotado(s)` : 'A definir');
   const supervisors = [...new Set(people.map((p) => p.supervisao).filter(Boolean))];
-  const actions = [button('quote',row,'quote','Cotação','amber'), button('reserve',row,'reserve','Reservar'), button('cancel',row,'checkout','Cancelar','purple')];
+  const actions = bucket(row) === 'solicitadas'
+    ? [button('quote',row,'quote','Cotar','amber'), button('reserve',row,'reserve','Reservar'), button('cancel',row,'checkout','Cancelar','purple')]
+    : [button('detail',row,'detail','Detalhes')];
   return `<article class="hosp-v2-row hosp-v2-request-row ${String(state.selectedId)===String(row.solicitacao_id)?'is-selected':''}">
     <div class="hosp-v2-cell"><label class="hosp-v2-select"><input type="checkbox" data-v2-select value="${esc(row.solicitacao_id)}" ${state.selectedRequests.has(String(row.solicitacao_id))?'checked':''}><span>${icon('hotel')}${esc([row.cidade,row.uf].filter(Boolean).join('/')||'-')}</span></label></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)</span></div></div>
