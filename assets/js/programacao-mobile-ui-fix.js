@@ -578,13 +578,23 @@ function injectMobileStyles() {
 
     body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row {
       display: grid !important;
-      grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
       gap: 9px !important;
       width: 100% !important;
       min-width: 0 !important;
       margin: 0 !important;
       padding: 0 !important;
       border: 0 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row:first-child {
+      grid-template-rows: auto 46px 46px !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar .prog-context-group,
+    body.mobile-gestor-mode .prog-toolbar .prog-actions-block,
+    body.mobile-gestor-mode .prog-toolbar .prog-action-row {
+      display: contents !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row + .prog-toolbar-row {
@@ -605,16 +615,23 @@ function injectMobileStyles() {
     }
 
     body.mobile-gestor-mode .prog-toolbar .prog-tfield-sup {
-      grid-column: 1 / span 3 !important;
+      grid-column: 1 !important;
+      grid-row: 1 !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar .prog-tfield-date {
-      grid-column: 4 / span 3 !important;
+      grid-column: 2 !important;
+      grid-row: 1 !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar .prog-tfield label {
       margin: 0 !important;
       white-space: nowrap !important;
+      font-size: 10px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
+      letter-spacing: .08em !important;
+      text-transform: uppercase !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar #progSupCombo,
@@ -628,13 +645,35 @@ function injectMobileStyles() {
 
     body.mobile-gestor-mode .prog-toolbar #progLoadContext,
     body.mobile-gestor-mode .prog-toolbar #progGerarPdf,
-    body.mobile-gestor-mode .prog-toolbar #progCompartilhar {
-      grid-column: span 2 !important;
+    body.mobile-gestor-mode .prog-toolbar #progCompartilhar,
+    body.mobile-gestor-mode .prog-toolbar #progDuplicar {
       width: 100% !important;
       order: initial !important;
       min-width: 0 !important;
       padding-inline: 4px !important;
       font-size: 11.5px !important;
+      min-height: 46px !important;
+      height: 46px !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progGerarPdf {
+      grid-column: 1 !important;
+      grid-row: 2 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progCompartilhar {
+      grid-column: 2 !important;
+      grid-row: 2 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progLoadContext {
+      grid-column: 1 !important;
+      grid-row: 3 !important;
+    }
+
+    body.mobile-gestor-mode .prog-toolbar #progDuplicar {
+      grid-column: 2 !important;
+      grid-row: 3 !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar-spacer,
