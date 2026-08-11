@@ -620,6 +620,9 @@ function ensureScreenTourStyles() {
 }
 
 function getScreenTourSteps() {
+  const programacaoSteps = getProgramacaoTourSteps();
+  if (programacaoSteps.length) return programacaoSteps;
+
   const title = document.getElementById('pageTitle');
   const sidebar = document.querySelector('.sidebar');
   const main = document.querySelector('.page-main, main');
@@ -633,6 +636,66 @@ function getScreenTourSteps() {
     document.querySelector('.topbar-actions') && { el:document.querySelector('.topbar-actions'), title:'Atalhos do topo', text:'Acesse notificações, ajuda e opções da sua conta por estes atalhos.' }
   ];
   return steps.filter((step, index, all) => step && step.el && step.el.getClientRects().length && all.findIndex(s => s?.el === step.el) === index);
+}
+
+function getProgramacaoTourSteps() {
+  const path = String(window.location.pathname || '').toLowerCase();
+  const title = document.getElementById('pageTitle')?.textContent?.trim().toLowerCase();
+  if (!path.includes('programacao') && title !== 'programação' && title !== 'programacao') return [];
+
+  const pick = (...selectors) => selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+  const context = pick('.prog-context-group', '.prog-toolbar-row:first-child');
+  const osStep = pick('#progSteps [data-ui-step="1"]', '#progSteps .stepbtn:first-child');
+  const semOsStep = pick('#progSteps [data-ui-step="2"]', '#progSteps .stepbtn:nth-child(2)');
+  const recusasStep = pick('#progSteps [data-ui-step="3"]', '#progSteps .stepbtn:nth-child(3)');
+  const filters = pick('.pld-filters', '#pgcPane1', '#progList');
+  const osList = pick('.pld-table-wrap', '#pldListaBody', '#pgcPane1');
+  const actions = pick('.prog-actions-block', '#progGerarPdf', '.prog-toolbar');
+
+  const steps = [
+    {
+      el: document.getElementById('pageTitle') || context,
+      title: 'Como fazer a programação',
+      text: 'Este guia mostra o fluxo completo do gestor. Você vai carregar o dia, tratar cada O.S., conferir quem ficou sem O.S. e resolver despesas recusadas.'
+    },
+    context && {
+      el: context,
+      title: '1. Escolha supervisão e data',
+      text: 'Selecione a supervisão, escolha o dia que será programado e clique em Carregar. Datas passadas ficam somente para consulta; para editar, use hoje ou uma data futura.'
+    },
+    osStep && {
+      el: osStep,
+      title: '2. Comece pela aba O.S.',
+      text: 'Aqui aparecem as ordens de serviço da supervisão. Use esta aba para decidir o andamento de cada serviço e montar a equipe que irá atender.'
+    },
+    filters && {
+      el: filters,
+      title: '3. Encontre a O.S.',
+      text: 'Pesquise pelo número da O.S. ou cliente e refine por cidade, local ou remanescente. Depois, clique na linha da O.S. para abrir os detalhes.'
+    },
+    osList && {
+      el: osList,
+      title: '4. Programe cada atendimento',
+      text: 'Ao abrir uma O.S., escolha Pausar, Atender ou Finalizar. Marque Atender para liberar a equipe; confirme a sugestão ou adicione colaboradores e Frota. Em seguida, revise estadia, alimentação, deslocamento e extras no painel da O.S.'
+    },
+    semOsStep && {
+      el: semOsStep,
+      title: '5. Trate quem ficou sem O.S.',
+      text: 'Abra Sem O.S. para conferir colaboradores sem atendimento no dia. Informe a situação correta — como folga, falta ou atestado — e registre observações quando necessário.'
+    },
+    recusasStep && {
+      el: recusasStep,
+      title: '6. Corrija as recusas',
+      text: 'Nesta aba ficam despesas devolvidas pela Conferência. Leia o motivo, faça a correção solicitada e acompanhe até a pendência ser resolvida.'
+    },
+    actions && {
+      el: actions,
+      title: '7. Finalize e compartilhe',
+      text: 'As alterações são salvas durante o preenchimento. Ao terminar, gere o PDF para conferência, use Compartilhar para montar a mensagem do dia ou Duplique a programação para outras datas.'
+    }
+  ];
+
+  return steps.filter((step) => step && step.el && step.el.getClientRects().length);
 }
 
 function startScreenTour(button) {
