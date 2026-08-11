@@ -434,7 +434,7 @@ function filteredRequestedRows() {
   };
   const order = state.requestSort.field;
   const direction = state.requestSort.direction === 'asc' ? 1 : -1;
-  const rows = state.rows.filter((row) => bucket(row) !== 'cancelada').filter((row) => state.requestStatus === 'todas' || requestStage(row) === state.requestStatus).filter((row) => {
+  const rows = state.rows.filter((row) => bucket(row) === 'solicitadas').filter((row) => {
     const item = requestedValues(row);
     return (!values.colaborador || norm(item.colaborador).includes(norm(values.colaborador)))
       && (!values.cidade || norm(item.cidade).includes(norm(values.cidade)))
