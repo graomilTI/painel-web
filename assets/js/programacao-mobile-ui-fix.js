@@ -721,6 +721,92 @@ function injectMobileStyles() {
       white-space: normal !important;
     }
 
+    /* A Programação também é aberta pelo painel móvel por perfis que não têm
+       o papel literal GESTOR. Nesse caminho o shell aplica mobile-panel-mode,
+       portanto o grid não pode depender de mobile-gestor-mode. */
+    body.mobile-panel-mode .prog-toolbar > .prog-toolbar-row:first-child {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      grid-template-rows: auto 46px 46px !important;
+      gap: 9px !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar .prog-context-group,
+    body.mobile-panel-mode .prog-toolbar .prog-actions-block,
+    body.mobile-panel-mode .prog-toolbar .prog-action-row {
+      display: contents !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar .prog-tfield-sup,
+    body.mobile-panel-mode .prog-toolbar .prog-tfield-date {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 5px !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar .prog-tfield-sup {
+      grid-column: 1 !important;
+      grid-row: 1 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar .prog-tfield-date {
+      grid-column: 2 !important;
+      grid-row: 1 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar .prog-tfield label {
+      margin: 0 !important;
+      line-height: 1.2 !important;
+      white-space: nowrap !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progSupCombo,
+    body.mobile-panel-mode .prog-toolbar #progDataRef {
+      width: 100% !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      height: 44px !important;
+      margin: 0 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progGerarPdf,
+    body.mobile-panel-mode .prog-toolbar #progCompartilhar,
+    body.mobile-panel-mode .prog-toolbar #progLoadContext,
+    body.mobile-panel-mode .prog-toolbar #progDuplicar {
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: 46px !important;
+      height: 46px !important;
+      margin: 0 !important;
+      padding-inline: 4px !important;
+      font-size: 11.5px !important;
+      order: initial !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progGerarPdf {
+      grid-column: 1 !important;
+      grid-row: 2 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progCompartilhar {
+      grid-column: 2 !important;
+      grid-row: 2 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progLoadContext {
+      grid-column: 1 !important;
+      grid-row: 3 !important;
+    }
+
+    body.mobile-panel-mode .prog-toolbar #progDuplicar {
+      grid-column: 2 !important;
+      grid-row: 3 !important;
+    }
+
     body.mobile-gestor-mode .prog-list-card,
     body.mobile-gestor-mode #progList,
     body.mobile-gestor-mode #pldShell,
