@@ -13,7 +13,7 @@ const WebSocket = require('ws');
 const { setupDownloadDir, triggerAndWaitForDownload } = require('./download-utils');
 puppeteer.use(StealthPlugin());
 const supabase = createClient(process.env.SUPABASE_URL, (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY), { realtime: { transport: WebSocket } });
-const REPORT_CONFIG = { name: 'NHE', url: 'https://www.grmserver.com.br/report/classification/nhe', dateFields: { from: '#lnsDateFrom', to: '#lnsDateTo' }, xlsSelector: '.nheReport-report-to-xls button', tableName: 'grm_nhe_importacoes', daysBack: 1 };
+const REPORT_CONFIG = { name: 'NHE', url: 'https://www.grmserver.com.br/report/classification/nhe', dateFields: { from: '#lnsDateFrom', to: '#lnsDateTo' }, xlsSelector: '.nheReport-report-to-xls button', tableName: 'grm_nhe_importacoes', daysBack: Math.max(1, Number(process.env.NHE_SYNC_DAYS_BACK) || 1) };
 function log(level, msg) { console.log(`[${level}] ${new Date().toISOString()} - ${msg}`); }
 function calculateDateRange(daysBack) {
   const today = new Date();
