@@ -1,0 +1,50 @@
+name: Patch NHE date entry
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-nhe-date-entry.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch agent
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('agentes-grm-sync/grm-sync-lancar-nhe.js')
+          s = p.read_text(encoding='utf-8')
+          a = ".in('status', ['SUCESSO', 'JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);"
+          b = ".in('status', ['JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);"
+          if s.count(a) != 1:
+              raise SystemExit('status guard nao encontrado uma vez')
+          s = s.replace(a, b, 1)
+          old = """  var dataOk = await page.evaluate(function (payload) {\n    var input = document.querySelector('#lnsDate');\n    if (!input) return false;\n    var proto = window.HTMLInputElement.prototype;\n    var setter = Object.getOwnPropertyDescriptor(proto, 'value');\n    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;\n    input.dispatchEvent(new Event('input', { bubbles: true }));\n    input.dispatchEvent(new Event('change', { bubbles: true }));\n    input.dispatchEvent(new Event('blur', { bubbles: true }));\n    return true;\n  }, { value: dataBr });\n  if (!dataOk) throw new Error('Campo Data (#lnsDate) não encontrado.');\n"""
+          new = """  // O GRM atualizado passou a exigir interação real para atualizar o model da Data.\n  var dataInput = await page.$('#lnsDate');\n  if (!dataInput) throw new Error('Campo Data (#lnsDate) não encontrado.');\n  var inputType = await dataInput.evaluate(function (input) { return String(input.type || 'text').toLowerCase(); });\n  if (inputType === 'date') {\n    await dataInput.evaluate(function (input, value) {\n      input.focus();\n      var proto = window.HTMLInputElement.prototype;\n      var setter = Object.getOwnPropertyDescriptor(proto, 'value');\n      if (setter && setter.set) setter.set.call(input, value); else input.value = value;\n      input.dispatchEvent(new Event('input', { bubbles: true }));\n      input.dispatchEvent(new Event('change', { bubbles: true }));\n    }, candidato.data);\n    await page.keyboard.press('Tab');\n  } else {\n    await dataInput.click({ clickCount: 3 });\n    await page.keyboard.down('Control');\n    await page.keyboard.press('A');\n    await page.keyboard.up('Control');\n    await page.keyboard.press('Backspace');\n    await dataInput.type(dataBr, { delay: 90 });\n    await page.keyboard.press('Tab');\n  }\n  await wait(500);\n  var dataValor = await page.$eval('#lnsDate', function (input) { return String(input.value || '').trim(); });\n  function soDigitos(v) { return String(v || '').replace(/\\D/g, ''); }\n  var recebido = soDigitos(dataValor);\n  if (recebido !== soDigitos(dataBr) && recebido !== soDigitos(candidato.data)) {\n    throw new Error('Campo Data não permaneceu com a data solicitada. Esperado=' + dataBr + ', campo=' + dataValor);\n  }\n  log('INFO', 'Data NHE preenchida e validada no formulário: ' + dataValor + ' (referência ' + candidato.data + ')');\n"""
+          if s.count(old) != 1:
+              raise SystemExit('bloco de data antigo nao encontrado uma vez')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          node --check agentes-grm-sync/grm-sync-lancar-nhe.js
+          grep -nE "Data NHE preenchida|SALVO_NAO_CONFIRMADO" agentes-grm-sync/grm-sync-lancar-nhe.js | head -20
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentes-grm-sync/grm-sync-lancar-nhe.js
+          git commit -m 'fix: type historical NHE date through UI'
+          git push origin HEAD:main
