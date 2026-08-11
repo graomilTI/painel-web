@@ -156,6 +156,11 @@ function runScript(scriptName, jobId) {
     let stderr = '';
     let memoryPeakMb = 0;
     let lastReportedMemoryMb = 0;
+    let vpsMemoryPeakMb = 0;
+    let vpsMemoryTotalMb = 0;
+    let vpsDiskUsedMb = 0;
+    let vpsDiskTotalMb = 0;
+    let lastReportedVpsMemoryMb = 0;
 
     log(`Executando ${scriptName}`);
 
@@ -175,9 +180,27 @@ function runScript(scriptName, jobId) {
     });
 
     // Soma o RSS do processo do agente e de toda a árvore Chromium/Puppeteer.
-    // A leitura é leve (a cada 2s) e falhas do `ps` não interrompem o job.
+    // A leitura é leve (a cada 5s) e falhas de telemetria não interrompem o job.
     const sampleMemory = () => {
       if (!child.pid) return;
+      try {
+        const meminfo = fs.readFileSync('/proc/meminfo', 'utf8');
+        const values = Object.fromEntries([...meminfo.matchAll(/^(MemTotal|MemAvailable):\s+(\d+)\s+kB$/gm)].map((match) => [match[1], Number(match[2])]));
+        if (values.MemTotal && values.MemAvailable != null) {
+          vpsMemoryTotalMb = values.MemTotal / 1024;
+          vpsMemoryPeakMb = Math.max(vpsMemoryPeakMb, (values.MemTotal - values.MemAvailable) / 1024);
+        }
+      } catch (_) {
+        // /proc pode não existir fora do Linux; a memória da árvore continua sendo coletada.
+      }
+      execFile('df', ['-Pk', PROJECT_ROOT], { timeout: 1500 }, (error, output) => {
+        if (error) return;
+        const columns = String(output || '').trim().split('\n').at(-1)?.trim().split(/\s+/) || [];
+        if (columns.length >= 4) {
+          vpsDiskTotalMb = Number(columns[1] || 0) / 1024;
+          vpsDiskUsedMb = Number(columns[2] || 0) / 1024;
+        }
+      });
       execFile('ps', ['-eo', 'pid=,ppid=,rss='], { timeout: 1500 }, (error, output) => {
         if (error) return;
         const rows = String(output || '').trim().split('\n').map((line) => line.trim().split(/\s+/).map(Number));
@@ -199,9 +222,16 @@ function runScript(scriptName, jobId) {
           stack.push(...(children.get(pid) || []));
         }
         memoryPeakMb = Math.max(memoryPeakMb, rssKb / 1024);
-        if (memoryPeakMb >= lastReportedMemoryMb + 5) {
+        if (memoryPeakMb >= lastReportedMemoryMb + 5 || vpsMemoryPeakMb >= lastReportedVpsMemoryMb + 25) {
           lastReportedMemoryMb = memoryPeakMb;
-          updateJob(jobId, { memory_peak_mb: Number(memoryPeakMb.toFixed(2)) })
+          lastReportedVpsMemoryMb = vpsMemoryPeakMb;
+          updateJob(jobId, {
+            memory_peak_mb: Number(memoryPeakMb.toFixed(2)),
+            vps_memory_peak_mb: Number(vpsMemoryPeakMb.toFixed(2)) || null,
+            vps_memory_total_mb: Number(vpsMemoryTotalMb.toFixed(2)) || null,
+            vps_disk_used_mb: Number(vpsDiskUsedMb.toFixed(2)) || null,
+            vps_disk_total_mb: Number(vpsDiskTotalMb.toFixed(2)) || null,
+          })
             .catch((updateError) => log(`Falha ao atualizar memória do job ${jobId}: ${updateError.message}`));
         }
       });
@@ -231,6 +261,10 @@ function runScript(scriptName, jobId) {
         stderr: trimOutput(stderr),
         error: error.message,
         memory_peak_mb: Number(memoryPeakMb.toFixed(2)) || null,
+        vps_memory_peak_mb: Number(vpsMemoryPeakMb.toFixed(2)) || null,
+        vps_memory_total_mb: Number(vpsMemoryTotalMb.toFixed(2)) || null,
+        vps_disk_used_mb: Number(vpsDiskUsedMb.toFixed(2)) || null,
+        vps_disk_total_mb: Number(vpsDiskTotalMb.toFixed(2)) || null,
       });
     });
 
@@ -244,6 +278,10 @@ function runScript(scriptName, jobId) {
         stderr: trimOutput(stderr),
         error: code === 0 ? null : `Script saiu com código ${code}`,
         memory_peak_mb: Number(memoryPeakMb.toFixed(2)) || null,
+        vps_memory_peak_mb: Number(vpsMemoryPeakMb.toFixed(2)) || null,
+        vps_memory_total_mb: Number(vpsMemoryTotalMb.toFixed(2)) || null,
+        vps_disk_used_mb: Number(vpsDiskUsedMb.toFixed(2)) || null,
+        vps_disk_total_mb: Number(vpsDiskTotalMb.toFixed(2)) || null,
       });
     });
   });
@@ -278,6 +316,10 @@ async function processOne() {
     finalizado_em: new Date().toISOString(),
     duration_ms: result.duration_ms,
     memory_peak_mb: result.memory_peak_mb,
+    vps_memory_peak_mb: result.vps_memory_peak_mb,
+    vps_memory_total_mb: result.vps_memory_total_mb,
+    vps_disk_used_mb: result.vps_disk_used_mb,
+    vps_disk_total_mb: result.vps_disk_total_mb,
     output: {
       script: scriptName,
       code: result.code,

@@ -102,6 +102,9 @@ function getStyles() {
 @media(max-width:900px){.ag-queue{grid-template-columns:1fr}.ag-queue-side{position:static}.ag-queue-item{grid-template-columns:28px 36px minmax(0,1fr) auto}}
 .ag-queue-board{display:grid;gap:14px}.ag-q-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid rgba(148,163,184,.13);border-radius:16px;background:rgba(15,23,42,.7)}.ag-q-toolbar>div:first-child strong,.ag-q-toolbar>div:first-child span{display:block}.ag-q-toolbar>div:first-child strong{color:#f8fafc;font-size:14px}.ag-q-toolbar>div:first-child span{margin-top:3px;color:#64748b;font-size:10px}.ag-q-toolbar>div:last-child{display:flex;gap:8px}.ag-q-lane{--lane:#3b82f6;overflow:hidden;border:1px solid color-mix(in srgb,var(--lane) 24%,rgba(148,163,184,.1));border-radius:19px;background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(5,11,22,.96));box-shadow:inset 3px 0 0 var(--lane)}.ag-q-lane.cyan{--lane:#06b6d4}.ag-q-lane.orange{--lane:#f97316}.ag-q-lane.green{--lane:#22c55e}.ag-q-lane>header{display:grid;grid-template-columns:minmax(180px,1fr) 150px 150px auto;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(148,163,184,.1);background:linear-gradient(90deg,color-mix(in srgb,var(--lane) 10%,transparent),transparent 45%)}.ag-q-lane>header>div:first-child span,.ag-q-lane>header>div:first-child strong{display:block}.ag-q-lane>header>div:first-child span{color:var(--lane);font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase}.ag-q-lane>header>div:first-child strong{margin-top:3px;color:#e2e8f0;font-size:13px}.ag-q-lane>header em{color:#64748b;font-size:10px;font-style:normal;text-align:right}.ag-q-lane-kpi{padding-left:13px;border-left:1px solid rgba(148,163,184,.12)}.ag-q-lane-kpi small,.ag-q-lane-kpi b{display:block}.ag-q-lane-kpi small{color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:.05em}.ag-q-lane-kpi b{margin-top:3px;color:#f8fafc;font-size:13px}.ag-q-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:9px;padding:11px}.ag-q-card{min-width:0;border:1px solid rgba(148,163,184,.11);border-radius:14px;background:rgba(7,15,29,.78);padding:12px;transition:.15s ease}.ag-q-card:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--lane) 40%,transparent);background:rgba(10,20,37,.94)}.ag-q-card.rodando{border-color:rgba(59,130,246,.38);box-shadow:0 0 0 1px rgba(59,130,246,.08)}.ag-q-card.pendente{border-color:rgba(234,179,8,.26)}.ag-q-card-top{display:grid;grid-template-columns:minmax(0,1fr) 8px auto auto;align-items:center;gap:7px}.ag-q-card-top>div strong,.ag-q-card-top>div code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ag-q-card-top>div strong{color:#f8fafc;font-size:12px}.ag-q-card-top>div code{margin-top:3px;color:#475569;font-size:8px}.ag-q-card-top b{font-size:10px}.ag-q-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:11px}.ag-q-kpis span{min-width:0;color:#64748b;font-size:8px;text-transform:uppercase;letter-spacing:.04em}.ag-q-kpis strong{display:block;margin-top:3px;color:#cbd5e1;font-size:10px;text-transform:none;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-q-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid rgba(148,163,184,.08)}.ag-q-card-footer small{color:#64748b;font-size:9px}.ag-q-card-footer>div{display:flex;gap:5px}.ag-q-priority{border:1px solid color-mix(in srgb,var(--lane) 30%,transparent);border-radius:8px;background:color-mix(in srgb,var(--lane) 10%,transparent);color:#cbd5e1;padding:5px 8px;font-size:9px;font-weight:850;cursor:pointer}.ag-q-priority:hover{background:color-mix(in srgb,var(--lane) 20%,transparent);color:#fff}
 .ag-q-card{position:relative}.ag-q-edit{position:absolute;top:8px;right:8px;width:25px;height:25px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.14);border-radius:8px;background:rgba(2,6,23,.72);color:#94a3b8;cursor:pointer;font-size:12px;z-index:2}.ag-q-edit:hover{color:#fff;border-color:var(--lane)}.ag-q-card-top{padding-right:27px}.ag-q-schedule{color:var(--lane)!important}.ag-settings-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(1,4,12,.78);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px}.ag-settings-modal{width:min(470px,100%);border:1px solid rgba(96,165,250,.3);border-radius:20px;background:linear-gradient(145deg,#0f172a,#050b16);box-shadow:0 28px 80px rgba(0,0,0,.55);padding:20px}.ag-settings-modal header{display:flex;justify-content:space-between;gap:12px;margin-bottom:18px}.ag-settings-modal h3{margin:0;color:#f8fafc;font-size:16px}.ag-settings-modal header span{display:block;margin-top:4px;color:#64748b;font-size:10px}.ag-settings-close{border:0;background:transparent;color:#94a3b8;font-size:20px;cursor:pointer}.ag-settings-field{display:block;margin-top:13px}.ag-settings-field>span{display:block;margin-bottom:6px;color:#94a3b8;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.ag-settings-field select{width:100%;border:1px solid rgba(148,163,184,.16);border-radius:11px;background:#08111f;color:#e2e8f0;padding:11px 12px;outline:none}.ag-settings-hint{margin:14px 0 0;padding:10px 12px;border-radius:11px;background:rgba(59,130,246,.08);color:#94a3b8;font-size:10px;line-height:1.5}.ag-settings-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.ag-capacity-layout{display:grid;grid-template-columns:minmax(0,1fr) 285px;gap:14px;align-items:start}.ag-capacity-side{position:sticky;top:16px;overflow:hidden;border:1px solid rgba(45,212,191,.2);border-radius:19px;background:linear-gradient(155deg,rgba(9,25,35,.98),rgba(4,10,21,.98));box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 18px 55px rgba(0,0,0,.2)}.ag-capacity-head{padding:17px 17px 14px;border-bottom:1px solid rgba(148,163,184,.1);background:radial-gradient(circle at 100% 0,rgba(45,212,191,.14),transparent 55%)}.ag-capacity-head span{display:block;color:#2dd4bf;font-size:9px;font-weight:950;letter-spacing:.12em;text-transform:uppercase}.ag-capacity-head strong{display:block;margin-top:5px;color:#f8fafc;font-size:15px}.ag-capacity-head small{display:block;margin-top:4px;color:#64748b;font-size:9px;line-height:1.4}.ag-capacity-body{display:grid;gap:15px;padding:16px}.ag-resource-label{display:flex;align-items:end;justify-content:space-between;gap:8px}.ag-resource-label span{color:#94a3b8;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.05em}.ag-resource-label strong{color:#f8fafc;font-size:12px}.ag-resource-track{height:8px;margin-top:8px;overflow:hidden;border-radius:99px;background:rgba(148,163,184,.1)}.ag-resource-fill{height:100%;width:var(--usage);border-radius:inherit;background:linear-gradient(90deg,#14b8a6,#2dd4bf);box-shadow:0 0 14px rgba(45,212,191,.28)}.ag-resource-fill.warn{background:linear-gradient(90deg,#f59e0b,#fb7185)}.ag-resource-meta{display:flex;justify-content:space-between;margin-top:6px;color:#64748b;font-size:9px}.ag-capacity-margin{padding:13px;border:1px solid rgba(45,212,191,.16);border-radius:13px;background:rgba(45,212,191,.055)}.ag-capacity-margin span,.ag-capacity-margin strong,.ag-capacity-margin small{display:block}.ag-capacity-margin span{color:#5eead4;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.ag-capacity-margin strong{margin-top:5px;color:#ecfeff;font-size:21px}.ag-capacity-margin small{margin-top:5px;color:#64748b;font-size:9px;line-height:1.45}.ag-capacity-empty{padding:20px 17px;color:#64748b;font-size:10px;line-height:1.5}.ag-capacity-note{padding:11px 16px;border-top:1px solid rgba(148,163,184,.08);color:#475569;font-size:8px;line-height:1.45}
+@media(max-width:1180px){.ag-capacity-layout{grid-template-columns:1fr}.ag-capacity-side{position:static}.ag-capacity-body{grid-template-columns:repeat(3,minmax(0,1fr));align-items:end}.ag-capacity-margin{height:100%;box-sizing:border-box}}
+@media(max-width:700px){.ag-capacity-body{grid-template-columns:1fr}}
 @media(max-width:760px){.ag-q-toolbar{align-items:flex-start;flex-direction:column}.ag-q-toolbar>div:last-child{width:100%}.ag-q-toolbar button{flex:1}.ag-q-lane>header{grid-template-columns:1fr 1fr}.ag-q-lane>header>div:first-child{grid-column:1/-1}.ag-q-lane>header em{grid-column:1/-1;text-align:left}.ag-q-cards{grid-template-columns:1fr}}
 /* O <details> precisa ser o contêiner; somente o <summary> compõe a grade. */
 .ag-exec-row{display:block;padding:0;overflow:hidden}
@@ -152,6 +155,12 @@ function formatMs(value) {
 function formatMemory(value) {
   const mb = Number(value || 0);
   return mb > 0 ? `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : 'Aguardando medição';
+}
+
+function formatCapacity(value) {
+  const mb = Number(value || 0);
+  if (mb >= 1024) return `${(mb / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} GB`;
+  return `${mb.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB`;
 }
 
 function formatInterval(minutes) {
@@ -433,6 +442,34 @@ function renderExecutions() {
   return `<section class="ag-exec" aria-label="Relatório de execuções dos agentes">${cards}${toolbar}<div class="ag-exec-health"><span class="ag-exec-health-dot"></span>Monitoramento automático a cada 30 segundos</div>${list}</section>`;
 }
 
+function renderCapacitySidebar() {
+  const measured = [...state.queue, ...state.executions].filter((job) => Number(job.vps_memory_total_mb) > 0);
+  if (!measured.length) {
+    return `<aside class="ag-capacity-side"><div class="ag-capacity-head"><span>Capacidade do host</span><strong>VPS · Recursos</strong><small>Telemetria coletada durante os agentes</small></div><div class="ag-capacity-empty">Aguardando a primeira execução com o novo monitoramento do VPS.</div></aside>`;
+  }
+
+  const latest = measured.reduce((current, job) => new Date(job.created_at || 0) > new Date(current.created_at || 0) ? job : current);
+  const running = measured.filter((job) => job.status === 'rodando');
+  const recent = state.executions.filter((job) => Number(job.vps_memory_peak_mb) > 0).slice(0, 100);
+  const memoryTotal = Number(latest.vps_memory_total_mb || 0);
+  const memoryUsed = running.length
+    ? Math.max(...running.map((job) => Number(job.vps_memory_peak_mb || 0)))
+    : Math.max(...recent.map((job) => Number(job.vps_memory_peak_mb || 0)), Number(latest.vps_memory_peak_mb || 0));
+  const diskTotal = Number(latest.vps_disk_total_mb || 0);
+  const diskUsed = Number(latest.vps_disk_used_mb || 0);
+  const memoryPct = memoryTotal ? Math.min(100, memoryUsed / memoryTotal * 100) : 0;
+  const diskPct = diskTotal ? Math.min(100, diskUsed / diskTotal * 100) : 0;
+  const safeLimit = memoryTotal * .8;
+  const safeMargin = Math.max(0, safeLimit - memoryUsed);
+  const agentSamples = state.executions.filter((job) => Number(job.memory_peak_mb) > 0).slice(0, 100);
+  const typicalAgentMb = agentSamples.length ? agentSamples.reduce((sum, job) => sum + Number(job.memory_peak_mb), 0) / agentSamples.length : 0;
+  const extraLanes = typicalAgentMb > 0 ? Math.max(0, Math.floor(safeMargin / typicalAgentMb)) : null;
+  const status = memoryPct >= 80 ? 'Limite operacional atingido' : memoryPct >= 65 ? 'Capacidade sob atenção' : 'Capacidade saudável';
+  const resource = (label, used, total, pct) => `<div><div class="ag-resource-label"><span>${label}</span><strong>${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</strong></div><div class="ag-resource-track"><div class="ag-resource-fill ${pct >= 80 ? 'warn' : ''}" style="--usage:${pct}%"></div></div><div class="ag-resource-meta"><span>${formatCapacity(used)} usados</span><span>${formatCapacity(total)} total</span></div></div>`;
+
+  return `<aside class="ag-capacity-side"><div class="ag-capacity-head"><span>Capacidade do host</span><strong>VPS · Recursos</strong><small>${status} · pico observado nas execuções</small></div><div class="ag-capacity-body">${resource('RAM · pico', memoryUsed, memoryTotal, memoryPct)}${resource('SSD', diskUsed, diskTotal, diskPct)}<div class="ag-capacity-margin"><span>Margem até 80% da RAM</span><strong>${formatCapacity(safeMargin)}</strong><small>${extraLanes == null ? 'Aguardando histórico dos agentes.' : `Projeção: até ${extraLanes} nova${extraLanes === 1 ? '' : 's'} fila${extraLanes === 1 ? '' : 's'} simultânea${extraLanes === 1 ? '' : 's'}.`}</small></div></div><div class="ag-capacity-note">A projeção divide a margem segura pelo pico médio da árvore de processos dos últimos 100 jobs. Valide gradualmente antes de liberar novas filas.</div></aside>`;
+}
+
 function renderQueue() {
   const entryAgents = AGENTES.filter((a) => getDirection(a) === 'entrada');
   const settingFor = (agentId) => state.agentSettings.find((item) => item.agent_id === agentId);
@@ -447,9 +484,11 @@ function renderQueue() {
   const metricsFor = (agentId) => {
     const history = historyFor(agentId).slice(0, 20);
     const memoryRows = history.filter((job) => Number(job.memory_peak_mb) > 0);
+    const vpsMemoryRows = history.filter((job) => Number(job.vps_memory_peak_mb) > 0);
     return {
       avgMs: history.length ? history.reduce((sum, job) => sum + Number(job.duration_ms), 0) / history.length : 0,
       avgMemory: memoryRows.length ? memoryRows.reduce((sum, job) => sum + Number(job.memory_peak_mb), 0) / memoryRows.length : 0,
+      avgVpsMemory: vpsMemoryRows.length ? vpsMemoryRows.reduce((sum, job) => sum + Number(job.vps_memory_peak_mb), 0) / vpsMemoryRows.length : 0,
     };
   };
   const openJobFor = (agentId) => state.queue.find((job) => job.agente_id === agentId && job.status === 'rodando') || state.queue.find((job) => job.agente_id === agentId && job.status === 'pendente');
@@ -472,17 +511,17 @@ function renderQueue() {
   const lane = (definition) => {
     const metricRows = definition.agents.map((agent) => metricsFor(agent.id));
     const runningJobs = state.queue.filter((job) => job.lane === definition.lane && job.status === 'rodando');
-    const runningMemory = runningJobs.reduce((sum, job) => sum + Number(job.memory_peak_mb || 0), 0);
-    const memoryEstimate = metricRows.reduce((sum, item) => sum + item.avgMemory, 0);
+    const runningMemory = Math.max(0, ...runningJobs.map((job) => Number(job.vps_memory_peak_mb || 0)));
+    const memoryEstimate = Math.max(0, ...metricRows.map((item) => item.avgVpsMemory));
     const memoryTotal = runningMemory || memoryEstimate;
     const timed = metricRows.filter((item) => item.avgMs > 0);
     const avgMs = timed.length ? timed.reduce((sum, item) => sum + item.avgMs, 0) / timed.length : 0;
     const open = state.queue.filter((job) => job.lane === definition.lane);
-    return `<section class="ag-q-lane ${definition.tone}"><header><div><span>${esc(definition.title)}</span><strong>${esc(definition.subtitle)}</strong></div><div class="ag-q-lane-kpi"><small>${runningMemory ? 'Memória em uso' : 'Memória estimada'}</small><b>${formatMemory(memoryTotal)}</b></div><div class="ag-q-lane-kpi"><small>Média MS</small><b>${formatMs(avgMs)}</b></div><em>${open.filter((j) => j.status === 'rodando').length} rodando · ${open.filter((j) => j.status === 'pendente').length} aguardando</em></header><div class="ag-q-cards">${definition.agents.map((agent) => card(agent, definition.lane)).join('')}</div></section>`;
+    return `<section class="ag-q-lane ${definition.tone}"><header><div><span>${esc(definition.title)}</span><strong>${esc(definition.subtitle)}</strong></div><div class="ag-q-lane-kpi"><small>${runningMemory ? 'Pico RAM do VPS' : 'Pico VPS estimado'}</small><b>${formatMemory(memoryTotal)}</b></div><div class="ag-q-lane-kpi"><small>Média MS</small><b>${formatMs(avgMs)}</b></div><em>${open.filter((j) => j.status === 'rodando').length} rodando · ${open.filter((j) => j.status === 'pendente').length} aguardando</em></header><div class="ag-q-cards">${definition.agents.map((agent) => card(agent, definition.lane)).join('')}</div></section>`;
   };
   const choices = AGENTES.filter((a) => getDirection(a) === 'entrada' && a.freq.includes('fila fixa')).map((agent) => `<label class="ag-agent-choice"><input type="checkbox" value="${esc(agent.id)}" ${state.queueSelection.includes(agent.id) ? 'checked' : ''} onchange="toggleQueueAgent('${esc(agent.id)}',this.checked)"><span>${esc(agent.name)}</span></label>`).join('');
   const composer = state.queueComposerOpen ? `<div class="ag-composer"><div class="ag-queue-head"><div><h3>Montar nova fila</h3><p>Selecione um ou mais agentes. Eles entram na ordem apresentada, depois dos jobs atuais.</p></div></div><div class="ag-composer-grid">${choices}</div><div class="ag-composer-footer"><button class="ag-btn ag-btn-danger" onclick="closeQueueComposer()">Cancelar</button><button class="ag-btn ag-btn-primary" ${!state.queueSelection.length || state.queueSaving ? 'disabled' : ''} onclick="createQueue()">${state.queueSaving ? 'Criando…' : `Abrir fila (${state.queueSelection.length})`}</button></div></div>` : '';
-  return `<section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>KPIs por agente e consumo consolidado por worker</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}${renderSettingsEditor()}</section>`;
+  return `<div class="ag-capacity-layout"><section class="ag-queue-board" aria-label="Gerenciamento da fila de agentes"><div class="ag-q-toolbar"><div><strong>Mapa operacional das filas</strong><span>Pico global do VPS e KPIs por agente</span></div><div><button class="ag-exec-refresh" onclick="loadQueue(true)">↻ Atualizar</button><button class="ag-btn ag-btn-primary" onclick="openQueueComposer()">＋ Nova fila</button></div></div>${state.queueLoading ? '<div class="ag-queue-empty">Consultando as filas…</div>' : laneDefs.map(lane).join('')}${composer}${renderSettingsEditor()}</section>${renderCapacitySidebar()}</div>`;
 }
 
 function renderAgentes() {
@@ -955,7 +994,7 @@ async function loadExecutions(forceRender = false) {
 
   try {
     const since = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
-    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, memory_peak_mb, erro';
+    const baseFields = 'id, agente_id, status, created_at, iniciado_em, finalizado_em, duration_ms, memory_peak_mb, vps_memory_peak_mb, vps_memory_total_mb, vps_disk_used_mb, vps_disk_total_mb, erro';
     const pageStarts = [0, 1000, 2000, 3000];
     const [jobPages, problemDetailsRes] = await Promise.all([
       Promise.all(pageStarts.map((start) => supabase
@@ -995,7 +1034,7 @@ async function loadQueue(showLoading = false) {
   if (showLoading) render();
   try {
     const { data, error } = await supabase.from('grm_sync_jobs')
-      .select('id,agente_id,status,lane,pipeline_seq,worker_id,created_at,iniciado_em,duration_ms,memory_peak_mb')
+      .select('id,agente_id,status,lane,pipeline_seq,worker_id,created_at,iniciado_em,duration_ms,memory_peak_mb,vps_memory_peak_mb,vps_memory_total_mb,vps_disk_used_mb,vps_disk_total_mb')
       .in('status', ['pendente', 'rodando'])
       .order('pipeline_seq', { ascending: true, nullsFirst: true })
       .order('created_at', { ascending: true });
