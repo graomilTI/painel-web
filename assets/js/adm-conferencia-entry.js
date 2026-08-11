@@ -340,7 +340,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260810-colunaestadia2')
+import('./adm-conferencia.js?v=20260811-csvdatafiltro')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();
