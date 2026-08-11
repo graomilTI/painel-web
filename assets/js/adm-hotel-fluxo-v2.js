@@ -88,7 +88,7 @@ function injectStyles() {
     .hosp-v2-modal{position:fixed;z-index:10010;inset:0;display:none;place-items:center;padding:16px;background:rgba(0,8,5,.82);backdrop-filter:blur(5px)}.hosp-v2-modal.open{display:grid}.hosp-v2-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#041a12;border:1px solid rgba(74,222,128,.35);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55);padding:18px}.hosp-v2-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hosp-v2-modal-head h3{margin:0;color:#f0fff6}.hosp-v2-modal-head p{margin:4px 0 0;color:#86a095;font-size:12px}.hosp-v2-modal-close{border:1px solid rgba(255,255,255,.12);background:transparent;color:#e5f5ed;border-radius:9px;padding:8px 11px;cursor:pointer}.hosp-v2-form{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}.hosp-v2-field{display:grid;gap:6px}.hosp-v2-field.full{grid-column:1/-1}.hosp-v2-field label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#91aa9f;font-weight:900}.hosp-v2-field input,.hosp-v2-field select,.hosp-v2-field textarea{width:100%;box-sizing:border-box;background:#071f17;border:1px solid rgba(74,222,128,.2);color:#eafff2;border-radius:11px;padding:10px 11px;outline:none;color-scheme:dark}.hosp-v2-field textarea{min-height:82px;resize:vertical}.hosp-v2-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.hosp-v2-primary{border:1px solid rgba(74,222,128,.5);background:rgba(22,101,52,.5);color:#d8ffe4;border-radius:10px;padding:10px 15px;font-weight:900;cursor:pointer}.hosp-v2-secondary{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#d9ebe2;border-radius:10px;padding:10px 15px;font-weight:850;cursor:pointer}.hosp-v2-feedback{font-size:11.5px;color:#9bb0a6;margin-right:auto;align-self:center}.hosp-v2-feedback.ok{color:#72f3a0}.hosp-v2-feedback.err{color:#fca5a5}.hosp-v2-mini-list{display:grid;gap:7px;margin-top:12px}.hosp-v2-mini-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(74,222,128,.16);border-radius:11px;background:rgba(2,16,12,.5)}.hosp-v2-mini-item strong{color:#eafff2;font-size:11.5px}.hosp-v2-mini-item small{display:block;color:#81998e;margin-top:2px}.hosp-v2-mini-item button{border:1px solid rgba(248,113,113,.25);background:rgba(127,29,29,.18);color:#fecaca;border-radius:8px;padding:6px 8px;cursor:pointer}
     @media(max-width:1280px){.hosp-v2-kpis{grid-template-columns:repeat(3,1fr)}.hosp-v2-row:not(.hosp-v2-request-row){grid-template-columns:minmax(180px,.8fr) minmax(300px,1.5fr) minmax(180px,.8fr)}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-cell.actions{grid-column:1/-1;border-top:1px solid rgba(74,222,128,.11);border-right:0}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-actions{grid-template-columns:repeat(7,minmax(70px,1fr))}}
     @media(max-width:820px){.hosp-v2-kpis{grid-template-columns:1fr 1fr}.hosp-v2-row{grid-template-columns:1fr}.hosp-v2-cell{border-right:0;border-bottom:1px solid rgba(74,222,128,.1)}.hosp-v2-actions{grid-template-columns:repeat(4,1fr)}.hosp-v2-form{grid-template-columns:1fr}.hosp-v2-field.full{grid-column:auto}}
-    #andamentoFiltros{display:none!important}.hosp-v2-stage-filterbar{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:0 0 10px;padding:11px;border:1px solid rgba(34,197,94,.2);border-radius:12px;background:#07151d}.hosp-v2-stage-filterbar label{display:grid;gap:5px;color:#91a89e;font-size:9.5px;font-weight:900;text-transform:uppercase}.hosp-v2-stage-filterbar select{padding:9px;border:1px solid rgba(74,222,128,.2);border-radius:9px;background:#061d15;color:#eafff2}.hosp-v2-stage-head,.hosp-v2-stage-row{grid-template-columns:minmax(185px,1.1fr) minmax(135px,.75fr) minmax(155px,.85fr) minmax(230px,1.35fr) minmax(105px,.6fr) minmax(90px,.5fr) minmax(75px,.42fr) minmax(170px,.9fr);min-width:1220px}.hosp-v2-mass-check{display:flex;align-items:center;gap:7px}.hosp-v2-mass-check input{width:16px;height:16px;accent-color:#4ade80}.hosp-v2-dot-status{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:850}.hosp-v2-dot-status::before{content:"";width:9px;height:9px;border-radius:50%;background:#facc15}.hosp-v2-dot-status.paid::before{background:#4ade80}.hosp-v2-dot-status.partial::before{background:#38bdf8}
+    #andamentoFiltros{display:none!important}.hosp-v2-stage-filterbar{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:0 0 10px;padding:11px;border:1px solid rgba(34,197,94,.2);border-radius:12px;background:#07151d}.hosp-v2-stage-filterbar label{display:grid;gap:5px;color:#91a89e;font-size:9.5px;font-weight:900;text-transform:uppercase}.hosp-v2-stage-filterbar select{padding:9px;border:1px solid rgba(74,222,128,.2);border-radius:9px;background:#061d15;color:#eafff2}.hosp-v2-stage-head,.hosp-v2-stage-row{grid-template-columns:minmax(175px,1.05fr) minmax(120px,.68fr) minmax(145px,.78fr) minmax(220px,1.25fr) minmax(150px,.82fr) minmax(105px,.58fr) 44px 44px minmax(170px,.9fr);min-width:1230px}.hosp-v2-mass-check{display:flex;align-items:center;gap:7px}.hosp-v2-mass-check input{width:16px;height:16px;accent-color:#4ade80}.hosp-v2-dot-status{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:850}.hosp-v2-dot-status::before{content:"";width:9px;height:9px;border-radius:50%;background:#facc15}.hosp-v2-dot-status.paid::before{background:#4ade80}.hosp-v2-dot-status.partial::before{background:#38bdf8}
   `;
   document.head.appendChild(style);
 }
@@ -150,7 +150,7 @@ function mountShell() {
   tabs.parentElement.insertBefore(kpis, tabs);
   const refresh = $('#refreshPainel');
   if (refresh) tabs.appendChild(refresh);
-  [['tab-solicitadas', 'hospV2Solicitadas'], ['tab-andamento', 'hospV2Andamento'], ['tab-pagar', 'hospV2Pagar'], ['tab-nf', 'hospV2Nf']].forEach(([tabId, listId]) => {
+  [['tab-solicitadas', 'hospV2Solicitadas'], ['tab-andamento', 'hospV2Andamento'], ['tab-pagar', 'hospV2Pagar']].forEach(([tabId, listId]) => {
     const panel = document.getElementById(tabId);
     const card = panel?.querySelector('.card');
     const table = panel?.querySelector('.adm-hosp-table-wrap');
@@ -159,9 +159,9 @@ function mountShell() {
     const list = document.createElement('div');
     list.id = listId;
     list.className = 'hosp-v2-list';
-    if (tabId === 'tab-solicitadas' || tabId === 'tab-andamento') {
+    if (tabId === 'tab-andamento') {
       const tools = document.createElement('div');
-      tools.id = tabId === 'tab-solicitadas' ? 'hospV2RequestFilters' : 'hospV2ReservationFilters';
+      tools.id = 'hospV2ReservationFilters';
       tools.className = 'hosp-v2-view-tools';
       card.appendChild(tools);
     }
@@ -238,25 +238,32 @@ function bindEvents() {
     const row = state.rows.find((r) => String(r.solicitacao_id) === String(action.dataset.id));
     if (!row) return;
     const selectedRows=state.rows.filter((r)=>state.selectedRequests.has(String(r.solicitacao_id)));
-    const targets=state.selectedRequests.has(String(row.solicitacao_id))&&selectedRows.length?selectedRows:[row];
+    const actionGroupIds=(action.dataset.groupIds||'').split(',').filter(Boolean);
+    const actionGroup=state.rows.filter((item)=>actionGroupIds.includes(String(item.solicitacao_id)));
+    const targets=actionGroup.length?actionGroup:(state.selectedRequests.has(String(row.solicitacao_id))&&selectedRows.length?selectedRows:[row]);
     state.selectedId = row.solicitacao_id;
     if (action.dataset.v2Action === 'detail') openDetails(row);
-    else if (action.dataset.v2Action === 'quote') openQuoteModal(row);
+    else if (action.dataset.v2Action === 'quote') { setGroupedRequests(action,row); openQuoteModal(row); }
     else if (action.dataset.v2Action === 'extra') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openExtraModal(row);}
-    else if (action.dataset.v2Action === 'document') openDocumentModal(row);
+    else if (action.dataset.v2Action === 'document') { window.__hospedagemAcaoLote=targets.map((item)=>item.solicitacao_id); openDocumentModal(row); }
     else if (action.dataset.v2Action === 'reserve') {
-      const selected = filteredRequestedRows().filter((item) => state.selectedRequests.has(String(item.solicitacao_id)));
-      window.__hospedagemSolicitacoesAgrupadas = selected.length > 1 ? selected.map((item) => item.solicitacao_id) : [];
+      const selected = setGroupedRequests(action,row);
+      window.__hospedagemSolicitacoesAgrupadas = selected.map((item) => item.solicitacao_id);
       triggerBaseAction('reservar', row);
     }
-    else if (action.dataset.v2Action === 'extend') triggerBaseAction('estender', row);
+    else if (action.dataset.v2Action === 'extend') {
+      const reservation=state.rows.find((item)=>String(item.reserva_id)===String(action.dataset.reservaId));
+      window.__hospedagemExtensaoSolicitacoes=(action.dataset.groupIds||String(row.solicitacao_id)).split(',');
+      triggerBaseAction('estender', reservation||row);
+    }
     else if (action.dataset.v2Action === 'payment' || action.dataset.v2Action === 'finance') triggerBaseAction('enviar-pagamento', row);
     else if (action.dataset.v2Action === 'pay-local') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openLocalPayment(row);}
-    else if (action.dataset.v2Action === 'checkout') {if(targets.length>1&&!window.confirm(`Confirmar checkout de ${targets.length} hospedagens selecionadas?`))return;for(const target of targets) await checkoutOnly(target,targets.length>1);}
+    else if (action.dataset.v2Action === 'checkout') { window.__hospedagemAcaoLote=targets.map((item)=>item.solicitacao_id); triggerBaseAction('enviar-pagamento',row); }
     else if (action.dataset.v2Action === 'quote-edit') await editQuote(action.dataset.quoteId, row);
     else if (action.dataset.v2Action === 'cancel') {
-      if (window.confirm(`Cancelar a solicitação ${row.codigo || ''}?`)) {
-        await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'CANCELADA' }).eq('id', row.solicitacao_id);
+      const ids=(action.dataset.groupIds||String(row.solicitacao_id)).split(',').filter(Boolean);
+      if (window.confirm(`Recusar ${ids.length} solicitação(ões) deste grupo?`)) {
+        await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'CANCELADA' }).in('id', ids);
         await loadData();
       }
     }
@@ -351,13 +358,47 @@ function renderAll() {
   renderRequestFilters();
   renderReservationFilters();
   renderPaymentSummary();
-  renderList('hospV2Solicitadas', filteredRequestedRows(), true);
+  renderList('hospV2Solicitadas', groupRequestedRows(filteredRequestedRows()), true);
   const andamento=filteredStageRows(filteredReservationRows());
   renderStageFilters(andamento);
   renderList('hospV2Andamento', sortedStageRows(andamento,'andamento'), false, 'andamento');
-  renderList('hospV2Pagar', sortedStageRows(state.rows.filter((r) => bucket(r) === 'pagar'),'pagar'), false, 'pagar');
-  renderList('hospV2Nf', sortedStageRows(state.rows.filter((r) => bucket(r) === 'nf'),'nf'), false, 'nf');
+  renderList('hospV2Pagar', groupPaymentRows(sortedStageRows(state.rows.filter((r) => bucket(r) === 'pagar'),'pagar')), false, 'pagar');
   if (state.selectedId) { const selected = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (selected && $('#hospV2Drawer')?.classList.contains('open')) renderDetails(selected); }
+}
+function setGroupedRequests(action,row){
+  const ids=(action.dataset.groupIds||String(row.solicitacao_id)).split(',').filter(Boolean);
+  const grouped=state.rows.filter((item)=>ids.includes(String(item.solicitacao_id)));
+  window.__hospedagemSolicitacoesAgrupadas=ids;
+  state.selectedRequests=new Set(ids);
+  return grouped.length?grouped:[row];
+}
+function groupRequestedRows(rows){
+  const groups=new Map();
+  rows.forEach((row)=>{
+    const pending=bucket(row)==='solicitadas';
+    const key=pending?`${norm(row.cidade)}|${norm(row.uf)}`:`single:${row.solicitacao_id}`;
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(row);
+  });
+  return [...groups.values()].map((items)=>Object.assign({},items[0],{_groupRows:items,_groupIds:items.map((item)=>item.solicitacao_id)}));
+}
+function groupPaymentRows(rows){
+  const groups=new Map();
+  rows.forEach((row)=>{const key=String(row.hotel_id||norm(row.hotel||getHotel(row)?.nome)||row.reserva_id);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);});
+  return [...groups.values()].map((items)=>Object.assign({},items[0],{_paymentRows:items,_groupIds:items.map((item)=>item.solicitacao_id),valor_financeiro:items.reduce((sum,item)=>sum+Number(item.valor_financeiro||item.valor_total_previsto||0),0)}));
+}
+function extensionReservation(group){
+  const requestPeople=new Set(group.flatMap((row)=>getPeople(row).map((p)=>norm(p.colaborador_id||p.nome_colaborador))));
+  const dates=group.map((row)=>String(row.data_checkin||row.data_checkin_prevista||'').slice(0,10)).filter(Boolean).sort();
+  return state.rows.find((candidate)=>{
+    if(!candidate.reserva_id||norm(candidate.cidade)!==norm(group[0]?.cidade)||norm(candidate.uf)!==norm(group[0]?.uf))return false;
+    const candidatePeople=getPeople(candidate).map((p)=>norm(p.colaborador_id||p.nome_colaborador));
+    if(!candidatePeople.some((person)=>requestPeople.has(person)))return false;
+    const checkout=String(candidate.data_checkout||candidate.data_checkout_prevista||'').slice(0,10);
+    if(!checkout||!dates[0])return false;
+    const delta=Math.round((new Date(`${dates[0]}T12:00:00`)-new Date(`${checkout}T12:00:00`))/86400000);
+    return delta===0||delta===1;
+  });
 }
 function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitado_por_nome||'-';}
 function filteredStageRows(rows){const f=state.stageFilters;return rows.filter((row)=>{const people=getPeople(row);return(!f.colaborador||people.some((p)=>String(p.nome_colaborador||'')===f.colaborador))&&(!f.cidade||String(row.cidade||'')===f.cidade)&&(!f.supervisao||people.some((p)=>String(p.supervisao||'')===f.supervisao))&&(!f.hotel||String(row.hotel||getHotel(row)?.nome||'')===f.hotel);});}
@@ -369,8 +410,10 @@ function renderKpis() {
   const payValue = state.rows.filter((r) => ['checkout', 'financeiro'].includes(bucket(r))).reduce((sum, r) => sum + Number(r.valor_financeiro || r.valor_total_previsto || 0), 0);
   const cards = [['Solicitações', counts.requests, `${state.rows.length} no fluxo`, 'quote', '#4ade80'], ['Em cotação', counts.quotes, quoteValue ? money(quoteValue) : 'Aguardando respostas', 'quote', '#facc15'], ['Reservados', counts.reserved, reservedValue ? money(reservedValue) : 'Reservas ativas', 'reserve', '#4ade80'], ['A pagar', counts.pay, payValue ? money(payValue) : 'Sem saldo calculado', 'pay', '#fb923c'], ['NFS-e pendentes', counts.nf, `${state.documents.filter((d) => String(d.tipo).toUpperCase() === 'NFSE').length} recebidas`, 'file', '#a78bfa']];
   const root = $('#hospV2Kpis'); if (!root) return;
-  const destinations=['solicitadas','solicitadas','andamento','pagar','nf'];
-  root.innerHTML = cards.map(([label, value, note, ico, color],index) => `<article class="hosp-v2-kpi" style="--kpi:${color}" data-v2-tab="${destinations[index]}" role="button" tabindex="0"><div class="hosp-v2-kpi-ico">${icon(ico)}</div><div><small>${esc(label)}</small><strong>${esc(value)}</strong><em>${esc(note)}</em></div></article>`).join('');
+  const destinations=['solicitadas','solicitadas','andamento','pagar'];
+  root.innerHTML = cards.map(([label, value, note, ico, color],index) => index===4
+    ? `<a class="hosp-v2-kpi" style="--kpi:${color};text-decoration:none" href="notas-fiscais.html"><div class="hosp-v2-kpi-ico">${icon(ico)}</div><div><small>${esc(label)}</small><strong>${esc(value)}</strong><em>${esc(note)}</em></div></a>`
+    : `<article class="hosp-v2-kpi" style="--kpi:${color}" data-v2-tab="${destinations[index]}" role="button" tabindex="0"><div class="hosp-v2-kpi-ico">${icon(ico)}</div><div><small>${esc(label)}</small><strong>${esc(value)}</strong><em>${esc(note)}</em></div></article>`).join('');
 }
 function requestedValues(row) {
   const people = getPeople(row);
@@ -405,7 +448,7 @@ function renderList(id, rows, requested = false, stage = '') {
   if (!rows.length) { root.innerHTML = '<div class="hosp-v2-empty">Nenhuma hospedagem nesta etapa.</div>'; return; }
   const operational = ['andamento','pagar','nf'].includes(stage);
   const visibleIds=rows.map((row)=>String(row.solicitacao_id));const allSelected=visibleIds.length&&visibleIds.every((id)=>state.selectedRequests.has(id));
-  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : operational ? `<div class="hosp-v2-stage-head"><div class="hosp-v2-mass-check"><input type="checkbox" data-v2-select-all data-stage="${stage}" ${allSelected?'checked':''} aria-label="Selecionar todas as linhas visíveis"><span>${stageSortHeader(stage,'hotel','Hotel')}</span></div>${stageSortHeader(stage,'cidade','Cidade')}${stageSortHeader(stage,'data','Data')}${stageSortHeader(stage,'colaboradores','Colaboradores')}${stageSortHeader(stage,'valor','Valor')}<span>Status $</span><span>NF</span><span>Ações</span></div>` : '';
+  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : operational ? `<div class="hosp-v2-stage-head"><div class="hosp-v2-mass-check"><input type="checkbox" data-v2-select-all data-stage="${stage}" ${allSelected?'checked':''} aria-label="Selecionar todas as linhas visíveis"><span>${stageSortHeader(stage,'hotel','Hotel')}</span></div>${stageSortHeader(stage,'cidade','Cidade')}${stageSortHeader(stage,'data','Data')}${stageSortHeader(stage,'colaboradores','Colaboradores')}<span>Supervisor</span>${stageSortHeader(stage,'valor','Valor')}<span>$</span><span>NF</span><span>Ações</span></div>` : '';
   root.innerHTML = head + rows.map(requested ? requestedRowHtml : operational ? (row) => operationalRowHtml(row,stage) : (row) => cardHtml(row, stage)).join('');
 }
 
@@ -429,15 +472,18 @@ function sortedStageRows(rows,stage) {
 }
 
 function operationalRowHtml(row,stage) {
-  const people=getPeople(row).map((person) => person.nome_colaborador).filter(Boolean);
+  const grouped=row._paymentRows||[row];
+  const people=grouped.flatMap((item)=>getPeople(item)).map((person) => person.nome_colaborador).filter(Boolean);
   const hotel=row.hotel||getHotel(row)?.nome||'Hotel não informado';
   const city=[row.cidade,row.uf].filter(Boolean).join('/')||'-';
   const checkin=row.data_checkin||row.data_checkin_prevista;
   const checkout=row.data_checkout||row.data_checkout_prevista;
   const value=row.valor_financeiro||row.valor_total_previsto;
   const fin=String(row.status_financeiro||'').toUpperCase();const paid=fin==='PAGO';const partial=fin==='PARCIAL'||Number(row.valor_pago||0)>0;const hasNf=getDocuments(row).some((d)=>String(d.tipo).toUpperCase()==='NFSE');
+  const actionAttrs=` data-group-ids="${esc((row._groupIds||[row.solicitacao_id]).join(','))}"`;
+  const groupedButton=(action,ico,label,cls='')=>button(action,row,ico,label,cls).replace(' data-id=',`${actionAttrs} data-id=`);
   const actions=stage==='pagar'
-    ? `${button('pay-local',row,'pay','Pagar','amber')}${button('extra',row,'extra','Custos')}`
+    ? `${groupedButton('pay-local','pay','Pagar','amber')}${groupedButton('document','attach','Anexos','purple')}`
     : stage==='nf' ? `${button('document',row,'attach','Anexar NF','purple')}${button('detail',row,'detail','Detalhes')}`
     : `${button('pay-local',row,'pay','Pagar','amber')}${button('checkout',row,'checkout','Checkout','blue')}`;
   const selected=state.selectedRequests.has(String(row.solicitacao_id));
@@ -446,6 +492,7 @@ function operationalRowHtml(row,stage) {
     <div class="hosp-v2-stage-cell"><strong>${esc(city)}</strong></div>
     <div class="hosp-v2-stage-cell"><strong>${brDate(checkin)}</strong><small>até ${brDate(checkout)}</small></div>
     <div class="hosp-v2-stage-cell people"><strong>${esc(people.join(', ')||row.colaboradores||row.colaborador||'-')}</strong></div>
+    <div class="hosp-v2-stage-cell"><strong>${esc([...new Set(grouped.map(requesterName))].join(', '))}</strong></div>
     <div class="hosp-v2-stage-cell value"><strong>${value?money(value):'A confirmar'}</strong></div>
     <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${paid?'paid':partial?'partial':''}" title="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}" role="img" aria-label="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}"></span></div>
     <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${hasNf?'paid':''}" title="${hasNf?'NF anexada':'NF pendente'}" role="img" aria-label="${hasNf?'NF anexada':'NF pendente'}"></span></div>
@@ -459,15 +506,19 @@ function sortHeader(field,label) {
   return `<button type="button" class="hosp-v2-sort${active?' is-active':''}" data-v2-sort="${field}" aria-sort="${ariaSort}" title="Ordenar por ${esc(label)}">${esc(label)}${arrow}</button>`;
 }
 function requestedRowHtml(row) {
-  const people = getPeople(row), quotes = getQuotes(row);
+  const group=row._groupRows||[row];
+  const people = group.flatMap((item)=>getPeople(item)), quotes = group.flatMap((item)=>getQuotes(item));
   const hotel = row.hotel || getHotel(row)?.nome || (quotes.length ? `${quotes.length} hotel(is) cotado(s)` : 'A definir');
   const supervisors = [...new Set(people.map((p) => p.supervisao).filter(Boolean))];
+  const extension=extensionReservation(group);
+  const attrs=` data-group-ids="${esc((row._groupIds||[row.solicitacao_id]).join(','))}"`;
+  const actionButton=(action,ico,label,cls='')=>button(action,row,ico,label,cls).replace(' data-id=',`${attrs}${extension?` data-reserva-id="${esc(extension.reserva_id)}"`:''} data-id=`);
   const actions = bucket(row) === 'solicitadas'
-    ? [button('quote',row,'quote','Cotar','amber'), button('reserve',row,'reserve','Reservar'), button('cancel',row,'checkout','Cancelar','purple')]
+    ? (extension?[actionButton('extend','extend','Estender'),actionButton('cancel','checkout','Recusar','purple')]:[actionButton('quote','quote','Cotar','amber'), actionButton('reserve','reserve','Reservar'), actionButton('cancel','checkout','Recusar','purple')])
     : [button('detail',row,'detail','Detalhes')];
   return `<article class="hosp-v2-row hosp-v2-request-row ${String(state.selectedId)===String(row.solicitacao_id)?'is-selected':''}">
     <div class="hosp-v2-cell"><label class="hosp-v2-select"><input type="checkbox" data-v2-select value="${esc(row.solicitacao_id)}" ${state.selectedRequests.has(String(row.solicitacao_id))?'checked':''}><span>${icon('hotel')}${esc([row.cidade,row.uf].filter(Boolean).join('/')||'-')}</span></label></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)</span></div></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)${group.length>1?` · ${group.length} solicitações`:''}</span></div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-people">${people.length?people.map((p)=>`<span class="hosp-v2-person">${esc(p.nome_colaborador||'-')}</span>`).join(', '):`<span class="hosp-v2-person">${esc(row.colaborador||row.colaboradores||'-')}</span>`}</div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-supervision">${esc(supervisors.join(', ')||row.supervisao||'-')}</div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(requesterName(row))}</div></div>
@@ -530,8 +581,12 @@ async function saveDocument() {
   const row = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (!row) return; if (!state.tables.documents) return setFeedback('hospV2DocumentFeedback', 'A migration do fluxo v2 ainda não foi aplicada.', 'err');
   const type = $('#hospV2DocumentType').value, file = $('#hospV2DocumentFile').files?.[0]; let url = $('#hospV2DocumentUrl').value.trim(); if (!file && !/^https:\/\//i.test(url)) return setFeedback('hospV2DocumentFeedback', 'Selecione um arquivo ou informe uma URL HTTPS.', 'err'); setFeedback('hospV2DocumentFeedback', 'Anexando documento...');
   if (file) { const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_'), path = `${row.solicitacao_id}/${Date.now()}-${safeName}`; const { error: uploadError } = await supabase.storage.from('hospedagem-documentos').upload(path, file, { upsert: false, contentType: file.type || undefined }); if (uploadError) return setFeedback('hospV2DocumentFeedback', uploadError.message, 'err'); url = supabase.storage.from('hospedagem-documentos').getPublicUrl(path).data.publicUrl; }
-  const { data: doc, error } = await supabase.from('hospedagem_documentos').insert({ solicitacao_id: row.solicitacao_id, reserva_id: row.reserva_id || null, tipo: type, arquivo_url: url, nome_arquivo: file?.name || url.split('/').pop(), mime_type: file?.type || null, origem: 'PAINEL', status: type === 'NFSE' ? 'RECEBIDO' : 'ANEXADO', recebido_em: new Date().toISOString() }).select('*').single(); if (error) return setFeedback('hospV2DocumentFeedback', error.message, 'err');
-  if (type === 'COMPROVANTE' && $('#hospV2DocumentAutoSend').checked) { const hotel = getHotel(row); if (hotel?.whatsapp) { const message = `Olá! Segue o comprovante de pagamento da hospedagem ${row.codigo || row.solicitacao_id}.`; const { data, error: sendError } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, fileUrl: url } }); if (!sendError && data?.ok !== false) await supabase.from('hospedagem_documentos').update({ botconversa_enviado_em: new Date().toISOString(), botconversa_destinatario: hotel.whatsapp, status: 'ENVIADO' }).eq('id', doc.id); else setFeedback('hospV2DocumentFeedback', `Documento anexado, mas o envio falhou: ${data?.error || sendError?.message}`, 'err'); } }
+  const batchIds=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
+  const targets=state.rows.filter((item)=>batchIds.includes(item.solicitacao_id));
+  const documentTargets=targets.length?targets:[row];
+  const { data: docs, error } = await supabase.from('hospedagem_documentos').insert(documentTargets.map((item)=>({ solicitacao_id: item.solicitacao_id, reserva_id: item.reserva_id || null, tipo: type, arquivo_url: url, nome_arquivo: file?.name || url.split('/').pop(), mime_type: file?.type || null, origem: 'PAINEL', status: type === 'NFSE' ? 'RECEBIDO' : 'ANEXADO', recebido_em: new Date().toISOString() }))).select('*'); if (error) return setFeedback('hospV2DocumentFeedback', error.message, 'err');
+  const doc=docs?.[0];
+  if (type === 'COMPROVANTE' && $('#hospV2DocumentAutoSend').checked) { const hotel = getHotel(row); if (hotel?.whatsapp) { const message = `Olá! Segue o comprovante de pagamento da hospedagem ${row.codigo || row.solicitacao_id}.`; const { data, error: sendError } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, fileUrl: url } }); if (!sendError && data?.ok !== false) await supabase.from('hospedagem_documentos').update({ botconversa_enviado_em: new Date().toISOString(), botconversa_destinatario: hotel.whatsapp, status: 'ENVIADO' }).in('id', (docs||[]).map((item)=>item.id)); else setFeedback('hospV2DocumentFeedback', `Documento anexado, mas o envio falhou: ${data?.error || sendError?.message}`, 'err'); } }
   $('#hospV2DocumentFile').value = ''; $('#hospV2DocumentUrl').value = ''; setFeedback('hospV2DocumentFeedback', 'Documento anexado com sucesso.', 'ok'); await loadData(); renderDocumentModal(row);
 }
 function boot() { injectStyles(); const start = () => { mountShell(); if (state.mounted) loadData(); }; start(); const observer = new MutationObserver(start); observer.observe(document.documentElement, { childList: true, subtree: true }); setTimeout(() => observer.disconnect(), 15000); window.addEventListener('hashchange', () => setTimeout(loadData, 300)); document.addEventListener('visibilitychange', () => { if (!document.hidden) loadData(); }); }
