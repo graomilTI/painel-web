@@ -205,7 +205,7 @@ async function loadHotelRows(de, ate, setMessage) {
   if (solicitationIds.length) {
     const { data: collaboratorData } = await supabase
       .from('hospedagem_solicitacao_colaboradores')
-      .select('solicitacao_id,nome_colaborador,supervisao,regional,coordenacao')
+      .select('solicitacao_id,nome_colaborador,supervisao,coordenacao')
       .in('solicitacao_id', solicitationIds);
     (collaboratorData || []).forEach((item) => {
       if (!collaboratorMap.has(item.solicitacao_id)) collaboratorMap.set(item.solicitacao_id, []);
@@ -250,7 +250,7 @@ async function loadHotelRows(de, ate, setMessage) {
     const stayDates = periodDates.filter((date) => date >= checkin && date <= checkout);
     const collaborators = collaboratorMap.get(row.solicitacao_id);
     const people = collaborators?.length
-      ? collaborators.map((item) => ({ name: item.nome_colaborador || '-', regional: item.supervisao || item.regional || '' }))
+      ? collaborators.map((item) => ({ name: item.nome_colaborador || '-', regional: item.supervisao || '' }))
       : String(row.colaboradores || row.colaborador || '')
         .split(/[\n\r,;]+/)
         .map((name) => name.trim())

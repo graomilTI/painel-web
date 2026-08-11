@@ -303,7 +303,7 @@ async function loadData() {
       supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
       supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true }),
       supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
-      supabase.from('hospedagem_solicitacoes').select('id,solicitado_por_nome'),
+      supabase.from('hospedagem_solicitacoes').select('id,solicitante_nome'),
       loadOptional('hospedagem_cotacoes'), loadOptional('hospedagem_custos_extras'), loadOptional('hospedagem_documentos'),
     ]);
     if (rowsRes.error) throw rowsRes.error;
@@ -311,7 +311,7 @@ async function loadData() {
     state.tables.quotes = !quotesRes.missing; state.tables.extras = !extrasRes.missing; state.tables.documents = !docsRes.missing;
     state.collaborators.clear();
     state.requesters.clear();
-    (requestersRes.data||[]).forEach((item)=>state.requesters.set(String(item.id),item.solicitado_por_nome||''));
+    (requestersRes.data||[]).forEach((item)=>state.requesters.set(String(item.id),item.solicitante_nome||''));
     (peopleRes.data || []).forEach((person) => { const key = String(person.solicitacao_id || ''); if (!state.collaborators.has(key)) state.collaborators.set(key, []); state.collaborators.get(key).push(person); });
     renderAll();
   } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; }
@@ -387,7 +387,7 @@ function extensionReservation(group){
     return delta===0||delta===1;
   });
 }
-function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitado_por_nome||'-';}
+function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitante_nome||'-';}
 function filteredStageRows(rows){const f=state.stageFilters;return rows.filter((row)=>{const people=getPeople(row);return(!f.colaborador||people.some((p)=>String(p.nome_colaborador||'')===f.colaborador))&&(!f.cidade||String(row.cidade||'')===f.cidade)&&(!f.supervisao||people.some((p)=>String(p.supervisao||'')===f.supervisao))&&(!f.hotel||String(row.hotel||getHotel(row)?.nome||'')===f.hotel);});}
 function renderStageFilters(visible){const root=$('#hospV2StageFilters');if(!root)return;const all=reservationRows();const choices=(values)=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));const fields={colaborador:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.nome_colaborador))),cidade:choices(all.map((r)=>r.cidade)),supervisao:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.supervisao))),hotel:choices(all.map((r)=>r.hotel||getHotel(r)?.nome))};root.innerHTML=Object.entries(fields).map(([key,values])=>`<label>${key}<select data-stage-filter="${key}"><option value="">Todos</option>${values.map((v)=>`<option value="${esc(v)}" ${state.stageFilters[key]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`).join('');root.dataset.visibleIds=visible.map((r)=>r.solicitacao_id).join(',');}
 function renderKpis() {
