@@ -1396,8 +1396,9 @@ function exportCsv() {
   let headers;
   let csvRows;
   if (state.tab === 'despesas') {
-    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Estadia', 'Extras'];
+    headers = ['Data', 'Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Estadia', 'Extras'];
     csvRows = rows.map((row) => [
+      brDate(row.data_referencia),
       row.colaborador || row.nome_colaborador || '',
       getRegional(row),
       STATUS_LABELS[getStatus(row)] || getStatus(row),
@@ -1452,7 +1453,10 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `conferencia-${state.tab}-${todayISO()}.csv`;
+  const periodo = state.filters.inicio && state.filters.fim
+    ? (state.filters.inicio === state.filters.fim ? state.filters.inicio : `${state.filters.inicio}_a_${state.filters.fim}`)
+    : (state.filters.inicio || state.filters.fim || todayISO());
+  a.download = `conferencia-${state.tab}-${periodo}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
