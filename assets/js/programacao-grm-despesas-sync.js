@@ -85,6 +85,7 @@ function shouldMarkDirty(target, eventType) {
     '[data-add-colab-confirm]',
     '[data-add-frota-confirm]',
     '[data-remover-colab]',
+    '[data-disponivel]',
   ].join(','));
 }
 

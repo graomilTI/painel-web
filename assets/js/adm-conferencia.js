@@ -29,6 +29,7 @@ const LOCALIZACAO_LOGIN_DISTANCIA_ATENCAO_KM = 2;
 const state = {
   tab: 'despesas',
   despesas: [],
+  disponiveis: [],
   conferenciaStatus: new Map(),
   auditoria: [],
   resultado: [],
@@ -307,7 +308,7 @@ function isPedidoDeslocamento(row) {
 }
 
 function getUniqueRegionais() {
-  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas, ...state.localizacao]
+  const values = [...state.despesas, ...state.disponiveis, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas, ...state.localizacao]
     .map((row) => row.supervisao || row.regional || row.coordenacao)
     .filter(Boolean);
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
@@ -397,6 +398,7 @@ function renderShell(content) {
     <section class="conf-hero conf-hero-compact">
       <div class="conf-tabs">
         <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
+        <button class="conf-tab" data-tab="disponiveis" type="button">Disponíveis</button>
         <button class="conf-tab" data-tab="pendentes" type="button">Pendentes</button>
         <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
         <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
@@ -495,6 +497,8 @@ function renderActiveTab() {
   if (subtitle) {
     subtitle.textContent = state.tab === 'despesas'
       ? 'Resumo por colaborador: alimentação, deslocamento e extras.'
+      : state.tab === 'disponiveis'
+        ? 'Efetivos sem O.S. pré-definida que foram liberados como disponíveis na programação.'
       : state.tab === 'pendentes'
         ? 'Despesas "Outros" que o agente automático não consegue lançar no GRM (sem categoria correspondente) — faça o lançamento manualmente e depois confira aqui.'
         : state.tab === 'auditoria'
@@ -509,11 +513,27 @@ function renderActiveTab() {
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
+  if (state.tab === 'disponiveis') return renderDisponiveisTable();
   if (state.tab === 'pendentes') return renderPendentesAgenteTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
   if (state.tab === 'justificativas') return renderJustificativasTable();
   if (state.tab === 'localizacao') return renderLocalizacaoTable();
   return renderResultadoTable();
+}
+
+function renderDisponiveisTable() {
+  const rows = applyLocalFilters(state.disponiveis, 'disponiveis')
+    .sort((a, b) => String(b.data_referencia || '').localeCompare(String(a.data_referencia || ''))
+      || String(a.nome_colaborador || '').localeCompare(String(b.nome_colaborador || ''), 'pt-BR'));
+  const target = document.getElementById('conf-table');
+  if (!rows.length) {
+    target.innerHTML = '<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhum efetivo disponível para os filtros selecionados.</td></tr></tbody></table></div>';
+    return;
+  }
+  target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table" style="min-width:720px">
+    <thead><tr><th>Data</th><th>Nome</th><th>Supervisão</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr><td>${brDate(row.data_referencia)}</td><td><strong>${escapeHtml(row.nome_colaborador || row.colaborador || '-')}</strong></td><td>${escapeHtml(row.supervisao || row.regional || row.coordenacao || '-')}</td></tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function despesasTableHead() {
@@ -1021,6 +1041,7 @@ async function loadDespesas() {
   const programacaoIds = (programacoes || []).map((p) => p.id).filter(Boolean);
   if (!programacaoIds.length) {
     state.despesas = [];
+    state.disponiveis = [];
     return;
   }
 
@@ -1056,6 +1077,13 @@ async function loadDespesas() {
     row.coordenacao = r.coordenacao || row.coordenacao;
     row.supervisao = r.supervisao || row.supervisao;
   });
+  state.disponiveis = disp
+    .filter((row) => normalizeText(row.disponibilidade) === 'DISPONIVEL')
+    .map((row) => ({
+      ...row,
+      data_referencia: row.data_referencia || programacaoMap.get(row.programacao_id)?.data_referencia || '',
+      supervisao: row.supervisao || programacaoMap.get(row.programacao_id)?.supervisao || '',
+    }));
 
   estadia.forEach((r) => {
     const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
@@ -1378,6 +1406,8 @@ async function updateDespesaStatus(id, status, motivo = null) {
 function exportCsv() {
   const rows = state.tab === 'despesas'
     ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
+    : state.tab === 'disponiveis'
+      ? applyLocalFilters(state.disponiveis, 'disponiveis')
     : state.tab === 'pendentes'
       ? sortRows(applyLocalFilters(getPendenciasAgente(), 'despesas'), 'despesas')
       : state.tab === 'auditoria'
@@ -1409,6 +1439,9 @@ function exportCsv() {
       estadiaResumo(row),
       extrasResumo(row),
     ]);
+  } else if (state.tab === 'disponiveis') {
+    headers = ['Data', 'Nome', 'Supervisão'];
+    csvRows = rows.map((row) => [brDate(row.data_referencia), row.nome_colaborador || '', row.supervisao || row.regional || row.coordenacao || '']);
   } else if (state.tab === 'pendentes') {
     headers = ['Colaborador', 'Regional', 'Status', 'Data', 'Despesa "Outros"'];
     csvRows = rows.map((row) => [
