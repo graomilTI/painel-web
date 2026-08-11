@@ -32,3 +32,5 @@ jobs:
           git add agentes-grm-sync/grm-sync-lancar-nhe.js
           git commit -m 'fix: block NHE when GRM day movement already exists'
           git push origin HEAD:main
+
+# rerun 2
