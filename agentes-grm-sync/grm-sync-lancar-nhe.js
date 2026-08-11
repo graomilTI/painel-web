@@ -71,6 +71,9 @@ var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR
 var MAX_LANCAMENTOS_POR_EXECUCAO = Math.min(8, Math.max(1, Number(process.env.NHE_LANCAMENTO_LOTE) || 8));
 var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
 var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';
+// Em recuperação manual, permite processar lotes sequenciais sem criar um job
+// concorrente no worker (use NHE_LANCAMENTO_AUTO_CONTINUACAO=false).
+var AUTO_CONTINUACAO = String(process.env.NHE_LANCAMENTO_AUTO_CONTINUACAO || 'true').toLowerCase() !== 'false';
 
 var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
 var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
@@ -703,6 +706,35 @@ function chaveUnica(dataReferencia, numeroOs) {
   return dataReferencia + '|' + numeroOs;
 }
 
+var nheRealPorChaveCache = {};
+
+// Trava de segurança contra duplicidade histórica: a auditoria do bot não é
+// a fonte de verdade para saber se uma NHE já existe. Antes de reprocessar uma
+// O.S.+data, consulta o histórico REAL importado do GRM. Em caso de falha na
+// consulta, lança erro e interrompe a execução (fail closed), em vez de correr
+// o risco de salvar uma segunda NHE.
+async function existeNheReal(dataReferencia, numeroOs) {
+  var key = chaveUnica(dataReferencia, numeroOs);
+  if (Object.prototype.hasOwnProperty.call(nheRealPorChaveCache, key)) {
+    return nheRealPorChaveCache[key];
+  }
+
+  var result = await supabase
+    .from('grm_nhe_importacoes')
+    .select('id')
+    .eq('dados_json->>sorCode', String(numeroOs))
+    .eq('dados_json->>lnsDate', String(dataReferencia))
+    .limit(1);
+
+  if (result.error) {
+    throw new Error('Falha ao verificar NHE real para ' + key + ': ' + result.error.message);
+  }
+
+  var existe = !!(result.data && result.data.length);
+  nheRealPorChaveCache[key] = existe;
+  return existe;
+}
+
 async function carregarJaLancadas(dataReferencia) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
   inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
@@ -711,7 +743,7 @@ async function carregarJaLancadas(dataReferencia) {
     .select('data_referencia,numero_os,status')
     .gte('data_referencia', ymd(inicio))
     .lte('data_referencia', dataReferencia)
-    .eq('status', 'SUCESSO');
+    .in('status', ['SUCESSO', 'JA_EXISTIA_GRM']);
   if (result.error) throw result.error;
   var set = {};
   (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
@@ -1163,7 +1195,7 @@ async function main() {
   var dryRun = args.dryRun || DRY_RUN;
   var runId = null;
 
-  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0 };
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
@@ -1193,7 +1225,29 @@ async function main() {
 
     for (var i = 0; i < pendentes.length; i++) {
       var p = pendentes[i];
-      if (jaLancadas[chaveUnica(p.data, p.os)]) continue;
+      var chavePendente = chaveUnica(p.data, p.os);
+      if (jaLancadas[chavePendente]) continue;
+
+      // Não confiar apenas em logistica_nhe_lancamentos_auto: uma execução
+      // antiga pode ter falhado/registrado SEM_LOGIN enquanto a NHE foi
+      // lançada manualmente ou por outro fluxo. O histórico importado do GRM
+      // é verificado por O.S.+data antes de abrir a tela de lançamento.
+      if (await existeNheReal(p.data, p.os)) {
+        stats.jaExistiaGrm++;
+        await salvarResultado(p, {
+          status: 'JA_EXISTIA_GRM',
+          erro: null,
+          lancado_em: null,
+          raw: {
+            reconciliacao: 'NHE já existente no GRM antes desta execução',
+            origem_verificacao: 'grm_nhe_importacoes',
+            nao_lancado_nesta_execucao: true
+          }
+        });
+        jaLancadas[chavePendente] = true;
+        log('INFO', 'O.S. ' + p.os + ' em ' + p.data + ': NHE já existe no GRM; lançamento bloqueado.');
+        continue;
+      }
 
       if (!p.funcionario) {
         stats.semFuncionario++;
@@ -1320,9 +1374,11 @@ async function main() {
     }
 
     var restantes = Math.max(0, totalCandidatos - candidatos.length);
-    if (!dryRun && restantes > 0 && stats.sucesso > 0) {
+    if (!dryRun && AUTO_CONTINUACAO && restantes > 0 && stats.sucesso > 0) {
       var criada = await enfileirarContinuacao();
       log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
+    } else if (!dryRun && !AUTO_CONTINUACAO && restantes > 0) {
+      log('INFO', restantes + ' candidato(s) restante(s); continuação automática desativada por NHE_LANCAMENTO_AUTO_CONTINUACAO=false.');
     } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
       log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
     }
@@ -1366,5 +1422,6 @@ module.exports = {
   combinarPendentes: combinarPendentes,
   buscarLoginColaborador: buscarLoginColaborador,
   resolverCoordenadaOs: resolverCoordenadaOs,
-  buscarGestorRegional: buscarGestorRegional
+  buscarGestorRegional: buscarGestorRegional,
+  existeNheReal: existeNheReal
 };
