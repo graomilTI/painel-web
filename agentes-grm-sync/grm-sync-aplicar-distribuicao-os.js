@@ -242,15 +242,53 @@ async function associarColaborador(page, li, colaboradorNome) {
 }
 
 async function salvar(page) {
-  const [btn] = await page.$x('//button[.//span[normalize-space(text())="SALVAR"]]');
-  if (!btn) throw new Error('Botão SALVAR não encontrado.');
-  const disabled = await page.evaluate((el) => el.disabled, btn);
-  if (disabled) { log('WARN', 'Botão SALVAR está desabilitado — nada pendente para salvar (nenhuma mudança detectada).'); return; }
-  await btn.click();
+  // O Graint já alternou a estrutura interna deste botão entre span/div e texto
+  // direto. Localize pela semântica visível em vez de depender de uma tag filha.
   await page.waitForFunction(() => {
-    const toast = document.body.textContent || '';
-    return toast.includes('Registro atualizado');
-  }, { timeout: 10000 }).catch(() => { throw new Error('Não recebi confirmação de salvamento do Graint (toast "Registro atualizado" não apareceu).'); });
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('button, [role="button"]')].some((el) => {
+      const rotulo = normalizar([el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('value')].filter(Boolean).join(' '));
+      return el.getClientRects().length > 0 && /(^|\s)SALVAR(\s|$)/.test(rotulo);
+    });
+  }, { timeout: 6000 }).catch(() => null);
+
+  const resultado = await page.evaluate(() => {
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const visiveis = [...document.querySelectorAll('button, [role="button"]')]
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => ({
+        el,
+        texto: normalizar(el.textContent),
+        rotulo: normalizar([el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('value')].filter(Boolean).join(' ')),
+      }));
+    const candidato = visiveis.find((item) => item.texto === 'SALVAR')
+      || visiveis.find((item) => /(^|\s)SALVAR(\s|$)/.test(item.rotulo));
+
+    if (!candidato) {
+      return { ok: false, motivo: 'ausente', botoes: visiveis.map((item) => item.rotulo).filter(Boolean).slice(0, 20) };
+    }
+    const desabilitado = candidato.el.disabled
+      || candidato.el.getAttribute('aria-disabled') === 'true'
+      || candidato.el.classList.contains('v-btn--disabled');
+    if (desabilitado) return { ok: false, motivo: 'desabilitado', botoes: [candidato.rotulo] };
+    candidato.el.click();
+    return { ok: true, rotulo: candidato.rotulo };
+  });
+
+  if (!resultado.ok) {
+    const disponiveis = resultado.botoes?.join(' | ') || 'nenhum';
+    throw new Error(`Botão SALVAR ${resultado.motivo === 'desabilitado' ? 'está desabilitado' : 'não encontrado'}. Botões visíveis: ${disponiveis}`);
+  }
+  await page.waitForFunction(() => {
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const avisos = [...document.querySelectorAll('.v-snackbar, .v-toast, [role="status"], [role="alert"]')]
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => normalizar(el.textContent));
+    return avisos.some((texto) => texto.includes('REGISTRO ATUALIZADO') || texto.includes('ATUALIZADO COM SUCESSO'));
+  }, { timeout: 10000 }).catch(() => { throw new Error(`Cliquei em "${resultado.rotulo}", mas não recebi confirmação de salvamento do Graint.`); });
 }
 
 // --- Grupo a grupo ---
