@@ -149,7 +149,11 @@ function formatInt(value) {
 
 function formatMs(value) {
   const ms = Number(value || 0);
-  return ms > 0 ? `${Math.round(ms).toLocaleString('pt-BR')} ms` : 'Sem histórico';
+  if (ms <= 0) return 'Sem histórico';
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function formatMemory(value) {
