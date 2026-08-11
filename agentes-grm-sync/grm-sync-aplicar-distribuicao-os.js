@@ -46,8 +46,20 @@ async function login(page) {
   ]);
 }
 
+// --- Ativação controlada por supervisão ---
+// Nem todo gestor já usa a tela Distribuir O.S do painel; pra esses, a indicação de
+// colaborador em operacional_os_colaboradores pode não existir ou não ser confiável,
+// então este agente só deve escrever no Graint pras supervisões que TI marcar como
+// prontas (tabela public.supervisoes, coluna distribuicao_os_automatica). Controlado
+// em TI > Agentes > Aplicar Distribuição de OS.
+async function carregarSupervisoesAtivas() {
+  const { data, error } = await supabase.from('supervisoes').select('nome').eq('distribuicao_os_automatica', true);
+  if (error) throw new Error(`Falha ao consultar supervisoes ativas: ${error.message}`);
+  return new Set(safe(data).map((s) => normalize(s.nome)));
+}
+
 // --- Coleta e agrupamento das OS pendentes (mesma lógica de assets/js/distribuir-os.js) ---
-async function carregarGruposPendentes() {
+async function carregarGruposPendentes(supervisoesAtivas) {
   const { data: osRows, error: osError } = await supabase
     .from('operacional_os')
     .select('*')
@@ -73,7 +85,11 @@ async function carregarGruposPendentes() {
     atribPorOs.set(String(a.os_id), list);
   }
 
+  // O Graint mantém todas as alterações da tela em memória e habilita SALVAR
+  // somente depois de uma distribuição. Por isso, a unidade de processamento é a
+  // tela inteira (data + supervisão), e não cada colaborador isoladamente.
   const grupos = new Map();
+  let ignoradasPorSupervisao = 0;
   for (const row of rows) {
     const vinculados = atribPorOs.get(String(row.id)) || [];
     if (!vinculados.length) continue; // sem colaborador indicado — precisa triagem manual, não é alvo deste agente
@@ -81,15 +97,25 @@ async function carregarGruposPendentes() {
     const coord = coordOf(row);
     // O Graint passou a aceitar distribuição somente entre hoje e os próximos 3 dias.
     if (!data || !coord || !dataAceitaNoGraint(data)) continue;
+    if (!supervisoesAtivas.has(normalize(coord))) { ignoradasPorSupervisao += 1; continue; }
+    const key = `${data}|${normalize(coord)}`;
+    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], osIds: new Set() });
+    const grupo = grupos.get(key);
     for (const a of vinculados) {
       const nome = a.colaborador_nome || '';
       if (!nome) continue;
-      const key = `${data}|${normalize(nome)}|${normalize(coord)}`;
-      if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, colaborador_nome: nome, os: [] });
-      grupos.get(key).os.push(row);
+      const duplicada = grupo.atribuicoes.some((item) => item.os.id === row.id && normalize(item.colaborador_nome) === normalize(nome));
+      if (duplicada) continue;
+      grupo.atribuicoes.push({ os: row, colaborador_nome: nome });
+      grupo.osIds.add(row.id);
     }
   }
-  return [...grupos.values()];
+  if (ignoradasPorSupervisao > 0) {
+    log('INFO', `${ignoradasPorSupervisao} O.S. ignorada(s) — supervisão ainda sem distribuição automática habilitada.`);
+  }
+  return [...grupos.values()]
+    .filter((grupo) => grupo.atribuicoes.length > 0)
+    .map((grupo) => ({ ...grupo, osIds: [...grupo.osIds] }));
 }
 
 // --- Interação com o Graint ---
@@ -225,48 +251,87 @@ async function associarColaborador(page, li, colaboradorNome) {
 }
 
 async function salvar(page) {
-  const [btn] = await page.$x('//button[.//span[normalize-space(text())="SALVAR"]]');
-  if (!btn) throw new Error('Botão SALVAR não encontrado.');
-  const disabled = await page.evaluate((el) => el.disabled, btn);
-  if (disabled) { log('WARN', 'Botão SALVAR está desabilitado — nada pendente para salvar (nenhuma mudança detectada).'); return; }
-  await btn.click();
+  // O Graint já alternou a estrutura interna deste botão entre span/div e texto
+  // direto. Localize pela semântica visível em vez de depender de uma tag filha.
   await page.waitForFunction(() => {
-    const toast = document.body.textContent || '';
-    return toast.includes('Registro atualizado');
-  }, { timeout: 10000 }).catch(() => { throw new Error('Não recebi confirmação de salvamento do Graint (toast "Registro atualizado" não apareceu).'); });
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    return [...document.querySelectorAll('button, [role="button"]')].some((el) => {
+      const rotulo = normalizar([el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('value')].filter(Boolean).join(' '));
+      return el.getClientRects().length > 0 && /(^|\s)SALVAR(\s|$)/.test(rotulo);
+    });
+  }, { timeout: 6000 }).catch(() => null);
+
+  const resultado = await page.evaluate(() => {
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const visiveis = [...document.querySelectorAll('button, [role="button"]')]
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => ({
+        el,
+        texto: normalizar(el.textContent),
+        rotulo: normalizar([el.textContent, el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('value')].filter(Boolean).join(' ')),
+      }));
+    const candidato = visiveis.find((item) => item.texto === 'SALVAR')
+      || visiveis.find((item) => /(^|\s)SALVAR(\s|$)/.test(item.rotulo));
+
+    if (!candidato) {
+      return { ok: false, motivo: 'ausente', botoes: visiveis.map((item) => item.rotulo).filter(Boolean).slice(0, 20) };
+    }
+    const desabilitado = candidato.el.disabled
+      || candidato.el.getAttribute('aria-disabled') === 'true'
+      || candidato.el.classList.contains('v-btn--disabled');
+    if (desabilitado) return { ok: false, motivo: 'desabilitado', botoes: [candidato.rotulo] };
+    candidato.el.click();
+    return { ok: true, rotulo: candidato.rotulo };
+  });
+
+  if (!resultado.ok) {
+    const disponiveis = resultado.botoes?.join(' | ') || 'nenhum';
+    throw new Error(`Botão SALVAR ${resultado.motivo === 'desabilitado' ? 'está desabilitado' : 'não encontrado'}. Botões visíveis: ${disponiveis}`);
+  }
+  await page.waitForFunction(() => {
+    const normalizar = (valor) => String(valor || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const avisos = [...document.querySelectorAll('.v-snackbar, .v-toast, [role="status"], [role="alert"]')]
+      .filter((el) => el.getClientRects().length > 0)
+      .map((el) => normalizar(el.textContent));
+    return avisos.some((texto) => texto.includes('REGISTRO ATUALIZADO') || texto.includes('ATUALIZADO COM SUCESSO'));
+  }, { timeout: 10000 }).catch(() => { throw new Error(`Cliquei em "${resultado.rotulo}", mas não recebi confirmação de salvamento do Graint.`); });
 }
 
-// --- Grupo a grupo ---
-async function processarGrupo(page, grupo) {
-  const numerosOs = grupo.os.map((o) => String(o.numero_os));
-  log('INFO', `Grupo ${grupo.data} · ${grupo.coordenacao} · ${grupo.colaborador_nome} · OS: ${numerosOs.join(', ')}`);
+// --- Supervisão a supervisão ---
+async function processarSupervisao(page, grupo) {
+  const numerosOs = [...new Set(grupo.atribuicoes.map((item) => String(item.os.numero_os)))];
+  log('INFO', `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${numerosOs.length} OS · ${grupo.atribuicoes.length} associação(ões)`);
 
   await ajustarData(page, grupo.data);
   const supervisaoEncontrada = await selecionarSupervisao(page, grupo.coordenacao);
   log('INFO', `Supervisão selecionada no Graint: "${supervisaoEncontrada}"`);
   await clicarAtualizar(page);
 
-  for (const os of grupo.os) {
-    const li = await localizarLiDaOs(page, os.numero_os);
-    if (!li) throw new Error(`OS ${os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
-    await associarColaborador(page, li, grupo.colaborador_nome);
+  // Aplica toda a distribuição da supervisão antes do único SALVAR da tela.
+  for (const atribuicao of grupo.atribuicoes) {
+    const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
+    if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
+    await associarColaborador(page, li, atribuicao.colaborador_nome);
   }
 
   if (DRY_RUN) {
-    log('INFO', `[DRY-RUN] Grupo pronto para salvar (${numerosOs.length} OS) — SALVAR e update no Supabase pulados.`);
+    log('INFO', `[DRY-RUN] Supervisão pronta para salvar (${numerosOs.length} OS, ${grupo.atribuicoes.length} associações) — SALVAR e update no Supabase pulados.`);
     return;
   }
 
   await salvar(page);
 
   const now = new Date().toISOString();
-  const ids = grupo.os.map((o) => o.id);
+  const ids = grupo.osIds;
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
     .in('id', ids);
   if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
-  log('SUCCESS', `Grupo aplicado no Graint e marcado como AJUSTADA (${ids.length} OS).`);
+  log('SUCCESS', `Supervisão aplicada no Graint e marcada como AJUSTADA (${ids.length} OS).`);
 }
 
 async function main() {
@@ -275,11 +340,17 @@ async function main() {
   let falhas = 0;
   try {
     log('INFO', `=== Aplicar Distribuição de OS no Graint${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
-    let grupos = await carregarGruposPendentes();
-    log('INFO', `${grupos.length} grupo(s) pendente(s) com colaborador indicado.`);
+    const supervisoesAtivas = await carregarSupervisoesAtivas();
+    if (!supervisoesAtivas.size) {
+      log('SUCCESS', 'Nenhuma supervisão habilitada para distribuição automática (TI > Agentes). Nada a fazer.');
+      return;
+    }
+    log('INFO', `${supervisoesAtivas.size} supervisão(ões) habilitada(s) para distribuição automática.`);
+    let grupos = await carregarGruposPendentes(supervisoesAtivas);
+    log('INFO', `${grupos.length} supervisão(ões)/data pendente(s) com colaborador indicado.`);
     if (LIMIT > 0 && grupos.length > LIMIT) {
       grupos = grupos.slice(0, LIMIT);
-      log('INFO', `LIMIT=${LIMIT} — processando só os primeiros ${grupos.length} grupo(s) (uso de teste).`);
+      log('INFO', `LIMIT=${LIMIT} — processando só as primeiras ${grupos.length} supervisão(ões)/data (uso de teste).`);
     }
     if (!grupos.length) { log('SUCCESS', 'Nada a fazer.'); return; }
 
@@ -302,34 +373,40 @@ async function main() {
     if (headless) await page.setViewport({ width: 1920, height: 1440 });
     await login(page);
     await page.goto(SO_ORDER_DISTRIBUTION_URL, { waitUntil: 'networkidle2' });
-    let abriuFiltro = false;
-    const botaoFiltro = await page.$('.v-badge__wrapper button');
-    if (botaoFiltro) {
-      await botaoFiltro.click();
-      abriuFiltro = true;
-    } else abriuFiltro = await page.evaluate(() => {
-      const direto = document.querySelector('.sOrderDistribution-act-filter');
-      if (direto) { direto.click(); return true; }
-      const botao = Array.from(document.querySelectorAll('button')).find((el) => {
-        const contexto = `${el.textContent || ''} ${el.title || ''} ${el.getAttribute('aria-label') || ''} ${el.className || ''}`;
-        return /FILT(RAR|RO)|PESQUISAR|TOGGLESEARCH/i.test(contexto);
-      });
-      if (botao) { botao.click(); return true; }
-      return false;
-    });
-    if (abriuFiltro) await new Promise((resolve) => setTimeout(resolve, 500));
+    // A tela pode preservar o painel de filtros aberto entre acessos. Clicar sempre
+    // no ícone, como o agente fazia, fecha o painel e remove #olsCode/#sodDate.
+    // Só acione o toggle quando os campos ainda não estiverem montados.
+    let filtrosProntos = Boolean(await page.$('#olsCode')) && Boolean(await page.$('#sodDate'));
+    if (!filtrosProntos) {
+      const botaoFiltro = await page.$('.sOrderDistribution-act-filter button, .v-badge__wrapper button');
+      if (botaoFiltro) {
+        await botaoFiltro.click();
+      } else {
+        await page.evaluate(() => {
+          const botao = Array.from(document.querySelectorAll('button')).find((el) => {
+            const contexto = `${el.textContent || ''} ${el.title || ''} ${el.getAttribute('aria-label') || ''} ${el.className || ''}`;
+            return /FILT(RAR|RO)|PESQUISAR|TOGGLESEARCH/i.test(contexto);
+          });
+          if (botao) botao.click();
+        });
+      }
+      await page.waitForSelector('#olsCode', { timeout: 6000 }).catch(() => null);
+      await page.waitForSelector('#sodDate', { timeout: 6000 }).catch(() => null);
+      filtrosProntos = Boolean(await page.$('#olsCode')) && Boolean(await page.$('#sodDate'));
+    }
+    if (!filtrosProntos) throw new Error('Painel de filtros abriu, mas os campos Supervisão (#olsCode) e Data (#sodDate) não ficaram disponíveis.');
 
     for (const grupo of grupos) {
       try {
-        await processarGrupo(page, grupo);
+        await processarSupervisao(page, grupo);
         ok += 1;
       } catch (error) {
         falhas += 1;
-        log('ERROR', `Grupo ${grupo.data} · ${grupo.coordenacao} · ${grupo.colaborador_nome} falhou: ${error.message}`);
+        log('ERROR', `Supervisão ${grupo.data} · ${grupo.coordenacao} falhou: ${error.message}`);
       }
     }
-    log('SUCCESS', `Concluído: ${ok} grupo(s) aplicado(s), ${falhas} falha(s).`);
-    if (falhas > 0 && ok === 0) throw new Error('Todos os grupos falharam.');
+    log('SUCCESS', `Concluído: ${ok} supervisão(ões)/data aplicada(s), ${falhas} falha(s).`);
+    if (falhas > 0 && ok === 0) throw new Error('Todas as supervisões falharam.');
   } catch (error) {
     log('ERROR', error.message);
     throw error;

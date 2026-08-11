@@ -1,4 +1,4 @@
-const SW_VERSION = '20260729-cache-v11';
+const SW_VERSION = '20260811-toolbar-mobile-v13';
 
 export function registerPanelPwa() {
   if (!('serviceWorker' in navigator)) return;

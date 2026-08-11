@@ -109,6 +109,7 @@ function injectStyles() {
     .adm-pix-box{display:none;grid-template-columns:220px 1fr;gap:14px;align-items:start;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;margin-top:12px}.adm-pix-box.open{display:grid}.adm-pix-qr{width:220px;height:220px;border-radius:14px;background:#fff;padding:10px;object-fit:contain}.adm-pix-copy{width:100%;min-height:126px;border:1px solid rgba(255,255,255,.08);background:#15152a;color:#dcfce7;border-radius:14px;padding:12px;font-size:12px;line-height:1.45;resize:vertical;outline:none}.adm-pix-hint{font-size:12px;color:#9ca3af;margin:0 0 8px}.adm-hotel-register-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.adm-hotel-register-card h3{margin:0}.adm-hotel-register-card p{margin:4px 0 0}
     .adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}
     .adm-hidden-soft{display:none!important}.adm-hidden{display:none!important}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.mt-16{margin-top:16px!important}
+    .adm-payment-modal-card{background:linear-gradient(155deg,#071b14,#03100c)}.adm-payment-main{grid-template-columns:1fr 1.2fr .72fr}.adm-payment-main .full{grid-column:1/-1}.adm-payment-extras{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:14px;border:1px solid rgba(74,222,128,.18);border-radius:15px;background:rgba(2,18,13,.55)}.adm-payment-extras strong{display:block;color:#f0fff6}.adm-payment-extras span{display:block;margin-top:3px;color:#8ea79c;font-size:11.5px}.adm-payment-choice{display:flex;gap:10px;margin:16px 0 0;padding:0;border:0}.adm-payment-choice legend{width:100%;margin-bottom:8px;color:#91a89e;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.adm-payment-choice label{display:flex;align-items:center;gap:9px;min-width:160px;padding:11px 13px;border:1px solid rgba(74,222,128,.18);border-radius:13px;background:#071f17;cursor:pointer}.adm-payment-choice input{width:17px;height:17px;accent-color:#4ade80}.adm-payment-choice strong,.adm-payment-choice small{display:block}.adm-payment-choice strong{color:#effff5}.adm-payment-choice small{margin-top:2px;color:#81998e}.adm-payment-actions{display:grid;grid-template-columns:1.05fr 1fr 1fr}.adm-payment-actions .adm-hosp-feedback{grid-column:1/-1}@media(max-width:700px){.adm-payment-main,.adm-payment-actions{grid-template-columns:1fr}.adm-payment-extras{align-items:flex-start;flex-direction:column}.adm-payment-choice{flex-direction:column}.adm-payment-choice label{min-width:0}}
     .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="andamento"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
     .adm-hosp-tabs-sep{width:1px;align-self:stretch;background:var(--line-2);margin:0 4px}
     .adm-hosp-tabs-label{align-self:center;font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
@@ -434,20 +435,24 @@ export function renderContent(content, userContext) {
 
     <!-- Modal: Pagar -->
     <div id="modalPagar" class="adm-hosp-modal">
-      <div class="adm-hosp-modal-card small">
+      <div class="adm-hosp-modal-card medium adm-payment-modal-card">
         <div class="adm-hosp-modal-head">
           <div><h3>Pagamento PIX</h3><p class="muted" id="pagarSub"></p></div>
           <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalPagarClose">Fechar</button>
         </div>
-        <div class="adm-hosp-form mt-16">
+        <div class="adm-section-block mt-16"><div class="adm-section-label">Período e colaboradores selecionados</div><div id="pagarResumoSelecao" class="muted"></div></div>
+        <div class="adm-hosp-form adm-payment-main mt-16">
           <div class="adm-hosp-field"><label>CNPJ/CPF do fornecedor</label><input id="pagarCnpj" placeholder="Ex.: 00.000.000/0001-00" /></div>
           <div class="adm-hosp-field"><label>Nome do fornecedor</label><input id="pagarFornecedor" /></div>
           <div class="adm-hosp-field"><label>Valor (R$)</label><input id="pagarValor" type="number" step="0.01" min="0" /></div>
-          <div class="adm-hosp-field"><label>PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
+          <div class="adm-hosp-field full"><label>Chave PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
         </div>
-        <div class="adm-hosp-form-actions mt-16">
-          <button class="btn btn-secondary" type="button" id="btnGerarPix">GERAR QR CODE</button>
-          <button class="btn btn-primary" type="button" id="btnConfirmarPagamento">PAGAR</button>
+        <div class="adm-payment-extras"><div><strong>Extras</strong><span>Inclua custos adicionais e envie para Conferência quando necessário.</span></div><button class="btn btn-secondary" type="button" id="btnPagarExtra">+ ADICIONAR EXTRA</button></div>
+        <fieldset class="adm-payment-choice"><legend>Pagamento</legend><label><input type="radio" name="pagarTipo" value="TOTAL" checked><span><strong>Total</strong><small>Quitar o valor integral</small></span></label><label><input type="radio" name="pagarTipo" value="PARCIAL"><span><strong>Parcial</strong><small>Manter saldo em aberto</small></span></label></fieldset>
+        <div class="adm-hosp-form-actions adm-payment-actions mt-16">
+          <button class="btn btn-primary" type="button" id="btnGerarPix">▦ PAGAR COM QR CODE</button>
+          <button class="btn btn-secondary" type="button" id="btnPagarFinanceiro">ENVIAR AO FINANCEIRO</button>
+          <button class="btn btn-secondary" type="button" id="btnPagarComprovante">ANEXAR COMPROVANTE</button>
           <span id="pagarFeedback" class="adm-hosp-feedback"></span>
         </div>
         <div id="pixQrBox" class="adm-pix-box">
@@ -1662,13 +1667,19 @@ export function renderContent(content, userContext) {
   // ─── Modal: Pagar ──────────────────────────────────────────────────────────
 
   function openModalPagar() {
-    const total=calcularTotalCheckout();
+    const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
+    const selectedRows=state.rows.filter((row)=>ids.includes(row.solicitacao_id));
+    const batch=selectedRows.length?selectedRows:[state.selected];
+    const total=batch.reduce((sum,row)=>sum+Number(row?.valor_financeiro||row?.valor_total_previsto||0),0)||calcularTotalCheckout();
     const hotel=getHotelById(state.selected?.hotel_id);
     document.getElementById('pagarSub').textContent=`${state.selected?.hotel||'-'} · ${money(total)}`;
     document.getElementById('pagarCnpj').value=hotel?.cnpj_cpf||'';
     document.getElementById('pagarFornecedor').value=state.selected?.hotel||'';
     document.getElementById('pagarValor').value=total.toFixed(2);
-    document.getElementById('pagarPix').value='';
+    document.getElementById('pagarPix').value=hotel?.pix_chave||'';
+    const dates=batch.flatMap((row)=>[row?.data_checkin||row?.data_checkin_prevista,row?.data_checkout||row?.data_checkout_prevista]).filter(Boolean).sort();
+    const names=[...new Set(batch.flatMap((row)=>getColaboradoresDetalhados(row).map((c)=>c.nome_colaborador||c.nome).filter(Boolean)))];
+    document.getElementById('pagarResumoSelecao').textContent=`${brDate(dates[0])} até ${brDate(dates.at(-1))} · ${names.join(', ')||'Sem colaboradores'} · ${batch.length} hospedagem(ns)`;
     const pixBox=document.getElementById('pixQrBox');
     pixBox?.classList.remove('open');
     const pixCopia=document.getElementById('pixCopiaCola');
@@ -1679,22 +1690,28 @@ export function renderContent(content, userContext) {
     document.getElementById('modalPagar').classList.add('open');
   }
 
+  window.__abrirPagamentoHospedagem=(solicitacaoId)=>{
+    const row=state.rows.find((item)=>String(item.solicitacao_id)===String(solicitacaoId));
+    if(!row)return;
+    state.selected=row;
+    const extras=document.getElementById('checkoutExtrasList');
+    if(extras)extras.innerHTML='';
+    openModalPagar();
+  };
+
   async function confirmarPagamento() {
     const fornecedor=document.getElementById('pagarFornecedor')?.value.trim();
     const valor=Number(document.getElementById('pagarValor')?.value||0);
     if (!fornecedor||!valor) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
     if (!state.selected?.reserva_id) { setFeedback('pagarFeedback','Reserva não encontrada.','err'); return; }
     setFeedback('pagarFeedback','Registrando pagamento...');
-    const total=calcularTotalCheckout();
+    const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
+    const batch=state.rows.filter((row)=>ids.includes(row.solicitacao_id)&&row.reserva_id);
+    const targets=batch.length?batch:[state.selected];
+    const total=targets.reduce((sum,row)=>sum+Number(row.valor_financeiro||row.valor_total_previsto||0),0)||calcularTotalCheckout();
     if (valor>total) { setFeedback('pagarFeedback','O valor pago não pode ser maior que o saldo.','err'); return; }
-    const parcial=valor<total;
-    const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:parcial?'PARCIAL':'PAGO',valor_original:total,valor_total:total,valor_pago:valor,saldo:Math.max(0,total-valor),pagamento_parcial:parcial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString()};
-    if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
-    else await supabase.from('hospedagem_financeiro').insert(finPayload);
-    await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:'CHECKOUT_REALIZADO',valor_total_previsto:total,
-      atualizado_por:userContext?.user?.id||null
-    }).eq('id',state.selected.reserva_id);
+    const parcial=document.querySelector('input[name="pagarTipo"]:checked')?.value==='PARCIAL'||valor<total;
+    for(const target of targets){const targetTotal=Number(target.valor_financeiro||target.valor_total_previsto||0);const paid=Math.min(targetTotal,total?valor*(targetTotal/total):valor);const targetPartial=parcial||paid<targetTotal;const finPayload={reserva_id:target.reserva_id,status_financeiro:targetPartial?'PARCIAL':'PAGO',valor_original:targetTotal,valor_total:targetTotal,valor_pago:paid,saldo:Math.max(0,targetTotal-paid),pagamento_parcial:targetPartial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString()};if(target.financeiro_id)await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',target.financeiro_id);else await supabase.from('hospedagem_financeiro').insert(finPayload);await supabase.from('hospedagem_reservas').update({status_hospedagem:'CHECKOUT_REALIZADO',atualizado_por:userContext?.user?.id||null}).eq('id',target.reserva_id);}
     setFeedback('pagarFeedback',parcial?`Pagamento parcial registrado. Saldo: ${money(total-valor)}.`:'Pagamento registrado.','ok');
     await loadRows();
     setTimeout(() => { document.getElementById('modalPagar').classList.remove('open'); document.getElementById('modalCheckout').classList.remove('open'); },1200);
@@ -1823,6 +1840,9 @@ export function renderContent(content, userContext) {
   document.getElementById('modalPagarClose')?.addEventListener('click',() => document.getElementById('modalPagar').classList.remove('open'));
   document.getElementById('modalPagar')?.addEventListener('click',(ev) => { if (ev.target.id==='modalPagar') document.getElementById('modalPagar').classList.remove('open'); });
   document.getElementById('btnGerarPix')?.addEventListener('click',gerarPixQr);
+  document.getElementById('btnPagarExtra')?.addEventListener('click',()=>window.__abrirHospedagemAcao?.('extra',state.selected?.solicitacao_id));
+  document.getElementById('btnPagarComprovante')?.addEventListener('click',()=>window.__abrirHospedagemAcao?.('document',state.selected?.solicitacao_id));
+  document.getElementById('btnPagarFinanceiro')?.addEventListener('click',async()=>{if(!document.getElementById('pagarPix')?.value.trim()){setFeedback('pagarFeedback','Informe a chave PIX antes de enviar ao financeiro.','err');return;}const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];const targets=state.rows.filter((row)=>ids.includes(row.solicitacao_id)&&row.reserva_id);for(const target of (targets.length?targets:[state.selected])){state.selected=target;await enviarFinanceiroCheckout();}});
   document.getElementById('btnConfirmarPagamento')?.addEventListener('click',confirmarPagamento);
 
   // Table delegation

@@ -12,6 +12,9 @@ const state = {
   selectedRequests: new Set(),
   selectedId: null,
   requestSort: { field: 'data', direction: 'desc' },
+  stageSort: { andamento: { field: 'data', direction: 'asc' }, pagar: { field: 'data', direction: 'asc' }, nf: { field: 'data', direction: 'desc' } },
+  stageFilters: { colaborador:'', cidade:'', supervisao:'', hotel:'' },
+  requesters: new Map(),
   mounted: false,
   loading: false,
   tables: { quotes: true, extras: true, documents: true, messages: true },
@@ -76,11 +79,13 @@ function injectStyles() {
     .hosp-v2-hotel{font-weight:850;color:#effff5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hosp-v2-status{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:5px 9px;border-radius:999px;border:1px solid rgba(74,222,128,.22);background:rgba(22,101,52,.22);color:#a7f3c0;font-size:10px;font-weight:950;text-transform:uppercase}.hosp-v2-status.quote{color:#fde68a;background:rgba(146,89,5,.17);border-color:rgba(245,158,11,.32)}.hosp-v2-status.finance{color:#ddd6fe;background:rgba(91,33,182,.18);border-color:rgba(167,139,250,.3)}.hosp-v2-status.paid{color:#bbf7d0;background:rgba(22,101,52,.28)}.hosp-v2-note{display:flex;gap:7px;align-items:center;color:#5ef497;font-size:10.5px;font-weight:850;margin-top:8px}.hosp-v2-note svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
     .hosp-v2-actions{display:grid;grid-template-columns:repeat(4,minmax(46px,1fr));gap:7px;align-content:center}.hosp-v2-btn{min-height:42px;border:1px solid rgba(74,222,128,.25);background:rgba(2,18,13,.8);color:#bfffd2;border-radius:11px;display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;cursor:pointer;font-size:9.5px;font-weight:850;line-height:1.05;padding:5px;transition:.12s ease}.hosp-v2-btn:hover{transform:translateY(-1px);background:rgba(12,55,38,.8);border-color:rgba(74,222,128,.55)}.hosp-v2-btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.85;stroke-linecap:round;stroke-linejoin:round}.hosp-v2-btn.amber{color:#fbbf24;border-color:rgba(245,158,11,.4);background:rgba(120,71,5,.12)}.hosp-v2-btn.purple{color:#c4b5fd;border-color:rgba(167,139,250,.38);background:rgba(76,29,149,.12)}.hosp-v2-btn.blue{color:#7dd3fc;border-color:rgba(56,189,248,.35);background:rgba(3,105,161,.1)}.hosp-v2-btn:disabled{opacity:.35;cursor:not-allowed;transform:none}.hosp-v2-btn.wide{grid-column:span 2;flex-direction:row;gap:7px;font-size:10px}
     .hosp-v2-empty{padding:34px;border:1px dashed rgba(74,222,128,.22);border-radius:15px;text-align:center;color:#8aa49a;background:rgba(3,20,15,.45)}
+    .hosp-v2-stage-head,.hosp-v2-stage-row{display:grid;grid-template-columns:minmax(185px,1.15fr) minmax(135px,.8fr) minmax(170px,.9fr) minmax(260px,1.5fr) minmax(120px,.7fr) minmax(190px,.9fr);min-width:1060px}.hosp-v2-stage-head{padding:0 11px;color:#91a89e;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.hosp-v2-stage-head span{padding:7px 10px}.hosp-v2-stage-row{position:relative;overflow:hidden;border:1px solid rgba(34,197,94,.28);border-radius:12px;background:linear-gradient(100deg,rgba(5,27,20,.98),rgba(2,16,12,.98));box-shadow:0 8px 24px rgba(0,0,0,.16);transition:.16s ease}.hosp-v2-stage-row::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#4ade80}.hosp-v2-stage-row:hover,.hosp-v2-stage-row.is-selected{border-color:rgba(74,222,128,.68);transform:translateY(-1px)}.hosp-v2-stage-row.is-selected{background:linear-gradient(100deg,rgba(10,53,35,.98),rgba(3,25,18,.98));box-shadow:0 0 0 1px rgba(74,222,128,.16),0 10px 28px rgba(0,0,0,.2)}.hosp-v2-stage-cell{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:12px 14px;border-right:1px solid rgba(74,222,128,.1);color:#d8eee3;font-size:11.5px}.hosp-v2-stage-cell:last-child{border-right:0}.hosp-v2-stage-cell strong{color:#f1fff7;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hosp-v2-stage-cell small{margin-top:4px;color:#88a298;font-size:10.5px}.hosp-v2-stage-cell.people{white-space:normal;line-height:1.4}.hosp-v2-stage-cell.value strong{color:#86efac;font-size:13px}.hosp-v2-stage-hotel{display:grid;grid-template-columns:18px minmax(0,1fr);gap:9px;align-items:center;cursor:pointer}.hosp-v2-stage-hotel input{width:17px;height:17px;margin:0;accent-color:#4ade80}.hosp-v2-stage-hotel span{min-width:0;color:#f1fff7;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hosp-v2-stage-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.hosp-v2-stage-actions .hosp-v2-btn{min-height:38px;flex-direction:row;font-size:9.5px}.hosp-v2-stage-actions .hosp-v2-btn svg{width:15px;height:15px}
     .hosp-v2-drawer{position:fixed;z-index:9997;top:0;right:0;width:min(430px,96vw);height:100vh;background:linear-gradient(180deg,#041711,#020d0a);border-left:1px solid rgba(74,222,128,.38);box-shadow:-24px 0 60px rgba(0,0,0,.42);transform:translateX(102%);transition:transform .2s ease;overflow:auto;padding:18px}.hosp-v2-drawer.open{transform:none}.hosp-v2-drawer-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid rgba(74,222,128,.18)}.hosp-v2-drawer-head h3{margin:0;color:#f2fff7}.hosp-v2-drawer-close{width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#d1e3da;cursor:pointer}.hosp-v2-drawer-body{display:grid;gap:12px;padding:14px 0}.hosp-v2-detail-box{border:1px solid rgba(74,222,128,.2);border-radius:14px;background:rgba(6,31,23,.55);padding:13px}.hosp-v2-detail-box h4{margin:0 0 10px;color:#f3fff8;font-size:13px}.hosp-v2-detail-grid{display:grid;grid-template-columns:1fr auto;gap:8px 12px;color:#a9beb4;font-size:11.5px}.hosp-v2-detail-grid strong{color:#effff5;text-align:right}.hosp-v2-total{color:#5df294!important;font-size:15px}.hosp-v2-doc{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 10px;border:1px solid rgba(74,222,128,.15);border-radius:11px;margin-top:7px}.hosp-v2-doc a{color:#d9fff0;text-decoration:none;font-weight:800;font-size:11.5px}.hosp-v2-doc small{display:block;color:#7f9a8e;margin-top:2px}.hosp-v2-quote{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(74,222,128,.12)}.hosp-v2-quote:last-child{border-bottom:0}.hosp-v2-quote strong{font-size:11.5px;color:#eafff2}.hosp-v2-quote small{display:block;color:#819a8f;margin-top:2px}.hosp-v2-linkbtn{border:1px solid rgba(74,222,128,.28);background:rgba(22,101,52,.18);color:#afffc6;border-radius:9px;padding:7px 9px;font-size:10px;font-weight:850;cursor:pointer}.hosp-v2-drawer-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.hosp-v2-drawer-actions button{min-height:42px;border-radius:11px;font-weight:900;font-size:11px;cursor:pointer}.hosp-v2-paylocal{border:1px solid rgba(245,158,11,.5);background:linear-gradient(180deg,rgba(180,83,9,.65),rgba(120,53,15,.65));color:#fff7ed}.hosp-v2-payfinance{border:1px solid rgba(167,139,250,.45);background:rgba(76,29,149,.32);color:#ede9fe}
     .hosp-v2-timeline{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;align-items:start}.hosp-v2-step{text-align:center;color:#748e82;font-size:8.5px;position:relative}.hosp-v2-step::before{content:"";position:absolute;top:12px;left:-50%;right:50%;height:1px;background:rgba(74,222,128,.22)}.hosp-v2-step:first-child::before{display:none}.hosp-v2-step i{position:relative;z-index:1;width:25px;height:25px;border-radius:50%;display:grid;place-items:center;margin:0 auto 5px;background:#09261a;border:1px solid rgba(74,222,128,.28);color:#4ade80;font-style:normal}.hosp-v2-step.done{color:#b9d1c5}.hosp-v2-step.done i{background:#0b4b2c;border-color:#4ade80;color:#caffd8}.hosp-v2-step.active i{box-shadow:0 0 0 4px rgba(74,222,128,.12)}
     .hosp-v2-modal{position:fixed;z-index:10010;inset:0;display:none;place-items:center;padding:16px;background:rgba(0,8,5,.82);backdrop-filter:blur(5px)}.hosp-v2-modal.open{display:grid}.hosp-v2-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#041a12;border:1px solid rgba(74,222,128,.35);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55);padding:18px}.hosp-v2-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hosp-v2-modal-head h3{margin:0;color:#f0fff6}.hosp-v2-modal-head p{margin:4px 0 0;color:#86a095;font-size:12px}.hosp-v2-modal-close{border:1px solid rgba(255,255,255,.12);background:transparent;color:#e5f5ed;border-radius:9px;padding:8px 11px;cursor:pointer}.hosp-v2-form{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}.hosp-v2-field{display:grid;gap:6px}.hosp-v2-field.full{grid-column:1/-1}.hosp-v2-field label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#91aa9f;font-weight:900}.hosp-v2-field input,.hosp-v2-field select,.hosp-v2-field textarea{width:100%;box-sizing:border-box;background:#071f17;border:1px solid rgba(74,222,128,.2);color:#eafff2;border-radius:11px;padding:10px 11px;outline:none;color-scheme:dark}.hosp-v2-field textarea{min-height:82px;resize:vertical}.hosp-v2-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}.hosp-v2-primary{border:1px solid rgba(74,222,128,.5);background:rgba(22,101,52,.5);color:#d8ffe4;border-radius:10px;padding:10px 15px;font-weight:900;cursor:pointer}.hosp-v2-secondary{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.03);color:#d9ebe2;border-radius:10px;padding:10px 15px;font-weight:850;cursor:pointer}.hosp-v2-feedback{font-size:11.5px;color:#9bb0a6;margin-right:auto;align-self:center}.hosp-v2-feedback.ok{color:#72f3a0}.hosp-v2-feedback.err{color:#fca5a5}.hosp-v2-mini-list{display:grid;gap:7px;margin-top:12px}.hosp-v2-mini-item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px;border:1px solid rgba(74,222,128,.16);border-radius:11px;background:rgba(2,16,12,.5)}.hosp-v2-mini-item strong{color:#eafff2;font-size:11.5px}.hosp-v2-mini-item small{display:block;color:#81998e;margin-top:2px}.hosp-v2-mini-item button{border:1px solid rgba(248,113,113,.25);background:rgba(127,29,29,.18);color:#fecaca;border-radius:8px;padding:6px 8px;cursor:pointer}
     @media(max-width:1280px){.hosp-v2-kpis{grid-template-columns:repeat(3,1fr)}.hosp-v2-row:not(.hosp-v2-request-row){grid-template-columns:minmax(180px,.8fr) minmax(300px,1.5fr) minmax(180px,.8fr)}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-cell.actions{grid-column:1/-1;border-top:1px solid rgba(74,222,128,.11);border-right:0}.hosp-v2-row:not(.hosp-v2-request-row) .hosp-v2-actions{grid-template-columns:repeat(7,minmax(70px,1fr))}}
     @media(max-width:820px){.hosp-v2-kpis{grid-template-columns:1fr 1fr}.hosp-v2-row{grid-template-columns:1fr}.hosp-v2-cell{border-right:0;border-bottom:1px solid rgba(74,222,128,.1)}.hosp-v2-actions{grid-template-columns:repeat(4,1fr)}.hosp-v2-form{grid-template-columns:1fr}.hosp-v2-field.full{grid-column:auto}}
+    #andamentoFiltros{display:none!important}.hosp-v2-stage-filterbar{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:9px;margin:0 0 10px;padding:11px;border:1px solid rgba(34,197,94,.2);border-radius:12px;background:#07151d}.hosp-v2-stage-filterbar label{display:grid;gap:5px;color:#91a89e;font-size:9.5px;font-weight:900;text-transform:uppercase}.hosp-v2-stage-filterbar select{padding:9px;border:1px solid rgba(74,222,128,.2);border-radius:9px;background:#061d15;color:#eafff2}.hosp-v2-stage-head,.hosp-v2-stage-row{grid-template-columns:minmax(185px,1.1fr) minmax(135px,.75fr) minmax(155px,.85fr) minmax(230px,1.35fr) minmax(105px,.6fr) minmax(90px,.5fr) minmax(75px,.42fr) minmax(170px,.9fr);min-width:1220px}.hosp-v2-mass-check{display:flex;align-items:center;gap:7px}.hosp-v2-mass-check input{width:16px;height:16px;accent-color:#4ade80}.hosp-v2-dot-status{display:inline-flex;align-items:center;gap:7px;font-size:10.5px;font-weight:850}.hosp-v2-dot-status::before{content:"";width:9px;height:9px;border-radius:50%;background:#facc15}.hosp-v2-dot-status.paid::before{background:#4ade80}.hosp-v2-dot-status.partial::before{background:#38bdf8}
   `;
   document.head.appendChild(style);
 }
@@ -153,6 +158,8 @@ function mountShell() {
     list.className = 'hosp-v2-list';
     card.appendChild(list);
   });
+  const andamentoList=$('#hospV2Andamento');
+  if(andamentoList) andamentoList.insertAdjacentHTML('beforebegin','<div class="hosp-v2-stage-filterbar" id="hospV2StageFilters"></div>');
   document.body.insertAdjacentHTML('beforeend', drawerHtml() + modalsHtml());
   bindEvents();
   observeBaseChanges();
@@ -188,19 +195,31 @@ function bindEvents() {
       renderAll();
       return;
     }
+    const stageSort = event.target.closest('[data-v2-stage-sort]');
+    if (stageSort) {
+      const stage=stageSort.dataset.v2Stage;
+      const field=stageSort.dataset.v2StageSort;
+      const current=state.stageSort[stage]||{field:'data',direction:'asc'};
+      state.stageSort[stage]={field,direction:current.field===field&&current.direction==='asc'?'desc':'asc'};
+      renderAll(); return;
+    }
     const selector = event.target.closest('[data-v2-select]');
     if (selector) {
       selector.checked ? state.selectedRequests.add(selector.value) : state.selectedRequests.delete(selector.value);
       renderAll(); return;
     }
+    const selectAll=event.target.closest('[data-v2-select-all]');
+    if(selectAll){const rows=selectAll.dataset.stage==='andamento'?filteredStageRows(state.rows.filter((r)=>bucket(r)==='reservados')):state.rows.filter((r)=>bucket(r)===selectAll.dataset.stage);rows.forEach((r)=>selectAll.checked?state.selectedRequests.add(String(r.solicitacao_id)):state.selectedRequests.delete(String(r.solicitacao_id)));renderAll();return;}
     const action = event.target.closest('[data-v2-action]');
     if (!action) return;
     const row = state.rows.find((r) => String(r.solicitacao_id) === String(action.dataset.id));
     if (!row) return;
+    const selectedRows=state.rows.filter((r)=>state.selectedRequests.has(String(r.solicitacao_id)));
+    const targets=state.selectedRequests.has(String(row.solicitacao_id))&&selectedRows.length?selectedRows:[row];
     state.selectedId = row.solicitacao_id;
     if (action.dataset.v2Action === 'detail') openDetails(row);
     else if (action.dataset.v2Action === 'quote') openQuoteModal(row);
-    else if (action.dataset.v2Action === 'extra') openExtraModal(row);
+    else if (action.dataset.v2Action === 'extra') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openExtraModal(row);}
     else if (action.dataset.v2Action === 'document') openDocumentModal(row);
     else if (action.dataset.v2Action === 'reserve') {
       const selected = filteredRequestedRows().filter((item) => state.selectedRequests.has(String(item.solicitacao_id)));
@@ -209,8 +228,8 @@ function bindEvents() {
     }
     else if (action.dataset.v2Action === 'extend') triggerBaseAction('estender', row);
     else if (action.dataset.v2Action === 'payment' || action.dataset.v2Action === 'finance') triggerBaseAction('enviar-pagamento', row);
-    else if (action.dataset.v2Action === 'pay-local') openLocalPayment(row);
-    else if (action.dataset.v2Action === 'checkout') await checkoutOnly(row);
+    else if (action.dataset.v2Action === 'pay-local') {window.__hospedagemAcaoLote=targets.map((r)=>r.solicitacao_id);openLocalPayment(row);}
+    else if (action.dataset.v2Action === 'checkout') {if(targets.length>1&&!window.confirm(`Confirmar checkout de ${targets.length} hospedagens selecionadas?`))return;for(const target of targets) await checkoutOnly(target,targets.length>1);}
     else if (action.dataset.v2Action === 'quote-edit') await editQuote(action.dataset.quoteId, row);
     else if (action.dataset.v2Action === 'cancel') {
       if (window.confirm(`Cancelar a solicitação ${row.codigo || ''}?`)) {
@@ -229,6 +248,7 @@ function bindEvents() {
   $('#solOrdenar')?.addEventListener('change',(event) => { state.requestSort.field = event.target.value; queueMicrotask(renderAll); });
   $('#solDirecao')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort.direction = $('#solDirecao')?.textContent?.trim() === '↑' ? 'asc' : 'desc'; renderAll(); }));
   $('#solLimparFiltros')?.addEventListener('click',() => queueMicrotask(() => { state.requestSort = { field:'data', direction:'desc' }; renderAll(); }));
+  document.addEventListener('change',(event)=>{const field=event.target?.dataset?.stageFilter;if(field){state.stageFilters[field]=event.target.value;renderAll();}});
 }
 
 function observeBaseChanges() {
@@ -248,16 +268,19 @@ async function loadData() {
   if (state.loading || !state.mounted) return;
   state.loading = true;
   try {
-    const [rowsRes, hotelsRes, peopleRes, quotesRes, extrasRes, docsRes] = await Promise.all([
+    const [rowsRes, hotelsRes, peopleRes, requestersRes, quotesRes, extrasRes, docsRes] = await Promise.all([
       supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
       supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true }),
       supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
+      supabase.from('hospedagem_solicitacoes').select('id,solicitado_por_nome'),
       loadOptional('hospedagem_cotacoes'), loadOptional('hospedagem_custos_extras'), loadOptional('hospedagem_documentos'),
     ]);
     if (rowsRes.error) throw rowsRes.error;
     state.rows = rowsRes.data || []; state.hotels = hotelsRes.data || []; state.quotes = quotesRes.data || []; state.extras = extrasRes.data || []; state.documents = docsRes.data || [];
     state.tables.quotes = !quotesRes.missing; state.tables.extras = !extrasRes.missing; state.tables.documents = !docsRes.missing;
     state.collaborators.clear();
+    state.requesters.clear();
+    (requestersRes.data||[]).forEach((item)=>state.requesters.set(String(item.id),item.solicitado_por_nome||''));
     (peopleRes.data || []).forEach((person) => { const key = String(person.solicitacao_id || ''); if (!state.collaborators.has(key)) state.collaborators.set(key, []); state.collaborators.get(key).push(person); });
     renderAll();
   } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; }
@@ -266,11 +289,16 @@ async function loadData() {
 function renderAll() {
   renderKpis();
   renderList('hospV2Solicitadas', filteredRequestedRows(), true);
-  renderList('hospV2Andamento', state.rows.filter((r) => bucket(r) === 'reservados'), false, 'andamento');
-  renderList('hospV2Pagar', state.rows.filter((r) => bucket(r) === 'pagar'), false, 'pagar');
-  renderList('hospV2Nf', state.rows.filter((r) => bucket(r) === 'nf'), false, 'nf');
+  const andamento=filteredStageRows(state.rows.filter((r) => bucket(r) === 'reservados'));
+  renderStageFilters(andamento);
+  renderList('hospV2Andamento', sortedStageRows(andamento,'andamento'), false, 'andamento');
+  renderList('hospV2Pagar', sortedStageRows(state.rows.filter((r) => bucket(r) === 'pagar'),'pagar'), false, 'pagar');
+  renderList('hospV2Nf', sortedStageRows(state.rows.filter((r) => bucket(r) === 'nf'),'nf'), false, 'nf');
   if (state.selectedId) { const selected = state.rows.find((r) => String(r.solicitacao_id) === String(state.selectedId)); if (selected && $('#hospV2Drawer')?.classList.contains('open')) renderDetails(selected); }
 }
+function requesterName(row){return state.requesters.get(String(row.solicitacao_id))||row.solicitado_por_nome||'-';}
+function filteredStageRows(rows){const f=state.stageFilters;return rows.filter((row)=>{const people=getPeople(row);return(!f.colaborador||people.some((p)=>String(p.nome_colaborador||'')===f.colaborador))&&(!f.cidade||String(row.cidade||'')===f.cidade)&&(!f.supervisao||people.some((p)=>String(p.supervisao||'')===f.supervisao))&&(!f.hotel||String(row.hotel||getHotel(row)?.nome||'')===f.hotel);});}
+function renderStageFilters(visible){const root=$('#hospV2StageFilters');if(!root)return;const all=state.rows.filter((r)=>bucket(r)==='reservados');const choices=(values)=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));const fields={colaborador:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.nome_colaborador))),cidade:choices(all.map((r)=>r.cidade)),supervisao:choices(all.flatMap((r)=>getPeople(r).map((p)=>p.supervisao))),hotel:choices(all.map((r)=>r.hotel||getHotel(r)?.nome))};root.innerHTML=Object.entries(fields).map(([key,values])=>`<label>${key}<select data-stage-filter="${key}"><option value="">Todos</option>${values.map((v)=>`<option value="${esc(v)}" ${state.stageFilters[key]===v?'selected':''}>${esc(v)}</option>`).join('')}</select></label>`).join('');root.dataset.visibleIds=visible.map((r)=>r.solicitacao_id).join(',');}
 function renderKpis() {
   const counts = { requests: state.rows.filter((r) => bucket(r) === 'solicitadas').length, quotes: state.rows.filter((r) => String(r.status_solicitacao).toUpperCase() === 'EM_COTACAO').length, reserved: state.rows.filter((r) => bucket(r) === 'reservados').length, pay: state.rows.filter((r) => ['checkout', 'financeiro'].includes(bucket(r)) && String(r.status_financeiro).toUpperCase() !== 'PAGO').length, nf: state.rows.filter((r) => !getDocuments(r).some((d) => String(d.tipo).toUpperCase() === 'NFSE') && !['LANCADO', 'DISPENSADO'].includes(String(r.status_nota).toUpperCase())).length };
   const quoteValue = state.quotes.reduce((sum, q) => sum + Number(q.valor_total || 0), 0);
@@ -289,7 +317,7 @@ function requestedValues(row) {
     data: String(row.data_solicitacao || '').slice(0,10),
     checkin: String(row.data_checkin || row.data_checkin_prevista || '').slice(0,10),
     hotel: row.hotel || getHotel(row)?.nome || '',
-    gestor: row.solicitado_por_nome || row.gestor_nome || row.gestor || row.criado_por_nome || '',
+    gestor: requesterName(row),
   };
 }
 function filteredRequestedRows() {
@@ -311,8 +339,54 @@ function filteredRequestedRows() {
 function renderList(id, rows, requested = false, stage = '') {
   const root = document.getElementById(id); if (!root) return;
   if (!rows.length) { root.innerHTML = '<div class="hosp-v2-empty">Nenhuma hospedagem nesta etapa.</div>'; return; }
-  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : '';
-  root.innerHTML = head + rows.map(requested ? requestedRowHtml : (row) => cardHtml(row, stage)).join('');
+  const operational = ['andamento','pagar','nf'].includes(stage);
+  const visibleIds=rows.map((row)=>String(row.solicitacao_id));const allSelected=visibleIds.length&&visibleIds.every((id)=>state.selectedRequests.has(id));
+  const head = requested ? `<div class="hosp-v2-list-head">${sortHeader('cidade','Cidade')}${sortHeader('checkin','Check-in / Diárias')}${sortHeader('colaborador','Colaboradores')}${sortHeader('supervisao','Supervisão')}${sortHeader('gestor','Gestor')}<span class="hosp-v2-list-head-label">Ações</span></div>` : operational ? `<div class="hosp-v2-stage-head"><div class="hosp-v2-mass-check"><input type="checkbox" data-v2-select-all data-stage="${stage}" ${allSelected?'checked':''} aria-label="Selecionar todas as linhas visíveis"><span>${stageSortHeader(stage,'hotel','Hotel')}</span></div>${stageSortHeader(stage,'cidade','Cidade')}${stageSortHeader(stage,'data','Data')}${stageSortHeader(stage,'colaboradores','Colaboradores')}${stageSortHeader(stage,'valor','Valor')}<span>Status $</span><span>NF</span><span>Ações</span></div>` : '';
+  root.innerHTML = head + rows.map(requested ? requestedRowHtml : operational ? (row) => operationalRowHtml(row,stage) : (row) => cardHtml(row, stage)).join('');
+}
+
+function stageSortHeader(stage,field,label) {
+  const current=state.stageSort[stage]||{};
+  const active=current.field===field;
+  return `<button type="button" class="hosp-v2-sort${active?' is-active':''}" data-v2-stage="${stage}" data-v2-stage-sort="${field}">${label}${active?`<span class="hosp-v2-sort-arrow">${current.direction==='asc'?'↑':'↓'}</span>`:''}</button>`;
+}
+
+function sortedStageRows(rows,stage) {
+  const current=state.stageSort[stage]||{field:'data',direction:'asc'};
+  const direction=current.direction==='asc'?1:-1;
+  const value=(row) => {
+    if(current.field==='hotel') return row.hotel||getHotel(row)?.nome||'';
+    if(current.field==='cidade') return [row.cidade,row.uf].filter(Boolean).join('/');
+    if(current.field==='colaboradores') return getPeople(row).map((person) => person.nome_colaborador).join(' ')||row.colaboradores||row.colaborador||'';
+    if(current.field==='valor') return Number(row.valor_financeiro||row.valor_total_previsto||0);
+    return row.data_checkin||row.data_checkin_prevista||'';
+  };
+  return [...rows].sort((a,b) => typeof value(a)==='number'?(value(a)-value(b))*direction:String(value(a)).localeCompare(String(value(b)),'pt-BR',{numeric:true,sensitivity:'base'})*direction);
+}
+
+function operationalRowHtml(row,stage) {
+  const people=getPeople(row).map((person) => person.nome_colaborador).filter(Boolean);
+  const hotel=row.hotel||getHotel(row)?.nome||'Hotel não informado';
+  const city=[row.cidade,row.uf].filter(Boolean).join('/')||'-';
+  const checkin=row.data_checkin||row.data_checkin_prevista;
+  const checkout=row.data_checkout||row.data_checkout_prevista;
+  const value=row.valor_financeiro||row.valor_total_previsto;
+  const fin=String(row.status_financeiro||'').toUpperCase();const paid=fin==='PAGO';const partial=fin==='PARCIAL'||Number(row.valor_pago||0)>0;const hasNf=getDocuments(row).some((d)=>String(d.tipo).toUpperCase()==='NFSE');
+  const actions=stage==='pagar'
+    ? `${button('pay-local',row,'pay','Pagar','amber')}${button('extra',row,'extra','Custos')}`
+    : stage==='nf' ? `${button('document',row,'attach','Anexar NF','purple')}${button('detail',row,'detail','Detalhes')}`
+    : `${button('pay-local',row,'pay','Pagar','amber')}${button('checkout',row,'checkout','Checkout','blue')}`;
+  const selected=state.selectedRequests.has(String(row.solicitacao_id));
+  return `<article class="hosp-v2-stage-row ${selected?'is-selected':''}">
+    <div class="hosp-v2-stage-cell"><label class="hosp-v2-stage-hotel"><input type="checkbox" data-v2-select value="${esc(row.solicitacao_id)}" ${selected?'checked':''} aria-label="Selecionar ${esc(hotel)}"><span title="${esc(hotel)}">${esc(hotel)}</span></label></div>
+    <div class="hosp-v2-stage-cell"><strong>${esc(city)}</strong></div>
+    <div class="hosp-v2-stage-cell"><strong>${brDate(checkin)}</strong><small>até ${brDate(checkout)}</small></div>
+    <div class="hosp-v2-stage-cell people"><strong>${esc(people.join(', ')||row.colaboradores||row.colaborador||'-')}</strong></div>
+    <div class="hosp-v2-stage-cell value"><strong>${value?money(value):'A confirmar'}</strong></div>
+    <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${paid?'paid':partial?'partial':''}" title="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}" role="img" aria-label="${paid?'Pago':partial?'Pagamento parcial':'Pagamento pendente'}"></span></div>
+    <div class="hosp-v2-stage-cell" style="align-items:center"><span class="hosp-v2-dot-status ${hasNf?'paid':''}" title="${hasNf?'NF anexada':'NF pendente'}" role="img" aria-label="${hasNf?'NF anexada':'NF pendente'}"></span></div>
+    <div class="hosp-v2-stage-cell"><div class="hosp-v2-stage-actions">${actions}</div></div>
+  </article>`;
 }
 function sortHeader(field,label) {
   const active = state.requestSort.field === field;
@@ -330,7 +404,7 @@ function requestedRowHtml(row) {
     <div class="hosp-v2-cell"><div class="hosp-v2-date">${icon('reserve')}<span>${brDate(row.data_checkin||row.data_checkin_prevista)} · ${esc(row.quantidade_diarias_prevista||row.quantidade_diarias||'-')} diária(s)</span></div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-people">${people.length?people.map((p)=>`<span class="hosp-v2-person">${esc(p.nome_colaborador||'-')}</span>`).join(', '):`<span class="hosp-v2-person">${esc(row.colaborador||row.colaboradores||'-')}</span>`}</div></div>
     <div class="hosp-v2-cell"><div class="hosp-v2-supervision">${esc(supervisors.join(', ')||row.supervisao||'-')}</div></div>
-    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(row.solicitado_por_nome||row.gestor_nome||row.gestor||row.criado_por_nome||'-')}</div></div>
+    <div class="hosp-v2-cell"><div class="hosp-v2-hotel">${esc(requesterName(row))}</div></div>
     <div class="hosp-v2-cell actions"><div class="hosp-v2-actions">${actions.join('')}</div></div>
   </article>`;
 }
@@ -348,7 +422,7 @@ function cardHtml(row, stage = '') {
 }
 function button(action, row, ico, label, cls = '', disabled = false) { return `<button type="button" class="hosp-v2-btn ${cls}" data-v2-action="${action}" data-id="${esc(row.solicitacao_id)}" ${disabled ? 'disabled' : ''}>${icon(ico)}<span>${esc(label)}</span></button>`; }
 function triggerBaseAction(action, row) { let helper = $('#hospV2BaseActionHelper'); if (!helper) { helper = document.createElement('button'); helper.id = 'hospV2BaseActionHelper'; helper.type = 'button'; helper.hidden = true; $('#pageContent')?.appendChild(helper); } helper.dataset.action = action; helper.dataset.id = row.solicitacao_id; helper.click(); }
-function openLocalPayment(row) { triggerBaseAction('enviar-pagamento', row); setTimeout(() => { const checkout = $('#modalCheckout'); if (checkout?.classList.contains('open')) $('#btnAbrirPagar')?.click(); }, 80); }
+function openLocalPayment(row) { if (typeof window.__abrirPagamentoHospedagem === 'function') { window.__abrirPagamentoHospedagem(row.solicitacao_id); return; } triggerBaseAction('enviar-pagamento', row); }
 async function checkoutOnly(row) { if (!row.reserva_id) return; if (!window.confirm(`Confirmar o check-out da hospedagem ${row.codigo || ''}?\n\nO pagamento e a NFS-e continuarão pendentes.`)) return; const { error } = await supabase.from('hospedagem_reservas').update({ status_hospedagem: 'CHECKOUT_REALIZADO', data_checkout: row.data_checkout || todayIso() }).eq('id', row.reserva_id); if (error) return window.alert(`Erro ao registrar check-out: ${error.message}`); await loadData(); }
 function openDetails(row) { state.selectedId = row.solicitacao_id; renderAll(); renderDetails(row); $('#hospV2Drawer')?.classList.add('open'); }
 function renderDetails(row) {
@@ -395,4 +469,5 @@ async function saveDocument() {
   $('#hospV2DocumentFile').value = ''; $('#hospV2DocumentUrl').value = ''; setFeedback('hospV2DocumentFeedback', 'Documento anexado com sucesso.', 'ok'); await loadData(); renderDocumentModal(row);
 }
 function boot() { injectStyles(); const start = () => { mountShell(); if (state.mounted) loadData(); }; start(); const observer = new MutationObserver(start); observer.observe(document.documentElement, { childList: true, subtree: true }); setTimeout(() => observer.disconnect(), 15000); window.addEventListener('hashchange', () => setTimeout(loadData, 300)); document.addEventListener('visibilitychange', () => { if (!document.hidden) loadData(); }); }
+window.__abrirHospedagemAcao=(action,solicitacaoId)=>{const row=state.rows.find((item)=>String(item.solicitacao_id)===String(solicitacaoId));if(!row)return;if(action==='extra')openExtraModal(row);if(action==='document')openDocumentModal(row);};
 boot();
