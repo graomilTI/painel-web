@@ -5,7 +5,13 @@ alter table public.operacional_os
 
 alter table public.operacional_os
   add constraint operacional_os_status_conferencia_check
-  check (status_conferencia in ('PENDENTE', 'AJUSTADA'))
+  check (status_conferencia in (
+    'PENDENTE',
+    'DISTRIBUIDA',
+    'AJUSTAR',
+    'CONCLUIDA',
+    'AJUSTADA'
+  ))
   not valid;
 
 alter table public.operacional_os
