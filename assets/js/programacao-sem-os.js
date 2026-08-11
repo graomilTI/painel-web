@@ -147,7 +147,6 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
   const indispBadge = indispMotivo
     ? `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`
     : '';
-  const efetivo = tipoContratoLetra(tipoContratoCru || colab.tipoLabel) === 'E';
   const disponivel = situacaoAtual === 'DISPONIVEL';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
@@ -158,7 +157,7 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
       </div>
     </div>
     <div class="pso-situacoes">
-      ${efetivo ? `<button type="button" class="pso-disponivel-btn ${disponivel ? 'on' : ''}" data-disponivel ${dis}>${disponivel ? 'Disponível ✓' : 'Disponível'}</button>` : ''}
+      <button type="button" class="pso-disponivel-btn ${disponivel ? 'on' : ''}" data-disponivel ${dis}>${disponivel ? 'Disponível ✓' : 'Disponível'}</button>
       <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
       ${SITUACOES.map(([valor, label]) => `<button type="button" class="pso-sit-btn ${situacaoAtual === valor ? 'on' : ''}" data-situacao="${esc(valor)}" ${dis}>${esc(label)}</button>`).join('')}
     </div>
