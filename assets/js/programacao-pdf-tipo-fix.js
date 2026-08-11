@@ -209,10 +209,15 @@ async function desenharPdf(linhas, semOsLinhas, meta = {}) {
     doc.text('Sem O.S. — colaboradores da regional sem atendimento hoje', M, y + 4);
     y += 8;
     desenharTabela([
-      { key: 'colaborador', label: 'Colaborador', width: 75 },
-      { key: 'tipo', label: 'Tipo', width: 15 },
-      { key: 'situacao', label: 'Situação', width: 40 },
-      { key: 'observacao', label: 'Observação', width: PW - 2 * M - (75 + 15 + 40) },
+      { key: 'colaborador', label: 'Colaborador', width: 55 },
+      { key: 'tipo', label: 'Tipo', width: 13 },
+      { key: 'situacao', label: 'Situação', width: 28 },
+      { key: 'cafe', label: 'Café', width: 13 },
+      { key: 'almoco', label: 'Almoço', width: 15 },
+      { key: 'janta', label: 'Janta', width: 13 },
+      { key: 'pernoite', label: 'Pernoite', width: 20 },
+      { key: 'extras', label: 'Extras', width: 50 },
+      { key: 'observacao', label: 'Observação', width: PW - 2 * M - (55 + 13 + 28 + 13 + 15 + 13 + 20 + 50) },
     ], semOsLinhas);
   }
 
@@ -244,10 +249,6 @@ async function gerarPdfComTipo(button) {
     const dataReferencia = document.getElementById('progDataRef')?.value || todayIso();
 
     const roster = await loadRosterDoDia(programacaoIdQuery);
-    if (!roster.length) {
-      setFeedback('Nenhum colaborador confirmado nesta programação ainda.', 'warn');
-      return;
-    }
 
     const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
     const colaboradorIds = roster.map((row) => row.colaboradorId);
@@ -329,12 +330,26 @@ async function gerarPdfComTipo(button) {
       situacoesPorColab = new Map((data || []).map((row) => [String(row.colaborador_id), row]));
     }
 
+    const disponiveisIds = semOsColabs
+      .filter((colaborador) => normalizeText(situacoesPorColab.get(colaborador.colaboradorId)?.disponibilidade) === 'DISPONIVEL')
+      .map((colaborador) => colaborador.colaboradorId);
+    const extrasDisponiveis = disponiveisIds.length
+      ? await loadExtras(programacaoIdQuery, disponiveisIds)
+      : new Map();
     const semOsLinhas = semOsColabs.map((colaborador) => {
       const row = situacoesPorColab.get(colaborador.colaboradorId);
+      const ali = custos.ali.get(colaborador.colaboradorId) || {};
+      const est = custos.est.get(colaborador.colaboradorId) || {};
+      const extras = extrasDisponiveis.get(colaborador.colaboradorId) || [];
       return {
         colaborador: colaborador.nome,
         tipo: tipoLetra(tipos, colaborador.colaboradorId, colaborador.nome),
-        situacao: SITUACAO_LABEL[normalizeText(row?.disponibilidade || '')] || '-',
+        situacao: normalizeText(row?.disponibilidade) === 'DISPONIVEL' ? 'Disponível' : (SITUACAO_LABEL[normalizeText(row?.disponibilidade || '')] || '-'),
+        cafe: ali.cafe ? 'Sim' : '-',
+        almoco: ali.almoco ? 'Sim' : '-',
+        janta: ali.janta ? 'Sim' : '-',
+        pernoite: normalizeText(est.tipo_estadia) === 'PERNOITE' ? 'Sim' : '-',
+        extras: extras.length ? extras.map((item) => `${item.tipo_despesa || 'Outro'} R$${(Number(item.valor) || 0).toFixed(2)}`).join('; ') : '-',
         observacao: row?.observacao || '-',
       };
     });
@@ -377,16 +392,15 @@ async function montarTextoCompartilhar() {
   const dataReferencia = document.getElementById('progDataRef')?.value || todayIso();
 
   const roster = await loadRosterDoDia(programacaoIdQuery);
-  if (!roster.length) throw new Error('Nenhum colaborador confirmado nesta programação ainda.');
 
   const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
   const [custos, osResumoPorId, vinculosRes] = await Promise.all([
     loadCustos(programacaoIdQuery),
     loadOsResumo(osIds),
-    supabase
+    osIds.length ? supabase
       .from('operacional_os_colaboradores')
       .select('os_id,colaborador_key,colaborador_cpf,origem_sugestao')
-      .in('os_id', osIds),
+      .in('os_id', osIds) : Promise.resolve({ data: [], error: null }),
   ]);
   if (vinculosRes.error) throw vinculosRes.error;
 
@@ -447,8 +461,29 @@ async function montarTextoCompartilhar() {
     return `Motorista: ${nomeMotorista}\nCaronas:\n${caronas.length ? caronas.join('\n') : '-'}`;
   });
 
+  const { data: disponiveisRows, error: disponiveisError } = await supabase
+    .from('programacao_colaboradores')
+    .select('programacao_id,colaborador_id,nome_colaborador')
+    .in('programacao_id', Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery])
+    .eq('disponibilidade', 'DISPONIVEL');
+  if (disponiveisError) throw disponiveisError;
+  const disponiveisIds = (disponiveisRows || []).map((row) => row.colaborador_id);
+  const extrasDisponiveis = disponiveisIds.length ? await loadExtras(programacaoIdQuery, disponiveisIds) : new Map();
+  const blocosDisponiveis = (disponiveisRows || []).map((row) => {
+    const ali = custos.ali.get(row.colaborador_id) || {};
+    const est = custos.est.get(row.colaborador_id) || {};
+    const extras = extrasDisponiveis.get(row.colaborador_id) || [];
+    const despesas = [
+      ali.cafe ? 'Café' : '', ali.almoco ? 'Almoço' : '', ali.janta ? 'Janta' : '',
+      normalizeText(est.tipo_estadia) === 'PERNOITE' ? 'Pernoite' : '',
+      ...extras.map((item) => `${item.tipo_despesa || 'Extra'}${Number(item.valor) > 0 ? ` R$ ${(Number(item.valor)).toFixed(2)}` : ''}`),
+    ].filter(Boolean);
+    return `• ${row.nome_colaborador || row.colaborador_id}${despesas.length ? ` — ${despesas.join(', ')}` : ''}`;
+  });
+
   const partes = [`📋 Programação — ${brDate(dataReferencia)}`, ...blocosLocal];
   if (blocosMotorista.length) partes.push(...blocosMotorista);
+  if (blocosDisponiveis.length) partes.push(`Disponíveis:\n${blocosDisponiveis.join('\n')}`);
   return partes.join('\n\n');
 }
 
