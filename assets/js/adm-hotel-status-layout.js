@@ -4,6 +4,7 @@ const STATUS_CELL_ATTR = 'data-hosp-status-cell';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const selectedRequestGroups = new Set();
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -56,6 +57,35 @@ function injectStyles() {
     }
     #hospV2Solicitadas .hosp-ext-row-note{
       display:none!important;
+    }
+
+    /* Seleção em massa da aba Solicitações. */
+    #hospV2Solicitadas .hosp-ext-mass-city-head{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+    }
+    #hospV2Solicitadas .hosp-ext-mass-city-head > .hosp-v2-sort{
+      flex:1 1 auto;
+      min-width:0;
+    }
+    #hospV2Solicitadas .hosp-ext-select-all,
+    #hospV2Solicitadas .hosp-ext-select-row{
+      width:16px;
+      height:16px;
+      margin:0;
+      flex:0 0 auto;
+      accent-color:#4ade80;
+      cursor:pointer;
+    }
+    #hospV2Solicitadas .hosp-v2-request-row > .hosp-v2-cell:first-child{
+      gap:9px;
+    }
+    #hospV2Solicitadas .hosp-v2-request-row.is-selected{
+      border-color:rgba(74,222,128,.78)!important;
+      background:linear-gradient(100deg,rgba(10,53,35,.98),rgba(3,25,18,.98))!important;
+      box-shadow:0 0 0 1px rgba(74,222,128,.16),0 10px 28px rgba(0,0,0,.2)!important;
     }
   `;
   document.head.appendChild(style);
@@ -121,11 +151,85 @@ function patchRows() {
   });
 }
 
+function rowSelectionMeta(row) {
+  const action = row.querySelector('[data-hosp-patch-action]');
+  if (!action) return null;
+  const requestIds = String(action.dataset.requestIds || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const collabIds = String(action.dataset.collabIds || '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  if (!requestIds.length) return null;
+  const target = action.dataset.reservaId ? `ext:${action.dataset.reservaId}` : 'nova';
+  const key = `${requestIds.slice().sort().join(',')}|${collabIds.slice().sort().join(',')}|${target}`;
+  return { key, requestIds, collabIds };
+}
+
+function visibleSelectableRows() {
+  return $$('#hospV2Solicitadas .hosp-v2-request-row[data-hosp-ext-patched="1"]')
+    .map((row) => ({ row, meta: rowSelectionMeta(row) }))
+    .filter((item) => item.meta);
+}
+
+function ensureMassHeader(items) {
+  const head = $('#hospV2Solicitadas .hosp-v2-list-head');
+  if (!head) return;
+
+  let wrapper = head.querySelector('.hosp-ext-mass-city-head');
+  if (!wrapper) {
+    const cityHeader = head.children[0];
+    if (!cityHeader) return;
+    wrapper = document.createElement('div');
+    wrapper.className = 'hosp-ext-mass-city-head';
+    cityHeader.replaceWith(wrapper);
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'hosp-ext-select-all';
+    checkbox.setAttribute('data-hosp-ext-select-all', '1');
+    checkbox.setAttribute('aria-label', 'Selecionar todas as solicitações visíveis');
+    wrapper.append(checkbox, cityHeader);
+  }
+
+  const checkbox = wrapper.querySelector('[data-hosp-ext-select-all]');
+  if (!checkbox) return;
+  const selectedCount = items.filter(({ meta }) => selectedRequestGroups.has(meta.key)).length;
+  checkbox.checked = items.length > 0 && selectedCount === items.length;
+  checkbox.indeterminate = selectedCount > 0 && selectedCount < items.length;
+  checkbox.disabled = items.length === 0;
+}
+
+function patchMassSelection() {
+  const items = visibleSelectableRows();
+
+  items.forEach(({ row, meta }) => {
+    const cityCell = row.children[0];
+    if (!cityCell) return;
+    let checkbox = cityCell.querySelector('[data-hosp-ext-select-row]');
+    if (!checkbox) {
+      checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'hosp-ext-select-row';
+      checkbox.setAttribute('data-hosp-ext-select-row', '1');
+      checkbox.setAttribute('aria-label', 'Selecionar solicitação');
+      cityCell.prepend(checkbox);
+    }
+    checkbox.dataset.selectionKey = meta.key;
+    checkbox.checked = selectedRequestGroups.has(meta.key);
+    row.classList.toggle('is-selected', checkbox.checked);
+  });
+
+  ensureMassHeader(items);
+}
+
 function applyLayout() {
   injectStyles();
   normalizeKpis();
   patchHeader();
   patchRows();
+  patchMassSelection();
 }
 
 function blockKpiInteraction(event) {
@@ -134,6 +238,26 @@ function blockKpiInteraction(event) {
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
+}
+
+function handleSelectionChange(event) {
+  const rowCheckbox = event.target.closest?.('[data-hosp-ext-select-row]');
+  if (rowCheckbox) {
+    const key = rowCheckbox.dataset.selectionKey;
+    if (!key) return;
+    if (rowCheckbox.checked) selectedRequestGroups.add(key);
+    else selectedRequestGroups.delete(key);
+    patchMassSelection();
+    return;
+  }
+
+  const selectAll = event.target.closest?.('[data-hosp-ext-select-all]');
+  if (!selectAll) return;
+  visibleSelectableRows().forEach(({ meta }) => {
+    if (selectAll.checked) selectedRequestGroups.add(meta.key);
+    else selectedRequestGroups.delete(meta.key);
+  });
+  patchMassSelection();
 }
 
 let timer = null;
@@ -148,6 +272,7 @@ function init() {
   // Captura antes do listener do fluxo v2: KPI é informativo; navegação fica
   // exclusivamente nas abas Dashboard/Solicitações/Reservas/Pagamentos etc.
   document.addEventListener('click', blockKpiInteraction, true);
+  document.addEventListener('change', handleSelectionChange, true);
   document.addEventListener('keydown', (event) => {
     if (!['Enter', ' '].includes(event.key)) return;
     const card = event.target.closest?.('#hospV2Kpis .hosp-v2-kpi');
