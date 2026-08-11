@@ -21,139 +21,15 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Patch grm-sync-lancar-nhe.js
-        shell: bash
+      - name: Apply patch
+        run: python3 scripts/fix-nhe-duplicate-guard.py
+
+      - name: Validate syntax
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('agentes-grm-sync/grm-sync-lancar-nhe.js')
-          text = path.read_text(encoding='utf-8')
-
-          def replace_once(old, new, label):
-              global text
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: esperado 1 ocorrência, encontrado {count}')
-              text = text.replace(old, new, 1)
-
-          replace_once(
-              "var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';\nvar DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';",
-              "var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';\nvar DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';\n// Em recuperação manual, permite processar lotes sequenciais sem criar um job\n// concorrente no worker (use NHE_LANCAMENTO_AUTO_CONTINUACAO=false).\nvar AUTO_CONTINUACAO = String(process.env.NHE_LANCAMENTO_AUTO_CONTINUACAO || 'true').toLowerCase() !== 'false';",
-              'AUTO_CONTINUACAO'
-          )
-
-          marker = "async function carregarJaLancadas(dataReferencia) {"
-          guard = """var nheRealPorChaveCache = {};
-
-// Trava de segurança contra duplicidade histórica: a auditoria do bot não é
-// a fonte de verdade para saber se uma NHE já existe. Antes de reprocessar uma
-// O.S.+data, consulta o histórico REAL importado do GRM. Em caso de falha na
-// consulta, lança erro e interrompe a execução (fail closed), em vez de correr
-// o risco de salvar uma segunda NHE.
-async function existeNheReal(dataReferencia, numeroOs) {
-  var key = chaveUnica(dataReferencia, numeroOs);
-  if (Object.prototype.hasOwnProperty.call(nheRealPorChaveCache, key)) {
-    return nheRealPorChaveCache[key];
-  }
-
-  var result = await supabase
-    .from('grm_nhe_importacoes')
-    .select('id')
-    .eq('dados_json->>sorCode', String(numeroOs))
-    .eq('dados_json->>lnsDate', String(dataReferencia))
-    .limit(1);
-
-  if (result.error) {
-    throw new Error('Falha ao verificar NHE real para ' + key + ': ' + result.error.message);
-  }
-
-  var existe = !!(result.data && result.data.length);
-  nheRealPorChaveCache[key] = existe;
-  return existe;
-}
-
-async function carregarJaLancadas(dataReferencia) {"""
-          replace_once(marker, guard, 'existeNheReal')
-
-          replace_once(
-              ".eq('status', 'SUCESSO');",
-              ".in('status', ['SUCESSO', 'JA_EXISTIA_GRM']);",
-              'status reconciliado'
-          )
-
-          replace_once(
-              "var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };",
-              "var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0 };",
-              'stats jaExistiaGrm'
-          )
-
-          old_loop = """    for (var i = 0; i < pendentes.length; i++) {
-      var p = pendentes[i];
-      if (jaLancadas[chaveUnica(p.data, p.os)]) continue;
-
-      if (!p.funcionario) {"""
-          new_loop = """    for (var i = 0; i < pendentes.length; i++) {
-      var p = pendentes[i];
-      var chavePendente = chaveUnica(p.data, p.os);
-      if (jaLancadas[chavePendente]) continue;
-
-      // Não confiar apenas em logistica_nhe_lancamentos_auto: uma execução
-      // antiga pode ter falhado/registrado SEM_LOGIN enquanto a NHE foi
-      // lançada manualmente ou por outro fluxo. O histórico importado do GRM
-      // é verificado por O.S.+data antes de abrir a tela de lançamento.
-      if (await existeNheReal(p.data, p.os)) {
-        stats.jaExistiaGrm++;
-        await salvarResultado(p, {
-          status: 'JA_EXISTIA_GRM',
-          erro: null,
-          lancado_em: null,
-          raw: {
-            reconciliacao: 'NHE já existente no GRM antes desta execução',
-            origem_verificacao: 'grm_nhe_importacoes',
-            nao_lancado_nesta_execucao: true
-          }
-        });
-        jaLancadas[chavePendente] = true;
-        log('INFO', 'O.S. ' + p.os + ' em ' + p.data + ': NHE já existe no GRM; lançamento bloqueado.');
-        continue;
-      }
-
-      if (!p.funcionario) {"""
-          replace_once(old_loop, new_loop, 'trava no loop')
-
-          old_cont = """    var restantes = Math.max(0, totalCandidatos - candidatos.length);
-    if (!dryRun && restantes > 0 && stats.sucesso > 0) {
-      var criada = await enfileirarContinuacao();
-      log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
-    } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
-      log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
-    }"""
-          new_cont = """    var restantes = Math.max(0, totalCandidatos - candidatos.length);
-    if (!dryRun && AUTO_CONTINUACAO && restantes > 0 && stats.sucesso > 0) {
-      var criada = await enfileirarContinuacao();
-      log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
-    } else if (!dryRun && !AUTO_CONTINUACAO && restantes > 0) {
-      log('INFO', restantes + ' candidato(s) restante(s); continuação automática desativada por NHE_LANCAMENTO_AUTO_CONTINUACAO=false.');
-    } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
-      log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
-    }"""
-          replace_once(old_cont, new_cont, 'controle continuação')
-
-          replace_once(
-              "  buscarGestorRegional: buscarGestorRegional\n};",
-              "  buscarGestorRegional: buscarGestorRegional,\n  existeNheReal: existeNheReal\n};",
-              'export existeNheReal'
-          )
-
-          path.write_text(text, encoding='utf-8')
-          PY
-
           node --check agentes-grm-sync/grm-sync-lancar-nhe.js
           grep -nE 'existeNheReal|JA_EXISTIA_GRM|AUTO_CONTINUACAO' agentes-grm-sync/grm-sync-lancar-nhe.js
 
       - name: Commit fix
-        shell: bash
         run: |
           if git diff --quiet -- agentes-grm-sync/grm-sync-lancar-nhe.js; then
             echo 'No changes to commit'
