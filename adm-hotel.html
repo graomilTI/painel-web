@@ -6,8 +6,44 @@
   <title>Painel</title>
   <link rel="icon" href="./assets/icons/pwa-192.png" />
   <link rel="stylesheet" href="./styles.css" />
+  <style id="hospSolicitacoesStablePaint">
+    body.hosp-solicitacoes-staging #tab-solicitadas .adm-hosp-filterbar,
+    body.hosp-solicitacoes-staging #tab-solicitadas .hosp-v2-view-tools,
+    body.hosp-solicitacoes-staging #hospV2Solicitadas{
+      visibility:hidden!important;
+      opacity:0!important;
+      pointer-events:none!important;
+    }
+    #hospV2RequestsStableLoader{
+      display:none;
+      min-height:86px;
+      box-sizing:border-box;
+      align-items:center;
+      justify-content:center;
+      gap:12px;
+      margin:8px 0;
+      padding:18px;
+      border:1px solid rgba(74,222,128,.18);
+      border-radius:12px;
+      background:rgba(5,29,21,.72);
+      color:#dff8eb;
+    }
+    body.hosp-solicitacoes-staging #tab-solicitadas #hospV2RequestsStableLoader{display:flex}
+    #hospV2RequestsStableLoader strong{display:block;font-size:12px}
+    #hospV2RequestsStableLoader small{display:block;margin-top:4px;color:#86a095;font-size:10.5px}
+    .hosp-stable-spinner{
+      width:20px;
+      height:20px;
+      flex:0 0 auto;
+      border:2px solid rgba(74,222,128,.18);
+      border-top-color:#4ade80;
+      border-radius:50%;
+      animation:hospStableSpin .75s linear infinite;
+    }
+    @keyframes hospStableSpin{to{transform:rotate(360deg)}}
+  </style>
 </head>
-<body>
+<body class="hosp-solicitacoes-staging">
   <div class="app-shell">
     <aside class="sidebar">
       <div class="sidebar-brand">
@@ -32,6 +68,7 @@
       <main class="page-main" id="pageContent"></main>
     </div>
   </div>
+  <script type="module" src="./assets/js/adm-hotel-render-estavel.js?v=20260811-render-estavel1"></script>
   <script type="module" src="./assets/js/adm-hotel.js?v=20260811-fluxo-operacional-completo"></script>
   <script type="module" src="./assets/js/adm-hotel-fluxo-v2-bootstrap.js?v=20260713-fluxo-v2"></script>
   <script type="module" src="./assets/js/adm-hotel-fluxo-v2.js?v=20260811-altura-equipe"></script>
