@@ -745,7 +745,7 @@ async function carregarJaLancadas(dataReferencia) {
     .select('data_referencia,numero_os,status')
     .gte('data_referencia', ymd(inicio))
     .lte('data_referencia', dataReferencia)
-    .in('status', ['SUCESSO', 'JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);
+    .in('status', ['JA_EXISTIA_GRM', 'SALVO_NAO_CONFIRMADO']);
   if (result.error) throw result.error;
   var set = {};
   (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
@@ -1131,18 +1131,37 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   if (!funcEscolhido) throw new Error('Não achei "' + nomeParaFuncionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
   log('INFO', 'Funcionário selecionado: ' + funcEscolhido);
 
-  var dataOk = await page.evaluate(function (payload) {
-    var input = document.querySelector('#lnsDate');
-    if (!input) return false;
-    var proto = window.HTMLInputElement.prototype;
-    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
-    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('blur', { bubbles: true }));
-    return true;
-  }, { value: dataBr });
-  if (!dataOk) throw new Error('Campo Data (#lnsDate) não encontrado.');
+  // O GRM atualizado passou a exigir interação real para atualizar o model da Data.
+  var dataInput = await page.$('#lnsDate');
+  if (!dataInput) throw new Error('Campo Data (#lnsDate) não encontrado.');
+  var inputType = await dataInput.evaluate(function (input) { return String(input.type || 'text').toLowerCase(); });
+  if (inputType === 'date') {
+    await dataInput.evaluate(function (input, value) {
+      input.focus();
+      var proto = window.HTMLInputElement.prototype;
+      var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (setter && setter.set) setter.set.call(input, value); else input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, candidato.data);
+    await page.keyboard.press('Tab');
+  } else {
+    await dataInput.click({ clickCount: 3 });
+    await page.keyboard.down('Control');
+    await page.keyboard.press('A');
+    await page.keyboard.up('Control');
+    await page.keyboard.press('Backspace');
+    await dataInput.type(dataBr, { delay: 90 });
+    await page.keyboard.press('Tab');
+  }
+  await wait(500);
+  var dataValor = await page.$eval('#lnsDate', function (input) { return String(input.value || '').trim(); });
+  function soDigitos(v) { return String(v || '').replace(/\D/g, ''); }
+  var recebido = soDigitos(dataValor);
+  if (recebido !== soDigitos(dataBr) && recebido !== soDigitos(candidato.data)) {
+    throw new Error('Campo Data não permaneceu com a data solicitada. Esperado=' + dataBr + ', campo=' + dataValor);
+  }
+  log('INFO', 'Data NHE preenchida e validada no formulário: ' + dataValor + ' (referência ' + candidato.data + ')');
 
   await realClickCampoNhe(page, 'Motivo');
   var motivoEscolhido = await selecionarOpcaoAberta(page, MOTIVO_FIXO, 'exata');
