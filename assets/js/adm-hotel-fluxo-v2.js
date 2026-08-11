@@ -364,7 +364,12 @@ function groupRequestedRows(rows){
   const groups=new Map();
   rows.forEach((row)=>{
     const pending=bucket(row)==='solicitadas';
-    const key=pending?`${norm(row.cidade)}|${norm(row.uf)}`:`single:${row.solicitacao_id}`;
+    // Cada solicitação só entra no mesmo card se tiver o mesmo destino: a
+    // mesma reserva a estender, ou nenhuma (aí é reserva nova). Isso evita
+    // misturar num card só quem precisa de Reservar com quem precisa de
+    // Estender — o usuário de Hotéis vê os dois separados.
+    const alvo=pending?(extensionReservation([row])?.reserva_id||'nova'):'';
+    const key=pending?`${norm(row.cidade)}|${norm(row.uf)}|${alvo}`:`single:${row.solicitacao_id}`;
     if(!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(row);
   });
@@ -379,7 +384,8 @@ function extensionReservation(group){
   const requestPeople=new Set(group.flatMap((row)=>getPeople(row).map((p)=>norm(p.colaborador_id||p.nome_colaborador))));
   const dates=group.map((row)=>String(row.data_checkin||row.data_checkin_prevista||'').slice(0,10)).filter(Boolean).sort();
   return state.rows.find((candidate)=>{
-    if(!candidate.reserva_id||bucket(candidate)!=='reservados'||norm(candidate.cidade)!==norm(group[0]?.cidade)||norm(candidate.uf)!==norm(group[0]?.uf))return false;
+    const candidateUf=norm(candidate.uf), groupUf=norm(group[0]?.uf);
+    if(!candidate.reserva_id||bucket(candidate)!=='reservados'||norm(candidate.cidade)!==norm(group[0]?.cidade)||(candidateUf&&groupUf&&candidateUf!==groupUf))return false;
     const candidatePeople=getPeople(candidate).map((p)=>norm(p.colaborador_id||p.nome_colaborador));
     if(!candidatePeople.some((person)=>requestPeople.has(person)))return false;
     const checkout=String(candidate.data_checkout||candidate.data_checkout_prevista||'').slice(0,10);
