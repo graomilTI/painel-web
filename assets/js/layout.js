@@ -578,6 +578,7 @@ function ensureTopbarIconButtons() {
   wrap.appendChild(dropdown);
 
   actions.prepend(wrap);
+  ensureScreenTourButton(actions, wrap);
 
   // Toggle dropdown ao clicar no sino
   notifBtn.addEventListener('click', (e) => {
@@ -589,6 +590,131 @@ function ensureTopbarIconButtons() {
   document.addEventListener('click', (e) => {
     if (!wrap.contains(e.target)) dropdown.classList.remove('open');
   });
+}
+
+function ensureScreenTourStyles() {
+  if (document.getElementById('screenTourStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'screenTourStyles';
+  style.textContent = `
+    .screen-tour-help{font:900 18px/1 ui-sans-serif,system-ui,sans-serif}
+    .screen-tour-help[aria-pressed="true"]{color:#54e7b2;border-color:rgba(84,231,178,.42);background:rgba(18,216,143,.14)}
+    .screen-tour-backdrop{position:fixed;inset:0;z-index:9990;pointer-events:none;background:rgba(1,10,7,.22);animation:tourFade .18s ease-out}
+    .screen-tour-focus{position:fixed;z-index:9991;border-radius:14px;pointer-events:none;box-shadow:0 0 0 4px rgba(84,231,178,.9),0 0 0 9999px rgba(1,10,7,.72);transition:top .25s ease,left .25s ease,width .25s ease,height .25s ease}
+    .screen-tour-card{position:fixed;z-index:9992;width:min(360px,calc(100vw - 24px));padding:20px;border:1px solid rgba(84,231,178,.28);border-radius:18px;background:#071b14;color:#ecfff7;box-shadow:0 22px 60px rgba(0,0,0,.44);font-family:ui-sans-serif,system-ui,sans-serif;animation:tourCardIn .22s ease-out}
+    .screen-tour-kicker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;color:#54e7b2;font-size:11px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}
+    .screen-tour-close{width:30px;height:30px;border:0;border-radius:9px;background:rgba(255,255,255,.07);color:#dff8ee;cursor:pointer;font-size:20px;line-height:1}
+    .screen-tour-card h3{margin:0 0 7px!important;color:#fff!important;font-size:19px!important;line-height:1.25!important}
+    .screen-tour-card p{margin:0;color:#acd0c1;font-size:14px;line-height:1.55}
+    .screen-tour-progress{display:flex;gap:5px;margin:17px 0}
+    .screen-tour-progress i{height:3px;flex:1;border-radius:99px;background:rgba(255,255,255,.12)}
+    .screen-tour-progress i.on{background:#35d69e}
+    .screen-tour-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .screen-tour-actions button{min-height:38px;padding:0 15px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#dff8ee;font-weight:800;cursor:pointer}
+    .screen-tour-actions .screen-tour-next{border-color:#35d69e;background:#35d69e;color:#032217}
+    .screen-tour-actions button:disabled{opacity:.35;cursor:default}
+    @keyframes tourFade{from{opacity:0}to{opacity:1}}@keyframes tourCardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @media(max-width:700px){.screen-tour-card{bottom:12px!important;left:12px!important;top:auto!important}.screen-tour-focus{border-radius:10px}}
+  `;
+  document.head.appendChild(style);
+}
+
+function getScreenTourSteps() {
+  const title = document.getElementById('pageTitle');
+  const sidebar = document.querySelector('.sidebar');
+  const main = document.querySelector('.page-main, main');
+  const content = main?.querySelector('section, .card, form, table, [class*="dashboard"]') || main;
+  const toolbar = main?.querySelector('.toolbar, [class*="toolbar"], .tabs, [class*="tabs"], form');
+  const steps = [
+    title && { el:title, title:'Você está nesta tela', text:`Este é o módulo ${title.textContent?.trim() || 'atual'}. Use este guia sempre que quiser relembrar os pontos principais.` },
+    sidebar && { el:sidebar, title:'Navegação do painel', text:'Use o menu lateral para trocar de módulo. As opções exibidas respeitam o seu perfil de acesso.' },
+    content && { el:content, title:'Área principal', text:'Aqui ficam as informações e tarefas desta tela. Role a página normalmente depois de concluir o tutorial.' },
+    toolbar && toolbar !== content && { el:toolbar, title:'Filtros e ações', text:'Nesta área você encontra os comandos da tela, como filtros, buscas, cadastros ou atualização dos dados.' },
+    document.querySelector('.topbar-actions') && { el:document.querySelector('.topbar-actions'), title:'Atalhos do topo', text:'Acesse notificações, ajuda e opções da sua conta por estes atalhos.' }
+  ];
+  return steps.filter((step, index, all) => step && step.el && step.el.getClientRects().length && all.findIndex(s => s?.el === step.el) === index);
+}
+
+function startScreenTour(button) {
+  if (window.__screenTourCleanup) window.__screenTourCleanup();
+  const steps = getScreenTourSteps();
+  if (!steps.length) return;
+  ensureScreenTourStyles();
+
+  let index = 0;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'screen-tour-backdrop';
+  backdrop.setAttribute('aria-hidden', 'true');
+  const focus = document.createElement('div');
+  focus.className = 'screen-tour-focus';
+  const card = document.createElement('div');
+  card.className = 'screen-tour-card';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  card.setAttribute('aria-label', 'Tutorial guiado da tela');
+  document.body.append(backdrop, focus, card);
+  button.setAttribute('aria-pressed', 'true');
+
+  const cleanup = () => {
+    backdrop.remove(); focus.remove(); card.remove();
+    button.setAttribute('aria-pressed', 'false');
+    document.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', position);
+    window.removeEventListener('scroll', position, true);
+    window.__screenTourCleanup = null;
+    button.focus();
+  };
+  window.__screenTourCleanup = cleanup;
+
+  function position() {
+    const rect = steps[index].el.getBoundingClientRect();
+    const pad = 7;
+    focus.style.cssText = `top:${Math.max(6,rect.top-pad)}px;left:${Math.max(6,rect.left-pad)}px;width:${Math.min(innerWidth-12,rect.width+pad*2)}px;height:${Math.min(innerHeight-12,rect.height+pad*2)}px`;
+    if (innerWidth <= 700) return;
+    const cardWidth = 360, gap = 18;
+    let left = rect.right + gap;
+    if (left + cardWidth > innerWidth - 12) left = Math.max(12, rect.left - cardWidth - gap);
+    let top = Math.max(12, Math.min(rect.top, innerHeight - card.offsetHeight - 12));
+    card.style.left = `${left}px`; card.style.top = `${top}px`;
+  }
+
+  function render() {
+    const step = steps[index];
+    step.el.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+    card.innerHTML = `
+      <div class="screen-tour-kicker"><span>Guia da tela · ${index + 1} de ${steps.length}</span><button class="screen-tour-close" type="button" aria-label="Fechar tutorial">×</button></div>
+      <h3>${step.title}</h3><p>${step.text}</p>
+      <div class="screen-tour-progress">${steps.map((_, i) => `<i class="${i <= index ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="screen-tour-actions"><button class="screen-tour-prev" type="button" ${index === 0 ? 'disabled' : ''}>Voltar</button><button class="screen-tour-next" type="button">${index === steps.length - 1 ? 'Concluir' : 'Avançar'}</button></div>`;
+    card.querySelector('.screen-tour-close').onclick = cleanup;
+    card.querySelector('.screen-tour-prev').onclick = () => { if (index > 0) { index--; render(); } };
+    card.querySelector('.screen-tour-next').onclick = () => { if (index === steps.length - 1) cleanup(); else { index++; render(); } };
+    requestAnimationFrame(position);
+  }
+  function onKeydown(e) {
+    if (e.key === 'Escape') cleanup();
+    if (e.key === 'ArrowRight') card.querySelector('.screen-tour-next')?.click();
+    if (e.key === 'ArrowLeft') card.querySelector('.screen-tour-prev')?.click();
+  }
+  document.addEventListener('keydown', onKeydown);
+  window.addEventListener('resize', position);
+  window.addEventListener('scroll', position, true);
+  render();
+}
+
+function ensureScreenTourButton(actions, notifWrap) {
+  if (document.getElementById('topbarHelpBtn')) return;
+  ensureScreenTourStyles();
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.id = 'topbarHelpBtn';
+  button.className = 'topbar-icon-btn screen-tour-help';
+  button.setAttribute('aria-label', 'Iniciar tutorial desta tela');
+  button.setAttribute('aria-pressed', 'false');
+  button.title = 'Tutorial desta tela';
+  button.textContent = '?';
+  actions.insertBefore(button, notifWrap);
+  button.addEventListener('click', () => startScreenTour(button));
 }
 
 function updateNotifBell(list, count, engine) {
