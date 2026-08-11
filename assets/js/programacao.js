@@ -379,9 +379,10 @@ function injectProgramacaoStyles() {
     .prog-duplicate-backdrop[hidden]{display:none}.prog-duplicate-backdrop{position:fixed;inset:0;z-index:9992;display:grid;place-items:center;padding:18px;background:rgba(1,8,5,.78);backdrop-filter:blur(9px)}
     .prog-duplicate-modal{width:min(560px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(111,208,165,.3);border-radius:24px;background:linear-gradient(155deg,#0d241a,#07120d 70%);box-shadow:0 30px 90px rgba(0,0,0,.58);padding:22px;color:#e8f6ee}
     .prog-duplicate-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.prog-duplicate-head h3{margin:0;font-size:20px}.prog-duplicate-head p{margin:6px 0 0;color:#8ba79a;font-size:12px}.prog-duplicate-close{width:34px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:rgba(2,6,23,.35);color:#b8ccc0;font-size:20px;cursor:pointer}
-    .prog-duplicate-source{margin:16px 0 14px;padding:11px 13px;border:1px solid rgba(111,208,165,.15);border-radius:13px;background:rgba(63,168,120,.08);color:#b8ccc0;font-size:11px}.prog-duplicate-dates{display:grid;gap:8px}.prog-duplicate-date{display:grid;grid-template-columns:28px 1fr 34px;align-items:center;gap:9px}.prog-duplicate-date span{display:grid;place-items:center;width:25px;height:25px;border-radius:8px;background:rgba(63,168,120,.16);color:#6fd0a5;font-size:10px;font-weight:900}.prog-duplicate-date input{width:100%;min-height:42px;padding:8px 11px;border:1px solid rgba(111,208,165,.24);border-radius:12px;background:#081a12;color:#eef7f2;color-scheme:dark}.prog-duplicate-remove{height:34px;border:0;border-radius:9px;background:rgba(239,68,68,.1);color:#fca5a5;cursor:pointer}.prog-duplicate-add{margin-top:10px;border:1px dashed rgba(111,208,165,.28);border-radius:11px;background:transparent;color:#9edcbd;padding:9px 12px;font-weight:800;cursor:pointer}.prog-duplicate-add:disabled{opacity:.35;cursor:not-allowed}
+    .prog-duplicate-source{margin:16px 0 14px;padding:11px 13px;border:1px solid rgba(111,208,165,.15);border-radius:13px;background:rgba(63,168,120,.08);color:#b8ccc0;font-size:11px}.prog-duplicate-calendar-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;color:#8ba79a;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.07em}.prog-duplicate-calendar-label span:last-child{color:#5f7d6e;font-weight:700;letter-spacing:0;text-transform:none}.prog-duplicate-dates{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.prog-duplicate-day{position:relative;min-width:0;min-height:92px;padding:10px 7px;border:1px solid rgba(111,208,165,.18);border-radius:14px;background:rgba(7,25,17,.74);color:#b8ccc0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;transition:transform .15s,border-color .15s,background .15s,box-shadow .15s}.prog-duplicate-day:hover{transform:translateY(-2px);border-color:rgba(111,208,165,.42);background:rgba(30,91,61,.22)}.prog-duplicate-day-week{font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#759686}.prog-duplicate-day-number{font-size:25px;line-height:1;font-weight:950;color:#eef7f2}.prog-duplicate-day-month{font-size:10px;color:#8ba79a}.prog-duplicate-day-check{position:absolute;right:7px;top:7px;width:17px;height:17px;border:1px solid rgba(111,208,165,.28);border-radius:6px;display:grid;place-items:center;color:transparent;font-size:11px}.prog-duplicate-day.is-selected{border-color:#6fd0a5;background:linear-gradient(150deg,rgba(35,134,90,.52),rgba(15,61,40,.7));box-shadow:0 8px 24px rgba(31,111,74,.2),inset 0 0 0 1px rgba(111,208,165,.12)}.prog-duplicate-day.is-selected .prog-duplicate-day-check{background:#6fd0a5;color:#07331f;border-color:#6fd0a5}.prog-duplicate-day.is-selected .prog-duplicate-day-week{color:#bdebd2}
     .prog-duplicate-note{margin-top:13px;color:#789486;font-size:10px;line-height:1.5}.prog-duplicate-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}.prog-duplicate-actions button{min-height:40px;padding:0 15px;border-radius:12px;font-weight:900;cursor:pointer}.prog-duplicate-cancel{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.45);color:#cbd5e1}.prog-duplicate-confirm{border:1px solid rgba(111,208,165,.35);background:linear-gradient(135deg,#23865a,#6fd0a5);color:#042d1c}.prog-duplicate-confirm:disabled{opacity:.5;cursor:wait}
     @media(max-width:900px){.prog-extra-card{grid-template-columns:1fr}.prog-table{min-width:860px}.prog-os-modal{padding:16px}.prog-estadia-selector{grid-template-columns:repeat(3,minmax(70px,1fr));min-width:220px}}
+    @media(max-width:560px){.prog-duplicate-dates{grid-template-columns:repeat(2,minmax(0,1fr))}.prog-duplicate-day:last-child{grid-column:1/-1}.prog-duplicate-modal{padding:17px}.prog-duplicate-actions{flex-direction:column-reverse}.prog-duplicate-actions button{width:100%}}
   `;
   document.head.appendChild(style);
 }
@@ -435,8 +436,8 @@ export function renderContent(content) {
       <section class="prog-duplicate-modal" role="dialog" aria-modal="true" aria-labelledby="progDuplicateTitle">
         <header class="prog-duplicate-head"><div><h3 id="progDuplicateTitle">Selecione as datas para duplicar</h3><p>Você pode copiar a programação para até 5 dias.</p></div><button class="prog-duplicate-close" type="button" data-duplicate-close aria-label="Fechar">×</button></header>
         <div class="prog-duplicate-source" id="progDuplicateSource"></div>
-        <div class="prog-duplicate-dates" id="progDuplicateDates"></div>
-        <button class="prog-duplicate-add" id="progDuplicateAdd" type="button">＋ Adicionar outra data</button>
+        <div class="prog-duplicate-calendar-label"><span>Próximos 5 dias</span><span>Selecione um ou mais</span></div>
+        <div class="prog-duplicate-dates" id="progDuplicateDates" role="group" aria-label="Próximos cinco dias"></div>
         <div class="prog-duplicate-note">Equipe por O.S., disponibilidade, hospedagem, alimentação, despesas e frota serão copiadas. Datas que já possuem programação serão preservadas.</div>
         <footer class="prog-duplicate-actions"><button class="prog-duplicate-cancel" type="button" data-duplicate-close>Cancelar</button><button class="prog-duplicate-confirm" id="progDuplicateConfirm" type="button">Duplicar programação</button></footer>
       </section>
@@ -457,7 +458,6 @@ export function renderContent(content) {
     duplicateModal: document.getElementById('progDuplicateModal'),
     duplicateSource: document.getElementById('progDuplicateSource'),
     duplicateDates: document.getElementById('progDuplicateDates'),
-    duplicateAdd: document.getElementById('progDuplicateAdd'),
     duplicateConfirm: document.getElementById('progDuplicateConfirm'),
     statTotal: document.getElementById('progStatTotal'),
     statBlocked: document.getElementById('progStatBlocked'),
@@ -539,14 +539,13 @@ export function renderContent(content) {
     el.saveBtn.addEventListener('click', saveProgramacao);
     el.pdfBtn.addEventListener('click', gerarPdfProgramacao);
     el.duplicateBtn.addEventListener('click', openDuplicateModal);
-    el.duplicateAdd.addEventListener('click', () => addDuplicateDate());
     el.duplicateConfirm.addEventListener('click', duplicateProgramacao);
     el.duplicateModal.addEventListener('click', (event) => {
       if (event.target === el.duplicateModal || event.target.closest('[data-duplicate-close]')) closeDuplicateModal();
-      const remove = event.target.closest('[data-duplicate-remove]');
-      if (remove) {
-        remove.closest('.prog-duplicate-date')?.remove();
-        renumberDuplicateDates();
+      const day = event.target.closest('[data-duplicate-date]');
+      if (day) {
+        day.classList.toggle('is-selected');
+        day.setAttribute('aria-pressed', String(day.classList.contains('is-selected')));
       }
     });
     document.addEventListener('keydown', (event) => {
@@ -572,21 +571,16 @@ export function renderContent(content) {
     return date.toISOString().slice(0, 10);
   }
 
-  function renumberDuplicateDates() {
-    const rows = [...el.duplicateDates.querySelectorAll('.prog-duplicate-date')];
-    rows.forEach((row, index) => { row.querySelector('span').textContent = index + 1; });
-    el.duplicateAdd.disabled = rows.length >= 5;
-    rows.forEach((row) => { row.querySelector('[data-duplicate-remove]').hidden = rows.length === 1; });
-  }
-
-  function addDuplicateDate(value = '') {
-    if (el.duplicateDates.children.length >= 5) return;
-    const row = document.createElement('div');
-    row.className = 'prog-duplicate-date';
-    row.innerHTML = `<span></span><input type="date" min="${todayIso()}" value="${escapeHtml(value)}" aria-label="Data para duplicar"><button class="prog-duplicate-remove" type="button" data-duplicate-remove aria-label="Remover data">×</button>`;
-    el.duplicateDates.appendChild(row);
-    renumberDuplicateDates();
-    row.querySelector('input')?.focus();
+  function renderDuplicateCalendar() {
+    const baseIso = state.dataReferencia > todayIso() ? state.dataReferencia : todayIso();
+    const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    const months = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    el.duplicateDates.innerHTML = Array.from({ length: 5 }, (_, index) => {
+      const iso = addDaysIso(baseIso, index + 1);
+      const date = new Date(`${iso}T12:00:00`);
+      const selected = index === 0;
+      return `<button class="prog-duplicate-day ${selected ? 'is-selected' : ''}" type="button" data-duplicate-date="${iso}" aria-pressed="${selected}" aria-label="${weekdays[date.getDay()]}, ${date.getDate()} de ${months[date.getMonth()]}"><span class="prog-duplicate-day-check">✓</span><span class="prog-duplicate-day-week">${weekdays[date.getDay()]}</span><strong class="prog-duplicate-day-number">${date.getDate()}</strong><span class="prog-duplicate-day-month">${months[date.getMonth()]}</span></button>`;
+    }).join('');
   }
 
   function openDuplicateModal() {
@@ -594,8 +588,7 @@ export function renderContent(content) {
       setFeedback(state.programacaoIdMap.size ? 'Selecione uma única supervisão para duplicar a programação.' : 'Carregue uma programação antes de duplicar.', 'warn');
       return;
     }
-    el.duplicateDates.innerHTML = '';
-    addDuplicateDate(addDaysIso(state.dataReferencia, 1));
+    renderDuplicateCalendar();
     el.duplicateSource.textContent = `Origem: ${state.supervisao} · ${brDate(state.dataReferencia)}`;
     el.duplicateModal.hidden = false;
     document.body.style.overflow = 'hidden';
@@ -609,14 +602,9 @@ export function renderContent(content) {
   }
 
   async function duplicateProgramacao() {
-    const datas = [...el.duplicateDates.querySelectorAll('input[type="date"]')].map((input) => input.value).filter(Boolean);
-    const unicas = [...new Set(datas)];
+    const unicas = [...el.duplicateDates.querySelectorAll('[data-duplicate-date].is-selected')].map((button) => button.dataset.duplicateDate);
     if (!unicas.length) {
       setFeedback('Selecione ao menos uma data para duplicar.', 'warn');
-      return;
-    }
-    if (unicas.length !== datas.length) {
-      setFeedback('Remova as datas repetidas antes de continuar.', 'warn');
       return;
     }
     if (unicas.includes(state.dataReferencia)) {
