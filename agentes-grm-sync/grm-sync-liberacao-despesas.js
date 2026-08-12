@@ -213,15 +213,20 @@ function canonicalRules(rules) {
     a.tipo_despesa.localeCompare(b.tipo_despesa, 'pt-BR'));
 }
 
-function rulesEqual(current, desired) {
+function rulesEqual(current, desired, autoLockedTypes) {
   // Exibir e Carga/NHE são definidos e, em algumas categorias, bloqueados
   // pelo próprio GRM. Eles não fazem parte do contrato deste agente: não são
   // alterados e também não podem transformar uma aplicação válida em
   // divergência. A conferência cobre somente os campos sob nossa gestão.
+  //
+  // AUTO entra na mesma exceção quando o próprio GRM trava a caixinha: a
+  // despesa deve ser liberada (valor/máx. mov. aplicados) mesmo que o AUTO
+  // não possa ser marcado — só nesse caso o campo sai da comparação.
+  const locked = autoLockedTypes || new Set();
   const comparable = (rules) => canonicalRules(rules).map((rule) => ({
     tipo_despesa: rule.tipo_despesa,
     valor_maximo: rule.valor_maximo,
-    auto: rule.auto,
+    auto: locked.has(norm(rule.tipo_despesa)) ? null : rule.auto,
     max_mov_dia: rule.max_mov_dia,
   }));
 
@@ -2136,20 +2141,31 @@ async function fillCashRuleRow(page, rowIndex, rule) {
     desired,
     disabled,
     label,
+    allowLockedMismatch = false,
   ) => {
-    if (!selector) return;
+    if (!selector) return false;
 
     const checked = await readCheckbox(selector);
 
     if (disabled) {
       if (checked !== desired) {
+        if (allowLockedMismatch) {
+          log(
+            'WARN',
+            `${label} está bloqueado em ${checked} pelo GRM `
+            + `(esperado ${desired}); despesa segue liberada mesmo assim.`,
+          );
+
+          return true;
+        }
+
         throw new Error(
           `${label} está bloqueado em ${checked}; `
           + `esperado ${desired}.`,
         );
       }
 
-      return;
+      return false;
     }
 
     if (checked !== desired) {
@@ -2165,13 +2181,19 @@ async function fillCashRuleRow(page, rowIndex, rule) {
         + `esperado ${desired}.`,
       );
     }
+
+    return false;
   };
 
-  await setCheckbox(
+  // Quando o GRM trava o AUTO (checkbox desabilitado), a liberação da
+  // despesa (valor/máx. mov.) segue mesmo assim — só o AUTO fica pendente
+  // de ajuste manual do lado de lá. Ver rulesEqual().
+  const autoLocked = await setCheckbox(
     descriptor.autoSelector,
     rule.auto === true,
     descriptor.autoDisabled,
     'AUTO',
+    true,
   );
 
   const finalMoney = await readNumber(
@@ -2193,6 +2215,8 @@ async function fillCashRuleRow(page, rowIndex, rule) {
   }
 
   await sleep(250);
+
+  return { autoLocked };
 }
 
 async function saveEmployee(page) {
@@ -2268,12 +2292,14 @@ async function applyEmployeeRules(page, job) {
       changed: false,
       currentRules: inspection.currentRules,
       verifiedRules: inspection.currentRules,
+      autoLockedTypes: [],
     };
   }
 
   const desiredByType = new Map(
     desired.map((rule) => [norm(rule.tipo_despesa), rule]),
   );
+  const autoLockedTypes = new Set();
 
   // Remova de baixo para cima somente as categorias que deixaram de fazer
   // parte da programação desta data. Assim os índices restantes não mudam
@@ -2297,19 +2323,21 @@ async function applyEmployeeRules(page, job) {
 
     if (index >= 0) {
       if (!rulesEqual([formRules[index]], [rule])) {
-        await fillCashRuleRow(page, index, rule);
+        const { autoLocked } = await fillCashRuleRow(page, index, rule);
+        if (autoLocked) autoLockedTypes.add(norm(rule.tipo_despesa));
       }
       continue;
     }
 
     await addCashRuleRow(page);
     const newIndex = await getCashRowsCount(page) - 1;
-    await fillCashRuleRow(page, newIndex, rule);
+    const { autoLocked } = await fillCashRuleRow(page, newIndex, rule);
+    if (autoLocked) autoLockedTypes.add(norm(rule.tipo_despesa));
   }
 
   formRules = canonicalRules(await readCashRules(page));
 
-  if (!rulesEqual(formRules, desired)) {
+  if (!rulesEqual(formRules, desired, autoLockedTypes)) {
     const error = new Error(
       'Formulário do GRM ficou divergente antes de salvar; salvamento cancelado.',
     );
@@ -2329,7 +2357,7 @@ async function applyEmployeeRules(page, job) {
 
   await closeModal(page);
 
-  if (!rulesEqual(verification.currentRules, desired)) {
+  if (!rulesEqual(verification.currentRules, desired, autoLockedTypes)) {
     const error = new Error(
       'GRM ficou divergente depois de salvar as Regras de Caixa Operacional.',
     );
@@ -2345,6 +2373,7 @@ async function applyEmployeeRules(page, job) {
     changed: true,
     currentRules: inspection.currentRules,
     verifiedRules: verification.currentRules,
+    autoLockedTypes: [...autoLockedTypes],
   };
 }
 
@@ -2440,6 +2469,9 @@ async function markSuccess(job, result, screenshot) {
       changed: result.changed,
       regras_antes: result.currentRules,
       regras_confirmadas: result.verifiedRules,
+      auto_bloqueado_pelo_grm: result.autoLockedTypes?.length
+        ? result.autoLockedTypes
+        : null,
     },
   });
 
