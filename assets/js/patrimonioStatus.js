@@ -48,6 +48,35 @@ function injectStatusStyles() {
   const style = document.createElement('style');
   style.id = 'patrimonio-status-styles';
   style.textContent = `
+    .pat-status-page .pat-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .pat-status-page .pat-tab {
+      appearance: none;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-bottom-color: transparent;
+      background: rgba(15, 23, 42, 0.34);
+      color: rgba(226, 232, 240, 0.72);
+      font: inherit;
+      font-weight: 600;
+      font-size: 13.5px;
+      text-decoration: none;
+      cursor: pointer;
+      padding: 10px 20px;
+      border-radius: 12px 12px 0 0;
+      box-shadow: inset 0 -3px 0 transparent;
+      transition: color .15s ease, background .15s ease;
+    }
+    .pat-status-page .pat-tab:hover { color: #e2e8f0; }
+    .pat-status-page .pat-tab.active {
+      background: rgba(2, 12, 10, 0.55);
+      color: #ecfdf5;
+      border-color: rgba(45, 212, 191, 0.3);
+      border-bottom-color: transparent;
+      box-shadow: inset 0 -3px 0 #2dd4a0;
+    }
     .pat-status-page .grid-cards {
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
@@ -222,17 +251,6 @@ function buildStatusRows(rows) {
     });
 }
 
-function applyFilters(rows, filters) {
-  return rows.filter((row) => {
-    if (filters.regional && normalizeKey(row.coordenacao) !== normalizeKey(filters.regional)) return false;
-    if (filters.busca) {
-      const haystack = normalizeKey(`${row.coordenacao} ${row.supervisao}`);
-      if (!haystack.includes(normalizeKey(filters.busca))) return false;
-    }
-    return true;
-  });
-}
-
 function updateCards(rows) {
   const totalGrupos = rows.length;
   const totalItens = rows.reduce((sum, row) => sum + row.total, 0);
@@ -309,31 +327,17 @@ function updatePagination(totalRows, page) {
   return safePage;
 }
 
-function setFeedback(message, isError = false) {
-  const el = document.getElementById('statusFeedback');
-  if (!el) return;
-  el.textContent = message;
-  el.style.color = isError ? '#fca5a5' : '#cbd5e1';
-}
-
 export function renderContent(content) {
   injectStatusStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
-  const importarUrl = toPanelUrl('importar-patrimonios');
   const statusUrl = toPanelUrl('patrimonio-status');
 
   content.innerHTML = `
     <section class="base-page pat-status-page">
-      <div class="section-heading">
-        <div>
-          <h2>Status de Patrimônios</h2>
-          <p class="section-subtitle">Resumo consolidado por coordenação e supervisão, mostrando volume total, itens em dia e progresso da regional.</p>
-        </div>
-        <div class="inline-nav">
-          <a href="${relatoriosUrl}">Relatórios</a>
-          <a href="${importarUrl}">Importar arquivo</a>
-          <a href="${statusUrl}" class="active">Status</a>
-        </div>
+      <div class="pat-tabs" role="tablist">
+        <a href="${relatoriosUrl}" class="pat-tab">Relatórios</a>
+        <a href="${statusUrl}" class="pat-tab active">Status</a>
+        <a href="${relatoriosUrl}" class="pat-tab">Desligados</a>
       </div>
 
       <div class="grid-cards">
@@ -342,26 +346,6 @@ export function renderContent(content) {
         <article class="card"><h3>Em dia</h3><div class="hero-metric" id="sumEmDia">0</div></article>
         <article class="card"><h3>Progresso médio</h3><div class="hero-metric" id="sumPercentual">0%</div></article>
       </div>
-
-      <article class="base-card">
-        <div class="base-grid">
-          <div class="base-field third">
-            <label class="base-label" for="fRegional">Coordenação</label>
-            <select class="base-select" id="fRegional"><option value="">Todas</option></select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fBusca">Busca</label>
-            <input class="base-input" id="fBusca" type="text" placeholder="Digite coordenação ou supervisão" />
-          </div>
-        </div>
-
-        <div class="base-actions">
-          <button class="base-button primary" id="btnAplicar">Aplicar filtros</button>
-          <button class="base-button secondary" id="btnLimpar">Limpar</button>
-        </div>
-
-        <pre id="statusFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando status atual...</pre>
-      </article>
 
       <article class="base-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
@@ -399,51 +383,25 @@ export function renderContent(content) {
 
   const state = {
     allRows: [],
-    filteredRows: [],
     page: 1
   };
 
-  const readFilters = () => ({
-    regional: document.getElementById('fRegional')?.value || '',
-    busca: document.getElementById('fBusca')?.value || ''
-  });
-
-  const applyAndRender = () => {
-    state.filteredRows = applyFilters(state.allRows, readFilters());
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderRows(state.filteredRows, state.page);
-    updateCards(state.filteredRows);
-    setFeedback(`${state.filteredRows.length} grupo(s) exibido(s) na tela.`);
+  const render = () => {
+    state.page = updatePagination(state.allRows.length, state.page);
+    renderRows(state.allRows, state.page);
+    updateCards(state.allRows);
   };
 
-  document.getElementById('btnAplicar')?.addEventListener('click', () => {
-    state.page = 1;
-    applyAndRender();
-  });
-  document.getElementById('btnLimpar')?.addEventListener('click', () => {
-    document.getElementById('fRegional').value = '';
-    document.getElementById('fBusca').value = '';
-    state.page = 1;
-    applyAndRender();
-  });
-  document.getElementById('fRegional')?.addEventListener('change', () => {
-    state.page = 1;
-    applyAndRender();
-  });
-  document.getElementById('fBusca')?.addEventListener('input', () => {
-    state.page = 1;
-    applyAndRender();
-  });
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderRows(state.filteredRows, state.page);
+    state.page = updatePagination(state.allRows.length, state.page);
+    renderRows(state.allRows, state.page);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
-    const maxPage = Math.max(1, Math.ceil(state.filteredRows.length / ROWS_PER_PAGE));
+    const maxPage = Math.max(1, Math.ceil(state.allRows.length / ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
-    state.page = updatePagination(state.filteredRows.length, state.page);
-    renderRows(state.filteredRows, state.page);
+    state.page = updatePagination(state.allRows.length, state.page);
+    renderRows(state.allRows, state.page);
   });
 
   (async () => {
@@ -461,19 +419,12 @@ export function renderContent(content) {
         try { localStorage.setItem(SNAP_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: snapshotRows })); } catch {}
       }
       state.allRows = buildStatusRows(snapshotRows);
-      const regionais = [...new Set(state.allRows.map((row) => row.coordenacao))].sort((a, b) => a.localeCompare(b));
-      const select = document.getElementById('fRegional');
-      if (select) {
-        select.innerHTML = ['<option value="">Todas</option>']
-          .concat(regionais.map((regional) => `<option value="${escapeHtml(regional)}">${escapeHtml(regional)}</option>`))
-          .join('');
-      }
-      applyAndRender();
+      render();
     } catch (error) {
       console.error(error);
-      renderRows([], 1);
       updateCards([]);
-      setFeedback(error?.message || 'Erro ao carregar o status de patrimônios.', true);
+      const tbody = document.getElementById('statusRows');
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error?.message || 'Erro ao carregar o status de patrimônios.')}</td></tr>`;
     }
   })();
 }
