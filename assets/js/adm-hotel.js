@@ -111,7 +111,7 @@ export function renderContent(content, userContext) {
   const state = {
     rows: [], resumo: {}, hoteis: [], alojamentos: [], historicoRows: [], historicoAtual: [], historicoErro: null,
     editingHotel: null, editingAlojamento: null,
-    tab: 'dashboard', selected: null,
+    tab: 'dashboard', selected: null, bootDone: false,
     reservarColabs: [], estenderColabs: [],
     dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos',
     solicitadasFiltros: { colaborador: '', cidade: '', supervisao: '', data: '', ordenar: 'data', direcao: 'desc' }
@@ -1054,10 +1054,11 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
     document.getElementById(`tab-${t}`)?.classList.add('active');
-    if (t==='hoteis') return loadHoteis();
-    if (t==='alojamentos') return loadAlojamentos();
-    if (t==='historico') return loadHistoricoRows();
-    Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
+    if (t==='hoteis') { renderHoteis(); return state.bootDone ? undefined : loadHoteis(); }
+    if (t==='alojamentos') { renderAlojamentos(); return state.bootDone ? undefined : loadAlojamentos(); }
+    if (t==='historico') { renderHistorico(); return state.bootDone ? undefined : loadHistoricoRows(); }
+    renderCurrentTab();
+    if (!state.bootDone) Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
   }
 
   // ─── Hotels ────────────────────────────────────────────────────────────────
@@ -1197,10 +1198,8 @@ export function renderContent(content, userContext) {
   // ─── Alojamentos ───────────────────────────────────────────────────────────
 
   async function loadAlojamentos() {
-    const tbody=document.getElementById('alojTbody');
-    if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr>`;
     const {data,error}=await supabase.from('hospedagem_alojamentos').select('*').order('cidade',{ascending:true}).order('nome',{ascending:true});
-    if (error) { if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
+    if (error) { const tbody=document.getElementById('alojTbody'); if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
     state.alojamentos=data||[];
     renderAlojamentos();
   }
@@ -1848,7 +1847,7 @@ export function renderContent(content, userContext) {
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
-  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); setTab(initialTabFromHash()); })();
+  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); state.bootDone=true; setTab(initialTabFromHash()); })();
 }
 
 initProtectedPage('Módulo Hospedagem', renderContent);
