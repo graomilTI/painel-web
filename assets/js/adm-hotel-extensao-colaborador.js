@@ -614,10 +614,7 @@ async function handlePatchedAction(event) {
 
 function schedulePatch() {
   clearTimeout(state.timer);
-  state.timer = setTimeout(() => {
-    patchNow(false);
-    if (Date.now() - state.lastLoad > 30000) loadPatchData();
-  }, 35);
+  state.timer = setTimeout(() => { patchNow(false); }, 35);
 }
 
 function observe() {
@@ -643,6 +640,7 @@ async function init() {
   observe();
   bind();
   await loadPatchData();
+  setInterval(() => { if (!state.loading && Date.now() - state.lastLoad > 30000) loadPatchData(); }, 30000);
   console.info(`[hosp-extensao-colaborador] ativo ${PATCH_VERSION}`);
 }
 
