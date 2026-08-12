@@ -74,9 +74,6 @@ function injectVisualStyles() {
     /* ===== Revisão 28/07/2026 — apontamento da cliente: "botões e filtros
        ocupando a tela inteira". Filtros agora ficam em uma única faixa em
        grade e os botões têm largura proporcional ao texto. ===== */
-    .patrimonio-relatorios-page .section-heading { margin-bottom: 12px; }
-    .patrimonio-relatorios-page .section-heading h2 { font-size: 1.28rem; margin: 0 0 2px; }
-    .patrimonio-relatorios-page .section-heading .section-subtitle { font-size: .85rem; margin: 0; }
     .patrimonio-relatorios-page .base-card { padding: 14px 16px; }
     .patrimonio-relatorios-page .pat-filtros-grid {
       display: grid;
@@ -249,7 +246,35 @@ function injectVisualStyles() {
     .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; }
     .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(52,211,153,.12); color:#bbf7d0; font-weight:800; }
     .pat-view[hidden] { display:none !important; }
-    .patrimonio-relatorios-page .inline-nav button { width:auto; min-height:42px; margin:0; padding:9px 16px; border-radius:12px; }
+    .patrimonio-relatorios-page .pat-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .patrimonio-relatorios-page .pat-tab {
+      appearance: none;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-bottom-color: transparent;
+      background: rgba(15, 23, 42, 0.34);
+      color: rgba(226, 232, 240, 0.72);
+      font: inherit;
+      font-weight: 600;
+      font-size: 13.5px;
+      text-decoration: none;
+      cursor: pointer;
+      padding: 10px 20px;
+      border-radius: 12px 12px 0 0;
+      box-shadow: inset 0 -3px 0 transparent;
+      transition: color .15s ease, background .15s ease;
+    }
+    .patrimonio-relatorios-page .pat-tab:hover { color: #e2e8f0; }
+    .patrimonio-relatorios-page .pat-tab.active {
+      background: rgba(2, 12, 10, 0.55);
+      color: #ecfdf5;
+      border-color: rgba(45, 212, 191, 0.3);
+      border-bottom-color: transparent;
+      box-shadow: inset 0 -3px 0 #2dd4a0;
+    }
     .pat-desligados-empty { padding:34px; text-align:center; color:rgba(226,232,240,.68); }
     .pat-alert { border-color:rgba(251,146,60,.28); background:rgba(124,45,18,.12); }
     @media (max-width: 900px) {
@@ -488,7 +513,7 @@ async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, file
     host.appendChild(page);
     // eslint-disable-next-line no-await-in-loop
     results.push(await domToPng(page, `${filePrefix}-pagina-${String(i + 1).padStart(2, '0')}`));
-    host.removeChild(page);
+    page.remove();
   }
 
   return results;
@@ -695,22 +720,14 @@ function groupRowsByRegional(rows) {
 export function renderContent(content) {
   injectVisualStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
-  const importarUrl = toPanelUrl('importar-patrimonios');
   const statusUrl = toPanelUrl('patrimonio-status');
 
   content.innerHTML = `
     <section class="base-page patrimonio-relatorios-page">
-      <div class="section-heading">
-        <div>
-          <h2>Relatórios de Patrimônios</h2>
-          <p class="section-subtitle">Consulta da base atual importada em <strong>RELATÓRIOS &gt; Patrimônios</strong>, com filtros por regional, supervisão e situação de atraso.</p>
-        </div>
-        <div class="inline-nav">
-          <a href="${relatoriosUrl}" class="active">Relatórios</a>
-          <a href="${importarUrl}">Importar arquivo</a>
-          <a href="${statusUrl}">Status</a>
-          <button class="base-button secondary" id="btnDesligados" type="button">Desligados</button>
-        </div>
+      <div class="pat-tabs" role="tablist">
+        <a href="${relatoriosUrl}" class="pat-tab active" id="tabRelatorios">Relatórios</a>
+        <a href="${statusUrl}" class="pat-tab">Status</a>
+        <button class="pat-tab" id="btnDesligados" type="button">Desligados</button>
       </div>
 
       <div class="pat-view" id="patRelatoriosView">
@@ -807,7 +824,8 @@ export function renderContent(content) {
     filteredRows: [],
     page: 1,
     sort: { column: '', direction: 'asc' },
-    expanded: new Set()
+    expanded: new Set(),
+    exportando: false
   };
 
   renderThead(state.sort);
@@ -893,11 +911,11 @@ export function renderContent(content) {
   document.getElementById('btnDesligados')?.addEventListener('click', async () => {
     document.getElementById('patRelatoriosView').hidden = true;
     document.getElementById('patDesligadosView').hidden = false;
-    document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.classList.remove('active');
+    document.getElementById('tabRelatorios')?.classList.remove('active');
     document.getElementById('btnDesligados').classList.add('active');
     await loadDesligados();
   });
-  document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.addEventListener('click', (event) => {
+  document.getElementById('tabRelatorios')?.addEventListener('click', (event) => {
     event.preventDefault();
     document.getElementById('patDesligadosView').hidden = true;
     document.getElementById('patRelatoriosView').hidden = false;
@@ -968,7 +986,23 @@ export function renderContent(content) {
     setFeedback('CSV gerado com sucesso.');
   });
 
-  document.getElementById('btnZip')?.addEventListener('click', async () => {
+  const withExportLock = (handler) => async () => {
+    if (state.exportando) return;
+    const btnZip = document.getElementById('btnZip');
+    const btnZipRegional = document.getElementById('btnZipRegional');
+    state.exportando = true;
+    if (btnZip) btnZip.disabled = true;
+    if (btnZipRegional) btnZipRegional.disabled = true;
+    try {
+      await handler();
+    } finally {
+      state.exportando = false;
+      if (btnZip) btnZip.disabled = false;
+      if (btnZipRegional) btnZipRegional.disabled = false;
+    }
+  };
+
+  document.getElementById('btnZip')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar.', true);
       return;
@@ -987,9 +1021,9 @@ export function renderContent(content) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o ZIP.', true);
     }
-  });
+  }));
 
-  document.getElementById('btnZipRegional')?.addEventListener('click', async () => {
+  document.getElementById('btnZipRegional')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar por regional.', true);
       return;
@@ -1030,7 +1064,7 @@ export function renderContent(content) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o ZIP por regional.', true);
     }
-  });
+  }));
 
   (async () => {
     try {
