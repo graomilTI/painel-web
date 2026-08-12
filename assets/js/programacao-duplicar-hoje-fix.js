@@ -44,11 +44,13 @@ function patchDuplicateCalendar() {
   if (!dates || !sourceIso) return;
 
   const retroactive = sourceIso < todayIso;
-  if (label) label.textContent = retroactive ? 'Hoje + próximos 5 dias' : 'Próximos 5 dias';
+  const desiredLabel = retroactive ? 'Hoje + próximos 5 dias' : 'Próximos 5 dias';
+  if (label && label.textContent !== desiredLabel) label.textContent = desiredLabel;
   if (!retroactive) return;
 
-  // programacao.js gera amanhã até D+5 para uma origem retroativa. Mantemos
-  // esse horizonte e acrescentamos apenas D0 (hoje), sem alterar a origem.
+  // programacao.js pode renderizar o calendário mais de uma vez ao abrir o
+  // modal. Sempre que uma origem é retroativa, D0 (hoje) precisa permanecer
+  // disponível como primeiro destino, sem alterar a programação de origem.
   if (!dates.querySelector(`[data-duplicate-date="${todayIso}"]`)) {
     dates.querySelectorAll('[data-duplicate-date].is-selected').forEach((day) => {
       day.classList.remove('is-selected');
@@ -56,6 +58,18 @@ function patchDuplicateCalendar() {
     });
     dates.prepend(buildDuplicateDay(todayIso, true));
   }
+}
+
+let duplicateCalendarPatchQueued = false;
+
+function scheduleDuplicateCalendarPatch() {
+  if (duplicateCalendarPatchQueued) return;
+  duplicateCalendarPatchQueued = true;
+
+  requestAnimationFrame(() => {
+    duplicateCalendarPatchQueued = false;
+    patchDuplicateCalendar();
+  });
 }
 
 function installDuplicateTodayFix() {
@@ -66,9 +80,17 @@ function installDuplicateTodayFix() {
 
   duplicateButton.dataset.duplicateTodayFix = '1';
 
-  // O listener original abre/renderiza o modal de forma síncrona. Executar em
-  // microtask garante que o calendário-base já exista antes de inserir hoje.
-  duplicateButton.addEventListener('click', () => queueMicrotask(patchDuplicateCalendar));
+  // A renderização original pode acontecer de forma síncrona ou ser refeita
+  // logo depois da abertura. Agenda o primeiro ajuste após o clique e observa
+  // qualquer re-render do modal para garantir que "Hoje" não seja removido.
+  duplicateButton.addEventListener('click', () => {
+    queueMicrotask(scheduleDuplicateCalendarPatch);
+  });
+
+  const modalObserver = new MutationObserver(() => {
+    scheduleDuplicateCalendarPatch();
+  });
+  modalObserver.observe(modal, { childList: true, subtree: true });
 
   // Ao exibir hoje + D+1…D+5 existem 6 opções possíveis, mas a regra atual
   // continua permitindo selecionar no máximo 5 datas por duplicação.
