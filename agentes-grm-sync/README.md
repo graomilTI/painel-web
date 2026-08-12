@@ -93,3 +93,58 @@ order by created_at desc limit 5;
 ## Logs
 
 `logs/*.log` — um arquivo por agente + `worker-cron.log`/`auto-scheduler.log`. Cresce sem rotação automática; truncar/arquivar periodicamente se ficar grande.
+
+## Concorrência entre agentes — conflitos de banco (mapeamento 2026-08-12)
+
+> **Nota:** a seção "Arquitetura" acima descreve uma versão anterior do worker (poll único a cada 15s, 1 job por vez). Desde então o sistema evoluiu para uma **fila em 3 lanes** controlada pela função Postgres `claim_next_grm_sync_job(p_lane, p_worker_id)` (`pg_advisory_xact_lock(872634503)` + `SELECT ... FOR UPDATE SKIP LOCKED`, migrations `20260805130142_grm_sync_three_lanes.sql` e `20260807191805_adiciona_lane_despesas_distribuicao.sql`), consumida por `worker/grm-sync-job-worker.js --once --lane=<lane> --worker-id=<id>` via `worker/crontab-three-lanes.txt` (4 processos cron, 1x/min, `flock -n`). Lease/heartbeat libera job travado sem heartbeat há 10-20min. A lane `fixed` também deixou de ser round-robin contínuo puro em 2026-08-11 (PR #132): agora é `fixed_a`/`fixed_b`, cada agente com intervalo configurável (ver tela TI > Agentes). Esta seção documenta o estado encontrado nessa data — reconferir se voltar a mexer na fila.
+
+**Capacidade concorrente por lane:**
+
+| Lane | Cap. simultânea | Agentes |
+|---|---|---|
+| `fixed` | 2 | esteira de 19 agentes (`worker/grm-sync-fixed-agents.js`): sync-colaboradores, sync-lista-os, sync-patrimonios, sync-nhe, sync-operacional-os, sync-distribuicao-os, sync-producao-diaria, sync-locais-embarque, sync-resultado-diario, sync-despesas, sync-notas-fiscais, sync-mapa-embarque, sync-contas-pagar, sync-contas-receber, sync-auditorias, sync-cargas-geofence, sync-btg-relatorios, sync-adiantamentos, botconversa-sync (+ sync-login-alimentacao, fora da esteira mas com prioridade na mesma lane) |
+| `alteracoes` | 1 | sync-lancar-nhe, sync-finalizar-os, sync-abrir-os, sync-despesas-retroativas, sync-btg-checkin, sync-btg-devolver-classificador |
+| `despesas_distribuicao` | 1 | sync-liberacao-despesas, aplicar-distribuicao-os |
+
+Total: no máximo **4 agentes rodando ao mesmo tempo** no sistema inteiro.
+
+**Tabelas escritas por agente e mecanismo de lock:**
+
+| Agente | Escreve (principal) | Lock/idempotência |
+|---|---|---|
+| sync-colaboradores | `colaboradores`, `colaboradores_status_historico` | nenhum próprio (via `grmserver-colaboradores-sync-snapshot.js`) |
+| sync-lista-os | `grm_lista_os_importacoes` (**insert puro, sem onConflict**) | **nenhum** — não idempotente a reprocessamento paralelo |
+| sync-patrimonios | `frotas_veiculos`, `patrimonios_importacoes` | nenhum |
+| sync-nhe | `grm_nhe_importacoes` (upsert `id`) | onConflict |
+| sync-operacional-os | `operacional_os` (upsert `numero_os` + delete guardado), `operacional_pontos_embarque` | onConflict; lê `grm_lista_os_importacoes` (dependência lógica do #2) |
+| sync-distribuicao-os | `grm_distribuicao_os_importacoes` (upsert `id`) | onConflict |
+| sync-producao-diaria | `producao_snapshot` (via staging) | staging/promote (`safe-table-load.js`) |
+| sync-locais-embarque | `grm_locais_embarque_importacoes` (upsert `id`) | onConflict |
+| sync-resultado-diario | `relatorio_resultado_diario` (via staging) | staging/promote |
+| sync-despesas | `grm_despesas_importacoes` (upsert `id`) | onConflict |
+| sync-notas-fiscais | `grm_notas_fiscais_importacoes` (upsert `numero_nf`) | onConflict |
+| sync-mapa-embarque | `grm_mapa_embarque_importacoes` (upsert `id`) | onConflict |
+| sync-contas-pagar | `grm_contas_pagar_importacoes` (upsert `id`) | onConflict |
+| sync-contas-receber | `grm_contas_receber_importacoes` (upsert `id`) | onConflict |
+| sync-auditorias | `grm_auditorias_importacoes` (**insert + delete de sobra, não é upsert**) | **nenhum** — não idempotente a reprocessamento paralelo |
+| sync-cargas-geofence | `logistica_cargas_monitor_execucoes`, `grm_cargas_importacoes` (upsert `chave_unica`), `logistica_cargas_irregularidades` (upsert `chave_unica`) | onConflict; lê `operacional_os`, `grm_lista_os_importacoes`, `grm_distribuicao_os_importacoes` (dependência lógica) |
+| sync-btg-relatorios/classificador | `logistica_btg_solicitacoes` (via staging) | staging/promote |
+| sync-adiantamentos | `grm_adiantamentos_importacoes` (upsert `ofr_code`) | onConflict |
+| botconversa-sync | nenhuma direta (dispara Edge Function) | — |
+| sync-login-alimentacao | `grm_login_movimentos_importacoes` (upsert `chave_unica`), `financeiro_alimentacao_colaboradores` (upsert `chave_unica`), `grm_login_alimentacao_execucoes` | onConflict; lê `operacional_os` |
+| sync-lancar-nhe | `logistica_nhe_lancamentos_auto` (upsert `chave_unica`), `logistica_nhe_lancamentos_execucoes` | onConflict; lê `operacional_os`, `colaboradores` |
+| sync-finalizar-os | `operacional_os` (update), `logistica_alertas`, `grm_finalizacao_os_execucoes/resultados` | — |
+| sync-abrir-os | `logistica_abertura_os` (update status), `grm_abertura_os_execucoes` | filtro por status |
+| sync-despesas-retroativas | `grm_despesas_retroativas_auditoria` + GRM externo | — |
+| sync-btg-checkin / sync-btg-devolver-classificador | nenhuma no Supabase (Edge Function / portal externo) | — |
+| **sync-liberacao-despesas** | `grm_despesas_fila`, `grm_despesas_estado_colaborador` | **sim** — `claim_next_grm_despesa_fila()`, `pg_advisory_xact_lock` + `FOR UPDATE SKIP LOCKED` (único agente com lock real) |
+| aplicar-distribuicao-os | `operacional_os` (update `status_conferencia`) + GRM externo | filtro `status_conferencia != 'AJUSTADA'` (idempotência, não lock) |
+
+**Riscos identificados:**
+
+1. **Alto:** `sync-lista-os` e `sync-auditorias` não são idempotentes (insert sem `onConflict`/delete de sobra, sem lock). Se o mesmo `agente_id` for enfileirado 2x em paralelo (ex.: botão "Executar Agora" da UI + esteira ao mesmo tempo), duplica ou corrompe linhas. Ponto mais frágil do desenho atual.
+2. **Médio:** `operacional_os` é tocada por agentes de lanes diferentes sem lock compartilhado (`sync-operacional-os` no `fixed`; `sync-finalizar-os`, `sync-lancar-nhe`, `aplicar-distribuicao-os`, `sync-login-alimentacao` nas outras lanes). Upsert por `numero_os` é seguro linha a linha, mas leitura concorrente pode pegar um estado transitório (baixo risco de corrupção real).
+3. **Baixo:** agentes de staging (`sync-producao-diaria`, `sync-resultado-diario`, `sync-btg-relatorios`) usam tabelas `_staging` próprias — só colidiriam se o **mesmo** agente rodasse 2x em paralelo (evitado pela capacidade da lane, mas sem lock explícito além do `safe-table-load.js`).
+4. **Dependência de ordem sem lock:** `sync-lista-os` → `sync-operacional-os` (lê `grm_lista_os_importacoes`) e `sync-lista-os`/`sync-distribuicao-os` → `sync-cargas-geofence` (lookup de local da O.S.) — garantido só pela posição na esteira, não reforçado por lock.
+
+**Combinações seguras para rodar 100% simultâneas** (tabelas de escrita totalmente distintas, upsert por chave própria): `sync-despesas`, `sync-notas-fiscais`, `sync-mapa-embarque`, `sync-contas-pagar`, `sync-contas-receber`, `sync-nhe`, `sync-distribuicao-os`, `sync-locais-embarque`, `sync-adiantamentos`, `sync-patrimonios`, `botconversa-sync`, `sync-btg-checkin`, `sync-btg-devolver-classificador`, `sync-liberacao-despesas`, `sync-abrir-os`.
