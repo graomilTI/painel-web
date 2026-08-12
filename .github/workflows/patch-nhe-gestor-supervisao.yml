@@ -1,0 +1,34 @@
+name: Patch NHE gestor supervision
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-nhe-gestor-supervisao.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply patch
+        run: python3 scripts/patch-nhe-gestor-supervisao.py
+      - name: Validate
+        run: |
+          node --check agentes-grm-sync/grm-sync-lancar-nhe.js
+          grep -nA3 'var supervisaoAlvo = candidato.viaGestor' agentes-grm-sync/grm-sync-lancar-nhe.js
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentes-grm-sync/grm-sync-lancar-nhe.js
+          git commit -m 'fix: use gestor supervision for NHE launch'
+          git push origin HEAD:main
