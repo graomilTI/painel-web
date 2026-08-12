@@ -310,28 +310,50 @@ async function processarSupervisao(page, grupo) {
   log('INFO', `Supervisão selecionada no Graint: "${supervisaoEncontrada}"`);
   await clicarAtualizar(page);
 
-  // Aplica toda a distribuição da supervisão antes do único SALVAR da tela.
+  // Aplica toda a distribuição da supervisão antes do único SALVAR da tela. Uma
+  // associação com problema (ex.: colaborador não encontrado no Graint pra essa
+  // supervisão) não pode travar as demais OS da mesma tela — só ela fica pendente
+  // pro próximo ciclo, o resto segue e é salvo normalmente.
+  const idsComSucesso = new Set();
+  const falhasAssociacao = [];
   for (const atribuicao of grupo.atribuicoes) {
-    const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
-    if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
-    await associarColaborador(page, li, atribuicao.colaborador_nome);
+    try {
+      const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
+      if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
+      await associarColaborador(page, li, atribuicao.colaborador_nome);
+      idsComSucesso.add(atribuicao.os.id);
+    } catch (error) {
+      falhasAssociacao.push(`OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome}: ${error.message}`);
+      log('ERROR', `Associação OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome} falhou: ${error.message}`);
+      // Fecha qualquer dropdown/overlay que tenha ficado aberto, senão atrapalha a próxima associação.
+      await page.keyboard.press('Escape').catch(() => null);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  if (!idsComSucesso.size) {
+    throw new Error(`Nenhuma associação aplicada nesta supervisão (${falhasAssociacao.length} falha(s)): ${falhasAssociacao.join(' | ')}`);
   }
 
   if (DRY_RUN) {
-    log('INFO', `[DRY-RUN] Supervisão pronta para salvar (${numerosOs.length} OS, ${grupo.atribuicoes.length} associações) — SALVAR e update no Supabase pulados.`);
+    log('INFO', `[DRY-RUN] Supervisão pronta para salvar (${idsComSucesso.size} de ${numerosOs.length} OS, ${grupo.atribuicoes.length - falhasAssociacao.length} de ${grupo.atribuicoes.length} associações) — SALVAR e update no Supabase pulados.`);
     return;
   }
 
   await salvar(page);
 
   const now = new Date().toISOString();
-  const ids = grupo.osIds;
+  const ids = [...idsComSucesso];
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
     .in('id', ids);
   if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
-  log('SUCCESS', `Supervisão aplicada no Graint e marcada como AJUSTADA (${ids.length} OS).`);
+  log(
+    falhasAssociacao.length ? 'WARN' : 'SUCCESS',
+    `Supervisão aplicada no Graint e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
+      + (falhasAssociacao.length ? `; ${falhasAssociacao.length} associação(ões) pendente(s) pro próximo ciclo: ${falhasAssociacao.join(' | ')}` : '') + '.',
+  );
 }
 
 async function main() {
