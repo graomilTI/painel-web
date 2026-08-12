@@ -18,6 +18,7 @@ const state = {
   requesters: new Map(),
   mounted: false,
   loading: false,
+  lastLoad: 0,
   tables: { quotes: true, extras: true, documents: true, messages: true },
 };
 
@@ -285,7 +286,7 @@ function bindEvents() {
 
 function observeBaseChanges() {
   let timer;
-  const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (!state.loading) loadData(); }, 350); });
+  const observer = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(() => { if (!state.loading && Date.now() - state.lastLoad > 4000) loadData(); }, 350); });
   ['tbodySolicitadas', 'tbodyAndamento', 'tbodyConcluidos'].forEach((id) => { const el = document.getElementById(id); if (el) observer.observe(el, { childList: true, subtree: true }); });
 }
 async function loadOptional(table) {
@@ -315,7 +316,7 @@ async function loadData() {
     (requestersRes.data||[]).forEach((item)=>state.requesters.set(String(item.id),item.solicitante_nome||''));
     (peopleRes.data || []).forEach((person) => { const key = String(person.solicitacao_id || ''); if (!state.collaborators.has(key)) state.collaborators.set(key, []); state.collaborators.get(key).push(person); });
     renderAll();
-  } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; }
+  } catch (error) { console.error('[hosp-v2] loadData', error); } finally { state.loading = false; state.lastLoad = Date.now(); }
 }
 
 function requestStage(row) {
