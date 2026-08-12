@@ -725,25 +725,16 @@ async function existeMovimentoReal(dataReferencia, numeroOs) {
     return movimentoRealPorChaveCache[key];
   }
 
-  var wanted = normOs(numeroOs);
-  var result = await supabase
-    .from('grm_producao_diaria_importacoes')
-    .select('id,dados_json')
-    .eq('dados_json->>Data', String(dataReferencia))
-    .eq('dados_json->>O.S.', String(wanted))
-    .limit(100);
+  var result = await supabase.rpc('nhe_existe_movimento_real', {
+    p_data: String(dataReferencia),
+    p_os: String(normOs(numeroOs))
+  });
 
   if (result.error) {
     throw new Error('Falha ao verificar movimento real para ' + key + ': ' + result.error.message);
   }
 
-  var existe = (result.data || []).some(function (row) {
-    var dados = row && row.dados_json ? row.dados_json : {};
-    var cargas = normText(dados.Cargas);
-    var tons = toNumberLoose(dados.Tons);
-    return cargas === 'NHE' || toNumberLoose(dados.Cargas) > 0 || tons > 0;
-  });
-
+  var existe = result.data === true;
   movimentoRealPorChaveCache[key] = existe;
   return existe;
 }
@@ -759,18 +750,16 @@ async function existeNheReal(dataReferencia, numeroOs) {
     return nheRealPorChaveCache[key];
   }
 
-  var result = await supabase
-    .from('grm_nhe_importacoes')
-    .select('id')
-    .eq('dados_json->>sorCode', String(numeroOs))
-    .eq('dados_json->>lnsDate', String(dataReferencia))
-    .limit(1);
+  var result = await supabase.rpc('nhe_existe_nhe_real', {
+    p_data: String(dataReferencia),
+    p_os: String(normOs(numeroOs))
+  });
 
   if (result.error) {
     throw new Error('Falha ao verificar NHE real para ' + key + ': ' + result.error.message);
   }
 
-  var existe = !!(result.data && result.data.length);
+  var existe = result.data === true;
   nheRealPorChaveCache[key] = existe;
   return existe;
 }
@@ -1407,7 +1396,20 @@ async function main() {
       // antiga pode ter falhado/registrado SEM_LOGIN enquanto a NHE foi
       // lançada manualmente ou por outro fluxo. O histórico importado do GRM
       // é verificado por O.S.+data antes de abrir a tela de lançamento.
-      if (await existeNheReal(p.data, p.os)) {
+      var temNheReal = false;
+      var temMovimentoReal = false;
+      try {
+        temNheReal = await existeNheReal(p.data, p.os);
+        if (!temNheReal) temMovimentoReal = await existeMovimentoReal(p.data, p.os);
+      } catch (checkError) {
+        stats.erro++;
+        var msgCheck = 'Falha na trava de segurança NHE/movimento para ' + p.data + '|' + p.os + ': ' + String(checkError.message || checkError);
+        await salvarResultado(p, { status: 'ERRO', erro: msgCheck.slice(0, 2000) });
+        log('ERROR', msgCheck + ' — O.S. bloqueada nesta execução; seguindo para as demais.');
+        continue;
+      }
+
+      if (temNheReal) {
         stats.jaExistiaGrm++;
         await salvarResultado(p, {
           status: 'JA_EXISTIA_GRM',
@@ -1415,7 +1417,7 @@ async function main() {
           lancado_em: null,
           raw: {
             reconciliacao: 'NHE já existente no GRM antes desta execução',
-            origem_verificacao: 'grm_nhe_importacoes',
+            origem_verificacao: 'rpc:nhe_existe_nhe_real',
             nao_lancado_nesta_execucao: true
           }
         });
@@ -1424,7 +1426,7 @@ async function main() {
         continue;
       }
 
-      if (await existeMovimentoReal(p.data, p.os)) {
+      if (temMovimentoReal) {
         stats.jaExistiaMovimento++;
         await salvarResultado(p, {
           status: 'JA_EXISTIA_MOVIMENTO_GRM',
@@ -1432,7 +1434,7 @@ async function main() {
           lancado_em: null,
           raw: {
             reconciliacao: 'Produção Diária já possui carga/movimento para esta O.S.+data',
-            origem_verificacao: 'grm_producao_diaria_importacoes',
+            origem_verificacao: 'rpc:nhe_existe_movimento_real',
             nao_lancado_nesta_execucao: true
           }
         });
