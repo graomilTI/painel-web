@@ -1,0 +1,34 @@
+name: Patch NHE RPC checks
+
+on:
+  push:
+    paths:
+      - '.github/workflows/patch-nhe-rpc-checks.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply patch
+        run: python3 scripts/patch-nhe-rpc-checks.py
+      - name: Validate
+        run: |
+          node --check agentes-grm-sync/grm-sync-lancar-nhe.js
+          grep -nE "nhe_existe_movimento_real|nhe_existe_nhe_real|O.S. bloqueada nesta execução" agentes-grm-sync/grm-sync-lancar-nhe.js
+      - name: Commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agentes-grm-sync/grm-sync-lancar-nhe.js
+          git commit -m 'fix: use RPC for NHE safety checks'
+          git push origin HEAD:main
