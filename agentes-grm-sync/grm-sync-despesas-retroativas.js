@@ -213,7 +213,7 @@ async function main() {
     ...(process.env.PUPPETEER_EXECUTABLE_PATH ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH } : {}),
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
   });
-  const summary = { checked: 0, unchanged: 0, approve: 0, create: 0, errors: 0, unresolved: 0 };
+  const summary = { checked: 0, unchanged: 0, approve: 0, create: 0, errors: 0, unresolved: 0, adiados: 0 };
   let actionCount = 0;
   try {
     const page = await browser.newPage();
@@ -239,7 +239,16 @@ async function main() {
         };
         try {
           if (decision.action === 'NONE') summary.unchanged += 1;
-          else if (actionCount >= MAX_ACTIONS) throw new Error(`Limite de ${MAX_ACTIONS} ações atingido.`);
+          else if (actionCount >= MAX_ACTIONS) {
+            // Trava de segurança intencional (evita rajada grande de ações num único run),
+            // não é uma falha: fica pendente e é retomado na próxima execução do agente.
+            summary.adiados += 1;
+            audit.sucesso = false;
+            audit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
+            log('WARN', `${candidate.nome} / ${expense.oexName}: ${audit.erro}`);
+            await recordAudit(audit);
+            continue;
+          }
           else if (decision.action === 'APPROVE') {
             summary.approve += 1; actionCount += 1;
             audit.ofm_code = Number(decision.row.ofmCode);
