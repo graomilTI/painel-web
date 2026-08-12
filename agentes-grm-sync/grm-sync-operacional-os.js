@@ -182,13 +182,16 @@ function pontoKey({ uf, cidade, nome_local }) {
 }
 
 function mapLocalEmbarqueRow(d) {
-  const latitude = toGeoNum(getField(d, ['Latitude', 'Lat']));
-  const longitude = toGeoNum(getField(d, ['Longitude', 'Long', 'Lng']));
+  // GRM passou a exportar essa tela em JSON com prefixo "spl" (splName/splLat/splLon/
+  // splCitName/splCitUF) em vez dos cabeçalhos de planilha em português usados antes
+  // (05/08 em diante); mantemos os aliases antigos como fallback caso o formato mude de novo.
+  const latitude = toGeoNum(getField(d, ['Latitude', 'Lat', 'splLat']));
+  const longitude = toGeoNum(getField(d, ['Longitude', 'Long', 'Lng', 'splLon']));
   return {
-    tipo_local: toText(getField(d, ['Tipo do Local', 'Tipo Local', 'Tipo'])),
-    nome_local: toText(getField(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque'])),
-    uf: toText(getField(d, ['UF', 'Estado'])),
-    cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município'])),
+    tipo_local: toText(getField(d, ['Tipo do Local', 'Tipo Local', 'Tipo', 'sptName'])),
+    nome_local: toText(getField(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque', 'splName'])),
+    uf: toText(getField(d, ['UF', 'Estado', 'splCitUF'])),
+    cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município', 'splCitName'])),
     latitude,
     longitude,
     ativo: true,
