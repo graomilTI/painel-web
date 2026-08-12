@@ -246,7 +246,7 @@ async function gerarPdfComTipo(button) {
     const supervisaoQuery = temMapa
       ? [...programacaoIdMap.keys()]
       : document.getElementById('progSup')?.value;
-    const dataReferencia = document.getElementById('progDataRef')?.value || todayIso();
+    const dataReferencia = window.__progGetDataReferencia?.() || document.getElementById('progDataRef')?.value || todayIso();
 
     const roster = await loadRosterDoDia(programacaoIdQuery);
 
@@ -389,7 +389,7 @@ async function montarTextoCompartilhar() {
   if (!programacaoId && !temMapa) throw new Error('Carregue um contexto antes de compartilhar.');
 
   const programacaoIdQuery = temMapa ? [...programacaoIdMap.values()] : programacaoId;
-  const dataReferencia = document.getElementById('progDataRef')?.value || todayIso();
+  const dataReferencia = window.__progGetDataReferencia?.() || document.getElementById('progDataRef')?.value || todayIso();
 
   const roster = await loadRosterDoDia(programacaoIdQuery);
 
