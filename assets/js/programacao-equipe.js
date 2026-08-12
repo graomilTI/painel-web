@@ -9,6 +9,7 @@
 import { supabase } from './supabaseClient.js';
 import { getUserContext, getCurrentUser } from './auth.js';
 import { anexarLaudoComGeolocalizacao, capturarGeolocalizacao } from './laudoUpload.js';
+import { marcarMapaRotasPendente } from './programacao-equipe-mapa-rotas-trigger.js';
 
 let currentUserIsMaster = false;
 let masterPermissionReady = null;
@@ -863,6 +864,22 @@ export function candCardHtml(cand, selected, minCustoId) {
 
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 
+// operacional_os.data_os não é confiável pra saber "de que dia é essa
+// confirmação" — o trigger do banco só a ajusta na 1ª promoção pra ATENDER,
+// então uma O.S. reaproveitada num novo dia de programação fica com data_os
+// da vez anterior (achado 11/08: 98% das O.S. confirmadas hoje com data_os
+// desalinhada de programacao_dia.data_referencia). A referência real é a
+// própria programação sendo editada.
+const dataReferenciaCache = new Map();
+async function dataReferenciaDaProgramacao(programacaoId) {
+  if (!programacaoId) return null;
+  if (dataReferenciaCache.has(programacaoId)) return dataReferenciaCache.get(programacaoId);
+  const { data, error } = await supabase.from('programacao_dia').select('data_referencia').eq('id', programacaoId).maybeSingle();
+  const valor = error ? null : (data?.data_referencia || null);
+  dataReferenciaCache.set(programacaoId, valor);
+  return valor;
+}
+
 const AGENTE_DISTRIBUICAO_OS = 'aplicar-distribuicao-os';
 
 async function enfileirarDistribuicaoOs() {
@@ -948,7 +965,10 @@ export async function atualizarStatusOsCore(os, nextStatus, currentUserId, dataR
   }
   const { error } = await supabase.from('operacional_os').update(patch).eq('id', os.id);
   if (error) throw error;
-  if (nextStatus === 'ATENDER') await enfileirarDistribuicaoOs();
+  if (nextStatus === 'ATENDER') {
+    await enfileirarDistribuicaoOs();
+    marcarMapaRotasPendente(os?.supervisao, patch.data_os || os?.data_os || dataReferencia);
+  }
 }
 
 export async function registrarSaldoKg(osId, kg) {
@@ -1112,6 +1132,11 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   const { error: espelhoErr } = await supabase.from('programacao_colaboradores').upsert(espelho, { onConflict: 'programacao_id,colaborador_id' });
   if (espelhoErr) console.warn('[programacao-equipe] falha ao espelhar disponibilidade.', espelhoErr);
   await reabrirDistribuicaoOs(os.id);
+  // Confirmar candidato aqui é quem de fato promove a O.S. pra ATENDER (via
+  // trigger programacao_equipe_marca_os_atender no banco) — não passa por
+  // atualizarStatusOsCore. Sem isto o Mapa Operacional ficava sem
+  // Colaborador/Veículo/Rota mesmo com a O.S. atendida (achado 11/08).
+  marcarMapaRotasPendente(os?.supervisao, await dataReferenciaDaProgramacao(programacaoId));
 }
 
 let frotasMotoristasCache = null;
@@ -1227,6 +1252,7 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
   if (vinculoRes?.error) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoRes.error);
   if (espelhoRes?.error) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoRes.error);
   await reabrirDistribuicaoOs(os.id);
+  marcarMapaRotasPendente(os?.supervisao, await dataReferenciaDaProgramacao(programacaoId));
 
   return upsertRows?.[0] || { ...payload, id: null };
 }

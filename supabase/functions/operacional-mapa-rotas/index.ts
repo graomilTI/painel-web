@@ -166,12 +166,42 @@ Deno.serve(async (req) => {
     if (!supabaseUrl || !serviceKey) return json({ error: 'SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY não configurados.' }, 500);
     const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
-    // 1) Só O.S. "Atender" da supervisão, na data de referência.
+    // 1) Só O.S. confirmadas na Etapa B pra essa data — mesmo critério que o
+    // Mapa Operacional usa pra decidir "O.S. de hoje" (assets/js/operacional.js
+    // :loadOsEPontos, via programacao_dia + programacao_equipe.confirmado).
+    // Não filtra por operacional_os.data_os: esse campo não fica em sincronia
+    // quando uma O.S. já ATENDER é reaproveitada numa nova programação — o
+    // trigger do banco só o ajusta na 1ª promoção (achado 11/08: 98% das O.S.
+    // confirmadas no dia com data_os desalinhada de programacao_dia.data_referencia,
+    // fazendo esta function sempre devolver "rotas: 0").
+    const { data: programasRef, error: programasErr } = await supabase
+      .from('programacao_dia')
+      .select('id')
+      .eq('data_referencia', dataReferencia);
+    if (programasErr) throw programasErr;
+    const programacaoIdsRef = (programasRef || []).map((p) => p.id).filter(Boolean);
+
+    let osIdsConfirmados: string[] = [];
+    if (programacaoIdsRef.length) {
+      const { data: equipeRef, error: equipeRefErr } = await supabase
+        .from('programacao_equipe')
+        .select('os_id')
+        .in('programacao_id', programacaoIdsRef)
+        .eq('confirmado', true);
+      if (equipeRefErr) throw equipeRefErr;
+      osIdsConfirmados = [...new Set((equipeRef || []).map((e) => e.os_id).filter(Boolean))];
+    }
+
+    if (!osIdsConfirmados.length) {
+      await supabase.from('operacional_mapa_rotas').delete().eq('supervisao', supervisao).eq('data_referencia', dataReferencia);
+      return json({ supervisao, data_referencia: dataReferencia, rotas: 0, motivo: 'Nenhuma O.S. confirmada para esta supervisão/data.' });
+    }
+
     const { data: osRows, error: osErr } = await supabase
       .from('operacional_os')
       .select('id, embarque, cliente, supervisao, data_os')
       .eq('status_gestor', 'ATENDER')
-      .eq('data_os', dataReferencia)
+      .in('id', osIdsConfirmados)
       .ilike('supervisao', supervisao);
     if (osErr) throw osErr;
     const osById = new Map<string, any>();
