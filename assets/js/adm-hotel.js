@@ -32,7 +32,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'admHospStyles';
   style.textContent = `
-    .adm-hosp-tabs{display:flex;align-items:center;gap:8px;overflow-x:auto;margin:16px 0 20px;padding:9px;border:1px solid rgba(111,208,165,.13);border-radius:16px;background:rgba(4,13,9,.76);box-shadow:0 12px 34px rgba(0,0,0,.16);scrollbar-width:thin;scrollbar-color:rgba(111,208,165,.25) transparent}.adm-hosp-tab{position:relative;display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;width:auto!important;min-height:42px;margin-top:0!important;border:1px solid transparent;background:transparent;color:#9eaaa4;border-radius:11px;padding:10px 14px;cursor:pointer;font-weight:800;font-size:12px;transition:background .16s ease,color .16s ease,border-color .16s ease,transform .16s ease}.adm-hosp-tab::before{display:grid;place-items:center;width:19px;height:19px;border-radius:6px;background:rgba(255,255,255,.045);color:#8da299;font-size:11px;font-weight:900}.adm-hosp-tab[data-tab="dashboard"]::before{content:'▦'}.adm-hosp-tab[data-tab="solicitadas"]::before{content:'≡'}.adm-hosp-tab[data-tab="andamento"]::before{content:'⌂'}.adm-hosp-tab[data-tab="pagar"]::before{content:'▭'}.adm-hosp-tab[data-tab="nf"]::before{content:'✓'}.adm-hosp-tab[data-tab="hoteis"]::before{content:'H'}.adm-hosp-tab[data-tab="alojamentos"]::before{content:'A'}.adm-hosp-tab[data-tab="historico"]::before{content:'↺'}.adm-hosp-tab:hover{color:#e9fff4;background:rgba(111,208,165,.06);transform:translateY(-1px)}.adm-hosp-tab.active{background:linear-gradient(180deg,rgba(0,200,122,.22),rgba(0,120,75,.16));color:#effff6;border-color:rgba(45,212,160,.28);box-shadow:0 8px 22px rgba(0,120,75,.14)}.adm-hosp-tab.active::before{background:#00c87a;color:#032116}.adm-hosp-tab small{display:inline-grid;place-items:center;min-width:19px;height:19px;margin-left:1px;padding:0 5px;border-radius:999px;background:#f59e0b;color:#1c1200;font-weight:950;font-size:10px}.adm-hosp-tabs-sep{width:1px;align-self:stretch;min-height:28px;background:rgba(111,208,165,.14);margin:3px 3px}.adm-hosp-tabs-label{align-self:center;padding:0 3px;font-size:9px;font-weight:900;color:#627168;text-transform:uppercase;letter-spacing:.11em;white-space:nowrap}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:700px;background:#15152a}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.03)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-small{width:auto!important;margin-top:0!important;padding:8px 12px!important;border-radius:12px!important;font-size:12px;font-weight:800!important}.adm-hosp-status{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:11px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#e2e8f0;background:rgba(21,21,42,.7);border-color:rgba(255,255,255,.14)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
+    .adm-hosp-tabs{display:flex;align-items:center;gap:8px;overflow-x:auto;margin:16px 0 20px;padding:9px;border:1px solid rgba(111,208,165,.13);border-radius:16px;background:rgba(4,13,9,.76);box-shadow:0 12px 34px rgba(0,0,0,.16);scrollbar-width:thin;scrollbar-color:rgba(111,208,165,.25) transparent}.adm-hosp-tab{position:relative;display:inline-flex;align-items:center;gap:9px;flex:0 0 auto;width:auto!important;min-height:42px;margin-top:0!important;border:1px solid transparent;background:transparent;color:#9eaaa4;border-radius:11px;padding:10px 14px;cursor:pointer;font-weight:800;font-size:12px;transition:background .16s ease,color .16s ease,border-color .16s ease,transform .16s ease}.adm-hosp-tab::before{display:grid;place-items:center;width:19px;height:19px;border-radius:6px;background:rgba(255,255,255,.045);color:#8da299;font-size:11px;font-weight:900}.adm-hosp-tab[data-tab="dashboard"]::before{content:'▦'}.adm-hosp-tab[data-tab="solicitadas"]::before{content:'≡'}.adm-hosp-tab[data-tab="andamento"]::before{content:'⌂'}.adm-hosp-tab[data-tab="pagar"]::before{content:'▭'}.adm-hosp-tab[data-tab="nf"]::before{content:'✓'}.adm-hosp-tab[data-tab="hoteis"]::before{content:'H'}.adm-hosp-tab[data-tab="alojamentos"]::before{content:'A'}.adm-hosp-tab[data-tab="historico"]::before{content:'↺'}.adm-hosp-tab:hover{color:#e9fff4;background:rgba(111,208,165,.06);transform:translateY(-1px)}.adm-hosp-tab.active{background:linear-gradient(180deg,rgba(0,200,122,.22),rgba(0,120,75,.16));color:#effff6;border-color:rgba(45,212,160,.28);box-shadow:0 8px 22px rgba(0,120,75,.14)}.adm-hosp-tab.active::before{background:#00c87a;color:#032116}.adm-hosp-tab small{display:inline-grid;place-items:center;min-width:19px;height:19px;margin-left:1px;padding:0 5px;border-radius:999px;background:#f59e0b;color:#1c1200;font-weight:950;font-size:10px}.adm-hosp-tabs-sep{width:1px;align-self:stretch;min-height:28px;background:rgba(111,208,165,.14);margin:3px 3px}.adm-hosp-tabs-label{align-self:center;padding:0 3px;font-size:9px;font-weight:900;color:#627168;text-transform:uppercase;letter-spacing:.11em;white-space:nowrap}.adm-hosp-panel{display:none}.adm-hosp-panel.active{display:block}.adm-hosp-btn{width:auto!important;margin-top:0!important}.adm-hosp-table-wrap{overflow:auto;border:1px solid var(--panel-line,var(--line));border-radius:18px}.adm-hosp-table{width:100%;border-collapse:collapse;min-width:700px;background:#15152a}.adm-hosp-table th,.adm-hosp-table td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-hosp-table th{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}.adm-hosp-table tr:hover td{background:rgba(111,208,165,.03)}.adm-hosp-actions{display:flex;gap:8px;flex-wrap:wrap}.adm-hosp-table-wrap .adm-hosp-actions{flex-wrap:nowrap}.adm-hosp-small{width:auto!important;margin-top:0!important;padding:8px 12px!important;border-radius:12px!important;font-size:12px;font-weight:800!important}.adm-hosp-status{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;border:1px solid var(--line-2);background:rgba(255,255,255,.04);font-size:11px;font-weight:800;white-space:nowrap}.adm-hosp-status.solicitada,.adm-hosp-status.em_analise,.adm-hosp-status.em_cotacao,.adm-hosp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.24)}.adm-hosp-status.reservada,.adm-hosp-status.checkin_previsto,.adm-hosp-status.hospedado,.adm-hosp-status.enviado_ao_financeiro,.adm-hosp-status.nf_recebida{color:#e2e8f0;background:rgba(21,21,42,.7);border-color:rgba(255,255,255,.14)}.adm-hosp-status.concluida,.adm-hosp-status.pago,.adm-hosp-status.lancado,.adm-hosp-status.ativo,.adm-hosp-status.preferencial{color:#bbf7d0;background:rgba(22,101,52,.22);border-color:rgba(22,101,52,.34)}.adm-hosp-status.cancelada,.adm-hosp-status.bloqueado,.adm-hosp-status.evitar{color:#fecaca;background:rgba(220,38,38,.13);border-color:rgba(220,38,38,.24)}.adm-hosp-status.checkout_hoje,.adm-hosp-status.renovacao_necessaria{color:#fed7aa;background:rgba(249,115,22,.11);border-color:rgba(249,115,22,.24)}
     .adm-hosp-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-hosp-field{display:flex;flex-direction:column;gap:7px}.adm-hosp-field.full{grid-column:1/-1}.adm-hosp-field label{font-size:13px;color:#cbd5e1;font-weight:800}.adm-hosp-field input,.adm-hosp-field textarea,.adm-hosp-field select{width:100%;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:12px 13px;outline:none;color-scheme:dark}.adm-hosp-field textarea{resize:vertical;min-height:72px}.adm-hosp-field input:focus,.adm-hosp-field textarea:focus,.adm-hosp-field select:focus{border-color:var(--green-2);box-shadow:0 0 0 3px rgba(111,208,165,.12)}.adm-hosp-form-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}.adm-hosp-feedback{color:var(--muted);font-size:13px}.adm-hosp-danger{border-color:rgba(220,38,38,.32)!important;background:rgba(127,29,29,.45)!important;color:#fecaca!important}.adm-hosp-danger:hover{background:rgba(185,28,28,.55)!important;color:#fff!important}.adm-hosp-feedback.ok{color:#bbf7d0}.adm-hosp-feedback.err{color:#fecaca}.adm-hosp-modal{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(2,6,23,.82);backdrop-filter:blur(6px)}.adm-hosp-modal.open{display:flex}.adm-hosp-modal-card{width:min(900px,100%);max-height:94vh;overflow:auto;background:#081611;border:1px solid var(--line-2);border-radius:24px;box-shadow:var(--shadow);padding:24px}.adm-hosp-modal-card.narrow{width:min(560px,100%)}.adm-hosp-modal-card.medium{width:min(680px,100%)}.adm-hosp-modal-card.small{width:min(480px,100%)}.adm-hosp-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:0}.adm-hosp-modal-head h3{margin:0}.adm-hosp-toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.adm-hosp-search{min-width:220px;border:1px solid rgba(255,255,255,0.08);background:#15152a;color:var(--text);border-radius:14px;padding:10px 13px;color-scheme:dark;font-size:13px}.adm-hosp-empty{padding:20px;text-align:center;color:var(--muted)}.adm-hosp-row-note{display:block;color:var(--muted);font-size:12px;margin-top:3px}.adm-hosp-colab-list{display:grid;gap:5px}.adm-hosp-colab-item{display:grid;gap:1px;line-height:1.2}.adm-hosp-colab-name{font-weight:800;color:var(--text);font-size:13px}.adm-hosp-colab-regional{font-size:11px;color:#9ca3af}.adm-hosp-select-hint{margin-top:6px;font-size:12px;color:#93c5fd}.adm-hosp-select-hint.warn{color:#fde68a}
     .adm-section-block{margin-top:16px}.adm-section-label{font-size:11px;font-weight:900;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
     .adm-colab-chips{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0;min-height:36px}.adm-colab-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(22,101,52,.16);border:1px solid rgba(111,208,165,.22);border-radius:999px;padding:6px 10px 6px 12px}.adm-colab-chip .cn{font-size:13px;font-weight:800;color:#dcfce7}.adm-colab-chip .cr{font-size:11px;color:#9ca3af}.adm-colab-chip .cx{background:none;border:none;color:#6b7280;cursor:pointer;font-size:15px;font-weight:900;padding:0 2px;line-height:1;margin-left:2px}.adm-colab-chip .cx:hover{color:#fecaca}.adm-colab-chip.excluido{background:rgba(220,38,38,.07);border-color:rgba(220,38,38,.2);opacity:.65}.adm-colab-chip.excluido .cn{color:#fca5a5;text-decoration:line-through}.adm-colab-chip.excluido .cx{color:#fca5a5}
@@ -44,6 +44,7 @@ function injectStyles() {
     .adm-pix-box{display:none;grid-template-columns:220px 1fr;gap:14px;align-items:start;border:1px solid rgba(111,208,165,.22);background:rgba(22,101,52,.08);border-radius:18px;padding:14px;margin-top:12px}.adm-pix-box.open{display:grid}.adm-pix-qr{width:220px;height:220px;border-radius:14px;background:#fff;padding:10px;object-fit:contain}.adm-pix-copy{width:100%;min-height:126px;border:1px solid rgba(255,255,255,.08);background:#15152a;color:#dcfce7;border-radius:14px;padding:12px;font-size:12px;line-height:1.45;resize:vertical;outline:none}.adm-pix-hint{font-size:12px;color:#9ca3af;margin:0 0 8px}.adm-hotel-register-card{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.adm-hotel-register-card h3{margin:0}.adm-hotel-register-card p{margin:4px 0 0}
     .adm-hosp-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.adm-hosp-action-grid .btn{width:100%!important}
     .adm-hidden-soft{display:none!important}.adm-hidden{display:none!important}.adm-hosp-help{font-size:12px;color:#6b7280;margin-top:4px}.mt-16{margin-top:16px!important}
+    .adm-payment-modal-card{background:linear-gradient(155deg,#071b14,#03100c)}.adm-payment-main{grid-template-columns:1fr 1.2fr .72fr}.adm-payment-main .full{grid-column:1/-1}.adm-payment-extras{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px;padding:14px;border:1px solid rgba(74,222,128,.18);border-radius:15px;background:rgba(2,18,13,.55)}.adm-payment-extras strong{display:block;color:#f0fff6}.adm-payment-extras span{display:block;margin-top:3px;color:#8ea79c;font-size:11.5px}.adm-payment-choice{display:flex;gap:10px;margin:16px 0 0;padding:0;border:0}.adm-payment-choice legend{width:100%;margin-bottom:8px;color:#91a89e;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.adm-payment-choice label{display:flex;align-items:center;gap:9px;min-width:160px;padding:11px 13px;border:1px solid rgba(74,222,128,.18);border-radius:13px;background:#071f17;cursor:pointer}.adm-payment-choice input{width:17px;height:17px;accent-color:#4ade80}.adm-payment-choice strong,.adm-payment-choice small{display:block}.adm-payment-choice strong{color:#effff5}.adm-payment-choice small{margin-top:2px;color:#81998e}.adm-payment-actions{display:grid;grid-template-columns:1.05fr 1fr 1fr}.adm-payment-actions .adm-hosp-feedback{grid-column:1/-1}@media(max-width:700px){.adm-payment-main,.adm-payment-actions{grid-template-columns:1fr}.adm-payment-extras{align-items:flex-start;flex-direction:column}.adm-payment-choice{flex-direction:column}.adm-payment-choice label{min-width:0}}
     .adm-menu-mode-hoteis [data-tab="alojamentos"],.adm-menu-mode-alojamentos [data-tab="solicitadas"],.adm-menu-mode-alojamentos [data-tab="andamento"],.adm-menu-mode-alojamentos [data-tab="concluidos"],.adm-menu-mode-alojamentos [data-tab="hoteis"]{display:none!important}
     .adm-hosp-tabs-sep{width:1px;align-self:stretch;background:var(--line-2);margin:0 4px}
     .adm-hosp-tabs-label{align-self:center;font-size:10px;font-weight:900;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
@@ -110,7 +111,7 @@ export function renderContent(content, userContext) {
   const state = {
     rows: [], resumo: {}, hoteis: [], alojamentos: [], historicoRows: [], historicoAtual: [], historicoErro: null,
     editingHotel: null, editingAlojamento: null,
-    tab: 'dashboard', selected: null,
+    tab: 'dashboard', selected: null, bootDone: false,
     reservarColabs: [], estenderColabs: [],
     dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos',
     solicitadasFiltros: { colaborador: '', cidade: '', supervisao: '', data: '', ordenar: 'data', direcao: 'desc' }
@@ -219,7 +220,6 @@ export function renderContent(content, userContext) {
       <button class="adm-hosp-tab" data-tab="solicitadas" type="button">Solicitações <small id="cntSolicitadas">0</small></button>
       <button class="adm-hosp-tab" data-tab="andamento" type="button">Reservas <small id="cntAndamento">0</small></button>
       <button class="adm-hosp-tab" data-tab="pagar" type="button">Pagamentos</button>
-      <button class="adm-hosp-tab" data-tab="nf" type="button">Notas fiscais</button>
       <span class="adm-hosp-tabs-sep" aria-hidden="true"></span>
       <span class="adm-hosp-tabs-label">Cadastros</span>
       <button class="adm-hosp-tab" data-tab="hoteis" type="button">Hotéis</button>
@@ -273,7 +273,6 @@ export function renderContent(content, userContext) {
     </section>
 
     <section id="tab-pagar" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
-    <section id="tab-nf" class="adm-hosp-panel"><article class="card"><div class="adm-hosp-table-wrap"><table class="adm-hosp-table"><tbody><tr><td class="adm-hosp-empty">Carregando...</td></tr></tbody></table></div></article></section>
 
     <section id="tab-concluidos" class="adm-hosp-panel">
       <article class="card">
@@ -348,7 +347,7 @@ export function renderContent(content, userContext) {
           <div><h3>Fechamento da hospedagem</h3><p class="muted" id="checkoutSub"></p></div>
           <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalCheckoutClose">Fechar</button>
         </div>
-        <div class="adm-section-block"><div class="adm-section-label">Colaboradores</div><div id="checkoutColabList" class="adm-colab-chips"></div></div>
+        <div class="adm-section-block"><div class="adm-section-label">Quem fará checkout? Marque toda a equipe ou somente quem sairá.</div><div id="checkoutColabList" class="adm-colab-check-list"></div></div>
         <div class="adm-checkout-totals mt-16">
           <div class="adm-checkout-line"><span>Valor total das diárias</span><strong id="checkoutValorDiarias">R$ 0,00</strong></div>
         </div>
@@ -368,20 +367,25 @@ export function renderContent(content, userContext) {
 
     <!-- Modal: Pagar -->
     <div id="modalPagar" class="adm-hosp-modal">
-      <div class="adm-hosp-modal-card small">
+      <div class="adm-hosp-modal-card medium adm-payment-modal-card">
         <div class="adm-hosp-modal-head">
           <div><h3>Pagamento PIX</h3><p class="muted" id="pagarSub"></p></div>
           <button class="btn btn-secondary adm-hosp-btn" type="button" id="modalPagarClose">Fechar</button>
         </div>
-        <div class="adm-hosp-form mt-16">
+        <div class="adm-section-block mt-16"><div class="adm-section-label">Período e colaboradores selecionados</div><div id="pagarResumoSelecao" class="muted"></div></div>
+        <div class="adm-hosp-form adm-payment-main mt-16">
           <div class="adm-hosp-field"><label>CNPJ/CPF do fornecedor</label><input id="pagarCnpj" placeholder="Ex.: 00.000.000/0001-00" /></div>
           <div class="adm-hosp-field"><label>Nome do fornecedor</label><input id="pagarFornecedor" /></div>
           <div class="adm-hosp-field"><label>Valor (R$)</label><input id="pagarValor" type="number" step="0.01" min="0" /></div>
-          <div class="adm-hosp-field"><label>PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
+          <div class="adm-hosp-field full"><label>Chave PIX</label><input id="pagarPix" placeholder="Chave PIX do hotel/fornecedor" /></div>
         </div>
-        <div class="adm-hosp-form-actions mt-16">
-          <button class="btn btn-secondary" type="button" id="btnGerarPix">GERAR QR CODE</button>
-          <button class="btn btn-primary" type="button" id="btnConfirmarPagamento">PAGAR</button>
+        <div class="adm-payment-extras"><div><strong>Extras</strong><span>Inclua custos adicionais e envie para Conferência quando necessário.</span></div><button class="btn btn-secondary" type="button" id="btnPagarExtra">+ ADICIONAR EXTRA</button></div>
+        <label class="adm-payment-choice"><input id="pagarTaxaBancaria" type="checkbox"><span><strong>Incluir taxa bancária</strong><small>O hotel recebe o valor informado e o comprovante inclui R$ 2,00.</small></span></label>
+        <div class="adm-hosp-form-actions adm-payment-actions mt-16">
+          <button class="btn btn-primary" type="button" id="btnConfirmarPagamento">CONFIRMAR PAGAMENTO</button>
+          <button class="btn btn-primary" type="button" id="btnGerarPix">▦ PAGAR COM QR CODE</button>
+          <button class="btn btn-secondary" type="button" id="btnPagarFinanceiro">ENVIAR AO FINANCEIRO</button>
+          <button class="btn btn-secondary" type="button" id="btnPagarComprovante">ANEXAR COMPROVANTE</button>
           <span id="pagarFeedback" class="adm-hosp-feedback"></span>
         </div>
         <div id="pixQrBox" class="adm-pix-box">
@@ -1050,11 +1054,11 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
     document.getElementById(`tab-${t}`)?.classList.add('active');
-    if (t==='hoteis') { renderHoteis(); return loadHoteis(); }
-    if (t==='alojamentos') { renderAlojamentos(); return loadAlojamentos(); }
-    if (t==='historico') { renderHistorico(); return loadHistoricoRows(); }
+    if (t==='hoteis') { renderHoteis(); return state.bootDone ? undefined : loadHoteis(); }
+    if (t==='alojamentos') { renderAlojamentos(); return state.bootDone ? undefined : loadAlojamentos(); }
+    if (t==='historico') { renderHistorico(); return state.bootDone ? undefined : loadHistoricoRows(); }
     renderCurrentTab();
-    Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
+    if (!state.bootDone) Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
   }
 
   // ─── Hotels ────────────────────────────────────────────────────────────────
@@ -1369,10 +1373,12 @@ export function renderContent(content, userContext) {
     const reservaId=state.selected.reserva_id||result.data?.id||null;
     const groupedIds=Array.isArray(window.__hospedagemSolicitacoesAgrupadas)?window.__hospedagemSolicitacoesAgrupadas:[];
     const grouped=state.rows.filter((item) => groupedIds.includes(item.solicitacao_id));
-    if (reservaId&&grouped.length>1) {
+    if (reservaId&&grouped.length) {
       await supabase.from('hospedagem_reserva_solicitacoes').upsert(grouped.map((item) => ({reserva_id:reservaId,solicitacao_id:item.solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
       await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',grouped.map((item) => item.solicitacao_id));
     }
+    const reservados=(state.reservarColabs||[]).filter((c)=>!c.excluido&&c.id);
+    if(reservaId&&reservados.length) await supabase.from('hospedagem_reserva_colaboradores').upsert(reservados.map((c)=>({reserva_id:reservaId,solicitacao_colaborador_id:c.id,status:'HOSPEDADO'})),{onConflict:'reserva_id,solicitacao_colaborador_id'});
     await enviarBoasVindasReserva(state.selected,hotelRecord||state.hoteis.find((h) => String(h.id)===String(hotelId))||{},reservaId);
     setFeedback('reservarFeedback','Reserva salva com sucesso.','ok');
     await loadRows();
@@ -1397,7 +1403,10 @@ export function renderContent(content, userContext) {
     state.estenderColabs=colabs.map((c) => ({...c,fica:true}));
     document.getElementById('estenderSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}`;
     renderEstenderColabs();
-    document.getElementById('estenderNovoCheckout').value=row.data_checkout||row.data_checkout_prevista||'';
+    const extensionIds=Array.isArray(window.__hospedagemExtensaoSolicitacoes)?window.__hospedagemExtensaoSolicitacoes:[];
+    const extensionRows=state.rows.filter((item)=>extensionIds.includes(String(item.solicitacao_id)));
+    const requestedCheckout=extensionRows.map((item)=>item.data_checkout||item.data_checkout_prevista).filter(Boolean).sort().at(-1);
+    document.getElementById('estenderNovoCheckout').value=requestedCheckout||row.data_checkout||row.data_checkout_prevista||'';
     document.getElementById('estenderObs').value='';
     setFeedback('estenderFeedback','');
     document.getElementById('modalEstender').classList.add('open');
@@ -1427,7 +1436,7 @@ export function renderContent(content, userContext) {
     const {error}=await supabase.from('hospedagem_reservas').update({
       data_checkout:novoCheckout,
       quantidade_diarias:diffDays(state.selected.data_checkin||state.selected.data_checkin_prevista,novoCheckout),
-      status_hospedagem:'RENOVACAO_NECESSARIA',
+      status_hospedagem:'HOSPEDADO',
       observacao_hospedagem:appendObservacaoProcesso(state.selected,'Extensão de reserva',[
         `Novo checkout: ${brDate(novoCheckout)}`,
         ficam.length?`Ficam: ${ficam.join(', ')}`:'',
@@ -1437,6 +1446,12 @@ export function renderContent(content, userContext) {
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
     if (error) { setFeedback('estenderFeedback',error.message,'err'); return; }
+    const extensionIds=Array.isArray(window.__hospedagemExtensaoSolicitacoes)?window.__hospedagemExtensaoSolicitacoes:[];
+    if(extensionIds.length){
+      await supabase.from('hospedagem_reserva_solicitacoes').upsert(extensionIds.map((solicitacao_id)=>({reserva_id:state.selected.reserva_id,solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
+      await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',extensionIds);
+      window.__hospedagemExtensaoSolicitacoes=[];
+    }
     setFeedback('estenderFeedback','Extensão salva com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalEstender').classList.remove('open'),800);
@@ -1449,11 +1464,11 @@ export function renderContent(content, userContext) {
     const colabs=getColaboradoresDetalhados(row);
     const stageLabel=ANDAMENTO_STAGES.find((s) => s.bucket===painelBucket(row))?.label||'';
     document.getElementById('checkoutSub').textContent=`${row.hotel||'-'} · ${[row.cidade,row.uf].filter(Boolean).join('/')}${stageLabel?` · Estágio: ${stageLabel}`:''}`;
-    document.getElementById('checkoutColabList').innerHTML=colabs.map((c) => {
+    document.getElementById('checkoutColabList').innerHTML=colabs.map((c,index) => {
       const nome=c.nome_colaborador||c.nome||'-';
-      return `<div class="adm-colab-chip"><span class="cn">${esc(nome)}</span></div>`;
+      return `<label class="adm-colab-check"><input type="checkbox" data-checkout-colab="${index}" checked><span>${esc(nome)}</span></label>`;
     }).join('')||'<span class="muted">Nenhum colaborador</span>';
-    document.getElementById('checkoutValorDiarias').textContent=money(Number(row.valor_total_previsto||0));
+    document.getElementById('checkoutValorDiarias').textContent=money(calcularValorDiarias(row));
     document.getElementById('checkoutExtrasList').innerHTML='';
     document.getElementById('checkoutObs').value='';
     updateCheckoutTotal();
@@ -1483,23 +1498,39 @@ export function renderContent(content, userContext) {
   }
 
   function updateCheckoutTotal() {
-    const base=Number(state.selected?.valor_total_previsto||0);
+    const base=calcularValorDiarias(state.selected);
     const extras=getCheckoutExtrasData().reduce((s,e) => s+(e.tipo==='desconto'?-e.valor:e.valor),0);
     const total=document.getElementById('checkoutTotal');
     if (total) total.textContent=money(base+extras);
   }
 
   function calcularTotalCheckout() {
-    const base=Number(state.selected?.valor_total_previsto||0);
+    const base=calcularValorDiarias(state.selected);
     return base+getCheckoutExtrasData().reduce((s,e) => s+(e.tipo==='desconto'?-e.valor:e.valor),0);
+  }
+
+  function calcularValorDiarias(row) {
+    if (!row) return 0;
+    const inicio=row.data_checkin||row.data_checkin_prevista;
+    const fim=row.data_checkout||row.data_checkout_prevista;
+    const dias=Math.max(1,diffDays(inicio,fim));
+    const quartos=Math.max(1,Number(row.quantidade_quartos||1));
+    const diaria=Number(row.valor_diaria||0);
+    return diaria>0?diaria*quartos*dias:Number(row.valor_total_previsto||0);
   }
 
   async function enviarFinanceiroCheckout() {
     if (!state.selected?.reserva_id) { setFeedback('checkoutFeedback','Reserva não encontrada.','err'); return; }
-    const total=calcularTotalCheckout();
+    const allColabs=getColaboradoresDetalhados(state.selected);
+    const selectedColabs=allColabs.filter((_,index)=>document.querySelector(`[data-checkout-colab="${index}"]`)?.checked);
+    if(!selectedColabs.length){setFeedback('checkoutFeedback','Selecione ao menos um colaborador para o checkout.','err');return;}
+    const proportion=allColabs.length?selectedColabs.length/allColabs.length:1;
     const extras=getCheckoutExtrasData();
+    const valorDiarias=calcularValorDiarias(state.selected)*proportion;
+    const valorExtras=extras.reduce((s,e)=>s+(e.tipo==='desconto'?-e.valor:e.valor),0);
+    const total=valorDiarias+valorExtras;
     const obs=document.getElementById('checkoutObs')?.value.trim()||'';
-    const colabs=getColaboradoresDetalhados(state.selected).map((c) => c.nome_colaborador||c.nome).filter(Boolean).join(', ');
+    const colabs=selectedColabs.map((c) => c.nome_colaborador||c.nome).filter(Boolean).join(', ');
     const destino=[state.selected.cidade,state.selected.uf].filter(Boolean).join('/');
     const checkin=state.selected.data_checkin||state.selected.data_checkin_prevista;
     const checkout=state.selected.data_checkout||state.selected.data_checkout_prevista;
@@ -1518,13 +1549,16 @@ export function renderContent(content, userContext) {
     const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:'ENVIADO_AO_FINANCEIRO',valor_total:total};
     if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
     else await supabase.from('hospedagem_financeiro').insert(finPayload);
+    const {data:lote}=await supabase.from('hospedagem_checkout_lotes').insert({reserva_id:state.selected.reserva_id,hotel_id:state.selected.hotel_id||null,data_checkout:new Date().toISOString().slice(0,10),valor_diarias:valorDiarias,valor_extras:valorExtras,valor_total:total,status:'PENDENTE',observacoes:obs||null}).select('id').single();
+    if(lote?.id) await supabase.from('hospedagem_checkout_lote_colaboradores').insert(selectedColabs.map((c)=>({lote_id:lote.id,reserva_colaborador_id:c.id||null,nome_colaborador:c.nome_colaborador||c.nome||'-'})));
+    if(extras.length) await supabase.from('hospedagem_custos_extras').insert(extras.map((extra)=>({solicitacao_id:state.selected.solicitacao_id,reserva_id:state.selected.reserva_id,tipo:extra.tipo==='desconto'?'DESCONTO':'OUTROS',descricao:extra.descricao,quantidade:1,valor_unitario:extra.valor,valor_total:extra.valor})));
+    const parcial=selectedColabs.length<allColabs.length;
     await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:'CHECKOUT_REALIZADO',
-      valor_total_previsto:total,
+      status_hospedagem:parcial?'HOSPEDADO':'CHECKOUT_REALIZADO',
       observacao_hospedagem:appendObservacaoProcesso(state.selected,'Enviado ao financeiro',[money(total),extras.length?extras.map((e) => `${e.tipo==='desconto'?'Desconto':'Extra'}: ${e.descricao} ${money(e.valor)}`).join('; '):'',obs]),
       atualizado_por:userContext?.user?.id||null
     }).eq('id',state.selected.reserva_id);
-    setFeedback('checkoutFeedback','Enviado ao financeiro com sucesso.','ok');
+    setFeedback('checkoutFeedback',parcial?'Checkout parcial registrado; os demais colaboradores permanecem hospedados.':'Checkout da equipe registrado com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalCheckout').classList.remove('open'),800);
   }
@@ -1594,14 +1628,28 @@ export function renderContent(content, userContext) {
 
   // ─── Modal: Pagar ──────────────────────────────────────────────────────────
 
-  function openModalPagar() {
-    const total=calcularTotalCheckout();
+  async function openModalPagar() {
+    const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
+    const selectedRows=state.rows.filter((row)=>ids.includes(row.solicitacao_id));
+    const batch=selectedRows.length?selectedRows:[state.selected];
+    const total=batch.reduce((sum,row)=>sum+Number(row?.valor_financeiro||calcularValorDiarias(row)||0),0)||calcularTotalCheckout();
     const hotel=getHotelById(state.selected?.hotel_id);
     document.getElementById('pagarSub').textContent=`${state.selected?.hotel||'-'} · ${money(total)}`;
     document.getElementById('pagarCnpj').value=hotel?.cnpj_cpf||'';
     document.getElementById('pagarFornecedor').value=state.selected?.hotel||'';
-    document.getElementById('pagarValor').value=total.toFixed(2);
-    document.getElementById('pagarPix').value='';
+    let credito=0;
+    state.adiantamentosAplicaveis=[];
+    if(state.selected?.hotel_id){
+      const {data:adiantamentos}=await supabase.from('hospedagem_adiantamentos').select('*').eq('hotel_id',state.selected.hotel_id).eq('status','DISPONIVEL').gt('saldo',0).order('created_at');
+      state.adiantamentosAplicaveis=adiantamentos||[];
+      credito=Math.min(total,state.adiantamentosAplicaveis.reduce((sum,item)=>sum+Number(item.saldo||0),0));
+    }
+    document.getElementById('pagarValor').value=Math.max(0,total-credito).toFixed(2);
+    document.getElementById('pagarPix').value=hotel?.pix_chave||'';
+    const dates=batch.flatMap((row)=>[row?.data_checkin||row?.data_checkin_prevista,row?.data_checkout||row?.data_checkout_prevista]).filter(Boolean).sort();
+    const names=[...new Set(batch.flatMap((row)=>getColaboradoresDetalhados(row).map((c)=>c.nome_colaborador||c.nome).filter(Boolean)))];
+    document.getElementById('pagarResumoSelecao').textContent=`${brDate(dates[0])} até ${brDate(dates.at(-1))} · ${names.join(', ')||'Sem colaboradores'} · ${batch.length} hospedagem(ns)${credito?` · ${money(credito)} de adiantamento aplicado`:''}`;
+    const taxa=document.getElementById('pagarTaxaBancaria'); if(taxa) taxa.checked=false;
     const pixBox=document.getElementById('pixQrBox');
     pixBox?.classList.remove('open');
     const pixCopia=document.getElementById('pixCopiaCola');
@@ -1612,23 +1660,39 @@ export function renderContent(content, userContext) {
     document.getElementById('modalPagar').classList.add('open');
   }
 
+  window.__abrirPagamentoHospedagem=(solicitacaoId)=>{
+    const row=state.rows.find((item)=>String(item.solicitacao_id)===String(solicitacaoId));
+    if(!row)return;
+    state.selected=row;
+    const extras=document.getElementById('checkoutExtrasList');
+    if(extras)extras.innerHTML='';
+    openModalPagar();
+  };
+
   async function confirmarPagamento() {
     const fornecedor=document.getElementById('pagarFornecedor')?.value.trim();
     const valor=Number(document.getElementById('pagarValor')?.value||0);
-    if (!fornecedor||!valor) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
+    if (!fornecedor||valor<0) { setFeedback('pagarFeedback','Informe o fornecedor e o valor.','err'); return; }
     if (!state.selected?.reserva_id) { setFeedback('pagarFeedback','Reserva não encontrada.','err'); return; }
     setFeedback('pagarFeedback','Registrando pagamento...');
-    const total=calcularTotalCheckout();
-    if (valor>total) { setFeedback('pagarFeedback','O valor pago não pode ser maior que o saldo.','err'); return; }
-    const parcial=valor<total;
-    const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:parcial?'PARCIAL':'PAGO',valor_original:total,valor_total:total,valor_pago:valor,saldo:Math.max(0,total-valor),pagamento_parcial:parcial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString()};
-    if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
-    else await supabase.from('hospedagem_financeiro').insert(finPayload);
-    await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:'CHECKOUT_REALIZADO',valor_total_previsto:total,
-      atualizado_por:userContext?.user?.id||null
-    }).eq('id',state.selected.reserva_id);
-    setFeedback('pagarFeedback',parcial?`Pagamento parcial registrado. Saldo: ${money(total-valor)}.`:'Pagamento registrado.','ok');
+    const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];
+    const batch=state.rows.filter((row)=>ids.includes(row.solicitacao_id)&&row.reserva_id);
+    const targets=batch.length?batch:[state.selected];
+    const total=targets.reduce((sum,row)=>sum+Number(row.valor_financeiro||calcularValorDiarias(row)||0),0)||calcularTotalCheckout();
+    let creditoAplicado=0;
+    for(const adiantamento of (state.adiantamentosAplicaveis||[])){
+      const uso=Math.min(Number(adiantamento.saldo||0),Math.max(0,total-creditoAplicado)); if(!uso)continue;
+      const saldo=Number(adiantamento.saldo)-uso;
+      await supabase.from('hospedagem_adiantamentos').update({saldo,status:saldo>0?'DISPONIVEL':'UTILIZADO',updated_at:new Date().toISOString()}).eq('id',adiantamento.id);
+      await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:adiantamento.id,reserva_id:state.selected.reserva_id,tipo:'DEBITO',valor:uso,observacoes:'Débito automático em nova hospedagem',criado_por:userContext?.user?.id||null});
+      creditoAplicado+=uso;
+    }
+    const recebido=valor+creditoAplicado, excedente=Math.max(0,recebido-total), pagoReserva=Math.min(total,recebido);
+    const classificacao=excedente>0?'ADIANTAMENTO':pagoReserva<total?'PARCIAL':'TOTAL';
+    const taxa=document.getElementById('pagarTaxaBancaria')?.checked?2:0;
+    for(const target of targets){const targetTotal=calcularValorDiarias(target)||Number(target.valor_financeiro||target.valor_total_previsto||0);const paid=Math.min(targetTotal,total?pagoReserva*(targetTotal/total):pagoReserva);const targetPartial=paid<targetTotal;const finPayload={reserva_id:target.reserva_id,status_financeiro:targetPartial?'PARCIAL':'PAGO',valor_original:targetTotal,valor_total:targetTotal,valor_pago:paid,saldo:Math.max(0,targetTotal-paid),pagamento_parcial:targetPartial,data_pagamento:new Date().toISOString().slice(0,10),pago_em:new Date().toISOString(),taxa_bancaria:taxa,valor_comprovante:valor+taxa,classificacao_pagamento:classificacao,adiantamento_gerado:excedente};if(target.financeiro_id)await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',target.financeiro_id);else await supabase.from('hospedagem_financeiro').insert(finPayload);await supabase.from('hospedagem_reservas').update({status_hospedagem:'CHECKOUT_REALIZADO',atualizado_por:userContext?.user?.id||null}).eq('id',target.reserva_id);}
+    if(excedente>0&&state.selected.hotel_id){const {data:advance}=await supabase.from('hospedagem_adiantamentos').insert({hotel_id:state.selected.hotel_id,reserva_origem_id:state.selected.reserva_id,valor_creditado:excedente,saldo:excedente,status:'DISPONIVEL',observacoes:'Crédito gerado por pagamento superior ao total',criado_por:userContext?.user?.id||null}).select('id').single();if(advance?.id)await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:advance.id,reserva_id:state.selected.reserva_id,tipo:'CREDITO',valor:excedente,observacoes:'Adiantamento recebido',criado_por:userContext?.user?.id||null});}
+    setFeedback('pagarFeedback',classificacao==='PARCIAL'?`Pagamento parcial registrado. Saldo: ${money(total-pagoReserva)}.`:classificacao==='ADIANTAMENTO'?`Pagamento registrado e ${money(excedente)} lançado como adiantamento.`:`Pagamento registrado${taxa?' com comprovante acrescido de R$ 2,00 de taxa':''}.`,'ok');
     await loadRows();
     setTimeout(() => { document.getElementById('modalPagar').classList.remove('open'); document.getElementById('modalCheckout').classList.remove('open'); },1200);
   }
@@ -1756,6 +1820,9 @@ export function renderContent(content, userContext) {
   document.getElementById('modalPagarClose')?.addEventListener('click',() => document.getElementById('modalPagar').classList.remove('open'));
   document.getElementById('modalPagar')?.addEventListener('click',(ev) => { if (ev.target.id==='modalPagar') document.getElementById('modalPagar').classList.remove('open'); });
   document.getElementById('btnGerarPix')?.addEventListener('click',gerarPixQr);
+  document.getElementById('btnPagarExtra')?.addEventListener('click',()=>window.__abrirHospedagemAcao?.('extra',state.selected?.solicitacao_id));
+  document.getElementById('btnPagarComprovante')?.addEventListener('click',()=>window.__abrirHospedagemAcao?.('document',state.selected?.solicitacao_id));
+  document.getElementById('btnPagarFinanceiro')?.addEventListener('click',async()=>{if(!document.getElementById('pagarPix')?.value.trim()){setFeedback('pagarFeedback','Informe a chave PIX antes de enviar ao financeiro.','err');return;}const ids=Array.isArray(window.__hospedagemAcaoLote)?window.__hospedagemAcaoLote:[];const targets=state.rows.filter((row)=>ids.includes(row.solicitacao_id)&&row.reserva_id);for(const target of (targets.length?targets:[state.selected])){state.selected=target;await enviarFinanceiroCheckout();}});
   document.getElementById('btnConfirmarPagamento')?.addEventListener('click',confirmarPagamento);
 
   // Table delegation
@@ -1780,7 +1847,7 @@ export function renderContent(content, userContext) {
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
-  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); setTab(initialTabFromHash()); })();
+  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); state.bootDone=true; setTab(initialTabFromHash()); })();
 }
 
 initProtectedPage('Módulo Hospedagem', renderContent);

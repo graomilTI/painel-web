@@ -10,6 +10,7 @@ import { anexoFieldHtml, resolverAnexo } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
+const TIPOS_EXTRA_DISPONIVEL = ['RECARGA', 'LAVANDERIA', 'LAVAGEM DE VEÍCULO', 'COMBUSTÍVEL'];
 
 const cpfNorm = (value) => String(value || '').replace(/\D/g, '');
 const diasEntre = (ini, fim) => Math.max(1, Math.round((new Date(`${fim}T00:00:00`) - new Date(`${ini}T00:00:00`)) / 86400000) + 1);
@@ -57,6 +58,12 @@ function normalizeText(value) {
 function todayIso() {
   const n = new Date();
   return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function addDaysIso(iso, amount) {
+  const date = new Date(`${iso}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 // Mesma regra das outras 3 etapas (ver isDataPassada em programacao-equipe.js).
@@ -107,6 +114,8 @@ function injectStyles() {
     .pso-inativar-btn{border:1px solid rgba(248,113,113,.4);background:rgba(127,29,29,.18);color:#fca5a5;border-radius:9px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;flex:0 0 auto}
     .pso-inativar-btn[disabled]{opacity:.6;cursor:default}
     .pso-inativar-btn.pendente{border-color:rgba(251,191,36,.4);background:rgba(120,53,15,.22);color:#fde68a}
+    .pso-disponivel-btn{border:1px solid rgba(96,165,250,.42);background:rgba(30,64,175,.18);color:#bfdbfe;border-radius:9px;padding:6px 11px;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap}
+    .pso-disponivel-btn.on{border-color:rgba(52,211,153,.48);background:rgba(6,95,70,.28);color:#a7f3d0}
     .pso-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}
     .pso-modal.open{display:flex}
     .pso-modal-card{width:min(480px,100%);background:#15152a;border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px;color:#e2e2f0}
@@ -120,6 +129,12 @@ function injectStyles() {
     .pso-ate-grid input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:8px 10px;margin-top:4px;color-scheme:dark}
     .pso-modal-card label[for],.pso-modal-card label{font-size:12.5px}
     .pso-modal-card input[type=file]{display:block;width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:8px 10px;margin-top:6px;font-size:12px}
+    .pso-disp-origin{margin:12px 0;padding:10px 12px;border:1px solid rgba(96,165,250,.24);border-radius:12px;background:rgba(30,64,175,.12);color:#bfdbfe;font-size:12px}
+    .pso-disp-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
+    .pso-disp-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#0d0d18;color:#e2e2f0;font-weight:800;cursor:pointer}
+    .pso-disp-extra-fields{display:grid;grid-template-columns:1fr 1.4fr .8fr;gap:8px;margin-top:10px}
+    .pso-disp-extra-fields input,.pso-disp-extra-fields select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:9px 10px}
+    @media(max-width:560px){.pso-disp-options,.pso-disp-extra-fields{grid-template-columns:1fr}.pso-modal-card{max-height:88vh;overflow:auto}}
   `;
   document.head.appendChild(style);
 }
@@ -132,6 +147,7 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
   const indispBadge = indispMotivo
     ? `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`
     : '';
+  const disponivel = situacaoAtual === 'DISPONIVEL';
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
       <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(tipoContratoCru || colab.tipoLabel))}</span>
@@ -141,6 +157,7 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
       </div>
     </div>
     <div class="pso-situacoes">
+      <button type="button" class="pso-disponivel-btn ${disponivel ? 'on' : ''}" data-disponivel ${dis}>${disponivel ? 'Disponível ✓' : 'Disponível'}</button>
       <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
       ${SITUACOES.map(([valor, label]) => `<button type="button" class="pso-sit-btn ${situacaoAtual === valor ? 'on' : ''}" data-situacao="${esc(valor)}" ${dis}>${esc(label)}</button>`).join('')}
     </div>
@@ -319,6 +336,119 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     };
   }
 
+  async function buscarEstadiaAnterior(colab) {
+    const dataAtual = options.dataReferencia || todayIso();
+    const dataAnterior = addDaysIso(dataAtual, -1);
+    const { data: programas, error: progError } = await supabase
+      .from('programacao_dia')
+      .select('id')
+      .eq('data_referencia', dataAnterior)
+      .limit(500);
+    if (progError) throw progError;
+    const ids = (programas || []).map((row) => row.id).filter(Boolean);
+    if (!ids.length) return null;
+    const { data, error } = await supabase
+      .from('programacao_estadia')
+      .select('tipo_estadia,alojamento_nome,cidade,observacao')
+      .in('programacao_id', ids)
+      .eq('colaborador_id', colab.colaboradorId)
+      .in('tipo_estadia', ['PERNOITE', 'HOTEL', 'ALOJAMENTO'])
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data || null;
+  }
+
+  async function abrirModalDisponivel(colab) {
+    modalEl.innerHTML = '<div class="pso-modal-card"><h3>Validando disponibilidade…</h3><p class="muted">Consultando a estadia do dia anterior.</p></div>';
+    modalEl.classList.add('open');
+    try {
+      const estadiaAnterior = await buscarEstadiaAnterior(colab);
+      if (!estadiaAnterior) {
+        modalEl.innerHTML = `<div class="pso-modal-card"><h3>Disponibilidade não liberada</h3><p class="muted">${esc(colab.nome)} não possui Pernoite, Hotel ou Alojamento registrado no dia anterior.</p><div class="pso-modal-actions"><button type="button" class="btn btn-secondary" id="psoDispFechar">Fechar</button></div></div>`;
+        modalEl.querySelector('#psoDispFechar').onclick = fecharModal;
+        return;
+      }
+      const tipoAnterior = normalizeText(estadiaAnterior.tipo_estadia);
+      modalEl.innerHTML = `<div class="pso-modal-card">
+        <h3>Liberar despesas de ${esc(colab.nome)}</h3>
+        <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia disponível.</p>
+        <div class="pso-disp-origin">Dia anterior: <strong>${esc(estadiaAnterior.tipo_estadia)}</strong>${estadiaAnterior.alojamento_nome ? ` · ${esc(estadiaAnterior.alojamento_nome)}` : ''}${estadiaAnterior.cidade ? ` · ${esc(estadiaAnterior.cidade)}` : ''}</div>
+        <div class="pso-disp-options">
+          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="cafe"> Café</label>
+          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="almoco"> Almoço</label>
+          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="janta"> Janta</label>
+          ${tipoAnterior === 'PERNOITE' ? '<label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>' : ''}
+          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="extras"> Extras</label>
+        </div>
+        <div class="pso-disp-extra-fields" id="psoDispExtraFields" hidden>
+          <select id="psoDispExtraTipo">${TIPOS_EXTRA_DISPONIVEL.map((tipo) => `<option value="${esc(tipo)}">${esc(tipo)}</option>`).join('')}</select>
+          <input id="psoDispExtraDesc" placeholder="Descrição do extra">
+          <input id="psoDispExtraValor" inputmode="decimal" placeholder="R$ 0,00">
+        </div>
+        <div class="pso-modal-actions">
+          <button type="button" class="btn btn-primary" id="psoDispSalvar">Liberar e sincronizar</button>
+          <button type="button" class="btn btn-secondary" id="psoDispCancelar">Cancelar</button>
+        </div>
+        <span class="pso-modal-fb" id="psoDispFb"></span>
+      </div>`;
+      const extrasCheck = modalEl.querySelector('[data-disp-ref="extras"]');
+      extrasCheck.onchange = () => { modalEl.querySelector('#psoDispExtraFields').hidden = !extrasCheck.checked; };
+      modalEl.querySelector('#psoDispCancelar').onclick = fecharModal;
+      modalEl.querySelector('#psoDispSalvar').onclick = async () => {
+        const fb = modalEl.querySelector('#psoDispFb');
+        const btn = modalEl.querySelector('#psoDispSalvar');
+        const selected = (key) => !!modalEl.querySelector(`[data-disp-ref="${key}"]`)?.checked;
+        if (!['cafe', 'almoco', 'janta', 'pernoite', 'extras'].some(selected)) {
+          fb.textContent = 'Selecione ao menos uma despesa.'; fb.classList.add('err'); return;
+        }
+        const programacaoId = programacaoIdParaColab(colab);
+        const dataReferencia = options.dataReferencia || todayIso();
+        const extraDescricao = modalEl.querySelector('#psoDispExtraDesc')?.value.trim() || '';
+        if (selected('extras') && !extraDescricao) {
+          fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
+        }
+        btn.disabled = true; fb.textContent = 'Salvando e enviando para sincronização…'; fb.classList.remove('err');
+        try {
+          const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
+          const writes = [
+            supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: `Disponível após ${estadiaAnterior.tipo_estadia}` }, { onConflict: 'programacao_id,colaborador_id' }),
+            supabase.from('programacao_alimentacao').upsert({ ...base, cafe: selected('cafe'), almoco: selected('almoco'), janta: selected('janta'), observacao: 'Liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
+          ];
+          if (selected('pernoite')) writes.push(supabase.from('programacao_estadia').upsert({ ...base, tipo_estadia: 'PERNOITE', tem_estadia: true, checkin: dataReferencia, checkout: addDaysIso(dataReferencia, 1), observacao: 'Pernoite liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }));
+          const results = await Promise.all(writes);
+          const writeError = results.find((result) => result.error)?.error;
+          if (writeError) throw writeError;
+          if (!selected('pernoite')) {
+            const { error: estadiaDeleteError } = await supabase.from('programacao_estadia')
+              .delete()
+              .eq('programacao_id', programacaoId)
+              .eq('colaborador_id', colab.colaboradorId)
+              .eq('observacao', 'Pernoite liberado no fluxo Disponível');
+            if (estadiaDeleteError) throw estadiaDeleteError;
+          }
+          const { error: extraDeleteError } = await supabase.from('programacao_extras').delete().eq('programacao_id', programacaoId).eq('colaborador_id', colab.colaboradorId).eq('observacao', 'Liberado no fluxo Disponível');
+          if (extraDeleteError) throw extraDeleteError;
+          if (selected('extras')) {
+            const valor = Number(String(modalEl.querySelector('#psoDispExtraValor')?.value || '0').replace(',', '.')) || 0;
+            const extraTipoSelecionado = modalEl.querySelector('#psoDispExtraTipo').value;
+            const combustivel = normalizeText(extraTipoSelecionado) === 'COMBUSTIVEL';
+            const { error: extraError } = await supabase.from('programacao_extras').insert({ ...base, tipo_despesa: combustivel ? 'OUTROS' : extraTipoSelecionado, descricao: combustivel ? `Combustível — ${extraDescricao}` : extraDescricao, valor, observacao: 'Liberado no fluxo Disponível' });
+            if (extraError) throw extraError;
+          }
+          await window.__publicarGrmLiberacaoDespesas?.('SALVAR_MANUAL');
+          fecharModal();
+          await carregar({ silent: true });
+        } catch (error) {
+          fb.textContent = error.message || 'Não foi possível liberar as despesas.'; fb.classList.add('err'); btn.disabled = false;
+        }
+      };
+    } catch (error) {
+      modalEl.innerHTML = `<div class="pso-modal-card"><h3>Falha ao validar</h3><p class="muted">${esc(error.message || 'Não foi possível consultar a estadia anterior.')}</p><div class="pso-modal-actions"><button type="button" class="btn btn-secondary" id="psoDispFechar">Fechar</button></div></div>`;
+      modalEl.querySelector('#psoDispFechar').onclick = fecharModal;
+    }
+  }
+
   async function carregar({ silent = false } = {}) {
     const scroller = silent ? scrollParentDe(listEl) : null;
     const scrollPos = scroller ? scroller.scrollTop : 0;
@@ -418,6 +548,13 @@ export async function renderProgramacaoSemOs(content, options = {}) {
   const obsTimers = new Map();
   listEl.addEventListener('click', (event) => {
     if (readOnly) return;
+    const disponivelBtn = event.target.closest('[data-disponivel]');
+    if (disponivelBtn) {
+      const card = disponivelBtn.closest('.pso-card');
+      const colab = colabsAtual.find((c) => c.colaboradorId === card?.dataset.colabId);
+      if (colab) abrirModalDisponivel(colab);
+      return;
+    }
     const inativarBtn = event.target.closest('[data-inativar]');
     if (inativarBtn) {
       const card = inativarBtn.closest('.pso-card');

@@ -87,6 +87,70 @@ function diasFromEstadia(est) {
   return 1;
 }
 
+// Uma programação representa um único dia. Quando a hospedagem atravessa mais
+// de uma data, replica a indicação de Hotel nos dias seguintes para que o
+// gestor enxergue a permanência do colaborador ao abrir cada dia da agenda.
+// O check-in já está representado pelo card atual; por isso a série começa em
+// check-in + 1 e termina no dia anterior ao checkout.
+async function sincronizarEstadiaHotelNosDiasSeguintes({
+  checkin,
+  checkout,
+  colaboradorId,
+  nomeColaborador,
+  cidade,
+  observacao,
+}) {
+  if (!checkin || !checkout || !colaboradorId || checkout <= addDaysIso(checkin, 1)) return;
+
+  const ctx = await getUserContext();
+  const user = ctx?.user || {};
+  const supervisao = user.supervisao || '';
+  if (!supervisao) throw new Error('Supervisão não identificada para criar os dias seguintes da hospedagem.');
+
+  for (let data = addDaysIso(checkin, 1); data < checkout; data = addDaysIso(data, 1)) {
+    const existente = await supabase
+      .from('programacao_dia')
+      .select('id')
+      .eq('data_referencia', data)
+      .eq('supervisao', supervisao)
+      .limit(1)
+      .maybeSingle();
+    if (existente.error) throw existente.error;
+
+    let programacaoId = existente.data?.id || null;
+    if (!programacaoId) {
+      const criada = await supabase
+        .from('programacao_dia')
+        .insert({
+          data_referencia: data,
+          supervisao,
+          coordenacao: user.coordenacao || null,
+          regional: supervisao,
+          status: 'rascunho',
+          criado_por: user.id || null,
+        })
+        .select('id')
+        .single();
+      if (criada.error) throw criada.error;
+      programacaoId = criada.data.id;
+    }
+
+    const { error } = await supabase.from('programacao_estadia').upsert({
+      programacao_id: programacaoId,
+      data_referencia: data,
+      colaborador_id: colaboradorId,
+      nome_colaborador: nomeColaborador,
+      tipo_estadia: 'HOTEL',
+      tem_estadia: true,
+      cidade: cidade || null,
+      checkin,
+      checkout,
+      observacao: observacao || null,
+    }, { onConflict: 'programacao_id,colaborador_id' });
+    if (error) throw error;
+  }
+}
+
 // Veículos ativos da supervisão pra sugerir placa (ver deslocLabel "Frota -
 // Motorista"/"Frota - Carona") quando o colaborador não tem placa própria
 // associada (placasPorCpf) — o gestor pode procurar pela placa OU pelo nome
@@ -764,6 +828,20 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       limparAvisoFalhaSalvar(card);
     }
     if (!error && tabela === 'programacao_estadia') {
+      if (payload.tipo_estadia === 'HOTEL') {
+        sincronizarEstadiaHotelNosDiasSeguintes({
+          checkin: payload.checkin,
+          checkout: payload.checkout,
+          colaboradorId: colabId,
+          nomeColaborador: card.dataset.nome,
+          cidade: payload.cidade,
+          observacao: payload.observacao,
+        }).catch((syncError) => {
+          console.error('[despesas] estadia de hotel nos dias seguintes', syncError);
+          avisarFalhaSalvar(card, 'programacao_estadia', syncError);
+        });
+      }
+
       // Colaborador em hotel/alojamento entra automaticamente na janta (pedido
       // do usuário, 2026-07-16): acende o chip da Etapa 3 (se ainda não estiver
       // aceso) e grava em Financeiro > Refeições. Pernoite fica de fora dessa

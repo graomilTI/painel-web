@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { getColaboradores } from './colaboradoresCache.js';
 import { sincronizarListaOsDoAgente } from './listaOsAgentSync.js';
+import { distribuirOsAgentTrigger } from './distribuir-os-idle-sync.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -241,6 +242,7 @@ export async function renderContent(content) {
     }));
     const { error: insErr } = await supabase.from('operacional_os_colaboradores').insert(novas);
     if (insErr) { alert(insErr.message); return; }
+    distribuirOsAgentTrigger.markPending();
     await loadAll();
   }
 

@@ -77,6 +77,7 @@ function injectGestorAjustesStyles() {
     #progSup option,#progSup optgroup{background:#020617!important;background-color:#020617!important;color:#f8fafc!important;opacity:1!important;text-shadow:none!important}
     #progSup option:checked,#progSup option:hover{background:#064e3b!important;background-color:#064e3b!important;color:#ffffff!important}
     #progSteps,#progSteps .stepbtn{position:relative!important;z-index:0!important}
+    #progCtxFeedback:empty{display:none!important}
     .prog-toolbar:has(#progSup:focus) .prog-toolbar-row-steps{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     .prog-list-card,#progList,#peqbOsList{position:relative;z-index:1;overflow:visible!important}
     .prog-os-lazy-card{border:1px dashed rgba(52,211,153,.22);border-radius:18px;padding:18px;background:rgba(15,23,42,.18);color:#94a3b8;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
@@ -150,7 +151,7 @@ function renderIdle() {
   const info = STEP_LABELS[currentUiStep] || STEP_LABELS['1'];
   if (feedback) {
     feedback.className = 'feedback mt-16 prog-feedback-ok';
-    feedback.textContent = `Etapa ${currentUiStep} — ${info.label}.`;
+    feedback.textContent = '';
   }
   if (!list) return;
   const sup = document.getElementById('progSup')?.value || '';

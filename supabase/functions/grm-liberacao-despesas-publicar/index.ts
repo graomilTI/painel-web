@@ -178,13 +178,14 @@ function buildRulesForStaff(args: {
   contract?: Record<string, unknown> | null;
   linkKeys: string[];
   alimentacao: ReturnType<typeof indexSourceRows>;
+  estadia: ReturnType<typeof indexSourceRows>;
   deslocamento: ReturnType<typeof indexSourceRows>;
   extras: Record<string, unknown>[];
   configByKey: Map<string, Record<string, unknown>>;
 }) {
   const pendingConfig: string[] = [];
   const rules: Record<string, unknown>[] = [];
-  const { staff, contract, linkKeys, alimentacao, deslocamento, extras, configByKey } = args;
+  const { staff, contract, linkKeys, alimentacao, estadia, deslocamento, extras, configByKey } = args;
 
   const requireConfig = (
     key: string,
@@ -236,17 +237,20 @@ function buildRulesForStaff(args: {
   requireConfig('ALIMENTACAO_ALMOCO', ali ? ali.almoco !== false : true);
   requireConfig('ALIMENTACAO_JANTA', ali?.janta === true);
 
+  const stay = sourceRowForStaff(estadia, staff, linkKeys);
+  requireConfig('ESTADIA_PERNOITE', norm(stay?.tipo_estadia) === 'PERNOITE');
+
   const des = sourceRowForStaff(deslocamento, staff, linkKeys);
   const desKey = configKeyDeslocamento(des?.tipo_deslocamento);
   const displacementValue = Number(des?.valor ?? 0);
   if (desKey) {
-    // Reembolso KM deve abrir a categoria mesmo antes de o valor calculado
-    // estar disponível; o GRM aceita a regra inicial com limite zero.
+    // Reembolso KM e Táxi/Uber devem abrir a categoria mesmo sem valor
+    // calculado; o GRM aceita ambas as regras com limite inicial zero.
     requireConfig(
       desKey,
       true,
       displacementValue,
-      desKey === 'DESLOCAMENTO_REEMBOLSO_KM',
+      ['DESLOCAMENTO_REEMBOLSO_KM', 'DESLOCAMENTO_UBER_TAXI'].includes(desKey),
     );
   }
 
@@ -433,13 +437,35 @@ Deno.serve(async (req) => {
     const osDateById = new Map(
       (activePrograms || []).map((row) => [clean(row.id), clean(row.data_referencia).slice(0, 10)]),
     );
-    const cpfsWithOsByDate = new Map<string, Set<string>>();
+    const cpfsAuthorizedByDate = new Map<string, Set<string>>();
     for (const link of globalLinks) {
       const resolved = resolveLinkCpf(link);
       const date = osDateById.get(clean(link.programacao_id));
       if (!resolved.cpf || !date) continue;
-      if (!cpfsWithOsByDate.has(date)) cpfsWithOsByDate.set(date, new Set());
-      cpfsWithOsByDate.get(date)!.add(resolved.cpf);
+      if (!cpfsAuthorizedByDate.has(date)) cpfsAuthorizedByDate.set(date, new Set());
+      cpfsAuthorizedByDate.get(date)!.add(resolved.cpf);
+    }
+    // Efetivos explicitamente marcados como DISPONIVEL também possuem uma
+    // autorização financeira válida mesmo sem vínculo a O.S. A autorização é
+    // diária e entra na mesma proteção contra limpeza por outra regional.
+    for (const ids of chunk(globalOsIds)) {
+      const { data, error } = await service
+        .from('programacao_colaboradores')
+        .select('programacao_id,colaborador_id,nome_colaborador')
+        .in('programacao_id', ids)
+        .eq('disponibilidade', 'DISPONIVEL');
+      if (error) throw error;
+      for (const row of data || []) {
+        const resolved = resolveLinkCpf({
+          colaborador_key: row.colaborador_id,
+          colaborador_cpf: row.colaborador_id,
+          colaborador_nome: row.nome_colaborador,
+        });
+        const date = osDateById.get(clean(row.programacao_id));
+        if (!resolved.cpf || !date) continue;
+        if (!cpfsAuthorizedByDate.has(date)) cpfsAuthorizedByDate.set(date, new Set());
+        cpfsAuthorizedByDate.get(date)!.add(resolved.cpf);
+      }
     }
 
     const overall = {
@@ -457,7 +483,7 @@ Deno.serve(async (req) => {
     };
 
     for (const group of groups.values()) {
-      const cpfsWithOsOnDate = cpfsWithOsByDate.get(group.date) || new Set<string>();
+      const cpfsAuthorizedOnDate = cpfsAuthorizedByDate.get(group.date) || new Set<string>();
       const regionalStaff = allStaff.filter((staff) => regionalMatches(staff, group.regional));
       const regionalStaffByCpf = new Map(
         regionalStaff
@@ -477,9 +503,16 @@ Deno.serve(async (req) => {
         colaborador_cpf: row.colaborador_id,
       }));
 
-      // Sem vínculo O.S. -> colaborador não existe autorização a publicar,
-      // mas isso também nunca é evidência suficiente para limpar a regional.
-      if (!currentLinks.length) {
+      const { data: availableRows, error: availableError } = await service
+        .from('programacao_colaboradores')
+        .select('programacao_id,colaborador_id,nome_colaborador,disponibilidade')
+        .in('programacao_id', group.ids)
+        .eq('disponibilidade', 'DISPONIVEL');
+      if (availableError) throw availableError;
+
+      // Sem vínculo O.S. nem disponibilidade explícita não existe autorização
+      // a publicar, mas isso também nunca é evidência suficiente para limpar.
+      if (!currentLinks.length && !availableRows?.length) {
         overall.grupos_adiados_sem_os += 1;
         overall.avisos.push(
           `${group.regional} em ${group.date}: nenhum colaborador confirmado em O.S.; limpeza adiada por segurança.`,
@@ -523,15 +556,48 @@ Deno.serve(async (req) => {
         }, 422);
       }
 
-      const [aliRes, desRes, extraRes] = await Promise.all([
+      const availableCpfs = new Set<string>();
+      for (const row of availableRows || []) {
+        const resolved = resolveLinkCpf({
+          colaborador_key: row.colaborador_id,
+          colaborador_cpf: row.colaborador_id,
+          colaborador_nome: row.nome_colaborador,
+        });
+        if (!resolved.cpf) {
+          linkProblems.push({ colaborador: row.nome_colaborador ?? row.colaborador_id, problema: resolved.error, origem: 'DISPONIVEL' });
+          continue;
+        }
+        if (!norm(contractByCpf.get(resolved.cpf)?.tipo_contrato).includes('EFETIVO')) {
+          overall.avisos.push(`${row.nome_colaborador || resolved.cpf}: disponibilidade ignorada porque o contrato vigente não é EFETIVO.`);
+          continue;
+        }
+        availableCpfs.add(resolved.cpf);
+        const keys = new Set(linkKeysByCpf.get(resolved.cpf) || []);
+        [row.colaborador_id, resolved.cpf].map(clean).filter(Boolean).forEach((key) => keys.add(key));
+        linkKeysByCpf.set(resolved.cpf, [...keys]);
+      }
+      if (linkProblems.length) {
+        return json({
+          error: 'A programação possui colaborador sem CPF válido ou não localizado.',
+          regional: group.regional,
+          data_referencia: group.date,
+          detalhes: linkProblems,
+        }, 422);
+      }
+      const authorizedCpfs = new Set([...currentCpfs, ...availableCpfs]);
+
+      const [aliRes, estRes, desRes, extraRes] = await Promise.all([
         service.from('programacao_alimentacao').select('*').in('programacao_id', group.ids),
+        service.from('programacao_estadia').select('*').in('programacao_id', group.ids),
         service.from('programacao_deslocamento').select('*').in('programacao_id', group.ids),
         service.from('programacao_extras').select('*').in('programacao_id', group.ids),
       ]);
       if (aliRes.error) throw aliRes.error;
+      if (estRes.error) throw estRes.error;
       if (desRes.error) throw desRes.error;
       if (extraRes.error) throw extraRes.error;
       const aliIndex = indexSourceRows(aliRes.data || []);
+      const estIndex = indexSourceRows(estRes.data || []);
       const desIndex = indexSourceRows(desRes.data || []);
       const extraRows = extraRes.data || [];
 
@@ -552,18 +618,23 @@ Deno.serve(async (req) => {
         const linkedStaff = staffByCpf.get(cpf) || linkedStaffFallbackByCpf.get(cpf);
         if (linkedStaff) staffForGroupByCpf.set(cpf, linkedStaff);
       }
+      for (const cpf of availableCpfs) {
+        const availableStaff = staffByCpf.get(cpf);
+        if (availableStaff) staffForGroupByCpf.set(cpf, availableStaff);
+      }
 
       for (const staff of staffForGroupByCpf.values()) {
         const cpf = digits(staff.cpf);
         if (cpf.length !== 11) continue;
         overall.avaliados += 1;
 
-        if (currentCpfs.has(cpf)) {
+        if (authorizedCpfs.has(cpf)) {
           const built = buildRulesForStaff({
             staff,
             contract: contractByCpf.get(cpf) || null,
             linkKeys: linkKeysByCpf.get(cpf) || [],
             alimentacao: aliIndex,
+            estadia: estIndex,
             deslocamento: desIndex,
             extras: extraRows,
             configByKey,
@@ -583,7 +654,7 @@ Deno.serve(async (req) => {
         // A decisão de limpeza é estritamente diária. Uma O.S. futura não
         // pode manter hoje uma autorização que não pertence à programação de
         // hoje; a versão futura será aplicada somente na própria janela.
-        if (!cpfsWithOsOnDate.has(cpf)) {
+        if (!cpfsAuthorizedOnDate.has(cpf)) {
           const rules: ReturnType<typeof canonicalRules> = [];
           const hash = await sha256({ cpf, action: 'LIMPAR', rules });
           desired.set(cpf, { staff, action: 'LIMPAR', rules, hash });
@@ -607,6 +678,7 @@ Deno.serve(async (req) => {
           resumo: {
             os_atender: new Set(currentLinks.map((row) => clean(row.os_id))).size,
             colaboradores_com_os: currentCpfs.size,
+            colaboradores_disponiveis: availableCpfs.size,
             colaboradores_regionais_ativos: regionalStaff.length,
             colaboradores_emprestados: Math.max(0, staffForGroupByCpf.size - regionalStaffByCpf.size),
           },

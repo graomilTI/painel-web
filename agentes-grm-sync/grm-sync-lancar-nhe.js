@@ -64,12 +64,18 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
+var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_DIAS) || 3);
 // Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
 // execução conclua antes do watchdog; os restantes são enfileirados pela
 // continuação automática já existente.
 var MAX_LANCAMENTOS_POR_EXECUCAO = Math.min(8, Math.max(1, Number(process.env.NHE_LANCAMENTO_LOTE) || 8));
 var DEBUG = String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
 var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() === 'true';
+// Em recuperação manual, permite processar lotes sequenciais sem criar um job
+// concorrente no worker (use NHE_LANCAMENTO_AUTO_CONTINUACAO=false).
+var AUTO_CONTINUACAO = String(process.env.NHE_LANCAMENTO_AUTO_CONTINUACAO || 'true').toLowerCase() !== 'false';
+// Somente diagnóstico manual: permite repetir SALVO_NAO_CONFIRMADO de uma O.S. explícita.
+var REPETIR_NAO_CONFIRMADO = String(process.env.NHE_LANCAMENTO_REPETIR_NAO_CONFIRMADO || 'false').toLowerCase() === 'true';
 
 var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
 var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
@@ -101,6 +107,7 @@ function parseArgs(argv) {
   var out = {};
   for (var i = 0; i < argv.length; i++) {
     if (argv[i] === '--os') out.os = argv[++i];
+    else if (argv[i] === '--data') out.data = argv[++i];
     else if (argv[i] === '--debug') out.debug = true;
     else if (argv[i] === '--dry-run') out.dryRun = true;
     else if (argv[i] === '--funcionario') out.funcionario = argv[++i];
@@ -343,7 +350,7 @@ async function resolverCoordenadasEmLote(numerosOs) {
     var chunk = unique.slice(i, i + pageSize);
     var result = await supabase
       .from('operacional_os')
-      .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,observacao_logistica')
+      .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
       .in('numero_os', chunk)
       .lte('data_os', referenceIso())
       .order('data_os', { ascending: false });
@@ -361,6 +368,7 @@ async function resolverCoordenadasEmLote(numerosOs) {
         lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
         servico: row.servico,
         supervisao: row.supervisao,
+        situacao: row.situacao,
         cliente: row.cliente,
         embarque: row.embarque,
         local: row.ponto1_nome || row.embarque,
@@ -428,7 +436,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
   // tenha "Última Atualização" no Mapa de Embarque.
   function servicoValido(os) {
     var info = coordPorOs[os];
-    return !!(info && info.servico && SERVICOS_FOB_CIF.indexOf(normText(info.servico)) !== -1);
+    return !!(info && (!info.situacao || normText(info.situacao) === 'ABERTA') && info.servico && SERVICOS_FOB_CIF.indexOf(normText(info.servico)) !== -1);
   }
 
   var base = brutos.filter(function (item) { return servicoValido(item.os); });
@@ -494,7 +502,6 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
 
     var status = relacionados.some(function (g) { return g.temNhe || g.temLaudo; }) ? 'DOIS EMBARQUES' : 'PENDENTE';
     if (status !== 'PENDENTE') return;
-    if (!item.funcionario) return;
     pendentes.push({
       data: item.date,
       data_br: brDate(item.date),
@@ -523,6 +530,45 @@ async function buscarPendentes() {
   return pendentes;
 }
 
+async function buscarPendenciasAnteriores(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO'];
+  if (REPETIR_NAO_CONFIRMADO) statusesHistoricos.push('SALVO_NAO_CONFIRMADO');
+  var result = await supabase
+    .from(TABLE_RESULTADOS)
+    .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
+    .gte('data_referencia', ymd(inicio))
+    .lt('data_referencia', dataReferencia)
+    .in('status', statusesHistoricos)
+    .order('data_referencia', { ascending: true });
+  if (result.error) throw result.error;
+  return (result.data || []).map(function (row) {
+    return {
+      data: row.data_referencia,
+      data_br: brDate(row.data_referencia),
+      os: normOs(row.numero_os),
+      cliente: row.cliente,
+      supervisao: row.supervisao,
+      // Em lançamentos via gestor, `funcionario` guarda quem seria escolhido
+      // no modal; para refazer a geofence precisamos do colaborador original.
+      funcionario: row.raw && row.raw.colaborador_original ? row.raw.colaborador_original : row.funcionario,
+      osCoord: undefined,
+      reprocessamento: true,
+      statusAnterior: row.status
+    };
+  });
+}
+
+function combinarPendentes(atuais, anteriores) {
+  var porChave = {};
+  (anteriores || []).concat(atuais || []).forEach(function (item) {
+    if (!item || !item.os || !item.data) return;
+    porChave[chaveUnica(item.data, item.os)] = item;
+  });
+  return Object.keys(porChave).map(function (key) { return porChave[key]; });
+}
+
 /* ---------------------------------------------------------------------- *
  * Coordenada da O.S. + login do colaborador dentro do raio
  * ---------------------------------------------------------------------- */
@@ -544,12 +590,33 @@ function isValidCoord(lat, lng) {
 // Versão avulsa de resolverCoordenadasEmLote, usada só no modo manual (--os).
 // Mesmo critério: só considera operacional_os com data_os <= data de
 // referência (não pega reabertura futura do mesmo número de O.S.).
-async function resolverCoordenadaOs(numeroOs) {
-  var mapa = await resolverCoordenadasEmLote([numeroOs]);
-  return mapa[numeroOs] || null;
+async function resolverCoordenadaOs(numeroOs, dataReferencia) {
+  var result = await supabase
+    .from('operacional_os')
+    .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
+    .eq('numero_os', numeroOs)
+    .lte('data_os', dataReferencia || referenceIso())
+    .order('data_os', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  var row = result.data;
+  if (!row) return null;
+  return {
+    lat: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_latitude) : null,
+    lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
+    servico: row.servico,
+    supervisao: row.supervisao,
+    situacao: row.situacao,
+    cliente: row.cliente,
+    embarque: row.embarque,
+    local: row.ponto1_nome || row.embarque,
+    temLaudo: typeof row.observacao_logistica === 'string' && row.observacao_logistica.indexOf('LAUDO:') === 0
+  };
 }
 
 var gestoresCache = null;
+var loginsPorDataCache = {};
 
 async function carregarGestores() {
   if (gestoresCache) return gestoresCache;
@@ -595,14 +662,23 @@ async function buscarLoginColaborador(dataYmd, funcionario, osCoord) {
   var wanted = normText(funcionario);
   if (!wanted) return null;
 
-  var result = await supabase
-    .from(TABLE_LOGIN)
-    .select('colaborador,colaborador_chave,latitude,longitude,hora_movimento,coordenacao,supervisao')
-    .eq('data_movimento', dataYmd)
-    .limit(5000);
-  if (result.error) throw result.error;
+  // Não usar apenas .limit(5000): o limite máximo do PostgREST do projeto é
+  // menor e truncava dias movimentados (07/08 teve 2.705 linhas), fazendo um
+  // login existente como o da O.S. 88709 virar SEM_LOGIN. Pagina até o fim.
+  var rows = loginsPorDataCache[dataYmd];
+  if (!rows) {
+    rows = await fetchPaged(function (from, to) {
+      return supabase
+        .from(TABLE_LOGIN)
+        .select('colaborador,colaborador_chave,latitude,longitude,hora_movimento,coordenacao,supervisao')
+        .eq('data_movimento', dataYmd)
+        .order('id', { ascending: true })
+        .range(from, to);
+    }, 20000);
+    loginsPorDataCache[dataYmd] = rows;
+  }
 
-  var candidatos = (result.data || []).filter(function (row) {
+  var candidatos = rows.filter(function (row) {
     return normText(row.colaborador) === wanted && isValidCoord(row.latitude, row.longitude);
   });
   if (!candidatos.length) return null;
@@ -636,15 +712,72 @@ function chaveUnica(dataReferencia, numeroOs) {
   return dataReferencia + '|' + numeroOs;
 }
 
+var nheRealPorChaveCache = {};
+var movimentoRealPorChaveCache = {};
+
+// Uma NHE não pode ser criada se a O.S. já tiver carga ou outro movimento no
+// mesmo dia. Consulta diretamente Data + O.S.; não pagina o dia inteiro, pois
+// grm_producao_diaria_importacoes é uma tabela volumosa e isso pode estourar o
+// statement_timeout do Postgres.
+async function existeMovimentoReal(dataReferencia, numeroOs) {
+  var key = chaveUnica(dataReferencia, numeroOs);
+  if (Object.prototype.hasOwnProperty.call(movimentoRealPorChaveCache, key)) {
+    return movimentoRealPorChaveCache[key];
+  }
+
+  var result = await supabase.rpc('nhe_existe_movimento_real', {
+    p_data: String(dataReferencia),
+    p_os: String(normOs(numeroOs))
+  });
+
+  if (result.error) {
+    throw new Error('Falha ao verificar movimento real para ' + key + ': ' + result.error.message);
+  }
+
+  var existe = result.data === true;
+  movimentoRealPorChaveCache[key] = existe;
+  return existe;
+}
+
+// Trava de segurança contra duplicidade histórica: a auditoria do bot não é
+// a fonte de verdade para saber se uma NHE já existe. Antes de reprocessar uma
+// O.S.+data, consulta o histórico REAL importado do GRM. Em caso de falha na
+// consulta, lança erro e interrompe a execução (fail closed), em vez de correr
+// o risco de salvar uma segunda NHE.
+async function existeNheReal(dataReferencia, numeroOs) {
+  var key = chaveUnica(dataReferencia, numeroOs);
+  if (Object.prototype.hasOwnProperty.call(nheRealPorChaveCache, key)) {
+    return nheRealPorChaveCache[key];
+  }
+
+  var result = await supabase.rpc('nhe_existe_nhe_real', {
+    p_data: String(dataReferencia),
+    p_os: String(normOs(numeroOs))
+  });
+
+  if (result.error) {
+    throw new Error('Falha ao verificar NHE real para ' + key + ': ' + result.error.message);
+  }
+
+  var existe = result.data === true;
+  nheRealPorChaveCache[key] = existe;
+  return existe;
+}
+
 async function carregarJaLancadas(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_MOVIMENTO_GRM'];
+  if (!REPETIR_NAO_CONFIRMADO) statusesResolvidos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
-    .select('numero_os,status')
-    .eq('data_referencia', dataReferencia)
-    .eq('status', 'SUCESSO');
+    .select('data_referencia,numero_os,status')
+    .gte('data_referencia', ymd(inicio))
+    .lte('data_referencia', dataReferencia)
+    .in('status', statusesResolvidos);
   if (result.error) throw result.error;
   var set = {};
-  (result.data || []).forEach(function (row) { set[row.numero_os] = true; });
+  (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
   return set;
 }
 
@@ -669,6 +802,7 @@ async function salvarResultado(candidato, patch) {
     raio_m: RAIO_M,
     motivo: MOTIVO_FIXO,
     observacao: candidato.loginMatch ? observacaoPara(candidato) : OBS_FIXA,
+    erro: null,
     raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome } : null,
     updated_at: now
   }, patch);
@@ -904,6 +1038,49 @@ async function abrirOsEModalCargas(page, numeroOs) {
   if (!modalAberto) throw new Error('Modal "Adicionar NHE" não abriu.');
 }
 
+var COORDENACAO_POR_UF = {
+  AC: 'ACRE', AL: 'ALAGOAS', AP: 'AMAPA', AM: 'AMAZONAS', BA: 'BAHIA', CE: 'CEARA',
+  DF: 'DISTRITO FEDERAL', ES: 'ESPIRITO SANTO', GO: 'GOIAS', MA: 'MARANHAO', MT: 'MATO GROSSO',
+  MS: 'MATO GROSSO DO SUL', MG: 'MINAS GERAIS', PA: 'PARA', PB: 'PARAIBA', PR: 'PARANA',
+  PE: 'PERNAMBUCO', PI: 'PIAUI', RJ: 'RIO DE JANEIRO', RN: 'RIO GRANDE DO NORTE',
+  RS: 'RIO GRANDE DO SUL', RO: 'RONDONIA', RR: 'RORAIMA', SC: 'SANTA CATARINA',
+  SP: 'SAO PAULO', SE: 'SERGIPE', TO: 'TOCANTINS'
+};
+
+function coordenacaoPorUf(osCoord) {
+  var embarque = normText(osCoord && osCoord.embarque);
+  var match = embarque.match(/^([A-Z]{2})\s*-/);
+  return match ? (COORDENACAO_POR_UF[match[1]] || '') : '';
+}
+
+// Fonte de verdade ao vivo: consulta o endpoint do relatório NHE na sessão já
+// autenticada do GRM. Serve tanto como trava pré-lançamento quanto como
+// confirmação pós-Salvar. Assim não dependemos da defasagem do sync Supabase.
+async function existeNheNoGrmAoVivo(page, dataYmd, numeroOs) {
+  var dataBr = brDate(dataYmd);
+  return page.evaluate(async function (payload) {
+    var token = '';
+    for (var i = 0; i < localStorage.length; i++) {
+      try {
+        var value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value && value.userToken) token = value.userToken;
+      } catch (_) {}
+    }
+    if (!token) throw new Error('Token do GRM não encontrado para confirmar NHE.');
+    var response = await fetch('/api/reports/classification/nhe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ lnsDateFrom: payload.dataBr, lnsDateTo: payload.dataBr })
+    });
+    var json = await response.json();
+    if (!response.ok || json.result === false) {
+      throw new Error('Consulta NHE GRM falhou: ' + JSON.stringify(json).slice(0, 500));
+    }
+    var rows = json.searchData || [];
+    return rows.some(function (row) { return String(row.sorCode) === String(payload.os); });
+  }, { dataBr: dataBr, os: String(numeroOs) });
+}
+
 async function preencherEModalNhe(page, candidato, dryRun, debug) {
   var dataBr = brDate(candidato.data);
 
@@ -924,7 +1101,14 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
       || (candidato.osCoord && candidato.osCoord.supervisao)
       || candidato.supervisao || '';
   var coordEscolhida = await selecionarOpcaoAberta(page, regiaoAlvo, 'substring');
-  if (!coordEscolhida) throw new Error('Não achei opção de Coordenação compatível com "' + regiaoAlvo + '".');
+  if (!coordEscolhida) {
+    var coordUf = coordenacaoPorUf(candidato.osCoord);
+    if (coordUf && normText(coordUf) !== normText(regiaoAlvo)) {
+      coordEscolhida = await selecionarOpcaoAberta(page, coordUf, 'substring');
+      if (coordEscolhida) log('INFO', 'Coordenação resolvida por UF do embarque (' + coordUf + '): ' + coordEscolhida);
+    }
+  }
+  if (!coordEscolhida) throw new Error('Não achei opção de Coordenação compatível com "' + regiaoAlvo + '" nem com a UF da O.S.');
   log('INFO', 'Coordenação selecionada: ' + coordEscolhida);
 
   // Supervisão é populada por um fetch em cascata disparado pela escolha da
@@ -976,18 +1160,37 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   if (!funcEscolhido) throw new Error('Não achei "' + nomeParaFuncionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
   log('INFO', 'Funcionário selecionado: ' + funcEscolhido);
 
-  var dataOk = await page.evaluate(function (payload) {
-    var input = document.querySelector('#lnsDate');
-    if (!input) return false;
-    var proto = window.HTMLInputElement.prototype;
-    var setter = Object.getOwnPropertyDescriptor(proto, 'value');
-    if (setter && setter.set) setter.set.call(input, payload.value); else input.value = payload.value;
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new Event('blur', { bubbles: true }));
-    return true;
-  }, { value: dataBr });
-  if (!dataOk) throw new Error('Campo Data (#lnsDate) não encontrado.');
+  // O GRM atualizado passou a exigir interação real para atualizar o model da Data.
+  var dataInput = await page.$('#lnsDate');
+  if (!dataInput) throw new Error('Campo Data (#lnsDate) não encontrado.');
+  var inputType = await dataInput.evaluate(function (input) { return String(input.type || 'text').toLowerCase(); });
+  if (inputType === 'date') {
+    await dataInput.evaluate(function (input, value) {
+      input.focus();
+      var proto = window.HTMLInputElement.prototype;
+      var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (setter && setter.set) setter.set.call(input, value); else input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }, candidato.data);
+    await page.keyboard.press('Tab');
+  } else {
+    await dataInput.click({ clickCount: 3 });
+    await page.keyboard.down('Control');
+    await page.keyboard.press('A');
+    await page.keyboard.up('Control');
+    await page.keyboard.press('Backspace');
+    await dataInput.type(dataBr, { delay: 90 });
+    await page.keyboard.press('Tab');
+  }
+  await wait(500);
+  var dataValor = await page.$eval('#lnsDate', function (input) { return String(input.value || '').trim(); });
+  function soDigitos(v) { return String(v || '').replace(/\D/g, ''); }
+  var recebido = soDigitos(dataValor);
+  if (recebido !== soDigitos(dataBr) && recebido !== soDigitos(candidato.data)) {
+    throw new Error('Campo Data não permaneceu com a data solicitada. Esperado=' + dataBr + ', campo=' + dataValor);
+  }
+  log('INFO', 'Data NHE preenchida e validada no formulário: ' + dataValor + ' (referência ' + candidato.data + ')');
 
   await realClickCampoNhe(page, 'Motivo');
   var motivoEscolhido = await selecionarOpcaoAberta(page, MOTIVO_FIXO, 'exata');
@@ -1028,6 +1231,40 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     return;
   }
 
+  // Diagnóstico da atualização do GRM: captura XHR/fetch disparados pelo Salvar.
+  // Não registra headers/tokens; somente método, URL, status, payload e resposta limitada.
+  var respostasSalvar = [];
+  var falhasSalvar = [];
+  var promessasSalvar = [];
+  function onResponseSalvar(response) {
+    try {
+      var req = response.request();
+      var tipo = req.resourceType();
+      if (tipo !== 'xhr' && tipo !== 'fetch') return;
+      if (response.url().indexOf('/api/') === -1) return;
+      var promessa = response.text().catch(function () { return ''; }).then(function (body) {
+        respostasSalvar.push({
+          metodo: req.method(),
+          url: response.url(),
+          status: response.status(),
+          payload: String(req.postData() || '').slice(0, 1500),
+          resposta: String(body || '').slice(0, 1500)
+        });
+      });
+      promessasSalvar.push(promessa);
+    } catch (_) {}
+  }
+  function onFalhaSalvar(request) {
+    try {
+      var tipo = request.resourceType();
+      if ((tipo === 'xhr' || tipo === 'fetch') && request.url().indexOf('/api/') !== -1) {
+        falhasSalvar.push({ metodo: request.method(), url: request.url(), erro: request.failure() });
+      }
+    } catch (_) {}
+  }
+  page.on('response', onResponseSalvar);
+  page.on('requestfailed', onFalhaSalvar);
+
   var salvo = await page.evaluate(function () {
     var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
     var dialog = dialogs.reverse().find(function (d) { return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1; });
@@ -1036,8 +1273,36 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     btn.click();
     return true;
   });
-  if (!salvo) throw new Error('Botão "Salvar" não encontrado no modal Adicionar NHE.');
-  await wait(2000);
+  if (!salvo) {
+    page.removeListener('response', onResponseSalvar);
+    page.removeListener('requestfailed', onFalhaSalvar);
+    throw new Error('Botão "Salvar" não encontrado no modal Adicionar NHE.');
+  }
+  await wait(4000);
+  page.removeListener('response', onResponseSalvar);
+  page.removeListener('requestfailed', onFalhaSalvar);
+  await Promise.allSettled(promessasSalvar);
+
+  var mensagensUi = await page.evaluate(function () {
+    var seletores = '.v-snackbar--active,.v-alert,[role="alert"],.v-messages__message';
+    return Array.from(document.querySelectorAll(seletores))
+      .map(function (el) { return String(el.innerText || el.textContent || '').trim(); })
+      .filter(Boolean)
+      .slice(-20);
+  }).catch(function () { return []; });
+
+  log('INFO', 'DIAGNOSTICO_SALVAR_HTTP=' + JSON.stringify(respostasSalvar));
+  if (falhasSalvar.length) log('WARN', 'DIAGNOSTICO_SALVAR_FALHAS=' + JSON.stringify(falhasSalvar));
+  if (mensagensUi.length) log('INFO', 'DIAGNOSTICO_SALVAR_UI=' + JSON.stringify(mensagensUi));
+
+  var jaTemMovimento = respostasSalvar.some(function (item) {
+    return String(item && item.resposta || '').indexOf('sOrderHasDayMovement') !== -1;
+  });
+  if (jaTemMovimento) {
+    var errMov = new Error('GRM informou que a O.S. já possui carga ou dia sem embarque nesta data.');
+    errMov.code = 'GRM_JA_POSSUI_MOVIMENTO';
+    throw errMov;
+  }
 }
 
 // Depois de lançar NHE de verdade no GRM, o painel FOB (logistica-fob-page-v9.js)
@@ -1052,7 +1317,8 @@ function atualizarRelatorioNhe() {
   return new Promise(function (resolve) {
     var scriptPath = path.join(__dirname, 'grm-sync-nhe.js');
     log('INFO', 'Atualizando grm_nhe_importacoes (rodando grm-sync-nhe.js) para refletir os lançamentos na tela FOB...');
-    childProcess.execFile(process.execPath, [scriptPath], { timeout: Number(process.env.NHE_LANCAMENTO_POS_SYNC_TIMEOUT_MS || 150000), env: process.env }, function (error, stdout, stderr) {
+    var syncEnv = Object.assign({}, process.env, { NHE_SYNC_DAYS_BACK: String(Math.max(REPROCESSAR_DIAS + 1, Number(process.env.NHE_SYNC_DAYS_BACK) || 1)) });
+    childProcess.execFile(process.execPath, [scriptPath], { timeout: Number(process.env.NHE_LANCAMENTO_POS_SYNC_TIMEOUT_MS || 150000), env: syncEnv }, function (error, stdout, stderr) {
       if (stdout) log('INFO', '[grm-sync-nhe] ' + stdout.trim().split('\n').join('\n[grm-sync-nhe] '));
       if (stderr) log('WARN', '[grm-sync-nhe] ' + stderr.trim().split('\n').join('\n[grm-sync-nhe] '));
       if (error) log('WARN', 'grm-sync-nhe.js terminou com erro (' + error.message + ') — a tela FOB só refletirá os lançamentos no próximo sync automático.');
@@ -1093,20 +1359,27 @@ async function main() {
   var dryRun = args.dryRun || DRY_RUN;
   var runId = null;
 
-  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0 };
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0 };
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
     var dataReferencia = referenceIso();
     runId = await criarExecucao(dataReferencia);
 
-    var pendentes = await buscarPendentes();
+    var pendentesAtuais = await buscarPendentes();
+    var pendenciasAnteriores = await buscarPendenciasAnteriores(dataReferencia);
+    var pendentes = combinarPendentes(pendentesAtuais, pendenciasAnteriores);
+    if (pendenciasAnteriores.length) {
+      log('INFO', pendenciasAnteriores.length + ' pendência(s) dos últimos ' + REPROCESSAR_DIAS + ' dias incluída(s) para nova tentativa.');
+    }
     if (args.os) {
       var osSolicitada = normOs(args.os);
-      pendentes = pendentes.filter(function (item) { return item.os === osSolicitada; });
+      pendentes = pendentes.filter(function (item) {
+        return item.os === osSolicitada && (!args.data || item.data === ymd(args.data));
+      });
       if (pendentes.length && args.funcionario) pendentes[0].funcionario = args.funcionario;
       if (!pendentes.length) {
-        log('WARN', 'O.S. ' + osSolicitada + ' não é elegível: pode existir carga/NHE no mesmo ponto, serviço fora do escopo ou ausência de informativo. --forcar não ignora esta regra.');
+        log('WARN', 'O.S. ' + osSolicitada + (args.data ? ' em ' + args.data : '') + ' não é elegível: pode existir carga/NHE no mesmo ponto, serviço fora do escopo ou ausência de informativo. --forcar não ignora esta regra.');
       }
     }
     stats.pendentes = pendentes.length;
@@ -1116,15 +1389,82 @@ async function main() {
 
     for (var i = 0; i < pendentes.length; i++) {
       var p = pendentes[i];
-      if (jaLancadas[p.os]) continue;
+      var chavePendente = chaveUnica(p.data, p.os);
+      if (jaLancadas[chavePendente]) continue;
+
+      // Não confiar apenas em logistica_nhe_lancamentos_auto: uma execução
+      // antiga pode ter falhado/registrado SEM_LOGIN enquanto a NHE foi
+      // lançada manualmente ou por outro fluxo. O histórico importado do GRM
+      // é verificado por O.S.+data antes de abrir a tela de lançamento.
+      var temNheReal = false;
+      var temMovimentoReal = false;
+      try {
+        temNheReal = await existeNheReal(p.data, p.os);
+        if (!temNheReal) temMovimentoReal = await existeMovimentoReal(p.data, p.os);
+      } catch (checkError) {
+        stats.erro++;
+        var msgCheck = 'Falha na trava de segurança NHE/movimento para ' + p.data + '|' + p.os + ': ' + String(checkError.message || checkError);
+        await salvarResultado(p, { status: 'ERRO', erro: msgCheck.slice(0, 2000) });
+        log('ERROR', msgCheck + ' — O.S. bloqueada nesta execução; seguindo para as demais.');
+        continue;
+      }
+
+      if (temNheReal) {
+        stats.jaExistiaGrm++;
+        await salvarResultado(p, {
+          status: 'JA_EXISTIA_GRM',
+          erro: null,
+          lancado_em: null,
+          raw: {
+            reconciliacao: 'NHE já existente no GRM antes desta execução',
+            origem_verificacao: 'rpc:nhe_existe_nhe_real',
+            nao_lancado_nesta_execucao: true
+          }
+        });
+        jaLancadas[chavePendente] = true;
+        log('INFO', 'O.S. ' + p.os + ' em ' + p.data + ': NHE já existe no GRM; lançamento bloqueado.');
+        continue;
+      }
+
+      if (temMovimentoReal) {
+        stats.jaExistiaMovimento++;
+        await salvarResultado(p, {
+          status: 'JA_EXISTIA_MOVIMENTO_GRM',
+          erro: null,
+          lancado_em: null,
+          raw: {
+            reconciliacao: 'Produção Diária já possui carga/movimento para esta O.S.+data',
+            origem_verificacao: 'rpc:nhe_existe_movimento_real',
+            nao_lancado_nesta_execucao: true
+          }
+        });
+        jaLancadas[chavePendente] = true;
+        log('INFO', 'O.S. ' + p.os + ' em ' + p.data + ': já existe carga/movimento no GRM; lançamento de NHE bloqueado.');
+        continue;
+      }
+
+      if (!p.funcionario) {
+        stats.semFuncionario++;
+        await salvarResultado(p, { status: 'SEM_FUNCIONARIO', erro: 'Informativo sem valor no campo Atualizado por/Funcionário.' });
+        continue;
+      }
 
       // pendentes vindos de calcularPendentes já trazem osCoord resolvido; o
       // modo manual (--os) não passa por calcularPendentes, então resolve na
       // hora (mesmo critério: data_os <= referência).
-      var osCoord = p.osCoord !== undefined ? p.osCoord : await resolverCoordenadaOs(p.os);
+      var osCoord = p.osCoord !== undefined ? p.osCoord : await resolverCoordenadaOs(p.os, p.data);
       if (!osCoord) {
         stats.semCoordenadaOs++;
         await salvarResultado(p, { status: 'SEM_COORDENADA_OS' });
+        continue;
+      }
+
+      if (osCoord.situacao && normText(osCoord.situacao) !== 'ABERTA') {
+        stats.osNaoAberta++;
+        await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), {
+          status: 'OS_NAO_ABERTA',
+          erro: 'O.S. está com situação "' + osCoord.situacao + '" em operacional_os; lançamento não executado.'
+        });
         continue;
       }
 
@@ -1213,12 +1553,78 @@ async function main() {
         for (var c = 0; c < candidatos.length; c++) {
           var candidato = candidatos[c];
           try {
+            if (!dryRun && await existeNheNoGrmAoVivo(page, candidato.data, candidato.os)) {
+              stats.jaExistiaGrm++;
+              await salvarResultado(candidato, {
+                status: 'JA_EXISTIA_GRM',
+                lancado_em: null,
+                raw: { origem_verificacao: 'grm_api_ao_vivo', nao_lancado_nesta_execucao: true }
+              });
+              log('INFO', 'O.S. ' + candidato.os + ' em ' + candidato.data + ': NHE já existe no GRM (consulta ao vivo); lançamento bloqueado.');
+              continue;
+            }
+
             log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (' + (candidato.viaGestor ? 'via gestor ' + candidato.gestorNome + ', colaborador original=' + candidato.funcionario : 'colaborador=' + candidato.funcionario) + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
             await lancarNheParaCandidato(page, candidato, dryRun, debug);
+
+            if (dryRun) {
+              stats.sucesso++;
+              await salvarResultado(candidato, { status: 'DRY_RUN_OK', lancado_em: new Date().toISOString() });
+              log('SUCCESS', 'O.S. ' + candidato.os + ': NHE validado (dry-run).');
+              continue;
+            }
+
+            var confirmado = false;
+            var erroConfirmacao = null;
+            for (var tentativaConf = 1; tentativaConf <= 3; tentativaConf++) {
+              await wait(1500 * tentativaConf);
+              try {
+                delete nheRealPorChaveCache[chaveUnica(candidato.data, candidato.os)];
+                if (await existeNheNoGrmAoVivo(page, candidato.data, candidato.os)) {
+                  confirmado = true;
+                  break;
+                }
+              } catch (confErr) {
+                erroConfirmacao = confErr;
+                break;
+              }
+            }
+
+            if (!confirmado) {
+              stats.erro++;
+              stats.salvoNaoConfirmado++;
+              var msgConfirmacao = erroConfirmacao
+                ? 'Salvar foi acionado, mas a confirmação ao vivo falhou: ' + erroConfirmacao.message
+                : 'Salvar foi acionado, mas a NHE não apareceu no relatório do GRM para O.S. ' + candidato.os + ' na data ' + candidato.data + '.';
+              await salvarResultado(candidato, { status: 'SALVO_NAO_CONFIRMADO', lancado_em: null, erro: msgConfirmacao.slice(0, 2000) });
+              log('ERROR', 'O.S. ' + candidato.os + ': ' + msgConfirmacao + ' Bloqueada contra nova tentativa automática.');
+              continue;
+            }
+
             stats.sucesso++;
-            await salvarResultado(candidato, { status: dryRun ? 'DRY_RUN_OK' : 'SUCESSO', lancado_em: new Date().toISOString(), erro: null });
-            log('SUCCESS', 'O.S. ' + candidato.os + ': NHE ' + (dryRun ? 'validado (dry-run)' : 'lançado') + '.');
+            await salvarResultado(candidato, { status: 'SUCESSO', lancado_em: new Date().toISOString() });
+            log('SUCCESS', 'O.S. ' + candidato.os + ': NHE lançado e confirmado no GRM em ' + candidato.data + '.');
           } catch (error) {
+            if (error && error.code === 'GRM_JA_POSSUI_MOVIMENTO') {
+              stats.jaExistiaMovimento++;
+              await salvarResultado(candidato, {
+                status: 'JA_EXISTIA_MOVIMENTO_GRM',
+                lancado_em: null,
+                erro: null,
+                raw: Object.assign({}, candidato.viaGestor ? {
+                  via_gestor: true,
+                  colaborador_original: candidato.funcionario,
+                  gestor: candidato.gestorNome
+                } : {}, {
+                  reconciliacao: 'Backend GRM recusou NHE porque já existe movimento no dia',
+                  origem_verificacao: 'api/loadNoShip/setRecord:sOrderHasDayMovement',
+                  nao_lancado_nesta_execucao: true
+                })
+              });
+              log('INFO', 'O.S. ' + candidato.os + ': GRM confirmou movimento já existente; NHE não necessária.');
+              await fecharModais(page);
+              continue;
+            }
             stats.erro++;
             log('ERROR', 'O.S. ' + candidato.os + ': ' + error.message);
             if (debug) await shot(page, 'erro-os-' + candidato.os + '.png');
@@ -1237,15 +1643,18 @@ async function main() {
     }
 
     var restantes = Math.max(0, totalCandidatos - candidatos.length);
-    if (!dryRun && restantes > 0 && stats.sucesso > 0) {
+    if (!dryRun && AUTO_CONTINUACAO && restantes > 0 && stats.sucesso > 0) {
       var criada = await enfileirarContinuacao();
       log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
+    } else if (!dryRun && !AUTO_CONTINUACAO && restantes > 0) {
+      log('INFO', restantes + ' candidato(s) restante(s); continuação automática desativada por NHE_LANCAMENTO_AUTO_CONTINUACAO=false.');
     } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
       log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
     }
 
+    var totalFalhas = stats.erro + stats.semLogin + stats.semFuncionario + stats.foraDoRaio + stats.semCoordenadaOs + stats.salvoNaoConfirmado;
     await finalizarExecucao(runId, {
-      status: 'SUCESSO',
+      status: totalFalhas > 0 ? 'PARCIAL' : 'SUCESSO',
       total_pendentes: stats.pendentes,
       total_candidatos: stats.candidatos,
       total_sucesso: stats.sucesso,
@@ -1278,6 +1687,11 @@ module.exports = {
   normOs: normOs,
   normText: normText,
   buscarPendentes: buscarPendentes,
+  buscarPendenciasAnteriores: buscarPendenciasAnteriores,
+  combinarPendentes: combinarPendentes,
+  buscarLoginColaborador: buscarLoginColaborador,
   resolverCoordenadaOs: resolverCoordenadaOs,
-  buscarGestorRegional: buscarGestorRegional
+  buscarGestorRegional: buscarGestorRegional,
+  existeNheReal: existeNheReal,
+  existeMovimentoReal: existeMovimentoReal
 };

@@ -29,6 +29,7 @@ const LOCALIZACAO_LOGIN_DISTANCIA_ATENCAO_KM = 2;
 const state = {
   tab: 'despesas',
   despesas: [],
+  disponiveis: [],
   conferenciaStatus: new Map(),
   auditoria: [],
   resultado: [],
@@ -37,6 +38,7 @@ const state = {
   localizacao: [],
   producaoPorColaboradorData: new Map(),
   loading: false,
+  reloadRequested: false,
   sort: {
     despesas: { column: 'colaborador', direction: 'asc' },
   },
@@ -46,6 +48,7 @@ const state = {
     regional: '',
     colaborador: '',
     status: '',
+    grm: '',
   },
 };
 
@@ -297,21 +300,26 @@ function isPedidoHospedagem(row) {
   return row.estadia_tipo && !['NÃO PRECISA', 'NAO PRECISA', 'CASA'].includes(normalizeText(row.estadia_tipo));
 }
 
+function estadiaResumo(row) {
+  return isPedidoHospedagem(row) ? row.estadia_tipo : 'Não precisa';
+}
+
 function isPedidoDeslocamento(row) {
   return row.deslocamento_tipo && !['NÃO PRECISA', 'NAO PRECISA'].includes(normalizeText(row.deslocamento_tipo));
 }
 
 function getUniqueRegionais() {
-  const values = [...state.despesas, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas, ...state.localizacao]
+  const values = [...state.despesas, ...state.disponiveis, ...state.auditoria, ...state.resultado, ...state.uber, ...state.justificativas, ...state.localizacao]
     .map((row) => row.supervisao || row.regional || row.coordenacao)
     .filter(Boolean);
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
 }
 
-function applyLocalFilters(rows, kind) {
+function applyLocalFilters(rows, kind, { skipGrm = false } = {}) {
   const regional = normalizeText(state.filters.regional);
   const colaborador = normalizeText(state.filters.colaborador);
   const status = normalizeText(state.filters.status).replaceAll(' ', '_');
+  const grm = state.filters.grm;
 
   return rows.filter((row) => {
     const rowRegional = normalizeText(row.supervisao || row.regional || row.coordenacao);
@@ -321,6 +329,7 @@ function applyLocalFilters(rows, kind) {
     if (regional && rowRegional !== regional) return false;
     if (colaborador && !rowColaborador.includes(colaborador)) return false;
     if (status && (kind === 'despesas' || kind === 'uber') && rowStatus !== status) return false;
+    if (!skipGrm && kind === 'despesas' && grm && grmVisualForRow(row).kind !== grm) return false;
     return true;
   });
 }
@@ -392,6 +401,7 @@ function renderShell(content) {
     <section class="conf-hero conf-hero-compact">
       <div class="conf-tabs">
         <button class="conf-tab active" data-tab="despesas" type="button">Despesas da programação</button>
+        <button class="conf-tab" data-tab="disponiveis" type="button">Disponíveis</button>
         <button class="conf-tab" data-tab="pendentes" type="button">Pendentes</button>
         <button class="conf-tab" data-tab="auditoria" type="button">Auditoria</button>
         <button class="conf-tab" data-tab="resultado" type="button">Resultado</button>
@@ -490,6 +500,8 @@ function renderActiveTab() {
   if (subtitle) {
     subtitle.textContent = state.tab === 'despesas'
       ? 'Resumo por colaborador: alimentação, deslocamento e extras.'
+      : state.tab === 'disponiveis'
+        ? 'Efetivos sem O.S. pré-definida que foram liberados como disponíveis na programação.'
       : state.tab === 'pendentes'
         ? 'Despesas "Outros" que o agente automático não consegue lançar no GRM (sem categoria correspondente) — faça o lançamento manualmente e depois confira aqui.'
         : state.tab === 'auditoria'
@@ -504,11 +516,27 @@ function renderActiveTab() {
   }
 
   if (state.tab === 'despesas') return renderDespesasTable();
+  if (state.tab === 'disponiveis') return renderDisponiveisTable();
   if (state.tab === 'pendentes') return renderPendentesAgenteTable();
   if (state.tab === 'auditoria') return renderAuditoriaTable();
   if (state.tab === 'justificativas') return renderJustificativasTable();
   if (state.tab === 'localizacao') return renderLocalizacaoTable();
   return renderResultadoTable();
+}
+
+function renderDisponiveisTable() {
+  const rows = applyLocalFilters(state.disponiveis, 'disponiveis')
+    .sort((a, b) => String(b.data_referencia || '').localeCompare(String(a.data_referencia || ''))
+      || String(a.nome_colaborador || '').localeCompare(String(b.nome_colaborador || ''), 'pt-BR'));
+  const target = document.getElementById('conf-table');
+  if (!rows.length) {
+    target.innerHTML = '<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhum efetivo disponível para os filtros selecionados.</td></tr></tbody></table></div>';
+    return;
+  }
+  target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table" style="min-width:720px">
+    <thead><tr><th>Data</th><th>Nome</th><th>Supervisão</th></tr></thead>
+    <tbody>${rows.map((row) => `<tr><td>${brDate(row.data_referencia)}</td><td><strong>${escapeHtml(row.nome_colaborador || row.colaborador || '-')}</strong></td><td>${escapeHtml(row.supervisao || row.regional || row.coordenacao || '-')}</td></tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function despesasTableHead() {
@@ -522,6 +550,7 @@ function despesasTableHead() {
         <th>Almoço</th>
         <th>Janta</th>
         <th>Deslocamento</th>
+        <th>Estadia</th>
         <th>Extras</th>
         <th>Produção</th>
         <th>Ações</th>
@@ -563,20 +592,23 @@ function grmOverviewHtml(rows) {
     counts[kind] = (counts[kind] || 0) + 1;
   });
 
+  const active = state.filters.grm;
+
   return `
     <div class="conf-grm-overview" aria-label="Resumo da sincronização com o GRM">
       <div class="conf-grm-overview-title">
         <strong>Retorno do GRM</strong>
-        <span>As cores abaixo são as mesmas usadas nas linhas.</span>
+        <span>Clique numa categoria pra filtrar a lista abaixo.</span>
       </div>
       <div class="conf-grm-overview-items">
         ${order.map((kind) => `
-          <span class="conf-grm-overview-item conf-grm-overview-${kind}">
+          <button type="button" class="conf-grm-overview-item conf-grm-overview-${kind}${active === kind ? ' active' : ''}" data-grm-filter="${escapeHtml(kind)}" title="${active === kind ? 'Clique pra remover o filtro' : `Filtrar por: ${escapeHtml(labels[kind])}`}">
             <i aria-hidden="true"></i>
             ${escapeHtml(labels[kind])}
             <strong>${counts[kind] || 0}</strong>
-          </span>
+          </button>
         `).join('')}
+        ${active ? '<button type="button" class="conf-grm-overview-clear" data-grm-filter-clear>Limpar filtro ✕</button>' : ''}
       </div>
     </div>
   `;
@@ -605,6 +637,7 @@ function despesasRowHtml(row, mode = 'fila') {
         ${escapeHtml(deslocamentoResumo(row))}
         <small>${escapeHtml(row.deslocamento_obs || '')}</small>
       </td>
+      <td>${escapeHtml(estadiaResumo(row))}</td>
       <td class="conf-td-extras">
         <strong>${escapeHtml(extrasResumo(row))}</strong>
         <small>${escapeHtml(row.extras_obs || '')}</small>
@@ -629,18 +662,22 @@ function despesasRowHtml(row, mode = 'fila') {
 }
 
 function renderDespesasTable() {
-  const rows = sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas');
+  const overviewRows = sortRows(applyLocalFilters(state.despesas, 'despesas', { skipGrm: true }), 'despesas');
   const target = document.getElementById('conf-table');
-  const filaRows = rows.filter((row) => getStatus(row) !== 'CONFERIDO');
-  const conferidosRows = rows.filter((row) => getStatus(row) === 'CONFERIDO');
 
-  if (!rows.length) {
+  if (!overviewRows.length) {
     target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
     return;
   }
 
+  const grmActive = state.filters.grm;
+  const rows = grmActive ? overviewRows.filter((row) => grmVisualForRow(row).kind === grmActive) : overviewRows;
+  const filaRows = rows.filter((row) => getStatus(row) !== 'CONFERIDO');
+  const conferidosRows = rows.filter((row) => getStatus(row) === 'CONFERIDO');
+
   target.innerHTML = `
-    ${grmOverviewHtml(rows)}
+    ${grmOverviewHtml(overviewRows)}
+    ${grmActive && !rows.length ? '<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa nesta categoria do GRM.</td></tr></tbody></table></div>' : `
     <div class="conf-subsection-head">
       <div>
         <h4>Itens para conferir</h4>
@@ -654,7 +691,7 @@ function renderDespesasTable() {
         <tbody>
           ${filaRows.length
             ? filaRows.map((row) => despesasRowHtml(row, 'fila')).join('')
-            : '<tr><td class="conf-empty" colspan="10">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
+            : '<tr><td class="conf-empty" colspan="11">Nenhum item pendente. Os registros conferidos estão na tabela abaixo.</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -673,11 +710,12 @@ function renderDespesasTable() {
           <tbody>
             ${conferidosRows.length
               ? conferidosRows.map((row) => despesasRowHtml(row, 'conferidos')).join('')
-              : '<tr><td class="conf-empty" colspan="10">Nenhum registro conferido nos filtros atuais.</td></tr>'}
+              : '<tr><td class="conf-empty" colspan="11">Nenhum registro conferido nos filtros atuais.</td></tr>'}
           </tbody>
         </table>
       </div>
     </div>
+    `}
   `;
 }
 
@@ -1014,6 +1052,7 @@ async function loadDespesas() {
   const programacaoIds = (programacoes || []).map((p) => p.id).filter(Boolean);
   if (!programacaoIds.length) {
     state.despesas = [];
+    state.disponiveis = [];
     return;
   }
 
@@ -1049,6 +1088,13 @@ async function loadDespesas() {
     row.coordenacao = r.coordenacao || row.coordenacao;
     row.supervisao = r.supervisao || row.supervisao;
   });
+  state.disponiveis = disp
+    .filter((row) => normalizeText(row.disponibilidade) === 'DISPONIVEL')
+    .map((row) => ({
+      ...row,
+      data_referencia: row.data_referencia || programacaoMap.get(row.programacao_id)?.data_referencia || '',
+      supervisao: row.supervisao || programacaoMap.get(row.programacao_id)?.supervisao || '',
+    }));
 
   estadia.forEach((r) => {
     const row = getRow(r.programacao_id, r.colaborador_id, r.nome_colaborador);
@@ -1270,8 +1316,15 @@ async function loadUber() {
 }
 
 async function loadAll() {
-  if (state.loading) return;
+  // Alterar os dois campos de data dispara dois submits em sequência. Se uma
+  // consulta já estiver em andamento, não descarte o filtro mais recente:
+  // execute-o logo depois com os valores atuais dos campos.
+  if (state.loading) {
+    state.reloadRequested = true;
+    return;
+  }
   state.loading = true;
+  state.reloadRequested = false;
   setFeedback('Carregando dados da conferência...');
   try {
     await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores()]);
@@ -1281,6 +1334,11 @@ async function loadAll() {
     setFeedback(error.message || 'Erro ao carregar conferência.', true);
   } finally {
     state.loading = false;
+    if (state.reloadRequested) {
+      state.reloadRequested = false;
+      await loadAll();
+      return;
+    }
     renderActiveTab();
   }
 }
@@ -1359,6 +1417,8 @@ async function updateDespesaStatus(id, status, motivo = null) {
 function exportCsv() {
   const rows = state.tab === 'despesas'
     ? sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas')
+    : state.tab === 'disponiveis'
+      ? applyLocalFilters(state.disponiveis, 'disponiveis')
     : state.tab === 'pendentes'
       ? sortRows(applyLocalFilters(getPendenciasAgente(), 'despesas'), 'despesas')
       : state.tab === 'auditoria'
@@ -1377,8 +1437,9 @@ function exportCsv() {
   let headers;
   let csvRows;
   if (state.tab === 'despesas') {
-    headers = ['Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Extras'];
+    headers = ['Data', 'Colaborador', 'Regional', 'Status', 'Café', 'Almoço', 'Janta', 'Deslocamento', 'Estadia', 'Extras'];
     csvRows = rows.map((row) => [
+      brDate(row.data_referencia),
       row.colaborador || row.nome_colaborador || '',
       getRegional(row),
       STATUS_LABELS[getStatus(row)] || getStatus(row),
@@ -1386,8 +1447,12 @@ function exportCsv() {
       row.almoco_valor ? 'Sim' : 'Não',
       row.janta_valor ? 'Sim' : 'Não',
       deslocamentoResumo(row),
+      estadiaResumo(row),
       extrasResumo(row),
     ]);
+  } else if (state.tab === 'disponiveis') {
+    headers = ['Data', 'Nome', 'Supervisão'];
+    csvRows = rows.map((row) => [brDate(row.data_referencia), row.nome_colaborador || '', row.supervisao || row.regional || row.coordenacao || '']);
   } else if (state.tab === 'pendentes') {
     headers = ['Colaborador', 'Regional', 'Status', 'Data', 'Despesa "Outros"'];
     csvRows = rows.map((row) => [
@@ -1432,7 +1497,10 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `conferencia-${state.tab}-${todayISO()}.csv`;
+  const periodo = state.filters.inicio && state.filters.fim
+    ? (state.filters.inicio === state.filters.fim ? state.filters.inicio : `${state.filters.inicio}_a_${state.filters.fim}`)
+    : (state.filters.inicio || state.filters.fim || todayISO());
+  a.download = `conferencia-${state.tab}-${periodo}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1456,7 +1524,7 @@ function bindEvents() {
   });
 
   document.getElementById('conf-clear')?.addEventListener('click', () => {
-    state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
+    state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '', grm: '' };
     document.getElementById('conf-inicio').value = state.filters.inicio;
     document.getElementById('conf-fim').value = state.filters.fim;
     document.getElementById('conf-colaborador').value = '';
@@ -1473,6 +1541,21 @@ function bindEvents() {
   });
 
   document.getElementById('conf-table')?.addEventListener('click', (event) => {
+    const grmClear = event.target.closest('[data-grm-filter-clear]');
+    if (grmClear) {
+      state.filters.grm = '';
+      renderDespesasTable();
+      return;
+    }
+
+    const grmBtn = event.target.closest('[data-grm-filter]');
+    if (grmBtn) {
+      const kind = grmBtn.dataset.grmFilter;
+      state.filters.grm = state.filters.grm === kind ? '' : kind;
+      renderDespesasTable();
+      return;
+    }
+
     const sortBtn = event.target.closest('[data-sort-column]');
     if (sortBtn) {
       const column = sortBtn.dataset.sortColumn;

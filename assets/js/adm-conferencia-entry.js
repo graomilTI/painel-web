@@ -199,7 +199,11 @@ function injectCleanLayoutStyles() {
     .conf-grm-overview-title strong{color:#edf9f3!important;font-size:12px!important}
     .conf-grm-overview-title span{color:#789487!important;font-size:10px!important}
     .conf-grm-overview-items{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:7px!important;flex-wrap:wrap!important}
-    .conf-grm-overview-item{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:5px 8px!important;border:1px solid rgba(148,163,184,.1)!important;border-radius:999px!important;background:rgba(15,23,42,.28)!important;color:#afbeb7!important;font-size:10px!important;font-weight:700!important;white-space:nowrap!important}
+    .conf-grm-overview-item{display:inline-flex!important;align-items:center!important;gap:6px!important;padding:5px 8px!important;border:1px solid rgba(148,163,184,.1)!important;border-radius:999px!important;background:rgba(15,23,42,.28)!important;color:#afbeb7!important;font-size:10px!important;font-weight:700!important;white-space:nowrap!important;font-family:inherit!important;cursor:pointer!important;transition:transform .12s ease,background .12s ease!important}
+    .conf-grm-overview-item:hover{background:rgba(15,23,42,.5)!important;transform:translateY(-1px)!important}
+    .conf-grm-overview-item.active{background:rgba(255,255,255,.13)!important;box-shadow:0 0 0 1px currentColor inset!important}
+    .conf-grm-overview-clear{display:inline-flex!important;align-items:center!important;gap:4px!important;padding:5px 9px!important;border:1px solid rgba(248,113,113,.22)!important;border-radius:999px!important;background:rgba(239,68,68,.08)!important;color:#ff9d9d!important;font-size:10px!important;font-weight:700!important;font-family:inherit!important;cursor:pointer!important;white-space:nowrap!important}
+    .conf-grm-overview-clear:hover{background:rgba(239,68,68,.16)!important}
     .conf-grm-overview-item i{width:7px!important;height:7px!important;border-radius:50%!important;background:#94a3b8!important;box-shadow:0 0 8px rgba(148,163,184,.35)!important}
     .conf-grm-overview-item strong{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-width:18px!important;height:18px!important;padding:0 5px!important;border-radius:999px!important;background:rgba(255,255,255,.06)!important;color:inherit!important;font-size:10px!important}
     .conf-grm-overview-noop{color:#93c5fd!important;border-color:rgba(96,165,250,.18)!important}.conf-grm-overview-noop i{background:#60a5fa!important;box-shadow:0 0 9px rgba(96,165,250,.52)!important}
@@ -340,7 +344,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260807-loginmaisproximo')
+import('./adm-conferencia.js?v=20260811-csvdatafiltro')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();

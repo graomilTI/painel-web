@@ -578,6 +578,7 @@ function ensureTopbarIconButtons() {
   wrap.appendChild(dropdown);
 
   actions.prepend(wrap);
+  ensureScreenTourButton(actions, wrap);
 
   // Toggle dropdown ao clicar no sino
   notifBtn.addEventListener('click', (e) => {
@@ -589,6 +590,222 @@ function ensureTopbarIconButtons() {
   document.addEventListener('click', (e) => {
     if (!wrap.contains(e.target)) dropdown.classList.remove('open');
   });
+}
+
+function ensureScreenTourStyles() {
+  if (document.getElementById('screenTourStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'screenTourStyles';
+  style.textContent = `
+    .screen-tour-help{font:900 18px/1 ui-sans-serif,system-ui,sans-serif}
+    .screen-tour-help[aria-pressed="true"]{color:#54e7b2;border-color:rgba(84,231,178,.42);background:rgba(18,216,143,.14)}
+    .screen-tour-backdrop{position:fixed;inset:0;z-index:9990;pointer-events:none;background:rgba(1,10,7,.22);animation:tourFade .18s ease-out}
+    .screen-tour-focus{position:fixed;z-index:9991;border-radius:14px;pointer-events:none;box-shadow:0 0 0 4px rgba(84,231,178,.9),0 0 0 9999px rgba(1,10,7,.72);transition:top .25s ease,left .25s ease,width .25s ease,height .25s ease}
+    .screen-tour-card{position:fixed;z-index:9992;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;padding:20px;border:1px solid rgba(84,231,178,.28);border-radius:18px;background:#071b14;color:#ecfff7;box-shadow:0 22px 60px rgba(0,0,0,.44);font-family:ui-sans-serif,system-ui,sans-serif;animation:tourCardIn .22s ease-out}
+    .screen-tour-kicker{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;color:#54e7b2;font-size:11px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}
+    .screen-tour-close{width:30px;height:30px;border:0;border-radius:9px;background:rgba(255,255,255,.07);color:#dff8ee;cursor:pointer;font-size:20px;line-height:1}
+    .screen-tour-card h3{margin:0 0 7px!important;color:#fff!important;font-size:19px!important;line-height:1.25!important}
+    .screen-tour-card p{margin:0;color:#acd0c1;font-size:14px;line-height:1.55}
+    .screen-tour-example{margin-top:14px;padding:12px;border:1px solid rgba(84,231,178,.2);border-radius:13px;background:rgba(0,0,0,.2)}
+    .screen-tour-example-label{display:block;margin-bottom:8px;color:#82e8c1;font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}
+    .screen-tour-demo-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .screen-tour-demo-btn{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:0 9px;border:1px solid rgba(255,255,255,.13);border-radius:8px;background:#10251d;color:#c9e8dc;font-size:11px;font-weight:800}
+    .screen-tour-demo-btn.on{border-color:#45daa6;background:#176c4d;color:#fff;box-shadow:0 0 0 1px rgba(69,218,166,.15)}
+    .screen-tour-demo-select,.screen-tour-demo-input{display:flex;align-items:center;min-height:32px;padding:0 9px;border:1px solid rgba(255,255,255,.13);border-radius:8px;background:#06140f;color:#d8eee6;font-size:11px;flex:1 1 130px}
+    .screen-tour-demo-input.money{flex:0 0 82px;color:#8ff0cb}
+    .screen-tour-demo-arrow{color:#54e7b2;font-weight:900}
+    .screen-tour-demo-note{display:block;margin-top:7px;color:#86aa9c;font-size:10.5px;line-height:1.35}
+    .screen-tour-progress{display:flex;gap:5px;margin:17px 0}
+    .screen-tour-progress i{height:3px;flex:1;border-radius:99px;background:rgba(255,255,255,.12)}
+    .screen-tour-progress i.on{background:#35d69e}
+    .screen-tour-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .screen-tour-actions button{min-height:38px;padding:0 15px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#dff8ee;font-weight:800;cursor:pointer}
+    .screen-tour-actions .screen-tour-next{border-color:#35d69e;background:#35d69e;color:#032217}
+    .screen-tour-actions button:disabled{opacity:.35;cursor:default}
+    @keyframes tourFade{from{opacity:0}to{opacity:1}}@keyframes tourCardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    @media(max-width:700px){.screen-tour-card{bottom:12px!important;left:12px!important;top:auto!important}.screen-tour-focus{border-radius:10px}}
+  `;
+  document.head.appendChild(style);
+}
+
+function getScreenTourSteps() {
+  const programacaoSteps = getProgramacaoTourSteps();
+  if (programacaoSteps.length) return programacaoSteps;
+
+  const title = document.getElementById('pageTitle');
+  const sidebar = document.querySelector('.sidebar');
+  const main = document.querySelector('.page-main, main');
+  const content = main?.querySelector('section, .card, form, table, [class*="dashboard"]') || main;
+  const toolbar = main?.querySelector('.toolbar, [class*="toolbar"], .tabs, [class*="tabs"], form');
+  const steps = [
+    title && { el:title, title:'Você está nesta tela', text:`Este é o módulo ${title.textContent?.trim() || 'atual'}. Use este guia sempre que quiser relembrar os pontos principais.` },
+    sidebar && { el:sidebar, title:'Navegação do painel', text:'Use o menu lateral para trocar de módulo. As opções exibidas respeitam o seu perfil de acesso.' },
+    content && { el:content, title:'Área principal', text:'Aqui ficam as informações e tarefas desta tela. Role a página normalmente depois de concluir o tutorial.' },
+    toolbar && toolbar !== content && { el:toolbar, title:'Filtros e ações', text:'Nesta área você encontra os comandos da tela, como filtros, buscas, cadastros ou atualização dos dados.' },
+    document.querySelector('.topbar-actions') && { el:document.querySelector('.topbar-actions'), title:'Atalhos do topo', text:'Acesse notificações, ajuda e opções da sua conta por estes atalhos.' }
+  ];
+  return steps.filter((step, index, all) => step && step.el && step.el.getClientRects().length && all.findIndex(s => s?.el === step.el) === index);
+}
+
+function getProgramacaoTourSteps() {
+  const path = String(window.location.pathname || '').toLowerCase();
+  const title = document.getElementById('pageTitle')?.textContent?.trim().toLowerCase();
+  if (!path.includes('programacao') && title !== 'programação' && title !== 'programacao') return [];
+
+  const pick = (...selectors) => selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+  const context = pick('.prog-context-group', '.prog-toolbar-row:first-child');
+  const osStep = pick('#progSteps [data-ui-step="1"]', '#progSteps .stepbtn:first-child');
+  const semOsStep = pick('#progSteps [data-ui-step="2"]', '#progSteps .stepbtn:nth-child(2)');
+  const recusasStep = pick('#progSteps [data-ui-step="3"]', '#progSteps .stepbtn:nth-child(3)');
+  const filters = pick('.pld-filters', '#pgcPane1', '#progList');
+  const osList = pick('.pld-table-wrap', '#pldListaBody', '#pgcPane1');
+  const actions = pick('.prog-actions-block', '#progGerarPdf', '.prog-toolbar');
+
+  const steps = [
+    {
+      el: document.getElementById('pageTitle') || context,
+      title: 'Como fazer a programação',
+      text: 'Este guia mostra o fluxo completo do gestor. Você vai carregar o dia, tratar cada O.S., conferir quem ficou sem O.S. e resolver despesas recusadas.'
+    },
+    context && {
+      el: context,
+      title: '1. Escolha supervisão e data',
+      text: 'Selecione a supervisão, escolha o dia que será programado e clique em Carregar. Datas passadas ficam somente para consulta; para editar, use hoje ou uma data futura.'
+    },
+    osStep && {
+      el: osStep,
+      title: '2. Comece pela aba O.S.',
+      text: 'Aqui aparecem as ordens de serviço da supervisão. Use esta aba para decidir o andamento de cada serviço e montar a equipe que irá atender.'
+    },
+    filters && {
+      el: filters,
+      title: '3. Encontre a O.S.',
+      text: 'Pesquise pelo número da O.S. ou cliente e refine por cidade, local ou remanescente. Depois, clique na linha da O.S. para abrir os detalhes.'
+    },
+    osList && {
+      el: osList,
+      title: '4. Defina a ação da O.S.',
+      text: 'Clique na O.S. para abrir o painel e escolha a ação que representa a situação atual. Use Atender para liberar a montagem da equipe.',
+      example: '<span class="screen-tour-example-label">Exemplo · ações da O.S.</span><div class="screen-tour-demo-row"><span class="screen-tour-demo-btn">⏸ Pausar</span><span class="screen-tour-demo-btn on">✓ Atender</span><span class="screen-tour-demo-btn">$ Finalizar</span><span class="screen-tour-demo-btn">💰 Saldo</span></div><span class="screen-tour-demo-note">No exemplo, “Atender” está selecionado e a programação da equipe fica liberada.</span>'
+    },
+    osList && {
+      el: osList,
+      title: '5. Adicione um colaborador',
+      text: 'Na seção Programação da O.S., abra Adicionar colaborador, pesquise ou selecione o nome e confirme em Adicionar.',
+      example: '<span class="screen-tour-example-label">Exemplo · equipe</span><div class="screen-tour-demo-row"><span class="screen-tour-demo-select">João da Silva ▾</span><span class="screen-tour-demo-arrow">→</span><span class="screen-tour-demo-btn on">Adicionar</span></div><span class="screen-tour-demo-note">Antes de confirmar, confira se o colaborador está disponível e se pertence à supervisão correta.</span>'
+    },
+    osList && {
+      el: osList,
+      title: '6. Adicione a Frota',
+      text: 'Use Adicionar Frota quando um motorista levar a equipe até a O.S. Selecione o motorista da Frota e confirme a inclusão.',
+      example: '<span class="screen-tour-example-label">Exemplo · motorista de Frota</span><div class="screen-tour-demo-row"><span class="screen-tour-demo-select">Maria Souza · ABC1D23 ▾</span><span class="screen-tour-demo-arrow">→</span><span class="screen-tour-demo-btn on">+ Adicionar Frota</span></div><span class="screen-tour-demo-note">Frota transporta a equipe; o motorista não é contado como colaborador atendendo a O.S.</span>'
+    },
+    osList && {
+      el: osList,
+      title: '7. Lance as despesas',
+      text: 'No cartão do colaborador, revise estadia, alimentação e deslocamento. Em Extras, escolha o tipo, descreva o gasto, informe o valor e adicione.',
+      example: '<span class="screen-tour-example-label">Exemplo · despesa extra</span><div class="screen-tour-demo-row"><span class="screen-tour-demo-select">Pedágio ▾</span><span class="screen-tour-demo-input">Praça BR-163</span><span class="screen-tour-demo-input money">R$ 18,50</span><span class="screen-tour-demo-btn on">+ Adicionar</span></div><span class="screen-tour-demo-note">Informe valores e observações com clareza para facilitar a conferência posterior.</span>'
+    },
+    semOsStep && {
+      el: semOsStep,
+      title: '8. Trate quem ficou sem O.S.',
+      text: 'Abra Sem O.S. para conferir colaboradores sem atendimento no dia. Informe a situação correta — como folga, falta ou atestado — e registre observações quando necessário.'
+    },
+    recusasStep && {
+      el: recusasStep,
+      title: '9. Corrija as recusas',
+      text: 'Nesta aba ficam despesas devolvidas pela Conferência. Leia o motivo, faça a correção solicitada e acompanhe até a pendência ser resolvida.'
+    },
+    actions && {
+      el: actions,
+      title: '10. Finalize e compartilhe',
+      text: 'As alterações são salvas durante o preenchimento. Ao terminar, gere o PDF para conferência, use Compartilhar para montar a mensagem do dia ou Duplique a programação para outras datas.'
+    }
+  ];
+
+  return steps.filter((step) => step && step.el && step.el.getClientRects().length);
+}
+
+function startScreenTour(button) {
+  if (window.__screenTourCleanup) window.__screenTourCleanup();
+  const steps = getScreenTourSteps();
+  if (!steps.length) return;
+  ensureScreenTourStyles();
+
+  let index = 0;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'screen-tour-backdrop';
+  backdrop.setAttribute('aria-hidden', 'true');
+  const focus = document.createElement('div');
+  focus.className = 'screen-tour-focus';
+  const card = document.createElement('div');
+  card.className = 'screen-tour-card';
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  card.setAttribute('aria-label', 'Tutorial guiado da tela');
+  document.body.append(backdrop, focus, card);
+  button.setAttribute('aria-pressed', 'true');
+
+  const cleanup = () => {
+    backdrop.remove(); focus.remove(); card.remove();
+    button.setAttribute('aria-pressed', 'false');
+    document.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', position);
+    window.removeEventListener('scroll', position, true);
+    window.__screenTourCleanup = null;
+    button.focus();
+  };
+  window.__screenTourCleanup = cleanup;
+
+  function position() {
+    const rect = steps[index].el.getBoundingClientRect();
+    const pad = 7;
+    focus.style.cssText = `top:${Math.max(6,rect.top-pad)}px;left:${Math.max(6,rect.left-pad)}px;width:${Math.min(innerWidth-12,rect.width+pad*2)}px;height:${Math.min(innerHeight-12,rect.height+pad*2)}px`;
+    if (innerWidth <= 700) return;
+    const cardWidth = 360, gap = 18;
+    let left = rect.right + gap;
+    if (left + cardWidth > innerWidth - 12) left = Math.max(12, rect.left - cardWidth - gap);
+    let top = Math.max(12, Math.min(rect.top, innerHeight - card.offsetHeight - 12));
+    card.style.left = `${left}px`; card.style.top = `${top}px`;
+  }
+
+  function render() {
+    const step = steps[index];
+    step.el.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+    card.innerHTML = `
+      <div class="screen-tour-kicker"><span>Guia da tela · ${index + 1} de ${steps.length}</span><button class="screen-tour-close" type="button" aria-label="Fechar tutorial">×</button></div>
+      <h3>${step.title}</h3><p>${step.text}</p>${step.example ? `<div class="screen-tour-example">${step.example}</div>` : ''}
+      <div class="screen-tour-progress">${steps.map((_, i) => `<i class="${i <= index ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="screen-tour-actions"><button class="screen-tour-prev" type="button" ${index === 0 ? 'disabled' : ''}>Voltar</button><button class="screen-tour-next" type="button">${index === steps.length - 1 ? 'Concluir' : 'Avançar'}</button></div>`;
+    card.querySelector('.screen-tour-close').onclick = cleanup;
+    card.querySelector('.screen-tour-prev').onclick = () => { if (index > 0) { index--; render(); } };
+    card.querySelector('.screen-tour-next').onclick = () => { if (index === steps.length - 1) cleanup(); else { index++; render(); } };
+    requestAnimationFrame(position);
+  }
+  function onKeydown(e) {
+    if (e.key === 'Escape') cleanup();
+    if (e.key === 'ArrowRight') card.querySelector('.screen-tour-next')?.click();
+    if (e.key === 'ArrowLeft') card.querySelector('.screen-tour-prev')?.click();
+  }
+  document.addEventListener('keydown', onKeydown);
+  window.addEventListener('resize', position);
+  window.addEventListener('scroll', position, true);
+  render();
+}
+
+function ensureScreenTourButton(actions, notifWrap) {
+  if (document.getElementById('topbarHelpBtn')) return;
+  ensureScreenTourStyles();
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.id = 'topbarHelpBtn';
+  button.className = 'topbar-icon-btn screen-tour-help';
+  button.setAttribute('aria-label', 'Iniciar tutorial desta tela');
+  button.setAttribute('aria-pressed', 'false');
+  button.title = 'Tutorial desta tela';
+  button.textContent = '?';
+  actions.insertBefore(button, notifWrap);
+  button.addEventListener('click', () => startScreenTour(button));
 }
 
 function updateNotifBell(list, count, engine) {
