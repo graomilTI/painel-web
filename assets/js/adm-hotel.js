@@ -1050,9 +1050,10 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.adm-hosp-tab').forEach((b) => b.classList.toggle('active',b.dataset.tab===t));
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
     document.getElementById(`tab-${t}`)?.classList.add('active');
-    if (t==='hoteis') return loadHoteis();
-    if (t==='alojamentos') return loadAlojamentos();
-    if (t==='historico') return loadHistoricoRows();
+    if (t==='hoteis') { renderHoteis(); return loadHoteis(); }
+    if (t==='alojamentos') { renderAlojamentos(); return loadAlojamentos(); }
+    if (t==='historico') { renderHistorico(); return loadHistoricoRows(); }
+    renderCurrentTab();
     Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
   }
 
@@ -1193,10 +1194,8 @@ export function renderContent(content, userContext) {
   // ─── Alojamentos ───────────────────────────────────────────────────────────
 
   async function loadAlojamentos() {
-    const tbody=document.getElementById('alojTbody');
-    if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">Carregando...</td></tr>`;
     const {data,error}=await supabase.from('hospedagem_alojamentos').select('*').order('cidade',{ascending:true}).order('nome',{ascending:true});
-    if (error) { if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
+    if (error) { const tbody=document.getElementById('alojTbody'); if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
     state.alojamentos=data||[];
     renderAlojamentos();
   }
