@@ -528,6 +528,11 @@ export function renderContent(content) {
     window.__progLoadColaboradores = loadContext;
     window.__progGetProgramacaoId = () => state.programacaoId;
     window.__progGetProgramacaoIdMap = () => state.programacaoIdMap;
+    // data do contexto efetivamente carregado (pode divergir do #progDataRef
+    // se o usuário mexeu no campo sem clicar em Carregar de novo) — usado pelo
+    // "Compartilhar" em programacao-pdf-tipo-fix.js pra não escrever a data
+    // errada no cabeçalho da mensagem.
+    window.__progGetDataReferencia = () => state.dataReferencia;
     // programacao-gestor-fluxo-avancado.js precisa saber quando loadContext()
     // (assíncrono — cria programacao_dia se a data/supervisão for nova, ex.:
     // programar adiantado) realmente termina, em vez de adivinhar com
