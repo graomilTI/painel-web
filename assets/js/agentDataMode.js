@@ -12,7 +12,6 @@ const ROUTES_WITH_AGENT_DATA = new Set([
   'importar-patrimonios',
   'notas-fiscais',
   'financeiro',
-  'adm-patrimonio',
 ]);
 
 const ROUTE_LABELS = {
@@ -25,7 +24,6 @@ const ROUTE_LABELS = {
   'consultar-colaboradores': 'Colaboradores',
   'consultar-producao': 'Produção',
   'logistica-informativos': 'Informativos de Logística',
-  'adm-patrimonio': 'Patrimônios',
 };
 
 function routeName() {
