@@ -13,6 +13,16 @@ const FETCH_BATCH_SIZE = 1000;
 const RELAT_CACHE_KEY = 'grao1000:patrimonio-relat:v1';
 const RELAT_CACHE_TTL = 30 * 60 * 1000;
 
+const ICONS = {
+  check: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+  x: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+  sheet: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>',
+  photo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
+  doc: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
+  chevronLeft: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>',
+};
+
 function escapeHtml(v) {
   return String(v ?? '')
     .replace(/&/g, '&amp;')
@@ -102,6 +112,17 @@ function injectVisualStyles() {
       border-radius: 11px;
       font-size: 13.5px;
     }
+    .patrimonio-relatorios-page .base-actions .icon-button {
+      width: 38px;
+      height: 38px;
+      min-height: 38px;
+      padding: 0;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .patrimonio-relatorios-page .base-actions .icon-button svg { display: block; }
     .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
     @media (max-width: 1080px) {
       .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -126,6 +147,40 @@ function injectVisualStyles() {
     }
     .patrimonio-table-title strong { font-size: 1.05rem; }
     .patrimonio-table-subtitle { opacity: .72; font-size: .92rem; }
+    .pat-view-modes {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.34);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .pat-view-mode-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: rgba(226, 232, 240, 0.68);
+      font: inherit;
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+      padding: 7px 12px;
+      border-radius: 9px;
+      transition: color .15s ease, background .15s ease;
+    }
+    .pat-view-mode-btn:hover { color: #e2e8f0; }
+    .pat-view-mode-btn.active { background: rgba(45, 212, 191, 0.18); color: #ecfdf5; }
+    .pat-pagination .icon-button {
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      margin: 0;
+    }
     .patrimonio-legend {
       display: flex;
       gap: 10px;
@@ -286,9 +341,31 @@ function injectVisualStyles() {
   document.head.appendChild(style);
 }
 
-function renderThead(sortState) {
+function renderThead(sortState, viewMode = 'colaborador') {
   const thead = document.getElementById('patrimonioThead');
   if (!thead) return;
+  if (viewMode === 'regional') {
+    thead.innerHTML = `<tr>
+      <th colspan="3">Regional</th>
+      <th>Materiais</th>
+      <th>Colaboradores</th>
+      <th></th>
+      <th>Maior atraso</th>
+    </tr>`;
+    return;
+  }
+  if (viewMode === 'lista') {
+    thead.innerHTML = `<tr>
+      ${sortableTh(sortState, 'patrimonio', 'Patrimônio')}
+      ${sortableTh(sortState, 'funcionario', 'Colaborador')}
+      ${sortableTh(sortState, 'identificacao', 'Identificação')}
+      ${sortableTh(sortState, 'supervisao', 'Supervisão')}
+      ${sortableTh(sortState, 'regional', 'Regional')}
+      ${sortableTh(sortState, 'ultima_leitura', 'Última leitura')}
+      ${sortableTh(sortState, 'dias', 'Dias')}
+    </tr>`;
+    return;
+  }
   thead.innerHTML = `<tr>
     <th colspan="3">Colaborador</th>
     <th>Materiais</th>
@@ -611,7 +688,80 @@ function groupRowsByColaborador(rows) {
   return [...groups.values()];
 }
 
-function renderTableRows(rows, page = 1, expanded = new Set()) {
+function groupRowsByRegionalGrouped(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const regional = getRegional(row);
+    const key = normalizeKey(regional);
+    if (!groups.has(key)) groups.set(key, { funcionario: regional, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return [...groups.values()].sort((a, b) => a.funcionario.localeCompare(b.funcionario, 'pt-BR'));
+}
+
+function getGroups(rows, viewMode) {
+  if (viewMode === 'regional') return groupRowsByRegionalGrouped(rows);
+  return groupRowsByColaborador(rows);
+}
+
+function renderGroupedRows(rows, page, expanded, viewMode) {
+  const tbody = document.getElementById('patrimonioRows');
+  const groups = getGroups(rows, viewMode);
+  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
+  const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
+  const isRegional = viewMode === 'regional';
+
+  tbody.innerHTML = pageGroups.map((group) => {
+    const key = normalizeKey(group.funcionario);
+    const open = expanded.has(key);
+    const first = group.rows[0];
+    const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
+    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
+    const detailHeaderExtra = isRegional ? '<th>Colaborador</th>' : '<th>Material</th>';
+    const details = group.rows.map((row) => `<tr>
+      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+      <td>${escapeHtml(isRegional ? (row.funcionario || '-') : (row.identificacao || '-'))}</td>
+      <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
+      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
+      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
+    </tr>`).join('');
+    const colInfoCell = isRegional
+      ? `<span class="pat-count-badge">${new Set(group.rows.map((row) => normalizeKey(row.funcionario))).size} colab.</span>`
+      : `<span class="pat-secondary">${escapeHtml(first.supervisao || '-')}</span>`;
+    const regionalCell = isRegional
+      ? ''
+      : `<td><span class="pat-regional-badge">${escapeHtml(getRegional(first))}</span></td>`;
+    return `<tr class="pat-group-row" data-colaborador="${escapeHtml(key)}">
+      <td colspan="3"><span class="pat-group-name"><span class="pat-group-arrow">${open ? '▾' : '▸'}</span><span class="pat-primary">${escapeHtml(group.funcionario)}</span></span></td>
+      <td><span class="pat-count-badge">${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</span></td>
+      <td>${colInfoCell}</td>
+      ${regionalCell || '<td></td>'}
+      <td><span class="pat-tag ${tagClass}">${maxDias >= 0 ? maxDias : '-'}</span></td>
+    </tr>${open ? `<tr class="pat-group-detail"><td colspan="7"><table><thead><tr><th>Patrimônio</th>${detailHeaderExtra}<th>Situação</th><th>Última leitura</th><th>Dias</th></tr></thead><tbody>${details}</tbody></table></td></tr>` : ''}`;
+  }).join('');
+}
+
+function renderFlatRows(rows, page) {
+  const tbody = document.getElementById('patrimonioRows');
+  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
+  const pageRows = rows.slice(start, start + TABLE_ROWS_PER_PAGE);
+
+  tbody.innerHTML = pageRows.map((row) => {
+    const diasInfo = getDiasInfo(row);
+    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > 10 ? 'danger' : 'ok';
+    return `<tr>
+      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+      <td>${escapeHtml(row.funcionario || '-')}</td>
+      <td>${escapeHtml(row.identificacao || '-')}</td>
+      <td>${escapeHtml(row.supervisao || '-')}</td>
+      <td><span class="pat-regional-badge">${escapeHtml(getRegional(row))}</span></td>
+      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
+      <td><span class="pat-tag ${tagClass}">${escapeHtml(diasInfo.hasValue ? diasInfo.value : '-')}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTableRows(rows, page = 1, expanded = new Set(), viewMode = 'colaborador') {
   const tbody = document.getElementById('patrimonioRows');
   if (!tbody) return;
 
@@ -620,31 +770,11 @@ function renderTableRows(rows, page = 1, expanded = new Set()) {
     return;
   }
 
-  const groups = groupRowsByColaborador(rows);
-  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
-  const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
-
-  tbody.innerHTML = pageGroups.map((group) => {
-    const key = normalizeKey(group.funcionario);
-    const open = expanded.has(key);
-    const first = group.rows[0];
-    const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
-    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
-    const details = group.rows.map((row) => `<tr>
-      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
-      <td>${escapeHtml(row.identificacao || '-')}</td>
-      <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
-      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
-    </tr>`).join('');
-    return `<tr class="pat-group-row" data-colaborador="${escapeHtml(key)}">
-      <td colspan="3"><span class="pat-group-name"><span class="pat-group-arrow">${open ? '▾' : '▸'}</span><span class="pat-primary">${escapeHtml(group.funcionario)}</span></span></td>
-      <td><span class="pat-count-badge">${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</span></td>
-      <td><span class="pat-secondary">${escapeHtml(first.supervisao || '-')}</span></td>
-      <td><span class="pat-regional-badge">${escapeHtml(getRegional(first))}</span></td>
-      <td><span class="pat-tag ${tagClass}">${maxDias >= 0 ? maxDias : '-'}</span></td>
-    </tr>${open ? `<tr class="pat-group-detail"><td colspan="7"><table><thead><tr><th>Patrimônio</th><th>Material</th><th>Situação</th><th>Última leitura</th><th>Dias</th></tr></thead><tbody>${details}</tbody></table></td></tr>` : ''}`;
-  }).join('');
+  if (viewMode === 'lista') {
+    renderFlatRows(rows, page);
+    return;
+  }
+  renderGroupedRows(rows, page, expanded, viewMode);
 }
 
 function fillSelectOptions(selectId, values, placeholder) {
@@ -670,18 +800,16 @@ function updateSummary(rows) {
   set('sumPercentual', stats.percentual);
 }
 
-function updatePagination(totalRows, page) {
-  const totalGroups = groupRowsByColaborador(totalRows).length;
-  const totalPages = Math.max(1, Math.ceil(totalGroups / TABLE_ROWS_PER_PAGE));
+function updatePagination(totalRows, page, viewMode = 'colaborador') {
+  const totalItems = viewMode === 'lista' ? totalRows.length : getGroups(totalRows, viewMode).length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / TABLE_ROWS_PER_PAGE));
   const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = totalGroups ? ((safePage - 1) * TABLE_ROWS_PER_PAGE) + 1 : 0;
-  const end = Math.min(safePage * TABLE_ROWS_PER_PAGE, totalGroups);
 
   const info = document.getElementById('paginationInfo');
   const prev = document.getElementById('btnPrevPage');
   const next = document.getElementById('btnNextPage');
 
-  if (info) info.textContent = totalGroups ? `Página ${safePage}/${totalPages} • colaboradores ${start}-${end} de ${totalGroups}` : 'Página 1/1 • sem colaboradores';
+  if (info) info.textContent = `Página ${safePage}/${totalPages}`;
   if (prev) prev.disabled = safePage <= 1;
   if (next) next.disabled = safePage >= totalPages;
 
@@ -764,11 +892,11 @@ export function renderContent(content) {
         </div>
 
         <div class="base-actions">
-          <button class="base-button primary" id="btnAplicar">Aplicar filtros</button>
-          <button class="base-button secondary" id="btnLimpar">Limpar</button>
-          <button class="base-button secondary" id="btnCsv">Exportar CSV</button>
-          <button class="base-button secondary" id="btnZip">Exportar ZIP imagens</button>
-          <button class="base-button secondary" id="btnZipRegional">Exportar ZIP por regional</button>
+          <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
+          <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
+          <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
+          <button class="base-button secondary icon-button" id="btnZip" title="Exportar ZIP de imagens" aria-label="Exportar ZIP de imagens">${ICONS.photo}</button>
+          <button class="base-button secondary icon-button" id="btnZipRegional" title="Exportar ZIP por regional" aria-label="Exportar ZIP por regional">${ICONS.doc}</button>
         </div>
 
         <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>
@@ -776,14 +904,15 @@ export function renderContent(content) {
 
       <article class="base-card patrimonio-table-card">
         <div class="patrimonio-table-toolbar">
-          <div class="patrimonio-table-title">
-            <strong>Lista de patrimônios</strong>
-            <span class="patrimonio-table-subtitle">Visualização agrupada por colaborador; clique em um nome para ver os patrimônios.</span>
+          <div class="pat-view-modes" role="group" aria-label="Modo de visualização">
+            <button class="pat-view-mode-btn active" type="button" data-view-mode="colaborador">Por colaborador</button>
+            <button class="pat-view-mode-btn" type="button" data-view-mode="regional">Por regional</button>
+            <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
           </div>
           <div class="pat-pagination">
-            <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
+            <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
             <span id="paginationInfo" class="pagination-chip">Página 1/1</span>
-            <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
+            <button class="base-button secondary icon-button" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
           </div>
         </div>
 
@@ -825,10 +954,11 @@ export function renderContent(content) {
     page: 1,
     sort: { column: '', direction: 'asc' },
     expanded: new Set(),
-    exportando: false
+    exportando: false,
+    viewMode: 'colaborador'
   };
 
-  renderThead(state.sort);
+  renderThead(state.sort, state.viewMode);
 
   document.getElementById('patrimonioThead')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-sort-column]');
@@ -838,8 +968,21 @@ export function renderContent(content) {
       column,
       direction: state.sort.column === column && state.sort.direction === 'asc' ? 'desc' : 'asc'
     };
-    renderThead(state.sort);
+    renderThead(state.sort, state.viewMode);
     applyAndRender();
+  });
+
+  document.querySelectorAll('.pat-view-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.viewMode;
+      if (mode === state.viewMode) return;
+      state.viewMode = mode;
+      state.page = 1;
+      state.expanded.clear();
+      document.querySelectorAll('.pat-view-mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      renderThead(state.sort, state.viewMode);
+      applyAndRender();
+    });
   });
 
   const readFilters = () => ({
@@ -852,8 +995,8 @@ export function renderContent(content) {
 
   const applyAndRender = () => {
     state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
     updateSummary(state.filteredRows);
 
     const stats = computeStats(state.filteredRows);
@@ -928,7 +1071,7 @@ export function renderContent(content) {
     if (!row) return;
     const key = row.dataset.colaborador;
     if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
 
   const refreshSupervisoes = () => {
@@ -966,14 +1109,15 @@ export function renderContent(content) {
 
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
-    const maxPage = Math.max(1, Math.ceil(groupRowsByColaborador(state.filteredRows).length / TABLE_ROWS_PER_PAGE));
+    const totalItems = state.viewMode === 'lista' ? state.filteredRows.length : getGroups(state.filteredRows, state.viewMode).length;
+    const maxPage = Math.max(1, Math.ceil(totalItems / TABLE_ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
@@ -1066,26 +1210,35 @@ export function renderContent(content) {
     }
   }));
 
+  const applyRowsToUi = (rows) => {
+    state.allRows = rows;
+    const coordenacoes = [...new Set(rows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
+    refreshSupervisoes();
+    applyAndRender();
+  };
+
+  let cachedRows;
+  try {
+    const raw = localStorage.getItem(RELAT_CACHE_KEY);
+    if (raw) {
+      const { ts, rows } = JSON.parse(raw);
+      if (Date.now() - ts < RELAT_CACHE_TTL) cachedRows = rows;
+    }
+  } catch {}
+
   (async () => {
     try {
-      await sincronizarPatrimoniosDoAgente();
-      let cachedRows;
-      try {
-        const raw = localStorage.getItem(RELAT_CACHE_KEY);
-        if (raw) {
-          const { ts, rows } = JSON.parse(raw);
-          if (Date.now() - ts < RELAT_CACHE_TTL) cachedRows = rows;
-        }
-      } catch {}
-      state.allRows = cachedRows ?? await (async () => {
+      // Renderiza com o cache local ou com a base já persistida (sem esperar a
+      // sincronização com o agente, que faz várias idas ao banco e deixava a tela
+      // travada em "Carregando..." por vários segundos a cada abertura da página).
+      if (cachedRows) {
+        applyRowsToUi(cachedRows);
+      } else {
         const fresh = await loadSnapshotRows();
         try { localStorage.setItem(RELAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: fresh })); } catch {}
-        return fresh;
-      })();
-      const coordenacoes = [...new Set(state.allRows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-      fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
-      refreshSupervisoes();
-      applyAndRender();
+        applyRowsToUi(fresh);
+      }
     } catch (error) {
       console.error(error);
       renderTableRows([]);
@@ -1093,6 +1246,16 @@ export function renderContent(content) {
       setFeedback(error?.message || 'Erro ao carregar base de patrimônios.', true);
     }
   })();
+
+  // Sincronização com o agente roda em segundo plano; quando terminar, atualiza a
+  // tela silenciosamente com a base mais recente.
+  sincronizarPatrimoniosDoAgente()
+    .then(() => loadSnapshotRows())
+    .then((fresh) => {
+      try { localStorage.setItem(RELAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: fresh })); } catch {}
+      applyRowsToUi(fresh);
+    })
+    .catch((error) => console.error('[patrimonio-relatorios] sincronização em segundo plano falhou:', error));
 }
 
 initProtectedPage('Relatórios de Patrimônios', renderContent);
