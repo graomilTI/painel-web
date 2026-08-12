@@ -85,24 +85,34 @@ function injectVisualStyles() {
        ocupando a tela inteira". Filtros agora ficam em uma única faixa em
        grade e os botões têm largura proporcional ao texto. ===== */
     .patrimonio-relatorios-page .base-card { padding: 14px 16px; }
+    .patrimonio-relatorios-page .pat-filtros-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
     .patrimonio-relatorios-page .pat-filtros-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 1.4fr);
+      grid-template-columns: repeat(5, minmax(0, 150px));
       gap: 10px;
       align-items: end;
+      flex: 1 1 auto;
+      min-width: 0;
     }
-    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; }
+    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; min-width: 0; }
     .patrimonio-relatorios-page .pat-filtros-grid .base-label { margin-bottom: 5px; font-size: 12px; }
     .patrimonio-relatorios-page .pat-filtros-grid .base-select,
     .patrimonio-relatorios-page .pat-filtros-grid .base-input {
+      width: 100%;
       min-height: 40px;
       padding: 8px 11px;
       border-radius: 11px;
       font-size: 13.5px;
     }
     .patrimonio-relatorios-page .base-actions {
-      margin-top: 10px;
+      margin-top: 0;
       gap: 8px;
+      flex: 0 0 auto;
     }
     .patrimonio-relatorios-page .base-actions .base-button {
       width: auto;
@@ -125,9 +135,10 @@ function injectVisualStyles() {
     .patrimonio-relatorios-page .base-actions .icon-button svg { display: block; }
     .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
     @media (max-width: 1080px) {
-      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 1 100%; }
     }
     @media (max-width: 640px) {
+      .patrimonio-relatorios-page .pat-filtros-row { flex-direction: column; align-items: stretch; }
       .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: 1fr; }
       .patrimonio-relatorios-page .base-actions .base-button { flex: 1 1 auto; }
     }
@@ -181,6 +192,13 @@ function injectVisualStyles() {
       border-radius: 10px;
       margin: 0;
     }
+    .pat-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .pat-pagination-sep { opacity: .3; font-size: .85rem; }
     .patrimonio-legend {
       display: flex;
       gap: 10px;
@@ -809,7 +827,7 @@ function updatePagination(totalRows, page, viewMode = 'colaborador') {
   const prev = document.getElementById('btnPrevPage');
   const next = document.getElementById('btnNextPage');
 
-  if (info) info.textContent = `Página ${safePage}/${totalPages}`;
+  if (info) info.textContent = `${safePage}/${totalPages}`;
   if (prev) prev.disabled = safePage <= 1;
   if (next) next.disabled = safePage >= totalPages;
 
@@ -860,43 +878,45 @@ export function renderContent(content) {
 
       <div class="pat-view" id="patRelatoriosView">
       <article class="base-card">
-        <div class="pat-filtros-grid">
-          <div class="base-field">
-            <label class="base-label" for="fCoordenacao">Regional</label>
-            <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
+        <div class="pat-filtros-row">
+          <div class="pat-filtros-grid">
+            <div class="base-field">
+              <label class="base-label" for="fCoordenacao">Regional</label>
+              <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fSupervisao">Supervisão</label>
+              <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fTipo">Situação</label>
+              <select class="base-select" id="fTipo">
+                <option value="geral">Geral</option>
+                <option value="atrasados">Somente atrasados</option>
+                <option value="emdia">Somente em dia</option>
+                <option value="semdias">Somente sem dias</option>
+              </select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
+              <select class="base-select" id="fIgnorados">
+                <option value="mostrar">Mostrar</option>
+                <option value="excluir">Excluir</option>
+              </select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fBusca">Busca</label>
+              <input class="base-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" />
+            </div>
           </div>
-          <div class="base-field">
-            <label class="base-label" for="fSupervisao">Supervisão</label>
-            <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fTipo">Situação</label>
-            <select class="base-select" id="fTipo">
-              <option value="geral">Geral</option>
-              <option value="atrasados">Somente atrasados</option>
-              <option value="emdia">Somente em dia</option>
-              <option value="semdias">Somente sem dias</option>
-            </select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
-            <select class="base-select" id="fIgnorados">
-              <option value="mostrar">Mostrar</option>
-              <option value="excluir">Excluir</option>
-            </select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fBusca">Busca</label>
-            <input class="base-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" />
-          </div>
-        </div>
 
-        <div class="base-actions">
-          <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
-          <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
-          <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
-          <button class="base-button secondary icon-button" id="btnZip" title="Exportar ZIP de imagens" aria-label="Exportar ZIP de imagens">${ICONS.photo}</button>
-          <button class="base-button secondary icon-button" id="btnZipRegional" title="Exportar ZIP por regional" aria-label="Exportar ZIP por regional">${ICONS.doc}</button>
+          <div class="base-actions">
+            <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
+            <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
+            <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
+            <button class="base-button secondary icon-button" id="btnZip" title="Exportar ZIP de imagens" aria-label="Exportar ZIP de imagens">${ICONS.photo}</button>
+            <button class="base-button secondary icon-button" id="btnZipRegional" title="Exportar ZIP por regional" aria-label="Exportar ZIP por regional">${ICONS.doc}</button>
+          </div>
         </div>
 
         <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>
@@ -909,17 +929,20 @@ export function renderContent(content) {
             <button class="pat-view-mode-btn" type="button" data-view-mode="regional">Por regional</button>
             <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
           </div>
-          <div class="pat-pagination">
-            <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
-            <span id="paginationInfo" class="pagination-chip">Página 1/1</span>
-            <button class="base-button secondary icon-button" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
+          <div class="pat-toolbar-right">
+            <div class="patrimonio-legend">
+              <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
+              <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
+              <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
+            </div>
+            <div class="pat-pagination">
+              <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
+              <span class="pat-pagination-sep">|</span>
+              <button class="base-button secondary icon-button" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
+              <span class="pat-pagination-sep">|</span>
+              <span id="paginationInfo" class="pagination-chip">1/1</span>
+            </div>
           </div>
-        </div>
-
-        <div class="patrimonio-legend" style="margin-bottom:12px;">
-          <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
-          <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
-          <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
         </div>
 
         <div class="table-shell">
@@ -998,9 +1021,6 @@ export function renderContent(content) {
     state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
     renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
     updateSummary(state.filteredRows);
-
-    const stats = computeStats(state.filteredRows);
-    setFeedback(`${state.filteredRows.length} registro(s) exibido(s) na tela. | Com dias informados: ${stats.emDia + stats.atrasados} | Sem dias informados: ${stats.semDias}`);
   };
 
   async function loadDesligados() {
