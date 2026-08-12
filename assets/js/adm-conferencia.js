@@ -48,6 +48,7 @@ const state = {
     regional: '',
     colaborador: '',
     status: '',
+    grm: '',
   },
 };
 
@@ -314,10 +315,11 @@ function getUniqueRegionais() {
   return [...new Set(values)].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
 }
 
-function applyLocalFilters(rows, kind) {
+function applyLocalFilters(rows, kind, { skipGrm = false } = {}) {
   const regional = normalizeText(state.filters.regional);
   const colaborador = normalizeText(state.filters.colaborador);
   const status = normalizeText(state.filters.status).replaceAll(' ', '_');
+  const grm = state.filters.grm;
 
   return rows.filter((row) => {
     const rowRegional = normalizeText(row.supervisao || row.regional || row.coordenacao);
@@ -327,6 +329,7 @@ function applyLocalFilters(rows, kind) {
     if (regional && rowRegional !== regional) return false;
     if (colaborador && !rowColaborador.includes(colaborador)) return false;
     if (status && (kind === 'despesas' || kind === 'uber') && rowStatus !== status) return false;
+    if (!skipGrm && kind === 'despesas' && grm && grmVisualForRow(row).kind !== grm) return false;
     return true;
   });
 }
@@ -589,20 +592,23 @@ function grmOverviewHtml(rows) {
     counts[kind] = (counts[kind] || 0) + 1;
   });
 
+  const active = state.filters.grm;
+
   return `
     <div class="conf-grm-overview" aria-label="Resumo da sincronização com o GRM">
       <div class="conf-grm-overview-title">
         <strong>Retorno do GRM</strong>
-        <span>As cores abaixo são as mesmas usadas nas linhas.</span>
+        <span>Clique numa categoria pra filtrar a lista abaixo.</span>
       </div>
       <div class="conf-grm-overview-items">
         ${order.map((kind) => `
-          <span class="conf-grm-overview-item conf-grm-overview-${kind}">
+          <button type="button" class="conf-grm-overview-item conf-grm-overview-${kind}${active === kind ? ' active' : ''}" data-grm-filter="${escapeHtml(kind)}" title="${active === kind ? 'Clique pra remover o filtro' : `Filtrar por: ${escapeHtml(labels[kind])}`}">
             <i aria-hidden="true"></i>
             ${escapeHtml(labels[kind])}
             <strong>${counts[kind] || 0}</strong>
-          </span>
+          </button>
         `).join('')}
+        ${active ? '<button type="button" class="conf-grm-overview-clear" data-grm-filter-clear>Limpar filtro ✕</button>' : ''}
       </div>
     </div>
   `;
@@ -656,18 +662,22 @@ function despesasRowHtml(row, mode = 'fila') {
 }
 
 function renderDespesasTable() {
-  const rows = sortRows(applyLocalFilters(state.despesas, 'despesas'), 'despesas');
+  const overviewRows = sortRows(applyLocalFilters(state.despesas, 'despesas', { skipGrm: true }), 'despesas');
   const target = document.getElementById('conf-table');
-  const filaRows = rows.filter((row) => getStatus(row) !== 'CONFERIDO');
-  const conferidosRows = rows.filter((row) => getStatus(row) === 'CONFERIDO');
 
-  if (!rows.length) {
+  if (!overviewRows.length) {
     target.innerHTML = `<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa encontrada para os filtros selecionados.</td></tr></tbody></table></div>`;
     return;
   }
 
+  const grmActive = state.filters.grm;
+  const rows = grmActive ? overviewRows.filter((row) => grmVisualForRow(row).kind === grmActive) : overviewRows;
+  const filaRows = rows.filter((row) => getStatus(row) !== 'CONFERIDO');
+  const conferidosRows = rows.filter((row) => getStatus(row) === 'CONFERIDO');
+
   target.innerHTML = `
-    ${grmOverviewHtml(rows)}
+    ${grmOverviewHtml(overviewRows)}
+    ${grmActive && !rows.length ? '<div class="conf-table-wrap"><table class="conf-table"><tbody><tr><td class="conf-empty">Nenhuma despesa nesta categoria do GRM.</td></tr></tbody></table></div>' : `
     <div class="conf-subsection-head">
       <div>
         <h4>Itens para conferir</h4>
@@ -705,6 +715,7 @@ function renderDespesasTable() {
         </table>
       </div>
     </div>
+    `}
   `;
 }
 
@@ -1513,7 +1524,7 @@ function bindEvents() {
   });
 
   document.getElementById('conf-clear')?.addEventListener('click', () => {
-    state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '' };
+    state.filters = { inicio: todayISO(), fim: todayISO(), regional: '', colaborador: '', status: '', grm: '' };
     document.getElementById('conf-inicio').value = state.filters.inicio;
     document.getElementById('conf-fim').value = state.filters.fim;
     document.getElementById('conf-colaborador').value = '';
@@ -1530,6 +1541,21 @@ function bindEvents() {
   });
 
   document.getElementById('conf-table')?.addEventListener('click', (event) => {
+    const grmClear = event.target.closest('[data-grm-filter-clear]');
+    if (grmClear) {
+      state.filters.grm = '';
+      renderDespesasTable();
+      return;
+    }
+
+    const grmBtn = event.target.closest('[data-grm-filter]');
+    if (grmBtn) {
+      const kind = grmBtn.dataset.grmFilter;
+      state.filters.grm = state.filters.grm === kind ? '' : kind;
+      renderDespesasTable();
+      return;
+    }
+
     const sortBtn = event.target.closest('[data-sort-column]');
     if (sortBtn) {
       const column = sortBtn.dataset.sortColumn;
