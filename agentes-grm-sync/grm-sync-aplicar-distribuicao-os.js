@@ -15,6 +15,7 @@ const SO_ORDER_DISTRIBUTION_URL = 'https://www.grmserver.com.br/operation/sOrder
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
 const limitArg = process.argv.find((a) => a.startsWith('--limit='));
 const LIMIT = Number(process.env.GRM_DISTRIBUICAO_OS_LIMIT || (limitArg ? limitArg.split('=')[1] : 0)) || 0;
+const TIMEOUT_MIN = Number(process.env.GRM_DISTRIBUICAO_OS_TIMEOUT_MIN || 120) || 120;
 
 function log(level, msg) {
   console.log(`[${level}] ${new Date().toISOString()} - ${msg}`);
@@ -127,7 +128,6 @@ async function selecionarSupervisao(page, coordenacao) {
   await page.waitForFunction(() => {
     return Array.from(document.querySelectorAll('.v-list-item-title')).some((el) => el.offsetParent !== null);
   }, { timeout: 6000 }).catch(() => {});
-
   const achou = await page.evaluate((alvo) => {
     const items = Array.from(document.querySelectorAll('.v-list-item-title')).filter((el) => el.offsetParent !== null);
     const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
@@ -423,6 +423,7 @@ async function main() {
   let falhas = 0;
   try {
     log('INFO', `=== Aplicar Distribuição de OS no Graint${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
+    log('INFO', `Watchdog global configurado para ${TIMEOUT_MIN} minuto(s).`);
     let grupos = await carregarGruposPendentes();
     log('INFO', `${grupos.length} supervisão(ões)/data pendente(s) com colaborador indicado — sem filtro de habilitação por supervisão.`);
 
@@ -496,4 +497,7 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(() => process.exit(1));
-setTimeout(() => process.exit(1), 15 * 60 * 1000);
+setTimeout(() => {
+  log('ERROR', `Watchdog global atingiu ${TIMEOUT_MIN} minuto(s); encerrando o agente para não bloquear a fila indefinidamente.`);
+  process.exit(1);
+}, TIMEOUT_MIN * 60 * 1000);
