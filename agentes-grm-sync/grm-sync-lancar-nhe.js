@@ -1379,6 +1379,41 @@ async function main() {
       pendentes = pendentes.filter(function (item) {
         return item.os === osSolicitada && (!args.data || item.data === ymd(args.data));
       });
+
+      // Um --dry-run valida o formulário mas grava DRY_RUN_OK, que de propósito
+      // não entra na fila histórica automática. Quando o operador pede
+      // explicitamente a MESMA O.S.+data depois do teste, reconstrói somente
+      // esse candidato a partir da auditoria. As travas reais abaixo continuam
+      // obrigatórias: NHE/movimento existente, situação da O.S., serviço, login
+      // e geofence são recalculados antes de qualquer Salvar.
+      if (!pendentes.length && args.data) {
+        var dataSolicitada = ymd(args.data);
+        var dryResult = await supabase
+          .from(TABLE_RESULTADOS)
+          .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
+          .eq('data_referencia', dataSolicitada)
+          .eq('numero_os', osSolicitada)
+          .eq('status', 'DRY_RUN_OK')
+          .limit(1)
+          .maybeSingle();
+        if (dryResult.error) throw dryResult.error;
+        if (dryResult.data) {
+          var dryRow = dryResult.data;
+          pendentes = [{
+            data: dryRow.data_referencia,
+            data_br: brDate(dryRow.data_referencia),
+            os: normOs(dryRow.numero_os),
+            cliente: dryRow.cliente,
+            supervisao: dryRow.supervisao,
+            funcionario: dryRow.raw && dryRow.raw.colaborador_original ? dryRow.raw.colaborador_original : dryRow.funcionario,
+            osCoord: undefined,
+            reprocessamento: true,
+            statusAnterior: 'DRY_RUN_OK'
+          }];
+          log('INFO', 'O.S. ' + osSolicitada + ' em ' + dataSolicitada + ': reaberta manualmente após DRY_RUN_OK; travas de segurança serão revalidadas.');
+        }
+      }
+
       if (pendentes.length && args.funcionario) pendentes[0].funcionario = args.funcionario;
       if (!pendentes.length) {
         log('WARN', 'O.S. ' + osSolicitada + (args.data ? ' em ' + args.data : '') + ' não é elegível: pode existir carga/NHE no mesmo ponto, serviço fora do escopo ou ausência de informativo. --forcar não ignora esta regra.');
