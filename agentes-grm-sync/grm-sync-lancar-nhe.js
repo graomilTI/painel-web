@@ -1570,8 +1570,7 @@ async function main() {
             await lancarNheParaCandidato(page, candidato, dryRun, debug);
 
             if (dryRun) {
-              stats.sucesso++;
-              await salvarResultado(candidato, { status: 'DRY_RUN_OK', lancado_em: new Date().toISOString() });
+              await salvarResultado(candidato, { status: 'DRY_RUN_OK', lancado_em: null, erro: null });
               log('SUCCESS', 'O.S. ' + candidato.os + ': NHE validado (dry-run).');
               continue;
             }
