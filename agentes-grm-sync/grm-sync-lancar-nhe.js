@@ -1117,7 +1117,9 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   // o campo abre sem nenhuma opção).
   await wait(1200);
   await realClickCampoNhe(page, 'Supervisão');
-  var supervisaoAlvo = (candidato.loginMatch && candidato.loginMatch.supervisao) || '';
+  var supervisaoAlvo = candidato.viaGestor
+    ? (candidato.gestorSupervisao || '')
+    : ((candidato.loginMatch && candidato.loginMatch.supervisao) || '');
   var supEscolhida = supervisaoAlvo ? await selecionarOpcaoAberta(page, supervisaoAlvo, 'substring') : null;
   // Sem opção batendo com a supervisão do colaborador (ou só existe 1 opção
   // mesmo, caso mais comum quando a Coordenação já é bem específica): cai
