@@ -159,6 +159,16 @@ function configKeyDeslocamento(value: unknown): string | null {
   return null;
 }
 
+// Trava de segurança: independentemente do que estiver marcado na tabela
+// grm_despesas_tipos_config, só estas 3 chaves podem sair com AUTO=true rumo
+// ao GRM. Uma edição manual da tabela (ex.: ativar AUTO em Pernoite) não deve
+// bastar para liberar lançamento/aprovação automática de outra despesa.
+const CHAVES_AUTO_PERMITIDAS = new Set([
+  'ALIMENTACAO_ALMOCO',
+  'VINCULO_SALARIO_INTERMITENTE',
+  'VINCULO_SERVICOS_TERCEIRIZADOS',
+]);
+
 function ruleFromConfig(config: Record<string, unknown>, overrideValue?: number | null) {
   const configuredValue = overrideValue != null && Number(overrideValue) > 0
     ? Number(overrideValue)
@@ -167,7 +177,7 @@ function ruleFromConfig(config: Record<string, unknown>, overrideValue?: number 
     tipo_despesa: config.tipo_grm,
     exibir: config.exibir,
     valor_maximo: configuredValue,
-    auto: config.auto,
+    auto: CHAVES_AUTO_PERMITIDAS.has(clean(config.chave)) && config.auto === true,
     carga_nhe: config.carga_nhe,
     max_mov_dia: config.max_mov_dia,
   });
@@ -277,10 +287,20 @@ function buildRulesForStaff(args: {
     );
     if (key === 'EXTRA_OUTROS') continue;
     const extraValue = Number(extra.valor ?? 0);
-    // Lavanderia também deve abrir mesmo quando o gestor ainda não informou
-    // valor. As demais categorias continuam exigindo limite positivo.
-    if (extraValue > 0 || key === 'EXTRA_LAVANDERIA') {
-      requireConfig(key, true, extraValue, key === 'EXTRA_LAVANDERIA');
+    // Lavanderia, Combustível, Recarga e Lavagem de Veículo também devem
+    // abrir mesmo quando o gestor ainda não informou valor (ex.: "Outros"
+    // com descrição "Combustível" registrado a R$ 0,00 enquanto o valor
+    // real não é apurado, ou RECARGA/LAVAGEM DE VEÍCULO escolhidos no
+    // dropdown sem valor preenchido — confirmado em produção: 3/5 RECARGA e
+    // 3/4 LAVAGEM DE VEÍCULO estavam a R$ 0,00) — sem essa exceção a
+    // despesa some silenciosamente: não é lançada automaticamente nem
+    // aparece como pendência manual na Conferência, que só sinaliza itens
+    // com tipo_despesa "OUTROS". Abrir a 0 deixa a categoria disponível no
+    // Caixa Operacional pra ser complementada depois, igual já acontece com
+    // Reembolso KM/Uber.
+    const abreComZero = ['EXTRA_LAVANDERIA', 'EXTRA_COMBUSTIVEL', 'EXTRA_RECARGA', 'EXTRA_LAVAGEM_VEICULO'].includes(key);
+    if (extraValue > 0 || abreComZero) {
+      requireConfig(key, true, extraValue, abreComZero);
     }
   }
 
