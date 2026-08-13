@@ -146,8 +146,14 @@ function configKeyExtra(value: unknown, description?: unknown): string {
   if (key === 'RECARGA') return 'EXTRA_RECARGA';
   if (key === 'LAVANDERIA') return 'EXTRA_LAVANDERIA';
   if (key === 'LAVAGEM DE VEICULO') return 'EXTRA_LAVAGEM_VEICULO';
-  if (key === 'OUTROS' && norm(description).includes('COMBUSTIVEL')) {
-    return 'EXTRA_COMBUSTIVEL';
+  if (key === 'OUTROS') {
+    const normDescription = norm(description);
+    if (normDescription.includes('COMBUSTIVEL')) return 'EXTRA_COMBUSTIVEL';
+    // "Bônus e Premiações" é o nome exato da categoria no GRM (confirmado
+    // ao vivo no dropdown "Tipo da Despesa" de Caixa Operacional).
+    if (normDescription.includes('BONUS') || normDescription.includes('PREMIACAO')) {
+      return 'EXTRA_BONUS';
+    }
   }
   return 'EXTRA_OUTROS';
 }
@@ -277,18 +283,18 @@ function buildRulesForStaff(args: {
     );
     if (key === 'EXTRA_OUTROS') continue;
     const extraValue = Number(extra.valor ?? 0);
-    // Lavanderia, Combustível, Recarga e Lavagem de Veículo também devem
-    // abrir mesmo quando o gestor ainda não informou valor (ex.: "Outros"
-    // com descrição "Combustível" registrado a R$ 0,00 enquanto o valor
-    // real não é apurado, ou RECARGA/LAVAGEM DE VEÍCULO escolhidos no
-    // dropdown sem valor preenchido — confirmado em produção: 3/5 RECARGA e
-    // 3/4 LAVAGEM DE VEÍCULO estavam a R$ 0,00) — sem essa exceção a
-    // despesa some silenciosamente: não é lançada automaticamente nem
-    // aparece como pendência manual na Conferência, que só sinaliza itens
-    // com tipo_despesa "OUTROS". Abrir a 0 deixa a categoria disponível no
-    // Caixa Operacional pra ser complementada depois, igual já acontece com
-    // Reembolso KM/Uber.
-    const abreComZero = ['EXTRA_LAVANDERIA', 'EXTRA_COMBUSTIVEL', 'EXTRA_RECARGA', 'EXTRA_LAVAGEM_VEICULO'].includes(key);
+    // Lavanderia, Combustível, Recarga, Lavagem de Veículo e Bônus/Premiações
+    // também devem abrir mesmo quando o gestor ainda não informou valor
+    // (ex.: "Outros" com descrição "Bônus 60,00 ..." registrado a R$ 0,00
+    // porque o valor citado no texto nunca foi replicado pro campo Valor, ou
+    // RECARGA/LAVAGEM DE VEÍCULO escolhidos no dropdown sem valor preenchido
+    // — confirmado em produção: 3/5 RECARGA e 3/4 LAVAGEM DE VEÍCULO estavam
+    // a R$ 0,00) — sem essa exceção a despesa some silenciosamente: não é
+    // lançada automaticamente nem aparece como pendência manual na
+    // Conferência, que só sinaliza itens com tipo_despesa "OUTROS". Abrir a
+    // 0 deixa a categoria disponível no Caixa Operacional pra ser
+    // complementada depois, igual já acontece com Reembolso KM/Uber.
+    const abreComZero = ['EXTRA_LAVANDERIA', 'EXTRA_COMBUSTIVEL', 'EXTRA_RECARGA', 'EXTRA_LAVAGEM_VEICULO', 'EXTRA_BONUS'].includes(key);
     if (extraValue > 0 || abreComZero) {
       requireConfig(key, true, extraValue, abreComZero);
     }
