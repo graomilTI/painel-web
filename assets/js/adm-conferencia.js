@@ -1057,6 +1057,18 @@ async function loadDespesas() {
   }
 
   const programacaoMap = new Map((programacoes || []).map((p) => [p.id, p]));
+  const datasReferencia = (programacoes || [])
+    .map((p) => String(p.data_referencia || '').slice(0, 10))
+    .filter(Boolean);
+  // A RPC de status do GRM devolve o histórico inteiro do colaborador quando
+  // não filtrada por data; com centenas de colaboradores isso facilmente
+  // passa das 1000 linhas (limite padrão do PostgREST) e o retorno vem
+  // truncado — colaboradores confirmados hoje podem sumir do resultado só
+  // por causa do corte, mesmo já estando com status_aplicacao=APLICADO no
+  // banco. Restringir à janela de datas realmente carregada mantém o
+  // resultado pequeno e correto.
+  const grmDataMin = datasReferencia.length ? datasReferencia.reduce((a, b) => (a < b ? a : b)) : null;
+  const grmDataMax = datasReferencia.length ? datasReferencia.reduce((a, b) => (a > b ? a : b)) : null;
 
   const [disp, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
     selectByProgramacoes('programacao_colaboradores', '*', programacaoIds),
@@ -1145,6 +1157,8 @@ async function loadDespesas() {
   if (colaboradorIds.length) {
     const { data: grmStatus, error: grmError } = await supabase.rpc('grm_despesas_status_por_colaborador', {
       p_colaborador_ids: colaboradorIds,
+      p_data_min: grmDataMin,
+      p_data_max: grmDataMax,
     });
     if (grmError) {
       console.warn('[Conferência] status de sincronização GRM indisponível:', grmError.message);
