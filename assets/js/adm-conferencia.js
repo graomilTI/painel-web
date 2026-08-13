@@ -191,8 +191,9 @@ function deslocamentoResumo(row) {
 // Espelha a regra do agente automático (configKeyExtra em
 // supabase/functions/grm-liberacao-despesas-publicar/index.ts): despesa tipo
 // "OUTROS" só ganha mapeamento pro GRM quando a descrição/observação cita
-// "combustível" explicitamente. Fora isso, o agente nunca lança essa despesa
-// no GRM (skip proposital, não é bug) -- precisa ser feita manualmente.
+// "combustível" ou "bônus"/"premiação" explicitamente. Fora isso, o agente
+// nunca lança essa despesa no GRM (skip proposital, não é bug) -- precisa
+// ser feita manualmente.
 function isExtraOutrosNaoMapeado(item) {
   const tipo = normalizeText(item?.tipo_despesa || '');
   if (!['OUTRO', 'OUTROS'].includes(tipo)) return false;
@@ -200,7 +201,7 @@ function isExtraOutrosNaoMapeado(item) {
   // O botão Adicionar cria primeiro um rascunho vazio. Se o gestor não o
   // preencher, ele não representa uma despesa e não deve virar pendência.
   if (!descricao && asNumber(item?.valor) <= 0) return false;
-  return !descricao.includes('COMBUSTIVEL');
+  return !descricao.includes('COMBUSTIVEL') && !descricao.includes('BONUS') && !descricao.includes('PREMIACAO');
 }
 
 function getExtrasOutrosNaoMapeados(row) {
