@@ -13,6 +13,16 @@ const FETCH_BATCH_SIZE = 1000;
 const RELAT_CACHE_KEY = 'grao1000:patrimonio-relat:v1';
 const RELAT_CACHE_TTL = 30 * 60 * 1000;
 
+const ICONS = {
+  check: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+  x: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+  sheet: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>',
+  photo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
+  doc: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
+  chevronLeft: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+  chevronRight: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>',
+};
+
 function escapeHtml(v) {
   return String(v ?? '')
     .replace(/&/g, '&amp;')
@@ -74,28 +84,35 @@ function injectVisualStyles() {
     /* ===== Revisão 28/07/2026 — apontamento da cliente: "botões e filtros
        ocupando a tela inteira". Filtros agora ficam em uma única faixa em
        grade e os botões têm largura proporcional ao texto. ===== */
-    .patrimonio-relatorios-page .section-heading { margin-bottom: 12px; }
-    .patrimonio-relatorios-page .section-heading h2 { font-size: 1.28rem; margin: 0 0 2px; }
-    .patrimonio-relatorios-page .section-heading .section-subtitle { font-size: .85rem; margin: 0; }
     .patrimonio-relatorios-page .base-card { padding: 14px 16px; }
+    .patrimonio-relatorios-page .pat-filtros-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
     .patrimonio-relatorios-page .pat-filtros-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 1.4fr);
+      grid-template-columns: repeat(5, minmax(0, 150px));
       gap: 10px;
       align-items: end;
+      flex: 1 1 auto;
+      min-width: 0;
     }
-    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; }
+    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; min-width: 0; }
     .patrimonio-relatorios-page .pat-filtros-grid .base-label { margin-bottom: 5px; font-size: 12px; }
     .patrimonio-relatorios-page .pat-filtros-grid .base-select,
     .patrimonio-relatorios-page .pat-filtros-grid .base-input {
+      width: 100%;
       min-height: 40px;
       padding: 8px 11px;
       border-radius: 11px;
       font-size: 13.5px;
     }
     .patrimonio-relatorios-page .base-actions {
-      margin-top: 10px;
+      margin-top: 0;
       gap: 8px;
+      flex: 0 0 auto;
     }
     .patrimonio-relatorios-page .base-actions .base-button {
       width: auto;
@@ -105,11 +122,23 @@ function injectVisualStyles() {
       border-radius: 11px;
       font-size: 13.5px;
     }
+    .patrimonio-relatorios-page .base-actions .icon-button {
+      width: 38px;
+      height: 38px;
+      min-height: 38px;
+      padding: 0;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .patrimonio-relatorios-page .base-actions .icon-button svg { display: block; }
     .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
     @media (max-width: 1080px) {
-      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 1 100%; }
     }
     @media (max-width: 640px) {
+      .patrimonio-relatorios-page .pat-filtros-row { flex-direction: column; align-items: stretch; }
       .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: 1fr; }
       .patrimonio-relatorios-page .base-actions .base-button { flex: 1 1 auto; }
     }
@@ -129,6 +158,47 @@ function injectVisualStyles() {
     }
     .patrimonio-table-title strong { font-size: 1.05rem; }
     .patrimonio-table-subtitle { opacity: .72; font-size: .92rem; }
+    .pat-view-modes {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.34);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+    }
+    .pat-view-mode-btn {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: rgba(226, 232, 240, 0.68);
+      font: inherit;
+      font-weight: 600;
+      font-size: 12.5px;
+      cursor: pointer;
+      padding: 7px 12px;
+      border-radius: 9px;
+      transition: color .15s ease, background .15s ease;
+    }
+    .pat-view-mode-btn:hover { color: #e2e8f0; }
+    .pat-view-mode-btn.active { background: rgba(45, 212, 191, 0.18); color: #ecfdf5; }
+    .pat-pagination .icon-button {
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      margin: 0;
+    }
+    .pat-toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .pat-pagination-sep { opacity: .3; font-size: .85rem; }
     .patrimonio-legend {
       display: flex;
       gap: 10px;
@@ -249,7 +319,35 @@ function injectVisualStyles() {
     .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; }
     .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(52,211,153,.12); color:#bbf7d0; font-weight:800; }
     .pat-view[hidden] { display:none !important; }
-    .patrimonio-relatorios-page .inline-nav button { width:auto; min-height:42px; margin:0; padding:9px 16px; border-radius:12px; }
+    .patrimonio-relatorios-page .pat-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .patrimonio-relatorios-page .pat-tab {
+      appearance: none;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-bottom-color: transparent;
+      background: rgba(15, 23, 42, 0.34);
+      color: rgba(226, 232, 240, 0.72);
+      font: inherit;
+      font-weight: 600;
+      font-size: 13.5px;
+      text-decoration: none;
+      cursor: pointer;
+      padding: 10px 20px;
+      border-radius: 12px 12px 0 0;
+      box-shadow: inset 0 -3px 0 transparent;
+      transition: color .15s ease, background .15s ease;
+    }
+    .patrimonio-relatorios-page .pat-tab:hover { color: #e2e8f0; }
+    .patrimonio-relatorios-page .pat-tab.active {
+      background: rgba(2, 12, 10, 0.55);
+      color: #ecfdf5;
+      border-color: rgba(45, 212, 191, 0.3);
+      border-bottom-color: transparent;
+      box-shadow: inset 0 -3px 0 #2dd4a0;
+    }
     .pat-desligados-empty { padding:34px; text-align:center; color:rgba(226,232,240,.68); }
     .pat-alert { border-color:rgba(251,146,60,.28); background:rgba(124,45,18,.12); }
     @media (max-width: 900px) {
@@ -261,9 +359,31 @@ function injectVisualStyles() {
   document.head.appendChild(style);
 }
 
-function renderThead(sortState) {
+function renderThead(sortState, viewMode = 'colaborador') {
   const thead = document.getElementById('patrimonioThead');
   if (!thead) return;
+  if (viewMode === 'regional') {
+    thead.innerHTML = `<tr>
+      <th colspan="3">Regional</th>
+      <th>Materiais</th>
+      <th>Colaboradores</th>
+      <th></th>
+      <th>Maior atraso</th>
+    </tr>`;
+    return;
+  }
+  if (viewMode === 'lista') {
+    thead.innerHTML = `<tr>
+      ${sortableTh(sortState, 'patrimonio', 'Patrimônio')}
+      ${sortableTh(sortState, 'funcionario', 'Colaborador')}
+      ${sortableTh(sortState, 'identificacao', 'Identificação')}
+      ${sortableTh(sortState, 'supervisao', 'Supervisão')}
+      ${sortableTh(sortState, 'regional', 'Regional')}
+      ${sortableTh(sortState, 'ultima_leitura', 'Última leitura')}
+      ${sortableTh(sortState, 'dias', 'Dias')}
+    </tr>`;
+    return;
+  }
   thead.innerHTML = `<tr>
     <th colspan="3">Colaborador</th>
     <th>Materiais</th>
@@ -488,7 +608,7 @@ async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, file
     host.appendChild(page);
     // eslint-disable-next-line no-await-in-loop
     results.push(await domToPng(page, `${filePrefix}-pagina-${String(i + 1).padStart(2, '0')}`));
-    host.removeChild(page);
+    page.remove();
   }
 
   return results;
@@ -586,7 +706,80 @@ function groupRowsByColaborador(rows) {
   return [...groups.values()];
 }
 
-function renderTableRows(rows, page = 1, expanded = new Set()) {
+function groupRowsByRegionalGrouped(rows) {
+  const groups = new Map();
+  rows.forEach((row) => {
+    const regional = getRegional(row);
+    const key = normalizeKey(regional);
+    if (!groups.has(key)) groups.set(key, { funcionario: regional, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return [...groups.values()].sort((a, b) => a.funcionario.localeCompare(b.funcionario, 'pt-BR'));
+}
+
+function getGroups(rows, viewMode) {
+  if (viewMode === 'regional') return groupRowsByRegionalGrouped(rows);
+  return groupRowsByColaborador(rows);
+}
+
+function renderGroupedRows(rows, page, expanded, viewMode) {
+  const tbody = document.getElementById('patrimonioRows');
+  const groups = getGroups(rows, viewMode);
+  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
+  const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
+  const isRegional = viewMode === 'regional';
+
+  tbody.innerHTML = pageGroups.map((group) => {
+    const key = normalizeKey(group.funcionario);
+    const open = expanded.has(key);
+    const first = group.rows[0];
+    const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
+    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
+    const detailHeaderExtra = isRegional ? '<th>Colaborador</th>' : '<th>Material</th>';
+    const details = group.rows.map((row) => `<tr>
+      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+      <td>${escapeHtml(isRegional ? (row.funcionario || '-') : (row.identificacao || '-'))}</td>
+      <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
+      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
+      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
+    </tr>`).join('');
+    const colInfoCell = isRegional
+      ? `<span class="pat-count-badge">${new Set(group.rows.map((row) => normalizeKey(row.funcionario))).size} colab.</span>`
+      : `<span class="pat-secondary">${escapeHtml(first.supervisao || '-')}</span>`;
+    const regionalCell = isRegional
+      ? ''
+      : `<td><span class="pat-regional-badge">${escapeHtml(getRegional(first))}</span></td>`;
+    return `<tr class="pat-group-row" data-colaborador="${escapeHtml(key)}">
+      <td colspan="3"><span class="pat-group-name"><span class="pat-group-arrow">${open ? '▾' : '▸'}</span><span class="pat-primary">${escapeHtml(group.funcionario)}</span></span></td>
+      <td><span class="pat-count-badge">${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</span></td>
+      <td>${colInfoCell}</td>
+      ${regionalCell || '<td></td>'}
+      <td><span class="pat-tag ${tagClass}">${maxDias >= 0 ? maxDias : '-'}</span></td>
+    </tr>${open ? `<tr class="pat-group-detail"><td colspan="7"><table><thead><tr><th>Patrimônio</th>${detailHeaderExtra}<th>Situação</th><th>Última leitura</th><th>Dias</th></tr></thead><tbody>${details}</tbody></table></td></tr>` : ''}`;
+  }).join('');
+}
+
+function renderFlatRows(rows, page) {
+  const tbody = document.getElementById('patrimonioRows');
+  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
+  const pageRows = rows.slice(start, start + TABLE_ROWS_PER_PAGE);
+
+  tbody.innerHTML = pageRows.map((row) => {
+    const diasInfo = getDiasInfo(row);
+    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > 10 ? 'danger' : 'ok';
+    return `<tr>
+      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
+      <td>${escapeHtml(row.funcionario || '-')}</td>
+      <td>${escapeHtml(row.identificacao || '-')}</td>
+      <td>${escapeHtml(row.supervisao || '-')}</td>
+      <td><span class="pat-regional-badge">${escapeHtml(getRegional(row))}</span></td>
+      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
+      <td><span class="pat-tag ${tagClass}">${escapeHtml(diasInfo.hasValue ? diasInfo.value : '-')}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTableRows(rows, page = 1, expanded = new Set(), viewMode = 'colaborador') {
   const tbody = document.getElementById('patrimonioRows');
   if (!tbody) return;
 
@@ -595,31 +788,11 @@ function renderTableRows(rows, page = 1, expanded = new Set()) {
     return;
   }
 
-  const groups = groupRowsByColaborador(rows);
-  const start = (page - 1) * TABLE_ROWS_PER_PAGE;
-  const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
-
-  tbody.innerHTML = pageGroups.map((group) => {
-    const key = normalizeKey(group.funcionario);
-    const open = expanded.has(key);
-    const first = group.rows[0];
-    const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
-    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
-    const details = group.rows.map((row) => `<tr>
-      <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
-      <td>${escapeHtml(row.identificacao || '-')}</td>
-      <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
-      <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
-    </tr>`).join('');
-    return `<tr class="pat-group-row" data-colaborador="${escapeHtml(key)}">
-      <td colspan="3"><span class="pat-group-name"><span class="pat-group-arrow">${open ? '▾' : '▸'}</span><span class="pat-primary">${escapeHtml(group.funcionario)}</span></span></td>
-      <td><span class="pat-count-badge">${group.rows.length} ${group.rows.length === 1 ? 'item' : 'itens'}</span></td>
-      <td><span class="pat-secondary">${escapeHtml(first.supervisao || '-')}</span></td>
-      <td><span class="pat-regional-badge">${escapeHtml(getRegional(first))}</span></td>
-      <td><span class="pat-tag ${tagClass}">${maxDias >= 0 ? maxDias : '-'}</span></td>
-    </tr>${open ? `<tr class="pat-group-detail"><td colspan="7"><table><thead><tr><th>Patrimônio</th><th>Material</th><th>Situação</th><th>Última leitura</th><th>Dias</th></tr></thead><tbody>${details}</tbody></table></td></tr>` : ''}`;
-  }).join('');
+  if (viewMode === 'lista') {
+    renderFlatRows(rows, page);
+    return;
+  }
+  renderGroupedRows(rows, page, expanded, viewMode);
 }
 
 function fillSelectOptions(selectId, values, placeholder) {
@@ -645,18 +818,16 @@ function updateSummary(rows) {
   set('sumPercentual', stats.percentual);
 }
 
-function updatePagination(totalRows, page) {
-  const totalGroups = groupRowsByColaborador(totalRows).length;
-  const totalPages = Math.max(1, Math.ceil(totalGroups / TABLE_ROWS_PER_PAGE));
+function updatePagination(totalRows, page, viewMode = 'colaborador') {
+  const totalItems = viewMode === 'lista' ? totalRows.length : getGroups(totalRows, viewMode).length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / TABLE_ROWS_PER_PAGE));
   const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = totalGroups ? ((safePage - 1) * TABLE_ROWS_PER_PAGE) + 1 : 0;
-  const end = Math.min(safePage * TABLE_ROWS_PER_PAGE, totalGroups);
 
   const info = document.getElementById('paginationInfo');
   const prev = document.getElementById('btnPrevPage');
   const next = document.getElementById('btnNextPage');
 
-  if (info) info.textContent = totalGroups ? `Página ${safePage}/${totalPages} • colaboradores ${start}-${end} de ${totalGroups}` : 'Página 1/1 • sem colaboradores';
+  if (info) info.textContent = `${safePage}/${totalPages}`;
   if (prev) prev.disabled = safePage <= 1;
   if (next) next.disabled = safePage >= totalPages;
 
@@ -695,63 +866,57 @@ function groupRowsByRegional(rows) {
 export function renderContent(content) {
   injectVisualStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
-  const importarUrl = toPanelUrl('importar-patrimonios');
   const statusUrl = toPanelUrl('patrimonio-status');
 
   content.innerHTML = `
     <section class="base-page patrimonio-relatorios-page">
-      <div class="section-heading">
-        <div>
-          <h2>Relatórios de Patrimônios</h2>
-          <p class="section-subtitle">Consulta da base atual importada em <strong>RELATÓRIOS &gt; Patrimônios</strong>, com filtros por regional, supervisão e situação de atraso.</p>
-        </div>
-        <div class="inline-nav">
-          <a href="${relatoriosUrl}" class="active">Relatórios</a>
-          <a href="${importarUrl}">Importar arquivo</a>
-          <a href="${statusUrl}">Status</a>
-          <button class="base-button secondary" id="btnDesligados" type="button">Desligados</button>
-        </div>
+      <div class="pat-tabs" role="tablist">
+        <a href="${relatoriosUrl}" class="pat-tab active" id="tabRelatorios">Relatórios</a>
+        <a href="${statusUrl}" class="pat-tab">Status</a>
+        <button class="pat-tab" id="btnDesligados" type="button">Desligados</button>
       </div>
 
       <div class="pat-view" id="patRelatoriosView">
       <article class="base-card">
-        <div class="pat-filtros-grid">
-          <div class="base-field">
-            <label class="base-label" for="fCoordenacao">Regional</label>
-            <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
+        <div class="pat-filtros-row">
+          <div class="pat-filtros-grid">
+            <div class="base-field">
+              <label class="base-label" for="fCoordenacao">Regional</label>
+              <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fSupervisao">Supervisão</label>
+              <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fTipo">Situação</label>
+              <select class="base-select" id="fTipo">
+                <option value="geral">Geral</option>
+                <option value="atrasados">Somente atrasados</option>
+                <option value="emdia">Somente em dia</option>
+                <option value="semdias">Somente sem dias</option>
+              </select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
+              <select class="base-select" id="fIgnorados">
+                <option value="mostrar">Mostrar</option>
+                <option value="excluir">Excluir</option>
+              </select>
+            </div>
+            <div class="base-field">
+              <label class="base-label" for="fBusca">Busca</label>
+              <input class="base-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" />
+            </div>
           </div>
-          <div class="base-field">
-            <label class="base-label" for="fSupervisao">Supervisão</label>
-            <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fTipo">Situação</label>
-            <select class="base-select" id="fTipo">
-              <option value="geral">Geral</option>
-              <option value="atrasados">Somente atrasados</option>
-              <option value="emdia">Somente em dia</option>
-              <option value="semdias">Somente sem dias</option>
-            </select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
-            <select class="base-select" id="fIgnorados">
-              <option value="mostrar">Mostrar</option>
-              <option value="excluir">Excluir</option>
-            </select>
-          </div>
-          <div class="base-field">
-            <label class="base-label" for="fBusca">Busca</label>
-            <input class="base-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" />
-          </div>
-        </div>
 
-        <div class="base-actions">
-          <button class="base-button primary" id="btnAplicar">Aplicar filtros</button>
-          <button class="base-button secondary" id="btnLimpar">Limpar</button>
-          <button class="base-button secondary" id="btnCsv">Exportar CSV</button>
-          <button class="base-button secondary" id="btnZip">Exportar ZIP imagens</button>
-          <button class="base-button secondary" id="btnZipRegional">Exportar ZIP por regional</button>
+          <div class="base-actions">
+            <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
+            <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
+            <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
+            <button class="base-button secondary icon-button" id="btnZip" title="Exportar ZIP de imagens" aria-label="Exportar ZIP de imagens">${ICONS.photo}</button>
+            <button class="base-button secondary icon-button" id="btnZipRegional" title="Exportar ZIP por regional" aria-label="Exportar ZIP por regional">${ICONS.doc}</button>
+          </div>
         </div>
 
         <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>
@@ -759,21 +924,25 @@ export function renderContent(content) {
 
       <article class="base-card patrimonio-table-card">
         <div class="patrimonio-table-toolbar">
-          <div class="patrimonio-table-title">
-            <strong>Lista de patrimônios</strong>
-            <span class="patrimonio-table-subtitle">Visualização agrupada por colaborador; clique em um nome para ver os patrimônios.</span>
+          <div class="pat-view-modes" role="group" aria-label="Modo de visualização">
+            <button class="pat-view-mode-btn active" type="button" data-view-mode="colaborador">Por colaborador</button>
+            <button class="pat-view-mode-btn" type="button" data-view-mode="regional">Por regional</button>
+            <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
           </div>
-          <div class="pat-pagination">
-            <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
-            <span id="paginationInfo" class="pagination-chip">Página 1/1</span>
-            <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
+          <div class="pat-toolbar-right">
+            <div class="patrimonio-legend">
+              <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
+              <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
+              <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
+            </div>
+            <div class="pat-pagination">
+              <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
+              <span class="pat-pagination-sep">|</span>
+              <button class="base-button secondary icon-button" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
+              <span class="pat-pagination-sep">|</span>
+              <span id="paginationInfo" class="pagination-chip">1/1</span>
+            </div>
           </div>
-        </div>
-
-        <div class="patrimonio-legend" style="margin-bottom:12px;">
-          <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
-          <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
-          <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
         </div>
 
         <div class="table-shell">
@@ -807,10 +976,12 @@ export function renderContent(content) {
     filteredRows: [],
     page: 1,
     sort: { column: '', direction: 'asc' },
-    expanded: new Set()
+    expanded: new Set(),
+    exportando: false,
+    viewMode: 'colaborador'
   };
 
-  renderThead(state.sort);
+  renderThead(state.sort, state.viewMode);
 
   document.getElementById('patrimonioThead')?.addEventListener('click', (event) => {
     const btn = event.target.closest('[data-sort-column]');
@@ -820,8 +991,21 @@ export function renderContent(content) {
       column,
       direction: state.sort.column === column && state.sort.direction === 'asc' ? 'desc' : 'asc'
     };
-    renderThead(state.sort);
+    renderThead(state.sort, state.viewMode);
     applyAndRender();
+  });
+
+  document.querySelectorAll('.pat-view-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.viewMode;
+      if (mode === state.viewMode) return;
+      state.viewMode = mode;
+      state.page = 1;
+      state.expanded.clear();
+      document.querySelectorAll('.pat-view-mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      renderThead(state.sort, state.viewMode);
+      applyAndRender();
+    });
   });
 
   const readFilters = () => ({
@@ -834,12 +1018,9 @@ export function renderContent(content) {
 
   const applyAndRender = () => {
     state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
     updateSummary(state.filteredRows);
-
-    const stats = computeStats(state.filteredRows);
-    setFeedback(`${state.filteredRows.length} registro(s) exibido(s) na tela. | Com dias informados: ${stats.emDia + stats.atrasados} | Sem dias informados: ${stats.semDias}`);
   };
 
   async function loadDesligados() {
@@ -893,11 +1074,11 @@ export function renderContent(content) {
   document.getElementById('btnDesligados')?.addEventListener('click', async () => {
     document.getElementById('patRelatoriosView').hidden = true;
     document.getElementById('patDesligadosView').hidden = false;
-    document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.classList.remove('active');
+    document.getElementById('tabRelatorios')?.classList.remove('active');
     document.getElementById('btnDesligados').classList.add('active');
     await loadDesligados();
   });
-  document.querySelector(`.inline-nav a[href="${relatoriosUrl}"]`)?.addEventListener('click', (event) => {
+  document.getElementById('tabRelatorios')?.addEventListener('click', (event) => {
     event.preventDefault();
     document.getElementById('patDesligadosView').hidden = true;
     document.getElementById('patRelatoriosView').hidden = false;
@@ -910,7 +1091,7 @@ export function renderContent(content) {
     if (!row) return;
     const key = row.dataset.colaborador;
     if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
 
   const refreshSupervisoes = () => {
@@ -948,14 +1129,15 @@ export function renderContent(content) {
 
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
-    const maxPage = Math.max(1, Math.ceil(groupRowsByColaborador(state.filteredRows).length / TABLE_ROWS_PER_PAGE));
+    const totalItems = state.viewMode === 'lista' ? state.filteredRows.length : getGroups(state.filteredRows, state.viewMode).length;
+    const maxPage = Math.max(1, Math.ceil(totalItems / TABLE_ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
-    state.page = updatePagination(state.filteredRows, state.page);
-    renderTableRows(state.filteredRows, state.page, state.expanded);
+    state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
   });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
@@ -968,7 +1150,23 @@ export function renderContent(content) {
     setFeedback('CSV gerado com sucesso.');
   });
 
-  document.getElementById('btnZip')?.addEventListener('click', async () => {
+  const withExportLock = (handler) => async () => {
+    if (state.exportando) return;
+    const btnZip = document.getElementById('btnZip');
+    const btnZipRegional = document.getElementById('btnZipRegional');
+    state.exportando = true;
+    if (btnZip) btnZip.disabled = true;
+    if (btnZipRegional) btnZipRegional.disabled = true;
+    try {
+      await handler();
+    } finally {
+      state.exportando = false;
+      if (btnZip) btnZip.disabled = false;
+      if (btnZipRegional) btnZipRegional.disabled = false;
+    }
+  };
+
+  document.getElementById('btnZip')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar.', true);
       return;
@@ -987,9 +1185,9 @@ export function renderContent(content) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o ZIP.', true);
     }
-  });
+  }));
 
-  document.getElementById('btnZipRegional')?.addEventListener('click', async () => {
+  document.getElementById('btnZipRegional')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar por regional.', true);
       return;
@@ -1030,28 +1228,37 @@ export function renderContent(content) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o ZIP por regional.', true);
     }
-  });
+  }));
+
+  const applyRowsToUi = (rows) => {
+    state.allRows = rows;
+    const coordenacoes = [...new Set(rows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
+    refreshSupervisoes();
+    applyAndRender();
+  };
+
+  let cachedRows;
+  try {
+    const raw = localStorage.getItem(RELAT_CACHE_KEY);
+    if (raw) {
+      const { ts, rows } = JSON.parse(raw);
+      if (Date.now() - ts < RELAT_CACHE_TTL) cachedRows = rows;
+    }
+  } catch {}
 
   (async () => {
     try {
-      await sincronizarPatrimoniosDoAgente();
-      let cachedRows;
-      try {
-        const raw = localStorage.getItem(RELAT_CACHE_KEY);
-        if (raw) {
-          const { ts, rows } = JSON.parse(raw);
-          if (Date.now() - ts < RELAT_CACHE_TTL) cachedRows = rows;
-        }
-      } catch {}
-      state.allRows = cachedRows ?? await (async () => {
+      // Renderiza com o cache local ou com a base já persistida (sem esperar a
+      // sincronização com o agente, que faz várias idas ao banco e deixava a tela
+      // travada em "Carregando..." por vários segundos a cada abertura da página).
+      if (cachedRows) {
+        applyRowsToUi(cachedRows);
+      } else {
         const fresh = await loadSnapshotRows();
         try { localStorage.setItem(RELAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: fresh })); } catch {}
-        return fresh;
-      })();
-      const coordenacoes = [...new Set(state.allRows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-      fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
-      refreshSupervisoes();
-      applyAndRender();
+        applyRowsToUi(fresh);
+      }
     } catch (error) {
       console.error(error);
       renderTableRows([]);
@@ -1059,6 +1266,16 @@ export function renderContent(content) {
       setFeedback(error?.message || 'Erro ao carregar base de patrimônios.', true);
     }
   })();
+
+  // Sincronização com o agente roda em segundo plano; quando terminar, atualiza a
+  // tela silenciosamente com a base mais recente.
+  sincronizarPatrimoniosDoAgente()
+    .then(() => loadSnapshotRows())
+    .then((fresh) => {
+      try { localStorage.setItem(RELAT_CACHE_KEY, JSON.stringify({ ts: Date.now(), rows: fresh })); } catch {}
+      applyRowsToUi(fresh);
+    })
+    .catch((error) => console.error('[patrimonio-relatorios] sincronização em segundo plano falhou:', error));
 }
 
 initProtectedPage('Relatórios de Patrimônios', renderContent);
