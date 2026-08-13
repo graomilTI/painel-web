@@ -1,0 +1,47 @@
+/* Home do Gestor baseada no modelo aprovado em 13/08/2026. */
+.gestor-app{padding-bottom:calc(16px + env(safe-area-inset-bottom))!important}
+.bottom-nav{display:none!important}
+#uxRegionalMetaMount{display:none!important}
+#appMain{padding-bottom:16px!important}
+.ux-home-actions,.db-actions-label,#appMain>.quick-grid{display:none!important}
+.db-topbar{margin-bottom:7px!important}
+.db-prod-card{padding:11px!important;border-radius:20px!important;margin-bottom:8px!important}
+.db-prod-eyebrow{margin-bottom:5px!important}
+.db-prod-body{grid-template-columns:minmax(0,1.42fr) minmax(108px,.76fr)!important;gap:6px!important;align-items:stretch!important;margin-bottom:6px!important}
+.db-prod-left{min-width:0!important;min-height:235px!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important;border-radius:16px!important;background:radial-gradient(circle at center,rgba(0,200,122,.055),transparent 70%)!important}
+.db-state-wrap{width:100%!important;height:235px!important;display:flex!important;align-items:center!important;justify-content:center!important;overflow:hidden!important}
+.db-state-svg{width:100%!important;height:235px!important;max-height:none!important;display:block!important;overflow:visible!important}
+.db-prod-right{min-width:0!important;gap:5px!important;justify-content:center!important}
+.db-stat-value{font-size:clamp(15px,4.2vw,20px)!important;line-height:1.03!important}
+.db-stat-label{font-size:7.5px!important;letter-spacing:.08em!important}
+.db-stat-sub,.db-delta{font-size:8px!important;line-height:1.18!important}
+.db-chart-label{font-size:7.5px!important}
+.db-prod-right svg{height:47px!important}
+.db-pace-row{gap:5px!important;margin-top:0!important}
+.db-pace-badge{font-size:9px!important;padding:5px 8px!important}
+.db-row-2{display:grid!important;grid-template-columns:1fr 1fr!important;gap:7px!important;margin-bottom:8px!important}
+.db-os-card{order:1!important}.db-patri-card{order:2!important}
+.db-os-card,.db-patri-card{min-height:88px!important;padding:10px!important;border-radius:17px!important}
+.db-card-eyebrow{font-size:8px!important;margin-bottom:4px!important}
+.db-os-hero,.db-patri-hero{margin-bottom:4px!important}
+.db-os-num,.db-patri-num{font-size:29px!important;line-height:1!important}
+.db-os-den,.db-patri-den{font-size:9.5px!important}
+.db-status-late,.db-status-ok{font-size:9px!important}
+.db-region{max-width:58%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+#gestorHomeModuleGrid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:7px!important;margin:7px 0 2px!important}
+.gm-home-module{min-width:0!important;min-height:64px!important;border:1px solid rgba(255,255,255,.075)!important;background:rgba(12,12,25,.84)!important;color:#b7bfd1!important;border-radius:17px!important;text-decoration:none!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:5px!important;text-align:center!important;font-weight:850!important;font-size:10.5px!important;line-height:1.05!important;box-sizing:border-box!important}
+.gm-home-module:active{transform:scale(.98)!important}
+.gm-home-module-icon{font-size:21px!important;line-height:1!important}
+.gm-home-module.is-primary{border-color:rgba(45,212,160,.38)!important;background:linear-gradient(180deg,rgba(0,95,62,.44),rgba(5,40,30,.82))!important;color:#effff7!important}
+.top-actions .pill{display:none!important}
+#uxMenuBtn{width:42px!important;min-width:42px!important;height:42px!important;min-height:42px!important;padding:0!important;font-size:0!important}
+#uxMenuBtn::after{content:'☰';font-size:21px;line-height:1}
+@media(max-width:430px){
+  .app-main{padding:9px 9px 13px!important}
+  .db-prod-card{padding:9px!important}
+  .db-prod-body{grid-template-columns:minmax(0,1.48fr) minmax(102px,.70fr)!important;gap:4px!important}
+  .db-prod-left,.db-state-wrap,.db-state-svg{height:222px!important;min-height:222px!important}
+  .db-state-pct{font-size:34px!important}.db-state-abbr{font-size:14px!important}.db-stat-value{font-size:15px!important}
+  .db-row-2{gap:5px!important}.db-os-card,.db-patri-card{padding:8px!important;min-height:84px!important}
+  #gestorHomeModuleGrid{gap:5px!important}.gm-home-module{min-height:60px!important;border-radius:15px!important;font-size:10px!important}
+}
