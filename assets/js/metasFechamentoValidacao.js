@@ -26,9 +26,13 @@ function getPeriodoSelecionado(container) {
 
 async function temRegistro(label, query) {
   try {
-    const { data, error } = await query;
+    const { data, count, error } = await query;
     if (error) return { label, ok: false, erro: error.message || String(error) };
-    return { label, ok: Array.isArray(data) && data.length > 0, erro: null };
+    return {
+      label,
+      ok: Number(count || 0) > 0 || (Array.isArray(data) && data.length > 0),
+      erro: null,
+    };
   } catch (error) {
     return { label, ok: false, erro: error?.message || String(error) };
   }
@@ -68,43 +72,38 @@ async function validarBasesFechamento(container, supabase) {
       `Produção diária do mês (${pad2(mes)}/${ano})`,
       supabase
         .from('producao_snapshot')
-        .select('data')
+        .select('*', { count: 'exact', head: true })
         .gte('data', mesInicio)
         .lt('data', proximoMes)
-        .limit(1)
     ),
     temRegistro(
       `Resultado Diário M-1 (${pad2(m1.mes)}/${m1.ano})`,
       supabase
         .from('relatorio_resultado_diario')
-        .select('coordenacao')
+        .select('*', { count: 'exact', head: true })
         .gte('data', m1Inicio)
         .lt('data', mesInicio)
-        .limit(1)
     ),
     temRegistro(
       `Despesas M-1 (${pad2(m1.mes)}/${m1.ano})`,
       supabase
         .from('dre_despesas_mensal')
-        .select('coordenacao')
+        .select('*', { count: 'exact', head: true })
         .eq('ano', m1.ano)
         .eq('mes', m1.mes)
-        .limit(1)
     ),
     temRegistro(
       'Leitura de patrimônios por supervisão',
       supabase
         .from('v_leitura_supervisao')
-        .select('supervisao')
-        .limit(1)
+        .select('*', { count: 'exact', head: true })
     ),
     temRegistro(
       'Gestores ativos cadastrados',
       supabase
         .from('metas_gestores')
-        .select('id')
+        .select('*', { count: 'exact', head: true })
         .eq('ativo', true)
-        .limit(1)
     ),
   ]);
 
