@@ -277,10 +277,16 @@ function buildRulesForStaff(args: {
     );
     if (key === 'EXTRA_OUTROS') continue;
     const extraValue = Number(extra.valor ?? 0);
-    // Lavanderia também deve abrir mesmo quando o gestor ainda não informou
-    // valor. As demais categorias continuam exigindo limite positivo.
-    if (extraValue > 0 || key === 'EXTRA_LAVANDERIA') {
-      requireConfig(key, true, extraValue, key === 'EXTRA_LAVANDERIA');
+    // Lavanderia e Combustível também devem abrir mesmo quando o gestor
+    // ainda não informou valor (ex.: "Outros" com descrição "Combustível"
+    // registrado a R$ 0,00 enquanto o valor real não é apurado) — sem essa
+    // exceção a despesa some silenciosamente: não é lançada automaticamente
+    // nem aparece como pendência manual na Conferência, porque lá o check
+    // só olha se a descrição cita "combustível", não se tem valor > 0. Abrir
+    // a 0 deixa a categoria disponível no Caixa Operacional pra ser
+    // complementada depois, igual já acontece com Reembolso KM/Uber.
+    if (extraValue > 0 || key === 'EXTRA_LAVANDERIA' || key === 'EXTRA_COMBUSTIVEL') {
+      requireConfig(key, true, extraValue, key === 'EXTRA_LAVANDERIA' || key === 'EXTRA_COMBUSTIVEL');
     }
   }
 
