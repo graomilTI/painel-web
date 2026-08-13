@@ -87,10 +87,10 @@ async function validarBasesFechamento(container, supabase) {
     temRegistro(
       `Despesas M-1 (${pad2(m1.mes)}/${m1.ano})`,
       supabase
-        .from('dre_despesas_mensal')
+        .from('grm_despesas_importacoes')
         .select('*', { count: 'exact', head: true })
-        .eq('ano', m1.ano)
-        .eq('mes', m1.mes)
+        .gte('data_conta_de', m1Inicio)
+        .lt('data_conta_de', mesInicio)
     ),
     temRegistro(
       'Leitura de patrimônios por supervisão',
