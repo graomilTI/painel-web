@@ -255,7 +255,23 @@ async function clicarOpcaoColaborador(page, popupId, colaboradorNome) {
   }, popupId, colaboradorNome);
 }
 
+async function colaboradorJaAssociado(li, colaboradorNome) {
+  const alvo = colaboradorNome.trim().toUpperCase();
+  return li.evaluate((el, nome) => {
+    const chip = Array.from(el.querySelectorAll('.v-chip__content')).some((c) => c.textContent.trim().toUpperCase() === nome);
+    const valor = Array.from(el.querySelectorAll('input[role="combobox"]')).some((item) => item.value.trim().toUpperCase() === nome);
+    const selecao = Array.from(el.querySelectorAll('.v-select__selection-text, .v-autocomplete__selection-text'))
+      .some((item) => item.textContent.trim().toUpperCase() === nome);
+    return chip || valor || selecao;
+  }, alvo);
+}
+
 async function associarColaborador(page, li, colaboradorNome) {
+  // Se a OS já está com o mesmo colaborador no Graint, não mexe — evita
+  // limpar e reaplicar a mesma associação a cada ciclo (gera ruído no log
+  // do GRM e retrabalho sem necessidade). Só limpa/redigita se for outra pessoa.
+  if (await colaboradorJaAssociado(li, colaboradorNome)) return;
+
   await li.click();
   await new Promise((resolve) => setTimeout(resolve, 250));
 
