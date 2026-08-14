@@ -29,6 +29,33 @@ function ensureCheckAndRejectActions() {
   });
 }
 
-const observer = new MutationObserver(() => queueMicrotask(ensureCheckAndRejectActions));
+function ensureBonusMenu() {
+  const tabs = document.querySelector('.conf-tabs');
+  if (!tabs || tabs.querySelector('[data-conferencia-bonus]')) return;
+
+  if (!document.getElementById('confBonusMenuStyle')) {
+    const style = document.createElement('style');
+    style.id = 'confBonusMenuStyle';
+    style.textContent = `
+      .conf-bonus-link{display:inline-flex;align-items:center;border:0;border-radius:0;background:transparent;padding:18px 16px 15px;color:#a9b8b1;font:inherit;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap;border-bottom:2px solid transparent;transition:color .16s ease,background .16s ease}
+      .conf-bonus-link:hover{color:#d9fbe8;background:rgba(34,197,94,.035);border-bottom-color:rgba(34,229,138,.35)}
+    `;
+    document.head.appendChild(style);
+  }
+
+  const link = document.createElement('a');
+  link.href = './conferencia-bonus.html';
+  link.className = 'conf-bonus-link';
+  link.dataset.conferenciaBonus = '1';
+  link.textContent = 'Bônus';
+  link.title = 'Produção mensal e auditoria do bônus';
+  tabs.appendChild(link);
+}
+
+const observer = new MutationObserver(() => queueMicrotask(() => {
+  ensureCheckAndRejectActions();
+  ensureBonusMenu();
+}));
 observer.observe(document.body, { childList: true, subtree: true });
 ensureCheckAndRejectActions();
+ensureBonusMenu();
