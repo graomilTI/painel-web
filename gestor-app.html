@@ -14,6 +14,18 @@
   <link rel="stylesheet" href="./assets/css/gestor-app.css" />
   <link rel="stylesheet" href="./assets/css/gestor-app-mobile-ux.css" />
   <link rel="stylesheet" href="./assets/css/gestor-app-mobile-render-fix.css?v=20260805-1" />
+  <style>
+    body #app.gestor-app #appMain .db-row-2{
+      display:grid!important;
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+      gap:7px!important;
+    }
+    body #app.gestor-app #appMain .db-row-2>.db-os-card,
+    body #app.gestor-app #appMain .db-row-2>.db-patri-card{
+      min-width:0!important;
+      width:auto!important;
+    }
+  </style>
 </head>
 <body>
   <div id="app" class="gestor-app is-loading">
