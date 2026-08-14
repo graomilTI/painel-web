@@ -52,10 +52,37 @@ function ensureBonusMenu() {
   tabs.appendChild(link);
 }
 
+function ensureSidebarBonusLink() {
+  const menu = document.getElementById('sidebarMenu');
+  if (!menu || menu.querySelector('[data-conferencia-bonus-link]')) return;
+  const sections = [...menu.querySelectorAll('.menu-section')];
+  const section = sections.find((el) => {
+    const title = (el.querySelector('.menu-section-toggle-text')?.textContent || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+    return title === 'CONFERENCIA';
+  });
+  const list = section?.querySelector('.menu-list');
+  if (!list) return;
+
+  const li = document.createElement('li');
+  const link = document.createElement('a');
+  link.href = './conferencia-bonus.html';
+  link.dataset.conferenciaBonusLink = '1';
+  const dot = document.createElement('span');
+  dot.className = 'menu-item-dot';
+  const label = document.createElement('span');
+  label.textContent = 'Bônus';
+  link.append(dot, label);
+  li.appendChild(link);
+  list.appendChild(li);
+}
+
 const observer = new MutationObserver(() => queueMicrotask(() => {
   ensureCheckAndRejectActions();
   ensureBonusMenu();
+  ensureSidebarBonusLink();
 }));
 observer.observe(document.body, { childList: true, subtree: true });
 ensureCheckAndRejectActions();
 ensureBonusMenu();
+ensureSidebarBonusLink();
