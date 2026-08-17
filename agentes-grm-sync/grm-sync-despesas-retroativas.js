@@ -70,12 +70,7 @@ function requiredExpenses(contractType, salary, expenseTypes) {
   const type = norm(contractType);
   const lunch = expenseTypes.get('ALMOCO');
   if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
-  const coffee = expenseTypes.get('CAFE');
-  if (!coffee) throw new Error('Categoria Café não encontrada no GRM.');
-  const result = [
-    { ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) },
-    { ...coffee, amount: Number(coffee.oexMaxOperatingFlowValue || 10) },
-  ];
+  const result = [{ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) }];
   if (type === 'INTERMITENTE') {
     const item = expenseTypes.get('SALARIO DE INTERMITENTE');
     if (!item) throw new Error('Categoria Salário de Intermitente não encontrada no GRM.');
