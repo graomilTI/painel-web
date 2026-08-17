@@ -8,7 +8,7 @@
  *   Funcionário -> abrir cadastro -> Despesas -> Adicionar
  *   -> Descrição / Valor / Data -> Salvar.
  *
- * A descrição é única por competência: BÔNUS CLASSIFICAÇÃO FOB MM/AAAA.
+ * A descrição é única por competência: Bônus de Tons <mês> - <ano>.
  * Antes de adicionar, o agente procura essa descrição no cadastro. Se já existir,
  * apenas confirma o lançamento no Supabase e NÃO cria uma segunda movimentação.
  */
@@ -84,15 +84,32 @@ function brDateNow() {
   return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
-function competenceLabel(value) {
-  const text = String(value || '').slice(0, 10);
-  const match = text.match(/^(\d{4})-(\d{2})/);
-  if (!match) throw new Error(`Competência inválida: ${value}`);
-  return `${match[2]}/${match[1]}`;
-}
+const MESES_PT_BR = [
+  'janeiro',
+  'fevereiro',
+  'março',
+  'abril',
+  'maio',
+  'junho',
+  'julho',
+  'agosto',
+  'setembro',
+  'outubro',
+  'novembro',
+  'dezembro',
+];
 
 function descriptionFor(job) {
-  return `BÔNUS CLASSIFICAÇÃO FOB ${competenceLabel(job.competencia)}`;
+  const text = String(job.competencia || '').slice(0, 10);
+  const match = text.match(/^(\d{4})-(\d{2})/);
+  if (!match) throw new Error(`Competência inválida: ${job.competencia}`);
+
+  const ano = match[1];
+  const mesNumero = Number(match[2]);
+  const mes = MESES_PT_BR[mesNumero - 1];
+  if (!mes) throw new Error(`Mês inválido na competência: ${job.competencia}`);
+
+  return `Bônus de Tons ${mes} - ${ano}`;
 }
 
 function ensureDir(dir) {
