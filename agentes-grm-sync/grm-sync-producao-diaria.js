@@ -223,8 +223,28 @@ function toTextSnapshot(value) {
 function toNumberSnapshot(value) {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  const s = String(value).trim().replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
-  const n = Number(s);
+
+  const s = String(value).trim().replace(/\s+/g, '').replace(/[^\d,.-]/g, '');
+  if (!s) return null;
+
+  const comma = s.lastIndexOf(',');
+  const dot = s.lastIndexOf('.');
+  let normalized = s;
+
+  if (comma >= 0 && dot >= 0) {
+    // O separador que aparece por último é o decimal. Exemplos suportados:
+    // 1.234,56 -> 1234.56 | 1,234.56 -> 1234.56
+    normalized = comma > dot
+      ? s.replace(/\./g, '').replace(',', '.')
+      : s.replace(/,/g, '');
+  } else if (comma >= 0) {
+    // Relatórios em pt-BR podem vir com vírgula decimal.
+    normalized = s.replace(',', '.');
+  }
+  // Quando existe somente ponto, preserva como separador decimal.
+  // A API do GRM retorna Tons dessa forma (ex.: "147.06").
+
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 }
 
