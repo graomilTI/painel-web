@@ -170,6 +170,15 @@ async function upsertData(data) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
+async function processarAlertasDeAtualizacao() {
+  const { data, error } = await supabase.functions.invoke('mapa-embarque-alertas', {
+    body: { action: 'scan' }
+  });
+  if (error) throw new Error(`Falha ao processar alertas do Mapa de Embarque: ${error.message}`);
+  if (!data?.ok) throw new Error(`Alertas do Mapa de Embarque recusados: ${data?.error || 'resposta inválida'}`);
+  log('SUCCESS', `Alertas processados: ${JSON.stringify(data)}`);
+}
+
 async function main() {
   let browser;
   try {
@@ -206,6 +215,7 @@ async function main() {
     const filePath = await downloadReport(page);
     const data = await parseXLS(filePath);
     await upsertData(data);
+    await processarAlertasDeAtualizacao();
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {
     log('ERROR', `Erro fatal: ${error.message}`);
