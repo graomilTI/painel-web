@@ -4,6 +4,9 @@ const STYLE_ID = 'conferenciaBonusCaixaStyles';
 let sortKey = null;
 let sortDir = 'asc';
 let lancando = false;
+let enhanceQueued = false;
+let bodyObserver = null;
+let observedBody = null;
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -62,10 +65,15 @@ function getLaunchableRows() {
 
 function syncSelectionUi() {
   const selected = getLaunchableRows().length;
+  const text = `${selected} selecionado(s) apto(s)`;
   const label = document.querySelector('#bonusBody .bonus-selected');
-  if (label) label.textContent = `${selected} selecionado(s) apto(s)`;
+  if (label && label.textContent !== text) label.textContent = text;
+
   const button = document.getElementById('bonusLaunchCaixa');
-  if (button) button.disabled = lancando || !isProduction() || selected === 0;
+  if (button) {
+    const disabled = lancando || !isProduction() || selected === 0;
+    if (button.disabled !== disabled) button.disabled = disabled;
+  }
 }
 
 function disableInaptos() {
@@ -73,9 +81,10 @@ function disableInaptos() {
     const checkbox = tr.querySelector('[data-row-check]');
     if (!checkbox) return;
     const apto = tr.querySelector('.bonus-status')?.textContent?.trim() === 'Apto';
-    checkbox.disabled = !apto;
-    if (!apto) checkbox.checked = false;
-    checkbox.title = apto ? 'Selecionar para lançamento no Caixa' : 'Colaborador inapto não pode ser lançado';
+    if (checkbox.disabled === apto) checkbox.disabled = !apto;
+    if (!apto && checkbox.checked) checkbox.checked = false;
+    const title = apto ? 'Selecionar para lançamento no Caixa' : 'Colaborador inapto não pode ser lançado';
+    if (checkbox.title !== title) checkbox.title = title;
   });
 }
 
@@ -93,7 +102,8 @@ function applySort() {
   if (!tbody) return;
   const rows = [...tbody.querySelectorAll('tr')].filter((tr) => tr.querySelector('.bonus-name'));
   if (!rows.length) return;
-  rows.sort((a, b) => {
+
+  const sortedRows = [...rows].sort((a, b) => {
     const av = valueForRow(a, sortKey);
     const bv = valueForRow(b, sortKey);
     let result = 0;
@@ -101,7 +111,13 @@ function applySort() {
     else result = String(av).localeCompare(String(bv), 'pt-BR', { numeric: true, sensitivity: 'base' });
     return sortDir === 'asc' ? result : -result;
   });
-  rows.forEach((row) => tbody.appendChild(row));
+
+  const alreadySorted = sortedRows.every((row, index) => rows[index] === row);
+  if (alreadySorted) return;
+
+  const fragment = document.createDocumentFragment();
+  sortedRows.forEach((row) => fragment.appendChild(row));
+  tbody.appendChild(fragment);
 }
 
 function enhanceHeaders() {
@@ -146,8 +162,10 @@ function enhanceHeaders() {
 function setMessage(text, type = '') {
   const msg = document.getElementById('bonusLaunchMsg');
   if (!msg) return;
-  msg.className = `bonus-launch-msg ${type}`.trim();
-  msg.textContent = text || '';
+  const className = `bonus-launch-msg ${type}`.trim();
+  if (msg.className !== className) msg.className = className;
+  const nextText = text || '';
+  if (msg.textContent !== nextText) msg.textContent = nextText;
 }
 
 async function launchSelected() {
@@ -206,30 +224,68 @@ function ensureTopAction() {
     group.querySelector('#bonusLaunchCaixa')?.addEventListener('click', launchSelected);
   }
   const wrap = group.querySelector('.bonus-launch-wrap');
-  if (wrap) wrap.style.display = isProduction() ? 'flex' : 'none';
+  if (wrap) {
+    const display = isProduction() ? 'flex' : 'none';
+    if (wrap.style.display !== display) wrap.style.display = display;
+  }
 }
 
 function enhance() {
   ensureTopAction();
-  if (!isProduction()) return syncSelectionUi();
+  if (!isProduction()) {
+    syncSelectionUi();
+    return;
+  }
   disableInaptos();
   enhanceHeaders();
   document.querySelectorAll('#bonusBody [data-row-check], #bonusCheckAll').forEach((input) => {
     if (input.dataset.caixaBound === '1') return;
     input.dataset.caixaBound = '1';
-    input.addEventListener('change', () => queueMicrotask(() => {
-      disableInaptos();
-      syncSelectionUi();
-      applySort();
-    }));
+    input.addEventListener('change', () => scheduleEnhance());
   });
   syncSelectionUi();
 }
 
-injectStyles();
-const observer = new MutationObserver(() => queueMicrotask(enhance));
-observer.observe(document.body, { childList: true, subtree: true });
-document.addEventListener('click', (event) => {
-  if (event.target.closest('.bonus-tab,[data-month],[data-year-step]')) queueMicrotask(enhance);
-});
-enhance();
+function attachBodyObserver() {
+  const body = document.getElementById('bonusBody');
+  if (!body) return false;
+  if (observedBody === body && bodyObserver) return true;
+
+  bodyObserver?.disconnect();
+  observedBody = body;
+  bodyObserver = new MutationObserver(() => scheduleEnhance());
+  bodyObserver.observe(body, { childList: true });
+  return true;
+}
+
+function scheduleEnhance() {
+  if (enhanceQueued) return;
+  enhanceQueued = true;
+  queueMicrotask(() => {
+    enhanceQueued = false;
+    attachBodyObserver();
+    enhance();
+  });
+}
+
+function start() {
+  injectStyles();
+
+  if (!attachBodyObserver()) {
+    const host = document.getElementById('pageContent') || document.body;
+    const bootstrapObserver = new MutationObserver(() => {
+      if (!attachBodyObserver()) return;
+      bootstrapObserver.disconnect();
+      scheduleEnhance();
+    });
+    bootstrapObserver.observe(host, { childList: true, subtree: true });
+  }
+
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.bonus-tab,[data-month],[data-year-step]')) scheduleEnhance();
+  });
+
+  scheduleEnhance();
+}
+
+start();
