@@ -823,31 +823,25 @@ export async function renderContent(content) {
       return;
     }
     el.finalizacao.innerHTML = `
-      <div class="log-table-wrap"><table class="log-table"><thead><tr>
-        <th>O.S.</th><th>Rota / Cliente</th><th>Colaborador</th><th>Status</th><th>Observação</th><th>Ações</th>
+      <div class="los-finalizacao-summary"><strong>${rows.length}</strong><span>aguardando decisão</span></div>
+      <div class="log-table-wrap los-finalizacao-table-wrap"><table class="log-table los-finalizacao-table"><thead><tr>
+        <th>O.S. / Regional</th><th>Cliente</th><th>Rota</th><th>Volume</th><th>Decisão</th>
       </tr></thead><tbody>
       ${rows.map((row) => {
-        const colabs = atribuicoes(row.id);
         return `<tr data-os-id="${esc(row.id)}">
-          <td><div class="log-title">${esc(osNumber(row))}</div><div class="log-meta">Data: ${brDate(row.data_os || row.data)}</div><div class="log-meta">Coord.: ${esc(coordOf(row))}</div></td>
-          <td><div class="log-title">${esc(clienteOf(row))}</div><div class="log-meta">Origem: ${esc(origemOf(row))}</div><div class="log-meta">Destino: ${esc(destinoOf(row))}</div><div class="log-meta">Remanescente: ${BR_NUM.format(numberBr(row.remanescente))}</div></td>
-          <td>${colabs.length ? colabs.map((a) => `<div class="log-title">${esc(a.colaborador_nome || a.nome || '-')}</div><div class="log-meta">${a.distancia_km != null ? `${BR_NUM.format(numberBr(a.distancia_km))} km · ` : ''}${esc(a.origem_sugestao || '')}</div>`).join('') : '<span class="muted">Sem colaborador vinculado</span>'}</td>
-          <td>${statusBadge(row.status_logistica)}<div class="log-meta">Gestor: ${esc(row.status_gestor || '-')}</div>${row.enviado_logistica_em ? `<div class="log-meta">Enviado: ${brDate(row.enviado_logistica_em, true)}</div>` : ''}${row.finalizado_em ? `<div class="log-meta">Finalizado: ${brDate(row.finalizado_em, true)}</div>` : ''}</td>
-          <td><textarea class="log-input log-textarea" data-obs-logistica placeholder="Observação da logística">${esc(row.observacao_logistica || '')}</textarea></td>
-          <td><div class="log-actions">${actionButtonsFinalizacao(row)}</div></td>
+          <td><div class="los-os-line"><strong>${esc(osNumber(row))}</strong><span>${brDate(row.data_os || row.data)}</span></div><div class="log-meta">${esc(coordOf(row))}</div></td>
+          <td><div class="log-title los-client">${esc(clienteOf(row))}</div><div class="los-request-tag">Finalizar OS</div></td>
+          <td><div class="los-route"><span><b>Origem</b>${esc(origemOf(row))}</span><i>→</i><span><b>Destino</b>${esc(destinoOf(row))}</span></div></td>
+          <td><div class="los-volume"><strong>${BR_NUM.format(numberBr(row.remanescente))}</strong><span>remanescente</span></div></td>
+          <td><div class="los-decision-actions">${actionButtonsFinalizacao(row)}</div></td>
         </tr>`;
       }).join('')}
       </tbody></table></div>`;
   }
 
   function actionButtonsFinalizacao(row) {
-    const st = statusLog(row);
-    if (st === 'FINALIZADA') return '<button class="btn btn-secondary" type="button" data-action="reabrir">Reabrir</button>';
-    if (st === 'DEVOLVIDA') return '<button class="btn btn-secondary" type="button" data-action="reabrir">Reabrir</button>';
-    return `
-      ${st !== 'EM_ANDAMENTO' ? '<button class="btn btn-secondary" type="button" data-action="assumir">Assumir</button>' : ''}
-      <button class="btn btn-primary" type="button" data-action="finalizar">Finalizar</button>
-      <button class="btn btn-secondary" type="button" data-action="devolver">Devolver</button>`;
+    return `<button class="los-decision approve" type="button" data-action="aprovar-finalizacao" aria-label="Aprovar finalização" title="Aprovar">✓</button>
+      <button class="los-decision reject" type="button" data-action="recusar-finalizacao" aria-label="Recusar finalização" title="Recusar">×</button>`;
   }
 
   function renderClassificadores() {
@@ -2158,6 +2152,11 @@ export async function renderContent(content) {
     if (!row) return;
     const action = btn.dataset.action;
 
+    if (['aprovar-finalizacao', 'recusar-finalizacao'].includes(action)) {
+      await decidirFinalizacao(row, action === 'aprovar-finalizacao', btn);
+      return;
+    }
+
     if (['assumir', 'finalizar', 'devolver', 'reabrir'].includes(action)) {
       await updateFinalizacao(row, action);
       return;
@@ -2198,6 +2197,25 @@ export async function renderContent(content) {
     }
     await addLog(row, action.toUpperCase(), patch);
     el.feedback.textContent = 'O.S. atualizada na logística.';
+  }
+
+  async function decidirFinalizacao(row, aprovar, btn) {
+    const botoes = btn.closest('.los-decision-actions')?.querySelectorAll('button') || [];
+    botoes.forEach((item) => { item.disabled = true; });
+    const { error } = await supabase.rpc('decidir_finalizacao_os_logistica', {
+      p_os_id: row.id,
+      p_aprovar: aprovar,
+    });
+    if (error) {
+      botoes.forEach((item) => { item.disabled = false; });
+      el.feedback.textContent = error.message;
+      return;
+    }
+    state.os = state.os.filter((item) => String(item.id) !== String(row.id));
+    render();
+    el.feedback.textContent = aprovar
+      ? 'Finalização aprovada e enviada ao agente.'
+      : 'Solicitação de finalização recusada.';
   }
 
   async function registrarAlertaClassificador(row, action) {
