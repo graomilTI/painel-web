@@ -311,7 +311,23 @@ async function clicarOpcaoColaborador(page, popupId, colaboradorNome) {
   }, popupId, colaboradorNome);
 }
 
+async function colaboradorJaAssociado(li, colaboradorNome) {
+  const alvo = colaboradorNome.trim().toUpperCase();
+  return li.evaluate((el, nome) => {
+    const chip = Array.from(el.querySelectorAll('.v-chip__content')).some((c) => c.textContent.trim().toUpperCase() === nome);
+    const valor = Array.from(el.querySelectorAll('input[role="combobox"]')).some((item) => item.value.trim().toUpperCase() === nome);
+    const selecao = Array.from(el.querySelectorAll('.v-select__selection-text, .v-autocomplete__selection-text'))
+      .some((item) => item.textContent.trim().toUpperCase() === nome);
+    return chip || valor || selecao;
+  }, alvo);
+}
+
 async function associarColaborador(page, li, colaboradorNome) {
+  // Se a OS já está com o mesmo colaborador no Graint, não mexe — evita
+  // limpar e reaplicar a mesma associação a cada ciclo (gera ruído no log
+  // do GRM e retrabalho sem necessidade). Só limpa/redigita se for outra pessoa.
+  if (await colaboradorJaAssociado(li, colaboradorNome)) return { alterado: false };
+
   await li.click();
   await new Promise((resolve) => setTimeout(resolve, 250));
 
@@ -366,6 +382,7 @@ async function associarColaborador(page, li, colaboradorNome) {
     return chip || valor || selecao;
   }, colaboradorNome);
   if (!chipOk) throw new Error(`Chip de "${colaboradorNome}" não apareceu na OS após seleção.`);
+  return { alterado: true };
 }
 
 async function salvar(page) {
@@ -431,44 +448,65 @@ async function processarSupervisao(page, grupo) {
   log('INFO', `Supervisão selecionada no Graint: "${supervisaoEncontrada}"`);
   await clicarAtualizar(page);
 
+  // Aplica toda a distribuição da supervisão antes do único SALVAR da tela. Uma
+  // associação com problema (ex.: colaborador não encontrado no Graint pra essa
+  // supervisão) não pode travar as demais OS da mesma tela — só ela fica pendente
+  // pro próximo ciclo, o resto segue e é salvo normalmente.
   const idsComSucesso = new Set();
+  const idsComFalha = new Set();
   const falhasAssociacao = [];
+  let alteracoesAplicadas = 0;
   for (const atribuicao of grupo.atribuicoes) {
     try {
       const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
       if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
-      await associarColaborador(page, li, atribuicao.colaborador_nome);
+      const resultado = await associarColaborador(page, li, atribuicao.colaborador_nome);
+      if (resultado.alterado) alteracoesAplicadas += 1;
       idsComSucesso.add(atribuicao.os.id);
     } catch (error) {
+      idsComFalha.add(atribuicao.os.id);
       falhasAssociacao.push(`OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome}: ${error.message}`);
       log('ERROR', `Associação OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome} falhou: ${error.message}`);
+      // Fecha qualquer dropdown/overlay que tenha ficado aberto, senão atrapalha a próxima associação.
       await page.keyboard.press('Escape').catch(() => null);
       await new Promise((r) => setTimeout(r, 300));
     }
   }
 
-  if (!idsComSucesso.size) {
+  // Uma OS pode ter mais de um colaborador. Ela só pode ser marcada como
+  // AJUSTADA quando todas as associações dela foram confirmadas nesta rodada.
+  const idsConfirmados = new Set([...idsComSucesso].filter((id) => !idsComFalha.has(id)));
+  if (!idsConfirmados.size) {
     throw new Error(`Nenhuma associação aplicada nesta supervisão (${falhasAssociacao.length} falha(s)): ${falhasAssociacao.join(' | ')}`);
   }
 
   if (DRY_RUN) {
-    log('INFO', `[DRY-RUN] Supervisão pronta para salvar (${idsComSucesso.size} de ${numerosOs.length} OS) — SALVAR e update no Supabase pulados.`);
+    log('INFO', `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOs.length} OS, ${grupo.atribuicoes.length - falhasAssociacao.length} de ${grupo.atribuicoes.length} associações, ${alteracoesAplicadas} alteração(ões)) — SALVAR e update no Supabase pulados.`);
     return;
   }
 
-  await salvar(page);
+  if (alteracoesAplicadas > 0) {
+    await salvar(page);
+  } else {
+    // Quando todas as associações já estão corretas, o Graint não habilita
+    // SALVAR porque não há alteração pendente. Esse é um estado sincronizado,
+    // não uma falha; basta encerrar a pendência local.
+    log('INFO', 'Todas as associações já estavam corretas no Graint; salvamento não necessário.');
+  }
 
   const now = new Date().toISOString();
-  const ids = [...idsComSucesso];
+  const ids = [...idsConfirmados];
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
     .in('id', ids);
   if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
-
+  const resultadoGraint = alteracoesAplicadas > 0
+    ? 'Supervisão aplicada no Graint'
+    : 'Supervisão já estava aplicada no Graint';
   log(
     falhasAssociacao.length ? 'WARN' : 'SUCCESS',
-    `Supervisão aplicada no Graint e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
+    `${resultadoGraint} e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
       + (falhasAssociacao.length ? `; ${falhasAssociacao.length} associação(ões) pendente(s) pro próximo ciclo: ${falhasAssociacao.join(' | ')}` : '') + '.',
   );
 }
