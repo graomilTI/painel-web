@@ -25,6 +25,10 @@ jobs:
           node --check assets/js/compras.js
           node --check assets/js/patrimonios.js
           node --check assets/js/programacao.js
+          node --check assets/js/authGuard.js
+          node --check assets/js/conferencia-bonus-caixa.js
+          node --check agentes-grm-sync/grm-sync-bonus-caixa.js
+          node --check agentes-grm-sync/worker/grm-sync-job-worker.js
 
   deploy:
     if: github.event_name != 'pull_request'
