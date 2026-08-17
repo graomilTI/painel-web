@@ -38,13 +38,69 @@ function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regi
 function safe(data) { return Array.isArray(data) ? data : []; }
 
 async function login(page) {
-  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
-  await page.type('input#input-v-2', process.env.GRMSERVER_USER);
-  await page.type('input#input-v-5', process.env.GRMSERVER_PASSWORD);
-  await Promise.all([
-    page.click('button.submit-btn'),
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
+  const user = process.env.GRMSERVER_USER;
+  const password = process.env.GRMSERVER_PASSWORD;
+  if (!user || !password) throw new Error('Credenciais GRMSERVER_USER/GRMSERVER_PASSWORD ausentes.');
+
+  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2', timeout: 60000 });
+
+  // Os IDs input-v-* são gerados pelo Vuetify e mudam entre versões; localiza
+  // os controles pelas características estáveis do formulário.
+  try {
+    await page.waitForFunction(() => {
+      const visible = (element) => {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const inputs = [...document.querySelectorAll('input')].filter(visible);
+      return inputs.some((input) => input.type === 'password')
+        && inputs.some((input) => !['password', 'hidden', 'submit', 'button'].includes(input.type));
+    }, { timeout: 30000 });
+  } catch (error) {
+    const diagnostico = await page.evaluate(() => ({
+      titulo: document.title,
+      inputs: [...document.querySelectorAll('input')].map((input) => ({
+        type: input.type, name: input.name, id: input.id, autocomplete: input.autocomplete,
+      })),
+    })).catch(() => ({ titulo: '', inputs: [] }));
+    throw new Error(`Formulário de login do Graint não apareceu. URL=${page.url()} título=${JSON.stringify(diagnostico.titulo)} inputs=${JSON.stringify(diagnostico.inputs)}`);
+  }
+
+  const campos = await page.$$('input');
+  let passwordInput = null;
+  let userInput = null;
+  for (const campo of campos) {
+    const info = await campo.evaluate((input) => {
+      const style = window.getComputedStyle(input);
+      const rect = input.getBoundingClientRect();
+      return {
+        visible: style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0,
+        type: input.type, name: input.name, id: input.id, autocomplete: input.autocomplete,
+      };
+    });
+    if (!info.visible) continue;
+    if (info.type === 'password') passwordInput ||= campo;
+    else if (!['hidden', 'submit', 'button'].includes(info.type)) {
+      const identidade = `${info.name} ${info.id} ${info.autocomplete}`.toLowerCase();
+      if (!userInput || /user|email|login|usuario|username/.test(identidade)) userInput = campo;
+    }
+  }
+  if (!userInput || !passwordInput) throw new Error(`Não foi possível identificar os campos de login do Graint. URL=${page.url()}`);
+
+  await userInput.click({ clickCount: 3 });
+  await userInput.type(user);
+  await passwordInput.click({ clickCount: 3 });
+  await passwordInput.type(password);
+
+  const submit = await page.$('button.submit-btn, button[type="submit"], input[type="submit"]');
+  if (!submit) throw new Error(`Botão de entrada do Graint não encontrado. URL=${page.url()}`);
+  await Promise.allSettled([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
+    submit.click(),
   ]);
+  await page.waitForFunction(() => !/\/login\/?(?:[?#].*)?$/.test(window.location.href), { timeout: 30000 })
+    .catch(() => { throw new Error(`Login do Graint não foi concluído; a página permaneceu em ${page.url()}.`); });
 }
 
 // --- Coleta e agrupamento das OS pendentes ---
@@ -433,7 +489,7 @@ async function main() {
     }
     if (!grupos.length) { log('SUCCESS', 'Nada a fazer.'); return; }
 
-    const headless = process.env.HEADLESS === 'false' ? false : true;
+    const headless = process.env.HEADLESS === 'false' ? false : 'new';
     const args = headless
       ? [
           '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
