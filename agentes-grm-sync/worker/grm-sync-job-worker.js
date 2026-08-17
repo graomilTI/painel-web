@@ -70,6 +70,7 @@ const SCRIPT_MAP = {
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',
   'sync-liberacao-despesas': 'grm-sync-liberacao-despesas.js',
+  'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
 };
