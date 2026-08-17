@@ -49,6 +49,34 @@ style.textContent = `
   .logistica-os-page #section-abertura_os .log-mini-grid article.card h3 { font-size:12px; margin:0 0 2px; text-transform:uppercase; letter-spacing:.04em; color:#9fb7aa; }
   .logistica-os-page #section-abertura_os .log-mini-grid .metric { font-size:22px; margin:0 0 2px; }
   .logistica-os-page #section-abertura_os .log-mini-grid .muted { font-size:11px; margin:0; }
+  /* Finalização: fila compacta e decisão binária, sem etapa de observação. */
+  .logistica-os-page #section-finalizacao { padding:14px 16px!important; }
+  .logistica-os-page #section-finalizacao>.section-head { min-height:36px; margin-bottom:8px!important; }
+  .logistica-os-page #section-finalizacao>.section-head h3 { font-size:16px!important; margin-bottom:2px!important; }
+  .logistica-os-page #section-finalizacao>.section-head .muted { font-size:10px!important; }
+  .los-finalizacao-summary { display:inline-flex;align-items:baseline;gap:6px;margin:0 0 8px;padding:5px 9px;border:1px solid rgba(22,215,144,.24);border-radius:9px;background:rgba(22,215,144,.08);color:#91aa9d;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.04em; }
+  .los-finalizacao-summary strong { color:#74eeb8;font-size:15px;line-height:1; }
+  .los-finalizacao-table-wrap { margin-top:0!important;border-radius:12px!important; }
+  .los-finalizacao-table { min-width:1040px!important;table-layout:fixed; }
+  .los-finalizacao-table th { padding:8px 10px!important;font-size:9px!important; }
+  .los-finalizacao-table th:nth-child(1){width:15%}.los-finalizacao-table th:nth-child(2){width:25%}.los-finalizacao-table th:nth-child(3){width:35%}.los-finalizacao-table th:nth-child(4){width:15%}.los-finalizacao-table th:nth-child(5){width:10%;text-align:right}
+  .los-finalizacao-table td { padding:9px 10px!important;vertical-align:middle!important; }
+  .los-os-line { display:flex;align-items:baseline;gap:7px; }
+  .los-os-line strong { color:#f1fbf6;font-size:13px; }
+  .los-os-line span { color:#748a7f;font-size:9px; }
+  .los-client { max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .los-request-tag { display:inline-block;margin-top:4px;padding:2px 6px;border-radius:999px;background:rgba(96,165,250,.11);color:#93c5fd;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.04em; }
+  .los-route { display:grid;grid-template-columns:minmax(0,1fr) 14px minmax(0,1fr);align-items:center;gap:6px;color:#a8bcb1;font-size:10px; }
+  .los-route span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .los-route b { display:block;margin-bottom:2px;color:#4f8c72;font-size:8px;text-transform:uppercase; }
+  .los-route i { color:#3f7d63;font-style:normal;text-align:center; }
+  .los-volume strong,.los-volume span { display:block; }.los-volume strong{color:#edf8f2;font-size:12px}.los-volume span{color:#70867b;font-size:8px}
+  .los-decision-actions { display:flex;justify-content:flex-end;gap:6px; }
+  .los-decision { width:32px;height:32px;border:1px solid transparent;border-radius:9px;font-size:18px;font-weight:950;line-height:1;cursor:pointer;transition:transform .14s ease,background .14s ease; }
+  .los-decision:hover { transform:translateY(-1px); }.los-decision:disabled{opacity:.4;cursor:wait;transform:none}
+  .los-decision.approve { border-color:rgba(22,215,144,.34);background:rgba(22,215,144,.13);color:#75edb7; }
+  .los-decision.reject { border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.1);color:#fca5a5; }
+  @media(max-width:760px){.los-route{grid-template-columns:1fr}.los-route i{display:none}.logistica-os-page #section-finalizacao{padding:12px!important}}
 `;
 document.head.appendChild(style);
 
@@ -188,7 +216,7 @@ function renderBootError(error) {
     </section>`;
 }
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
+import('./adm-logistica.js?v=20260817-finalizacao-check-x')
   .then(async () => {
     await setup();
     await import('./logistica-abertura-os-workflow.js?v=20260725-aprovacao1');
