@@ -143,7 +143,7 @@ function renderDetails() {
   details.dataset.signature = detailsSignature;
   details.innerHTML = `
     <div class="ag-details-header">
-      <div class="ag-details-title">Finalizar OS · Baixo Remanescente - Detalhes</div>
+      <div class="ag-details-title">Finalizar OS · Regras Operacionais - Detalhes</div>
       <button class="ag-details-close" type="button" data-action="close">✕</button>
     </div>
     <div style="margin-bottom:16px">
@@ -218,7 +218,7 @@ function renderCard() {
     card.className = `ag-card ${state.selected ? 'active' : ''}`;
     card.innerHTML = `
     <div class="ag-card-header">
-      <div class="ag-card-title">Finalizar OS · Baixo Remanescente</div>
+      <div class="ag-card-title">Finalizar OS · Regras Operacionais</div>
       <div class="ag-card-freq">1h</div>
     </div>
     <div class="ag-card-status">
@@ -244,7 +244,7 @@ function renderCard() {
 
 async function executeNow(event) {
   event?.stopPropagation();
-  const confirmed = confirm('Enfileirar agora o agente de finalização de OS?\n\nA execução é REAL e poderá finalizar OS abertas/não faturadas com remanescente de 0,00 a 30,00.');
+  const confirmed = confirm('Enfileirar agora o agente de finalização de OS?\n\nA execução é REAL e poderá finalizar OS com remanescente 0,00, com mais de 5 dias sem lançamento ou aprovadas pela Logística.');
   if (!confirmed) return;
 
   try {
