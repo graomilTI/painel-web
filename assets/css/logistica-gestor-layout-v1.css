@@ -420,6 +420,202 @@ body.logistica-gestor-page .log-table tr:hover td {
   background: rgba(9, 47, 33, 0.52);
 }
 
+/* Finalização: leitura operacional densa, com decisão binária evidente. */
+body.logistica-gestor-page .log-finalizacao-card {
+  padding: 14px 16px !important;
+}
+
+body.logistica-gestor-page .log-finalizacao-head {
+  min-height: 42px;
+  margin-bottom: 9px !important;
+}
+
+body.logistica-gestor-page .log-finalizacao-head h3 {
+  font-size: 16px !important;
+}
+
+body.logistica-gestor-page .log-finalizacao-head .muted {
+  margin: 3px 0 0;
+  font-size: 10px;
+}
+
+body.logistica-gestor-page .log-finalizacao-kpis {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+body.logistica-gestor-page .log-finalizacao-kpis span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(22, 215, 144, .24);
+  border-radius: 9px;
+  background: rgba(22, 215, 144, .08);
+  color: #9ec5b3;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .045em;
+}
+
+body.logistica-gestor-page .log-finalizacao-kpis strong {
+  color: #79edbb;
+  font-size: 15px;
+  line-height: 1;
+}
+
+body.logistica-gestor-page .log-finalizacao-kpis .saldo {
+  border-color: rgba(251, 191, 36, .24);
+  background: rgba(251, 191, 36, .07);
+}
+
+body.logistica-gestor-page .log-finalizacao-kpis .saldo strong {
+  color: #fcd56b;
+}
+
+body.logistica-gestor-page .log-finalizacao-table th {
+  padding: 8px 10px;
+}
+
+body.logistica-gestor-page .log-finalizacao-table td {
+  padding: 9px 10px;
+  vertical-align: middle;
+}
+
+body.logistica-gestor-page .log-os-primary {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+body.logistica-gestor-page .log-os-primary strong {
+  color: #f2fbf6;
+  font-size: 14px;
+}
+
+body.logistica-gestor-page .log-os-primary span,
+body.logistica-gestor-page .log-finalizacao-table td > small {
+  color: #799488;
+  font-size: 9px;
+}
+
+body.logistica-gestor-page .log-cliente-name {
+  max-width: 280px;
+  overflow: hidden;
+  color: #dcebe4;
+  font-size: 11px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.logistica-gestor-page .log-request-tag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, .11);
+  color: #93c5fd;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+body.logistica-gestor-page .log-request-tag.saldo {
+  background: rgba(251, 191, 36, .1);
+  color: #fcd56b;
+}
+
+body.logistica-gestor-page .log-route {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 14px minmax(90px, 1fr);
+  align-items: center;
+  gap: 5px;
+  max-width: 440px;
+  color: #9bb1a6;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+body.logistica-gestor-page .log-route span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.logistica-gestor-page .log-route b {
+  color: #5ea889;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+body.logistica-gestor-page .log-route i {
+  color: #3d8065;
+  font-style: normal;
+  text-align: center;
+}
+
+body.logistica-gestor-page .log-volume strong,
+body.logistica-gestor-page .log-volume span,
+body.logistica-gestor-page .log-volume small {
+  display: block;
+}
+
+body.logistica-gestor-page .log-volume strong {
+  color: #eef8f3;
+  font-size: 12px;
+}
+
+body.logistica-gestor-page .log-volume span,
+body.logistica-gestor-page .log-volume small {
+  color: #769084;
+  font-size: 8px;
+}
+
+body.logistica-gestor-page .log-decision-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+body.logistica-gestor-page .log-decision-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform .14s ease, background .14s ease, border-color .14s ease;
+}
+
+body.logistica-gestor-page .log-decision-btn:hover {
+  transform: translateY(-1px);
+}
+
+body.logistica-gestor-page .log-decision-btn.approve {
+  border-color: rgba(22, 215, 144, .32);
+  background: rgba(22, 215, 144, .13);
+  color: #79edbb;
+}
+
+body.logistica-gestor-page .log-decision-btn.reject {
+  border-color: rgba(248, 113, 113, .28);
+  background: rgba(248, 113, 113, .1);
+  color: #fca5a5;
+}
+
+body.logistica-gestor-page .log-decision-btn:disabled {
+  cursor: wait;
+  opacity: .45;
+  transform: none;
+}
+
 body.logistica-gestor-page .log-empty {
   border-color: rgba(22, 215, 144, 0.17);
   background: rgba(3, 24, 17, 0.55);

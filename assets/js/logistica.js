@@ -120,6 +120,8 @@ export async function renderContent(content, userContext) {
   content.addEventListener('click', async (e) => {
     const okBtn = e.target.closest('[data-ok-id]');
     if (okBtn) { await handleOk(okBtn.dataset.okId, okBtn.dataset.okType, content); return; }
+    const rejectBtn = e.target.closest('[data-x-id]');
+    if (rejectBtn) { await handleReject(rejectBtn.dataset.xId, rejectBtn.dataset.xType, content); return; }
 
     const osStatusBtn = e.target.closest('[data-os-status][data-os-id]');
     if (osStatusBtn) { await handleOsStatusChange(osStatusBtn.dataset.osId, osStatusBtn.dataset.osStatus, content); return; }
@@ -208,8 +210,8 @@ async function loadOs() {
   const { data } = await supabase
     .from('operacional_os')
     .select('id,numero_os,data_os,cliente,embarque,destino,supervisao,remanescente,lote,embarcado,status_gestor,status_logistica,observacao_logistica')
-    .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*,remanescente.eq.0')
-    .or('status_logistica.is.null,status_logistica.neq.FINALIZADA')
+    .or('status_gestor.eq.FINALIZAR,observacao_logistica.ilike.KG solicitado*')
+    .or('status_logistica.is.null,status_logistica.eq.PENDENTE')
     .order('data_os', { ascending: false })
     .limit(1000);
   state.rows = safe(data);
@@ -418,14 +420,18 @@ function renderOsTab() {
     </section>
 
     ${(kgRows.length || logQueue.length) ? `
-    <section class="card mt-16">
-      <div class="section-head">
-        <div><h3>Fila Logística</h3><p class="muted">${logQueue.length} para concluir · ${kgRows.length} aumento de saldo</p></div>
+    <section class="card mt-16 log-finalizacao-card">
+      <div class="section-head log-finalizacao-head">
+        <div><h3>Finalização</h3><p class="muted">Solicitações enviadas pela Programação para decisão da Logística.</p></div>
+        <div class="log-finalizacao-kpis" aria-label="Resumo da fila">
+          <span><strong>${logQueue.length}</strong> aguardando</span>
+          ${kgRows.length ? `<span class="saldo"><strong>${kgRows.length}</strong> saldo</span>` : ''}
+        </div>
       </div>
       <div class="log-table-wrap">
-        <table class="log-table">
+        <table class="log-table log-finalizacao-table">
           <thead><tr>
-            <th>O.S.</th><th>Cliente / Rota</th><th>Remanescente</th><th>Solicitação</th><th>Ação</th>
+            <th>O.S. / Regional</th><th>Cliente</th><th>Rota</th><th>Volume</th><th>Decisão</th>
           </tr></thead>
           <tbody>${state.rows.map(rowHtml).join('')}</tbody>
         </table>
@@ -667,21 +673,14 @@ function renderAtualizarTab() {
 
 function rowHtml(row) {
   const isKg = String(row.observacao_logistica||'').startsWith('KG solicitado');
-  const isFinalizar = !isKg && String(row.status_gestor||'') === 'FINALIZAR';
-  const isSaldoZero = !isKg && !isFinalizar && Number(row.remanescente) === 0;
-  const type = isKg ? 'kg' : isSaldoZero ? 'saldo_zero' : 'finalizar';
-  const badge = isKg
-    ? `<span class="log-chip red">↑ KG</span><div class="log-obs">${esc(row.observacao_logistica)}</div>`
-    : isSaldoZero
-      ? `<span class="log-chip warn">Saldo zerado</span>`
-      : `<span class="log-chip blue">$ Finalizar</span>`;
+  const type = isKg ? 'kg' : 'finalizar';
   const rem = Number(row.remanescente);
-  return `<tr data-log-row="${esc(String(row.id))}">
-    <td data-label="O.S."><strong>${esc(row.numero_os)}</strong><br><small class="muted">${brDate(row.data_os)}</small><br><small class="muted">${esc(row.supervisao||'-')}</small></td>
-    <td data-label="Cliente / Rota"><div style="font-weight:850">${esc(row.cliente||'-')}</div><div class="muted" style="font-size:12px;margin-top:3px">Emb.: ${esc(row.embarque||'-')}</div><div class="muted" style="font-size:12px">Dest.: ${esc(row.destino||'-')}</div></td>
-    <td data-label="Remanescente"><span class="log-chip ${rem<=0?'warn':'ok'}">${fmt(rem)}</span><div class="muted" style="font-size:11px;margin-top:4px">Lote ${fmt(row.lote)}</div></td>
-    <td data-label="Solicitação">${badge}</td>
-    <td data-label="Ação"><button class="log-btn-ok" data-ok-id="${esc(String(row.id))}" data-ok-type="${type}" type="button">OK</button></td>
+  return `<tr data-log-row="${esc(String(row.id))}" class="${isKg ? 'is-saldo' : 'is-finalizacao'}">
+    <td data-label="O.S. / Regional"><div class="log-os-primary"><strong>${esc(row.numero_os)}</strong><span>${brDate(row.data_os)}</span></div><small class="muted">${esc(row.supervisao||'-')}</small></td>
+    <td data-label="Cliente"><div class="log-cliente-name">${esc(row.cliente||'-')}</div><span class="log-request-tag ${isKg ? 'saldo' : ''}">${isKg ? 'Ajuste de saldo' : 'Finalizar OS'}</span></td>
+    <td data-label="Rota"><div class="log-route"><span><b>Emb.</b> ${esc(row.embarque||'-')}</span><i aria-hidden="true">→</i><span><b>Dest.</b> ${esc(row.destino||'-')}</span></div></td>
+    <td data-label="Volume"><div class="log-volume"><strong>${fmt(rem)}</strong><span>remanescente</span><small>Lote ${fmt(row.lote)}</small></div></td>
+    <td data-label="Decisão"><div class="log-decision-actions"><button class="log-decision-btn approve" data-ok-id="${esc(String(row.id))}" data-ok-type="${type}" type="button" aria-label="Aprovar solicitação" title="Aprovar">✓</button><button class="log-decision-btn reject" data-x-id="${esc(String(row.id))}" data-x-type="${type}" type="button" aria-label="Recusar solicitação" title="Recusar">×</button></div></td>
   </tr>`;
 }
 
@@ -773,14 +772,31 @@ async function handleOk(id, type, content) {
   const btn = content.querySelector(`[data-ok-id="${id}"]`);
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
 
-  const patch = type === 'kg'
-    ? { observacao_logistica: null, updated_at: new Date().toISOString() }
-    : { status_gestor: null, status_logistica: 'FINALIZADA', finalizado_em: new Date().toISOString(), updated_at: new Date().toISOString() };
-
-  const { error } = await supabase.from('operacional_os').update(patch).eq('id', id);
+  const request = type === 'kg'
+    ? supabase.from('operacional_os').update({ observacao_logistica: null, updated_at: new Date().toISOString() }).eq('id', id)
+    : supabase.rpc('decidir_finalizacao_os_logistica', { p_os_id: id, p_aprovar: true });
+  const { error } = await request;
   if (error) {
     alert(error.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'OK'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✓'; }
+    return;
+  }
+  state.rows = state.rows.filter(r => String(r.id) !== String(id));
+  render(content);
+}
+
+async function handleReject(id, type, content) {
+  const row = state.rows.find(r => String(r.id) === String(id));
+  if (!row) return;
+  const btn = content.querySelector(`[data-x-id="${id}"]`);
+  if (btn) btn.disabled = true;
+  const request = type === 'kg'
+    ? supabase.from('operacional_os').update({ observacao_logistica: null, updated_at: new Date().toISOString() }).eq('id', id)
+    : supabase.rpc('decidir_finalizacao_os_logistica', { p_os_id: id, p_aprovar: false });
+  const { error } = await request;
+  if (error) {
+    alert(error.message);
+    if (btn) btn.disabled = false;
     return;
   }
   state.rows = state.rows.filter(r => String(r.id) !== String(id));
