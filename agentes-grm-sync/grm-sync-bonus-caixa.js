@@ -80,8 +80,18 @@ function nameKey(value) {
   return norm(value).replace(/\s+/g, '');
 }
 
-function brDateNow() {
-  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+function brDateDia15() {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  if (!year || !month) throw new Error('NÃ£o foi possÃ­vel calcular a data de lanÃ§amento do BÃ´nus.');
+
+  return `15/${month}/${year}`;
 }
 
 const MESES_PT_BR = [
@@ -99,7 +109,7 @@ const MESES_PT_BR = [
   'dezembro',
 ];
 
-function descriptionFor(job) {
+function competenceParts(job) {
   const text = String(job.competencia || '').slice(0, 10);
   const match = text.match(/^(\d{4})-(\d{2})/);
   if (!match) throw new Error(`CompetÃªncia invÃ¡lida: ${job.competencia}`);
@@ -109,7 +119,23 @@ function descriptionFor(job) {
   const mes = MESES_PT_BR[mesNumero - 1];
   if (!mes) throw new Error(`MÃªs invÃ¡lido na competÃªncia: ${job.competencia}`);
 
-  return `BÃ´nus de Tons ${mes} - ${ano}`;
+  return { ano, mes, mesNumero };
+}
+
+function descriptionFor(job) {
+  const { ano, mes } = competenceParts(job);
+  // Mesmo padrÃ£o usado no fluxo manual validado no GRM.
+  return `BÃ´nus toneladas ${mes} / ${ano}`;
+}
+
+function descriptionAliasesFor(job) {
+  const { ano, mes } = competenceParts(job);
+  // Inclui a descriÃ§Ã£o da versÃ£o anterior para bloquear duplicidade caso
+  // alguma tentativa antiga tenha sido persistida pelo GRM.
+  return [
+    descriptionFor(job),
+    `BÃ´nus de Tons ${mes} - ${ano}`,
+  ];
 }
 
 function ensureDir(dir) {
@@ -222,14 +248,25 @@ async function selectExactStaffRow(page, cpf) {
   }, target);
 
   if (!prepared.ok) throw new Error(`FuncionÃ¡rio nÃ£o localizado de forma Ãºnica pelo CPF: ${JSON.stringify(prepared)}`);
-  const checkboxSelector = '[data-grm-bonus-staff-checkbox="1"]';
-  const checked = await page.$eval(checkboxSelector, (el) => !!el.checked);
-  if (!checked) {
-    const control = await page.$('[data-grm-bonus-staff-control="1"]');
-    if (control) await page.click('[data-grm-bonus-staff-control="1"]');
-    else await page.click(checkboxSelector);
+  if (!prepared.checked) {
+    const clicked = await page.evaluate((targetCpf) => {
+      const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
+      const row = [...document.querySelectorAll('tr')]
+        .find((el) => onlyDigits(el.innerText).includes(targetCpf));
+      const checkbox = row?.querySelector('input[type="checkbox"]');
+      if (!checkbox) return false;
+      checkbox.click();
+      return true;
+    }, target);
+    if (!clicked) throw new Error('Checkbox do funcionÃ¡rio desapareceu durante a seleÃ§Ã£o.');
   }
-  await sleep(350);
+  await page.waitForFunction((targetCpf) => {
+    const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
+    const row = [...document.querySelectorAll('tr')]
+      .find((el) => onlyDigits(el.innerText).includes(targetCpf));
+    return row?.querySelector('input[type="checkbox"]')?.checked === true;
+  }, { timeout: DEFAULT_TIMEOUT }, target);
+  await sleep(250);
 }
 
 async function waitEmployeeModal(page, timeout = 10000) {
@@ -246,136 +283,518 @@ async function waitEmployeeModal(page, timeout = 10000) {
   }
 }
 
-async function clickEdit(page) {
+async function clickCash(page) {
   const prepared = await page.evaluate(() => {
-    const visible = (el) => !!el && el.getClientRects().length > 0
-      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
-    const buttons = [...document.querySelectorAll('button, [role="button"]')]
-      .filter(visible)
-      .filter((button) => !button.disabled && button.getAttribute('aria-disabled') !== 'true');
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && style.opacity !== '0';
+    };
 
-    let edit = buttons.find((button) => {
-      const signature = normalize([
-        button.textContent,
-        button.getAttribute('title'),
-        button.getAttribute('aria-label'),
-        typeof button.className === 'string' ? button.className : '',
-        button.outerHTML,
-      ].filter(Boolean).join(' '));
-      return /\bEDITAR\b|PENCIL|EDIT OUTLINE|STAFF.*EDIT|EDIT.*STAFF/.test(signature)
-        && !/HISTOR|DESATIV|XLS|UPLOAD/.test(signature);
-    });
+    document
+      .querySelectorAll('[data-grm-bonus-cash]')
+      .forEach((el) => delete el.dataset.grmBonusCash);
 
-    if (!edit) {
-      const search = [...document.querySelectorAll('input')]
-        .find((input) => /nome.*email.*cpf/i.test(input.getAttribute('placeholder') || ''));
-      if (search) {
-        const rect = search.getBoundingClientRect();
-        edit = buttons
-          .filter((button) => {
-            const b = button.getBoundingClientRect();
-            return b.right <= rect.left + 20 && Math.abs(b.top - rect.top) < 100;
-          })
-          .filter((button) => !/XLS|UNAVAILABLE|DEACTIVATE|UPLOAD|ADD/.test(String(button.parentElement?.className || '').toUpperCase()))
-          .sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)[0];
-      }
+    // O campo de busca jÃ¡ Ã© utilizado pelo agente para pesquisar o CPF.
+    const searchInput = [...document.querySelectorAll('input')]
+      .find((el) =>
+        /nome.*email.*cpf/i.test(el.getAttribute('placeholder') || '')
+        || /cpf/i.test(el.getAttribute('placeholder') || '')
+      );
+
+    if (!searchInput) {
+      return {
+        ok: false,
+        motivo: 'CAMPO_BUSCA_NAO_LOCALIZADO',
+      };
     }
 
-    if (!edit) return null;
-    edit.dataset.grmBonusEdit = '1';
-    return '[data-grm-bonus-edit="1"]';
+    const sr = searchInput.getBoundingClientRect();
+    const centerY = sr.top + (sr.height / 2);
+
+    const buttons = [...document.querySelectorAll(
+      'button,[role="button"],a'
+    )]
+      .filter(visible)
+      .filter((el) =>
+        !el.disabled &&
+        el.getAttribute('aria-disabled') !== 'true'
+      )
+      .map((el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          el,
+          rect,
+          centerY: rect.top + (rect.height / 2),
+        };
+      })
+      // Somente a barra de aÃ§Ãµes Ã  esquerda do campo de busca.
+      .filter(({ rect, centerY: buttonY }) =>
+        rect.right <= sr.left + 15
+        && Math.abs(buttonY - centerY) <= 35
+      )
+      .sort((a, b) => a.rect.left - b.rect.left);
+
+    if (buttons.length < 5) {
+      return {
+        ok: false,
+        motivo: 'BARRA_ACOES_INCOMPLETA',
+        quantidade: buttons.length,
+        posicoes: buttons.map((item, index) => ({
+          posicao: index + 1,
+          left: Math.round(item.rect.left),
+          top: Math.round(item.rect.top),
+        })),
+      };
+    }
+
+    // Barra real do GRM:
+    // 1 lÃ¡pis
+    // 2 XLS
+    // 3 calendÃ¡rio
+    // 4 localizaÃ§Ã£o
+    // 5 Caixa (Ã­cone prÃ©dio/museu)
+    const cash = buttons[4].el;
+
+    cash.dataset.grmBonusCash = '1';
+
+    return {
+      ok: true,
+      selector: '[data-grm-bonus-cash="1"]',
+      posicao: 5,
+      quantidade_acoes: buttons.length,
+      left: Math.round(buttons[4].rect.left),
+      top: Math.round(buttons[4].rect.top),
+      html: String(cash.outerHTML || '').slice(0, 800),
+    };
   });
 
-  if (!prepared) throw new Error('BotÃ£o Editar do funcionÃ¡rio nÃ£o localizado.');
-  await page.click(prepared);
-  if (!await waitEmployeeModal(page)) throw new Error('Editar foi acionado, mas o cadastro do funcionÃ¡rio nÃ£o abriu.');
+  if (!prepared?.ok) {
+    throw new Error(
+      `BotÃ£o Caixa nÃ£o localizado na barra de aÃ§Ãµes: ${
+        JSON.stringify(prepared).slice(0, 1800)
+      }`
+    );
+  }
+
+  log('INFO', 'BotÃ£o Caixa localizado pela posiÃ§Ã£o da barra.', prepared);
+
+  const beforeUrl = page.url();
+
+  await page.click(prepared.selector);
+  await page.waitForFunction((previous) => {
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    return [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )]
+      .filter(visible)
+      .some((el) => {
+        const text = String(el.innerText || '').replace(/\s+/g, ' ').trim();
+        return /CAIXA OPERACIONAL/i.test(text)
+          && /TIPO DE DESPESA|ADIANTAMENTOS|COMPROVANTES/i.test(text);
+      });
+  }, { timeout: DEFAULT_TIMEOUT });
+  await sleep(400);
+
+  const after = await page.evaluate((urlAnterior) => {
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden';
+    };
+
+    const dialogs = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )]
+      .filter(visible)
+      .map((el) => String(el.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(-3);
+
+    return {
+      urlAnterior,
+      urlAtual: window.location.href,
+      mudouUrl: window.location.href !== urlAnterior,
+      dialogs,
+      body: String(document.body?.innerText || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(-5000),
+      controls: [...document.querySelectorAll('button,[role="button"],a')]
+        .filter(visible)
+        .map((el) => ({
+          text: String(el.innerText || '').replace(/\s+/g, ' ').trim(),
+          title: el.getAttribute('title'),
+          aria: el.getAttribute('aria-label'),
+          icons: [...el.querySelectorAll('lord-icon')]
+            .map((icon) => icon.getAttribute('src')),
+        }))
+        .slice(-60),
+    };
+  }, beforeUrl);
+
+  log('INFO', 'Resultado apÃ³s clicar no Caixa.', DEBUG ? after : {
+    urlAnterior: after.urlAnterior,
+    urlAtual: after.urlAtual,
+    mudouUrl: after.mudouUrl,
+    dialogs: after.dialogs,
+  });
+
+  // NÃ£o falha aqui apenas porque nÃ£o abriu modal.
+  // O Caixa pode abrir tela, drawer ou outro componente.
   await sleep(500);
 }
-
 async function openEmployee(page, cpf) {
   await openStaffPage(page);
   await setSearchCpf(page, cpf);
   await selectExactStaffRow(page, cpf);
-  await clickEdit(page);
+  await clickCash(page);
 }
 
 async function openExpensesSection(page) {
-  const prepared = await page.evaluate(() => {
+  const found = await page.evaluate(() => {
     const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-    const visible = (el) => !!el && el.getClientRects().length > 0
-      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    const labels = [...document.querySelectorAll('*')]
-      .filter((el) => visible(el) && el.children.length === 0 && normalize(el.textContent) === 'DESPESAS');
-    const label = labels[labels.length - 1];
-    if (!label) return null;
-    const clickable = label.closest('button, [role="button"], .v-expansion-panel-title') || label.parentElement;
-    if (!clickable) return null;
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden'
+        && style.opacity !== '0';
+    };
+
+    document
+      .querySelectorAll('[data-grm-bonus-expenses]')
+      .forEach((el) => delete el.dataset.grmBonusExpenses);
+
+    const dialogs = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )].filter(visible);
+
+    const scope = dialogs[dialogs.length - 1] || document.body;
+
+    const clickableSelector = [
+      'button',
+      '[role="button"]',
+      '[role="tab"]',
+      'a',
+      '.v-tab',
+      '.v-list-item',
+      '.v-expansion-panel-title',
+    ].join(',');
+
+    // 1. Controle clicÃ¡vel cujo prÃ³prio texto Ã© EXATAMENTE DESPESAS.
+    const direct = [...scope.querySelectorAll(clickableSelector)]
+      .filter(visible)
+      .filter((el) => !['I', 'SVG', 'PATH'].includes(el.tagName))
+      .filter((el) => {
+        const text = normalize(el.innerText || el.textContent || '');
+        return text === 'DESPESAS' || text === 'DESPESA';
+      });
+
+    let clickable = direct[direct.length - 1] || null;
+
+    // 2. Procura um rÃ³tulo folha exatamente DESPESAS e sobe atÃ© o controle.
+    if (!clickable) {
+      const labels = [...scope.querySelectorAll('*')]
+        .filter(visible)
+        .filter((el) => el.children.length === 0)
+        .filter((el) => {
+          const text = normalize(el.textContent || '');
+          return text === 'DESPESAS' || text === 'DESPESA';
+        });
+
+      for (let i = labels.length - 1; i >= 0; i -= 1) {
+        const parent = labels[i].closest(clickableSelector);
+
+        if (
+          parent &&
+          visible(parent) &&
+          !['I', 'SVG', 'PATH'].includes(parent.tagName)
+        ) {
+          clickable = parent;
+          break;
+        }
+      }
+    }
+
+    if (!clickable) {
+      return {
+        ok: false,
+        encontrados: [...scope.querySelectorAll('*')]
+          .filter(visible)
+          .map((el) => normalize(el.textContent || ''))
+          .filter((text) => text === 'DESPESAS' || text === 'DESPESA')
+          .slice(0, 20),
+      };
+    }
+
     clickable.dataset.grmBonusExpenses = '1';
-    return '[data-grm-bonus-expenses="1"]';
+
+    return {
+      ok: true,
+      selector: '[data-grm-bonus-expenses="1"]',
+      tag: clickable.tagName,
+      texto: normalize(clickable.innerText || clickable.textContent || ''),
+      html: String(clickable.outerHTML || '').slice(0, 700),
+    };
   });
-  if (!prepared) throw new Error('SeÃ§Ã£o Despesas do cadastro do funcionÃ¡rio nÃ£o localizada.');
-  await page.click(prepared);
-  await sleep(500);
+
+  if (!found?.ok) {
+    throw new Error(
+      `SeÃ§Ã£o DESPESAS exata nÃ£o localizada no cadastro. DiagnÃ³stico: ${
+        JSON.stringify(found).slice(0, 1200)
+      }`
+    );
+  }
+
+  log('INFO', 'Controle correto de Despesas localizado.', found);
+
+  await page.click(found.selector);
+  await sleep(1000);
+}
+async function inspectExpenseDescriptions(page, descriptions) {
+  const expected = Array.isArray(descriptions) ? descriptions : [descriptions];
+  return page.evaluate((wanted) => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const targets = wanted.map(normalize).filter(Boolean);
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none'
+      && getComputedStyle(el).visibility !== 'hidden';
+
+    return [...document.querySelectorAll('tr,[role="row"]')]
+      .filter(visible)
+      .map((row) => ({
+        text: String(row.innerText || '').replace(/\s+/g, ' ').trim(),
+        normalized: normalize(row.innerText || ''),
+        cells: [...row.querySelectorAll('td,[role="cell"],[role="gridcell"]')]
+          .map((cell) => String(cell.innerText || '').replace(/\s+/g, ' ').trim()),
+      }))
+      .filter((row) => targets.some((target) => row.normalized.includes(target)));
+  }, expected);
 }
 
-async function hasExpenseDescription(page, description) {
-  return page.evaluate((expected) => {
-    const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
-    const target = normalize(expected);
-    const visible = (el) => !!el && el.getClientRects().length > 0
-      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    const containers = [...document.querySelectorAll('[role="dialog"], .v-overlay__content, .v-dialog, [class*="modal"], [class*="dialog"]')]
-      .filter(visible);
-    const scope = containers[containers.length - 1] || document.body;
-    return normalize(scope.innerText || '').includes(target);
-  }, description);
+function brMoneyText(value) {
+  return Number(value || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function verifyMovementRow(rows, job, description) {
+  const expectedDescription = norm(description);
+  const expectedCategory = norm('BÃ´nus e PremiaÃ§Ãµes');
+  const expectedValue = brMoneyText(job.valor);
+  const candidates = (rows || []).filter((row) =>
+    norm(row.text).includes(expectedDescription)
+  );
+
+  const exact = candidates.find((row) => {
+    const cells = row.cells || [];
+    const hasCategory = cells.some((cell) => norm(cell) === expectedCategory)
+      || norm(row.text).includes(expectedCategory);
+    const hasValue = cells.some((cell) => String(cell).includes(expectedValue))
+      || String(row.text).includes(expectedValue);
+    const hasDocumentZero = cells.some((cell) => String(cell).trim() === '0');
+    return hasCategory && hasValue && hasDocumentZero;
+  });
+
+  return {
+    found: candidates.length > 0,
+    exact: !!exact,
+    exactRow: exact || null,
+    candidates,
+  };
 }
 
 async function clickAddExpense(page) {
   const prepared = await page.evaluate(() => {
     const normalize = (value) => String(value || '')
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9+]+/g, ' ').trim();
-    const visible = (el) => !!el && el.getClientRects().length > 0
-      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    const expensesLabel = [...document.querySelectorAll('*')]
-      .filter((el) => visible(el) && el.children.length === 0 && normalize(el.textContent) === 'DESPESAS')
-      .pop();
-    if (!expensesLabel) return null;
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none'
+        && style.visibility !== 'hidden';
+    };
 
-    let section = expensesLabel.parentElement;
-    while (section && section !== document.body) {
-      const text = normalize(section.innerText || '');
-      if (text.includes('DESPESAS') && section.querySelectorAll('button, [role="button"]').length) break;
-      section = section.parentElement;
-    }
-    if (!section) return null;
+    const signature = (el) => normalize([
+      el.innerText,
+      el.textContent,
+      el.getAttribute?.('title'),
+      el.getAttribute?.('aria-label'),
+    ].filter(Boolean).join(' '));
 
-    const buttons = [...section.querySelectorAll('button, [role="button"]')]
+    document
+      .querySelectorAll('[data-grm-bonus-add-expense]')
+      .forEach((el) => delete el.dataset.grmBonusAddExpense);
+
+    const dialogs = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )].filter(visible);
+
+    const scope = dialogs[dialogs.length - 1] || document.body;
+
+    const controls = [...scope.querySelectorAll(
+      'button,[role="button"],a'
+    )]
       .filter(visible)
-      .filter((button) => !button.disabled && button.getAttribute('aria-disabled') !== 'true');
-    let add = buttons.find((button) => {
-      const key = normalize([
-        button.textContent,
-        button.getAttribute('title'),
-        button.getAttribute('aria-label'),
-        typeof button.className === 'string' ? button.className : '',
-      ].filter(Boolean).join(' '));
-      return key === 'ADICIONAR' || key === '+' || /\bADICIONAR\b|\bADD\b|PLUS/.test(key);
+      .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+
+    let add = controls.find((el) => {
+      const key = signature(el);
+      return key === 'ADICIONAR DESPESA'
+        || key === 'NOVA DESPESA'
+        || key === 'ADICIONAR'
+        || key === 'NOVO';
     });
+
+    if (!add) {
+      // Mesmo fallback do agente V1: procurar "+" ou Adicionar
+      // dentro de um container relacionado a Despesas.
+      const containers = [...scope.querySelectorAll(
+        'section,main,div,.v-expansion-panel-text'
+      )]
+        .filter(visible)
+        .filter((el) => {
+          const key = normalize(el.innerText || '');
+          return key.includes('DESPESA') && key.length < 5000;
+        })
+        .sort(
+          (a, b) =>
+            String(a.innerText || '').length -
+            String(b.innerText || '').length
+        );
+
+      for (const container of containers) {
+        const buttons = [...container.querySelectorAll(
+          'button,[role="button"],a'
+        )]
+          .filter(visible)
+          .filter((el) => !el.disabled);
+
+        add = buttons.find((el) => {
+          const key = signature(el);
+          return key === '+'
+            || /\bADICIONAR\b/.test(key)
+            || /\bNOVA?\b/.test(key)
+            || /\bNOVO\b/.test(key)
+            || /PLUS/.test(key);
+        });
+
+        if (add) break;
+      }
+    }
+
+    if (!add) {
+      const plusButtons = [...document.querySelectorAll(
+        'button,[role="button"],a'
+      )]
+        .filter(visible)
+        .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true')
+        .filter((el) =>
+        [...el.querySelectorAll('lord-icon')].some((icon) =>
+          /\/48-plus-to-square-rotation-outline\.json(?:$|\?)/
+            .test(icon.getAttribute('src') || '')
+        )
+        );
+      add = plusButtons[plusButtons.length - 1] || null;
+    }
+
     if (!add) return null;
+
     add.dataset.grmBonusAddExpense = '1';
-    return '[data-grm-bonus-add-expense="1"]';
+
+    return {
+      selector: '[data-grm-bonus-add-expense="1"]',
+      tag: add.tagName,
+      texto: signature(add).slice(0, 300),
+    };
   });
 
-  if (!prepared) throw new Error('BotÃ£o Adicionar de Despesas nÃ£o localizado.');
-  await page.click(prepared);
-  await sleep(600);
-}
+  if (!prepared) {
+    const diagnostics = await page.evaluate(() => {
+      const visible = (el) => {
+        if (!el || !el.getClientRects().length) return false;
+        const style = getComputedStyle(el);
+        return style.display !== 'none'
+          && style.visibility !== 'hidden';
+      };
 
+      return [...document.querySelectorAll(
+        'button,[role="button"],a'
+      )]
+        .filter(visible)
+        .map((el) => String([
+          el.innerText,
+          el.getAttribute('title'),
+          el.getAttribute('aria-label'),
+        ].filter(Boolean).join(' | ')).replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .slice(0, 80);
+    });
+
+    throw new Error(
+      `BotÃ£o para adicionar nova despesa nÃ£o localizado. Controles: ${
+        JSON.stringify(diagnostics).slice(0, 1600)
+      }`
+    );
+  }
+
+  const beforeForm = await page.evaluate(() => {
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    return {
+      inputs: [...document.querySelectorAll(
+        'input:not([type="checkbox"]),textarea,select,[role="combobox"]'
+      )].filter(visible).length,
+      dialogs: [...document.querySelectorAll(
+        '[role="dialog"],.v-dialog,[class*="modal"],[class*="dialog"]'
+      )].filter(visible).length,
+    };
+  });
+
+  await page.click(prepared.selector);
+  await page.waitForFunction((previous) => {
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    };
+    const inputCount = [...document.querySelectorAll(
+      'input:not([type="checkbox"]),textarea,select,[role="combobox"]'
+    )].filter(visible).length;
+    return inputCount > previous.inputs;
+  }, { timeout: DEFAULT_TIMEOUT }, beforeForm);
+  await sleep(300);
+
+  log('INFO', 'FormulÃ¡rio de nova despesa aberto.', prepared);
+}
 async function markField(page, semantic) {
   const selector = await page.evaluate((fieldType) => {
     const normalize = (value) => String(value || '')
@@ -383,16 +802,23 @@ async function markField(page, semantic) {
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
     const patterns = {
-      descricao: /DESCRI[CÃ‡][AÃƒ]O|DESCRICAO/,
-      valor: /^VALOR$|VALOR DA DESPESA|VALOR TOTAL/,
+      descricao: /DESCRI[CÃ‡][AÃƒ]O|DESCRICAO|MOTIVO|OBSERVA[CÃ‡][AÃƒ]O|OBSERVACAO/,
+      valor: /^VALOR$|VALOR DA DESPESA|VALOR TOTAL|R\$/,
       data: /^DATA$|DATA DA DESPESA|DATA DO LAN[CÃ‡]AMENTO/,
+      documento: /^N(\.|Âº|Â°)?\s*(DO\s*)?DOCUMENTO$|NUMERO DO DOCUMENTO|N DOCUMENTO/,
     };
     const pattern = patterns[fieldType];
     if (!pattern) return null;
 
     const dialogs = [...document.querySelectorAll('[role="dialog"], .v-overlay__content, .v-dialog, [class*="modal"], [class*="dialog"]')]
       .filter(visible);
-    const scope = dialogs[dialogs.length - 1] || document.body;
+    const formDialogs = dialogs
+      .filter((el) => /ADICIONAR MOVIMENTO/i.test(el.innerText || ''))
+      .filter((el) => el.querySelector('input,textarea,select,[role="combobox"]'))
+      .sort((a, b) =>
+        b.querySelectorAll('input,textarea,select,[role="combobox"]').length
+        - a.querySelectorAll('input,textarea,select,[role="combobox"]').length);
+    const scope = formDialogs[0] || dialogs[dialogs.length - 1] || document.body;
 
     const labelCandidates = [...scope.querySelectorAll('label, .v-label, [class*="label"]')]
       .filter(visible)
@@ -403,341 +829,473 @@ async function markField(page, semantic) {
       if (label.htmlFor) input = document.getElementById(label.htmlFor);
       if (!input) {
         const host = label.closest('.v-input, .v-field, .form-group, [class*="field"]') || label.parentElement;
-        input = host?.querySelector('input:not([type="checkbox"]), textarea') || null;
-      }
-      if (input && visible(input)) {
-        input.dataset.grmBonusField = fieldType;
-        return `[data-grm-bonus-field="${fieldType}"]`;
-      }
-    }
+        input = host?.querySelectoŠ	Ú[œ]››İ
+İ\OH˜ÚXÚØ›Ş—JK^\™XIÊH[ÂˆBˆYˆ
+[œ]	‰ˆš\ÚX›J[œ]
+JHÂˆ[œ]™]\Ù]™Ü›P›Û\ÑšY[HšY[\NÂˆ™]\›ˆÙ]KYÜ›KX›Û\ËYšY[H‰ÙšY[\_H—XÂˆBˆB‚ˆÛÛœİ[œ]ÈHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	Ú[œ]››İ
+İ\OH˜ÚXÚØ›Ş—JK^\™XIÊWK™š[\Šš\ÚX›JNÂˆÛÛœİ[œ]H[œ]Ë™š[™
 
-    const inputs = [...scope.querySelectorAll('input:not([type="checkbox"]), textarea')].filter(visible);
-    const input = inputs.find((el) => pattern.test(normalize([
-      el.getAttribute('placeholder'), el.getAttribute('name'), el.id, el.getAttribute('aria-label'),
-    ].filter(Boolean).join(' '))));
-    if (!input) return null;
-    input.dataset.grmBonusField = fieldType;
-    return `[data-grm-bonus-field="${fieldType}"]`;
-  }, semantic);
+[
+HOˆ]\›‹\İ
+›Ü›X[^™JÂˆ[™Ù]]šX]J	ÜXÙZÛ\‰ÊK[™Ù]]šX]J	Û˜[YIÊK[šY[™Ù]]šX]J	Ø\šXK[X™[	ÊKˆK™š[\Š›ÛÛX[ŠKš›Ú[Š	È	ÊJJJNÂˆYˆ
+Z[œ]
+H™]\›ˆ[Âˆ[œ]™]\Ù]™Ü›P›Û\ÑšY[HšY[\NÂˆ™]\›ˆÙ]KYÜ›KX›Û\ËYšY[H‰ÙšY[\_H—XÂˆKÙ[X[XÊNÂ‚ˆYˆ
+\Ù[XİÜŠH›İÈ™]È\œ›ÜŠØ[\È	ÜÙ[X[XßHH\Ü\ØH°èÛÈØØ[^˜YË˜
+NÂˆ™]\›ˆÙ[XİÜÂŸB‚˜\Ş[˜È[˜İ[Ûˆ\QšY[
+YÙKÙ[XİÜ‹˜[YJHÂˆ]ØZ]YÙK˜ÛXÚÊÙ[XİÜ‹ÈÛXÚĞÛİ[ˆÈJNÂˆ]ØZ]YÙKšÙ^X›Ø\™™İÛŠ	ĞÛÛ›Û	ÊNÂˆHÈ]ØZ]YÙKšÙ^X›Ø\™œ™\ÜÊ	ĞIÊNÈHš[˜[HÈ]ØZ]YÙKšÙ^X›Ø\™\
+	ĞÛÛ›Û	ÊNÈBˆ]ØZ]YÙKšÙ^X›Ø\™œ™\ÜÊ	Ğ˜XÚÜÜXÙIÊNÂˆ]ØZ]YÙKšÙ^X›Ø\™\Jİš[™Ê˜[YJKÈ[^NˆŒJNÂˆ]ØZ]YÙKšÙ^X›Ø\™œ™\ÜÊ	ÕX‰ÊNÂˆ]ØZ]ÛY\
+L
+NÂŸB‚™[˜İ[Ûˆ\œÙPœ›İÜÙ\“[X™\Š˜[YJHÂˆÛÛœİ˜]ÈHİš[™Ê˜[YHÏÈ	ÉÊKš[J
+NÂˆYˆ
+\˜]ÊH™]\›ˆÂˆÛÛœİ›Ü›X[^™YH˜]Ëš[˜ÛY\Ê	Ë	ÊHÈ˜]Ëœ™\XÙJ×‹ÙË	ÉÊKœ™\XÙJ	Ë	Ë	Ë‰ÊHˆ˜]ÎÂˆÛÛœİˆH[X™\Š›Ü›X[^™Yœ™\XÙJÖ×ŒNK‹WKÙË	ÉÊJNÂˆ™]\›ˆ[X™\‹š\Ñš[š]JŠHÈˆˆÂŸB‚˜\Ş[˜È[˜İ[ÛˆÚÛÜÙS[İ™[Y[\JYÙK^XİYH	ĞÛÛ\›İ˜[IÊHÂˆÛÛœİÙ[XİÜˆH]ØZ]YÙK™]˜[X]J
 
-  if (!selector) throw new Error(`Campo ${semantic} da Despesa nÃ£o localizado.`);
-  return selector;
-}
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊK››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊKÕ\\Ø\ÙJ
+Kš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÈ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂˆÛÛœİX[ÙÜÈHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+	ÖÜ›ÛOH™X[ÙÈ—K‹[İ™\›^W×ØÛÛ[‹YX[ÙËØÛ\ÜÊH›[Ù[—KØÛ\ÜÊH™X[ÙÈ—IÊWBˆ™š[\Šš\ÚX›JBˆ™š[\Š
+[
+HOˆĞQPÒSÓTˆSÕ’SQS•ËÚK\İ
+[š[›™\•^	ÉÊJNÂˆÛÛœİØÛÜHHX[ÙÜËœÛÜ
 
-async function typeField(page, selector, value) {
-  await page.click(selector, { clickCount: 3 });
-  await page.keyboard.down('Control');
-  try { await page.keyboard.press('A'); } finally { await page.keyboard.up('Control'); }
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type(String(value), { delay: 20 });
-  await page.keyboard.press('Tab');
-  await sleep(250);
-}
+KŠHOˆ‹œ]Y\TÙ[XİÜ[
+	Ú[œ]	ÊK›[™İHKœ]Y\TÙ[XİÜ[
+	Ú[œ]	ÊK›[™İ
+VÌNÂˆYˆ
+\ØÛÜJH™]\›ˆ[ÂˆÛÛœİX™[ÈHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	ÛX™[‹[X™[ØÛ\ÜÊH›X™[—IÊWBˆ™š[\Šš\ÚX›JBˆ™š[\Š
+[
+HOˆ›Ü›X[^™J[^ÛÛ[
+HOOH	ÕTÉÊNÂˆ]ÛÛ›ÛHX™[ÖÌOË˜ÛÜÙ\İ
+	Ë‹Z[œ]‹YšY[Ü›ÛOH˜ÛÛX›Ø›Ş—KØÛ\ÜÊH™šY[—IÊNÂˆYˆ
+XÛÛ›Û
+HÂˆÛÛ›ÛHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	ÖÜ›ÛOH˜ÛÛX›Ø›Ş—K‹\Ù[Xİ‹X]]ØÛÛ\]IÊWBˆ™š[\Šš\ÚX›JBˆ™š[™
 
-function parseBrowserNumber(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return 0;
-  const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
-  const n = Number(normalized.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(n) ? n : 0;
-}
+[
+HOˆĞQPS•SQS•ßÓÓT“ÕS•KË\İ
+›Ü›X[^™J[š[›™\•^[^ÛÛ[
+JJNÂˆBˆÛÛœİÛXÚØX›HHÛÛ›ÛË›X]Ú\Ê	Ú[œ]]Û‹Ü›ÛOH˜ÛÛX›Ø›Ş—IÊBˆÈÛÛ›ÛˆˆÛÛ›ÛËœ]Y\TÙ[XİÜŠ	Ú[œ]]Û‹Ü›ÛOH˜ÛÛX›Ø›Ş—IÊHÛÛ›ÛÂˆYˆ
+XÛXÚØX›JH™]\›ˆ[ÂˆÛXÚØX›K™]\Ù]™Ü›P›Û\Õ\HH	ÌIÎÂˆ™]\›ˆ	ÖÙ]KYÜ›KX›Û\Ë]\OHŒH—IÎÂˆJNÂˆYˆ
+\Ù[XİÜŠH›İÈ™]È\œ›ÜŠ	ĞØ[\È\ÈÈ[İš[Y[È°èÛÈØØ[^˜YË‰ÊNÂˆ]ØZ]YÙK˜ÛXÚÊÙ[XİÜŠNÂˆ]ØZ]ÛY\
+Ì
+NÂˆÛÛœİÜ[ÛˆH]ØZ]YÙK™]˜[X]J
+Ø[Y
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊK››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊKÕ\\Ø\ÙJ
+Kš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÈ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂˆÛÛœİ\™Ù]H›Ü›X[^™JØ[Y
+NÂˆÛÛœİØ[™Y]HHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+	ÖÜ›ÛOH›Ü[Ûˆ—K‹[\İZ][KIÊWBˆ™š[\Šš\ÚX›JBˆ™š[™
 
-async function fillExpense(page, job, description) {
-  const descriptionField = await markField(page, 'descricao');
-  const valueField = await markField(page, 'valor');
-  const dateField = await markField(page, 'data');
+[
+HOˆ›Ü›X[^™J[š[›™\•^[^ÛÛ[
+HOOH\™Ù]
+NÂˆYˆ
+XØ[™Y]JH™]\›ˆ[ÂˆØ[™Y]K™]\Ù]™Ü›P›Û\Õ\SÜ[ÛˆH	ÌIÎÂˆ™]\›ˆ	ÖÙ]KYÜ›KX›Û\Ë]\K[Ü[ÛHŒH—IÎÂˆK^XİY
+NÂˆYˆ
+[Ü[ÛŠH›İÈ™]È\œ›ÜŠÜ0éğèÛÈ	Ù^XİYH°èÛÈØØ[^˜YH›ÈØ[\È\Ë˜
+NÂˆ]ØZ]YÙK˜ÛXÚÊÜ[ÛŠNÂˆ]ØZ]ÛY\
+L
+NÂŸB‚˜\Ş[˜È[˜İ[ÛˆÚÛÜÙTÙ[XİSX™[
+YÙKX™[^^XİYÜ[ÛŠHÂˆÛÛœİÙ[XİÜˆH]ØZ]YÙK™]˜[X]J
+X™[Ø[Y
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊBˆ››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊBˆÕ\\Ø\ÙJ
+Bˆœ™\XÙJÖ×KVŒNWJËÙË	È	ÊBˆš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÂˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂˆÛÛœİ\™Ù]H›Ü›X[^™JX™[Ø[Y
+NÂ‚ˆØİ[Y[ˆœ]Y\TÙ[XİÜ[
+	ÖÙ]KYÜ›KX›Û\Ë\Ù[XİYšY[IÊBˆ™›Ü‘XXÚ
 
-  await typeField(page, descriptionField, description);
+[
+HOˆ[]H[™]\Ù]™Ü›P›Û\ÔÙ[XİšY[
+NÂ‚ˆÛÛœİX[ÙÜÈHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	ÖÜ›ÛOH™X[ÙÈ—K‹[İ™\›^W×ØÛÛ[‹YX[ÙËØÛ\ÜÊH›[Ù[—KØÛ\ÜÊH™X[ÙÈ—IÂˆ
+WBˆ™š[\Šš\ÚX›JBˆ™š[\Š
+[
+HOˆĞQPÒSÓTˆSÕ’SQS•ËÚK\İ
+[š[›™\•^	ÉÊJBˆœÛÜ
 
-  const expectedValue = Number(job.valor || 0);
-  const valueCandidates = [
-    expectedValue.toFixed(2).replace('.', ','),
-    String(Math.round(expectedValue * 100)),
-    expectedValue.toFixed(2),
-  ];
-  let valueOk = false;
-  for (const candidate of valueCandidates) {
-    await typeField(page, valueField, candidate);
-    const observed = await page.$eval(valueField, (el) => el.value || el.getAttribute('value') || '');
-    if (Math.abs(parseBrowserNumber(observed) - expectedValue) < 0.001) {
-      valueOk = true;
-      break;
-    }
-  }
-  if (!valueOk) throw new Error(`Valor do bÃ´nus nÃ£o permaneceu no formulÃ¡rio como ${expectedValue.toFixed(2)}.`);
+KŠHO‚ˆ‹œ]Y\TÙ[XİÜ[
+	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊK›[™İˆHKœ]Y\TÙ[XİÜ[
+	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊK›[™İˆ
+NÂˆÛÛœİØÛÜHHX[ÙÜÖÌHØİ[Y[˜›ÙNÂ‚ˆÛÛœİX™[ÈHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	ÛX™[‹[X™[ØÛ\ÜÊH›X™[—IÊWBˆ™š[\Šš\ÚX›JBˆ™š[\Š
+[
+HOˆ›Ü›X[^™J[^ÛÛ[	ÉÊHOOH\™Ù]
+NÂ‚ˆ]ÛÛ›ÛH[Âˆ›Üˆ
+ÛÛœİX™[ÙˆX™[ÊHÂˆÛÛ›ÛHX™[˜ÛÜÙ\İ
+	Ë‹Z[œ]‹YšY[‹\Ù[Xİ‹X]]ØÛÛ\]KØÛ\ÜÊH™šY[—IÊNÂˆYˆ
+ÛÛ›Û
+Hœ™XZÎÂˆB‚ˆYˆ
+XÛÛ›Û
+HÂˆÛÛœİ[œ]ÈHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	Ú[œ]Ü›ÛOH˜ÛÛX›Ø›Ş—IÊWK™š[\Šš\ÚX›JNÂˆÛÛ›ÛH[œ]Ë™š[™
 
-  const today = brDateNow();
-  await typeField(page, dateField, today);
+[
+HOˆÂˆÛÛœİÚYÛ˜]\™HH›Ü›X[^™JÂˆ[™Ù]]šX]J	Ø\šXK[X™[	ÊKˆ[™Ù]]šX]J	ÜXÙZÛ\‰ÊKˆ[™Ù]]šX]J	Û˜[YIÊKˆK™š[\Š›ÛÛX[ŠKš›Ú[Š	È	ÊJNÂˆ™]\›ˆÚYÛ˜]\™HOOH\™Ù]ÚYÛ˜]\™Kš[˜ÛY\Ê\™Ù]
+NÂˆJH[ÂˆB‚ˆÛÛœİÛXÚØX›HHÛÛ›ÛË›X]Ú\Ê	Ú[œ]]Û‹Ü›ÛOH˜ÛÛX›Ø›Ş—IÊBˆÈÛÛ›ÛˆˆÛÛ›ÛËœ]Y\TÙ[XİÜŠ	Ú[œ]]Û‹Ü›ÛOH˜ÛÛX›Ø›Ş—IÊHÛÛ›ÛÂ‚ˆYˆ
+XÛXÚØX›JH™]\›ˆ[ÂˆÛXÚØX›K™]\Ù]™Ü›P›Û\ÔÙ[XİšY[H\™Ù]Âˆ™]\›ˆ	ÖÙ]KYÜ›KX›Û\Ë\Ù[XİYšY[IÎÂˆKX™[^
+NÂ‚ˆYˆ
+\Ù[XİÜŠH›İÈ™]È\œ›ÜŠØ[\È	ÛX™[^H°èÛÈØØ[^˜YÈ›È›Ü›][0è\š[ÈÈÔ“K˜
+NÂˆ]ØZ]YÙK˜ÛXÚÊÙ[XİÜŠNÂˆ]ØZ]ÛY\
+ÍL
+NÂ‚ˆÛÛœİÜ[ÛˆH]ØZ]YÙK™]˜[X]J
+Ø[Y
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊBˆ››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊBˆÕ\\Ø\ÙJ
+Bˆœ™\XÙJ×ÊËÙË	È	ÊBˆš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÂˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂˆÛÛœİ\™Ù]H›Ü›X[^™JØ[Y
+NÂ‚ˆØİ[Y[ˆœ]Y\TÙ[XİÜ[
+	ÖÙ]KYÜ›KX›Û\Ë\Ù[Xİ[Ü[Û—IÊBˆ™›Ü‘XXÚ
 
-  const descriptionObserved = await page.$eval(descriptionField, (el) => String(el.value || '').trim());
-  if (norm(descriptionObserved) !== norm(description)) {
-    throw new Error(`DescriÃ§Ã£o divergente no formulÃ¡rio: ${descriptionObserved}`);
-  }
+[
+HOˆ[]H[™]\Ù]™Ü›P›Û\ÔÙ[XİÜ[ÛŠNÂ‚ˆÛÛœİØ[™Y]\ÈHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	ÖÜ›ÛOH›Ü[Ûˆ—K‹[\İZ][KIÂˆ
+WBˆ™š[\Šš\ÚX›JBˆ™š[\Š
+[
+HOˆ›Ü›X[^™J[š[›™\•^[^ÛÛ[
+HOOH\™Ù]
+NÂ‚ˆÛÛœİØ[™Y]HHØ[™Y]\ÖØØ[™Y]\Ë›[™İHWNÂˆYˆ
+XØ[™Y]JH™]\›ˆ[ÂˆØ[™Y]K™]\Ù]™Ü›P›Û\ÔÙ[XİÜ[ÛˆH	ÌIÎÂˆ™]\›ˆ	ÖÙ]KYÜ›KX›Û\Ë\Ù[Xİ[Ü[ÛHŒH—IÎÂˆK^XİYÜ[ÛŠNÂ‚ˆYˆ
+[Ü[ÛŠH›İÈ™]È\œ›ÜŠˆÜ0éğèÛÈ	Ù^XİYÜ[ÛŸH°èÛÈØØ[^˜YH›ÈØ[\È	ÛX™[^K˜ˆ
+NÂ‚ˆ]ØZ]YÙK˜ÛXÚÊÜ[ÛŠNÂˆ]ØZ]ÛY\
+Ì
+NÂŸB‚˜\Ş[˜È[˜İ[Ûˆš[^[œÙJYÙK›Ø‹\ØÜš\[ÛŠHÂˆ]ØZ]ÚÛÜÙS[İ™[Y[\JYÙK	ĞÛÛ\›İ˜[IÊNÂ‚ˆËÈ›ÈÔ“H\İ\ÈØ[\ÜÈ\\™XÙ[H]X[™ÈÈ[İš[Y[È0êHÛÛ\›İ˜[K‚ˆ]ØZ]ÚÛÜÙTÙ[XİSX™[
+YÙK	Õ\ÈH\Ü\ØIË	Ğ°í\ÈH™[ZXpéğíY\ÉÊNÂˆ]ØZ]ÚÛÜÙTÙ[XİSX™[
+YÙK	Õ\ÈHØİ[Y[ÉË	Ğİ\ÛHš\ØØ[	ÊNÂ‚ˆÛÛœİ\ØÜš\[Û‘šY[H]ØZ]X\šÑšY[
+YÙK	Ù\ØÜšXØ[ÉÊNÂˆÛÛœİ˜[YQšY[H]ØZ]X\šÑšY[
+YÙK	İ˜[Ü‰ÊNÂˆÛÛœİ]QšY[H]ØZ]X\šÑšY[
+YÙK	Ù]IÊNÂˆÛÛœİØİ[Y[šY[H]ØZ]X\šÑšY[
+YÙK	ÙØİ[Y[ÉÊNÂ‚ˆ]ØZ]\QšY[
+YÙK\ØÜš\[Û‘šY[\ØÜš\[ÛŠNÂˆ]ØZ]\QšY[
+YÙKØİ[Y[šY[	Ì	ÊNÂ‚ˆÛÛœİ^XİY˜[YHH[X™\Š›Ø‹˜[Üˆ
+NÂˆÛÛœİ˜[YPØ[™Y]\ÈHÂˆ^XİY˜[YKÑš^Y
+ŠKœ™\XÙJ	Ë‰Ë	Ë	ÊKˆİš[™ÊX]œ›İ[™
+^XİY˜[YH
+ˆL
+JKˆ^XİY˜[YKÑš^Y
+ŠKˆNÂˆ]˜[YSÚÈH˜[ÙNÂˆ›Üˆ
+ÛÛœİØ[™Y]HÙˆ˜[YPØ[™Y]\ÊHÂˆ]ØZ]\QšY[
+YÙK˜[YQšY[Ø[™Y]JNÂˆÛÛœİØœÙ\™YH]ØZ]YÙK‰]˜[
+ˆ˜[YQšY[ˆ
+[
+HOˆ[˜[YH[™Ù]]šX]J	İ˜[YIÊH	ÉÂˆ
+NÂˆYˆ
+X]˜XœÊ\œÙPœ›İÜÙ\“[X™\ŠØœÙ\™Y
+HH^XİY˜[YJHŒJHÂˆ˜[YSÚÈHYNÂˆœ™XZÎÂˆBˆBˆYˆ
+]˜[YSÚÊHÂˆ›İÈ™]È\œ›ÜŠˆ˜[ÜˆÈ°í\È°èÛÈ\›X[™XÙ]H›È›Ü›][0è\š[ÈÛÛ[È	Ù^XİY˜[YKÑš^Y
+Š_K˜ˆ
+NÂˆB‚ˆÛÛœİ][˜Ú]HHœ‘]QXLMJ
+NÂˆ]ØZ]\QšY[
+YÙK]QšY[][˜Ú]JNÂ‚ˆÛÛœİØœÙ\™YH]ØZ]YÙK™]˜[X]J
+Ù[XİÜœÊHOˆÂˆÛÛœİ˜[YHH
+Ù[XİÜŠHOˆÂˆÛÛœİ[HØİ[Y[œ]Y\TÙ[XİÜŠÙ[XİÜŠNÂˆ™]\›ˆİš[™Ê[Ë˜[YH[Ë™Ù]]šX]OËŠ	İ˜[YIÊH	ÉÊKš[J
+NÂˆNÂˆÛÛœİ›Ü›HHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	ÖÜ›ÛOH™X[ÙÈ—K‹[İ™\›^W×ØÛÛ[‹YX[ÙËØÛ\ÜÊH›[Ù[—KØÛ\ÜÊH™X[ÙÈ—IÂˆ
+WK™š[™
 
-  return { date: today, value: expectedValue };
-}
+[
+HOˆĞQPÒSÓTˆSÕ’SQS•ËÚK\İ
+[š[›™\•^	ÉÊJNÂˆ™]\›ˆÂˆ\ØÜšXØ[Îˆ˜[YJÙ[XİÜœË™\ØÜš\[ÛŠKˆØİ[Y[Îˆ˜[YJÙ[XİÜœË™Øİ[Y[
+Kˆ^Ñ›Ü›][\š[Îˆİš[™Ê›Ü›OËš[›™\•^	ÉÊKœ™\XÙJ×ÊËÙË	È	ÊKš[J
+KˆNÂˆKÂˆ\ØÜš\[Ûˆ\ØÜš\[Û‘šY[ˆØİ[Y[ˆØİ[Y[šY[ˆJNÂ‚ˆYˆ
+›Ü›JØœÙ\™Y™\ØÜšXØ[ÊHOOH›Ü›J\ØÜš\[ÛŠJHÂˆ›İÈ™]È\œ›ÜŠ\ØÜšpéğèÛÈ]™\™Ù[H›È›Ü›][0è\š[Îˆ	ÛØœÙ\™Y™\ØÜšXØ[ßX
+NÂˆBˆYˆ
+İš[™ÊØœÙ\™Y™Øİ[Y[ÊKš[J
+HOOH	Ì	ÊHÂˆ›İÈ™]È\œ›ÜŠ‹ˆØİ[Y[È]™\™Ù[H›È›Ü›][0è\š[Îˆ	ÛØœÙ\™Y™Øİ[Y[ßX
+NÂˆBˆYˆ
+[›Ü›JØœÙ\™Y^Ñ›Ü›][\š[ÊKš[˜ÛY\Ê›Ü›J	Ğ°í\ÈH™[ZXpéğíY\ÉÊJJHÂˆ›İÈ™]È\œ›ÜŠ	Õ\ÈH\Ü\ØH°èÛÈ\›X[™XÙ]HÛÛ[È°í\ÈH™[ZXpéğíY\Ë‰ÊNÂˆBˆYˆ
+[›Ü›JØœÙ\™Y^Ñ›Ü›][\š[ÊKš[˜ÛY\Ê›Ü›J	Ğİ\ÛHš\ØØ[	ÊJJHÂˆ›İÈ™]È\œ›ÜŠ	Õ\ÈHØİ[Y[È°èÛÈ\›X[™XÙ]HÛÛ[Èİ\ÛHš\ØØ[‰ÊNÂˆBˆYˆ
+[›Ü›JØœÙ\™Y^Ñ›Ü›][\š[ÊKš[˜ÛY\Ê›Ü›J	ĞÛÛ\›İ˜[IÊJJHÂˆ›İÈ™]È\œ›ÜŠ	Õ\ÈÈ[İš[Y[È°èÛÈ\›X[™XÙ]HÛÛ[ÈÛÛ\›İ˜[K‰ÊNÂˆB‚ˆ™]\›ˆÈ]Nˆ][˜Ú]K˜[YNˆ^XİY˜[YHNÂŸB‚˜\Ş[˜È[˜İ[ÛˆØ]™Q^[œÙJYÙJHÂˆÛÛœİ™\\™YH]ØZ]YÙK™]˜[X]J
 
-async function saveExpense(page) {
-  const prepared = await page.evaluate(() => {
-    const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
-    const visible = (el) => !!el && el.getClientRects().length > 0
-      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    const dialogs = [...document.querySelectorAll('[role="dialog"], .v-overlay__content, .v-dialog, [class*="modal"], [class*="dialog"]')]
-      .filter(visible);
-    const scope = dialogs[dialogs.length - 1] || document.body;
-    const save = [...scope.querySelectorAll('button, [role="button"]')]
-      .filter(visible)
-      .find((button) => normalize(button.textContent) === 'SALVAR' && !button.disabled);
-    if (!save) return null;
-    save.dataset.grmBonusSaveExpense = '1';
-    return '[data-grm-bonus-save-expense="1"]';
-  });
-  if (!prepared) throw new Error('BotÃ£o SALVAR da Despesa nÃ£o localizado.');
-  await page.click(prepared);
-  await sleep(1000);
-}
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊBˆ››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊBˆÕ\\Ø\ÙJ
+Bˆš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÂˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂ‚ˆÛÛœİX[ÙÜÈHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	ÖÜ›ÛOH™X[ÙÈ—K‹[İ™\›^W×ØÛÛ[‹YX[ÙËØÛ\ÜÊH›[Ù[—KØÛ\ÜÊH™X[ÙÈ—IÂˆ
+WK™š[\Šš\ÚX›JNÂ‚ˆÛÛœİ›Ü›QX[ÙÜÈHX[ÙÜÂˆ™š[\Š
+[
+HOˆĞQPÒSÓTˆSÕ’SQS•ËÚK\İ
+[š[›™\•^	ÉÊJBˆ™š[\Š
+[
+HOˆ[œ]Y\TÙ[XİÜŠ	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊJBˆœÛÜ
 
-async function closeDialogs(page) {
-  await page.keyboard.press('Escape').catch(() => {});
-  await sleep(250);
-}
+KŠHO‚ˆ‹œ]Y\TÙ[XİÜ[
+	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊK›[™İˆHKœ]Y\TÙ[XİÜ[
+	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊK›[™İˆ
+NÂ‚ˆÛÛœİØÛÜHH›Ü›QX[ÙÜÖÌHX[ÙÜÖÙX[ÙÜË›[™İHWHØİ[Y[˜›ÙNÂˆÛÛœİØ]™HHË‹‹œØÛÜKœ]Y\TÙ[XİÜ[
+	Ø]Û‹Ü›ÛOH˜]Ûˆ—IÊWBˆ™š[\Šš\ÚX›JBˆ™š[™
 
-async function verifyExpense(page, cpf, description) {
-  await closeDialogs(page);
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
-  await sleep(400);
-  return hasExpenseDescription(page, description);
-}
+]ÛŠHOˆ›Ü›X[^™J]Û‹^ÛÛ[
+HOOH	ÔĞST‰È	‰ˆX]Û‹™\ØX›Y
+NÂ‚ˆYˆ
+\Ø]™JH™]\›ˆ[ÂˆØ]™K™]\Ù]™Ü›P›Û\ÔØ]™Q^[œÙHH	ÌIÎÂ‚ˆ™]\›ˆÂˆÙ[XİÜˆ	ÖÙ]KYÜ›KX›Û\Ë\Ø]™KY^[œÙOHŒH—IËˆNÂˆJNÂ‚ˆYˆ
+\™\\™Y
+H›İÈ™]È\œ›ÜŠ	Ğ›İ0èÛÈĞSTˆÈ[İš[Y[È°èÛÈØØ[^˜YË‰ÊNÂ‚ˆ]ØZ]YÙK˜ÛXÚÊ™\\™YœÙ[XİÜŠNÂˆ]ØZ]ÛY\
+M
+NÂ‚ˆÛÛœİÛÛ™š\›X][ÛˆH]ØZ]YÙK™]˜[X]J
 
-async function recoverStaleProcessing() {
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  const { error } = await supabase
-    .from('bonus_caixa_lancamentos')
-    .update({ status: 'PENDENTE', iniciado_em: null, updated_at: new Date().toISOString() })
-    .eq('status', 'PROCESSANDO')
-    .lt('iniciado_em', cutoff);
-  if (error) log('WARN', `Falha ao recuperar PROCESSANDO antigo: ${error.message}`);
-}
+HOˆÂˆÛÛœİ›Ü›X[^™HH
+˜[YJHOˆİš[™Ê˜[YH	ÉÊBˆ››Ü›X[^™J	Ó‘‘	ÊBˆœ™\XÙJÖ×LÌWLÍ™—KÙË	ÉÊBˆÕ\\Ø\ÙJ
+Bˆœ™\XÙJ×ÊËÙË	È	ÊBˆš[J
+NÂˆÛÛœİš\ÚX›HH
+[
+HOˆHY[	‰ˆ[™Ù]ÛY[™XİÊ
+K›[™İˆˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+K™\Ü^HOOH	Û›Û™IÂˆ	‰ˆÙ]ÛÛ\]Yİ[J[
+Kš\ÚXš[]HOOH	ÚY[‰ÎÂ‚ˆÛÛœİ›Ü›Tİ[Ü[ˆHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	ÖÜ›ÛOH™X[ÙÈ—K‹[İ™\›^W×ØÛÛ[‹YX[ÙËØÛ\ÜÊH›[Ù[—KØÛ\ÜÊH™X[ÙÈ—IÂˆ
+WBˆ™š[\Šš\ÚX›JBˆœÛÛYJ
+[
+HO‚ˆĞQPÒSÓTˆSÕ’SQS•ËÚK\İ
+[š[›™\•^	ÉÊBˆ	‰ˆ[œ]Y\TÙ[XİÜŠ	Ú[œ]^\™XKÙ[XİÜ›ÛOH˜ÛÛX›Ø›Ş—IÊBˆ
+NÂ‚ˆÛÛœİY\ÜØYÙ\ÈHË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+ˆ	Ë‹[Y\ÜØYÙ\××ÛY\ÜØYÙK‹X[\Ü›ÛOH˜[\—K‹\Û˜XÚØ˜\‹‹\Û˜XÚØ˜\—×ØÛÛ[	Âˆ
+WBˆ™š[\Šš\ÚX›JBˆ›X\
 
-async function loadPendingJobs() {
-  const { data, error } = await supabase
-    .from('bonus_caixa_lancamentos')
-    .select('*')
-    .eq('status', 'PENDENTE')
-    .order('solicitado_em', { ascending: true })
-    .limit(MAX_PER_RUN);
-  if (error) throw error;
-  return data || [];
-}
+[
+HOˆİš[™Ê[š[›™\•^[^ÛÛ[	ÉÊKœ™\XÙJ×ÊËÙË	È	ÊKš[J
+JBˆ™š[\Š›ÛÛX[ŠBˆœÛXÙJLLŠNÂ‚ˆÛÛœİİXØÙ\ÜÔ]\›ˆHÔ‘QÒTÕ“ËŠĞQTÕQŠ”ÕPÑTÔßĞQTÕQŠ”ÕPÑTÔßÕPÑTÔÓßĞS“ßĞS_Ô’PQßQPÒSÓQËÎÂˆÛÛœİ\œ›Ü”]\›ˆHÑT”“ßĞ”’QĞUS•SQ‘QSÒ_ÑSPÒSÓ‘_S_SÈ“ÒHĞQTÕQ°àÓÈ“ÒHĞQTÕQÎÂ‚ˆ]\İÚYÛ˜[H[ÂˆY\ÜØYÙ\Ë™›Ü‘XXÚ
 
-async function loadCollaborators() {
-  const { data, error } = await supabase
-    .from('vw_colaboradores_atuais')
-    .select('nome,cpf,ativo,situacao')
-    .limit(2000);
-  if (error) throw error;
+\ÙË[™^
+HOˆÂˆÛÛœİ›Ü›X[^™YH›Ü›X[^™J\ÙÊNÂˆYˆ
+\œ›Ü”]\›‹\İ
+›Ü›X[^™Y
+JHÂˆ\İÚYÛ˜[HÈ\Nˆ	Ù\œ›Ü‰ËY\ÜØYÙNˆ\ÙË[™^NÂˆBˆYˆ
+İXØÙ\ÜÔ]\›‹\İ
+›Ü›X[^™Y
+H	‰ˆKÓSß°àÓßT”“ßSKË\İ
+›Ü›X[^™Y
+JHÂˆ\İÚYÛ˜[HÈ\Nˆ	ÜİXØÙ\ÜÉËY\ÜØYÙNˆ\ÙË[™^NÂˆBˆJNÂ‚ˆ™]\›ˆÂˆ›Ü›Tİ[Ü[‹ˆY\ÜØYÙ\ËˆİXØÙ\ÜÓY\ÜØYÙNˆ\İÚYÛ˜[Ë\HOOH	ÜİXØÙ\ÜÉÈÈ\İÚYÛ˜[›Y\ÜØYÙHˆ[ˆ\œ›Ü“Y\ÜØYÙNˆ\İÚYÛ˜[Ë\HOOH	Ù\œ›Ü‰ÈÈ\İÚYÛ˜[›Y\ÜØYÙHˆ[ˆÚYÛ˜[\Nˆ\İÚYÛ˜[Ë\H[ˆNÂˆJNÂ‚ˆËÈÈÔ“HX[0ê[HÈ›Ü›][0è\š[ÈX™\È[H[İ[X\È™\œğíY\ÈY\Û[È\0ìÜÈÜ˜]˜\‹‚ˆËÈHY[œØYÙ[HÙšXÚX[”™YÚ\İ›ÈØY\İ˜YË‹‹ˆÛÛHİXÙ\ÜÛÈˆ0êHÛÛ™š\›XpéğèÛÂˆËÈİYšXÚY[H\˜HÙYİZ\ˆ0è™\šYšXØpéğèÛÈÈ[İš[Y[È›ÈØZ^K‚ˆYˆ
+ÛÛ™š\›X][Û‹œÚYÛ˜[\HOOH	ÜİXØÙ\ÜÉÊHÂˆÙÊ	ÔÕPĞÑTÔÉË	ÑÔ“HÛÛ™š\›[İHÈØY\İ›ÈÈ[İš[Y[Ë‰ËÛÛ™š\›X][ÛŠNÂˆ™]\›ˆÈ‹‹˜ÛÛ™š\›X][Û‹ÛÛ™š\›YYNˆ	ÑÔ“WÔÕPĞÑTÔ×ÓQTÔĞQÑIÈNÂˆB‚ˆYˆ
+ÛÛ™š\›X][Û‹œÚYÛ˜[\HOOH	Ù\œ›Ü‰ÊHÂˆ›İÈ™]È\œ›ÜŠÔ“H™Xİ\ÛİHÈØ[˜[Y[ÈÈ°í\Îˆ	ØÛÛ™š\›X][Û‹™\œ›Ü“Y\ÜØYÙ_X
+NÂˆB‚ˆYˆ
+ÛÛ™š\›X][Û‹™›Ü›Tİ[Ü[ŠHÂˆ›İÈ™]È\œ›ÜŠˆÔ“H°èÛÈÛÛ™š\›[İHÈØ[˜[Y[ÈÈ°í\Ë˜ˆ
+È
+ÛÛ™š\›X][Û‹›Y\ÜØYÙ\Ë›[™İˆÈY[œØYÙ[œÎˆ	ØÛÛ™š\›X][Û‹›Y\ÜØYÙ\Ëš›Ú[Š	È	ÊKœÛXÙJLŒ
+_Xˆˆ	ÈÈ›Ü›][0è\š[È\›X[™XÙ]HX™\È\0ìÜÈÛXØ\ˆ[HØ[˜\ˆH™[š[XHY[œØYÙ[HHİXÙ\ÜÛÈ›ÚH^XšYK‰ÊBˆ
+NÂˆB‚ˆÙÊ	ÒS‘“ÉË	ÑÔ“H™XÚİHÈ›Ü›][0è\š[ÈHYXÚ[Û˜\ˆ[İš[Y[È\0ìÜÈØ[˜\ÈÙYİZ[™È\˜H™\šYšXØpéğèÛÈ›ÈØZ^K‰ËÛÛ™š\›X][ÛŠNÂˆ™]\›ˆÈ‹‹˜ÛÛ™š\›X][Û‹ÛÛ™š\›YYNˆ	Ñ“Ô“WĞÓÔÑQ	ÈNÂŸB‚˜\Ş[˜È[˜İ[ÛˆÛÜÙQX[ÙÜÊYÙJHÂˆ]ØZ]YÙKšÙ^X›Ø\™œ™\ÜÊ	Ñ\ØØ\IÊK˜Ø]Ú
 
-  const map = new Map();
-  for (const row of data || []) {
-    const key = nameKey(row.nome);
-    const cpf = digits(row.cpf);
-    if (!key || !cpf) continue;
-    if (!map.has(key)) map.set(key, []);
-    const list = map.get(key);
-    if (!list.some((item) => item.cpf === cpf)) list.push({ ...row, cpf });
-  }
-  return map;
-}
 
-function resolveCpf(job, collaborators) {
-  const matches = collaborators.get(nameKey(job.colaborador_nome)) || [];
-  const active = matches.filter((item) => item.ativo !== false && !/INATIV|DESLIG/i.test(String(item.situacao || '')));
-  const preferred = active.length ? active : matches;
-  if (preferred.length !== 1) {
-    throw new Error(`CPF nÃ£o resolvido de forma Ãºnica para ${job.colaborador_nome}: ${preferred.length} correspondÃªncia(s).`);
-  }
-  return preferred[0].cpf;
-}
+HOˆßJNÂˆ]ØZ]ÛY\
+L
+NÂŸB‚˜\Ş[˜È[˜İ[Ûˆ™\šYQ^[œÙJYÙKÜ‹›Ø‹\ØÜš\[ÛœÊHÂˆ]ØZ]ÛÜÙQX[ÙÜÊYÙJNÂˆ]ØZ]Ü[‘[\ŞYYJYÙKÜŠNÂ‚ˆÛÛœİš[X\HH\ØÜš\[ÛœÖÌNÂˆ]\İ›İÜÈH×NÂˆ]\İ™\šYšXØ][ÛˆH[Â‚ˆËÈÈ[İš[Y[ÈÙH]˜\ˆ[İ[œÈÙYİ[™ÜÈ\˜H\\™XÙ\ˆ˜HX™[H\0ìÜÈBˆËÈY[œØYÙ[HHİXÙ\ÜÛËˆ˜^™[[ÜÈ[]]˜\ÈÛÛY[HHZ]\˜KÙ[HØ[˜\‚ˆËÈ›İ˜[Y[K\˜H°èÛÈÜšX\ˆ\XÚYYK‚ˆ›Üˆ
+]][\HNÈ][\HNÈ][\
+ÏHJHÂˆ]ØZ]ÛY\
+][\OOHHÈÌˆLŒ
+NÂˆÛÛœİ›İÜÈH]ØZ][œÜXİ^[œÙQ\ØÜš\[ÛœÊYÙK\ØÜš\[ÛœÊNÂˆ\İ›İÜÈH›İÜÎÂˆÛÛœİ™\šYšXØ][ÛˆH™\šYS[İ™[Y[›İÊ›İÜË›Ø‹š[X\JNÂˆ\İ™\šYšXØ][ÛˆH™\šYšXØ][ÛÂ‚ˆYˆ
+™\šYšXØ][Û‹™^Xİ
+HÂˆ™]\›ˆÈÚÎˆYK›İÎˆ™\šYšXØ][Û‹™^Xİ›İË][\NÂˆB‚ˆËÈÙH[XH\ØÜšpéğèÛÈ[YØH^\İ\‹[H[X°ê[H›Ü]YZXH\XÚYYKˆ\˜BˆËÈÛÛ™š\›X\ˆİXÙ\ÜÛÈ^YÚ[[ÜÈÈ˜[ÜˆHÜÈØ[\ÜÈš\ğë]™Z\ÈÈ[İš[Y[Ë‚ˆYˆ
+›İÜË›[™İ
+HÂˆÛÛœİYØXŞQ^XİH›İÜË™š[™
 
-async function updateLaunch(id, patch) {
-  const { error } = await supabase
-    .from('bonus_caixa_lancamentos')
-    .update({ ...patch, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw error;
-}
+›İÊHOˆÂˆÛÛœİÙ[ÈH›İË˜Ù[È×NÂˆÛÛœİ^XİY˜[YHHœ“[Û™^U^
+›Ø‹˜[ÜŠNÂˆÛÛœİ\ĞØ]YÛÜHHÙ[ËœÛÛYJ
+Ù[
+HOˆ›Ü›JÙ[
+HOOH›Ü›J	Ğ°í\ÈH™[ZXpéğíY\ÉÊJBˆ›Ü›J›İË^
+Kš[˜ÛY\Ê›Ü›J	Ğ°í\ÈH™[ZXpéğíY\ÉÊJNÂˆÛÛœİ\Õ˜[YHHÙ[ËœÛÛYJ
+Ù[
+HOˆİš[™ÊÙ[
+Kš[˜ÛY\Ê^XİY˜[YJJBˆİš[™Ê›İË^
+Kš[˜ÛY\Ê^XİY˜[YJNÂˆÛÛœİ\ÑØİ[Y[™\›ÈHÙ[ËœÛÛYJ
+Ù[
+HOˆİš[™ÊÙ[
+Kš[J
+HOOH	Ì	ÊNÂˆ™]\›ˆ\ĞØ]YÛÜH	‰ˆ\Õ˜[YH	‰ˆ\ÑØİ[Y[™\›ÎÂˆJNÂˆYˆ
+YØXŞQ^Xİ
+HÂˆ™]\›ˆÈÚÎˆYK›İÎˆYØXŞQ^XİYØXŞNˆYK][\NÂˆBˆBˆB‚ˆ™]\›ˆÂˆÚÎˆ˜[ÙKˆ›İÎˆ\İ™\šYšXØ][ÛË™^Xİ›İÈ[ˆ›İÜÎˆ\İ›İÜËˆNÂŸB‚˜\Ş[˜È[˜İ[Ûˆ™XÛİ™\”İ[T›ØÙ\ÜÚ[™Ê
+HÂˆÛÛœİİ]Ù™ˆH™]È]J]K››İÊ
+HHÌ
+ˆŒ
+ˆL
+KÒTÓÔİš[™Ê
+NÂˆÛÛœİÈ\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	Ø›Û\×ØØZ^WÛ[˜Ø[Y[ÜÉÊBˆ\]JÈİ]\Îˆ	ÔS‘S•IË[šXÚXY×Ù[Nˆ[\]YØ]ˆ™]È]J
+KÒTÓÔİš[™Ê
+HJBˆ™\J	Üİ]\ÉË	Ô“ĞÑTÔĞS‘ÉÊBˆ›
+	Ú[šXÚXY×Ù[IËİ]Ù™ŠNÂˆYˆ
+\œ›ÜŠHÙÊ	ÕĞT“‰Ë˜[H[È™Xİ\\˜\ˆ“ĞÑTÔĞS‘È[YÛÎˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+NÂŸB‚˜\Ş[˜È[˜İ[ÛˆØY[™[™Ò›ØœÊ
+HÂˆÛÛœİÈ]K\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	Ø›Û\×ØØZ^WÛ[˜Ø[Y[ÜÉÊBˆœÙ[Xİ
+	Ê‰ÊBˆ™\J	Üİ]\ÉË	ÔS‘S•IÊBˆ›Ü™\Š	ÜÛÛXÚ]Y×Ù[IËÈ\ØÙ[™[™ÎˆYHJBˆ›[Z]
+PVÔT—Ô•SŠNÂˆYˆ
+\œ›ÜŠH›İÈ\œ›ÜÂˆÛÛœİ›ØœÈH]H×NÂˆÛÛœİPÛÛ\][˜ÙHH™]ÈX\
 
-async function markProcessing(job) {
-  await updateLaunch(job.id, {
-    status: 'PROCESSANDO',
-    tentativas: Number(job.tentativas || 0) + 1,
-    ultimo_erro: null,
-    iniciado_em: new Date().toISOString(),
-    processado_em: null,
-  });
-}
+NÂ‚ˆ›Üˆ
+ÛÛœİ›ØˆÙˆ›ØœÊHÂˆÛÛœİÛÛ\][˜ÙHHİš[™Ê›Ø‹˜ÛÛ\][˜ÚXH	ÉÊKœÛXÙJL
+NÂˆYˆ
+XPÛÛ\][˜ÙKš\ÊÛÛ\][˜ÙJJHÂˆÛÛœİÈ]Nˆ›ÙXİ[Û‹\œ›Üˆ›ÙXİ[Û‘\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆœœÊ	Ø›Û\×Ü›ÙXØ[×ØÛÛ\][˜ÚXIËÈØÛÛ\][˜ÚXNˆÛÛ\][˜ÙHJNÂˆYˆ
+›ÙXİ[Û‘\œ›ÜŠH›İÈ›ÙXİ[Û‘\œ›ÜÂˆPÛÛ\][˜ÙKœÙ]
+ÛÛ\][˜ÙK™]ÈX\
+ˆ
+›ÙXİ[Ûˆ×JK›X\
 
-async function markSuccess(job, payload) {
-  await updateLaunch(job.id, {
-    status: 'LANCADO',
-    ultimo_erro: null,
-    processado_em: new Date().toISOString(),
-    grm_retorno: payload,
-  });
-}
+›İÊHOˆÂˆ˜[YRÙ^J›İË˜ÛÛX›Ü˜YÜˆ›İË˜ÛÛX›Ü˜YÜ—Û›ÛYH›İË››ÛYJKˆ›İËˆJKˆ
+JNÂˆB‚ˆÛÛœİİ\œ™[HPÛÛ\][˜ÙK™Ù]
+ÛÛ\][˜ÙJK™Ù]
+˜[YRÙ^J›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛYJJNÂˆYˆ
+Xİ\œ™[›Ü›Jİ\œ™[œİ]\ÊHOOH	ĞTÉÊHÂˆ›İÈ™]È\œ›ÜŠˆ°í\È]X[°èÛÈ\İ0èH\È\˜H	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_H˜HÛÛ\]0ê›˜ÚXH	ØÛÛ\][˜Ù_K˜ˆ
+NÂˆB‚ˆÛÛœİİ\œ™[ÛœÈH[X™\Šİ\œ™[ÛœÈ
+NÂˆÛÛœİİ\œ™[˜[YHH[X™\Šİ\œ™[˜[Üˆ
+NÂˆYˆ
+ˆX]˜XœÊ[X™\Š›Ø‹ÛœÈ
+HHİ\œ™[ÛœÊHˆŒBˆX]˜XœÊ[X™\Š›Ø‹˜[Üˆ
+HHİ\œ™[˜[YJHˆŒBˆ
+HÂˆÛÛœİÈ\œ›Üˆ™Yœ™\Ú\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	Ø›Û\×ØØZ^WÛ[˜Ø[Y[ÜÉÊBˆ\]JÂˆÛœÎˆİ\œ™[ÛœËˆ˜[Üˆİ\œ™[˜[YKˆ\]YØ]ˆ™]È]J
+KÒTÓÔİš[™Ê
+KˆJBˆ™\J	ÚY	Ë›Ø‹šY
+Bˆ™\J	Üİ]\ÉË	ÔS‘S•IÊNÂˆYˆ
+™Yœ™\Ú\œ›ÜŠH›İÈ™Yœ™\Ú\œ›ÜÂˆÙÊ	ÒS‘“ÉË	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆš[H]X[^˜YHÛÛHH›ÙpéğèÛÈšYÙ[K˜ÂˆÛœ×Ø[\š[Üˆ[X™\Š›Ø‹ÛœÈ
+KˆÛœ×Ø]X[ˆİ\œ™[ÛœËˆ˜[Ü—Ø[\š[Üˆ[X™\Š›Ø‹˜[Üˆ
+Kˆ˜[Ü—Ø]X[ˆİ\œ™[˜[YKˆJNÂˆ›Ø‹ÛœÈHİ\œ™[ÛœÎÂˆ›Ø‹˜[ÜˆHİ\œ™[˜[YNÂˆBˆB‚ˆ™]\›ˆ›ØœÎÂŸB‚˜\Ş[˜È[˜İ[ÛˆØYÛÛX›Ü˜]ÜœÊ
+HÂˆÛÛœİÈ]K\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	İ×ØÛÛX›Ü˜YÜ™\×Ø]XZ\ÉÊBˆœÙ[Xİ
+	Û›ÛYKÜ‹]]›ËÚ]XXØ[ÉÊBˆ›[Z]
+Œ
+NÂˆYˆ
+\œ›ÜŠH›İÈ\œ›ÜÂ‚ˆÛÛœİX\H™]ÈX\
 
-async function markError(job, error, screenshotPath) {
-  await updateLaunch(job.id, {
-    status: 'ERRO',
-    ultimo_erro: String(error?.message || error).slice(0, 4000),
-    processado_em: new Date().toISOString(),
-    grm_retorno: {
-      ok: false,
-      erro: String(error?.message || error),
-      stack: String(error?.stack || '').slice(0, 8000),
-      screenshot_path: screenshotPath || null,
-    },
-  });
-}
+NÂˆ›Üˆ
+ÛÛœİ›İÈÙˆ]H×JHÂˆÛÛœİÙ^HH˜[YRÙ^J›İË››ÛYJNÂˆÛÛœİÜˆHYÚ]Ê›İË˜ÜŠNÂˆYˆ
+ZÙ^HXÜŠHÛÛ[YNÂˆYˆ
+[X\š\ÊÙ^JJHX\œÙ]
+Ù^K×JNÂˆÛÛœİ\İHX\™Ù]
+Ù^JNÂˆYˆ
+[\İœÛÛYJ
+][JHOˆ][K˜ÜˆOOHÜŠJH\İœ\Ú
+È‹‹œ›İËÜˆJNÂˆBˆ™]\›ˆX\ÂŸB‚™[˜İ[Ûˆ™\ÛÛ™PÜŠ›Ø‹ÛÛX›Ü˜]ÜœÊHÂˆÛÛœİX]Ú\ÈHÛÛX›Ü˜]ÜœË™Ù]
+˜[YRÙ^J›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛYJJH×NÂˆÛÛœİXİ]™HHX]Ú\Ë™š[\Š
+][JHOˆ][K˜]]›ÈOOH˜[ÙH	‰ˆKÒSUUŸTÓQËÚK\İ
+İš[™Ê][KœÚ]XXØ[È	ÉÊJJNÂˆÛÛœİ™Y™\œ™YHXİ]™K›[™İÈXİ]™HˆX]Ú\ÎÂˆYˆ
+™Y™\œ™Y›[™İOOHJHÂˆ›İÈ™]È\œ›ÜŠÔˆ°èÛÈ™\ÛÛšYÈH›Ü›XH0î›šXØH\˜H	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ	Ü™Y™\œ™Y›[™İHÛÜœ™\ÜÛ™0ê›˜ÚXJÊK˜
+NÂˆBˆ™]\›ˆ™Y™\œ™YÌK˜ÜÂŸB‚˜\Ş[˜È[˜İ[Ûˆ\]S][˜Ú
+Y]Ú
+HÂˆÛÛœİÈ\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	Ø›Û\×ØØZ^WÛ[˜Ø[Y[ÜÉÊBˆ\]JÈ‹‹œ]Ú\]YØ]ˆ™]È]J
+KÒTÓÔİš[™Ê
+HJBˆ™\J	ÚY	ËY
+NÂˆYˆ
+\œ›ÜŠH›İÈ\œ›ÜÂŸB‚˜\Ş[˜È[˜İ[ÛˆX\šÔ›ØÙ\ÜÚ[™Ê›ØŠHÂˆ]ØZ]\]S][˜Ú
+›Ø‹šYÂˆİ]\Îˆ	Ô“ĞÑTÔĞS‘ÉËˆ[]]˜\Îˆ[X™\Š›Ø‹[]]˜\È
+H
+ÈKˆ[[[×Ù\œ›Îˆ[ˆ[šXÚXY×Ù[Nˆ™]È]J
+KÒTÓÔİš[™Ê
+Kˆ›ØÙ\ÜØY×Ù[Nˆ[ˆJNÂŸB‚˜\Ş[˜È[˜İ[ÛˆX\šÔİXØÙ\ÜÊ›Ø‹^[ØY
+HÂˆ]ØZ]\]S][˜Ú
+›Ø‹šYÂˆİ]\Îˆ	ÓSĞQÉËˆ[[[×Ù\œ›Îˆ[ˆ›ØÙ\ÜØY×Ù[Nˆ™]È]J
+KÒTÓÔİš[™Ê
+KˆÜ›WÜ™]Ü››Îˆ^[ØYˆJNÂŸB‚˜\Ş[˜È[˜İ[ÛˆX\šÑ\œ›ÜŠ›Ø‹\œ›Ü‹ØÜ™Y[œÚİ]
+HÂˆ]ØZ]\]S][˜Ú
+›Ø‹šYÂˆİ]\Îˆ	ÑT”“ÉËˆ[[[×Ù\œ›Îˆİš[™Ê\œ›ÜË›Y\ÜØYÙH\œ›ÜŠKœÛXÙJ
+Kˆ›ØÙ\ÜØY×Ù[Nˆ™]È]J
+KÒTÓÔİš[™Ê
+KˆÜ›WÜ™]Ü››ÎˆÂˆÚÎˆ˜[ÙKˆ\œ›Îˆİš[™Ê\œ›ÜË›Y\ÜØYÙH\œ›ÜŠKˆİXÚÎˆİš[™Ê\œ›ÜËœİXÚÈ	ÉÊKœÛXÙJ
+KˆØÜ™Y[œÚİÜ]ˆØÜ™Y[œÚİ][ˆKˆJNÂŸB‚˜\Ş[˜È[˜İ[Ûˆ[œ]Y]YQ›Ûİİ\Y“™YYY
 
-async function enqueueFollowupIfNeeded() {
-  const { data: remaining, error } = await supabase
-    .from('bonus_caixa_lancamentos')
-    .select('id')
-    .eq('status', 'PENDENTE')
-    .limit(1);
-  if (error || !remaining?.length) return;
+HÂˆÛÛœİÈ]Nˆ™[XZ[š[™Ë\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	Ø›Û\×ØØZ^WÛ[˜Ø[Y[ÜÉÊBˆœÙ[Xİ
+	ÚY	ÊBˆ™\J	Üİ]\ÉË	ÔS‘S•IÊBˆ›[Z]
+JNÂˆYˆ
+\œ›Üˆ\™[XZ[š[™ÏË›[™İ
+H™]\›Â‚ˆÛÛœİÈ]Nˆ]Y]YY\œ›Üˆ]Y]YY\œ›ÜˆHH]ØZ]İ\X˜\ÙBˆ™œ›ÛJ	ÙÜ›WÜŞ[˜×Ú›ØœÉÊBˆœÙ[Xİ
+	ÚY	ÊBˆ™\J	ØYÙ[WÚY	Ë	ÜŞ[˜ËX›Û\ËXØZ^IÊBˆ™\J	Üİ]\ÉË	Ü[™[IÊBˆ›[Z]
+JNÂˆYˆ
+]Y]YY\œ›Üˆ]Y]YYË›[™İ
+H™]\›Â‚ˆÛÛœİÈ\œ›Üˆ[œÙ\\œ›ÜˆHH]ØZ]İ\X˜\ÙK™œ›ÛJ	ÙÜ›WÜŞ[˜×Ú›ØœÉÊKš[œÙ\
+ÂˆYÙ[WÚYˆ	ÜŞ[˜ËX›Û\ËXØZ^IËˆİ]\Îˆ	Ü[™[IËˆ^[ØYˆÈÜšYÙ[Nˆ	Ø›Û\×ØØZ^WØÛÛ[XXØ[ÉÈKˆJNÂˆYˆ
+[œÙ\\œ›ÜŠHÙÊ	ÕĞT“‰Ë˜[H[È[™š[Z\˜\ˆÛÛ[XpéğèÛÎˆ	Ú[œÙ\\œ›Ü‹›Y\ÜØYÙ_X
+NÂŸB‚˜\Ş[˜È[˜İ[Ûˆ›ØÙ\ÜÒ›ØŠYÙK›Ø‹ÛÛX›Ü˜]ÜœÊHÂˆ]ØZ]X\šÔ›ØÙ\ÜÚ[™Ê›ØŠNÂˆÛÛœİÜˆH™\ÛÛ™PÜŠ›Ø‹ÛÛX›Ü˜]ÜœÊNÂˆÛÛœİ\ØÜš\[ÛœÈH\ØÜš\[Û[X\Ù\Ñ›ÜŠ›ØŠNÂˆÛÛœİ\ØÜš\[ÛˆH\ØÜš\[ÛœÖÌNÂˆÛÛœİ]HHœ‘]QXLMJ
+NÂ‚ˆÙÊ	ÒS‘“ÉË	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ™\\˜[™È	Ù\ØÜš\[ÛŸH›È˜[ÜˆH	Ó[X™\Š›Ø‹˜[Üˆ
+KÑš^Y
+Š_K˜
+NÂ‚ˆ]ØZ]Ü[‘[\ŞYYJYÙKÜŠNÂ‚ˆÛÛœİ^\İ[™ÈH]ØZ][œÜXİ^[œÙQ\ØÜš\[ÛœÊYÙK\ØÜš\[ÛœÊNÂˆYˆ
+^\İ[™Ë›[™İ
+HÂˆÛÛœİ^XİH^\İ[™Ë™š[™
 
-  const { data: queued, error: queuedError } = await supabase
-    .from('grm_sync_jobs')
-    .select('id')
-    .eq('agente_id', 'sync-bonus-caixa')
-    .eq('status', 'pendente')
-    .limit(1);
-  if (queuedError || queued?.length) return;
+›İÊHOˆÂˆÛÛœİÙ[ÈH›İË˜Ù[È×NÂˆÛÛœİ^XİY˜[YHHœ“[Û™^U^
+›Ø‹˜[ÜŠNÂˆÛÛœİ\Õ˜[YHHÙ[ËœÛÛYJ
+Ù[
+HOˆİš[™ÊÙ[
+Kš[˜ÛY\Ê^XİY˜[YJJBˆİš[™Ê›İË^
+Kš[˜ÛY\Ê^XİY˜[YJNÂˆ™]\›ˆ\Õ˜[YNÂˆJNÂ‚ˆYˆ
+Y^Xİ
+HÂˆ›İÈ™]È\œ›ÜŠˆ°èH^\İH[İš[Y[ÈH°í\È\İHÛÛ\]0ê›˜ÚXH›ÈÔ“KX\ÈÛÛH˜[Üˆ]™\™Ù[Kˆˆ
+È[°éØ[Y[È]]Ûpè]XÛÈ›Ü]YXYÈ\˜H]š]\ˆ\XÚYYK˜ˆ
+NÂˆB‚ˆ]ØZ]X\šÔİXØÙ\ÜÊ›Ø‹ÂˆÚÎˆYKˆÜ‹ˆ\ØÜšXØ[Îˆ\ØÜš\[Û‹ˆ˜[Üˆ[X™\Š›Ø‹˜[Üˆ
+Kˆ]Nˆ]Kˆ\XØ]WÙİX\™ˆ	ÑTĞÔ’PĞS×ÑWĞÓÓTUSÒPWÒWÑVTÕPWÓ“×ÑÔ“IËˆÜšXY×ØYÛÜ˜Nˆ˜[ÙKˆ[šWÙÜ›Nˆ^Xİ^ˆ™\šYšXØY×Ù[Nˆ™]È]J
+KÒTÓÔİš[™Ê
+KˆJNÂˆÙÊ	ÔÕPĞÑTÔÉË	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ°í\È°èH^\İXH›ÈÔ“NÈ\XÚYYH›Ü]YXYK˜
+NÂˆ™]\›ÂˆB‚ˆYˆ
+–WÔ•SŠHÂˆ]ØZ]\]S][˜Ú
+›Ø‹šYÂˆİ]\Îˆ	ÔS‘S•IËˆ[šXÚXY×Ù[Nˆ[ˆÜ›WÜ™]Ü››ÎˆÂˆWÜ[ˆYKˆÜ‹ˆ\ØÜšXØ[Îˆ\ØÜš\[Û‹ˆ˜[Üˆ[X™\Š›Ø‹˜[Üˆ
+Kˆ]Nˆ]Kˆ™\šYšXØY×Ù^\İ[Nˆ˜[ÙKˆKˆJNÂˆÙÊ	ÒS‘“ÉË	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ–WÔ•S‹™[š[XH[\˜péğèÛÈ™Z]K˜
+NÂˆ™]\›ÂˆB‚ˆ]ØZ]ÛXÚĞY^[œÙJYÙJNÂˆÛÛœİš[YH]ØZ]š[^[œÙJYÙK›Ø‹\ØÜš\[ÛŠNÂˆ]ØZ]Ø]™Q^[œÙJYÙJNÂ‚ˆÛÛœİ™\šYšYYH]ØZ]™\šYQ^[œÙJYÙKÜ‹›Ø‹\ØÜš\[ÛœÊNÂˆYˆ
+]™\šYšYY›ÚÊHÂˆ›İÈ™]È\œ›ÜŠˆ	ÑÔ“H™XÚİHÈ›Ü›][0è\š[ËX\ÈÈ[°éØ[Y[ÈÈ°í\È°èÛÈ›ÚHØØ[^˜YÈ›ÈØZ^H	Âˆ
+È	ØÛÛH\ØÜšpéğèÛÈ
+È°í\ÈH™[ZXpéğíY\È
+È‹ˆØİ[Y[È
+È˜[Üˆ\Ü\˜YÜËˆ	Âˆ
+È	Ó°èÛÈ™\›ØÙ\ÜÙHÙ[HÛÛ™™\š\ˆÈØY\İ›È\˜H]š]\ˆ\XÚYYK‰Âˆ
+NÂˆB‚ˆ]ØZ]X\šÔİXØÙ\ÜÊ›Ø‹ÂˆÚÎˆYKˆÜ‹ˆ\ØÜšXØ[Îˆ\ØÜš\[Û‹ˆ˜[Üˆš[Y˜[YKˆ]Nˆš[Y™]KˆÜšXY×ØYÛÜ˜NˆYKˆ™\šYšXØY×Û›×ÙÜ›NˆYKˆ[šWÙÜ›Nˆ™\šYšYYœ›İÏË^[ˆ™\šYšXØY×Ù[Nˆ™]È]J
+KÒTÓÔİš[™Ê
+KˆJNÂˆÙÊ	ÔÕPĞÑTÔÉË	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ°í\È[°éØYÈH™\šYšXØYÈ›ÈÔ“K˜
+NÂŸB‚˜\Ş[˜È[˜İ[ÛˆXZ[Š
+HÂˆ[œİ\™Q\ŠĞÔ‘QS”ÒÕÑTŠNÂˆ]ØZ]™XÛİ™\”İ[T›ØÙ\ÜÚ[™Ê
+NÂˆÛÛœİ›ØœÈH]ØZ]ØY[™[™Ò›ØœÊ
+NÂˆYˆ
+Z›ØœË›[™İ
+HÂˆÙÊ	ÒS‘“ÉË	Ó™[š[H°í\È[™[H\˜H[°éØ\‹‰ÊNÂˆ™]\›ÂˆB‚ˆÛÛœİÛÛX›Ü˜]ÜœÈH]ØZ]ØYÛÛX›Ü˜]ÜœÊ
+NÂˆ]œ›İÜÙ\Âˆ]İXØÙ\ÜÈHÂˆ]\œ›ÜœÈHÂ‚ˆHÂˆœ›İÜÙ\ˆH]ØZ]][˜Úœ›İÜÙ\Š
+NÂˆÛÛœİYÙHH]ØZ]œ›İÜÙ\‹›™]ÔYÙJ
+NÂˆYÙKœÙ]Y˜][[Y[İ]
+QUSÕSQSÕU
+NÂˆYÙKœÙ]Y˜][˜]šYØ][Û•[Y[İ]
+Œ
+NÂˆYˆ
+P•QÊHYÙK›ÛŠ	ØÛÛœÛÛIË
+\ÙÊHOˆÙÊ	Ğ”“ÕÔÑT‰Ë\ÙË^
 
-  const { error: insertError } = await supabase.from('grm_sync_jobs').insert({
-    agente_id: 'sync-bonus-caixa',
-    status: 'pendente',
-    payload: { origem: 'bonus_caixa_continuacao' },
-  });
-  if (insertError) log('WARN', `Falha ao enfileirar continuaÃ§Ã£o: ${insertError.message}`);
-}
+JJNÂˆ]ØZ]ÙÚ[ŠYÙJNÂ‚ˆ›Üˆ
+ÛÛœİ›ØˆÙˆ›ØœÊHÂˆHÂˆ]ØZ]›ØÙ\ÜÒ›ØŠYÙK›Ø‹ÛÛX›Ü˜]ÜœÊNÂˆİXØÙ\ÜÈ
+ÏHNÂˆHØ]Ú
+\œ›ÜŠHÂˆ\œ›ÜœÈ
+ÏHNÂˆÛÛœİÚİH]ØZ]ØÜ™Y[œÚİ
+YÙK›Ø‹	Ù\œ›ÉÊNÂˆHÈ]ØZ]X\šÑ\œ›ÜŠ›Ø‹\œ›Ü‹Úİ
+NÈHØ]Ú
+X\šÑ\œ›Ü‘˜Z[\™JHÂˆÙÊ	ÑT”“Ô‰Ë˜[H[È™YÚ\İ˜\ˆ\œ›ÈÈ[°éØ[Y[È	Ú›Ø‹šYNˆ	ÛX\šÑ\œ›Ü‘˜Z[\™K›Y\ÜØYÙ_X
+NÂˆBˆÙÊ	ÑT”“Ô‰Ë	Ú›Ø‹˜ÛÛX›Ü˜YÜ—Û›ÛY_Nˆ	Ù\œ›Ü‹›Y\ÜØYÙ_X
+NÂˆHÈ]ØZ]ÛÜÙQX[ÙÜÊYÙJNÈHØ]Ú
+ÊHßBˆBˆBˆHš[˜[HÂˆYˆ
+œ›İÜÙ\ŠH]ØZ]œ›İÜÙ\‹˜ÛÜÙJ
+NÂˆ]ØZ][œ]Y]YQ›Ûİİ\Y“™YYY
 
-async function processJob(page, job, collaborators) {
-  await markProcessing(job);
-  const cpf = resolveCpf(job, collaborators);
-  const description = descriptionFor(job);
-  const date = brDateNow();
+NÂˆB‚ˆÙÊ\œ›ÜœÈÈ	ÕĞT“‰Èˆ	ÔÕPĞÑTÔÉË	ĞYÙ[HH°í\ÈÛÛ˜ÛpëYË‰ËÂˆ›ØÙ\ÜØYÜÎˆ›ØœË›[™İˆİXÙ\ÜÛÎˆİXØÙ\ÜËˆ\œ›ÜÎˆ\œ›ÜœËˆWÜ[ˆ–WÔ•S‹ˆJNÂ‚ˆYˆ
+\œ›ÜœÈˆ
+HÂˆ›ØÙ\ÜË™^]ÛÙHHNÂˆBŸB‚›XZ[Š
+K˜Ø]Ú
 
-  log('INFO', `${job.colaborador_nome}: preparando ${description} no valor de ${Number(job.valor || 0).toFixed(2)}.`);
-
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
-
-  if (await hasExpenseDescription(page, description)) {
-    await markSuccess(job, {
-      ok: true,
-      cpf,
-      descricao: description,
-      valor: Number(job.valor || 0),
-      data: date,
-      duplicate_guard: 'DESCRICAO_JA_EXISTIA_NO_GRM',
-      criado_agora: false,
-      verificado_em: new Date().toISOString(),
-    });
-    log('SUCCESS', `${job.colaborador_nome}: bÃ´nus jÃ¡ existia no GRM; duplicidade bloqueada.`);
-    return;
-  }
-
-  if (DRY_RUN) {
-    await updateLaunch(job.id, {
-      status: 'PENDENTE',
-      iniciado_em: null,
-      grm_retorno: {
-        dry_run: true,
-        cpf,
-        descricao: description,
-        valor: Number(job.valor || 0),
-        data: date,
-        verificado_existente: false,
-      },
-    });
-    log('INFO', `${job.colaborador_nome}: DRY_RUN, nenhuma alteraÃ§Ã£o feita.`);
-    return;
-  }
-
-  await clickAddExpense(page);
-  const filled = await fillExpense(page, job, description);
-  await saveExpense(page);
-
-  const verified = await verifyExpense(page, cpf, description);
-  if (!verified) throw new Error('Despesa foi salva, mas a descriÃ§Ã£o do BÃ´nus nÃ£o apareceu na verificaÃ§Ã£o do cadastro.');
-
-  await markSuccess(job, {
-    ok: true,
-    cpf,
-    descricao: description,
-    valor: filled.value,
-    data: filled.date,
-    criado_agora: true,
-    verificado_no_grm: true,
-    verificado_em: new Date().toISOString(),
-  });
-  log('SUCCESS', `${job.colaborador_nome}: bÃ´nus lanÃ§ado e verificado no GRM.`);
-}
-
-async function main() {
-  ensureDir(SCREENSHOT_DIR);
-  await recoverStaleProcessing();
-  const jobs = await loadPendingJobs();
-  if (!jobs.length) {
-    log('INFO', 'Nenhum BÃ´nus pendente para lanÃ§ar.');
-    return;
-  }
-
-  const collaborators = await loadCollaborators();
-  let browser;
-  let success = 0;
-  let errors = 0;
-
-  try {
-    browser = await launchBrowser();
-    const page = await browser.newPage();
-    page.setDefaultTimeout(DEFAULT_TIMEOUT);
-    page.setDefaultNavigationTimeout(60000);
-    if (DEBUG) page.on('console', (msg) => log('BROWSER', msg.text()));
-    await login(page);
-
-    for (const job of jobs) {
-      try {
-        await processJob(page, job, collaborators);
-        success += 1;
-      } catch (error) {
-        errors += 1;
-        const shot = await screenshot(page, job, 'erro');
-        try { await markError(job, error, shot); } catch (markErrorFailure) {
-          log('ERROR', `Falha ao registrar erro do lanÃ§amento ${job.id}: ${markErrorFailure.message}`);
-        }
-        log('ERROR', `${job.colaborador_nome}: ${error.message}`);
-        try { await closeDialogs(page); } catch (_) {}
-      }
-    }
-  } finally {
-    if (browser) await browser.close();
-    await enqueueFollowupIfNeeded();
-  }
-
-  log(errors ? 'WARN' : 'SUCCESS', 'Agente de BÃ´nus concluÃ­do.', {
-    processados: jobs.length,
-    sucesso: success,
-    erros: errors,
-    dry_run: DRY_RUN,
-  });
-}
-
-main().catch((error) => {
-  log('ERROR', `Erro fatal no agente de BÃ´nus: ${error.message}`, { stack: error.stack });
-  process.exitCode = 1;
-});
+\œ›ÜŠHOˆÂˆÙÊ	ÑT”“Ô‰Ë\œ›È˜][›ÈYÙ[HH°í\Îˆ	Ù\œ›Ü‹›Y\ÜØYÙ_XÈİXÚÎˆ\œ›Ü‹œİXÚÈJNÂˆ›ØÙ\ÜË™^]ÛÙHHNÂŸJNÂ
