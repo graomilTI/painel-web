@@ -236,7 +236,9 @@ function initFinalizacaoAgentTrigger() {
   };
 }
 
-initFinalizacaoAgentTrigger();
+// FINALIZAR agora é uma solicitação manual: o status salvo pela Programação
+// alimenta Logística > O.S. > Finalização. O agente só é enfileirado pelo
+// Check da Logística, portanto não há disparo por inatividade ou saída da tela.
 
 export function initProgramacaoRuntimeFixes(content = document.getElementById('pageContent')) {
   if (!content || routeName() !== 'programacao') return;
