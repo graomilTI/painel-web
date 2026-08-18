@@ -5,6 +5,8 @@ const state = {
   search: '',
   loading: false,
   mounted: false,
+  renderWhenLoaded: false,
+  restoringPanel: false,
 };
 
 const esc = (value) => String(value ?? '')
@@ -45,22 +47,68 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
+function panelMarkup() {
+  return `
+    <div class="hosp-rd-toolbar">
+      <div class="hosp-rd-title">
+        <h3>Canceladas</h3>
+        <p>Arquivo de solicitações e reservas canceladas. Os registros permanecem disponíveis para auditoria.</p>
+      </div>
+      <div class="hosp-rd-toolbar-right">
+        <span class="hosp-canceladas-muted" id="hospRdCanceladasMeta">0 canceladas</span>
+        <div class="hosp-rd-field hosp-rd-search">
+          <label>Buscar</label>
+          <input id="hospRdCanceladasSearch" type="search" autocomplete="off" value="${esc(state.search)}" placeholder="Colaborador, cidade, supervisão..." />
+        </div>
+      </div>
+    </div>
+    <div class="hosp-rd-table-wrap">
+      <table class="hosp-rd-table">
+        <thead><tr>
+          <th>Solicitação</th>
+          <th>Data</th>
+          <th>Dias</th>
+          <th>Colaboradores</th>
+          <th>Cidade</th>
+          <th>UF</th>
+          <th>Supervisão</th>
+          <th>Solicitante</th>
+          <th>Cancelado por</th>
+        </tr></thead>
+        <tbody id="hospRdCanceladasBody"><tr><td colspan="9"><div class="hosp-rd-loading">Carregando canceladas...</div></td></tr></tbody>
+      </table>
+    </div>`;
+}
+
+function ensurePanelContent() {
+  const panel = document.getElementById('hospRdCanceladas');
+  if (!panel || document.getElementById('hospRdCanceladasBody')) return panel;
+  if (state.restoringPanel) return panel;
+  state.restoringPanel = true;
+  panel.innerHTML = panelMarkup();
+  state.restoringPanel = false;
+  return panel;
+}
+
 function filteredRows() {
   const q = norm(state.search);
   if (!q) return state.rows;
   return state.rows.filter((row) => norm([
     row.solicitacao,
     row.data,
+    row.dias,
     row.colaboradores,
     row.cidade,
     row.uf,
     row.supervisao,
     row.solicitante,
     row.cancelado_por,
+    row.motivo_cancelamento,
   ].join(' ')).includes(q));
 }
 
 function renderBody() {
+  ensurePanelContent();
   const tbody = document.getElementById('hospRdCanceladasBody');
   if (!tbody) return;
   const rows = filteredRows();
@@ -82,40 +130,78 @@ function renderBody() {
   if (meta) meta.textContent = state.search
     ? `${rows.length} de ${state.rows.length} canceladas`
     : `${state.rows.length} canceladas`;
+
+  const input = document.getElementById('hospRdCanceladasSearch');
+  if (input && input.value !== state.search) input.value = state.search;
 }
 
 async function loadCanceladas({ render = true } = {}) {
-  if (state.loading) return;
+  if (state.loading) {
+    if (render) state.renderWhenLoaded = true;
+    return;
+  }
+
   state.loading = true;
-  const body = document.getElementById('hospRdCanceladasBody');
-  if (render && body) body.innerHTML = '<tr><td colspan="9"><div class="hosp-rd-loading">Carregando canceladas...</div></td></tr>';
+  state.renderWhenLoaded = state.renderWhenLoaded || render;
+
+  if (render) {
+    ensurePanelContent();
+    const body = document.getElementById('hospRdCanceladasBody');
+    if (body && !state.rows.length) body.innerHTML = '<tr><td colspan="9"><div class="hosp-rd-loading">Carregando canceladas...</div></td></tr>';
+  }
+
   try {
     const { data, error } = await supabase
       .from('hospedagem_canceladas')
       .select('*')
       .order('cancelado_em', { ascending: false, nullsFirst: false })
       .order('data', { ascending: false });
+
     if (error) throw error;
     state.rows = data || [];
+
     const count = document.getElementById('hospRdCountCancelled');
     if (count) count.textContent = String(state.rows.length);
-    if (render) renderBody();
+
+    if (render || state.renderWhenLoaded || document.getElementById('hospRdCanceladas')?.classList.contains('active')) {
+      renderBody();
+    }
   } catch (error) {
     console.error('[hosp-canceladas] load', error);
+    ensurePanelContent();
+    const body = document.getElementById('hospRdCanceladasBody');
     if (body) body.innerHTML = `<tr><td colspan="9"><div class="hosp-rd-empty">Não foi possível carregar canceladas: ${esc(error.message || error)}</div></td></tr>`;
   } finally {
     state.loading = false;
+    state.renderWhenLoaded = false;
   }
 }
 
 function openCanceladas() {
   const root = document.getElementById('hospRedesignRoot');
   if (!root) return;
+
+  ensurePanelContent();
   root.querySelectorAll('.hosp-rd-tab').forEach((tab) => tab.classList.remove('active'));
   root.querySelector('[data-hosp-canceladas-tab]')?.classList.add('active');
   root.querySelectorAll('.hosp-rd-panel').forEach((panel) => panel.classList.remove('active'));
   document.getElementById('hospRdCanceladas')?.classList.add('active');
-  loadCanceladas();
+
+  if (state.rows.length) renderBody();
+  loadCanceladas({ render: true });
+}
+
+function watchPanelOverwrite(root) {
+  const observer = new MutationObserver(() => {
+    const panel = document.getElementById('hospRdCanceladas');
+    if (!panel?.classList.contains('active')) return;
+    if (document.getElementById('hospRdCanceladasBody')) return;
+
+    ensurePanelContent();
+    if (state.rows.length) renderBody();
+    else loadCanceladas({ render: true });
+  });
+  observer.observe(root, { childList: true, subtree: true });
 }
 
 function mountCanceladas() {
@@ -141,46 +227,20 @@ function mountCanceladas() {
     const panel = document.createElement('div');
     panel.id = 'hospRdCanceladas';
     panel.className = 'hosp-rd-panel';
-    panel.innerHTML = `
-      <div class="hosp-rd-toolbar">
-        <div class="hosp-rd-title">
-          <h3>Canceladas</h3>
-          <p>Arquivo de solicitações e reservas canceladas. Os registros permanecem disponíveis para auditoria.</p>
-        </div>
-        <div class="hosp-rd-toolbar-right">
-          <span class="hosp-canceladas-muted" id="hospRdCanceladasMeta">0 canceladas</span>
-          <div class="hosp-rd-field hosp-rd-search">
-            <label>Buscar</label>
-            <input id="hospRdCanceladasSearch" type="search" autocomplete="off" placeholder="Colaborador, cidade, supervisão..." />
-          </div>
-        </div>
-      </div>
-      <div class="hosp-rd-table-wrap">
-        <table class="hosp-rd-table">
-          <thead><tr>
-            <th>Solicitação</th>
-            <th>Data</th>
-            <th>Dias</th>
-            <th>Colaboradores</th>
-            <th>Cidade</th>
-            <th>UF</th>
-            <th>Supervisão</th>
-            <th>Solicitante</th>
-            <th>Cancelado por</th>
-          </tr></thead>
-          <tbody id="hospRdCanceladasBody"><tr><td colspan="9"><div class="hosp-rd-loading">Carregando canceladas...</div></td></tr></tbody>
-        </table>
-      </div>`;
+    panel.innerHTML = panelMarkup();
     const hotelsPanel = document.getElementById('hospRdHoteis');
     root.insertBefore(panel, hotelsPanel || document.getElementById('hospRdModal'));
+  } else {
+    ensurePanelContent();
   }
 
   root.addEventListener('click', (event) => {
     if (event.target.closest('[data-hosp-canceladas-tab]')) {
       event.preventDefault();
+      event.stopPropagation();
       openCanceladas();
     }
-  });
+  }, true);
 
   root.addEventListener('input', (event) => {
     if (event.target.id !== 'hospRdCanceladasSearch') return;
@@ -188,13 +248,14 @@ function mountCanceladas() {
     renderBody();
   });
 
+  watchPanelOverwrite(root);
   state.mounted = true;
   loadCanceladas({ render: false });
   return true;
 }
 
-// Corrige os filtros do redesign: os painéis eram recriados a cada caractere,
-// substituindo o input e derrubando foco/cursor.
+// Preserva foco e cursor nos filtros do redesign. O módulo principal recria
+// o painel a cada caractere, substituindo fisicamente o input.
 let focusGeneration = 0;
 const trackedSearchSelector = [
   '[data-hosp-rd-search]',
@@ -219,7 +280,10 @@ function restoreFilterFocus(locator, value, start, end, generation) {
   replacement.focus({ preventScroll: true });
   try {
     const length = replacement.value.length;
-    replacement.setSelectionRange(Math.min(start ?? length, length), Math.min(end ?? length, length));
+    replacement.setSelectionRange(
+      Math.min(start ?? length, length),
+      Math.min(end ?? length, length),
+    );
   } catch {}
 }
 
