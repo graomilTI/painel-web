@@ -11,11 +11,12 @@ SRC_WORKER="$REPO_ROOT/agentes-grm-sync/worker/grm-sync-job-worker.js"
 PATCH_FINANCEIRO="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-financeiro.js"
 PATCH_FINANCEIRO_V2="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-financeiro-v2.js"
 PATCH_VALIDACAO_V3="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-validacao-v3.js"
+PATCH_SITUACAO_V4="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-situacao-v4.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -34,6 +35,10 @@ install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 
 # Após a ação Reabrir, recarrega a rota do GRM antes de validar Abertas.
 "$NODE_BIN" "$PATCH_VALIDACAO_V3" "$DST_AGENT"
+
+# Se a O.S. desaparecer de Abertas/Finalizadas, diagnostica todas as opções de
+# Situação/Financeiro sem executar nova ação no GRM.
+"$NODE_BIN" "$PATCH_SITUACAO_V4" "$DST_AGENT"
 
 upsert_env() {
   local key="$1" value="$2"
@@ -64,6 +69,7 @@ chmod 600 "$ENV_FILE"
 echo "Deploy concluído em modo seguro (DRY_RUN=true, ENCADEAR=false)."
 echo "Proteção financeira aplicada: Faturadas/Bonificadas/Faturadas e Bonificadas => REVISAO_MANUAL."
 echo "Validação pós-reabertura aplicada: reload completo antes de confirmar Abertas."
+echo "Diagnóstico ampliado aplicado: todas as opções de Situação/Financeiro serão pesquisadas em dry-run."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
