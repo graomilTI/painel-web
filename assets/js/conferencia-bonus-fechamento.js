@@ -1,10 +1,12 @@
 import { supabase } from './supabaseClient.js';
 
 const STYLE_ID = 'conferenciaBonusFechamentoStyles';
+const CLOSED_BANNER_HTML = '<strong>Competência fechada.</strong> Valores congelados pela fotografia do fechamento. Novos lançamentos estão bloqueados; somente falhas já aprovadas podem ser reenviadas.';
 let competenciaConsultada = null;
 let competenciaFechada = false;
 let carregando = false;
 let observer = null;
+let enhanceQueued = false;
 
 function injectStyles() {
   if (document.getElementById(STYLE_ID)) return;
@@ -42,9 +44,8 @@ function applyClosedState() {
   const banner = ensureBanner();
   if (banner) {
     banner.classList.toggle('visible', competenciaFechada);
-    banner.innerHTML = competenciaFechada
-      ? '<strong>Competência fechada.</strong> Valores congelados pela fotografia do fechamento. Novos lançamentos estão bloqueados; somente falhas já aprovadas podem ser reenviadas.'
-      : '';
+    const nextHtml = competenciaFechada ? CLOSED_BANNER_HTML : '';
+    if (banner.innerHTML !== nextHtml) banner.innerHTML = nextHtml;
   }
 
   document.querySelectorAll('#bonusBody .bonus-table tbody tr').forEach((tr) => {
@@ -92,7 +93,10 @@ async function refreshClosedState(force = false) {
 }
 
 function scheduleApply() {
+  if (enhanceQueued) return;
+  enhanceQueued = true;
   queueMicrotask(() => {
+    enhanceQueued = false;
     applyClosedState();
     void refreshClosedState();
   });
