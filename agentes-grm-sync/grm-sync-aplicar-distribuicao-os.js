@@ -178,25 +178,108 @@ async function selecionarSupervisao(page, coordenacao) {
   const alvo = normalize(coordenacao);
   const input = await page.$('#olsCode');
   if (!input) throw new Error('Campo de Supervisão (#olsCode) não encontrado na página.');
-  await input.click({ clickCount: 3 });
-  await page.keyboard.press('Backspace').catch(() => {});
+
+  await input.focus();
+  await page.keyboard.down('Control').catch(() => null);
+  await page.keyboard.press('A').catch(() => null);
+  await page.keyboard.up('Control').catch(() => null);
+  await page.keyboard.press('Backspace').catch(() => null);
   await input.type(coordenacao, { delay: 30 });
-  await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('.v-list-item-title')).some((el) => el.offsetParent !== null);
-  }, { timeout: 6000 }).catch(() => {});
-  const achou = await page.evaluate((alvo) => {
-    const items = Array.from(document.querySelectorAll('.v-list-item-title')).filter((el) => el.offsetParent !== null);
-    const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-    const match = items.find((el) => {
-      const t = norm(el.textContent);
-      return t.includes(alvo) || alvo.includes(t);
-    });
-    if (match) { match.click(); return match.textContent.trim(); }
-    return null;
+
+  // No Vuetify o menu do autocomplete é teleportado para um overlay fora do
+  // campo. Procurar somente .v-list-item-title no fluxo normal pode enxergar o
+  // texto na tela e ainda assim não localizar a opção correta pelo DOM.
+  const popupId = await obterPopupId(input);
+  const localizarRoot = `
+    const visivel = (el) => Boolean(
+      el && el.getClientRects().length
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none'
+    );
+    let root = id ? document.getElementById(id) : null;
+    if (!visivel(root)) {
+      const candidatos = Array.from(document.querySelectorAll(
+        '.v-overlay--active [role="listbox"], .v-overlay--active .v-list, '
+        + '.v-overlay-container [role="listbox"], .v-overlay-container .v-list, [role="listbox"]'
+      )).filter(visivel);
+      root = candidatos[candidatos.length - 1] || null;
+    }
+  `;
+
+  try {
+    await page.waitForFunction(new Function('id', 'alvo', `
+      ${localizarRoot}
+      if (!root) return false;
+      const norm = (s) => String(s || '').normalize('NFD')
+        .replace(/[\\u0300-\\u036f]/g, '').toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ').trim();
+      const opcoes = Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]')).filter(visivel);
+      return opcoes.some((el) => norm(el.textContent) === alvo)
+        || opcoes.some((el) => {
+          const texto = norm(el.textContent);
+          return texto && (texto.includes(alvo) || alvo.includes(texto));
+        });
+    `), { timeout: 8000 }, popupId, alvo);
+  } catch (_) {
+    const disponiveis = await page.evaluate(new Function('id', `
+      ${localizarRoot}
+      if (!root) return [];
+      return Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]'))
+        .filter(visivel)
+        .map((el) => (el.textContent || '').trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    `), popupId).catch(() => []);
+    throw new Error(
+      `Supervisão "${coordenacao}" não encontrada no autocomplete do Graint. `
+      + `Opções apresentadas: ${disponiveis.join(' | ') || 'nenhuma'}.`
+    );
+  }
+
+  const achou = await page.evaluate(new Function('id', 'alvo', `
+    ${localizarRoot}
+    if (!root) return null;
+    const norm = (s) => String(s || '').normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ').trim();
+    const opcoes = Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]')).filter(visivel);
+    const match = opcoes.find((el) => norm(el.textContent) === alvo)
+      || opcoes.find((el) => {
+        const texto = norm(el.textContent);
+        return texto && (texto.includes(alvo) || alvo.includes(texto));
+      });
+    if (!match) return null;
+    const texto = (match.textContent || '').trim();
+    const clicavel = match.closest('[role="option"], .v-list-item') || match;
+    clicavel.scrollIntoView({ block: 'nearest' });
+    clicavel.click();
+    return texto;
+  `), popupId, alvo);
+
+  if (!achou) throw new Error(`Não consegui clicar na supervisão "${coordenacao}" no autocomplete do Graint.`);
+
+  await new Promise((r) => setTimeout(r, 500));
+  const confirmacao = await page.evaluate((alvoEsperado) => {
+    const norm = (s) => String(s || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ').trim();
+    const campo = document.querySelector('#olsCode');
+    const host = campo?.closest('.v-input, .v-autocomplete, .v-select') || campo?.parentElement;
+    const valores = [
+      campo?.value,
+      ...(host ? Array.from(host.querySelectorAll('.v-select__selection-text, .v-autocomplete__selection-text, .v-chip__content'))
+        .map((el) => el.textContent) : []),
+    ].filter(Boolean);
+    return { ok: valores.some((valor) => norm(valor) === alvoEsperado), valores };
   }, alvo);
 
-  if (!achou) throw new Error(`Supervisão "${coordenacao}" não encontrada no campo do Graint.`);
-  await new Promise((r) => setTimeout(r, 300));
+  if (!confirmacao.ok) {
+    throw new Error(
+      `Cliquei na supervisão "${achou}", mas o campo não confirmou a seleção. `
+      + `Valor(es) após o clique: ${confirmacao.valores.join(' | ') || 'vazio'}.`
+    );
+  }
+
   return achou;
 }
 
