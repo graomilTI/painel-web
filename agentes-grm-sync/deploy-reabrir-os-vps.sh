@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="${REPO_ROOT:-/home/grao100/painel-web}"
+GRM_ROOT="${GRM_ROOT:-/home/grao100/painel-scripts/grm-sync}"
+NODE_BIN="${GRM_SYNC_NODE_BIN:-/opt/node22/bin/node}"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+
+SRC_AGENT="$REPO_ROOT/agentes-grm-sync/grm-sync-reabrir-os.js"
+SRC_WORKER="$REPO_ROOT/agentes-grm-sync/worker/grm-sync-job-worker.js"
+DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
+DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
+ENV_FILE="$GRM_ROOT/.env"
+
+for file in "$SRC_AGENT" "$SRC_WORKER" "$ENV_FILE"; do
+  [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
+done
+
+mkdir -p "$GRM_ROOT/worker"
+
+[[ ! -f "$DST_AGENT" ]] || cp -a "$DST_AGENT" "$DST_AGENT.backup-$STAMP"
+[[ ! -f "$DST_WORKER" ]] || cp -a "$DST_WORKER" "$DST_WORKER.backup-reabrir-$STAMP"
+
+install -o grao100 -g grao100 -m 750 "$SRC_AGENT" "$DST_AGENT"
+install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
+
+upsert_env() {
+  local key="$1" value="$2"
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  fi
+}
+
+# O deploy nunca habilita alteração real sozinho.
+upsert_env GRM_REABRIR_OS_DRY_RUN true
+upsert_env GRM_REABRIR_OS_PRIORIDADE_MAX 1
+upsert_env GRM_REABRIR_OS_ENCADEAR false
+upsert_env GRM_REABRIR_OS_DEBUG true
+
+"$NODE_BIN" --check "$DST_AGENT"
+"$NODE_BIN" --check "$DST_WORKER"
+
+grep -q "'sync-reabrir-os': 'grm-sync-reabrir-os.js'" "$DST_WORKER" || {
+  echo "Worker instalado sem o mapeamento sync-reabrir-os." >&2
+  exit 1
+}
+
+chown grao100:grao100 "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+echo "Deploy concluído em modo seguro (DRY_RUN=true, ENCADEAR=false)."
+echo "Agente: $DST_AGENT"
+echo "Worker: $DST_WORKER"
+grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
