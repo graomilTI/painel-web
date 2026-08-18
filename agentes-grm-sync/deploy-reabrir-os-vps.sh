@@ -8,11 +8,12 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 SRC_AGENT="$REPO_ROOT/agentes-grm-sync/grm-sync-reabrir-os.js"
 SRC_WORKER="$REPO_ROOT/agentes-grm-sync/worker/grm-sync-job-worker.js"
+PATCH_FINANCEIRO="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-financeiro.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -23,6 +24,10 @@ mkdir -p "$GRM_ROOT/worker"
 
 install -o grao100 -g grao100 -m 750 "$SRC_AGENT" "$DST_AGENT"
 install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
+
+# Proteção adicional: procura também Finalizadas/Faturadas, mas nunca reabre
+# automaticamente uma O.S. que já tenha reflexo financeiro.
+"$NODE_BIN" "$PATCH_FINANCEIRO" "$DST_AGENT"
 
 upsert_env() {
   local key="$1" value="$2"
@@ -51,6 +56,7 @@ chown grao100:grao100 "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 echo "Deploy concluído em modo seguro (DRY_RUN=true, ENCADEAR=false)."
+echo "Proteção financeira aplicada: O.S. faturada => REVISAO_MANUAL."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
