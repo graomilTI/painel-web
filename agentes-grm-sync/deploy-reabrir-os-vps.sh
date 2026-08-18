@@ -17,11 +17,12 @@ PATCH_TOOLTIP_V6="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-tooltip-v6.js"
 PATCH_POS_CLIQUE_V7="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-pos-clique-v7.js"
 PATCH_CONFIRMACAO_V8="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-confirmacao-v8.js"
 PATCH_MOTIVO_V9="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-motivo-v9.js"
+PATCH_REGRA_V10="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-regra-v10.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$PATCH_REGRA_V10" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -65,6 +66,10 @@ install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 # permitir o clique em CONFIRMAR, com texto auditável e configurável por env.
 "$NODE_BIN" "$PATCH_MOTIVO_V9" "$DST_AGENT"
 
+# Regra oficial do lote: Remanescente > 30 e Dias sem embarque < 10.
+# Situação=Finalizadas e Financeiro=Não Faturadas são validados ao vivo no GRM.
+"$NODE_BIN" "$PATCH_REGRA_V10" "$DST_AGENT"
+
 upsert_env() {
   local key="$1" value="$2"
   if grep -q "^${key}=" "$ENV_FILE"; then
@@ -76,7 +81,7 @@ upsert_env() {
 
 # O deploy nunca habilita alteração real sozinho.
 upsert_env GRM_REABRIR_OS_DRY_RUN true
-upsert_env GRM_REABRIR_OS_PRIORIDADE_MAX 1
+upsert_env GRM_REABRIR_OS_PRIORIDADE_MAX 2
 upsert_env GRM_REABRIR_OS_ENCADEAR false
 upsert_env GRM_REABRIR_OS_DEBUG true
 upsert_env GRM_REABRIR_OS_MOTIVO "Correção de finalização indevida pelo agente automático."
@@ -109,6 +114,11 @@ grep -q "GRM_REABRIR_OS_MOTIVO" "$DST_AGENT" || {
   exit 1
 }
 
+grep -q "FINALIZADAS_NAO_FATURADAS_REMANESCENTE_GT_30_DIAS_SEM_EMBARQUE_LT_10" "$DST_AGENT" || {
+  echo "Agente instalado sem a regra oficial de reabertura v10." >&2
+  exit 1
+}
+
 chown grao100:grao100 "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -120,6 +130,7 @@ echo "Proteção de ação aplicada: Reabrir OS somente por atributo/tooltip EXA
 echo "Pós-clique protegido: clique DOM exato + feedback HTTP/GRM; falha de efetivação => REVISAO_MANUAL."
 echo "Confirmação v8 aplicada: diálogo 'Deseja realmente abrir a Ordem de Serviço?' + botão afirmativo seguro."
 echo "Motivo v9 aplicado: campo obrigatório preenchido antes de CONFIRMAR."
+echo "Regra v10 aplicada: Finalizadas + Não Faturadas + Remanescente > 30,00 + Dias sem embarque < 10."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
