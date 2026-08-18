@@ -68,6 +68,7 @@ const SCRIPT_MAP = {
   'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
+  'sync-reabrir-os': 'grm-sync-reabrir-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',
   'sync-liberacao-despesas': 'grm-sync-liberacao-despesas.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
