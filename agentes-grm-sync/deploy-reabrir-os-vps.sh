@@ -15,11 +15,12 @@ PATCH_SITUACAO_V4="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-situacao-v4.js"
 PATCH_FATURADAS_V5="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-faturadas-v5.js"
 PATCH_TOOLTIP_V6="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-tooltip-v6.js"
 PATCH_POS_CLIQUE_V7="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-pos-clique-v7.js"
+PATCH_CONFIRMACAO_V8="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-confirmacao-v8.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -54,6 +55,11 @@ install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 # respostas HTTP. Se o GRM não efetivar, isola em REVISAO_MANUAL sem repetir.
 "$NODE_BIN" "$PATCH_POS_CLIQUE_V7" "$DST_AGENT"
 
+# O GRM confirma a ação com "Deseja realmente abrir a Ordem de Serviço?".
+# Reconhece somente esse diálogo (ou equivalente de reabertura) e só clica em
+# botão afirmativo explícito: SIM/CONFIRMAR/ABRIR/REABRIR.
+"$NODE_BIN" "$PATCH_CONFIRMACAO_V8" "$DST_AGENT"
+
 upsert_env() {
   local key="$1" value="$2"
   if grep -q "^${key}=" "$ENV_FILE"; then
@@ -87,6 +93,11 @@ grep -q "click_method: 'dom-button-exato'" "$DST_AGENT" || {
   exit 1
 }
 
+grep -q "DESEJA REALMENTE ABRIR A ORDEM DE SERVICO" "$DST_AGENT" || {
+  echo "Agente instalado sem suporte à confirmação de abertura v8." >&2
+  exit 1
+}
+
 chown grao100:grao100 "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -96,6 +107,7 @@ echo "Validação pós-reabertura aplicada: reload completo antes de confirmar A
 echo "Diagnóstico ampliado aplicado: todas as opções de Situação/Financeiro serão pesquisadas em dry-run."
 echo "Proteção de ação aplicada: Reabrir OS somente por atributo/tooltip EXATO do próprio botão."
 echo "Pós-clique protegido: clique DOM exato + feedback HTTP/GRM; falha de efetivação => REVISAO_MANUAL."
+echo "Confirmação v8 aplicada: diálogo 'Deseja realmente abrir a Ordem de Serviço?' + botão afirmativo seguro."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
