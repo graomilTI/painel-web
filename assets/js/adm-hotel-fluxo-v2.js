@@ -181,6 +181,11 @@ function mountShell() {
   document.body.insertAdjacentHTML('beforeend', drawerHtml() + modalsHtml());
   bindEvents();
   observeBaseChanges();
+  // Sinal explícito disparado por adm-hotel.js ao fim de loadRows() (reservar,
+  // checkout, pagamento, cancelar, estender...): pula o throttle de 4s do
+  // observeBaseChanges() pra não deixar Solicitações/Em Andamento mostrando
+  // dado velho logo depois de uma ação salvar com sucesso.
+  document.addEventListener('hospedagem:baseAtualizada', () => { if (!state.loading) loadData(); });
 }
 
 function drawerHtml() {
