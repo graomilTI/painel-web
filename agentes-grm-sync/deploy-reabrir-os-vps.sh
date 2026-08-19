@@ -18,11 +18,12 @@ PATCH_POS_CLIQUE_V7="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-pos-clique-v7.
 PATCH_CONFIRMACAO_V8="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-confirmacao-v8.js"
 PATCH_MOTIVO_V9="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-motivo-v9.js"
 PATCH_REGRA_V10="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-regra-v10.js"
+PATCH_BUSCA_UNICA_V11="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-busca-unica-v11.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$PATCH_REGRA_V10" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$PATCH_REGRA_V10" "$PATCH_BUSCA_UNICA_V11" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -34,19 +35,17 @@ mkdir -p "$GRM_ROOT/worker"
 install -o grao100 -g grao100 -m 750 "$SRC_AGENT" "$DST_AGENT"
 install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 
-# Proteções financeiras e diagnósticos seguros.
+# Proteções financeiras e diagnósticos seguros da base histórica.
 "$NODE_BIN" "$PATCH_FINANCEIRO" "$DST_AGENT"
 "$NODE_BIN" "$PATCH_FINANCEIRO_V2" "$DST_AGENT"
 
 # Após a ação Reabrir, recarrega a rota do GRM antes de validar Abertas.
 "$NODE_BIN" "$PATCH_VALIDACAO_V3" "$DST_AGENT"
 
-# Se a O.S. desaparecer de Abertas/Finalizadas, diagnostica todas as opções de
-# Situação/Financeiro sem executar nova ação no GRM.
+# Diagnóstico histórico; a v11 substitui a pré-busca por consulta exclusiva.
 "$NODE_BIN" "$PATCH_SITUACAO_V4" "$DST_AGENT"
 
-# Regra operacional: O.S. Faturadas ou Faturadas e Bonificadas não possuem
-# possibilidade de reabertura no GRM e devem ser ignoradas pela automação.
+# Regra financeira histórica; a v11 não pesquisa combinações alternativas.
 "$NODE_BIN" "$PATCH_FATURADAS_V5" "$DST_AGENT"
 
 # A ação Reabrir só pode ser selecionada por atributo ou tooltip EXATO do
@@ -58,17 +57,18 @@ install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 "$NODE_BIN" "$PATCH_POS_CLIQUE_V7" "$DST_AGENT"
 
 # O GRM confirma a ação com "Deseja realmente abrir a Ordem de Serviço?".
-# Reconhece somente esse diálogo (ou equivalente de reabertura) e só clica em
-# botão afirmativo explícito: SIM/CONFIRMAR/ABRIR/REABRIR.
+# Reconhece somente esse diálogo e botão afirmativo explícito.
 "$NODE_BIN" "$PATCH_CONFIRMACAO_V8" "$DST_AGENT"
 
-# O diálogo exige motivo obrigatório. Preenche o campo de motivo antes de
-# permitir o clique em CONFIRMAR, com texto auditável e configurável por env.
+# O diálogo exige motivo obrigatório.
 "$NODE_BIN" "$PATCH_MOTIVO_V9" "$DST_AGENT"
 
-# Regra oficial do lote: Remanescente > 30 e Dias sem embarque < 10.
-# Situação=Finalizadas e Financeiro=Não Faturadas são validados ao vivo no GRM.
+# Regra do lote: Remanescente > 30 e Dias sem embarque < 10.
 "$NODE_BIN" "$PATCH_REGRA_V10" "$DST_AGENT"
+
+# Pré-busca exclusiva: somente Finalizadas / Não Faturadas.
+# Se não localizar, encerra o item sem buscar qualquer outra combinação.
+"$NODE_BIN" "$PATCH_BUSCA_UNICA_V11" "$DST_AGENT"
 
 upsert_env() {
   local key="$1" value="$2"
@@ -119,18 +119,21 @@ grep -q "FINALIZADAS_NAO_FATURADAS_REMANESCENTE_GT_30_DIAS_SEM_EMBARQUE_LT_10" "
   exit 1
 }
 
+grep -q "SOMENTE_FINALIZADAS_NAO_FATURADAS_V11" "$DST_AGENT" || {
+  echo "Agente instalado sem a busca exclusiva Finalizadas/Não Faturadas v11." >&2
+  exit 1
+}
+
 chown grao100:grao100 "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 echo "Deploy concluído em modo seguro (DRY_RUN=true, ENCADEAR=false)."
-echo "Proteção financeira aplicada: Faturadas/Faturadas e Bonificadas => IGNORADA; Bonificadas => REVISAO_MANUAL."
-echo "Validação pós-reabertura aplicada: reload completo antes de confirmar Abertas."
-echo "Diagnóstico ampliado aplicado: todas as opções de Situação/Financeiro serão pesquisadas em dry-run."
 echo "Proteção de ação aplicada: Reabrir OS somente por atributo/tooltip EXATO do próprio botão."
 echo "Pós-clique protegido: clique DOM exato + feedback HTTP/GRM; falha de efetivação => REVISAO_MANUAL."
 echo "Confirmação v8 aplicada: diálogo 'Deseja realmente abrir a Ordem de Serviço?' + botão afirmativo seguro."
 echo "Motivo v9 aplicado: campo obrigatório preenchido antes de CONFIRMAR."
-echo "Regra v10 aplicada: Finalizadas + Não Faturadas + Remanescente > 30,00 + Dias sem embarque < 10."
+echo "Regra v10 aplicada: Remanescente > 30,00 + Dias sem embarque < 10."
+echo "Busca v11 aplicada: consultar somente Finalizadas / Não Faturadas; ausente => pular sem outras buscas."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
