@@ -6,10 +6,10 @@
  * retroativo no Caixa Operacional do colaborador.
  *
  * REGRA DE SEGURANÇA:
- * - só remove linhas cuja descrição contenha EXATAMENTE a assinatura
- *   "Lançamento automático retroativo - Café";
- * - também exige que a própria linha identifique Café;
- * - nunca remove uma despesa de Café com outra observação/descrição;
+ * - só remove linhas com a assinatura exata "Lançamento automático retroativo - Café";
+ * - exige que a mesma linha identifique o tipo de despesa Café;
+ * - usa exclusivamente a lixeira da própria linha encontrada;
+ * - antes de confirmar, valida o modal "EXCLUIR MOVIMENTO" e o valor da linha;
  * - DRY_RUN é o padrão. Para excluir de verdade, use --real.
  */
 
@@ -38,7 +38,7 @@ const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V1-EXACT-DESCRIPTION';
+const VERSION = 'V2-GRM-CONFIRM-DELETE';
 const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.br/login';
 const STAFF_URL = process.env.GRM_CLEANUP_CAFE_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
 const TARGET_DESCRIPTION = 'Lançamento automático retroativo - Café';
@@ -228,36 +228,21 @@ async function clickCash(page) {
   });
   if (!prepared.ok) throw new Error(`Botão Caixa não localizado: ${JSON.stringify(prepared)}`);
   await page.click(prepared.selector);
-  await page.waitForFunction(() => {
-    const text = document.body?.innerText || '';
-    return /CAIXA OPERACIONAL/i.test(text) && /DESPESAS/i.test(text);
-  }, { timeout: DEFAULT_TIMEOUT });
-  await sleep(500);
-}
 
-async function openExpenses(page) {
-  const prepared = await page.evaluate(() => {
-    const normText = (value) => String(value || '').normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  await page.waitForFunction(() => {
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    document.querySelectorAll('[data-grm-cleanup-expenses]').forEach((el) => delete el.dataset.grmCleanupExpenses);
-    const controls = [...document.querySelectorAll('button,[role="button"],[role="tab"],a,.v-tab,.v-list-item,.v-expansion-panel-title')]
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
       .filter(visible);
-    let target = controls.find((el) => ['DESPESAS', 'DESPESA'].includes(normText(el.innerText || el.textContent)));
-    if (!target) {
-      const label = [...document.querySelectorAll('*')]
-        .filter(visible)
-        .find((el) => el.children.length === 0 && ['DESPESAS', 'DESPESA'].includes(normText(el.textContent)));
-      target = label?.closest('button,[role="button"],[role="tab"],a,.v-tab,.v-list-item,.v-expansion-panel-title') || null;
-    }
-    if (!target) return null;
-    target.dataset.grmCleanupExpenses = '1';
-    return '[data-grm-cleanup-expenses="1"]';
-  });
-  if (!prepared) throw new Error('Seção Despesas não localizada.');
-  await page.click(prepared);
-  await sleep(800);
+    return dialogs.some((dialog) => {
+      const text = String(dialog.innerText || '').replace(/\s+/g, ' ');
+      return /CAIXA OPERACIONAL/i.test(text)
+        && /TIPO DE DESPESA/i.test(text)
+        && /DESCRI[CÇ][AÃ]O|DESCRICAO/i.test(text)
+        && /VALOR/i.test(text);
+    });
+  }, { timeout: DEFAULT_TIMEOUT });
+  await sleep(500);
 }
 
 async function inspectTargets(page) {
@@ -277,8 +262,8 @@ async function inspectTargets(page) {
   }, { descriptionKey: TARGET_DESCRIPTION_KEY });
 }
 
-async function deleteFirstTarget(page) {
-  const prepared = await page.evaluate(({ descriptionKey }) => {
+async function prepareDeleteTarget(page) {
+  return page.evaluate(({ descriptionKey }) => {
     const normText = (value) => String(value || '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
     const visible = (el) => !!el && el.getClientRects().length > 0
@@ -303,31 +288,105 @@ async function deleteFirstTarget(page) {
         return key.includes(descriptionKey) && /(^| )CAFE( |$)/.test(key);
       });
     if (!rows.length) return { ok: false, reason: 'NO_TARGET' };
+
     const row = rows[0];
-    const buttons = [...row.querySelectorAll('button,[role="button"],a')]
+    const cells = [...row.querySelectorAll('td,[role="cell"],[role="gridcell"]')];
+    const rowText = String(row.innerText || '').replace(/\s+/g, ' ').trim();
+    const valueMatch = rowText.match(/R\$\s*([\d.]+,\d{2})/i);
+    if (!valueMatch) {
+      return { ok: false, reason: 'VALUE_NOT_FOUND', row: rowText.slice(0, 1000) };
+    }
+    const valueText = `R$ ${valueMatch[1]}`;
+
+    const allButtons = [...row.querySelectorAll('button,[role="button"],a')]
       .filter(visible)
       .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-    const candidates = buttons.filter((el) => {
-      const key = signature(el);
-      return /EXCLUIR|REMOVER|DELETE|TRASH|LIXEIRA|BIN/.test(key);
-    });
-    if (candidates.length !== 1) {
+
+    const semantic = allButtons.filter((el) => /EXCLUIR|REMOVER|DELETE|TRASH|LIXEIRA|BIN/.test(signature(el)));
+    let deleteButton = semantic.length === 1 ? semantic[0] : null;
+    let strategy = deleteButton ? 'SEMANTIC' : null;
+
+    if (!deleteButton && cells.length) {
+      const firstCellButtons = [...cells[0].querySelectorAll('button,[role="button"],a')]
+        .filter(visible)
+        .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+      if (firstCellButtons.length === 1) {
+        deleteButton = firstCellButtons[0];
+        strategy = 'FIRST_CELL_ONLY_BUTTON';
+      }
+    }
+
+    if (!deleteButton) {
       return {
         ok: false,
         reason: 'DELETE_CONTROL_NOT_UNIQUE',
-        count: candidates.length,
-        row: String(row.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000),
-        controls: buttons.map((el) => signature(el)).slice(0, 20),
+        semanticCount: semantic.length,
+        row: rowText.slice(0, 1000),
+        controls: allButtons.map((el) => signature(el)).slice(0, 20),
       };
     }
-    candidates[0].dataset.grmCleanupDelete = '1';
+
+    deleteButton.dataset.grmCleanupDelete = '1';
     return {
       ok: true,
       selector: '[data-grm-cleanup-delete="1"]',
-      row: String(row.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 1000),
+      strategy,
+      row: rowText.slice(0, 1000),
+      valueText,
+      valueKey: normText(valueText),
     };
   }, { descriptionKey: TARGET_DESCRIPTION_KEY });
+}
 
+async function confirmDeleteModal(page, expectedValueKey) {
+  await page.waitForFunction(({ expectedValue }) => {
+    const normText = (value) => String(value || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
+      .filter(visible);
+    return dialogs.some((dialog) => {
+      const text = normText(dialog.innerText || '');
+      return text.includes('EXCLUIR MOVIMENTO')
+        && text.includes('CAIXA OPERACIONAL')
+        && text.includes('DESEJA REALMENTE EXCLUIR O REGISTRO NO VALOR DE')
+        && text.includes(expectedValue)
+        && [...dialog.querySelectorAll('button,[role="button"]')]
+          .filter(visible)
+          .some((button) => normText(button.innerText || button.textContent) === 'CONFIRMAR');
+    });
+  }, { timeout: DEFAULT_TIMEOUT }, { expectedValue: expectedValueKey });
+
+  const clicked = await page.evaluate(({ expectedValue }) => {
+    const normText = (value) => String(value || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
+      .filter(visible)
+      .filter((dialog) => {
+        const text = normText(dialog.innerText || '');
+        return text.includes('EXCLUIR MOVIMENTO')
+          && text.includes('CAIXA OPERACIONAL')
+          && text.includes(expectedValue);
+      });
+    if (dialogs.length !== 1) return { ok: false, reason: 'DELETE_MODAL_NOT_UNIQUE', count: dialogs.length };
+    const buttons = [...dialogs[0].querySelectorAll('button,[role="button"]')].filter(visible);
+    const confirm = buttons.filter((button) => normText(button.innerText || button.textContent) === 'CONFIRMAR');
+    const cancel = buttons.filter((button) => normText(button.innerText || button.textContent) === 'CANCELAR');
+    if (confirm.length !== 1 || cancel.length !== 1) {
+      return { ok: false, reason: 'CONFIRM_CONTROLS_INVALID', confirm: confirm.length, cancel: cancel.length };
+    }
+    confirm[0].click();
+    return { ok: true };
+  }, { expectedValue: expectedValueKey });
+
+  if (!clicked.ok) throw new Error(`Modal de exclusão inseguro: ${JSON.stringify(clicked)}`);
+}
+
+async function deleteFirstTarget(page) {
+  const prepared = await prepareDeleteTarget(page);
   if (!prepared.ok) {
     if (prepared.reason === 'NO_TARGET') return false;
     throw new Error(`Controle seguro de exclusão não localizado: ${JSON.stringify(prepared)}`);
@@ -335,29 +394,32 @@ async function deleteFirstTarget(page) {
 
   const before = (await inspectTargets(page)).length;
   await page.click(prepared.selector);
-  await sleep(300);
+  await confirmDeleteModal(page, prepared.valueKey);
 
-  await page.evaluate(() => {
+  await page.waitForFunction(({ descriptionKey, beforeCount }) => {
     const normText = (value) => String(value || '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
-    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
+    const remaining = [...document.querySelectorAll('tr,[role="row"]')]
       .filter(visible)
-      .filter((el) => /EXCLUIR|REMOVER|TEM CERTEZA|CONFIRMAR/i.test(el.innerText || ''));
-    const dialog = dialogs[dialogs.length - 1];
-    if (!dialog) return;
-    const buttons = [...dialog.querySelectorAll('button,[role="button"]')].filter(visible);
-    const confirm = buttons.find((el) => ['EXCLUIR', 'REMOVER', 'SIM', 'CONFIRMAR'].includes(normText(el.innerText || el.textContent)));
-    if (confirm) confirm.click();
-  });
+      .filter((row) => {
+        const key = normText(row.innerText || '');
+        return key.includes(descriptionKey) && /(^| )CAFE( |$)/.test(key);
+      }).length;
+    return remaining < beforeCount;
+  }, { timeout: DEFAULT_TIMEOUT }, { descriptionKey: TARGET_DESCRIPTION_KEY, beforeCount: before });
 
-  await sleep(900);
   const after = (await inspectTargets(page)).length;
-  if (after >= before) {
-    throw new Error(`Exclusão não foi confirmada no GRM (${before} -> ${after}).`);
-  }
-  log('SUCCESS', 'Despesa retroativa de Café excluída.', { before, after, row: prepared.row });
+  if (after >= before) throw new Error(`Exclusão não foi confirmada no GRM (${before} -> ${after}).`);
+
+  log('SUCCESS', 'Despesa retroativa de Café excluída.', {
+    before,
+    after,
+    valor: prepared.valueText,
+    estrategia_lixeira: prepared.strategy,
+    row: prepared.row,
+  });
   return true;
 }
 
@@ -373,7 +435,6 @@ async function processTarget(page, target) {
   await searchCpf(page, target.cpf);
   await selectExactStaff(page, target.cpf);
   await clickCash(page);
-  await openExpenses(page);
 
   const found = await inspectTargets(page);
   if (!found.length) {
