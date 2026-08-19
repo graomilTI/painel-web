@@ -2,15 +2,20 @@
 'use strict';
 
 /*
- * Limpeza pontual dos lançamentos indevidos de Café criados pelo agente
- * retroativo no Caixa Operacional do colaborador.
+ * Limpeza pontual dos lançamentos indevidos de Café criados retroativamente
+ * no Caixa Operacional.
  *
- * REGRA DE SEGURANÇA:
- * - só remove linhas com a assinatura exata "Lançamento automático retroativo - Café";
- * - exige que a mesma linha identifique o tipo de despesa Café;
- * - usa exclusivamente a lixeira da própria linha encontrada;
- * - antes de confirmar, valida o modal "EXCLUIR MOVIMENTO" e o valor da linha;
- * - DRY_RUN é o padrão. Para excluir de verdade, use --real.
+ * Segurança:
+ * - descobre os alvos diretamente na API atual do GRM;
+ * - exige descrição exata "Lançamento automático retroativo - Café";
+ * - exige categoria Café;
+ * - faz um PRECHECK completo pela interface antes de qualquer exclusão;
+ * - exige que a quantidade por colaborador na interface seja igual à API;
+ * - usa exclusivamente a lixeira da própria linha alvo;
+ * - valida o modal "EXCLUIR MOVIMENTO", o valor e o botão "CONFIRMAR";
+ * - após o --real, consulta novamente a API e exige zero alvos restantes.
+ *
+ * DRY_RUN é o padrão. Para excluir de verdade, use --real.
  */
 
 process.env.HOME = process.env.HOME || '/home/grao100';
@@ -33,36 +38,23 @@ if (typeof globalThis.Headers === 'undefined') {
 
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { createClient } = require('@supabase/supabase-js');
-const WebSocket = require('ws');
-
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V2-GRM-CONFIRM-DELETE';
+const VERSION = 'V3-API-PREFLIGHT-DELETE';
 const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.br/login';
 const STAFF_URL = process.env.GRM_CLEANUP_CAFE_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
+const DATE_FROM = process.env.GRM_CLEANUP_CAFE_DATA_DE || '2026-08-11';
+const DATE_TO = process.env.GRM_CLEANUP_CAFE_DATA_ATE || '2026-08-17';
 const TARGET_DESCRIPTION = 'Lançamento automático retroativo - Café';
 const TARGET_DESCRIPTION_KEY = 'LANCAMENTO AUTOMATICO RETROATIVO CAFE';
 const DRY_RUN = !process.argv.includes('--real');
 const HEADLESS = String(process.env.GRM_HEADLESS ?? 'true').toLowerCase() !== 'false';
-const MAX_COLLABORATORS = Math.max(1, Number(process.env.GRM_CLEANUP_CAFE_MAX_COLABORADORES || 250));
 const DEFAULT_TIMEOUT = Math.max(15000, Number(process.env.GRM_CLEANUP_CAFE_TIMEOUT_MS || 45000));
+const MAX_DELETE_PER_STAFF = Math.max(1, Number(process.env.GRM_CLEANUP_CAFE_MAX_POR_COLABORADOR || 20));
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SB_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-  || process.env.SUPABASE_SERVICE_KEY
-  || process.env.SB_SERVICE_KEY
-  || process.env.SUPABASE_KEY;
 const GRM_USER = process.env.GRMSERVER_USER;
 const GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
-
-if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Credenciais do Supabase ausentes.');
 if (!GRM_USER || !GRM_PASSWORD) throw new Error('Credenciais do GRM ausentes.');
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-  realtime: { transport: WebSocket },
-});
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
@@ -74,51 +66,20 @@ function norm(value) {
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
 }
+function isoToBr(iso) {
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+}
+function toIsoDate(value) {
+  const s = String(value || '').trim();
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  return s;
+}
 function log(level, message, data) {
   console.log(`[${level}] ${new Date().toISOString()} - ${message}${data === undefined ? '' : ` ${JSON.stringify(data)}`}`);
-}
-
-async function loadTargets() {
-  const rows = [];
-  const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from('grm_despesas_retroativas_auditoria')
-      .select('cpf,colaborador,data_referencia,tipo_despesa,acao,ofm_code,dry_run,sucesso')
-      .eq('tipo_despesa', 'Café')
-      .eq('acao', 'CREATE')
-      .eq('dry_run', false)
-      .eq('sucesso', true)
-      .not('ofm_code', 'is', null)
-      .order('data_referencia', { ascending: true })
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < pageSize) break;
-  }
-
-  const byCpf = new Map();
-  for (const row of rows) {
-    const cpf = digits(row.cpf);
-    if (cpf.length !== 11) continue;
-    const current = byCpf.get(cpf) || {
-      cpf,
-      colaborador: row.colaborador || cpf,
-      datas: new Set(),
-      ofm_codes: new Set(),
-    };
-    if (row.data_referencia) current.datas.add(String(row.data_referencia).slice(0, 10));
-    if (row.ofm_code != null) current.ofm_codes.add(Number(row.ofm_code));
-    byCpf.set(cpf, current);
-  }
-
-  return [...byCpf.values()]
-    .map((row) => ({
-      ...row,
-      datas: [...row.datas].sort(),
-      ofm_codes: [...row.ofm_codes].sort((a, b) => a - b),
-    }))
-    .slice(0, MAX_COLLABORATORS);
 }
 
 async function launchBrowser() {
@@ -150,7 +111,110 @@ async function login(page) {
     page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
     page.click('button.submit-btn'),
   ]);
-  await sleep(1000);
+  await sleep(800);
+}
+
+async function api(page, path, body) {
+  return page.evaluate(async ({ apiPath, payload }) => {
+    let token = null;
+    for (let i = 0; i < localStorage.length; i += 1) {
+      try {
+        const value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value?.userToken) { token = value.userToken; break; }
+      } catch (_) {}
+    }
+    if (!token) throw new Error('Token GRM não encontrado no navegador.');
+    const response = await fetch(apiPath, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const text = await response.text();
+    let json;
+    try { json = JSON.parse(text); } catch (_) { json = { text }; }
+    if (!response.ok || json?.result === false) {
+      throw new Error(`${response.status}: ${text.slice(0, 700)}`);
+    }
+    return json;
+  }, { apiPath: path, payload: body });
+}
+
+async function loadCurrentApiState(page) {
+  const [report, staffResp, typesResp] = await Promise.all([
+    api(page, '/api/reports/finance/operatingFlow', {
+      ofmDateFrom: isoToBr(DATE_FROM),
+      ofmDateTo: isoToBr(DATE_TO),
+      ofmStatusReport: ['P', 'A', 'N'],
+      reportType: 'flowList',
+    }),
+    api(page, '/api/staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A' }),
+    api(page, '/api/oFlowExpenseType/getRecords', { oexStatus: 'A' }),
+  ]);
+
+  const types = typesResp.searchData || [];
+  const cafe = types.find((row) => norm(row.oexName) === 'CAFE');
+  if (!cafe) throw new Error('Categoria Café não encontrada na API do GRM.');
+  const cafeCode = Number(cafe.oexCode);
+
+  const movements = (report.searchData || []).filter((row) =>
+    Number(row.oexCode) === cafeCode
+    && norm(row.ofmDescription) === TARGET_DESCRIPTION_KEY
+    && ['P', 'A', 'N'].includes(String(row.ofmStatus || '').toUpperCase())
+  );
+
+  const staffByCode = new Map((staffResp.searchData || []).map((row) => [Number(row.staCode), row]));
+  const byStaff = new Map();
+  const unresolved = [];
+
+  for (const movement of movements) {
+    const staCode = Number(movement.staCode);
+    const staff = staffByCode.get(staCode);
+    if (!staff) {
+      unresolved.push({
+        staCode,
+        ofmCode: Number(movement.ofmCode),
+        data: toIsoDate(movement.ofmDate),
+      });
+      continue;
+    }
+    const cpf = digits(staff.staCPF);
+    if (cpf.length !== 11) {
+      unresolved.push({ staCode, nome: staff.staName, cpf: staff.staCPF, ofmCode: Number(movement.ofmCode) });
+      continue;
+    }
+    const current = byStaff.get(staCode) || {
+      staCode,
+      cpf,
+      colaborador: staff.staName || cpf,
+      movimentos: [],
+    };
+    current.movimentos.push({
+      ofmCode: Number(movement.ofmCode),
+      data: toIsoDate(movement.ofmDate),
+      status: String(movement.ofmStatus || ''),
+      valor: Number(movement.ofmValue || 0),
+    });
+    byStaff.set(staCode, current);
+  }
+
+  const targets = [...byStaff.values()]
+    .map((target) => ({
+      ...target,
+      movimentos: target.movimentos.sort((a, b) => a.ofmCode - b.ofmCode),
+      esperado: target.movimentos.length,
+    }))
+    .sort((a, b) => a.colaborador.localeCompare(b.colaborador, 'pt-BR'));
+
+  return {
+    cafeCode,
+    reportCount: (report.searchData || []).length,
+    total: movements.length,
+    targets,
+    unresolved,
+  };
 }
 
 async function openStaffPage(page) {
@@ -181,8 +245,7 @@ async function searchCpf(page, cpf) {
 async function selectExactStaff(page, cpf) {
   await page.waitForFunction((targetCpf) => {
     const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
-    return [...document.querySelectorAll('tr')]
-      .some((row) => onlyDigits(row.innerText).includes(targetCpf));
+    return [...document.querySelectorAll('tr')].some((row) => onlyDigits(row.innerText).includes(targetCpf));
   }, { timeout: DEFAULT_TIMEOUT }, cpf);
 
   const selected = await page.evaluate((targetCpf) => {
@@ -191,8 +254,7 @@ async function selectExactStaff(page, cpf) {
       .filter((row) => onlyDigits(row.innerText).includes(targetCpf));
     if (rows.length !== 1) return { ok: false, matches: rows.length };
     const row = rows[0];
-    const exact = [...row.querySelectorAll('td')]
-      .some((cell) => onlyDigits(cell.innerText) === targetCpf);
+    const exact = [...row.querySelectorAll('td')].some((cell) => onlyDigits(cell.innerText) === targetCpf);
     if (!exact) return { ok: false, reason: 'CPF_NOT_EXACT' };
     const checkbox = row.querySelector('input[type="checkbox"]');
     if (!checkbox) return { ok: false, reason: 'CHECKBOX_NOT_FOUND' };
@@ -228,7 +290,6 @@ async function clickCash(page) {
   });
   if (!prepared.ok) throw new Error(`Botão Caixa não localizado: ${JSON.stringify(prepared)}`);
   await page.click(prepared.selector);
-
   await page.waitForFunction(() => {
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
@@ -242,7 +303,7 @@ async function clickCash(page) {
         && /VALOR/i.test(text);
     });
   }, { timeout: DEFAULT_TIMEOUT });
-  await sleep(500);
+  await sleep(450);
 }
 
 async function inspectTargets(page) {
@@ -260,6 +321,14 @@ async function inspectTargets(page) {
       }))
       .filter((row) => row.normalized.includes(descriptionKey) && /(^| )CAFE( |$)/.test(row.normalized));
   }, { descriptionKey: TARGET_DESCRIPTION_KEY });
+}
+
+async function openTarget(page, target) {
+  await openStaffPage(page);
+  await searchCpf(page, target.cpf);
+  await selectExactStaff(page, target.cpf);
+  await clickCash(page);
+  return inspectTargets(page);
 }
 
 async function prepareDeleteTarget(page) {
@@ -293,15 +362,12 @@ async function prepareDeleteTarget(page) {
     const cells = [...row.querySelectorAll('td,[role="cell"],[role="gridcell"]')];
     const rowText = String(row.innerText || '').replace(/\s+/g, ' ').trim();
     const valueMatch = rowText.match(/R\$\s*([\d.]+,\d{2})/i);
-    if (!valueMatch) {
-      return { ok: false, reason: 'VALUE_NOT_FOUND', row: rowText.slice(0, 1000) };
-    }
+    if (!valueMatch) return { ok: false, reason: 'VALUE_NOT_FOUND', row: rowText.slice(0, 1000) };
     const valueText = `R$ ${valueMatch[1]}`;
 
     const allButtons = [...row.querySelectorAll('button,[role="button"],a')]
       .filter(visible)
       .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true');
-
     const semantic = allButtons.filter((el) => /EXCLUIR|REMOVER|DELETE|TRASH|LIXEIRA|BIN/.test(signature(el)));
     let deleteButton = semantic.length === 1 ? semantic[0] : null;
     let strategy = deleteButton ? 'SEMANTIC' : null;
@@ -412,7 +478,6 @@ async function deleteFirstTarget(page) {
 
   const after = (await inspectTargets(page)).length;
   if (after >= before) throw new Error(`Exclusão não foi confirmada no GRM (${before} -> ${after}).`);
-
   log('SUCCESS', 'Despesa retroativa de Café excluída.', {
     before,
     after,
@@ -430,88 +495,136 @@ async function closeCurrent(page) {
   await sleep(250);
 }
 
-async function processTarget(page, target) {
-  await openStaffPage(page);
-  await searchCpf(page, target.cpf);
-  await selectExactStaff(page, target.cpf);
-  await clickCash(page);
-
-  const found = await inspectTargets(page);
-  if (!found.length) {
-    await closeCurrent(page);
-    return { found: 0, deleted: 0 };
+async function preflightAll(page, targets, expectedTotal) {
+  const summary = { colaboradores: 0, encontrados: 0, erros: 0 };
+  for (const target of targets) {
+    summary.colaboradores += 1;
+    try {
+      const found = await openTarget(page, target);
+      if (found.length !== target.esperado) {
+        throw new Error(`Divergência API/UI: API=${target.esperado}, interface=${found.length}.`);
+      }
+      summary.encontrados += found.length;
+      log('INFO', `${target.colaborador}: precheck OK.`, {
+        cpf: target.cpf,
+        api: target.esperado,
+        interface: found.length,
+        ofm_codes: target.movimentos.map((m) => m.ofmCode),
+      });
+    } catch (error) {
+      summary.erros += 1;
+      log('ERROR', `${target.colaborador} / ${target.cpf}: ${error.message}`);
+    } finally {
+      await closeCurrent(page).catch(() => {});
+    }
   }
-
-  log('INFO', `${target.colaborador}: ${found.length} lançamento(s) alvo localizado(s).`, {
-    cpf: target.cpf,
-    datas_auditadas: target.datas,
-    dry_run: DRY_RUN,
-  });
-
-  if (DRY_RUN) {
-    await closeCurrent(page);
-    return { found: found.length, deleted: 0 };
+  if (summary.erros > 0 || summary.encontrados !== expectedTotal) {
+    throw new Error(`PRECHECK reprovado: ${JSON.stringify({ ...summary, esperado_api: expectedTotal })}`);
   }
+  return summary;
+}
 
-  let deleted = 0;
-  let guard = 0;
-  while ((await inspectTargets(page)).length > 0) {
-    if (guard++ > 20) throw new Error('Limite de segurança de exclusões por colaborador excedido.');
-    const changed = await deleteFirstTarget(page);
-    if (!changed) break;
-    deleted += 1;
+async function deleteAll(page, targets, expectedTotal) {
+  const summary = { colaboradores: 0, encontrados: 0, excluidos: 0, erros: 0 };
+  for (const target of targets) {
+    summary.colaboradores += 1;
+    try {
+      const found = await openTarget(page, target);
+      if (found.length !== target.esperado) {
+        throw new Error(`Divergência antes da exclusão: API inicial=${target.esperado}, interface=${found.length}.`);
+      }
+      summary.encontrados += found.length;
+      let deleted = 0;
+      while ((await inspectTargets(page)).length > 0) {
+        if (deleted >= MAX_DELETE_PER_STAFF) throw new Error('Limite de exclusões por colaborador excedido.');
+        const changed = await deleteFirstTarget(page);
+        if (!changed) break;
+        deleted += 1;
+      }
+      const remaining = await inspectTargets(page);
+      if (remaining.length !== 0 || deleted !== target.esperado) {
+        throw new Error(`Limpeza incompleta: esperado=${target.esperado}, excluído=${deleted}, restante=${remaining.length}.`);
+      }
+      summary.excluidos += deleted;
+      log('SUCCESS', `${target.colaborador}: limpeza concluída.`, { cpf: target.cpf, excluidos: deleted });
+    } catch (error) {
+      summary.erros += 1;
+      log('ERROR', `${target.colaborador} / ${target.cpf}: ${error.message}`);
+    } finally {
+      await closeCurrent(page).catch(() => {});
+    }
   }
-
-  const remaining = await inspectTargets(page);
-  if (remaining.length) throw new Error(`${remaining.length} lançamento(s) alvo permaneceram após a limpeza.`);
-  await closeCurrent(page);
-  return { found: found.length, deleted };
+  if (summary.erros > 0 || summary.excluidos !== expectedTotal) {
+    throw new Error(`EXCLUSÃO incompleta: ${JSON.stringify({ ...summary, esperado_api: expectedTotal })}`);
+  }
+  return summary;
 }
 
 async function main() {
-  const targets = await loadTargets();
   log('INFO', `Cleanup ${VERSION} iniciado.`, {
     alvo: TARGET_DESCRIPTION,
-    colaboradores_auditados: targets.length,
+    de: DATE_FROM,
+    ate: DATE_TO,
     dry_run: DRY_RUN,
   });
 
   const browser = await launchBrowser();
-  const summary = {
-    colaboradores: 0,
-    encontrados: 0,
-    excluidos: 0,
-    sem_alvo: 0,
-    erros: 0,
-  };
-
   try {
     const page = await browser.newPage();
     await login(page);
-    for (const target of targets) {
-      summary.colaboradores += 1;
-      try {
-        const result = await processTarget(page, target);
-        summary.encontrados += result.found;
-        summary.excluidos += result.deleted;
-        if (!result.found) summary.sem_alvo += 1;
-      } catch (error) {
-        summary.erros += 1;
-        log('ERROR', `${target.colaborador} / ${target.cpf}: ${error.message}`);
-        await closeCurrent(page).catch(() => {});
-      }
+
+    const apiState = await loadCurrentApiState(page);
+    log('INFO', 'Alvos atuais carregados pela API do GRM.', {
+      movimentos_relatorio: apiState.reportCount,
+      cafe_oex_code: apiState.cafeCode,
+      encontrados_exatos: apiState.total,
+      colaboradores: apiState.targets.length,
+      sem_cadastro_ativo: apiState.unresolved.length,
+    });
+
+    if (apiState.unresolved.length) {
+      throw new Error(`Há movimentos sem colaborador ativo resolvido: ${JSON.stringify(apiState.unresolved).slice(0, 3000)}`);
     }
+    if (apiState.total === 0) {
+      log('SUCCESS', 'Nenhum lançamento retroativo de Café permanece no GRM.');
+      return;
+    }
+
+    const preflight = await preflightAll(page, apiState.targets, apiState.total);
+    log('SUCCESS', 'PRECHECK concluído sem divergências.', preflight);
+
+    if (DRY_RUN) {
+      log('SUCCESS', 'Cleanup concluído em DRY-RUN.', {
+        api_exatos: apiState.total,
+        colaboradores: apiState.targets.length,
+        encontrados_interface: preflight.encontrados,
+        excluidos: 0,
+        erros: 0,
+      });
+      return;
+    }
+
+    const deleted = await deleteAll(page, apiState.targets, apiState.total);
+    const after = await loadCurrentApiState(page);
+    if (after.total !== 0) {
+      throw new Error(`Verificação final da API encontrou ${after.total} lançamento(s) restante(s).`);
+    }
+
+    log('SUCCESS', 'Cleanup REAL concluído e verificado pela API.', {
+      api_inicial: apiState.total,
+      colaboradores: apiState.targets.length,
+      excluidos: deleted.excluidos,
+      api_restante: after.total,
+      erros: 0,
+    });
   } finally {
     await browser.close();
   }
-
-  log(summary.erros ? 'WARN' : 'SUCCESS', 'Cleanup concluído.', summary);
-  if (summary.erros) process.exitCode = 1;
 }
 
 if (require.main === module) {
   main().catch((error) => {
-    console.error(error.stack || error.message);
+    console.error(`[FATAL] ${new Date().toISOString()} - ${error.stack || error.message}`);
     process.exit(1);
   });
 }
