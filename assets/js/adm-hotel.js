@@ -803,8 +803,14 @@ export function renderContent(content, userContext) {
     // saveReservarModal() filtra por c.id e nunca vincula ninguém em
     // hospedagem_reserva_colaboradores, deixando a reserva presa em
     // Solicitações pra sempre (o card nunca conta como "completo").
-    const {data,error}=await supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,supervisao,regional,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
-    if (error||!Array.isArray(data)) return rows||[];
+    // "regional" NÃO existe nessa tabela (colunas reais: id, solicitacao_id,
+    // colaborador_id, nome_colaborador, cpf, tipo_colaborador, empresa,
+    // coordenacao, supervisao, status_colaborador, observacoes, created_at) —
+    // pedir coluna inexistente derruba o select inteiro com erro 400, e caía
+    // no mesmo fallback sem id de novo. getRegionalColaborador() já cobre
+    // via "supervisao" (ver linha ~404), não precisa de "regional" aqui.
+    const {data,error}=await supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,supervisao,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
+    if (error||!Array.isArray(data)) { if (error) console.error('[adm-hotel] enrichRowsWithColaboradores falhou',error); return rows||[]; }
     const porSolicitacao=new Map();
     data.forEach((c) => { const key=String(c.solicitacao_id||''); if (!porSolicitacao.has(key)) porSolicitacao.set(key,[]); porSolicitacao.get(key).push(c); });
     return (rows||[]).map((row) => ({...row,_colaboradoresDetalhados:porSolicitacao.get(String(row.solicitacao_id||''))||[]}));
