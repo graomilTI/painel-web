@@ -1,9 +1,16 @@
 // Programação: usa a relação programacao_usuario_supervisoes/RPC para não buscar todas as supervisões a cada carregamento.
 import { supabase } from './supabaseClient.js';
 
-const CACHE_KEY_PREFIX = 'programacao_supervisoes_v3';
+// v4 invalida o cache de 12h criado antes do ajuste de coordenação/supervisão.
+// Sem isso, um navegador que já abriu Programação hoje poderia continuar
+// escondendo uma supervisão recém-corrigida até o TTL expirar.
+const CACHE_KEY_PREFIX = 'programacao_supervisoes_v4';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
-try { localStorage.removeItem('programacao_supervisoes_v2'); localStorage.removeItem('programacao_supervisoes_v1'); } catch (_) {}
+try {
+  localStorage.removeItem('programacao_supervisoes_v3');
+  localStorage.removeItem('programacao_supervisoes_v2');
+  localStorage.removeItem('programacao_supervisoes_v1');
+} catch (_) {}
 const originalFrom = supabase.from.bind(supabase);
 const originalRpc = supabase.rpc.bind(supabase);
 let pending = null;
