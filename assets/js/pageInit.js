@@ -19,7 +19,7 @@ import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 // cargas concorrentes. Essas rotas usam navegação completa e versionada.
 const FULL_PAGE_RELEASES = new Map([
   ['hospedagem', '20260713-cache-v10'],
-  ['adm-hotel', '20260713-fluxo-v2-sidebar1'],
+  ['adm-hotel', '20260819-financeiro-pagamentos-fix'],
   ['adm-logistica', '20260714-logistica-v4'],
 ]);
 
