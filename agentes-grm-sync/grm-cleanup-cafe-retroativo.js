@@ -12,8 +12,10 @@
  * - faz um PRECHECK completo pela interface antes de qualquer exclusão;
  * - exige que a quantidade por colaborador na interface seja igual à API;
  * - usa exclusivamente a lixeira da própria linha alvo;
- * - valida o modal "EXCLUIR MOVIMENTO", o valor e o botão "CONFIRMAR";
- * - após o --real, consulta novamente a API e exige zero alvos restantes.
+ * - valida o modal de exclusão, o valor e os botões CANCELAR/CONFIRMAR;
+ * - aceita somente as grafias observadas no GRM: EXCLUIR MOVIMENTO ou EXLCUIR MOVIMENTO;
+ * - permite escopo seguro por CPF via GRM_CLEANUP_CAFE_ONLY_CPF;
+ * - após o --real, consulta novamente a API e exige zero alvos no escopo executado.
  *
  * DRY_RUN é o padrão. Para excluir de verdade, use --real.
  */
@@ -40,7 +42,7 @@ const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V3-API-PREFLIGHT-DELETE';
+const VERSION = 'V4-GRM-TYPO-MODAL';
 const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.br/login';
 const STAFF_URL = process.env.GRM_CLEANUP_CAFE_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
 const DATE_FROM = process.env.GRM_CLEANUP_CAFE_DATA_DE || '2026-08-11';
@@ -51,10 +53,12 @@ const DRY_RUN = !process.argv.includes('--real');
 const HEADLESS = String(process.env.GRM_HEADLESS ?? 'true').toLowerCase() !== 'false';
 const DEFAULT_TIMEOUT = Math.max(15000, Number(process.env.GRM_CLEANUP_CAFE_TIMEOUT_MS || 45000));
 const MAX_DELETE_PER_STAFF = Math.max(1, Number(process.env.GRM_CLEANUP_CAFE_MAX_POR_COLABORADOR || 20));
+const ONLY_CPF = String(process.env.GRM_CLEANUP_CAFE_ONLY_CPF || '').replace(/\D/g, '');
 
 const GRM_USER = process.env.GRMSERVER_USER;
 const GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 if (!GRM_USER || !GRM_PASSWORD) throw new Error('Credenciais do GRM ausentes.');
+if (ONLY_CPF && ONLY_CPF.length !== 11) throw new Error('GRM_CLEANUP_CAFE_ONLY_CPF inválido. Informe 11 dígitos.');
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
@@ -173,11 +177,7 @@ async function loadCurrentApiState(page) {
     const staCode = Number(movement.staCode);
     const staff = staffByCode.get(staCode);
     if (!staff) {
-      unresolved.push({
-        staCode,
-        ofmCode: Number(movement.ofmCode),
-        data: toIsoDate(movement.ofmDate),
-      });
+      unresolved.push({ staCode, ofmCode: Number(movement.ofmCode), data: toIsoDate(movement.ofmDate) });
       continue;
     }
     const cpf = digits(staff.staCPF);
@@ -410,17 +410,18 @@ async function confirmDeleteModal(page, expectedValueKey) {
       .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const validTitle = (text) => text.includes('EXCLUIR MOVIMENTO') || text.includes('EXLCUIR MOVIMENTO');
     const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
       .filter(visible);
     return dialogs.some((dialog) => {
       const text = normText(dialog.innerText || '');
-      return text.includes('EXCLUIR MOVIMENTO')
+      const buttons = [...dialog.querySelectorAll('button,[role="button"]')].filter(visible);
+      return validTitle(text)
         && text.includes('CAIXA OPERACIONAL')
         && text.includes('DESEJA REALMENTE EXCLUIR O REGISTRO NO VALOR DE')
         && text.includes(expectedValue)
-        && [...dialog.querySelectorAll('button,[role="button"]')]
-          .filter(visible)
-          .some((button) => normText(button.innerText || button.textContent) === 'CONFIRMAR');
+        && buttons.some((button) => normText(button.innerText || button.textContent) === 'CONFIRMAR')
+        && buttons.some((button) => normText(button.innerText || button.textContent) === 'CANCELAR');
     });
   }, { timeout: DEFAULT_TIMEOUT }, { expectedValue: expectedValueKey });
 
@@ -429,12 +430,14 @@ async function confirmDeleteModal(page, expectedValueKey) {
       .replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const validTitle = (text) => text.includes('EXCLUIR MOVIMENTO') || text.includes('EXLCUIR MOVIMENTO');
     const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
       .filter(visible)
       .filter((dialog) => {
         const text = normText(dialog.innerText || '');
-        return text.includes('EXCLUIR MOVIMENTO')
+        return validTitle(text)
           && text.includes('CAIXA OPERACIONAL')
+          && text.includes('DESEJA REALMENTE EXCLUIR O REGISTRO NO VALOR DE')
           && text.includes(expectedValue);
       });
     if (dialogs.length !== 1) return { ok: false, reason: 'DELETE_MODAL_NOT_UNIQUE', count: dialogs.length };
@@ -566,6 +569,7 @@ async function main() {
     de: DATE_FROM,
     ate: DATE_TO,
     dry_run: DRY_RUN,
+    only_cpf: ONLY_CPF || null,
   });
 
   const browser = await launchBrowser();
@@ -590,13 +594,29 @@ async function main() {
       return;
     }
 
-    const preflight = await preflightAll(page, apiState.targets, apiState.total);
+    const scopeTargets = ONLY_CPF
+      ? apiState.targets.filter((target) => target.cpf === ONLY_CPF)
+      : apiState.targets;
+    const scopeTotal = scopeTargets.reduce((sum, target) => sum + target.esperado, 0);
+
+    if (ONLY_CPF && scopeTargets.length !== 1) {
+      throw new Error(`CPF de teste não localizado entre os alvos atuais: ${ONLY_CPF}`);
+    }
+
+    log('INFO', 'Escopo da execução definido.', {
+      only_cpf: ONLY_CPF || null,
+      colaboradores_escopo: scopeTargets.length,
+      movimentos_escopo: scopeTotal,
+    });
+
+    const preflight = await preflightAll(page, scopeTargets, scopeTotal);
     log('SUCCESS', 'PRECHECK concluído sem divergências.', preflight);
 
     if (DRY_RUN) {
       log('SUCCESS', 'Cleanup concluído em DRY-RUN.', {
-        api_exatos: apiState.total,
-        colaboradores: apiState.targets.length,
+        api_exatos_global: apiState.total,
+        api_exatos_escopo: scopeTotal,
+        colaboradores: scopeTargets.length,
         encontrados_interface: preflight.encontrados,
         excluidos: 0,
         erros: 0,
@@ -604,17 +624,29 @@ async function main() {
       return;
     }
 
-    const deleted = await deleteAll(page, apiState.targets, apiState.total);
+    const deleted = await deleteAll(page, scopeTargets, scopeTotal);
     const after = await loadCurrentApiState(page);
-    if (after.total !== 0) {
-      throw new Error(`Verificação final da API encontrou ${after.total} lançamento(s) restante(s).`);
+    const afterScope = ONLY_CPF
+      ? after.targets.filter((target) => target.cpf === ONLY_CPF).reduce((sum, target) => sum + target.esperado, 0)
+      : after.total;
+
+    if (afterScope !== 0) {
+      throw new Error(`Verificação final da API encontrou ${afterScope} lançamento(s) restante(s) no escopo.`);
+    }
+
+    const expectedGlobalAfter = apiState.total - scopeTotal;
+    if (after.total !== expectedGlobalAfter) {
+      throw new Error(`Total global após exclusão divergiu: esperado=${expectedGlobalAfter}, API=${after.total}.`);
     }
 
     log('SUCCESS', 'Cleanup REAL concluído e verificado pela API.', {
-      api_inicial: apiState.total,
-      colaboradores: apiState.targets.length,
+      api_inicial_global: apiState.total,
+      api_inicial_escopo: scopeTotal,
+      only_cpf: ONLY_CPF || null,
+      colaboradores: scopeTargets.length,
       excluidos: deleted.excluidos,
-      api_restante: after.total,
+      api_restante_escopo: afterScope,
+      api_restante_global: after.total,
       erros: 0,
     });
   } finally {
