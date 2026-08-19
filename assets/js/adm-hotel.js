@@ -1382,12 +1382,31 @@ export function renderContent(content, userContext) {
       await supabase.from('hospedagem_reserva_solicitacoes').upsert(grouped.map((item) => ({reserva_id:reservaId,solicitacao_id:item.solicitacao_id})),{onConflict:'reserva_id,solicitacao_id'});
       await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'RESERVADA'}).in('id',grouped.map((item) => item.solicitacao_id));
     }
-    const reservados=(state.reservarColabs||[]).filter((c)=>!c.excluido&&c.id);
-    if(reservaId&&reservados.length) await supabase.from('hospedagem_reserva_colaboradores').upsert(reservados.map((c)=>({reserva_id:reservaId,solicitacao_colaborador_id:c.id,status:'HOSPEDADO'})),{onConflict:'reserva_id,solicitacao_colaborador_id'});
+    const incluidos=(state.reservarColabs||[]).filter((c)=>!c.excluido);
+    const reservados=incluidos.filter((c)=>c.id);
+    // c.id vem de _colaboradoresDetalhados (enrichRowsWithColaboradores). Se
+    // faltar em algum colaborador não excluído, é sinal de que o enrich
+    // falhou silenciosamente pra essa solicitação — sem isso a solicitação
+    // nunca sai de "Solicitações" (redesign.js/pendingRequestRows), mesmo
+    // com a reserva 100% salva. Já aconteceu (ver commit a2f39815) e não
+    // pode voltar a passar batido.
+    const semId=incluidos.filter((c)=>!c.id);
+    let vinculoErro=null;
+    if(reservaId&&reservados.length) {
+      const vinculo=await supabase.from('hospedagem_reserva_colaboradores').upsert(reservados.map((c)=>({reserva_id:reservaId,solicitacao_colaborador_id:c.id,status:'HOSPEDADO'})),{onConflict:'reserva_id,solicitacao_colaborador_id'});
+      if(vinculo.error) vinculoErro=vinculo.error.message;
+    }
+    if(semId.length||vinculoErro) {
+      console.error('[adm-hotel] colaborador sem vínculo em hospedagem_reserva_colaboradores',{reservaId,semId:semId.map((c)=>c.nome_colaborador||c.nome),vinculoErro});
+    }
     await enviarBoasVindasReserva(state.selected,hotelRecord||state.hoteis.find((h) => String(h.id)===String(hotelId))||{},reservaId);
-    setFeedback('reservarFeedback','Reserva salva com sucesso.','ok');
+    if(semId.length||vinculoErro) {
+      setFeedback('reservarFeedback',`Reserva salva, mas ${semId.length?`${semId.length} colaborador(es) não foram vinculados (${semId.map((c)=>c.nome_colaborador||c.nome).join(', ')})`:'houve falha ao vincular colaboradores'} — avise o TI, a solicitação pode ficar presa em Solicitações.`,'err');
+    } else {
+      setFeedback('reservarFeedback','Reserva salva com sucesso.','ok');
+    }
     await loadRows();
-    setTimeout(() => document.getElementById('modalReservar').classList.remove('open'),800);
+    if(!semId.length&&!vinculoErro) setTimeout(() => document.getElementById('modalReservar').classList.remove('open'),800);
   }
 
   async function enviarBoasVindasReserva(row,hotel,reservaId) {
