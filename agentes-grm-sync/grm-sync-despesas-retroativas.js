@@ -26,7 +26,7 @@ const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V1';
+const VERSION = 'V2-NO-DIRECT-CAFE';
 const LOGIN_URL = 'https://www.grmserver.com.br/login';
 const FLOW_URL = 'https://www.grmserver.com.br/report/finance/operatingFlow';
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -48,6 +48,20 @@ function getSupabase() {
 function norm(value) {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+const DIRECT_EXPENSE_BLOCKLIST = new Set(['CAFE']);
+
+function assertDirectExpenseAllowed(expense) {
+  const expenseName = String(expense?.oexName || '').trim();
+  const key = norm(expenseName);
+  if (DIRECT_EXPENSE_BLOCKLIST.has(key)) {
+    const error = new Error(
+      `Despesa ${expenseName || key} bloqueada: o agente retroativo não pode lançar ou aprovar Café diretamente no Caixa Operacional.`,
+    );
+    error.code = 'DESPESA_DIRETA_BLOQUEADA';
+    throw error;
+  }
 }
 
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
@@ -189,6 +203,7 @@ async function approve(page, row) {
 }
 
 async function create(page, staff, expense, date) {
+  assertDirectExpenseAllowed(expense);
   return api(page, '/api/oFlow/setRecord', {
     ofmType: 'D', staCode: Number(staff.staCode), ofmDate: isoToBr(date),
     ofmDescription: `Lançamento automático retroativo - ${expense.oexName}`,
@@ -238,6 +253,7 @@ async function main() {
           acao: decision.action, dry_run: DRY_RUN, diagnostico: { existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })), duplicados_pendentes: decision.duplicates || 0 },
         };
         try {
+          assertDirectExpenseAllowed(expense);
           if (decision.action === 'NONE') summary.unchanged += 1;
           else if (actionCount >= MAX_ACTIONS) {
             // Trava de segurança intencional (evita rajada grande de ações num único run),
@@ -279,4 +295,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.stack || error.message); process.exit(1); });
-module.exports = { norm, yesterdaySaoPaulo, requiredExpenses, decide };
+module.exports = { norm, yesterdaySaoPaulo, requiredExpenses, decide, assertDirectExpenseAllowed };
