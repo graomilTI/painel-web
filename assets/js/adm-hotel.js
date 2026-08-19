@@ -799,7 +799,11 @@ export function renderContent(content, userContext) {
   async function enrichRowsWithColaboradores(rows) {
     const ids=[...new Set((rows||[]).map((r) => r.solicitacao_id).filter(Boolean))];
     if (!ids.length) return rows||[];
-    const {data,error}=await supabase.from('hospedagem_solicitacao_colaboradores').select('solicitacao_id,nome_colaborador,supervisao,regional,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
+    // Sem "id" aqui, todo colaborador chega ao modal de Reservar sem PK —
+    // saveReservarModal() filtra por c.id e nunca vincula ninguém em
+    // hospedagem_reserva_colaboradores, deixando a reserva presa em
+    // Solicitações pra sempre (o card nunca conta como "completo").
+    const {data,error}=await supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,supervisao,regional,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
     if (error||!Array.isArray(data)) return rows||[];
     const porSolicitacao=new Map();
     data.forEach((c) => { const key=String(c.solicitacao_id||''); if (!porSolicitacao.has(key)) porSolicitacao.set(key,[]); porSolicitacao.get(key).push(c); });
