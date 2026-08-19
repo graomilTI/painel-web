@@ -1,4 +1,4 @@
-const REDESIGN_GUARD_VERSION = '20260815-hoteis-janelas1';
+const REDESIGN_GUARD_VERSION = '20260819-consolidado-realtime1';
 
 function waitForBaseShell() {
   return new Promise((resolve) => {
@@ -23,7 +23,7 @@ async function ensureRedesign() {
   // O primeiro import pode ter montado antes do shell legado terminar o
   // próprio render. O query string distinto força uma nova avaliação do
   // módulo somente quando o root realmente desapareceu.
-  await import(`./adm-hotel-redesign.js?v=${REDESIGN_GUARD_VERSION}-remount`);
+  await import(`./adm-hotel-v2.js?v=${REDESIGN_GUARD_VERSION}-remount`);
 }
 
 if (document.readyState === 'loading') {

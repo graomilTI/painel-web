@@ -341,7 +341,7 @@ function start() {
   const timer=setInterval(()=>{
     tries+=1;
     const root=$('#hospRedesignRoot');
-    if(root){clearInterval(timer);state.root=root;bindRoot(root);state.filter=$('.hosp-rd-btn.primary[data-hosp-rd-hotel-filter]',root)?.dataset.hospRdHotelFilter||'uso';state.search=$('[data-hosp-rd-search="hoteis"]',root)?.value||'';setTimeout(refreshHotels,400);setTimeout(refreshHotels,1400);}
+    if(root){clearInterval(timer);state.root=root;bindRoot(root);state.filter=$('.hosp-rd-btn.primary[data-hosp-rd-hotel-filter]',root)?.dataset.hospRdHotelFilter||'uso';state.search=$('[data-hosp-rd-search="hoteis"]',root)?.value||'';setTimeout(refreshHotels,1400);}
     if(tries>150)clearInterval(timer);
   },100);
   console.info(`[adm-hotel-safe] ${VERSION}`);

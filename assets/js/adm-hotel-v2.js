@@ -1,6 +1,15 @@
 import { supabase } from './supabaseClient.js';
 
-const REDESIGN_VERSION = '20260815-hoteis-janelas1';
+// adm-hotel-v2.js substitui adm-hotel-redesign.js + adm-hotel-fluxo-v2.js
+// (+ bootstrap/history) + adm-hotel-filtro-todos.js: consolida a carga de
+// dados (antes duplicada em 3+ módulos independentes), troca polling por
+// Supabase Realtime, e traz Cotar/Anexar nativos (antes delegados ao
+// fluxo-v2 via clique sintético). Ver plano em
+// C:\Users\graom\.claude\plans\spicy-bubbling-russell.md.
+const V2_VERSION = '20260819-consolidado-realtime1';
+const HOSP_COTACAO_FLOW_ID = '8660973';
+const onlyDigits = (value) => String(value || '').replace(/\D+/g, '');
+const roomsLabel = (row) => row.composicao_quartos || row.tipo_quarto || row.quartos || row.observacao_quartos || 'A definir';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value) => String(value ?? '')
@@ -134,6 +143,9 @@ async function loadData() {
     state.extras = extras; state.finance = finance; state.documents = documents; state.advances = advances; state.advanceMoves = advanceMoves; state.checkoutLots = checkoutLots; state.checkoutPeople = checkoutPeople;
     rebuildIndexes();
     state.ready = true;
+    // adm-hotel.js (modais legados de Reservar/Estender/Checkout/Pagar) lê
+    // esse bridge em vez de refazer sua própria busca de hospedagem_painel_geral.
+    window.__hospedagemV2State = state;
     renderAll();
   } catch (error) {
     console.error('[hosp-redesign] loadData', error);
@@ -426,7 +438,7 @@ function renderHoteis() {
   const month = today().slice(0,7), paidMonth = state.finance.filter((f) => String(f.status_financeiro).toUpperCase() === 'PAGO' && iso(f.data_pagamento || f.pago_em).startsWith(month)).reduce((s,f) => s + Number(f.valor_pago || f.valor_total || 0),0);
   $('#hospRdHoteis').innerHTML = `<div class="hosp-rd-hotel-summary"><article class="hosp-rd-hotel-metric credit"><span>Crédito em hotéis</span><strong>${money(totalCredit)}</strong></article><article class="hosp-rd-hotel-metric debt"><span>A pagar</span><strong>${money(totalDebt)}</strong></article><article class="hosp-rd-hotel-metric"><span>Pago no mês</span><strong>${money(paidMonth)}</strong></article></div>
   <div class="hosp-rd-toolbar"><div class="hosp-rd-title"><h3>Hotéis</h3><p>Cadastro, pendências, créditos e fluxo financeiro por hotel.</p></div><div class="hosp-rd-toolbar-right"><button class="hosp-rd-btn" data-hosp-rd-action="cashflow">${icon('flow')} Fluxo de caixa</button><div class="hosp-rd-field hosp-rd-search"><label>Buscar</label><input data-hosp-rd-search="hoteis" value="${esc(state.search.hoteis)}" placeholder="Hotel, cidade, CNPJ..." /></div></div></div>
-  <div class="hosp-rd-toolbar"><div class="hosp-rd-toolbar-left"><button class="hosp-rd-btn ${state.hotelFilter==='uso'?'primary':''}" data-hosp-rd-hotel-filter="uso">Em Uso</button><button class="hosp-rd-btn ${state.hotelFilter==='negativos'?'primary':''}" data-hosp-rd-hotel-filter="negativos">Negativos</button><button class="hosp-rd-btn ${state.hotelFilter==='saldo'?'primary':''}" data-hosp-rd-hotel-filter="saldo">Com Saldo</button></div></div>
+  <div class="hosp-rd-toolbar"><div class="hosp-rd-toolbar-left"><button class="hosp-rd-btn ${state.hotelFilter==='todos'?'primary':''}" data-hosp-rd-hotel-filter="todos">Todos</button><button class="hosp-rd-btn ${state.hotelFilter==='uso'?'primary':''}" data-hosp-rd-hotel-filter="uso">Em Uso</button><button class="hosp-rd-btn ${state.hotelFilter==='negativos'?'primary':''}" data-hosp-rd-hotel-filter="negativos">Negativos</button><button class="hosp-rd-btn ${state.hotelFilter==='saldo'?'primary':''}" data-hosp-rd-hotel-filter="saldo">Com Saldo</button></div></div>
   <div class="hosp-rd-table-wrap"><table class="hosp-rd-table"><thead><tr><th>Hotel</th><th>Cidade</th><th>UF</th><th>Saldo</th><th>Opções</th></tr></thead><tbody>${rows.length ? rows.map(hotelRowHtml).join('') : '<tr><td colspan="5"><div class="hosp-rd-empty">Nenhum hotel nesta janela.</div></td></tr>'}</tbody></table></div>`;
 }
 function hotelRowHtml(h) {
@@ -459,9 +471,6 @@ function triggerBase(action, solicitationId) {
   let helper = $('#hospRdBaseActionHelper'); if (!helper) { helper = document.createElement('button'); helper.id='hospRdBaseActionHelper'; helper.type='button'; helper.hidden=true; $('#pageContent')?.appendChild(helper); }
   helper.dataset.action = action; helper.dataset.id = solicitationId; helper.click();
 }
-function triggerV2(action, unit) {
-  const helper = document.createElement('button'); helper.type='button'; helper.hidden=true; helper.dataset.v2Action=action; helper.dataset.id=unit.row.solicitacao_id; helper.dataset.groupIds=unit.ids.join(','); $('#pageContent')?.appendChild(helper); helper.click(); helper.remove();
-}
 function startReserve(unit) {
   state.pendingReserveIds = [...unit.ids]; window.__hospedagemSolicitacoesAgrupadas = [...unit.ids]; triggerBase('reservar', unit.row.solicitacao_id); setTimeout(() => enhanceReserveModal(unit), 60);
 }
@@ -474,14 +483,50 @@ function reserveDecision(unit) {
   if (!candidate) return startReserve(unit);
   openModal('Colaborador já hospedado', `${unit.people.map((p)=>p.nome_colaborador).filter(Boolean).join(', ')}`, `<div class="hosp-rd-modal-section"><p style="margin:0;color:#d9eee3;font-size:12px">O colaborador já possui uma hospedagem ativa em <strong>${esc(candidate.hotel || '-')}</strong>. Deseja iniciar uma nova reserva ou estender a atual?</p></div><div class="hosp-rd-modal-actions"><button class="hosp-rd-btn" data-hosp-rd-modal="close">Cancelar</button><button class="hosp-rd-btn blue" data-hosp-rd-modal="new-reservation" data-ids="${esc(unit.ids.join(','))}">Nova reserva</button><button class="hosp-rd-btn primary" data-hosp-rd-modal="extend-existing" data-ids="${esc(unit.ids.join(','))}" data-target="${esc(candidate.solicitacao_id)}">Estender</button></div>`, 'small');
 }
-function quoteUnit(unit) {
-  triggerV2('quote', unit);
-  setTimeout(() => {
-    const ta = $('#hospV2QuoteMessage'); if (!ta) return;
-    const count = unit.people.length || 1, checkout = unit.rows.map((r)=>iso(r.data_checkout || r.data_checkout_prevista)).filter(Boolean).sort().at(-1), diarias = Math.max(...unit.rows.map((r)=>Number(r.quantidade_diarias_prevista || diffDays(r.data_checkin_prevista,r.data_checkout_prevista))||1));
-    ta.value = ta.value.replace(/Pessoas:\s*[^\n\r]+/i, `Pessoas: ${count}`).replace(/Check-out:\s*[^\n\r]+/i, `Check-out: ${brDate(checkout)}`).replace(/Diárias previstas:\s*[^\n\r]+/i, `Diárias previstas: ${diarias}`);
-  }, 80);
+function quoteMessage(row, unit) {
+  const count = unit.people.length || 1;
+  const checkout = unit.rows.map((r) => iso(r.data_checkout || r.data_checkout_prevista)).filter(Boolean).sort().at(-1);
+  const diarias = Math.max(1, ...unit.rows.map((r) => Number(r.quantidade_diarias_prevista || diffDays(r.data_checkin_prevista, r.data_checkout_prevista)) || 1));
+  return `Olá! A Grão 1000 solicita uma cotação de hospedagem.\n\nSolicitação: ${row.codigo || row.solicitacao_id}\nCidade: ${[row.cidade, row.uf].filter(Boolean).join('/')}\nCheck-in: ${brDate(row.data_checkin_prevista || row.data_checkin)}\nCheck-out: ${brDate(checkout)}\nPessoas: ${count}\nQuartos: ${roomsLabel(row)}\nDiárias previstas: ${diarias}\n\nPor favor, informe disponibilidade, valor das diárias, valor total, café da manhã, estacionamento e se aceita pagamento no checkout.`;
 }
+function quoteUnit(unit) {
+  const row = unit.row;
+  const matching = state.hotels.filter((h) => String(h.status || '').toUpperCase() !== 'INATIVO' && String(h.status || '').toUpperCase() !== 'BLOQUEADO' && h.recebe_cotacao !== false && norm(h.cidade) === norm(row.cidade) && (!row.uf || !h.uf || norm(h.uf) === norm(row.uf)));
+  const hotelsHtml = matching.length ? matching.map((h) => `<label class="hosp-rd-check"><input type="checkbox" data-quote-hotel value="${esc(h.id)}" ${h.whatsapp ? 'checked' : 'disabled'}><span>${esc(h.nome)} — ${esc(h.whatsapp || 'sem WhatsApp cadastrado')}</span></label>`).join('') : '<div class="hosp-rd-empty">Nenhum hotel ativo com WhatsApp cadastrado nesta cidade.</div>';
+  state.pendingQuoteRow = row;
+  openModal('Solicitar cotação', `${row.cidade || '-'}/${row.uf || ''}`, `<div class="hosp-rd-modal-section"><h4>Hotéis</h4><div class="hosp-rd-list">${hotelsHtml}</div></div><div class="hosp-rd-field full" style="margin-top:12px"><label>Mensagem que será enviada</label><textarea id="hospRdQuoteMessage" rows="8">${esc(quoteMessage(row, unit))}</textarea></div><div class="hosp-rd-modal-actions"><span id="hospRdQuoteFeedback" class="hosp-rd-feedback"></span><button class="hosp-rd-btn" data-hosp-rd-modal="close">Cancelar</button><button class="hosp-rd-btn primary" data-hosp-rd-modal="send-quote" data-ids="${esc(unit.ids.join(','))}">Enviar cotação</button></div>`, 'wide');
+}
+function quoteFeedback(message, error = false) { const el = $('#hospRdQuoteFeedback'); if (!el) return; el.textContent = message || ''; el.className = `hosp-rd-feedback ${error ? 'err' : 'ok'}`; }
+async function sendQuote(button) {
+  const row = state.pendingQuoteRow; if (!row) return;
+  const ids = String(button.dataset.ids || '').split(',').filter(Boolean);
+  const hotelIds = $$('[data-quote-hotel]:checked', $('#hospRdModal')).map((el) => el.value);
+  const hotels = state.hotels.filter((h) => hotelIds.includes(String(h.id)) && h.whatsapp);
+  const message = $('#hospRdQuoteMessage')?.value.trim();
+  if (!hotels.length) return quoteFeedback('Selecione pelo menos um hotel com WhatsApp.', true);
+  if (!message) return quoteFeedback('A mensagem não pode ficar vazia.', true);
+  quoteFeedback(`Enviando para ${hotels.length} hotel(is)...`);
+  await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'EM_COTACAO' }).in('id', ids.length ? ids : [row.solicitacao_id]);
+  let sent = 0; const failures = [];
+  for (const hotel of hotels) {
+    let quoteId = null;
+    const { data } = await supabase.from('hospedagem_cotacoes').upsert({ solicitacao_id: row.solicitacao_id, hotel_id: hotel.id, hotel_nome: hotel.nome, status: 'ENVIANDO', quantidade_pessoas: unit_people_count(row), diarias_previstas: Number(row.quantidade_diarias_prevista || 1), aceita_pagamento_checkout: hotel.aceita_pagamento_checkout ?? null, mensagem_enviada: message }, { onConflict: 'solicitacao_id,hotel_id' }).select('id').single();
+    quoteId = data?.id || null;
+    try {
+      const { data: res, error } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, flowId: HOSP_COTACAO_FLOW_ID } });
+      if (error || res?.ok === false) throw new Error(res?.error || error?.message || 'Falha no envio');
+      sent += 1;
+      if (quoteId) await supabase.from('hospedagem_cotacoes').update({ status: 'ENVIADA', enviado_em: new Date().toISOString(), erro_envio: null }).eq('id', quoteId);
+    } catch (err) {
+      failures.push(`${hotel.nome}: ${err.message}`);
+      if (quoteId) await supabase.from('hospedagem_cotacoes').update({ status: 'FALHA', erro_envio: err.message }).eq('id', quoteId);
+    }
+  }
+  quoteFeedback(`${sent}/${hotels.length} enviados${failures.length ? ` · ${failures.join(' | ')}` : ''}`, failures.length > 0);
+  await loadData();
+  if (!failures.length) setTimeout(closeModal, 900);
+}
+function unit_people_count(row) { return peopleForRequest(row.solicitacao_id).length || null; }
 function rejectUnit(unit) {
   openModal('Recusar solicitação', unit.people.map((p)=>p.nome_colaborador).filter(Boolean).join(', '), `<div class="hosp-rd-field"><label>Qual o motivo da recusa?</label><textarea id="hospRdRejectReason" rows="5" placeholder="Informe o motivo"></textarea></div><div class="hosp-rd-modal-actions"><button class="hosp-rd-btn" data-hosp-rd-modal="close">Cancelar</button><button class="hosp-rd-btn danger" data-hosp-rd-modal="confirm-reject" data-ids="${esc(unit.ids.join(','))}">Confirmar</button></div>`, 'small');
 }
@@ -587,8 +632,61 @@ async function sendFinanceFromNative() {
 }
 
 function triggerAttachments(reservaId) {
-  const row=reservationRow(reservaId);if(!row)return;const ids=linkedRequestIds(reservaId);const unit={row,ids:ids.length?ids:[String(row.solicitacao_id)]};window.__hospedagemAcaoLote=[...unit.ids];triggerV2('document',unit);
+  const row=reservationRow(reservaId);if(!row)return;
+  const ids=linkedRequestIds(reservaId);
+  openDocumentModal(row, ids.length?ids:[String(row.solicitacao_id)]);
 }
+function reservationDocuments(row) {
+  return state.documents.filter((d) => String(d.solicitacao_id || '') === String(row.solicitacao_id) || (row.reserva_id && String(d.reserva_id || '') === String(row.reserva_id)));
+}
+function openDocumentModal(row, batchIds) {
+  state.pendingDocumentRow = row;
+  state.pendingDocumentIds = batchIds?.length ? batchIds : [String(row.solicitacao_id)];
+  renderDocumentModal(row);
+}
+function renderDocumentModal(row) {
+  const docs = reservationDocuments(row);
+  const list = docs.length ? docs.map((d) => `<div class="hosp-rd-list-row"><div><strong>${esc(d.tipo || 'Documento')}</strong><small>${brDate(d.recebido_em || d.created_at)}${d.botconversa_enviado_em ? ' · enviado ao hotel' : ''}</small></div><a class="hosp-rd-btn" href="${esc(d.arquivo_url)}" target="_blank" rel="noopener">Abrir</a></div>`).join('') : '<div class="hosp-rd-empty">Nenhum documento anexado.</div>';
+  openModal('Documentos da hospedagem', `${row.hotel || hotelById(row.hotel_id)?.nome || '-'}`, `<div class="hosp-rd-modal-section"><h4>Já anexados</h4><div class="hosp-rd-list">${list}</div></div><div class="hosp-rd-modal-section"><h4>Novo documento</h4><div class="hosp-rd-modal-grid"><div class="hosp-rd-field"><label>Tipo</label><select id="hospV2DocumentType"><option value="COMPROVANTE">Comprovante de pagamento</option><option value="NFSE">NFS-e</option><option value="COTACAO">Cotação</option><option value="OUTRO">Outro</option></select></div><div class="hosp-rd-field"><label>Arquivo</label><input id="hospRdDocFile" type="file" accept="application/pdf,image/*"></div></div><div class="hosp-rd-field full" style="margin-top:8px"><label>Ou URL HTTPS</label><input id="hospRdDocUrl" placeholder="https://..."></div><label class="hosp-rd-check" style="margin-top:8px"><input type="checkbox" id="hospRdDocAutoSend" checked><span>Enviar automaticamente ao hotel quando for comprovante</span></label></div><div class="hosp-rd-modal-actions"><span id="hospRdDocFeedback" class="hosp-rd-feedback"></span><button class="hosp-rd-btn" data-hosp-rd-modal="close">Fechar</button><button class="hosp-rd-btn primary" id="hospV2SaveDocument" data-hosp-rd-modal="save-document">Anexar documento</button></div>`, 'wide');
+}
+function docFeedback(message, error = false) { const el = $('#hospRdDocFeedback'); if (!el) return; el.textContent = message || ''; el.className = `hosp-rd-feedback ${error ? 'err' : 'ok'}`; }
+async function saveDocument() {
+  const row = state.pendingDocumentRow; if (!row) return;
+  const type = $('#hospV2DocumentType')?.value, file = $('#hospRdDocFile')?.files?.[0];
+  let url = $('#hospRdDocUrl')?.value.trim() || '';
+  if (!file && !/^https:\/\//i.test(url)) return docFeedback('Selecione um arquivo ou informe uma URL HTTPS.', true);
+  docFeedback('Anexando documento...');
+  if (file) {
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_'), path = `${row.solicitacao_id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from('hospedagem-documentos').upload(path, file, { upsert: false, contentType: file.type || undefined });
+    if (uploadError) return docFeedback(uploadError.message, true);
+    url = supabase.storage.from('hospedagem-documentos').getPublicUrl(path).data.publicUrl;
+  }
+  const ids = state.pendingDocumentIds?.length ? state.pendingDocumentIds : [String(row.solicitacao_id)];
+  const targets = ids.map((id) => requestRow(id)).filter(Boolean);
+  const documentTargets = targets.length ? targets : [row];
+  const { data: docs, error } = await supabase.from('hospedagem_documentos').insert(documentTargets.map((item) => ({ solicitacao_id: item.solicitacao_id, reserva_id: item.reserva_id || row.reserva_id || null, tipo: type, arquivo_url: url, nome_arquivo: file?.name || url.split('/').pop(), mime_type: file?.type || null, origem: 'PAINEL', status: type === 'NFSE' ? 'RECEBIDO' : 'ANEXADO', recebido_em: new Date().toISOString() }))).select('*');
+  if (error) return docFeedback(error.message, true);
+  if (type === 'COMPROVANTE' && $('#hospRdDocAutoSend')?.checked) {
+    const hotel = hotelById(row.hotel_id);
+    if (hotel?.whatsapp) {
+      const message = `Olá! Segue o comprovante de pagamento da hospedagem ${row.codigo || row.solicitacao_id}.`;
+      const { data, error: sendError } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, fileUrl: url } });
+      if (!sendError && data?.ok !== false) await supabase.from('hospedagem_documentos').update({ botconversa_enviado_em: new Date().toISOString(), botconversa_destinatario: hotel.whatsapp, status: 'ENVIADO' }).in('id', (docs || []).map((d) => d.id));
+      else { docFeedback(`Documento anexado, mas o envio falhou: ${data?.error || sendError?.message}`, true); await loadData(); return; }
+    }
+  }
+  docFeedback('Documento anexado.');
+  await loadData();
+  renderDocumentModal(reservationRow(row.reserva_id) || row);
+}
+// Compatibilidade com adm-hotel-saldo-pagamento-safe.js (botão "Anexar NFSe"
+// no modal nativo de pagamento) — mesma assinatura que fluxo-v2.js expunha.
+window.__abrirHospedagemAcao = (action, solicitacaoId) => {
+  const row = requestRow(solicitacaoId) || state.rows.find((r) => String(r.solicitacao_id) === String(solicitacaoId));
+  if (!row) return;
+  if (action === 'document') openDocumentModal(row, [String(row.solicitacao_id)]);
+};
 
 function openEditHotel(hotelId) {
   const h=hotelById(hotelId);if(!h)return;
@@ -608,7 +706,7 @@ function openCashflow(){const reservations=uniqueReservations(),lines=[];state.a
 async function handleAction(button) {
   const action=button.dataset.hospRdAction;if(action==='refresh'){await loadData();return;}if(action==='group')return openGroup(unitFromIds(button.dataset.ids));if(action==='quote')return quoteUnit(unitFromIds(button.dataset.ids));if(action==='reserve')return reserveDecision(unitFromIds(button.dataset.ids));if(action==='extend'){const u=unitFromIds(button.dataset.ids),candidate=extensionCandidateForUnit(u);if(candidate)return startExtend(u,candidate);return openModal('Extensão de estadia','Nenhuma hospedagem atual foi encontrada.',`<p style="margin:0;color:#dceee5;font-size:12px">Esta solicitação não possui uma reserva ativa compatível. Você pode iniciar uma nova reserva.</p><div class="hosp-rd-modal-actions"><button class="hosp-rd-btn" data-hosp-rd-modal="close">Cancelar</button><button class="hosp-rd-btn primary" data-hosp-rd-modal="new-reservation" data-ids="${esc(u.ids.join(','))}">Nova reserva</button></div>`,'small');}if(action==='reject')return rejectUnit(unitFromIds(button.dataset.ids));if(action==='checkout')return openCheckout(button.dataset.reserva);if(action==='extras')return openExtras(button.dataset.reserva);if(action==='pay')return preparePayment(button.dataset.reserva);if(action==='cancel-reservation')return openCancelReservation(button.dataset.reserva);if(action==='attachments')return triggerAttachments(button.dataset.reserva);if(action==='edit-hotel')return openEditHotel(button.dataset.hotel);if(action==='hotel-pending')return openHotelPending(button.dataset.hotel);if(action==='remove-hotel')return removeHotel(button.dataset.hotel);if(action==='cashflow')return openCashflow();
 }
-async function handleModalAction(button) {const a=button.dataset.hospRdModal;if(a==='close')return closeModal();if(a==='confirm-group')return confirmGroup(button);if(a==='confirm-reject')return confirmReject(button);if(a==='new-reservation'){const u=unitFromIds(button.dataset.ids);closeModal();return startReserve(u);}if(a==='extend-existing'){const u=unitFromIds(button.dataset.ids),target=state.rowsByRequest.get(String(button.dataset.target));closeModal();return startExtend(u,target);}if(a==='confirm-checkout')return confirmCheckout(button);if(a==='add-extra-row')return addExtraRow(button.dataset.reserva);if(a==='save-extras')return saveExtras(button.dataset.reserva);if(a==='confirm-cancel-reservation')return confirmCancelReservation(button.dataset.reserva);if(a==='save-hotel')return saveHotel(button.dataset.hotel);if(a==='confirm-remove-hotel')return confirmRemoveHotel(button.dataset.hotel);if(a==='hotel-pay'){closeModal();return preparePayment(button.dataset.reserva);}if(a==='hotel-attachments')return openHotelAttachments(button.dataset.hotel);}
+async function handleModalAction(button) {const a=button.dataset.hospRdModal;if(a==='close')return closeModal();if(a==='confirm-group')return confirmGroup(button);if(a==='confirm-reject')return confirmReject(button);if(a==='new-reservation'){const u=unitFromIds(button.dataset.ids);closeModal();return startReserve(u);}if(a==='extend-existing'){const u=unitFromIds(button.dataset.ids),target=state.rowsByRequest.get(String(button.dataset.target));closeModal();return startExtend(u,target);}if(a==='confirm-checkout')return confirmCheckout(button);if(a==='add-extra-row')return addExtraRow(button.dataset.reserva);if(a==='save-extras')return saveExtras(button.dataset.reserva);if(a==='confirm-cancel-reservation')return confirmCancelReservation(button.dataset.reserva);if(a==='save-hotel')return saveHotel(button.dataset.hotel);if(a==='confirm-remove-hotel')return confirmRemoveHotel(button.dataset.hotel);if(a==='hotel-pay'){closeModal();return preparePayment(button.dataset.reserva);}if(a==='hotel-attachments')return openHotelAttachments(button.dataset.hotel);if(a==='send-quote')return sendQuote(button);if(a==='save-document')return saveDocument();}
 
 function bind() {
   const root=$('#hospRedesignRoot');if(!root)return;
@@ -619,15 +717,41 @@ function bind() {
     if(state.nativePayment&&event.target.closest('#btnPagarFinanceiro')){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();await sendFinanceFromNative();}
     else if(state.nativePayment&&event.target.closest('#btnConfirmarPagamento')){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();await registerPaymentFromNative();}
   },true);
-  window.addEventListener('hashchange',()=>{const content=$('#pageContent');if(currentMode()==='hoteis'){content?.classList.add('hosp-rd-active');loadData();}else content?.classList.remove('hosp-rd-active');});
+  window.addEventListener('hashchange',()=>{const content=$('#pageContent');if(currentMode()==='hoteis'){content?.classList.add('hosp-rd-active');loadData();setupRealtime();}else content?.classList.remove('hosp-rd-active');});
+}
+
+// Tempo real: em vez de repovoar tudo a cada 60s tenha ou não mudado algo, a
+// tela assina as tabelas relevantes e só recarrega quando o banco muda de
+// verdade — mudança feita por outra pessoa/aba aparece em ~1s. Um poll de
+// segurança bem espaçado (5min) cobre o caso raro de perder um evento
+// (queda de conexão), sem virar o mecanismo principal de novo.
+let realtimeChannel = null;
+let reloadTimer = null;
+function scheduleReload(delay = 400) {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => { if (currentMode() === 'hoteis' && !state.loading) loadData(); }, delay);
+}
+function setupRealtime() {
+  if (realtimeChannel || currentMode() !== 'hoteis') return;
+  const tables = ['hospedagem_solicitacoes','hospedagem_reservas','hospedagem_reserva_colaboradores','hospedagem_financeiro','hospedagem_checkout_lotes','hospedagem_custos_extras','hospedagem_documentos','hospedagem_hoteis'];
+  realtimeChannel = supabase.channel('hospedagem-hoteis-v2');
+  tables.forEach((table) => realtimeChannel.on('postgres_changes', { event: '*', schema: 'public', table }, () => scheduleReload()));
+  realtimeChannel.subscribe();
 }
 
 async function init() {
   let tries=0;while(!mount()&&tries<80){await new Promise(r=>setTimeout(r,50));tries+=1;}if(!$('#hospRedesignRoot'))return;
+  // Se o guard (adm-hotel-redesign-guard.js) reimportar este módulo depois
+  // que uma instância já montou o root, essa 2ª instância chegaria até aqui
+  // (mount() só falha por root ausente OU já existente — não distingue "sou
+  // eu mesmo que já montei" de "outra instância montou") e criaria um 2º
+  // state/loadData/canal realtime rodando pra sempre em paralelo com o 1º.
+  if (window.__hospedagemV2Booted) return;
+  window.__hospedagemV2Booted = true;
   const {data}=await supabase.auth.getUser();state.user=data?.user||null;state.userName=$('#welcomeUser')?.textContent?.replace(/^Olá\s*/i,'').trim()||state.user?.email||'Hotéis';
-  bind(); if(currentMode()==='hoteis')await loadData();
-  setInterval(()=>{if(currentMode()==='hoteis'&&!state.loading)loadData();},60000);
-  console.info(`[hosp-redesign] ativo ${REDESIGN_VERSION}`);
+  bind(); if(currentMode()==='hoteis'){await loadData();setupRealtime();}
+  setInterval(()=>{if(currentMode()==='hoteis'&&!state.loading)loadData();},300000);
+  console.info(`[hosp-v2] ativo ${V2_VERSION}`);
 }
 
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();

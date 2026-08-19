@@ -829,6 +829,7 @@ export function renderContent(content, userContext) {
       state.historicoErro = hist.error.message;
       state.historicoRows = [];
       state.historicoAtual = [];
+      state.historicoLoaded = true;
       updateHistoricoCount();
       renderHistorico();
       return;
@@ -844,6 +845,7 @@ export function renderContent(content, userContext) {
     if (!atual.error) state.historicoAtual = atual.data || [];
     else state.historicoAtual = dedupeHistoricoAtual(state.historicoRows);
 
+    state.historicoLoaded = true;
     updateHistoricoCount();
     renderHistorico();
   }
@@ -897,7 +899,14 @@ export function renderContent(content, userContext) {
   }
 
   async function loadRows() {
-    const {data,error}=await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao',{ascending:false});
+    // adm-hotel-v2.js (a UI real de Hotéis) já carrega hospedagem_painel_geral
+    // inteira pra si — reaproveitar em vez de buscar de novo. state.rows daqui
+    // só alimenta os modais legados (Reservar/Estender/Checkout/Pagar) e a aba
+    // Alojamentos, então cai pro fetch próprio se o bridge não estiver pronto.
+    const bridged = window.__hospedagemV2State;
+    const {data,error} = bridged?.ready
+      ? {data: bridged.rows, error: null}
+      : await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao',{ascending:false});
     if (error) { ['tbodySolicitadas','tbodyAndamento','tbodyConcluidos'].forEach((id) => { const el=document.getElementById(id); if (el) el.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; }); return; }
     state.rows=await enrichRowsWithColaboradores(data||[]);
     updateTabCounts();
@@ -1067,9 +1076,9 @@ export function renderContent(content, userContext) {
     document.getElementById(`tab-${t}`)?.classList.add('active');
     if (t==='hoteis') { renderHoteis(); return state.bootDone ? undefined : loadHoteis(); }
     if (t==='alojamentos') { renderAlojamentos(); return state.bootDone ? undefined : loadAlojamentos(); }
-    if (t==='historico') { renderHistorico(); return state.bootDone ? undefined : loadHistoricoRows(); }
+    if (t==='historico') { renderHistorico(); return state.historicoLoaded ? undefined : loadHistoricoRows(); }
     renderCurrentTab();
-    if (!state.bootDone) Promise.all([loadRows(), loadHistoricoRows()]).catch(() => loadRows());
+    if (!state.bootDone) loadRows();
   }
 
   // ─── Hotels ────────────────────────────────────────────────────────────────
@@ -1877,7 +1886,16 @@ export function renderContent(content, userContext) {
 
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
-  (async function boot() { await loadHoteis(); await loadAlojamentos(); await Promise.all([loadRows(), loadHistoricoRows()]); state.bootDone=true; setTab(initialTabFromHash()); })();
+  (async function boot() {
+    await loadHoteis(); await loadAlojamentos(); await loadRows();
+    state.bootDone=true;
+    // Histórico não faz parte da UI visível (adm-hotel-v2.js cobre tudo que a
+    // usuária vê); carregar 2 tabelas sem filtro de data (limit 5000) pra uma
+    // aba que ninguém abre é desperdício — só busca se a hash pedir direto.
+    const initialTab = initialTabFromHash();
+    setTab(initialTab);
+    if (initialTab === 'historico') await loadHistoricoRows();
+  })();
 }
 
 initProtectedPage('Módulo Hospedagem', renderContent);
