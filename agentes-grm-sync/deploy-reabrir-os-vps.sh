@@ -19,11 +19,12 @@ PATCH_CONFIRMACAO_V8="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-confirmacao-v
 PATCH_MOTIVO_V9="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-motivo-v9.js"
 PATCH_REGRA_V10="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-regra-v10.js"
 PATCH_BUSCA_UNICA_V11="$REPO_ROOT/agentes-grm-sync/patch-reabrir-os-busca-unica-v11.js"
+PATCH_WORKER_REAL_V12="$REPO_ROOT/agentes-grm-sync/patch-worker-reabrir-real-v12.js"
 DST_AGENT="$GRM_ROOT/grm-sync-reabrir-os.js"
 DST_WORKER="$GRM_ROOT/worker/grm-sync-job-worker.js"
 ENV_FILE="$GRM_ROOT/.env"
 
-for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$PATCH_REGRA_V10" "$PATCH_BUSCA_UNICA_V11" "$ENV_FILE"; do
+for file in "$SRC_AGENT" "$SRC_WORKER" "$PATCH_FINANCEIRO" "$PATCH_FINANCEIRO_V2" "$PATCH_VALIDACAO_V3" "$PATCH_SITUACAO_V4" "$PATCH_FATURADAS_V5" "$PATCH_TOOLTIP_V6" "$PATCH_POS_CLIQUE_V7" "$PATCH_CONFIRMACAO_V8" "$PATCH_MOTIVO_V9" "$PATCH_REGRA_V10" "$PATCH_BUSCA_UNICA_V11" "$PATCH_WORKER_REAL_V12" "$ENV_FILE"; do
   [[ -f "$file" ]] || { echo "Arquivo obrigatório ausente: $file" >&2; exit 1; }
 done
 
@@ -69,6 +70,10 @@ install -o grao100 -g grao100 -m 640 "$SRC_WORKER" "$DST_WORKER"
 # Pré-busca exclusiva: somente Finalizadas / Não Faturadas.
 # Se não localizar, encerra o item sem buscar qualquer outra combinação.
 "$NODE_BIN" "$PATCH_BUSCA_UNICA_V11" "$DST_AGENT"
+
+# Worker: o .env continua DRY_RUN=true. Apenas jobs explicitamente marcados
+# com payload.mode=real recebem --real para o agente de reabertura.
+"$NODE_BIN" "$PATCH_WORKER_REAL_V12" "$DST_WORKER"
 
 upsert_env() {
   local key="$1" value="$2"
@@ -124,6 +129,11 @@ grep -q "SOMENTE_FINALIZADAS_NAO_FATURADAS_V11" "$DST_AGENT" || {
   exit 1
 }
 
+grep -q "REABRIR_REAL_POR_PAYLOAD_V12" "$DST_WORKER" || {
+  echo "Worker instalado sem autorização REAL por payload v12." >&2
+  exit 1
+}
+
 chown grao100:grao100 "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -134,6 +144,7 @@ echo "Confirmação v8 aplicada: diálogo 'Deseja realmente abrir a Ordem de Ser
 echo "Motivo v9 aplicado: campo obrigatório preenchido antes de CONFIRMAR."
 echo "Regra v10 aplicada: Remanescente > 30,00 + Dias sem embarque < 10."
 echo "Busca v11 aplicada: consultar somente Finalizadas / Não Faturadas; ausente => pular sem outras buscas."
+echo "Worker v12 aplicado: --real somente quando payload.mode=real; DRY_RUN global permanece true."
 echo "Agente: $DST_AGENT"
 echo "Worker: $DST_WORKER"
 grep '^GRM_REABRIR_OS_' "$ENV_FILE" || true
