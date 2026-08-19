@@ -15,10 +15,9 @@ if (source.includes(marker)) {
 const processIndex = source.indexOf('async function processItem(page, item, config) {');
 if (processIndex < 0) throw new Error(`[patch-v11] processItem não encontrado em ${target}`);
 
-// A stack v1-v10 ainda contém a busca inicial em Abertas seguida de todo o
-// diagnóstico financeiro/situação. Substituímos esse bloco inteiro pela única
-// combinação operacional permitida, preservando toda a lógica de clique e
-// confirmação que começa em selectOsRow().
+// A stack v1-v10 ainda contém a busca inicial em Abertas seguida do diagnóstico
+// financeiro/situação. Substituímos esse bloco inteiro pela única combinação
+// operacional permitida, preservando a lógica de clique a partir de selectOsRow().
 const searchStartNeedle = "  await openServiceOrderPage(page, 'Abertas', 'Não Faturadas');";
 const actionStartNeedle = '  await selectOsRow(page, item.os);';
 const searchStart = source.indexOf(searchStartNeedle, processIndex);
@@ -32,21 +31,18 @@ const replacement = `  // ${marker}\n  // Pré-validação operacional: consulta
 
 source = source.slice(0, searchStart) + replacement + source.slice(actionStart);
 
-// Adiciona a observação específica sem depender da indentação exata deixada
-// pelos patches financeiros v1-v5. A v5 deixa este ramo antes de REVISAO_MANUAL.
-const reviewNeedle = ": result.status === 'REVISAO_MANUAL'";
-const reviewIndex = source.indexOf(reviewNeedle);
-if (reviewIndex < 0) {
-  throw new Error(`[patch-v11] ramo REVISAO_MANUAL de queueObservation não encontrado em ${target}`);
+// Formato final determinístico produzido pela v5. v6-v10 não alteram este bloco.
+const observationBefore = `    const queueObservation = result.status === 'JA_REABERTA'\n      ? 'O.S. já estava aberta no GRM no momento da execução.'\n      : result.status === 'IGNORADA'\n        ? String(result.details?.motivo || 'O.S. faturada; não possui possibilidade de reabertura no GRM e foi ignorada pela automação.')\n        : result.status === 'REVISAO_MANUAL'\n          ? String(result.details?.motivo || 'O.S. separada para revisão manual; nenhuma reabertura foi executada.')\n          : 'Reaberta automaticamente para corrigir finalização indevida do agente.';`;
+
+const observationAfter = `    const queueObservation = result.status === 'JA_REABERTA'\n      ? 'O.S. já estava aberta no GRM no momento da execução.'\n      : result.status === 'IGNORADA'\n        ? String(result.details?.motivo || 'O.S. faturada; não possui possibilidade de reabertura no GRM e foi ignorada pela automação.')\n        : result.status === 'RESOLVIDA_SEM_REABERTURA'\n          ? String(result.details?.motivo || 'O.S. não localizada em Finalizadas/Não Faturadas; item pulado sem reabertura.')\n          : result.status === 'REVISAO_MANUAL'\n            ? String(result.details?.motivo || 'O.S. separada para revisão manual; nenhuma reabertura foi executada.')\n            : 'Reaberta automaticamente para corrigir finalização indevida do agente.';`;
+
+if (!source.includes(observationBefore)) {
+  throw new Error(`[patch-v11] bloco final de queueObservation produzido pela v5 não encontrado em ${target}`);
 }
+source = source.replace(observationBefore, observationAfter);
 
-const lineStart = source.lastIndexOf('\n', reviewIndex) + 1;
-const indent = source.slice(lineStart, reviewIndex);
-const resolvedBranch = `${indent}: result.status === 'RESOLVIDA_SEM_REABERTURA'\n${indent}  ? String(result.details?.motivo || 'O.S. não localizada em Finalizadas/Não Faturadas; item pulado sem reabertura.')\n${indent}`;
-source = source.slice(0, lineStart) + resolvedBranch + source.slice(reviewIndex);
-
-// Se o encadeamento vier a ser habilitado depois, um item ausente também pode
-// liberar o próximo. O deploy continua mantendo ENCADEAR=false por segurança.
+// Se o encadeamento vier a ser habilitado no futuro, um item ausente também
+// pode liberar o próximo. O deploy continua mantendo ENCADEAR=false por segurança.
 const chainNeedle = `    if (!config.dryRun && ENV_CHAIN && result.status === 'REABERTA') {`;
 const chainReplacement = `    if (!config.dryRun && ENV_CHAIN && ['REABERTA', 'RESOLVIDA_SEM_REABERTURA'].includes(result.status)) {`;
 if (source.includes(chainNeedle)) {
