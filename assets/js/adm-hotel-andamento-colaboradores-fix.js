@@ -189,7 +189,16 @@ function start() {
   const observer = new MutationObserver(() => {
     if (!applying) schedule();
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  // Escopado no container da própria tela (não document.documentElement) —
+  // observar o documento inteiro fazia esse callback disparar a cada mutação
+  // de QUALQUER página do painel, competindo por tempo de main thread à toa.
+  let tries = 0;
+  const waitRoot = setInterval(() => {
+    tries += 1;
+    const root = document.getElementById('hospRedesignRoot');
+    if (root) { clearInterval(waitRoot); observer.observe(root, { childList: true, subtree: true }); }
+    else if (tries > 200) clearInterval(waitRoot);
+  }, 50);
 
   document.addEventListener('click', (event) => {
     const refresh = event.target.closest('[data-hosp-rd-action="refresh"]');
