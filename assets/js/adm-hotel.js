@@ -297,7 +297,7 @@ export function renderContent(content, userContext) {
         <div class="adm-hosp-form mt-16">
           <div class="adm-hosp-field"><label>Check-in *</label><input id="resCheckin" type="date" /></div>
           <div class="adm-hosp-field"><label>Check-out *</label><input id="resCheckout" type="date" /></div>
-          <div class="adm-hosp-field"><label>Hotel *</label><input id="resHotelNome" list="resHotelOptions" placeholder="Digite ou selecione um hotel" autocomplete="off" /><datalist id="resHotelOptions"></datalist><select id="resHotel" hidden></select><span id="resHotelHint" class="adm-hosp-select-hint">Se não existir, o hotel será cadastrado automaticamente.</span></div>
+          <div class="adm-hosp-field"><label>Hotel *</label><input id="resHotelNome" list="resHotelOptions" placeholder="Digite ou selecione um hotel" autocomplete="off" /><datalist id="resHotelOptions"></datalist><select id="resHotel" hidden style="display:none"></select><span id="resHotelHint" class="adm-hosp-select-hint">Se não existir, o hotel será cadastrado automaticamente.</span></div>
           <div class="adm-hosp-field"><label>Confirmado com</label><input id="resConfirmado" /></div>
           <div class="adm-hosp-field"><label>Contato de confirmação</label><input id="resContato" /></div>
         </div>
@@ -892,6 +892,7 @@ export function renderContent(content, userContext) {
     state.rows=await enrichRowsWithColaboradores(data||[]);
     updateTabCounts();
     renderCurrentTab();
+    document.dispatchEvent(new CustomEvent('hospedagem:baseAtualizada'));
   }
 
   function painelBucket(r) {
