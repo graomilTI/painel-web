@@ -740,14 +740,21 @@ function setupRealtime() {
 }
 
 async function init() {
-  let tries=0;while(!mount()&&tries<80){await new Promise(r=>setTimeout(r,50));tries+=1;}if(!$('#hospRedesignRoot'))return;
-  // Se o guard (adm-hotel-redesign-guard.js) reimportar este módulo depois
-  // que uma instância já montou o root, essa 2ª instância chegaria até aqui
-  // (mount() só falha por root ausente OU já existente — não distingue "sou
-  // eu mesmo que já montei" de "outra instância montou") e criaria um 2º
-  // state/loadData/canal realtime rodando pra sempre em paralelo com o 1º.
-  if (window.__hospedagemV2Booted) return;
-  window.__hospedagemV2Booted = true;
+  let tries=0;while(!mount()&&tries<80){await new Promise(r=>setTimeout(r,50));tries+=1;}
+  const root=$('#hospRedesignRoot');if(!root)return;
+  // BUG (achado 19/08 testando ao vivo): o shell legado (adm-hotel.js) às
+  // vezes só termina de renderizar DEPOIS que este mount() já rodou — o
+  // innerHTML dele reescreve #pageContent inteiro e apaga o root recém
+  // criado. adm-hotel-redesign-guard.js existe pra detectar isso e remontar.
+  // Uma flag em window (versão anterior) bloqueava essa remontagem legítima
+  // porque persistia mesmo com o root antigo já destruído: a tela ficava com
+  // state.ready=true na memória (da instância morta) mas nada na tela e
+  // nenhum clique funcionando, até um evento de realtime salvar de raspão
+  // via querySelector buscando o DOM ao vivo. A flag fica no elemento (não
+  // em window): um root NOVO nunca tem essa flag, então sempre reinicia o
+  // boot; só evita bind()/loadData() duas vezes no MESMO root.
+  if (root.dataset.v2Booted === '1') return;
+  root.dataset.v2Booted = '1';
   const {data}=await supabase.auth.getUser();state.user=data?.user||null;state.userName=$('#welcomeUser')?.textContent?.replace(/^Olá\s*/i,'').trim()||state.user?.email||'Hotéis';
   bind(); if(currentMode()==='hoteis'){await loadData();setupRealtime();}
   setInterval(()=>{if(currentMode()==='hoteis'&&!state.loading)loadData();},300000);

@@ -1,4 +1,4 @@
-const REDESIGN_GUARD_VERSION = '20260819-consolidado-realtime1';
+const REDESIGN_GUARD_VERSION = '20260819-fix-boot-flag-por-root';
 
 function waitForBaseShell() {
   return new Promise((resolve) => {
