@@ -47,7 +47,6 @@ var WebSocket = require('ws');
 var fs = require('fs');
 var path = require('path');
 var os = require('os');
-var childProcess = require('child_process');
 var createClient = require('@supabase/supabase-js').createClient;
 
 puppeteer.use(StealthPlugin());
@@ -1315,19 +1314,32 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
 // rodar o sync de leitura já existente (grm-sync-nhe.js), que baixa o relatório
 // de verdade do GRM (já refletindo os lançamentos que acabamos de fazer) e vira
 // o lote mais recente — sem duplicar a lógica de download/parse aqui.
-function atualizarRelatorioNhe() {
-  return new Promise(function (resolve) {
-    var scriptPath = path.join(__dirname, 'grm-sync-nhe.js');
-    log('INFO', 'Atualizando grm_nhe_importacoes (rodando grm-sync-nhe.js) para refletir os lançamentos na tela FOB...');
-    var syncEnv = Object.assign({}, process.env, { NHE_SYNC_DAYS_BACK: String(Math.max(REPROCESSAR_DIAS + 1, Number(process.env.NHE_SYNC_DAYS_BACK) || 1)) });
-    childProcess.execFile(process.execPath, [scriptPath], { timeout: Number(process.env.NHE_LANCAMENTO_POS_SYNC_TIMEOUT_MS || 150000), env: syncEnv }, function (error, stdout, stderr) {
-      if (stdout) log('INFO', '[grm-sync-nhe] ' + stdout.trim().split('\n').join('\n[grm-sync-nhe] '));
-      if (stderr) log('WARN', '[grm-sync-nhe] ' + stderr.trim().split('\n').join('\n[grm-sync-nhe] '));
-      if (error) log('WARN', 'grm-sync-nhe.js terminou com erro (' + error.message + ') — a tela FOB só refletirá os lançamentos no próximo sync automático.');
-      else log('SUCCESS', 'grm_nhe_importacoes atualizado — tela FOB já deve mostrar essas O.S. como Ok.');
-      resolve();
-    });
+async function atualizarRelatorioNhe() {
+  log('INFO', 'Garantindo refresh do relatório NHE pela fila controlada (sync-nhe)...');
+
+  var result = await supabase.rpc('enqueue_grm_sync_job_internal', {
+    p_agent_id: 'sync-nhe',
+    p_payload: {
+      origem: 'sync-lancar-nhe',
+      motivo: 'pos_lancamento_nhe',
+      reprocessar_dias: REPROCESSAR_DIAS,
+      solicitado_em: new Date().toISOString()
+    }
   });
+
+  if (result.error) {
+    log('WARN', 'NHE foi lançado, mas não foi possível enfileirar sync-nhe: ' +
+      result.error.message + ' — o próximo sync automático poderá atualizar o FOB.');
+    return false;
+  }
+
+  if (!result.data) {
+    log('WARN', 'NHE foi lançado, porém sync-nhe está desabilitado; refresh imediato não criado.');
+    return false;
+  }
+
+  log('SUCCESS', 'Refresh NHE garantido pela fila entrada_os | job=' + result.data + '.');
+  return true;
 }
 
 async function fecharModais(page) {
