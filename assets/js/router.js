@@ -119,7 +119,7 @@ const SOFT_NAV_PAGES = new Map([
     () => import('./programacao-kpi-inline-patch.js'),
     () => import('./programacao-gestor-filtro-fix.js'),
     () => import('./programacao-mobile-ui-fix.js?v=20260811-mobile-panel-toolbar-v2'),
-    () => import('./programacao-gestor-fluxo-avancado.js'),
+    () => import('./programacao-gestor-fluxo-avancado.js?v=20260820-save-confirmado'),
     () => import('./programacao-lista-drawer-fixo.js'),
     () => import('./programacao-lista-drawer-ux-hotfix.js'),
     () => import('./programacao-pdf-tipo-fix.js'),
