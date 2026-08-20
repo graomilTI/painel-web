@@ -622,13 +622,13 @@ async function confirmCancelReservation(reservaId) {
 async function preparePayment(reservaId) {
   await syncReservationTotal(reservaId); await loadData(); const row=reservationRow(reservaId);if(!row)return;const total=reservationTotal(row),credit=availableCredit(row.hotel_id),ids=linkedRequestIds(reservaId);state.nativePayment={reservaId,row,total,credit,ids};window.__hospedagemAcaoLote=[...ids];const solId=ids[0]||row.solicitacao_id;if(typeof window.__abrirPagamentoHospedagem==='function')window.__abrirPagamentoHospedagem(solId);else triggerBase('enviar-pagamento',solId);setTimeout(()=>{const hotel=hotelById(row.hotel_id);if($('#pagarFornecedor'))$('#pagarFornecedor').value=hotel?.razao_social||hotel?.nome||row.hotel||'';if($('#pagarCnpj'))$('#pagarCnpj').value=hotel?.cnpj_cpf||'';if($('#pagarPix'))$('#pagarPix').value=hotel?.pix_chave||hotel?.chave_pix||'';if($('#pagarValor'))$('#pagarValor').value=Math.max(0,total-credit).toFixed(2);if($('#pagarResumoSelecao'))$('#pagarResumoSelecao').textContent=`Total da hospedagem ${money(total)}${credit?` · crédito disponível ${money(credit)}`:''}`;},100);
 }
-async function consumeCredits(hotelId,reservaId,limit){let remaining=limit,used=0;const advances=state.advances.filter((a)=>String(a.hotel_id)===String(hotelId)&&String(a.status).toUpperCase()==='DISPONIVEL'&&Number(a.saldo||0)>0).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));for(const a of advances){if(remaining<=0)break;const use=Math.min(remaining,Number(a.saldo||0));if(use<=0)continue;const newSaldo=Number(a.saldo||0)-use;await supabase.from('hospedagem_adiantamentos').update({saldo:newSaldo,status:newSaldo<=0?'UTILIZADO':'DISPONIVEL'}).eq('id',a.id);await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:a.id,reserva_id:reservaId,tipo:'UTILIZACAO',valor:use,observacoes:'Crédito aplicado à hospedagem',criado_por:state.user?.id||null});remaining-=use;used+=use;}return used;}
+async function consumeCredits(hotelId,reservaId,limit){if(!hotelId||limit<=0)return 0;const{data,error}=await supabase.rpc('hospedagem_consumir_creditos',{p_hotel_id:hotelId,p_reserva_id:reservaId,p_limite:limit});if(error)throw error;return Number(data||0);}
 async function upsertFinance(reservaId,payload){const existing=financeForReservation(reservaId);if(existing)return supabase.from('hospedagem_financeiro').update(payload).eq('id',existing.id);return supabase.from('hospedagem_financeiro').insert({reserva_id:reservaId,...payload});}
 async function registerPaymentFromNative() {
-  const ctx=state.nativePayment;if(!ctx)return;const paidCash=Number($('#pagarValor')?.value||0),taxa=$('#pagarTaxaBancaria')?.checked?2:0;const creditUsed=await consumeCredits(ctx.row.hotel_id,ctx.reservaId,ctx.total);const received=paidCash+creditUsed,paid=Math.min(ctx.total,received),excess=Math.max(0,received-ctx.total),status=paid>=ctx.total?'PAGO':'PARCIAL';const payload={valor_original:ctx.total,valor_total:ctx.total,valor_pago:paid,saldo:Math.max(0,ctx.total-paid),pagamento_parcial:status==='PARCIAL',status_financeiro:status,data_pagamento:today(),pago_em:new Date().toISOString(),responsavel_pagamento:state.userName||'Hotéis',responsavel_pagamento_id:state.user?.id||null,origem_pagamento:'HOTEIS',taxa_bancaria:taxa,valor_comprovante:paidCash+taxa,classificacao_pagamento:excess>0?'ADIANTAMENTO':status==='PARCIAL'?'PARCIAL':'TOTAL',adiantamento_gerado:excess};const {error}=await upsertFinance(ctx.reservaId,payload);if(error)return toast(error.message,true);if(excess>0&&ctx.row.hotel_id){const {data:adv}=await supabase.from('hospedagem_adiantamentos').insert({hotel_id:ctx.row.hotel_id,reserva_origem_id:ctx.reservaId,valor_creditado:excess,saldo:excess,status:'DISPONIVEL',observacoes:'Crédito gerado por pagamento superior ao total',criado_por:state.user?.id||null}).select('id').single();if(adv?.id)await supabase.from('hospedagem_adiantamento_movimentos').insert({adiantamento_id:adv.id,reserva_id:ctx.reservaId,tipo:'CREDITO',valor:excess,observacoes:'Adiantamento recebido',criado_por:state.user?.id||null});}if(status==='PAGO')await supabase.from('hospedagem_checkout_lotes').update({status:'PAGO'}).eq('reserva_id',ctx.reservaId).eq('status','PENDENTE');$('#modalPagar')?.classList.remove('open');state.nativePayment=null;toast(status==='PAGO'?'Pagamento registrado.':'Pagamento parcial registrado.');await loadData();
+  const ctx=state.nativePayment;if(!ctx)return;const paidCash=Number($('#pagarValor')?.value||0);const{data:lotes,error:loteError}=await supabase.from('hospedagem_checkout_lotes').select('id').eq('reserva_id',ctx.reservaId).in('status',['PENDENTE','PARCIAL']).order('created_at',{ascending:true}).limit(1);if(loteError)return toast(loteError.message,true);const loteId=lotes?.[0]?.id;if(!loteId)return toast('Nenhum lote pendente foi encontrado.',true);const{data,error}=await supabase.rpc('hospedagem_confirmar_pagamento_lote',{p_lote_id:loteId,p_valor_pago:paidCash,p_comprovante_url:null});if(error)return toast(error.message,true);const status=String(data?.status||'PARCIAL').toUpperCase();$('#modalPagar')?.classList.remove('open');state.nativePayment=null;toast(status==='PAGO'?'Pagamento registrado.':'Pagamento parcial registrado.');await loadData();
 }
 async function sendFinanceFromNative() {
-  const ctx=state.nativePayment;if(!ctx)return;const hotel=hotelById(ctx.row.hotel_id),creditUsed=await consumeCredits(ctx.row.hotel_id,ctx.reservaId,ctx.total),due=Math.max(0,ctx.total-creditUsed);const payload={origem_setor:'HOSPEDAGEM',origem_tabela:'hospedagem_reservas',origem_id:ctx.reservaId,origem_codigo:ctx.row.codigo||null,competencia:ctx.row.data_checkin||ctx.row.data_checkin_prevista||today(),descricao:`Hospedagem ${ctx.row.hotel||hotel?.nome||''} · ${ctx.row.cidade||''}/${ctx.row.uf||''}`,favorecido_nome:hotel?.razao_social||hotel?.nome||ctx.row.hotel||'Hotel',forma_pagamento:'PIX',valor:due,status:'PENDENTE',prioridade:'NORMAL',observacoes:creditUsed?`Crédito de ${money(creditUsed)} aplicado antes do envio.`:null,solicitado_por:state.user?.id||null,solicitado_por_nome:state.userName||null,atualizado_por:state.user?.id||null,atualizado_por_nome:state.userName||null};const {error}=await supabase.from('financeiro_pagamentos').upsert(payload,{onConflict:'origem_tabela,origem_id'});if(error)return toast(error.message,true);await upsertFinance(ctx.reservaId,{valor_original:ctx.total,valor_total:ctx.total,valor_pago:creditUsed,saldo:due,status_financeiro:'ENVIADO_AO_FINANCEIRO',origem_pagamento:'FINANCEIRO',enviado_financeiro_em:new Date().toISOString()});$('#modalPagar')?.classList.remove('open');state.nativePayment=null;toast('Pagamento enviado ao Financeiro sem alterar o status da hospedagem.');await loadData();
+  const ctx=state.nativePayment;if(!ctx)return;const{data:lotes,error:loteError}=await supabase.from('hospedagem_checkout_lotes').select('id').eq('reserva_id',ctx.reservaId).in('status',['PENDENTE','PARCIAL']).order('created_at',{ascending:false}).limit(1);if(loteError)return toast(loteError.message,true);const loteId=lotes?.[0]?.id;if(!loteId)return toast('Faça o checkout antes de enviar ao Financeiro.',true);const{error}=await supabase.rpc('hospedagem_enviar_lote_financeiro',{p_reserva_id:ctx.reservaId,p_lote_id:loteId});if(error)return toast(error.message,true);$('#modalPagar')?.classList.remove('open');state.nativePayment=null;toast('Lote enviado ao Financeiro sem alterar o status da hospedagem.');await loadData();
 }
 
 function triggerAttachments(reservaId) {
@@ -639,14 +639,22 @@ function triggerAttachments(reservaId) {
 function reservationDocuments(row) {
   return state.documents.filter((d) => String(d.solicitacao_id || '') === String(row.solicitacao_id) || (row.reserva_id && String(d.reserva_id || '') === String(row.reserva_id)));
 }
-function openDocumentModal(row, batchIds) {
+async function openDocumentModal(row, batchIds) {
   state.pendingDocumentRow = row;
   state.pendingDocumentIds = batchIds?.length ? batchIds : [String(row.solicitacao_id)];
-  renderDocumentModal(row);
+  await renderDocumentModal(row);
 }
-function renderDocumentModal(row) {
+async function signedDocumentUrl(value) {
+  const raw=String(value||'');
+  if (!raw.startsWith('storage://hospedagem-documentos/')) return raw;
+  const path=raw.slice('storage://hospedagem-documentos/'.length);
+  const {data,error}=await supabase.storage.from('hospedagem-documentos').createSignedUrl(path,900);
+  return error?'':(data?.signedUrl||'');
+}
+async function renderDocumentModal(row) {
   const docs = reservationDocuments(row);
-  const list = docs.length ? docs.map((d) => `<div class="hosp-rd-list-row"><div><strong>${esc(d.tipo || 'Documento')}</strong><small>${brDate(d.recebido_em || d.created_at)}${d.botconversa_enviado_em ? ' · enviado ao hotel' : ''}</small></div><a class="hosp-rd-btn" href="${esc(d.arquivo_url)}" target="_blank" rel="noopener">Abrir</a></div>`).join('') : '<div class="hosp-rd-empty">Nenhum documento anexado.</div>';
+  const resolved=await Promise.all(docs.map(async(d)=>({...d,signed_url:await signedDocumentUrl(d.arquivo_url)})));
+  const list = resolved.length ? resolved.map((d) => `<div class="hosp-rd-list-row"><div><strong>${esc(d.tipo || 'Documento')}</strong><small>${brDate(d.recebido_em || d.created_at)}${d.botconversa_enviado_em ? ' · enviado ao hotel' : ''}</small></div>${d.signed_url?`<a class="hosp-rd-btn" href="${esc(d.signed_url)}" target="_blank" rel="noopener">Abrir</a>`:'<span class="hosp-rd-feedback err">Sem acesso</span>'}</div>`).join('') : '<div class="hosp-rd-empty">Nenhum documento anexado.</div>';
   openModal('Documentos da hospedagem', `${row.hotel || hotelById(row.hotel_id)?.nome || '-'}`, `<div class="hosp-rd-modal-section"><h4>Já anexados</h4><div class="hosp-rd-list">${list}</div></div><div class="hosp-rd-modal-section"><h4>Novo documento</h4><div class="hosp-rd-modal-grid"><div class="hosp-rd-field"><label>Tipo</label><select id="hospV2DocumentType"><option value="COMPROVANTE">Comprovante de pagamento</option><option value="NFSE">NFS-e</option><option value="COTACAO">Cotação</option><option value="OUTRO">Outro</option></select></div><div class="hosp-rd-field"><label>Arquivo</label><input id="hospRdDocFile" type="file" accept="application/pdf,image/*"></div></div><div class="hosp-rd-field full" style="margin-top:8px"><label>Ou URL HTTPS</label><input id="hospRdDocUrl" placeholder="https://..."></div><label class="hosp-rd-check" style="margin-top:8px"><input type="checkbox" id="hospRdDocAutoSend" checked><span>Enviar automaticamente ao hotel quando for comprovante</span></label></div><div class="hosp-rd-modal-actions"><span id="hospRdDocFeedback" class="hosp-rd-feedback"></span><button class="hosp-rd-btn" data-hosp-rd-modal="close">Fechar</button><button class="hosp-rd-btn primary" id="hospV2SaveDocument" data-hosp-rd-modal="save-document">Anexar documento</button></div>`, 'wide');
 }
 function docFeedback(message, error = false) { const el = $('#hospRdDocFeedback'); if (!el) return; el.textContent = message || ''; el.className = `hosp-rd-feedback ${error ? 'err' : 'ok'}`; }
@@ -660,7 +668,7 @@ async function saveDocument() {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_'), path = `${row.solicitacao_id}/${Date.now()}-${safeName}`;
     const { error: uploadError } = await supabase.storage.from('hospedagem-documentos').upload(path, file, { upsert: false, contentType: file.type || undefined });
     if (uploadError) return docFeedback(uploadError.message, true);
-    url = supabase.storage.from('hospedagem-documentos').getPublicUrl(path).data.publicUrl;
+    url = `storage://hospedagem-documentos/${path}`;
   }
   const ids = state.pendingDocumentIds?.length ? state.pendingDocumentIds : [String(row.solicitacao_id)];
   const targets = ids.map((id) => requestRow(id)).filter(Boolean);
@@ -671,14 +679,15 @@ async function saveDocument() {
     const hotel = hotelById(row.hotel_id);
     if (hotel?.whatsapp) {
       const message = `Olá! Segue o comprovante de pagamento da hospedagem ${row.codigo || row.solicitacao_id}.`;
-      const { data, error: sendError } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, fileUrl: url } });
+      const fileUrl=await signedDocumentUrl(url);
+      const { data, error: sendError } = await supabase.functions.invoke('botconversa-send', { body: { phone: onlyDigits(hotel.whatsapp), nome: hotel.nome, message, fileUrl } });
       if (!sendError && data?.ok !== false) await supabase.from('hospedagem_documentos').update({ botconversa_enviado_em: new Date().toISOString(), botconversa_destinatario: hotel.whatsapp, status: 'ENVIADO' }).in('id', (docs || []).map((d) => d.id));
       else { docFeedback(`Documento anexado, mas o envio falhou: ${data?.error || sendError?.message}`, true); await loadData(); return; }
     }
   }
   docFeedback('Documento anexado.');
   await loadData();
-  renderDocumentModal(reservationRow(row.reserva_id) || row);
+  await renderDocumentModal(reservationRow(row.reserva_id) || row);
 }
 // Compatibilidade com adm-hotel-saldo-pagamento-safe.js (botão "Anexar NFSe"
 // no modal nativo de pagamento) — mesma assinatura que fluxo-v2.js expunha.
