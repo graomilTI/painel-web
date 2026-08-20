@@ -12,6 +12,7 @@ const DASH_CACHE_KEY = 'grao1000:gestor-dash:v4-segmentado';
 // Os agentes de produção/patrimônio resincronizam a cada ~20min; 1h evita que os
 // KPIs (meta mensal, patrimônios) fiquem presos em cache por dias.
 const DASH_CACHE_TTL = 1000 * 60 * 60;
+const OS_PREFETCH_INTERVAL = 1000 * 60;
 const LIMITE_MULTIPLOS = 500000;
 const LIMITE_OS_POR_COLABORADOR = 2;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
@@ -49,6 +50,7 @@ const state = {
   tomorrow: new Set(),
   installPrompt: null,
   dashboard: null,
+  osPrefetchTimer: null,
 };
 
 function escapeHtml(value) {
@@ -207,6 +209,39 @@ async function boot() {
   setupPwaInstall();
   await Promise.all([loadData({ useCache: true }), loadDashboard()]);
   renderCurrentTab();
+  startOsPrefetch();
+}
+
+async function fetchFreshOs() {
+  let query = supabase.from('operacional_os').select('*').limit(1000);
+  if (!state.isMaster && state.allowedSupervisoes.length) query = query.in('supervisao', state.allowedSupervisoes);
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) ? data : [];
+}
+
+function persistCurrentData() {
+  saveCache({ os: state.os, atribuicoes: state.atribuicoes, colaboradores: state.colaboradores, pontos: state.pontos });
+}
+
+async function refreshOsSilently({ rehydrate = false } = {}) {
+  const freshOs = await fetchFreshOs();
+  state.os = freshOs;
+  persistCurrentData();
+  if (rehydrate) {
+    hydrateSelections();
+    refreshSuggestions();
+  }
+  return freshOs;
+}
+
+function startOsPrefetch() {
+  if (state.osPrefetchTimer) clearInterval(state.osPrefetchTimer);
+  state.osPrefetchTimer = setInterval(() => {
+    // Atualiza apenas o estado/cache. A tela não é redesenhada aqui: isso evita
+    // piscar, perder foco de campos ou alterar a posição de rolagem do gestor.
+    refreshOsSilently().catch((error) => console.warn('[gestor-app] pré-carga silenciosa de O.S.:', error?.message || error));
+  }, OS_PREFETCH_INTERVAL);
 }
 
 function renderShell() {
@@ -246,10 +281,16 @@ function renderShell() {
     renderCurrentTab();
     showToast('Dados atualizados.');
   });
-  document.getElementById('bottomNav')?.addEventListener('click', (event) => {
+  document.getElementById('bottomNav')?.addEventListener('click', async (event) => {
     const btn = event.target.closest('[data-tab]');
     if (!btn) return;
-    state.currentTab = btn.dataset.tab;
+    const nextTab = btn.dataset.tab;
+    // A troca de aba já exige um render. Aproveitamos esse momento natural para
+    // buscar O.S. novas antes do desenho, sem provocar um segundo render.
+    if (nextTab === 'programacao' || nextTab === 'os') {
+      await refreshOsSilently({ rehydrate: true }).catch((error) => console.warn('[gestor-app] atualização de O.S. ao abrir programação:', error?.message || error));
+    }
+    state.currentTab = nextTab;
     if (btn.dataset.tab !== 'patrimonio') state.patrimonioSubview = null;
     document.querySelectorAll('.nav-btn').forEach((item) => item.classList.toggle('is-active', item === btn));
     renderCurrentTab();
@@ -278,6 +319,15 @@ async function loadData({ useCache = true } = {}) {
       pontos: cached.pontos || [],
       atribuicoes: cached.atribuicoes || [],
     });
+    // Colaboradores, pontos e vínculos podem aproveitar o cache, mas a lista de
+    // O.S. precisa estar atual antes do primeiro render. A consulta acontece
+    // enquanto o loader já está visível e não causa re-render/flicker depois.
+    try {
+      state.os = await fetchFreshOs();
+      persistCurrentData();
+    } catch (error) {
+      console.warn('[gestor-app] usando O.S. em cache após falha na atualização:', error?.message || error);
+    }
     hydrateSelections();
     state.loading = false;
     refreshSuggestions();
@@ -285,10 +335,8 @@ async function loadData({ useCache = true } = {}) {
   }
 
   try {
-    let osQuery = supabase.from('operacional_os').select('*').limit(1000);
-    if (!state.isMaster && state.allowedSupervisoes.length) osQuery = osQuery.in('supervisao', state.allowedSupervisoes);
     const [osRes, atrRes, colabRes, pontosRes] = await Promise.all([
-      osQuery,
+      fetchFreshOs().then((data) => ({ data, error: null })).catch((error) => ({ data: null, error })),
       supabase.from('operacional_os_colaboradores').select('*').limit(5000),
       supabase.from('operacional_colaborador_base').select('id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,ativo,nome_chave,telefone').eq('ativo', true).limit(5000),
       supabase.from('operacional_pontos_embarque').select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo').eq('ativo', true).limit(8000),
@@ -299,7 +347,7 @@ async function loadData({ useCache = true } = {}) {
     state.atribuicoes = Array.isArray(atrRes.data) ? atrRes.data : [];
     state.colaboradores = Array.isArray(colabRes.data) ? colabRes.data.filter(isActiveColab) : [];
     state.pontos = Array.isArray(pontosRes.data) ? pontosRes.data : [];
-    saveCache({ os: state.os, atribuicoes: state.atribuicoes, colaboradores: state.colaboradores, pontos: state.pontos });
+    persistCurrentData();
     hydrateSelections();
     refreshSuggestions();
   } catch (error) {
