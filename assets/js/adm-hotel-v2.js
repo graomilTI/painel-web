@@ -711,7 +711,17 @@ async function handleModalAction(button) {const a=button.dataset.hospRdModal;if(
 function bind() {
   const root=$('#hospRedesignRoot');if(!root)return;
   root.addEventListener('click',async(event)=>{const tab=event.target.closest('[data-hosp-rd-tab]');if(tab)return setTab(tab.dataset.hospRdTab);const filter=event.target.closest('[data-hosp-rd-hotel-filter]');if(filter){state.hotelFilter=filter.dataset.hospRdHotelFilter;renderHoteis();return;}const modal=event.target.closest('[data-hosp-rd-modal]');if(modal)return handleModalAction(modal);const action=event.target.closest('[data-hosp-rd-action]');if(action)return handleAction(action);const remove=event.target.closest('[data-remove-extra]');if(remove)return remove.closest('[data-new-extra]')?.remove();});
-  root.addEventListener('input',(event)=>{const scope=event.target.dataset.hospRdSearch;if(!scope)return;state.search[scope]=event.target.value;if(scope==='solicitacoes')renderSolicitacoes();else if(scope==='andamento')renderAndamento();else if(scope==='finalizado')renderFinalizado();else if(scope==='hoteis')renderHoteis();});
+  root.addEventListener('input',(event)=>{
+    const scope=event.target.dataset.hospRdSearch;if(!scope)return;
+    state.search[scope]=event.target.value;
+    const selStart=event.target.selectionStart,selEnd=event.target.selectionEnd;
+    if(scope==='solicitacoes')renderSolicitacoes();else if(scope==='andamento')renderAndamento();else if(scope==='finalizado')renderFinalizado();else if(scope==='hoteis')renderHoteis();
+    // Cada renderX() recria o HTML da aba inteira via innerHTML, o que apaga
+    // e recria o próprio <input> de busca — sem restaurar foco/cursor aqui,
+    // só o 1º caractere digitado registra (achado ao vivo 19/08).
+    const fresh=root.querySelector(`[data-hosp-rd-search="${scope}"]`);
+    if(fresh){fresh.focus();try{fresh.setSelectionRange(selStart,selEnd);}catch(err){}}
+  });
   document.addEventListener('click',async(event)=>{
     if(event.target.closest('#btnConfirmarReserva'))captureReserveMeta();
     if(state.nativePayment&&event.target.closest('#btnPagarFinanceiro')){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();await sendFinanceFromNative();}
