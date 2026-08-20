@@ -1115,6 +1115,7 @@ export async function anexarLaudo(osId, files) {
 }
 
 export async function confirmarCandidato(programacaoId, os, cand) {
+  if (!programacaoId) throw new Error('Programação da supervisão não encontrada. Recarregue a data e tente novamente.');
   const payload = {
     programacao_id: programacaoId,
     os_id: os.id,
@@ -1127,7 +1128,10 @@ export async function confirmarCandidato(programacaoId, os, cand) {
     km_estimado: cand.km,
     confirmado: true,
   };
-  const { error } = await supabase.from('programacao_equipe').upsert(payload, { onConflict: 'programacao_id,os_id,colaborador_id' });
+  const { data: equipeRow, error } = await supabase.from('programacao_equipe')
+    .upsert(payload, { onConflict: 'programacao_id,os_id,colaborador_id' })
+    .select('*')
+    .single();
   if (error) throw error;
 
   // operacional_os_colaboradores é o vínculo OS<->colaborador usado por outras
@@ -1170,6 +1174,7 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   // atualizarStatusOsCore. Sem isto o Mapa Operacional ficava sem
   // Colaborador/Veículo/Rota mesmo com a O.S. atendida (achado 11/08).
   marcarMapaRotasPendente(os?.supervisao, await dataReferenciaDaProgramacao(programacaoId));
+  return equipeRow;
 }
 
 let frotasMotoristasCache = null;
@@ -1244,6 +1249,7 @@ export async function adicionarFrotaOs(programacaoId, os, motorista) {
 }
 
 export async function adicionarColaboradorOs(programacaoId, os, cand) {
+  if (!programacaoId) throw new Error('Programação da supervisão não encontrada. Recarregue a data e tente novamente.');
   const payload = {
     programacao_id: programacaoId,
     os_id: os.id,
