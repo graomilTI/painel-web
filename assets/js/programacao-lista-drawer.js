@@ -25,7 +25,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260820-busca-os-remota';
+} from './programacao-equipe.js?v=20260820-save-confirmado';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260810-agrupar-hoteis';
 
 function esc(value) {
@@ -365,6 +365,19 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     return equipeRowsAtual;
   }
 
+  // O upsert devolve a linha que o banco acabou de confirmar. Usa essa linha
+  // imediatamente no estado da tela em vez de depender de uma segunda leitura
+  // geral, que pode chegar atrasada e fazer o colaborador "sumir" logo depois
+  // do salvamento. A chave também cobre o caso de um registro já existente.
+  function aplicarEquipeRowSalva(row) {
+    if (!row) return;
+    const mesmaLinha = (atual) => String(atual.id || '') === String(row.id || '')
+      || (String(atual.programacao_id) === String(row.programacao_id)
+        && String(atual.os_id) === String(row.os_id)
+        && String(atual.colaborador_id) === String(row.colaborador_id));
+    equipeRowsAtual = [...equipeRowsAtual.filter((atual) => !mesmaLinha(atual)), row];
+  }
+
   function confirmadosPorOsMap() {
     const map = new Map();
     equipeRowsAtual.filter((r) => r.confirmado).forEach((r) => {
@@ -494,8 +507,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // em si não muda com essas ações, só status_gestor (patcheado localmente) ou
   // a equipe. Só recarrega programacao_equipe quando pedido (add/remover) e
   // remonta o corpo do painel da O.S. aberta.
-  async function refreshAposAcao(os, { equipe = false } = {}) {
-    if (equipe) await recarregarEquipeRows();
+  async function refreshAposAcao(os, { equipe = false, equipeRow = null } = {}) {
+    if (equipeRow) aplicarEquipeRowSalva(equipeRow);
+    else if (equipe) await recarregarEquipeRows();
     renderLista();
     if (String(state.osAbertaId) === String(os.id)) await abrirDrawer(os, { silent: true });
     // A aba Sem O.S. é montada em paralelo e mantinha a fotografia anterior
@@ -954,8 +968,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         const { candidatos } = await carregarCandidatoSugerido(os);
         const cand = candidatos.find((c) => String(c.colaboradorId) === confirmarCandBtn.dataset.confirmarCandidato) || candidatos[0];
         if (cand) {
-          await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
-          await refreshAposAcao(os, { equipe: true });
+          const equipeRow = await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          await refreshAposAcao(os, { equipe: true, equipeRow });
         }
       } catch (error) {
         alert(error.message || 'Não foi possível confirmar o colaborador.');
@@ -977,14 +991,14 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         if (!motivo) return;
         addConfirmBtn.disabled = true;
         try {
-          await adicionarColaboradorOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          const equipeRow = await adicionarColaboradorOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
           logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
             os_id: os.id, numero_os: os.numero_os,
             colaboradores: [...rowsAtuais.map((r) => r.colaborador_id), cand.colaboradorId],
             nomes: [...rowsAtuais.map((r) => r.nome_colaborador), cand.nome],
             motivo,
           });
-          await refreshAposAcao(os, { equipe: true });
+          await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
           alert(error.message || 'Não foi possível adicionar o colaborador.');
         } finally {
@@ -993,8 +1007,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       } else {
         addConfirmBtn.disabled = true;
         try {
-          await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
-          await refreshAposAcao(os, { equipe: true });
+          const equipeRow = await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
           alert(error.message || 'Não foi possível adicionar o colaborador.');
         } finally {
@@ -1013,8 +1027,8 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const motorista = { colaboradorId: sel.value, nome: opt?.dataset.nome || sel.value };
       addFrotaConfirmBtn.disabled = true;
       try {
-        await adicionarFrotaOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, motorista);
-        await refreshAposAcao(os, { equipe: true });
+        const equipeRow = await adicionarFrotaOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, motorista);
+        await refreshAposAcao(os, { equipe: true, equipeRow });
       } catch (error) {
         alert(error.message || 'Não foi possível adicionar o motorista de Frota.');
       } finally {
