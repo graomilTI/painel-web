@@ -1,4 +1,4 @@
-const REDESIGN_GUARD_VERSION = '20260819-fix-boot-flag-por-root';
+const REDESIGN_GUARD_VERSION = '20260820-fix-busca-input-foco';
 
 function waitForBaseShell() {
   return new Promise((resolve) => {
