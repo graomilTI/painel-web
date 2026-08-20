@@ -1,27 +1,24 @@
 // Programação: usa a relação programacao_usuario_supervisoes/RPC para não buscar todas as supervisões a cada carregamento.
 import { supabase } from './supabaseClient.js';
 
-// v4 invalida o cache de 12h criado antes do ajuste de coordenação/supervisão.
-// Sem isso, um navegador que já abriu Programação hoje poderia continuar
-// escondendo uma supervisão recém-corrigida até o TTL expirar.
-const CACHE_KEY_PREFIX = 'programacao_supervisoes_v4';
+// v5 invalida o cache amplo criado quando coordenação ainda expandia acesso.
+// Regra de segurança: resposta vazia do RPC significa ZERO supervisões
+// liberadas. Nunca deve cair para uma consulta irrestrita de supervisoes.
+const CACHE_KEY_PREFIX = 'programacao_supervisoes_v5';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
 try {
-  localStorage.removeItem('programacao_supervisoes_v3');
-  localStorage.removeItem('programacao_supervisoes_v2');
-  localStorage.removeItem('programacao_supervisoes_v1');
+  Object.keys(localStorage)
+    .filter((key) => /^programacao_supervisoes_v[1-4](?::|$)/.test(key))
+    .forEach((key) => localStorage.removeItem(key));
 } catch (_) {}
+
 const originalFrom = supabase.from.bind(supabase);
 const originalRpc = supabase.rpc.bind(supabase);
 let pending = null;
 let lastResult = null;
 
-// A chave PRECISA ser por usuário: antes (v1/v2) era uma chave global só em
-// localStorage, então num mesmo navegador/dispositivo o resultado do RPC
-// programacao_listar_supervisoes (que já é restrito por usuário) de quem
-// carregasse a página primeiro ficava em cache e era servido pro PRÓXIMO
-// usuário que logasse ali dentro das 12h — vazando a lista de supervisões
-// (e, em cascata, colaboradores/O.S.) de outra conta pra quem não deveria ver.
+// A chave PRECISA ser por usuário para não compartilhar permissões entre
+// contas que usam o mesmo navegador/dispositivo.
 async function cacheKey() {
   try {
     const { data } = await supabase.auth.getUser();
@@ -46,7 +43,7 @@ async function readCache() {
 
 async function writeCache(rows) {
   try {
-    localStorage.setItem(await cacheKey(), JSON.stringify({ ts: Date.now(), rows }));
+    localStorage.setItem(await cacheKey(), JSON.stringify({ ts: Date.now(), rows: Array.isArray(rows) ? rows : [] }));
   } catch (_) {}
 }
 
@@ -62,31 +59,31 @@ function normalizeRows(rows) {
 
 async function fetchSupervisoes() {
   const cached = await readCache();
-  if (cached?.length) return { data: cached, error: null, fromCache: true };
+  // Array vazio é resultado válido: significa que o usuário não tem nenhuma
+  // supervisão liberada. Não confundir com ausência de cache.
+  if (Array.isArray(cached)) {
+    lastResult = { data: cached, error: null };
+    return { ...lastResult, fromCache: true };
+  }
 
   if (pending) return pending;
   pending = (async () => {
     try {
       const { data, error } = await originalRpc('programacao_listar_supervisoes');
       if (error) throw error;
-      const rows = normalizeRows(data);
-      if (rows.length) {
-        await writeCache(rows);
-        lastResult = { data: rows, error: null };
-        return lastResult;
-      }
-    } catch (error) {
-      console.warn('[programacao-supervisoes-cache] RPC indisponível; usando tabela supervisoes.', error);
-    }
 
-    const fallback = await originalFrom('supervisoes')
-      .select('nome')
-      .eq('ativo', true)
-      .order('nome', { ascending: true });
-    const rows = normalizeRows(fallback.data || []);
-    if (!fallback.error && rows.length) await writeCache(rows);
-    lastResult = { data: rows, error: fallback.error || null };
-    return lastResult;
+      const rows = normalizeRows(data);
+      await writeCache(rows);
+      lastResult = { data: rows, error: null };
+      return lastResult;
+    } catch (error) {
+      // FAIL CLOSED: se a fonte de autorização falhar, não consulta a tabela
+      // supervisoes sem escopo. Isso impediria um erro de rede/RPC de liberar
+      // todas as regionais para um usuário restrito.
+      console.error('[programacao-supervisoes-cache] falha ao resolver supervisões autorizadas.', error);
+      lastResult = { data: [], error };
+      return lastResult;
+    }
   })().finally(() => { pending = null; });
 
   return pending;
