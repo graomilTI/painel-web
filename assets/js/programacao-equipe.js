@@ -427,6 +427,19 @@ export async function loadOsRelevantes(supervisao, dataReferencia) {
   return [...porId.values()];
 }
 
+export async function loadOsRelevantePorNumero(supervisao, numeroOs) {
+  let query = supabase
+    .from('operacional_os')
+    .select(OS_COLUNAS)
+    .eq('numero_os', String(numeroOs).trim())
+    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER');
+  query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+
+  const { data, error } = await query.limit(1);
+  if (error) throw error;
+  return data?.[0] || null;
+}
+
 export function statusNorm(os) {
   return normalizeText(os?.status_gestor || '') || 'PENDENTE';
 }

@@ -15,7 +15,7 @@ import { logActivity } from './activityLogger.js';
 import { getCurrentUser } from './auth.js';
 import { confirmar } from './core/ui.js';
 import {
-  loadOsRelevantes, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
+  loadOsRelevantes, loadOsRelevantePorNumero, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
   loadColaboradoresRegional, loadIndisponiveisNaData, loadPontos, loadCandidatosPorOs,
   aplicarSugestoesRegionais, loadDisponibilidadeConfirmados,
   ordenarCandidatosPorEmbarque, candCardHtml, tipoTone, avatarBadgeHtml, embarqueHtml,
@@ -25,7 +25,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260820-os-paginadas';
+} from './programacao-equipe.js?v=20260820-busca-os-remota';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260810-agrupar-hoteis';
 
 function esc(value) {
@@ -869,7 +869,28 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   }
 
   // --- Eventos: lista (filtros, ordenação, clique na linha) ---
-  content.querySelector('#pldBusca').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
+  let buscaRemotaTimer = null;
+  let buscaRemotaSeq = 0;
+  content.querySelector('#pldBusca').addEventListener('input', (e) => {
+    state.busca = e.target.value;
+    renderLista();
+
+    clearTimeout(buscaRemotaTimer);
+    const numeroOs = String(e.target.value || '').trim();
+    if (!/^\d{4,}$/.test(numeroOs) || osTodasAtual.some((os) => String(os.numero_os) === numeroOs)) return;
+
+    const seq = ++buscaRemotaSeq;
+    buscaRemotaTimer = setTimeout(async () => {
+      try {
+        const os = await loadOsRelevantePorNumero(supervisaoQuery, numeroOs);
+        if (seq !== buscaRemotaSeq || String(state.busca || '').trim() !== numeroOs || !os) return;
+        if (!osTodasAtual.some((row) => String(row.id) === String(os.id))) osTodasAtual.push(os);
+        renderLista();
+      } catch (error) {
+        console.warn('[programacao-lista-drawer] busca remota de O.S.:', error);
+      }
+    }, 250);
+  });
   content.querySelector('#pldCliente').addEventListener('change', (e) => { state.cliente = e.target.value; renderLista(); });
   content.querySelector('#pldCidade').addEventListener('change', (e) => { state.cidade = e.target.value; renderLista(); });
   content.querySelector('#pldLocal').addEventListener('change', (e) => { state.local = e.target.value; renderLista(); });
