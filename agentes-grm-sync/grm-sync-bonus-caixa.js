@@ -829,473 +829,748 @@ async function markField(page, semantic) {
       if (label.htmlFor) input = document.getElementById(label.htmlFor);
       if (!input) {
         const host = label.closest('.v-input, .v-field, .form-group, [class*="field"]') || label.parentElement;
-        input = host?.querySelectoä	⁄[ú]õõ›
-›\OHò⁄X⁄ÿõﬁóJK^\ôXI Hù[¬àBàYà
-[ú]	âàö\⁄XõJ[ú]
-JH¬à[ú]ô]\Ÿ]ô‹õPõ€ù\—öY[HöY[\N¬àô]\õàŸ]KY‹õKXõ€ù\ÀYöY[HâŸöY[\_HóX¬àBàBÇà€€ú›[ú]»HÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	⁄[ú]õõ›
-›\OHò⁄X⁄ÿõﬁóJK^\ôXI WKôö[\äö\⁄XõJN¬à€€ú›[ú]H[ú]Àôö[ô
+        input = host?.querySelector('input:not([type="checkbox"]), textarea') || null;
+      }
+      if (input && visible(input)) {
+        input.dataset.grmBonusField = fieldType;
+        return `[data-grm-bonus-field="${fieldType}"]`;
+      }
+    }
 
-[
-HOà]\õãù\›
-õ‹õX[^ôJ¬à[ôŸ]]öXù]J	‹XŸZ€\â K[ôŸ]]öXù]J	€ò[YI K[öY[ôŸ]]öXù]J	ÿ\öXK[Xô[	 KàKôö[\äõ€€X[äKöõ⁄[ä	»	 JJJN¬àYà
-Z[ú]
-Hô]\õàù[¬à[ú]ô]\Ÿ]ô‹õPõ€ù\—öY[HöY[\N¬àô]\õàŸ]KY‹õKXõ€ù\ÀYöY[HâŸöY[\_HóX¬àKŸ[X[ùX N¬ÇàYà
-\Ÿ[X›‹äHõ›»ô]»\úõ‹äÿ[\»	‹Ÿ[X[ùXﬂHH\‹\ÿH∞Ë€»ÿÿ[^òYÀò
-N¬àô]\õàŸ[X›‹é¬üBÇò\ﬁ[ò»ù[ò›[€à\QöY[
-YŸKŸ[X›‹ãò[YJH¬à]ÿZ]YŸKò€X⁄ Ÿ[X›‹ã»€X⁄–€›[ùà»JN¬à]ÿZ]YŸKöŸ^Xõÿ\ôô›€ä	–€€ùõ€	 N¬àûH»]ÿZ]YŸKöŸ^Xõÿ\ôúô\‹ 	–I N»Hö[ò[H»]ÿZ]YŸKöŸ^Xõÿ\ôù\
-	–€€ùõ€	 N»Bà]ÿZ]YŸKöŸ^Xõÿ\ôúô\‹ 	–òX⁄‹‹XŸI N¬à]ÿZ]YŸKöŸ^Xõÿ\ôù\J›ö[ô ò[YJK»[^NàåJN¬à]ÿZ]YŸKöŸ^Xõÿ\ôúô\‹ 	’Xâ N¬à]ÿZ]€Y\
-çL
-N¬üBÇôù[ò›[€à\úŸPúõ›‹Ÿ\ìù[Xô\äò[YJH¬à€€ú›ò]»H›ö[ô ò[YHœ»	… Kùö[J
-N¬àYà
-\ò] Hô]\õà¬à€€ú›õ‹õX[^ôYHò]Àö[ò€Y\ 	À	 H»ò]Àúô\XŸJ◊ãŸÀ	… Kúô\XŸJ	À	À	Àâ Hàò]Œ¬à€€ú›àHù[Xô\äõ‹õX[^ôYúô\XŸJ÷◊åNKãWKŸÀ	… JN¬àô]\õàù[Xô\ãö\—ö[ö]JäH»àà¬üBÇò\ﬁ[ò»ù[ò›[€à⁄€‹ŸS[›ô[Y[ù\JYŸK^X›YH	–€€\õ›ò[ùI H¬à€€ú›Ÿ[X›‹àH]ÿZ]YŸKô]ò[X]J
+    const inputs = [...scope.querySelectorAll('input:not([type="checkbox"]), textarea')].filter(visible);
+    const input = inputs.find((el) => pattern.test(normalize([
+      el.getAttribute('placeholder'), el.getAttribute('name'), el.id, el.getAttribute('aria-label'),
+    ].filter(Boolean).join(' '))));
+    if (!input) return null;
+    input.dataset.grmBonusField = fieldType;
+    return `[data-grm-bonus-field="${fieldType}"]`;
+  }, semantic);
 
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Kõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Kù’\\êÿ\ŸJ
-Kùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI»	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬à€€ú›X[Ÿ‹»HÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-	÷‹õ€OHôX[Ÿ»óKùã[›ô\õ^W◊ÿ€€ù[ùùãYX[ŸÀÿ€\‹ èHõ[Ÿ[óKÿ€\‹ èHôX[Ÿ»óI WBàôö[\äö\⁄XõJBàôö[\ä
-[
-HOà–QP“S”êTàS’íSQSïÀ⁄Kù\›
-[ö[õô\ï^	… JN¬à€€ú›ÿ€‹HHX[Ÿ‹Àú€‹ù
+  if (!selector) throw new Error(`Campo ${semantic} da Despesa n√£o localizado.`);
+  return selector;
+}
 
-KäHOàãú]Y\ûTŸ[X›‹ê[
-	⁄[ú]	 Kõ[ô›HKú]Y\ûTŸ[X›‹ê[
-	⁄[ú]	 Kõ[ô›
-VÃN¬àYà
-\ÿ€‹JHô]\õàù[¬à€€ú›Xô[»HÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	€Xô[ùã[Xô[ÿ€\‹ èHõXô[óI WBàôö[\äö\⁄XõJBàôö[\ä
-[
-HOàõ‹õX[^ôJ[ù^€€ù[ù
-HOOH	’T… N¬à]€€ùõ€HXô[÷ÃOÀò€‹Ÿ\›
-	ÀùãZ[ú]ùãYöY[‹õ€OHò€€XõÿõﬁóKÿ€\‹ èHôöY[óI N¬àYà
-X€€ùõ€
-H¬à€€ùõ€HÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	÷‹õ€OHò€€XõÿõﬁóKùã\Ÿ[X›ùãX]]ÿ€€\]I WBàôö[\äö\⁄XõJBàôö[ô
+async function typeField(page, selector, value) {
+  await page.click(selector, { clickCount: 3 });
+  await page.keyboard.down('Control');
+  try { await page.keyboard.press('A'); } finally { await page.keyboard.up('Control'); }
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type(String(value), { delay: 20 });
+  await page.keyboard.press('Tab');
+  await sleep(250);
+}
 
-[
-HOà–QPSïSQSïﬂ””Tì’êSïKÀù\›
-õ‹õX[^ôJ[ö[õô\ï^[ù^€€ù[ù
-JJN¬àBà€€ú›€X⁄ÿXõHH€€ùõ€ÀõX]⁄\ 	⁄[ú]ù]€ã‹õ€OHò€€XõÿõﬁóI Bà»€€ùõ€àà€€ùõ€Àú]Y\ûTŸ[X›‹ä	⁄[ú]ù]€ã‹õ€OHò€€XõÿõﬁóI H€€ùõ€¬àYà
-X€X⁄ÿXõJHô]\õàù[¬à€X⁄ÿXõKô]\Ÿ]ô‹õPõ€ù\’\HH	ÃIŒ¬àô]\õà	÷Ÿ]KY‹õKXõ€ù\À]\OHåHóIŒ¬àJN¬àYà
-\Ÿ[X›‹äHõ›»ô]»\úõ‹ä	–ÿ[\»\»»[›ö[Y[ù»∞Ë€»ÿÿ[^òYÀâ N¬à]ÿZ]YŸKò€X⁄ Ÿ[X›‹äN¬à]ÿZ]€Y\
-Ã
-N¬à€€ú›‹[€àH]ÿZ]YŸKô]ò[X]J
-ÿ[ùY
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Kõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Kù’\\êÿ\ŸJ
-Kùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI»	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬à€€ú›\ôŸ]Hõ‹õX[^ôJÿ[ùY
-N¬à€€ú›ÿ[ôY]HHÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-	÷‹õ€OHõ‹[€àóKùã[\›Z][KI WBàôö[\äö\⁄XõJBàôö[ô
+function parseBrowserNumber(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return 0;
+  const normalized = raw.includes(',') ? raw.replace(/\./g, '').replace(',', '.') : raw;
+  const n = Number(normalized.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
 
-[
-HOàõ‹õX[^ôJ[ö[õô\ï^[ù^€€ù[ù
-HOOH\ôŸ]
-N¬àYà
-Xÿ[ôY]JHô]\õàù[¬àÿ[ôY]Kô]\Ÿ]ô‹õPõ€ù\’\S‹[€àH	ÃIŒ¬àô]\õà	÷Ÿ]KY‹õKXõ€ù\À]\K[‹[€èHåHóIŒ¬àK^X›Y
-N¬àYà
-[‹[€äHõ›»ô]»\úõ‹ä‹0ÈË€»	Ÿ^X›YH∞Ë€»ÿÿ[^òYHõ»ÿ[\»\Àò
-N¬à]ÿZ]YŸKò€X⁄ ‹[€äN¬à]ÿZ]€Y\
-çL
-N¬üBÇò\ﬁ[ò»ù[ò›[€à⁄€‹ŸTŸ[X›ûSXô[
-YŸKXô[^^X›Y‹[€äH¬à€€ú›Ÿ[X›‹àH]ÿZ]YŸKô]ò[X]J
-Xô[ÿ[ùY
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Bàõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Bàù’\\êÿ\ŸJ
-Bàúô\XŸJ÷◊êKVåNWJÀŸÀ	»	 Bàùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI¬à	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬à€€ú›\ôŸ]Hõ‹õX[^ôJXô[ÿ[ùY
-N¬Çàÿ›[Y[ùàú]Y\ûTŸ[X›‹ê[
-	÷Ÿ]KY‹õKXõ€ù\À\Ÿ[X›YöY[I Bàôõ‹ëXX⁄
+async function chooseMovementType(page, expected = 'Comprovante') {
+  const selector = await page.evaluate(() => {
+    const normalize = (value) => String(value || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
+      .filter(visible)
+      .filter((el) => /ADICIONAR MOVIMENTO/i.test(el.innerText || ''));
+    const scope = dialogs.sort((a, b) => b.querySelectorAll('input').length - a.querySelectorAll('input').length)[0];
+    if (!scope) return null;
+    const labels = [...scope.querySelectorAll('label,.v-label,[class*="label"]')]
+      .filter(visible)
+      .filter((el) => normalize(el.textContent) === 'TIPO');
+    let control = labels[0]?.closest('.v-input,.v-field,[role="combobox"],[class*="field"]');
+    if (!control) {
+      control = [...scope.querySelectorAll('[role="combobox"],.v-select,.v-autocomplete')]
+        .filter(visible)
+        .find((el) => /ADIANTAMENTO|COMPROVANTE/.test(normalize(el.innerText || el.textContent)));
+    }
+    const clickable = control?.matches('input,button,[role="combobox"]')
+      ? control
+      : control?.querySelector('input,button,[role="combobox"]') || control;
+    if (!clickable) return null;
+    clickable.dataset.grmBonusType = '1';
+    return '[data-grm-bonus-type="1"]';
+  });
+  if (!selector) throw new Error('Campo Tipo do movimento n√£o localizado.');
+  await page.click(selector);
+  await sleep(300);
+  const option = await page.evaluate((wanted) => {
+    const normalize = (value) => String(value || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const target = normalize(wanted);
+    const candidate = [...document.querySelectorAll('[role="option"],.v-list-item,li')]
+      .filter(visible)
+      .find((el) => normalize(el.innerText || el.textContent) === target);
+    if (!candidate) return null;
+    candidate.dataset.grmBonusTypeOption = '1';
+    return '[data-grm-bonus-type-option="1"]';
+  }, expected);
+  if (!option) throw new Error(`Op√ß√£o ${expected} n√£o localizada no campo Tipo.`);
+  await page.click(option);
+  await sleep(250);
+}
 
-[
-HOà[]H[ô]\Ÿ]ô‹õPõ€ù\‘Ÿ[X›öY[
-N¬Çà€€ú›X[Ÿ‹»HÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	÷‹õ€OHôX[Ÿ»óKùã[›ô\õ^W◊ÿ€€ù[ùùãYX[ŸÀÿ€\‹ èHõ[Ÿ[óKÿ€\‹ èHôX[Ÿ»óI¬à
-WBàôö[\äö\⁄XõJBàôö[\ä
-[
-HOà–QP“S”êTàS’íSQSïÀ⁄Kù\›
-[ö[õô\ï^	… JBàú€‹ù
+async function chooseSelectByLabel(page, labelText, expectedOption) {
+  const selector = await page.evaluate((labelWanted) => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ')
+      .trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none'
+      && getComputedStyle(el).visibility !== 'hidden';
+    const target = normalize(labelWanted);
 
-KäHOÇàãú]Y\ûTŸ[X›‹ê[
-	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI Kõ[ô›àHKú]Y\ûTŸ[X›‹ê[
-	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI Kõ[ô›à
-N¬à€€ú›ÿ€‹HHX[Ÿ‹÷ÃHÿ›[Y[ùòõŸN¬Çà€€ú›Xô[»HÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	€Xô[ùã[Xô[ÿ€\‹ èHõXô[óI WBàôö[\äö\⁄XõJBàôö[\ä
-[
-HOàõ‹õX[^ôJ[ù^€€ù[ù	… HOOH\ôŸ]
-N¬Çà]€€ùõ€Hù[¬àõ‹à
-€€ú›Xô[ŸàXô[ H¬à€€ùõ€HXô[ò€‹Ÿ\›
-	ÀùãZ[ú]ùãYöY[ùã\Ÿ[X›ùãX]]ÿ€€\]Kÿ€\‹ èHôöY[óI N¬àYà
-€€ùõ€
-HúôXZŒ¬àBÇàYà
-X€€ùõ€
-H¬à€€ú›[ú]»HÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	⁄[ú]‹õ€OHò€€XõÿõﬁóI WKôö[\äö\⁄XõJN¬à€€ùõ€H[ú]Àôö[ô
+    document
+      .querySelectorAll('[data-grm-bonus-select-field]')
+      .forEach((el) => delete el.dataset.grmBonusSelectField);
 
-[
-HOà¬à€€ú›⁄Y€ò]\ôHHõ‹õX[^ôJ¬à[ôŸ]]öXù]J	ÿ\öXK[Xô[	 Kà[ôŸ]]öXù]J	‹XŸZ€\â Kà[ôŸ]]öXù]J	€ò[YI KàKôö[\äõ€€X[äKöõ⁄[ä	»	 JN¬àô]\õà⁄Y€ò]\ôHOOH\ôŸ]⁄Y€ò]\ôKö[ò€Y\ \ôŸ]
-N¬àJHù[¬àBÇà€€ú›€X⁄ÿXõHH€€ùõ€ÀõX]⁄\ 	⁄[ú]ù]€ã‹õ€OHò€€XõÿõﬁóI Bà»€€ùõ€àà€€ùõ€Àú]Y\ûTŸ[X›‹ä	⁄[ú]ù]€ã‹õ€OHò€€XõÿõﬁóI H€€ùõ€¬ÇàYà
-X€X⁄ÿXõJHô]\õàù[¬à€X⁄ÿXõKô]\Ÿ]ô‹õPõ€ù\‘Ÿ[X›öY[H\ôŸ]¬àô]\õà	÷Ÿ]KY‹õKXõ€ù\À\Ÿ[X›YöY[IŒ¬àKXô[^
-N¬ÇàYà
-\Ÿ[X›‹äHõ›»ô]»\úõ‹äÿ[\»	€Xô[^H∞Ë€»ÿÿ[^òY»õ»õ‹õ][0Ë\ö[»»‘ìKò
-N¬à]ÿZ]YŸKò€X⁄ Ÿ[X›‹äN¬à]ÿZ]€Y\
-ÕL
-N¬Çà€€ú›‹[€àH]ÿZ]YŸKô]ò[X]J
-ÿ[ùY
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Bàõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Bàù’\\êÿ\ŸJ
-Bàúô\XŸJ◊ ÀŸÀ	»	 Bàùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI¬à	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬à€€ú›\ôŸ]Hõ‹õX[^ôJÿ[ùY
-N¬Çàÿ›[Y[ùàú]Y\ûTŸ[X›‹ê[
-	÷Ÿ]KY‹õKXõ€ù\À\Ÿ[X›[‹[€óI Bàôõ‹ëXX⁄
+    const dialogs = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )]
+      .filter(visible)
+      .filter((el) => /ADICIONAR MOVIMENTO/i.test(el.innerText || ''))
+      .sort((a, b) =>
+        b.querySelectorAll('input,textarea,select,[role="combobox"]').length
+        - a.querySelectorAll('input,textarea,select,[role="combobox"]').length
+      );
+    const scope = dialogs[0] || document.body;
 
-[
-HOà[]H[ô]\Ÿ]ô‹õPõ€ù\‘Ÿ[X›‹[€äN¬Çà€€ú›ÿ[ôY]\»HÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	÷‹õ€OHõ‹[€àóKùã[\›Z][KI¬à
-WBàôö[\äö\⁄XõJBàôö[\ä
-[
-HOàõ‹õX[^ôJ[ö[õô\ï^[ù^€€ù[ù
-HOOH\ôŸ]
-N¬Çà€€ú›ÿ[ôY]HHÿ[ôY]\÷ÿÿ[ôY]\Àõ[ô›HWN¬àYà
-Xÿ[ôY]JHô]\õàù[¬àÿ[ôY]Kô]\Ÿ]ô‹õPõ€ù\‘Ÿ[X›‹[€àH	ÃIŒ¬àô]\õà	÷Ÿ]KY‹õKXõ€ù\À\Ÿ[X›[‹[€èHåHóIŒ¬àK^X›Y‹[€äN¬ÇàYà
-[‹[€äHõ›»ô]»\úõ‹äà‹0ÈË€»	Ÿ^X›Y‹[€üH∞Ë€»ÿÿ[^òYHõ»ÿ[\»	€Xô[^Kòà
-N¬Çà]ÿZ]YŸKò€X⁄ ‹[€äN¬à]ÿZ]€Y\
-Ã
-N¬üBÇò\ﬁ[ò»ù[ò›[€àö[^[úŸJYŸKõÿã\ÿ‹ö\[€äH¬à]ÿZ]⁄€‹ŸS[›ô[Y[ù\JYŸK	–€€\õ›ò[ùI N¬ÇàÀ»õ»‘ìH\›\»ÿ[\‹»\\ôXŸ[H]X[ô»»[›ö[Y[ù»0ÍH€€\õ›ò[ùKÇà]ÿZ]⁄€‹ŸTŸ[X›ûSXô[
-YŸK	’\»H\‹\ÿIÀ	–∞Ìù\»Hô[ZXpÈÌY\… N¬à]ÿZ]⁄€‹ŸTŸ[X›ûSXô[
-YŸK	’\»Hÿ›[Y[ù…À	–›\€Hö\ÿÿ[	 N¬Çà€€ú›\ÿ‹ö\[€ëöY[H]ÿZ]X\ö—öY[
-YŸK	Ÿ\ÿ‹öXÿ[… N¬à€€ú›ò[YQöY[H]ÿZ]X\ö—öY[
-YŸK	›ò[‹â N¬à€€ú›]QöY[H]ÿZ]X\ö—öY[
-YŸK	Ÿ]I N¬à€€ú›ÿ›[Y[ùöY[H]ÿZ]X\ö—öY[
-YŸK	Ÿÿ›[Y[ù… N¬Çà]ÿZ]\QöY[
-YŸK\ÿ‹ö\[€ëöY[\ÿ‹ö\[€äN¬à]ÿZ]\QöY[
-YŸKÿ›[Y[ùöY[	Ã	 N¬Çà€€ú›^X›Yò[YHHù[Xô\äõÿãùò[‹à
-N¬à€€ú›ò[YPÿ[ôY]\»H¬à^X›Yò[YKù—ö^Y
-äKúô\XŸJ	ÀâÀ	À	 Kà›ö[ô X]úõ›[ô
-^X›Yò[YH
-àL
-JKà^X›Yò[YKù—ö^Y
-äKàN¬à]ò[YS⁄»Hò[ŸN¬àõ‹à
-€€ú›ÿ[ôY]HŸàò[YPÿ[ôY]\ H¬à]ÿZ]\QöY[
-YŸKò[YQöY[ÿ[ôY]JN¬à€€ú›ÿúŸ\ùôYH]ÿZ]YŸKâ]ò[
-àò[YQöY[à
-[
-HOà[ùò[YH[ôŸ]]öXù]J	›ò[YI H	…¬à
-N¬àYà
-X]òXú \úŸPúõ›‹Ÿ\ìù[Xô\äÿúŸ\ùôY
-HH^X›Yò[YJHåJH¬àò[YS⁄»HùYN¬àúôXZŒ¬àBàBàYà
-]ò[YS⁄ H¬àõ›»ô]»\úõ‹äàò[‹à»∞Ìù\»∞Ë€»\õX[ôXŸ]Hõ»õ‹õ][0Ë\ö[»€€[»	Ÿ^X›Yò[YKù—ö^Y
-ä_Kòà
-N¬àBÇà€€ú›][ò⁄]HHúë]QXLMJ
-N¬à]ÿZ]\QöY[
-YŸK]QöY[][ò⁄]JN¬Çà€€ú›ÿúŸ\ùôYH]ÿZ]YŸKô]ò[X]J
-Ÿ[X›‹ú HOà¬à€€ú›ò[YHH
-Ÿ[X›‹äHOà¬à€€ú›[Hÿ›[Y[ùú]Y\ûTŸ[X›‹äŸ[X›‹äN¬àô]\õà›ö[ô [Àùò[YH[ÀôŸ]]öXù]OÀä	›ò[YI H	… Kùö[J
-N¬àN¬à€€ú›õ‹õHHÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	÷‹õ€OHôX[Ÿ»óKùã[›ô\õ^W◊ÿ€€ù[ùùãYX[ŸÀÿ€\‹ èHõ[Ÿ[óKÿ€\‹ èHôX[Ÿ»óI¬à
-WKôö[ô
+    const labels = [...scope.querySelectorAll('label,.v-label,[class*="label"]')]
+      .filter(visible)
+      .filter((el) => normalize(el.textContent || '') === target);
 
-[
-HOà–QP“S”êTàS’íSQSïÀ⁄Kù\›
-[ö[õô\ï^	… JN¬àô]\õà¬à\ÿ‹öXÿ[Œàò[YJŸ[X›‹úÀô\ÿ‹ö\[€äKàÿ›[Y[ùŒàò[YJŸ[X›‹úÀôÿ›[Y[ù
-Kà^—õ‹õ][\ö[Œà›ö[ô õ‹õOÀö[õô\ï^	… Kúô\XŸJ◊ ÀŸÀ	»	 Kùö[J
-KàN¬àK¬à\ÿ‹ö\[€éà\ÿ‹ö\[€ëöY[àÿ›[Y[ùàÿ›[Y[ùöY[àJN¬ÇàYà
-õ‹õJÿúŸ\ùôYô\ÿ‹öXÿ[ HOOHõ‹õJ\ÿ‹ö\[€äJH¬àõ›»ô]»\úõ‹ä\ÿ‹öpÈË€»]ô\ôŸ[ùHõ»õ‹õ][0Ë\ö[Œà	€ÿúŸ\ùôYô\ÿ‹öXÿ[ﬂX
-N¬àBàYà
-›ö[ô ÿúŸ\ùôYôÿ›[Y[ù Kùö[J
-HOOH	Ã	 H¬àõ›»ô]»\úõ‹äãàÿ›[Y[ù»]ô\ôŸ[ùHõ»õ‹õ][0Ë\ö[Œà	€ÿúŸ\ùôYôÿ›[Y[ùﬂX
-N¬àBàYà
-[õ‹õJÿúŸ\ùôYù^—õ‹õ][\ö[ Kö[ò€Y\ õ‹õJ	–∞Ìù\»Hô[ZXpÈÌY\… JJH¬àõ›»ô]»\úõ‹ä	’\»H\‹\ÿH∞Ë€»\õX[ôXŸ]H€€[»∞Ìù\»Hô[ZXpÈÌY\Àâ N¬àBàYà
-[õ‹õJÿúŸ\ùôYù^—õ‹õ][\ö[ Kö[ò€Y\ õ‹õJ	–›\€Hö\ÿÿ[	 JJH¬àõ›»ô]»\úõ‹ä	’\»Hÿ›[Y[ù»∞Ë€»\õX[ôXŸ]H€€[»›\€Hö\ÿÿ[â N¬àBàYà
-[õ‹õJÿúŸ\ùôYù^—õ‹õ][\ö[ Kö[ò€Y\ õ‹õJ	–€€\õ›ò[ùI JJH¬àõ›»ô]»\úõ‹ä	’\»»[›ö[Y[ù»∞Ë€»\õX[ôXŸ]H€€[»€€\õ›ò[ùKâ N¬àBÇàô]\õà»]Nà][ò⁄]Kò[YNà^X›Yò[YHN¬üBÇò\ﬁ[ò»ù[ò›[€àÿ]ôQ^[úŸJYŸJH¬à€€ú›ô\\ôYH]ÿZ]YŸKô]ò[X]J
+    let control = null;
+    for (const label of labels) {
+      control = label.closest('.v-input,.v-field,.v-select,.v-autocomplete,[class*="field"]');
+      if (control) break;
+    }
 
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Bàõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Bàù’\\êÿ\ŸJ
-Bàùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI¬à	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬Çà€€ú›X[Ÿ‹»HÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	÷‹õ€OHôX[Ÿ»óKùã[›ô\õ^W◊ÿ€€ù[ùùãYX[ŸÀÿ€\‹ èHõ[Ÿ[óKÿ€\‹ èHôX[Ÿ»óI¬à
-WKôö[\äö\⁄XõJN¬Çà€€ú›õ‹õQX[Ÿ‹»HX[Ÿ‹¬àôö[\ä
-[
-HOà–QP“S”êTàS’íSQSïÀ⁄Kù\›
-[ö[õô\ï^	… JBàôö[\ä
-[
-HOà[ú]Y\ûTŸ[X›‹ä	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI JBàú€‹ù
+    if (!control) {
+      const inputs = [...scope.querySelectorAll('input,[role="combobox"]')].filter(visible);
+      control = inputs.find((el) => {
+        const signature = normalize([
+          el.getAttribute('aria-label'),
+          el.getAttribute('placeholder'),
+          el.getAttribute('name'),
+        ].filter(Boolean).join(' '));
+        return signature === target || signature.includes(target);
+      }) || null;
+    }
 
-KäHOÇàãú]Y\ûTŸ[X›‹ê[
-	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI Kõ[ô›àHKú]Y\ûTŸ[X›‹ê[
-	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI Kõ[ô›à
-N¬Çà€€ú›ÿ€‹HHõ‹õQX[Ÿ‹÷ÃHX[Ÿ‹÷ŸX[Ÿ‹Àõ[ô›HWHÿ›[Y[ùòõŸN¬à€€ú›ÿ]ôHHÀããúÿ€‹Kú]Y\ûTŸ[X›‹ê[
-	ÿù]€ã‹õ€OHòù]€àóI WBàôö[\äö\⁄XõJBàôö[ô
+    const clickable = control?.matches('input,button,[role="combobox"]')
+      ? control
+      : control?.querySelector('input,button,[role="combobox"]') || control;
 
-ù]€äHOàõ‹õX[^ôJù]€ãù^€€ù[ù
-HOOH	‘–SêTâ»	âàXù]€ãô\ÿXõY
-N¬ÇàYà
-\ÿ]ôJHô]\õàù[¬àÿ]ôKô]\Ÿ]ô‹õPõ€ù\‘ÿ]ôQ^[úŸHH	ÃIŒ¬Çàô]\õà¬àŸ[X›‹éà	÷Ÿ]KY‹õKXõ€ù\À\ÿ]ôKY^[úŸOHåHóIÀàN¬àJN¬ÇàYà
-\ô\\ôY
-Hõ›»ô]»\úõ‹ä	–õ›0Ë€»–SêTà»[›ö[Y[ù»∞Ë€»ÿÿ[^òYÀâ N¬Çà]ÿZ]YŸKò€X⁄ ô\\ôYúŸ[X›‹äN¬à]ÿZ]€Y\
-M
-N¬Çà€€ú›€€ôö\õX][€àH]ÿZ]YŸKô]ò[X]J
+    if (!clickable) return null;
+    clickable.dataset.grmBonusSelectField = target;
+    return '[data-grm-bonus-select-field]';
+  }, labelText);
 
-HOà¬à€€ú›õ‹õX[^ôHH
-ò[YJHOà›ö[ô ò[YH	… Bàõõ‹õX[^ôJ	”ëë	 Bàúô\XŸJ÷◊LÃWLÕôóKŸÀ	… Bàù’\\êÿ\ŸJ
-Bàúô\XŸJ◊ ÀŸÀ	»	 Bàùö[J
-N¬à€€ú›ö\⁄XõHH
-[
-HOàHY[	âà[ôŸ]€Y[ùôX› 
-Kõ[ô›àà	âàŸ]€€\]Y›[J[
-Kô\‹^HOOH	€õ€ôI¬à	âàŸ]€€\]Y›[J[
-Kùö\⁄Xö[]HOOH	⁄Y[âŒ¬Çà€€ú›õ‹õT›[‹[àHÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	÷‹õ€OHôX[Ÿ»óKùã[›ô\õ^W◊ÿ€€ù[ùùãYX[ŸÀÿ€\‹ èHõ[Ÿ[óKÿ€\‹ èHôX[Ÿ»óI¬à
-WBàôö[\äö\⁄XõJBàú€€YJ
-[
-HOÇà–QP“S”êTàS’íSQSïÀ⁄Kù\›
-[ö[õô\ï^	… Bà	âà[ú]Y\ûTŸ[X›‹ä	⁄[ú]^\ôXKŸ[X›‹õ€OHò€€XõÿõﬁóI Bà
-N¬Çà€€ú›Y\‹ÿYŸ\»HÀããôÿ›[Y[ùú]Y\ûTŸ[X›‹ê[
-à	Àùã[Y\‹ÿYŸ\◊◊€Y\‹ÿYŸKùãX[\ù‹õ€OHò[\ùóKùã\€òX⁄ÿò\ãùã\€òX⁄ÿò\ó◊ÿ€€ù[ù	¬à
-WBàôö[\äö\⁄XõJBàõX\
+  if (!selector) throw new Error(`Campo ${labelText} n√£o localizado no formul√°rio do GRM.`);
+  await page.click(selector);
+  await sleep(350);
 
-[
-HOà›ö[ô [ö[õô\ï^[ù^€€ù[ù	… Kúô\XŸJ◊ ÀŸÀ	»	 Kùö[J
-JBàôö[\äõ€€X[äBàú€XŸJLLäN¬Çà€€ú››XÿŸ\‹‘]\õàH‘ëQ“T’ìÀäê–QT’êQäî’P—T‘ﬂ–QT’êQäî’P—T‘ﬂ’P—T‘”ﬂ–Sìﬂ–Sê_‘íPQﬂQP“S”êQÀŒ¬à€€ú›\úõ‹î]\õàH—Tîìﬂ–îíQ–USïêSQëQSê“_—SP“S”ë_êS_êS»ì“H–QT’êQ∞‡”»ì“H–QT’êQŒ¬Çà]\›⁄Y€ò[Hù[¬àY\‹ÿYŸ\Àôõ‹ëXX⁄
+  const option = await page.evaluate((wanted) => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none'
+      && getComputedStyle(el).visibility !== 'hidden';
+    const target = normalize(wanted);
 
-\ŸÀ[ô^
-HOà¬à€€ú›õ‹õX[^ôYHõ‹õX[^ôJ\Ÿ N¬àYà
-\úõ‹î]\õãù\›
-õ‹õX[^ôY
-JH¬à\›⁄Y€ò[H»\Nà	Ÿ\úõ‹âÀY\‹ÿYŸNà\ŸÀ[ô^N¬àBàYà
-›XÿŸ\‹‘]\õãù\›
-õ‹õX[^ôY
-H	âàK”êSﬂ∞‡”ﬂTîìﬂêSKÀù\›
-õ‹õX[^ôY
-JH¬à\›⁄Y€ò[H»\Nà	‹›XÿŸ\‹…ÀY\‹ÿYŸNà\ŸÀ[ô^N¬àBàJN¬Çàô]\õà¬àõ‹õT›[‹[ãàY\‹ÿYŸ\Àà›XÿŸ\‹”Y\‹ÿYŸNà\›⁄Y€ò[Àù\HOOH	‹›XÿŸ\‹…»»\›⁄Y€ò[õY\‹ÿYŸHàù[à\úõ‹ìY\‹ÿYŸNà\›⁄Y€ò[Àù\HOOH	Ÿ\úõ‹â»»\›⁄Y€ò[õY\‹ÿYŸHàù[à⁄Y€ò[\Nà\›⁄Y€ò[Àù\Hù[àN¬àJN¬ÇàÀ»»‘ìHX[ù0Í[H»õ‹õ][0Ë\ö[»Xô\ù»[H[›[X\»ô\úÌY\»Y\€[»\0Ï‹»‹ò]ò\ãÇàÀ»HY[úÿYŸ[HŸöX⁄X[îôY⁄\›õ»ÿY\›òYÀããà€€H›XŸ\‹€»à0ÍH€€ôö\õXpÈË€¬àÀ»›YöX⁄Y[ùH\òHŸY›Z\à0Ëô\öYöXÿpÈË€»»[›ö[Y[ù»õ»ÿZ^KÇàYà
-€€ôö\õX][€ãú⁄Y€ò[\HOOH	‹›XÿŸ\‹… H¬àŸ 	‘’P–—T‘…À	—‘ìH€€ôö\õ[›H»ÿY\›õ»»[›ö[Y[ùÀâÀ€€ôö\õX][€äN¬àô]\õà»ããò€€ôö\õX][€ã€€ôö\õYYûNà	—‘ìW‘’P–—T‘◊”QT‘–Q—I»N¬àBÇàYà
-€€ôö\õX][€ãú⁄Y€ò[\HOOH	Ÿ\úõ‹â H¬àõ›»ô]»\úõ‹ä‘ìHôX›\€›H»ÿ[ò[Y[ù»»∞Ìù\Œà	ÿ€€ôö\õX][€ãô\úõ‹ìY\‹ÿYŸ_X
-N¬àBÇàYà
-€€ôö\õX][€ãôõ‹õT›[‹[äH¬àõ›»ô]»\úõ‹äà‘ìH∞Ë€»€€ôö\õ[›H»ÿ[ò[Y[ù»»∞Ìù\Àòà
-»
-€€ôö\õX][€ãõY\‹ÿYŸ\Àõ[ô›à»Y[úÿYŸ[úŒà	ÿ€€ôö\õX][€ãõY\‹ÿYŸ\Àöõ⁄[ä	»	 Kú€XŸJLå
-_Xàà	»»õ‹õ][0Ë\ö[»\õX[ôXŸ]HXô\ù»\0Ï‹»€Xÿ\à[Hÿ[ò\àHô[ö[XHY[úÿYŸ[HH›XŸ\‹€»õ⁄H^XöYKâ Bà
-N¬àBÇàŸ 	“Sëì…À	—‘ìHôX⁄›H»õ‹õ][0Ë\ö[»HYX⁄[€ò\à[›ö[Y[ù»\0Ï‹»ÿ[ò\é»ŸY›Z[ô»\òHô\öYöXÿpÈË€»õ»ÿZ^KâÀ€€ôö\õX][€äN¬àô]\õà»ããò€€ôö\õX][€ã€€ôö\õYYûNà	—ì‘ìW–”‘—Q	»N¬üBÇò\ﬁ[ò»ù[ò›[€à€‹ŸQX[Ÿ‹ YŸJH¬à]ÿZ]YŸKöŸ^Xõÿ\ôúô\‹ 	—\ÿÿ\I Kòÿ]⁄
+    document
+      .querySelectorAll('[data-grm-bonus-select-option]')
+      .forEach((el) => delete el.dataset.grmBonusSelectOption);
 
+    const candidates = [...document.querySelectorAll(
+      '[role="option"],.v-list-item,li'
+    )]
+      .filter(visible)
+      .filter((el) => normalize(el.innerText || el.textContent) === target);
 
-HOàﬂJN¬à]ÿZ]€Y\
-çL
-N¬üBÇò\ﬁ[ò»ù[ò›[€àô\öYûQ^[úŸJYŸK‹ãõÿã\ÿ‹ö\[€ú H¬à]ÿZ]€‹ŸQX[Ÿ‹ YŸJN¬à]ÿZ]‹[ë[\ﬁYYJYŸK‹äN¬Çà€€ú›ö[X\ûHH\ÿ‹ö\[€ú÷ÃN¬à]\›õ›‹»H◊N¬à]\›ô\öYöXÿ][€àHù[¬ÇàÀ»»[›ö[Y[ù»ŸH]ò\à[›[ú»ŸY›[ô‹»\òH\\ôXŸ\àòHXô[H\0Ï‹»BàÀ»Y[úÿYŸ[HH›XŸ\‹€Ààò^ô[[‹»[ù]]ò\»€€Y[ùHHZ]\òKŸ[Hÿ[ò\ÇàÀ»õ›ò[Y[ùK\òH∞Ë€»‹öX\à\X⁄YYKÇàõ‹à
-]][\HN»][\HN»][\
-œHJH¬à]ÿZ]€Y\
-][\OOHH»ÃàLå
-N¬à€€ú›õ›‹»H]ÿZ][ú‹X›^[úŸQ\ÿ‹ö\[€ú YŸK\ÿ‹ö\[€ú N¬à\›õ›‹»Hõ›‹Œ¬à€€ú›ô\öYöXÿ][€àHô\öYûS[›ô[Y[ùõ› õ›‹Àõÿãö[X\ûJN¬à\›ô\öYöXÿ][€àHô\öYöXÿ][€é¬ÇàYà
-ô\öYöXÿ][€ãô^X›
-H¬àô]\õà»⁄ŒàùYKõ›Œàô\öYöXÿ][€ãô^X›õ›À][\N¬àBÇàÀ»ŸH[XH\ÿ‹öpÈË€»[ùYÿH^\›\ã[H[X∞Í[Hõ‹]YZXH\X⁄YYKà\òBàÀ»€€ôö\õX\à›XŸ\‹€»^Y⁄[[‹»»ò[‹àH‹»ÿ[\‹»ö\Î]ôZ\»»[›ö[Y[ùÀÇàYà
-õ›‹Àõ[ô›
-H¬à€€ú›YÿXﬁQ^X›Hõ›‹Àôö[ô
+    const candidate = candidates[candidates.length - 1];
+    if (!candidate) return null;
+    candidate.dataset.grmBonusSelectOption = '1';
+    return '[data-grm-bonus-select-option="1"]';
+  }, expectedOption);
 
-õ› HOà¬à€€ú›Ÿ[»Hõ›ÀòŸ[»◊N¬à€€ú›^X›Yò[YHHúì[€ô^U^
-õÿãùò[‹äN¬à€€ú›\–ÿ]Y€‹ûHHŸ[Àú€€YJ
-Ÿ[
-HOàõ‹õJŸ[
-HOOHõ‹õJ	–∞Ìù\»Hô[ZXpÈÌY\… JBàõ‹õJõ›Àù^
-Kö[ò€Y\ õ‹õJ	–∞Ìù\»Hô[ZXpÈÌY\… JN¬à€€ú›\’ò[YHHŸ[Àú€€YJ
-Ÿ[
-HOà›ö[ô Ÿ[
-Kö[ò€Y\ ^X›Yò[YJJBà›ö[ô õ›Àù^
-Kö[ò€Y\ ^X›Yò[YJN¬à€€ú›\—ÿ›[Y[ùô\õ»HŸ[Àú€€YJ
-Ÿ[
-HOà›ö[ô Ÿ[
-Kùö[J
-HOOH	Ã	 N¬àô]\õà\–ÿ]Y€‹ûH	âà\’ò[YH	âà\—ÿ›[Y[ùô\õŒ¬àJN¬àYà
-YÿXﬁQ^X›
-H¬àô]\õà»⁄ŒàùYKõ›ŒàYÿXﬁQ^X›YÿXﬁNàùYK][\N¬àBàBàBÇàô]\õà¬à⁄Œàò[ŸKàõ›Œà\›ô\öYöXÿ][€èÀô^X›õ›»ù[àõ›‹Œà\›õ›‹ÀàN¬üBÇò\ﬁ[ò»ù[ò›[€àôX€›ô\î›[TõÿŸ\‹⁄[ô 
-H¬à€€ú››]ŸôàHô]»]J]Kõõ› 
-HHÃ
-àå
-àL
-Kù“T”‘›ö[ô 
-N¬à€€ú›»\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	ÿõ€ù\◊ÿÿZ^W€[òÿ[Y[ù‹… Bàù\]J»›]\Œà	‘SëSïIÀ[öX⁄XY◊Ÿ[Nàù[\]Yÿ]àô]»]J
-Kù“T”‘›ö[ô 
-HJBàô\J	‹›]\…À	‘ì–—T‘–Së… Bàõ
-	⁄[öX⁄XY◊Ÿ[IÀ›]ŸôäN¬àYà
-\úõ‹äHŸ 	’–TìâÀò[H[»ôX›\\ò\àì–—T‘–Së»[ùY€Œà	Ÿ\úõ‹ãõY\‹ÿYŸ_X
-N¬üBÇò\ﬁ[ò»ù[ò›[€àÿY[ô[ô“õÿú 
-H¬à€€ú›»]K\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	ÿõ€ù\◊ÿÿZ^W€[òÿ[Y[ù‹… BàúŸ[X›
-	 â Bàô\J	‹›]\…À	‘SëSïI Bàõ‹ô\ä	‹€€X⁄]Y◊Ÿ[IÀ»\ÿŸ[ô[ôŒàùYHJBàõ[Z]
-PV‘Tó‘ïSäN¬àYà
-\úõ‹äHõ›»\úõ‹é¬à€€ú›õÿú»H]H◊N¬à€€ú›ûP€€\][òŸHHô]»X\
+  if (!option) throw new Error(
+    `Op√ß√£o ${expectedOption} n√£o localizada no campo ${labelText}.`
+  );
 
-N¬Çàõ‹à
-€€ú›õÿàŸàõÿú H¬à€€ú›€€\][òŸHH›ö[ô õÿãò€€\][ò⁄XH	… Kú€XŸJL
-N¬àYà
-XûP€€\][òŸKö\ €€\][òŸJJH¬à€€ú›»]NàõŸX›[€ã\úõ‹éàõŸX›[€ë\úõ‹àHH]ÿZ]›\Xò\ŸBàúú 	ÿõ€ù\◊‹õŸXÿ[◊ÿ€€\][ò⁄XIÀ»ÿ€€\][ò⁄XNà€€\][òŸHJN¬àYà
-õŸX›[€ë\úõ‹äHõ›»õŸX›[€ë\úõ‹é¬àûP€€\][òŸKúŸ]
-€€\][òŸKô]»X\
-à
-õŸX›[€à◊JKõX\
+  await page.click(option);
+  await sleep(300);
+}
 
-õ› HOà¬àò[YRŸ^Jõ›Àò€€Xõ‹òY‹àõ›Àò€€Xõ‹òY‹ó€õ€YHõ›Àõõ€YJKàõ›ÀàJKà
-JN¬àBÇà€€ú››\úô[ùHûP€€\][òŸKôŸ]
-€€\][òŸJKôŸ]
-ò[YRŸ^Jõÿãò€€Xõ‹òY‹ó€õ€YJJN¬àYà
-X›\úô[ùõ‹õJ›\úô[ùú›]\ HOOH	–T… H¬àõ›»ô]»\úõ‹äà∞Ìù\»]X[∞Ë€»\›0ËH\»\òH	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_HòH€€\]0Íõò⁄XH	ÿ€€\][òŸ_Kòà
-N¬àBÇà€€ú››\úô[ù€ú»Hù[Xô\ä›\úô[ùù€ú»
-N¬à€€ú››\úô[ùò[YHHù[Xô\ä›\úô[ùùò[‹à
-N¬àYà
-àX]òXú ù[Xô\äõÿãù€ú»
-HH›\úô[ù€ú HàåBàX]òXú ù[Xô\äõÿãùò[‹à
-HH›\úô[ùò[YJHàåBà
-H¬à€€ú›»\úõ‹éàôYúô\⁄\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	ÿõ€ù\◊ÿÿZ^W€[òÿ[Y[ù‹… Bàù\]J¬à€úŒà›\úô[ù€úÀàò[‹éà›\úô[ùò[YKà\]Yÿ]àô]»]J
-Kù“T”‘›ö[ô 
-KàJBàô\J	⁄Y	ÀõÿãöY
-Bàô\J	‹›]\…À	‘SëSïI N¬àYà
-ôYúô\⁄\úõ‹äHõ›»ôYúô\⁄\úõ‹é¬àŸ 	“Sëì…À	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nàö[H]X[^òYH€€HHõŸpÈË€»öYŸ[ùKò¬à€ú◊ÿ[ù\ö[‹éàù[Xô\äõÿãù€ú»
-Kà€ú◊ÿ]X[à›\úô[ù€úÀàò[‹óÿ[ù\ö[‹éàù[Xô\äõÿãùò[‹à
-Kàò[‹óÿ]X[à›\úô[ùò[YKàJN¬àõÿãù€ú»H›\úô[ù€úŒ¬àõÿãùò[‹àH›\úô[ùò[YN¬àBàBÇàô]\õàõÿúŒ¬üBÇò\ﬁ[ò»ù[ò›[€àÿY€€Xõ‹ò]‹ú 
-H¬à€€ú›»]K\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	›ù◊ÿ€€Xõ‹òY‹ô\◊ÿ]XZ\… BàúŸ[X›
-	€õ€YK‹ã]]õÀ⁄]XXÿ[… Bàõ[Z]
-å
-N¬àYà
-\úõ‹äHõ›»\úõ‹é¬Çà€€ú›X\Hô]»X\
+async function fillExpense(page, job, description) {
+  await chooseMovementType(page, 'Comprovante');
 
-N¬àõ‹à
-€€ú›õ›»Ÿà]H◊JH¬à€€ú›Ÿ^HHò[YRŸ^Jõ›Àõõ€YJN¬à€€ú›‹àHY⁄] õ›Àò‹äN¬àYà
-ZŸ^HX‹äH€€ù[ùYN¬àYà
-[X\ö\ Ÿ^JJHX\úŸ]
-Ÿ^K◊JN¬à€€ú›\›HX\ôŸ]
-Ÿ^JN¬àYà
-[\›ú€€YJ
-][JHOà][Kò‹àOOH‹äJH\›ú\⁄
-»ããúõ›À‹àJN¬àBàô]\õàX\¬üBÇôù[ò›[€àô\€€ôP‹äõÿã€€Xõ‹ò]‹ú H¬à€€ú›X]⁄\»H€€Xõ‹ò]‹úÀôŸ]
-ò[YRŸ^Jõÿãò€€Xõ‹òY‹ó€õ€YJJH◊N¬à€€ú›X›]ôHHX]⁄\Àôö[\ä
-][JHOà][Kò]]õ»OOHò[ŸH	âàK“SêUUüT”QÀ⁄Kù\›
-›ö[ô ][Kú⁄]XXÿ[»	… JJN¬à€€ú›ôYô\úôYHX›]ôKõ[ô›»X›]ôHàX]⁄\Œ¬àYà
-ôYô\úôYõ[ô›OOHJH¬àõ›»ô]»\úõ‹ä‘à∞Ë€»ô\€€öY»Hõ‹õXH0ÓõöXÿH\òH	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nà	‹ôYô\úôYõ[ô›H€‹úô\‹€ô0Íõò⁄XJ Kò
-N¬àBàô]\õàôYô\úôYÃKò‹é¬üBÇò\ﬁ[ò»ù[ò›[€à\]S][ò⁄
-Y]⁄
-H¬à€€ú›»\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	ÿõ€ù\◊ÿÿZ^W€[òÿ[Y[ù‹… Bàù\]J»ããú]⁄\]Yÿ]àô]»]J
-Kù“T”‘›ö[ô 
-HJBàô\J	⁄Y	ÀY
-N¬àYà
-\úõ‹äHõ›»\úõ‹é¬üBÇò\ﬁ[ò»ù[ò›[€àX\ö‘õÿŸ\‹⁄[ô õÿäH¬à]ÿZ]\]S][ò⁄
-õÿãöY¬à›]\Œà	‘ì–—T‘–Së…Àà[ù]]ò\Œàù[Xô\äõÿãù[ù]]ò\»
-H
-»Kà[[[◊Ÿ\úõŒàù[à[öX⁄XY◊Ÿ[Nàô]»]J
-Kù“T”‘›ö[ô 
-KàõÿŸ\‹ÿY◊Ÿ[Nàù[àJN¬üBÇò\ﬁ[ò»ù[ò›[€àX\ö‘›XÿŸ\‹ õÿã^[ÿY
-H¬à]ÿZ]\]S][ò⁄
-õÿãöY¬à›]\Œà	”Sê–Q…Àà[[[◊Ÿ\úõŒàù[àõÿŸ\‹ÿY◊Ÿ[Nàô]»]J
-Kù“T”‘›ö[ô 
-Kà‹õW‹ô]‹õõŒà^[ÿYàJN¬üBÇò\ﬁ[ò»ù[ò›[€àX\ö—\úõ‹äõÿã\úõ‹ãÿ‹ôY[ú⁄›]
-H¬à]ÿZ]\]S][ò⁄
-õÿãöY¬à›]\Œà	—Tîì…Àà[[[◊Ÿ\úõŒà›ö[ô \úõ‹èÀõY\‹ÿYŸH\úõ‹äKú€XŸJ
-KàõÿŸ\‹ÿY◊Ÿ[Nàô]»]J
-Kù“T”‘›ö[ô 
-Kà‹õW‹ô]‹õõŒà¬à⁄Œàò[ŸKà\úõŒà›ö[ô \úõ‹èÀõY\‹ÿYŸH\úõ‹äKà›X⁄Œà›ö[ô \úõ‹èÀú›X⁄»	… Kú€XŸJ
-Kàÿ‹ôY[ú⁄›‹]àÿ‹ôY[ú⁄›]ù[àKàJN¬üBÇò\ﬁ[ò»ù[ò›[€à[ú]Y]YQõ€››\YìôYYY
+  // No GRM estes campos aparecem quando o movimento √© Comprovante.
+  await chooseSelectByLabel(page, 'Tipo da Despesa', 'B√¥nus e Premia√ß√µes');
+  await chooseSelectByLabel(page, 'Tipo de Documento', 'Cupom Fiscal');
 
-H¬à€€ú›»]Nàô[XZ[ö[ôÀ\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	ÿõ€ù\◊ÿÿZ^W€[òÿ[Y[ù‹… BàúŸ[X›
-	⁄Y	 Bàô\J	‹›]\…À	‘SëSïI Bàõ[Z]
-JN¬àYà
-\úõ‹à\ô[XZ[ö[ôœÀõ[ô›
-Hô]\õé¬Çà€€ú›»]Nà]Y]YY\úõ‹éà]Y]YY\úõ‹àHH]ÿZ]›\Xò\ŸBàôúõ€J	Ÿ‹õW‹ﬁ[ò◊⁄õÿú… BàúŸ[X›
-	⁄Y	 Bàô\J	ÿYŸ[ùW⁄Y	À	‹ﬁ[òÀXõ€ù\ÀXÿZ^I Bàô\J	‹›]\…À	‹[ô[ùI Bàõ[Z]
-JN¬àYà
-]Y]YY\úõ‹à]Y]YYÀõ[ô›
-Hô]\õé¬Çà€€ú›»\úõ‹éà[úŸ\ù\úõ‹àHH]ÿZ]›\Xò\ŸKôúõ€J	Ÿ‹õW‹ﬁ[ò◊⁄õÿú… Kö[úŸ\ù
-¬àYŸ[ùW⁄Yà	‹ﬁ[òÀXõ€ù\ÀXÿZ^IÀà›]\Œà	‹[ô[ùIÀà^[ÿYà»‹öYŸ[Nà	ÿõ€ù\◊ÿÿZ^Wÿ€€ù[ùXXÿ[…»KàJN¬àYà
-[úŸ\ù\úõ‹äHŸ 	’–TìâÀò[H[»[ôö[Z\ò\à€€ù[ùXpÈË€Œà	⁄[úŸ\ù\úõ‹ãõY\‹ÿYŸ_X
-N¬üBÇò\ﬁ[ò»ù[ò›[€àõÿŸ\‹“õÿäYŸKõÿã€€Xõ‹ò]‹ú H¬à]ÿZ]X\ö‘õÿŸ\‹⁄[ô õÿäN¬à€€ú›‹àHô\€€ôP‹äõÿã€€Xõ‹ò]‹ú N¬à€€ú›\ÿ‹ö\[€ú»H\ÿ‹ö\[€ê[X\Ÿ\—õ‹äõÿäN¬à€€ú›\ÿ‹ö\[€àH\ÿ‹ö\[€ú÷ÃN¬à€€ú›]HHúë]QXLMJ
-N¬ÇàŸ 	“Sëì…À	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nàô\\ò[ô»	Ÿ\ÿ‹ö\[€üHõ»ò[‹àH	”ù[Xô\äõÿãùò[‹à
-Kù—ö^Y
-ä_Kò
-N¬Çà]ÿZ]‹[ë[\ﬁYYJYŸK‹äN¬Çà€€ú›^\›[ô»H]ÿZ][ú‹X›^[úŸQ\ÿ‹ö\[€ú YŸK\ÿ‹ö\[€ú N¬àYà
-^\›[ôÀõ[ô›
-H¬à€€ú›^X›H^\›[ôÀôö[ô
+  const descriptionField = await markField(page, 'descricao');
+  const valueField = await markField(page, 'valor');
+  const dateField = await markField(page, 'data');
+  const documentField = await markField(page, 'documento');
 
-õ› HOà¬à€€ú›Ÿ[»Hõ›ÀòŸ[»◊N¬à€€ú›^X›Yò[YHHúì[€ô^U^
-õÿãùò[‹äN¬à€€ú›\’ò[YHHŸ[Àú€€YJ
-Ÿ[
-HOà›ö[ô Ÿ[
-Kö[ò€Y\ ^X›Yò[YJJBà›ö[ô õ›Àù^
-Kö[ò€Y\ ^X›Yò[YJN¬àô]\õà\’ò[YN¬àJN¬ÇàYà
-Y^X›
-H¬àõ›»ô]»\úõ‹äà∞ËH^\›H[›ö[Y[ù»H∞Ìù\»\›H€€\]0Íõò⁄XHõ»‘ìKX\»€€Hò[‹à]ô\ôŸ[ùKàà
-»[∞Èÿ[Y[ù»]]€pË]X€»õ‹]YXY»\òH]ö]\à\X⁄YYKòà
-N¬àBÇà]ÿZ]X\ö‘›XÿŸ\‹ õÿã¬à⁄ŒàùYKà‹ãà\ÿ‹öXÿ[Œà\ÿ‹ö\[€ãàò[‹éàù[Xô\äõÿãùò[‹à
-Kà]Nà]Kà\Xÿ]WŸ›X\ôà	—T–‘íP–S◊—W–””TUSê“PW“êW—VT’PW”ì◊—‘ìIÀà‹öXY◊ÿY€‹òNàò[ŸKà[öWŸ‹õNà^X›ù^àô\öYöXÿY◊Ÿ[Nàô]»]J
-Kù“T”‘›ö[ô 
-KàJN¬àŸ 	‘’P–—T‘…À	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nà∞Ìù\»∞ËH^\›XHõ»‘ìN»\X⁄YYHõ‹]YXYKò
-N¬àô]\õé¬àBÇàYà
-ñW‘ïSäH¬à]ÿZ]\]S][ò⁄
-õÿãöY¬à›]\Œà	‘SëSïIÀà[öX⁄XY◊Ÿ[Nàù[à‹õW‹ô]‹õõŒà¬àûW‹ù[éàùYKà‹ãà\ÿ‹öXÿ[Œà\ÿ‹ö\[€ãàò[‹éàù[Xô\äõÿãùò[‹à
-Kà]Nà]Kàô\öYöXÿY◊Ÿ^\›[ùNàò[ŸKàKàJN¬àŸ 	“Sëì…À	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_NàñW‘ïSãô[ö[XH[\òpÈË€»ôZ]Kò
-N¬àô]\õé¬àBÇà]ÿZ]€X⁄–Y^[úŸJYŸJN¬à€€ú›ö[YH]ÿZ]ö[^[úŸJYŸKõÿã\ÿ‹ö\[€äN¬à]ÿZ]ÿ]ôQ^[úŸJYŸJN¬Çà€€ú›ô\öYöYYH]ÿZ]ô\öYûQ^[úŸJYŸK‹ãõÿã\ÿ‹ö\[€ú N¬àYà
-]ô\öYöYYõ⁄ H¬àõ›»ô]»\úõ‹äà	—‘ìHôX⁄›H»õ‹õ][0Ë\ö[ÀX\»»[∞Èÿ[Y[ù»»∞Ìù\»∞Ë€»õ⁄Hÿÿ[^òY»õ»ÿZ^H	¬à
-»	ÿ€€H\ÿ‹öpÈË€»
-»∞Ìù\»Hô[ZXpÈÌY\»
-»ãàÿ›[Y[ù»
-»ò[‹à\‹\òY‹Àà	¬à
-»	”∞Ë€»ô\õÿŸ\‹ŸHŸ[H€€ôô\ö\à»ÿY\›õ»\òH]ö]\à\X⁄YYKâ¬à
-N¬àBÇà]ÿZ]X\ö‘›XÿŸ\‹ õÿã¬à⁄ŒàùYKà‹ãà\ÿ‹öXÿ[Œà\ÿ‹ö\[€ãàò[‹éàö[Yùò[YKà]Nàö[Yô]Kà‹öXY◊ÿY€‹òNàùYKàô\öYöXÿY◊€õ◊Ÿ‹õNàùYKà[öWŸ‹õNàô\öYöYYúõ›œÀù^ù[àô\öYöXÿY◊Ÿ[Nàô]»]J
-Kù“T”‘›ö[ô 
-KàJN¬àŸ 	‘’P–—T‘…À	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nà∞Ìù\»[∞ÈÿY»Hô\öYöXÿY»õ»‘ìKò
-N¬üBÇò\ﬁ[ò»ù[ò›[€àXZ[ä
-H¬à[ú›\ôQ\ä–‘ëQSî“’—TäN¬à]ÿZ]ôX€›ô\î›[TõÿŸ\‹⁄[ô 
-N¬à€€ú›õÿú»H]ÿZ]ÿY[ô[ô“õÿú 
-N¬àYà
-ZõÿúÀõ[ô›
-H¬àŸ 	“Sëì…À	”ô[ö[H∞Ìù\»[ô[ùH\òH[∞Èÿ\ãâ N¬àô]\õé¬àBÇà€€ú›€€Xõ‹ò]‹ú»H]ÿZ]ÿY€€Xõ‹ò]‹ú 
-N¬à]úõ›‹Ÿ\é¬à]›XÿŸ\‹»H¬à]\úõ‹ú»H¬ÇàûH¬àúõ›‹Ÿ\àH]ÿZ]][ò⁄úõ›‹Ÿ\ä
-N¬à€€ú›YŸHH]ÿZ]úõ›‹Ÿ\ãõô]‘YŸJ
-N¬àYŸKúŸ]Yò][[Y[›]
-QêUS’SQS’U
-N¬àYŸKúŸ]Yò][ò]öYÿ][€ï[Y[›]
-å
-N¬àYà
-PïQ HYŸKõ€ä	ÿ€€ú€€IÀ
-\Ÿ HOàŸ 	–îì’‘—TâÀ\ŸÀù^
+  await typeField(page, descriptionField, description);
+  await typeField(page, documentField, '0');
 
-JJN¬à]ÿZ]Ÿ⁄[äYŸJN¬Çàõ‹à
-€€ú›õÿàŸàõÿú H¬àûH¬à]ÿZ]õÿŸ\‹“õÿäYŸKõÿã€€Xõ‹ò]‹ú N¬à›XÿŸ\‹»
-œHN¬àHÿ]⁄
-\úõ‹äH¬à\úõ‹ú»
-œHN¬à€€ú›⁄›H]ÿZ]ÿ‹ôY[ú⁄›
-YŸKõÿã	Ÿ\úõ… N¬àûH»]ÿZ]X\ö—\úõ‹äõÿã\úõ‹ã⁄›
-N»Hÿ]⁄
-X\ö—\úõ‹ëòZ[\ôJH¬àŸ 	—Tîì‘âÀò[H[»ôY⁄\›ò\à\úõ»»[∞Èÿ[Y[ù»	⁄õÿãöYNà	€X\ö—\úõ‹ëòZ[\ôKõY\‹ÿYŸ_X
-N¬àBàŸ 	—Tîì‘âÀ	⁄õÿãò€€Xõ‹òY‹ó€õ€Y_Nà	Ÿ\úõ‹ãõY\‹ÿYŸ_X
-N¬àûH»]ÿZ]€‹ŸQX[Ÿ‹ YŸJN»Hÿ]⁄
- HﬂBàBàBàHö[ò[H¬àYà
-úõ›‹Ÿ\äH]ÿZ]úõ›‹Ÿ\ãò€‹ŸJ
-N¬à]ÿZ][ú]Y]YQõ€››\YìôYYY
+  const expectedValue = Number(job.valor || 0);
+  const valueCandidates = [
+    expectedValue.toFixed(2).replace('.', ','),
+    String(Math.round(expectedValue * 100)),
+    expectedValue.toFixed(2),
+  ];
+  let valueOk = false;
+  for (const candidate of valueCandidates) {
+    await typeField(page, valueField, candidate);
+    const observed = await page.$eval(
+      valueField,
+      (el) => el.value || el.getAttribute('value') || ''
+    );
+    if (Math.abs(parseBrowserNumber(observed) - expectedValue) < 0.001) {
+      valueOk = true;
+      break;
+    }
+  }
+  if (!valueOk) {
+    throw new Error(
+      `Valor do b√¥nus n√£o permaneceu no formul√°rio como ${expectedValue.toFixed(2)}.`
+    );
+  }
 
-N¬àBÇàŸ \úõ‹ú»»	’–Tìâ»à	‘’P–—T‘…À	–YŸ[ùHH∞Ìù\»€€ò€pÎYÀâÀ¬àõÿŸ\‹ÿY‹ŒàõÿúÀõ[ô›à›XŸ\‹€Œà›XÿŸ\‹Àà\úõ‹Œà\úõ‹úÀàûW‹ù[éàñW‘ïSãàJN¬ÇàYà
-\úõ‹ú»à
-H¬àõÿŸ\‹Àô^]€ŸHHN¬àBüBÇõXZ[ä
-Kòÿ]⁄
+  const launchDate = brDateDia15();
+  await typeField(page, dateField, launchDate);
 
-\úõ‹äHOà¬àŸ 	—Tîì‘âÀ\úõ»ò][õ»YŸ[ùHH∞Ìù\Œà	Ÿ\úõ‹ãõY\‹ÿYŸ_X»›X⁄Œà\úõ‹ãú›X⁄»JN¬àõÿŸ\‹Àô^]€ŸHHN¬üJN¬
+  const observed = await page.evaluate((selectors) => {
+    const value = (selector) => {
+      const el = document.querySelector(selector);
+      return String(el?.value || el?.getAttribute?.('value') || '').trim();
+    };
+    const form = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )].find((el) => /ADICIONAR MOVIMENTO/i.test(el.innerText || ''));
+    return {
+      descricao: value(selectors.description),
+      documento: value(selectors.document),
+      textoFormulario: String(form?.innerText || '').replace(/\s+/g, ' ').trim(),
+    };
+  }, {
+    description: descriptionField,
+    document: documentField,
+  });
+
+  if (norm(observed.descricao) !== norm(description)) {
+    throw new Error(`Descri√ß√£o divergente no formul√°rio: ${observed.descricao}`);
+  }
+  if (String(observed.documento).trim() !== '0') {
+    throw new Error(`N. Documento divergente no formul√°rio: ${observed.documento}`);
+  }
+  if (!norm(observed.textoFormulario).includes(norm('B√¥nus e Premia√ß√µes'))) {
+    throw new Error('Tipo da Despesa n√£o permaneceu como B√¥nus e Premia√ß√µes.');
+  }
+  if (!norm(observed.textoFormulario).includes(norm('Cupom Fiscal'))) {
+    throw new Error('Tipo de Documento n√£o permaneceu como Cupom Fiscal.');
+  }
+  if (!norm(observed.textoFormulario).includes(norm('Comprovante'))) {
+    throw new Error('Tipo do movimento n√£o permaneceu como Comprovante.');
+  }
+
+  return { date: launchDate, value: expectedValue };
+}
+
+async function saveExpense(page) {
+  const prepared = await page.evaluate(() => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none'
+      && getComputedStyle(el).visibility !== 'hidden';
+
+    const dialogs = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )].filter(visible);
+
+    const formDialogs = dialogs
+      .filter((el) => /ADICIONAR MOVIMENTO/i.test(el.innerText || ''))
+      .filter((el) => el.querySelector('input,textarea,select,[role="combobox"]'))
+      .sort((a, b) =>
+        b.querySelectorAll('input,textarea,select,[role="combobox"]').length
+        - a.querySelectorAll('input,textarea,select,[role="combobox"]').length
+      );
+
+    const scope = formDialogs[0] || dialogs[dialogs.length - 1] || document.body;
+    const save = [...scope.querySelectorAll('button,[role="button"]')]
+      .filter(visible)
+      .find((button) => normalize(button.textContent) === 'SALVAR' && !button.disabled);
+
+    if (!save) return null;
+    save.dataset.grmBonusSaveExpense = '1';
+
+    return {
+      selector: '[data-grm-bonus-save-expense="1"]',
+    };
+  });
+
+  if (!prepared) throw new Error('Bot√£o SALVAR do movimento n√£o localizado.');
+
+  await page.click(prepared.selector);
+  await sleep(1400);
+
+  const confirmation = await page.evaluate(() => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0
+      && getComputedStyle(el).display !== 'none'
+      && getComputedStyle(el).visibility !== 'hidden';
+
+    const formStillOpen = [...document.querySelectorAll(
+      '[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]'
+    )]
+      .filter(visible)
+      .some((el) =>
+        /ADICIONAR MOVIMENTO/i.test(el.innerText || '')
+        && el.querySelector('input,textarea,select,[role="combobox"]')
+      );
+
+    const messages = [...document.querySelectorAll(
+      '.v-messages__message,.v-alert,[role="alert"],.v-snackbar,.v-snackbar__content'
+    )]
+      .filter(visible)
+      .map((el) => String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(-12);
+
+    const successPattern = /REGISTRO.*CADASTRAD.*SUCESS|CADASTRAD.*SUCESS|SUCESSO|SALVO|SALVA|CRIADO|ADICIONADO/;
+    const errorPattern = /ERRO|OBRIGAT|INVALID|PREENCHA|SELECIONE|FALHA|NAO FOI CADASTRAD|N√ÉO FOI CADASTRAD/;
+
+    let lastSignal = null;
+    messages.forEach((msg, index) => {
+      const normalized = normalize(msg);
+      if (errorPattern.test(normalized)) {
+        lastSignal = { type: 'error', message: msg, index };
+      }
+      if (successPattern.test(normalized) && !/NAO|N√ÉO|ERRO|FALHA/.test(normalized)) {
+        lastSignal = { type: 'success', message: msg, index };
+      }
+    });
+
+    return {
+      formStillOpen,
+      messages,
+      successMessage: lastSignal?.type === 'success' ? lastSignal.message : null,
+      errorMessage: lastSignal?.type === 'error' ? lastSignal.message : null,
+      signalType: lastSignal?.type || null,
+    };
+  });
+
+  // O GRM mant√©m o formul√°rio aberto em algumas vers√µes mesmo ap√≥s gravar.
+  // A mensagem oficial "Registro cadastrado... com sucesso" √© confirma√ß√£o
+  // suficiente para seguir √† verifica√ß√£o do movimento no Caixa.
+  if (confirmation.signalType === 'success') {
+    log('SUCCESS', 'GRM confirmou o cadastro do movimento.', confirmation);
+    return { ...confirmation, confirmedBy: 'GRM_SUCCESS_MESSAGE' };
+  }
+
+  if (confirmation.signalType === 'error') {
+    throw new Error(`GRM recusou o salvamento do B√¥nus: ${confirmation.errorMessage}`);
+  }
+
+  if (confirmation.formStillOpen) {
+    throw new Error(
+      `GRM n√£o confirmou o salvamento do B√¥nus.`
+      + (confirmation.messages.length
+        ? ` Mensagens: ${confirmation.messages.join(' | ').slice(0, 1200)}`
+        : ' O formul√°rio permaneceu aberto ap√≥s clicar em Salvar e nenhuma mensagem de sucesso foi exibida.')
+    );
+  }
+
+  log('INFO', 'GRM fechou o formul√°rio de Adicionar Movimento ap√≥s Salvar; seguindo para verifica√ß√£o no Caixa.', confirmation);
+  return { ...confirmation, confirmedBy: 'FORM_CLOSED' };
+}
+
+async function closeDialogs(page) {
+  await page.keyboard.press('Escape').catch(() => {});
+  await sleep(250);
+}
+
+async function verifyExpense(page, cpf, job, descriptions) {
+  await closeDialogs(page);
+  await openEmployee(page, cpf);
+
+  const primary = descriptions[0];
+  let lastRows = [];
+  let lastVerification = null;
+
+  // O movimento pode levar alguns segundos para aparecer na tabela ap√≥s a
+  // mensagem de sucesso. Fazemos tentativas somente de leitura, sem salvar
+  // novamente, para n√£o criar duplicidade.
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    await sleep(attempt === 1 ? 700 : 1200);
+    const rows = await inspectExpenseDescriptions(page, descriptions);
+    lastRows = rows;
+    const verification = verifyMovementRow(rows, job, primary);
+    lastVerification = verification;
+
+    if (verification.exact) {
+      return { ok: true, row: verification.exactRow, attempt };
+    }
+
+    // Se uma descri√ß√£o antiga existir, ela tamb√©m bloqueia duplicidade. Para
+    // confirmar sucesso exigimos o valor e os campos vis√≠veis do movimento.
+    if (rows.length) {
+      const legacyExact = rows.find((row) => {
+        const cells = row.cells || [];
+        const expectedValue = brMoneyText(job.valor);
+        const hasCategory = cells.some((cell) => norm(cell) === norm('B√¥nus e Premia√ß√µes'))
+          || norm(row.text).includes(norm('B√¥nus e Premia√ß√µes'));
+        const hasValue = cells.some((cell) => String(cell).includes(expectedValue))
+          || String(row.text).includes(expectedValue);
+        const hasDocumentZero = cells.some((cell) => String(cell).trim() === '0');
+        return hasCategory && hasValue && hasDocumentZero;
+      });
+      if (legacyExact) {
+        return { ok: true, row: legacyExact, legacy: true, attempt };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    row: lastVerification?.exactRow || null,
+    rows: lastRows,
+  };
+}
+
+async function recoverStaleProcessing() {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from('bonus_caixa_lancamentos')
+    .update({ status: 'PENDENTE', iniciado_em: null, updated_at: new Date().toISOString() })
+    .eq('status', 'PROCESSANDO')
+    .lt('iniciado_em', cutoff);
+  if (error) log('WARN', `Falha ao recuperar PROCESSANDO antigo: ${error.message}`);
+}
+
+async function loadPendingJobs() {
+  const { data, error } = await supabase
+    .from('bonus_caixa_lancamentos')
+    .select('*')
+    .eq('status', 'PENDENTE')
+    .order('solicitado_em', { ascending: true })
+    .limit(MAX_PER_RUN);
+  if (error) throw error;
+  const jobs = data || [];
+  const byCompetence = new Map();
+
+  for (const job of jobs) {
+    const competence = String(job.competencia || '').slice(0, 10);
+    if (!byCompetence.has(competence)) {
+      const { data: production, error: productionError } = await supabase
+        .rpc('bonus_producao_competencia', { p_competencia: competence });
+      if (productionError) throw productionError;
+      byCompetence.set(competence, new Map(
+        (production || []).map((row) => [
+          nameKey(row.colaborador || row.colaborador_nome || row.nome),
+          row,
+        ]),
+      ));
+    }
+
+    const current = byCompetence.get(competence).get(nameKey(job.colaborador_nome));
+    if (!current || norm(current.status) !== 'APTO') {
+      throw new Error(
+        `B√¥nus atual n√£o est√° Apto para ${job.colaborador_nome} na compet√™ncia ${competence}.`,
+      );
+    }
+
+    const currentTons = Number(current.tons || 0);
+    const currentValue = Number(current.valor || 0);
+    if (
+      Math.abs(Number(job.tons || 0) - currentTons) > 0.001
+      || Math.abs(Number(job.valor || 0) - currentValue) > 0.001
+    ) {
+      const { error: refreshError } = await supabase
+        .from('bonus_caixa_lancamentos')
+        .update({
+          tons: currentTons,
+          valor: currentValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+        .eq('status', 'PENDENTE');
+      if (refreshError) throw refreshError;
+      log('INFO', `${job.colaborador_nome}: fila atualizada com a produ√ß√£o vigente.`, {
+        tons_anterior: Number(job.tons || 0),
+        tons_atual: currentTons,
+        valor_anterior: Number(job.valor || 0),
+        valor_atual: currentValue,
+      });
+      job.tons = currentTons;
+      job.valor = currentValue;
+    }
+  }
+
+  return jobs;
+}
+
+async function loadCollaborators() {
+  const { data, error } = await supabase
+    .from('vw_colaboradores_atuais')
+    .select('nome,cpf,ativo,situacao')
+    .limit(2000);
+  if (error) throw error;
+
+  const map = new Map();
+  for (const row of data || []) {
+    const key = nameKey(row.nome);
+    const cpf = digits(row.cpf);
+    if (!key || !cpf) continue;
+    if (!map.has(key)) map.set(key, []);
+    const list = map.get(key);
+    if (!list.some((item) => item.cpf === cpf)) list.push({ ...row, cpf });
+  }
+  return map;
+}
+
+function resolveCpf(job, collaborators) {
+  const matches = collaborators.get(nameKey(job.colaborador_nome)) || [];
+  const active = matches.filter((item) => item.ativo !== false && !/INATIV|DESLIG/i.test(String(item.situacao || '')));
+  const preferred = active.length ? active : matches;
+  if (preferred.length !== 1) {
+    throw new Error(`CPF n√£o resolvido de forma √∫nica para ${job.colaborador_nome}: ${preferred.length} correspond√™ncia(s).`);
+  }
+  return preferred[0].cpf;
+}
+
+async function updateLaunch(id, patch) {
+  const { error } = await supabase
+    .from('bonus_caixa_lancamentos')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+async function markProcessing(job) {
+  await updateLaunch(job.id, {
+    status: 'PROCESSANDO',
+    tentativas: Number(job.tentativas || 0) + 1,
+    ultimo_erro: null,
+    iniciado_em: new Date().toISOString(),
+    processado_em: null,
+  });
+}
+
+async function markSuccess(job, payload) {
+  await updateLaunch(job.id, {
+    status: 'LANCADO',
+    ultimo_erro: null,
+    processado_em: new Date().toISOString(),
+    grm_retorno: payload,
+  });
+}
+
+async function markError(job, error, screenshotPath) {
+  await updateLaunch(job.id, {
+    status: 'ERRO',
+    ultimo_erro: String(error?.message || error).slice(0, 4000),
+    processado_em: new Date().toISOString(),
+    grm_retorno: {
+      ok: false,
+      erro: String(error?.message || error),
+      stack: String(error?.stack || '').slice(0, 8000),
+      screenshot_path: screenshotPath || null,
+    },
+  });
+}
+
+async function enqueueFollowupIfNeeded() {
+  const { data: remaining, error } = await supabase
+    .from('bonus_caixa_lancamentos')
+    .select('id')
+    .eq('status', 'PENDENTE')
+    .limit(1);
+  if (error || !remaining?.length) return;
+
+  const { data: queued, error: queuedError } = await supabase
+    .from('grm_sync_jobs')
+    .select('id')
+    .eq('agente_id', 'sync-bonus-caixa')
+    .eq('status', 'pendente')
+    .limit(1);
+  if (queuedError || queued?.length) return;
+
+  const { error: insertError } = await supabase.from('grm_sync_jobs').insert({
+    agente_id: 'sync-bonus-caixa',
+    status: 'pendente',
+    payload: { origem: 'bonus_caixa_continuacao' },
+  });
+  if (insertError) log('WARN', `Falha ao enfileirar continua√ß√£o: ${insertError.message}`);
+}
+
+async function processJob(page, job, collaborators) {
+  await markProcessing(job);
+  const cpf = resolveCpf(job, collaborators);
+  const descriptions = descriptionAliasesFor(job);
+  const description = descriptions[0];
+  const date = brDateDia15();
+
+  log('INFO', `${job.colaborador_nome}: preparando ${description} no valor de ${Number(job.valor || 0).toFixed(2)}.`);
+
+  await openEmployee(page, cpf);
+
+  const existing = await inspectExpenseDescriptions(page, descriptions);
+  if (existing.length) {
+    const exact = existing.find((row) => {
+      const cells = row.cells || [];
+      const expectedValue = brMoneyText(job.valor);
+      const hasValue = cells.some((cell) => String(cell).includes(expectedValue))
+        || String(row.text).includes(expectedValue);
+      return hasValue;
+    });
+
+    if (!exact) {
+      throw new Error(
+        `J√° existe movimento de B√¥nus desta compet√™ncia no GRM, mas com valor divergente. `
+        + `Lan√ßamento autom√°tico bloqueado para evitar duplicidade.`
+      );
+    }
+
+    await markSuccess(job, {
+      ok: true,
+      cpf,
+      descricao: description,
+      valor: Number(job.valor || 0),
+      data: date,
+      duplicate_guard: 'DESCRICAO_DA_COMPETENCIA_JA_EXISTIA_NO_GRM',
+      criado_agora: false,
+      linha_grm: exact.text,
+      verificado_em: new Date().toISOString(),
+    });
+    log('SUCCESS', `${job.colaborador_nome}: b√¥nus j√° existia no GRM; duplicidade bloqueada.`);
+    return;
+  }
+
+  if (DRY_RUN) {
+    await updateLaunch(job.id, {
+      status: 'PENDENTE',
+      iniciado_em: null,
+      grm_retorno: {
+        dry_run: true,
+        cpf,
+        descricao: description,
+        valor: Number(job.valor || 0),
+        data: date,
+        verificado_existente: false,
+      },
+    });
+    log('INFO', `${job.colaborador_nome}: DRY_RUN, nenhuma altera√ß√£o feita.`);
+    return;
+  }
+
+  await clickAddExpense(page);
+  const filled = await fillExpense(page, job, description);
+  await saveExpense(page);
+
+  const verified = await verifyExpense(page, cpf, job, descriptions);
+  if (!verified.ok) {
+    throw new Error(
+      'GRM fechou o formul√°rio, mas o lan√ßamento do B√¥nus n√£o foi localizado no Caixa '
+      + 'com Descri√ß√£o + B√¥nus e Premia√ß√µes + N. Documento 0 + Valor esperados. '
+      + 'N√£o reprocesse sem conferir o cadastro para evitar duplicidade.'
+    );
+  }
+
+  await markSuccess(job, {
+    ok: true,
+    cpf,
+    descricao: description,
+    valor: filled.value,
+    data: filled.date,
+    criado_agora: true,
+    verificado_no_grm: true,
+    linha_grm: verified.row?.text || null,
+    verificado_em: new Date().toISOString(),
+  });
+  log('SUCCESS', `${job.colaborador_nome}: b√¥nus lan√ßado e verificado no GRM.`);
+}
+
+async function main() {
+  ensureDir(SCREENSHOT_DIR);
+  await recoverStaleProcessing();
+  const jobs = await loadPendingJobs();
+  if (!jobs.length) {
+    log('INFO', 'Nenhum B√¥nus pendente para lan√ßar.');
+    return;
+  }
+
+  const collaborators = await loadCollaborators();
+  let browser;
+  let success = 0;
+  let errors = 0;
+
+  try {
+    browser = await launchBrowser();
+    const page = await browser.newPage();
+    page.setDefaultTimeout(DEFAULT_TIMEOUT);
+    page.setDefaultNavigationTimeout(60000);
+    if (DEBUG) page.on('console', (msg) => log('BROWSER', msg.text()));
+    await login(page);
+
+    for (const job of jobs) {
+      try {
+        await processJob(page, job, collaborators);
+        success += 1;
+      } catch (error) {
+        errors += 1;
+        const shot = await screenshot(page, job, 'erro');
+        try { await markError(job, error, shot); } catch (markErrorFailure) {
+          log('ERROR', `Falha ao registrar erro do lan√ßamento ${job.id}: ${markErrorFailure.message}`);
+        }
+        log('ERROR', `${job.colaborador_nome}: ${error.message}`);
+        try { await closeDialogs(page); } catch (_) {}
+      }
+    }
+  } finally {
+    if (browser) await browser.close();
+    await enqueueFollowupIfNeeded();
+  }
+
+  log(errors ? 'WARN' : 'SUCCESS', 'Agente de B√¥nus conclu√≠do.', {
+    processados: jobs.length,
+    sucesso: success,
+    erros: errors,
+    dry_run: DRY_RUN,
+  });
+
+  if (errors > 0) {
+    process.exitCode = 1;
+  }
+}
+
+main().catch((error) => {
+  log('ERROR', `Erro fatal no agente de B√¥nus: ${error.message}`, { stack: error.stack });
+  process.exitCode = 1;
+});
