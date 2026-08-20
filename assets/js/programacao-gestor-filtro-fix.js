@@ -6,15 +6,11 @@ const state = {
   restricted: false,
   allowedLabels: [],
   allowedKeys: new Set(),
-  coordinationLabels: [],
-  coordinationKeys: new Set(),
-  autoSelectedOnce: false,
 };
 
 // Valor sintético da opção "Todas" no seletor de Supervisão — não existe na
-// tabela supervisoes, é resolvido em tempo de carregamento (ver
-// programacao.js/programacao-gestor-ajustes.js) para a lista de supervisões
-// permitidas ao gestor que têm alguma O.S. acionável no dia.
+// tabela supervisoes. Quando selecionado, a Programação trabalha somente com
+// as supervisões explicitamente liberadas ao usuário.
 export const TODAS_SUPERVISOES = '__TODAS__';
 
 function norm(value) {
@@ -46,16 +42,15 @@ function parseList(value) {
 }
 
 // Marcadores de papel/perfil que às vezes aparecem misturados no campo livre
-// app_usuarios.supervisao (ex.: "Master" herdado de backfill legado) — não são
-// coordenações reais e não podem aparecer como se fossem uma.
-const NAO_COORDENACAO = new Set(['MASTER', 'ADMIN', 'ADMINISTRADOR', 'GESTOR', 'DIRETOR']);
+// app_usuarios.supervisao não são supervisões reais.
+const NAO_SUPERVISAO = new Set(['MASTER', 'ADMIN', 'ADMINISTRADOR', 'GESTOR', 'DIRETOR']);
 
 function uniqLabels(values) {
   const map = new Map();
   values.flatMap(parseList).forEach((item) => {
     const label = String(item || '').trim();
     const key = norm(label);
-    if (label && key && !NAO_COORDENACAO.has(key) && !map.has(key)) map.set(key, label);
+    if (label && key && !NAO_SUPERVISAO.has(key) && !map.has(key)) map.set(key, label);
   });
   return [...map.values()];
 }
@@ -82,47 +77,28 @@ function extractAllowedSupervisoes(appUser, context, relationRows = []) {
   ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
-// Coordenação não é uma supervisão literal. Ex.: "MATO GROSSO" deve liberar
-// "MATO GROSSO MT1 - Sinop", "MATO GROSSO MT2 - Sul" etc., mas não deve ser
-// inserida como uma opção falsa no select. O programacao.js já trabalha assim;
-// este hotfix precisa usar a mesma regra para não esconder O.S. válidas.
-function extractCoordinationLabels(appUser, context) {
-  return uniqLabels([
-    appUser?.coordenacao,
-    context?.coordenacao,
-    context?.user?.coordenacao,
-    context?.department?.name,
-  ]).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-}
-
 function buildAccess(appUser, context, relationRows = []) {
   const setor = appUser?.setor || context?.setor || context?.department?.name || context?.department?.code || '';
   const role = context?.user?.role || context?.perfil_codigo || context?.perfil_nome || context?.role || '';
   const master = isMasterContext(context);
   const allowedLabels = extractAllowedSupervisoes(appUser, context, relationRows);
-  const coordinationLabels = extractCoordinationLabels(appUser, context);
   const restricted = !master && (
     looksLikeGestor(setor)
     || looksLikeGestor(role)
     || allowedLabels.length > 0
-    || coordinationLabels.length > 0
   );
 
   return {
     restricted,
     allowedLabels,
     allowedKeys: new Set(allowedLabels.map(norm).filter(Boolean)),
-    coordinationLabels,
-    coordinationKeys: new Set(coordinationLabels.map(norm).filter((key) => key.length >= 4)),
   };
 }
 
 function optionAllowed(optionText) {
   if (!state.restricted) return true;
   const key = norm(optionText);
-  if (!key) return false;
-  if (state.allowedKeys.has(key)) return true;
-  return [...state.coordinationKeys].some((coordKey) => key.includes(coordKey));
+  return Boolean(key && state.allowedKeys.has(key));
 }
 
 function setFeedback(message, type = 'ok') {
@@ -145,11 +121,6 @@ function addAllowedOptions(select) {
     select.appendChild(option);
     existing.add(key);
   });
-
-  // A coordenação é usada somente como prefixo/token para liberar as
-  // supervisões reais existentes. Nunca adicionamos a própria coordenação como
-  // opção. A opção "Todas" só é útil quando há mais de uma supervisão visível;
-  // isso é resolvido em filterSelect após aplicar os tokens.
 }
 
 function ensureTodasOption(select, visibleCount) {
@@ -175,10 +146,10 @@ function filterSelect() {
 
   addAllowedOptions(select);
 
-  if (!state.allowedLabels.length && !state.coordinationKeys.size) {
+  if (!state.allowedLabels.length) {
     select.value = '';
     select.disabled = true;
-    setFeedback('Seu usuário está como Gestor, mas não possui supervisão ou coordenação liberada.', 'error');
+    setFeedback('Seu usuário está como Gestor, mas não possui supervisão liberada.', 'error');
     return;
   }
 
@@ -204,21 +175,18 @@ function filterSelect() {
   if (!visibleCount) {
     select.value = '';
     select.disabled = true;
-    setFeedback('Nenhuma supervisão compatível com o acesso do usuário foi encontrada no seletor.', 'error');
+    setFeedback('Nenhuma supervisão liberada para este usuário foi encontrada no seletor.', 'error');
     return;
   }
 
-  // Com mais de uma supervisão liberada, "Todas" é o padrão mais útil. Para
-  // coordenadores, isso inclui todas as supervisões reais que começam pela
-  // coordenação (ex.: MATO GROSSO -> MT1/MT2/MT3/MT4).
   const defaultValue = visibleCount > 1 ? TODAS_SUPERVISOES : firstAllowed;
 
+  // Importante: não dispara "change" ao corrigir/selecionar automaticamente.
+  // programacao-gestor-ajustes.js trata qualquer change como ação do gestor e
+  // chama renderIdle(), o que apagava a programação já carregada e causava o
+  // efeito de piscar/reiniciar. A seleção automática só ajusta o valor.
   if (!select.value || select.selectedOptions?.[0]?.disabled || (select.value === TODAS_SUPERVISOES && visibleCount === 1)) {
     select.value = defaultValue;
-    if (!state.autoSelectedOnce) {
-      state.autoSelectedOnce = true;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    }
   }
 
   select.disabled = visibleCount === 1;
