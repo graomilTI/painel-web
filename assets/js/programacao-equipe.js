@@ -375,6 +375,31 @@ export function isDataPassada(dataReferencia) {
 // FINALIZAR já saíram do fluxo do dia. A triagem (mudar status) e a atribuição
 // passam a conviver na mesma tela.
 const OS_COLUNAS = 'id,numero_os,contrato,cliente,servico,embarque,destino,ponto_embarque_id,ponto1_latitude,ponto1_longitude,supervisao,status_gestor,remanescente,observacao_logistica,data_os,configurada_em';
+const OS_PAGE_SIZE = 1000;
+
+async function loadOsAbertasPaginadas(supervisao) {
+  const rows = [];
+
+  for (let from = 0; ; from += OS_PAGE_SIZE) {
+    let query = supabase
+      .from('operacional_os')
+      .select(OS_COLUNAS)
+      .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER');
+    query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
+
+    const { data, error } = await query
+      .order('data_os', { ascending: false })
+      .order('numero_os', { ascending: false })
+      .range(from, from + OS_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < OS_PAGE_SIZE) break;
+  }
+
+  return rows;
+}
 
 // dataReferencia é opcional (só a Etapa 1 passa) — quando informada, também
 // busca as O.S. FINALIZAR do dia (configurada_em na data selecionada) pra
@@ -383,14 +408,7 @@ const OS_COLUNAS = 'id,numero_os,contrato,cliente,servico,embarque,destino,ponto
 // (só as não finalizadas) — usado pela Etapa 2/mapa, que já filtra por
 // ATENDER na frente e não precisa do histórico de finalizadas.
 export async function loadOsRelevantes(supervisao, dataReferencia) {
-  let query = supabase.from('operacional_os').select(OS_COLUNAS);
-  query = Array.isArray(supervisao) ? query.in('supervisao', supervisao) : query.eq('supervisao', supervisao);
-  const { data, error } = await query
-    .or('status_gestor.is.null,status_gestor.eq.PENDENTE,status_gestor.eq.AGUARDAR,status_gestor.eq.ATENDER')
-    .order('data_os', { ascending: false })
-    .order('numero_os', { ascending: false })
-    .limit(400);
-  if (error) throw error;
+  const abertas = await loadOsAbertasPaginadas(supervisao);
 
   let finalizadas = [];
   if (dataReferencia) {
@@ -404,7 +422,9 @@ export async function loadOsRelevantes(supervisao, dataReferencia) {
     if (finResult.error) console.warn('[equipe] O.S. finalizadas do dia:', finResult.error);
     finalizadas = finResult.data || [];
   }
-  return [...(data || []), ...finalizadas];
+  const porId = new Map();
+  [...abertas, ...finalizadas].forEach((os) => porId.set(String(os.id), os));
+  return [...porId.values()];
 }
 
 export function statusNorm(os) {
