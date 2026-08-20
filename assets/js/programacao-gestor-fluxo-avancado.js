@@ -1,5 +1,5 @@
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260811-disponiveis-todos';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260807-frota-combo1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260820-os-paginadas';
 import { renderProgramacaoRecusas } from './programacao-recusas.js?v=20260730-recusas1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
