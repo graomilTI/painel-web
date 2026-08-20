@@ -1569,34 +1569,20 @@ export function renderContent(content, userContext) {
     const valorExtras=extras.reduce((s,e)=>s+(e.tipo==='desconto'?-e.valor:e.valor),0);
     const total=valorDiarias+valorExtras;
     const obs=document.getElementById('checkoutObs')?.value.trim()||'';
-    const colabs=selectedColabs.map((c) => c.nome_colaborador||c.nome).filter(Boolean).join(', ');
-    const destino=[state.selected.cidade,state.selected.uf].filter(Boolean).join('/');
-    const checkin=state.selected.data_checkin||state.selected.data_checkin_prevista;
-    const checkout=state.selected.data_checkout||state.selected.data_checkout_prevista;
     setFeedback('checkoutFeedback','Enviando ao financeiro...');
-    const pagamentoPayload={
-      origem_setor:'HOSPEDAGEM',origem_tabela:'hospedagem_reservas',origem_id:state.selected.reserva_id,
-      origem_codigo:state.selected.codigo||null,competencia:checkin,
-      descricao:`Hospedagem ${destino}${checkin||checkout?` · ${brDate(checkin)} até ${brDate(checkout)}`:''}${colabs?` · ${colabs}`:''}`.trim(),
-      favorecido_nome:state.selected.hotel||'Hotel',forma_pagamento:'PIX',valor:total,
-      status:'PENDENTE',prioridade:'NORMAL',observacoes:obs||null,
-      solicitado_por:userContext?.user?.id||null,solicitado_por_nome:userContext?.user?.name||null,
-      atualizado_por:userContext?.user?.id||null,atualizado_por_nome:userContext?.user?.name||null
-    };
-    const {error}=await supabase.from('financeiro_pagamentos').upsert(pagamentoPayload,{onConflict:'origem_tabela,origem_id'});
-    if (error) { setFeedback('checkoutFeedback',`${error.message}. Verifique se o módulo financeiro está configurado.`,'err'); return; }
-    const finPayload={reserva_id:state.selected.reserva_id,status_financeiro:'ENVIADO_AO_FINANCEIRO',valor_total:total};
-    if (state.selected.financeiro_id) await supabase.from('hospedagem_financeiro').update(finPayload).eq('id',state.selected.financeiro_id);
-    else await supabase.from('hospedagem_financeiro').insert(finPayload);
-    const {data:lote}=await supabase.from('hospedagem_checkout_lotes').insert({reserva_id:state.selected.reserva_id,hotel_id:state.selected.hotel_id||null,data_checkout:new Date().toISOString().slice(0,10),valor_diarias:valorDiarias,valor_extras:valorExtras,valor_total:total,status:'PENDENTE',observacoes:obs||null}).select('id').single();
-    if(lote?.id) await supabase.from('hospedagem_checkout_lote_colaboradores').insert(selectedColabs.map((c)=>({lote_id:lote.id,reserva_colaborador_id:c.id||null,nome_colaborador:c.nome_colaborador||c.nome||'-'})));
-    if(extras.length) await supabase.from('hospedagem_custos_extras').insert(extras.map((extra)=>({solicitacao_id:state.selected.solicitacao_id,reserva_id:state.selected.reserva_id,tipo:extra.tipo==='desconto'?'DESCONTO':'OUTROS',descricao:extra.descricao,quantidade:1,valor_unitario:extra.valor,valor_total:extra.valor})));
     const parcial=selectedColabs.length<allColabs.length;
-    await supabase.from('hospedagem_reservas').update({
-      status_hospedagem:parcial?'HOSPEDADO':'CHECKOUT_REALIZADO',
-      observacao_hospedagem:appendObservacaoProcesso(state.selected,'Enviado ao financeiro',[money(total),extras.length?extras.map((e) => `${e.tipo==='desconto'?'Desconto':'Extra'}: ${e.descricao} ${money(e.valor)}`).join('; '):'',obs]),
-      atualizado_por:userContext?.user?.id||null
-    }).eq('id',state.selected.reserva_id);
+    const colaboradoresPayload=selectedColabs.map((c)=>({
+      solicitacao_colaborador_id:c.solicitacao_colaborador_id||c.id||null,
+      nome_colaborador:c.nome_colaborador||c.nome||'-'
+    }));
+    const {error}=await supabase.rpc('hospedagem_realizar_checkout',{
+      p_reserva_id:state.selected.reserva_id,
+      p_colaboradores:colaboradoresPayload,
+      p_valor_diarias:valorDiarias,
+      p_extras:extras,
+      p_observacoes:obs||null
+    });
+    if (error) { setFeedback('checkoutFeedback',`${error.message}. Nenhuma etapa do checkout foi gravada.`,'err'); return; }
     setFeedback('checkoutFeedback',parcial?'Checkout parcial registrado; os demais colaboradores permanecem hospedados.':'Checkout da equipe registrado com sucesso.','ok');
     await loadRows();
     setTimeout(() => document.getElementById('modalCheckout').classList.remove('open'),800);
@@ -1744,8 +1730,8 @@ export function renderContent(content, userContext) {
     if (motivo===null) return;
     const motivoLimpo=String(motivo||'').trim();
     if (!motivoLimpo) { window.alert('Informe o motivo da recusa.'); return; }
-    await supabase.from('hospedagem_solicitacoes').update({status_solicitacao:'CANCELADA'}).eq('id',row.solicitacao_id);
-    if (row.reserva_id) await supabase.from('hospedagem_reservas').update({status_hospedagem:'CANCELADA',observacao_hospedagem:`Recusada: ${motivoLimpo}`}).eq('id',row.reserva_id);
+    const {error}=await supabase.rpc('hospedagem_cancelar_solicitacao',{p_solicitacao_id:row.solicitacao_id,p_motivo:motivoLimpo});
+    if(error){window.alert(`Erro ao recusar: ${error.message}`);return;}
     await loadRows();
   }
 

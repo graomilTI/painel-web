@@ -706,34 +706,16 @@ export function renderContent(content, userContext) {
       status_solicitacao: 'SOLICITADA',
     };
 
-    const { data, error } = await supabase
-      .from('hospedagem_solicitacoes')
-      .insert(payload)
-      .select('id,codigo')
-      .single();
+    const { data, error } = await supabase.rpc('hospedagem_criar_solicitacao', {
+      p_solicitacao: payload,
+      p_colaboradores: colaboradores,
+    });
 
     if (error) {
       setFeedback(error.message || 'Erro ao criar solicitação.', 'err');
       btn.disabled = false;
       return;
     }
-
-    const itens = colaboradores.map((c) => ({ ...c, solicitacao_id: data.id }));
-    const { error: colabError } = await supabase.from('hospedagem_solicitacao_colaboradores').insert(itens);
-    if (colabError) {
-      setFeedback(`Solicitação criada, mas houve erro ao vincular colaboradores: ${colabError.message}`, 'err');
-      btn.disabled = false;
-      return;
-    }
-
-    await supabase.from('hospedagem_eventos').insert({
-      solicitacao_id: data.id,
-      usuario_id: userContext?.user?.id || null,
-      usuario_nome: userContext?.user?.name || null,
-      tipo_evento: 'SOLICITACAO_CRIADA',
-      descricao: 'Solicitação criada pelo gestor.',
-      status_novo: 'SOLICITADA',
-    });
 
     resetForm();
     setFeedback(`Solicitação ${data.codigo || ''} enviada com sucesso.`, 'ok');
@@ -841,18 +823,11 @@ export function renderContent(content, userContext) {
   async function acaoCancelar(id) {
     const motivo = window.prompt('Motivo do cancelamento (opcional):', '') || null;
     if (!window.confirm('Confirmar cancelamento desta hospedagem?')) return;
-    const { error } = await supabase
-      .from('hospedagem_solicitacoes')
-      .update({
-        status_solicitacao: 'CANCELADA',
-        cancelado_em: new Date().toISOString(),
-        cancelado_por: userContext?.user?.id || null,
-        motivo_cancelamento: motivo,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
+    const { error } = await supabase.rpc('hospedagem_cancelar_solicitacao', {
+      p_solicitacao_id: id,
+      p_motivo: motivo,
+    });
     if (error) { window.alert(`Erro ao cancelar: ${error.message}`); return; }
-    await registrarEvento(id, 'CANCELADA', motivo ? `Cancelada pelo gestor: ${motivo}` : 'Cancelada pelo gestor.', null, 'CANCELADA');
     await loadSolicitacoes(false);
   }
 

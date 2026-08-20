@@ -223,57 +223,41 @@ async function upsertFinance(reservaId, payload) {
 }
 async function consumeCredits(hotelId, reservaId, limit) {
   if (!hotelId || limit <= 0) return 0;
-  const { data: advances } = await supabase.from('hospedagem_adiantamentos').select('*').eq('hotel_id',hotelId).eq('status','DISPONIVEL').gt('saldo',0).order('created_at');
-  let remaining = limit, used = 0;
-  for (const adv of (advances || [])) {
-    if (remaining <= 0) break;
-    const use = Math.min(remaining,num(adv.saldo)); if (use <= 0) continue;
-    const saldo = num(adv.saldo)-use;
-    await supabase.from('hospedagem_adiantamentos').update({ saldo, status:saldo<=0?'UTILIZADO':'DISPONIVEL' }).eq('id',adv.id);
-    await supabase.from('hospedagem_adiantamento_movimentos').insert({ adiantamento_id:adv.id,reserva_id:reservaId,tipo:'UTILIZACAO',valor:use,observacoes:'Crédito aplicado à hospedagem' });
-    remaining -= use; used += use;
-  }
-  return used;
+  const { data, error } = await supabase.rpc('hospedagem_consumir_creditos', {
+    p_hotel_id:hotelId,
+    p_reserva_id:reservaId,
+    p_limite:limit
+  });
+  if (error) throw error;
+  return num(data);
 }
 async function confirmPaymentWithProof() {
   const reservaId = state.payment.reservaId; if (!reservaId) return;
   await persistInlineExtras();
-  const { data: rrows } = await supabase.from('hospedagem_painel_geral').select('*').eq('reserva_id',reservaId).limit(1);
-  const row = rrows?.[0]; if (!row) return;
-  const { data: extras } = await supabase.from('hospedagem_custos_extras').select('*').eq('reserva_id',reservaId);
-  const base = num(row.valor_total_previsto || (num(row.valor_diaria) * Math.max(1,num(row.quantidade_diarias||1)) * Math.max(1,num(row.quantidade_quartos||1))));
-  const total = Math.max(0, base + (extras || []).reduce((s,e) => s + signedExtra(e),0));
-  const creditUsed = await consumeCredits(row.hotel_id,reservaId,total);
   const paidCash = num($('#pagarValor')?.value);
-  const paid = Math.min(total, paidCash + creditUsed);
-  const status = paid >= total ? 'PAGO' : 'PARCIAL';
-  const taxa = $('#pagarTaxaBancaria')?.checked ? 2 : 0;
-  const { data: userData } = await supabase.auth.getUser();
-  const payload = { valor_original:total,valor_total:total,valor_pago:paid,saldo:Math.max(0,total-paid),pagamento_parcial:status==='PARCIAL',status_financeiro:status,data_pagamento:today(),pago_em:new Date().toISOString(),responsavel_pagamento:userData?.user?.email||'Hotéis',responsavel_pagamento_id:userData?.user?.id||null,origem_pagamento:'HOTEIS',taxa_bancaria:taxa,valor_comprovante:paidCash+taxa,classificacao_pagamento:status==='PARCIAL'?'PARCIAL':'TOTAL' };
-  const { error } = await upsertFinance(reservaId,payload); if (error) throw error;
-  if (status === 'PAGO') await supabase.from('hospedagem_checkout_lotes').update({status:'PAGO'}).eq('reserva_id',reservaId).eq('status','PENDENTE');
+  const { data: lotes, error: lotError } = await supabase.from('hospedagem_checkout_lotes').select('id').eq('reserva_id',reservaId).in('status',['PENDENTE','PARCIAL']).order('created_at',{ascending:true}).limit(1);
+  if (lotError) throw lotError;
+  const loteId=lotes?.[0]?.id;
+  if (!loteId) throw new Error('Nenhum lote financeiro pendente foi encontrado.');
+  const { data: result, error } = await supabase.rpc('hospedagem_confirmar_pagamento_lote', {
+    p_lote_id:loteId,
+    p_valor_pago:paidCash,
+    p_comprovante_url:null
+  });
+  if (error) throw error;
+  const status=String(result?.status||'PARCIAL').toUpperCase();
   const feedback = $('#pagarFeedback'); if (feedback) { feedback.textContent = status==='PAGO'?'Pagamento confirmado pelo comprovante anexado.':'Comprovante anexado; pagamento registrado como parcial.'; feedback.className='adm-hosp-feedback ok'; }
   await refreshHotels();
 }
 async function sendToFinance() {
   const reservaId = state.payment.reservaId; if (!reservaId) return;
   await persistInlineExtras();
-  const { data: rrows } = await supabase.from('hospedagem_painel_geral').select('*').eq('reserva_id',reservaId).limit(1);
-  const row = rrows?.[0]; if (!row) return;
-  const hotel = hotelById(row.hotel_id);
-  const { data: extras } = await supabase.from('hospedagem_custos_extras').select('*').eq('reserva_id',reservaId);
-  const base = num(row.valor_total_previsto || (num(row.valor_diaria) * Math.max(1,num(row.quantidade_diarias||1)) * Math.max(1,num(row.quantidade_quartos||1))));
-  const total = Math.max(0,base+(extras||[]).reduce((s,e)=>s+signedExtra(e),0));
-  const creditUsed = await consumeCredits(row.hotel_id,reservaId,total), due = Math.max(0,total-creditUsed);
-  if (due <= 0) {
-    await upsertFinance(reservaId,{valor_original:total,valor_total:total,valor_pago:total,saldo:0,status_financeiro:'PAGO',origem_pagamento:'CREDITO',data_pagamento:today(),pago_em:new Date().toISOString()});
-    const feedback=$('#pagarFeedback');if(feedback){feedback.textContent='Hospedagem quitada integralmente com crédito do hotel.';feedback.className='adm-hosp-feedback ok';}
-    await refreshHotels(); return;
-  }
-  const { data: userData } = await supabase.auth.getUser();
-  const pg = { origem_setor:'HOSPEDAGEM',origem_tabela:'hospedagem_reservas',origem_id:reservaId,origem_codigo:row.codigo||null,competencia:row.data_checkin||row.data_checkin_prevista||today(),descricao:`Hospedagem ${row.hotel||hotel?.nome||''} · ${row.cidade||''}/${row.uf||''}`,favorecido_nome:hotel?.razao_social||hotel?.nome||row.hotel||'Hotel',forma_pagamento:'PIX',valor:due,status:'PENDENTE',prioridade:'NORMAL',observacoes:creditUsed?`Crédito de ${money(creditUsed)} aplicado antes do envio.`:null,solicitado_por:userData?.user?.id||null,solicitado_por_nome:userData?.user?.email||null,atualizado_por:userData?.user?.id||null,atualizado_por_nome:userData?.user?.email||null };
-  const { error } = await supabase.from('financeiro_pagamentos').upsert(pg,{onConflict:'origem_tabela,origem_id'}); if (error) throw error;
-  await upsertFinance(reservaId,{valor_original:total,valor_total:total,valor_pago:creditUsed,saldo:due,status_financeiro:'ENVIADO_AO_FINANCEIRO',origem_pagamento:'FINANCEIRO',enviado_financeiro_em:new Date().toISOString()});
+  const { data: lotes, error: lotError } = await supabase.from('hospedagem_checkout_lotes').select('id').eq('reserva_id',reservaId).in('status',['PENDENTE','PARCIAL']).order('created_at',{ascending:false}).limit(1);
+  if (lotError) throw lotError;
+  const loteId=lotes?.[0]?.id;
+  if (!loteId) throw new Error('Faça o checkout antes de enviar ao Financeiro.');
+  const { error } = await supabase.rpc('hospedagem_enviar_lote_financeiro', { p_reserva_id:reservaId,p_lote_id:loteId });
+  if (error) throw error;
   $('#modalPagar')?.classList.remove('open'); state.payment.open=false;
   await refreshHotels();
 }
