@@ -16,6 +16,9 @@ assert.equal(norm('Salário de Intermitente'), 'SALARIO DE INTERMITENTE');
 assert.deepEqual(requiredExpenses('Efetivo', 100, types).map((x) => x.oexCode), [13]);
 assert.deepEqual(requiredExpenses('Intermitente', 105, types).map((x) => [x.oexCode, x.amount]), [[63, 105], [13, 30]]);
 assert.deepEqual(requiredExpenses('Diarista', 95, types).map((x) => [x.oexCode, x.amount]), [[65, 95], [13, 30]]);
+assert.deepEqual(requiredExpenses('Efetivo', 100, types, { programmed: false }), []);
+assert.deepEqual(requiredExpenses('Intermitente', 105, types, { programmed: false }).map((x) => [x.oexCode, x.amount]), [[63, 105]]);
+assert.deepEqual(requiredExpenses('Diarista', 95, types, { programmed: false }).map((x) => [x.oexCode, x.amount]), [[65, 95]]);
 for (const contractType of ['Efetivo', 'Intermitente', 'Diarista']) {
   assert.equal(
     requiredExpenses(contractType, 100, types).some((x) => norm(x.oexName) === 'CAFE'),
@@ -31,4 +34,7 @@ assert.doesNotThrow(() => assertDirectExpenseAllowed(types.get('ALMOCO')));
 assert.equal(decide([{ ofmStatus: 'A' }]).action, 'NONE');
 assert.equal(decide([{ ofmStatus: 'P', ofmCode: 2 }]).action, 'APPROVE');
 assert.equal(decide([{ ofmStatus: 'N' }]).action, 'CREATE');
-console.log('OK: regras de despesas retroativas; Café bloqueado para lançamento direto');
+// A decisão recebe somente lançamentos da categoria correspondente (oexCode),
+// portanto uma despesa de outro tipo nunca bloqueia Salário/Serviços/Almoço.
+assert.equal(decide([]).action, 'CREATE');
+console.log('OK: regras por laudo/programação e por categoria correspondente; Café bloqueado');
