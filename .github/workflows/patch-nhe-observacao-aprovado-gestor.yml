@@ -3,7 +3,7 @@ name: Patch NHE observacao aprovado gestor
 on:
   push:
     branches:
-      - 'fix/nhe-observacao-aprovado-gestor'
+      - main
     paths:
       - '.github/workflows/patch-nhe-observacao-aprovado-gestor.yml'
 
@@ -14,10 +14,10 @@ jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: fix/nhe-observacao-aprovado-gestor
+          ref: main
           fetch-depth: 0
 
       - name: Trocar observacao fixa
@@ -63,4 +63,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- agentes-grm-sync/grm-sync-lancar-nhe.js
           git commit -m 'fix(nhe): usar observação Aprovado pelo Gestor'
-          git push origin HEAD:fix/nhe-observacao-aprovado-gestor
+          git push origin HEAD:main
