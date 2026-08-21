@@ -1,6 +1,11 @@
+import { supabase } from './supabaseClient.js';
+
 const MAX_WIDTH = 768;
 let saldoFiltro = '';
 let raf = 0;
+let supervisoesLiberadas = null;
+let supervisoesErro = '';
+let supervisoesPromise = null;
 
 function isGestorMobile() {
   return document.body.classList.contains('mobile-gestor-mode') && window.innerWidth <= MAX_WIDTH;
@@ -9,6 +14,49 @@ function isGestorMobile() {
 function isAtualizarTab() {
   const active = document.querySelector('.log-tab.active');
   return active?.dataset?.tab === 'atualizar' || location.hash === '#atualizar';
+}
+
+function normalizeSupervisao(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+async function carregarSupervisoesLiberadas() {
+  if (supervisoesPromise) return supervisoesPromise;
+
+  if (isAtualizarTab()) {
+    document.body.classList.add('logistica-atualizar-supervisao-pendente');
+  }
+
+  supervisoesPromise = (async () => {
+    const { data, error } = await supabase
+      .from('programacao_usuario_supervisoes')
+      .select('supervisao')
+      .eq('ativo', true);
+
+    if (error) throw error;
+
+    supervisoesLiberadas = new Set(
+      (Array.isArray(data) ? data : [])
+        .map((row) => normalizeSupervisao(row?.supervisao))
+        .filter(Boolean)
+    );
+    supervisoesErro = '';
+  })().catch((error) => {
+    console.error('[logistica#atualizar] Falha ao carregar supervisões liberadas:', error);
+    // Falha fechada: se a permissão não puder ser validada, nenhuma OS é exibida.
+    supervisoesLiberadas = new Set();
+    supervisoesErro = 'Não foi possível validar as supervisões liberadas para este usuário.';
+  }).finally(() => {
+    document.body.classList.remove('logistica-atualizar-supervisao-pendente');
+    schedule();
+  });
+
+  return supervisoesPromise;
 }
 
 function parsePtBrNumber(value) {
@@ -25,6 +73,60 @@ function remanescenteDaLinha(row) {
   const cell = row.querySelector('td[data-label="Remanescente"]');
   if (!cell) return null;
   return parsePtBrNumber(cell.textContent);
+}
+
+function supervisaoDaLinha(row) {
+  const cell = row.querySelector('td[data-label="O.S."]');
+  if (!cell) return '';
+  const detalhes = cell.querySelectorAll('small.muted');
+  const supervisao = detalhes.length ? detalhes[detalhes.length - 1]?.textContent : '';
+  return normalizeSupervisao(supervisao);
+}
+
+function atualizarAvisoSupervisao() {
+  let aviso = document.getElementById('logisticaSupervisaoAviso');
+
+  if (!isAtualizarTab() || supervisoesLiberadas === null || supervisoesLiberadas.size > 0) {
+    aviso?.remove();
+    return;
+  }
+
+  const anchor = document.querySelector('#logContent .atz-filtros') || document.querySelector('#logContent .log-table');
+  if (!anchor) return;
+
+  if (!aviso) {
+    aviso = document.createElement('div');
+    aviso.id = 'logisticaSupervisaoAviso';
+    aviso.className = 'logistica-supervisao-aviso';
+    anchor.parentElement?.insertBefore(aviso, anchor);
+  }
+
+  aviso.textContent = supervisoesErro || 'Nenhuma supervisão está liberada para este usuário.';
+}
+
+function aplicarFiltroSupervisao() {
+  if (!isAtualizarTab()) {
+    document.querySelectorAll('#logContent tr.atz-supervisao-hidden').forEach((row) => {
+      row.classList.remove('atz-supervisao-hidden');
+    });
+    atualizarAvisoSupervisao();
+    return;
+  }
+
+  const rows = document.querySelectorAll('#logContent .log-table tbody tr[data-os-row]');
+
+  if (supervisoesLiberadas === null) {
+    rows.forEach((row) => row.classList.add('atz-supervisao-hidden'));
+    return;
+  }
+
+  rows.forEach((row) => {
+    const supervisao = supervisaoDaLinha(row);
+    const liberada = Boolean(supervisao) && supervisoesLiberadas.has(supervisao);
+    row.classList.toggle('atz-supervisao-hidden', !liberada);
+  });
+
+  atualizarAvisoSupervisao();
 }
 
 function aplicarFiltroSaldo() {
@@ -92,6 +194,22 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'logisticaAtualizarMobileFiltrosStyles';
   style.textContent = `
+    #logContent tr.atz-supervisao-hidden,
+    body.logistica-atualizar-supervisao-pendente #logContent tr[data-os-row] {
+      display: none !important;
+    }
+
+    #logContent .logistica-supervisao-aviso {
+      margin: 10px 0 12px;
+      padding: 11px 13px;
+      border: 1px solid rgba(245,158,11,.30);
+      border-radius: 12px;
+      background: rgba(245,158,11,.08);
+      color: #fde68a;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
     @media (max-width: ${MAX_WIDTH}px) {
       body.mobile-gestor-mode #logContent .atz-filtros-organizados {
         display: grid !important;
@@ -178,11 +296,13 @@ function injectStyles() {
 function schedule() {
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
+    aplicarFiltroSupervisao();
     organizarFiltros();
   });
 }
 
 injectStyles();
+carregarSupervisoesLiberadas();
 
 document.addEventListener('click', (event) => {
   const button = event.target.closest('[data-atualizar-saldo-filter]');
@@ -195,5 +315,12 @@ document.addEventListener('click', (event) => {
 
 new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
 window.addEventListener('resize', schedule, { passive: true });
-window.addEventListener('hashchange', schedule);
+window.addEventListener('hashchange', () => {
+  if (isAtualizarTab() && supervisoesLiberadas === null) {
+    document.body.classList.add('logistica-atualizar-supervisao-pendente');
+  } else {
+    document.body.classList.remove('logistica-atualizar-supervisao-pendente');
+  }
+  schedule();
+});
 schedule();
