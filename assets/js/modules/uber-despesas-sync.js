@@ -278,6 +278,11 @@ function ensureOrganizerStyle() {
   const style = document.createElement('style');
   style.id = 'uberOrganizerStyle';
   style.textContent = `
+    .uber-hero{padding:0!important;min-height:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;display:flex!important;justify-content:flex-end!important;align-items:center!important}
+    .uber-hero>div:not(.uber-actions){display:none!important}
+    .uber-hero .uber-actions{margin:0!important;width:auto!important;justify-content:flex-end!important;gap:8px!important}
+    .uber-hero .uber-btn{min-height:38px!important;padding:8px 12px!important}
+    .uber-grid{margin-top:10px!important}
     .uber-table th[data-uber-sort-col]{cursor:pointer;user-select:none;white-space:nowrap}
     .uber-table th[data-uber-sort-col]:hover{background:rgba(22,101,52,.28)}
     .uber-table th[data-uber-sort-col]::after{content:' ↕';opacity:.38;font-size:11px}
@@ -287,8 +292,26 @@ function ensureOrganizerStyle() {
   document.head.appendChild(style);
 }
 
+function compactUberLayout() {
+  const hero = document.querySelector('.uber-hero');
+  if (hero) {
+    [...hero.children].forEach((child) => {
+      if (!child.classList?.contains('uber-actions')) child.remove();
+    });
+  }
+
+  document.querySelectorAll('.uber-table').forEach((table) => {
+    const headers = [...table.querySelectorAll('thead th')];
+    const categoryIndex = headers.findIndex((th) => /^(CATEGORIA)$/i.test((th.textContent || '').trim()));
+    if (categoryIndex < 0) return;
+    headers[categoryIndex]?.remove();
+    table.querySelectorAll('tbody tr').forEach((row) => row.cells?.[categoryIndex]?.remove());
+  });
+}
+
 function decorateUberTables() {
   ensureOrganizerStyle();
+  compactUberLayout();
   document.querySelectorAll('.uber-table').forEach((table) => {
     const headers = [...table.querySelectorAll('thead th')];
     const group = tableGroup(table);
@@ -305,7 +328,9 @@ function decorateUberTables() {
       else delete th.dataset.sortDirection;
     });
 
-    if (state.index !== null) applyTableSort(table, state.index, state.direction);
+    if (state.index !== null && state.index < headers.length - 1) {
+      applyTableSort(table, state.index, state.direction);
+    }
   });
 }
 
