@@ -222,6 +222,7 @@ const sortState = {
   caixa: { index: null, direction: 'asc' },
   valida: { index: null, direction: 'asc' },
 };
+const defaultRefreshButtons = new WeakSet();
 
 function tableGroup(table) {
   if (table.closest('[data-conferir]')) return 'conferir';
@@ -261,14 +262,15 @@ function applyTableSort(table, index, direction) {
   if (!tbody) return;
   const rows = [...tbody.rows].filter((row) => !row.querySelector('.uber-empty'));
   const multiplier = direction === 'desc' ? -1 : 1;
-
-  rows.sort((a, b) => {
+  const sorted = [...rows].sort((a, b) => {
     const av = cellSortValue(a.cells[index], index);
     const bv = cellSortValue(b.cells[index], index);
     return compareValues(av, bv) * multiplier;
   });
 
-  rows.forEach((row) => tbody.appendChild(row));
+  const changed = sorted.some((row, position) => row !== rows[position]);
+  if (!changed) return;
+  sorted.forEach((row) => tbody.appendChild(row));
 }
 
 function ensureOrganizerStyle() {
@@ -323,17 +325,17 @@ function applyDefaultDateInputs() {
 }
 
 function scheduleDefaultRefresh() {
-  if (window.__uberDefaultPeriodRefreshScheduled) return;
-  window.__uberDefaultPeriodRefreshScheduled = true;
+  const button = document.querySelector('[data-refresh]');
+  if (!button || defaultRefreshButtons.has(button)) return;
+  defaultRefreshButtons.add(button);
   let attempts = 0;
 
   const tryRefresh = () => {
     attempts += 1;
     const ready = applyDefaultDateInputs();
-    const button = document.querySelector('[data-refresh]');
     const feedback = document.querySelector('[data-feedback]')?.textContent || '';
 
-    if (!ready || !button) {
+    if (!ready) {
       if (attempts < 30) setTimeout(tryRefresh, 100);
       return;
     }
