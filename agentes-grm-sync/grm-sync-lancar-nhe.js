@@ -32,7 +32,7 @@
  *     campo) — um .click() sintético via DOM não abre o menu (confirmado por
  *     teste ao vivo: DOM click abre o menu de navegação lateral por engano).
  *   - Motivo fixo escolhido pelo usuário: "Falta de Caminhão".
- *   - Obs. fixa escolhida pelo usuário: "Lançado via Bot".
+ *   - Obs. fixa escolhida pelo usuário: "Lançado Admin".
  */
 
 process.env.TMPDIR = process.env.TMPDIR || '/tmp';
@@ -58,7 +58,7 @@ var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 
 var RAIO_M = Number(process.env.NHE_LANCAMENTO_RAIO_M || 2000);
 var MOTIVO_FIXO = process.env.NHE_LANCAMENTO_MOTIVO || 'Falta de Caminhão';
-var OBS_FIXA = process.env.NHE_LANCAMENTO_OBS || 'Lançado via Bot';
+var OBS_FIXA = 'Lançado Admin';
 var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
@@ -781,9 +781,7 @@ async function carregarJaLancadas(dataReferencia) {
 }
 
 function observacaoPara(candidato) {
-  if (!candidato.viaGestor) return OBS_FIXA;
-  var km = (candidato.loginMatch.distancia / 1000).toFixed(1);
-  return 'Lançamento BOT - ' + km + 'km de distancia';
+  return OBS_FIXA;
 }
 
 async function salvarResultado(candidato, patch) {
@@ -1541,8 +1539,8 @@ async function main() {
 
       if (loginMatch.distancia > RAIO_M && !args.forcar) {
         // Colaborador fora do raio: não fica mais pendente sem mais — lança
-        // no nome do gestor da regional (pedido do usuário 21/07), com Obs.
-        // indicando a distância. Só cai pro comportamento antigo (fica
+        // no nome do gestor da regional (pedido do usuário 21/07), mantendo a
+        // observação fixa 'Lançado Admin'. Só cai pro comportamento antigo (fica
         // PENDENTE) se não achar nenhum gestor pra essa Coordenação/Supervisão.
         // operacional_os não tem coluna "coordenação" própria — só supervisão
         // (texto "MATO GROSSO MT4 - Geral"); a coordenação é o prefixo antes
