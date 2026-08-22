@@ -1,4 +1,4 @@
-const REDESIGN_GUARD_VERSION = '20260820-fix-busca-input-foco';
+const REDESIGN_GUARD_VERSION = '20260820-fix-checkout-parcial-finalizado';
 
 function waitForBaseShell() {
   return new Promise((resolve) => {
