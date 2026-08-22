@@ -400,8 +400,14 @@ function finalizedUnits() {
   const result = [];
   const byLot = new Set();
   state.checkoutLots.filter((l) => String(l.status || '').toUpperCase() !== 'CANCELADO').forEach((lot) => {
-    byLot.add(String(lot.reserva_id));
     const row = reservationRow(lot.reserva_id); if (!row) return;
+    // Checkout parcial também cria um lote — só listar aqui quando a reserva
+    // como um todo já finalizou, senão ela aparece "Finalizado" enquanto
+    // ainda está "Em Andamento" pros colaboradores que ficaram (achado ao
+    // vivo 20/08: reserva aparecia nas duas abas, e o botão Pagar dessa
+    // linha fantasma cobrava o total cheio, não o valor parcial mostrado).
+    if (String(row.status_hospedagem || '').toUpperCase() !== 'CHECKOUT_REALIZADO') return;
+    byLot.add(String(lot.reserva_id));
     const names = state.checkoutPeople.filter((p) => String(p.lote_id) === String(lot.id)).map((p) => p.nome_colaborador).filter(Boolean);
     result.push({ type: 'lot', id: lot.id, lot, row, names });
   });
