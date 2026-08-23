@@ -118,7 +118,7 @@ async function existeNheMesmoPontoNoGrmAoVivo(page, candidato) {
 
 async function preencherEModalNhe(page, candidato, dryRun, debug) {
 """,
-'trava ao vivo por grupo')
+' trava ao vivo por grupo'.strip())
 
 replace_once(
 """  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0 };
@@ -165,7 +165,7 @@ replace_once(
 
     var totalCandidatos = candidatos.length;
 """,
-deduplicação dentro do lote')
+'deduplicação dentro do lote')
 
 replace_once(
 """            if (!dryRun && await existeNheNoGrmAoVivo(page, candidato.data, candidato.os)) {
