@@ -579,19 +579,23 @@ function ensureStyles() {
   document.head.appendChild(style);
 }
 
-async function domToPng(node, filenameBase) {
+async function domToPng(node) {
   if (!window.html2canvas) throw new Error('html2canvas não encontrado.');
+  // Usa a altura real do conteúdo (nunca menor que EXPORT_H): se linhas com texto
+  // longo quebrarem em mais de uma linha, a página cresce em vez de cortar
+  // as últimas linhas fora da imagem capturada.
+  const height = Math.max(EXPORT_H, node.scrollHeight);
   const canvas = await window.html2canvas(node, {
     scale: EXPORT_SCALE,
     backgroundColor: '#f8fafc',
     useCORS: true,
     logging: false,
     width: EXPORT_W,
-    height: EXPORT_H,
+    height,
     windowWidth: EXPORT_W,
-    windowHeight: EXPORT_H
+    windowHeight: height
   });
-  return { filename: `${filenameBase}.png`, dataUrl: canvas.toDataURL('image/png') };
+  return { dataUrl: canvas.toDataURL('image/png'), height };
 }
 
 async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, filePrefix, rowsPerPage = DEFAULT_ROWS_PER_PAGE }) {
@@ -607,31 +611,41 @@ async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, file
     const page = wrap.firstElementChild;
     host.appendChild(page);
     // eslint-disable-next-line no-await-in-loop
-    results.push(await domToPng(page, `${filePrefix}-pagina-${String(i + 1).padStart(2, '0')}`));
+    results.push(await domToPng(page));
     page.remove();
   }
 
   return results;
 }
 
+const RESUMO_LINE_HEIGHT = 28;
+const RESUMO_TOP = 130;
+const RESUMO_BOTTOM_MARGIN = 40;
+const RESUMO_LINES_PER_PAGE = Math.floor((EXPORT_H - RESUMO_BOTTOM_MARGIN - RESUMO_TOP) / RESUMO_LINE_HEIGHT);
+
 async function baixarPdfDeImagens(images, pdfName, resumoLines) {
   if (!window.jspdf?.jsPDF) throw new Error('jsPDF não encontrado.');
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'px', format: [EXPORT_W, EXPORT_H], hotfixes: ['px_scaling'] });
+  const resumoPages = resumoLines?.length ? chunkArray(resumoLines, RESUMO_LINES_PER_PAGE) : [];
+  const firstImageHeight = images[0]?.height || EXPORT_H;
+  const firstFormat = [EXPORT_W, resumoPages.length ? EXPORT_H : firstImageHeight];
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'px', format: firstFormat, hotfixes: ['px_scaling'] });
   let firstPage = true;
 
-  if (resumoLines?.length) {
-    doc.setFontSize(28);
-    doc.text('Resumo por regional', 60, 80);
-    doc.setFontSize(16);
-    resumoLines.forEach((line, i) => doc.text(line, 60, 130 + i * 28));
-    firstPage = false;
-  }
-
-  images.forEach((img) => {
+  resumoPages.forEach((lines, pageIndex) => {
     if (!firstPage) doc.addPage([EXPORT_W, EXPORT_H], 'landscape');
     firstPage = false;
-    doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, EXPORT_H);
+    doc.setFontSize(28);
+    doc.text(pageIndex === 0 ? 'Resumo por regional' : 'Resumo por regional (continuação)', 60, 80);
+    doc.setFontSize(16);
+    lines.forEach((line, i) => doc.text(line, 60, RESUMO_TOP + i * RESUMO_LINE_HEIGHT));
+  });
+
+  images.forEach((img) => {
+    const pageHeight = img.height || EXPORT_H;
+    if (!firstPage) doc.addPage([EXPORT_W, pageHeight], 'landscape');
+    firstPage = false;
+    doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, pageHeight);
   });
 
   doc.save(pdfName);
