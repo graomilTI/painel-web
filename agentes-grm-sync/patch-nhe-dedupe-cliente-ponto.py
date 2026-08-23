@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import sys
+
+if len(sys.argv) != 2:
+    raise SystemExit('Uso: python3 patch-nhe-dedupe-cliente-ponto.py /caminho/grm-sync-lancar-nhe.js')
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding='utf-8')
+original = text
+
+
+def replace_once(old: str, new: str, label: str):
+    global text
+    if new in text:
+        print(f'[OK] {label}: já aplicado')
+        return
+    if old not in text:
+        raise SystemExit(f'[ERRO] trecho não encontrado: {label}')
+    text = text.replace(old, new, 1)
+    print(f'[OK] {label}: aplicado')
+
+
+replace_once(
+"""async function carregarJaLancadas(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_MOVIMENTO_GRM'];
+""",
+"""async function carregarJaLancadas(dataReferencia) {
+  var inicio = new Date(dataReferencia + 'T12:00:00');
+  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_GRUPO_GRM', 'JA_EXISTIA_MOVIMENTO_GRM', 'MESMO_PONTO_AGRUPADO'];
+""",
+'status de grupos já resolvidos')
+
+replace_once(
+"""function observacaoPara(candidato) {
+  return OBS_FIXA;
+}
+""",
+"""function chaveGrupoEmbarque(candidato) {
+  var info = candidato && candidato.osCoord ? candidato.osCoord : {};
+  var cliente = normText((candidato && candidato.cliente) || info.cliente);
+  var embarque = normText(info.embarque || info.local);
+  return cliente && embarque ? cliente + '|embarque:' + embarque : '';
+}
+
+function identidadeGrupoEmbarque(candidato) {
+  var info = candidato && candidato.osCoord ? candidato.osCoord : {};
+  var embarque = String(info.embarque || '').trim();
+  var match = embarque.match(/^(.*?)\\s*\\((.*)\\)\\s*$/);
+  var cidade = match ? match[1].trim() : '';
+  var ponto = match ? match[2].trim() : String(info.local || '').split('·')[0].trim();
+  return {
+    cliente: String((candidato && candidato.cliente) || info.cliente || '').trim(),
+    cidade: cidade,
+    ponto: ponto
+  };
+}
+
+function observacaoPara(candidato) {
+  return OBS_FIXA;
+}
+""",
+'helpers Cliente + Embarque')
+
+replace_once(
+"""async function preencherEModalNhe(page, candidato, dryRun, debug) {
+""",
+"""// Trava ao vivo por Cliente + ponto de embarque. A NHE é única para o
+// agrupamento na data, inclusive entre execuções de continuação do mesmo lote.
+async function existeNheMesmoPontoNoGrmAoVivo(page, candidato) {
+  var dataBr = brDate(candidato.data);
+  var identidade = identidadeGrupoEmbarque(candidato);
+  return page.evaluate(async function (payload) {
+    function norm(value) {
+      return String(value == null ? '' : value)
+        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+        .replace(/\\u00A0/g, ' ').replace(/\\s+/g, ' ').trim().toUpperCase();
+    }
+    var token = '';
+    for (var i = 0; i < localStorage.length; i++) {
+      try {
+        var value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value && value.userToken) token = value.userToken;
+      } catch (_) {}
+    }
+    if (!token) throw new Error('Token do GRM não encontrado para confirmar grupo NHE.');
+    var response = await fetch('/api/reports/classification/nhe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ lnsDateFrom: payload.dataBr, lnsDateTo: payload.dataBr })
+    });
+    var json = await response.json();
+    if (!response.ok || json.result === false) {
+      throw new Error('Consulta NHE GRM por grupo falhou: ' + JSON.stringify(json).slice(0, 500));
+    }
+    var cliente = norm(payload.identidade.cliente);
+    var cidade = norm(payload.identidade.cidade);
+    var ponto = norm(payload.identidade.ponto);
+    var rows = json.searchData || [];
+    var found = rows.find(function (row) {
+      if (norm(row.cliName) !== cliente) return false;
+      if (ponto && norm(row.splName) !== ponto) return false;
+      if (cidade && norm(row.citEmb) !== cidade) return false;
+      return true;
+    });
+    return found ? {
+      existe: true,
+      os: String(found.sorCode == null ? '' : found.sorCode),
+      cliente: String(found.cliName || ''),
+      ponto: String(found.splName || ''),
+      cidade: String(found.citEmb || '')
+    } : { existe: false };
+  }, { dataBr: dataBr, identidade: identidade });
+}
+
+async function preencherEModalNhe(page, candidato, dryRun, debug) {
+""",
+'trava ao vivo por grupo')
+
+replace_once(
+"""  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0 };
+""",
+"""  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0, mesmoPontoAgrupado: 0, nheMesmoPontoGrm: 0 };
+""",
+'estatísticas de agrupamento')
+
+replace_once(
+"""    stats.candidatos = candidatos.length;
+    log('SUCCESS', candidatos.length + ' candidato(s) elegível(is) para lançamento automático.');
+
+    var totalCandidatos = candidatos.length;
+""",
+"""    // REGRA OPERACIONAL: somente uma NHE por Cliente + ponto de embarque.
+    // Duas O.S. irmãs podem chegar PENDENTE no mesmo cálculo; apenas uma segue
+    // para o GRM e as demais ficam auditadas como agrupadas.
+    var gruposCandidatos = {};
+    var candidatosUnicos = [];
+    for (var u = 0; u < candidatos.length; u++) {
+      var cand = candidatos[u];
+      var chaveGrupo = chaveGrupoEmbarque(cand);
+      if (chaveGrupo && gruposCandidatos[chaveGrupo]) {
+        stats.mesmoPontoAgrupado++;
+        await salvarResultado(cand, {
+          status: 'MESMO_PONTO_AGRUPADO',
+          lancado_em: null,
+          erro: null,
+          raw: {
+            agrupado_com_os: gruposCandidatos[chaveGrupo],
+            regra: 'MESMO_CLIENTE_MESMO_PONTO_UMA_NHE'
+          }
+        });
+        log('INFO', 'O.S. ' + cand.os + ': mesma combinação Cliente + Embarque já representada pela O.S. ' + gruposCandidatos[chaveGrupo] + '; lançamento bloqueado.');
+        continue;
+      }
+      if (chaveGrupo) gruposCandidatos[chaveGrupo] = cand.os;
+      candidatosUnicos.push(cand);
+    }
+    candidatos = candidatosUnicos;
+
+    stats.candidatos = candidatos.length;
+    log('SUCCESS', candidatos.length + ' grupo(s) único(s) Cliente + Embarque elegível(is); ' + stats.mesmoPontoAgrupado + ' O.S. irmã(s) agrupada(s).');
+
+    var totalCandidatos = candidatos.length;
+""",
+deduplicação dentro do lote')
+
+replace_once(
+"""            if (!dryRun && await existeNheNoGrmAoVivo(page, candidato.data, candidato.os)) {
+              stats.jaExistiaGrm++;
+              await salvarResultado(candidato, {
+                status: 'JA_EXISTIA_GRM',
+                lancado_em: null,
+                raw: { origem_verificacao: 'grm_api_ao_vivo', nao_lancado_nesta_execucao: true }
+              });
+              log('INFO', 'O.S. ' + candidato.os + ' em ' + candidato.data + ': NHE já existe no GRM (consulta ao vivo); lançamento bloqueado.');
+              continue;
+            }
+""",
+"""            if (!dryRun) {
+              var nheGrupoAoVivo = await existeNheMesmoPontoNoGrmAoVivo(page, candidato);
+              if (nheGrupoAoVivo && nheGrupoAoVivo.existe) {
+                stats.jaExistiaGrm++;
+                var mesmaOs = String(nheGrupoAoVivo.os) === String(candidato.os);
+                if (!mesmaOs) stats.nheMesmoPontoGrm++;
+                await salvarResultado(candidato, {
+                  status: mesmaOs ? 'JA_EXISTIA_GRM' : 'JA_EXISTIA_GRUPO_GRM',
+                  lancado_em: null,
+                  raw: {
+                    origem_verificacao: 'grm_api_ao_vivo_cliente_ponto',
+                    nao_lancado_nesta_execucao: true,
+                    os_nhe_existente: nheGrupoAoVivo.os,
+                    ponto_nhe_existente: nheGrupoAoVivo.ponto,
+                    cidade_nhe_existente: nheGrupoAoVivo.cidade
+                  }
+                });
+                log('INFO', 'O.S. ' + candidato.os + ' em ' + candidato.data + ': já existe NHE para o mesmo Cliente + ponto na O.S. ' + nheGrupoAoVivo.os + '; novo lançamento bloqueado.');
+                continue;
+              }
+            }
+""",
+'trava entre continuações')
+
+replace_once(
+"""  existeNheReal: existeNheReal,
+  existeMovimentoReal: existeMovimentoReal
+};
+""",
+"""  existeNheReal: existeNheReal,
+  existeMovimentoReal: existeMovimentoReal,
+  chaveGrupoEmbarque: chaveGrupoEmbarque,
+  identidadeGrupoEmbarque: identidadeGrupoEmbarque
+};
+""",
+'exports')
+
+if text == original:
+    print('[OK] nenhuma alteração necessária')
+else:
+    backup = path.with_name(path.name + '.bak_dedupe_cliente_ponto')
+    if not backup.exists():
+        backup.write_text(original, encoding='utf-8')
+        print(f'[OK] backup: {backup}')
+    path.write_text(text, encoding='utf-8')
+    print(f'[OK] arquivo atualizado: {path}')
+
+required = [
+    "MESMO_CLIENTE_MESMO_PONTO_UMA_NHE",
+    "existeNheMesmoPontoNoGrmAoVivo",
+    "JA_EXISTIA_GRUPO_GRM",
+    "var OBS_FIXA = 'Aprovado pelo Gestor';",
+]
+for item in required:
+    if item not in text:
+        raise SystemExit(f'[ERRO] validação falhou: {item}')
+print('[OK] validação textual concluída')
