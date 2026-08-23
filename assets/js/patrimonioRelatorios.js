@@ -4,9 +4,11 @@ import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 
 const EXPORT_W = 1920;
-const EXPORT_H = 1080;
+// Página em retrato (mais alta que larga) com bem mais espaço vertical, pra
+// caber muito mais linhas por página e reduzir o total de páginas geradas.
+const EXPORT_H = 5000;
 const EXPORT_SCALE = 2;
-const DEFAULT_ROWS_PER_PAGE = 32;
+const DEFAULT_ROWS_PER_PAGE = 200;
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
@@ -565,7 +567,7 @@ function ensureStyles() {
     .col-id { width: 35%; }
     .col-leitura { width: 14%; white-space: nowrap; font-size: 12px; }
     .col-dias { width: 8%; text-align: center; white-space: nowrap; }
-    @media print { @page { size: landscape; margin: 10mm; } }
+    @media print { @page { size: portrait; margin: 10mm; } }
   `;
   document.head.appendChild(style);
 }
@@ -617,10 +619,10 @@ const RESUMO_LINES_PER_PAGE = Math.floor((EXPORT_H - RESUMO_BOTTOM_MARGIN - RESU
 // grandes (dezenas/centenas de páginas de imagem em alta resolução) isso
 // estoura "RangeError: Invalid string length" no navegador. Em vez de um
 // PDF gigante, quebra em vários arquivos menores, todos baixados sem ZIP.
-const PDF_IMAGES_PER_FILE = 15;
+const PDF_IMAGES_PER_FILE = 2;
 
 function criarDocPaginas(jsPDF, primeiraAltura) {
-  return new jsPDF({ orientation: 'landscape', unit: 'px', format: [EXPORT_W, primeiraAltura || EXPORT_H], hotfixes: ['px_scaling'] });
+  return new jsPDF({ orientation: 'portrait', unit: 'px', format: [EXPORT_W, primeiraAltura || EXPORT_H], hotfixes: ['px_scaling'] });
 }
 
 async function baixarPdfDeImagens(images, pdfName, resumoLines) {
@@ -637,7 +639,7 @@ async function baixarPdfDeImagens(images, pdfName, resumoLines) {
     const resumoPages = chunkArray(resumoLines, RESUMO_LINES_PER_PAGE);
     const doc = criarDocPaginas(jsPDF, EXPORT_H);
     resumoPages.forEach((lines, pageIndex) => {
-      if (pageIndex > 0) doc.addPage([EXPORT_W, EXPORT_H], 'landscape');
+      if (pageIndex > 0) doc.addPage([EXPORT_W, EXPORT_H], 'portrait');
       doc.setFontSize(28);
       doc.text(pageIndex === 0 ? 'Resumo por regional' : 'Resumo por regional (continuação)', 60, 80);
       doc.setFontSize(16);
@@ -651,7 +653,7 @@ async function baixarPdfDeImagens(images, pdfName, resumoLines) {
     const doc = criarDocPaginas(jsPDF, chunk[0]?.height);
     chunk.forEach((img, i) => {
       const pageHeight = img.height || EXPORT_H;
-      if (i > 0) doc.addPage([EXPORT_W, pageHeight], 'landscape');
+      if (i > 0) doc.addPage([EXPORT_W, pageHeight], 'portrait');
       doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, pageHeight);
     });
     doc.save(`${baseName}${sufixo(arquivoIndex)}.pdf`);
