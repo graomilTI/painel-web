@@ -5,7 +5,10 @@ import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 
 const EXPORT_W = 1920;
 const EXPORT_H = 1080;
-const EXPORT_SCALE = 2;
+// scale=1 (sem supersampling): com a base inteira (3000+ registros / ~100
+// páginas), scale=2 gera páginas grandes o bastante para o jsPDF estourar
+// "RangeError: Invalid string length" ao juntar tudo num PDF só.
+const EXPORT_SCALE = 1;
 const DEFAULT_ROWS_PER_PAGE = 32;
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
