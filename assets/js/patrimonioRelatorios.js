@@ -6,7 +6,7 @@ import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 const EXPORT_W = 1920;
 const EXPORT_H = 1080;
 const EXPORT_SCALE = 2;
-const DEFAULT_ROWS_PER_PAGE = 18;
+const DEFAULT_ROWS_PER_PAGE = 32;
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
@@ -549,22 +549,22 @@ function ensureStyles() {
       width: ${EXPORT_W}px;
       min-height: ${EXPORT_H}px;
       box-sizing: border-box;
-      padding: 38px 42px;
+      padding: 22px 30px;
       background: #f8fafc;
       color: #0d0d18;
       font-family: Arial, Helvetica, sans-serif;
     }
-    .g1000-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
-    .g1000-header h1 { margin: 0; font-size: 34px; line-height: 1.1; }
-    .g1000-header p { margin: 8px 0 0; font-size: 16px; color: #475569; }
-    .gpage-badge { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 999px; padding: 10px 16px; font-size: 14px; font-weight: 700; white-space: nowrap; }
-    .gstats { display: flex; gap: 16px; margin-bottom: 26px; flex-wrap: wrap; }
-    .gstat { background: #fff; border: 1px solid #cbd5e1; border-radius: 18px; padding: 14px 18px; min-width: 150px; }
+    .g1000-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 10px; }
+    .g1000-header h1 { margin: 0; font-size: 24px; line-height: 1.1; }
+    .g1000-header p { margin: 4px 0 0; font-size: 12px; color: #475569; }
+    .gpage-badge { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .gstats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .gstat { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 6px 12px; min-width: 120px; font-size: 12px; }
     .glabel { color: #475569; margin-right: 6px; }
-    .gtable-wrap { background: #fff; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
+    .gtable-wrap { background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
     .gtable { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .gtable thead th { background: #0d0d18; color: #fff; font-size: 13px; letter-spacing: .04em; text-align: left; padding: 14px 10px; border-right: 1px solid rgba(255,255,255,.15); }
-    .gtable tbody td { font-size: 14px; padding: 10px 10px; border: 1px solid #dbe4ef; vertical-align: top; word-break: break-word; }
+    .gtable thead th { background: #0d0d18; color: #fff; font-size: 11px; letter-spacing: .03em; text-align: left; padding: 6px 8px; border-right: 1px solid rgba(255,255,255,.15); }
+    .gtable tbody td { font-size: 11px; padding: 4px 8px; border: 1px solid #dbe4ef; vertical-align: top; word-break: break-word; line-height: 1.25; }
     .gtable tbody tr.is-atrasado td.col-dias { color: #b91c1c; font-weight: 700; }
     .gtable tbody tr.is-ok td.col-dias { color: #166534; font-weight: 700; }
     .gtable tbody tr.is-empty td.col-dias { color: #475569; font-weight: 700; }
@@ -614,15 +614,27 @@ async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, file
   return results;
 }
 
-async function baixarZipDeImagens(images, zipName) {
-  if (!window.JSZip) throw new Error('JSZip não encontrado.');
-  const zip = new window.JSZip();
+async function baixarPdfDeImagens(images, pdfName, resumoLines) {
+  if (!window.jspdf?.jsPDF) throw new Error('jsPDF não encontrado.');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'px', format: [EXPORT_W, EXPORT_H], hotfixes: ['px_scaling'] });
+  let firstPage = true;
+
+  if (resumoLines?.length) {
+    doc.setFontSize(28);
+    doc.text('Resumo por regional', 60, 80);
+    doc.setFontSize(16);
+    resumoLines.forEach((line, i) => doc.text(line, 60, 130 + i * 28));
+    firstPage = false;
+  }
+
   images.forEach((img) => {
-    const base64 = img.dataUrl.split(',')[1];
-    zip.file(img.filename, base64, { base64: true });
+    if (!firstPage) doc.addPage([EXPORT_W, EXPORT_H], 'landscape');
+    firstPage = false;
+    doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, EXPORT_H);
   });
-  const blob = await zip.generateAsync({ type: 'blob' });
-  downloadBlob(zipName, blob);
+
+  doc.save(pdfName);
 }
 
 function computeStats(rows) {
@@ -914,8 +926,8 @@ export function renderContent(content) {
             <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
             <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
             <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
-            <button class="base-button secondary icon-button" id="btnZip" title="Exportar ZIP de imagens" aria-label="Exportar ZIP de imagens">${ICONS.photo}</button>
-            <button class="base-button secondary icon-button" id="btnZipRegional" title="Exportar ZIP por regional" aria-label="Exportar ZIP por regional">${ICONS.doc}</button>
+            <button class="base-button secondary icon-button" id="btnPdf" title="Exportar PDF" aria-label="Exportar PDF">${ICONS.photo}</button>
+            <button class="base-button secondary icon-button" id="btnPdfRegional" title="Exportar PDF por regional" aria-label="Exportar PDF por regional">${ICONS.doc}</button>
           </div>
         </div>
 
@@ -1152,21 +1164,21 @@ export function renderContent(content) {
 
   const withExportLock = (handler) => async () => {
     if (state.exportando) return;
-    const btnZip = document.getElementById('btnZip');
-    const btnZipRegional = document.getElementById('btnZipRegional');
+    const btnPdf = document.getElementById('btnPdf');
+    const btnPdfRegional = document.getElementById('btnPdfRegional');
     state.exportando = true;
-    if (btnZip) btnZip.disabled = true;
-    if (btnZipRegional) btnZipRegional.disabled = true;
+    if (btnPdf) btnPdf.disabled = true;
+    if (btnPdfRegional) btnPdfRegional.disabled = true;
     try {
       await handler();
     } finally {
       state.exportando = false;
-      if (btnZip) btnZip.disabled = false;
-      if (btnZipRegional) btnZipRegional.disabled = false;
+      if (btnPdf) btnPdf.disabled = false;
+      if (btnPdfRegional) btnPdfRegional.disabled = false;
     }
   };
 
-  document.getElementById('btnZip')?.addEventListener('click', withExportLock(async () => {
+  document.getElementById('btnPdf')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar.', true);
       return;
@@ -1174,59 +1186,49 @@ export function renderContent(content) {
     try {
       setFeedback('Carregando bibliotecas de exportação e montando páginas...');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
+      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
       const stats = computeStats(state.filteredRows);
       const titulo = buildReportTitle(readFilters().tipo);
       const subtitulo = `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
       const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats, filePrefix: 'patrimonios' });
-      await baixarZipDeImagens(images, 'relatorios-patrimonios.zip');
-      setFeedback('ZIP de imagens gerado com sucesso.');
+      await baixarPdfDeImagens(images, 'relatorios-patrimonios.pdf');
+      setFeedback('PDF gerado com sucesso.');
     } catch (error) {
       console.error(error);
-      setFeedback(error?.message || 'Não foi possível gerar o ZIP.', true);
+      setFeedback(error?.message || 'Não foi possível gerar o PDF.', true);
     }
   }));
 
-  document.getElementById('btnZipRegional')?.addEventListener('click', withExportLock(async () => {
+  document.getElementById('btnPdfRegional')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar por regional.', true);
       return;
     }
 
     try {
-      setFeedback('Carregando bibliotecas e preparando pacotes por regional...');
+      setFeedback('Carregando bibliotecas e preparando páginas por regional...');
       await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', 'JSZip');
+      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
 
-      const zip = new window.JSZip();
       const groups = groupRowsByRegional(state.filteredRows);
       const resumo = [];
+      const allImages = [];
 
       for (const [regional, rows] of groups) {
-        const folder = zip.folder(slugify(regional));
         const regionalStats = computeStats(rows);
-        const csvContent = toCsv(rows);
-        folder.file('relatorio.csv', csvContent);
-
         const titulo = buildReportTitle(readFilters().tipo, regional);
         const subtitulo = `Regional ${regional} • gerado em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
         // eslint-disable-next-line no-await-in-loop
         const images = await gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats: regionalStats, filePrefix: slugify(regional) });
-        images.forEach((img) => {
-          const base64 = img.dataUrl.split(',')[1];
-          folder.file(img.filename, base64, { base64: true });
-        });
-
+        allImages.push(...images);
         resumo.push(`${regional}: ${rows.length} registro(s) | Em dia: ${regionalStats.emDia} | Em atraso: ${regionalStats.atrasados} | Sem dias: ${regionalStats.semDias}`);
       }
 
-      zip.file('resumo.txt', resumo.join('\n'));
-      const blob = await zip.generateAsync({ type: 'blob' });
-      downloadBlob('relatorios-patrimonios-por-regional.zip', blob);
-      setFeedback('ZIP por regional gerado com sucesso.');
+      await baixarPdfDeImagens(allImages, 'relatorios-patrimonios-por-regional.pdf', resumo);
+      setFeedback('PDF por regional gerado com sucesso.');
     } catch (error) {
       console.error(error);
-      setFeedback(error?.message || 'Não foi possível gerar o ZIP por regional.', true);
+      setFeedback(error?.message || 'Não foi possível gerar o PDF por regional.', true);
     }
   }));
 
@@ -1282,5 +1284,5 @@ initProtectedPage('Relatórios de Patrimônios', renderContent);
 
 window.PATRIMONIO_RELATORIOS = window.PATRIMONIO_RELATORIOS || {};
 window.PATRIMONIO_RELATORIOS.gerarPacoteImagensPaginado = gerarPacoteImagensPaginado;
-window.PATRIMONIO_RELATORIOS.baixarZipDeImagens = baixarZipDeImagens;
+window.PATRIMONIO_RELATORIOS.baixarPdfDeImagens = baixarPdfDeImagens;
 window.PATRIMONIO_RELATORIOS.EXPORT_CONFIG = { width: EXPORT_W, height: EXPORT_H, rowsPerPage: DEFAULT_ROWS_PER_PAGE };
