@@ -5,10 +5,7 @@ import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 
 const EXPORT_W = 1920;
 const EXPORT_H = 1080;
-// scale=1 (sem supersampling): com a base inteira (3000+ registros / ~100
-// páginas), scale=2 gera páginas grandes o bastante para o jsPDF estourar
-// "RangeError: Invalid string length" ao juntar tudo num PDF só.
-const EXPORT_SCALE = 1;
+const EXPORT_SCALE = 2;
 const DEFAULT_ROWS_PER_PAGE = 32;
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -616,33 +613,51 @@ const RESUMO_LINE_HEIGHT = 28;
 const RESUMO_TOP = 130;
 const RESUMO_BOTTOM_MARGIN = 40;
 const RESUMO_LINES_PER_PAGE = Math.floor((EXPORT_H - RESUMO_BOTTOM_MARGIN - RESUMO_TOP) / RESUMO_LINE_HEIGHT);
+// jsPDF monta o PDF juntando todas as páginas numa única string; com bases
+// grandes (dezenas/centenas de páginas de imagem em alta resolução) isso
+// estoura "RangeError: Invalid string length" no navegador. Em vez de um
+// PDF gigante, quebra em vários arquivos menores, todos baixados sem ZIP.
+const PDF_IMAGES_PER_FILE = 15;
+
+function criarDocPaginas(jsPDF, primeiraAltura) {
+  return new jsPDF({ orientation: 'landscape', unit: 'px', format: [EXPORT_W, primeiraAltura || EXPORT_H], hotfixes: ['px_scaling'] });
+}
 
 async function baixarPdfDeImagens(images, pdfName, resumoLines) {
   if (!window.jspdf?.jsPDF) throw new Error('jsPDF não encontrado.');
   const { jsPDF } = window.jspdf;
-  const resumoPages = resumoLines?.length ? chunkArray(resumoLines, RESUMO_LINES_PER_PAGE) : [];
-  const firstImageHeight = images[0]?.height || EXPORT_H;
-  const firstFormat = [EXPORT_W, resumoPages.length ? EXPORT_H : firstImageHeight];
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'px', format: firstFormat, hotfixes: ['px_scaling'] });
-  let firstPage = true;
+  const baseName = pdfName.replace(/\.pdf$/i, '');
+  const imageChunks = chunkArray(images, PDF_IMAGES_PER_FILE);
+  const totalFiles = imageChunks.length + (resumoLines?.length ? 1 : 0);
+  const sufixo = (i) => (totalFiles > 1 ? `-parte-${i}-de-${totalFiles}` : '');
+  let arquivoIndex = 0;
 
-  resumoPages.forEach((lines, pageIndex) => {
-    if (!firstPage) doc.addPage([EXPORT_W, EXPORT_H], 'landscape');
-    firstPage = false;
-    doc.setFontSize(28);
-    doc.text(pageIndex === 0 ? 'Resumo por regional' : 'Resumo por regional (continuação)', 60, 80);
-    doc.setFontSize(16);
-    lines.forEach((line, i) => doc.text(line, 60, RESUMO_TOP + i * RESUMO_LINE_HEIGHT));
-  });
+  if (resumoLines?.length) {
+    arquivoIndex += 1;
+    const resumoPages = chunkArray(resumoLines, RESUMO_LINES_PER_PAGE);
+    const doc = criarDocPaginas(jsPDF, EXPORT_H);
+    resumoPages.forEach((lines, pageIndex) => {
+      if (pageIndex > 0) doc.addPage([EXPORT_W, EXPORT_H], 'landscape');
+      doc.setFontSize(28);
+      doc.text(pageIndex === 0 ? 'Resumo por regional' : 'Resumo por regional (continuação)', 60, 80);
+      doc.setFontSize(16);
+      lines.forEach((line, i) => doc.text(line, 60, RESUMO_TOP + i * RESUMO_LINE_HEIGHT));
+    });
+    doc.save(`${baseName}-resumo${sufixo(arquivoIndex)}.pdf`);
+  }
 
-  images.forEach((img) => {
-    const pageHeight = img.height || EXPORT_H;
-    if (!firstPage) doc.addPage([EXPORT_W, pageHeight], 'landscape');
-    firstPage = false;
-    doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, pageHeight);
-  });
+  for (const chunk of imageChunks) {
+    arquivoIndex += 1;
+    const doc = criarDocPaginas(jsPDF, chunk[0]?.height);
+    chunk.forEach((img, i) => {
+      const pageHeight = img.height || EXPORT_H;
+      if (i > 0) doc.addPage([EXPORT_W, pageHeight], 'landscape');
+      doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, pageHeight);
+    });
+    doc.save(`${baseName}${sufixo(arquivoIndex)}.pdf`);
+  }
 
-  doc.save(pdfName);
+  return { totalFiles };
 }
 
 function computeStats(rows) {
@@ -1199,8 +1214,8 @@ export function renderContent(content) {
       const titulo = buildReportTitle(readFilters().tipo);
       const subtitulo = `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
       const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats });
-      await baixarPdfDeImagens(images, 'relatorios-patrimonios.pdf');
-      setFeedback('PDF gerado com sucesso.');
+      const { totalFiles } = await baixarPdfDeImagens(images, 'relatorios-patrimonios.pdf');
+      setFeedback(totalFiles > 1 ? `PDF gerado em ${totalFiles} arquivos (base grande demais para 1 PDF só).` : 'PDF gerado com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o PDF.', true);
@@ -1234,10 +1249,10 @@ export function renderContent(content) {
         resumo.push(`${regional}: ${rows.length} registro(s) | Em dia: ${regionalStats.emDia} | Em atraso: ${regionalStats.atrasados} | Sem dias: ${regionalStats.semDias}`);
       }
 
-      await baixarPdfDeImagens(allImages, 'relatorios-patrimonios-por-regional.pdf', resumo);
+      const { totalFiles } = await baixarPdfDeImagens(allImages, 'relatorios-patrimonios-por-regional.pdf', resumo);
       const csvBlob = new Blob([toCsv(orderedRows)], { type: 'text/csv;charset=utf-8' });
       downloadBlob('relatorios-patrimonios-por-regional.csv', csvBlob);
-      setFeedback('PDF e CSV por regional gerados com sucesso.');
+      setFeedback(totalFiles > 1 ? `PDF gerado em ${totalFiles} arquivos + CSV (base grande demais para 1 PDF só).` : 'PDF e CSV por regional gerados com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o PDF por regional.', true);
