@@ -49,15 +49,6 @@ function normalizeKey(value) {
     .toLowerCase();
 }
 
-function slugify(value) {
-  return normalizeText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'sem-regional';
-}
-
 function formatDateTime(value) {
   if (!value) return '-';
   const dt = new Date(value);
@@ -598,7 +589,7 @@ async function domToPng(node) {
   return { dataUrl: canvas.toDataURL('image/png'), height };
 }
 
-async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, filePrefix, rowsPerPage = DEFAULT_ROWS_PER_PAGE }) {
+async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, rowsPerPage = DEFAULT_ROWS_PER_PAGE }) {
   ensureStyles();
   const host = ensureExportHost();
   host.innerHTML = '';
@@ -1204,7 +1195,7 @@ export function renderContent(content) {
       const stats = computeStats(state.filteredRows);
       const titulo = buildReportTitle(readFilters().tipo);
       const subtitulo = `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
-      const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats, filePrefix: 'patrimonios' });
+      const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats });
       await baixarPdfDeImagens(images, 'relatorios-patrimonios.pdf');
       setFeedback('PDF gerado com sucesso.');
     } catch (error) {
@@ -1227,19 +1218,23 @@ export function renderContent(content) {
       const groups = groupRowsByRegional(state.filteredRows);
       const resumo = [];
       const allImages = [];
+      const orderedRows = [];
 
       for (const [regional, rows] of groups) {
         const regionalStats = computeStats(rows);
         const titulo = buildReportTitle(readFilters().tipo, regional);
         const subtitulo = `Regional ${regional} • gerado em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
         // eslint-disable-next-line no-await-in-loop
-        const images = await gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats: regionalStats, filePrefix: slugify(regional) });
+        const images = await gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats: regionalStats });
         allImages.push(...images);
+        orderedRows.push(...rows);
         resumo.push(`${regional}: ${rows.length} registro(s) | Em dia: ${regionalStats.emDia} | Em atraso: ${regionalStats.atrasados} | Sem dias: ${regionalStats.semDias}`);
       }
 
       await baixarPdfDeImagens(allImages, 'relatorios-patrimonios-por-regional.pdf', resumo);
-      setFeedback('PDF por regional gerado com sucesso.');
+      const csvBlob = new Blob([toCsv(orderedRows)], { type: 'text/csv;charset=utf-8' });
+      downloadBlob('relatorios-patrimonios-por-regional.csv', csvBlob);
+      setFeedback('PDF e CSV por regional gerados com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o PDF por regional.', true);
