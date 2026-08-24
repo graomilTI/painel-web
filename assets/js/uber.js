@@ -462,7 +462,7 @@ function loadCache() {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return false;
     const cached = JSON.parse(raw);
-    if (!Array.isArray(cached?.rows) || !cached.rows.length) return false;
+    if (!Array.isArray(cached?.rows)) return false;
     state.rows = cached.rows;
     state.producao = Array.isArray(cached.producao) ? cached.producao : [];
     state.filters = { ...state.filters, ...(cached.filters || {}) };
