@@ -1,7 +1,17 @@
 import { supabase } from './supabaseClient.js';
 
-const VERSION = '20260815-periodo-reserva1';
+const VERSION = '20260824-v2-shared1';
 const state = { periods: new Map(), observer: null, timer: null };
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
 const iso = (value) => String(value || '').slice(0, 10);
 const br = (value) => {
   const [y,m,d] = iso(value).split('-');
@@ -30,10 +40,29 @@ function applyPeriods() {
 
 async function loadPeriods() {
   try {
-    const { data, error } = await supabase
-      .from('hospedagem_reservas')
-      .select('id,data_checkin,data_checkout');
-    if (error) throw error;
+    const shared = await waitForV2State();
+    let data;
+    if (shared?.ready) {
+      const byReservation = new Map();
+      (shared.rows || []).forEach((row) => {
+        if (!row.reserva_id) return;
+        const key = String(row.reserva_id);
+        const current = byReservation.get(key) || { id: row.reserva_id, data_checkin: '', data_checkout: '' };
+        const checkin = iso(row.data_checkin || row.data_checkin_prevista);
+        const checkout = iso(row.data_checkout || row.data_checkout_prevista);
+        if (checkin && (!current.data_checkin || checkin < current.data_checkin)) current.data_checkin = checkin;
+        if (checkout && (!current.data_checkout || checkout > current.data_checkout)) current.data_checkout = checkout;
+        byReservation.set(key, current);
+      });
+      data = [...byReservation.values()];
+    } else {
+      const result = await supabase
+        .from('hospedagem_reservas')
+        .select('id,data_checkin,data_checkout');
+      if (result.error) throw result.error;
+      data = result.data || [];
+    }
+
     state.periods.clear();
     (data || []).forEach((r) => {
       state.periods.set(String(r.id), {
@@ -64,10 +93,10 @@ function init() {
   }, 50);
   setTimeout(() => clearInterval(wait), 15000);
   document.addEventListener('click', (event) => {
-    if (event.target.closest('[data-hosp-rd-action="refresh"]')) setTimeout(loadPeriods, 250);
+    if (event.target.closest('[data-hosp-rd-action="refresh"]')) setTimeout(loadPeriods, 650);
   });
+  window.addEventListener('hospedagem:v2-data', loadPeriods);
   window.addEventListener('hospedagem:redesign-totais-atualizados', () => setTimeout(loadPeriods, 150));
-  setInterval(loadPeriods, 30000);
   console.info(`[hosp-periodo-reserva] ativo ${VERSION}`);
 }
 
