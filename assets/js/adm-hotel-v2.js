@@ -6,7 +6,7 @@ import { supabase } from './supabaseClient.js';
 // Supabase Realtime, e traz Cotar/Anexar nativos (antes delegados ao
 // fluxo-v2 via clique sintético). Ver plano em
 // C:\Users\graom\.claude\plans\spicy-bubbling-russell.md.
-const V2_VERSION = '20260824-fonte-unica-dados2';
+const V2_VERSION = '20260824-snapshot-rpc1';
 const HOSP_COTACAO_FLOW_ID = '8660973';
 const onlyDigits = (value) => String(value || '').replace(/\D+/g, '');
 const roomsLabel = (row) => row.composicao_quartos || row.tipo_quarto || row.quartos || row.observacao_quartos || 'A definir';
@@ -124,23 +124,48 @@ async function loadData() {
   const root = $('#hospRedesignRoot');
   if (root && !state.ready) root.querySelectorAll('.hosp-rd-panel').forEach((p) => p.innerHTML = '<div class="hosp-rd-loading">Carregando hospedagem...</div>');
   try {
-    const [rowsRes, hotelsRes, peopleRes, assignmentsRes, linksRes] = await Promise.all([
-      supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
-      supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true }),
-      supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
-      supabase.from('hospedagem_reserva_colaboradores').select('*'),
-      supabase.from('hospedagem_reserva_solicitacoes').select('*'),
-    ]);
-    if (rowsRes.error) throw rowsRes.error;
-    state.rows = rowsRes.data || [];
-    state.hotels = hotelsRes.error ? [] : (hotelsRes.data || []);
-    state.people = peopleRes.error ? [] : (peopleRes.data || []);
-    state.assignments = assignmentsRes.error ? [] : (assignmentsRes.data || []);
-    state.links = linksRes.error ? [] : (linksRes.data || []);
-    const [extras, finance, documents, advances, advanceMoves, checkoutLots, checkoutPeople, quotes] = await Promise.all([
-      optional('hospedagem_custos_extras'), optional('hospedagem_financeiro'), optional('hospedagem_documentos'), optional('hospedagem_adiantamentos'), optional('hospedagem_adiantamento_movimentos'), optional('hospedagem_checkout_lotes'), optional('hospedagem_checkout_lote_colaboradores'), optional('hospedagem_cotacoes'),
-    ]);
-    state.extras = extras; state.finance = finance; state.documents = documents; state.advances = advances; state.advanceMoves = advanceMoves; state.checkoutLots = checkoutLots; state.checkoutPeople = checkoutPeople; state.quotes = quotes;
+    // Uma única chamada traz todo o snapshot necessário para a tela.
+    // Mantemos o carregamento antigo apenas como fallback de compatibilidade.
+    const snapshotRes = await supabase.rpc('hospedagem_carregar_painel_v2');
+    let snapshot = snapshotRes.error ? null : snapshotRes.data;
+    if (typeof snapshot === 'string') {
+      try { snapshot = JSON.parse(snapshot); } catch { snapshot = null; }
+    }
+
+    if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      state.rows = Array.isArray(snapshot.rows) ? snapshot.rows : [];
+      state.hotels = Array.isArray(snapshot.hotels) ? snapshot.hotels : [];
+      state.people = Array.isArray(snapshot.people) ? snapshot.people : [];
+      state.assignments = Array.isArray(snapshot.assignments) ? snapshot.assignments : [];
+      state.links = Array.isArray(snapshot.links) ? snapshot.links : [];
+      state.extras = Array.isArray(snapshot.extras) ? snapshot.extras : [];
+      state.finance = Array.isArray(snapshot.finance) ? snapshot.finance : [];
+      state.documents = Array.isArray(snapshot.documents) ? snapshot.documents : [];
+      state.advances = Array.isArray(snapshot.advances) ? snapshot.advances : [];
+      state.advanceMoves = Array.isArray(snapshot.advanceMoves) ? snapshot.advanceMoves : [];
+      state.checkoutLots = Array.isArray(snapshot.checkoutLots) ? snapshot.checkoutLots : [];
+      state.checkoutPeople = Array.isArray(snapshot.checkoutPeople) ? snapshot.checkoutPeople : [];
+      state.quotes = Array.isArray(snapshot.quotes) ? snapshot.quotes : [];
+    } else {
+      if (snapshotRes.error) console.warn('[hosp-v2] snapshot RPC indisponível; usando fallback', snapshotRes.error);
+      const [rowsRes, hotelsRes, peopleRes, assignmentsRes, linksRes] = await Promise.all([
+        supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
+        supabase.from('hospedagem_hoteis').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true }),
+        supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
+        supabase.from('hospedagem_reserva_colaboradores').select('*'),
+        supabase.from('hospedagem_reserva_solicitacoes').select('*'),
+      ]);
+      if (rowsRes.error) throw rowsRes.error;
+      state.rows = rowsRes.data || [];
+      state.hotels = hotelsRes.error ? [] : (hotelsRes.data || []);
+      state.people = peopleRes.error ? [] : (peopleRes.data || []);
+      state.assignments = assignmentsRes.error ? [] : (assignmentsRes.data || []);
+      state.links = linksRes.error ? [] : (linksRes.data || []);
+      const [extras, finance, documents, advances, advanceMoves, checkoutLots, checkoutPeople, quotes] = await Promise.all([
+        optional('hospedagem_custos_extras'), optional('hospedagem_financeiro'), optional('hospedagem_documentos'), optional('hospedagem_adiantamentos'), optional('hospedagem_adiantamento_movimentos'), optional('hospedagem_checkout_lotes'), optional('hospedagem_checkout_lote_colaboradores'), optional('hospedagem_cotacoes'),
+      ]);
+      state.extras = extras; state.finance = finance; state.documents = documents; state.advances = advances; state.advanceMoves = advanceMoves; state.checkoutLots = checkoutLots; state.checkoutPeople = checkoutPeople; state.quotes = quotes;
+    }
     rebuildIndexes();
     state.ready = true;
     // adm-hotel.js (modais legados de Reservar/Estender/Checkout/Pagar) lê
