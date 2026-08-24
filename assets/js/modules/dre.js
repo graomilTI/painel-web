@@ -416,7 +416,29 @@
     return out;
   }
 
-  async function loadProduzidoColaboradorFromDb(supabase, year){
+  // historico_colaboradores tem ~120 mil linhas/ano - paginado 1000 em 1000, isso é
+  // ~120 requisições. loadProduzidoColaboradorFromDb e loadMediaAtivosPorRegionalFromDb
+  // (abaixo) usavam cada um o seu próprio fetch dessa mesma tabela/ano, dobrando as
+  // requisições no primeiro carregamento (cache frio) - por isso o fetch fica separado
+  // aqui e é compartilhado via o 3º parâmetro getHistRows nas duas funções.
+  async function fetchHistoricoColaboradoresAno(supabase, year){
+    const start=`${year}-01-01`; const end=`${year + 1}-01-01`;
+    const pageSize=1000; const all=[]; let from=0;
+    while(true){
+      const {data,error}=await supabase
+        .from('historico_colaboradores')
+        .select('data_referencia,nome,situacao,coordenacao,tipo,origem')
+        .gte('data_referencia', start).lt('data_referencia', end)
+        .range(from, from + pageSize - 1);
+      if(error) throw error;
+      const rows=data||[]; all.push(...rows);
+      if(rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
+  async function loadProduzidoColaboradorFromDb(supabase, year, getHistRows){
     const cached=dreFromCache(`grao1000:dre-colab:${year}`);
     if(cached) return cached;
     const out={porRegional:{}, geral:Array(12).fill(0), regionais:new Set(), totalProdRows:0, totalHistRows:0};
@@ -442,22 +464,10 @@
         }
         return all;
       }
-      async function fetchHistColabRows(){
-        const all=[]; let from=0;
-        while(true){
-          const {data,error}=await supabase
-            .from('historico_colaboradores')
-            .select('data_referencia,nome,situacao,coordenacao,tipo')
-            .gte('data_referencia', start).lt('data_referencia', end)
-            .range(from, from + pageSize - 1);
-          if(error) throw error;
-          const rows=data||[]; all.push(...rows);
-          if(rows.length < pageSize) break;
-          from += pageSize;
-        }
-        return all;
-      }
-      [prodRows, histRows] = await Promise.all([fetchProdColabRows(), fetchHistColabRows()]);
+      [prodRows, histRows] = await Promise.all([
+        fetchProdColabRows(),
+        getHistRows ? getHistRows() : fetchHistoricoColaboradoresAno(supabase, year)
+      ]);
     }catch(error){
       console.warn('DRE: não foi possível carregar dados para produção por colaborador.', error);
       return out;
@@ -545,37 +555,15 @@
     return out;
   }
 
-  async function loadMediaAtivosPorRegionalFromDb(supabase, year){
+  async function loadMediaAtivosPorRegionalFromDb(supabase, year, getHistRows){
     const cached=dreFromCache(`grao1000:dre-ativos:${year}`);
     if(cached) return cached;
     const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0};
     if(!supabase || !year) return out;
-    const start=`${year}-01-01`;
-    const end=`${year + 1}-01-01`;
-
-    async function fetchRows(selectCols){
-      const all=[];
-      const pageSize=1000;
-      let from=0;
-      while(true){
-        const {data,error}=await supabase
-          .from('historico_colaboradores')
-          .select(selectCols)
-          .gte('data_referencia', start)
-          .lt('data_referencia', end)
-          .range(from, from + pageSize - 1);
-        if(error) throw error;
-        const rows=data||[];
-        all.push(...rows);
-        if(rows.length < pageSize) break;
-        from += pageSize;
-      }
-      return all;
-    }
 
     let histRows=[];
     try{
-      histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,origem');
+      histRows = getHistRows ? await getHistRows() : await fetchHistoricoColaboradoresAno(supabase, year);
     }catch(error){
       console.warn('DRE: não foi possível carregar histórico diário para rateio de investimentos por ativos.', error);
       return out;
@@ -1109,12 +1097,20 @@
     }
 
     setStatus('Conferindo dados sincronizados pelo agente e calculando rateios...');
+    // getHistColabShared memoiza o fetch de historico_colaboradores pra loadProduzidoColaboradorFromDb
+    // e loadMediaAtivosPorRegionalFromDb reaproveitarem a mesma requisição em vez de cada um
+    // paginar a tabela inteira (~120 mil linhas/ano) por conta própria.
+    let histColabPromise;
+    const getHistColabShared=()=>{
+      if(!histColabPromise) histColabPromise=fetchHistoricoColaboradoresAno(opts.supabase, state.year);
+      return histColabPromise;
+    };
     const [despesasDb, nfDb, prodDb, prodColab, ativosRateio] = await Promise.all([
       loadDespesasFromDb(opts.supabase, state.year),
       loadNotasFiscaisFromDb(opts.supabase, state.year),
       loadResultadoDiarioFromDb(opts.supabase, state.year),
-      loadProduzidoColaboradorFromDb(opts.supabase, state.year),
-      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year),
+      loadProduzidoColaboradorFromDb(opts.supabase, state.year, getHistColabShared),
+      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year, getHistColabShared),
     ]);
 
     if(despesasDb.totalRows > 0){
