@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const VERSION = '20260815-extensao-sem-duplicar1';
+const VERSION = '20260824-v2-shared1';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const norm = (value) => String(value || '')
@@ -10,6 +10,16 @@ const norm = (value) => String(value || '')
   .trim()
   .toUpperCase();
 const iso = (value) => String(value || '').slice(0, 10);
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
 
 const state = {
   reservationCheckout: new Map(),
@@ -82,20 +92,46 @@ function applyProjection() {
 
 async function loadProjection() {
   try {
-    const [reservationsRes, linksRes, peopleRes, assignmentsRes] = await Promise.all([
-      supabase.from('hospedagem_reservas').select('id,data_checkout'),
-      supabase.from('hospedagem_reserva_solicitacoes').select('reserva_id,solicitacao_id'),
-      supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,cpf'),
-      supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,solicitacao_colaborador_id,status,checkout_em,created_at'),
-    ]);
+    const shared = await waitForV2State();
+    let reservations = [];
+    let links = [];
+    let people = [];
+    let assignments = [];
+
+    if (shared?.ready) {
+      const byReservation = new Map();
+      (shared.rows || []).forEach((row) => {
+        if (!row.reserva_id) return;
+        const key = String(row.reserva_id);
+        const checkout = iso(row.data_checkout || row.data_checkout_prevista);
+        const current = byReservation.get(key);
+        if (!current || (checkout && checkout > current.data_checkout)) {
+          byReservation.set(key, { id: row.reserva_id, data_checkout: checkout });
+        }
+      });
+      reservations = [...byReservation.values()];
+      links = shared.links || [];
+      people = shared.people || [];
+      assignments = shared.assignments || [];
+    } else {
+      // Compatibilidade: somente se a fonte única V2 não iniciar.
+      const [reservationsRes, linksRes, peopleRes, assignmentsRes] = await Promise.all([
+        supabase.from('hospedagem_reservas').select('id,data_checkout'),
+        supabase.from('hospedagem_reserva_solicitacoes').select('reserva_id,solicitacao_id'),
+        supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,cpf'),
+        supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,solicitacao_colaborador_id,status,checkout_em,created_at'),
+      ]);
+      reservations = reservationsRes.data || [];
+      links = linksRes.data || [];
+      people = peopleRes.data || [];
+      assignments = assignmentsRes.data || [];
+    }
 
     state.reservationCheckout.clear();
-    (reservationsRes.data || []).forEach((reservation) => {
+    reservations.forEach((reservation) => {
       if (reservation.id && reservation.data_checkout) state.reservationCheckout.set(String(reservation.id), iso(reservation.data_checkout));
     });
 
-    const people = peopleRes.data || [];
-    const assignments = assignmentsRes.data || [];
     const peopleById = new Map(people.map((person) => [String(person.id), person]));
     const peopleByRequest = new Map();
     people.forEach((person) => {
@@ -115,7 +151,7 @@ async function loadProjection() {
     });
 
     state.resolvedExtensions.clear();
-    (linksRes.data || []).forEach((link) => {
+    links.forEach((link) => {
       const requestId = String(link.solicitacao_id || '');
       const reservaId = String(link.reserva_id || '');
       const requestPeople = peopleByRequest.get(requestId) || [];
@@ -231,9 +267,8 @@ async function repairExtension(requestIds) {
       await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'RESERVADA' }).eq('id', request.id);
     }
 
+    if (window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
     await loadProjection();
-    document.querySelector('[data-hosp-rd-action="refresh"]')?.click();
-    setTimeout(loadProjection, 450);
   } catch (error) {
     console.error('[hosp-extensao-sem-duplicar] reparo', error);
   }
@@ -272,7 +307,7 @@ function bindExtensionRepair() {
 async function init() {
   bindExtensionRepair();
   await loadProjection();
-  setInterval(loadProjection, 30000);
+  window.addEventListener('hospedagem:v2-data', loadProjection);
   console.info(`[hosp-extensao-sem-duplicar] ativo ${VERSION}`);
 }
 
