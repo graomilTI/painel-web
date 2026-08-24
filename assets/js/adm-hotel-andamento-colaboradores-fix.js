@@ -192,7 +192,6 @@ function schedule(options = {}) {
 
 function invalidateAndSchedule() {
   cacheAt = 0;
-  window.addEventListener('hospedagem:v2-data', invalidateAndSchedule);
   schedule({ force: true });
 }
 
@@ -218,6 +217,7 @@ function start() {
     if (refresh || checkout || modalMutation) invalidateAndSchedule();
   }, true);
 
+  window.addEventListener('hospedagem:v2-data', invalidateAndSchedule);
   schedule({ force: true });
 }
 
