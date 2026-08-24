@@ -1,5 +1,17 @@
 import { supabase } from './supabaseClient.js';
 
+const VERSION = '20260824-v2-shared1';
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
+
 const state = {
   hotels: new Map(),
   rows: new Map(),
@@ -91,6 +103,7 @@ async function persistInvoiceChoice(snapshot) {
     return;
   }
   state.editingHotelId = null;
+  if (window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
   await refreshData();
 }
 
@@ -268,6 +281,16 @@ function scheduleDecorate() {
 }
 
 async function refreshData() {
+  const shared = await waitForV2State();
+  if (shared?.ready) {
+    state.hotels = new Map((shared.hotels || []).map((hotel) => [String(hotel.id), hotel]));
+    state.rows = new Map((shared.rows || []).map((row) => [String(row.solicitacao_id), row]));
+    state.quotes = new Map((shared.quotes || []).map((quote) => [String(quote.id), quote]));
+    decorate();
+    return;
+  }
+
+  // Fallback apenas se o V2 não iniciar.
   const [hotelsRes, rowsRes, quotesRes] = await Promise.all([
     supabase.from('hospedagem_hoteis').select('id,nome,cidade,uf,emite_nota_fiscal'),
     supabase.from('hospedagem_painel_geral').select('solicitacao_id,hotel_id,status_solicitacao,status_financeiro,pendencia_financeira'),
@@ -285,10 +308,14 @@ function boot() {
   bindHotelForm();
   refreshData();
   const observer = new MutationObserver(scheduleDecorate);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const target = document.getElementById('pageContent') || document.body;
+  observer.observe(target, { childList: true, subtree: true });
+  window.addEventListener('hospedagem:v2-data', refreshData);
   window.addEventListener('hashchange', () => setTimeout(refreshData, 250));
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshData(); });
-  setInterval(refreshData, 30000);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && window.__hospedagemV2Refresh) window.__hospedagemV2Refresh();
+  });
+  console.info(`[hosp-nf-alert] ativo ${VERSION}`);
 }
 
 boot();
