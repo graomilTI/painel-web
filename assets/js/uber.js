@@ -447,7 +447,7 @@ async function loadProducaoForRows(rows) {
 
 function saveCache() {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
       rows: state.rows,
       producao: state.producao,
       filters: state.filters,
@@ -459,7 +459,7 @@ function saveCache() {
 
 function loadCache() {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return false;
     const cached = JSON.parse(raw);
     if (!Array.isArray(cached?.rows)) return false;
