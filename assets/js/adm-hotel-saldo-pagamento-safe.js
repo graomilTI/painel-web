@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient.js';
 
 const VERSION = '20260824-v2-shared1';
 const $ = (s, r = document) => r.querySelector(s);
-const $ = (s, r = document) => [...r.querySelectorAll(s)];
+const qall = (s, r = document) => [...r.querySelectorAll(s)];
 
 async function waitForV2State(timeoutMs = 8000) {
   const start = Date.now();
@@ -118,7 +118,7 @@ function renderHotelBalances() {
   const desc = panel.querySelector('.hosp-rd-title p');
   if (desc) desc.textContent = 'Cadastro, pendências, créditos e saldo financeiro por hotel.';
 
-  const metrics = $$('.hosp-rd-hotel-metric', panel);
+  const metrics = qall('.hosp-rd-hotel-metric', panel);
   const positive = [...state.balances.values()].reduce((s,b) => s + Math.max(0,b.net),0);
   const negative = [...state.balances.values()].reduce((s,b) => s + Math.max(0,-b.net),0);
   const month = today().slice(0,7);
@@ -136,7 +136,7 @@ function renderHotelBalances() {
   hotels.sort((a,b) => String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR',{sensitivity:'base'}));
   const tbody = panel.querySelector('.hosp-rd-table tbody');
   if (tbody) tbody.innerHTML = hotels.length ? hotels.map(hotelRow).join('') : '<tr><td colspan="5"><div class="hosp-rd-empty">Nenhum hotel nesta janela.</div></td></tr>';
-  $$('.hosp-rd-btn[data-hosp-rd-hotel-filter]', panel).forEach((btn) => btn.classList.toggle('primary', btn.dataset.hospRdHotelFilter === state.filter));
+  qall('.hosp-rd-btn[data-hosp-rd-hotel-filter]', panel).forEach((btn) => btn.classList.toggle('primary', btn.dataset.hospRdHotelFilter === state.filter));
 }
 async function refreshHotels(forceShared = false) {
   if (forceShared && window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
@@ -160,7 +160,7 @@ function injectStyles() {
 }
 
 function paymentRowsRoot() { return $('#hospPayInlineExtras'); }
-function paymentExtrasTotal() { return $$('[data-pay-extra-row]', paymentRowsRoot() || document).reduce((s,row) => s + num(row.querySelector('[data-pay-extra-value]')?.value),0); }
+function paymentExtrasTotal() { return qall('[data-pay-extra-row]', paymentRowsRoot() || document).reduce((s,row) => s + num(row.querySelector('[data-pay-extra-value]')?.value),0); }
 function recalcPaymentValue() {
   const input = $('#pagarValor'); if (input) input.value = (state.payment.baseDue + paymentExtrasTotal()).toFixed(2);
   const total = $('#hospPayExtraTotal'); if (total) total.textContent = money(paymentExtrasTotal());
@@ -213,7 +213,7 @@ async function resolvePaymentContext() {
 }
 async function persistInlineExtras() {
   if (state.payment.savingExtras || !state.payment.reservaId) return;
-  const rows = $$('[data-pay-extra-row]', paymentRowsRoot() || document).filter((r) => r.dataset.saved !== '1');
+  const rows = qall('[data-pay-extra-row]', paymentRowsRoot() || document).filter((r) => r.dataset.saved !== '1');
   const items = rows.map((r) => ({ qty: Math.max(1,num(r.querySelector('[data-pay-extra-qty]')?.value)), desc: String(r.querySelector('[data-pay-extra-desc]')?.value || '').trim(), value: num(r.querySelector('[data-pay-extra-value]')?.value) })).filter((x) => x.desc && x.value > 0);
   if (!items.length) return;
   state.payment.savingExtras = true;
