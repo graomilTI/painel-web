@@ -1,8 +1,18 @@
 import { supabase } from './supabaseClient.js';
 
-const VERSION = '20260816-saldo-pagamento-safe1';
+const VERSION = '20260824-v2-shared1';
 const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const $ = (s, r = document) => [...r.querySelectorAll(s)];
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
 const num = (v) => Number(String(v ?? 0).replace(',', '.')) || 0;
 const iso = (v) => String(v || '').slice(0, 10);
 const money = (v) => num(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -47,20 +57,31 @@ function availableCredit(hotelId) {
 }
 
 async function loadBalanceData() {
-  const [hotels, rows, finance, extras, advances, assignments] = await Promise.all([
-    supabase.from('hospedagem_hoteis').select('*'),
-    supabase.from('hospedagem_painel_geral').select('*'),
-    supabase.from('hospedagem_financeiro').select('*'),
-    supabase.from('hospedagem_custos_extras').select('*'),
-    supabase.from('hospedagem_adiantamentos').select('*'),
-    supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,status,checkout_em'),
-  ]);
-  state.hotels = hotels.data || [];
-  state.rows = rows.data || [];
-  state.finance = finance.data || [];
-  state.extras = extras.data || [];
-  state.advances = advances.data || [];
-  state.assignments = assignments.data || [];
+  const shared = await waitForV2State();
+  if (shared?.ready) {
+    state.hotels = shared.hotels || [];
+    state.rows = shared.rows || [];
+    state.finance = shared.finance || [];
+    state.extras = shared.extras || [];
+    state.advances = shared.advances || [];
+    state.assignments = shared.assignments || [];
+  } else {
+    // Compatibilidade: só consulta diretamente se o V2 falhar de fato.
+    const [hotels, rows, finance, extras, advances, assignments] = await Promise.all([
+      supabase.from('hospedagem_hoteis').select('*'),
+      supabase.from('hospedagem_painel_geral').select('*'),
+      supabase.from('hospedagem_financeiro').select('*'),
+      supabase.from('hospedagem_custos_extras').select('*'),
+      supabase.from('hospedagem_adiantamentos').select('*'),
+      supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,status,checkout_em'),
+    ]);
+    state.hotels = hotels.data || [];
+    state.rows = rows.data || [];
+    state.finance = finance.data || [];
+    state.extras = extras.data || [];
+    state.advances = advances.data || [];
+    state.assignments = assignments.data || [];
+  }
 
   const activeReservationIds = new Set(state.assignments
     .filter((a) => !a.checkout_em && !['CHECKOUT','CANCELADO'].includes(String(a.status || '').toUpperCase()))
@@ -117,7 +138,11 @@ function renderHotelBalances() {
   if (tbody) tbody.innerHTML = hotels.length ? hotels.map(hotelRow).join('') : '<tr><td colspan="5"><div class="hosp-rd-empty">Nenhum hotel nesta janela.</div></td></tr>';
   $$('.hosp-rd-btn[data-hosp-rd-hotel-filter]', panel).forEach((btn) => btn.classList.toggle('primary', btn.dataset.hospRdHotelFilter === state.filter));
 }
-async function refreshHotels() { await loadBalanceData(); renderHotelBalances(); }
+async function refreshHotels(forceShared = false) {
+  if (forceShared && window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
+  await loadBalanceData();
+  renderHotelBalances();
+}
 
 function injectStyles() {
   if ($('#hospSafeStyles')) return;
@@ -198,7 +223,7 @@ async function persistInlineExtras() {
     const { error } = await supabase.from('hospedagem_custos_extras').insert(payload); if (error) throw error;
     rows.forEach((r) => { r.dataset.saved = '1'; r.querySelectorAll('input').forEach((i) => i.disabled = true); });
     await syncReservationTotal(state.payment.reservaId);
-    await loadBalanceData();
+    await refreshHotels(true);
   } finally { state.payment.savingExtras = false; }
 }
 async function syncReservationTotal(reservaId) {
@@ -247,7 +272,7 @@ async function confirmPaymentWithProof() {
   if (error) throw error;
   const status=String(result?.status||'PARCIAL').toUpperCase();
   const feedback = $('#pagarFeedback'); if (feedback) { feedback.textContent = status==='PAGO'?'Pagamento confirmado pelo comprovante anexado.':'Comprovante anexado; pagamento registrado como parcial.'; feedback.className='adm-hosp-feedback ok'; }
-  await refreshHotels();
+  await refreshHotels(true);
 }
 async function sendToFinance() {
   const reservaId = state.payment.reservaId; if (!reservaId) return;
@@ -259,7 +284,7 @@ async function sendToFinance() {
   const { error } = await supabase.rpc('hospedagem_enviar_lote_financeiro', { p_reserva_id:reservaId,p_lote_id:loteId });
   if (error) throw error;
   $('#modalPagar')?.classList.remove('open'); state.payment.open=false;
-  await refreshHotels();
+  await refreshHotels(true);
 }
 
 async function openDocument(type) {
@@ -291,8 +316,8 @@ function bindRoot(root) {
   root.addEventListener('click',(event)=>{
     const filter=event.target.closest('[data-hosp-rd-hotel-filter]');
     if(filter){state.filter=filter.dataset.hospRdHotelFilter;setTimeout(renderHotelBalances,60);}
-    const tab=event.target.closest('[data-hosp-rd-tab="hoteis"]'); if(tab)setTimeout(()=>{refreshHotels();},150);
-    const refresh=event.target.closest('[data-hosp-rd-action="refresh"]'); if(refresh)setTimeout(()=>refreshHotels(),500);
+    const tab=event.target.closest('[data-hosp-rd-tab="hoteis"]'); if(tab)setTimeout(()=>{refreshHotels(false);},150);
+    const refresh=event.target.closest('[data-hosp-rd-action="refresh"]'); if(refresh)setTimeout(()=>refreshHotels(false),650);
     const pay=event.target.closest('[data-hosp-rd-action="pay"]'); if(pay?.dataset.reserva)waitPaymentModal(pay.dataset.reserva);
     const hotelPay=event.target.closest('[data-hosp-rd-modal="hotel-pay"]'); if(hotelPay?.dataset.reserva)waitPaymentModal(hotelPay.dataset.reserva);
   });
@@ -325,7 +350,7 @@ function start() {
   const timer=setInterval(()=>{
     tries+=1;
     const root=$('#hospRedesignRoot');
-    if(root){clearInterval(timer);state.root=root;bindRoot(root);state.filter=$('.hosp-rd-btn.primary[data-hosp-rd-hotel-filter]',root)?.dataset.hospRdHotelFilter||'uso';state.search=$('[data-hosp-rd-search="hoteis"]',root)?.value||'';setTimeout(refreshHotels,1400);}
+    if(root){clearInterval(timer);state.root=root;bindRoot(root);state.filter=$('.hosp-rd-btn.primary[data-hosp-rd-hotel-filter]',root)?.dataset.hospRdHotelFilter||'uso';state.search=$('[data-hosp-rd-search="hoteis"]',root)?.value||'';window.addEventListener('hospedagem:v2-data',()=>refreshHotels(false));setTimeout(()=>refreshHotels(false),1400);}
     if(tries>150)clearInterval(timer);
   },100);
   console.info(`[adm-hotel-safe] ${VERSION}`);
