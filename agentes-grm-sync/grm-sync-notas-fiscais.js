@@ -189,23 +189,28 @@ async function upsertData(data) {
     data_fatura_ate: toIso(dateRange.to),
     cliente_nacional: row['Cliente Nacional'] || null,
     numero_nf: row['Número NF'] || row['NF'] || null,
+    empresa: row['Empresa'] || null,
+    fatura: row['Fatura'] != null ? String(row['Fatura']) : null,
     valor_total: parseFloat(row['Valor Total'] || row['Valor']) || null,
     dados_json: row,
     data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
   }));
-  // A API pode repetir uma NF em mais de uma linha de faturamento, enquanto a
-  // tabela mantém uma linha por número de nota.
+  // "N.F." (numero_nf) NAO identifica uma linha unica: uma mesma nota fiscal pode
+  // agrupar varias Faturas (cargas/carregamentos distintos, cada um com seu
+  // proprio Valor Bruto) - descoberto 24/08 depois de um buraco de ~R$9,36mi
+  // (23,6% da receita) causado por essa suposicao errada. A linha de verdade e
+  // por (Empresa, Fatura); dedupar so por N.F. descartava a maioria das Faturas.
   const byInvoice = new Map();
   const withoutInvoice = [];
   for (const record of mappedRecords) {
-    if (record.numero_nf == null || record.numero_nf === '') withoutInvoice.push(record);
-    else byInvoice.set(String(record.numero_nf), record);
+    if (record.empresa == null || record.fatura == null || record.fatura === '') withoutInvoice.push(record);
+    else byInvoice.set(`${record.empresa}|${record.fatura}`, record);
   }
   const records = [...byInvoice.values(), ...withoutInvoice];
 
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'numero_nf' });
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'empresa,fatura' });
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
