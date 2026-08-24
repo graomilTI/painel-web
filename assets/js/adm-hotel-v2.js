@@ -6,7 +6,7 @@ import { supabase } from './supabaseClient.js';
 // Supabase Realtime, e traz Cotar/Anexar nativos (antes delegados ao
 // fluxo-v2 via clique sintético). Ver plano em
 // C:\Users\graom\.claude\plans\spicy-bubbling-russell.md.
-const V2_VERSION = '20260819-consolidado-realtime1';
+const V2_VERSION = '20260824-fonte-unica-dados2';
 const HOSP_COTACAO_FLOW_ID = '8660973';
 const onlyDigits = (value) => String(value || '').replace(/\D+/g, '');
 const roomsLabel = (row) => row.composicao_quartos || row.tipo_quarto || row.quartos || row.observacao_quartos || 'A definir';
@@ -39,7 +39,7 @@ const addDays = (date, amount) => {
 
 const state = {
   tab: 'dashboard', hotelFilter: 'uso', loading: false, ready: false,
-  rows: [], hotels: [], people: [], assignments: [], links: [], extras: [], finance: [], documents: [],
+  rows: [], hotels: [], people: [], assignments: [], links: [], extras: [], finance: [], documents: [], quotes: [],
   advances: [], advanceMoves: [], checkoutLots: [], checkoutPeople: [],
   peopleByRequest: new Map(), peopleById: new Map(), rowsByRequest: new Map(),
   manualGroups: new Map(), activeModal: null, user: null, userName: '',
@@ -137,21 +137,29 @@ async function loadData() {
     state.people = peopleRes.error ? [] : (peopleRes.data || []);
     state.assignments = assignmentsRes.error ? [] : (assignmentsRes.data || []);
     state.links = linksRes.error ? [] : (linksRes.data || []);
-    const [extras, finance, documents, advances, advanceMoves, checkoutLots, checkoutPeople] = await Promise.all([
-      optional('hospedagem_custos_extras'), optional('hospedagem_financeiro'), optional('hospedagem_documentos'), optional('hospedagem_adiantamentos'), optional('hospedagem_adiantamento_movimentos'), optional('hospedagem_checkout_lotes'), optional('hospedagem_checkout_lote_colaboradores'),
+    const [extras, finance, documents, advances, advanceMoves, checkoutLots, checkoutPeople, quotes] = await Promise.all([
+      optional('hospedagem_custos_extras'), optional('hospedagem_financeiro'), optional('hospedagem_documentos'), optional('hospedagem_adiantamentos'), optional('hospedagem_adiantamento_movimentos'), optional('hospedagem_checkout_lotes'), optional('hospedagem_checkout_lote_colaboradores'), optional('hospedagem_cotacoes'),
     ]);
-    state.extras = extras; state.finance = finance; state.documents = documents; state.advances = advances; state.advanceMoves = advanceMoves; state.checkoutLots = checkoutLots; state.checkoutPeople = checkoutPeople;
+    state.extras = extras; state.finance = finance; state.documents = documents; state.advances = advances; state.advanceMoves = advanceMoves; state.checkoutLots = checkoutLots; state.checkoutPeople = checkoutPeople; state.quotes = quotes;
     rebuildIndexes();
     state.ready = true;
     // adm-hotel.js (modais legados de Reservar/Estender/Checkout/Pagar) lê
     // esse bridge em vez de refazer sua própria busca de hospedagem_painel_geral.
     window.__hospedagemV2State = state;
+    window.dispatchEvent(new CustomEvent('hospedagem:v2-data', { detail: { version: V2_VERSION, loadedAt: Date.now() } }));
     renderAll();
   } catch (error) {
     console.error('[hosp-redesign] loadData', error);
     toast(`Não foi possível carregar Hotéis: ${error.message || error}`, true);
   } finally { state.loading = false; }
 }
+
+// API compartilhada: patches e shell legado reaproveitam exatamente o mesmo
+// snapshot. Assim um clique em Atualizar gera uma única carga do módulo.
+window.__hospedagemV2Refresh = async () => {
+  await loadData();
+  return window.__hospedagemV2State || state;
+};
 
 function personKey(person) { return norm(person?.colaborador_id || person?.cpf || person?.nome_colaborador || person?.nome); }
 function peopleForRequest(requestId) { return state.peopleByRequest.get(String(requestId || '')) || []; }
@@ -758,7 +766,7 @@ function scheduleReload(delay = 400) {
 }
 function setupRealtime() {
   if (realtimeChannel || currentMode() !== 'hoteis') return;
-  const tables = ['hospedagem_solicitacoes','hospedagem_reservas','hospedagem_reserva_colaboradores','hospedagem_financeiro','hospedagem_checkout_lotes','hospedagem_custos_extras','hospedagem_documentos','hospedagem_hoteis'];
+  const tables = ['hospedagem_solicitacoes','hospedagem_solicitacao_colaboradores','hospedagem_reservas','hospedagem_reserva_colaboradores','hospedagem_reserva_solicitacoes','hospedagem_financeiro','hospedagem_checkout_lotes','hospedagem_checkout_lote_colaboradores','hospedagem_custos_extras','hospedagem_documentos','hospedagem_hoteis','hospedagem_adiantamentos','hospedagem_adiantamento_movimentos','hospedagem_cotacoes'];
   realtimeChannel = supabase.channel('hospedagem-hoteis-v2');
   tables.forEach((table) => realtimeChannel.on('postgres_changes', { event: '*', schema: 'public', table }, () => scheduleReload()));
   realtimeChannel.subscribe();
