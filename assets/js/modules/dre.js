@@ -354,25 +354,20 @@
     const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
     if(!supabase || !year) return out;
 
-    // Antes lia so o "lote mais recente" (created_at dentro de 5min do mais novo),
-    // assumindo que toda a sincronizacao terminava nesse intervalo. Na pratica o
-    // agente de notas fiscais processa o relatorio inteiro (ate 35 dias, milhares
-    // de notas) em mais de 5 minutos, então essa janela so capturava um pedaço do
-    // que estava sendo sincronizado - e como o upsert antigo nunca deduplicava
-    // (sem chave por numero da nota), a tabela acumulou ~380 mil linhas repetidas.
-    // Agora a tabela tem indice unico por numero_nf (upsert real), então basta
-    // paginar tudo; o dedupe por numero_nf abaixo é só defesa extra para linhas
-    // antigas sem numero_nf preenchido ou eventuais resíduos.
-    const pageSize=1000; let from=0; const rows=[];
-    while(true){
-      const {data,error}=await supabase
-        .from('grm_notas_fiscais_importacoes')
-        .select('numero_nf, created_at, dados_json')
-        .range(from, from+pageSize-1);
-      if(error){ console.warn('DRE: falha ao paginar notas fiscais sincronizadas pelo agente.', error); break; }
-      const batch=data||[]; rows.push(...batch);
-      if(batch.length<pageSize) break;
-      from+=pageSize;
+    // Antes paginava a tabela inteira 1000 em 1000 (chegou a ~287 mil linhas: o
+    // agente de sync só passou a preencher numero_nf corretamente a partir de
+    // ~14/08/2026, então o upsert nunca deduplicava as linhas antigas - NULL não
+    // colide com NULL num índice único - e ~287 requisições sequenciais do
+    // navegador deixavam a tela "Conferindo dados..." travada por minutos,
+    // parecendo um loop infinito). Agora usa a RPC dre_notas_fiscais_deduplicadas,
+    // que já devolve a tabela deduplicada por (Empresa, N.F.) direto no banco -
+    // mesma chave de dedupe usada em resumo_faturamento_notas_periodo (Dashboard
+    // do Sócio) - então vira 1 requisição só.
+    let rows=[];
+    {
+      const {data,error}=await supabase.rpc('dre_notas_fiscais_deduplicadas');
+      if(error){ console.warn('DRE: falha ao buscar notas fiscais sincronizadas pelo agente.', error); }
+      else rows=data||[];
     }
 
     const porNumeroNf=new Map(); const semNumero=[];
