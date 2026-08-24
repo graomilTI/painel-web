@@ -372,11 +372,16 @@
     // navegador deixavam a tela "Conferindo dados..." travada por minutos,
     // parecendo um loop infinito; a tabela também foi limpa dessas ~285 mil
     // linhas órfãs em 24/08). Agora usa a RPC dre_notas_fiscais_deduplicadas,
-    // que já devolve a tabela deduplicada por (Empresa, N.F.) direto no banco -
-    // mesma chave de dedupe usada em resumo_faturamento_notas_periodo (Dashboard
-    // do Sócio). O Supabase ainda limita cada resposta a 1000 linhas mesmo pra
-    // uma function - com ~2 mil notas distintas isso ainda cabe em 2-3 páginas
-    // rápidas, bem diferente das ~287 antigas sobre a tabela crua.
+    // que já devolve a tabela deduplicada direto no banco. A chave de dedupe é
+    // (Empresa, Fatura) - não (Empresa, N.F.): uma N.F. pode agrupar várias
+    // Faturas (cargas/carregamentos distintos, cada um com seu próprio Valor
+    // Bruto), então dedupar por N.F. descartava a maioria delas em silêncio
+    // (achado 24/08, buraco de ~R$9,36mi/23,6% da receita). Não rededuplica no
+    // cliente - a RPC já é a fonte da verdade; um segundo dedupe aqui (por
+    // numero_nf) desfaria o fix. O Supabase ainda limita cada resposta a 1000
+    // linhas mesmo pra uma function - com poucos milhares de Faturas distintas
+    // isso ainda cabe em poucas páginas rápidas, bem diferente das ~287 antigas
+    // sobre a tabela crua.
     let rows=[]; let fetchFailed=false;
     {
       const pageSize=1000; let from=0;
@@ -388,18 +393,9 @@
         from+=pageSize;
       }
     }
+    out.totalRows=rows.length;
 
-    const porNumeroNf=new Map(); const semNumero=[];
     for(const row of rows){
-      const chave=row.numero_nf ?? row.dados_json?.['N.F.'];
-      if(chave==null){ semNumero.push(row); continue; }
-      const atual=porNumeroNf.get(chave);
-      if(!atual || new Date(row.created_at||0) > new Date(atual.created_at||0)) porNumeroNf.set(chave, row);
-    }
-    const rowsDeduplicadas=[...porNumeroNf.values(), ...semNumero];
-    out.totalRows=rowsDeduplicadas.length;
-
-    for(const row of rowsDeduplicadas){
       const json=row.dados_json||{};
       const reg=mapReg(json['Coordenação'] ?? json['Coordenacao'] ?? json['Regional']);
       const m=monthFrom(json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data']);
