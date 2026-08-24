@@ -1,6 +1,16 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 
+async function waitForHospedagemV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
+
 const LABELS = {
   CASA: 'Casa', APARTAMENTO: 'Apartamento', POUSADA: 'Pousada', ESCRITORIO: 'Escritório',
   SOLICITADA: 'Solicitada', EM_ANALISE: 'Em análise', EM_COTACAO: 'Em cotação', RESERVADA: 'Reservada', CANCELADA: 'Cancelada', CONCLUIDA: 'Concluída',
@@ -111,7 +121,7 @@ export function renderContent(content, userContext) {
   const state = {
     rows: [], resumo: {}, hoteis: [], alojamentos: [], historicoRows: [], historicoAtual: [], historicoErro: null,
     editingHotel: null, editingAlojamento: null,
-    tab: 'dashboard', selected: null, bootDone: false,
+    tab: 'dashboard', selected: null, bootDone: false, alojamentosLoaded: false,
     reservarColabs: [], estenderColabs: [],
     dashPeriod: 30, dashUF: null, andamentoFiltro: 'todos',
     solicitadasFiltros: { colaborador: '', cidade: '', supervisao: '', data: '', ordenar: 'data', direcao: 'desc' }
@@ -799,17 +809,18 @@ export function renderContent(content, userContext) {
   async function enrichRowsWithColaboradores(rows) {
     const ids=[...new Set((rows||[]).map((r) => r.solicitacao_id).filter(Boolean))];
     if (!ids.length) return rows||[];
-    // Sem "id" aqui, todo colaborador chega ao modal de Reservar sem PK —
-    // saveReservarModal() filtra por c.id e nunca vincula ninguém em
-    // hospedagem_reserva_colaboradores, deixando a reserva presa em
-    // Solicitações pra sempre (o card nunca conta como "completo").
-    // "regional" NÃO existe nessa tabela (colunas reais: id, solicitacao_id,
-    // colaborador_id, nome_colaborador, cpf, tipo_colaborador, empresa,
-    // coordenacao, supervisao, status_colaborador, observacoes, created_at) —
-    // pedir coluna inexistente derruba o select inteiro com erro 400, e caía
-    // no mesmo fallback sem id de novo. getRegionalColaborador() já cobre
-    // via "supervisao" (ver linha ~404), não precisa de "regional" aqui.
-    const {data,error}=await supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,supervisao,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
+    // O V2 já carrega esta tabela para montar Solicitações/Em Andamento.
+    // Reutiliza o snapshot compartilhado; só faz consulta própria se o V2
+    // realmente não conseguir iniciar (fallback de compatibilidade).
+    const shared=await waitForHospedagemV2State();
+    let data=null,error=null;
+    if (shared?.people) {
+      const allowed=new Set(ids.map(String));
+      data=shared.people.filter((c)=>allowed.has(String(c.solicitacao_id||'')));
+    } else {
+      const result=await supabase.from('hospedagem_solicitacao_colaboradores').select('id,solicitacao_id,nome_colaborador,supervisao,coordenacao,empresa,tipo_colaborador').in('solicitacao_id',ids);
+      data=result.data; error=result.error;
+    }
     if (error||!Array.isArray(data)) { if (error) console.error('[adm-hotel] enrichRowsWithColaboradores falhou',error); return rows||[]; }
     const porSolicitacao=new Map();
     data.forEach((c) => { const key=String(c.solicitacao_id||''); if (!porSolicitacao.has(key)) porSolicitacao.set(key,[]); porSolicitacao.get(key).push(c); });
@@ -899,11 +910,10 @@ export function renderContent(content, userContext) {
   }
 
   async function loadRows() {
-    // adm-hotel-v2.js (a UI real de Hotéis) já carrega hospedagem_painel_geral
-    // inteira pra si — reaproveitar em vez de buscar de novo. state.rows daqui
-    // só alimenta os modais legados (Reservar/Estender/Checkout/Pagar) e a aba
-    // Alojamentos, então cai pro fetch próprio se o bridge não estiver pronto.
-    const bridged = window.__hospedagemV2State;
+    // Depois do boot, operações legadas pedem ao V2 uma única atualização.
+    // No boot apenas aguardamos a carga que o V2 já iniciou.
+    if (state.bootDone && window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
+    const bridged = await waitForHospedagemV2State();
     const {data,error} = bridged?.ready
       ? {data: bridged.rows, error: null}
       : await supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao',{ascending:false});
@@ -1075,7 +1085,7 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.adm-hosp-panel').forEach((p) => p.classList.remove('active'));
     document.getElementById(`tab-${t}`)?.classList.add('active');
     if (t==='hoteis') { renderHoteis(); return state.bootDone ? undefined : loadHoteis(); }
-    if (t==='alojamentos') { renderAlojamentos(); return state.bootDone ? undefined : loadAlojamentos(); }
+    if (t==='alojamentos') { renderAlojamentos(); return state.alojamentosLoaded ? undefined : loadAlojamentos(); }
     if (t==='historico') { renderHistorico(); return state.historicoLoaded ? undefined : loadHistoricoRows(); }
     renderCurrentTab();
     if (!state.bootDone) loadRows();
@@ -1084,7 +1094,11 @@ export function renderContent(content, userContext) {
   // ─── Hotels ────────────────────────────────────────────────────────────────
 
   async function loadHoteis() {
-    const {data,error}=await supabase.from('hospedagem_hoteis').select('*').order('cidade',{ascending:true}).order('nome',{ascending:true});
+    if (state.bootDone && window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
+    const shared=await waitForHospedagemV2State();
+    const {data,error}=shared?.ready
+      ? {data:shared.hotels,error:null}
+      : await supabase.from('hospedagem_hoteis').select('*').order('cidade',{ascending:true}).order('nome',{ascending:true});
     if (error) { document.getElementById('hotelTbody').innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
     state.hoteis=data||[];
     fillHotelSelect(state.selected);
@@ -1221,6 +1235,7 @@ export function renderContent(content, userContext) {
     const {data,error}=await supabase.from('hospedagem_alojamentos').select('*').order('cidade',{ascending:true}).order('nome',{ascending:true});
     if (error) { const tbody=document.getElementById('alojTbody'); if (tbody) tbody.innerHTML=`<tr><td colspan="7" class="adm-hosp-empty">${esc(error.message)}</td></tr>`; return; }
     state.alojamentos=data||[];
+    state.alojamentosLoaded=true;
     renderAlojamentos();
   }
   function renderAlojamentos() {
@@ -1873,12 +1888,13 @@ export function renderContent(content, userContext) {
   // ─── Boot ──────────────────────────────────────────────────────────────────
 
   (async function boot() {
-    await loadHoteis(); await loadAlojamentos(); await loadRows();
-    state.bootDone=true;
-    // Histórico não faz parte da UI visível (adm-hotel-v2.js cobre tudo que a
-    // usuária vê); carregar 2 tabelas sem filtro de data (limit 5000) pra uma
-    // aba que ninguém abre é desperdício — só busca se a hash pedir direto.
     const initialTab = initialTabFromHash();
+    await loadHoteis();
+    if (initialTab === 'alojamentos') await loadAlojamentos();
+    await loadRows();
+    state.bootDone=true;
+    // Histórico e Alojamentos agora são lazy: a tela de Hotéis não consulta
+    // bases que não usa durante o carregamento inicial.
     setTab(initialTab);
     if (initialTab === 'historico') await loadHistoricoRows();
   })();
