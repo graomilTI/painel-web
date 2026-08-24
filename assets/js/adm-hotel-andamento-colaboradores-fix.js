@@ -1,7 +1,17 @@
 import { supabase } from './supabaseClient.js';
 
-const FIX_VERSION = '20260817-andamento-colab1';
+const FIX_VERSION = '20260824-v2-shared1';
 const CACHE_TTL_MS = 5000;
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
 
 let cache = null;
 let cacheAt = 0;
@@ -83,13 +93,17 @@ async function loadIndex(force = false) {
   if (loading) return loading;
 
   loading = (async () => {
-    const { data, error } = await supabase
-      .from('hospedagem_painel_geral')
-      .select('reserva_id,data_checkout,data_checkout_prevista,status_hospedagem,colaboradores')
-      .not('reserva_id', 'is', null);
-
-    if (error) throw error;
-    cache = buildIndex(data || []);
+    const shared = await waitForV2State();
+    if (shared?.ready) {
+      cache = buildIndex((shared.rows || []).filter((row) => row.reserva_id));
+    } else {
+      const { data, error } = await supabase
+        .from('hospedagem_painel_geral')
+        .select('reserva_id,data_checkout,data_checkout_prevista,status_hospedagem,colaboradores')
+        .not('reserva_id', 'is', null);
+      if (error) throw error;
+      cache = buildIndex(data || []);
+    }
     cacheAt = Date.now();
     return cache;
   })();
@@ -178,11 +192,8 @@ function schedule(options = {}) {
 
 function invalidateAndSchedule() {
   cacheAt = 0;
+  window.addEventListener('hospedagem:v2-data', invalidateAndSchedule);
   schedule({ force: true });
-  setTimeout(() => {
-    cacheAt = 0;
-    schedule({ force: true });
-  }, 1200);
 }
 
 function start() {
