@@ -1,6 +1,6 @@
 // Ajustes de saneamento para fontes do DRE alimentadas pelos agentes GRM.
 // Este arquivo roda depois do módulo principal e envolve o openHome para limpar caches
-// antigos e entregar ao DRE somente as fontes oficiais dos agentes para NF, despesas e produção.
+// antigos e normalizar os dados de despesas dos agentes GRM antes de chegar ao DRE.
 (function () {
   const originalDre = window.DRE;
   if (!originalDre || typeof originalDre.openHome !== 'function' || originalDre.openHome.__dreAgentesFix) return;
@@ -25,7 +25,6 @@
   };
 
   const REGIOES_IGNORADAS_DRE = new Set(['NULL', 'AGROTRADER', 'LOG1000', 'PARAGUAI']);
-  const DRE_TIPOS_AGENTES_OFICIAIS = new Set(['despesas', 'notas_fiscais', 'resultado-diario']);
   const CAMPOS_VALOR = [
     'Valor Total', 'Valor', 'Valor Pago', 'V. Pago', 'Total Pago', 'Total',
     'valor_total', 'valor', 'valor_pago', 'total'
@@ -60,43 +59,6 @@
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^A-Z0-9]/g, '');
-  }
-
-  function cleanTipo(value) {
-    return String(value || '')
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/_/g, '-')
-      .replace(/\s+/g, '-');
-  }
-
-  function normalizeReportTipo(row) {
-    const candidates = [
-      row?.tipo,
-      row?.tipo_relatorio,
-      row?.titulo_relatorio,
-      row?.nome_arquivo,
-      row?.arquivo_nome_original
-    ].map(v => String(v || '').trim()).filter(Boolean);
-
-    for (const original of candidates) {
-      const t = cleanTipo(original);
-      const low = original.toLowerCase();
-      if (['despesas', 'relatorio-de-despesas', 'despesas-por-regional'].includes(t)) return 'despesas';
-      if (['notas-fiscais', 'nota-fiscal', 'nfs', 'nf', 'nfe', 'nfse', 'faturamento', 'relatorio-de-notas-fiscais'].includes(t)) return 'notas_fiscais';
-      if (['resultado-diario', 'resultado-diario-gavilon', 'relatorio-resultado-diario', 'producao', 'producao-consolidada', 'relatorio-de-resultado-diario'].includes(t)) return 'resultado-diario';
-      if (/despesas?|despesas?\s*por\s*regional/.test(low)) return 'despesas';
-      if (/notas?\s*fiscais?|nfe|nfse|faturamento/.test(low)) return 'notas_fiscais';
-      if (/resultado.*diario|diario.*resultado|gavilon|producao|produção/.test(low)) return 'resultado-diario';
-    }
-    return cleanTipo(candidates[0] || 'outros');
-  }
-
-  function filterRelatoriosManuaisDoDre(data) {
-    const rows = Array.isArray(data) ? data : [];
-    return rows.filter(row => !DRE_TIPOS_AGENTES_OFICIAIS.has(normalizeReportTipo(row)));
   }
 
   function n(value) {
@@ -300,9 +262,6 @@
     if (state.table === 'grm_despesas_importacoes' && /dados_json/i.test(state.selected || '')) {
       return { ...result, data: normalizeDespesasRows(result.data) };
     }
-    if (state.table === 'relatorios_importacoes') {
-      return { ...result, data: filterRelatoriosManuaisDoDre(result.data) };
-    }
     return result;
   }
 
@@ -352,7 +311,7 @@
         if (prop !== 'from') return target[prop];
         return (table) => {
           const builder = target.from(table);
-          return (table === 'grm_despesas_importacoes' || table === 'relatorios_importacoes')
+          return table === 'grm_despesas_importacoes'
             ? wrapQueryBuilder(builder, table)
             : builder;
         };
