@@ -249,6 +249,7 @@
     const end=`${year + 1}-01-01`;
     const pageSize=1000;
     let from=0;
+    let fetchFailed=false;
 
     while(true){
       const {data,error}=await supabase
@@ -260,6 +261,7 @@
 
       if(error){
         console.warn('DRE: não foi possível carregar produção do banco relatorio_resultado_diario.', error);
+        fetchFailed=true;
         break;
       }
 
@@ -288,7 +290,9 @@
       from += pageSize;
     }
 
-    dreCache(`grao1000:dre-diario:${year}`, out);
+    // Só cacheia em sucesso: cachear uma paginação interrompida no meio travava
+    // a Produção em zero/parcial por até DRE_CACHE_TTL (2h) numa falha pontual.
+    if(!fetchFailed) dreCache(`grao1000:dre-diario:${year}`, out);
     return out;
   }
 
@@ -312,14 +316,14 @@
     }
     const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
 
-    const pageSize=1000; let from=0; const rows=[];
+    const pageSize=1000; let from=0; const rows=[]; let fetchFailed=false;
     while(true){
       const {data,error}=await supabase
         .from('grm_despesas_importacoes')
         .select('coordenacao,data_conta_de,dados_json')
         .gte('created_at', threshold)
         .range(from, from+pageSize-1);
-      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); break; }
+      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); fetchFailed=true; break; }
       const batch=data||[]; rows.push(...batch);
       if(batch.length<pageSize) break;
       from+=pageSize;
@@ -343,7 +347,8 @@
         else add(out.base, reg, tipo, m.month, valor);
       }
     }
-    dreCache(`grao1000:dre-despesas:${year}`, out);
+    // Só cacheia em sucesso, mesmo motivo do loader de produção acima.
+    if(!fetchFailed) dreCache(`grao1000:dre-despesas:${year}`, out);
     return out;
   }
 
