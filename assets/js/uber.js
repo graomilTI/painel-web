@@ -447,7 +447,7 @@ async function loadProducaoForRows(rows) {
 
 function saveCache() {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
       rows: state.rows,
       producao: state.producao,
       filters: state.filters,
@@ -459,7 +459,7 @@ function saveCache() {
 
 function loadCache() {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return false;
     const cached = JSON.parse(raw);
     if (!Array.isArray(cached?.rows) || !cached.rows.length) return false;
@@ -473,10 +473,11 @@ function loadCache() {
   }
 }
 
-async function loadRows() {
+async function loadRows(options = {}) {
+  const { silent = false } = options;
   if (state.loading) return;
   state.loading = true;
-  setFeedback('Carregando lançamentos Uber...');
+  if (!silent) setFeedback('Carregando lançamentos Uber...');
   try {
     const rows = await fetchAll(() => {
       let query = supabase
@@ -489,7 +490,7 @@ async function loadRows() {
     });
 
     state.rows = rows;
-    setFeedback('Cruzando lançamentos Uber com Produção Diária...');
+    if (!silent) setFeedback('Cruzando lançamentos Uber com Produção Diária...');
     await loadProducaoForRows(rows);
 
     const embarques = rows.filter((row) => computedStatus(row) === 'EMBARQUE').length;
@@ -498,9 +499,14 @@ async function loadRows() {
     saveCache();
   } catch (error) {
     console.error('[Uber] loadRows:', error);
-    state.rows = [];
-    state.producao = [];
-    setFeedback(`Não foi possível carregar o Uber. Rode o SQL enviado no ZIP. Detalhe: ${error.message}`, true);
+    const mantendoCache = silent && state.rows.length;
+    setFeedback(mantendoCache
+      ? `Não foi possível atualizar agora. Mostrando os últimos dados carregados. Detalhe: ${error.message}`
+      : `Não foi possível carregar o Uber. Rode o SQL enviado no ZIP. Detalhe: ${error.message}`, true);
+    if (!mantendoCache) {
+      state.rows = [];
+      state.producao = [];
+    }
   } finally {
     state.loading = false;
     renderData();
@@ -642,7 +648,8 @@ export async function renderContent(content) {
   renderShell(content);
   if (cached) {
     renderData();
-    setFeedback(`${state.rows.length} lançamento(s) Uber carregados do cache. Use "Atualizar" para buscar dados novos.`);
+    setFeedback(`${state.rows.length} lançamento(s) Uber carregados. Atualizando em segundo plano...`);
+    loadRows({ silent: true });
   } else {
     await loadRows();
   }
