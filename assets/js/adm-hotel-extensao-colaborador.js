@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 
-const PATCH_VERSION = '20260811-extensao-colaborador1';
+const PATCH_VERSION = '20260824-v2-shared1';
 
 const state = {
   rows: [],
@@ -20,6 +20,16 @@ const state = {
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
+
+async function waitForV2State(timeoutMs = 8000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const shared = window.__hospedagemV2State;
+    if (shared?.ready) return shared;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return window.__hospedagemV2State?.ready ? window.__hospedagemV2State : null;
+}
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = (value) => String(value ?? '')
   .replaceAll('&', '&amp;')
@@ -351,27 +361,38 @@ async function loadPatchData() {
   if (state.loading) return;
   state.loading = true;
   try {
-    const [rowsRes, peopleRes, assignmentsRes, requestersRes] = await Promise.all([
-      supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
-      supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
-      supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,solicitacao_colaborador_id,status'),
-      supabase.from('hospedagem_solicitacoes').select('id,solicitante_nome,status_solicitacao'),
-    ]);
-    if (rowsRes.error) throw rowsRes.error;
-    if (peopleRes.error) throw peopleRes.error;
+    const shared = await waitForV2State();
+    let rows = shared?.rows || null;
+    let people = shared?.people || null;
+    let assignments = shared?.assignments || null;
 
-    state.rows = rowsRes.data || [];
-    state.assignments = assignmentsRes.error ? [] : (assignmentsRes.data || []);
+    // Fallback somente se o V2 não subir. Em operação normal este bloco não
+    // executa e não há uma segunda carga concorrente do módulo.
+    if (!shared?.ready) {
+      const [rowsRes, peopleRes, assignmentsRes] = await Promise.all([
+        supabase.from('hospedagem_painel_geral').select('*').order('data_solicitacao', { ascending: false }),
+        supabase.from('hospedagem_solicitacao_colaboradores').select('*'),
+        supabase.from('hospedagem_reserva_colaboradores').select('reserva_id,solicitacao_colaborador_id,status'),
+      ]);
+      if (rowsRes.error) throw rowsRes.error;
+      if (peopleRes.error) throw peopleRes.error;
+      rows = rowsRes.data || [];
+      people = peopleRes.data || [];
+      assignments = assignmentsRes.error ? [] : (assignmentsRes.data || []);
+    }
+
+    state.rows = rows || [];
+    state.assignments = assignments || [];
     state.peopleByRequest.clear();
     state.peopleById.clear();
-    (peopleRes.data || []).forEach((person) => {
+    (people || []).forEach((person) => {
       const requestId = String(person.solicitacao_id || '');
       if (!state.peopleByRequest.has(requestId)) state.peopleByRequest.set(requestId, []);
       state.peopleByRequest.get(requestId).push(person);
       if (person.id) state.peopleById.set(String(person.id), person);
     });
     state.requesters.clear();
-    (requestersRes.data || []).forEach((item) => state.requesters.set(String(item.id), item.solicitante_nome || ''));
+    state.rows.forEach((item) => state.requesters.set(String(item.solicitacao_id || ''), item.solicitante_nome || ''));
     state.ready = true;
     state.lastLoad = Date.now();
     patchNow(true);
@@ -546,6 +567,7 @@ async function finishPendingAction() {
     await reconcileRequestStatuses(pending.group.requestIds);
   } finally {
     state.pendingAction = null;
+    if (window.__hospedagemV2Refresh) await window.__hospedagemV2Refresh();
     await loadPatchData();
     setTimeout(() => document.getElementById('refreshPainel')?.click(), 100);
   }
@@ -627,7 +649,7 @@ function observe() {
 function bind() {
   document.addEventListener('click', handlePatchedAction, true);
   document.addEventListener('click', (event) => {
-    if (event.target.closest('#refreshPainel')) setTimeout(loadPatchData, 250);
+    if (event.target.closest('#refreshPainel')) setTimeout(loadPatchData, 650);
   });
   ['solFiltroColaborador', 'solFiltroCidade', 'solFiltroSupervisao', 'solFiltroData'].forEach((id) => {
     document.getElementById(id)?.addEventListener('input', schedulePatch);
@@ -640,7 +662,7 @@ async function init() {
   observe();
   bind();
   await loadPatchData();
-  setInterval(() => { if (!state.loading && Date.now() - state.lastLoad > 30000) loadPatchData(); }, 30000);
+  window.addEventListener('hospedagem:v2-data', () => { if (!state.loading) loadPatchData(); });
   console.info(`[hosp-extensao-colaborador] ativo ${PATCH_VERSION}`);
 }
 
