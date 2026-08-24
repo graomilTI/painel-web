@@ -107,11 +107,32 @@ function rowIdentity(row, index) {
   );
 }
 
-function buildDefaultPeriodCache(...serializedSources) {
+function buildDefaultPeriodCache(persistentRaw, defaultRaw, sessionRaw) {
   const period = defaultUberPeriod();
-  const merged = new Map();
 
-  for (const serialized of serializedSources) {
+  // uberConferenciaCache_default_period_v1 é a foto dedicada e já confirmada
+  // do período padrão (inclusive quando a resposta real foi "0 corridas").
+  // Se ela bate com o período de hoje, usar direto em vez de exigir merge
+  // com linhas — senão um período sem nenhuma corrida nunca vira cache e a
+  // tela volta a "Carregando..." a cada visita.
+  if (defaultRaw) {
+    try {
+      const payload = JSON.parse(defaultRaw);
+      if (Array.isArray(payload?.rows) && payload?.filters?.inicio === period.inicio && payload?.filters?.fim === period.fim) {
+        return JSON.stringify({
+          rows: payload.rows,
+          producao: [],
+          filters: { inicio: period.inicio, fim: period.fim, q: '', status: '' },
+          cachedAt: payload.cachedAt || new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.warn('[Uber] Cache do período padrão inválido, tentando reconstruir por merge:', error);
+    }
+  }
+
+  const merged = new Map();
+  for (const serialized of [persistentRaw, sessionRaw]) {
     if (!serialized) continue;
     try {
       const payload = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
@@ -126,13 +147,13 @@ function buildDefaultPeriodCache(...serializedSources) {
     }
   }
 
+  if (!merged.size) return null;
   const rows = [...merged.values()].sort((a, b) => {
     const dateCmp = rowDateKey(b).localeCompare(rowDateKey(a));
     if (dateCmp) return dateCmp;
     return String(b?.hora_solicitacao_local || '').localeCompare(String(a?.hora_solicitacao_local || ''));
   });
 
-  if (!rows.length) return null;
   return JSON.stringify({
     rows,
     producao: [],
@@ -334,37 +355,49 @@ function decorateUberTables() {
   });
 }
 
+// Retorna null enquanto os inputs ainda não existem, true se acabou de
+// preencher o período padrão (inputs estavam vazios) e false se os inputs já
+// tinham data (veio de cache/filtro do usuário) — nesse caso não mexe em nada.
 function applyDefaultDateInputs() {
   const start = document.querySelector('[data-inicio]');
   const end = document.querySelector('[data-fim]');
-  if (!start || !end) return false;
-  const period = defaultUberPeriod();
+  if (!start || !end) return null;
+  if (start.dataset.uberDefaultInitialized) return false;
+  start.dataset.uberDefaultInitialized = '1';
+  end.dataset.uberDefaultInitialized = '1';
 
-  if (!start.dataset.uberDefaultInitialized) {
-    start.value = period.inicio;
-    end.value = period.fim;
-    start.dataset.uberDefaultInitialized = '1';
-    end.dataset.uberDefaultInitialized = '1';
-  }
+  if (start.value || end.value) return false;
+
+  const period = defaultUberPeriod();
+  start.value = period.inicio;
+  end.value = period.fim;
   return true;
 }
 
+// Só força um refresh automático quando a tela realmente começou sem
+// nenhuma data preenchida (primeira visita sem cache algum). Se já havia
+// cache ou filtro do usuário, os dados já estão passivamente na tela e um
+// clique automático em "Atualizar" só reintroduziria o "Carregando..." e
+// poderia atropelar um filtro que o usuário acabou de aplicar.
 function scheduleDefaultRefresh() {
   const button = document.querySelector('[data-refresh]');
   if (!button || defaultRefreshButtons.has(button)) return;
   defaultRefreshButtons.add(button);
   let attempts = 0;
+  let forcedDefault = false;
 
   const tryRefresh = () => {
     attempts += 1;
-    const ready = applyDefaultDateInputs();
-    const feedback = document.querySelector('[data-feedback]')?.textContent || '';
+    const applied = applyDefaultDateInputs();
 
-    if (!ready) {
+    if (applied === null) {
       if (attempts < 30) setTimeout(tryRefresh, 100);
       return;
     }
+    if (applied) forcedDefault = true;
+    if (!forcedDefault) return;
 
+    const feedback = document.querySelector('[data-feedback]')?.textContent || '';
     if (/Carregando|Cruzando/i.test(feedback)) {
       if (attempts < 40) setTimeout(tryRefresh, 150);
       return;
