@@ -365,15 +365,23 @@
     // ~14/08/2026, então o upsert nunca deduplicava as linhas antigas - NULL não
     // colide com NULL num índice único - e ~287 requisições sequenciais do
     // navegador deixavam a tela "Conferindo dados..." travada por minutos,
-    // parecendo um loop infinito). Agora usa a RPC dre_notas_fiscais_deduplicadas,
+    // parecendo um loop infinito; a tabela também foi limpa dessas ~285 mil
+    // linhas órfãs em 24/08). Agora usa a RPC dre_notas_fiscais_deduplicadas,
     // que já devolve a tabela deduplicada por (Empresa, N.F.) direto no banco -
     // mesma chave de dedupe usada em resumo_faturamento_notas_periodo (Dashboard
-    // do Sócio) - então vira 1 requisição só.
-    let rows=[];
+    // do Sócio). O Supabase ainda limita cada resposta a 1000 linhas mesmo pra
+    // uma function - com ~2 mil notas distintas isso ainda cabe em 2-3 páginas
+    // rápidas, bem diferente das ~287 antigas sobre a tabela crua.
+    let rows=[]; let fetchFailed=false;
     {
-      const {data,error}=await supabase.rpc('dre_notas_fiscais_deduplicadas');
-      if(error){ console.warn('DRE: falha ao buscar notas fiscais sincronizadas pelo agente.', error); }
-      else rows=data||[];
+      const pageSize=1000; let from=0;
+      while(true){
+        const {data,error}=await supabase.rpc('dre_notas_fiscais_deduplicadas').range(from, from+pageSize-1);
+        if(error){ console.warn('DRE: falha ao buscar notas fiscais sincronizadas pelo agente.', error); fetchFailed=true; break; }
+        const batch=data||[]; rows.push(...batch);
+        if(batch.length<pageSize) break;
+        from+=pageSize;
+      }
     }
 
     const porNumeroNf=new Map(); const semNumero=[];
@@ -396,7 +404,10 @@
       addArr(out.descAcresc, reg, m.month, n(json['Acréscimo'] ?? json['Acrescimo']) - n(json['Desconto'] ?? json['Descontos']));
       addArr(out.impostos, reg, m.month, json['Imposto'] ?? json['Impostos'] ?? json['Total de Impostos']);
     }
-    dreCache(`grao1000:dre-nf:${year}`, out);
+    // Só cacheia em caso de sucesso: cachear um resultado vazio de uma falha de rede/timeout
+    // travava as Notas Fiscais em zero por até DRE_CACHE_TTL (2h), mesmo já tendo dados reais
+    // no banco - o botão "Atualizar DRE" também não limpa esse cache específico.
+    if(!fetchFailed) dreCache(`grao1000:dre-nf:${year}`, out);
     return out;
   }
 
