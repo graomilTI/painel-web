@@ -189,6 +189,8 @@
   background: var(--bg-card);
   box-shadow: var(--shadow);
 }
+.ah-reservar { max-width: 760px; }
+.ah-modal-foot-left { display: flex; gap: 10px; }
 .ah-modal-head {
   display: flex;
   align-items: flex-start;
@@ -322,3 +324,58 @@
 }
 .ah-toast.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .ah-toast[data-type="err"] { border-color: rgba(220, 38, 38, .45); color: #fca5a5; }
+
+/* ---- Reservar (Fase 3) ---- */
+
+.ah-field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.ah-field-row .ah-field { flex: 1; min-width: 160px; }
+
+.ah-select, .ah-select-sm, .ah-input-sm,
+.ah-field input[type="date"], .ah-field input[type="time"], .ah-field input[type="text"] {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.ah-select:focus, .ah-select-sm:focus, .ah-input-sm:focus,
+.ah-field input:focus { outline: none; border-color: var(--green-2); }
+
+.ah-checks { display: flex; flex-wrap: wrap; gap: 14px; }
+.ah-check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+
+.ah-quartos-list { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.ah-quarto-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(111, 208, 165, .03);
+}
+.ah-quarto-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ah-quarto-index { font-weight: 800; font-size: 12px; color: var(--text); white-space: nowrap; }
+.ah-quarto-head .ah-select-sm { width: auto; min-width: 100px; }
+.ah-quarto-head .ah-input-sm { width: 90px; }
+.ah-quarto-cap {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(111, 208, 165, .08);
+}
+.ah-quarto-cap-over { color: #fca5a5; background: rgba(220, 38, 38, .14); }
+.ah-quarto-remove {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+}
+.ah-quarto-remove:hover { color: #fca5a5; }
+.ah-quarto-guests { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ah-guest-clickable { cursor: pointer; user-select: none; }
+.ah-guest-clickable:hover { border-color: var(--green-2); color: var(--green-2); }
