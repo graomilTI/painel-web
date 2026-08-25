@@ -74,6 +74,7 @@ export const MENU_CONFIG = [
   {
     grupo: "HOSPEDAGEM",
     itens: [
+      item("hotel", "Hotéis", "adm-hotel#hoteis", ["ADM_HOTEL", "HOTEL"]),
       item("hotel_alojamentos", "Alojamentos", "adm-hotel#alojamentos", ["HOTEL_ALOJAMENTOS", "HOSPEDAGEM_ALOJAMENTOS", "ALOJAMENTO", "ALOJAMENTOS"]),
       item("hotel_relatorio", "Relatório", "hotel-relatorio", ["ADM_HOTEL", "HOTEL", "HOTEL_RELATORIO"])
     ]
