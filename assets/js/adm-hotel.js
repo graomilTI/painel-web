@@ -10,10 +10,15 @@ import {
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
   renderReservarForm, renderQuartosBox, renderQuartosSummaryText,
   renderAgruparPicker, renderEstenderForm,
+  renderCheckoutForm, renderExtrasBox, renderExtrasTotalText, renderDiferencaForm,
+  renderFinanceiroShell, renderFinanceiroQueue,
 } from './adm-hotel-view.js';
 
 function currentMode() {
-  return String(location.hash || '').toLowerCase().includes('aloj') ? 'alojamentos' : 'hoteis';
+  const hash = String(location.hash || '').toLowerCase();
+  if (hash.includes('financeiro')) return 'financeiro';
+  if (hash.includes('aloj')) return 'alojamentos';
+  return 'hoteis';
 }
 
 const state = {
@@ -38,6 +43,21 @@ const reservar = {
   quartos: [],
   assignments: new Map(),
   saving: false,
+};
+
+const checkout = {
+  open: false,
+  solicitacaoId: null,
+  reservaId: null,
+  selected: new Set(),
+  extras: [],
+  saving: false,
+};
+
+const financeiro = {
+  loaded: false,
+  loading: false,
+  items: [],
 };
 
 let contentEl = null;
@@ -213,6 +233,10 @@ function openDetalhes(solicitacaoId) {
   if (agruparBtn) agruparBtn.addEventListener('click', () => openAgrupar(solicitacaoId));
   const estenderBtn = root.querySelector('[data-estender]');
   if (estenderBtn) estenderBtn.addEventListener('click', () => openEstender(solicitacaoId));
+  const checkoutBtn = root.querySelector('[data-checkout]');
+  if (checkoutBtn) checkoutBtn.addEventListener('click', () => openCheckout(solicitacaoId));
+  const diferencaBtn = root.querySelector('[data-diferenca]');
+  if (diferencaBtn) diferencaBtn.addEventListener('click', () => openDiferenca(solicitacaoId));
   wireCotacoesBox();
   subscribeQuotes(solicitacaoId);
 }
@@ -704,6 +728,270 @@ async function confirmEstender(row) {
   openDetalhes(solicitacaoId);
 }
 
+// Colaboradores de uma reserva, filtrados por status (HOSPEDADO/CHECKOUT/CANCELADO)
+// via hospedagem_reserva_colaboradores, com o nome resolvido em state.people.
+function colaboradoresForReserva(reservaId, statuses) {
+  return state.assignments
+    .filter((a) => a.reserva_id === reservaId && (!statuses || statuses.includes(a.status)))
+    .map((a) => ({
+      id: a.solicitacao_colaborador_id,
+      nome: state.people.find((p) => p.id === a.solicitacao_colaborador_id)?.nome_colaborador || 'Não informado',
+    }));
+}
+
+function newExtra() {
+  const localId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `e-${Date.now()}-${Math.random()}`;
+  return { localId, tipo: 'adicional', descricao: '', valor: 0 };
+}
+
+function openCheckout(solicitacaoId) {
+  const row = findRow(solicitacaoId);
+  if (!row || !row.reserva_id) return;
+  const colaboradores = colaboradoresForReserva(row.reserva_id, ['HOSPEDADO']);
+  checkout.open = true;
+  checkout.solicitacaoId = solicitacaoId;
+  checkout.reservaId = row.reserva_id;
+  checkout.selected = new Set(colaboradores.map((c) => c.id));
+  checkout.extras = [];
+  checkout.saving = false;
+  renderCheckout();
+}
+
+function renderCheckout() {
+  const row = findRow(checkout.solicitacaoId);
+  if (!row) return;
+  const colaboradores = colaboradoresForReserva(checkout.reservaId, ['HOSPEDADO']);
+  const valorDiarias = row.valor_total_previsto ?? row.valor_diaria ?? 0;
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderCheckoutForm(row, colaboradores, checkout.selected, valorDiarias)}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-checkout]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelector('[data-back-detalhes-checkout]')?.addEventListener('click', () => openDetalhes(row.solicitacao_id));
+  root.querySelectorAll('[data-colaborador-id]').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.colaboradorId;
+      if (cb.checked) checkout.selected.add(id); else checkout.selected.delete(id);
+      const count = document.getElementById('ahCkoColabCount');
+      if (count) count.textContent = `${checkout.selected.size}/${colaboradores.length}`;
+    });
+  });
+  document.getElementById('ahCkoConfirm')?.addEventListener('click', () => confirmCheckout(row));
+  renderExtrasBoxUI();
+}
+
+function renderExtrasBoxUI() {
+  const box = document.getElementById('ahCkoExtrasBox');
+  if (!box) return;
+  box.innerHTML = renderExtrasBox(checkout.extras);
+  wireExtrasBox();
+}
+
+function wireExtrasBox() {
+  document.querySelectorAll('[data-extra-field]').forEach((el) => {
+    const field = el.dataset.extraField;
+    const id = el.dataset.extraId;
+    const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+    el.addEventListener(eventName, () => {
+      const extra = checkout.extras.find((x) => x.localId === id);
+      if (!extra) return;
+      extra[field] = field === 'valor' ? Number(el.value || 0) : el.value;
+      if (field === 'tipo') {
+        renderExtrasBoxUI();
+      } else if (field === 'valor') {
+        const label = document.getElementById('ahCkoExtrasLabel');
+        if (label) label.textContent = renderExtrasTotalText(checkout.extras);
+      }
+    });
+  });
+  document.querySelectorAll('[data-remove-extra]').forEach((b) => {
+    b.addEventListener('click', () => {
+      checkout.extras = checkout.extras.filter((x) => x.localId !== b.dataset.removeExtra);
+      renderExtrasBoxUI();
+    });
+  });
+  document.querySelector('[data-add-extra]')?.addEventListener('click', () => {
+    checkout.extras.push(newExtra());
+    renderExtrasBoxUI();
+  });
+}
+
+function showCheckoutError(message) {
+  const errorBox = document.getElementById('ahCkoErrorBox');
+  if (errorBox) errorBox.textContent = message;
+  toast(message, 'err');
+}
+
+async function confirmCheckout(row) {
+  if (checkout.saving) return;
+  const errorBox = document.getElementById('ahCkoErrorBox');
+  if (errorBox) errorBox.textContent = '';
+
+  if (checkout.selected.size === 0) return showCheckoutError('Selecione ao menos um colaborador.');
+  const valorDiarias = Number(document.getElementById('ahCkoValorDiarias')?.value || 0);
+  if (valorDiarias < 0) return showCheckoutError('Valor das diárias inválido.');
+
+  const colaboradores = colaboradoresForReserva(checkout.reservaId, ['HOSPEDADO'])
+    .filter((c) => checkout.selected.has(c.id))
+    .map((c) => ({ solicitacao_colaborador_id: c.id, nome_colaborador: c.nome }));
+  const extrasPayload = checkout.extras
+    .filter((e) => Number(e.valor || 0) > 0)
+    .map((e) => ({ tipo: e.tipo, valor: Number(e.valor), descricao: e.descricao || null }));
+  const observacoes = document.getElementById('ahCkoObservacoes')?.value || null;
+
+  checkout.saving = true;
+  const confirmBtn = document.getElementById('ahCkoConfirm');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Processando...'; }
+
+  const { error } = await supabase.rpc('hospedagem_realizar_checkout', {
+    p_reserva_id: checkout.reservaId,
+    p_colaboradores: colaboradores,
+    p_valor_diarias: valorDiarias,
+    p_extras: extrasPayload,
+    p_observacoes: observacoes,
+  });
+
+  checkout.saving = false;
+  if (error) {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirmar check-out'; }
+    return showCheckoutError(`Erro ao realizar check-out: ${error.message}`);
+  }
+
+  toast('Check-out realizado e enviado ao Financeiro.');
+  const solicitacaoId = row.solicitacao_id;
+  await loadPainel();
+  openDetalhes(solicitacaoId);
+}
+
+function openDiferenca(solicitacaoId) {
+  const row = findRow(solicitacaoId);
+  if (!row || !row.reserva_id) return;
+  const colaboradores = colaboradoresForReserva(row.reserva_id, null);
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderDiferencaForm(row, colaboradores)}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-diferenca]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelector('[data-back-detalhes-diferenca]')?.addEventListener('click', () => openDetalhes(solicitacaoId));
+  document.getElementById('ahDifConfirm')?.addEventListener('click', () => confirmDiferenca(row));
+}
+
+async function confirmDiferenca(row) {
+  const errorBox = document.getElementById('ahDifErrorBox');
+  if (errorBox) errorBox.textContent = '';
+
+  const solicitacaoColaboradorId = document.getElementById('ahDifColaborador')?.value || '';
+  const valor = Number(document.getElementById('ahDifValor')?.value || 0);
+  const observacoes = document.getElementById('ahDifObs')?.value || null;
+
+  if (!solicitacaoColaboradorId) {
+    const msg = 'Selecione o colaborador.';
+    if (errorBox) errorBox.textContent = msg;
+    toast(msg, 'err');
+    return;
+  }
+  if (!(valor > 0)) {
+    const msg = 'Informe um valor maior que zero.';
+    if (errorBox) errorBox.textContent = msg;
+    toast(msg, 'err');
+    return;
+  }
+
+  const confirmBtn = document.getElementById('ahDifConfirm');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Salvando...'; }
+
+  const { data: userData } = await supabase.auth.getUser();
+  const { error } = await supabase.from('hospedagem_diferencas_colaborador').insert({
+    reserva_id: row.reserva_id,
+    solicitacao_colaborador_id: solicitacaoColaboradorId,
+    valor,
+    observacoes,
+    criado_por: userData?.user?.id || null,
+  });
+
+  if (error) {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Registrar diferença'; }
+    const msg = `Erro ao registrar diferença: ${error.message}`;
+    if (errorBox) errorBox.textContent = msg;
+    toast(msg, 'err');
+    return;
+  }
+
+  toast('Diferença registrada no caixa do colaborador.');
+  const solicitacaoId = row.solicitacao_id;
+  openDetalhes(solicitacaoId);
+}
+
+async function loadFinanceiroQueue() {
+  financeiro.loading = true;
+  renderFinanceiroBoard();
+  const { data, error } = await supabase
+    .from('financeiro_pagamentos')
+    .select('id, descricao, favorecido_nome, valor, status, competencia, comprovante_url, hospedagem_checkout_lote_id, created_at')
+    .eq('origem_setor', 'HOSPEDAGEM')
+    .in('status', ['PENDENTE', 'EM_ANALISE'])
+    .order('created_at', { ascending: false });
+  financeiro.loading = false;
+  if (error) {
+    financeiro.items = [];
+    financeiro.loaded = true;
+    financeiro.error = error.message;
+    renderFinanceiroBoard();
+    return;
+  }
+  financeiro.items = data || [];
+  financeiro.loaded = true;
+  financeiro.error = null;
+  renderFinanceiroBoard();
+}
+
+function renderFinanceiroBoard() {
+  const board = document.getElementById('ahFinBoard');
+  if (!board) return;
+  if (financeiro.loading) {
+    board.innerHTML = '<div class="card ah-empty">Carregando...</div>';
+    return;
+  }
+  if (financeiro.error) {
+    board.innerHTML = `<div class="card ah-empty ah-error">Erro ao carregar: ${financeiro.error}</div>`;
+    return;
+  }
+  board.innerHTML = renderFinanceiroQueue(financeiro.items);
+  board.querySelectorAll('[data-confirmar-pagamento]').forEach((b) => {
+    b.addEventListener('click', () => confirmarPagamento(b.dataset.confirmarPagamento));
+  });
+}
+
+async function confirmarPagamento(loteId) {
+  const valorInput = document.querySelector(`[data-fin-field="valorPago"][data-fin-id="${loteId}"]`);
+  const comprovanteInput = document.querySelector(`[data-fin-field="comprovante"][data-fin-id="${loteId}"]`);
+  const valorPago = Number(valorInput?.value || 0);
+  const comprovanteUrl = comprovanteInput?.value?.trim() || null;
+
+  if (!(valorPago >= 0)) {
+    toast('Valor pago inválido.', 'err');
+    return;
+  }
+
+  const btn = document.querySelector(`[data-confirmar-pagamento="${loteId}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Confirmando...'; }
+
+  const { error } = await supabase.rpc('hospedagem_confirmar_pagamento_lote', {
+    p_lote_id: loteId,
+    p_valor_pago: valorPago,
+    p_comprovante_url: comprovanteUrl,
+  });
+
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pagamento'; }
+    toast(`Erro ao confirmar pagamento: ${error.message}`, 'err');
+    return;
+  }
+
+  toast('Pagamento confirmado.');
+  await loadFinanceiroQueue();
+}
+
 document.addEventListener('click', (e) => {
   if (state.openKpi && !e.target.closest('.ah-tab-wrap')) {
     state.openKpi = null;
@@ -728,9 +1016,18 @@ function renderHoteisShell() {
   if (!state.loaded && !state.loading) loadPainel();
 }
 
+function renderFinanceiroPage() {
+  contentEl.innerHTML = renderFinanceiroShell();
+  if (!financeiro.loaded && !financeiro.loading) {
+    loadFinanceiroQueue();
+  } else {
+    renderFinanceiroBoard();
+  }
+}
+
 function setPageTitle(mode) {
   const el = document.getElementById('pageTitle');
-  if (el) el.textContent = mode === 'alojamentos' ? 'Alojamentos' : 'Hotéis';
+  if (el) el.textContent = mode === 'alojamentos' ? 'Alojamentos' : mode === 'financeiro' ? 'Confirmação de Pagamento' : 'Hotéis';
 }
 
 export function renderContent(content) {
@@ -740,6 +1037,8 @@ export function renderContent(content) {
   setPageTitle(mode);
   if (mode === 'alojamentos') {
     content.innerHTML = renderShellAlojamentos();
+  } else if (mode === 'financeiro') {
+    renderFinanceiroPage();
   } else {
     renderHoteisShell();
   }

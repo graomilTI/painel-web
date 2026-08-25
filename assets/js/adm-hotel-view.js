@@ -1,7 +1,7 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
 import {
   esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO,
-  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween,
+  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween, EXTRA_TYPE_LABEL,
 } from './adm-hotel-helpers.js';
 
 const TABS = [
@@ -143,6 +143,8 @@ export function renderDetalhes(row, quotes) {
   const temReserva = Boolean(row.reserva_id);
   const podeCotar = tabGroup(row) === 'solicitada';
   const podeEstender = temReserva && (row.status_hospedagem === 'CHECKIN_PREVISTO' || row.status_hospedagem === 'HOSPEDADO');
+  const podeCheckout = podeEstender;
+  const podeDiferenca = temReserva;
   return `
     <div class="ah-modal">
       <div class="ah-modal-head">
@@ -191,6 +193,8 @@ export function renderDetalhes(row, quotes) {
           ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-agrupar="${esc(row.solicitacao_id)}" type="button">Agrupar</button>` : ''}
           ${podeCotar ? `<button class="btn btn-primary ah-btn-sm" data-reservar="${esc(row.solicitacao_id)}" type="button">Reservar</button>` : ''}
           ${podeEstender ? `<button class="btn btn-secondary ah-btn-sm" data-estender="${esc(row.solicitacao_id)}" type="button">Estender</button>` : ''}
+          ${podeCheckout ? `<button class="btn btn-primary ah-btn-sm" data-checkout="${esc(row.solicitacao_id)}" type="button">Check-out</button>` : ''}
+          ${podeDiferenca ? `<button class="btn btn-secondary ah-btn-sm" data-diferenca="${esc(row.solicitacao_id)}" type="button">Diferença</button>` : ''}
         </div>
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
       </div>
@@ -330,6 +334,144 @@ export function renderEstenderForm(row) {
         <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-estender type="button">Voltar</button>
         <button class="btn btn-primary ah-btn-sm" id="ahExtConfirm" data-confirm-estender type="button">Confirmar extensão</button>
       </div>
+    </div>
+  `;
+}
+
+export function renderCheckoutForm(row, colaboradores, selectedIds, valorDiarias) {
+  return `
+    <div class="ah-modal">
+      <div class="ah-modal-head">
+        <div><h3>Check-out</h3><p class="muted">${esc(row.hotel || '—')} · ${brDate(row.data_checkin)} → ${brDate(row.data_checkout)}</p></div>
+        <button class="ah-modal-x" data-close-checkout type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <div class="ah-field">
+          <label>Colaboradores fazendo check-out (<span id="ahCkoColabCount">${selectedIds.size}/${colaboradores.length}</span>)</label>
+          <div class="ah-guest-wrap">
+            ${colaboradores.length ? colaboradores.map((c) => `
+              <label class="ah-picker-item">
+                <input type="checkbox" data-colaborador-id="${esc(c.id)}" ${selectedIds.has(c.id) ? 'checked' : ''} />
+                <span class="ah-picker-item-name">${esc(c.nome)}</span>
+              </label>
+            `).join('') : '<span class="muted">Nenhum colaborador hospedado nesta reserva.</span>'}
+          </div>
+          <p class="ah-note">Desmarque quem continua hospedado — o check-out desses colaboradores fica pendente pra outro lote.</p>
+        </div>
+
+        <div class="ah-field">
+          <label>Valor das diárias deste check-out</label>
+          <input type="number" min="0" step="0.01" id="ahCkoValorDiarias" value="${valorDiarias}" />
+        </div>
+
+        <div class="ah-field" id="ahCkoExtrasBox"></div>
+
+        <div class="ah-field">
+          <label>Observações</label>
+          <input type="text" id="ahCkoObservacoes" placeholder="Opcional" />
+        </div>
+        <div id="ahCkoErrorBox"></div>
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-checkout type="button">Voltar</button>
+        <button class="btn btn-primary ah-btn-sm" id="ahCkoConfirm" data-confirm-checkout type="button">Confirmar check-out</button>
+      </div>
+    </div>
+  `;
+}
+
+export function renderExtrasTotalText(extras) {
+  const total = extras.reduce((s, e) => s + (e.tipo === 'desconto' ? -Math.abs(Number(e.valor || 0)) : Math.abs(Number(e.valor || 0))), 0);
+  return `Itens extras (${extras.length}) · ${money(total)}`;
+}
+
+export function renderExtrasBox(extras) {
+  return `
+    <label id="ahCkoExtrasLabel">${renderExtrasTotalText(extras)}</label>
+    <div class="ah-quartos-list">
+      ${extras.map((e) => `
+        <div class="ah-quarto-card">
+          <div class="ah-quarto-head">
+            <select data-extra-field="tipo" data-extra-id="${esc(e.localId)}" class="ah-select-sm">
+              <option value="adicional" ${e.tipo === 'adicional' ? 'selected' : ''}>${EXTRA_TYPE_LABEL.adicional}</option>
+              <option value="desconto" ${e.tipo === 'desconto' ? 'selected' : ''}>${EXTRA_TYPE_LABEL.desconto}</option>
+            </select>
+            <input type="text" class="ah-input-sm ah-extra-desc" data-extra-field="descricao" data-extra-id="${esc(e.localId)}" value="${esc(e.descricao)}" placeholder="Descrição" />
+            <input type="number" min="0" step="0.01" class="ah-input-sm" data-extra-field="valor" data-extra-id="${esc(e.localId)}" value="${e.valor || 0}" placeholder="Valor" />
+            <button type="button" class="ah-quarto-remove" data-remove-extra="${esc(e.localId)}" title="Remover item">✕</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <button type="button" class="btn btn-secondary ah-btn-sm" data-add-extra>+ Adicionar item</button>
+  `;
+}
+
+export function renderDiferencaForm(row, colaboradores) {
+  return `
+    <div class="ah-modal">
+      <div class="ah-modal-head">
+        <div><h3>Registrar diferença</h3><p class="muted">${esc(row.hotel || '—')}</p></div>
+        <button class="ah-modal-x" data-close-diferenca type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <div class="ah-field">
+          <label>Colaborador</label>
+          <select id="ahDifColaborador" class="ah-select">
+            <option value="">Selecione...</option>
+            ${colaboradores.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="ah-field-row">
+          <div class="ah-field"><label>Valor</label><input type="number" min="0.01" step="0.01" id="ahDifValor" placeholder="0,00" /></div>
+          <div class="ah-field"><label>Observações</label><input type="text" id="ahDifObs" placeholder="Ex.: ficou em hotel próprio" /></div>
+        </div>
+        <div id="ahDifErrorBox"></div>
+        <p class="ah-note">Credita a diferença no caixa do colaborador — não altera o financeiro da reserva.</p>
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-diferenca type="button">Voltar</button>
+        <button class="btn btn-primary ah-btn-sm" id="ahDifConfirm" data-confirm-diferenca type="button">Registrar diferença</button>
+      </div>
+    </div>
+  `;
+}
+
+export function renderFinanceiroShell() {
+  return `
+    <section class="hero-card">
+      <div>
+        <div class="eyebrow">Financeiro</div>
+        <h2>Confirmação de pagamento — Hospedagem</h2>
+        <p>Lotes de check-out já enviados ao Financeiro, aguardando confirmação de pagamento.</p>
+      </div>
+      <div class="hero-badge-wrap"><span class="hero-badge">FINANCEIRO</span></div>
+    </section>
+    <div id="ahFinBoard"></div>
+  `;
+}
+
+export function renderFinanceiroQueue(items) {
+  if (items.length === 0) {
+    return `<div class="card"><div class="ah-empty">Nenhum pagamento de hospedagem pendente.</div></div>`;
+  }
+  return `
+    <div class="ah-detail-list">
+      ${items.map((it) => `
+        <div class="ah-quote-row">
+          <div class="ah-quote-main">
+            <span class="ah-quote-hotel">${esc(it.favorecido_nome || '—')}</span>
+            <span class="ah-quote-badge ${it.status === 'EM_ANALISE' ? 'ah-quote-falha' : 'ah-quote-pendente'}">${it.status === 'EM_ANALISE' ? 'Em análise' : 'Pendente'}</span>
+          </div>
+          <div class="ah-quote-meta muted">${esc(it.descricao || '—')}</div>
+          <div class="ah-quote-meta muted">Valor devido ${money(it.valor)}${it.competencia ? ` · ${brDate(it.competencia)}` : ''}</div>
+          <div class="ah-field-row">
+            <div class="ah-field"><label>Valor pago</label><input type="number" min="0" step="0.01" class="ah-input-sm" data-fin-field="valorPago" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" value="${it.valor}" /></div>
+            <div class="ah-field"><label>Comprovante (URL)</label><input type="text" class="ah-input-sm" data-fin-field="comprovante" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" placeholder="https://..." /></div>
+          </div>
+          <button class="btn btn-primary ah-btn-sm" data-confirmar-pagamento="${esc(it.hospedagem_checkout_lote_id)}" type="button">Confirmar pagamento</button>
+        </div>
+      `).join('')}
     </div>
   `;
 }
