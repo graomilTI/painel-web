@@ -12,6 +12,7 @@ const MOBILE_ADM_ITEMS = [
   { code: 'logistica_adm', title: 'Logística', group: 'Logística', description: 'Painel administrativo de logística, finalizações e validações.', path: 'adm-logistica', aliases: ['LOGISTICA_ADM', 'LOGISTICA'] },
   { code: 'logistica_informativos', title: 'Informativos', group: 'Logística', description: 'Comunicados e avisos operacionais para a equipe.', path: 'logistica-informativos', aliases: ['LOGISTICA_INFORMATIVOS', 'LOGISTICA_ADM', 'LOGISTICA'] },
   { code: 'patrimonio', title: 'Patrimônios', group: 'Patrimônios', description: 'Consulta e controle administrativo de patrimônios.', path: 'adm-patrimonio', aliases: ['PATRIMONIO_ADM'] },
+  { code: 'hotel', title: 'Hotéis', group: 'Hospedagem', description: 'Reservas, hospedagens e acompanhamento de hotéis.', path: 'adm-hotel#hoteis', aliases: ['ADM_HOTEL', 'HOTEL'] },
   { code: 'hotel_alojamentos', title: 'Alojamentos', group: 'Hospedagem', description: 'Controle de alojamentos e ocupações.', path: 'adm-hotel#alojamentos', aliases: ['ADM_HOTEL', 'HOTEL'] },
   { code: 'rh_plantao', title: 'Plantão', group: 'RH', description: 'Escalas de plantão por setor e data.', path: 'plantao', aliases: ['RH_PLANTAO', 'PLANTAO'] },
   { code: 'frotas_multas', title: 'Multas', group: 'Frotas', description: 'Acompanhamento de multas, ações e pendências.', path: 'frotas-multas', aliases: ['MULTAS', 'FROTAS_MULTAS'] },
