@@ -1,5 +1,8 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
-import { esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO } from './adm-hotel-helpers.js';
+import {
+  esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO,
+  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween,
+} from './adm-hotel-helpers.js';
 
 const TABS = [
   { key: 'todas', label: 'Todas' },
@@ -182,7 +185,10 @@ export function renderDetalhes(row, quotes) {
         </div>
       </div>
       <div class="ah-modal-foot">
-        ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : '<span></span>'}
+        <div class="ah-modal-foot-left">
+          ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : ''}
+          ${podeCotar ? `<button class="btn btn-primary ah-btn-sm" data-reservar="${esc(row.solicitacao_id)}" type="button">Reservar</button>` : ''}
+        </div>
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
       </div>
     </div>
@@ -266,5 +272,104 @@ export function renderPickerList(hotels, query, selectedIds) {
       </label>
     `).join('')}
     ${hint}
+  `;
+}
+
+export function renderReservarForm(row, hotelsSorted, selectedHotelId) {
+  return `
+    <div class="ah-modal ah-reservar">
+      <div class="ah-modal-head">
+        <div><h3>Reservar</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''}</p></div>
+        <button class="ah-modal-x" data-close-reservar type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <div class="ah-field">
+          <label>Hotel</label>
+          <select id="ahResvHotel" class="ah-select">
+            <option value="">Selecione um hotel...</option>
+            ${hotelsSorted.map((h) => `<option value="${esc(h.id)}" ${h.id === selectedHotelId ? 'selected' : ''}>${esc(h.nome)}${h.cidade ? ` — ${esc(h.cidade)}${h.uf ? `/${esc(h.uf)}` : ''}` : ''}</option>`).join('')}
+          </select>
+        </div>
+
+        <div class="ah-field-row">
+          <div class="ah-field"><label>Check-in</label><input type="date" id="ahResvCheckin" value="${esc(row.data_checkin_prevista || '')}" /></div>
+          <div class="ah-field"><label>Check-out</label><input type="date" id="ahResvCheckout" value="${esc(row.data_checkout_prevista || '')}" /></div>
+          <div class="ah-field"><label>Horário de chegada</label><input type="time" id="ahResvHorario" value="${esc(row.horario_chegada_previsto || '')}" /></div>
+        </div>
+
+        <div class="ah-field">
+          <label>Inclusos</label>
+          <div class="ah-checks">
+            <label class="ah-check"><input type="checkbox" id="ahResvCafe" /> Café da manhã</label>
+            <label class="ah-check"><input type="checkbox" id="ahResvAlmoco" /> Almoço</label>
+            <label class="ah-check"><input type="checkbox" id="ahResvJanta" /> Janta</label>
+            <label class="ah-check"><input type="checkbox" id="ahResvEstacionamento" /> Estacionamento</label>
+          </div>
+        </div>
+
+        <div class="ah-field-row">
+          <div class="ah-field"><label>Confirmado com</label><input type="text" id="ahResvConfirmadoCom" placeholder="Quem confirmou no hotel" /></div>
+          <div class="ah-field"><label>Contato</label><input type="text" id="ahResvContato" placeholder="Telefone/WhatsApp" /></div>
+          <div class="ah-field"><label>Código da reserva no hotel</label><input type="text" id="ahResvCodigo" placeholder="Opcional" /></div>
+        </div>
+
+        <div class="ah-field" id="ahResvQuartosBox"></div>
+        <div id="ahResvErrorBox"></div>
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-resv type="button">Voltar</button>
+        <button class="btn btn-primary ah-btn-sm" id="ahResvConfirm" data-confirm-reservar type="button">Confirmar reserva</button>
+      </div>
+    </div>
+  `;
+}
+
+export function renderQuartosSummaryText(quartos, checkin, checkout) {
+  const nights = nightsBetween(checkin, checkout);
+  const total = quartos.reduce((s, q) => s + Number(q.valorDiaria || 0), 0) * nights;
+  return `${nights} diária(s) · Total previsto ${money(total)}`;
+}
+
+export function renderQuartosBox(quartos, people, assignments, checkin, checkout) {
+  const unassigned = people.filter((p) => !assignments.get(p.id));
+
+  return `
+    <label>Quartos (${quartos.length})</label>
+    <div id="ahResvSummary" class="muted">${renderQuartosSummaryText(quartos, checkin, checkout)}</div>
+    <div class="ah-quartos-list">
+      ${quartos.map((q, i) => {
+        const cap = ROOM_CAPACITY[q.tipoQuarto] || 1;
+        const guests = people.filter((p) => assignments.get(p.id) === q.localId);
+        return `
+          <div class="ah-quarto-card">
+            <div class="ah-quarto-head">
+              <span class="ah-quarto-index">Quarto ${i + 1}</span>
+              <select data-quarto-field="tipoQuarto" data-quarto-id="${esc(q.localId)}" class="ah-select-sm">
+                ${ROOM_TYPES.map((t) => `<option value="${t}" ${t === q.tipoQuarto ? 'selected' : ''}>${ROOM_TYPE_LABEL[t]}</option>`).join('')}
+              </select>
+              <select data-quarto-field="genero" data-quarto-id="${esc(q.localId)}" class="ah-select-sm">
+                <option value="" ${!q.genero ? 'selected' : ''}>Misto</option>
+                <option value="MASC" ${q.genero === 'MASC' ? 'selected' : ''}>Masc.</option>
+                <option value="FEM" ${q.genero === 'FEM' ? 'selected' : ''}>Fem.</option>
+              </select>
+              <input type="number" min="0" step="0.01" class="ah-input-sm" data-quarto-field="valorDiaria" data-quarto-id="${esc(q.localId)}" value="${q.valorDiaria || 0}" placeholder="Diária" />
+              <span class="ah-quarto-cap ${guests.length > cap ? 'ah-quarto-cap-over' : ''}">${guests.length}/${cap}</span>
+              <button type="button" class="ah-quarto-remove" data-remove-quarto="${esc(q.localId)}" title="Remover quarto">✕</button>
+            </div>
+            <div class="ah-quarto-guests">
+              ${guests.length ? guests.map((p) => `<span class="ah-guest-tag ah-guest-clickable" data-assign-person="${esc(p.id)}">${esc(p.nome_colaborador)}</span>`).join('') : '<span class="muted">Nenhum hóspede alocado — clique num nome abaixo.</span>'}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <button type="button" class="btn btn-secondary ah-btn-sm" data-add-quarto>+ Adicionar quarto</button>
+
+    <div class="ah-field">
+      <label>Não alocados (${unassigned.length})</label>
+      <div class="ah-guest-wrap">
+        ${unassigned.length ? unassigned.map((p) => `<span class="ah-guest-tag ah-guest-clickable" data-assign-person="${esc(p.id)}">${esc(p.nome_colaborador)}</span>`).join('') : '<span class="muted">Todos alocados.</span>'}
+      </div>
+    </div>
   `;
 }

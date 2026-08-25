@@ -83,7 +83,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20260825-fase2';
+  link.href = './assets/css/adm-hotel.css?v=20260825-fase3';
   document.head.appendChild(link);
 }
 
@@ -118,6 +118,29 @@ export function buildCotacaoMessage(row) {
     '',
     'Por favor, informe disponibilidade, valor das diárias, valor total, café da manhã, estacionamento e se aceita pagamento no checkout.',
   ].join('\n');
+}
+
+// tipo_quarto (hospedagem_reserva_quartos) — vocabulário real do CHECK
+// constraint criado na Fase 0 (20260825120000_hospedagem_reserva_quartos_diferencas.sql).
+export const ROOM_TYPES = ['INDIVIDUAL', 'DUPLO', 'TRIPLO', 'QUADRUPLO'];
+export const ROOM_TYPE_LABEL = {
+  INDIVIDUAL: 'Individual',
+  DUPLO: 'Duplo',
+  TRIPLO: 'Triplo',
+  QUADRUPLO: 'Quádruplo',
+};
+export const ROOM_CAPACITY = { INDIVIDUAL: 1, DUPLO: 2, TRIPLO: 3, QUADRUPLO: 4 };
+
+export function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function nightsBetween(checkin, checkout) {
+  if (!checkin || !checkout) return 1;
+  const a = new Date(`${checkin}T00:00:00`);
+  const b = new Date(`${checkout}T00:00:00`);
+  const diff = Math.round((b - a) / 86400000);
+  return diff > 0 ? diff : 1;
 }
 
 let toastTimer = null;
