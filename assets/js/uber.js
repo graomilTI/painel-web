@@ -197,6 +197,7 @@ function statusChip(row) {
     ATENCAO: ['Atenção', 'warn'],
     ATENÇÃO: ['Atenção', 'warn'],
     CAIXA_COLABORADOR: ['Caixa colaborador', 'danger'],
+    GORJETA: ['Gorjeta', 'warn'],
     PENDENTE: ['Pendente', 'neutral'],
   };
   const item = map[key] || [key.replaceAll('_', ' '), 'neutral'];
@@ -277,6 +278,7 @@ function renderShell(content) {
         <div class="uber-actions">
           <button class="uber-btn" type="button" data-export-csv>⬇ Exportar CSV</button>
           <button class="uber-btn" type="button" data-refresh>↻ Atualizar</button>
+          <button class="uber-btn" type="button" data-gps-pendentes>Converter GPS pendentes</button>
           <button class="uber-btn primary" type="button" data-sync-api>Sincronizar API</button>
         </div>
       </div>
@@ -386,7 +388,7 @@ function renderRow(row) {
       <button class="uber-btn primary" type="button" data-action="VALIDADA" data-id="${escapeHtml(row.id)}">Validar</button>
       <button class="uber-btn danger" type="button" data-action="CAIXA_COLABORADOR" data-id="${escapeHtml(row.id)}">Caixa</button>
       <button class="uber-btn" type="button" data-action="ATENCAO" data-id="${escapeHtml(row.id)}">Atenção</button>
-      <button class="uber-btn" type="button" data-gps data-partida="${escapeHtml(row.endereco_partida || '')}" data-destino="${escapeHtml(row.endereco_destino || '')}">GPS</button>
+      <button class="uber-btn" type="button" data-gps data-id="${escapeHtml(row.id)}">${row.partida_latitude != null ? 'GPS ✓' : 'GPS'}</button>
     </div></td>
   </tr>`;
 }
@@ -564,15 +566,77 @@ async function updateStatus(id, status) {
   }
 }
 
-function openGpsRoute(partida, destino) {
-  if (!partida && !destino) {
-    setFeedback('Endereço de partida/destino não informado para essa corrida.', true);
-    return;
+function aplicarResultadoGps(resultado) {
+  if (!resultado?.id) return;
+  const row = state.rows.find((item) => String(item.id) === String(resultado.id));
+  if (!row) return;
+  if (resultado.geocodificado !== false) row.partida_latitude = row.partida_latitude ?? true;
+  if (resultado.validado) {
+    Object.assign(row, {
+      status_validacao: 'VALIDADO',
+      classificacao_manual: 'VALIDADA',
+      motivo_validacao: `Validação automática: O.S. ${resultado.os} com laudo do colaborador a ${Math.round(resultado.distancia_m)} m da partida.`,
+      observacao_validacao: null,
+      validado_em: new Date().toISOString(),
+    });
+  } else if (resultado.motivo === 'fora_do_raio') {
+    row.observacao_validacao = `O.S. ${resultado.os} tem laudo do colaborador na data, mas a ${(resultado.distancia_m / 1000).toFixed(1)} km da partida (fora do raio de 2km).`;
+  } else if (resultado.motivo === 'sem_correspondencia') {
+    row.observacao_validacao = 'Nenhuma O.S. com laudo do colaborador encontrada na data da corrida.';
+  } else if (resultado.geocodificado === false) {
+    row.observacao_validacao = 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.';
   }
-  const params = new URLSearchParams({ api: '1' });
-  if (partida) params.set('origin', partida);
-  if (destino) params.set('destination', destino);
-  window.open(`https://www.google.com/maps/dir/?${params.toString()}`, '_blank', 'noopener');
+}
+
+async function geocodificarCorrida(id, btn) {
+  if (!id) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Convertendo...'; }
+  setFeedback('Convertendo endereço em GPS e comparando com a O.S...');
+  try {
+    const { data, error } = await supabase.functions.invoke('uber-geocodificar-gps', { body: { id } });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    const resultado = data?.resultados?.[0];
+    if (resultado?.error) throw new Error(resultado.error);
+    aplicarResultadoGps(resultado);
+    saveCache();
+    if (resultado?.validado) {
+      setFeedback(`Corrida validada automaticamente: O.S. ${resultado.os} encontrada a ${Math.round(resultado.distancia_m)}m com laudo do colaborador.`);
+    } else if (resultado?.geocodificado === false) {
+      setFeedback('Não foi possível localizar o endereço no mapa. Confira o endereço ou valide manualmente.', true);
+    } else {
+      setFeedback('Endereço convertido em GPS. Nenhuma O.S. com laudo do colaborador em raio de 2km — confira manualmente.');
+    }
+    renderData();
+  } catch (error) {
+    console.error('[Uber] geocodificarCorrida:', error);
+    setFeedback(`Falha ao converter GPS: ${error.message}`, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'GPS'; }
+  }
+}
+
+async function converterGpsPendentes(root) {
+  if (state.convertendoGps) return;
+  state.convertendoGps = true;
+  const btn = root.querySelector('[data-gps-pendentes]');
+  if (btn) { btn.disabled = true; btn.textContent = 'Convertendo...'; }
+  setFeedback('Convertendo endereços pendentes em GPS...');
+  try {
+    const { data, error } = await supabase.functions.invoke('uber-geocodificar-gps', { body: { modo: 'pendentes', limite: 10 } });
+    if (error) throw error;
+    if (data?.error) throw new Error(data.error);
+    (data?.resultados || []).forEach(aplicarResultadoGps);
+    saveCache();
+    setFeedback(`${data?.geocodificados ?? 0} corrida(s) convertida(s) em GPS, ${data?.validados ?? 0} validada(s) automaticamente por O.S. com laudo dentro de 2km.`);
+    renderData();
+  } catch (error) {
+    console.error('[Uber] converterGpsPendentes:', error);
+    setFeedback(`Falha ao converter GPS pendentes: ${error.message}`, true);
+  } finally {
+    state.convertendoGps = false;
+    if (btn) { btn.disabled = false; btn.textContent = 'Converter GPS pendentes'; }
+  }
 }
 
 function exportCsv() {
@@ -614,6 +678,7 @@ function bindEvents(root) {
   });
   root.querySelector('[data-sync-api]')?.addEventListener('click', () => syncApi(root));
   root.querySelector('[data-export-csv]')?.addEventListener('click', exportCsv);
+  root.querySelector('[data-gps-pendentes]')?.addEventListener('click', () => converterGpsPendentes(root));
   root.querySelector('[data-q]')?.addEventListener('input', (event) => {
     state.filters.q = event.target.value || '';
     renderData();
@@ -628,7 +693,7 @@ function bindEvents(root) {
     }
     const gpsBtn = event.target.closest('[data-gps]');
     if (gpsBtn) {
-      openGpsRoute(gpsBtn.dataset.partida, gpsBtn.dataset.destino);
+      geocodificarCorrida(gpsBtn.dataset.id, gpsBtn);
       return;
     }
     const btn = event.target.closest('[data-action][data-id]');
