@@ -4,10 +4,11 @@
 // por adm-hotel-alojamentos-v2.js e companhia, via adm-hotel-deferred.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { ensureStyles, tabGroup, buildCotacaoMessage, toast } from './adm-hotel-helpers.js';
+import { ensureStyles, tabGroup, buildCotacaoMessage, toast, nightsBetween } from './adm-hotel-helpers.js';
 import {
   renderShellAlojamentos, renderTabsBar, renderTable, renderFluxoPlaceholder, renderDetalhes,
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
+  renderReservarForm, renderQuartosBox, renderQuartosSummaryText,
 } from './adm-hotel-view.js';
 
 function currentMode() {
@@ -26,6 +27,16 @@ const picker = {
   query: '',
   selected: new Set(),
   sending: false,
+};
+
+const reservar = {
+  open: false,
+  solicitacaoId: null,
+  selectedHotelId: '',
+  selectedQuote: null,
+  quartos: [],
+  assignments: new Map(),
+  saving: false,
 };
 
 let contentEl = null;
@@ -195,6 +206,8 @@ function openDetalhes(solicitacaoId) {
   root.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeDetalhes));
   const cotarBtn = root.querySelector('[data-cotar]');
   if (cotarBtn) cotarBtn.addEventListener('click', () => openPicker(solicitacaoId));
+  const reservarBtn = root.querySelector('[data-reservar]');
+  if (reservarBtn) reservarBtn.addEventListener('click', () => openReservar(solicitacaoId));
   wireCotacoesBox();
   subscribeQuotes(solicitacaoId);
 }
@@ -322,6 +335,253 @@ async function confirmCotar(row) {
   toast(fail === 0 ? `${ok} cotação(ões) enviada(s).` : `${ok} enviada(s), ${fail} falharam.`, fail === 0 ? 'ok' : 'err');
   renderAll();
   openDetalhes(row.solicitacao_id);
+}
+
+function peopleForRow(solicitacaoId) {
+  return state.people.filter((p) => p.solicitacao_id === solicitacaoId);
+}
+
+function newQuarto() {
+  const localId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `q-${Date.now()}-${Math.random()}`;
+  return { localId, tipoQuarto: 'INDIVIDUAL', genero: '', valorDiaria: 0 };
+}
+
+function sortedAllHotels(row) {
+  const uf = String(row?.uf || '').toUpperCase();
+  return state.hotels.slice().sort((a, b) => {
+    const am = String(a.uf || '').toUpperCase() === uf ? 0 : 1;
+    const bm = String(b.uf || '').toUpperCase() === uf ? 0 : 1;
+    if (am !== bm) return am - bm;
+    return String(a.nome || '').localeCompare(String(b.nome || ''));
+  });
+}
+
+function openReservar(solicitacaoId) {
+  const row = findRow(solicitacaoId);
+  if (!row) return;
+  const selectedQuote = state.quotes.find((q) => q.solicitacao_id === solicitacaoId && q.selecionada) || null;
+  const firstQuarto = newQuarto();
+  if (selectedQuote?.valor_diaria != null) firstQuarto.valorDiaria = selectedQuote.valor_diaria;
+  reservar.open = true;
+  reservar.solicitacaoId = solicitacaoId;
+  reservar.selectedHotelId = selectedQuote?.hotel_id || '';
+  reservar.selectedQuote = selectedQuote;
+  reservar.quartos = [firstQuarto];
+  reservar.assignments = new Map();
+  reservar.saving = false;
+  renderReservar();
+}
+
+function renderReservar() {
+  const row = findRow(reservar.solicitacaoId);
+  if (!row) return;
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderReservarForm(row, sortedAllHotels(row), reservar.selectedHotelId)}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-reservar]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelector('[data-back-detalhes-resv]')?.addEventListener('click', () => openDetalhes(row.solicitacao_id));
+
+  const hotelSelect = document.getElementById('ahResvHotel');
+  if (hotelSelect) hotelSelect.addEventListener('change', () => { reservar.selectedHotelId = hotelSelect.value; });
+
+  document.getElementById('ahResvCheckin')?.addEventListener('change', updateQuartosSummary);
+  document.getElementById('ahResvCheckout')?.addEventListener('change', updateQuartosSummary);
+
+  if (reservar.selectedQuote) {
+    const cafeEl = document.getElementById('ahResvCafe');
+    if (cafeEl) cafeEl.checked = Boolean(reservar.selectedQuote.cafe_incluso);
+    const estEl = document.getElementById('ahResvEstacionamento');
+    if (estEl) estEl.checked = Boolean(reservar.selectedQuote.estacionamento_incluso);
+  }
+
+  document.getElementById('ahResvConfirm')?.addEventListener('click', () => confirmReservar(row));
+
+  renderQuartosBoxUI();
+}
+
+function renderQuartosBoxUI() {
+  const box = document.getElementById('ahResvQuartosBox');
+  if (!box) return;
+  const checkin = document.getElementById('ahResvCheckin')?.value || '';
+  const checkout = document.getElementById('ahResvCheckout')?.value || '';
+  const people = peopleForRow(reservar.solicitacaoId);
+  box.innerHTML = renderQuartosBox(reservar.quartos, people, reservar.assignments, checkin, checkout);
+  wireQuartosBox();
+}
+
+function updateQuartosSummary() {
+  const el = document.getElementById('ahResvSummary');
+  if (!el) return;
+  const checkin = document.getElementById('ahResvCheckin')?.value || '';
+  const checkout = document.getElementById('ahResvCheckout')?.value || '';
+  el.textContent = renderQuartosSummaryText(reservar.quartos, checkin, checkout);
+}
+
+function wireQuartosBox() {
+  document.querySelectorAll('[data-quarto-field]').forEach((el) => {
+    const field = el.dataset.quartoField;
+    const id = el.dataset.quartoId;
+    const eventName = el.tagName === 'SELECT' ? 'change' : 'input';
+    el.addEventListener(eventName, () => {
+      const quarto = reservar.quartos.find((q) => q.localId === id);
+      if (!quarto) return;
+      quarto[field] = field === 'valorDiaria' ? Number(el.value || 0) : el.value;
+      if (field === 'tipoQuarto') renderQuartosBoxUI();
+      else if (field === 'valorDiaria') updateQuartosSummary();
+    });
+  });
+  document.querySelectorAll('[data-remove-quarto]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const id = b.dataset.removeQuarto;
+      reservar.quartos = reservar.quartos.filter((q) => q.localId !== id);
+      reservar.assignments.forEach((quartoId, personId) => {
+        if (quartoId === id) reservar.assignments.delete(personId);
+      });
+      renderQuartosBoxUI();
+    });
+  });
+  document.querySelector('[data-add-quarto]')?.addEventListener('click', () => {
+    reservar.quartos.push(newQuarto());
+    renderQuartosBoxUI();
+  });
+  document.querySelectorAll('[data-assign-person]').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      cycleAssignment(chip.dataset.assignPerson);
+      renderQuartosBoxUI();
+    });
+  });
+}
+
+function cycleAssignment(personId) {
+  if (!reservar.quartos.length) return;
+  const current = reservar.assignments.get(personId);
+  if (!current) {
+    reservar.assignments.set(personId, reservar.quartos[0].localId);
+    return;
+  }
+  const idx = reservar.quartos.findIndex((q) => q.localId === current);
+  if (idx === -1 || idx === reservar.quartos.length - 1) {
+    reservar.assignments.delete(personId);
+  } else {
+    reservar.assignments.set(personId, reservar.quartos[idx + 1].localId);
+  }
+}
+
+function reservarFieldValue(id) {
+  return document.getElementById(id)?.value || '';
+}
+
+async function confirmReservar(row) {
+  if (reservar.saving) return;
+  const errorBox = document.getElementById('ahResvErrorBox');
+  if (errorBox) errorBox.textContent = '';
+
+  const hotelId = reservarFieldValue('ahResvHotel');
+  const checkin = reservarFieldValue('ahResvCheckin');
+  const checkout = reservarFieldValue('ahResvCheckout');
+
+  if (!hotelId) return showReservarError('Selecione um hotel.');
+  if (!checkin || !checkout) return showReservarError('Informe check-in e check-out.');
+  if (checkout < checkin) return showReservarError('Check-out não pode ser antes do check-in.');
+  if (reservar.quartos.length === 0) return showReservarError('Adicione pelo menos um quarto.');
+
+  const hotel = state.hotels.find((h) => h.id === hotelId);
+  const nights = nightsBetween(checkin, checkout);
+  const somaDiarias = reservar.quartos.reduce((s, q) => s + Number(q.valorDiaria || 0), 0);
+
+  reservar.saving = true;
+  const confirmBtn = document.getElementById('ahResvConfirm');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Salvando...'; }
+
+  const { data: reserva, error: reservaErr } = await supabase
+    .from('hospedagem_reservas')
+    .insert({
+      solicitacao_id: row.solicitacao_id,
+      hotel_id: hotelId,
+      nome_hotel: hotel?.nome || null,
+      cidade_hotel: hotel?.cidade || null,
+      uf_hotel: hotel?.uf || null,
+      valor_diaria: somaDiarias,
+      quantidade_diarias: nights,
+      quantidade_quartos: reservar.quartos.length,
+      tipo_quarto: reservar.quartos[0]?.tipoQuarto || 'INDIVIDUAL',
+      valor_total_previsto: somaDiarias * nights,
+      data_checkin: checkin,
+      data_checkout: checkout,
+      horario_chegada: reservarFieldValue('ahResvHorario') || null,
+      inclui_cafe: document.getElementById('ahResvCafe')?.checked || false,
+      inclui_almoco: document.getElementById('ahResvAlmoco')?.checked || false,
+      inclui_janta: document.getElementById('ahResvJanta')?.checked || false,
+      estacionamento: document.getElementById('ahResvEstacionamento')?.checked || false,
+      confirmado_com: reservarFieldValue('ahResvConfirmadoCom') || null,
+      contato_confirmacao: reservarFieldValue('ahResvContato') || null,
+      codigo_reserva_hotel: reservarFieldValue('ahResvCodigo') || null,
+    })
+    .select()
+    .single();
+
+  if (reservaErr || !reserva) {
+    reservar.saving = false;
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirmar reserva'; }
+    return showReservarError(`Erro ao criar reserva: ${reservaErr?.message || 'falha desconhecida'}`);
+  }
+
+  const { error: linkErr } = await supabase
+    .from('hospedagem_reserva_solicitacoes')
+    .insert({ reserva_id: reserva.id, solicitacao_id: row.solicitacao_id });
+  if (linkErr) {
+    reservar.saving = false;
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirmar reserva'; }
+    return showReservarError(`Reserva criada, mas falhou ao vincular a solicitação: ${linkErr.message}`);
+  }
+
+  const quartoIdByLocal = new Map();
+  for (const q of reservar.quartos) {
+    const { data: savedQuarto, error: quartoErr } = await supabase
+      .from('hospedagem_reserva_quartos')
+      .insert({
+        reserva_id: reserva.id,
+        quantidade: 1,
+        tipo_quarto: q.tipoQuarto,
+        genero: q.genero || null,
+        valor_diaria: q.valorDiaria || 0,
+      })
+      .select()
+      .single();
+    if (quartoErr || !savedQuarto) {
+      toast(`Aviso: falha ao gravar um dos quartos (${quartoErr?.message || 'erro'}).`, 'err');
+      continue;
+    }
+    quartoIdByLocal.set(q.localId, savedQuarto.id);
+  }
+
+  const people = peopleForRow(row.solicitacao_id);
+  if (people.length) {
+    const assignRows = people.map((p) => ({
+      reserva_id: reserva.id,
+      solicitacao_colaborador_id: p.id,
+      status: 'HOSPEDADO',
+      reserva_quarto_id: quartoIdByLocal.get(reservar.assignments.get(p.id)) || null,
+    }));
+    const { error: assignErr } = await supabase.from('hospedagem_reserva_colaboradores').insert(assignRows);
+    if (assignErr) toast(`Aviso: falha ao alocar colaboradores na reserva: ${assignErr.message}`, 'err');
+  }
+
+  await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'RESERVADA' }).eq('id', row.solicitacao_id);
+
+  reservar.saving = false;
+  reservar.open = false;
+  toast('Reserva criada com sucesso.');
+  const solicitacaoId = row.solicitacao_id;
+  await loadPainel();
+  openDetalhes(solicitacaoId);
+}
+
+function showReservarError(message) {
+  const errorBox = document.getElementById('ahResvErrorBox');
+  if (errorBox) errorBox.textContent = message;
+  toast(message, 'err');
 }
 
 document.addEventListener('click', (e) => {
