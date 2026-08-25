@@ -357,6 +357,7 @@
 .ah-quarto-index { font-weight: 800; font-size: 12px; color: var(--text); white-space: nowrap; }
 .ah-quarto-head .ah-select-sm { width: auto; min-width: 100px; }
 .ah-quarto-head .ah-input-sm { width: 90px; }
+.ah-quarto-head .ah-extra-desc { width: auto; flex: 1; min-width: 140px; }
 .ah-quarto-cap {
   font-size: 11px;
   font-weight: 800;

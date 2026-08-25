@@ -83,7 +83,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20260825-fase5';
+  link.href = './assets/css/adm-hotel.css?v=20260825-fase6';
   document.head.appendChild(link);
 }
 
@@ -142,6 +142,8 @@ export function nightsBetween(checkin, checkout) {
   const diff = Math.round((b - a) / 86400000);
   return diff > 0 ? diff : 1;
 }
+
+export const EXTRA_TYPE_LABEL = { adicional: 'Adicional', desconto: 'Desconto' };
 
 let toastTimer = null;
 export function toast(message, type = 'ok') {
