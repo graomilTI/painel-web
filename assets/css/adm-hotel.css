@@ -231,12 +231,78 @@
 .ah-note { color: var(--muted); font-size: 13px; margin: 0; }
 .ah-modal-foot {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   padding: 14px 22px 20px;
   border-top: 1px solid var(--line);
 }
 .ah-btn-sm { padding: 8px 16px; font-size: 12px; }
+
+/* ---- Cotações (Fase 2) ---- */
+
+.ah-quote-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(111, 208, 165, .03);
+}
+.ah-quote-row.ah-quote-selected { border-color: rgba(63, 168, 120, .5); background: var(--green-soft); }
+.ah-quote-main { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ah-quote-hotel { font-weight: 700; color: var(--text); font-size: 13px; }
+.ah-quote-meta { font-size: 12px; }
+.ah-quote-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ah-quote-pendente { background: rgba(111, 208, 165, .08); color: var(--muted); }
+.ah-quote-ok { background: rgba(63, 168, 120, .18); color: var(--green-2); }
+.ah-quote-indisponivel { background: rgba(220, 38, 38, .14); color: #fca5a5; }
+.ah-quote-falha { background: rgba(220, 38, 38, .14); color: #fca5a5; }
+.ah-quote-selected-badge { background: var(--green-2); color: #06130e; }
+.ah-quote-use { align-self: flex-start; }
+
+/* ---- Picker de hotéis (Fase 2) ---- */
+
+.ah-picker-search {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.ah-picker-search:focus { outline: none; border-color: var(--green-2); }
+.ah-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.ah-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ah-picker-item:hover { background: rgba(111, 208, 165, .06); }
+.ah-picker-item input { flex: 0 0 auto; }
+.ah-picker-item-name { color: var(--text); font-size: 13px; flex: 1; }
+.ah-picker-item-meta { font-size: 12px; white-space: nowrap; }
+.ah-picker-hint { padding: 8px 4px; font-size: 12px; text-align: center; }
 
 .ah-toast {
   position: fixed;
