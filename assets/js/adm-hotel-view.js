@@ -187,6 +187,7 @@ export function renderDetalhes(row, quotes) {
       <div class="ah-modal-foot">
         <div class="ah-modal-foot-left">
           ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : ''}
+          ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-agrupar="${esc(row.solicitacao_id)}" type="button">Agrupar</button>` : ''}
           ${podeCotar ? `<button class="btn btn-primary ah-btn-sm" data-reservar="${esc(row.solicitacao_id)}" type="button">Reservar</button>` : ''}
         </div>
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
@@ -272,6 +273,39 @@ export function renderPickerList(hotels, query, selectedIds) {
       </label>
     `).join('')}
     ${hint}
+  `;
+}
+
+export function renderAgruparPicker(row, reservas) {
+  return `
+    <div class="ah-modal">
+      <div class="ah-modal-head">
+        <div><h3>Agrupar</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''} · junta esta solicitação numa reserva já existente na mesma cidade</p></div>
+        <button class="ah-modal-x" data-close-agrupar type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        ${reservas.length ? `
+          <div class="ah-detail-list">
+            ${reservas.map((r) => `
+              <div class="ah-quote-row">
+                <div class="ah-quote-main">
+                  <span class="ah-quote-hotel">${esc(r.hotel || '—')}</span>
+                  <span class="ah-quote-badge ${r.status_hospedagem === 'HOSPEDADO' ? 'ah-quote-ok' : 'ah-quote-pendente'}">${esc(statusLabel(r))}</span>
+                </div>
+                <div class="ah-quote-meta muted">
+                  ${brDate(r.data_checkin)} → ${brDate(r.data_checkout)} · ${r.total_colaboradores ?? 0} colaborador(es)
+                </div>
+                <button class="btn btn-secondary ah-btn-sm" data-agrupar-reserva="${esc(r.reserva_id)}" type="button">Agrupar nesta reserva</button>
+              </div>
+            `).join('')}
+          </div>
+        ` : `<p class="ah-note">Nenhuma reserva ativa em ${esc(row.cidade || 'sem cidade definida')}${row.uf ? `/${esc(row.uf)}` : ''} pra agrupar. Use "Reservar" pra criar uma nova.</p>`}
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-agrupar type="button">Voltar</button>
+        <span></span>
+      </div>
+    </div>
   `;
 }
 
