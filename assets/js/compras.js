@@ -50,6 +50,12 @@ function pushUniforme(c){
   if(!state.uniformes.some(x=>colaboradorKey(x)===key)) state.uniformes.push(c);
 }
 function isClassificador(c){ return norm(`${c.tipo||''} ${c.cargo||''}`).includes('classificador'); }
+function uniformeCorOptions(value){
+  return ['Cinza','Verde'].map(c=>`<option value="${c}"${norm(c)===norm(value)?' selected':''}>${c}</option>`).join('');
+}
+function uniformeTamanhoOptions(value){
+  return UNIFORME_TAMANHOS.map(t=>`<option value="${t}"${t===value?' selected':''}>${t}</option>`).join('');
+}
 async function notifyCompras(message){
   const cfgs = await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
   if(!cfgs.length) return {ok:false,msg:'Solicitação salva. Nenhum responsável configurado em compras_notificacoes_config.'};
@@ -368,26 +374,37 @@ function renderItensList(){
 function uniformRow(c){
   const cor=c._uniformeCor||(isClassificador(c)?'Verde':'Cinza');
   const tamanho=c._uniformeTamanho||'M';
-  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td data-label="Colaborador">${esc(c.nome)}</td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><b class="uni-cor">${esc(cor)}</b></td><td data-label="Tamanho"><b class="uni-tam">${esc(tamanho)}</b></td><td data-label="Un. máx 2"><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
+  const qtd=Math.min(2,Math.max(1,Number(c._uniformeQtd||1)));
+  return `<tr class="cmp-uniforme-row" data-uniforme-id="${esc(colaboradorKey(c))}"><td data-label="Colaborador"><strong>${esc(c.nome)}</strong></td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><select class="uni-cor" aria-label="Cor do uniforme de ${esc(c.nome)}">${uniformeCorOptions(cor)}</select></td><td data-label="Tamanho"><select class="uni-tam" aria-label="Tamanho do uniforme de ${esc(c.nome)}">${uniformeTamanhoOptions(tamanho)}</select></td><td data-label="Un."><input class="uni-qtd" aria-label="Unidades para ${esc(c.nome)}" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></td><td class="cmp-row-action"><button class="btn btn-small btn-danger" aria-label="Remover ${esc(c.nome)}" type="button" data-del-uniforme>×</button></td></tr>`;
 }
 function renderUniformes(){
   const body=document.getElementById('cmpUniformeBody');
   body.innerHTML=state.uniformes.map(uniformRow).join('') || `<tr><td colspan="6" class="cmp-empty">Nenhum colaborador adicionado.</td></tr>`;
   body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==String(id)); renderUniformes(); });
+  body.querySelectorAll('[data-uniforme-id]').forEach(tr=>{
+    const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId);
+    if(!c) return;
+    tr.querySelector('.uni-cor').onchange=e=>{ c._uniformeCor=e.target.value; };
+    tr.querySelector('.uni-tam').onchange=e=>{ c._uniformeTamanho=e.target.value; };
+    tr.querySelector('.uni-qtd').onchange=e=>{ const qtd=Math.min(2,Math.max(1,Number(e.target.value||1))); c._uniformeQtd=qtd; e.target.value=qtd; };
+  });
 }
 function addAllColaboradores(ctx){
-  // Escopo pela equipe real do gestor: supervisão-com-supervisão e
-  // coordenação-com-coordenação (nunca cruzando os dois campos, que tem
-  // formatos diferentes e geravam matches quase vazios ou por acidente).
   const u=usuario(ctx);
-  const supGestor=norm(u.supervisao);
-  const coordGestor=norm(u.coordenacao);
-  let base=[];
-  if(supGestor) base=state.colaboradores.filter(c=>norm(c.supervisao)===supGestor);
-  if(!base.length && coordGestor) base=state.colaboradores.filter(c=>norm(c.coordenacao)===coordGestor);
-  if(!base.length) base=state.colaboradores;
-  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza'}));
+  // A regional aparece como supervisao ou coordenacao, dependendo da origem
+  // (app_usuarios, RPC de contexto ou sincronizacao de colaboradores).
+  const escopos=new Set([
+    u.supervisao,u.coordenacao,u.regional,
+    ctx?.supervisao,ctx?.coordenacao,ctx?.regional,
+  ].flatMap(v=>String(v||'').split(/[,;|]/)).map(norm).filter(Boolean));
+  const base=state.colaboradores.filter(c=>{
+    const campos=[c.supervisao,c.coordenacao,c.regional].map(norm).filter(Boolean);
+    return campos.some(campo=>[...escopos].some(escopo=>campo===escopo || campo.startsWith(`${escopo} `) || escopo.startsWith(`${campo} `)));
+  });
+  if(!escopos.size){ setMsg('cmpFeedback','Seu usuário não possui uma regional cadastrada. Solicite o ajuste do cadastro.',true); return; }
+  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza',_uniformeQtd:1}));
   renderUniformes();
+  setMsg('cmpFeedback',base.length?`${state.uniformes.length} colaborador(es) da regional adicionados.`:'Nenhum colaborador ativo foi encontrado para a sua regional.',!base.length);
 }
 function setupColabSearch(){
   const input=document.getElementById('cmpColabBusca'); const box=document.getElementById('cmpColabSug');
@@ -489,7 +506,7 @@ async function submitItens(ctx, overrideItems=null){
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
-  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:c._uniformeCor||(isClassificador(c)?'Verde':'Cinza')}; });
+  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||(isClassificador(c)?'Verde':'Cinza')}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;
@@ -506,19 +523,51 @@ function historyGroup(status){
   if(status==='recusado') return 'cancelados';
   return 'pendentes';
 }
+function solicitacaoUniformeEditavel(s){
+  return norm(s?.tipo_solicitacao)==='uniformes' && !['comprado','recusado','cancelado','concluido','fechado'].includes(norm(s?.status));
+}
+function historyUniformeItem(item, editavel){
+  const qtd=Math.min(2,Math.max(1,Number(item.quantidade||item.unidade||1)));
+  if(!editavel) return `<div class="cmp-history-uniforme"><strong>${esc(item.colaborador_nome||'Colaborador')}</strong><span>${qtd} un · ${esc(item.uniforme_cor||'-')} · Tam. ${esc(item.tamanho||'-')}</span></div>`;
+  return `<div class="cmp-history-uniforme is-editable" data-edit-uniforme="${esc(item.id)}"><div class="cmp-history-person"><strong>${esc(item.colaborador_nome||'Colaborador')}</strong><small>${esc(item.colaborador_tipo||'')}</small></div><label><span>Cor</span><select class="hist-uni-cor">${uniformeCorOptions(item.uniforme_cor||'Cinza')}</select></label><label><span>Tamanho</span><select class="hist-uni-tam">${uniformeTamanhoOptions(item.tamanho||'M')}</select></label><label><span>Un.</span><input class="hist-uni-qtd" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></label><button class="btn btn-small btn-secondary" type="button" data-save-uniforme>Salvar</button></div>`;
+}
+async function salvarUniformeAberto(button){
+  const box=button.closest('[data-edit-uniforme]');
+  const itemId=box?.dataset.editUniforme;
+  const solicitacao=state.rows.find(s=>(s.compras_itens||[]).some(i=>String(i.id)===String(itemId)));
+  if(!box || !solicitacaoUniformeEditavel(solicitacao)) throw new Error('Esta solicitação já foi fechada e não pode mais ser editada.');
+  const qtd=Math.min(2,Math.max(1,Number(box.querySelector('.hist-uni-qtd').value||1)));
+  const payload={uniforme_cor:box.querySelector('.hist-uni-cor').value,tamanho:box.querySelector('.hist-uni-tam').value,quantidade:qtd,unidade:qtd};
+  button.disabled=true; button.textContent='Salvando…';
+  const {data:statusAtual,error:statusError}=await supabase.from('compras_solicitacoes').select('status,tipo_solicitacao').eq('id',solicitacao.id).maybeSingle();
+  if(statusError) throw statusError;
+  if(!solicitacaoUniformeEditavel(statusAtual)) throw new Error('Esta solicitação foi fechada e não pode mais ser editada.');
+  const {data,error}=await supabase.from('compras_itens').update(payload).eq('id',itemId).select('id').maybeSingle();
+  if(error) throw error;
+  if(!data) throw new Error('O item não pôde ser alterado. Atualize a página e confira se o pedido ainda está aberto.');
+  const item=solicitacao.compras_itens.find(i=>String(i.id)===String(itemId));
+  Object.assign(item,payload);
+  button.textContent='Salvo ✓';
+  setTimeout(()=>{ if(button.isConnected){ button.disabled=false; button.textContent='Salvar'; } },1400);
+}
 function renderMinhas(){
   const body=document.getElementById('cmpMinhasBody');
   if(!body) return;
   const data=state.rows.filter(r=>historyGroup(r.status)===state.historyFilter);
   document.querySelectorAll('[data-history-filter]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyFilter===state.historyFilter));
   if(!data.length){ body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhuma solicitação neste status.</td></tr>'; return; }
-  body.innerHTML=data.map(r=>`<tr><td data-label="Data">${brDate(r.data_solicitacao)}</td><td data-label="Tipo">${esc(r.tipo_solicitacao)}</td><td data-label="Itens"><div class="cmp-items-cell">${(r.compras_itens||[]).map(i=>`<span>${esc(i.quantidade||i.unidade||1)} un · ${esc(i.material)}${i.tamanho?` <small>${esc(i.tamanho)}</small>`:''}</span>`).join('')}</div></td><td data-label="Status">${pill(r.status)}</td><td data-label="Motivo">${esc(r.motivo_recusa||'—')}</td></tr>`).join('');
+  body.innerHTML=data.map(r=>`<tr><td data-label="Data">${brDate(r.data_solicitacao)}</td><td data-label="Tipo">${esc(r.tipo_solicitacao)}</td><td data-label="Itens"><div class="cmp-items-cell">${(r.compras_itens||[]).map(i=>norm(r.tipo_solicitacao)==='uniformes'?historyUniformeItem(i,solicitacaoUniformeEditavel(r)):`<span>${esc(i.quantidade||i.unidade||1)} un · ${esc(i.material)}${i.tamanho?` <small>${esc(i.tamanho)}</small>`:''}</span>`).join('')}</div></td><td data-label="Status">${pill(r.status)}</td><td data-label="Motivo">${esc(r.motivo_recusa||'—')}</td></tr>`).join('');
+  body.querySelectorAll('[data-save-uniforme]').forEach(btn=>btn.onclick=async()=>{
+    try{ await salvarUniformeAberto(btn); }
+    catch(e){ btn.disabled=false; btn.textContent='Salvar'; setMsg('cmpHistoryFeedback',e.message||'Não foi possível salvar a alteração.',true); }
+  });
 }
 function styles(){return `<style>
 .cmp-tabs,.cmp-actions{display:flex;gap:8px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important;border:1px solid var(--line)!important;background:var(--bg-card)!important;color:var(--muted)!important;border-radius:12px!important;padding:9px 16px!important;font-weight:700;font-size:13px}.cmp-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;color:#f0fff7!important;border-color:var(--green-2)!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}.cmp-table{width:100%;border-collapse:collapse;min-width:680px}.cmp-table th,.cmp-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}.cmp-table th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;background:rgba(13,32,24,.5)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field select,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;color-scheme:dark;min-height:40px;font-size:14px}.cmp-table input:focus,.cmp-table select:focus,.cmp-field input:focus,.cmp-field select:focus,.cmp-field textarea:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}.cmp-field label{font-size:11px;color:var(--muted);font-weight:700}.cmp-field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23cbd5e1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}.cmp-field select:disabled,.cmp-table select:disabled,.cmp-field input:disabled,.cmp-table input:disabled,.cmp-field textarea:disabled{opacity:.72;cursor:not-allowed}.cmp-field{display:flex;flex-direction:column;gap:5px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmp-add-box{display:grid;grid-template-columns:90px 1.4fr 1fr 1fr auto;gap:10px;align-items:start}.cmp-add-box .cmp-field small.muted{display:block;font-size:11px;line-height:1.3;margin-top:2px}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-autocomplete-wrap{position:relative}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px;cursor:pointer}.cmp-item-suggest{position:absolute;top:100%;left:0;right:0;z-index:50;background:#0a1e17;border:1px solid var(--line-2);border-radius:12px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:260px;overflow:auto}.cmp-item-suggest:empty{display:none}.cmp-item-suggest button{display:flex;justify-content:space-between;align-items:center;gap:10px}.cmp-item-suggest small{color:var(--muted);font-weight:800}.cmp-no-sug{color:var(--muted);padding:10px 12px;font-weight:700}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf,.cmp-status.aguardando_termo{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}
 .cmp-cel-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.cmp-cel-modal.open{display:flex}.cmp-cel-card{width:min(600px,100%);max-height:90vh;overflow:auto;background:var(--bg-card);border:1px solid var(--line-2);border-radius:18px;padding:20px;color:var(--text)}
 .cmp-workspace{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:16px;align-items:start}.cmp-request-card,.cmp-history-card{min-width:0}.cmp-request-card{position:sticky;top:16px}.cmp-request-card .section-head{align-items:flex-start;flex-direction:column}.cmp-request-card .cmp-tabs{order:-1}.cmp-request-card .cmp-grid{grid-template-columns:1fr}.cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) 110px}.cmp-request-card .cmp-add-box .cmp-field:nth-child(1){grid-column:1}.cmp-request-card .cmp-add-box .cmp-field:nth-child(2){grid-column:2/4}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3){grid-column:1/3}.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:3}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-request-card .cmp-add-action label{display:none}.cmp-request-card .cmp-add-action .btn,.cmp-request-card #cmpSolicitar{width:100%}.cmp-request-card .cmp-table{min-width:560px}.cmp-request-card .cmp-table-wrap{max-height:260px}.cmp-request-card #panel-uniformes .cmp-actions{display:grid}.cmp-request-card #panel-uniformes .cmp-field{min-width:0!important}.cmp-history-head{align-items:flex-end}.cmp-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.cmp-history-filter{width:auto!important;margin:0!important;border-radius:999px!important;padding:8px 16px!important}.cmp-history-filter.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;border-color:var(--green-2)!important;color:#f0fff7!important}.cmp-history-card .cmp-table-wrap{border-radius:16px}.cmp-history-card .cmp-table td{padding-top:16px;padding-bottom:16px}.cmp-items-cell{display:grid;gap:5px}.cmp-items-cell span{display:block}.cmp-items-cell small{color:var(--muted);margin-left:4px}.cmp-request-card .form-actions{display:grid;gap:10px}.cmp-feedback{line-height:1.45}
 .cmp-uniforme-add{display:grid;grid-template-columns:minmax(0,1fr) 82px 90px;gap:10px;align-items:end}.cmp-uniforme-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.cmp-uniforme-actions .btn{width:100%;margin:0!important;padding-inline:10px!important}
+.cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}}
 @media(max-width:960px){.cmp-workspace{grid-template-columns:1fr}.cmp-request-card{position:static}.cmp-request-card .cmp-add-box{grid-template-columns:90px minmax(0,1fr) 130px}.cmp-history-head{align-items:flex-start}}
 @media(max-width:760px){
@@ -535,6 +584,7 @@ function styles(){return `<style>
   .cmp-table td{border-bottom:1px solid var(--line)}
   .cmp-table td:last-child{border-bottom:0}
   .cmp-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+  .cmp-uniforme-row{display:grid!important;grid-template-columns:1fr 1fr 72px;gap:0}.cmp-uniforme-row td{box-sizing:border-box}.cmp-uniforme-row td:nth-child(1),.cmp-uniforme-row td:nth-child(2){grid-column:auto}.cmp-uniforme-row td:nth-child(3),.cmp-uniforme-row td:nth-child(4){grid-column:auto}.cmp-uniforme-row .cmp-row-action{width:auto;display:flex!important;align-items:end;justify-content:center}.cmp-uniforme-row .cmp-row-action .btn{min-height:40px;width:100%}.cmp-history-uniforme.is-editable{grid-template-columns:1fr 1fr 64px}.cmp-history-person{grid-column:1/-1}.cmp-history-uniforme .btn{grid-column:1/-1}
 }
 </style>`}
 
@@ -558,7 +608,7 @@ async function renderSolicitacaoTab(content, userContext){
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
-  <section class="card cmp-history-card"><div class="section-head cmp-history-head" style="margin-bottom:12px"><div><h3 style="margin:0">Pendentes e histórico</h3><p class="muted" style="margin:2px 0 0">Acompanhe o andamento do que já foi solicitado.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><div class="cmp-history-filters"><button class="btn btn-secondary cmp-history-filter active" data-history-filter="pendentes" type="button">Pendentes</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="concluidos" type="button">Concluídos</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="cancelados" type="button">Cancelados</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section></div>`;
+  <section class="card cmp-history-card"><div class="section-head cmp-history-head" style="margin-bottom:12px"><div><h3 style="margin:0">Pendentes e histórico</h3><p class="muted" style="margin:2px 0 0">Acompanhe o andamento. Uniformes podem ser ajustados até o fechamento da solicitação.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><span class="cmp-feedback cmp-history-feedback" id="cmpHistoryFeedback"></span><div class="cmp-history-filters"><button class="btn btn-secondary cmp-history-filter active" data-history-filter="pendentes" type="button">Pendentes</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="concluidos" type="button">Concluídos</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="cancelados" type="button">Cancelados</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section></div>`;
   state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.querySelectorAll('[data-history-filter]').forEach(btn=>btn.onclick=()=>{ state.historyFilter=btn.dataset.historyFilter; renderMinhas(); });
