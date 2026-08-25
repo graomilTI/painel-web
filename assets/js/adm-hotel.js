@@ -977,6 +977,10 @@ function renderFinanceiroBoard() {
 // Chamada compartilhada entre a fila do Financeiro e o extrato por hotel (Fase 7)
 // — os dois usam os mesmos data-attributes (data-fin-field/data-fin-id) nos inputs.
 async function submitConfirmarPagamento(loteId, onSuccess) {
+  if (!loteId) {
+    toast('Este pagamento não tem um lote de check-out vinculado — confirme em Financeiro > Pagamentos.', 'err');
+    return;
+  }
   const valorInput = document.querySelector(`[data-fin-field="valorPago"][data-fin-id="${loteId}"]`);
   const comprovanteInput = document.querySelector(`[data-fin-field="comprovante"][data-fin-id="${loteId}"]`);
   const valorPago = Number(valorInput?.value || 0);

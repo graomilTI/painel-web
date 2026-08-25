@@ -551,11 +551,15 @@ export function renderFinanceiroQueue(items) {
           </div>
           <div class="ah-quote-meta muted">${esc(it.descricao || '—')}</div>
           <div class="ah-quote-meta muted">Valor devido ${money(it.valor)}${it.competencia ? ` · ${brDate(it.competencia)}` : ''}</div>
-          <div class="ah-field-row">
-            <div class="ah-field"><label>Valor pago</label><input type="number" min="0" step="0.01" class="ah-input-sm" data-fin-field="valorPago" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" value="${it.valor}" /></div>
-            <div class="ah-field"><label>Comprovante (URL)</label><input type="text" class="ah-input-sm" data-fin-field="comprovante" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" placeholder="https://..." /></div>
-          </div>
-          <button class="btn btn-primary ah-btn-sm" data-confirmar-pagamento="${esc(it.hospedagem_checkout_lote_id)}" type="button">Confirmar pagamento</button>
+          ${it.hospedagem_checkout_lote_id ? `
+            <div class="ah-field-row">
+              <div class="ah-field"><label>Valor pago</label><input type="number" min="0" step="0.01" class="ah-input-sm" data-fin-field="valorPago" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" value="${it.valor}" /></div>
+              <div class="ah-field"><label>Comprovante (URL)</label><input type="text" class="ah-input-sm" data-fin-field="comprovante" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" placeholder="https://..." /></div>
+            </div>
+            <button class="btn btn-primary ah-btn-sm" data-confirmar-pagamento="${esc(it.hospedagem_checkout_lote_id)}" type="button">Confirmar pagamento</button>
+          ` : `
+            <p class="ah-note">Pagamento sem lote de check-out vinculado (lançamento anterior à reconstrução do módulo) — confirme em Financeiro &gt; Pagamentos.</p>
+          `}
         </div>
       `).join('')}
     </div>
