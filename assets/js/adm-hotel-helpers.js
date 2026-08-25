@@ -83,7 +83,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20260825-fase6';
+  link.href = './assets/css/adm-hotel.css?v=20260825-fase7';
   document.head.appendChild(link);
 }
 
@@ -144,6 +144,15 @@ export function nightsBetween(checkin, checkout) {
 }
 
 export const EXTRA_TYPE_LABEL = { adicional: 'Adicional', desconto: 'Desconto' };
+
+// status de public.hospedagem_checkout_lotes — vocabulário real (visto na
+// função hospedagem_realizar_checkout / hospedagem_confirmar_pagamento_lote).
+export const LOTE_STATUS_LABEL = {
+  PENDENTE: 'Pendente',
+  PARCIAL: 'Parcial',
+  PAGO: 'Pago',
+  CANCELADO: 'Cancelado',
+};
 
 let toastTimer = null;
 export function toast(message, type = 'ok') {

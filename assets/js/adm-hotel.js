@@ -6,12 +6,13 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { ensureStyles, tabGroup, normalizeText, buildCotacaoMessage, toast, nightsBetween } from './adm-hotel-helpers.js';
 import {
-  renderShellAlojamentos, renderTabsBar, renderTable, renderFluxoPlaceholder, renderDetalhes,
+  renderShellAlojamentos, renderTabsBar, renderTable, renderDetalhes,
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
   renderReservarForm, renderQuartosBox, renderQuartosSummaryText,
   renderAgruparPicker, renderEstenderForm,
   renderCheckoutForm, renderExtrasBox, renderExtrasTotalText, renderDiferencaForm,
   renderFinanceiroShell, renderFinanceiroQueue,
+  renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
 
 function currentMode() {
@@ -23,6 +24,7 @@ function currentMode() {
 
 const state = {
   rows: [], hotels: [], people: [], assignments: [], links: [], quotes: [], finance: [], documents: [],
+  advances: [], advanceMoves: [], checkoutLots: [],
   loading: false, error: null, loaded: false,
   activeTab: 'todas', openKpi: null,
 };
@@ -93,7 +95,14 @@ function renderBoard() {
   const board = document.getElementById('ahBoard');
   if (!board) return;
   if (state.activeTab === 'fluxo') {
-    board.innerHTML = renderFluxoPlaceholder();
+    if (state.loading) {
+      board.innerHTML = '<div class="card ah-empty">Carregando...</div>';
+      return;
+    }
+    board.innerHTML = renderFluxoBoard(hotelLedger());
+    board.querySelectorAll('[data-open-extrato]').forEach((b) => {
+      b.addEventListener('click', () => openHotelExtrato(b.dataset.openExtrato));
+    });
     return;
   }
   if (state.loading) {
@@ -134,6 +143,9 @@ async function loadPainel() {
   state.quotes = data?.quotes || [];
   state.finance = data?.finance || [];
   state.documents = data?.documents || [];
+  state.advances = data?.advances || [];
+  state.advanceMoves = data?.advanceMoves || [];
+  state.checkoutLots = data?.checkoutLots || [];
   state.loaded = true;
   renderAll();
 }
@@ -962,7 +974,9 @@ function renderFinanceiroBoard() {
   });
 }
 
-async function confirmarPagamento(loteId) {
+// Chamada compartilhada entre a fila do Financeiro e o extrato por hotel (Fase 7)
+// — os dois usam os mesmos data-attributes (data-fin-field/data-fin-id) nos inputs.
+async function submitConfirmarPagamento(loteId, onSuccess) {
   const valorInput = document.querySelector(`[data-fin-field="valorPago"][data-fin-id="${loteId}"]`);
   const comprovanteInput = document.querySelector(`[data-fin-field="comprovante"][data-fin-id="${loteId}"]`);
   const valorPago = Number(valorInput?.value || 0);
@@ -989,7 +1003,110 @@ async function confirmarPagamento(loteId) {
   }
 
   toast('Pagamento confirmado.');
-  await loadFinanceiroQueue();
+  await onSuccess();
+}
+
+async function confirmarPagamento(loteId) {
+  await submitConfirmarPagamento(loteId, loadFinanceiroQueue);
+}
+
+async function confirmarPagamentoExtrato(loteId, hotelId) {
+  await submitConfirmarPagamento(loteId, async () => {
+    await loadPainel();
+    openHotelExtrato(hotelId);
+  });
+}
+
+// Saldo real por hotel: soma o que ainda está devido (hospedagem_financeiro,
+// exceto lotes já PAGO) e o crédito disponível (hospedagem_adiantamentos com
+// status DISPONIVEL) — substitui o "saldo" simulado do protótipo original.
+function hotelLedger() {
+  const reservaHotel = new Map();
+  state.rows.forEach((r) => { if (r.reserva_id && r.hotel_id) reservaHotel.set(r.reserva_id, r.hotel_id); });
+
+  const byHotel = new Map();
+  function ensure(hotelId) {
+    if (!byHotel.has(hotelId)) {
+      const h = state.hotels.find((x) => x.id === hotelId);
+      byHotel.set(hotelId, {
+        hotelId, nome: h?.nome || 'Hotel', cidade: h?.cidade || '', uf: h?.uf || '',
+        saldoDevido: 0, creditoDisponivel: 0, hasActivity: false,
+      });
+    }
+    return byHotel.get(hotelId);
+  }
+
+  state.finance.forEach((f) => {
+    const hotelId = reservaHotel.get(f.reserva_id);
+    if (!hotelId) return;
+    const entry = ensure(hotelId);
+    entry.hasActivity = true;
+    if (f.status_financeiro !== 'PAGO') entry.saldoDevido += Number(f.saldo || 0);
+  });
+
+  state.advances.forEach((a) => {
+    if (!a.hotel_id) return;
+    const entry = ensure(a.hotel_id);
+    entry.hasActivity = true;
+    if (a.status === 'DISPONIVEL') entry.creditoDisponivel += Number(a.saldo || 0);
+  });
+
+  return [...byHotel.values()].filter((h) => h.hasActivity).sort((a, b) => b.saldoDevido - a.saldoDevido);
+}
+
+function groupReservasForHotel(hotelId) {
+  const seen = new Map();
+  state.rows.forEach((r) => {
+    if (r.hotel_id !== hotelId || !r.reserva_id) return;
+    if (!seen.has(r.reserva_id)) seen.set(r.reserva_id, r);
+  });
+  return [...seen.values()].sort((a, b) => new Date(b.data_checkin || 0) - new Date(a.data_checkin || 0));
+}
+
+async function fetchPendingPaymentsForLots(loteIds) {
+  if (loteIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('financeiro_pagamentos')
+    .select('id, valor, status, hospedagem_checkout_lote_id')
+    .in('hospedagem_checkout_lote_id', loteIds)
+    .in('status', ['PENDENTE', 'EM_ANALISE']);
+  if (error) return new Map();
+  const map = new Map();
+  (data || []).forEach((p) => map.set(p.hospedagem_checkout_lote_id, p));
+  return map;
+}
+
+function openHotelExtrato(hotelId) {
+  const root = modalRoot();
+  root.innerHTML = '<div class="ah-overlay" id="ahOverlay"><div class="ah-modal"><div class="ah-modal-body"><div class="ah-empty">Carregando extrato...</div></div></div></div>';
+  document.getElementById('ahOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'ahOverlay') closeDetalhes();
+  });
+  renderHotelExtratoAsync(hotelId);
+}
+
+async function renderHotelExtratoAsync(hotelId) {
+  const hotelData = hotelLedger().find((h) => h.hotelId === hotelId);
+  if (!hotelData) return;
+  const reservas = groupReservasForHotel(hotelId);
+  const lots = state.checkoutLots
+    .filter((l) => l.hotel_id === hotelId)
+    .sort((a, b) => new Date(b.data_checkout || 0) - new Date(a.data_checkout || 0));
+  const advances = state.advances.filter((a) => a.hotel_id === hotelId);
+  const advanceIds = new Set(advances.map((a) => a.id));
+  const moves = state.advanceMoves
+    .filter((m) => advanceIds.has(m.adiantamento_id))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  const pendingByLote = await fetchPendingPaymentsForLots(lots.map((l) => l.id));
+
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderHotelExtrato(hotelData, reservas, lots, pendingByLote, advances, moves)}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-extrato]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelectorAll('[data-confirmar-pagamento]').forEach((b) => {
+    b.addEventListener('click', () => confirmarPagamentoExtrato(b.dataset.confirmarPagamento, hotelId));
+  });
 }
 
 document.addEventListener('click', (e) => {
