@@ -1,7 +1,7 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
 import {
   esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO,
-  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween, EXTRA_TYPE_LABEL,
+  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween, EXTRA_TYPE_LABEL, LOTE_STATUS_LABEL,
 } from './adm-hotel-helpers.js';
 
 const TABS = [
@@ -128,11 +128,97 @@ export function renderTable(list) {
   `;
 }
 
-export function renderFluxoPlaceholder() {
+export function renderFluxoBoard(cards) {
+  if (cards.length === 0) {
+    return `
+      <div class="card ah-fluxo-placeholder">
+        <p class="eyebrow">Fluxo de caixa</p>
+        <p class="muted">Nenhum hotel com reserva enviada ao Financeiro ou crédito registrado ainda.</p>
+      </div>
+    `;
+  }
   return `
-    <div class="card ah-fluxo-placeholder">
-      <p class="eyebrow">Fluxo de caixa</p>
-      <p class="muted">Saldo por hotel, extrato e pagamento em lote chegam na próxima fase da reconstrução — por enquanto esta aba fica reservada.</p>
+    <div class="ah-fluxo-grid">
+      ${cards.map((c) => `
+        <button class="ah-fluxo-card" data-open-extrato="${esc(c.hotelId)}" type="button">
+          <div class="ah-fluxo-card-head">
+            <span class="ah-fluxo-card-name">${esc(c.nome)}</span>
+            <span class="ah-fluxo-card-city muted">${esc(c.cidade || '—')}${c.uf ? `/${esc(c.uf)}` : ''}</span>
+          </div>
+          <div class="ah-fluxo-card-saldo ${c.saldoDevido > 0 ? 'ah-fluxo-saldo-devido' : ''}">${money(c.saldoDevido)}</div>
+          ${c.creditoDisponivel > 0 ? `<div class="ah-fluxo-card-credito">Crédito ${money(c.creditoDisponivel)}</div>` : ''}
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function loteBadgeClass(status) {
+  if (status === 'PAGO') return 'ah-quote-ok';
+  if (status === 'CANCELADO') return 'ah-quote-falha';
+  return 'ah-quote-pendente';
+}
+
+export function renderHotelExtrato(hotelInfo, reservas, lots, pendingByLote, advances, moves) {
+  return `
+    <div class="ah-modal ah-extrato">
+      <div class="ah-modal-head">
+        <div>
+          <h3>${esc(hotelInfo.nome)}</h3>
+          <p class="muted">${esc(hotelInfo.cidade || '')}${hotelInfo.uf ? ` · ${esc(hotelInfo.uf)}` : ''} · Saldo devido ${money(hotelInfo.saldoDevido)}${hotelInfo.creditoDisponivel > 0 ? ` · Crédito ${money(hotelInfo.creditoDisponivel)}` : ''}</p>
+        </div>
+        <button class="ah-modal-x" data-close-extrato type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <div class="ah-field">
+          <label>Reservas (${reservas.length})</label>
+          <div class="ah-detail-list">
+            ${reservas.length ? reservas.map((r) => `
+              <div class="ah-detail-row"><span>${brDate(r.data_checkin)} → ${brDate(r.data_checkout)} <span class="muted">· ${esc(statusLabel(r))}</span></span><span class="muted">${r.valor_total_previsto != null ? money(r.valor_total_previsto) : '—'}</span></div>
+            `).join('') : '<p class="ah-note">Nenhuma reserva neste hotel ainda.</p>'}
+          </div>
+        </div>
+
+        <div class="ah-field">
+          <label>Lançamentos de check-out (${lots.length})</label>
+          <div class="ah-detail-list">
+            ${lots.length ? lots.map((l) => {
+              const pending = pendingByLote.get(l.id);
+              return `
+                <div class="ah-quote-row">
+                  <div class="ah-quote-main">
+                    <span class="ah-quote-hotel">${brDate(l.data_checkout)}</span>
+                    <span class="ah-quote-badge ${loteBadgeClass(l.status)}">${esc(LOTE_STATUS_LABEL[l.status] || l.status)}</span>
+                  </div>
+                  <div class="ah-quote-meta muted">Diárias ${money(l.valor_diarias)} · Extras ${money(l.valor_extras)} · Total ${money(l.valor_total)}</div>
+                  ${pending ? `
+                    <div class="ah-field-row">
+                      <div class="ah-field"><label>Valor pago</label><input type="number" min="0" step="0.01" class="ah-input-sm" data-fin-field="valorPago" data-fin-id="${esc(l.id)}" value="${pending.valor}" /></div>
+                      <div class="ah-field"><label>Comprovante (URL)</label><input type="text" class="ah-input-sm" data-fin-field="comprovante" data-fin-id="${esc(l.id)}" placeholder="https://..." /></div>
+                    </div>
+                    <button class="btn btn-primary ah-btn-sm" data-confirmar-pagamento="${esc(l.id)}" type="button">Confirmar pagamento</button>
+                  ` : ''}
+                </div>
+              `;
+            }).join('') : '<p class="ah-note">Nenhum check-out lançado ainda.</p>'}
+          </div>
+        </div>
+
+        ${moves.length ? `
+          <div class="ah-field">
+            <label>Movimentações de crédito (${moves.length})</label>
+            <div class="ah-detail-list">
+              ${moves.map((m) => `
+                <div class="ah-detail-row"><span>${brDate(m.created_at)} <span class="muted">· ${esc(m.tipo)}</span></span><span class="muted">${money(m.valor)}</span></div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+      <div class="ah-modal-foot">
+        <span></span>
+        <button class="btn btn-secondary ah-btn-sm" data-close-extrato type="button">Fechar</button>
+      </div>
     </div>
   `;
 }
