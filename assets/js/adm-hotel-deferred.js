@@ -1,4 +1,6 @@
-const VERSION = '20260824-mode-lazy1';
+// A tela de Hotéis foi zerada — este arquivo agora só carrega os módulos de
+// Alojamentos sob demanda quando o hash aponta pra #alojamentos.
+const VERSION = '20260825-zera-hotel1';
 
 function currentMode() {
   return String(location.hash || '').toLowerCase().includes('aloj') ? 'alojamentos' : 'hoteis';
@@ -20,28 +22,11 @@ function schedule(callback) {
   window.setTimeout(callback, 650);
 }
 
-let hotelsPromise = null;
 let alojamentosPromise = null;
-
-function loadHotelsExtras() {
-  if (hotelsPromise) return hotelsPromise;
-  hotelsPromise = new Promise((resolve) => schedule(async () => {
-    await Promise.allSettled([
-      importSafe('./adm-hotel-dashboard-map.js?v=20260824-mode-lazy1'),
-      importSafe('./adm-hotel-redesign-integracoes.js?v=20260824-mode-lazy1'),
-      importSafe('./adm-hotel-redesign-cadastro-hotel.js?v=20260824-mode-lazy1'),
-    ]);
-    console.info(`[hosp-deferred] melhorias de Hotéis carregadas ${VERSION}`);
-    resolve();
-  }));
-  return hotelsPromise;
-}
 
 function loadAlojamentosModules() {
   if (alojamentosPromise) return alojamentosPromise;
   alojamentosPromise = new Promise((resolve) => schedule(async () => {
-    // Estes módulos faziam consultas de alojamentos mesmo na tela de Hotéis.
-    // Agora só entram em memória quando o usuário realmente abre Alojamentos.
     await Promise.allSettled([
       importSafe('./adm-hotel-alojamentos-v2.js?v=20260824-mode-lazy1'),
       importSafe('./adm-hotel-separacao-modulos.js?v=20260824-mode-lazy1'),
@@ -55,8 +40,7 @@ function loadAlojamentosModules() {
 }
 
 function loadForCurrentMode() {
-  if (currentMode() === 'alojamentos') return loadAlojamentosModules();
-  return loadHotelsExtras();
+  if (currentMode() === 'alojamentos') loadAlojamentosModules();
 }
 
 loadForCurrentMode();

@@ -29,7 +29,6 @@ export const MENU_CONFIG = [
     grupo: "GESTOR",
     itens: [
       item("programacao", "Programação", "programacao", ["PROGRAMACAO", "OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS", "OS_GESTOR"]),
-      item("hospedagem", "Hospedagem", "hospedagem", ["HOSPEDAGEM"]),
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA_GESTOR", "GESTOR_LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
@@ -75,7 +74,6 @@ export const MENU_CONFIG = [
   {
     grupo: "HOSPEDAGEM",
     itens: [
-      item("hotel", "Hotéis", "adm-hotel#hoteis", ["ADM_HOTEL", "HOTEL"]),
       item("hotel_alojamentos", "Alojamentos", "adm-hotel#alojamentos", ["HOTEL_ALOJAMENTOS", "HOSPEDAGEM_ALOJAMENTOS", "ALOJAMENTO", "ALOJAMENTOS"]),
       item("hotel_relatorio", "Relatório", "hotel-relatorio", ["ADM_HOTEL", "HOTEL", "HOTEL_RELATORIO"])
     ]
