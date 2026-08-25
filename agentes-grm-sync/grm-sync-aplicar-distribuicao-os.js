@@ -38,13 +38,69 @@ function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regi
 function safe(data) { return Array.isArray(data) ? data : []; }
 
 async function login(page) {
-  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
-  await page.type('input#input-v-2', process.env.GRMSERVER_USER);
-  await page.type('input#input-v-5', process.env.GRMSERVER_PASSWORD);
-  await Promise.all([
-    page.click('button.submit-btn'),
-    page.waitForNavigation({ waitUntil: 'networkidle2' }),
+  const user = process.env.GRMSERVER_USER;
+  const password = process.env.GRMSERVER_PASSWORD;
+  if (!user || !password) throw new Error('Credenciais GRMSERVER_USER/GRMSERVER_PASSWORD ausentes.');
+
+  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2', timeout: 60000 });
+
+  // Os IDs input-v-* são gerados pelo Vuetify e mudam entre versões; localiza
+  // os controles pelas características estáveis do formulário.
+  try {
+    await page.waitForFunction(() => {
+      const visible = (element) => {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      };
+      const inputs = [...document.querySelectorAll('input')].filter(visible);
+      return inputs.some((input) => input.type === 'password')
+        && inputs.some((input) => !['password', 'hidden', 'submit', 'button'].includes(input.type));
+    }, { timeout: 30000 });
+  } catch (error) {
+    const diagnostico = await page.evaluate(() => ({
+      titulo: document.title,
+      inputs: [...document.querySelectorAll('input')].map((input) => ({
+        type: input.type, name: input.name, id: input.id, autocomplete: input.autocomplete,
+      })),
+    })).catch(() => ({ titulo: '', inputs: [] }));
+    throw new Error(`Formulário de login do Graint não apareceu. URL=${page.url()} título=${JSON.stringify(diagnostico.titulo)} inputs=${JSON.stringify(diagnostico.inputs)}`);
+  }
+
+  const campos = await page.$$('input');
+  let passwordInput = null;
+  let userInput = null;
+  for (const campo of campos) {
+    const info = await campo.evaluate((input) => {
+      const style = window.getComputedStyle(input);
+      const rect = input.getBoundingClientRect();
+      return {
+        visible: style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0,
+        type: input.type, name: input.name, id: input.id, autocomplete: input.autocomplete,
+      };
+    });
+    if (!info.visible) continue;
+    if (info.type === 'password') passwordInput ||= campo;
+    else if (!['hidden', 'submit', 'button'].includes(info.type)) {
+      const identidade = `${info.name} ${info.id} ${info.autocomplete}`.toLowerCase();
+      if (!userInput || /user|email|login|usuario|username/.test(identidade)) userInput = campo;
+    }
+  }
+  if (!userInput || !passwordInput) throw new Error(`Não foi possível identificar os campos de login do Graint. URL=${page.url()}`);
+
+  await userInput.click({ clickCount: 3 });
+  await userInput.type(user);
+  await passwordInput.click({ clickCount: 3 });
+  await passwordInput.type(password);
+
+  const submit = await page.$('button.submit-btn, button[type="submit"], input[type="submit"]');
+  if (!submit) throw new Error(`Botão de entrada do Graint não encontrado. URL=${page.url()}`);
+  await Promise.allSettled([
+    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
+    submit.click(),
   ]);
+  await page.waitForFunction(() => !/\/login\/?(?:[?#].*)?$/.test(window.location.href), { timeout: 30000 })
+    .catch(() => { throw new Error(`Login do Graint não foi concluído; a página permaneceu em ${page.url()}.`); });
 }
 
 // --- Coleta e agrupamento das OS pendentes ---
@@ -122,25 +178,108 @@ async function selecionarSupervisao(page, coordenacao) {
   const alvo = normalize(coordenacao);
   const input = await page.$('#olsCode');
   if (!input) throw new Error('Campo de Supervisão (#olsCode) não encontrado na página.');
-  await input.click({ clickCount: 3 });
-  await page.keyboard.press('Backspace').catch(() => {});
+
+  await input.focus();
+  await page.keyboard.down('Control').catch(() => null);
+  await page.keyboard.press('A').catch(() => null);
+  await page.keyboard.up('Control').catch(() => null);
+  await page.keyboard.press('Backspace').catch(() => null);
   await input.type(coordenacao, { delay: 30 });
-  await page.waitForFunction(() => {
-    return Array.from(document.querySelectorAll('.v-list-item-title')).some((el) => el.offsetParent !== null);
-  }, { timeout: 6000 }).catch(() => {});
-  const achou = await page.evaluate((alvo) => {
-    const items = Array.from(document.querySelectorAll('.v-list-item-title')).filter((el) => el.offsetParent !== null);
-    const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-    const match = items.find((el) => {
-      const t = norm(el.textContent);
-      return t.includes(alvo) || alvo.includes(t);
-    });
-    if (match) { match.click(); return match.textContent.trim(); }
-    return null;
+
+  // No Vuetify o menu do autocomplete é teleportado para um overlay fora do
+  // campo. Procurar somente .v-list-item-title no fluxo normal pode enxergar o
+  // texto na tela e ainda assim não localizar a opção correta pelo DOM.
+  const popupId = await obterPopupId(input);
+  const localizarRoot = `
+    const visivel = (el) => Boolean(
+      el && el.getClientRects().length
+      && getComputedStyle(el).visibility !== 'hidden'
+      && getComputedStyle(el).display !== 'none'
+    );
+    let root = id ? document.getElementById(id) : null;
+    if (!visivel(root)) {
+      const candidatos = Array.from(document.querySelectorAll(
+        '.v-overlay--active [role="listbox"], .v-overlay--active .v-list, '
+        + '.v-overlay-container [role="listbox"], .v-overlay-container .v-list, [role="listbox"]'
+      )).filter(visivel);
+      root = candidatos[candidatos.length - 1] || null;
+    }
+  `;
+
+  try {
+    await page.waitForFunction(new Function('id', 'alvo', `
+      ${localizarRoot}
+      if (!root) return false;
+      const norm = (s) => String(s || '').normalize('NFD')
+        .replace(/[\\u0300-\\u036f]/g, '').toUpperCase()
+        .replace(/[^A-Z0-9]+/g, ' ').trim();
+      const opcoes = Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]')).filter(visivel);
+      return opcoes.some((el) => norm(el.textContent) === alvo)
+        || opcoes.some((el) => {
+          const texto = norm(el.textContent);
+          return texto && (texto.includes(alvo) || alvo.includes(texto));
+        });
+    `), { timeout: 8000 }, popupId, alvo);
+  } catch (_) {
+    const disponiveis = await page.evaluate(new Function('id', `
+      ${localizarRoot}
+      if (!root) return [];
+      return Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]'))
+        .filter(visivel)
+        .map((el) => (el.textContent || '').trim())
+        .filter(Boolean)
+        .slice(0, 20);
+    `), popupId).catch(() => []);
+    throw new Error(
+      `Supervisão "${coordenacao}" não encontrada no autocomplete do Graint. `
+      + `Opções apresentadas: ${disponiveis.join(' | ') || 'nenhuma'}.`
+    );
+  }
+
+  const achou = await page.evaluate(new Function('id', 'alvo', `
+    ${localizarRoot}
+    if (!root) return null;
+    const norm = (s) => String(s || '').normalize('NFD')
+      .replace(/[\\u0300-\\u036f]/g, '').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ').trim();
+    const opcoes = Array.from(root.querySelectorAll('.v-list-item-title, [role="option"]')).filter(visivel);
+    const match = opcoes.find((el) => norm(el.textContent) === alvo)
+      || opcoes.find((el) => {
+        const texto = norm(el.textContent);
+        return texto && (texto.includes(alvo) || alvo.includes(texto));
+      });
+    if (!match) return null;
+    const texto = (match.textContent || '').trim();
+    const clicavel = match.closest('[role="option"], .v-list-item') || match;
+    clicavel.scrollIntoView({ block: 'nearest' });
+    clicavel.click();
+    return texto;
+  `), popupId, alvo);
+
+  if (!achou) throw new Error(`Não consegui clicar na supervisão "${coordenacao}" no autocomplete do Graint.`);
+
+  await new Promise((r) => setTimeout(r, 500));
+  const confirmacao = await page.evaluate((alvoEsperado) => {
+    const norm = (s) => String(s || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, ' ').trim();
+    const campo = document.querySelector('#olsCode');
+    const host = campo?.closest('.v-input, .v-autocomplete, .v-select') || campo?.parentElement;
+    const valores = [
+      campo?.value,
+      ...(host ? Array.from(host.querySelectorAll('.v-select__selection-text, .v-autocomplete__selection-text, .v-chip__content'))
+        .map((el) => el.textContent) : []),
+    ].filter(Boolean);
+    return { ok: valores.some((valor) => norm(valor) === alvoEsperado), valores };
   }, alvo);
 
-  if (!achou) throw new Error(`Supervisão "${coordenacao}" não encontrada no campo do Graint.`);
-  await new Promise((r) => setTimeout(r, 300));
+  if (!confirmacao.ok) {
+    throw new Error(
+      `Cliquei na supervisão "${achou}", mas o campo não confirmou a seleção. `
+      + `Valor(es) após o clique: ${confirmacao.valores.join(' | ') || 'vazio'}.`
+    );
+  }
+
   return achou;
 }
 
@@ -270,7 +409,7 @@ async function associarColaborador(page, li, colaboradorNome) {
   // Se a OS já está com o mesmo colaborador no Graint, não mexe — evita
   // limpar e reaplicar a mesma associação a cada ciclo (gera ruído no log
   // do GRM e retrabalho sem necessidade). Só limpa/redigita se for outra pessoa.
-  if (await colaboradorJaAssociado(li, colaboradorNome)) return;
+  if (await colaboradorJaAssociado(li, colaboradorNome)) return { alterado: false };
 
   await li.click();
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -326,6 +465,7 @@ async function associarColaborador(page, li, colaboradorNome) {
     return chip || valor || selecao;
   }, colaboradorNome);
   if (!chipOk) throw new Error(`Chip de "${colaboradorNome}" não apareceu na OS após seleção.`);
+  return { alterado: true };
 }
 
 async function salvar(page) {
@@ -396,14 +536,18 @@ async function processarSupervisao(page, grupo) {
   // supervisão) não pode travar as demais OS da mesma tela — só ela fica pendente
   // pro próximo ciclo, o resto segue e é salvo normalmente.
   const idsComSucesso = new Set();
+  const idsComFalha = new Set();
   const falhasAssociacao = [];
+  let alteracoesAplicadas = 0;
   for (const atribuicao of grupo.atribuicoes) {
     try {
       const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
       if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
-      await associarColaborador(page, li, atribuicao.colaborador_nome);
+      const resultado = await associarColaborador(page, li, atribuicao.colaborador_nome);
+      if (resultado.alterado) alteracoesAplicadas += 1;
       idsComSucesso.add(atribuicao.os.id);
     } catch (error) {
+      idsComFalha.add(atribuicao.os.id);
       falhasAssociacao.push(`OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome}: ${error.message}`);
       log('ERROR', `Associação OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome} falhou: ${error.message}`);
       // Fecha qualquer dropdown/overlay que tenha ficado aberto, senão atrapalha a próxima associação.
@@ -412,27 +556,40 @@ async function processarSupervisao(page, grupo) {
     }
   }
 
-  if (!idsComSucesso.size) {
+  // Uma OS pode ter mais de um colaborador. Ela só pode ser marcada como
+  // AJUSTADA quando todas as associações dela foram confirmadas nesta rodada.
+  const idsConfirmados = new Set([...idsComSucesso].filter((id) => !idsComFalha.has(id)));
+  if (!idsConfirmados.size) {
     throw new Error(`Nenhuma associação aplicada nesta supervisão (${falhasAssociacao.length} falha(s)): ${falhasAssociacao.join(' | ')}`);
   }
 
   if (DRY_RUN) {
-    log('INFO', `[DRY-RUN] Supervisão pronta para salvar (${idsComSucesso.size} de ${numerosOs.length} OS, ${grupo.atribuicoes.length - falhasAssociacao.length} de ${grupo.atribuicoes.length} associações) — SALVAR e update no Supabase pulados.`);
+    log('INFO', `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOs.length} OS, ${grupo.atribuicoes.length - falhasAssociacao.length} de ${grupo.atribuicoes.length} associações, ${alteracoesAplicadas} alteração(ões)) — SALVAR e update no Supabase pulados.`);
     return;
   }
 
-  await salvar(page);
+  if (alteracoesAplicadas > 0) {
+    await salvar(page);
+  } else {
+    // Quando todas as associações já estão corretas, o Graint não habilita
+    // SALVAR porque não há alteração pendente. Esse é um estado sincronizado,
+    // não uma falha; basta encerrar a pendência local.
+    log('INFO', 'Todas as associações já estavam corretas no Graint; salvamento não necessário.');
+  }
 
   const now = new Date().toISOString();
-  const ids = [...idsComSucesso];
+  const ids = [...idsConfirmados];
   const { error } = await supabase
     .from('operacional_os')
     .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
     .in('id', ids);
   if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
+  const resultadoGraint = alteracoesAplicadas > 0
+    ? 'Supervisão aplicada no Graint'
+    : 'Supervisão já estava aplicada no Graint';
   log(
     falhasAssociacao.length ? 'WARN' : 'SUCCESS',
-    `Supervisão aplicada no Graint e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
+    `${resultadoGraint} e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
       + (falhasAssociacao.length ? `; ${falhasAssociacao.length} associação(ões) pendente(s) pro próximo ciclo: ${falhasAssociacao.join(' | ')}` : '') + '.',
   );
 }
@@ -453,7 +610,7 @@ async function main() {
     }
     if (!grupos.length) { log('SUCCESS', 'Nada a fazer.'); return; }
 
-    const headless = process.env.HEADLESS === 'false' ? false : true;
+    const headless = process.env.HEADLESS === 'false' ? false : 'new';
     const args = headless
       ? [
           '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu',

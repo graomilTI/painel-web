@@ -14,6 +14,18 @@
   <link rel="stylesheet" href="./assets/css/gestor-app.css" />
   <link rel="stylesheet" href="./assets/css/gestor-app-mobile-ux.css" />
   <link rel="stylesheet" href="./assets/css/gestor-app-mobile-render-fix.css?v=20260805-1" />
+  <style>
+    body #app.gestor-app #appMain .db-row-2{
+      display:grid!important;
+      grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+      gap:7px!important;
+    }
+    body #app.gestor-app #appMain .db-row-2>.db-os-card,
+    body #app.gestor-app #appMain .db-row-2>.db-patri-card{
+      min-width:0!important;
+      width:auto!important;
+    }
+  </style>
 </head>
 <body>
   <div id="app" class="gestor-app is-loading">
@@ -24,7 +36,7 @@
     </div>
   </div>
   <script type="module" src="./assets/js/gestor-app-dashboard-live-fix.js?v=20260622-3"></script>
-  <script type="module" src="./assets/js/gestor-app.js?v=20260622-3"></script>
+  <script type="module" src="./assets/js/gestor-app.js?v=20260820-os-refresh-silencioso"></script>
   <script type="module" src="./assets/js/gestor-app-supervisao-fix.js?v=20260702-coordfix1"></script>
   <script type="module" src="./assets/js/gestor-app-mobile-ux.js?v=20260622-3"></script>
   <script type="module" src="./assets/js/gestor-app-full-modules-fix.js?v=20260813-v1"></script>

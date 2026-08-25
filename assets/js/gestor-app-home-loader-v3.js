@@ -1,0 +1,1 @@
+import('./gestor-app-home-model-v2.js?v=20260813-home2');const l=document.createElement('link');l.rel='stylesheet';l.href='./assets/css/gestor-app-home-model-v2.css?v=20260813-home2';document.head.appendChild(l);

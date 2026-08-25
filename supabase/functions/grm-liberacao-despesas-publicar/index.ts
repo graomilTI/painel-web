@@ -725,16 +725,33 @@ Deno.serve(async (req) => {
       // colaborador tenha sido atualizado, deixando status_aplicacao=PENDENTE
       // "mentindo" que ainda existe um job vivo. Por isso confirmamos que hoje
       // existe mesmo um item PENDENTE/PROCESSANDO com esse hash antes de pular.
+      //
+      // ERRO com tentativas ainda disponíveis também conta como "vivo": é
+      // exatamente o mesmo critério de elegibilidade usado por
+      // claim_next_grm_despesa_fila() para retentativa. Se não considerarmos
+      // isso aqui, esta função insere uma linha PENDENTE nova para o mesmo
+      // cpf/data/hash de uma linha ERRO ainda elegível — o insert passa (o
+      // índice único parcial só cobre PENDENTE/PROCESSANDO, não ERRO), mas a
+      // próxima vez que o worker tentar reprocessar o ERRO promovendo-o para
+      // PROCESSANDO, colide com a PENDENTE duplicada e o agente inteiro morre
+      // com "duplicate key value violates unique constraint
+      // grm_despesas_fila_pendente_hash_uidx" (travando também os outros
+      // colaboradores da fila). Incidente real em 2026-08-13.
       const liveHashesByCpf = new Map<string, Set<string>>();
       for (const cpfChunk of chunk(cpfs)) {
         const { data, error } = await service
           .from('grm_despesas_fila')
-          .select('cpf,hash_desejado')
+          .select('cpf,hash_desejado,status,tentativas,max_tentativas')
           .in('cpf', cpfChunk)
           .eq('data_referencia', group.date)
-          .in('status', ['PENDENTE', 'PROCESSANDO']);
+          .in('status', ['PENDENTE', 'PROCESSANDO', 'ERRO']);
         if (error) throw error;
         (data || []).forEach((row) => {
+          const isRetriableErro = clean(row.status) === 'ERRO'
+            && Number(row.tentativas || 0) < Number(row.max_tentativas || 3);
+          const isLive = ['PENDENTE', 'PROCESSANDO'].includes(clean(row.status))
+            || isRetriableErro;
+          if (!isLive) return;
           const key = clean(row.cpf);
           if (!liveHashesByCpf.has(key)) liveHashesByCpf.set(key, new Set());
           liveHashesByCpf.get(key)!.add(clean(row.hash_desejado));
@@ -747,7 +764,7 @@ Deno.serve(async (req) => {
           && ['APLICADO', 'LIMPO'].includes(clean(previous?.status_aplicacao));
         const hasLiveQueueItem = liveHashesByCpf.get(cpf)?.has(item.hash) ?? false;
         const alreadyDesired = previous?.hash_desejado === item.hash
-          && ['PENDENTE', 'PROCESSANDO'].includes(clean(previous?.status_aplicacao))
+          && ['PENDENTE', 'PROCESSANDO', 'ERRO'].includes(clean(previous?.status_aplicacao))
           && hasLiveQueueItem;
 
         if (alreadyApplied || alreadyDesired) {

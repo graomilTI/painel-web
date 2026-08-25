@@ -16,7 +16,6 @@ const money = (v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currenc
 const norm = (v)=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 function usuario(ctx){ return ctx?.user || {}; }
 function solicitanteNome(ctx){ return usuario(ctx).name || usuario(ctx).email || 'Usuário logado'; }
-function solicitanteCoord(ctx){ return usuario(ctx).coordenacao || usuario(ctx).supervisao || ''; }
 function setMsg(id,msg,err=false){ const el=document.getElementById(id); if(el){ el.textContent=msg||''; el.classList.toggle('err',!!err); }}
 function pill(v){ return `<span class="cmp-status ${esc(v)}">${esc(STATUS[v]||v||'-')}</span>`; }
 async function safe(fn,fallback=[]){ try{ const {data,error}=await fn(); if(error) throw error; return data||fallback; }catch(e){ console.warn(e); return fallback; } }
@@ -358,7 +357,7 @@ function renderItensList(){
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
     const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
-    return `<tr data-item-id="${esc(i._id)}"><td>${esc(i.unidade||i.quantidade||1)}</td><td>${matLabel}</td><td>${esc(i.tipo||'-')}</td><td>${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
+    return `<tr data-item-id="${esc(i._id)}"><td data-label="Un.">${esc(i.unidade||i.quantidade||1)}</td><td data-label="Item">${matLabel}</td><td data-label="Tipo">${esc(i.tipo||'-')}</td><td data-label="Tamanho/Detalhe">${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
     const id=btn.closest('tr').dataset.itemId;
@@ -369,7 +368,7 @@ function renderItensList(){
 function uniformRow(c){
   const cor=c._uniformeCor||(isClassificador(c)?'Verde':'Cinza');
   const tamanho=c._uniformeTamanho||'M';
-  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td>${esc(c.nome)}</td><td>${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><b class="uni-cor">${esc(cor)}</b></td><td data-label="Tamanho"><b class="uni-tam">${esc(tamanho)}</b></td><td><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
+  return `<tr data-uniforme-id="${esc(colaboradorKey(c))}"><td data-label="Colaborador">${esc(c.nome)}</td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><b class="uni-cor">${esc(cor)}</b></td><td data-label="Tamanho"><b class="uni-tam">${esc(tamanho)}</b></td><td data-label="Un. máx 2"><input class="uni-qtd" type="number" min="1" max="2" value="1"></td><td><button class="btn btn-small btn-danger" type="button" data-del-uniforme>×</button></td></tr>`;
 }
 function renderUniformes(){
   const body=document.getElementById('cmpUniformeBody');
@@ -377,9 +376,17 @@ function renderUniformes(){
   body.querySelectorAll('[data-del-uniforme]').forEach(btn=>btn.onclick=()=>{ const id=btn.closest('tr').dataset.uniformeId; state.uniformes=state.uniformes.filter(c=>colaboradorKey(c)!==String(id)); renderUniformes(); });
 }
 function addAllColaboradores(ctx){
-  const coord=norm(solicitanteCoord(ctx));
-  const base=state.colaboradores.filter(c=>!coord || norm(c.coordenacao||c.supervisao).includes(coord) || coord.includes(norm(c.coordenacao||c.supervisao)));
-  state.uniformes = dedupeColaboradores(base.length ? base : state.colaboradores).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza'}));
+  // Escopo pela equipe real do gestor: supervisão-com-supervisão e
+  // coordenação-com-coordenação (nunca cruzando os dois campos, que tem
+  // formatos diferentes e geravam matches quase vazios ou por acidente).
+  const u=usuario(ctx);
+  const supGestor=norm(u.supervisao);
+  const coordGestor=norm(u.coordenacao);
+  let base=[];
+  if(supGestor) base=state.colaboradores.filter(c=>norm(c.supervisao)===supGestor);
+  if(!base.length && coordGestor) base=state.colaboradores.filter(c=>norm(c.coordenacao)===coordGestor);
+  if(!base.length) base=state.colaboradores;
+  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza'}));
   renderUniformes();
 }
 function setupColabSearch(){

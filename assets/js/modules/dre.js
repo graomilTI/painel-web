@@ -27,6 +27,12 @@
       .dre-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}.dre-card{padding:15px;border-radius:22px;border:1px solid var(--line);background:linear-gradient(180deg,rgba(15,23,42,.86),rgba(2,6,23,.62))}.dre-card span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.035em}.dre-card strong{display:block;margin-top:8px;font-size:20px;letter-spacing:-.03em}.dre-card small{display:block;margin-top:5px;color:#6b7280}.dre-card.positive strong{color:#86efac}.dre-card.negative strong{color:#fca5a5}
       .dre-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px;margin-bottom:14px}.dre-chart{border:1px solid var(--line);border-radius:22px;background:rgba(15,23,42,.78);padding:15px;min-height:260px}.dre-chart h3{margin:0 0 6px;font-size:15px}.dre-chart p{margin:0 0 12px;color:var(--muted);font-size:12px}.dre-bars{display:grid;grid-template-columns:repeat(12,1fr);gap:7px;align-items:end;height:170px;border-bottom:1px solid rgba(148,163,184,.2);padding-top:10px}.dre-bar-wrap{height:100%;display:flex;align-items:end;position:relative}.dre-bar{width:100%;min-height:3px;border-radius:12px 12px 0 0;background:linear-gradient(180deg,#22c55e,#166534)}.dre-bar.negative{background:linear-gradient(180deg,#fca5a5,#dc2626)}.dre-chart-labels{display:grid;grid-template-columns:repeat(12,1fr);gap:7px;margin-top:8px;font-size:10px;color:#6b7280;text-align:center}.dre-volume-row{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center;margin:12px 0}.dre-volume-row strong{font-size:12px}.dre-track{height:14px;border-radius:999px;background:#020617;overflow:hidden;border:1px solid rgba(148,163,184,.22)}.dre-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#166534,#22c55e)}.dre-fill.secondary{background:linear-gradient(90deg,#0f766e,#67e8f9)}
       .dre-report{border:1px solid var(--line);border-radius:24px;overflow:hidden;background:#fff;color:#10101e}.dre-report-head{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 20px;background:linear-gradient(135deg,#052e16,#166534);color:#fff}.dre-report-head h3{margin:0;font-size:20px}.dre-report-head p{margin:4px 0 0;color:#dcfce7;font-size:12px}.dre-table-wrap{overflow:auto;background:#fff}.dre-table{width:100%;border-collapse:collapse;font-size:12px;min-width:1180px}.dre-table th{background:#b7e3c6;color:#052e16;text-align:center;font-weight:900;padding:10px;border:1px solid #b7cfc0}.dre-table td{padding:9px 10px;border:1px solid #d1d5db;text-align:right;white-space:nowrap}.dre-table td:first-child{text-align:left;font-weight:900;color:#10101e}.dre-table tr:nth-child(even) td{background:#f0fdf4}.dre-table tr.highlight td{background:#dcfce7!important;font-weight:900}.dre-table tr.result td{background:#bbf7d0!important;font-weight:900}.dre-table .neg{color:#dc2626}.dre-extra{display:grid;gap:12px;padding:14px;background:#fff}.dre-extra-box{border:1px solid #d1d5db;border-radius:16px;overflow:hidden}.dre-extra-box h4{margin:0;padding:10px 12px;background:#b7e3c6;color:#052e16}.dre-extra-box table{width:100%;border-collapse:collapse;font-size:12px}.dre-extra-box td,.dre-extra-box th{border:1px solid #d1d5db;padding:8px;text-align:right}.dre-extra-box td:first-child,.dre-extra-box th:first-child{text-align:left;font-weight:850}
+      /* painel-design-system.css (tema global painel-ui-v2) tem "html.painel-ui-v2 .page-main table td{color:var(--panel-text)}"
+         com especificidade maior (2 classes + 3 tags) que as regras acima (1 classe + 1/2 tags), incluindo !important em th/td.
+         Isso apagava o texto do relatório (quase branco sobre fundo claro/verde-claro - "camada branca"). O prefixo
+         .dre-wrap .dre-report abaixo soma 2-3 classes só nesse componente, o que garante vitória na especificidade
+         independente de qual tema global estiver ativo, sem depender de ordem de carregamento dos <style>. */
+      .dre-wrap .dre-report .dre-table th{background:#b7e3c6!important;color:#052e16!important}.dre-wrap .dre-report .dre-table td{background:#fff!important;color:#10101e!important}.dre-wrap .dre-report .dre-table tr:nth-child(even) td{background:#f0fdf4!important}.dre-wrap .dre-report .dre-table tr.highlight td{background:#dcfce7!important}.dre-wrap .dre-report .dre-table tr.result td{background:#bbf7d0!important}.dre-wrap .dre-report .dre-table .neg{color:#dc2626!important}.dre-wrap .dre-report .dre-extra-box table th{background:#b7e3c6!important;color:#052e16!important}.dre-wrap .dre-report .dre-extra-box table td{background:#fff!important;color:#10101e!important}
       @media(max-width:1180px){.dre-cards{grid-template-columns:repeat(3,minmax(0,1fr))}.dre-grid{grid-template-columns:1fr}.dre-hero{grid-template-columns:1fr}.dre-controls{justify-content:flex-start}}@media(max-width:720px){.dre-cards{grid-template-columns:1fr}.dre-controls select,.dre-controls button{width:100%}}
     </style>`;
 
@@ -243,6 +249,7 @@
     const end=`${year + 1}-01-01`;
     const pageSize=1000;
     let from=0;
+    let fetchFailed=false;
 
     while(true){
       const {data,error}=await supabase
@@ -254,6 +261,7 @@
 
       if(error){
         console.warn('DRE: não foi possível carregar produção do banco relatorio_resultado_diario.', error);
+        fetchFailed=true;
         break;
       }
 
@@ -282,7 +290,9 @@
       from += pageSize;
     }
 
-    dreCache(`grao1000:dre-diario:${year}`, out);
+    // Só cacheia em sucesso: cachear uma paginação interrompida no meio travava
+    // a Produção em zero/parcial por até DRE_CACHE_TTL (2h) numa falha pontual.
+    if(!fetchFailed) dreCache(`grao1000:dre-diario:${year}`, out);
     return out;
   }
 
@@ -306,14 +316,14 @@
     }
     const threshold=new Date(new Date(maxRows[0].created_at).getTime()-5*60*1000).toISOString();
 
-    const pageSize=1000; let from=0; const rows=[];
+    const pageSize=1000; let from=0; const rows=[]; let fetchFailed=false;
     while(true){
       const {data,error}=await supabase
         .from('grm_despesas_importacoes')
         .select('coordenacao,data_conta_de,dados_json')
         .gte('created_at', threshold)
         .range(from, from+pageSize-1);
-      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); break; }
+      if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); fetchFailed=true; break; }
       const batch=data||[]; rows.push(...batch);
       if(batch.length<pageSize) break;
       from+=pageSize;
@@ -337,7 +347,8 @@
         else add(out.base, reg, tipo, m.month, valor);
       }
     }
-    dreCache(`grao1000:dre-despesas:${year}`, out);
+    // Só cacheia em sucesso, mesmo motivo do loader de produção acima.
+    if(!fetchFailed) dreCache(`grao1000:dre-despesas:${year}`, out);
     return out;
   }
 
@@ -354,38 +365,37 @@
     const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
     if(!supabase || !year) return out;
 
-    // Antes lia so o "lote mais recente" (created_at dentro de 5min do mais novo),
-    // assumindo que toda a sincronizacao terminava nesse intervalo. Na pratica o
-    // agente de notas fiscais processa o relatorio inteiro (ate 35 dias, milhares
-    // de notas) em mais de 5 minutos, então essa janela so capturava um pedaço do
-    // que estava sendo sincronizado - e como o upsert antigo nunca deduplicava
-    // (sem chave por numero da nota), a tabela acumulou ~380 mil linhas repetidas.
-    // Agora a tabela tem indice unico por numero_nf (upsert real), então basta
-    // paginar tudo; o dedupe por numero_nf abaixo é só defesa extra para linhas
-    // antigas sem numero_nf preenchido ou eventuais resíduos.
-    const pageSize=1000; let from=0; const rows=[];
-    while(true){
-      const {data,error}=await supabase
-        .from('grm_notas_fiscais_importacoes')
-        .select('numero_nf, created_at, dados_json')
-        .range(from, from+pageSize-1);
-      if(error){ console.warn('DRE: falha ao paginar notas fiscais sincronizadas pelo agente.', error); break; }
-      const batch=data||[]; rows.push(...batch);
-      if(batch.length<pageSize) break;
-      from+=pageSize;
+    // Antes paginava a tabela inteira 1000 em 1000 (chegou a ~287 mil linhas: o
+    // agente de sync só passou a preencher numero_nf corretamente a partir de
+    // ~14/08/2026, então o upsert nunca deduplicava as linhas antigas - NULL não
+    // colide com NULL num índice único - e ~287 requisições sequenciais do
+    // navegador deixavam a tela "Conferindo dados..." travada por minutos,
+    // parecendo um loop infinito; a tabela também foi limpa dessas ~285 mil
+    // linhas órfãs em 24/08). Agora usa a RPC dre_notas_fiscais_deduplicadas,
+    // que já devolve a tabela deduplicada direto no banco. A chave de dedupe é
+    // (Empresa, Fatura) - não (Empresa, N.F.): uma N.F. pode agrupar várias
+    // Faturas (cargas/carregamentos distintos, cada um com seu próprio Valor
+    // Bruto), então dedupar por N.F. descartava a maioria delas em silêncio
+    // (achado 24/08, buraco de ~R$9,36mi/23,6% da receita). Não rededuplica no
+    // cliente - a RPC já é a fonte da verdade; um segundo dedupe aqui (por
+    // numero_nf) desfaria o fix. O Supabase ainda limita cada resposta a 1000
+    // linhas mesmo pra uma function - com poucos milhares de Faturas distintas
+    // isso ainda cabe em poucas páginas rápidas, bem diferente das ~287 antigas
+    // sobre a tabela crua.
+    let rows=[]; let fetchFailed=false;
+    {
+      const pageSize=1000; let from=0;
+      while(true){
+        const {data,error}=await supabase.rpc('dre_notas_fiscais_deduplicadas').range(from, from+pageSize-1);
+        if(error){ console.warn('DRE: falha ao buscar notas fiscais sincronizadas pelo agente.', error); fetchFailed=true; break; }
+        const batch=data||[]; rows.push(...batch);
+        if(batch.length<pageSize) break;
+        from+=pageSize;
+      }
     }
+    out.totalRows=rows.length;
 
-    const porNumeroNf=new Map(); const semNumero=[];
     for(const row of rows){
-      const chave=row.numero_nf ?? row.dados_json?.['N.F.'];
-      if(chave==null){ semNumero.push(row); continue; }
-      const atual=porNumeroNf.get(chave);
-      if(!atual || new Date(row.created_at||0) > new Date(atual.created_at||0)) porNumeroNf.set(chave, row);
-    }
-    const rowsDeduplicadas=[...porNumeroNf.values(), ...semNumero];
-    out.totalRows=rowsDeduplicadas.length;
-
-    for(const row of rowsDeduplicadas){
       const json=row.dados_json||{};
       const reg=mapReg(json['Coordenação'] ?? json['Coordenacao'] ?? json['Regional']);
       const m=monthFrom(json['Data N.F.'] ?? json['Data da NF'] ?? json['Data NF'] ?? json['Data Nota'] ?? json['Data']);
@@ -395,11 +405,36 @@
       addArr(out.descAcresc, reg, m.month, n(json['Acréscimo'] ?? json['Acrescimo']) - n(json['Desconto'] ?? json['Descontos']));
       addArr(out.impostos, reg, m.month, json['Imposto'] ?? json['Impostos'] ?? json['Total de Impostos']);
     }
-    dreCache(`grao1000:dre-nf:${year}`, out);
+    // Só cacheia em caso de sucesso: cachear um resultado vazio de uma falha de rede/timeout
+    // travava as Notas Fiscais em zero por até DRE_CACHE_TTL (2h), mesmo já tendo dados reais
+    // no banco - o botão "Atualizar DRE" também não limpa esse cache específico.
+    if(!fetchFailed) dreCache(`grao1000:dre-nf:${year}`, out);
     return out;
   }
 
-  async function loadProduzidoColaboradorFromDb(supabase, year){
+  // historico_colaboradores tem ~120 mil linhas/ano - paginado 1000 em 1000, isso é
+  // ~120 requisições. loadProduzidoColaboradorFromDb e loadMediaAtivosPorRegionalFromDb
+  // (abaixo) usavam cada um o seu próprio fetch dessa mesma tabela/ano, dobrando as
+  // requisições no primeiro carregamento (cache frio) - por isso o fetch fica separado
+  // aqui e é compartilhado via o 3º parâmetro getHistRows nas duas funções.
+  async function fetchHistoricoColaboradoresAno(supabase, year){
+    const start=`${year}-01-01`; const end=`${year + 1}-01-01`;
+    const pageSize=1000; const all=[]; let from=0;
+    while(true){
+      const {data,error}=await supabase
+        .from('historico_colaboradores')
+        .select('data_referencia,nome,situacao,coordenacao,tipo,origem')
+        .gte('data_referencia', start).lt('data_referencia', end)
+        .range(from, from + pageSize - 1);
+      if(error) throw error;
+      const rows=data||[]; all.push(...rows);
+      if(rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
+  async function loadProduzidoColaboradorFromDb(supabase, year, getHistRows){
     const cached=dreFromCache(`grao1000:dre-colab:${year}`);
     if(cached) return cached;
     const out={porRegional:{}, geral:Array(12).fill(0), regionais:new Set(), totalProdRows:0, totalHistRows:0};
@@ -425,22 +460,10 @@
         }
         return all;
       }
-      async function fetchHistColabRows(){
-        const all=[]; let from=0;
-        while(true){
-          const {data,error}=await supabase
-            .from('historico_colaboradores')
-            .select('data_referencia,nome,situacao,coordenacao,tipo')
-            .gte('data_referencia', start).lt('data_referencia', end)
-            .range(from, from + pageSize - 1);
-          if(error) throw error;
-          const rows=data||[]; all.push(...rows);
-          if(rows.length < pageSize) break;
-          from += pageSize;
-        }
-        return all;
-      }
-      [prodRows, histRows] = await Promise.all([fetchProdColabRows(), fetchHistColabRows()]);
+      [prodRows, histRows] = await Promise.all([
+        fetchProdColabRows(),
+        getHistRows ? getHistRows() : fetchHistoricoColaboradoresAno(supabase, year)
+      ]);
     }catch(error){
       console.warn('DRE: não foi possível carregar dados para produção por colaborador.', error);
       return out;
@@ -528,37 +551,15 @@
     return out;
   }
 
-  async function loadMediaAtivosPorRegionalFromDb(supabase, year){
+  async function loadMediaAtivosPorRegionalFromDb(supabase, year, getHistRows){
     const cached=dreFromCache(`grao1000:dre-ativos:${year}`);
     if(cached) return cached;
     const out={porRegional:{}, total:Array(12).fill(0), regionais:new Set(), totalHistRows:0};
     if(!supabase || !year) return out;
-    const start=`${year}-01-01`;
-    const end=`${year + 1}-01-01`;
-
-    async function fetchRows(selectCols){
-      const all=[];
-      const pageSize=1000;
-      let from=0;
-      while(true){
-        const {data,error}=await supabase
-          .from('historico_colaboradores')
-          .select(selectCols)
-          .gte('data_referencia', start)
-          .lt('data_referencia', end)
-          .range(from, from + pageSize - 1);
-        if(error) throw error;
-        const rows=data||[];
-        all.push(...rows);
-        if(rows.length < pageSize) break;
-        from += pageSize;
-      }
-      return all;
-    }
 
     let histRows=[];
     try{
-      histRows = await fetchRows('data_referencia,nome,situacao,coordenacao,origem');
+      histRows = getHistRows ? await getHistRows() : await fetchHistoricoColaboradoresAno(supabase, year);
     }catch(error){
       console.warn('DRE: não foi possível carregar histórico diário para rateio de investimentos por ativos.', error);
       return out;
@@ -1092,12 +1093,20 @@
     }
 
     setStatus('Conferindo dados sincronizados pelo agente e calculando rateios...');
+    // getHistColabShared memoiza o fetch de historico_colaboradores pra loadProduzidoColaboradorFromDb
+    // e loadMediaAtivosPorRegionalFromDb reaproveitarem a mesma requisição em vez de cada um
+    // paginar a tabela inteira (~120 mil linhas/ano) por conta própria.
+    let histColabPromise;
+    const getHistColabShared=()=>{
+      if(!histColabPromise) histColabPromise=fetchHistoricoColaboradoresAno(opts.supabase, state.year);
+      return histColabPromise;
+    };
     const [despesasDb, nfDb, prodDb, prodColab, ativosRateio] = await Promise.all([
       loadDespesasFromDb(opts.supabase, state.year),
       loadNotasFiscaisFromDb(opts.supabase, state.year),
       loadResultadoDiarioFromDb(opts.supabase, state.year),
-      loadProduzidoColaboradorFromDb(opts.supabase, state.year),
-      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year),
+      loadProduzidoColaboradorFromDb(opts.supabase, state.year, getHistColabShared),
+      loadMediaAtivosPorRegionalFromDb(opts.supabase, state.year, getHistColabShared),
     ]);
 
     if(despesasDb.totalRows > 0){

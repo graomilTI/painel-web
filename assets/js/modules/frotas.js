@@ -1,10 +1,11 @@
 ﻿/* assets/js/modules/frotas.js */
+import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print-ocr-core.js?v=20260820a';
+
 (function () {
   'use strict';
 
   const MODULE_NAME = 'FROTAS';
   const PASTA_MAE_DRIVE_ID = '1q5Ba5qqNJEBUZYA8GNRZmXZZsJ8U0YIr';
-  const GAS_URL_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GAS_URL';
   const GENERATED_GROUPS_KEY = 'FROTAS_EXCESSO_VELOCIDADE_GRUPOS_GERADOS';
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
   const BFLEET_EXCESSO_FUNCTION = window.FROTAS_CONFIG?.BFLEET_EXCESSO_FUNCTION || 'sync-bfleet-excesso-velocidade';
@@ -24,7 +25,7 @@
     uploadedFiles: [],
     savedPrints: [],
     lastMessage: '',
-    gasUrl: localStorage.getItem(GAS_URL_KEY) || window.FROTAS_CONFIG?.EXCESSO_VELOCIDADE_WEBAPP_URL || DEFAULT_GAS_URL,
+    gasUrl: window.FROTAS_CONFIG?.EXCESSO_VELOCIDADE_WEBAPP_URL || DEFAULT_GAS_URL,
     selectedImportedGroupKey: '',
     generatedImportedGroupKeys: new Set(JSON.parse(localStorage.getItem(GENERATED_GROUPS_KEY) || '[]')),
     colaboradores: [],
@@ -1460,7 +1461,7 @@
   }
 
   function applyOcrResult(root, result) {
-    const data = result?.data || result || {};
+    const data = normalizeOcrResponse(result);
     const placa = onlyPlate(data.placa || data.vehiclePlate || '');
     if (placa) {
       const plateInput = root.querySelector('[data-speed-plate]');
@@ -1520,16 +1521,6 @@
   function clearImportedDateFilter() {
     state.activeImportedDateFilter = null;
   }
-
-  function ocrRecordMatchesRow(ocrRecord, row) {
-    if (!ocrRecord || !row) return false;
-    const ocrDate = normalizeDateForMatch(ocrRecord.data || ocrRecord.date);
-    const rowDate = normalizeDateForMatch(row.data_evento);
-    const ocrSpeed = parseSpeed(ocrRecord.velocidade || ocrRecord.speed);
-    const rowSpeed = parseSpeed(row.velocidade);
-    return Boolean(ocrDate && rowDate && ocrDate === rowDate && ocrSpeed && rowSpeed && ocrSpeed === rowSpeed);
-  }
-
 
   function normalizeTextForOcrMatch(value) {
     return String(value || '')
@@ -1756,112 +1747,91 @@
     return status === 'GERADA' || state.generatedImportedGroupKeys.has(getGroupKeyFromRow(row));
   }
 
-  function fileMatchesRowByVehicleOrDriver(file, row) {
-    const filePlate = getPossibleFilePlate(file);
-    const fileDriver = normalizeDriverNameForMatch(getPossibleFileDriverName(file));
-    const rowPlate = onlyPlate(row?.placa || '');
-    const rowDriver = normalizeDriverNameForMatch(getDriverFromExcesso(row));
-    const fileNotification = getFileNotificationNumber(file);
-    const rowNotification = rowNotificationNumber(row);
-    if (fileNotification && rowNotification && fileNotification === rowNotification) return true;
-    if (filePlate && rowPlate && filePlate === rowPlate) return true;
-    if (fileDriver && rowDriver && !isUnknownDriverName(rowDriver) && (fileDriver === rowDriver || fileDriver.includes(rowDriver) || rowDriver.includes(fileDriver))) return true;
-    return false;
+  async function persistOcrJob(supabase, plan, notificationDate) {
+    const file = plan.file || {};
+    const userId = getCurrentUserId();
+    const payload = {
+      arquivo_id: String(file.fileId || file.id || '') || null,
+      arquivo_nome: String(file.fileName || file.name || 'Print sem nome'),
+      arquivo_url: String(file.fileUrl || file.url || '') || null,
+      data_notificacao: normalizeDateForMatch(notificationDate) || null,
+      placa_ocr: plan.plate || null,
+      motorista_ocr: getPossibleFileDriverName(file) || null,
+      registros_ocr: plan.records,
+      resposta_ocr: file,
+      status: plan.status,
+      ids_correspondentes: plan.matches.map((item) => item.row.id),
+      candidatos_ambiguos: plan.ambiguous,
+      motivo: plan.matches[0]?.reason || (plan.ambiguous.length ? 'mais_de_um_candidato' : 'sem_evidencia_suficiente')
+    };
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.criado_por = userId;
+    const { data, error } = await supabase.from('frotas_print_ocr_execucoes').insert(payload).select('id').single();
+    if (error) throw new Error(`Não foi possível registrar a auditoria do print: ${error.message}`);
+    return data.id;
   }
 
-  async function archiveMatchedImportedRowsFromOcr(root, files) {
+  async function archiveMatchedImportedRowsFromOcr(root, files, notificationDate) {
     const supabase = window.supabase;
     const savedFiles = Array.isArray(files) ? files : [];
-    if (!savedFiles.length || !supabase || typeof supabase.from !== 'function') return;
+    if (!savedFiles.length || !supabase || typeof supabase.from !== 'function') return { archivedCount: 0, reviewCount: 0 };
 
-    const matched = new Map();
     const openRows = (state.importedExcessos || []).filter((row) => {
       const status = String(row.status_notificacao || '').toUpperCase();
       return status === 'PENDENTE' || status === 'GERADA';
     });
-
-    const addMatch = (row, file, reason) => {
-      if (!row?.id) return;
-      matched.set(row.id, {
-        id: row.id,
-        fileName: file?.fileName || file?.name || '',
-        fileUrl: file?.fileUrl || file?.url || '',
-        driverName: getPossibleFileDriverName(file) || file?.driverName || file?.driverFolderName || getDriverFromExcesso(row) || '',
-        plate: getPossibleFilePlate(file) || onlyPlate(row.placa || ''),
-        reason
-      });
-    };
-
-    savedFiles.forEach((file) => {
-      const explicitIds = new Set(getFileMatchedIds(file));
-      if (explicitIds.size) {
-        openRows.forEach((row) => {
-          if (explicitIds.has(String(row.id))) addMatch(row, file, 'ids_retornados_pelo_ocr');
-        });
-      }
-
-      const rawText = getOcrTextFromFileResult(file);
-      const structuredRecords = Array.isArray(file?.registros || file?.extractedRegistros || file?.records)
-        ? (file.registros || file.extractedRegistros || file.records)
-        : [];
-      const ocrRecords = [
-        ...structuredRecords,
-        ...extractOcrRecordsFromText(rawText)
-      ];
-
-      openRows.forEach((row) => {
-        if (!fileMatchesRowByVehicleOrDriver(file, row)) return;
-
-        const hasSameRecord = ocrRecords.some((ocr) => ocrRecordMatchesRow(ocr, row));
-        if (hasSameRecord) {
-          addMatch(row, file, 'placa_data_velocidade');
-          return;
-        }
-
-        // Fluxo independente do painel de mensagem copiada:
-        // o print deve ser validado pelo OCR/Drive, usando placa/motorista e, quando disponível, data + velocidade.
-        // Não exigimos mais status GERADA/COPIADA, para o usuário poder enviar prints em lote sem ficar preso
-        // ao primeiro processo de geração/cópia da mensagem.
-        if (!ocrRecords.length) {
-          addMatch(row, file, 'ocr_motorista_ou_placa');
-        }
-      });
+    const plans = buildOcrReconciliationPlan({
+      files: savedFiles,
+      openRows,
+      helpers: {
+        getPlate: getPossibleFilePlate,
+        getNotification: getFileNotificationNumber,
+        getMatchedIds: getFileMatchedIds,
+        rowNotification: rowNotificationNumber,
+        getTextRecords: (file) => extractOcrRecordsFromText(getOcrTextFromFileResult(file))
+      },
+      speedTolerance: 1
     });
-
-    const matches = Array.from(matched.values());
-    if (!matches.length) {
-      toast('Prints salvos. Nenhuma pendência foi arquivada: o OCR não identificou placa/motorista/data/velocidade correspondente às pendências abertas.', 'error');
-      return;
-    }
-
-    const ids = matches.map((m) => m.id);
     const nowIso = new Date().toISOString();
     const userId = getCurrentUserId();
     const userName = getCurrentUserName();
-    const firstFile = matches[0] || {};
-    const payload = {
-      status_notificacao: 'NOTIFICADO',
-      notificado_em: nowIso,
-      observacoes: `Arquivado automaticamente após envio do print conferido por OCR. Motivo: ${firstFile.reason || 'ocr'}. Arquivo: ${firstFile.fileName || firstFile.fileUrl || 'print salvo no Drive'}`
-    };
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
-    if (userName) payload.notificado_por_nome = userName;
-
+    let archivedCount = 0;
+    let reviewCount = 0;
+    const archivedIds = new Set();
     try {
-      const { error } = await supabase
-        .from('frotas_excesso_velocidade')
-        .update(payload)
-        .in('id', ids);
-      if (error) throw error;
-
+      for (const plan of plans) {
+        const executionId = await persistOcrJob(supabase, plan, notificationDate);
+        const ids = plan.matches.map((item) => item.row.id);
+        if (!ids.length) { reviewCount += 1; continue; }
+        const file = plan.file || {};
+        const payload = {
+          status_notificacao: 'NOTIFICADO',
+          notificado_em: nowIso,
+          observacoes: `Arquivado automaticamente por OCR auditável #${executionId}. Motivo: ${plan.matches[0].reason}. Arquivo: ${file.fileName || file.fileUrl || 'print salvo no Drive'}`
+        };
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
+        if (userName) payload.notificado_por_nome = userName;
+        const { data: updated, error } = await supabase.from('frotas_excesso_velocidade')
+          .update(payload).in('id', ids).in('status_notificacao', ['PENDENTE', 'GERADA']).select('id');
+        if (error) throw error;
+        (updated || []).forEach((row) => archivedIds.add(String(row.id)));
+        archivedCount += (updated || []).length;
+        const { error: auditError } = await supabase.from('frotas_print_ocr_execucoes').update({
+          status: (updated || []).length === ids.length ? 'ARQUIVADO' : 'CONFLITO_CONCORRENCIA',
+          ids_arquivados: (updated || []).map((row) => row.id),
+          processado_em: new Date().toISOString()
+        }).eq('id', executionId);
+        if (auditError) console.warn('[FROTAS] Ocorrência baixada, mas a finalização da auditoria falhou:', auditError);
+      }
       state.importedExcessos.forEach((row) => {
-        if (matched.has(row.id)) row.status_notificacao = 'NOTIFICADO';
+        if (archivedIds.has(String(row.id))) row.status_notificacao = 'NOTIFICADO';
       });
       renderImportedExcessos(root);
-      toast(`${ids.length} registro(s) arquivado(s): print enviado e conferido pelo OCR.`);
+      if (archivedCount) toast(`${archivedCount} registro(s) arquivado(s) com auditoria do OCR.${reviewCount ? ` ${reviewCount} print(s) ficaram para conferência.` : ''}`);
+      else toast(`${reviewCount || plans.length} print(s) registrado(s) para conferência. Nenhuma ocorrência foi baixada sem evidência suficiente.`, 'error');
+      return { archivedCount, reviewCount };
     } catch (err) {
       console.warn('[FROTAS] Falha ao arquivar registros após envio do print:', err);
-      toast('Prints salvos, mas não foi possível arquivar os registros no Supabase.', 'error');
+      throw err;
     }
   }
 
@@ -1879,7 +1849,6 @@
     if (!gasUrl) return toast('Informe a URL do Web App do Apps Script.', 'error');
     if (!state.uploadedFiles.length) return toast('Selecione ao menos um print para enviar.', 'error');
 
-    localStorage.setItem(GAS_URL_KEY, gasUrl);
     state.gasUrl = gasUrl;
 
     const btn = root.querySelector('[data-upload-prints]');
@@ -1963,12 +1932,13 @@
       const json = await resp.json();
       if (!json.ok) throw new Error(json.message || 'Falha ao processar prints.');
       applyOcrResult(root, json);
-      await archiveMatchedImportedRowsFromOcr(root, (json?.data?.files || []).map((file) => normalizeSavedPrintFileResult(file)));
+      const ocrData = normalizeOcrResponse(json);
+      const reconciliation = await archiveMatchedImportedRowsFromOcr(root, ocrData.files.map((file) => normalizeSavedPrintFileResult(file)), dataNotificacao);
       state.uploadedFiles = [];
       const input = root.querySelector('[data-print-files]');
       if (input) input.value = '';
       renderUploadLists(root);
-      toast('Prints salvos no Drive. O arquivamento foi conferido por OCR, sem depender da mensagem copiada.');
+      if (!reconciliation?.archivedCount) toast('Prints salvos no Drive e mantidos na fila de conferência.');
     } catch (err) {
       console.error('[FROTAS] Upload/OCR:', err);
       toast(err.message || 'Erro ao enviar prints.', 'error');
@@ -2543,7 +2513,7 @@
               <button class="speed-modal-close" type="button" data-prints-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
             </div>
             <div class="upload-box">
-              <div class="speed-field"><label>URL do Web App / Apps Script</label><input class="speed-input" type="url" placeholder="https://script.google.com/macros/s/.../exec" value="${escapeHtml(state.gasUrl)}" data-gas-url><p class="speed-hint">Essa URL fica salva no navegador e é usada para salvar no Drive/OCR. O envio dos prints é independente do Painel 1: não usa a mensagem copiada nem a sugestão selecionada. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
+              <div class="speed-field"><label>Leitor OCR</label><input class="speed-input" type="text" value="Serviço central configurado" readonly><p class="speed-hint">Os prints são salvos no Drive e toda conciliação fica auditada no banco. Pasta mãe: <code>${PASTA_MAE_DRIVE_ID}</code>.</p></div>
               <div class="paste-zone" tabindex="0" data-paste-zone>
                 <strong>Clique aqui e cole o print</strong>
                 <span>Após clicar neste quadro, use <kbd>Ctrl</kbd> + <kbd>V</kbd>. Também funciona colando em qualquer campo desta tela, arrastando imagens ou selecionando em lote abaixo.</span>
@@ -2558,7 +2528,6 @@
         </div>
       </section>`;
 
-    if (state.gasUrl) localStorage.setItem(GAS_URL_KEY, state.gasUrl);
     renderRecords(container);
     renderUploadLists(container);
     renderColaboradorStatus(container, opts);
@@ -2670,10 +2639,6 @@
       });
     }
 
-    container.querySelector('[data-gas-url]')?.addEventListener('input', (ev) => {
-      state.gasUrl = String(ev.target.value || '').trim() || DEFAULT_GAS_URL;
-      localStorage.setItem(GAS_URL_KEY, state.gasUrl);
-    });
     container.querySelector('[data-upload-prints]')?.addEventListener('click', () => uploadPrints(container));
     container.querySelector('[data-generate-speed-message]')?.addEventListener('click', async () => {
       syncRecordsFromDom(container);

@@ -26,7 +26,7 @@ const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V1';
+const VERSION = 'V3-LAUDO-PROGRAMACAO-POR-DESPESA';
 const LOGIN_URL = 'https://www.grmserver.com.br/login';
 const FLOW_URL = 'https://www.grmserver.com.br/report/finance/operatingFlow';
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -50,6 +50,20 @@ function norm(value) {
     .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
+const DIRECT_EXPENSE_BLOCKLIST = new Set(['CAFE']);
+
+function assertDirectExpenseAllowed(expense) {
+  const expenseName = String(expense?.oexName || '').trim();
+  const key = norm(expenseName);
+  if (DIRECT_EXPENSE_BLOCKLIST.has(key)) {
+    const error = new Error(
+      `Despesa ${expenseName || key} bloqueada: o agente retroativo não pode lançar ou aprovar Café diretamente no Caixa Operacional.`,
+    );
+    error.code = 'DESPESA_DIRETA_BLOQUEADA';
+    throw error;
+  }
+}
+
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
 function log(level, message, data) {
   console.log(`[${level}] ${new Date().toISOString()} - ${message}${data === undefined ? '' : ` ${JSON.stringify(data)}`}`);
@@ -66,24 +80,22 @@ function yesterdaySaoPaulo(now = new Date()) {
 
 function isoToBr(iso) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
 
-function requiredExpenses(contractType, salary, expenseTypes) {
+function requiredExpenses(contractType, salary, expenseTypes, { programmed = true } = {}) {
   const type = norm(contractType);
-  const lunch = expenseTypes.get('ALMOCO');
-  if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
-  const coffee = expenseTypes.get('CAFE');
-  if (!coffee) throw new Error('Categoria Café não encontrada no GRM.');
-  const result = [
-    { ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) },
-    { ...coffee, amount: Number(coffee.oexMaxOperatingFlowValue || 10) },
-  ];
+  const result = [];
   if (type === 'INTERMITENTE') {
     const item = expenseTypes.get('SALARIO DE INTERMITENTE');
     if (!item) throw new Error('Categoria Salário de Intermitente não encontrada no GRM.');
-    result.unshift({ ...item, amount: Number(salary || 0) });
+    result.push({ ...item, amount: Number(salary || 0) });
   } else if (type === 'DIARISTA') {
     const item = expenseTypes.get('SERVICOS TERCEIRIZADOS');
     if (!item) throw new Error('Categoria Serviços Terceirizados não encontrada no GRM.');
-    result.unshift({ ...item, amount: Number(salary || 0) });
+    result.push({ ...item, amount: Number(salary || 0) });
+  }
+  if (programmed) {
+    const lunch = expenseTypes.get('ALMOCO');
+    if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
+    result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
   }
   return result;
 }
@@ -115,7 +127,11 @@ async function loadCandidates(date) {
     queryAll('producao_snapshot', 'funcionario,data,os,cargas,tons', (q) => q.eq('data', date)),
     queryAll('colaborador_cruzamento', 'colaborador_id,cpf,nome,tipo_contrato,salario,atualizado_em', (q) => q.order('atualizado_em', { ascending: false })),
   ]);
-  const productionNames = new Set(production.map((row) => norm(row.funcionario)));
+  // Uma linha na produção representa o laudo emitido pelo colaborador na data.
+  const laudoNames = new Set(production.map((row) => norm(row.funcionario)).filter(Boolean));
+  const programmedIds = new Set(programmed.map((row) => String(row.colaborador_id || '')).filter(Boolean));
+  const programmedNames = new Set(programmed.map((row) => norm(row.nome_colaborador)).filter(Boolean));
+  const programmedByName = new Map(programmed.map((row) => [norm(row.nome_colaborador), row]));
   const contractsById = new Map();
   const contractsByName = new Map();
   for (const row of contracts) {
@@ -125,14 +141,17 @@ async function loadCandidates(date) {
     if (name && !contractsByName.has(name)) contractsByName.set(name, row);
   }
   const unique = new Map();
-  for (const item of programmed) {
-    const name = norm(item.nome_colaborador);
-    if (!name || !productionNames.has(name)) continue;
-    const contract = contractsById.get(String(item.colaborador_id || '')) || contractsByName.get(name);
+  for (const name of laudoNames) {
+    const programmedItem = programmedByName.get(name);
+    const contract = contractsById.get(String(programmedItem?.colaborador_id || '')) || contractsByName.get(name);
     if (!contract || !['DIARISTA', 'INTERMITENTE', 'EFETIVO'].includes(norm(contract.tipo_contrato))) continue;
-    unique.set(digits(contract.cpf) || name, { ...item, ...contract, nameKey: name });
+    const isProgrammed = programmedIds.has(String(contract.colaborador_id || '')) || programmedNames.has(name);
+    // Efetivo só pode gerar Almoço, que exige programação. Intermitente e
+    // Diarista continuam elegíveis pelo laudo mesmo quando não programados.
+    if (norm(contract.tipo_contrato) === 'EFETIVO' && !isProgrammed) continue;
+    unique.set(digits(contract.cpf) || name, { ...contract, nameKey: name, programmed: isProgrammed });
   }
-  return { candidates: [...unique.values()], programmed: programmed.length, production: productionNames.size };
+  return { candidates: [...unique.values()], programmed: programmed.length, production: laudoNames.size };
 }
 
 async function login(page) {
@@ -194,6 +213,7 @@ async function approve(page, row) {
 }
 
 async function create(page, staff, expense, date) {
+  assertDirectExpenseAllowed(expense);
   return api(page, '/api/oFlow/setRecord', {
     ofmType: 'D', staCode: Number(staff.staCode), ofmDate: isoToBr(date),
     ofmDescription: `Lançamento automático retroativo - ${expense.oexName}`,
@@ -231,7 +251,7 @@ async function main() {
         log('WARN', 'Colaborador não localizado no GRM.', { nome: candidate.nome, cpf: candidate.cpf });
         continue;
       }
-      for (const expense of requiredExpenses(candidate.tipo_contrato, candidate.salario, grm.expenseTypes)) {
+      for (const expense of requiredExpenses(candidate.tipo_contrato, candidate.salario, grm.expenseTypes, { programmed: candidate.programmed })) {
         summary.checked += 1;
         const existing = grm.movements.filter((row) => Number(row.staCode) === Number(staff.staCode)
           && Number(row.oexCode) === Number(expense.oexCode) && row.ofmType === 'D');
@@ -240,9 +260,10 @@ async function main() {
           data_referencia: date, cpf: digits(candidate.cpf), colaborador: candidate.nome,
           sta_code: Number(staff.staCode), tipo_contrato: candidate.tipo_contrato,
           tipo_despesa: expense.oexName, oex_code: Number(expense.oexCode), valor: expense.amount,
-          acao: decision.action, dry_run: DRY_RUN, diagnostico: { existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })), duplicados_pendentes: decision.duplicates || 0 },
+          acao: decision.action, dry_run: DRY_RUN, diagnostico: { laudo: true, programado: candidate.programmed, existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })), duplicados_pendentes: decision.duplicates || 0 },
         };
         try {
+          assertDirectExpenseAllowed(expense);
           if (decision.action === 'NONE') summary.unchanged += 1;
           else if (actionCount >= MAX_ACTIONS) {
             // Trava de segurança intencional (evita rajada grande de ações num único run),
@@ -284,4 +305,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.stack || error.message); process.exit(1); });
-module.exports = { norm, yesterdaySaoPaulo, requiredExpenses, decide };
+module.exports = { norm, yesterdaySaoPaulo, requiredExpenses, decide, assertDirectExpenseAllowed };

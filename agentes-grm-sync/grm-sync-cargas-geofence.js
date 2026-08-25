@@ -930,6 +930,32 @@ async function finalizarExecucao(runId, patch) {
   if (res.error) log('WARN', 'Falha ao finalizar execução: ' + res.error.message);
 }
 
+
+function dedupePorChaveUnicaV2(records, contexto) {
+  var porChave = Object.create(null);
+  var semChave = [];
+  var total = records.length;
+
+  records.forEach(function (record) {
+    if (!record || !record.chave_unica) {
+      semChave.push(record);
+      return;
+    }
+    porChave[record.chave_unica] = record;
+  });
+
+  var deduped = Object.keys(porChave)
+    .map(function (chave) { return porChave[chave]; })
+    .concat(semChave);
+
+  var removidas = total - deduped.length;
+  if (removidas > 0) {
+    log('WARN', '[DEDUP_CARGAS_V2][' + contexto + '] ' + removidas +
+      ' linha(s) duplicada(s) por chave_unica removida(s) antes do upsert.');
+  }
+  return deduped;
+}
+
 async function salvarImportacao(rows) {
   if (!REPORT_CONFIG.salvarImportacao || !rows.length) return;
   var records = rows.map(function (r) {
@@ -950,6 +976,8 @@ async function salvarImportacao(rows) {
       sincronizado_em: new Date().toISOString()
     };
   });
+
+  records = dedupePorChaveUnicaV2(records, 'importacoes');
 
   for (var i = 0; i < records.length; i += 100) {
     var chunk = records.slice(i, i + 100);
@@ -1164,6 +1192,7 @@ function montarIrregularidade(row, localOs, distancia) {
 }
 
 async function upsertIrregularidades(rows) {
+  rows = dedupePorChaveUnicaV2(rows, 'irregularidades');
   for (var i = 0; i < rows.length; i += 100) {
     var chunk = rows.slice(i, i + 100);
     var res = await supabase.from(REPORT_CONFIG.tableIrregularidades).upsert(chunk, { onConflict: 'chave_unica' });

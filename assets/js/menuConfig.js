@@ -29,7 +29,6 @@ export const MENU_CONFIG = [
     grupo: "GESTOR",
     itens: [
       item("programacao", "Programação", "programacao", ["PROGRAMACAO", "OS", "O.S", "OPERACIONAL_OS", "GESTOR_OS", "OS_GESTOR"]),
-      item("hospedagem", "Hospedagem", "hospedagem", ["HOSPEDAGEM"]),
       item("compras_gestor", "Compras", "compras", ["COMPRAS"]),
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA_GESTOR", "GESTOR_LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
@@ -42,6 +41,7 @@ export const MENU_CONFIG = [
     grupo: "CONFERÊNCIA",
     itens: [
       item("conferencia", "Painel de Conferência", "adm-conferencia", ["ADM_CONFERENCIA"]),
+      item("conferencia_bonus", "Bônus", "conferencia-bonus", ["CONFERENCIA_BONUS", "ADM_CONFERENCIA", "CONFERENCIA"]),
       item("conferencia_deslocamento", "Deslocamento", "conferencia-deslocamento", ["CONFERENCIA_DESLOCAMENTO", "ADM_CONFERENCIA"]),
       item("conferencia_uber", "Uber · Conferência", "uber", ["CONFERENCIA_UBER", "UBER"]),
       item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
@@ -160,7 +160,8 @@ export const MENU_CONFIG = [
       item("financeiro_fluxo_caixa", "Fluxo de Caixa", "financeiro", ["FINANCEIRO", "FLUXO_CAIXA", "FINANCEIRO_FLUXO_CAIXA"]),
       item("financeiro_pagamentos", "Pagamentos", "financeiro#pagamentos", ["FINANCEIRO", "PAGAMENTOS", "FINANCEIRO_PAGAMENTOS"]),
       item("financeiro_adiantamentos", "Adiantamentos", "financeiro#despesas?modo=adiantamentos", ["ADIANTAMENTOS", "FINANCEIRO_ADIANTAMENTOS"]),
-      item("financeiro_alimentacao", "Alimentação", "financeiro#despesas?modo=almoco", ["ALIMENTACAO", "ALIMENTAÇÃO", "FINANCEIRO_ALIMENTACAO"])
+      item("financeiro_alimentacao", "Alimentação", "financeiro#despesas?modo=almoco", ["ALIMENTACAO", "ALIMENTAÇÃO", "FINANCEIRO_ALIMENTACAO"]),
+      item("financeiro_hospedagem", "Hospedagem", "adm-hotel#financeiro", ["FINANCEIRO_HOSPEDAGEM"])
     ]
   },
 

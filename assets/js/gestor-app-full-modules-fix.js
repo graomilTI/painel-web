@@ -1,4 +1,5 @@
 import { toPanelUrl } from './paths.js';
+import './gestor-app-home-loader-v2.js?v=20260813-home2';
 
 const REAL_MODULES = {
   programacao: 'programacao',
@@ -47,9 +48,5 @@ function interceptLegacyTabs(event) {
   }
 }
 
-// O App Gestor nasceu com abas internas simplificadas de Programação e
-// Patrimônio. Hoje os módulos reais já têm apresentação mobile no painel; por
-// isso o shell deve abrir essas rotas reais, preservando todas as regras e
-// procedimentos em vez de manter uma segunda implementação parcial.
 document.addEventListener('click', interceptModuleLinks, true);
 document.addEventListener('click', interceptLegacyTabs, true);

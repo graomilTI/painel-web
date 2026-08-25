@@ -1,10 +1,9 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
-import { installPrintDriverValidation } from './frotas-validacao-condutor-print.js?v=20260615a';
 import { installPreviousWeekDefaults } from './frotas-periodo-semana-anterior.js?v=20260615d';
 import { installIntuitiveFleetLayout } from './frotas-layout-intuitivo.js?v=20260804b';
-import './modules/frotas.js?v=20260807e';
+import './modules/frotas.js?v=20260820-ocr-audit';
 
 function installFleetHeaderCleanup(root = document) {
   if (root.getElementById('frotasHeaderCleanupStyles')) return;
@@ -21,7 +20,6 @@ function installFleetHeaderCleanup(root = document) {
 
 installFleetHeaderCleanup(document);
 installDailyDriverResolution(supabase);
-installPrintDriverValidation(supabase);
 installPreviousWeekDefaults(document, supabase);
 installIntuitiveFleetLayout(document);
 

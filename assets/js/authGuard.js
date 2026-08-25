@@ -69,6 +69,15 @@ function buildModuleCodeSet(context) {
 }
 
 function itemIsAllowedByModules(item, allowedCodes) {
+  const itemCode = normalize(item?.code);
+
+  // Bônus é uma permissão financeira/operacional sensível e precisa ser
+  // liberado individualmente em Usuários e Acessos. Os aliases legados de
+  // Conferência não podem abrir essa tela nem exibir o submenu.
+  if (itemCode === 'conferencia_bonus') {
+    return allowedCodes.has('conferencia_bonus');
+  }
+
   const candidates = [item.code, ...(Array.isArray(item.aliases) ? item.aliases : [])]
     .map(normalize)
     .filter(Boolean);

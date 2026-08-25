@@ -108,6 +108,38 @@ async function upsertData(data) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
+
+async function enfileirarOperacionalOs(totalImportado) {
+  const { data, error } = await supabase.rpc('enqueue_grm_sync_job_internal', {
+    p_agent_id: 'sync-operacional-os',
+    p_payload: {
+      origem: 'sync-lista-os',
+      motivo: 'pos_importacao_lista_os',
+      total_importado: Number(totalImportado || 0),
+      solicitado_em: new Date().toISOString(),
+    },
+  });
+
+  if (error) {
+    throw new Error(
+      `Lista de OS importada, mas falhou ao enfileirar sync-operacional-os: ${error.message}`
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      'Lista de OS importada, mas sync-operacional-os está desabilitado.'
+    );
+  }
+
+  log(
+    'SUCCESS',
+    `Derivação operacional garantida na fila | sync-operacional-os | job=${data}`
+  );
+
+  return data;
+}
+
 async function main() {
   let browser;
 
@@ -161,6 +193,9 @@ async function main() {
     }
 
     await upsertData(data);
+
+    // PIPELINE_V2: operacional_os é responsabilidade exclusiva de sync-operacional-os.
+    await enfileirarOperacionalOs(data.length);
 
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 

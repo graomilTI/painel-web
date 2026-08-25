@@ -61,6 +61,12 @@ function injectStyle() {
 function buildCombobox(select) {
   if (!select || select.dataset[FLAG] === '1') return;
   if (select.multiple) return;
+  // select com o atributo "hidden" foi marcado assim de propósito pela tela
+  // que o criou (ex.: #resHotel em adm-hotel.js, um <select> só interno pra
+  // calcular diária, nunca deveria aparecer pro usuário) — respeitar isso e
+  // não desenhar um combobox visível por cima. Reportado 19/08: virava um
+  // segundo campo "Selecionar hotel" fantasma ao lado do campo de texto real.
+  if (select.hidden) return;
   // Alguns fluxos precisam da lista customizada mesmo com poucas opções para
   // não abrir o picker nativo de tela cheia no celular.
   const forced = select.hasAttribute('data-searchable-select');

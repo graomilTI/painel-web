@@ -32,7 +32,7 @@
  *     campo) — um .click() sintético via DOM não abre o menu (confirmado por
  *     teste ao vivo: DOM click abre o menu de navegação lateral por engano).
  *   - Motivo fixo escolhido pelo usuário: "Falta de Caminhão".
- *   - Obs. fixa escolhida pelo usuário: "Lançado via Bot".
+ *   - Obs. fixa escolhida pelo usuário: "Aprovado pelo Gestor".
  */
 
 process.env.TMPDIR = process.env.TMPDIR || '/tmp';
@@ -47,7 +47,6 @@ var WebSocket = require('ws');
 var fs = require('fs');
 var path = require('path');
 var os = require('os');
-var childProcess = require('child_process');
 var createClient = require('@supabase/supabase-js').createClient;
 
 puppeteer.use(StealthPlugin());
@@ -59,7 +58,7 @@ var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 
 var RAIO_M = Number(process.env.NHE_LANCAMENTO_RAIO_M || 2000);
 var MOTIVO_FIXO = process.env.NHE_LANCAMENTO_MOTIVO || 'Falta de Caminhão';
-var OBS_FIXA = process.env.NHE_LANCAMENTO_OBS || 'Lançado via Bot';
+var OBS_FIXA = 'Aprovado pelo Gestor';
 var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
@@ -782,9 +781,7 @@ async function carregarJaLancadas(dataReferencia) {
 }
 
 function observacaoPara(candidato) {
-  if (!candidato.viaGestor) return OBS_FIXA;
-  var km = (candidato.loginMatch.distancia / 1000).toFixed(1);
-  return 'Lançamento BOT - ' + km + 'km de distancia';
+  return OBS_FIXA;
 }
 
 async function salvarResultado(candidato, patch) {
@@ -1315,19 +1312,32 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
 // rodar o sync de leitura já existente (grm-sync-nhe.js), que baixa o relatório
 // de verdade do GRM (já refletindo os lançamentos que acabamos de fazer) e vira
 // o lote mais recente — sem duplicar a lógica de download/parse aqui.
-function atualizarRelatorioNhe() {
-  return new Promise(function (resolve) {
-    var scriptPath = path.join(__dirname, 'grm-sync-nhe.js');
-    log('INFO', 'Atualizando grm_nhe_importacoes (rodando grm-sync-nhe.js) para refletir os lançamentos na tela FOB...');
-    var syncEnv = Object.assign({}, process.env, { NHE_SYNC_DAYS_BACK: String(Math.max(REPROCESSAR_DIAS + 1, Number(process.env.NHE_SYNC_DAYS_BACK) || 1)) });
-    childProcess.execFile(process.execPath, [scriptPath], { timeout: Number(process.env.NHE_LANCAMENTO_POS_SYNC_TIMEOUT_MS || 150000), env: syncEnv }, function (error, stdout, stderr) {
-      if (stdout) log('INFO', '[grm-sync-nhe] ' + stdout.trim().split('\n').join('\n[grm-sync-nhe] '));
-      if (stderr) log('WARN', '[grm-sync-nhe] ' + stderr.trim().split('\n').join('\n[grm-sync-nhe] '));
-      if (error) log('WARN', 'grm-sync-nhe.js terminou com erro (' + error.message + ') — a tela FOB só refletirá os lançamentos no próximo sync automático.');
-      else log('SUCCESS', 'grm_nhe_importacoes atualizado — tela FOB já deve mostrar essas O.S. como Ok.');
-      resolve();
-    });
+async function atualizarRelatorioNhe() {
+  log('INFO', 'Garantindo refresh do relatório NHE pela fila controlada (sync-nhe)...');
+
+  var result = await supabase.rpc('enqueue_grm_sync_job_internal', {
+    p_agent_id: 'sync-nhe',
+    p_payload: {
+      origem: 'sync-lancar-nhe',
+      motivo: 'pos_lancamento_nhe',
+      reprocessar_dias: REPROCESSAR_DIAS,
+      solicitado_em: new Date().toISOString()
+    }
   });
+
+  if (result.error) {
+    log('WARN', 'NHE foi lançado, mas não foi possível enfileirar sync-nhe: ' +
+      result.error.message + ' — o próximo sync automático poderá atualizar o FOB.');
+    return false;
+  }
+
+  if (!result.data) {
+    log('WARN', 'NHE foi lançado, porém sync-nhe está desabilitado; refresh imediato não criado.');
+    return false;
+  }
+
+  log('SUCCESS', 'Refresh NHE garantido pela fila entrada_os | job=' + result.data + '.');
+  return true;
 }
 
 async function fecharModais(page) {
@@ -1529,8 +1539,8 @@ async function main() {
 
       if (loginMatch.distancia > RAIO_M && !args.forcar) {
         // Colaborador fora do raio: não fica mais pendente sem mais — lança
-        // no nome do gestor da regional (pedido do usuário 21/07), com Obs.
-        // indicando a distância. Só cai pro comportamento antigo (fica
+        // no nome do gestor da regional (pedido do usuário 21/07), mantendo a
+        // observação fixa 'Aprovado pelo Gestor'. Só cai pro comportamento antigo (fica
         // PENDENTE) se não achar nenhum gestor pra essa Coordenação/Supervisão.
         // operacional_os não tem coluna "coordenação" própria — só supervisão
         // (texto "MATO GROSSO MT4 - Geral"); a coordenação é o prefixo antes
