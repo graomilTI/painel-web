@@ -69,7 +69,6 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
-  ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js') }],
   ['compras', { title: 'Compras', module: () => import('./compras.js') }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js'), extraModules: [() => import('./logistica-abertura-upload.js'), () => import('./logistica-abertura-os-correcao.js')] }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js') }],

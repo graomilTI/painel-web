@@ -11,15 +11,13 @@ import './searchableSelect.js?v=20260819-respeita-hidden';
 import './logistica-saldo-filtros.js?v=20260803-saldo-filtros1';
 import './logistica-abertura-upload.js?v=20260803-upload-autofill1';
 import './pwa-register.js?v=20260713-cache-v10';
-import './hospedagem-colaboradores-regional.js?v=20260713-cache-v10';
 
 // Algumas páginas são compostas por vários módulos complementares ou ainda
 // executam boot próprio no topo do módulo. A navegação suave pode importar o
 // módulo e, ao mesmo tempo, chamar renderContent(), causando dois boots e duas
 // cargas concorrentes. Essas rotas usam navegação completa e versionada.
 const FULL_PAGE_RELEASES = new Map([
-  ['hospedagem', '20260713-cache-v10'],
-  ['adm-hotel', '20260819-financeiro-pagamentos-fix'],
+  ['adm-hotel', '20260825-zera-hotel1'],
   ['adm-logistica', '20260714-logistica-v4'],
 ]);
 
