@@ -166,6 +166,35 @@
 .ah-fluxo-placeholder { padding: 28px; text-align: center; }
 .ah-fluxo-placeholder p { margin: 6px 0; }
 
+.ah-fluxo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.ah-fluxo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.ah-fluxo-card:hover { border-color: var(--line-2); }
+.ah-fluxo-card-head { display: flex; flex-direction: column; gap: 2px; }
+.ah-fluxo-card-name { font-weight: 800; font-size: 13px; color: var(--text); }
+.ah-fluxo-card-city { font-size: 11px; }
+.ah-fluxo-card-saldo { font-size: 18px; font-weight: 800; color: var(--muted); margin-top: 6px; }
+.ah-fluxo-saldo-devido { color: #fca5a5; }
+.ah-fluxo-card-credito { font-size: 11px; font-weight: 700; color: var(--green-2); }
+
+.ah-extrato { max-width: 640px; }
+
 /* ---- Modal de detalhes ---- */
 
 .ah-overlay {

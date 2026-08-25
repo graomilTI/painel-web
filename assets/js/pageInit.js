@@ -17,7 +17,7 @@ import './pwa-register.js?v=20260713-cache-v10';
 // módulo e, ao mesmo tempo, chamar renderContent(), causando dois boots e duas
 // cargas concorrentes. Essas rotas usam navegação completa e versionada.
 const FULL_PAGE_RELEASES = new Map([
-  ['adm-hotel', '20260825-fase6'],
+  ['adm-hotel', '20260825-fase7'],
   ['adm-logistica', '20260714-logistica-v4'],
 ]);
 
