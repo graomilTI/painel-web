@@ -4,11 +4,12 @@
 // por adm-hotel-alojamentos-v2.js e companhia, via adm-hotel-deferred.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { ensureStyles, tabGroup, buildCotacaoMessage, toast, nightsBetween } from './adm-hotel-helpers.js';
+import { ensureStyles, tabGroup, normalizeText, buildCotacaoMessage, toast, nightsBetween } from './adm-hotel-helpers.js';
 import {
   renderShellAlojamentos, renderTabsBar, renderTable, renderFluxoPlaceholder, renderDetalhes,
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
   renderReservarForm, renderQuartosBox, renderQuartosSummaryText,
+  renderAgruparPicker,
 } from './adm-hotel-view.js';
 
 function currentMode() {
@@ -208,6 +209,8 @@ function openDetalhes(solicitacaoId) {
   if (cotarBtn) cotarBtn.addEventListener('click', () => openPicker(solicitacaoId));
   const reservarBtn = root.querySelector('[data-reservar]');
   if (reservarBtn) reservarBtn.addEventListener('click', () => openReservar(solicitacaoId));
+  const agruparBtn = root.querySelector('[data-agrupar]');
+  if (agruparBtn) agruparBtn.addEventListener('click', () => openAgrupar(solicitacaoId));
   wireCotacoesBox();
   subscribeQuotes(solicitacaoId);
 }
@@ -582,6 +585,64 @@ function showReservarError(message) {
   const errorBox = document.getElementById('ahResvErrorBox');
   if (errorBox) errorBox.textContent = message;
   toast(message, 'err');
+}
+
+// Reservas ativas (não canceladas/checkout já realizado) em outras solicitações
+// na mesma cidade/UF — regra de Agrupar definida pelo usuário: "é como se já
+// houvesse 1 reserva, e vai entrar mais uma pessoa".
+function activeReservasForGroup(row) {
+  const uf = String(row.uf || '').toUpperCase();
+  const cidade = normalizeText(row.cidade);
+  const seen = new Map();
+  state.rows.forEach((r) => {
+    if (!r.reserva_id || r.solicitacao_id === row.solicitacao_id) return;
+    if (String(r.uf || '').toUpperCase() !== uf || normalizeText(r.cidade) !== cidade) return;
+    if (r.status_hospedagem === 'CANCELADA' || r.status_hospedagem === 'CHECKOUT_REALIZADO') return;
+    if (!seen.has(r.reserva_id)) seen.set(r.reserva_id, r);
+  });
+  return [...seen.values()];
+}
+
+function openAgrupar(solicitacaoId) {
+  const row = findRow(solicitacaoId);
+  if (!row) return;
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderAgruparPicker(row, activeReservasForGroup(row))}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-agrupar]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelector('[data-back-detalhes-agrupar]')?.addEventListener('click', () => openDetalhes(solicitacaoId));
+  root.querySelectorAll('[data-agrupar-reserva]').forEach((b) => {
+    b.addEventListener('click', () => agruparReserva(row, b.dataset.agruparReserva));
+  });
+}
+
+async function agruparReserva(row, reservaId) {
+  const { error: linkErr } = await supabase
+    .from('hospedagem_reserva_solicitacoes')
+    .insert({ reserva_id: reservaId, solicitacao_id: row.solicitacao_id });
+  if (linkErr) {
+    toast(`Erro ao agrupar: ${linkErr.message}`, 'err');
+    return;
+  }
+
+  const people = peopleForRow(row.solicitacao_id);
+  if (people.length) {
+    const assignRows = people.map((p) => ({
+      reserva_id: reservaId,
+      solicitacao_colaborador_id: p.id,
+      status: 'HOSPEDADO',
+    }));
+    const { error: assignErr } = await supabase.from('hospedagem_reserva_colaboradores').insert(assignRows);
+    if (assignErr) toast(`Aviso: falha ao adicionar colaboradores na reserva: ${assignErr.message}`, 'err');
+  }
+
+  await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'RESERVADA' }).eq('id', row.solicitacao_id);
+
+  toast('Solicitação agrupada na reserva existente.');
+  const solicitacaoId = row.solicitacao_id;
+  await loadPainel();
+  openDetalhes(solicitacaoId);
 }
 
 document.addEventListener('click', (e) => {
