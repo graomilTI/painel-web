@@ -142,6 +142,7 @@ export function renderDetalhes(row, quotes) {
   const quotesForRow = (quotes || []).filter((q) => q.solicitacao_id === row.solicitacao_id);
   const temReserva = Boolean(row.reserva_id);
   const podeCotar = tabGroup(row) === 'solicitada';
+  const podeEstender = temReserva && (row.status_hospedagem === 'CHECKIN_PREVISTO' || row.status_hospedagem === 'HOSPEDADO');
   return `
     <div class="ah-modal">
       <div class="ah-modal-head">
@@ -189,6 +190,7 @@ export function renderDetalhes(row, quotes) {
           ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : ''}
           ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-agrupar="${esc(row.solicitacao_id)}" type="button">Agrupar</button>` : ''}
           ${podeCotar ? `<button class="btn btn-primary ah-btn-sm" data-reservar="${esc(row.solicitacao_id)}" type="button">Reservar</button>` : ''}
+          ${podeEstender ? `<button class="btn btn-secondary ah-btn-sm" data-estender="${esc(row.solicitacao_id)}" type="button">Estender</button>` : ''}
         </div>
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
       </div>
@@ -304,6 +306,29 @@ export function renderAgruparPicker(row, reservas) {
       <div class="ah-modal-foot">
         <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-agrupar type="button">Voltar</button>
         <span></span>
+      </div>
+    </div>
+  `;
+}
+
+export function renderEstenderForm(row) {
+  return `
+    <div class="ah-modal">
+      <div class="ah-modal-head">
+        <div><h3>Estender hospedagem</h3><p class="muted">${esc(row.hotel || '—')} · check-out atual ${brDate(row.data_checkout)}</p></div>
+        <button class="ah-modal-x" data-close-estender type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <div class="ah-field">
+          <label>Nova data de check-out</label>
+          <input type="date" id="ahExtCheckout" value="${esc(row.data_checkout || '')}" min="${esc(row.data_checkout || '')}" />
+        </div>
+        <div id="ahExtErrorBox"></div>
+        <p class="ah-note">Atualiza a reserva e todas as solicitações agrupadas nela.</p>
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-estender type="button">Voltar</button>
+        <button class="btn btn-primary ah-btn-sm" id="ahExtConfirm" data-confirm-estender type="button">Confirmar extensão</button>
       </div>
     </div>
   `;
