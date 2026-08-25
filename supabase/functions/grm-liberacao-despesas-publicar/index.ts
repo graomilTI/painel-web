@@ -159,6 +159,16 @@ function configKeyDeslocamento(value: unknown): string | null {
   return null;
 }
 
+// Trava de segurança: independentemente do que estiver marcado na tabela
+// grm_despesas_tipos_config, só estas 3 chaves podem sair com AUTO=true rumo
+// ao GRM. Uma edição manual da tabela (ex.: ativar AUTO em Pernoite) não deve
+// bastar para liberar lançamento/aprovação automática de outra despesa.
+const CHAVES_AUTO_PERMITIDAS = new Set([
+  'ALIMENTACAO_ALMOCO',
+  'VINCULO_SALARIO_INTERMITENTE',
+  'VINCULO_SERVICOS_TERCEIRIZADOS',
+]);
+
 function ruleFromConfig(config: Record<string, unknown>, overrideValue?: number | null) {
   const configuredValue = overrideValue != null && Number(overrideValue) > 0
     ? Number(overrideValue)
@@ -167,7 +177,7 @@ function ruleFromConfig(config: Record<string, unknown>, overrideValue?: number 
     tipo_despesa: config.tipo_grm,
     exibir: config.exibir,
     valor_maximo: configuredValue,
-    auto: config.auto,
+    auto: CHAVES_AUTO_PERMITIDAS.has(clean(config.chave)) && config.auto === true,
     carga_nhe: config.carga_nhe,
     max_mov_dia: config.max_mov_dia,
   });

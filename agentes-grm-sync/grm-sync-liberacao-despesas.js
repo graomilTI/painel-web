@@ -180,13 +180,17 @@ function autoObrigatorioPorTipo(tipo) {
     || key === 'SERVICOS TERCEIRIZADOS';
 }
 
+// Trava de segurança: só Almoço, Salário de Intermitente e Serviços
+// Terceirizados podem sair como AUTO no GRM. Qualquer outro tipo tem o AUTO
+// zerado aqui, mesmo que job.regras (vindo de grm_despesas_tipos_config)
+// tenha chegado com auto=true por engano/edição manual na tabela — a
+// publicação (Edge Function) é a origem dos dados, mas este worker é quem
+// efetivamente marca a caixinha no GRM, então não confia cegamente na fonte.
 function desiredRules(rules) {
   return canonicalRules(
     (Array.isArray(rules) ? rules : []).map((rule) => ({
       ...rule,
-      auto: autoObrigatorioPorTipo(rule?.tipo_despesa)
-        ? true
-        : rule?.auto === true,
+      auto: autoObrigatorioPorTipo(rule?.tipo_despesa),
     })),
   );
 }
