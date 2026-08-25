@@ -83,7 +83,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20260825-fase4';
+  link.href = './assets/css/adm-hotel.css?v=20260825-fase5';
   document.head.appendChild(link);
 }
 

@@ -9,7 +9,7 @@ import {
   renderShellAlojamentos, renderTabsBar, renderTable, renderFluxoPlaceholder, renderDetalhes,
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
   renderReservarForm, renderQuartosBox, renderQuartosSummaryText,
-  renderAgruparPicker,
+  renderAgruparPicker, renderEstenderForm,
 } from './adm-hotel-view.js';
 
 function currentMode() {
@@ -211,6 +211,8 @@ function openDetalhes(solicitacaoId) {
   if (reservarBtn) reservarBtn.addEventListener('click', () => openReservar(solicitacaoId));
   const agruparBtn = root.querySelector('[data-agrupar]');
   if (agruparBtn) agruparBtn.addEventListener('click', () => openAgrupar(solicitacaoId));
+  const estenderBtn = root.querySelector('[data-estender]');
+  if (estenderBtn) estenderBtn.addEventListener('click', () => openEstender(solicitacaoId));
   wireCotacoesBox();
   subscribeQuotes(solicitacaoId);
 }
@@ -640,6 +642,63 @@ async function agruparReserva(row, reservaId) {
   await supabase.from('hospedagem_solicitacoes').update({ status_solicitacao: 'RESERVADA' }).eq('id', row.solicitacao_id);
 
   toast('Solicitação agrupada na reserva existente.');
+  const solicitacaoId = row.solicitacao_id;
+  await loadPainel();
+  openDetalhes(solicitacaoId);
+}
+
+function openEstender(solicitacaoId) {
+  const row = findRow(solicitacaoId);
+  if (!row) return;
+  const root = modalRoot();
+  root.innerHTML = `<div class="ah-overlay" id="ahOverlay">${renderEstenderForm(row)}</div>`;
+  const overlay = document.getElementById('ahOverlay');
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeDetalhes(); });
+  root.querySelectorAll('[data-close-estender]').forEach((b) => b.addEventListener('click', closeDetalhes));
+  root.querySelector('[data-back-detalhes-estender]')?.addEventListener('click', () => openDetalhes(solicitacaoId));
+  document.getElementById('ahExtConfirm')?.addEventListener('click', () => confirmEstender(row));
+}
+
+async function confirmEstender(row) {
+  const errorBox = document.getElementById('ahExtErrorBox');
+  if (errorBox) errorBox.textContent = '';
+
+  const novoCheckout = document.getElementById('ahExtCheckout')?.value || '';
+  if (!novoCheckout || novoCheckout <= row.data_checkout) {
+    const msg = 'A nova data de check-out precisa ser depois da atual.';
+    if (errorBox) errorBox.textContent = msg;
+    toast(msg, 'err');
+    return;
+  }
+
+  const confirmBtn = document.getElementById('ahExtConfirm');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Salvando...'; }
+
+  const nights = nightsBetween(row.data_checkin, novoCheckout);
+  const novoTotal = Number(row.valor_diaria || 0) * nights;
+
+  const { error: reservaErr } = await supabase
+    .from('hospedagem_reservas')
+    .update({ data_checkout: novoCheckout, quantidade_diarias: nights, valor_total_previsto: novoTotal })
+    .eq('id', row.reserva_id);
+  if (reservaErr) {
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirmar extensão'; }
+    const msg = `Erro ao estender: ${reservaErr.message}`;
+    if (errorBox) errorBox.textContent = msg;
+    toast(msg, 'err');
+    return;
+  }
+
+  const solicitacaoIds = state.rows.filter((r) => r.reserva_id === row.reserva_id).map((r) => r.solicitacao_id);
+  if (solicitacaoIds.length) {
+    const { error: solErr } = await supabase
+      .from('hospedagem_solicitacoes')
+      .update({ data_checkout_prevista: novoCheckout })
+      .in('id', solicitacaoIds);
+    if (solErr) toast(`Aviso: reserva estendida, mas falhou ao atualizar alguma solicitação: ${solErr.message}`, 'err');
+  }
+
+  toast('Hospedagem estendida.');
   const solicitacaoId = row.solicitacao_id;
   await loadPainel();
   openDetalhes(solicitacaoId);
