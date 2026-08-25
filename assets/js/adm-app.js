@@ -14,6 +14,7 @@ const MOBILE_ADM_ITEMS = [
   { code: 'patrimonio', title: 'Patrimônios', group: 'Patrimônios', description: 'Consulta e controle administrativo de patrimônios.', path: 'adm-patrimonio', aliases: ['PATRIMONIO_ADM'] },
   { code: 'hotel', title: 'Hotéis', group: 'Hospedagem', description: 'Reservas, hospedagens e acompanhamento de hotéis.', path: 'adm-hotel#hoteis', aliases: ['ADM_HOTEL', 'HOTEL'] },
   { code: 'hotel_alojamentos', title: 'Alojamentos', group: 'Hospedagem', description: 'Controle de alojamentos e ocupações.', path: 'adm-hotel#alojamentos', aliases: ['ADM_HOTEL', 'HOTEL'] },
+  { code: 'financeiro_hospedagem', title: 'Hospedagem', group: 'Financeiro', description: 'Confirmação de pagamento dos lotes de check-out de hospedagem.', path: 'adm-hotel#financeiro', aliases: ['FINANCEIRO_HOSPEDAGEM'] },
   { code: 'rh_plantao', title: 'Plantão', group: 'RH', description: 'Escalas de plantão por setor e data.', path: 'plantao', aliases: ['RH_PLANTAO', 'PLANTAO'] },
   { code: 'frotas_multas', title: 'Multas', group: 'Frotas', description: 'Acompanhamento de multas, ações e pendências.', path: 'frotas-multas', aliases: ['MULTAS', 'FROTAS_MULTAS'] },
   { code: 'frotas_rastreadores', title: 'Rastreadores', group: 'Frotas', description: 'Instalações, remoções e histórico de rastreadores.', path: 'frotas-rastreadores', aliases: ['FROTAS_RASTREADORES', 'RASTREADORES'] },
