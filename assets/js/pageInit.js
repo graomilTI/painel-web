@@ -15,10 +15,11 @@ import './pwa-register.js?v=20260713-cache-v10';
 // Algumas páginas são compostas por vários módulos complementares ou ainda
 // executam boot próprio no topo do módulo. A navegação suave pode importar o
 // módulo e, ao mesmo tempo, chamar renderContent(), causando dois boots e duas
-// cargas concorrentes. Essas rotas usam navegação completa e versionada.
-const FULL_PAGE_RELEASES = new Map([
-  ['adm-hotel', '20260825-fase7-fix1'],
-  ['adm-logistica', '20260714-logistica-v4'],
+// cargas concorrentes. Essas rotas usam navegação completa; os módulos da
+// própria página já possuem versão para invalidação de cache.
+const FULL_PAGE_ROUTES = new Set([
+  'adm-hotel',
+  'adm-logistica',
 ]);
 
 function routeFromPath(pathname) {
@@ -31,6 +32,12 @@ function routeFromPath(pathname) {
 }
 
 function installFreshModuleNavigation() {
+  const currentUrl = new URL(window.location.href);
+  if (currentUrl.searchParams.has('_release')) {
+    currentUrl.searchParams.delete('_release');
+    window.history.replaceState(window.history.state, '', currentUrl.href);
+  }
+
   if (window.__freshModuleNavigationBound) return;
   window.__freshModuleNavigationBound = true;
 
@@ -57,15 +64,13 @@ function installFreshModuleNavigation() {
     if (url.origin !== window.location.origin) return;
 
     const route = routeFromPath(url.pathname);
-    const release = FULL_PAGE_RELEASES.get(route);
-    if (!release) return;
+    if (!FULL_PAGE_ROUTES.has(route)) return;
 
     const currentRoute = routeFromPath(window.location.pathname);
     const targetPathAndHash = `${url.pathname}${url.hash}`;
     const currentPathAndHash = `${window.location.pathname}${window.location.hash}`;
     if (route === currentRoute && targetPathAndHash === currentPathAndHash) return;
 
-    url.searchParams.set('_release', release);
     event.preventDefault();
     event.stopImmediatePropagation();
     window.location.assign(url.href);
