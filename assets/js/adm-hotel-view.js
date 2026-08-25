@@ -1,5 +1,5 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
-import { esc, brDate, money, statusLabel, tabGroup, STATUS_SOLICITACAO } from './adm-hotel-helpers.js';
+import { esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO } from './adm-hotel-helpers.js';
 
 const TABS = [
   { key: 'todas', label: 'Todas' },
@@ -138,6 +138,7 @@ export function renderDetalhes(row, quotes) {
   const colaboradores = String(row.colaboradores || '').split(',').map((s) => s.trim()).filter(Boolean);
   const quotesForRow = (quotes || []).filter((q) => q.solicitacao_id === row.solicitacao_id);
   const temReserva = Boolean(row.reserva_id);
+  const podeCotar = tabGroup(row) === 'solicitada';
   return `
     <div class="ah-modal">
       <div class="ah-modal-head">
@@ -176,23 +177,94 @@ export function renderDetalhes(row, quotes) {
           </div>
         ` : `<p class="ah-note">Ainda sem reserva — os detalhes de hotel e financeiro aparecem depois que uma reserva for criada.</p>`}
 
-        ${quotesForRow.length ? `
-          <div class="ah-field">
-            <label>Cotações enviadas</label>
-            <div class="ah-detail-list">
-              ${quotesForRow.map((q) => `
-                <div class="ah-detail-row">
-                  <span>${esc(q.hotel_nome || '—')} <span class="muted">· ${esc(q.status || '—')}</span></span>
-                  <span class="muted">${q.valor_diaria != null ? money(q.valor_diaria) : (q.status === 'RESPONDIDA' || q.status === 'INDISPONIVEL' ? 'sem valor' : 'aguardando')}</span>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
+        <div class="ah-field" id="ahCotacoesBox">
+          ${renderCotacoesSection(row, quotesForRow)}
+        </div>
       </div>
       <div class="ah-modal-foot">
+        ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : '<span></span>'}
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
       </div>
     </div>
+  `;
+}
+
+function quoteBadgeClass(status) {
+  if (status === 'RESPONDIDA') return 'ah-quote-ok';
+  if (status === 'INDISPONIVEL') return 'ah-quote-indisponivel';
+  if (status === 'FALHA') return 'ah-quote-falha';
+  return 'ah-quote-pendente';
+}
+
+export function renderCotacoesSection(row, quotesForRow) {
+  return `
+    <label>Cotações (${quotesForRow.length})</label>
+    ${quotesForRow.length ? `
+      <div class="ah-detail-list">
+        ${quotesForRow.slice().sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((q) => `
+          <div class="ah-quote-row ${q.selecionada ? 'ah-quote-selected' : ''}">
+            <div class="ah-quote-main">
+              <span class="ah-quote-hotel">${esc(q.hotel_nome || '—')}</span>
+              <span class="ah-quote-badge ${quoteBadgeClass(q.status)}">${esc(STATUS_COTACAO[q.status] || q.status || '—')}</span>
+              ${q.selecionada ? '<span class="ah-quote-badge ah-quote-selected-badge">Selecionada</span>' : ''}
+            </div>
+            <div class="ah-quote-meta muted">
+              ${q.valor_diaria != null ? `Diária ${money(q.valor_diaria)}` : ''}
+              ${q.valor_total != null ? ` · Total ${money(q.valor_total)}` : ''}
+              ${q.disponibilidade === false ? ' · sem disponibilidade' : ''}
+              ${q.resposta_texto ? ` · "${esc(q.resposta_texto).slice(0, 140)}"` : ''}
+            </div>
+            ${q.status === 'RESPONDIDA' && q.disponibilidade !== false && !q.selecionada ? `
+              <button class="btn btn-secondary ah-btn-sm ah-quote-use" data-use-quote="${esc(q.id)}" type="button">Usar esta cotação</button>
+            ` : ''}
+          </div>
+        `).join('')}
+      </div>
+    ` : '<p class="ah-note">Nenhuma cotação enviada ainda.</p>'}
+  `;
+}
+
+export function renderHoteisPicker(row, query) {
+  return `
+    <div class="ah-modal ah-picker">
+      <div class="ah-modal-head">
+        <div><h3>Cotar hotéis</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''} · ${brDate(row.data_checkin_prevista)} → ${brDate(row.data_checkout_prevista)}</p></div>
+        <button class="ah-modal-x" data-close-picker type="button">✕</button>
+      </div>
+      <div class="ah-modal-body">
+        <input type="text" class="ah-picker-search" id="ahPickerSearch" placeholder="Buscar por nome ou cidade..." value="${esc(query)}" autocomplete="off" />
+        <div id="ahPickerList" class="ah-picker-list"></div>
+      </div>
+      <div class="ah-modal-foot">
+        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes type="button">Voltar</button>
+        <button class="btn btn-primary ah-btn-sm" id="ahPickerConfirm" data-confirm-cotar type="button" disabled>Cotar em lote (0)</button>
+      </div>
+    </div>
+  `;
+}
+
+const PICKER_LIMIT = 60;
+
+export function renderPickerList(hotels, query, selectedIds) {
+  const q = normalizeText(query);
+  const filtered = q
+    ? hotels.filter((h) => normalizeText(h.nome).includes(q) || normalizeText(h.cidade).includes(q) || normalizeText(h.uf).includes(q))
+    : hotels;
+  if (filtered.length === 0) {
+    return '<div class="ah-empty">Nenhum hotel encontrado.</div>';
+  }
+  const shown = filtered.slice(0, PICKER_LIMIT);
+  const hint = filtered.length > PICKER_LIMIT
+    ? `<div class="ah-picker-hint muted">Mostrando ${PICKER_LIMIT} de ${filtered.length} — refine a busca para ver mais.</div>`
+    : '';
+  return `
+    ${shown.map((h) => `
+      <label class="ah-picker-item">
+        <input type="checkbox" data-hotel-id="${esc(h.id)}" ${selectedIds.has(h.id) ? 'checked' : ''} />
+        <span class="ah-picker-item-name">${esc(h.nome || '—')}</span>
+        <span class="ah-picker-item-meta muted">${esc(h.cidade || '—')}${h.uf ? `/${esc(h.uf)}` : ''}</span>
+      </label>
+    `).join('')}
+    ${hint}
   `;
 }
