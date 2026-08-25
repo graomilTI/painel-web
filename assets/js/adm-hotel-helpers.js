@@ -83,8 +83,41 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20260825-fase1';
+  link.href = './assets/css/adm-hotel.css?v=20260825-fase2';
   document.head.appendChild(link);
+}
+
+// status de public.hospedagem_cotacoes — vocabulário real confirmado no banco
+// (webhook hospedagem-whatsapp-webhook grava RESPONDIDA/INDISPONIVEL na resposta).
+export const STATUS_COTACAO = {
+  PENDENTE: 'Pendente',
+  ENVIADA: 'Enviada',
+  FALHA: 'Falha no envio',
+  RESPONDIDA: 'Respondida',
+  INDISPONIVEL: 'Indisponível',
+};
+
+// Mesmo texto usado pelo módulo antigo (confirmado em cotações reais já
+// enviadas no banco) — o webhook de resposta só casa por telefone, então o
+// texto em si não precisa carregar um código, mas mantém o formato que os
+// hotéis já reconhecem.
+export function buildCotacaoMessage(row) {
+  const checkin = brDate(row.data_checkin_prevista);
+  const checkout = brDate(row.data_checkout_prevista);
+  const cidade = [row.cidade, row.uf].filter(Boolean).join('/');
+  return [
+    'Olá! A Grão 1000 solicita uma cotação de hospedagem.',
+    '',
+    `Solicitação: ${row.solicitacao_id}`,
+    `Cidade: ${cidade || '—'}`,
+    `Check-in: ${checkin}`,
+    `Check-out: ${checkout}`,
+    `Pessoas: ${row.total_colaboradores ?? 1}`,
+    'Quartos: A definir',
+    `Diárias previstas: ${row.quantidade_diarias_prevista ?? 1}`,
+    '',
+    'Por favor, informe disponibilidade, valor das diárias, valor total, café da manhã, estacionamento e se aceita pagamento no checkout.',
+  ].join('\n');
 }
 
 let toastTimer = null;
