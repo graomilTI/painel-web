@@ -49,9 +49,8 @@ function pushUniforme(c){
   if(!key) return;
   if(!state.uniformes.some(x=>colaboradorKey(x)===key)) state.uniformes.push(c);
 }
-function isClassificador(c){ return norm(`${c.tipo||''} ${c.cargo||''}`).includes('classificador'); }
 function uniformeCorOptions(value){
-  return ['Cinza','Verde'].map(c=>`<option value="${c}"${norm(c)===norm(value)?' selected':''}>${c}</option>`).join('');
+  return ['Verde','Cinza'].map(c=>`<option value="${c}"${norm(c)===norm(value)?' selected':''}>${c}</option>`).join('');
 }
 function uniformeTamanhoOptions(value){
   return UNIFORME_TAMANHOS.map(t=>`<option value="${t}"${t===value?' selected':''}>${t}</option>`).join('');
@@ -386,7 +385,7 @@ function renderItensList(){
   });
 }
 function uniformRow(c){
-  const cor=c._uniformeCor||(isClassificador(c)?'Verde':'Cinza');
+  const cor=c._uniformeCor||'Verde';
   const tamanho=c._uniformeTamanho||'M';
   const qtd=Math.min(2,Math.max(1,Number(c._uniformeQtd||1)));
   return `<tr class="cmp-uniforme-row" data-uniforme-id="${esc(colaboradorKey(c))}"><td data-label="Colaborador"><strong>${esc(c.nome)}</strong></td><td data-label="Função/tipo">${esc(c.tipo||c.cargo||'-')}</td><td data-label="Cor"><select class="uni-cor" aria-label="Cor do uniforme de ${esc(c.nome)}">${uniformeCorOptions(cor)}</select></td><td data-label="Tamanho"><select class="uni-tam" aria-label="Tamanho do uniforme de ${esc(c.nome)}">${uniformeTamanhoOptions(tamanho)}</select></td><td data-label="Un."><input class="uni-qtd" aria-label="Unidades para ${esc(c.nome)}" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></td><td class="cmp-row-action"><button class="btn btn-small btn-danger" aria-label="Remover ${esc(c.nome)}" type="button" data-del-uniforme>×</button></td></tr>`;
@@ -416,7 +415,7 @@ function addAllColaboradores(ctx){
     return campos.some(campo=>[...escopos].some(escopo=>campo===escopo || campo.startsWith(`${escopo} `) || escopo.startsWith(`${campo} `)));
   });
   if(!escopos.size){ setMsg('cmpFeedback','Seu usuário não possui uma regional cadastrada. Solicite o ajuste do cadastro.',true); return; }
-  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:isClassificador(c)?'Verde':'Cinza',_uniformeQtd:1}));
+  state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:'Verde',_uniformeQtd:1}));
   renderUniformes();
   setMsg('cmpFeedback',base.length?`${state.uniformes.length} colaborador(es) da regional adicionados.`:'Nenhum colaborador ativo foi encontrado para a sua regional.',!base.length);
 }
@@ -428,7 +427,7 @@ function setupColabSearch(){
     const q=norm(input.value); if(q.length<2){box.innerHTML='';return;}
     const list=dedupeColaboradores(state.colaboradores.filter(c=>norm(c.nome).includes(q))).slice(0,10);
     box.innerHTML=list.map(c=>`<button type="button" data-add-colab="${esc(colaboradorKey(c))}">${esc(c.nome)} <small>${esc(c.tipo||c.cargo||'')}</small></button>`).join('');
-    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ selecionado=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab)||null; if(!selecionado)return; input.value=selecionado.nome; document.getElementById('cmpUniCor').value=isClassificador(selecionado)?'Verde':'Cinza'; box.innerHTML=''; });
+    box.querySelectorAll('[data-add-colab]').forEach(btn=>btn.onclick=()=>{ selecionado=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.addColab)||null; if(!selecionado)return; input.value=selecionado.nome; document.getElementById('cmpUniCor').value='Verde'; box.innerHTML=''; });
   });
   document.getElementById('cmpAddUniforme').onclick=()=>{
     if(!selecionado){ setMsg('cmpFeedback','Selecione um colaborador pelo nome antes de adicionar.',true); return; }
@@ -520,7 +519,7 @@ async function submitItens(ctx, overrideItems=null){
 }
 async function submitUniformes(ctx){
   const rows=[...document.querySelectorAll('[data-uniforme-id]')];
-  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||(isClassificador(c)?'Verde':'Cinza')}; });
+  const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||'Verde'}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
   return itens;
@@ -543,7 +542,7 @@ function solicitacaoUniformeEditavel(s){
 function historyUniformeItem(item, editavel){
   const qtd=Math.min(2,Math.max(1,Number(item.quantidade||item.unidade||1)));
   if(!editavel) return `<div class="cmp-history-uniforme"><strong>${esc(item.colaborador_nome||'Colaborador')}</strong><span>${qtd} un · ${esc(item.uniforme_cor||'-')} · Tam. ${esc(item.tamanho||'-')}</span></div>`;
-  return `<div class="cmp-history-uniforme is-editable" data-edit-uniforme="${esc(item.id)}"><div class="cmp-history-person"><strong>${esc(item.colaborador_nome||'Colaborador')}</strong><small>${esc(item.colaborador_tipo||'')}</small></div><label><span>Cor</span><select class="hist-uni-cor">${uniformeCorOptions(item.uniforme_cor||'Cinza')}</select></label><label><span>Tamanho</span><select class="hist-uni-tam">${uniformeTamanhoOptions(item.tamanho||'M')}</select></label><label><span>Un.</span><input class="hist-uni-qtd" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></label><button class="btn btn-small btn-secondary" type="button" data-save-uniforme>Salvar</button></div>`;
+  return `<div class="cmp-history-uniforme is-editable" data-edit-uniforme="${esc(item.id)}"><div class="cmp-history-person"><strong>${esc(item.colaborador_nome||'Colaborador')}</strong><small>${esc(item.colaborador_tipo||'')}</small></div><label><span>Cor</span><select class="hist-uni-cor">${uniformeCorOptions(item.uniforme_cor||'Verde')}</select></label><label><span>Tamanho</span><select class="hist-uni-tam">${uniformeTamanhoOptions(item.tamanho||'M')}</select></label><label><span>Un.</span><input class="hist-uni-qtd" type="number" inputmode="numeric" min="1" max="2" value="${qtd}"></label><button class="btn btn-small btn-secondary" type="button" data-save-uniforme>Salvar</button></div>`;
 }
 async function salvarUniformeAberto(button){
   const box=button.closest('[data-edit-uniforme]');
@@ -638,7 +637,7 @@ async function renderSolicitacaoTab(content, userContext){
       <p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p>
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
-    <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option>Verde</option><option selected>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
