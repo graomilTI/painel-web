@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 let applying = false;
 
@@ -176,7 +177,7 @@ async function saveWithoutDuplicate(event) {
     setTimeout(() => window.location.reload(), 600);
   } catch (error) {
     if (feedback) {
-      feedback.textContent = error?.message || 'Não foi possível salvar o material.';
+      feedback.textContent = await mensagemFalhaSalvar(error, error?.message || 'Não foi possível salvar o material.');
       feedback.className = 'stk-feedback err';
     }
   }
