@@ -22,7 +22,7 @@ function normalizeKey(value: unknown) {
   return asString(value)
     .toUpperCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^A-Z0-9_]/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "");
@@ -39,11 +39,13 @@ function normalizeText(value: unknown) {
 function normalizeNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  const cleaned = asString(value).replace(/[^0-9,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  const cleaned = asString(value)
+    .replace(/[^0-9,.-]/g, "")
+    .replace(/\.(?=\d{3}(\D|$))/g, "")
+    .replace(",", ".");
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
-
 
 function decodeHtml(value: unknown) {
   return asString(value)
@@ -93,7 +95,11 @@ function parseHtmlTableRows(htmlValue: unknown): any[] {
       const normalizedHeaders = values.map((v, idx) => v || `COLUNA_${idx + 1}`);
       const hasKnownHeader = normalizedHeaders.some((h) => {
         const k = normalizeKey(h);
-        return ["DATA", "FECHA", "HORA", "PLACA", "MOTORISTA", "VELOCIDADE", "VELOCIDAD", "ENDERECO", "LATITUDE", "LONGITUDE", "VER_MAPA"].includes(k);
+        return [
+          "DATA", "FECHA", "HORA", "PLACA", "MOTORISTA", "CONDUCTOR",
+          "VELOCIDADE", "VELOCIDAD", "ENDERECO", "DOMICILIO",
+          "LATITUDE", "LONGITUDE", "VER_MAPA",
+        ].includes(k);
       });
       if (hasKnownHeader) {
         headers = normalizedHeaders;
@@ -102,21 +108,18 @@ function parseHtmlTableRows(htmlValue: unknown): any[] {
     }
 
     if (!headers.length) {
-      // Alguns retornos vêm apenas com <tbody>, sem <thead>. Quando a quantidade de colunas
-      // bate com o relatório de Excesso de velocidade, aplicamos o cabeçalho padrão.
       if (values.length >= 10) {
         headers = ["Data", "Hora", "Alerta", "Ativo", "Placa", "Motorista", "Velocidade", "Endereco", "Latitude", "Longitude", "Ver mapa"];
       } else {
         continue;
       }
     }
+
     const obj: Record<string, string> = {};
     headers.forEach((h, idx) => {
-      obj[h] = values[idx] || "";
-      if (normalizeKey(h) === "VER_MAPA") {
-        const link = extractLinkFromHtml(cells[idx] || "");
-        if (link) obj[h] = link;
-      }
+      const cell = cells[idx] || "";
+      const key = normalizeKey(h);
+      obj[h] = key.startsWith("VER_MAPA") ? (extractLinkFromHtml(cell) || stripHtml(cell)) : stripHtml(cell);
     });
 
     const looksLikeData = Object.values(obj).some(Boolean) && (
@@ -147,8 +150,15 @@ function toIsoDate(value: unknown) {
     return `${y}-${pad2(Number(br[2]))}-${pad2(Number(br[1]))}`;
   }
   const dt = new Date(raw);
-  if (!Number.isNaN(dt.getTime())) return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  if (!Number.isNaN(dt.getTime())) {
+    return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  }
   return null;
+}
+
+function toBfleetDate(value: unknown) {
+  const iso = toIsoDate(value);
+  return iso ? iso.split("-").reverse().join("/") : asString(value);
 }
 
 function parseTimeText(value: unknown) {
@@ -188,9 +198,14 @@ function rowsFromArrayMatrix(rows: any[], columns: any): any[] {
     headers = ["Data", "Hora", "Alerta", "Ativo", "Placa", "Motorista", "Velocidade", "Endereco", "Latitude", "Longitude", "Ver mapa"];
   }
   if (!headers.length) return [];
+
   return rows.map((arr: any[]) => {
     const obj: Record<string, string> = {};
-    headers.forEach((h, idx) => obj[h] = stripHtml(arr[idx] ?? ""));
+    headers.forEach((h, idx) => {
+      const cell = arr[idx] ?? "";
+      const key = normalizeKey(h);
+      obj[h] = key.startsWith("VER_MAPA") ? (extractLinkFromHtml(cell) || stripHtml(cell)) : stripHtml(cell);
+    });
     return obj;
   });
 }
@@ -198,14 +213,11 @@ function rowsFromArrayMatrix(rows: any[], columns: any): any[] {
 function extractRows(payload: any): any[] {
   if (!payload) return [];
 
-  // Alguns ambientes do OnReports devolvem o campo result/message como string JSON ou HTML.
   if (typeof payload === "string") {
     const raw = payload.trim();
     if (!raw) return [];
-
     const htmlRows = parseHtmlTableRows(raw);
     if (htmlRows.length) return htmlRows;
-
     try {
       return extractRows(JSON.parse(raw));
     } catch {
@@ -263,12 +275,11 @@ function extractRows(payload: any): any[] {
       if (nested.length) return nested;
       continue;
     }
-    if (Array.isArray(item)) return Array.isArray(item[0]) ? rowsFromArrayMatrix(item, payload.data?.columns || payload.columns) : item;
+    if (Array.isArray(item)) {
+      return Array.isArray(item[0]) ? rowsFromArrayMatrix(item, payload.data?.columns || payload.columns) : item;
+    }
     if (item && typeof item === "object") {
       const values = Object.values(item);
-
-      // Caso padrão do OnReports quando result vem como objeto indexado:
-      // { "0": {...}, "1": {...} }
       if (values.length && values.every((v) => v && typeof v === "object" && !Array.isArray(v))) {
         const looksLikeRows = values.some((v: any) => {
           const keys = Object.keys(v || {}).map(normalizeKey);
@@ -276,11 +287,11 @@ function extractRows(payload: any): any[] {
         });
         if (looksLikeRows) return values;
       }
-
       const nested = extractRows(item);
       if (nested.length) return nested;
     }
   }
+
   return [];
 }
 
@@ -302,10 +313,11 @@ function buildHash(row: any) {
 
 async function loadIntegrationSecrets(supabase: any) {
   const cfg: Record<string, string> = {};
-  const { data: integrations } = await supabase
+  const { data: integrations, error: integrationsError } = await supabase
     .from("ti_integracoes")
     .select("id,nome,codigo,base_url,auth_url,ativo")
     .eq("ativo", true);
+  if (integrationsError) throw integrationsError;
 
   const bfleetIntegrations = (integrations || []).filter((item: any) => {
     const code = normalizeKey(`${item?.codigo || ""} ${item?.nome || ""}`);
@@ -315,21 +327,23 @@ async function loadIntegrationSecrets(supabase: any) {
   for (const integ of bfleetIntegrations) {
     if (integ.base_url) cfg.API_BASE = asString(integ.base_url);
     if (integ.auth_url) cfg.AUTH_URL = asString(integ.auth_url);
-    const { data: secrets } = await supabase
+    const { data: secrets, error: secretsError } = await supabase
       .from("ti_integracao_segredos")
       .select("chave,valor,ativo")
       .eq("integracao_id", integ.id)
       .eq("ativo", true);
+    if (secretsError) throw secretsError;
     for (const secret of secrets || []) {
       const k = normalizeKey(secret.chave);
       if (k) cfg[k] = asString(secret.valor);
     }
   }
+
   return cfg;
 }
 
 async function buildConfig(supabase: any, requestBody: any = {}) {
-  const secrets = await loadIntegrationSecrets(supabase).catch(() => ({}));
+  const secrets = await loadIntegrationSecrets(supabase).catch(() => ({} as Record<string, string>));
   const env = (key: string) => Deno.env.get(key) || "";
   const get = (...keys: string[]) => {
     for (const key of keys) {
@@ -339,8 +353,7 @@ async function buildConfig(supabase: any, requestBody: any = {}) {
     }
     return "";
   };
-  const today = new Date();
-  const from = new Date(today.getTime() - 1000 * 60 * 60 * 24 * Number(get("BFLEET_DIAS_SYNC", "DIAS_SYNC") || 7));
+
   return {
     baseUrl: get("BFLEET_API_BASE", "API_BASE", "BASE_URL").replace(/\/$/, ""),
     authUrl: get("BFLEET_AUTH_URL", "AUTH_URL"),
@@ -348,12 +361,16 @@ async function buildConfig(supabase: any, requestBody: any = {}) {
     username: get("BFLEET_USERNAME", "USERNAME"),
     password: get("BFLEET_PASSWORD", "PASSWORD"),
     token: get("BFLEET_TOKEN", "TOKEN"),
-    reportId: requestBody?.reportId || requestBody?.report_id || get("BFLEET_REPORT_ID", "ID_RELATORIO_EXCESSO_VELOCIDADE", "IDRELATORIOSALVO", "ID_RELATORIO_SALVO", "RELATORIO_EXCESSO_ID", "REPORT_ID"),
-    // No OnReports, quando o relatório usa marcador relativo (ex.: yesterday), Data Inicial/Data Final ficam vazias mesmo.
-    // A consulta do resultado programado não deve depender dessas datas.
+    reportId: requestBody?.reportId || requestBody?.report_id || get(
+      "BFLEET_REPORT_ID",
+      "ID_RELATORIO_EXCESSO_VELOCIDADE",
+      "IDRELATORIOSALVO",
+      "ID_RELATORIO_SALVO",
+      "RELATORIO_EXCESSO_ID",
+      "REPORT_ID",
+    ) || "85055",
     dataInicial: requestBody?.dataInicial || requestBody?.data_inicial || requestBody?.startDate || requestBody?.start_date || get("DATA_INICIAL", "BFLEET_DATA_INICIAL") || "",
     dataFinal: requestBody?.dataFinal || requestBody?.data_final || requestBody?.endDate || requestBody?.end_date || get("DATA_FINAL", "BFLEET_DATA_FINAL") || "",
-    rangeTimeId: requestBody?.rangeTimeId || requestBody?.range_time_id || get("RANGO_TIEMPO_ID", "RANGE_TIME_ID", "RANGO_TEMPO_ID", "PERIODO_RAPIDO"),
     rangeTimeVal: requestBody?.rangeTimeVal || requestBody?.range_time_val || get("RANGO_TIEMPO_VAL", "RANGE_TIME_VAL", "RANGO_TEMPO_VAL", "PERIODO_RAPIDO_VAL") || "yesterday",
     webBaseUrl: (requestBody?.webBaseUrl || requestBody?.web_base_url || get("BFLEET_WEB_BASE", "WEB_BASE", "REPORTS_BASE", "RELATORIOS_BASE") || "https://relatorios.bfleet.com.br").replace(/\/$/, ""),
     webCookie: requestBody?.webCookie || requestBody?.web_cookie || get("BFLEET_WEB_COOKIE", "WEB_COOKIE", "RELATORIOS_COOKIE"),
@@ -361,358 +378,138 @@ async function buildConfig(supabase: any, requestBody: any = {}) {
     webUsername: requestBody?.webUsername || requestBody?.web_username || get("BFLEET_WEB_USERNAME", "WEB_USERNAME", "RELATORIOS_USERNAME") || get("BFLEET_USERNAME", "USERNAME"),
     webPassword: requestBody?.webPassword || requestBody?.web_password || get("BFLEET_WEB_PASSWORD", "WEB_PASSWORD", "RELATORIOS_PASSWORD") || get("BFLEET_PASSWORD", "PASSWORD"),
     webLang: requestBody?.webLang || requestBody?.web_lang || get("BFLEET_WEB_LANG", "WEB_LANG") || "pt",
-    preferWebReport: requestBody?.preferWebReport !== false,
-    autoLoginWeb: requestBody?.autoLoginWeb !== false,
   };
-}
-
-async function fetchJson(url: string, init: RequestInit, label: string) {
-  const res = await fetch(url, init);
-  const text = await res.text();
-  let payload: any = null;
-  try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-  if (!res.ok) throw new Error(`${label}: HTTP ${res.status} ${String(text || "").slice(0, 400)}`);
-  return payload;
-}
-
-async function getToken(cfg: any) {
-  if (cfg.token) return cfg.token;
-  if (!cfg.baseUrl && !cfg.authUrl) throw new Error("Configure API_BASE ou AUTH_URL da BFleet.");
-  if (!cfg.username || !cfg.password) throw new Error("Configure USERNAME e PASSWORD da BFleet.");
-
-  const authUrls = Array.from(new Set([
-    cfg.authUrl,
-    `${cfg.baseUrl}/auth/login`,
-    `${cfg.baseUrl}/api/auth/login`,
-    `${cfg.baseUrl}/api/v1/auth/login`,
-    `${cfg.baseUrl}/login`,
-    `${cfg.baseUrl}/api/login`,
-  ].filter(Boolean)));
-
-  const bodies = [
-    { username: cfg.username, password: cfg.password, apiKey: cfg.apiKey },
-    { userName: cfg.username, password: cfg.password, apiKey: cfg.apiKey },
-    { login: cfg.username, senha: cfg.password, apiKey: cfg.apiKey },
-    { email: cfg.username, password: cfg.password, apiKey: cfg.apiKey },
-  ];
-
-  let last = "";
-  for (const url of authUrls) {
-    for (const body of bodies) {
-      try {
-        const payload = await fetchJson(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            ...(cfg.apiKey ? { "x-api-key": cfg.apiKey, apikey: cfg.apiKey, Authorization: cfg.apiKey } : {}),
-          },
-          body: JSON.stringify(body),
-        }, "Autenticação BFleet");
-        const token = payload?.token || payload?.access_token || payload?.accessToken || payload?.jwt || payload?.data?.token || payload?.resultado?.token;
-        if (token) return String(token);
-      } catch (err) {
-        last = err instanceof Error ? err.message : String(err);
-      }
-    }
-  }
-  throw new Error(`Não foi possível autenticar na BFleet. Último retorno: ${last}`);
 }
 
 function joinUrl(base: string, path: string) {
   return `${String(base || "").replace(/\/+$/, "")}/${String(path || "").replace(/^\/+/, "")}`;
 }
 
-function getOnReportsEndpoint(baseUrl: string) {
-  const base = String(baseUrl || "").replace(/\/+$/, "");
-  if (/\/api\/v1$/i.test(base)) return joinUrl(base, "/onreports/getScheduledReportResult");
-  if (/\/api\/v1\/onreports$/i.test(base)) return joinUrl(base, "/getScheduledReportResult");
-  return joinUrl(base, "/api/v1/onreports/getScheduledReportResult");
+async function fetchWithRetry(url: string, init: RequestInit, attempts = 3) {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, init);
+      if (![502, 503, 504].includes(response.status) || attempt === attempts) return response;
+      try { await response.body?.cancel(); } catch { /* descartada antes da nova tentativa */ }
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+  }
+  throw lastError instanceof Error ? lastError : new Error("Falha ao conectar à BFleet.");
 }
-
-function payloadDiagnostic(payload: any) {
-  const message = payload?.data?.message ?? payload?.message ?? payload?.data?.mensaje ?? payload?.mensaje ?? "";
-  return {
-    status: payload?.status ?? payload?.data?.status ?? null,
-    headers: payload?.headers ?? payload?.data?.headers ?? null,
-    topKeys: payload && typeof payload === "object" ? Object.keys(payload).slice(0, 20) : [],
-    dataKeys: payload?.data && typeof payload.data === "object" ? Object.keys(payload.data).slice(0, 20) : [],
-    resultType: typeof payload?.data?.result,
-    resultIsArray: Array.isArray(payload?.data?.result),
-    resultKeys: payload?.data?.result && typeof payload.data.result === "object" ? Object.keys(payload.data.result).slice(0, 20) : [],
-    messageType: typeof message,
-    messagePreview: typeof message === "string" ? stripHtml(message).slice(0, 500) : JSON.stringify(message || {}).slice(0, 500),
-    messageHasTable: typeof message === "string" ? /<table|<tr|<td|<th/i.test(message) : false,
-  };
-}
-
-const DEFAULT_BFLEET_WEB_DATAJSON: any = {
-  "prefix": "",
-  "caja_multisel_grupos": {
-    "18283": "MATO GROSSO MT1",
-    "19296": "MATOPIPA",
-    "19297": "MATO GROSSO MT2",
-    "19299": "MATO GROSSO MT4",
-    "19300": "MATO GROSSO MT3 CONFRESA",
-    "19634": "PONTA GROSSA",
-    "19659": "MARINGA",
-    "20132": "MOTORISTAS",
-    "20134": "VEICULOS",
-    "20175": "MINAS GERAIS",
-    "20268": "CASCAVEL",
-    "20306": "MATO GROSSO MT3 QUERENCIA",
-    "20309": "LOG 1000",
-    "20310": "LONDRINA",
-    "20311": "GOIAS",
-    "20312": "BAHIA",
-    "20313": "RIO GRANDE DO SUL",
-    "20314": "MATO GROSSO DO SUL",
-    "20315": "ADMINISTRATIVO GERAL",
-    "20320": "SAO PAULO"
-  },
-  "caja_multisel_activos": {
-    "455421": "GOL 10L MC4  BED6F03",
-    "455424": "GOL 10  NPD1I84",
-    "455427": "GOL 16 CITY  OHS2H79",
-    "455448": "UNO  ISV4E98",
-    "455450": "ARGO  SEH3F18",
-    "459937": "MOBI LIKE  SHE2I37",
-    "459938": "PALIO FIRE  AYQ8H95",
-    "465025": "PALIO FIRE ECONOM  OGH1C33",
-    "465030": "UNO VIVACE 10  FHY6B76",
-    "465032": "MOBI DRIVE  BCD6D46",
-    "465067": "GOL 16L MB5  RFU7C08",
-    "467877": "FIESTA 16 FLEX  ASC8F72",
-    "468218": "DUSTER ZEN 16  RMQ4E96",
-    "472561": "SEH5J54  ARGO 10",
-    "473361": "ARGO 10  SER7B78",
-    "474189": "MOBI TREKKING 10MT  SYH0E81",
-    "474192": "MOBI LIKE  SYO2E24",
-    "474193": "MOBI LIKE  SYO2E31",
-    "474196": "MOBI TREKKING 10MT  SYH2H43",
-    "474210": "MOBI LIKE  TCA6D61",
-    "476281": "MOBI LIKE  RVD6B57",
-    "477102": "ARGO  SEH5J50",
-    "477916": "PALIO FIRE  AYD2I82",
-    "478418": "MOBI LIKE  RVQ6J42",
-    "480656": "MOBI LIKE  RNM8A57",
-    "481713": "MOBI LIKE  TCA6C76",
-    "481716": "MOBI LIKE  TCA6C80",
-    "481718": "MOBI LIKE  SIC8C02",
-    "482527": "MOBI LIKE  RTW0E56",
-    "482534": "MOBI LIKE  SIY4H03",
-    "482544": "MOBI LIKE  RVH7H48",
-    "482547": "MOBI LIKE  SIB5J70",
-    "482605": "MOBI LIKE  RVN7E53",
-    "482839": "UNO MILLE ECONOMY  AVH4I98",
-    "482936": "ARGO 10  SEH3F15",
-    "483760": "GOL 10  AVM4B26",
-    "484004": "ARGO DRIVE 10  RUP8A61",
-    "485335": "MOBI LIKE  RVL5I83",
-    "485544": "MOBI LIKE  SYD4H65",
-    "487142": "ONIX 14MT LTZ  BBD3H56",
-    "487201": "GOL 10  HOG7C22",
-    "488142": "MOBI LIKE  RUW5B41",
-    "489267": "MOBI LIKE  SHV7F36",
-    "492843": "NOVO GOL 10 CITY  IVK9B59",
-    "495101": "MOBI LIKE  RTV3A15",
-    "495103": "UNO VIVACE 10  OWI1D91",
-    "496368": "GOL 16  NWK7A56",
-    "498467": "NOVO GOL 10 CITY  FMQ6B31",
-    "498596": "MOBI LIKE  RUU6D98",
-    "499579": "UNO WAY 10 E  GIX4I64",
-    "500731": "MOBI LIKE  SYD4H57",
-    "502909": "KWID ZEN 10MT  BDT8I72",
-    "503894": "UNO DRIVE 10  BCP4I83",
-    "504225": "ARGO 10  SEH5J61",
-    "506832": "ATTRACTIVE 10  BCS8H67",
-    "507273": "KWID ZEN 10MT  BXZ7I02",
-    "507275": "UNO ATTRACTIVE 10  BCS8I07",
-    "507528": "MOBI LIKE  EXG1A71",
-    "508329": "KWID ZEN 10MT  BDV5B79",
-    "508331": "ARGO DRIVE 10  RUO4J65",
-    "509294": "ARGO DRIVE 13  PBJ0B58",
-    "509325": "DUSTER ZEN 16  RMS1E45"
-  },
-  "idreporte": "11",
-  "fecha_inicio": "08/05/2026",
-  "fecha_fin": "10/05/2026",
-  "hora_inicio": "00:00:00",
-  "hora_fin": "23:59:59",
-  "sino_mostrar_pestanias_excel": "0",
-  "reporte_detallado": "0",
-  "reporte_descartar_excesos": "0",
-  "filter_velocidad": "120",
-  "tiempo_velocidad_maxima": "0",
-  "caja_multisel_columnas": {
-    "Fecha": "Fecha",
-    "Hora": "Hora",
-    "Alerta": "Alerta",
-    "VEHICULO-IdVehiculo": "Activo",
-    "VEHICULO-Patente": "Placa",
-    "CONDUCTOR-IdConductor": "Conductor",
-    "Velocidad": "Velocidad",
-    "Domicilio": "Direccion",
-    "Latitud": "Latitud",
-    "Longitud": "Longitud",
-    "link_gm": "Ver mapa"
-  },
-  "caja_multisel_formato_adjunto": {
-    "XLS": "Anexo em XLS"
-  },
-  "graficar_reporte": "0",
-  "guardar_reporte": "1",
-  "usuario_reporte": "0",
-  "incluir_cercas_lugares": "0",
-  "enviar_reporte": "0",
-  "rdb_montly_report": "0",
-  "nombre_guardar": "Excessos de velocidade",
-  "url_destino": ""
-};
-
-function getBfleetCookie(cfg: any) {
-  const full = asString(cfg.webCookie);
-  if (full) return full;
-  const session = asString(cfg.phpSessionId);
-  return session ? `PHPSESSID=${session}` : "";
-}
-
 
 function getSetCookieHeaders(headers: Headers) {
-  const anyHeaders = headers as any;
-  if (typeof anyHeaders.getSetCookie === "function") {
-    const values = anyHeaders.getSetCookie();
-    if (Array.isArray(values) && values.length) return values.map(String);
-  }
+  const extended = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof extended.getSetCookie === "function") return extended.getSetCookie().map(String);
   const single = headers.get("set-cookie");
   return single ? [single] : [];
 }
 
-function extractPhpSessionFromSetCookie(setCookies: string[]) {
-  for (const cookie of setCookies || []) {
-    const m = String(cookie).match(/PHPSESSID=([^;\s]+)/i);
-    if (m?.[1]) return m[1];
+function mergeCookieHeader(current: string, setCookies: string[]) {
+  const jar = new Map<string, string>();
+  for (const pair of asString(current).split(/;\s*/)) {
+    const separator = pair.indexOf("=");
+    if (separator > 0) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
   }
-  return "";
+  for (const setCookie of setCookies) {
+    const pair = asString(setCookie).split(";", 1)[0];
+    const separator = pair.indexOf("=");
+    if (separator > 0) jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+  }
+  return Array.from(jar.entries()).map(([name, value]) => `${name}=${value}`).join("; ");
 }
 
-async function loginBfleetWeb(cfg: any) {
-  if (!cfg.autoLoginWeb) return "";
+function configuredWebCookie(cfg: any) {
+  if (asString(cfg.webCookie)) return asString(cfg.webCookie);
+  return asString(cfg.phpSessionId) ? `PHPSESSID=${asString(cfg.phpSessionId)}` : "";
+}
+
+function looksLikeLoginPage(text: string) {
+  return /name=["']nick["']|name=["']passwd["']|id=["']btnLogin["']/i.test(text);
+}
+
+async function resolveWebCookie(cfg: any) {
   const username = asString(cfg.webUsername);
   const password = asString(cfg.webPassword);
-  if (!username || !password) return "";
+  const fallback = configuredWebCookie(cfg);
+  if (!username || !password) {
+    if (!fallback) throw new Error("Credenciais web da BFleet não configuradas.");
+    return fallback;
+  }
 
-  const webBase = cfg.webBaseUrl || "https://relatorios.bfleet.com.br";
-  const loginUrl = joinUrl(webBase, "/login");
-  const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+  const base = cfg.webBaseUrl || "https://relatorios.bfleet.com.br";
+  const loginUrl = joinUrl(base, "/login");
+  const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome Safari";
+  let cookie = fallback;
 
-  let session = "";
-
-  // Primeiro abre a tela de login para o servidor criar uma sessão inicial.
   try {
-    const pre = await fetch(loginUrl, {
+    const pre = await fetchWithRetry(loginUrl, {
       method: "GET",
       redirect: "manual",
-      headers: {
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9",
-        "User-Agent": userAgent,
-      },
+      headers: { Accept: "text/html", "User-Agent": userAgent },
     });
-    session = extractPhpSessionFromSetCookie(getSetCookieHeaders(pre.headers));
+    cookie = mergeCookieHeader(cookie, getSetCookieHeaders(pre.headers));
   } catch {
-    // Se a abertura inicial falhar, ainda tentamos o POST direto.
+    // O POST ainda pode funcionar sem a sessão inicial.
   }
 
-  const body = new URLSearchParams();
-  body.set("nick", username);
-  body.set("passwd", password);
-  body.set("cbLang", asString(cfg.webLang || "pt") || "pt");
+  const body = new URLSearchParams({
+    nick: username,
+    passwd: password,
+    cbLang: asString(cfg.webLang || "pt") || "pt",
+  });
 
-  const loginHeaders: Record<string, string> = {
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-    "Accept-Language": "pt-BR,pt;q=0.9",
-    "Cache-Control": "no-cache",
-    "Content-Type": "application/x-www-form-urlencoded",
-    Origin: webBase,
-    Pragma: "no-cache",
-    Referer: loginUrl,
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Fetch-User": "?1",
-    "Upgrade-Insecure-Requests": "1",
-    "User-Agent": userAgent,
-  };
-  if (session) loginHeaders.Cookie = `PHPSESSID=${session}`;
-
-  const res = await fetch(loginUrl, {
+  const res = await fetchWithRetry(loginUrl, {
     method: "POST",
     redirect: "manual",
-    headers: loginHeaders,
+    headers: {
+      Accept: "text/html,application/xhtml+xml",
+      "Content-Type": "application/x-www-form-urlencoded",
+      Origin: base,
+      Referer: loginUrl,
+      "User-Agent": userAgent,
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
     body: body.toString(),
   });
+  cookie = mergeCookieHeader(cookie, getSetCookieHeaders(res.headers));
 
-  const postSession = extractPhpSessionFromSetCookie(getSetCookieHeaders(res.headers));
-  if (postSession) session = postSession;
+  if (!cookie) throw new Error(`Login BFleet não retornou cookie de sessão. HTTP ${res.status}.`);
 
-  // Algumas instalações mantêm o mesmo PHPSESSID do GET e apenas autenticam essa sessão.
-  if (!session) {
-    const fallbackCookie = getBfleetCookie(cfg);
-    const m = fallbackCookie.match(/PHPSESSID=([^;\s]+)/i);
-    if (m?.[1]) session = m[1];
-  }
-
-  if (!session) {
-    const preview = await res.text().catch(() => "");
-    throw new Error(`Login web BFleet não retornou PHPSESSID. HTTP ${res.status}. Prévia: ${stripHtml(preview).slice(0, 300)}`);
-  }
-
-  return `PHPSESSID=${session}`;
-}
-
-async function resolveBfleetWebCookie(cfg: any) {
-  // Quando usuário/senha web estão configurados, renovamos o PHPSESSID a cada sincronização.
-  const loggedCookie = await loginBfleetWeb(cfg).catch((err) => {
-    const staticCookie = getBfleetCookie(cfg);
-    if (staticCookie) return staticCookie;
-    throw err;
+  const check = await fetchWithRetry(joinUrl(base, "/new-reports"), {
+    method: "GET",
+    redirect: "follow",
+    headers: {
+      Accept: "text/html",
+      "User-Agent": userAgent,
+      Cookie: cookie,
+    },
   });
-  return loggedCookie || getBfleetCookie(cfg);
+  const checkText = await check.text();
+  if (!check.ok || looksLikeLoginPage(checkText)) {
+    throw new Error(`Login web BFleet não autenticado. HTTP ${check.status}.`);
+  }
+
+  return cookie;
 }
 
 function formatBrDate(date: Date) {
   return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
-function buildWebDataJson(cfg: any) {
-  const dataJson = JSON.parse(JSON.stringify(DEFAULT_BFLEET_WEB_DATAJSON));
-  const today = new Date();
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-
-  if (cfg.dataInicial && cfg.dataFinal) {
-    dataJson.fecha_inicio = toIsoDate(cfg.dataInicial)?.split("-").reverse().join("/") || cfg.dataInicial;
-    dataJson.fecha_fin = toIsoDate(cfg.dataFinal)?.split("-").reverse().join("/") || cfg.dataFinal;
-  } else if (normalizeKey(cfg.rangeTimeVal) === "YESTERDAY") {
-    dataJson.fecha_inicio = formatBrDate(yesterday);
-    dataJson.fecha_fin = formatBrDate(yesterday);
-  }
-
-  dataJson.hora_inicio = dataJson.hora_inicio || "00:00:00";
-  dataJson.hora_fin = dataJson.hora_fin || "23:59:59";
-  dataJson.filter_velocidad = String(dataJson.filter_velocidad || "120");
-  return dataJson;
-}
-
 function appendNestedForm(params: URLSearchParams, prefix: string, value: any) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    for (const [k, v] of Object.entries(value)) appendNestedForm(params, `${prefix}[${k}]`, v);
+    for (const [key, nested] of Object.entries(value)) appendNestedForm(params, `${prefix}[${key}]`, nested);
     return;
   }
   params.append(prefix, asString(value));
 }
 
-function parseBfleetWebRows(text: string, columns: any) {
+function parseWebRows(text: string, columns: any) {
   const raw = asString(text).replace(/(\r\n|\n|\r)/g, " ").trim();
   if (!raw) return [];
   const htmlRows = parseHtmlTableRows(raw);
@@ -721,9 +518,10 @@ function parseBfleetWebRows(text: string, columns: any) {
     const parsed = JSON.parse(raw);
     const rows = extractRows(parsed);
     if (rows.length) return rows;
-  } catch {}
+  } catch {
+    // Pode ser um array/objeto JavaScript da própria tela.
+  }
   try {
-    // A tela da BFleet faz eval(data). Aqui avaliamos apenas o retorno do endpoint logado.
     const parsed = Function(`"use strict"; return (${raw});`)();
     if (Array.isArray(parsed)) return Array.isArray(parsed[0]) ? rowsFromArrayMatrix(parsed, columns) : parsed;
     return extractRows(parsed);
@@ -732,120 +530,182 @@ function parseBfleetWebRows(text: string, columns: any) {
   }
 }
 
+function parseJsObject(raw: string) {
+  try { return JSON.parse(raw); } catch { /* tenta expressão JS */ }
+  try { return Function(`"use strict"; return (${raw});`)(); } catch { return null; }
+}
+
+async function loadSavedWebReport(cfg: any, cookie: string) {
+  const url = joinUrl(cfg.webBaseUrl, "/ReportesFront/getDataReporteGuardado");
+  const res = await fetchWithRetry(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Cookie: cookie,
+      "X-Requested-With": "XMLHttpRequest",
+      "User-Agent": "Mozilla/5.0 Chrome Safari",
+    },
+    body: new URLSearchParams({ "data[idreporte_guardado]": String(cfg.reportId || "85055") }).toString(),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Configuração web BFleet: HTTP ${res.status} ${stripHtml(text).slice(0, 300)}`);
+  if (looksLikeLoginPage(text)) throw new Error("A BFleet devolveu a tela de login ao carregar o relatório salvo.");
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`Configuração web BFleet inválida: ${stripHtml(text).slice(0, 300)}`);
+  }
+
+  if (parsed?.data && typeof parsed.data === "object" && !Array.isArray(parsed.data)) {
+    const d = parsed.data;
+    if (d.idreporte || d.caja_multisel_activos || d.caja_multisel_columnas || d.fecha_inicio !== undefined) return d;
+  }
+  return parsed;
+}
+
 function buildAssetMapByPlate(dataJson: any) {
   const map = new Map<string, any>();
   const ativos = dataJson?.caja_multisel_activos || {};
   for (const [assetId, assetName] of Object.entries(ativos)) {
     const plate = extractPlateFromText(assetName);
     if (!plate) continue;
-    map.set(plate, { bfleet_vehicle_id: String(assetId), bfleet_ativo_nome: normalizeText(assetName) });
+    map.set(plate, {
+      bfleet_vehicle_id: String(assetId),
+      bfleet_ativo_nome: normalizeText(assetName),
+    });
   }
   return map;
 }
 
-async function fetchWebReport(cfg: any) {
-  const cookie = await resolveBfleetWebCookie(cfg);
-  if (!cookie) throw new Error("Configure BFLEET_WEB_USERNAME/BFLEET_WEB_PASSWORD ou BFLEET_WEB_COOKIE/BFLEET_PHPSESSID para usar o relatório web da BFleet.");
-  const dataJson = buildWebDataJson(cfg);
-  const params = new URLSearchParams();
-  appendNestedForm(params, "dataJson", dataJson);
-  params.append("idreporte_guardado", String(cfg.reportId || "85055"));
-  params.append("uniq_id", asString(cfg.uniqId || cfg.uniq_id || "painel_sync"));
+function isClearlyEmptyPayload(text: string) {
+  const raw = text.trim();
+  if (["", "[]", "{}", "null", "false"].includes(raw)) return true;
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length === 0) return true;
+    if (parsed && typeof parsed === "object") {
+      const rows = extractRows(parsed);
+      if (rows.length) return false;
+      const candidates = [parsed.data, parsed.result, parsed.rows, parsed.items, parsed.aaData];
+      if (candidates.some((v) => Array.isArray(v) && v.length === 0)) return true;
+    }
+  } catch {
+    // Não é JSON vazio.
+  }
+  return false;
+}
 
-  const url = joinUrl(cfg.webBaseUrl || "https://relatorios.bfleet.com.br", "/reportesback/excesosVelocidad");
-  const res = await fetch(url, {
+async function fetchWebReport(cfg: any) {
+  const cookie = await resolveWebCookie(cfg);
+  const dataJson = await loadSavedWebReport(cfg, cookie);
+  if (!dataJson || typeof dataJson !== "object") throw new Error("Relatório salvo BFleet 85055 sem configuração utilizável.");
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  if (cfg.dataInicial && cfg.dataFinal) {
+    dataJson.fecha_inicio = toBfleetDate(cfg.dataInicial);
+    dataJson.fecha_fin = toBfleetDate(cfg.dataFinal);
+  } else if (normalizeKey(cfg.rangeTimeVal) === "YESTERDAY") {
+    dataJson.fecha_inicio = formatBrDate(yesterday);
+    dataJson.fecha_fin = formatBrDate(yesterday);
+  }
+  dataJson.hora_inicio = dataJson.hora_inicio || "00:00:00";
+  dataJson.hora_fin = dataJson.hora_fin || "23:59:59";
+  dataJson.filter_velocidad = "120";
+
+  const pageParams = new URLSearchParams();
+  appendNestedForm(pageParams, "data", dataJson);
+  const pageUrl = joinUrl(cfg.webBaseUrl, "/reportesfront/resultadoreporte");
+  const pageRes = await fetchWithRetry(pageUrl, {
     method: "POST",
     headers: {
       Accept: "*/*",
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      Origin: cfg.webBaseUrl || "https://relatorios.bfleet.com.br",
-      Referer: joinUrl(cfg.webBaseUrl || "https://relatorios.bfleet.com.br", "/new-reports"),
+      Origin: cfg.webBaseUrl,
+      Referer: joinUrl(cfg.webBaseUrl, "/new-reports"),
       "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome Safari",
+      "User-Agent": "Mozilla/5.0 Chrome Safari",
       Cookie: cookie,
     },
-    body: params.toString(),
+    body: pageParams.toString(),
   });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Endpoint web BFleet ${url} retornou HTTP ${res.status}: ${text.slice(0, 400)}`);
-  const rows = parseBfleetWebRows(text, dataJson.caja_multisel_columnas);
-  if (!rows.length) {
-    throw new Error(`Endpoint web BFleet ${url} respondeu, mas não retornou linhas. Confira se o PHPSESSID/cookie ainda está válido e se a sessão da BFleet continua logada. Prévia: ${stripHtml(text).slice(0, 500)}`);
-  }
-  return { payload: text, rows, endpoint: url, dataJson, assetMapByPlate: buildAssetMapByPlate(dataJson) };
-}
+  const pageText = await pageRes.text();
+  if (!pageRes.ok) throw new Error(`Preparação do relatório BFleet: HTTP ${pageRes.status} ${stripHtml(pageText).slice(0, 300)}`);
+  if (looksLikeLoginPage(pageText)) throw new Error("A sessão BFleet expirou ao preparar o relatório.");
 
-async function syncBfleetVehicleIds(supabase: any, vehicleMap: Map<string, any>, assetMapByPlate: Map<string, any>) {
-  let updated = 0;
-  for (const [placa, asset] of assetMapByPlate.entries()) {
-    const v = vehicleMap.get(placa);
-    if (!v?.id) continue;
-    const { error } = await supabase
-      .from("frotas_veiculos")
-      .update({
-        bfleet_vehicle_id: asset.bfleet_vehicle_id,
-        bfleet_ativo_nome: asset.bfleet_ativo_nome,
-        possui_rastreador: true,
-        rastreador_origem: "BFLEET",
-        bfleet_sync_at: new Date().toISOString(),
-      })
-      .eq("id", v.id);
-    if (!error) updated += 1;
-  }
-  return updated;
-}
-
-async function fetchReport(cfg: any, token: string) {
-  if (!cfg.baseUrl) throw new Error("Configure API_BASE da BFleet/Service24GPS.");
-  if (!cfg.apiKey) throw new Error("Configure API_KEY da BFleet/Service24GPS.");
-  if (!token) throw new Error("Configure TOKEN da BFleet/Service24GPS ou habilite a autenticação automática.");
-  if (!cfg.reportId) throw new Error("Configure o ID do relatório de excesso de velocidade em BFLEET_REPORT_ID, ID_RELATORIO_EXCESSO_VELOCIDADE, RELATORIO_EXCESSO_ID ou REPORT_ID.");
-
-  // Endpoint correto da documentação Service24GPS/RedGPS/BFleet para relatório programado:
-  // POST /api/v1/onreports/getScheduledReportResult via multipart/form-data com apikey, token e report_id.
-  const onReportsUrl = getOnReportsEndpoint(cfg.baseUrl);
-  let last = "";
-  let lastPayloadInfo: any = null;
-
-  try {
-    const form = new FormData();
-    form.append("apikey", cfg.apiKey);
-    form.append("token", token);
-    form.append("report_id", cfg.reportId);
-    if (cfg.rangeTimeId) form.append("range_time_id", String(cfg.rangeTimeId));
-    if (cfg.rangeTimeVal) form.append("range_time_val", String(cfg.rangeTimeVal));
-    const payload = await fetchJson(onReportsUrl, {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      body: form,
-    }, "Relatório programado BFleet");
-    const rows = extractRows(payload);
-    if (rows.length) return { payload, rows, endpoint: onReportsUrl };
-    lastPayloadInfo = payloadDiagnostic(payload);
-    last = `Endpoint ${onReportsUrl} respondeu, mas não retornou linhas em data.result.`;
-  } catch (err) {
-    last = err instanceof Error ? err.message : String(err);
+  const pageCookie = mergeCookieHeader(cookie, getSetCookieHeaders(pageRes.headers));
+  const directRows = parseWebRows(pageText, dataJson.caja_multisel_columnas);
+  if (directRows.length) {
+    return {
+      rows: directRows,
+      endpoint: pageUrl,
+      dataJson,
+      assetMapByPlate: buildAssetMapByPlate(dataJson),
+    };
   }
 
-  // Fallback JSON para instalações que aceitam body application/json no mesmo endpoint.
-  try {
-    const payload = await fetchJson(onReportsUrl, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ apikey: cfg.apiKey, token, report_id: cfg.reportId, range_time_id: cfg.rangeTimeId || undefined, range_time_val: cfg.rangeTimeVal || undefined }),
-    }, "Relatório programado BFleet");
-    const rows = extractRows(payload);
-    if (rows.length) return { payload, rows, endpoint: onReportsUrl };
-    lastPayloadInfo = payloadDiagnostic(payload);
-    last = `Endpoint JSON ${onReportsUrl} respondeu, mas não retornou linhas em data.result.`;
-  } catch (err) {
-    last = err instanceof Error ? err.message : String(err);
+  let runtimeData = dataJson;
+  const runtimePatterns = [
+    /dataJson\s*=\s*(\{[\s\S]*?\});\s*\/\/se cambian/i,
+    /dataJson\s*=\s*(\{[\s\S]*?\});/i,
+  ];
+  for (const pattern of runtimePatterns) {
+    const match = pageText.match(pattern);
+    if (!match?.[1]) continue;
+    const parsed = parseJsObject(match[1]);
+    if (parsed && typeof parsed === "object") {
+      runtimeData = parsed;
+      break;
+    }
+  }
+
+  runtimeData.fecha_inicio = dataJson.fecha_inicio;
+  runtimeData.fecha_fin = dataJson.fecha_fin;
+  runtimeData.hora_inicio = dataJson.hora_inicio;
+  runtimeData.hora_fin = dataJson.hora_fin;
+  runtimeData.filter_velocidad = "120";
+
+  const savedReportIds = Array.from(pageText.matchAll(/idreporte_guardado\s*=\s*["']?(\d+)["']?/g)).map((m) => m[1]).filter((id) => id !== "0");
+  const uniqueIds = Array.from(pageText.matchAll(/uniq_id\s*=\s*["']([^"']+)["']/g)).map((m) => m[1]).filter(Boolean);
+  const savedReportId = savedReportIds[savedReportIds.length - 1] || String(cfg.reportId || "85055");
+  const uniqueId = uniqueIds[uniqueIds.length - 1] || "painel_sync";
+
+  const dataParams = new URLSearchParams();
+  appendNestedForm(dataParams, "dataJson", runtimeData);
+  dataParams.set("idreporte_guardado", savedReportId);
+  dataParams.set("uniq_id", uniqueId);
+
+  const dataUrl = joinUrl(cfg.webBaseUrl, "/reportesback/excesosVelocidad");
+  const dataRes = await fetchWithRetry(dataUrl, {
+    method: "POST",
+    headers: {
+      Accept: "*/*",
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Origin: cfg.webBaseUrl,
+      Referer: joinUrl(cfg.webBaseUrl, "/new-reports"),
+      "X-Requested-With": "XMLHttpRequest",
+      "User-Agent": "Mozilla/5.0 Chrome Safari",
+      Cookie: pageCookie,
+    },
+    body: dataParams.toString(),
+  });
+  const dataText = await dataRes.text();
+  if (!dataRes.ok) throw new Error(`Endpoint web BFleet ${dataUrl}: HTTP ${dataRes.status} ${stripHtml(dataText).slice(0, 300)}`);
+  if (looksLikeLoginPage(dataText)) throw new Error("A BFleet devolveu a tela de login no endpoint de excesso de velocidade.");
+
+  const rows = parseWebRows(dataText, runtimeData.caja_multisel_columnas || dataJson.caja_multisel_columnas);
+  const assetMapByPlate = buildAssetMapByPlate(runtimeData);
+  if (rows.length) return { rows, endpoint: dataUrl, dataJson: runtimeData, assetMapByPlate };
+
+  if (isClearlyEmptyPayload(dataText)) {
+    return { rows: [], endpoint: dataUrl, dataJson: runtimeData, assetMapByPlate };
   }
 
   throw new Error(
-    `Não foi possível ler linhas do relatório programado BFleet. ${last} ` +
-    `O relatório ${cfg.reportId} pode usar Data Inicial/Data Final vazias quando o marcador é yesterday; isso é esperado. Verifique apenas se a última execução do relatório está em JSON e se o token usado pela API ainda está válido. ` +
-    `Diagnóstico: ${JSON.stringify(lastPayloadInfo || {})}`
+    `Endpoint web BFleet ${dataUrl} respondeu sem linhas em formato reconhecido. ` +
+    `Prévia: ${stripHtml(dataText).slice(0, 500)}`,
   );
 }
 
@@ -853,18 +713,19 @@ function mapReportRow(row: any, arquivoNome = "BFleet API") {
   const placa = onlyPlate(pick(row, ["Placa", "plate", "vehiclePlate", "patente", "licensePlate", "placaVeiculo"]));
   const dataEvento = toIsoDate(pick(row, ["Data", "Fecha", "date", "data_evento", "Data Evento", "Fecha Evento", "eventDate", "dateTime", "Data/Hora", "Data Hora", "Fecha/Hora", "Fecha Hora"]));
   const velocidade = normalizeNumber(pick(row, ["Velocidade", "Velocidad", "speed", "Velocidade Km/h", "Velocidad Km/h", "velocity", "maximumSpeed", "max_speed", "velocidad"]));
-  if (!placa || !dataEvento || !velocidade) return null;
+  if (!placa || !dataEvento || velocidade === null) return null;
+
   const mapped: any = {
     data_evento: dataEvento,
     hora_evento: parseTimeText(pick(row, ["Hora", "time", "hora_evento", "Data/Hora", "Data Hora", "Fecha/Hora", "Fecha Hora", "dateTime"])),
     alerta: normalizeText(pick(row, ["Alerta", "alert", "Evento", "event", "Descrição", "Descricao"])) || "Excesso de velocidade",
     ativo_rastreador: normalizeText(pick(row, ["Ativo", "Veículo", "Veiculo", "Vehicle", "Nome Veículo", "Nome Veiculo", "vehicleName"])),
     placa,
-    motorista_planilha: normalizeText(pick(row, ["Motorista", "Condutor", "Driver", "driverName", "Nome Motorista"])),
+    motorista_planilha: normalizeText(pick(row, ["Motorista", "Condutor", "Conductor", "Driver", "driverName", "Nome Motorista"])),
     velocidade,
-    endereco: normalizeText(pick(row, ["Endereço", "Endereco", "Domicilio", "Lugar", "Address", "Local", "location"])),
-    latitude: normalizeNumber(pick(row, ["Latitude", "Lat"])),
-    longitude: normalizeNumber(pick(row, ["Longitude", "Long", "Lng"])),
+    endereco: normalizeText(pick(row, ["Endereço", "Endereco", "Direccion", "Dirección", "Domicilio", "Lugar", "Address", "Local", "location"])),
+    latitude: normalizeNumber(pick(row, ["Latitude", "Lat", "Latitud"])),
+    longitude: normalizeNumber(pick(row, ["Longitude", "Long", "Lng", "Longitud"])),
     mapa_url: normalizeText(pick(row, ["Ver mapa", "Mapa", "Map", "mapUrl"])),
     arquivo_nome: arquivoNome,
     origem: "bfleet_api",
@@ -881,8 +742,6 @@ async function loadVehicleMap(supabase: any, placas: string[]) {
   let from = 0;
   const size = 1000;
 
-  // Não usamos .in('placa', placas) porque no banco a placa pode estar com hífen/espaço
-  // e no relatório vem normalizada. Carrega em páginas e compara com onlyPlate().
   while (from < 20000) {
     const { data, error } = await supabase
       .from("frotas_veiculos")
@@ -926,39 +785,57 @@ async function loadPatrimonioMap(supabase: any) {
   return map;
 }
 
+async function syncBfleetVehicleIds(supabase: any, vehicleMap: Map<string, any>, assetMapByPlate: Map<string, any>) {
+  let updated = 0;
+  for (const [placa, asset] of assetMapByPlate.entries()) {
+    const v = vehicleMap.get(placa);
+    if (!v?.id) continue;
+    const { error } = await supabase
+      .from("frotas_veiculos")
+      .update({
+        bfleet_vehicle_id: asset.bfleet_vehicle_id,
+        bfleet_ativo_nome: asset.bfleet_ativo_nome,
+        possui_rastreador: true,
+        rastreador_origem: "BFLEET",
+        bfleet_sync_at: new Date().toISOString(),
+      })
+      .eq("id", v.id);
+    if (!error) updated += 1;
+  }
+  return updated;
+}
+
 async function syncExcessos(supabase: any, requestBody: any = {}) {
   const cfg = await buildConfig(supabase, requestBody);
-  let report: any = null;
-  let webError = "";
+  const report = await fetchWebReport(cfg);
+  const mapped = report.rows
+    .map((r: any) => mapReportRow(r, `BFleet · relatório ${cfg.reportId}`))
+    .filter(Boolean) as any[];
 
-  // A conta BFleet desta implantação não disponibiliza JSON em getScheduledReportResult.
-  // Por isso, por padrão usamos o endpoint web real que a própria tela chama:
-  // /reportesback/excesosVelocidad. Se ele falhar, não mascaramos o erro com o endpoint JSON.
-  if (cfg.preferWebReport) {
-    try {
-      report = await fetchWebReport(cfg);
-    } catch (err) {
-      webError = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Falha ao ler o relatório pelo endpoint web da BFleet. ` +
-        `Configure BFLEET_WEB_USERNAME/BFLEET_WEB_PASSWORD para renovar o cookie automaticamente, ` +
-        `ou BFLEET_WEB_COOKIE/BFLEET_PHPSESSID para usar uma sessão manual. ` +
-        `Detalhe: ${webError}`
-      );
-    }
+  if (!mapped.length) {
+    return {
+      ok: true,
+      endpoint: report.endpoint,
+      relatorio_id: String(cfg.reportId),
+      periodo_inicio: cfg.dataInicial || cfg.rangeTimeVal || "yesterday",
+      periodo_fim: cfg.dataFinal || cfg.rangeTimeVal || "yesterday",
+      limite_velocidade_kmh: 120,
+      total: 0,
+      upserted: 0,
+      inserted: 0,
+      updated: 0,
+      identificados: 0,
+      pendentes: 0,
+      placas: 0,
+      veiculos_bfleet_atualizados: 0,
+      fonte_configuracao: "relatorio_salvo_bfleet",
+    };
   }
-
-  if (!report) {
-    const token = await getToken(cfg);
-    report = await fetchReport(cfg, token);
-  }
-
-  const mapped = report.rows.map((r: any) => mapReportRow(r, `BFleet · relatório ${cfg.reportId}`)).filter(Boolean) as any[];
 
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
   const patrimonioMap = await loadPatrimonioMap(supabase).catch(() => new Map());
-  const assetMapByPlate: Map<string, any> = report.assetMapByPlate || buildAssetMapByPlate(report.dataJson || DEFAULT_BFLEET_WEB_DATAJSON);
+  const assetMapByPlate: Map<string, any> = report.assetMapByPlate || buildAssetMapByPlate(report.dataJson || {});
   const veiculosBfleetAtualizados = await syncBfleetVehicleIds(supabase, vehicleMap, assetMapByPlate).catch(() => 0);
 
   const cruzados = mapped.map((r) => {
@@ -983,7 +860,9 @@ async function syncExcessos(supabase: any, requestBody: any = {}) {
   let insertedOrUpdated = 0;
   for (let i = 0; i < cruzados.length; i += 500) {
     const batch = cruzados.slice(i, i + 500);
-    const { error } = await supabase.from("frotas_excesso_velocidade").upsert(batch, { onConflict: "import_hash" });
+    const { error } = await supabase
+      .from("frotas_excesso_velocidade")
+      .upsert(batch, { onConflict: "import_hash" });
     if (error) throw new Error(error.message || "Falha ao gravar excessos de velocidade.");
     insertedOrUpdated += batch.length;
   }
@@ -991,8 +870,10 @@ async function syncExcessos(supabase: any, requestBody: any = {}) {
   return {
     ok: true,
     endpoint: report.endpoint,
+    relatorio_id: String(cfg.reportId),
     periodo_inicio: cfg.dataInicial || cfg.rangeTimeVal || "yesterday",
     periodo_fim: cfg.dataFinal || cfg.rangeTimeVal || "yesterday",
+    limite_velocidade_kmh: 120,
     total: mapped.length,
     upserted: insertedOrUpdated,
     inserted: insertedOrUpdated,
@@ -1001,7 +882,7 @@ async function syncExcessos(supabase: any, requestBody: any = {}) {
     pendentes: cruzados.filter((r) => !r.patrimonio_funcionario).length,
     placas: placas.length,
     veiculos_bfleet_atualizados: veiculosBfleetAtualizados,
-    web_fallback_error: webError || null,
+    fonte_configuracao: "relatorio_salvo_bfleet",
   };
 }
 
@@ -1013,9 +894,11 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceKey) throw new Error("SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY não configurados.");
+
     const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
     let requestBody: any = {};
     try { requestBody = await req.json(); } catch { requestBody = {}; }
+
     const result = await syncExcessos(supabase, requestBody);
     return json(result);
   } catch (err) {
