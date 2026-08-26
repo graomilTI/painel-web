@@ -3,6 +3,7 @@ import { getCurrentUser, getSession, getUserContext, signOut } from './auth.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
 import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -1564,7 +1565,7 @@ async function saveOsStatus(id, status) {
     showToast(`O.S. ${os.numero_os} marcada como ${status}.`);
   } catch (error) {
     console.error(error);
-    showToast(error.message || 'Não foi possível salvar a O.S.', 'error');
+    showToast(await mensagemFalhaSalvar(error, error.message || 'Não foi possível salvar a O.S.', 'O.S.'), 'error');
     await loadData({ useCache: false });
     renderOs(document.getElementById('appMain'));
   } finally {

@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 const BTG_AGENT_ID = 'sync-btg-relatorios';
 const BTG_AGENT_ALIASES = [
@@ -765,7 +766,7 @@ window.saveAgentSettings = async (event) => {
     state.settingsEditor = null;
     await loadQueue();
   } catch (error) {
-    alert(`Não foi possível salvar a configuração: ${error.message}`);
+    alert(await mensagemFalhaSalvar(error, `Não foi possível salvar a configuração: ${error.message}`));
   } finally { state.queueSaving = false; render(); }
 };
 window.openQueueComposer = () => { state.queueComposerOpen = true; state.queueSelection = []; render(); };
@@ -792,7 +793,7 @@ window.moveQueueJob = async (jobId, direction) => {
     if (error) throw error;
     await loadQueue();
   } catch (error) {
-    alert(`Não foi possível salvar a nova ordem: ${error.message}`);
+    alert(await mensagemFalhaSalvar(error, `Não foi possível salvar a nova ordem: ${error.message}`));
     await loadQueue();
   } finally { state.queueSaving = false; }
 };

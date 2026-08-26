@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 import {
   esc, norm, clamp, renderBase, applyModules, filterItems, renderKpis,
   renderList, renderDetail, renderHistory, fillForm, fillProgress,
@@ -56,7 +57,7 @@ async function saveItem(content,form){
   if(!id){payload.created_by=u.id;payload.created_by_name=u.name;}
   const query=id?supabase.from(TABLE).update(payload).eq('id',id):supabase.from(TABLE).insert(payload);
   const {data,error}=await query.select().single();
-  if(error){alert(`Não foi possível salvar: ${error.message}`);return;}
+  if(error){alert(await mensagemFalhaSalvar(error, `Não foi possível salvar: ${error.message}`));return;}
   await addHistory(data,before,form.elements.nota.value||(id?'Cadastro atualizado.':'Desenvolvimento cadastrado.'));
   state.selected=data.id;closeModal(content,'form');await load(content);
 }
@@ -66,7 +67,7 @@ async function saveProgress(content,form){
   const u=currentUser(),status=form.elements.status.value;
   const payload={status,progresso:status==='CONCLUIDO'?100:clamp(form.elements.progresso.value),proxima_etapa:form.elements.proxima_etapa.value.trim()||null,impedimentos:form.elements.impedimentos.value.trim()||null,updated_by:u.id,updated_by_name:u.name};
   const {data,error}=await supabase.from(TABLE).update(payload).eq('id',before.id).select().single();
-  if(error){alert(`Não foi possível atualizar: ${error.message}`);return;}
+  if(error){alert(await mensagemFalhaSalvar(error, `Não foi possível atualizar: ${error.message}`));return;}
   await addHistory(data,before,form.elements.nota.value);state.selected=data.id;closeModal(content,'progress');await load(content);
 }
 

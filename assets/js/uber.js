@@ -1,5 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 const MONEY = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const MAX_UBER_ROWS = 30000;
@@ -560,7 +561,7 @@ async function updateStatus(id, status) {
     renderData();
   } catch (error) {
     console.error('[Uber] updateStatus:', error);
-    setFeedback(`Não foi possível salvar a conferência: ${error.message}`, true);
+    setFeedback(await mensagemFalhaSalvar(error, `Não foi possível salvar a conferência: ${error.message}`), true);
   }
 }
 

@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { confirmar } from './core/ui.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' });
 const MONEY_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -1400,7 +1401,7 @@ async function updateDespesaStatus(id, status, motivo = null) {
     .single();
 
   if (error) {
-    setFeedback(`Não foi possível salvar. Rode o SQL de estrutura enviado no ZIP. Detalhe: ${error.message}`, true);
+    setFeedback(await mensagemFalhaSalvar(error, `Não foi possível salvar. Rode o SQL de estrutura enviado no ZIP. Detalhe: ${error.message}`), true);
     return;
   }
 
