@@ -52,19 +52,6 @@ export const STATUS_SOLICITACAO = {
   CONCLUIDA: 'Concluída',
 };
 
-// preferencia_hospedagem (hospedagem_solicitacoes) — sinalizada pelo gestor na tela de
-// autoatendimento; é informativa (não roteia sozinha pra Alojamentos, que continua sendo
-// decidido manualmente via Programação/tipo_estadia).
-export const PREFERENCIA_HOSPEDAGEM = {
-  HOTEL: 'Hotel',
-  ALOJAMENTO: 'Alojamento',
-  SEM_PREFERENCIA: 'Sem preferência',
-};
-
-export function preferenciaLabel(row) {
-  return PREFERENCIA_HOSPEDAGEM[row?.preferencia_hospedagem] || 'Sem preferência';
-}
-
 // status_hospedagem (hospedagem_reservas) — sub-estado da reserva, só existe depois de reservar.
 export const STATUS_HOSPEDAGEM = {
   CHECKIN_PREVISTO: 'Check-in previsto',

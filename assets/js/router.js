@@ -45,7 +45,6 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js') }],
   ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js') }],
   ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
-  ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js') }],
   ['hotel-relatorio', { title: 'Relatório de Hospedagem', module: () => import('./hotel-relatorio.js') }],
   ['importar-colaboradores', { title: 'Importar Colaboradores', module: () => import('./importarColaboradores.js') }],
   ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],

@@ -2,7 +2,6 @@
 import {
   esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO,
   ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween, EXTRA_TYPE_LABEL, LOTE_STATUS_LABEL,
-  preferenciaLabel,
 } from './adm-hotel-helpers.js';
 
 const TABS = [
@@ -247,8 +246,6 @@ export function renderDetalhes(row, quotes) {
             <div class="ah-detail-row"><span>Cliente</span><span class="muted">${esc(row.cliente || '—')}</span></div>
             <div class="ah-detail-row"><span>Local de embarque</span><span class="muted">${esc(row.local_embarque || '—')}</span></div>
             <div class="ah-detail-row"><span>Período previsto</span><span class="muted">${brDate(row.data_checkin_prevista)} → ${brDate(row.data_checkout_prevista)}</span></div>
-            <div class="ah-detail-row"><span>Preferência do gestor</span><span class="muted">${esc(preferenciaLabel(row))}</span></div>
-            ${row.observacao_gestor ? `<div class="ah-detail-row"><span>Observação do gestor</span><span class="muted">${esc(row.observacao_gestor)}</span></div>` : ''}
           </div>
         </div>
 
