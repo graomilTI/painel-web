@@ -763,13 +763,24 @@ export function wireDespesasCards(containerEl, ctx = {}) {
   // banco, dando a impressão de "salvo" quando não estava (relatado
   // 2026-07-17: Reembolso km selecionado na Etapa 3 não aparecia no PDF
   // porque nunca tinha sido gravado). Marca o card visualmente até salvar de novo com sucesso.
-  function avisarFalhaSalvar(card, tabela, error) {
+  async function avisarFalhaSalvar(card, tabela, error) {
     card.classList.add('peqd-card-erro');
     let aviso = card.querySelector('.peqd-erro-aviso');
     if (!aviso) {
       aviso = document.createElement('div');
       aviso.className = 'peqd-erro-aviso';
       card.prepend(aviso);
+    }
+    // A política RLS dessas tabelas libera tudo pra role authenticated
+    // (checado em produção) — um 42501 aqui quase sempre é sessão expirada
+    // (token inválido cai pro role anon, que não tem política nenhuma),
+    // não bug de permissão. Mensagem técnica de RLS só confundia o usuário.
+    if (error?.code === '42501') {
+      const { data } = await supabase.auth.getSession().catch(() => ({ data: null }));
+      if (!data?.session) {
+        aviso.textContent = `⚠ Sua sessão expirou. Recarregue a página e faça login de novo para salvar (${tabela.replace('programacao_', '')}).`;
+        return;
+      }
     }
     aviso.textContent = `⚠ Não foi possível salvar (${tabela.replace('programacao_', '')}): ${error?.message || 'erro desconhecido'} — tente de novo.`;
   }
@@ -823,7 +834,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
     const { error } = await supabase.from(tabela).upsert(payload, { onConflict: 'programacao_id,colaborador_id' });
     if (error) {
       console.error('[despesas]', tabela, error);
-      avisarFalhaSalvar(card, tabela, error);
+      await avisarFalhaSalvar(card, tabela, error);
     } else {
       limparAvisoFalhaSalvar(card);
     }
