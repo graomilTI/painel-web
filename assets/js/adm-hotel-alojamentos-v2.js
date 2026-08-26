@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient.js';
 import { loadUserContext } from './sessionStore.js';
 import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
 import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './adm-hotel-alojamentos-v2-view.js?v=20260804-multisupervisao1';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 
 const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null, supervisoes: [] };
 const obsState = { alojamentoId: null, year: 0, month: 0, selectedDate: '' };
@@ -334,7 +335,7 @@ async function saveRecord(event) {
     compatibilityMode = true;
     result = await persist(legacy);
   }
-  if (result.error) return feedback(result.error.message || 'Não foi possível salvar.', 'err');
+  if (result.error) return feedback(await mensagemFalhaSalvar(result.error, result.error.message || 'Não foi possível salvar.'), 'err');
   closeModal();
   await loadRows();
   toast(compatibilityMode ? 'Alojamento salvo; novos campos preservados em modo compatível.' : 'Alojamento salvo com sucesso.');
