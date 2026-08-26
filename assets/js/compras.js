@@ -141,14 +141,27 @@ function resetItemForm(){
   const tam=document.getElementById('cmpNovoTam');
   tam.value=''; tam.disabled=true; tam.placeholder='Selecione Botina ou Peneira Individual';
 }
+function closeComprasModal(modal){
+  modal?.classList.remove('open');
+  document.body.classList.remove('cmp-modal-open');
+}
+function showComprasModal(modal){
+  if(!modal) return;
+  modal.classList.add('open');
+  document.body.classList.add('cmp-modal-open');
+  modal.onclick=e=>{ if(e.target===modal) closeComprasModal(modal); };
+  modal.onkeydown=e=>{ if(e.key==='Escape') closeComprasModal(modal); };
+  requestAnimationFrame(()=>modal.querySelector('input:not([disabled]),select:not([disabled]),button')?.focus());
+}
 function openCelularModal(baseItem){
   const modal=document.getElementById('cmpCelularModal');
-  modal.innerHTML=`<div class="cmp-cel-card">
-    <div class="section-head">
-      <div><h3>Compra de Celular</h3><p class="muted">Preencha os dados do colaborador e condição de pagamento.</p></div>
-      <button class="btn btn-secondary" id="celClose" type="button">Fechar</button>
+  modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true'); modal.setAttribute('aria-labelledby','celModalTitle');
+  modal.innerHTML=`<div class="cmp-cel-card cmp-dialog-card">
+    <div class="cmp-dialog-head">
+      <div class="cmp-dialog-title"><span class="cmp-dialog-icon" aria-hidden="true">▣</span><div><small>Nova solicitação</small><h3 id="celModalTitle">Compra de celular</h3><p>Informe quem receberá o aparelho e como será o desconto.</p></div></div>
+      <button class="cmp-dialog-close" id="celClose" type="button" aria-label="Fechar janela">×</button>
     </div>
-    <div class="cmp-grid mt-16">
+    <div class="cmp-dialog-body"><div class="cmp-grid">
       <div class="cmp-field cmp-full cmp-autocomplete-wrap">
         <label>Colaborador que receberá o celular</label>
         <input id="celColab" type="text" placeholder="Digite para pesquisar..." autocomplete="off">
@@ -167,16 +180,16 @@ function openCelularModal(baseItem){
           ${[2,3,4,5].map(n=>`<option value="${n}">${n}x</option>`).join('')}
         </select>
       </div>
-    </div>
-    <div class="cmp-actions mt-16">
+    </div></div>
+    <div class="cmp-dialog-footer">
+      <span class="cmp-feedback" id="celFeedback"></span>
       <button class="btn btn-primary" id="celConfirmar" type="button">Adicionar à lista</button>
       <button class="btn btn-secondary" id="celCancelar" type="button">Cancelar</button>
     </div>
-    <span class="cmp-feedback" id="celFeedback"></span>
   </div>`;
-  modal.classList.add('open');
-  modal.querySelector('#celClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#celCancelar').onclick=()=>modal.classList.remove('open');
+  showComprasModal(modal);
+  modal.querySelector('#celClose').onclick=()=>closeComprasModal(modal);
+  modal.querySelector('#celCancelar').onclick=()=>closeComprasModal(modal);
   const metodo=modal.querySelector('#celMetodo');
   const parcelasWrap=modal.querySelector('#celParcelasWrap');
   metodo.onchange=()=>{ parcelasWrap.style.display=metodo.value==='parcelado'?'flex':'none'; };
@@ -207,7 +220,7 @@ function openCelularModal(baseItem){
     resetItemForm();
     renderItensList();
     setMsg('cmpFeedback',`Celular adicionado: ${colab.nome}.`);
-    modal.classList.remove('open');
+    closeComprasModal(modal);
   };
 }
 
@@ -221,20 +234,21 @@ function openDistribModal(onConfirm){
   const restante=i=>totalItem(i)-distribTotal(i._id);
 
   function renderModal(){
-    modal.innerHTML=`<div class="cmp-cel-card" style="width:min(720px,100%);max-height:90vh;overflow:auto">
-      <div class="section-head">
-        <div><h3>Informar colaboradores</h3><p class="muted">Distribua os EPIs por colaborador. O restante vai sem destinatário específico.</p></div>
-        <button class="btn btn-secondary" id="dcClose" type="button">Fechar</button>
+    modal.setAttribute('role','dialog'); modal.setAttribute('aria-modal','true'); modal.setAttribute('aria-labelledby','dcModalTitle');
+    modal.innerHTML=`<div class="cmp-cel-card cmp-dialog-card cmp-dialog-wide">
+      <div class="cmp-dialog-head">
+        <div class="cmp-dialog-title"><span class="cmp-dialog-icon" aria-hidden="true">↗</span><div><small>Distribuição de EPI</small><h3 id="dcModalTitle">Informar colaboradores</h3><p>Associe cada item ao colaborador. Quantidades restantes seguem sem destinatário.</p></div></div>
+        <button class="cmp-dialog-close" id="dcClose" type="button" aria-label="Fechar janela">×</button>
       </div>
-      <div class="mt-16">
+      <div class="cmp-dialog-body">
         <p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:8px">EPIs solicitados</p>
-        <div style="display:grid;gap:6px;margin-bottom:16px">
-          ${epiItens.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px;font-size:14px">
+        <div class="cmp-dialog-list">
+          ${epiItens.map(i=>`<div class="cmp-dialog-list-row">
             <span><b>${esc(i.material)}</b>${i.tamanho?` <small class="muted">Tam: ${esc(i.tamanho)}</small>`:''}</span>
             <span><b>${totalItem(i)}</b> un &nbsp;·&nbsp; <span style="color:${restante(i)>0?'#fde68a':'#86efac'}">${restante(i)} restante${restante(i)!==1?'s':''}</span></span>
           </div>`).join('')}
         </div>
-        <div style="background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div class="cmp-dialog-subcard">
           <p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:12px">Adicionar distribuição</p>
           <div class="cmp-grid" style="gap:12px">
             <div class="cmp-field cmp-autocomplete-wrap cmp-full">
@@ -259,23 +273,23 @@ function openDistribModal(onConfirm){
           <span class="cmp-feedback" id="dcFeedback"></span>
         </div>
         ${distribucoes.length?`<p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:8px">Distribuições informadas</p>
-        <div style="display:grid;gap:6px;margin-bottom:16px">
-          ${distribucoes.map((d,idx)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.2);border-radius:12px;font-size:14px">
+        <div class="cmp-dialog-list">
+          ${distribucoes.map((d,idx)=>`<div class="cmp-dialog-list-row">
             <span><b>${esc(d.colaborador_nome)}</b> &nbsp;·&nbsp; ${esc(d.material)} &nbsp;·&nbsp; ${d.quantidade} un</span>
             <button class="btn btn-small btn-danger" data-rem="${idx}" type="button">×</button>
           </div>`).join('')}
         </div>`:''}
       </div>
-      <div class="cmp-actions mt-16">
+      <div class="cmp-dialog-footer">
         <button class="btn btn-primary" id="dcConfirmar" type="button">Solicitar com esta distribuição</button>
         <button class="btn btn-secondary" id="dcSemColab" type="button">Solicitar sem distribuição</button>
       </div>
     </div>`;
-    modal.classList.add('open');
-    modal.querySelector('#dcClose').onclick=()=>modal.classList.remove('open');
-    modal.querySelector('#dcSemColab').onclick=()=>{ modal.classList.remove('open'); onConfirm(null); };
+    showComprasModal(modal);
+    modal.querySelector('#dcClose').onclick=()=>closeComprasModal(modal);
+    modal.querySelector('#dcSemColab').onclick=()=>{ closeComprasModal(modal); onConfirm(null); };
     modal.querySelector('#dcConfirmar').onclick=()=>{
-      modal.classList.remove('open');
+      closeComprasModal(modal);
       const finalItens=[];
       state.itens.filter(i=>i.tipo!=='EPI').forEach(i=>finalItens.push({...i}));
       epiItens.forEach(item=>{
@@ -564,7 +578,7 @@ function renderMinhas(){
 }
 function styles(){return `<style>
 .cmp-tabs,.cmp-actions{display:flex;gap:8px;flex-wrap:wrap}.cmp-tab{width:auto!important;margin:0!important;border:1px solid var(--line)!important;background:var(--bg-card)!important;color:var(--muted)!important;border-radius:12px!important;padding:9px 16px!important;font-weight:700;font-size:13px}.cmp-tab.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;color:#f0fff7!important;border-color:var(--green-2)!important}.cmp-panel{display:none}.cmp-panel.active{display:block}.cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}.cmp-table{width:100%;border-collapse:collapse;min-width:680px}.cmp-table th,.cmp-table td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:13px}.cmp-table th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:800;background:rgba(13,32,24,.5)}.cmp-table input,.cmp-table select,.cmp-field input,.cmp-field select,.cmp-field textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px 11px;color-scheme:dark;min-height:40px;font-size:14px}.cmp-table input:focus,.cmp-table select:focus,.cmp-field input:focus,.cmp-field select:focus,.cmp-field textarea:focus{border-color:var(--green-2);outline:2px solid rgba(111,208,165,.16)}.cmp-field label{font-size:11px;color:var(--muted);font-weight:700}.cmp-field select{appearance:none;-webkit-appearance:none;-moz-appearance:none;padding-right:42px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23cbd5e1' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;background-size:14px}.cmp-field select:disabled,.cmp-table select:disabled,.cmp-field input:disabled,.cmp-table input:disabled,.cmp-field textarea:disabled{opacity:.72;cursor:not-allowed}.cmp-field{display:flex;flex-direction:column;gap:5px}.cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmp-add-box{display:grid;grid-template-columns:90px 1.4fr 1fr 1fr auto;gap:10px;align-items:start}.cmp-add-box .cmp-field small.muted{display:block;font-size:11px;line-height:1.3;margin-top:2px}.cmp-add-action .btn{white-space:nowrap}.cmp-full{grid-column:1/-1}.cmp-autocomplete-wrap{position:relative}.cmp-suggest{display:grid;gap:6px;margin-top:6px}.cmp-suggest button{text-align:left;border:1px solid var(--line-2);background:#0a1e17;color:var(--text);border-radius:11px;padding:9px;cursor:pointer}.cmp-item-suggest{position:absolute;top:100%;left:0;right:0;z-index:50;background:#0a1e17;border:1px solid var(--line-2);border-radius:12px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:260px;overflow:auto}.cmp-item-suggest:empty{display:none}.cmp-item-suggest button{display:flex;justify-content:space-between;align-items:center;gap:10px}.cmp-item-suggest small{color:var(--muted);font-weight:800}.cmp-no-sug{color:var(--muted);padding:10px 12px;font-weight:700}.cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}.cmp-status.pendente,.cmp-status.em_cotacao,.cmp-status.em_analise,.cmp-status.pendente_pagamento,.cmp-status.aguardando_nf,.cmp-status.aguardando_termo{color:#fde68a;background:rgba(245,158,11,.1)}.cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.18)}.cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.cmp-feedback{font-weight:700}.cmp-feedback.err{color:#fecaca}.cmp-empty{color:var(--muted);text-align:center}.cmp-actions{display:flex;gap:10px;flex-wrap:wrap}
-.cmp-cel-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.cmp-cel-modal.open{display:flex}.cmp-cel-card{width:min(600px,100%);max-height:90vh;overflow:auto;background:var(--bg-card);border:1px solid var(--line-2);border-radius:18px;padding:20px;color:var(--text)}
+body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;background:rgba(1,10,7,.8);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:9999;display:none;align-items:center;justify-content:center;padding:clamp(12px,3vw,32px)}.cmp-cel-modal.open{display:flex;animation:cmpBackdropIn .18s ease-out}.cmp-cel-card{width:min(600px,100%);max-height:min(90vh,780px);overflow:hidden;background:linear-gradient(155deg,#0d271d 0%,#071711 72%);border:1px solid rgba(111,208,165,.28);border-radius:24px;color:var(--text);box-shadow:0 28px 90px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.04);animation:cmpDialogIn .24s cubic-bezier(.2,.8,.2,1)}.cmp-dialog-wide{width:min(760px,100%)}.cmp-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:22px 22px 18px;border-bottom:1px solid rgba(111,208,165,.14);background:linear-gradient(110deg,rgba(35,105,72,.24),transparent 68%)}.cmp-dialog-title{display:flex;align-items:flex-start;gap:13px}.cmp-dialog-icon{display:grid;place-items:center;flex:0 0 40px;height:40px;border-radius:13px;background:rgba(73,194,139,.14);border:1px solid rgba(111,208,165,.25);color:#8ee0b8;font-size:19px}.cmp-dialog-title small{display:block;color:#70c99d;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.11em;margin:0 0 4px}.cmp-dialog-title h3{margin:0;color:#f2fff8;font-size:21px;line-height:1.15}.cmp-dialog-title p{margin:6px 0 0;color:#9fb9ac;font-size:13px;line-height:1.45}.cmp-dialog-close{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.2);background:rgba(3,17,12,.62);color:#b9cec3;font-size:24px;line-height:1;cursor:pointer;transition:.18s ease}.cmp-dialog-close:hover,.cmp-dialog-close:focus-visible{color:#fff;background:rgba(220,38,38,.18);border-color:rgba(248,113,113,.35);outline:none;transform:rotate(4deg)}.cmp-dialog-body{padding:22px;overflow:auto;max-height:calc(min(90vh,780px) - 165px);scrollbar-color:#367d5c transparent}.cmp-dialog-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:16px 22px 20px;border-top:1px solid rgba(111,208,165,.14);background:rgba(3,14,10,.56)}.cmp-dialog-footer .cmp-feedback{margin-right:auto}.cmp-dialog-footer .btn{width:auto!important;margin:0!important;min-height:42px;padding-inline:18px!important}.cmp-dialog-list{display:grid;gap:8px;margin-bottom:18px}.cmp-dialog-list-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 13px;border:1px solid rgba(111,208,165,.15);border-radius:13px;background:rgba(8,31,22,.58);font-size:13px}.cmp-dialog-subcard{background:linear-gradient(145deg,rgba(14,46,33,.75),rgba(5,22,15,.72));border:1px solid rgba(111,208,165,.18);border-radius:17px;padding:17px;margin-bottom:18px}@keyframes cmpBackdropIn{from{opacity:0}to{opacity:1}}@keyframes cmpDialogIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 .cmp-workspace{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:16px;align-items:start}.cmp-request-card,.cmp-history-card{min-width:0}.cmp-request-card{position:sticky;top:16px}.cmp-request-card .section-head{align-items:flex-start;flex-direction:column}.cmp-request-card .cmp-tabs{order:-1}.cmp-request-card .cmp-grid{grid-template-columns:1fr}.cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) 110px}.cmp-request-card .cmp-add-box .cmp-field:nth-child(1){grid-column:1}.cmp-request-card .cmp-add-box .cmp-field:nth-child(2){grid-column:2/4}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3){grid-column:1/3}.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:3}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-request-card .cmp-add-action label{display:none}.cmp-request-card .cmp-add-action .btn,.cmp-request-card #cmpSolicitar{width:100%}.cmp-request-card .cmp-table{min-width:560px}.cmp-request-card .cmp-table-wrap{max-height:260px}.cmp-request-card #panel-uniformes .cmp-actions{display:grid}.cmp-request-card #panel-uniformes .cmp-field{min-width:0!important}.cmp-history-head{align-items:flex-end}.cmp-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.cmp-history-filter{width:auto!important;margin:0!important;border-radius:999px!important;padding:8px 16px!important}.cmp-history-filter.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;border-color:var(--green-2)!important;color:#f0fff7!important}.cmp-history-card .cmp-table-wrap{border-radius:16px}.cmp-history-card .cmp-table td{padding-top:16px;padding-bottom:16px}.cmp-items-cell{display:grid;gap:5px}.cmp-items-cell span{display:block}.cmp-items-cell small{color:var(--muted);margin-left:4px}.cmp-request-card .form-actions{display:grid;gap:10px}.cmp-feedback{line-height:1.45}
 .cmp-uniforme-add{display:grid;grid-template-columns:minmax(0,1fr) 82px 90px;gap:10px;align-items:end}.cmp-uniforme-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.cmp-uniforme-actions .btn{width:100%;margin:0!important;padding-inline:10px!important}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
@@ -584,7 +598,25 @@ function styles(){return `<style>
   .cmp-table td{border-bottom:1px solid var(--line)}
   .cmp-table td:last-child{border-bottom:0}
   .cmp-table td[data-label]::before{content:attr(data-label);display:block;font-size:10px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
-  .cmp-uniforme-row{display:grid!important;grid-template-columns:1fr 1fr 72px;gap:0}.cmp-uniforme-row td{box-sizing:border-box}.cmp-uniforme-row td:nth-child(1),.cmp-uniforme-row td:nth-child(2){grid-column:auto}.cmp-uniforme-row td:nth-child(3),.cmp-uniforme-row td:nth-child(4){grid-column:auto}.cmp-uniforme-row .cmp-row-action{width:auto;display:flex!important;align-items:end;justify-content:center}.cmp-uniforme-row .cmp-row-action .btn{min-height:40px;width:100%}.cmp-history-uniforme.is-editable{grid-template-columns:1fr 1fr 64px}.cmp-history-person{grid-column:1/-1}.cmp-history-uniforme .btn{grid-column:1/-1}
+  #panel-uniformes .cmp-table-wrap{display:block;max-height:min(52dvh,620px)!important;overflow-x:hidden!important;overflow-y:auto!important;padding:2px 5px 18px 0;border:0!important;overscroll-behavior-y:auto;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+  #cmpUniformeBody{display:grid!important;gap:10px;width:100%}
+  .cmp-uniforme-row{position:relative;display:grid!important;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;width:100%!important;min-width:0!important;margin:0!important;padding:14px 12px 12px;border:1px solid var(--line-2)!important;border-radius:16px!important;background:linear-gradient(145deg,rgba(11,38,27,.98),rgba(5,24,17,.98))!important;box-shadow:0 8px 22px rgba(0,0,0,.16);overflow:visible!important}
+  .cmp-uniforme-row td{display:block!important;width:auto!important;min-width:0!important;padding:8px!important;border:0!important;box-sizing:border-box}
+  .cmp-uniforme-row td:nth-child(1){grid-column:1/-1;padding-right:52px!important;padding-bottom:3px!important}
+  .cmp-uniforme-row td:nth-child(1) strong{display:block;overflow-wrap:anywhere;font-size:14px;line-height:1.3}
+  .cmp-uniforme-row td:nth-child(2){grid-column:1/-1;padding-top:3px!important;padding-right:52px!important;color:var(--muted);font-size:12px}
+  .cmp-uniforme-row td:nth-child(3){grid-column:span 3}
+  .cmp-uniforme-row td:nth-child(4){grid-column:span 2}
+  .cmp-uniforme-row td:nth-child(5){grid-column:span 1}
+  .cmp-uniforme-row td[data-label]::before{margin-bottom:6px}
+  .cmp-uniforme-row select,.cmp-uniforme-row input{width:100%!important;min-width:0!important;min-height:44px!important;padding:8px 10px!important;border-radius:11px!important;font-size:15px!important}
+  .cmp-uniforme-row .uni-qtd{min-width:0!important;text-align:center;padding-inline:4px!important}
+  .cmp-uniforme-row .cmp-row-action{position:absolute;top:12px;right:12px;display:block!important;width:38px!important;padding:0!important}
+  .cmp-uniforme-row .cmp-row-action .btn{display:grid;place-items:center;width:38px!important;min-width:38px!important;height:38px;min-height:38px!important;margin:0!important;padding:0!important;border-radius:11px!important;font-size:20px}
+  .cmp-request-card .form-actions{position:relative!important;z-index:2;margin-top:12px;padding-top:12px;background:linear-gradient(180deg,transparent,rgba(5,22,15,.96) 22%)}
+  .cmp-request-card #cmpFeedback{display:block;padding:0 2px;overflow-wrap:anywhere}
+  .cmp-history-uniforme.is-editable{grid-template-columns:1fr 1fr 64px}.cmp-history-person{grid-column:1/-1}.cmp-history-uniforme .btn{grid-column:1/-1}
+  .cmp-cel-modal{padding:0;align-items:flex-end}.cmp-cel-card{width:100%;max-height:94dvh;border-radius:24px 24px 0 0;border-bottom:0}.cmp-dialog-head{padding:18px 16px 15px}.cmp-dialog-icon{display:none}.cmp-dialog-title h3{font-size:19px}.cmp-dialog-body{padding:16px;max-height:calc(94dvh - 164px)}.cmp-dialog-footer{display:grid;grid-template-columns:1fr 1fr;padding:13px 16px max(16px,env(safe-area-inset-bottom))}.cmp-dialog-footer .cmp-feedback{grid-column:1/-1;margin:0}.cmp-dialog-footer .btn{width:100%!important;padding-inline:10px!important}.cmp-dialog-list-row{align-items:flex-start;flex-direction:column}.cmp-dialog-list-row>button{align-self:flex-end}.cmp-dialog-subcard{padding:14px}
 }
 </style>`}
 
