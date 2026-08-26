@@ -64,7 +64,7 @@ async function renderEpisTab(area) {
   document.documentElement.classList.add('is-route-transitioning');
   try {
     await import('./epiRhPresetPatch.js');
-    const mod = await import('./epiRh.js');
+    const mod = await import('./epiRh.js?v=20260826-fichas-anteriores');
     area.innerHTML = '';
     await mod.renderContent(area, state.ctx);
   } finally {
