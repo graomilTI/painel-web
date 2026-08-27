@@ -99,6 +99,26 @@
       const sit=lookup(sitRes.data||[]), ina=lookup(inaRes.data||[]), byDate=new Map();
       for(const p of ps){ const d=String(p.data_referencia||'').slice(0,10); if(!byDate.has(d))byDate.set(d,[]); byDate.get(d).push(p); }
       const out=[];
+      // O registro feito pelo gestor em "Sem O.S." e a fonte de verdade.
+      // Antes, a tela primeiro tentava reconstruir o quadro pelo cadastro
+      // atual da regional; se o colaborador nao voltasse nessa consulta
+      // (cadastro historico, CPF/supervisao divergente etc.), o motivo salvo
+      // existia no banco mas nunca chegava a aba Disponiveis.
+      const programaPorId=new Map(ps.map(p=>[String(p.id),p]));
+      const confirmadoPorPrograma=new Set((eqRes.data||[]).filter(r=>r.confirmado).flatMap(r=>{
+        const p=String(r.programacao_id||''),i=idKey(r.colaborador_id),n=norm(r.nome_colaborador),keys=[];
+        if(p&&i)keys.push(`${p}::ID::${i}`); if(p&&n)keys.push(`${p}::NOME::${n}`); return keys;
+      }));
+      for(const s of (sitRes.data||[])){
+        const p=programaPorId.get(String(s.programacao_id||'')); if(!p)continue;
+        const i=idKey(s.colaborador_id),n=norm(s.nome_colaborador);
+        if(confirmadoPorPrograma.has(`${p.id}::ID::${i}`)||confirmadoPorPrograma.has(`${p.id}::NOME::${n}`))continue;
+        const inaRow=find(ina,String(p.id),s),sc=inaRow?'INATIVAR':code(s.disponibilidade);
+        // Linhas completamente vazias sao apenas residuos de edicao. Um
+        // motivo/situacao ou uma observacao caracteriza a decisao do gestor.
+        if(sc==='SEM_STATUS'&&!String(s.observacao||'').trim())continue;
+        out.push({data_referencia:String(p.data_referencia||'').slice(0,10),regional:p.supervisao||s.supervisao||s.coordenacao||'-',colaborador:s.nome_colaborador||'-',status_code:sc,status_label:labels[sc]||String(s.disponibilidade||sc).replaceAll('_',' '),id:i||n});
+      }
       for(const [d,pDia] of byDate){
         const sups=[...new Set(pDia.map(p=>p.supervisao).filter(Boolean))];
         const candidatos=await loadColaboradoresRegional(sups.length===1?sups[0]:sups); const supSet=new Set(sups.map(norm));
