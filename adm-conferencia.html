@@ -105,14 +105,14 @@
       // (cadastro historico, CPF/supervisao divergente etc.), o motivo salvo
       // existia no banco mas nunca chegava a aba Disponiveis.
       const programaPorId=new Map(ps.map(p=>[String(p.id),p]));
-      const confirmadoPorPrograma=new Set((eqRes.data||[]).filter(r=>r.confirmado).flatMap(r=>{
+      const vinculadoPorPrograma=new Set((eqRes.data||[]).flatMap(r=>{
         const p=String(r.programacao_id||''),i=idKey(r.colaborador_id),n=norm(r.nome_colaborador),keys=[];
         if(p&&i)keys.push(`${p}::ID::${i}`); if(p&&n)keys.push(`${p}::NOME::${n}`); return keys;
       }));
       for(const s of (sitRes.data||[])){
         const p=programaPorId.get(String(s.programacao_id||'')); if(!p)continue;
         const i=idKey(s.colaborador_id),n=norm(s.nome_colaborador);
-        if(confirmadoPorPrograma.has(`${p.id}::ID::${i}`)||confirmadoPorPrograma.has(`${p.id}::NOME::${n}`))continue;
+        if(vinculadoPorPrograma.has(`${p.id}::ID::${i}`)||vinculadoPorPrograma.has(`${p.id}::NOME::${n}`))continue;
         const inaRow=find(ina,String(p.id),s),sc=inaRow?'INATIVAR':code(s.disponibilidade);
         // Linhas completamente vazias sao apenas residuos de edicao. Um
         // motivo/situacao ou uma observacao caracteriza a decisao do gestor.
@@ -122,7 +122,7 @@
       for(const [d,pDia] of byDate){
         const sups=[...new Set(pDia.map(p=>p.supervisao).filter(Boolean))];
         const candidatos=await loadColaboradoresRegional(sups.length===1?sups[0]:sups); const supSet=new Set(sups.map(norm));
-        const equipe=(eqRes.data||[]).filter(r=>pDia.some(p=>String(p.id)===String(r.programacao_id))&&r.confirmado);
+        const equipe=(eqRes.data||[]).filter(r=>pDia.some(p=>String(p.id)===String(r.programacao_id)));
         const cIds=new Set(equipe.map(r=>idKey(r.colaborador_id)).filter(Boolean)), cNames=new Set(equipe.map(r=>norm(r.nome_colaborador)).filter(Boolean));
         const pBySup=new Map(pDia.map(p=>[norm(p.supervisao),p]));
         for(const c of (candidatos||[]).filter(c=>supSet.has(norm(c.supervisao)))){
