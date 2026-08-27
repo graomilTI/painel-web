@@ -26,7 +26,7 @@ const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V5-TRAVAS-PROGRAMACAO-ALMOCO-DIARIAS';
+const VERSION = 'V6-TRAVAS-PROGRAMACAO-ALMOCO-DIARIAS-OS';
 const LOGIN_URL = 'https://www.grmserver.com.br/login';
 const FLOW_URL = 'https://www.grmserver.com.br/report/finance/operatingFlow';
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -52,7 +52,12 @@ function norm(value) {
 
 function assertDirectExpenseAllowed(
   expense,
-  { cafeAuthorized = false, programmed = false, lunchProgrammed = false } = {},
+  {
+    cafeAuthorized = false,
+    programmed = false,
+    lunchProgrammed = false,
+    dailyAuthorized = false,
+  } = {},
 ) {
   const expenseName = String(expense?.oexName || '').trim();
   const key = norm(expenseName);
@@ -73,11 +78,11 @@ function assertDirectExpenseAllowed(
     throw error;
   }
 
-  if (['SALARIO DE INTERMITENTE', 'SERVICOS TERCEIRIZADOS'].includes(key) && programmed !== true) {
+  if (['SALARIO DE INTERMITENTE', 'SERVICOS TERCEIRIZADOS'].includes(key) && dailyAuthorized !== true) {
     const error = new Error(
-      `Despesa ${expenseName || key} bloqueada: diária exige colaborador na Programação do Painel para a mesma data.`,
+      `Despesa ${expenseName || key} bloqueada: diária exige vínculo confirmado com O.S. na Programação do Painel para a mesma data.`,
     );
-    error.code = 'DIARIA_SEM_PROGRAMACAO';
+    error.code = 'DIARIA_SEM_PROGRAMACAO_OS';
     throw error;
   }
 }
@@ -107,13 +112,15 @@ function requiredExpenses(
     lunchProgrammed = false,
     hasLaudo = true,
     cafeAuthorized = false,
+    dailyAuthorized = false,
   } = {},
 ) {
   const type = norm(contractType);
   const result = [];
 
-  // Diárias só existem quando há simultaneamente laudo/produção e Programação.
-  if (hasLaudo && programmed) {
+  // Diárias só existem quando há laudo/produção e vínculo confirmado com O.S.
+  // na Programação do Painel para a mesma data.
+  if (hasLaudo && dailyAuthorized) {
     if (type === 'INTERMITENTE') {
       const item = expenseTypes.get('SALARIO DE INTERMITENTE');
       if (!item) throw new Error('Categoria Salário de Intermitente não encontrada no GRM.');
@@ -220,8 +227,7 @@ async function loadCandidates(date) {
       ...(programmedById.get(contractId) || []),
       ...namedPrograms,
     ];
-    const programmedItem = programCandidates.find((row, index, arr) => arr.findIndex((x) => x.id === row.id) === index)
-      || null;
+    const programmedItem = programCandidates[0] || null;
     const isProgrammed = !!programmedItem;
 
     const foodItem = isProgrammed
@@ -234,7 +240,6 @@ async function loadCandidates(date) {
     const cafeProgrammed = isProgrammed && foodItem?.cafe === true;
 
     // Sem laudo, somente Café explicitamente programado pode manter o candidato.
-    // Diária e Almoço nunca entram sem Programação válida.
     if (!hasLaudo && !cafeProgrammed) continue;
 
     unique.set(digits(contract.cpf) || name, {
@@ -267,6 +272,19 @@ async function validateCafeAuthorization(candidate, date) {
     p_versao_id: null,
     p_colaborador_id: candidate.programacaoColaboradorId || String(candidate.colaborador_id || ''),
     p_cpf: digits(candidate.cpf),
+    p_nome: candidate.nome,
+  });
+
+  if (error) throw error;
+  return data === true;
+}
+
+async function validateDailyAuthorization(candidate, date) {
+  if (!candidate.hasLaudo) return false;
+
+  const { data, error } = await getSupabase().rpc('grm_diaria_programacao_valida', {
+    p_data: date,
+    p_colaborador_id: String(candidate.colaborador_id || candidate.programacaoColaboradorId || ''),
     p_nome: candidate.nome,
   });
 
@@ -337,9 +355,19 @@ async function create(
   staff,
   expense,
   date,
-  { cafeAuthorized = false, programmed = false, lunchProgrammed = false } = {},
+  {
+    cafeAuthorized = false,
+    programmed = false,
+    lunchProgrammed = false,
+    dailyAuthorized = false,
+  } = {},
 ) {
-  assertDirectExpenseAllowed(expense, { cafeAuthorized, programmed, lunchProgrammed });
+  assertDirectExpenseAllowed(expense, {
+    cafeAuthorized,
+    programmed,
+    lunchProgrammed,
+    dailyAuthorized,
+  });
   return api(page, '/api/oFlow/setRecord', {
     ofmType: 'D', staCode: Number(staff.staCode), ofmDate: isoToBr(date),
     ofmDescription: `Lançamento automático retroativo - ${expense.oexName}`,
@@ -382,6 +410,8 @@ async function main() {
     cafe_programado: 0,
     cafe_autorizado_login: 0,
     cafe_bloqueado_login: 0,
+    diaria_autorizada_os: 0,
+    diaria_bloqueada_os: 0,
   };
   let actionCount = 0;
   try {
@@ -397,6 +427,14 @@ async function main() {
         else summary.cafe_bloqueado_login += 1;
       }
 
+      const contractType = norm(candidate.tipo_contrato);
+      let dailyAuthorized = false;
+      if (candidate.hasLaudo && ['INTERMITENTE', 'DIARISTA'].includes(contractType)) {
+        dailyAuthorized = await validateDailyAuthorization(candidate, date);
+        if (dailyAuthorized) summary.diaria_autorizada_os += 1;
+        else summary.diaria_bloqueada_os += 1;
+      }
+
       const expenses = requiredExpenses(
         candidate.tipo_contrato,
         candidate.salario,
@@ -406,6 +444,7 @@ async function main() {
           lunchProgrammed: candidate.lunchProgrammed,
           hasLaudo: candidate.hasLaudo,
           cafeAuthorized,
+          dailyAuthorized,
         },
       );
 
@@ -432,6 +471,7 @@ async function main() {
             laudo: candidate.hasLaudo,
             programado: candidate.programmed,
             almoco_programado: candidate.lunchProgrammed,
+            diaria_programada_os: dailyAuthorized,
             cafe_programado: candidate.cafeProgrammed,
             cafe_login_valido_04_07: cafeAuthorized,
             existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
@@ -443,11 +483,10 @@ async function main() {
             cafeAuthorized,
             programmed: candidate.programmed,
             lunchProgrammed: candidate.lunchProgrammed,
+            dailyAuthorized,
           });
           if (decision.action === 'NONE') summary.unchanged += 1;
           else if (actionCount >= MAX_ACTIONS) {
-            // Trava de segurança intencional (evita rajada grande de ações num único run),
-            // não é uma falha: fica pendente e é retomado na próxima execução do agente.
             summary.adiados += 1;
             audit.sucesso = false;
             audit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
@@ -467,6 +506,7 @@ async function main() {
                 cafeAuthorized,
                 programmed: candidate.programmed,
                 lunchProgrammed: candidate.lunchProgrammed,
+                dailyAuthorized,
               });
               const refreshed = await api(page, '/api/reports/finance/operatingFlow', { ofmDateFrom: isoToBr(date), ofmDateTo: isoToBr(date), ofmStatusReport: ['P', 'A', 'N'], reportType: 'flowList' });
               const created = (refreshed.searchData || []).filter((row) => Number(row.staCode) === Number(staff.staCode) && Number(row.oexCode) === Number(expense.oexCode)).sort((a, b) => Number(b.ofmCode) - Number(a.ofmCode))[0];
@@ -496,4 +536,5 @@ module.exports = {
   decide,
   assertDirectExpenseAllowed,
   validateCafeAuthorization,
+  validateDailyAuthorization,
 };
