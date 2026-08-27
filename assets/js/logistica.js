@@ -793,7 +793,7 @@ async function handleSalvarAberturaOs(content) {
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
 
   if (contratoRegra?.tipo === 'formato' && payload.numero_contrato) {
-    if (!new RegExp(contratoRegra.regex_formato).test(payload.numero_contrato)) {
+    if (!new RegExp(contratoRegra.regex_formato, 'i').test(payload.numero_contrato)) {
       alert(`${contratoRotulo} do cliente ${payload.contratante_cliente} deve seguir o formato: ${contratoRegra.exemplo_formato}`);
       return;
     }
