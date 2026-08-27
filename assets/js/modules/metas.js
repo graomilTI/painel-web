@@ -51,16 +51,14 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       label: 'Acompanhamento',
       tabs: [
         { id: 'geral',     label: 'Visão Geral',  desc: 'Indicadores consolidados do período: meta total, produção realizada e percentual de atingimento.' },
-        { id: 'regionais', label: 'Regionais',    desc: 'Desempenho de cada regional/coordenação frente à meta cadastrada para o mês selecionado.' },
-        { id: 'estados',   label: 'Estados',      desc: 'Visão consolidada por estado, somando o resultado das regionais correspondentes.' },
-        { id: 'historico', label: 'Histórico',    desc: 'Evolução mês a mês da meta cadastrada e da produção realizada ao longo do tempo.' }
+        { id: 'estados',   label: 'Estados',      desc: 'Visão consolidada por estado, somando o resultado das regionais correspondentes.' }
       ]
     },
     {
       label: 'Gestão',
       tabs: [
         { id: 'gestores',   label: 'Gestores',            desc: 'Cadastro dos gestores de cada coordenação/supervisão — base para o cálculo do bônus.' },
-        { id: 'configurar', label: 'Metas & Fechamento',  desc: 'Cadastro das metas do mês, fechamento do período e cálculo do bônus dos gestores (produção, custo e patrimônios/leitura).' }
+        { id: 'configurar', label: 'Fechamento',  desc: 'Cadastro das metas do mês, auditoria, fechamento do período e cálculo do bônus dos gestores.' }
       ]
     }
   ];
@@ -89,7 +87,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     erro: null,
     gestores: [],
     gestoresEditId: null,
-    custosRegional: []
+    custosRegional: [],
+    auditoria: []
   };
 
   function injectStyle() {
@@ -1619,7 +1618,11 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       <div class="metas-table-card">
         <div class="metas-table-top">
           <h2>Configurar Metas por Coordenação</h2>
-          <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
+            <input type="file" accept=".xlsx,.xls" data-metas-auditoria-file hidden />
+            <button class="metas-btn secondary" type="button" data-metas-auditoria ${fechado ? 'disabled' : ''}>Auditoria</button>
+          </div>
         </div>
 
         <div class="metas-suggest-card">
@@ -2118,6 +2121,14 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
           .eq('mes', m1.mes)
           .order('coordenacao', { ascending: true })
       ).catch(() => []);
+
+      state.auditoria = await fetchAllRows(
+        supabase.from('metas_auditoria')
+          .select('ano,mes,regional,valor_auditoria,total_embarcado,percentual_limite,apto,nome_arquivo')
+          .eq('ano', Number(state.ano))
+          .eq('mes', Number(state.mes))
+          .order('regional', { ascending: true })
+      ).catch(() => []);
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
       state.erro = err && err.message ? err.message : String(err);
@@ -2317,12 +2328,14 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       const prod = Number(row.produzido_tons || 0);
       return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
     }));
+    const auditoriaByKey = new Map((state.auditoria || []).map(row => [normalizarTexto(row.regional), row]));
 
     // Enriquece com % regional e calcula produção
     const gestores = gestoresEnriq.map(g => {
       const pct = percByKey.has(g._key) ? percByKey.get(g._key) : null;
       const valorProducao = pct !== null ? (pct / 100) * g.bonusInicial * 0.4 : 0;
-      return { ...g, pct, valorProducao };
+      const auditoria = auditoriaByKey.get(g._key) || null;
+      return { ...g, pct, valorProducao, auditoria, auditoriaApta: auditoria ? auditoria.apto !== false : true };
     });
 
     const comGestor = new Set(gestores.map(g => g._key));
@@ -2357,6 +2370,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                   <th>Gestor</th>
                   <th>Coordenação / Supervisão</th>
                   <th class="num">% Regional</th>
+                  <th class="num">Auditoria</th>
                   <th class="num">Qualifica</th>
                   <th class="num">B. Inicial</th>
                   <th class="num" title="Produção 40%">Prod (40%)</th>
@@ -2373,6 +2387,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                         data-gestor-id="${escapeHtml(String(g.id))}"
                         data-key="${escapeHtml(g._key)}"
                         data-percentual="${(g.pct ?? 0).toFixed(6)}"
+                        data-auditoria-apta="${g.auditoriaApta ? '1' : '0'}"
                         data-valor-producao="${g.valorProducao.toFixed(6)}"
                         data-valor-custo="${g.valorCusto.toFixed(6)}"
                         data-valor-leitura="${g.valorLeitura.toFixed(6)}"
@@ -2383,6 +2398,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                         <div style="font-size:11px;color:var(--metas-muted)">${escapeHtml(g.supervisao || '—')}</div>
                       </td>
                       <td class="num">${g.pct !== null ? `<span class="metas-pill ${pctClass(g.pct)}">${fmtPct(g.pct)}</span>` : '<span class="metas-pill">sem meta</span>'}</td>
+                      <td class="num">${g.auditoria ? `<span class="metas-pill ${g.auditoriaApta ? 'good' : 'bad'}">${g.auditoriaApta ? 'Dentro do limite' : 'Acima do limite'}</span>` : '<span class="metas-pill">não anexada</span>'}</td>
                       <td class="num" data-metas-qualifica-cell>—</td>
                       <td class="num" style="font-size:11px">${fmtBRL(g.bonusInicial)}</td>
                       <td class="num" data-bonus-cell-prod style="font-size:11px">—</td>
@@ -2415,7 +2431,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         const vProd    = Number(tr.dataset.valorProducao  || 0);
         const vCusto   = Number(tr.dataset.valorCusto     || 0);
         const vLeitura = Number(tr.dataset.valorLeitura   || 0);
-        const qualifica = pct >= min;
+        const qualifica = pct >= min && tr.dataset.auditoriaApta !== '0';
         const total = qualifica ? vProd + vCusto + vLeitura : 0;
 
         const qc = tr.querySelector('[data-metas-qualifica-cell]');
@@ -2443,7 +2459,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       const gestoresBonus = [];
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
         const pct = Number(tr.dataset.percentual || 0);
-        const qualifica = pct >= min;
+        const qualifica = pct >= min && tr.dataset.auditoriaApta !== '0';
         gestoresBonus.push({
           coordenacaoKey: tr.dataset.key,
           gestorId: Number(tr.dataset.gestorId),
@@ -2513,7 +2529,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
 
     const gestoresBonus = gestoresEnriq.map(g => {
       const pct = percByKey.has(g._key) ? percByKey.get(g._key) : 0;
-      const qualifica = pct >= min;
+      const auditoria = (state.auditoria || []).find(a => normalizarTexto(a.regional) === g._key);
+      const qualifica = pct >= min && (!auditoria || auditoria.apto !== false);
       return {
         coordenacaoKey: g._key,
         gestorId: g.id,
@@ -2530,6 +2547,57 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     }
 
     gerarRelatorioBonusXlsx(state, gestoresEnriq, gestoresBonus);
+  }
+
+  function pedirPercentualAuditoria(nomeArquivo) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'metas-modal-overlay';
+      overlay.innerHTML = `<div class="metas-modal" style="max-width:520px"><div class="metas-modal-header"><h3>Configurar auditoria</h3><p>${escapeHtml(nomeArquivo)}</p></div><div class="metas-field"><label>Qual o percentual de auditoria será considerado?</label><input class="metas-edit-input" type="number" min="0" max="100" step="0.01" value="1" data-auditoria-percentual /><p class="metas-config-hint">O limite será calculado sobre o Total Embarcado de cada regional.</p></div><div class="metas-modal-footer"><button class="metas-btn secondary" type="button" data-cancelar>Cancelar</button><button class="metas-btn" type="button" data-confirmar>Aplicar auditoria</button></div></div>`;
+      document.body.appendChild(overlay);
+      const finish = value => { overlay.remove(); resolve(value); };
+      overlay.querySelector('[data-cancelar]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirmar]').onclick = () => {
+        const value = Number(overlay.querySelector('[data-auditoria-percentual]').value);
+        if (!Number.isFinite(value) || value < 0 || value > 100) return alert('Informe um percentual entre 0 e 100.');
+        finish(value);
+      };
+    });
+  }
+
+  async function importarAuditoria(file, state, supabase, reload) {
+    const percentual = await pedirPercentualAuditoria(file.name);
+    if (percentual === null) return;
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const dados = XLSX.utils.sheet_to_json(sheet, { defval: null });
+    const auditoria = new Map();
+    dados.forEach(row => {
+      const regional = String(row['Coordenação'] ?? row['Coordenacao'] ?? '').trim();
+      const valor = Number(row.Total || 0);
+      if (!regional || normalizarTexto(regional) === 'total geral' || !Number.isFinite(valor)) return;
+      const key = normalizarTexto(regional);
+      auditoria.set(key, { regional, valor: (auditoria.get(key)?.valor || 0) + valor });
+    });
+    if (!auditoria.size) return alert('A planilha precisa conter as colunas Coordenação e Total.');
+
+    const range = getMonthRange(Number(state.ano), Number(state.mes));
+    const embarques = await fetchAllRows(supabase.from('relatorio_resultado_diario').select('coordenacao,embarcado,data').gte('data', range.start).lt('data', range.next));
+    const totalEmbarcado = new Map();
+    embarques.forEach(row => {
+      const key = normalizarTexto(row.coordenacao);
+      totalEmbarcado.set(key, (totalEmbarcado.get(key) || 0) + Number(row.embarcado || 0));
+    });
+    const now = new Date().toISOString();
+    const payload = Array.from(auditoria.entries()).map(([key, item]) => {
+      const embarcado = totalEmbarcado.get(key) || 0;
+      const limite = embarcado * (percentual / 100);
+      return { ano: Number(state.ano), mes: Number(state.mes), regional: item.regional, valor_auditoria: item.valor, total_embarcado: embarcado, percentual_limite: percentual, apto: item.valor <= limite, nome_arquivo: file.name, updated_at: now };
+    });
+    const { error } = await supabase.from('metas_auditoria').upsert(payload, { onConflict: 'ano,mes,regional' });
+    if (error) return alert('Erro ao salvar auditoria: ' + error.message);
+    alert(`Auditoria aplicada em ${payload.length} regionais. ${payload.filter(r => !r.apto).length} ficaram acima do limite.`);
+    await reload();
   }
 
   async function fecharMetaMes(state, supabase, rerender) {
@@ -2730,6 +2798,18 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         await salvarMeta(form, state, supabase, rerender);
+      });
+    }
+
+    // ── Auditoria ─────────────────────────────────────────────────────────
+    const auditoriaBtn = container.querySelector('[data-metas-auditoria]');
+    const auditoriaFile = container.querySelector('[data-metas-auditoria-file]');
+    if (auditoriaBtn && auditoriaFile) {
+      auditoriaBtn.addEventListener('click', () => auditoriaFile.click());
+      auditoriaFile.addEventListener('change', async () => {
+        const file = auditoriaFile.files?.[0];
+        if (file) await importarAuditoria(file, state, supabase, reload);
+        auditoriaFile.value = '';
       });
     }
 
