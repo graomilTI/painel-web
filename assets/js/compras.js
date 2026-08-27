@@ -1,6 +1,6 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { getColaboradores, searchColaboradores } from './colaboradoresCache.js';
+import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20260827-situacao';
 
 const CATALOGO = [
   ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR',''],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
@@ -23,11 +23,10 @@ const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
 const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
 
 async function loadColaboradores(){
-  // A presença na foto mais recente do relatório define o colaborador ativo.
-  // Nem todas as cargas trazem colunas de status/ativo.
+  // A coluna Situação do relatório é a fonte de verdade para colaboradores ativos.
   try {
     const dados = await getColaboradores({ force: true });
-    state.colaboradores = dedupeColaboradores(dados);
+    state.colaboradores = dedupeColaboradores(dados).filter(c=>norm(c.situacao)==='ativo');
   } catch(e) { console.warn(e); state.colaboradores = []; }
 }
 function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
