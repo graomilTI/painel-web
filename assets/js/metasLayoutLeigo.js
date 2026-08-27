@@ -673,6 +673,8 @@ function ensureConfigWorkflow(container) {
   const auditButton = sourceCard.querySelector('[data-metas-auditoria]');
   const auditInput = sourceCard.querySelector('[data-metas-auditoria-file]');
   const closeButton = closePanel.querySelector('[data-metas-close]');
+  const reopenButton = closePanel.querySelector('[data-metas-reopen]');
+  const exportButton = closePanel.querySelector('[data-metas-baixar-bonus]');
   const saveButton = suggest.querySelector('[data-metas-save-list]');
   if (!auditButton || !auditInput || !closeButton || !saveButton) return;
   if (!closeButton.disabled) closeButton.textContent = 'Fechar Meta';
@@ -696,6 +698,8 @@ function ensureConfigWorkflow(container) {
 
   const actions = workflow.querySelector('.metas-closing-buttons');
   actions.append(auditInput, auditButton, closeButton);
+  if (reopenButton) actions.appendChild(reopenButton);
+  if (exportButton) actions.appendChild(exportButton);
   const atribuirPanel = workflow.querySelector('[data-metas-closing-panel="atribuir"]');
   const despesasPanel = workflow.querySelector('[data-metas-closing-panel="despesas"]');
   saveButton.textContent = 'Salvar metas';
