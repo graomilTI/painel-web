@@ -10,7 +10,6 @@
 
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
-import JSZip from 'https://esm.sh/jszip@3.10.1';
 
 (function () {
   'use strict';
@@ -2760,20 +2759,17 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
   async function gerarImagensBonusPorGestor(state, dadosGestores) {
     if (!dadosGestores.length) return;
 
-    const zip = new JSZip();
+    const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
     for (const dados of dadosGestores) {
       const dataUrl = await renderCartaoBonusPng(dados);
-      const base64 = dataUrl.split(',')[1];
-      const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
-      zip.file(`bonus_${slugFileName(dados.gestor)}_${ref}.png`, base64, { base64: true });
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `bonus_${slugFileName(dados.gestor)}_${ref}.png`;
+      a.click();
+      // Pequeno intervalo entre downloads: disparar todos no mesmo tick faz o
+      // navegador tratar como pop-up em massa e bloquear os downloads seguintes.
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `bonus_imagens_${String(state.mes).padStart(2, '0')}-${state.ano}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   }
 
   async function baixarRelatorioBonusFechado(state, supabase) {
