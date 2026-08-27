@@ -23,19 +23,12 @@ const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
 const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
 
 async function loadColaboradores(){
-  // Para uniformes, sempre consulta a foto atual: um desligamento não pode
-  // permanecer elegível por causa do cache da sessão.
+  // A presença na foto mais recente do relatório define o colaborador ativo.
+  // Nem todas as cargas trazem colunas de status/ativo.
   try {
-    const dados = await getColaboradores({ force: true, somenteAtivos: true });
-    state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
+    const dados = await getColaboradores({ force: true });
+    state.colaboradores = dedupeColaboradores(dados);
   } catch(e) { console.warn(e); state.colaboradores = []; }
-}
-function colaboradorAtivo(c){
-  if(typeof c?.ativo==='boolean') return c.ativo;
-  if(typeof c?.ativo==='number') return c.ativo===1;
-  const ativo=norm(c?.ativo);
-  if(ativo) return ['true','1','ativo','active','sim'].includes(ativo);
-  return ['ativo','active'].includes(norm(c?.situacao));
 }
 function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
 function dedupeColaboradores(lista){
@@ -422,7 +415,6 @@ function addAllColaboradores(ctx){
   }
   if(!escopos.size){ setMsg('cmpFeedback','Seu usuário não possui uma regional cadastrada. Solicite o ajuste do cadastro.',true); return; }
   const base=state.colaboradores.filter(c=>{
-    if(!colaboradorAtivo(c)) return false;
     const regionais=campoRegional(c);
     return [...regionais].some(regional=>escopos.has(regional));
   });
