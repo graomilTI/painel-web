@@ -227,6 +227,16 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         border-color: var(--metas-border);
       }
 
+      .metas-btn.danger {
+        background: rgba(127, 29, 29, .2);
+        color: #fecaca;
+        border-color: rgba(248, 113, 113, .38);
+      }
+
+      .metas-btn.danger:hover {
+        border-color: rgba(248, 113, 113, .78);
+      }
+
       .metas-filter-card,
       .metas-card,
       .metas-table-card {
@@ -1671,6 +1681,10 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
             <button class="metas-btn ${fechado ? 'secondary' : ''}" type="button" data-metas-close ${fechado ? 'disabled' : ''}>
               ${fechado ? 'Meta fechada' : 'Fechar meta'}
             </button>
+            ${fechado ? `
+            <button class="metas-btn danger" type="button" data-metas-reopen title="Reabre o período e limpa os resultados calculados no fechamento">
+              Reverter fechamento
+            </button>` : ''}
             ${fechado && rows.some(r => r.qualifica_bonus) ? `
             <button class="metas-btn secondary" type="button" data-metas-baixar-bonus>
               Exportar relatório de bônus (XLS)
@@ -2680,6 +2694,59 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     });
   }
 
+  async function reverterFechamentoMes(state, supabase, rerender, button) {
+    if (!isMonthClosed(state)) {
+      alert('A meta deste mês já está aberta.');
+      return;
+    }
+
+    const periodo = `${getMonthName(state.mes)}/${state.ano}`;
+    const confirmado = confirm(
+      `Reverter o fechamento de ${periodo}?\n\n` +
+      'O período será reaberto para edição. Os status e valores de bônus calculados serão limpos, mas as metas cadastradas serão mantidas.'
+    );
+    if (!confirmado) return;
+
+    const original = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Revertendo...';
+    }
+
+    const { error } = await supabase
+      .from('metas_producao')
+      .update({
+        fechado: false,
+        fechado_em: null,
+        status_fechamento: null,
+        produzido_fechamento: null,
+        percentual_fechamento: null,
+        bonus_percentual_minimo: null,
+        bonus_producao: 0,
+        bonus_custo: 0,
+        bonus_leitura: 0,
+        bonus_total: 0,
+        qualifica_bonus: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('ano', Number(state.ano))
+      .eq('mes', Number(state.mes));
+
+    if (error) {
+      console.error('[METAS] Erro ao reverter fechamento:', error);
+      alert('Erro ao reverter o fechamento: ' + error.message);
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+      return;
+    }
+
+    await loadData(state, supabase);
+    rerender();
+    alert(`Fechamento de ${periodo} revertido. O período está aberto novamente.`);
+  }
+
 
   function bindEvents(container, state, supabase, opts) {
     const rerender = () => {
@@ -2771,6 +2838,13 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
     if (closeBtn) {
       closeBtn.addEventListener('click', async () => {
         await fecharMetaMes(state, supabase, rerender);
+      });
+    }
+
+    const reopenBtn = container.querySelector('[data-metas-reopen]');
+    if (reopenBtn) {
+      reopenBtn.addEventListener('click', async () => {
+        await reverterFechamentoMes(state, supabase, rerender, reopenBtn);
       });
     }
 
