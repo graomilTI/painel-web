@@ -23,13 +23,20 @@ const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
 const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
 
 async function loadColaboradores(){
-  // cache compartilhado (foto mais recente)
+  // Para uniformes, sempre consulta a foto atual: um desligamento não pode
+  // permanecer elegível por causa do cache da sessão.
   try {
-    const dados = await getColaboradores({ somenteAtivos: true });
+    const dados = await getColaboradores({ force: true, somenteAtivos: true });
     state.colaboradores = dedupeColaboradores(dados).filter(colaboradorAtivo);
   } catch(e) { console.warn(e); state.colaboradores = []; }
 }
-function colaboradorAtivo(c){ const txt=norm(c.ativo ?? c.situacao ?? 'ativo'); return !['false','0','inativo','nao ativo','não ativo','desligado'].includes(txt); }
+function colaboradorAtivo(c){
+  if(typeof c?.ativo==='boolean') return c.ativo;
+  if(typeof c?.ativo==='number') return c.ativo===1;
+  const ativo=norm(c?.ativo);
+  if(ativo) return ['true','1','ativo','active','sim'].includes(ativo);
+  return ['ativo','active'].includes(norm(c?.situacao));
+}
 function colaboradorKey(c){ return String(c?.cpf || c?.documento || c?.id || norm(c?.nome || '')).trim(); }
 function dedupeColaboradores(lista){
   const map=new Map();
@@ -404,17 +411,21 @@ function renderUniformes(){
 }
 function addAllColaboradores(ctx){
   const u=usuario(ctx);
-  // A regional aparece como supervisao ou coordenacao, dependendo da origem
-  // (app_usuarios, RPC de contexto ou sincronizacao de colaboradores).
-  const escopos=new Set([
-    u.supervisao,u.coordenacao,u.regional,
-    ctx?.supervisao,ctx?.coordenacao,ctx?.regional,
-  ].flatMap(v=>String(v||'').split(/[,;|]/)).map(norm).filter(Boolean));
-  const base=state.colaboradores.filter(c=>{
-    const campos=[c.supervisao,c.coordenacao,c.regional].map(norm).filter(Boolean);
-    return campos.some(campo=>[...escopos].some(escopo=>campo===escopo || campo.startsWith(`${escopo} `) || escopo.startsWith(`${campo} `)));
-  });
+  const valores=(lista)=>new Set(lista.flatMap(v=>String(v||'').split(/[,;|]/)).map(norm).filter(Boolean));
+  // Regional/supervisão é o escopo operacional. Coordenação só é usada como
+  // fallback quando o cadastro do usuário não informa a regional.
+  let escopos=valores([u.regional,u.supervisao,ctx?.regional,ctx?.supervisao]);
+  let campoRegional=(c)=>valores([c.regional,c.supervisao]);
+  if(!escopos.size){
+    escopos=valores([u.coordenacao,ctx?.coordenacao]);
+    campoRegional=(c)=>valores([c.coordenacao]);
+  }
   if(!escopos.size){ setMsg('cmpFeedback','Seu usuário não possui uma regional cadastrada. Solicite o ajuste do cadastro.',true); return; }
+  const base=state.colaboradores.filter(c=>{
+    if(!colaboradorAtivo(c)) return false;
+    const regionais=campoRegional(c);
+    return [...regionais].some(regional=>escopos.has(regional));
+  });
   state.uniformes = dedupeColaboradores(base).map(c=>({...c,_uniformeTamanho:'M',_uniformeCor:'Verde',_uniformeQtd:1}));
   renderUniformes();
   setMsg('cmpFeedback',base.length?`${state.uniformes.length} colaborador(es) da regional adicionados.`:'Nenhum colaborador ativo foi encontrado para a sua regional.',!base.length);
