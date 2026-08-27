@@ -2651,12 +2651,29 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
     });
   }
 
+  function lerpCor(hexBaixo, hexAlto, t) {
+    const a = hexBaixo.match(/\w\w/g).map(h => parseInt(h, 16));
+    const b = hexAlto.match(/\w\w/g).map(h => parseInt(h, 16));
+    const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    return `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  // Interpola verde↔vermelho conforme onde `valor` cai entre `pontoVerde` e `pontoVermelho`
+  // (a ordem dos dois pontos define se "maior é melhor" ou "menor é melhor").
+  function corEscalaAlerta(valor, pontoVerde, pontoVermelho) {
+    if (valor === null || valor === undefined || !Number.isFinite(valor)) return '#7d8590';
+    const t = pontoVermelho === pontoVerde
+      ? 0
+      : Math.min(1, Math.max(0, (valor - pontoVerde) / (pontoVermelho - pontoVerde)));
+    return lerpCor('#86efac', '#f87171', t);
+  }
+
   async function renderCartaoBonusPng(dados) {
     const fmtBRL  = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const fmtT    = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     const fmtPct1 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
-    const linhaComponente = (cor, titulo, peso, valor, metaLabel, metaValor, atingidoLabel, atingidoValor) => `
+    const linhaComponente = (cor, titulo, peso, valor, metaLabel, metaValor, atingidoLabel, atingidoValor, atingidoCor) => `
       <div style="margin-bottom:14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div style="display:flex;gap:8px;align-items:center;">
@@ -2672,7 +2689,7 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
           </div>
           <div style="flex:1;padding:6px 10px;">
             <p style="margin:0;font-size:10px;color:#7d8590;">${escapeHtml(atingidoLabel)}</p>
-            <p style="margin:1px 0 0;font-size:12px;color:#86efac;font-weight:600;">${atingidoValor}</p>
+            <p style="margin:1px 0 0;font-size:12px;color:${atingidoCor || '#86efac'};font-weight:600;">${atingidoValor}</p>
           </div>
         </div>
       </div>`;
@@ -2707,10 +2724,12 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
           'Atingido', `${fmtT(dados.producao.produzidoTons)} t (${fmtPct1(dados.producao.pct)}%)`)}
         ${linhaComponente('#4ade80', 'Despesas', 30, dados.despesas.valor,
           'Meta (custo/t empresa)', fmtBRL(dados.despesas.cptGeral),
-          'Atingido (custo/t regional)', dados.despesas.cptCoord > 0 ? fmtBRL(dados.despesas.cptCoord) : 'sem dado')}
+          'Atingido (custo/t regional)', dados.despesas.cptCoord > 0 ? fmtBRL(dados.despesas.cptCoord) : 'sem dado',
+          dados.despesas.cptCoord > 0 ? corEscalaAlerta(dados.despesas.cptCoord, dados.despesas.cptGeral, dados.despesas.cptGeral * 1.5) : null)}
         ${linhaComponente('#bbf7d0', 'Leitura', 30, dados.leitura.valor,
           'Meta', '100%',
-          'Atingido', dados.leitura.leituraPct !== null && dados.leitura.leituraPct !== undefined ? `${fmtPct1(dados.leitura.leituraPct)}%` : 'sem dado')}
+          'Atingido', dados.leitura.leituraPct !== null && dados.leitura.leituraPct !== undefined ? `${fmtPct1(dados.leitura.leituraPct)}%` : 'sem dado',
+          corEscalaAlerta(dados.leitura.leituraPct, 90, 60))}
       </div>
     `;
 
