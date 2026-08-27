@@ -3,13 +3,12 @@
  * Padrão do projeto: IIFE + window.METAS.openHome(container, { auth, api, onBack })
  *
  * Regras oficiais:
- * - Produção usada para bater meta = produção diária importada em producao_snapshot.tons
- * - A base é o Relatório de Produção Diária: Coordenação, Data e Tons
- * - Não usar Resultado Diário, embarcado nem total_embarcado_mais_teste
+ * - Produção usada para bater meta = relatorio_resultado_diario.toneladas
+ * - A base é o Relatório Resultado Diário: Coordenação, Data e Toneladas
+ * - Não usar o snapshot, embarcado nem total_embarcado_mais_teste
  */
 
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
-import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSync.js';
 
 (function () {
   'use strict';
@@ -1266,7 +1265,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         <div class="metas-card">
           <div class="metas-card-label">Produzido</div>
           <div class="metas-card-value">${fmtTons(total.produzido)}</div>
-          <div class="metas-card-sub">Base: Relatório de Produção Diária · coluna Tons</div>
+          <div class="metas-card-sub">Base: Relatório Resultado Diário · coluna Toneladas</div>
         </div>
         <div class="metas-card">
           <div class="metas-card-label">Restante</div>
@@ -1844,7 +1843,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
             </div>
             <p>
               Acompanhamento mensal da meta por regional e estado.
-              Produção considerada: <strong>Relatório de Produção Diária</strong>, coluna <strong>Tons</strong>.
+              Produção considerada: <strong>Relatório Resultado Diário</strong>, coluna <strong>Toneladas</strong>.
             </p>
           </div>
           <div class="metas-actions">
@@ -2059,8 +2058,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       if (state.regional) metasQuery = metasQuery.eq('regional', state.regional);
 
       const producaoQuery = supabase
-        .from('producao_snapshot')
-        .select('data,data_referencia,coordenacao,tons')
+        .from('relatorio_resultado_diario')
+        .select('data,coordenacao,toneladas')
         .gte('data', range.start)
         .lt('data', range.next)
         .order('data', { ascending: true });
@@ -2075,7 +2074,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
             .order('mes', { ascending: true })
         ),
         fetchAllRows(producaoQuery).catch(err => {
-          console.warn('[METAS] Não foi possível carregar Produção Diária em producao_snapshot:', err);
+          console.warn('[METAS] Não foi possível carregar Resultado Diário:', err);
           return [];
         })
       ]);
@@ -2919,7 +2918,6 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     render(container, state);
     bindEvents(container, state, supabase, options);
 
-    await sincronizarProducaoSnapshotDoAgente();
     await loadData(state, supabase);
     render(container, state);
     bindEvents(container, state, supabase, options);
