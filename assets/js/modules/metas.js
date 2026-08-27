@@ -2576,7 +2576,7 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
       });
   }
 
-  function desenharDonut3D(canvas, slices) {
+  function desenharPizza3D(canvas, slices) {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
     const cx = W / 2;
@@ -2584,7 +2584,6 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
     const ry = rx * 0.55;
     const depth = rx * 0.27;
     const cyTop = ry + 10;
-    const holeRatio = 0.55;
 
     const total = slices.reduce((s, sl) => s + Math.max(sl.value, 0), 0) || 1;
     let acc = 0;
@@ -2636,11 +2635,23 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
       ctx.fill();
     });
 
-    // furo do donut
+    // miolo em "verde cromado" (gradiente radial simulando metal polido)
+    const hubRx = rx * 0.26;
+    const hubRy = ry * 0.26;
+    const highlightX = cx - hubRx * 0.3;
+    const highlightY = cyTop - hubRy * 0.4;
+    const chrome = ctx.createRadialGradient(highlightX, highlightY, hubRx * 0.08, cx, cyTop, hubRx);
+    chrome.addColorStop(0, '#f2fff6');
+    chrome.addColorStop(0.35, '#5eeba0');
+    chrome.addColorStop(0.7, '#16a34a');
+    chrome.addColorStop(1, '#0b3d20');
     ctx.beginPath();
-    ctx.ellipse(cx, cyTop, rx * holeRatio, ry * holeRatio, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#0b1220';
+    ctx.ellipse(cx, cyTop, hubRx, hubRy, 0, 0, Math.PI * 2);
+    ctx.fillStyle = chrome;
     ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.stroke();
   }
 
   async function renderCartaoBonusPng(dados) {
@@ -2710,7 +2721,7 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
     document.body.appendChild(holder);
 
     const canvas = card.querySelector('#metasBonusDonut');
-    desenharDonut3D(canvas, [
+    desenharPizza3D(canvas, [
       { value: dados.producao.valor, top: '#166534', wall: '#0d3d1f' },
       { value: dados.despesas.valor, top: '#4ade80', wall: '#2c854d' },
       { value: dados.leitura.valor, top: '#bbf7d0', wall: '#70947d' }
