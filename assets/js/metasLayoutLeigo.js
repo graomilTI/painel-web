@@ -677,8 +677,7 @@ function ensureConfigWorkflow(container) {
       <div class="metas-flow-step"><strong>1</strong><span>Definir meta</span></div>
       <div class="metas-flow-step"><strong>2</strong><span>Conferir regionais</span></div>
       <div class="metas-flow-step"><strong>3</strong><span>Validar M-1</span></div>
-      <div class="metas-flow-step"><strong>4</strong><span>Fechar meta</span></div>
-      <div class="metas-flow-step"><strong>5</strong><span>Ver bônus</span></div>
+      <div class="metas-flow-step"><strong>4</strong><span>Fechar e ver bônus</span></div>
     </div>
     <div class="metas-config-workflow-grid"></div>
   `;
@@ -687,8 +686,7 @@ function ensureConfigWorkflow(container) {
   const step1 = createWorkCard('1', 'Definir ou sugerir a meta do mês', 'Informe o valor estimado ou use a sugestão automática. Depois clique em Salvar lista.', { className: 'is-primary' });
   const step2 = createWorkCard('2', 'Conferir metas por regional', 'Confira se cada regional está com a meta correta antes do fechamento.', { badge: `${totalMetas || 0} linhas` });
   const step3 = createWorkCard('3', 'Conferir despesas do mês anterior', 'O custo do bônus usa sempre M-1. Exemplo: meta de Junho usa despesas de Maio.', { badge: custosBadge, badgeClass: custosBadge.includes('aguardando') ? '' : 'good' });
-  const step4 = createWorkCard('4', 'Fechar meta e calcular bônus', 'Depois de conferir metas, despesas, gestores e leitura de patrimônio, finalize o período.', { className: 'is-close' });
-  const step5 = createWorkCard('5', 'Resumo do fechamento', 'Depois de fechado, acompanhe quem atingiu a meta e os valores calculados.' );
+  const step4 = createWorkCard('4', 'Resumo do fechamento', 'Finalize o período e acompanhe quem atingiu a meta e os valores calculados.', { className: 'is-close' });
 
   step1.querySelector('.metas-work-body').appendChild(suggest);
   step2.querySelector('.metas-work-body').appendChild(metasTable);
@@ -696,12 +694,12 @@ function ensureConfigWorkflow(container) {
   step4.querySelector('.metas-work-body').appendChild(closePanel);
 
   if (resumo) {
-    step5.querySelector('.metas-work-body').appendChild(resumo);
+    step4.querySelector('.metas-work-body').appendChild(resumo);
   } else {
-    step5.querySelector('.metas-work-body').innerHTML = '<div class="metas-empty">O resumo será exibido após carregar ou fechar uma meta.</div>';
+    step4.querySelector('.metas-work-body').insertAdjacentHTML('beforeend', '<div class="metas-empty">O resumo será exibido após carregar ou fechar uma meta.</div>');
   }
 
-  grid.append(step1, step2, step3, step4, step5);
+  grid.append(step1, step2, step3, step4);
   content.insertBefore(workflow, sourceCard);
   sourceCard.remove();
 }

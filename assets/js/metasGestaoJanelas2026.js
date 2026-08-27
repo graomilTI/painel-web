@@ -173,7 +173,6 @@ function applyWindow(container, name) {
       findWorkflowCard(container, /conferir despesas do mês anterior/i)
     ],
     resumo: [
-      findWorkflowCard(container, /fechar meta e calcular bônus/i),
       findWorkflowCard(container, /resumo do fechamento/i)
     ]
   };
@@ -237,10 +236,6 @@ function enhance(container) {
   const saveButton = findButtonByText(step1, /salvar lista/i);
   moveActionToToolbar(toolbar, suggestButton);
   moveActionToToolbar(toolbar, saveButton);
-
-  const closeCard = findWorkflowCard(container, /fechar meta e calcular bônus/i);
-  const closeButton = closeCard?.querySelector('[data-metas-close]') || findButtonByText(closeCard, /fechar meta/i);
-  moveActionToToolbar(toolbar, closeButton, 'Fechar metas');
 
   step1.classList.add('metas-gestao-hidden-card');
 
