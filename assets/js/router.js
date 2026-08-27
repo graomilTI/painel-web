@@ -70,7 +70,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
-  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260827-uniforme-relatorio-regional') }],
+  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260827-uniforme-situacao-ativo') }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js'), extraModules: [() => import('./logistica-abertura-upload.js'), () => import('./logistica-abertura-os-correcao.js')] }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
