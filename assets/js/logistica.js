@@ -10,6 +10,7 @@ function brDate(v) { if (!v) return '-'; const [y,m,d] = String(v).slice(0,10).s
 function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
 function safe(d) { return Array.isArray(d) ? d : []; }
 function normalizeText(v) { return String(v ?? '').trim().toUpperCase(); }
+function chaveContrato(v) { return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); }
 function dateFromTomorrowLock() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -188,6 +189,7 @@ export async function renderContent(content, userContext) {
         select.innerHTML = `<option value="">${cliente ? (filiais.length ? 'Selecione' : 'Nenhum Cliente Final associado') : 'Selecione o cliente primeiro'}</option>${filiais.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}`;
         select.disabled = !filiais.length;
       }
+      aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
     const chk = e.target.closest('[data-teste-key]');
@@ -235,13 +237,22 @@ async function loadAllOs() {
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
-  const [prod, os, sup, nacInativos, aliases] = await Promise.all([
+  const [prod, os, sup, nacInativos, aliases, contratoRegras] = await Promise.all([
     supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
     supabase.from('operacional_os').select('cliente,embarque,destino,supervisao').limit(5000),
     supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }).limit(1000),
     supabase.from('clientes_nacionais').select('nome').eq('ativo', false).limit(1000),
     supabase.from('logistica_clientes_nacionais_aliases').select('alias_normalizado,canonical').limit(1000),
+    supabase.from('logistica_clientes_contrato_regras').select('cliente,aliases,tipo,regex_formato,exemplo_formato,rotulo_campo').limit(200),
   ]);
+  // Padrão/obrigatoriedade do número de contrato por cliente (planilha da
+  // usuária, 27/08) — mesmo esquema de match de precisaAnexoSaldo() em
+  // programacao-equipe.js: substring normalizada (sem acento/pontuação/
+  // espaço) em ambas direções contra `cliente` OU qualquer `aliases`.
+  state.aberturaContratoRegras = safe(contratoRegras.data).map(r => ({
+    ...r,
+    chaves: [r.cliente, ...(r.aliases || [])].map(chaveContrato).filter(Boolean),
+  }));
   // Clientes Nacionais inativos no GRM (roster sincronizado manualmente em
   // clientes_nacionais) não devem aparecer no Contratante/Cliente da Abertura.
   const clientesInativos = new Set(safe(nacInativos.data).map(r => normalizeText(r.nome)));
@@ -298,6 +309,34 @@ async function loadAberturaRefs() {
   ['clientes', 'armazens', 'destinos', 'locaisDestino', 'regionais'].forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   Object.values(refs.filiaisPorCliente).forEach(list => list.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   state.aberturaRefs = refs;
+}
+
+// Regra de padrão/obrigatoriedade do número de contrato pro cliente
+// selecionado (ou null se não há regra cadastrada -- comportamento padrão:
+// campo obrigatório, sem formato fixo).
+function contratoRegraPara(clienteNome) {
+  const chave = chaveContrato(clienteNome);
+  if (!chave) return null;
+  const regras = state.aberturaContratoRegras || [];
+  return regras.find(r => r.chaves.some(c => c && (chave.includes(c) || c.includes(chave)))) || null;
+}
+
+// Aplica a regra de contrato do cliente selecionado no campo "Número
+// contrato": rótulo, placeholder e obrigatoriedade mudam conforme o tipo
+// ('formato' trava o valor de exemplo como placeholder; 'nao_obrigatorio'
+// tira o *; 'obrigatorio' pode trocar o rótulo pra refletir o que o cliente
+// realmente pede, ex.: "Pedido de compra").
+function aplicarRegraContratoNoCampo(content, clienteNome) {
+  const label = content.querySelector('#osNumeroContratoLabel');
+  const input = content.querySelector('#osNumeroContrato');
+  if (!label || !input) return;
+  const regra = contratoRegraPara(clienteNome);
+  const rotuloBase = (regra?.rotulo_campo) || 'Número contrato *';
+  label.textContent = regra?.tipo === 'nao_obrigatorio' ? rotuloBase.replace(/\s*\*\s*$/, '') : rotuloBase;
+  input.placeholder = regra?.tipo === 'formato' ? `Formato: ${regra.exemplo_formato}` : 'Aceita letras, números e símbolos';
+  input.dataset.regraTipo = regra?.tipo || '';
+  input.dataset.regraRegex = regra?.regex_formato || '';
+  input.dataset.regraExemplo = regra?.exemplo_formato || '';
 }
 
 async function loadAberturaOs() {
@@ -498,7 +537,7 @@ function renderAbrirOsTab() {
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
           <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
-          <label>Número contrato *<input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
+          <label><span id="osNumeroContratoLabel">Número contrato *</span><input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
           <label>Produto *<select id="osProduto" class="log-input"><option value="">Selecione</option>${Object.values(CATALOGO_PRODUTOS).map(p => `<option value="${esc(p.label)}" ${p.label === state.aberturaProdutoAtual ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
           <label>Tipo de produto *
             <select id="osTipoProduto" class="log-input">
@@ -735,16 +774,30 @@ async function handleSalvarAberturaOs(content) {
     raw: {}
   };
 
+  // Padrão/obrigatoriedade do número de contrato varia por cliente (ver
+  // aplicarRegraContratoNoCampo) — recalculado aqui pra validar no envio
+  // mesmo que o usuário nunca tenha disparado o evento 'change' do select.
+  const contratoRegra = contratoRegraPara(payload.contratante_cliente);
+  const contratoRotulo = (contratoRegra?.rotulo_campo || 'Número contrato').replace(/\s*\*\s*$/, '');
+
   const obrigatorios = [
     ['Contratante/Cliente', payload.contratante_cliente], ['Filial pagadora', payload.filial_pagadora],
     ['Armazém de embarque', payload.armazem_embarque], ['Cidade de embarque', payload.cidade_embarque],
     ['Cidade destino', payload.cidade_destino], ['Local de destino', payload.local_destino],
-    ['Número contrato', payload.numero_contrato], ['Produto', payload.produto], ['Tipo de produto', payload.tipo_produto],
+    ['Produto', payload.produto], ['Tipo de produto', payload.tipo_produto],
     ['Volume inicial', payload.volume_inicial], ['Regional', payload.regional], ['Troca de notas', payload.troca_notas],
     ['Serviço', payload.servico]
   ];
+  if (contratoRegra?.tipo !== 'nao_obrigatorio') obrigatorios.push([contratoRotulo, payload.numero_contrato]);
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
+
+  if (contratoRegra?.tipo === 'formato' && payload.numero_contrato) {
+    if (!new RegExp(contratoRegra.regex_formato).test(payload.numero_contrato)) {
+      alert(`${contratoRotulo} do cliente ${payload.contratante_cliente} deve seguir o formato: ${contratoRegra.exemplo_formato}`);
+      return;
+    }
+  }
 
   state.aberturaSaving = true;
   const { error } = await supabase.from('logistica_abertura_os').insert(payload);
