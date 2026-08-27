@@ -2606,7 +2606,11 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
     ctx.fill();
     ctx.restore();
 
-    // parede (extrusão) — só a metade voltada pra frente (ângulo canvas 0°–180°)
+    // ponto de luz único (mesma posição pra todas as fatias) — dá o efeito "cromado"
+    const highlightX = cx - rx * 0.35;
+    const highlightY = cyTop - ry * 0.45;
+
+    // parede (extrusão) cromada — só a metade voltada pra frente (ângulo canvas 0°–180°)
     spans.forEach(sl => {
       const a0 = toCanvasAngle(sl.startClock);
       const a1 = toCanvasAngle(sl.endClock);
@@ -2614,44 +2618,37 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
       const visEnd = Math.min(a1, Math.PI);
       if (visStart >= visEnd) return;
 
+      const wallGrad = ctx.createLinearGradient(cx, cyTop, cx, cyTop + depth);
+      wallGrad.addColorStop(0, sl.top);
+      wallGrad.addColorStop(0.5, sl.wall);
+      wallGrad.addColorStop(1, sl.rim);
+
       ctx.beginPath();
       ctx.ellipse(cx, cyTop, rx, ry, 0, visStart, visEnd, false);
       ctx.lineTo(cx + rx * Math.cos(visEnd), cyTop + depth + ry * Math.sin(visEnd));
       ctx.ellipse(cx, cyTop + depth, rx, ry, 0, visEnd, visStart, true);
       ctx.closePath();
-      ctx.fillStyle = sl.wall;
+      ctx.fillStyle = wallGrad;
       ctx.fill();
     });
 
-    // topo (face de cima, com as fatias)
+    // topo cromado (face de cima, com brilho radial por fatia)
     spans.forEach(sl => {
       const a0 = toCanvasAngle(sl.startClock);
       const a1 = toCanvasAngle(sl.endClock);
+
+      const topGrad = ctx.createRadialGradient(highlightX, highlightY, rx * 0.03, cx, cyTop, rx);
+      topGrad.addColorStop(0, sl.highlight);
+      topGrad.addColorStop(0.45, sl.top);
+      topGrad.addColorStop(1, sl.wall);
+
       ctx.beginPath();
       ctx.moveTo(cx, cyTop);
       ctx.ellipse(cx, cyTop, rx, ry, 0, a0, a1, false);
       ctx.closePath();
-      ctx.fillStyle = sl.top;
+      ctx.fillStyle = topGrad;
       ctx.fill();
     });
-
-    // miolo em "verde cromado" (gradiente radial simulando metal polido)
-    const hubRx = rx * 0.26;
-    const hubRy = ry * 0.26;
-    const highlightX = cx - hubRx * 0.3;
-    const highlightY = cyTop - hubRy * 0.4;
-    const chrome = ctx.createRadialGradient(highlightX, highlightY, hubRx * 0.08, cx, cyTop, hubRx);
-    chrome.addColorStop(0, '#f2fff6');
-    chrome.addColorStop(0.35, '#5eeba0');
-    chrome.addColorStop(0.7, '#16a34a');
-    chrome.addColorStop(1, '#0b3d20');
-    ctx.beginPath();
-    ctx.ellipse(cx, cyTop, hubRx, hubRy, 0, 0, Math.PI * 2);
-    ctx.fillStyle = chrome;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.stroke();
   }
 
   async function renderCartaoBonusPng(dados) {
@@ -2722,9 +2719,9 @@ import JSZip from 'https://esm.sh/jszip@3.10.1';
 
     const canvas = card.querySelector('#metasBonusDonut');
     desenharPizza3D(canvas, [
-      { value: dados.producao.valor, top: '#166534', wall: '#0d3d1f' },
-      { value: dados.despesas.valor, top: '#4ade80', wall: '#2c854d' },
-      { value: dados.leitura.valor, top: '#bbf7d0', wall: '#70947d' }
+      { value: dados.producao.valor, top: '#166534', wall: '#0d3d1f', highlight: '#a7f3c9', rim: '#04170c' },
+      { value: dados.despesas.valor, top: '#4ade80', wall: '#2c854d', highlight: '#eafff5', rim: '#0d3d20' },
+      { value: dados.leitura.valor, top: '#bbf7d0', wall: '#70947d', highlight: '#ffffff', rim: '#345940' }
     ]);
 
     try {
