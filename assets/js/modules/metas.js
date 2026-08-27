@@ -11,7 +11,6 @@
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
 import JSZip from 'https://esm.sh/jszip@3.10.1';
-import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
 
 (function () {
   'use strict';
@@ -2553,6 +2552,7 @@ import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
           supervisao: g.supervisao || '',
           mes: state.mes,
           ano: state.ano,
+          bonusInicial: g.bonusInicial || 0,
           total,
           producao: {
             valor: gb.bonusProducao,
@@ -2574,6 +2574,73 @@ import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
           }
         };
       });
+  }
+
+  function desenharDonut3D(canvas, slices) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2;
+    const rx = W * 0.39;
+    const ry = rx * 0.55;
+    const depth = rx * 0.27;
+    const cyTop = ry + 10;
+    const holeRatio = 0.55;
+
+    const total = slices.reduce((s, sl) => s + Math.max(sl.value, 0), 0) || 1;
+    let acc = 0;
+    const spans = slices.map(sl => {
+      const startClock = (acc / total) * 360;
+      acc += Math.max(sl.value, 0);
+      const endClock = (acc / total) * 360;
+      return { ...sl, startClock, endClock };
+    });
+    const toCanvasAngle = (clockDeg) => ((clockDeg - 90) * Math.PI) / 180;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // sombra suave de apoio
+    ctx.save();
+    ctx.filter = 'blur(6px)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cyTop + depth + ry * 0.5, rx * 0.92, ry * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+    ctx.restore();
+
+    // parede (extrusão) — só a metade voltada pra frente (ângulo canvas 0°–180°)
+    spans.forEach(sl => {
+      const a0 = toCanvasAngle(sl.startClock);
+      const a1 = toCanvasAngle(sl.endClock);
+      const visStart = Math.max(a0, 0);
+      const visEnd = Math.min(a1, Math.PI);
+      if (visStart >= visEnd) return;
+
+      ctx.beginPath();
+      ctx.ellipse(cx, cyTop, rx, ry, 0, visStart, visEnd, false);
+      ctx.lineTo(cx + rx * Math.cos(visEnd), cyTop + depth + ry * Math.sin(visEnd));
+      ctx.ellipse(cx, cyTop + depth, rx, ry, 0, visEnd, visStart, true);
+      ctx.closePath();
+      ctx.fillStyle = sl.wall;
+      ctx.fill();
+    });
+
+    // topo (face de cima, com as fatias)
+    spans.forEach(sl => {
+      const a0 = toCanvasAngle(sl.startClock);
+      const a1 = toCanvasAngle(sl.endClock);
+      ctx.beginPath();
+      ctx.moveTo(cx, cyTop);
+      ctx.ellipse(cx, cyTop, rx, ry, 0, a0, a1, false);
+      ctx.closePath();
+      ctx.fillStyle = sl.top;
+      ctx.fill();
+    });
+
+    // furo do donut
+    ctx.beginPath();
+    ctx.ellipse(cx, cyTop, rx * holeRatio, ry * holeRatio, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#0b1220';
+    ctx.fill();
   }
 
   async function renderCartaoBonusPng(dados) {
@@ -2613,12 +2680,18 @@ import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
         <p style="margin:2px 0 0;font-size:17px;font-weight:600;color:#f3f4f6;">${escapeHtml(dados.gestor)}</p>
         <p style="margin:1px 0 0;font-size:12px;color:#9ca3af;">${escapeHtml(dados.coordenacao)}${dados.supervisao ? ' · ' + escapeHtml(dados.supervisao) : ''}</p>
       </div>
-      <div style="text-align:center;margin:2px 0 16px;">
-        <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus total</p>
-        <p style="margin:2px 0 0;font-size:32px;font-weight:600;color:#86efac;">${fmtBRL(dados.total)}</p>
+      <div style="display:flex;background:rgba(148,163,184,.08);border-radius:10px;overflow:hidden;margin:2px 0 16px;">
+        <div style="flex:1;text-align:center;padding:14px 10px;border-right:1px solid rgba(148,163,184,.14);">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus de Partida</p>
+          <p style="margin:4px 0 0;font-size:21px;font-weight:600;color:#e5e7eb;">${fmtBRL(dados.bonusInicial)}</p>
+        </div>
+        <div style="flex:1;text-align:center;padding:14px 10px;">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus Final</p>
+          <p style="margin:4px 0 0;font-size:21px;font-weight:600;color:#86efac;">${fmtBRL(dados.total)}</p>
+        </div>
       </div>
       <div style="display:flex;justify-content:center;margin-bottom:14px;">
-        <canvas id="metasBonusDonut" width="192" height="192" style="width:96px;height:96px;"></canvas>
+        <canvas id="metasBonusDonut" width="300" height="210" style="width:150px;height:105px;"></canvas>
       </div>
       <div style="border-top:1px solid rgba(148,163,184,.16);padding-top:14px;">
         ${linhaComponente('#166534', 'Produção', 40, dados.producao.valor,
@@ -2637,34 +2710,22 @@ import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
     document.body.appendChild(holder);
 
     const canvas = card.querySelector('#metasBonusDonut');
-    const chart = new Chart(canvas, {
-      type: 'doughnut',
-      data: {
-        labels: ['Produção', 'Despesas', 'Leitura'],
-        datasets: [{
-          data: [dados.producao.valor, dados.despesas.valor, dados.leitura.valor],
-          backgroundColor: ['#166534', '#4ade80', '#bbf7d0'],
-          borderWidth: 0
-        }]
-      },
-      options: {
-        cutout: '38%',
-        animation: false,
-        plugins: { legend: { display: false }, tooltip: { enabled: false } }
-      }
-    });
+    desenharDonut3D(canvas, [
+      { value: dados.producao.valor, top: '#166534', wall: '#0d3d1f' },
+      { value: dados.despesas.valor, top: '#4ade80', wall: '#2c854d' },
+      { value: dados.leitura.valor, top: '#bbf7d0', wall: '#70947d' }
+    ]);
 
     try {
+      // Pequena espera pra garantir que o layout/DOM assentou antes da captura.
       // Não usar requestAnimationFrame aqui: em lote (vários gestores seguidos), o
       // usuário pode trocar de aba durante a geração e o navegador suspende rAF em
       // abas em segundo plano, travando o fechamento indefinidamente. setTimeout
-      // continua rodando (só com throttling leve) e é suficiente pro Chart.js
-      // (animation:false) terminar de desenhar antes da captura.
+      // continua rodando (só com throttling leve).
       await new Promise(resolve => setTimeout(resolve, 50));
       const canvasImg = await html2canvas(card, { backgroundColor: '#0b1220', scale: 2 });
       return canvasImg.toDataURL('image/png');
     } finally {
-      chart.destroy();
       holder.remove();
     }
   }
