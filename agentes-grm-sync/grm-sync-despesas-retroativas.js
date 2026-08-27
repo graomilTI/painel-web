@@ -26,7 +26,7 @@ const WebSocket = require('ws');
 
 puppeteer.use(StealthPlugin());
 
-const VERSION = 'V4-CAFE-PROGRAMACAO-LOGIN-PONTO';
+const VERSION = 'V5-TRAVAS-PROGRAMACAO-ALMOCO-DIARIAS';
 const LOGIN_URL = 'https://www.grmserver.com.br/login';
 const FLOW_URL = 'https://www.grmserver.com.br/report/finance/operatingFlow';
 const DRY_RUN = process.argv.includes('--dry-run')
@@ -50,14 +50,34 @@ function norm(value) {
     .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
-function assertDirectExpenseAllowed(expense, { cafeAuthorized = false } = {}) {
+function assertDirectExpenseAllowed(
+  expense,
+  { cafeAuthorized = false, programmed = false, lunchProgrammed = false } = {},
+) {
   const expenseName = String(expense?.oexName || '').trim();
   const key = norm(expenseName);
+
   if (key === 'CAFE' && cafeAuthorized !== true) {
     const error = new Error(
       `Despesa ${expenseName || key} bloqueada: Café exige Programação do Painel e login válido no ponto de embarque entre 04h e 07h no horário local.`,
     );
     error.code = 'CAFE_SEM_AUTORIZACAO_OPERACIONAL';
+    throw error;
+  }
+
+  if (key === 'ALMOCO' && !(programmed === true && lunchProgrammed === true)) {
+    const error = new Error(
+      `Despesa ${expenseName || key} bloqueada: Almoço exige colaborador na Programação do Painel e almoco=true para a mesma programação/data.`,
+    );
+    error.code = 'ALMOCO_SEM_PROGRAMACAO';
+    throw error;
+  }
+
+  if (['SALARIO DE INTERMITENTE', 'SERVICOS TERCEIRIZADOS'].includes(key) && programmed !== true) {
+    const error = new Error(
+      `Despesa ${expenseName || key} bloqueada: diária exige colaborador na Programação do Painel para a mesma data.`,
+    );
+    error.code = 'DIARIA_SEM_PROGRAMACAO';
     throw error;
   }
 }
@@ -82,12 +102,18 @@ function requiredExpenses(
   contractType,
   salary,
   expenseTypes,
-  { programmed = true, hasLaudo = true, cafeAuthorized = false } = {},
+  {
+    programmed = false,
+    lunchProgrammed = false,
+    hasLaudo = true,
+    cafeAuthorized = false,
+  } = {},
 ) {
   const type = norm(contractType);
   const result = [];
 
-  if (hasLaudo) {
+  // Diárias só existem quando há simultaneamente laudo/produção e Programação.
+  if (hasLaudo && programmed) {
     if (type === 'INTERMITENTE') {
       const item = expenseTypes.get('SALARIO DE INTERMITENTE');
       if (!item) throw new Error('Categoria Salário de Intermitente não encontrada no GRM.');
@@ -97,13 +123,17 @@ function requiredExpenses(
       if (!item) throw new Error('Categoria Serviços Terceirizados não encontrada no GRM.');
       result.push({ ...item, amount: Number(salary || 0) });
     }
-    if (programmed) {
-      const lunch = expenseTypes.get('ALMOCO');
-      if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
-      result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
-    }
   }
 
+  // Almoço exige a marcação explícita almoco=true na alimentação da MESMA
+  // programação do colaborador, além do laudo já exigido pelo fluxo atual.
+  if (hasLaudo && programmed && lunchProgrammed) {
+    const lunch = expenseTypes.get('ALMOCO');
+    if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
+    result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
+  }
+
+  // Café mantém a regra especial: Programação + cafe=true + login/geofence 04h-07h.
   if (cafeAuthorized) {
     const coffee = expenseTypes.get('CAFE');
     if (!coffee) throw new Error('Categoria Café não encontrada no GRM.');
@@ -134,6 +164,12 @@ async function queryAll(table, select, configure) {
   }
 }
 
+function addToIndex(map, key, row) {
+  if (!key) return;
+  if (!map.has(key)) map.set(key, []);
+  map.get(key).push(row);
+}
+
 async function loadCandidates(date) {
   const [programmed, alimentation, production, contracts] = await Promise.all([
     queryAll(
@@ -143,28 +179,24 @@ async function loadCandidates(date) {
     ),
     queryAll(
       'programacao_alimentacao',
-      'programacao_id,colaborador_id,nome_colaborador,cafe,data_referencia',
-      (q) => q.eq('data_referencia', date).eq('cafe', true),
+      'programacao_id,colaborador_id,nome_colaborador,cafe,almoco,data_referencia',
+      (q) => q.eq('data_referencia', date),
     ),
     queryAll('producao_snapshot', 'funcionario,data,os,cargas,tons', (q) => q.eq('data', date)),
     queryAll('colaborador_cruzamento', 'colaborador_id,cpf,nome,tipo_contrato,salario,atualizado_em', (q) => q.order('atualizado_em', { ascending: false })),
   ]);
 
-  // Laudo continua sendo o gatilho das despesas já existentes (salário/serviço
-  // e almoço). Café é uma exceção intencional: pode entrar sem laudo, desde que
-  // esteja marcado na Programação e passe pela validação de login/geofence.
   const laudoNames = new Set(production.map((row) => norm(row.funcionario)).filter(Boolean));
-  const cafeByName = new Map(
-    alimentation
-      .filter((row) => row.cafe === true)
-      .map((row) => [norm(row.nome_colaborador), row]),
-  );
-  const cafeNames = new Set([...cafeByName.keys()].filter(Boolean));
+  const cafeRows = alimentation.filter((row) => row.cafe === true);
+  const cafeNames = new Set(cafeRows.map((row) => norm(row.nome_colaborador)).filter(Boolean));
   const candidateNames = new Set([...laudoNames, ...cafeNames]);
 
-  const programmedIds = new Set(programmed.map((row) => String(row.colaborador_id || '')).filter(Boolean));
-  const programmedNames = new Set(programmed.map((row) => norm(row.nome_colaborador)).filter(Boolean));
-  const programmedByName = new Map(programmed.map((row) => [norm(row.nome_colaborador), row]));
+  const programmedByName = new Map();
+  const programmedById = new Map();
+  for (const row of programmed) {
+    addToIndex(programmedByName, norm(row.nome_colaborador), row);
+    addToIndex(programmedById, String(row.colaborador_id || ''), row);
+  }
 
   const contractsById = new Map();
   const contractsByName = new Map();
@@ -177,29 +209,43 @@ async function loadCandidates(date) {
 
   const unique = new Map();
   for (const name of candidateNames) {
-    const cafeItem = cafeByName.get(name);
-    const programmedItem = programmedByName.get(name);
-    const referenceItem = cafeItem || programmedItem;
+    const namedPrograms = programmedByName.get(name) || [];
+    const namedFood = alimentation.filter((row) => norm(row.nome_colaborador) === name);
+    const referenceItem = namedPrograms[0] || namedFood[0];
     const contract = contractsById.get(String(referenceItem?.colaborador_id || '')) || contractsByName.get(name);
     if (!contract || !['DIARISTA', 'INTERMITENTE', 'EFETIVO'].includes(norm(contract.tipo_contrato))) continue;
 
-    const isProgrammed = programmedIds.has(String(contract.colaborador_id || '')) || programmedNames.has(name);
-    const hasLaudo = laudoNames.has(name);
-    const cafeProgrammed = !!cafeItem;
+    const contractId = String(contract.colaborador_id || '');
+    const programCandidates = [
+      ...(programmedById.get(contractId) || []),
+      ...namedPrograms,
+    ];
+    const programmedItem = programCandidates.find((row, index, arr) => arr.findIndex((x) => x.id === row.id) === index)
+      || null;
+    const isProgrammed = !!programmedItem;
 
-    // Mantém a regra anterior para despesas base de efetivo; a inclusão sem
-    // laudo só existe para Café explicitamente marcado na Programação.
-    if (norm(contract.tipo_contrato) === 'EFETIVO' && hasLaudo && !isProgrammed) continue;
+    const foodItem = isProgrammed
+      ? alimentation.find((row) => String(row.programacao_id || '') === String(programmedItem.programacao_id || '')
+        && (String(row.colaborador_id || '') === contractId || norm(row.nome_colaborador) === name))
+      : null;
+
+    const hasLaudo = laudoNames.has(name);
+    const lunchProgrammed = isProgrammed && foodItem?.almoco === true;
+    const cafeProgrammed = isProgrammed && foodItem?.cafe === true;
+
+    // Sem laudo, somente Café explicitamente programado pode manter o candidato.
+    // Diária e Almoço nunca entram sem Programação válida.
     if (!hasLaudo && !cafeProgrammed) continue;
 
     unique.set(digits(contract.cpf) || name, {
       ...contract,
       nameKey: name,
       programmed: isProgrammed,
+      lunchProgrammed,
       hasLaudo,
       cafeProgrammed,
-      programacaoId: String(cafeItem?.programacao_id || programmedItem?.programacao_id || ''),
-      programacaoColaboradorId: String(cafeItem?.colaborador_id || programmedItem?.colaborador_id || contract.colaborador_id || ''),
+      programacaoId: String(foodItem?.programacao_id || programmedItem?.programacao_id || ''),
+      programacaoColaboradorId: String(foodItem?.colaborador_id || programmedItem?.colaborador_id || contract.colaborador_id || ''),
     });
   }
 
@@ -207,12 +253,13 @@ async function loadCandidates(date) {
     candidates: [...unique.values()],
     programmed: programmed.length,
     production: laudoNames.size,
-    cafesProgramados: alimentation.length,
+    cafesProgramados: cafeRows.length,
+    almocosProgramados: alimentation.filter((row) => row.almoco === true).length,
   };
 }
 
 async function validateCafeAuthorization(candidate, date) {
-  if (!candidate.cafeProgrammed || !candidate.programacaoId) return false;
+  if (!candidate.programmed || !candidate.cafeProgrammed || !candidate.programacaoId) return false;
 
   const { data, error } = await getSupabase().rpc('grm_cafe_login_valido', {
     p_data: date,
@@ -285,8 +332,14 @@ async function approve(page, row) {
   return api(page, '/api/oFlow/approve', { ofmCode: Number(row.ofmCode), reproveReason: '', type: 'A' });
 }
 
-async function create(page, staff, expense, date, { cafeAuthorized = false } = {}) {
-  assertDirectExpenseAllowed(expense, { cafeAuthorized });
+async function create(
+  page,
+  staff,
+  expense,
+  date,
+  { cafeAuthorized = false, programmed = false, lunchProgrammed = false } = {},
+) {
+  assertDirectExpenseAllowed(expense, { cafeAuthorized, programmed, lunchProgrammed });
   return api(page, '/api/oFlow/setRecord', {
     ofmType: 'D', staCode: Number(staff.staCode), ofmDate: isoToBr(date),
     ofmDescription: `Lançamento automático retroativo - ${expense.oexName}`,
@@ -306,6 +359,7 @@ async function main() {
   const source = await loadCandidates(date);
   log('INFO', `Agente ${VERSION}: base ${date}.`, {
     programados: source.programmed,
+    almocos_programados: source.almocosProgramados,
     cafes_programados: source.cafesProgramados,
     com_producao: source.production,
     elegiveis: source.candidates.length,
@@ -349,6 +403,7 @@ async function main() {
         grm.expenseTypes,
         {
           programmed: candidate.programmed,
+          lunchProgrammed: candidate.lunchProgrammed,
           hasLaudo: candidate.hasLaudo,
           cafeAuthorized,
         },
@@ -376,6 +431,7 @@ async function main() {
           diagnostico: {
             laudo: candidate.hasLaudo,
             programado: candidate.programmed,
+            almoco_programado: candidate.lunchProgrammed,
             cafe_programado: candidate.cafeProgrammed,
             cafe_login_valido_04_07: cafeAuthorized,
             existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
@@ -383,7 +439,11 @@ async function main() {
           },
         };
         try {
-          assertDirectExpenseAllowed(expense, { cafeAuthorized });
+          assertDirectExpenseAllowed(expense, {
+            cafeAuthorized,
+            programmed: candidate.programmed,
+            lunchProgrammed: candidate.lunchProgrammed,
+          });
           if (decision.action === 'NONE') summary.unchanged += 1;
           else if (actionCount >= MAX_ACTIONS) {
             // Trava de segurança intencional (evita rajada grande de ações num único run),
@@ -403,7 +463,11 @@ async function main() {
             if (!(Number(expense.amount) > 0)) throw new Error(`Valor inválido para ${expense.oexName}: ${expense.amount}`);
             summary.create += 1; actionCount += 1;
             if (!DRY_RUN) {
-              await create(page, staff, expense, date, { cafeAuthorized });
+              await create(page, staff, expense, date, {
+                cafeAuthorized,
+                programmed: candidate.programmed,
+                lunchProgrammed: candidate.lunchProgrammed,
+              });
               const refreshed = await api(page, '/api/reports/finance/operatingFlow', { ofmDateFrom: isoToBr(date), ofmDateTo: isoToBr(date), ofmStatusReport: ['P', 'A', 'N'], reportType: 'flowList' });
               const created = (refreshed.searchData || []).filter((row) => Number(row.staCode) === Number(staff.staCode) && Number(row.oexCode) === Number(expense.oexCode)).sort((a, b) => Number(b.ofmCode) - Number(a.ofmCode))[0];
               if (!created) throw new Error('Lançamento não apareceu na conferência após criação.');
