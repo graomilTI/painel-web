@@ -38,14 +38,32 @@ export async function signOut() {
 }
 
 export async function getSession() {
-  const result = await withTimeout(
-    supabase.auth.getSession(),
-    6000,
-    { data: { session: null }, error: null }
-  );
-  const { data, error } = result || { data: { session: null }, error: null };
-  if (error) throw error;
-  return data?.session || null;
+  // Timeout não significa sessão encerrada. Em reload/F5 o Supabase pode estar
+  // restaurando o token persistido ou aguardando o lock interno de refresh; se
+  // tratarmos essa demora como `session: null`, o authGuard apaga o contexto e
+  // manda o colaborador para o login indevidamente.
+  //
+  // Quando o Supabase responde normalmente, porém ainda sem sessão, fazemos
+  // tentativas rápidas para cobrir a pequena janela de reidratação. Um timeout
+  // real é propagado como erro temporário e NÃO como logout.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await withRejectTimeout(
+      supabase.auth.getSession(),
+      5000,
+      'Tempo excedido ao restaurar a sessão do usuário.'
+    );
+    const { data, error } = result || { data: { session: null }, error: null };
+    if (error) throw error;
+
+    const session = data?.session || null;
+    if (session?.user) return session;
+
+    if (attempt < 3) await wait(150 * attempt);
+  }
+
+  // Só retorna null depois que o próprio Supabase respondeu, em todas as
+  // tentativas, que não existe uma sessão restaurável.
+  return null;
 }
 
 // Evita que qualquer tela fique em branco aguardando indefinidamente uma chamada
