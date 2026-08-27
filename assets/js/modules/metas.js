@@ -9,6 +9,9 @@
  */
 
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
+import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
+import JSZip from 'https://esm.sh/jszip@3.10.1';
+import { Chart } from 'https://esm.sh/chart.js@4.4.0/auto';
 
 (function () {
   'use strict';
@@ -2311,8 +2314,9 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       const despesaCoord  = despesaMap.get(key)  || 0;
       let fatorCusto = 0;
       let valorCusto = 0;
+      let cptCoord = 0;
       if (cptGeral > 0 && volClassCoord > 0 && despesaCoord > 0) {
-        const cptCoord = despesaCoord / volClassCoord;
+        cptCoord = despesaCoord / volClassCoord;
         fatorCusto = cptCoord > 0 ? cptGeral / cptCoord : 0;
         valorCusto = fatorCusto * bonusInicial * 0.3;
       }
@@ -2323,6 +2327,7 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
         bonusInicial,
         leituraPct, multLeitura, valorLeitura,
         volClassCoord, despesaCoord, fatorCusto, valorCusto,
+        cptGeral, cptCoord,
         temDespesas,
         m1Ref: `${String(m1.mes).padStart(2,'0')}/${m1.ano}`
       };
@@ -2341,6 +2346,10 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       const prod = Number(row.produzido_tons || 0);
       return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
     }));
+    const metaProdByKey = new Map(rows.map(row => [rowKey(row), {
+      metaTons: Number(row.meta_tons || 0),
+      produzidoTons: Number(row.produzido_tons || 0)
+    }]));
     const auditoriaByKey = new Map((state.auditoria || []).map(row => [normalizarTexto(row.regional), row]));
 
     // Enriquece com % regional e calcula produção
@@ -2473,10 +2482,14 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
         const pct = Number(tr.dataset.percentual || 0);
         const qualifica = pct >= min && tr.dataset.auditoriaApta !== '0';
+        const mp = metaProdByKey.get(tr.dataset.key) || { metaTons: 0, produzidoTons: 0 };
         gestoresBonus.push({
           coordenacaoKey: tr.dataset.key,
           gestorId: Number(tr.dataset.gestorId),
           qualifica,
+          pct,
+          metaTons: mp.metaTons,
+          produzidoTons: mp.produzidoTons,
           bonusProducao: qualifica ? Number(tr.dataset.valorProducao  || 0) : 0,
           bonusCusto:    qualifica ? Number(tr.dataset.valorCusto     || 0) : 0,
           bonusLeitura:  qualifica ? Number(tr.dataset.valorLeitura   || 0) : 0
@@ -2518,6 +2531,161 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 
     const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
     XLSX.writeFile(wb, `bonus_metas_${ref}.xlsx`);
+  }
+
+  function slugFileName(str) {
+    return normalizarTexto(str).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'gestor';
+  }
+
+  function montarDadosCartaoBonus(gestoresEnriq, gestoresBonus, state) {
+    const porId = new Map(gestoresEnriq.map(g => [g.id, g]));
+
+    return (gestoresBonus || [])
+      .filter(gb => gb.qualifica && (gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura) > 0)
+      .map(gb => {
+        const g = porId.get(gb.gestorId) || {};
+        const total = gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura;
+        const pctDe = v => (total > 0 ? (v / total) * 100 : 0);
+
+        return {
+          gestor: g.gestor || '',
+          coordenacao: g.coordenacao || '',
+          supervisao: g.supervisao || '',
+          mes: state.mes,
+          ano: state.ano,
+          total,
+          producao: {
+            valor: gb.bonusProducao,
+            pctTotal: pctDe(gb.bonusProducao),
+            metaTons: gb.metaTons || 0,
+            produzidoTons: gb.produzidoTons || 0,
+            pct: gb.pct || 0
+          },
+          despesas: {
+            valor: gb.bonusCusto,
+            pctTotal: pctDe(gb.bonusCusto),
+            cptGeral: g.cptGeral || 0,
+            cptCoord: g.cptCoord || 0
+          },
+          leitura: {
+            valor: gb.bonusLeitura,
+            pctTotal: pctDe(gb.bonusLeitura),
+            leituraPct: g.leituraPct
+          }
+        };
+      });
+  }
+
+  async function renderCartaoBonusPng(dados) {
+    const fmtBRL  = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtT    = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const fmtPct1 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    const linhaComponente = (cor, titulo, peso, valor, metaLabel, metaValor, atingidoLabel, atingidoValor) => `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div style="width:9px;height:9px;border-radius:50%;background:${cor};flex:none;"></div>
+            <span style="font-size:12.5px;color:#f3f4f6;font-weight:600;">${escapeHtml(titulo)} · ${peso}%</span>
+          </div>
+          <span style="font-size:12.5px;color:#f3f4f6;font-weight:600;">${fmtBRL(valor)}</span>
+        </div>
+        <div style="display:flex;background:rgba(148,163,184,.08);border-radius:8px;overflow:hidden;">
+          <div style="flex:1;padding:6px 10px;border-right:1px solid rgba(148,163,184,.14);">
+            <p style="margin:0;font-size:10px;color:#7d8590;">${escapeHtml(metaLabel)}</p>
+            <p style="margin:1px 0 0;font-size:12px;color:#e5e7eb;font-weight:600;">${metaValor}</p>
+          </div>
+          <div style="flex:1;padding:6px 10px;">
+            <p style="margin:0;font-size:10px;color:#7d8590;">${escapeHtml(atingidoLabel)}</p>
+            <p style="margin:1px 0 0;font-size:12px;color:#86efac;font-weight:600;">${atingidoValor}</p>
+          </div>
+        </div>
+      </div>`;
+
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'width:360px;background:#0b1220;border:1px solid rgba(148,163,184,.18);border-radius:20px;padding:24px 22px;font-family:"DM Sans",system-ui,sans-serif;color:#e5e7eb;box-sizing:border-box;';
+    card.innerHTML = `
+      <div style="margin-bottom:16px;">
+        <p style="margin:0;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#7d8590;">Bônus · ${escapeHtml(getMonthName(dados.mes))}/${dados.ano}</p>
+        <p style="margin:2px 0 0;font-size:17px;font-weight:600;color:#f3f4f6;">${escapeHtml(dados.gestor)}</p>
+        <p style="margin:1px 0 0;font-size:12px;color:#9ca3af;">${escapeHtml(dados.coordenacao)}${dados.supervisao ? ' · ' + escapeHtml(dados.supervisao) : ''}</p>
+      </div>
+      <div style="text-align:center;margin:2px 0 16px;">
+        <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus total</p>
+        <p style="margin:2px 0 0;font-size:32px;font-weight:600;color:#86efac;">${fmtBRL(dados.total)}</p>
+      </div>
+      <div style="display:flex;justify-content:center;margin-bottom:14px;">
+        <canvas id="metasBonusDonut" width="192" height="192" style="width:96px;height:96px;"></canvas>
+      </div>
+      <div style="border-top:1px solid rgba(148,163,184,.16);padding-top:14px;">
+        ${linhaComponente('#166534', 'Produção', 40, dados.producao.valor,
+          'Meta', `${fmtT(dados.producao.metaTons)} t`,
+          'Atingido', `${fmtT(dados.producao.produzidoTons)} t (${fmtPct1(dados.producao.pct)}%)`)}
+        ${linhaComponente('#4ade80', 'Despesas', 30, dados.despesas.valor,
+          'Meta (custo/t empresa)', fmtBRL(dados.despesas.cptGeral),
+          'Atingido (custo/t regional)', dados.despesas.cptCoord > 0 ? fmtBRL(dados.despesas.cptCoord) : 'sem dado')}
+        ${linhaComponente('#bbf7d0', 'Leitura', 30, dados.leitura.valor,
+          'Meta', '100%',
+          'Atingido', dados.leitura.leituraPct !== null && dados.leitura.leituraPct !== undefined ? `${fmtPct1(dados.leitura.leituraPct)}%` : 'sem dado')}
+      </div>
+    `;
+
+    holder.appendChild(card);
+    document.body.appendChild(holder);
+
+    const canvas = card.querySelector('#metasBonusDonut');
+    const chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: ['Produção', 'Despesas', 'Leitura'],
+        datasets: [{
+          data: [dados.producao.valor, dados.despesas.valor, dados.leitura.valor],
+          backgroundColor: ['#166534', '#4ade80', '#bbf7d0'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        cutout: '38%',
+        animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } }
+      }
+    });
+
+    try {
+      // Não usar requestAnimationFrame aqui: em lote (vários gestores seguidos), o
+      // usuário pode trocar de aba durante a geração e o navegador suspende rAF em
+      // abas em segundo plano, travando o fechamento indefinidamente. setTimeout
+      // continua rodando (só com throttling leve) e é suficiente pro Chart.js
+      // (animation:false) terminar de desenhar antes da captura.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const canvasImg = await html2canvas(card, { backgroundColor: '#0b1220', scale: 2 });
+      return canvasImg.toDataURL('image/png');
+    } finally {
+      chart.destroy();
+      holder.remove();
+    }
+  }
+
+  async function gerarImagensBonusPorGestor(state, dadosGestores) {
+    if (!dadosGestores.length) return;
+
+    const zip = new JSZip();
+    for (const dados of dadosGestores) {
+      const dataUrl = await renderCartaoBonusPng(dados);
+      const base64 = dataUrl.split(',')[1];
+      const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
+      zip.file(`bonus_${slugFileName(dados.gestor)}_${ref}.png`, base64, { base64: true });
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bonus_imagens_${String(state.mes).padStart(2, '0')}-${state.ano}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
   }
 
   async function baixarRelatorioBonusFechado(state, supabase) {
@@ -2687,6 +2855,14 @@ import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
       } catch (e) {
         console.error('[METAS] Erro ao gerar relatório de bônus:', e);
         alert('Meta fechada com sucesso, mas houve um erro ao gerar o XLS de bônus: ' + (e?.message || e) + '\n\nVocê pode gerar o relatório novamente pelo botão "Exportar relatório de bônus (XLS)".');
+      }
+
+      try {
+        const dadosGestores = montarDadosCartaoBonus(gestoresEnriq, params.gestoresBonus, state);
+        await gerarImagensBonusPorGestor(state, dadosGestores);
+      } catch (e) {
+        console.error('[METAS] Erro ao gerar imagens de bônus:', e);
+        alert('Meta fechada com sucesso, mas houve um erro ao gerar as imagens de bônus: ' + (e?.message || e));
       }
 
       await loadData(state, supabase);
