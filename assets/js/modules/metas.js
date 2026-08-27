@@ -1621,7 +1621,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
             <input type="file" accept=".xlsx,.xls" data-metas-auditoria-file hidden />
-            <button class="metas-btn secondary" type="button" data-metas-auditoria ${fechado ? 'disabled' : ''}>Auditoria</button>
+            <button class="metas-btn secondary metas-auditoria-btn ${(state.auditoria || []).length ? 'is-ready' : 'is-pending'}" type="button" data-metas-auditoria aria-label="${(state.auditoria || []).length ? 'Auditoria anexada' : 'Auditoria pendente'}" ${fechado ? 'disabled' : ''}>Auditoria</button>
           </div>
         </div>
 
