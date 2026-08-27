@@ -3,16 +3,23 @@ import { supabase } from './supabaseClient.js';
 import { searchColaboradores } from './colaboradoresCache.js';
 
 const EPI_LISTA = [
-  { material:'CAPACETE', label:'Capacete', ca_obrigatorio:true },
+  { material:'CAPACETE', label:'Capacete classe B', ca:'29792', ca_obrigatorio:true },
   { material:'OCULOS DE PROTEÇÃO', label:'Óculos de Proteção', ca_obrigatorio:true },
-  { material:'PROTETOR AURICULAR', label:'Protetor Auricular', ca_obrigatorio:true },
-  { material:'MASCARA PFF2', label:'Máscara PFF2', ca_obrigatorio:true },
+  { material:'PROTETOR AURICULAR', label:'Protetor auricular plug', ca:'19578', ca_obrigatorio:true },
+  { material:'MASCARA PFF2', label:'Máscara PFF 02', ca:'36857', ca_obrigatorio:true },
   { material:'COLETE REFLETIVO', label:'Colete Refletivo', ca_obrigatorio:false },
-  { material:'LUVA MULTITATO PU', label:'Luva Multitato PU', ca_obrigatorio:true },
-  { material:'BOTINA', label:'Botina', ca_obrigatorio:true, temTamanho:true },
-  { material:'CINTO DE SEGURANÇA', label:'Cinto de Segurança', ca_obrigatorio:true },
-  { material:'TALABARTE', label:'Talabarte', ca_obrigatorio:true },
+  { material:'LUVA MULTITATO PU', label:'Luva de prot. c.a. mecânicos', ca:'32034', ca_obrigatorio:true },
+  { material:'BOTINA', label:'Calçado baixo - tipo A', ca:'40043', ca_obrigatorio:true, temTamanho:true },
+  { material:'CINTURAO SEGURANCA TALABARTE', label:'Cinturão de seg. c/ talabarte', ca:'35509', ca_obrigatorio:true },
 ];
+
+const MATERIAL_LABELS_LEGADO = { 'CINTO DE SEGURANÇA':'Cinturão de segurança', 'TALABARTE':'Talabarte' };
+function labelMaterial(material){
+  if(!material) return '';
+  const found = EPI_LISTA.find(e=>norm(e.material)===norm(material));
+  if(found) return found.label;
+  return MATERIAL_LABELS_LEGADO[material] || material;
+}
 
 const EMPREGADOR_EPI = {
   razao:'GRAOMIL LTDA',
@@ -141,14 +148,26 @@ function renderSolicitacoes(){
     const colab=dadosColaboradorSolicitacao(s,itens);
     const itensHtml=itens.map(i=>{
       const caTag=i.ca?`<span style="color:#86efac;font-size:11px;font-weight:700"> · CA: ${esc(i.ca)}</span>`:(norm(i.material)==='colete refletivo'?`<span style="color:#94a3b8;font-size:11px"> · CA não obrigatório</span>`:`<span style="color:#fde68a;font-size:11px"> · CA pendente</span>`);
-      return `<div style="font-size:13px">${esc(i.material)}${i.tamanho?` <small class="muted">T:${esc(i.tamanho)}</small>`:''}${caTag}</div>`;
+      return `<div style="font-size:13px">${esc(labelMaterial(i.material))}${i.tamanho?` <small class="muted">T:${esc(i.tamanho)}</small>`:''}${caTag}</div>`;
     }).join('');
     const bucket=solBucket(s);
     const podeCancelar=bucket!=='concluido'&&bucket!=='cancelado';
-    return `<tr><td>${brDate(s.data_solicitacao||s.created_at)}</td><td><b>${esc(colab.nome)}</b>${colab.cpf?`<br><small class="muted">CPF: ${esc(colab.cpf)}</small>`:''}</td><td>${esc(colab.supervisao||'-')}${colab.coordenacao?`<br><small class="muted">${esc(colab.coordenacao)}</small>`:''}</td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${statusPill(s.status||'pendente')}</td><td class="epi-acoes"><button class="btn btn-small btn-secondary" data-sol-ver="${esc(s.id)}" type="button">Ver</button>${podeCancelar?`<button class="btn btn-small btn-secondary" data-sol-cancelar="${esc(s.id)}" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Cancelar</button>`:''}</td></tr>`;
+    return `<tr><td>${brDate(s.data_solicitacao||s.created_at)}</td><td><b>${esc(colab.nome)}</b>${colab.cpf?`<br><small class="muted">CPF: ${esc(colab.cpf)}</small>`:''}</td><td>${esc(colab.supervisao||'-')}${colab.coordenacao?`<br><small class="muted">${esc(colab.coordenacao)}</small>`:''}</td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${statusPill(s.status||'pendente')}</td><td class="epi-acoes"><button class="btn btn-small btn-secondary" data-sol-ver="${esc(s.id)}" type="button">Ver</button><button class="btn btn-small btn-secondary" data-sol-editar="${esc(s.id)}" type="button">Editar</button>${podeCancelar?`<button class="btn btn-small btn-secondary" data-sol-cancelar="${esc(s.id)}" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Cancelar</button>`:''}<button class="btn btn-small btn-secondary" data-sol-excluir="${esc(s.id)}" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Excluir</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-sol-ver]').forEach(b=>b.onclick=()=>openSolicitacaoModal(b.dataset.solVer));
+  body.querySelectorAll('[data-sol-editar]').forEach(b=>b.onclick=()=>openEditarSolicitacaoModal(b.dataset.solEditar));
   body.querySelectorAll('[data-sol-cancelar]').forEach(b=>b.onclick=()=>cancelarSolicitacao(b.dataset.solCancelar));
+  body.querySelectorAll('[data-sol-excluir]').forEach(b=>b.onclick=()=>excluirSolicitacao(b.dataset.solExcluir));
+}
+
+async function excluirSolicitacao(id){
+  if(!confirm('Excluir permanentemente esta solicitação de EPI? Essa ação não pode ser desfeita.')) return;
+  try{
+    await supabase.from('compras_itens').delete().eq('solicitacao_id',id);
+    await supabase.from('compras_solicitacoes').delete().eq('id',id);
+    setSolMsg('Solicitação excluída.');
+    await loadSolicitacoes();
+  }catch(e){ setSolMsg(e.message,true); }
 }
 
 async function cancelarSolicitacao(id){
@@ -161,17 +180,16 @@ async function cancelarSolicitacao(id){
   }catch(e){ setSolMsg(e.message,true); }
 }
 
-function fichaEpiHtml(s,itens){
-  const colab=dadosColaboradorSolicitacao(s,itens);
+function fichaEpiHtml(s,itens,overrides={}){
+  const colab={...dadosColaboradorSolicitacao(s,itens),...overrides};
   const epis=[...(itens||[])].slice(0,12);
   while(epis.length<8) epis.push({material:'',ca:'',quantidade:''});
-  const periodo=colab.data_admissao?`Desde ${brDate(colab.data_admissao)}`:'';
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha de EPIs - ${esc(colab.nome)}</title><style>@page{size:A4;margin:12mm}body{font-family:"Times New Roman",serif;color:#111;font-size:12pt}.titulo{text-align:center;font-weight:bold;font-size:16pt;margin:0 0 26px}.box{border:1px solid #111;margin-bottom:16px}.sec{background:#ddd;border-bottom:1px solid #111;text-align:center;font-weight:bold;padding:4px}.row{display:grid;border-bottom:1px solid #111}.row:last-child{border-bottom:0}.cell{padding:5px;border-right:1px solid #111}.cell:last-child{border-right:0}.emp1{grid-template-columns:58% 42%}.func1{grid-template-columns:58% 20% 22%}.func2{grid-template-columns:29% 29% 17% 25%;text-align:center}.epi-table{width:100%;border-collapse:collapse}.epi-table th,.epi-table td{border:1px solid #111;padding:5px;text-align:left}.epi-table th{background:#eee}.recibo{line-height:1.25;padding:18px 38px 28px}.assinatura{margin-top:88px;text-align:center}.assinatura .linha{display:inline-block;border-top:1px solid #111;min-width:300px;padding-top:6px}.rodape{text-align:center;margin-top:16px}</style></head><body><h1 class="titulo">FICHA DE EPIs</h1><div class="box"><div class="sec">DADOS DO EMPREGADOR</div><div class="row emp1"><div class="cell"><strong>Razão Social:</strong> ${esc(EMPREGADOR_EPI.razao)}</div><div class="cell"><strong>CNPJ:</strong> ${esc(EMPREGADOR_EPI.cnpj)}</div></div><div class="row"><div class="cell"><strong>Endereço:</strong> ${esc(EMPREGADOR_EPI.endereco)}</div></div><div class="sec">FUNCIONÁRIO</div><div class="row"><div class="cell"><strong>Nome:</strong> ${esc(colab.nome)}</div></div><div class="row func1"><div class="cell"><strong>CPF:</strong> ${esc(colab.cpf)}</div><div class="cell"><strong>RG:</strong> ${esc(colab.rg)}</div><div class="cell"><strong>Data Nasc.:</strong> ${brDate(colab.data_nascimento)}</div></div><div class="row func2"><div class="cell"><strong>FUNÇÃO</strong></div><div class="cell"><strong>CARGO</strong></div><div class="cell"><strong>SETOR</strong></div><div class="cell"><strong>PERÍODO</strong></div></div><div class="row func2"><div class="cell">${esc(colab.funcao)}</div><div class="cell">${esc(colab.cargo)}</div><div class="cell">${esc(colab.setor)}</div><div class="cell">${esc(periodo)}</div></div></div><div class="box"><div class="sec">ENTREGA DE EPIs</div><table class="epi-table"><thead><tr><th style="width:46%">EPI</th><th style="width:18%">CA</th><th style="width:11%">Qtde.</th><th>Entrega</th></tr></thead><tbody>${epis.map(i=>`<tr><td>${esc(i.material||'_________________________________________')}</td><td>${esc(i.ca||'____________')}</td><td>${esc(i.quantidade||i.unidade||'_____')}</td><td>____/____/_________</td></tr>`).join('')}</tbody></table></div><div class="box"><div class="sec">RECIBO</div><div class="recibo"><p>Declaro que recebi da empresa os EPIs acima listados, bem como instruções de uso adequadas e treinamento apropriado.</p><p>Declaro ainda que me responsabilizo pelo uso correto destes equipamentos, e pela devolução em caso de desligamento, danos ao equipamento ou expiração da data de vencimento.</p><p>Por fim, declaro que recebi orientação adequada sobre os riscos à segurança apresentados pela minha função, responsabilizando-me por quaisquer danos causados pelo mau uso ou ausência dos equipamentos de proteção individual.</p></div></div><div class="assinatura"><div class="linha">${esc(colab.nome)}</div></div><div class="rodape">Ficha de entrega de Equipamento de Proteção Individual gerada pelo painel Grão 1000.</div></body></html>`;
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha de EPIs - ${esc(colab.nome)}</title><style>@page{size:A4;margin:12mm}body{font-family:"Times New Roman",serif;color:#111;font-size:12pt}.titulo{text-align:center;font-weight:bold;font-size:16pt;margin:0 0 26px}.box{border:1px solid #111;margin-bottom:16px}.sec{background:#ddd;border-bottom:1px solid #111;text-align:center;font-weight:bold;padding:4px}.row{display:grid;border-bottom:1px solid #111}.row:last-child{border-bottom:0}.cell{padding:5px;border-right:1px solid #111}.cell:last-child{border-right:0}.emp1{grid-template-columns:58% 42%}.func1{grid-template-columns:58% 20% 22%}.func2{grid-template-columns:40% 38% 22%;text-align:center}.func2 .cell{white-space:nowrap;overflow:hidden}.epi-table{width:100%;border-collapse:collapse}.epi-table th,.epi-table td{border:1px solid #111;padding:5px;text-align:left}.epi-table th{background:#eee}.recibo{line-height:1.25;padding:18px 38px 28px}.assinatura{margin-top:88px;text-align:center}.assinatura .linha{display:inline-block;border-top:1px solid #111;min-width:300px;padding-top:6px}.rodape{text-align:center;margin-top:16px}</style></head><body><h1 class="titulo">FICHA DE EPIs</h1><div class="box"><div class="sec">DADOS DO EMPREGADOR</div><div class="row emp1"><div class="cell"><strong>Razão Social:</strong> ${esc(EMPREGADOR_EPI.razao)}</div><div class="cell"><strong>CNPJ:</strong> ${esc(EMPREGADOR_EPI.cnpj)}</div></div><div class="row"><div class="cell"><strong>Endereço:</strong> ${esc(EMPREGADOR_EPI.endereco)}</div></div><div class="sec">FUNCIONÁRIO</div><div class="row"><div class="cell"><strong>Nome:</strong> ${esc(colab.nome)}</div></div><div class="row func1"><div class="cell"><strong>CPF:</strong> ${esc(colab.cpf)}</div><div class="cell"><strong>RG:</strong> ${esc(colab.rg)}</div><div class="cell"><strong>Data Nasc.:</strong> ${brDate(colab.data_nascimento)}</div></div><div class="row func2"><div class="cell"><strong>FUNÇÃO</strong></div><div class="cell"><strong>CARGO</strong></div><div class="cell"><strong>SETOR</strong></div></div><div class="row func2"><div class="cell">${esc(colab.funcao)}</div><div class="cell">${esc(colab.cargo)}</div><div class="cell">${esc(colab.setor)}</div></div></div><div class="box"><div class="sec">ENTREGA DE EPIs</div><table class="epi-table"><thead><tr><th style="width:46%">EPI</th><th style="width:18%">CA</th><th style="width:11%">Qtde.</th><th>Entrega</th></tr></thead><tbody>${epis.map(i=>`<tr><td>${esc(i.material?labelMaterial(i.material):'_________________________________________')}</td><td>${esc(i.ca||'____________')}</td><td>${esc(i.quantidade||i.unidade||'_____')}</td><td>____/____/_________</td></tr>`).join('')}</tbody></table></div><div class="box"><div class="sec">RECIBO</div><div class="recibo"><p>Declaro que recebi da empresa os EPIs acima listados, bem como instruções de uso adequadas e treinamento apropriado.</p><p>Declaro ainda que me responsabilizo pelo uso correto destes equipamentos, e pela devolução em caso de desligamento, danos ao equipamento ou expiração da data de vencimento.</p><p>Por fim, declaro que recebi orientação adequada sobre os riscos à segurança apresentados pela minha função, responsabilizando-me por quaisquer danos causados pelo mau uso ou ausência dos equipamentos de proteção individual.</p></div></div><div class="assinatura"><div class="linha">${esc(colab.nome)}</div></div><div class="rodape">Ficha de entrega de Equipamento de Proteção Individual gerada pelo painel Grão 1000.</div></body></html>`;
 }
-function abrirFichaEpi(s,itens){
+function abrirFichaEpi(s,itens,overrides={}){
   const win=window.open('', '_blank', 'width=900,height=1100');
   if(!win){alert('Permita pop-ups para gerar a ficha.');return;}
-  win.document.open(); win.document.write(fichaEpiHtml(s,itens)); win.document.close(); win.focus(); setTimeout(()=>win.print(),450);
+  win.document.open(); win.document.write(fichaEpiHtml(s,itens,overrides)); win.document.close(); win.focus(); setTimeout(()=>win.print(),450);
 }
 
 function openSolicitacaoModal(id){
@@ -184,10 +202,11 @@ function openSolicitacaoModal(id){
   const cancelado=bucket==='cancelado';
   const podeCancelar=!concluido&&!cancelado;
   const modal=document.getElementById('epiModal');
-  modal.innerHTML=`<div class="epi-modal-card"><div class="section-head"><div><h3>Solicitação de Compra EPI</h3><p class="muted">${brDate(s.data_solicitacao||s.created_at)} · ${statusPill(s.status||'pendente')}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="epi-detail-grid mt-16"><div><span class="muted">Colaborador</span><b>${esc(colab.nome)}</b></div><div><span class="muted">Supervisão</span><b>${esc(colab.supervisao||'Não informada')}</b></div><div><span class="muted">Coordenação</span><b>${esc(colab.coordenacao||'-')}</b></div><div><span class="muted">Função/Cargo</span><b>${esc(colab.funcao||colab.cargo||'-')}</b></div><div><span class="muted">Solicitado por</span><b>${esc(s.solicitante||'RH')}</b></div><div><span class="muted">Status</span>${statusPill(s.status||'pendente')}</div></div><div class="mt-16"><p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:10px">Itens solicitados</p><div style="display:grid;gap:8px">${itens.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid rgba(148,163,184,.2);border-radius:12px"><span><b>${esc(i.material)}</b>${i.tamanho?` <small class="muted">Tam: ${esc(i.tamanho)}</small>`:''}</span><span>${i.ca?`<span style="color:#86efac;font-weight:700;font-size:13px">CA: ${esc(i.ca)}</span>`:(norm(i.material)==='colete refletivo'?`<span style="color:#94a3b8;font-size:12px">CA não obrigatório</span>`:`<span style="color:#fde68a;font-size:12px">CA pendente</span>`)}</span></div>`).join('')}</div></div>${s.observacoes?`<div class="mt-16"><span class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;font-weight:700">Observação</span><p style="margin-top:6px">${esc(s.observacoes)}</p></div>`:''}<div class="adm-cmp-actions mt-16">${comprado&&!concluido?`<button class="btn btn-primary" id="gerarFichaEpi" type="button">Gerar ficha de EPI</button>`:''}${concluido?`<button class="btn btn-secondary" id="reabrirFichaEpi" type="button">Ver/reimprimir ficha</button>`:''}${podeCancelar?`<button class="btn btn-secondary" id="cancelarSolEpi" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Cancelar pedido</button>`:''}</div><span class="epi-feedback mt-8" id="epiSolModalFb"></span></div>`;
+  modal.innerHTML=`<div class="epi-modal-card"><div class="section-head"><div><h3>Solicitação de Compra EPI</h3><p class="muted">${brDate(s.data_solicitacao||s.created_at)} · ${statusPill(s.status||'pendente')}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="epi-detail-grid mt-16"><div><span class="muted">Colaborador</span><b>${esc(colab.nome)}</b></div><div><span class="muted">Supervisão</span><b>${esc(colab.supervisao||'Não informada')}</b></div><div><span class="muted">Coordenação</span><b>${esc(colab.coordenacao||'-')}</b></div><div><span class="muted">Função/Cargo</span><b>${esc(colab.funcao||colab.cargo||'-')}</b></div><div><span class="muted">Solicitado por</span><b>${esc(s.solicitante||'RH')}</b></div><div><span class="muted">Status</span>${statusPill(s.status||'pendente')}</div></div><div class="mt-16"><p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:10px">Itens solicitados</p><div style="display:grid;gap:8px">${itens.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid rgba(148,163,184,.2);border-radius:12px"><span><b>${esc(labelMaterial(i.material))}</b>${i.tamanho?` <small class="muted">Tam: ${esc(i.tamanho)}</small>`:''}</span><span>${i.ca?`<span style="color:#86efac;font-weight:700;font-size:13px">CA: ${esc(i.ca)}</span>`:(norm(i.material)==='colete refletivo'?`<span style="color:#94a3b8;font-size:12px">CA não obrigatório</span>`:`<span style="color:#fde68a;font-size:12px">CA pendente</span>`)}</span></div>`).join('')}</div></div>${s.observacoes?`<div class="mt-16"><span class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;font-weight:700">Observação</span><p style="margin-top:6px">${esc(s.observacoes)}</p></div>`:''}${(comprado||concluido)?`<div class="mt-16"><p class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:10px">Dados para a ficha</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">Função<input id="fichaFuncaoInput" type="text" value="${esc(colab.funcao)}" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px"></label><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">Cargo<input id="fichaCargoInput" type="text" value="${esc(colab.cargo)}" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px"></label></div></div>`:''}<div class="adm-cmp-actions mt-16">${comprado&&!concluido?`<button class="btn btn-primary" id="gerarFichaEpi" type="button">Gerar ficha de EPI</button>`:''}${concluido?`<button class="btn btn-secondary" id="reabrirFichaEpi" type="button">Ver/reimprimir ficha</button>`:''}${podeCancelar?`<button class="btn btn-secondary" id="cancelarSolEpi" type="button" style="color:#fecaca;border-color:rgba(220,38,38,.4)">Cancelar pedido</button>`:''}</div><span class="epi-feedback mt-8" id="epiSolModalFb"></span></div>`;
   modal.classList.add('open');
+  const fichaOverrides=()=>({funcao:modal.querySelector('#fichaFuncaoInput')?.value?.trim()||colab.funcao,cargo:modal.querySelector('#fichaCargoInput')?.value?.trim()||colab.cargo});
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#reabrirFichaEpi')?.addEventListener('click',()=>abrirFichaEpi(s,itens));
+  modal.querySelector('#reabrirFichaEpi')?.addEventListener('click',()=>abrirFichaEpi(s,itens,fichaOverrides()));
   modal.querySelector('#cancelarSolEpi')?.addEventListener('click',async()=>{
     await cancelarSolicitacao(s.id);
     modal.classList.remove('open');
@@ -195,7 +214,7 @@ function openSolicitacaoModal(id){
   modal.querySelector('#gerarFichaEpi')?.addEventListener('click',async()=>{
     const btn=modal.querySelector('#gerarFichaEpi');
     const fb=modal.querySelector('#epiSolModalFb');
-    abrirFichaEpi(s,itens);
+    abrirFichaEpi(s,itens,fichaOverrides());
     btn.disabled=true; if(fb) fb.textContent='Marcando como concluído...';
     try{
       await supabase.from('compras_solicitacoes').update({status:'concluido'}).eq('id',s.id);
@@ -251,7 +270,7 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
     const bruto=getColab()||(colabInput.value.trim()?{id:null,nome:colabInput.value.trim()}:null);
     if(!bruto) throw new Error('Selecione o colaborador.');
     const colab=await buscarColaboradorDetalhes(bruto);
-    const checkedEpis=EPI_LISTA.map((epi,idx)=>{const checked=modal.querySelector(`#epiCheck_${idx}`)?.checked; if(!checked) return null; const tamanho=epi.temTamanho?(modal.querySelector(`#epiTam_${idx}`)?.value?.trim()||null):null; if(epi.temTamanho&&!tamanho) throw new Error(`Informe o tamanho da ${epi.label}.`); return {material:epi.material,tamanho,tipo:'EPI'};}).filter(Boolean);
+    const checkedEpis=EPI_LISTA.map((epi,idx)=>{const checked=modal.querySelector(`#epiCheck_${idx}`)?.checked; if(!checked) return null; const tamanho=epi.temTamanho?(modal.querySelector(`#epiTam_${idx}`)?.value?.trim()||null):null; if(epi.temTamanho&&!tamanho) throw new Error(`Informe o tamanho da ${epi.label}.`); return {material:epi.material,ca:epi.ca||null,tamanho,tipo:'EPI'};}).filter(Boolean);
     if(!checkedEpis.length) throw new Error('Marque pelo menos um EPI antes de solicitar.');
     const obs=modal.querySelector('#solObs')?.value?.trim()||null;
     const u=userContext?.user||{};
@@ -262,13 +281,78 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
       const r2=await supabase.from('compras_solicitacoes').insert(limpo).select('id').single();
       if(r2.error) throw r2.error; sol=r2.data;
     }
-    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:'aguardando_gestor'}));
+    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,ca:epi.ca||null,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:'aguardando_gestor'}));
     const {error:itensErr}=await supabase.from('compras_itens').insert(itens);
     if(itensErr){
       const fallback=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:'aguardando_gestor'}));
       const r2=await supabase.from('compras_itens').insert(fallback); if(r2.error) throw r2.error;
     }
     modal.classList.remove('open'); setSolMsg('Solicitação enviada para aprovação do gestor da supervisão.'); await loadSolicitacoes();
+  }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
+  finally{btn.disabled=false;}
+}
+
+function openEditarSolicitacaoModal(id){
+  const s=state.solicitacoes.find(x=>String(x.id)===String(id)); if(!s) return;
+  const itensAtuais=s.compras_itens||[];
+  const colabAtual=dadosColaboradorSolicitacao(s,itensAtuais);
+  const checkedMateriais=new Set(itensAtuais.map(i=>i.material));
+  const tamanhoPorMaterial={};
+  itensAtuais.forEach(i=>{ if(i.tamanho) tamanhoPorMaterial[i.material]=i.tamanho; });
+  const modal=document.getElementById('epiModal');
+  let selectedColab={...colabAtual};
+  let debounce=null;
+  modal.innerHTML=`<div class="epi-modal-card" style="width:min(620px,100%)"><div class="section-head"><div><h3>Editar Solicitação de Compra EPI</h3><p class="muted">Ajuste o colaborador e os EPIs desta solicitação.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="mt-16" style="position:relative"><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Colaborador <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* obrigatório</span><input id="solColabInput" type="text" placeholder="Digite o nome para pesquisar..." autocomplete="off" value="${esc(colabAtual.nome)}" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0"></label><div id="solColabInfo" class="epi-colab-info" style="display:block"><b>${esc(colabAtual.nome)}</b><br><small>Supervisão: ${esc(colabAtual.supervisao||'Não informada')}${colabAtual.coordenacao?` · Coordenação: ${esc(colabAtual.coordenacao)}`:''}${colabAtual.cargo?` · Cargo: ${esc(colabAtual.cargo)}`:''}</small></div><div id="solColabSug" class="epi-colab-sug"></div></div><div class="mt-20"><p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:12px">EPIs — marque os que fazem parte desta solicitação</p><div style="display:grid;gap:8px">${EPI_LISTA.map((epi,idx)=>`<label class="epi-check-row" style="display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid rgba(148,163,184,.18);border-radius:12px;cursor:pointer;background:#0d0d18"><input type="checkbox" id="epiCheck_${idx}" value="${esc(epi.material)}" ${checkedMateriais.has(epi.material)?'checked':''} style="width:18px;height:18px;flex-shrink:0;accent-color:#4ade80;cursor:pointer"><span style="flex:1;font-weight:600;font-size:14px">${esc(epi.label)}</span>${epi.temTamanho?`<input type="number" id="epiTam_${idx}" placeholder="Nº tamanho" min="30" max="50" value="${esc(tamanhoPorMaterial[epi.material]||'')}" onclick="event.stopPropagation()" style="width:100px;border:1px solid rgba(148,163,184,.24);background:#15152a;color:#e2e2f0;border-radius:10px;padding:7px 10px;font-size:13px">`:``}${!epi.ca_obrigatorio?`<span style="font-size:11px;color:#94a3b8;white-space:nowrap">CA não obrig.</span>`:''}</label>`).join('')}</div></div><div class="mt-16"><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Observações <span style="text-transform:none;letter-spacing:0;font-weight:400">(opcional)</span><textarea id="solObs" rows="2" placeholder="Informações adicionais...">${esc(s.observacoes||'')}</textarea></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="solSalvar" type="button">Salvar alterações</button><button class="btn btn-secondary" id="solCancelar" type="button">Fechar</button></div><span class="epi-feedback mt-8" id="solModalFeedback"></span></div>`;
+  modal.classList.add('open');
+  const input=modal.querySelector('#solColabInput');
+  const sug=modal.querySelector('#solColabSug');
+  const info=modal.querySelector('#solColabInfo');
+  function renderColabInfo(c){
+    if(!c){info.innerHTML=''; info.style.display='none'; return;}
+    info.innerHTML=`<b>${esc(c.nome)}</b><br><small>Supervisão: ${esc(c.supervisao||'Não informada')}${c.coordenacao?` · Coordenação: ${esc(c.coordenacao)}`:''}${c.cargo?` · Cargo: ${esc(c.cargo)}`:''}</small>`;
+    info.style.display='block';
+  }
+  input.addEventListener('input',()=>{
+    selectedColab=null; renderColabInfo(null);
+    const q=input.value.trim();
+    if(q.length<2){sug.innerHTML='';sug.style.display='none';return;}
+    clearTimeout(debounce);
+    debounce=setTimeout(async()=>{
+      const data=await buscarColaboradoresPorNome(q);
+      const seen=new Set();
+      const list=data.filter(c=>{const t=norm(c.ativo??'ativo'); if(['false','0','inativo','desligado'].includes(t)) return false; const k=norm(c.nome||''); if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,12);
+      if(!list.length){sug.innerHTML='';sug.style.display='none';return;}
+      sug.innerHTML=list.map((c,idx)=>`<button type="button" data-idx="${idx}">${esc(c.nome)} <small>${esc(c.supervisao||c.cargo||c.coordenacao||'')}</small></button>`).join('');
+      sug.style.display='block';
+      sug.querySelectorAll('button').forEach(b=>b.onmousedown=async(ev)=>{ev.preventDefault(); selectedColab=await buscarColaboradorDetalhes(list[Number(b.dataset.idx)]); input.value=selectedColab.nome; renderColabInfo(selectedColab); sug.innerHTML=''; sug.style.display='none';});
+    },250);
+  });
+  input.addEventListener('blur',()=>setTimeout(()=>{sug.innerHTML='';sug.style.display='none';},160));
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#solCancelar').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#solSalvar').onclick=()=>salvarEdicaoSolicitacaoEPI(modal,s,()=>selectedColab||colabAtual,input);
+}
+
+async function salvarEdicaoSolicitacaoEPI(modal,s,getColab,colabInput){
+  const btn=modal.querySelector('#solSalvar');
+  const fb=modal.querySelector('#solModalFeedback');
+  btn.disabled=true; if(fb){fb.textContent='Salvando...';fb.classList.remove('err');}
+  try{
+    const bruto=getColab()||(colabInput.value.trim()?{id:null,nome:colabInput.value.trim()}:null);
+    if(!bruto) throw new Error('Selecione o colaborador.');
+    const colab=await buscarColaboradorDetalhes(bruto);
+    const checkedEpis=EPI_LISTA.map((epi,idx)=>{const checked=modal.querySelector(`#epiCheck_${idx}`)?.checked; if(!checked) return null; const tamanho=epi.temTamanho?(modal.querySelector(`#epiTam_${idx}`)?.value?.trim()||null):null; if(epi.temTamanho&&!tamanho) throw new Error(`Informe o tamanho da ${epi.label}.`); return {material:epi.material,ca:epi.ca||null,tamanho,tipo:'EPI'};}).filter(Boolean);
+    if(!checkedEpis.length) throw new Error('Marque pelo menos um EPI.');
+    const obs=modal.querySelector('#solObs')?.value?.trim()||null;
+    await supabase.from('compras_solicitacoes').update({observacoes:obs,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,supervisao:colab.supervisao||null,coordenacao:colab.coordenacao||s.coordenacao||null}).eq('id',s.id);
+    await supabase.from('compras_itens').delete().eq('solicitacao_id',s.id);
+    const itens=checkedEpis.map(epi=>({solicitacao_id:s.id,material:epi.material,ca:epi.ca||null,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:s.status||'aguardando_gestor'}));
+    const {error:itensErr}=await supabase.from('compras_itens').insert(itens);
+    if(itensErr){
+      const fallback=checkedEpis.map(epi=>({solicitacao_id:s.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:s.status||'aguardando_gestor'}));
+      const r2=await supabase.from('compras_itens').insert(fallback); if(r2.error) throw r2.error;
+    }
+    modal.classList.remove('open'); setSolMsg('Solicitação atualizada.'); await loadSolicitacoes();
   }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
   finally{btn.disabled=false;}
 }
