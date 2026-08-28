@@ -38,6 +38,7 @@ const state = {
   justificativas: [],
   localizacao: [],
   producaoPorColaboradorData: new Map(),
+  classificacaoOuroSafra: { hoje: 0, erros: 0, ultimaExecucao: null, ultimoStatus: null },
   loading: false,
   reloadRequested: false,
   sort: {
@@ -472,6 +473,15 @@ function renderRegionalOptions() {
   select.value = current;
 }
 
+function classificacaoOuroSafraCard() {
+  const c = state.classificacaoOuroSafra;
+  const metric = c.ultimoStatus === 'dry-run' ? 'DRY-RUN' : `${c.hoje}/${c.erros}`;
+  const desc = c.ultimaExecucao
+    ? `Última execução hoje: ${brDateTime(c.ultimaExecucao)}${c.ultimoStatus === 'dry-run' ? ' (modo teste, nada foi salvo)' : ''}.`
+    : 'Nenhuma execução registrada hoje.';
+  return ['Classificação Ouro Safra', metric, desc];
+}
+
 function renderMetrics() {
   const s = summarize();
   const html = [
@@ -481,6 +491,7 @@ function renderMetrics() {
     ['Hotel/Desloc.', `${s.hoteis}/${s.deslocamentos}`, 'Hospedagens e deslocamentos solicitados.'],
     ['Auditoria crítica', s.criticas, 'Ocorrências alta/crítica no período.'],
     ['Uber atenção', s.uberAtencao, 'Corridas fora da regra de 2 km.'],
+    classificacaoOuroSafraCard(),
   ].map(([title, metric, desc]) => `
     <article class="conf-card">
       <h3>${escapeHtml(title)}</h3>
@@ -1347,6 +1358,32 @@ async function loadUber() {
   state.uber = data || [];
 }
 
+// KPI do agente grm-sync-classificacao-ourosafra.js (não depende dos filtros
+// de data da tela — é sempre "hoje", pra dar visibilidade rápida se o agente
+// está rodando).
+async function loadClassificacaoOuroSafraStats() {
+  const inicioHoje = `${todayISO()}T00:00:00`;
+  const { data, error } = await supabase
+    .from('ouro_safra_classificacao_execucoes')
+    .select('status, iniciado_em')
+    .gte('iniciado_em', inicioHoje)
+    .order('iniciado_em', { ascending: false })
+    .limit(500);
+
+  if (error) {
+    console.warn('[Conferência] KPI classificação Ouro Safra indisponível:', error.message);
+    return;
+  }
+
+  const rows = data || [];
+  state.classificacaoOuroSafra = {
+    hoje: rows.filter((row) => row.status === 'sucesso').length,
+    erros: rows.filter((row) => row.status === 'erro').length,
+    ultimaExecucao: rows[0]?.iniciado_em || null,
+    ultimoStatus: rows[0]?.status || null,
+  };
+}
+
 async function loadAll() {
   // Alterar os dois campos de data dispara dois submits em sequência. Se uma
   // consulta já estiver em andamento, não descarte o filtro mais recente:
@@ -1359,7 +1396,7 @@ async function loadAll() {
   state.reloadRequested = false;
   setFeedback('Carregando dados da conferência...');
   try {
-    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores()]);
+    await Promise.all([loadDespesas(), loadAuditoria(), loadResultado(), loadUber(), loadJustificativas(), loadLocalizacao(), loadProducaoColaboradores(), loadClassificacaoOuroSafraStats()]);
     setFeedback('Dados atualizados.');
   } catch (error) {
     console.error(error);
