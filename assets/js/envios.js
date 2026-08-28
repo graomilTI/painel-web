@@ -66,23 +66,12 @@ function printPdf(b64) {
   win.addEventListener('afterprint', () => URL.revokeObjectURL(url));
 }
 
-function printDeclaracao(postagem) {
-  const rem = postagem.remetente ?? {};
-  const dest = postagem.destinatario ?? {};
-  const endereco = pessoa => [pessoa.logradouro, pessoa.numero, pessoa.complemento, pessoa.bairro, `${pessoa.cidade ?? ''}/${pessoa.uf ?? ''}`, pessoa.cep].filter(Boolean).join(', ');
-  const valor = Number(postagem.valor_declarado || 0);
+function openDeclaracaoHtml(html) {
   const win = window.open('', '_blank');
-  if (!win) { setFeedback('Permita pop-ups para gerar a declaração de conteúdo.', true); return; }
-  win.document.write(`<!DOCTYPE html><html><head><title>Declaração de Conteúdo</title><meta charset="utf-8"><style>
-    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#000;margin:0}.doc{max-width:760px;margin:auto;border:2px solid #000;padding:14px}h1{text-align:center;font-size:18px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.box{border:1px solid #000;padding:9px;min-height:88px}.box strong{display:block;margin-bottom:5px}.line{margin:4px 0}.items{width:100%;border-collapse:collapse;margin:12px 0}.items th,.items td{border:1px solid #000;padding:7px;text-align:left}.items .num{text-align:right}.texto{font-size:11px;text-align:justify;line-height:1.4}.assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:45px}.assinatura{border-top:1px solid #000;text-align:center;padding-top:5px}.codigo{text-align:center;font-weight:bold;margin:10px 0}@media print{button{display:none}}
-  </style></head><body><div class="doc"><h1>DECLARAÇÃO DE CONTEÚDO</h1>
-    <div class="codigo">Objeto: ${esc(postagem.numero_objeto || '—')}</div><div class="grid">
-    <div class="box"><strong>REMETENTE</strong><div class="line">${esc(rem.nome || '—')}</div><div class="line">CPF/CNPJ: ${esc(rem.cpf_cnpj || '—')}</div><div class="line">${esc(endereco(rem))}</div></div>
-    <div class="box"><strong>DESTINATÁRIO</strong><div class="line">${esc(dest.nome || '—')}</div><div class="line">CPF/CNPJ: ${esc(dest.cpf_cnpj || '—')}</div><div class="line">${esc(endereco(dest))}</div></div></div>
-    <table class="items"><thead><tr><th>Conteúdo</th><th>Quantidade</th><th>Valor</th></tr></thead><tbody><tr><td>${esc(postagem.conteudo || 'Documentos')}</td><td class="num">1</td><td class="num">${esc(MONEY.format(valor))}</td></tr><tr><th colspan="2">Valor total</th><th class="num">${esc(MONEY.format(valor))}</th></tr></tbody></table>
-    <p class="texto">Declaro que a presente remessa não contém produtos perigosos ou proibidos pelos Correios e não se enquadra em transação comercial sujeita à emissão de documento fiscal. Responsabilizo-me integralmente pelas informações declaradas.</p>
-    <div class="assinaturas"><div class="assinatura">Local e data</div><div class="assinatura">Assinatura do declarante/remetente</div></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+  if (!win) { setFeedback('Permita pop-ups para abrir a declaração de conteúdo.', true); return; }
+  win.document.write(html);
   win.document.close();
+  setTimeout(() => { try { win.print(); } catch {} }, 400);
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -533,9 +522,11 @@ function renderEnviados() {
       <div>${badge(p.status)}</div>
       <div class="envios-col-prev">
         <span class="envios-data-main">${prazo}</span>
-        ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" style="margin-top:6px;align-self:flex-start" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
-        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
-        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-declaracao="${p.id}">Declaração de conteúdo</button>
+        <div class="envios-col-prev-actions">
+          ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
+          <button class="btn btn-sm btn-secondary" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
+          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">Declaração de conteúdo</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -590,8 +581,10 @@ function renderHistorico() {
       <div>${badge(p.status)}</div>
       <div class="envios-col-prev">
         <span class="envios-data-main">${prazo}</span>
-        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
-        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-declaracao="${p.id}">Gerar novamente declaração</button>
+        <div class="envios-col-prev-actions">
+          <button class="btn btn-sm btn-secondary" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
+          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">Gerar novamente declaração</button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1104,12 +1097,16 @@ function bindTabEvents() {
     });
   });
 
-  // Gerar ou gerar novamente a declaração de conteúdo (documento local, sem nova postagem)
+  // Declaração de conteúdo oficial, emitida pelos Correios
   area.querySelectorAll('[data-declaracao]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const postagem = state.postagens.find(p => p.id === btn.dataset.declaracao);
-      if (!postagem) return setFeedback('Postagem não encontrada.', true);
-      printDeclaracao(postagem);
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.declaracao;
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Gerando...';
+      const result = await callFn('correios-declaracao', { postagem_ids: [id] });
+      if (result.ok && result.html) openDeclaracaoHtml(result.html);
+      else setFeedback('Erro ao gerar declaração: ' + (result.error ?? 'desconhecido'), true);
+      btn.disabled = false; btn.textContent = orig;
     });
   });
 
@@ -1664,19 +1661,20 @@ export async function renderContent(content) {
       .dest-ac-item small{font-size:11px;color:rgba(180,220,195,.50)}
       .td-actions{white-space:nowrap;display:flex;gap:4px;align-items:center;flex-wrap:nowrap}
       .envios-row-list{display:flex;flex-direction:column;gap:6px}
-      .envios-row-header{display:grid;grid-template-columns:110px 1fr 170px 120px 110px;gap:8px 14px;padding:0 18px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(180,220,195,.28)}
-      .envios-row{display:grid;grid-template-columns:110px 1fr 170px 120px 110px;gap:8px 14px;align-items:center;background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.09);border-radius:12px;padding:12px 18px;transition:border-color .15s,background .15s}
+      .envios-row-header{display:grid;grid-template-columns:110px 1fr 170px 120px minmax(200px,auto);gap:8px 14px;padding:0 18px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:rgba(180,220,195,.28)}
+      .envios-row{display:grid;grid-template-columns:110px 1fr 170px 120px minmax(200px,auto);gap:8px 14px;align-items:center;background:rgba(4,13,9,.42);border:1px solid rgba(45,212,160,.09);border-radius:12px;padding:12px 18px;transition:border-color .15s,background .15s}
       .envios-row:hover{border-color:rgba(45,212,160,.20);background:rgba(4,13,9,.58)}
       .envios-row-devolvido{border-color:rgba(239,68,68,.14)}
       .envios-row-devolvido:hover{border-color:rgba(239,68,68,.28)}
       .envios-col-data,.envios-col-prev{display:flex;flex-direction:column;gap:3px}
+      .envios-col-prev-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
       .envios-data-main{font-size:.82rem;color:rgba(200,230,210,.78);font-variant-numeric:tabular-nums;line-height:1.3}
       .envios-data-sub{font-size:.70rem;color:rgba(180,220,195,.35)}
       .envios-nome{font-size:.92rem;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .envios-sub{font-size:.73rem;color:rgba(180,220,195,.44);margin-top:2px;line-height:1.35}
       .envios-rastreio-code{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:.75rem;letter-spacing:.07em;color:rgba(45,212,160,.84);background:rgba(45,212,160,.07);border:1px solid rgba(45,212,160,.13);padding:3px 8px;border-radius:6px;display:inline-block;white-space:nowrap}
-      @media(max-width:960px){.envios-row,.envios-row-header{grid-template-columns:100px 1fr 150px 110px 100px}}
-      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}.envios-row,.envios-row-header{grid-template-columns:1fr 1fr}.envios-col-rastreio{grid-column:span 2}.envios-col-data{order:-1}}
+      @media(max-width:960px){.envios-row,.envios-row-header{grid-template-columns:100px 1fr 150px 110px minmax(170px,auto)}}
+      @media(max-width:720px){.form-grid{grid-template-columns:1fr}.form-group.full-width,.form-actions{grid-column:span 1}.envios-row,.envios-row-header{grid-template-columns:1fr 1fr}.envios-col-rastreio{grid-column:span 2}.envios-col-data{order:-1}.envios-col-prev{grid-column:span 2}}
     </style>
     <div id="envios-feedback" class="feedback-bar" style="display:none"></div>
     <nav class="envios-tabs">

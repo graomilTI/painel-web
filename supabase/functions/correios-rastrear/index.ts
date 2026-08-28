@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     const { postagem_id, numeros = [] } = await req.json();
     const objetos = (numeros as string[]).map((n) => String(n).replace(/[^A-Za-z0-9]/g, "").toUpperCase()).filter(Boolean);
     if (!objetos.length) return json({ ok: false, error: "Informe ao menos um código de rastreamento." }, 400);
-    const res = await correiosFetch(`/srorastro/v1/objetos/${objetos.join(",")}?resultado=T`);
+    const res = await correiosFetch(`/srorastro/v1/objetos/${objetos.join(",")}?resultado=T`, { headers: { "Accept-Language": "pt-BR" } });
     const text = await res.text();
     const data = JSON.parse(text);
     if (!res.ok) return json({ ok: false, error: data?.msgs?.join?.("; ") || text.slice(0, 300) }, res.status);

@@ -59,6 +59,9 @@ verify_jwt = false
 [functions.correios-rastrear]
   verify_jwt = true
 
+[functions.correios-declaracao]
+  verify_jwt = true
+
 [functions.correios-telegrama]
 verify_jwt = true
 

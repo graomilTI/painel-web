@@ -86,7 +86,7 @@ export async function correiosFetch(path: string, init: RequestInit = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
-    headers.set("Accept", "application/json");
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
     const res = await fetch(correiosApi(path), { ...init, headers });
     if (![401, 403].includes(res.status) || attempt === 2) return res;
     if (attempt === 0 && delegatedKey) token = await getCorreiosToken(false, scope);
