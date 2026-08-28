@@ -21,13 +21,13 @@ function labelMaterial(material){
   return MATERIAL_LABELS_LEGADO[material] || material;
 }
 
-const EMPREGADOR_EPI = {
+const EMPREGADOR_EPI_PADRAO = {
   razao:'GRAOMIL LTDA',
   cnpj:'29.666.679/0001-34',
   endereco:'AV BRASIL, nº 2732, APT 01, SAO CRISTOVAO, Cascavel - PR, CEP 85816-294',
 };
 
-const state = { solicitacoes:[], solFilter:'concluido' };
+const state = { solicitacoes:[], empresas:[], solFilter:'concluido' };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-';};
@@ -40,6 +40,26 @@ const today = ()=>{
   return `${ano}-${mes}-${dia}`;
 };
 const money = (v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+function normalizarEmpresa(e={}){
+  return {
+    razao:getAny(e,['razao_social','razao','empresa'])||'',
+    cnpj:getAny(e,['cnpj'])||'',
+    endereco:getAny(e,['endereco'])||'',
+    aliases:Array.isArray(e.aliases)?e.aliases:[],
+  };
+}
+
+function empresaDoColaborador(nomeEmpresa){
+  const chave=norm(nomeEmpresa);
+  if(!chave) return null;
+  return state.empresas.find(e=>[e.razao,...e.aliases].some(nome=>norm(nome)===chave))||null;
+}
+
+async function loadEmpresas(){
+  const empresas=await safe(()=>supabase.from('rh_empresas').select('razao_social,cnpj,endereco,aliases').eq('ativo',true).order('razao_social'));
+  state.empresas=empresas.map(normalizarEmpresa);
+}
 
 function setSolMsg(msg,err=false){const el=document.getElementById('epiSolFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err);}}
 async function safe(fn,fallback=[]){try{const {data,error}=await fn(); if(error) throw error; return data||fallback;}catch(e){console.warn(e);return fallback;}}
@@ -68,6 +88,7 @@ function normalizarColaborador(c={}){
     setor:getAny(c,['setor','Setor','departamento']) || '',
     supervisao:getAny(c,['supervisao','supervisão','Supervisão','SUPERVISAO','SUPERVISÃO','supervisor','responsavel','responsável']) || '',
     coordenacao:getAny(c,['coordenacao','coordenação','Coordenação','COORDENACAO','COORDENAÇÃO','regional']) || '',
+    empresa:getAny(c,['empresa','Empresa','colaborador_empresa']) || '',
     data_admissao:getAny(c,['data_admissao','admissao','admissão','Data Admissão','periodo','período']) || '',
     ativo:getAny(c,['ativo','status','situacao','situação']) || 'ativo',
   };
@@ -120,6 +141,7 @@ function dadosColaboradorSolicitacao(s={},itens=[],overrides={}){
     setor:getAny(i,['colaborador_setor'])||getAny(s,['colaborador_setor'])||'',
     supervisao:getAny(i,['colaborador_supervisao','supervisao','supervisão'])||getAny(s,['supervisao','supervisão','colaborador_supervisao'])||'',
     coordenacao:getAny(i,['colaborador_coordenacao','colaborador_coordenação'])||getAny(s,['coordenacao','coordenação','colaborador_coordenacao'])||'',
+    empresa:getAny(i,['colaborador_empresa'])||getAny(s,['colaborador_empresa','empresa'])||'',
     data_admissao:getAny(i,['colaborador_data_admissao'])||getAny(s,['colaborador_data_admissao'])||'',
     ...overrides,
   };
@@ -184,6 +206,8 @@ async function cancelarSolicitacao(id){
 
 function fichaEpiHtml(s,itens,overrides={}){
   const colab=dadosColaboradorSolicitacao(s,itens,overrides);
+  const empregador=empresaDoColaborador(colab.empresa)||EMPREGADOR_EPI_PADRAO;
+  const EMPREGADOR_EPI=empregador;
   const epis=[...(itens||[])].slice(0,12);
   while(epis.length<8) epis.push({material:'',ca:'',quantidade:''});
   const dataEntrega=brDate(today());
@@ -203,7 +227,13 @@ async function loadJsPdf(){
 async function baixarFichaEpi(s,itens,overrides={}){
   const JsPDF=await loadJsPdf();
   const doc=new JsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-  const colab=dadosColaboradorSolicitacao(s,itens,overrides);
+  let colab=dadosColaboradorSolicitacao(s,itens,overrides);
+  if(!colab.empresa && (colab.id||colab.nome)){
+    const atualizado=await buscarColaboradorDetalhes(colab);
+    colab={...colab,...atualizado,...overrides};
+  }
+  const empregador=empresaDoColaborador(colab.empresa);
+  if(!empregador) throw new Error(`Empresa "${colab.empresa||'não informada'}" sem cadastro para a ficha de EPI.`);
   const margem=14, largura=182;
   let y=16;
   const texto=(valor,x,linha,opts={})=>doc.text(Array.isArray(valor)?valor:String(valor??''),x,linha,opts);
@@ -222,8 +252,8 @@ async function baixarFichaEpi(s,itens,overrides={}){
   doc.setFont('helvetica','bold'); doc.setFontSize(16); texto('FICHA DE EPIs',105,y,{align:'center'}); y+=12;
   secao('DADOS DO EMPREGADOR');
   doc.setFont('helvetica','normal'); doc.setFontSize(9);
-  desenharCelulas([{valor:`Razão Social: ${EMPREGADOR_EPI.razao}`,largura:105},{valor:`CNPJ: ${EMPREGADOR_EPI.cnpj}`,largura:77}]);
-  desenharCelulas([{valor:`Endereço: ${EMPREGADOR_EPI.endereco}`,largura}]);
+  desenharCelulas([{valor:`Razão Social: ${empregador.razao}`,largura:105},{valor:`CNPJ: ${empregador.cnpj}`,largura:77}]);
+  desenharCelulas([{valor:`Endereço: ${empregador.endereco}`,largura}]);
   secao('FUNCIONÁRIO');
   desenharCelulas([{valor:`Nome: ${colab.nome||'-'}`,largura}]);
   desenharCelulas([{valor:`CPF: ${colab.cpf||'-'}`,largura:106},{valor:`RG: ${colab.rg||'-'}`,largura:31},{valor:`Data Nasc.: ${brDate(colab.data_nascimento)}`,largura:45}]);
@@ -318,7 +348,7 @@ function openNovasSolicitacaoModal(userContext){
   const info=modal.querySelector('#solColabInfo');
   function renderColabInfo(c){
     if(!c){info.innerHTML=''; info.style.display='none'; return;}
-    info.innerHTML=`<b>${esc(c.nome)}</b><br><small>Supervisão: ${esc(c.supervisao||'Não informada')}${c.coordenacao?` · Coordenação: ${esc(c.coordenacao)}`:''}${c.cargo?` · Cargo: ${esc(c.cargo)}`:''}</small>`;
+    info.innerHTML=`<b>${esc(c.nome)}</b><br><small>Empresa: ${esc(c.empresa||'Não informada')} · Supervisão: ${esc(c.supervisao||'Não informada')}${c.coordenacao?` · Coordenação: ${esc(c.coordenacao)}`:''}${c.cargo?` · Cargo: ${esc(c.cargo)}`:''}</small>`;
     info.style.display='block';
   }
   input.addEventListener('input',()=>{
@@ -363,6 +393,7 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
       cargo:cargoInformado,
       setor:setorSelecionado,
     };
+    if(!empresaDoColaborador(colab.empresa)) throw new Error(`A empresa "${colab.empresa||'não informada'}" do colaborador não está cadastrada para a ficha de EPI.`);
     const cas=await Promise.all(checkedEpis.map(epi=>epi.ca?Promise.resolve(epi.ca):buscarUltimoCaPorMaterial(epi.material)));
     checkedEpis.forEach((epi,idx)=>{epi.ca=epi.ca||cas[idx]||null;});
     await loadJsPdf();
@@ -375,7 +406,7 @@ async function salvarSolicitacaoEPI(modal,userContext,getColab,colabInput){
       const r2=await supabase.from('compras_solicitacoes').insert(limpo).select('id').single();
       if(r2.error) throw r2.error; sol=r2.data;
     }
-    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:'concluido'}));
+    const itens=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,colaborador_empresa:colab.empresa||null,status:'concluido'}));
     const {error:itensErr}=await supabase.from('compras_itens').insert(itens);
     if(itensErr){
       const fallback=checkedEpis.map(epi=>({solicitacao_id:sol.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:'concluido'}));
@@ -407,7 +438,7 @@ function openEditarSolicitacaoModal(id){
   const info=modal.querySelector('#solColabInfo');
   function renderColabInfo(c){
     if(!c){info.innerHTML=''; info.style.display='none'; return;}
-    info.innerHTML=`<b>${esc(c.nome)}</b><br><small>Supervisão: ${esc(c.supervisao||'Não informada')}${c.coordenacao?` · Coordenação: ${esc(c.coordenacao)}`:''}</small>`;
+    info.innerHTML=`<b>${esc(c.nome)}</b><br><small>Empresa: ${esc(c.empresa||'Não informada')} · Supervisão: ${esc(c.supervisao||'Não informada')}${c.coordenacao?` · Coordenação: ${esc(c.coordenacao)}`:''}</small>`;
     info.style.display='block';
   }
   input.addEventListener('input',()=>{
@@ -452,12 +483,13 @@ async function salvarEdicaoSolicitacaoEPI(modal,s,getColab,colabInput){
       cargo:cargoInformado,
       setor:setorSelecionado,
     };
+    if(!empresaDoColaborador(colab.empresa)) throw new Error(`A empresa "${colab.empresa||'não informada'}" do colaborador não está cadastrada para a ficha de EPI.`);
     const cas=await Promise.all(checkedEpis.map(epi=>epi.ca?Promise.resolve(epi.ca):buscarUltimoCaPorMaterial(epi.material)));
     checkedEpis.forEach((epi,idx)=>{epi.ca=epi.ca||cas[idx]||null;});
     const obs=modal.querySelector('#solObs')?.value?.trim()||null;
     await supabase.from('compras_solicitacoes').update({observacoes:obs,coordenacao:colab.coordenacao||s.coordenacao||null,supervisao:colab.supervisao||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null}).eq('id',s.id);
     await supabase.from('compras_itens').delete().eq('solicitacao_id',s.id);
-    const itens=checkedEpis.map(epi=>({solicitacao_id:s.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,status:s.status||'concluido'}));
+    const itens=checkedEpis.map(epi=>({solicitacao_id:s.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_cpf:colab.cpf||null,colaborador_rg:colab.rg||null,colaborador_data_nascimento:colab.data_nascimento||null,colaborador_funcao:colab.funcao||null,colaborador_cargo:colab.cargo||null,colaborador_setor:colab.setor||null,colaborador_supervisao:colab.supervisao||null,colaborador_coordenacao:colab.coordenacao||null,colaborador_data_admissao:colab.data_admissao||null,colaborador_empresa:colab.empresa||null,status:s.status||'concluido'}));
     const {error:itensErr}=await supabase.from('compras_itens').insert(itens);
     if(itensErr){
       const fallback=checkedEpis.map(epi=>({solicitacao_id:s.id,material:epi.material,tipo:'EPI',tamanho:epi.tamanho||null,quantidade:1,unidade:1,ca:epi.ca||null,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,status:s.status||'concluido'}));
@@ -475,6 +507,7 @@ export async function renderContent(content, userContext){
   document.getElementById('epiNovaSol').onclick=()=>openNovasSolicitacaoModal(userContext);
   document.getElementById('epiSolRefresh').onclick=loadSolicitacoes;
   document.querySelectorAll('[data-sf]').forEach(b=>b.onclick=()=>{state.solFilter=b.dataset.sf; document.querySelectorAll('[data-sf]').forEach(x=>x.classList.toggle('active',x===b)); renderSolicitacoes();});
+  await loadEmpresas();
   await loadSolicitacoes();
 }
 
