@@ -1,4 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import {
+  isDesiredStateApplied,
+  shouldClearOperationalRules,
+} from '../_shared/grm-liberacao-policy.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -454,16 +458,15 @@ Deno.serve(async (req) => {
       return { cpf: '', error: 'COLABORADOR_NAO_LOCALIZADO' };
     };
 
-    const osDateById = new Map(
-      (activePrograms || []).map((row) => [clean(row.id), clean(row.data_referencia).slice(0, 10)]),
-    );
-    const cpfsAuthorizedByDate = new Map<string, Set<string>>();
+    // O GRM não possui vigência por data: uma única regra fica ativa no
+    // cadastro do colaborador. Por isso qualquer programação de hoje ou do
+    // futuro precisa impedir uma limpeza disparada pela reconciliação de outro
+    // dia/regional.
+    const cpfsAuthorizedInActiveWindow = new Set<string>();
     for (const link of globalLinks) {
       const resolved = resolveLinkCpf(link);
-      const date = osDateById.get(clean(link.programacao_id));
-      if (!resolved.cpf || !date) continue;
-      if (!cpfsAuthorizedByDate.has(date)) cpfsAuthorizedByDate.set(date, new Set());
-      cpfsAuthorizedByDate.get(date)!.add(resolved.cpf);
+      if (!resolved.cpf) continue;
+      cpfsAuthorizedInActiveWindow.add(resolved.cpf);
     }
     // Efetivos explicitamente marcados como DISPONIVEL também possuem uma
     // autorização financeira válida mesmo sem vínculo a O.S. A autorização é
@@ -481,10 +484,8 @@ Deno.serve(async (req) => {
           colaborador_cpf: row.colaborador_id,
           colaborador_nome: row.nome_colaborador,
         });
-        const date = osDateById.get(clean(row.programacao_id));
-        if (!resolved.cpf || !date) continue;
-        if (!cpfsAuthorizedByDate.has(date)) cpfsAuthorizedByDate.set(date, new Set());
-        cpfsAuthorizedByDate.get(date)!.add(resolved.cpf);
+        if (!resolved.cpf) continue;
+        cpfsAuthorizedInActiveWindow.add(resolved.cpf);
       }
     }
 
@@ -503,7 +504,6 @@ Deno.serve(async (req) => {
     };
 
     for (const group of groups.values()) {
-      const cpfsAuthorizedOnDate = cpfsAuthorizedByDate.get(group.date) || new Set<string>();
       const regionalStaff = allStaff.filter((staff) => regionalMatches(staff, group.regional));
       const regionalStaffByCpf = new Map(
         regionalStaff
@@ -671,10 +671,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // A decisão de limpeza é estritamente diária. Uma O.S. futura não
-        // pode manter hoje uma autorização que não pertence à programação de
-        // hoje; a versão futura será aplicada somente na própria janela.
-        if (!cpfsAuthorizedOnDate.has(cpf)) {
+        // LIMPAR é destrutivo e o GRM não guarda vigência. Só é seguro remover
+        // quando o CPF não aparece em nenhuma programação válida de hoje em
+        // diante. Isso também cobre uma leitura parcial do grupo corrente e
+        // evita que uma reconciliação apague regras que outra data ainda exige.
+        if (shouldClearOperationalRules(cpf, cpfsAuthorizedInActiveWindow)) {
           const rules: ReturnType<typeof canonicalRules> = [];
           const hash = await sha256({ cpf, action: 'LIMPAR', rules });
           desired.set(cpf, { staff, action: 'LIMPAR', rules, hash });
@@ -760,8 +761,15 @@ Deno.serve(async (req) => {
 
       for (const [cpf, item] of desired) {
         const previous = existingByCpf.get(cpf);
-        const alreadyApplied = previous?.hash_aplicado === item.hash
-          && ['APLICADO', 'LIMPO'].includes(clean(previous?.status_aplicacao));
+        // Hash igual não basta: uma limpeza antiga pode deixar o mesmo hash
+        // registrado com status LIMPO. Uma ação APLICAR só está concluída com
+        // status APLICADO (e vice-versa), senão a reparação nunca entra na fila.
+        const alreadyApplied = isDesiredStateApplied(
+          item.action,
+          item.hash,
+          previous?.hash_aplicado,
+          clean(previous?.status_aplicacao),
+        );
         const hasLiveQueueItem = liveHashesByCpf.get(cpf)?.has(item.hash) ?? false;
         const alreadyDesired = previous?.hash_desejado === item.hash
           && ['PENDENTE', 'PROCESSANDO', 'ERRO'].includes(clean(previous?.status_aplicacao))
