@@ -25,7 +25,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260807-papel-os1';
+} from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260810-agrupar-hoteis';
 
 function esc(value) {
