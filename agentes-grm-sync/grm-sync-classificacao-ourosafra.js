@@ -254,7 +254,14 @@ async function clickNthButtonInRow(row, index) {
 
 async function listarAgendamentosPorCard(page, label) {
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
-  await wait(2000);
+  // Um wait fixo de 2s às vezes não é suficiente pro painel de KPIs (cards)
+  // terminar de renderizar via SignalR (Blazor Server) — o script concluía
+  // "0 placas" por engano mesmo com itens reais na tela, pulando o card
+  // inteiro naquele ciclo (confirmado ao vivo 28/08). Espera ativamente
+  // pelo menos 1 .rz-card aparecer antes de decidir se o card do status
+  // existe ou não.
+  await page.waitForFunction(() => document.querySelectorAll('.rz-card').length > 0, { timeout: 15000 }).catch(() => {});
+  await wait(500);
   // Os cards do painel (Carregando / Aguardando Classificação / Aguardando
   // Laudo Classificação) são <div class="rz-card">, não <button> — e o card
   // some do DOM quando a contagem daquele status é 0 (confirmado ao vivo).
