@@ -74,6 +74,7 @@ const SCRIPT_MAP = {
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
+  'sync-classificacao-ourosafra': 'grm-sync-classificacao-ourosafra.js',
 };
 
 function getSupabase() {

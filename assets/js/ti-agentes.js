@@ -48,7 +48,7 @@ const AGENTES = [
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
-  { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: 'manual (fora do cron)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida' },
+  { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: '10 min (fila 06 · Saída OS)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida' },
 ];
 
 const STATUS_META = {
@@ -340,7 +340,7 @@ function renderOurosafraKpi() {
     <div class="ag-btg-kpi-head">
       <div>
         <div class="ag-btg-kpi-title">🌾 KPI · Classificação Ouro Safra (Laudo)</div>
-        <div class="ag-btg-kpi-sub">Casa placas "Aguardando Classificação" no painel Ouro Safra com o GRM e anexa o laudo. Ainda fora do cron — roda só manual/supervisionado (HEADLESS=false).</div>
+        <div class="ag-btg-kpi-sub">Casa placas "Aguardando Classificação" no painel Ouro Safra com o GRM e anexa o laudo. Fila 06 · Saída OS, a cada 10 min.</div>
       </div>
       <div class="ag-btg-kpi-status" style="color:${meta.color}"><span class="ag-status-dot ${meta.ui}"></span>${meta.label}</div>
     </div>
