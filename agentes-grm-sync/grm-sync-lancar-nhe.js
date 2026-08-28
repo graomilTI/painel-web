@@ -280,32 +280,33 @@ function splitBatches(records, maxGapMs) {
   return batches;
 }
 
-function dedupeMovement(records) {
-  var map = {};
+function chooseMovementBatch(records) {
+  // União de todos os lotes da janela, não só o "lote vencedor" (mais linhas
+  // batendo a referência): o Mapa de Embarque é um snapshot AO VIVO do board
+  // do GRM, e uma O.S. pode sumir dele entre um sync e o próximo (ex.: saiu
+  // da tela do GRM antes da próxima execução) sem nunca ter sido resolvida.
+  // Escolher só o lote com mais matches descartava silenciosamente qualquer
+  // O.S. que só aparecia num lote mais antigo/perdedor — achado com a O.S.
+  // 90394 (Última Atualização=27/08 presente até 02:53 UTC, sumida dos syncs
+  // seguintes; o agente rodou depois disso e nunca a viu). Mantém, por O.S.,
+  // a ocorrência de created_at mais recente entre todos os lotes.
+  var byOs = {};
+  var rawSeen = {};
+  var lastBatchAt = null;
   (records || []).forEach(function (record) {
+    if (!lastBatchAt || String(record.created_at) > String(lastBatchAt)) lastBatchAt = record.created_at;
     var row = normalizedRow(record.dados_json || {});
     var os = normOs(pick(row, ['OS', 'O.S.', 'O.S', 'O S']));
-    if (os && normText(os) !== 'OS') map[os] = { row: row, createdAt: record.created_at };
-  });
-  return Object.keys(map).map(function (k) { return map[k]; });
-}
-
-function chooseMovementBatch(records) {
-  var selected = null;
-  splitBatches(records).forEach(function (batch) {
-    var deduped = dedupeMovement(batch);
-    var matching = deduped.filter(function (item) { return movementDate(item.row) === referenceIso(); });
-    var zeroCount = matching.filter(function (item) {
-      var tons = pick(item.row, ['Tons Hoje', 'TonsHoje', 'Tons']);
-      return String(tons == null ? '' : tons).trim() !== '' && toNumberLoose(tons) === 0;
-    }).length;
-    var score = matching.length * 1000 + zeroCount;
-    var batchAt = batch[0] ? batch[0].created_at : null;
-    if (!selected || score > selected.score || (score === selected.score && String(batchAt) > String(selected.batchAt))) {
-      selected = { score: score, batchAt: batchAt, rawCount: deduped.length, matchingCount: matching.length, rows: matching };
+    if (!os || normText(os) === 'OS') return;
+    rawSeen[os] = true;
+    if (movementDate(row) !== referenceIso()) return;
+    var existing = byOs[os];
+    if (!existing || String(record.created_at) > String(existing.createdAt)) {
+      byOs[os] = { row: row, createdAt: record.created_at };
     }
   });
-  return selected;
+  var rows = Object.keys(byOs).map(function (k) { return byOs[k]; });
+  return { score: rows.length, batchAt: lastBatchAt, rawCount: Object.keys(rawSeen).length, matchingCount: rows.length, rows: rows };
 }
 
 function chooseServiceBatch(records) {
