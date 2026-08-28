@@ -66,6 +66,25 @@ function printPdf(b64) {
   win.addEventListener('afterprint', () => URL.revokeObjectURL(url));
 }
 
+function printDeclaracao(postagem) {
+  const rem = postagem.remetente ?? {};
+  const dest = postagem.destinatario ?? {};
+  const endereco = pessoa => [pessoa.logradouro, pessoa.numero, pessoa.complemento, pessoa.bairro, `${pessoa.cidade ?? ''}/${pessoa.uf ?? ''}`, pessoa.cep].filter(Boolean).join(', ');
+  const valor = Number(postagem.valor_declarado || 0);
+  const win = window.open('', '_blank');
+  if (!win) { setFeedback('Permita pop-ups para gerar a declaração de conteúdo.', true); return; }
+  win.document.write(`<!DOCTYPE html><html><head><title>Declaração de Conteúdo</title><meta charset="utf-8"><style>
+    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:12px Arial,sans-serif;color:#000;margin:0}.doc{max-width:760px;margin:auto;border:2px solid #000;padding:14px}h1{text-align:center;font-size:18px;margin:0 0 14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.box{border:1px solid #000;padding:9px;min-height:88px}.box strong{display:block;margin-bottom:5px}.line{margin:4px 0}.items{width:100%;border-collapse:collapse;margin:12px 0}.items th,.items td{border:1px solid #000;padding:7px;text-align:left}.items .num{text-align:right}.texto{font-size:11px;text-align:justify;line-height:1.4}.assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:35px;margin-top:45px}.assinatura{border-top:1px solid #000;text-align:center;padding-top:5px}.codigo{text-align:center;font-weight:bold;margin:10px 0}@media print{button{display:none}}
+  </style></head><body><div class="doc"><h1>DECLARAÇÃO DE CONTEÚDO</h1>
+    <div class="codigo">Objeto: ${esc(postagem.numero_objeto || '—')}</div><div class="grid">
+    <div class="box"><strong>REMETENTE</strong><div class="line">${esc(rem.nome || '—')}</div><div class="line">CPF/CNPJ: ${esc(rem.cpf_cnpj || '—')}</div><div class="line">${esc(endereco(rem))}</div></div>
+    <div class="box"><strong>DESTINATÁRIO</strong><div class="line">${esc(dest.nome || '—')}</div><div class="line">CPF/CNPJ: ${esc(dest.cpf_cnpj || '—')}</div><div class="line">${esc(endereco(dest))}</div></div></div>
+    <table class="items"><thead><tr><th>Conteúdo</th><th>Quantidade</th><th>Valor</th></tr></thead><tbody><tr><td>${esc(postagem.conteudo || 'Documentos')}</td><td class="num">1</td><td class="num">${esc(MONEY.format(valor))}</td></tr><tr><th colspan="2">Valor total</th><th class="num">${esc(MONEY.format(valor))}</th></tr></tbody></table>
+    <p class="texto">Declaro que a presente remessa não contém produtos perigosos ou proibidos pelos Correios e não se enquadra em transação comercial sujeita à emissão de documento fiscal. Responsabilizo-me integralmente pelas informações declaradas.</p>
+    <div class="assinaturas"><div class="assinatura">Local e data</div><div class="assinatura">Assinatura do declarante/remetente</div></div></div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+  win.document.close();
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
   tab: 'postagens',
@@ -129,7 +148,7 @@ async function loadAll() {
   state.loading = true;
   const [{ data: posts }, { data: rems }, { data: rev }, dests] = await Promise.all([
     supabase.from('envios_postagens')
-      .select('*, remetente:envios_remetentes(nome, cidade, uf), destinatario:envios_destinatarios(nome, cidade, uf)')
+      .select('*, remetente:envios_remetentes(*), destinatario:envios_destinatarios(*)')
       .order('created_at', { ascending: false })
       .limit(200),
     supabase.from('envios_remetentes').select('*').eq('ativo', true).order('nome'),
@@ -515,6 +534,8 @@ function renderEnviados() {
       <div class="envios-col-prev">
         <span class="envios-data-main">${prazo}</span>
         ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" style="margin-top:6px;align-self:flex-start" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
+        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
+        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-declaracao="${p.id}">Declaração de conteúdo</button>
       </div>
     </div>`;
   }).join('');
@@ -569,6 +590,8 @@ function renderHistorico() {
       <div>${badge(p.status)}</div>
       <div class="envios-col-prev">
         <span class="envios-data-main">${prazo}</span>
+        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
+        <button class="btn btn-sm btn-secondary" style="margin-top:6px" data-declaracao="${p.id}">Gerar novamente declaração</button>
       </div>
     </div>`;
   }).join('');
@@ -1078,6 +1101,15 @@ function bindTabEvents() {
       } catch (e) { setFeedback('Erro: ' + e.message, true); }
       btn.disabled = false;
       btn.textContent = orig;
+    });
+  });
+
+  // Gerar ou gerar novamente a declaração de conteúdo (documento local, sem nova postagem)
+  area.querySelectorAll('[data-declaracao]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const postagem = state.postagens.find(p => p.id === btn.dataset.declaracao);
+      if (!postagem) return setFeedback('Postagem não encontrada.', true);
+      printDeclaracao(postagem);
     });
   });
 

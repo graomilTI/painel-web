@@ -327,7 +327,7 @@
     const current = selectedIntegration();
     if (!current) return toast('Selecione uma integração antes de salvar token.', 'error');
     const chave = normalizeCode(root.querySelector('[data-secret-key]')?.value || '');
-    const valor = root.querySelector('[data-secret-value]')?.value || '';
+    const valor = root.querySelector('[data-secret-value]')?.value.trim() || '';
     const descricao = root.querySelector('[data-secret-desc]')?.value.trim() || null;
     const sensivel = Boolean(root.querySelector('[data-secret-sensitive]')?.checked);
     if (!chave) return toast('Informe o nome da chave/token.', 'error');

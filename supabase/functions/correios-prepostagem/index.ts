@@ -1,8 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { authorizeRequest } from "../_shared/authorization.ts";
+import { correiosFetch } from "../_shared/correios.ts";
 
-const CORREIOS_API = 'https://api.correios.com.br';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -40,8 +40,6 @@ Deno.serve(async (req: Request) => {
   for (const s of secrets ?? []) sec[s.chave] = s.valor;
 
   const cartao    = sec['CORREIOS_CARTAO']         ?? '';
-  const cwsCartao = sec['CORREIOS_CWS_KEY_CARTAO'] ?? '';
-  if (!cwsCartao) return json({ ok: false, error: 'Chave CWS cartão não configurada' }, 500);
 
   const rem  = postagem.remetente;
   const dest = postagem.destinatario;
@@ -102,9 +100,9 @@ Deno.serve(async (req: Request) => {
   };
 
   try {
-    const res = await fetch(`${CORREIOS_API}/prepostagem/v1/prepostagens`, {
+    const res = await correiosFetch('/prepostagem/v1/prepostagens', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${cwsCartao}`, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const rawText = await res.text();
