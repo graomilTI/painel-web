@@ -9,9 +9,9 @@
 //
 // Diferente do upload manual (que só faz insert, um upload = um lote isolado),
 // o agente resincroniza ~11.000 linhas a cada ~20min cobrindo várias semanas.
-// Para não duplicar a cada ciclo, apagamos o intervalo de datas coberto pelo
-// lote atual antes de inserir de novo (mesmo padrão usado em
-// replacePainelResultadoDiario no agente de Resultado Diário).
+// Para não duplicar a cada ciclo, substituímos o intervalo de datas coberto
+// pelo lote atual em uma única transação no banco. Assim nenhuma leitura do
+// dashboard enxerga o período entre o delete e o fim dos inserts.
 import { supabase } from './supabaseClient.js';
 
 const LOTE_MINIMO = 1000;
@@ -133,17 +133,14 @@ export async function sincronizarProducaoSnapshotDoAgente() {
       const dataMin = datas[0];
       const dataMax = datas[datas.length - 1];
 
-      const { error: delError } = await supabase
-        .from('producao_snapshot')
-        .delete()
-        .gte('data', dataMin)
-        .lte('data', dataMax);
-      if (delError) throw delError;
-
-      for (let i = 0; i < mapped.length; i += 500) {
-        const chunk = mapped.slice(i, i + 500);
-        const { error } = await supabase.from('producao_snapshot').insert(chunk);
-        if (error) throw error;
+      const { data: totalInserido, error } = await supabase.rpc('substituir_producao_snapshot_periodo', {
+        p_data_ini: dataMin,
+        p_data_fim: dataMax,
+        p_linhas: mapped,
+      });
+      if (error) throw error;
+      if (Number(totalInserido) !== mapped.length) {
+        throw new Error(`Substituição incompleta: ${totalInserido}/${mapped.length} linhas.`);
       }
 
       console.info(`[producao-snapshot-agente] sincronização automática: ${mapped.length} linhas (${dataMin} a ${dataMax}).`);

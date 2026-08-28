@@ -11,7 +11,7 @@ const ICON_STATUS  = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1
 
 const BR = new Intl.NumberFormat('pt-BR');
 const MESES_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v5-segmentado';
+const GESTOR_CACHE_KEY = 'grao1000:gestor-dash:v6-atomic-production';
 // O agente de produção diária resincroniza producao_snapshot a cada ~20min;
 // 1h garante que a Meta Mensal não fique presa em cache por dias sem o usuário
 // precisar clicar em "Atualizar".
@@ -313,8 +313,8 @@ function dashPeriodKey(ano, mes) {
 
 function dashCacheReference({ isMaster, coordenacao, ano, mes }) {
   const period = dashPeriodKey(ano, mes);
-  if (isMaster) return `master:${period}`;
-  return `regional:${normalizeStr(coordenacao) || 'sem_regional'}:${period}`;
+  if (isMaster) return `v6:master:${period}`;
+  return `v6:regional:${normalizeStr(coordenacao) || 'sem_regional'}:${period}`;
 }
 
 function dashLocalCacheKey(ref) {
@@ -401,17 +401,6 @@ async function fetchGestorDataLive(ctx) {
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  const makeProdQuery = () => {
-    let q = supabase
-      .from('producao_snapshot')
-      .select('data,coordenacao,tons')
-      .gte('data', dataIni)
-      .lt('data', dataFim)
-      .order('data', { ascending: true });
-    if (!isMaster && coordenacao) q = q.eq('coordenacao', coordenacao);
-    return q;
-  };
-
   let patriBase     = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo');
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').gt('dias_sem_leitura',7);
   let osPendBase    = supabase.from('operacional_os').select('*',{count:'exact',head:true})
@@ -434,10 +423,14 @@ async function fetchGestorDataLive(ctx) {
     .select('veiculo_id,proxima_data,data_execucao')
     .order('data_execucao', { ascending: false });
 
-  const [metaRes, prodRows, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
+  const [metaRes, prodRes, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
     await Promise.all([
       supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
-      fetchAllRows(makeProdQuery),
+      supabase.rpc('dashboard_producao_agregada', {
+        p_data_ini: dataIni,
+        p_data_fim: dataFim,
+        p_coordenacao: !isMaster && coordenacao ? coordenacao : null,
+      }),
       patriBase,
       patriLateBase,
       osPendBase,
@@ -446,6 +439,9 @@ async function fetchGestorDataLive(ctx) {
       veiculosBase,
       fetchAllRows(makeChecklistsQuery),
     ]);
+
+  if (prodRes.error) throw prodRes.error;
+  const prodRows = prodRes.data || [];
 
   // Um veículo está "em dia" se o checklist mais recente dele (a primeira
   // ocorrência já que checklistRows vem ordenado por data_execucao desc) tem
