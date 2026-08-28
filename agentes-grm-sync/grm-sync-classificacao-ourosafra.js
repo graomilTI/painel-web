@@ -252,34 +252,46 @@ async function clickNthButtonInRow(row, index) {
 // Ouro Safra — lista de agendamentos pendentes de classificação
 // ---------------------------------------------------------------------------
 
-// A grid pagina em ~10 registros — com o backlog de Carregando passando de
-// 40+, ficar só na 1ª página deixa placas presas sem nunca serem
-// alcançadas (confirmado ao vivo 28/08: placa real na página 4/5). Os
-// controles de paginação (Radzen) ficam dentro do mesmo container
-// .rz-data-grid da tabela de dados — busca aí em vez de document inteiro
-// pra não pegar o paginador do dropdown Empresa (grid separada, menor).
-async function clickPaginatorLink(page, ariaLabel) {
-  const handle = await page.evaluateHandle((ariaLabel) => {
+// A grid pagina em ~10 registros por padrão — com o backlog de Carregando
+// passando de 40+, ficar só na 1ª página deixa placas presas sem nunca
+// serem alcançadas (confirmado ao vivo 28/08: placa real na página 4/5).
+// Em vez de percorrer página por página, sobe o "items per page" pro
+// máximo disponível (70) — cobre o backlog observado até agora numa
+// tacada só. O dropdown (Radzen, não é <select> nativo) e o paginador
+// ficam dentro do mesmo container .rz-data-grid da tabela de dados —
+// busca aí em vez de document inteiro pra não pegar o dropdown menor do
+// filtro de Empresa.
+const ITENS_POR_PAGINA = 70;
+
+async function definirItensPorPagina(page, valor) {
+  const dropdownHandle = await page.evaluateHandle(() => {
     const table = Array.from(document.querySelectorAll('table')).find((t) => Array.from(t.tHead?.rows[0]?.cells || []).some((th) => th.textContent.trim().toLowerCase().includes('placa')));
     const container = table?.closest('.rz-data-grid');
-    return container?.querySelector(`a[aria-label="${ariaLabel}"]`) || null;
-  }, ariaLabel);
-  const el = handle.asElement();
-  if (!el) return false;
-  const disabled = await page.evaluate((node) => node.classList.contains('rz-state-disabled'), el);
-  if (disabled) return false;
-  await el.click();
-  return true;
-}
+    return container?.querySelector('.rz-paginator .rz-dropdown') || null;
+  });
+  const dropdownEl = dropdownHandle.asElement();
+  if (!dropdownEl) return false;
 
-async function irParaPagina(page, pagina) {
-  if (pagina <= 1) return;
-  await clickPaginatorLink(page, 'Go to first page.');
-  await wait(800);
-  for (let i = 1; i < pagina; i += 1) {
-    await clickPaginatorLink(page, 'Go to next page.');
-    await wait(800);
-  }
+  const jaEsta = await page.evaluate((el, valor) => el.querySelector('.rz-dropdown-label')?.textContent.trim() === String(valor), dropdownEl, valor);
+  if (jaEsta) return true;
+
+  // A página tem VÁRIOS .rz-dropdown-panel ao mesmo tempo (o combo de mês
+  // dos campos de data também usa essa classe) — document.querySelector
+  // pegava o painel errado e nunca achava a opção "70" (confirmado ao vivo
+  // 28/08). O painel de cada dropdown Radzen tem id="popup-<id-do-dropdown>",
+  // usa isso pra achar o painel certo.
+  const dropdownId = await page.evaluate((el) => el.id, dropdownEl);
+  await dropdownEl.click();
+  await wait(300);
+  const opcaoHandle = await page.evaluateHandle((valor, dropdownId) => {
+    const panel = document.getElementById(`popup-${dropdownId}`);
+    return Array.from(panel?.querySelectorAll('li[role="option"]') || []).find((li) => li.textContent.trim() === String(valor)) || null;
+  }, valor, dropdownId);
+  const opcaoEl = opcaoHandle.asElement();
+  if (!opcaoEl) return false;
+  await opcaoEl.click();
+  await wait(500);
+  return true;
 }
 
 async function listarAgendamentosPorCard(page, label) {
@@ -306,8 +318,10 @@ async function listarAgendamentosPorCard(page, label) {
     return [];
   }
   await wait(1500);
+  await definirItensPorPagina(page, ITENS_POR_PAGINA);
+  await wait(500);
 
-  const extrairPagina = () => page.evaluate(() => {
+  const agendamentos = await page.evaluate(() => {
     // A página tem vários <table> ao mesmo tempo (calendário dos campos de
     // data, grid interno do dropdown Empresa) — e a PRÓPRIA grid de dados
     // tem tabelas de calendário ANINHADAS dentro do popup de filtro de cada
@@ -333,25 +347,9 @@ async function listarAgendamentosPorCard(page, label) {
       .filter((r) => r.placa);
   });
 
-  // A grid pagina em ~10 registros — percorre todas as páginas (não só a
-  // 1ª) pra não deixar placa presa no fim da fila enquanto o backlog for
-  // grande. Cada item guarda em que página foi encontrado (`pagina`),
-  // porque rowIndex sozinho só faz sentido dentro daquela página.
-  const todos = [];
-  let pagina = 1;
-  for (;;) {
-    const agendamentosPagina = await extrairPagina();
-    agendamentosPagina.forEach((a) => todos.push({ ...a, pagina }));
-    const avancou = await clickPaginatorLink(page, 'Go to next page.');
-    if (!avancou) break;
-    await wait(1000);
-    pagina += 1;
-    if (pagina > 50) break; // guarda de segurança contra loop infinito
-  }
-
   // A Ouro Safra mostra a placa sem hífen (ex.: "EOE5D72") — reformata pro
   // padrão com hífen (ver normalizePlaca) antes de usar em qualquer busca no GRM.
-  return todos.map((a) => ({ ...a, placa: normalizePlaca(a.placa) }));
+  return agendamentos.map((a) => ({ ...a, placa: normalizePlaca(a.placa) }));
 }
 
 function listarAgendamentosPendentes(page) {
@@ -362,16 +360,16 @@ function listarAgendamentosCarregando(page) {
   return listarAgendamentosPorCard(page, 'Carregando');
 }
 
-async function abrirAgendamento(page, rowIndex, pagina = 1) {
+async function abrirAgendamento(page, rowIndex) {
   // Blazor Server só reage a eventos de clique "de verdade" (Puppeteer
   // ElementHandle.click(), via CDP) — um btn.click() sintético dentro de
   // page.evaluate() não dispara o handler @onclick e o modal nunca abre
   // (confirmado ao vivo 28/08: 100% dos rowIndex reais estouravam os 15s
   // esperando o modal, mesmo com o botão certo sendo encontrado). Mesmo
   // cuidado já documentado no topo do arquivo pro v-autocomplete do GRM.
-  // rowIndex é relativo à página onde a placa foi encontrada em
-  // listarAgendamentosPorCard — precisa navegar até lá primeiro.
-  await irParaPagina(page, pagina);
+  // rowIndex é relativo à página atual — listarAgendamentosPorCard já
+  // deixou o grid com ITENS_POR_PAGINA itens por página logo antes de
+  // chamar essa função, então não precisa navegar entre páginas aqui.
   const rowHandle = await page.evaluateHandle((rowIndex) => {
     // Mesmo cuidado de listarAgendamentosPorCard: usa tHead/tBodies (API
     // nativa) em vez de querySelectorAll, que desceria pelas tabelas de
@@ -656,7 +654,7 @@ async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
       return;
     }
 
-    await abrirAgendamento(pageOuroSafra, agendamento.rowIndex, agendamento.pagina);
+    await abrirAgendamento(pageOuroSafra, agendamento.rowIndex);
     await preencherItensClassificacao(pageOuroSafra, valores);
 
     const pdfBuffer = await baixarLaudoDaOS(pageGRM, browserGRM, grm.os, agendamento.placa);
