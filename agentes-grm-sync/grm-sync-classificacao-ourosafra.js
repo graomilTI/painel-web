@@ -304,16 +304,24 @@ function listarAgendamentosCarregando(page) {
 }
 
 async function abrirAgendamento(page, rowIndex) {
-  await page.evaluate((rowIndex) => {
+  // Blazor Server só reage a eventos de clique "de verdade" (Puppeteer
+  // ElementHandle.click(), via CDP) — um btn.click() sintético dentro de
+  // page.evaluate() não dispara o handler @onclick e o modal nunca abre
+  // (confirmado ao vivo 28/08: 100% dos rowIndex reais estouravam os 15s
+  // esperando o modal, mesmo com o botão certo sendo encontrado). Mesmo
+  // cuidado já documentado no topo do arquivo pro v-autocomplete do GRM.
+  const rowHandle = await page.evaluateHandle((rowIndex) => {
     // Mesmo cuidado de listarAgendamentosPorCard: usa tHead/tBodies (API
     // nativa) em vez de querySelectorAll, que desceria pelas tabelas de
     // calendário aninhadas nos popups de filtro de cada coluna.
     const table = Array.from(document.querySelectorAll('table')).find((t) => Array.from(t.tHead?.rows[0]?.cells || []).some((th) => th.textContent.trim().toLowerCase().includes('placa')));
-    const row = table?.tBodies[0]?.rows[rowIndex];
-    const btn = row?.querySelector('td button, td a');
-    if (!btn) throw new Error('Botão de ação não encontrado na linha');
-    btn.click();
+    return table?.tBodies[0]?.rows[rowIndex] || null;
   }, rowIndex);
+  const row = rowHandle.asElement();
+  if (!row) throw new Error(`Linha ${rowIndex} não encontrada na tabela`);
+  const btn = await row.$('td button, td a');
+  if (!btn) throw new Error('Botão de ação não encontrado na linha');
+  await btn.click();
   await page.waitForFunction(
     () => Array.from(document.querySelectorAll('*')).some((el) => (el.textContent || '').trim().startsWith('Classificação - Agendamento')),
     { timeout: 15000 }
