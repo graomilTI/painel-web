@@ -360,25 +360,19 @@ export async function renderProgramacaoSemOs(content, options = {}) {
   }
 
   async function abrirModalDisponivel(colab) {
-    modalEl.innerHTML = '<div class="pso-modal-card"><h3>Validando disponibilidade…</h3><p class="muted">Consultando a estadia do dia anterior.</p></div>';
+    modalEl.innerHTML = '<div class="pso-modal-card"><h3>Carregando…</h3><p class="muted">Consultando a estadia do dia anterior.</p></div>';
     modalEl.classList.add('open');
     try {
       const estadiaAnterior = await buscarEstadiaAnterior(colab);
-      if (!estadiaAnterior) {
-        modalEl.innerHTML = `<div class="pso-modal-card"><h3>Disponibilidade não liberada</h3><p class="muted">${esc(colab.nome)} não possui Pernoite, Hotel ou Alojamento registrado no dia anterior.</p><div class="pso-modal-actions"><button type="button" class="btn btn-secondary" id="psoDispFechar">Fechar</button></div></div>`;
-        modalEl.querySelector('#psoDispFechar').onclick = fecharModal;
-        return;
-      }
-      const tipoAnterior = normalizeText(estadiaAnterior.tipo_estadia);
       modalEl.innerHTML = `<div class="pso-modal-card">
         <h3>Liberar despesas de ${esc(colab.nome)}</h3>
         <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia disponível.</p>
-        <div class="pso-disp-origin">Dia anterior: <strong>${esc(estadiaAnterior.tipo_estadia)}</strong>${estadiaAnterior.alojamento_nome ? ` · ${esc(estadiaAnterior.alojamento_nome)}` : ''}${estadiaAnterior.cidade ? ` · ${esc(estadiaAnterior.cidade)}` : ''}</div>
+        ${estadiaAnterior ? `<div class="pso-disp-origin">Dia anterior: <strong>${esc(estadiaAnterior.tipo_estadia)}</strong>${estadiaAnterior.alojamento_nome ? ` · ${esc(estadiaAnterior.alojamento_nome)}` : ''}${estadiaAnterior.cidade ? ` · ${esc(estadiaAnterior.cidade)}` : ''}</div>` : ''}
         <div class="pso-disp-options">
           <label class="pso-disp-option"><input type="checkbox" data-disp-ref="cafe"> Café</label>
           <label class="pso-disp-option"><input type="checkbox" data-disp-ref="almoco"> Almoço</label>
           <label class="pso-disp-option"><input type="checkbox" data-disp-ref="janta"> Janta</label>
-          ${tipoAnterior === 'PERNOITE' ? '<label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>' : ''}
+          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>
           <label class="pso-disp-option"><input type="checkbox" data-disp-ref="extras"> Extras</label>
         </div>
         <div class="pso-disp-extra-fields" id="psoDispExtraFields" hidden>
@@ -412,7 +406,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
         try {
           const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
           const writes = [
-            supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: `Disponível após ${estadiaAnterior.tipo_estadia}` }, { onConflict: 'programacao_id,colaborador_id' }),
+            supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: estadiaAnterior ? `Disponível após ${estadiaAnterior.tipo_estadia}` : 'Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
             supabase.from('programacao_alimentacao').upsert({ ...base, cafe: selected('cafe'), almoco: selected('almoco'), janta: selected('janta'), observacao: 'Liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
           ];
           if (selected('pernoite')) writes.push(supabase.from('programacao_estadia').upsert({ ...base, tipo_estadia: 'PERNOITE', tem_estadia: true, checkin: dataReferencia, checkout: addDaysIso(dataReferencia, 1), observacao: 'Pernoite liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }));
