@@ -1,0 +1,411 @@
+/* Módulo Hotel — Fase 1. Casca de Alojamentos (portada de adm-hotel-alojamentos-shell.js,
+   removido nesta fase) + painel somente-leitura de Hotéis, usando os tokens globais
+   de styles.css (--bg, --line, --text, --muted, --green, --danger, --radius). */
+
+.adm-hosp-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 16px 0 20px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-soft);
+  box-shadow: var(--shadow-soft);
+}
+.adm-hosp-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  width: auto !important;
+  min-height: 42px;
+  margin-top: 0 !important;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 11px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 12px;
+}
+.adm-hosp-tab.active {
+  background: linear-gradient(180deg, rgba(0, 200, 122, .22), rgba(0, 120, 75, .16));
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.adm-hosp-panel { display: none; }
+.adm-hosp-panel.active { display: block; }
+
+/* ---- Hotéis (painel novo, Fase 1) ---- */
+
+.ah-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 20px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-soft);
+  box-shadow: var(--shadow-soft);
+}
+.ah-tab-wrap { position: relative; }
+.ah-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 11px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 12px;
+}
+.ah-tab[data-active="true"] {
+  background: linear-gradient(180deg, rgba(0, 200, 122, .22), rgba(0, 120, 75, .16));
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.ah-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-2);
+  font-size: 11px;
+}
+.ah-kpi-arrow {
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+.ah-kpi-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 280px;
+  max-width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+}
+.ah-kpi-title { font-weight: 800; font-size: 12px; color: var(--text); margin-bottom: 10px; }
+.ah-kpi-empty { color: var(--muted); font-size: 12px; }
+.ah-kpi-item { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; margin-top: 8px; }
+.ah-kpi-item .name { color: var(--text); font-weight: 700; }
+.ah-kpi-item .meta { color: var(--muted); }
+.ah-kpi-guests { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+.ah-kpi-guest {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(111, 208, 165, .08);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.ah-empty { padding: 32px 16px; text-align: center; color: var(--muted); }
+.ah-error { color: var(--danger); }
+
+.ah-table-scroll { overflow-x: auto; padding: 0; }
+.ah-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ah-table th {
+  text-align: left;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 1px solid var(--line);
+}
+.ah-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  vertical-align: middle;
+}
+.ah-table tbody tr:last-child td { border-bottom: none; }
+.ah-table tbody tr:hover { background: rgba(111, 208, 165, .04); }
+.ah-mono { font-variant-numeric: tabular-nums; }
+.ah-muted { color: var(--muted); }
+.ah-city { white-space: nowrap; }
+.ah-sup { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+.ah-chip {
+  border: 1px solid var(--line-2);
+  background: rgba(111, 208, 165, .08);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ah-chip-reservada { border-color: rgba(63, 168, 120, .45); color: var(--green-2); }
+.ah-chip-concluida { border-color: var(--line-2); color: var(--muted); }
+.ah-chip-cancelada { border-color: rgba(220, 38, 38, .4); color: var(--danger); }
+
+.ah-fluxo-placeholder { padding: 28px; text-align: center; }
+.ah-fluxo-placeholder p { margin: 6px 0; }
+
+.ah-fluxo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.ah-fluxo-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-soft);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.ah-fluxo-card:hover { border-color: var(--line-2); }
+.ah-fluxo-card-head { display: flex; flex-direction: column; gap: 2px; }
+.ah-fluxo-card-name { font-weight: 800; font-size: 13px; color: var(--text); }
+.ah-fluxo-card-city { font-size: 11px; }
+.ah-fluxo-card-saldo { font-size: 18px; font-weight: 800; color: var(--muted); margin-top: 6px; }
+.ah-fluxo-saldo-devido { color: #fca5a5; }
+.ah-fluxo-card-credito { font-size: 11px; font-weight: 700; color: var(--green-2); }
+
+.ah-extrato { max-width: 640px; }
+
+/* ---- Modal de detalhes ---- */
+
+.ah-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(3, 10, 7, .58);
+  backdrop-filter: blur(2px);
+}
+.ah-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 86vh;
+  overflow-y: auto;
+  border-radius: var(--radius, 24px);
+  border: 1px solid var(--line-2);
+  background: #07150f;
+  box-shadow: 0 28px 72px rgba(0, 0, 0, .56);
+}
+.ah-reservar { max-width: 760px; }
+.ah-modal-foot-left { display: flex; gap: 10px; }
+.ah-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 22px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.ah-modal-head h3 { margin: 0 0 4px; color: var(--text); }
+.ah-modal-x {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px;
+}
+.ah-modal-body { padding: 16px 22px; display: flex; flex-direction: column; gap: 18px; }
+.ah-field label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+.ah-detail-list { display: flex; flex-direction: column; gap: 8px; }
+.ah-detail-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text); }
+.ah-guest-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+.ah-guest-tag {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(111, 208, 165, .08);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+.ah-note { color: var(--muted); font-size: 13px; margin: 0; }
+.ah-modal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px 20px;
+  border-top: 1px solid var(--line);
+}
+.ah-btn-sm { padding: 8px 16px; font-size: 12px; }
+
+/* ---- Cotações (Fase 2) ---- */
+
+.ah-quote-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(111, 208, 165, .03);
+}
+.ah-quote-row.ah-quote-selected { border-color: rgba(63, 168, 120, .5); background: var(--green-soft); }
+.ah-quote-main { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ah-quote-hotel { font-weight: 700; color: var(--text); font-size: 13px; }
+.ah-quote-meta { font-size: 12px; }
+.ah-quote-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.ah-quote-pendente { background: rgba(111, 208, 165, .08); color: var(--muted); }
+.ah-quote-ok { background: rgba(63, 168, 120, .18); color: var(--green-2); }
+.ah-quote-indisponivel { background: rgba(220, 38, 38, .14); color: #fca5a5; }
+.ah-quote-falha { background: rgba(220, 38, 38, .14); color: #fca5a5; }
+.ah-quote-selected-badge { background: var(--green-2); color: #06130e; }
+.ah-quote-use { align-self: flex-start; }
+
+/* ---- Picker de hotéis (Fase 2) ---- */
+
+.ah-picker-search {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.ah-picker-search:focus { outline: none; border-color: var(--green-2); }
+.ah-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.ah-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.ah-picker-item:hover { background: rgba(111, 208, 165, .06); }
+.ah-picker-item input { flex: 0 0 auto; }
+.ah-picker-item-name { color: var(--text); font-size: 13px; flex: 1; }
+.ah-picker-item-meta { font-size: 12px; white-space: nowrap; }
+.ah-picker-hint { padding: 8px 4px; font-size: 12px; text-align: center; }
+
+.ah-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 200;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--line-2);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.ah-toast.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.ah-toast[data-type="err"] { border-color: rgba(220, 38, 38, .45); color: #fca5a5; }
+
+/* ---- Reservar (Fase 3) ---- */
+
+.ah-field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.ah-field-row .ah-field { flex: 1; min-width: 160px; }
+
+.ah-select, .ah-select-sm, .ah-input-sm,
+.ah-field input[type="date"], .ah-field input[type="time"], .ah-field input[type="text"] {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.ah-select:focus, .ah-select-sm:focus, .ah-input-sm:focus,
+.ah-field input:focus { outline: none; border-color: var(--green-2); }
+
+.ah-checks { display: flex; flex-wrap: wrap; gap: 14px; }
+.ah-check { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+
+.ah-quartos-list { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.ah-quarto-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(111, 208, 165, .03);
+}
+.ah-quarto-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ah-quarto-index { font-weight: 800; font-size: 12px; color: var(--text); white-space: nowrap; }
+.ah-quarto-head .ah-select-sm { width: auto; min-width: 100px; }
+.ah-quarto-head .ah-input-sm { width: 90px; }
+.ah-quarto-head .ah-extra-desc { width: auto; flex: 1; min-width: 140px; }
+.ah-quarto-cap {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(111, 208, 165, .08);
+}
+.ah-quarto-cap-over { color: #fca5a5; background: rgba(220, 38, 38, .14); }
+.ah-quarto-remove {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px;
+}
+.ah-quarto-remove:hover { color: #fca5a5; }
+.ah-quarto-guests { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ah-guest-clickable { cursor: pointer; user-select: none; }
+.ah-guest-clickable:hover { border-color: var(--green-2); color: var(--green-2); }

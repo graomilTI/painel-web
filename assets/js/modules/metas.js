@@ -3,13 +3,13 @@
  * Padrão do projeto: IIFE + window.METAS.openHome(container, { auth, api, onBack })
  *
  * Regras oficiais:
- * - Produção usada para bater meta = produção diária importada em producao_snapshot.tons
- * - A base é o Relatório de Produção Diária: Coordenação, Data e Tons
- * - Não usar Resultado Diário, embarcado nem total_embarcado_mais_teste
+ * - Produção usada para bater meta = relatorio_resultado_diario.toneladas
+ * - A base é o Relatório Resultado Diário: Coordenação, Data e Toneladas
+ * - Não usar o snapshot, embarcado nem total_embarcado_mais_teste
  */
 
 import * as XLSX from 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
-import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSync.js';
+import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
 
 (function () {
   'use strict';
@@ -51,16 +51,14 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       label: 'Acompanhamento',
       tabs: [
         { id: 'geral',     label: 'Visão Geral',  desc: 'Indicadores consolidados do período: meta total, produção realizada e percentual de atingimento.' },
-        { id: 'regionais', label: 'Regionais',    desc: 'Desempenho de cada regional/coordenação frente à meta cadastrada para o mês selecionado.' },
-        { id: 'estados',   label: 'Estados',      desc: 'Visão consolidada por estado, somando o resultado das regionais correspondentes.' },
-        { id: 'historico', label: 'Histórico',    desc: 'Evolução mês a mês da meta cadastrada e da produção realizada ao longo do tempo.' }
+        { id: 'estados',   label: 'Estados',      desc: 'Visão consolidada por estado, somando o resultado das regionais correspondentes.' }
       ]
     },
     {
       label: 'Gestão',
       tabs: [
         { id: 'gestores',   label: 'Gestores',            desc: 'Cadastro dos gestores de cada coordenação/supervisão — base para o cálculo do bônus.' },
-        { id: 'configurar', label: 'Metas & Fechamento',  desc: 'Cadastro das metas do mês, fechamento do período e cálculo do bônus dos gestores (produção, custo e patrimônios/leitura).' }
+        { id: 'configurar', label: 'Fechamento',  desc: 'Cadastro das metas do mês, auditoria, fechamento do período e cálculo do bônus dos gestores.' }
       ]
     }
   ];
@@ -89,7 +87,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     erro: null,
     gestores: [],
     gestoresEditId: null,
-    custosRegional: []
+    custosRegional: [],
+    auditoria: []
   };
 
   function injectStyle() {
@@ -227,6 +226,16 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         background: rgba(15, 23, 42, .78);
         color: var(--metas-text);
         border-color: var(--metas-border);
+      }
+
+      .metas-btn.danger {
+        background: rgba(127, 29, 29, .2);
+        color: #fecaca;
+        border-color: rgba(248, 113, 113, .38);
+      }
+
+      .metas-btn.danger:hover {
+        border-color: rgba(248, 113, 113, .78);
       }
 
       .metas-filter-card,
@@ -1267,7 +1276,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         <div class="metas-card">
           <div class="metas-card-label">Produzido</div>
           <div class="metas-card-value">${fmtTons(total.produzido)}</div>
-          <div class="metas-card-sub">Base: Relatório de Produção Diária · coluna Tons</div>
+          <div class="metas-card-sub">Base: Relatório Resultado Diário · coluna Toneladas</div>
         </div>
         <div class="metas-card">
           <div class="metas-card-label">Restante</div>
@@ -1619,7 +1628,11 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       <div class="metas-table-card">
         <div class="metas-table-top">
           <h2>Configurar Metas por Coordenação</h2>
-          <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span class="metas-pill ${fechado ? 'good' : ''}">${fechado ? 'Mês fechado' : 'Cadastro em lista'}</span>
+            <input type="file" accept=".xlsx,.xls" data-metas-auditoria-file hidden />
+            <button class="metas-btn secondary metas-auditoria-btn ${(state.auditoria || []).length ? 'is-ready' : 'is-pending'}" type="button" data-metas-auditoria aria-label="${(state.auditoria || []).length ? 'Auditoria anexada' : 'Auditoria pendente'}" ${fechado ? 'disabled' : ''}>Auditoria</button>
+          </div>
         </div>
 
         <div class="metas-suggest-card">
@@ -1669,6 +1682,10 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
             <button class="metas-btn ${fechado ? 'secondary' : ''}" type="button" data-metas-close ${fechado ? 'disabled' : ''}>
               ${fechado ? 'Meta fechada' : 'Fechar meta'}
             </button>
+            ${fechado ? `
+            <button class="metas-btn danger" type="button" data-metas-reopen title="Reabre o período e limpa os resultados calculados no fechamento">
+              Reverter fechamento
+            </button>` : ''}
             ${fechado && rows.some(r => r.qualifica_bonus) ? `
             <button class="metas-btn secondary" type="button" data-metas-baixar-bonus>
               Exportar relatório de bônus (XLS)
@@ -1841,7 +1858,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
             </div>
             <p>
               Acompanhamento mensal da meta por regional e estado.
-              Produção considerada: <strong>Relatório de Produção Diária</strong>, coluna <strong>Tons</strong>.
+              Produção considerada: <strong>Relatório Resultado Diário</strong>, coluna <strong>Toneladas</strong>.
             </p>
           </div>
           <div class="metas-actions">
@@ -2056,8 +2073,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       if (state.regional) metasQuery = metasQuery.eq('regional', state.regional);
 
       const producaoQuery = supabase
-        .from('producao_snapshot')
-        .select('data,data_referencia,coordenacao,tons')
+        .from('relatorio_resultado_diario')
+        .select('data,coordenacao,toneladas')
         .gte('data', range.start)
         .lt('data', range.next)
         .order('data', { ascending: true });
@@ -2072,7 +2089,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
             .order('mes', { ascending: true })
         ),
         fetchAllRows(producaoQuery).catch(err => {
-          console.warn('[METAS] Não foi possível carregar Produção Diária em producao_snapshot:', err);
+          console.warn('[METAS] Não foi possível carregar Resultado Diário:', err);
           return [];
         })
       ]);
@@ -2117,6 +2134,14 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
           .eq('ano', m1.ano)
           .eq('mes', m1.mes)
           .order('coordenacao', { ascending: true })
+      ).catch(() => []);
+
+      state.auditoria = await fetchAllRows(
+        supabase.from('metas_auditoria')
+          .select('ano,mes,regional,valor_auditoria,total_embarcado,percentual_limite,apto,nome_arquivo')
+          .eq('ano', Number(state.ano))
+          .eq('mes', Number(state.mes))
+          .order('regional', { ascending: true })
       ).catch(() => []);
     } catch (err) {
       console.error('[METAS] Erro ao carregar dados:', err);
@@ -2287,8 +2312,9 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       const despesaCoord  = despesaMap.get(key)  || 0;
       let fatorCusto = 0;
       let valorCusto = 0;
+      let cptCoord = 0;
       if (cptGeral > 0 && volClassCoord > 0 && despesaCoord > 0) {
-        const cptCoord = despesaCoord / volClassCoord;
+        cptCoord = despesaCoord / volClassCoord;
         fatorCusto = cptCoord > 0 ? cptGeral / cptCoord : 0;
         valorCusto = fatorCusto * bonusInicial * 0.3;
       }
@@ -2299,6 +2325,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         bonusInicial,
         leituraPct, multLeitura, valorLeitura,
         volClassCoord, despesaCoord, fatorCusto, valorCusto,
+        cptGeral, cptCoord,
         temDespesas,
         m1Ref: `${String(m1.mes).padStart(2,'0')}/${m1.ano}`
       };
@@ -2317,12 +2344,18 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       const prod = Number(row.produzido_tons || 0);
       return [rowKey(row), meta > 0 ? (prod / meta) * 100 : 0];
     }));
+    const metaProdByKey = new Map(rows.map(row => [rowKey(row), {
+      metaTons: Number(row.meta_tons || 0),
+      produzidoTons: Number(row.produzido_tons || 0)
+    }]));
+    const auditoriaByKey = new Map((state.auditoria || []).map(row => [normalizarTexto(row.regional), row]));
 
     // Enriquece com % regional e calcula produção
     const gestores = gestoresEnriq.map(g => {
       const pct = percByKey.has(g._key) ? percByKey.get(g._key) : null;
       const valorProducao = pct !== null ? (pct / 100) * g.bonusInicial * 0.4 : 0;
-      return { ...g, pct, valorProducao };
+      const auditoria = auditoriaByKey.get(g._key) || null;
+      return { ...g, pct, valorProducao, auditoria, auditoriaApta: auditoria ? auditoria.apto !== false : true };
     });
 
     const comGestor = new Set(gestores.map(g => g._key));
@@ -2357,6 +2390,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                   <th>Gestor</th>
                   <th>Coordenação / Supervisão</th>
                   <th class="num">% Regional</th>
+                  <th class="num">Auditoria</th>
                   <th class="num">Qualifica</th>
                   <th class="num">B. Inicial</th>
                   <th class="num" title="Produção 40%">Prod (40%)</th>
@@ -2373,6 +2407,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                         data-gestor-id="${escapeHtml(String(g.id))}"
                         data-key="${escapeHtml(g._key)}"
                         data-percentual="${(g.pct ?? 0).toFixed(6)}"
+                        data-auditoria-apta="${g.auditoriaApta ? '1' : '0'}"
                         data-valor-producao="${g.valorProducao.toFixed(6)}"
                         data-valor-custo="${g.valorCusto.toFixed(6)}"
                         data-valor-leitura="${g.valorLeitura.toFixed(6)}"
@@ -2383,6 +2418,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
                         <div style="font-size:11px;color:var(--metas-muted)">${escapeHtml(g.supervisao || '—')}</div>
                       </td>
                       <td class="num">${g.pct !== null ? `<span class="metas-pill ${pctClass(g.pct)}">${fmtPct(g.pct)}</span>` : '<span class="metas-pill">sem meta</span>'}</td>
+                      <td class="num">${g.auditoria ? `<span class="metas-pill ${g.auditoriaApta ? 'good' : 'bad'}">${g.auditoriaApta ? 'Dentro do limite' : 'Acima do limite'}</span>` : '<span class="metas-pill">não anexada</span>'}</td>
                       <td class="num" data-metas-qualifica-cell>—</td>
                       <td class="num" style="font-size:11px">${fmtBRL(g.bonusInicial)}</td>
                       <td class="num" data-bonus-cell-prod style="font-size:11px">—</td>
@@ -2415,7 +2451,7 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         const vProd    = Number(tr.dataset.valorProducao  || 0);
         const vCusto   = Number(tr.dataset.valorCusto     || 0);
         const vLeitura = Number(tr.dataset.valorLeitura   || 0);
-        const qualifica = pct >= min;
+        const qualifica = pct >= min && tr.dataset.auditoriaApta !== '0';
         const total = qualifica ? vProd + vCusto + vLeitura : 0;
 
         const qc = tr.querySelector('[data-metas-qualifica-cell]');
@@ -2443,11 +2479,15 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       const gestoresBonus = [];
       overlay.querySelectorAll('[data-metas-bonus-row]').forEach(tr => {
         const pct = Number(tr.dataset.percentual || 0);
-        const qualifica = pct >= min;
+        const qualifica = pct >= min && tr.dataset.auditoriaApta !== '0';
+        const mp = metaProdByKey.get(tr.dataset.key) || { metaTons: 0, produzidoTons: 0 };
         gestoresBonus.push({
           coordenacaoKey: tr.dataset.key,
           gestorId: Number(tr.dataset.gestorId),
           qualifica,
+          pct,
+          metaTons: mp.metaTons,
+          produzidoTons: mp.produzidoTons,
           bonusProducao: qualifica ? Number(tr.dataset.valorProducao  || 0) : 0,
           bonusCusto:    qualifica ? Number(tr.dataset.valorCusto     || 0) : 0,
           bonusLeitura:  qualifica ? Number(tr.dataset.valorLeitura   || 0) : 0
@@ -2491,6 +2531,247 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     XLSX.writeFile(wb, `bonus_metas_${ref}.xlsx`);
   }
 
+  function slugFileName(str) {
+    return normalizarTexto(str).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'gestor';
+  }
+
+  function montarDadosCartaoBonus(gestoresEnriq, gestoresBonus, state) {
+    const porId = new Map(gestoresEnriq.map(g => [g.id, g]));
+
+    return (gestoresBonus || [])
+      .filter(gb => gb.qualifica && (gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura) > 0)
+      .map(gb => {
+        const g = porId.get(gb.gestorId) || {};
+        const total = gb.bonusProducao + gb.bonusCusto + gb.bonusLeitura;
+        const pctDe = v => (total > 0 ? (v / total) * 100 : 0);
+
+        return {
+          gestor: g.gestor || '',
+          coordenacao: g.coordenacao || '',
+          supervisao: g.supervisao || '',
+          mes: state.mes,
+          ano: state.ano,
+          bonusInicial: g.bonusInicial || 0,
+          total,
+          producao: {
+            valor: gb.bonusProducao,
+            pctTotal: pctDe(gb.bonusProducao),
+            metaTons: gb.metaTons || 0,
+            produzidoTons: gb.produzidoTons || 0,
+            pct: gb.pct || 0
+          },
+          despesas: {
+            valor: gb.bonusCusto,
+            pctTotal: pctDe(gb.bonusCusto),
+            cptGeral: g.cptGeral || 0,
+            cptCoord: g.cptCoord || 0
+          },
+          leitura: {
+            valor: gb.bonusLeitura,
+            pctTotal: pctDe(gb.bonusLeitura),
+            leituraPct: g.leituraPct
+          }
+        };
+      });
+  }
+
+  function desenharPizza3D(canvas, slices) {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2;
+    const rx = W * 0.39;
+    const ry = rx * 0.55;
+    const depth = rx * 0.27;
+    const cyTop = ry + 10;
+
+    const total = slices.reduce((s, sl) => s + Math.max(sl.value, 0), 0) || 1;
+    let acc = 0;
+    const spans = slices.map(sl => {
+      const startClock = (acc / total) * 360;
+      acc += Math.max(sl.value, 0);
+      const endClock = (acc / total) * 360;
+      return { ...sl, startClock, endClock };
+    });
+    const toCanvasAngle = (clockDeg) => ((clockDeg - 90) * Math.PI) / 180;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // sombra suave de apoio
+    ctx.save();
+    ctx.filter = 'blur(6px)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cyTop + depth + ry * 0.5, rx * 0.92, ry * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fill();
+    ctx.restore();
+
+    // ponto de luz único (mesma posição pra todas as fatias) — dá o efeito "cromado"
+    const highlightX = cx - rx * 0.35;
+    const highlightY = cyTop - ry * 0.45;
+
+    // parede (extrusão) cromada — só a metade voltada pra frente (ângulo canvas 0°–180°)
+    spans.forEach(sl => {
+      const a0 = toCanvasAngle(sl.startClock);
+      const a1 = toCanvasAngle(sl.endClock);
+      const visStart = Math.max(a0, 0);
+      const visEnd = Math.min(a1, Math.PI);
+      if (visStart >= visEnd) return;
+
+      const wallGrad = ctx.createLinearGradient(cx, cyTop, cx, cyTop + depth);
+      wallGrad.addColorStop(0, sl.top);
+      wallGrad.addColorStop(0.5, sl.wall);
+      wallGrad.addColorStop(1, sl.rim);
+
+      ctx.beginPath();
+      ctx.ellipse(cx, cyTop, rx, ry, 0, visStart, visEnd, false);
+      ctx.lineTo(cx + rx * Math.cos(visEnd), cyTop + depth + ry * Math.sin(visEnd));
+      ctx.ellipse(cx, cyTop + depth, rx, ry, 0, visEnd, visStart, true);
+      ctx.closePath();
+      ctx.fillStyle = wallGrad;
+      ctx.fill();
+    });
+
+    // topo cromado (face de cima, com brilho radial por fatia)
+    spans.forEach(sl => {
+      const a0 = toCanvasAngle(sl.startClock);
+      const a1 = toCanvasAngle(sl.endClock);
+
+      const topGrad = ctx.createRadialGradient(highlightX, highlightY, rx * 0.03, cx, cyTop, rx);
+      topGrad.addColorStop(0, sl.highlight);
+      topGrad.addColorStop(0.45, sl.top);
+      topGrad.addColorStop(1, sl.wall);
+
+      ctx.beginPath();
+      ctx.moveTo(cx, cyTop);
+      ctx.ellipse(cx, cyTop, rx, ry, 0, a0, a1, false);
+      ctx.closePath();
+      ctx.fillStyle = topGrad;
+      ctx.fill();
+    });
+  }
+
+  function lerpCor(hexBaixo, hexAlto, t) {
+    const a = hexBaixo.match(/\w\w/g).map(h => parseInt(h, 16));
+    const b = hexAlto.match(/\w\w/g).map(h => parseInt(h, 16));
+    const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+    return `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  // Interpola verde↔vermelho conforme onde `valor` cai entre `pontoVerde` e `pontoVermelho`
+  // (a ordem dos dois pontos define se "maior é melhor" ou "menor é melhor").
+  function corEscalaAlerta(valor, pontoVerde, pontoVermelho) {
+    if (valor === null || valor === undefined || !Number.isFinite(valor)) return '#7d8590';
+    const t = pontoVermelho === pontoVerde
+      ? 0
+      : Math.min(1, Math.max(0, (valor - pontoVerde) / (pontoVermelho - pontoVerde)));
+    return lerpCor('#86efac', '#f87171', t);
+  }
+
+  async function renderCartaoBonusPng(dados) {
+    const fmtBRL  = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const fmtT    = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const fmtPct1 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    const linhaComponente = (cor, titulo, peso, valor, metaLabel, metaValor, atingidoLabel, atingidoValor, atingidoCor) => `
+      <div style="margin-bottom:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div style="width:9px;height:9px;border-radius:50%;background:${cor};flex:none;"></div>
+            <span style="font-size:12.5px;color:#f3f4f6;font-weight:600;">${escapeHtml(titulo)} · ${peso}%</span>
+          </div>
+          <span style="font-size:12.5px;color:#f3f4f6;font-weight:600;">${fmtBRL(valor)}</span>
+        </div>
+        <div style="display:flex;background:rgba(148,163,184,.08);border-radius:8px;overflow:hidden;">
+          <div style="flex:1;padding:6px 10px;border-right:1px solid rgba(148,163,184,.14);">
+            <p style="margin:0;font-size:10px;color:#7d8590;">${escapeHtml(metaLabel)}</p>
+            <p style="margin:1px 0 0;font-size:12px;color:#e5e7eb;font-weight:600;">${metaValor}</p>
+          </div>
+          <div style="flex:1;padding:6px 10px;">
+            <p style="margin:0;font-size:10px;color:#7d8590;">${escapeHtml(atingidoLabel)}</p>
+            <p style="margin:1px 0 0;font-size:12px;color:${atingidoCor || '#86efac'};font-weight:600;">${atingidoValor}</p>
+          </div>
+        </div>
+      </div>`;
+
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-1;';
+
+    const card = document.createElement('div');
+    card.style.cssText = 'width:360px;background:#0b1220;border:1px solid rgba(148,163,184,.18);border-radius:20px;padding:24px 22px;font-family:"DM Sans",system-ui,sans-serif;color:#e5e7eb;box-sizing:border-box;';
+    card.innerHTML = `
+      <div style="margin-bottom:16px;">
+        <p style="margin:0;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#7d8590;">Bônus · ${escapeHtml(getMonthName(dados.mes))}/${dados.ano}</p>
+        <p style="margin:2px 0 0;font-size:17px;font-weight:600;color:#f3f4f6;">${escapeHtml(dados.gestor)}</p>
+        <p style="margin:1px 0 0;font-size:12px;color:#9ca3af;">${escapeHtml(dados.coordenacao)}${dados.supervisao ? ' · ' + escapeHtml(dados.supervisao) : ''}</p>
+      </div>
+      <div style="display:flex;background:rgba(148,163,184,.08);border-radius:10px;overflow:hidden;margin:2px 0 16px;">
+        <div style="flex:1;text-align:center;padding:14px 10px;border-right:1px solid rgba(148,163,184,.14);">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus de Partida</p>
+          <p style="margin:4px 0 0;font-size:21px;font-weight:600;color:#e5e7eb;">${fmtBRL(dados.bonusInicial)}</p>
+        </div>
+        <div style="flex:1;text-align:center;padding:14px 10px;">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">Bônus Final</p>
+          <p style="margin:4px 0 0;font-size:21px;font-weight:600;color:#86efac;">${fmtBRL(dados.total)}</p>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:center;margin-bottom:14px;">
+        <canvas id="metasBonusDonut" width="300" height="210" style="width:150px;height:105px;"></canvas>
+      </div>
+      <div style="border-top:1px solid rgba(148,163,184,.16);padding-top:14px;">
+        ${linhaComponente('#166534', 'Produção', 40, dados.producao.valor,
+          'Meta', `${fmtT(dados.producao.metaTons)} t`,
+          'Atingido', `${fmtT(dados.producao.produzidoTons)} t (${fmtPct1(dados.producao.pct)}%)`)}
+        ${linhaComponente('#4ade80', 'Despesas', 30, dados.despesas.valor,
+          'Meta (custo/t empresa)', fmtBRL(dados.despesas.cptGeral),
+          'Atingido (custo/t regional)', dados.despesas.cptCoord > 0 ? fmtBRL(dados.despesas.cptCoord) : 'sem dado',
+          dados.despesas.cptCoord > 0 ? corEscalaAlerta(dados.despesas.cptCoord, dados.despesas.cptGeral, dados.despesas.cptGeral * 1.5) : null)}
+        ${linhaComponente('#bbf7d0', 'Leitura', 30, dados.leitura.valor,
+          'Meta', '100%',
+          'Atingido', dados.leitura.leituraPct !== null && dados.leitura.leituraPct !== undefined ? `${fmtPct1(dados.leitura.leituraPct)}%` : 'sem dado',
+          corEscalaAlerta(dados.leitura.leituraPct, 90, 60))}
+      </div>
+    `;
+
+    holder.appendChild(card);
+    document.body.appendChild(holder);
+
+    const canvas = card.querySelector('#metasBonusDonut');
+    desenharPizza3D(canvas, [
+      { value: dados.producao.valor, top: '#166534', wall: '#0d3d1f', highlight: '#a7f3c9', rim: '#04170c' },
+      { value: dados.despesas.valor, top: '#4ade80', wall: '#2c854d', highlight: '#eafff5', rim: '#0d3d20' },
+      { value: dados.leitura.valor, top: '#bbf7d0', wall: '#70947d', highlight: '#ffffff', rim: '#345940' }
+    ]);
+
+    try {
+      // Pequena espera pra garantir que o layout/DOM assentou antes da captura.
+      // Não usar requestAnimationFrame aqui: em lote (vários gestores seguidos), o
+      // usuário pode trocar de aba durante a geração e o navegador suspende rAF em
+      // abas em segundo plano, travando o fechamento indefinidamente. setTimeout
+      // continua rodando (só com throttling leve).
+      await new Promise(resolve => setTimeout(resolve, 50));
+      const canvasImg = await html2canvas(card, { backgroundColor: '#0b1220', scale: 2 });
+      return canvasImg.toDataURL('image/png');
+    } finally {
+      holder.remove();
+    }
+  }
+
+  async function gerarImagensBonusPorGestor(state, dadosGestores) {
+    if (!dadosGestores.length) return;
+
+    const ref = `${String(state.mes).padStart(2, '0')}-${state.ano}`;
+    for (const dados of dadosGestores) {
+      const dataUrl = await renderCartaoBonusPng(dados);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `bonus_${slugFileName(dados.gestor)}_${ref}.png`;
+      a.click();
+      // Pequeno intervalo entre downloads: disparar todos no mesmo tick faz o
+      // navegador tratar como pop-up em massa e bloquear os downloads seguintes.
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
+  }
+
   async function baixarRelatorioBonusFechado(state, supabase) {
     if (!isMonthClosed(state)) return;
 
@@ -2513,7 +2794,8 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
 
     const gestoresBonus = gestoresEnriq.map(g => {
       const pct = percByKey.has(g._key) ? percByKey.get(g._key) : 0;
-      const qualifica = pct >= min;
+      const auditoria = (state.auditoria || []).find(a => normalizarTexto(a.regional) === g._key);
+      const qualifica = pct >= min && (!auditoria || auditoria.apto !== false);
       return {
         coordenacaoKey: g._key,
         gestorId: g.id,
@@ -2530,6 +2812,57 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     }
 
     gerarRelatorioBonusXlsx(state, gestoresEnriq, gestoresBonus);
+  }
+
+  function pedirPercentualAuditoria(nomeArquivo) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'metas-modal-overlay';
+      overlay.innerHTML = `<div class="metas-modal" style="max-width:520px"><div class="metas-modal-header"><h3>Configurar auditoria</h3><p>${escapeHtml(nomeArquivo)}</p></div><div class="metas-field"><label>Qual o percentual de auditoria será considerado?</label><input class="metas-edit-input" type="number" min="0" max="100" step="0.01" value="1" data-auditoria-percentual /><p class="metas-config-hint">O limite será calculado sobre o Total Embarcado de cada regional.</p></div><div class="metas-modal-footer"><button class="metas-btn secondary" type="button" data-cancelar>Cancelar</button><button class="metas-btn" type="button" data-confirmar>Aplicar auditoria</button></div></div>`;
+      document.body.appendChild(overlay);
+      const finish = value => { overlay.remove(); resolve(value); };
+      overlay.querySelector('[data-cancelar]').onclick = () => finish(null);
+      overlay.querySelector('[data-confirmar]').onclick = () => {
+        const value = Number(overlay.querySelector('[data-auditoria-percentual]').value);
+        if (!Number.isFinite(value) || value < 0 || value > 100) return alert('Informe um percentual entre 0 e 100.');
+        finish(value);
+      };
+    });
+  }
+
+  async function importarAuditoria(file, state, supabase, reload) {
+    const percentual = await pedirPercentualAuditoria(file.name);
+    if (percentual === null) return;
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const dados = XLSX.utils.sheet_to_json(sheet, { defval: null });
+    const auditoria = new Map();
+    dados.forEach(row => {
+      const regional = String(row['Coordenação'] ?? row['Coordenacao'] ?? '').trim();
+      const valor = Number(row.Total || 0);
+      if (!regional || normalizarTexto(regional) === 'total geral' || !Number.isFinite(valor)) return;
+      const key = normalizarTexto(regional);
+      auditoria.set(key, { regional, valor: (auditoria.get(key)?.valor || 0) + valor });
+    });
+    if (!auditoria.size) return alert('A planilha precisa conter as colunas Coordenação e Total.');
+
+    const range = getMonthRange(Number(state.ano), Number(state.mes));
+    const embarques = await fetchAllRows(supabase.from('relatorio_resultado_diario').select('coordenacao,embarcado,data').gte('data', range.start).lt('data', range.next));
+    const totalEmbarcado = new Map();
+    embarques.forEach(row => {
+      const key = normalizarTexto(row.coordenacao);
+      totalEmbarcado.set(key, (totalEmbarcado.get(key) || 0) + Number(row.embarcado || 0));
+    });
+    const now = new Date().toISOString();
+    const payload = Array.from(auditoria.entries()).map(([key, item]) => {
+      const embarcado = totalEmbarcado.get(key) || 0;
+      const limite = embarcado * (percentual / 100);
+      return { ano: Number(state.ano), mes: Number(state.mes), regional: item.regional, valor_auditoria: item.valor, total_embarcado: embarcado, percentual_limite: percentual, apto: item.valor <= limite, nome_arquivo: file.name, updated_at: now };
+    });
+    const { error } = await supabase.from('metas_auditoria').upsert(payload, { onConflict: 'ano,mes,regional' });
+    if (error) return alert('Erro ao salvar auditoria: ' + error.message);
+    alert(`Auditoria aplicada em ${payload.length} regionais. ${payload.filter(r => !r.apto).length} ficaram acima do limite.`);
+    await reload();
   }
 
   async function fecharMetaMes(state, supabase, rerender) {
@@ -2608,9 +2941,70 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
         alert('Meta fechada com sucesso, mas houve um erro ao gerar o XLS de bônus: ' + (e?.message || e) + '\n\nVocê pode gerar o relatório novamente pelo botão "Exportar relatório de bônus (XLS)".');
       }
 
+      try {
+        const dadosGestores = montarDadosCartaoBonus(gestoresEnriq, params.gestoresBonus, state);
+        await gerarImagensBonusPorGestor(state, dadosGestores);
+      } catch (e) {
+        console.error('[METAS] Erro ao gerar imagens de bônus:', e);
+        alert('Meta fechada com sucesso, mas houve um erro ao gerar as imagens de bônus: ' + (e?.message || e));
+      }
+
       await loadData(state, supabase);
       rerender();
     });
+  }
+
+  async function reverterFechamentoMes(state, supabase, rerender, button) {
+    if (!isMonthClosed(state)) {
+      alert('A meta deste mês já está aberta.');
+      return;
+    }
+
+    const periodo = `${getMonthName(state.mes)}/${state.ano}`;
+    const confirmado = confirm(
+      `Reverter o fechamento de ${periodo}?\n\n` +
+      'O período será reaberto para edição. Os status e valores de bônus calculados serão limpos, mas as metas cadastradas serão mantidas.'
+    );
+    if (!confirmado) return;
+
+    const original = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Revertendo...';
+    }
+
+    const { error } = await supabase
+      .from('metas_producao')
+      .update({
+        fechado: false,
+        fechado_em: null,
+        status_fechamento: null,
+        produzido_fechamento: null,
+        percentual_fechamento: null,
+        bonus_percentual_minimo: null,
+        bonus_producao: 0,
+        bonus_custo: 0,
+        bonus_leitura: 0,
+        bonus_total: 0,
+        qualifica_bonus: false,
+        updated_at: new Date().toISOString()
+      })
+      .eq('ano', Number(state.ano))
+      .eq('mes', Number(state.mes));
+
+    if (error) {
+      console.error('[METAS] Erro ao reverter fechamento:', error);
+      alert('Erro ao reverter o fechamento: ' + error.message);
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+      return;
+    }
+
+    await loadData(state, supabase);
+    rerender();
+    alert(`Fechamento de ${periodo} revertido. O período está aberto novamente.`);
   }
 
 
@@ -2707,6 +3101,13 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       });
     }
 
+    const reopenBtn = container.querySelector('[data-metas-reopen]');
+    if (reopenBtn) {
+      reopenBtn.addEventListener('click', async () => {
+        await reverterFechamentoMes(state, supabase, rerender, reopenBtn);
+      });
+    }
+
     const baixarBonusBtn = container.querySelector('[data-metas-baixar-bonus]');
     if (baixarBonusBtn) {
       baixarBonusBtn.addEventListener('click', async () => {
@@ -2730,6 +3131,18 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         await salvarMeta(form, state, supabase, rerender);
+      });
+    }
+
+    // ── Auditoria ─────────────────────────────────────────────────────────
+    const auditoriaBtn = container.querySelector('[data-metas-auditoria]');
+    const auditoriaFile = container.querySelector('[data-metas-auditoria-file]');
+    if (auditoriaBtn && auditoriaFile) {
+      auditoriaBtn.addEventListener('click', () => auditoriaFile.click());
+      auditoriaFile.addEventListener('change', async () => {
+        const file = auditoriaFile.files?.[0];
+        if (file) await importarAuditoria(file, state, supabase, reload);
+        auditoriaFile.value = '';
       });
     }
 
@@ -2839,7 +3252,6 @@ import { sincronizarProducaoSnapshotDoAgente } from '../producaoSnapshotAgentSyn
     render(container, state);
     bindEvents(container, state, supabase, options);
 
-    await sincronizarProducaoSnapshotDoAgente();
     await loadData(state, supabase);
     render(container, state);
     bindEvents(container, state, supabase, options);

@@ -260,6 +260,17 @@ function injectStyle() {
       gap: 16px;
     }
 
+    .metas-closing-actions { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; padding:16px 18px; border-bottom:1px solid rgba(148,163,184,.11); background:rgba(15,23,42,.46); }
+    .metas-closing-actions h2 { margin:0; font-size:clamp(19px,2vw,25px); letter-spacing:-.035em; }
+    .metas-closing-buttons { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .metas-closing-buttons .metas-btn { min-height:40px; box-shadow:none; }
+    .metas-closing-buttons .metas-btn.is-active { color:#ecfdf5; border-color:rgba(74,222,128,.48); background:rgba(21,128,61,.30); }
+    .metas-auditoria-btn.is-pending { color:#fef3c7 !important; border-color:rgba(250,204,21,.55) !important; background:rgba(161,98,7,.34) !important; }
+    .metas-auditoria-btn.is-ready { color:#dcfce7 !important; border-color:rgba(74,222,128,.55) !important; background:rgba(21,128,61,.36) !important; }
+    .metas-closing-panel[hidden] { display:none !important; }
+    .metas-closing-panel { padding:16px 18px 18px; border-bottom:1px solid rgba(148,163,184,.11); }
+    .metas-closing-summary .metas-section-spacer { margin:0 !important; border:0 !important; border-radius:0 !important; box-shadow:none !important; }
+
     .metas-config-hero {
       display: grid;
       grid-template-columns: minmax(260px, 1fr) auto;
@@ -655,53 +666,58 @@ function ensureConfigWorkflow(container) {
 
   if (!suggest || !despesas || !closePanel || !metasTable) return;
 
-  const period = String(container.querySelector('.metas-period-chip')?.textContent || '').trim() || 'Período selecionado';
-  const totalMetas = metasTable.querySelectorAll('[data-metas-meta-row]').length;
-  const custosBadge = despesas.querySelector('.metas-pill')?.textContent?.trim() || 'custos';
-  const fechado = Boolean(closePanel.querySelector('[data-metas-close][disabled]'));
+  const mesSelect = container.querySelector('[data-metas-filter="mes"]');
+  const anoSelect = container.querySelector('[data-metas-filter="ano"]');
+  const mes = mesSelect?.selectedOptions?.[0]?.textContent?.trim() || 'Mês';
+  const ano = anoSelect?.value || new Date().getFullYear();
+  const auditButton = sourceCard.querySelector('[data-metas-auditoria]');
+  const auditInput = sourceCard.querySelector('[data-metas-auditoria-file]');
+  const closeButton = closePanel.querySelector('[data-metas-close]');
+  const reopenButton = closePanel.querySelector('[data-metas-reopen]');
+  const exportButton = closePanel.querySelector('[data-metas-baixar-bonus]');
+  const saveButton = suggest.querySelector('[data-metas-save-list]');
+  if (!auditButton || !auditInput || !closeButton || !saveButton) return;
+  if (!closeButton.disabled) closeButton.textContent = 'Fechar Meta';
 
   const workflow = document.createElement('div');
   workflow.className = 'metas-config-workflow';
   workflow.innerHTML = `
-    <div class="metas-config-hero">
-      <div>
-        <h2>Fechamento guiado da meta</h2>
-        <p>Use esta tela de cima para baixo. Primeiro defina ou confira as metas, depois confira as despesas do mês anterior e só então feche o período para calcular o bônus.</p>
+    <section class="metas-work-card is-close">
+      <div class="metas-closing-actions">
+        <h2>Fechamento - ${mes}/${ano}</h2>
+        <div class="metas-closing-buttons">
+          <button class="metas-btn secondary" type="button" data-metas-closing-view="atribuir">Atribuir</button>
+          <button class="metas-btn secondary" type="button" data-metas-closing-view="despesas">Despesas</button>
+        </div>
       </div>
-      <div class="metas-config-status">
-        <span class="metas-pill ${fechado ? 'good' : ''}">${period}</span>
-        <span class="metas-pill">${totalMetas || 0} regionais com meta</span>
-      </div>
-    </div>
-    <div class="metas-flow-stepper" aria-label="Fluxo do fechamento de metas">
-      <div class="metas-flow-step"><strong>1</strong><span>Definir meta</span></div>
-      <div class="metas-flow-step"><strong>2</strong><span>Conferir regionais</span></div>
-      <div class="metas-flow-step"><strong>3</strong><span>Validar M-1</span></div>
-      <div class="metas-flow-step"><strong>4</strong><span>Fechar meta</span></div>
-      <div class="metas-flow-step"><strong>5</strong><span>Ver bônus</span></div>
-    </div>
-    <div class="metas-config-workflow-grid"></div>
+      <div class="metas-closing-panel" data-metas-closing-panel="atribuir" hidden></div>
+      <div class="metas-closing-panel" data-metas-closing-panel="despesas" hidden></div>
+      <div class="metas-closing-summary"></div>
+    </section>
   `;
 
-  const grid = workflow.querySelector('.metas-config-workflow-grid');
-  const step1 = createWorkCard('1', 'Definir ou sugerir a meta do mês', 'Informe o valor estimado ou use a sugestão automática. Depois clique em Salvar lista.', { className: 'is-primary' });
-  const step2 = createWorkCard('2', 'Conferir metas por regional', 'Confira se cada regional está com a meta correta antes do fechamento.', { badge: `${totalMetas || 0} linhas` });
-  const step3 = createWorkCard('3', 'Conferir despesas do mês anterior', 'O custo do bônus usa sempre M-1. Exemplo: meta de Junho usa despesas de Maio.', { badge: custosBadge, badgeClass: custosBadge.includes('aguardando') ? '' : 'good' });
-  const step4 = createWorkCard('4', 'Fechar meta e calcular bônus', 'Depois de conferir metas, despesas, gestores e leitura de patrimônio, finalize o período.', { className: 'is-close' });
-  const step5 = createWorkCard('5', 'Resumo do fechamento', 'Depois de fechado, acompanhe quem atingiu a meta e os valores calculados.' );
-
-  step1.querySelector('.metas-work-body').appendChild(suggest);
-  step2.querySelector('.metas-work-body').appendChild(metasTable);
-  step3.querySelector('.metas-work-body').appendChild(despesas);
-  step4.querySelector('.metas-work-body').appendChild(closePanel);
-
-  if (resumo) {
-    step5.querySelector('.metas-work-body').appendChild(resumo);
-  } else {
-    step5.querySelector('.metas-work-body').innerHTML = '<div class="metas-empty">O resumo será exibido após carregar ou fechar uma meta.</div>';
-  }
-
-  grid.append(step1, step2, step3, step4, step5);
+  const actions = workflow.querySelector('.metas-closing-buttons');
+  actions.append(auditInput, auditButton, closeButton);
+  if (reopenButton) actions.appendChild(reopenButton);
+  if (exportButton) actions.appendChild(exportButton);
+  const atribuirPanel = workflow.querySelector('[data-metas-closing-panel="atribuir"]');
+  const despesasPanel = workflow.querySelector('[data-metas-closing-panel="despesas"]');
+  saveButton.textContent = 'Salvar metas';
+  atribuirPanel.append(saveButton, metasTable);
+  despesasPanel.appendChild(despesas);
+  const summary = workflow.querySelector('.metas-closing-summary');
+  if (resumo) summary.appendChild(resumo);
+  else summary.innerHTML = '<div class="metas-empty">O resumo será exibido após carregar ou fechar uma meta.</div>';
+  workflow.querySelectorAll('[data-metas-closing-view]').forEach(button => {
+    button.addEventListener('click', () => {
+      const name = button.dataset.metasClosingView;
+      const panel = workflow.querySelector(`[data-metas-closing-panel="${name}"]`);
+      const willOpen = panel?.hasAttribute('hidden');
+      workflow.querySelectorAll('[data-metas-closing-panel]').forEach(item => item.setAttribute('hidden', ''));
+      workflow.querySelectorAll('[data-metas-closing-view]').forEach(item => item.classList.remove('is-active'));
+      if (willOpen && panel) { panel.removeAttribute('hidden'); button.classList.add('is-active'); }
+    });
+  });
   content.insertBefore(workflow, sourceCard);
   sourceCard.remove();
 }

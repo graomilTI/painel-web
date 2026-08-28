@@ -1,35 +1,3 @@
-import { supabase } from './supabaseClient.js';
-
-const PROG_OS_ATIVAS_FLAG = '__prog_os_ativas_select_patch__';
-
-if (!supabase[PROG_OS_ATIVAS_FLAG]) {
-  const originalFrom = supabase.from.bind(supabase);
-
-  function patchBuilder(builder, table) {
-    if (!builder || builder.__progOsAtivasPatched) return builder;
-    Object.defineProperty(builder, '__progOsAtivasPatched', { value: true, configurable: true });
-
-    const originalSelect = builder.select?.bind(builder);
-    if (originalSelect) {
-      builder.select = function patchedSelect(columns, options) {
-        const selected = originalSelect(columns, options);
-        if (table === 'operacional_os' && typeof selected?.eq === 'function' && typeof selected?.not === 'function') {
-          return selected.eq('situacao', 'Aberta').not('ultima_atualizacao', 'is', null);
-        }
-        return patchBuilder(selected, table);
-      };
-    }
-
-    return builder;
-  }
-
-  supabase.from = function patchedFrom(table) {
-    return patchBuilder(originalFrom(table), table);
-  };
-
-  Object.defineProperty(supabase, PROG_OS_ATIVAS_FLAG, { value: true, configurable: false });
-}
-
 // Programação: ajuste leve de fonte para manter cliente/local em linha única, sem reticências.
 (function () {
   const MIN_FONT = 8.2;

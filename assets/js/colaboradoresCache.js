@@ -15,7 +15,7 @@ const TTL_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 1000;
 
 const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo';
-const CAMPOS_MINIMOS = 'nome,cpf,tipo,supervisao,coordenacao,empresa';
+const CAMPOS_MINIMOS = 'nome,cpf,tipo,supervisao,coordenacao,empresa,situacao';
 const CAMPOS_FALLBACK = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,data_referencia';
 
 let inflight = null;

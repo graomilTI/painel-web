@@ -47,6 +47,9 @@ verify_jwt = false
 [functions.hospedagem-whatsapp-webhook]
 verify_jwt = false
 
+[functions.mapa-embarque-alertas]
+verify_jwt = false
+
 [functions.correios-prepostagem]
 verify_jwt = true
 

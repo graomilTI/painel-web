@@ -1058,6 +1058,18 @@ async function loadDespesas() {
   }
 
   const programacaoMap = new Map((programacoes || []).map((p) => [p.id, p]));
+  const datasReferencia = (programacoes || [])
+    .map((p) => String(p.data_referencia || '').slice(0, 10))
+    .filter(Boolean);
+  // A RPC de status do GRM devolve o histórico inteiro do colaborador quando
+  // não filtrada por data; com centenas de colaboradores isso facilmente
+  // passa das 1000 linhas (limite padrão do PostgREST) e o retorno vem
+  // truncado — colaboradores confirmados hoje podem sumir do resultado só
+  // por causa do corte, mesmo já estando com status_aplicacao=APLICADO no
+  // banco. Restringir à janela de datas realmente carregada mantém o
+  // resultado pequeno e correto.
+  const grmDataMin = datasReferencia.length ? datasReferencia.reduce((a, b) => (a < b ? a : b)) : null;
+  const grmDataMax = datasReferencia.length ? datasReferencia.reduce((a, b) => (a > b ? a : b)) : null;
 
   const [disp, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
     selectByProgramacoes('programacao_colaboradores', '*', programacaoIds),
@@ -1146,6 +1158,8 @@ async function loadDespesas() {
   if (colaboradorIds.length) {
     const { data: grmStatus, error: grmError } = await supabase.rpc('grm_despesas_status_por_colaborador', {
       p_colaborador_ids: colaboradorIds,
+      p_data_min: grmDataMin,
+      p_data_max: grmDataMax,
     });
     if (grmError) {
       console.warn('[Conferência] status de sincronização GRM indisponível:', grmError.message);
@@ -1154,6 +1168,13 @@ async function loadDespesas() {
         `${r.colaborador_id}|${String(r.data_referencia || '').slice(0, 10)}`,
         r,
       ]));
+      const autoConfirmCandidates = [];
+      // Confere sozinho quando o GRM já processou com sucesso (Aplicado ou
+      // Limpo, com ou sem alteração) — o gestor pediu que a conferência não
+      // fique represada esperando um clique manual pra algo que o GRM já
+      // confirmou. Não mexe em quem já foi CONFERIDO/PENDENCIA/CANCELADO
+      // manualmente: uma recusa explícita nunca é sobrescrita por isso.
+      const jaDecididoManualmente = new Set(['CONFERIDO', 'PENDENCIA', 'CANCELADO']);
       for (const row of rows.values()) {
         const grm = grmMap.get(
           `${row.colaborador_id}|${String(row.data_referencia || '').slice(0, 10)}`,
@@ -1161,6 +1182,16 @@ async function loadDespesas() {
         row.grm_status_aplicacao = grm?.status_aplicacao || null;
         row.grm_aplicado_em = grm?.aplicado_em || null;
         row.grm_houve_alteracao = typeof grm?.houve_alteracao === 'boolean' ? grm.houve_alteracao : null;
+
+        if (
+          ['APLICADO', 'LIMPO'].includes(row.grm_status_aplicacao)
+          && !jaDecididoManualmente.has(getStatus(row))
+        ) {
+          autoConfirmCandidates.push(row);
+        }
+      }
+      if (autoConfirmCandidates.length) {
+        await autoConfirmarProcessadosPeloGrm(autoConfirmCandidates);
       }
     }
   }
@@ -1413,6 +1444,48 @@ async function updateDespesaStatus(id, status, motivo = null) {
   });
   setFeedback('Status da conferência atualizado.');
   renderActiveTab();
+}
+
+// Auto-conferência: quando o GRM já processou a despesa (Aplicado/Limpo), o
+// gestor não precisa clicar "Conferir" manualmente — isso teria o mesmo
+// efeito de clicar o botão OK verde, só que automático. Roda em lote (não
+// dispara render/feedback por item, silencioso) porque acontece toda vez que
+// a aba Despesas é carregada, potencialmente pra dezenas de linhas de uma vez.
+async function autoConfirmarProcessadosPeloGrm(rowsParaConfirmar) {
+  const nowIso = new Date().toISOString();
+  const payloads = rowsParaConfirmar.map((row) => ({
+    programacao_id: row.programacao_id,
+    colaborador_id: row.colaborador_id,
+    nome_colaborador: row.colaborador || row.nome_colaborador || null,
+    data_referencia: row.data_referencia,
+    coordenacao: row.coordenacao || null,
+    supervisao: row.supervisao || row.regional || null,
+    status_conferencia: 'CONFERIDO',
+    observacao_conferencia: row.observacao_conferencia || '',
+    conferido_em: nowIso,
+  }));
+
+  const { data, error } = await supabase
+    .from('programacao_conferencia_status')
+    .upsert(payloads, { onConflict: 'programacao_id,colaborador_id' })
+    .select('*');
+
+  if (error) {
+    console.warn('[Conferência] auto-confirmação por GRM falhou:', error.message);
+    return;
+  }
+
+  const byKey = new Map((data || []).map((d) => [`${d.programacao_id}::${d.colaborador_id}`, d]));
+  for (const row of rowsParaConfirmar) {
+    const updated = byKey.get(row.id);
+    if (!updated) continue;
+    Object.assign(row, {
+      status_conferencia: updated.status_conferencia,
+      observacao_conferencia: updated.observacao_conferencia,
+      conferencia_status_id: updated.id,
+      conferido_em: updated.conferido_em,
+    });
+  }
 }
 
 function exportCsv() {

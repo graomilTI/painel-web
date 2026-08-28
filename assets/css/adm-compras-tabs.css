@@ -1,0 +1,92 @@
+/* Painel de Compras — etapas em formato de janelas/abas.
+   Somente apresentação: não altera eventos, estado ou fluxo do módulo. */
+
+.adm-cmp-tabs {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  margin: 16px 0 20px !important;
+  padding: 9px !important;
+  border: 1px solid rgba(111, 208, 165, .13) !important;
+  border-radius: 16px !important;
+  background: rgba(4, 13, 9, .76) !important;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .16) !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(111, 208, 165, .25) transparent;
+}
+
+.adm-cmp-tabs > button {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-height: 42px !important;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  border: 1px solid transparent !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  color: #9eaaa4 !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1.1 !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  transition: background .16s ease, color .16s ease, border-color .16s ease,
+              transform .16s ease, box-shadow .16s ease !important;
+}
+
+.adm-cmp-tabs > button:hover {
+  color: #e9fff4 !important;
+  background: rgba(111, 208, 165, .06) !important;
+  border-color: rgba(111, 208, 165, .08) !important;
+  transform: translateY(-1px) !important;
+}
+
+.adm-cmp-tabs > button.active {
+  color: #effff6 !important;
+  background: linear-gradient(180deg, rgba(0, 200, 122, .22), rgba(0, 120, 75, .16)) !important;
+  border-color: rgba(45, 212, 160, .28) !important;
+  box-shadow: 0 8px 22px rgba(0, 120, 75, .14) !important;
+  transform: none !important;
+}
+
+.adm-cmp-tabs > button.active::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: #00c87a;
+  box-shadow: 0 0 10px rgba(0, 200, 122, .35);
+}
+
+/* Mantém as ações separadas visualmente das janelas de navegação. */
+.adm-cmp-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  margin-top: 0 !important;
+}
+
+@media (max-width: 760px) {
+  .adm-cmp-tabs {
+    margin-top: 14px !important;
+    margin-bottom: 16px !important;
+    padding: 7px !important;
+  }
+
+  .adm-cmp-tabs > button {
+    min-height: 40px !important;
+    padding: 9px 12px !important;
+    font-size: 11px !important;
+  }
+}
