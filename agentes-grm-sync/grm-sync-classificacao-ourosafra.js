@@ -1,9 +1,11 @@
-process.env.TMPDIR = '/home/grao100/tmp';
-process.env.TEMP = '/home/grao100/tmp';
-process.env.TMP = '/home/grao100/tmp';
-
 /**
  * Agente: Classificação Ouro Safra (cdci) <-> GRM
+ *
+ * Ao contrário dos agentes só-leitura (grm-sync-nhe.js etc.), este NÃO
+ * hardcoda TMPDIR/TEMP/TMP pro caminho do servidor — segue o mesmo padrão de
+ * grm-sync-aplicar-distribuicao-os.js (o outro agente com --dry-run/HEADLESS
+ * pensado pra rodar supervisionado localmente também). No cron, o crontab já
+ * exporta TMPDIR=/home/grao100/tmp antes de chamar o node (ver README).
  *
  * Fluxo (validado manualmente ao vivo em 27/08/2026, placa BDP-1G46 / O.S. 90493):
  *   1. Login no painel Ouro Safra (app.ourosafra.com.br) e no GRM (grmserver.com.br).
@@ -19,16 +21,31 @@ process.env.TMP = '/home/grao100/tmp';
  *      "Cargas" e baixa o laudo (PDF).
  *   6. Volta no Ouro Safra e anexa o laudo (Upload Laudo) + salva.
  *
- * ATENÇÃO — nível de confiança dos seletores usados:
- *   - Login GRM, `/api` fetch pattern, formatação BR de percentual (vírgula):
- *     reaproveitados de scripts já em produção neste repo (alta confiança).
- *   - Fluxo Ouro Safra (cards, modal de classificação, itens, upload de
- *     laudo) e busca de laudo na O.S. do GRM: testados manualmente passo a
- *     passo no navegador, mas os seletores aqui foram reimplementados de
- *     forma estrutural (por texto/posição, não por classes fixas) porque a
- *     Ouro Safra usa Radzen/Blazor Server com IDs gerados dinamicamente por
- *     sessão. RODAR EM MODO SUPERVISIONADO (headless:false ou com
- *     screenshots) pelo menos uma vez antes de colocar no cron.
+ * ATENÇÃO — nível de confiança dos seletores usados (atualizado 28/08/2026):
+ *   - Login GRM, formatação BR de percentual (vírgula): reaproveitados de
+ *     scripts já em produção neste repo (alta confiança).
+ *   - buscarClassificacaoGRM() (Cliente Nacional #clnCode, Placa
+ *     #loaLicensePlate, período #loaDateFrom/#loaDateTo dentro de .dr-field,
+ *     checkboxes #joinCItems/#addStaffInfo, botão .loadsReport-act-update,
+ *     leitura da tabela por cabeçalho): reescrita e RE-TESTADA com Puppeteer
+ *     de verdade (não só manualmente no Chrome) em 28/08/2026 contra a placa
+ *     BDP-1G46/O.S. 90493 — bateu exato (Umidade 13,90 / Matérias E. Imp.
+ *     0,80 / Avariado Total 1,00). Alta confiança agora. IMPORTANTE: o
+ *     v-autocomplete do Cliente Nacional só abre com um clique REAL via
+ *     Puppeteer (page.click) — um clique disparado dentro de page.evaluate
+ *     (DOM sintético) não funciona, e essa era a causa do 1º dry-run travar.
+ *   - Fluxo Ouro Safra (cards do painel, modal de classificação, itens,
+ *     upload de laudo) e a busca do laudo dentro da O.S. no GRM
+ *     (operation/serviceOrder → Cargas → Imprimir Laudo): testados
+ *     manualmente passo a passo no navegador (27/08/2026), mas os seletores
+ *     no script foram reimplementados de forma estrutural (por texto/posição,
+ *     não por classes fixas) porque a Ouro Safra usa Radzen/Blazor Server com
+ *     IDs gerados dinamicamente por sessão — e isso AINDA NÃO foi re-testado
+ *     com Puppeteer de verdade (só o card-click de listarAgendamentosPendentes
+ *     foi corrigido e confirmado: os cards são <div class="rz-card">, não
+ *     <button>, e somem do DOM quando a contagem é 0). RODAR SUPERVISIONADO
+ *     (HEADLESS=false) na próxima vez que houver placa em "Aguardando
+ *     Classificação" antes de colocar no cron.
  *   - Achado crítico: o campo de percentual da Ouro Safra só aceita vírgula
  *     como separador decimal — "0.80" é interpretado como 80,00 (100x maior).
  *     Por isso todo valor é formatado com fmtPercent() antes de digitar.
@@ -213,7 +230,19 @@ async function clickNthButtonInRow(row, index) {
 async function listarAgendamentosPendentes(page) {
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2000);
-  await clickButtonByText(page, 'Aguardando Classificação');
+  // Os cards do painel (Carregando / Aguardando Classificação / Aguardando
+  // Laudo Classificação) são <div class="rz-card">, não <button> — e o card
+  // some do DOM quando a contagem daquele status é 0 (confirmado ao vivo).
+  const cardClicado = await page.evaluate((label) => {
+    const card = Array.from(document.querySelectorAll('.rz-card')).find((el) => (el.textContent || '').includes(label));
+    if (!card) return false;
+    card.click();
+    return true;
+  }, 'Aguardando Classificação');
+  if (!cardClicado) {
+    log('INFO', 'Card "Aguardando Classificação" não existe agora (0 placas pendentes).');
+    return [];
+  }
   await wait(1500);
   return page.evaluate(() => {
     const table = document.querySelector('table');
@@ -294,62 +323,69 @@ async function anexarLaudo(page, pdfPath) {
 // GRM — encontrar a classificação da placa (report/classification/loads)
 // ---------------------------------------------------------------------------
 
-async function preencherSearchableSelect(page, labelText, valorBusca) {
-  // Abre o combo pelo texto do label, digita a busca e clica na opção exibida.
-  await page.evaluate((labelText) => {
-    const label = Array.from(document.querySelectorAll('label, span, div')).find((el) => (el.textContent || '').trim() === labelText);
-    const container = label?.closest('div');
-    const clickTarget = container?.querySelector('input, [role="combobox"], .v-select, .v-input') || container;
-    if (!clickTarget) throw new Error(`Campo "${labelText}" não encontrado`);
-    clickTarget.click();
-  }, labelText);
-  await wait(400);
-  await page.keyboard.type(valorBusca, { delay: 30 });
-  await wait(800);
-  await page.waitForFunction(
-    (valorBusca) => Array.from(document.querySelectorAll('li, .v-list-item, [role="option"]')).some((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase())),
-    { timeout: 10000 },
-    valorBusca
-  );
-  await page.evaluate((valorBusca) => {
-    const opt = Array.from(document.querySelectorAll('li, .v-list-item, [role="option"]')).find((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase()));
-    opt?.click();
-  }, valorBusca);
-  await wait(400);
-}
+// Todos os seletores abaixo (IDs e a classe .loadsReport-act-update) foram
+// confirmados ao vivo em report/classification/loads em 28/08/2026 — os
+// campos do GRM usam os mesmos nomes da API interna (clnCode, loaLicensePlate,
+// loaDateFrom/loaDateTo etc.), consistente com o que grm-sync-cargas-geofence.js
+// já usa no corpo do POST /api/reports/classification/loads.
 
-async function preencherCampoTexto(page, labelText, valor) {
-  const filled = await page.evaluate((labelText, valor) => {
-    const label = Array.from(document.querySelectorAll('label')).find((el) => (el.textContent || '').trim().startsWith(labelText));
-    const container = label?.closest('div');
-    const input = container?.querySelector('input[type=text], input:not([type])');
-    if (!input) return false;
+async function setNativeInputValue(page, selector, valor) {
+  await page.waitForSelector(selector, { timeout: 15000 });
+  await page.evaluate((selector, valor) => {
+    const input = document.querySelector(selector);
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     setter.call(input, valor);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-  }, labelText, valor);
-  if (!filled) throw new Error(`Campo "${labelText}" não encontrado`);
+  }, selector, valor);
+}
+
+async function preencherClienteNacionalGRM(page, valorBusca) {
+  // v-autocomplete: precisa de um clique REAL (Puppeteer/CDP) pra abrir o
+  // menu — um clique disparado via page.evaluate (DOM sintético) não abre.
+  await page.waitForSelector('#clnCode', { timeout: 15000 });
+  await page.click('#clnCode');
+  await wait(400);
+  await page.keyboard.type(valorBusca, { delay: 30 });
+  await page.waitForFunction(
+    (valorBusca) => Array.from(document.querySelectorAll('[role="option"]')).some((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase())),
+    { timeout: 10000 },
+    valorBusca
+  );
+  await page.evaluate((valorBusca) => {
+    const opt = Array.from(document.querySelectorAll('[role="option"]')).find((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase()));
+    opt?.click();
+  }, valorBusca);
+  await wait(400);
 }
 
 async function buscarClassificacaoGRM(page, placa) {
   const hoje = new Date();
   const inicio = new Date(hoje.getTime() - DIAS_BUSCA_GRM * 24 * 60 * 60 * 1000);
   await page.goto('https://www.grmserver.com.br/report/classification/loads', { waitUntil: 'networkidle2', timeout: 60000 });
-  await wait(2000);
-  await preencherSearchableSelect(page, 'Cliente Nacional', CLIENTE_NACIONAL_GRM);
-  await preencherCampoTexto(page, 'Placa', placa);
-  // datas De/Até já vêm com o dia atual por padrão; força o intervalo de busca.
-  await preencherCampoTexto(page, 'De', toBrDate(inicio));
-  await preencherCampoTexto(page, 'Até', toBrDate(hoje));
-  await clickButtonByText(page, 'Gerar Relatório').catch(async () => {
-    // fallback: ícone sem texto acessível — tenta pelo título/tooltip.
-    await page.evaluate(() => {
-      const el = Array.from(document.querySelectorAll('*')).find((e) => (e.textContent || '').trim() === 'Gerar Relatório');
-      (el?.closest('button') || el)?.click();
+  await wait(3000); // hidratação do app (Vue) — sem isso os inputs ainda não existem no DOM
+
+  await preencherClienteNacionalGRM(page, CLIENTE_NACIONAL_GRM);
+  await setNativeInputValue(page, '#loaLicensePlate', placa);
+
+  // "Data de Classificação" só expõe #loaDateFrom/#loaDateTo depois de um
+  // clique real no campo composto (.dr-field) — closed by default.
+  await page.click('.dr-field');
+  await wait(400);
+  await setNativeInputValue(page, '#loaDateFrom', toBrDate(inicio));
+  await setNativeInputValue(page, '#loaDateTo', toBrDate(hoje));
+
+  // Sem estes 2 marcados, o relatório sai sem as colunas de Umidade/
+  // Impureza/Avariados que a gente precisa.
+  await page.evaluate(() => {
+    ['joinCItems', 'addStaffInfo'].forEach((id) => {
+      const cb = document.getElementById(id);
+      if (cb && !cb.checked) cb.click();
     });
   });
+
+  await page.waitForSelector('.loadsReport-act-update', { timeout: 15000 });
+  await page.click('.loadsReport-act-update');
   await wait(2500);
 
   return page.evaluate(() => {
