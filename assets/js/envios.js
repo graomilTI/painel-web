@@ -66,13 +66,6 @@ function printPdf(b64) {
   win.addEventListener('afterprint', () => URL.revokeObjectURL(url));
 }
 
-function openDeclaracaoHtml(html) {
-  const win = window.open('', '_blank');
-  if (!win) { setFeedback('Permita pop-ups para abrir a declaração de conteúdo.', true); return; }
-  win.document.write(html);
-  win.document.close();
-  setTimeout(() => { try { win.print(); } catch {} }, 400);
-}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
@@ -525,7 +518,7 @@ function renderEnviados() {
         <div class="envios-col-prev-actions">
           ${p.numero_objeto ? `<button class="btn btn-sm btn-secondary" data-rastrear="${p.id}" data-objeto="${esc(p.numero_objeto)}">Rastrear</button>` : ''}
           <button class="btn btn-sm btn-secondary" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
-          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">Declaração de conteúdo</button>
+          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">DACE</button>
         </div>
       </div>
     </div>`;
@@ -583,7 +576,7 @@ function renderHistorico() {
         <span class="envios-data-main">${prazo}</span>
         <div class="envios-col-prev-actions">
           <button class="btn btn-sm btn-secondary" data-etiqueta="${p.id}">Gerar novamente etiqueta</button>
-          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">Gerar novamente declaração</button>
+          <button class="btn btn-sm btn-secondary" data-declaracao="${p.id}">Gerar novamente DACE</button>
         </div>
       </div>
     </div>`;
@@ -1097,14 +1090,15 @@ function bindTabEvents() {
     });
   });
 
-  // Declaração de conteúdo oficial, emitida pelos Correios
+  // DACE (Declaração Auxiliar de Conteúdo Eletrônica) — DCe emitida automaticamente
+  // pelos Correios na criação da pré-postagem (emiteDCe:"S")
   area.querySelectorAll('[data-declaracao]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.dataset.declaracao;
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Gerando...';
       const result = await callFn('correios-declaracao', { postagem_ids: [id] });
-      if (result.ok && result.html) openDeclaracaoHtml(result.html);
+      if (result.ok && result.pdf_base64) printPdf(result.pdf_base64);
       else setFeedback('Erro ao gerar declaração: ' + (result.error ?? 'desconhecido'), true);
       btn.disabled = false; btn.textContent = orig;
     });
