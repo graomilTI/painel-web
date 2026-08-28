@@ -1029,13 +1029,23 @@ async function abrirOsEModalCargas(page, numeroOs) {
   if (!nheClicked) {
     throw new Error('A ação "+NHE" não está disponível para a conta de automação na tela atual do Graint.');
   }
-  await wait(1200);
 
-  var modalAberto = await page.evaluate(function () {
-    return Array.from(document.querySelectorAll('.v-overlay--active')).some(function (d) {
-      return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1;
+  // Poll em vez de um wait fixo único: um wait(1200) + checagem única falhava
+  // com "Modal não abriu" sempre que o GRM demorava um pouco mais que o normal
+  // pra montar o overlay (achado investigando a O.S. 90394 — o mesmo clique,
+  // repetido com polling, abriu o modal em ~300ms de forma consistente; não
+  // era seletor quebrado, só falta de folga no timing). Tenta a cada 300ms por
+  // até 6s antes de desistir.
+  var modalAberto = false;
+  for (var tentativa = 0; tentativa < 20; tentativa++) {
+    await wait(300);
+    modalAberto = await page.evaluate(function () {
+      return Array.from(document.querySelectorAll('.v-overlay--active')).some(function (d) {
+        return (d.innerText || '').toUpperCase().indexOf('ADICIONAR NHE') !== -1;
+      });
     });
-  });
+    if (modalAberto) break;
+  }
   if (!modalAberto) throw new Error('Modal "Adicionar NHE" não abriu.');
 }
 
