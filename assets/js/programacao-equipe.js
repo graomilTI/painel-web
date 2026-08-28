@@ -74,8 +74,12 @@ function isSupervisaoExcecaoBloqueioCargo(supervisao) {
 
 function isColaboradorInativo(row) {
   if (row?.ativo === false) return true;
-  if (String(row?.desligamento || '').trim()) return true;
   const situacao = normalizeText(row?.situacao || row?.status || row?.disponibilidade);
+  // Colaborador readmitido mantém no GRM a data do desligamento ANTERIOR à
+  // volta (só `situacao` vira "Ativo" na readmissão) — sem o "&& situacao !==
+  // 'ATIVO'", ele fica fora do pool da própria supervisão pra sempre mesmo já
+  // reativado (caso real: GABRIEL MARIANO DA SILVA, 28/08/2026).
+  if (String(row?.desligamento || '').trim() && situacao !== 'ATIVO') return true;
   return ['INATIVO', 'INATIVA', 'DESLIGADO', 'DESLIGADA', 'DEMITIDO', 'DEMITIDA', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA', 'INDISPONIVEL']
     .some((status) => situacao.includes(status));
 }

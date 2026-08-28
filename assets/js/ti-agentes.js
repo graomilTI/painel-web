@@ -18,6 +18,7 @@ const BTG_AGENT_ALIASES = [
 
 const CARGAS_AGENT_ID = 'sync-cargas-geofence';
 const DISTRIBUICAO_OS_AGENT_ID = 'aplicar-distribuicao-os';
+const OUROSAFRA_AGENT_ID = 'sync-classificacao-ourosafra';
 
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
@@ -47,6 +48,7 @@ const AGENTES = [
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
+  { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: 'manual (fora do cron)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida' },
 ];
 
 const STATUS_META = {
@@ -65,6 +67,7 @@ const state = {
   botconversaFailures: [],
   supervisoesDistribuicao: [],
   cargasKpi: null,
+  ourosafraKpi: null,
   activeTab: 'entrada',
   executions: [],
   executionsLoading: false,
@@ -322,6 +325,57 @@ async function loadCargasKpi() {
     };
   } catch (e) {
     console.error('Erro carregando KPI de Cargas x Geofence:', e);
+  }
+  render();
+}
+
+function renderOurosafraKpi() {
+  const agente = state.agentes.find((x) => x.id === OUROSAFRA_AGENT_ID) || AGENTES.find((x) => x.id === OUROSAFRA_AGENT_ID);
+  const meta = getAgenteMeta(agente);
+  const kpi = state.ourosafraKpi;
+  const last = kpi?.lastRun;
+  const lastStatusLabel = last?.status ? (STATUS_META[last.status]?.label || last.status) : null;
+
+  return `<div class="ag-btg-kpi" onclick="selectAgent('${OUROSAFRA_AGENT_ID}')">
+    <div class="ag-btg-kpi-head">
+      <div>
+        <div class="ag-btg-kpi-title">🌾 KPI · Classificação Ouro Safra (Laudo)</div>
+        <div class="ag-btg-kpi-sub">Casa placas "Aguardando Classificação" no painel Ouro Safra com o GRM e anexa o laudo. Ainda fora do cron — roda só manual/supervisionado (HEADLESS=false).</div>
+      </div>
+      <div class="ag-btg-kpi-status" style="color:${meta.color}"><span class="ag-status-dot ${meta.ui}"></span>${meta.label}</div>
+    </div>
+    <div class="ag-btg-kpi-grid">
+      <div class="ag-btg-kpi-item"><span>Última execução</span><strong>${formatDate(last?.iniciado_em)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Última placa</span><strong>${esc(last?.placa || 'N/A')}${lastStatusLabel ? ` · ${esc(lastStatusLabel)}` : ''}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Sucesso (30d)</span><strong style="color:#86efac">${formatInt(kpi?.sucesso30d)}</strong></div>
+      <div class="ag-btg-kpi-item"><span>Erros (30d)</span><strong style="color:${kpi?.erro30d ? '#fca5a5' : '#86efac'}">${formatInt(kpi?.erro30d)}</strong></div>
+    </div>
+  </div>`;
+}
+
+async function loadOurosafraKpi() {
+  try {
+    const [lastRes, periodRes] = await Promise.all([
+      supabase
+        .from('ouro_safra_classificacao_execucoes')
+        .select('placa, os_grm, status, erro, duracao_ms, iniciado_em')
+        .order('iniciado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('ouro_safra_classificacao_execucoes')
+        .select('status, iniciado_em')
+        .gte('iniciado_em', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
+    ]);
+    const rows = periodRes.data || [];
+    state.ourosafraKpi = {
+      lastRun: lastRes.data || null,
+      total30d: rows.length,
+      sucesso30d: rows.filter((r) => r.status === 'sucesso').length,
+      erro30d: rows.filter((r) => r.status === 'erro').length,
+    };
+  } catch (e) {
+    console.error('Erro carregando KPI de Classificação Ouro Safra:', e);
   }
   render();
 }
@@ -603,6 +657,7 @@ function renderAgentes() {
       </div>`}
       ${state.activeTab === 'entrada' ? renderBtgKpi() : ''}
       ${state.activeTab === 'entrada' ? renderCargasKpi() : ''}
+      ${state.activeTab === 'saida' ? renderOurosafraKpi() : ''}
     </div>`;
 
   if (state.activeTab === 'execucoes') {
@@ -1112,13 +1167,14 @@ function render() {
 
 async function init() {
   await initProtectedPage(['TI_AGENTES', 'TI']);
-  await Promise.all([loadAgentes(), loadCargasKpi(), loadExecutions(), loadQueue(), loadAgentSettings()]);
+  await Promise.all([loadAgentes(), loadCargasKpi(), loadOurosafraKpi(), loadExecutions(), loadQueue(), loadAgentSettings()]);
 }
 
 init();
 setInterval(() => {
   loadAgentes();
   loadCargasKpi();
+  loadOurosafraKpi();
   loadExecutions();
   loadQueue();
   loadAgentSettings();
