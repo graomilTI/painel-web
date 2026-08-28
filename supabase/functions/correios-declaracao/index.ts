@@ -18,37 +18,29 @@ Deno.serve(async (req) => {
     const ids = data.map((p: any) => p.id_prepostagem).filter(Boolean);
     if (!ids.length) return json({ ok: false, error: "Postagem ainda não possui pré-postagem confirmada." }, 400);
 
-    const res = await correiosFetch(`/prepostagem/v1/prepostagens/declaracaoconteudo/${ids.join(",")}`, { headers: { Accept: "text/html" } });
+    // DACE (Declaração Auxiliar de Conteúdo Eletrônica) só existe pra pré-postagens
+    // criadas com emiteDCe:"S". Pré-postagens antigas, criadas antes desse campo
+    // existir no payload, não têm DCe emitida e vão cair no erro dos Correios abaixo.
+    const res = await correiosFetch("/prepostagem/v1/prepostagens/dce/dace/impressao", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idsPrePostagens: ids, tipoDace: "C" }),
+    });
     const contentType = res.headers.get("content-type") || "";
-    const raw = await res.text();
-    console.log("[correios-declaracao] HTTP", res.status, contentType, raw.slice(0, 300));
-    if (!res.ok) {
-      let payload: any = null;
-      try { payload = JSON.parse(raw); } catch { /* resposta não era JSON */ }
-      return json({ ok: false, error: payload?.msgs?.join?.("; ") || raw.slice(0, 300) }, res.status);
-    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
+    console.log("[correios-declaracao] HTTP", res.status, contentType, text.slice(0, 500));
+    let payload: any; try { payload = JSON.parse(text); } catch { payload = null; }
+    if (!res.ok) return json({ ok: false, error: payload?.msgs?.join?.("; ") || text.slice(0, 300) }, res.status);
 
-    // A resposta pode vir embrulhada em JSON (ex.: { html/dados: "<html>..." ou base64})
-    // em vez de HTML puro, dependendo do Accept aceito pelo gateway dos Correios.
-    let html = raw;
-    if (contentType.includes("application/json")) {
-      let payload: any = null;
-      try { payload = JSON.parse(raw); } catch { /* segue com raw mesmo */ }
-      const candidate = payload?.html ?? payload?.dados ?? payload?.arquivo ?? payload?.conteudo;
-      if (typeof candidate === "string") {
-        try { html = atob(candidate); } catch { html = candidate; }
-      }
+    let binaryPdf: string | null = null;
+    if (contentType.includes("application/pdf")) {
+      let value = "";
+      for (let offset = 0; offset < bytes.length; offset += 0x8000) value += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+      binaryPdf = btoa(value);
     }
-
-    // A página abre numa janela em branco (about:blank) sem origem própria — sem uma
-    // <base> apontando pro domínio dos Correios, CSS/imagens/QR-code referenciados por
-    // caminho relativo no HTML deles não carregam e o documento sai quebrado na tela.
-    if (!/<base\b/i.test(html)) {
-      html = /<head[^>]*>/i.test(html)
-        ? html.replace(/<head([^>]*)>/i, `<head$1><base href="https://api.correios.com.br/">`)
-        : `<base href="https://api.correios.com.br/">${html}`;
-    }
-
-    return json({ ok: true, html });
+    const pdf = binaryPdf || payload?.dados || payload?.pdf || payload?.pdfBase64 || (typeof payload === "string" ? payload : null);
+    if (!pdf) return json({ ok: false, error: "Os Correios não retornaram a DACE. Esta postagem pode ter sido criada antes da emissão automática de DCe." }, 502);
+    return json({ ok: true, pdf_base64: pdf });
   } catch (e) { return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500); }
 });

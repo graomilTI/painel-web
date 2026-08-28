@@ -97,6 +97,7 @@ Deno.serve(async (req: Request) => {
     ...(postagem.conteudo ? { observacao: postagem.conteudo } : {}),
     itensDeclaracaoConteudo: [{ conteudo: conteudoDesc, quantidade: 1, valor: valorDeclarado }],
     cienteObjetoNaoProibido: '1',
+    emiteDCe: 'S',
   };
 
   try {
