@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
-import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260730-indisp-legado';
+import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260810-agrupar-hoteis';
 
 const STEPS = [
@@ -138,7 +138,10 @@ function isColaboradorAtivo(colab) {
 
   const situacao = normalizeAccessText(colab.situacao);
   const desligamento = String(colab.desligamento || '').trim();
-  if (desligamento) return false;
+  // Colaborador readmitido mantém a data do desligamento ANTERIOR no GRM (só
+  // `situacao` é atualizada pra "Ativo" na readmissão) — sem o "&& situacao
+  // !== 'ATIVO'", ele ficava bloqueado pra sempre mesmo já reativado.
+  if (desligamento && situacao !== 'ATIVO') return false;
 
   return ![
     'NAO ATIVO',

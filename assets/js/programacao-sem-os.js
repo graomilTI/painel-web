@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260730-indisp-legado';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import { anexoFieldHtml, resolverAnexo } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 

@@ -140,7 +140,10 @@ async function carregarColaboradoresElegiveis(originalFrom, supervisao) {
     const rows = (data || [])
       .filter((r) => r?.nome)
       .filter((r) => r.ativo !== false)
-      .filter((r) => !r.desligamento)
+      // Readmitido mantém no GRM a data do desligamento ANTERIOR (só
+      // `situacao` vira "Ativo" na volta) — sem o "&& situação != ATIVO" ele
+      // fica fora do embarque pra sempre mesmo já reativado.
+      .filter((r) => !r.desligamento || normalizeText(r.situacao) === 'ATIVO')
       .filter((r) => !isSituacaoInativa(r.situacao))
       .filter((r) => !isCargoBloqueadoEmbarque(r.cargo))
       .map((r) => ({
