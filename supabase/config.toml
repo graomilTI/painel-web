@@ -51,7 +51,13 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.correios-prepostagem]
-verify_jwt = true
+  verify_jwt = true
+
+[functions.correios-etiqueta]
+  verify_jwt = true
+
+[functions.correios-rastrear]
+  verify_jwt = true
 
 [functions.correios-telegrama]
 verify_jwt = true
