@@ -53,11 +53,19 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 
 `safe-table-load.js` fornece `replaceTableSafely()` — grava em tabela `_staging` e promove via função SQL transacional, evitando janela de tabela vazia (ver migration `20260630124500_grm_staging_promote_agents.sql` no painel-web). `download-utils.js` tem os helpers de download de XLS compartilhados pelos agentes de relatório.
 
+### `grm-sync-classificacao-ourosafra.js` (novo, 28/08 — ainda NÃO está no SCRIPT_MAP/cron)
+
+Segundo agente de escrita do repo, e o primeiro que grava fora do GRM: casa placas "Aguardando Classificação" no painel Ouro Safra (`app.ourosafra.com.br/app/cdci`) com a classificação já feita no GRM (`report/classification/loads`, filtro Cliente Nacional = OURO SAFRA INDUSTRIA E COMERCIO LTDA), preenche os 3 itens (Impureza/Umidade/Avariados) na Ouro Safra, baixa o laudo em PDF da O.S. correspondente no GRM (`operation/serviceOrder` → Cargas → Imprimir Laudo) e anexa de volta na Ouro Safra. Fluxo validado manualmente ao vivo (placa BDP-1G46 / O.S. 90493, 27/08/2026); os seletores usam texto/posição estrutural (não IDs fixos) porque a Ouro Safra é Radzen/Blazor Server com IDs gerados por sessão.
+
+Precisa de `OUROSAFRA_USER`/`OUROSAFRA_PASSWORD` no `.env` (ver `.env.example`) e de uma tabela de auditoria `ouro_safra_classificacao_execucoes` no Supabase (ainda não criada/migrada). Segue o mesmo padrão de segurança do `aplicar-distribuicao-os`: `--dry-run`/`DRY_RUN=true` casa a placa e calcula os valores mas não preenche nem anexa nada; `HEADLESS=false` roda com o Chrome visível. Placa sem correspondência no GRM é pulada silenciosamente (tenta de novo no próximo ciclo). **Antes de colocar no cron:** rodar algumas vezes com `--dry-run` e depois com `HEADLESS=false` supervisionado — os seletores do modal "Cargas" do GRM e do combo "Cliente Nacional" (searchableSelect) são best-effort e não foram exercitados via este script ainda.
+
 ## Variáveis de ambiente (`.env`)
 
 ```
 GRMSERVER_USER=...
 GRMSERVER_PASSWORD=...
+OUROSAFRA_USER=...
+OUROSAFRA_PASSWORD=...
 SUPABASE_URL=https://jbzmcyycanrlnfhedcup.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 ```
