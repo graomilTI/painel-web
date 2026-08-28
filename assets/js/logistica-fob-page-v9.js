@@ -201,7 +201,13 @@ function movementDate(row) {
 }
 
 function serviceDate(row) {
-  return ymd(pick(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+  // 'lnsDate' cobre grm_nhe_importacoes desde 05/08/2026, quando o sync desse
+  // agente passou a gravar o formato bruto da API do GRM (sorCode/lnsDate/...)
+  // em vez do cabeçalho em português do Excel antigo (O.S./Data/...) — sem
+  // esse alias, toda linha de NHE virava invisível pro cálculo de pendência
+  // (achado investigando a O.S. 90394, 28/08/2026: NHE lançado e confirmado
+  // no GRM, mas nunca aparecia como Ok porque essa função não lia a data).
+  return ymd(pick(row, ['Data', 'lnsDate', 'Última Atualização', 'Ultima Atualizacao']));
 }
 
 async function fetchPaged(builder, maxRows) {
@@ -443,7 +449,9 @@ function compareFob(movementRows, productionRows, nheRows) {
 
   const setNheOsOnly = new Set();
   nheRows.forEach((row) => {
-    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
+    // 'sorCode' é o nome do campo O.S. no formato bruto da API do GRM (ver
+    // serviceDate acima) — mesma causa, mesma correção.
+    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S', 'sorCode']));
     if (os) setNheOsOnly.add(os);
   });
 
