@@ -9,17 +9,22 @@
  *
  * Fluxo (validado manualmente ao vivo em 27/08/2026, placa BDP-1G46 / O.S. 90493):
  *   1. Login no painel Ouro Safra (app.ourosafra.com.br) e no GRM (grmserver.com.br).
- *   2. No Ouro Safra, lista as placas em "Aguardando Classificação".
- *   3. Para cada placa, procura a correspondência no GRM em
+ *   2. No Ouro Safra, lista as placas em "Carregando" e, pra cada uma, abre o
+ *      modal "Classificação - Agendamento #ID" e clica Salvar sem alterar
+ *      nada — os campos (Empresa/Local/Classificadora/Produto) já vêm certos
+ *      do próprio agendamento (confirmado com a usuária, 28/08/2026). Isso
+ *      promove a placa pra "Aguardando Classificação".
+ *   3. Lista as placas em "Aguardando Classificação" (inclui as recém-promovidas).
+ *   4. Para cada placa, procura a correspondência no GRM em
  *      report/classification/loads, filtrando Cliente Nacional =
  *      OURO SAFRA INDUSTRIA E COMERCIO LTDA + Placa. Sem correspondência: pula
  *      (tenta de novo na próxima execução).
- *   4. Com a correspondência, preenche os 3 itens de classificação da Ouro
+ *   5. Com a correspondência, preenche os 3 itens de classificação da Ouro
  *      Safra (Impureza = Matérias E. e Imp., Umidade = Umidade, Avariados =
  *      Avariado Total) com os valores do GRM.
- *   5. No GRM, abre a O.S. correspondente, localiza a carga da placa na lista
+ *   6. No GRM, abre a O.S. correspondente, localiza a carga da placa na lista
  *      "Cargas" e baixa o laudo (PDF).
- *   6. Volta no Ouro Safra e anexa o laudo (Upload Laudo) + salva.
+ *   7. Volta no Ouro Safra e anexa o laudo (Upload Laudo) + salva.
  *
  * ATENÇÃO — nível de confiança dos seletores usados (atualizado 28/08/2026):
  *   - Login GRM, formatação BR de percentual (vírgula): reaproveitados de
@@ -238,7 +243,7 @@ async function clickNthButtonInRow(row, index) {
 // Ouro Safra — lista de agendamentos pendentes de classificação
 // ---------------------------------------------------------------------------
 
-async function listarAgendamentosPendentes(page) {
+async function listarAgendamentosPorCard(page, label) {
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2000);
   // Os cards do painel (Carregando / Aguardando Classificação / Aguardando
@@ -249,21 +254,29 @@ async function listarAgendamentosPendentes(page) {
     if (!card) return false;
     card.click();
     return true;
-  }, 'Aguardando Classificação');
+  }, label);
   if (!cardClicado) {
-    log('INFO', 'Card "Aguardando Classificação" não existe agora (0 placas pendentes).');
+    log('INFO', `Card "${label}" não existe agora (0 placas).`);
     return [];
   }
   await wait(1500);
   const agendamentos = await page.evaluate(() => {
-    const table = document.querySelector('table');
+    // A página tem vários <table> ao mesmo tempo (calendário dos campos de
+    // data, grid interno do dropdown Empresa) — e a PRÓPRIA grid de dados
+    // tem tabelas de calendário ANINHADAS dentro do popup de filtro de cada
+    // coluna de data. querySelectorAll('thead th')/('tbody tr') descem
+    // recursivamente por essas tabelas aninhadas e misturam tudo (confirmado
+    // ao vivo 28/08 — cabeçalho vinha com 108 células em vez de 10). Por
+    // isso usa table.tHead/table.tBodies (API nativa da tabela, só pega os
+    // filhos diretos da PRÓPRIA tabela, não das aninhadas).
+    const table = Array.from(document.querySelectorAll('table')).find((t) => Array.from(t.tHead?.rows[0]?.cells || []).some((th) => th.textContent.trim().toLowerCase().includes('placa')));
     if (!table) return [];
-    const headerCells = Array.from(table.querySelectorAll('thead th, thead td')).map((th) => th.textContent.trim().toLowerCase());
+    const headerCells = Array.from(table.tHead.rows[0].cells).map((th) => th.textContent.trim().toLowerCase());
     const idxPlaca = headerCells.findIndex((h) => h.includes('placa'));
-    const idxId = headerCells.findIndex((h) => h === 'id');
-    return Array.from(table.querySelectorAll('tbody tr'))
+    const idxId = headerCells.findIndex((h) => h.startsWith('id'));
+    return Array.from(table.tBodies[0]?.rows || [])
       .map((tr, rowIndex) => {
-        const cells = Array.from(tr.querySelectorAll('td'));
+        const cells = Array.from(tr.cells);
         return {
           rowIndex,
           placa: idxPlaca >= 0 ? (cells[idxPlaca]?.textContent || '').trim() : null,
@@ -277,10 +290,21 @@ async function listarAgendamentosPendentes(page) {
   return agendamentos.map((a) => ({ ...a, placa: normalizePlaca(a.placa) }));
 }
 
+function listarAgendamentosPendentes(page) {
+  return listarAgendamentosPorCard(page, 'Aguardando Classificação');
+}
+
+function listarAgendamentosCarregando(page) {
+  return listarAgendamentosPorCard(page, 'Carregando');
+}
+
 async function abrirAgendamento(page, rowIndex) {
   await page.evaluate((rowIndex) => {
-    const table = document.querySelector('table');
-    const row = table.querySelectorAll('tbody tr')[rowIndex];
+    // Mesmo cuidado de listarAgendamentosPorCard: usa tHead/tBodies (API
+    // nativa) em vez de querySelectorAll, que desceria pelas tabelas de
+    // calendário aninhadas nos popups de filtro de cada coluna.
+    const table = Array.from(document.querySelectorAll('table')).find((t) => Array.from(t.tHead?.rows[0]?.cells || []).some((th) => th.textContent.trim().toLowerCase().includes('placa')));
+    const row = table?.tBodies[0]?.rows[rowIndex];
     const btn = row?.querySelector('td button, td a');
     if (!btn) throw new Error('Botão de ação não encontrado na linha');
     btn.click();
@@ -290,6 +314,19 @@ async function abrirAgendamento(page, rowIndex) {
     { timeout: 15000 }
   );
   await wait(500);
+}
+
+// "Carregando" → "Aguardando Classificação": o modal "Classificação -
+// Agendamento #ID" já vem com Empresa/Local/Classificadora/Produto
+// preenchidos pelo próprio agendamento — confirmado com a usuária que esses
+// campos sempre vêm certos e só precisam ser salvos como estão (28/08/2026).
+// Só depois de salvar essa confirmação é que a tabela de itens de
+// classificação e o Upload Laudo ficam disponíveis (fluxo já tratado por
+// preencherItensClassificacao/anexarLaudo).
+async function promoverParaClassificacao(page, rowIndex) {
+  await abrirAgendamento(page, rowIndex);
+  await clickButtonByText(page, 'Salvar', { exact: true });
+  await wait(1500);
 }
 
 async function preencherItensClassificacao(page, valores) {
@@ -519,6 +556,20 @@ async function registrarExecucao(registro) {
   }
 }
 
+async function promoverPlaca(pageOuroSafra, agendamento) {
+  const inicio = Date.now();
+  try {
+    if (DRY_RUN) {
+      log('INFO', `[DRY-RUN] ${agendamento.placa} (agendamento ${agendamento.id}) seria promovida de Carregando para Aguardando Classificação — nada foi salvo.`);
+      return;
+    }
+    await promoverParaClassificacao(pageOuroSafra, agendamento.rowIndex);
+    log('SUCCESS', `${agendamento.placa} (agendamento ${agendamento.id}) promovida de Carregando para Aguardando Classificação (${Date.now() - inicio}ms)`);
+  } catch (err) {
+    log('ERROR', `${agendamento.placa} (agendamento ${agendamento.id}): falha ao promover de Carregando — ${String(err.message || err).slice(0, 500)}`);
+  }
+}
+
 async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
   const inicio = Date.now();
   const registro = {
@@ -593,6 +644,17 @@ async function main() {
     const pageGRM = await browser.newPage();
     if (HEADLESS) await pageGRM.setViewport({ width: 1440, height: 900 });
     await loginGRM(pageGRM);
+
+    const carregando = await listarAgendamentosCarregando(pageOuroSafra);
+    log('INFO', `${carregando.length} placa(s) em "Carregando" aguardando confirmação`);
+
+    for (const agendamento of carregando) {
+      // relista a cada iteração pelo mesmo motivo do loop de classificação abaixo.
+      const listaAtual = await listarAgendamentosCarregando(pageOuroSafra);
+      const atual = listaAtual.find((a) => a.id === agendamento.id);
+      if (!atual) continue;
+      await promoverPlaca(pageOuroSafra, atual);
+    }
 
     const pendentes = await listarAgendamentosPendentes(pageOuroSafra);
     log('INFO', `${pendentes.length} placa(s) aguardando classificação`);
