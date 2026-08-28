@@ -3,13 +3,13 @@ import {
   loadColaboradoresRegional,
   loadCruzamentoTipoContrato,
   tipoContratoLetra,
-} from './programacao-equipe.js?v=20260807-papel-os1';
+} from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
 } from './programacao-despesas.js?v=20260810-agrupar-hoteis';
-import { loadCustos } from './programacao-equipe.js?v=20260807-papel-os1';
+import { loadCustos } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 
 function normalizeText(value) {
   return String(value ?? '')
