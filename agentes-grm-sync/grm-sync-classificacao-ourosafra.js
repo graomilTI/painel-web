@@ -126,6 +126,17 @@ function parseBrNumber(text) {
   return Number.isFinite(n) ? n : null;
 }
 
+// A Ouro Safra normaliza a placa sem hífen (ex.: "EOE5D72"), enquanto o GRM
+// usa o formato com hífen na posição do padrão Mercosul/antigo (ex.:
+// "EOE-5D72", confirmado ao vivo com BDP-1G46 — ver nota no topo do
+// arquivo). Reformata pro padrão com hífen assim que a placa é lida da
+// Ouro Safra, pra manter o mesmo valor daqui em diante (busca no GRM e
+// casamento de linha na lista de Cargas).
+function normalizePlaca(value) {
+  const clean = String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return clean.length === 7 ? `${clean.slice(0, 3)}-${clean.slice(3)}` : clean;
+}
+
 async function clearAndType(page, selector, value) {
   await page.waitForSelector(selector, { timeout: 30000 });
   await page.focus(selector);
@@ -244,7 +255,7 @@ async function listarAgendamentosPendentes(page) {
     return [];
   }
   await wait(1500);
-  return page.evaluate(() => {
+  const agendamentos = await page.evaluate(() => {
     const table = document.querySelector('table');
     if (!table) return [];
     const headerCells = Array.from(table.querySelectorAll('thead th, thead td')).map((th) => th.textContent.trim().toLowerCase());
@@ -261,6 +272,9 @@ async function listarAgendamentosPendentes(page) {
       })
       .filter((r) => r.placa);
   });
+  // A Ouro Safra mostra a placa sem hífen (ex.: "EOE5D72") — reformata pro
+  // padrão com hífen (ver normalizePlaca) antes de usar em qualquer busca no GRM.
+  return agendamentos.map((a) => ({ ...a, placa: normalizePlaca(a.placa) }));
 }
 
 async function abrirAgendamento(page, rowIndex) {
@@ -453,11 +467,20 @@ async function baixarLaudoDaOS(page, browser, numeroOS, placa) {
     groups.forEach((g) => g.click());
   }, placa);
   await wait(1000);
-  await page.evaluate((placa) => {
-    const row = Array.from(document.querySelectorAll('table tr')).find((r) => (r.textContent || '').toUpperCase().includes(placa.toUpperCase()));
+  const placaMarcada = await page.evaluate((placa) => {
+    // Compara ignorando hífen dos dois lados — a Ouro Safra normaliza sem
+    // hífen e não dá pra garantir que a lista de Cargas do GRM sempre mostre
+    // a placa formatada do mesmo jeito que o restante do GRM.
+    const alvo = placa.toUpperCase().replace(/-/g, '');
+    const row = Array.from(document.querySelectorAll('table tr')).find((r) => (r.textContent || '').toUpperCase().replace(/-/g, '').includes(alvo));
     const checkbox = row?.querySelector('input[type=checkbox]');
-    checkbox?.click();
+    if (!checkbox) return false;
+    checkbox.click();
+    return true;
   }, placa);
+  if (!placaMarcada) {
+    throw new Error(`Placa ${placa} não encontrada na lista de Cargas da O.S. ${numeroOS} — laudo não baixado.`);
+  }
   await wait(500);
 
   const newTargetPromise = browser.waitForTarget((t) => t.url().startsWith('blob:'), { timeout: 20000 });
