@@ -359,88 +359,98 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     return data || null;
   }
 
-  async function abrirModalDisponivel(colab) {
-    modalEl.innerHTML = '<div class="pso-modal-card"><h3>Carregando…</h3><p class="muted">Consultando a estadia do dia anterior.</p></div>';
+  // Antes o modal só aparecia depois de esperar buscarEstadiaAnterior (2
+  // consultas sequenciais ao banco) — na prática dava a impressão de que o
+  // botão Disponível "não respondia na hora", precisando de 2-3 cliques
+  // (reportado pela usuária, 2026-08-28). Como a estadia anterior hoje é só
+  // informativa (não bloqueia mais nada, ver commit anterior), o modal
+  // renderiza na hora e a consulta roda em paralelo, preenchendo o aviso
+  // "Dia anterior: ..." só quando/se voltar.
+  function abrirModalDisponivel(colab) {
+    let estadiaAnterior = null;
+    modalEl.innerHTML = `<div class="pso-modal-card">
+      <h3>Liberar despesas de ${esc(colab.nome)}</h3>
+      <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia disponível.</p>
+      <div class="pso-disp-origin" id="psoDispOrigin" hidden></div>
+      <div class="pso-disp-options">
+        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="cafe"> Café</label>
+        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="almoco"> Almoço</label>
+        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="janta"> Janta</label>
+        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>
+        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="extras"> Extras</label>
+      </div>
+      <div class="pso-disp-extra-fields" id="psoDispExtraFields" hidden>
+        <select id="psoDispExtraTipo">${TIPOS_EXTRA_DISPONIVEL.map((tipo) => `<option value="${esc(tipo)}">${esc(tipo)}</option>`).join('')}</select>
+        <input id="psoDispExtraDesc" placeholder="Descrição do extra">
+        <input id="psoDispExtraValor" inputmode="decimal" placeholder="R$ 0,00">
+      </div>
+      <div class="pso-modal-actions">
+        <button type="button" class="btn btn-primary" id="psoDispSalvar">Liberar e sincronizar</button>
+        <button type="button" class="btn btn-secondary" id="psoDispCancelar">Cancelar</button>
+      </div>
+      <span class="pso-modal-fb" id="psoDispFb"></span>
+    </div>`;
     modalEl.classList.add('open');
-    try {
-      const estadiaAnterior = await buscarEstadiaAnterior(colab);
-      modalEl.innerHTML = `<div class="pso-modal-card">
-        <h3>Liberar despesas de ${esc(colab.nome)}</h3>
-        <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia disponível.</p>
-        ${estadiaAnterior ? `<div class="pso-disp-origin">Dia anterior: <strong>${esc(estadiaAnterior.tipo_estadia)}</strong>${estadiaAnterior.alojamento_nome ? ` · ${esc(estadiaAnterior.alojamento_nome)}` : ''}${estadiaAnterior.cidade ? ` · ${esc(estadiaAnterior.cidade)}` : ''}</div>` : ''}
-        <div class="pso-disp-options">
-          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="cafe"> Café</label>
-          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="almoco"> Almoço</label>
-          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="janta"> Janta</label>
-          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>
-          <label class="pso-disp-option"><input type="checkbox" data-disp-ref="extras"> Extras</label>
-        </div>
-        <div class="pso-disp-extra-fields" id="psoDispExtraFields" hidden>
-          <select id="psoDispExtraTipo">${TIPOS_EXTRA_DISPONIVEL.map((tipo) => `<option value="${esc(tipo)}">${esc(tipo)}</option>`).join('')}</select>
-          <input id="psoDispExtraDesc" placeholder="Descrição do extra">
-          <input id="psoDispExtraValor" inputmode="decimal" placeholder="R$ 0,00">
-        </div>
-        <div class="pso-modal-actions">
-          <button type="button" class="btn btn-primary" id="psoDispSalvar">Liberar e sincronizar</button>
-          <button type="button" class="btn btn-secondary" id="psoDispCancelar">Cancelar</button>
-        </div>
-        <span class="pso-modal-fb" id="psoDispFb"></span>
-      </div>`;
-      const extrasCheck = modalEl.querySelector('[data-disp-ref="extras"]');
-      extrasCheck.onchange = () => { modalEl.querySelector('#psoDispExtraFields').hidden = !extrasCheck.checked; };
-      modalEl.querySelector('#psoDispCancelar').onclick = fecharModal;
-      modalEl.querySelector('#psoDispSalvar').onclick = async () => {
-        const fb = modalEl.querySelector('#psoDispFb');
-        const btn = modalEl.querySelector('#psoDispSalvar');
-        const selected = (key) => !!modalEl.querySelector(`[data-disp-ref="${key}"]`)?.checked;
-        if (!['cafe', 'almoco', 'janta', 'pernoite', 'extras'].some(selected)) {
-          fb.textContent = 'Selecione ao menos uma despesa.'; fb.classList.add('err'); return;
+
+    buscarEstadiaAnterior(colab).then((resultado) => {
+      estadiaAnterior = resultado;
+      const origin = modalEl.querySelector('#psoDispOrigin');
+      if (!resultado || !origin) return;
+      origin.hidden = false;
+      origin.innerHTML = `Dia anterior: <strong>${esc(resultado.tipo_estadia)}</strong>${resultado.alojamento_nome ? ` · ${esc(resultado.alojamento_nome)}` : ''}${resultado.cidade ? ` · ${esc(resultado.cidade)}` : ''}`;
+    }).catch((error) => console.warn('[sem-os] estadia do dia anterior:', error));
+
+    const extrasCheck = modalEl.querySelector('[data-disp-ref="extras"]');
+    extrasCheck.onchange = () => { modalEl.querySelector('#psoDispExtraFields').hidden = !extrasCheck.checked; };
+    modalEl.querySelector('#psoDispCancelar').onclick = fecharModal;
+    modalEl.querySelector('#psoDispSalvar').onclick = async () => {
+      const fb = modalEl.querySelector('#psoDispFb');
+      const btn = modalEl.querySelector('#psoDispSalvar');
+      const selected = (key) => !!modalEl.querySelector(`[data-disp-ref="${key}"]`)?.checked;
+      if (!['cafe', 'almoco', 'janta', 'pernoite', 'extras'].some(selected)) {
+        fb.textContent = 'Selecione ao menos uma despesa.'; fb.classList.add('err'); return;
+      }
+      const programacaoId = programacaoIdParaColab(colab);
+      const dataReferencia = options.dataReferencia || todayIso();
+      const extraDescricao = modalEl.querySelector('#psoDispExtraDesc')?.value.trim() || '';
+      if (selected('extras') && !extraDescricao) {
+        fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
+      }
+      btn.disabled = true; fb.textContent = 'Salvando e enviando para sincronização…'; fb.classList.remove('err');
+      try {
+        const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
+        const writes = [
+          supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: estadiaAnterior ? `Disponível após ${estadiaAnterior.tipo_estadia}` : 'Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
+          supabase.from('programacao_alimentacao').upsert({ ...base, cafe: selected('cafe'), almoco: selected('almoco'), janta: selected('janta'), observacao: 'Liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
+        ];
+        if (selected('pernoite')) writes.push(supabase.from('programacao_estadia').upsert({ ...base, tipo_estadia: 'PERNOITE', tem_estadia: true, checkin: dataReferencia, checkout: addDaysIso(dataReferencia, 1), observacao: 'Pernoite liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }));
+        const results = await Promise.all(writes);
+        const writeError = results.find((result) => result.error)?.error;
+        if (writeError) throw writeError;
+        if (!selected('pernoite')) {
+          const { error: estadiaDeleteError } = await supabase.from('programacao_estadia')
+            .delete()
+            .eq('programacao_id', programacaoId)
+            .eq('colaborador_id', colab.colaboradorId)
+            .eq('observacao', 'Pernoite liberado no fluxo Disponível');
+          if (estadiaDeleteError) throw estadiaDeleteError;
         }
-        const programacaoId = programacaoIdParaColab(colab);
-        const dataReferencia = options.dataReferencia || todayIso();
-        const extraDescricao = modalEl.querySelector('#psoDispExtraDesc')?.value.trim() || '';
-        if (selected('extras') && !extraDescricao) {
-          fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
+        const { error: extraDeleteError } = await supabase.from('programacao_extras').delete().eq('programacao_id', programacaoId).eq('colaborador_id', colab.colaboradorId).eq('observacao', 'Liberado no fluxo Disponível');
+        if (extraDeleteError) throw extraDeleteError;
+        if (selected('extras')) {
+          const valor = Number(String(modalEl.querySelector('#psoDispExtraValor')?.value || '0').replace(',', '.')) || 0;
+          const extraTipoSelecionado = modalEl.querySelector('#psoDispExtraTipo').value;
+          const combustivel = normalizeText(extraTipoSelecionado) === 'COMBUSTIVEL';
+          const { error: extraError } = await supabase.from('programacao_extras').insert({ ...base, tipo_despesa: combustivel ? 'OUTROS' : extraTipoSelecionado, descricao: combustivel ? `Combustível — ${extraDescricao}` : extraDescricao, valor, observacao: 'Liberado no fluxo Disponível' });
+          if (extraError) throw extraError;
         }
-        btn.disabled = true; fb.textContent = 'Salvando e enviando para sincronização…'; fb.classList.remove('err');
-        try {
-          const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
-          const writes = [
-            supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: estadiaAnterior ? `Disponível após ${estadiaAnterior.tipo_estadia}` : 'Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
-            supabase.from('programacao_alimentacao').upsert({ ...base, cafe: selected('cafe'), almoco: selected('almoco'), janta: selected('janta'), observacao: 'Liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
-          ];
-          if (selected('pernoite')) writes.push(supabase.from('programacao_estadia').upsert({ ...base, tipo_estadia: 'PERNOITE', tem_estadia: true, checkin: dataReferencia, checkout: addDaysIso(dataReferencia, 1), observacao: 'Pernoite liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }));
-          const results = await Promise.all(writes);
-          const writeError = results.find((result) => result.error)?.error;
-          if (writeError) throw writeError;
-          if (!selected('pernoite')) {
-            const { error: estadiaDeleteError } = await supabase.from('programacao_estadia')
-              .delete()
-              .eq('programacao_id', programacaoId)
-              .eq('colaborador_id', colab.colaboradorId)
-              .eq('observacao', 'Pernoite liberado no fluxo Disponível');
-            if (estadiaDeleteError) throw estadiaDeleteError;
-          }
-          const { error: extraDeleteError } = await supabase.from('programacao_extras').delete().eq('programacao_id', programacaoId).eq('colaborador_id', colab.colaboradorId).eq('observacao', 'Liberado no fluxo Disponível');
-          if (extraDeleteError) throw extraDeleteError;
-          if (selected('extras')) {
-            const valor = Number(String(modalEl.querySelector('#psoDispExtraValor')?.value || '0').replace(',', '.')) || 0;
-            const extraTipoSelecionado = modalEl.querySelector('#psoDispExtraTipo').value;
-            const combustivel = normalizeText(extraTipoSelecionado) === 'COMBUSTIVEL';
-            const { error: extraError } = await supabase.from('programacao_extras').insert({ ...base, tipo_despesa: combustivel ? 'OUTROS' : extraTipoSelecionado, descricao: combustivel ? `Combustível — ${extraDescricao}` : extraDescricao, valor, observacao: 'Liberado no fluxo Disponível' });
-            if (extraError) throw extraError;
-          }
-          await window.__publicarGrmLiberacaoDespesas?.('SALVAR_MANUAL');
-          fecharModal();
-          await carregar({ silent: true });
-        } catch (error) {
-          fb.textContent = error.message || 'Não foi possível liberar as despesas.'; fb.classList.add('err'); btn.disabled = false;
-        }
-      };
-    } catch (error) {
-      modalEl.innerHTML = `<div class="pso-modal-card"><h3>Falha ao validar</h3><p class="muted">${esc(error.message || 'Não foi possível consultar a estadia anterior.')}</p><div class="pso-modal-actions"><button type="button" class="btn btn-secondary" id="psoDispFechar">Fechar</button></div></div>`;
-      modalEl.querySelector('#psoDispFechar').onclick = fecharModal;
-    }
+        await window.__publicarGrmLiberacaoDespesas?.('SALVAR_MANUAL');
+        fecharModal();
+        await carregar({ silent: true });
+      } catch (error) {
+        fb.textContent = error.message || 'Não foi possível liberar as despesas.'; fb.classList.add('err'); btn.disabled = false;
+      }
+    };
   }
 
   async function carregar({ silent = false } = {}) {
