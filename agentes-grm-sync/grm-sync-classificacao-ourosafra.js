@@ -9,22 +9,26 @@
  *
  * Fluxo (validado manualmente ao vivo em 27/08/2026, placa BDP-1G46 / O.S. 90493):
  *   1. Login no painel Ouro Safra (app.ourosafra.com.br) e no GRM (grmserver.com.br).
- *   2. No Ouro Safra, lista as placas em "Carregando" e, pra cada uma, abre o
- *      modal "Classificação - Agendamento #ID" e clica Salvar sem alterar
- *      nada — os campos (Empresa/Local/Classificadora/Produto) já vêm certos
- *      do próprio agendamento (confirmado com a usuária, 28/08/2026). Isso
- *      promove a placa pra "Aguardando Classificação".
- *   3. Lista as placas em "Aguardando Classificação" (inclui as recém-promovidas).
- *   4. Para cada placa, procura a correspondência no GRM em
+ *   2. No Ouro Safra, lista as placas em "Carregando" E em "Aguardando
+ *      Classificação" — as duas são tratadas igual: a janela "Classificação -
+ *      Agendamento #ID" é a MESMA página rolável nos dois casos, com a
+ *      tabela de itens (Impureza/Umidade/Avariados) sempre presente mais
+ *      abaixo, não é um modal pequeno. NÃO existe passo separado de "abrir e
+ *      salvar vazio" pra promover Carregando → Aguardando Classificação — só
+ *      dá pra mexer numa placa (Carregando ou não) quando o laudo já existe
+ *      no GRM pra preencher os itens (confirmado com a usuária, 28/08/2026;
+ *      uma tentativa anterior de "confirmar vazio" clicava Salvar sem
+ *      preencher nada e não mudava status nenhum — descartada).
+ *   3. Para cada placa (das duas listas), procura a correspondência no GRM em
  *      report/classification/loads, filtrando Cliente Nacional =
  *      OURO SAFRA INDUSTRIA E COMERCIO LTDA + Placa. Sem correspondência: pula
  *      (tenta de novo na próxima execução).
- *   5. Com a correspondência, preenche os 3 itens de classificação da Ouro
+ *   4. Com a correspondência, preenche os 3 itens de classificação da Ouro
  *      Safra (Impureza = Matérias E. e Imp., Umidade = Umidade, Avariados =
  *      Avariado Total) com os valores do GRM.
- *   6. No GRM, abre a O.S. correspondente, localiza a carga da placa na lista
+ *   5. No GRM, abre a O.S. correspondente, localiza a carga da placa na lista
  *      "Cargas" e baixa o laudo (PDF).
- *   7. Volta no Ouro Safra e anexa o laudo (Upload Laudo) + salva.
+ *   6. Volta no Ouro Safra e anexa o laudo (Upload Laudo) + salva.
  *
  * ATENÇÃO — nível de confiança dos seletores usados (atualizado 28/08/2026):
  *   - Login GRM, formatação BR de percentual (vírgula): reaproveitados de
@@ -329,19 +333,6 @@ async function abrirAgendamento(page, rowIndex) {
   await wait(500);
 }
 
-// "Carregando" → "Aguardando Classificação": o modal "Classificação -
-// Agendamento #ID" já vem com Empresa/Local/Classificadora/Produto
-// preenchidos pelo próprio agendamento — confirmado com a usuária que esses
-// campos sempre vêm certos e só precisam ser salvos como estão (28/08/2026).
-// Só depois de salvar essa confirmação é que a tabela de itens de
-// classificação e o Upload Laudo ficam disponíveis (fluxo já tratado por
-// preencherItensClassificacao/anexarLaudo).
-async function promoverParaClassificacao(page, rowIndex) {
-  await abrirAgendamento(page, rowIndex);
-  await clickButtonByText(page, 'Salvar', { exact: true });
-  await wait(1500);
-}
-
 async function preencherItensClassificacao(page, valores) {
   // valores: { impureza, umidade, avariados } (números, ex.: 0.80)
   const itens = [
@@ -572,20 +563,6 @@ async function registrarExecucao(registro) {
   }
 }
 
-async function promoverPlaca(pageOuroSafra, agendamento) {
-  const inicio = Date.now();
-  try {
-    if (DRY_RUN) {
-      log('INFO', `[DRY-RUN] ${agendamento.placa} (agendamento ${agendamento.id}) seria promovida de Carregando para Aguardando Classificação — nada foi salvo.`);
-      return;
-    }
-    await promoverParaClassificacao(pageOuroSafra, agendamento.rowIndex);
-    log('SUCCESS', `${agendamento.placa} (agendamento ${agendamento.id}) promovida de Carregando para Aguardando Classificação (${Date.now() - inicio}ms)`);
-  } catch (err) {
-    log('ERROR', `${agendamento.placa} (agendamento ${agendamento.id}): falha ao promover de Carregando — ${String(err.message || err).slice(0, 500)}`);
-  }
-}
-
 async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
   const inicio = Date.now();
   const registro = {
@@ -597,6 +574,7 @@ async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
     const grm = await buscarClassificacaoGRM(pageGRM, agendamento.placa);
     if (!grm || !grm.os) {
       log('INFO', `${agendamento.placa}: sem correspondência no GRM ainda, pulando.`);
+      registro.status = 'sem-correspondencia';
       return;
     }
 
@@ -661,24 +639,24 @@ async function main() {
     if (HEADLESS) await pageGRM.setViewport({ width: 1440, height: 900 });
     await loginGRM(pageGRM);
 
+    // "Carregando" e "Aguardando Classificação" são processados igual: a
+    // janela do agendamento tem a MESMA tabela de itens (Impureza/Umidade/
+    // Avariados) nos dois casos, só que mais abaixo na página (confirmado ao
+    // vivo 28/08 — não é um passo separado de "confirmar vazio", a
+    // classificação só é preenchida quando o laudo já existe no GRM).
     const carregando = await listarAgendamentosCarregando(pageOuroSafra);
-    log('INFO', `${carregando.length} placa(s) em "Carregando" aguardando confirmação`);
-
-    for (const agendamento of carregando) {
-      // relista a cada iteração pelo mesmo motivo do loop de classificação abaixo.
-      const listaAtual = await listarAgendamentosCarregando(pageOuroSafra);
-      const atual = listaAtual.find((a) => a.id === agendamento.id);
-      if (!atual) continue;
-      await promoverPlaca(pageOuroSafra, atual);
-    }
-
     const pendentes = await listarAgendamentosPendentes(pageOuroSafra);
-    log('INFO', `${pendentes.length} placa(s) aguardando classificação`);
+    log('INFO', `${carregando.length} placa(s) em "Carregando", ${pendentes.length} em "Aguardando Classificação"`);
 
-    for (const agendamento of pendentes) {
+    const fila = [
+      ...carregando.map((a) => ({ ...a, card: 'Carregando' })),
+      ...pendentes.map((a) => ({ ...a, card: 'Aguardando Classificação' })),
+    ];
+
+    for (const agendamento of fila) {
       // relista a cada iteração: abrir/fechar o modal e navegar re-renderiza a tabela
       // e invalida rowIndex/handles anteriores.
-      const listaAtual = await listarAgendamentosPendentes(pageOuroSafra);
+      const listaAtual = await listarAgendamentosPorCard(pageOuroSafra, agendamento.card);
       const atual = listaAtual.find((a) => a.id === agendamento.id);
       if (!atual) continue;
       await processarPlaca(pageOuroSafra, pageGRM, browser, atual);
