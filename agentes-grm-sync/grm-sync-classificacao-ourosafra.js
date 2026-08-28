@@ -205,18 +205,23 @@ async function loginOuroSafra(page) {
 // ---------------------------------------------------------------------------
 
 async function clickButtonByText(page, text, { exact = false, timeout = 15000 } = {}) {
+  // Os botões do Radzen colocam a ligature do ícone (Material Symbols, ex.:
+  // "save") ANTES do label visível — textContent nunca é só "Salvar", é
+  // "save\n...\nSalvar" (confirmado ao vivo 28/08, causava timeout em todo
+  // clickButtonByText(..., {exact:true})). Por isso "exact" compara o fim do
+  // texto normalizado (label precedido de espaço), não igualdade estrita.
   await page.waitForFunction(
     (text, exact) => Array.from(document.querySelectorAll('button')).some((b) => {
-      const t = (b.textContent || '').trim();
-      return exact ? t === text : t.includes(text);
+      const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+      return exact ? (t === text || t.endsWith(` ${text}`)) : t.includes(text);
     }),
     { timeout },
     text,
     exact
   );
   const handle = await page.evaluateHandle((text, exact) => Array.from(document.querySelectorAll('button')).find((b) => {
-    const t = (b.textContent || '').trim();
-    return exact ? t === text : t.includes(text);
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+    return exact ? (t === text || t.endsWith(` ${text}`)) : t.includes(text);
   }), text, exact);
   const el = handle.asElement();
   if (!el) throw new Error(`Botão "${text}" não encontrado`);
@@ -362,7 +367,10 @@ async function anexarLaudo(page, pdfPath) {
   ]);
   await fileChooser.accept([pdfPath]);
   await wait(2000);
-  const temSalvar = await page.evaluate(() => Array.from(document.querySelectorAll('button')).some((b) => (b.textContent || '').trim() === 'Salvar'));
+  const temSalvar = await page.evaluate(() => Array.from(document.querySelectorAll('button')).some((b) => {
+    const t = (b.textContent || '').replace(/\s+/g, ' ').trim();
+    return t === 'Salvar' || t.endsWith(' Salvar');
+  }));
   if (temSalvar) {
     await clickButtonByText(page, 'Salvar', { exact: true });
     await wait(1500);
