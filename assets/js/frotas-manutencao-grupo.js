@@ -61,7 +61,7 @@ export function renderContent(content, ctx) {
       <div class="frotas-hub-kicker">Frotas · Manutenção</div>
       <h1 class="frotas-hub-title">Manutenção</h1>
       <p class="frotas-hub-subtitle">Manutenção, troca de óleo e checklists dos veículos.</p>
-      ${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}
+      <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}</div>
       <p class="frotas-hub-tab-desc" id="frotasManutencaoTabDesc"></p>
       <div class="frotas-hub-tab-body" id="frotasManutencaoTabBody"></div>
     </section>`;
