@@ -294,7 +294,24 @@ async function definirItensPorPagina(page, valor) {
   return true;
 }
 
+// A Ouro Safra (ou o GRM, via as chamadas encadeadas) fica lenta com
+// frequência o bastante (confirmado ao vivo várias vezes 28/08) pra
+// estourar o timeout de protocolo do Puppeteer (~3min, "Runtime.
+// callFunctionOn timed out"). Quando isso acontece durante a LISTAGEM
+// (fora do try/catch por placa de processarPlaca), derrubava o job
+// inteiro com "Script saiu com código 1" mesmo sem nenhuma ação real ter
+// sido tentada. Encapsula pra tratar como "0 placas nesse ciclo" e deixar
+// o próximo ciclo do cron tentar de novo, em vez de crashar.
 async function listarAgendamentosPorCard(page, label) {
+  try {
+    return await listarAgendamentosPorCardInterno(page, label);
+  } catch (err) {
+    log('ERROR', `Falha ao listar "${label}" (provável lentidão externa) — tratando como 0 placas nesse ciclo: ${String(err.message || err).slice(0, 300)}`);
+    return [];
+  }
+}
+
+async function listarAgendamentosPorCardInterno(page, label) {
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
   // Um wait fixo de 2s às vezes não é suficiente pro painel de KPIs (cards)
   // terminar de renderizar via SignalR (Blazor Server) — o script concluía
