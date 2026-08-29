@@ -11,6 +11,16 @@ if (typeof document !== 'undefined' && !document.getElementById('frotasDashboard
   document.head.appendChild(link);
 }
 
+// Mesmo motivo do CSS acima: os 3 hubs de Frotas (Cadastros/Manutenção/Ocorrências)
+// e as janelas que eles abrem usam essa folha de estilo.
+if (typeof document !== 'undefined' && !document.getElementById('frotasHubStyles')) {
+  const link = document.createElement('link');
+  link.id = 'frotasHubStyles';
+  link.rel = 'stylesheet';
+  link.href = new URL('../css/frotas-hub.css?v=20260829a', import.meta.url).href;
+  document.head.appendChild(link);
+}
+
 function item(code, label, path, aliases = [], opts = {}) {
   return { code, label, path, aliases, ...opts };
 }
@@ -116,15 +126,22 @@ export const MENU_CONFIG = [
     grupo: "FROTAS",
     itens: [
       item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
-      item("frotas_excesso_velocidade", "Notificação", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"]),
-      item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"]),
-      item("frotas_motoristas", "Motoristas", "frotas-motoristas", ["FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_VEICULOS", "VEICULOS"]),
-      item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"]),
-      item("frotas_manutencao", "Manutenção", "frotas-manutencao", ["FROTAS_MANUTENCAO", "MANUTENCAO"]),
-      item("frotas_troca_oleo", "Troca de Óleo", "frotas-troca-oleo", ["FROTAS_TROCA_OLEO", "TROCA_OLEO"]),
-      item("frotas_checklists", "Checklists", "frotas-checklists", ["FROTAS_CHECKLISTS", "CHECKLISTS"]),
-      item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"]),
-      item("frotas_rastreadores", "Rastreadores", "frotas-rastreadores", ["FROTAS_RASTREADORES", "RASTREADORES"])
+      // Grupos visíveis na sidebar (janelas dentro de cada hub). Os itens
+      // individuais abaixo continuam existindo (rota e permissão válidas,
+      // usados pela navegação cruzada interna entre as telas antigas), só
+      // ficam ocultos da lista visível via `hidden: true`.
+      item("frotas_cadastros", "Cadastros", "frotas-cadastros", ["FROTAS_CADASTROS", "FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_RASTREADORES", "RASTREADORES"]),
+      item("frotas_manutencao_grupo", "Manutenção", "frotas-manutencao-grupo", ["FROTAS_MANUTENCAO_GRUPO", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
+      item("frotas_ocorrencias", "Ocorrências", "frotas-ocorrencias", ["FROTAS_OCORRENCIAS", "FROTAS_EXCESSO_VELOCIDADE", "EXCESSO_VELOCIDADE", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS"]),
+      item("frotas_excesso_velocidade", "Notificação", "frotas", ["FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE"], { hidden: true }),
+      item("frotas_veiculos", "Veículos", "frotas-veiculos", ["FROTAS_VEICULOS", "VEICULOS", "VEÍCULOS", "FROTA_VEICULOS"], { hidden: true }),
+      item("frotas_motoristas", "Motoristas", "frotas-motoristas", ["FROTAS_MOTORISTAS", "MOTORISTAS"], { hidden: true }),
+      item("frotas_multas", "Multas", "frotas-multas", ["MULTAS", "FROTAS_MULTAS"], { hidden: true }),
+      item("frotas_manutencao", "Manutenção", "frotas-manutencao", ["FROTAS_MANUTENCAO", "MANUTENCAO"], { hidden: true }),
+      item("frotas_troca_oleo", "Troca de Óleo", "frotas-troca-oleo", ["FROTAS_TROCA_OLEO", "TROCA_OLEO"], { hidden: true }),
+      item("frotas_checklists", "Checklists", "frotas-checklists", ["FROTAS_CHECKLISTS", "CHECKLISTS"], { hidden: true }),
+      item("frotas_historico", "Histórico", "frotas-historico", ["FROTAS_HISTORICO", "HISTORICO_FROTAS"], { hidden: true }),
+      item("frotas_rastreadores", "Rastreadores", "frotas-rastreadores", ["FROTAS_RASTREADORES", "RASTREADORES"], { hidden: true })
     ]
   },
 
