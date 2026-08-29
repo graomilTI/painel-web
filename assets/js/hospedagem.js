@@ -19,6 +19,14 @@ const state = {
   solicitacoes: [],
   solicitacoesStatus: 'idle', // idle | loading | loaded | error
   enviando: false,
+  alojamentos: [],
+  alojamentosStatus: 'idle', // idle | loading | loaded | error
+  ocupantesAtuais: [],
+  ocupantesHistorico: [],
+  hospAModo: 'atual', // atual | historico
+  hospAHistoricoCarregado: false,
+  buscaAlojamento: '',
+  alojEnviando: false,
 };
 
 function usuario() { return state.ctx?.user || {}; }
@@ -118,6 +126,246 @@ function renderMinhasSolicitacoes() {
       vazio: 'Você ainda não fez nenhuma solicitação de hospedagem.',
       minWidth: 860,
     })}`;
+}
+
+// ---------- "Alojamento" (informar colaborador alojado) ----------
+function alojamentoNaSupervisao(aloj) {
+  const sups = [...new Set([
+    ...(Array.isArray(aloj.supervisoes) ? aloj.supervisoes : []),
+    aloj.supervisao,
+  ].map(norm).filter(Boolean))];
+  return sups.some((s) => state.supervisoes.some((g) => s.includes(g) || g.includes(s)));
+}
+
+async function carregarAlojamentosRegional() {
+  state.alojamentosStatus = 'loading';
+  renderTabActive();
+  const { data, error } = await supabase
+    .from('hospedagem_alojamentos')
+    .select('id,nome,cidade,uf,status,supervisao,supervisoes')
+    .neq('status', 'INATIVO')
+    .order('cidade', { ascending: true })
+    .order('nome', { ascending: true });
+  if (error) {
+    console.warn('[hospedagem] alojamentos:', error);
+    state.alojamentosStatus = 'error';
+    renderTabActive();
+    return;
+  }
+  state.alojamentos = (data || []).filter(alojamentoNaSupervisao);
+  await carregarOcupantesAtuais();
+  state.alojamentosStatus = 'loaded';
+  renderTabActive();
+}
+
+function ocupanteEstaAtivo(row, hoje) {
+  if (String(row.tipo_estadia).toUpperCase() !== 'ALOJAMENTO') return false;
+  if (row.tem_estadia === false) return false;
+  if (!row.alojamento_id) return false;
+  const referencia = row.data_referencia || row.checkin || '';
+  const checkout = row.checkout || '';
+  return referencia <= hoje && (!checkout || checkout >= hoje);
+}
+
+function mapOcupanteRow(row, alojPorId) {
+  const aloj = alojPorId.get(String(row.alojamento_id));
+  return {
+    id: row.id,
+    nome: row.nome_colaborador || 'Colaborador',
+    checkin: row.checkin || row.data_referencia || null,
+    checkout: row.checkout || null,
+    alojamentoId: row.alojamento_id,
+    alojamentoNome: aloj?.nome || row.alojamento_nome || 'Alojamento',
+  };
+}
+
+async function carregarOcupantesAtuais() {
+  const ids = state.alojamentos.map((a) => a.id);
+  if (!ids.length) { state.ocupantesAtuais = []; return; }
+  const hoje = new Date().toISOString().slice(0, 10);
+  const colunas = 'id,nome_colaborador,alojamento_id,alojamento_nome,checkin,checkout,data_referencia,tipo_estadia,tem_estadia';
+  const [atual, legado] = await Promise.all([
+    supabase.from('programacao_estadia').select(colunas).eq('data_referencia', hoje).in('alojamento_id', ids),
+    supabase.from('programacao_estadia').select(colunas).is('data_referencia', null).in('alojamento_id', ids),
+  ]);
+  const alojPorId = new Map(state.alojamentos.map((a) => [String(a.id), a]));
+  const rows = [...(atual.data || []), ...(legado.data || [])].filter((row) => ocupanteEstaAtivo(row, hoje));
+  state.ocupantesAtuais = rows
+    .map((row) => mapOcupanteRow(row, alojPorId))
+    .sort((a, b) => a.alojamentoNome.localeCompare(b.alojamentoNome, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'));
+}
+
+const HOSP_A_HISTORICO_DIAS = 180;
+
+async function carregarHistoricoOcupantes() {
+  const ids = state.alojamentos.map((a) => a.id);
+  state.ocupantesHistorico = [];
+  state.hospAHistoricoCarregado = false;
+  if (!ids.length) { state.hospAHistoricoCarregado = true; return; }
+  const hoje = new Date().toISOString().slice(0, 10);
+  const desde = new Date(Date.now() - HOSP_A_HISTORICO_DIAS * 86400000).toISOString().slice(0, 10);
+  const colunas = 'id,nome_colaborador,alojamento_id,alojamento_nome,checkin,checkout,data_referencia,tipo_estadia,tem_estadia';
+  const [legado, snapshots] = await Promise.all([
+    supabase.from('programacao_estadia').select(colunas).is('data_referencia', null).in('alojamento_id', ids),
+    supabase.from('programacao_estadia').select(colunas).gte('data_referencia', desde).in('alojamento_id', ids),
+  ]);
+  const alojPorId = new Map(state.alojamentos.map((a) => [String(a.id), a]));
+  const rows = [...(legado.data || []), ...(snapshots.data || [])].filter((row) => {
+    if (String(row.tipo_estadia).toUpperCase() !== 'ALOJAMENTO') return false;
+    if (row.tem_estadia === false) return false;
+    return !!row.alojamento_id;
+  });
+  state.ocupantesHistorico = rows
+    .map((row) => {
+      const mapeado = mapOcupanteRow(row, alojPorId);
+      if (!mapeado.checkout && row.data_referencia && row.data_referencia < hoje) mapeado.checkout = row.data_referencia;
+      return mapeado;
+    })
+    .sort((a, b) => (b.checkin || '').localeCompare(a.checkin || ''));
+  state.hospAHistoricoCarregado = true;
+}
+
+function renderAlojamentoOpcoes() {
+  return `<option value="">Selecione o alojamento...</option>${state.alojamentos
+    .map((a) => `<option value="${esc(a.id)}">${esc(a.nome)}${a.cidade ? ` — ${esc(a.cidade)}/${esc(a.uf || '')}` : ''}</option>`)
+    .join('')}`;
+}
+
+function renderColaboradorOpcoes() {
+  const ordenados = [...state.colaboradoresEquipe].sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR'));
+  return `<option value="">Selecione o colaborador...</option>${ordenados
+    .map((c) => `<option value="${esc(colaboradorChave(c))}">${esc(c.nome)}</option>`)
+    .join('')}`;
+}
+
+function renderOcupantesTabela() {
+  const historico = state.hospAModo === 'historico';
+  if (historico && !state.hospAHistoricoCarregado) return loadingState('Carregando histórico...');
+  const origem = historico ? state.ocupantesHistorico : state.ocupantesAtuais;
+  const q = norm(state.buscaAlojamento);
+  const filtrados = !q ? origem : origem.filter((o) => norm(`${o.alojamentoNome} ${o.nome}`).includes(q));
+  const linhas = filtrados.map((o) => `
+    <tr>
+      <td>${esc(o.alojamentoNome)}</td>
+      <td>${esc(o.nome)}</td>
+      <td>${esc(brDate(o.checkin))}</td>
+      <td>${o.checkout ? esc(brDate(o.checkout)) : badge('Hospedado atualmente', 'ok')}</td>
+      <td>${o.checkout ? '' : `<button type="button" class="btn btn-secondary btn-sm" data-encerrar-estadia="${esc(o.id)}">Encerrar</button>`}</td>
+    </tr>`).join('');
+  return table({
+    colunas: [
+      { id: 'alojamento', label: 'Alojamento' },
+      { id: 'colaborador', label: 'Colaborador' },
+      { id: 'checkin', label: 'Entrada' },
+      { id: 'checkout', label: 'Saída' },
+      { id: 'acao', label: '' },
+    ],
+    linhasHtml: linhas,
+    vazio: !state.alojamentos.length
+      ? 'Nenhum alojamento cadastrado na sua regional ainda. Fale com o time de Hospedagem para vincular um alojamento à sua supervisão.'
+      : (historico ? 'Nenhuma entrada registrada nos últimos meses.' : 'Nenhum colaborador hospedado no momento.'),
+    minWidth: 720,
+  });
+}
+
+function renderAlojamento() {
+  if (state.alojamentosStatus === 'idle' || state.alojamentosStatus === 'loading') {
+    return loadingState('Carregando alojamentos da sua regional...');
+  }
+  if (state.alojamentosStatus === 'error') {
+    return errorState('Não foi possível carregar os alojamentos.', { retryId: 'hospARetry' });
+  }
+  return `
+    <div class="hosp-note">Informe aqui quem da sua equipe está hospedado em cada alojamento da sua regional. Isso não passa pela fila do administrativo — é atualizado na hora.</div>
+    <div class="hosp-aloj-add">
+      <div class="ds-field">
+        <label for="hospAAlojSelect">Alojamento *</label>
+        <select id="hospAAlojSelect">${renderAlojamentoOpcoes()}</select>
+      </div>
+      <div class="ds-field">
+        <label for="hospAColabSelect">Colaborador *</label>
+        <select id="hospAColabSelect">${renderColaboradorOpcoes()}</select>
+      </div>
+      <button class="btn btn-primary" type="button" id="hospAAddBtn" ${state.alojEnviando ? 'disabled' : ''}>${state.alojEnviando ? 'Adicionando...' : 'Adicionar'}</button>
+    </div>
+    <span class="hosp-feedback" id="hospAFeedback"></span>
+    <div class="hosp-aloj-toolbar">
+      <div class="hosp-aloj-modebar">
+        <button type="button" class="btn btn-secondary btn-sm ${state.hospAModo === 'atual' ? 'active' : ''}" data-hosp-a-modo="atual">Hospedados agora</button>
+        <button type="button" class="btn btn-secondary btn-sm ${state.hospAModo === 'historico' ? 'active' : ''}" data-hosp-a-modo="historico">Histórico</button>
+      </div>
+      <input id="hospABusca" type="text" placeholder="Buscar alojamento ou colaborador..." value="${esc(state.buscaAlojamento)}" />
+    </div>
+    <div id="hospAOcupantes">${renderOcupantesTabela()}</div>`;
+}
+
+function setAlojFeedback(msg, tipo = '') {
+  const el = document.getElementById('hospAFeedback');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.className = `hosp-feedback ${tipo}`.trim();
+}
+
+async function onAdicionarAlojamento() {
+  if (state.alojEnviando) return;
+  const alojId = document.getElementById('hospAAlojSelect').value;
+  const colabChave = document.getElementById('hospAColabSelect').value;
+  if (!alojId) { setAlojFeedback('Selecione o alojamento.', 'err'); return; }
+  if (!colabChave) { setAlojFeedback('Selecione o colaborador.', 'err'); return; }
+  const aloj = state.alojamentos.find((a) => String(a.id) === String(alojId));
+  const colaborador = state.colaboradoresEquipe.find((c) => colaboradorChave(c) === colabChave);
+  if (!aloj || !colaborador) { setAlojFeedback('Seleção inválida.', 'err'); return; }
+
+  state.alojEnviando = true;
+  setAlojFeedback('Adicionando...');
+  renderTabActive();
+
+  const cpf = colaborador.cpf ? String(colaborador.cpf).replace(/\D/g, '') : '';
+  const colaboradorId = cpf || norm(colaborador.nome) || colaborador.nome;
+  const hoje = new Date().toISOString().slice(0, 10);
+  const { error } = await supabase.from('programacao_estadia').insert({
+    colaborador_id: colaboradorId,
+    nome_colaborador: colaborador.nome,
+    tem_estadia: true,
+    tipo_estadia: 'ALOJAMENTO',
+    diarias: 1,
+    checkin: hoje,
+    checkout: null,
+    data_referencia: null,
+    alojamento_id: aloj.id,
+    alojamento_nome: aloj.nome,
+    cidade: aloj.cidade || null,
+    uf: aloj.uf || null,
+  });
+
+  state.alojEnviando = false;
+  if (error) {
+    console.warn('[hospedagem] adicionar alojamento:', error);
+    setAlojFeedback(error.message || 'Não foi possível adicionar.', 'err');
+    renderTabActive();
+    return;
+  }
+
+  toast(`${colaborador.nome} adicionado a ${aloj.nome}.`, 'ok');
+  state.hospAHistoricoCarregado = false;
+  await carregarOcupantesAtuais();
+  if (state.hospAModo === 'historico') await carregarHistoricoOcupantes();
+  renderTabActive();
+}
+
+async function onEncerrarEstadia(estadiaId) {
+  if (!window.confirm('Confirmar o encerramento desta estadia?')) return;
+  const ontem = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const { error } = await supabase.from('programacao_estadia').update({ checkout: ontem }).eq('id', estadiaId);
+  if (error) {
+    console.warn('[hospedagem] encerrar estadia:', error);
+    toast(error.message || 'Erro ao encerrar estadia.', 'err');
+    return;
+  }
+  state.hospAHistoricoCarregado = false;
+  await carregarOcupantesAtuais();
+  if (state.hospAModo === 'historico') await carregarHistoricoOcupantes();
+  renderTabActive();
 }
 
 // ---------- "Nova solicitação" ----------
@@ -232,7 +480,14 @@ function styles() {
     .hosp-feedback{font-weight:700;font-size:13px}
     .hosp-feedback.err{color:#fecaca}
     .hosp-feedback.ok{color:#86efac}
-    @media (max-width: 900px){ .hosp-form-grid{grid-template-columns:1fr 1fr} }
+    .hosp-aloj-add{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:10px}
+    .hosp-aloj-add .btn-primary{width:auto}
+    .hosp-aloj-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 10px}
+    .hosp-aloj-modebar{display:flex;gap:8px}
+    .hosp-aloj-modebar .btn.active{background:rgba(22,163,74,.18);border-color:rgba(22,163,74,.4)}
+    .hosp-aloj-toolbar input{flex:1 1 240px;min-width:180px}
+    .btn-sm{padding:5px 10px;font-size:12px;width:auto}
+    @media (max-width: 900px){ .hosp-form-grid{grid-template-columns:1fr 1fr} .hosp-aloj-add{grid-template-columns:1fr} }
     @media (max-width: 600px){ .hosp-form-grid{grid-template-columns:1fr} }
   </style>`;
 }
@@ -241,7 +496,9 @@ function styles() {
 function renderTabActive() {
   const body = document.getElementById('hospTabBody');
   if (!body) return;
-  body.innerHTML = state.tab === 'nova' ? renderNovaSolicitacao() : renderMinhasSolicitacoes();
+  if (state.tab === 'nova') body.innerHTML = renderNovaSolicitacao();
+  else if (state.tab === 'alojamento') body.innerHTML = renderAlojamento();
+  else body.innerHTML = renderMinhasSolicitacoes();
   wireTabEvents();
 }
 
@@ -262,9 +519,38 @@ function wireTabEvents() {
       state.selecionados.delete(btn.dataset.removeColab);
       atualizarColaboradorUI();
     });
+  } else if (state.tab === 'alojamento') {
+    document.getElementById('hospARetry')?.addEventListener('click', carregarAlojamentosRegional);
+    document.getElementById('hospAAddBtn')?.addEventListener('click', onAdicionarAlojamento);
+    document.getElementById('hospABusca')?.addEventListener('input', (e) => {
+      state.buscaAlojamento = e.target.value;
+      const wrap = document.getElementById('hospAOcupantes');
+      if (wrap) wrap.innerHTML = renderOcupantesTabela();
+    });
+    document.querySelectorAll('[data-hosp-a-modo]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const modo = btn.dataset.hospAModo;
+        if (modo === state.hospAModo) return;
+        state.hospAModo = modo;
+        if (modo === 'historico' && !state.hospAHistoricoCarregado) {
+          renderTabActive();
+          await carregarHistoricoOcupantes();
+        }
+        renderTabActive();
+      });
+    });
+    wireOcupantesEvents();
   } else {
     document.getElementById('hospRetryMinhas')?.addEventListener('click', carregarMinhasSolicitacoes);
   }
+}
+
+function wireOcupantesEvents() {
+  document.getElementById('hospAOcupantes')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-encerrar-estadia]');
+    if (!btn) return;
+    onEncerrarEstadia(btn.dataset.encerrarEstadia);
+  });
 }
 
 function wireColaboradorCheckboxes() {
@@ -386,6 +672,7 @@ function renderShell() {
         itens: [
           { id: 'nova', label: 'Nova solicitação' },
           { id: 'minhas', label: 'Minhas solicitações' },
+          { id: 'alojamento', label: 'Alojamento' },
         ],
         ativo: state.tab,
       })}
@@ -397,6 +684,7 @@ function renderShell() {
       state.tab = btn.dataset.dsTab;
       renderShell();
       if (state.tab === 'minhas' && state.solicitacoesStatus === 'idle') carregarMinhasSolicitacoes();
+      if (state.tab === 'alojamento' && state.alojamentosStatus === 'idle') carregarAlojamentosRegional();
     });
   });
 
