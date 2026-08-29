@@ -1,7 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { esc } from './core/ui.js';
-import { openFrotasWindow } from './modules/frotas-window.js';
+import { esc, tabs } from './core/ui.js';
 import { temAcessoFrota } from './modules/frotas-permissoes.js';
 
 const CARDS = [
@@ -60,32 +59,46 @@ const CARDS = [
   },
 ];
 
+const state = { tab: null };
+
+function montarTabAtiva(content, ctx, visiveis) {
+  const card = visiveis.find((c) => c.id === state.tab);
+  const desc = content.querySelector('#frotasCadastrosTabDesc');
+  const body = content.querySelector('#frotasCadastrosTabBody');
+  if (desc) desc.textContent = card?.descricao || '';
+  if (!body) return;
+  if (!card) { body.innerHTML = '<div class="frotas-window-placeholder">Nenhum item disponível.</div>'; return; }
+  body.innerHTML = '';
+  Promise.resolve(card.montar(body, ctx)).catch((error) => {
+    console.error('[frotas-cadastros] Falha ao montar aba:', error);
+    body.innerHTML = `<div class="frotas-window-placeholder">Erro ao carregar esta aba: ${esc(String(error?.message || error))}.</div>`;
+  });
+}
+
 export function renderContent(content, ctx) {
-  const cardsHtml = CARDS
-    .filter((card) => !card.aliases || temAcessoFrota(ctx, card.aliases))
-    .map((card) => `
-      <button class="frotas-hub-card" type="button" data-card="${esc(card.id)}">
-        ${card.badge ? `<span class="frotas-hub-card-badge">${esc(card.badge)}</span>` : ''}
-        <h3 class="frotas-hub-card-title">${esc(card.titulo)}</h3>
-        <p class="frotas-hub-card-desc">${esc(card.descricao)}</p>
-      </button>`)
-    .join('');
+  const visiveis = CARDS.filter((card) => !card.aliases || temAcessoFrota(ctx, card.aliases));
+  if (!visiveis.some((c) => c.id === state.tab)) state.tab = visiveis[0]?.id || null;
 
   content.innerHTML = `
     <section class="card mt-16">
       <div class="frotas-hub-kicker">Frotas · Cadastros</div>
       <h1 class="frotas-hub-title">Cadastros</h1>
       <p class="frotas-hub-subtitle">Motoristas, veículos, rastreadores e o termo de utilização de veículos.</p>
-      <div class="frotas-hub-grid">${cardsHtml}</div>
+      ${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo, badge: c.badge })), ativo: state.tab })}
+      <p class="frotas-hub-tab-desc" id="frotasCadastrosTabDesc"></p>
+      <div class="frotas-hub-tab-body" id="frotasCadastrosTabBody"></div>
     </section>`;
 
-  content.querySelectorAll('[data-card]').forEach((btn) => {
-    const card = CARDS.find((c) => c.id === btn.dataset.card);
-    if (!card) return;
+  content.querySelectorAll('[data-ds-tab]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      openFrotasWindow({ titulo: card.titulo, montar: (body) => card.montar(body, ctx) });
+      if (btn.dataset.dsTab === state.tab) return;
+      state.tab = btn.dataset.dsTab;
+      content.querySelectorAll('[data-ds-tab]').forEach((b) => b.classList.toggle('active', b.dataset.dsTab === state.tab));
+      montarTabAtiva(content, ctx, visiveis);
     });
   });
+
+  montarTabAtiva(content, ctx, visiveis);
 }
 
 initProtectedPage('Frotas · Cadastros', renderContent);
