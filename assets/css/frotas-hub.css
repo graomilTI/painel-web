@@ -1,7 +1,7 @@
 /* assets/css/frotas-hub.css
-   Grid de cards dos hubs de Frotas (Cadastros, Manutenção, Ocorrências) e o
-   modificador de tamanho das janelas (modais) que eles abrem por cima do
-   modal padrão do design system (.ds-modal-card, ver assets/js/core/ui.js). */
+   Cabeçalho + abas (design system .ds-tabs/.ds-tab, ver assets/js/core/ui.js)
+   dos hubs de Frotas (Cadastros, Manutenção, Ocorrências). Cada aba monta a
+   tela antiga correspondente direto no corpo da página — sem modal. */
 
 .frotas-hub-kicker {
   display: inline-flex;
@@ -31,140 +31,26 @@
   line-height: 1.55;
 }
 
-.frotas-hub-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+.frotas-hub-tab-desc {
+  margin: 14px 0 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
-.frotas-hub-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  text-align: left;
-  cursor: pointer;
-  background: radial-gradient(circle at top left, rgba(34, 197, 94, .13), transparent 34%), linear-gradient(180deg, rgba(15, 23, 42, .98), rgba(2, 6, 23, .98));
-  border: 1px solid rgba(148, 163, 184, .16);
-  border-radius: 20px;
-  padding: 18px;
-  color: inherit;
-  transition: .18s ease;
-}
-
-.frotas-hub-card:hover,
-.frotas-hub-card:focus-visible {
-  border-color: rgba(34, 197, 94, .55);
-  transform: translateY(-2px);
-  outline: none;
-}
-
-.frotas-hub-card.is-disabled {
-  opacity: .5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.frotas-hub-card-icon {
-  width: 40px;
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: rgba(34, 197, 94, .12);
-  border: 1px solid rgba(34, 197, 94, .24);
-  color: #86efac;
-  font-size: 18px;
-}
-
-.frotas-hub-card-title {
-  margin: 0;
-  color: #f8fafc;
-  font-size: 15px;
-  font-weight: 900;
-}
-
-.frotas-hub-card-desc {
-  margin: 0;
-  color: #6b7280;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.frotas-hub-card-badge {
-  display: inline-flex;
-  align-self: flex-start;
-  border-radius: 999px;
-  padding: 3px 9px;
-  font-size: 10px;
-  font-weight: 950;
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  background: rgba(251, 191, 36, .12);
-  border: 1px solid rgba(251, 191, 36, .3);
-  color: #fde68a;
-}
-
-/* ── janela (modal grande em cima do .ds-modal-card padrão) ── */
-.frotas-window-card {
-  max-width: 1180px;
-  width: 95vw;
-  max-height: 92vh;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.frotas-window-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 20px;
-  border-bottom: 1px solid rgba(148, 163, 184, .14);
-  flex-shrink: 0;
-}
-
-.frotas-window-head h3 {
-  margin: 0;
-  color: #f8fafc;
-  font-size: 17px;
-}
-
-.frotas-window-close {
-  border: 0;
-  background: rgba(148, 163, 184, .14);
-  color: #cbd5e1;
-  border-radius: 10px;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 16px;
-  transition: .16s ease;
-}
-
-.frotas-window-close:hover {
-  background: rgba(239, 68, 68, .18);
-  color: #fca5a5;
-}
-
-.frotas-window-body {
-  padding: 20px;
-  overflow-y: auto;
+.frotas-hub-tab-body {
+  margin-top: 14px;
 }
 
 /* As telas antigas renderizam seu próprio título (kicker + h1 + subtítulo)
-   dentro do container — redundante com o título que a janela já mostra no
-   cabeçalho do modal. Some só esse bloco; as abas/ações de cada tela ficam
-   num irmão separado (ex.: .fv-card/.fm-card/.fr-card) e continuam intactas. */
-.frotas-window-body .frotas-header,
-.frotas-window-body .fv-head,
-.frotas-window-body .fm-head,
-.frotas-window-body .fr-head {
+   dentro do container — redundante com o título + descrição que a aba já
+   mostra no cabeçalho do hub. Some só esse bloco; os controles/tabelas de
+   cada tela ficam num irmão separado (ex.: .fv-card/.fm-card/.fr-card) e
+   continuam intactos. */
+.frotas-hub-tab-body .frotas-header,
+.frotas-hub-tab-body .fv-head,
+.frotas-hub-tab-body .fm-head,
+.frotas-hub-tab-body .fr-head {
   display: none !important;
 }
 
@@ -176,9 +62,4 @@
   color: #94a3b8;
   font-size: 14px;
   line-height: 1.6;
-}
-
-@media (max-width: 640px) {
-  .frotas-hub-grid { grid-template-columns: 1fr; }
-  .frotas-window-card { width: 100vw; max-height: 100vh; border-radius: 0; }
 }
