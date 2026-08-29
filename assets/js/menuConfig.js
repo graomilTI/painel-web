@@ -17,7 +17,7 @@ if (typeof document !== 'undefined' && !document.getElementById('frotasHubStyles
   const link = document.createElement('link');
   link.id = 'frotasHubStyles';
   link.rel = 'stylesheet';
-  link.href = new URL('../css/frotas-hub.css?v=20260829a', import.meta.url).href;
+  link.href = new URL('../css/frotas-hub.css?v=20260829b-abas-flush', import.meta.url).href;
   document.head.appendChild(link);
 }
 

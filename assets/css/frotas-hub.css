@@ -34,7 +34,12 @@
 /* Abas no estilo "flush" (texto + risco embaixo do ativo), igual ao Painel
    de Conferência (.conf-tab em assets/js/adm-conferencia-entry.js) — só
    reskina o .ds-tabs/.ds-tab do design system aqui dentro, sem afetar quem
-   usa o estilo padrão em pílula (ex.: Hospedagem). */
+   usa o estilo padrão em pílula (ex.: Hospedagem). O tema global
+   painel-ui-v2 (painel-design-system.css) força cor/fundo em QUALQUER
+   [role="tab"] com !important e especificidade html+2 classes — pra vencer
+   precisa de !important E especificidade igual/maior aqui (por isso o
+   seletor repete .frotas-hub-tabs; mesma pegadinha documentada em
+   painel-web-painel-ui-v2-css-especificidade, lá pra tabela do DRE). */
 .frotas-hub-tabs .ds-tabs {
   gap: 2px;
   border-bottom: 1px solid rgba(148, 163, 184, .14);
@@ -42,26 +47,31 @@
   overflow-x: auto;
 }
 
-.frotas-hub-tabs .ds-tab {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 12px 14px 11px;
-  color: #a9b8b1;
+.frotas-hub-tabs.frotas-hub-tabs .ds-tab {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 12px 14px 11px !important;
+  color: #a9b8b1 !important;
   font-size: 13px;
   white-space: nowrap;
-  border-bottom: 2px solid transparent;
+  border-bottom: 2px solid transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
-.frotas-hub-tabs .ds-tab:hover {
-  color: #d9fbe8;
-  background: rgba(34, 197, 94, .035);
+.frotas-hub-tabs.frotas-hub-tabs .ds-tab:hover:not(:disabled) {
+  color: #d9fbe8 !important;
+  background: rgba(34, 197, 94, .035) !important;
+  border-color: transparent !important;
+  transform: none !important;
 }
 
-.frotas-hub-tabs .ds-tab.active {
-  color: #35e990;
-  background: transparent;
-  border-bottom-color: #22e58a;
+.frotas-hub-tabs.frotas-hub-tabs .ds-tab.active {
+  color: #35e990 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-bottom-color: #22e58a !important;
 }
 
 .frotas-hub-tab-desc {
