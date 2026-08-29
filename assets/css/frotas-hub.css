@@ -157,6 +157,17 @@
   overflow-y: auto;
 }
 
+/* As telas antigas renderizam seu próprio título (kicker + h1 + subtítulo)
+   dentro do container — redundante com o título que a janela já mostra no
+   cabeçalho do modal. Some só esse bloco; as abas/ações de cada tela ficam
+   num irmão separado (ex.: .fv-card/.fm-card/.fr-card) e continuam intactas. */
+.frotas-window-body .frotas-header,
+.frotas-window-body .fv-head,
+.frotas-window-body .fm-head,
+.frotas-window-body .fr-head {
+  display: none !important;
+}
+
 .frotas-window-placeholder {
   display: flex;
   flex-direction: column;

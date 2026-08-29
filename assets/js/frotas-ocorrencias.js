@@ -4,16 +4,7 @@ import { esc } from './core/ui.js';
 import { openFrotasWindow } from './modules/frotas-window.js';
 import { temAcessoFrota } from './modules/frotas-permissoes.js';
 
-function installFleetHeaderCleanup() {
-  if (document.getElementById('frotasOcorrenciasHeaderCleanupStyles')) return;
-  const style = document.createElement('style');
-  style.id = 'frotasOcorrenciasHeaderCleanupStyles';
-  style.textContent = `.frotas-window-body .frotas-header { display: none !important; }`;
-  document.head.appendChild(style);
-}
-
 async function montarNotificacao(body, ctx) {
-  installFleetHeaderCleanup();
   const [{ installDailyDriverResolution }, { installPreviousWeekDefaults }, { installIntuitiveFleetLayout }] = await Promise.all([
     import('./frotas-motorista-leitura-diaria.js'),
     import('./frotas-periodo-semana-anterior.js'),
@@ -27,7 +18,6 @@ async function montarNotificacao(body, ctx) {
 }
 
 async function montarHistorico(body, ctx) {
-  installFleetHeaderCleanup();
   await import('./modules/frotas.js');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
