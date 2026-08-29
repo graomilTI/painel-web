@@ -31,6 +31,39 @@
   line-height: 1.55;
 }
 
+/* Abas no estilo "flush" (texto + risco embaixo do ativo), igual ao Painel
+   de Conferência (.conf-tab em assets/js/adm-conferencia-entry.js) — só
+   reskina o .ds-tabs/.ds-tab do design system aqui dentro, sem afetar quem
+   usa o estilo padrão em pílula (ex.: Hospedagem). */
+.frotas-hub-tabs .ds-tabs {
+  gap: 2px;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.frotas-hub-tabs .ds-tab {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 14px 11px;
+  color: #a9b8b1;
+  font-size: 13px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+.frotas-hub-tabs .ds-tab:hover {
+  color: #d9fbe8;
+  background: rgba(34, 197, 94, .035);
+}
+
+.frotas-hub-tabs .ds-tab.active {
+  color: #35e990;
+  background: transparent;
+  border-bottom-color: #22e58a;
+}
+
 .frotas-hub-tab-desc {
   margin: 14px 0 0;
   color: #94a3b8;
