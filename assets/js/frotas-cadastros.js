@@ -47,14 +47,10 @@ const CARDS = [
     id: 'termo-veiculos',
     titulo: 'Termo de Utilização de Veículos',
     descricao: 'Geração do termo de utilização de veículos pelo motorista.',
-    badge: 'Em construção',
     aliases: null, // visível pra quem acessa o hub — feature nova, ainda sem permissão própria
-    montar: async (body) => {
-      body.innerHTML = `
-        <div class="frotas-window-placeholder">
-          <strong style="color:#f8fafc;font-size:15px">Em construção</strong>
-          <p style="margin:0">A criação do Termo de Utilização de Veículos ainda está sendo desenvolvida. Em breve será possível gerar o termo por aqui.</p>
-        </div>`;
+    montar: async (body, ctx) => {
+      await import('./modules/frotas-termo-veiculos.js');
+      window.FROTAS_TERMO_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
 ];
