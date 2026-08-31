@@ -60,9 +60,7 @@ const state = { tab: null };
 
 function montarTabAtiva(content, ctx, visiveis) {
   const card = visiveis.find((c) => c.id === state.tab);
-  const desc = content.querySelector('#frotasOcorrenciasTabDesc');
   const body = content.querySelector('#frotasOcorrenciasTabBody');
-  if (desc) desc.textContent = card?.descricao || '';
   if (!body) return;
   if (!card) { body.innerHTML = '<div class="frotas-window-placeholder">Nenhum item disponível.</div>'; return; }
   body.innerHTML = '';
@@ -82,7 +80,6 @@ export function renderContent(content, ctx) {
       <h1 class="frotas-hub-title">Ocorrências</h1>
       <p class="frotas-hub-subtitle">Notificações de excesso de velocidade, multas e histórico dos colaboradores.</p>
       <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}</div>
-      <p class="frotas-hub-tab-desc" id="frotasOcorrenciasTabDesc"></p>
       <div class="frotas-hub-tab-body" id="frotasOcorrenciasTabBody"></div>
     </section>`;
 
