@@ -8,7 +8,7 @@ async function montarNotificacao(body, ctx) {
     import('./frotas-motorista-leitura-diaria.js'),
     import('./frotas-periodo-semana-anterior.js'),
     import('./frotas-layout-intuitivo.js'),
-    import('./modules/frotas.js'),
+    import('./modules/frotas.js?v=20260830-tabs-cleanup'),
   ]);
   installDailyDriverResolution(supabase);
   installPreviousWeekDefaults(document, supabase);
@@ -17,7 +17,7 @@ async function montarNotificacao(body, ctx) {
 }
 
 async function montarHistorico(body, ctx) {
-  await import('./modules/frotas.js');
+  await import('./modules/frotas.js?v=20260830-tabs-cleanup');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
@@ -25,7 +25,7 @@ async function montarMultas(body, ctx) {
   const [{ installStableMultasActions }, { installTemporaryMultasUpload }] = await Promise.all([
     import('./modules/frotas-multas-stable-actions.js'),
     import('./modules/frotas-multas-temporary-upload.js'),
-    import('./modules/frotas-multas.js'),
+    import('./modules/frotas-multas.js?v=20260830-tabs-cleanup'),
   ]);
   window.FROTAS_MULTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
   installStableMultasActions(body);
