@@ -27,7 +27,7 @@ const EMPREGADOR_EPI_PADRAO = {
   endereco:'AV BRASIL, nº 2732, APT 01, SAO CRISTOVAO, Cascavel - PR, CEP 85816-294',
 };
 
-const state = { solicitacoes:[], empresas:[], solFilter:'concluido' };
+const state = { solicitacoes:[], empresas:[], solFilter:'concluido', compradosGestor:[], compradosFilter:'comprados' };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-';};
@@ -500,15 +500,141 @@ async function salvarEdicaoSolicitacaoEPI(modal,s,getColab,colabInput){
   finally{btn.disabled=false;}
 }
 
+// ---------- EPIs comprados pelo Gestor (Compras > Solicitação) ----------
+// Separado das fichas lançadas direto pelo RH (state.solicitacoes acima):
+// aqui listamos itens tipo=EPI de solicitações normais de Compras (Gestor >
+// Solicitação) que já passaram do pagamento (financeiro anexou o
+// comprovante), agrupados por colaborador. compras_itens.status continua
+// pertencendo ao fluxo normal de Compras (aguardando_nf/comprado) — o campo
+// epi_ficha_gerada_em (só usado aqui) é quem move o card de "Comprados" pra
+// "Concluídas" quando o RH gera a ficha.
+const STATUS_SEM_FICHA = ['pendente','em_cotacao','em_analise','pendente_pagamento','recusado'];
+// Histórico limpo: a aba "Comprados" só considera compras pagas a partir do
+// lançamento desta feature — compras de EPI feitas antes disso pelo fluxo
+// antigo (aprovação do Gestor em Compras, removida) não aparecem aqui.
+const COMPRADOS_GESTOR_DESDE = '2026-08-31T00:00:00-03:00';
+function groupKey(item){ return `${item.solicitacao_id}::${item.colaborador_id||norm(item.colaborador_nome)}`; }
+
+async function loadCompradosGestor(){
+  const rows=await safe(()=>supabase.from('compras_itens')
+    .select('*, compras_solicitacoes!inner(id,tipo_solicitacao,supervisao,coordenacao,data_solicitacao)')
+    .eq('tipo','EPI')
+    .neq('compras_solicitacoes.tipo_solicitacao','epi_rh')
+    .not('status','in',`(${STATUS_SEM_FICHA.join(',')})`)
+    .gte('updated_at',COMPRADOS_GESTOR_DESDE)
+    .order('comprado_em',{ascending:false})
+    .limit(300));
+  const map=new Map();
+  for(const item of rows){
+    const key=groupKey(item);
+    if(!map.has(key)) map.set(key,{key,colaborador_id:item.colaborador_id,colaborador_nome:item.colaborador_nome,solicitacao:item.compras_solicitacoes,itens:[]});
+    map.get(key).itens.push(item);
+  }
+  state.compradosGestor=[...map.values()];
+  renderCompradosGestor();
+}
+
+function compradoBucket(g){ return g.itens.every(i=>i.epi_ficha_gerada_em) ? 'concluidas' : 'comprados'; }
+
+function renderCompradosGestor(){
+  const body=document.getElementById('epiCompradosBody');
+  if(!body) return;
+  const lista=state.compradosGestor.filter(g=>compradoBucket(g)===state.compradosFilter);
+  if(!lista.length){ body.innerHTML=`<tr><td colspan="4" class="epi-empty">${state.compradosGestor.length?'Nenhum item nesta aba.':'Nenhum EPI comprado via Gestor > Compras aguardando ficha.'}</td></tr>`; return; }
+  body.innerHTML=lista.map(g=>{
+    const itensHtml=g.itens.map(i=>`<div style="font-size:13px">${esc(i.material?labelMaterial(i.material):i.material)}${i.tamanho?` <small class="muted">T:${esc(i.tamanho)}</small>`:''}${i.ca?`<span style="color:#86efac;font-size:11px;font-weight:700"> · CA: ${esc(i.ca)}</span>`:''}</div>`).join('');
+    const feito=compradoBucket(g)==='concluidas';
+    const acao=feito
+      ?`<button class="btn btn-small btn-secondary" data-comprado-baixar="${esc(g.key)}" type="button">Baixar ficha novamente</button>`
+      :`<button class="btn btn-small btn-primary" data-comprado-gerar="${esc(g.key)}" type="button">Gerar ficha</button>`;
+    return `<tr><td>${brDate(g.itens[0]?.comprado_em||g.itens[0]?.updated_at||g.solicitacao?.data_solicitacao)}</td><td><b>${esc(g.colaborador_nome||'Colaborador não informado')}</b></td><td style="max-width:280px;line-height:1.8">${itensHtml||'-'}</td><td>${acao}</td></tr>`;
+  }).join('');
+  body.querySelectorAll('[data-comprado-gerar]').forEach(b=>b.onclick=()=>openGerarFichaCompradoModal(b.dataset.compradoGerar));
+  body.querySelectorAll('[data-comprado-baixar]').forEach(b=>b.onclick=async()=>{
+    const g=state.compradosGestor.find(x=>x.key===b.dataset.compradoBaixar); if(!g) return;
+    b.disabled=true;
+    try{ await baixarFichaEpi({},g.itens); }
+    catch(e){ setSolMsg(e.message,true); }
+    finally{ b.disabled=false; }
+  });
+}
+
+function openGerarFichaCompradoModal(key){
+  const g=state.compradosGestor.find(x=>x.key===key); if(!g) return;
+  const modal=document.getElementById('epiModal');
+  modal.innerHTML=`<div class="epi-modal-card" style="width:min(620px,100%)"><div class="section-head"><div><h3>Gerar ficha — comprado pelo Gestor</h3><p class="muted">Confirme os dados do colaborador antes de gerar a ficha.</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="mt-16 epi-colab-info" id="compradoColabInfo">Carregando dados do colaborador...</div><div class="mt-16" style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Função <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* obrigatório</span><input id="cgFuncao" type="text" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0"></label><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Cargo <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* obrigatório</span><input id="cgCargo" type="text" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0"></label></div><div class="mt-16"><label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">Setor <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* obrigatório</span><select id="cgSetor" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0"><option value="">Selecione...</option><option value="OPERACIONAL 1">OPERACIONAL 1</option><option value="OPERACIONAL 2">OPERACIONAL 2</option></select></label></div><div class="mt-16"><p style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:10px">Itens desta compra</p><div style="display:grid;gap:8px">${g.itens.map(i=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid rgba(148,163,184,.2);border-radius:12px"><span><b>${esc(labelMaterial(i.material))}</b>${i.tamanho?` <small class="muted">Tam: ${esc(i.tamanho)}</small>`:''}</span>${i.ca?`<span style="color:#86efac;font-weight:700;font-size:13px">CA: ${esc(i.ca)}</span>`:`<span style="color:#fde68a;font-size:12px">CA será buscado ao gerar</span>`}</div>`).join('')}</div></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="cgGerar" type="button">Gerar ficha</button><button class="btn btn-secondary" id="cgCancelar" type="button">Cancelar</button></div><span class="epi-feedback mt-8" id="cgFeedback"></span></div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#cgCancelar').onclick=()=>modal.classList.remove('open');
+  let colabDetalhado=null;
+  const btnGerar=modal.querySelector('#cgGerar');
+  btnGerar.disabled=true;
+  (async()=>{
+    colabDetalhado=await buscarColaboradorDetalhes({id:g.colaborador_id,nome:g.colaborador_nome});
+    const info=modal.querySelector('#compradoColabInfo');
+    if(!info) return;
+    info.innerHTML=`<b>${esc(colabDetalhado.nome||g.colaborador_nome||'Colaborador não informado')}</b><br><small>Empresa: ${esc(colabDetalhado.empresa||'Não informada')} · Supervisão: ${esc(colabDetalhado.supervisao||g.solicitacao?.supervisao||'Não informada')}</small>`;
+    if(!modal.querySelector('#cgFuncao').value) modal.querySelector('#cgFuncao').value=colabDetalhado.funcao||'';
+    if(!modal.querySelector('#cgCargo').value) modal.querySelector('#cgCargo').value=colabDetalhado.cargo||'';
+    btnGerar.disabled=false;
+  })();
+  modal.querySelector('#cgGerar').onclick=async()=>{
+    const btn=modal.querySelector('#cgGerar');
+    const fb=modal.querySelector('#cgFeedback');
+    if(!colabDetalhado?.nome && !g.colaborador_nome){ fb.textContent='Este item não possui colaborador vinculado — ajuste a distribuição em Compras.'; fb.classList.add('err'); return; }
+    const funcaoInformada=modal.querySelector('#cgFuncao').value.trim();
+    const cargoInformado=modal.querySelector('#cgCargo').value.trim();
+    const setorSelecionado=modal.querySelector('#cgSetor').value.trim();
+    if(!funcaoInformada){ fb.textContent='Informe a função.'; fb.classList.add('err'); return; }
+    if(!cargoInformado){ fb.textContent='Informe o cargo.'; fb.classList.add('err'); return; }
+    if(!setorSelecionado){ fb.textContent='Selecione o setor OPERACIONAL 1 ou OPERACIONAL 2.'; fb.classList.add('err'); return; }
+    btn.disabled=true; fb.textContent='Buscando os últimos CAs e gerando a ficha...'; fb.classList.remove('err');
+    try{
+      await loadJsPdf();
+      const colab={...colabDetalhado,funcao:funcaoInformada,cargo:cargoInformado,setor:setorSelecionado};
+      const itensFicha=await Promise.all(g.itens.map(async item=>({
+        ...item,
+        colaborador_cpf:colab.cpf||null, colaborador_rg:colab.rg||null, colaborador_data_nascimento:colab.data_nascimento||null,
+        colaborador_funcao:funcaoInformada, colaborador_cargo:cargoInformado, colaborador_setor:setorSelecionado,
+        colaborador_supervisao:colab.supervisao||item.colaborador_supervisao||g.solicitacao?.supervisao||null,
+        colaborador_coordenacao:colab.coordenacao||item.colaborador_coordenacao||g.solicitacao?.coordenacao||null,
+        colaborador_data_admissao:colab.data_admissao||null, colaborador_empresa:colab.empresa||null,
+        ca:item.ca||await buscarUltimoCaPorMaterial(item.material),
+      })));
+      await baixarFichaEpi({},itensFicha);
+      const agora=new Date().toISOString();
+      for(const item of itensFicha){
+        const {error}=await supabase.from('compras_itens').update({
+          colaborador_cpf:item.colaborador_cpf, colaborador_rg:item.colaborador_rg, colaborador_data_nascimento:item.colaborador_data_nascimento,
+          colaborador_funcao:item.colaborador_funcao, colaborador_cargo:item.colaborador_cargo, colaborador_setor:item.colaborador_setor,
+          colaborador_supervisao:item.colaborador_supervisao, colaborador_coordenacao:item.colaborador_coordenacao,
+          colaborador_data_admissao:item.colaborador_data_admissao, colaborador_empresa:item.colaborador_empresa,
+          ca:item.ca, epi_ficha_gerada_em:agora,
+        }).eq('id',item.id);
+        if(error) throw error;
+      }
+      modal.classList.remove('open');
+      state.compradosFilter='concluidas';
+      document.querySelectorAll('[data-cg]').forEach(x=>x.classList.toggle('active',x.dataset.cg==='concluidas'));
+      await loadCompradosGestor();
+    }catch(e){ fb.textContent=e.message; fb.classList.add('err'); btn.disabled=false; }
+  };
+}
+
 function styles(){return `<style>.epi-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px}.epi-table{width:100%;border-collapse:collapse;min-width:760px}.epi-table th,.epi-table td{padding:14px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.epi-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.epi-empty{text-align:center;color:var(--muted)}.epi-acoes{display:flex;gap:8px;flex-wrap:wrap}.epi-link{color:#86efac;text-decoration:underline;font-size:12px}.epi-feedback{font-weight:700;display:block}.epi-feedback.err{color:#fecaca}.epi-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.epi-modal.open{display:flex}.epi-modal-card{width:min(760px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,.06);border-radius:22px;padding:24px;color:#e2e2f0}.epi-detail-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.epi-detail-grid>div{display:flex;flex-direction:column;gap:4px}.epi-detail-grid .muted{font-size:12px;text-transform:uppercase;letter-spacing:.04em}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.epi-filter-tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between}.epi-filter-tabs-group{display:flex;gap:8px;flex-wrap:wrap}.epi-filter-tabs .active{background:#166534!important;color:#fff!important}.epi-icon-btn{width:38px;height:38px;padding:0!important;display:inline-flex;align-items:center;justify-content:center;font-size:17px;line-height:1;flex:0 0 38px}.mt-20{margin-top:20px}.mt-8{margin-top:8px}.mt-16{margin-top:16px}.epi-check-row:hover{background:#12122a!important;border-color:rgba(74,222,128,.3)!important}.epi-colab-info{margin-top:8px;padding:10px 12px;border:1px solid rgba(74,222,128,.25);background:rgba(22,101,52,.12);border-radius:12px;color:#d1fae5}.epi-colab-info small{color:#bbf7d0}.epi-colab-sug{display:none;position:absolute;top:100%;left:0;right:0;z-index:50;background:#071b13;border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 16px 40px rgba(0,0,0,.38);max-height:220px;overflow:auto;margin-top:4px}.epi-colab-sug button{text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px;cursor:pointer;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px}.epi-colab-sug button small{color:var(--muted);font-weight:800}@media(max-width:640px){.epi-detail-grid{grid-template-columns:1fr}}</style>`;}
 
 export async function renderContent(content, userContext){
-  content.innerHTML=`${styles()}<section class="card"><div class="section-head"><div><h3>Fichas de EPI</h3><p class="muted">Ao adicionar, a ficha é gerada imediatamente com o último CA comprado de cada EPI.</p></div></div><div class="epi-filter-tabs mt-16"><div class="epi-filter-tabs-group"><button class="btn btn-secondary active" data-sf="concluido" type="button">Concluídas</button><button class="btn btn-secondary" data-sf="pendente" type="button">Pendentes anteriores</button><button class="btn btn-secondary" data-sf="cancelado" type="button">Canceladas</button><button class="btn btn-secondary" data-sf="todos" type="button">Todas</button></div><div class="epi-filter-tabs-group"><button class="btn btn-primary epi-icon-btn" id="epiNovaSol" type="button" title="Adicionar ficha" aria-label="Adicionar ficha">+</button><button class="btn btn-secondary epi-icon-btn" id="epiSolRefresh" type="button" title="Atualizar fichas" aria-label="Atualizar fichas">↻</button></div></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="4" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section><div class="epi-modal" id="epiModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card"><div class="section-head"><div><h3>Fichas de EPI</h3><p class="muted">Ao adicionar, a ficha é gerada imediatamente com o último CA comprado de cada EPI.</p></div></div><div class="epi-filter-tabs mt-16"><div class="epi-filter-tabs-group"><button class="btn btn-secondary active" data-sf="concluido" type="button">Concluídas</button><button class="btn btn-secondary" data-sf="pendente" type="button">Pendentes anteriores</button><button class="btn btn-secondary" data-sf="cancelado" type="button">Canceladas</button><button class="btn btn-secondary" data-sf="todos" type="button">Todas</button></div><div class="epi-filter-tabs-group"><button class="btn btn-primary epi-icon-btn" id="epiNovaSol" type="button" title="Adicionar ficha" aria-label="Adicionar ficha">+</button><button class="btn btn-secondary epi-icon-btn" id="epiSolRefresh" type="button" title="Atualizar fichas" aria-label="Atualizar fichas">↻</button></div></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Supervisão</th><th></th></tr></thead><tbody id="epiSolBody"><tr><td colspan="4" class="epi-empty">Carregando...</td></tr></tbody></table></div><span class="epi-feedback mt-8" id="epiSolFeedback"></span></section>
+  <section class="card mt-16"><div class="section-head"><div><h3>Comprados pelo Gestor</h3><p class="muted">EPIs solicitados pelo Gestor em Compras, já pagos pelo Financeiro. Gere a ficha para concluir a entrega.</p></div><button class="btn btn-secondary epi-icon-btn" id="epiCompradosRefresh" type="button" title="Atualizar" aria-label="Atualizar">↻</button></div><div class="epi-filter-tabs mt-16"><div class="epi-filter-tabs-group"><button class="btn btn-secondary active" data-cg="comprados" type="button">Comprados</button><button class="btn btn-secondary" data-cg="concluidas" type="button">Concluídas</button></div></div><div class="epi-table-wrap mt-16"><table class="epi-table"><thead><tr><th>Data</th><th>Colaborador</th><th>Itens</th><th></th></tr></thead><tbody id="epiCompradosBody"><tr><td colspan="4" class="epi-empty">Carregando...</td></tr></tbody></table></div></section>
+  <div class="epi-modal" id="epiModal"></div>`;
   document.getElementById('epiNovaSol').onclick=()=>openNovasSolicitacaoModal(userContext);
   document.getElementById('epiSolRefresh').onclick=loadSolicitacoes;
+  document.getElementById('epiCompradosRefresh').onclick=loadCompradosGestor;
   document.querySelectorAll('[data-sf]').forEach(b=>b.onclick=()=>{state.solFilter=b.dataset.sf; document.querySelectorAll('[data-sf]').forEach(x=>x.classList.toggle('active',x===b)); renderSolicitacoes();});
+  document.querySelectorAll('[data-cg]').forEach(b=>b.onclick=()=>{state.compradosFilter=b.dataset.cg; document.querySelectorAll('[data-cg]').forEach(x=>x.classList.toggle('active',x===b)); renderCompradosGestor();});
   await loadEmpresas();
   await loadSolicitacoes();
+  await loadCompradosGestor();
 }
 
 initProtectedPage('EPI', renderContent);
