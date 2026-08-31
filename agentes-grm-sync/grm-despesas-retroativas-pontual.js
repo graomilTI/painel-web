@@ -166,6 +166,7 @@ function requiredExpenses(
   {
     hasLaudo = true,
     cafeAuthorized = false,
+    hasPernoite = false,
   } = {},
 ) {
   const type = norm(contractType);
@@ -186,15 +187,17 @@ function requiredExpenses(
   }
 
   // Almoço: basta laudo/produção do colaborador na data — não depende da
-  // Programação do Painel.
-  if (hasLaudo) {
+  // Programação do Painel. Exceto se já houver Pernoite lançado no Caixa
+  // nessa data: hospedagem cobre a alimentação, não lança Almoço.
+  if (hasLaudo && !hasPernoite) {
     const lunch = expenseTypes.get('ALMOCO');
     if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
     result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
   }
 
-  // Café mantém a regra especial: Programação + cafe=true + login/geofence 04h-07h.
-  if (cafeAuthorized) {
+  // Café mantém a regra especial: Programação + cafe=true + login/geofence
+  // 04h-07h. Mesma exceção de Pernoite do Almoço.
+  if (cafeAuthorized && !hasPernoite) {
     const coffee = expenseTypes.get('CAFE');
     if (!coffee) throw new Error('Categoria Café não encontrada no GRM.');
     result.push({ ...coffee, amount: Number(coffee.oexMaxOperatingFlowValue || 10) });
@@ -611,7 +614,7 @@ async function applyCorrection(page, date, row, staffRow, correctedDate, budget)
 // AUTO) usando haveMovement=SIM como autorização — também sem Programação.
 // Café fica de fora da aprovação automática aqui (mantém autorização
 // operacional própria), mas ainda participa da correção de "data corrigida".
-async function processMovementFallback(page, grm, date, visitedKeys, budget) {
+async function processMovementFallback(page, grm, date, visitedKeys, budget, pernoiteStaCodes) {
   const AUTO_APPROVE_CATEGORIES = new Set(['ALMOCO', 'SALARIO DE INTERMITENTE', 'SERVICOS TERCEIRIZADOS']);
   const CORRECTION_CATEGORIES = new Set([...AUTO_APPROVE_CATEGORIES, 'CAFE']);
 
@@ -625,7 +628,7 @@ async function processMovementFallback(page, grm, date, visitedKeys, budget) {
   }
 
   const summary = {
-    grupos: groups.size, corrigidos: 0, ja_aprovados: 0, aprovados: 0, sem_pendente_elegivel: 0, adiados: 0, erros: 0,
+    grupos: groups.size, corrigidos: 0, ja_aprovados: 0, aprovados: 0, sem_pendente_elegivel: 0, pernoite_pulados: 0, adiados: 0, erros: 0,
   };
 
   for (const rows of groups.values()) {
@@ -637,6 +640,13 @@ async function processMovementFallback(page, grm, date, visitedKeys, budget) {
     }
 
     if (!AUTO_APPROVE_CATEGORIES.has(norm(rows[0].oexName))) continue;
+
+    // Almoço não é auto-aprovado se o colaborador já tem Pernoite ativo no
+    // Caixa nessa data (hospedagem cobre a alimentação).
+    if (norm(rows[0].oexName) === 'ALMOCO' && pernoiteStaCodes?.has(Number(rows[0].staCode))) {
+      summary.pernoite_pulados += 1;
+      continue;
+    }
 
     const approved = remaining.some((row) => String(row.ofmStatus || '').toUpperCase() === 'A');
     if (approved) { summary.ja_aprovados += 1; continue; }
@@ -703,12 +713,28 @@ async function processDate(page, date, budget) {
     cafe_programado: 0,
     cafe_autorizado_login: 0,
     cafe_bloqueado_login: 0,
+    pernoite_pulados: 0,
   };
   const visitedKeys = new Set();
 
   const grm = await loadGrmData(page, date);
 
+  // Colaboradores com Pernoite ativo (P/A) no Caixa nessa data: hospedagem
+  // cobre a alimentação, então Almoço/Café não são lançados automaticamente.
+  const pernoiteStaCodes = new Set(
+    grm.movements
+      .filter((row) => row.ofmType === 'D' && norm(row.oexName) === 'PERNOITE' && String(row.ofmStatus).toUpperCase() !== 'N')
+      .map((row) => Number(row.staCode)),
+  );
+
   for (const candidate of source.candidates) {
+    const staff = findStaff(candidate, grm.staff);
+    if (!staff) {
+      summary.unresolved += 1;
+      log('WARN', `${date}: colaborador não localizado no GRM.`, { nome: candidate.nome, cpf: candidate.cpf });
+      continue;
+    }
+
     let cafeAuthorized = false;
     if (candidate.cafeProgrammed) {
       summary.cafe_programado += 1;
@@ -717,21 +743,16 @@ async function processDate(page, date, budget) {
       else summary.cafe_bloqueado_login += 1;
     }
 
+    const hasPernoite = pernoiteStaCodes.has(Number(staff.staCode));
+    if (hasPernoite && (candidate.hasLaudo || cafeAuthorized)) summary.pernoite_pulados += 1;
     const expenses = requiredExpenses(
       candidate.tipo_contrato,
       candidate.salario,
       grm.expenseTypes,
-      { hasLaudo: candidate.hasLaudo, cafeAuthorized },
+      { hasLaudo: candidate.hasLaudo, cafeAuthorized, hasPernoite },
     ).filter((expense) => !TARGET_EXPENSE || norm(expense.oexName) === TARGET_EXPENSE);
 
     if (!expenses.length) continue;
-
-    const staff = findStaff(candidate, grm.staff);
-    if (!staff) {
-      summary.unresolved += 1;
-      log('WARN', `${date}: colaborador não localizado no GRM.`, { nome: candidate.nome, cpf: candidate.cpf });
-      continue;
-    }
 
     for (const expense of expenses) {
       summary.checked += 1;
@@ -753,6 +774,7 @@ async function processDate(page, date, budget) {
         acao: decision.action, dry_run: DRY_RUN,
         diagnostico: {
           laudo: candidate.hasLaudo,
+          pernoite_ativo: hasPernoite,
           cafe_programado: candidate.cafeProgrammed,
           cafe_login_valido_04_07: cafeAuthorized,
           existentes: existingAll.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
@@ -797,7 +819,7 @@ async function processDate(page, date, budget) {
     }
   }
 
-  const fallbackSummary = await processMovementFallback(page, grm, date, visitedKeys, budget);
+  const fallbackSummary = await processMovementFallback(page, grm, date, visitedKeys, budget, pernoiteStaCodes);
   summary.fallback = fallbackSummary;
   summary.errors += fallbackSummary.erros;
 
@@ -824,7 +846,8 @@ async function main() {
   const totals = {
     dias_processados: 0, checked: 0, unchanged: 0, approve: 0, create: 0,
     corrigidos_data: 0, errors: 0, unresolved: 0, adiados: 0,
-    fallback_aprovados: 0, fallback_corrigidos: 0, fallback_adiados: 0,
+    fallback_aprovados: 0, fallback_corrigidos: 0, fallback_adiados: 0, fallback_pernoite_pulados: 0,
+    pernoite_pulados: 0,
   };
 
   try {
@@ -849,6 +872,8 @@ async function main() {
       totals.fallback_aprovados += daySummary.fallback.aprovados;
       totals.fallback_corrigidos += daySummary.fallback.corrigidos;
       totals.fallback_adiados += daySummary.fallback.adiados;
+      totals.fallback_pernoite_pulados += daySummary.fallback.pernoite_pulados;
+      totals.pernoite_pulados += daySummary.pernoite_pulados;
     }
   } finally {
     await browser.close();
