@@ -13,6 +13,7 @@ const GROUPS = [
   ]],
   ['Controle e consulta', [
     ['patrimonio', 'Patrimônio', 'Leitura e cadastro pelo app', '📦', 'patrimonio'],
+    ['email', 'E-mail', 'Caixa de entrada e mensagens do gestor', '✉', 'email'],
     ['patrimonios-web', 'Patrimônios Web', 'Tela completa do painel', '🖥', null, 'patrimonios'],
     ['painel-web', 'Painel Web', 'Abrir versão completa', '↗', null, 'dashboard'],
   ]],
@@ -22,7 +23,7 @@ const GROUPS = [
 }));
 
 const FLAT = GROUPS.flatMap((g) => g.items);
-const NAV = { dashboard: ['⌂', 'Início'], programacao: ['📅', 'Prog.'], patrimonio: ['📦', 'Patrim.'], mais: ['☰', 'Menu'] };
+const NAV = { dashboard: ['⌂', 'Início'], programacao: ['📅', 'Prog.'], patrimonio: ['📦', 'Patrim.'], email: ['✉', 'E-mail'], mais: ['☰', 'Menu'] };
 
 function norm(v) {
   return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
