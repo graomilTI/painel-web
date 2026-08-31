@@ -493,6 +493,17 @@ function useBudget(budget) {
   return true;
 }
 
+// grm_despesas_retroativas_auditoria.tipo_contrato é NOT NULL. Nos caminhos
+// que não passam por um candidato do Supabase (correção de duplicado,
+// aprovação via haveMovement), o único sinal de contrato disponível é o
+// staType do próprio GRM ('D'/'I'), no mesmo padrão de
+// grm-sync-producao-diaria.js.
+function contractTypeLabel(staType) {
+  if (staType === 'D') return 'Diarista';
+  if (staType === 'I') return 'Intermitente';
+  return 'Efetivo';
+}
+
 // Trata uma pendência duplicada cuja observação indica que ela foi lançada
 // na data errada: recusa com "data corrigida" e relança na data indicada
 // pela observação, desde que não exista ali um lançamento ativo (P/A) da
@@ -502,6 +513,7 @@ async function applyCorrection(page, date, row, staffRow, correctedDate, budget)
     cpf: digits(staffRow?.staCPF),
     colaborador: row.staName || staffRow?.staName || `staCode ${row.staCode}`,
     sta_code: Number(row.staCode),
+    tipo_contrato: contractTypeLabel(staffRow?.staType),
     tipo_despesa: row.oexName,
     oex_code: Number(row.oexCode),
     valor: Number(row.ofmValue || 0),
@@ -641,6 +653,7 @@ async function processMovementFallback(page, grm, date, visitedKeys, budget) {
       cpf: digits(staffRow?.staCPF),
       colaborador: chosen.staName || staffRow?.staName || `staCode ${chosen.staCode}`,
       sta_code: Number(chosen.staCode),
+      tipo_contrato: contractTypeLabel(staffRow?.staType),
       tipo_despesa: chosen.oexName,
       oex_code: Number(chosen.oexCode),
       valor: Number(chosen.ofmValue || 0),
