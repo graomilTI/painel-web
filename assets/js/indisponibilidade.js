@@ -161,7 +161,6 @@ function openIndisponibilidadeModal(row = null) {
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim da indisponibilidade.'; fb.classList.add('err'); return; }
     if (fim < inicio) { fb.textContent = 'O fim não pode ser antes do início.'; fb.classList.add('err'); return; }
-    if (fim < todayIso() && inicio !== fim) { fb.textContent = 'O fim não pode ser retroativo.'; fb.classList.add('err'); return; }
     if (!motivo) { fb.textContent = 'Informe o motivo.'; fb.classList.add('err'); return; }
     try {
       const payload = {
