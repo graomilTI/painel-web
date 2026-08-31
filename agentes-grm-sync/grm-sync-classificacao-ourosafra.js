@@ -123,6 +123,22 @@ function toBrDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
+// O servidor roda em UTC. Das 21h às 23h59 em Brasília (=0h-2h59 UTC do dia
+// seguinte), `new Date()` cru já mostra o dia seguinte enquanto no GRM ainda
+// é "hoje" em horário local — abre risco de gap na janela de busca
+// (loaDateFrom/loaDateTo) bem na virada do dia. Usa o calendário de
+// America/Sao_Paulo explicitamente em vez do TZ ambiente do processo.
+function hojeBrasilia() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return new Date(Number(get('year')), Number(get('month')) - 1, Number(get('day')));
+}
+
 // Ouro Safra só aceita vírgula como separador decimal (ver nota no topo do arquivo).
 function fmtPercent(value) {
   return Number(value).toFixed(2).replace('.', ',');
@@ -491,7 +507,7 @@ async function preencherClienteNacionalGRM(page, valorBusca) {
 }
 
 async function buscarClassificacaoGRM(page, placa) {
-  const hoje = new Date();
+  const hoje = hojeBrasilia();
   const inicio = new Date(hoje.getTime() - DIAS_BUSCA_GRM * 24 * 60 * 60 * 1000);
   await page.goto('https://www.grmserver.com.br/report/classification/loads', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(3000); // hidratação do app (Vue) — sem isso os inputs ainda não existem no DOM
