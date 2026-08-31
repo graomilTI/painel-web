@@ -71,6 +71,9 @@ verify_jwt = true
 [functions.email-account-save]
 verify_jwt = true
 
+[functions.gestor-email-account]
+verify_jwt = true
+
 # IMPORTANTE: o callback OAuth do Google abre direto pelo navegador/Google,
 # então não envia Authorization header do Supabase.
 # Por isso esta função precisa ficar pública no gateway.

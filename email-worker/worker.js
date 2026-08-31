@@ -208,6 +208,9 @@ function mailboxFlagList(mailbox) {
 function shouldSyncMailbox(mailbox, account) {
   if (!mailbox?.path || mailbox.disabled) return false;
   const pathKey = mailboxKey(mailbox.path);
+  // A caixa pessoal do Gestor precisa refletir Entrada, Enviados, Rascunhos,
+  // Spam e Lixeira. A Central administrativa continua limitada às pastas úteis.
+  if (account.escopo === 'GESTOR') return mailbox.listed !== false;
   const include = envList('EMAIL_WORKER_INCLUDE_MAILBOXES');
   if (include.length) return include.map(mailboxKey).includes(pathKey);
 
@@ -772,7 +775,7 @@ function isDangerousAttachment(filename, mimeType) {
   return dangerousExts.test(filename) || dangerousMimes.includes(mimeType);
 }
 
-async function saveAttachment(emailId, attachment) {
+async function saveAttachment(emailId, attachment, { analyze = true } = {}) {
   const filename = attachment.filename || `anexo-${Date.now()}`;
   const storagePath = `${emailId}/${Date.now()}-${filename}`.replace(/[^a-zA-Z0-9_./-]/g, '_');
   let stored = null;
@@ -793,6 +796,9 @@ async function saveAttachment(emailId, attachment) {
   let dadosExtraidos = {};
   let status = null;
   try {
+    if (!analyze) {
+      status = 'SEM_IA';
+    } else
     if (mime === 'application/xml' || mime === 'text/xml' || /\.xml$/i.test(filename)) {
       dadosExtraidos = interpretXmlAttachment(attachment.content);
       status = Object.keys(dadosExtraidos).length ? 'OK' : 'SEM_DADOS';
@@ -955,7 +961,11 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
         if (exists.data?.id) continue;
         const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
-        const cls = await classifyWithAI(input, classifyByRules(input, rules, gestores), gestores);
+        const isGestorMailbox = account.escopo === 'GESTOR';
+        const cls = isGestorMailbox
+          ? { regional: null, categoria: 'PESSOAL', prioridade: 'NORMAL', resumo_ia: null, dados_detectados: {}, precisa_resposta: false, resposta_sugerida: null, classificado_por: 'mailbox', risco: 'BAIXO' }
+          : await classifyWithAI(input, classifyByRules(input, rules, gestores), gestores);
+        const flags = Array.from(item.flags || []).map(String);
         const { data: saved, error } = await supabase.from('email_messages').insert({
           account_id: account.id,
           uid: item.uid,
@@ -980,12 +990,15 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
           status: cls.precisa_resposta ? 'RESPONDER' : 'NOVO',
           classificado_por: cls.classificado_por,
           risco: cls.risco || 'BAIXO',
+          mailbox_path: mailboxPath,
+          lido: flags.some((flag) => flag.toLowerCase() === '\\seen'),
+          favorito: flags.some((flag) => flag.toLowerCase() === '\\flagged'),
           encaminhar_sugerido_para: nullableText(cls.encaminhar_sugerido_para),
           encaminhar_sugerido_cc: nullableText(cls.encaminhar_sugerido_cc),
           raw: {
             mailbox: mailboxPath,
             uid_validity: uidValidity,
-            flags: Array.from(item.flags || []),
+            flags,
             headers: { from: nullableText(parsed.from?.text), to: nullableText(parsed.to?.text) }
           }
         }).select('id').single();
@@ -995,7 +1008,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         const linhasEmbarque = [];
         let temAnexoPeigoso = false;
         for (const attachment of await collectAttachments(parsed)) {
-          const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment);
+          const { dadosExtraidos, isDangerous } = await saveAttachment(saved.id, attachment, { analyze: !isGestorMailbox });
           // linhas_embarque vira sugestão de OS separada (ver abaixo), não faz sentido
           // misturar com os "Dados detectados" de contrato/CNPJ/etc.
           const { linhas_embarque, ...resto } = dadosExtraidos || {};
@@ -1018,7 +1031,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         if (Object.keys(updatePayload).length > 1) {
           await supabase.from('email_messages').update(updatePayload).eq('id', saved.id);
         }
-        if (account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
+        if (!isGestorMailbox && account.auto_responder && cls.auto_responder && cls.resposta_sugerida && from.address) {
           await supabase.from('email_outbox').insert({
             email_id: saved.id,
             account_id: account.id,
@@ -1028,7 +1041,7 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
             status: 'PENDENTE'
           });
         }
-        await autoForwardEmail(account, saved.id, cls, parsed, updatePayload.risco || cls.risco);
+        if (!isGestorMailbox) await autoForwardEmail(account, saved.id, cls, parsed, updatePayload.risco || cls.risco);
       } catch (itemError) {
         failed++;
         console.error(`Falha ao processar mensagem uid=${item.uid} de ${account.email} em ${mailboxPath}:`, itemError);
@@ -1099,6 +1112,9 @@ async function syncAccount(account, rules, gestores) {
         ? `OK PARCIAL - ${inserted} novo(s), ${failed} com falha, ${mailboxErrors} pasta(s) com erro`
         : `OK - ${inserted} novo(s) em ${syncedPaths.length} pasta(s)`,
       ultima_sync_erro: mailboxErrors ? `${mailboxErrors} pasta(s) falharam. Ver email_mailbox_states/logs.` : null,
+      conexao_status: mailboxErrors && !syncedPaths.length ? 'ERRO' : 'CONECTADA',
+      conectada_em: account.conectada_em || new Date().toISOString(),
+      ultima_verificacao_em: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }).eq('id', account.id);
   } catch (error) {
@@ -1108,6 +1124,8 @@ async function syncAccount(account, rules, gestores) {
       ultima_sync_em: new Date().toISOString(),
       ultima_sync_status: 'ERRO',
       ultima_sync_erro: String(error.responseText || error.message || error).slice(0, 1000),
+      conexao_status: 'ERRO',
+      ultima_verificacao_em: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }).eq('id', account.id);
   }
