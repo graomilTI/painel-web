@@ -2990,7 +2990,7 @@ CREATE TABLE public.grm_despesas_retroativas_auditoria (
   erro text,
   diagnostico jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT grm_despesas_retroativas_auditoria_acao_check CHECK ((acao = ANY (ARRAY['NONE'::text, 'APPROVE'::text, 'CREATE'::text]))),
+  CONSTRAINT grm_despesas_retroativas_auditoria_acao_check CHECK ((acao = ANY (ARRAY['NONE'::text, 'APPROVE'::text, 'CREATE'::text, 'REPROVE'::text, 'ADIADO'::text, 'SKIP_DUPLICADO'::text]))),
   CONSTRAINT grm_despesas_retroativas_auditoria_pkey PRIMARY KEY (id)
 );
 
