@@ -33,9 +33,11 @@ const state = {
   isMaster: false,
   allowedSupervisoes: [],
   currentTab: 'dashboard',
-  emailSelectedId: 1,
+  emailSelectedId: null,
   emailFolder: 'entrada',
   emailSearch: '',
+  emailAccount: null,
+  emailMessages: [],
   loading: false,
   os: [],
   colaboradores: [],
@@ -702,17 +704,61 @@ function renderCurrentTab() {
   if (state.currentTab === 'dashboard') { renderInicio(main); triggerStateFillAnim(main); return; }
   if (state.currentTab === 'programacao' || state.currentTab === 'os') return renderProgramacao(main);
   if (state.currentTab === 'patrimonio') return renderPatrimonio(main);
-  if (state.currentTab === 'email') return renderEmail(main);
+  if (state.currentTab === 'email') return renderGestorEmail(main);
   return renderMais(main);
 }
 
-const EMAIL_DEMO = [
-  { id: 1, from: 'Fernanda Lima', initials: 'FL', subject: 'Aprovação de hospedagem — equipe Norte', preview: 'Bom dia! Encaminho a relação atualizada para aprovação das reservas desta semana.', time: '09:42', unread: true, starred: true, tag: 'Operação', color: '#2dd4a0', body: 'Bom dia!\n\nEncaminho a relação atualizada da equipe Norte para aprovação das reservas desta semana. Os dados dos colaboradores e os períodos já foram conferidos.\n\nFico no aguardo da sua validação para seguirmos com as emissões.\n\nObrigada,\nFernanda' },
-  { id: 2, from: 'Compras • Grão 1000', initials: 'CG', subject: 'Solicitação #2841 aprovada', preview: 'A solicitação de materiais para a regional foi aprovada e seguirá para cotação.', time: '08:17', unread: true, starred: false, tag: 'Compras', color: '#93c5fd', body: 'Olá,\n\nA solicitação #2841 foi aprovada. O time de Compras iniciará as cotações e você receberá uma atualização assim que houver fornecedor definido.\n\nAtenciosamente,\nCentral de Compras' },
-  { id: 3, from: 'Rafael Martins', initials: 'RM', subject: 'Relatório semanal de produtividade', preview: 'Segue o consolidado da regional referente ao período de 24 a 30 de agosto.', time: 'Ontem', unread: false, starred: false, tag: 'Relatório', color: '#fde68a', body: 'Olá!\n\nSegue o consolidado de produtividade da regional referente ao período de 24 a 30 de agosto. Os principais desvios estão destacados no anexo.\n\nAbraço,\nRafael' },
-  { id: 4, from: 'Patrimônio', initials: 'PT', subject: '3 itens aguardando conferência', preview: 'Existem patrimônios sem leitura há mais de sete dias na sua regional.', time: '29 ago', unread: false, starred: true, tag: 'Alerta', color: '#f87171', body: 'Atenção, gestor.\n\nExistem 3 patrimônios sem leitura há mais de sete dias. Acesse o módulo Patrimônio para consultar os itens pendentes e registrar a conferência.' },
-  { id: 5, from: 'Juliana Costa', initials: 'JC', subject: 'Reunião de alinhamento — setembro', preview: 'Podemos confirmar o alinhamento mensal para quarta-feira às 10h?', time: '28 ago', unread: false, starred: false, tag: 'Agenda', color: '#c4b5fd', body: 'Oi!\n\nPodemos confirmar nosso alinhamento mensal para quarta-feira às 10h? Reservei 45 minutos para revisarmos metas e prioridades.\n\nAté lá,\nJuliana' },
-];
+function gestorMailboxType(path) {
+  const value = normalize(path).toLowerCase();
+  if (/sent|enviad/.test(value)) return 'enviados';
+  if (/trash|lixeira|deleted/.test(value)) return 'lixeira';
+  if (/junk|spam/.test(value)) return 'spam';
+  return 'entrada';
+}
+
+async function loadGestorEmailData() {
+  const { data: account, error: accountError } = await supabase.from('email_accounts_public').select('*').eq('escopo', 'GESTOR').maybeSingle();
+  if (accountError) throw accountError;
+  state.emailAccount = account || null;
+  if (!account) { state.emailMessages = []; return; }
+  const { data, error } = await supabase.from('email_messages')
+    .select('id,account_id,mailbox_path,remetente_nome,remetente_email,destinatario,cc,assunto,corpo_texto,corpo_html,data_recebimento,lido,favorito,excluido_em')
+    .eq('account_id', account.id).order('data_recebimento', { ascending: false }).limit(150);
+  if (error) throw error;
+  state.emailMessages = data || [];
+  if (!state.emailMessages.some((m) => String(m.id) === String(state.emailSelectedId))) state.emailSelectedId = state.emailMessages[0]?.id || null;
+}
+
+async function renderGestorEmail(main) {
+  main.innerHTML = '<div class="empty">Carregando sua caixa de e-mail...</div>';
+  try { await loadGestorEmailData(); } catch (error) { main.innerHTML = `<div class="empty">Não foi possível carregar seus e-mails.<br>${escapeHtml(error.message)}</div>`; return; }
+  if (!state.emailAccount) {
+    main.innerHTML = `<section class="mail-shell"><header class="mail-header"><div><div class="mail-eyebrow">Caixa pessoal do Gestor</div><h1>E-mail</h1><p>Conecte sua conta profissional. Ela ficará vinculada somente ao seu usuário.</p></div></header><div class="mail-modal-card" style="margin:20px auto"><span class="mail-modal-mark">@</span><h2>Conectar meu e-mail</h2><form id="gestorMailConnect"><label class="field"><span>E-mail</span><input id="gestorMailEmail" type="email" required placeholder="seu.nome@grao1000.com.br"></label><label class="field"><span>Senha</span><input id="gestorMailPassword" type="password" required autocomplete="current-password"></label><div class="mail-security-note">🔒 A conta será associada ao seu login atual.</div><div class="help warn" id="gestorMailFeedback"></div><button class="btn" type="submit">Conectar conta</button></form></div></section>`;
+    main.querySelector('#gestorMailConnect')?.addEventListener('submit', async (event) => {
+      event.preventDefault(); const email = main.querySelector('#gestorMailEmail').value.trim(); const domain = email.split('@')[1] || 'grao1000.com.br'; const feedback = main.querySelector('#gestorMailFeedback');
+      feedback.textContent = 'Preparando sua conta...';
+      const { data, error } = await supabase.functions.invoke('gestor-email-account', { body: { action: 'connect', email, username: email, password: main.querySelector('#gestorMailPassword').value, provider: 'CPANEL', imap_host: `mail.${domain}`, imap_port: 993, smtp_host: `mail.${domain}`, smtp_port: 465 } });
+      if (error || !data?.ok) { feedback.textContent = data?.error || error?.message || 'Falha ao conectar.'; return; }
+      await renderGestorEmail(main);
+    });
+    return;
+  }
+
+  const term = normalize(state.emailSearch);
+  const rows = state.emailMessages.filter((m) => gestorMailboxType(m.mailbox_path) === state.emailFolder).filter((m) => state.emailFolder === 'lixeira' ? m.excluido_em : !m.excluido_em).filter((m) => !term || normalize(`${m.remetente_nome} ${m.remetente_email} ${m.assunto} ${m.corpo_texto}`).includes(term));
+  const selected = state.emailMessages.find((m) => String(m.id) === String(state.emailSelectedId)) || rows[0] || null;
+  const connected = state.emailAccount.conexao_status === 'CONECTADA';
+  main.innerHTML = `<section class="mail-shell"><header class="mail-header"><div><div class="mail-eyebrow">Caixa pessoal do Gestor</div><h1>E-mail</h1><p>Somente mensagens da sua conta vinculada.</p></div><button class="mail-account" id="gestorMailSync" type="button"><span class="mail-account-dot" style="background:${connected ? '#2dd4a0' : '#fde68a'}"></span><span><b>${connected ? 'Conta conectada' : 'Sincronização pendente'}</b><small>${escapeHtml(state.emailAccount.email)}</small></span><span>↻</span></button></header><div class="mail-toolbar"><label class="mail-search">${emailIcon('search')}<input id="gestorMailSearch" type="search" value="${escapeHtml(state.emailSearch)}" placeholder="Buscar em meus e-mails"></label><button class="mail-compose" id="gestorMailCompose" type="button">${emailIcon('compose')}<span>Novo e-mail</span></button></div><div class="mail-workspace"><aside class="mail-folders">${[['entrada','Entrada'],['enviados','Enviados'],['spam','Spam'],['lixeira','Lixeira']].map(([id,label])=>`<button class="${state.emailFolder===id?'is-active':''}" data-gestor-folder="${id}" type="button">${emailIcon(id==='entrada'?'inbox':'archive')}<span>${label}</span></button>`).join('')}</aside><div class="mail-list-panel"><div class="mail-list-head"><div><b>${state.emailFolder[0].toUpperCase()+state.emailFolder.slice(1)}</b><span>${rows.length} mensagens</span></div></div><div class="mail-list">${rows.length?rows.map((m)=>`<button class="mail-row ${m.lido?'':'is-unread'} ${selected?.id===m.id?'is-selected':''}" data-gestor-email="${m.id}" type="button"><span class="mail-avatar" style="--avatar:#2dd4a0">${escapeHtml(String(m.remetente_nome||m.remetente_email||'??').slice(0,2).toUpperCase())}</span><span class="mail-row-copy"><span class="mail-row-top"><b>${escapeHtml(m.remetente_nome||m.remetente_email||'-')}</b><time>${brDate(m.data_recebimento)}</time></span><strong>${escapeHtml(m.assunto||'(sem assunto)')}</strong><span class="mail-preview">${escapeHtml(String(m.corpo_texto||'').replace(/\s+/g,' ').slice(0,100))}</span></span></button>`).join(''):'<div class="empty">Nenhuma mensagem nesta pasta.</div>'}</div></div><article class="mail-reader"><div class="mail-reader-actions"><button class="mail-mobile-back" type="button">‹ Voltar</button><span></span>${selected?`<button data-gestor-action="star" type="button">${emailIcon('star')}</button><button data-gestor-action="trash" type="button">${emailIcon('trash')}</button>`:''}</div>${selected?`<div class="mail-reader-title"><h2>${escapeHtml(selected.assunto||'(sem assunto)')}</h2></div><div class="mail-sender"><span class="mail-avatar" style="--avatar:#2dd4a0">${escapeHtml(String(selected.remetente_nome||'??').slice(0,2).toUpperCase())}</span><div><b>${escapeHtml(selected.remetente_nome||selected.remetente_email||'-')}</b><span>${escapeHtml(selected.remetente_email||'')} · ${brDate(selected.data_recebimento)}</span></div></div><div class="mail-body">${escapeHtml(selected.corpo_texto||String(selected.corpo_html||'').replace(/<[^>]+>/g,' ')||'(sem conteúdo)').replaceAll('\n','<br>')}</div><div class="mail-reply-actions"><button class="btn" data-gestor-compose="reply" type="button">${emailIcon('reply')} Responder</button><button class="btn secondary" data-gestor-compose="forward" type="button">Encaminhar</button></div>`:'<div class="empty">Selecione uma mensagem.</div>'}</article></div></section><div class="mail-modal" id="gestorComposeModal" hidden><div class="mail-modal-card"><button class="mail-modal-close" data-gestor-close type="button">×</button><div class="mail-eyebrow">Nova mensagem</div><h2>Escrever e-mail</h2><form id="gestorComposeForm"><label class="field"><span>Para</span><input id="gestorTo" type="email" required></label><label class="field"><span>Assunto</span><input id="gestorSubject" required></label><label class="field"><span>Mensagem</span><textarea id="gestorBody" rows="7" required></textarea></label><button class="btn" type="submit">Enviar</button></form></div></div>`;
+  main.querySelector('#gestorMailSearch')?.addEventListener('input', (e) => { state.emailSearch=e.target.value; renderGestorEmail(main); });
+  main.querySelectorAll('[data-gestor-folder]').forEach((b)=>b.addEventListener('click',()=>{state.emailFolder=b.dataset.gestorFolder;state.emailSelectedId=null;renderGestorEmail(main);}));
+  main.querySelectorAll('[data-gestor-email]').forEach((b)=>b.addEventListener('click',async()=>{state.emailSelectedId=b.dataset.gestorEmail;await supabase.from('email_messages').update({lido:true}).eq('id',b.dataset.gestorEmail);await renderGestorEmail(main);main.querySelector('.mail-workspace')?.classList.add('is-reading');}));
+  main.querySelector('#gestorMailSync')?.addEventListener('click',async()=>{await supabase.functions.invoke('gestor-email-account',{body:{action:'sync'}});showToast('Sincronização solicitada.');});
+  const openCompose=(mode='new')=>{const modal=main.querySelector('#gestorComposeModal');modal.hidden=false;if(mode==='reply'&&selected){main.querySelector('#gestorTo').value=selected.remetente_email||'';main.querySelector('#gestorSubject').value=/^re:/i.test(selected.assunto||'')?selected.assunto:`Re: ${selected.assunto||''}`;}modal.dataset.mode=mode;};
+  main.querySelector('#gestorMailCompose')?.addEventListener('click',()=>openCompose()); main.querySelectorAll('[data-gestor-compose]').forEach(b=>b.addEventListener('click',()=>openCompose(b.dataset.gestorCompose))); main.querySelector('[data-gestor-close]')?.addEventListener('click',()=>main.querySelector('#gestorComposeModal').hidden=true);
+  main.querySelector('#gestorComposeForm')?.addEventListener('submit',async(e)=>{e.preventDefault();const mode=main.querySelector('#gestorComposeModal').dataset.mode||'new';const{error}=await supabase.from('email_outbox').insert({email_id:mode==='new'?null:selected?.id||null,account_id:state.emailAccount.id,para:main.querySelector('#gestorTo').value.trim(),assunto:main.querySelector('#gestorSubject').value.trim(),corpo:main.querySelector('#gestorBody').value.trim(),status:'PENDENTE',tipo:mode==='reply'?'RESPOSTA':'NOVO',aprovado_por:state.user.id,aprovado_por_nome:state.user.email,aprovado_em:new Date().toISOString()});if(error)return showToast(error.message,'error');main.querySelector('#gestorComposeModal').hidden=true;showToast('Mensagem adicionada à fila de envio.');});
+  main.querySelector('[data-gestor-action="star"]')?.addEventListener('click',async()=>{await supabase.from('email_messages').update({favorito:!selected.favorito}).eq('id',selected.id);await renderGestorEmail(main);});
+  main.querySelector('[data-gestor-action="trash"]')?.addEventListener('click',async()=>{await supabase.from('email_messages').update({excluido_em:new Date().toISOString(),mailbox_path:'Trash'}).eq('id',selected.id);state.emailSelectedId=null;await renderGestorEmail(main);});
+}
 
 function emailIcon(name) {
   const paths = {
@@ -725,90 +771,6 @@ function emailIcon(name) {
     trash: '<path d="M3 6h18"/><path d="m8 6 1-3h6l1 3"/><path d="M6 6l1 15h10l1-15"/>',
   };
   return `<svg class="mail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
-}
-
-function renderEmail(main) {
-  const term = normalize(state.emailSearch);
-  const messages = EMAIL_DEMO.filter((m) => !term || normalize(`${m.from} ${m.subject} ${m.preview}`).includes(term));
-  const selected = EMAIL_DEMO.find((m) => m.id === state.emailSelectedId) || messages[0] || EMAIL_DEMO[0];
-  const unread = EMAIL_DEMO.filter((m) => m.unread).length;
-  main.innerHTML = `
-    <section class="mail-shell">
-      <header class="mail-header">
-        <div>
-          <div class="mail-eyebrow">Central de comunicação</div>
-          <h1>E-mail</h1>
-          <p>Mensagens da sua conta profissional em um só lugar.</p>
-        </div>
-        <button class="mail-account" id="mailConnectBtn" type="button">
-          <span class="mail-account-dot"></span>
-          <span><b>Conectar conta</b><small>Login e senha</small></span>
-          <span aria-hidden="true">›</span>
-        </button>
-      </header>
-
-      <div class="mail-toolbar">
-        <label class="mail-search">${emailIcon('search')}<input id="mailSearch" type="search" value="${escapeHtml(state.emailSearch)}" placeholder="Buscar em e-mails" aria-label="Buscar em e-mails"></label>
-        <button class="mail-compose" id="mailComposeBtn" type="button">${emailIcon('compose')}<span>Novo e-mail</span></button>
-      </div>
-
-      <div class="mail-workspace">
-        <aside class="mail-folders" aria-label="Pastas de e-mail">
-          <button class="is-active" type="button">${emailIcon('inbox')}<span>Entrada</span><b>${unread}</b></button>
-          <button type="button">${emailIcon('star')}<span>Com estrela</span></button>
-          <button type="button">${emailIcon('archive')}<span>Arquivados</span></button>
-          <div class="mail-storage"><span><b>2,4 GB</b> de 15 GB</span><i><em></em></i></div>
-        </aside>
-
-        <div class="mail-list-panel">
-          <div class="mail-list-head"><div><b>Caixa de entrada</b><span>${messages.length} mensagens</span></div><button type="button" title="Atualizar">↻</button></div>
-          <div class="mail-list" id="mailList">
-            ${messages.map((m) => `<button class="mail-row ${m.unread ? 'is-unread' : ''} ${m.id === selected.id ? 'is-selected' : ''}" data-email-id="${m.id}" type="button">
-              <span class="mail-avatar" style="--avatar:${m.color}">${m.initials}</span>
-              <span class="mail-row-copy"><span class="mail-row-top"><b>${escapeHtml(m.from)}</b><time>${m.time}</time></span><strong>${escapeHtml(m.subject)}</strong><span class="mail-preview">${escapeHtml(m.preview)}</span><span class="mail-tag">${escapeHtml(m.tag)}</span></span>
-              ${m.unread ? '<i class="mail-unread-dot" title="Não lido"></i>' : ''}
-            </button>`).join('') || '<div class="empty">Nenhuma mensagem encontrada.</div>'}
-          </div>
-        </div>
-
-        <article class="mail-reader" id="mailReader">
-          <div class="mail-reader-actions">
-            <button class="mail-mobile-back" id="mailBackBtn" type="button">‹ Voltar</button>
-            <span></span>
-            <button type="button" title="Arquivar">${emailIcon('archive')}</button><button type="button" title="Excluir">${emailIcon('trash')}</button>
-          </div>
-          <div class="mail-reader-title"><span class="mail-tag">${escapeHtml(selected.tag)}</span><h2>${escapeHtml(selected.subject)}</h2></div>
-          <div class="mail-sender"><span class="mail-avatar" style="--avatar:${selected.color}">${selected.initials}</span><div><b>${escapeHtml(selected.from)}</b><span>para mim · ${selected.time}</span></div><button type="button" title="Marcar com estrela">${emailIcon('star')}</button></div>
-          <div class="mail-body">${escapeHtml(selected.body).replaceAll('\n', '<br>')}</div>
-          <div class="mail-reply-actions"><button class="btn" type="button">${emailIcon('reply')} Responder</button><button class="btn secondary" type="button">Encaminhar</button></div>
-        </article>
-      </div>
-    </section>
-    <div class="mail-modal" id="mailConnectModal" hidden>
-      <div class="mail-modal-card" role="dialog" aria-modal="true" aria-labelledby="mailModalTitle">
-        <button class="mail-modal-close" data-mail-close type="button" aria-label="Fechar">×</button>
-        <span class="mail-modal-mark">@</span><div class="mail-eyebrow">Configuração da conta</div><h2 id="mailModalTitle">Conectar seu e-mail</h2><p>Informe os dados da conta profissional. A conexão segura será implementada na próxima etapa.</p>
-        <label class="field"><span>E-mail</span><input type="email" placeholder="gestor@empresa.com.br"></label>
-        <label class="field"><span>Senha</span><input type="password" placeholder="••••••••••••"></label>
-        <label class="field"><span>Provedor</span><select><option>Detectar automaticamente</option><option>Microsoft 365 / Outlook</option><option>Google Workspace / Gmail</option><option>Outro (IMAP/SMTP)</option></select></label>
-        <div class="mail-security-note">🔒 Suas credenciais não são salvas neste protótipo.</div>
-        <button class="btn" id="mailDemoConnect" type="button">Continuar</button>
-      </div>
-    </div>
-    <div class="mail-modal" id="mailComposeModal" hidden>
-      <div class="mail-modal-card mail-compose-card" role="dialog" aria-modal="true"><button class="mail-modal-close" data-mail-close type="button" aria-label="Fechar">×</button><div class="mail-eyebrow">Nova mensagem</div><h2>Novo e-mail</h2><label class="field"><span>Para</span><input type="email" placeholder="nome@empresa.com.br"></label><label class="field"><span>Assunto</span><input type="text" placeholder="Assunto da mensagem"></label><label class="field"><span>Mensagem</span><textarea rows="7" placeholder="Escreva sua mensagem..."></textarea></label><button class="btn" id="mailDemoSend" type="button">Enviar mensagem</button></div>
-    </div>`;
-
-  main.querySelector('#mailSearch')?.addEventListener('input', (event) => { state.emailSearch = event.target.value; renderEmail(main); main.querySelector('#mailSearch')?.focus(); });
-  main.querySelectorAll('[data-email-id]').forEach((row) => row.addEventListener('click', () => { state.emailSelectedId = Number(row.dataset.emailId); renderEmail(main); main.querySelector('.mail-workspace')?.classList.add('is-reading'); }));
-  main.querySelector('#mailBackBtn')?.addEventListener('click', () => main.querySelector('.mail-workspace')?.classList.remove('is-reading'));
-  const openModal = (id) => { const modal = main.querySelector(id); if (modal) modal.hidden = false; };
-  main.querySelector('#mailConnectBtn')?.addEventListener('click', () => openModal('#mailConnectModal'));
-  main.querySelector('#mailComposeBtn')?.addEventListener('click', () => openModal('#mailComposeModal'));
-  main.querySelectorAll('[data-mail-close]').forEach((btn) => btn.addEventListener('click', () => { btn.closest('.mail-modal').hidden = true; }));
-  main.querySelectorAll('.mail-modal').forEach((modal) => modal.addEventListener('click', (event) => { if (event.target === modal) modal.hidden = true; }));
-  main.querySelector('#mailDemoConnect')?.addEventListener('click', () => showToast('Layout validado. A conexão segura será feita na próxima etapa.'));
-  main.querySelector('#mailDemoSend')?.addEventListener('click', () => showToast('Composição pronta. O envio será conectado na próxima etapa.'));
 }
 
 /* Brazil state SVG paths — viewBox 0 0 800 796 */
