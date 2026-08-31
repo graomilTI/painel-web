@@ -44,6 +44,7 @@ export const MENU_CONFIG = [
       item("logistica_gestor", "Logística", "logistica", ["LOGISTICA_GESTOR", "GESTOR_LOGISTICA"]),
       item("patrimonios_gestor", "Patrimônios", "patrimonios", ["PATRIMONIOS"]),
       item("contato_cliente", "Contato Cliente", "contato-cliente", ["CONTATO_CLIENTE"]),
+      item("email_gestor", "E-mail", "emails", ["EMAILS", "CENTRAL_EMAILS", "CENTRAL_DE_EMAILS", "GESTOR_APP", "PROGRAMACAO"]),
       item("historico_producao", "Histórico Produção", "consultar-producao", ["RELATORIOS_PROD", "CONSULTAR_PRODUCAO", "PRODUCAO_HISTORICO", "GESTOR_APP", "PROGRAMACAO", "DESEMPENHO"])
     ]
   },
