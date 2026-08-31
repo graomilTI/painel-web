@@ -5875,6 +5875,7 @@ CREATE TABLE public.programacao_veiculo_proprio (
   criado_por uuid,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  tarifa_km numeric(12,2) NOT NULL DEFAULT 1.20,
   CONSTRAINT programacao_veiculo_proprio_colaborador_id_key UNIQUE (colaborador_id),
   CONSTRAINT programacao_veiculo_proprio_pkey PRIMARY KEY (id)
 );
