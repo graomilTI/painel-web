@@ -70,7 +70,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
-  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260827-uniforme-situacao-ativo') }],
+  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260831-remove-aba-epi') }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js'), extraModules: [() => import('./logistica-abertura-upload.js'), () => import('./logistica-abertura-os-correcao.js')] }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
@@ -92,7 +92,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-cadastros', { title: 'Frotas · Cadastros', module: () => import('./frotas-cadastros.js?v=20260829-abas-flush') }],
   ['frotas-manutencao-grupo', { title: 'Frotas · Manutenção', module: () => import('./frotas-manutencao-grupo.js?v=20260829-abas-flush') }],
   ['frotas-ocorrencias', { title: 'Frotas · Ocorrências', module: () => import('./frotas-ocorrencias.js?v=20260829-abas-flush') }],
-  ['epi-rh', { title: 'EPI', module: () => import('./epiRh.js?v=20260826-fichas-anteriores'), extraModules: [() => import('./epiRhPresetPatch.js')] }],
+  ['epi-rh', { title: 'EPI', module: () => import('./epiRh.js?v=20260831-comprados-gestor'), extraModules: [() => import('./epiRhPresetPatch.js')] }],
   ['admin-usuarios', { title: 'Usuários e acessos', module: () => import('./admin-usuarios.js'), extraModules: [() => import('./admin-usuarios-create-password.js')] }],
   // relatorio-importador.js é compartilhado por 8 rotas — todas levam ao mesmo hub genérico de importação (confirmado: openHome() não depende da URL/rota).
   ['importar-relatorios', { title: 'Importar Relatórios', module: () => import('./relatorio-importador.js') }],
