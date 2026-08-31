@@ -5,33 +5,42 @@ import { supabase } from './supabaseClient.js';
 // Aba 1 — Conferência de km: lê os deslocamentos sincronizados da programação
 //         (programacao_deslocamento, alimentada pelo fluxo GRM/Programação),
 //         permite conferir/lançar km por colaborador e calcula o valor de
-//         reembolso com base na tarifa R$/km configurável.
-// Aba 2 — Relação de veículo próprio (programacao_veiculo_proprio): fallback
-//         das caronas; quem está na relação vai de carro próprio (REEMBOLSO KM),
-//         quem não está vai de Uber/Táxi.
+//         reembolso com base na tarifa R$/km de cada colaborador.
+// Aba 2 — Resumo: o mesmo período agrupado por colaborador, com cada data em
+//         que ele teve deslocamento lançado (conforme a Programação).
+// Aba 3 — Configuração (programacao_veiculo_proprio): quem usa veículo
+//         próprio (REEMBOLSO KM) — fallback das caronas — e a tarifa R$/km
+//         de cada um (não é universal, cada colaborador tem a sua).
 
 const STYLE_ID = 'conf-desloc-styles';
+const DEFAULT_TARIFA = 1.2; // usado só quando o colaborador ainda não tem tarifa configurada
 
 let elRoot = null;
 let abaAtiva = 'km';
 
-// ------ estado aba KM ------
+// ------ estado compartilhado (período) ------
 let deslocs = [];        // linhas de programacao_deslocamento no período
-let tarifaKm = 1.2;      // R$/km (deslocamento_config.tarifa_km)
-let filtroTipo = 'TODOS';
-let filtroBusca = '';
 let kmDe = '';
 let kmAte = '';
 
-// ------ estado aba Relação ------
+// ------ estado aba Conferência de km ------
+let filtroTipo = 'TODOS';
+let filtroBusca = '';
+
+// ------ estado aba Resumo ------
+let resumoBusca = '';
+
+// ------ estado aba Configuração ------
 let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
-let lista = [];          // linhas de programacao_veiculo_proprio
+let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km)
 let estimativaPorColaborador = new Map(); // chave -> média mensal (R$) dos últimos 3 meses
+let tarifaPorChave = new Map();
+let tarifaPorNome = new Map();
 
 const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'NÃO PRECISA', 'OUTRO'];
 
 function norm(s) {
-  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim().replace(/\s+/g, ' ');
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim().replace(/\s+/g, ' ');
 }
 function chaveDe(cpf, nome) {
   const c = String(cpf || '').replace(/\D/g, '');
@@ -85,14 +94,12 @@ function injectStyles() {
     .cd-kpi b{font-size:19px;color:#f8fafc;font-variant-numeric:tabular-nums}
     .cd-kpi span{font-size:11px;color:#8ba79a}
     .cd-card{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:16px;padding:14px 16px;margin-bottom:14px}
-    .cd-filtros{display:grid;grid-template-columns:150px 150px 200px minmax(200px,1fr) 190px;gap:8px;align-items:end}
+    .cd-filtros{display:grid;grid-template-columns:150px 150px 200px minmax(200px,1fr);gap:8px;align-items:end}
     @media (max-width:960px){.cd-filtros{grid-template-columns:1fr 1fr}}
     .cd-lbl{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#6fd0a5;margin-bottom:4px;display:block}
     .cd-input,.cd-area,.cd-select{width:100%;box-sizing:border-box;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:10px;padding:9px 11px;font-size:13.5px;font-family:inherit;outline:none}
     .cd-input:focus,.cd-area:focus,.cd-select:focus{border-color:#6fd0a5}
     .cd-area{min-height:84px;resize:vertical}
-    .cd-tarifa{display:flex;align-items:center;gap:6px}
-    .cd-tarifa .cd-input{width:90px;text-align:right}
     .cd-btn{background:rgba(63,168,120,.16);border:1px solid rgba(134,239,172,.4);color:#dcfce7;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
     .cd-btn:hover{background:rgba(63,168,120,.3)}
     .cd-btn:disabled{opacity:.6;cursor:not-allowed}
@@ -115,6 +122,9 @@ function injectStyles() {
     .cd-km-input{width:84px;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:8px;padding:6px 8px;font-size:13px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
     .cd-km-input:focus{border-color:#6fd0a5}
     .cd-km-input.salvo{border-color:#86efac;box-shadow:0 0 0 2px rgba(134,239,172,.2)}
+    .cd-tarifa-input{width:76px;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:8px;padding:6px 8px;font-size:13px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
+    .cd-tarifa-input:focus{border-color:#6fd0a5}
+    .cd-tarifa-input.salvo{border-color:#86efac;box-shadow:0 0 0 2px rgba(134,239,172,.2)}
     .cd-valor{font-weight:800;color:#fde68a}
     .cd-valor.zero{color:#64748b;font-weight:600}
     .cd-sub{font-size:11px;color:#8ba79a}
@@ -130,7 +140,7 @@ function injectStyles() {
     .cd-count b{color:#6fd0a5}
     .cd-rel-table{width:100%;border-collapse:separate;border-spacing:0 6px;margin-top:4px}
     .cd-rel-table th{text-align:left;padding:0 11px 4px;font-size:10.5px;color:#6fa589;text-transform:uppercase;letter-spacing:.04em;font-weight:750}
-    .cd-rel-table th:last-child{text-align:right}
+    .cd-rel-table th.num{text-align:right}
     .cd-rel-table td{background:rgba(13,32,24,.6);border-top:1px solid rgba(111,208,165,.12);border-bottom:1px solid rgba(111,208,165,.12);padding:9px 11px;font-size:13px;color:#eef7f2}
     .cd-rel-table td:first-child{border-left:1px solid rgba(111,208,165,.12);border-radius:10px 0 0 10px;font-weight:700}
     .cd-rel-table td:last-child{border-right:1px solid rgba(111,208,165,.12);border-radius:0 10px 10px 0;text-align:right;white-space:nowrap}
@@ -142,31 +152,23 @@ function injectStyles() {
     .cd-empty{padding:16px;border:1px dashed rgba(111,208,165,.22);border-radius:12px;color:#8ba79a;font-size:13px;text-align:center}
     .cd-grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
     @media (max-width:900px){.cd-grid2{grid-template-columns:1fr}}
+    .cd-resumo-group{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:14px;padding:12px 14px;margin-bottom:10px}
+    .cd-resumo-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+    .cd-resumo-head h4{margin:0;font-size:14.5px;color:#f8fafc}
+    .cd-resumo-stats{display:flex;gap:14px;font-size:12px;color:#9fb7aa}
+    .cd-resumo-stats b{color:#6fd0a5}
+    .cd-resumo-rows{display:flex;flex-direction:column;gap:5px}
+    .cd-resumo-row{display:grid;grid-template-columns:78px 1fr auto auto auto;gap:10px;align-items:center;padding:7px 9px;background:rgba(13,32,24,.55);border:1px solid rgba(111,208,165,.1);border-radius:9px;font-size:12.5px}
+    @media (max-width:760px){.cd-resumo-row{grid-template-columns:1fr 1fr;grid-template-areas:"data tipo" "trajeto trajeto" "km valor"}}
+    .cd-resumo-row .rr-data{white-space:nowrap;color:#cbd5e1;font-weight:700}
+    .cd-resumo-row .rr-trajeto{color:#9fb7aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cd-resumo-row .rr-km{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .cd-resumo-row .rr-valor{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:800;color:#fde68a}
   `;
   document.head.appendChild(st);
 }
 
-/* ========================== ABA 1 · CONFERÊNCIA DE KM ========================== */
-
-async function loadTarifa() {
-  const { data, error } = await supabase
-    .from('deslocamento_config')
-    .select('valor')
-    .eq('chave', 'tarifa_km')
-    .maybeSingle();
-  if (!error && data?.valor && typeof data.valor.valor !== 'undefined') {
-    const v = Number(data.valor.valor);
-    if (Number.isFinite(v) && v > 0) tarifaKm = v;
-  }
-}
-
-async function saveTarifa(v) {
-  const { error } = await supabase
-    .from('deslocamento_config')
-    .upsert({ chave: 'tarifa_km', valor: { valor: v }, updated_at: new Date().toISOString() }, { onConflict: 'chave' });
-  if (error) throw error;
-  tarifaKm = v;
-}
+/* ========================== DADOS COMPARTILHADOS ========================== */
 
 async function loadDeslocs() {
   let q = supabase
@@ -182,23 +184,25 @@ async function loadDeslocs() {
   deslocs = data || [];
 }
 
-function deslocsFiltrados() {
-  const busca = norm(filtroBusca);
-  return deslocs.filter((d) => {
-    if (filtroTipo !== 'TODOS' && norm(d.tipo_deslocamento) !== norm(filtroTipo)) return false;
-    if (busca && !norm(d.nome_colaborador).includes(busca) && !norm(d.placa_veiculo).includes(busca)) return false;
-    return true;
-  });
+function montarTarifas() {
+  tarifaPorChave = new Map(lista.map((l) => [String(l.colaborador_id), Number(l.tarifa_km) || DEFAULT_TARIFA]));
+  tarifaPorNome = new Map(lista.map((l) => [norm(l.nome), Number(l.tarifa_km) || DEFAULT_TARIFA]));
+}
+
+function tarifaDe(d) {
+  return tarifaPorChave.get(String(d.colaborador_id))
+    ?? tarifaPorNome.get(norm(d.nome_colaborador))
+    ?? DEFAULT_TARIFA;
 }
 
 function valorLinha(d) {
   const v = Number(d.valor || 0);
   if (v > 0) return v;
-  if (norm(d.tipo_deslocamento).includes('REEMBOLSO')) return Number(d.km || 0) * tarifaKm;
+  if (norm(d.tipo_deslocamento).includes('REEMBOLSO')) return Number(d.km || 0) * tarifaDe(d);
   return 0;
 }
 
-function renderKpisKm() {
+function renderKpis() {
   const box = elRoot.querySelector('#cdKpis');
   if (!box) return;
   const rows = deslocsFiltrados();
@@ -211,9 +215,20 @@ function renderKpisKm() {
     <div class="cd-kpi"><small>Registros no período</small><b>${rows.length}</b><span>${colabs} colaborador(es)</span></div>
     <div class="cd-kpi"><small>Km total</small><b>${numKm(kmTotal)} km</b><span>todos os tipos</span></div>
     <div class="cd-kpi"><small>Reembolso km</small><b>${reemb.length}</b><span>deslocamentos a reembolsar</span></div>
-    <div class="cd-kpi"><small>Valor a reembolsar</small><b>${moeda(valorReemb)}</b><span>tarifa ${moeda(tarifaKm)}/km</span></div>
-    <div class="cd-kpi"><small>Veículo próprio</small><b>${naRelacao}</b><span>ativos na relação</span></div>
+    <div class="cd-kpi"><small>Valor a reembolsar</small><b>${moeda(valorReemb)}</b><span>tarifa por colaborador</span></div>
+    <div class="cd-kpi"><small>Veículo próprio</small><b>${naRelacao}</b><span>ativos na configuração</span></div>
   `;
+}
+
+/* ========================== ABA 1 · CONFERÊNCIA DE KM ========================== */
+
+function deslocsFiltrados() {
+  const busca = norm(filtroBusca);
+  return deslocs.filter((d) => {
+    if (filtroTipo !== 'TODOS' && norm(d.tipo_deslocamento) !== norm(filtroTipo)) return false;
+    if (busca && !norm(d.nome_colaborador).includes(busca) && !norm(d.placa_veiculo).includes(busca)) return false;
+    return true;
+  });
 }
 
 function renderTabelaKm() {
@@ -251,7 +266,7 @@ function renderTabelaKm() {
         </tbody>
       </table>
     </div>
-    <div class="cd-msg">Edite o km diretamente na tabela e pressione Enter (ou clique fora do campo) para salvar. Para deslocamentos do tipo <b>REEMBOLSO KM</b>, o valor é recalculado automaticamente pela tarifa vigente.</div>
+    <div class="cd-msg">Edite o km diretamente na tabela e pressione Enter (ou clique fora do campo) para salvar. Para deslocamentos do tipo <b>REEMBOLSO KM</b>, o valor é recalculado automaticamente pela tarifa configurada para aquele colaborador (aba Configuração).</div>
   `;
 }
 
@@ -261,7 +276,7 @@ async function salvarKm(id, kmNovo, inputEl, rowEl) {
   const km = Number(kmNovo);
   if (!Number.isFinite(km) || km < 0) { inputEl.value = Number(d.km || 0); return; }
   const isReemb = norm(d.tipo_deslocamento).includes('REEMBOLSO');
-  const valor = isReemb ? Number((km * tarifaKm).toFixed(2)) : Number(d.valor || 0);
+  const valor = isReemb ? Number((km * tarifaDe(d)).toFixed(2)) : Number(d.valor || 0);
   const { error } = await supabase
     .from('programacao_deslocamento')
     .update({ km, valor, updated_at: new Date().toISOString() })
@@ -276,7 +291,7 @@ async function salvarKm(id, kmNovo, inputEl, rowEl) {
   }
   inputEl.classList.add('salvo');
   setTimeout(() => inputEl.classList.remove('salvo'), 1200);
-  renderKpisKm();
+  renderKpis();
 }
 
 function wireAbaKm() {
@@ -284,8 +299,6 @@ function wireAbaKm() {
   const ate = elRoot.querySelector('#cdAte');
   const tipo = elRoot.querySelector('#cdTipo');
   const busca = elRoot.querySelector('#cdBusca');
-  const tarifa = elRoot.querySelector('#cdTarifa');
-  const tarifaBtn = elRoot.querySelector('#cdTarifaBtn');
   const aplicar = elRoot.querySelector('#cdAplicar');
 
   const recarregar = async () => {
@@ -293,27 +306,14 @@ function wireAbaKm() {
     aplicar.disabled = true; aplicar.textContent = 'Carregando...';
     await loadDeslocs();
     aplicar.disabled = false; aplicar.textContent = 'Aplicar período';
-    renderKpisKm(); renderTabelaKm();
+    renderKpis(); renderTabelaKm();
   };
   aplicar.addEventListener('click', recarregar);
   de.addEventListener('change', recarregar);
   ate.addEventListener('change', recarregar);
 
-  tipo.addEventListener('change', () => { filtroTipo = tipo.value; renderKpisKm(); renderTabelaKm(); });
-  busca.addEventListener('input', () => { filtroBusca = busca.value; renderKpisKm(); renderTabelaKm(); });
-
-  tarifaBtn.addEventListener('click', async () => {
-    const v = Number(String(tarifa.value).replace(',', '.'));
-    if (!Number.isFinite(v) || v <= 0) { alert('Informe uma tarifa válida (R$/km).'); return; }
-    tarifaBtn.disabled = true;
-    try {
-      await saveTarifa(v);
-      renderKpisKm(); renderTabelaKm();
-      tarifaBtn.textContent = 'Salva ✓';
-      setTimeout(() => { tarifaBtn.textContent = 'Salvar'; }, 1500);
-    } catch (err) { alert(err.message || 'Não foi possível salvar a tarifa.'); }
-    finally { tarifaBtn.disabled = false; }
-  });
+  tipo.addEventListener('change', () => { filtroTipo = tipo.value; renderKpis(); renderTabelaKm(); });
+  busca.addEventListener('input', () => { filtroBusca = busca.value; renderKpis(); renderTabelaKm(); });
 
   const tabela = elRoot.querySelector('#cdKmTabela');
   tabela.addEventListener('keydown', (e) => {
@@ -329,7 +329,84 @@ function wireAbaKm() {
   });
 }
 
-/* ========================== ABA 2 · RELAÇÃO VEÍCULO PRÓPRIO ========================== */
+/* ========================== ABA 2 · RESUMO ========================== */
+
+function resumoAgrupado() {
+  const busca = norm(resumoBusca);
+  const porColab = new Map(); // chave -> { nome, itens: [] }
+  for (const d of deslocs) {
+    const nome = d.nome_colaborador || d.colaborador_id || 'Sem nome';
+    if (busca && !norm(nome).includes(busca)) continue;
+    const chave = d.colaborador_id || nome;
+    if (!porColab.has(chave)) porColab.set(chave, { nome, itens: [] });
+    porColab.get(chave).itens.push(d);
+  }
+  const grupos = [...porColab.values()];
+  grupos.forEach((g) => g.itens.sort((a, b) => String(b.data_referencia).localeCompare(String(a.data_referencia))));
+  grupos.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return grupos;
+}
+
+function renderResumo() {
+  const box = elRoot.querySelector('#cdResumoLista');
+  if (!box) return;
+  const grupos = resumoAgrupado();
+  if (!grupos.length) {
+    box.innerHTML = '<div class="cd-empty">Nenhum deslocamento sincronizado para o período/busca selecionados.</div>';
+    return;
+  }
+  box.innerHTML = grupos.map((g) => {
+    const kmTotal = g.itens.reduce((s, d) => s + Number(d.km || 0), 0);
+    const valorTotal = g.itens.reduce((s, d) => s + valorLinha(d), 0);
+    return `
+      <div class="cd-resumo-group">
+        <div class="cd-resumo-head">
+          <h4>${esc(g.nome)}</h4>
+          <div class="cd-resumo-stats">
+            <span><b>${g.itens.length}</b> data(s)</span>
+            <span><b>${numKm(kmTotal)}</b> km</span>
+            <span><b>${moeda(valorTotal)}</b></span>
+          </div>
+        </div>
+        <div class="cd-resumo-rows">
+          ${g.itens.map((d) => {
+            const val = valorLinha(d);
+            const trajeto = [d.origem, d.destino].filter(Boolean).join(' → ') || '—';
+            return `
+              <div class="cd-resumo-row">
+                <span class="rr-data">${dataBr(d.data_referencia)}</span>
+                <span class="rr-trajeto" title="${esc(trajeto)}">${esc(trajeto)}${d.placa_veiculo ? ` · ${esc(d.placa_veiculo)}` : ''}</span>
+                <span class="cd-badge ${tipoClasse(d.tipo_deslocamento)}">${esc(d.tipo_deslocamento || '—')}</span>
+                <span class="rr-km">${numKm(d.km)} km</span>
+                <span class="rr-valor">${moeda(val)}</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function wireAbaResumo() {
+  const de = elRoot.querySelector('#cdResumoDe');
+  const ate = elRoot.querySelector('#cdResumoAte');
+  const busca = elRoot.querySelector('#cdResumoBusca');
+  const aplicar = elRoot.querySelector('#cdResumoAplicar');
+
+  const recarregar = async () => {
+    kmDe = de.value; kmAte = ate.value;
+    aplicar.disabled = true; aplicar.textContent = 'Carregando...';
+    await loadDeslocs();
+    aplicar.disabled = false; aplicar.textContent = 'Aplicar período';
+    renderKpis(); renderResumo();
+  };
+  aplicar.addEventListener('click', recarregar);
+  de.addEventListener('change', recarregar);
+  ate.addEventListener('change', recarregar);
+
+  busca.addEventListener('input', () => { resumoBusca = busca.value; renderResumo(); });
+}
+
+/* ========================== ABA 3 · CONFIGURAÇÃO ========================== */
 
 async function loadBase() {
   const { data, error } = await supabase
@@ -354,12 +431,13 @@ async function loadLista() {
     .order('nome');
   if (error) { console.warn('[conf-desloc] lista', error); lista = []; return; }
   lista = data || [];
+  montarTarifas();
 }
 
 // #35: colaborador desligado (inativo em operacional_colaborador_base) sai
-// automaticamente da relação de veículo próprio -- baseColabs só traz os
-// ativos (usado pra busca/adição), então checamos o status real de cada um
-// já presente na lista contra a base completa antes de decidir remover.
+// automaticamente da configuração (baseColabs só traz os ativos, usado
+// pra busca/adição), então checamos o status real de cada um já presente na
+// lista contra a base completa antes de decidir remover.
 async function limparInativosDaLista() {
   if (!lista.length) return;
   const { data, error } = await supabase
@@ -380,11 +458,12 @@ async function limparInativosDaLista() {
 
   const idsRemovidos = new Set(paraRemover.map((l) => l.id));
   lista = lista.filter((l) => !idsRemovidos.has(l.id));
+  montarTarifas();
 }
 
 // #36: estimativa mensal de consumo por colaborador, baseada na média dos
 // últimos 3 meses de deslocamento (programacao_deslocamento), independente
-// do filtro de período selecionado na aba Conferência de km.
+// do filtro de período selecionado nas abas Conferência de km / Resumo.
 async function loadEstimativaConsumo() {
   const hoje = new Date();
   const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 3, 1).toISOString().slice(0, 10);
@@ -421,19 +500,36 @@ async function addEntry(chave, nome) {
   if (error) throw error;
 }
 
+async function salvarTarifaColaborador(id, valor, inputEl) {
+  const l = lista.find((x) => String(x.id) === String(id));
+  if (!l) return;
+  const v = Number(String(valor).replace(',', '.'));
+  if (!Number.isFinite(v) || v <= 0) { inputEl.value = Number(l.tarifa_km || DEFAULT_TARIFA); return; }
+  const { error } = await supabase
+    .from('programacao_veiculo_proprio')
+    .update({ tarifa_km: v, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) { alert(error.message || 'Não foi possível salvar a tarifa.'); inputEl.value = Number(l.tarifa_km || DEFAULT_TARIFA); return; }
+  l.tarifa_km = v;
+  montarTarifas();
+  inputEl.classList.add('salvo');
+  setTimeout(() => inputEl.classList.remove('salvo'), 1200);
+}
+
 function renderLista() {
   const box = elRoot.querySelector('#cdLista');
   const cnt = elRoot.querySelector('#cdCount');
   if (!box) return;
   const ativos = lista.filter((l) => l.ativo).length;
   if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${lista.length} no total`;
-  if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador na relação ainda. Adicione ao lado.</div>'; return; }
-  box.innerHTML = `<table class="cd-rel-table"><thead><tr><th>Colaborador</th><th>Estimativa mensal</th><th>Status</th><th></th></tr></thead><tbody>${lista.map((l) => {
+  if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador cadastrado ainda. Adicione ao lado.</div>'; return; }
+  box.innerHTML = `<table class="cd-rel-table"><thead><tr><th>Colaborador</th><th>Estimativa mensal</th><th class="num">Tarifa R$/km</th><th>Status</th><th></th></tr></thead><tbody>${lista.map((l) => {
     const estimativa = estimativaPorColaborador.get(l.colaborador_id);
     return `
     <tr data-id="${esc(l.id)}">
       <td>${esc(l.nome || l.colaborador_id)}</td>
       <td>${estimativa != null ? `${moeda(estimativa)}/mês` : '—'}</td>
+      <td class="num"><input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(l.tarifa_km || DEFAULT_TARIFA)}" /></td>
       <td><span class="cd-pill ${l.ativo ? 'on' : 'off'}" data-toggle>${l.ativo ? 'Ativo' : 'Inativo'}</span></td>
       <td><button class="cd-del" data-del>remover</button></td>
     </tr>`;
@@ -461,7 +557,7 @@ async function bulkAdd(text, msgEl) {
   }
   await loadLista();
   renderLista();
-  renderKpisKm();
+  renderKpis();
   if (msgEl) {
     msgEl.innerHTML = `Adicionados: <b style="color:#86efac">${unicos.length}</b>.` +
       (naoAchados.length ? ` Não encontrados (confira o nome): ${naoAchados.map(esc).join(', ')}` : '');
@@ -478,7 +574,7 @@ function wireSearch() {
     const jaTem = new Set(lista.map((l) => String(l.colaborador_id)));
     const res = baseColabs.filter((c) => c.nomeNorm.includes(term)).slice(0, 12);
     if (!res.length) { dd.innerHTML = '<div class="cd-dd-empty">Nenhum colaborador encontrado.</div>'; dd.hidden = false; return; }
-    dd.innerHTML = res.map((c) => `<div class="cd-dd-item" data-chave="${esc(c.chave)}" data-nome="${esc(c.nome)}">${esc(c.nome)} ${jaTem.has(c.chave) ? '<small>· já na relação</small>' : `<small>· ${esc(c.supervisao)}</small>`}</div>`).join('');
+    dd.innerHTML = res.map((c) => `<div class="cd-dd-item" data-chave="${esc(c.chave)}" data-nome="${esc(c.nome)}">${esc(c.nome)} ${jaTem.has(c.chave) ? '<small>· já cadastrado</small>' : `<small>· ${esc(c.supervisao)}</small>`}</div>`).join('');
     dd.hidden = false;
   };
   input.addEventListener('input', render);
@@ -495,7 +591,7 @@ function wireSearch() {
       await addEntry(it.dataset.chave, it.dataset.nome);
       await loadLista();
       renderLista();
-      renderKpisKm();
+      renderKpis();
     } catch (err) { alert(err.message || 'Não foi possível adicionar.'); }
   });
 }
@@ -508,16 +604,27 @@ function wireLista() {
     if (!tr) return;
     const id = tr.dataset.id;
     if (e.target.closest('[data-del]')) {
-      if (!confirm('Remover este colaborador da relação?')) return;
+      if (!confirm('Remover este colaborador da configuração?')) return;
       const { error } = await supabase.from('programacao_veiculo_proprio').delete().eq('id', id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista(); renderKpisKm();
+      await loadLista(); renderLista(); renderKpis();
     } else if (e.target.closest('[data-toggle]')) {
       const atual = lista.find((l) => String(l.id) === String(id));
       const { error } = await supabase.from('programacao_veiculo_proprio').update({ ativo: !atual?.ativo, updated_at: new Date().toISOString() }).eq('id', id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista(); renderKpisKm();
+      await loadLista(); renderLista(); renderKpis();
     }
+  });
+  box.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('[data-tarifa]')) { e.preventDefault(); e.target.blur(); }
+  });
+  box.addEventListener('focusout', (e) => {
+    if (!e.target.matches('[data-tarifa]')) return;
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    const l = lista.find((x) => String(x.id) === String(tr.dataset.id));
+    if (l && Number(e.target.value) === Number(l.tarifa_km || DEFAULT_TARIFA)) return; // sem mudança
+    salvarTarifaColaborador(tr.dataset.id, e.target.value, e.target);
   });
 }
 
@@ -546,13 +653,6 @@ function htmlAbaKm() {
           <label class="cd-lbl">Buscar colaborador / placa</label>
           <input class="cd-input" id="cdBusca" type="text" placeholder="Nome ou placa..." value="${esc(filtroBusca)}" />
         </div>
-        <div>
-          <label class="cd-lbl">Tarifa (R$/km)</label>
-          <div class="cd-tarifa">
-            <input class="cd-input" id="cdTarifa" type="number" min="0" step="0.01" value="${tarifaKm}" />
-            <button class="cd-btn" id="cdTarifaBtn" type="button">Salvar</button>
-          </div>
-        </div>
       </div>
       <div class="cd-row-actions">
         <button class="cd-btn ghost" id="cdAplicar" type="button">Aplicar período</button>
@@ -563,7 +663,33 @@ function htmlAbaKm() {
   `;
 }
 
-function htmlAbaRelacao() {
+function htmlAbaResumo() {
+  return `
+    <div class="cd-card">
+      <div class="cd-filtros">
+        <div>
+          <label class="cd-lbl">De</label>
+          <input class="cd-input" id="cdResumoDe" type="date" value="${esc(kmDe)}" />
+        </div>
+        <div>
+          <label class="cd-lbl">Até</label>
+          <input class="cd-input" id="cdResumoAte" type="date" value="${esc(kmAte)}" />
+        </div>
+        <div>
+          <label class="cd-lbl">Buscar colaborador</label>
+          <input class="cd-input" id="cdResumoBusca" type="text" placeholder="Nome do colaborador..." value="${esc(resumoBusca)}" />
+        </div>
+      </div>
+      <div class="cd-row-actions">
+        <button class="cd-btn ghost" id="cdResumoAplicar" type="button">Aplicar período</button>
+        <span class="cd-sub">Todos os deslocamentos do período, agrupados por colaborador, com cada data conforme lançado na Programação.</span>
+      </div>
+    </div>
+    <div id="cdResumoLista"><div class="cd-empty">Carregando resumo...</div></div>
+  `;
+}
+
+function htmlAbaConfig() {
   return `
     <div class="cd-grid2">
       <div class="cd-card">
@@ -578,14 +704,15 @@ function htmlAbaRelacao() {
           <button class="cd-btn" id="cdBulkBtn" type="button">Adicionar lista</button>
         </div>
         <div class="cd-msg" id="cdBulkMsg"></div>
-        <div class="cd-msg">Quem está nesta relação, quando <b>não pega carona</b> na programação, vai de <b>carro próprio</b> (reembolso por km). Quem não está vai de <b>Uber/Táxi</b>. Usada pela sugestão de caronas na Etapa 1 da Programação.</div>
+        <div class="cd-msg">Quem está cadastrado aqui, quando <b>não pega carona</b> na programação, vai de <b>carro próprio</b> (reembolso pela tarifa R$/km dele). Quem não está vai de <b>Uber/Táxi</b>. Usado pela sugestão de caronas na Etapa 1 da Programação.</div>
       </div>
       <div class="cd-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <label class="cd-lbl" style="margin:0">Relação atual</label>
+          <label class="cd-lbl" style="margin:0">Colaboradores cadastrados</label>
           <span class="cd-count" id="cdCount"></span>
         </div>
         <div id="cdLista" style="max-height:56vh;overflow:auto"><div class="cd-empty">Carregando...</div></div>
+        <div class="cd-msg">A tarifa R$/km não é única para todos — edite o valor de cada colaborador diretamente na tabela e pressione Enter (ou clique fora do campo) para salvar.</div>
       </div>
     </div>
   `;
@@ -597,14 +724,19 @@ function renderAba() {
   if (abaAtiva === 'km') {
     body.innerHTML = htmlAbaKm();
     wireAbaKm();
-    renderKpisKm();
+    renderKpis();
     renderTabelaKm();
+  } else if (abaAtiva === 'resumo') {
+    body.innerHTML = htmlAbaResumo();
+    wireAbaResumo();
+    renderKpis();
+    renderResumo();
   } else {
-    body.innerHTML = htmlAbaRelacao();
+    body.innerHTML = htmlAbaConfig();
     wireSearch();
     wireLista();
     renderLista();
-    renderKpisKm();
+    renderKpis();
     const bulkBtn = elRoot.querySelector('#cdBulkBtn');
     bulkBtn.addEventListener('click', async () => {
       bulkBtn.disabled = true;
@@ -631,11 +763,12 @@ export function renderContent(content) {
       <div class="cd-topo">
         <div>
           <h3>Conferência · Deslocamento</h3>
-          <p>Km rodado por colaborador conforme a sincronização da Programação (GRM), apuração do reembolso por km e gestão da relação de veículo próprio.</p>
+          <p>Km rodado por colaborador conforme a sincronização da Programação (GRM), apuração do reembolso por km e configuração de quem usa veículo próprio.</p>
         </div>
         <div class="cd-tabs">
           <button class="cd-tab on" data-aba="km" type="button">Conferência de km</button>
-          <button class="cd-tab" data-aba="relacao" type="button">Relação veículo próprio</button>
+          <button class="cd-tab" data-aba="resumo" type="button">Resumo</button>
+          <button class="cd-tab" data-aba="config" type="button">Configuração</button>
         </div>
       </div>
       <div class="cd-kpis" id="cdKpis"></div>
@@ -650,7 +783,7 @@ export function renderContent(content) {
     renderAba();
   });
 
-  Promise.all([loadTarifa(), loadDeslocs(), loadBase(), loadLista()]).then(async () => {
+  Promise.all([loadDeslocs(), loadBase(), loadLista()]).then(async () => {
     await limparInativosDaLista();
     await loadEstimativaConsumo();
     renderAba();
