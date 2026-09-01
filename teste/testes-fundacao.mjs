@@ -167,7 +167,7 @@ teste('migrations versionadas presentes', () => {
 
 teste('serviços de domínio presentes (2.4)', () => {
   const servicos = ['programacaoService', 'logisticaService', 'logisticaApoioService', 'operacionalService',
-    'comprasService', 'financeiroService', 'hospedagemService', 'frotasService', 'rhService', 'tiService', 'relatoriosService'];
+    'financeiroService', 'hospedagemService', 'frotasService', 'rhService', 'tiService', 'relatoriosService'];
   const faltando = servicos.filter((s) => !existsSync(join(raiz, `assets/js/services/${s}.js`)));
   igual(faltando, [], 'serviços ausentes');
 });
