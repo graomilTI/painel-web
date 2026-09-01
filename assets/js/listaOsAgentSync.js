@@ -304,19 +304,46 @@ function mapListaOsRow(d) {
   };
 }
 
+async function agenteListaOsHabilitado() {
+  try {
+    const { data, error } = await supabase
+      .from('grm_sync_agent_settings')
+      .select('enabled')
+      .eq('agent_id', 'sync-lista-os')
+      .maybeSingle();
+    if (error) throw error;
+    return data ? data.enabled !== false : true;
+  } catch (error) {
+    console.warn('[lista-os-agente] falha ao checar grm_sync_agent_settings; seguindo como habilitado por padrão', error);
+    return true;
+  }
+}
+
 let sincronizando = null;
 
 export async function sincronizarListaOsDoAgente() {
   if (sincronizando) return sincronizando;
   sincronizando = (async () => {
     try {
-      const [listaRows, supervisaoMap, locaisResumo] = await Promise.all([
+      const locaisResumo = await sincronizarLocaisEmbarqueDoAgente().catch((error) => {
+        console.warn('[lista-os-agente] falha ao sincronizar Locais de Embarque', error);
+        return { ignorado: true, erro: error?.message };
+      });
+
+      // sync-lista-os (Puppeteer/XLS) foi pausado em favor do polling direto na API
+      // do GRM (grmserver-lista-os-api-realtime.js, ~8s, grava direto em
+      // operacional_os). Rodar esse resync legado com o agente pausado leria um
+      // lote de grm_lista_os_importacoes cada vez mais velho e, pior, apagaria de
+      // operacional_os qualquer O.S. nova que só existe via o polling da API (por
+      // não estar nesse lote antigo). Ver [[painel-web-colaboradores-lista-os-api-realtime]].
+      if (!(await agenteListaOsHabilitado())) {
+        console.info('[lista-os-agente] sync-lista-os está pausado (grm_sync_agent_settings); pulando resync legado — operacional_os já é mantido pela API em tempo quase real.');
+        return { ignorado: true, motivo: 'agente_pausado', locais: locaisResumo };
+      }
+
+      const [listaRows, supervisaoMap] = await Promise.all([
         buscarUltimoLote('grm_lista_os_importacoes', 20000),
         buscarSupervisaoPorOs(),
-        sincronizarLocaisEmbarqueDoAgente().catch((error) => {
-          console.warn('[lista-os-agente] falha ao sincronizar Locais de Embarque', error);
-          return { ignorado: true, erro: error?.message };
-        }),
       ]);
 
       if (listaRows.length < LOTE_MINIMO) {
