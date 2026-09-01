@@ -146,7 +146,12 @@ async function carregarGruposPendentes() {
     const precisaLimpar = vinculados.length === 0 && row.status_conferencia === 'AJUSTADA';
     if (!precisaAplicar && !precisaLimpar) continue;
 
-    const data = dateKey(row.configurada_em || row.data_os);
+    // data_os é a data em que a O.S. está sendo atendida (o que o Graint precisa
+    // saber); configurada_em é só "quando o gestor mexeu pela 1ª vez no status" e
+    // fica travado em O.S. remanescentes reaproveitadas em vários dias seguintes
+    // — priorizá-lo aqui fazia a janela de 3 dias excluir essas O.S. pra sempre,
+    // mesmo com data_os e colaborador corretos (achado em produção 01/09, O.S. 90497).
+    const data = dateKey(row.data_os || row.configurada_em);
     const coord = coordOf(row);
     if (!data || !dataAceitaNoGraint(data)) continue;
     if (!coord) {
