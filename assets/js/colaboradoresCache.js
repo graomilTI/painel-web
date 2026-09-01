@@ -1,11 +1,16 @@
 // Cache compartilhado da base atual de colaboradores.
 //
-// Fonte principal: public.colaboradores, sincronizada automaticamente pelo
-// agente grmserver-colaboradores-sync. A view colaboradores_atuais permanece
-// apenas como fallback para ambientes que ainda não possuem a tabela nova.
+// Fonte principal: public.colaboradores, sincronizada quase em tempo real pelo
+// agente grmserver-colaboradores-api-realtime (polling de ~5s na API do GRM).
+// A view colaboradores_atuais permanece apenas como fallback para ambientes
+// que ainda não possuem a tabela nova.
 //
 // O cache guarda somente os campos cadastrais usados pelos módulos do painel;
-// campos sensíveis da tabela não são persistidos no sessionStorage.
+// campos sensíveis da tabela não são persistidos no sessionStorage. O TTL de
+// 10min é só a rede de segurança: a inscrição Realtime abaixo invalida antes
+// disso sempre que a tabela colaboradores muda, para as ~13 telas que usam
+// getColaboradores()/searchColaboradores() acompanharem o agente novo sem
+// esperar o TTL vencer.
 
 import { supabase } from './supabaseClient.js';
 
@@ -13,6 +18,18 @@ const CACHE_KEY = 'grm:colaboradores:v2';
 const LEGACY_CACHE_KEY = 'grm:colaboradores_atuais:v1';
 const TTL_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 1000;
+
+let realtimeChannel = null;
+
+function garantirInscricaoRealtime() {
+  if (realtimeChannel) return;
+  realtimeChannel = supabase
+    .channel('colaboradores-cache-invalidacao')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'colaboradores' }, () => {
+      invalidateColaboradores();
+    })
+    .subscribe();
+}
 
 const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo';
 const CAMPOS_MINIMOS = 'nome,cpf,tipo,supervisao,coordenacao,empresa,situacao';
@@ -141,6 +158,8 @@ async function carregarBase() {
  */
 export async function getColaboradores(opts = {}) {
   const { force = false, somenteAtivos = false } = opts;
+
+  garantirInscricaoRealtime();
 
   if (!force) {
     const cache = lerCache();
