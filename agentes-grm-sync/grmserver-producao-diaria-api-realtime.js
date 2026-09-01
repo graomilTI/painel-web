@@ -12,12 +12,20 @@
  * processo inteiro roda sem abrir navegador e pode ficar de pé como serviço
  * com polling curto, em vez de rodar 1x a cada N minutos na esteira.
  *
- * Escopo do polling é só uma janela recente (hoje/ontem por padrão, ver
- * GRM_PRODUCAO_DIARIA_DAYS_BACK) para manter a consulta e a promoção de
+ * Escopo do polling rápido é só uma janela recente (hoje/ontem por padrão,
+ * ver GRM_PRODUCAO_DIARIA_DAYS_BACK) para manter a consulta e a promoção de
  * staging leves; grm_promover_staging_periodo() só substitui as datas
- * presentes na staging, preservando o histórico fora da janela. Sincronização
- * completa (30 dias) continua sendo responsabilidade do agente antigo, que
- * fica no disco para rollback (ver agentes-grm-sync/README.md).
+ * presentes na staging, preservando o histórico fora da janela.
+ *
+ * Além do polling rápido, o processo faz uma sincronização completa (mesma
+ * janela de 30 dias do agente Puppeteer antigo) a cada
+ * GRM_PRODUCAO_DIARIA_FULL_SYNC_MS (padrão 30min). Sem isso, o "Meta Mensal"
+ * do dashboard do Gestor (assets/js/dashboard.js, soma producao_snapshot do
+ * mês inteiro) ficaria com os dias fora da janela rápida presos no valor que
+ * tinham quando o agente antigo foi pausado — nenhuma correção retroativa do
+ * GRM para um dia já fechado chegaria ao painel. A janela cheia roda logo no
+ * boot (lastFullSyncAt=0) para garantir cobertura do mês já na primeira
+ * execução, mesmo após reiniciar o serviço.
  */
 
 const dotenvResult = require('dotenv').config();
@@ -58,6 +66,9 @@ const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmser
 const POLL_INTERVAL_MS = Math.max(15000, Number(process.env.GRM_PRODUCAO_DIARIA_POLL_MS || 60000));
 const DAYS_BACK = Math.max(1, Number(process.env.GRM_PRODUCAO_DIARIA_DAYS_BACK || 2));
 const MIN_ROWS = Math.max(1, Number(process.env.GRM_PRODUCAO_DIARIA_MIN_ROWS || 20));
+const FULL_SYNC_INTERVAL_MS = Math.max(300000, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_MS || 1800000));
+const FULL_SYNC_DAYS_BACK = Math.max(DAYS_BACK, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_DAYS_BACK || 30));
+const FULL_SYNC_MIN_ROWS = Math.max(MIN_ROWS, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_MIN_ROWS || 1000));
 const GRM_WEB_HEADERS = {
   origin: 'https://www.grmserver.com.br',
   referer: 'https://www.grmserver.com.br/login',
@@ -240,7 +251,7 @@ async function fetchProducaoDiaria(token, dateRange) {
   return response.searchData;
 }
 
-async function applyCycle(supabase, rawRows) {
+async function applyCycle(supabase, rawRows, minRows) {
   const mapped = rawRows
     .map(mapProducaoSnapshotRow)
     .filter((row) => row.os && row.data && row.servico !== 'Total');
@@ -252,7 +263,7 @@ async function applyCycle(supabase, rawRows) {
 
   await replaceTablePeriodSafely(supabase, 'producao_snapshot', mapped, {
     dateColumn: 'data',
-    minRows: MIN_ROWS,
+    minRows: minRows == null ? MIN_ROWS : minRows,
     chunkSize: 500,
     logger: console,
   });
@@ -266,12 +277,19 @@ async function main() {
     requiredEnv('SUPABASE_SERVICE_ROLE_KEY', ['SUPABASE_SERVICE_KEY', 'SB_SERVICE_KEY', 'SUPABASE_KEY']),
   );
   let token = await login();
-  logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms, janela ${DAYS_BACK} dia(s).`);
+  logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms, janela rápida ${DAYS_BACK} dia(s), sync completa a cada ${FULL_SYNC_INTERVAL_MS} ms (janela ${FULL_SYNC_DAYS_BACK} dia(s)).`);
+
+  // 0 força uma sync completa já no primeiro ciclo (cobertura do mês logo após
+  // o boot/restart do serviço, sem esperar o intervalo cheio).
+  let lastFullSyncAt = 0;
 
   while (true) {
     const startedAt = Date.now();
     try {
-      const dateRange = calculateDateRange(DAYS_BACK);
+      const isFullSync = (startedAt - lastFullSyncAt) >= FULL_SYNC_INTERVAL_MS;
+      const daysBack = isFullSync ? FULL_SYNC_DAYS_BACK : DAYS_BACK;
+      const minRows = isFullSync ? FULL_SYNC_MIN_ROWS : MIN_ROWS;
+      const dateRange = calculateDateRange(daysBack);
       let rows;
       try {
         rows = await fetchProducaoDiaria(token, dateRange);
@@ -280,9 +298,10 @@ async function main() {
         token = await login();
         rows = await fetchProducaoDiaria(token, dateRange);
       }
-      const result = await applyCycle(supabase, rows);
+      const result = await applyCycle(supabase, rows, minRows);
       if (!result.skipped) {
-        logger.info(`producao_snapshot: ${result.promoted} linha(s) promovida(s) (janela ${dateRange.from} a ${dateRange.to}, ${result.remote} recebida(s) do GRM).`);
+        logger.info(`producao_snapshot: ${result.promoted} linha(s) promovida(s) (janela ${dateRange.from} a ${dateRange.to}${isFullSync ? ', sync completa' : ''}, ${result.remote} recebida(s) do GRM).`);
+        if (isFullSync) lastFullSyncAt = startedAt;
       }
     } catch (error) {
       logger.error(error.stack || error.message);

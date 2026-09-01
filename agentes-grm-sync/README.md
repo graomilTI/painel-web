@@ -117,13 +117,32 @@ mais em `grm_producao_diaria_importacoes` (tabela de arquivo do fluxo XLS
 antigo); segue a mesma simplificação já aplicada em `grmserver-lista-os-api-
 realtime.js`.
 
+**Duas janelas no mesmo loop:** além do polling rápido (hoje/ontem), o
+processo faz uma sincronização completa (mesma janela de 30 dias do agente
+Puppeteer antigo) a cada `GRM_PRODUCAO_DIARIA_FULL_SYNC_MS` (padrão 30min,
+rodando também logo no boot). Necessário porque o "Meta Mensal" do dashboard
+do Gestor (`assets/js/dashboard.js`) soma `producao_snapshot` do **mês
+inteiro**, não só dos últimos 2 dias — sem a sync completa periódica,
+qualquer correção retroativa do GRM num dia já fora da janela rápida nunca
+chegaria ao painel.
+
 Variáveis opcionais:
 
 ```
-GRM_PRODUCAO_DIARIA_POLL_MS=60000    # intervalo entre consultas (mínimo 15000)
-GRM_PRODUCAO_DIARIA_DAYS_BACK=2      # janela de dias (hoje + N-1 anteriores)
-GRM_PRODUCAO_DIARIA_MIN_ROWS=20      # guarda contra promover uma janela vazia/parcial
+GRM_PRODUCAO_DIARIA_POLL_MS=60000            # intervalo do loop rápido (mínimo 15000)
+GRM_PRODUCAO_DIARIA_DAYS_BACK=2              # janela rápida (hoje + N-1 anteriores)
+GRM_PRODUCAO_DIARIA_MIN_ROWS=20              # guarda contra promover a janela rápida vazia/parcial
+GRM_PRODUCAO_DIARIA_FULL_SYNC_MS=1800000     # intervalo da sync completa (mínimo 300000)
+GRM_PRODUCAO_DIARIA_FULL_SYNC_DAYS_BACK=30   # janela da sync completa
+GRM_PRODUCAO_DIARIA_FULL_SYNC_MIN_ROWS=1000  # guarda contra promover a sync completa vazia/parcial
 ```
+
+`assets/js/producaoSnapshotAgentSync.js` (resync legado disparado pelo
+dashboard a partir de `grm_producao_diaria_importacoes`) ganhou o mesmo guard
+de `agenteListaOsHabilitado()`/`listaOsAgentSync.js`: pula sozinho quando
+`sync-producao-diaria` está `enabled=false`, para não sobrescrever
+`producao_snapshot` com o lote cada vez mais velho que ficaria parado desde a
+pausa do agente antigo.
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync

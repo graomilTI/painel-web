@@ -2,10 +2,21 @@
 // (grm_producao_diaria_importacoes), replicando o mesmo mapeamento de campos
 // que assets/js/importarProducao.js já grava na importação manual.
 //
-// producao_snapshot é a base oficial de "Metas" (ver comentário no topo de
-// modules/metas.js: "Produção usada para bater meta = producao_snapshot.tons",
-// "Não usar Resultado Diário") — por isso essa conexão é separada da de FOB,
-// que usa a mesma tabela de origem mas filtrada só por Serviço=Classificação FOB.
+// producao_snapshot alimenta o "Meta Mensal" do dashboard do Gestor
+// (assets/js/dashboard.js, soma o mês inteiro) — por isso essa conexão é
+// separada da de FOB, que usa a mesma tabela de origem mas filtrada só por
+// Serviço=Classificação FOB.
+//
+// sync-producao-diaria (Puppeteer/XLS, agente que alimentava
+// grm_producao_diaria_importacoes) foi pausado em 01/09 em favor do polling
+// direto na API do GRM (grmserver-producao-diaria-api-realtime.js), que grava
+// direto em producao_snapshot (janela rápida de 2 dias + sync completa
+// periódica do mês, ver comentário no topo daquele arquivo). Com o agente
+// antigo pausado, grm_producao_diaria_importacoes para de crescer — rodar
+// este resync legado leria sempre o mesmo lote cada vez mais velho e
+// sobrescreveria com dado desatualizado o que a API em tempo quase real já
+// mantém fresco. Ver agenteProducaoDiariaHabilitado() abaixo (mesmo padrão
+// de listaOsAgentSync.js/agenteListaOsHabilitado()).
 //
 // Diferente do upload manual (que só faz insert, um upload = um lote isolado),
 // o agente resincroniza ~11.000 linhas a cada ~20min cobrindo várias semanas.
@@ -97,12 +108,32 @@ async function buscarUltimoLoteAgente(limite) {
   return rows;
 }
 
+async function agenteProducaoDiariaHabilitado() {
+  try {
+    const { data, error } = await supabase
+      .from('grm_sync_agent_settings')
+      .select('enabled')
+      .eq('agent_id', 'sync-producao-diaria')
+      .maybeSingle();
+    if (error) throw error;
+    return data ? data.enabled !== false : true;
+  } catch (error) {
+    console.warn('[producao-snapshot-agente] falha ao checar grm_sync_agent_settings; seguindo como habilitado por padrão', error);
+    return true;
+  }
+}
+
 let sincronizando = null;
 
 export async function sincronizarProducaoSnapshotDoAgente() {
   if (sincronizando) return sincronizando;
   sincronizando = (async () => {
     try {
+      if (!(await agenteProducaoDiariaHabilitado())) {
+        console.info('[producao-snapshot-agente] sync-producao-diaria está pausado (grm_sync_agent_settings); pulando resync legado — producao_snapshot já é mantido pela API em tempo quase real.');
+        return { ignorado: true, motivo: 'agente_pausado' };
+      }
+
       const dadosBrutos = await buscarUltimoLoteAgente(20000);
       if (dadosBrutos.length < LOTE_MINIMO) {
         console.warn(`[producao-snapshot-agente] lote do agente pequeno demais (${dadosBrutos.length} linhas); sincronização ignorada.`);
