@@ -4,11 +4,16 @@ import { supabase } from './supabaseClient.js';
 // v5 invalida o cache amplo criado quando coordenação ainda expandia acesso.
 // Regra de segurança: resposta vazia do RPC significa ZERO supervisões
 // liberadas. Nunca deve cair para uma consulta irrestrita de supervisoes.
-const CACHE_KEY_PREFIX = 'programacao_supervisoes_v5';
-const CACHE_TTL_MS = 1000 * 60 * 60 * 12;
+// v6: TTL caiu de 12h para 5min (mesmo padrão do grao1000:user-ctx:v1) —
+// 12h deixava usuário vendo lista de supervisão desatualizada por até 12h
+// depois de o cadastro (app_usuarios.supervisao / programacao_usuario_supervisoes)
+// ser alterado por um admin, já que a chave só expira por tempo, não por mudança
+// de dado (caso real: SARA KELCI RIBAS, 01/09/2026).
+const CACHE_KEY_PREFIX = 'programacao_supervisoes_v6';
+const CACHE_TTL_MS = 1000 * 60 * 5;
 try {
   Object.keys(localStorage)
-    .filter((key) => /^programacao_supervisoes_v[1-4](?::|$)/.test(key))
+    .filter((key) => /^programacao_supervisoes_v[1-5](?::|$)/.test(key))
     .forEach((key) => localStorage.removeItem(key));
 } catch (_) {}
 
