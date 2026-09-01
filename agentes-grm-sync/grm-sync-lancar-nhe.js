@@ -60,9 +60,13 @@ var RAIO_M = Number(process.env.NHE_LANCAMENTO_RAIO_M || 2000);
 var MOTIVO_FIXO = process.env.NHE_LANCAMENTO_MOTIVO || 'Falta de Caminhão';
 var OBS_FIXA = 'Aprovado pelo Gestor';
 var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
-var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 20000);
+// grm_mapa_embarque_importacoes gira ~21-27 mil linhas/dia (medido 25-31/08) —
+// uma janela de 3 dias soma 60-80 mil, bem acima do antigo teto de 20000, que
+// na prática só alcançava ~12-14h pra trás (silenciosamente descartava o
+// resto da janela). grm_nhe_importacoes é bem menor (~1,1-1,6 mil/dia).
+var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 100000);
 var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
-var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 15000);
+var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 10000);
 var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_DIAS) || 3);
 // Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
 // execução conclua antes do watchdog; os restantes são enfileirados pela
@@ -229,16 +233,73 @@ async function fetchPaged(builder, maxRows) {
   return rows;
 }
 
+// Igual a fetchPaged, mas 1 página de cada vez (sem 6 requests concorrentes).
+// Usada só para as RPCs de lote (fob_lote_recente/fob_producao_lote_vencedor):
+// cada chamada reexecuta a função do zero no Postgres (não há cache de
+// resultado entre requests HTTP separados), então pedir 6 páginas ao mesmo
+// tempo dispara 6 execuções pesadas simultâneas na mesma tabela — foi isso
+// que fez as duas RPCs estourarem statement_timeout no diagnóstico da O.S.
+// 90869 (31/08). Sequencial evita essa contenção autoinfligida.
+async function fetchPagedSequential(builder, maxRows) {
+  var rows = [];
+  var pageSize = 1000;
+  for (var from = 0; from < maxRows; from += pageSize) {
+    var to = Math.min(from + pageSize, maxRows) - 1;
+    var result = await builder(from, to);
+    if (result.error) throw result.error;
+    var chunk = result.data || [];
+    rows = rows.concat(chunk);
+    if (chunk.length < pageSize) return rows;
+  }
+  log('WARN', 'fetchPagedSequential atingiu o teto de ' + maxRows + ' linhas antes do fim dos dados — resultado pode estar incompleto.');
+  return rows;
+}
+
+// Paginação por cursor (created_at, id), sem OFFSET: OFFSET numa tabela de
+// dezenas de milhares de linhas por dia obriga o Postgres a visitar (não só
+// pular) cada linha descartada em toda página seguinte, ficando mais lento a
+// cada página. Usa `created_at <= cursor` (inclusive) + dedupe por id no
+// cliente em vez de `<` estrito, porque um mesmo sync grava várias linhas com
+// o MESMO created_at (uma única transação) — `<` estrito no cursor poderia
+// pular o resto desse lote se ele atravessar a borda de uma página, seria a
+// mesma classe de perda silenciosa da O.S. 90394/90869.
 async function fetchByCreatedAt(table, maxRows, dias) {
   var cutoffIso = new Date(Date.now() - dias * 86400000).toISOString();
-  return fetchPaged(function (from, to) {
-    return supabase.from(table).select('id,dados_json,created_at').gte('created_at', cutoffIso).order('created_at', { ascending: false }).range(from, to);
-  }, maxRows);
+  var rows = [];
+  var seen = {};
+  var cursor = null;
+  var pageSize = 1000;
+  while (rows.length < maxRows) {
+    var query = supabase.from(table).select('id,dados_json,created_at').gte('created_at', cutoffIso)
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(pageSize);
+    if (cursor) query = query.lte('created_at', cursor);
+    var result = await query;
+    if (result.error) throw result.error;
+    var chunk = result.data || [];
+    if (!chunk.length) break;
+    var novos = 0;
+    chunk.forEach(function (row) {
+      if (seen[row.id]) return;
+      seen[row.id] = true;
+      rows.push(row);
+      novos++;
+    });
+    if (chunk.length < pageSize) break;
+    cursor = chunk[chunk.length - 1].created_at;
+    if (!novos) {
+      log('WARN', 'fetchByCreatedAt: página inteira repetida (lote maior que ' + pageSize + ' linhas com o mesmo created_at) em ' + table + ' — parando pra evitar loop.');
+      break;
+    }
+  }
+  if (rows.length >= maxRows) {
+    log('WARN', 'fetchByCreatedAt atingiu o teto de ' + maxRows + ' linhas para ' + table + ' — pode haver dados da janela de ' + dias + ' dia(s) não capturados.');
+  }
+  return rows.slice(0, maxRows);
 }
 
 async function fetchLoteRecente(table, maxRows) {
   try {
-    return await fetchPaged(function (from, to) {
+    return await fetchPagedSequential(function (from, to) {
       return supabase.rpc('fob_lote_recente', { p_table: table, p_dias: FOB_JANELA_DIAS }).order('created_at', { ascending: false }).range(from, to);
     }, maxRows);
   } catch (error) {
@@ -249,11 +310,16 @@ async function fetchLoteRecente(table, maxRows) {
 
 async function fetchProducaoLoteVencedor(referenciaDdMmYyyy, maxRows) {
   try {
-    return await fetchPaged(function (from, to) {
+    return await fetchPagedSequential(function (from, to) {
       return supabase.rpc('fob_producao_lote_vencedor', { p_referencia_ddmmyyyy: referenciaDdMmYyyy, p_dias: FOB_JANELA_DIAS }).order('created_at', { ascending: false }).range(from, to);
     }, maxRows);
   } catch (error) {
-    log('WARN', 'RPC fob_producao_lote_vencedor indisponível; usando fallback created_at: ' + error.message);
+    // grm_producao_diaria_importacoes gira ~260 MIL linhas/dia (medido
+    // 27-30/08) — uma janela de 3 dias tem ~780 mil. Esse fallback bruto
+    // (sem o agrupamento em lote que a RPC faz) nunca vai conseguir cobrir
+    // isso com segurança só paginando; ficou como estava (best-effort), mas
+    // agora avisa alto em vez de mascarar. Fix de verdade é na RPC/índice.
+    log('WARN', 'RPC fob_producao_lote_vencedor indisponível; fallback created_at em grm_producao_diaria_importacoes pode ficar bem incompleto (~260 mil linhas/dia, muito acima do que dá pra paginar com segurança): ' + error.message);
     return fetchByCreatedAt('grm_producao_diaria_importacoes', maxRows, FOB_JANELA_DIAS);
   }
 }
@@ -767,7 +833,7 @@ async function existeNheReal(dataReferencia, numeroOs) {
 async function carregarJaLancadas(dataReferencia) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
   inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
-  var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_MOVIMENTO_GRM'];
+  var statusesResolvidos = ['JA_EXISTIA_GRM', 'JA_EXISTIA_GRUPO_GRM', 'JA_EXISTIA_MOVIMENTO_GRM', 'MESMO_PONTO_AGRUPADO'];
   if (!REPETIR_NAO_CONFIRMADO) statusesResolvidos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
@@ -779,6 +845,26 @@ async function carregarJaLancadas(dataReferencia) {
   var set = {};
   (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
   return set;
+}
+
+function chaveGrupoEmbarque(candidato) {
+  var info = candidato && candidato.osCoord ? candidato.osCoord : {};
+  var cliente = normText((candidato && candidato.cliente) || info.cliente);
+  var embarque = normText(info.embarque || info.local);
+  return cliente && embarque ? cliente + '|embarque:' + embarque : '';
+}
+
+function identidadeGrupoEmbarque(candidato) {
+  var info = candidato && candidato.osCoord ? candidato.osCoord : {};
+  var embarque = String(info.embarque || '').trim();
+  var match = embarque.match(/^(.*?)\s*\((.*)\)\s*$/);
+  var cidade = match ? match[1].trim() : '';
+  var ponto = match ? match[2].trim() : String(info.local || '').split('·')[0].trim();
+  return {
+    cliente: String((candidato && candidato.cliente) || info.cliente || '').trim(),
+    cidade: cidade,
+    ponto: ponto
+  };
 }
 
 function observacaoPara(candidato) {
@@ -915,6 +1001,30 @@ async function realClickCampoNhe(page, label) {
   await page.mouse.click(box.x, box.y);
 }
 
+// Os autocompletes do GRM carregam apenas um subconjunto inicial das opções.
+// Coordenações que não estão nesse primeiro lote (ex.: CASCAVEL/PARANÁ) só
+// aparecem depois que o texto é digitado e a busca remota é disparada.
+async function buscarNoCampoNhe(page, label, texto) {
+  var inputHandle = await page.evaluateHandle(function (payload) {
+    function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    var dialogs = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = dialogs.reverse().find(function (d) { return norm(d.innerText || '').indexOf('ADICIONAR NHE') !== -1; });
+    if (!dialog) return null;
+    var wanted = norm(payload.label);
+    var fields = Array.from(dialog.querySelectorAll('.v-input, .v-select, .v-autocomplete, .v-field'));
+    var field = fields.find(function (f) { return norm(f.innerText || '').indexOf(wanted) !== -1; });
+    return field ? field.querySelector('input') : null;
+  }, { label: label });
+  var input = inputHandle && inputHandle.asElement();
+  if (!input) throw new Error('Input do campo "' + label + '" não encontrado no modal Adicionar NHE.');
+  await input.click({ clickCount: 3 });
+  await page.keyboard.down('Control');
+  await page.keyboard.press('A');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+  if (texto) await input.type(String(texto), { delay: 50 });
+}
+
 // modo: 'primeira' (clica a 1ª opção da lista — usado quando só há uma opção
 // possível, ex. Supervisão já filtrada pela Coordenação), 'exata' (texto
 // normalizado === alvo) ou 'substring' (alvo contido no texto ou vice-versa —
@@ -925,27 +1035,32 @@ async function realClickCampoNhe(page, label) {
 // pro contexto da página (bug já visto ao vivo: ReferenceError na variável
 // capturada, pois só o texto-fonte da função sobrevive à serialização).
 async function selecionarOpcaoAberta(page, alvo, modo) {
-  await wait(800);
-  var clicked = await page.evaluate(function (payload) {
-    function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
-    var alvoNorm = norm(payload.alvo);
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
-    for (var i = overlays.length - 1; i >= 0; i--) {
-      var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
-      for (var j = 0; j < options.length; j++) {
-        var textoOriginal = (options[j].innerText || options[j].textContent || '').trim();
-        if (!textoOriginal) continue;
-        var texto = norm(textoOriginal);
-        var bate = false;
-        if (payload.modo === 'primeira') bate = true;
-        else if (payload.modo === 'exata') bate = texto === alvoNorm;
-        else bate = alvoNorm.length > 0 && (texto.indexOf(alvoNorm) !== -1 || alvoNorm.indexOf(texto) !== -1);
-        if (bate) { options[j].click(); return textoOriginal; }
+  // Polling cobre a latência da busca server-side dos v-autocompletes. Uma
+  // espera fixa de 800ms era curta e transformava lentidão em falso "não achei".
+  for (var tentativa = 0; tentativa < 15; tentativa++) {
+    await wait(tentativa === 0 ? 800 : 300);
+    var clicked = await page.evaluate(function (payload) {
+      function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+      var alvoNorm = norm(payload.alvo);
+      var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+      for (var i = overlays.length - 1; i >= 0; i--) {
+        var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
+        for (var j = 0; j < options.length; j++) {
+          var textoOriginal = (options[j].innerText || options[j].textContent || '').trim();
+          if (!textoOriginal) continue;
+          var texto = norm(textoOriginal);
+          var bate = false;
+          if (payload.modo === 'primeira') bate = true;
+          else if (payload.modo === 'exata') bate = texto === alvoNorm;
+          else bate = alvoNorm.length > 0 && (texto.indexOf(alvoNorm) !== -1 || alvoNorm.indexOf(texto) !== -1);
+          if (bate) { options[j].click(); return textoOriginal; }
+        }
       }
-    }
-    return null;
-  }, { alvo: alvo || '', modo: modo || 'substring' });
-  return clicked;
+      return null;
+    }, { alvo: alvo || '', modo: modo || 'substring' });
+    if (clicked) return clicked;
+  }
+  return null;
 }
 
 async function abrirOsEModalCargas(page, numeroOs) {
@@ -1067,6 +1182,13 @@ function coordenacaoPorUf(osCoord) {
 async function existeNheNoGrmAoVivo(page, dataYmd, numeroOs) {
   var dataBr = brDate(dataYmd);
   return page.evaluate(async function (payload) {
+    function normalizarData(value) {
+      var texto = String(value || '').trim();
+      var iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+      var br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      return br ? br[3] + '-' + br[2] + '-' + br[1] : '';
+    }
     var token = '';
     for (var i = 0; i < localStorage.length; i++) {
       try {
@@ -1085,8 +1207,67 @@ async function existeNheNoGrmAoVivo(page, dataYmd, numeroOs) {
       throw new Error('Consulta NHE GRM falhou: ' + JSON.stringify(json).slice(0, 500));
     }
     var rows = json.searchData || [];
-    return rows.some(function (row) { return String(row.sorCode) === String(payload.os); });
-  }, { dataBr: dataBr, os: String(numeroOs) });
+    return rows.some(function (row) {
+      return String(row.sorCode) === String(payload.os)
+        && normalizarData(row.lnsDate) === payload.dataYmd;
+    });
+  }, { dataBr: dataBr, dataYmd: String(dataYmd), os: String(numeroOs) });
+}
+
+// Trava ao vivo por Cliente + ponto de embarque. A NHE é única para o
+// agrupamento na data, inclusive entre execuções de continuação do mesmo lote.
+async function existeNheMesmoPontoNoGrmAoVivo(page, candidato) {
+  var dataBr = brDate(candidato.data);
+  var identidade = identidadeGrupoEmbarque(candidato);
+  return page.evaluate(async function (payload) {
+    function normalizarData(value) {
+      var texto = String(value || '').trim();
+      var iso = texto.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return iso[1] + '-' + iso[2] + '-' + iso[3];
+      var br = texto.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      return br ? br[3] + '-' + br[2] + '-' + br[1] : '';
+    }
+    function norm(value) {
+      return String(value == null ? '' : value)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+    }
+    var token = '';
+    for (var i = 0; i < localStorage.length; i++) {
+      try {
+        var value = JSON.parse(localStorage.getItem(localStorage.key(i)));
+        if (value && value.userToken) token = value.userToken;
+      } catch (_) {}
+    }
+    if (!token) throw new Error('Token do GRM não encontrado para confirmar grupo NHE.');
+    var response = await fetch('/api/reports/classification/nhe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ lnsDateFrom: payload.dataBr, lnsDateTo: payload.dataBr })
+    });
+    var json = await response.json();
+    if (!response.ok || json.result === false) {
+      throw new Error('Consulta NHE GRM por grupo falhou: ' + JSON.stringify(json).slice(0, 500));
+    }
+    var cliente = norm(payload.identidade.cliente);
+    var cidade = norm(payload.identidade.cidade);
+    var ponto = norm(payload.identidade.ponto);
+    var rows = json.searchData || [];
+    var found = rows.find(function (row) {
+      if (normalizarData(row.lnsDate) !== payload.dataYmd) return false;
+      if (norm(row.cliName) !== cliente) return false;
+      if (ponto && norm(row.splName) !== ponto) return false;
+      if (cidade && norm(row.citEmb) !== cidade) return false;
+      return true;
+    });
+    return found ? {
+      existe: true,
+      os: String(found.sorCode == null ? '' : found.sorCode),
+      cliente: String(found.cliName || ''),
+      ponto: String(found.splName || ''),
+      cidade: String(found.citEmb || '')
+    } : { existe: false };
+  }, { dataBr: dataBr, dataYmd: String(candidato.data), identidade: identidade });
 }
 
 async function preencherEModalNhe(page, candidato, dryRun, debug) {
@@ -1108,10 +1289,12 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
     : (candidato.loginMatch && (candidato.loginMatch.coordenacao || candidato.loginMatch.supervisao))
       || (candidato.osCoord && candidato.osCoord.supervisao)
       || candidato.supervisao || '';
+  await buscarNoCampoNhe(page, 'Coordenação', regiaoAlvo);
   var coordEscolhida = await selecionarOpcaoAberta(page, regiaoAlvo, 'substring');
   if (!coordEscolhida) {
     var coordUf = coordenacaoPorUf(candidato.osCoord);
     if (coordUf && normText(coordUf) !== normText(regiaoAlvo)) {
+      await buscarNoCampoNhe(page, 'Coordenação', coordUf);
       coordEscolhida = await selecionarOpcaoAberta(page, coordUf, 'substring');
       if (coordEscolhida) log('INFO', 'Coordenação resolvida por UF do embarque (' + coordUf + '): ' + coordEscolhida);
     }
@@ -1382,7 +1565,7 @@ async function main() {
   var dryRun = args.dryRun || DRY_RUN;
   var runId = null;
 
-  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0 };
+  var stats = { pendentes: 0, candidatos: 0, sucesso: 0, erro: 0, semLogin: 0, semFuncionario: 0, foraDoRaio: 0, semCoordenadaOs: 0, semServico: 0, viaGestor: 0, jaExistiaGrm: 0, jaExistiaMovimento: 0, osNaoAberta: 0, salvoNaoConfirmado: 0, mesmoPontoAgrupado: 0, nheMesmoPontoGrm: 0 };
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
@@ -1578,8 +1761,35 @@ async function main() {
       candidatos.push(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }));
     }
 
+    // REGRA OPERACIONAL: somente uma NHE por Cliente + ponto de embarque.
+    // Duas O.S. irmãs podem chegar PENDENTE no mesmo cálculo; apenas uma segue
+    // para o GRM e as demais ficam auditadas como agrupadas.
+    var gruposCandidatos = {};
+    var candidatosUnicos = [];
+    for (var u = 0; u < candidatos.length; u++) {
+      var cand = candidatos[u];
+      var chaveGrupo = chaveGrupoEmbarque(cand);
+      if (chaveGrupo && gruposCandidatos[chaveGrupo]) {
+        stats.mesmoPontoAgrupado++;
+        await salvarResultado(cand, {
+          status: 'MESMO_PONTO_AGRUPADO',
+          lancado_em: null,
+          erro: null,
+          raw: {
+            agrupado_com_os: gruposCandidatos[chaveGrupo],
+            regra: 'MESMO_CLIENTE_MESMO_PONTO_UMA_NHE'
+          }
+        });
+        log('INFO', 'O.S. ' + cand.os + ': mesma combinação Cliente + Embarque já representada pela O.S. ' + gruposCandidatos[chaveGrupo] + '; lançamento bloqueado.');
+        continue;
+      }
+      if (chaveGrupo) gruposCandidatos[chaveGrupo] = cand.os;
+      candidatosUnicos.push(cand);
+    }
+    candidatos = candidatosUnicos;
+
     stats.candidatos = candidatos.length;
-    log('SUCCESS', candidatos.length + ' candidato(s) elegível(is) para lançamento automático.');
+    log('SUCCESS', candidatos.length + ' grupo(s) único(s) Cliente + Embarque elegível(is); ' + stats.mesmoPontoAgrupado + ' O.S. irmã(s) agrupada(s).');
 
     var totalCandidatos = candidatos.length;
     if (MAX_LANCAMENTOS_POR_EXECUCAO > 0 && candidatos.length > MAX_LANCAMENTOS_POR_EXECUCAO) {
@@ -1611,15 +1821,26 @@ async function main() {
         for (var c = 0; c < candidatos.length; c++) {
           var candidato = candidatos[c];
           try {
-            if (!dryRun && await existeNheNoGrmAoVivo(page, candidato.data, candidato.os)) {
-              stats.jaExistiaGrm++;
-              await salvarResultado(candidato, {
-                status: 'JA_EXISTIA_GRM',
-                lancado_em: null,
-                raw: { origem_verificacao: 'grm_api_ao_vivo', nao_lancado_nesta_execucao: true }
-              });
-              log('INFO', 'O.S. ' + candidato.os + ' em ' + candidato.data + ': NHE já existe no GRM (consulta ao vivo); lançamento bloqueado.');
-              continue;
+            if (!dryRun) {
+              var nheGrupoAoVivo = await existeNheMesmoPontoNoGrmAoVivo(page, candidato);
+              if (nheGrupoAoVivo && nheGrupoAoVivo.existe) {
+                stats.jaExistiaGrm++;
+                var mesmaOs = String(nheGrupoAoVivo.os) === String(candidato.os);
+                if (!mesmaOs) stats.nheMesmoPontoGrm++;
+                await salvarResultado(candidato, {
+                  status: mesmaOs ? 'JA_EXISTIA_GRM' : 'JA_EXISTIA_GRUPO_GRM',
+                  lancado_em: null,
+                  raw: {
+                    origem_verificacao: 'grm_api_ao_vivo_cliente_ponto',
+                    nao_lancado_nesta_execucao: true,
+                    os_nhe_existente: nheGrupoAoVivo.os,
+                    ponto_nhe_existente: nheGrupoAoVivo.ponto,
+                    cidade_nhe_existente: nheGrupoAoVivo.cidade
+                  }
+                });
+                log('INFO', 'O.S. ' + candidato.os + ' em ' + candidato.data + ': já existe NHE para o mesmo Cliente + ponto na O.S. ' + nheGrupoAoVivo.os + '; novo lançamento bloqueado.');
+                continue;
+              }
             }
 
             log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (' + (candidato.viaGestor ? 'via gestor ' + candidato.gestorNome + ', colaborador original=' + candidato.funcionario : 'colaborador=' + candidato.funcionario) + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
@@ -1750,5 +1971,7 @@ module.exports = {
   resolverCoordenadaOs: resolverCoordenadaOs,
   buscarGestorRegional: buscarGestorRegional,
   existeNheReal: existeNheReal,
-  existeMovimentoReal: existeMovimentoReal
+  existeMovimentoReal: existeMovimentoReal,
+  chaveGrupoEmbarque: chaveGrupoEmbarque,
+  identidadeGrupoEmbarque: identidadeGrupoEmbarque
 };
