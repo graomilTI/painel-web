@@ -58,9 +58,28 @@
  *   - Achado crítico: o campo de percentual da Ouro Safra só aceita vírgula
  *     como separador decimal — "0.80" é interpretado como 80,00 (100x maior).
  *     Por isso todo valor é formatado com fmtPercent() antes de digitar.
+ *
+ * ATUALIZAÇÃO 01/09/2026 — busca no GRM migrada de Puppeteer/UI para API
+ * HTTP direta: confirmado ao vivo (via probe temporário) que o Ouro Safra
+ * (app.ourosafra.com.br) é Blazor Server puro — todo o tráfego pós-login
+ * passa por 1 WebSocket SignalR binário, sem nenhum endpoint JSON por trás
+ * (não dá pra migrar esse lado). Já o GRM tem API JSON real por trás da
+ * tela (mesmo endpoint POST /api/reports/classification/loads que
+ * grm-sync-cargas-geofence.js já usa em produção, e o mesmo login HTTP puro
+ * (POST /api/user/login) que grmserver-lista-os-api-realtime.js já usa) —
+ * buscarClassificacaoGRM() foi reescrita pra chamar essa API direto (sem
+ * abrir página nenhuma), eliminando o Puppeteer do lado GRM na etapa de
+ * busca/casamento (o autocomplete #clnCode + tabela renderizada). Validado
+ * ao vivo: mesmo período de 10 dias, resposta traz cItems com um código
+ * semântico estável por item (pctCodeATT: 'umidade'/'impureza'/'avariado')
+ * que independe do rótulo específico por cliente (ex.: "Matérias E. e Imp."
+ * vs "Materias E. e imp." têm o mesmo pctCodeATT). O download do laudo
+ * (baixarLaudoDaOS) e todo o fluxo Ouro Safra continuam via Puppeteer —
+ * sem alternativa de API pra essas partes.
  */
 
 require('dotenv').config();
+const https = require('https');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const fs = require('fs');
@@ -76,9 +95,22 @@ const supabase = createClient(
   { realtime: { transport: WebSocket } }
 );
 
-const CLIENTE_NACIONAL_GRM = 'OURO SAFRA INDUSTRIA E COMERCIO LTDA';
 const EXEC_TABLE = 'ouro_safra_classificacao_execucoes';
 const DIAS_BUSCA_GRM = Math.max(1, Number(process.env.OUROSAFRA_GRM_DIAS_BUSCA) || 3);
+
+// A busca da classificação usa só "OURO SAFRA" (não a razão social completa
+// "OURO SAFRA INDUSTRIA E COMERCIO LTDA" do Cliente Nacional, que era o que
+// a UI buscava no autocomplete #clnCode) porque o campo `cliName` retornado
+// pela API é o Cliente Final por unidade (ex.: "OURO SAFRA - PILAR DO SUL"),
+// não a razão social — confirmado ao vivo 01/09/2026.
+const CLIENTE_FILTRO_GRM = 'OURO SAFRA';
+const GRM_API_BASE = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
+const GRM_WEB_HEADERS = {
+  origin: 'https://www.grmserver.com.br',
+  referer: 'https://www.grmserver.com.br/login',
+  'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+  'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+};
 
 // Segue o mesmo padrão de segurança do único outro agente de escrita do
 // repo (grm-sync-aplicar-distribuicao-os.js): --dry-run/DRY_RUN=true prepara
@@ -467,95 +499,128 @@ async function anexarLaudo(page, pdfPath) {
 }
 
 // ---------------------------------------------------------------------------
-// GRM — encontrar a classificação da placa (report/classification/loads)
+// GRM — encontrar a classificação da placa, via API (report/classification/loads)
 // ---------------------------------------------------------------------------
 
-// Todos os seletores abaixo (IDs e a classe .loadsReport-act-update) foram
-// confirmados ao vivo em report/classification/loads em 28/08/2026 — os
-// campos do GRM usam os mesmos nomes da API interna (clnCode, loaLicensePlate,
-// loaDateFrom/loaDateTo etc.), consistente com o que grm-sync-cargas-geofence.js
-// já usa no corpo do POST /api/reports/classification/loads.
-
-async function setNativeInputValue(page, selector, valor) {
-  await page.waitForSelector(selector, { timeout: 15000 });
-  await page.evaluate((selector, valor) => {
-    const input = document.querySelector(selector);
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(input, valor);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, selector, valor);
+// HTTP puro (sem Puppeteer) — mesmo endpoint e mesmo login que
+// grm-sync-cargas-geofence.js / grmserver-lista-os-api-realtime.js já usam
+// em produção. Ver nota datada 01/09/2026 no topo do arquivo.
+function requestJsonGrm(url, method, body, headers) {
+  const parsed = new URL(url);
+  const payload = body == null ? '' : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: `${parsed.pathname}${parsed.search}`,
+      method,
+      timeout: 30000,
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...(payload ? { 'content-length': Buffer.byteLength(payload) } : {}),
+        ...headers,
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        let data;
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch (e) {
+          reject(new Error(`GRM API retornou conteúdo inválido (HTTP ${res.statusCode}).`));
+          return;
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`GRM API respondeu HTTP ${res.statusCode}: ${data.message || 'erro'}`));
+          return;
+        }
+        resolve(data);
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => req.destroy(new Error('GRM API: timeout')));
+    if (payload) req.write(payload);
+    req.end();
+  });
 }
 
-async function preencherClienteNacionalGRM(page, valorBusca) {
-  // v-autocomplete: precisa de um clique REAL (Puppeteer/CDP) pra abrir o
-  // menu — um clique disparado via page.evaluate (DOM sintético) não abre.
-  await page.waitForSelector('#clnCode', { timeout: 15000 });
-  await page.click('#clnCode');
-  await wait(400);
-  await page.keyboard.type(valorBusca, { delay: 30 });
-  await page.waitForFunction(
-    (valorBusca) => Array.from(document.querySelectorAll('[role="option"]')).some((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase())),
-    { timeout: 10000 },
-    valorBusca
-  );
-  await page.evaluate((valorBusca) => {
-    const opt = Array.from(document.querySelectorAll('[role="option"]')).find((el) => (el.textContent || '').toUpperCase().includes(valorBusca.toUpperCase()));
-    opt?.click();
-  }, valorBusca);
-  await wait(400);
+async function loginGrmApi() {
+  log('INFO', 'Login GRM (API)...');
+  const res = await requestJsonGrm(`${GRM_API_BASE}user/login`, 'POST', {
+    userEmail: process.env.GRMSERVER_USER,
+    userPass: process.env.GRMSERVER_PASSWORD,
+    loginInfo: {
+      ip: '', browser: 'grm-sync-classificacao-ourosafra', browserVersion: '1.0',
+      engine: 'Node.js', engineVersion: process.version,
+      platform: process.platform, screenSize: '', windowSize: '',
+    },
+  }, GRM_WEB_HEADERS);
+  if (!res.result || !res.token) throw new Error(`Login GRM (API) recusado: ${res.message || 'sem token'}`);
+  log('SUCCESS', 'Login GRM (API) OK');
+  return res.token;
 }
 
-async function buscarClassificacaoGRM(page, placa) {
+// Busca UMA VEZ (não por placa) todas as cargas classificadas dos últimos
+// DIAS_BUSCA_GRM dias, com joinCItems=S pra trazer os itens de classificação
+// junto — mesmo formato de payload que grm-sync-cargas-geofence.js já
+// valida em produção. Sem filtro de cliente/placa no request (a API não
+// exige clnCode) — filtra client-side em buscarClassificacaoGRM, do mesmo
+// jeito que o geofence já faz.
+async function fetchClassificacoesGRM(token) {
   const hoje = hojeBrasilia();
   const inicio = new Date(hoje.getTime() - DIAS_BUSCA_GRM * 24 * 60 * 60 * 1000);
-  await page.goto('https://www.grmserver.com.br/report/classification/loads', { waitUntil: 'networkidle2', timeout: 60000 });
-  await wait(3000); // hidratação do app (Vue) — sem isso os inputs ainda não existem no DOM
+  const res = await requestJsonGrm(`${GRM_API_BASE}reports/classification/loads`, 'POST', {
+    loaDateFrom: toBrDate(inicio),
+    loaDateTo: toBrDate(hoje),
+    loaType: 'EMB',
+    includeTotal: 'N',
+    addStaffInfo: 'S',
+    addLocalInfo: 'S',
+    addTestsInfo: 'N',
+    addSchedulesInfo: 'N',
+    joinCItems: 'S',
+  }, { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` });
+  if (!res.result) throw new Error(`GRM recusou a consulta de classificação: ${res.message || 'erro desconhecido'}`);
+  const loads = [];
+  for (const group of res.searchData || []) {
+    for (const load of group.loads || []) loads.push(load);
+  }
+  return loads;
+}
 
-  await preencherClienteNacionalGRM(page, CLIENTE_NACIONAL_GRM);
-  await setNativeInputValue(page, '#loaLicensePlate', placa);
-
-  // "Data de Classificação" só expõe #loaDateFrom/#loaDateTo depois de um
-  // clique real no campo composto (.dr-field) — closed by default.
-  await page.click('.dr-field');
-  await wait(400);
-  await setNativeInputValue(page, '#loaDateFrom', toBrDate(inicio));
-  await setNativeInputValue(page, '#loaDateTo', toBrDate(hoje));
-
-  // Sem estes 2 marcados, o relatório sai sem as colunas de Umidade/
-  // Impureza/Avariados que a gente precisa.
-  await page.evaluate(() => {
-    ['joinCItems', 'addStaffInfo'].forEach((id) => {
-      const cb = document.getElementById(id);
-      if (cb && !cb.checked) cb.click();
-    });
+// cItems traz um código semântico estável por item (pctCodeATT), que não
+// muda com o rótulo específico do cliente (confirmado ao vivo 01/09/2026:
+// "Matérias E. e Imp." e "Materias E. e imp." têm ambos pctCodeATT=
+// 'impureza'). O item de Avariados vem marcado com pciIsTotal='S' — é o
+// único item "total" da lista, mesmo quando há vários itens de dano
+// individuais (Queimados, Mofados etc.) que não entram no cálculo aqui.
+function buscarClassificacaoGRM(loadsGRM, placa) {
+  const alvo = normalizePlaca(placa);
+  const load = loadsGRM.find((l) => {
+    const cliente = (l.cliName || '').toUpperCase();
+    if (!cliente.includes(CLIENTE_FILTRO_GRM)) return false;
+    return normalizePlaca(l.loaLicensePlate) === alvo;
   });
+  if (!load) return null;
 
-  await page.waitForSelector('.loadsReport-act-update', { timeout: 15000 });
-  await page.click('.loadsReport-act-update');
-  await wait(2500);
+  const itens = load.cItems || [];
+  const porCodigo = (codigo) => itens.find((i) => i.pctCodeATT === codigo);
+  const umidadeItem = porCodigo('umidade');
+  const impurezaItem = porCodigo('impureza');
+  const avariadoItem = itens.find((i) => i.pctCodeATT === 'avariado' && i.pciIsTotal === 'S') || porCodigo('avariado');
 
-  return page.evaluate(() => {
-    const table = document.querySelector('table');
-    if (!table) return null;
-    const headers = Array.from(table.querySelectorAll('thead th, thead td')).map((th) => th.textContent.trim().toUpperCase());
-    const idx = (name) => headers.findIndex((h) => h.includes(name));
-    const rows = Array.from(table.querySelectorAll('tbody tr'));
-    if (!rows.length) return null;
-    const cells = Array.from(rows[0].querySelectorAll('td')).map((td) => td.textContent.trim());
-    const get = (name) => {
-      const i = idx(name);
-      return i >= 0 ? cells[i] : null;
-    };
-    return {
-      os: get('OS'),
-      dataCadastro: get('DATA'),
-      horaCadastro: get('HORA CAD'),
-      umidade: get('UMIDADE'),
-      materiasImp: get('MAT'),
-      avariadoTotal: get('AVARIADO TOTAL'),
-    };
-  });
+  return {
+    os: load.sorCode,
+    dataCadastro: load.loaDate,
+    horaCadastro: (load.loaRegisterDate || '').split(' ')[1] || null,
+    umidade: umidadeItem ? umidadeItem.lciValue : null,
+    materiasImp: impurezaItem ? impurezaItem.lciValue : null,
+    avariadoTotal: avariadoItem ? avariadoItem.lciValue : null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -652,7 +717,7 @@ async function registrarExecucao(registro) {
   }
 }
 
-async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
+async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento, classificacoesGRM) {
   const inicio = Date.now();
   const registro = {
     agendamento_id: agendamento.id,
@@ -660,7 +725,7 @@ async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento) {
     iniciado_em: new Date().toISOString(),
   };
   try {
-    const grm = await buscarClassificacaoGRM(pageGRM, agendamento.placa);
+    const grm = buscarClassificacaoGRM(classificacoesGRM, agendamento.placa);
     if (!grm || !grm.os) {
       log('INFO', `${agendamento.placa}: sem correspondência no GRM ainda, pulando.`);
       registro.status = 'sem-correspondencia';
@@ -728,6 +793,13 @@ async function main() {
     if (HEADLESS) await pageGRM.setViewport({ width: 1440, height: 900 });
     await loginGRM(pageGRM);
 
+    // Busca via API (HTTP puro, sem Puppeteer) — 1 chamada só pra todo o
+    // lote, em vez de 1 navegação de página por placa (ver nota 01/09/2026
+    // no topo do arquivo).
+    const tokenGrmApi = await loginGrmApi();
+    const classificacoesGRM = await fetchClassificacoesGRM(tokenGrmApi);
+    log('INFO', `${classificacoesGRM.length} carga(s) classificada(s) no GRM nos últimos ${DIAS_BUSCA_GRM} dia(s).`);
+
     // "Carregando" e "Aguardando Classificação" são processados igual: a
     // janela do agendamento tem a MESMA tabela de itens (Impureza/Umidade/
     // Avariados) nos dois casos, só que mais abaixo na página (confirmado ao
@@ -748,7 +820,7 @@ async function main() {
       const listaAtual = await listarAgendamentosPorCard(pageOuroSafra, agendamento.card);
       const atual = listaAtual.find((a) => a.id === agendamento.id);
       if (!atual) continue;
-      await processarPlaca(pageOuroSafra, pageGRM, browser, atual);
+      await processarPlaca(pageOuroSafra, pageGRM, browser, atual, classificacoesGRM);
     }
 
     log('SUCCESS', 'Concluído');
