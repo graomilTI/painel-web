@@ -37,7 +37,7 @@ Os repositórios usam o wrapper `core/supabaseService.js`, que padroniza filtros
 
 ## 3. Serviços por domínio
 
-Os serviços de domínio previstos são `programacaoService`, `logisticaService`, `comprasService`, `financeiroService`, `notasFiscaisService`, `hospedagemService`, `frotasService` e `rhService`. Cada um nasce quando o respectivo módulo é migrado para o padrão (o piloto criou `modules/notas-fiscais/service.js`). Um serviço nunca é duplicado: se dois módulos precisam da mesma regra, ela vive no serviço do domínio dono do dado.
+Os serviços de domínio previstos são `programacaoService`, `logisticaService`, `financeiroService`, `notasFiscaisService`, `hospedagemService`, `frotasService` e `rhService`. Cada um nasce quando o respectivo módulo é migrado para o padrão (o piloto criou `modules/notas-fiscais/service.js`). Um serviço nunca é duplicado: se dois módulos precisam da mesma regra, ela vive no serviço do domínio dono do dado.
 
 ## 4. Migrations e banco
 

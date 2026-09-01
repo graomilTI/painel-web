@@ -72,6 +72,8 @@ export const MENU_CONFIG = [
     grupo: "COMPRAS",
     itens: [
       item("compras_adm", "Painel de Compras", "adm-compras", ["COMPRAS_ADM"]),
+      // Reaproveita o alias COMPRAS_ADM de propósito: quem tem acesso ao Painel de Compras
+      // também enxerga o Estoque, sem precisar de uma concessão de módulo separada.
       item("compras_estoque", "Estoque", "compras-estoque", ["COMPRAS_ESTOQUE", "ESTOQUE", "ALMOXARIFADO", "COMPRAS_ADM"])
     ]
   },
