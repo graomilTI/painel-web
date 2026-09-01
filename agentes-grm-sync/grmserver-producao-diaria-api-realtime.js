@@ -26,6 +26,13 @@
  * GRM para um dia já fechado chegaria ao painel. A janela cheia roda logo no
  * boot (lastFullSyncAt=0) para garantir cobertura do mês já na primeira
  * execução, mesmo após reiniciar o serviço.
+ *
+ * O endpoint dailyProductionReport passou a rejeitar intervalos longos
+ * (erro `invalidDateRangeDaysExtendedDays` num teste real em produção,
+ * 01/09, pedindo 30 dias de uma vez). Por isso qualquer janela — rápida ou
+ * completa — é sempre dividida em sub-consultas de no máximo
+ * GRM_PRODUCAO_DIARIA_CHUNK_DAYS dias (padrão 7) e concatenada antes de
+ * promover; ver fetchProducaoDiariaEmJanelas().
  */
 
 const dotenvResult = require('dotenv').config();
@@ -69,6 +76,7 @@ const MIN_ROWS = Math.max(1, Number(process.env.GRM_PRODUCAO_DIARIA_MIN_ROWS || 
 const FULL_SYNC_INTERVAL_MS = Math.max(300000, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_MS || 1800000));
 const FULL_SYNC_DAYS_BACK = Math.max(DAYS_BACK, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_DAYS_BACK || 30));
 const FULL_SYNC_MIN_ROWS = Math.max(MIN_ROWS, Number(process.env.GRM_PRODUCAO_DIARIA_FULL_SYNC_MIN_ROWS || 1000));
+const CHUNK_DAYS = Math.max(1, Number(process.env.GRM_PRODUCAO_DIARIA_CHUNK_DAYS || 7));
 const GRM_WEB_HEADERS = {
   origin: 'https://www.grmserver.com.br',
   referer: 'https://www.grmserver.com.br/login',
@@ -150,7 +158,22 @@ function formatDateBr(date) {
 function calculateDateRange(daysBack) {
   const today = new Date();
   const pastDate = new Date(today.getTime() - (daysBack - 1) * 24 * 60 * 60 * 1000);
-  return { from: formatDateBr(pastDate), to: formatDateBr(today) };
+  return { from: formatDateBr(pastDate), to: formatDateBr(today), fromDate: pastDate, toDate: today };
+}
+
+// Quebra [fromDate, toDate] em sub-janelas de no máximo chunkDays dias cada
+// (a API do GRM passou a rejeitar intervalos longos numa consulta só).
+function splitIntoChunks(fromDate, toDate, chunkDays) {
+  const chunks = [];
+  let cursor = new Date(fromDate);
+  const fimTotal = new Date(toDate);
+  while (cursor <= fimTotal) {
+    const fimJanela = new Date(cursor.getTime() + (chunkDays - 1) * 24 * 60 * 60 * 1000);
+    if (fimJanela > fimTotal) fimJanela.setTime(fimTotal.getTime());
+    chunks.push({ from: new Date(cursor), to: fimJanela });
+    cursor = new Date(fimJanela.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return chunks;
 }
 
 function normalizeText(value) {
@@ -251,6 +274,31 @@ async function fetchProducaoDiaria(token, dateRange) {
   return response.searchData;
 }
 
+// Busca uma sub-janela com retry de login em caso de 401/logoutUser, devolvendo
+// o token (possivelmente renovado) para as próximas sub-janelas reaproveitarem.
+async function fetchComRelogin(token, dateRange) {
+  try {
+    return { rows: await fetchProducaoDiaria(token, dateRange), token };
+  } catch (error) {
+    if (!error.requiresLogin && error.statusCode !== 401) throw error;
+    const novoToken = await login();
+    return { rows: await fetchProducaoDiaria(novoToken, dateRange), token: novoToken };
+  }
+}
+
+async function fetchProducaoDiariaEmJanelas(token, fromDate, toDate) {
+  const janelas = splitIntoChunks(fromDate, toDate, CHUNK_DAYS);
+  let tokenAtual = token;
+  const rows = [];
+  for (const janela of janelas) {
+    const dateRange = { from: formatDateBr(janela.from), to: formatDateBr(janela.to) };
+    const resultado = await fetchComRelogin(tokenAtual, dateRange);
+    tokenAtual = resultado.token;
+    rows.push(...resultado.rows);
+  }
+  return { rows, token: tokenAtual };
+}
+
 async function applyCycle(supabase, rawRows, minRows) {
   const mapped = rawRows
     .map(mapProducaoSnapshotRow)
@@ -277,7 +325,7 @@ async function main() {
     requiredEnv('SUPABASE_SERVICE_ROLE_KEY', ['SUPABASE_SERVICE_KEY', 'SB_SERVICE_KEY', 'SUPABASE_KEY']),
   );
   let token = await login();
-  logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms, janela rápida ${DAYS_BACK} dia(s), sync completa a cada ${FULL_SYNC_INTERVAL_MS} ms (janela ${FULL_SYNC_DAYS_BACK} dia(s)).`);
+  logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms, janela rápida ${DAYS_BACK} dia(s), sync completa a cada ${FULL_SYNC_INTERVAL_MS} ms (janela ${FULL_SYNC_DAYS_BACK} dia(s)), sub-consultas de até ${CHUNK_DAYS} dia(s).`);
 
   // 0 força uma sync completa já no primeiro ciclo (cobertura do mês logo após
   // o boot/restart do serviço, sem esperar o intervalo cheio).
@@ -290,15 +338,9 @@ async function main() {
       const daysBack = isFullSync ? FULL_SYNC_DAYS_BACK : DAYS_BACK;
       const minRows = isFullSync ? FULL_SYNC_MIN_ROWS : MIN_ROWS;
       const dateRange = calculateDateRange(daysBack);
-      let rows;
-      try {
-        rows = await fetchProducaoDiaria(token, dateRange);
-      } catch (error) {
-        if (!error.requiresLogin && error.statusCode !== 401) throw error;
-        token = await login();
-        rows = await fetchProducaoDiaria(token, dateRange);
-      }
-      const result = await applyCycle(supabase, rows, minRows);
+      const busca = await fetchProducaoDiariaEmJanelas(token, dateRange.fromDate, dateRange.toDate);
+      token = busca.token;
+      const result = await applyCycle(supabase, busca.rows, minRows);
       if (!result.skipped) {
         logger.info(`producao_snapshot: ${result.promoted} linha(s) promovida(s) (janela ${dateRange.from} a ${dateRange.to}${isFullSync ? ', sync completa' : ''}, ${result.remote} recebida(s) do GRM).`);
         if (isFullSync) lastFullSyncAt = startedAt;
