@@ -139,6 +139,110 @@ async function upsertData(data) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
+// Promove os locais válidos direto do lote que acabamos de baixar para
+// operacional_pontos_embarque (lookup geográfico usado por TODA O.S. via
+// trg_operacional_os_resolver_ponto). Antes isso era um efeito colateral de
+// sync-operacional-os, que relia numa janela de 5min sobre esta própria tabela
+// pra adivinhar "o lote mais recente" — desnecessário agora que temos os dados
+// em mãos aqui, na mesma execução que os baixou (01/09).
+const LOTE_MINIMO_LOCAIS = 10;
+
+function normKey(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function toText(value) {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  return s || null;
+}
+
+function toGeoNum(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const s = String(value).trim().replace(',', '.').replace(/[^0-9.-]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isGeoBrasil(lat, lng) {
+  const a = Number(lat);
+  const b = Number(lng);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return a >= -34.5 && a <= 6 && b >= -75 && b <= -33;
+}
+
+function getField(row, aliases = []) {
+  if (!row) return null;
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
+  }
+  const map = new Map();
+  Object.keys(row).forEach((key) => map.set(normKey(key), row[key]));
+  for (const alias of aliases) {
+    const hit = map.get(normKey(alias));
+    if (hit !== undefined) return hit;
+  }
+  return null;
+}
+
+function pontoKey({ uf, cidade, nome_local }) {
+  return `${normKey(uf)}|${normKey(cidade)}|${normKey(nome_local)}`;
+}
+
+function mapLocalEmbarqueRow(d) {
+  const latitude = toGeoNum(getField(d, ['Latitude', 'Lat', 'splLat']));
+  const longitude = toGeoNum(getField(d, ['Longitude', 'Long', 'Lng', 'splLon']));
+  return {
+    tipo_local: toText(getField(d, ['Tipo do Local', 'Tipo Local', 'Tipo', 'sptName'])),
+    nome_local: toText(getField(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque', 'splName'])),
+    uf: toText(getField(d, ['UF', 'Estado', 'splCitUF'])),
+    cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município', 'splCitName'])),
+    latitude,
+    longitude,
+    ativo: true,
+  };
+}
+
+async function promoverPontosEmbarque(rows) {
+  const locaisMap = new Map();
+  rows.forEach((raw) => {
+    const local = mapLocalEmbarqueRow(raw);
+    if (!local.uf || !local.cidade || !local.nome_local) return;
+    if (!isGeoBrasil(local.latitude, local.longitude)) return;
+    locaisMap.set(pontoKey(local), local);
+  });
+
+  if (locaisMap.size < LOTE_MINIMO_LOCAIS) {
+    log('WARN', `[locais-embarque] lote com poucos locais válidos (${locaisMap.size}/${rows.length}); promoção para operacional_pontos_embarque ignorada.`);
+    return;
+  }
+
+  const locais = [...locaisMap.values()];
+  let sincronizados = 0;
+  let ignoradosPorColisao = 0;
+  for (let i = 0; i < locais.length; i += 500) {
+    const chunk = locais.slice(i, i + 500);
+    const { error } = await supabase
+      .from('operacional_pontos_embarque')
+      .upsert(chunk, { onConflict: 'nome_local,cidade,uf' });
+    if (!error) { sincronizados += chunk.length; continue; }
+
+    log('WARN', `[locais-embarque] chunk falhou (${error.message}); tentando linha a linha...`);
+    for (const local of chunk) {
+      const { error: rowError } = await supabase
+        .from('operacional_pontos_embarque')
+        .upsert([local], { onConflict: 'nome_local,cidade,uf' });
+      if (rowError) ignoradosPorColisao++;
+      else sincronizados++;
+    }
+  }
+
+  log('SUCCESS', `[locais-embarque] ${sincronizados} pontos georreferenciados promovidos para operacional_pontos_embarque${ignoradosPorColisao ? ` (${ignoradosPorColisao} ignorados por colisão de cadastro duplicado)` : ''}.`);
+}
+
 async function main() {
   let browser;
   try {
@@ -172,6 +276,7 @@ async function main() {
     await login(page);
     const data = await fetchReportApi(page);
     await upsertData(data);
+    await promoverPontosEmbarque(data);
     log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
   } catch (error) {
     log('ERROR', `Erro fatal: ${error.message}`);
