@@ -59,7 +59,9 @@ const SCRIPT_MAP = {
   'sync-lista-os': 'grm-sync-lista-os.js',
   'sync-operacional-os': 'grm-sync-operacional-os.js',
   'sync-distribuicao-os': 'grm-sync-distribuicao-os.js',
-  'aplicar-distribuicao-os': 'grm-sync-aplicar-distribuicao-os.js',
+  // Migrado pra API direta em 01/09 (ver memória painel-web-distribuicao-os-api-investigacao).
+  // grm-sync-aplicar-distribuicao-os.js (Puppeteer) mantido no disco pra rollback.
+  'aplicar-distribuicao-os': 'grmserver-aplicar-distribuicao-os-api.js',
   'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',
