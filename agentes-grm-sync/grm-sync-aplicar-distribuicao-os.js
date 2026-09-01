@@ -104,14 +104,17 @@ async function login(page) {
 }
 
 // --- Coleta e agrupamento das OS pendentes ---
-// O agente processa TODAS as supervisões que tenham OS elegível e colaborador
-// indicado. A flag supervisoes.distribuicao_os_automatica não é mais um gate.
+// O agente processa TODAS as supervisões que tenham OS elegível, em dois sentidos:
+//   - aplicar: colaborador indicado no painel, ainda não refletido no Graint;
+//   - limpar: OS que já tinha sido aplicada (AJUSTADA) e teve a indicação de
+//     colaborador removida no painel depois — o Graint precisa refletir essa
+//     remoção também, senão fica com gente associada que o painel não mostra mais.
+// A flag supervisoes.distribuicao_os_automatica não é mais um gate.
 async function carregarGruposPendentes() {
   const { data: osRows, error: osError } = await supabase
     .from('operacional_os')
     .select('*')
     .eq('status_gestor', 'ATENDER')
-    .neq('status_conferencia', 'AJUSTADA')
     .limit(3000);
   if (osError) throw new Error(`Falha ao consultar operacional_os: ${osError.message}`);
 
@@ -139,7 +142,9 @@ async function carregarGruposPendentes() {
   let ignoradasSemSupervisao = 0;
   for (const row of rows) {
     const vinculados = atribPorOs.get(String(row.id)) || [];
-    if (!vinculados.length) continue; // não há associação para aplicar
+    const precisaAplicar = vinculados.length > 0 && row.status_conferencia !== 'AJUSTADA';
+    const precisaLimpar = vinculados.length === 0 && row.status_conferencia === 'AJUSTADA';
+    if (!precisaAplicar && !precisaLimpar) continue;
 
     const data = dateKey(row.configurada_em || row.data_os);
     const coord = coordOf(row);
@@ -150,16 +155,22 @@ async function carregarGruposPendentes() {
     }
 
     const key = `${data}|${normalize(coord)}`;
-    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], osIds: new Set() });
+    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], remocoes: [], osIds: new Set() });
     const grupo = grupos.get(key);
-    for (const a of vinculados) {
-      const nome = a.colaborador_nome || '';
-      if (!nome) continue;
-      const duplicada = grupo.atribuicoes.some(
-        (item) => item.os.id === row.id && normalize(item.colaborador_nome) === normalize(nome)
-      );
-      if (duplicada) continue;
-      grupo.atribuicoes.push({ os: row, colaborador_nome: nome });
+
+    if (precisaAplicar) {
+      for (const a of vinculados) {
+        const nome = a.colaborador_nome || '';
+        if (!nome) continue;
+        const duplicada = grupo.atribuicoes.some(
+          (item) => item.os.id === row.id && normalize(item.colaborador_nome) === normalize(nome)
+        );
+        if (duplicada) continue;
+        grupo.atribuicoes.push({ os: row, colaborador_nome: nome });
+        grupo.osIds.add(row.id);
+      }
+    } else {
+      grupo.remocoes.push({ os: row });
       grupo.osIds.add(row.id);
     }
   }
@@ -169,7 +180,7 @@ async function carregarGruposPendentes() {
   }
 
   return [...grupos.values()]
-    .filter((grupo) => grupo.atribuicoes.length > 0)
+    .filter((grupo) => grupo.atribuicoes.length > 0 || grupo.remocoes.length > 0)
     .map((grupo) => ({ ...grupo, osIds: [...grupo.osIds] }));
 }
 
@@ -468,6 +479,71 @@ async function associarColaborador(page, li, colaboradorNome) {
   return { alterado: true };
 }
 
+async function limparColaborador(page, li) {
+  const temValor = await li.evaluate((el) => {
+    const chip = el.querySelector('.v-chip__content');
+    const combo = el.querySelector('input[role="combobox"]');
+    const selecao = el.querySelector('.v-select__selection-text, .v-autocomplete__selection-text');
+    return Boolean(chip || selecao || (combo && combo.value.trim()));
+  });
+  if (!temValor) return { alterado: false };
+
+  await li.click();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  // Vuetify expõe um botão nativo de limpar em campos "clearable" em algumas
+  // versões do tema; usa se existir, senão limpa via teclado (mesmo padrão de
+  // associarColaborador: focar, selecionar tudo, apagar).
+  const limpouPeloBotao = await li.evaluate((el) => {
+    const botao = el.querySelector(
+      '.v-field__clearable button, .v-input__icon--clear button, button[aria-label="clear icon"], .mdi-close-circle'
+    );
+    if (botao) { botao.click(); return true; }
+    return false;
+  });
+
+  if (!limpouPeloBotao) {
+    const inputs = await li.$$('input[role="combobox"]');
+    let input = null;
+    for (const candidato of inputs) {
+      const caixa = await candidato.boundingBox();
+      if (caixa && caixa.width > 0 && caixa.height > 0) { input = candidato; break; }
+    }
+    if (!input && inputs.length) input = inputs[0];
+    if (!input) {
+      const diagnostico = await li.evaluate((el) => ({
+        texto: (el.innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+        inputs: Array.from(el.querySelectorAll('input')).map((item) => ({
+          id: item.id, role: item.getAttribute('role'), type: item.type, className: item.className,
+        })),
+      }));
+      throw new Error(`Campo de colaborador não encontrado na linha da OS pra limpar: ${JSON.stringify(diagnostico)}`);
+    }
+
+    const campoVisual = await li.$('.v-autocomplete .v-field, .v-select .v-field');
+    if (campoVisual) await campoVisual.evaluate((el) => el.click());
+    await input.focus();
+    await page.keyboard.down('Control').catch(() => null);
+    await page.keyboard.press('A').catch(() => null);
+    await page.keyboard.up('Control').catch(() => null);
+    await page.keyboard.press('Backspace').catch(() => null);
+    await page.keyboard.press('Backspace').catch(() => null);
+  }
+
+  await page.keyboard.press('Escape').catch(() => null);
+  await new Promise((r) => setTimeout(r, 400));
+
+  const aindaTemValor = await li.evaluate((el) => {
+    const chip = el.querySelector('.v-chip__content');
+    const combo = el.querySelector('input[role="combobox"]');
+    const selecao = el.querySelector('.v-select__selection-text, .v-autocomplete__selection-text');
+    return Boolean(chip || selecao || (combo && combo.value.trim()));
+  });
+  if (aindaTemValor) throw new Error('Não consegui limpar o colaborador desta OS no Graint (campo continua preenchido após a tentativa).');
+
+  return { alterado: true };
+}
+
 async function salvar(page) {
   await page.waitForFunction(() => {
     const normalizar = (valor) => String(valor || '')
@@ -523,8 +599,13 @@ async function salvar(page) {
 }
 
 async function processarSupervisao(page, grupo) {
-  const numerosOs = [...new Set(grupo.atribuicoes.map((item) => String(item.os.numero_os)))];
-  log('INFO', `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${numerosOs.length} OS · ${grupo.atribuicoes.length} associação(ões)`);
+  const numerosOsAplicar = [...new Set(grupo.atribuicoes.map((item) => String(item.os.numero_os)))];
+  const numerosOsLimpar = [...new Set(grupo.remocoes.map((item) => String(item.os.numero_os)))];
+  log(
+    'INFO',
+    `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${numerosOsAplicar.length} OS a aplicar `
+      + `(${grupo.atribuicoes.length} associação(ões)) · ${numerosOsLimpar.length} OS a limpar`,
+  );
 
   await ajustarData(page, grupo.data);
   const supervisaoEncontrada = await selecionarSupervisao(page, grupo.coordenacao);
@@ -532,25 +613,46 @@ async function processarSupervisao(page, grupo) {
   await clicarAtualizar(page);
 
   // Aplica toda a distribuição da supervisão antes do único SALVAR da tela. Uma
-  // associação com problema (ex.: colaborador não encontrado no Graint pra essa
-  // supervisão) não pode travar as demais OS da mesma tela — só ela fica pendente
-  // pro próximo ciclo, o resto segue e é salvo normalmente.
+  // associação ou limpeza com problema (ex.: colaborador não encontrado no Graint
+  // pra essa supervisão) não pode travar as demais OS da mesma tela — só ela fica
+  // pendente pro próximo ciclo, o resto segue e é salvo normalmente.
   const idsComSucesso = new Set();
   const idsComFalha = new Set();
-  const falhasAssociacao = [];
-  let alteracoesAplicadas = 0;
+  const falhas = [];
+  let mudancasAplicadas = 0;
   for (const atribuicao of grupo.atribuicoes) {
     try {
       const li = await localizarLiDaOs(page, atribuicao.os.numero_os);
       if (!li) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
       const resultado = await associarColaborador(page, li, atribuicao.colaborador_nome);
-      if (resultado.alterado) alteracoesAplicadas += 1;
+      if (resultado.alterado) mudancasAplicadas += 1;
       idsComSucesso.add(atribuicao.os.id);
     } catch (error) {
       idsComFalha.add(atribuicao.os.id);
-      falhasAssociacao.push(`OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome}: ${error.message}`);
+      falhas.push(`OS ${atribuicao.os.numero_os} / associar ${atribuicao.colaborador_nome}: ${error.message}`);
       log('ERROR', `Associação OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome} falhou: ${error.message}`);
       // Fecha qualquer dropdown/overlay que tenha ficado aberto, senão atrapalha a próxima associação.
+      await page.keyboard.press('Escape').catch(() => null);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  // OS que já tinham sido aplicadas (AJUSTADA) e ficaram sem colaborador indicado
+  // no painel — precisa limpar a associação no Graint pra ele continuar refletindo
+  // o painel também nesse sentido (não só adicionar, também remover).
+  const idsLimpezaComSucesso = new Set();
+  const idsLimpezaComFalha = new Set();
+  for (const remocao of grupo.remocoes) {
+    try {
+      const li = await localizarLiDaOs(page, remocao.os.numero_os);
+      if (!li) throw new Error(`OS ${remocao.os.numero_os} não encontrada na lista do Graint para essa Supervisão/Data.`);
+      const resultado = await limparColaborador(page, li);
+      if (resultado.alterado) mudancasAplicadas += 1;
+      idsLimpezaComSucesso.add(remocao.os.id);
+    } catch (error) {
+      idsLimpezaComFalha.add(remocao.os.id);
+      falhas.push(`OS ${remocao.os.numero_os} / limpar: ${error.message}`);
+      log('ERROR', `Limpeza OS ${remocao.os.numero_os} falhou: ${error.message}`);
       await page.keyboard.press('Escape').catch(() => null);
       await new Promise((r) => setTimeout(r, 300));
     }
@@ -559,38 +661,54 @@ async function processarSupervisao(page, grupo) {
   // Uma OS pode ter mais de um colaborador. Ela só pode ser marcada como
   // AJUSTADA quando todas as associações dela foram confirmadas nesta rodada.
   const idsConfirmados = new Set([...idsComSucesso].filter((id) => !idsComFalha.has(id)));
-  if (!idsConfirmados.size) {
-    throw new Error(`Nenhuma associação aplicada nesta supervisão (${falhasAssociacao.length} falha(s)): ${falhasAssociacao.join(' | ')}`);
+  const idsLimpezaConfirmados = new Set([...idsLimpezaComSucesso].filter((id) => !idsLimpezaComFalha.has(id)));
+  if (!idsConfirmados.size && !idsLimpezaConfirmados.size) {
+    throw new Error(`Nenhuma alteração aplicada nesta supervisão (${falhas.length} falha(s)): ${falhas.join(' | ')}`);
   }
 
   if (DRY_RUN) {
-    log('INFO', `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOs.length} OS, ${grupo.atribuicoes.length - falhasAssociacao.length} de ${grupo.atribuicoes.length} associações, ${alteracoesAplicadas} alteração(ões)) — SALVAR e update no Supabase pulados.`);
+    log(
+      'INFO',
+      `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
+        + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s), ${mudancasAplicadas} mudança(s)) `
+        + '— SALVAR e update no Supabase pulados.',
+    );
     return;
   }
 
-  if (alteracoesAplicadas > 0) {
+  if (mudancasAplicadas > 0) {
     await salvar(page);
   } else {
-    // Quando todas as associações já estão corretas, o Graint não habilita
+    // Quando tudo já está correto (aplicado ou limpo), o Graint não habilita
     // SALVAR porque não há alteração pendente. Esse é um estado sincronizado,
     // não uma falha; basta encerrar a pendência local.
-    log('INFO', 'Todas as associações já estavam corretas no Graint; salvamento não necessário.');
+    log('INFO', 'Todas as OS já estavam corretas no Graint; salvamento não necessário.');
   }
 
   const now = new Date().toISOString();
-  const ids = [...idsConfirmados];
-  const { error } = await supabase
-    .from('operacional_os')
-    .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
-    .in('id', ids);
-  if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
-  const resultadoGraint = alteracoesAplicadas > 0
-    ? 'Supervisão aplicada no Graint'
-    : 'Supervisão já estava aplicada no Graint';
+  if (idsConfirmados.size) {
+    const { error } = await supabase
+      .from('operacional_os')
+      .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
+      .in('id', [...idsConfirmados]);
+    if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
+  }
+  if (idsLimpezaConfirmados.size) {
+    // Volta pra PENDENTE (não AJUSTADA): o Graint agora reflete "sem colaborador",
+    // igual ao painel. Se alguém indicar um novo colaborador depois, o fluxo normal
+    // de aplicação processa de novo.
+    const { error } = await supabase
+      .from('operacional_os')
+      .update({ status_conferencia: 'PENDENTE', conferido_por: null, conferido_em: now, updated_at: now })
+      .in('id', [...idsLimpezaConfirmados]);
+    if (error) throw new Error(`Graint limpo, mas falhou ao voltar status para PENDENTE no Supabase: ${error.message}`);
+  }
+
   log(
-    falhasAssociacao.length ? 'WARN' : 'SUCCESS',
-    `${resultadoGraint} e marcada como AJUSTADA (${ids.length} de ${numerosOs.length} OS)`
-      + (falhasAssociacao.length ? `; ${falhasAssociacao.length} associação(ões) pendente(s) pro próximo ciclo: ${falhasAssociacao.join(' | ')}` : '') + '.',
+    falhas.length ? 'WARN' : 'SUCCESS',
+    `Supervisão processada: ${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
+      + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s)`
+      + (falhas.length ? `; ${falhas.length} pendência(s) pro próximo ciclo: ${falhas.join(' | ')}` : '') + '.',
   );
 }
 
@@ -602,7 +720,13 @@ async function main() {
     log('INFO', `=== Aplicar Distribuição de OS no Graint${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
     log('INFO', `Watchdog global configurado para ${TIMEOUT_MIN} minuto(s).`);
     let grupos = await carregarGruposPendentes();
-    log('INFO', `${grupos.length} supervisão(ões)/data pendente(s) com colaborador indicado — sem filtro de habilitação por supervisão.`);
+    const totalAplicar = grupos.reduce((soma, g) => soma + g.atribuicoes.length, 0);
+    const totalLimpar = grupos.reduce((soma, g) => soma + g.remocoes.length, 0);
+    log(
+      'INFO',
+      `${grupos.length} supervisão(ões)/data pendente(s): ${totalAplicar} associação(ões) a aplicar, `
+        + `${totalLimpar} OS a limpar — todas as regionais, sem filtro de habilitação por supervisão.`,
+    );
 
     if (LIMIT > 0 && grupos.length > LIMIT) {
       grupos = grupos.slice(0, LIMIT);
