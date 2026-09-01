@@ -259,7 +259,10 @@ async function fetchServiceOrders(token) {
 }
 
 async function fetchAllCurrent(supabase) {
-  const columns = ['numero_os', ...TRACKED_FIELDS].join(',');
+  // status_gestor não é um TRACKED_FIELD (não vem do GRM, não entra no diff),
+  // mas precisa vir junto pra decidir se preserva data_os de uma O.S. ATENDER/
+  // FINALIZAR (ver applyCycle).
+  const columns = ['numero_os', 'status_gestor', ...TRACKED_FIELDS].join(',');
   const rows = [];
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
     const data = await supabase.selectAll('operacional_os', columns, offset, PAGE_SIZE);
@@ -291,11 +294,24 @@ async function applyCycle(supabase, rawRows) {
   let upserts = 0;
   for (const remote of remoteRows) {
     const previous = byNumero.get(remote.numero_os) || null;
-    if (previous && diffFields(previous, remote).length === 0) continue;
+
+    // data_os do GRM (sorDate) é a data de ABERTURA da O.S., não a data em que
+    // ela está sendo atendida — o painel move data_os de propósito quando o
+    // gestor confirma equipe na Programação (trigger programacao_equipe_marca_
+    // os_atender), podendo divergir do sorDate por dias. Sem essa preservação,
+    // toda O.S. ATENDER/FINALIZAR reusada em dias seguintes (remanescente) tinha
+    // data_os revertido pro valor velho do GRM a cada ciclo (~8s), sumindo do
+    // Mapa Operacional (filtra data_os=hoje) e caindo fora da janela de datas
+    // aceita pelo agente aplicar-distribuicao-os (mesma lógica de proteção que
+    // o antigo listaOsAgentSync.js já tinha). Achado em produção 01/09 (O.S. 90497).
+    const preservarAtendimento = Boolean(previous && ['ATENDER', 'FINALIZAR'].includes(previous.status_gestor));
+    const payload = { ...remote };
+    if (preservarAtendimento) payload.data_os = previous.data_os;
+
+    if (previous && diffFields(previous, payload).length === 0) continue;
 
     const mesmaOcorrencia = Boolean(previous && previous.data_os === remote.data_os);
-    const payload = { ...remote };
-    if (!mesmaOcorrencia) {
+    if (!preservarAtendimento && !mesmaOcorrencia) {
       // O.S. nova ou que avançou pra uma ocorrência/data diferente: entra limpa,
       // senão fica presa no status_gestor de uma ocorrência anterior e some da
       // Programação de hoje (mesma lógica do antigo sync-operacional-os).

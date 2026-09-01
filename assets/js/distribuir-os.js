@@ -87,7 +87,7 @@ export async function renderContent(content) {
         loadColaboradores(),
       ]);
       if (osResult.error) { el.feedback.textContent = osResult.error.message || 'Falha ao consultar operacional_os.'; return; }
-      const all = safe(osResult.data).sort((a, b) => String(b.configurada_em || b.data_os || '').localeCompare(String(a.configurada_em || a.data_os || '')) || num(b.numero_os) - num(a.numero_os));
+      const all = safe(osResult.data).sort((a, b) => String(b.data_os || b.configurada_em || '').localeCompare(String(a.data_os || a.configurada_em || '')) || num(b.numero_os) - num(a.numero_os));
       state.rows = all.filter(r => r.status_conferencia !== 'AJUSTADA');
       state.ajustadas = all.filter(r => r.status_conferencia === 'AJUSTADA');
       const ids = state.rows.map(r => r.id).filter(Boolean);
@@ -132,7 +132,11 @@ export async function renderContent(content) {
     const coordFiltro = normalize(state.filters.coordenacao);
     const busca = normalize(state.filters.busca);
     for (const row of rows) {
-      const confirmedDate = dateKey(row.configurada_em || row.data_os);
+      // data_os é a data de atendimento; configurada_em fica travado em O.S.
+      // remanescentes reaproveitadas em vários dias — usar data_os primeiro
+      // mantém essa tela e o agente aplicar-distribuicao-os agrupando pela
+      // mesma data (achado em produção 01/09, O.S. 90497).
+      const confirmedDate = dateKey(row.data_os || row.configurada_em);
       if (dataFiltro && confirmedDate !== dataFiltro) continue;
       const coord = coordOf(row);
       if (coordFiltro && normalize(coord) !== coordFiltro) continue;
