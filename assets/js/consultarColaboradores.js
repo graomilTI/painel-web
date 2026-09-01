@@ -3,6 +3,9 @@ import { supabase } from './supabaseClient.js';
 import { getSession } from './auth.js';
 import { toPanelUrl, toApiUrl } from './paths.js';
 
+let colaboradoresRealtimeChannel = null;
+let realtimeReloadTimer = null;
+
 function makeCell(text) {
   const td = document.createElement('td');
   td.textContent = text ?? '';
@@ -97,6 +100,46 @@ async function loadData() {
   });
 
   meta.textContent = `${data.length} registro(s) localizado(s).`;
+}
+
+async function loadRecentChanges() {
+  const tbody = document.getElementById('tbodyAlteracoesColaboradores');
+  if (!tbody) return;
+
+  const { data, error } = await supabase
+    .from('colaboradores_alteracoes')
+    .select('nome,tipo_evento,campos_alterados,detectado_em')
+    .order('detectado_em', { ascending: false })
+    .limit(50);
+  if (error) throw error;
+
+  tbody.innerHTML = '';
+  for (const row of data || []) {
+    const tr = document.createElement('tr');
+    tr.appendChild(makeCell(new Date(row.detectado_em).toLocaleString('pt-BR')));
+    tr.appendChild(makeCell(row.nome));
+    tr.appendChild(makeCell(row.tipo_evento));
+    tr.appendChild(makeCell((row.campos_alterados || []).join(', ') || 'cadastro completo'));
+    tbody.appendChild(tr);
+  }
+}
+
+function scheduleRealtimeReload() {
+  clearTimeout(realtimeReloadTimer);
+  realtimeReloadTimer = setTimeout(() => {
+    Promise.all([loadData(), loadRecentChanges()]).catch((error) => {
+      console.error('[Colaboradores Realtime]', error);
+    });
+  }, 250);
+}
+
+function setupColaboradoresRealtime() {
+  if (colaboradoresRealtimeChannel) supabase.removeChannel(colaboradoresRealtimeChannel);
+  colaboradoresRealtimeChannel = supabase
+    .channel('relatorio-colaboradores-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'colaboradores' }, scheduleRealtimeReload)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'colaboradores_alteracoes' }, scheduleRealtimeReload)
+    .subscribe();
 }
 
 function getExportEndpoint(tipo) {
@@ -386,6 +429,17 @@ export function renderContent(content) {
 
         <div class="base-meta" id="metaConsulta">Aguardando pesquisa.</div>
       </div>
+
+      <div class="base-card">
+        <h3 style="margin-top:0">Alterações em tempo real</h3>
+        <div class="base-meta" style="margin-bottom:12px">Últimos cadastros, inativações, reativações e campos alterados detectados no GRM.</div>
+        <div class="base-table-wrap">
+          <table class="base-table wide">
+            <thead><tr><th>Detectado em</th><th>Colaborador</th><th>Evento</th><th>Campos alterados</th></tr></thead>
+            <tbody id="tbodyAlteracoesColaboradores"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
   `;
 
@@ -407,6 +461,8 @@ export function renderContent(content) {
     const meta = document.getElementById('metaConsulta');
     if (meta) meta.textContent = `Erro ao consultar base: ${err.message || err}`;
   });
+  loadRecentChanges().catch((err) => console.error('[Alterações Colaboradores]', err));
+  setupColaboradoresRealtime();
 }
 
 initProtectedPage('Consultar Base de Colaboradores', renderContent);
