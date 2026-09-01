@@ -757,6 +757,28 @@ async function main() {
     });
     const page = await browser.newPage();
     if (headless) await page.setViewport({ width: 1920, height: 1440 });
+
+    // Instrumentação temporária pra descobrir o endpoint de escrita da
+    // Distribuição de OS (investigação 01/09, mesmo método usado pra
+    // descobrir serviceOrder/getRecords). Só ativa com CAPTURE_NET=true.
+    if (process.env.CAPTURE_NET === 'true') {
+      page.on('request', (req) => {
+        const method = req.method();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && /\/api\//.test(req.url())) {
+          log('CAPTURE', `REQ ${method} ${req.url()} :: ${req.postData() || ''}`);
+        }
+      });
+      page.on('response', async (res) => {
+        const req = res.request();
+        const method = req.method();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && /\/api\//.test(req.url())) {
+          let body = '';
+          try { body = (await res.text()).slice(0, 2000); } catch (_) { /* corpo binário/streaming */ }
+          log('CAPTURE', `RES ${res.status()} ${req.url()} :: ${body}`);
+        }
+      });
+    }
+
     await login(page);
     await page.goto(SO_ORDER_DISTRIBUTION_URL, { waitUntil: 'networkidle2' });
 
