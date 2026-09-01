@@ -72,7 +72,33 @@ OUROSAFRA_USER=...
 OUROSAFRA_PASSWORD=...
 SUPABASE_URL=https://jbzmcyycanrlnfhedcup.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
+# Opcional: latência de detecção do cadastro de colaboradores (mínimo 2000 ms)
+GRM_COLABORADORES_POLL_MS=5000
 ```
+
+## Colaboradores pela API (quase em tempo real)
+
+`grmserver-colaboradores-api-realtime.js` substitui, somente para o cadastro de
+colaboradores, o fluxo navegador → XLS. Ele autentica em `user/login`, consulta
+`staff/getRecords` continuamente, grava apenas diferenças em `colaboradores` e
+mantém o journal `colaboradores_alteracoes` com cadastro, alteração, inativação
+e reativação. As duas tabelas são publicadas no Supabase Realtime; a página
+`consultar-colaboradores.html` se atualiza sem recarregar o navegador.
+
+O GRM não oferece webhook. Portanto, a latência é o intervalo de polling mais o
+tempo da requisição (5 segundos por padrão), não zero absoluto. Execute este
+script como serviço persistente e mantenha o sincronizador XLS antigo disponível
+para rollback, mas não rode os dois como fonte principal ao mesmo tempo.
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+GRM_COLABORADORES_POLL_MS=5000 /home/grao100/bin/node grmserver-colaboradores-api-realtime.js
+```
+
+Antes de iniciar o serviço, aplique a migration
+`20260901000805_grm_colaboradores_realtime_auditoria.sql`. O primeiro ciclo
+associa os registros existentes ao `staCode` do GRM; somente diferenças reais
+são incluídas no journal.
 
 ## Rodar manualmente (debug)
 

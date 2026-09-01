@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node grmserver-colaboradores-sync.js",
     "sync": "node grmserver-colaboradores-sync.js",
+    "sync:api-realtime": "node grmserver-colaboradores-api-realtime.js",
     "sync:watch": "nodemon grmserver-colaboradores-sync.js"
   },
   "dependencies": {
