@@ -194,15 +194,9 @@ function renderTable(){
   body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
 }
 function selectedRows(){return state.rows.filter(r=>state.selected.has(String(r.id)));}
-async function updateItems(rows,payload){ if(!rows.length) throw new Error('Selecione pelo menos um item.'); const {error}=await supabase.from('compras_itens').update(payload).in('id',rows.map(r=>r.id)); if(error) throw error; await syncSolicitacoesStatus(rows.map(r=>r.solicitacao_id)); }
-async function syncSolicitacoesStatus(ids){
-  for(const id of [...new Set(ids.filter(Boolean))]){
-    const itens=await safe(()=>supabase.from('compras_itens').select('status').eq('solicitacao_id',id));
-    const st=itens.map(i=>i.status); let status='pendente';
-    if(st.every(x=>x==='comprado')) status='comprado'; else if(st.every(x=>x==='recusado')) status='recusado'; else if(st.includes('aguardando_nf')) status='aguardando_nf'; else if(st.includes('aguardando_termo')) status='aguardando_termo'; else if(st.includes('pendente_pagamento')) status='pendente_pagamento'; else if(st.includes('em_analise')) status='em_analise'; else if(st.includes('em_cotacao')) status='em_cotacao';
-    await supabase.from('compras_solicitacoes').update({status}).eq('id',id);
-  }
-}
+// compras_solicitacoes.status é recalculado pela trigger sync_compras_solicitacao_status()
+// sempre que compras_itens.status muda — não precisa (nem deve) ser feito aqui também.
+async function updateItems(rows,payload){ if(!rows.length) throw new Error('Selecione pelo menos um item.'); const {error}=await supabase.from('compras_itens').update(payload).in('id',rows.map(r=>r.id)); if(error) throw error; }
 function approvalMessage(rows){
   const byGestor=new Map(); rows.forEach(r=>{const s=r.compras_solicitacoes||{}; const k=s.solicitante||'Gestor'; if(!byGestor.has(k)) byGestor.set(k,[]); byGestor.get(k).push(r);});
   return [...byGestor.entries()].map(([gestor,itens])=>`Gestor que solicitou: ${gestor}\n${itens.map(i=>`${i.quantidade||i.unidade||1} un | ${i.material}${i.tamanho?` | ${i.tamanho}`:''}`).join('\n')}`).join('\n\n');
@@ -317,7 +311,6 @@ async function confirmarCotacao(rows, fornecedores){
     {const {error:caErr}=await supabase.from('compras_itens').update(update).eq('id',r.id); if(caErr&&(caErr.message?.includes("'ca'")||caErr.code==='PGRST204')){delete update.ca; await supabase.from('compras_itens').update(update).eq('id',r.id);}}
   }
   await supabase.from('compras_cotacoes').insert({status:'em_cotacao', itens_ids:rows.map(r=>r.id), titulo:`Cotação ${new Date().toLocaleString('pt-BR')}`});
-  await syncSolicitacoesStatus(rows.map(r=>r.solicitacao_id));
   modal.classList.remove('open');
   setMsg(`${rows.length} item(ns) enviado(s) para COTAÇÕES.`);
   await loadRows();
@@ -347,7 +340,6 @@ async function liberarSelecionados(){
     if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null,status:'liberado'}).eq('compra_item_id',r.id));
     else await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'liberado',created_at:new Date().toISOString()}]),null);
   }
-  await syncSolicitacoesStatus(rows.map(r=>r.solicitacao_id));
   setMsg(`${rows.length} item(ns) liberado(s) direto do estoque, sem necessidade de compra.`);
   await loadRows();
 }
@@ -375,9 +367,9 @@ function renderModalArea(r){ const area=document.getElementById('modalArea'); if
   else area.innerHTML=`<p class="muted">Use os botões da tela principal para movimentar este item.</p>`;
   const valor=area.querySelector('#mValor'), total=area.querySelector('#mTotal'); if(valor) valor.oninput=()=>{ total.value=(Number(valor.value||0)*Number(r.quantidade||r.unidade||1)).toFixed(2); };
   area.querySelector('#mComprar')?.addEventListener('click',()=>openPagamento(r, Number(total.value||0), Number(valor.value||0)));
-  area.querySelector('#mCancelar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mAprovar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente', aprovado_por:area.querySelector('#mAprovador').value.trim()||null, aprovado_em:new Date().toISOString()}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mReprovar')?.addEventListener('click',async()=>{const motivo=area.querySelector('#mMotivo').value.trim(); if(!motivo){alert('Informe o motivo.');return;} await supabase.from('compras_itens').update({status:'recusado', recusado_por:area.querySelector('#mAprovador').value.trim()||null, motivo_recusa:motivo}).eq('id',r.id); await syncSolicitacoesStatus([r.solicitacao_id]); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
+  area.querySelector('#mCancelar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
+  area.querySelector('#mAprovar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente', aprovado_por:area.querySelector('#mAprovador').value.trim()||null, aprovado_em:new Date().toISOString()}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
+  area.querySelector('#mReprovar')?.addEventListener('click',async()=>{const motivo=area.querySelector('#mMotivo').value.trim(); if(!motivo){alert('Informe o motivo.');return;} await supabase.from('compras_itens').update({status:'recusado', recusado_por:area.querySelector('#mAprovador').value.trim()||null, motivo_recusa:motivo}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
   area.querySelector('#mFinalizar')?.addEventListener('click',async()=>{
     const btn=area.querySelector('#mFinalizar'); const fb=area.querySelector('#nfFeedback');
     btn.disabled=true; if(fb) fb.textContent='';
@@ -607,7 +599,6 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
     await safe(()=>supabase.from('termos_celular').update({valor:r._valor_total}).eq('compra_item_id',r.id));
   }
 
-  await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
   document.getElementById('admCmpModal').classList.remove('open');
   if(celularItens.length&&normalItens.length) setMsg(`${normalItens.length} item(ns) ao Financeiro. ${celularItens.length} celular(es) aguardando termo.`);
   else if(celularItens.length) setMsg(`${celularItens.length} celular(es) encaminhado(s) para assinatura de termo.`);
@@ -625,7 +616,6 @@ async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='
     if(patErr&&(patErr.message?.includes("'fornecedor'")||patErr.code==='PGRST204')){delete updPat.fornecedor; await supabase.from('compras_itens').update(updPat).eq('id',r.id);}
     const payPat={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: CELULAR (patrimônio)`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
     await safe(()=>mergeOrInsertComprasPayment(payPat),null);
-    await syncSolicitacoesStatus([r.solicitacao_id]);
     await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: CELULAR (patrimônio)\nValor: ${money(total)}\nForma: ${forma}`);
     document.getElementById('admCmpModal').classList.remove('open');
     setMsg('Celular (patrimônio) enviado ao Financeiro. Será etiquetado após a NF.');
@@ -638,7 +628,6 @@ async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='
     const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
     if(updErr&&(updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204')){delete upd.fornecedor; await supabase.from('compras_itens').update(upd).eq('id',r.id);}
     await safe(()=>supabase.from('termos_celular').update({valor:total}).eq('compra_item_id',r.id));
-    await syncSolicitacoesStatus([r.solicitacao_id]);
     document.getElementById('admCmpModal').classList.remove('open');
     setMsg('Celular encaminhado para assinatura de termo.');
     await loadRows();
@@ -651,7 +640,7 @@ async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='
   if(isEPI(r)&&(r.colaborador_id||r.colaborador_nome)){
     await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:r.ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);
   }
-  await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: ${r.material}\nValor: ${money(total)}\nForma: ${forma}`);
+  await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: ${r.material}\nValor: ${money(total)}\nForma: ${forma}`);
   document.getElementById('admCmpModal').classList.remove('open'); setMsg('Compra enviada ao Financeiro e movida para PENDENTES.'); await loadRows();
 }
 async function finalizarCompra(r){ const nf=document.getElementById('mNf')?.value?.trim()||''; if(!nf){alert('Informe a NF ou anexe um arquivo.');return;} const marca=document.getElementById('mMarca').value.trim();
@@ -660,7 +649,7 @@ async function finalizarCompra(r){ const nf=document.getElementById('mNf')?.valu
   if(isEPI(r)&&ca) updPayload.ca=ca;
   await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
   if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
-  if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}); await syncSolicitacoesStatus([r.solicitacao_id]); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
+  if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
   try { const engine=window.__painelNotifEngine; const s=r.compras_solicitacoes||{}; const destinatarioId=s.solicitante_id||s.created_by||null; if(engine&&destinatarioId){ await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} foi concluída. NF disponível.`,destinatario_usuario_id:destinatarioId,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`}); } } catch(_){}
   document.getElementById('admCmpModal').classList.remove('open'); await loadRows(); }
 
@@ -722,7 +711,6 @@ async function finalizarCompraGrupo(itens,nf){
     if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
     if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca:r.marca||null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'});
   }
-  await syncSolicitacoesStatus(itens.map(r=>r.solicitacao_id));
   try{const engine=window.__painelNotifEngine; for(const r of itens){const s=r.compras_solicitacoes||{}; const did=s.solicitante_id||s.created_by||null; if(engine&&did) await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} concluída. NF disponível.`,destinatario_usuario_id:did,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`});}}catch(_){}
   await notifyByConfig('GESTOR',`Compras concluídas\n${itens.length} itens finalizados\nNF: ${nf}\nTotal: ${money(itens.reduce((s,r)=>s+Number(r.valor_total||0),0))}`);
   document.getElementById('admCmpModal').classList.remove('open');
