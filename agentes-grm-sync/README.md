@@ -100,6 +100,47 @@ Antes de iniciar o serviço, aplique a migration
 associa os registros existentes ao `staCode` do GRM; somente diferenças reais
 são incluídas no journal.
 
+## Produção Diária pela API (janela recente, sem Puppeteer)
+
+`grmserver-producao-diaria-api-realtime.js` substitui, para a janela recente
+(hoje/ontem por padrão), o fluxo Puppeteer de `grm-sync-producao-diaria.js`.
+O script antigo já buscava os dados por `fetch` dentro da página (não pelo
+XLS) — só o login exigia navegador. Aqui o login também é POST direto em
+`user/login`, então o processo roda sem abrir Chrome/Puppeteer e pode ficar
+de pé como serviço com polling curto (`GRM_PRODUCAO_DIARIA_POLL_MS`, padrão
+60000ms), em vez de rodar 1x a cada ciclo da esteira de agentes.
+
+Grava direto em `producao_snapshot` via `replaceTablePeriodSafely()`
+(staging + `grm_promover_staging_periodo()`), que só substitui as datas
+presentes na consulta — histórico fora da janela fica intacto. Não escreve
+mais em `grm_producao_diaria_importacoes` (tabela de arquivo do fluxo XLS
+antigo); segue a mesma simplificação já aplicada em `grmserver-lista-os-api-
+realtime.js`.
+
+Variáveis opcionais:
+
+```
+GRM_PRODUCAO_DIARIA_POLL_MS=60000    # intervalo entre consultas (mínimo 15000)
+GRM_PRODUCAO_DIARIA_DAYS_BACK=2      # janela de dias (hoje + N-1 anteriores)
+GRM_PRODUCAO_DIARIA_MIN_ROWS=20      # guarda contra promover uma janela vazia/parcial
+```
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+/home/grao100/bin/node grmserver-producao-diaria-api-realtime.js
+```
+
+`grm-sync-producao-diaria.js` (Puppeteer, janela de 30 dias) continua no
+`SCRIPT_MAP`/esteira para a sincronização histórica completa e como rollback;
+ao promover este agente para produção, pausar `sync-producao-diaria` em
+`grm_sync_agent_settings` (não em `worker/grm-sync-fixed-agents.js`, que é
+código morto — ver [[painel-web-grm-sync-agent-settings-fonte-real]]) para
+evitar os dois escrevendo em `producao_snapshot` ao mesmo tempo. Para rodar
+persistente, seguir o mesmo padrão systemd dos dois agentes acima
+(`Restart=always`), inclusive para o caso de faltar acesso root na sessão
+(cron+flock+nohup como fallback temporário, ver `loginctl enable-linger`
+em [[painel-web-agentes-grm-sync-deploy-cpanel]]).
+
 ## Rodar manualmente (debug)
 
 ```bash
