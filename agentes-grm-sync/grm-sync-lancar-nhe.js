@@ -684,6 +684,27 @@ async function resolverCoordenadaOs(numeroOs, dataReferencia) {
 var gestoresCache = null;
 var loginsPorDataCache = {};
 
+// --forcar sem login real (SEM_LOGIN) não tem de onde tirar a Coordenação/
+// Supervisão do colaborador (grm_login_movimentos_importacoes não tem
+// registro nesse dia) — sem isso, preencherEModalNhe cai no fallback da
+// supervisão da O.S. (texto completo, ex. "MATO GROSSO MT1 - Lucas do Rio
+// Verde/Nova Mutum"), que não bate como Coordenação e aciona o fallback por
+// UF do embarque, que pode escolher a primeira opção que contém o prefixo
+// (ex. "MATO GROSSO DO SUL" ao buscar "MATO GROSSO") e depois não achar o
+// colaborador na lista de Funcionário errada. Busca o cadastro dele mesmo
+// (mesma fonte usada por carregarGestores) pra preencher com o valor certo.
+async function resolverCoordenacaoColaborador(nome) {
+  var wanted = normText(nome);
+  if (!wanted) return null;
+  var result = await supabase
+    .from('colaboradores')
+    .select('nome,coordenacao,supervisao')
+    .eq('situacao', 'Ativo');
+  if (result.error) throw result.error;
+  var achado = (result.data || []).find(function (row) { return normText(row.nome) === wanted; });
+  return achado ? { coordenacao: achado.coordenacao, supervisao: achado.supervisao } : null;
+}
+
 async function carregarGestores() {
   if (gestoresCache) return gestoresCache;
   var result = await supabase
@@ -1724,7 +1745,16 @@ async function main() {
       }
 
       var loginMatch = await buscarLoginColaborador(p.data, p.funcionario, osCoord);
-      if (!loginMatch && args.forcar) loginMatch = { distancia: 0, colaborador_chave: null, hora_movimento: null };
+      if (!loginMatch && args.forcar) {
+        var cadastroColaborador = await resolverCoordenacaoColaborador(p.funcionario);
+        loginMatch = {
+          distancia: 0,
+          colaborador_chave: null,
+          hora_movimento: null,
+          coordenacao: cadastroColaborador ? cadastroColaborador.coordenacao : null,
+          supervisao: cadastroColaborador ? cadastroColaborador.supervisao : null
+        };
+      }
       if (!loginMatch) {
         stats.semLogin++;
         await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), { status: 'SEM_LOGIN' });
