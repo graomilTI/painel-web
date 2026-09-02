@@ -22,6 +22,15 @@ const OUROSAFRA_AGENT_ID = 'sync-classificacao-ourosafra';
 
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
+//
+// apiStatus indica se o agente ainda depende de Puppeteer (login simulado +
+// download de XLS, sujeito à rotação da fila fixa com os outros agentes) ou
+// se já foi migrado pra chamar a API interna do GRM/BTG direto:
+//   'api'       - já migrado, chama API direto (sem navegador).
+//   'hybrid'    - parte do fluxo já é API, mas ainda depende de Puppeteer em algum trecho.
+//   'puppeteer' - ainda 100% Puppeteer, sujeito à rotação da fila fixa.
+//   'paused'    - agente pausado/substituído, mantido só pra referência/rollback.
+// apiNote complementa o card/detalhe com o "porquê" do estado.
 const AGENTES = [
   // Colaboradores e Lista de OS migraram pra API direta em 01/09
   // (grmserver-colaboradores-api-realtime.js / grmserver-lista-os-api-realtime.js,
@@ -34,45 +43,96 @@ const AGENTES = [
   // "sync-lista-os" têm enabled=false em grm_sync_agent_settings (agente antigo
   // pausado) e o trigger trg_grm_sync_guard_disabled_agent bloqueia insert em
   // grm_sync_jobs pra QUALQUER job com esse agente_id, inclusive o heartbeat.
-  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'] },
+  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'], apiStatus: 'api', apiNote: 'Migrado 31/08-01/09 (PR #330/#331): serviço systemd contínuo faz poll em staff/getRecords e grava só o que muda. Script Puppeteer antigo mantido no disco pra rollback.' },
   // Lista de OS agora escreve direto em operacional_os (upsert quase em tempo
   // real); grm_lista_os_importacoes é a tabela de import do agente Puppeteer
   // antigo, pausada e congelada desde a migração.
-  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'] },
-  { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes' },
-  { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes' },
+  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'], apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #332): serviço systemd contínuo faz poll em serviceOrder/getRecords e grava direto em operacional_os. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes', apiStatus: 'puppeteer' },
   // sync-operacional-os (derivação em lote antiga) também está pausada e sem
   // substituto direto — operacional_os agora é mantida por sync-lista-os acima.
   // Card mantido pra rollback/histórico; "Erro" aqui é esperado até ser
   // removido ou reaproveitado.
-  { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'fila fixa', table: 'operacional_os' },
-  { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes' },
+  { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'fila fixa', table: 'operacional_os', apiStatus: 'paused', apiNote: 'Pausado em 01/09 (enabled=false em grm_sync_agent_settings): derivava operacional_os a partir do lote de sync-lista-os, que agora grava direto via API/tempo real. Mantido só pra referência/rollback.' },
+  { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes', apiStatus: 'puppeteer' },
   // Migrado pra API direta em 01/09 (grmserver-producao-diaria-api-realtime.js,
   // ver memória painel-web-lancamento-automatico-nhe): roda como serviço contínuo
   // no VPS, fora da fila grm_sync_jobs, gravando direto em producao_snapshot.
   // grm_producao_diaria_importacoes ficou congelada (agente Puppeteer pausado em
   // grm_sync_agent_settings) — usar producao_snapshot.created_at como sinal de vida.
-  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20 },
-  { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes' },
-  { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes' },
-  { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes' },
-  { id: 'sync-notas-fiscais', name: 'Notas Fiscais', freq: 'fila fixa', table: 'grm_notas_fiscais_importacoes' },
-  { id: 'sync-mapa-embarque', name: 'Mapa de Embarque', freq: 'fila fixa', table: 'grm_mapa_embarque_importacoes' },
-  { id: 'sync-contas-pagar', name: 'Contas a Pagar', freq: 'fila fixa', table: 'grm_contas_pagar_importacoes' },
-  { id: 'sync-contas-receber', name: 'Contas a Receber', freq: 'fila fixa', table: 'grm_contas_receber_importacoes' },
-  { id: 'sync-auditorias', name: 'Auditorias', freq: 'fila fixa', table: 'grm_auditorias_importacoes' },
-  { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: 'fila fixa', table: 'grm_cargas_importacoes' },
-  { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: 'fila fixa / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true },
-  { id: 'sync-adiantamentos', name: 'Adiantamentos', freq: 'fila fixa', table: 'grm_adiantamentos_importacoes' },
-  { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa' },
-  { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores' },
-  { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida' },
-  { id: DISTRIBUICAO_OS_AGENT_ID, name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min (por supervisão)', table: 'operacional_os', direction: 'saida' },
-  { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida' },
-  { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida' },
-  { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida' },
-  { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: '10 min (fila 06 · Saída OS)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida' },
+  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20, apiStatus: 'api', apiNote: 'Migrado 01/09: serviço systemd contínuo grava direto em producao_snapshot. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-notas-fiscais', name: 'Notas Fiscais', freq: 'fila fixa', table: 'grm_notas_fiscais_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-mapa-embarque', name: 'Mapa de Embarque', freq: 'fila fixa', table: 'grm_mapa_embarque_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-contas-pagar', name: 'Contas a Pagar', freq: 'fila fixa', table: 'grm_contas_pagar_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-contas-receber', name: 'Contas a Receber', freq: 'fila fixa', table: 'grm_contas_receber_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-auditorias', name: 'Auditorias', freq: 'fila fixa', table: 'grm_auditorias_importacoes', apiStatus: 'puppeteer' },
+  { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: 'fila fixa', table: 'grm_cargas_importacoes', apiStatus: 'puppeteer' },
+  { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: 'fila fixa / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true, apiStatus: 'puppeteer' },
+  { id: 'sync-adiantamentos', name: 'Adiantamentos', freq: 'fila fixa', table: 'grm_adiantamentos_importacoes', apiStatus: 'puppeteer' },
+  { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa', apiStatus: 'api', apiNote: 'Nunca dependeu de Puppeteer: roda como Edge Function do Supabase chamando a API do BotConversa direto.' },
+  { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores', apiStatus: 'puppeteer' },
+  { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida', apiStatus: 'api', apiNote: 'Nunca dependeu de Puppeteer: dispara a Edge Function btg-checkin-send direto via HTTPS.' },
+  { id: DISTRIBUICAO_OS_AGENT_ID, name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min (por supervisão)', table: 'operacional_os', direction: 'saida', apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #340): chama a API interna do Graint direto. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida', apiStatus: 'puppeteer' },
+  { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida', apiStatus: 'puppeteer' },
+  { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida', apiStatus: 'api', apiNote: 'Migrado 02/09: chama a API interna do Graint direto (grmserver-liberacao-despesas-api.js), ~10s por lote contra ~1min/CPF do fluxo Puppeteer antigo (mantido no disco pra rollback).' },
+  { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: '10 min (fila 06 · Saída OS)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida', apiStatus: 'hybrid', apiNote: 'A busca da classificação no GRM já usa API (PR #341). O preenchimento no painel Ouro Safra continua via Puppeteer, porque a Ouro Safra é Blazor Server e não tem API.' },
 ];
+
+const API_STATUS_META = {
+  api: { icon: '🔌', label: 'Via API', cls: 'api', detail: 'Chama a API direto, sem navegador.' },
+  hybrid: { icon: '🔀', label: 'Híbrido', cls: 'hybrid', detail: 'Parte do fluxo já é API; outra parte ainda depende de Puppeteer.' },
+  puppeteer: { icon: '🧭', label: 'Via Puppeteer', cls: 'puppeteer', detail: 'Ainda depende de login simulado no navegador — sujeito à rotação da fila fixa com os outros agentes.' },
+  paused: { icon: '⏸️', label: 'Pausado', cls: 'paused', detail: 'Agente pausado/substituído, mantido só pra referência ou rollback.' },
+};
+
+function getApiStatusMeta(agenteDef) {
+  return API_STATUS_META[agenteDef?.apiStatus] || API_STATUS_META.puppeteer;
+}
+
+function formatGapDuration(ms) {
+  const value = Number(ms || 0);
+  if (value <= 0) return null;
+  const totalMinutes = Math.round(value / 60000);
+  if (totalMinutes < 1) return '<1min';
+  if (totalMinutes < 60) return `${totalMinutes}min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) return minutes ? `${hours}h${minutes}min` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+// Intervalo real medido entre as últimas execuções com sucesso do agente
+// (grm_sync_jobs, últimos 3 dias já carregados em state.executions). É esse
+// número — não o "freq" nominal — que mostra o gap real de um agente que
+// ainda roda em rotação na fila fixa com outros agentes Puppeteer. Agentes
+// "contínuo (API)" já reportam heartbeat próprio (ver getTableHeartbeat) e
+// aparecem sempre quase em dia, então a métrica de gap não agrega nada ali.
+function getAgentGapLabel(agenteDef) {
+  if (String(agenteDef.freq || '').toLowerCase().includes('contínuo')) {
+    return 'Tempo real (serviço contínuo, fora da fila)';
+  }
+
+  const ids = getAgentIds(agenteDef);
+  const jobs = state.executions
+    .filter((job) => ids.includes(job.agente_id) && String(job.status).toLowerCase() === 'sucesso' && job.finalizado_em)
+    .map((job) => new Date(job.finalizado_em).getTime())
+    .filter((ts) => Number.isFinite(ts))
+    .sort((a, b) => b - a);
+
+  if (jobs.length < 2) return 'Sem histórico suficiente (3d)';
+
+  const gaps = [];
+  for (let i = 0; i < jobs.length - 1; i += 1) gaps.push(jobs[i] - jobs[i + 1]);
+  const avgMs = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+  const label = formatGapDuration(avgMs);
+  return label ? `~${label} entre execuções (${jobs.length} amostras/3d)` : 'Sem histórico suficiente (3d)';
+}
 
 const STATUS_META = {
   pendente: { ui: 'idle', label: 'Aguardando', color: '#f59e0b', detail: '🟡 Aguardando worker' },
@@ -120,7 +180,7 @@ const esc = (v) => String(v ?? '')
 
 function getStyles() {
   return `<style id="agentes-style">
-.ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}
+.ag-wrap{width:100%;color:#e2e2f0}.ag-hero{background:radial-gradient(ellipse at top left,rgba(59,130,246,.13),transparent 55%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));border:1px solid rgba(148,163,184,.14);border-radius:24px;padding:24px 28px;margin-bottom:20px}.ag-hero h2{margin:0;font-size:clamp(20px,2vw,28px);letter-spacing:-.03em;color:#f8fafc}.ag-hero p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5;max-width:700px}.ag-stats{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}.ag-stat{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:12px 18px;text-align:center}.ag-stat-val{font-size:22px;font-weight:900;color:#3b82f6;line-height:1}.ag-stat-lbl{font-size:11px;color:#6b7280;margin-top:4px;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi{margin-top:16px;background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(34,197,94,.08));border:1px solid rgba(96,165,250,.28);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-btg-kpi:hover{border-color:rgba(96,165,250,.48);background:linear-gradient(135deg,rgba(59,130,246,.22),rgba(34,197,94,.12))}.ag-btg-kpi-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.ag-btg-kpi-title{font-size:15px;font-weight:900;color:#f8fafc}.ag-btg-kpi-sub{font-size:11px;color:#94a3b8;margin-top:3px}.ag-btg-kpi-status{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:900}.ag-btg-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.ag-btg-kpi-item{background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.12);border-radius:13px;padding:10px}.ag-btg-kpi-item span{display:block;font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}.ag-btg-kpi-item strong{display:block;margin-top:3px;color:#f8fafc;font-size:13px}.ag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:20px}.ag-card{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:16px;cursor:pointer;transition:.15s ease}.ag-card:hover{border-color:rgba(59,130,246,.3);background:rgba(15,23,42,.85)}.ag-card.active{border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.08)}.ag-card-header{display:flex;justify-content:space-between;align-items:start;margin-bottom:12px}.ag-card-title{font-size:14px;font-weight:900;color:#f8fafc}.ag-card-freq{font-size:11px;color:#94a3b8;background:rgba(148,163,184,.1);padding:3px 8px;border-radius:6px}.ag-card-status{display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px}.ag-status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}.ag-status-dot.online{background:#22c55e;box-shadow:0 0 8px rgba(34,197,94,.4)}.ag-status-dot.error{background:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.4)}.ag-status-dot.idle{background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.4)}.ag-status-dot.running{background:#3b82f6;box-shadow:0 0 8px rgba(59,130,246,.4)}.ag-card-meta{display:flex;gap:16px;font-size:12px;color:#6b7280}.ag-card-meta span{display:flex;flex-direction:column}.ag-card-meta span strong{color:#e2e2f0;display:block;font-weight:900;font-size:13px}.ag-details{background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.12);border-radius:18px;padding:20px;margin-bottom:20px}.ag-details-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.12);padding-bottom:16px}.ag-details-title{font-size:16px;font-weight:900;color:#f8fafc}.ag-details-close{background:transparent;border:0;color:#94a3b8;cursor:pointer;padding:4px;font-size:18px}.ag-log-box{background:rgba(0,0,0,.3);border:1px solid rgba(148,163,184,.12);border-radius:12px;padding:12px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;color:#6b7280;line-height:1.4;white-space:pre-wrap}.ag-log-line{margin:2px 0;color:#94a3b8}.ag-log-error{color:#fca5a5}.ag-log-success{color:#86efac}.ag-btn{border:0;border-radius:12px;padding:10px 16px;font-weight:900;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-btn-primary{background:linear-gradient(135deg,#3b82f6,#60a5fa);color:#fff}.ag-btn-danger{background:rgba(239,68,68,.1);color:#fca5a5;border:1px solid rgba(239,68,68,.22)}.ag-btn:disabled{opacity:.5;cursor:not-allowed}.ag-card-integration{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap}.ag-api-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:7px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}.ag-api-badge.api{background:rgba(34,197,94,.14);color:#86efac}.ag-api-badge.hybrid{background:rgba(96,165,250,.14);color:#93c5fd}.ag-api-badge.puppeteer{background:rgba(148,163,184,.14);color:#cbd5e1}.ag-api-badge.paused{background:rgba(100,116,139,.16);color:#94a3b8}.ag-card-gap{color:#64748b;font-size:10px;text-align:right}.ag-details-api{margin-top:4px;padding:10px 12px;border-radius:11px;background:rgba(15,23,42,.6);border:1px solid rgba(148,163,184,.12);font-size:12px;color:#94a3b8;line-height:1.5}
 .ag-tabs{display:flex;gap:8px;margin-top:18px;border-bottom:1px solid rgba(148,163,184,.14);padding-bottom:0}.ag-tab{background:transparent;border:0;border-bottom:2px solid transparent;color:#6b7280;font-weight:900;font-size:13px;padding:10px 4px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:.15s ease}.ag-tab:hover{color:#cbd5e1}.ag-tab.active{color:#f8fafc;border-bottom-color:#3b82f6}.ag-tab-count{background:rgba(148,163,184,.14);color:#cbd5e1;border-radius:999px;padding:1px 8px;font-size:11px}.ag-tab.active .ag-tab-count{background:rgba(59,130,246,.22);color:#bfdbfe}.ag-dir-badge{font-size:10px;font-weight:900;letter-spacing:.04em;padding:2px 7px;border-radius:6px;text-transform:uppercase}.ag-dir-badge.entrada{background:rgba(34,197,94,.13);color:#86efac}.ag-dir-badge.saida{background:rgba(251,146,60,.15);color:#fdba74}
 .ag-queue{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr);gap:16px}.ag-queue-panel{background:linear-gradient(145deg,rgba(15,23,42,.92),rgba(7,13,26,.94));border:1px solid rgba(148,163,184,.13);border-radius:19px;padding:18px}.ag-queue-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}.ag-queue-head h3{margin:0;color:#f8fafc;font-size:15px}.ag-queue-head p{margin:4px 0 0;color:#64748b;font-size:11px}.ag-queue-actions{display:flex;gap:8px}.ag-queue-item{display:grid;grid-template-columns:35px 42px minmax(0,1fr) auto;align-items:center;gap:11px;padding:11px 10px;border-bottom:1px solid rgba(148,163,184,.09)}.ag-queue-item:last-child{border-bottom:0}.ag-queue-pos{color:#475569;font-weight:950;font-size:11px;text-align:center}.ag-queue-icon{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:rgba(59,130,246,.11);color:#60a5fa}.ag-queue-name strong{display:block;color:#f1f5f9;font-size:12px}.ag-queue-name span{display:block;color:#64748b;font-size:9px;margin-top:3px}.ag-queue-move{display:flex;gap:5px}.ag-icon-btn{width:29px;height:29px;border-radius:8px;border:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.45);color:#94a3b8;cursor:pointer}.ag-icon-btn:hover:not(:disabled){border-color:#3b82f6;color:#bfdbfe}.ag-icon-btn:disabled{opacity:.25;cursor:default}.ag-running{border:1px solid rgba(34,197,94,.18);background:rgba(34,197,94,.04);border-radius:13px;margin-bottom:8px}.ag-running .ag-queue-icon{background:rgba(34,197,94,.12);color:#4ade80}.ag-queue-empty{padding:34px 16px;text-align:center;color:#64748b;font-size:12px}.ag-queue-side{position:sticky;top:16px;align-self:start}.ag-lane-card{padding:13px;border:1px solid rgba(148,163,184,.11);border-radius:13px;margin-bottom:10px}.ag-lane-card span{display:block;color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.ag-lane-card strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.ag-composer{grid-column:1/-1;background:rgba(2,6,23,.88);border:1px solid rgba(96,165,250,.25);border-radius:19px;padding:18px}.ag-composer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin:14px 0}.ag-agent-choice{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid rgba(148,163,184,.12);border-radius:11px;color:#cbd5e1;font-size:11px;cursor:pointer}.ag-agent-choice:has(input:checked){border-color:rgba(59,130,246,.5);background:rgba(59,130,246,.09);color:#eff6ff}.ag-composer-footer{display:flex;justify-content:flex-end;gap:8px}
 .ag-exec{display:grid;gap:14px}.ag-exec-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.ag-exec-kpi{position:relative;overflow:hidden;background:linear-gradient(145deg,rgba(15,23,42,.94),rgba(8,15,29,.9));border:1px solid rgba(148,163,184,.13);border-radius:17px;padding:15px 16px}.ag-exec-kpi::after{content:"";position:absolute;inset:auto -24px -38px auto;width:92px;height:92px;border-radius:50%;background:var(--glow,rgba(59,130,246,.12));filter:blur(2px)}.ag-exec-kpi span{display:block;color:#94a3b8;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.ag-exec-kpi strong{display:block;margin-top:6px;color:#f8fafc;font-size:25px;line-height:1;font-weight:950}.ag-exec-kpi small{display:block;margin-top:7px;color:#64748b;font-size:10px}.ag-exec-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:rgba(15,23,42,.62);border:1px solid rgba(148,163,184,.12);border-radius:16px;padding:10px}.ag-exec-search{min-width:220px;flex:1;background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#e2e8f0;padding:10px 12px;outline:none}.ag-exec-search:focus{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 3px rgba(59,130,246,.1)}.ag-exec-filter{background:rgba(2,6,23,.7);border:1px solid rgba(148,163,184,.16);border-radius:11px;color:#cbd5e1;padding:9px 11px}.ag-exec-refresh{border:1px solid rgba(96,165,250,.26);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:11px;padding:9px 12px;font-weight:850;cursor:pointer}.ag-exec-refresh:hover{background:rgba(59,130,246,.18)}.ag-exec-updated{margin-left:auto;color:#64748b;font-size:10px}.ag-exec-list{display:grid;gap:6px}.ag-exec-row{display:grid;grid-template-columns:30px minmax(150px,1.1fr) minmax(100px,.6fr) minmax(110px,.65fr) minmax(210px,1.5fr) 88px 20px;gap:9px;align-items:center;background:rgba(15,23,42,.66);border:1px solid rgba(148,163,184,.11);border-left:3px solid var(--status-color,#64748b);border-radius:11px;padding:7px 11px;color:#cbd5e1}.ag-exec-row:hover{background:rgba(15,23,42,.86);border-color:rgba(148,163,184,.2);border-left-color:var(--status-color,#64748b)}.ag-exec-icon{width:24px;height:24px;border-radius:8px;display:grid;place-items:center;background:color-mix(in srgb,var(--status-color) 14%,transparent);color:var(--status-color);font-weight:950;font-size:11px}.ag-exec-agent{display:flex;align-items:baseline;gap:5px;min-width:0;white-space:nowrap;overflow:hidden}.ag-exec-agent strong{color:#f8fafc;font-size:11px;overflow:hidden;text-overflow:ellipsis}.ag-exec-agent code{color:#64748b;font-size:9px;overflow:hidden;text-overflow:ellipsis}.ag-exec-time,.ag-exec-duration{color:#94a3b8;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-error{min-width:0;color:#94a3b8;font-size:10px;line-height:1.35;overflow:hidden}.ag-exec-error strong{display:block;color:#e2e8f0;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-error span{display:block;margin-top:1px;color:#64748b;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ag-exec-error:not(:has(strong)){white-space:nowrap;text-overflow:ellipsis}.ag-exec-retry{justify-self:end;border:1px solid rgba(96,165,250,.28);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:8px;padding:5px 9px;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap}.ag-exec-retry:hover{background:rgba(59,130,246,.2)}.ag-exec-chevron{color:#64748b;text-align:center;font-size:11px}.ag-exec-detail{grid-column:1/-1;margin:2px 0 0;padding:12px;background:rgba(2,6,23,.72);border-radius:10px;border:1px solid rgba(148,163,184,.1);white-space:pre-wrap;word-break:break-word;font:10px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#94a3b8}.ag-exec-empty{text-align:center;padding:52px 20px;border:1px dashed rgba(148,163,184,.17);border-radius:16px;color:#64748b}.ag-exec-empty strong{display:block;color:#cbd5e1;margin-bottom:5px}.ag-exec-health{display:flex;align-items:center;gap:8px;font-size:11px;color:#94a3b8}.ag-exec-health-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 9px rgba(34,197,94,.55)}
@@ -701,10 +761,15 @@ function renderAgentes() {
     const agente = state.agentes.find((x) => x.id === a.id);
     const meta = getAgenteMeta(agente);
     const dir = getDirection(a);
+    const apiMeta = getApiStatusMeta(a);
 
     html += `<div class="ag-card ${state.selectedAgent?.id === a.id ? 'active' : ''}" onclick="selectAgent('${a.id}')">
       <div class="ag-card-header"><div class="ag-card-title">${esc(a.name)}</div><div class="ag-card-freq">${a.freq}</div></div>
       <div class="ag-card-status"><div class="ag-status-dot ${meta.ui}"></div><span style="color:${meta.color}">${meta.label}</span><span class="ag-dir-badge ${dir}">${dir === 'saida' ? 'Saída' : 'Entrada'}</span></div>
+      <div class="ag-card-integration" title="${esc(apiMeta.detail)}">
+        <span class="ag-api-badge ${apiMeta.cls}">${apiMeta.icon} ${apiMeta.label}</span>
+        <span class="ag-card-gap">${esc(getAgentGapLabel(a))}</span>
+      </div>
       <div class="ag-card-meta">
         <span>Total<strong>${formatInt(agente?.total_records)}</strong></span>
         <span>Última Sync<strong>${formatDate(agente?.ultima_sync)}</strong></span>
@@ -720,6 +785,7 @@ function renderAgentes() {
 
 function renderAgentDetails(agente) {
   const meta = getAgenteMeta(agente);
+  const apiMeta = getApiStatusMeta(agente);
   const aliases = agente.aliases?.length ? `<p><strong>Aliases monitorados:</strong> ${esc(agente.aliases.join(', '))}</p>` : '';
   return `<div class="ag-details">
     <div class="ag-details-header"><div class="ag-details-title">${esc(agente.name)} - Detalhes</div><button class="ag-details-close" onclick="closeDetails()">✕</button></div>
@@ -727,14 +793,17 @@ function renderAgentDetails(agente) {
       <p><strong>ID:</strong> ${esc(agente.id)}</p>
       ${aliases}
       <p><strong>Tabela:</strong> ${esc(agente.table)}</p>
-      <p><strong>Frequência:</strong> ${esc(agente.freq)}</p>
+      <p><strong>Frequência nominal:</strong> ${esc(agente.freq)}</p>
+      <p><strong>Intervalo real (3d):</strong> ${esc(getAgentGapLabel(agente))}</p>
       <p><strong>Status:</strong> ${meta.detail}</p>
+      <p><strong>Integração:</strong> <span class="ag-api-badge ${apiMeta.cls}">${apiMeta.icon} ${apiMeta.label}</span></p>
       <p><strong>Última Sincronização:</strong> ${formatDate(agente.ultima_sync)}</p>
       <p><strong>Total de Registros:</strong> ${formatInt(agente.total_records)}</p>
       <p><strong>Último Job:</strong> ${esc(agente.job_id || 'N/A')}</p>
       <p><strong>Duração:</strong> ${esc(formatDuration(agente.duration_ms))}</p>
     </div>
-    <div><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
+    ${agente.apiNote ? `<div class="ag-details-api">${apiMeta.icon} ${esc(agente.apiNote)}</div>` : ''}
+    <div style="margin-top:16px"><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
     ${agente.source === 'botconversa' ? renderBotConversaFailures() : ''}
     ${agente.id === DISTRIBUICAO_OS_AGENT_ID ? renderDistribuicaoSupervisoes() : ''}
     <div style="margin-top:16px">
