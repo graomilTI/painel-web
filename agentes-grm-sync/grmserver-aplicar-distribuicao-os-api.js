@@ -22,6 +22,13 @@
  *
  * olsCode de cada supervisão vem de supervision/getForSelect {olsStatus:"A"}
  * (não é por O.S., é por supervisão — cacheado uma vez por execução).
+ *
+ * Fonte de verdade de "quem deve estar associado" (02/09): programacao_equipe
+ * (confirmado=true), não mais operacional_os_colaboradores. Decisão do usuário:
+ * a Programação é a única forma de decidir distribuição — a tela Distribuir O.S.
+ * virou somente leitura (reflete o que a Programação decidiu, ver distribuir-os.js).
+ * O.S. sem linha confirmada em programacao_equipe é limpa no Graint mesmo que
+ * ainda tenha um vínculo antigo em operacional_os_colaboradores.
  */
 
 require('dotenv').config();
@@ -140,10 +147,10 @@ async function carregarSupervisoes(token) {
 
 // --- Coleta e agrupamento das OS pendentes ---
 // O agente processa TODAS as supervisões que tenham OS elegível, em dois sentidos:
-//   - aplicar: colaborador indicado no painel, ainda não refletido no Graint;
-//   - limpar: OS que já tinha sido aplicada (AJUSTADA) e teve a indicação de
-//     colaborador removida no painel depois — o Graint precisa refletir essa
-//     remoção também, senão fica com gente associada que o painel não mostra mais.
+//   - aplicar: colaborador confirmado na Programação, ainda não refletido no Graint;
+//   - limpar: OS que já tinha sido aplicada (AJUSTADA) e não tem mais nenhum
+//     colaborador confirmado na Programação — o Graint precisa refletir essa
+//     remoção também, senão fica com gente associada que a Programação não indica mais.
 // A flag supervisoes.distribuicao_os_automatica não é mais um gate.
 async function carregarGruposPendentes() {
   const { data: osRows, error: osError } = await supabase
@@ -155,20 +162,24 @@ async function carregarGruposPendentes() {
 
   const rows = safe(osRows);
   const ids = rows.map((r) => r.id).filter(Boolean);
-  const atrib = [];
+  const programadas = [];
   const CHUNK = 200;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
-    const { data, error } = await supabase.from('operacional_os_colaboradores').select('*').in('os_id', chunk);
-    if (error) throw new Error(`Falha ao consultar operacional_os_colaboradores: ${error.message}`);
-    atrib.push(...safe(data));
+    const { data, error } = await supabase
+      .from('programacao_equipe')
+      .select('os_id, colaborador_id, nome_colaborador')
+      .eq('confirmado', true)
+      .in('os_id', chunk);
+    if (error) throw new Error(`Falha ao consultar programacao_equipe: ${error.message}`);
+    programadas.push(...safe(data));
   }
 
-  const atribPorOs = new Map();
-  for (const a of atrib) {
-    const list = atribPorOs.get(String(a.os_id)) || [];
-    list.push(a);
-    atribPorOs.set(String(a.os_id), list);
+  const programadosPorOs = new Map();
+  for (const p of programadas) {
+    const list = programadosPorOs.get(String(p.os_id)) || [];
+    list.push(p);
+    programadosPorOs.set(String(p.os_id), list);
   }
 
   // Data + supervisão é a unidade de processamento (um par getDistributionData
@@ -176,9 +187,9 @@ async function carregarGruposPendentes() {
   const grupos = new Map();
   let ignoradasSemSupervisao = 0;
   for (const row of rows) {
-    const vinculados = atribPorOs.get(String(row.id)) || [];
-    const precisaAplicar = vinculados.length > 0 && row.status_conferencia !== 'AJUSTADA';
-    const precisaLimpar = vinculados.length === 0 && row.status_conferencia === 'AJUSTADA';
+    const programados = programadosPorOs.get(String(row.id)) || [];
+    const precisaAplicar = programados.length > 0 && row.status_conferencia !== 'AJUSTADA';
+    const precisaLimpar = programados.length === 0 && row.status_conferencia === 'AJUSTADA';
     if (!precisaAplicar && !precisaLimpar) continue;
 
     // data_os é a data em que a O.S. está sendo atendida (o que o Graint precisa
@@ -198,8 +209,8 @@ async function carregarGruposPendentes() {
     const grupo = grupos.get(key);
 
     if (precisaAplicar) {
-      for (const a of vinculados) {
-        const nome = a.colaborador_nome || '';
+      for (const p of programados) {
+        const nome = p.nome_colaborador || '';
         if (!nome) continue;
         const duplicada = grupo.atribuicoes.some(
           (item) => item.os.id === row.id && normalize(item.colaborador_nome) === normalize(nome)
