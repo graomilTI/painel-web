@@ -41,7 +41,14 @@ const crypto = require('crypto');
 const https = require('https');
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
-const AGENT_ID = 'sync-colaboradores';
+// agente_id próprio pro heartbeat (não "sync-colaboradores"): esse id tem
+// enabled=false em grm_sync_agent_settings (agente antigo pausado), e o
+// trigger trg_grm_sync_guard_disabled_agent bloqueia QUALQUER insert em
+// grm_sync_jobs pra um agente desativado — inclusive o heartbeat deste
+// serviço, que não tem nada a ver com o agente pausado. Um id sem linha em
+// grm_sync_agent_settings passa livre pelo trigger (v_enabled fica NULL, não
+// "is false"). ti-agentes.js referencia esse id via `aliases`.
+const AGENT_ID = 'sync-colaboradores-realtime';
 const POLL_INTERVAL_MS = Math.max(2000, Number(process.env.GRM_COLABORADORES_POLL_MS || 5000));
 const PAGE_SIZE = 1000;
 const MAX_ROWS = 20000;

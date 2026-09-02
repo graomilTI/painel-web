@@ -29,12 +29,16 @@ const AGENTES = [
   // contínuo no VPS, fora da fila grm_sync_jobs original — os dois scripts agora
   // reportam um heartbeat próprio em grm_sync_jobs a cada ciclo (não dependem
   // mais de ter havido diff/mudança) pra esse card não ficar travado no erro do
-  // agente antigo pausado (achado 02/09, PR #344 + este).
-  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores' },
+  // agente antigo pausado (achado 02/09, PR #344 + este). O heartbeat usa um
+  // agente_id PRÓPRIO (aliases abaixo), não o id do card: "sync-colaboradores"/
+  // "sync-lista-os" têm enabled=false em grm_sync_agent_settings (agente antigo
+  // pausado) e o trigger trg_grm_sync_guard_disabled_agent bloqueia insert em
+  // grm_sync_jobs pra QUALQUER job com esse agente_id, inclusive o heartbeat.
+  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'] },
   // Lista de OS agora escreve direto em operacional_os (upsert quase em tempo
   // real); grm_lista_os_importacoes é a tabela de import do agente Puppeteer
   // antigo, pausada e congelada desde a migração.
-  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os' },
+  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'] },
   { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes' },
   { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes' },
   // sync-operacional-os (derivação em lote antiga) também está pausada e sem
