@@ -29,6 +29,16 @@
  * virou somente leitura (reflete o que a Programação decidiu, ver distribuir-os.js).
  * O.S. sem linha confirmada em programacao_equipe é limpa no Graint mesmo que
  * ainda tenha um vínculo antigo em operacional_os_colaboradores.
+ *
+ * Limpeza de ajuste manual direto no Graint (02/09): dentro de um grupo
+ * supervisão+data que já vai ser consultado no Graint por outro motivo (tem
+ * pelo menos 1 O.S. a aplicar/limpar pelas regras acima), o agente também
+ * varre TODAS as O.S. desse grupo — não só as pré-selecionadas — e limpa
+ * qualquer uma que o Graint mostre com colaborador associado mas que não
+ * tenha nenhuma programação confirmada no painel. Isso cobre o caso de
+ * alguém editar a Distribuição de OS direto na tela do Graint (fora do
+ * painel-web) numa O.S. que a Programação nunca tocou. Não gera chamada
+ * extra ao Graint (usa o mesmo getDistributionData já feito pro grupo).
  */
 
 require('dotenv').config();
@@ -187,11 +197,6 @@ async function carregarGruposPendentes() {
   const grupos = new Map();
   let ignoradasSemSupervisao = 0;
   for (const row of rows) {
-    const programados = programadosPorOs.get(String(row.id)) || [];
-    const precisaAplicar = programados.length > 0 && row.status_conferencia !== 'AJUSTADA';
-    const precisaLimpar = programados.length === 0 && row.status_conferencia === 'AJUSTADA';
-    if (!precisaAplicar && !precisaLimpar) continue;
-
     // data_os é a data em que a O.S. está sendo atendida (o que o Graint precisa
     // saber); configurada_em é só "quando o gestor mexeu pela 1ª vez no status" e
     // fica travado em O.S. remanescentes reaproveitadas em vários dias seguidos —
@@ -205,8 +210,17 @@ async function carregarGruposPendentes() {
     }
 
     const key = `${data}|${normalize(coord)}`;
-    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], remocoes: [], osIds: new Set() });
+    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], remocoes: [], todasOs: [], osIds: new Set() });
     const grupo = grupos.get(key);
+
+    const programados = programadosPorOs.get(String(row.id)) || [];
+    // todasOs guarda TODA O.S. do grupo (não só as pré-selecionadas abaixo) —
+    // usado em processarSupervisao pra achar ajuste manual feito direto no
+    // Graint numa O.S. que a Programação nunca tocou (ver comentário no topo).
+    grupo.todasOs.push({ os: row, programadosCount: programados.length });
+
+    const precisaAplicar = programados.length > 0 && row.status_conferencia !== 'AJUSTADA';
+    const precisaLimpar = programados.length === 0 && row.status_conferencia === 'AJUSTADA';
 
     if (precisaAplicar) {
       for (const p of programados) {
@@ -219,7 +233,7 @@ async function carregarGruposPendentes() {
         grupo.atribuicoes.push({ os: row, colaborador_nome: nome });
         grupo.osIds.add(row.id);
       }
-    } else {
+    } else if (precisaLimpar) {
       grupo.remocoes.push({ os: row });
       grupo.osIds.add(row.id);
     }
@@ -298,6 +312,30 @@ async function processarSupervisao(token, olsCode, grupo) {
     }
   }
 
+  // Varredura extra: qualquer O.S. do grupo que não passou pelas duas listas
+  // acima (nem aplicar, nem limpar pelas regras normais) mas que o Graint
+  // mostra com colaborador associado e zero programação confirmada no painel
+  // — provável ajuste manual feito direto na Distribuição de OS do Graint.
+  const jaTratadas = new Set([
+    ...grupo.atribuicoes.map((item) => item.os.id),
+    ...grupo.remocoes.map((item) => item.os.id),
+  ]);
+  let extrasEncontradas = 0;
+  for (const item of grupo.todasOs || []) {
+    if (jaTratadas.has(item.os.id) || item.programadosCount > 0) continue;
+    const ordem = ordemPorNumero.get(String(item.os.numero_os));
+    if (!ordem || !Array.isArray(ordem.staCodes) || !ordem.staCodes.length) continue;
+    extrasEncontradas += 1;
+    ordem.staCodes = [];
+    mudancasAplicadas += 1;
+    idsLimpezaComSucesso.add(item.os.id);
+    log(
+      'WARN',
+      `OS ${item.os.numero_os}: colaborador associado no Graint sem programação confirmada no painel `
+        + '— removido (provável ajuste manual direto na Distribuição de OS do Graint).',
+    );
+  }
+
   const idsConfirmados = new Set([...idsComSucesso].filter((id) => !idsComFalha.has(id)));
   const idsLimpezaConfirmados = new Set([...idsLimpezaComSucesso].filter((id) => !idsLimpezaComFalha.has(id)));
   if (!idsConfirmados.size && !idsLimpezaConfirmados.size) {
@@ -308,7 +346,8 @@ async function processarSupervisao(token, olsCode, grupo) {
     log(
       'INFO',
       `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
-        + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s), ${mudancasAplicadas} mudança(s)) `
+        + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length + extrasEncontradas} OS limpa(s) `
+        + `[${extrasEncontradas} por ajuste manual no Graint], ${mudancasAplicadas} mudança(s)) `
         + '— setDistributionData e update no Supabase pulados.',
     );
     return;
@@ -339,7 +378,8 @@ async function processarSupervisao(token, olsCode, grupo) {
   log(
     falhas.length ? 'WARN' : 'SUCCESS',
     `Supervisão processada: ${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
-      + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s)`
+      + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length + extrasEncontradas} OS limpa(s)`
+      + (extrasEncontradas ? ` (${extrasEncontradas} por ajuste manual no Graint)` : '')
       + (falhas.length ? `; ${falhas.length} pendência(s) pro próximo ciclo: ${falhas.join(' | ')}` : '') + '.',
   );
 }
