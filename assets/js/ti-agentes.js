@@ -29,7 +29,12 @@ const AGENTES = [
   { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes' },
   { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'fila fixa', table: 'operacional_os' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes' },
-  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'fila fixa', table: 'grm_producao_diaria_importacoes' },
+  // Migrado pra API direta em 01/09 (grmserver-producao-diaria-api-realtime.js,
+  // ver memória painel-web-lancamento-automatico-nhe): roda como serviço contínuo
+  // no VPS, fora da fila grm_sync_jobs, gravando direto em producao_snapshot.
+  // grm_producao_diaria_importacoes ficou congelada (agente Puppeteer pausado em
+  // grm_sync_agent_settings) — usar producao_snapshot.created_at como sinal de vida.
+  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20 },
   { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes' },
   { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes' },
   { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes' },
@@ -1025,6 +1030,39 @@ async function getLastJob(agenteOrId) {
   return null;
 }
 
+// Agentes migrados pra serviço contínuo via API (ver AGENTES) não gravam mais
+// em grm_sync_jobs — o job real está sempre desatualizado depois que o agente
+// antigo (fila) é pausado. Deriva um "job" sintético a partir do timestamp mais
+// recente da própria tabela de destino, tratando como erro só quando o serviço
+// realmente parou de gravar (mais velho que syncHeartbeatMinutes).
+async function getTableHeartbeat(agente) {
+  const column = agente.syncHeartbeatColumn;
+  const { data, error } = await supabase
+    .from(agente.table)
+    .select(column)
+    .order(column, { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+
+  const lastSync = data?.[column] ? new Date(data[column]) : null;
+  const limiteMinutos = agente.syncHeartbeatMinutes || 15;
+  if (!lastSync) {
+    return { agente_id: agente.id, status: 'erro', erro: 'Nenhum registro sincronizado ainda.' };
+  }
+
+  const staleMs = Date.now() - lastSync.getTime();
+  const stale = staleMs > limiteMinutos * 60 * 1000;
+  return {
+    agente_id: agente.id,
+    status: stale ? 'erro' : 'sucesso',
+    finalizado_em: lastSync.toISOString(),
+    erro: stale
+      ? `Sem gravação em ${agente.table} há mais de ${limiteMinutos} min (serviço contínuo via API, sem fila de jobs).`
+      : null,
+  };
+}
+
 async function countRecords(table) {
   const { count, error } = await supabase
     .from(table)
@@ -1045,7 +1083,7 @@ async function loadAgentes() {
       AGENTES.map(async (agente) => {
         try {
           const [lastJob, totalRecords] = await Promise.all([
-            getLastJob(agente),
+            agente.syncHeartbeatColumn ? getTableHeartbeat(agente) : getLastJob(agente),
             countRecords(agente.table),
           ]);
           const jobTotal = extractTotalFromJob(lastJob);
