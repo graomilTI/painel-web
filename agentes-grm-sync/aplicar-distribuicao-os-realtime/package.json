@@ -1,0 +1,12 @@
+{
+  "name": "aplicar-distribuicao-os-realtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Disparo imediato do agente aplicar-distribuicao-os via Supabase Realtime. Dependências isoladas (node_modules próprio) porque a versão do @supabase/supabase-js compartilhada em agentes-grm-sync (2.39.x) não fala Realtime com o formato novo de chave (sb_secret_...) — sem tocar nas dependências dos outros agentes.",
+  "main": "index.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.114.0",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  }
+}

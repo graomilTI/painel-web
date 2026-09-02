@@ -1,0 +1,17 @@
+[Unit]
+Description=GRM aplicar-distribuicao-os realtime trigger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grao100
+Group=grao100
+WorkingDirectory=/home/grao100/painel-scripts/grm-sync/aplicar-distribuicao-os-realtime
+ExecStart=/opt/node22/bin/node /home/grao100/painel-scripts/grm-sync/aplicar-distribuicao-os-realtime/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
