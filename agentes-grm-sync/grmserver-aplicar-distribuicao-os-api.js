@@ -1,34 +1,22 @@
 #!/usr/bin/env node
 
 /**
- * Aplica a distribuição de OS do painel direto no Graint via API, substituindo
- * o fluxo Puppeteer/UI (grm-sync-aplicar-distribuicao-os.js) — mesmo tipo de
- * migração já feita em Colaboradores e Lista de O.S. (ver
- * grmserver-colaboradores-api-realtime.js, grmserver-lista-os-api-realtime.js).
+ * Aplica a distribuição de OS do painel direto no Graint via API.
  *
- * Formato de escrita descoberto e validado ao vivo em 01/09 (ver memória
- * painel-web-distribuicao-os-api-investigacao): não usa resetSession nem
- * finalizeSession (chamar resetSession sem parear com um finalize trava a
- * sessão de edição da supervisão pro usuário AUTOMACOES — não fazer isso).
- * O fluxo real é:
- *   1. user/login -> token
- *   2. serviceOrder/distribution/getDistributionData {olsCode, sodDate} ->
- *      {staffs, sOrders} — cada item de sOrders já vem com staCodes (quem
- *      está associado agora).
- *   3. edita em memória o staCodes da(s) O.S. que precisa mudar
- *   4. serviceOrder/distribution/setDistributionData manda de volta o pacote
- *      INTEIRO (staffs + sOrders completos, não um diff) -> {result:true,
- *      message:"updateSuccess"}.
+ * Fonte de verdade: Programação do DIA da OS.
+ * - operacional_os.data_os define a data que será enviada ao Graint;
+ * - programacao_equipe_ultima + programacao_dia_ultima definem exatamente quem
+ *   está confirmado para aquela OS naquela data;
+ * - histórico de programacao_equipe de outras datas NÃO participa da distribuição.
  *
- * olsCode de cada supervisão vem de supervision/getForSelect {olsStatus:"A"}
- * (não é por O.S., é por supervisão — cacheado uma vez por execução).
+ * A escrita é uma reconciliação exata: para cada OS gerenciada, staCodes passa a
+ * ser exatamente o conjunto esperado na Programação. Assim o agente adiciona
+ * faltantes e remove vínculos antigos/indevidos de forma idempotente.
  *
- * Fonte de verdade de "quem deve estar associado" (02/09): programacao_equipe
- * (confirmado=true), não mais operacional_os_colaboradores. Decisão do usuário:
- * a Programação é a única forma de decidir distribuição — a tela Distribuir O.S.
- * virou somente leitura (reflete o que a Programação decidiu, ver distribuir-os.js).
- * O.S. sem linha confirmada em programacao_equipe é limpa no Graint mesmo que
- * ainda tenha um vínculo antigo em operacional_os_colaboradores.
+ * Segurança da API Graint:
+ * - não usar resetSession/finalizeSession;
+ * - getDistributionData retorna staffs + sOrders completos;
+ * - setDistributionData recebe o pacote inteiro da supervisão/data.
  */
 
 require('dotenv').config();
@@ -46,7 +34,6 @@ const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmser
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
 const limitArg = process.argv.find((a) => a.startsWith('--limit='));
 const LIMIT = Number(process.env.GRM_DISTRIBUICAO_OS_LIMIT || (limitArg ? limitArg.split('=')[1] : 0)) || 0;
-// Sem browser pra travar, o timeout pode ser bem mais curto que o da versão Puppeteer (120min).
 const TIMEOUT_MIN = Number(process.env.GRM_DISTRIBUICAO_OS_TIMEOUT_MIN || 20) || 20;
 
 const GRM_WEB_HEADERS = {
@@ -61,20 +48,65 @@ function log(level, msg) {
 }
 
 function normalize(value) {
-  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
 }
+
 function dateKey(value) { return String(value || '').slice(0, 10); }
-function toBrDate(iso) { const [y, m, d] = String(iso).slice(0, 10).split('-'); return y && m && d ? `${d}/${m}/${y}` : null; }
-function dataAceitaNoGraint(iso) {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const limite = new Date(hoje);
-  limite.setDate(limite.getDate() + 3);
-  const data = new Date(`${iso}T00:00:00`);
-  return !Number.isNaN(data.getTime()) && data >= hoje && data <= limite;
+function toBrDate(iso) {
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : null;
 }
-function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regional || row.supervisao || ''; }
 function safe(data) { return Array.isArray(data) ? data : []; }
+function coordOf(row) { return row.coordenacao || row.coordenacao_os || row.regional || row.supervisao || ''; }
+
+function isoLocalDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function janelaDatas() {
+  const inicio = new Date();
+  inicio.setHours(0, 0, 0, 0);
+  const fim = new Date(inicio);
+  fim.setDate(fim.getDate() + 3);
+  return { inicio: isoLocalDate(inicio), fim: isoLocalDate(fim) };
+}
+
+function dataAceitaNoGraint(iso) {
+  const { inicio, fim } = janelaDatas();
+  const data = dateKey(iso);
+  return Boolean(data && data >= inicio && data <= fim);
+}
+
+function uniqueByNormalizedName(rows) {
+  const result = [];
+  const seen = new Set();
+  for (const row of rows) {
+    const nome = String(row.nome_colaborador || '').trim();
+    const key = normalize(nome);
+    if (!nome || !key || seen.has(key)) continue;
+    seen.add(key);
+    result.push({ ...row, nome_colaborador: nome });
+  }
+  return result;
+}
+
+function codeKey(value) { return String(value); }
+
+function sameCodeSet(atual, esperado) {
+  const a = new Set(safe(atual).map(codeKey));
+  const b = new Set(safe(esperado).map(codeKey));
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
+}
 
 function requestJson(url, method = 'GET', body = null, headers = {}) {
   const parsed = new URL(url);
@@ -117,27 +149,43 @@ function requestJson(url, method = 'GET', body = null, headers = {}) {
     request.end(payload || undefined);
   });
 }
+
 function postJson(url, body, headers = {}) { return requestJson(url, 'POST', body, headers); }
 
 async function login() {
   const userEmail = process.env.GRMSERVER_USER;
   const userPass = process.env.GRMSERVER_PASSWORD;
   if (!userEmail || !userPass) throw new Error('Credenciais GRMSERVER_USER/GRMSERVER_PASSWORD ausentes.');
+
   const response = await postJson(`${GRM_BASE_URL}user/login`, {
-    userEmail, userPass,
+    userEmail,
+    userPass,
     loginInfo: {
-      ip: '', browser: 'GRM API Agent', browserVersion: '1.0',
-      engine: 'Node.js', engineVersion: process.version,
-      platform: process.platform, screenSize: '', windowSize: '',
+      ip: '',
+      browser: 'GRM API Agent',
+      browserVersion: '1.0',
+      engine: 'Node.js',
+      engineVersion: process.version,
+      platform: process.platform,
+      screenSize: '',
+      windowSize: '',
     },
   }, GRM_WEB_HEADERS);
-  if (!response.result || !response.token) throw new Error(`Login GRM recusado: ${response.message || 'sem token'}`);
+
+  if (!response.result || !response.token) {
+    throw new Error(`Login GRM recusado: ${response.message || 'sem token'}`);
+  }
   return response.token;
 }
 
 async function carregarSupervisoes(token) {
-  const response = await postJson(`${GRM_BASE_URL}supervision/getForSelect`, { olsStatus: 'A' }, { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` });
+  const response = await postJson(
+    `${GRM_BASE_URL}supervision/getForSelect`,
+    { olsStatus: 'A' },
+    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
+  );
   if (!response.result) throw new Error(`Falha ao listar supervisões do Graint: ${response.message || 'erro'}`);
+
   const map = new Map();
   for (const item of safe(response.searchData)) {
     if (item.olsName) map.set(normalize(item.olsName), item.olsCode);
@@ -145,73 +193,87 @@ async function carregarSupervisoes(token) {
   return map;
 }
 
-// --- Coleta e agrupamento das OS pendentes ---
-// O agente processa TODAS as supervisões que tenham OS elegível, em dois sentidos:
-//   - aplicar: colaborador confirmado na Programação, ainda não refletido no Graint;
-//   - limpar: OS que já tinha sido aplicada (AJUSTADA) e não tem mais nenhum
-//     colaborador confirmado na Programação — o Graint precisa refletir essa
-//     remoção também, senão fica com gente associada que a Programação não indica mais.
-// A flag supervisoes.distribuicao_os_automatica não é mais um gate.
-async function carregarGruposPendentes() {
-  const { data: osRows, error: osError } = await supabase
-    .from('operacional_os')
-    .select('*')
-    .eq('status_gestor', 'ATENDER')
-    .limit(3000);
-  if (osError) throw new Error(`Falha ao consultar operacional_os: ${osError.message}`);
-
-  const rows = safe(osRows);
-  const ids = rows.map((r) => r.id).filter(Boolean);
-  const programadas = [];
-  const CHUNK = 200;
-  // programacao_equipe acumula 1 linha por colaborador+dia (o os_id é reaproveitado
-  // toda vez que o número de O.S. volta a ser programado, ver comentário no topo
-  // do arquivo) — um chunk de 200 os_id pode facilmente somar mais de 1000 linhas
-  // confirmadas no histórico inteiro. Sem paginação explícita, o limite padrão do
-  // PostgREST (1000 linhas) truncava o resultado silenciosamente, fazendo O.S.
-  // programadas HOJE sumirem do mapa (achado em produção 02/09: OS 90825/Alexandre
-  // José da Silva, 767 linhas cortadas só no 1º chunk) e virarem candidatas erradas
-  // a "limpar" no Graint.
+async function carregarPaginado(factory, contexto) {
   const PAGE_SIZE = 1000;
+  const result = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await factory(offset, PAGE_SIZE);
+    if (error) throw new Error(`${contexto}: ${error.message}`);
+    const pagina = safe(data);
+    result.push(...pagina);
+    if (pagina.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return result;
+}
+
+// Coleta apenas a programação vigente da MESMA data_os.
+// programacao_equipe_ultima elimina versões antigas de programacao_dia e o mapa
+// programacao_id -> data_referencia impede que uma OS reaproveitada misture dias.
+async function carregarGruposPendentes() {
+  const { inicio, fim } = janelaDatas();
+
+  const osRows = await carregarPaginado(
+    (offset, pageSize) => supabase
+      .from('operacional_os')
+      .select('*')
+      .eq('status_gestor', 'ATENDER')
+      .gte('data_os', inicio)
+      .lte('data_os', fim)
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1),
+    'Falha ao consultar operacional_os'
+  );
+
+  const programacoesDia = await carregarPaginado(
+    (offset, pageSize) => supabase
+      .from('programacao_dia_ultima')
+      .select('id, data_referencia, supervisao')
+      .gte('data_referencia', inicio)
+      .lte('data_referencia', fim)
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1),
+    'Falha ao consultar programacao_dia_ultima'
+  );
+
+  const dataPorProgramacaoId = new Map();
+  for (const p of programacoesDia) {
+    if (p.id && p.data_referencia) dataPorProgramacaoId.set(String(p.id), dateKey(p.data_referencia));
+  }
+
+  const ids = osRows.map((r) => r.id).filter(Boolean);
+  const equipeVigente = [];
+  const CHUNK = 200;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
-    let offset = 0;
-    for (;;) {
-      const { data, error } = await supabase
-        .from('programacao_equipe')
-        .select('os_id, colaborador_id, nome_colaborador')
+    const linhas = await carregarPaginado(
+      (offset, pageSize) => supabase
+        .from('programacao_equipe_ultima')
+        .select('id, programacao_id, os_id, colaborador_id, nome_colaborador, confirmado')
         .eq('confirmado', true)
         .in('os_id', chunk)
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (error) throw new Error(`Falha ao consultar programacao_equipe: ${error.message}`);
-      const pagina = safe(data);
-      programadas.push(...pagina);
-      if (pagina.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
-    }
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1),
+      'Falha ao consultar programacao_equipe_ultima'
+    );
+    equipeVigente.push(...linhas);
   }
 
-  const programadosPorOs = new Map();
-  for (const p of programadas) {
-    const list = programadosPorOs.get(String(p.os_id)) || [];
+  const programadosPorOsData = new Map();
+  for (const p of equipeVigente) {
+    const data = dataPorProgramacaoId.get(String(p.programacao_id));
+    if (!data || !p.os_id) continue;
+    const key = `${String(p.os_id)}|${data}`;
+    const list = programadosPorOsData.get(key) || [];
     list.push(p);
-    programadosPorOs.set(String(p.os_id), list);
+    programadosPorOsData.set(key, list);
   }
 
-  // Data + supervisão é a unidade de processamento (um par getDistributionData
-  // / setDistributionData por grupo, igual a tela real faz um SALVAR por vez).
   const grupos = new Map();
   let ignoradasSemSupervisao = 0;
-  for (const row of rows) {
-    const programados = programadosPorOs.get(String(row.id)) || [];
-    const precisaAplicar = programados.length > 0 && row.status_conferencia !== 'AJUSTADA';
-    const precisaLimpar = programados.length === 0 && row.status_conferencia === 'AJUSTADA';
-    if (!precisaAplicar && !precisaLimpar) continue;
 
-    // data_os é a data em que a O.S. está sendo atendida (o que o Graint precisa
-    // saber); configurada_em é só "quando o gestor mexeu pela 1ª vez no status" e
-    // fica travado em O.S. remanescentes reaproveitadas em vários dias seguidos —
-    // priorizá-lo faria a janela de 3 dias excluir essas O.S. pra sempre.
+  for (const row of osRows) {
     const data = dateKey(row.data_os || row.configurada_em);
     const coord = coordOf(row);
     if (!data || !dataAceitaNoGraint(data)) continue;
@@ -220,154 +282,207 @@ async function carregarGruposPendentes() {
       continue;
     }
 
-    const key = `${data}|${normalize(coord)}`;
-    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, atribuicoes: [], remocoes: [], osIds: new Set() });
-    const grupo = grupos.get(key);
+    const programados = uniqueByNormalizedName(
+      programadosPorOsData.get(`${String(row.id)}|${data}`) || []
+    );
 
-    if (precisaAplicar) {
-      for (const p of programados) {
-        const nome = p.nome_colaborador || '';
-        if (!nome) continue;
-        const duplicada = grupo.atribuicoes.some(
-          (item) => item.os.id === row.id && normalize(item.colaborador_nome) === normalize(nome)
-        );
-        if (duplicada) continue;
-        grupo.atribuicoes.push({ os: row, colaborador_nome: nome });
-        grupo.osIds.add(row.id);
-      }
-    } else {
-      grupo.remocoes.push({ os: row });
-      grupo.osIds.add(row.id);
-    }
+    // Mantém o limite operacional do fluxo anterior:
+    // - OS com programação atual sempre são reconciliadas;
+    // - OS sem programação só são limpas se já eram gerenciadas pelo agente (AJUSTADA).
+    // Isso evita apagar distribuição de OS PENDENTE que nunca entrou no fluxo do painel.
+    if (!programados.length && row.status_conferencia !== 'AJUSTADA') continue;
+
+    const key = `${data}|${normalize(coord)}`;
+    if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, itens: [] });
+    grupos.get(key).itens.push({ os: row, programados });
   }
 
   if (ignoradasSemSupervisao > 0) {
     log('WARN', `${ignoradasSemSupervisao} O.S. ignorada(s) porque não possuem supervisão informada.`);
   }
 
-  return [...grupos.values()]
-    .filter((grupo) => grupo.atribuicoes.length > 0 || grupo.remocoes.length > 0)
-    .map((grupo) => ({ ...grupo, osIds: [...grupo.osIds] }));
+  return [...grupos.values()].filter((grupo) => grupo.itens.length > 0);
+}
+
+function nomeAtualDoCodigo(code, nomePorStaCode) {
+  return nomePorStaCode.get(codeKey(code)) || `STA#${code}`;
 }
 
 async function processarSupervisao(token, olsCode, grupo) {
   const sodDate = toBrDate(grupo.data);
-  const numerosOsAplicar = [...new Set(grupo.atribuicoes.map((item) => String(item.os.numero_os)))];
-  const numerosOsLimpar = [...new Set(grupo.remocoes.map((item) => String(item.os.numero_os)))];
+  const totalEsperadas = grupo.itens.reduce((soma, item) => soma + item.programados.length, 0);
+  const totalSemProgramacao = grupo.itens.filter((item) => item.programados.length === 0).length;
+
   log(
     'INFO',
-    `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${numerosOsAplicar.length} OS a aplicar `
-      + `(${grupo.atribuicoes.length} associação(ões)) · ${numerosOsLimpar.length} OS a limpar`,
+    `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${grupo.itens.length} OS para reconciliar `
+      + `(${totalEsperadas} associação(ões) esperada(s), ${totalSemProgramacao} OS sem programação)`
   );
 
   const dist = await getDistributionData(token, olsCode, sodDate);
   const { staffs, sOrders } = dist;
 
   const staCodePorNome = new Map();
+  const nomePorStaCode = new Map();
   for (const s of safe(staffs)) {
-    if (s.staName) staCodePorNome.set(normalize(s.staName), s.staCode);
+    if (s.staName && s.staCode != null) {
+      staCodePorNome.set(normalize(s.staName), s.staCode);
+      nomePorStaCode.set(codeKey(s.staCode), s.staName);
+    }
   }
+
   const ordemPorNumero = new Map();
   for (const o of safe(sOrders)) {
     if (o.sorCode != null) ordemPorNumero.set(String(o.sorCode), o);
   }
 
   const idsComSucesso = new Set();
-  const idsComFalha = new Set();
+  const itensPorId = new Map(grupo.itens.map((item) => [String(item.os.id), item]));
   const falhas = [];
-  let mudancasAplicadas = 0;
+  let associacoesAdicionar = 0;
+  let associacoesRemover = 0;
+  let osComMudanca = 0;
+  let osSemMudanca = 0;
 
-  for (const atribuicao of grupo.atribuicoes) {
+  for (const item of grupo.itens) {
+    const numeroOs = String(item.os.numero_os);
     try {
-      const ordem = ordemPorNumero.get(String(atribuicao.os.numero_os));
-      if (!ordem) throw new Error(`OS ${atribuicao.os.numero_os} não encontrada na Distribuição de OS do Graint para essa Supervisão/Data.`);
-      const staCode = staCodePorNome.get(normalize(atribuicao.colaborador_nome));
-      if (staCode == null) throw new Error(`Colaborador "${atribuicao.colaborador_nome}" não encontrado no Graint pra essa supervisão.`);
-      if (!Array.isArray(ordem.staCodes)) ordem.staCodes = [];
-      if (!ordem.staCodes.includes(staCode)) {
-        ordem.staCodes.push(staCode);
-        mudancasAplicadas += 1;
+      const ordem = ordemPorNumero.get(numeroOs);
+      if (!ordem) {
+        throw new Error(`OS ${numeroOs} não encontrada na Distribuição de OS do Graint para essa Supervisão/Data.`);
       }
-      idsComSucesso.add(atribuicao.os.id);
+
+      const faltantesNoCadastro = [];
+      const esperadosComCodigo = [];
+      const vistos = new Set();
+      for (const p of item.programados) {
+        const nome = String(p.nome_colaborador || '').trim();
+        const normalized = normalize(nome);
+        if (!normalized || vistos.has(normalized)) continue;
+        vistos.add(normalized);
+        const staCode = staCodePorNome.get(normalized);
+        if (staCode == null) {
+          faltantesNoCadastro.push(nome);
+        } else {
+          esperadosComCodigo.push({ nome, staCode });
+        }
+      }
+
+      // Nunca faz reconciliação parcial: se alguém esperado não existe no Graint
+      // dessa supervisão, deixa a OS intacta e mantém pendência para investigação.
+      if (faltantesNoCadastro.length) {
+        throw new Error(
+          `${faltantesNoCadastro.length} colaborador(es) esperado(s) não encontrado(s) no Graint: ${faltantesNoCadastro.join(', ')}`
+        );
+      }
+
+      const codigosEsperados = [...new Map(
+        esperadosComCodigo.map((x) => [codeKey(x.staCode), x.staCode])
+      ).values()];
+      const codigosAtuais = safe(ordem.staCodes);
+      const setAtual = new Set(codigosAtuais.map(codeKey));
+      const setEsperado = new Set(codigosEsperados.map(codeKey));
+
+      const adicionar = codigosEsperados.filter((code) => !setAtual.has(codeKey(code)));
+      const remover = codigosAtuais.filter((code) => !setEsperado.has(codeKey(code)));
+
+      if (!sameCodeSet(codigosAtuais, codigosEsperados)) {
+        ordem.staCodes = codigosEsperados;
+        osComMudanca += 1;
+        associacoesAdicionar += adicionar.length;
+        associacoesRemover += remover.length;
+
+        const nomesAdicionar = adicionar.map((c) => nomeAtualDoCodigo(c, nomePorStaCode));
+        const nomesRemover = remover.map((c) => nomeAtualDoCodigo(c, nomePorStaCode));
+        log(
+          DRY_RUN ? 'INFO' : 'INFO',
+          `${DRY_RUN ? '[DRY-RUN] ' : ''}OS ${numeroOs}: +[${nomesAdicionar.join(', ')}] -[${nomesRemover.join(', ')}] `
+            + `=> esperado [${item.programados.map((p) => p.nome_colaborador).join(', ')}]`
+        );
+      } else {
+        osSemMudanca += 1;
+      }
+
+      idsComSucesso.add(String(item.os.id));
     } catch (error) {
-      idsComFalha.add(atribuicao.os.id);
-      falhas.push(`OS ${atribuicao.os.numero_os} / associar ${atribuicao.colaborador_nome}: ${error.message}`);
-      log('ERROR', `Associação OS ${atribuicao.os.numero_os} / ${atribuicao.colaborador_nome} falhou: ${error.message}`);
+      const detalhe = `OS ${numeroOs}: ${error.message}`;
+      falhas.push(detalhe);
+      log('ERROR', detalhe);
     }
   }
 
-  const idsLimpezaComSucesso = new Set();
-  const idsLimpezaComFalha = new Set();
-  for (const remocao of grupo.remocoes) {
-    try {
-      const ordem = ordemPorNumero.get(String(remocao.os.numero_os));
-      if (!ordem) throw new Error(`OS ${remocao.os.numero_os} não encontrada na Distribuição de OS do Graint para essa Supervisão/Data.`);
-      if (Array.isArray(ordem.staCodes) && ordem.staCodes.length) {
-        ordem.staCodes = [];
-        mudancasAplicadas += 1;
-      }
-      idsLimpezaComSucesso.add(remocao.os.id);
-    } catch (error) {
-      idsLimpezaComFalha.add(remocao.os.id);
-      falhas.push(`OS ${remocao.os.numero_os} / limpar: ${error.message}`);
-      log('ERROR', `Limpeza OS ${remocao.os.numero_os} falhou: ${error.message}`);
-    }
-  }
-
-  const idsConfirmados = new Set([...idsComSucesso].filter((id) => !idsComFalha.has(id)));
-  const idsLimpezaConfirmados = new Set([...idsLimpezaComSucesso].filter((id) => !idsLimpezaComFalha.has(id)));
-  if (!idsConfirmados.size && !idsLimpezaConfirmados.size) {
-    throw new Error(`Nenhuma alteração aplicada nesta supervisão (${falhas.length} falha(s)): ${falhas.join(' | ')}`);
+  if (!idsComSucesso.size) {
+    throw new Error(`Nenhuma OS reconciliável nesta supervisão (${falhas.length} falha(s)): ${falhas.join(' | ')}`);
   }
 
   if (DRY_RUN) {
     log(
-      'INFO',
-      `[DRY-RUN] Supervisão conferida (${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
-        + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s), ${mudancasAplicadas} mudança(s)) `
-        + '— setDistributionData e update no Supabase pulados.',
+      falhas.length ? 'WARN' : 'INFO',
+      `[DRY-RUN] Supervisão conferida: ${idsComSucesso.size}/${grupo.itens.length} OS válidas; `
+        + `${osComMudanca} OS mudariam; ${osSemMudanca} já corretas; `
+        + `+${associacoesAdicionar}/-${associacoesRemover} associação(ões); `
+        + 'setDistributionData e updates no Supabase pulados.'
     );
     return;
   }
 
-  if (mudancasAplicadas > 0) {
+  if (osComMudanca > 0) {
     await setDistributionData(token, staffs, sOrders, sodDate);
   } else {
-    log('INFO', 'Todas as OS já estavam corretas no Graint; setDistributionData não necessário.');
+    log('INFO', 'Todas as OS reconciliáveis já estavam corretas no Graint; setDistributionData não necessário.');
+  }
+
+  const idsComProgramacao = [];
+  const idsSemProgramacao = [];
+  for (const id of idsComSucesso) {
+    const item = itensPorId.get(id);
+    if (!item) continue;
+    if (item.programados.length > 0) idsComProgramacao.push(id);
+    else idsSemProgramacao.push(id);
   }
 
   const now = new Date().toISOString();
-  if (idsConfirmados.size) {
+  if (idsComProgramacao.length) {
     const { error } = await supabase
       .from('operacional_os')
       .update({ status_conferencia: 'AJUSTADA', conferido_por: null, conferido_em: now, updated_at: now })
-      .in('id', [...idsConfirmados]);
+      .in('id', idsComProgramacao);
     if (error) throw new Error(`Graint atualizado, mas falhou ao marcar AJUSTADA no Supabase: ${error.message}`);
   }
-  if (idsLimpezaConfirmados.size) {
+
+  if (idsSemProgramacao.length) {
     const { error } = await supabase
       .from('operacional_os')
       .update({ status_conferencia: 'PENDENTE', conferido_por: null, conferido_em: now, updated_at: now })
-      .in('id', [...idsLimpezaConfirmados]);
+      .in('id', idsSemProgramacao);
     if (error) throw new Error(`Graint limpo, mas falhou ao voltar status para PENDENTE no Supabase: ${error.message}`);
   }
 
   log(
     falhas.length ? 'WARN' : 'SUCCESS',
-    `Supervisão processada: ${idsConfirmados.size} de ${numerosOsAplicar.length} OS aplicada(s), `
-      + `${idsLimpezaConfirmados.size} de ${numerosOsLimpar.length} OS limpa(s)`
-      + (falhas.length ? `; ${falhas.length} pendência(s) pro próximo ciclo: ${falhas.join(' | ')}` : '') + '.',
+    `Supervisão reconciliada: ${idsComSucesso.size}/${grupo.itens.length} OS; `
+      + `${osComMudanca} alterada(s), ${osSemMudanca} já correta(s); `
+      + `+${associacoesAdicionar}/-${associacoesRemover} associação(ões)`
+      + (falhas.length ? `; ${falhas.length} pendência(s): ${falhas.join(' | ')}` : '') + '.'
   );
 }
 
 async function getDistributionData(token, olsCode, sodDate) {
-  const response = await postJson(`${GRM_BASE_URL}serviceOrder/distribution/getDistributionData`, { olsCode, sodDate }, { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` });
+  const response = await postJson(
+    `${GRM_BASE_URL}serviceOrder/distribution/getDistributionData`,
+    { olsCode, sodDate },
+    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
+  );
   if (!response.result) throw new Error(`getDistributionData falhou: ${response.message || 'erro'}`);
   return response;
 }
 
 async function setDistributionData(token, staffs, sOrders, sodDate) {
-  const response = await postJson(`${GRM_BASE_URL}serviceOrder/distribution/setDistributionData`, { staffs, sOrders, sodDate }, { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` });
+  const response = await postJson(
+    `${GRM_BASE_URL}serviceOrder/distribution/setDistributionData`,
+    { staffs, sOrders, sodDate },
+    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
+  );
   if (!response.result) throw new Error(`setDistributionData falhou: ${response.message || 'erro'}`);
   return response;
 }
@@ -375,24 +490,37 @@ async function setDistributionData(token, staffs, sOrders, sodDate) {
 async function main() {
   let ok = 0;
   let falhas = 0;
+
   try {
     log('INFO', `=== Aplicar Distribuição de OS no Graint via API${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
     log('INFO', `Watchdog global configurado para ${TIMEOUT_MIN} minuto(s).`);
 
     let grupos = await carregarGruposPendentes();
-    const totalAplicar = grupos.reduce((soma, g) => soma + g.atribuicoes.length, 0);
-    const totalLimpar = grupos.reduce((soma, g) => soma + g.remocoes.length, 0);
+    const totalOs = grupos.reduce((soma, g) => soma + g.itens.length, 0);
+    const totalEsperadas = grupos.reduce(
+      (soma, g) => soma + g.itens.reduce((s, item) => s + item.programados.length, 0),
+      0
+    );
+    const totalSemProgramacao = grupos.reduce(
+      (soma, g) => soma + g.itens.filter((item) => item.programados.length === 0).length,
+      0
+    );
+
     log(
       'INFO',
-      `${grupos.length} supervisão(ões)/data pendente(s): ${totalAplicar} associação(ões) a aplicar, `
-        + `${totalLimpar} OS a limpar — todas as regionais, sem filtro de habilitação por supervisão.`,
+      `${grupos.length} supervisão(ões)/data para reconciliar: ${totalOs} OS, `
+        + `${totalEsperadas} associação(ões) esperada(s), ${totalSemProgramacao} OS a limpar se necessário.`
     );
 
     if (LIMIT > 0 && grupos.length > LIMIT) {
       grupos = grupos.slice(0, LIMIT);
-      log('INFO', `GRM_DISTRIBUICAO_OS_LIMIT/LIMIT de teste=${LIMIT} — processando só as primeiras ${grupos.length} supervisão(ões)/data.`);
+      log('INFO', `LIMIT de teste=${LIMIT} — processando somente ${grupos.length} supervisão(ões)/data.`);
     }
-    if (!grupos.length) { log('SUCCESS', 'Nada a fazer.'); return; }
+
+    if (!grupos.length) {
+      log('SUCCESS', 'Nada a fazer.');
+      return;
+    }
 
     const token = await login();
     const supervisoes = await carregarSupervisoes(token);
@@ -400,7 +528,9 @@ async function main() {
     for (const grupo of grupos) {
       try {
         const olsCode = supervisoes.get(normalize(grupo.coordenacao));
-        if (olsCode == null) throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
+        if (olsCode == null) {
+          throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
+        }
         await processarSupervisao(token, olsCode, grupo);
         ok += 1;
       } catch (error) {
@@ -409,7 +539,7 @@ async function main() {
       }
     }
 
-    log('SUCCESS', `Concluído: ${ok} supervisão(ões)/data aplicada(s), ${falhas} falha(s).`);
+    log('SUCCESS', `Concluído: ${ok} supervisão(ões)/data reconciliada(s), ${falhas} falha(s).`);
     if (falhas > 0 && ok === 0) throw new Error('Todas as supervisões falharam.');
   } catch (error) {
     log('ERROR', error.message);
