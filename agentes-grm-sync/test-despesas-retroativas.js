@@ -18,13 +18,59 @@ const types = new Map([
 ]);
 
 assert.equal(norm('Salário de Intermitente'), 'SALARIO DE INTERMITENTE');
-assert.deepEqual(requiredExpenses('Efetivo', 100, types).map((x) => x.oexCode), [13]);
-assert.deepEqual(requiredExpenses('Intermitente', 105, types).map((x) => [x.oexCode, x.amount]), [[63, 105], [13, 30]]);
-assert.deepEqual(requiredExpenses('Diarista', 95, types).map((x) => [x.oexCode, x.amount]), [[65, 95], [13, 30]]);
 
-assert.deepEqual(requiredExpenses('Efetivo', 100, types, { programmed: false }), []);
-assert.deepEqual(requiredExpenses('Intermitente', 105, types, { programmed: false }).map((x) => [x.oexCode, x.amount]), [[63, 105]]);
-assert.deepEqual(requiredExpenses('Diarista', 95, types, { programmed: false }).map((x) => [x.oexCode, x.amount]), [[65, 95]]);
+// Despesas-base continuam exigindo produção/laudo.
+assert.deepEqual(requiredExpenses('Efetivo', 100, types), []);
+assert.deepEqual(
+  requiredExpenses('Intermitente', 105, types).map((x) => [x.oexCode, x.amount]),
+  [[63, 105]],
+);
+assert.deepEqual(
+  requiredExpenses('Diarista', 95, types).map((x) => [x.oexCode, x.amount]),
+  [[65, 95]],
+);
+
+// Almoço exige explicitamente Almoço=SIM na programação de alimentação.
+assert.deepEqual(
+  requiredExpenses('Efetivo', 100, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: true,
+  }).map((x) => [x.oexCode, x.amount]),
+  [[13, 30]],
+);
+assert.deepEqual(
+  requiredExpenses('Intermitente', 105, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: true,
+  }).map((x) => [x.oexCode, x.amount]),
+  [[63, 105], [13, 30]],
+);
+assert.deepEqual(
+  requiredExpenses('Diarista', 95, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: true,
+  }).map((x) => [x.oexCode, x.amount]),
+  [[65, 95], [13, 30]],
+);
+assert.deepEqual(
+  requiredExpenses('Efetivo', 100, types, {
+    programmed: true,
+    almocoProgrammed: false,
+    hasLaudo: true,
+  }),
+  [],
+);
+assert.deepEqual(
+  requiredExpenses('Efetivo', 100, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: false,
+  }),
+  [],
+);
 
 // Café nunca entra apenas por programação genérica ou por laudo.
 for (const contractType of ['Efetivo', 'Intermitente', 'Diarista']) {
@@ -33,9 +79,6 @@ for (const contractType of ['Efetivo', 'Intermitente', 'Diarista']) {
     false,
   );
 }
-
-// Café entra somente quando a autorização operacional já foi validada
-// (Programação + login 04h-07h + geofence do ponto).
 assert.deepEqual(
   requiredExpenses('Efetivo', 100, types, {
     programmed: true,
@@ -44,25 +87,23 @@ assert.deepEqual(
   }).map((x) => [x.oexCode, x.amount]),
   [[14, 10]],
 );
-
 assert.deepEqual(
   requiredExpenses('Intermitente', 105, types, {
     programmed: true,
+    almocoProgrammed: true,
     hasLaudo: true,
     cafeAuthorized: true,
   }).map((x) => [x.oexCode, x.amount]),
   [[63, 105], [13, 30], [14, 10]],
 );
 
-// Janta nunca entra apenas porque existe produção/laudo ou programação genérica.
+// Janta só entra após Programação + laudo >= 19h local.
 for (const contractType of ['Efetivo', 'Intermitente', 'Diarista']) {
   assert.equal(
     requiredExpenses(contractType, 100, types).some((x) => norm(x.oexName) === 'JANTA'),
     false,
   );
 }
-
-// Janta só entra depois que a validação Programação + laudo >= 19h local foi satisfeita.
 assert.deepEqual(
   requiredExpenses('Efetivo', 100, types, {
     programmed: true,
@@ -74,6 +115,7 @@ assert.deepEqual(
 assert.deepEqual(
   requiredExpenses('Intermitente', 105, types, {
     programmed: true,
+    almocoProgrammed: true,
     hasLaudo: true,
     jantaAuthorized: true,
   }).map((x) => [x.oexCode, x.amount]),
@@ -92,7 +134,6 @@ assert.throws(
 assert.doesNotThrow(() => assertDirectExpenseAllowed(types.get('JANTA'), { jantaAuthorized: true }));
 assert.doesNotThrow(() => assertDirectExpenseAllowed(types.get('ALMOCO')));
 
-// Conversão do horário-base de São Paulo/Brasília para o horário do ponto.
 assert.equal(pointOffsetFromSaoPauloHours('PR', 'Cascavel'), 0);
 assert.equal(pointOffsetFromSaoPauloHours('MT', 'Alto Taquari'), -1);
 assert.equal(pointOffsetFromSaoPauloHours('AC', 'Rio Branco'), -2);
@@ -109,4 +150,4 @@ assert.equal(decide([{ ofmStatus: 'P', ofmCode: 2 }]).action, 'APPROVE');
 assert.equal(decide([{ ofmStatus: 'N' }]).action, 'CREATE');
 assert.equal(decide([]).action, 'CREATE');
 
-console.log('OK: Café e Janta exigem autorizações operacionais específicas; demais regras preservadas');
+console.log('OK: Almoço exige programação específica; Café e Janta mantêm autorizações operacionais próprias');
