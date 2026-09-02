@@ -1,0 +1,170 @@
+/* E-mail do Gestor — navegação das pastas em abas/janelas no topo.
+   Esta camada é propositalmente isolada para não alterar os demais módulos. */
+
+/*
+ * Desktop/tablet: o workspace deixa de reservar uma coluna para as pastas.
+ * A primeira linha passa a ser uma faixa de abas e, abaixo, permanecem
+ * somente lista de mensagens + leitura da mensagem.
+ */
+.mail-workspace {
+  grid-template-columns: minmax(285px, .92fr) minmax(390px, 1.38fr) !important;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "folders folders"
+    "list reader";
+}
+
+.mail-folders {
+  grid-area: folders;
+  display: flex !important;
+  align-items: flex-end;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-right: 0 !important;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background:
+    linear-gradient(180deg, rgba(21,21,42,.58), rgba(12,12,23,.90));
+  scrollbar-width: none;
+}
+
+.mail-folders::-webkit-scrollbar { display: none; }
+
+/* Cada pasta assume visual de uma pequena janela encaixada no conteúdo. */
+.mail-folders button {
+  position: relative;
+  bottom: -1px;
+  width: auto !important;
+  min-width: max-content;
+  min-height: 45px !important;
+  flex: 0 0 auto;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  padding: 0 14px !important;
+  color: #78869a !important;
+  background: rgba(15,15,29,.78) !important;
+  border: 1px solid rgba(255,255,255,.065) !important;
+  border-bottom-color: rgba(255,255,255,.07) !important;
+  border-radius: 13px 13px 0 0 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  white-space: nowrap;
+  transition:
+    color .15s ease,
+    background .15s ease,
+    border-color .15s ease,
+    transform .15s ease;
+}
+
+.mail-folders button:hover {
+  color: var(--text) !important;
+  background: rgba(24,24,44,.92) !important;
+  border-color: rgba(255,255,255,.11) !important;
+  transform: translateY(-1px);
+}
+
+.mail-folders button.is-active {
+  z-index: 2;
+  color: var(--soft) !important;
+  background: rgba(12,12,23,1) !important;
+  border-color: rgba(45,212,160,.22) !important;
+  border-bottom-color: rgba(12,12,23,1) !important;
+  box-shadow:
+    inset 0 3px 0 var(--green-2),
+    0 -8px 22px rgba(0,0,0,.12);
+}
+
+.mail-folders button .mail-icon {
+  width: 17px;
+  height: 17px;
+  opacity: .86;
+}
+
+.mail-folders button span {
+  display: inline !important;
+  flex: 0 0 auto !important;
+}
+
+.mail-folders button b {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  color: #02160d !important;
+  background: var(--green-2);
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* O indicador de armazenamento fazia sentido no menu lateral; nas abas ele
+   tiraria espaço útil da navegação, então fica oculto nesta composição. */
+.mail-storage { display: none !important; }
+
+.mail-list-panel {
+  grid-area: list;
+  min-width: 0;
+}
+
+.mail-reader {
+  grid-area: reader;
+  min-width: 0;
+}
+
+/* Dá uma leitura mais clara de "janela ativa" entre a faixa de abas e o corpo. */
+.mail-list-head,
+.mail-reader-actions {
+  border-top: 0 !important;
+}
+
+@media (max-width: 850px) and (min-width: 651px) {
+  .mail-workspace {
+    grid-template-columns: minmax(260px, .9fr) minmax(330px, 1.15fr) !important;
+  }
+
+  .mail-folders {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .mail-folders button {
+    padding-left: 11px !important;
+    padding-right: 11px !important;
+  }
+}
+
+@media (max-width: 650px) {
+  /* No celular as abas continuam no topo e rolam horizontalmente. O fluxo
+     lista -> leitura já existente no app permanece intacto. */
+  .mail-workspace {
+    display: block !important;
+    min-height: 0;
+  }
+
+  .mail-folders {
+    display: flex !important;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 9px 9px 0 !important;
+    overflow-x: auto;
+    border-right: 0 !important;
+    border-bottom: 1px solid rgba(255,255,255,.07) !important;
+  }
+
+  .mail-folders button {
+    min-width: max-content !important;
+    min-height: 42px !important;
+    padding: 0 11px !important;
+  }
+
+  .mail-folders button span {
+    display: inline !important;
+  }
+
+  .mail-workspace.is-reading .mail-folders {
+    visibility: hidden;
+  }
+}
