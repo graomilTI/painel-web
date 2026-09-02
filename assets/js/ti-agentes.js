@@ -23,10 +23,28 @@ const OUROSAFRA_AGENT_ID = 'sync-classificacao-ourosafra';
 // direction: 'entrada' (informação vem de fora e entra no painel) é o padrão.
 // 'saida' = o agente pega informação do painel e leva pra fora (Graint, BTG, etc).
 const AGENTES = [
-  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'fila fixa', table: 'colaboradores' },
-  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'fila fixa', table: 'grm_lista_os_importacoes' },
+  // Colaboradores e Lista de OS migraram pra API direta em 01/09
+  // (grmserver-colaboradores-api-realtime.js / grmserver-lista-os-api-realtime.js,
+  // ver memória painel-web-lancamento-automatico-nhe): rodam como serviço
+  // contínuo no VPS, fora da fila grm_sync_jobs original — os dois scripts agora
+  // reportam um heartbeat próprio em grm_sync_jobs a cada ciclo (não dependem
+  // mais de ter havido diff/mudança) pra esse card não ficar travado no erro do
+  // agente antigo pausado (achado 02/09, PR #344 + este). O heartbeat usa um
+  // agente_id PRÓPRIO (aliases abaixo), não o id do card: "sync-colaboradores"/
+  // "sync-lista-os" têm enabled=false em grm_sync_agent_settings (agente antigo
+  // pausado) e o trigger trg_grm_sync_guard_disabled_agent bloqueia insert em
+  // grm_sync_jobs pra QUALQUER job com esse agente_id, inclusive o heartbeat.
+  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'] },
+  // Lista de OS agora escreve direto em operacional_os (upsert quase em tempo
+  // real); grm_lista_os_importacoes é a tabela de import do agente Puppeteer
+  // antigo, pausada e congelada desde a migração.
+  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'] },
   { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes' },
   { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes' },
+  // sync-operacional-os (derivação em lote antiga) também está pausada e sem
+  // substituto direto — operacional_os agora é mantida por sync-lista-os acima.
+  // Card mantido pra rollback/histórico; "Erro" aqui é esperado até ser
+  // removido ou reaproveitado.
   { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'fila fixa', table: 'operacional_os' },
   { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes' },
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'fila fixa', table: 'grm_producao_diaria_importacoes' },
