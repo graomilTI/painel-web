@@ -2,10 +2,12 @@
 import { supabase } from './supabaseClient.js';
 import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20260827-situacao';
 
-const CATALOGO = [
-  ['ALICATE DE CORTE','Outros'],['BALANÇA DE PRECISÃO','Patrimonio'],['CAIXA DE BOBINAS','Outros'],['CAIXA DE SULFITE A4','Outros'],['CALADOR','Patrimonio'],['CELULAR',''],['ESTILETE','Outros'],['HOMOGENEIZADOR','Patrimonio'],['IMPRESSORA A4','Patrimonio'],['IMPRESSORA TÉRMICA BLUETOOTH','Patrimonio'],['JOGO DE PENEIRAS','Patrimonio'],['LIQUIDIFICADOR','Patrimonio'],['LUMINÁRIA','Patrimonio'],['MICROPIPETA','Patrimonio'],['PENEIRA INDIVIDUAL','Patrimonio'],['QUARTEADOR','Patrimonio'],['CAPACETE','EPI'],['COLETE REFLETIVO','EPI'],['LUVA MULTITATO','EPI'],['PROTETOR AURICULAR','EPI'],['MASCARA PFF2','EPI'],['OCULOS DE PROTEÇÃO','EPI'],['BOTINA','EPI']
-].map(([material,tipo])=>({material,tipo}));
+let CATALOGO = [];
+async function loadCatalogo(){
+  CATALOGO = await safe(()=>supabase.from('compras_catalogo').select('material,tipo,observacao').eq('ativo',true).order('material'));
+}
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
+const UF_LIST = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado' };
 const state = { mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[] };
 
@@ -96,7 +98,7 @@ function currentItemForm(){
   return {
     unidade:qtd,
     material:found?.material || raw.toUpperCase(),
-    tipo:found?.tipo || document.getElementById('cmpNovoTipo')?.value || '',
+    tipo:found?.tipo || '',
     tamanho:(document.getElementById('cmpNovoTam')?.value||'').trim() || null,
     quantidade:qtd
   };
@@ -104,21 +106,17 @@ function currentItemForm(){
 function selectCatalogoItem(material){
   const found=findCatalogoItem(material);
   const input=document.getElementById('cmpNovoItem');
-  const tipo=document.getElementById('cmpNovoTipo');
   const box=document.getElementById('cmpItemSug');
   if(input) input.value=found?.material || material || '';
-  if(tipo) tipo.value=found?.tipo || '';
   updateDetalheState(found?.material || material || '');
   if(box) box.innerHTML='';
 }
 function renderItemSugestoes(){
   const input=document.getElementById('cmpNovoItem');
-  const tipo=document.getElementById('cmpNovoTipo');
   const box=document.getElementById('cmpItemSug');
   if(!input || !box) return;
   const q=norm(input.value);
   const exact=findCatalogoItem(input.value);
-  if(tipo && exact) tipo.value=exact.tipo;
   updateDetalheState(exact?.material || '');
   if(q.length<1){ box.innerHTML=''; return; }
   const list=CATALOGO.filter(i=>norm(i.material).includes(q)).slice(0,10);
@@ -133,7 +131,6 @@ function renderItemSugestoes(){
 function resetItemForm(){
   document.getElementById('cmpNovaUn').value = 1;
   document.getElementById('cmpNovoItem').value = '';
-  document.getElementById('cmpNovoTipo').value = '';
   const box=document.getElementById('cmpItemSug');
   if(box) box.innerHTML='';
   const tam=document.getElementById('cmpNovoTam');
@@ -369,13 +366,13 @@ function renderItensList(){
   const body=document.getElementById('cmpItemBody');
   if(!body) return;
   if(!state.itens.length){
-    body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhum material adicionado. Selecione o item acima e clique em <b>Adicionar material</b>.</td></tr>';
+    body.innerHTML='<tr><td colspan="4" class="cmp-empty">Nenhum material adicionado. Selecione o item acima e clique em <b>Adicionar material</b>.</td></tr>';
     return;
   }
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
     const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
-    return `<tr data-item-id="${esc(i._id)}"><td data-label="Un.">${esc(i.unidade||i.quantidade||1)}</td><td data-label="Item">${matLabel}</td><td data-label="Tipo">${esc(i.tipo||'-')}</td><td data-label="Tamanho/Detalhe">${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
+    return `<tr data-item-id="${esc(i._id)}"><td data-label="Un.">${esc(i.unidade||i.quantidade||1)}</td><td data-label="Item">${matLabel}</td><td data-label="Tamanho/Detalhe">${esc(i.tamanho||'-')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-item>Remover</button></td></tr>`;
   }).join('');
   body.querySelectorAll('[data-del-item]').forEach(btn=>btn.onclick=()=>{
     const id=btn.closest('tr').dataset.itemId;
@@ -483,6 +480,8 @@ async function salvarSolicitacao(ctx, tipo, itens){
     coordenacao:u.coordenacao||u.supervisao||null,
     tipo_solicitacao:tipo,
     status:'pendente',
+    cidade:document.getElementById('cmpCidade')?.value.trim()||null,
+    uf:document.getElementById('cmpUf')?.value||null,
     observacoes:document.getElementById('cmpObs').value.trim()||null,
     fornecedor:document.getElementById('cmpFornecedor')?.value.trim()||null,
     telefone_fornecedor:document.getElementById('cmpTelFornecedor')?.value.replace(/\D/g,'')||null,
@@ -625,19 +624,24 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 
 async function renderSolicitacaoTab(content, userContext){
   await loadColaboradores();
+  await loadCatalogo();
   content.innerHTML=`${styles()}
   <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button></div></div>
-    <input id="cmpData" type="hidden" value="${today()}"><input id="cmpObs" type="hidden" value="">
+    <input id="cmpObs" type="hidden" value="">
+    <div class="cmp-add-box">
+      <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
+      <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" placeholder="Cidade de compra" autocomplete="off"></div>
+      <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">--</option>${UF_LIST.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
+    </div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
         <div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpNovoItem" type="text" placeholder="Comece a digitar o material..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpItemSug"></div></div>
-        <div class="cmp-field"><label>Tipo</label><select id="cmpNovoTipo" disabled><option value="">-- Tipo --</option><option value="EPI">EPI</option><option value="Patrimonio">Patrimônio</option><option value="Outros">Outros</option></select></div>
         <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Selecione Botina ou Peneira Individual" disabled></div>
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddMaterial" type="button">Adicionar material</button></div>
       </div>
       <p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p>
-      <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tipo</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
+      <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>

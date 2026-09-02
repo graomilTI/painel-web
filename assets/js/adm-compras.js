@@ -3,10 +3,10 @@ import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const TABS = [
-  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS']
+  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
 ];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando Termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { tab:'solicitacoes', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoCache:{} };
+const state = { tab:'solicitacoes', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoCache:{}, gruposSeparados:new Set(), catalogo:[] };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -60,7 +60,67 @@ async function notifyByConfig(setor, message){
   const cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor',setor).eq('ativo',true).limit(10));
   let ok=0; for(const cfg of cfgs){ if(!cfg.telefone) continue; try{const res=await fetch('/api/botconversa/send-message',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({empresa:cfg.empresa||'Grao 1000',nome:cfg.nome||setor,telefone:cfg.telefone,cpf:cfg.cpf||'',mensagem:message})}); if(res.ok) ok++;}catch(e){console.warn(e)}} return ok;
 }
+function setCatalogoMsg(msg,err=false){const el=document.getElementById('admCmpCatalogoFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
+async function loadCatalogoRows(){
+  state.catalogo=await safe(()=>supabase.from('compras_catalogo').select('*').order('material'));
+  renderCatalogoTable();
+}
+function renderCatalogoTable(){
+  const body=document.getElementById('admCmpCatalogoBody');
+  if(!body) return;
+  if(!state.catalogo.length){ body.innerHTML='<tr><td colspan="5" class="adm-cmp-empty">Nenhum material cadastrado.</td></tr>'; return; }
+  body.innerHTML=state.catalogo.map(c=>`<tr>
+    <td>${esc(c.material)}</td><td>${esc(c.tipo)}</td><td>${esc(c.observacao||'-')}</td>
+    <td>${c.ativo?'<span class="adm-cmp-status comprado">Ativo</span>':'<span class="adm-cmp-status recusado">Inativo</span>'}</td>
+    <td><button class="btn btn-small btn-secondary" data-cat-editar="${esc(c.id)}" type="button">Editar</button> <button class="btn btn-small btn-secondary" data-cat-toggle="${esc(c.id)}" type="button">${c.ativo?'Inativar':'Reativar'}</button></td>
+  </tr>`).join('');
+  body.querySelectorAll('[data-cat-toggle]').forEach(b=>b.onclick=()=>toggleCatalogoAtivo(b.dataset.catToggle).catch(e=>setCatalogoMsg(e.message,true)));
+  body.querySelectorAll('[data-cat-editar]').forEach(b=>b.onclick=()=>abrirEditarCatalogoModal(b.dataset.catEditar));
+}
+function abrirEditarCatalogoModal(id){
+  const item=state.catalogo.find(c=>String(c.id)===String(id));
+  if(!item) return;
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>Editar material</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid mt-16"><label>Material<input id="catEditMaterial" value="${esc(item.material)}"></label><label>Tipo<select id="catEditTipo"><option value="Uniforme"${item.tipo==='Uniforme'?' selected':''}>Uniforme</option><option value="Patrimonio"${item.tipo==='Patrimonio'?' selected':''}>Patrimônio</option><option value="EPI"${item.tipo==='EPI'?' selected':''}>EPI</option><option value="Outros"${item.tipo==='Outros'?' selected':''}>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catEditObs" value="${esc(item.observacao||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catSalvar" type="button">Salvar</button><span class="adm-cmp-feedback" id="catEditFeedback"></span></div></div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#catSalvar').onclick=async()=>{
+    const material=modal.querySelector('#catEditMaterial').value.trim();
+    const tipo=modal.querySelector('#catEditTipo').value;
+    const observacao=modal.querySelector('#catEditObs').value.trim()||null;
+    if(!material){ modal.querySelector('#catEditFeedback').textContent='Informe o material.'; return; }
+    const {error}=await supabase.from('compras_catalogo').update({material:material.toUpperCase(),tipo,observacao}).eq('id',id);
+    if(error){ modal.querySelector('#catEditFeedback').textContent=error.message; return; }
+    modal.classList.remove('open');
+    await loadCatalogoRows();
+  };
+}
+async function adicionarCatalogoItem(){
+  const material=document.getElementById('catNovoMaterial')?.value.trim();
+  const tipo=document.getElementById('catNovoTipo')?.value;
+  const observacao=document.getElementById('catNovaObs')?.value.trim()||null;
+  if(!material){ setCatalogoMsg('Informe o nome do material.',true); return; }
+  const {error}=await supabase.from('compras_catalogo').insert({material:material.toUpperCase(),tipo,observacao});
+  if(error){ setCatalogoMsg(error.message,true); return; }
+  document.getElementById('catNovoMaterial').value='';
+  document.getElementById('catNovaObs').value='';
+  setCatalogoMsg('Material adicionado ao catálogo.');
+  await loadCatalogoRows();
+}
+async function toggleCatalogoAtivo(id){
+  const item=state.catalogo.find(c=>String(c.id)===String(id));
+  if(!item) return;
+  const {error}=await supabase.from('compras_catalogo').update({ativo:!item.ativo}).eq('id',id);
+  if(error){ setCatalogoMsg(error.message,true); return; }
+  await loadCatalogoRows();
+}
+
 async function loadRows(){
+  const itensSection=document.getElementById('admCmpItensSection');
+  const catalogoSection=document.getElementById('admCmpCatalogoSection');
+  if(itensSection) itensSection.style.display=state.tab==='catalogo'?'none':'';
+  if(catalogoSection) catalogoSection.style.display=state.tab==='catalogo'?'':'none';
+  if(state.tab==='catalogo'){ await loadCatalogoRows(); return; }
   const wrap=document.getElementById('admCmpBody')?.closest('.adm-cmp-table-wrap');
   wrap?.classList.add('is-loading');
   try{
@@ -120,8 +180,31 @@ function groupKey(r, useNf=false){
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
   return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
+    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
   </tr>`;
+}
+
+// Chave de agrupamento automático da aba Cotações: mesmo gestor (solicitante)
+// + mesma cidade da solicitação. Itens sem cidade informada caem sozinhos
+// (não agrupa às cegas quando não há como confirmar que é a mesma compra).
+function groupKeyCotacao(r){
+  const s=r.compras_solicitacoes||{};
+  const cidade=norm(s.cidade||'');
+  const gestor=norm(s.solicitante||'');
+  if(!cidade||!gestor) return `solo:${r.id}`;
+  return `cot:${gestor}|${cidade}`;
+}
+function cotacaoMessage(rows){
+  const linhas=rows.map(r=>`${r.quantidade||r.unidade||1} un | ${r.material}${r.tamanho?` | ${r.tamanho}`:''}`).join('\n');
+  return `Solicitação de cotação\n${linhas}\n\nO fornecedor emite Nota Fiscal?`;
+}
+async function gerarMensagemCotacao(rows){
+  if(!rows.length) return;
+  const msg=cotacaoMessage(rows);
+  await updateItems(rows,{mensagem_cotacao:msg});
+  await navigator.clipboard?.writeText(msg).catch(()=>{});
+  setMsg('Mensagem de cotação gerada e copiada.');
+  await loadRows();
 }
 
 function renderTable(){
@@ -174,7 +257,7 @@ function renderTable(){
         <td>${brDate(comprado_em)}</td>
         <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
         <td>${itens.length}&nbsp;itens</td>
-        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
+        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>r.codigo?`${esc(r.material)} (${esc(r.codigo)})`:esc(r.material)).join(' · ')}</small></td>
         <td>-</td>
         <td>${pill('comprado')}${nfLabel?`<br>${nfLabel}`:''}</td>
         <td>${money(totalGrp)}</td>
@@ -187,9 +270,45 @@ function renderTable(){
     return;
   }
 
-  body.innerHTML=rows.map(r=>{const s=r.compras_solicitacoes||{}; return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
-  </tr>`}).join('');
+  if(state.tab==='cotacoes'){
+    const groups=new Map();
+    rows.forEach(r=>{
+      const k=state.gruposSeparados.has(groupKeyCotacao(r))?`solo:${r.id}`:groupKeyCotacao(r);
+      if(!groups.has(k)) groups.set(k,[]);
+      groups.get(k).push(r);
+    });
+    body.innerHTML=[...groups.values()].map(itens=>{
+      if(itens.length===1) return singleRowHtml(itens[0]);
+      const totalGrp=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
+      const s0=itens[0].compras_solicitacoes||{};
+      const gids=itens.map(r=>r.id).join(',');
+      const gkey=groupKeyCotacao(itens[0]);
+      return `<tr class="adm-cmp-group-row">
+        <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
+        <td>${brDate(s0.data_solicitacao)}</td>
+        <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.cidade||'')}${s0.uf?`/${esc(s0.uf)}`:''}</small></td>
+        <td>${itens.length}&nbsp;itens</td>
+        <td><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
+        <td>-</td>
+        <td>${pill('em_cotacao')}</td>
+        <td>${money(totalGrp)}</td>
+        <td><button class="btn btn-small btn-secondary" data-cotar-msg="${esc(gids)}" type="button">Gerar mensagem</button> <button class="btn btn-small btn-secondary" data-separar-grupo="${esc(gkey)}" type="button">Separar</button></td>
+      </tr>`;
+    }).join('');
+    bindCheckHandlers(body);
+    body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
+    body.querySelectorAll('[data-cotar-msg]').forEach(b=>b.onclick=()=>{
+      const ids=b.dataset.cotarMsg.split(',');
+      gerarMensagemCotacao(state.rows.filter(r=>ids.includes(String(r.id)))).catch(e=>setMsg(e.message,true));
+    });
+    body.querySelectorAll('[data-separar-grupo]').forEach(b=>b.onclick=()=>{
+      state.gruposSeparados.add(b.dataset.separarGrupo);
+      renderTable();
+    });
+    return;
+  }
+
+  body.innerHTML=rows.map(r=>singleRowHtml(r)).join('');
   bindCheckHandlers(body);
   body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
 }
@@ -644,7 +763,9 @@ async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='
 }
 async function finalizarCompra(r){ const nf=document.getElementById('mNf')?.value?.trim()||''; if(!nf){alert('Informe a NF ou anexe um arquivo.');return;} const marca=document.getElementById('mMarca').value.trim();
   const ca=isEPI(r)?(document.getElementById('mCa')?.value?.trim()||r.ca||null):(r.ca||null);
+  const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
   const updPayload={status:'comprado',nf_url:nf,marca,comprado_em:new Date().toISOString()};
+  if(codigo) updPayload.codigo=codigo;
   if(isEPI(r)&&ca) updPayload.ca=ca;
   await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
   if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
@@ -704,7 +825,9 @@ function openGrupoModal(gids){
 async function finalizarCompraGrupo(itens,nf){
   for(const r of itens){
     const ca=r.ca||null;
+    const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
     const updPayload={status:'comprado',nf_url:nf,comprado_em:new Date().toISOString()};
+    if(codigo) updPayload.codigo=codigo;
     if(isEPI(r)&&ca) updPayload.ca=ca;
     await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
     if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
@@ -775,14 +898,15 @@ function updateActionButtons(){
 
 initProtectedPage('Compras ADM', async (content)=>{
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="adm-cmp-kpis"><article class="card adm-cmp-kpi"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados</p></article><article class="card adm-cmp-kpi"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Valores informados</p></article><article class="card adm-cmp-kpi"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Exigem cadastro</p></article></section><section class="card"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
+  content.innerHTML=`${styles()}<section class="adm-cmp-kpis" id="admCmpKpis"><article class="card adm-cmp-kpi"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados</p></article><article class="card adm-cmp-kpi"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Valores informados</p></article><article class="card adm-cmp-kpi"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Exigem cadastro</p></article></section><section class="card"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div id="admCmpItensSection"><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); document.getElementById('admCmpKpis').style.display=state.tab==='catalogo'?'none':'';updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
   document.getElementById('btnLiberar').onclick=()=>liberarSelecionados().catch(e=>setMsg(e.message,true));
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
   document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true));
+  document.getElementById('catAdicionar').onclick=()=>adicionarCatalogoItem().catch(e=>setCatalogoMsg(e.message,true));
   updateActionButtons();
   await loadRows();
 });
