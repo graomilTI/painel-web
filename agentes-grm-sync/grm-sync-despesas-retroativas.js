@@ -1,34 +1,22 @@
 #!/usr/bin/env node
 'use strict';
 
-process.env.HOME = process.env.HOME || '/home/grao100';
-process.env.TMP = process.env.TMP || '/home/grao100/chrome-runtime/tmp';
-process.env.TEMP = process.env.TEMP || process.env.TMP;
-process.env.TMPDIR = process.env.TMPDIR || process.env.TMP;
-
 require('dotenv').config();
 
-if (typeof globalThis.Headers === 'undefined') {
-  let nodeFetch;
-  try { nodeFetch = require('node-fetch'); } catch (_) {
-    nodeFetch = require('./node_modules/puppeteer/node_modules/node-fetch');
-  }
-  globalThis.fetch = nodeFetch;
-  globalThis.Headers = nodeFetch.Headers;
-  globalThis.Request = nodeFetch.Request;
-  globalThis.Response = nodeFetch.Response;
-}
-
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 
-puppeteer.use(StealthPlugin());
-
-const VERSION = 'V5-JANTA-PROGRAMACAO-LAUDO-19H-LOCAL';
-const LOGIN_URL = 'https://www.grmserver.com.br/login';
-const FLOW_URL = 'https://www.grmserver.com.br/report/finance/operatingFlow';
+const VERSION = 'V6.1-API-DIRETA-ALMOCO-PROGRAMACAO-JANTA-19H-LOCAL';
+const GRM_BASE_URL = String(
+  process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
+).replace(/\/?$/, '/');
+const GRM_WEB_HEADERS = {
+  accept: 'application/json',
+  origin: 'https://www.grmserver.com.br',
+  referer: 'https://www.grmserver.com.br/login',
+  'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+  'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
+};
 const DRY_RUN = process.argv.includes('--dry-run')
   || String(process.env.GRM_DESPESAS_RETROATIVAS_DRY_RUN || 'false').toLowerCase() === 'true';
 const MAX_ACTIONS = Math.max(1, Number(process.env.GRM_DESPESAS_RETROATIVAS_MAX_ACOES || 100));
@@ -88,9 +76,6 @@ function yesterdaySaoPaulo(now = new Date()) {
 
 function isoToBr(iso) { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; }
 
-// O GRM grava os horários operacionais usando a referência de Brasília/São Paulo.
-// Para a regra da Janta, convertemos o horário de cadastro do laudo para o horário
-// legal do ponto de embarque antes de comparar com 19h.
 const AMAZONAS_UTC5 = new Set([
   'ATALAIA DO NORTE', 'BENJAMIN CONSTANT', 'BOCA DO ACRE', 'EIRUNEPE', 'ENVIRA',
   'GUAJARA', 'IPIXUNA', 'ITAMARATI', 'JUTAI', 'LABREA', 'PAUINI',
@@ -120,12 +105,7 @@ function registerDateAtPoint(value, uf, city) {
   const local = new Date(base + offsetHours * 60 * 60 * 1000);
   const ymd = `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}-${String(local.getUTCDate()).padStart(2, '0')}`;
   const time = `${String(local.getUTCHours()).padStart(2, '0')}:${String(local.getUTCMinutes()).padStart(2, '0')}:${String(local.getUTCSeconds()).padStart(2, '0')}`;
-  return {
-    ymd,
-    time,
-    hour: local.getUTCHours(),
-    offsetHours,
-  };
+  return { ymd, time, hour: local.getUTCHours(), offsetHours };
 }
 
 function requiredExpenses(
@@ -134,6 +114,7 @@ function requiredExpenses(
   expenseTypes,
   {
     programmed = true,
+    almocoProgrammed = false,
     hasLaudo = true,
     cafeAuthorized = false,
     jantaAuthorized = false,
@@ -152,7 +133,7 @@ function requiredExpenses(
       if (!item) throw new Error('Categoria Serviços Terceirizados não encontrada no GRM.');
       result.push({ ...item, amount: Number(salary || 0) });
     }
-    if (programmed) {
+    if (almocoProgrammed) {
       const lunch = expenseTypes.get('ALMOCO');
       if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
       result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
@@ -221,10 +202,9 @@ async function loadCandidates(date) {
     queryAll('colaborador_cruzamento', 'colaborador_id,cpf,nome,tipo_contrato,salario,atualizado_em', (q) => q.order('atualizado_em', { ascending: false })),
   ]);
 
-  // Laudo/produção continua sendo o gatilho das despesas base (salário/serviço
-  // e almoço). Café e Janta possuem validações operacionais próprias.
   const laudoNames = new Set(production.map((row) => norm(row.funcionario)).filter(Boolean));
   const cafeRowsByName = rowsByName(alimentation, (row) => row.cafe === true);
+  const almocoRowsByName = rowsByName(alimentation, (row) => row.almoco === true);
   const jantaRowsByName = rowsByName(alimentation, (row) => row.janta === true);
   const cafeNames = new Set([...cafeRowsByName.keys()]);
   const jantaNames = new Set([...jantaRowsByName.keys()]);
@@ -246,22 +226,22 @@ async function loadCandidates(date) {
   const unique = new Map();
   for (const name of candidateNames) {
     const cafeItems = cafeRowsByName.get(name) || [];
+    const almocoItems = almocoRowsByName.get(name) || [];
     const jantaItems = jantaRowsByName.get(name) || [];
     const cafeItem = cafeItems[0];
+    const almocoItem = almocoItems[0];
     const jantaItem = jantaItems[0];
     const programmedItem = programmedByName.get(name);
-    const referenceItem = cafeItem || jantaItem || programmedItem;
+    const referenceItem = cafeItem || almocoItem || jantaItem || programmedItem;
     const contract = contractsById.get(String(referenceItem?.colaborador_id || '')) || contractsByName.get(name);
     if (!contract || !['DIARISTA', 'INTERMITENTE', 'EFETIVO'].includes(norm(contract.tipo_contrato))) continue;
 
     const isProgrammed = programmedIds.has(String(contract.colaborador_id || '')) || programmedNames.has(name);
     const hasLaudo = laudoNames.has(name);
     const cafeProgrammed = cafeItems.length > 0;
+    const almocoProgrammed = almocoItems.length > 0;
     const jantaProgrammed = jantaItems.length > 0;
 
-    // Mantém a regra anterior para despesas base de efetivo. As inclusões sem
-    // produção só existem para Café/Janta explicitamente marcados na Programação
-    // e dependem das validações específicas antes de qualquer ação no GRM.
     if (norm(contract.tipo_contrato) === 'EFETIVO' && hasLaudo && !isProgrammed) continue;
     if (!hasLaudo && !cafeProgrammed && !jantaProgrammed) continue;
 
@@ -271,9 +251,10 @@ async function loadCandidates(date) {
       programmed: isProgrammed,
       hasLaudo,
       cafeProgrammed,
+      almocoProgrammed,
       jantaProgrammed,
-      programacaoId: String(cafeItem?.programacao_id || jantaItem?.programacao_id || programmedItem?.programacao_id || ''),
-      programacaoColaboradorId: String(cafeItem?.colaborador_id || jantaItem?.colaborador_id || programmedItem?.colaborador_id || contract.colaborador_id || ''),
+      programacaoId: String(cafeItem?.programacao_id || programmedItem?.programacao_id || ''),
+      programacaoColaboradorId: String(cafeItem?.colaborador_id || programmedItem?.colaborador_id || contract.colaborador_id || ''),
       jantaProgramacaoIds: [...new Set(jantaItems.map((row) => String(row.programacao_id || '')).filter(Boolean))],
       jantaColaboradorIds: [...new Set(jantaItems.map((row) => String(row.colaborador_id || '')).filter(Boolean))],
     });
@@ -284,13 +265,13 @@ async function loadCandidates(date) {
     programmed: programmed.length,
     production: laudoNames.size,
     cafesProgramados: alimentation.filter((row) => row.cafe === true).length,
+    almocosProgramados: alimentation.filter((row) => row.almoco === true).length,
     jantasProgramadas: alimentation.filter((row) => row.janta === true).length,
   };
 }
 
 async function validateCafeAuthorization(candidate, date) {
   if (!candidate.cafeProgrammed || !candidate.programacaoId) return false;
-
   const { data, error } = await getSupabase().rpc('grm_cafe_login_valido', {
     p_data: date,
     p_programacao_id: candidate.programacaoId,
@@ -299,7 +280,6 @@ async function validateCafeAuthorization(candidate, date) {
     p_cpf: digits(candidate.cpf),
     p_nome: candidate.nome,
   });
-
   if (error) throw error;
   return data === true;
 }
@@ -396,9 +376,7 @@ async function validateJantaAuthorization(candidate, date) {
     });
   }
 
-  if (!validLoads.length) {
-    return { ...baseResult, reason: 'SEM_LAUDO_APOS_19H_LOCAL' };
-  }
+  if (!validLoads.length) return { ...baseResult, reason: 'SEM_LAUDO_APOS_19H_LOCAL' };
   validLoads.sort((a, b) => String(b.cadastro_local).localeCompare(String(a.cadastro_local)));
   return {
     authorized: true,
@@ -407,46 +385,89 @@ async function validateJantaAuthorization(candidate, date) {
   };
 }
 
-async function login(page) {
-  await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
-  await page.type('input#input-v-2', process.env.GRMSERVER_USER);
-  await page.type('input#input-v-5', process.env.GRMSERVER_PASSWORD);
-  await Promise.allSettled([
-    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 }),
-    page.click('button.submit-btn'),
-  ]);
-  await page.goto(FLOW_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+async function grmRequest(path, body, token = null, multipart = false) {
+  const endpoint = String(path || '').replace(/^\/+/, '').replace(/^api\//, '');
+  const headers = {
+    ...GRM_WEB_HEADERS,
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
+  };
+  let requestBody;
+
+  if (multipart) {
+    if (typeof FormData === 'undefined') {
+      throw new Error(`FormData indisponível no ${process.version}; execute este agente com Node.js 22.`);
+    }
+    const form = new FormData();
+    Object.entries(body || {}).forEach(([key, value]) => {
+      form.append(key, value == null ? '' : String(value));
+    });
+    requestBody = form;
+  } else {
+    headers['content-type'] = 'application/json';
+    requestBody = JSON.stringify(body || {});
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let response;
+  try {
+    response = await fetch(`${GRM_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: requestBody,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error(`Timeout de 30s no endpoint GRM ${endpoint}.`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const text = await response.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch (_) {
+    throw new Error(`GRM ${endpoint} retornou conteúdo inválido (HTTP ${response.status}): ${text.slice(0, 300)}`);
+  }
+  if (!response.ok || json?.result === false) {
+    throw new Error(`GRM ${endpoint} HTTP ${response.status}: ${json?.message || text.slice(0, 500)}`);
+  }
+  return json;
 }
 
-async function api(page, path, body, multipart = false) {
-  return page.evaluate(async ({ apiPath, payload, useMultipart }) => {
-    let token = null;
-    for (let i = 0; i < localStorage.length; i += 1) {
-      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
-    }
-    const headers = { Authorization: `Bearer ${token}` };
-    let requestBody;
-    if (useMultipart) {
-      requestBody = new FormData();
-      Object.entries(payload).forEach(([key, value]) => requestBody.append(key, value == null ? '' : String(value)));
-    } else {
-      headers['Content-Type'] = 'application/json';
-      requestBody = JSON.stringify(payload);
-    }
-    const response = await fetch(apiPath, { method: 'POST', headers, body: requestBody });
-    const text = await response.text();
-    let json; try { json = JSON.parse(text); } catch (_) { json = { text }; }
-    if (!response.ok || json?.result === false) throw new Error(`${response.status}: ${text.slice(0, 500)}`);
-    return json;
-  }, { apiPath: path, payload: body, useMultipart: multipart });
+async function login() {
+  log('INFO', 'Autenticando diretamente na API do GRM.');
+  const response = await grmRequest('user/login', {
+    userEmail: process.env.GRMSERVER_USER,
+    userPass: process.env.GRMSERVER_PASSWORD,
+    loginInfo: {
+      ip: '',
+      browser: 'GRM API Agent',
+      browserVersion: '1.0',
+      engine: 'Node.js',
+      engineVersion: process.version,
+      platform: process.platform,
+      screenSize: '',
+      windowSize: '',
+    },
+  });
+  if (!response.token) throw new Error('Login GRM concluído sem token.');
+  log('SUCCESS', 'Login direto na API do GRM concluído.');
+  return response.token;
 }
 
-async function loadGrmData(page, date) {
+async function api(token, path, body, multipart = false) {
+  return grmRequest(path, body, token, multipart);
+}
+
+async function loadGrmData(token, date) {
   const br = isoToBr(date);
   const [report, staff, types] = await Promise.all([
-    api(page, '/api/reports/finance/operatingFlow', { ofmDateFrom: br, ofmDateTo: br, ofmStatusReport: ['P', 'A', 'N'], reportType: 'flowList' }),
-    api(page, '/api/staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A' }),
-    api(page, '/api/oFlowExpenseType/getRecords', { oexStatus: 'A' }),
+    api(token, '/api/reports/finance/operatingFlow', { ofmDateFrom: br, ofmDateTo: br, ofmStatusReport: ['P', 'A', 'N'], reportType: 'flowList' }),
+    api(token, '/api/staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A' }),
+    api(token, '/api/oFlowExpenseType/getRecords', { oexStatus: 'A' }),
   ]);
   return {
     movements: report.searchData || [],
@@ -461,23 +482,31 @@ function findStaff(candidate, staff) {
     || staff.find((row) => norm(row.staName) === candidate.nameKey);
 }
 
-async function approve(page, row) {
-  return api(page, '/api/oFlow/approve', { ofmCode: Number(row.ofmCode), reproveReason: '', type: 'A' });
+async function approve(token, row) {
+  return api(token, '/api/oFlow/approve', {
+    ofmCode: Number(row.ofmCode), reproveReason: '', type: 'A',
+  });
 }
 
 async function create(
-  page,
+  token,
   staff,
   expense,
   date,
   { cafeAuthorized = false, jantaAuthorized = false } = {},
 ) {
   assertDirectExpenseAllowed(expense, { cafeAuthorized, jantaAuthorized });
-  return api(page, '/api/oFlow/setRecord', {
-    ofmType: 'D', staCode: Number(staff.staCode), ofmDate: isoToBr(date),
+  return api(token, '/api/oFlow/setRecord', {
+    ofmType: 'D',
+    staCode: Number(staff.staCode),
+    ofmDate: isoToBr(date),
     ofmDescription: `Lançamento automático retroativo - ${expense.oexName}`,
-    ofmValue: Number(expense.amount).toFixed(2), oexCode: Number(expense.oexCode),
-    odtCode: 1, ofmDocument: '0', moreThenOneCompany: 'N', scpCode: 1,
+    ofmValue: Number(expense.amount).toFixed(2),
+    oexCode: Number(expense.oexCode),
+    odtCode: 1,
+    ofmDocument: '0',
+    moreThenOneCompany: 'N',
+    scpCode: 1,
   }, true);
 }
 
@@ -487,23 +516,23 @@ async function recordAudit(row) {
 }
 
 async function main() {
-  if (!process.env.GRMSERVER_USER || !process.env.GRMSERVER_PASSWORD) throw new Error('Credenciais GRM ausentes.');
+  if (!process.env.GRMSERVER_USER || !process.env.GRMSERVER_PASSWORD) {
+    throw new Error('Credenciais GRM ausentes.');
+  }
   const date = process.env.GRM_DESPESAS_RETROATIVAS_DATA || yesterdaySaoPaulo();
   const source = await loadCandidates(date);
   log('INFO', `Agente ${VERSION}: base ${date}.`, {
     programados: source.programmed,
     cafes_programados: source.cafesProgramados,
+    almocos_programados: source.almocosProgramados,
     jantas_programadas: source.jantasProgramadas,
     com_producao: source.production,
     elegiveis: source.candidates.length,
     dry_run: DRY_RUN,
   });
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    ...(process.env.PUPPETEER_EXECUTABLE_PATH ? { executablePath: process.env.PUPPETEER_EXECUTABLE_PATH } : {}),
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
-  });
+  const token = await login();
+  const grm = await loadGrmData(token, date);
   const summary = {
     checked: 0,
     unchanged: 0,
@@ -513,6 +542,7 @@ async function main() {
     unresolved: 0,
     adiados: 0,
     cafe_programado: 0,
+    almoco_programado: 0,
     cafe_autorizado_login: 0,
     cafe_bloqueado_login: 0,
     janta_programada: 0,
@@ -520,114 +550,142 @@ async function main() {
     janta_bloqueada_laudo_19h: 0,
   };
   let actionCount = 0;
-  try {
-    const page = await browser.newPage();
-    await login(page);
-    const grm = await loadGrmData(page, date);
-    for (const candidate of source.candidates) {
-      let cafeAuthorized = false;
-      if (candidate.cafeProgrammed) {
-        summary.cafe_programado += 1;
-        cafeAuthorized = await validateCafeAuthorization(candidate, date);
-        if (cafeAuthorized) summary.cafe_autorizado_login += 1;
-        else summary.cafe_bloqueado_login += 1;
-      }
 
-      let jantaValidation = {
-        authorized: false,
-        reason: candidate.jantaProgrammed ? 'NAO_VALIDADA' : 'JANTA_NAO_PROGRAMADA',
-      };
-      if (candidate.jantaProgrammed) {
-        summary.janta_programada += 1;
-        jantaValidation = await validateJantaAuthorization(candidate, date);
-        if (jantaValidation.authorized) summary.janta_autorizada_laudo_19h += 1;
-        else summary.janta_bloqueada_laudo_19h += 1;
-      }
-      const jantaAuthorized = jantaValidation.authorized === true;
-
-      const expenses = requiredExpenses(
-        candidate.tipo_contrato,
-        candidate.salario,
-        grm.expenseTypes,
-        {
-          programmed: candidate.programmed,
-          hasLaudo: candidate.hasLaudo,
-          cafeAuthorized,
-          jantaAuthorized,
-        },
-      );
-
-      if (!expenses.length) continue;
-
-      const staff = findStaff(candidate, grm.staff);
-      if (!staff) {
-        summary.unresolved += 1;
-        log('WARN', 'Colaborador não localizado no GRM.', { nome: candidate.nome, cpf: candidate.cpf });
-        continue;
-      }
-
-      for (const expense of expenses) {
-        summary.checked += 1;
-        const existing = grm.movements.filter((row) => Number(row.staCode) === Number(staff.staCode)
-          && Number(row.oexCode) === Number(expense.oexCode) && row.ofmType === 'D');
-        const decision = decide(existing);
-        const audit = {
-          data_referencia: date, cpf: digits(candidate.cpf), colaborador: candidate.nome,
-          sta_code: Number(staff.staCode), tipo_contrato: candidate.tipo_contrato,
-          tipo_despesa: expense.oexName, oex_code: Number(expense.oexCode), valor: expense.amount,
-          acao: decision.action, dry_run: DRY_RUN,
-          diagnostico: {
-            laudo: candidate.hasLaudo,
-            programado: candidate.programmed,
-            cafe_programado: candidate.cafeProgrammed,
-            cafe_login_valido_04_07: cafeAuthorized,
-            janta_programada: candidate.jantaProgrammed,
-            janta_laudo_apos_19h_local: jantaValidation,
-            existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
-            duplicados_pendentes: decision.duplicates || 0,
-          },
-        };
-        try {
-          assertDirectExpenseAllowed(expense, { cafeAuthorized, jantaAuthorized });
-          if (decision.action === 'NONE') summary.unchanged += 1;
-          else if (actionCount >= MAX_ACTIONS) {
-            summary.adiados += 1;
-            audit.sucesso = false;
-            audit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
-            log('WARN', `${candidate.nome} / ${expense.oexName}: ${audit.erro}`);
-            await recordAudit(audit);
-            continue;
-          }
-          else if (decision.action === 'APPROVE') {
-            summary.approve += 1; actionCount += 1;
-            audit.ofm_code = Number(decision.row.ofmCode);
-            if (!DRY_RUN) await approve(page, decision.row);
-          } else {
-            if (!(Number(expense.amount) > 0)) throw new Error(`Valor inválido para ${expense.oexName}: ${expense.amount}`);
-            summary.create += 1; actionCount += 1;
-            if (!DRY_RUN) {
-              await create(page, staff, expense, date, { cafeAuthorized, jantaAuthorized });
-              const refreshed = await api(page, '/api/reports/finance/operatingFlow', { ofmDateFrom: isoToBr(date), ofmDateTo: isoToBr(date), ofmStatusReport: ['P', 'A', 'N'], reportType: 'flowList' });
-              const created = (refreshed.searchData || []).filter((row) => Number(row.staCode) === Number(staff.staCode) && Number(row.oexCode) === Number(expense.oexCode)).sort((a, b) => Number(b.ofmCode) - Number(a.ofmCode))[0];
-              if (!created) throw new Error('Lançamento não apareceu na conferência após criação.');
-              audit.ofm_code = Number(created.ofmCode);
-              if (created.ofmStatus === 'P') await approve(page, created);
-              grm.movements.push({ ...created, ofmStatus: 'A' });
-            }
-          }
-          audit.sucesso = true;
-        } catch (error) {
-          summary.errors += 1; audit.sucesso = false; audit.erro = error.message; log('ERROR', `${candidate.nome} / ${expense.oexName}: ${error.message}`);
-        }
-        await recordAudit(audit);
-      }
+  for (const candidate of source.candidates) {
+    let cafeAuthorized = false;
+    if (candidate.cafeProgrammed) {
+      summary.cafe_programado += 1;
+      cafeAuthorized = await validateCafeAuthorization(candidate, date);
+      if (cafeAuthorized) summary.cafe_autorizado_login += 1;
+      else summary.cafe_bloqueado_login += 1;
     }
-  } finally { await browser.close(); }
+
+    let jantaValidation = {
+      authorized: false,
+      reason: candidate.jantaProgrammed ? 'NAO_VALIDADA' : 'JANTA_NAO_PROGRAMADA',
+    };
+    if (candidate.jantaProgrammed) {
+      summary.janta_programada += 1;
+      jantaValidation = await validateJantaAuthorization(candidate, date);
+      if (jantaValidation.authorized) summary.janta_autorizada_laudo_19h += 1;
+      else summary.janta_bloqueada_laudo_19h += 1;
+    }
+    const jantaAuthorized = jantaValidation.authorized === true;
+
+    if (candidate.almocoProgrammed) summary.almoco_programado += 1;
+
+    const expenses = requiredExpenses(
+      candidate.tipo_contrato,
+      candidate.salario,
+      grm.expenseTypes,
+      {
+        programmed: candidate.programmed,
+        almocoProgrammed: candidate.almocoProgrammed,
+        hasLaudo: candidate.hasLaudo,
+        cafeAuthorized,
+        jantaAuthorized,
+      },
+    );
+    if (!expenses.length) continue;
+
+    const staff = findStaff(candidate, grm.staff);
+    if (!staff) {
+      summary.unresolved += 1;
+      log('WARN', 'Colaborador não localizado no GRM.', { nome: candidate.nome, cpf: candidate.cpf });
+      continue;
+    }
+
+    for (const expense of expenses) {
+      summary.checked += 1;
+      const existing = grm.movements.filter((row) => Number(row.staCode) === Number(staff.staCode)
+        && Number(row.oexCode) === Number(expense.oexCode) && row.ofmType === 'D');
+      const decision = decide(existing);
+      const audit = {
+        data_referencia: date,
+        cpf: digits(candidate.cpf),
+        colaborador: candidate.nome,
+        sta_code: Number(staff.staCode),
+        tipo_contrato: candidate.tipo_contrato,
+        tipo_despesa: expense.oexName,
+        oex_code: Number(expense.oexCode),
+        valor: expense.amount,
+        acao: decision.action,
+        dry_run: DRY_RUN,
+        diagnostico: {
+          laudo: candidate.hasLaudo,
+          programado: candidate.programmed,
+          almoco_programado: candidate.almocoProgrammed,
+          cafe_programado: candidate.cafeProgrammed,
+          cafe_login_valido_04_07: cafeAuthorized,
+          janta_programada: candidate.jantaProgrammed,
+          janta_laudo_apos_19h_local: jantaValidation,
+          existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
+          duplicados_pendentes: decision.duplicates || 0,
+        },
+      };
+
+      try {
+        assertDirectExpenseAllowed(expense, { cafeAuthorized, jantaAuthorized });
+        if (decision.action === 'NONE') {
+          summary.unchanged += 1;
+        } else if (actionCount >= MAX_ACTIONS) {
+          summary.adiados += 1;
+          audit.sucesso = false;
+          audit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
+          log('WARN', `${candidate.nome} / ${expense.oexName}: ${audit.erro}`);
+          await recordAudit(audit);
+          continue;
+        } else if (decision.action === 'APPROVE') {
+          summary.approve += 1;
+          actionCount += 1;
+          audit.ofm_code = Number(decision.row.ofmCode);
+          if (!DRY_RUN) await approve(token, decision.row);
+        } else {
+          if (!(Number(expense.amount) > 0)) {
+            throw new Error(`Valor inválido para ${expense.oexName}: ${expense.amount}`);
+          }
+          summary.create += 1;
+          actionCount += 1;
+          if (!DRY_RUN) {
+            await create(token, staff, expense, date, { cafeAuthorized, jantaAuthorized });
+            const refreshed = await api(token, '/api/reports/finance/operatingFlow', {
+              ofmDateFrom: isoToBr(date),
+              ofmDateTo: isoToBr(date),
+              ofmStatusReport: ['P', 'A', 'N'],
+              reportType: 'flowList',
+            });
+            const created = (refreshed.searchData || [])
+              .filter((row) => Number(row.staCode) === Number(staff.staCode)
+                && Number(row.oexCode) === Number(expense.oexCode))
+              .sort((a, b) => Number(b.ofmCode) - Number(a.ofmCode))[0];
+            if (!created) throw new Error('Lançamento não apareceu na conferência após criação.');
+            audit.ofm_code = Number(created.ofmCode);
+            if (created.ofmStatus === 'P') await approve(token, created);
+            grm.movements.push({ ...created, ofmStatus: 'A' });
+          }
+        }
+        audit.sucesso = true;
+      } catch (error) {
+        summary.errors += 1;
+        audit.sucesso = false;
+        audit.erro = error.message;
+        log('ERROR', `${candidate.nome} / ${expense.oexName}: ${error.message}`);
+      }
+      await recordAudit(audit);
+    }
+  }
+
   log(summary.errors ? 'WARN' : 'SUCCESS', 'Execução concluída.', summary);
   if (summary.errors) process.exitCode = 1;
 }
 
-if (require.main === module) main().catch((error) => { console.error(error.stack || error.message); process.exit(1); });
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+}
+
 module.exports = {
   norm,
   yesterdaySaoPaulo,
