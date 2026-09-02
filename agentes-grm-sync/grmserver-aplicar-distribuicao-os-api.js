@@ -286,11 +286,10 @@ async function carregarGruposPendentes() {
       programadosPorOsData.get(`${String(row.id)}|${data}`) || []
     );
 
-    // Mantém o limite operacional do fluxo anterior:
-    // - OS com programação atual sempre são reconciliadas;
-    // - OS sem programação só são limpas se já eram gerenciadas pelo agente (AJUSTADA).
-    // Isso evita apagar distribuição de OS PENDENTE que nunca entrou no fluxo do painel.
-    if (!programados.length && row.status_conferencia !== 'AJUSTADA') continue;
+    // Programação é a fonte de verdade: toda OS ATENDER na janela é reconciliada.
+    // Se não houver colaborador confirmado nessa data, o conjunto esperado é vazio
+    // e qualquer vínculo residual no Graint será removido. Isso também corrige OS
+    // PENDENTE que possam ter sido parcialmente alteradas por execuções anteriores.
 
     const key = `${data}|${normalize(coord)}`;
     if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, itens: [] });
