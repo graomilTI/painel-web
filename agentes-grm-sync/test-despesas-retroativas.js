@@ -150,4 +150,22 @@ assert.equal(decide([{ ofmStatus: 'P', ofmCode: 2 }]).action, 'APPROVE');
 assert.equal(decide([{ ofmStatus: 'N' }]).action, 'CREATE');
 assert.equal(decide([]).action, 'CREATE');
 
-console.log('OK: Almoço exige programação específica; Café e Janta mantêm autorizações operacionais próprias');
+// Pendências (status P) além da que a decisão resolve viram "orphans" pro
+// chamador recusar — nunca ficam só ignoradas (isso é o que gerava
+// duplicidade latente no GRM: uma aprovada + uma pendente esquecida).
+assert.deepEqual(
+  decide([{ ofmStatus: 'A', ofmCode: 1 }, { ofmStatus: 'P', ofmCode: 2 }]).orphans.map((r) => r.ofmCode),
+  [2],
+);
+assert.deepEqual(decide([{ ofmStatus: 'A', ofmCode: 1 }]).orphans, []);
+assert.deepEqual(
+  decide([{ ofmStatus: 'P', ofmCode: 5 }, { ofmStatus: 'P', ofmCode: 3 }]).orphans.map((r) => r.ofmCode),
+  [5],
+);
+assert.equal(
+  decide([{ ofmStatus: 'P', ofmCode: 5 }, { ofmStatus: 'P', ofmCode: 3 }]).row.ofmCode,
+  3,
+);
+assert.deepEqual(decide([]).orphans, []);
+
+console.log('OK: Almoço exige programação específica; Café e Janta mantêm autorizações operacionais próprias; decide() aponta pendências órfãs pra recusa');
