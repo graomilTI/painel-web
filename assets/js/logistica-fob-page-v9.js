@@ -8,7 +8,6 @@ const PAGE_SIZE = 1000;
 // carregamento. Buscar em ondas concorrentes derruba o tempo pra ~nº de ondas.
 const PAGE_CONCURRENCY = 6;
 const MAX_MOV_ROWS = 20000;
-const MAX_PROD_ROWS = 30000;
 const MAX_NHE_ROWS = 15000;
 // Janela (dias) que a RPC fob_lote_recente devolve. Um lote só pode conter
 // linhas da data de referência (ontem) se foi criado nessa data ou depois, então
@@ -270,22 +269,49 @@ async function fetchLoteRecente(table, maxRows) {
   }
 }
 
-// Produção Diária tem MILHÕES de linhas e lotes de ~10 mil linhas várias
-// vezes por dia — mesmo só "últimos 3 dias" são ~190 mil linhas, caro demais
-// pra baixar toda vez. fob_producao_lote_vencedor escolhe o lote no SERVIDOR
-// (mesmo critério do chooseServiceBatch abaixo: mais linhas batendo a data de
-// referência, empate pelo lote mais recente) e devolve só as linhas desse
-// lote — o cliente ainda roda chooseServiceBatch em cima (redundante mas
-// inofensivo: o resultado já é só 1 lote, então splitBatches devolve só ele).
-async function fetchProducaoLoteVencedor(referenciaDdMmYyyy, maxRows) {
+// Espelha o mesmo fix aplicado no bot de NHE (grm-sync-lancar-nhe.js, PR
+// #342): sync-producao-diaria (Puppeteer/XLS -> grm_producao_diaria_importacoes)
+// foi pausado em grm_sync_agent_settings em 01/09, substituído por
+// grmserver-producao-diaria-api-realtime.js, que grava só em
+// producao_snapshot (README do agente confirma: "não escreve mais em
+// grm_producao_diaria_importacoes"). Sem esse fix, a coluna "Produção" desta
+// tela ficaria pra sempre presa na foto congelada em 2026-08-31 22:34.
+//
+// producao_snapshot é mantida por replaceTablePeriodSafely (substitui o
+// período consultado, não acumula imports) — não tem lotes concorrentes pra
+// desambiguar, então filtra direto pela data (coluna `data`, tipo date), sem
+// a heurística de lote/gap que grm_producao_diaria_importacoes exigia.
+//
+// Achado ao migrar: o sinal "Cargas"="NHE" (linha de Produção Diária que
+// marcava um dia sem carga do classificador, usado em compareFob como
+// setNheEmProducaoOs) não existe na API usada pelo agente novo — só expõe
+// countLoads numérico. Já não era um proxy confiável mesmo na tabela antiga
+// (checado 01/09: amostra de O.S. com Cargas="NHE" não batia com
+// grm_nhe_importacoes na mesma data). Perder esse atalho não tira nenhuma
+// O.S. do escopo da regra — a exclusão por NHE passa a depender só de
+// setNheOsOnly (tabela grm_nhe_importacoes separada), que já era a fonte de
+// verdade real.
+async function fetchProducaoSnapshotDia(dataIso) {
   try {
-    return await fetchPaged((from, to) => supabase
-      .rpc('fob_producao_lote_vencedor', { p_referencia_ddmmyyyy: referenciaDdMmYyyy, p_dias: FOB_JANELA_DIAS })
-      .order('created_at', { ascending: false })
-      .range(from, to), maxRows);
+    const rows = await fetchPaged((from, to) => supabase
+      .from('producao_snapshot')
+      .select('os,cargas,created_at')
+      .eq('data', dataIso)
+      .range(from, to), 20000);
+    const batchAt = rows.reduce((max, row) => (row.created_at && (!max || row.created_at > max) ? row.created_at : max), null);
+    return {
+      rows: rows.map((row) => normalizedRow({ 'O.S.': row.os, Cargas: row.cargas })),
+      batchAt,
+      rawCount: rows.length,
+      warning: '',
+    };
   } catch (error) {
-    console.warn('[FOB v9] RPC fob_producao_lote_vencedor indisponível; usando fallback created_at (baixa a janela inteira, mais lento).', error);
-    return fetchByCreatedAt('grm_producao_diaria_importacoes', maxRows);
+    return {
+      rows: [],
+      batchAt: null,
+      rawCount: 0,
+      warning: `Produção Diária: falha ao consultar producao_snapshot (${error.message || error}).`,
+    };
   }
 }
 
@@ -396,9 +422,7 @@ async function fetchMovementDaily() {
 
 async function fetchServiceDay(table, label, maxRows) {
   try {
-    const records = table === 'grm_producao_diaria_importacoes'
-      ? await fetchProducaoLoteVencedor(referenceBr(), maxRows)
-      : await fetchLoteRecente(table, maxRows);
+    const records = await fetchLoteRecente(table, maxRows);
     return chooseServiceBatch(records, label);
   } catch (error) {
     return {
@@ -662,7 +686,7 @@ async function generateReport() {
   try {
     const [movement, production, nhe, foraDoRaio] = await Promise.all([
       fetchMovementDaily(),
-      fetchServiceDay('grm_producao_diaria_importacoes', 'Produção Diária', MAX_PROD_ROWS),
+      fetchProducaoSnapshotDia(referenceIso()),
       fetchServiceDay('grm_nhe_importacoes', 'NHE', MAX_NHE_ROWS),
       fetchForaDoRaio(),
     ]);
