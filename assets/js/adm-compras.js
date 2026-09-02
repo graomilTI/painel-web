@@ -310,7 +310,6 @@ async function confirmarCotacao(rows, fornecedores){
     }
     {const {error:caErr}=await supabase.from('compras_itens').update(update).eq('id',r.id); if(caErr&&(caErr.message?.includes("'ca'")||caErr.code==='PGRST204')){delete update.ca; await supabase.from('compras_itens').update(update).eq('id',r.id);}}
   }
-  await supabase.from('compras_cotacoes').insert({status:'em_cotacao', itens_ids:rows.map(r=>r.id), titulo:`Cotação ${new Date().toLocaleString('pt-BR')}`});
   modal.classList.remove('open');
   setMsg(`${rows.length} item(ns) enviado(s) para COTAÇÕES.`);
   await loadRows();
