@@ -123,10 +123,21 @@ const HEADLESS = process.env.HEADLESS === 'false' ? false : true;
 // várias vezes na LISTAGEM de "Carregando"/"Aguardando Classificação" por
 // pura lentidão externa (SignalR/Blazor Server), o que faz o ciclo inteiro
 // ser tratado como "0 placas" mesmo com backlog real esperando (ver
-// listarAgendamentosPorCard). Dobrado pra reduzir a frequência desses
-// falsos "0 placas" — o erro do Puppeteer já sugere esse ajuste
-// ("Increase the 'protocolTimeout' setting").
-const PROTOCOL_TIMEOUT_MS = Number(process.env.OUROSAFRA_PROTOCOL_TIMEOUT_MS) || 360000;
+// listarAgendamentosPorCard). Primeiro dobrado pra 6min (360000) em
+// 02/09/2026; validado ao vivo que ainda não bastou (um ciclo real estourou
+// mesmo os 6min) — subido pra 8min. Ver KILL_SWITCH_MS abaixo, aumentado
+// junto pra não matar o processo no meio de um timeout de listagem legítimo.
+const PROTOCOL_TIMEOUT_MS = Number(process.env.OUROSAFRA_PROTOCOL_TIMEOUT_MS) || 480000;
+
+// Kill-switch hardcoded no fim do arquivo: já matou pelo menos 1 run real no
+// meio do processamento de um backlog grande (job "erro", 19:36 28/08/2026 —
+// ver histórico). Também precisa de folga sobre PROTOCOL_TIMEOUT_MS: no pior
+// caso as 2 listagens iniciais (Carregando + Aguardando Classificação) podem
+// estourar o timeout de protocolo em sequência (2x 8min = 16min) antes mesmo
+// do loop de processamento por placa começar — um kill-switch igual ou menor
+// que isso mataria o processo ANTES do catch interno conseguir degradar pra
+// "0 placas" graciosamente. 20min dá folga sobre esse pior caso + login (~20s).
+const KILL_SWITCH_MS = Number(process.env.OUROSAFRA_KILL_SWITCH_MS) || 1200000;
 
 const LAUNCH_ARGS = HEADLESS
   ? [
@@ -843,4 +854,4 @@ async function main() {
 }
 
 main().then(() => process.exit(0)).catch(() => process.exit(1));
-setTimeout(() => process.exit(1), 600000);
+setTimeout(() => process.exit(1), KILL_SWITCH_MS);
