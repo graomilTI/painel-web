@@ -63,7 +63,7 @@ const AGENTES = [
   // grm_sync_agent_settings) — usar producao_snapshot.created_at como sinal de vida.
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20, apiStatus: 'api', apiNote: 'Migrado 01/09: serviço systemd contínuo grava direto em producao_snapshot. Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes', apiStatus: 'puppeteer' },
-  { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes', apiStatus: 'api', apiNote: 'Migrado 02/09: login via API direto (user/login), sem abrir navegador — já buscava os dados via fetch antes, só o login usava Puppeteer. Continua job pontual na fila fixa (não virou serviço contínuo); janela reduzida de 30 pra 7 dias.' },
   { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes', apiStatus: 'puppeteer' },
   { id: 'sync-notas-fiscais', name: 'Notas Fiscais', freq: 'fila fixa', table: 'grm_notas_fiscais_importacoes', apiStatus: 'puppeteer' },
   { id: 'sync-mapa-embarque', name: 'Mapa de Embarque', freq: 'fila fixa', table: 'grm_mapa_embarque_importacoes', apiStatus: 'puppeteer' },
