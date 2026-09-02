@@ -119,6 +119,15 @@ const GRM_WEB_HEADERS = {
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
 const HEADLESS = process.env.HEADLESS === 'false' ? false : true;
 
+// Default do Puppeteer é 180000ms (3min) — a Ouro Safra/GRM já estourou isso
+// várias vezes na LISTAGEM de "Carregando"/"Aguardando Classificação" por
+// pura lentidão externa (SignalR/Blazor Server), o que faz o ciclo inteiro
+// ser tratado como "0 placas" mesmo com backlog real esperando (ver
+// listarAgendamentosPorCard). Dobrado pra reduzir a frequência desses
+// falsos "0 placas" — o erro do Puppeteer já sugere esse ajuste
+// ("Increase the 'protocolTimeout' setting").
+const PROTOCOL_TIMEOUT_MS = Number(process.env.OUROSAFRA_PROTOCOL_TIMEOUT_MS) || 360000;
+
 const LAUNCH_ARGS = HEADLESS
   ? [
       '--no-sandbox',
@@ -783,6 +792,7 @@ async function main() {
       dumpio: true,
       args: LAUNCH_ARGS,
       defaultViewport: HEADLESS ? { width: 1440, height: 900 } : null,
+      protocolTimeout: PROTOCOL_TIMEOUT_MS,
     });
 
     const pageOuroSafra = await browser.newPage();
