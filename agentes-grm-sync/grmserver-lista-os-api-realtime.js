@@ -51,6 +51,7 @@ try {
 const https = require('https');
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
+const AGENT_ID = 'sync-lista-os';
 const POLL_INTERVAL_MS = Math.max(3000, Number(process.env.GRM_LISTA_OS_POLL_MS || 8000));
 const PAGE_SIZE = 1000;
 const MAX_ROWS = 20000;
@@ -170,6 +171,23 @@ function createSupabaseRest(baseUrl, serviceKey) {
         'DELETE',
         null,
         authHeaders,
+      );
+    },
+    async insertJob(payload) {
+      const rows = await requestJson(
+        `${restUrl}/grm_sync_jobs`,
+        'POST',
+        payload,
+        { ...authHeaders, prefer: 'return=representation' },
+      );
+      return rows?.[0] || null;
+    },
+    async updateJob(id, patch) {
+      await requestJson(
+        `${restUrl}/grm_sync_jobs?id=eq.${encodeURIComponent(id)}`,
+        'PATCH',
+        patch,
+        { ...authHeaders, prefer: 'return=minimal' },
       );
     },
   };
@@ -341,6 +359,38 @@ async function applyCycle(supabase, rawRows) {
   return { remote: remoteRows.length, upserts, removidos };
 }
 
+// Este serviço roda fora da fila grm_sync_jobs (nada o invoca via job-worker),
+// mas a tela de Agentes (assets/js/ti-agentes.js) lê o último job de lá pra
+// status/Última Sync do card. applyCycle só grava em `operacional_os` quando há
+// diff real, então um heartbeat baseado no updated_at da própria tabela ficaria
+// "Erro" em qualquer janela sem O.S. abrindo/mudando mesmo com o serviço
+// saudável — por isso reporta aqui, direto, independente de diff. Mantém UMA
+// linha por ciclo de vida do processo (atualizada a cada ciclo), não insere um
+// job novo a cada poll de 8s pra não inflar grm_sync_jobs.
+async function reportarInicio(supabase) {
+  try {
+    const job = await supabase.insertJob({
+      agente_id: AGENT_ID,
+      status: 'rodando',
+      iniciado_em: new Date().toISOString(),
+      worker_id: 'realtime-service',
+    });
+    return job?.id || null;
+  } catch (error) {
+    logger.warn(`Falha ao registrar job inicial em grm_sync_jobs: ${error.message}`);
+    return null;
+  }
+}
+
+async function reportarCiclo(supabase, jobId, patch) {
+  if (!jobId) return;
+  try {
+    await supabase.updateJob(jobId, patch);
+  } catch (error) {
+    logger.warn(`Falha ao atualizar job em grm_sync_jobs: ${error.message}`);
+  }
+}
+
 async function main() {
   const supabase = createSupabaseRest(
     requiredEnv('SUPABASE_URL', ['SB_URL']),
@@ -348,6 +398,7 @@ async function main() {
   );
   let token = await login();
   logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms.`);
+  const jobId = await reportarInicio(supabase);
 
   while (true) {
     const startedAt = Date.now();
@@ -364,8 +415,21 @@ async function main() {
       if (result.upserts || result.removidos) {
         logger.info(`${result.upserts || 0} O.S. atualizada(s), ${result.removidos || 0} removida(s), de ${result.remote} em aberto.`);
       }
+      await reportarCiclo(supabase, jobId, {
+        status: 'sucesso',
+        finalizado_em: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        erro: null,
+        output: { remote: result.remote, upserts: result.upserts, removidos: result.removidos, skipped: result.skipped || false },
+      });
     } catch (error) {
       logger.error(error.stack || error.message);
+      await reportarCiclo(supabase, jobId, {
+        status: 'erro',
+        finalizado_em: new Date().toISOString(),
+        duration_ms: Date.now() - startedAt,
+        erro: String(error.message || error).slice(0, 4000),
+      });
     }
     const remaining = Math.max(500, POLL_INTERVAL_MS - (Date.now() - startedAt));
     await new Promise((resolve) => setTimeout(resolve, remaining));
