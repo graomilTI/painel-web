@@ -65,7 +65,6 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 // na prática só alcançava ~12-14h pra trás (silenciosamente descartava o
 // resto da janela). grm_nhe_importacoes é bem menor (~1,1-1,6 mil/dia).
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 100000);
-var MAX_PROD_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_PROD_ROWS || 30000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 10000);
 var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_DIAS) || 3);
 // Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
@@ -308,22 +307,6 @@ async function fetchLoteRecente(table, maxRows) {
   }
 }
 
-async function fetchProducaoLoteVencedor(referenciaDdMmYyyy, maxRows) {
-  try {
-    return await fetchPagedSequential(function (from, to) {
-      return supabase.rpc('fob_producao_lote_vencedor', { p_referencia_ddmmyyyy: referenciaDdMmYyyy, p_dias: FOB_JANELA_DIAS }).order('created_at', { ascending: false }).range(from, to);
-    }, maxRows);
-  } catch (error) {
-    // grm_producao_diaria_importacoes gira ~260 MIL linhas/dia (medido
-    // 27-30/08) — uma janela de 3 dias tem ~780 mil. Esse fallback bruto
-    // (sem o agrupamento em lote que a RPC faz) nunca vai conseguir cobrir
-    // isso com segurança só paginando; ficou como estava (best-effort), mas
-    // agora avisa alto em vez de mascarar. Fix de verdade é na RPC/índice.
-    log('WARN', 'RPC fob_producao_lote_vencedor indisponível; fallback created_at em grm_producao_diaria_importacoes pode ficar bem incompleto (~260 mil linhas/dia, muito acima do que dá pra paginar com segurança): ' + error.message);
-    return fetchByCreatedAt('grm_producao_diaria_importacoes', maxRows, FOB_JANELA_DIAS);
-  }
-}
-
 function splitBatches(records, maxGapMs) {
   maxGapMs = maxGapMs || 90000;
   var sorted = (records || []).filter(function (r) { return r && r.created_at; })
@@ -396,10 +379,41 @@ async function fetchMovementDaily() {
 }
 
 async function fetchServiceDay(table, maxRows) {
-  var records = table === 'grm_producao_diaria_importacoes'
-    ? await fetchProducaoLoteVencedor(referenceBr(), maxRows)
-    : await fetchLoteRecente(table, maxRows);
+  var records = await fetchLoteRecente(table, maxRows);
   return chooseServiceBatch(records).rows || [];
+}
+
+// grm_producao_diaria_importacoes (fluxo Puppeteer/XLS, base do
+// fetchProducaoLoteVencedor/chooseServiceBatch acima) parou de crescer em
+// 01/09: sync-producao-diaria foi pausado em grm_sync_agent_settings a favor
+// de grmserver-producao-diaria-api-realtime.js, que grava só em
+// producao_snapshot (README do agente confirma "não escreve mais em
+// grm_producao_diaria_importacoes"). producao_snapshot é mantida por
+// replaceTablePeriodSafely (substitui o período consultado, não acumula
+// imports) — não tem lotes concorrentes pra desambiguar, então basta filtrar
+// pela data (coluna `data`, tipo date) direto, sem a heurística de
+// created_at/gap usada pra tabela antiga.
+//
+// Achado ao migrar: o texto "Cargas"="NHE" (linha de Produção Diária que
+// marca um dia sem carga do classificador, sinal usado por calcularPendentes
+// pra pular pendências já cobertas) não existe em producao_snapshot — a API
+// usada pelo agente novo só expõe countLoads numérico (mapProducaoSnapshotRow
+// em grmserver-producao-diaria-api-realtime.js), sem esse marcador. Testado
+// ao vivo (01/09): das O.S. amostradas com "Cargas"="NHE" na tabela antiga,
+// NENHUMA tinha um registro correspondente em grm_nhe_importacoes na mesma
+// data — ou seja, não é um proxy confiável de "NHE real já lançado" mesmo na
+// tabela antiga. Perder esse sinal aqui não abre brecha de duplicidade: a
+// trava de segurança nhe_existe_movimento_real (também migrada pra
+// producao_snapshot) continua bloqueando o lançamento sempre que já existir
+// QUALQUER linha de Produção Diária pra aquela O.S.+data, com ou sem carga —
+// o efeito é a O.S. aparecer como candidata e ser barrada ali (status
+// JA_EXISTIA_MOVIMENTO_GRM) em vez de nem entrar na lista, mais barulho no
+// log mas sem risco de lançar em duplicidade.
+async function fetchProducaoSnapshotDia(dataIso) {
+  var rows = await fetchPaged(function (from, to) {
+    return supabase.from('producao_snapshot').select('os,cargas').eq('data', dataIso).range(from, to);
+  }, 20000);
+  return rows.map(function (row) { return normalizedRow({ 'O.S.': row.os, Cargas: row.cargas }); });
 }
 
 // Mesma regra de assets/js/logistica-fob-page-v9.js:compareFob — só o
@@ -589,7 +603,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
 async function buscarPendentes() {
   log('INFO', 'Recalculando regra do FOB para ' + referenceBr() + '...');
   var movement = await fetchMovementDaily();
-  var production = await fetchServiceDay('grm_producao_diaria_importacoes', MAX_PROD_ROWS);
+  var production = await fetchProducaoSnapshotDia(referenceIso());
   var nhe = await fetchServiceDay('grm_nhe_importacoes', MAX_NHE_ROWS);
   var pendentes = await calcularPendentes(movement, production, nhe);
   log('SUCCESS', pendentes.length + ' O.S. pendente(s) de NHE em ' + referenceBr() + '.');
@@ -683,6 +697,27 @@ async function resolverCoordenadaOs(numeroOs, dataReferencia) {
 
 var gestoresCache = null;
 var loginsPorDataCache = {};
+
+// --forcar sem login real (SEM_LOGIN) não tem de onde tirar a Coordenação/
+// Supervisão do colaborador (grm_login_movimentos_importacoes não tem
+// registro nesse dia) — sem isso, preencherEModalNhe cai no fallback da
+// supervisão da O.S. (texto completo, ex. "MATO GROSSO MT1 - Lucas do Rio
+// Verde/Nova Mutum"), que não bate como Coordenação e aciona o fallback por
+// UF do embarque, que pode escolher a primeira opção que contém o prefixo
+// (ex. "MATO GROSSO DO SUL" ao buscar "MATO GROSSO") e depois não achar o
+// colaborador na lista de Funcionário errada. Busca o cadastro dele mesmo
+// (mesma fonte usada por carregarGestores) pra preencher com o valor certo.
+async function resolverCoordenacaoColaborador(nome) {
+  var wanted = normText(nome);
+  if (!wanted) return null;
+  var result = await supabase
+    .from('colaboradores')
+    .select('nome,coordenacao,supervisao')
+    .eq('situacao', 'Ativo');
+  if (result.error) throw result.error;
+  var achado = (result.data || []).find(function (row) { return normText(row.nome) === wanted; });
+  return achado ? { coordenacao: achado.coordenacao, supervisao: achado.supervisao } : null;
+}
 
 async function carregarGestores() {
   if (gestoresCache) return gestoresCache;
@@ -1724,7 +1759,16 @@ async function main() {
       }
 
       var loginMatch = await buscarLoginColaborador(p.data, p.funcionario, osCoord);
-      if (!loginMatch && args.forcar) loginMatch = { distancia: 0, colaborador_chave: null, hora_movimento: null };
+      if (!loginMatch && args.forcar) {
+        var cadastroColaborador = await resolverCoordenacaoColaborador(p.funcionario);
+        loginMatch = {
+          distancia: 0,
+          colaborador_chave: null,
+          hora_movimento: null,
+          coordenacao: cadastroColaborador ? cadastroColaborador.coordenacao : null,
+          supervisao: cadastroColaborador ? cadastroColaborador.supervisao : null
+        };
+      }
       if (!loginMatch) {
         stats.semLogin++;
         await salvarResultado(Object.assign({}, p, { osCoord: osCoord }), { status: 'SEM_LOGIN' });
