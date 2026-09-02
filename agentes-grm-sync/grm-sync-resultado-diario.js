@@ -1,39 +1,161 @@
-const { replaceTableSafely, replaceTablePeriodSafely } = require('./safe-table-load');
-require('dotenv').config();
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const XLSX = require('xlsx');
+#!/usr/bin/env node
+
+/**
+ * Sincroniza Resultado Diário direto pela API do GRM, sem abrir navegador —
+ * mesmo padrão HTTP puro de grmserver-producao-diaria-api-realtime.js.
+ * Continua rodando como job pontual na esteira (SCRIPT_MAP sync-resultado-
+ * diario, lane `fixed`), só troca COMO os dados são buscados: a versão
+ * anterior já usava a API (fetchReportApi, dentro de page.evaluate) em vez
+ * do XLS — só o login (Puppeteer completo: abrir Chrome, preencher form,
+ * esperar navegação) era o gargalo. Aqui o login também vira POST direto em
+ * user/login, então o script inteiro roda sem browser.
+ *
+ * Removido código morto que já não era chamado por main() antes desta
+ * mudança: downloadReport/parseXLS/ensureAddValuesSim (fluxo de XLS nunca
+ * usado de fato, main() sempre chamou fetchReportApi).
+ *
+ * Janela default reduzida de 30 dias (monthsBack:1, today-29) pra 7 dias
+ * (GRM_RESULTADO_DIARIO_DAYS_BACK) — pedido do usuário 02/09. Como
+ * replaceTablePeriodSafely só substitui as datas presentes na consulta,
+ * histórico fora da janela continua intacto; pra reprocessar um período mais
+ * antigo, rodar manualmente com GRM_RESULTADO_DIARIO_DAYS_BACK maior.
+ *
+ * MIN_ROWS escalado junto com a janela: o valor antigo (1000) foi calibrado
+ * pra 30 dias de volume; mantido em 1000 ele abortaria toda promoção de uma
+ * janela de 7 dias (staging sempre "pequena demais"). Default novo: ~33
+ * linhas/dia (medida do volume antigo) × 7 dias, com folga pra baixo.
+ */
+
+const dotenvResult = require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+
+// Alguns servidores legados mantêm `.env` com espaços ao redor do `=`. A
+// versão antiga de dotenv instalada no cPanel não normaliza todas essas linhas.
+// Reaproveita somente os pares já parseados e corrige o nome da variável, sem
+// imprimir ou persistir os valores.
+for (const [rawKey, value] of Object.entries(dotenvResult.parsed || {})) {
+  const key = rawKey.trim();
+  if (key && !process.env[key]) process.env[key] = value;
+}
+
+// Fallback para dotenv legado: aceita `CHAVE = valor`, preservando o valor
+// integral e removendo apenas aspas externas.
+try {
+  const envText = fs.readFileSync(path.join(process.cwd(), '.env'), 'utf8');
+  for (const line of envText.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (!match || process.env[match[1]]) continue;
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    process.env[match[1]] = value;
+  }
+} catch {
+  // requiredEnv produzirá uma mensagem objetiva se o arquivo não existir.
+}
+
+const https = require('https');
+const XLSX = require('xlsx');
 const { createClient } = require('@supabase/supabase-js');
-const WebSocket = require('ws');
-const { setupDownloadDir, waitForFileDownload } = require('./download-utils');
+const { replaceTablePeriodSafely } = require('./safe-table-load');
 
-puppeteer.use(StealthPlugin());
-
-const supabase = createClient(process.env.SUPABASE_URL, (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY), { realtime: { transport: WebSocket } });
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY),
+);
 
 const REPORT_CONFIG = {
   name: 'Resultado Diário',
-  url: 'https://www.grmserver.com.br/report/classification/dailyResultReport',
-  dateFields: { from: '#requestDateFrom', to: '#requestDateTo' },
-  incluirValoresField: '#addValues',
-  xlsSelector: '.dailyResultReport-daily-result-report-to-xls button',
   tableName: 'grm_resultado_diario_importacoes',
   painelTableName: 'relatorio_resultado_diario',
-  monthsBack: 1
+};
+
+const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
+const DAYS_BACK = Math.max(1, Number(process.env.GRM_RESULTADO_DIARIO_DAYS_BACK || 7));
+const MIN_ROWS = Math.max(1, Number(process.env.GRM_RESULTADO_DIARIO_MIN_ROWS || 200));
+const GRM_WEB_HEADERS = {
+  origin: 'https://www.grmserver.com.br',
+  referer: 'https://www.grmserver.com.br/login',
+  'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+  'accept-language': 'pt-BR,pt;q=0.9,en;q=0.8',
 };
 
 function log(level, msg) {
   console.log(`[${level}] ${new Date().toISOString()} - ${msg}`);
 }
 
+function requiredEnv(name, alternatives = []) {
+  for (const key of [name, ...alternatives]) {
+    if (process.env[key]) return process.env[key];
+  }
+  throw new Error(`Variável obrigatória ausente: ${[name, ...alternatives].join(' ou ')}`);
+}
+
+function requestJson(url, method = 'GET', body = null, headers = {}) {
+  const parsed = new URL(url);
+  const payload = body == null ? '' : JSON.stringify(body);
+
+  return new Promise((resolve, reject) => {
+    const request = https.request({
+      protocol: parsed.protocol,
+      hostname: parsed.hostname,
+      port: parsed.port || 443,
+      path: `${parsed.pathname}${parsed.search}`,
+      method,
+      timeout: 60000,
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        ...(payload ? { 'content-length': Buffer.byteLength(payload) } : {}),
+        ...headers,
+      },
+    }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        let data;
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          reject(new Error(`GRM retornou conteúdo inválido (HTTP ${response.statusCode}).`));
+          return;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          const error = new Error(`GRM respondeu HTTP ${response.statusCode}: ${data.message || 'erro'}`);
+          error.statusCode = response.statusCode;
+          reject(error);
+          return;
+        }
+        resolve(data);
+      });
+    });
+
+    request.on('timeout', () => request.destroy(new Error('Timeout ao consultar o GRM.')));
+    request.on('error', reject);
+    request.end(payload || undefined);
+  });
+}
+
+function postJson(url, body, headers = {}) {
+  return requestJson(url, 'POST', body, headers);
+}
+
+function formatDateBr(date) {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+}
+
 function calculateDateRange() {
   const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const pastDate = new Date(today);
-  pastDate.setDate(today.getDate() - 29);
-  const formatDate = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-  return { from: formatDate(pastDate), to: formatDate(today) };
+  pastDate.setDate(today.getDate() - (DAYS_BACK - 1));
+  return { from: formatDateBr(pastDate), to: formatDateBr(today) };
 }
 
 function toIso(brDate) {
@@ -48,7 +170,7 @@ function clean(value) {
 function normalizeText(value) {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
@@ -94,34 +216,52 @@ function toIsoDateValue(value) {
   return null;
 }
 
-async function login(page) {
-  log('INFO', 'Iniciando login...');
-  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
-  await page.type('input#input-v-2', process.env.GRMSERVER_USER);
-  await page.type('input#input-v-5', process.env.GRMSERVER_PASSWORD);
-  await Promise.all([page.click('button.submit-btn'), page.waitForNavigation({ waitUntil: 'networkidle2' })]);
-  log('SUCCESS', 'Login realizado');
+async function login() {
+  const userEmail = requiredEnv('GRMSERVER_USER');
+  const userPass = requiredEnv('GRMSERVER_PASSWORD');
+  const response = await postJson(`${GRM_BASE_URL}user/login`, {
+    userEmail,
+    userPass,
+    loginInfo: {
+      ip: '', browser: 'GRM API Agent', browserVersion: '1.0',
+      engine: 'Node.js', engineVersion: process.version,
+      platform: process.platform, screenSize: '', windowSize: '',
+    },
+  }, GRM_WEB_HEADERS);
+  if (!response.result || !response.token) throw new Error(`Login GRM recusado: ${response.message || 'sem token'}`);
+  return response.token;
 }
 
-async function fetchReportApi(page) {
-  const dateRange = calculateDateRange();
-  log('INFO', `Consultando API de Resultado Diário: ${dateRange.from} até ${dateRange.to}`);
-  const payload = await page.evaluate(async ({ from, to }) => {
-    let token = '';
-    for (let i = 0; i < localStorage.length; i += 1) {
-      try { const value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value?.userToken) token = value.userToken; } catch (_) {}
-    }
-    const response = await fetch('/api/reports/classification/getDailyResultReport', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ requestDateFrom: from, requestDateTo: to, addValues: 'S' }),
-    });
-    const json = await response.json();
-    if (!response.ok || !json.result) throw new Error(json.message || `HTTP ${response.status}`);
-    return json.searchData || [];
-  }, { from: dateRange.from, to: dateRange.to });
+async function fetchResultadoDiarioApi(token, dateRange) {
+  const response = await postJson(
+    `${GRM_BASE_URL}reports/classification/getDailyResultReport`,
+    { requestDateFrom: dateRange.from, requestDateTo: dateRange.to, addValues: 'S' },
+    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` },
+  );
+  if (!response.result) {
+    const error = new Error(`Consulta de Resultado Diário recusada: ${response.message || 'erro GRM'}`);
+    error.requiresLogin = Boolean(response.logoutUser);
+    throw error;
+  }
+  if (!Array.isArray(response.searchData)) throw new Error('Resposta do GRM não contém searchData.');
+  return response.searchData;
+}
 
-  const data = payload.map((row) => ({
+// Busca com retry de login em caso de 401/logoutUser, devolvendo o token
+// (possivelmente renovado).
+async function fetchComRelogin(token, dateRange) {
+  try {
+    return { rows: await fetchResultadoDiarioApi(token, dateRange), token };
+  } catch (error) {
+    if (!error.requiresLogin && error.statusCode !== 401) throw error;
+    log('WARN', 'Token expirado, refazendo login...');
+    const novoToken = await login();
+    return { rows: await fetchResultadoDiarioApi(novoToken, dateRange), token: novoToken };
+  }
+}
+
+function mapApiRowsToFriendlyKeys(rows) {
+  const data = rows.map((row) => ({
     'O.S.': row.sorCode,
     Contrato: row.sorContract,
     Produto: row.proName,
@@ -158,121 +298,6 @@ async function fetchReportApi(page) {
     _api: row,
   }));
   log('SUCCESS', `${data.length} linhas recebidas pela API`);
-  return data;
-}
-
-async function ensureAddValuesSim(page) {
-  const field = REPORT_CONFIG.incluirValoresField;
-
-  const already = await page.evaluate((sel) => {
-    const input = document.querySelector(sel);
-    const wrap = input?.closest('.v-field__input');
-    const text = wrap?.querySelector('.v-autocomplete__selection-text')?.textContent?.trim();
-    return text || null;
-  }, field);
-
-  if (already && /^sim$/i.test(already)) {
-    log('INFO', 'Campo "Incluir valores" já está em "Sim".');
-    return;
-  }
-
-  log('INFO', 'Selecionando "Sim" no campo "Incluir valores" (necessário para trazer Embarcado/Afla/Vomitoxina/etc.)...');
-  await page.click(field);
-  await page.waitForTimeout(500);
-
-  const selected = await page.evaluate(() => {
-    const item = Array.from(document.querySelectorAll('.v-overlay--active.v-menu .v-list-item, .v-overlay--active.v-menu [role="option"]'))
-      .find((el) => /^sim$/i.test((el.textContent || '').trim()));
-    if (item) { item.click(); return true; }
-    return false;
-  });
-  await page.waitForTimeout(400);
-
-  if (!selected) {
-    log('WARN', 'Não encontrei a opção "Sim" no campo "Incluir valores" — o relatório pode vir sem as colunas de valor.');
-  } else {
-    log('SUCCESS', '"Incluir valores" definido como "Sim".');
-  }
-}
-
-async function downloadReport(page) {
-  log('INFO', `Navegando para ${REPORT_CONFIG.name}...`);
-  await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2' });
-  await page.waitForTimeout(2000);
-
-  await ensureAddValuesSim(page);
-
-  const dateRange = calculateDateRange();
-  log('INFO', `Preenchendo datas: ${dateRange.from} até ${dateRange.to}`);
-  await page.type(REPORT_CONFIG.dateFields.from, dateRange.from);
-  await page.keyboard.press('Tab');
-  await page.type(REPORT_CONFIG.dateFields.to, dateRange.to);
-  await page.keyboard.press('Tab');
-
-  log('INFO', 'Clicando em Atualizar...');
-  await page.click('.dailyResultReport-act-update button');
-  log('INFO', 'Aguardando o GRM processar o relatório e liberar o XLS...');
-  await page.waitForSelector('.dailyResultReport-daily-result-report-to-xls button:not([disabled])', { timeout: 120000 });
-
-  log('INFO', 'Clicando em XLS...');
-  const tempDir = setupDownloadDir('resultado-diario');
-
-  const client = await page.target().createCDPSession();
-  await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: tempDir });
-  await client.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: tempDir, eventsEnabled: true });
-
-  await page.waitForSelector(REPORT_CONFIG.xlsSelector, { timeout: 30000 });
-  await page.click(REPORT_CONFIG.xlsSelector);
-  await page.waitForTimeout(500);
-  await page.evaluate(() => {
-    const item = Array.from(document.querySelectorAll('.v-overlay--active.v-menu .v-list-item, .v-overlay--active.v-menu [role="option"]'))
-      .find(el => /modelo padr/i.test(el.textContent || ''));
-    if (item) item.click();
-  });
-
-  return waitForFileDownload(tempDir, 120000);
-}
-
-function normalizeHeaderCell(value) {
-  return String(value ?? '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().trim();
-}
-
-// Com "Incluir valores" = Sim, o GRM passa a inserir uma linha de aviso/disclaimer
-// acima do cabeçalho real. Procuramos a linha que de fato contém "Data" e "Toneladas".
-function findHeaderRowIndex(matrix) {
-  const required = ['data', 'toneladas'];
-  for (let i = 0; i < Math.min(matrix.length, 10); i += 1) {
-    const cells = (matrix[i] || []).map(normalizeHeaderCell);
-    const hits = required.filter((req) => cells.some((c) => c === req || c.includes(req)));
-    if (hits.length === required.length) return i;
-  }
-  return -1;
-}
-
-async function parseXLS(filePath) {
-  log('INFO', `Parseando arquivo: ${filePath}`);
-  const workbook = XLSX.readFile(filePath, { cellDates: true });
-  const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: null, raw: true });
-
-  const headerRowIndex = findHeaderRowIndex(matrix);
-  if (headerRowIndex === -1) {
-    log('WARN', 'Não encontrei a linha de cabeçalho real (procurando "Data" e "Toneladas") — usando a primeira linha do arquivo.');
-  }
-  const usedIndex = headerRowIndex >= 0 ? headerRowIndex : 0;
-  const headerRow = (matrix[usedIndex] || []).map((h, idx) => String(h ?? `COLUNA_${idx + 1}`).trim());
-
-  const data = matrix.slice(usedIndex + 1)
-    .map((line) => {
-      const obj = {};
-      headerRow.forEach((h, idx) => { if (h) obj[h] = line[idx] ?? null; });
-      return obj;
-    })
-    .filter((row) => Object.values(row).some((v) => v !== null && String(v).trim() !== ''));
-
-  log('INFO', `Cabeçalhos encontrados: ${headerRow.join(' | ')}`);
-  log('SUCCESS', `${data.length} linhas parseadas`);
   return data;
 }
 
@@ -342,7 +367,7 @@ function mapResultadoDiarioToPainelRows(data) {
     const hasMetric = [row.toneladas, row.embarcado, row.total_embarcado_mais_teste, row.cargas].some((v) => v !== null && v !== 0);
     if (!hasMetric) return false;
     if (row.embarcado === null) {
-      log('WARN', `O.S. ${row.os || '(sem número)'}: sem coluna "Embarcado" no XLS — verifique se "Incluir valores" está em "Sim".`);
+      log('WARN', `O.S. ${row.os || '(sem número)'}: sem "Embarcado" na resposta da API — verifique se addValues=S está sendo enviado.`);
       return false;
     }
     return true;
@@ -356,7 +381,7 @@ async function replacePainelResultadoDiario(data) {
   const rows = mapResultadoDiarioToPainelRows(data);
 
   if (!rows.length) {
-    log('WARN', `Nenhuma linha compatível com ${REPORT_CONFIG.painelTableName}. Verifique os cabeçalhos do XLS acima.`);
+    log('WARN', `Nenhuma linha compatível com ${REPORT_CONFIG.painelTableName}. Verifique a resposta da API acima.`);
     return;
   }
 
@@ -364,14 +389,12 @@ async function replacePainelResultadoDiario(data) {
 
   await replaceTablePeriodSafely(supabase, REPORT_CONFIG.painelTableName, rows, {
     dateColumn: 'data',
-    minRows: 1000,
+    minRows: MIN_ROWS,
     chunkSize: 500,
     logger: console,
   });
 
   log('SUCCESS', `Tabela ${REPORT_CONFIG.painelTableName} sincronizada com segurança: ${rows.length} registros.`);
-
-  log('SUCCESS', `${REPORT_CONFIG.painelTableName} atualizado: ${rows.length} registros`);
 }
 
 async function upsertData(data) {
@@ -402,46 +425,15 @@ async function upsertData(data) {
 }
 
 async function main() {
-  let browser;
-  try {
-    log('INFO', `=== Iniciando sincronização ${REPORT_CONFIG.name} ===`);
-    browser = await puppeteer.launch({
-      headless: true,
-      dumpio: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
-        '--disable-site-isolation-trials'
-      ],
-      defaultViewport: { width: 1920, height: 1440 }
-    });
-    const page = await browser.newPage();
-    page.setViewport({ width: 1920, height: 1440 });
-    await login(page);
-    const data = await fetchReportApi(page);
-    await upsertData(data);
-    log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
-  } catch (error) {
-    log('ERROR', `Erro fatal: ${error.message}`);
-    throw error;
-  } finally {
-    if (browser) await browser.close();
-  }
+  log('INFO', `=== Iniciando sincronização ${REPORT_CONFIG.name} (via API, janela de ${DAYS_BACK} dia(s)) ===`);
+  const token = await login();
+  const dateRange = calculateDateRange();
+  log('INFO', `Consultando API de Resultado Diário: ${dateRange.from} até ${dateRange.to}`);
+  const busca = await fetchComRelogin(token, dateRange);
+  const data = mapApiRowsToFriendlyKeys(busca.rows);
+  await upsertData(data);
+  log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
-main().then(() => process.exit(0)).catch(err => { log('ERROR', err.message); process.exit(1); });
+main().then(() => process.exit(0)).catch(err => { log('ERROR', err.stack || err.message); process.exit(1); });
 setTimeout(() => process.exit(0), 300000);

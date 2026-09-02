@@ -160,6 +160,33 @@ persistente, seguir o mesmo padrão systemd dos dois agentes acima
 (cron+flock+nohup como fallback temporário, ver `loginctl enable-linger`
 em [[painel-web-agentes-grm-sync-deploy-cpanel]]).
 
+## Resultado Diário pela API (janela de 7 dias, sem Puppeteer)
+
+`grm-sync-resultado-diario.js` já buscava os dados por `fetch` dentro da
+página (`fetchReportApi`, não pelo XLS — o fluxo de download/parse de XLS
+ficou como código morto, nunca chamado por `main()`); só o login exigia
+Puppeteer. Login virou POST direto em `user/login` (mesmo padrão dos agentes
+acima), então o script roda sem abrir Chrome. Continua como job pontual na
+esteira (`SCRIPT_MAP`, lane `fixed`) — não virou serviço contínuo, só ficou
+mais rápido.
+
+Janela default reduzida de 30 dias (`monthsBack:1`) para 7
+(`GRM_RESULTADO_DIARIO_DAYS_BACK`). `MIN_ROWS` (guarda contra promover
+staging vazia/parcial) escalado junto, de 1000 para 200 — mantido em 1000 ele
+abortaria toda promoção de uma janela 4x menor.
+
+```
+GRM_RESULTADO_DIARIO_DAYS_BACK=7     # janela de consulta (hoje + N-1 anteriores)
+GRM_RESULTADO_DIARIO_MIN_ROWS=200    # guarda contra promover a janela vazia/parcial
+```
+
+Continua gravando nas duas tabelas de sempre: `grm_resultado_diario_importacoes`
+(log bruto, upsert por `id` — não deduplica de fato, é log de auditoria) e
+`relatorio_resultado_diario` (via staging, `replaceTablePeriodSafely` — só
+substitui as datas presentes na janela consultada, histórico mais antigo
+fica intacto). Para reprocessar um período fora da janela de 7 dias, rodar
+manualmente com `GRM_RESULTADO_DIARIO_DAYS_BACK` maior.
+
 ## Rodar manualmente (debug)
 
 ```bash
