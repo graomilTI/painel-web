@@ -808,6 +808,28 @@ async function main() {
 
     const pageOuroSafra = await browser.newPage();
     if (HEADLESS) await pageOuroSafra.setViewport({ width: 1440, height: 900 });
+    // A tela cdci (Painel Classificação Ext.) carrega a Google Maps
+    // JavaScript API DUAS VEZES (2 chaves, 2 callbacks — initializeMap e
+    // callbackMap), e o callbackMap nunca resolve ("Uncaught (in promise)
+    // InvalidValueError: callbackMap is not a function", confirmado ao vivo
+    // 02/09/2026 inspecionando a página manualmente). Isso deixa o loader do
+    // Maps girando e prende a aba num loop que consome 260%+ de CPU
+    // contínuo no Chrome headless do servidor (confirmado via `top` durante
+    // um run real: 1 processo chrome, >10min de CPU acumulada num run de
+    // ~10min) — essa é a causa real dos timeouts de listagem (não lentidão
+    // de rede como se pensava antes), porque o Runtime.callFunctionOn do
+    // Puppeteer nunca consegue rodar com a thread da aba saturada. A tela
+    // de classificação não usa mapa nenhum, só a grid — bloqueando essas
+    // requisições a página nunca tenta inicializar o Maps.
+    await pageOuroSafra.setRequestInterception(true);
+    pageOuroSafra.on('request', (req) => {
+      const url = req.url();
+      if (url.includes('maps.googleapis.com') || url.includes('markerclustererplus')) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
     await loginOuroSafra(pageOuroSafra);
 
     const pageGRM = await browser.newPage();
