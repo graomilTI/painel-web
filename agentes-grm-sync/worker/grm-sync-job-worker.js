@@ -72,7 +72,9 @@ const SCRIPT_MAP = {
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-reabrir-os': 'grm-sync-reabrir-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',
-  'sync-liberacao-despesas': 'grm-sync-liberacao-despesas.js',
+  // Migrado pra API direta em 02/09 (ver memória painel-web-grm-liberacao-despesas-api-descoberta).
+  // grm-sync-liberacao-despesas.js (Puppeteer) mantido no disco pra rollback.
+  'sync-liberacao-despesas': 'grmserver-liberacao-despesas-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
