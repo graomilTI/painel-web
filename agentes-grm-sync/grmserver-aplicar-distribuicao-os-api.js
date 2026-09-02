@@ -164,15 +164,31 @@ async function carregarGruposPendentes() {
   const ids = rows.map((r) => r.id).filter(Boolean);
   const programadas = [];
   const CHUNK = 200;
+  // programacao_equipe acumula 1 linha por colaborador+dia (o os_id é reaproveitado
+  // toda vez que o número de O.S. volta a ser programado, ver comentário no topo
+  // do arquivo) — um chunk de 200 os_id pode facilmente somar mais de 1000 linhas
+  // confirmadas no histórico inteiro. Sem paginação explícita, o limite padrão do
+  // PostgREST (1000 linhas) truncava o resultado silenciosamente, fazendo O.S.
+  // programadas HOJE sumirem do mapa (achado em produção 02/09: OS 90825/Alexandre
+  // José da Silva, 767 linhas cortadas só no 1º chunk) e virarem candidatas erradas
+  // a "limpar" no Graint.
+  const PAGE_SIZE = 1000;
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK);
-    const { data, error } = await supabase
-      .from('programacao_equipe')
-      .select('os_id, colaborador_id, nome_colaborador')
-      .eq('confirmado', true)
-      .in('os_id', chunk);
-    if (error) throw new Error(`Falha ao consultar programacao_equipe: ${error.message}`);
-    programadas.push(...safe(data));
+    let offset = 0;
+    for (;;) {
+      const { data, error } = await supabase
+        .from('programacao_equipe')
+        .select('os_id, colaborador_id, nome_colaborador')
+        .eq('confirmado', true)
+        .in('os_id', chunk)
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) throw new Error(`Falha ao consultar programacao_equipe: ${error.message}`);
+      const pagina = safe(data);
+      programadas.push(...pagina);
+      if (pagina.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
   }
 
   const programadosPorOs = new Map();
