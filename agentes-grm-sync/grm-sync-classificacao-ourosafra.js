@@ -798,8 +798,16 @@ async function main() {
   let browser;
   try {
     log('INFO', `=== Classificação Ouro Safra <-> GRM${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
+    // Achado ao vivo 02/09/2026: o mesmo fluxo (login, clicar card, subir
+    // itens por página, ler a grid) roda limpo em ~8s local — só trava no
+    // servidor, sempre no mesmo ponto, com ou sem o protocolTimeout maior e
+    // com ou sem o Maps bloqueado. O único diferencial visível nos logs do
+    // servidor é o "Puppeteer old Headless deprecation warning" (o Headless
+    // ANTIGO, mais bugado/pesado, especialmente sem GPU — o servidor loga
+    // "vkCreateInstance: Found no drivers!", caindo pra renderização por
+    // software). Troca pro Headless NOVO, como o próprio aviso já sugere.
     browser = await puppeteer.launch({
-      headless: HEADLESS,
+      headless: HEADLESS ? 'new' : false,
       dumpio: true,
       args: LAUNCH_ARGS,
       defaultViewport: HEADLESS ? { width: 1440, height: 900 } : null,
