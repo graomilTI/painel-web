@@ -1323,6 +1323,19 @@ function bindTabEvents() {
   });
   _postAcInp?.addEventListener('blur', () => _postAcDrop?.classList.remove('open'));
 
+  // Prefill vindo de Compras ("Enviar via Estoque" → Correios): consome a chave
+  // uma única vez, senão o campo seria repreenchido toda vez que o usuário
+  // voltar pra aba Postagens.
+  if (state.tab === 'postagens' && _postAcInp) {
+    let nomePrefill = null;
+    try { nomePrefill = sessionStorage.getItem('cmpEnviosPrefillNome'); } catch {}
+    if (nomePrefill) {
+      try { sessionStorage.removeItem('cmpEnviosPrefillNome'); } catch {}
+      _postAcInp.value = nomePrefill;
+      _postAcInp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
   // Autocomplete destinatário na cotação
   const _acInp = area.querySelector('#search-dest-cotacao');
   const _acDrop = area.querySelector('#dest-ac-drop');
