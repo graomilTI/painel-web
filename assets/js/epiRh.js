@@ -161,7 +161,7 @@ function solBucket(s){
 }
 
 function statusPill(s){
-  const map={aguardando_gestor:['#fde68a','rgba(245,158,11,.1)','Aguardando Gestor'],pendente:['#fde68a','rgba(245,158,11,.1)','Pendente'],ok:['#bbf7d0','rgba(22,101,52,.18)','Confirmado'],em_cotacao:['#93c5fd','rgba(59,130,246,.12)','Em cotação'],em_analise:['#c4b5fd','rgba(139,92,246,.12)','Em análise'],pendente_pagamento:['#fde68a','rgba(245,158,11,.1)','Pend. Pagamento'],aguardando_nf:['#fde68a','rgba(245,158,11,.1)','Aguard. NF'],aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguard. Termo'],comprado:['#bbf7d0','rgba(22,101,52,.18)','Comprado'],concluido:['#a5b4fc','rgba(99,102,241,.14)','Concluído'],recusado:['#fecaca','rgba(220,38,38,.12)','Recusado'],cancelado:['#fecaca','rgba(220,38,38,.12)','Cancelado']};
+  const map={pendente:['#fde68a','rgba(245,158,11,.1)','Pendente'],ok:['#bbf7d0','rgba(22,101,52,.18)','Confirmado'],em_cotacao:['#93c5fd','rgba(59,130,246,.12)','Em cotação'],em_analise:['#c4b5fd','rgba(139,92,246,.12)','Em análise'],pendente_pagamento:['#fde68a','rgba(245,158,11,.1)','Pend. Pagamento'],aguardando_nf:['#fde68a','rgba(245,158,11,.1)','Aguard. NF'],aguardando_termo:['#fde68a','rgba(245,158,11,.1)','Aguard. Termo'],comprado:['#bbf7d0','rgba(22,101,52,.18)','Comprado'],concluido:['#a5b4fc','rgba(99,102,241,.14)','Concluído'],recusado:['#fecaca','rgba(220,38,38,.12)','Recusado'],cancelado:['#fecaca','rgba(220,38,38,.12)','Cancelado']};
   const [color,bg,label]=map[s]||['#cbd5e1','rgba(148,163,184,.1)',s||'-'];
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${color};background:${bg};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
 }
