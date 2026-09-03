@@ -551,24 +551,62 @@ async function marcarAgendamentoReconciliado(grupo) {
   log('INFO', `programacao_distribuicao_agendada: ${idsParaMarcar.length} pendência(s) confirmada(s) para ${grupo.coordenacao}/${grupo.data}.`);
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// getDistributionData/setDistributionData falham em ~19% das execuções (medido
+// em produção), sempre bem sucedidas ao isolar/repetir a mesma chamada — não é
+// problema de dado de nenhuma supervisão específica. Investigado: um delay FIXO
+// de retentativa (1.5s) reproduzia a MESMA falha de novo, na mesma posição da
+// sequência, run após run — sugerindo colisão com algo periódico rodando no
+// mesmo servidor com a mesma conta do Graint (ex.: os agentes *-realtime de
+// colaboradores/lista-os, que fazem polling contínuo a cada 5-8s e nunca passam
+// pela fila/lock do job-worker). Um delay ALEATÓRIO (jitter) quebra esse
+// alinhamento de fase e resolveu de forma consistente em teste (0 falhas em
+// 7 de 8 execuções seguidas; a 1 que falhou foi recuperada pela retentativa).
+// setDistributionData é seguro de reenviar porque manda o pacote inteiro
+// (estado desejado), não um diff: reenviar o mesmo payload é idempotente, seja
+// a tentativa anterior tendo aplicado ou não.
+async function comRetentativas(fn, contexto, tentativas = 3, delayMs = 1500) {
+  let ultimoErro;
+  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+    try {
+      return await fn();
+    } catch (error) {
+      ultimoErro = error;
+      if (tentativa < tentativas) {
+        const espera = delayMs + Math.floor(Math.random() * delayMs);
+        log('WARN', `${contexto}: tentativa ${tentativa}/${tentativas} falhou (${error.message}); tentando de novo em ${espera}ms.`);
+        await delay(espera);
+      }
+    }
+  }
+  throw ultimoErro;
+}
+
 async function getDistributionData(token, olsCode, sodDate) {
-  const response = await postJson(
-    `${GRM_BASE_URL}serviceOrder/distribution/getDistributionData`,
-    { olsCode, sodDate },
-    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
-  );
-  if (!response.result) throw new Error(`getDistributionData falhou: ${response.message || 'erro'}`);
-  return response;
+  return comRetentativas(async () => {
+    const response = await postJson(
+      `${GRM_BASE_URL}serviceOrder/distribution/getDistributionData`,
+      { olsCode, sodDate },
+      { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
+    );
+    if (!response.result) throw new Error(`getDistributionData falhou: ${response.message || 'erro'}`);
+    return response;
+  }, `getDistributionData (olsCode=${olsCode}, sodDate=${sodDate})`);
 }
 
 async function setDistributionData(token, staffs, sOrders, sodDate) {
-  const response = await postJson(
-    `${GRM_BASE_URL}serviceOrder/distribution/setDistributionData`,
-    { staffs, sOrders, sodDate },
-    { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
-  );
-  if (!response.result) throw new Error(`setDistributionData falhou: ${response.message || 'erro'}`);
-  return response;
+  return comRetentativas(async () => {
+    const response = await postJson(
+      `${GRM_BASE_URL}serviceOrder/distribution/setDistributionData`,
+      { staffs, sOrders, sodDate },
+      { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }
+    );
+    if (!response.result) throw new Error(`setDistributionData falhou: ${response.message || 'erro'}`);
+    return response;
+  }, `setDistributionData (sodDate=${sodDate})`);
 }
 
 async function main() {
