@@ -108,6 +108,13 @@ function renderAlertas(box,ctx){ const alertas=state.materiais.filter(m=>['baixo
 async function gerarSolicitacaoCompra(ctx,id){ const m=state.materiais.find(x=>x.id===id); const fb=document.getElementById('alertFb'); if(!m) return; const sug=Math.max(1,Number(m.estoque_minimo||0)-Number(m.estoque_atual||0)); fb.textContent='Gerando solicitação...'; fb.className='stk-feedback'; const u=usuario(ctx); const header={data_solicitacao:hoje(),solicitante_id:u.id||null,solicitante:userName(ctx),coordenacao:u.coordenacao||u.supervisao||null,tipo_solicitacao:'estoque',status:'pendente',observacoes:`Reposição automática do estoque: ${materialLabel(m)}`,created_by:u.id||null}; const {data:sol,error:e1}=await supabase.from('compras_solicitacoes').insert(header).select('id').single(); if(e1){fb.textContent=e1.message;fb.className='stk-feedback err';return;} const item={solicitacao_id:sol.id,material:m.nome,tipo:m.categoria||'Outros',tamanho:m.tamanho||null,quantidade:sug,unidade:sug,status:'pendente'}; const {error:e2}=await supabase.from('compras_itens').insert(item); if(e2){fb.textContent=e2.message;fb.className='stk-feedback err';return;} fb.textContent='Solicitação de compra gerada.'; fb.className='stk-feedback ok'; }
 function renderHistorico(box){ box.innerHTML=`<div class="section-head mt-16"><div><h3>Histórico</h3><p class="muted">Todas as entradas, saídas e ajustes recentes.</p></div><input class="stk-filter" id="histBusca" placeholder="Buscar no histórico..."></div><div id="histTabela">${tableHistorico(state.movs)}</div>`; document.getElementById('histBusca').oninput=(e)=>{ const q=norm(e.target.value); document.getElementById('histTabela').innerHTML=tableHistorico(state.movs.filter(r=>norm(`${r.tipo_movimentacao} ${r.motivo} ${r.observacao} ${r.colaborador_nome} ${r.destino} ${r.fornecedor} ${materialLabel(r.compras_estoque_materiais||{})}`).includes(q))); }; }
 
-export async function renderContent(content, userContext) { window.__stkCtx=userContext; content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Compras</div><h2>Carregando estoque...</h2><p>Preparando materiais e movimentações.</p></div></section>`; await loadBase(); renderShell(content,userContext); }
+export async function renderContent(content, userContext) {
+  window.__stkCtx=userContext;
+  const hashTab=(window.location.hash||'').replace('#','').trim();
+  if(['visao','materiais','entradas','saidas','inventario','alertas','historico'].includes(hashTab)) state.tab=hashTab;
+  content.innerHTML=`${styles()}<section class="hero-card"><div><div class="eyebrow">Compras</div><h2>Carregando estoque...</h2><p>Preparando materiais e movimentações.</p></div></section>`;
+  await loadBase();
+  renderShell(content,userContext);
+}
 
 initProtectedPage('Estoque', renderContent);
