@@ -252,15 +252,20 @@ function buildStaffSetRecordPayload(staffRow, oFlowRules, moreThenOneCompany) {
 
 // --- Regras de negócio (portadas de grm-sync-liberacao-despesas.js) ---
 
-// Trava de segurança: só Almoço, Salário de Intermitente e Serviços
-// Terceirizados podem sair como AUTO no GRM. Qualquer outro tipo tem o AUTO
-// zerado aqui, mesmo que job.regras (vindo de grm_despesas_tipos_config)
-// tenha chegado com auto=true por engano/edição manual na tabela — a
-// publicação (Edge Function) é a origem dos dados, mas este worker é quem
-// efetivamente aplica no GRM, então não confia cegamente na fonte.
+// Trava de segurança: só Almoço, Salário de Intermitente, Serviços
+// Terceirizados e qualquer tipo de despesa cujo nome contenha "Starlink"
+// (ex.: Internet Starlink) podem sair como AUTO no GRM. Qualquer outro tipo
+// tem o AUTO zerado aqui, mesmo que job.regras (vindo de
+// grm_despesas_tipos_config) tenha chegado com auto=true por engano/edição
+// manual na tabela — a publicação (Edge Function) é a origem dos dados, mas
+// este worker é quem efetivamente aplica no GRM, então não confia cegamente
+// na fonte.
 function autoObrigatorioPorTipo(tipo) {
   const key = norm(tipo);
-  return key === 'ALMOCO' || key === 'SALARIO DE INTERMITENTE' || key === 'SERVICOS TERCEIRIZADOS';
+  return key === 'ALMOCO'
+    || key === 'SALARIO DE INTERMITENTE'
+    || key === 'SERVICOS TERCEIRIZADOS'
+    || key.includes('STARLINK');
 }
 
 function canonicalRules(rules) {
