@@ -10,7 +10,7 @@ import { loadColaboradoresRegional } from './programacao-equipe.js?v=20260730-in
 
 const labels = { SEM_STATUS: 'Pendente', DISPONIVEL: 'Disponível', INATIVAR: 'Inativação solicitada', ATESTADO: 'Atestado', FALTA: 'Falta', FERIAS: 'Férias', FOLGA: 'Folga' };
 const statusCodes = ['SEM_STATUS', 'DISPONIVEL', 'INATIVAR', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
-const state = { rows: [], sort: ['data_referencia', 'desc'], filters: { data: '', regional: '', colaborador: '', status: '' }, token: 0, loading: false, statusHtml: null, statusValue: '' };
+const state = { rows: [], sort: ['data_referencia', 'desc'], token: 0, loading: false, statusHtml: null, statusValue: '' };
 
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 const idKey = (v) => { const d = String(v || '').replace(/\D/g, ''); return d.length >= 9 ? d : String(v || '').trim(); };
@@ -26,8 +26,6 @@ function styles() {
   if (document.querySelector('#confSemOsStyles')) return;
   const s = document.createElement('style'); s.id = 'confSemOsStyles'; s.textContent = `
     .conf-sem-os{min-width:840px!important}.conf-sem-os thead tr:first-child th{top:0!important;z-index:4!important}
-    .conf-sem-os-filter th{top:42px!important;z-index:3!important;padding:7px 10px!important;background:#071913!important;text-transform:none!important;letter-spacing:0!important}
-    .conf-sem-os-input{width:100%;height:34px;box-sizing:border-box;border:1px solid rgba(110,231,183,.16);border-radius:8px;background:#06150f;color:#e8f7ef;padding:0 9px;font-size:11.5px;outline:none;color-scheme:dark}
     .conf-sem-os-sort{width:100%;display:inline-flex;align-items:center;gap:7px;border:0;background:transparent;color:inherit;font:inherit;font-weight:900;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;padding:0}
     .conf-sem-os-chip{display:inline-flex;border-radius:999px;padding:6px 9px;border:1px solid rgba(148,163,184,.16);font-size:11px;font-weight:850;white-space:nowrap}
     .conf-sem-os-chip.DISPONIVEL{color:#bfdbfe;background:rgba(59,130,246,.12)}.conf-sem-os-chip.FERIAS{color:#bbf7d0;background:rgba(34,197,94,.12)}
@@ -102,15 +100,20 @@ async function load() {
 }
 
 function rows() {
-  const f = top(); const lr = norm(state.filters.regional); const lc = norm(state.filters.colaborador); const tr = norm(f.regional); const tc = norm(f.colaborador);
-  const a = state.rows.filter((r) => (!tr || norm(r.regional) === tr) && (!tc || norm(r.colaborador).includes(tc)) && (!f.status || r.status_code === f.status) && (!state.filters.data || r.data_referencia === state.filters.data) && (!lr || norm(r.regional).includes(lr)) && (!lc || norm(r.colaborador).includes(lc)) && (!state.filters.status || r.status_code === state.filters.status));
+  const f = top(); const tr = norm(f.regional); const tc = norm(f.colaborador);
+  const a = state.rows.filter((r) => (!tr || norm(r.regional) === tr) && (!tc || norm(r.colaborador).includes(tc)) && (!f.status || r.status_code === f.status));
   const [col, dir] = state.sort; const mul = dir === 'desc' ? -1 : 1; return a.sort((x, y) => { const xv = col === 'status' ? x.status_label : x[col]; const yv = col === 'status' ? y.status_label : y[col]; const c = String(xv || '').localeCompare(String(yv || ''), 'pt-BR', { sensitivity: 'base', numeric: true }); return c ? c * mul : String(x.colaborador).localeCompare(String(y.colaborador), 'pt-BR'); });
 }
 function th(col, label) { const on = state.sort[0] === col; const ic = on ? (state.sort[1] === 'asc' ? '↑' : '↓') : '↕'; return `<button class="conf-sem-os-sort" data-sem-sort="${col}" type="button">${label}<span>${ic}</span></button>`; }
-function render(focus = '') {
+function render() {
+  // Filtros ficam só no painel de cima (De/Até/Supervisão/Colaborador/Status,
+  // este último trocado por syncStatus() enquanto a aba está ativa) — a
+  // versao anterior tinha uma 2a linha de inputs dentro da propria tabela
+  // duplicando os mesmos campos, gerando duas barras de filtro fazendo a
+  // mesma coisa. Aqui só sobra a ordenação por coluna, que o painel de cima
+  // não oferece.
   if (!active()) return; syncStatus(); styles(); const t = document.querySelector('#conf-table'); if (!t) return; const rr = rows();
-  t.innerHTML = `<div class="conf-table-wrap"><table class="conf-table conf-sem-os"><thead><tr><th>${th('data_referencia', 'Data')}</th><th>${th('regional', 'Regional')}</th><th>${th('colaborador', 'Colaborador')}</th><th>${th('status', 'Status')}</th></tr><tr class="conf-sem-os-filter"><th><input class="conf-sem-os-input" type="date" data-sem-filter="data" value="${esc(state.filters.data)}"></th><th><input class="conf-sem-os-input" type="search" data-sem-filter="regional" placeholder="Filtrar regional" value="${esc(state.filters.regional)}"></th><th><input class="conf-sem-os-input" type="search" data-sem-filter="colaborador" placeholder="Filtrar colaborador" value="${esc(state.filters.colaborador)}"></th><th><select class="conf-sem-os-input" data-sem-filter="status">${statusOptions(state.filters.status)}</select></th></tr></thead><tbody>${rr.length ? rr.map((r) => `<tr><td>${br(r.data_referencia)}</td><td><strong>${esc(r.regional)}</strong></td><td><strong>${esc(r.colaborador)}</strong></td><td><span class="conf-sem-os-chip ${esc(r.status_code)}">${esc(r.status_label)}</span></td></tr>`).join('') : '<tr><td class="conf-empty" colspan="4">Nenhum colaborador sem O.S. para os filtros selecionados.</td></tr>'}</tbody></table></div>`;
-  if (focus) { const e = t.querySelector(`[data-sem-filter="${focus}"]`); e?.focus(); if (e && typeof e.setSelectionRange === 'function') { try { e.setSelectionRange(e.value.length, e.value.length); } catch { /* input sem seleção de texto (ex.: type=date) */ } } }
+  t.innerHTML = `<div class="conf-table-wrap"><table class="conf-table conf-sem-os"><thead><tr><th>${th('data_referencia', 'Data')}</th><th>${th('regional', 'Regional')}</th><th>${th('colaborador', 'Colaborador')}</th><th>${th('status', 'Status')}</th></tr></thead><tbody>${rr.length ? rr.map((r) => `<tr><td>${br(r.data_referencia)}</td><td><strong>${esc(r.regional)}</strong></td><td><strong>${esc(r.colaborador)}</strong></td><td><span class="conf-sem-os-chip ${esc(r.status_code)}">${esc(r.status_label)}</span></td></tr>`).join('') : '<tr><td class="conf-empty" colspan="4">Nenhum colaborador sem O.S. para os filtros selecionados.</td></tr>'}</tbody></table></div>`;
 }
 async function reload() {
   if (!active()) return; const token = ++state.token; state.loading = true; syncStatus(); const t = document.querySelector('#conf-table'); if (t) t.innerHTML = '<div class="conf-empty" style="padding:28px">Carregando colaboradores sem O.S.…</div>';
@@ -135,7 +138,7 @@ document.addEventListener('click', (e) => {
   const s = e.target.closest('[data-sem-sort]'); if (active() && s) { e.preventDefault(); e.stopPropagation(); const c = s.dataset.semSort; if (state.sort[0] === c) state.sort[1] = state.sort[1] === 'asc' ? 'desc' : 'asc'; else state.sort = [c, c === 'data_referencia' ? 'desc' : 'asc']; render(); return; }
   if (active() && e.target.closest('#conf-refresh,#conf-clear')) later(80);
 }, true);
-document.addEventListener('input', (e) => { const f = e.target.closest('[data-sem-filter]'); if (active() && f) { state.filters[f.dataset.semFilter] = f.value; render(f.dataset.semFilter); return; } if (active() && e.target.matches('#conf-colaborador')) render(); }, true);
+document.addEventListener('input', (e) => { if (active() && e.target.matches('#conf-colaborador')) render(); }, true);
 document.addEventListener('change', (e) => { if (!active()) return; if (e.target.matches('#conf-inicio,#conf-fim,#conf-regional')) later(); else if (e.target.matches('#conf-status')) render(); }, true);
 document.addEventListener('submit', (e) => { if (active() && e.target.matches('#conf-filters')) later(80); }, true);
 new MutationObserver(() => { syncStatus(); if (active() && !state.loading) { const t = document.querySelector('#conf-table'); if (t && !t.querySelector('.conf-sem-os')) later(30); } }).observe(document.body, { childList: true, subtree: true });
