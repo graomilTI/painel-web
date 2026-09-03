@@ -776,9 +776,20 @@ async function coletarDadosPagamento(forma,area){
 }
 function updatePagamentoFields(area,forma){
   const label=area.querySelector('#payLabel'); const input=area.querySelector('#payData'); const fileWrap=area.querySelector('#payFileWrap');
+  const linkCols=area.querySelectorAll('.pay-link-th,.pay-link-td');
+  if(forma==='LINK'){
+    // Compra por link de produto: cada item tem o link do seu próprio
+    // produto (site diferente, carrinho diferente) — Financeiro adiciona
+    // cada um ao carrinho e paga. Some o campo único de "link de pagamento".
+    if(label) label.style.display='none';
+    if(fileWrap) fileWrap.style.display='none';
+    linkCols.forEach(el=>el.style.display='');
+    return;
+  }
+  linkCols.forEach(el=>el.style.display='none');
   if(!label||!input) return;
+  label.style.display='';
   if(forma==='PIX'){label.firstChild.textContent='Chave PIX';input.placeholder='Informe a chave PIX';if(fileWrap)fileWrap.style.display='none';}
-  else if(forma==='LINK'){label.firstChild.textContent='Link de pagamento';input.placeholder='Cole o link de pagamento';if(fileWrap)fileWrap.style.display='none';}
   else{label.firstChild.textContent='Boleto / URL';input.placeholder='Cole o link do boleto ou anexe abaixo';if(fileWrap)fileWrap.style.display='block';}
 }
 
@@ -791,8 +802,8 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   area.innerHTML=`<div class="section-head"><div><h3>Pagamento da compra</h3><p class="muted">Total da compra: <b>${money(total)}</b></p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||isEPI(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||isEPI(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th><th class="pay-link-th" style="display:none">Link do produto</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
       </table>
     </div>
     <div class="adm-cmp-grid mt-16">
@@ -818,16 +829,28 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   updatePagamentoFields(area,forma);
   area.querySelector('#paySend').onclick=async()=>{
     try{
-      const dados=await coletarDadosPagamento(forma,area);
       const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||'';
       const contato=area.querySelector('#payContato')?.value?.trim()||'';
       const isPatrimonio=hasCelular&&!!area.querySelector('#payPatrimonio')?.checked;
-      await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio);
+      if(forma==='LINK'){
+        // Compra por link de produto: um link por item (Financeiro adiciona
+        // cada um ao carrinho do site e paga), não um link único do grupo.
+        const dadosPorItem={};
+        for(const r of rows){
+          const link=area.querySelector(`.pay-link-input[data-id="${CSS.escape(String(r.id))}"]`)?.value?.trim()||'';
+          if(!link){ alert(`Informe o link do produto de "${r.material}".`); return; }
+          dadosPorItem[r.id]=link;
+        }
+        await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem);
+      }else{
+        const dados=await coletarDadosPagamento(forma,area);
+        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio);
+      }
     }catch(e){setMsg(e.message,true);alert(e.message);}
   };
 }
 
-async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false){
+async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null){
   if(celularAsPatrimonio){
     const celRows=itens.filter(r=>norm(r.material)==='celular');
     for(const r of celRows){
@@ -842,10 +865,19 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   if(normalItens.length){
     const normalTotal=normalItens.reduce((s,r)=>s+Number(r._valor_total||0),0);
     const descricao=`Compra: ${normalItens.map(r=>`${r.quantidade||r.unidade||1} un ${r.material}`).join(' | ')}`;
-    const payload={origem:'COMPRAS',origem_id:normalItens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+    // Compra por link de produto: um link por item — junta tudo num texto
+    // só (material: link) pro Financeiro ver de uma vez o que precisa
+    // colocar no carrinho de cada site.
+    const dadosConsolidado=dadosPorItem?normalItens.map(r=>`${r.material}: ${dadosPorItem[r.id]||''}`).join('\n'):dados;
+    // financeiro_pagamentos.forma_pagamento só aceita PIX/BOLETO/TRANSFERENCIA/
+    // CARTAO/OUTRO (constraint própria, diferente do texto livre usado em
+    // compras_itens.forma_pagamento) — LINK cai em OUTRO só nesse insert.
+    const formaFinPagamento=['PIX','BOLETO'].includes(forma)?forma:'OUTRO';
+    const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:dadosConsolidado||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
     await safe(()=>mergeOrInsertComprasPayment(payload),null);
     for(const r of normalItens){
-      const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados||null};
+      const dadosItem=dadosPorItem?(dadosPorItem[r.id]||null):dados;
+      const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null};
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
       const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
