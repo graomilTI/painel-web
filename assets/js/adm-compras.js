@@ -249,6 +249,7 @@ function singleRowHtml(r){
 function rowActionsHtml(r){
   if(state.tab==='solicitacoes') return `${iconBtn('cotar',r.id,'Cotar')}${iconBtn('aprovar_solicitar',r.id,'Solicitar aprovação')}${iconBtn('recusar',r.id,'Recusar')}`;
   if(state.tab==='cotacoes') return `${iconBtn('comprar',r.id,'Comprar')}${iconBtn('cancelar',r.id,'Cancelar')}`;
+  if(state.tab==='analise') return `${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}`;
   return '';
 }
 function cardRowHtml(r){
@@ -427,6 +428,11 @@ function renderTable(){
   if(state.tab==='cotacoes'){
     wrap.innerHTML=`<div class="adm-cmp-cards" id="admCmpBody"></div>`;
     renderCotacoesCards(document.getElementById('admCmpBody'), rows);
+    return;
+  }
+  if(state.tab==='analise'){
+    wrap.innerHTML=`<div class="adm-cmp-cards" id="admCmpBody"></div>`;
+    renderCards(document.getElementById('admCmpBody'), rows);
     return;
   }
 
