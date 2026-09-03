@@ -227,7 +227,13 @@ function cardRowHtml(r){
   </div>`;
 }
 function cardHtml(itens){
-  const s=itens[0].compras_solicitacoes||{};
+  // Usa a solicitação mais recente do grupo pra exibir gestor/coordenação/data
+  // no cabeçalho — necessário porque uniforme agrupa várias solicitações do
+  // mesmo gestor, não só uma.
+  const s=itens.reduce((best,r)=>{
+    const cur=r.compras_solicitacoes||{};
+    return (!best||(cur.data_solicitacao||'')>(best.data_solicitacao||''))?cur:best;
+  },null)||{};
   const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
   const totalQtd=itens.reduce((sum,r)=>sum+Number(r.quantidade||r.unidade||1),0);
   const ids=itens.map(r=>r.id).join(',');
@@ -239,10 +245,17 @@ function cardHtml(itens){
     <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
   </article>`;
 }
+// Uniforme agrupa por gestor (todas as solicitações pendentes dele viram um
+// card só); os demais tipos continuam agrupados por solicitação individual.
+function solicitacoesGroupKey(r){
+  const s=r.compras_solicitacoes||{};
+  if(norm(r.tipo).includes('uniforme')) return `uniforme:${norm(s.solicitante||'')}`;
+  return r.solicitacao_id||s.id||`solo:${r.id}`;
+}
 function renderCards(container,rows){
   if(!rows.length){container.innerHTML='<div class="adm-cmp-empty">Nenhum item nesta etapa.</div>'; return;}
   const groups=new Map();
-  rows.forEach(r=>{const sid=r.solicitacao_id||r.compras_solicitacoes?.id||`solo:${r.id}`; if(!groups.has(sid))groups.set(sid,[]); groups.get(sid).push(r);});
+  rows.forEach(r=>{const k=solicitacoesGroupKey(r); if(!groups.has(k))groups.set(k,[]); groups.get(k).push(r);});
   container.innerHTML=[...groups.values()].map(cardHtml).join('');
   bindCheckHandlers(container);
   wireRowActions(container);
