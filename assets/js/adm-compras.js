@@ -323,7 +323,39 @@ function renderCotacoesCards(container,rows){
 // ─── Wiring dos ícones de ação em linha ────────────────────────────────────────
 function selectOnly(id){ state.selected=new Set([String(id)]); }
 async function cancelarItem(r){ await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); setMsg('Item cancelado, voltou para SOLICITAÇÕES.'); await loadRows(); }
-async function aprovarItem(r){ const quem=prompt('Quem está aprovando?','')||null; await supabase.from('compras_itens').update({status:'pendente', aprovado_por:quem, aprovado_em:new Date().toISOString()}).eq('id',r.id); setMsg('Item aprovado, voltou para SOLICITAÇÕES.'); await loadRows(); }
+function openAprovarModal(r){
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card">
+    <div class="section-head"><div><h3>Aprovar item</h3><p class="muted">${esc(r.material)}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="adm-cmp-grid mt-16">
+      <label class="adm-cmp-full">Quem está aprovando<input id="aprQuem" placeholder="Nome de quem aprovou"></label>
+      <label class="adm-cmp-full">Anexar print da aprovação (opcional)<input id="aprAnexo" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="aprConfirmar" type="button">Aprovar</button></div>
+    <span class="adm-cmp-feedback mt-8" id="aprFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#aprConfirmar').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#aprConfirmar'); const fb=modal.querySelector('#aprFeedback');
+    btn.disabled=true; if(fb) fb.textContent='';
+    try{
+      const quem=modal.querySelector('#aprQuem')?.value?.trim()||null;
+      const file=modal.querySelector('#aprAnexo')?.files?.[0]||null;
+      let anexoUrl=null;
+      if(file){ if(fb) fb.textContent='Enviando anexo...'; anexoUrl=await uploadArquivoNotasFiscais(file,'compras/aprovacoes'); }
+      await aprovarItem(r,{quem,anexoUrl});
+      modal.classList.remove('open');
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
+  });
+}
+async function aprovarItem(r,{quem,anexoUrl}={}){
+  const payload={status:'pendente', aprovado_por:quem||null, aprovado_em:new Date().toISOString()};
+  if(anexoUrl) payload.aprovacao_anexo_url=anexoUrl;
+  await supabase.from('compras_itens').update(payload).eq('id',r.id);
+  setMsg('Item aprovado, voltou para SOLICITAÇÕES.');
+  await loadRows();
+}
 async function reprovarItem(r){ const motivo=prompt('Motivo da recusa:'); if(!motivo) return; const quem=prompt('Quem está recusando? (opcional)','')||null; await supabase.from('compras_itens').update({status:'recusado', recusado_por:quem, motivo_recusa:motivo}).eq('id',r.id); setMsg('Item reprovado.'); await loadRows(); }
 
 function wireRowActions(container){
@@ -339,7 +371,7 @@ function wireRowActions(container){
         else if(action==='recusar'){ selectOnly(r.id); await recusarSelecionados(); }
         else if(action==='comprar'){ selectOnly(r.id); abrirCompraSelecionados(); }
         else if(action==='cancelar'){ await cancelarItem(r); }
-        else if(action==='aprovar'){ await aprovarItem(r); }
+        else if(action==='aprovar'){ openAprovarModal(r); }
         else if(action==='reprovar'){ await reprovarItem(r); }
         else if(action==='finalizar'){ openFinalizarModal(r); }
       }catch(e){ setMsg(e.message,true); }
