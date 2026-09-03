@@ -208,13 +208,25 @@ async function carregarPaginado(factory, contexto) {
   return result;
 }
 
-// Coleta apenas a programação vigente da MESMA data_os.
+// Coleta a programação vigente por (OS, data), não por operacional_os.data_os.
 // programacao_equipe_ultima elimina versões antigas de programacao_dia e o mapa
 // programacao_id -> data_referencia impede que uma OS reaproveitada misture dias.
+// Importante: uma mesma OS pode ter programação confirmada em MAIS DE UMA data
+// dentro da janela (ex.: reaproveitada de um dia pro outro), e operacional_os.data_os
+// pode ficar desatualizado (ex.: ainda no dia anterior) mesmo com a OS continuando
+// ATENDER. Se a busca e o agrupamento dependessem só da data_os atual da OS, a data
+// mais antiga escondia a mais nova por dois motivos: (1) a query de operacional_os
+// nem trazia a OS pra dentro da janela de busca, e (2) o agrupamento só olhava uma
+// data por OS. O agente reconciliava contra o dia errado e dava "já está correto"
+// sem nunca ver a programação do dia certo. Corrigido buscando a equipe por
+// programacao_id (não por os_id vindo de um filtro de data_os) e agrupando por
+// todo par (OS, data) com programação confirmada na janela.
 async function carregarGruposPendentes() {
   const { inicio, fim } = janelaDatas();
 
-  const osRows = await carregarPaginado(
+  // OS "de vitrine" da janela: usadas como base e, principalmente, pra pegar
+  // OS sem NENHUMA programação confirmada (caso de limpeza de vínculo residual).
+  const osPorDataOs = await carregarPaginado(
     (offset, pageSize) => supabase
       .from('operacional_os')
       .select('*')
@@ -238,21 +250,28 @@ async function carregarGruposPendentes() {
   );
 
   const dataPorProgramacaoId = new Map();
+  const idsProgramacaoDia = [];
   for (const p of programacoesDia) {
-    if (p.id && p.data_referencia) dataPorProgramacaoId.set(String(p.id), dateKey(p.data_referencia));
+    if (p.id && p.data_referencia) {
+      dataPorProgramacaoId.set(String(p.id), dateKey(p.data_referencia));
+      idsProgramacaoDia.push(p.id);
+    }
   }
 
-  const ids = osRows.map((r) => r.id).filter(Boolean);
-  const equipeVigente = [];
+  // Busca a equipe confirmada por programacao_id (já delimitado à janela acima),
+  // não por os_id vindo de osPorDataOs — assim uma OS com programação confirmada
+  // na janela é encontrada mesmo que operacional_os.data_os esteja desatualizado
+  // (ex.: ainda no dia anterior) e por isso ficasse fora do filtro de data acima.
   const CHUNK = 200;
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
+  const equipeVigente = [];
+  for (let i = 0; i < idsProgramacaoDia.length; i += CHUNK) {
+    const chunk = idsProgramacaoDia.slice(i, i + CHUNK);
     const linhas = await carregarPaginado(
       (offset, pageSize) => supabase
         .from('programacao_equipe_ultima')
         .select('id, programacao_id, os_id, colaborador_id, nome_colaborador, confirmado')
         .eq('confirmado', true)
-        .in('os_id', chunk)
+        .in('programacao_id', chunk)
         .order('id', { ascending: true })
         .range(offset, offset + pageSize - 1),
       'Falha ao consultar programacao_equipe_ultima'
@@ -261,35 +280,66 @@ async function carregarGruposPendentes() {
   }
 
   const programadosPorOsData = new Map();
+  const osIdsComProgramacao = new Set();
   for (const p of equipeVigente) {
     const data = dataPorProgramacaoId.get(String(p.programacao_id));
     if (!data || !p.os_id) continue;
+    osIdsComProgramacao.add(String(p.os_id));
     const key = `${String(p.os_id)}|${data}`;
     const list = programadosPorOsData.get(key) || [];
     list.push(p);
     programadosPorOsData.set(key, list);
   }
 
+  // Completa com as OS que têm programação confirmada na janela mas cujo
+  // data_os ficou de fora do filtro acima (mesmo caso descrito no comentário).
+  const idsJaCarregados = new Set(osPorDataOs.map((row) => String(row.id)));
+  const idsFaltantes = [...osIdsComProgramacao].filter((id) => !idsJaCarregados.has(id));
+  const osExtras = [];
+  for (let i = 0; i < idsFaltantes.length; i += CHUNK) {
+    const chunk = idsFaltantes.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('operacional_os')
+      .select('*')
+      .eq('status_gestor', 'ATENDER')
+      .in('id', chunk);
+    if (error) throw new Error(`Falha ao consultar operacional_os por id: ${error.message}`);
+    osExtras.push(...safe(data));
+  }
+
+  const osRows = [...osPorDataOs, ...osExtras];
+  const osById = new Map(osRows.map((row) => [String(row.id), row]));
+
+  // Todo par (os_id, data) com programação confirmada participa — mesmo que a
+  // OS também tenha uma outra data com programação (ver comentário acima).
+  // O data_os atual da OS entra como fallback, só pra continuar cobrindo o caso
+  // de OS sem NENHUMA programação confirmada (limpeza de vínculo residual).
+  const paresOsData = new Set(programadosPorOsData.keys());
+  for (const row of osRows) {
+    const data = dateKey(row.data_os || row.configurada_em);
+    if (data) paresOsData.add(`${String(row.id)}|${data}`);
+  }
+
   const grupos = new Map();
   let ignoradasSemSupervisao = 0;
 
-  for (const row of osRows) {
-    const data = dateKey(row.data_os || row.configurada_em);
-    const coord = coordOf(row);
+  for (const par of paresOsData) {
+    const [osId, data] = par.split('|');
+    const row = osById.get(osId);
+    if (!row) continue; // programação aponta pra OS que não está mais ATENDER na janela
     if (!data || !dataAceitaNoGraint(data)) continue;
+
+    const coord = coordOf(row);
     if (!coord) {
       ignoradasSemSupervisao += 1;
       continue;
     }
 
-    const programados = uniqueByNormalizedName(
-      programadosPorOsData.get(`${String(row.id)}|${data}`) || []
-    );
-
     // Programação é a fonte de verdade: toda OS ATENDER na janela é reconciliada.
     // Se não houver colaborador confirmado nessa data, o conjunto esperado é vazio
     // e qualquer vínculo residual no Graint será removido. Isso também corrige OS
     // PENDENTE que possam ter sido parcialmente alteradas por execuções anteriores.
+    const programados = uniqueByNormalizedName(programadosPorOsData.get(par) || []);
 
     const key = `${data}|${normalize(coord)}`;
     if (!grupos.has(key)) grupos.set(key, { data, coordenacao: coord, itens: [] });
@@ -466,6 +516,41 @@ async function processarSupervisao(token, olsCode, grupo) {
   );
 }
 
+// Marca em programacao_distribuicao_agendada como processada(s) só a(s) pendência(s)
+// da MESMA supervisão+data que este grupo acabou de reconciliar de fato no Graint.
+// Antes disso era o cron das 02h que marcava processado=true na hora de enfileirar
+// o job, sem esperar ele rodar — então um job travado/rodando por outro motivo já
+// "consumia" a pendência sem nunca ter reconciliado aquela supervisão/data.
+async function marcarAgendamentoReconciliado(grupo) {
+  const { data: pendentes, error } = await supabase
+    .from('programacao_distribuicao_agendada')
+    .select('id, supervisao')
+    .eq('data_referencia', grupo.data)
+    .eq('processado', false);
+
+  if (error) {
+    log('WARN', `Falha ao consultar programacao_distribuicao_agendada (${grupo.data}/${grupo.coordenacao}): ${error.message}`);
+    return;
+  }
+
+  const idsParaMarcar = safe(pendentes)
+    .filter((p) => normalize(p.supervisao) === normalize(grupo.coordenacao))
+    .map((p) => p.id);
+  if (!idsParaMarcar.length) return;
+
+  const { error: updateError } = await supabase
+    .from('programacao_distribuicao_agendada')
+    .update({ processado: true, processado_em: new Date().toISOString() })
+    .in('id', idsParaMarcar);
+
+  if (updateError) {
+    log('WARN', `Falha ao marcar programacao_distribuicao_agendada como processado (${grupo.data}/${grupo.coordenacao}): ${updateError.message}`);
+    return;
+  }
+
+  log('INFO', `programacao_distribuicao_agendada: ${idsParaMarcar.length} pendência(s) confirmada(s) para ${grupo.coordenacao}/${grupo.data}.`);
+}
+
 async function getDistributionData(token, olsCode, sodDate) {
   const response = await postJson(
     `${GRM_BASE_URL}serviceOrder/distribution/getDistributionData`,
@@ -531,6 +616,7 @@ async function main() {
           throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
         }
         await processarSupervisao(token, olsCode, grupo);
+        if (!DRY_RUN) await marcarAgendamentoReconciliado(grupo);
         ok += 1;
       } catch (error) {
         falhas += 1;
