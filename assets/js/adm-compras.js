@@ -3,10 +3,10 @@ import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const TABS = [
-  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS']
+  ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
 ];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando Termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { tab:'solicitacoes', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoCache:{} };
+const state = { tab:'solicitacoes', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoCache:{}, gruposSeparados:new Set(), catalogo:[] };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -60,14 +60,74 @@ async function notifyByConfig(setor, message){
   const cfgs=await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor',setor).eq('ativo',true).limit(10));
   let ok=0; for(const cfg of cfgs){ if(!cfg.telefone) continue; try{const res=await fetch('/api/botconversa/send-message',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({empresa:cfg.empresa||'Grao 1000',nome:cfg.nome||setor,telefone:cfg.telefone,cpf:cfg.cpf||'',mensagem:message})}); if(res.ok) ok++;}catch(e){console.warn(e)}} return ok;
 }
+function setCatalogoMsg(msg,err=false){const el=document.getElementById('admCmpCatalogoFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
+async function loadCatalogoRows(){
+  state.catalogo=await safe(()=>supabase.from('compras_catalogo').select('*').order('material'));
+  renderCatalogoTable();
+}
+function renderCatalogoTable(){
+  const body=document.getElementById('admCmpCatalogoBody');
+  if(!body) return;
+  if(!state.catalogo.length){ body.innerHTML='<tr><td colspan="5" class="adm-cmp-empty">Nenhum material cadastrado.</td></tr>'; return; }
+  body.innerHTML=state.catalogo.map(c=>`<tr>
+    <td>${esc(c.material)}</td><td>${esc(c.tipo)}</td><td>${esc(c.observacao||'-')}</td>
+    <td>${c.ativo?'<span class="adm-cmp-status comprado">Ativo</span>':'<span class="adm-cmp-status recusado">Inativo</span>'}</td>
+    <td><button class="btn btn-small btn-secondary" data-cat-editar="${esc(c.id)}" type="button">Editar</button> <button class="btn btn-small btn-secondary" data-cat-toggle="${esc(c.id)}" type="button">${c.ativo?'Inativar':'Reativar'}</button></td>
+  </tr>`).join('');
+  body.querySelectorAll('[data-cat-toggle]').forEach(b=>b.onclick=()=>toggleCatalogoAtivo(b.dataset.catToggle).catch(e=>setCatalogoMsg(e.message,true)));
+  body.querySelectorAll('[data-cat-editar]').forEach(b=>b.onclick=()=>abrirEditarCatalogoModal(b.dataset.catEditar));
+}
+function abrirEditarCatalogoModal(id){
+  const item=state.catalogo.find(c=>String(c.id)===String(id));
+  if(!item) return;
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>Editar material</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid mt-16"><label>Material<input id="catEditMaterial" value="${esc(item.material)}"></label><label>Tipo<select id="catEditTipo"><option value="Uniforme"${item.tipo==='Uniforme'?' selected':''}>Uniforme</option><option value="Patrimonio"${item.tipo==='Patrimonio'?' selected':''}>Patrimônio</option><option value="EPI"${item.tipo==='EPI'?' selected':''}>EPI</option><option value="Outros"${item.tipo==='Outros'?' selected':''}>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catEditObs" value="${esc(item.observacao||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catSalvar" type="button">Salvar</button><span class="adm-cmp-feedback" id="catEditFeedback"></span></div></div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#catSalvar').onclick=async()=>{
+    const material=modal.querySelector('#catEditMaterial').value.trim();
+    const tipo=modal.querySelector('#catEditTipo').value;
+    const observacao=modal.querySelector('#catEditObs').value.trim()||null;
+    if(!material){ modal.querySelector('#catEditFeedback').textContent='Informe o material.'; return; }
+    const {error}=await supabase.from('compras_catalogo').update({material:material.toUpperCase(),tipo,observacao}).eq('id',id);
+    if(error){ modal.querySelector('#catEditFeedback').textContent=error.message; return; }
+    modal.classList.remove('open');
+    await loadCatalogoRows();
+  };
+}
+async function adicionarCatalogoItem(){
+  const material=document.getElementById('catNovoMaterial')?.value.trim();
+  const tipo=document.getElementById('catNovoTipo')?.value;
+  const observacao=document.getElementById('catNovaObs')?.value.trim()||null;
+  if(!material){ setCatalogoMsg('Informe o nome do material.',true); return; }
+  const {error}=await supabase.from('compras_catalogo').insert({material:material.toUpperCase(),tipo,observacao});
+  if(error){ setCatalogoMsg(error.message,true); return; }
+  document.getElementById('catNovoMaterial').value='';
+  document.getElementById('catNovaObs').value='';
+  setCatalogoMsg('Material adicionado ao catálogo.');
+  await loadCatalogoRows();
+}
+async function toggleCatalogoAtivo(id){
+  const item=state.catalogo.find(c=>String(c.id)===String(id));
+  if(!item) return;
+  const {error}=await supabase.from('compras_catalogo').update({ativo:!item.ativo}).eq('id',id);
+  if(error){ setCatalogoMsg(error.message,true); return; }
+  await loadCatalogoRows();
+}
+
 async function loadRows(){
-  const wrap=document.getElementById('admCmpBody')?.closest('.adm-cmp-table-wrap');
+  const itensSection=document.getElementById('admCmpItensSection');
+  const catalogoSection=document.getElementById('admCmpCatalogoSection');
+  if(itensSection) itensSection.style.display=state.tab==='catalogo'?'none':'';
+  if(catalogoSection) catalogoSection.style.display=state.tab==='catalogo'?'':'none';
+  if(state.tab==='catalogo'){ await loadCatalogoRows(); return; }
+  const wrap=document.getElementById('admCmpListWrap');
   wrap?.classList.add('is-loading');
   try{
     const statusByTab={solicitacoes:['pendente'],cotacoes:['em_cotacao'],analise:['em_analise'],aguardando:['pendente_pagamento'],nf:['aguardando_nf'],termos:['aguardando_termo'],comprados:['comprado'],recusados:['recusado']};
     let q=supabase.from('compras_itens').select('*, compras_solicitacoes(*)').order('created_at',{ascending:false}).limit(500);
     const statuses=statusByTab[state.tab]||[]; if(statuses.length) q=q.in('status',statuses);
-    const {data,error}=await q; if(error){document.getElementById('admCmpBody').innerHTML=`<tr><td colspan="9" class="adm-cmp-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</td></tr>`;return;}
+    const {data,error}=await q; if(error){if(wrap) wrap.innerHTML=`<div class="adm-cmp-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</div>`;return;}
     state.rows=data||[]; state.selected.clear(); renderTable(); updateKpis();
   } finally {
     wrap?.classList.remove('is-loading');
@@ -85,22 +145,27 @@ function updateSelCount(){
   if(el) el.textContent=state.selected.size?`${state.selected.size} selecionado(s)`:'';
 }
 function bindCheckHandlers(body){
+  const rowSel='tr, .adm-cmp-card-row';
   body.querySelectorAll('[data-check]').forEach(c=>{
     c.checked=state.selected.has(c.dataset.check);
-    c.closest('tr')?.classList.toggle('is-selected',c.checked);
+    c.closest(rowSel)?.classList.toggle('is-selected',c.checked);
     c.onchange=()=>{
       c.checked?state.selected.add(c.dataset.check):state.selected.delete(c.dataset.check);
-      c.closest('tr')?.classList.toggle('is-selected',c.checked);
+      c.closest(rowSel)?.classList.toggle('is-selected',c.checked);
       updateSelCount();
     };
   });
   body.querySelectorAll('[data-check-group]').forEach(c=>{
     const ids=c.dataset.checkGroup.split(',');
     c.checked=ids.every(id=>state.selected.has(id));
-    c.closest('tr')?.classList.toggle('is-selected',c.checked);
+    c.closest(rowSel)?.classList.toggle('is-selected',c.checked);
     c.onchange=()=>{
       ids.forEach(id=>c.checked?state.selected.add(id):state.selected.delete(id));
-      c.closest('tr')?.classList.toggle('is-selected',c.checked);
+      c.closest(rowSel)?.classList.toggle('is-selected',c.checked);
+      ids.forEach(id=>{
+        const child=body.querySelector(`[data-check="${CSS.escape(id)}"]`);
+        if(child){ child.checked=c.checked; child.closest(rowSel)?.classList.toggle('is-selected',c.checked); }
+      });
       updateSelCount();
     };
   });
@@ -117,16 +182,179 @@ function groupKey(r, useNf=false){
   return `solo:${r.id}`;
 }
 
+// ─── Ícones de ação em linha (mesmo padrão visual de Conferência) ─────────────
+const ICONS={
+  check:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+  x:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+  tag:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L4 3a1 1 0 0 0-1 1l.24 5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.36-4.36a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>`,
+  send:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+  doc:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>`,
+};
+const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc'};
+function iconBtn(action,id,title){
+  return `<button class="adm-cmp-icon-btn" data-row-action="${esc(action)}" data-id="${esc(id)}" type="button" title="${esc(title)}" aria-label="${esc(title)}">${ICONS[ROW_ACTION_ICONS[action]]}</button>`;
+}
+function nfLinkHtml(r){
+  const nfUrl=r?.nf_url||'';
+  if(!nfUrl) return '<span class="muted">-</span>';
+  return /^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`;
+}
+function actionsCellForTab(r){
+  if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}</div>`;
+  if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}</div>`;
+  if(state.tab==='recusados') return `<small class="muted">${esc(r.motivo_recusa||'-')}</small>`;
+  if(state.tab==='comprados') return nfLinkHtml(r);
+  return '<span class="muted">-</span>';
+}
+
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
   return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
+    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
   </tr>`;
 }
 
+// ─── Cards (SOLICITAÇÕES agrupa por solicitação) ──────────────────────────────
+function rowActionsHtml(r){
+  if(state.tab==='solicitacoes') return `${iconBtn('cotar',r.id,'Cotar')}${iconBtn('aprovar_solicitar',r.id,'Solicitar aprovação')}${iconBtn('recusar',r.id,'Recusar')}`;
+  if(state.tab==='cotacoes') return `${iconBtn('comprar',r.id,'Comprar')}${iconBtn('cancelar',r.id,'Cancelar')}`;
+  return '';
+}
+function cardRowHtml(r){
+  return `<div class="adm-cmp-card-row" data-row-id="${esc(r.id)}">
+    <input type="checkbox" data-check="${esc(r.id)}">
+    <div class="adm-cmp-card-row-info">
+      <strong>${esc(r.quantidade||r.unidade||1)}x ${esc(r.material)}</strong>
+      <small>${esc(r.tipo||'-')}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}${r.colaborador_nome?` · ${esc(r.colaborador_nome)}`:''}${r.codigo?` · Cód: ${esc(r.codigo)}`:''}</small>
+    </div>
+    <div class="adm-cmp-card-row-value">${money(r.valor_total||0)}</div>
+    <div class="adm-cmp-card-row-actions">${rowActionsHtml(r)}</div>
+  </div>`;
+}
+function cardHtml(itens){
+  const s=itens[0].compras_solicitacoes||{};
+  const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
+  const ids=itens.map(r=>r.id).join(',');
+  return `<article class="adm-cmp-card">
+    <div class="adm-cmp-card-head">
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.coordenacao||s.supervisao||'')} · ${brDate(s.data_solicitacao)}</small></div></label>
+      <div class="adm-cmp-card-meta"><span>${itens.length} ${itens.length===1?'item':'itens'}</span><strong>${money(total)}</strong></div>
+    </div>
+    <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
+  </article>`;
+}
+function renderCards(container,rows){
+  if(!rows.length){container.innerHTML='<div class="adm-cmp-empty">Nenhum item nesta etapa.</div>'; return;}
+  const groups=new Map();
+  rows.forEach(r=>{const sid=r.solicitacao_id||r.compras_solicitacoes?.id||`solo:${r.id}`; if(!groups.has(sid))groups.set(sid,[]); groups.get(sid).push(r);});
+  container.innerHTML=[...groups.values()].map(cardHtml).join('');
+  bindCheckHandlers(container);
+  wireRowActions(container);
+}
+
+// ─── Cards (COTAÇÕES agrupa por gestor+cidade — auto, com "Separar") ──────────
+// Itens sem cidade informada caem sozinhos (não agrupa às cegas quando não há
+// como confirmar que é a mesma compra).
+function groupKeyCotacao(r){
+  const s=r.compras_solicitacoes||{};
+  const cidade=norm(s.cidade||'');
+  const gestor=norm(s.solicitante||'');
+  if(!cidade||!gestor) return `solo:${r.id}`;
+  return `cot:${gestor}|${cidade}`;
+}
+function cotacaoMessage(rows){
+  const linhas=rows.map(r=>`${r.quantidade||r.unidade||1} un | ${r.material}${r.tamanho?` | ${r.tamanho}`:''}`).join('\n');
+  return `Solicitação de cotação\n${linhas}\n\nO fornecedor emite Nota Fiscal?`;
+}
+async function gerarMensagemCotacao(rows){
+  if(!rows.length) return;
+  const msg=cotacaoMessage(rows);
+  await updateItems(rows,{mensagem_cotacao:msg});
+  await navigator.clipboard?.writeText(msg).catch(()=>{});
+  setMsg('Mensagem de cotação gerada e copiada.');
+  await loadRows();
+}
+function cotacaoCardHtml(itens,gkey){
+  const s=itens[0].compras_solicitacoes||{};
+  const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
+  const ids=itens.map(r=>r.id).join(',');
+  const podeSeparar=itens.length>1&&gkey&&!gkey.startsWith('solo:');
+  return `<article class="adm-cmp-card">
+    <div class="adm-cmp-card-head">
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.cidade||'')}${s.uf?`/${esc(s.uf)}`:''}</small></div></label>
+      <div class="adm-cmp-card-meta"><span>${itens.length} ${itens.length===1?'item':'itens'}</span><strong>${money(total)}</strong>
+        <button class="btn btn-small btn-secondary" data-cotar-msg="${esc(ids)}" type="button">Gerar mensagem</button>
+        ${podeSeparar?`<button class="btn btn-small btn-secondary" data-separar-grupo="${esc(gkey)}" type="button">Separar</button>`:''}
+      </div>
+    </div>
+    <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
+  </article>`;
+}
+function renderCotacoesCards(container,rows){
+  if(!rows.length){container.innerHTML='<div class="adm-cmp-empty">Nenhum item nesta etapa.</div>'; return;}
+  const groups=new Map();
+  rows.forEach(r=>{
+    const k=state.gruposSeparados.has(groupKeyCotacao(r))?`solo:${r.id}`:groupKeyCotacao(r);
+    if(!groups.has(k)) groups.set(k,[]);
+    groups.get(k).push(r);
+  });
+  container.innerHTML=[...groups.entries()].map(([k,itens])=>cotacaoCardHtml(itens,k)).join('');
+  bindCheckHandlers(container);
+  wireRowActions(container);
+  container.querySelectorAll('[data-cotar-msg]').forEach(b=>b.onclick=()=>{
+    const ids=b.dataset.cotarMsg.split(',');
+    gerarMensagemCotacao(state.rows.filter(r=>ids.includes(String(r.id)))).catch(e=>setMsg(e.message,true));
+  });
+  container.querySelectorAll('[data-separar-grupo]').forEach(b=>b.onclick=()=>{
+    state.gruposSeparados.add(b.dataset.separarGrupo);
+    renderTable();
+  });
+}
+
+// ─── Wiring dos ícones de ação em linha ────────────────────────────────────────
+function selectOnly(id){ state.selected=new Set([String(id)]); }
+async function cancelarItem(r){ await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); setMsg('Item cancelado, voltou para SOLICITAÇÕES.'); await loadRows(); }
+async function aprovarItem(r){ const quem=prompt('Quem está aprovando?','')||null; await supabase.from('compras_itens').update({status:'pendente', aprovado_por:quem, aprovado_em:new Date().toISOString()}).eq('id',r.id); setMsg('Item aprovado, voltou para SOLICITAÇÕES.'); await loadRows(); }
+async function reprovarItem(r){ const motivo=prompt('Motivo da recusa:'); if(!motivo) return; const quem=prompt('Quem está recusando? (opcional)','')||null; await supabase.from('compras_itens').update({status:'recusado', recusado_por:quem, motivo_recusa:motivo}).eq('id',r.id); setMsg('Item reprovado.'); await loadRows(); }
+
+function wireRowActions(container){
+  container.querySelectorAll('[data-row-action]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const action=btn.dataset.rowAction;
+      if(action==='finalizar_grupo'){ openGrupoModal(btn.dataset.id); return; }
+      const r=state.rows.find(x=>String(x.id)===String(btn.dataset.id));
+      if(!r) return;
+      try{
+        if(action==='cotar'){ selectOnly(r.id); abrirCotarModal(); }
+        else if(action==='aprovar_solicitar'){ selectOnly(r.id); await solicitarAprovacao(); }
+        else if(action==='recusar'){ selectOnly(r.id); await recusarSelecionados(); }
+        else if(action==='comprar'){ selectOnly(r.id); abrirCompraSelecionados(); }
+        else if(action==='cancelar'){ await cancelarItem(r); }
+        else if(action==='aprovar'){ await aprovarItem(r); }
+        else if(action==='reprovar'){ await reprovarItem(r); }
+        else if(action==='finalizar'){ openFinalizarModal(r); }
+      }catch(e){ setMsg(e.message,true); }
+    };
+  });
+}
+
 function renderTable(){
-  const body=document.getElementById('admCmpBody');
+  const wrap=document.getElementById('admCmpListWrap');
   const rows=state.rows;
+
+  if(state.tab==='solicitacoes'){
+    wrap.innerHTML=`<div class="adm-cmp-cards" id="admCmpBody"></div>`;
+    renderCards(document.getElementById('admCmpBody'), rows);
+    return;
+  }
+  if(state.tab==='cotacoes'){
+    wrap.innerHTML=`<div class="adm-cmp-cards" id="admCmpBody"></div>`;
+    renderCotacoesCards(document.getElementById('admCmpBody'), rows);
+    return;
+  }
+
+  wrap.innerHTML=`<table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table>`;
+  const body=document.getElementById('admCmpBody');
   if(!rows.length){body.innerHTML='<tr><td colspan="9" class="adm-cmp-empty">Nenhum item nesta etapa.</td></tr>'; return;}
 
   if(state.tab==='aguardando'||state.tab==='nf'){
@@ -139,6 +367,7 @@ function renderTable(){
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const stGrp=state.tab==='nf'?'aguardando_nf':'pendente_pagamento';
       const gids=itens.map(r=>r.id).join(',');
+      const acao=`<div class="adm-cmp-row-actions">${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}</div>`;
       return `<tr class="adm-cmp-group-row">
         <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
         <td>${brDate(s0.data_solicitacao)}</td>
@@ -148,12 +377,11 @@ function renderTable(){
         <td>-</td>
         <td>${pill(stGrp)}</td>
         <td>${money(totalGrp)}</td>
-        <td><button class="btn btn-small btn-secondary" data-open-grupo="${esc(gids)}" type="button">Abrir grupo</button></td>
+        <td>${acao}</td>
       </tr>`;
     }).join('');
     bindCheckHandlers(body);
-    body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
-    body.querySelectorAll('[data-open-grupo]').forEach(b=>b.onclick=()=>openGrupoModal(b.dataset.openGrupo));
+    wireRowActions(body);
     return;
   }
 
@@ -164,34 +392,28 @@ function renderTable(){
       if(itens.length===1) return singleRowHtml(itens[0]);
       const totalGrp=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
       const s0=itens[0].compras_solicitacoes||{};
-      const nfUrl=itens[0].nf_url||'';
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const comprado_em=itens[0].comprado_em||itens[0].created_at||'';
       const gids=itens.map(r=>r.id).join(',');
-      const nfLabel=nfUrl?(/^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`):'';
       return `<tr class="adm-cmp-group-row">
         <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
         <td>${brDate(comprado_em)}</td>
         <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
         <td>${itens.length}&nbsp;itens</td>
-        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
+        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>r.codigo?`${esc(r.material)} (${esc(r.codigo)})`:esc(r.material)).join(' · ')}</small></td>
         <td>-</td>
-        <td>${pill('comprado')}${nfLabel?`<br>${nfLabel}`:''}</td>
+        <td>${pill('comprado')}</td>
         <td>${money(totalGrp)}</td>
-        <td><button class="btn btn-small btn-secondary" data-ver-grupo="${esc(gids)}" type="button">Ver grupo</button></td>
+        <td>${nfLinkHtml(itens[0])}</td>
       </tr>`;
     }).join('');
     bindCheckHandlers(body);
-    body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
-    body.querySelectorAll('[data-ver-grupo]').forEach(b=>b.onclick=()=>verGrupoCompradoModal(b.dataset.verGrupo));
     return;
   }
 
-  body.innerHTML=rows.map(r=>{const s=r.compras_solicitacoes||{}; return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td><button class="btn btn-small btn-secondary" data-open="${esc(r.id)}" type="button">Abrir</button></td>
-  </tr>`}).join('');
+  body.innerHTML=rows.map(r=>singleRowHtml(r)).join('');
   bindCheckHandlers(body);
-  body.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openItem(b.dataset.open));
+  wireRowActions(body);
 }
 function selectedRows(){return state.rows.filter(r=>state.selected.has(String(r.id)));}
 // compras_solicitacoes.status é recalculado pela trigger sync_compras_solicitacao_status()
@@ -310,7 +532,6 @@ async function confirmarCotacao(rows, fornecedores){
     }
     {const {error:caErr}=await supabase.from('compras_itens').update(update).eq('id',r.id); if(caErr&&(caErr.message?.includes("'ca'")||caErr.code==='PGRST204')){delete update.ca; await supabase.from('compras_itens').update(update).eq('id',r.id);}}
   }
-  await supabase.from('compras_cotacoes').insert({status:'em_cotacao', itens_ids:rows.map(r=>r.id), titulo:`Cotação ${new Date().toLocaleString('pt-BR')}`});
   modal.classList.remove('open');
   setMsg(`${rows.length} item(ns) enviado(s) para COTAÇÕES.`);
   await loadRows();
@@ -319,66 +540,34 @@ async function confirmarCotacao(rows, fornecedores){
 async function solicitarAprovacao(){ const rows=selectedRows(); const msg=approvalMessage(rows); await updateItems(rows,{status:'em_analise', mensagem_aprovacao:msg}); await navigator.clipboard?.writeText(msg).catch(()=>{}); setMsg('Mensagem de aprovação gerada e copiada. Itens movidos para EM ANÁLISE.'); await loadRows(); }
 async function recusarSelecionados(){ const rows=selectedRows(); const motivo=prompt('Motivo da recusa:'); if(!motivo) return; await updateItems(rows,{status:'recusado', motivo_recusa:motivo}); setMsg('Itens recusados.'); await loadRows(); }
 
-// ─── LIBERAR (sem compra, usa CA do estoque) ──────────────────────────────────
-async function buscarUltimoCaPorMaterial(material){
-  const rows=await safe(()=>supabase.from('compras_itens').select('ca,created_at').eq('material',material).eq('status','comprado').not('ca','is',null).order('created_at',{ascending:false}).limit(1));
-  return rows?.[0]?.ca||null;
-}
-async function liberarSelecionados(){
-  const rows=selectedRows();
-  if(!rows.length){setMsg('Selecione pelo menos um item para liberar.',true);return;}
-  const naoEpi=rows.filter(r=>!isEPI(r));
-  if(naoEpi.length){setMsg('Liberado é só para itens de EPI já disponíveis em estoque.',true);return;}
-  for(const r of rows){
-    let ca=r.ca||null;
-    if(!ca) ca=await buscarUltimoCaPorMaterial(r.material);
-    if(!ca&&!confirm(`Nenhum CA encontrado em compras anteriores de "${r.material}". Liberar mesmo assim, sem CA?`)) return;
-    const updPayload={status:'comprado', ca:ca||null, comprado_em:new Date().toISOString()};
-    const {error:updErr}=await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
-    if(updErr){delete updPayload.ca; await supabase.from('compras_itens').update(updPayload).eq('id',r.id);}
-    const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle();
-    if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null,status:'liberado'}).eq('compra_item_id',r.id));
-    else await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'liberado',created_at:new Date().toISOString()}]),null);
-  }
-  setMsg(`${rows.length} item(ns) liberado(s) direto do estoque, sem necessidade de compra.`);
-  await loadRows();
-}
-function openItem(id){ const r=state.rows.find(x=>String(x.id)===String(id)); if(!r)return; const s=r.compras_solicitacoes||{}; const modal=document.getElementById('admCmpModal');
-  modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>${esc(r.material)}</h3><p class="muted">${esc(s.solicitante||'-')} · ${brDate(s.data_solicitacao)} · ${pill(r.status)}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid">
-    <div><b>Quantidade:</b> ${esc(r.quantidade||r.unidade||1)}</div><div><b>Tipo:</b> <select id="mTipo"><option value="" ${!r.tipo?'selected':''}>-- Selecionar --</option><option value="EPI" ${r.tipo==='EPI'?'selected':''}>EPI</option><option value="Patrimonio" ${r.tipo==='Patrimonio'?'selected':''}>Patrimônio</option><option value="Outros" ${r.tipo==='Outros'?'selected':''}>Outros</option></select></div><div><b>Tamanho:</b> ${esc(r.tamanho||'-')}</div><div><b>Valor:</b> ${money(r.valor_total||0)}</div>
-    ${r.ca?`<div><b>CA:</b> ${esc(r.ca)}</div>`:''}
-    ${r.colaborador_nome?`<div><b>Colaborador:</b> ${esc(r.colaborador_nome)}</div>`:''}
-    <div class="adm-cmp-full"><b>Observação:</b> ${esc(s.observacoes||'-')}</div>
-  </div><div id="modalArea" class="mt-16"></div></div>`;
-  modal.classList.add('open'); modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-  modal.querySelector('#mTipo').onchange=async(ev)=>{
-    const novoTipo=ev.target.value||null;
-    await safe(()=>supabase.from('compras_itens').update({tipo:novoTipo}).eq('id',r.id));
-    r.tipo=novoTipo;
-    await loadRows();
-  };
-  renderModalArea(r);
-}
-function renderModalArea(r){ const area=document.getElementById('modalArea'); if(!area)return;
-  if(r.status==='em_cotacao') area.innerHTML=`<h3>Cotação</h3><div class="adm-cmp-grid"><label>Valor unitário<input id="mValor" type="number" step="0.01" value="${esc(r.valor_unitario||'')}"></label><label>Total<input id="mTotal" readonly value="${esc(r.valor_total||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mComprar" type="button">COMPRAR</button><button class="btn btn-danger" id="mCancelar" type="button">CANCELAR</button></div>`;
-  else if(r.status==='em_analise') area.innerHTML=`<h3>Análise</h3><div class="adm-cmp-grid"><label>Quem aprovou/recusou<input id="mAprovador" list="aprovadores" placeholder="Nome do colaborador"></label><label>Motivo/observação<input id="mMotivo" placeholder="Obrigatório se recusar"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mAprovar" type="button">APROVADO</button><button class="btn btn-danger" id="mReprovar" type="button">RECUSADO</button></div>`;
-  else if(r.status==='aguardando_termo') area.innerHTML=`<h3>Aguardando Termo</h3><p class="muted" style="line-height:1.7">Este item está aguardando a assinatura do termo no módulo <b>Termos &gt; Celular</b>.<br>Após a assinatura, o Financeiro receberá a notificação automaticamente.</p>`;
-  else if(r.status==='aguardando_nf') area.innerHTML=`<h3>Anexar NF</h3><div class="adm-cmp-grid"><label>URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF"></label><label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label>${isEPI(r)?`<label>Nº CA (Certificado de Aprovação)<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}<label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mFinalizar" type="button">Finalizar compra</button>${r.comprovante_url?`<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank">Abrir comprovante</a>`:''}</div><span class="adm-cmp-feedback mt-8" id="nfFeedback"></span>`;
-  else area.innerHTML=`<p class="muted">Use os botões da tela principal para movimentar este item.</p>`;
-  const valor=area.querySelector('#mValor'), total=area.querySelector('#mTotal'); if(valor) valor.oninput=()=>{ total.value=(Number(valor.value||0)*Number(r.quantidade||r.unidade||1)).toFixed(2); };
-  area.querySelector('#mComprar')?.addEventListener('click',()=>openPagamento(r, Number(total.value||0), Number(valor.value||0)));
-  area.querySelector('#mCancelar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente'}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mAprovar')?.addEventListener('click',async()=>{await supabase.from('compras_itens').update({status:'pendente', aprovado_por:area.querySelector('#mAprovador').value.trim()||null, aprovado_em:new Date().toISOString()}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mReprovar')?.addEventListener('click',async()=>{const motivo=area.querySelector('#mMotivo').value.trim(); if(!motivo){alert('Informe o motivo.');return;} await supabase.from('compras_itens').update({status:'recusado', recusado_por:area.querySelector('#mAprovador').value.trim()||null, motivo_recusa:motivo}).eq('id',r.id); document.getElementById('admCmpModal').classList.remove('open'); await loadRows();});
-  area.querySelector('#mFinalizar')?.addEventListener('click',async()=>{
-    const btn=area.querySelector('#mFinalizar'); const fb=area.querySelector('#nfFeedback');
+// ─── FINALIZAR NF (modal dedicado, chamado pelo ícone "Finalizar") ────────────
+function openFinalizarModal(r){
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card">
+    <div class="section-head"><div><h3>Finalizar compra</h3><p class="muted">${esc(r.material)}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="adm-cmp-grid mt-16">
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF"></label>
+      <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label>
+      ${isEPI(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
+      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mFinalizar" type="button">Finalizar compra</button>${r.comprovante_url?`<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank">Abrir comprovante</a>`:''}</div>
+    <span class="adm-cmp-feedback mt-8" id="nfFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#mFinalizar').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#mFinalizar'); const fb=modal.querySelector('#nfFeedback');
     btn.disabled=true; if(fb) fb.textContent='';
     try{
-      const file=area.querySelector('#mNfFile')?.files?.[0]||null;
-      if(file){if(fb)fb.textContent='Enviando arquivo...'; const url=await uploadArquivoNotasFiscais(file,'compras/nf'); area.querySelector('#mNf').value=url;}
-      await finalizarCompra(r);
-    }catch(e){if(fb){fb.textContent=e.message;fb.classList.add('err');}}
-    finally{btn.disabled=false;}
+      const file=modal.querySelector('#mNfFile')?.files?.[0]||null;
+      let nf=modal.querySelector('#mNf')?.value?.trim()||'';
+      if(file){ if(fb) fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf'); }
+      if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btn.disabled=false; return; }
+      const marca=modal.querySelector('#mMarca')?.value?.trim()||'';
+      const ca=isEPI(r)?(modal.querySelector('#mCa')?.value?.trim()||r.ca||null):(r.ca||null);
+      await finalizarCompra(r,{nf,marca,ca});
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
   });
 }
 
@@ -606,46 +795,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   await loadRows();
 }
 
-function openPagamento(r,total,unit){ const area=document.getElementById('modalArea'); area.innerHTML=`<h3>Pagamento</h3><p class="muted">Total da compra: <b>${money(total)}</b></p><div class="adm-cmp-grid mt-16"><label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor"></label><label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label><label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label></div><div class="adm-cmp-tabs mt-16"><button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button><button class="btn btn-secondary" data-pay="PIX" type="button">PIX</button><button class="btn btn-secondary" data-pay="LINK" type="button">LINK</button></div><div class="adm-cmp-grid"><label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label><label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label></div>${norm(r.material)==='celular'?`<label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;color:#e2e2f0"><input type="checkbox" id="payPatrimonio" style="width:16px;height:16px;cursor:pointer"> <span>Celular como patrimônio (sem termo de desconto em folha)</span></label>`:''}<div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button></div>`; let forma='BOLETO'; area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);}); updatePagamentoFields(area,forma); area.querySelector('#paySend').onclick=async()=>{ try{ const dados=await coletarDadosPagamento(forma,area); const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||''; const contato=area.querySelector('#payContato')?.value?.trim()||''; const isPatrimonio=norm(r.material)==='celular'&&!!area.querySelector('#payPatrimonio')?.checked; await enviarFinanceiro(r,total,unit,forma,dados,fornecedor,contato,isPatrimonio); }catch(e){ setMsg(e.message,true); alert(e.message); } }; }
-async function enviarFinanceiro(r,total,unit,forma,dados,fornecedor='',contato='',isPatrimonio=false){
-  if(norm(r.material)==='celular'&&isPatrimonio){
-    await safe(()=>supabase.from('termos_celular').delete().eq('compra_item_id',r.id));
-    const updPat={status:'pendente_pagamento',tipo:'Patrimonio',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null};
-    if(fornecedor) updPat.fornecedor=fornecedor;
-    const {error:patErr}=await supabase.from('compras_itens').update(updPat).eq('id',r.id);
-    if(patErr&&(patErr.message?.includes("'fornecedor'")||patErr.code==='PGRST204')){delete updPat.fornecedor; await supabase.from('compras_itens').update(updPat).eq('id',r.id);}
-    const payPat={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: CELULAR (patrimônio)`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
-    await safe(()=>mergeOrInsertComprasPayment(payPat),null);
-    await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: CELULAR (patrimônio)\nValor: ${money(total)}\nForma: ${forma}`);
-    document.getElementById('admCmpModal').classList.remove('open');
-    setMsg('Celular (patrimônio) enviado ao Financeiro. Será etiquetado após a NF.');
-    await loadRows();
-    return;
-  }
-  if(norm(r.material)==='celular'){
-    const upd={status:'aguardando_termo',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null};
-    if(fornecedor) upd.fornecedor=fornecedor;
-    const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
-    if(updErr&&(updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204')){delete upd.fornecedor; await supabase.from('compras_itens').update(upd).eq('id',r.id);}
-    await safe(()=>supabase.from('termos_celular').update({valor:total}).eq('compra_item_id',r.id));
-    document.getElementById('admCmpModal').classList.remove('open');
-    setMsg('Celular encaminhado para assinatura de termo.');
-    await loadRows();
-    return;
-  }
-  const payload={origem:'COMPRAS',origem_id:r.id,descricao:`Compra: ${r.material}`,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:total,forma_pagamento:forma,dados_pagamento:dados||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
-  await safe(()=>mergeOrInsertComprasPayment(payload),null);
-  const {error:updErr}=await supabase.from('compras_itens').update({status:'pendente_pagamento',valor_unitario:unit,valor_total:total,forma_pagamento:forma,dados_pagamento:dados||null}).eq('id',r.id);
-  if(updErr) throw new Error(`Erro ao atualizar item: ${updErr.message}`);
-  if(isEPI(r)&&(r.colaborador_id||r.colaborador_nome)){
-    await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:r.ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);
-  }
-  await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nMaterial: ${r.material}\nValor: ${money(total)}\nForma: ${forma}`);
-  document.getElementById('admCmpModal').classList.remove('open'); setMsg('Compra enviada ao Financeiro e movida para PENDENTES.'); await loadRows();
-}
-async function finalizarCompra(r){ const nf=document.getElementById('mNf')?.value?.trim()||''; if(!nf){alert('Informe a NF ou anexe um arquivo.');return;} const marca=document.getElementById('mMarca').value.trim();
-  const ca=isEPI(r)?(document.getElementById('mCa')?.value?.trim()||r.ca||null):(r.ca||null);
+async function finalizarCompra(r,{nf,marca,ca}){
+  const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
   const updPayload={status:'comprado',nf_url:nf,marca,comprado_em:new Date().toISOString()};
+  if(codigo) updPayload.codigo=codigo;
   if(isEPI(r)&&ca) updPayload.ca=ca;
   await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
   if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
@@ -705,7 +858,9 @@ function openGrupoModal(gids){
 async function finalizarCompraGrupo(itens,nf){
   for(const r of itens){
     const ca=r.ca||null;
+    const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
     const updPayload={status:'comprado',nf_url:nf,comprado_em:new Date().toISOString()};
+    if(codigo) updPayload.codigo=codigo;
     if(isEPI(r)&&ca) updPayload.ca=ca;
     await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
     if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
@@ -718,37 +873,11 @@ async function finalizarCompraGrupo(itens,nf){
   await loadRows();
 }
 
-function verGrupoCompradoModal(gids){
-  const ids=gids.split(',').map(id=>id.trim());
-  const itens=state.rows.filter(r=>ids.includes(String(r.id)));
-  if(!itens.length) return;
-  const modal=document.getElementById('admCmpModal');
-  const total=itens.reduce((s,r)=>s+Number(r.valor_total||0),0);
-  const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
-  const nfUrl=itens[0].nf_url||'';
-  const comprado_em=itens[0].comprado_em||'';
-  const nfHtml=nfUrl?(/^https?:\/\//i.test(nfUrl)?`<a class="btn btn-secondary" href="${esc(nfUrl)}" target="_blank" rel="noopener">Abrir NF</a>`:`<span style="color:#e2e2f0;font-size:14px">${esc(nfUrl)}</span>`):'<span class="muted">NF não informada</span>';
-  modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
-    <div class="section-head">
-      <div><h3>Grupo comprado</h3><p class="muted">${esc(fn||'Mesmo fornecedor')} · ${money(total)}${comprado_em?` · ${brDate(comprado_em)}`:''}</p></div>
-      <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
-    </div>
-    <div class="adm-cmp-table-wrap mt-16">
-      <table class="adm-cmp-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Marca</th><th>Valor</th></tr></thead>
-        <tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${esc(r.marca||'-')}</td><td>${money(r.valor_total||0)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="4" style="text-align:right;font-weight:700;padding:10px 12px">Total</td><td style="font-weight:800;color:#bbf7d0;padding:10px 12px">${money(total)}</td></tr></tfoot>
-      </table>
-    </div>
-    <div class="adm-cmp-actions mt-16">${nfHtml}</div>
-  </div>`;
-  modal.classList.add('open');
-  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-}
-
 function styles(){return `<style>
 .adm-cmp-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}.adm-cmp-kpi{min-height:0;padding:14px 16px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 16px}.adm-cmp-kpi h3{margin:0;font-size:13px;font-weight:700;color:var(--muted)}.adm-cmp-kpi .metric{grid-column:2;grid-row:1/3;margin:0;font-size:26px;line-height:1;font-weight:800;white-space:nowrap}.adm-cmp-kpi .muted{margin:0;font-size:12px;line-height:1.3}
-.adm-cmp-tabs,.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-tabs .active{background:#166534!important;color:#fff!important}#admCmpTabs{gap:2px!important;overflow-x:auto!important;flex-wrap:nowrap!important}#admCmpTabs>button{border:0!important;border-radius:0!important;background:transparent!important;padding:14px 16px 13px!important;color:#a9b8b1!important;font-size:13px!important;font-weight:700!important;white-space:nowrap!important;border-bottom:2px solid transparent!important}#admCmpTabs>button:hover{color:#d9fbe8!important;background:rgba(34,197,94,.035)!important}#admCmpTabs>button.active{color:#35e990!important;background:transparent!important;border-bottom-color:#22e58a!important}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;transition:opacity .15s ease}.adm-cmp-table-wrap.is-loading{opacity:.35;pointer-events:none}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.aguardando_termo{color:#c4b5fd;background:rgba(139,92,246,.12)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-empty{text-align:center;color:var(--muted)}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,0.06);border-radius:22px;padding:20px;color:#e2e2f0}.adm-cmp-modal-wide{width:min(1260px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}
+.adm-cmp-tabs,.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-tabs:not(#admCmpTabs) .active{background:#166534!important;color:#fff!important}#admCmpTabs{gap:2px!important;overflow-x:auto!important;flex-wrap:nowrap!important}#admCmpTabs>button{border:0!important;border-radius:0!important;background:transparent!important;padding:14px 16px 13px!important;color:#a9b8b1!important;font-size:13px!important;font-weight:700!important;white-space:nowrap!important;border-bottom:2px solid transparent!important;outline:none!important}#admCmpTabs>button:hover{color:#d9fbe8!important;background:rgba(34,197,94,.035)!important}#admCmpTabs>button.active{color:#35e990!important;background:transparent!important;border-bottom-color:#22e58a!important}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;transition:opacity .15s ease}.adm-cmp-table-wrap.is-loading{opacity:.35;pointer-events:none}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.aguardando_termo{color:#c4b5fd;background:rgba(139,92,246,.12)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-empty{text-align:center;color:var(--muted);padding:20px!important}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,0.06);border-radius:22px;padding:20px;color:#e2e2f0}.adm-cmp-modal-wide{width:min(1260px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}
+.adm-cmp-cards{display:flex;flex-direction:column;gap:14px}.adm-cmp-card{border:1px solid var(--line);border-radius:16px;background:rgba(15,23,42,.4);overflow:hidden}.adm-cmp-card-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:rgba(15,23,42,.65);border-bottom:1px solid var(--line);flex-wrap:wrap}.adm-cmp-card-select{display:flex;align-items:center;gap:12px;cursor:pointer}.adm-cmp-card-select input{width:18px;height:18px;cursor:pointer;flex-shrink:0}.adm-cmp-card-select strong{display:block;font-size:14px}.adm-cmp-card-select small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.adm-cmp-card-meta{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted);white-space:nowrap;flex-wrap:wrap}.adm-cmp-card-meta strong{color:#bbf7d0;font-size:16px}.adm-cmp-card-body{display:flex;flex-direction:column}.adm-cmp-card-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid rgba(148,163,184,.08);flex-wrap:wrap}.adm-cmp-card-body .adm-cmp-card-row:first-child{border-top:0}.adm-cmp-card-row input[type=checkbox]{width:17px;height:17px;cursor:pointer;flex-shrink:0}.adm-cmp-card-row-info{flex:1 1 220px;min-width:0}.adm-cmp-card-row-info strong{display:block;font-size:13.5px}.adm-cmp-card-row-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.adm-cmp-card-row-value{font-weight:700;font-size:13px;white-space:nowrap;margin-left:auto}.adm-cmp-card-row-actions,.adm-cmp-row-actions{display:flex;gap:6px;flex-shrink:0}.adm-cmp-icon-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:1px solid rgba(148,163,184,.2);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex-shrink:0}.adm-cmp-icon-btn:hover{background:rgba(34,197,94,.14)}.adm-cmp-icon-btn svg{width:16px;height:16px}.adm-cmp-icon-btn[data-row-action="comprar"],.adm-cmp-icon-btn[data-row-action="aprovar"],.adm-cmp-icon-btn[data-row-action="cotar"]{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.25);color:#68f0ac}.adm-cmp-icon-btn[data-row-action="recusar"],.adm-cmp-icon-btn[data-row-action="reprovar"],.adm-cmp-icon-btn[data-row-action="cancelar"]{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.2);color:#ff7272}.adm-cmp-icon-btn[data-row-action="aprovar_solicitar"],.adm-cmp-icon-btn[data-row-action="finalizar"],.adm-cmp-icon-btn[data-row-action="finalizar_grupo"]{background:rgba(59,130,246,.1);border-color:rgba(96,165,250,.22);color:#93c5fd}
+@media(max-width:760px){.adm-cmp-card-row-value{margin-left:44px}}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
@@ -763,12 +892,10 @@ function updateActionButtons(){
   const isSolic=tab==='solicitacoes';
   const btnCotar=document.getElementById('btnCotar');
   const btnComprar=document.getElementById('btnComprar');
-  const btnLiberar=document.getElementById('btnLiberar');
   const btnAprovar=document.getElementById('btnAprovar');
   const btnRecusar=document.getElementById('btnRecusar');
   if(btnCotar) btnCotar.style.display=isSolic?'inline-flex':'none';
   if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
-  if(btnLiberar) btnLiberar.style.display=isSolic?'inline-flex':'none';
   if(btnAprovar) btnAprovar.style.display=isSolic?'inline-flex':'none';
   if(btnRecusar) btnRecusar.style.display=(isSolic||isCotacoes||tab==='analise')?'inline-flex':'none';
   setMsg('');
@@ -776,526 +903,15 @@ function updateActionButtons(){
 
 initProtectedPage('Compras ADM', async (content)=>{
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="adm-cmp-kpis"><article class="card adm-cmp-kpi"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados</p></article><article class="card adm-cmp-kpi"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Valores informados</p></article><article class="card adm-cmp-kpi"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Exigem cadastro</p></article></section><section class="card"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnLiberar" type="button" title="Para EPI já disponível em estoque: libera pro RH com o CA da última compra, sem precisar comprar de novo">LIBERADO</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
+  content.innerHTML=`${styles()}<section class="adm-cmp-kpis" id="admCmpKpis"><article class="card adm-cmp-kpi"><h3>Itens na etapa</h3><p class="metric" id="kpiSol">0</p><p class="muted">Registros filtrados</p></article><article class="card adm-cmp-kpi"><h3>Total cotado</h3><p class="metric" id="kpiTotal">R$ 0,00</p><p class="muted">Valores informados</p></article><article class="card adm-cmp-kpi"><h3>Patrimônios</h3><p class="metric" id="kpiPat">0</p><p class="muted">Exigem cadastro</p></article></section><section class="card"><div class="section-head"><div><h3>Fila de compras</h3><p class="muted">Selecione itens específicos. A compra pode ser parcial e por fornecedores diferentes.</p></div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><div id="admCmpItensSection"><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="btnCotar" type="button">COTAR</button><button class="btn btn-primary" id="btnComprar" type="button" style="display:none">COMPRAR</button><button class="btn btn-secondary" id="btnAprovar" type="button">SOLICITAR APROVAÇÃO</button><button class="btn btn-danger" id="btnRecusar" type="button">RECUSAR</button><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div><div class="adm-cmp-table-wrap mt-16" id="admCmpListWrap"></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); document.getElementById('admCmpKpis').style.display=state.tab==='catalogo'?'none':'';updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
-  document.getElementById('btnLiberar').onclick=()=>liberarSelecionados().catch(e=>setMsg(e.message,true));
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
   document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true));
+  document.getElementById('catAdicionar').onclick=()=>adicionarCatalogoItem().catch(e=>setCatalogoMsg(e.message,true));
   updateActionButtons();
   await loadRows();
 });
 
-// ---------------------------------------------------------------------------
-// Aba EPI do Painel de Compras — versão leve.
-// Mantém os checkboxes reais dos itens e só reagrupa quando a tabela é renderizada.
-// ---------------------------------------------------------------------------
-
-let epiTabVisual = 'solicitacoes';
-let epiInternalClick = false;
-let epiApplying = false;
-let epiSort = { field: 'funcionario', dir: 'asc' };
-let epiObserverInstalled = false;
-let epiObserver = null;
-let epiDelegationInstalled = false;
-let epiApplyTimer = null;
-const epiExpanded = new Set();
-
-function normEpi(value = '') {
-  return String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
-}
-
-function moneyEpi(value) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function isEmptyRow(row) {
-  return row?.querySelector?.('.adm-cmp-empty');
-}
-
-function baseRows(body) {
-  return [...(body?.querySelectorAll(':scope > tr') || [])].filter((row) => (
-    !row.hasAttribute('data-epi-toolbar') &&
-    !row.hasAttribute('data-epi-sort-header') &&
-    !row.hasAttribute('data-epi-group-header') &&
-    !row.hasAttribute('data-epi-empty-row')
-  ));
-}
-
-function isEpiRow(row) {
-  if (!row || isEmptyRow(row)) return false;
-  const tipo = row.children?.[5]?.textContent || '';
-  const material = row.children?.[4]?.textContent || '';
-  const n = `${normEpi(tipo)} ${normEpi(material)}`;
-  return n.includes('epi') || n.includes('ca pendente') || n.includes('ca:');
-}
-
-function getColaborador(row) {
-  const materialCell = row.children?.[4];
-  if (!materialCell) return 'SEM COLABORADOR';
-  const smalls = [...materialCell.querySelectorAll('small')]
-    .map((el) => el.textContent.trim())
-    .filter(Boolean)
-    .filter((txt) => !/^tam\s*:/i.test(txt));
-  return smalls[smalls.length - 1] || 'SEM COLABORADOR';
-}
-
-function getRegional(row) {
-  const solicitanteCell = row.children?.[2];
-  const small = solicitanteCell?.querySelector?.('small')?.textContent?.trim();
-  return small || 'Não informada';
-}
-
-function getQtd(row) {
-  return Number(String(row.children?.[3]?.textContent || '1').replace(/\D+/g, '') || 1);
-}
-
-function getValor(row) {
-  const text = row.children?.[7]?.textContent || '0';
-  const clean = text.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  return Number(clean || 0);
-}
-
-function getMaterial(row, colaborador) {
-  const cell = row.children?.[4];
-  const clone = cell?.cloneNode(true);
-  clone?.querySelectorAll('small').forEach((small) => small.remove());
-  return (clone?.textContent || cell?.textContent || '')
-    .replace(colaborador, '')
-    .replace(/CA\s*:?\s*pendente/ig, '')
-    .replace(/CA\s*:?\s*\d+/ig, '')
-    .trim();
-}
-
-function compareText(a, b) {
-  const dir = epiSort.dir === 'desc' ? -1 : 1;
-  return String(a || '').localeCompare(String(b || ''), 'pt-BR', { sensitivity: 'base', numeric: true }) * dir;
-}
-
-function sortGroups(groups) {
-  return [...groups].sort((a, b) => {
-    if (epiSort.field === 'regional') {
-      const byRegional = compareText(a.regional, b.regional);
-      if (byRegional) return byRegional;
-    }
-    return compareText(a.nome, b.nome);
-  });
-}
-
-function sortLabel(field) {
-  if (epiSort.field !== field) return '↕';
-  return epiSort.dir === 'asc' ? '↑' : '↓';
-}
-
-function setSort(field) {
-  if (epiSort.field === field) epiSort = { field, dir: epiSort.dir === 'asc' ? 'desc' : 'asc' };
-  else epiSort = { field, dir: 'asc' };
-  applyEpiVisual();
-}
-
-function groupRowsFromHeader(header) {
-  const rows = [];
-  let cursor = header?.nextElementSibling;
-  while (cursor) {
-    if (
-      cursor.hasAttribute('data-epi-toolbar') ||
-      cursor.hasAttribute('data-epi-sort-header') ||
-      cursor.hasAttribute('data-epi-group-header') ||
-      cursor.hasAttribute('data-epi-empty-row')
-    ) break;
-    if (cursor.querySelector('input[type="checkbox"][data-check]')) rows.push(cursor);
-    cursor = cursor.nextElementSibling;
-  }
-  return rows;
-}
-
-function setRowsChecked(rows, checked) {
-  rows.forEach((row) => {
-    const checkbox = row.querySelector('input[type="checkbox"][data-check]');
-    if (!checkbox) return;
-    checkbox.checked = checked;
-    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-}
-
-function updateGroupState(header) {
-  const rows = groupRowsFromHeader(header);
-  const total = rows.length;
-  const selected = rows.filter((row) => row.querySelector('input[type="checkbox"][data-check]')?.checked).length;
-  const box = header?.querySelector?.('[data-epi-group-select]');
-  const status = header?.querySelector?.('[data-epi-group-status]');
-  const btn = header?.querySelector?.('[data-epi-group-check]');
-  const arrow = header?.querySelector?.('[data-epi-group-arrow]');
-  const kpi = header?.querySelector?.('[data-epi-group-kpi]');
-  if (box) {
-    box.checked = total > 0 && selected === total;
-    box.indeterminate = selected > 0 && selected < total;
-  }
-  const expanded = epiExpanded.has(header?.dataset?.epiGroupKey);
-  if (arrow) arrow.textContent = expanded ? '▾' : '▸';
-  if (kpi) kpi.title = `Clique para ${expanded ? 'recolher' : 'expandir'} e ver os itens individualmente`;
-  if (status) status.textContent = selected ? `${selected}/${total} selecionado(s)` : (expanded ? 'Marque os itens abaixo para liberar ou comprar individualmente' : 'Clique aqui para ver e marcar os itens individualmente');
-  if (btn) btn.textContent = total > 0 && selected === total ? 'Desmarcar grupo' : 'Selecionar grupo';
-}
-
-function toggleGroupExpand(header) {
-  const key = header?.dataset?.epiGroupKey;
-  if (!key) return;
-  const expand = !epiExpanded.has(key);
-  if (expand) epiExpanded.add(key); else epiExpanded.delete(key);
-  groupRowsFromHeader(header).forEach((row) => { row.style.display = expand ? '' : 'none'; });
-  updateGroupState(header);
-}
-
-function updateSummary() {
-  const body = document.getElementById('admCmpBody');
-  const toolbar = body?.querySelector('[data-epi-toolbar]');
-  if (!body || !toolbar) return;
-  const groups = [...body.querySelectorAll('[data-epi-group-select]')];
-  const checkedGroups = groups.filter((input) => input.checked).length;
-  const rows = baseRows(body).filter((row) => isEpiRow(row) && row.querySelector('input[type="checkbox"][data-check]')?.checked);
-  const unidades = rows.reduce((sum, row) => sum + getQtd(row), 0);
-  const valor = rows.reduce((sum, row) => sum + getValor(row), 0);
-  const materiais = new Map();
-  rows.forEach((row) => {
-    const colab = getColaborador(row);
-    const mat = getMaterial(row, colab) || 'EPI';
-    const key = normEpi(mat);
-    materiais.set(key, { nome: mat, qtd: (materiais.get(key)?.qtd || 0) + getQtd(row) });
-  });
-  const matText = [...materiais.values()].slice(0, 5).map((m) => `${m.qtd}x ${m.nome}`).join(' · ') || 'Nenhum grupo selecionado';
-  toolbar.querySelector('[data-epi-selected-summary]').textContent = `${checkedGroups} grupo(s) · ${rows.length} item(ns) · ${unidades} unidade(s) · ${moneyEpi(valor)}`;
-  toolbar.querySelector('[data-epi-selected-materials]').textContent = matText;
-}
-
-function syncHeaders() {
-  document.querySelectorAll('[data-epi-group-header]').forEach(updateGroupState);
-  updateSummary();
-}
-
-function toggleGroup(header, checked = null) {
-  const rows = groupRowsFromHeader(header);
-  const shouldCheck = checked ?? rows.some((row) => !row.querySelector('input[type="checkbox"][data-check]')?.checked);
-  setRowsChecked(rows, shouldCheck);
-  if (shouldCheck) {
-    const key = header?.dataset?.epiGroupKey;
-    if (key && !epiExpanded.has(key)) {
-      epiExpanded.add(key);
-      rows.forEach((row) => { row.style.display = ''; });
-    }
-  }
-  updateGroupState(header);
-  updateSummary();
-}
-
-function clearEpiRows(body) {
-  body?.querySelectorAll('[data-epi-toolbar],[data-epi-sort-header],[data-epi-group-header],[data-epi-empty-row]').forEach((row) => row.remove());
-}
-
-function makeToolbar(groups, colCount) {
-  const tr = document.createElement('tr');
-  tr.setAttribute('data-epi-toolbar', '1');
-  tr.innerHTML = `
-    <td colspan="${colCount}" style="background:rgba(15,23,42,.88);border:1px solid rgba(148,163,184,.25);padding:12px 14px">
-      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-        <div>
-          <strong style="color:#e2e8f0">Selecionar vários grupos para compra</strong>
-          <div data-epi-selected-summary style="font-size:12px;color:#bbf7d0;margin-top:4px;font-weight:700">0 grupo(s) · 0 item(ns) · 0 unidade(s) · ${moneyEpi(0)}</div>
-          <div data-epi-selected-materials style="font-size:12px;color:#94a3b8;margin-top:4px">Nenhum grupo selecionado</div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="btn btn-small btn-secondary" data-epi-select-all-groups>Selecionar todos</button>
-          <button type="button" class="btn btn-small btn-secondary" data-epi-clear-groups>Limpar seleção</button>
-        </div>
-      </div>
-    </td>`;
-  tr._epiGroups = groups;
-  return tr;
-}
-
-function makeSortHeader(colCount) {
-  const tr = document.createElement('tr');
-  tr.setAttribute('data-epi-sort-header', '1');
-  tr.innerHTML = `
-    <td colspan="${colCount}" style="background:rgba(30,41,59,.96);border-bottom:1px solid rgba(148,163,184,.28);padding:0">
-      <div style="display:grid;grid-template-columns:minmax(240px,1fr) minmax(180px,.7fr) 150px 170px;align-items:center;font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#cbd5e1">
-        <button type="button" data-epi-sort="funcionario" style="all:unset;cursor:pointer;padding:10px 14px;color:#e2e8f0">Funcionário ${sortLabel('funcionario')}</button>
-        <button type="button" data-epi-sort="regional" style="all:unset;cursor:pointer;padding:10px 14px;color:#e2e8f0">Regional/Supervisão ${sortLabel('regional')}</button>
-        <div style="padding:10px 14px;text-align:right">Valor</div>
-        <div style="padding:10px 14px;text-align:right">Ação</div>
-      </div>
-    </td>`;
-  return tr;
-}
-
-function makeGroupHeader(group, colCount, key) {
-  const totalItens = group.rows.length;
-  const totalUn = group.rows.reduce((sum, row) => sum + getQtd(row), 0);
-  const totalValor = group.rows.reduce((sum, row) => sum + getValor(row), 0);
-  const materiais = group.rows.map((row) => getMaterial(row, group.nome)).filter(Boolean).join(' · ');
-  const expanded = epiExpanded.has(key);
-  const tr = document.createElement('tr');
-  tr.setAttribute('data-epi-group-header', '1');
-  tr.dataset.epiGroupKey = key;
-  tr.innerHTML = `
-    <td colspan="${colCount}" style="background:rgba(16,185,129,.11);border-top:1px solid rgba(74,222,128,.35);border-bottom:1px solid rgba(74,222,128,.2);padding:12px 14px">
-      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
-        <div style="display:flex;gap:10px;align-items:flex-start;min-width:260px">
-          <input type="checkbox" data-epi-group-select aria-label="Selecionar grupo ${group.nome}" style="margin-top:3px;transform:scale(1.15)">
-          <div data-epi-group-kpi style="cursor:pointer" title="Clique para ${expanded ? 'recolher' : 'expandir'} e ver os itens individualmente">
-            <strong style="color:#bbf7d0"><span data-epi-group-arrow>${expanded ? '▾' : '▸'}</span> EPI — ${group.nome}</strong>
-            <div style="font-size:12px;color:#fde68a;margin-top:4px;font-weight:700">Regional/Supervisão: ${group.regional}</div>
-            <div style="font-size:12px;color:#94a3b8;margin-top:4px">${totalItens} item(ns) · ${totalUn} unidade(s) · ${materiais}</div>
-            <div data-epi-group-status style="font-size:12px;color:#bbf7d0;margin-top:4px">${expanded ? 'Marque os itens abaixo para liberar ou comprar individualmente' : 'Clique aqui para ver e marcar os itens individualmente'}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <strong style="color:#e2e8f0">${moneyEpi(totalValor)}</strong>
-          <button type="button" class="btn btn-small btn-secondary" data-epi-group-check>Selecionar grupo</button>
-        </div>
-      </div>
-    </td>`;
-  return tr;
-}
-
-function makeEmptyRow(colCount, msg) {
-  const tr = document.createElement('tr');
-  tr.setAttribute('data-epi-empty-row', '1');
-  tr.innerHTML = `<td colspan="${colCount}" class="adm-cmp-empty">${msg}</td>`;
-  return tr;
-}
-
-function applySolicitacoes(body) {
-  clearEpiRows(body);
-  const rows = baseRows(body);
-  let visible = 0;
-  rows.forEach((row) => {
-    const show = isEmptyRow(row) || !isEpiRow(row);
-    row.style.display = show ? '' : 'none';
-    if (show && !isEmptyRow(row)) visible += 1;
-  });
-  const epiCount = rows.filter(isEpiRow).length;
-  if (epiCount > 0) {
-    const colCount = rows[0]?.children?.length || 9;
-    const tr = document.createElement('tr');
-    tr.setAttribute('data-epi-empty-row', '1');
-    if (!visible) {
-      tr.innerHTML = `<td colspan="${colCount}" class="adm-cmp-empty" style="padding:24px 16px">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
-          <span>Nenhuma solicitação comum nesta etapa.</span>
-          <button type="button" class="btn btn-secondary" id="epiGoToEpiTab" style="font-weight:700;letter-spacing:.04em">
-            📋 Ver ${epiCount} solicitaç${epiCount === 1 ? 'ão' : 'ões'} de EPI pendente${epiCount === 1 ? '' : 's'}
-          </button>
-        </div>
-      </td>`;
-    } else {
-      tr.innerHTML = `<td colspan="${colCount}" style="padding:8px 14px;background:rgba(245,158,11,.08);border-top:1px solid rgba(245,158,11,.25)">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span style="font-size:13px;color:#fde68a;font-weight:700">⚠️ ${epiCount} solicitaç${epiCount === 1 ? 'ão' : 'ões'} de EPI oculta${epiCount === 1 ? '' : 's'} nesta aba.</span>
-          <button type="button" class="btn btn-small btn-secondary" id="epiGoToEpiTab" style="font-size:12px">Ver EPIs →</button>
-        </div>
-      </td>`;
-    }
-    body.appendChild(tr);
-    tr.querySelector('#epiGoToEpiTab')?.addEventListener('click', () => {
-      document.querySelector('[data-tab-epi-exclusivo]')?.click();
-    });
-  }
-}
-
-function applyEpi(body) {
-  clearEpiRows(body);
-  const rows = baseRows(body).filter((row) => !isEmptyRow(row));
-  const epiRows = rows.filter(isEpiRow);
-  const colCount = rows[0]?.children?.length || 9;
-
-  rows.forEach((row) => { row.style.display = 'none'; });
-
-  if (!epiRows.length) {
-    body.appendChild(makeEmptyRow(colCount, 'Nenhuma solicitação de EPI pendente. Depois da cotação, os EPIs seguem nas demais abas do fluxo.'));
-    return;
-  }
-
-  const map = new Map();
-  epiRows.forEach((row) => {
-    const nome = getColaborador(row);
-    const key = normEpi(nome);
-    if (!map.has(key)) map.set(key, { key, nome, regional: getRegional(row), rows: [] });
-    map.get(key).rows.push(row);
-  });
-
-  const groups = sortGroups(map.values());
-  const frag = document.createDocumentFragment();
-  frag.appendChild(makeToolbar(groups, colCount));
-  frag.appendChild(makeSortHeader(colCount));
-
-  groups.forEach((group) => {
-    const expanded = epiExpanded.has(group.key);
-    frag.appendChild(makeGroupHeader(group, colCount, group.key));
-    group.rows.forEach((row) => {
-      row.style.display = expanded ? '' : 'none';
-      row.style.borderLeft = '3px solid rgba(74,222,128,.35)';
-      frag.appendChild(row);
-    });
-  });
-
-  body.appendChild(frag);
-  syncHeaders();
-}
-
-function applyEpiVisual() {
-  if (epiApplying) return;
-  const body = document.getElementById('admCmpBody');
-  if (!body) return;
-  epiApplying = true;
-  // Desliga o observer enquanto reorganizamos o DOM: sem isso, o MutationObserver
-  // só processa a fila de mutações depois que este bloco termina (microtask), quando
-  // epiApplying já voltou a false — ele então achava que era uma mudança externa e
-  // chamava scheduleApply de novo, reconstruindo a tabela em loop e piscando tudo.
-  epiObserver?.disconnect();
-  try {
-    if (epiTabVisual === 'epi') applyEpi(body);
-    else if (epiTabVisual === 'solicitacoes') applySolicitacoes(body);
-    else {
-      clearEpiRows(body);
-      baseRows(body).forEach((row) => { row.style.display = ''; });
-    }
-  } finally {
-    epiApplying = false;
-    if (epiObserverInstalled) epiObserver?.observe(body, { childList: true });
-  }
-}
-
-function scheduleApply(delay = 120) {
-  clearTimeout(epiApplyTimer);
-  epiApplyTimer = setTimeout(applyEpiVisual, delay);
-}
-
-function updateTabs() {
-  const tabs = document.querySelector('.adm-cmp-tabs');
-  if (!tabs) return;
-  const epiBtn = tabs.querySelector('[data-tab-epi-exclusivo]');
-  const tabButtons = [...tabs.querySelectorAll('[data-tab]')];
-  if (epiTabVisual === 'epi') {
-    tabButtons.forEach((btn) => btn.classList.remove('active'));
-    epiBtn?.classList.add('active');
-  } else epiBtn?.classList.remove('active');
-}
-
-function installEpiTab() {
-  const tabs = document.querySelector('.adm-cmp-tabs');
-  if (!tabs) return;
-  const solicitacoesBtn = tabs.querySelector('[data-tab="solicitacoes"]');
-  if (!solicitacoesBtn) return;
-
-  if (!tabs.querySelector('[data-tab-epi-exclusivo]')) {
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-secondary';
-    btn.type = 'button';
-    btn.setAttribute('data-tab-epi-exclusivo', '1');
-    btn.textContent = 'EPI';
-    solicitacoesBtn.insertAdjacentElement('afterend', btn);
-    btn.addEventListener('click', () => {
-      epiInternalClick = true;
-      solicitacoesBtn.click();
-      epiInternalClick = false;
-      epiTabVisual = 'epi';
-      updateTabs();
-      scheduleApply(180);
-    });
-  }
-
-  tabs.querySelectorAll('[data-tab]').forEach((btn) => {
-    if (btn.dataset.epiBound) return;
-    btn.dataset.epiBound = '1';
-    btn.addEventListener('click', () => {
-      if (epiInternalClick) return;
-      epiTabVisual = btn.dataset.tab || 'solicitacoes';
-      updateTabs();
-      scheduleApply(140);
-    });
-  });
-}
-
-function installDelegation() {
-  if (epiDelegationInstalled) return;
-  epiDelegationInstalled = true;
-
-  document.addEventListener('click', (event) => {
-    const sortBtn = event.target.closest?.('[data-epi-sort]');
-    if (sortBtn) {
-      event.preventDefault();
-      setSort(sortBtn.dataset.epiSort);
-      return;
-    }
-
-    const groupBtn = event.target.closest?.('[data-epi-group-check]');
-    if (groupBtn) {
-      event.preventDefault();
-      toggleGroup(groupBtn.closest('[data-epi-group-header]'));
-      return;
-    }
-
-    const kpi = event.target.closest?.('[data-epi-group-kpi]');
-    if (kpi) {
-      event.preventDefault();
-      toggleGroupExpand(kpi.closest('[data-epi-group-header]'));
-      return;
-    }
-
-    const allBtn = event.target.closest?.('[data-epi-select-all-groups]');
-    if (allBtn) {
-      event.preventDefault();
-      document.querySelectorAll('[data-epi-group-header]').forEach((header) => toggleGroup(header, true));
-      return;
-    }
-
-    const clearBtn = event.target.closest?.('[data-epi-clear-groups]');
-    if (clearBtn) {
-      event.preventDefault();
-      document.querySelectorAll('[data-epi-group-header]').forEach((header) => toggleGroup(header, false));
-    }
-  });
-
-  document.addEventListener('change', (event) => {
-    const groupSelect = event.target.closest?.('[data-epi-group-select]');
-    if (groupSelect) {
-      toggleGroup(groupSelect.closest('[data-epi-group-header]'), groupSelect.checked);
-      return;
-    }
-
-    if (event.target.matches?.('input[type="checkbox"][data-check]')) setTimeout(syncHeaders, 0);
-  });
-}
-
-function installBodyObserver() {
-  if (epiObserverInstalled) return;
-  const body = document.getElementById('admCmpBody');
-  if (!body) return;
-  epiObserverInstalled = true;
-  epiObserver = new MutationObserver((mutations) => {
-    if (epiApplying) return;
-    if (!mutations.some((m) => [...m.addedNodes, ...m.removedNodes].some((node) => node.nodeType === 1 && !node.hasAttribute?.('data-epi-toolbar') && !node.hasAttribute?.('data-epi-sort-header') && !node.hasAttribute?.('data-epi-group-header') && !node.hasAttribute?.('data-epi-empty-row')))) return;
-    scheduleApply(120);
-  });
-  epiObserver.observe(body, { childList: true });
-}
-
-function bootEpiCompras() {
-  installDelegation();
-  const tick = setInterval(() => {
-    installEpiTab();
-    installBodyObserver();
-    updateTabs();
-    if (document.querySelector('.adm-cmp-tabs') && document.getElementById('admCmpBody')) {
-      scheduleApply(120);
-      clearInterval(tick);
-    }
-  }, 250);
-  setTimeout(() => clearInterval(tick), 10000);
-}
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootEpiCompras, { once: true });
-else bootEpiCompras();
