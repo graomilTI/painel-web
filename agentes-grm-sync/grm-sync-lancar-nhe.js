@@ -613,7 +613,12 @@ async function buscarPendentes() {
 async function buscarPendenciasAnteriores(dataReferencia) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
   inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
-  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO'];
+  // LOTE_EXCEDIDO incluído aqui (03/09/2026): candidato cortado pelo cap
+  // MAX_LANCAMENTOS_POR_EXECUCAO sem a continuação automática ter conseguido
+  // reprocessar no mesmo dia (ver comentário em main() sobre `loteProgresso`)
+  // — sem isso, virava pendência fantasma permanente assim que a referência
+  // mudava de dia (casos reais: O.S. 89301 e 91561 em 02/09/2026).
+  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO', 'LOTE_EXCEDIDO'];
   if (REPETIR_NAO_CONFIRMADO) statusesHistoricos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
@@ -1836,9 +1841,36 @@ async function main() {
     log('SUCCESS', candidatos.length + ' grupo(s) único(s) Cliente + Embarque elegível(is); ' + stats.mesmoPontoAgrupado + ' O.S. irmã(s) agrupada(s).');
 
     var totalCandidatos = candidatos.length;
+    var loteProgresso = 0;
     if (MAX_LANCAMENTOS_POR_EXECUCAO > 0 && candidatos.length > MAX_LANCAMENTOS_POR_EXECUCAO) {
+      var cortados = candidatos.slice(MAX_LANCAMENTOS_POR_EXECUCAO);
       candidatos = candidatos.slice(0, MAX_LANCAMENTOS_POR_EXECUCAO);
       log('INFO', 'Processando lote de ' + candidatos.length + '/' + totalCandidatos + ' candidato(s) para respeitar o tempo do worker.');
+
+      // BUG CORRIGIDO (03/09/2026): o excedente do lote era descartado sem
+      // gravar nada em logistica_nhe_lancamentos_auto. Na prática isso ficava
+      // mascarado pela continuação automática (enfileirarContinuacao), que
+      // reprocessa o restante — MAS ela só dispara se `stats.sucesso > 0`
+      // nesta execução (ver abaixo). Se o lote de 8 processado agora resolver
+      // inteiro como JA_EXISTIA_GRM/JA_EXISTIA_GRUPO_GRM (sem nenhum
+      // lançamento novo — comum, já que a maioria das O.S. do dia já tem NHE),
+      // a continuação nunca é enfileirada e o excedente vira pendência
+      // fantasma: nunca mais reprocessada depois que o dia vira (achado com as
+      // O.S. 89301 e 91561 em 02/09/2026, mesma classe de bug da 90394 — ver
+      // memória painel-web-fob-nhe-uniao-lotes-retroativos). Agora cada
+      // cortado grava LOTE_EXCEDIDO: não bloqueia (não entra em
+      // carregarJaLancadas), então é recalculado normalmente nas próximas
+      // execuções do mesmo dia, e também entra em buscarPendenciasAnteriores
+      // (repescagem por até REPROCESSAR_DIAS dias) se o dia virar antes de
+      // ser resolvido.
+      for (var x = 0; x < cortados.length; x++) {
+        await salvarResultado(cortados[x], {
+          status: 'LOTE_EXCEDIDO',
+          lancado_em: null,
+          erro: null,
+          raw: { motivo: 'Excedeu MAX_LANCAMENTOS_POR_EXECUCAO=' + MAX_LANCAMENTOS_POR_EXECUCAO + ' nesta execução; aguardando continuação ou nova execução.' }
+        });
+      }
     }
 
     if (candidatos.length) {
@@ -1869,6 +1901,7 @@ async function main() {
               var nheGrupoAoVivo = await existeNheMesmoPontoNoGrmAoVivo(page, candidato);
               if (nheGrupoAoVivo && nheGrupoAoVivo.existe) {
                 stats.jaExistiaGrm++;
+                loteProgresso++;
                 var mesmaOs = String(nheGrupoAoVivo.os) === String(candidato.os);
                 if (!mesmaOs) stats.nheMesmoPontoGrm++;
                 await salvarResultado(candidato, {
@@ -1924,11 +1957,13 @@ async function main() {
             }
 
             stats.sucesso++;
+            loteProgresso++;
             await salvarResultado(candidato, { status: 'SUCESSO', lancado_em: new Date().toISOString() });
             log('SUCCESS', 'O.S. ' + candidato.os + ': NHE lançado e confirmado no GRM em ' + candidato.data + '.');
           } catch (error) {
             if (error && error.code === 'GRM_JA_POSSUI_MOVIMENTO') {
               stats.jaExistiaMovimento++;
+              loteProgresso++;
               await salvarResultado(candidato, {
                 status: 'JA_EXISTIA_MOVIMENTO_GRM',
                 lancado_em: null,
@@ -1965,13 +2000,23 @@ async function main() {
     }
 
     var restantes = Math.max(0, totalCandidatos - candidatos.length);
-    if (!dryRun && AUTO_CONTINUACAO && restantes > 0 && stats.sucesso > 0) {
+    // BUG CORRIGIDO (03/09/2026): a continuação só disparava com
+    // `stats.sucesso > 0` (lançamento novo de verdade). Num lote de 8 onde
+    // TODOS resolvem como "já existia no GRM" (comum — é o desfecho mais
+    // frequente do dia, ver logistica_nhe_lancamentos_auto), sucesso fica 0 e
+    // a continuação nunca era enfileirada — o excedente (`restantes`) ficava
+    // sem chance de rodar de novo no mesmo dia. Agora usa `loteProgresso`
+    // (soma SUCESSO + JA_EXISTIA_GRM/GRUPO + JA_EXISTIA_MOVIMENTO_GRM do
+    // lote), que reflete se o lote andou de verdade; só fica em 0 se todo
+    // mundo travou em erro/SALVO_NAO_CONFIRMADO, quando faz sentido mesmo
+    // parar pra não entrar em loop de erro.
+    if (!dryRun && AUTO_CONTINUACAO && restantes > 0 && loteProgresso > 0) {
       var criada = await enfileirarContinuacao();
       log('INFO', restantes + ' candidato(s) restante(s); continuação ' + (criada ? 'enfileirada' : 'já estava pendente') + '.');
     } else if (!dryRun && !AUTO_CONTINUACAO && restantes > 0) {
       log('INFO', restantes + ' candidato(s) restante(s); continuação automática desativada por NHE_LANCAMENTO_AUTO_CONTINUACAO=false.');
-    } else if (!dryRun && restantes > 0 && stats.sucesso === 0) {
-      log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote teve sucesso; continuação automática bloqueada para evitar loop de erro.');
+    } else if (!dryRun && restantes > 0 && loteProgresso === 0) {
+      log('WARN', restantes + ' candidato(s) não processado(s), mas nenhuma operação do lote avançou (só erro/SALVO_NAO_CONFIRMADO); continuação automática bloqueada para evitar loop de erro. Ficam com status LOTE_EXCEDIDO — serão recalculados na próxima execução do dia ou repescados em até ' + REPROCESSAR_DIAS + ' dia(s) se a referência virar antes disso.');
     }
 
     var totalFalhas = stats.erro + stats.semLogin + stats.semFuncionario + stats.foraDoRaio + stats.semCoordenadaOs + stats.salvoNaoConfirmado;
