@@ -66,6 +66,7 @@ function parseValor(v) {
 }
 
 function isoDate(d) {
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
   return String(d || '').slice(0, 10);
 }
 
@@ -85,10 +86,31 @@ function espiaoHeaders() {
   };
 }
 
-async function espiaoGet(path, params) {
+// Descoberto ao vivo (03/09): a API devolve HTTP 429 "API calls quota
+// exceeded! maximum admitted 3 per 1s" sem aviso na doc. Serializa as
+// chamadas com um intervalo mínimo entre elas pra nunca estourar 3 req/s.
+const ESPIAO_MIN_INTERVALO_MS = 400;
+let espiaoUltimaChamadaEm = 0;
+
+async function espiaoThrottle() {
+  const espera = espiaoUltimaChamadaEm + ESPIAO_MIN_INTERVALO_MS - Date.now();
+  if (espera > 0) await new Promise((resolve) => setTimeout(resolve, espera));
+  espiaoUltimaChamadaEm = Date.now();
+}
+
+async function espiaoGet(path, params, { tentativa = 1, allow404 = false } = {}) {
+  await espiaoThrottle();
   const url = new URL(ESPIAO_BASE_URL + path);
   Object.entries(params || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v); });
   const res = await fetch(url, { headers: espiaoHeaders() });
+  if (res.status === 429 && tentativa <= 3) {
+    log('WARN', `Espião NF-e ${path} -> HTTP 429, aguardando e tentando de novo (tentativa ${tentativa}).`);
+    await new Promise((resolve) => setTimeout(resolve, 1000 * tentativa));
+    return espiaoGet(path, params, { tentativa: tentativa + 1, allow404 });
+  }
+  // A consulta por período devolve 404 "Não localizado" (em vez de dados:[])
+  // quando não há nenhuma nota no filtro — descoberto ao vivo em 03/09.
+  if (res.status === 404 && allow404) return null;
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`Espião NF-e ${path} -> HTTP ${res.status}: ${body.slice(0, 300)}`);
@@ -109,7 +131,8 @@ async function fetchResumoPeriodo({ dataInicial, dataFinal, modelo }) {
       emitidaRecebida: '0', // recebidas
       modelo,
       codigoProximaPagina,
-    });
+    }, { allow404: true });
+    if (!res) break; // sem notas nesse filtro
     const json = await res.json();
     (json?.dados || []).forEach((d) => dados.push(d));
     codigoProximaPagina = json?.codigoProximaPagina || null;
@@ -205,7 +228,12 @@ async function decidirMatch(item, candidatos) {
       log('WARN', `Falha ao baixar XML de desempate ${c.chaveAcesso}: ${e.message}`);
     }
   }
-  if (!melhor) return null;
+  // Sem nenhuma sobreposição de palavras com a descrição do produto, o
+  // "melhor" candidato não passa de um chute entre empatados por valor+data
+  // — com centenas/milhares de notas no período, isso é ruído, não sugestão.
+  // Descoberto ao vivo em 03/09 (2 itens com score 0 no primeiro teste real).
+  const LIMIAR_MINIMO_DESEMPATE = 0.15;
+  if (!melhor || melhor.score < LIMIAR_MINIMO_DESEMPATE) return null;
   return { candidato: melhor.candidato, auto: false, criterios: melhor.criterios, score: melhor.score };
 }
 
@@ -300,10 +328,19 @@ async function main() {
   }
 
   const hoje = isoDate(new Date());
+  // A API rejeita período > 31 dias (HTTP 400 "O período não pode ser
+  // superior a 31 dias") — descoberto ao vivo em teste real. Itens com
+  // comprado_em mais antigo que isso já passam do prazo de desistência de
+  // qualquer forma (marcarSemCandidato aplica a mesma regra dos 30 dias
+  // independente do que a API retornar), então só limitamos a janela da
+  // consulta, sem excluir nenhum item da rodada.
+  const LIMITE_API_DIAS = 30;
+  const limiteInferior = isoDate(new Date(Date.now() - LIMITE_API_DIAS * 86400000));
   const datasBase = itens.map((i) => isoDate(i.comprado_em || i.created_at)).filter(Boolean);
-  const dataInicial = datasBase.sort()[0] || hoje;
+  const dataInicialDesejada = datasBase.sort()[0] || hoje;
+  const dataInicial = dataInicialDesejada < limiteInferior ? limiteInferior : dataInicialDesejada;
 
-  log('INFO', `Consultando Espião NF-e Cloud: ${dataInicial} até ${hoje} (${itens.length} item(ns) pendente(s)).`);
+  log('INFO', `Consultando Espião NF-e Cloud: ${dataInicial} até ${hoje} (${itens.length} item(ns) pendente(s), janela desejada desde ${dataInicialDesejada}).`);
   let candidatosPeriodo = [];
   for (const modelo of MODELOS) {
     const dados = await fetchResumoPeriodo({ dataInicial, dataFinal: hoje, modelo });
