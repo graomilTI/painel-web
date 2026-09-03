@@ -34,7 +34,7 @@ const SOFT_NAV_PAGES = new Map([
   ['historico-colaboradores', { title: 'Histórico de Importações', module: () => import('./historicoColaboradores.js') }],
   ['consultar-colaboradores', { title: 'Consultar Base de Colaboradores', module: () => import('./consultarColaboradores.js') }],
   // Fase 2 — Categoria A (padrão mecânico simples)
-  ['adm-conferencia', { title: 'ADM Conferência', module: () => import('./adm-conferencia.js'), extraModules: [() => import('./adm-conferencia-entry.js'), () => import('./adm-conferencia-actions-clean.js')] }],
+  ['adm-conferencia', { title: 'ADM Conferência', module: () => import('./adm-conferencia.js'), extraModules: [() => import('./adm-conferencia-entry.js'), () => import('./adm-conferencia-actions-clean.js'), () => import('./adm-conferencia-sem-os.js')] }],
   ['admin-auditoria', { title: 'Auditoria', module: () => import('./admin-auditoria.js') }],
   ['auditoria', { title: 'Auditoria', module: () => import('./auditoria.js') }],
   ['clinicas-sst', { title: 'Clínicas SST', module: () => import('./clinicas-sst.js') }],
