@@ -224,7 +224,7 @@ const ICONS={
   send:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
   doc:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>`,
 };
-const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc'};
+const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',confirmar_nf_sugerida:'check'};
 function iconBtn(action,id,title){
   return `<button class="adm-cmp-icon-btn" data-row-action="${esc(action)}" data-id="${esc(id)}" type="button" title="${esc(title)}" aria-label="${esc(title)}">${ICONS[ROW_ACTION_ICONS[action]]}</button>`;
 }
@@ -235,7 +235,7 @@ function nfLinkHtml(r){
 }
 function actionsCellForTab(r){
   if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}</div>`;
-  if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}</div>`;
+  if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${r.nf_busca_status==='sugestao_pendente'?iconBtn('confirmar_nf_sugerida',r.id,'Confirmar NF sugerida'):''}${iconBtn('finalizar',r.id,'Finalizar')}</div>`;
   if(state.tab==='recusados') return `<small class="muted">${esc(r.motivo_recusa||'-')}</small>`;
   if(state.tab==='comprados') return nfLinkHtml(r);
   return '<span class="muted">-</span>';
@@ -244,7 +244,7 @@ function actionsCellForTab(r){
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
   return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
+    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}${r.nf_busca_status==='sugestao_pendente'?'<br><span class="adm-cmp-badge-sugestao">NF sugerida</span>':''}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
   </tr>`;
 }
 
@@ -414,6 +414,7 @@ function wireRowActions(container){
         else if(action==='aprovar'){ openAprovarModal(r); }
         else if(action==='reprovar'){ await reprovarItem(r); }
         else if(action==='finalizar'){ openFinalizarModal(r); }
+        else if(action==='confirmar_nf_sugerida'){ openConfirmarNfSugeridaModal(r); }
       }catch(e){ setMsg(e.message,true); }
     };
   });
@@ -657,6 +658,54 @@ function openFinalizarModal(r){
   });
 }
 
+// ─── CONFIRMAR NF SUGERIDA (agente Espião NF-e Cloud) ─────────────────────────
+function openConfirmarNfSugeridaModal(r){
+  const sug=r.nf_sugestao||{};
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card">
+    <div class="section-head"><div><h3>Confirmar NF sugerida</h3><p class="muted">${esc(r.material)}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="adm-cmp-grid mt-16">
+      <label>Emitente<input value="${esc(sug.nomeEmitente||'-')}" disabled></label>
+      <label>CNPJ do emitente<input value="${esc(sug.cnpjEmitente||'-')}" disabled></label>
+      <label>Valor da NF<input value="${esc(money(sug.valorTotal||0))}" disabled></label>
+      <label>Data de emissão<input value="${esc(brDate(sug.dataEmissao))}" disabled></label>
+      <label class="adm-cmp-full">Chave de acesso<input value="${esc(sug.chaveAcesso||'-')}" disabled></label>
+    </div>
+    <div class="adm-cmp-actions mt-16">
+      ${sug.pdfUrl?`<a class="btn btn-secondary" href="${esc(sug.pdfUrl)}" target="_blank" rel="noopener">Ver PDF (DANFE)</a>`:''}
+      ${sug.xmlUrl?`<a class="btn btn-secondary" href="${esc(sug.xmlUrl)}" target="_blank" rel="noopener">Ver XML</a>`:''}
+    </div>
+    <p class="muted mt-8" style="font-size:12px">Encontrada automaticamente por: ${esc((sug.criterios||[]).join(', ')||'valor e data aproximados')}${Number.isFinite(sug.score)?` · confiança ${Math.round(sug.score*100)}%`:''}. Confira antes de confirmar — esse item não tinha CNPJ de fornecedor cadastrado, então não foi anexado sozinho.</p>
+    <div class="adm-cmp-actions mt-16">
+      <button class="btn btn-primary" id="mConfirmarSug" type="button">Confirmar e anexar</button>
+      <button class="btn btn-secondary" id="mRejeitarSug" type="button">Rejeitar</button>
+    </div>
+    <span class="adm-cmp-feedback mt-8" id="sugFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#mConfirmarSug').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#mConfirmarSug'); const fb=modal.querySelector('#sugFeedback');
+    btn.disabled=true; if(fb) fb.textContent='Confirmando...';
+    try{
+      const {data,error}=await supabase.rpc('confirmar_nf_sugerida',{p_item_id:r.id,p_aceitar:true});
+      if(error) throw error;
+      await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${data?.nf_url||sug.pdfUrl||''}`);
+      modal.classList.remove('open'); await loadRows();
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
+  });
+  modal.querySelector('#mRejeitarSug').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#mRejeitarSug'); const fb=modal.querySelector('#sugFeedback');
+    const motivo=prompt('Motivo da rejeição (opcional):')||null;
+    btn.disabled=true; if(fb) fb.textContent='Rejeitando...';
+    try{
+      const {error}=await supabase.rpc('confirmar_nf_sugerida',{p_item_id:r.id,p_aceitar:false,p_motivo:motivo});
+      if(error) throw error;
+      modal.classList.remove('open'); await loadRows();
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
+  });
+}
+
 // ─── MODAL COMPRAR (lote) ─────────────────────────────────────────────────────
 function abrirCompraSelecionados(){
   const rows=selectedRows();
@@ -811,6 +860,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
     </div>
     <div class="adm-cmp-grid mt-16">
       <label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor" value="${esc(fornecedorInicial)}"></label>
+      <label>CNPJ do fornecedor (opcional)<input id="payFornecedorCnpj" placeholder="Só quando conhecido — habilita anexo automático de NF" value="${esc(rows[0]?.fornecedor_cnpj||'')}"></label>
       <label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label>
       <label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label>
       <label>Retirada ou entrega?<select id="payEntregaTipo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></label>
@@ -839,6 +889,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   area.querySelector('#paySend').onclick=async()=>{
     try{
       const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||'';
+      const fornecedorCnpj=area.querySelector('#payFornecedorCnpj')?.value?.replace(/\D/g,'')||'';
       const contato=area.querySelector('#payContato')?.value?.trim()||'';
       const isPatrimonio=hasCelular&&!!area.querySelector('#payPatrimonio')?.checked;
       const entregaTipo=area.querySelector('#payEntregaTipo')?.value||'retirada';
@@ -853,16 +904,16 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
           if(!link){ alert(`Informe o link do produto de "${r.material}".`); return; }
           dadosPorItem[r.id]=link;
         }
-        await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem,entregaTipo,entregaEndereco);
+        await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem,entregaTipo,entregaEndereco,fornecedorCnpj);
       }else{
         const dados=await coletarDadosPagamento(forma,area);
-        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio,null,entregaTipo,entregaEndereco);
+        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio,null,entregaTipo,entregaEndereco,fornecedorCnpj);
       }
     }catch(e){setMsg(e.message,true);alert(e.message);}
   };
 }
 
-async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null){
+async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null,fornecedorCnpj=''){
   if(celularAsPatrimonio){
     const celRows=itens.filter(r=>norm(r.material)==='celular');
     for(const r of celRows){
@@ -894,9 +945,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
       if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
+      if(fornecedorCnpj) upd.fornecedor_cnpj=fornecedorCnpj;
       const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
       if(updErr){
-        if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; delete upd.entrega_tipo; delete upd.entrega_endereco; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
+        if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; delete upd.fornecedor_cnpj; delete upd.entrega_tipo; delete upd.entrega_endereco; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
         else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
       }
     }
@@ -1013,6 +1065,8 @@ function styles(){return `<style>
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
 .adm-cmp-table tbody tr.is-selected{background:rgba(34,197,94,.16)!important}.adm-cmp-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}
 .adm-cmp-sel-count{display:inline-flex;align-items:center;font-weight:800;color:#86efac;font-size:13px}
+.adm-cmp-badge-sugestao{display:inline-flex;margin-top:4px;padding:3px 8px;border-radius:999px;border:1px solid rgba(96,165,250,.35);background:rgba(59,130,246,.14);color:#93c5fd;font-size:11px;font-weight:800}
+.adm-cmp-icon-btn[data-row-action="confirmar_nf_sugerida"]{background:rgba(59,130,246,.14);border-color:rgba(96,165,250,.3);color:#93c5fd}
 @media(max-width:760px){.adm-cmp-kpis{grid-template-columns:1fr}.adm-cmp-kpi{padding:12px 14px}.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}
 </style>`}
 

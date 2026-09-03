@@ -1,0 +1,17 @@
+# Agente Compras -> Auto-anexo de NF via Espião NF-e Cloud
+# Comece SEMPRE em dry-run. Só desative depois de validar as saídas do log
+# (candidatos encontrados, decisões auto/sugestão) contra um lote pequeno.
+GRM_COMPRAS_NF_DRY_RUN=true
+GRM_COMPRAS_NF_MAX_POR_EXECUCAO=30
+GRM_COMPRAS_NF_JANELA_DESISTENCIA_DIAS=30
+GRM_COMPRAS_NF_DEBUG=false
+
+# Credenciais já usadas pelos demais agentes
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# Conta Espião NF-e Cloud (https://api.espiaonfe.com.br) — certificado digital
+# da empresa já precisa estar cadastrado lá para a consulta trazer resultado.
+ESPIAO_CLOUD_TOKEN=
+ESPIAO_CLOUD_USER_TOKEN=
+ESPIAO_CLOUD_CNPJ_CONTA=

@@ -79,6 +79,7 @@ const SCRIPT_MAP = {
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
   'sync-classificacao-ourosafra': 'grm-sync-classificacao-ourosafra.js',
+  'compras-match-nf': 'grm-sync-compras-match-nf.js',
 };
 
 function getSupabase() {
