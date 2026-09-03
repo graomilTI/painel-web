@@ -1696,10 +1696,28 @@ export function renderContent(content, userContext) {
     if (contato) parts.push(`Contato: ${esc(contato)}`);
     if (forma) parts.push(`Forma: <strong>${esc(forma)}</strong>`);
     if (dados) {
-      const dadosDisplay = isLinkDados(dados)
-        ? `<a href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(dados)}</a>`
-        : `<strong style="word-break:break-all">${esc(dados)}</strong>`;
+      // dados pode ter várias linhas (link do produto + "Entrega: ...") —
+      // linkifica só o trecho que é URL em cada linha, não o bloco inteiro.
+      const dadosDisplay = String(dados)
+        .split(/\n+/)
+        .map((linha) => {
+          const m = linha.match(/https?:\/\/\S+/i);
+          if (!m) return `<strong style="word-break:break-all">${esc(linha)}</strong>`;
+          const url = m[0];
+          const antes = linha.slice(0, m.index);
+          const depois = linha.slice(m.index + url.length);
+          return `${esc(antes)}<a href="${esc(ensureHttps(url))}" target="_blank" rel="noopener" style="color:#34d399;word-break:break-all">${esc(url)}</a>${esc(depois)}`;
+        })
+        .join('<br>');
       parts.push(`Dados: ${dadosDisplay}`);
+    }
+    // Itens derivados direto de compras_itens (não agrupados num
+    // financeiro_pagamentos real) trazem entrega_tipo/entrega_endereco como
+    // colunas próprias, não dentro de dados_pagamento — mostra também.
+    if (row.entrega_tipo === 'entrega' && row.entrega_endereco) {
+      parts.push(`Entrega: <strong>${esc(row.entrega_endereco)}</strong>`);
+    } else if (row.entrega_tipo === 'retirada') {
+      parts.push(`Retirada`);
     }
     return parts.join('<br>') || `Solicitação de ${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}`;
   }
