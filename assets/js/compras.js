@@ -200,8 +200,8 @@ function openCelularModal(baseItem){
       const data=await searchColaboradores(q,{limite:60}); // cache local
       const seen=new Set();
       const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
-      colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
-      colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
+      colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}" data-ctipo="${esc(c.tipo||c.cargo||'')}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
+      colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome,tipo:b.dataset.ctipo}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
     },250);
   });
   colabInput.addEventListener('blur',()=>setTimeout(()=>{colabSug.innerHTML='';},160));
@@ -211,7 +211,7 @@ function openCelularModal(baseItem){
     const colab=selectedColab||{id:null,nome:colabInput.value.trim()};
     const metodoVal=metodo.value;
     const parcelasVal=metodoVal==='parcelado'?Number(modal.querySelector('#celParcelas')?.value||1):1;
-    state.itens.push({...baseItem,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,_metodo:metodoVal,_parcelas:parcelasVal});
+    state.itens.push({...baseItem,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,colaborador_id:colab.id||null,colaborador_nome:colab.nome||null,colaborador_tipo:colab.tipo||'',_metodo:metodoVal,_parcelas:parcelasVal});
     resetItemForm();
     renderItensList();
     setMsg('cmpFeedback',`Celular adicionado: ${colab.nome}.`);
