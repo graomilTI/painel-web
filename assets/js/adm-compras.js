@@ -810,6 +810,8 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
       <label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor" value="${esc(fornecedorInicial)}"></label>
       <label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label>
       <label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato"></label>
+      <label>Retirada ou entrega?<select id="payEntregaTipo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></label>
+      <label class="adm-cmp-full" id="payEnderecoWrap" style="display:none">Endereço de entrega<input id="payEndereco" placeholder="Endereço completo pra entrega"></label>
     </div>
     <div class="adm-cmp-tabs mt-16">
       <button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button>
@@ -827,11 +829,18 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   area.querySelector('#payBack').onclick=()=>fornecedorPreSelecionado?abrirCompraSelecionados():openCompraLote(rows.map(r=>({...r})));
   area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);});
   updatePagamentoFields(area,forma);
+  area.querySelector('#payEntregaTipo').onchange=(ev)=>{
+    const wrap=area.querySelector('#payEnderecoWrap');
+    if(wrap) wrap.style.display=ev.target.value==='entrega'?'':'none';
+  };
   area.querySelector('#paySend').onclick=async()=>{
     try{
       const fornecedor=area.querySelector('#payFornecedor')?.value?.trim()||'';
       const contato=area.querySelector('#payContato')?.value?.trim()||'';
       const isPatrimonio=hasCelular&&!!area.querySelector('#payPatrimonio')?.checked;
+      const entregaTipo=area.querySelector('#payEntregaTipo')?.value||'retirada';
+      const entregaEndereco=area.querySelector('#payEndereco')?.value?.trim()||'';
+      if(entregaTipo==='entrega'&&!entregaEndereco){ alert('Informe o endereço de entrega.'); return; }
       if(forma==='LINK'){
         // Compra por link de produto: um link por item (Financeiro adiciona
         // cada um ao carrinho do site e paga), não um link único do grupo.
@@ -841,16 +850,16 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
           if(!link){ alert(`Informe o link do produto de "${r.material}".`); return; }
           dadosPorItem[r.id]=link;
         }
-        await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem);
+        await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem,entregaTipo,entregaEndereco);
       }else{
         const dados=await coletarDadosPagamento(forma,area);
-        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio);
+        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio,null,entregaTipo,entregaEndereco);
       }
     }catch(e){setMsg(e.message,true);alert(e.message);}
   };
 }
 
-async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null){
+async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null){
   if(celularAsPatrimonio){
     const celRows=itens.filter(r=>norm(r.material)==='celular');
     for(const r of celRows){
@@ -873,16 +882,18 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
     // CARTAO/OUTRO (constraint própria, diferente do texto livre usado em
     // compras_itens.forma_pagamento) — LINK cai em OUTRO só nesse insert.
     const formaFinPagamento=['PIX','BOLETO'].includes(forma)?forma:'OUTRO';
-    const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:dadosConsolidado||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+    const entregaLinha=entregaTipo==='entrega'?`Entrega: ${entregaEndereco}`:(entregaTipo?'Retirada':'');
+    const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:[dadosConsolidado,entregaLinha].filter(Boolean).join('\n')||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
     await safe(()=>mergeOrInsertComprasPayment(payload),null);
     for(const r of normalItens){
       const dadosItem=dadosPorItem?(dadosPorItem[r.id]||null):dados;
       const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null};
+      if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
       const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
       if(updErr){
-        if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
+        if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; delete upd.entrega_tipo; delete upd.entrega_endereco; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
         else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
       }
     }
@@ -897,9 +908,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   // Celular items → Termos (aguardando_termo)
   for(const r of celularItens){
     const upd={status:'aguardando_termo',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dados||null};
+    if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
     if(fornecedor) upd.fornecedor=fornecedor;
     const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
-    if(updErr&&(updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204')){delete upd.fornecedor; await supabase.from('compras_itens').update(upd).eq('id',r.id);}
+    if(updErr&&(updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204')){delete upd.fornecedor; delete upd.entrega_tipo; delete upd.entrega_endereco; await supabase.from('compras_itens').update(upd).eq('id',r.id);}
     await safe(()=>supabase.from('termos_celular').update({valor:r._valor_total}).eq('compra_item_id',r.id));
   }
 
