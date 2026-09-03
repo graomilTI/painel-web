@@ -835,6 +835,12 @@ export function renderContent(content, userContext) {
       .spay-meta-label{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;flex-shrink:0}
       .spay-link{color:#38bdf8;text-decoration:none;word-break:break-all}
       .spay-link:hover{text-decoration:underline}
+      .spay-dados-details{margin-top:3px}
+      .spay-dados-details summary{cursor:pointer;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;font-weight:700;list-style:none}
+      .spay-dados-details summary::-webkit-details-marker{display:none}
+      .spay-dados-details summary:before{content:'▸ ';font-size:10px}
+      .spay-dados-details[open] summary:before{content:'▾ '}
+      .spay-dados-details .spay-meta{margin-top:4px;max-width:520px;word-break:break-word}
       .spay-empty{color:#64748b;font-size:13px}
       .fin-btn-recusar{border:1px solid rgba(220,38,38,.3);background:rgba(220,38,38,.1);color:#fca5a5;border-radius:10px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;transition:all .14s;white-space:nowrap}
       .fin-btn-recusar:hover{background:rgba(220,38,38,.22);border-color:rgba(220,38,38,.5);color:#fecaca}
@@ -1472,10 +1478,23 @@ export function renderContent(content, userContext) {
     if (linhas.length) parts.push(`<div class="spay-items">${linhas.map((l) => esc(l)).join('<br>')}</div>`);
     if (forma) parts.push(`<div class="spay-meta"><span class="spay-meta-label">Forma:</span> ${esc(forma)}</div>`);
     if (dados) {
-      const dadosHtml = isLinkDados(dados)
-        ? `<a class="spay-link" href="${esc(ensureHttps(dados))}" target="_blank" rel="noopener">${esc(dados)}</a>`
-        : esc(dados);
-      parts.push(`<div class="spay-meta"><span class="spay-meta-label">Dados:</span> ${dadosHtml}</div>`);
+      // dados pode ser um bloco de várias linhas (link do produto + endereço
+      // de entrega, um por linha) — linkifica só o trecho que é URL em cada
+      // linha, em vez de tentar tratar o bloco inteiro como um link só.
+      // Fica recolhido por padrão (details/summary) pra não estourar a
+      // altura da linha da tabela com link grande + endereço.
+      const dadosHtml = String(dados)
+        .split(/\n+/)
+        .map((linha) => {
+          const m = linha.match(/https?:\/\/\S+/i);
+          if (!m) return esc(linha);
+          const url = m[0];
+          const antes = linha.slice(0, m.index);
+          const depois = linha.slice(m.index + url.length);
+          return `${esc(antes)}<a class="spay-link" href="${esc(ensureHttps(url))}" target="_blank" rel="noopener">${esc(url)}</a>${esc(depois)}`;
+        })
+        .join('<br>');
+      parts.push(`<details class="spay-dados-details"><summary>Ver dados${isLinkDados(dados) || /https?:\/\//i.test(dados) ? ' e link' : ''}</summary><div class="spay-meta">${dadosHtml}</div></details>`);
     }
     if (!parts.length) return `<span class="spay-empty">—</span>`;
     return parts.join('');
@@ -1609,6 +1628,7 @@ export function renderContent(content, userContext) {
         .from('financeiro_pagamentos')
         .select('*')
         .neq('status', 'PAGO')
+        .neq('status', 'RECUSADO')
         .is('comprovante_url', null)
         .order('created_at', { ascending: false })
         .limit(500),
@@ -1624,16 +1644,21 @@ export function renderContent(content, userContext) {
     const pagamentos = pagamentosRes.error ? [] : (pagamentosRes.data || []);
     const comprasAgrupadas = comprasRes.error ? [] : groupCompraPagamentos(comprasRes.data || []);
 
-    const financeKeys = new Set(
+    // Deduplica por id de compras_itens (não por texto de forma+dados — a
+    // partir de agora um financeiro_pagamentos de COMPRAS grava
+    // compras_item_ids com os itens reais que ele cobre, mais confiável que
+    // comparar texto livre que pode divergir entre o registro consolidado do
+    // lote e o item individual).
+    const idsJaCobertos = new Set(
       pagamentos
         .filter((row) => normalize(row.origem || row.setor || row.modulo_origem).includes('compra'))
-        .map((row) => `${normalize(row.forma_pagamento || '')}|${normalize(row.dados_pagamento || '')}`)
-        .filter((key) => key !== '|')
+        .flatMap((row) => Array.isArray(row.compras_item_ids) ? row.compras_item_ids.map(String) : [])
     );
 
     const comprasSemDuplicar = comprasAgrupadas.filter((row) => {
-      const key = `${normalize(row.forma_pagamento || '')}|${normalize(row.dados_pagamento || '')}`;
-      return key === '|' || !financeKeys.has(key);
+      const ids = (row._compra_item_ids || []).map((id) => String(id || '').replace(/^compra_/, ''));
+      if (ids.length && ids.every((id) => idsJaCobertos.has(id))) return false;
+      return true;
     });
 
     if (pagamentosRes.error && comprasRes.error) {
@@ -1915,23 +1940,26 @@ export function renderContent(content, userContext) {
     if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Recusando...'; }
     if (fb) { fb.textContent = ''; }
     try {
+      // 'recusado_financeiro' é distinto de 'recusado' (recusa do próprio
+      // Compras antes de comprar) — aparece na aba Recusados do Painel de
+      // Compras rotulado "Recusa Financeiro".
       const isCompra = String(row.id || '').startsWith('compra_') || row._source_table === 'compras_itens' || row._source_table === 'compras_itens_group';
       if (isCompra) {
         const ids = (row._compra_item_ids || []).map((id) => String(id || '').replace(/^compra_/, '')).filter(Boolean);
         let q = supabase.from('compras_itens');
         if (ids.length) {
-          q = q.update({ status: 'recusado', motivo_recusa: motivo }).in('id', ids);
+          q = q.update({ status: 'recusado_financeiro', motivo_recusa: motivo }).in('id', ids);
         } else {
           const rawId = String(row.origem_id || row.id || '').replace(/^compra_grp_|^compra_/, '');
-          q = q.update({ status: 'recusado', motivo_recusa: motivo }).eq('id', rawId);
+          q = q.update({ status: 'recusado_financeiro', motivo_recusa: motivo }).eq('id', rawId);
         }
         let { error } = await q;
         if (error && isMissingColumnError(error)) {
           let retry = supabase.from('compras_itens');
-          if (ids.length) retry = retry.update({ status: 'recusado' }).in('id', ids);
+          if (ids.length) retry = retry.update({ status: 'recusado_financeiro' }).in('id', ids);
           else {
             const rawId = String(row.origem_id || row.id || '').replace(/^compra_grp_|^compra_/, '');
-            retry = retry.update({ status: 'recusado' }).eq('id', rawId);
+            retry = retry.update({ status: 'recusado_financeiro' }).eq('id', rawId);
           }
           const res = await retry;
           if (res.error) throw res.error;
@@ -1946,6 +1974,15 @@ export function renderContent(content, userContext) {
           if (res.error) throw res.error;
         } else if (error) {
           throw error;
+        }
+        // Registro real de financeiro_pagamentos: propaga a recusa de volta
+        // pros compras_itens ligados (compras_item_ids), senão o Compras
+        // nunca fica sabendo que o Financeiro recusou.
+        const itemIds = Array.isArray(row.compras_item_ids) && row.compras_item_ids.length
+          ? row.compras_item_ids.map(String)
+          : (row.origem_id ? [String(row.origem_id)] : []);
+        if (itemIds.length) {
+          await supabase.from('compras_itens').update({ status: 'recusado_financeiro', motivo_recusa: motivo }).in('id', itemIds);
         }
       }
       modal.classList.remove('open');
