@@ -8,7 +8,7 @@
 import { supabase as raw } from './supabaseClient.js';
 import { loadColaboradoresRegional } from './programacao-equipe.js?v=20260730-indisp-legado';
 
-const labels = { SEM_STATUS: 'Pendente', DISPONIVEL: 'Disponível', INATIVAR: 'Inativação solicitada', ATESTADO: 'Atestado', FALTA: 'Falta', FERIAS: 'Férias', FOLGA: 'Folga' };
+const labels = { SEM_STATUS: 'Sem O.S.', DISPONIVEL: 'Disponível', INATIVAR: 'Inativação solicitada', ATESTADO: 'Atestado', FALTA: 'Falta', FERIAS: 'Férias', FOLGA: 'Folga' };
 const statusCodes = ['SEM_STATUS', 'DISPONIVEL', 'INATIVAR', 'ATESTADO', 'FALTA', 'FERIAS', 'FOLGA'];
 const state = { rows: [], sort: ['data_referencia', 'desc'], token: 0, loading: false, statusHtml: null, statusValue: '' };
 
@@ -19,7 +19,12 @@ const br = (v) => { const p = String(v || '').slice(0, 10).split('-'); return p.
 const today = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
 const active = () => !!document.querySelector('.conf-tab.active[data-tab="disponiveis"]');
 const top = () => ({ inicio: document.querySelector('#conf-inicio')?.value || today(), fim: document.querySelector('#conf-fim')?.value || document.querySelector('#conf-inicio')?.value || today(), regional: document.querySelector('#conf-regional')?.value || '', colaborador: document.querySelector('#conf-colaborador')?.value || '', status: document.querySelector('#conf-status')?.value || '' });
-const code = (v) => { const s = norm(v).replaceAll(' ', '_'); return statusCodes.includes(s) ? s : (s || 'SEM_STATUS'); };
+// A coluna disponibilidade também é reaproveitada por outro recurso (toggle
+// Atendimento "OK"/"Logística" do card confirmado na O.S., além de valores
+// como "SEM EMBARQUE") — resíduo de outra funcionalidade, não uma decisão do
+// gestor em "Sem O.S.". Qualquer valor fora dos status curados aqui cai em
+// SEM_STATUS em vez de vazar esse texto cru como se fosse um rótulo real.
+const code = (v) => { const s = norm(v).replaceAll(' ', '_'); return statusCodes.includes(s) ? s : 'SEM_STATUS'; };
 const statusOptions = (sel = '') => `<option value="">Todos</option>${statusCodes.map((s) => `<option value="${s}" ${s === sel ? 'selected' : ''}>${labels[s]}</option>`).join('')}`;
 
 function styles() {
@@ -81,8 +86,8 @@ async function load() {
     const inaRow = find(ina, String(p.id), s); const sc = inaRow ? 'INATIVAR' : code(s.disponibilidade);
     // Sem motivo/situacao registrado pelo gestor em "Sem O.S." (nenhum botao
     // clicado) e uma decisao pendente, nao um residuo pra esconder — deve
-    // aparecer como Pendente pra sinalizar que falta o gestor decidir.
-    out.push({ data_referencia: String(p.data_referencia || '').slice(0, 10), regional: p.supervisao || s.supervisao || s.coordenacao || '-', colaborador: s.nome_colaborador || '-', status_code: sc, status_label: labels[sc] || String(s.disponibilidade || sc).replaceAll('_', ' '), id: i || n });
+    // aparecer como "Sem O.S." pra sinalizar que falta o gestor decidir.
+    out.push({ data_referencia: String(p.data_referencia || '').slice(0, 10), regional: p.supervisao || s.supervisao || s.coordenacao || '-', colaborador: s.nome_colaborador || '-', status_code: sc, status_label: labels[sc], id: i || n });
   }
   for (const [d, pDia] of byDate) {
     const sups = [...new Set(pDia.map((p) => p.supervisao).filter(Boolean))];
@@ -93,7 +98,7 @@ async function load() {
     for (const c of (candidatos || []).filter((c) => supSet.has(norm(c.supervisao)))) {
       const i = idKey(c.colaboradorId || c.colaborador_id || c.cpf || c.id); const n = norm(c.nome || c.nome_colaborador); if (cIds.has(i) || cNames.has(n)) continue;
       const p = pBySup.get(norm(c.supervisao)); if (!p) continue; const s = find(sit, String(p.id), c); const inaRow = find(ina, String(p.id), c); const sc = inaRow ? 'INATIVAR' : code(s?.disponibilidade);
-      out.push({ data_referencia: d, regional: p.supervisao || c.supervisao || c.coordenacao || '-', colaborador: c.nome || c.nome_colaborador || '-', status_code: sc, status_label: labels[sc] || String(s?.disponibilidade || sc).replaceAll('_', ' '), id: i || n });
+      out.push({ data_referencia: d, regional: p.supervisao || c.supervisao || c.coordenacao || '-', colaborador: c.nome || c.nome_colaborador || '-', status_code: sc, status_label: labels[sc], id: i || n });
     }
   }
   const dd = new Map(); for (const r of out) { const k = `${r.data_referencia}::${norm(r.regional)}::${r.id}`; const old = dd.get(k); if (!old || old.status_code === 'SEM_STATUS' || r.status_code === 'INATIVAR') dd.set(k, r); } return [...dd.values()];
