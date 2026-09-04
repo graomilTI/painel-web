@@ -529,6 +529,13 @@ function abrirCotarModal(){
         ${fornecedores.map((f,i)=>`<div class="adm-cot-forn-cell"><label>Fornecedor ${i+1}<input class="forn-nome" data-fi="${i}" value="${esc(f)}" placeholder="Nome do fornecedor ${i+1}"></label>${fornecedores.length>1?`<button class="btn btn-small btn-danger adm-cot-rem-forn" data-fi="${i}" type="button">×</button>`:''}</div>`).join('')}
         <button class="btn btn-secondary" id="addFornBtn" type="button">+ Fornecedor</button>
       </div>
+      <div class="adm-cmp-actions mt-16">
+        <button class="btn btn-secondary" id="cotGerarMsgBtn" type="button">Gerar mensagem de cotação</button>
+        <span class="muted" id="cotMsgFeedback"></span>
+      </div>
+      <div class="adm-cmp-full mt-8" id="cotMsgPreviewWrap" style="display:none">
+        <label>Mensagem para enviar aos fornecedores (copiada automaticamente)<textarea id="cotMsgText" rows="6" style="width:100%"></textarea></label>
+      </div>
       <div class="adm-cmp-table-wrap mt-16">
         <table class="adm-cmp-table adm-cot-table">
           <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${rows.some(isEPI)?'<th>CA</th><th>Colaborador</th>':''}${fornecedores.map((_,i)=>`<th>Valor unit. F${i+1}</th>`).join('')}<th>Total melhor</th></tr></thead>
@@ -562,6 +569,17 @@ function abrirCotarModal(){
       fornecedores.splice(Number(btn.dataset.fi),1); renderModal();
     });
     modal.querySelectorAll('.forn-nome').forEach((el,i)=>el.oninput=()=>{fornecedores[i]=el.value;});
+    modal.querySelector('#cotGerarMsgBtn').onclick=async()=>{
+      const fb=modal.querySelector('#cotMsgFeedback');
+      try{
+        const msg=cotacaoMessage(rows);
+        await navigator.clipboard?.writeText(msg).catch(()=>{});
+        await updateItems(rows,{mensagem_cotacao:msg});
+        const wrap=modal.querySelector('#cotMsgPreviewWrap'); const txt=modal.querySelector('#cotMsgText');
+        if(wrap&&txt){ wrap.style.display='block'; txt.value=msg; }
+        if(fb) fb.textContent='Mensagem gerada e copiada — cole no chat de cada fornecedor.';
+      }catch(e){ if(fb) fb.textContent=e.message; }
+    };
     // colaborador autocomplete
     modal.querySelectorAll('.cot-colab-input').forEach(input=>{
       const sug=input.closest('.cot-colab-wrap').querySelector('.cot-colab-sug');
