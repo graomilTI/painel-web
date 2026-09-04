@@ -6,14 +6,13 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
-import { anexoFieldHtml, resolverAnexo } from './rhShared.js';
+import { anexoFieldHtml, resolverAnexo, upsertAtestado } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
 const TIPOS_EXTRA_DISPONIVEL = ['RECARGA', 'LAVANDERIA', 'LAVAGEM DE VEÍCULO', 'COMBUSTÍVEL'];
 
 const cpfNorm = (value) => String(value || '').replace(/\D/g, '');
-const diasEntre = (ini, fim) => Math.max(1, Math.round((new Date(`${fim}T00:00:00`) - new Date(`${ini}T00:00:00`)) / 86400000) + 1);
 
 // Ao marcar Atestado aqui o gestor não tem acesso ao RH > Indisponibilidade,
 // então o atestado nunca era formalizado (só virava um texto solto em
@@ -214,6 +213,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
 
   let colabsAtual = [];
   let pendentesAtual = new Set();
+  let indisponiveisAtual = { chavesRpc: [], match: () => false, motivo: () => null };
 
   function fecharModal() { modalEl.classList.remove('open'); modalEl.innerHTML = ''; }
 
@@ -314,17 +314,18 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       try {
         const anexo = await resolverAnexo(modalEl, 'psoAteAnexo', 'atestados');
         const cadastro = await resolverColaboradorRh(colab);
-        const { error } = await supabase.from('rh_atestados').insert({
-          colaborador_id: cadastro?.id || null,
-          colaborador_nome: colab.nome,
-          data_inicio: inicio,
-          data_fim: fim,
-          dias: diasEntre(inicio, fim),
-          anexo_url: anexo,
-          status: 'lancado',
-          created_by: currentUser?.id || null,
+        // upsertAtestado evita "acumular datas": se já existe um atestado
+        // ativo do mesmo colaborador sobrepondo/adjacente a este período,
+        // estende esse registro em vez de criar outro (pedido da usuária,
+        // 2026-09-04 — ver [[painel-web-rh-indisponibilidade-programacao]]).
+        await upsertAtestado({
+          colaboradorId: cadastro?.id || null,
+          colaboradorNome: colab.nome,
+          dataInicio: inicio,
+          dataFim: fim,
+          anexoUrl: anexo,
+          createdBy: currentUser?.id || null,
         });
-        if (error) throw error;
         fecharModal();
         await salvar(colaboradorId, { disponibilidade: 'ATESTADO' });
         await carregar({ silent: true });
@@ -524,6 +525,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     }
 
     colabsAtual = semOs;
+    indisponiveisAtual = indisponiveis;
     kpiEl.textContent = String(semOs.length);
     listEl.innerHTML = semOs.length
       ? semOs.map((c) => cardHtml(c, situacoesPorColab.get(c.colaboradorId), readOnly, pendentesAtual.has(String(c.colaboradorId)), tipoContratoPorCpf.get(String(c.colaboradorId).replace(/\D/g, '')), indisponiveis.motivo(c))).join('')
@@ -574,7 +576,18 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     const jaAtivo = btn.classList.contains('on');
     if (!jaAtivo && btn.dataset.situacao === 'ATESTADO') {
       const colab = colabsAtual.find((c) => c.colaboradorId === colaboradorId);
-      if (colab) abrirModalAtestado(colab, colaboradorId);
+      if (!colab) return;
+      // Já existe atestado formal (RH ou dia anterior da Programação) cobrindo
+      // esta data — o badge "🤒 Atestado (RH)" já mostra isso no card. Não
+      // precisa reabrir a caixa de anexo nem lançar outro registro por dia;
+      // o atestado vale pelo período descrito (pedido da usuária, 2026-09-04).
+      if (indisponiveisAtual.motivo(colab) === 'Atestado') {
+        card.querySelectorAll('[data-situacao]').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        salvar(colaboradorId, { disponibilidade: 'ATESTADO' });
+        return;
+      }
+      abrirModalAtestado(colab, colaboradorId);
       return;
     }
     card.querySelectorAll('[data-situacao]').forEach((b) => b.classList.remove('on'));
