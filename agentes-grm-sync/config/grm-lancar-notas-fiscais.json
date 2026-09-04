@@ -1,0 +1,198 @@
+{
+  "_comentario_empresas": "A empresa é resolvida pelo CNPJ/CPF ou pelo nome encontrado no documento. Sem correspondência, o arquivo fica em AGUARDANDO_DADOS.",
+  "empresas": [
+    {
+      "documento": "29666679000134",
+      "nome": "GRAOMIL LTDA"
+    },
+    {
+      "documento": "09987821901",
+      "nome": "DOUGLAS HENRIQUE MOTA 09987821901"
+    },
+    {
+      "documento": "32202416000189",
+      "nome": "BV GRAIN"
+    },
+    {
+      "documento": "36514493000125",
+      "nome": "EXCELENCIA"
+    },
+    {
+      "documento": "35134829000161",
+      "nome": "CAR1000"
+    },
+    {
+      "documento": "04429697000171",
+      "nome": "ELIZEU MOTA"
+    }
+  ],
+  "defaults": {
+    "tipo_favorecido": "Fornecedor",
+    "tipo_documento": "DANFe",
+    "intervalo_cobranca": "Não Parcelar",
+    "forma_pagamento": "",
+    "rateio": {
+      "tipo_participacao": "Coordenação",
+      "identificacao": "GERAL"
+    }
+  },
+  "holerite": {
+    "sabado_dia_util": true,
+    "feriados": []
+  },
+  "payment_code_map": {
+    "01": "Dinheiro",
+    "03": "Cartão de Crédito",
+    "04": "Cartão de Débito",
+    "15": "Boleto",
+    "16": "Depósito Bancário",
+    "17": "PIX",
+    "18": "Transferência"
+  },
+  "payment_rules": [
+    {
+      "keywords": [
+        "PIX",
+        "PAGAMENTO INSTANTÂNEO"
+      ],
+      "forma_pagamento": "PIX"
+    },
+    {
+      "keywords": [
+        "BOLETO",
+        "LINHA DIGITÁVEL"
+      ],
+      "forma_pagamento": "Boleto"
+    },
+    {
+      "keywords": [
+        "TRANSFERÊNCIA",
+        "TED",
+        "DADOS BANCÁRIOS"
+      ],
+      "forma_pagamento": "Transferência"
+    }
+  ],
+  "setor_rules": [
+    {
+      "setor_contains": "HOSPEDAGEM",
+      "set": {
+        "grupo_categoria": "DESPESAS OPERACIONAIS",
+        "categoria": "HOSPEDAGEM"
+      }
+    },
+    {
+      "setor_contains": "FROTAS",
+      "set": {
+        "grupo_categoria": "DESPESAS COM VEICULOS"
+      }
+    },
+    {
+      "setor_contains": "RH",
+      "set": {
+        "grupo_categoria": "DESPESAS RH"
+      }
+    },
+    {
+      "setor_contains": "COMPRAS",
+      "set": {
+        "grupo_categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM",
+        "categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM"
+      }
+    }
+  ],
+  "keyword_rules": [
+    {
+      "keywords": [
+        "DIÁRIA",
+        "HOSPEDAGEM",
+        "APARTAMENTO"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS OPERACIONAIS",
+        "categoria": "HOSPEDAGEM"
+      }
+    },
+    {
+      "keywords": [
+        "GASOLINA",
+        "ETANOL",
+        "DIESEL",
+        "COMBUSTÍVEL"
+      ],
+      "set": {
+        "grupo_categoria": "COMBUSTIVEIS E LUBRIFICANTES",
+        "categoria": "COMBUSTIVEL"
+      }
+    },
+    {
+      "keywords": [
+        "PNEU",
+        "PNEUS"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS COM VEICULOS",
+        "categoria": "PNEUS AQUISICAO"
+      }
+    },
+    {
+      "keywords": [
+        "UNIFORME",
+        "CRACHÁ",
+        "CRACHA"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS RH",
+        "categoria": "UNIFORME/CRACHA"
+      }
+    },
+    {
+      "keywords": [
+        "SOFTWARE",
+        "SISTEMA",
+        "LICENÇA DE USO",
+        "LICENCA DE USO",
+        "ASSINATURA MENSAL",
+        "EMAIL CORPORATIVO"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+        "categoria": "SOFTWARE/SISTEMA"
+      }
+    },
+    {
+      "keywords": [
+        "INTERNET",
+        "TELEFONIA",
+        "PLANO MOVEL",
+        "PLANO EMPRESARIAL MOVEL"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+        "categoria": "INTERNET/TELEFONE"
+      }
+    },
+    {
+      "keywords": [
+        "ENERGIA ELETRICA",
+        "ENERGIA ELÉTRICA",
+        "FATURA DE ENERGIA"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+        "categoria": "ENERGIA ELETRICA"
+      }
+    },
+    {
+      "keywords": [
+        "MATERIAL DE EXPEDIENTE",
+        "MATERIAL EXPEDIENTE",
+        "PAPELARIA"
+      ],
+      "set": {
+        "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+        "categoria": "MATERIAL EXPEDIENTE"
+      }
+    }
+  ]
+}
