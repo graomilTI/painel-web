@@ -164,6 +164,78 @@ export function bindAnexoButtons(root) {
 }
 
 // ---------------------------------------------------------------------------
+// Atestados — evita "acumular datas": se já existe um atestado ATIVO
+// (lancado/aprovado) do mesmo colaborador cujo período se sobrepõe ou é
+// adjacente (até 1 dia de intervalo) ao novo período, estende esse registro
+// em vez de criar outro. Pedido da usuária, 2026-09-04: um atestado de um
+// único período (ex.: 02 a 09) não pode virar 5+ linhas por causa de
+// lançamentos dia a dia na Programação > Sem O.S. Usada tanto pelo "Lançar
+// Atestado" do RH quanto pelo toggle Atestado da Programação.
+export async function upsertAtestado({
+  colaboradorId = null,
+  colaboradorNome,
+  dataInicio,
+  dataFim,
+  cid = null,
+  medico = null,
+  anexoUrl = null,
+  observacoes = null,
+  createdBy = null,
+}) {
+  const addDias = (iso, n) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const diasEntre = (ini, fim) => Math.max(1, Math.round((new Date(`${fim}T00:00:00`) - new Date(`${ini}T00:00:00`)) / 86400000) + 1);
+  const nomeNorm = String(colaboradorNome || '').trim().toUpperCase();
+
+  const { data: candidatos, error: buscaError } = await supabase
+    .from('rh_atestados')
+    .select('*')
+    .in('status', ['lancado', 'aprovado'])
+    .lte('data_inicio', addDias(dataFim, 1))
+    .gte('data_fim', addDias(dataInicio, -1));
+  if (buscaError) throw buscaError;
+
+  const existente = (candidatos || []).find((r) => (
+    (colaboradorId && r.colaborador_id === colaboradorId)
+    || String(r.colaborador_nome || '').trim().toUpperCase() === nomeNorm
+  ));
+
+  if (existente) {
+    const inicioFinal = existente.data_inicio < dataInicio ? existente.data_inicio : dataInicio;
+    const fimFinal = existente.data_fim > dataFim ? existente.data_fim : dataFim;
+    const payload = {
+      data_inicio: inicioFinal,
+      data_fim: fimFinal,
+      dias: diasEntre(inicioFinal, fimFinal),
+      cid: cid || existente.cid,
+      medico: medico || existente.medico,
+      anexo_url: anexoUrl || existente.anexo_url,
+      observacoes: observacoes || existente.observacoes,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await supabase.from('rh_atestados').update(payload).eq('id', existente.id);
+    if (error) throw error;
+    return { id: existente.id, merged: true };
+  }
+
+  const payload = {
+    colaborador_id: colaboradorId,
+    colaborador_nome: colaboradorNome,
+    data_inicio: dataInicio,
+    data_fim: dataFim,
+    dias: diasEntre(dataInicio, dataFim),
+    cid,
+    medico,
+    anexo_url: anexoUrl,
+    observacoes,
+    status: 'lancado',
+    created_by: createdBy,
+  };
+  const { data, error } = await supabase.from('rh_atestados').insert(payload).select('id').single();
+  if (error) throw error;
+  return { id: data.id, merged: false };
+}
+
+// ---------------------------------------------------------------------------
 // Ações de linha (editar/excluir).
 export function acoesHtml(id) {
   return `<div class="rh-acoes-cell">

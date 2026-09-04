@@ -5,6 +5,7 @@ import {
   filtrosHtml, filtrosStyle, bindFiltros, lerFiltros, aplicarFiltros,
   exportCsv, acoesHtml, bindAcoes,
   anexoFieldHtml, resolverAnexo, anexoBtnHtml, bindAnexoButtons,
+  upsertAtestado,
 } from './rhShared.js';
 
 const TABS = [
@@ -24,6 +25,7 @@ const STATUS_FERIAS = {
 const STATUS_ATESTADO = {
   lancado: { label: 'Lançado' },
   aprovado: { label: 'Aprovado' },
+  recusado: { label: 'Recusado' },
 };
 
 const state = { tab: 'indisponiveis', indisponiveis: [], ferias: [], atestados: [], ctx: null, filtros: null };
@@ -33,7 +35,7 @@ const diasEntre = (ini, fim) => { const a = new Date(`${ini}T00:00:00`); const b
 function statusPill(status, map) {
   const label = map?.[status]?.label || status || '-';
   const ok = status === 'concluida' || status === 'aprovado';
-  const cor = ok ? ['#bbf7d0', 'rgba(22,101,52,.18)'] : (status === 'cancelada' ? ['#fecaca', 'rgba(220,38,38,.12)'] : ['#fde68a', 'rgba(245,158,11,.1)']);
+  const cor = ok ? ['#bbf7d0', 'rgba(22,101,52,.18)'] : (['cancelada', 'recusado'].includes(status) ? ['#fecaca', 'rgba(220,38,38,.12)'] : ['#fde68a', 'rgba(245,158,11,.1)']);
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${cor[0]};background:${cor[1]};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
 }
 
@@ -55,6 +57,9 @@ function styles() {
     .in-actions{display:flex;gap:10px;flex-wrap:wrap}
     .in-feedback{font-weight:700;display:block}
     .in-feedback.err{color:#fecaca}
+    .in-ate-acoes{display:flex;gap:6px;flex-wrap:wrap}
+    .in-btn-recusar{color:#fca5a5!important;border-color:rgba(248,113,113,.35)!important}
+    .in-motivo-recusa{font-size:11px;color:#fca5a5;margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .inds-modal-card{padding:28px}
     .inds-modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding-bottom:18px;margin-bottom:20px;border-bottom:1px solid rgba(148,163,184,.14)}
     .inds-modal-head h3{margin:0 0 6px;font-size:19px}
@@ -341,14 +346,20 @@ function renderAtestadosTable() {
     <td><b>${esc(a.colaborador_nome)}</b></td>
     <td>${brDate(a.data_inicio)} — ${brDate(a.data_fim)}</td>
     <td>${a.dias ?? '-'} dias${a.cid ? ` · CID: ${esc(a.cid)}` : ''}</td>
-    <td>${statusPill(a.status, STATUS_ATESTADO)}</td>
-    <td>${a.status !== 'aprovado' ? `<button class="btn btn-small btn-secondary" data-ate-aprovar="${esc(a.id)}" type="button">Aprovar</button>` : '-'}</td>
+    <td>${statusPill(a.status, STATUS_ATESTADO)}${a.status === 'recusado' && a.motivo_recusa ? `<div class="in-motivo-recusa" title="${esc(a.motivo_recusa)}">${esc(a.motivo_recusa)}</div>` : ''}</td>
+    <td>${!['aprovado', 'recusado'].includes(a.status) ? `<div class="in-ate-acoes"><button class="btn btn-small btn-secondary" data-ate-aprovar="${esc(a.id)}" type="button">Aprovar</button><button class="btn btn-small btn-secondary in-btn-recusar" data-ate-recusar="${esc(a.id)}" type="button">Recusar</button></div>` : '-'}</td>
     <td>${anexoBtnHtml(a.anexo_url)}</td>
     <td>${acoesHtml(a.id)}</td>
   </tr>`).join('');
   bindAnexoButtons(body);
   body.querySelectorAll('[data-ate-aprovar]').forEach((b) => b.onclick = async () => {
-    await supabase.from('rh_atestados').update({ status: 'aprovado', updated_at: new Date().toISOString() }).eq('id', b.dataset.ateAprovar);
+    await supabase.from('rh_atestados').update({ status: 'aprovado', motivo_recusa: null, updated_at: new Date().toISOString() }).eq('id', b.dataset.ateAprovar);
+    await loadAtestados();
+  });
+  body.querySelectorAll('[data-ate-recusar]').forEach((b) => b.onclick = async () => {
+    const motivo = prompt('Motivo da recusa (atestado inválido):');
+    if (!motivo || !motivo.trim()) return;
+    await supabase.from('rh_atestados').update({ status: 'recusado', motivo_recusa: motivo.trim(), updated_at: new Date().toISOString() }).eq('id', b.dataset.ateRecusar);
     await loadAtestados();
   });
   bindAcoes(body, {
@@ -409,26 +420,32 @@ function openAtestadoModal(row = null) {
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do atestado.'; fb.classList.add('err'); return; }
     try {
       const anexo = await resolverAnexo(modal, 'ateAnexo', 'atestados', row?.anexo_url || null);
-      const payload = {
-        colaborador_id: selecionado?.id || row?.colaborador_id || null,
-        colaborador_nome: nome,
-        data_inicio: inicio,
-        data_fim: fim,
-        dias: diasEntre(inicio, fim),
-        cid: modal.querySelector('#ateCid').value.trim() || null,
-        medico: modal.querySelector('#ateMedico').value.trim() || null,
-        anexo_url: anexo,
-        observacoes: modal.querySelector('#ateObs').value.trim() || null,
-      };
+      const cid = modal.querySelector('#ateCid').value.trim() || null;
+      const medico = modal.querySelector('#ateMedico').value.trim() || null;
+      const observacoes = modal.querySelector('#ateObs').value.trim() || null;
       if (row) {
-        payload.updated_at = new Date().toISOString();
-        const { error } = await supabase.from('rh_atestados').update(payload).eq('id', row.id);
+        const { error } = await supabase.from('rh_atestados').update({
+          colaborador_id: selecionado?.id || row?.colaborador_id || null,
+          colaborador_nome: nome,
+          data_inicio: inicio,
+          data_fim: fim,
+          dias: diasEntre(inicio, fim),
+          cid, medico, anexo_url: anexo, observacoes,
+          updated_at: new Date().toISOString(),
+        }).eq('id', row.id);
         if (error) throw error;
       } else {
-        payload.status = 'lancado';
-        payload.created_by = state.ctx?.user?.id || null;
-        const { error } = await supabase.from('rh_atestados').insert(payload);
-        if (error) throw error;
+        // upsertAtestado evita "acumular datas": se já existe um atestado
+        // ativo do mesmo colaborador sobrepondo/adjacente ao período, estende
+        // esse registro em vez de criar outro (ver [[painel-web-rh-indisponibilidade-programacao]]).
+        await upsertAtestado({
+          colaboradorId: selecionado?.id || null,
+          colaboradorNome: nome,
+          dataInicio: inicio,
+          dataFim: fim,
+          cid, medico, anexoUrl: anexo, observacoes,
+          createdBy: state.ctx?.user?.id || null,
+        });
       }
       modal.classList.remove('open');
       await loadAtestados();
