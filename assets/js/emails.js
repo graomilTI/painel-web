@@ -691,155 +691,6 @@ export function renderContent(content, userContext) {
     renderDetail(userContext);
   }
 
-  // Mesmas opções das constraints CHECK de public.logistica_abertura_os —
-  // um valor fora dessa lista faz o insert falhar no banco.
-  const OS_SERVICO_OPTIONS = ['FOB', 'CIF', 'AUDITORIA', 'CLASSIFICAÇÃO TRANSB. SAÍDA', 'ACOMPANHAMENTO DE EMBARQUE', 'CLASSIFICAÇÃO TRANSB. ENTRADA'];
-  const OS_TROCA_NOTAS_OPTIONS = ['SIM', 'NAO'];
-
-  const OS_FIELD_DEFS = [
-    ['contratante_cliente', 'Contratante / Cliente', 'text'],
-    ['filial_pagadora', 'Filial pagadora', 'text'],
-    ['produtor', 'Produtor (opcional)', 'text'],
-    ['armazem_embarque', 'Armazém de embarque', 'text'],
-    ['cidade_embarque', 'Cidade de embarque', 'text'],
-    ['cidade_destino', 'Cidade destino', 'text'],
-    ['local_destino', 'Local de destino', 'text'],
-    ['numero_contrato', 'Número do contrato', 'text'],
-    ['produto', 'Produto', 'text'],
-    ['tipo_produto', 'Tipo de produto', 'text'],
-    ['servico', 'Serviço', 'select', OS_SERVICO_OPTIONS],
-    ['volume_inicial', 'Volume inicial (tons)', 'number'],
-    ['regional', 'Regional', 'text'],
-    ['troca_notas', 'Troca de notas', 'select', OS_TROCA_NOTAS_OPTIONS]
-  ];
-  const OS_REQUIRED_KEYS = OS_FIELD_DEFS.filter(([key]) => key !== 'produtor').map(([key]) => key);
-
-  // dados_detectados usa nomes vindos do worker de classificação; a IA de
-  // Abertura de O.S. (logistica-os-ai-structurer.js) espera outros nomes pro
-  // mesmo conceito — essa tabela só faz a ponte pra semear a extração.
-  const OS_SEED_FROM_DADOS = {
-    numero_contrato: 'numero_contrato', cidade_embarque: 'cidade_embarque', cidade_destino: 'cidade_destino',
-    local_destino: 'local_destino', produto: 'produto', tipo_produto: 'tipo_produto',
-    volume_inicial: 'volume_inicial', regional_informado: 'regional'
-  };
-
-  function emailOsSeed(e) {
-    const dados = e.dados_detectados || {};
-    const seed = {};
-    Object.entries(OS_SEED_FROM_DADOS).forEach(([from, to]) => {
-      const value = dados[from];
-      if (value !== undefined && value !== null && String(value).trim() !== '') seed[to] = value;
-    });
-    if (!seed.regional && e.regional) seed.regional = e.regional;
-    return seed;
-  }
-
-  function aberturaOsCardHtml(e) {
-    if (e.categoria !== 'LOGÍSTICA') return '';
-    const criadaId = e.dados_detectados?.abertura_os_criada_id;
-    if (criadaId) {
-      return `<div class="em-summary" id="emAberturaOsCard">
-        <span class="em-summary-label">🚚 Abrir O.S. a partir deste e-mail</span>
-        <div class="em-muted em-small">✅ Solicitação já criada a partir deste e-mail — acompanhe em Logística &gt; Abertura de O.S. (pendente de decisão do ADM).</div>
-      </div>`;
-    }
-    return `<div class="em-summary" id="emAberturaOsCard">
-      <span class="em-summary-label">🚚 Abrir O.S. a partir deste e-mail</span>
-      <div class="em-muted em-small">Lê o corpo do e-mail e sugere os campos da Abertura de O.S. Nada é criado sem você conferir e confirmar.</div>
-      <button class="btn btn-primary em-btn-full" type="button" id="emAberturaOsExtrairBtn" style="margin-top:8px">Extrair campos do e-mail</button>
-    </div>`;
-  }
-
-  function renderAberturaOsForm(card, e, campos, userContext) {
-    card.innerHTML = `
-      <span class="em-summary-label">🚚 Abrir O.S. a partir deste e-mail</span>
-      <div class="em-muted em-small">Confira os campos abaixo (extraídos automaticamente) antes de enviar. A solicitação entra como pendente na Logística ADM, do mesmo jeito que uma aberta pelo Gestor.</div>
-      <form id="emAberturaOsForm" class="em-field">
-        ${OS_FIELD_DEFS.map(([key, label, type, options]) => `
-          <label>${esc(label)}</label>
-          ${type === 'select'
-            ? `<select id="emOs_${key}"><option value="">Selecione...</option>${options.map((opt) => `<option value="${esc(opt)}" ${String(campos?.[key] || '') === opt ? 'selected' : ''}>${esc(opt)}</option>`).join('')}</select>`
-            : `<input type="${type}" id="emOs_${key}" value="${esc(campos?.[key] ?? '')}" ${type === 'number' ? 'step="0.01"' : ''} />`}
-        `).join('')}
-        <button class="btn btn-primary em-btn-full" type="submit" style="margin-top:8px">Criar solicitação (pendente ADM)</button>
-      </form>
-    `;
-
-    card.querySelector('#emAberturaOsForm').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const values = Object.fromEntries(OS_FIELD_DEFS.map(([key]) => [key, card.querySelector(`#emOs_${key}`).value.trim()]));
-      const faltando = OS_FIELD_DEFS.filter(([key, label]) => OS_REQUIRED_KEYS.includes(key) && !values[key]).map(([, label]) => label);
-      if (faltando.length) return alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`);
-      const volumeInicial = Number(String(values.volume_inicial).replace(',', '.'));
-      if (!Number.isFinite(volumeInicial) || volumeInicial <= 0) return alert('Volume inicial deve ser um número maior que zero.');
-
-      const submitBtn = event.target.querySelector('button[type="submit"]');
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Enviando...';
-
-      const payload = {
-        // solicitante_id não é enviado: o banco preenche sozinho com o
-        // usuário logado (auth.uid()) — quem clicou aqui na Central de
-        // E-mails, já que não existe uma sessão do Gestor remetente.
-        solicitante_nome: `${e.remetente_nome || e.remetente_email || 'E-mail'} (via Central de E-mails)`,
-        contratante_cliente: values.contratante_cliente,
-        filial_pagadora: values.filial_pagadora,
-        produtor: values.produtor || null,
-        armazem_embarque: values.armazem_embarque,
-        cidade_embarque: values.cidade_embarque,
-        cidade_destino: values.cidade_destino,
-        local_destino: values.local_destino,
-        numero_contrato: values.numero_contrato,
-        produto: values.produto,
-        tipo_produto: values.tipo_produto,
-        servico: values.servico,
-        volume_inicial: volumeInicial,
-        regional: values.regional,
-        troca_notas: values.troca_notas,
-        testes: {},
-        status: 'PENDENTE',
-        raw: { origem: 'email_central', email_id: e.id, account_id: e.account_id, remetente_email: e.remetente_email, remetente_nome: e.remetente_nome }
-      };
-
-      const { data, error } = await supabase.from('logistica_abertura_os').insert(payload).select('id').single();
-      if (error) {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Criar solicitação (pendente ADM)';
-        return alert(error.message);
-      }
-
-      try {
-        await updateEmail(e.id, { dados_detectados: { ...(e.dados_detectados || {}), abertura_os_criada_id: data.id } }, userContext);
-      } catch (err) {
-        console.warn('[emails] falha ao marcar e-mail com a OS criada', err);
-      }
-      await loadEmails();
-      await selectEmail(e.id);
-      alert('Solicitação de Abertura de O.S. criada e enviada para a Logística ADM.');
-    });
-  }
-
-  function wireAberturaOsCard(e, bodyText, userContext) {
-    const button = document.getElementById('emAberturaOsExtrairBtn');
-    if (!button) return;
-    button.addEventListener('click', async () => {
-      const card = document.getElementById('emAberturaOsCard');
-      button.disabled = true;
-      button.textContent = 'Lendo e-mail...';
-      try {
-        const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260904-email-os1');
-        const seed = emailOsSeed(e);
-        const campos = await enhanceLogisticaOsFields(bodyText, seed, (progress) => { button.textContent = progress; });
-        renderAberturaOsForm(card, e, campos, userContext);
-      } catch (error) {
-        console.error('[emails] abertura-os extrair', error);
-        button.disabled = false;
-        button.textContent = 'Extrair campos do e-mail';
-        alert(`Não foi possível ler o e-mail automaticamente: ${error?.message || error}`);
-      }
-    });
-  }
-
   function renderDetail(userContext) {
     const e = state.selected;
     const detail = document.getElementById('emDetail');
@@ -923,8 +774,6 @@ export function renderContent(content, userContext) {
           })()}
         </div>
 
-        ${aberturaOsCardHtml(e)}
-
         ${(e.os_sugestao_aguardar || []).map((sug) => {
           const linha = sug.linha || {};
           const candidatos = sug.candidatos || [];
@@ -962,8 +811,6 @@ export function renderContent(content, userContext) {
         </div>
       </div>
     `;
-
-    wireAberturaOsCard(e, bodyText, userContext);
 
     document.getElementById('emReplyForm').addEventListener('submit', async (event) => {
       event.preventDefault();
