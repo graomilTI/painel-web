@@ -56,7 +56,6 @@ export const MENU_CONFIG = [
       item("conferencia_bonus", "Bônus", "conferencia-bonus", ["CONFERENCIA_BONUS", "ADM_CONFERENCIA", "CONFERENCIA"]),
       item("conferencia_deslocamento", "Deslocamento", "conferencia-deslocamento", ["CONFERENCIA_DESLOCAMENTO", "ADM_CONFERENCIA"]),
       item("conferencia_uber", "Uber · Conferência", "uber", ["CONFERENCIA_UBER", "UBER"]),
-      item("distribuir_os", "Distribuir O.S", "distribuir-os", ["DISTRIBUIR_OS", "CONFERENCIA_DISTRIBUIR_OS"]),
       item("termos", "Termos", "termos", ["TERMOS_CELULAR", "TERMOS_VEICULOS", "TERMOS"])
     ]
   },
