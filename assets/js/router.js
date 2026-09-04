@@ -72,6 +72,7 @@ const SOFT_NAV_PAGES = new Map([
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
   ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260831-remove-aba-epi'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20260813-modelos-v4')] }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js'), extraModules: [() => import('./logistica-abertura-upload.js'), () => import('./logistica-abertura-os-correcao.js')] }],
+  ['logistica-correcao', { title: 'Logística de Correção', module: () => import('./logistica-correcao.js') }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
   ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
