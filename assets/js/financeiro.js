@@ -1879,14 +1879,18 @@ export function renderContent(content, userContext) {
     const forma = row.forma_pagamento || '';
     const dados = row.dados_pagamento || '';
 
+    // Boletos de Compras já entram como "comprado" (NF anexada na origem —
+    // vai direto pra Notas Fiscais, sem esperar o Financeiro pagar). Não
+    // regride pra "aguardando_nf" um item que já passou dessa etapa; só
+    // itens ainda "pendente_pagamento" avançam aqui.
     let q = supabase.from('compras_itens');
     if (ids.length) {
-      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).in('id', ids);
+      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).in('id', ids).eq('status', 'pendente_pagamento');
     } else if (dados) {
       q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
       if (forma) q = q.eq('forma_pagamento', forma);
     } else if (row.origem_id) {
-      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('id', String(row.origem_id).replace(/^compra_/, ''));
+      q = q.update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl }).eq('id', String(row.origem_id).replace(/^compra_/, '')).eq('status', 'pendente_pagamento');
     } else {
       return;
     }
@@ -1896,11 +1900,11 @@ export function renderContent(content, userContext) {
 
     if (isMissingColumnError(error)) {
       let retry = supabase.from('compras_itens');
-      if (ids.length) retry = retry.update({ status: 'aguardando_nf' }).in('id', ids);
+      if (ids.length) retry = retry.update({ status: 'aguardando_nf' }).in('id', ids).eq('status', 'pendente_pagamento');
       else if (dados) {
         retry = retry.update({ status: 'aguardando_nf' }).eq('dados_pagamento', dados).eq('status', 'pendente_pagamento');
         if (forma) retry = retry.eq('forma_pagamento', forma);
-      } else if (row.origem_id) retry = retry.update({ status: 'aguardando_nf' }).eq('id', String(row.origem_id).replace(/^compra_/, ''));
+      } else if (row.origem_id) retry = retry.update({ status: 'aguardando_nf' }).eq('id', String(row.origem_id).replace(/^compra_/, '')).eq('status', 'pendente_pagamento');
       const res = await retry;
       if (res.error) throw res.error;
       return;
