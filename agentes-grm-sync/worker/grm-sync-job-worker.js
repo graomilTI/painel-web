@@ -62,6 +62,11 @@ const SCRIPT_MAP = {
   // Migrado pra API direta em 01/09 (ver memória painel-web-distribuicao-os-api-investigacao).
   // grm-sync-aplicar-distribuicao-os.js (Puppeteer) mantido no disco pra rollback.
   'aplicar-distribuicao-os': 'grmserver-aplicar-distribuicao-os-api.js',
+  // Exclusivo do cron das 02h (novo dia): limpa e redistribui em seguida,
+  // supervisão por supervisão, só as pendências de "novo dia" — força o Graint
+  // a registrar a virada do dia mesmo quando a distribuição de hoje é idêntica
+  // à de ontem. Mesmo script do agente acima, só liga a flag RESET_DIA.
+  'aplicar-distribuicao-os-reset-dia': 'grmserver-aplicar-distribuicao-os-reset-dia.js',
   'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',

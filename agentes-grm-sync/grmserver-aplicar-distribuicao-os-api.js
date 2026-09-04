@@ -32,6 +32,13 @@ const supabase = createClient(
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
 const DRY_RUN = process.argv.includes('--dry-run') || process.env.DRY_RUN === 'true';
+// Modo usado exclusivamente pelo cron das 02h (novo dia): antes de redistribuir,
+// limpa (staCodes=[]) as OS que serão reconciliadas e as redistribui em seguida,
+// supervisão por supervisão — força o Graint a registrar uma mudança real mesmo
+// quando a distribuição do novo dia é idêntica à do dia anterior (sem isso, o
+// agente pula o setDistributionData por já estar "correto", e o Graint nunca
+// processa a virada do dia). Ver painel-web-distribuicao-os-reset-dia na memória.
+const RESET_DIA = process.argv.includes('--reset-dia') || process.env.GRM_RESET_DIA_NOVO_DIA === 'true';
 const limitArg = process.argv.find((a) => a.startsWith('--limit='));
 const LIMIT = Number(process.env.GRM_DISTRIBUICAO_OS_LIMIT || (limitArg ? limitArg.split('=')[1] : 0)) || 0;
 const TIMEOUT_MIN = Number(process.env.GRM_DISTRIBUICAO_OS_TIMEOUT_MIN || 20) || 20;
@@ -221,7 +228,35 @@ async function carregarPaginado(factory, contexto) {
 // sem nunca ver a programação do dia certo. Corrigido buscando a equipe por
 // programacao_id (não por os_id vindo de um filtro de data_os) e agrupando por
 // todo par (OS, data) com programação confirmada na janela.
-async function carregarGruposPendentes() {
+// Usado só em RESET_DIA: restringe a reconciliação às supervisão+data que têm
+// pendência de "novo dia" registrada (programacao_distribuicao_agendada), com
+// a supervisão habilitada para distribuição automática — mesma checagem que o
+// cron das 02h já faz antes de enfileirar o job.
+async function carregarPendenciasNovoDia() {
+  const { data: pendentes, error } = await supabase
+    .from('programacao_distribuicao_agendada')
+    .select('supervisao, data_referencia')
+    .eq('processado', false);
+  if (error) throw new Error(`Falha ao consultar programacao_distribuicao_agendada: ${error.message}`);
+
+  const { data: supervisoesFlag, error: errorFlag } = await supabase
+    .from('supervisoes')
+    .select('nome, distribuicao_os_automatica');
+  if (errorFlag) throw new Error(`Falha ao consultar supervisoes: ${errorFlag.message}`);
+
+  const automaticaPorNome = new Map(
+    safe(supervisoesFlag).map((s) => [normalize(s.nome), Boolean(s.distribuicao_os_automatica)])
+  );
+
+  const chaves = new Set();
+  for (const p of safe(pendentes)) {
+    if (!automaticaPorNome.get(normalize(p.supervisao))) continue;
+    chaves.add(`${dateKey(p.data_referencia)}|${normalize(p.supervisao)}`);
+  }
+  return chaves;
+}
+
+async function carregarGruposPendentes({ apenasNovoDia = false } = {}) {
   const { inicio, fim } = janelaDatas();
 
   // OS "de vitrine" da janela: usadas como base e, principalmente, pra pegar
@@ -350,21 +385,28 @@ async function carregarGruposPendentes() {
     log('WARN', `${ignoradasSemSupervisao} O.S. ignorada(s) porque não possuem supervisão informada.`);
   }
 
-  return [...grupos.values()].filter((grupo) => grupo.itens.length > 0);
+  let resultado = [...grupos.values()].filter((grupo) => grupo.itens.length > 0);
+
+  if (apenasNovoDia) {
+    const chavesNovoDia = await carregarPendenciasNovoDia();
+    resultado = resultado.filter((grupo) => chavesNovoDia.has(`${grupo.data}|${normalize(grupo.coordenacao)}`));
+  }
+
+  return resultado;
 }
 
 function nomeAtualDoCodigo(code, nomePorStaCode) {
   return nomePorStaCode.get(codeKey(code)) || `STA#${code}`;
 }
 
-async function processarSupervisao(token, olsCode, grupo) {
+async function processarSupervisao(token, olsCode, grupo, resetDia) {
   const sodDate = toBrDate(grupo.data);
   const totalEsperadas = grupo.itens.reduce((soma, item) => soma + item.programados.length, 0);
   const totalSemProgramacao = grupo.itens.filter((item) => item.programados.length === 0).length;
 
   log(
     'INFO',
-    `Supervisão ${grupo.data} · ${grupo.coordenacao} · ${grupo.itens.length} OS para reconciliar `
+    `${resetDia ? '[RESET-DIA] ' : ''}Supervisão ${grupo.data} · ${grupo.coordenacao} · ${grupo.itens.length} OS para reconciliar `
       + `(${totalEsperadas} associação(ões) esperada(s), ${totalSemProgramacao} OS sem programação)`
   );
 
@@ -467,15 +509,41 @@ async function processarSupervisao(token, olsCode, grupo) {
   if (DRY_RUN) {
     log(
       falhas.length ? 'WARN' : 'INFO',
-      `[DRY-RUN] Supervisão conferida: ${idsComSucesso.size}/${grupo.itens.length} OS válidas; `
+      `[DRY-RUN]${resetDia ? '[RESET-DIA]' : ''} Supervisão conferida: ${idsComSucesso.size}/${grupo.itens.length} OS válidas; `
         + `${osComMudanca} OS mudariam; ${osSemMudanca} já corretas; `
         + `+${associacoesAdicionar}/-${associacoesRemover} associação(ões); `
+        + (resetDia ? 'reset-dia forçaria limpar+redistribuir mesmo as já corretas; ' : '')
         + 'setDistributionData e updates no Supabase pulados.'
     );
     return;
   }
 
-  if (osComMudanca > 0) {
+  // RESET_DIA: limpa (staCodes=[]) só as OS que acabamos de confirmar como
+  // reconciliáveis (idsComSucesso) e imediatamente restaura o estado correto já
+  // calculado acima, num par de chamadas seguidas — nunca deixa a supervisão
+  // vazia por mais que o tempo entre essas duas chamadas. OS com falha (fora de
+  // idsComSucesso) ficam de fora e continuam intocadas, como no fluxo normal.
+  if (resetDia) {
+    const ordensParaResetar = [...idsComSucesso]
+      .map((id) => itensPorId.get(id))
+      .filter(Boolean)
+      .map((item) => ordemPorNumero.get(String(item.os.numero_os)))
+      .filter(Boolean);
+
+    if (ordensParaResetar.length) {
+      const estadoFinal = new Map(ordensParaResetar.map((ordem) => [ordem, [...safe(ordem.staCodes)]]));
+      for (const ordem of ordensParaResetar) ordem.staCodes = [];
+      log(
+        'INFO',
+        `[RESET-DIA] Limpando ${ordensParaResetar.length} OS reconciliável(is) na Distribuição de OS `
+          + `(${grupo.coordenacao}/${grupo.data}) antes de redistribuir.`
+      );
+      await setDistributionData(token, staffs, sOrders, sodDate);
+      for (const [ordem, staCodes] of estadoFinal) ordem.staCodes = staCodes;
+    }
+  }
+
+  if (osComMudanca > 0 || resetDia) {
     await setDistributionData(token, staffs, sOrders, sodDate);
   } else {
     log('INFO', 'Todas as OS reconciliáveis já estavam corretas no Graint; setDistributionData não necessário.');
@@ -614,10 +682,10 @@ async function main() {
   let falhas = 0;
 
   try {
-    log('INFO', `=== Aplicar Distribuição de OS no Graint via API${DRY_RUN ? ' (DRY-RUN)' : ''} ===`);
+    log('INFO', `=== Aplicar Distribuição de OS no Graint via API${DRY_RUN ? ' (DRY-RUN)' : ''}${RESET_DIA ? ' (RESET-DIA / NOVO DIA)' : ''} ===`);
     log('INFO', `Watchdog global configurado para ${TIMEOUT_MIN} minuto(s).`);
 
-    let grupos = await carregarGruposPendentes();
+    let grupos = await carregarGruposPendentes({ apenasNovoDia: RESET_DIA });
     const totalOs = grupos.reduce((soma, g) => soma + g.itens.length, 0);
     const totalEsperadas = grupos.reduce(
       (soma, g) => soma + g.itens.reduce((s, item) => s + item.programados.length, 0),
@@ -653,7 +721,7 @@ async function main() {
         if (olsCode == null) {
           throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
         }
-        await processarSupervisao(token, olsCode, grupo);
+        await processarSupervisao(token, olsCode, grupo, RESET_DIA);
         if (!DRY_RUN) await marcarAgendamentoReconciliado(grupo);
         ok += 1;
       } catch (error) {
