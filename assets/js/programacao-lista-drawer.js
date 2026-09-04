@@ -14,6 +14,7 @@ import { supabase } from './supabaseClient.js';
 import { logActivity } from './activityLogger.js';
 import { getCurrentUser } from './auth.js';
 import { confirmar } from './core/ui.js';
+import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 import {
   loadOsRelevantes, loadOsRelevantePorNumero, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
   loadColaboradoresRegional, loadIndisponiveisNaData, loadPontos, loadCandidatosPorOs,
@@ -829,7 +830,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         await carregarLista({ manterDrawer: true });
       } catch (error) {
         okBtn.disabled = false; okBtn.textContent = 'Confirmar';
-        alert(error.message || 'Não foi possível solicitar saldo.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível solicitar saldo.'));
       }
     });
   }
@@ -857,7 +858,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         await carregarLista({ manterDrawer: true });
       } catch (error) {
         okBtn.disabled = false; okBtn.textContent = 'Enviar';
-        alert(error.message || 'Não foi possível anexar o laudo.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível anexar o laudo.'));
       }
     });
   }
@@ -949,7 +950,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         if (novoStatus === 'ATENDER' && options.dataReferencia) os.data_os = options.dataReferencia;
         await refreshAposAcao(os);
       } catch (error) {
-        alert(error.message || 'Não foi possível atualizar a O.S.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível atualizar a O.S.'));
       } finally {
         statusBtn.disabled = false;
       }
@@ -972,7 +973,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           await refreshAposAcao(os, { equipe: true, equipeRow });
         }
       } catch (error) {
-        alert(error.message || 'Não foi possível confirmar o colaborador.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível confirmar o colaborador.'));
       }
       return;
     }
@@ -1000,7 +1001,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           });
           await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
-          alert(error.message || 'Não foi possível adicionar o colaborador.');
+          alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o colaborador.'));
         } finally {
           addConfirmBtn.disabled = false;
         }
@@ -1010,7 +1011,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           const equipeRow = await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
           await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
-          alert(error.message || 'Não foi possível adicionar o colaborador.');
+          alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o colaborador.'));
         } finally {
           addConfirmBtn.disabled = false;
         }
@@ -1030,7 +1031,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         const equipeRow = await adicionarFrotaOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, motorista);
         await refreshAposAcao(os, { equipe: true, equipeRow });
       } catch (error) {
-        alert(error.message || 'Não foi possível adicionar o motorista de Frota.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o motorista de Frota.'));
       } finally {
         addFrotaConfirmBtn.disabled = false;
       }
@@ -1046,7 +1047,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         await removerConfirmacao(programacaoIdParaOs(os, programacaoId, programacaoIdMap), removerBtn.dataset.removerColab);
         await refreshAposAcao(os, { equipe: true });
       } catch (error) {
-        alert(error.message || 'Não foi possível remover o colaborador.');
+        alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível remover o colaborador.'));
       }
       return;
     }
