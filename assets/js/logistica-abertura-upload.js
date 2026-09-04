@@ -442,8 +442,46 @@ function ensureUploadButton() {
   });
 }
 
+// Ponte com o botão "🚚 Abrir O.S." da caixa pessoal do Gestor
+// (assets/js/gestor-email.js): lá a IA já leu o e-mail e guardou os campos
+// aqui antes de navegar pra esta página — só aplica 1x por carregamento e
+// limpa a chave logo em seguida pra não reaplicar num F5.
+const EMAIL_PREFILL_KEY = 'logisticaAberturaOsEmailPrefill';
+let emailPrefillConsumed = false;
+
+function consumeEmailPrefill() {
+  if (emailPrefillConsumed) return;
+  if (!isLogisticaPage()) return;
+  if (!document.getElementById(UPLOAD_ID)) return;
+  let raw;
+  try {
+    raw = sessionStorage.getItem(EMAIL_PREFILL_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  emailPrefillConsumed = true;
+  sessionStorage.removeItem(EMAIL_PREFILL_KEY);
+  document.querySelectorAll('.os-upload-filled').forEach((field) => field.classList.remove('os-upload-filled'));
+  try {
+    const campos = JSON.parse(raw);
+    const filled = applyFields(campos || {});
+    setStatus(
+      filled
+        ? `E-mail do Gestor · ${filled} campo${filled === 1 ? '' : 's'} preenchido${filled === 1 ? '' : 's'} automaticamente. Confira antes de enviar.`
+        : 'E-mail recebido, mas nenhum campo foi identificado automaticamente. Preencha manualmente.',
+      filled ? 'ok' : 'warn',
+    );
+  } catch (error) {
+    console.warn('[logistica-abertura-upload] prefill de e-mail inválido', error);
+  }
+}
+
 function scheduleEnsure() {
-  requestAnimationFrame(ensureUploadButton);
+  requestAnimationFrame(() => {
+    ensureUploadButton();
+    consumeEmailPrefill();
+  });
 }
 
 // Cola (Ctrl+V) uma captura de tela direto na aba Abrir OS — mesmo fluxo de
