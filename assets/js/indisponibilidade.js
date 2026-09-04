@@ -57,7 +57,6 @@ function styles() {
     .in-actions{display:flex;gap:10px;flex-wrap:wrap}
     .in-feedback{font-weight:700;display:block}
     .in-feedback.err{color:#fecaca}
-    .in-ate-acoes{display:flex;gap:6px;flex-wrap:wrap}
     .in-btn-recusar{color:#fca5a5!important;border-color:rgba(248,113,113,.35)!important}
     .in-motivo-recusa{font-size:11px;color:#fca5a5;margin-top:4px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .inds-modal-card{padding:28px}
@@ -339,7 +338,7 @@ function renderAtestadosTable() {
   if (!body) return;
   const rows = atestadosFiltrados();
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" class="in-empty">${state.atestados.length ? 'Nenhum atestado no filtro atual.' : 'Nenhum atestado lançado. Clique em <b>+ Lançar Atestado</b> para registrar.'}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="in-empty">${state.atestados.length ? 'Nenhum atestado no filtro atual.' : 'Nenhum atestado lançado. Clique em <b>+ Lançar Atestado</b> para registrar.'}</td></tr>`;
     return;
   }
   body.innerHTML = rows.map((a) => `<tr>
@@ -347,9 +346,12 @@ function renderAtestadosTable() {
     <td>${brDate(a.data_inicio)} — ${brDate(a.data_fim)}</td>
     <td>${a.dias ?? '-'} dias${a.cid ? ` · CID: ${esc(a.cid)}` : ''}</td>
     <td>${statusPill(a.status, STATUS_ATESTADO)}${a.status === 'recusado' && a.motivo_recusa ? `<div class="in-motivo-recusa" title="${esc(a.motivo_recusa)}">${esc(a.motivo_recusa)}</div>` : ''}</td>
-    <td>${!['aprovado', 'recusado'].includes(a.status) ? `<div class="in-ate-acoes"><button class="btn btn-small btn-secondary" data-ate-aprovar="${esc(a.id)}" type="button">Aprovar</button><button class="btn btn-small btn-secondary in-btn-recusar" data-ate-recusar="${esc(a.id)}" type="button">Recusar</button></div>` : '-'}</td>
     <td>${anexoBtnHtml(a.anexo_url)}</td>
-    <td>${acoesHtml(a.id)}</td>
+    <td><div class="rh-acoes-cell">
+      ${!['aprovado', 'recusado'].includes(a.status) ? `<button class="rh-acao-btn" data-ate-aprovar="${esc(a.id)}" type="button" title="Aprovar">✔</button><button class="rh-acao-btn in-btn-recusar" data-ate-recusar="${esc(a.id)}" type="button" title="Recusar">✖</button>` : ''}
+      <button class="rh-acao-btn" data-rh-editar="${esc(a.id)}" type="button" title="Editar">✏️</button>
+      <button class="rh-acao-btn excluir" data-rh-excluir="${esc(a.id)}" type="button" title="Excluir">🗑</button>
+    </div></td>
   </tr>`).join('');
   bindAnexoButtons(body);
   body.querySelectorAll('[data-ate-aprovar]').forEach((b) => b.onclick = async () => {
@@ -456,7 +458,7 @@ function openAtestadoModal(row = null) {
 function renderAtestadosTab(area) {
   area.innerHTML = `<div class="section-head mt-16"><div><h3>Atestados</h3><p class="muted">Controle de atestados médicos por colaborador.</p></div><button class="btn btn-primary" id="inAteNovo" type="button">+ Lançar Atestado</button></div>
   ${filtrosHtml('ate')}
-  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias / CID</th><th>Status</th><th></th><th>Anexo</th><th>Ações</th></tr></thead><tbody id="inAteBody"><tr><td colspan="7" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
+  <div class="in-table-wrap mt-16"><table class="in-table"><thead><tr><th>Colaborador</th><th>Período</th><th>Dias / CID</th><th>Status</th><th>Anexo</th><th>Ações</th></tr></thead><tbody id="inAteBody"><tr><td colspan="6" class="in-empty">Carregando...</td></tr></tbody></table></div>`;
   area.querySelector('#inAteNovo').onclick = () => openAtestadoModal();
   bindFiltros(area, 'ate', () => { state.filtros = lerFiltros(area, 'ate'); renderAtestadosTable(); });
   area.querySelector('#ateExportar').onclick = exportarAtestados;
