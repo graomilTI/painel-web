@@ -51,7 +51,10 @@ const SCRIPT_MAP = {
   'sync-despesas': 'grm-sync-despesas.js',
   'sync-notas-fiscais': 'grm-sync-notas-fiscais.js',
   'sync-mapa-embarque': 'grm-sync-mapa-embarque.js',
-  'sync-patrimonios': 'grm-sync-patrimonios.js',
+  // Migrado pra API direta em 04/09 (patrimonies/getRecords, ver comentário no
+  // topo de grmserver-patrimonios-api.js). grm-sync-patrimonios.js (Puppeteer)
+  // mantido no disco pra rollback.
+  'sync-patrimonios': 'grmserver-patrimonios-api.js',
   'sync-contas-pagar': 'grm-sync-contas-pagar.js',
   'sync-contas-receber': 'grm-sync-contas-receber.js',
   'sync-auditorias': 'grm-sync-auditorias.js',
