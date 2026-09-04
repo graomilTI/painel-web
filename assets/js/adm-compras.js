@@ -856,6 +856,7 @@ async function coletarDadosPagamento(forma,area){
 }
 function updatePagamentoFields(area,forma){
   const label=area.querySelector('#payLabel'); const input=area.querySelector('#payData'); const fileWrap=area.querySelector('#payFileWrap');
+  const nfWrap=area.querySelector('#payNfWrap');
   const linkCols=area.querySelectorAll('.pay-link-th,.pay-link-td');
   if(forma==='LINK'){
     // Compra por link de produto: cada item tem o link do seu próprio
@@ -863,14 +864,20 @@ function updatePagamentoFields(area,forma){
     // cada um ao carrinho e paga. Some o campo único de "link de pagamento".
     if(label) label.style.display='none';
     if(fileWrap) fileWrap.style.display='none';
+    if(nfWrap) nfWrap.style.display='none';
     linkCols.forEach(el=>el.style.display='');
     return;
   }
   linkCols.forEach(el=>el.style.display='none');
   if(!label||!input) return;
   label.style.display='';
-  if(forma==='PIX'){label.firstChild.textContent='Chave PIX';input.placeholder='Informe a chave PIX';if(fileWrap)fileWrap.style.display='none';}
-  else{label.firstChild.textContent='Boleto / URL';input.placeholder='Cole o link do boleto ou anexe abaixo';if(fileWrap)fileWrap.style.display='block';}
+  if(forma==='PIX'){label.firstChild.textContent='Chave PIX';input.placeholder='Informe a chave PIX';if(fileWrap)fileWrap.style.display='none';if(nfWrap)nfWrap.style.display='none';}
+  else{
+    // Boleto não é pago na hora (vence depois), então não passa pela fila
+    // de aprovação do Financeiro: Compras já anexa NF+boleto aqui e o item
+    // vai direto pra Comprado/Notas Fiscais pra lançamento no GRM.
+    label.firstChild.textContent='Boleto / URL';input.placeholder='Cole o link do boleto ou anexe abaixo';if(fileWrap)fileWrap.style.display='block';if(nfWrap)nfWrap.style.display='block';
+  }
 }
 
 function openPagamentoLote(rows, fornecedorPreSelecionado=false){
@@ -901,6 +908,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
     <div class="adm-cmp-grid mt-16">
       <label id="payLabel">Boleto / URL<input id="payData" placeholder="Cole o link do boleto ou anexe abaixo"></label>
       <label id="payFileWrap">Arquivo do boleto<input id="payFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx"></label>
+      <label id="payNfWrap" class="adm-cmp-full" style="display:none">Nota Fiscal (NF)<input id="payNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml"></label>
     </div>
     ${hasCelular?`<label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;color:#e2e2f0"><input type="checkbox" id="payPatrimonio" style="width:16px;height:16px;cursor:pointer"> <span>Celular como patrimônio (sem termo de desconto em folha)</span></label>`:''}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button><button class="btn btn-secondary" id="payBack" type="button">Voltar</button></div>`;
@@ -933,13 +941,21 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
         await enviarFinanceiroLote(rows,total,forma,null,fornecedor,contato,isPatrimonio,dadosPorItem,entregaTipo,entregaEndereco);
       }else{
         const dados=await coletarDadosPagamento(forma,area);
-        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio,null,entregaTipo,entregaEndereco);
+        let nfUrl=null;
+        if(forma==='BOLETO'){
+          if(!dados){ alert('Anexe o boleto (arquivo) ou cole o link do boleto.'); return; }
+          const nfArquivo=area.querySelector('#payNfFile')?.files?.[0]||null;
+          if(!nfArquivo){ alert('Boleto exige anexar a Nota Fiscal (NF) junto — o item vai direto pra Notas Fiscais.'); return; }
+          nfUrl=await uploadArquivoNotasFiscais(nfArquivo,'compras/notas-fiscais');
+        }
+        await enviarFinanceiroLote(rows,total,forma,dados,fornecedor,contato,isPatrimonio,null,entregaTipo,entregaEndereco,nfUrl);
       }
     }catch(e){setMsg(e.message,true);alert(e.message);}
   };
 }
 
-async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null){
+async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null,nfUrl=null){
+  const boletoDireto=forma==='BOLETO'&&!!nfUrl;
   if(celularAsPatrimonio){
     const celRows=itens.filter(r=>norm(r.material)==='celular');
     for(const r of celRows){
@@ -963,11 +979,19 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
     // compras_itens.forma_pagamento) — LINK cai em OUTRO só nesse insert.
     const formaFinPagamento=['PIX','BOLETO'].includes(forma)?forma:'OUTRO';
     const entregaLinha=entregaTipo==='entrega'?`Entrega: ${entregaEndereco}`:(entregaTipo?'Retirada':'');
-    const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,compras_item_ids:normalItens.map(r=>r.id),descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:[dadosConsolidado,entregaLinha].filter(Boolean).join('\n')||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
+    // Boleto não é pago na hora (vence depois) — não trava esperando o
+    // Financeiro aprovar. Compras já anexou NF+boleto, então o item vira
+    // "comprado" na hora e cai direto em Notas Fiscais pra lançar no GRM;
+    // o registro em financeiro_pagamentos só fica de aviso pro Financeiro
+    // pagar o boleto no vencimento.
+    const nfLinha=boletoDireto?`NF já anexada — lançada em Notas Fiscais. Pagar boleto no vencimento.`:'';
+    const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,compras_item_ids:normalItens.map(r=>r.id),descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:[dadosConsolidado,entregaLinha,nfLinha].filter(Boolean).join('\n')||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
     await safe(()=>mergeOrInsertComprasPayment(payload),null);
     for(const r of normalItens){
       const dadosItem=dadosPorItem?(dadosPorItem[r.id]||null):dados;
-      const upd={status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null};
+      const upd=boletoDireto
+        ?{status:'comprado',nf_url:nfUrl,comprovante_url:dadosItem||null,comprado_em:new Date().toISOString(),valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null}
+        :{status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null};
       if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
@@ -982,7 +1006,9 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
       const rhPayload=episComColab.map(r=>({data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:r._ca||r.ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}));
       await safe(()=>supabase.from('rh_epi_registros').insert(rhPayload),null);
     }
-    await notifyByConfig('FINANCEIRO',`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nItens: ${normalItens.length}\nValor total: ${money(normalTotal)}\nForma: ${forma}`);
+    await notifyByConfig('FINANCEIRO',boletoDireto
+      ?`Boleto de compras a pagar no vencimento\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nItens: ${normalItens.length}\nValor total: ${money(normalTotal)}\nNF já anexada — item já está em Notas Fiscais.`
+      :`Pagamento de compras pendente\nFornecedor: ${fornecedor||'Não informado'}\nContato: ${contato||'Não informado'}\nItens: ${normalItens.length}\nValor total: ${money(normalTotal)}\nForma: ${forma}`);
   }
 
   // Celular items → Termos (aguardando_termo)
@@ -996,8 +1022,9 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   }
 
   document.getElementById('admCmpModal').classList.remove('open');
-  if(celularItens.length&&normalItens.length) setMsg(`${normalItens.length} item(ns) ao Financeiro. ${celularItens.length} celular(es) aguardando termo.`);
+  if(celularItens.length&&normalItens.length) setMsg(`${normalItens.length} item(ns) ${boletoDireto?'em Notas Fiscais':'ao Financeiro'}. ${celularItens.length} celular(es) aguardando termo.`);
   else if(celularItens.length) setMsg(`${celularItens.length} celular(es) encaminhado(s) para assinatura de termo.`);
+  else if(boletoDireto) setMsg('Compra registrada em Notas Fiscais. Boleto a pagar no vencimento.');
   else setMsg('Compra enviada ao Financeiro e movida para PENDENTES.');
   await loadRows();
 }
