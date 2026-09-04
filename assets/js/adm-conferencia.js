@@ -189,19 +189,37 @@ function deslocamentoResumo(row) {
   return valor > 0 ? `${tipo} • ${money(valor)}` : tipo;
 }
 
-// Espelha a regra do agente automático (configKeyExtra em
-// supabase/functions/grm-liberacao-despesas-publicar/index.ts): despesa tipo
-// "OUTROS" só ganha mapeamento pro GRM quando a descrição/observação cita
-// "combustível" explicitamente. Fora isso, o agente nunca lança essa despesa
-// no GRM (skip proposital, não é bug) -- precisa ser feita manualmente.
+// Espelha a regra do agente automático (grm_filtrar_regras_programacao,
+// função no banco criada pela migration 20260901_grm_outros_caixa_manual.sql):
+// despesa tipo "OUTROS" só ganha mapeamento automático pro GRM (abre a
+// categoria no Caixa Operacional, sempre com AUTO=false/conferência manual
+// no GRM) quando a descrição/observação cita inequivocamente UMA família de
+// despesa conhecida. Ambíguo (mais de uma família) ou sem nenhuma família
+// reconhecida continua sem categoria -- precisa ser lançado manualmente.
+const AGENTE_OUTROS_CATEGORIAS = [
+  /(^| )(BONUS|BONIFICACAO|PREMIACAO)( |$)/,
+  /(^| )RECEBIMENTO DA LAVOURA( |$)/,
+  /(^| )(COMBUSTIVEL|GASOLINA|ABASTECIMENTO)( |$)/,
+  /(^| )PEDAGIO(S)?( |$)/,
+  /(^| )PASSAGEM(ENS)?( |$)/,
+  /(^| )MANUTENCAO( |$)/,
+  /(^| )TROCA DE PNEU(S)?( |$)/,
+  /(^| )(UBER|TAXI)( |$)/,
+  /(^| )RECARGA( DE)? (CELULAR|TELEFONE)( |$)/,
+  /(^| )(LAVAGEM|LAVA JATO)( |$)/,
+  /(^| )(REEMBOLSO KM|ADICIONAR KM)( |$)/,
+];
+
 function isExtraOutrosNaoMapeado(item) {
   const tipo = normalizeText(item?.tipo_despesa || '');
   if (!['OUTRO', 'OUTROS'].includes(tipo)) return false;
-  const descricao = normalizeText(`${item?.descricao || item?.extras_descricao || item?.detalhamento || ''} ${item?.observacao || item?.observacoes || ''}`);
+  const descricaoBruta = `${item?.descricao || item?.extras_descricao || item?.detalhamento || ''} ${item?.observacao || item?.observacoes || ''}`;
   // O botão Adicionar cria primeiro um rascunho vazio. Se o gestor não o
   // preencher, ele não representa uma despesa e não deve virar pendência.
-  if (!descricao && asNumber(item?.valor) <= 0) return false;
-  return !descricao.includes('COMBUSTIVEL');
+  if (!normalizeText(descricaoBruta) && asNumber(item?.valor) <= 0) return false;
+  const texto = normalizeText(descricaoBruta).replace(/[^A-Z0-9]+/g, ' ').trim();
+  const categoriasReconhecidas = AGENTE_OUTROS_CATEGORIAS.filter((regex) => regex.test(texto)).length;
+  return categoriasReconhecidas !== 1;
 }
 
 function getExtrasOutrosNaoMapeados(row) {
