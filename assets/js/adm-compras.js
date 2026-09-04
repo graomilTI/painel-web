@@ -995,10 +995,21 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
       if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
+      // Boleto pula finalizarCompra/finalizarCompraGrupo (que geram o código
+      // da compra e a linha de cadastro de patrimônio) — replica aqui pra não
+      // perder o número da compra nem o card de "aguardando número" no
+      // Gestor > Patrimônios.
+      if(boletoDireto){
+        const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
+        if(codigo) upd.codigo=codigo;
+      }
       const {error:updErr}=await supabase.from('compras_itens').update(upd).eq('id',r.id);
       if(updErr){
         if(updErr.message?.includes("'ca'")||updErr.message?.includes("'fornecedor'")||updErr.code==='PGRST204'){delete upd.ca; delete upd.fornecedor; delete upd.entrega_tipo; delete upd.entrega_endereco; const {error:r2}=await supabase.from('compras_itens').update(upd).eq('id',r.id); if(r2) throw new Error(`Erro ao atualizar item ${r.material}: ${r2.message}`);}
         else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
+      }
+      if(boletoDireto&&norm(r.tipo).includes('patrimonio')){
+        await safe(()=>supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca:r.marca||null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}),null);
       }
     }
     const episComColab=normalItens.filter(r=>isEPI(r)&&(r.colaborador_id||r.colaborador_nome));
