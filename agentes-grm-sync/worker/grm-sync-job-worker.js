@@ -77,6 +77,13 @@ const SCRIPT_MAP = {
   'sync-adiantamentos': 'grm-sync-adiantamentos.js',
   'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
+  // Migrado pra API direta em 04/09 (payInvoice/setRecord, ver comentário no
+  // topo de grmserver-lancar-notas-fiscais-api.js) — validado com um
+  // lançamento real de teste (código GRM 118857) antes do deploy.
+  // grm-sync-lancar-notas-fiscais.js (Puppeteer) mantido no disco pra
+  // rollback. Essa entrada tinha sumido do SCRIPT_MAP (drift não commitado
+  // entre 08/08 e 10/08) — é por isso que o agente não rodava mais.
+  'sync-lancar-notas-fiscais': 'grmserver-lancar-notas-fiscais-api.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-reabrir-os': 'grm-sync-reabrir-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',
