@@ -3230,12 +3230,14 @@ CREATE TABLE public.grm_nf_lancamentos (
   processado_em timestamp with time zone,
   lancado_em timestamp with time zone,
   erro text,
+  rh_folha_id uuid,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT grm_nf_lancamentos_pkey PRIMARY KEY (id),
   CONSTRAINT grm_nf_lancamentos_storage_path_key UNIQUE (storage_path),
   CONSTRAINT grm_nf_lancamentos_execucao_id_fkey FOREIGN KEY (execucao_id) REFERENCES grm_nf_lancamento_execucoes(id) ON DELETE SET NULL,
-  CONSTRAINT grm_nf_lancamentos_enviado_por_fkey FOREIGN KEY (enviado_por) REFERENCES auth.users(id)
+  CONSTRAINT grm_nf_lancamentos_enviado_por_fkey FOREIGN KEY (enviado_por) REFERENCES auth.users(id),
+  CONSTRAINT grm_nf_lancamentos_rh_folha_id_fkey FOREIGN KEY (rh_folha_id) REFERENCES rh_folha(id) ON DELETE SET NULL
 );
 
 CREATE TABLE public.grm_nhe_importacoes (
@@ -6373,14 +6375,15 @@ CREATE TABLE public.rh_ferias (
 CREATE TABLE public.rh_folha (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   colaborador_id uuid,
-  colaborador_nome text NOT NULL,
-  competencia text NOT NULL,
+  colaborador_nome text,
+  competencia text,
   valor_bruto numeric,
   valor_liquido numeric,
   proventos jsonb NOT NULL DEFAULT '[]'::jsonb,
   descontos jsonb NOT NULL DEFAULT '[]'::jsonb,
   arquivo_url text,
   status text NOT NULL DEFAULT 'gerada'::text,
+  empresa text,
   created_by uuid,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
@@ -18359,6 +18362,7 @@ CREATE INDEX idx_grm_mapa_embarque_importacoes_created_at ON public.grm_mapa_emb
 CREATE INDEX grm_nf_lancamentos_documento_idx ON public.grm_nf_lancamentos USING btree (fornecedor_cnpj, numero_documento, data_emissao);
 CREATE INDEX grm_nf_lancamentos_fingerprint_idx ON public.grm_nf_lancamentos USING btree (fingerprint) WHERE (fingerprint IS NOT NULL);
 CREATE INDEX grm_nf_lancamentos_status_idx ON public.grm_nf_lancamentos USING btree (status, updated_at DESC);
+CREATE INDEX grm_nf_lancamentos_rh_folha_id_idx ON public.grm_nf_lancamentos USING btree (rh_folha_id) WHERE (rh_folha_id IS NOT NULL);
 CREATE INDEX idx_grm_nhe_data_os_json ON public.grm_nhe_importacoes USING btree (((dados_json ->> 'lnsDate'::text)), ((dados_json ->> 'sorCode'::text)));
 CREATE INDEX idx_grm_nhe_importacoes_created_at ON public.grm_nhe_importacoes USING btree (created_at DESC);
 CREATE UNIQUE INDEX grm_notas_fiscais_importacoes_empresa_fatura_uidx ON public.grm_notas_fiscais_importacoes USING btree (empresa, fatura);
