@@ -672,7 +672,13 @@ function payrollEmployees(text) {
   const unique = new Map();
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const patterns = [
-    /^\s*(\d{1,8})\s+([A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý .'-]{4,}?)\s+(\d{5,7})\s+(\d+)\s+(\d+)\s*$/i,
+    // Holerite individual (não-lote): entre o nome e o CBO pode vir o valor de
+    // Referência (ex.: "31,00", dias/horas trabalhados) — achado real
+    // processando HOLERITE 1013 - SAMMUEL ARAÚJO SOARES.pdf, arquivo que
+    // ficou parado na fila desde 07/08 porque essa variação não batia com
+    // nenhum dos dois padrões abaixo (só o formato de lote, sem Referência,
+    // batia).
+    /^\s*(\d{1,8})\s+([A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý .'-]{4,}?)\s+(?:\d{1,3}(?:\.\d{3})*,\d{2}\s+)?(\d{5,7})\s+(\d+)\s+(\d+)\s*$/i,
     /^\s*(\d{1,8})\s{2,}([A-ZÀ-ÖØ-Ý][A-ZÀ-ÖØ-Ý .'-]{4,}?)\s{2,}(\d{5,7})\b/i,
   ];
   for (const line of lines) {
