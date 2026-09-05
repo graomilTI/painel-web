@@ -51,11 +51,25 @@ const SCRIPT_MAP = {
   // era código morto). Script Puppeteer antigo mantido no disco pra rollback.
   'sync-locais-embarque': 'grmserver-locais-embarque-api.js',
   'sync-resultado-diario': 'grm-sync-resultado-diario.js',
-  'sync-despesas': 'grm-sync-despesas.js',
+  // Migrado pra API direta em 05/09 (reports/expenses). O agrupamento via UI que o
+  // script Puppeteer antigo clicava (Coordenação/Grupo de Categoria) nunca influenciava
+  // a resposta — o fetch já mandava selectRow/selectColumn fixos no corpo; confirmado
+  // ao vivo chamando o endpoint direto e recebendo a mesma tabela pivot de sempre.
+  // Script Puppeteer antigo mantido no disco pra rollback.
+  'sync-despesas': 'grmserver-despesas-api.js',
   // Migrado pra API direta em 05/09 (reports/finance/invoices, mesmo motivo do
   // locais-embarque acima). Script Puppeteer antigo mantido no disco pra rollback.
   'sync-notas-fiscais': 'grmserver-notas-fiscais-api.js',
-  'sync-mapa-embarque': 'grm-sync-mapa-embarque.js',
+  // Migrado pra API direta em 05/09 (manager/boardPanel/getDayBoardingData). O script
+  // Puppeteer antigo baixava um XLS gerado 100% client-side (exceljs) a partir dos MESMOS
+  // dados dessa chamada — mapeamento de colunas extraído do bundle JS da tela
+  // (BoardingMap-*.js/PrintBoardingListXLS). De brinde, corrigido um bug pré-existente
+  // (também presente no script antigo): a chamada final à Edge Function
+  // mapa-embarque-alertas via supabase.functions.invoke() sempre voltava 401 em produção
+  // (a lib do supabase-js instalada aqui não manda o header Authorization esperado) —
+  // trocado por fetch cru, que funciona. Script Puppeteer antigo mantido no disco pra
+  // rollback.
+  'sync-mapa-embarque': 'grmserver-mapa-embarque-api.js',
   // Migrado pra API direta em 04/09 (patrimonies/getRecords, ver comentário no
   // topo de grmserver-patrimonios-api.js). grm-sync-patrimonios.js (Puppeteer)
   // mantido no disco pra rollback.
