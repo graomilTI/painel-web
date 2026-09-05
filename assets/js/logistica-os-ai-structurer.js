@@ -340,6 +340,31 @@ function mergeFields(existing, ai, explicit) {
 // faltando antes de considerar "já tá bom o suficiente".
 const CAMPOS_MINIMOS_SEM_IA_LOCAL = KEYS.length - 2;
 
+// Falha já vista ao vivo: depois que o download do modelo chega a 100%, o
+// Chrome ainda precisa carregar/inicializar o Gemini Nano, e isso pode
+// travar indefinidamente em máquinas sem GPU/NPU compatível (o await de
+// `session.create` nunca resolve nem rejeita). Sem limite de tempo aqui, o
+// botão fica preso em "baixando IA local · 100%" pra sempre. Se estourar o
+// prazo, segue sem IA local — a leitura por rótulo explícito já cobre a
+// maioria dos casos.
+const AI_LOCAL_TIMEOUT_MS = 20000;
+
+function withTimeout(promise, ms, onTimeout) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      onTimeout?.();
+      resolve(null);
+    }, ms);
+    promise.then(
+      (value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } },
+      () => { if (!settled) { settled = true; clearTimeout(timer); resolve(null); } },
+    );
+  });
+}
+
 export async function enhanceLogisticaOsFields(text, existingFields = {}, onProgress) {
   const explicit = parseExplicitLabels(text);
 
@@ -352,6 +377,10 @@ export async function enhanceLogisticaOsFields(text, existingFields = {}, onProg
   const preenchidos = KEYS.filter((key) => hasValue(semIaLocal[key])).length;
   if (preenchidos >= CAMPOS_MINIMOS_SEM_IA_LOCAL) return semIaLocal;
 
-  const ai = await chromeAiFields(text, onProgress);
+  const ai = await withTimeout(
+    chromeAiFields(text, onProgress),
+    AI_LOCAL_TIMEOUT_MS,
+    () => onProgress?.('IA local demorou demais, seguindo sem ela...'),
+  );
   return mergeFields(semIaLocal, ai, explicit);
 }
