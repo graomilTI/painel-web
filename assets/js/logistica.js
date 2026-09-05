@@ -3,6 +3,7 @@ import { getSession } from './auth.js';
 import { supabase } from './supabaseClient.js';
 import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
+import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -583,16 +584,32 @@ function testesResumo(testes) {
   return `<br><small class="muted">Testes: ${esc(labels.join(', '))}</small>`;
 }
 
+function camposCorrigirBadgesHtml(row) {
+  const campos = Array.isArray(row.campos_corrigir) ? row.campos_corrigir : [];
+  if (!campos.length) return '';
+  return `<div class="log-campos-corrigir">${campos.map(c => `<span class="log-campo-badge">${esc(labelCampoAberturaOs(typeof c === 'string' ? c : c.campo))}</span>`).join('')}</div>`;
+}
+
+function pontoProblemaAvisoHtml(row) {
+  const pontos = Array.isArray(row.pontos_problema) ? row.pontos_problema : [];
+  if (!pontos.length) return '';
+  const ultimo = [...pontos].sort((a, b) => String(b.em || '').localeCompare(String(a.em || '')))[0];
+  return `<div class="log-obs log-ponto-problema">❗ ${esc(ultimo.descricao || '-')} <small class="muted">(${brDate(ultimo.em)})</small></div>`;
+}
+
 function renderAberturaOsHistorico() {
   if (!state.aberturaRows.length) return `<div class="log-empty">Nenhuma solicitação de abertura de O.S. encontrada.</div>`;
-  return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => `
-    <tr>
+  return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => {
+    const precisaCorrigir = String(r.status || '').toUpperCase() === 'CORRIGIR';
+    return `
+    <tr class="${precisaCorrigir ? 'log-row-corrigir' : ''}">
       <td data-label="Data">${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
       <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
       <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
       <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small>${testesResumo(r.testes)}</td>
-      <td data-label="Status"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}</td>
-    </tr>`).join('')}</tbody></table></div>`;
+      <td data-label="Status"><span class="log-status-cell"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${precisaCorrigir ? `<button class="log-editar-corrigir-btn" data-editar-abertura="${esc(r.id)}" type="button" title="Corrigir e reenviar para Logística">✎</button>` : ''}</span>${camposCorrigirBadgesHtml(r)}${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}${pontoProblemaAvisoHtml(r)}</td>
+    </tr>`;
+  }).join('')}</tbody></table></div>`;
 }
 
 function osRegionalHead() {
@@ -1042,6 +1059,11 @@ function injectStyles() {
     .atz-resolvido-chip{background:rgba(22,163,74,.28)!important;border-color:rgba(34,197,94,.6)!important;color:#dcfce7!important;font-weight:950;animation:atzResolvidoPulse 1.4s ease infinite}
     @keyframes atzResolvidoPulse{50%{box-shadow:0 0 0 4px rgba(34,197,94,.16)}}
     .log-os-actions{display:flex;gap:6px}.log-os-status-btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(52,211,153,.2);background:rgba(15,23,42,.6);color:#8fa1b5;border-radius:10px;width:36px;height:36px;cursor:pointer;transition:background .15s}.log-os-status-btn.yellow.active,.log-os-status-btn.yellow:hover{background:rgba(250,204,21,.18);border-color:rgba(250,204,21,.35);color:#fde68a}.log-os-status-btn.blue.active,.log-os-status-btn.blue:hover{background:rgba(59,130,246,.18);border-color:rgba(96,165,250,.35);color:#bfdbfe}.log-os-status-btn.green.active,.log-os-status-btn.green:hover{background:rgba(22,163,74,.22);border-color:rgba(34,197,94,.4);color:#bbf7d0}
+    .log-row-corrigir{background:rgba(250,204,21,.10)!important}.log-row-corrigir td{border-color:rgba(250,204,21,.18)!important}
+    .log-status-cell{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .log-editar-corrigir-btn{width:28px;height:28px;border-radius:8px;border:1px solid rgba(250,204,21,.4);background:rgba(250,204,21,.16);color:#fde68a;font-size:14px;line-height:1;cursor:pointer}.log-editar-corrigir-btn:hover{background:rgba(250,204,21,.26)}
+    .log-campos-corrigir{margin-top:4px}.log-campo-badge{display:inline-block;margin:0 4px 4px 0;padding:2px 7px;border-radius:999px;background:rgba(250,204,21,.16);color:#fde68a;font-size:10px;font-weight:800}
+    .log-ponto-problema{color:#fdba74!important}
     @media(max-width:1100px){.abrir-os-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr 1fr}.fob-row{grid-template-columns:1fr}.fob-cell.actions{grid-template-columns:1fr 52px 52px}}
     @media(max-width:820px){.abrir-os-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:680px){.abrir-os-grid{grid-template-columns:1fr}.fob-kpis,.fob-add-grid,.fob-os-found{grid-template-columns:1fr}.fob-os-line{grid-template-columns:1fr}.log-tab{flex:1}.fob-cell.actions{grid-template-columns:1fr 48px 48px}}
