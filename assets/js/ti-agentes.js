@@ -48,8 +48,8 @@ const AGENTES = [
   // real); grm_lista_os_importacoes é a tabela de import do agente Puppeteer
   // antigo, pausada e congelada desde a migração.
   { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'], apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #332): serviço systemd contínuo faz poll em serviceOrder/getRecords e grava direto em operacional_os. Script Puppeteer antigo mantido no disco pra rollback.' },
-  { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes', apiStatus: 'puppeteer' },
-  { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes', apiStatus: 'api', apiNote: 'Migrado 04/09: chama a API interna do Graint direto (grmserver-patrimonios-api.js, patrimonies/getRecords). Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-nhe-api.js, reports/classification/nhe). Script Puppeteer antigo mantido no disco pra rollback.' },
   // sync-operacional-os (derivação em lote antiga) também está pausada e sem
   // substituto direto — operacional_os agora é mantida por sync-lista-os acima.
   // Card mantido pra rollback/histórico; "Erro" aqui é esperado até ser
@@ -62,23 +62,23 @@ const AGENTES = [
   // grm_producao_diaria_importacoes ficou congelada (agente Puppeteer pausado em
   // grm_sync_agent_settings) — usar producao_snapshot.created_at como sinal de vida.
   { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20, apiStatus: 'api', apiNote: 'Migrado 01/09: serviço systemd contínuo grava direto em producao_snapshot. Script Puppeteer antigo mantido no disco pra rollback.' },
-  { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-locais-embarque-api.js, reports/classification/servicePlaces). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes', apiStatus: 'api', apiNote: 'Migrado 02/09: login via API direto (user/login), sem abrir navegador — já buscava os dados via fetch antes, só o login usava Puppeteer. Continua job pontual na fila fixa (não virou serviço contínuo); janela reduzida de 30 pra 7 dias.' },
   { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes', apiStatus: 'puppeteer' },
-  { id: 'sync-notas-fiscais', name: 'Notas Fiscais', freq: 'fila fixa', table: 'grm_notas_fiscais_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-notas-fiscais', name: 'Notas Fiscais', freq: 'fila fixa', table: 'grm_notas_fiscais_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-notas-fiscais-api.js, reports/finance/invoices). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-mapa-embarque', name: 'Mapa de Embarque', freq: 'fila fixa', table: 'grm_mapa_embarque_importacoes', apiStatus: 'puppeteer' },
-  { id: 'sync-contas-pagar', name: 'Contas a Pagar', freq: 'fila fixa', table: 'grm_contas_pagar_importacoes', apiStatus: 'puppeteer' },
-  { id: 'sync-contas-receber', name: 'Contas a Receber', freq: 'fila fixa', table: 'grm_contas_receber_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-contas-pagar', name: 'Contas a Pagar', freq: 'fila fixa', table: 'grm_contas_pagar_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-contas-pagar-api.js, payInvoice/getRecords). Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-contas-receber', name: 'Contas a Receber', freq: 'fila fixa', table: 'grm_contas_receber_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-contas-receber-api.js, receiveInvoice/getRecords). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-auditorias', name: 'Auditorias', freq: 'fila fixa', table: 'grm_auditorias_importacoes', apiStatus: 'puppeteer' },
-  { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: 'fila fixa', table: 'grm_cargas_importacoes', apiStatus: 'puppeteer' },
+  { id: CARGAS_AGENT_ID, name: 'Cargas · Geofence', freq: 'fila fixa', table: 'grm_cargas_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-cargas-geofence-api.js, reports/classification/loads). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: BTG_AGENT_ID, name: 'BTG · Relatórios', freq: 'fila fixa / disparo', table: 'logistica_btg_solicitacoes', aliases: BTG_AGENT_ALIASES, kpi: true, apiStatus: 'puppeteer' },
-  { id: 'sync-adiantamentos', name: 'Adiantamentos', freq: 'fila fixa', table: 'grm_adiantamentos_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-adiantamentos', name: 'Adiantamentos', freq: 'fila fixa', table: 'grm_adiantamentos_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-adiantamentos-api.js, oFlow/request/getRecords). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'botconversa-sync', name: 'BotConversa · Contatos', freq: 'fila fixa', table: 'botconversa_contatos', source: 'botconversa', apiStatus: 'api', apiNote: 'Nunca dependeu de Puppeteer: roda como Edge Function do Supabase chamando a API do BotConversa direto.' },
   { id: 'sync-login-alimentacao', name: 'Login Alimentação', freq: 'contínuo', table: 'financeiro_alimentacao_colaboradores', apiStatus: 'puppeteer' },
   { id: 'sync-btg-checkin', name: 'BTG · Envio de Check-in', freq: 'sob demanda', table: 'logistica_btg_solicitacoes', direction: 'saida', apiStatus: 'api', apiNote: 'Nunca dependeu de Puppeteer: dispara a Edge Function btg-checkin-send direto via HTTPS.' },
   { id: DISTRIBUICAO_OS_AGENT_ID, name: 'Aplicar Distribuição de OS (Graint)', freq: '15 min (por supervisão)', table: 'operacional_os', direction: 'saida', apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #340): chama a API interna do Graint direto. Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-lancar-nhe', name: 'Lançamento Automático de NHE (Graint)', freq: 'diário 02h', table: 'logistica_nhe_lancamentos_auto', direction: 'saida', apiStatus: 'puppeteer' },
-  { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida', apiStatus: 'puppeteer' },
+  { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida', apiStatus: 'api', apiNote: 'Já era 100% via API (login e chamadas via fetch direto, sem Puppeteer) — rótulo desatualizado corrigido em 05/09.' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida', apiStatus: 'api', apiNote: 'Migrado 02/09: chama a API interna do Graint direto (grmserver-liberacao-despesas-api.js), ~10s por lote contra ~1min/CPF do fluxo Puppeteer antigo (mantido no disco pra rollback).' },
   { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: '10 min (fila 06 · Saída OS)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida', apiStatus: 'hybrid', apiNote: 'A busca da classificação no GRM já usa API (PR #341). O preenchimento no painel Ouro Safra continua via Puppeteer, porque a Ouro Safra é Blazor Server e não tem API.' },
 ];

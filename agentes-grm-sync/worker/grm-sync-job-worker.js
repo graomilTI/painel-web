@@ -46,19 +46,32 @@ fs.mkdirSync(`${WORKER_RUNTIME}/cache`, { recursive: true });
 const SCRIPT_MAP = {
   'sync-colaboradores': 'grmserver-colaboradores-sync-snapshot.js',
   'sync-producao-diaria': 'grm-sync-producao-diaria.js',
-  'sync-locais-embarque': 'grm-sync-locais-embarque.js',
+  // Migrado pra API direta em 05/09 (reports/classification/servicePlaces, o script
+  // Puppeteer antigo já fazia esse fetch de dentro da página; o download de XLS por trás
+  // era código morto). Script Puppeteer antigo mantido no disco pra rollback.
+  'sync-locais-embarque': 'grmserver-locais-embarque-api.js',
   'sync-resultado-diario': 'grm-sync-resultado-diario.js',
   'sync-despesas': 'grm-sync-despesas.js',
-  'sync-notas-fiscais': 'grm-sync-notas-fiscais.js',
+  // Migrado pra API direta em 05/09 (reports/finance/invoices, mesmo motivo do
+  // locais-embarque acima). Script Puppeteer antigo mantido no disco pra rollback.
+  'sync-notas-fiscais': 'grmserver-notas-fiscais-api.js',
   'sync-mapa-embarque': 'grm-sync-mapa-embarque.js',
   // Migrado pra API direta em 04/09 (patrimonies/getRecords, ver comentário no
   // topo de grmserver-patrimonios-api.js). grm-sync-patrimonios.js (Puppeteer)
   // mantido no disco pra rollback.
   'sync-patrimonios': 'grmserver-patrimonios-api.js',
-  'sync-contas-pagar': 'grm-sync-contas-pagar.js',
-  'sync-contas-receber': 'grm-sync-contas-receber.js',
+  // Migrados pra API direta em 05/09 (payInvoice/getRecords e
+  // receiveInvoice/getRecords — o script Puppeteer antigo já fazia esse fetch
+  // de dentro da página, só precisava do navegador pra logar; ver comentário
+  // no topo de grmserver-contas-pagar-api.js). Scripts Puppeteer antigos
+  // mantidos no disco pra rollback.
+  'sync-contas-pagar': 'grmserver-contas-pagar-api.js',
+  'sync-contas-receber': 'grmserver-contas-receber-api.js',
   'sync-auditorias': 'grm-sync-auditorias.js',
-  'sync-nhe': 'grm-sync-nhe.js',
+  // Migrado pra API direta em 05/09 (reports/classification/nhe, mesmo motivo do
+  // locais-embarque/notas-fiscais acima). Script Puppeteer antigo mantido no disco
+  // pra rollback.
+  'sync-nhe': 'grmserver-nhe-api.js',
   'sync-lista-os': 'grm-sync-lista-os.js',
   'sync-operacional-os': 'grm-sync-operacional-os.js',
   'sync-distribuicao-os': 'grm-sync-distribuicao-os.js',
@@ -70,11 +83,18 @@ const SCRIPT_MAP = {
   // a registrar a virada do dia mesmo quando a distribuição de hoje é idêntica
   // à de ontem. Mesmo script do agente acima, só liga a flag RESET_DIA.
   'aplicar-distribuicao-os-reset-dia': 'grmserver-aplicar-distribuicao-os-reset-dia.js',
-  'sync-cargas-geofence': 'grm-sync-cargas-geofence.js',
+  // Migrado pra API direta em 05/09 (reports/classification/loads — main() já só usava o
+  // navegador pra logar e chamar esse fetch; toda a maquinaria de download de XLS por trás
+  // já era código morto). Script Puppeteer antigo mantido no disco pra rollback.
+  'sync-cargas-geofence': 'grmserver-cargas-geofence-api.js',
   'sync-btg-relatorios': 'grm-sync-btg-classificador.js',
   'sync-btg-classificador': 'grm-sync-btg-classificador.js',
   'sync-btg-checkin': 'grm-sync-btg-checkin.js',
-  'sync-adiantamentos': 'grm-sync-adiantamentos.js',
+  // Migrado pra API direta em 05/09 (oFlow/request/getRecords, endpoint já
+  // conhecido do script Puppeteer antigo desde a descoberta de 10/07 — só
+  // faltava tirar o navegador do meio). grm-sync-adiantamentos.js (Puppeteer)
+  // mantido no disco pra rollback.
+  'sync-adiantamentos': 'grmserver-adiantamentos-api.js',
   'sync-login-alimentacao': 'grm-sync-login-alimentacao.js',
   'sync-lancar-nhe': 'grm-sync-lancar-nhe.js',
   // Migrado pra API direta em 04/09 (payInvoice/setRecord, ver comentário no
