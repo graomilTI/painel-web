@@ -33,7 +33,7 @@
 "distribuir-os";"distribuir-os.html";"assets/js/distribuir-os.js";"";"";"operacional_colaborador_base | operacional_os | operacional_os_colaboradores";"";"";""
 "dre";"dre.html";"assets/js/dre.js";"";"";"";"";"";""
 "efetivos-sem-producao";"efetivos-sem-producao.html";"assets/js/efetivosSemProducao.js";"";"";"colaborador_snapshot | efetivos_sem_producao | producao_snapshot";"";"";""
-"emails";"emails.html";"assets/js/emails.js";"assets/js/emails-secure-account.js";"assets/js/emails-layout-v3.js";"email_accounts_public | email_attachments | email_historico | email_messages | email_outbox | operacional_os";"";"email-anexos";""
+"emails";"emails.html";"assets/js/emails.js";"assets/js/emails-secure-account.js";"assets/js/emails-layout.js";"email_accounts_public | email_attachments | email_historico | email_messages | email_outbox | operacional_os";"";"email-anexos";""
 "envios";"envios.html";"assets/js/envios.js";"";"";"envios_destinatarios | envios_postagens | envios_remetentes | envios_reversa | historico_colaboradores";"";"";"Correios"
 "epi-rh";"epi-rh.html";"assets/js/epiRh.js";"";"assets/js/epiRhPresetPatch.js";"colaboradores | compras_itens | compras_notificacoes_config | compras_solicitacoes";"";"";"Botconversa"
 "equipe";"equipe.html";"assets/js/equipe.js";"";"";"programacao_inativacao_solicitacoes | rh_admissoes | rh_documentos_registro | rh_integracao";"";"";"OCR"
