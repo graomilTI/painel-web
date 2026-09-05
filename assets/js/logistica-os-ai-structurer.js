@@ -194,6 +194,16 @@ function canonicalize(fields, wholeText = '') {
   return result;
 }
 
+// numero_contrato e volume_inicial são os únicos campos legitimamente
+// numéricos. Nos outros, um valor puramente numérico quase sempre é lixo de
+// tabela (ex.: cabeçalho "PRODUTO" sozinho seguido, na linha de baixo, por um
+// código NCM de outra coluna — visto ao vivo com e-mail da Cargill).
+const NUMERIC_VALUE_ALLOWED = new Set(['numero_contrato', 'volume_inicial']);
+
+function isNumericOnly(value) {
+  return /^\d+([.,]\d+)?$/.test(String(value ?? '').trim());
+}
+
 function parseExplicitLabels(text) {
   const result = blankFields();
   const lines = String(text ?? '')
@@ -209,6 +219,7 @@ function parseExplicitLabels(text) {
     let value = match.value;
     if (!value && lines[index + 1] && !findLabel(lines[index + 1])) value = clean(lines[index + 1]);
     if (!value) continue;
+    if (isNumericOnly(value) && !NUMERIC_VALUE_ALLOWED.has(match.key)) continue;
     result[match.key] = value;
   }
 
@@ -224,7 +235,10 @@ function parseExplicitLabels(text) {
     while ((match = regex.exec(normalizedText))) {
       const label = normalize(match[1]);
       const item = FIELD_ALIASES.find(([, aliases]) => aliases.some((alias) => normalize(alias) === label));
-      if (item && !hasValue(result[item[0]])) result[item[0]] = clean(match[2]);
+      const candidate = clean(match[2]);
+      if (item && !hasValue(result[item[0]]) && !(isNumericOnly(candidate) && !NUMERIC_VALUE_ALLOWED.has(item[0]))) {
+        result[item[0]] = candidate;
+      }
     }
   }
 
