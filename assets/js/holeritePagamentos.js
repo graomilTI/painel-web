@@ -39,10 +39,17 @@ function statusPill(status) {
 }
 
 // Um item da fila de Notas Fiscais é considerado resolvido pra fins da Folha
-// quando o agente já lançou no GRM, ou quando o valor extraído é R$ 0,00 (não
-// há o que lançar).
+// quando o agente já lançou no GRM, quando o valor extraído é R$ 0,00 (não há
+// o que lançar), ou quando o próprio status já indica que não sobrou nada
+// pendente nele: DIVIDIDO (holerite de lote virou N linhas-filha — quem
+// importa pro status daqui pra frente são as filhas, não a linha original) e
+// DUPLICADO/CANCELADO (já resolvido por outra linha, ou descartado de
+// propósito). Sem isso, um lote com holerite em lote ficava preso em
+// "Pendente" pra sempre mesmo com todo mundo já lançado, porque a linha
+// original (DIVIDIDO) nunca virava LANCADO — achado em produção, 04/09.
+const STATUS_ITEM_RESOLVIDO = new Set(['LANCADO', 'DIVIDIDO', 'DUPLICADO', 'CANCELADO']);
 function itemConcluido(item) {
-  if (item.status === 'LANCADO') return true;
+  if (STATUS_ITEM_RESOLVIDO.has(item.status)) return true;
   return item.valor_total != null && Number(item.valor_total) === 0;
 }
 
