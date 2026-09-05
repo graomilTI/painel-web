@@ -350,6 +350,18 @@ function stripArtifacts(content) {
     .replace(/[ \t]{2,}/g, ' ');
 }
 
+// E-mails encaminhados costumam colar o cabeçalho original (De/Para/Cópia) como
+// texto do corpo — um endereço tipo "supervisao.cascavel@grao1000.com.br" na
+// lista de cópia batia com a palavra-chave "cascavel" e classificava o e-mail
+// pra regional errada mesmo o conteúdo real falando de outra cidade/estado
+// (visto ao vivo: PALMEIRA DAS MISSOES/RS classificado como PR CASCAVEL só por
+// causa do endereço em cópia). Endereço de e-mail nunca é dado geográfico —
+// tira antes de procurar palavra-chave de regional.
+const EMAIL_ADDRESS_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+function textoParaRegional(content) {
+  return stripArtifacts(content).replace(EMAIL_ADDRESS_RE, ' ');
+}
+
 // Converte HTML de e-mail em texto puro legível. Necessário porque muitos
 // e-mails corporativos chegam SEM versão text/plain — nesses casos o fallback
 // de resumo usava message.html cru e o card "Resumo da IA" exibia <!DOCTYPE html>...
@@ -677,7 +689,7 @@ function classifyByRules(message, rules, gestores) {
   });
   const full = [message.subject, readableBody(message)].join('\n');
   const fullLimpo = stripArtifacts(full);
-  const regional = matched?.regional || extractRegional(fullLimpo);
+  const regional = matched?.regional || extractRegional(textoParaRegional(full));
   return {
     regional,
     categoria: matched?.categoria || 'GERAL',
@@ -962,8 +974,14 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         if (exists.data?.id) continue;
         const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
         const isGestorMailbox = account.escopo === 'GESTOR';
+        // Caixa pessoal do Gestor pula classificação de categoria/encaminhamento
+        // de propósito (o e-mail já chegou na pessoa certa) — mas a regional
+        // ainda é útil pra filtrar/buscar na Central de E-mails da TI, que
+        // mistura essas caixas com a geral. Só a detecção por palavra-chave
+        // (sem regra de negócio, sem IA), pra não reintroduzir encaminhamento
+        // automático nem mudar categoria/prioridade dessas mensagens.
         const cls = isGestorMailbox
-          ? { regional: null, categoria: 'PESSOAL', prioridade: 'NORMAL', resumo_ia: null, dados_detectados: {}, precisa_resposta: false, resposta_sugerida: null, classificado_por: 'mailbox', risco: 'BAIXO' }
+          ? { regional: extractRegional(textoParaRegional([input.subject, readableBody(input)].join('\n'))), categoria: 'PESSOAL', prioridade: 'NORMAL', resumo_ia: null, dados_detectados: {}, precisa_resposta: false, resposta_sugerida: null, classificado_por: 'mailbox', risco: 'BAIXO' }
           : await classifyWithAI(input, classifyByRules(input, rules, gestores), gestores);
         const flags = Array.from(item.flags || []).map(String);
         const { data: saved, error } = await supabase.from('email_messages').insert({
