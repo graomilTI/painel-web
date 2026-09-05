@@ -12,6 +12,7 @@ import {
 } from './repository.js';
 import { registrarAuditoria } from '../../core/audit.js';
 import { validarParaLancamento } from './validators.js';
+import { supabase } from '../../supabaseClient.js';
 
 // ── carga consolidada ────────────────────────────────────────────────────────
 export async function carregarNotas({ chaveCorrida } = {}) {
@@ -118,6 +119,42 @@ export function descricaoItens(itens) {
   }).join(' · ');
 }
 
+// Extrai o path relativo ao bucket de uma URL pública do Supabase Storage.
+// nf_url do Compras nem sempre é um arquivo real: pode ser um link externo
+// colado à mão, ou só o número da NF digitado (campo "URL ou número da NF").
+// Só dá pra mandar pro agente do GRM quando é de fato um arquivo no bucket
+// notas-fiscais — nos outros casos, "Lançar" continua só marcando o flag.
+function storagePathDoBucket(url, bucket) {
+  const marcador = `/storage/v1/object/public/${bucket}/`;
+  const indice = String(url || '').indexOf(marcador);
+  if (indice === -1) return null;
+  try { return decodeURIComponent(url.slice(indice + marcador.length)); }
+  catch { return url.slice(indice + marcador.length); }
+}
+
+// Ponte Compras → GRM: o botão "Lançar" aqui sempre só marcou nf_lancado=true
+// em compras_itens (bookkeeping interno), sem nunca ter chamado o GRM de
+// verdade. Agora, quando a NF já é um arquivo real no bucket notas-fiscais,
+// a mesma ação também cria uma linha em grm_nf_lancamentos — a fila que o
+// agente de lançamento (grmserver-lancar-notas-fiscais-api.js) processa de
+// verdade. Retorna true se enfileirou (ou já estava enfileirada de um
+// lançamento anterior), false quando não há arquivo pra mandar.
+async function enviarParaFilaGrm(grupo) {
+  const path = storagePathDoBucket(grupo.nf_url, 'notas-fiscais');
+  if (!path) return false;
+  const { data: { session } } = await supabase.auth.getSession();
+  const { error } = await supabase.from('grm_nf_lancamentos').insert({
+    storage_bucket: 'notas-fiscais',
+    storage_path: path,
+    arquivo_nome: path.split('/').pop(),
+    setor: 'COMPRAS',
+    status: 'NOVO',
+    enviado_por: session?.user?.id || null,
+  });
+  if (error && error.code !== '23505') throw error; // 23505 = essa NF já estava na fila
+  return true;
+}
+
 // ── lançar NF (com auditoria) ────────────────────────────────────────────────
 export async function lancarNf(grupo) {
   const quando = new Date().toISOString();
@@ -137,17 +174,28 @@ export async function lancarNf(grupo) {
       throw error;
     }
   }
+  let enviadoGrm = false;
+  let erroGrm = null;
   try {
     await marcarItensLancados(grupo.ids, quando);
+    try {
+      enviadoGrm = await enviarParaFilaGrm(grupo);
+    } catch (error) {
+      erroGrm = error;
+      console.warn('[notas-fiscais] não consegui enviar pra fila de lançamento do GRM:', error.message);
+    }
     await registrarAuditoria({
       modulo: 'notas-fiscais',
       tabela: 'compras_itens',
       registroId: grupo.ids.join(','),
       acao: 'nf_lancada',
       valorAnterior: { nf_lancado: false },
-      valorNovo: { nf_lancado: true, nf_lancado_em: quando, nf_url: grupo.nf_url, valor_total: grupo.valor_total },
+      valorNovo: {
+        nf_lancado: true, nf_lancado_em: quando, nf_url: grupo.nf_url, valor_total: grupo.valor_total,
+        enviado_fila_grm: enviadoGrm, erro_fila_grm: erroGrm?.message || null,
+      },
     });
-    return quando;
+    return { quando, enviadoGrm };
   } catch (error) {
     await registrarAuditoria({
       modulo: 'notas-fiscais',
