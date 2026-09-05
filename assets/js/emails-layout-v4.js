@@ -35,7 +35,13 @@
       body.email-center-v4 .emails-smart-page svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
       body.email-center-v4 .emails-smart-page .em-wrap{gap:10px!important}
       body.email-center-v4 .emails-smart-page .em-hero,
-      body.email-center-v4 .emails-smart-page .em-v3-health{display:none!important}
+      body.email-center-v4 .emails-smart-page .em-v3-health,
+      body.email-center-v4 .emails-smart-page .em-v2-step-head{display:none!important}
+      /* Badge só vale a pena mostrar quando carrega sinal de verdade — prioridade
+         NORMAL (a maioria) e "sem regional/categoria identificada" (placeholder,
+         não é dado) só poluem o card sem ajudar a triagem. */
+      body.email-center-v4 .emails-smart-page .em-row .em-prio.normal,
+      body.email-center-v4 .emails-smart-page .em-row .em-badge.em-v4-noise{display:none!important}
 
       /* Navegação do módulo */
       body.email-center-v4 .emails-smart-page .em-tabs{
@@ -210,6 +216,16 @@
     return [...document.querySelectorAll('#emList .em-row')].filter((row) => getComputedStyle(row).display !== 'none');
   }
 
+  // categoria e regional usam a mesma classe (.em-badge.arquivado) — só dá pra
+  // distinguir "placeholder sem dado" de "categoria/regional real" pelo texto.
+  const NOISE_BADGE_TEXT = new Set(['SEM REGIONAL IDENTIFICADO', 'SEM CATEGORIA DEFINIDA']);
+  function markNoiseBadges() {
+    document.querySelectorAll('#emList .em-row .em-badge, #emPerigoList .em-row .em-badge').forEach((badge) => {
+      const isNoise = NOISE_BADGE_TEXT.has((badge.textContent || '').trim().toUpperCase());
+      badge.classList.toggle('em-v4-noise', isNoise);
+    });
+  }
+
   function ensureInboxHeader() {
     const list = document.getElementById('emList');
     const column = list?.closest('.em-col-list');
@@ -351,6 +367,7 @@
     addStyles();
     if (!document.body.classList.contains('email-center-v4')) document.body.classList.add('email-center-v4');
     ensureInboxHeader();
+    markNoiseBadges();
     ensureReader();
     ensureActionRail();
   }
