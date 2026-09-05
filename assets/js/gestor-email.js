@@ -60,7 +60,7 @@ async function abrirOsFromEmail(event) {
   const original = button.textContent;
   button.textContent = 'Lendo e-mail...';
   try {
-    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260904-email-os1');
+    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1');
     const texto = m.corpo_texto || String(m.corpo_html || '').replace(/<[^>]+>/g, ' ');
     const campos = await enhanceLogisticaOsFields(texto, {}, (progress) => { button.textContent = progress; });
     sessionStorage.setItem('logisticaAberturaOsEmailPrefill', JSON.stringify(campos));

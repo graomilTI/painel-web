@@ -2,6 +2,8 @@
 // Prioridade: campos explicitamente rotulados -> IA nativa do Chrome -> leitura anterior.
 // A IA roda localmente pelo Prompt API/Gemini Nano quando disponível.
 
+import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
+
 const KEYS = [
   'contratante_cliente',
   'filial_pagadora',
@@ -99,32 +101,48 @@ function canonicalYesNo(value) {
   return '';
 }
 
+// Produto casa contra o catálogo real (logistica-abertura-os-produtos.js) — a
+// mesma lista que alimenta o <select> do formulário. Antes essa função tinha
+// sua própria lista de 5 nomes (incluía "Ervilha", que não existe mais no
+// catálogo, e faltavam Triguilho/Canola/Milheto/Triticale/etc.), então um
+// produto reconhecido aqui podia não bater com nenhuma opção do select.
+const CATALOGO_LABELS = Object.values(CATALOGO_PRODUTOS).map((p) => p.label);
+
 function canonicalProduct(value, wholeText = '') {
   const text = normalize(value || wholeText);
-  if (text.includes('soja')) return 'Soja';
-  if (text.includes('milho')) return 'Milho';
-  if (text.includes('trigo')) return 'Trigo';
-  if (text.includes('sorgo')) return 'Sorgo';
-  if (text.includes('ervilha')) return 'Ervilha';
-  return clean(value);
+  if (!text) return clean(value);
+  const found = CATALOGO_LABELS.find((label) => text.includes(normalize(label)));
+  return found || clean(value);
 }
 
-function canonicalProductType(value) {
+// Tipo de produto não é um vocabulário global — cada produto tem seu próprio
+// conjunto de tipos válidos no catálogo (ex.: só Milho aceita "Exportação"; só
+// Soja aceita "Declarada Intacta"). A função antiga ignorava isso e ainda
+// devolvia "Declarado Intacta" (masculino) quando o <select> real usa
+// "Declarada Intacta" (feminino, concordando com "Soja") — o campo nunca
+// batia com nenhuma opção. Agora só aceita um candidato se ele realmente for
+// uma opção válida para o produto já resolvido.
+function canonicalProductType(value, produtoResolvido) {
+  const categoria = categoriaProduto(produtoResolvido);
+  const tiposPermitidos = categoria ? CATALOGO_PRODUTOS[categoria].tipos : null;
   const text = normalize(value);
-  if (!text) return '';
-  if (text.includes('aflatox') && text.includes('neg')) return 'Aflatoxina Negativo';
-  // "Declarada" sozinho já significa "Declarado Intacta" no vocabulário da
-  // operação (confirmado pelo usuário 04/08) — não precisa da palavra
-  // "intacta" junto pra bater.
-  if (text.includes('declar') || (text.includes('intacta') && text.includes('nf'))) return 'Declarado Intacta';
-  if (text.includes('intacta') && text.includes('neg')) return 'Intacta Negativo';
-  if (text.includes('intacta') && text.includes('pos')) return 'Intacta Positivo';
-  if (text.includes('teste')) return 'OS com teste';
-  if (text.includes('particip')) return 'Participante';
-  if (text.includes('transgen')) return 'Transgênico';
-  if (text.includes('convenc')) return 'Convencional';
-  if (text.includes('nao defin') || text.includes('não defin')) return 'Não Definido';
-  return clean(value);
+  if (!text || !tiposPermitidos?.length) return '';
+
+  const candidatos = [];
+  if (text.includes('declar') || (text.includes('intacta') && text.includes('nf'))) candidatos.push('declarada intacta', 'declarado intacta');
+  if (text.includes('intacta') && text.includes('neg')) candidatos.push('intacta negativo');
+  if (text.includes('intacta') && text.includes('pos')) candidatos.push('intacta positivo');
+  if (text.includes('particip')) candidatos.push('participante');
+  if (text.includes('convenc')) candidatos.push('convencional');
+  if (text.includes('tipo export') || text.includes('exportacao')) candidatos.push('tipo exportação', 'exportação');
+  if (text.includes('nao defin') || text.includes('não defin')) candidatos.push('não definido');
+  candidatos.push(text); // tenta o próprio valor bruto por último
+
+  for (const candidato of candidatos) {
+    const match = tiposPermitidos.find((tipo) => normalize(tipo) === candidato);
+    if (match) return match;
+  }
+  return '';
 }
 
 function canonicalService(value) {
@@ -186,7 +204,7 @@ function discardLabelBleed(fields) {
 function canonicalize(fields, wholeText = '') {
   const result = { ...blankFields(), ...discardLabelBleed(fields || {}) };
   result.produto = canonicalProduct(result.produto, wholeText);
-  result.tipo_produto = canonicalProductType(result.tipo_produto);
+  result.tipo_produto = canonicalProductType(result.tipo_produto, result.produto);
   result.servico = canonicalService(result.servico);
   result.troca_notas = canonicalYesNo(result.troca_notas);
   result.volume_inicial = parseNumber(result.volume_inicial);
