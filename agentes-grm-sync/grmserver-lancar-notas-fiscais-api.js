@@ -1038,13 +1038,17 @@ async function resolveCoordenacao(nome) {
 
 // Cascata idêntica ao selectEmployeeById() do Puppeteer (matrícula sozinha já
 // falhava lá também — o autocomplete do GRM só busca por nome de verdade).
+// staStatus SEM filtro (não só "A"): holerite é frequentemente da última
+// competência de alguém já desligado (rescisão) — 19 lançamentos reais
+// falharam com "não encontrado" só porque o funcionário já estava com
+// staStatus 'N' no GRM (achado processando o backlog em produção, 04/09).
 async function resolveFuncionario(data) {
   const name = String(data.funcionario_nome || data.fornecedor || '').trim();
   const registration = String(data.funcionario_registro || '').trim();
   const shortName = name.split(/\s+/).slice(0, 2).join(' ');
   const searches = Array.from(new Set([registration, name, shortName].filter(Boolean)));
   for (const search of searches) {
-    const response = await apiPost('staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A', groupSearch: search });
+    const response = await apiPost('staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: '', groupSearch: search });
     if (!response.result) continue;
     const rows = safe(response.searchData);
     if (rows.length === 1) return rows[0];
