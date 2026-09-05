@@ -202,13 +202,13 @@ async function lancar(grupo) {
   if (!confirmado) return false;
 
   try {
-    const quando = await lancarNf(grupo);
+    const { quando, enviadoGrm } = await lancarNf(grupo);
     const estado = nfState.get();
     const itens = estado.itens.map((r) => (grupo.ids.includes(r.id)
       ? { ...r, nf_lancado: true, nf_lancado_em: quando }
       : r));
     nfState.set({ itens });
-    toast('NF marcada como lançada.', 'ok');
+    toast(enviadoGrm ? 'NF marcada como lançada e enviada pra fila de lançamento do GRM.' : 'NF marcada como lançada.', 'ok');
     render();
     return true;
   } catch (error) {
