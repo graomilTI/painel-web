@@ -744,7 +744,7 @@ async function abrirOsFromGestorEmail(selected, button) {
     const texto = selected.corpo_texto || String(selected.corpo_html || '').replace(/<[^>]+>/g, ' ');
     const campos = await enhanceLogisticaOsFields(texto, {}, (progress) => { button.textContent = progress; });
     sessionStorage.setItem('logisticaAberturaOsEmailPrefill', JSON.stringify(campos));
-    location.href = './logistica.html#abrir_os';
+    location.href = `${panelHref('logistica')}#abrir_os`;
   } catch (error) {
     console.error('[gestor-app] abrir-os', error);
     showToast(`Não foi possível ler o e-mail automaticamente: ${error?.message || error}`, 'error');
