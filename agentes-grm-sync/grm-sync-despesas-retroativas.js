@@ -155,12 +155,17 @@ function requiredExpenses(
   return result;
 }
 
+// "orphans" são pendências (status P) que sobram além da que a decisão
+// resolve — seja porque já existe uma aprovada (NONE ignora as demais) ou
+// porque só a primeira pendência é aprovada aqui (APPROVE). Ficam sem
+// aprovação nem recusa a menos que alguém as trate — o chamador é
+// responsável por recusá-las (ver reprove() em main()).
 function decide(existing) {
-  if (existing.some((row) => row.ofmStatus === 'A')) return { action: 'NONE' };
   const pending = existing.filter((row) => row.ofmStatus === 'P')
     .sort((a, b) => Number(a.ofmCode) - Number(b.ofmCode));
-  if (pending.length) return { action: 'APPROVE', row: pending[0], duplicates: pending.length - 1 };
-  return { action: 'CREATE' };
+  if (existing.some((row) => row.ofmStatus === 'A')) return { action: 'NONE', orphans: pending };
+  if (pending.length) return { action: 'APPROVE', row: pending[0], orphans: pending.slice(1) };
+  return { action: 'CREATE', orphans: [] };
 }
 
 async function queryAll(table, select, configure) {
@@ -488,6 +493,12 @@ async function approve(token, row) {
   });
 }
 
+async function reprove(token, row, reason) {
+  return api(token, '/api/oFlow/disapprove', {
+    ofmCode: Number(row.ofmCode), reproveReason: reason, type: 'D',
+  });
+}
+
 async function create(
   token,
   staff,
@@ -548,6 +559,7 @@ async function main() {
     janta_programada: 0,
     janta_autorizada_laudo_19h: 0,
     janta_bloqueada_laudo_19h: 0,
+    orfas_recusadas: 0,
   };
   let actionCount = 0;
 
@@ -620,7 +632,7 @@ async function main() {
           janta_programada: candidate.jantaProgrammed,
           janta_laudo_apos_19h_local: jantaValidation,
           existentes: existing.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
-          duplicados_pendentes: decision.duplicates || 0,
+          duplicados_pendentes: (decision.orphans || []).length,
         },
       };
 
@@ -672,6 +684,51 @@ async function main() {
         log('ERROR', `${candidate.nome} / ${expense.oexName}: ${error.message}`);
       }
       await recordAudit(audit);
+
+      // Recusa pendências duplicadas que sobraram (já existe uma aprovada, ou
+      // só a primeira pendência foi aprovada acima) — sem isso ficavam
+      // paradas em GRM como risco de pagamento em dobro se alguém aprovasse
+      // manualmente depois.
+      for (const orphan of decision.orphans || []) {
+        const orphanAudit = {
+          data_referencia: date,
+          cpf: digits(candidate.cpf),
+          colaborador: candidate.nome,
+          sta_code: Number(staff.staCode),
+          tipo_contrato: candidate.tipo_contrato,
+          tipo_despesa: expense.oexName,
+          oex_code: Number(expense.oexCode),
+          valor: Number(orphan.ofmValue) || 0,
+          acao: 'REPROVE',
+          dry_run: DRY_RUN,
+          diagnostico: {
+            motivo: 'pendencia_orfa_apos_dedupe',
+            decisao_original: decision.action,
+          },
+        };
+        try {
+          if (actionCount >= MAX_ACTIONS) {
+            summary.adiados += 1;
+            orphanAudit.sucesso = false;
+            orphanAudit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
+            log('WARN', `${candidate.nome} / ${expense.oexName}: recusa de pendência órfã (ofm ${orphan.ofmCode}) adiada.`);
+          } else {
+            actionCount += 1;
+            orphanAudit.ofm_code = Number(orphan.ofmCode);
+            if (!DRY_RUN) {
+              await reprove(token, orphan, 'Recusa automática: pendência duplicada para a mesma despesa/dia.');
+            }
+            summary.orfas_recusadas += 1;
+            orphanAudit.sucesso = true;
+          }
+        } catch (error) {
+          summary.errors += 1;
+          orphanAudit.sucesso = false;
+          orphanAudit.erro = error.message;
+          log('ERROR', `${candidate.nome} / ${expense.oexName}: falha ao recusar pendência órfã (ofm ${orphan.ofmCode}): ${error.message}`);
+        }
+        await recordAudit(orphanAudit);
+      }
     }
   }
 
