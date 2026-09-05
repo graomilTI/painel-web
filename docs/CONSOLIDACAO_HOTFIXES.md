@@ -24,7 +24,7 @@ não em um big-bang.
 | Página | Arquivo principal | Patches carregados em ordem |
 |---|---|---|
 | programacao | programacao.js (112 KB) | supervisoes-cache, ultima-programacao-fix, hospedagem-colaboradores-fix, gestor-ajustes, kpi-inline-patch, gestor-filtro-fix, mobile-ui-fix, gestor-fluxo-avancado, lista-drawer-fixo, lista-drawer-ux-hotfix |
-| emails | emails.js | emails-secure-account, emails-layout-v2 |
+| emails | emails.js | emails-secure-account, emails-layout |
 | financeiro | financeiro.js | financeiro-access, financeiro-local-date |
 | dashboard | dashboard.js | dashboardProducaoHistoryLink, dashboard-regional-map |
 | compras-estoque | compras-estoque.js | pwa-register, compras-estoque-agrupamento, compras-estoque-layout |
@@ -34,6 +34,16 @@ não em um big-bang.
 
 Os nove hotfixes **mortos** (não referenciados por nenhuma página) já foram
 removidos do repositório na fundação P0.
+
+**05/09/2026 — `emails-layout-v3.js` + `emails-layout-v4.js` fundidos em
+`assets/js/emails-layout.js`.** As duas camadas rodavam ao mesmo tempo (v4
+nunca foi adicionada ao `router.js`, só ao `emails.html` — dependendo de como
+o usuário chegava na tela, uma ou as duas rodavam), cada uma injetando seu
+próprio header "Caixa de Entrada" — causa da duplicação visual reportada pela
+usuária. A fusão elimina esse drift, mas ainda é um patch carregado por cima
+de `emails.js` (não incorporado ao módulo principal) — validado apenas com
+fixture estático (sem login real disponível na sessão); falta homologação ao
+vivo antes de considerar o item 100% fechado.
 
 ## Lotes de incorporação propostos (cada lote = 1 commit + homologação)
 

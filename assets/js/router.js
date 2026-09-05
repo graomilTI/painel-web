@@ -112,7 +112,7 @@ const SOFT_NAV_PAGES = new Map([
   ['uber', { title: 'Uber · Conferência', module: () => import('./uber.js'), extraModules: [() => import('./modules/uber-despesas-sync.js')] }],
   ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
   ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
-  ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout-v3.js')] }],
+  ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js') }],
   // Fase 3 (2026-07-04) — páginas críticas com muitos scripts, consolidação avaliada script a script
   ['programacao', { title: 'Programação', module: () => import('./programacao.js'), extraModules: [
