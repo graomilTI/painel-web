@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+import { toPanelUrl } from './paths.js';
 
 const state = { user: null, account: null, messages: [], selected: null, attachments: [], folder: 'entrada', search: '' };
 const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -63,7 +64,7 @@ async function abrirOsFromEmail(event) {
     const texto = m.corpo_texto || String(m.corpo_html || '').replace(/<[^>]+>/g, ' ');
     const campos = await enhanceLogisticaOsFields(texto, {}, (progress) => { button.textContent = progress; });
     sessionStorage.setItem('logisticaAberturaOsEmailPrefill', JSON.stringify(campos));
-    location.href = './logistica.html#abrir_os';
+    location.href = `${toPanelUrl('logistica')}#abrir_os`;
   } catch (error) {
     console.error('[gestor-email] abrir-os', error);
     alert(`Não foi possível ler o e-mail automaticamente: ${error?.message || error}`);
