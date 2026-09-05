@@ -481,6 +481,13 @@ async function createSplitPayslipRows(row, split) {
       enviado_por: row.enviado_por || null,
       status: 'NOVO',
       origem_extracao: `SPLIT_DE_${row.id}`,
+      // Sem isso, holerites de lote enviados pela Nova Folha do RH (que já
+      // nascem com rh_folha_id) perdiam o vínculo com o lote assim que eram
+      // divididos por funcionário — a tela de Folha e Holerite ficava
+      // mostrando "Pendente" pra sempre mesmo depois de tudo lançado, porque
+      // não achava nenhum item vinculado ao lote. Achado em produção (04/09),
+      // corrigido com backfill manual dos 5 lotes já divididos até aqui.
+      rh_folha_id: row.rh_folha_id || null,
     });
     created.push(inserted);
   }
