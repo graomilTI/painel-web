@@ -47,6 +47,10 @@ const pinCodeArgIdx = args.indexOf('--pin-code');
 const SOMENTE_PIN_CODE = pinCodeArgIdx >= 0 ? args[pinCodeArgIdx + 1] : null;
 const limitArgIdx = args.indexOf('--limit');
 const LIMIT = limitArgIdx >= 0 ? Number(args[limitArgIdx + 1]) : Infinity;
+// Confirmação humana explícita pra 1 caso onde o nome não bate exato (ex.:
+// nome de casada faltando no holerite) — só vale junto com --pin-code, pra
+// nunca destravar o lote inteiro sem checagem de nome.
+const CONFIRMAR_NOME_DIFERENTE = args.includes('--confirmar-nome-diferente');
 
 function log(level, msg, extra) {
   const suffix = extra === undefined ? '' : ` ${JSON.stringify(extra)}`;
@@ -174,9 +178,13 @@ async function main() {
         continue;
       }
       if (normalizeText(staff.staName) !== normalizeText(row.fornecedor_nome)) {
-        log('WARN', `${row.fornecedor_nome} (pinCode ${row.grm_codigo}): melhor achado foi "${staff.staName}", não é exato — pulando por segurança.`);
-        resultado.nomeAindaDivergente.push({ fornecedor_nome: row.fornecedor_nome, achado: staff.staName, pinCode: row.grm_codigo });
-        continue;
+        const confirmadoManualmente = CONFIRMAR_NOME_DIFERENTE && SOMENTE_PIN_CODE && String(row.grm_codigo) === String(SOMENTE_PIN_CODE);
+        if (!confirmadoManualmente) {
+          log('WARN', `${row.fornecedor_nome} (pinCode ${row.grm_codigo}): melhor achado foi "${staff.staName}", não é exato — pulando por segurança.`);
+          resultado.nomeAindaDivergente.push({ fornecedor_nome: row.fornecedor_nome, achado: staff.staName, pinCode: row.grm_codigo });
+          continue;
+        }
+        log('INFO', `${row.fornecedor_nome} (pinCode ${row.grm_codigo}): nome não exato ("${staff.staName}") mas confirmado manualmente via --confirmar-nome-diferente.`);
       }
 
       log('INFO', `${row.fornecedor_nome} (pinCode ${row.grm_codigo}): ${live.favoredName} (staCode ${live.staCode}) -> ${staff.staName} (staCode ${staff.staCode}). Valor R$ ${live.pinInstallmentValue}, doc ${live.pinDocNumber}.`);
