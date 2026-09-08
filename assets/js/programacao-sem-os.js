@@ -574,7 +574,14 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     if (disponivelBtn) {
       const card = disponivelBtn.closest('.pso-card');
       const colab = colabsAtual.find((c) => c.colaboradorId === card?.dataset.colabId);
-      if (colab) abrirModalDisponivel(colab);
+      if (!colab) return;
+      if (disponivelBtn.classList.contains('on')) {
+        disponivelBtn.classList.remove('on');
+        disponivelBtn.textContent = 'Disponível';
+        salvar(colab.colaboradorId, { disponibilidade: null });
+        return;
+      }
+      abrirModalDisponivel(colab);
       return;
     }
     const inativarBtn = event.target.closest('[data-inativar]');
