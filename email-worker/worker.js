@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import nodemailer from 'nodemailer';
+import MailComposer from 'nodemailer/lib/mail-composer/index.js';
 import { XMLParser } from 'fast-xml-parser';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -1178,6 +1179,43 @@ async function loadForwardAttachments(emailId) {
   return result;
 }
 
+// Envio via SMTP puro não deixa cópia na pasta Enviados do servidor (isso é o
+// cliente de e-mail que normalmente faz, via IMAP APPEND, depois de mandar) —
+// sem isso a mensagem enviada nunca aparecia na aba Enviados do painel.
+function buildRawMessage(mailOptions) {
+  return new Promise((resolve, reject) => {
+    new MailComposer(mailOptions).compile().build((err, message) => {
+      if (err) reject(err); else resolve(message);
+    });
+  });
+}
+
+function findSentMailboxPath(listed) {
+  const bySpecialUse = listed.find((mailbox) => mailboxFlagList(mailbox).includes('\\Sent'));
+  if (bySpecialUse) return bySpecialUse.path;
+  const byName = listed.find((mailbox) => /sent|enviad/.test(mailboxKey(mailbox.path)));
+  return byName ? byName.path : 'INBOX.Sent';
+}
+
+async function appendToSentFolder(account, rawMessage) {
+  const client = new ImapFlow({
+    host: account.imap_host,
+    port: account.imap_port,
+    secure: account.imap_secure,
+    auth: { user: account.username, pass: decryptCredential(account.password_cipher) },
+    tls: { rejectUnauthorized: false },
+    logger: false
+  });
+  await client.connect();
+  try {
+    const listed = await client.list();
+    const sentPath = findSentMailboxPath(listed);
+    await client.append(sentPath, rawMessage, ['\\Seen']);
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
 async function processOutbox() {
   const { data: rows, error } = await supabase
     .from('email_outbox')
@@ -1199,7 +1237,7 @@ async function processOutbox() {
         auth: { user: account.username, pass: decryptCredential(account.password_cipher) }
       });
       const attachments = row.tipo === 'ENCAMINHAMENTO' ? await loadForwardAttachments(row.email_id) : [];
-      const info = await transporter.sendMail({
+      const mailOptions = {
         from: `${account.nome || account.email} <${account.email}>`,
         to: row.para,
         cc: row.cc || undefined,
@@ -1207,7 +1245,14 @@ async function processOutbox() {
         subject: row.assunto,
         text: row.corpo,
         attachments: attachments.length ? attachments : undefined
-      });
+      };
+      const info = await transporter.sendMail(mailOptions);
+      try {
+        const rawMessage = await buildRawMessage(mailOptions);
+        await appendToSentFolder(account, rawMessage);
+      } catch (appendError) {
+        console.warn(`Falha ao salvar cópia em Enviados de ${account.email}:`, appendError.message || appendError);
+      }
       await supabase.from('email_outbox').update({
         status: 'ENVIADO',
         enviado_em: new Date().toISOString(),
