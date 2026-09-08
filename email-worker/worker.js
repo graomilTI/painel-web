@@ -51,7 +51,7 @@ const GROQ_KEYS = String(process.env.GROQ_API_KEYS || '')
   .split(/[\s,;]+/)
   .map((k) => k.trim())
   .filter((k) => k.startsWith('gsk_'));
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_VISION_MODEL = process.env.GROQ_VISION_MODEL || 'qwen/qwen3.6-27b';
 const GROQ_KEY_COOLDOWN_MS = 10 * 60 * 1000; // 10 min fora de rotação após rate limit
 
