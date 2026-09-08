@@ -1049,6 +1049,21 @@ async function resolveCoordenacao(nome) {
 // competência de alguém já desligado (rescisão) — 19 lançamentos reais
 // falharam com "não encontrado" só porque o funcionário já estava com
 // staStatus 'N' no GRM (achado processando o backlog em produção, 04/09).
+//
+// BUG CONFIRMADO AO VIVO EM 08/09 (ver painel-web-lancar-notas-fiscais-staCode-errado-matricula-reaproveitada):
+// a matrícula é REAPROVEITADA no GRM quando um funcionário desliga e outro é
+// contratado com o mesmo número. A busca por matrícula pura às vezes acha
+// exatamente 1 registro — mas é o DONO ATUAL do número, não
+// necessariamente a pessoa do holerite (que pode ser um desligamento
+// antigo). O código antigo aceitava esse único resultado sem checar o nome,
+// lançando holerites reais no funcionário errado (valor e "matrícula-
+// competência" corretos, staCode/nome trocados) — pelo menos 4 casos
+// confirmados no lote de agosto/GRAOMIL (Gloria Teles Correa -> Jailton
+// Nascimento dos Santos, João Lourenço -> Janderlaine Napoles Machado,
+// Pedro Vitor -> Marcone da Costa Teixeira, Ryan Gutemberg -> Eduardo Silva
+// dos Anjos). Agora só aceita o resultado único da busca por matrícula se o
+// nome bater; senão, cai pros próximos termos da cascata (nome
+// completo/reduzido), que identificam a pessoa de verdade.
 async function resolveFuncionario(data) {
   const name = String(data.funcionario_nome || data.fornecedor || '').trim();
   const registration = String(data.funcionario_registro || '').trim();
@@ -1058,7 +1073,11 @@ async function resolveFuncionario(data) {
     const response = await apiPost('staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: '', groupSearch: search });
     if (!response.result) continue;
     const rows = safe(response.searchData);
-    if (rows.length === 1) return rows[0];
+    if (rows.length === 1) {
+      const buscaPorMatricula = search === registration && search !== name && search !== shortName;
+      if (!buscaPorMatricula || !name || normalizeText(rows[0].staName) === normalizeText(name)) return rows[0];
+      continue; // matrícula achou 1 pessoa, mas não é quem o holerite diz — tenta pelo nome.
+    }
     if (rows.length > 1 && name) {
       const exact = rows.find((r) => normalizeText(r.staName) === normalizeText(name));
       if (exact) return exact;
