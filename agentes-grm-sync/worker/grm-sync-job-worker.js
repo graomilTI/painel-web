@@ -74,6 +74,13 @@ const SCRIPT_MAP = {
   // topo de grmserver-patrimonios-api.js). grm-sync-patrimonios.js (Puppeteer)
   // mantido no disco pra rollback.
   'sync-patrimonios': 'grmserver-patrimonios-api.js',
+  // Novo em 07/09: nunca teve fluxo Puppeteer, criado direto via API
+  // (client/national/getRecords + client/last/getRecords — "last" é o nome
+  // interno do GRM pra Clientes Finais, achado no bundle JS da tela via
+  // objeto graintLinks). Sincroniza clientes_nacionais e faturamento_clientes,
+  // incluindo o status ativo/inativo que antes só dava pra ver pela cor da
+  // linha na UI do GRM.
+  'sync-clientes': 'grmserver-clientes-api.js',
   // Migrados pra API direta em 05/09 (payInvoice/getRecords e
   // receiveInvoice/getRecords — o script Puppeteer antigo já fazia esse fetch
   // de dentro da página, só precisava do navegador pra logar; ver comentário

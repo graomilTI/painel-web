@@ -5,6 +5,7 @@ const AGENT_NAMES = {
   'sync-colaboradores': 'Colaboradores',
   'sync-lista-os': 'Lista de OS',
   'sync-patrimonios': 'Patrimônios',
+  'sync-clientes': 'Clientes (Nacionais/Finais)',
   'sync-nhe': 'NHE',
   'sync-operacional-os': 'Operacional · OS',
   'sync-distribuicao-os': 'Distribuição de OS',
