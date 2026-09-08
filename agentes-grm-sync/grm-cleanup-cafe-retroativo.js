@@ -431,7 +431,7 @@ async function confirmDeleteModal(page, expectedValueKey) {
     const visible = (el) => !!el && el.getClientRects().length > 0
       && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
     const validTitle = (text) => text.includes('EXCLUIR MOVIMENTO') || text.includes('EXLCUIR MOVIMENTO');
-    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
+    const matched = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')]
       .filter(visible)
       .filter((dialog) => {
         const text = normText(dialog.innerText || '');
@@ -440,6 +440,12 @@ async function confirmDeleteModal(page, expectedValueKey) {
           && text.includes('DESEJA REALMENTE EXCLUIR O REGISTRO NO VALOR DE')
           && text.includes(expectedValue);
       });
+    // Os seletores acima ([class*="modal"], [class*="dialog"]) casam com
+    // vários wrappers aninhados do MESMO popup (ex.: overlay > conteúdo do
+    // overlay > card interna), todos com o mesmo innerText — isso inflava a
+    // contagem pra >1 mesmo com só 1 modal real na tela. Descarta quem tem
+    // outro elemento casado como descendente, mantendo só o mais específico.
+    const dialogs = matched.filter((d) => !matched.some((other) => other !== d && d.contains(other)));
     if (dialogs.length !== 1) return { ok: false, reason: 'DELETE_MODAL_NOT_UNIQUE', count: dialogs.length };
     const buttons = [...dialogs[0].querySelectorAll('button,[role="button"]')].filter(visible);
     const confirm = buttons.filter((button) => normText(button.innerText || button.textContent) === 'CONFIRMAR');
