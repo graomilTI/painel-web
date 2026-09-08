@@ -309,6 +309,106 @@ async function extractPdfText(pdfPath) {
   }
 }
 
+async function pdfPageCount(pdfPath) {
+  try {
+    const result = await execFile('pdfinfo', [pdfPath]);
+    const match = String(result.stdout || '').match(/^Pages:\s*(\d+)/im);
+    return match ? Number(match[1]) : null;
+  } catch (_) { return null; }
+}
+
+// Mesmo padrão de grmserver-lancar-notas-fiscais-api.js (extractPdfPageTexts):
+// pdftotext -layout separa páginas por form-feed ('\f'); descarta a página
+// vazia final que sobra quando o total bate com pdfinfo.
+async function extractPdfPageTexts(pdfPath) {
+  if (!await commandExists('pdftotext')) return [];
+  try {
+    const result = await execFile('pdftotext', ['-layout', '-enc', 'UTF-8', pdfPath, '-'], { maxBuffer: 30 * 1024 * 1024 });
+    const pages = String(result.stdout || '').split('\f');
+    const realCount = await pdfPageCount(pdfPath);
+    if (realCount && pages.length === realCount + 1 && !pages[pages.length - 1].trim()) pages.pop();
+    return pages;
+  } catch (error) {
+    log('WARN', `pdftotext (por página) falhou para ${path.basename(pdfPath)}: ${error.message}`);
+    return [];
+  }
+}
+
+async function extractPdfPageRange(pdfPath, from, to, outPath) {
+  await execFile('qpdf', ['--empty', '--pages', pdfPath, `${from}-${to}`, '--', outPath]);
+  return outPath;
+}
+
+async function uploadToStorage(bucket, storagePath, filePath, contentType) {
+  const buffer = fs.readFileSync(filePath);
+  const { error } = await supabase.storage.from(bucket).upload(storagePath, buffer, {
+    contentType: contentType || 'application/octet-stream', upsert: false,
+  });
+  if (error) throw new Error(`Falha ao enviar "${storagePath}" pro Storage: ${error.message}`);
+}
+
+async function insertQueueItem(payload) {
+  const { data, error } = await supabase.from(TABLE_ITEMS).insert(payload).select('id,arquivo_nome').single();
+  if (error) throw error;
+  return data;
+}
+
+// Tenta reconhecer 1 página como comprovante completo (mesma lógica de
+// detectTemplate/parse usada pro arquivo inteiro, aplicada a um trecho).
+function parsePageAsComprovante(pageText) {
+  const template = detectTemplate(pageText);
+  if (!template) return null;
+  const parsed = template.parse(pageText);
+  if (!parsed.valor || !parsed.dataPagamento || !parsed.favorecidoNome) return null;
+  return { template, parsed };
+}
+
+// Comprovantes bancários às vezes chegam como um único PDF com 1 página por
+// pagamento (o extrato "cru" antes de qualquer separação manual) — ex.:
+// "Banco Itaú - Comprovante de Transferência" repetido dezenas de vezes.
+// Detecta isso achando 2+ páginas que sozinhas já são um comprovante válido
+// e completo (valor+data+favorecido), separa cada uma com qpdf e cria 1
+// linha nova por página; a linha original vira DIVIDIDO (nunca processada
+// como se fosse ela mesma 1 comprovante).
+async function splitComprovanteBatch(row, localPath, workDir) {
+  const pageCount = await pdfPageCount(localPath);
+  if (!pageCount || pageCount < 2) return null;
+  const pageTexts = await extractPdfPageTexts(localPath);
+  if (pageTexts.length < 2) return null;
+
+  const blocks = [];
+  for (let i = 0; i < pageTexts.length; i += 1) {
+    const found = parsePageAsComprovante(pageTexts[i]);
+    if (found) blocks.push({ page: i + 1, ...found });
+  }
+  if (blocks.length < 2) return null;
+
+  const created = [];
+  for (const block of blocks) {
+    const suffix = sanitizeFileName(`pag${block.page}-${block.parsed.favorecidoNome}`);
+    const outPath = path.join(workDir, `split-${suffix}.pdf`);
+    await extractPdfPageRange(localPath, block.page, block.page, outPath);
+    const dir = path.dirname(row.storage_path || '');
+    const storagePath = `${dir && dir !== '.' ? `${dir}/` : ''}split-${suffix}-${crypto.randomUUID()}.pdf`;
+    const arquivoNome = `${stemOf(row.arquivo_nome)} - pág ${block.page} - ${block.parsed.favorecidoNome}.pdf`;
+    await uploadToStorage(row.storage_bucket || 'notas-fiscais', storagePath, outPath, 'application/pdf');
+    const inserted = await insertQueueItem({
+      storage_bucket: row.storage_bucket || 'notas-fiscais',
+      storage_path: storagePath,
+      arquivo_nome: arquivoNome,
+      arquivo_mime_type: 'application/pdf',
+      enviado_por: row.enviado_por || null,
+      status: 'NOVO',
+    });
+    created.push(inserted);
+  }
+  return created;
+}
+
+function stemOf(name) {
+  return path.basename(String(name || ''), path.extname(String(name || ''))).trim() || 'comprovante';
+}
+
 // ---------------------------------------------------------------------------
 // Reconhecimento de template do comprovante e extração dos campos.
 // Todos os 5 formatos de exemplo (Sicredi Pix, Itaú/Sispag Pix por chave,
@@ -620,6 +720,16 @@ async function processBaixa(row, runId) {
         pinDocNumber: row.extraido_json?.pinDocNumber || null,
       };
     } else {
+      const divididos = await splitComprovanteBatch(row, localPath, workDir);
+      if (divididos) {
+        await updateItem(row.id, {
+          status: 'DIVIDIDO', execucao_id: runId, erro: null,
+          extraido_json: { paginas: divididos.length, arquivos_gerados: divididos.map((d) => d.arquivo_nome) },
+        });
+        log('SUCCESS', `${row.arquivo_nome}: lote com ${divididos.length} comprovante(s) — dividido em ${divididos.length} arquivo(s) individuais, ficam pro próximo ciclo.`);
+        return 'dividido';
+      }
+
       const fingerprint = sha256(buffer);
       const duplicado = await findDuplicateFingerprint(fingerprint, row.id);
       if (duplicado && !args.force) {
@@ -730,7 +840,7 @@ async function runExtractOnly(filePath) {
 
 async function main() {
   let runId = null;
-  const stats = { encontrados: 0, baixados: 0, dry_run: 0, aguardando_revisao: 0, duplicados: 0, erros: 0 };
+  const stats = { encontrados: 0, baixados: 0, dry_run: 0, aguardando_revisao: 0, divididos: 0, duplicados: 0, erros: 0 };
   try {
     assertConfig({ extractOnly: args.extractOnly });
     if (args.extractOnly) { await runExtractOnly(args.file); return; }
@@ -767,6 +877,7 @@ async function main() {
       if (result === 'baixado') stats.baixados += 1;
       else if (result === 'dry_run') stats.dry_run += 1;
       else if (result === 'aguardando_revisao') stats.aguardando_revisao += 1;
+      else if (result === 'dividido') stats.divididos += 1;
       else if (result === 'duplicado') stats.duplicados += 1;
       else if (result === 'erro') stats.erros += 1;
     }
