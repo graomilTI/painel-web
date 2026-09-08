@@ -588,7 +588,7 @@ function injectMobileStyles() {
     }
 
     body.mobile-gestor-mode .prog-toolbar > .prog-toolbar-row:first-child {
-      grid-template-rows: auto 46px 46px !important;
+      grid-template-rows: auto 46px 46px 46px !important;
     }
 
     body.mobile-gestor-mode .prog-toolbar .prog-context-group,
@@ -677,9 +677,23 @@ function injectMobileStyles() {
     }
 
     body.mobile-gestor-mode .prog-toolbar-spacer,
-    body.mobile-gestor-mode #progSearchWrap,
-    body.mobile-gestor-mode #progSaveProgramacao {
+    body.mobile-gestor-mode #progSearchWrap {
       display: none !important;
+    }
+
+    /* Linha própria embaixo das ações — botão de segurança do gestor:
+       autosave por campo já roda sozinho, isso só dá a confirmação visual. */
+    body.mobile-gestor-mode .prog-toolbar #progSaveProgramacao {
+      display: block !important;
+      grid-column: 1 / -1 !important;
+      grid-row: 4 !important;
+      width: 100% !important;
+      order: initial !important;
+      min-width: 0 !important;
+      min-height: 46px !important;
+      height: 46px !important;
+      padding-inline: 4px !important;
+      font-size: 12.5px !important;
     }
 
     body.mobile-gestor-mode #progSteps {
