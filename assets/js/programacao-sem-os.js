@@ -10,7 +10,6 @@ import { anexoFieldHtml, resolverAnexo, upsertAtestado } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
 const SITUACOES = [['ATESTADO', 'Atestado'], ['FALTA', 'Falta'], ['FERIAS', 'Férias'], ['FOLGA', 'Folga']];
-const TIPOS_EXTRA_DISPONIVEL = ['RECARGA', 'LAVANDERIA', 'LAVAGEM DE VEÍCULO', 'COMBUSTÍVEL'];
 
 const cpfNorm = (value) => String(value || '').replace(/\D/g, '');
 
@@ -131,9 +130,14 @@ function injectStyles() {
     .pso-disp-origin{margin:12px 0;padding:10px 12px;border:1px solid rgba(96,165,250,.24);border-radius:12px;background:rgba(30,64,175,.12);color:#bfdbfe;font-size:12px}
     .pso-disp-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
     .pso-disp-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(148,163,184,.22);border-radius:12px;background:#0d0d18;color:#e2e2f0;font-weight:800;cursor:pointer}
-    .pso-disp-extra-fields{display:grid;grid-template-columns:1fr 1.4fr .8fr;gap:8px;margin-top:10px}
-    .pso-disp-extra-fields input,.pso-disp-extra-fields select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:9px 10px}
-    @media(max-width:560px){.pso-disp-options,.pso-disp-extra-fields{grid-template-columns:1fr}.pso-modal-card{max-height:88vh;overflow:auto}}
+    .pso-disp-extras-block{margin-top:14px}
+    .pso-disp-extras-label{font-size:12.5px;font-weight:800;color:var(--muted);margin-bottom:8px}
+    .pso-disp-extra-row{display:grid;grid-template-columns:1fr .7fr auto;gap:8px;margin-top:8px}
+    .pso-disp-extra-row:first-child{margin-top:0}
+    .pso-disp-extra-row input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:9px 10px}
+    .pso-disp-extra-remove{border:1px solid rgba(148,163,184,.28);background:#0d0d18;color:#fca5a5;border-radius:11px;width:36px;font-weight:800;cursor:pointer}
+    .pso-disp-extra-add{margin-top:8px;border:1px dashed rgba(148,163,184,.36);background:transparent;color:#e2e2f0;border-radius:11px;padding:8px 12px;font-weight:700;cursor:pointer;width:100%}
+    @media(max-width:560px){.pso-disp-options{grid-template-columns:1fr}.pso-modal-card{max-height:88vh;overflow:auto}}
   `;
   document.head.appendChild(style);
 }
@@ -378,12 +382,16 @@ export async function renderProgramacaoSemOs(content, options = {}) {
         <label class="pso-disp-option"><input type="checkbox" data-disp-ref="almoco"> Almoço</label>
         <label class="pso-disp-option"><input type="checkbox" data-disp-ref="janta"> Janta</label>
         <label class="pso-disp-option"><input type="checkbox" data-disp-ref="pernoite"> Pernoite</label>
-        <label class="pso-disp-option"><input type="checkbox" data-disp-ref="extras"> Extras</label>
       </div>
-      <div class="pso-disp-extra-fields" id="psoDispExtraFields" hidden>
-        <select id="psoDispExtraTipo">${TIPOS_EXTRA_DISPONIVEL.map((tipo) => `<option value="${esc(tipo)}">${esc(tipo)}</option>`).join('')}</select>
-        <input id="psoDispExtraDesc" placeholder="Descrição do extra">
-        <input id="psoDispExtraValor" inputmode="decimal" placeholder="R$ 0,00">
+      <div class="pso-disp-extras-block">
+        <div class="pso-disp-extras-label">Extras</div>
+        <div id="psoDispExtrasList">
+          <div class="pso-disp-extra-row">
+            <input class="pso-extra-desc" placeholder="Descrição do extra">
+            <input class="pso-extra-valor" inputmode="decimal" placeholder="R$ 0,00">
+          </div>
+        </div>
+        <button type="button" class="pso-disp-extra-add" id="psoDispExtraAdd">+ Adicionar extra</button>
       </div>
       <div class="pso-modal-actions">
         <button type="button" class="btn btn-primary" id="psoDispSalvar">Liberar e sincronizar</button>
@@ -401,22 +409,33 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       origin.innerHTML = `Dia anterior: <strong>${esc(resultado.tipo_estadia)}</strong>${resultado.alojamento_nome ? ` · ${esc(resultado.alojamento_nome)}` : ''}${resultado.cidade ? ` · ${esc(resultado.cidade)}` : ''}`;
     }).catch((error) => console.warn('[sem-os] estadia do dia anterior:', error));
 
-    const extrasCheck = modalEl.querySelector('[data-disp-ref="extras"]');
-    extrasCheck.onchange = () => { modalEl.querySelector('#psoDispExtraFields').hidden = !extrasCheck.checked; };
+    const extrasList = modalEl.querySelector('#psoDispExtrasList');
+    function novaLinhaExtra() {
+      const row = document.createElement('div');
+      row.className = 'pso-disp-extra-row';
+      row.innerHTML = `<input class="pso-extra-desc" placeholder="Descrição do extra"><input class="pso-extra-valor" inputmode="decimal" placeholder="R$ 0,00"><button type="button" class="pso-disp-extra-remove" title="Remover">×</button>`;
+      row.querySelector('.pso-disp-extra-remove').onclick = () => row.remove();
+      return row;
+    }
+    modalEl.querySelector('#psoDispExtraAdd').onclick = () => { extrasList.appendChild(novaLinhaExtra()); };
     modalEl.querySelector('#psoDispCancelar').onclick = fecharModal;
     modalEl.querySelector('#psoDispSalvar').onclick = async () => {
       const fb = modalEl.querySelector('#psoDispFb');
       const btn = modalEl.querySelector('#psoDispSalvar');
       const selected = (key) => !!modalEl.querySelector(`[data-disp-ref="${key}"]`)?.checked;
-      if (!['cafe', 'almoco', 'janta', 'pernoite', 'extras'].some(selected)) {
+      const linhasExtra = [...extrasList.querySelectorAll('.pso-disp-extra-row')].map((row) => ({
+        descricao: row.querySelector('.pso-extra-desc').value.trim(),
+        valor: Number(String(row.querySelector('.pso-extra-valor').value || '0').replace(',', '.')) || 0,
+      }));
+      if (linhasExtra.some((linha) => !linha.descricao && linha.valor)) {
+        fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
+      }
+      const extrasPreenchidos = linhasExtra.filter((linha) => linha.descricao);
+      if (!['cafe', 'almoco', 'janta', 'pernoite'].some(selected) && !extrasPreenchidos.length) {
         fb.textContent = 'Selecione ao menos uma despesa.'; fb.classList.add('err'); return;
       }
       const programacaoId = programacaoIdParaColab(colab);
       const dataReferencia = options.dataReferencia || todayIso();
-      const extraDescricao = modalEl.querySelector('#psoDispExtraDesc')?.value.trim() || '';
-      if (selected('extras') && !extraDescricao) {
-        fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
-      }
       btn.disabled = true; fb.textContent = 'Salvando e enviando para sincronização…'; fb.classList.remove('err');
       try {
         const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
@@ -438,11 +457,8 @@ export async function renderProgramacaoSemOs(content, options = {}) {
         }
         const { error: extraDeleteError } = await supabase.from('programacao_extras').delete().eq('programacao_id', programacaoId).eq('colaborador_id', colab.colaboradorId).eq('observacao', 'Liberado no fluxo Disponível');
         if (extraDeleteError) throw extraDeleteError;
-        if (selected('extras')) {
-          const valor = Number(String(modalEl.querySelector('#psoDispExtraValor')?.value || '0').replace(',', '.')) || 0;
-          const extraTipoSelecionado = modalEl.querySelector('#psoDispExtraTipo').value;
-          const combustivel = normalizeText(extraTipoSelecionado) === 'COMBUSTIVEL';
-          const { error: extraError } = await supabase.from('programacao_extras').insert({ ...base, tipo_despesa: combustivel ? 'OUTROS' : extraTipoSelecionado, descricao: combustivel ? `Combustível — ${extraDescricao}` : extraDescricao, valor, observacao: 'Liberado no fluxo Disponível' });
+        if (extrasPreenchidos.length) {
+          const { error: extraError } = await supabase.from('programacao_extras').insert(extrasPreenchidos.map((linha) => ({ ...base, tipo_despesa: 'OUTROS', descricao: linha.descricao, valor: linha.valor, observacao: 'Liberado no fluxo Disponível' })));
           if (extraError) throw extraError;
         }
         await window.__publicarGrmLiberacaoDespesas?.('SALVAR_MANUAL');
