@@ -57,7 +57,7 @@ create table if not exists public.grm_nf_baixas (
 
   constraint grm_nf_baixas_status_check check (status in (
     'NOVO', 'PROCESSANDO', 'AGUARDANDO_REVISAO', 'VALIDADO',
-    'BAIXADO', 'DRY_RUN_OK', 'DUPLICADO', 'ERRO', 'CANCELADO'
+    'BAIXADO', 'DRY_RUN_OK', 'DIVIDIDO', 'DUPLICADO', 'ERRO', 'CANCELADO'
   ))
 );
 

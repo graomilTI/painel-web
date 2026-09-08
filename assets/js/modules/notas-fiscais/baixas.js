@@ -27,6 +27,7 @@ const STATUS_LABEL = {
   AGUARDANDO_REVISAO: 'Revisão manual',
   VALIDADO: 'Validado',
   BAIXADO: 'Baixado',
+  DIVIDIDO: 'Lote dividido',
   DUPLICADO: 'Duplicado',
   ERRO: 'Erro',
   CANCELADO: 'Cancelado',
@@ -38,6 +39,7 @@ const STATUS_BADGE = {
   AGUARDANDO_REVISAO: 'warn',
   VALIDADO: 'ok',
   BAIXADO: 'ok',
+  DIVIDIDO: 'neutral',
   DUPLICADO: 'warn',
   ERRO: 'danger',
   CANCELADO: 'neutral',
@@ -108,6 +110,7 @@ function acoesLinha(row) {
 function detalheLinha(row) {
   if (row.status === 'BAIXADO') return `pinCode ${esc(row.pin_code || '-')}`;
   if (row.status === 'VALIDADO') return `Aguardando o agente confirmar no GRM (pinCode ${esc(row.pin_code || '-')})`;
+  if (row.status === 'DIVIDIDO') return `Lote com ${esc(row.extraido_json?.paginas ?? '?')} comprovante(s) — cada um virou um item novo na fila`;
   return esc(row.erro || '-');
 }
 
