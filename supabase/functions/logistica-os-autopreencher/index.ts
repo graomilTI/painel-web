@@ -234,6 +234,68 @@ async function callGroq(base64: string, mime: string, apiKey: string) {
   return { campos: normalizeCampos(parseJsonText(text)), texto: text, provider: "groq" };
 }
 
+// Regras extras pro caminho de texto livre (e-mail encaminhado, sem rótulos
+// nem imagem) — o mesmo vocabulário que a IA local do Chrome usava em
+// logistica-os-ai-structurer.js, agora rodando num modelo de verdade em vez
+// do Gemini Nano on-device (lento pra baixar/carregar e fraco pra extrair
+// texto corrido em português). Ver [[painel-web-emails-abrir-os-botao]].
+function promptJsonTexto(texto: string): string {
+  return `${promptJson()}
+Regras adicionais (o texto abaixo é um e-mail corrido, não um formulário rotulado):
+- ORIGEM, fazenda, armazém ou ponto de origem normalmente é armazem_embarque, não cidade_embarque.
+- Mantenha cidade_embarque e cidade_destino separados do local/armazém.
+- Preserve zeros à esquerda em numero_contrato.
+- Frases como "Intacta declarada", "declarada Intacta" ou "Intacta declarada NF" mapeiam para "Declarado Intacta".
+
+TEXTO DE ORIGEM (e-mail):
+${texto.slice(0, 12000)}`;
+}
+
+async function callGroqTexto(texto: string, apiKey: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: Deno.env.get("GROQ_TEXT_MODEL") || Deno.env.get("GROQ_OCR_MODEL") || "qwen/qwen3.6-27b",
+      messages: [{ role: "user", content: promptJsonTexto(texto) }],
+      temperature: 0,
+      response_format: { type: "json_object" },
+      max_tokens: 1600,
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`Groq API ${response.status}: ${raw.slice(0, 500)}`);
+  const result = JSON.parse(raw);
+  const text = result?.choices?.[0]?.message?.content || "";
+  return { campos: normalizeCampos(parseJsonText(text)), texto: text, provider: "groq" };
+}
+
+async function callOpenAITexto(texto: string, apiKey: string) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: Deno.env.get("OPENAI_TEXT_MODEL") || Deno.env.get("OPENAI_OCR_MODEL") || "gpt-4.1-mini",
+      store: false,
+      input: [{ role: "user", content: [{ type: "input_text", text: promptJsonTexto(texto) }] }],
+      max_output_tokens: 1800,
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const raw = await response.text();
+  if (!response.ok) throw new Error(`OpenAI API ${response.status}: ${raw.slice(0, 500)}`);
+  const result = JSON.parse(raw);
+  const text = outputText(result);
+  return { campos: normalizeCampos(parseJsonText(text)), texto: text, provider: "openai" };
+}
+
 function outputText(result: any): string {
   if (typeof result?.output_text === "string" && result.output_text.trim()) return result.output_text.trim();
   for (const item of result?.output ?? []) {
@@ -426,15 +488,31 @@ serve(async (req) => {
   try {
     const body = await req.json();
     const base64 = String(body?.base64 || "").replace(/^data:[^;]+;base64,/, "");
+    const textoEmail = String(body?.texto || "").trim();
+
+    const groqKey = Deno.env.get("GROQ_API_KEY") || "";
+    const openaiKey = Deno.env.get("OPENAI_API_KEY") || "";
+    const ocrSpaceKey = Deno.env.get("OCR_SPACE_API_KEY") || "";
+
+    // Texto livre (e-mail encaminhado pro Gestor, sem imagem/PDF) — pula OCR
+    // e manda direto pro modelo de linguagem. Ver [[painel-web-emails-abrir-os-botao]].
+    if (!base64 && textoEmail) {
+      if (textoEmail.length < 10) return json({ error: "Texto vazio ou curto demais para analisar.", request_id: requestId }, 400);
+
+      let resultTexto;
+      if (groqKey) resultTexto = await callGroqTexto(textoEmail, groqKey);
+      else if (openaiKey) resultTexto = await callOpenAITexto(textoEmail, openaiKey);
+      else return json({ error: "Nenhum provedor de leitura está configurado. Configure GROQ_API_KEY ou OPENAI_API_KEY nas Edge Function Secrets.", request_id: requestId }, 500);
+
+      const identificadosTexto = Object.values(resultTexto.campos).filter((value) => value !== null && clean(value) !== "").length;
+      return json({ ...resultTexto, campos_identificados: identificadosTexto, request_id: requestId });
+    }
+
     const extension = String(body?.tipo || "").toLowerCase();
     if (!base64) return json({ error: "Arquivo não enviado.", request_id: requestId }, 400);
     if (base64.length > MAX_BASE64_LENGTH) return json({ error: "O arquivo excede o limite técnico de 15 MB.", request_id: requestId }, 413);
     const type = TYPES[extension];
     if (!type) return json({ error: "Formato não suportado. Envie PDF, JPG, PNG, GIF ou WEBP.", request_id: requestId }, 400);
-
-    const groqKey = Deno.env.get("GROQ_API_KEY") || "";
-    const openaiKey = Deno.env.get("OPENAI_API_KEY") || "";
-    const ocrSpaceKey = Deno.env.get("OCR_SPACE_API_KEY") || "";
 
     let result;
     if (extension !== "pdf" && groqKey) {

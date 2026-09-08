@@ -47,22 +47,35 @@ function renderReader() {
 }
 
 // Lê o e-mail (já encaminhado pra este Gestor pela Central de E-mails, ver
-// [[painel-web-emails-abrir-os-botao]]) com o mesmo motor de IA usado no
-// upload de print/PDF em Logística > Abrir O.S., guarda os campos e manda
-// pra lá — quem preenche/confere/envia continua sendo o Gestor, com toda a
-// validação (contrato por cliente, selects canônicos etc.) que já existe
-// naquele formulário. Nada é criado a partir daqui.
+// [[painel-web-emails-abrir-os-botao]]) e manda pra Abrir O.S. com os campos
+// já preenchidos — quem preenche/confere/envia continua sendo o Gestor, com
+// toda a validação (contrato por cliente, selects canônicos etc.) que já
+// existe naquele formulário. Nada é criado a partir daqui.
+//
+// Tenta primeiro o mesmo modelo online (Groq/OpenAI) que já lê print/PDF em
+// Logística > Abrir O.S. (edge function logistica-os-autopreencher, modo
+// texto) — a IA local do Chrome (Gemini Nano) é lenta pra baixar/carregar e
+// bem mais fraca extraindo texto corrido de e-mail. `enhanceLogisticaOsFields`
+// só recorre a ela como fallback, se o provedor online falhar ou não tiver
+// achado campos suficientes.
 async function abrirOsFromEmail(event) {
   const m = state.selected;
   if (!m) return;
   const button = event.currentTarget;
   button.disabled = true;
   const original = button.textContent;
-  button.textContent = 'Lendo e-mail...';
+  button.textContent = 'IA lendo o e-mail...';
   try {
-    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1');
     const texto = m.corpo_texto || String(m.corpo_html || '').replace(/<[^>]+>/g, ' ');
-    const campos = await enhanceLogisticaOsFields(texto, {}, (progress) => { button.textContent = progress; });
+    let camposOnline = {};
+    try {
+      const { data, error } = await supabase.functions.invoke('logistica-os-autopreencher', { body: { texto } });
+      if (!error && data?.campos) camposOnline = data.campos;
+    } catch (err) {
+      console.warn('[gestor-email] leitura online indisponível, tentando IA local', err);
+    }
+    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1');
+    const campos = await enhanceLogisticaOsFields(texto, camposOnline, (progress) => { button.textContent = progress; });
     sessionStorage.setItem('logisticaAberturaOsEmailPrefill', JSON.stringify(campos));
     location.href = `${toPanelUrl('logistica')}#abrir_os`;
   } catch (error) {
