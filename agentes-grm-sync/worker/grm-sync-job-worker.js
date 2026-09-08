@@ -125,6 +125,12 @@ const SCRIPT_MAP = {
   // rollback. Essa entrada tinha sumido do SCRIPT_MAP (drift não commitado
   // entre 08/08 e 10/08) — é por isso que o agente não rodava mais.
   'sync-lancar-notas-fiscais': 'grmserver-lancar-notas-fiscais-api.js',
+  // Baixa (marcar como pago) dos lançamentos acima, a partir de comprovantes
+  // bancários anexados pelo Financeiro (payInvoice/payment, ver comentário
+  // no topo de grmserver-baixa-notas-fiscais-api.js). Mesmo padrão do
+  // lançamento: só roda por disparo manual + auto-continuação, não entra em
+  // grm_sync_agent_settings/ti-agentes.js.
+  'sync-baixa-notas-fiscais': 'grmserver-baixa-notas-fiscais-api.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-reabrir-os': 'grm-sync-reabrir-os.js',
   'sync-abrir-os': 'grm-sync-abrir-os.js',

@@ -11,9 +11,11 @@ import { nfState } from './state.js';
 import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
+import { renderBaixas, vincularEventosBaixas, carregarBaixas, contarRevisaoPendente } from './baixas.js';
 
 let raiz = null;
 let bootId = 0; // evita boot/listeners duplicados em soft-nav
+let baixasRevisaoPendente = null; // null = ainda não carregado (sem badge)
 
 function gruposVisiveis(estado) {
   let grupos = agruparPorNf(estado.itens, estado.pagamentos)
@@ -38,6 +40,12 @@ function gruposVisiveis(estado) {
 function render() {
   if (!raiz) return;
   const estado = nfState.get();
+
+  if (estado.janela === 'baixas') {
+    renderBaixasView(estado);
+    return;
+  }
+
   const todosGrupos = agruparPorNf(estado.itens, estado.pagamentos);
   const r = resumo(todosGrupos);
   const grupos = gruposVisiveis(estado);
@@ -57,6 +65,7 @@ function render() {
           itens: [
             { id: 'pendentes', label: 'Pendentes', badge: r.pendentes },
             { id: 'lancados', label: 'Lançados', badge: r.lancados },
+            { id: 'baixas', label: 'Baixas', badge: baixasRevisaoPendente },
           ],
           ativo: estado.janela,
           attr: 'data-nf-janela',
@@ -99,12 +108,54 @@ function render() {
   vincularEventos(grupos);
 }
 
+// A aba "Baixas" é sobre um recorte totalmente diferente (comprovantes de
+// pagamento -> grm_nf_baixas), não os compras_itens desta tela — por isso
+// tem seu próprio módulo (baixas.js) e não usa agruparPorNf/gruposVisiveis.
+function renderBaixasView(estado) {
+  raiz.innerHTML = `
+    <section style="display:grid;gap:18px">
+      ${pageHeader({
+        titulo: 'Notas Fiscais',
+        subtitulo: 'Baixa de pagamentos (holerite/NF) no GRM a partir dos comprovantes enviados pelo Financeiro.',
+      })}
+
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        ${tabs({
+          itens: [
+            { id: 'pendentes', label: 'Pendentes' },
+            { id: 'lancados', label: 'Lançados' },
+            { id: 'baixas', label: 'Baixas', badge: baixasRevisaoPendente },
+          ],
+          ativo: estado.janela,
+          attr: 'data-nf-janela',
+        })}
+      </div>
+
+      <article class="ds-card" style="display:grid;gap:14px">
+        ${renderBaixas()}
+      </article>
+    </section>`;
+
+  raiz.querySelectorAll('[data-nf-janela]').forEach((b) => {
+    b.addEventListener('click', () => trocarJanela(b.dataset.nfJanela));
+  });
+  vincularEventosBaixas(raiz, { aoAtualizar: render });
+}
+
+async function trocarJanela(janela) {
+  if (janela === nfState.get().janela) return;
+  nfState.set({ janela, pagina: 1 });
+  if (janela === 'baixas') {
+    render();
+    await carregarBaixas();
+    baixasRevisaoPendente = await contarRevisaoPendente();
+  }
+  render();
+}
+
 function vincularEventos(grupos) {
   raiz.querySelectorAll('[data-nf-janela]').forEach((b) => {
-    b.addEventListener('click', () => {
-      nfState.set({ janela: b.dataset.nfJanela, pagina: 1 });
-      render();
-    });
+    b.addEventListener('click', () => trocarJanela(b.dataset.nfJanela));
   });
 
   const busca = raiz.querySelector('#nfBusca');
@@ -234,8 +285,17 @@ async function carregar() {
 
 export function renderContent(content) {
   bootId += 1;
+  const meuBoot = bootId;
   raiz = content;
   nfState.reset();
+  if (window.location.hash === '#baixas') nfState.set({ janela: 'baixas' });
   render();
+  contarRevisaoPendente().then((n) => { if (meuBoot === bootId) { baixasRevisaoPendente = n; render(); } });
+  // Sempre carrega os dados de Compras em segundo plano (mesmo entrando
+  // direto em #baixas), pra trocar de aba depois não cair numa tela presa
+  // em "carregando".
   carregar();
+  if (nfState.get().janela === 'baixas') {
+    carregarBaixas().then(() => { if (meuBoot === bootId) render(); });
+  }
 }

@@ -1231,6 +1231,17 @@ export function renderContent(content, userContext) {
             <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
           </div>
 
+          <div class="fin-drop" style="margin-bottom:16px">
+            <h3>Comprovantes de pagamento (Holerite/NF)</h3>
+            <p class="fin-muted">Envie os comprovantes de PIX/TED de um lote já pago (holerite ou NF já lançados no GRM). Cada arquivo vira 1 item na fila de baixa — o casamento com o lançamento certo e a confirmação de casos ambíguos ficam no Painel de Notas Fiscais.</p><br>
+            <input id="baixaNfArquivos" type="file" multiple accept=".pdf">
+            <div class="fin-actions-row">
+              <button class="btn btn-primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
+              <span id="fbBaixaNf" class="fin-feedback"></span>
+            </div>
+            <div id="baixaNfResumo" class="pay-summary" style="margin-top:12px"></div>
+          </div>
+
           <div class="fin-table-wrap">
             <table class="fin-table">
               <thead>
@@ -1341,7 +1352,7 @@ export function renderContent(content, userContext) {
     document.getElementById(`tab-${tab}`)?.classList.add('active');
     if (tab === 'fluxo') mostrarFluxoLista();
     if (tab === 'despesas') setPayMode(payModeFromHash());
-    if (tab === 'pagamentos') loadSetorPagamentos();
+    if (tab === 'pagamentos') { loadSetorPagamentos(); carregarResumoBaixaNf(); }
     if (tab === 'dashboard') loadDashboardData();
     if (tab === 'notas-fiscais' && !state.notasFiscaisLoaded) loadNotasFiscais();
   }
@@ -1618,6 +1629,102 @@ export function renderContent(content, userContext) {
     return [...map.values()];
   }
 
+  // ---------------------------------------------------------------------
+  // Comprovantes de pagamento (Holerite/NF) -> fila grm_nf_baixas, revisada
+  // no Painel de Notas Fiscais (aba Baixas). O agente sync-baixa-notas-fiscais
+  // faz a extração/matching/baixa no GRM (payInvoice/payment).
+  const BAIXA_NF_BUCKET = 'notas-fiscais';
+  const BAIXA_NF_TABELA = 'grm_nf_baixas';
+  const BAIXA_NF_AGENTE = 'sync-baixa-notas-fiscais';
+  const BAIXA_NF_STATUS_LABEL = {
+    NOVO: 'Na fila',
+    PROCESSANDO: 'Processando',
+    AGUARDANDO_REVISAO: 'Revisão manual',
+    VALIDADO: 'Validado',
+    BAIXADO: 'Baixado',
+    ERRO: 'Erro',
+  };
+
+  function safeStorageFileNameBaixaNf(name) {
+    return String(name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
+  }
+
+  async function uploadComprovanteBaixaNf(file, userId) {
+    const ano = new Date().getFullYear();
+    const path = `financeiro/baixa-pagamentos/${ano}/${Date.now()}_${safeStorageFileNameBaixaNf(file.name)}`;
+    const { error: uploadError } = await supabase.storage.from(BAIXA_NF_BUCKET).upload(path, file, {
+      upsert: false, contentType: file.type || 'application/pdf',
+    });
+    if (uploadError) throw new Error(`Falha ao enviar "${file.name}": ${uploadError.message}`);
+    const { error: insertError } = await supabase.from(BAIXA_NF_TABELA).insert({
+      storage_bucket: BAIXA_NF_BUCKET,
+      storage_path: path,
+      arquivo_nome: file.name,
+      arquivo_mime_type: file.type || null,
+      status: 'NOVO',
+      enviado_por: userId,
+    });
+    if (insertError) throw new Error(`Falha ao registrar "${file.name}": ${insertError.message}`);
+  }
+
+  async function carregarResumoBaixaNf() {
+    const alvo = document.getElementById('baixaNfResumo');
+    if (!alvo) return;
+    const statuses = Object.keys(BAIXA_NF_STATUS_LABEL);
+    const counts = await Promise.all(statuses.map((s) => supabase.from(BAIXA_NF_TABELA)
+      .select('id', { count: 'exact', head: true }).eq('status', s)));
+    alvo.innerHTML = statuses.map((s, i) => `
+      <div class="pay-mini"><span>${esc(BAIXA_NF_STATUS_LABEL[s])}</span><strong>${counts[i]?.count || 0}</strong></div>
+    `).join('') + `
+      <div class="pay-mini"><a href="notas-fiscais.html#baixas" style="color:#86efac;text-decoration:none;font-weight:800">Ver e revisar →</a></div>
+    `;
+  }
+
+  async function enviarComprovantesBaixaNf() {
+    const input = document.getElementById('baixaNfArquivos');
+    const feedback = document.getElementById('fbBaixaNf');
+    const arquivos = Array.from(input?.files || []);
+    if (!arquivos.length) {
+      if (feedback) { feedback.textContent = 'Selecione ao menos um arquivo.'; feedback.className = 'fin-feedback err'; }
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      if (feedback) { feedback.textContent = 'Sessão expirada. Recarregue a página.'; feedback.className = 'fin-feedback err'; }
+      return;
+    }
+
+    const botao = document.getElementById('btnEnviarBaixaNf');
+    if (botao) { botao.disabled = true; botao.textContent = 'Enviando...'; }
+
+    let sucesso = 0;
+    let falhas = 0;
+    for (const arquivo of arquivos) {
+      try {
+        await uploadComprovanteBaixaNf(arquivo, session.user.id);
+        sucesso += 1;
+      } catch (error) {
+        falhas += 1;
+        console.warn('[financeiro] falha ao enviar comprovante de baixa', error);
+      }
+    }
+
+    if (botao) { botao.disabled = false; botao.textContent = 'Enviar comprovantes'; }
+    if (input) input.value = '';
+    if (feedback) {
+      feedback.textContent = falhas
+        ? `${sucesso} enviado(s), ${falhas} com falha.`
+        : `${sucesso} comprovante(s) enviado(s) para a fila de baixa.`;
+      feedback.className = falhas ? 'fin-feedback err' : 'fin-feedback ok';
+    }
+    if (sucesso) {
+      await supabase.from('grm_sync_jobs').insert({
+        agente_id: BAIXA_NF_AGENTE, status: 'pendente', lane: 'alteracoes',
+        solicitado_por: session.user.email || session.user.id,
+      });
+    }
+    await carregarResumoBaixaNf();
+  }
 
   async function loadSetorPagamentos() {
     const tbody = document.getElementById('setorPagamentosTbody');
@@ -3280,6 +3387,7 @@ export function renderContent(content, userContext) {
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
   document.getElementById('btnReload').addEventListener('click', loadFluxo);
   document.getElementById('btnReloadSetorPagamentos')?.addEventListener('click', loadSetorPagamentos);
+  document.getElementById('btnEnviarBaixaNf')?.addEventListener('click', enviarComprovantesBaixaNf);
   document.getElementById('nfReloadBtn')?.addEventListener('click', loadNotasFiscais);
   document.getElementById('nfFiltroCliente')?.addEventListener('input', (event) => { state.notasFiscaisFiltro.cliente = event.target.value; renderNotasFiscais(); });
   document.getElementById('nfFiltroSituacao')?.addEventListener('change', (event) => { state.notasFiscaisFiltro.situacao = event.target.value; renderNotasFiscais(); });

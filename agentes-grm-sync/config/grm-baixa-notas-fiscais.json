@@ -1,0 +1,42 @@
+{
+  "_comentario": "Mapeia a conta bancária pagadora impressa no comprovante (agência+conta, ou CNPJ quando o comprovante não traz agência/conta explícita, como no Pix da Caixa) pro par baccCode/scpCode cadastrado no GRM (bankAccount/getRecords). Validado ao vivo em 08/09 comparando os 5 comprovantes de exemplo de AGOSTO/2026 com o cadastro real do GRM — ver o plano radiant-leaping-clarke.md. baccCode/scpCode não mudam com frequência (só se o financeiro trocar de banco/conta), então isso fica em disco, não em tabela.",
+  "contas_pagadoras": [
+    {
+      "empresa": "ARAGUAIA",
+      "match": { "agencia": "0806", "conta": "256017" },
+      "baccCode": 21,
+      "scpCode": 5,
+      "baccName": "ARAGUAIA SICREDI"
+    },
+    {
+      "empresa": "BV GRAIN",
+      "match": { "agencia": "0932", "conta": "292220" },
+      "baccCode": 22,
+      "scpCode": 4,
+      "baccName": "BVGRAIN ITAU"
+    },
+    {
+      "empresa": "EXCELENCIA",
+      "match": { "cnpj": "36514493000125", "agencia": "4379" },
+      "baccCode": 25,
+      "scpCode": 3,
+      "baccName": "EXCELENCIA CEF",
+      "_obs": "Excelência paga por 2 modelos de comprovante Caixa: Pix (só imprime o CNPJ do pagador, sem agência/conta) e TEV/Transferência Entre Contas (imprime 'Conta de débito 4379 | 1292 | 000578762346-7', sem CNPJ nenhum) — por isso esta entrada casa tanto por CNPJ quanto por agência sozinha (4379), sem exigir a conta completa."
+    },
+    {
+      "empresa": "GRAO1000",
+      "match": { "agencia": "3727", "conta": "338000" },
+      "baccCode": 18,
+      "scpCode": 2,
+      "baccName": "GRAO1000 ITAU"
+    },
+    {
+      "empresa": "GRAOMIL",
+      "match": { "agencia": "3727", "conta": "373775" },
+      "baccCode": 8,
+      "scpCode": 1,
+      "baccName": "GRAOMIL ITAU",
+      "_obs": "O comprovante desse par agência/conta imprime 'Nome da empresa: GRAO 1000 LTDA', mas a conta cadastrada no GRM (bankAccount/getRecords) é GRAOMIL ITAU, não GRAO1000 ITAU (que é uma conta diferente, agência 3727 conta 33800). Confiar sempre na agência+conta, nunca no nome impresso no comprovante."
+    }
+  ]
+}
