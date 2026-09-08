@@ -208,6 +208,9 @@ function mailboxFlagList(mailbox) {
 function shouldSyncMailbox(mailbox, account) {
   if (!mailbox?.path || mailbox.disabled) return false;
   const pathKey = mailboxKey(mailbox.path);
+  // Pastas internas do Dovecot (armazenam os filtros sieve do cPanel), não são
+  // caixas de mensagens reais e sempre falham ao tentar sincronizar.
+  if (pathKey.split('.').includes('dovecot')) return false;
   // A caixa pessoal do Gestor precisa refletir Entrada, Enviados, Rascunhos,
   // Spam e Lixeira. A Central administrativa continua limitada às pastas úteis.
   if (account.escopo === 'GESTOR') return mailbox.listed !== false;
