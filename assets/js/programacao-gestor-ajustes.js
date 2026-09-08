@@ -127,7 +127,11 @@ function injectGestorAjustesStyles() {
 }
 
 function hideCoreControls() {
-  ['progSaveProgramacao', 'progSearchWrap', 'progOsStatusTopWrap'].forEach((id) => {
+  // "Salvar programação" (progSaveProgramacao) fica visível de propósito: o
+  // autosave por campo continua rodando, mas o gestor pediu um botão de
+  // segurança pra ter a associação visual de "salvei" — antes ele ficava
+  // escondido aqui pra todo mundo, sem nenhuma confirmação manual no lugar.
+  ['progSearchWrap', 'progOsStatusTopWrap'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
