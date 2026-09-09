@@ -1,11 +1,12 @@
 import { DIRECTOR_MAP_STATES, DIRECTOR_MAP_COORDS } from '../dashboardDiretoriaMap.js';
 
 const DASHBOARD_DIRETORIA_STYLE_ID = 'dashboard-diretoria-style';
+const DASHBOARD_DIRETORIA_VIEW_CACHE = 'dashboard-diretoria:view:v2';
 if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const stylesheet = document.createElement('link');
   stylesheet.id = DASHBOARD_DIRETORIA_STYLE_ID;
   stylesheet.rel = 'stylesheet';
-  stylesheet.href = new URL('../../css/dashboard-diretoria.css?v=20260909-2', import.meta.url).href;
+  stylesheet.href = new URL('../../css/dashboard-diretoria.css?v=20260909-4', import.meta.url).href;
   document.head.appendChild(stylesheet);
 }
 
@@ -28,7 +29,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     mode:'sum', compareBy:'month', view:'charts', rankMetric:'services', rankLimit:10,
     mapMetric:'tons', mapFocus:'BR', bubbleSize:24, detail:null, lastUpdated:null
   };
-  const charts = { weekly:null, finance:null };
+  const charts = { daily:null, finance:null };
   const attached = new WeakSet();
 
   const n = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
@@ -75,25 +76,35 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     return rows;
   }
 
-  async function loadLatestSnapshot(table, select) {
-    if (state.snapshotCache.has(table)) return state.snapshotCache.get(table);
+  async function loadLatestSnapshot(table, select, period=null) {
+    const cacheKey = period ? `${table}:${period.start}:${period.end}` : table;
+    if (state.snapshotCache.has(cacheKey)) return state.snapshotCache.get(cacheKey);
     const promise = (async () => {
       const { data:latest, error:latestError } = await state.supabase.from(table).select('created_at').order('created_at',{ascending:false}).limit(1);
       if (latestError) throw latestError;
       const createdAt = latest?.[0]?.created_at;
       if (!createdAt) return [];
       const threshold = new Date(new Date(createdAt).getTime()-5*60*1000).toISOString();
-      return fetchAll(() => state.supabase.from(table).select(select).gte('created_at',threshold));
+      return fetchAll(() => {
+        let query=state.supabase.from(table).select(select).gte('created_at',threshold);
+        if (period && table==='grm_despesas_importacoes') query=query.gte('data_conta_de',period.start).lt('data_conta_de',period.end);
+        if (period && table==='grm_notas_fiscais_importacoes') query=query.gte('data_nota_real',period.start).lt('data_nota_real',period.end);
+        return query;
+      });
     })();
-    state.snapshotCache.set(table,promise);
+    state.snapshotCache.set(cacheKey,promise);
     return promise;
   }
 
   function normalizeProduction(row, year, month) {
     return { year,month,date:String(row.data||''),coord:String(row.coordenacao||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:String(row.cliente_nacional||row.cliente_final||'').trim(),tons:n(row.toneladas),services:n(row.valor_embarcado) };
   }
-  function normalizeExpense(row, year, month) {
-    return { year,month,coord:String(row.coordenacao||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:'',category:String(row.categoria||row.grupo_categoria||'Sem categoria').trim()||'Sem categoria',costs:n(row.valor) };
+  function normalizeExpenses(row, year, month) {
+    const base={year,month,coord:String(row.coordenacao||rawValue(row,['Coordenação','Coordenacao'])||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:''};
+    const ignored=new Set(['COORDENACAO','TOTAL','DATA CONTA DE','DATA CONTA ATE','DATA','SUPERVISAO','FUNCIONARIO']);
+    const categories=Object.entries(row.dados_json||{}).filter(([key,value])=>!ignored.has(norm(key))&&n(value)!==0).map(([category,value])=>({...base,category:String(category).trim(),costs:n(value)}));
+    if(categories.length)return categories;
+    return [{...base,category:String(row.categoria||row.grupo_categoria||'Sem categoria').trim()||'Sem categoria',costs:n(row.valor)}];
   }
   function normalizeNote(row, year, month) {
     const noteDate = dateIso(row.data_nota_real || rawValue(row,['Data N.F.','Data NF','Data da Fatura']));
@@ -111,14 +122,14 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       const { start,end } = bounds(year,month);
       const [productionRows, expenseSnapshot, noteSnapshot, receiptRows, metaResult] = await Promise.all([
         fetchAll(() => state.supabase.from('relatorio_resultado_diario').select('data,funcionario,coordenacao,supervisao,cliente_nacional,cliente_final,toneladas,valor_embarcado').gte('data',start).lt('data',end)),
-        loadLatestSnapshot('grm_despesas_importacoes','data_conta_de,data_conta_ate,coordenacao,supervisao,funcionario,categoria,grupo_categoria,valor,created_at'),
+        loadLatestSnapshot('grm_despesas_importacoes','data_conta_de,data_conta_ate,coordenacao,supervisao,funcionario,categoria,grupo_categoria,valor,dados_json,created_at',{start,end}),
         loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at'),
         fetchAll(() => state.supabase.from('financeiro_contas_receber').select('cliente,numero_nf,valor_pago,recebimento').gte('recebimento',start).lt('recebimento',end).not('recebimento','is',null)),
         state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true)
       ]);
       if (metaResult.error) throw metaResult.error;
       const production = productionRows.map((row) => normalizeProduction(row,year,month)).filter((row) => !isExcluded(row.coord));
-      const expenses = expenseSnapshot.filter((row) => String(row.data_conta_de||start).slice(0,10)<end && String(row.data_conta_ate||end).slice(0,10)>=start).map((row) => normalizeExpense(row,year,month)).filter((row) => !isExcluded(row.coord));
+      const expenses = expenseSnapshot.filter((row) => String(row.data_conta_de||'').slice(0,10)>=start && String(row.data_conta_de||'').slice(0,10)<end).flatMap((row) => normalizeExpenses(row,year,month)).filter((row) => !isExcluded(row.coord));
       const dedupedNotes = new Map();
       noteSnapshot.map((row) => normalizeNote(row,year,month)).filter((row) => row.date>=start && row.date<end).forEach((row) => {
         const noteKey = norm(row.number) || `${norm(row.client)}|${row.date}|${row.invoices}`;
@@ -254,19 +265,35 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     return `<section class="dir-section"><div class="dir-section-head"><div><h3>Comparativo por ${label}</h3><p>Valores detalhados para cada grupo selecionado</p></div></div><div class="dir-compare"><div class="dir-compare-metrics">${metricCharts}</div><div class="dir-table-scroll"><table class="dir-table"><thead><tr><th>Seleção</th>${METRICS.map((metric)=>`<th>${metric.label}</th>`).join('')}<th>Resultado</th><th>Custo/t</th></tr></thead><tbody>${groups.map((group)=>{const v=group.values,result=v.services!=null&&v.costs!=null?v.services-v.costs:null,cpt=v.costs!=null&&v.tons?v.costs/v.tons:null;return `<tr><td>${safe(group.name)}</td>${METRICS.map((metric)=>`<td>${formatMetric(metric.key,v[metric.key])}</td>`).join('')}<td class="${result==null?'':result>=0?'positive':'negative'}">${result==null?'<span class="dir-na">—</span>':fmtMoney(result)}</td><td>${cpt==null?'<span class="dir-na">—</span>':fmtMoney(cpt)}</td></tr>`;}).join('')}</tbody></table></div><p class="dir-legend-note">“Sem detalhamento” indica que a fonte original não possui vínculo direto com essa dimensão.</p></div></section>`;
   }
 
-  function weekSeries(data) {
-    const weeks=[0,0,0,0,0]; filtered(data).production.forEach((row)=>{const day=Number(String(row.date).slice(8,10))||1;weeks[Math.min(4,Math.floor((day-1)/7))]+=row.tons;}); return weeks;
+  function dailySeries(data) {
+    const days=new Map();
+    filtered(data).production.forEach((row)=>{if(row.date)days.set(row.date,(days.get(row.date)||0)+row.tons);});
+    const entries=[...days.entries()].sort(([a],[b])=>a.localeCompare(b));
+    return {labels:entries.map(([date])=>{const [year,month,day]=date.slice(0,10).split('-');return `${day}/${MONTHS[Number(month)-1]}/${String(year).slice(-2)}`;}),values:entries.map(([,value])=>value)};
   }
   function destroyCharts(){ for(const key of Object.keys(charts)){ if(charts[key]){charts[key].destroy();charts[key]=null;} } }
+  function saveViewCache(markup) {
+    try { localStorage.setItem(DASHBOARD_DIRETORIA_VIEW_CACHE,JSON.stringify({savedAt:Date.now(),markup})); } catch (_) { /* cache visual opcional */ }
+  }
+  function restoreViewCache(container) {
+    try {
+      const cached=JSON.parse(localStorage.getItem(DASHBOARD_DIRETORIA_VIEW_CACHE)||'null');
+      if(!cached?.markup||Date.now()-n(cached.savedAt)>12*60*60*1000)return false;
+      container.innerHTML=cached.markup;
+      container.querySelector('.dir-page')?.classList.add('is-refreshing');
+      return true;
+    } catch (_) { return false; }
+  }
   function mountCharts(data) {
     destroyCharts(); if (!window.Chart || state.view!=='charts') return;
-    const weekly=state.container.querySelector('#dir-weekly-chart'),finance=state.container.querySelector('#dir-finance-chart'); if(!weekly||!finance)return;
+    const daily=state.container.querySelector('#dir-daily-chart'),finance=state.container.querySelector('#dir-finance-chart'); if(!daily||!finance)return;
     const text='#9daf9f',grid='rgba(183,210,190,.10)',packs=[...state.selectedMonths].sort((a,b)=>a-b).map((month)=>({month,data:mergePacks([data].map(()=>({production:data.production.filter(r=>r.month===month),expenses:data.expenses.filter(r=>r.month===month),notes:data.notes.filter(r=>r.month===month),receipts:data.receipts.filter(r=>r.month===month),metas:data.metas})))}));
-    charts.weekly=new window.Chart(weekly,{type:'bar',data:{labels:['Semana 1','Semana 2','Semana 3','Semana 4','Semana 5'],datasets:[{label:'Produção (t)',data:weekSeries(data),backgroundColor:'rgba(72,185,121,.72)',borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:text}},y:{grid:{color:grid},ticks:{color:text}}}}});
+    const dailyData=dailySeries(data);
+    charts.daily=new window.Chart(daily,{type:'bar',data:{labels:dailyData.labels,datasets:[{label:'Produção (t)',data:dailyData.values,backgroundColor:'rgba(72,185,121,.72)',borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{color:text,maxRotation:0,autoSkip:true,maxTicksLimit:16}},y:{grid:{color:grid},ticks:{color:text}}}}});
     charts.finance=new window.Chart(finance,{type:'line',data:{labels:packs.map(p=>`${MONTHS[p.month-1]}/${state.year}`),datasets:[{label:'Serviços',data:packs.map(p=>metrics(p.data).services),borderColor:'#48b979',backgroundColor:'#48b979',tension:.28},{label:'Notas',data:packs.map(p=>metrics(p.data).invoices),borderColor:'#64a6d9',backgroundColor:'#64a6d9',tension:.28},{label:'Recebimentos',data:packs.map(p=>metrics(p.data).received),borderColor:'#d7a947',backgroundColor:'#d7a947',tension:.28}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:text,boxWidth:10}}},scales:{x:{grid:{display:false},ticks:{color:text}},y:{grid:{color:grid},ticks:{color:text,callback:(value)=>`R$${Math.round(value/1000)}k`}}}}});
   }
   function renderCharts(data) {
-    return `<section class="dir-section"><div class="dir-section-head"><div><h3>Evolução da operação</h3><p>Produção semanal e fluxo financeiro dos meses selecionados</p></div>${renderViewToggle()}</div><div class="dir-chart-grid"><article class="dir-panel"><h4>Produção por semana</h4><p class="dir-panel-caption">Toneladas classificadas no período consolidado</p><div class="dir-canvas-wrap"><canvas id="dir-weekly-chart"></canvas></div></article><article class="dir-panel"><h4>Serviços, notas e recebimentos</h4><p class="dir-panel-caption">Cada série segue sua respectiva data</p><div class="dir-canvas-wrap"><canvas id="dir-finance-chart"></canvas></div></article></div></section>`;
+    return `<section class="dir-section"><div class="dir-section-head"><div><h3>Evolução da operação</h3><p>Produção diária e fluxo financeiro dos meses selecionados</p></div>${renderViewToggle()}</div><div class="dir-chart-grid"><article class="dir-panel"><h4>Produção por dia</h4><p class="dir-panel-caption">Toneladas classificadas em cada data do período</p><div class="dir-canvas-wrap"><canvas id="dir-daily-chart"></canvas></div></article><article class="dir-panel"><h4>Serviços, notas e recebimentos</h4><p class="dir-panel-caption">Cada série segue sua respectiva data</p><div class="dir-canvas-wrap"><canvas id="dir-finance-chart"></canvas></div></article></div></section>`;
   }
   function renderViewToggle() { return `<div class="dir-view-toggle"><button class="dir-chip ${state.view==='charts'?'is-active':''}" data-view="charts" type="button">Gráficos</button><button class="dir-chip ${state.view==='map'?'is-active':''}" data-view="map" type="button">Mapa</button></div>`; }
 
@@ -310,8 +337,9 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     const container=state.container;if(!container)return;
     if(state.loading){destroyCharts();container.innerHTML=`<div class="dir-page">${renderToolbar()}<div class="dir-loading"><span class="dir-loader"></span>Carregando indicadores reais…</div></div>`;return;}
     if(state.error){destroyCharts();container.innerHTML=`<div class="dir-page">${renderToolbar()}<div class="dir-error"><strong>Não foi possível carregar o painel.</strong><br>${safe(state.error)}</div></div>`;return;}
-    const packs=await loadedData(),data=mergePacks(packs),selectedLabel=[...state.selectedMonths].sort((a,b)=>a-b).map((month)=>MONTHS[month-1]).join(' + ');
-    container.innerHTML=`<div class="dir-page">${renderToolbar()}<header class="dir-hero"><div><span class="dir-eyebrow">Visão da diretoria</span><h2>Panorama da empresa</h2><p>Produção, faturamento, recebimentos e custos com os mesmos filtros.</p></div><span class="dir-updated">${selectedLabel} de ${state.year}</span></header><div class="dir-filters">${renderFilterOptions(data)}</div><div class="dir-filter-summary">${activeFilterSummary()}</div>${renderDetail(data)}${state.mode==='sum'?renderKpis(data):renderComparison(data)}${renderRankings(data)}${state.view==='map'?renderMap(data):renderCharts(data)}${renderOperationalTable(data)}</div>`;
+    const packs=await loadedData(),data=mergePacks(packs);
+    container.innerHTML=`<div class="dir-page">${renderToolbar()}<div class="dir-filters">${renderFilterOptions(data)}</div><div class="dir-filter-summary">${activeFilterSummary()}</div>${renderDetail(data)}${state.mode==='sum'?renderKpis(data):renderComparison(data)}${renderRankings(data)}${state.view==='map'?renderMap(data):renderCharts(data)}${renderOperationalTable(data)}</div>`;
+    saveViewCache(container.innerHTML);
     mountCharts(data);
   }
 
@@ -359,7 +387,8 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   async function openHome(container,opts={}) {
     state.container=container;state.supabase=opts.supabase||opts.api?.supabase;attach(container);
     if(!state.supabase){state.loading=false;state.error='Conexão com o banco de dados indisponível.';render();return;}
-    state.loading=true;state.error='';render();
+    state.loading=true;state.error='';
+    if(!restoreViewCache(container))render();
     try{await initialize();}catch(error){state.loading=false;state.error=error?.message||'Erro inesperado.';render();}
   }
   window.DASHBOARD_SOCIO={openHome};

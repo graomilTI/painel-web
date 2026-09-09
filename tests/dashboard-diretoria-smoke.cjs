@@ -14,7 +14,7 @@ const rows = {
     { data:'2026-08-08', funcionario:'Ana', coordenacao:'CASCAVEL', supervisao:'Sul', cliente_nacional:'Cliente A', cliente_final:'', toneladas:800, valor_embarcado:110000 }
   ],
   grm_despesas_importacoes: [
-    { data_conta_de:'2026-09-01', data_conta_ate:'2026-09-30', coordenacao:'CASCAVEL', supervisao:'Sul', funcionario:'Ana', categoria:'Hospedagem', grupo_categoria:'Viagens', valor:42000, created_at:'2026-09-30T12:00:00Z' },
+    { data_conta_de:'2026-09-01', data_conta_ate:'2026-09-30', coordenacao:'CASCAVEL', supervisao:'Sul', funcionario:'Ana', categoria:null, grupo_categoria:null, valor:42000, dados_json:{'Coordenação':'CASCAVEL','Hospedagem':42000,'Total':42000}, created_at:'2026-09-30T12:00:00Z' },
     { data_conta_de:'2026-09-01', data_conta_ate:'2026-09-30', coordenacao:'MATO GROSSO MT1', supervisao:'Centro-Oeste', funcionario:'Bruno', categoria:'Combustível', grupo_categoria:'Operação', valor:31000, created_at:'2026-09-30T12:00:00Z' },
     { data_conta_de:'2026-08-01', data_conta_ate:'2026-08-31', coordenacao:'CASCAVEL', supervisao:'Sul', funcionario:'Ana', categoria:'Hospedagem', grupo_categoria:'Viagens', valor:26000, created_at:'2026-09-30T12:00:00Z' }
   ],
@@ -45,10 +45,11 @@ class Query {
   order(k,o={}){ this.orders.push([k,o.ascending!==false]); return this; }
   limit(v){ this.max=v; return this; } range(a,b){ this.slice=[a,b]; return this; }
   maybeSingle(){ return this.run().then(x=>({...x,data:x.data[0]||null})); }
-  run(){ let data=(window.mockRows[this.table]||[]).filter(r=>this.filters.every(f=>f(r))); for(const [k,asc] of this.orders) data.sort((a,b)=>String(a[k]).localeCompare(String(b[k]))*(asc?1:-1)); if(this.max!=null)data=data.slice(0,this.max); if(this.slice)data=data.slice(this.slice[0],this.slice[1]+1); return Promise.resolve({data,error:null}); }
+  run(){ let data=(window.mockRows[this.table]||[]).filter(r=>this.filters.every(f=>f(r))); for(const [k,asc] of this.orders) data.sort((a,b)=>String(a[k]).localeCompare(String(b[k]))*(asc?1:-1)); if(this.max!=null)data=data.slice(0,this.max); if(this.slice)data=data.slice(this.slice[0],this.slice[1]+1); const response={data,error:null}; return window.mockDelay?new Promise(resolve=>setTimeout(()=>resolve(response),window.mockDelay)):Promise.resolve(response); }
   then(ok,bad){ return this.run().then(ok,bad); }
 }
 window.mockRows=${JSON.stringify(rows)};
+window.mockDelay=localStorage.getItem('dashboard-test-delay')?1500:0;
 window.mockSupabase={from:t=>new Query(t)};
 window.Chart=class { constructor(){ } destroy(){ } };
 </script><script type="module">import '/assets/js/modules/dashboard-diretoria.js'; window.DASHBOARD_SOCIO.openHome(document.querySelector('#pageContent'),{supabase:window.mockSupabase});</script></body></html>`;
@@ -75,8 +76,10 @@ const server = http.createServer((req,res) => {
     await page.locator('.dir-kpis').waitFor();
     await page.waitForFunction(() => document.getElementById('dashboard-diretoria-style')?.sheet);
     assert.equal(await page.locator('.dir-kpi').count(), 5);
+    assert.ok(await page.evaluate(() => localStorage.getItem('dashboard-diretoria:view:v2')?.includes('dir-kpis')));
     assert.match(await page.locator('.dir-kpis').evaluate(el=>getComputedStyle(el).gridTemplateColumns), /px/);
     assert.equal(await page.locator('.dir-filters').evaluate(el=>getComputedStyle(el).display), 'grid');
+    assert.equal(await page.locator('#dir-daily-chart').count(),1);
     assert.match(await page.locator('.dir-kpi').nth(0).innerText(), /2\.100 t/);
     await page.locator('[data-month="8"]').click();
     await page.locator('[data-mode="compare"]').click();
@@ -94,6 +97,11 @@ const server = http.createServer((req,res) => {
     await page.setViewportSize({width:390,height:844});
     assert.ok(await page.locator('.dir-page').isVisible());
     await page.screenshot({path:path.join(screenshotDir,'dashboard-diretoria-smoke.png'),fullPage:true});
+    await page.evaluate(() => localStorage.setItem('dashboard-test-delay','1'));
+    await page.reload();
+    await page.locator('.dir-rank-row').first().waitFor({state:'visible',timeout:1200});
+    assert.equal(await page.locator('.dir-page.is-refreshing').count(),1);
+    await page.evaluate(() => localStorage.removeItem('dashboard-test-delay'));
     console.log('dashboard-diretoria smoke: ok');
   } finally {
     await browser.close();
