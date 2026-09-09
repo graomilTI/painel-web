@@ -6183,8 +6183,12 @@ CREATE TABLE public.rh_atestados (
   created_by uuid,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  motivo_recusa text,
+  recusado_por text,
+  periodo text NOT NULL DEFAULT 'integral'::text,
   CONSTRAINT rh_atestados_pkey PRIMARY KEY (id),
-  CONSTRAINT rh_atestados_colaborador_id_fkey FOREIGN KEY (colaborador_id) REFERENCES colaboradores(id)
+  CONSTRAINT rh_atestados_colaborador_id_fkey FOREIGN KEY (colaborador_id) REFERENCES colaboradores(id),
+  CONSTRAINT rh_atestados_periodo_check CHECK (periodo IN ('integral', 'manha', 'tarde'))
 );
 
 CREATE TABLE public.rh_cartao_ponto (

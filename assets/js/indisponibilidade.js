@@ -28,6 +28,12 @@ const STATUS_ATESTADO = {
   recusado: { label: 'Recusado' },
 };
 
+const PERIODO_ATESTADO = {
+  integral: 'Dia todo',
+  manha: 'Meio período (manhã)',
+  tarde: 'Meio período (tarde)',
+};
+
 const state = { tab: 'indisponiveis', indisponiveis: [], ferias: [], atestados: [], ctx: null, filtros: null };
 
 const diasEntre = (ini, fim) => { const a = new Date(`${ini}T00:00:00`); const b = new Date(`${fim}T00:00:00`); return Math.max(1, Math.round((b - a) / 86400000) + 1); };
@@ -344,7 +350,7 @@ function renderAtestadosTable() {
   body.innerHTML = rows.map((a) => `<tr>
     <td><b>${esc(a.colaborador_nome)}</b></td>
     <td>${brDate(a.data_inicio)} — ${brDate(a.data_fim)}</td>
-    <td>${a.dias ?? '-'} dias${a.cid ? ` · CID: ${esc(a.cid)}` : ''}</td>
+    <td>${a.dias ?? '-'} dias${a.periodo && a.periodo !== 'integral' ? ` · ${esc(PERIODO_ATESTADO[a.periodo] || a.periodo)}` : ''}${a.cid ? ` · CID: ${esc(a.cid)}` : ''}</td>
     <td>${statusPill(a.status, STATUS_ATESTADO)}${a.status === 'recusado' && a.motivo_recusa ? `<div class="in-motivo-recusa" title="${esc(a.motivo_recusa)}">${esc(a.motivo_recusa)}</div>` : ''}</td>
     <td>${anexoBtnHtml(a.anexo_url)}</td>
     <td><div class="rh-acoes-cell">
@@ -381,6 +387,7 @@ function exportarAtestados() {
     { key: 'data_inicio', label: 'Início', fmt: brDate },
     { key: 'data_fim', label: 'Fim', fmt: brDate },
     { key: 'dias', label: 'Dias' },
+    { key: 'periodo', label: 'Período', fmt: (v) => PERIODO_ATESTADO[v] || v },
     { key: 'cid', label: 'CID' },
     { key: 'medico', label: 'Médico' },
     { key: 'status', label: 'Status', fmt: (v) => STATUS_ATESTADO[v]?.label || v },
@@ -401,6 +408,7 @@ function openAtestadoModal(row = null) {
     <div class="in-grid mt-16">
       <label>Início *<input id="ateInicio" type="date" value="${d(row?.data_inicio)}"></label>
       <label>Fim *<input id="ateFim" type="date" value="${d(row?.data_fim)}"></label>
+      <label>Período *<select id="atePeriodo">${Object.entries(PERIODO_ATESTADO).map(([k, v]) => `<option value="${k}" ${k === (row?.periodo || 'integral') ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
       <label>CID<input id="ateCid" type="text" value="${esc(row?.cid || '')}"></label>
       <label>Médico<input id="ateMedico" type="text" value="${esc(row?.medico || '')}"></label>
       ${anexoFieldHtml('ateAnexo', { label: 'Atestado digitalizado (PDF/foto)', atual: row?.anexo_url })}
@@ -425,6 +433,7 @@ function openAtestadoModal(row = null) {
       const cid = modal.querySelector('#ateCid').value.trim() || null;
       const medico = modal.querySelector('#ateMedico').value.trim() || null;
       const observacoes = modal.querySelector('#ateObs').value.trim() || null;
+      const periodo = modal.querySelector('#atePeriodo').value;
       if (row) {
         const { error } = await supabase.from('rh_atestados').update({
           colaborador_id: selecionado?.id || row?.colaborador_id || null,
@@ -432,7 +441,7 @@ function openAtestadoModal(row = null) {
           data_inicio: inicio,
           data_fim: fim,
           dias: diasEntre(inicio, fim),
-          cid, medico, anexo_url: anexo, observacoes,
+          cid, medico, anexo_url: anexo, observacoes, periodo,
           updated_at: new Date().toISOString(),
         }).eq('id', row.id);
         if (error) throw error;
@@ -445,7 +454,7 @@ function openAtestadoModal(row = null) {
           colaboradorNome: nome,
           dataInicio: inicio,
           dataFim: fim,
-          cid, medico, anexoUrl: anexo, observacoes,
+          cid, medico, anexoUrl: anexo, observacoes, periodo,
           createdBy: state.ctx?.user?.id || null,
         });
       }
