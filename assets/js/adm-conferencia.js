@@ -208,13 +208,15 @@ const AGENTE_OUTROS_CATEGORIAS = [
   /(^| )RECARGA( DE)? (CELULAR|TELEFONE)( |$)/,
   /(^| )(LAVAGEM|LAVA JATO)( |$)/,
   /(^| )(REEMBOLSO KM|ADICIONAR KM)( |$)/,
-  // 4 categorias mapeadas em 09/09/2026 no agente (configKeyExtra em
+  // Categorias mapeadas em 09/09/2026 no agente (configKeyExtra em
   // grm-liberacao-despesas-publicar/index.ts) — nomes GRM: Comercial
-  // cliente / Postagens e fretes / Compra do Alojamento / Serviços de
-  // Limpeza.
+  // cliente / Postagens e fretes / Serviços de Limpeza. "Alojamento" (Compra
+  // do Alojamento) não entra aqui — tratado à parte em
+  // isExtraOutrosNaoMapeado() porque tem prioridade sobre qualquer outra
+  // palavra (ex.: "limpeza de alojamento" é só Compra do Alojamento, nunca
+  // ambíguo com Serviços de Limpeza).
   /(^| )COMERCIAL CLIENTE( |$)/,
   /(^| )(CORREIOS|POSTAGEM(NS)?|FRETE(S)?)( |$)/,
-  /(^| )COMPRA(S)? (DO )?ALOJAMENTO( |$)/,
   /(^| )LIMPEZA( |$)/,
 ];
 
@@ -226,6 +228,14 @@ function isExtraOutrosNaoMapeado(item) {
   // preencher, ele não representa uma despesa e não deve virar pendência.
   if (!normalizeText(descricaoBruta) && asNumber(item?.valor) <= 0) return false;
   const texto = normalizeText(descricaoBruta).replace(/[^A-Z0-9]+/g, ' ').trim();
+  // Qualquer coisa envolvendo "alojamento" é Compra do Alojamento, mesmo com
+  // outra palavra junto (limpeza, manutenção etc.) — regra explícita da
+  // usuária em 09/09/2026. Tratado antes da contagem genérica porque o
+  // mecanismo abaixo exige EXATAMENTE 1 padrão reconhecido: "limpeza de
+  // alojamento" bateria em ALOJAMENTO e em LIMPEZA ao mesmo tempo e viraria
+  // "ambíguo" (2 matches) por engano, quando devia ser só Compra do
+  // Alojamento, sem ambiguidade nenhuma.
+  if (/(^| )ALOJAMENTO( |$)/.test(texto)) return false;
   const categoriasReconhecidas = AGENTE_OUTROS_CATEGORIAS.filter((regex) => regex.test(texto)).length;
   return categoriasReconhecidas !== 1;
 }

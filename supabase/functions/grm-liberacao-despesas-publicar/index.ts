@@ -159,10 +159,15 @@ function configKeyExtra(value: unknown, description?: unknown): string {
     // Caixa Operacional (lista completa passada pela usuária).
     if (desc.includes('COMERCIAL CLIENTE')) return 'EXTRA_COMERCIAL_CLIENTE';
     if (desc.includes('CORREIOS') || desc.includes('POSTAGEM') || desc.includes('FRETE')) return 'EXTRA_POSTAGENS_FRETES';
-    if (desc.includes('COMPRA') && desc.includes('ALOJAMENTO')) return 'EXTRA_COMPRA_ALOJAMENTO';
-    // "Limpeza" aqui vira Serviços de Limpeza (mão de obra), não Material de
-    // Limpeza (insumo) — assumido a partir do texto "limpeza de alojamento"
-    // do caso real; corrigir se o uso real for de compra de material.
+    // Qualquer coisa envolvendo "alojamento" é Compra do Alojamento, mesmo
+    // com outra palavra junto (limpeza, manutenção etc.) — regra explícita
+    // da usuária em 09/09/2026, corrigindo a 1ª versão que só pegava
+    // "compra"+"alojamento" e mandava "limpeza de alojamento" pra Serviços
+    // de Limpeza por engano. Por isso este check vem ANTES do de LIMPEZA.
+    if (desc.includes('ALOJAMENTO')) return 'EXTRA_COMPRA_ALOJAMENTO';
+    // "Limpeza" sem menção a alojamento vira Serviços de Limpeza (mão de
+    // obra), não Material de Limpeza (insumo) — nunca confirmado num caso
+    // real ainda; corrigir se o uso real for de compra de material.
     if (desc.includes('LIMPEZA')) return 'EXTRA_SERVICOS_LIMPEZA';
     // Estas 4 categorias já existiam em grm_despesas_tipos_config (com
     // observação documentando a intenção de detecção) desde 01-13/08/2026,
