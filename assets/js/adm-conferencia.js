@@ -1201,9 +1201,20 @@ async function loadDespesas() {
         row.grm_aplicado_em = grm?.aplicado_em || null;
         row.grm_houve_alteracao = typeof grm?.houve_alteracao === 'boolean' ? grm.houve_alteracao : null;
 
+        // status_aplicacao vem de grm_despesas_status_por_colaborador, que só
+        // reflete as categorias auto-sincronizáveis (alimentação/deslocamento/
+        // etc.) — não sabe nada sobre extras "Outros" sem categoria mapeada,
+        // que dependem de lançamento MANUAL no GRM (ver isPendenciaAgenteGrm).
+        // Achado ao vivo em 09/09: um colaborador tinha status "LIMPO"
+        // calculado ANTES de o gestor liberar 4 extras "Outros" no fluxo
+        // Disponível — sem essa exceção, a confirmação automática ia marcar
+        // CONFERIDO na hora que alguém abrisse esta tela, escondendo pra
+        // sempre uma pendência real de lançamento manual (ninguém mais ia
+        // saber que faltava lançar aquilo no GRM).
         if (
           ['APLICADO', 'LIMPO'].includes(row.grm_status_aplicacao)
           && !jaDecididoManualmente.has(getStatus(row))
+          && !getExtrasOutrosNaoMapeados(row).length
         ) {
           autoConfirmCandidates.push(row);
         }

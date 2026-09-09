@@ -1,4 +1,4 @@
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260909-extra-exige-valor1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260909-extra-zero-ok1';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260820-save-confirmado';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
