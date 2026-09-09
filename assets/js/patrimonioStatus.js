@@ -27,6 +27,10 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// Mesmo limiar do Dashboard/gestor-app/histórico (dashboard.js, gestor-app.js) —
+// unificado em 09/09/2026, esta tela usava 10 dias e as demais 7.
+const DIAS_LIMITE_ATRASO = 7;
+
 function getDiasInfo(row) {
   if (row?.dias_sem_leitura === null || row?.dias_sem_leitura === undefined || row?.dias_sem_leitura === '') {
     return { hasValue: false, value: null };
@@ -234,7 +238,7 @@ function buildStatusRows(rows) {
     group.total += 1;
 
     const diasInfo = getDiasInfo(row);
-    if (diasInfo.hasValue && diasInfo.value <= 10) {
+    if (diasInfo.hasValue && diasInfo.value <= DIAS_LIMITE_ATRASO) {
       group.emDia += 1;
     }
   });
