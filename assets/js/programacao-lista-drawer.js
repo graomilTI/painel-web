@@ -47,6 +47,16 @@ function normalizeText(value) {
 }
 function todayIso() { const n = new Date(); return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
 
+// Mesma condição usada por mensagemFalhaSalvar (rls-sessao-expirada.js) pra
+// traduzir o erro: a O.S. que o drawer tinha em memória foi removida de
+// operacional_os (ex.: grm-sync-operacional-os tirando O.S. que sumiu do
+// relatório do GRM) enquanto o drawer estava aberto. Além da mensagem legível,
+// vale a pena fechar o drawer e recarregar a lista sozinho — senão o usuário
+// clica de novo na mesma O.S. fantasma e recebe o mesmo erro.
+function isOsRemovidaError(error) {
+  return error?.code === '23503' && /os_id_fkey/.test(error?.message || '');
+}
+
 let currentUser = null;
 getCurrentUser().then((u) => { currentUser = u; }).catch(() => {});
 
@@ -974,6 +984,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         }
       } catch (error) {
         alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível confirmar o colaborador.'));
+        if (isOsRemovidaError(error)) { fecharDrawer(); await carregarLista(); }
       }
       return;
     }
@@ -1002,6 +1013,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
           alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o colaborador.'));
+          if (isOsRemovidaError(error)) { fecharDrawer(); await carregarLista(); }
         } finally {
           addConfirmBtn.disabled = false;
         }
@@ -1012,6 +1024,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
           await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
           alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o colaborador.'));
+          if (isOsRemovidaError(error)) { fecharDrawer(); await carregarLista(); }
         } finally {
           addConfirmBtn.disabled = false;
         }
@@ -1032,6 +1045,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         await refreshAposAcao(os, { equipe: true, equipeRow });
       } catch (error) {
         alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o motorista de Frota.'));
+        if (isOsRemovidaError(error)) { fecharDrawer(); await carregarLista(); }
       } finally {
         addFrotaConfirmBtn.disabled = false;
       }

@@ -123,7 +123,7 @@ const SOFT_NAV_PAGES = new Map([
     () => import('./programacao-kpi-inline-patch.js'),
     () => import('./programacao-gestor-filtro-fix.js'),
     () => import('./programacao-mobile-ui-fix.js?v=20260909-header-grid1'),
-    () => import('./programacao-gestor-fluxo-avancado.js?v=20260909-extra-zero-ok1'),
+    () => import('./programacao-gestor-fluxo-avancado.js?v=20260909-auto-refresh-os-removida'),
     () => import('./programacao-lista-drawer-fixo.js'),
     () => import('./programacao-lista-drawer-ux-hotfix.js'),
     () => import('./programacao-pdf-tipo-fix.js'),
