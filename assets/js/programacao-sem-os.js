@@ -430,6 +430,15 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       if (linhasExtra.some((linha) => !linha.descricao && linha.valor)) {
         fb.textContent = 'Descreva o extra que será liberado.'; fb.classList.add('err'); return;
       }
+      // Faltava o inverso: descrição preenchida sem valor salvava como
+      // R$ 0,00 sem aviso nenhum (achado 09/09 — 4 extras de um colaborador
+      // foram liberados a R$ 0,00, "sumindo" tanto da relação de despesas da
+      // Conferência quanto do lançamento no GRM, já que "Outros" sem
+      // categoria mapeada só aparece na fila de lançamento manual, e lá foi
+      // exibido a zero — sem valor real pra conferir/lançar).
+      if (linhasExtra.some((linha) => linha.descricao && !linha.valor)) {
+        fb.textContent = 'Informe o valor de cada extra descrito.'; fb.classList.add('err'); return;
+      }
       const extrasPreenchidos = linhasExtra.filter((linha) => linha.descricao);
       if (!['cafe', 'almoco', 'janta', 'pernoite'].some(selected) && !extrasPreenchidos.length) {
         fb.textContent = 'Selecione ao menos uma despesa.'; fb.classList.add('err'); return;
