@@ -110,14 +110,27 @@ async function fetchInvoiceData(token) {
 
 async function upsertData(data) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
-  const records = data.map(row => ({ dados_json: row, data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString() }));
+  const startedAt = new Date();
+  const records = data.map(row => ({ dados_json: row, data_sincronizacao: startedAt.toISOString(), sincronizado_em: startedAt.toISOString() }));
 
+  // onConflict:'id' nunca colidia (id é gen_random_uuid() por default, nunca
+  // enviado aqui) — cada sync só inseria de novo, sem nunca substituir o lote
+  // anterior. Mesmo padrão já corrigido em grmserver-patrimonios-api.js e em
+  // grmserver-contas-receber-api.js: insert simples + limpeza do lote
+  // anterior por created_at (tabela só serve de estágio do lote mais
+  // recente).
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'id' });
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).insert(chunk);
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
+
+  const { error: cleanupError } = await supabase
+    .from(REPORT_CONFIG.tableName)
+    .delete()
+    .lt('created_at', startedAt.toISOString());
+  if (cleanupError) log('WARN', `Falha ao limpar lote antigo de ${REPORT_CONFIG.tableName}: ${cleanupError.message}`);
 
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
