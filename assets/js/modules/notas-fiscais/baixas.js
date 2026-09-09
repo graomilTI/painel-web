@@ -160,27 +160,16 @@ async function abrirRevisao(id, aoAtualizar) {
   if (!row) return;
   const candidatos = Array.isArray(row.candidatos_json) ? row.candidatos_json : [];
 
-  const opcaoHtml = (c, i) => (c.grupo
-    ? `
-      <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.12)">
-        <input type="radio" name="baixaCandidato" value="${i}" ${i === 0 ? 'checked' : ''} style="margin-top:3px">
-        <span>
-          <strong>Soma de ${c.itens.length} parcelas</strong> — ${dinheiro(c.total)}<br>
-          <span style="color:#94a3b8;font-size:13px">${c.itens.map((it) => `${esc(it.favoredName)} · Doc ${esc(it.pinDocNumber || '-')} · vencimento ${it.pinDueDate ? dataBR(it.pinDueDate) : '-'} · pinCode ${esc(it.pinCode)}`).join('<br>')}</span>
-        </span>
-      </label>`
-    : `
+  const opcoesHtml = candidatos.length
+    ? candidatos.map((c, i) => `
       <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.12)">
         <input type="radio" name="baixaCandidato" value="${i}" ${i === 0 ? 'checked' : ''} style="margin-top:3px">
         <span>
           <strong>${esc(c.favoredName)}</strong> — ${dinheiro(c.valor)}<br>
           <span style="color:#94a3b8;font-size:13px">Doc ${esc(c.pinDocNumber || '-')} · vencimento ${c.pinDueDate ? dataBR(c.pinDueDate) : '-'} · pinCode ${esc(c.pinCode)}</span>
         </span>
-      </label>`);
-
-  const opcoesHtml = candidatos.length
-    ? candidatos.map(opcaoHtml).join('')
-    : `<p style="color:#94a3b8">Nenhum lançamento em aberto no GRM bateu com empresa + valor pra este comprovante (isolado ou em soma de parcelas). Confira se o holerite/NF já foi lançado (Painel de Notas Fiscais &gt; Pendentes, ou direto no GRM) antes de relançar.</p>`;
+      </label>`).join('')
+    : `<p style="color:#94a3b8">Nenhum lançamento em aberto no GRM bateu com empresa + valor pra este comprovante. Confira se o holerite/NF já foi lançado (Painel de Notas Fiscais &gt; Pendentes, ou direto no GRM) antes de relançar.</p>`;
 
   const overlay = openModal({
     id: 'baixaRevisaoModal',
@@ -199,27 +188,17 @@ async function abrirRevisao(id, aoAtualizar) {
     const candidato = candidatos[idx];
     if (!candidato) return;
     try {
-      const patch = candidato.grupo
-        ? {
-          status: 'VALIDADO',
-          pin_code: candidato.pinCodes.join(','),
-          pin_codes_json: candidato.itens,
-          pat_code: candidato.itens[0]?.patCode ?? null,
-          candidatos_json: [],
-          erro: null,
-        }
-        : {
-          status: 'VALIDADO',
-          pin_code: String(candidato.pinCode),
-          pin_codes_json: [{
-            pinCode: String(candidato.pinCode), patCode: candidato.patCode ?? null,
-            valor: candidato.valor, pinDocNumber: candidato.pinDocNumber || null,
-          }],
-          pat_code: candidato.patCode ?? null,
-          candidatos_json: [],
-          erro: null,
-        };
-      await atualizar(TABELA, [{ coluna: 'id', valor: row.id }], patch);
+      await atualizar(TABELA, [{ coluna: 'id', valor: row.id }], {
+        status: 'VALIDADO',
+        pin_code: String(candidato.pinCode),
+        pin_codes_json: [{
+          pinCode: String(candidato.pinCode), patCode: candidato.patCode ?? null,
+          valor: candidato.valor, pinDocNumber: candidato.pinDocNumber || null,
+        }],
+        pat_code: candidato.patCode ?? null,
+        candidatos_json: [],
+        erro: null,
+      });
       await inserir(TABELA_JOBS, {
         agente_id: AGENTE_ID, status: 'pendente', lane: 'alteracoes', solicitado_por: usuarioAtual(),
       });
