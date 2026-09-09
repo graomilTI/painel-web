@@ -135,9 +135,6 @@ const SOFT_NAV_PAGES = new Map([
   ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [
     () => import('./financeiro-access.js'),
     () => import('./financeiro-adiantamentos-lote.js'),
-    () => import('./financeiro-refeicoes-unicas.js'),
-    () => import('./financeiro-refeicoes-arquivos.js'),
-    () => import('./financeiro-refeicoes-refresh.js'),
     () => import('./financeiro-alojamentos-faturas.js'),
     () => import('./financeiro-local-date.js'),
   ] }],
