@@ -15,5 +15,12 @@ export async function mensagemFalhaSalvar(error, fallback, contexto) {
       return `Sua sessão expirou. Recarregue a página e faça login de novo para salvar${contexto ? ` (${contexto})` : ''}.`;
     }
   }
+  // FK violation em "*_os_id_fkey" (operacional_os): a O.S. que a tela tinha
+  // em memória foi removida/atualizada no meio-tempo (ex.: grm-sync-operacional-os
+  // tirando O.S. que sumiu do relatório do GRM) — sem isto o usuário via o erro
+  // cru do Postgres e ficava clicando na mesma O.S. fantasma sem entender por quê.
+  if (error?.code === '23503' && /os_id_fkey/.test(error?.message || '')) {
+    return `Essa O.S. não existe mais no sistema (removida ou atualizada pelo GRM). Atualize a lista e tente novamente${contexto ? ` (${contexto})` : ''}.`;
+  }
   return fallback;
 }
