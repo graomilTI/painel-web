@@ -39,13 +39,18 @@
  * Grão1000/Graomil) ficam no config (não banco, muda raríssimo) — ver
  * config/grm-baixa-notas-fiscais.json.
  *
- * Match por SOMA de parcelas (adicionado 09/09, caso real MAURICIO ALENCAR
- * DE SOUZA): quando nenhuma parcela isolada em aberto bate com o valor do
- * comprovante, tenta achar um conjunto de 2+ parcelas do MESMO
- * favorecido+empresa cuja soma bate exatamente (comprovante único liquidando
- * vários holerites/NFs de uma vez). Só baixa sozinho se existir exatamente 1
- * combinação possível — 0 ou 2+ combinações também vão pra AGUARDANDO_REVISAO,
- * igual ao match de parcela única. Ver findCandidateGroups().
+ * Match por SOMA de comprovantes (adicionado 09/09, caso real MAURICIO
+ * ALENCAR DE SOUZA): o financeiro às vezes paga UMA parcela usando 2+
+ * comprovantes bancários separados (ex.: salário + diferença salarial do
+ * mesmo mês, cada um um arquivo distinto na fila). Quando o valor do
+ * comprovante não bate com nenhuma parcela isolada, o agente busca outros
+ * comprovantes já na fila do MESMO favorecido+empresa cuja soma com este
+ * bate exatamente com uma parcela em aberto. Cada comprovante manda seu
+ * PRÓPRIO payInvoice/payment (arquivo diferente), com ppyPaidValue = só o
+ * valor daquele comprovante — o GRM acumula o pago até fechar a parcela. Só
+ * baixa sozinho se existir exatamente 1 combinação possível — 0 ou 2+
+ * combinações também vão pra AGUARDANDO_REVISAO, igual ao match de parcela
+ * única. Ver findComprovanteGroupMatch().
  *
  * Segurança (mesmo padrão dos demais agentes de escrita):
  *   - dry-run por padrão;
@@ -655,16 +660,6 @@ function findCandidates(openInvoices, { scpCode, valor, favorecidoNome }) {
   return preferirVencimentoMaisRecente(candidatos);
 }
 
-function candidatosMesmaPessoa(openInvoices, { scpCode, favorecidoNome }) {
-  const alvoNome = normalizeText(favorecidoNome);
-  return openInvoices.filter((inv) => {
-    if (Number(inv.scpCode) !== Number(scpCode)) return false;
-    const nomeInv = normalizeText(inv.favoredName);
-    if (!nomeInv || !alvoNome) return false;
-    return nomesCompativeis(alvoNome, nomeInv);
-  });
-}
-
 function combinacoes(lista, tamanho) {
   const resultado = [];
   const atual = [];
@@ -679,28 +674,59 @@ function combinacoes(lista, tamanho) {
   return resultado;
 }
 
-// Caso real (MAURICIO ALENCAR DE SOUZA, 09/2026): nenhuma parcela isolada em
-// aberto batia com o valor do comprovante, mas 2 parcelas do mesmo
-// favorecido/empresa somadas batiam exatamente (comprovante único liquidando
-// 2 holerites do mesmo mês). Só tenta quando o match de parcela única deu
-// ZERO candidatos (nunca em cima de um empate 2+, isso continua indo pra
-// revisão manual como já era). Só baixa sozinho se existir exatamente 1
-// combinação possível — 0 ou 2+ combinações também vão pra revisão manual.
+// Caso real (MAURICIO ALENCAR DE SOUZA, 09/2026): o financeiro às vezes paga
+// UMA parcela usando 2+ comprovantes bancários separados no mesmo mês (ex.:
+// salário + diferença salarial, cada um upado como um arquivo distinto na
+// fila) — confirmado ao vivo comparando "Salário diferença" R$300,00 +
+// "bklcom1" R$2.583,42 = R$2.883,42, valor exato de 2 parcelas em aberto do
+// mesmo favorecido (jul/2026 e ago/2026, GRAOMIL). Nenhum comprovante
+// isolado bate com a parcela cheia, mas a SOMA dos comprovantes do mesmo
+// favorecido+empresa bate exatamente. Cada comprovante manda seu PRÓPRIO
+// payInvoice/payment (arquivo diferente), com ppyPaidValue = só o valor
+// daquele comprovante — o GRM acumula em pinTotalPaidValue até fechar a
+// parcela (ver cabeçalho do arquivo). Só tenta quando o match de parcela
+// única deu ZERO candidatos; só baixa sozinho se existir exatamente 1
+// combinação (comprovante-irmãos + 1 parcela) possível — 0 ou 2+ vão pra
+// revisão manual, igual ao match de parcela única.
 const MAX_COMBO_TAMANHO = 4;
 const MAX_COMBO_CANDIDATOS = 12;
 
-function findCandidateGroups(openInvoices, { scpCode, valor, favorecidoNome }) {
-  const mesmaPessoa = candidatosMesmaPessoa(openInvoices, { scpCode, favorecidoNome });
-  if (mesmaPessoa.length < 2 || mesmaPessoa.length > MAX_COMBO_CANDIDATOS) return [];
-  const alvoCentavos = Math.round(Number(valor) * 100);
-  const grupos = [];
-  for (let tamanho = 2; tamanho <= Math.min(MAX_COMBO_TAMANHO, mesmaPessoa.length); tamanho += 1) {
-    for (const grupo of combinacoes(mesmaPessoa, tamanho)) {
-      const soma = grupo.reduce((acc, inv) => acc + Math.round(Number(inv.pinInstallmentValue) * 100), 0);
-      if (soma === alvoCentavos) grupos.push(grupo);
+async function findComprovanteGroupMatch(row, parsed, conta, openInvoices) {
+  const { data: irmaos, error } = await supabase.from(TABLE_ITEMS)
+    .select('id,valor,favorecido_nome,pin_code,pat_code,status')
+    .neq('id', row.id)
+    .eq('empresa_detectada', conta.empresa)
+    .not('valor', 'is', null)
+    .in('status', ['AGUARDANDO_REVISAO', 'VALIDADO', 'BAIXADO']);
+  if (error) {
+    log('WARN', `${row.arquivo_nome}: não consegui buscar comprovantes-irmãos pra match por soma: ${error.message}`);
+    return null;
+  }
+
+  const alvoNome = normalizeText(parsed.favorecidoNome);
+  const compativeis = (irmaos || []).filter((r) => nomesCompativeis(alvoNome, normalizeText(r.favorecido_nome)));
+  if (!compativeis.length || compativeis.length > MAX_COMBO_CANDIDATOS) return null;
+
+  const invoicesPessoa = openInvoices.filter((inv) => Number(inv.scpCode) === Number(conta.scpCode)
+    && nomesCompativeis(alvoNome, normalizeText(inv.favoredName)));
+  if (!invoicesPessoa.length) return null;
+
+  const parsedCentavos = Math.round(Number(parsed.valor) * 100);
+  const matches = [];
+  for (let tamanho = 1; tamanho <= Math.min(MAX_COMBO_TAMANHO - 1, compativeis.length); tamanho += 1) {
+    for (const subset of combinacoes(compativeis, tamanho)) {
+      const somaCentavos = parsedCentavos + subset.reduce((acc, r) => acc + Math.round(Number(r.valor) * 100), 0);
+      const invoicesBatendo = invoicesPessoa.filter((inv) => Math.round(Number(inv.pinInstallmentValue) * 100) === somaCentavos);
+      if (!invoicesBatendo.length) continue;
+      // Mesmo empate de "2 parcelas com valor igual em meses seguidos" do
+      // match de parcela única (ex.: MAURICIO ALENCAR DE SOUZA tinha
+      // jul/2026 e ago/2026 com o mesmo valor cheio) — se só muda o
+      // vencimento, a parcela certa é a mais recente (ver
+      // preferirVencimentoMaisRecente).
+      for (const inv of preferirVencimentoMaisRecente(invoicesBatendo)) matches.push({ subset, invoice: inv });
     }
   }
-  return grupos;
+  return matches.length === 1 ? matches[0] : null;
 }
 
 // Achado ao vivo em 08/09 (confirmado com o usuário): quando 2+ parcelas
@@ -922,55 +948,64 @@ async function processBaixa(row, runId) {
 
       const openInvoices = await getOpenInvoicesCache();
       const candidatos = findCandidates(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome });
-      // Só tenta casar por SOMA de parcelas quando nada bateu isolado — um
-      // empate (2+) de parcela única continua indo pra revisão manual como
-      // já era, sem misturar com combinações.
-      const grupos = candidatos.length === 0
-        ? findCandidateGroups(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
-        : [];
+      // Só tenta casar por SOMA de comprovantes quando nada bateu isolado —
+      // um empate (2+) de parcela única continua indo pra revisão manual
+      // como já era, sem misturar com o match por soma.
+      const grupoComprovantes = candidatos.length === 0
+        ? await findComprovanteGroupMatch(row, parsed, conta, openInvoices)
+        : null;
 
-      if (candidatos.length !== 1 && grupos.length !== 1) {
-        const candidatosJson = candidatos.map((c) => ({
-          pinCode: c.pinCode, favoredName: c.favoredName, valor: c.pinInstallmentValue,
-          scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
-        })).concat(grupos.map((grupo) => ({
-          grupo: true,
-          pinCodes: grupo.map((i) => i.pinCode),
-          total: grupo.reduce((acc, i) => acc + Number(i.pinInstallmentValue), 0),
-          itens: grupo.map((i) => ({
-            pinCode: i.pinCode, favoredName: i.favoredName, valor: i.pinInstallmentValue,
-            pinDocNumber: i.pinDocNumber, pinDueDate: i.pinDueDate, patCode: i.patCode,
-          })),
-        })));
+      if (candidatos.length !== 1 && !grupoComprovantes) {
         await updateItem(row.id, {
           ...baseUpdate,
           status: 'AGUARDANDO_REVISAO',
-          candidatos_json: candidatosJson,
-          erro: (candidatos.length === 0 && grupos.length === 0)
-            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (nem isolado, nem em soma de parcelas).'
-            : `${candidatos.length + grupos.length} possibilidade(s) batem com empresa + favorecido — escolha manualmente qual é a certa.`,
+          candidatos_json: candidatos.map((c) => ({
+            pinCode: c.pinCode, favoredName: c.favoredName, valor: c.pinInstallmentValue,
+            scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
+          })),
+          erro: candidatos.length === 0
+            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (isolado ou somado com outros comprovantes já na fila).'
+            : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.`,
         });
-        log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) + ${grupos.length} grupo(s) por soma — foi pra AGUARDANDO_REVISAO.`);
+        log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
         return 'aguardando_revisao';
       }
 
-      const grupoResolvido = candidatos.length === 1 ? candidatos : grupos[0];
-      const grmNfLancamentoId = grupoResolvido.length === 1 ? await findGrmNfLancamentoId(grupoResolvido[0].pinCode) : null;
+      let candidato;
+      let grmNfLancamentoId;
+      if (grupoComprovantes) {
+        const { invoice, subset } = grupoComprovantes;
+        candidato = invoice;
+        grmNfLancamentoId = await findGrmNfLancamentoId(invoice.pinCode);
+        log('INFO', `${row.arquivo_nome}: 1 de ${subset.length + 1} comprovantes que juntos liquidam a parcela de ${parsed.favorecidoNome} (pinCode ${invoice.pinCode}, parcela cheia R$ ${formatMoney(invoice.pinInstallmentValue)}).`);
+        // Sinaliza os comprovantes-irmãos ainda não baixados pro mesmo
+        // pinCode, pra o próprio agente pegar a baixa deles na próxima
+        // passada sem precisar de revisão manual.
+        for (const irmao of subset) {
+          if (irmao.status === 'BAIXADO') continue;
+          await updateItem(irmao.id, {
+            status: 'VALIDADO', pat_code: invoice.patCode, pin_code: String(invoice.pinCode),
+            pin_codes_json: [{
+              pinCode: String(invoice.pinCode), patCode: invoice.patCode, valor: Number(irmao.valor), pinDocNumber: invoice.pinDocNumber,
+            }],
+            candidatos_json: [], erro: null,
+          });
+        }
+      } else {
+        [candidato] = candidatos;
+        grmNfLancamentoId = await findGrmNfLancamentoId(candidato.pinCode);
+      }
+
       resolved = {
-        itens: grupoResolvido.map((c) => ({
-          pinCode: String(c.pinCode), patCode: c.patCode, valor: Number(c.pinInstallmentValue), pinDocNumber: c.pinDocNumber,
-        })),
+        itens: [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: parsed.valor, pinDocNumber: candidato.pinDocNumber }],
         baccCode: conta.baccCode,
         favorecidoNome: parsed.favorecidoNome, valor: parsed.valor, dataPagamento: parsed.dataPagamento,
       };
-      if (grupoResolvido.length > 1) {
-        log('INFO', `${row.arquivo_nome}: comprovante único liquidando ${grupoResolvido.length} parcelas em aberto de ${parsed.favorecidoNome} (soma R$ ${formatMoney(parsed.valor)}).`);
-      }
       await updateItem(row.id, {
         ...baseUpdate,
         status: 'VALIDADO',
-        pat_code: grupoResolvido[0].patCode,
-        pin_code: resolved.itens.map((i) => i.pinCode).join(','),
+        pat_code: candidato.patCode,
+        pin_code: resolved.itens[0].pinCode,
         pin_codes_json: resolved.itens,
         grm_nf_lancamento_id: grmNfLancamentoId,
         candidatos_json: [],
@@ -1095,7 +1130,7 @@ if (require.main === module) {
   main();
 } else {
   module.exports = {
-    detectTemplate, resolveContaPagadora, findCandidates, findCandidateGroups, buildPaymentPayload,
+    detectTemplate, resolveContaPagadora, findCandidates, findComprovanteGroupMatch, buildPaymentPayload,
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
     uploadComprovanteAnexo,
   };
