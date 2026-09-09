@@ -35,7 +35,7 @@ const rows = {
   ]
 };
 
-const harness = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/assets/css/dashboard-diretoria.css"></head><body style="margin:0;background:#07110c"><main id="pageContent"></main><script>
+const harness = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/styles.css"></head><body><main class="page-main" id="pageContent"></main><script>
 class Query {
   constructor(table){ this.table=table; this.filters=[]; this.orders=[]; this.max=null; this.slice=null; }
   select(){ return this; } eq(k,v){ this.filters.push(r=>r[k]===v); return this; }
@@ -73,7 +73,10 @@ const server = http.createServer((req,res) => {
   try {
     await page.goto(`http://127.0.0.1:${server.address().port}/__dashboard_test`);
     await page.locator('.dir-kpis').waitFor();
+    await page.waitForFunction(() => document.getElementById('dashboard-diretoria-style')?.sheet);
     assert.equal(await page.locator('.dir-kpi').count(), 5);
+    assert.match(await page.locator('.dir-kpis').evaluate(el=>getComputedStyle(el).gridTemplateColumns), /px/);
+    assert.equal(await page.locator('.dir-filters').evaluate(el=>getComputedStyle(el).display), 'grid');
     assert.match(await page.locator('.dir-kpi').nth(0).innerText(), /2\.100 t/);
     await page.locator('[data-month="8"]').click();
     await page.locator('[data-mode="compare"]').click();
