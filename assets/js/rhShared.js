@@ -180,6 +180,7 @@ export async function upsertAtestado({
   medico = null,
   anexoUrl = null,
   observacoes = null,
+  periodo = 'integral',
   createdBy = null,
 }) {
   const addDias = (iso, n) => { const d = new Date(`${iso}T00:00:00`); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
@@ -194,9 +195,12 @@ export async function upsertAtestado({
     .gte('data_fim', addDias(dataInicio, -1));
   if (buscaError) throw buscaError;
 
+  // Só estende um atestado existente do mesmo período (integral/manhã/tarde);
+  // um atestado de meio período não pode "engolir" um de dia todo (ou vice-versa).
   const existente = (candidatos || []).find((r) => (
-    (colaboradorId && r.colaborador_id === colaboradorId)
-    || String(r.colaborador_nome || '').trim().toUpperCase() === nomeNorm
+    (r.periodo || 'integral') === periodo
+    && ((colaboradorId && r.colaborador_id === colaboradorId)
+      || String(r.colaborador_nome || '').trim().toUpperCase() === nomeNorm)
   ));
 
   if (existente) {
@@ -227,6 +231,7 @@ export async function upsertAtestado({
     medico,
     anexo_url: anexoUrl,
     observacoes,
+    periodo,
     status: 'lancado',
     created_by: createdBy,
   };
