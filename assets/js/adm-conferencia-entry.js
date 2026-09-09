@@ -1,9 +1,19 @@
 import { supabase } from './supabaseClient.js';
 
 // Corrige a fonte da aba "Despesas da programação".
-// A Conferência deve considerar somente colaboradores confirmados em uma O.S.
-// da programação. Registros de disponibilidade criados para toda a regional
-// não podem, sozinhos, gerar uma linha de despesa nem o almoço padrão.
+// A Conferência deve considerar colaboradores confirmados em uma O.S. da
+// programação OU marcados "Disponível" via o modal de Gestor > Programação >
+// Sem O.S. (decisão explícita do gestor, com despesas reais anexadas —
+// diferente do caso original: registros de disponibilidade criados em lote
+// para toda a regional, sem decisão nenhuma por trás, que não podem sozinhos
+// gerar uma linha de despesa nem o almoço padrão).
+//
+// Achado em 09/09/2026: um colaborador marcado Disponível (café/extras
+// liberados de verdade no modal) sumia inteiro da aba "Despesas da
+// programação" porque não tinha vínculo em programacao_equipe — o filtro
+// original só deixava passar quem tinha os_id confirmado. A pista foi o
+// comentário original citar só "toda a regional", não o fluxo Disponível
+// específico; ver [[painel-web-sem-os-extra-sem-valor-sumia-conferencia-grm]].
 const FILTERED_TABLES = new Set([
   'programacao_colaboradores',
   'programacao_estadia',
@@ -15,6 +25,7 @@ const FILTERED_TABLES = new Set([
 
 const originalFrom = supabase.from.bind(supabase);
 const rosterCache = new Map();
+const disponivelRosterCache = new Map();
 const CACHE_MS = 5000;
 
 function clean(value) {
@@ -61,13 +72,51 @@ async function loadConfirmedRoster(programacaoIds) {
   return rows;
 }
 
+// Colaborador marcado Disponível (Gestor > Programação > Sem O.S.) já tem
+// linha real em todas as FILTERED_TABLES, escritas pelo próprio modal
+// (programacao-sem-os.js) — diferente do roster de O.S., não precisa de
+// injeção sintética abaixo, só entrar no conjunto "permitido".
+async function loadDisponivelRoster(programacaoIds) {
+  const ids = unique(programacaoIds).sort();
+  if (!ids.length) return [];
+
+  const cacheKey = ids.join(',');
+  const cached = disponivelRosterCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.rows;
+
+  const { data, error } = await originalFrom('programacao_colaboradores')
+    .select('programacao_id,colaborador_id,nome_colaborador')
+    .in('programacao_id', ids)
+    .eq('disponibilidade', 'DISPONIVEL')
+    .limit(10000);
+
+  if (error) {
+    console.error('[conferencia-roster-fix] Falha ao validar disponibilidade:', error);
+    return [];
+  }
+
+  const dedup = new Map();
+  for (const row of data || []) {
+    const key = rosterKey(row.programacao_id, row.colaborador_id);
+    if (!row.programacao_id || !row.colaborador_id || dedup.has(key)) continue;
+    dedup.set(key, row);
+  }
+
+  const rows = [...dedup.values()];
+  disponivelRosterCache.set(cacheKey, { at: Date.now(), rows });
+  return rows;
+}
+
 async function filterConferenceResult(table, result, programacaoIds) {
   if (!result || result.error || !Array.isArray(result.data)) return result;
 
-  const roster = await loadConfirmedRoster(programacaoIds);
-  const allowed = new Map(
-    roster.map((row) => [rosterKey(row.programacao_id, row.colaborador_id), row]),
-  );
+  const [osRoster, disponivelRoster] = await Promise.all([
+    loadConfirmedRoster(programacaoIds),
+    loadDisponivelRoster(programacaoIds),
+  ]);
+  const allowed = new Map();
+  for (const row of osRoster) allowed.set(rosterKey(row.programacao_id, row.colaborador_id), row);
+  for (const row of disponivelRoster) allowed.set(rosterKey(row.programacao_id, row.colaborador_id), row);
 
   const filtered = result.data.filter((row) =>
     allowed.has(rosterKey(row.programacao_id, row.colaborador_id)),
@@ -78,7 +127,10 @@ async function filterConferenceResult(table, result, programacaoIds) {
       filtered.map((row) => rosterKey(row.programacao_id, row.colaborador_id)),
     );
 
-    for (const member of roster) {
+    // Só o roster de O.S. ganha linha sintética "OK" — quem está aqui por
+    // disponivelRoster já tem a própria linha real (disponibilidade já veio
+    // no resultado original), não precisa e não deve ganhar outra por cima.
+    for (const member of osRoster) {
       const key = rosterKey(member.programacao_id, member.colaborador_id);
       if (present.has(key)) continue;
       filtered.push({
@@ -344,7 +396,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260909-autoconfere-outros-pendente1')
+import('./adm-conferencia.js?v=20260909-mapeamento-outros-grm1')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();

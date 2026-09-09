@@ -208,6 +208,14 @@ const AGENTE_OUTROS_CATEGORIAS = [
   /(^| )RECARGA( DE)? (CELULAR|TELEFONE)( |$)/,
   /(^| )(LAVAGEM|LAVA JATO)( |$)/,
   /(^| )(REEMBOLSO KM|ADICIONAR KM)( |$)/,
+  // 4 categorias mapeadas em 09/09/2026 no agente (configKeyExtra em
+  // grm-liberacao-despesas-publicar/index.ts) — nomes GRM: Comercial
+  // cliente / Postagens e fretes / Compra do Alojamento / Serviços de
+  // Limpeza.
+  /(^| )COMERCIAL CLIENTE( |$)/,
+  /(^| )(CORREIOS|POSTAGEM(NS)?|FRETE(S)?)( |$)/,
+  /(^| )COMPRA(S)? (DO )?ALOJAMENTO( |$)/,
+  /(^| )LIMPEZA( |$)/,
 ];
 
 function isExtraOutrosNaoMapeado(item) {
