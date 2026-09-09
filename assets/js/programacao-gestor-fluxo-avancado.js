@@ -1,6 +1,5 @@
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260904-atestado-recusar-dedupe';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260820-save-confirmado';
-import { renderProgramacaoRecusas } from './programacao-recusas.js?v=20260730-recusas1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar
@@ -240,12 +239,10 @@ function mountShell() {
     <div class="pgc-tabs-shell" id="pgcTabsShell">
       <section class="pgc-tab-pane" id="pgcPane1" data-pgc-pane="1">${loadingHtml('O.S.')}</section>
       <section class="pgc-tab-pane" id="pgcPane2" data-pgc-pane="2" hidden>${loadingHtml('Sem O.S.')}</section>
-      <section class="pgc-tab-pane" id="pgcPane3" data-pgc-pane="3" hidden>${loadingHtml('Recusas')}</section>
     </div>`;
   state.panes = {
     '1': document.getElementById('pgcPane1'),
     '2': document.getElementById('pgcPane2'),
-    '3': document.getElementById('pgcPane3'),
   };
   setActiveStep(state.activeStep);
   return state.panes;
@@ -280,7 +277,6 @@ async function renderAllTabs({ force = false } = {}) {
     const results = await Promise.allSettled([
       renderProgramacaoListaDrawer(panes['1'], common),
       renderProgramacaoSemOs(panes['2'], common),
-      renderProgramacaoRecusas(panes['3'], common),
     ]);
     if (token !== state.renderToken) return;
     const falhas = results.filter((r) => r.status === 'rejected');
