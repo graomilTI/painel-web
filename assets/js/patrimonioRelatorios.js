@@ -386,6 +386,10 @@ function renderThead(sortState, viewMode = 'colaborador') {
   </tr>`;
 }
 
+// Mesmo limiar do Dashboard/gestor-app/histórico (dashboard.js, gestor-app.js) —
+// unificado em 09/09/2026, esta tela usava 10 dias e as demais 7.
+const DIAS_LIMITE_ATRASO = 7;
+
 function getDiasInfo(row) {
   if (row?.dias_sem_leitura === null || row?.dias_sem_leitura === undefined || row?.dias_sem_leitura === '') {
     return { hasValue: false, value: null };
@@ -493,7 +497,7 @@ function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount })
   const bodyRows = rows.map((item) => {
     const diasInfo = getDiasInfo(item);
     const dias = diasInfo.hasValue ? diasInfo.value : '-';
-    const rowClass = !diasInfo.hasValue ? 'is-empty' : diasInfo.value > 10 ? 'is-atrasado' : 'is-ok';
+    const rowClass = !diasInfo.hasValue ? 'is-empty' : diasInfo.value > DIAS_LIMITE_ATRASO ? 'is-atrasado' : 'is-ok';
     return `
       <tr class="${rowClass}">
         <td class="col-pat">${escapeHtml(item.patrimonio_codigo ?? '')}</td>
@@ -672,7 +676,7 @@ function computeStats(rows) {
     const diasInfo = getDiasInfo(row);
     if (!diasInfo.hasValue) {
       semDias += 1;
-    } else if (diasInfo.value > 10) {
+    } else if (diasInfo.value > DIAS_LIMITE_ATRASO) {
       atrasados += 1;
     } else {
       emDia += 1;
@@ -699,8 +703,8 @@ function applyFilters(rows, filters) {
     if (filters.coordenacao && normalizeKey(getRegional(row)) !== normalizeKey(filters.coordenacao)) return false;
     if (filters.supervisao && normalizeKey(row.supervisao) !== normalizeKey(filters.supervisao)) return false;
     if (filters.busca && !searchBase.includes(normalizeKey(filters.busca))) return false;
-    if (filters.tipo === 'atrasados' && (!diasInfo.hasValue || diasInfo.value <= 10)) return false;
-    if (filters.tipo === 'emdia' && (!diasInfo.hasValue || diasInfo.value > 10)) return false;
+    if (filters.tipo === 'atrasados' && (!diasInfo.hasValue || diasInfo.value <= DIAS_LIMITE_ATRASO)) return false;
+    if (filters.tipo === 'emdia' && (!diasInfo.hasValue || diasInfo.value > DIAS_LIMITE_ATRASO)) return false;
     if (filters.tipo === 'semdias' && diasInfo.hasValue) return false;
     return true;
   });
@@ -771,14 +775,14 @@ function renderGroupedRows(rows, page, expanded, viewMode) {
     const open = expanded.has(key);
     const first = group.rows[0];
     const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
-    const tagClass = maxDias < 0 ? 'neutral' : maxDias > 10 ? 'danger' : 'ok';
+    const tagClass = maxDias < 0 ? 'neutral' : maxDias > DIAS_LIMITE_ATRASO ? 'danger' : 'ok';
     const detailHeaderExtra = isRegional ? '<th>Colaborador</th>' : '<th>Material</th>';
     const details = group.rows.map((row) => `<tr>
       <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
       <td>${escapeHtml(isRegional ? (row.funcionario || '-') : (row.identificacao || '-'))}</td>
       <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
       <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > 10 ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
+      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > DIAS_LIMITE_ATRASO ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
     </tr>`).join('');
     const colInfoCell = isRegional
       ? `<span class="pat-count-badge">${new Set(group.rows.map((row) => normalizeKey(row.funcionario))).size} colab.</span>`
@@ -803,7 +807,7 @@ function renderFlatRows(rows, page) {
 
   tbody.innerHTML = pageRows.map((row) => {
     const diasInfo = getDiasInfo(row);
-    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > 10 ? 'danger' : 'ok';
+    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > DIAS_LIMITE_ATRASO ? 'danger' : 'ok';
     return `<tr>
       <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
       <td>${escapeHtml(row.funcionario || '-')}</td>
