@@ -1,5 +1,14 @@
 import { DIRECTOR_MAP_STATES, DIRECTOR_MAP_COORDS } from '../dashboardDiretoriaMap.js';
 
+const DASHBOARD_DIRETORIA_STYLE_ID = 'dashboard-diretoria-style';
+if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
+  const stylesheet = document.createElement('link');
+  stylesheet.id = DASHBOARD_DIRETORIA_STYLE_ID;
+  stylesheet.rel = 'stylesheet';
+  stylesheet.href = new URL('../../css/dashboard-diretoria.css?v=20260909-2', import.meta.url).href;
+  document.head.appendChild(stylesheet);
+}
+
 (function () {
   const MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   const EXCLUDED = new Set(['GERAL','AGROTRADER','LOG1000','PARAGUAI']);

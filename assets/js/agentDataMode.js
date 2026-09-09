@@ -15,7 +15,7 @@ const ROUTES_WITH_AGENT_DATA = new Set([
 ]);
 
 const ROUTE_LABELS = {
-  'dashboard-socio': 'Dashboard do Sócio',
+  'dashboard-socio': 'Panorama da Empresa',
   desempenho: 'Desempenho',
   metas: 'Metas',
   dre: 'DRE',
