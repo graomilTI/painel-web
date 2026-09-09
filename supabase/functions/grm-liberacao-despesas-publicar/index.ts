@@ -36,7 +36,7 @@ function digits(value: unknown): string {
 function norm(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
@@ -150,8 +150,32 @@ function configKeyExtra(value: unknown, description?: unknown): string {
   if (key === 'RECARGA') return 'EXTRA_RECARGA';
   if (key === 'LAVANDERIA') return 'EXTRA_LAVANDERIA';
   if (key === 'LAVAGEM DE VEICULO') return 'EXTRA_LAVAGEM_VEICULO';
-  if (key === 'OUTROS' && norm(description).includes('COMBUSTIVEL')) {
-    return 'EXTRA_COMBUSTIVEL';
+  if (key === 'OUTROS') {
+    const desc = norm(description);
+    if (desc.includes('COMBUSTIVEL')) return 'EXTRA_COMBUSTIVEL';
+    // 4 categorias mapeadas em 09/09/2026 (pedido do usuário, achado ao
+    // investigar um colaborador com extras "Outros" nunca configurados no
+    // GRM) — nomes conferidos contra o dropdown real de Tipo da Despesa do
+    // Caixa Operacional (lista completa passada pela usuária).
+    if (desc.includes('COMERCIAL CLIENTE')) return 'EXTRA_COMERCIAL_CLIENTE';
+    if (desc.includes('CORREIOS') || desc.includes('POSTAGEM') || desc.includes('FRETE')) return 'EXTRA_POSTAGENS_FRETES';
+    if (desc.includes('COMPRA') && desc.includes('ALOJAMENTO')) return 'EXTRA_COMPRA_ALOJAMENTO';
+    // "Limpeza" aqui vira Serviços de Limpeza (mão de obra), não Material de
+    // Limpeza (insumo) — assumido a partir do texto "limpeza de alojamento"
+    // do caso real; corrigir se o uso real for de compra de material.
+    if (desc.includes('LIMPEZA')) return 'EXTRA_SERVICOS_LIMPEZA';
+    // Estas 4 categorias já existiam em grm_despesas_tipos_config (com
+    // observação documentando a intenção de detecção) desde 01-13/08/2026,
+    // mas o código aqui nunca foi escrito — a tabela client-side
+    // AGENTE_OUTROS_CATEGORIAS (adm-conferencia.js) já tratava esses textos
+    // como "categoria reconhecida" (sumindo da fila de lançamento manual)
+    // SEM o GRM nunca ter sido configurado de verdade: pior versão do mesmo
+    // bug investigado em 09/09 (a despesa ficava duplamente invisível).
+    // Achado ao mapear as 4 categorias novas acima e notar o padrão.
+    if (desc.includes('BONUS') || desc.includes('BONIFICACAO') || desc.includes('PREMIACAO')) return 'EXTRA_BONUS';
+    if (desc.includes('PEDAGIO')) return 'EXTRA_PEDAGIO';
+    if (desc.includes('PASSAGEM')) return 'EXTRA_PASSAGEM';
+    if (desc.includes('MANUTENCAO') || desc.includes('TROCA DE PNEU')) return 'EXTRA_MANUTENCAO_VEICULO';
   }
   return 'EXTRA_OUTROS';
 }
@@ -163,10 +187,6 @@ function configKeyDeslocamento(value: unknown): string | null {
   return null;
 }
 
-// Trava de segurança: independentemente do que estiver marcado na tabela
-// grm_despesas_tipos_config, só estas 3 chaves podem sair com AUTO=true rumo
-// ao GRM. Uma edição manual da tabela (ex.: ativar AUTO em Pernoite) não deve
-// bastar para liberar lançamento/aprovação automática de outra despesa.
 const CHAVES_AUTO_PERMITIDAS = new Set([
   'ALIMENTACAO_ALMOCO',
   'VINCULO_SALARIO_INTERMITENTE',
@@ -225,9 +245,6 @@ function buildRulesForStaff(args: {
     rules.push(ruleFromConfig(config, value));
   };
 
-  // A despesa do vínculo é nativa do embarque e acompanha a associação do
-  // colaborador à O.S., independentemente das despesas escolhidas pelo gestor.
-  // O valor diário vem do cruzamento vigente do colaborador no GRM.
   const contractType = norm(contract?.tipo_contrato ?? staff.tipo_contrato);
   const contractValue = Number(contract?.salario ?? staff.salario ?? 0);
   requireConfig(
@@ -245,9 +262,6 @@ function buildRulesForStaff(args: {
 
   const ali = sourceRowForStaff(alimentacao, staff, linkKeys);
   requireConfig('ALIMENTACAO_CAFE', ali?.cafe === true);
-  // A própria Programação e a Conferência exibem almoço=SIM quando ainda não
-  // existe linha em programacao_alimentacao. A publicação precisa repetir o
-  // mesmo padrão para não mostrar uma despesa que nunca chega ao GRM.
   requireConfig('ALIMENTACAO_ALMOCO', ali ? ali.almoco !== false : true);
   requireConfig('ALIMENTACAO_JANTA', ali?.janta === true);
 
@@ -258,8 +272,6 @@ function buildRulesForStaff(args: {
   const desKey = configKeyDeslocamento(des?.tipo_deslocamento);
   const displacementValue = Number(des?.valor ?? 0);
   if (desKey) {
-    // Reembolso KM e Táxi/Uber devem abrir a categoria mesmo sem valor
-    // calculado; o GRM aceita ambas as regras com limite inicial zero.
     requireConfig(
       desKey,
       true,
@@ -281,28 +293,22 @@ function buildRulesForStaff(args: {
       || (!!rowName && rowName === name);
   });
   for (const extra of staffExtras) {
-    // "Outros" é um campo livre do painel para o gestor descrever uma
-    // necessidade fora das categorias padrão; não existe categoria
-    // correspondente no GRM, então essa seleção nunca gera regra de Caixa
-    // Operacional nem bloqueia a publicação da regional.
     const key = configKeyExtra(
       extra.tipo_despesa,
       `${clean(extra.descricao)} ${clean(extra.observacao)}`,
     );
     if (key === 'EXTRA_OUTROS') continue;
     const extraValue = Number(extra.valor ?? 0);
-    // Lavanderia, Combustível, Recarga e Lavagem de Veículo também devem
-    // abrir mesmo quando o gestor ainda não informou valor (ex.: "Outros"
-    // com descrição "Combustível" registrado a R$ 0,00 enquanto o valor
-    // real não é apurado, ou RECARGA/LAVAGEM DE VEÍCULO escolhidos no
-    // dropdown sem valor preenchido — confirmado em produção: 3/5 RECARGA e
-    // 3/4 LAVAGEM DE VEÍCULO estavam a R$ 0,00) — sem essa exceção a
-    // despesa some silenciosamente: não é lançada automaticamente nem
-    // aparece como pendência manual na Conferência, que só sinaliza itens
-    // com tipo_despesa "OUTROS". Abrir a 0 deixa a categoria disponível no
-    // Caixa Operacional pra ser complementada depois, igual já acontece com
-    // Reembolso KM/Uber.
-    const abreComZero = ['EXTRA_LAVANDERIA', 'EXTRA_COMBUSTIVEL', 'EXTRA_RECARGA', 'EXTRA_LAVAGEM_VEICULO'].includes(key);
+    const abreComZero = [
+      'EXTRA_LAVANDERIA', 'EXTRA_COMBUSTIVEL', 'EXTRA_RECARGA', 'EXTRA_LAVAGEM_VEICULO',
+      'EXTRA_COMERCIAL_CLIENTE', 'EXTRA_POSTAGENS_FRETES', 'EXTRA_COMPRA_ALOJAMENTO', 'EXTRA_SERVICOS_LIMPEZA',
+      // EXTRA_BONUS documentado assim desde 13/08 (observação em
+      // grm_despesas_tipos_config); PASSAGEM/PEDAGIO/MANUTENCAO_VEICULO
+      // ficam de fora — a observação delas não menciona abrir a zero, e um
+      // pedágio/passagem/manutenção sem valor nenhum é mais provável ser
+      // rascunho incompleto do que despesa real ainda não apurada.
+      'EXTRA_BONUS',
+    ].includes(key);
     if (extraValue > 0 || abreComZero) {
       requireConfig(key, true, extraValue, abreComZero);
     }
@@ -311,8 +317,6 @@ function buildRulesForStaff(args: {
   return { rules: canonicalRules(rules), pendingConfig: [...new Set(pendingConfig)] };
 }
 
-// Chave operacional mantida explícita para permitir uma pausa emergencial sem
-// remover a proteção que adia regionais cuja Lista de OS ainda não sincronizou.
 const AGENTE_LIBERACAO_DESPESAS_PAUSADO = false;
 
 Deno.serve(async (req) => {
@@ -358,8 +362,6 @@ Deno.serve(async (req) => {
     const settleMs = Math.min(2000, Math.max(0, Number(body.settleMs ?? 0) || 0));
     if (settleMs) await new Promise((resolve) => setTimeout(resolve, settleMs));
 
-    // Esta consulta usa o JWT do gestor. Portanto a própria RLS da
-    // programacao_dia impede publicar uma regional que ele não pode acessar.
     const programacaoClient = internalReconciliation ? service : userClient;
     const { data: programacoes, error: progError } = await programacaoClient
       .from('programacao_dia')
@@ -411,15 +413,9 @@ Deno.serve(async (req) => {
     const contractByCpf = new Map<string, Record<string, unknown>>();
     for (const contract of contractRows || []) {
       const cpf = digits(contract.cpf);
-      // A ordenação decrescente garante que o primeiro registro seja o vigente.
       if (cpf.length === 11 && !contractByCpf.has(cpf)) contractByCpf.set(cpf, contract);
     }
 
-    // Uma programação futura já representa uma janela válida de despesas.
-    // Como o GRM mantém a regra por colaborador (sem data de vigência), nenhuma
-    // publicação pode limpar hoje quem possui O.S. ATENDER hoje ou no futuro.
-    // A proteção expira naturalmente à meia-noite de São Paulo após a data da
-    // O.S.; a partir daí uma reconciliação posterior pode gerar a limpeza.
     const activeWindowStart = todayInSaoPaulo();
     const { data: activePrograms, error: globalOsError } = await service
       .from('programacao_dia')
@@ -445,9 +441,6 @@ Deno.serve(async (req) => {
 
     const resolveLinkCpf = (link: Record<string, unknown>) => {
       const direct = digits(link.colaborador_cpf ?? link.colaborador_key);
-      // Um CPF explícito e válido no vínculo é a fonte mais confiável. A
-      // validação de ativo e regional acontece logo abaixo, pelo mapa
-      // regionalStaffByCpf; não deve ser antecipada aqui como "não localizado".
       if (direct.length === 11) return { cpf: direct, error: null };
       const candidates = staffByName.get(norm(link.colaborador_nome ?? link.colaborador_key)) || [];
       if (candidates.length === 1) {
@@ -458,19 +451,12 @@ Deno.serve(async (req) => {
       return { cpf: '', error: 'COLABORADOR_NAO_LOCALIZADO' };
     };
 
-    // O GRM não possui vigência por data: uma única regra fica ativa no
-    // cadastro do colaborador. Por isso qualquer programação de hoje ou do
-    // futuro precisa impedir uma limpeza disparada pela reconciliação de outro
-    // dia/regional.
     const cpfsAuthorizedInActiveWindow = new Set<string>();
     for (const link of globalLinks) {
       const resolved = resolveLinkCpf(link);
       if (!resolved.cpf) continue;
       cpfsAuthorizedInActiveWindow.add(resolved.cpf);
     }
-    // Efetivos explicitamente marcados como DISPONIVEL também possuem uma
-    // autorização financeira válida mesmo sem vínculo a O.S. A autorização é
-    // diária e entra na mesma proteção contra limpeza por outra regional.
     for (const ids of chunk(globalOsIds)) {
       const { data, error } = await service
         .from('programacao_colaboradores')
@@ -530,8 +516,6 @@ Deno.serve(async (req) => {
         .eq('disponibilidade', 'DISPONIVEL');
       if (availableError) throw availableError;
 
-      // Sem vínculo O.S. nem disponibilidade explícita não existe autorização
-      // a publicar, mas isso também nunca é evidência suficiente para limpar.
       if (!currentLinks.length && !availableRows?.length) {
         overall.grupos_adiados_sem_os += 1;
         overall.avisos.push(
@@ -629,10 +613,6 @@ Deno.serve(async (req) => {
       }>();
       const configProblems: Record<string, unknown>[] = [];
 
-      // A O.S. ATENDER é a fonte operacional da equipe do dia. Colaboradores
-      // ativos podem ser emprestados entre regionais; eles devem receber as
-      // despesas da O.S. mesmo que o cadastro ainda aponte outra regional.
-      // Para LIMPAR, a abrangência continua restrita ao quadro da regional.
       const staffForGroupByCpf = new Map(regionalStaffByCpf);
       for (const cpf of currentCpfs) {
         const linkedStaff = staffByCpf.get(cpf) || linkedStaffFallbackByCpf.get(cpf);
@@ -642,6 +622,27 @@ Deno.serve(async (req) => {
         const availableStaff = staffByCpf.get(cpf);
         if (availableStaff) staffForGroupByCpf.set(cpf, availableStaff);
       }
+
+      const { data: version, error: versionError } = await service
+        .from('grm_despesas_versoes')
+        .insert({
+          gestor_id: userData.user?.id ?? null,
+          regional: group.regional,
+          data_referencia: group.date,
+          motivo: reason,
+          programacao_ids: group.ids,
+          resumo: {
+            os_atender: new Set(currentLinks.map((row) => clean(row.os_id))).size,
+            colaboradores_com_os: currentCpfs.size,
+            colaboradores_disponiveis: availableCpfs.size,
+            colaboradores_regionais_ativos: regionalStaff.length,
+            colaboradores_emprestados: Math.max(0, staffForGroupByCpf.size - regionalStaffByCpf.size),
+          },
+        })
+        .select('id')
+        .single();
+      if (versionError) throw versionError;
+      overall.versoes.push(version.id);
 
       for (const staff of staffForGroupByCpf.values()) {
         const cpf = digits(staff.cpf);
@@ -666,15 +667,25 @@ Deno.serve(async (req) => {
             );
             continue;
           }
-          const hash = await sha256({ cpf, action: 'APLICAR', rules: built.rules });
-          desired.set(cpf, { staff, action: 'APLICAR', rules: built.rules, hash });
+          const staffId = clean(staff.id ?? staff.colaborador_id) || cpf;
+          const { data: regrasFiltradas, error: filtroError } = await service.rpc(
+            'grm_filtrar_regras_programacao',
+            {
+              p_versao_id: version.id,
+              p_data: group.date,
+              p_colaborador_id: staffId,
+              p_nome: clean(staff.nome),
+              p_regras: built.rules,
+            },
+          );
+          if (filtroError) throw filtroError;
+          const rules = canonicalRules(regrasFiltradas || []);
+          const action: 'APLICAR' | 'LIMPAR' = rules.length ? 'APLICAR' : 'LIMPAR';
+          const hash = await sha256({ cpf, action, rules });
+          desired.set(cpf, { staff, action, rules, hash });
           continue;
         }
 
-        // LIMPAR é destrutivo e o GRM não guarda vigência. Só é seguro remover
-        // quando o CPF não aparece em nenhuma programação válida de hoje em
-        // diante. Isso também cobre uma leitura parcial do grupo corrente e
-        // evita que uma reconciliação apague regras que outra data ainda exige.
         if (shouldClearOperationalRules(cpf, cpfsAuthorizedInActiveWindow)) {
           const rules: ReturnType<typeof canonicalRules> = [];
           const hash = await sha256({ cpf, action: 'LIMPAR', rules });
@@ -683,31 +694,6 @@ Deno.serve(async (req) => {
           overall.preservados_por_outra_regional += 1;
         }
       }
-
-      // Uma configuração financeira ausente bloqueia somente o colaborador
-      // afetado. Os demais seguem para a fila, e a pendência fica explícita no
-      // retorno para não transformar um caso isolado em atraso da regional.
-
-      const { data: version, error: versionError } = await service
-        .from('grm_despesas_versoes')
-        .insert({
-          gestor_id: userData.user?.id ?? null,
-          regional: group.regional,
-          data_referencia: group.date,
-          motivo: reason,
-          programacao_ids: group.ids,
-          resumo: {
-            os_atender: new Set(currentLinks.map((row) => clean(row.os_id))).size,
-            colaboradores_com_os: currentCpfs.size,
-            colaboradores_disponiveis: availableCpfs.size,
-            colaboradores_regionais_ativos: regionalStaff.length,
-            colaboradores_emprestados: Math.max(0, staffForGroupByCpf.size - regionalStaffByCpf.size),
-          },
-        })
-        .select('id')
-        .single();
-      if (versionError) throw versionError;
-      overall.versoes.push(version.id);
 
       const cpfs = [...desired.keys()];
       const existingByCpf = new Map<string, Record<string, unknown>>();
@@ -721,23 +707,6 @@ Deno.serve(async (req) => {
         (data || []).forEach((row) => existingByCpf.set(clean(row.cpf), row));
       }
 
-      // status_aplicacao sozinho não é confiável: um item da fila pode ter sido
-      // marcado IGNORADO_VERSAO_SUPERADA (ou similar) sem que o estado do
-      // colaborador tenha sido atualizado, deixando status_aplicacao=PENDENTE
-      // "mentindo" que ainda existe um job vivo. Por isso confirmamos que hoje
-      // existe mesmo um item PENDENTE/PROCESSANDO com esse hash antes de pular.
-      //
-      // ERRO com tentativas ainda disponíveis também conta como "vivo": é
-      // exatamente o mesmo critério de elegibilidade usado por
-      // claim_next_grm_despesa_fila() para retentativa. Se não considerarmos
-      // isso aqui, esta função insere uma linha PENDENTE nova para o mesmo
-      // cpf/data/hash de uma linha ERRO ainda elegível — o insert passa (o
-      // índice único parcial só cobre PENDENTE/PROCESSANDO, não ERRO), mas a
-      // próxima vez que o worker tentar reprocessar o ERRO promovendo-o para
-      // PROCESSANDO, colide com a PENDENTE duplicada e o agente inteiro morre
-      // com "duplicate key value violates unique constraint
-      // grm_despesas_fila_pendente_hash_uidx" (travando também os outros
-      // colaboradores da fila). Incidente real em 2026-08-13.
       const liveHashesByCpf = new Map<string, Set<string>>();
       for (const cpfChunk of chunk(cpfs)) {
         const { data, error } = await service
@@ -761,9 +730,6 @@ Deno.serve(async (req) => {
 
       for (const [cpf, item] of desired) {
         const previous = existingByCpf.get(cpf);
-        // Hash igual não basta: uma limpeza antiga pode deixar o mesmo hash
-        // registrado com status LIMPO. Uma ação APLICAR só está concluída com
-        // status APLICADO (e vice-versa), senão a reparação nunca entra na fila.
         const alreadyApplied = isDesiredStateApplied(
           item.action,
           item.hash,
@@ -821,9 +787,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Itens futuros ficam preparados na fila, mas o worker só é acordado
-    // quando a data já entrou na janela. O cron diário das 01:00 inicia os
-    // itens que viraram elegíveis durante a madrugada.
     if (overall.enfileirados_na_janela > 0 && !AGENTE_LIBERACAO_DESPESAS_PAUSADO) {
       const { data: existingJob, error: jobCheckError } = await service
         .from('grm_sync_jobs')
