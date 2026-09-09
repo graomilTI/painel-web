@@ -13,6 +13,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 //   pra otimizar entre eles: 1 rota individual ponto-a-ponto (origem -> embarque).
 // 'NÃO PRECISA'/'UBER/TÁXI' não geram rota (nada a desenhar no mapa).
 //
+// Fallback de tipo_deslocamento: quando não há linha sincronizada do GRM em
+// programacao_deslocamento pra esse colaborador/data, cai pro "acordo padrão"
+// cadastrado em Conferência > Deslocamento > Configuração (programacao_veiculo_proprio,
+// colunas tipo_deslocamento/km adicionadas 2026-09-09) — sem isso, colaborador sem
+// deslocamento sincronizado no dia virava sempre marcador "local" (sem rota), mesmo
+// quando já se sabe de antemão que ele sempre anda de carro próprio, por exemplo.
+// O km ali é só o "acordo" de referência (não por data) — não usado no cálculo da
+// rota, que sempre recalcula a distância real via geocoding + OSRM.
+//
 // Origem de cada colaborador: se estiver hospedado (Hotel com reserva
 // confirmada, ou Alojamento) na data de referência, usa a coordenada do
 // hotel/alojamento em vez da casa (pedido da usuária, 2026-07-30).
@@ -255,6 +264,31 @@ Deno.serve(async (req) => {
       deslocPorCpf.set(normalizeDigits(d.colaborador_id), { tipo: normalize(d.tipo_deslocamento), placa: normalizePlate(d.placa_veiculo) });
     }
 
+    // 3b) Fallback: acordo padrão por colaborador (programacao_veiculo_proprio),
+    // usado só quando não há linha em programacao_deslocamento pra essa data —
+    // colaborador_id ali é CPF (11 dígitos) ou o nome cru quando cadastrado sem CPF
+    // (mesma chaveDe() de assets/js/conferencia-deslocamento.js).
+    const { data: veiculoProprioRaw, error: veiculoProprioErr } = await supabase
+      .from('programacao_veiculo_proprio')
+      .select('colaborador_id,nome,tipo_deslocamento,ativo')
+      .eq('ativo', true);
+    if (veiculoProprioErr) throw veiculoProprioErr;
+    const fallbackTipoPorCpf = new Map<string, string>();
+    const fallbackTipoPorNome = new Map<string, string>();
+    for (const v of (veiculoProprioRaw || [])) {
+      const tipo = normalize(v.tipo_deslocamento);
+      if (!tipo) continue;
+      const cpfDigits = normalizeDigits(v.colaborador_id);
+      if (cpfDigits.length === 11) fallbackTipoPorCpf.set(cpfDigits, tipo);
+      else fallbackTipoPorNome.set(normalize(v.colaborador_id), tipo);
+      if (v.nome) fallbackTipoPorNome.set(normalize(v.nome), tipo);
+    }
+    function tipoDeslocamentoDe(v: { cpf: string; colaborador_nome: string }): string {
+      const sincronizado = deslocPorCpf.get(v.cpf)?.tipo;
+      if (sincronizado) return sincronizado;
+      return (v.cpf && fallbackTipoPorCpf.get(v.cpf)) || fallbackTipoPorNome.get(normalize(v.colaborador_nome)) || '';
+    }
+
     // 4) Endereço de casa (colaboradores + geocode_cache + colaborador_cruzamento)
     const { data: colabsRaw, error: colabErr } = await supabase
       .from('colaboradores').select('nome,cpf,cep,cidade,estado').eq('situacao', 'Ativo').limit(3000);
@@ -374,8 +408,7 @@ Deno.serve(async (req) => {
     for (const [, v] of vinculoPorColaborador) {
       const osRow = osById.get(v.os_id);
       if (!osRow) continue;
-      const desloc = deslocPorCpf.get(v.cpf) || null;
-      const tipo = desloc?.tipo || '';
+      const tipo = tipoDeslocamentoDe(v);
       if (tipo !== 'MOTORISTA FROTA' && tipo !== 'CARONA FROTA' && tipo !== 'REEMBOLSO KM') {
         // NÃO PRECISA/UBER/ainda sem Etapa D preenchida: sem rota a desenhar,
         // mas o colaborador continua aparecendo no mapa (marcador "local"),
