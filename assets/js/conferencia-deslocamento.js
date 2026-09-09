@@ -31,7 +31,6 @@ let resumoFiltroTipo = null; // null = sem filtro (todos); senão, um valor de T
 // ------ estado aba Configuração ------
 let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
 let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km, tipo_deslocamento, km)
-let estimativaPorColaborador = new Map(); // chave -> média mensal (R$) dos últimos 3 meses
 let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
 let cfgFiltro = '';
@@ -171,14 +170,10 @@ function injectStyles() {
     .cd-resumo-row .rr-data{white-space:nowrap;color:#cbd5e1;font-weight:700}
     .cd-resumo-row .rr-trajeto{color:#9fb7aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-    /* ---- Configuração: linha cheia por colaborador ---- */
-    .cd-cfg-row{background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:14px;padding:12px 14px;margin-bottom:8px}
-    .cd-cfg-nome{font-size:14.5px;font-weight:800;color:#f8fafc;margin-bottom:8px}
-    .cd-cfg-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12.5px;color:#9fb7aa}
-    .cd-cfg-meta b{color:#6fd0a5}
+    /* ---- Configuração: uma linha por colaborador (nome · tipo · tarifa) ---- */
+    .cd-cfg-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:12.5px;color:#9fb7aa}
+    .cd-cfg-nome{font-size:13.5px;font-weight:800;color:#f8fafc;flex:1 1 220px;min-width:0}
     .cd-cfg-tarifa{display:flex;align-items:center;gap:6px}
-    .cd-cfg-tipo{display:flex;align-items:center;gap:6px}
-    .cd-cfg-km{display:flex;align-items:center;gap:6px}
     .cd-tipo-select{width:auto;min-width:170px}
   `;
   document.head.appendChild(st);
@@ -460,40 +455,9 @@ async function limparInativosDaLista() {
   montarTarifas();
 }
 
-// #36: estimativa mensal de consumo por colaborador, baseada na média dos
-// últimos 3 meses de deslocamento (programacao_deslocamento), independente
-// do filtro de período selecionado na aba Resumo.
-async function loadEstimativaConsumo() {
-  const hoje = new Date();
-  const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 3, 1).toISOString().slice(0, 10);
-  const { data, error } = await supabase
-    .from('programacao_deslocamento')
-    .select('data_referencia,colaborador_id,nome_colaborador,tipo_deslocamento,km,valor')
-    .gte('data_referencia', inicio)
-    .limit(20000);
-  if (error) { console.warn('[conf-desloc] estimativa', error); estimativaPorColaborador = new Map(); return; }
-
-  const porColabMes = new Map();
-  for (const d of (data || [])) {
-    const chave = d.colaborador_id || d.nome_colaborador;
-    const mes = String(d.data_referencia || '').slice(0, 7);
-    if (!chave || !mes) continue;
-    if (!porColabMes.has(chave)) porColabMes.set(chave, new Map());
-    const meses = porColabMes.get(chave);
-    meses.set(mes, (meses.get(mes) || 0) + valorLinha(d));
-  }
-
-  estimativaPorColaborador = new Map();
-  for (const [chave, meses] of porColabMes.entries()) {
-    const totais = [...meses.values()];
-    const media = totais.reduce((s, v) => s + v, 0) / totais.length;
-    estimativaPorColaborador.set(chave, media);
-  }
-}
-
 // Une TODOS os colaboradores ativos (operacional_colaborador_base) com o que já
 // está registrado em programacao_veiculo_proprio — quem ainda não tem registro
-// aparece do mesmo jeito, com tipo/km/tarifa em branco pra preencher. Editar
+// aparece do mesmo jeito, com tipo/tarifa em branco pra preencher. Editar
 // qualquer campo de uma linha "não registrada" cria o registro na hora (upsert).
 function configUnificado() {
   const porChave = new Map(lista.map((l) => [String(l.colaborador_id), l]));
@@ -503,7 +467,7 @@ function configUnificado() {
     vistos.add(c.chave);
     return existente
       ? { ...existente, nome: existente.nome || c.nome, _existe: true }
-      : { id: null, colaborador_id: c.chave, nome: c.nome, ativo: false, tarifa_km: null, tipo_deslocamento: null, km: null, _existe: false };
+      : { id: null, colaborador_id: c.chave, nome: c.nome, ativo: false, tarifa_km: null, tipo_deslocamento: null, _existe: false };
   });
   // colaboradores registrados que não bateram com a base ativa (ex.: nome cadastrado
   // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado.
@@ -542,27 +506,18 @@ function renderLista() {
   const ativos = linhas.filter((c) => c.ativo).length;
   if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${linhas.length} colaborador(es)`;
   if (!linhas.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador encontrado pra esse filtro.</div>'; return; }
-  box.innerHTML = linhas.map((c) => {
-    const estimativa = estimativaPorColaborador.get(c.colaborador_id);
-    return `
+  box.innerHTML = linhas.map((c) => `
     <div class="cd-cfg-row" data-chave="${esc(c.colaborador_id)}">
       <div class="cd-cfg-nome">${esc(c.nome || c.colaborador_id)}</div>
-      <div class="cd-cfg-meta">
-        <label class="cd-cfg-tipo">Tipo de deslocamento
-          <select class="cd-select cd-tipo-select" data-tipo>
-            <option value="">— não definido —</option>
-            ${TIPOS.map((t) => `<option value="${esc(t)}"${c.tipo_deslocamento === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
-          </select>
-        </label>
-        <label class="cd-cfg-km">Km <input class="cd-km-input" data-km type="number" min="0" step="0.1" placeholder="—" value="${c.km != null ? Number(c.km) : ''}" /></label>
-        <label class="cd-cfg-tarifa">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(c.tarifa_km || DEFAULT_TARIFA)}" /></label>
-        <span>Estimativa mensal: <b>${estimativa != null ? `${moeda(estimativa)}/mês` : '—'}</b></span>
-        ${c._existe
-          ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
-          : '<span class="cd-pill off">Não registrado</span>'}
-      </div>
-    </div>`;
-  }).join('');
+      <select class="cd-select cd-tipo-select" data-tipo>
+        <option value="">— não definido —</option>
+        ${TIPOS.map((t) => `<option value="${esc(t)}"${c.tipo_deslocamento === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+      </select>
+      <label class="cd-cfg-tarifa">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(c.tarifa_km || DEFAULT_TARIFA)}" /></label>
+      ${c._existe
+        ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
+        : '<span class="cd-pill off">Não registrado</span>'}
+    </div>`).join('');
 }
 
 function wireBusca() {
@@ -605,27 +560,19 @@ function wireLista() {
     salvarCampoConfig(chave, nomeAtual, { tipo_deslocamento: valor }, e.target);
   });
   box.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.matches('[data-tarifa],[data-km]')) { e.preventDefault(); e.target.blur(); }
+    if (e.key === 'Enter' && e.target.matches('[data-tarifa]')) { e.preventDefault(); e.target.blur(); }
   });
   box.addEventListener('focusout', (e) => {
+    if (!e.target.matches('[data-tarifa]')) return;
     const row = e.target.closest('.cd-cfg-row[data-chave]');
     if (!row) return;
     const chave = row.dataset.chave;
     const nomeAtual = row.querySelector('.cd-cfg-nome')?.textContent || '';
     const l = lista.find((x) => String(x.colaborador_id) === String(chave));
-    if (e.target.matches('[data-tarifa]')) {
-      const v = Number(String(e.target.value).replace(',', '.'));
-      if (!Number.isFinite(v) || v <= 0) { e.target.value = Number(l?.tarifa_km || DEFAULT_TARIFA); return; }
-      if (l && Number(v) === Number(l.tarifa_km || DEFAULT_TARIFA)) return;
-      salvarCampoConfig(chave, nomeAtual, { tarifa_km: v }, e.target);
-    } else if (e.target.matches('[data-km]')) {
-      const raw = e.target.value;
-      const v = raw === '' ? null : Number(String(raw).replace(',', '.'));
-      if (v != null && (!Number.isFinite(v) || v < 0)) { e.target.value = l?.km != null ? Number(l.km) : ''; return; }
-      const atual = l?.km != null ? Number(l.km) : null;
-      if (v === atual) return;
-      salvarCampoConfig(chave, nomeAtual, { km: v }, e.target);
-    }
+    const v = Number(String(e.target.value).replace(',', '.'));
+    if (!Number.isFinite(v) || v <= 0) { e.target.value = Number(l?.tarifa_km || DEFAULT_TARIFA); return; }
+    if (l && Number(v) === Number(l.tarifa_km || DEFAULT_TARIFA)) return;
+    salvarCampoConfig(chave, nomeAtual, { tarifa_km: v }, e.target);
   });
 }
 
@@ -668,7 +615,7 @@ function htmlAbaConfig() {
         </div>
         <div><span class="cd-count" id="cdCount"></span></div>
       </div>
-      <div class="cd-msg">Todos os colaboradores ativos aparecem aqui. O <b>tipo de deslocamento</b> e o <b>km</b> são o acordo padrão de cada um — usados como referência (pra popular o Mapa Operacional, por exemplo) quando a Programação ainda não trouxe um deslocamento real sincronizado do GRM para aquela pessoa. Pode ser alterado a qualquer momento conforme a programação da regional muda. A tarifa R$/km também é individual, não é única pra todos.</div>
+      <div class="cd-msg">Todos os colaboradores ativos aparecem aqui. O <b>tipo de deslocamento</b> é o modo padrão/acordado de cada um — usado como referência (pra popular o Mapa Operacional, por exemplo) quando a Programação ainda não trouxe um deslocamento real sincronizado do GRM para aquela pessoa. Pode ser alterado a qualquer momento conforme a programação da regional muda. A <b>tarifa R$/km</b> é individual (não é única pra todos) e só entra na conta quando o tipo selecionado na Programação for <b>Reembolso KM</b>.</div>
     </div>
     <div id="cdLista"><div class="cd-empty">Carregando...</div></div>
   `;
@@ -718,7 +665,6 @@ export function renderContent(content) {
 
   Promise.all([loadDeslocs(), loadBase(), loadLista()]).then(async () => {
     await limparInativosDaLista();
-    await loadEstimativaConsumo();
     renderAba();
   });
 }
