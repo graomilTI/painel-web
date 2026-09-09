@@ -78,6 +78,26 @@ function normalizePath(value = '') {
   return ('/' + String(value || '').replace(/^\.\//, '').replace(/^\//, '')).replace(/\/+/g, '/');
 }
 
+// Compara a página (path sem hash) E a aba (hash sem query) do item contra a
+// URL atual. Antes só a página era comparada de fato — dois itens que abrem a
+// mesma página em abas diferentes (ex.: financeiro#pagamentos e
+// financeiro#despesas) ficavam os dois marcados como ativos ao mesmo tempo,
+// porque a regra que compara "página.html" ignorava a hash da URL atual.
+function isItemPathActive(itemPath, currentBasePath, currentHash) {
+  const [itemBaseRaw, itemHashRaw] = String(itemPath || '').split('#');
+  const itemBase = normalizePath(itemBaseRaw);
+  const itemHash = itemHashRaw ? `#${itemHashRaw.split('?')[0]}` : '';
+
+  const baseMatches = (
+    currentBasePath.endsWith(itemBase) ||
+    currentBasePath.endsWith(itemBase + '.html')
+  );
+  if (!baseMatches) return false;
+
+  const currentHashNoQuery = String(currentHash || '').split('?')[0];
+  return currentHashNoQuery === itemHash;
+}
+
 function buildAllowedCodeSet(userContext) {
   const set = new Set();
   for (const mod of userContext?.modules || []) {
@@ -554,7 +574,8 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
   if (!container) return;
 
   container.innerHTML = '';
-  const normalizedCurrent = normalizePath(`${currentPath || window.location.pathname}${window.location.hash || ''}`);
+  const normalizedCurrentBase = normalizePath(currentPath || window.location.pathname);
+  const currentHash = window.location.hash || '';
   const storedOpenSections = new Set(loadOpenSections());
 
   menuSections.forEach((section) => {
@@ -567,17 +588,7 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
     const sectionEl = document.createElement('section');
     sectionEl.className = 'menu-section';
 
-    const hasActiveItem = visibleItems.some((item) => {
-      const normalizedItemPath = normalizePath(item.path);
-      const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
-      return (
-        normalizedCurrent.endsWith(normalizedItemPath) ||
-        normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-        normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
-        normalizedCurrent.endsWith(normalizedItemNoHash) ||
-        normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
-      );
-    });
+    const hasActiveItem = visibleItems.some((item) => isItemPathActive(item.path, normalizedCurrentBase, currentHash));
 
     const titleBtn = document.createElement('button');
     titleBtn.type = 'button';
@@ -625,15 +636,7 @@ export function renderMenu(container, menuSections, currentPath = '', userContex
       link.appendChild(dot);
       link.appendChild(label);
 
-      const normalizedItemPath = normalizePath(item.path);
-      const normalizedItemNoHash = normalizePath(String(item.path || '').split('#')[0]);
-      if (
-        normalizedCurrent.endsWith(normalizedItemPath) ||
-        normalizedCurrent.endsWith('/' + normalizedItemPath.replace(/^\//, '')) ||
-        normalizedCurrent.endsWith(normalizedItemPath + '.html') ||
-        normalizedCurrent.endsWith(normalizedItemNoHash) ||
-        normalizedCurrent.endsWith(normalizedItemNoHash + '.html')
-      ) {
+      if (isItemPathActive(item.path, normalizedCurrentBase, currentHash)) {
         link.classList.add('active');
       }
 
