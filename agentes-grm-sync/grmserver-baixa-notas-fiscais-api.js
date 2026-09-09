@@ -39,18 +39,26 @@
  * Grão1000/Graomil) ficam no config (não banco, muda raríssimo) — ver
  * config/grm-baixa-notas-fiscais.json.
  *
- * Match por SOMA de comprovantes (adicionado 09/09, caso real MAURICIO
- * ALENCAR DE SOUZA): o financeiro às vezes paga UMA parcela usando 2+
- * comprovantes bancários separados (ex.: salário + diferença salarial do
- * mesmo mês, cada um um arquivo distinto na fila). Quando o valor do
- * comprovante não bate com nenhuma parcela isolada, o agente busca outros
- * comprovantes já na fila do MESMO favorecido+empresa cuja soma com este
- * bate exatamente com uma parcela em aberto. Cada comprovante manda seu
- * PRÓPRIO payInvoice/payment (arquivo diferente), com ppyPaidValue = só o
- * valor daquele comprovante — o GRM acumula o pago até fechar a parcela. Só
- * baixa sozinho se existir exatamente 1 combinação possível — 0 ou 2+
- * combinações também vão pra AGUARDANDO_REVISAO, igual ao match de parcela
- * única. Ver findComprovanteGroupMatch().
+ * Casos de pagamento em partes (adicionado 09/09, caso real MAURICIO ALENCAR
+ * DE SOUZA — ver notas em findComprovanteGroupMatch/findFallbackPartialMatch/
+ * findPendingCompletionMatch mais abaixo pro histórico completo, incluindo
+ * uma baixa real incompleta causada pela 1ª versão desta ideia):
+ *   - o GRM fecha a parcela (pinStatus 'P') já na 1ª chamada de
+ *     payInvoice/payment, não importa o valor enviado — NÃO existe
+ *     acumulação de pagamento parcial de verdade lá; uma 2ª chamada pro
+ *     mesmo pinCode é recusada com "payInvoiceAlreadyPaid";
+ *   - quando 2+ comprovantes do mesmo favorecido+empresa somam exatamente o
+ *     valor de 1 parcela aberta, só UM deles manda a chamada de payment (com
+ *     o valor CHEIO da parcela) — os outros ficam só marcados como baixados
+ *     no mesmo pinCode, sem chamada própria;
+ *   - quando nada bate (nem isolado, nem por soma) mas existe exatamente 1
+ *     parcela aberta pro favorecido+empresa e o valor não excede ela, baixa
+ *     como pagamento PARCIAL "confiável" (status BAIXADO_PARCIAL,
+ *     saldo_pendente = quanto falta) — o GRM fecha a parcela mesmo assim; o
+ *     controle do que falta fica só no nosso banco;
+ *   - quando chega um comprovante novo cujo valor bate exatamente com o
+ *     saldo_pendente de uma baixa parcial, ele só ANEXA o comprovante no
+ *     mesmo pinCode (não manda payment de novo) e zera o saldo.
  *
  * Segurança (mesmo padrão dos demais agentes de escrita):
  *   - dry-run por padrão;
@@ -681,13 +689,24 @@ function combinacoes(lista, tamanho) {
 // "bklcom1" R$2.583,42 = R$2.883,42, valor exato de 2 parcelas em aberto do
 // mesmo favorecido (jul/2026 e ago/2026, GRAOMIL). Nenhum comprovante
 // isolado bate com a parcela cheia, mas a SOMA dos comprovantes do mesmo
-// favorecido+empresa bate exatamente. Cada comprovante manda seu PRÓPRIO
-// payInvoice/payment (arquivo diferente), com ppyPaidValue = só o valor
-// daquele comprovante — o GRM acumula em pinTotalPaidValue até fechar a
-// parcela (ver cabeçalho do arquivo). Só tenta quando o match de parcela
-// única deu ZERO candidatos; só baixa sozinho se existir exatamente 1
-// combinação (comprovante-irmãos + 1 parcela) possível — 0 ou 2+ vão pra
-// revisão manual, igual ao match de parcela única.
+// favorecido+empresa bate exatamente.
+//
+// CUIDADO: a primeira versão disto (commit 37db34e3/ece14f81) mandava 1
+// payInvoice/payment POR comprovante, cada um só com o próprio valor,
+// assumindo que o GRM acumulava (pinTotalPaidValue) até fechar a parcela.
+// Isso causou uma baixa real incompleta em produção (09/09/2026): a 1ª
+// chamada (R$2.583,42) já fechou a parcela inteira (pinStatus 'P') com só
+// esse valor registrado, e a 2ª chamada (R$300,00) foi recusada pelo GRM com
+// "payInvoiceAlreadyPaid" — não existe acúmulo de pagamento parcial de
+// verdade lá, a 1ª chamada fecha tudo não importa o valor enviado. Por isso
+// esta função só faz o MATCH (achar quais comprovantes + qual parcela); quem
+// chama (processBaixa) manda UMA ÚNICA chamada com o valor CHEIO da parcela
+// (soma de todos os comprovantes do grupo) — os comprovantes-irmãos não
+// mandam chamada própria, só ficam marcados como baixados junto no mesmo
+// pinCode. Só tenta quando o match de parcela única deu ZERO candidatos; só
+// baixa sozinho se existir exatamente 1 combinação (comprovante-irmãos + 1
+// parcela) possível — 0 ou 2+ vão pra revisão manual, igual ao match de
+// parcela única.
 const MAX_COMBO_TAMANHO = 4;
 const MAX_COMBO_CANDIDATOS = 12;
 
@@ -697,7 +716,7 @@ async function findComprovanteGroupMatch(row, parsed, conta, openInvoices) {
     .neq('id', row.id)
     .eq('empresa_detectada', conta.empresa)
     .not('valor', 'is', null)
-    .in('status', ['AGUARDANDO_REVISAO', 'VALIDADO', 'BAIXADO']);
+    .in('status', ['AGUARDANDO_REVISAO', 'VALIDADO', 'DRY_RUN_OK', 'BAIXADO']);
   if (error) {
     log('WARN', `${row.arquivo_nome}: não consegui buscar comprovantes-irmãos pra match por soma: ${error.message}`);
     return null;
@@ -727,6 +746,59 @@ async function findComprovanteGroupMatch(row, parsed, conta, openInvoices) {
     }
   }
   return matches.length === 1 ? matches[0] : null;
+}
+
+// IMPORTANTE (descoberto ao vivo em 09/09/2026, ao tentar baixar o 2º
+// comprovante do grupo do MAURICIO ALENCAR DE SOUZA): o GRM fecha a parcela
+// (pinStatus 'P') já na PRIMEIRA chamada de payInvoice/payment, com o valor
+// que for enviado — não existe acúmulo de pagamento parcial de verdade lá.
+// Uma 2ª chamada pro mesmo pinCode é recusada com "payInvoiceAlreadyPaid".
+// Por isso o grupo por soma de comprovantes (findComprovanteGroupMatch
+// acima) só pode mandar UMA chamada pro GRM, com o valor CHEIO da parcela
+// (soma de todos os comprovantes do grupo) — os comprovantes-irmãos não
+// mandam chamada própria, só ficam marcados como baixados junto (mesmo
+// pinCode, sem outra chamada de pagamento).
+
+// Último recurso, só quando nem match isolado nem soma de comprovantes bate:
+// se existe EXATAMENTE 1 parcela em aberto pro favorecido+empresa (sem
+// ambiguidade de qual é) e o valor do comprovante não passa do valor cheio
+// dela, aceita como pagamento PARCIAL "confiável" — comum quando o segundo
+// comprovante que completaria a soma ainda não chegou na fila. O GRM fecha
+// a parcela mesmo só recebendo parte do valor (ver nota acima); o que falta
+// fica registrado em saldo_pendente até outro comprovante completar (ver
+// findPendingCompletionMatch).
+function findFallbackPartialMatch(openInvoices, { scpCode, valor, favorecidoNome }) {
+  const alvoNome = normalizeText(favorecidoNome);
+  const daPessoa = openInvoices.filter((inv) => Number(inv.scpCode) === Number(scpCode)
+    && nomesCompativeis(alvoNome, normalizeText(inv.favoredName)));
+  const escolhidas = preferirVencimentoMaisRecente(daPessoa);
+  if (escolhidas.length !== 1) return null;
+  const [invoice] = escolhidas;
+  if (Math.round(Number(valor) * 100) > Math.round(Number(invoice.pinInstallmentValue) * 100)) return null;
+  return invoice;
+}
+
+// Quando um comprovante novo bate EXATAMENTE com o saldo_pendente de uma
+// baixa parcial anterior do mesmo favorecido+empresa, ele completa aquele
+// pagamento — mas NÃO manda payInvoice/payment de novo (a parcela já está
+// 'P' no GRM, a chamada seria recusada): só anexa o comprovante no mesmo
+// pinCode (payInvoice/uploadFiles, que não mexe em status) e zera o saldo.
+async function findPendingCompletionMatch(row, parsed, conta) {
+  const { data: pendentes, error } = await supabase.from(TABLE_ITEMS)
+    .select('id,favorecido_nome,pin_code,pat_code,parcela_valor_total,saldo_pendente,status')
+    .neq('id', row.id)
+    .eq('empresa_detectada', conta.empresa)
+    .eq('status', 'BAIXADO_PARCIAL')
+    .gt('saldo_pendente', 0);
+  if (error) {
+    log('WARN', `${row.arquivo_nome}: não consegui buscar baixas parciais pendentes: ${error.message}`);
+    return null;
+  }
+  const alvoNome = normalizeText(parsed.favorecidoNome);
+  const alvoCentavos = Math.round(Number(parsed.valor) * 100);
+  const compat = (pendentes || []).filter((r) => nomesCompativeis(alvoNome, normalizeText(r.favorecido_nome))
+    && Math.round(Number(r.saldo_pendente) * 100) === alvoCentavos);
+  return compat.length === 1 ? compat[0] : null;
 }
 
 // Achado ao vivo em 08/09 (confirmado com o usuário): quando 2+ parcelas
@@ -894,6 +966,8 @@ async function processBaixa(row, runId) {
       resolved = {
         itens, baccCode: row.bacc_code,
         favorecidoNome: row.favorecido_nome, valor: Number(row.valor), dataPagamento: row.data_pagamento,
+        parcelaValorTotal: row.parcela_valor_total != null ? Number(row.parcela_valor_total) : Number(row.valor),
+        saldoPendente: Number(row.saldo_pendente || 0),
       };
     } else {
       const divididos = await splitComprovanteBatch(row, localPath, workDir);
@@ -948,14 +1022,25 @@ async function processBaixa(row, runId) {
 
       const openInvoices = await getOpenInvoicesCache();
       const candidatos = findCandidates(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome });
-      // Só tenta casar por SOMA de comprovantes quando nada bateu isolado —
-      // um empate (2+) de parcela única continua indo pra revisão manual
-      // como já era, sem misturar com o match por soma.
+      // Ordem de tentativas quando a parcela única não bate isolada (só
+      // entram aqui com candidatos.length === 0): 1) soma exata de
+      // comprovantes-irmãos já na fila pra 1 parcela; 2) este comprovante
+      // COMPLETA o saldo pendente de uma baixa parcial anterior; 3)
+      // pagamento parcial "confiável" (única parcela aberta pra
+      // pessoa+empresa, valor não excede a parcela). Um empate (2+) de
+      // parcela única continua indo pra revisão manual como já era, sem
+      // tentar nenhuma dessas.
       const grupoComprovantes = candidatos.length === 0
         ? await findComprovanteGroupMatch(row, parsed, conta, openInvoices)
         : null;
+      const completaPendente = (candidatos.length === 0 && !grupoComprovantes)
+        ? await findPendingCompletionMatch(row, parsed, conta)
+        : null;
+      const parcialConfiavel = (candidatos.length === 0 && !grupoComprovantes && !completaPendente)
+        ? findFallbackPartialMatch(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
+        : null;
 
-      if (candidatos.length !== 1 && !grupoComprovantes) {
+      if (candidatos.length !== 1 && !grupoComprovantes && !completaPendente && !parcialConfiavel) {
         await updateItem(row.id, {
           ...baseUpdate,
           status: 'AGUARDANDO_REVISAO',
@@ -964,42 +1049,91 @@ async function processBaixa(row, runId) {
             scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
           })),
           erro: candidatos.length === 0
-            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (isolado ou somado com outros comprovantes já na fila).'
+            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (isolado, somado com outros comprovantes já na fila, ou como parcial).'
             : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.`,
         });
         log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
         return 'aguardando_revisao';
       }
 
+      // Comprovante que só completa um saldo pendente: NÃO manda
+      // payInvoice/payment (a parcela já está fechada no GRM desde a baixa
+      // parcial anterior — uma 2ª chamada seria recusada com
+      // "payInvoiceAlreadyPaid") — só anexa o comprovante e zera o saldo.
+      // Fluxo à parte, mais curto que o resto (não usa a variável `resolved`
+      // nem o envio de payment lá embaixo).
+      if (completaPendente) {
+        log('INFO', `${row.arquivo_nome}: completa o saldo pendente (R$ ${formatMoney(parsed.valor)}) de ${parsed.favorecidoNome} (pinCode ${completaPendente.pin_code}) — GRM já fechou essa parcela na baixa anterior, então só anexa o comprovante, sem nova chamada de pagamento.`);
+        const patchComum = {
+          ...baseUpdate,
+          pat_code: completaPendente.pat_code,
+          pin_code: completaPendente.pin_code,
+          pin_codes_json: [{ pinCode: completaPendente.pin_code, patCode: completaPendente.pat_code, valor: parsed.valor, completaPendente: true }],
+          parcela_valor_total: Number(completaPendente.parcela_valor_total),
+          saldo_pendente: 0,
+          candidatos_json: [],
+        };
+        if (DRY_RUN) {
+          await updateItem(row.id, { ...patchComum, status: 'DRY_RUN_OK', grm_resposta: { dryRun: true, completaSaldoPendenteDe: completaPendente.id, pinCode: completaPendente.pin_code }, erro: null });
+          return 'dry_run';
+        }
+        let anexoErro = null;
+        try { await uploadComprovanteAnexo(completaPendente.pin_code, localPath, row.arquivo_nome); } catch (anexoError) {
+          anexoErro = String(anexoError.message || anexoError).slice(0, 1000);
+          log('WARN', `${row.arquivo_nome}: falha ao anexar comprovante de conclusão: ${anexoErro}`);
+        }
+        await updateItem(row.id, { ...patchComum, status: 'BAIXADO', baixado_em: isoNow(), erro: anexoErro ? `Anexo não subiu: ${anexoErro}` : null });
+        await updateItem(completaPendente.id, { saldo_pendente: 0, erro: `Saldo completado pelo comprovante "${row.arquivo_nome}".` });
+        log('SUCCESS', `${row.arquivo_nome}: saldo pendente de ${parsed.favorecidoNome} zerado (pinCode ${completaPendente.pin_code}).`);
+        return 'baixado';
+      }
+
       let candidato;
-      let grmNfLancamentoId;
+      let grmNfLancamentoId = null;
+      let parcelaValorTotal = parsed.valor;
+      let saldoPendente = 0;
       if (grupoComprovantes) {
         const { invoice, subset } = grupoComprovantes;
         candidato = invoice;
+        parcelaValorTotal = Number(invoice.pinInstallmentValue);
         grmNfLancamentoId = await findGrmNfLancamentoId(invoice.pinCode);
-        log('INFO', `${row.arquivo_nome}: 1 de ${subset.length + 1} comprovantes que juntos liquidam a parcela de ${parsed.favorecidoNome} (pinCode ${invoice.pinCode}, parcela cheia R$ ${formatMoney(invoice.pinInstallmentValue)}).`);
-        // Sinaliza os comprovantes-irmãos ainda não baixados pro mesmo
-        // pinCode, pra o próprio agente pegar a baixa deles na próxima
-        // passada sem precisar de revisão manual.
+        log('INFO', `${row.arquivo_nome}: ${subset.length + 1} comprovantes juntos somam a parcela cheia de ${parsed.favorecidoNome} (pinCode ${invoice.pinCode}, R$ ${formatMoney(parcelaValorTotal)}) — só este manda a baixa pro GRM com o valor somado; os outros ficam consolidados no mesmo pinCode.`);
+        // O GRM fecha a parcela já na 1ª chamada de payment (não acumula) —
+        // os irmãos NÃO mandam chamada própria, só ficam marcados como
+        // baixados junto, referenciando o mesmo pinCode.
         for (const irmao of subset) {
           if (irmao.status === 'BAIXADO') continue;
           await updateItem(irmao.id, {
-            status: 'VALIDADO', pat_code: invoice.patCode, pin_code: String(invoice.pinCode),
-            pin_codes_json: [{
-              pinCode: String(invoice.pinCode), patCode: invoice.patCode, valor: Number(irmao.valor), pinDocNumber: invoice.pinDocNumber,
-            }],
-            candidatos_json: [], erro: null,
+            status: 'BAIXADO', pat_code: invoice.patCode, pin_code: String(invoice.pinCode),
+            pin_codes_json: [{ pinCode: String(invoice.pinCode), patCode: invoice.patCode, valor: Number(irmao.valor), pinDocNumber: invoice.pinDocNumber }],
+            parcela_valor_total: parcelaValorTotal, saldo_pendente: 0,
+            candidatos_json: [], baixado_em: isoNow(),
+            erro: 'Consolidado na baixa de outro comprovante do mesmo pagamento (mesmo pinCode) — o GRM só aceita 1 chamada de pagamento por parcela.',
           });
         }
+      } else if (parcialConfiavel) {
+        candidato = parcialConfiavel;
+        parcelaValorTotal = Number(parcialConfiavel.pinInstallmentValue);
+        saldoPendente = Math.round((parcelaValorTotal - parsed.valor) * 100) / 100;
+        grmNfLancamentoId = await findGrmNfLancamentoId(parcialConfiavel.pinCode);
+        log('WARN', `${row.arquivo_nome}: comprovante não bate com o valor cheio da parcela de ${parsed.favorecidoNome}, mas é a ÚNICA parcela em aberto pra essa pessoa+empresa — baixando como PAGAMENTO PARCIAL (falta R$ ${formatMoney(saldoPendente)}, pinCode ${parcialConfiavel.pinCode}). O GRM fecha a parcela mesmo assim; o saldo fica só registrado aqui até um novo comprovante completar.`);
       } else {
         [candidato] = candidatos;
         grmNfLancamentoId = await findGrmNfLancamentoId(candidato.pinCode);
       }
 
+      // Pro grupo por soma de comprovantes, ESTA chamada carrega o valor
+      // CHEIO da parcela (soma de todos os comprovantes do grupo) — é a
+      // única chamada de payment que o grupo inteiro vai mandar pro GRM (ver
+      // nota no cabeçalho de findFallbackPartialMatch). Nos outros casos
+      // (parcela única normal ou parcial confiável) é só o valor deste
+      // comprovante mesmo.
+      const valorParaGrm = grupoComprovantes ? parcelaValorTotal : parsed.valor;
       resolved = {
-        itens: [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: parsed.valor, pinDocNumber: candidato.pinDocNumber }],
+        itens: [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: valorParaGrm, pinDocNumber: candidato.pinDocNumber }],
         baccCode: conta.baccCode,
-        favorecidoNome: parsed.favorecidoNome, valor: parsed.valor, dataPagamento: parsed.dataPagamento,
+        favorecidoNome: parsed.favorecidoNome, valor: valorParaGrm, dataPagamento: parsed.dataPagamento,
+        parcelaValorTotal, saldoPendente,
       };
       await updateItem(row.id, {
         ...baseUpdate,
@@ -1007,6 +1141,8 @@ async function processBaixa(row, runId) {
         pat_code: candidato.patCode,
         pin_code: resolved.itens[0].pinCode,
         pin_codes_json: resolved.itens,
+        parcela_valor_total: parcelaValorTotal,
+        saldo_pendente: saldoPendente,
         grm_nf_lancamento_id: grmNfLancamentoId,
         candidatos_json: [],
         erro: null,
@@ -1019,7 +1155,10 @@ async function processBaixa(row, runId) {
 
     if (DRY_RUN) {
       log('DEBUG', 'Payload que seria enviado pro payInvoice/payment (dry-run):', payload);
-      await updateItem(row.id, { status: 'DRY_RUN_OK', execucao_id: runId, grm_resposta: { dryRun: true, payload }, erro: null });
+      await updateItem(row.id, {
+        status: 'DRY_RUN_OK', execucao_id: runId, grm_resposta: { dryRun: true, payload },
+        parcela_valor_total: resolved.parcelaValorTotal, saldo_pendente: resolved.saldoPendente || 0, erro: null,
+      });
       return 'dry_run';
     }
 
@@ -1039,8 +1178,19 @@ async function processBaixa(row, runId) {
       }
     }
 
-    await updateItem(row.id, { status: 'BAIXADO', execucao_id: runId, grm_resposta: response, baixado_em: isoNow(), erro: anexoErro ? `Anexo não subiu: ${anexoErro}` : null });
-    log('SUCCESS', `${row.arquivo_nome}: baixa registrada no GRM (pinCode(s) ${pinCodesLog}).`);
+    const saldoPendenteFinal = Number(resolved.saldoPendente || 0);
+    const statusFinal = saldoPendenteFinal > 0 ? 'BAIXADO_PARCIAL' : 'BAIXADO';
+    await updateItem(row.id, {
+      status: statusFinal, execucao_id: runId, grm_resposta: response, baixado_em: isoNow(),
+      erro: anexoErro ? `Anexo não subiu: ${anexoErro}` : (saldoPendenteFinal > 0
+        ? `Pagamento parcial: falta R$ ${formatMoney(saldoPendenteFinal)} pra completar a parcela (o GRM já fechou como paga). Aguardando um novo comprovante que complete esse valor.`
+        : null),
+    });
+    if (saldoPendenteFinal > 0) {
+      log('WARN', `${row.arquivo_nome}: baixa PARCIAL registrada no GRM (pinCode(s) ${pinCodesLog}) — falta R$ ${formatMoney(saldoPendenteFinal)}.`);
+    } else {
+      log('SUCCESS', `${row.arquivo_nome}: baixa registrada no GRM (pinCode(s) ${pinCodesLog}).`);
+    }
     return 'baixado';
   } catch (error) {
     await updateItem(row.id, { status: 'ERRO', execucao_id: runId, erro: String(error.message || error).slice(0, 4000) });
@@ -1130,7 +1280,8 @@ if (require.main === module) {
   main();
 } else {
   module.exports = {
-    detectTemplate, resolveContaPagadora, findCandidates, findComprovanteGroupMatch, buildPaymentPayload,
+    detectTemplate, resolveContaPagadora, findCandidates, findComprovanteGroupMatch,
+    findFallbackPartialMatch, findPendingCompletionMatch, buildPaymentPayload,
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
     uploadComprovanteAnexo,
   };
