@@ -293,11 +293,6 @@ function readWorkbookRows(file) {
 }
 
 
-const PAGAMENTO_VALOR_REFEICAO = Object.freeze({
-  CAFE: 15,
-  ALMOCO: 30,
-  JANTA: 30
-});
 const PAGAMENTO_IFOOD_CNPJ = '29.666.679/0001-34';
 
 function onlyDigits(value) {
@@ -335,170 +330,15 @@ function getAny(row, names = []) {
   return null;
 }
 
-function buildLatestColaboradorMap(rows) {
-  const map = new Map();
-  (rows || []).forEach((row) => {
-    const key = normalizeName(row.nome);
-    if (!key || map.has(key)) return;
-    map.set(key, {
-      nome: row.nome,
-      cpf: onlyDigits(row.cpf).padStart(11, '0').slice(0, 11),
-      salario: toNumber(row.salario),
-      banco: row.conta_bancaria_despesas || row.conta_bancaria || row['C. Banc. Despesas'] || '',
-      empresa: row.empresa || '',
-      coordenacao: row.coordenacao || '',
-      supervisao: row.supervisao || '',
-      tipoRh: row.tipo || '',
-      nascimento: row.data_nascimento || row.nascimento || '',
-      whatsapp: row.whatsapp || '',
-      emailPessoal: row.email_pessoal || '',
-      emailEmpresa: row.email_empresa || ''
-    });
-  });
-  return map;
-}
-
-// Fonte: colaboradores (sincronizada pelo agente grmserver-colaboradores-sync a cada
-// ciclo do worker, dado atual — sem dimensão de data). Antes lia de colaborador_snapshot,
-// uma base legada alimentada por upload manual (importarColaboradores.js) que parou de
-// ser atualizada em 2026-06-18 — CPF/conta bancária ficavam presos num estado de ~1 mês
-// atrás (ex.: colaborador ainda aparecia com conta ALELO muito depois de a GRM já ter
-// zerado/trocado o campo). dataReferencia não é mais usado (colaboradores não tem
-// histórico por data); mantido no parâmetro só para não quebrar o chamador.
-async function loadColaboradoresPagamento(_dataReferencia = null) {
-  const pageSize = 1000;
-  const rows = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('colaboradores')
-      .select('nome,cpf,salario,conta_bancaria_despesas,empresa,coordenacao,supervisao,tipo,data_nascimento,whatsapp,email_pessoal,email_empresa')
-      .range(from, from + pageSize - 1);
-    if (error) throw error;
-    const page = data || [];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return buildLatestColaboradorMap(rows || []);
-}
-
-const TIPO_BENEFICIO_LABEL = { CAFE: 'Café', ALMOCO: 'Almoço', JANTA: 'Janta' };
-
-// Fonte: financeiro_alimentacao_colaboradores, gravada pelo agente sync-login-alimentacao
-// (login no GRM a até 1km de um Local de Embarque, classificado por turno: Café 06:00-07:30,
-// Almoço 11:00-12:30, Janta 19:00-20:30 — coluna tipo_beneficio). Cruza com a base RH só
-// para achar CPF/conta bancária (Flash/iFood) — mesma lógica de destino já usada em
-// Adiantamentos/antiga apuração de produção.
-function apurarAlmocoRows(rows, rhMap) {
-  const flashMap = new Map();
-  const ifoodMap = new Map();
-  const conferencia = [];
-  const logs = [];
-
-  (rows || []).forEach((row) => {
-    const funcionario = String(row.colaborador || '').trim();
-    const dataRef = row.data_ref;
-    if (!funcionario || !dataRef) return;
-
-    const tipoLabel = TIPO_BENEFICIO_LABEL[row.tipo_beneficio] || 'Refeição';
-    const composicaoBase = [row.local_nome, row.hora_identificada, row.distancia_m != null ? `${row.distancia_m}m` : null].filter(Boolean).join(' · ');
-    const rh = rhMap.get(normalizeName(funcionario));
-    if (!rh) {
-      logs.push({ data: dataRef, funcionario, status: 'ERRO', mensagem: 'Colaborador não localizado na base RH.' });
-      conferencia.push({ data: dataRef, funcionario, cpf: '', destino: 'Pendente', tipo: tipoLabel, valor: 0, composicao: composicaoBase, coordenacao: row.coordenacao || '', supervisao: row.supervisao || '', observacao: 'Colaborador não localizado na base RH.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
-      return;
-    }
-    if (!rh.cpf || rh.cpf.length !== 11) {
-      logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: 'CPF ausente ou inválido na base RH.' });
-      conferencia.push({ data: dataRef, funcionario: rh.nome || funcionario, cpf: rh.cpf || '', destino: 'Pendente', tipo: tipoLabel, valor: 0, composicao: composicaoBase, coordenacao: rh.coordenacao || row.coordenacao || '', supervisao: rh.supervisao || row.supervisao || '', observacao: 'CPF ausente ou inválido.', _almoco_id: row.id, status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined });
-      return;
-    }
-
-    const valor = PAGAMENTO_VALOR_REFEICAO[String(row.tipo_beneficio || '').toUpperCase()] ?? PAGAMENTO_VALOR_REFEICAO.ALMOCO;
-    const bancoNorm = normalize(rh.banco).replace(/\s+/g, '');
-    let destino = 'Pendente';
-    if (bancoNorm.includes('graomilflash') || bancoNorm.includes('flash')) destino = 'Flash';
-    if (bancoNorm.includes('graomilifood') || bancoNorm.includes('ifood')) destino = 'iFood';
-
-    const confRow = {
-      data: dataRef,
-      funcionario: rh.nome || funcionario,
-      cpf: rh.cpf,
-      destino,
-      tipo: tipoLabel,
-      valor: roundNumber(valor),
-      composicao: composicaoBase || `${tipoLabel} ${money(valor)}`,
-      coordenacao: rh.coordenacao || row.coordenacao || '',
-      supervisao: rh.supervisao || row.supervisao || '',
-      banco: rh.banco || '',
-      observacao: destino === 'Pendente' ? `C. Banc. Despesas sem destino reconhecido: ${rh.banco || '(vazio)'}` : 'OK',
-      _almoco_id: row.id,
-      status_pagamento: row.status && row.status !== 'PENDENTE' ? String(row.status).toUpperCase() : undefined
-    };
-    conferencia.push(confRow);
-
-    if (destino === 'Flash') {
-      const key = rh.cpf;
-      if (!flashMap.has(key)) flashMap.set(key, { cpf: rh.cpf, nome: rh.nome, valor: 0 });
-      flashMap.get(key).valor = roundNumber(flashMap.get(key).valor + valor);
-    } else if (destino === 'iFood') {
-      const key = rh.cpf;
-      if (!ifoodMap.has(key)) {
-        ifoodMap.set(key, {
-          cnpj: PAGAMENTO_IFOOD_CNPJ,
-          nome: rh.nome,
-          cpf: rh.cpf,
-          nascimento: rh.nascimento || '',
-          email: rh.emailEmpresa || rh.emailPessoal || '',
-          celular: onlyDigits(rh.whatsapp),
-          centro_custo: rh.coordenacao || '',
-          livre: 0
-        });
-      }
-      ifoodMap.get(key).livre = roundNumber(ifoodMap.get(key).livre + valor);
-    } else {
-      logs.push({ data: dataRef, funcionario: rh.nome || funcionario, status: 'ERRO', mensagem: confRow.observacao });
-    }
-  });
-
-  return {
-    conferencia: conferencia.sort((a, b) => `${a.data}|${a.funcionario}`.localeCompare(`${b.data}|${b.funcionario}`, 'pt-BR')),
-    flash: Array.from(flashMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
-    ifood: Array.from(ifoodMap.values()).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR')),
-    logs
-  };
-}
-
 function roundNumber(value) {
   return Math.round((Number(value) || 0) * 100) / 100;
 }
 
 
-function paymentStatusClass(value) {
-  const s = normalize(value || 'OK');
-  if (s === 'pago') return 'pago';
-  if (s === 'pendente') return 'pendente';
-  if (s.includes('erro')) return 'danger';
-  return 'ok';
-}
-
 function makePaymentHash(row) {
   return hashText([
     row.data || '', row.funcionario || '', row.cpf || '', row.destino || '', row.tipo || '', row.valor || 0, row.composicao || ''
   ].join('|'));
-}
-
-function normalizePaymentRows(apuracao = {}, defaultStatus = 'OK') {
-  const status = ['OK', 'PENDENTE'].includes(String(defaultStatus || '').toUpperCase()) ? String(defaultStatus).toUpperCase() : 'OK';
-  const conferencia = (apuracao.conferencia || []).map((row) => ({
-    ...row,
-    unique_hash: row.unique_hash || makePaymentHash(row),
-    status_pagamento: row.status_pagamento || (normalize(row.observacao).includes('ok') ? status : status)
-  }));
-  return { ...apuracao, conferencia };
 }
 
 function buildPaymentOutputs(conferencia = []) {
@@ -565,16 +405,6 @@ async function fetchAlreadyPaidMap(hashes = []) {
     });
   }
   return result;
-}
-
-async function syncPaidStatus(apuracao = {}) {
-  const rows = apuracao.conferencia || [];
-  const paid = await fetchAlreadyPaidMap(rows.map((row) => row.unique_hash));
-  if (!paid.size) return apuracao;
-  return {
-    ...apuracao,
-    conferencia: rows.map((row) => paid.has(row.unique_hash) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row)
-  };
 }
 
 function groupNotasFiscaisResumo(rows = [], execucaoId = null) {
@@ -791,7 +621,7 @@ export function renderContent(content, userContext) {
       .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#6b7280}.fin-card{border:1px solid rgba(148,163,184,.13);border-radius:24px;background:rgba(8,15,26,.75);padding:20px 22px;box-shadow:0 20px 50px rgba(2,6,23,.22);backdrop-filter:blur(10px)}
       .fin-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.1)}.fin-head h3{margin:0;color:#f8fafc;font-size:17px;font-weight:700;letter-spacing:-.01em}.fin-head p{margin:3px 0 0;color:#64748b;font-size:13px}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#6b7280}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.pay-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.pay-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:4px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s;letter-spacing:.01em}.fin-tab:hover{color:#e2e8f0;background:rgba(15,23,42,.85);border-color:rgba(148,163,184,.25)}.fin-tab.active{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;border-color:transparent;font-weight:700;box-shadow:0 2px 10px rgba(22,101,52,.4)}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(15,23,42,.8);color:#e2e2f0;padding:10px 13px;color-scheme:dark;transition:border-color .14s}.fin-field input:focus,.fin-field select:focus,.fin-field textarea:focus{outline:0;border-color:rgba(52,211,153,.45);box-shadow:0 0 0 3px rgba(52,211,153,.08)}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#e2e8f0;font-size:14px}.fin-table th{background:rgba(8,15,26,.96);color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;position:sticky;top:0;z-index:1}.fin-table tbody tr:hover td{background:rgba(34,197,94,.05)}.fin-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}.fin-muted{display:block;color:#6b7280;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.35);border-radius:16px;padding:18px;background:rgba(22,101,52,.08);transition:border-color .14s,background .14s}.fin-drop:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.14)}.pay-upload{border:1px dashed rgba(34,197,94,.45);border-radius:18px;background:rgba(22,101,52,.08);padding:14px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.16s ease}.pay-upload:hover,.pay-upload.dragging{border-color:#22c55e;background:rgba(22,101,52,.18);transform:translateY(-1px)}.pay-upload input{display:none}.pay-upload strong{display:block;color:#e2e2f0;font-size:13px}.pay-upload span{display:block;color:#6b7280;font-size:12px;margin-top:4px;word-break:break-word}.pay-upload.has-file{border-style:solid;background:rgba(34,197,94,.14)}.fin-feedback{color:#6b7280;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#6b7280;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
 
-      .pay-mode-switch{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}.pay-mode-btn{border:1px solid rgba(148,163,184,.15);background:rgba(15,23,42,.6);color:#6b7280;border-radius:12px;padding:11px 18px;font-weight:700;font-size:13px;cursor:pointer;transition:all .14s;letter-spacing:.02em}.pay-mode-btn:hover{color:#e2e8f0;background:rgba(15,23,42,.9)}.pay-mode-btn.active{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;border-color:transparent;box-shadow:0 3px 12px rgba(22,101,52,.35)}.pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-toggle{display:inline-flex;align-items:stretch;min-width:168px;overflow:hidden;border:2px solid rgba(226,232,240,.78);border-radius:999px;background:#020617;box-shadow:inset 0 0 0 1px rgba(15,23,42,.75)}.pay-status-btn{flex:1;border:0;background:transparent;color:#e2e2f0;padding:9px 14px;font-weight:900;font-size:12px;letter-spacing:.02em;cursor:pointer;transition:background .16s ease,color .16s ease,transform .16s ease}.pay-status-btn + .pay-status-btn{border-left:2px solid rgba(226,232,240,.78)}.pay-status-btn:hover{filter:brightness(1.06)}.pay-status-btn.active-ok{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.pay-status-btn.active-pendente{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}.pay-status-btn.is-inactive{background:#0d0d18;color:#cbd5e1}.pay-status-paid{display:inline-flex;align-items:center;justify-content:center;min-width:168px;padding:9px 14px;border-radius:999px;border:2px solid rgba(59,130,246,.4);background:linear-gradient(135deg,rgba(29,78,216,.25),rgba(59,130,246,.2));color:#bfdbfe;font-size:12px;font-weight:900;letter-spacing:.04em}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#6b7280;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}.pay-status-toggle,.pay-status-paid{min-width:138px}}.pay-search-panel{margin:14px 0;display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:10px;align-items:end}.pay-search-field{display:grid;gap:6px}.pay-search-field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}.pay-search-input{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px 14px;color-scheme:dark}.pay-search-count{color:#6b7280;font-size:12px;margin-top:4px}@media(max-width:620px){.pay-search-panel{grid-template-columns:1fr}}
+      .pay-mode-panel{display:none}.pay-mode-panel.active{display:block}.pay-toolbar{display:flex;align-items:end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:14px 0}.pay-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px;align-items:end}.pay-status-toggle{display:inline-flex;align-items:stretch;min-width:168px;overflow:hidden;border:2px solid rgba(226,232,240,.78);border-radius:999px;background:#020617;box-shadow:inset 0 0 0 1px rgba(15,23,42,.75)}.pay-status-btn{flex:1;border:0;background:transparent;color:#e2e2f0;padding:9px 14px;font-weight:900;font-size:12px;letter-spacing:.02em;cursor:pointer;transition:background .16s ease,color .16s ease,transform .16s ease}.pay-status-btn + .pay-status-btn{border-left:2px solid rgba(226,232,240,.78)}.pay-status-btn:hover{filter:brightness(1.06)}.pay-status-btn.active-ok{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.pay-status-btn.active-pendente{background:linear-gradient(135deg,#dc2626,#ef4444);color:#fff7f7}.pay-status-btn.is-inactive{background:#0d0d18;color:#cbd5e1}.pay-status-paid{display:inline-flex;align-items:center;justify-content:center;min-width:168px;padding:9px 14px;border-radius:999px;border:2px solid rgba(59,130,246,.4);background:linear-gradient(135deg,rgba(29,78,216,.25),rgba(59,130,246,.2));color:#bfdbfe;font-size:12px;font-weight:900;letter-spacing:.04em}.pay-footer{position:sticky;bottom:12px;z-index:2;margin-top:16px;border:1px solid rgba(34,197,94,.24);border-radius:20px;background:rgba(2,6,23,.94);backdrop-filter:blur(12px);padding:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;box-shadow:0 18px 45px rgba(2,6,23,.38)}.pay-footer strong{display:block;color:#f8fafc}.pay-footer span{display:block;color:#6b7280;font-size:12px;margin-top:3px}.btn-pay-final{border:0;border-radius:16px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16;font-weight:1000;padding:14px 28px;cursor:pointer}.btn-pay-final:disabled{opacity:.45;cursor:not-allowed}.pay-note{border:1px solid rgba(59,130,246,.24);background:rgba(37,99,235,.10);border-radius:16px;padding:12px;color:#bfdbfe;font-size:13px}.fin-status.pendente{background:rgba(245,158,11,.14);color:#fde68a}.fin-status.pago{background:rgba(59,130,246,.14);color:#bfdbfe}@media(max-width:900px){.pay-filter-grid{grid-template-columns:1fr 1fr}.pay-footer{position:static;display:grid}.btn-pay-final{width:100%}}@media(max-width:620px){.pay-filter-grid{grid-template-columns:1fr}.pay-status-toggle,.pay-status-paid{min-width:138px}}.pay-search-panel{margin:14px 0;display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:10px;align-items:end}.pay-search-field{display:grid;gap:6px}.pay-search-field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}.pay-search-input{width:100%;border:1px solid rgba(148,163,184,.22);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px 14px;color-scheme:dark}.pay-search-count{color:#6b7280;font-size:12px;margin-top:4px}@media(max-width:620px){.pay-search-panel{grid-template-columns:1fr}}
 
       .fin-setor-filter{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.fin-setor-btn{border:1px solid rgba(148,163,184,.22);background:#08111f;color:#cbd5e1;border-radius:999px;padding:9px 14px;font-weight:900;cursor:pointer}.fin-setor-btn.active{background:#166534;color:#fff;border-color:#22c55e}.fin-text-block{white-space:pre-wrap;line-height:1.45}.fin-pay-actions{display:flex;gap:8px;flex-wrap:wrap}.fin-pay-actions a{text-decoration:none}
 
@@ -1071,13 +901,7 @@ export function renderContent(content, userContext) {
 
         <div class="fin-panel" id="tab-despesas">
           <div class="fin-head">
-            <div><h3>Despesas</h3><p>Adiantamentos e pagamentos de diária/almoço ficam concentrados aqui.</p></div>
-          </div>
-
-          <div class="pay-mode-switch">
-            <button class="pay-mode-btn active" data-pay-mode="adiantamentos" type="button">ADIANTAMENTOS</button>
-            <button class="pay-mode-btn" data-pay-mode="almoco" type="button">REFEIÇÕES</button>
-            <button class="pay-mode-btn" data-pay-mode="diarias" type="button">DIÁRIAS</button>
+            <div><h3>Despesas</h3><p>Adiantamentos ficam concentrados aqui. Diária (Terceirizados) e Alimentação (almoço) saíram deste fluxo — o lançamento já é feito pelo agente de despesas retroativas direto no GRM.</p></div>
           </div>
 
           <section class="pay-card pay-mode-panel active" id="pay-mode-adiantamentos">
@@ -1130,85 +954,6 @@ export function renderContent(content, userContext) {
             <div class="adiant-table" id="adiant-historico">
               <input id="histColaboradorFiltro" class="pay-search-input" type="search" placeholder="Filtrar por colaborador..." style="margin-bottom:14px">
               <div id="adiantHistoricoContent"><div class="fin-empty">Nenhum pagamento registrado ainda.</div></div>
-            </div>
-          </section>
-
-          <section class="pay-card pay-mode-panel" id="pay-mode-almoco">
-            <h4>REFEIÇÕES</h4>
-            <p>Colaboradores identificados automaticamente pelo relatório de login do GRM, a até 1km de um Local de Embarque, classificados pela coluna <strong>Tipo</strong> conforme o horário do login: <strong>Café</strong> 06:00-07:30, <strong>Almoço</strong> 11:00-12:30, <strong>Janta</strong> 19:00-20:30 (agente sync-login-alimentacao). Marque cada linha como OK ou PENDENTE antes de pagar.</p>
-            <div class="pay-filter-grid">
-              <div class="fin-field"><label>Data</label><input id="almocoData" type="date" value="${esc(state.currentDate)}"></div>
-              <div class="fin-field"><label>Status padrão</label><select id="payDefaultStatus"><option value="OK" selected>OK</option><option value="PENDENTE">PENDENTE</option></select></div>
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-primary" id="btnGerarAlmoco" type="button">Consultar</button></div>
-              <div class="fin-field full"><span id="fbAlimentacao" class="fin-feedback"></span></div>
-            </div>
-
-            <div class="pay-summary">
-              <div class="pay-mini"><span>Tipo</span><strong id="payTipo">-</strong></div>
-              <div class="pay-mini"><span>Período</span><strong id="payPeriodo">-</strong></div>
-              <div class="pay-mini"><span>Registros OK</span><strong id="payRegistros">0</strong></div>
-              <div class="pay-mini"><span>Total OK</span><strong id="payTotal">R$ 0,00</strong></div>
-            </div>
-
-            <div class="pay-note">Somente linhas marcadas como <strong>OK</strong> entram no botão <strong>PAGAR</strong>. Linhas <strong>PENDENTES</strong> permanecem para o financeiro resolver depois. Linhas <strong>PAGO</strong> são bloqueadas para evitar duplicidade.</div>
-
-            <div class="pay-search-panel">
-              <div class="pay-search-field">
-                <label>Pesquisar colaborador para bloquear</label>
-                <input id="payColaboradorFiltro" class="pay-search-input" type="search" placeholder="Digite nome, CPF, supervisão ou destino">
-                <span id="payFiltroInfo" class="pay-search-count">Mostrando todos os colaboradores.</span>
-              </div>
-              <button class="btn btn-secondary" id="btnLimparPayFiltro" type="button">Limpar filtro</button>
-            </div>
-
-            <div class="pay-toolbar">
-              <div class="pay-subtabs">
-                <button class="pay-subtab active" data-pay-tab="conferencia" type="button">Conferência</button>
-                <button class="pay-subtab" data-pay-tab="flash" type="button">Flash</button>
-                <button class="pay-subtab" data-pay-tab="ifood" type="button">iFood</button>
-                <button class="pay-subtab" data-pay-tab="alelo" type="button">Alelo</button>
-                <button class="pay-subtab" data-pay-tab="logs" type="button">Pendências</button>
-                <button class="pay-subtab" data-pay-tab="historico" type="button">Histórico</button>
-              </div>
-              <div class="fin-actions-row">
-                <button class="btn btn-secondary fin-small" id="btnExportarTudo" type="button">Exportar arquivos</button>
-              </div>
-            </div>
-
-            <div class="pay-table active" id="pay-conferencia"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Status</th><th>Data</th><th>Colaborador</th><th>CPF</th><th>Destino</th><th>Tipo</th><th>Valor</th><th>Composição</th><th>Supervisão</th><th>Observação</th></tr></thead><tbody id="payConferenciaTbody"><tr><td colspan="10" class="fin-empty">Gere um pagamento para conferir.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-flash"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CPF</th><th>Nome</th><th>Valor</th></tr></thead><tbody id="payFlashTbody"><tr><td colspan="3" class="fin-empty">Nenhum arquivo Flash gerado.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-ifood"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>CNPJ</th><th>Nome</th><th>CPF</th><th>Nascimento</th><th>Email</th><th>Celular</th><th>Centro de custo</th><th>Livre</th></tr></thead><tbody id="payIfoodTbody"><tr><td colspan="8" class="fin-empty">Nenhum arquivo iFood gerado.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-alelo"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Número de Série</th><th>CPF</th><th>Valor da Carga</th><th>Observação</th><th>Nome</th></tr></thead><tbody id="payAleloTbody"><tr><td colspan="5" class="fin-empty">Nenhum arquivo Alelo gerado.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-logs"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data/Linha</th><th>Colaborador</th><th>Status</th><th>Mensagem</th></tr></thead><tbody id="payLogsTbody"><tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr></tbody></table></div></div>
-            <div class="pay-table" id="pay-historico"><div class="fin-table-wrap"><table class="fin-table"><thead><tr><th>Data</th><th>Tipo</th><th>Colaborador</th><th>Coordenação</th><th>Supervisão</th><th>Local</th><th>Pago em</th></tr></thead><tbody id="payHistoricoTbody"><tr><td colspan="7" class="fin-empty">Carregando...</td></tr></tbody></table></div></div>
-
-            <div class="pay-footer">
-              <div><strong id="payFooterTotal">Total pronto para pagar: R$ 0,00</strong><span id="payFooterHint">Gere ou importe pagamentos para liberar o botão.</span></div>
-              <button class="btn-pay-final" id="btnPagarBeneficios" type="button" disabled>PAGAR</button>
-            </div>
-          </section>
-
-          <section class="pay-card pay-mode-panel" id="pay-mode-diarias">
-            <h4>DIÁRIAS</h4>
-            <p>Apuração automática: dias com colaborador <b>confirmado na Programação</b> × valor/dia do GRM (colaborador_cruzamento). Só Intermitente/Diarista — Efetivo não recebe diária. Confira e exporte; o pagamento em lote entra numa próxima fase.</p>
-            <div class="pay-filter-grid">
-              <div class="fin-field"><label>De</label><input id="diariasDe" type="date"></div>
-              <div class="fin-field"><label>Até</label><input id="diariasAte" type="date"></div>
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnAtualizarDiarias" type="button">↻ Apurar</button></div>
-              <div class="fin-field"><label>&nbsp;</label><button class="btn btn-secondary" id="btnExportarDiarias" type="button">⬇ Exportar CSV</button></div>
-              <div class="fin-field full"><label>&nbsp;</label><span id="fbDiarias" class="fin-feedback"></span></div>
-            </div>
-            <div class="pay-summary">
-              <div class="pay-mini"><span>Colaboradores</span><strong id="diariasColabs">0</strong></div>
-              <div class="pay-mini"><span>Diárias no período</span><strong id="diariasQtd">0</strong></div>
-              <div class="pay-mini"><span>Sem valor no GRM</span><strong id="diariasSemValor">0</strong></div>
-              <div class="pay-mini"><span>Total apurado</span><strong id="diariasTotal">R$ 0,00</strong></div>
-            </div>
-            <div class="fin-table-wrap" style="overflow:auto">
-              <table class="fin-table" style="min-width:760px">
-                <thead><tr><th>Colaborador</th><th>Tipo</th><th>Supervisão</th><th>Dias</th><th>Valor/dia</th><th>Total</th></tr></thead>
-                <tbody id="diariasBody"><tr><td colspan="6" class="fin-empty">Selecione o período e clique em Apurar.</td></tr></tbody>
-              </table>
             </div>
           </section>
         </div>
@@ -1321,11 +1066,6 @@ export function renderContent(content, userContext) {
     return ['dashboard', 'fluxo', 'despesas', 'pagamentos', 'notas-fiscais', 'ajustes'].includes(tab) ? tab : 'dashboard';
   }
 
-  function payModeFromHash() {
-    const query = String(window.location.hash || '').split('?')[1] || '';
-    return new URLSearchParams(query).get('modo') || 'adiantamentos';
-  }
-
   function mostrarFluxoLista() {
     const lista = document.getElementById('fluxoListaView');
     const det = document.getElementById('fluxoDetalhesView');
@@ -1351,7 +1091,7 @@ export function renderContent(content, userContext) {
     document.querySelectorAll('.fin-panel').forEach((panel) => panel.classList.remove('active'));
     document.getElementById(`tab-${tab}`)?.classList.add('active');
     if (tab === 'fluxo') mostrarFluxoLista();
-    if (tab === 'despesas') setPayMode(payModeFromHash());
+    if (tab === 'despesas') carregarDespesasTab();
     if (tab === 'pagamentos') { loadSetorPagamentos(); carregarResumoBaixaNf(); }
     if (tab === 'dashboard') loadDashboardData();
     if (tab === 'notas-fiscais' && !state.notasFiscaisLoaded) loadNotasFiscais();
@@ -2528,162 +2268,12 @@ export function renderContent(content, userContext) {
 
 
 
-  state.pagamentos = { tipo: null, periodo: '', conferencia: [], flash: [], ifood: [], alelo: [], logs: [], modo: 'adiantamentos' };
   state.adiantamentosRows = [];
   state.adiantamentosLoaded = false;
-  state.almocoLoaded = false;
 
   function paySetFeedback(id, text, type = '') {
     setFeedback(id, text, type);
   }
-
-  function setPayTab(tab) {
-    document.querySelectorAll('.pay-subtab').forEach((btn) => btn.classList.toggle('active', btn.dataset.payTab === tab));
-    document.querySelectorAll('.pay-table').forEach((panel) => panel.classList.remove('active'));
-    document.getElementById(`pay-${tab}`)?.classList.add('active');
-  }
-
-  function updatePaySummary() {
-    const p = state.pagamentos;
-    const outputs = buildPaymentOutputs(p.conferencia || []);
-    const total = outputs.okRows.reduce((sum, row) => sum + Number(row.valor || 0), 0);
-    const registros = outputs.okRows.length;
-    if (document.getElementById('payTipo')) document.getElementById('payTipo').textContent = p.tipo || '-';
-    if (document.getElementById('payPeriodo')) document.getElementById('payPeriodo').textContent = p.periodo || '-';
-    if (document.getElementById('payRegistros')) document.getElementById('payRegistros').textContent = String(registros);
-    if (document.getElementById('payTotal')) document.getElementById('payTotal').textContent = money(total);
-    if (document.getElementById('payFooterTotal')) document.getElementById('payFooterTotal').textContent = `Total pronto para pagar: ${money(total)}`;
-    if (document.getElementById('payFooterHint')) {
-      const pendentes = (p.conferencia || []).filter((row) => String(row.status_pagamento || '').toUpperCase() === 'PENDENTE').length;
-      const pagos = (p.conferencia || []).filter((row) => String(row.status_pagamento || '').toUpperCase() === 'PAGO').length;
-      document.getElementById('payFooterHint').textContent = `${registros} OK · ${pendentes} pendente(s) · ${pagos} já pago(s)`;
-    }
-    if (document.getElementById('btnPagarBeneficios')) document.getElementById('btnPagarBeneficios').disabled = registros <= 0;
-    state.pagamentos.flash = outputs.flash;
-    state.pagamentos.ifood = outputs.ifood;
-    state.pagamentos.alelo = outputs.alelo;
-  }
-
-  function getPayFilteredEntries() {
-    const termo = normalize(document.getElementById('payColaboradorFiltro')?.value || '');
-    const entries = (state.pagamentos.conferencia || []).map((row, idx) => ({ row, idx }));
-    if (!termo) return { entries, termo };
-    const filtered = entries.filter(({ row }) => normalize([
-      row.funcionario,
-      row.cpf,
-      row.destino,
-      row.tipo,
-      row.composicao,
-      row.supervisao,
-      row.observacao
-    ].filter(Boolean).join(' ')).includes(termo));
-    return { entries: filtered, termo };
-  }
-
-  function renderPayTables() {
-    const p = state.pagamentos;
-    updatePaySummary();
-    const filtered = getPayFilteredEntries();
-    const entries = filtered.entries;
-    const filtroInfo = document.getElementById('payFiltroInfo');
-    if (filtroInfo) {
-      filtroInfo.textContent = filtered.termo
-        ? `${entries.length} de ${(p.conferencia || []).length} colaborador(es) encontrados.`
-        : `Mostrando ${(p.conferencia || []).length} colaborador(es).`;
-    }
-
-    document.getElementById('payConferenciaTbody').innerHTML = entries.length ? entries.map(({ row: r, idx }) => {
-      const st = String(r.status_pagamento || 'OK').toUpperCase();
-      const statusCell = st === 'PAGO'
-        ? `<span class="pay-status-paid">PAGO</span>`
-        : `
-          <div class="pay-status-toggle" role="group" aria-label="Status do pagamento de ${esc(r.funcionario || 'colaborador')}">
-            <button class="pay-status-btn ${st === 'OK' ? 'active-ok' : 'is-inactive'}" type="button" data-pay-status-index="${idx}" data-pay-status-value="OK">OK</button>
-            <button class="pay-status-btn ${st === 'PENDENTE' ? 'active-pendente' : 'is-inactive'}" type="button" data-pay-status-index="${idx}" data-pay-status-value="PENDENTE">PENDENTE</button>
-          </div>`;
-      return `<tr><td>${statusCell}</td><td>${brDate(r.data)}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(r.destino || '-')}</td><td>${esc(r.tipo || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.composicao || '-')}</td><td>${esc(r.supervisao || '-')}</td><td>${esc(r.observacao || '-')}</td></tr>`;
-    }).join('') : `<tr><td colspan="10" class="fin-empty">${filtered.termo ? 'Nenhum colaborador encontrado nesse filtro.' : 'Nenhuma conferência gerada.'}</td></tr>`;
-
-    document.getElementById('payFlashTbody').innerHTML = p.flash?.length ? p.flash.map((r) => `
-      <tr><td>${esc(r.cpf || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${money(r.valor)}</td></tr>
-    `).join('') : `<tr><td colspan="3" class="fin-empty">Nenhum pagamento Flash OK.</td></tr>`;
-
-    document.getElementById('payIfoodTbody').innerHTML = p.ifood?.length ? p.ifood.map((r) => `
-      <tr><td>${esc(r.cnpj || '-')}</td><td><strong>${esc(r.nome || '-')}</strong></td><td>${esc(r.cpf || '-')}</td><td>${esc(formatDateForXlsx(r.nascimento) || '-')}</td><td>${esc(r.email || '-')}</td><td>${esc(r.celular || '-')}</td><td>${esc(r.centro_custo || '-')}</td><td>${money(r.livre ?? r.valor)}</td></tr>
-    `).join('') : `<tr><td colspan="8" class="fin-empty">Nenhum pagamento iFood OK.</td></tr>`;
-
-    document.getElementById('payAleloTbody').innerHTML = p.alelo?.length ? p.alelo.map((r) => `
-      <tr><td>${esc(r.serie || '-')}</td><td>${esc(r.cpf || '-')}</td><td>${money(r.valor)}</td><td>${esc(r.observacao || '-')}</td><td>${esc(r.nome || '-')}</td></tr>
-    `).join('') : `<tr><td colspan="5" class="fin-empty">Nenhum pagamento Alelo OK.</td></tr>`;
-
-    document.getElementById('payLogsTbody').innerHTML = p.logs?.length ? p.logs.map((r) => `
-      <tr><td>${esc(r.data ? brDate(r.data) : (r.linha ? `Linha ${r.linha}` : '-'))}</td><td><strong>${esc(r.funcionario || '-')}</strong></td><td><span class="fin-status ${paymentStatusClass(r.status || r.tipo)}">${esc(r.status || r.tipo || '-')}</span></td><td>${esc(r.mensagem || '-')}</td></tr>
-    `).join('') : `<tr><td colspan="4" class="fin-empty">Nenhuma pendência.</td></tr>`;
-    updatePaySummary();
-  }
-
-  async function carregarAlmoco() {
-    const data = document.getElementById('almocoData')?.value;
-    if (!data) return paySetFeedback('fbAlimentacao', 'Informe a data.', 'err');
-    try {
-      paySetFeedback('fbAlimentacao', 'Consultando colaboradores elegíveis (login x embarque) e base de colaboradores...');
-      const [rhMap, almoco] = await Promise.all([
-        loadColaboradoresPagamento(data),
-        supabase.from('financeiro_alimentacao_colaboradores')
-          .select('id,data_ref,colaborador,cpf,coordenacao,supervisao,hora_identificada,local_nome,distancia_m,status,tipo_beneficio')
-          .eq('data_ref', data)
-          .eq('ativo', true)
-          .neq('status', 'PAGO')
-      ]);
-      if (almoco.error) throw almoco.error;
-
-      let apuracao = apurarAlmocoRows(almoco.data || [], rhMap);
-      apuracao = await syncPaidStatus(normalizePaymentRows(apuracao, document.getElementById('payDefaultStatus')?.value || 'OK'));
-      if (!apuracao.conferencia.length) {
-        paySetFeedback('fbAlimentacao', 'Nenhum colaborador elegível para almoço nessa data (login entre 10:30-12:00 a até 1km de um embarque).', 'err');
-      }
-      state.pagamentos = { tipo: 'Almoço', periodo: brDate(data), modo: 'almoco', ...apuracao };
-      renderPayTables();
-      setPayTab('conferencia');
-      paySetFeedback('fbAlimentacao', `Gerado: ${apuracao.conferencia.length} colaborador(es), ${apuracao.flash.length} Flash, ${apuracao.ifood.length} iFood, ${apuracao.logs.length} pendências.`, 'ok');
-    } catch (err) {
-      console.error(err);
-      paySetFeedback('fbAlimentacao', err.message || 'Erro ao consultar almoço.', 'err');
-    }
-  }
-
-  // Histórico do Almoço: linhas já PAGAS somem da Conferência (carregarAlmoco filtra
-  // status<>PAGO) e aparecem só aqui — evita que o financeiro gere o XLS de novo pra
-  // quem já foi pago no mesmo dia.
-  async function carregarHistoricoAlmoco() {
-    const tbody = document.getElementById('payHistoricoTbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="fin-empty">Carregando...</td></tr>';
-    try {
-      const { data, error } = await supabase
-        .from('financeiro_alimentacao_colaboradores')
-        .select('data_ref,colaborador,coordenacao,supervisao,local_nome,processado_em,tipo_beneficio')
-        .eq('status', 'PAGO')
-        .order('processado_em', { ascending: false })
-        .limit(500);
-      if (error) throw error;
-      if (!tbody) return;
-      tbody.innerHTML = (data || []).length ? data.map((row) => `
-        <tr>
-          <td>${brDate(row.data_ref)}</td>
-          <td>${esc(TIPO_BENEFICIO_LABEL[row.tipo_beneficio] || 'Refeição')}</td>
-          <td><strong>${esc(row.colaborador || '-')}</strong></td>
-          <td>${esc(row.coordenacao || '-')}</td>
-          <td>${esc(row.supervisao || '-')}</td>
-          <td>${esc(row.local_nome || '-')}</td>
-          <td>${row.processado_em ? new Date(row.processado_em).toLocaleString('pt-BR') : '-'}</td>
-        </tr>
-      `).join('') : '<tr><td colspan="7" class="fin-empty">Nenhum pagamento registrado ainda.</td></tr>';
-    } catch (err) {
-      console.error(err);
-      if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="fin-empty">Erro ao carregar histórico: ${esc(err.message)}</td></tr>`;
-    }
-  }
-
 
   // ── Adiantamentos (sincronizado do GRM pelo agente sync-adiantamentos) ────
   // Fonte: grm_adiantamentos_importacoes (espelho GRM) + financeiro_adiantamentos_decisoes
@@ -3073,169 +2663,10 @@ export function renderContent(content, userContext) {
   }
 
 
-  // ---------- DIÁRIAS (apuração, sem pagamento automático) ----------
-  // Dias com colaborador CONFIRMADO na programação (programacao_equipe ×
-  // programacao_dia) × valor/dia do GRM (colaborador_cruzamento.salario, que
-  // pra Intermitente/Diarista é diária — mesma convenção do motor de custo da
-  // Etapa 2; Efetivo fica de fora). Um dia conta UMA diária, mesmo com 2 O.S.
-  // no mesmo dia. Não grava nada: conferência + CSV; pagamento em lote fica
-  // pra uma próxima fase com regra de aprovação definida.
-  async function carregarDiarias() {
-    const fb = (msg, tone) => paySetFeedback('fbDiarias', msg, tone);
-    const de = document.getElementById('diariasDe')?.value;
-    const ate = document.getElementById('diariasAte')?.value;
-    if (!de || !ate) { fb('Informe o período (De/Até).', 'err'); return; }
-    if (de > ate) { fb('Data inicial maior que a final.', 'err'); return; }
-    fb('Apurando...');
-    try {
-      const { data: dias, error: e1 } = await supabase
-        .from('programacao_dia')
-        .select('id,data_referencia,supervisao')
-        .gte('data_referencia', de)
-        .lte('data_referencia', ate)
-        .limit(2000);
-      if (e1) throw e1;
-      const diaPorProg = new Map((dias || []).map((d) => [String(d.id), d]));
-      if (!diaPorProg.size) { state.diariasRows = []; renderDiarias(); fb('Nenhuma programação no período.'); return; }
-
-      const progIds = [...diaPorProg.keys()];
-      const equipe = [];
-      // .in() com centenas de ids estoura o limite de URL do PostgREST — corta em lotes.
-      for (let i = 0; i < progIds.length; i += 100) {
-        const { data, error } = await supabase
-          .from('programacao_equipe')
-          .select('programacao_id,colaborador_id,nome_colaborador')
-          .eq('confirmado', true)
-          .in('programacao_id', progIds.slice(i, i + 100))
-          .limit(10000);
-        if (error) throw error;
-        equipe.push(...(data || []));
-      }
-      if (!equipe.length) { state.diariasRows = []; renderDiarias(); fb('Nenhum colaborador confirmado no período.'); return; }
-
-      // Agrupa por colaborador: dias distintos + supervisões vistas.
-      const porColab = new Map();
-      equipe.forEach((r) => {
-        const key = String(r.colaborador_id || '').trim();
-        if (!key) return;
-        const dia = diaPorProg.get(String(r.programacao_id));
-        if (!dia) return;
-        const atual = porColab.get(key) || { key, nome: r.nome_colaborador || key, dias: new Set(), supervisoes: new Set() };
-        atual.dias.add(String(dia.data_referencia).slice(0, 10));
-        if (dia.supervisao) atual.supervisoes.add(dia.supervisao);
-        if (!atual.nome && r.nome_colaborador) atual.nome = r.nome_colaborador;
-        porColab.set(key, atual);
-      });
-
-      // Valor/dia e tipo de contrato do cruzamento (linha mais recente por CPF).
-      const cpfs = [...porColab.keys()].filter((k) => /^\d{6,}$/.test(k));
-      const taxaPorCpf = new Map();
-      for (let i = 0; i < cpfs.length; i += 150) {
-        const { data, error } = await supabase
-          .from('colaborador_cruzamento')
-          .select('cpf,tipo_contrato,salario,atualizado_em')
-          .in('cpf', cpfs.slice(i, i + 150))
-          .order('atualizado_em', { ascending: false })
-          .limit(10000);
-        if (error) throw error;
-        (data || []).forEach((r) => { if (!taxaPorCpf.has(r.cpf)) taxaPorCpf.set(r.cpf, r); });
-      }
-
-      const rows = [];
-      porColab.forEach((c) => {
-        const cz = taxaPorCpf.get(c.key) || null;
-        const tipo = String(cz?.tipo_contrato || '').toUpperCase();
-        if (tipo.includes('EFETIVO')) return; // efetivo não recebe diária
-        const valorDia = Number(cz?.salario || 0);
-        rows.push({
-          nome: c.nome,
-          tipo: cz?.tipo_contrato || 'Sem cadastro no GRM',
-          supervisao: [...c.supervisoes].join(', ') || '-',
-          dias: c.dias.size,
-          valorDia,
-          total: valorDia > 0 ? valorDia * c.dias.size : 0,
-          semValor: !(valorDia > 0),
-        });
-      });
-      rows.sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
-      state.diariasRows = rows;
-      renderDiarias();
-      fb(rows.length ? `Apurado: ${de.split('-').reverse().join('/')} a ${ate.split('-').reverse().join('/')}.` : 'Nenhum Intermitente/Diarista confirmado no período.');
-    } catch (err) {
-      console.error('[financeiro] diárias:', err);
-      fb(err.message || 'Erro ao apurar diárias.', 'err');
-    }
-  }
-
-  function renderDiarias() {
-    const rows = state.diariasRows || [];
-    const body = document.getElementById('diariasBody');
-    if (!body) return;
-    const comValor = rows.filter((r) => !r.semValor);
-    document.getElementById('diariasColabs').textContent = String(rows.length);
-    document.getElementById('diariasQtd').textContent = String(rows.reduce((s, r) => s + r.dias, 0));
-    document.getElementById('diariasSemValor').textContent = String(rows.length - comValor.length);
-    document.getElementById('diariasTotal').textContent = money(comValor.reduce((s, r) => s + r.total, 0));
-    if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6" class="fin-empty">Nenhuma diária apurada no período.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map((r) => `<tr>
-      <td><b>${esc(r.nome)}</b></td>
-      <td>${esc(r.tipo)}</td>
-      <td>${esc(r.supervisao)}</td>
-      <td>${r.dias}</td>
-      <td>${r.semValor ? '<span style="color:#fde68a;font-weight:700">sem valor</span>' : esc(money(r.valorDia))}</td>
-      <td><b>${r.semValor ? '-' : esc(money(r.total))}</b></td>
-    </tr>`).join('');
-  }
-
-  function exportarDiariasCsv() {
-    const rows = state.diariasRows || [];
-    if (!rows.length) { paySetFeedback('fbDiarias', 'Apure um período antes de exportar.', 'err'); return; }
-    const de = document.getElementById('diariasDe')?.value || 'inicio';
-    const ate = document.getElementById('diariasAte')?.value || 'fim';
-    const num = (v) => String(v ?? '').replace('.', ',');
-    const cel = (v) => { const s = String(v ?? ''); return /[";\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s; };
-    const linhas = [
-      ['Colaborador', 'Tipo', 'Supervisão', 'Dias', 'Valor/dia', 'Total'].join(';'),
-      ...rows.map((r) => [cel(r.nome), cel(r.tipo), cel(r.supervisao), r.dias, r.semValor ? '' : num(r.valorDia.toFixed(2)), r.semValor ? '' : num(r.total.toFixed(2))].join(';')),
-    ];
-    const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `diarias-${de}-a-${ate}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  }
-
-  function setPayMode(mode) {
-    const clean = ['almoco', 'diarias'].includes(mode) ? mode : 'adiantamentos';
-    state.pagamentos.modo = clean;
-    document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.classList.toggle('active', btn.dataset.payMode === clean));
-    document.querySelectorAll('.pay-mode-panel').forEach((panel) => panel.classList.remove('active'));
-    document.getElementById(`pay-mode-${clean}`)?.classList.add('active');
-    if (clean === 'adiantamentos' && !state.adiantamentosLoaded) {
-      state.adiantamentosLoaded = true;
-      carregarAdiantamentos();
-    }
-    if (clean === 'almoco' && !state.almocoLoaded) {
-      state.almocoLoaded = true;
-      carregarAlmoco();
-    }
-    if (clean === 'diarias' && !state.diariasLoaded) {
-      state.diariasLoaded = true;
-      const hoje = new Date();
-      const primeiroDia = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
-      const hojeIso = new Date(hoje.getTime() - hoje.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      const de = document.getElementById('diariasDe');
-      const ate = document.getElementById('diariasAte');
-      if (de && !de.value) de.value = primeiroDia;
-      if (ate && !ate.value) ate.value = hojeIso;
-      document.getElementById('btnAtualizarDiarias')?.addEventListener('click', carregarDiarias);
-      document.getElementById('btnExportarDiarias')?.addEventListener('click', exportarDiariasCsv);
-      carregarDiarias();
-    }
+  function carregarDespesasTab() {
+    if (state.adiantamentosLoaded) return;
+    state.adiantamentosLoaded = true;
+    carregarAdiantamentos();
   }
 
   async function salvarResumoNotasFiscais(rows, execucaoId = null) {
@@ -3271,69 +2702,6 @@ export function renderContent(content, userContext) {
     if (error) throw error;
   }
 
-  async function pagarBeneficios() {
-    const outputs = buildPaymentOutputs(state.pagamentos.conferencia || []);
-    const rows = outputs.okRows.filter((row) => ['flash', 'ifood'].some((destino) => normalize(row.destino).includes(destino)));
-    if (!rows.length) return paySetFeedback('fbAlimentacao', 'Nenhuma linha OK de Flash/iFood para pagar.', 'err');
-
-    try {
-      document.getElementById('btnPagarBeneficios').disabled = true;
-      paySetFeedback('fbAlimentacao', 'Conferindo duplicidades e enviando pagamento para Flash/iFood...');
-
-      const paid = await fetchAlreadyPaidMap(rows.map((row) => row.unique_hash || makePaymentHash(row)));
-      const elegiveis = rows.filter((row) => !paid.has(row.unique_hash || makePaymentHash(row)));
-      if (!elegiveis.length) {
-        paySetFeedback('fbAlimentacao', 'Todos os registros OK já constam como PAGO. Nenhum pagamento duplicado foi enviado.', 'ok');
-        state.pagamentos.conferencia = state.pagamentos.conferencia.map((row) => paid.has(row.unique_hash) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row);
-        renderPayTables();
-        return;
-      }
-
-      const total = elegiveis.reduce((sum, row) => sum + Number(row.valor || 0), 0);
-      const { data: execucao, error: execError } = await supabase.from('financeiro_pagamentos_execucoes').insert({
-        tipo: state.pagamentos.tipo || 'Pagamento',
-        periodo: state.pagamentos.periodo || null,
-        status: 'PROCESSANDO',
-        total_valor: roundNumber(total),
-        total_linhas: elegiveis.length,
-        responsavel: userContext?.user?.name || userContext?.user?.email || null
-      }).select('id').single();
-      if (execError) throw execError;
-
-      const apiPayload = {
-        execucao_id: execucao.id,
-        tipo: state.pagamentos.tipo,
-        periodo: state.pagamentos.periodo,
-        flash: buildPaymentOutputs(elegiveis).flash,
-        ifood: buildPaymentOutputs(elegiveis).ifood,
-        linhas: elegiveis
-      };
-
-      const { data: apiData, error: apiError } = await supabase.functions.invoke('financeiro-pagar-beneficios', { body: apiPayload });
-      if (apiError) throw new Error(apiError.message || 'Falha na API de pagamento Flash/iFood.');
-      if (apiData?.ok === false) throw new Error(apiData?.error || 'API de pagamento retornou erro.');
-
-      await registrarLinhasPagamento(elegiveis, execucao.id, 'PAGO', apiData || null);
-      await salvarResumoNotasFiscais(elegiveis, execucao.id);
-      await supabase.from('financeiro_pagamentos_execucoes').update({ status: 'PAGO', api_retorno: apiData || null }).eq('id', execucao.id);
-
-      const almocoIds = elegiveis.map((row) => row._almoco_id).filter(Boolean);
-      if (almocoIds.length) {
-        await supabase.from('financeiro_alimentacao_colaboradores').update({ status: 'PAGO', processado_em: new Date().toISOString() }).in('id', almocoIds);
-      }
-
-      const paidHashes = new Set(elegiveis.map((row) => row.unique_hash || makePaymentHash(row)));
-      state.pagamentos.conferencia = state.pagamentos.conferencia.map((row) => paidHashes.has(row.unique_hash || makePaymentHash(row)) ? { ...row, status_pagamento: 'PAGO', observacao: 'PAGO - bloqueado para evitar duplicidade' } : row);
-      renderPayTables();
-      setPayTab('conferencia');
-      paySetFeedback('fbAlimentacao', `Pagamento enviado e registrado: ${elegiveis.length} linha(s), ${money(total)}. Resumo enviado para Notas Fiscais.`, 'ok');
-    } catch (err) {
-      console.error(err);
-      paySetFeedback('fbAlimentacao', err.message || 'Erro ao pagar.', 'err');
-      updatePaySummary();
-    }
-  }
-
   const flashCols = [{ key: 'cpf', label: 'CPF' }, { key: 'valor', label: 'Valor' }];
   const ifoodCols = [
     { key: 'cnpj', label: 'CNPJ' }, { key: 'nome', label: 'Nome' }, { key: 'cpf', label: 'CPF' },
@@ -3349,39 +2717,6 @@ export function renderContent(content, userContext) {
     { key: 'composicao', label: 'Composição' }, { key: 'coordenacao', label: 'Coordenação' }, { key: 'supervisao', label: 'Supervisão' },
     { key: 'banco', label: 'C. Banc. Despesas' }, { key: 'observacao', label: 'Observação' }
   ];
-
-  // Um único botão baixa todos os arquivos necessários (cada categoria com dados vira um
-  // arquivo, no formato exigido pra upload na respectiva plataforma) em vez de exigir um
-  // clique por categoria.
-  function exportarTudo() {
-    const p = state.pagamentos;
-    const periodo = compactDate(p.periodo) || compactDate(new Date().toISOString());
-    const gerados = [];
-
-    if (p.flash?.length) {
-      downloadWorkbook(`PGTO_FLASH_${periodo}.xlsx`, [{ name: 'PGTO_FLASH', ws: worksheetFromObjects(p.flash, flashCols) }]);
-      gerados.push('Flash');
-    }
-    if (p.ifood?.length) {
-      downloadWorkbook(`PGTO_IFOOD_${periodo}.xlsx`, [{ name: 'PGTO_IFOOD', ws: worksheetFromObjects(p.ifood, ifoodCols) }]);
-      gerados.push('iFood');
-    }
-    if (p.alelo?.length) {
-      downloadCsv(`PGTO_ALELO_${periodo}.csv`, p.alelo, aleloCols);
-      gerados.push('Alelo');
-    }
-    if (p.conferencia?.length) {
-      downloadWorkbook(`CONFERENCIA_PAGAMENTOS_${periodo}.xlsx`, [
-        { name: 'Conferencia', ws: worksheetFromObjects(p.conferencia, confCols) },
-        { name: 'Flash', ws: worksheetFromObjects(p.flash || [], flashCols) },
-        { name: 'iFood', ws: worksheetFromObjects(p.ifood || [], ifoodCols) },
-        { name: 'Alelo', ws: worksheetFromObjects(p.alelo || [], aleloCols) }
-      ]);
-      gerados.push('Conferência');
-    }
-
-    if (!gerados.length) alert('Nenhum registro para exportar.');
-  }
 
   document.querySelectorAll('.fin-tab').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tab); if (btn.dataset.tab && btn.dataset.tab !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tab}`); }));
   document.querySelectorAll('[data-tab-target]').forEach((btn) => btn.addEventListener('click', () => { setTab(btn.dataset.tabTarget); if (btn.dataset.tabTarget && btn.dataset.tabTarget !== 'fluxo') history.replaceState(null, '', `#${btn.dataset.tabTarget}`); }));
@@ -3420,37 +2755,10 @@ export function renderContent(content, userContext) {
   document.getElementById('detFiltroFavorecido')?.addEventListener('input', (e) => { state.detFilter.favorecido = e.target.value; renderDetalhes(); });
   document.getElementById('detFiltroDoc')?.addEventListener('input', (e) => { state.detFilter.doc = e.target.value; renderDetalhes(); });
 
-  document.getElementById('btnGerarAlmoco')?.addEventListener('click', carregarAlmoco);
   document.getElementById('btnAtualizarAdiantamentos')?.addEventListener('click', carregarAdiantamentos);
   document.getElementById('btnPagarAdiantamentos')?.addEventListener('click', pagarAdiantamentos);
   document.querySelectorAll('.adiant-subtab').forEach((btn) => btn.addEventListener('click', () => setAdiantTab(btn.dataset.adiantTab)));
   document.getElementById('histColaboradorFiltro')?.addEventListener('input', () => renderHistoricoAgrupado(state.adiantamentosHistorico || []));
-  document.querySelectorAll('.pay-mode-btn').forEach((btn) => btn.addEventListener('click', () => setPayMode(btn.dataset.payMode)));
-  document.getElementById('btnPagarBeneficios').addEventListener('click', pagarBeneficios);
-  document.getElementById('payColaboradorFiltro')?.addEventListener('input', renderPayTables);
-  document.getElementById('btnLimparPayFiltro')?.addEventListener('click', () => {
-    const input = document.getElementById('payColaboradorFiltro');
-    if (input) input.value = '';
-    renderPayTables();
-  });
-  content.addEventListener('click', (event) => {
-    const statusBtn = event.target.closest('[data-pay-status-index][data-pay-status-value]');
-    if (!statusBtn) return;
-    const idx = Number(statusBtn.dataset.payStatusIndex);
-    const value = String(statusBtn.dataset.payStatusValue || '').toUpperCase();
-    if (!Number.isInteger(idx) || !state.pagamentos.conferencia?.[idx]) return;
-    if (!['OK', 'PENDENTE'].includes(value)) return;
-    const row = state.pagamentos.conferencia[idx];
-    row.status_pagamento = value;
-    renderPayTables();
-    if (row._almoco_id) {
-      supabase.from('financeiro_alimentacao_colaboradores').update({ status: value, updated_at: new Date().toISOString() }).eq('id', row._almoco_id)
-        .then(({ error }) => { if (error) console.warn('[financeiro] falha ao persistir status do almoço', error); });
-    }
-  });
-  document.querySelectorAll('.pay-subtab').forEach((btn) => btn.addEventListener('click', () => setPayTab(btn.dataset.payTab)));
-  document.querySelector('[data-pay-tab="historico"]')?.addEventListener('click', carregarHistoricoAlmoco);
-  document.getElementById('btnExportarTudo').addEventListener('click', exportarTudo);
   document.getElementById('periodForm').addEventListener('submit', (event) => {
     event.preventDefault();
     state.filters.inicio = document.getElementById('filterInicio').value;
@@ -3465,7 +2773,7 @@ export function renderContent(content, userContext) {
   document.querySelectorAll('.ajustes-subtab').forEach((btn) => btn.addEventListener('click', () => setAjustesTab(btn.dataset.ajustesTab)));
 
   window.addEventListener('hashchange', () => setTab(tabFromHash()));
-  setPayMode('adiantamentos');
+  carregarDespesasTab();
   setTab(tabFromHash());
   sincronizarContasAgente().then(loadFluxo, loadFluxo);
 }
