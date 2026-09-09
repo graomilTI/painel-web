@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/dashboard-socio.js?v=20260729-faturamento-rpc-fix';
+import './modules/dashboard-diretoria.js?v=20260909';
 
 function normalizarChaveDashboardSocio(value) {
   return String(value ?? '')
@@ -141,7 +141,7 @@ function criarSupabaseDashboardSocio(baseSupabase) {
 
 export function renderContent(content, ctx) {
   if (!window.DASHBOARD_SOCIO || typeof window.DASHBOARD_SOCIO.openHome !== 'function') {
-    content.innerHTML = '<div class="card"><strong>Erro ao carregar o Dashboard do Sócio.</strong><br>O módulo window.DASHBOARD_SOCIO.openHome não foi encontrado.</div>';
+    content.innerHTML = '<div class="card"><strong>Erro ao carregar o Panorama da Empresa.</strong><br>O módulo window.DASHBOARD_SOCIO.openHome não foi encontrado.</div>';
     return;
   }
 
@@ -158,4 +158,4 @@ export function renderContent(content, ctx) {
   });
 }
 
-initProtectedPage('Dashboard do Sócio', renderContent);
+initProtectedPage('Panorama da Empresa', renderContent);
