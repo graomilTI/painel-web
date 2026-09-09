@@ -472,7 +472,9 @@ async function fetchDashDataLive() {
   };
 
   let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
-  let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').gt('dias_sem_leitura', 7);
+  // dias_sem_leitura NULL = patrimônio nunca lido, pior caso possível — conta como atrasado
+  // (um .gt() puro ignora NULL silenciosamente e o contava como "em dia").
+  let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').or('dias_sem_leitura.gt.7,dias_sem_leitura.is.null');
 
   if (!state.isMaster && coordenacao) {
     patriBase     = patriBase.eq('coordenacao', coordenacao);

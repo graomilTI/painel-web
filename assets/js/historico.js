@@ -105,7 +105,9 @@ function buildPatrimonioChartData({ isMaster, coordenacao, patriRows }) {
   for (const row of patriRows) {
     const key = isMaster ? (row?.coordenacao || 'Sem regional') : (coordenacao || 'Minha regional');
     const bucket = porRegional.get(key) || { ok: 0, atrasado: 0 };
-    if (Number(row?.dias_sem_leitura || 0) > 7) bucket.atrasado += 1;
+    // dias_sem_leitura nulo = nunca lido, pior caso possível — conta como atrasado.
+    const dias = row?.dias_sem_leitura;
+    if (dias === null || dias === undefined || Number(dias) > 7) bucket.atrasado += 1;
     else bucket.ok += 1;
     porRegional.set(key, bucket);
   }

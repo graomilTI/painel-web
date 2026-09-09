@@ -402,7 +402,9 @@ async function fetchGestorDataLive(ctx) {
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
   let patriBase     = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo');
-  let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').gt('dias_sem_leitura',7);
+  // dias_sem_leitura NULL = patrimônio nunca lido, pior caso possível — conta como atrasado
+  // (um .gt() puro ignora NULL silenciosamente e o contava como "em dia").
+  let patriLateBase = supabase.from('patrimonios_snapshot').select('*',{count:'exact',head:true}).eq('situacao','Ativo').or('dias_sem_leitura.gt.7,dias_sem_leitura.is.null');
   let osPendBase    = supabase.from('operacional_os').select('*',{count:'exact',head:true})
                         .or('status_gestor.is.null,status_gestor.eq.AGUARDAR').is('configurada_em',null);
   let osAtendBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true}).eq('status_gestor','ATENDER');

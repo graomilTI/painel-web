@@ -163,7 +163,11 @@ async function buildFreshPayload(userInfo) {
     .filter(activePatrimonio)
     .filter((row) => userInfo.isMaster || matchesRegional(row, userInfo.coordenacao, userInfo.allowed));
   const totalPatrimonios = patrimonioFiltered.length;
-  const atrasados = patrimonioFiltered.filter((row) => Number(row.dias_sem_leitura || 0) > 7).length;
+  // dias_sem_leitura nulo = nunca lido, pior caso possível — conta como atrasado.
+  const atrasados = patrimonioFiltered.filter((row) => {
+    const dias = row.dias_sem_leitura;
+    return dias === null || dias === undefined || Number(dias) > 7;
+  }).length;
 
   return {
     loading: false,
