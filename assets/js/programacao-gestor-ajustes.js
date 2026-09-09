@@ -254,10 +254,14 @@ function configureSteps() {
   if (!stepsWrap) return;
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
+  // "3 · Recusas" saiu da toolbar (pedido do usuário, 08/09/2026: cabeçalho
+  // reorganizado, só O.S./Sem O.S. como abas). A aba some da UI, mas
+  // programacao-gestor-fluxo-avancado.js continua montando o painel '3' por
+  // baixo — sem uma aba pra trocar currentUiStep pra '3', ele só nunca é
+  // mostrado (nada quebra, fica só inacessível por aqui).
   const layout = [
     { ui: '1', label: STEP_LABELS['1'].title },
     { ui: '2', label: STEP_LABELS['2'].title },
-    { ui: '3', label: STEP_LABELS['3'].title },
   ];
 
   layout.forEach((step, index) => {

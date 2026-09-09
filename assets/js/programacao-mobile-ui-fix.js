@@ -696,9 +696,11 @@ function injectMobileStyles() {
       font-size: 12.5px !important;
     }
 
+    /* Só O.S./Sem O.S. (Recusas saiu da toolbar, 08/09/2026 — ver
+       programacao-gestor-ajustes.js) — 2 colunas, não 3. */
     body.mobile-gestor-mode #progSteps {
       display: grid !important;
-      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
       gap: 7px !important;
       grid-column: 1 / -1 !important;
       width: 100% !important;
