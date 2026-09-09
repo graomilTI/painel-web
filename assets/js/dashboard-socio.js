@@ -1,8 +1,8 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/dashboard-diretoria.js?v=20260909-4';
+import './modules/dashboard-diretoria.js?v=20260909-5';
 
-function normalizarChaveDashboardSocio(value) {
+function normalizarChave(value) {
   return String(value ?? '')
     .trim()
     .toUpperCase()
@@ -11,132 +11,178 @@ function normalizarChaveDashboardSocio(value) {
     .replace(/[^A-Z0-9]/g, '');
 }
 
-function valorRawDashboardSocio(row, aliases) {
-  const source = row?.dados_json || row?.raw || row || {};
-  const keys = Object.keys(source);
-
-  for (const alias of aliases) {
-    const expected = normalizarChaveDashboardSocio(alias);
-    const key = keys.find((candidate) => normalizarChaveDashboardSocio(candidate) === expected);
-    if (key && source[key] != null && String(source[key]).trim() !== '') return source[key];
-  }
-
-  return null;
-}
-
-function numeroBrDashboardSocio(value) {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-  const text = String(value ?? '').trim();
-  if (!text) return 0;
-  const normalized = text.includes(',')
-    ? text.replace(/\./g, '').replace(',', '.')
-    : text;
-  const parsed = Number(normalized.replace(/[^0-9.-]/g, ''));
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function dataIsoDashboardSocio(value) {
-  const text = String(value ?? '').trim();
-  if (!text) return null;
-
-  const br = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (br) {
-    const [, dd, mm, yyyy] = br;
-    return `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-  }
-
-  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return iso[0];
-
-  return null;
-}
-
-function normalizarLinhaNotaFiscalDashboardSocio(row) {
-  if (!row || typeof row !== 'object') return row;
-
-  const valorNF = valorRawDashboardSocio(row, [
-    'Valor da N.F.',
-    'Valor da NF',
-    'Valor N.F.',
-    'Valor NF',
-    'Valor Total',
-    'Valor da Nota',
-    'Valor Bruto'
-  ]);
-
-  const dataFatura = dataIsoDashboardSocio(valorRawDashboardSocio(row, [
-    'Data da Fatura',
-    'Data Fatura',
-    'Data N.F.',
-    'Data NF',
-    'Data Nota',
-    'Emissão NF',
-    'Emissao NF'
-  ]));
-
-  const valorTotalNormalizado = row.valor_total != null
-    ? row.valor_total
-    : numeroBrDashboardSocio(valorNF);
-
-  return {
-    ...row,
-    valor_total: valorTotalNormalizado,
-    data_fatura_de: dataFatura || row.data_fatura_de,
-    data_fatura_ate: dataFatura || row.data_fatura_ate,
-    data_nota_de: dataFatura || row.data_nota_de,
-    data_nota_ate: dataFatura || row.data_nota_ate
-  };
-}
-
-function normalizarRespostaNotasDashboardSocio(response) {
-  if (!response || !Array.isArray(response.data)) return response;
-
-  return {
-    ...response,
-    data: response.data.map(normalizarLinhaNotaFiscalDashboardSocio)
-  };
-}
-
-function wrapQueryNotasDashboardSocio(query) {
-  if (!query || typeof query !== 'object') return query;
-
-  return new Proxy(query, {
-    get(target, prop, receiver) {
-      if (prop === 'then') {
-        return (onFulfilled, onRejected) => target.then(
-          (response) => {
-            const normalizada = normalizarRespostaNotasDashboardSocio(response);
-            return typeof onFulfilled === 'function' ? onFulfilled(normalizada) : normalizada;
-          },
-          onRejected
-        );
-      }
-
-      const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== 'function') return value;
-
-      return (...args) => {
-        const result = value.apply(target, args);
-        return result && typeof result === 'object' ? wrapQueryNotasDashboardSocio(result) : result;
-      };
-    }
-  });
-}
-
 function criarSupabaseDashboardSocio(baseSupabase) {
   return new Proxy(baseSupabase, {
     get(target, prop, receiver) {
       if (prop !== 'from') return Reflect.get(target, prop, receiver);
-
       return (tableName) => {
-        const query = target.from(tableName);
+        // As duas views abaixo são alimentadas pelos lotes atuais das APIs do GRM.
+        // Mantemos os nomes esperados pelo módulo-base, mas trocamos a origem.
         if (tableName === 'grm_notas_fiscais_importacoes') {
-          return wrapQueryNotasDashboardSocio(query);
+          return target.from('dashboard_socios_notas_emitidas_api');
         }
-        return query;
+        if (tableName === 'financeiro_contas_receber') {
+          return target.from('dashboard_socios_recebimentos_api');
+        }
+        return target.from(tableName);
       };
     }
   });
+}
+
+const fmtInteiro = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+const fmtMoeda = new Intl.NumberFormat('pt-BR', {
+  style: 'currency', currency: 'BRL', maximumFractionDigits: 0
+});
+const fmtMoedaCompacta = new Intl.NumberFormat('pt-BR', {
+  style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1
+});
+
+function instalarChartComUnidadesReais() {
+  if (!window.Chart || window.__dashboardSocioChartUnidades) return;
+  const ChartOriginal = window.Chart;
+
+  window.Chart = new Proxy(ChartOriginal, {
+    construct(target, args, newTarget) {
+      const config = args?.[1];
+      const datasets = config?.data?.datasets || [];
+      const financeiro = datasets.some((dataset) => dataset.label === 'Serviços')
+        && datasets.some((dataset) => dataset.label === 'Notas')
+        && datasets.some((dataset) => dataset.label === 'Recebimentos');
+
+      if (financeiro) {
+        datasets.forEach((dataset) => {
+          dataset.yAxisID = dataset.label === 'Notas' ? 'notas' : 'financeiro';
+        });
+
+        config.options ||= {};
+        config.options.scales ||= {};
+        const eixoOriginal = config.options.scales.y || {};
+        const ticksOriginais = eixoOriginal.ticks || {};
+        const gridOriginal = eixoOriginal.grid || {};
+        delete config.options.scales.y;
+
+        config.options.scales.financeiro = {
+          ...eixoOriginal,
+          type: 'linear',
+          position: 'left',
+          beginAtZero: true,
+          grid: gridOriginal,
+          title: {
+            ...(eixoOriginal.title || {}),
+            display: true,
+            text: 'Valores (R$)',
+            color: ticksOriginais.color
+          },
+          ticks: {
+            ...ticksOriginais,
+            callback: (value) => fmtMoedaCompacta.format(Number(value) || 0)
+          }
+        };
+
+        config.options.scales.notas = {
+          type: 'linear',
+          position: 'right',
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          title: { display: true, text: 'Notas (qtd.)', color: ticksOriginais.color },
+          ticks: {
+            color: ticksOriginais.color,
+            precision: 0,
+            callback: (value) => fmtInteiro.format(Number(value) || 0)
+          }
+        };
+
+        config.options.plugins ||= {};
+        config.options.plugins.tooltip ||= {};
+        const callbacks = config.options.plugins.tooltip.callbacks || {};
+        config.options.plugins.tooltip.callbacks = {
+          ...callbacks,
+          label(context) {
+            const value = context?.parsed?.y ?? context?.raw ?? 0;
+            return context?.dataset?.label === 'Notas'
+              ? `Notas: ${fmtInteiro.format(Number(value) || 0)}`
+              : `${context?.dataset?.label || 'Valor'}: ${fmtMoeda.format(Number(value) || 0)}`;
+          }
+        };
+      }
+
+      return Reflect.construct(target, args, newTarget);
+    }
+  });
+
+  window.__dashboardSocioChartUnidades = true;
+}
+
+function removerPrefixoMoeda(element) {
+  if (!element || !/R\$/.test(element.textContent || '')) return;
+  element.textContent = String(element.textContent || '').replace(/R\$\s*/i, '').trim();
+}
+
+function corrigirTabelaComparativa(root) {
+  root.querySelectorAll('table.dir-table').forEach((table) => {
+    const headers = [...table.querySelectorAll('thead th')];
+    const index = headers.findIndex((th) => normalizarChave(th.textContent) === 'NOTASEMITIDAS');
+    if (index < 0) return;
+    table.querySelectorAll('tbody tr').forEach((row) => removerPrefixoMoeda(row.children?.[index]));
+  });
+}
+
+function corrigirUnidadesNaTela(root) {
+  const cardNotas = root.querySelector('[data-detail="invoices"]');
+  if (cardNotas) {
+    removerPrefixoMoeda(cardNotas.querySelector('.dir-kpi-value'));
+    const sub = cardNotas.querySelector('.dir-kpi-sub');
+    const texto = 'Quantidade pela data de emissão';
+    if (sub && sub.textContent !== texto) sub.textContent = texto;
+  }
+
+  const indicadorRanking = root.querySelector('[data-rank-metric]');
+  if (indicadorRanking?.value === 'invoices') {
+    indicadorRanking.closest('.dir-section')
+      ?.querySelectorAll('.dir-rank-row strong, .dir-rank-rest')
+      .forEach(removerPrefixoMoeda);
+  }
+
+  const detalhe = root.querySelector('.dir-detail');
+  if (detalhe && normalizarChave(detalhe.querySelector('h4')?.textContent) === 'NOTASEMITIDAS') {
+    detalhe.querySelectorAll('.dir-rank-row strong, .dir-rank-rest').forEach(removerPrefixoMoeda);
+    const p = detalhe.querySelector('.dir-detail-head p');
+    const texto = 'Quantidade pela data de emissão. Maiores coordenações no filtro atual.';
+    if (p && p.textContent !== texto) p.textContent = texto;
+  }
+
+  root.querySelectorAll('.dir-compare-metric').forEach((bloco) => {
+    if (normalizarChave(bloco.querySelector('h4')?.textContent) !== 'NOTASEMITIDAS') return;
+    bloco.querySelectorAll('.dir-compare-row strong').forEach(removerPrefixoMoeda);
+  });
+  corrigirTabelaComparativa(root);
+
+  const indicadorMapa = root.querySelector('[data-map-metric]');
+  if (indicadorMapa?.value === 'invoices') {
+    const secao = indicadorMapa.closest('.dir-section');
+    secao?.querySelectorAll('.dir-rank-row strong, .dir-rank-rest').forEach(removerPrefixoMoeda);
+    secao?.querySelectorAll('svg title').forEach((title) => {
+      if (/R\$/.test(title.textContent || '')) title.textContent = title.textContent.replace(/R\$\s*/g, '');
+    });
+  }
+}
+
+function observarUnidades(content) {
+  let agendado = false;
+  const aplicar = () => {
+    if (agendado) return;
+    agendado = true;
+    queueMicrotask(() => {
+      agendado = false;
+      corrigirUnidadesNaTela(content);
+    });
+  };
+  const observer = new MutationObserver(aplicar);
+  observer.observe(content, { childList: true, subtree: true });
+  content.addEventListener('change', aplicar);
+  content.addEventListener('click', aplicar);
+  aplicar();
 }
 
 export function renderContent(content, ctx) {
@@ -145,6 +191,8 @@ export function renderContent(content, ctx) {
     return;
   }
 
+  instalarChartComUnidadesReais();
+  observarUnidades(content);
   const supabaseDashboardSocio = criarSupabaseDashboardSocio(supabase);
 
   window.DASHBOARD_SOCIO.openHome(content, {
@@ -152,9 +200,7 @@ export function renderContent(content, ctx) {
     api: { supabase: supabaseDashboardSocio },
     auth: ctx,
     user: ctx?.user || null,
-    onBack: () => {
-      window.location.href = './dashboard.html';
-    }
+    onBack: () => { window.location.href = './dashboard.html'; }
   });
 }
 
