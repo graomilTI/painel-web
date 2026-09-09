@@ -344,7 +344,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260813-autoconferegrm')
+import('./adm-conferencia.js?v=20260909-autoconfere-outros-pendente1')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();

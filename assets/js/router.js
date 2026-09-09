@@ -34,7 +34,7 @@ const SOFT_NAV_PAGES = new Map([
   ['historico-colaboradores', { title: 'Histórico de Importações', module: () => import('./historicoColaboradores.js') }],
   ['consultar-colaboradores', { title: 'Consultar Base de Colaboradores', module: () => import('./consultarColaboradores.js') }],
   // Fase 2 — Categoria A (padrão mecânico simples)
-  ['adm-conferencia', { title: 'ADM Conferência', module: () => import('./adm-conferencia.js'), extraModules: [() => import('./adm-conferencia-entry.js'), () => import('./adm-conferencia-actions-clean.js'), () => import('./adm-conferencia-sem-os.js')] }],
+  ['adm-conferencia', { title: 'ADM Conferência', module: () => import('./adm-conferencia.js?v=20260909-autoconfere-outros-pendente1'), extraModules: [() => import('./adm-conferencia-entry.js'), () => import('./adm-conferencia-actions-clean.js'), () => import('./adm-conferencia-sem-os.js')] }],
   ['admin-auditoria', { title: 'Auditoria', module: () => import('./admin-auditoria.js') }],
   ['auditoria', { title: 'Auditoria', module: () => import('./auditoria.js') }],
   ['clinicas-sst', { title: 'Clínicas SST', module: () => import('./clinicas-sst.js') }],
@@ -123,7 +123,7 @@ const SOFT_NAV_PAGES = new Map([
     () => import('./programacao-kpi-inline-patch.js'),
     () => import('./programacao-gestor-filtro-fix.js'),
     () => import('./programacao-mobile-ui-fix.js?v=20260909-header-grid1'),
-    () => import('./programacao-gestor-fluxo-avancado.js?v=20260909-extra-exige-valor1'),
+    () => import('./programacao-gestor-fluxo-avancado.js?v=20260909-extra-zero-ok1'),
     () => import('./programacao-lista-drawer-fixo.js'),
     () => import('./programacao-lista-drawer-ux-hotfix.js'),
     () => import('./programacao-pdf-tipo-fix.js'),
