@@ -39,11 +39,19 @@
  * Grão1000/Graomil) ficam no config (não banco, muda raríssimo) — ver
  * config/grm-baixa-notas-fiscais.json.
  *
+ * Match por SOMA de parcelas (adicionado 09/09, caso real MAURICIO ALENCAR
+ * DE SOUZA): quando nenhuma parcela isolada em aberto bate com o valor do
+ * comprovante, tenta achar um conjunto de 2+ parcelas do MESMO
+ * favorecido+empresa cuja soma bate exatamente (comprovante único liquidando
+ * vários holerites/NFs de uma vez). Só baixa sozinho se existir exatamente 1
+ * combinação possível — 0 ou 2+ combinações também vão pra AGUARDANDO_REVISAO,
+ * igual ao match de parcela única. Ver findCandidateGroups().
+ *
  * Segurança (mesmo padrão dos demais agentes de escrita):
  *   - dry-run por padrão;
  *   - deduplicação por fingerprint (hash do próprio arquivo);
- *   - match ambíguo (0 ou 2+ candidatos) NUNCA baixa sozinho — vai pra
- *     AGUARDANDO_REVISAO, só um humano confirma pela tela;
+ *   - match ambíguo (0 ou 2+ candidatos, isolados ou em soma) NUNCA baixa
+ *     sozinho — vai pra AGUARDANDO_REVISAO, só um humano confirma pela tela;
  *   - processamento serial;
  *   - código de saída diferente de zero em erro técnico.
  */
@@ -589,26 +597,123 @@ function resolveContaPagadora(parsed) {
 // nome do favorecido (igual ou prefixo, pra tolerar pequenas divergências
 // de acentuação/abreviação — o texto do comprovante normalmente já traz o
 // nome completo, não truncado).
+//
+// IMPORTANTE: NÃO filtrar por pinStatus:'A' na própria chamada ao GRM — esse
+// filtro server-side usa um índice que fica defasado (confirmado ao vivo em
+// 08/09/2026: um pinCode com pinStatus:'A' real ficava de fora da lista
+// filtrada, mas aparecia na consulta sem filtro). Isso já causou baixa da
+// parcela ERRADA quando havia 2 parcelas com mesmo valor pro mesmo
+// colaborador (uma antiga em aberto + a do mês corrente): só a antiga
+// aparecia no cache filtrado, "candidato único" falso-positivo, sem cair em
+// revisão manual (31 casos reais corrigidos nesse incidente). Por isso o
+// filtro pinStatus é sempre aplicado aqui, em memória, sobre a lista cheia.
 async function getOpenInvoicesCache() {
   if (!openInvoicesCache) {
-    const response = await apiPost('payInvoice/getRecords', { pinStatus: 'A', moreThenOneCompany: 'S' });
+    const response = await apiPost('payInvoice/getRecords', { moreThenOneCompany: 'S' });
     if (!response.result) throw new Error(`payInvoice/getRecords falhou: ${response.message || 'erro'}`);
-    openInvoicesCache = safe(response.searchData);
+    openInvoicesCache = safe(response.searchData).filter((r) => r.pinStatus === 'A');
     log('INFO', `Cache de parcelas em aberto no GRM: ${openInvoicesCache.length} registro(s).`);
   }
   return openInvoicesCache;
 }
 
+const CONECTORES_NOME = new Set(['DE', 'DA', 'DO', 'DOS', 'DAS', 'E']);
+
+function tokensSignificativos(nome) {
+  return String(nome || '').split(' ').filter(Boolean).filter((t) => !CONECTORES_NOME.has(t));
+}
+
+// Compara nome do comprovante x nome do GRM tolerando os 2 padrões achados
+// ao vivo em 08/09: preposição faltando no meio ("DANIEL PADUA LOPES" vs
+// "DANIEL DE PADUA LOPES") e abreviação de uma palavra do meio, não só o
+// final ("STEPHANY RAMIRES F DE OLIVEIRA" vs "...FERREIRA DE OLIVEIRA").
+// Ignora conectores dos dois lados e compara token a token por prefixo.
+function nomesCompativeis(nomeComprovante, nomeGrm) {
+  const a = tokensSignificativos(nomeComprovante);
+  const b = tokensSignificativos(nomeGrm);
+  if (!a.length || !b.length) return false;
+  const menor = a.length <= b.length ? a : b;
+  const maior = a.length <= b.length ? b : a;
+  for (let i = 0; i < menor.length; i += 1) {
+    const t1 = menor[i];
+    const t2 = maior[i];
+    if (t1 !== t2 && !t1.startsWith(t2) && !t2.startsWith(t1)) return false;
+  }
+  return true;
+}
+
 function findCandidates(openInvoices, { scpCode, valor, favorecidoNome }) {
   const alvoNome = normalizeText(favorecidoNome);
   const alvoCentavos = Math.round(Number(valor) * 100);
-  return openInvoices.filter((inv) => {
+  const candidatos = openInvoices.filter((inv) => {
     if (Number(inv.scpCode) !== Number(scpCode)) return false;
     if (Math.round(Number(inv.pinInstallmentValue) * 100) !== alvoCentavos) return false;
     const nomeInv = normalizeText(inv.favoredName);
     if (!nomeInv || !alvoNome) return false;
-    return nomeInv === alvoNome || nomeInv.startsWith(alvoNome) || alvoNome.startsWith(nomeInv);
+    return nomesCompativeis(alvoNome, nomeInv);
   });
+  return preferirVencimentoMaisRecente(candidatos);
+}
+
+function candidatosMesmaPessoa(openInvoices, { scpCode, favorecidoNome }) {
+  const alvoNome = normalizeText(favorecidoNome);
+  return openInvoices.filter((inv) => {
+    if (Number(inv.scpCode) !== Number(scpCode)) return false;
+    const nomeInv = normalizeText(inv.favoredName);
+    if (!nomeInv || !alvoNome) return false;
+    return nomesCompativeis(alvoNome, nomeInv);
+  });
+}
+
+function combinacoes(lista, tamanho) {
+  const resultado = [];
+  const atual = [];
+  (function backtrack(inicio) {
+    if (atual.length === tamanho) { resultado.push(atual.slice()); return; }
+    for (let i = inicio; i < lista.length; i += 1) {
+      atual.push(lista[i]);
+      backtrack(i + 1);
+      atual.pop();
+    }
+  }(0));
+  return resultado;
+}
+
+// Caso real (MAURICIO ALENCAR DE SOUZA, 09/2026): nenhuma parcela isolada em
+// aberto batia com o valor do comprovante, mas 2 parcelas do mesmo
+// favorecido/empresa somadas batiam exatamente (comprovante único liquidando
+// 2 holerites do mesmo mês). Só tenta quando o match de parcela única deu
+// ZERO candidatos (nunca em cima de um empate 2+, isso continua indo pra
+// revisão manual como já era). Só baixa sozinho se existir exatamente 1
+// combinação possível — 0 ou 2+ combinações também vão pra revisão manual.
+const MAX_COMBO_TAMANHO = 4;
+const MAX_COMBO_CANDIDATOS = 12;
+
+function findCandidateGroups(openInvoices, { scpCode, valor, favorecidoNome }) {
+  const mesmaPessoa = candidatosMesmaPessoa(openInvoices, { scpCode, favorecidoNome });
+  if (mesmaPessoa.length < 2 || mesmaPessoa.length > MAX_COMBO_CANDIDATOS) return [];
+  const alvoCentavos = Math.round(Number(valor) * 100);
+  const grupos = [];
+  for (let tamanho = 2; tamanho <= Math.min(MAX_COMBO_TAMANHO, mesmaPessoa.length); tamanho += 1) {
+    for (const grupo of combinacoes(mesmaPessoa, tamanho)) {
+      const soma = grupo.reduce((acc, inv) => acc + Math.round(Number(inv.pinInstallmentValue) * 100), 0);
+      if (soma === alvoCentavos) grupos.push(grupo);
+    }
+  }
+  return grupos;
+}
+
+// Achado ao vivo em 08/09 (confirmado com o usuário): quando 2+ parcelas
+// batem empresa+valor+nome, normalmente é a MESMA pessoa com holerite de
+// valor igual em 2 meses seguidos (ex.: julho e agosto), cada mês com seu
+// próprio vencimento (06/08 vs 05/09). Nesse caso a certa é sempre a mais
+// recente (o mês que está sendo pago agora) — só some pra revisão manual se
+// o empate persistir mesmo na data de vencimento (duplicidade de verdade).
+function preferirVencimentoMaisRecente(candidatos) {
+  if (candidatos.length <= 1) return candidatos;
+  const maiorVencimento = candidatos.reduce((max, c) => (!max || String(c.pinDueDate) > max ? String(c.pinDueDate) : max), null);
+  const maisRecentes = candidatos.filter((c) => String(c.pinDueDate) === maiorVencimento);
+  return maisRecentes.length === 1 ? maisRecentes : candidatos;
 }
 
 async function findGrmNfLancamentoId(pinCode) {
@@ -618,20 +723,26 @@ async function findGrmNfLancamentoId(pinCode) {
 }
 
 // ---------------------------------------------------------------------------
+// resolved.itens tem 1 entrada no caso normal (parcela única) ou 2+ quando o
+// comprovante liquida a SOMA de várias parcelas em aberto da mesma pessoa
+// (ver findCandidateGroups) — o GRM já aceita múltiplas entradas em
+// paymentInfo num único payInvoice/payment, cada uma com seu próprio valor.
 function buildPaymentPayload(resolved) {
+  const docs = resolved.itens.map((i) => i.pinDocNumber || i.pinCode).join(', ');
+  const pinCodes = resolved.itens.map((i) => i.pinCode).join(',');
   return {
-    ppyMovBancDescription: `Pagamento ${resolved.favorecidoNome}. Doc ${resolved.pinDocNumber || resolved.pinCode}. Conta: ${resolved.pinCode}`,
-    patCode: resolved.patCode,
+    ppyMovBancDescription: `Pagamento ${resolved.favorecidoNome}. Doc ${docs}. Conta: ${pinCodes}`,
+    patCode: resolved.itens[0].patCode,
     baccCode: resolved.baccCode,
     ppyPaidDate: resolved.dataPagamento,
     baccCodePaied: null,
     ppyAgencyPaied: null,
     ppyAccountPaied: null,
     ppyPaidDocLink: '',
-    paymentInfo: JSON.stringify([{
-      pinCode: Number(resolved.pinCode), ppyPaidTax: 0, ppyPaidDiscount: 0,
-      ppyPaidValue: resolved.valor, pinPaymentType: 'N',
-    }]),
+    paymentInfo: JSON.stringify(resolved.itens.map((i) => ({
+      pinCode: Number(i.pinCode), ppyPaidTax: 0, ppyPaidDiscount: 0,
+      ppyPaidValue: i.valor, pinPaymentType: 'N',
+    }))),
     pinPaymentType: 'N',
     withDiscount: 'N',
   };
@@ -661,6 +772,36 @@ async function submitPayInvoicePayment(payload, filePath, fileName) {
     },
   }, body, 'json');
   if (!response || response.result === false) throw new Error(`payInvoice/payment falhou: ${response?.message || 'resposta sem result:true'}`);
+  return response;
+}
+
+// Além de ir junto no payInvoice/payment (campo ppyPaidDocLinkNew, que fica
+// só no registro interno do pagamento), sobe o mesmo comprovante também pro
+// modal de Anexos da conta (ícone de anexo na tela de Contas a Pagar) —
+// payInvoice/uploadFiles, mainRecord=pinCode. Sem isso o comprovante fica
+// "invisível" pra quem confere manualmente no GRM (confirmado 08/09/2026).
+async function uploadComprovanteAnexo(pinCode, filePath, fileName) {
+  const boundary = `----grmanexo${crypto.randomBytes(16).toString('hex')}`;
+  const fileBuffer = fs.readFileSync(filePath);
+  const fields = { mainRecord: String(pinCode), fileDir: 'payInvoiceFileDir' };
+  const parts = [];
+  for (const [key, value] of Object.entries(fields)) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value}\r\n`));
+  }
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${sanitizeFileName(fileName)}"\r\nContent-Type: application/pdf\r\n\r\n`));
+  parts.push(fileBuffer);
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  const body = Buffer.concat(parts);
+
+  if (!grmToken) grmToken = await grmLogin();
+  const response = await httpRequest({
+    method: 'POST', hostname: 'www.grmserver.com.br', path: '/api/payInvoice/uploadFiles',
+    headers: {
+      ...GRM_WEB_HEADERS, authorization: `Bearer ${grmToken}`,
+      'content-type': `multipart/form-data; boundary=${boundary}`, 'content-length': body.length,
+    },
+  }, body, 'json');
+  if (!response || response.result === false) throw new Error(`payInvoice/uploadFiles falhou: ${response?.message || 'resposta sem result:true'}`);
   return response;
 }
 
@@ -714,10 +855,19 @@ async function processBaixa(row, runId) {
     if (row.status === 'VALIDADO' && row.pin_code) {
       // Já casado antes (automático numa execução anterior, ou confirmado
       // manualmente na tela) — só falta submeter a baixa no GRM.
+      // pin_codes_json guarda 1 item no caso normal, ou 2+ quando o
+      // comprovante liquida a soma de várias parcelas; linhas antigas (sem
+      // essa coluna preenchida) caem no fallback de 1 item a partir do
+      // pin_code/valor/pat_code já gravados.
+      const itens = Array.isArray(row.pin_codes_json) && row.pin_codes_json.length
+        ? row.pin_codes_json
+        : [{
+          pinCode: row.pin_code, patCode: row.pat_code, valor: Number(row.valor),
+          pinDocNumber: row.extraido_json?.pinDocNumber || null,
+        }];
       resolved = {
-        pinCode: row.pin_code, baccCode: row.bacc_code, patCode: row.pat_code,
+        itens, baccCode: row.bacc_code,
         favorecidoNome: row.favorecido_nome, valor: Number(row.valor), dataPagamento: row.data_pagamento,
-        pinDocNumber: row.extraido_json?.pinDocNumber || null,
       };
     } else {
       const divididos = await splitComprovanteBatch(row, localPath, workDir);
@@ -772,42 +922,64 @@ async function processBaixa(row, runId) {
 
       const openInvoices = await getOpenInvoicesCache();
       const candidatos = findCandidates(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome });
+      // Só tenta casar por SOMA de parcelas quando nada bateu isolado — um
+      // empate (2+) de parcela única continua indo pra revisão manual como
+      // já era, sem misturar com combinações.
+      const grupos = candidatos.length === 0
+        ? findCandidateGroups(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
+        : [];
 
-      if (candidatos.length !== 1) {
+      if (candidatos.length !== 1 && grupos.length !== 1) {
+        const candidatosJson = candidatos.map((c) => ({
+          pinCode: c.pinCode, favoredName: c.favoredName, valor: c.pinInstallmentValue,
+          scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
+        })).concat(grupos.map((grupo) => ({
+          grupo: true,
+          pinCodes: grupo.map((i) => i.pinCode),
+          total: grupo.reduce((acc, i) => acc + Number(i.pinInstallmentValue), 0),
+          itens: grupo.map((i) => ({
+            pinCode: i.pinCode, favoredName: i.favoredName, valor: i.pinInstallmentValue,
+            pinDocNumber: i.pinDocNumber, pinDueDate: i.pinDueDate, patCode: i.patCode,
+          })),
+        })));
         await updateItem(row.id, {
           ...baseUpdate,
           status: 'AGUARDANDO_REVISAO',
-          candidatos_json: candidatos.map((c) => ({
-            pinCode: c.pinCode, favoredName: c.favoredName, valor: c.pinInstallmentValue,
-            scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
-          })),
-          erro: candidatos.length === 0
-            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido.'
-            : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.`,
+          candidatos_json: candidatosJson,
+          erro: (candidatos.length === 0 && grupos.length === 0)
+            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (nem isolado, nem em soma de parcelas).'
+            : `${candidatos.length + grupos.length} possibilidade(s) batem com empresa + favorecido — escolha manualmente qual é a certa.`,
         });
-        log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
+        log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) + ${grupos.length} grupo(s) por soma — foi pra AGUARDANDO_REVISAO.`);
         return 'aguardando_revisao';
       }
 
-      const candidato = candidatos[0];
-      const grmNfLancamentoId = await findGrmNfLancamentoId(candidato.pinCode);
+      const grupoResolvido = candidatos.length === 1 ? candidatos : grupos[0];
+      const grmNfLancamentoId = grupoResolvido.length === 1 ? await findGrmNfLancamentoId(grupoResolvido[0].pinCode) : null;
       resolved = {
-        pinCode: String(candidato.pinCode), baccCode: conta.baccCode, patCode: candidato.patCode,
+        itens: grupoResolvido.map((c) => ({
+          pinCode: String(c.pinCode), patCode: c.patCode, valor: Number(c.pinInstallmentValue), pinDocNumber: c.pinDocNumber,
+        })),
+        baccCode: conta.baccCode,
         favorecidoNome: parsed.favorecidoNome, valor: parsed.valor, dataPagamento: parsed.dataPagamento,
-        pinDocNumber: candidato.pinDocNumber,
       };
+      if (grupoResolvido.length > 1) {
+        log('INFO', `${row.arquivo_nome}: comprovante único liquidando ${grupoResolvido.length} parcelas em aberto de ${parsed.favorecidoNome} (soma R$ ${formatMoney(parsed.valor)}).`);
+      }
       await updateItem(row.id, {
         ...baseUpdate,
         status: 'VALIDADO',
-        pat_code: candidato.patCode,
-        pin_code: resolved.pinCode,
+        pat_code: grupoResolvido[0].patCode,
+        pin_code: resolved.itens.map((i) => i.pinCode).join(','),
+        pin_codes_json: resolved.itens,
         grm_nf_lancamento_id: grmNfLancamentoId,
         candidatos_json: [],
         erro: null,
       });
     }
 
-    log('INFO', `${row.arquivo_nome}: ${DRY_RUN ? 'validando payload de baixa (dry-run)' : 'dando baixa no GRM'} - pinCode ${resolved.pinCode}, R$ ${formatMoney(resolved.valor)}, pago em ${resolved.dataPagamento}.`);
+    const pinCodesLog = resolved.itens.map((i) => i.pinCode).join(',');
+    log('INFO', `${row.arquivo_nome}: ${DRY_RUN ? 'validando payload de baixa (dry-run)' : 'dando baixa no GRM'} - pinCode(s) ${pinCodesLog}, R$ ${formatMoney(resolved.valor)}, pago em ${resolved.dataPagamento}.`);
     const payload = buildPaymentPayload(resolved);
 
     if (DRY_RUN) {
@@ -817,8 +989,23 @@ async function processBaixa(row, runId) {
     }
 
     const response = await submitPayInvoicePayment(payload, localPath, row.arquivo_nome);
-    await updateItem(row.id, { status: 'BAIXADO', execucao_id: runId, grm_resposta: response, baixado_em: isoNow(), erro: null });
-    log('SUCCESS', `${row.arquivo_nome}: baixa registrada no GRM (pinCode ${resolved.pinCode}).`);
+
+    // Anexa o comprovante em cada parcela liquidada — quando são 2+ (soma),
+    // todas precisam mostrar o mesmo comprovante pra conferência manual no GRM.
+    let anexoErro = null;
+    for (const item of resolved.itens) {
+      try {
+        await uploadComprovanteAnexo(item.pinCode, localPath, row.arquivo_nome);
+      } catch (anexoError) {
+        // A baixa em si já foi feita (o que importa financeiramente) — falha
+        // só no upload do anexo não deve marcar o item inteiro como ERRO.
+        anexoErro = String(anexoError.message || anexoError).slice(0, 1000);
+        log('WARN', `${row.arquivo_nome}: baixa ok, mas falha ao subir anexo (pinCode ${item.pinCode}): ${anexoErro}`);
+      }
+    }
+
+    await updateItem(row.id, { status: 'BAIXADO', execucao_id: runId, grm_resposta: response, baixado_em: isoNow(), erro: anexoErro ? `Anexo não subiu: ${anexoErro}` : null });
+    log('SUCCESS', `${row.arquivo_nome}: baixa registrada no GRM (pinCode(s) ${pinCodesLog}).`);
     return 'baixado';
   } catch (error) {
     await updateItem(row.id, { status: 'ERRO', execucao_id: runId, erro: String(error.message || error).slice(0, 4000) });
@@ -908,7 +1095,8 @@ if (require.main === module) {
   main();
 } else {
   module.exports = {
-    detectTemplate, resolveContaPagadora, findCandidates, buildPaymentPayload,
+    detectTemplate, resolveContaPagadora, findCandidates, findCandidateGroups, buildPaymentPayload,
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
+    uploadComprovanteAnexo,
   };
 }
