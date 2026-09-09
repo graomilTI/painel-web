@@ -584,10 +584,26 @@ async function buscarUltimoLoteAgente(tabela, limite) {
   // o agente recarrega a tabela inteira a cada sincronização; pegamos só o lote mais recente
   // (margem de 5 min cobre a duração do próprio carregamento em lote).
   const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
-  const { data, error } = await supabase
-    .from(tabela).select('dados_json').gte('created_at', threshold).limit(limite);
-  if (error) throw error;
-  return (data || []).map((row) => row.dados_json);
+
+  // O PostgREST tem um teto de linhas por requisição (Max Rows do projeto, hoje 1000)
+  // que corta silenciosamente qualquer resultado maior — o antigo .limit(limite) nunca
+  // furava esse teto, então lotes de milhares de linhas (ex.: Contas a Receber) chegavam
+  // truncados nas primeiras ~1000 linhas físicas da tabela, não necessariamente as mais
+  // relevantes. Pagina com .range() até esgotar o lote ou atingir `limite`, mesmo padrão
+  // de loadColaboradoresPagamento() neste arquivo.
+  const pageSize = 1000;
+  const rows = [];
+  let from = 0;
+  while (rows.length < limite) {
+    const { data, error } = await supabase
+      .from(tabela).select('dados_json').gte('created_at', threshold).range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page.map((row) => row.dados_json));
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return rows.slice(0, limite);
 }
 
 async function sincronizarContasAgente() {
