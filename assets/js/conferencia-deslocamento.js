@@ -30,11 +30,11 @@ let resumoFiltroTipo = null; // null = sem filtro (todos); senão, um valor de T
 
 // ------ estado aba Configuração ------
 let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
-let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km)
+let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km, tipo_deslocamento, km)
 let estimativaPorColaborador = new Map(); // chave -> média mensal (R$) dos últimos 3 meses
 let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
-let cfgBulkAberto = false;
+let cfgFiltro = '';
 
 const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'NÃO PRECISA', 'OUTRO'];
 
@@ -177,6 +177,9 @@ function injectStyles() {
     .cd-cfg-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:12.5px;color:#9fb7aa}
     .cd-cfg-meta b{color:#6fd0a5}
     .cd-cfg-tarifa{display:flex;align-items:center;gap:6px}
+    .cd-cfg-tipo{display:flex;align-items:center;gap:6px}
+    .cd-cfg-km{display:flex;align-items:center;gap:6px}
+    .cd-tipo-select{width:auto;min-width:170px}
   `;
   document.head.appendChild(st);
 }
@@ -488,158 +491,141 @@ async function loadEstimativaConsumo() {
   }
 }
 
-async function addEntry(chave, nome) {
-  if (!chave) return;
-  const { error } = await supabase
-    .from('programacao_veiculo_proprio')
-    .upsert({ colaborador_id: chave, nome: nome || null, ativo: true }, { onConflict: 'colaborador_id' });
-  if (error) throw error;
+// Une TODOS os colaboradores ativos (operacional_colaborador_base) com o que já
+// está registrado em programacao_veiculo_proprio — quem ainda não tem registro
+// aparece do mesmo jeito, com tipo/km/tarifa em branco pra preencher. Editar
+// qualquer campo de uma linha "não registrada" cria o registro na hora (upsert).
+function configUnificado() {
+  const porChave = new Map(lista.map((l) => [String(l.colaborador_id), l]));
+  const vistos = new Set();
+  const linhas = baseColabs.map((c) => {
+    const existente = porChave.get(c.chave);
+    vistos.add(c.chave);
+    return existente
+      ? { ...existente, nome: existente.nome || c.nome, _existe: true }
+      : { id: null, colaborador_id: c.chave, nome: c.nome, ativo: false, tarifa_km: null, tipo_deslocamento: null, km: null, _existe: false };
+  });
+  // colaboradores registrados que não bateram com a base ativa (ex.: nome cadastrado
+  // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado.
+  lista.forEach((l) => {
+    if (!vistos.has(String(l.colaborador_id))) linhas.push({ ...l, _existe: true });
+  });
+  const termo = norm(cfgFiltro);
+  const filtradas = termo ? linhas.filter((c) => norm(c.nome).includes(termo)) : linhas;
+  filtradas.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  return filtradas;
 }
 
-async function salvarTarifaColaborador(id, valor, inputEl) {
-  const l = lista.find((x) => String(x.id) === String(id));
-  if (!l) return;
-  const v = Number(String(valor).replace(',', '.'));
-  if (!Number.isFinite(v) || v <= 0) { inputEl.value = Number(l.tarifa_km || DEFAULT_TARIFA); return; }
-  const { error } = await supabase
+async function salvarCampoConfig(chave, nome, patch, feedbackEl) {
+  const existente = lista.find((l) => String(l.colaborador_id) === String(chave));
+  const payload = existente
+    ? { colaborador_id: chave, ...patch }
+    : { colaborador_id: chave, nome: nome || null, ativo: true, ...patch };
+  const { data, error } = await supabase
     .from('programacao_veiculo_proprio')
-    .update({ tarifa_km: v, updated_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) { alert(error.message || 'Não foi possível salvar a tarifa.'); inputEl.value = Number(l.tarifa_km || DEFAULT_TARIFA); return; }
-  l.tarifa_km = v;
+    .upsert(payload, { onConflict: 'colaborador_id' })
+    .select()
+    .single();
+  if (error) { alert(error.message || 'Não foi possível salvar.'); renderLista(); return; }
+  if (existente) Object.assign(existente, data);
+  else lista.push(data);
   montarTarifas();
-  inputEl.classList.add('salvo');
-  setTimeout(() => inputEl.classList.remove('salvo'), 1200);
+  if (feedbackEl) { feedbackEl.classList.add('salvo'); setTimeout(() => feedbackEl.classList.remove('salvo'), 1200); }
+  renderLista();
 }
 
 function renderLista() {
   const box = elRoot.querySelector('#cdLista');
   const cnt = elRoot.querySelector('#cdCount');
   if (!box) return;
-  const ativos = lista.filter((l) => l.ativo).length;
-  if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${lista.length} no total`;
-  if (!lista.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador cadastrado ainda. Use a busca acima pra adicionar.</div>'; return; }
-  box.innerHTML = lista.map((l) => {
-    const estimativa = estimativaPorColaborador.get(l.colaborador_id);
+  const linhas = configUnificado();
+  const ativos = linhas.filter((c) => c.ativo).length;
+  if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${linhas.length} colaborador(es)`;
+  if (!linhas.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador encontrado pra esse filtro.</div>'; return; }
+  box.innerHTML = linhas.map((c) => {
+    const estimativa = estimativaPorColaborador.get(c.colaborador_id);
     return `
-    <div class="cd-cfg-row" data-id="${esc(l.id)}">
-      <div class="cd-cfg-nome">${esc(l.nome || l.colaborador_id)}</div>
+    <div class="cd-cfg-row" data-chave="${esc(c.colaborador_id)}">
+      <div class="cd-cfg-nome">${esc(c.nome || c.colaborador_id)}</div>
       <div class="cd-cfg-meta">
+        <label class="cd-cfg-tipo">Tipo de deslocamento
+          <select class="cd-select cd-tipo-select" data-tipo>
+            <option value="">— não definido —</option>
+            ${TIPOS.map((t) => `<option value="${esc(t)}"${c.tipo_deslocamento === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          </select>
+        </label>
+        <label class="cd-cfg-km">Km <input class="cd-km-input" data-km type="number" min="0" step="0.1" placeholder="—" value="${c.km != null ? Number(c.km) : ''}" /></label>
+        <label class="cd-cfg-tarifa">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(c.tarifa_km || DEFAULT_TARIFA)}" /></label>
         <span>Estimativa mensal: <b>${estimativa != null ? `${moeda(estimativa)}/mês` : '—'}</b></span>
-        <label class="cd-cfg-tarifa">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(l.tarifa_km || DEFAULT_TARIFA)}" /></label>
-        <span class="cd-pill ${l.ativo ? 'on' : 'off'}" data-toggle>${l.ativo ? 'Ativo' : 'Inativo'}</span>
-        <button class="cd-del" data-del>remover</button>
+        ${c._existe
+          ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
+          : '<span class="cd-pill off">Não registrado</span>'}
       </div>
     </div>`;
   }).join('');
 }
 
-async function bulkAdd(text, msgEl) {
-  const linhas = String(text || '').split(/[\n;]+/).map((s) => s.trim()).filter(Boolean);
-  if (!linhas.length) return;
-  const porNome = new Map();
-  baseColabs.forEach((c) => { if (!porNome.has(c.nomeNorm)) porNome.set(c.nomeNorm, c); });
-  const achados = [];
-  const naoAchados = [];
-  linhas.forEach((linha) => {
-    const c = porNome.get(norm(linha));
-    if (c) achados.push(c); else naoAchados.push(linha);
-  });
-  // dedup por chave
-  const vistos = new Set();
-  const unicos = achados.filter((c) => (vistos.has(c.chave) ? false : vistos.add(c.chave)));
-  if (unicos.length) {
-    const payload = unicos.map((c) => ({ colaborador_id: c.chave, nome: c.nome, ativo: true }));
-    const { error } = await supabase.from('programacao_veiculo_proprio').upsert(payload, { onConflict: 'colaborador_id' });
-    if (error) throw error;
-  }
-  await loadLista();
-  renderLista();
-  if (msgEl) {
-    msgEl.innerHTML = `Adicionados: <b style="color:#86efac">${unicos.length}</b>.` +
-      (naoAchados.length ? ` Não encontrados (confira o nome): ${naoAchados.map(esc).join(', ')}` : '');
-  }
-}
-
-function achaColabPorNomeExato(texto) {
-  const alvo = norm(texto);
-  if (!alvo) return null;
-  return baseColabs.find((c) => c.nomeNorm === alvo) || null;
-}
-
-function wireSearch() {
+function wireBusca() {
   const input = elRoot.querySelector('#cdSearch');
-  const dd = elRoot.querySelector('#cdDropdown');
-  const addBtn = elRoot.querySelector('#cdAddBtn');
-  if (!input || !dd) return;
-  const render = () => {
-    const term = norm(input.value);
-    if (term.length < 2) { dd.hidden = true; return; }
-    const jaTem = new Set(lista.map((l) => String(l.colaborador_id)));
-    const res = baseColabs.filter((c) => c.nomeNorm.includes(term)).slice(0, 12);
-    if (!res.length) { dd.innerHTML = '<div class="cd-dd-empty">Nenhum colaborador encontrado.</div>'; dd.hidden = false; return; }
-    dd.innerHTML = res.map((c) => `<div class="cd-dd-item" data-chave="${esc(c.chave)}" data-nome="${esc(c.nome)}">${esc(c.nome)} ${jaTem.has(c.chave) ? '<small>· já cadastrado</small>' : `<small>· ${esc(c.supervisao)}</small>`}</div>`).join('');
-    dd.hidden = false;
-  };
-  input.addEventListener('input', render);
-  input.addEventListener('focus', render);
-  document.addEventListener('click', (e) => {
-    const wrap = elRoot.querySelector('#cdSearchWrap');
-    if (wrap && !wrap.contains(e.target)) dd.hidden = true;
-  });
-  dd.addEventListener('click', async (e) => {
-    const it = e.target.closest('.cd-dd-item');
-    if (!it || !it.dataset.chave) return;
-    dd.hidden = true; input.value = '';
-    try {
-      await addEntry(it.dataset.chave, it.dataset.nome);
-      await loadLista();
-      renderLista();
-    } catch (err) { alert(err.message || 'Não foi possível adicionar.'); }
-  });
-  addBtn.addEventListener('click', async () => {
-    const c = achaColabPorNomeExato(input.value);
-    if (!c) { alert('Não encontrei esse colaborador. Escolha um nome da lista de sugestões.'); return; }
-    addBtn.disabled = true;
-    try {
-      await addEntry(c.chave, c.nome);
-      await loadLista();
-      renderLista();
-      input.value = ''; dd.hidden = true;
-    } catch (err) { alert(err.message || 'Não foi possível adicionar.'); }
-    finally { addBtn.disabled = false; }
-  });
+  if (!input) return;
+  input.addEventListener('input', () => { cfgFiltro = input.value; renderLista(); });
 }
 
 function wireLista() {
   const box = elRoot.querySelector('#cdLista');
   if (!box) return;
   box.addEventListener('click', async (e) => {
-    const row = e.target.closest('.cd-cfg-row[data-id]');
+    const row = e.target.closest('.cd-cfg-row[data-chave]');
     if (!row) return;
-    const id = row.dataset.id;
+    const chave = row.dataset.chave;
+    const l = lista.find((x) => String(x.colaborador_id) === String(chave));
     if (e.target.closest('[data-del]')) {
-      if (!confirm('Remover este colaborador da configuração?')) return;
-      const { error } = await supabase.from('programacao_veiculo_proprio').delete().eq('id', id);
+      if (!l) return;
+      if (!confirm('Remover o registro deste colaborador?')) return;
+      const { error } = await supabase.from('programacao_veiculo_proprio').delete().eq('id', l.id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista();
+      lista = lista.filter((x) => x.id !== l.id);
+      montarTarifas();
+      renderLista();
     } else if (e.target.closest('[data-toggle]')) {
-      const atual = lista.find((l) => String(l.id) === String(id));
-      const { error } = await supabase.from('programacao_veiculo_proprio').update({ ativo: !atual?.ativo, updated_at: new Date().toISOString() }).eq('id', id);
+      if (!l) return;
+      const { error } = await supabase.from('programacao_veiculo_proprio').update({ ativo: !l.ativo, updated_at: new Date().toISOString() }).eq('id', l.id);
       if (error) { alert(error.message); return; }
-      await loadLista(); renderLista();
+      l.ativo = !l.ativo;
+      renderLista();
     }
   });
+  box.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-tipo]')) return;
+    const row = e.target.closest('.cd-cfg-row[data-chave]');
+    if (!row) return;
+    const chave = row.dataset.chave;
+    const nomeAtual = row.querySelector('.cd-cfg-nome')?.textContent || '';
+    const valor = e.target.value || null;
+    salvarCampoConfig(chave, nomeAtual, { tipo_deslocamento: valor }, e.target);
+  });
   box.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && e.target.matches('[data-tarifa]')) { e.preventDefault(); e.target.blur(); }
+    if (e.key === 'Enter' && e.target.matches('[data-tarifa],[data-km]')) { e.preventDefault(); e.target.blur(); }
   });
   box.addEventListener('focusout', (e) => {
-    if (!e.target.matches('[data-tarifa]')) return;
-    const row = e.target.closest('.cd-cfg-row[data-id]');
+    const row = e.target.closest('.cd-cfg-row[data-chave]');
     if (!row) return;
-    const l = lista.find((x) => String(x.id) === String(row.dataset.id));
-    if (l && Number(e.target.value) === Number(l.tarifa_km || DEFAULT_TARIFA)) return; // sem mudança
-    salvarTarifaColaborador(row.dataset.id, e.target.value, e.target);
+    const chave = row.dataset.chave;
+    const nomeAtual = row.querySelector('.cd-cfg-nome')?.textContent || '';
+    const l = lista.find((x) => String(x.colaborador_id) === String(chave));
+    if (e.target.matches('[data-tarifa]')) {
+      const v = Number(String(e.target.value).replace(',', '.'));
+      if (!Number.isFinite(v) || v <= 0) { e.target.value = Number(l?.tarifa_km || DEFAULT_TARIFA); return; }
+      if (l && Number(v) === Number(l.tarifa_km || DEFAULT_TARIFA)) return;
+      salvarCampoConfig(chave, nomeAtual, { tarifa_km: v }, e.target);
+    } else if (e.target.matches('[data-km]')) {
+      const raw = e.target.value;
+      const v = raw === '' ? null : Number(String(raw).replace(',', '.'));
+      if (v != null && (!Number.isFinite(v) || v < 0)) { e.target.value = l?.km != null ? Number(l.km) : ''; return; }
+      const atual = l?.km != null ? Number(l.km) : null;
+      if (v === atual) return;
+      salvarCampoConfig(chave, nomeAtual, { km: v }, e.target);
+    }
   });
 }
 
@@ -676,27 +662,13 @@ function htmlAbaConfig() {
   return `
     <div class="cd-card">
       <div class="cd-filtros cd-filtros-cfg">
-        <div class="cd-search" id="cdSearchWrap">
-          <label class="cd-lbl">Buscar / adicionar colaborador</label>
-          <input class="cd-input" id="cdSearch" type="text" placeholder="Nome do colaborador..." autocomplete="off" spellcheck="false" />
-          <div class="cd-dd" id="cdDropdown" hidden></div>
-        </div>
         <div>
-          <label class="cd-lbl">&nbsp;</label>
-          <button class="cd-btn" id="cdAddBtn" type="button">Adicionar</button>
+          <label class="cd-lbl">Buscar colaborador</label>
+          <input class="cd-input" id="cdSearch" type="text" placeholder="Nome do colaborador..." autocomplete="off" spellcheck="false" value="${esc(cfgFiltro)}" />
         </div>
+        <div><span class="cd-count" id="cdCount"></span></div>
       </div>
-      <div class="cd-row-actions">
-        <button class="cd-btn ghost" id="cdBulkToggle" type="button">${cfgBulkAberto ? 'Ocultar' : 'Colar lista de nomes'}</button>
-        <span class="cd-count" id="cdCount"></span>
-      </div>
-      <div id="cdBulkWrap" ${cfgBulkAberto ? '' : 'hidden'}>
-        <label class="cd-lbl" style="margin-top:10px">Colar lista de nomes (um por linha)</label>
-        <textarea class="cd-area" id="cdBulk" placeholder="João da Silva&#10;Maria Souza&#10;..."></textarea>
-        <div class="cd-row-actions"><button class="cd-btn" id="cdBulkBtn" type="button">Adicionar lista</button></div>
-        <div class="cd-msg" id="cdBulkMsg"></div>
-      </div>
-      <div class="cd-msg">Quem está cadastrado aqui, quando <b>não pega carona</b> na programação, vai de <b>carro próprio</b> (reembolso pela tarifa R$/km dele). Quem não está vai de <b>Uber/Táxi</b>. Usado pela sugestão de caronas na Etapa 1 da Programação. A tarifa não é única para todos — edite o valor de cada colaborador direto na linha dele.</div>
+      <div class="cd-msg">Todos os colaboradores ativos aparecem aqui. O <b>tipo de deslocamento</b> e o <b>km</b> são o acordo padrão de cada um — usados como referência (pra popular o Mapa Operacional, por exemplo) quando a Programação ainda não trouxe um deslocamento real sincronizado do GRM para aquela pessoa. Pode ser alterado a qualquer momento conforme a programação da regional muda. A tarifa R$/km também é individual, não é única pra todos.</div>
     </div>
     <div id="cdLista"><div class="cd-empty">Carregando...</div></div>
   `;
@@ -712,24 +684,9 @@ function renderAba() {
     renderResumo();
   } else {
     body.innerHTML = htmlAbaConfig();
-    wireSearch();
+    wireBusca();
     wireLista();
     renderLista();
-    const bulkToggle = elRoot.querySelector('#cdBulkToggle');
-    bulkToggle.addEventListener('click', () => {
-      cfgBulkAberto = !cfgBulkAberto;
-      elRoot.querySelector('#cdBulkWrap').hidden = !cfgBulkAberto;
-      bulkToggle.textContent = cfgBulkAberto ? 'Ocultar' : 'Colar lista de nomes';
-    });
-    const bulkBtn = elRoot.querySelector('#cdBulkBtn');
-    bulkBtn.addEventListener('click', async () => {
-      bulkBtn.disabled = true;
-      try {
-        await bulkAdd(elRoot.querySelector('#cdBulk').value, elRoot.querySelector('#cdBulkMsg'));
-        elRoot.querySelector('#cdBulk').value = '';
-      } catch (err) { alert(err.message || 'Erro ao adicionar a lista.'); }
-      finally { bulkBtn.disabled = false; }
-    });
   }
 }
 
