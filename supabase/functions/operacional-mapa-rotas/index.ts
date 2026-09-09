@@ -16,11 +16,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 // Fallback de tipo_deslocamento: quando não há linha sincronizada do GRM em
 // programacao_deslocamento pra esse colaborador/data, cai pro "acordo padrão"
 // cadastrado em Conferência > Deslocamento > Configuração (programacao_veiculo_proprio,
-// colunas tipo_deslocamento/km adicionadas 2026-09-09) — sem isso, colaborador sem
+// coluna tipo_deslocamento adicionada 2026-09-09) — sem isso, colaborador sem
 // deslocamento sincronizado no dia virava sempre marcador "local" (sem rota), mesmo
 // quando já se sabe de antemão que ele sempre anda de carro próprio, por exemplo.
-// O km ali é só o "acordo" de referência (não por data) — não usado no cálculo da
-// rota, que sempre recalcula a distância real via geocoding + OSRM.
 //
 // Origem de cada colaborador: se estiver hospedado (Hotel com reserva
 // confirmada, ou Alojamento) na data de referência, usa a coordenada do
