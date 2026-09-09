@@ -13,11 +13,14 @@ let supComboState = { input: null, onSelect: null };
 // 2026-07-21: tela única "lista + painel lateral" (programacao-lista-drawer.js)
 // substitui as antigas 4 etapas — Situação/Equipe+Mapa/Despesas viraram uma
 // coisa só (a lista de O.S. + o painel que abre ao clicar). Só "Sem O.S."
-// continua separado, por não ser sobre uma O.S. específica.
+// continua separado, por não ser sobre uma O.S. específica. "Recusas"
+// (despesas recusadas pela conferência) existiu como 3ª aba de 30/07 a
+// 09/09/2026 — removida por não ter mais uso (pedido do usuário); o módulo
+// programacao-recusas.js e o painel '3' em programacao-gestor-fluxo-
+// avancado.js foram removidos junto.
 const STEP_LABELS = {
   '1': { label: 'Programação de O.S.', title: 'O.S.' },
   '2': { label: 'Colaboradores sem O.S.', title: 'Sem O.S.' },
-  '3': { label: 'Despesas recusadas pela conferência', title: 'Recusas' },
 };
 
 function debounce(fn, wait) {
@@ -254,11 +257,6 @@ function configureSteps() {
   if (!stepsWrap) return;
 
   const existing = [...stepsWrap.querySelectorAll('.stepbtn')];
-  // "3 · Recusas" saiu da toolbar (pedido do usuário, 08/09/2026: cabeçalho
-  // reorganizado, só O.S./Sem O.S. como abas). A aba some da UI, mas
-  // programacao-gestor-fluxo-avancado.js continua montando o painel '3' por
-  // baixo — sem uma aba pra trocar currentUiStep pra '3', ele só nunca é
-  // mostrado (nada quebra, fica só inacessível por aqui).
   const layout = [
     { ui: '1', label: STEP_LABELS['1'].title },
     { ui: '2', label: STEP_LABELS['2'].title },
