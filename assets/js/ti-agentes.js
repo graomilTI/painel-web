@@ -834,17 +834,14 @@ function renderBotConversaFailures() {
 function renderDistribuicaoSupervisoes() {
   const rows = state.supervisoesDistribuicao;
   if (rows === null) {
-    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Supervisões com distribuição automática:</strong></p><div class="ag-log-box">Carregando...</div></div>';
+    return '<div style="margin-top:16px"><p style="margin-bottom:8px"><strong>Supervisões:</strong></p><div class="ag-log-box">Carregando...</div></div>';
   }
-  const ativas = rows.filter((s) => s.distribuicao_os_automatica).length;
   const itens = rows.map((s) => `
-    <label style="display:flex;align-items:center;gap:8px;padding:5px 0;color:#e2e2f0;font-size:12px;cursor:pointer">
-      <input type="checkbox" ${s.distribuicao_os_automatica ? 'checked' : ''} onchange="toggleDistribuicaoSupervisao('${esc(s.id)}', this.checked)" />
-      ${esc(s.nome)}
-    </label>`).join('') || '<div class="ag-log-line">Nenhuma supervisão cadastrada em public.supervisoes.</div>';
+    <div style="padding:5px 0;color:#e2e2f0;font-size:12px">${esc(s.nome)}</div>`).join('')
+    || '<div class="ag-log-line">Nenhuma supervisão cadastrada em public.supervisoes.</div>';
   return `<div style="margin-top:16px">
-    <p style="margin-bottom:4px"><strong>Supervisões com distribuição automática (${ativas}/${rows.length}):</strong></p>
-    <p style="font-size:12px;color:#6b7280;margin-bottom:10px">Marque só as supervisões cujo gestor já usa a tela "Distribuir O.S" do painel — nas demais o agente ignora as O.S. e a associação continua sendo feita manualmente no Graint.</p>
+    <p style="margin-bottom:4px"><strong>Supervisões (${rows.length}):</strong></p>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px">A Programação do painel é a única fonte de verdade pra todas as regionais — o agente reconcilia o Graint pra todas elas, sem exceção. Uma O.S. sem colaborador confirmado na Programação fica sem classificador no Graint até alguém programar no painel.</p>
     <div class="ag-log-box" style="max-height:280px">${itens}</div>
   </div>`;
 }
@@ -853,7 +850,7 @@ async function loadSupervisoesDistribuicao() {
   try {
     const { data, error } = await supabase
       .from('supervisoes')
-      .select('id, nome, distribuicao_os_automatica')
+      .select('id, nome')
       .order('nome');
     if (error) throw error;
     state.supervisoesDistribuicao = data || [];
@@ -1024,21 +1021,6 @@ window.executeAgent = async (agentId) => {
     await loadAgentes();
   } catch (e) {
     alert(`❌ Erro ao enfileirar agente: ${e.message}`);
-  }
-};
-
-window.toggleDistribuicaoSupervisao = async (supervisaoId, checked) => {
-  const row = (state.supervisoesDistribuicao || []).find((s) => String(s.id) === String(supervisaoId));
-  if (row) row.distribuicao_os_automatica = checked;
-  render();
-  const { error } = await supabase
-    .from('supervisoes')
-    .update({ distribuicao_os_automatica: checked })
-    .eq('id', supervisaoId);
-  if (error) {
-    alert(`❌ Erro ao salvar: ${error.message}`);
-    if (row) row.distribuicao_os_automatica = !checked;
-    render();
   }
 };
 

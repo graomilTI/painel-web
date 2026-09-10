@@ -229,9 +229,11 @@ async function carregarPaginado(factory, contexto) {
 // programacao_id (não por os_id vindo de um filtro de data_os) e agrupando por
 // todo par (OS, data) com programação confirmada na janela.
 // Usado só em RESET_DIA: restringe a reconciliação às supervisão+data que têm
-// pendência de "novo dia" registrada (programacao_distribuicao_agendada), com
-// a supervisão habilitada para distribuição automática — mesma checagem que o
-// cron das 02h já faz antes de enfileirar o job.
+// pendência de "novo dia" registrada (programacao_distribuicao_agendada) — a
+// Programação é a única fonte de verdade pra TODAS as supervisões, sem exceção
+// (o antigo gate supervisoes.distribuicao_os_automatica foi removido daqui e
+// do cron das 02h: uma supervisão sem programação também precisa ser varrida,
+// senão o vínculo feito manualmente no Graint nunca é limpo).
 async function carregarPendenciasNovoDia() {
   const { data: pendentes, error } = await supabase
     .from('programacao_distribuicao_agendada')
@@ -239,18 +241,8 @@ async function carregarPendenciasNovoDia() {
     .eq('processado', false);
   if (error) throw new Error(`Falha ao consultar programacao_distribuicao_agendada: ${error.message}`);
 
-  const { data: supervisoesFlag, error: errorFlag } = await supabase
-    .from('supervisoes')
-    .select('nome, distribuicao_os_automatica');
-  if (errorFlag) throw new Error(`Falha ao consultar supervisoes: ${errorFlag.message}`);
-
-  const automaticaPorNome = new Map(
-    safe(supervisoesFlag).map((s) => [normalize(s.nome), Boolean(s.distribuicao_os_automatica)])
-  );
-
   const chaves = new Set();
   for (const p of safe(pendentes)) {
-    if (!automaticaPorNome.get(normalize(p.supervisao))) continue;
     chaves.add(`${dateKey(p.data_referencia)}|${normalize(p.supervisao)}`);
   }
   return chaves;
