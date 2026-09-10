@@ -205,6 +205,30 @@ async function clearAndType(page, selector, value) {
   }, { selector: selector, value: String(value) });
 }
 
+// Instrumentação temporária pra descobrir o endpoint de escrita da Abertura
+// de O.S. (investigação 10/09, mesmo método usado pra descobrir o endpoint de
+// escrita da Distribuição de OS em grm-sync-aplicar-distribuicao-os.js). Só
+// ativa com CAPTURE_NET=true — loga toda chamada POST/PUT/PATCH/DELETE /api/
+// (request e response) pra achar o payload do "Salvar" do formulário Nova O.S.
+function instrumentarCapturaRede(page) {
+  if (process.env.CAPTURE_NET !== 'true') return;
+  page.on('request', function (req) {
+    var method = req.method();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) !== -1 && /\/api\//.test(req.url())) {
+      log('CAPTURE', 'REQ ' + method + ' ' + req.url() + ' :: ' + (req.postData() || ''));
+    }
+  });
+  page.on('response', async function (res) {
+    var req = res.request();
+    var method = req.method();
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) !== -1 && /\/api\//.test(req.url())) {
+      var body = '';
+      try { body = (await res.text()).slice(0, 2000); } catch (e) { /* corpo binário/streaming */ }
+      log('CAPTURE', 'RES ' + res.status() + ' ' + req.url() + ' :: ' + body);
+    }
+  });
+}
+
 async function shot(page, name) {
   try {
     var dir = process.env.GRM_DEBUG_DIR || path.join(os.tmpdir(), 'grm-sync-abrir-os-debug');
@@ -779,6 +803,7 @@ async function rodarDiscover(debug) {
   browserAtual = browser;
   try {
     var page = await browser.newPage();
+    instrumentarCapturaRede(page);
     await login(page);
     var aberto = await abrirDialogoNovaOs(page);
     if (!aberto) {
@@ -817,6 +842,7 @@ async function main() {
   browserAtual = browser;
   try {
     var page = await browser.newPage();
+    instrumentarCapturaRede(page);
     await login(page);
     for (var i = 0; i < solicitacoes.length; i++) {
       await processarSolicitacao(page, solicitacoes[i], dryRun, debug);
