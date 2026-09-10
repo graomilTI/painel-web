@@ -145,12 +145,20 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       const createdAt = latest?.[0]?.[timestampColumn];
       if (!createdAt) return [];
       const threshold = new Date(new Date(createdAt).getTime()-5*60*1000).toISOString();
+      // grm_notas_fiscais_importacoes tem só ~4.600 linhas no total (~5
+      // páginas) — não dá pra aumentar pageSize com segurança sem saber o
+      // db-max-rows do projeto (não é visível via SQL, e paginar errado
+      // trunca dados silenciosamente), mas dá pra buscar as ~5 páginas
+      // inteiras numa leva só em vez de em 3 sequenciais: cada requisição
+      // já refaz o CTE caro da view do zero, então menos LEVAS (não menos
+      // páginas) é o que corta o tempo total de carregamento.
+      const batchSize = table==='grm_notas_fiscais_importacoes' ? 6 : undefined;
       return fetchAll((sel, opts) => {
         let query=state.supabase.from(table).select(sel, opts).gte(timestampColumn,threshold);
         if (period && table==='grm_despesas_importacoes') query=query.gte('data_conta_de',period.start).lt('data_conta_de',period.end);
         if (period && table==='grm_contas_receber_importacoes') query=query.gte('dados_json->>rinPaidDate',period.start).lt('dados_json->>rinPaidDate',period.end);
         return query;
-      }, select, { orderBy: orderColumn });
+      }, select, { orderBy: orderColumn, ...(batchSize ? { batchSize } : {}) });
     })();
     state.snapshotCache.set(cacheKey,promise);
     return promise;
