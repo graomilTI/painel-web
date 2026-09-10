@@ -65,33 +65,42 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   };
   const isExcluded = (coord) => EXCLUDED.has(norm(coord));
 
-  // Paginação em duas fases: 1 requisição de contagem + páginas em paralelo
-  // (antes era sequencial, página por página — cada mês podia levar dezenas
-  // de round-trips em série). `queryFactory(select, opts)` deve montar a
-  // query DEPOIS do .select(), já que filtros só existem no FilterBuilder.
+  // Paginação em lotes paralelos SEM `count: exact`: pedir contagem exata
+  // via HEAD antes de paginar parecia mais rápido, mas sob RLS (política
+  // daqui usa 2 EXISTS correlacionados) o Postgres precisa avaliar a policy
+  // pra cada linha pra contar — em grm_despesas_importacoes (503 mil linhas
+  // na tabela toda) isso estourava o statement_timeout e virava 500,
+  // derrubando a tela inteira (confirmado nos logs do Supabase: "canceling
+  // statement due to statement timeout", 57014). Em vez disso, busca lotes
+  // de `batchSize` páginas em paralelo e para assim que alguma página do
+  // lote voltar incompleta — sem nunca precisar saber o total de antemão.
   // `orderBy` é obrigatório para paginação correta: sem ORDER BY estável o
   // Postgres não garante a mesma ordem entre requisições .range() separadas,
   // e linhas podem ficar de fora silenciosamente quando a tabela recebe
   // gravações concorrentes (como relatorio_resultado_diario, sincronizada
   // continuamente pelos agentes) — foi a causa da produção do mês aparecer
   // menor do que o total real.
-  async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy } = {}) {
-    const { count, error: countError } = await queryFactory('*', { count: 'exact', head: true });
-    if (countError) throw countError;
-    const total = count || 0;
-    if (!total) return [];
-    const pages = Math.min(Math.ceil(total / pageSize), maxPages);
+  async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy, batchSize=4 } = {}) {
     const orderCols = (Array.isArray(orderBy) ? orderBy : [orderBy]).filter(Boolean);
-    const requests = Array.from({ length: pages }, (_, page) => {
+    const buildPage = (page) => {
       let q = queryFactory(select);
       orderCols.forEach((col) => { q = q.order(col, { ascending: true }); });
       return q.range(page*pageSize, (page+1)*pageSize-1);
-    });
-    const results = await Promise.all(requests);
+    };
     const rows = [];
-    for (const { data, error } of results) {
-      if (error) throw error;
-      rows.push(...(data || []));
+    let page = 0;
+    let reachedEnd = false;
+    while (!reachedEnd && page < maxPages) {
+      const batchPages = [];
+      for (let i=0; i<batchSize && page+i<maxPages; i+=1) batchPages.push(page+i);
+      const results = await Promise.all(batchPages.map(buildPage));
+      for (const { data, error } of results) {
+        if (error) throw error;
+        const chunk = data || [];
+        rows.push(...chunk);
+        if (chunk.length < pageSize) reachedEnd = true;
+      }
+      page += batchPages.length;
     }
     return rows;
   }
