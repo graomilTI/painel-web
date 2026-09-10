@@ -80,6 +80,22 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   // gravações concorrentes (como relatorio_resultado_diario, sincronizada
   // continuamente pelos agentes) — foi a causa da produção do mês aparecer
   // menor do que o total real.
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  // Falhas isoladas (blip passageiro de rede/edge, 500 sem relação com a
+  // query em si — já vimos isso acontecer em produção) derrubavam a tela
+  // inteira mesmo quando as outras 3 páginas do lote tinham vindo certas.
+  // Reexecuta a mesma página até 2 vezes com um pequeno backoff antes de
+  // desistir; um erro persistente (bug de verdade, tipo coluna inexistente)
+  // ainda propaga normalmente depois das tentativas.
+  async function fetchPageWithRetry(buildPage, page, retries=2) {
+    for (let attempt=0; ; attempt+=1) {
+      const result = await buildPage(page);
+      if (!result.error || attempt >= retries) return result;
+      await wait(300 * (attempt + 1));
+    }
+  }
+
   async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy, batchSize=4 } = {}) {
     const orderCols = (Array.isArray(orderBy) ? orderBy : [orderBy]).filter(Boolean);
     const buildPage = (page) => {
@@ -93,7 +109,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     while (!reachedEnd && page < maxPages) {
       const batchPages = [];
       for (let i=0; i<batchSize && page+i<maxPages; i+=1) batchPages.push(page+i);
-      const results = await Promise.all(batchPages.map(buildPage));
+      const results = await Promise.all(batchPages.map((p) => fetchPageWithRetry(buildPage, p)));
       for (const { data, error } of results) {
         if (error) throw error;
         const chunk = data || [];
@@ -115,7 +131,9 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       // sincronizado_em aqui quebrava essa tela inteira com erro 42703.
       const timestampColumn = table==='grm_contas_receber_importacoes' ? 'sincronizado_em' : 'created_at';
       const orderColumn = table==='grm_notas_fiscais_importacoes' ? ['created_at','numero_nf'] : 'id';
-      const { data:latest, error:latestError } = await state.supabase.from(table).select(timestampColumn).order(timestampColumn,{ascending:false}).limit(1);
+      const { data:latest, error:latestError } = await fetchPageWithRetry(
+        () => state.supabase.from(table).select(timestampColumn).order(timestampColumn,{ascending:false}).limit(1)
+      );
       if (latestError) throw latestError;
       const createdAt = latest?.[0]?.[timestampColumn];
       if (!createdAt) return [];
@@ -168,7 +186,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
         // só as colunas abaixo. Pedir as outras derrubava a tela com 42703.
         loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at'),
         loadLatestSnapshot('grm_contas_receber_importacoes','dados_json,sincronizado_em',{start,end}),
-        state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true)
+        fetchPageWithRetry(() => state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true))
       ]);
       if (metaResult.error) throw metaResult.error;
       const production = productionRows.map((row) => normalizeProduction(row,year,month)).filter((row) => !isExcluded(row.coord));
@@ -415,8 +433,8 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
 
   async function initialize() {
     const [latestResult,availableResult]=await Promise.all([
-      state.supabase.from('relatorio_resultado_diario').select('data').order('data',{ascending:false}).limit(1).maybeSingle(),
-      state.supabase.from('metas_producao').select('ano,mes').eq('ativo',true).order('ano',{ascending:false}).order('mes',{ascending:false}).limit(1000)
+      fetchPageWithRetry(() => state.supabase.from('relatorio_resultado_diario').select('data').order('data',{ascending:false}).limit(1).maybeSingle()),
+      fetchPageWithRetry(() => state.supabase.from('metas_producao').select('ano,mes').eq('ativo',true).order('ano',{ascending:false}).order('mes',{ascending:false}).limit(1000))
     ]);
     if(latestResult.error)throw latestResult.error;
     const availableMap=new Map((availableResult.data||[]).map((row)=>[`${row.ano}-${row.mes}`,{year:Number(row.ano),month:Number(row.mes)}]));
