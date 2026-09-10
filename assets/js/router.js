@@ -75,7 +75,7 @@ const SOFT_NAV_PAGES = new Map([
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js?v=20260910-2') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
   ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
-  ['dashboard-socio', { title: 'Panorama da Empresa', module: () => import('./dashboard-socio.js?v=20260910-7') }],
+  ['dashboard-socio', { title: 'Panorama da Empresa', module: () => import('./dashboard-socio.js?v=20260910-8') }],
   ['notificacoes', { title: 'Notificações', module: () => import('./notificacoes.js') }],
   // Fase 2 — Categoria B (padrão próprio, verificado individualmente)
   ['admin-configuracoes', { title: 'Configurações', module: () => import('./admin-configuracoes.js') }],
