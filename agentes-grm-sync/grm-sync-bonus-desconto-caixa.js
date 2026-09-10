@@ -102,7 +102,8 @@ function todayBrDate() {
 }
 
 function descriptionFor(job) {
-  const base = String(job.descricao || '').trim() || 'Desconto de auditoria';
+  const motivo = String(job.descricao || '').trim();
+  const base = motivo ? `Auditoria - Motivo da Recusa: ${motivo}` : 'Auditoria - Motivo da Recusa';
   return base.slice(0, 250);
 }
 
