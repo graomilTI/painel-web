@@ -139,8 +139,11 @@ const SCRIPT_MAP = {
   'sync-liberacao-despesas': 'grmserver-liberacao-despesas-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
-  // Bônus (RPC bonus_substituir_auditoria). Fluxo de Adiantamento nunca validado ao vivo
-  // no GRM ainda — ver DRY_RUN (padrão true) no topo do script.
+  // Bônus. A fila (bonus_desconto_caixa_lancamentos) é alimentada na importação da
+  // planilha (RPC bonus_substituir_auditoria), mas o job só é enfileirado quando o
+  // admin aciona "Lançar no Caixa" do Bônus (RPC bonus_solicitar_lancamento_caixa) —
+  // de propósito, pra não rodar Puppeteer sozinho assim que alguém sobe a planilha.
+  // Formulário Adiantamento validado ao vivo em 10/09/2026.
   'sync-bonus-desconto-caixa': 'grm-sync-bonus-desconto-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
