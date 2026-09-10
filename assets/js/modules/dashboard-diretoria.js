@@ -27,7 +27,14 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const state = {
     container:null, supabase:null, loading:true, error:'', year:null, selectedMonths:new Set(),
     available:[], cache:new Map(), snapshotCache:new Map(), filters:{coord:'',sup:'',collab:'',client:''},
-    mode:'sum', compareBy:'month', view:'charts', rankMetric:'billed', rankLimit:10,
+    // rankMetric era 'billed' por padrão, mas 'billed' não é opção válida
+    // no <select> de indicador da seção "Participação nos resultados" (só
+    // services/invoices/received/tons) — o dropdown caía no 1º item
+    // ("Serviços realizados") por padrão do navegador (nenhum <option> tinha
+    // "selected"), enquanto o cálculo de verdade usava a chave inválida
+    // 'billed' contra linhas de produção, que não têm esse campo — todo
+    // valor saía 0 e formatado como dinheiro. Default corrigido pra 'services'.
+    mode:'sum', compareBy:'month', view:'charts', rankMetric:'services', rankLimit:10,
     mapMetric:'tons', mapFocus:'BR', bubbleSize:24, detail:null, lastUpdated:null
   };
   const charts = { daily:null, finance:null };
