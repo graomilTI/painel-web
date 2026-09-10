@@ -585,7 +585,20 @@ function extrairNumeroDoTexto(texto) {
   return m ? m[1] : null;
 }
 
-async function salvarECapturarNumero(page) {
+// Lê o número na 1ª célula numérica da 1ª linha da grade — usada como
+// baseline (antes de salvar) e como estratégia 3 de captura (depois de
+// salvar). Ver comentário em salvarECapturarNumero sobre por que a baseline
+// existe.
+function lerNumeroTopoGrade(page) {
+  return page.evaluate(function () {
+    var row = document.querySelector('table tbody tr');
+    if (!row) return null;
+    var cell = Array.from(row.querySelectorAll('td')).find(function (td) { return /^\d{4,}$/.test((td.textContent || '').trim()); });
+    return cell ? cell.textContent.trim() : null;
+  });
+}
+
+async function salvarECapturarNumero(page, numeroAntes) {
   var salvo = await page.evaluate(function () {
     function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
     var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
@@ -627,15 +640,26 @@ async function salvarECapturarNumero(page) {
   }
 
   // 3ª tentativa: após o diálogo fechar, a grade deve ter uma nova linha no
-  // topo — primeira célula numérica da 1ª linha da tabela.
+  // topo — primeira célula numérica da 1ª linha da tabela. SÓ é confiável se
+  // o diálogo realmente fechou (senão o clique em "Salvar" pode ter sido
+  // bloqueado por validação, sem gerar erro nem fechar nada) E se o número
+  // lido é DIFERENTE do que já estava no topo antes de salvar — caso
+  // contrário a grade não mudou (save falhou silenciosamente) e essa
+  // estratégia acabaria devolvendo o número de uma O.S. antiga, de outro
+  // cliente, como se fosse a recém-criada (bug real: O.S. 92387 da AMAGGI
+  // devolvida pra CARGILL em 10/09; mesmo número devolvido a 4 solicitações
+  // em lote em 03/09).
   if (!numero) {
     await wait(2500);
-    numero = await page.evaluate(function () {
-      var row = document.querySelector('table tbody tr');
-      if (!row) return null;
-      var cell = Array.from(row.querySelectorAll('td')).find(function (td) { return /^\d{4,}$/.test((td.textContent || '').trim()); });
-      return cell ? cell.textContent.trim() : null;
-    });
+    var aindaAberto = await overlayFormularioAtivo(page);
+    if (aindaAberto) {
+      throw new Error('O diálogo de Nova O.S. continua aberto após clicar em "Salvar" — o clique provavelmente foi bloqueado por validação (campo obrigatório/inválido). Não é seguro ler a grade nesse estado.');
+    }
+    var numeroTopo = await lerNumeroTopoGrade(page);
+    if (numeroTopo && numeroAntes && numeroTopo === numeroAntes) {
+      throw new Error('Diálogo fechou, mas o topo da grade continua com o mesmo número de antes de salvar (' + numeroTopo + ') — a O.S. provavelmente NÃO foi criada (save falhou silenciosamente). Não é seguro assumir que esse é o número novo.');
+    }
+    numero = numeroTopo;
   }
 
   if (!numero) throw new Error('O.S. pode ter sido criada, mas não consegui capturar o número gerado (nenhuma estratégia de leitura funcionou). Rode --discover / --debug para ajustar salvarECapturarNumero.');
@@ -774,6 +798,12 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
     var dialogOk = await findDialog(page);
     if (!dialogOk) throw new Error('Diálogo de Nova O.S. não abriu após o clique.');
 
+    // Baseline pra estratégia 3 de captura (ver salvarECapturarNumero): sem
+    // isso não dá pra distinguir "grade mudou porque a O.S. foi criada" de
+    // "grade ficou igual porque o save falhou" — é a causa raiz do bug de
+    // capturar o número de outro cliente (ver comentário na função).
+    var numeroAntes = await lerNumeroTopoGrade(page);
+
     await preencherFormulario(page, solicitacao);
     if (debug) await shot(page, 'solicitacao-' + id + '-form-preenchido.png');
 
@@ -787,7 +817,7 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
       return;
     }
 
-    var numeroOs = await salvarECapturarNumero(page);
+    var numeroOs = await salvarECapturarNumero(page, numeroAntes);
     await validarNumeroNaoColide(numeroOs, solicitacao);
     await marcarCadastrada(id, numeroOs);
     await finalizarExecucao(execucaoId, { status: 'SUCESSO', numero_os: numeroOs });
