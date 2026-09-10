@@ -646,6 +646,38 @@ async function confirmarCotacao(rows, fornecedores){
 
 async function solicitarAprovacao(){ const rows=selectedRows(); const msg=approvalMessage(rows); await updateItems(rows,{status:'em_analise', mensagem_aprovacao:msg}); await navigator.clipboard?.writeText(msg).catch(()=>{}); setMsg('Mensagem de aprovação gerada e copiada. Itens movidos para EM ANÁLISE.'); await loadRows(); }
 async function recusarSelecionados(){ const rows=selectedRows(); const motivo=prompt('Motivo da recusa:'); if(!motivo) return; await updateItems(rows,{status:'recusado', motivo_recusa:motivo}); setMsg('Itens recusados.'); await loadRows(); }
+function aprovarSelecionados(){
+  const rows=selectedRows();
+  if(!rows.length){ setMsg('Selecione pelo menos um item.',true); return; }
+  const modal=document.getElementById('admCmpModal');
+  modal.innerHTML=`<div class="adm-cmp-modal-card">
+    <div class="section-head"><div><h3>Aprovar ${rows.length} ${rows.length===1?'item':'itens'}</h3><p class="muted">${rows.map(r=>esc(r.material)).join(', ')}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    <div class="adm-cmp-grid mt-16">
+      <label class="adm-cmp-full">Quem está aprovando<input id="aprQuem" placeholder="Nome de quem aprovou"></label>
+      <label class="adm-cmp-full">Anexar print da aprovação (opcional)<input id="aprAnexo" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="aprConfirmar" type="button">Aprovar</button></div>
+    <span class="adm-cmp-feedback mt-8" id="aprFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#aprConfirmar').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#aprConfirmar'); const fb=modal.querySelector('#aprFeedback');
+    btn.disabled=true; if(fb) fb.textContent='';
+    try{
+      const quem=modal.querySelector('#aprQuem')?.value?.trim()||null;
+      const file=modal.querySelector('#aprAnexo')?.files?.[0]||null;
+      let anexoUrl=null;
+      if(file){ if(fb) fb.textContent='Enviando anexo...'; anexoUrl=await uploadArquivoNotasFiscais(file,'compras/aprovacoes'); }
+      const payload={status:'pendente', aprovado_por:quem||null, aprovado_em:new Date().toISOString()};
+      if(anexoUrl) payload.aprovacao_anexo_url=anexoUrl;
+      await updateItems(rows,payload);
+      modal.classList.remove('open');
+      setMsg('Itens aprovados, voltaram para SOLICITAÇÕES.');
+      await loadRows();
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
+  });
+}
 
 // Envia itens de SOLICITAÇÕES direto do Estoque (compras_estoque_*), sem passar
 // por cotação/compra: dá baixa automática na quantidade e some de Solicitações.
@@ -1138,11 +1170,13 @@ function updateActionButtons(){
   const btnCotar=document.getElementById('btnCotar');
   const btnComprar=document.getElementById('btnComprar');
   const btnAprovar=document.getElementById('btnAprovar');
+  const btnAprovarLote=document.getElementById('btnAprovarLote');
   const btnEnviarEstoque=document.getElementById('btnEnviarEstoque');
   const btnRecusar=document.getElementById('btnRecusar');
   if(btnCotar) btnCotar.style.display=isSolic?'inline-flex':'none';
   if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
   if(btnAprovar) btnAprovar.style.display=isSolic?'inline-flex':'none';
+  if(btnAprovarLote) btnAprovarLote.style.display=tab==='analise'?'inline-flex':'none';
   if(btnEnviarEstoque) btnEnviarEstoque.style.display=isSolic?'inline-flex':'none';
   if(btnRecusar) btnRecusar.style.display=(isSolic||isCotacoes||tab==='analise')?'inline-flex':'none';
   setMsg('');
@@ -1151,12 +1185,13 @@ function updateActionButtons(){
 initProtectedPage('Compras ADM', async (content,ctx)=>{
   state.ctx=ctx;
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="card"><div class="adm-cmp-tabs-row"><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div id="admCmpItensSection"><div class="adm-cmp-table-wrap mt-16" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card"><div class="adm-cmp-tabs-row"><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div id="admCmpItensSection"><div class="adm-cmp-table-wrap mt-16" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
+  document.getElementById('btnAprovarLote').onclick=()=>aprovarSelecionados();
   document.getElementById('btnEnviarEstoque').onclick=()=>enviarEstoqueSelecionados().catch(e=>setMsg(e.message,true));
   document.getElementById('btnRecusar').onclick=()=>recusarSelecionados().catch(e=>setMsg(e.message,true));
   document.getElementById('catAdicionar').onclick=()=>adicionarCatalogoItem().catch(e=>setCatalogoMsg(e.message,true));
