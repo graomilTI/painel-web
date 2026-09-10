@@ -156,6 +156,25 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     return promise;
   }
 
+  // Total real de faturamento (R$) pro card "Faturamento emitido" — não dá
+  // pra somar isso das notas já carregadas (a view usada nesta tela fixa
+  // valor_nota_real/valor_total em 1). `null` sinaliza indisponível em vez
+  // de mostrar zero, que pareceria um total real quando na verdade a busca
+  // falhou.
+  async function loadBilledTotal(start, end) {
+    const cacheKey = `billed:${start}:${end}`;
+    if (state.snapshotCache.has(cacheKey)) return state.snapshotCache.get(cacheKey);
+    const promise = (async () => {
+      const { data, error } = await fetchPageWithRetry(
+        () => state.supabase.rpc('resumo_faturamento_notas_periodo', { p_inicio: start, p_fim: end })
+      );
+      if (error) { console.warn('[dashboard diretoria] faturamento emitido indisponível', error); return null; }
+      return n(data);
+    })();
+    state.snapshotCache.set(cacheKey,promise);
+    return promise;
+  }
+
   function normalizeProduction(row, year, month) {
     return { year,month,date:String(row.data||''),coord:String(row.coordenacao||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:String(row.cliente_nacional||row.cliente_final||'').trim(),tons:n(row.toneladas),services:n(row.cargas) };
   }
@@ -181,7 +200,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     if (state.cache.has(key)) return state.cache.get(key);
     const promise = (async () => {
       const { start,end } = bounds(year,month);
-      const [productionRows, expenseSnapshot, noteSnapshot, receiptRows, metaResult] = await Promise.all([
+      const [productionRows, expenseSnapshot, noteSnapshot, receiptRows, metaResult, billedTotal] = await Promise.all([
         fetchAll(
           (sel, opts) => state.supabase.from('relatorio_resultado_diario').select(sel, opts).gte('data',start).lt('data',end),
           'data,funcionario,coordenacao,supervisao,cliente_nacional,cliente_final,cargas,toneladas',
@@ -191,9 +210,17 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
         // dashboard_socios_notas_emitidas_api (view p/ a qual esta tabela é
         // redirecionada nesta tela) não tem updated_at nem sincronizado_em —
         // só as colunas abaixo. Pedir as outras derrubava a tela com 42703.
+        // Além disso a view fixa valor_nota_real/valor_total em 1 (sem valor
+        // real em R$) — por isso o total de faturamento vem à parte, via RPC.
         loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at'),
         loadLatestSnapshot('grm_contas_receber_importacoes','dados_json,sincronizado_em',{start,end}),
-        fetchPageWithRetry(() => state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true))
+        fetchPageWithRetry(() => state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true)),
+        // resumo_faturamento_notas_periodo é SECURITY DEFINER e lê a tabela
+        // real (não a view proxied) — dedup por (empresa,fatura), soma
+        // valor_nota_real de verdade. Card "Faturamento emitido" nunca
+        // funcionou (metrics() não somava esse campo); com esse total pronto
+        // por mês dá pra mostrar o valor real sem herdar o problema da view.
+        loadBilledTotal(start,end)
       ]);
       if (metaResult.error) throw metaResult.error;
       const production = productionRows.map((row) => normalizeProduction(row,year,month)).filter((row) => !isExcluded(row.coord));
@@ -212,7 +239,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       });
       const receipts = receiptRows.map((row) => normalizeReceipt(row,year,month,allNotesByNumber)).filter((row) => row.date>=start&&row.date<end&&!isExcluded(row.coord));
       const metas = (metaResult.data||[]).filter((row) => !isExcluded(row.regional)).map((row) => ({coord:String(row.regional||'').trim(),uf:String(row.estado||'').trim().toUpperCase(),target:n(row.meta_tons)}));
-      return { year,month,production,expenses,notes,receipts,metas };
+      return { year,month,production,expenses,notes,receipts,metas,billedTotal };
     })();
     state.cache.set(key,promise);
     try { return await promise; } catch (error) { state.cache.delete(key); throw error; }
@@ -255,16 +282,24 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   }
   function metrics(data, ignored='') {
     const rows = filtered(data,ignored);
+    // billedTotal vem pronto (via RPC) só no pacote consolidado de
+    // mergePacks — grupos de comparação/ranking não têm esse campo, então
+    // caem em null automaticamente. Com algum filtro ativo também mostra
+    // null: o total do RPC é da empresa inteira, não decompõe por filtro.
+    const filtersActive = Object.values(state.filters).some(Boolean);
     return {
       tons:metricAvailability('production',ignored)?rows.production.reduce((sum,row)=>sum+row.tons,0):null,
       services:metricAvailability('production',ignored)?rows.production.reduce((sum,row)=>sum+row.services,0):null,
       invoices:metricAvailability('notes',ignored)?rows.notes.reduce((sum,row)=>sum+row.invoices,0):null,
+      billed:(!filtersActive && data.billedTotal!=null)?data.billedTotal:null,
       received:metricAvailability('receipts',ignored)?rows.receipts.reduce((sum,row)=>sum+row.received,0):null,
       costs:metricAvailability('expenses',ignored)?rows.expenses.reduce((sum,row)=>sum+row.costs,0):null
     };
   }
   function mergePacks(packs) {
-    return packs.reduce((all,pack) => { for (const key of ['production','expenses','notes','receipts','metas']) all[key].push(...pack[key]); return all; },{production:[],expenses:[],notes:[],receipts:[],metas:[]});
+    const merged = packs.reduce((all,pack) => { for (const key of ['production','expenses','notes','receipts','metas']) all[key].push(...pack[key]); return all; },{production:[],expenses:[],notes:[],receipts:[],metas:[]});
+    merged.billedTotal = packs.some((pack) => pack.billedTotal==null) ? null : packs.reduce((sum,pack) => sum+pack.billedTotal, 0);
+    return merged;
   }
   function valuesForMetric(data,key) {
     const totals = metrics(data);
