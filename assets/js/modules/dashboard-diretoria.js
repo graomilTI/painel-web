@@ -154,7 +154,10 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
           { orderBy: 'id' }
         ),
         loadLatestSnapshot('grm_despesas_importacoes','data_conta_de,data_conta_ate,coordenacao,supervisao,funcionario,categoria,grupo_categoria,valor,dados_json,created_at',{start,end}),
-        loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at,updated_at,sincronizado_em'),
+        // dashboard_socios_notas_emitidas_api (view p/ a qual esta tabela é
+        // redirecionada nesta tela) não tem updated_at nem sincronizado_em —
+        // só as colunas abaixo. Pedir as outras derrubava a tela com 42703.
+        loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at'),
         loadLatestSnapshot('grm_contas_receber_importacoes','dados_json,sincronizado_em',{start,end}),
         state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true)
       ]);
