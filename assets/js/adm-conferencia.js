@@ -1125,31 +1125,44 @@ async function loadDespesas() {
   const grmDataMin = datasReferencia.length ? datasReferencia.reduce((a, b) => (a < b ? a : b)) : null;
   const grmDataMax = datasReferencia.length ? datasReferencia.reduce((a, b) => (a > b ? a : b)) : null;
 
-  const [dispBruto, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
+  const [dispBruto, estadia, alimentacao, deslocamento, extras, statusRows, equipeConfirmada] = await Promise.all([
     selectProgramacaoColaboradores(programacaoIds),
     selectByProgramacoes('programacao_estadia', '*', programacaoIds),
     selectByProgramacoes('programacao_alimentacao', '*', programacaoIds),
     selectByProgramacoes('programacao_deslocamento', '*', programacaoIds),
     selectByProgramacoes('programacao_extras', '*', programacaoIds),
     selectByProgramacoes('programacao_conferencia_status', '*', programacaoIds),
+    supabase
+      .from('programacao_equipe')
+      .select('programacao_id,colaborador_id')
+      .in('programacao_id', programacaoIds)
+      .eq('confirmado', true)
+      .not('os_id', 'is', null)
+      .limit(10000)
+      .then(({ data, error }) => {
+        if (error) console.warn('[Conferência] equipe confirmada indisponível:', error.message);
+        return data || [];
+      }),
   ]);
 
   // rpc_programacao_colaboradores_por_ids() (ver selectProgramacaoColaboradores)
   // devolve TODO colaborador vinculado à programação, inclusive quem nunca
   // teve nenhuma decisão real naquele dia (a maioria nasce "SEM EMBARQUE" —
-  // valor padrão do roster da supervisão, não uma confirmação). Confirmado
-  // com dados reais (10/09): um supervisor pode estar "confirmado" com os_id
-  // em programacao_equipe (ele é o responsável pela O.S., não quem embarca
-  // nela) mesmo com disponibilidade='SEM EMBARQUE' — então esse vínculo não
-  // serve pra decidir quem deve ganhar o almoço automático. Só 'OK' (equipe
-  // realmente escalada) e 'DISPONIVEL' (decisão explícita do gestor no fluxo
-  // Sem O.S.) representam presença real; os demais status (SEM EMBARQUE,
-  // LOGISTICA, FOLGA, ATESTADO, FERIAS, FALTA, DESLOCAMENTO, INATIVO) não
-  // geram linha de despesa nem o almoço padrão de baseRow().
-  const disp = dispBruto.filter((r) => {
-    const status = normalizeText(r.disponibilidade);
-    return status === 'OK' || status === 'DISPONIVEL';
-  });
+  // valor padrão do roster da supervisão, não uma confirmação; "OK" também
+  // aparece solto sem confirmação real, ver print da usuária em 10/09 com
+  // MICHAEL FERNANDO RIBAS/MICHAEL GONCALVES DA SILVA). A tela só deve
+  // listar quem tem vínculo real: confirmado numa O.S.
+  // (programacao_equipe.confirmado=true + os_id) OU decisão explícita
+  // Disponível (Sem O.S.) — o mesmo critério que adm-conferencia-entry.js já
+  // aplica nas outras 5 tabelas via .from(); a RPC precisa do mesmo filtro
+  // aqui porque não passa por supabase.from().
+  const equipeConfirmadaKeys = new Set(
+    (equipeConfirmada || []).map((r) => makeKey(r.programacao_id, r.colaborador_id)),
+  );
+  const disp = dispBruto.filter((r) =>
+    normalizeText(r.disponibilidade) === 'DISPONIVEL'
+    || equipeConfirmadaKeys.has(makeKey(r.programacao_id, r.colaborador_id)),
+  );
 
   const rows = new Map();
 
