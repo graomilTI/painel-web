@@ -34,6 +34,8 @@ let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_i
 let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
 let cfgFiltro = '';
+let cfgAgrupar = false;         // agrupa a lista por supervisão
+let cfgGruposAbertos = new Set(); // supervisões com o grupo expandido (persiste entre re-renders)
 
 const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'PARTICULAR/CARONA CAMINHÃO'];
 
@@ -174,6 +176,10 @@ function injectStyles() {
     .cd-resumo-row .rr-trajeto{color:#9fb7aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
     /* ---- Configuração: uma linha por colaborador (nome · tipo · tarifa) ---- */
+    .cd-cfg-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+    .cd-toggle-btn{font-family:inherit;font-size:11px;font-weight:800;padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid rgba(148,163,184,.3);background:rgba(148,163,184,.1);color:#cbd5e1;white-space:nowrap}
+    .cd-toggle-btn:hover{background:rgba(148,163,184,.2)}
+    .cd-toggle-btn.on{background:rgba(63,168,120,.22);color:#86efac;border-color:rgba(134,239,172,.4)}
     .cd-cfg-row{display:grid;grid-template-columns:minmax(180px,1fr) 190px 150px minmax(150px,auto);align-items:center;gap:14px;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:12.5px;color:#9fb7aa}
     @media (max-width:760px){.cd-cfg-row{grid-template-columns:1fr}}
     .cd-cfg-nome{font-size:13.5px;font-weight:800;color:#f8fafc;min-width:0}
@@ -181,6 +187,18 @@ function injectStyles() {
     .cd-cfg-tarifa.cd-cfg-tarifa--on{visibility:visible}
     .cd-cfg-status{display:flex;align-items:center}
     .cd-tipo-select{width:auto;min-width:170px}
+
+    /* ---- Configuração agrupada por supervisão ---- */
+    .cd-cfg-group{background:rgba(8,22,17,.55);border:1px solid rgba(111,208,165,.14);border-radius:14px;padding:2px 14px;margin-bottom:10px}
+    .cd-cfg-group[open]{padding-bottom:10px}
+    .cd-cfg-group-head{display:flex;align-items:center;gap:10px;padding:11px 0;cursor:pointer;list-style:none}
+    .cd-cfg-group-head::-webkit-details-marker{display:none}
+    .cd-cfg-chevron{width:9px;height:9px;border-right:2px solid #6fd0a5;border-bottom:2px solid #6fd0a5;transform:rotate(-45deg);transition:transform .15s ease;flex:none}
+    .cd-cfg-group[open] .cd-cfg-chevron{transform:rotate(45deg)}
+    .cd-cfg-group-nome{font-size:12.5px;font-weight:800;color:#dcfce7;text-transform:uppercase;letter-spacing:.03em}
+    .cd-cfg-group-count{font-size:11px;font-weight:800;color:#6fd0a5;background:rgba(111,208,165,.14);border-radius:999px;padding:2px 9px}
+    .cd-cfg-group-rows{display:flex;flex-direction:column;gap:8px;padding-top:2px}
+    .cd-cfg-group-rows .cd-cfg-row{margin-bottom:0}
   `;
   document.head.appendChild(st);
 }
@@ -472,13 +490,14 @@ function configUnificado() {
     const existente = porChave.get(c.chave);
     vistos.add(c.chave);
     return existente
-      ? { ...existente, nome: existente.nome || c.nome, _existe: true }
-      : { id: null, colaborador_id: c.chave, nome: c.nome, ativo: false, tarifa_km: null, tipo_deslocamento: null, _existe: false };
+      ? { ...existente, nome: existente.nome || c.nome, supervisao: c.supervisao, _existe: true }
+      : { id: null, colaborador_id: c.chave, nome: c.nome, ativo: false, tarifa_km: null, tipo_deslocamento: null, supervisao: c.supervisao, _existe: false };
   });
   // colaboradores registrados que não bateram com a base ativa (ex.: nome cadastrado
-  // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado.
+  // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado —
+  // sem supervisão conhecida, caem no grupo "Sem supervisão" ao agrupar.
   lista.forEach((l) => {
-    if (!vistos.has(String(l.colaborador_id))) linhas.push({ ...l, _existe: true });
+    if (!vistos.has(String(l.colaborador_id))) linhas.push({ ...l, supervisao: '', _existe: true });
   });
   const termo = norm(cfgFiltro);
   const filtradas = termo ? linhas.filter((c) => norm(c.nome).includes(termo)) : linhas;
@@ -504,15 +523,8 @@ async function salvarCampoConfig(chave, nome, patch, feedbackEl) {
   renderLista();
 }
 
-function renderLista() {
-  const box = elRoot.querySelector('#cdLista');
-  const cnt = elRoot.querySelector('#cdCount');
-  if (!box) return;
-  const linhas = configUnificado();
-  const ativos = linhas.filter((c) => c.ativo).length;
-  if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${linhas.length} colaborador(es)`;
-  if (!linhas.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador encontrado pra esse filtro.</div>'; return; }
-  box.innerHTML = linhas.map((c) => `
+function linhaConfigHtml(c) {
+  return `
     <div class="cd-cfg-row" data-chave="${esc(c.colaborador_id)}">
       <div class="cd-cfg-nome">${esc(c.nome || c.colaborador_id)}</div>
       <select class="cd-select cd-tipo-select" data-tipo>
@@ -525,18 +537,76 @@ function renderLista() {
           ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
           : '<span class="cd-pill off">Não registrado</span>'}
       </div>
-    </div>`).join('');
+    </div>`;
+}
+
+// Agrupa por supervisão (operacional_colaborador_base.supervisao); quem não
+// bateu com a base ativa (sem supervisão conhecida) cai no grupo "Sem
+// supervisão", sempre por último.
+function agruparPorSupervisao(linhas) {
+  const grupos = new Map();
+  linhas.forEach((c) => {
+    const sup = (c.supervisao || '').trim() || 'Sem supervisão';
+    if (!grupos.has(sup)) grupos.set(sup, []);
+    grupos.get(sup).push(c);
+  });
+  const chaves = [...grupos.keys()].sort((a, b) => {
+    if (a === 'Sem supervisão') return 1;
+    if (b === 'Sem supervisão') return -1;
+    return a.localeCompare(b, 'pt-BR');
+  });
+  return chaves.map((supervisao) => ({ supervisao, linhas: grupos.get(supervisao) }));
+}
+
+function renderLista() {
+  const box = elRoot.querySelector('#cdLista');
+  const cnt = elRoot.querySelector('#cdCount');
+  if (!box) return;
+  const linhas = configUnificado();
+  const ativos = linhas.filter((c) => c.ativo).length;
+  if (cnt) cnt.innerHTML = `<b>${ativos}</b> ativo(s) · ${linhas.length} colaborador(es)`;
+  if (!linhas.length) { box.innerHTML = '<div class="cd-empty">Nenhum colaborador encontrado pra esse filtro.</div>'; return; }
+  if (!cfgAgrupar) {
+    box.innerHTML = linhas.map(linhaConfigHtml).join('');
+    return;
+  }
+  const abrirTodos = !!cfgFiltro; // busca ativa: abre os grupos direto pra achar o resultado
+  const grupos = agruparPorSupervisao(linhas);
+  box.innerHTML = grupos.map((g) => `
+    <details class="cd-cfg-group" data-sup="${esc(g.supervisao)}"${(abrirTodos || cfgGruposAbertos.has(g.supervisao)) ? ' open' : ''}>
+      <summary class="cd-cfg-group-head">
+        <span class="cd-cfg-chevron"></span>
+        <span class="cd-cfg-group-nome">${esc(g.supervisao)}</span>
+        <span class="cd-cfg-group-count">${g.linhas.length}</span>
+      </summary>
+      <div class="cd-cfg-group-rows">${g.linhas.map(linhaConfigHtml).join('')}</div>
+    </details>`).join('');
 }
 
 function wireBusca() {
   const input = elRoot.querySelector('#cdSearch');
-  if (!input) return;
-  input.addEventListener('input', () => { cfgFiltro = input.value; renderLista(); });
+  if (input) input.addEventListener('input', () => { cfgFiltro = input.value; renderLista(); });
+  const toggle = elRoot.querySelector('#cdAgruparToggle');
+  if (toggle) toggle.addEventListener('click', () => {
+    cfgAgrupar = !cfgAgrupar;
+    toggle.classList.toggle('on', cfgAgrupar);
+    toggle.textContent = `${cfgAgrupar ? '☑' : '☐'} Agrupar por supervisão`;
+    renderLista();
+  });
 }
 
 function wireLista() {
   const box = elRoot.querySelector('#cdLista');
   if (!box) return;
+  // 'toggle' de <details> não borbulha — escutar na fase de captura pra
+  // lembrar quais grupos o usuário abriu/fechou entre re-renders (a lista
+  // inteira é reconstruída a cada edição de tipo/tarifa).
+  box.addEventListener('toggle', (e) => {
+    const det = e.target.closest('.cd-cfg-group');
+    if (!det) return;
+    const sup = det.dataset.sup;
+    if (det.open) cfgGruposAbertos.add(sup); else cfgGruposAbertos.delete(sup);
+  }, true);
   box.addEventListener('click', async (e) => {
     const row = e.target.closest('.cd-cfg-row[data-chave]');
     if (!row) return;
@@ -621,7 +691,10 @@ function htmlAbaConfig() {
           <label class="cd-lbl">Buscar colaborador</label>
           <input class="cd-input" id="cdSearch" type="text" placeholder="Nome do colaborador..." autocomplete="off" spellcheck="false" value="${esc(cfgFiltro)}" />
         </div>
-        <div><span class="cd-count" id="cdCount"></span></div>
+        <div class="cd-cfg-actions">
+          <button type="button" class="cd-toggle-btn${cfgAgrupar ? ' on' : ''}" id="cdAgruparToggle">${cfgAgrupar ? '☑' : '☐'} Agrupar por supervisão</button>
+          <span class="cd-count" id="cdCount"></span>
+        </div>
       </div>
       <div class="cd-msg">Todos os colaboradores ativos aparecem aqui. O <b>tipo de deslocamento</b> é o modo padrão/acordado de cada um — usado como referência (pra popular o Mapa Operacional, por exemplo) quando a Programação ainda não trouxe um deslocamento real sincronizado do GRM para aquela pessoa. Pode ser alterado a qualquer momento conforme a programação da regional muda. A <b>tarifa R$/km</b> é individual (não é única pra todos) e só entra na conta quando o tipo selecionado na Programação for <b>Reembolso KM</b>.</div>
     </div>

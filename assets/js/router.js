@@ -72,7 +72,7 @@ const SOFT_NAV_PAGES = new Map([
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
   ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260831-remove-aba-epi'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20260813-modelos-v4')] }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js'), extraModules: [() => import('./logistica-abertura-upload.js'), () => import('./logistica-abertura-os-correcao.js'), () => import('./logistica-clientes-filiais-pagadoras.js?v=20260903-clientes-filiais-master1')] }],
-  ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js?v=20260910-2') }],
+  ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js?v=20260910-3') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
   ['consultar-producao', { title: 'Histórico de Produção', module: () => import('./consultarProducao.js') }],
   ['dashboard-socio', { title: 'Panorama da Empresa', module: () => import('./dashboard-socio.js?v=20260910-9') }],
