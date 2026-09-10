@@ -115,7 +115,7 @@ const SOFT_NAV_PAGES = new Map([
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js') }],
   // Fase 3 (2026-07-04) — páginas críticas com muitos scripts, consolidação avaliada script a script
-  ['programacao', { title: 'Programação', module: () => import('./programacao.js'), extraModules: [
+  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260910-desloc-particular1'), extraModules: [
     () => import('./programacao-supervisoes-cache.js?v=20260901-v6-ttl5min'),
     () => import('./programacao-ultima-programacao-fix.js'),
     () => import('./programacao-hospedagem-colaboradores-fix.js'),
@@ -123,10 +123,10 @@ const SOFT_NAV_PAGES = new Map([
     () => import('./programacao-kpi-inline-patch.js'),
     () => import('./programacao-gestor-filtro-fix.js'),
     () => import('./programacao-mobile-ui-fix.js?v=20260909-header-grid1'),
-    () => import('./programacao-gestor-fluxo-avancado.js?v=20260909-auto-refresh-os-removida'),
+    () => import('./programacao-gestor-fluxo-avancado.js?v=20260910-desloc-particular1'),
     () => import('./programacao-lista-drawer-fixo.js'),
     () => import('./programacao-lista-drawer-ux-hotfix.js'),
-    () => import('./programacao-pdf-tipo-fix.js'),
+    () => import('./programacao-pdf-tipo-fix.js?v=20260910-desloc-particular1'),
     () => import('./programacao-indisponibilidade-sync.js'),
     () => import('./programacao-indisponibilidade-rh-lock.js'),
     () => import('./programacao-regional-colaboradores-strict.js'),
