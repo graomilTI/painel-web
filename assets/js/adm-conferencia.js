@@ -1010,6 +1010,24 @@ async function selectByProgramacoes(table, columns, programacaoIds) {
   return data || [];
 }
 
+// O select direto em programacao_colaboradores via REST vinha voltando []
+// (200, sem erro) mesmo com dados reais e RLS permissiva — bug de infra
+// confirmado em 03/09 e ainda ativo em 10/09 mesmo após restart do projeto
+// (ver memória painel-web-programacao-colaboradores-select-vazio-infra).
+// A RPC (security definer) usa outro caminho no PostgREST e contorna o bug.
+async function selectProgramacaoColaboradores(programacaoIds) {
+  if (!programacaoIds.length) return [];
+  const { data, error } = await supabase.rpc('rpc_programacao_colaboradores_por_ids', {
+    p_programacao_ids: programacaoIds,
+  });
+
+  if (error) {
+    console.warn('[Conferência] rpc_programacao_colaboradores_por_ids indisponível:', error.message);
+    return selectByProgramacoes('programacao_colaboradores', '*', programacaoIds);
+  }
+  return data || [];
+}
+
 function makeKey(programacaoId, colaboradorId) {
   return `${programacaoId}::${colaboradorId}`;
 }
@@ -1108,7 +1126,7 @@ async function loadDespesas() {
   const grmDataMax = datasReferencia.length ? datasReferencia.reduce((a, b) => (a > b ? a : b)) : null;
 
   const [disp, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
-    selectByProgramacoes('programacao_colaboradores', '*', programacaoIds),
+    selectProgramacaoColaboradores(programacaoIds),
     selectByProgramacoes('programacao_estadia', '*', programacaoIds),
     selectByProgramacoes('programacao_alimentacao', '*', programacaoIds),
     selectByProgramacoes('programacao_deslocamento', '*', programacaoIds),
