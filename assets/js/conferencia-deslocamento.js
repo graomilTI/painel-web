@@ -35,7 +35,7 @@ let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
 let cfgFiltro = '';
 
-const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'NÃO PRECISA', 'OUTRO'];
+const TIPOS = ['REEMBOLSO KM', 'MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'ÔNIBUS', 'PARTICULAR/CARONA CAMINHÃO'];
 
 function norm(s) {
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim().replace(/\s+/g, ' ');
@@ -67,6 +67,7 @@ function tipoClasse(t) {
   const n = norm(t);
   if (n.includes('REEMBOLSO')) return 'reemb';
   if (n.includes('MOTORISTA')) return 'motorista';
+  if (n.includes('PARTICULAR')) return 'particular';
   if (n.includes('CARONA')) return 'carona';
   if (n.includes('UBER') || n.includes('TAXI')) return 'uber';
   if (n.includes('ONIBUS')) return 'onibus';
@@ -103,6 +104,7 @@ function injectStyles() {
     .cd-badge.onibus{background:rgba(45,212,191,.14);color:#99f6e4;border-color:rgba(45,212,191,.3)}
     .cd-badge.nao{background:rgba(148,163,184,.14);color:#cbd5e1;border-color:rgba(148,163,184,.25)}
     .cd-badge.outro{background:rgba(251,146,60,.14);color:#fed7aa;border-color:rgba(251,146,60,.3)}
+    .cd-badge.particular{background:rgba(244,114,182,.14);color:#fbcfe8;border-color:rgba(244,114,182,.3)}
     .cd-km-input{width:84px;background:#06130e;color:#eef7f2;border:1px solid rgba(111,208,165,.3);border-radius:8px;padding:6px 8px;font-size:13px;text-align:right;outline:none;font-variant-numeric:tabular-nums}
     .cd-km-input:focus{border-color:#6fd0a5}
     .cd-km-input.salvo{border-color:#86efac;box-shadow:0 0 0 2px rgba(134,239,172,.2)}
@@ -147,6 +149,7 @@ function injectStyles() {
     .cd-chip.onibus{color:#99f6e4;border-color:rgba(45,212,191,.22)}.cd-chip.onibus i{background:#2dd4bf;box-shadow:0 0 9px rgba(45,212,191,.5)}
     .cd-chip.nao{color:#cbd5e1;border-color:rgba(148,163,184,.22)}.cd-chip.nao i{background:#94a3b8;box-shadow:0 0 8px rgba(148,163,184,.4)}
     .cd-chip.outro{color:#fed7aa;border-color:rgba(251,146,60,.22)}.cd-chip.outro i{background:#fb923c;box-shadow:0 0 9px rgba(251,146,60,.5)}
+    .cd-chip.particular{color:#fbcfe8;border-color:rgba(244,114,182,.22)}.cd-chip.particular i{background:#f472b6;box-shadow:0 0 9px rgba(244,114,182,.5)}
     .cd-chip-clear{display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border:1px solid rgba(248,113,113,.22);border-radius:999px;background:rgba(239,68,68,.08);color:#ff9d9d;font-size:10.5px;font-weight:800;font-family:inherit;cursor:pointer;white-space:nowrap}
     .cd-chip-clear:hover{background:rgba(239,68,68,.16)}
     @media (max-width:760px){.cd-overview{flex-direction:column;align-items:flex-start}.cd-overview-items{justify-content:flex-start}}
