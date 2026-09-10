@@ -281,7 +281,7 @@ function cardHtml(itens){
   const ids=itens.map(r=>r.id).join(',');
   return `<article class="adm-cmp-card">
     <div class="adm-cmp-card-head">
-      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.coordenacao||s.supervisao||'')} · ${brDate(s.data_solicitacao)}</small></div></label>
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.coordenacao||s.supervisao||'')}${s.cidade?` · ${esc(s.cidade)}${s.uf?`/${esc(s.uf)}`:''}`:''} · ${brDate(s.data_solicitacao)}</small></div></label>
       <div class="adm-cmp-card-meta"><span>${totalQtd}&nbsp;un · ${itens.length} ${itens.length===1?'item':'itens'}</span><strong>${money(total)}</strong></div>
     </div>
     <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
