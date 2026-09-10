@@ -12,11 +12,11 @@
  * Fluxo no GRM: Funcionário -> abrir cadastro -> Caixa -> Despesas -> Adicionar
  * -> Tipo = Adiantamento -> Descrição / Valor / Data -> Salvar.
  *
- * ATENÇÃO: o formulário "ADICIONAR MOVIMENTO" com Tipo = Adiantamento nunca foi
- * validado ao vivo neste agente (só confirmamos que a opção existe no combo Tipo,
- * ver chooseMovementType). Por isso GRM_BONUS_DESCONTO_CAIXA_DRY_RUN começa
- * habilitado por padrão — só desative depois de validar manualmente que os campos
- * abaixo (Descrição/Valor/Data) são os únicos exigidos para Adiantamento.
+ * Validado ao vivo em 10/09/2026: com Tipo = Adiantamento o formulário só pede
+ * Funcionário, Tipo, Empresa (já vem pré-preenchida, não precisa tocar), Data,
+ * Valor, Arquivo (opcional) e Descrição — sem "Tipo da Despesa", "Tipo de
+ * Documento" nem "N. Documento" (exclusivos do Comprovante). Também não passa
+ * por fila de aprovação separada; "Aprovado Por" já sai preenchido.
  */
 
 process.env.TMPDIR = process.env.TMPDIR || '/tmp';
@@ -46,8 +46,8 @@ const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.
 const STAFF_URL = process.env.GRM_BONUS_CAIXA_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
 const HEADLESS = String(process.env.GRM_HEADLESS ?? 'true').toLowerCase() !== 'false';
 const DEBUG = String(process.env.GRM_BONUS_DESCONTO_CAIXA_DEBUG ?? 'false').toLowerCase() === 'true';
-// Padrão TRUE: fluxo de Adiantamento ainda não foi validado ao vivo (ver comentário acima).
-const DRY_RUN = String(process.env.GRM_BONUS_DESCONTO_CAIXA_DRY_RUN ?? 'true').toLowerCase() !== 'false';
+// Fluxo validado ao vivo em 10/09/2026 (ver comentário acima) — padrão FALSE.
+const DRY_RUN = String(process.env.GRM_BONUS_DESCONTO_CAIXA_DRY_RUN ?? 'false').toLowerCase() === 'true';
 const MAX_PER_RUN = Math.max(1, Math.min(20, Number(process.env.GRM_BONUS_DESCONTO_CAIXA_MAX_POR_EXECUCAO || 8)));
 const DEFAULT_TIMEOUT = Math.max(15000, Number(process.env.GRM_BONUS_DESCONTO_CAIXA_TIMEOUT_MS || 45000));
 const SCREENSHOT_DIR = process.env.GRM_BONUS_DESCONTO_CAIXA_SCREENSHOT_DIR

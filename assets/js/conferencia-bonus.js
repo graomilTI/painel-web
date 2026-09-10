@@ -424,7 +424,7 @@ async function handleAuditFile(event) {
     const bloqueados = Number(data?.bloqueados_teto || 0);
 
     const partes = [`${importados} colaborador(es) importados e marcados como Inapto em ${MESES_FULL[mes]} de ${ano}`];
-    if (enfileirados) partes.push(`${enfileirados} adiantamento(s) enfileirado(s) no Caixa (${moeda(valorEnfileirado)})`);
+    if (enfileirados) partes.push(`${enfileirados} adiantamento(s) na fila do Caixa (${moeda(valorEnfileirado)}) — lançados quando "Lançar no Caixa" do Bônus for acionado`);
     if (bloqueados) partes.push(`${bloqueados} bloqueado(s)/reduzido(s) pelo teto de R$ 500,00 por colaborador`);
 
     msg.className = `audit-msg ${bloqueados ? 'err' : 'ok'}`;
