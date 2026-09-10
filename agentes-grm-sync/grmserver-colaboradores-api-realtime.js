@@ -173,6 +173,24 @@ function createSupabaseRest(baseUrl, serviceKey) {
         { ...authHeaders, prefer: 'resolution=ignore-duplicates,return=minimal' },
       );
     },
+    async insertStatusHistory(rows) {
+      // Insere uma linha por vez: uq_colab_status_hist_estado é um índice com
+      // expressão (COALESCE em situacao_nova), que o `on_conflict` do PostgREST
+      // não resolve num insert em lote. Uma violação (23505/HTTP 409) só
+      // significa que este mesmo evento já foi registrado — ignora e segue.
+      for (const row of rows) {
+        try {
+          await requestJson(
+            `${restUrl}/colaboradores_status_historico`,
+            'POST',
+            row,
+            { ...authHeaders, prefer: 'return=minimal' },
+          );
+        } catch (error) {
+          if (error.statusCode !== 409) throw error;
+        }
+      }
+    },
     async insertJob(payload) {
       const rows = await requestJson(
         `${restUrl}/grm_sync_jobs`,
@@ -343,6 +361,7 @@ async function applyCycle(supabase, rawRows) {
   const byCode = new Map(currentRows.filter((row) => row.grm_staff_code).map((row) => [Number(row.grm_staff_code), row]));
   const byCpf = new Map(currentRows.filter((row) => row.cpf).map((row) => [normalizeCpf(row.cpf), row]));
   const changes = [];
+  const statusHistory = [];
 
   for (const remote of remoteRows) {
     const previous = byCode.get(remote.grm_staff_code) || byCpf.get(remote.cpf) || null;
@@ -366,23 +385,50 @@ async function applyCycle(supabase, rawRows) {
       : await supabase.upsertByCpf(remote);
     if (!saved?.id) throw new Error(`Falha ao salvar ${remote.nome}: resposta sem id.`);
 
+    const tipoEvento = eventType(previous, remote);
+
     changes.push({
       event_key: eventKey(remote.grm_staff_code, previous, remote, diff, synchronizedAt),
       colaborador_id: saved.id,
       grm_staff_code: remote.grm_staff_code,
       cpf: remote.cpf,
       nome: remote.nome,
-      tipo_evento: eventType(previous, remote),
+      tipo_evento: tipoEvento,
       campos_alterados: diff.fields,
       valores_anteriores: diff.before,
       valores_novos: diff.after,
       detectado_em: synchronizedAt,
       metadata: { intervalo_ms: POLL_INTERVAL_MS },
     });
+
+    // colaboradores_status_historico é a única fonte que alimenta o trigger de
+    // remoção de acesso no Uber (trg_uber_fila_remocao_status_colaborador).
+    // Sem isso, um desligamento detectado só por este worker de API nunca
+    // dispara a remoção automática — o colaborador some do painel mas
+    // continua com acesso no Uber.
+    if (tipoEvento === 'INATIVADO' || tipoEvento === 'REATIVADO') {
+      statusHistory.push({
+        colaborador_id: saved.id,
+        cpf: remote.cpf,
+        nome: remote.nome,
+        situacao_anterior: previous?.situacao || null,
+        situacao_nova: remote.situacao,
+        ativo_anterior: previous?.situacao === 'Ativo',
+        ativo_novo: remote.situacao === 'Ativo',
+        data_efetiva: (tipoEvento === 'INATIVADO' && remote.desligamento) || synchronizedAt.slice(0, 10),
+        detectado_em: synchronizedAt,
+        fonte: 'grmserver_api_staff_get_records',
+        metadata: { grm_staff_code: remote.grm_staff_code, intervalo_ms: POLL_INTERVAL_MS },
+      });
+    }
   }
 
   if (changes.length) {
     await supabase.insertChanges(changes);
+  }
+
+  if (statusHistory.length) {
+    await supabase.insertStatusHistory(statusHistory);
   }
 
   return { remote: remoteRows.length, changed: changes.length };
