@@ -31,6 +31,7 @@ const AGENT_NAMES = {
   'sync-liberacao-despesas': 'Liberação de Despesas (GRM)',
   'sync-lancar-notas-fiscais': 'Lançar Notas Fiscais (GRM)',
   'sync-bonus-caixa': 'Bônus de Caixa (GRM)',
+  'sync-bonus-desconto-caixa': 'Adiantamento Desconto Auditoria (GRM)',
   'sync-abrir-os': 'Abrir OS (GRM)',
   'sync-finalizar-os': 'Finalizar OS (GRM)',
   'sync-reabrir-os': 'Reabrir OS (GRM)',

@@ -138,6 +138,10 @@ const SCRIPT_MAP = {
   // grm-sync-liberacao-despesas.js (Puppeteer) mantido no disco pra rollback.
   'sync-liberacao-despesas': 'grmserver-liberacao-despesas-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
+  // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
+  // Bônus (RPC bonus_substituir_auditoria). Fluxo de Adiantamento nunca validado ao vivo
+  // no GRM ainda — ver DRY_RUN (padrão true) no topo do script.
+  'sync-bonus-desconto-caixa': 'grm-sync-bonus-desconto-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
   'sync-classificacao-ourosafra': 'grm-sync-classificacao-ourosafra.js',
