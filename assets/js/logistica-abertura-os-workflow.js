@@ -88,8 +88,53 @@ function pontosProblemaHtml(row){
   return `<div class="ds-modal-full"><div class="ds-modal-label">❗ Pontos com problema reportados ao Gestor</div><div class="ds-modal-value">${ordenados.map(p=>`<div class="ab-ponto-problema-item">${esc(p.descricao||'-')}<span> · ${date(p.em,true)}</span></div>`).join('')}</div></div>`;
 }
 
+// ── busca de O.S. já existente pro mesmo cliente/contrato (evita duplicar) ──
+// operacional_os não tem coluna de filial, então o match automático é só
+// cliente+contrato; a filial fica pro ADM conferir visualmente na lista de
+// resultados antes de alocar.
+async function buscarOsExistente(row){
+  const contrato=String(row.numero_contrato||'').trim();
+  if(!contrato)return [];
+  const {data,error}=await supabase.from('operacional_os')
+    .select('numero_os,situacao,financeiro,cliente,contrato,supervisao,embarque,destino,produto,data_os,remanescente')
+    .ilike('contrato',contrato)
+    .order('data_os',{ascending:false})
+    .limit(5);
+  if(error){console.error('[abertura-os-workflow] buscarOsExistente',error);return [];}
+  return (Array.isArray(data)?data:[]).filter(os=>String(os.financeiro||'').trim().toUpperCase()!=='FATURADA');
+}
+
+function existenteMatchHtml(os){
+  return `<div class="ab-os-existente-item">
+      <div class="ab-os-existente-info">
+        <strong>O.S. ${esc(os.numero_os)}</strong>
+        <span>${esc(os.cliente||'-')}</span>
+        <span>${esc(os.embarque||'-')} → ${esc(os.destino||'-')}</span>
+        <span>${esc(os.produto||'-')} · ${esc(os.situacao||'-')}${os.financeiro?` · ${esc(os.financeiro)}`:''}</span>
+      </div>
+      <button class="btn btn-secondary" data-abertura-alocar="${esc(os.numero_os)}" type="button">Alocar este número</button>
+    </div>`;
+}
+
+function existenteBoxHtml(){
+  return `<div class="ab-os-existente-box" id="aberturaOsExistenteBox">
+      <div class="log-meta">Verificando se já existe O.S. aberta para este cliente/contrato...</div>
+    </div>`;
+}
+
+async function atualizarBoxExistente(overlay,row){
+  const box=overlay.querySelector('#aberturaOsExistenteBox');
+  if(!box)return;
+  const matches=await buscarOsExistente(row);
+  if(!matches.length){box.innerHTML='';box.hidden=true;return;}
+  box.hidden=false;
+  box.innerHTML=`<div class="ab-os-existente-alerta">⚠ Já existe ${matches.length>1?'O.S. abertas':'uma O.S. aberta'} para este contrato e ainda ${matches.length>1?'não foram':'não foi'} faturada${matches.length>1?'s':''}. Confira a filial abaixo e, se for a mesma solicitação, aloque o número em vez de abrir uma O.S. nova.</div>
+    ${matches.map(existenteMatchHtml).join('')}`;
+}
+
 function detalheHtml(row){
   const testes=testesResumo(row);
+  const podeAlocar=['PENDENTE','ERRO'].includes(String(row.status||'').toUpperCase());
   return `<h3 class="ds-modal-title">Solicitação de Abertura de O.S.</h3>
     <div class="ds-modal-grid">
       <div><div class="ds-modal-label">Solicitação</div><div class="ds-modal-value">${date(row.created_at,true)}</div></div>
@@ -116,6 +161,7 @@ function detalheHtml(row){
       ${camposCorrigirHtml(row)}
       ${pontosProblemaHtml(row)}
     </div>
+    ${podeAlocar?existenteBoxHtml():''}
     <div id="aberturaDetalheAcoes">${acoesDetalheHtml(row)}</div>`;
 }
 
@@ -186,10 +232,34 @@ async function decide(id,action,{obs=null,campos=[]}={},button){
   else toast('Solicitação recusada.','ok');
 }
 
+async function alocarOsExistente(id,numeroOs,button){
+  const original=button?.textContent;
+  if(button){button.disabled=true;button.textContent='Alocando...';}
+  const {error}=await supabase.rpc('alocar_os_existente_abertura_os',{p_id:id,p_numero_os:numeroOs});
+  if(error){
+    toast(error.message,'err');
+    if(button){button.disabled=false;button.textContent=original;}
+    return;
+  }
+  closeModal('aberturaDetalheModal');
+  await load();
+  toast(`O.S. ${numeroOs} alocada. Número devolvido ao Gestor sem abrir nova O.S. no GRM.`,'ok');
+}
+
 function abrirDetalhe(row){
   const overlay=openModal({id:'aberturaDetalheModal',conteudoHtml:detalheHtml(row)+'<div class="ds-modal-actions" style="margin-top:16px"><button class="ds-btn" data-ds-fechar type="button">Fechar</button></div>'});
   overlay.querySelector('[data-ds-fechar]')?.addEventListener('click',()=>closeModal('aberturaDetalheModal'));
+  if(['PENDENTE','ERRO'].includes(String(row.status||'').toUpperCase())){
+    atualizarBoxExistente(overlay,row);
+  }
   overlay.addEventListener('click',async(event)=>{
+    const alocar=event.target.closest('[data-abertura-alocar]');
+    if(alocar){
+      const numeroOs=alocar.dataset.aberturaAlocar;
+      const ok=await confirmar({titulo:'Alocar O.S. existente',mensagem:`A solicitação será marcada como CADASTRADA com o número ${numeroOs}, sem abrir uma O.S. nova no GRM. Confirmar?`,confirmarLabel:'Alocar'});
+      if(ok)await alocarOsExistente(row.id,numeroOs,alocar);
+      return;
+    }
     const toggle=event.target.closest('[data-abertura-toggle]');
     if(toggle){showPainel(overlay,toggle.dataset.aberturaToggle);return;}
     const cancelar=event.target.closest('[data-abertura-cancelar]');
@@ -242,7 +312,7 @@ function abrirDetalhe(row){
   });
 }
 
-function injectStyle(){if(document.getElementById('abertura-workflow-style'))return;const style=document.createElement('style');style.id='abertura-workflow-style';style.textContent=`.abertura-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-bottom:14px}.abertura-kpis article.card{padding:10px 12px}.abertura-kpis h3{font-size:11px;margin:0 0 2px;text-transform:uppercase;color:#9fb7aa}.abertura-kpis .metric{font-size:22px;margin:0}.abertura-kpis .muted{font-size:10px;margin:2px 0 0}.ab-abrir-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}.ab-problema-dot{font-size:14px;cursor:default}.abertura-recusar{background:rgba(127,29,29,.82)!important;color:#fecaca!important;border:1px solid rgba(239,68,68,.35)!important}.ab-icon-actions{display:flex;gap:8px;margin-top:6px}.ab-icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid transparent;font-size:18px;font-weight:900;line-height:1;cursor:pointer;transition:transform .14s ease}.ab-icon-btn:hover{transform:translateY(-1px)}.ab-icon-btn:disabled{opacity:.4;cursor:wait;transform:none}.ab-icon-btn.ok{border-color:rgba(22,215,144,.34);background:rgba(22,215,144,.13);color:#75edb7}.ab-icon-btn.correct{border-color:rgba(250,204,21,.34);background:rgba(250,204,21,.13);color:#fde68a}.ab-icon-btn.reject{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.1);color:#fca5a5}.ab-icon-btn.alert{border-color:rgba(251,146,60,.34);background:rgba(251,146,60,.13);color:#fdba74}.ab-subpainel{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(15,23,42,.36)}.ab-campos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin:8px 0}.ab-campo-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1}.ab-campo-badge{display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;border-radius:999px;background:rgba(250,204,21,.14);color:#fde68a;font-size:11px;font-weight:700}.ab-ponto-problema-item{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);color:#fdba74}.ab-ponto-problema-item:last-child{border-bottom:0}.ab-ponto-problema-item span{color:#8fa1b5;font-size:11px}.ab-subpainel-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}@media(max-width:1100px){.abertura-kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.abertura-kpis{grid-template-columns:repeat(2,1fr)}}`;document.head.appendChild(style);}
+function injectStyle(){if(document.getElementById('abertura-workflow-style'))return;const style=document.createElement('style');style.id='abertura-workflow-style';style.textContent=`.abertura-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-bottom:14px}.abertura-kpis article.card{padding:10px 12px}.abertura-kpis h3{font-size:11px;margin:0 0 2px;text-transform:uppercase;color:#9fb7aa}.abertura-kpis .metric{font-size:22px;margin:0}.abertura-kpis .muted{font-size:10px;margin:2px 0 0}.ab-abrir-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}.ab-problema-dot{font-size:14px;cursor:default}.abertura-recusar{background:rgba(127,29,29,.82)!important;color:#fecaca!important;border:1px solid rgba(239,68,68,.35)!important}.ab-icon-actions{display:flex;gap:8px;margin-top:6px}.ab-icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid transparent;font-size:18px;font-weight:900;line-height:1;cursor:pointer;transition:transform .14s ease}.ab-icon-btn:hover{transform:translateY(-1px)}.ab-icon-btn:disabled{opacity:.4;cursor:wait;transform:none}.ab-icon-btn.ok{border-color:rgba(22,215,144,.34);background:rgba(22,215,144,.13);color:#75edb7}.ab-icon-btn.correct{border-color:rgba(250,204,21,.34);background:rgba(250,204,21,.13);color:#fde68a}.ab-icon-btn.reject{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.1);color:#fca5a5}.ab-icon-btn.alert{border-color:rgba(251,146,60,.34);background:rgba(251,146,60,.13);color:#fdba74}.ab-subpainel{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(15,23,42,.36)}.ab-campos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin:8px 0}.ab-campo-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1}.ab-campo-badge{display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;border-radius:999px;background:rgba(250,204,21,.14);color:#fde68a;font-size:11px;font-weight:700}.ab-ponto-problema-item{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);color:#fdba74}.ab-ponto-problema-item:last-child{border-bottom:0}.ab-ponto-problema-item span{color:#8fa1b5;font-size:11px}.ab-subpainel-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.ab-os-existente-box{margin:12px 0;display:flex;flex-direction:column;gap:8px}.ab-os-existente-alerta{padding:10px 12px;border-radius:10px;border:1px solid rgba(250,204,21,.34);background:rgba(250,204,21,.1);color:#fde68a;font-size:12px}.ab-os-existente-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(15,23,42,.36)}.ab-os-existente-info{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#cbd5e1}.ab-os-existente-info strong{font-size:13px;color:#e2e8f0}@media(max-width:1100px){.abertura-kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.abertura-kpis{grid-template-columns:repeat(2,1fr)}}`;document.head.appendChild(style);}
 
 async function boot(){
   const list=await waitFor('#aberturaOsList');injectStyle();
