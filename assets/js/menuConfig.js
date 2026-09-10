@@ -187,7 +187,11 @@ export const MENU_CONFIG = [
   {
     grupo: "LOGÍSTICA",
     itens: [
-      item("logistica_adm", "Painel de Logística", "logistica-adm-os", ["LOGISTICA_ADM", "LOGISTICA"]),
+      // "Painel de Logística" (logistica-adm-os, aba "os") saiu do menu: não é
+      // operacional, só espelhava a lista de O.S. com um botão "OK" que marca
+      // atualizar_resolvido_* pra aba Atualizar do Gestor (ver logistica.js
+      // handleAtualizarOk). A página continua existindo por URL direta —
+      // ninguém removeu esse handshake, só o atalho no sidebar.
       // "O.S" reúne Abertura | Conferência | Ajuste | Finalização num único ponto
       // (logistica-os.html, 4 abas). Os códigos antigos ficam como aliases para
       // preservar as permissões de quem já tinha acesso a essas telas separadas.

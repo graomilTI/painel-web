@@ -1,4 +1,4 @@
-const CACHE_NAME = 'g1000-painel-pwa-v15';
+const CACHE_NAME = 'g1000-painel-pwa-v16';
 const SHARE_CACHE = 'g1000-shared-file';
 
 const STATIC_URLS = [
