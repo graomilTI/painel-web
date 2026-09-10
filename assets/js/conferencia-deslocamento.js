@@ -171,9 +171,12 @@ function injectStyles() {
     .cd-resumo-row .rr-trajeto{color:#9fb7aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
     /* ---- Configuração: uma linha por colaborador (nome · tipo · tarifa) ---- */
-    .cd-cfg-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:12.5px;color:#9fb7aa}
-    .cd-cfg-nome{font-size:13.5px;font-weight:800;color:#f8fafc;flex:1 1 220px;min-width:0}
-    .cd-cfg-tarifa{display:flex;align-items:center;gap:6px}
+    .cd-cfg-row{display:grid;grid-template-columns:minmax(180px,1fr) 190px 150px minmax(150px,auto);align-items:center;gap:14px;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:12.5px;color:#9fb7aa}
+    @media (max-width:760px){.cd-cfg-row{grid-template-columns:1fr}}
+    .cd-cfg-nome{font-size:13.5px;font-weight:800;color:#f8fafc;min-width:0}
+    .cd-cfg-tarifa{display:flex;align-items:center;gap:6px;visibility:hidden}
+    .cd-cfg-tarifa.cd-cfg-tarifa--on{visibility:visible}
+    .cd-cfg-status{display:flex;align-items:center}
     .cd-tipo-select{width:auto;min-width:170px}
   `;
   document.head.appendChild(st);
@@ -513,10 +516,12 @@ function renderLista() {
         <option value="">— não definido —</option>
         ${TIPOS.map((t) => `<option value="${esc(t)}"${c.tipo_deslocamento === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
       </select>
-      <label class="cd-cfg-tarifa">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(c.tarifa_km || DEFAULT_TARIFA)}" /></label>
-      ${c._existe
-        ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
-        : '<span class="cd-pill off">Não registrado</span>'}
+      <label class="cd-cfg-tarifa${norm(c.tipo_deslocamento).includes('REEMBOLSO') ? ' cd-cfg-tarifa--on' : ''}">Tarifa R$/km <input class="cd-tarifa-input" data-tarifa type="number" min="0" step="0.01" value="${Number(c.tarifa_km || DEFAULT_TARIFA)}" /></label>
+      <div class="cd-cfg-status">
+        ${c._existe
+          ? `<span class="cd-pill ${c.ativo ? 'on' : 'off'}" data-toggle>${c.ativo ? 'Ativo' : 'Inativo'}</span><button class="cd-del" data-del>remover</button>`
+          : '<span class="cd-pill off">Não registrado</span>'}
+      </div>
     </div>`).join('');
 }
 
