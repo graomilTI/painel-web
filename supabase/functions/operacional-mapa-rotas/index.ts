@@ -11,7 +11,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 //   otimizado multi-parada via VROOM (mesmo modelo de frotas-roteirizar).
 // - 'REEMBOLSO KM' -> colaborador com carro próprio, sem veículo compartilhado
 //   pra otimizar entre eles: 1 rota individual ponto-a-ponto (origem -> embarque).
-// 'NÃO PRECISA'/'UBER/TÁXI' não geram rota (nada a desenhar no mapa).
+// 'UBER/TÁXI'/'PARTICULAR/CARONA CAMINHÃO' (e o antigo 'NÃO PRECISA' em
+// registros já gravados) não geram rota (nada a desenhar no mapa).
 //
 // Fallback de tipo_deslocamento: quando não há linha sincronizada do GRM em
 // programacao_deslocamento pra esse colaborador/data, cai pro "acordo padrão"

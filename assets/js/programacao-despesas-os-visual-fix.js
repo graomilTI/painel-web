@@ -111,7 +111,7 @@ function aplicarAlimentacao(card, row) {
 function aplicarDeslocamento(card, row) {
   const des = asObject(row?.detalhes);
   if (!row) return;
-  setSelectValue(card.querySelector('select[data-tab="deslocamento"][data-fld="tipo_deslocamento"]'), des.tipo_deslocamento || 'NÃO PRECISA');
+  setSelectValue(card.querySelector('select[data-tab="deslocamento"][data-fld="tipo_deslocamento"]'), des.tipo_deslocamento || '');
   setInput(card, 'input[data-tab="deslocamento"][data-fld="placa_veiculo"]', des.placa_veiculo || '');
   setInput(card, 'input[data-tab="deslocamento"][data-fld="km"]', des.km ?? 0);
   setInput(card, 'input[data-tab="deslocamento"][data-fld="valor"]', des.valor ?? 0);
