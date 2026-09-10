@@ -145,20 +145,20 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       const createdAt = latest?.[0]?.[timestampColumn];
       if (!createdAt) return [];
       const threshold = new Date(new Date(createdAt).getTime()-5*60*1000).toISOString();
-      // grm_notas_fiscais_importacoes tem só ~4.600 linhas no total (~5
-      // páginas) — não dá pra aumentar pageSize com segurança sem saber o
-      // db-max-rows do projeto (não é visível via SQL, e paginar errado
-      // trunca dados silenciosamente), mas dá pra buscar as ~5 páginas
-      // inteiras numa leva só em vez de em 3 sequenciais: cada requisição
-      // já refaz o CTE caro da view do zero, então menos LEVAS (não menos
-      // páginas) é o que corta o tempo total de carregamento.
-      const batchSize = table==='grm_notas_fiscais_importacoes' ? 6 : undefined;
+      // REVERTIDO (ao vivo, 10/09 19:42): tentei batchSize:6 pra notas
+      // fiscais pra buscar as ~5 páginas numa leva só (menos levas = menos
+      // recomputações do CTE caro da view). Na prática as 6 requisições
+      // simultâneas contra essa view derrubaram TODAS juntas com "canceling
+      // statement due to statement timeout" — reproduziu de novo o mesmo
+      // padrão do incidente das 19:12. Mais paralelismo nesta view
+      // específica piora, não melhora; ela não escala em concorrência.
+      // Volta pro batchSize padrão (2) do fetchAll.
       return fetchAll((sel, opts) => {
         let query=state.supabase.from(table).select(sel, opts).gte(timestampColumn,threshold);
         if (period && table==='grm_despesas_importacoes') query=query.gte('data_conta_de',period.start).lt('data_conta_de',period.end);
         if (period && table==='grm_contas_receber_importacoes') query=query.gte('dados_json->>rinPaidDate',period.start).lt('dados_json->>rinPaidDate',period.end);
         return query;
-      }, select, { orderBy: orderColumn, ...(batchSize ? { batchSize } : {}) });
+      }, select, { orderBy: orderColumn });
     })();
     state.snapshotCache.set(cacheKey,promise);
     return promise;
