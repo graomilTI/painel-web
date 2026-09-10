@@ -1,12 +1,12 @@
 import { DIRECTOR_MAP_STATES, DIRECTOR_MAP_COORDS } from '../dashboardDiretoriaMap.js';
 
 const DASHBOARD_DIRETORIA_STYLE_ID = 'dashboard-diretoria-style';
-const DASHBOARD_DIRETORIA_VIEW_CACHE = 'dashboard-diretoria:view:v2';
+const DASHBOARD_DIRETORIA_VIEW_CACHE = 'dashboard-diretoria:view:v3';
 if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const stylesheet = document.createElement('link');
   stylesheet.id = DASHBOARD_DIRETORIA_STYLE_ID;
   stylesheet.rel = 'stylesheet';
-  stylesheet.href = new URL('../../css/dashboard-diretoria.css?v=20260909-4', import.meta.url).href;
+  stylesheet.href = new URL('../../css/dashboard-diretoria.css?v=20260909-5', import.meta.url).href;
   document.head.appendChild(stylesheet);
 }
 
@@ -15,8 +15,9 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const EXCLUDED = new Set(['GERAL','AGROTRADER','LOG1000','PARAGUAI']);
   const METRICS = [
     { key:'tons', label:'Produção', sub:'Toneladas classificadas', format:'tons', color:'var(--dir-lime)' },
-    { key:'services', label:'Serviços realizados', sub:'Pela data da produção', format:'money', color:'var(--dir-green)' },
-    { key:'invoices', label:'Notas emitidas', sub:'Pela data de emissão', format:'money', color:'var(--dir-blue)' },
+    { key:'services', label:'Serviços realizados', sub:'Cargas classificadas', format:'count', color:'var(--dir-green)' },
+    { key:'invoices', label:'Notas emitidas', sub:'Documentos emitidos', format:'count', color:'var(--dir-blue)' },
+    { key:'billed', label:'Faturamento emitido', sub:'Valor total das notas', format:'money', color:'var(--dir-cyan)' },
     { key:'received', label:'Valores recebidos', sub:'Pela data do recebimento', format:'money', color:'var(--dir-gold)' },
     { key:'costs', label:'Custos totais', sub:'Pela competência da despesa', format:'money', color:'var(--dir-red)' }
   ];
@@ -26,7 +27,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const state = {
     container:null, supabase:null, loading:true, error:'', year:null, selectedMonths:new Set(),
     available:[], cache:new Map(), snapshotCache:new Map(), filters:{coord:'',sup:'',collab:'',client:''},
-    mode:'sum', compareBy:'month', view:'charts', rankMetric:'services', rankLimit:10,
+    mode:'sum', compareBy:'month', view:'charts', rankMetric:'billed', rankLimit:10,
     mapMetric:'tons', mapFocus:'BR', bubbleSize:24, detail:null, lastUpdated:null
   };
   const charts = { daily:null, finance:null };
@@ -39,7 +40,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   const fmtMoney = (v) => n(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
   const fmtTons = (v) => `${fmtNumber(v)} t`;
   const fmtPct = (v) => `${fmtNumber(v,1)}%`;
-  const formatMetric = (key, value) => value == null ? '<span class="dir-na">Sem detalhamento</span>' : (key === 'tons' ? fmtTons(value) : fmtMoney(value));
+  const formatMetric = (key, value) => value == null ? '<span class="dir-na">Sem detalhamento</span>' : key === 'tons' ? fmtTons(value) : key === 'services' ? `${fmtNumber(value)} cargas` : key === 'invoices' ? `${fmtNumber(value)} notas` : fmtMoney(value);
   const monthKey = (year, month) => `${year}-${String(month).padStart(2,'0')}`;
   const bounds = (year, month) => {
     const start = `${year}-${String(month).padStart(2,'0')}-01`;
@@ -64,14 +65,33 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   };
   const isExcluded = (coord) => EXCLUDED.has(norm(coord));
 
-  async function fetchAll(makeQuery, pageSize=1000, maxPages=40) {
+  // Paginação em duas fases: 1 requisição de contagem + páginas em paralelo
+  // (antes era sequencial, página por página — cada mês podia levar dezenas
+  // de round-trips em série). `queryFactory(select, opts)` deve montar a
+  // query DEPOIS do .select(), já que filtros só existem no FilterBuilder.
+  // `orderBy` é obrigatório para paginação correta: sem ORDER BY estável o
+  // Postgres não garante a mesma ordem entre requisições .range() separadas,
+  // e linhas podem ficar de fora silenciosamente quando a tabela recebe
+  // gravações concorrentes (como relatorio_resultado_diario, sincronizada
+  // continuamente pelos agentes) — foi a causa da produção do mês aparecer
+  // menor do que o total real.
+  async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy } = {}) {
+    const { count, error: countError } = await queryFactory('*', { count: 'exact', head: true });
+    if (countError) throw countError;
+    const total = count || 0;
+    if (!total) return [];
+    const pages = Math.min(Math.ceil(total / pageSize), maxPages);
+    const orderCols = (Array.isArray(orderBy) ? orderBy : [orderBy]).filter(Boolean);
+    const requests = Array.from({ length: pages }, (_, page) => {
+      let q = queryFactory(select);
+      orderCols.forEach((col) => { q = q.order(col, { ascending: true }); });
+      return q.range(page*pageSize, (page+1)*pageSize-1);
+    });
+    const results = await Promise.all(requests);
     const rows = [];
-    for (let page=0; page<maxPages; page+=1) {
-      const { data, error } = await makeQuery().range(page*pageSize,(page+1)*pageSize-1);
+    for (const { data, error } of results) {
       if (error) throw error;
-      const chunk = data || [];
-      rows.push(...chunk);
-      if (chunk.length < pageSize) break;
+      rows.push(...(data || []));
     }
     return rows;
   }
@@ -80,24 +100,30 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     const cacheKey = period ? `${table}:${period.start}:${period.end}` : table;
     if (state.snapshotCache.has(cacheKey)) return state.snapshotCache.get(cacheKey);
     const promise = (async () => {
-      const { data:latest, error:latestError } = await state.supabase.from(table).select('created_at').order('created_at',{ascending:false}).limit(1);
+      // grm_notas_fiscais_importacoes é redirecionada (via Proxy em
+      // dashboard-socio.js) para a view dashboard_socios_notas_emitidas_api,
+      // que não tem coluna sincronizado_em — só created_at. Usar
+      // sincronizado_em aqui quebrava essa tela inteira com erro 42703.
+      const timestampColumn = table==='grm_contas_receber_importacoes' ? 'sincronizado_em' : 'created_at';
+      const orderColumn = table==='grm_notas_fiscais_importacoes' ? ['created_at','numero_nf'] : 'id';
+      const { data:latest, error:latestError } = await state.supabase.from(table).select(timestampColumn).order(timestampColumn,{ascending:false}).limit(1);
       if (latestError) throw latestError;
-      const createdAt = latest?.[0]?.created_at;
+      const createdAt = latest?.[0]?.[timestampColumn];
       if (!createdAt) return [];
       const threshold = new Date(new Date(createdAt).getTime()-5*60*1000).toISOString();
-      return fetchAll(() => {
-        let query=state.supabase.from(table).select(select).gte('created_at',threshold);
+      return fetchAll((sel, opts) => {
+        let query=state.supabase.from(table).select(sel, opts).gte(timestampColumn,threshold);
         if (period && table==='grm_despesas_importacoes') query=query.gte('data_conta_de',period.start).lt('data_conta_de',period.end);
-        if (period && table==='grm_notas_fiscais_importacoes') query=query.gte('data_nota_real',period.start).lt('data_nota_real',period.end);
+        if (period && table==='grm_contas_receber_importacoes') query=query.gte('dados_json->>rinPaidDate',period.start).lt('dados_json->>rinPaidDate',period.end);
         return query;
-      });
+      }, select, { orderBy: orderColumn });
     })();
     state.snapshotCache.set(cacheKey,promise);
     return promise;
   }
 
   function normalizeProduction(row, year, month) {
-    return { year,month,date:String(row.data||''),coord:String(row.coordenacao||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:String(row.cliente_nacional||row.cliente_final||'').trim(),tons:n(row.toneladas),services:n(row.valor_embarcado) };
+    return { year,month,date:String(row.data||''),coord:String(row.coordenacao||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:String(row.cliente_nacional||row.cliente_final||'').trim(),tons:n(row.toneladas),services:n(row.cargas) };
   }
   function normalizeExpenses(row, year, month) {
     const base={year,month,coord:String(row.coordenacao||rawValue(row,['Coordenação','Coordenacao'])||'').trim(),sup:String(row.supervisao||'').trim(),collab:String(row.funcionario||'').trim(),client:''};
@@ -108,11 +134,12 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
   }
   function normalizeNote(row, year, month) {
     const noteDate = dateIso(row.data_nota_real || rawValue(row,['Data N.F.','Data NF','Data da Fatura']));
-    return { year,month,date:noteDate,coord:String(rawValue(row,['Coordenação','Coordenacao'])||'').trim(),sup:'',collab:'',client:String(row.cliente_nacional||rawValue(row,['Cliente Nacional','Cliente'])||'').trim(),number:String(row.numero_nf||rawValue(row,['Número NF','N.F.'])||'').trim(),invoices:n(row.valor_nota_real ?? row.valor_total ?? rawValue(row,['Valor da N.F.','Valor Total','Valor Bruto'])),createdAt:String(row.created_at||'') };
+    return { year,month,date:noteDate,coord:String(rawValue(row,['Coordenação','Coordenacao'])||'').trim(),sup:'',collab:'',client:String(row.cliente_nacional||rawValue(row,['Cliente Nacional','Cliente'])||'').trim(),number:String(row.numero_nf||rawValue(row,['Número NF','N.F.'])||'').trim(),invoices:1,billed:n(row.valor_nota_real ?? row.valor_total ?? rawValue(row,['Valor da N.F.','Valor Total','Valor Bruto'])),createdAt:String(row.updated_at||row.created_at||'') };
   }
   function normalizeReceipt(row, year, month, notesByNumber) {
-    const note = notesByNumber.get(norm(row.numero_nf));
-    return { year,month,date:String(row.recebimento||''),coord:note?.coord||'',sup:'',collab:'',client:String(row.cliente||note?.client||'').trim(),number:String(row.numero_nf||''),received:n(row.valor_pago) };
+    const number=String(row.numero_nf||rawValue(row,['biiNumber','Número NF','N.F.'])||'').trim();
+    const note = notesByNumber.get(norm(number));
+    return { year,month,date:dateIso(row.recebimento||rawValue(row,['rinPaidDate','Recebimento'])),coord:note?.coord||'',sup:'',collab:'',client:String(row.cliente||rawValue(row,['cliName','Cliente'])||note?.client||'').trim(),number,received:n(row.valor_pago??rawValue(row,['rinTotalValue','Valor Pago'])) };
   }
 
   async function loadMonth(year, month) {
@@ -121,10 +148,14 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     const promise = (async () => {
       const { start,end } = bounds(year,month);
       const [productionRows, expenseSnapshot, noteSnapshot, receiptRows, metaResult] = await Promise.all([
-        fetchAll(() => state.supabase.from('relatorio_resultado_diario').select('data,funcionario,coordenacao,supervisao,cliente_nacional,cliente_final,toneladas,valor_embarcado').gte('data',start).lt('data',end)),
+        fetchAll(
+          (sel, opts) => state.supabase.from('relatorio_resultado_diario').select(sel, opts).gte('data',start).lt('data',end),
+          'data,funcionario,coordenacao,supervisao,cliente_nacional,cliente_final,cargas,toneladas',
+          { orderBy: 'id' }
+        ),
         loadLatestSnapshot('grm_despesas_importacoes','data_conta_de,data_conta_ate,coordenacao,supervisao,funcionario,categoria,grupo_categoria,valor,dados_json,created_at',{start,end}),
-        loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at'),
-        fetchAll(() => state.supabase.from('financeiro_contas_receber').select('cliente,numero_nf,valor_pago,recebimento').gte('recebimento',start).lt('recebimento',end).not('recebimento','is',null)),
+        loadLatestSnapshot('grm_notas_fiscais_importacoes','data_nota_real,cliente_nacional,numero_nf,valor_nota_real,valor_total,dados_json,created_at,updated_at,sincronizado_em'),
+        loadLatestSnapshot('grm_contas_receber_importacoes','dados_json,sincronizado_em',{start,end}),
         state.supabase.from('metas_producao').select('regional,estado,meta_tons').eq('ano',year).eq('mes',month).eq('ativo',true)
       ]);
       if (metaResult.error) throw metaResult.error;
@@ -142,7 +173,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
         const noteKey = norm(row.number);
         if (!allNotesByNumber.has(noteKey) || allNotesByNumber.get(noteKey).createdAt < row.createdAt) allNotesByNumber.set(noteKey,row);
       });
-      const receipts = receiptRows.map((row) => normalizeReceipt(row,year,month,allNotesByNumber)).filter((row) => !isExcluded(row.coord));
+      const receipts = receiptRows.map((row) => normalizeReceipt(row,year,month,allNotesByNumber)).filter((row) => row.date>=start&&row.date<end&&!isExcluded(row.coord));
       const metas = (metaResult.data||[]).filter((row) => !isExcluded(row.regional)).map((row) => ({coord:String(row.regional||'').trim(),uf:String(row.estado||'').trim().toUpperCase(),target:n(row.meta_tons)}));
       return { year,month,production,expenses,notes,receipts,metas };
     })();
