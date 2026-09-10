@@ -65,6 +65,31 @@ function chunk<T>(rows: T[], size = 300): T[][] {
   return out;
 }
 
+// PostgREST tem um teto de linhas por resposta (visto em produção: 1000,
+// mesmo pedindo .limit(20000) no client) — uma única página silenciosamente
+// corta o resultado sem erro nem aviso (retorna 206 Partial Content, que o
+// supabase-js não expõe como erro). `colaboradores_atuais` já passou de 1000
+// linhas (achado 10/09: LUCAS PEREIRA DA SILVA, Intermitente, sumia
+// inteiramente do agente de liberação de despesas GRM por cair fora da 1ª
+// página, ordem não determinística). Pagina com `.range()` até a página
+// vir menor que o tamanho pedido.
+async function paginateAll<T = Record<string, unknown>>(
+  buildPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  pageSize = 1000,
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await buildPage(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = data || [];
+    all.push(...page);
+    if (page.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 function jwtRole(token: string): string {
   try {
     const payload = token.split('.')[1];
@@ -394,12 +419,10 @@ Deno.serve(async (req) => {
     if (configError) throw configError;
     const configByKey = new Map((configRows || []).map((row) => [clean(row.chave), row]));
 
-    const { data: allStaffRows, error: staffError } = await service
-      .from('colaboradores_atuais')
-      .select('*')
-      .limit(20000);
-    if (staffError) throw staffError;
-    const allStaff = (allStaffRows || []).filter(isActiveStaff);
+    const allStaffRows = await paginateAll<Record<string, unknown>>(
+      (from, to) => service.from('colaboradores_atuais').select('*').range(from, to),
+    );
+    const allStaff = allStaffRows.filter(isActiveStaff);
     const staffByCpf = new Map<string, Record<string, unknown>>();
     const staffByName = new Map<string, Record<string, unknown>[]>();
     for (const staff of allStaff) {
@@ -409,26 +432,28 @@ Deno.serve(async (req) => {
       if (name) staffByName.set(name, [...(staffByName.get(name) || []), staff]);
     }
 
-    const { data: contractRows, error: contractError } = await service
-      .from('colaborador_cruzamento')
-      .select('cpf,tipo_contrato,salario,atualizado_em')
-      .order('atualizado_em', { ascending: false })
-      .limit(20000);
-    if (contractError) throw contractError;
+    const contractRows = await paginateAll<Record<string, unknown>>(
+      (from, to) => service
+        .from('colaborador_cruzamento')
+        .select('cpf,tipo_contrato,salario,atualizado_em')
+        .order('atualizado_em', { ascending: false })
+        .range(from, to),
+    );
     const contractByCpf = new Map<string, Record<string, unknown>>();
-    for (const contract of contractRows || []) {
+    for (const contract of contractRows) {
       const cpf = digits(contract.cpf);
       if (cpf.length === 11 && !contractByCpf.has(cpf)) contractByCpf.set(cpf, contract);
     }
 
     const activeWindowStart = todayInSaoPaulo();
-    const { data: activePrograms, error: globalOsError } = await service
-      .from('programacao_dia')
-      .select('id,data_referencia')
-      .gte('data_referencia', activeWindowStart)
-      .limit(20000);
-    if (globalOsError) throw globalOsError;
-    const globalOsIds = (activePrograms || []).map((row) => clean(row.id)).filter(Boolean);
+    const activePrograms = await paginateAll<Record<string, unknown>>(
+      (from, to) => service
+        .from('programacao_dia')
+        .select('id,data_referencia')
+        .gte('data_referencia', activeWindowStart)
+        .range(from, to),
+    );
+    const globalOsIds = activePrograms.map((row) => clean(row.id)).filter(Boolean);
     const globalLinks: Record<string, unknown>[] = [];
     for (const ids of chunk(globalOsIds)) {
       const { data, error } = await service
@@ -576,8 +601,14 @@ Deno.serve(async (req) => {
           linkProblems.push({ colaborador: row.nome_colaborador ?? row.colaborador_id, problema: resolved.error, origem: 'DISPONIVEL' });
           continue;
         }
-        if (!norm(contractByCpf.get(resolved.cpf)?.tipo_contrato).includes('EFETIVO')) {
-          overall.avisos.push(`${row.nome_colaborador || resolved.cpf}: disponibilidade ignorada porque o contrato vigente não é EFETIVO.`);
+        // Efetivos e Intermitentes marcados DISPONIVEL têm autorização
+        // financeira válida sem vínculo a O.S. Achado 10/09: Intermitentes
+        // (ex.: Salário de Intermitente configurado) ficavam de fora dessa
+        // trava e nunca tinham café/almoço/janta liberado pelo fluxo
+        // Disponível, mesmo com o modal já permitindo a solicitação.
+        const tipoContratoDisponivel = norm(contractByCpf.get(resolved.cpf)?.tipo_contrato);
+        if (!tipoContratoDisponivel.includes('EFETIVO') && !tipoContratoDisponivel.includes('INTERMITENTE')) {
+          overall.avisos.push(`${row.nome_colaborador || resolved.cpf}: disponibilidade ignorada porque o contrato vigente não é EFETIVO nem INTERMITENTE.`);
           continue;
         }
         availableCpfs.add(resolved.cpf);
