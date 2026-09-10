@@ -1225,6 +1225,24 @@ async function loadDespesas() {
     row.conferido_em = r.conferido_em || null;
   });
 
+  // disponibilidade='OK' também aparece pra Supervisor/Coordenador/Auditor/
+  // Administrativo/Gerente Operacional sem NENHUMA confirmação real de O.S.
+  // nem despesa (confirmado via SQL em 10/09: de 299 Supervisores "OK", só
+  // 43 tinham despesa real; de 161 Coordenadores "OK", 2 colaboradores
+  // específicos reportados pela usuária não tinham NENHUMA linha em
+  // programacao_equipe pra aquele dia). 'OK' sozinho não prova presença pra
+  // esses cargos — só Classificador/Suporte/Logistica (cargos que realmente
+  // embarcam em O.S.) têm correlação real entre "OK" e despesa. Cargos de
+  // liderança/administrativo só ganham o almoço automático se tiverem
+  // decisão explícita (Disponível, fluxo Sem O.S.) ou despesa já lançada.
+  const CARGOS_OPERACIONAIS = /^classificador|^suporte$|^logistica$/i;
+  for (const row of rows.values()) {
+    if (row.alimentacao_registrada) continue;
+    if (normalizeText(row.disponibilidade_status) === 'DISPONIVEL') continue;
+    if (CARGOS_OPERACIONAIS.test(normalizeText(row.cargo))) continue;
+    row.almoco_valor = false;
+  }
+
   const colaboradorIds = [...new Set([...rows.values()].map((r) => r.colaborador_id).filter(Boolean))];
   if (colaboradorIds.length) {
     const { data: grmStatus, error: grmError } = await supabase.rpc('grm_despesas_status_por_colaborador', {
