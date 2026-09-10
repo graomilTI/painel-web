@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/dashboard-diretoria.js?v=20260910-2';
+import './modules/dashboard-diretoria.js?v=20260910-3';
 
 function normalizarChave(value) {
   return String(value ?? '')
