@@ -96,7 +96,7 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
     }
   }
 
-  async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy, batchSize=4 } = {}) {
+  async function fetchAll(queryFactory, select, { pageSize=1000, maxPages=40, orderBy, batchSize=2 } = {}) {
     const orderCols = (Array.isArray(orderBy) ? orderBy : [orderBy]).filter(Boolean);
     const buildPage = (page) => {
       let q = queryFactory(select);
@@ -130,7 +130,14 @@ if (!document.getElementById(DASHBOARD_DIRETORIA_STYLE_ID)) {
       // que não tem coluna sincronizado_em — só created_at. Usar
       // sincronizado_em aqui quebrava essa tela inteira com erro 42703.
       const timestampColumn = table==='grm_contas_receber_importacoes' ? 'sincronizado_em' : 'created_at';
-      const orderColumn = table==='grm_notas_fiscais_importacoes' ? ['created_at','numero_nf'] : 'id';
+      // A view dashboard_socios_notas_emitidas_api computa created_at como
+      // MAX(created_at) da tabela inteira via CROSS JOIN (pg_get_viewdef
+      // confirmou) — é o MESMO valor em toda linha, não serve pra ordenar
+      // nem pra filtrar por linha. numero_nf também é uma expressão
+      // calculada (concat_ws), não uma coluna indexada, mas pelo menos varia
+      // por linha; ordenar só por ela evita o custo extra de ordenar por uma
+      // coluna que não discrimina nada.
+      const orderColumn = table==='grm_notas_fiscais_importacoes' ? 'numero_nf' : 'id';
       const { data:latest, error:latestError } = await fetchPageWithRetry(
         () => state.supabase.from(table).select(timestampColumn).order(timestampColumn,{ascending:false}).limit(1)
       );
