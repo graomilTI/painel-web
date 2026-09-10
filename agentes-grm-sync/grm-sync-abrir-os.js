@@ -683,6 +683,31 @@ async function marcarProcessando(id, tentativaAtual) {
   return (result.data || []).length > 0;
 }
 
+// A captura do número (salvarECapturarNumero) tem um fallback frágil que lê
+// a 1ª célula numérica da 1ª linha da grade — se ela não tiver atualizado a
+// tempo, esse número pode ser o de uma O.S. antiga de OUTRO cliente/contrato
+// já existente. Antes de gravar como cadastrado, confere no operacional_os
+// (fonte real, sincronizada do GRM) se esse número já pertence a um
+// cliente/contrato diferente do desta solicitação — se sim, é captura
+// errada, não um número novo, e não pode ser devolvido ao Gestor.
+async function validarNumeroNaoColide(numeroOs, solicitacao) {
+  var result = await supabase.from('operacional_os').select('cliente,contrato').eq('numero_os', numeroOs).limit(1);
+  if (result.error) { log('WARN', 'Não consegui validar colisão de número (' + result.error.message + ') — seguindo sem checar.'); return; }
+  var existente = (result.data || [])[0];
+  if (!existente) return; // ainda não sincronizado do GRM: número realmente novo, nada a comparar.
+
+  var contratoSolicitado = String(solicitacao.numero_contrato || '').trim().toUpperCase();
+  var contratoExistente = String(existente.contrato || '').trim().toUpperCase();
+  if (contratoSolicitado && contratoExistente && contratoSolicitado === contratoExistente) return;
+
+  throw new Error(
+    'Captura de número inválida: O.S. ' + numeroOs + ' já pertence a outro cliente/contrato (' +
+    (existente.cliente || '-') + ' / ' + (existente.contrato || '-') +
+    '), não a "' + (solicitacao.contratante_cliente || '-') + ' / ' + (solicitacao.numero_contrato || '-') +
+    '". Provável falha na leitura da grade após salvar — revise manualmente no GRM e reenvie.'
+  );
+}
+
 async function marcarCadastrada(id, numeroOs) {
   var result = await supabase.from(TABLE_SOLICITACOES).update({
     status: 'CADASTRADO',
@@ -763,6 +788,7 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
     }
 
     var numeroOs = await salvarECapturarNumero(page);
+    await validarNumeroNaoColide(numeroOs, solicitacao);
     await marcarCadastrada(id, numeroOs);
     await finalizarExecucao(execucaoId, { status: 'SUCESSO', numero_os: numeroOs });
     log('SUCCESS', 'Solicitação ' + id + ': O.S. ' + numeroOs + ' cadastrada no GRM.');
