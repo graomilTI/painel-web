@@ -1125,7 +1125,7 @@ async function loadDespesas() {
   const grmDataMin = datasReferencia.length ? datasReferencia.reduce((a, b) => (a < b ? a : b)) : null;
   const grmDataMax = datasReferencia.length ? datasReferencia.reduce((a, b) => (a > b ? a : b)) : null;
 
-  const [disp, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
+  const [dispBruto, estadia, alimentacao, deslocamento, extras, statusRows] = await Promise.all([
     selectProgramacaoColaboradores(programacaoIds),
     selectByProgramacoes('programacao_estadia', '*', programacaoIds),
     selectByProgramacoes('programacao_alimentacao', '*', programacaoIds),
@@ -1133,6 +1133,23 @@ async function loadDespesas() {
     selectByProgramacoes('programacao_extras', '*', programacaoIds),
     selectByProgramacoes('programacao_conferencia_status', '*', programacaoIds),
   ]);
+
+  // rpc_programacao_colaboradores_por_ids() (ver selectProgramacaoColaboradores)
+  // devolve TODO colaborador vinculado à programação, inclusive quem nunca
+  // teve nenhuma decisão real naquele dia (a maioria nasce "SEM EMBARQUE" —
+  // valor padrão do roster da supervisão, não uma confirmação). Confirmado
+  // com dados reais (10/09): um supervisor pode estar "confirmado" com os_id
+  // em programacao_equipe (ele é o responsável pela O.S., não quem embarca
+  // nela) mesmo com disponibilidade='SEM EMBARQUE' — então esse vínculo não
+  // serve pra decidir quem deve ganhar o almoço automático. Só 'OK' (equipe
+  // realmente escalada) e 'DISPONIVEL' (decisão explícita do gestor no fluxo
+  // Sem O.S.) representam presença real; os demais status (SEM EMBARQUE,
+  // LOGISTICA, FOLGA, ATESTADO, FERIAS, FALTA, DESLOCAMENTO, INATIVO) não
+  // geram linha de despesa nem o almoço padrão de baseRow().
+  const disp = dispBruto.filter((r) => {
+    const status = normalizeText(r.disponibilidade);
+    return status === 'OK' || status === 'DISPONIVEL';
+  });
 
   const rows = new Map();
 
