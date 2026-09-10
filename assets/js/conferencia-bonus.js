@@ -292,7 +292,7 @@ function renderAuditoria() {
         <p>Importe a planilha mensal. Todo nome encontrado na coluna <b>Colaborador</b> será considerado <b>Inapto</b> para esta competência. Um novo upload substitui a lista anterior do mesmo mês.</p>
         <div class="audit-drop">
           <strong>Planilha de auditoria</strong>
-          <small>Formato .xlsx ou .xls · cabeçalho “Colaborador”</small>
+          <small>Formato .xlsx ou .xls · cabeçalho “Colaborador” (opcional: “Valor” e “Descrição” lançam um Adiantamento no Caixa, teto de R$ 500,00 por colaborador)</small>
           <label class="audit-btn" for="bonusAuditFile">Selecionar planilha</label>
           <input class="audit-file" id="bonusAuditFile" type="file" accept=".xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
         </div>
@@ -305,9 +305,9 @@ function renderAuditoria() {
         </div>
         <div class="audit-table-wrap">
           <table class="bonus-table">
-            <thead><tr><th>Colaborador</th><th>Arquivo</th><th>Importado em</th></tr></thead>
+            <thead><tr><th>Colaborador</th><th>Valor desconto</th><th>Descrição</th><th>Arquivo</th><th>Importado em</th></tr></thead>
             <tbody>
-              ${auditoria.length ? auditoria.map((row) => `<tr><td><span class="bonus-name">${esc(row.colaborador_nome)}</span></td><td>${esc(row.arquivo_nome || '—')}</td><td>${esc(dataHoraBr(row.importado_em))}</td></tr>`).join('') : '<tr><td colspan="3"><div class="bonus-empty">Nenhuma planilha importada para este mês.</div></td></tr>'}
+              ${auditoria.length ? auditoria.map((row) => `<tr><td><span class="bonus-name">${esc(row.colaborador_nome)}</span></td><td>${Number(row.valor_desconto || 0) > 0 ? esc(moeda(row.valor_desconto)) : '—'}</td><td>${esc(row.descricao_desconto || '—')}</td><td>${esc(row.arquivo_nome || '—')}</td><td>${esc(dataHoraBr(row.importado_em))}</td></tr>`).join('') : '<tr><td colspan="5"><div class="bonus-empty">Nenhuma planilha importada para este mês.</div></td></tr>'}
             </tbody>
           </table>
         </div>
@@ -334,7 +334,7 @@ async function loadData() {
     supabase.rpc('bonus_producao_competencia', { p_competencia: comp }),
     supabase
       .from('bonus_auditoria_inaptos')
-      .select('id,colaborador_nome,arquivo_nome,importado_em')
+      .select('id,colaborador_nome,arquivo_nome,importado_em,valor_desconto,descricao_desconto')
       .eq('competencia', comp)
       .order('colaborador_nome', { ascending: true }),
   ]);
@@ -346,7 +346,26 @@ async function loadData() {
   renderBody();
 }
 
-function extractCollaborators(workbook) {
+const COL_VALOR_ALIASES = ['Valor', 'Valor Desconto', 'Valor do Desconto', 'Desconto', 'Valor Auditoria'];
+const COL_DESCRICAO_ALIASES = ['Descrição', 'Descricao', 'Motivo', 'Observação', 'Observacao'];
+
+function parseBrNumber(value) {
+  const text = String(value ?? '').replace(/R\$/gi, '').trim();
+  if (!text) return 0;
+  const normalized = text.includes(',') ? text.replace(/\./g, '').replace(',', '.') : text;
+  const n = Number(normalized.replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function findColumn(line, aliases) {
+  for (const alias of aliases) {
+    const idx = line.findIndex((cell) => norm(cell) === norm(alias));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+function extractItems(workbook) {
   for (const sheetName of workbook.SheetNames || []) {
     const sheet = workbook.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
@@ -354,12 +373,20 @@ function extractCollaborators(workbook) {
       const line = Array.isArray(rows[r]) ? rows[r] : [];
       const col = line.findIndex((cell) => norm(cell) === norm('Colaborador'));
       if (col < 0) continue;
+      const valorCol = findColumn(line, COL_VALOR_ALIASES);
+      const descricaoCol = findColumn(line, COL_DESCRICAO_ALIASES);
       const unique = new Map();
       for (let i = r + 1; i < rows.length; i += 1) {
         const raw = String(rows[i]?.[col] ?? '').trim();
         const key = norm(raw);
         if (!key || key === 'TOTAL' || key === 'TOTAIS' || key === 'COLABORADOR') continue;
-        if (!unique.has(key)) unique.set(key, raw);
+        const valor = valorCol >= 0 ? parseBrNumber(rows[i]?.[valorCol]) : 0;
+        const descricao = descricaoCol >= 0 ? String(rows[i]?.[descricaoCol] ?? '').trim() : '';
+        if (!unique.has(key)) {
+          unique.set(key, { nome: raw, valor, descricao });
+        } else {
+          unique.get(key).valor += valor;
+        }
       }
       if (unique.size) return [...unique.values()];
     }
@@ -380,24 +407,33 @@ async function handleAuditFile(event) {
   try {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
-    const nomes = extractCollaborators(workbook);
-    if (!nomes.length) throw new Error('Não encontrei a coluna “Colaborador” com nomes na planilha.');
+    const itens = extractItems(workbook);
+    if (!itens.length) throw new Error('Não encontrei a coluna “Colaborador” com nomes na planilha.');
 
-    msg.textContent = `${nomes.length} nome(s) encontrados. Salvando auditoria...`;
+    msg.textContent = `${itens.length} nome(s) encontrados. Salvando auditoria...`;
     const { data, error } = await supabase.rpc('bonus_substituir_auditoria', {
       p_competencia: competencia(),
-      p_nomes: nomes,
+      p_itens: itens,
       p_arquivo_nome: file.name,
     });
     if (error) throw error;
 
-    msg.className = 'audit-msg ok';
-    msg.textContent = `${Number(data || nomes.length)} colaborador(es) importados. Todos foram marcados como Inapto em ${MESES_FULL[mes]} de ${ano}.`;
+    const importados = Number(data?.importados ?? itens.length);
+    const enfileirados = Number(data?.enfileirados_caixa || 0);
+    const valorEnfileirado = Number(data?.valor_enfileirado_caixa || 0);
+    const bloqueados = Number(data?.bloqueados_teto || 0);
+
+    const partes = [`${importados} colaborador(es) importados e marcados como Inapto em ${MESES_FULL[mes]} de ${ano}`];
+    if (enfileirados) partes.push(`${enfileirados} adiantamento(s) enfileirado(s) no Caixa (${moeda(valorEnfileirado)})`);
+    if (bloqueados) partes.push(`${bloqueados} bloqueado(s)/reduzido(s) pelo teto de R$ 500,00 por colaborador`);
+
+    msg.className = `audit-msg ${bloqueados ? 'err' : 'ok'}`;
+    msg.textContent = `${partes.join('. ')}.`;
     await loadData();
     const nextMsg = root.querySelector('#bonusAuditMsg');
     if (nextMsg) {
-      nextMsg.className = 'audit-msg ok';
-      nextMsg.textContent = `${Number(data || nomes.length)} colaborador(es) importados de ${file.name}.`;
+      nextMsg.className = `audit-msg ${bloqueados ? 'err' : 'ok'}`;
+      nextMsg.textContent = `${partes.join('. ')} (arquivo: ${file.name}).`;
     }
   } catch (error) {
     console.error('[conferencia-bonus] upload auditoria', error);
