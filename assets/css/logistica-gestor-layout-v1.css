@@ -420,6 +420,35 @@ body.logistica-gestor-page .log-table tr:hover td {
   background: rgba(9, 47, 33, 0.52);
 }
 
+/* Minhas solicitações: linhas mais baixas — cada célula fica em no máximo
+   2 linhas (rótulo em negrito + 1 linha de detalhe), em vez de 3-4 <br>
+   empilhados. */
+body.logistica-gestor-page .log-table-compact td {
+  padding: 7px 12px;
+  line-height: 1.45;
+  vertical-align: top;
+}
+
+body.logistica-gestor-page .log-table-compact td small {
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+body.logistica-gestor-page .log-btn-informar-colab {
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(22, 215, 144, 0.35);
+  background: rgba(22, 215, 144, 0.10);
+  color: #72ddb0;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+body.logistica-gestor-page .log-btn-informar-colab:hover {
+  background: rgba(22, 215, 144, 0.2);
+}
+
 /* Finalização: leitura operacional densa, com decisão binária evidente. */
 body.logistica-gestor-page .log-finalizacao-card {
   padding: 14px 16px !important;

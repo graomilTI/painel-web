@@ -634,15 +634,17 @@ function pontoProblemaAvisoHtml(row) {
 
 function renderAberturaOsHistorico() {
   if (!state.aberturaRows.length) return `<div class="log-empty">Nenhuma solicitação de abertura de O.S. encontrada.</div>`;
-  return `<div class="log-table-wrap"><table class="log-table"><thead><tr><th>Data</th><th>Cliente / contrato</th><th>Origem / destino</th><th>Produto</th><th>Status</th></tr></thead><tbody>${state.aberturaRows.map(r => {
+  return `<div class="log-table-wrap"><table class="log-table log-table-compact"><thead><tr><th>Data / Regional</th><th>Cliente / contrato</th><th>Origem → destino</th><th>Produto</th><th>Status</th><th></th></tr></thead><tbody>${state.aberturaRows.map(r => {
     const precisaCorrigir = String(r.status || '').toUpperCase() === 'CORRIGIR';
+    const cadastrada = String(r.status || '').toUpperCase() === 'CADASTRADO';
     return `
     <tr class="${precisaCorrigir ? 'log-row-corrigir' : ''}">
-      <td data-label="Data">${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
-      <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
-      <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(ufCidade(r.uf_embarque, r.cidade_embarque))} → ${esc(ufCidade(r.uf_destino, r.cidade_destino))}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
-      <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small>${testesResumo(r.testes)}</td>
-      <td data-label="Status"><span class="log-status-cell"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${precisaCorrigir ? `<button class="log-editar-corrigir-btn" data-editar-abertura="${esc(r.id)}" type="button" title="Corrigir e reenviar para Logística">✎</button>` : ''}</span>${camposCorrigirBadgesHtml(r)}${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}${pontoProblemaAvisoHtml(r)}</td>
+      <td data-label="Data / Regional">${brDate(r.created_at)}<br><small class="muted">${esc(r.regional || '-')}</small></td>
+      <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">${esc(r.filial_pagadora || '-')} · Ctr. ${esc(r.numero_contrato || '-')}</small></td>
+      <td data-label="Origem → destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(ufCidade(r.uf_embarque, r.cidade_embarque))} → ${esc(ufCidade(r.uf_destino, r.cidade_destino))} · ${esc(r.local_destino || '-')}</small></td>
+      <td data-label="Produto">${esc(r.produto || '-')} <small class="muted">${esc(r.tipo_produto || '-')}</small><br><small class="muted">${fmt(r.volume_inicial)} tons · ${esc(r.servico || '-')}${testesResumo(r.testes)}</small></td>
+      <td data-label="Status"><span class="log-status-cell"><span class="log-chip ${cadastrada?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${cadastrada ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${precisaCorrigir ? `<button class="log-editar-corrigir-btn" data-editar-abertura="${esc(r.id)}" type="button" title="Corrigir e reenviar para Logística">✎</button>` : ''}</span>${camposCorrigirBadgesHtml(r)}${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}${pontoProblemaAvisoHtml(r)}</td>
+      <td data-label="">${cadastrada ? `<button class="log-btn-informar-colab" data-informar-colab="${esc(r.id)}" data-os="${esc(r.numero_os_cadastrada || '')}" type="button">Informar colaborador</button>` : ''}</td>
     </tr>`;
   }).join('')}</tbody></table></div>`;
 }
