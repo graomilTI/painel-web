@@ -1162,7 +1162,20 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
   var tentativa = Number(solicitacao.tentativas_agente || 0) + 1;
 
   if (tentativa > MAX_TENTATIVAS) {
-    await marcarErro(id, 'Número máximo de tentativas (' + MAX_TENTATIVAS + ') excedido — revise manualmente e reenvie.');
+    // erro_agente já foi limpado no reenvio (decidir_abertura_os zera na
+    // aprovação) — sem isso a mensagem final vira só "tentativas esgotadas",
+    // sem dizer POR QUÊ, e quem revisa o card não sabe o que corrigir antes
+    // de reenviar de novo (achado ao vivo 11/09: solicitação c4396f64 caiu
+    // aqui sem mostrar que o problema real era o campo Produtor). Busca a
+    // última execução real (não esse guard) que ainda tem a causa provável.
+    var mensagemFinal = 'Número máximo de tentativas (' + MAX_TENTATIVAS + ') excedido — revise manualmente e reenvie.';
+    var ultimaExecucao = await supabase.from(TABLE_EXECUCOES)
+      .select('mensagem').eq('abertura_os_id', id).eq('status', 'ERRO')
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    if (!ultimaExecucao.error && ultimaExecucao.data && ultimaExecucao.data.mensagem) {
+      mensagemFinal += ' Última causa registrada: ' + ultimaExecucao.data.mensagem;
+    }
+    await marcarErro(id, mensagemFinal);
     log('ERROR', 'Solicitação ' + id + ': tentativas esgotadas.');
     return;
   }
