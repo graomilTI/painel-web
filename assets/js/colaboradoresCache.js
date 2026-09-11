@@ -14,7 +14,7 @@
 
 import { supabase } from './supabaseClient.js';
 
-const CACHE_KEY = 'grm:colaboradores:v2';
+const CACHE_KEY = 'grm:colaboradores:v3';
 const LEGACY_CACHE_KEY = 'grm:colaboradores_atuais:v1';
 const TTL_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 1000;
@@ -31,9 +31,9 @@ function garantirInscricaoRealtime() {
     .subscribe();
 }
 
-const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo';
-const CAMPOS_MINIMOS = 'nome,cpf,tipo,supervisao,coordenacao,empresa,situacao';
-const CAMPOS_FALLBACK = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,data_referencia';
+const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,sexo,whatsapp';
+const CAMPOS_MINIMOS = 'id,nome,cpf,tipo,supervisao,coordenacao,empresa,situacao,sexo,whatsapp';
+const CAMPOS_FALLBACK = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,data_referencia,sexo,whatsapp';
 
 let inflight = null;
 
@@ -74,6 +74,8 @@ function normalizarLinha(row = {}) {
     empresa: texto(row.empresa),
     situacao: texto(row.situacao ?? row.status),
     ativo: row.ativo,
+    sexo: texto(row.sexo),
+    whatsapp: texto(row.whatsapp),
     data_referencia: row.data_referencia ?? null,
   };
 }

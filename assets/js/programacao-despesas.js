@@ -513,6 +513,12 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
         <input class="peqd-inp peqd-dias" data-tab="estadia" data-fld="dias" type="number" min="1" value="${dias}" title="diárias" />
         <input class="peqd-inp peqd-obs" data-tab="estadia" data-fld="observacao" value="${esc(est.observacao || '')}" placeholder="Observação" />
       </div>
+      <div class="peqd-row peqd-hotel-fields" data-hotel-fields ${tipoEst === 'HOTEL' ? '' : 'hidden'} style="margin-top:8px">
+        <input class="peqd-inp" data-hotel-horario type="time" aria-label="Horário de chegada ao hotel" title="Horário de chegada ao hotel" />
+        <input class="peqd-inp" data-hotel-uf value="${esc(ufFromEmbarque(embarqueRef))}" maxlength="2" placeholder="UF *" aria-label="UF do hotel" />
+        <select class="peqd-inp" data-hotel-sexo aria-label="Sexo do colaborador"><option value="">Sexo *</option><option value="MASCULINO">Masculino</option><option value="FEMININO">Feminino</option></select>
+        <button type="button" class="peqd-extra-add" data-solicitar-hotel>Solicitar hotel</button>
+      </div>
     </div>
 
     <div class="peqd-sec" data-sec="alimentacao">
@@ -627,11 +633,36 @@ async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
     const dataCheckin = dataReferencia || todayIso();
     const checkout = addDaysIso(dataCheckin, dias);
     const cidade = card.querySelector('[data-fld="cidade"]')?.value?.trim() || cidadeFromEmbarque(embarque);
-    const uf = ufFromEmbarque(embarque);
+    const uf = (card.querySelector('[data-hotel-uf]')?.value || ufFromEmbarque(embarque)).trim().toUpperCase();
+    const horario = card.querySelector('[data-hotel-horario]')?.value || '';
+    const sexo = card.querySelector('[data-hotel-sexo]')?.value || '';
     const programacaoId = card.dataset.programacaoId || null;
     const ctx = await getUserContext().catch(() => null);
     const user = ctx?.user || {};
     const supervisao = user.supervisao || '';
+
+    // Novo fluxo: cada marcação HOTEL gera seu card operacional e pode ser
+    // agrupada posteriormente pelo ADM com outras pessoas/períodos compatíveis.
+    if (card.querySelector('[data-hotel-fields]')) {
+      if (!cidade || !uf || !horario || !sexo) throw new Error('Informe cidade, UF, horário de chegada e sexo antes de solicitar o hotel.');
+      const cpfDigits = String(colabId || '').replace(/\D/g, '');
+      let cadastro = null;
+      if (/^[0-9a-f-]{36}$/i.test(String(colabId))) {
+        const { data } = await supabase.from('colaboradores').select('id,cpf,tipo,empresa,coordenacao,supervisao').eq('id', colabId).maybeSingle(); cadastro = data;
+      } else if (cpfDigits.length === 11) {
+        const { data } = await supabase.from('colaboradores').select('id,cpf,tipo,empresa,coordenacao,supervisao').eq('cpf', cpfDigits).maybeSingle(); cadastro = data;
+      } else {
+        const { data } = await supabase.from('colaboradores').select('id,cpf,tipo,empresa,coordenacao,supervisao').ilike('nome', nome).limit(1).maybeSingle(); cadastro = data;
+      }
+      if (!cadastro?.id) throw new Error(`Cadastro de ${nome} não localizado na base de colaboradores.`);
+      const p_solicitacao = { programacao_id: programacaoId, solicitante_nome:user.name||user.email||'Gestor', solicitante_email:user.email||'', empresa:user.empresa||cadastro.empresa||'', coordenacao:user.coordenacao||cadastro.coordenacao||'', supervisao:supervisao||cadastro.supervisao||'', regional:supervisao||'', cidade, uf, cliente, local_embarque:embarque||'', observacao_gestor:`Solicitação automática via Programação — ${nome}.`, origem_solicitacao:'PROGRAMACAO' };
+      const p_colaboradores = [{ colaborador_id:cadastro.id, nome_colaborador:nome, cpf:cadastro.cpf||null, tipo_colaborador:cadastro.tipo||null, empresa:cadastro.empresa||null, coordenacao:cadastro.coordenacao||null, supervisao:cadastro.supervisao||supervisao||null, data_checkin_prevista:dataCheckin, horario_chegada_previsto:horario, quantidade_diarias_prevista:dias, sexo }];
+      const { data, error } = await supabase.rpc('hospedagem_v3_criar_solicitacao',{p_solicitacao,p_colaboradores});
+      if (error) throw error;
+      if (badge) { badge.hidden=false;badge.classList.remove('erro');badge.textContent=`✓ Hotel solicitado (${data?.codigo||''})`; }
+      delete card.dataset.hotelPendente;
+      return;
+    }
 
     let solicitacoesQuery = supabase
       .from('hospedagem_solicitacoes')
@@ -1045,9 +1076,13 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       const badge = card.querySelector('[data-hotel-badge]');
       if (normalizeText(sel.value) === 'HOTEL') {
         card.dataset.hotelPendente = '1';
+        const hotelFields = card.querySelector('[data-hotel-fields]');
+        if (hotelFields) hotelFields.hidden = false;
       } else {
         delete card.dataset.hotelPendente;
         if (badge) badge.hidden = true;
+        const hotelFields = card.querySelector('[data-hotel-fields]');
+        if (hotelFields) hotelFields.hidden = true;
       }
     }
     // Ao escolher "Frota - Motorista"/"Frota - Carona", puxa a placa já
@@ -1070,6 +1105,15 @@ export function wireDespesasCards(containerEl, ctx = {}) {
   containerEl.addEventListener('click', async (event) => {
     if (isReadOnly()) return;
     talvezDispararHotelPendente(event);
+    const hotelBtn = event.target.closest('[data-solicitar-hotel]');
+    if (hotelBtn) {
+      const card = hotelBtn.closest('.peqd-card');
+      hotelBtn.disabled = true;
+      try { await criarSolicitacaoHotelSeNecessario(card, getDataReferencia()); }
+      catch (error) { console.error('[despesas] solicitação de hotel', error); const badge=card?.querySelector('[data-hotel-badge]'); if(badge){badge.hidden=false;badge.classList.add('erro');badge.textContent=`⚠ ${error.message||'Falha ao solicitar hotel'}`;} }
+      finally { hotelBtn.disabled = false; }
+      return;
+    }
     const chip = event.target.closest('.peqd-chip[data-ref]');
     if (chip) {
       chip.classList.toggle('on');

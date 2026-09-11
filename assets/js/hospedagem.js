@@ -17,6 +17,7 @@ const state = {
   selecionados: new Map(), // id/cpf/nome -> colaborador
   buscaColaborador: '',
   solicitacoes: [],
+  checkoutDecisoes: [],
   solicitacoesStatus: 'idle', // idle | loading | loaded | error
   enviando: false,
   alojamentos: [],
@@ -71,12 +72,11 @@ async function carregarMinhasSolicitacoes() {
   state.solicitacoesStatus = 'loading';
   renderTabActive();
   const myId = usuario().id;
-  const { data, error } = await supabase
-    .from('hospedagem_minhas_solicitacoes')
-    .select('*')
-    .eq('solicitante_id', myId)
-    .order('data_solicitacao', { ascending: false })
-    .limit(200);
+  const [itens, decisoes] = await Promise.all([
+    supabase.from('hospedagem_v3_itens').select('*').eq('solicitante_id', myId).order('solicitado_em', { ascending: false }).limit(500),
+    supabase.from('hospedagem_checkout_decisoes').select('*').in('status',['AGUARDANDO_GESTOR','SEM_RESPOSTA']).order('data_checkout_prevista'),
+  ]);
+  const { data, error } = itens;
   if (error) {
     console.warn('[hospedagem] minhas solicitações:', error);
     state.solicitacoesStatus = 'error';
@@ -84,15 +84,15 @@ async function carregarMinhasSolicitacoes() {
     return;
   }
   state.solicitacoes = data || [];
+  state.checkoutDecisoes = decisoes.data || [];
   state.solicitacoesStatus = 'loaded';
   renderTabActive();
 }
 
 function statusBadge(row) {
-  const s = row.status_solicitacao;
-  if (s === 'CANCELADA') return badge(statusLabel(row), 'danger');
-  if (s === 'CONCLUIDA' || s === 'RESERVADA') return badge(statusLabel(row), 'ok');
-  return badge(statusLabel(row), 'warn');
+  const labels = { AGUARDANDO:'Aguardando',EM_COTACAO:'Em cotação',AGUARDANDO_HOTEL:'Em cotação',RESERVADO:'Reservado',ALTERACAO_PENDENTE:'Alteração solicitada',CHECKOUT_PENDENTE:'Checkout pendente',CHECKOUT:'Checkout',RECUSADO:'Recusado',CANCELADO:'Cancelado' };
+  const s = row.status_item;
+  return badge(labels[s] || s || 'Aguardando', ['CANCELADO','RECUSADO'].includes(s) ? 'danger' : ['RESERVADO','CHECKOUT'].includes(s) ? 'ok' : 'warn');
 }
 
 function renderMinhasSolicitacoes() {
@@ -104,23 +104,23 @@ function renderMinhasSolicitacoes() {
   }
   const linhas = state.solicitacoes.map((row) => `
     <tr>
-      <td><b>${esc(row.codigo || '—')}</b><br><small class="muted">${esc(brDate(row.data_solicitacao))}</small></td>
+      <td><b>${esc(row.codigo_operacional || row.codigo_solicitacao || '—')}</b><br><small class="muted">${esc(brDate(row.solicitado_em))}</small></td>
       <td>${esc(row.cidade || '—')}${row.uf ? `/${esc(row.uf)}` : ''}</td>
       <td>${esc(brDate(row.data_checkin_prevista))} → ${esc(brDate(row.data_checkout_prevista))}</td>
-      <td style="max-width:260px">${esc(row.colaboradores || '—')}</td>
-      <td>${esc(preferenciaLabel(row))}</td>
-      <td>${statusBadge(row)}</td>
+      <td style="max-width:260px"><b>${esc(row.nome_colaborador || '—')}</b>${row.motivo_recusa ? `<br><small class="muted">${esc(row.motivo_recusa)}</small>` : ''}</td>
+      <td>${statusBadge(row)}${row.hotel ? `<br><small>${esc(row.hotel)}</small>${row.hotel_localizacao ? ` · <a href="${esc(row.hotel_localizacao)}" target="_blank" rel="noopener">localização</a>` : ''}` : ''}</td>
+      <td>${state.checkoutDecisoes.find((d)=>d.solicitacao_colaborador_id===row.item_id) ? `<button type="button" class="btn btn-primary btn-sm" data-checkout-item="${esc(state.checkoutDecisoes.find((d)=>d.solicitacao_colaborador_id===row.item_id).id)}">Responder checkout</button>` : row.status_item === 'AGUARDANDO' ? `<button type="button" class="btn btn-secondary btn-sm" data-editar-solicitacao="${esc(row.solicitacao_id)}">Editar</button> <button type="button" class="btn btn-secondary btn-sm" data-cancelar-item="${esc(row.item_id)}">Cancelar</button>` : row.status_item === 'RESERVADO' ? `<button type="button" class="btn btn-secondary btn-sm" data-alterar-item="${esc(row.item_id)}">Solicitar alteração</button>` : ''}</td>
     </tr>`).join('');
   return `
-    <div class="hosp-note">Acompanhe aqui o status das suas solicitações. Detalhes do hotel reservado (nome, valores, check-in real) são tratados pelo administrativo e não aparecem nesta lista.</div>
+    <div class="hosp-note">Cada colaborador é acompanhado separadamente. Ao reservar, o hotel e sua localização aparecem aqui.</div>
     ${table({
       colunas: [
         { id: 'codigo', label: 'Código' },
         { id: 'cidade', label: 'Cidade/UF' },
         { id: 'periodo', label: 'Período previsto' },
         { id: 'colaboradores', label: 'Colaboradores' },
-        { id: 'preferencia', label: 'Preferência' },
         { id: 'status', label: 'Status' },
+        { id: 'acoes', label: 'Ações' },
       ],
       linhasHtml: linhas,
       vazio: 'Você ainda não fez nenhuma solicitação de hospedagem.',
@@ -387,9 +387,17 @@ function renderColaboradorLista() {
 
 function renderSelecionados() {
   if (!state.selecionados.size) return '<span class="muted">Nenhum colaborador selecionado ainda.</span>';
-  return [...state.selecionados.values()].map((c) => `
-    <span class="hosp-chip">${esc(c.nome)}<button type="button" data-remove-colab="${esc(colaboradorChave(c))}" aria-label="Remover">×</button></span>
-  `).join('');
+  const hoje = new Date().toISOString().slice(0, 10);
+  return [...state.selecionados.entries()].map(([chave,c]) => `
+    <article class="hosp-colab-draft" data-draft="${esc(chave)}">
+      <header><b>${esc(c.nome)}</b><button type="button" data-remove-colab="${esc(chave)}" aria-label="Remover">×</button></header>
+      <div class="hosp-draft-grid">
+        <label>Entrada *<input type="date" min="${hoje}" data-draft-field="checkin" value="${esc(c._hosp?.checkin || hoje)}" required></label>
+        <label>Chegada *<input type="time" data-draft-field="horario" value="${esc(c._hosp?.horario || '')}" required></label>
+        <label>Dias *<input type="number" min="1" max="365" data-draft-field="dias" value="${esc(c._hosp?.dias || 1)}" required></label>
+        <label>Sexo *<select data-draft-field="sexo" required><option value="">Selecione</option><option value="MASCULINO" ${c._hosp?.sexo === 'MASCULINO' || c.sexo === 'MASCULINO' ? 'selected' : ''}>Masculino</option><option value="FEMININO" ${c._hosp?.sexo === 'FEMININO' || c.sexo === 'FEMININO' ? 'selected' : ''}>Feminino</option></select></label>
+      </div>
+    </article>`).join('');
 }
 
 function renderNovaSolicitacao() {
@@ -419,26 +427,6 @@ function renderNovaSolicitacao() {
         <div class="ds-field">
           <label for="hospLink">Link de localização</label>
           <input id="hospLink" type="url" maxlength="300" placeholder="Link do Google Maps (opcional)" />
-        </div>
-        <div class="ds-field">
-          <label for="hospCheckin">Check-in *</label>
-          <input id="hospCheckin" type="date" required min="${hoje}" value="${hoje}" />
-        </div>
-        <div class="ds-field">
-          <label for="hospCheckout">Check-out *</label>
-          <input id="hospCheckout" type="date" required min="${hoje}" />
-        </div>
-        <div class="ds-field">
-          <label for="hospHorario">Horário de chegada previsto</label>
-          <input id="hospHorario" type="time" />
-        </div>
-        <div class="ds-field">
-          <label for="hospPreferencia">Preferência de hospedagem</label>
-          <select id="hospPreferencia">
-            <option value="SEM_PREFERENCIA">Sem preferência</option>
-            <option value="HOTEL">Hotel</option>
-            <option value="ALOJAMENTO">Alojamento</option>
-          </select>
         </div>
       </div>
 
@@ -472,7 +460,10 @@ function styles() {
     .hosp-colab-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 6px;border-radius:8px}
     .hosp-colab-item:hover{background:rgba(148,163,184,.08)}
     .hosp-colab-item small{margin-left:auto}
-    .hosp-colab-selecionados{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;min-height:28px}
+    .hosp-colab-selecionados{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-top:10px;min-height:28px}
+    .hosp-colab-draft{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(148,163,184,.04)}
+    .hosp-colab-draft header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.hosp-colab-draft header button{border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
+    .hosp-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px}.hosp-draft-grid label{font-size:11px;color:var(--muted)}.hosp-draft-grid input,.hosp-draft-grid select{margin-top:4px;width:100%}
     .hosp-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border-radius:999px;background:rgba(22,163,74,.14);border:1px solid rgba(22,163,74,.3);font-size:12px;font-weight:700}
     .hosp-chip button{border:none;background:transparent;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
     .hosp-form-actions{display:flex;align-items:center;gap:14px;justify-content:flex-end;margin-top:18px}
@@ -519,6 +510,15 @@ function wireTabEvents() {
       state.selecionados.delete(btn.dataset.removeColab);
       atualizarColaboradorUI();
     });
+    document.getElementById('hospColabSelecionados')?.addEventListener('change', (e) => {
+      const field = e.target.closest('[data-draft-field]');
+      const card = e.target.closest('[data-draft]');
+      if (!field || !card) return;
+      const c = state.selecionados.get(card.dataset.draft);
+      if (!c) return;
+      c._hosp ||= {};
+      c._hosp[field.dataset.draftField] = field.value;
+    });
   } else if (state.tab === 'alojamento') {
     document.getElementById('hospARetry')?.addEventListener('click', carregarAlojamentosRegional);
     document.getElementById('hospAAddBtn')?.addEventListener('click', onAdicionarAlojamento);
@@ -542,6 +542,46 @@ function wireTabEvents() {
     wireOcupantesEvents();
   } else {
     document.getElementById('hospRetryMinhas')?.addEventListener('click', carregarMinhasSolicitacoes);
+    const tabBody = document.getElementById('hospTabBody');
+    if (tabBody) tabBody.onclick = async (e) => {
+      const cancelar = e.target.closest('[data-cancelar-item]');
+      if (cancelar) {
+        if (!window.confirm('Cancelar esta solicitação de hotel?')) return;
+        const { error } = await supabase.rpc('hospedagem_v3_cancelar_item', { p_item_id: cancelar.dataset.cancelarItem });
+        if (error) return toast(error.message || 'Não foi possível cancelar.', 'err');
+        toast('Solicitação cancelada.', 'ok'); await carregarMinhasSolicitacoes(); return;
+      }
+      const editar = e.target.closest('[data-editar-solicitacao]');
+      if (editar) {
+        const rows=state.solicitacoes.filter((r)=>r.solicitacao_id===editar.dataset.editarSolicitacao);
+        const cidade=window.prompt('Cidade da hospedagem:',rows[0]?.cidade||'')?.trim(); if(!cidade)return;
+        const uf=window.prompt('UF:',rows[0]?.uf||'')?.trim().toUpperCase(); if(!uf)return;
+        const colaboradores=[];
+        for(const row of rows){const checkin=window.prompt(`Entrada de ${row.nome_colaborador}:`,row.data_checkin_prevista)?.trim();if(!checkin)return;const horario=window.prompt(`Horário de chegada de ${row.nome_colaborador}:`,String(row.horario_chegada_previsto||'').slice(0,5))?.trim();if(!horario)return;const dias=Number(window.prompt(`Dias de hotel para ${row.nome_colaborador}:`,String(row.quantidade_diarias_prevista||1)));if(!Number.isInteger(dias)||dias<=0)return;const sexo=window.prompt(`Sexo de ${row.nome_colaborador} (MASCULINO/FEMININO):`,row.sexo||'')?.trim().toUpperCase();if(!['MASCULINO','FEMININO'].includes(sexo))return;colaboradores.push({item_id:row.item_id,data_checkin_prevista:checkin,horario_chegada_previsto:horario,quantidade_diarias_prevista:dias,sexo});}
+        const {error}=await supabase.rpc('hospedagem_v3_editar_solicitacao',{p_solicitacao_id:editar.dataset.editarSolicitacao,p_solicitacao:{cidade,uf,cliente:rows[0]?.cliente||'',local_embarque:rows[0]?.local_embarque||'',link_local_embarque:rows[0]?.link_local_embarque||'',observacao_gestor:rows[0]?.observacao_gestor||''},p_colaboradores:colaboradores});if(error)return toast(error.message||'Não foi possível editar.','err');toast('Solicitação atualizada.','ok');await carregarMinhasSolicitacoes();return;
+      }
+      const alterar = e.target.closest('[data-alterar-item]');
+      if (alterar) {
+        const tipo = window.prompt('Tipo: PRORROGACAO, CANCELAMENTO, MUDANCA_DATAS ou MUDANCA_CIDADE', 'PRORROGACAO')?.trim().toUpperCase();
+        if (!['PRORROGACAO','CANCELAMENTO','MUDANCA_DATAS','MUDANCA_CIDADE'].includes(tipo)) return;
+        let dados={};
+        if(tipo==='PRORROGACAO'){const n=Number(window.prompt('Quantos dias adicionais?','1'));if(!Number.isInteger(n)||n<=0)return;dados={dias_adicionais:n};}
+        if(tipo==='MUDANCA_DATAS'){const entrada=window.prompt('Nova data de entrada (AAAA-MM-DD):')?.trim();const dias=Number(window.prompt('Quantidade de dias:','1'));if(!entrada||!Number.isInteger(dias)||dias<=0)return;dados={data_checkin:entrada,dias};}
+        if(tipo==='MUDANCA_CIDADE'){const cidade=window.prompt('Nova cidade:')?.trim();const uf=window.prompt('Nova UF:')?.trim().toUpperCase();if(!cidade||!uf)return;dados={cidade,uf};}
+        const { error } = await supabase.rpc('hospedagem_v3_solicitar_alteracao', { p_item_id: alterar.dataset.alterarItem, p_tipo: tipo, p_dados: dados });
+        if (error) return toast(error.message || 'Não foi possível solicitar a alteração.', 'err');
+        toast('Alteração enviada para Hospedagem.', 'ok'); await carregarMinhasSolicitacoes();
+      }
+      const responder = e.target.closest('[data-checkout-item]');
+      if (responder) {
+        const manter = window.confirm('O colaborador precisa permanecer hospedado?\nOK = prorrogar | Cancelar = realizar checkout');
+        let dias = null;
+        if (manter) { dias = Number(window.prompt('Quantos dias adicionais?', '1')); if (!Number.isInteger(dias) || dias <= 0) return toast('Informe uma quantidade válida de dias.', 'err'); }
+        const { error } = await supabase.rpc('hospedagem_v3_responder_checkout',{p_decisao_id:responder.dataset.checkoutItem,p_decisao:manter?'PRORROGAR':'CHECKOUT',p_dias_adicionais:dias});
+        if (error) return toast(error.message || 'Não foi possível registrar a decisão.', 'err');
+        toast('Decisão enviada ao hotel e atualizada no painel.', 'ok'); await carregarMinhasSolicitacoes();
+      }
+    };
   }
 }
 
@@ -559,7 +599,7 @@ function wireColaboradorCheckboxes() {
       const chave = input.dataset.colab;
       if (input.checked) {
         const c = state.colaboradoresEquipe.find((x) => colaboradorChave(x) === chave);
-        if (c) state.selecionados.set(chave, c);
+        if (c) state.selecionados.set(chave, { ...c, _hosp: { checkin: new Date().toISOString().slice(0, 10), horario: '', dias: 1, sexo: c.sexo || '' } });
       } else {
         state.selecionados.delete(chave);
       }
@@ -590,21 +630,17 @@ async function onSubmit(event) {
 
   const uf = document.getElementById('hospUf').value;
   const cidade = document.getElementById('hospCidade').value.trim();
-  const checkin = document.getElementById('hospCheckin').value;
-  const checkout = document.getElementById('hospCheckout').value;
 
-  if (!uf || !cidade || !checkin || !checkout) {
-    setFeedback('Preencha UF, cidade, check-in e check-out.', 'err');
-    return;
-  }
-  if (checkout <= checkin) {
-    setFeedback('O check-out deve ser depois do check-in.', 'err');
+  if (!uf || !cidade) {
+    setFeedback('Preencha UF e cidade.', 'err');
     return;
   }
   if (!state.selecionados.size) {
     setFeedback('Selecione ao menos um colaborador.', 'err');
     return;
   }
+  const incompleto = [...state.selecionados.values()].find((c) => !c._hosp?.checkin || !c._hosp?.horario || !Number(c._hosp?.dias) || !c._hosp?.sexo);
+  if (incompleto) { setFeedback(`Complete período, horário e sexo de ${incompleto.nome}.`, 'err'); return; }
 
   state.enviando = true;
   setFeedback('Enviando solicitação...');
@@ -623,11 +659,8 @@ async function onSubmit(event) {
     cliente: document.getElementById('hospCliente').value.trim(),
     local_embarque: document.getElementById('hospLocalEmbarque').value.trim(),
     link_local_embarque: document.getElementById('hospLink').value.trim(),
-    data_checkin_prevista: checkin,
-    data_checkout_prevista: checkout,
-    horario_chegada_previsto: document.getElementById('hospHorario').value || null,
     observacao_gestor: document.getElementById('hospObservacao').value.trim(),
-    preferencia_hospedagem: document.getElementById('hospPreferencia').value,
+    origem_solicitacao: 'FORMULARIO',
   };
   const p_colaboradores = [...state.selecionados.values()].map((c) => ({
     colaborador_id: c.id || null,
@@ -637,9 +670,13 @@ async function onSubmit(event) {
     empresa: c.empresa || null,
     coordenacao: c.coordenacao || null,
     supervisao: c.supervisao || null,
+    data_checkin_prevista: c._hosp.checkin,
+    horario_chegada_previsto: c._hosp.horario,
+    quantidade_diarias_prevista: Number(c._hosp.dias),
+    sexo: c._hosp.sexo,
   }));
 
-  const { data, error } = await supabase.rpc('hospedagem_criar_solicitacao', { p_solicitacao, p_colaboradores });
+  const { data, error } = await supabase.rpc('hospedagem_v3_criar_solicitacao', { p_solicitacao, p_colaboradores });
 
   state.enviando = false;
   if (error) {
