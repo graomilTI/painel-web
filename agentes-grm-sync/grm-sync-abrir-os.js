@@ -475,17 +475,30 @@ async function selecionarOpcaoAberta(page, alvo, modo) {
     function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
     var alvoNorm = normJs(payload.alvo);
     var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    // "Substring" puro é frágil demais pra valores curtos: "GO" (Goiás) é
+    // substring de "ALAGOAS" (a-l-A-G-O-as), então digitar "GO" em UF de
+    // Destino selecionava "AL - Alagoas" em vez de "GO - Goiás" — confirmado
+    // ao vivo 11/09. Prioriza "começa com" sobre "contém em qualquer lugar";
+    // só cai pro contains puro se nenhuma opção começar com o alvo.
     for (var i = overlays.length - 1; i >= 0; i--) {
       var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
       if (!options.length) continue;
-      for (var j = 0; j < options.length; j++) {
-        var textoOriginal = (options[j].innerText || options[j].textContent || '').trim();
-        if (!textoOriginal) continue;
-        var texto = normJs(textoOriginal);
-        var bate = false;
-        if (payload.modo === 'exata') bate = texto === alvoNorm;
-        else bate = alvoNorm.length > 0 && (texto.indexOf(alvoNorm) !== -1 || alvoNorm.indexOf(texto) !== -1);
-        if (bate) { options[j].click(); return textoOriginal; }
+      var textos = options.map(function (o) { return (o.innerText || o.textContent || '').trim(); });
+      if (payload.modo === 'exata') {
+        for (var e = 0; e < options.length; e++) {
+          if (textos[e] && normJs(textos[e]) === alvoNorm) { options[e].click(); return textos[e]; }
+        }
+        continue;
+      }
+      if (alvoNorm.length > 0) {
+        for (var p = 0; p < options.length; p++) {
+          if (textos[p] && normJs(textos[p]).indexOf(alvoNorm) === 0) { options[p].click(); return textos[p]; }
+        }
+        for (var c = 0; c < options.length; c++) {
+          if (!textos[c]) continue;
+          var texto = normJs(textos[c]);
+          if (texto.indexOf(alvoNorm) !== -1 || alvoNorm.indexOf(texto) !== -1) { options[c].click(); return textos[c]; }
+        }
       }
     }
     return null;
@@ -649,13 +662,15 @@ async function preencherCampo(page, campo, labels, valorBruto) {
 // dos campos (ex.: "Teste Aflatoxina") foram confirmados ao vivo via
 // --discover (todos vieram v-input--disabled no diálogo vazio — mesma
 // cascata dos outros campos condicionais; só destravam depois de Produto
-// selecionado, por isso esta função roda DEPOIS do loop do LABEL_MAP). Já o
-// TEXTO das opções dentro de cada dropdown (ex.: se é "Qualitativo" mesmo,
-// ou se Intacta/GMO Free/Vomitoxina usam "Sim"/"Realizar"/outro texto) NÃO
-// foi confirmado — ajustar aqui depois de abrir um desses campos ao vivo.
+// selecionado, por isso esta função roda DEPOIS do loop do LABEL_MAP). O
+// TEXTO das opções foi confirmado ao vivo em 11/09 (dropdown real de Teste
+// Aflatoxina): "Não Será Realizado" / "Qualitativo e Quantitativo" /
+// "Somente Qualitativo" / "Somente Quantitativo" — as opções são "Somente
+// X", não só "X" (era esse o motivo de "Não achei opção pro teste
+// AFLATOXINA_QUALITATIVO" nos runs reais).
 var TESTES_GRM_MAP = {
-  AFLATOXINA_QUALITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Qualitativo' },
-  AFLATOXINA_QUANTITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Quantitativo' },
+  AFLATOXINA_QUALITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Somente Qualitativo' },
+  AFLATOXINA_QUANTITATIVO: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Somente Quantitativo' },
   AFLATOXINA_QUALI_QUANTI: { campo: ['TESTE AFLATOXINA'], opcaoExata: 'Qualitativo e Quantitativo' },
   INTACTA: { campo: ['TESTE INTACTA'], opcaoSubstring: ['SIM', 'REALIZAR', 'INTACTA'] },
   GMO_FREE: { campo: ['TESTE SOJA GMO FREE'], opcaoSubstring: ['SIM', 'REALIZAR', 'GMO'] },
