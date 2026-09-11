@@ -1628,7 +1628,7 @@ export function renderContent(content) {
     el.list.querySelectorAll('tr[data-table="programacao_estadia"]').forEach((tr) => {
       const tipo = String(tr.querySelector('[data-field="tipo_estadia"]')?.value || '').toUpperCase();
       const cidadeEl = tr.querySelector('[data-field="cidade"]');
-      if (tipo === 'HOTEL' && cidadeEl && !cidadeEl.value && preencherCidadeDaOs(tr)) {
+      if (TIPOS_ESTADIA_BOTOES.includes(tipo) && cidadeEl && !cidadeEl.value && preencherCidadeDaOs(tr)) {
         atualizarSugestaoAlojamento(tr);
         scheduleSaveRow(tr);
       }
@@ -1875,7 +1875,7 @@ export function renderContent(content) {
       tr.querySelectorAll('.prog-estadia-card').forEach((btn) => btn.classList.toggle('active', !wasActive && btn === estadiaBtn));
       const note = tr.querySelector('.prog-required-note');
       if (note) note.remove();
-      if (tipo === 'HOTEL') preencherCidadeDaOs(tr);
+      if (TIPOS_ESTADIA_BOTOES.includes(tipo)) preencherCidadeDaOs(tr);
       atualizarSugestaoAlojamento(tr);
       scheduleSaveRow(tr);
       return;
