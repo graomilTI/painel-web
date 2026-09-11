@@ -66,6 +66,7 @@ alter table public.hospedagem_reservas
   add column if not exists codigo_ano integer,
   add column if not exists confirmado_em timestamptz,
   add column if not exists confirmacao_origem text,
+  add column if not exists data_checkout_real timestamptz,
   add column if not exists fluxo_versao smallint not null default 2;
 
 -- Uma solicitacao v3 pode ser dividida entre varias reservas/hoteis.
