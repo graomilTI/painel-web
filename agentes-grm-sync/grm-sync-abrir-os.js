@@ -766,25 +766,50 @@ function extrairLocalPadrao(texto) {
 async function clicarAdicionarDestino(page) {
   var box = await localizarCampoBox(page, ['DESTINO']);
   if (!box) { log('WARN', 'Campo "DESTINO" não encontrado pra clicar no botão "+" — destino pode não ter sido adicionado à lista.'); return; }
-  var alvo = await page.evaluate(function (payload) {
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
-    var dialog = overlays[overlays.length - 1];
-    if (!dialog) return null;
-    var melhor = null, menorDist = Infinity;
-    Array.from(dialog.querySelectorAll('button')).forEach(function (b) {
-      var r = b.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      var cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-      if (cx <= payload.x || Math.abs(cy - payload.y) > 20) return;
-      var dist = cx - payload.x;
-      if (dist < menorDist) { menorDist = dist; melhor = { x: cx, y: cy }; }
-    });
-    return melhor;
-  }, { x: box.x, y: box.y });
-  if (!alvo) { log('WARN', 'Botão "+" ao lado de Destino não encontrado — destino pode não ter sido adicionado à lista.'); return; }
+
+  // O botão fica "v-btn--disabled" até o Vue validar UF+Cidade+Destino
+  // preenchidos — confirmado ao vivo 11/09 (testado manualmente: logo após
+  // preencher os 3 campos o botão ainda aparecia disabled por um instante,
+  // só habilitando de fato pouco depois). Por isso espera até ~4s por ele
+  // ficar habilitado antes de clicar, em vez de assumir que já está pronto.
+  var alvo = null;
+  for (var tentativa = 0; tentativa < 8 && !alvo; tentativa++) {
+    if (tentativa > 0) await wait(500);
+    alvo = await page.evaluate(function (payload) {
+      var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+      var dialog = overlays[overlays.length - 1];
+      if (!dialog) return null;
+      var melhor = null, menorDist = Infinity;
+      Array.from(dialog.querySelectorAll('button')).forEach(function (b) {
+        var r = b.getBoundingClientRect();
+        if (!r.width || !r.height || b.disabled || b.className.indexOf('--disabled') !== -1) return;
+        var cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+        if (cx <= payload.x || Math.abs(cy - payload.y) > 20) return;
+        var dist = cx - payload.x;
+        if (dist < menorDist) { menorDist = dist; melhor = { x: cx, y: cy }; }
+      });
+      return melhor;
+    }, { x: box.x, y: box.y });
+  }
+  if (!alvo) { log('WARN', 'Botão "+" ao lado de Destino não encontrado (ou continua desabilitado) — destino pode não ter sido adicionado à lista.'); return; }
   await page.mouse.click(alvo.x, alvo.y);
   await wait(700);
-  log('INFO', 'Clicado botão "+" ao lado de Destino (adiciona à lista "Dados de Destino").');
+
+  // Confere de verdade se a linha entrou na tabela "DADOS DE DESTINO" (não
+  // só assume que o clique funcionou) — conta linhas de tabela dentro do
+  // diálogo antes inexistentes; se continuar em 0, avisa em vez de seguir
+  // silenciosamente como se tivesse dado certo.
+  var linhas = await page.evaluate(function () {
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = overlays[overlays.length - 1];
+    if (!dialog) return 0;
+    return dialog.querySelectorAll('table tbody tr').length;
+  });
+  if (linhas > 0) {
+    log('INFO', 'Clicado botão "+" ao lado de Destino — ' + linhas + ' linha(s) na tabela "Dados de Destino".');
+  } else {
+    log('WARN', 'Clicado botão "+" ao lado de Destino, mas nenhuma linha apareceu na tabela — destino pode não ter sido adicionado.');
+  }
 }
 
 async function preencherDestino(page, solicitacao) {
