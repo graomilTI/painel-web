@@ -752,6 +752,41 @@ function extrairLocalPadrao(texto) {
   return { uf: m[1].toUpperCase(), cidade: m[2].trim(), local: m[3].trim() };
 }
 
+// Preencher o campo "Destino" não basta — é texto livre que só vira uma
+// linha de verdade na tabela "DADOS DE DESTINO" (Estado/Cidade/Local/
+// Cargas) depois de clicar no botão "+" ao lado (confirmado ao vivo
+// 11/09, mesmo padrão do "+" ao lado de Local do Serviço/Produtor — só que
+// esses dois são pra CADASTRAR um valor novo quando a opção não existe
+// ainda na lista, enquanto o de Destino é o que de fato ADICIONA a O.S.
+// nessa lista; sem clicar, o campo fica com texto mas a O.S. não tem
+// nenhum destino registrado — provável causa do Salvar continuar
+// bloqueado mesmo com todo o resto preenchido certo). Acha o botão mais
+// próximo à DIREITA do campo Destino, na mesma linha (mesmo Y, tolerância
+// de 20px) — não depende de nenhuma classe específica de contêiner.
+async function clicarAdicionarDestino(page) {
+  var box = await localizarCampoBox(page, ['DESTINO']);
+  if (!box) { log('WARN', 'Campo "DESTINO" não encontrado pra clicar no botão "+" — destino pode não ter sido adicionado à lista.'); return; }
+  var alvo = await page.evaluate(function (payload) {
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    var dialog = overlays[overlays.length - 1];
+    if (!dialog) return null;
+    var melhor = null, menorDist = Infinity;
+    Array.from(dialog.querySelectorAll('button')).forEach(function (b) {
+      var r = b.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      var cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+      if (cx <= payload.x || Math.abs(cy - payload.y) > 20) return;
+      var dist = cx - payload.x;
+      if (dist < menorDist) { menorDist = dist; melhor = { x: cx, y: cy }; }
+    });
+    return melhor;
+  }, { x: box.x, y: box.y });
+  if (!alvo) { log('WARN', 'Botão "+" ao lado de Destino não encontrado — destino pode não ter sido adicionado à lista.'); return; }
+  await page.mouse.click(alvo.x, alvo.y);
+  await wait(700);
+  log('INFO', 'Clicado botão "+" ao lado de Destino (adiciona à lista "Dados de Destino").');
+}
+
 async function preencherDestino(page, solicitacao) {
   var parsed = extrairLocalPadrao(solicitacao.local_destino);
   if (parsed) {
@@ -764,6 +799,7 @@ async function preencherDestino(page, solicitacao) {
     await preencherCampo(page, 'cidade_destino', ['CIDADE DE DESTINO'], solicitacao.cidade_destino);
     await preencherCampo(page, 'local_destino', ['DESTINO'], solicitacao.local_destino);
   }
+  await clicarAdicionarDestino(page);
 }
 
 async function preencherFormulario(page, solicitacao) {
