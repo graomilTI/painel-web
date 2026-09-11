@@ -458,8 +458,8 @@ async function localizarCampoBox(page, labels) {
 // clicar/olhar a tela). Por isso localizarCampoBox agora tem essa variante
 // que tenta de novo por até ~2,4s antes de desistir.
 async function localizarCampoHabilitado(page, labels, tentativas, intervaloMs) {
-  tentativas = tentativas || 6;
-  intervaloMs = intervaloMs || 400;
+  tentativas = tentativas || 8;
+  intervaloMs = intervaloMs || 500;
   var box = null;
   for (var i = 0; i < tentativas; i++) {
     box = await localizarCampoBox(page, labels);
@@ -580,9 +580,13 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   // livre" mesmo tendo opção real pra selecionar, porque a lista ainda não
   // tinha renderizado no momento do check; sem a seleção de verdade, tudo
   // que cascateia de Produto — Tipo do Produto, Testes — ficava travado).
+  // 8x500ms (~4s) — confirmado ao vivo 11/09 que 4x400ms (~1,6s) ainda não
+  // era suficiente pra Local do Serviço/Produto em alguns runs (a mesma
+  // busca que renderizava rápido pra Tipo do Local/UF/Cidade, backed por
+  // uma lista provavelmente maior/mais lenta pra Produto/Local do Serviço).
   var opcaoAberta = false;
-  for (var tentativaOpcao = 0; tentativaOpcao < 4 && !opcaoAberta; tentativaOpcao++) {
-    await wait(400);
+  for (var tentativaOpcao = 0; tentativaOpcao < 8 && !opcaoAberta; tentativaOpcao++) {
+    await wait(500);
     opcaoAberta = await page.evaluate(function () {
       var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
       return overlays.some(function (o) { return o.querySelectorAll('[role="option"], .v-list-item').length > 0; });
