@@ -513,13 +513,20 @@ function styles() {
     .hosp-colab-add-btn{width:44px;flex:none;padding:0;font-size:20px;line-height:1;border-radius:11px}
     .hosp-colab-add-erro{min-height:16px;margin:6px 0 0;font-size:12px;color:#fca5a5}
 
-    /* Abas em sublinhado (padrão adm-conferencia-entry.js), não em botão/pill
-       como o .ds-tab padrão do design system — escopado em .hosp-shell pra não
-       afetar as abas de outras telas que usam o mesmo componente. */
+    /* Abas em sublinhado (padrão adm-conferencia-entry.js/frotas-hub.css), não em
+       botão/pill como o .ds-tab padrão do design system — escopado em .hosp-shell
+       pra não afetar outras telas. O tema global painel-ui-v2 (painel-design-system.css)
+       força cor/fundo/border-radius em QUALQUER [role="tab"] com !important e
+       especificidade html+2 classes — os botões daqui usam role="tab" (vêm do
+       helper tabs() em core/ui.js), então SEM !important e sem repetir a classe
+       pra igualar especificidade essa regra nunca vencia (pegadinha descoberta
+       11/09 depois do fix "abas em sublinhado" não aparecer nem em aba anônima —
+       ver painel-web-painel-ui-v2-css-especificidade, mesmo problema do DRE e
+       resolvido em frotas-hub.css). */
     .hosp-shell .ds-tabs{gap:2px;flex-wrap:nowrap;overflow-x:auto}
-    .hosp-shell .ds-tab{border:0;border-radius:0;background:transparent;padding:14px 16px 12px;color:#a9b8b1;font-weight:800;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent}
-    .hosp-shell .ds-tab:hover{color:#d9fbe8;background:rgba(34,197,94,.035)}
-    .hosp-shell .ds-tab.active{color:#35e990;background:transparent;border-bottom-color:#22e58a}
+    .hosp-shell.hosp-shell .ds-tab{border:0 !important;border-radius:0 !important;background:transparent !important;box-shadow:none !important;padding:14px 16px 12px;color:#a9b8b1 !important;font-weight:800;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent !important}
+    .hosp-shell.hosp-shell .ds-tab:hover{color:#d9fbe8 !important;background:rgba(34,197,94,.035) !important;border-color:transparent !important}
+    .hosp-shell.hosp-shell .ds-tab.active{color:#35e990 !important;background:transparent !important;border-color:transparent !important;border-bottom-color:#22e58a !important}
 
     /* Padrão de cores/campos alinhado ao usado em adm-conferencia.js (pedido
        11/09): rótulo pequeno em maiúsculas, campo escuro com borda azulada,
