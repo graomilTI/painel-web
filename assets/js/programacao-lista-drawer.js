@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260828-merge-readmitido-save-confirmado';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260910-desloc-particular1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260911-hosp-v3';
 
 function esc(value) {
   return String(value ?? '')

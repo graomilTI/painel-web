@@ -1,11 +1,11 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import {
-  esc, pageHeader, tabs, badge, loadingState, emptyState, errorState,
+  esc, tabs, badge, loadingState, emptyState, errorState,
   table, toast,
 } from './core/ui.js';
 import { brDate, statusLabel, preferenciaLabel } from './adm-hotel-helpers.js';
-import { getColaboradores } from './colaboradoresCache.js';
+import { getColaboradores } from './colaboradoresCache.js?v=20260911-hosp-v3';
 
 const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
@@ -392,9 +392,9 @@ function renderSelecionados() {
     <article class="hosp-colab-draft" data-draft="${esc(chave)}">
       <header><b>${esc(c.nome)}</b><button type="button" data-remove-colab="${esc(chave)}" aria-label="Remover">×</button></header>
       <div class="hosp-draft-grid">
-        <label>Entrada *<input type="date" min="${hoje}" data-draft-field="checkin" value="${esc(c._hosp?.checkin || hoje)}" required></label>
-        <label>Chegada *<input type="time" data-draft-field="horario" value="${esc(c._hosp?.horario || '')}" required></label>
-        <label>Dias *<input type="number" min="1" max="365" data-draft-field="dias" value="${esc(c._hosp?.dias || 1)}" required></label>
+        <label>Data *<input type="date" min="${hoje}" data-draft-field="checkin" value="${esc(c._hosp?.checkin || hoje)}" required></label>
+        <label>Horário de chegada *<input type="time" data-draft-field="horario" value="${esc(c._hosp?.horario || '')}" required></label>
+        <label>Diárias previstas *<input type="number" min="1" max="365" data-draft-field="dias" value="${esc(c._hosp?.dias || 1)}" required></label>
         <label>Sexo *<select data-draft-field="sexo" required><option value="">Selecione</option><option value="MASCULINO" ${c._hosp?.sexo === 'MASCULINO' || c.sexo === 'MASCULINO' ? 'selected' : ''}>Masculino</option><option value="FEMININO" ${c._hosp?.sexo === 'FEMININO' || c.sexo === 'FEMININO' ? 'selected' : ''}>Feminino</option></select></label>
       </div>
     </article>`).join('');
@@ -405,16 +405,20 @@ function renderNovaSolicitacao() {
   return `
     <form id="hospForm" class="hosp-form">
       <div class="hosp-form-grid">
-        <div class="ds-field">
-          <label for="hospUf">UF *</label>
-          <select id="hospUf" required>
-            <option value="">Selecione</option>
-            ${UFS.map((uf) => `<option value="${uf}">${uf}</option>`).join('')}
-          </select>
-        </div>
-        <div class="ds-field">
-          <label for="hospCidade">Cidade *</label>
-          <input id="hospCidade" type="text" required maxlength="120" placeholder="Ex.: Rondonópolis" />
+        <div class="ds-field hosp-field-uf-cidade">
+          <div class="hosp-uf-cidade-row">
+            <div class="ds-field hosp-field-uf">
+              <label for="hospUf">UF *</label>
+              <select id="hospUf" required>
+                <option value="">--</option>
+                ${UFS.map((uf) => `<option value="${uf}">${uf}</option>`).join('')}
+              </select>
+            </div>
+            <div class="ds-field">
+              <label for="hospCidade">Cidade *</label>
+              <input id="hospCidade" type="text" required maxlength="120" placeholder="Ex.: Rondonópolis" />
+            </div>
+          </div>
         </div>
         <div class="ds-field">
           <label for="hospCliente">Cliente</label>
@@ -439,6 +443,7 @@ function renderNovaSolicitacao() {
         <div class="section-head" style="margin-top:16px">
           <div><h4 style="margin:0">Colaboradores *</h4><p class="muted" style="margin:4px 0 0">Selecione quem vai se hospedar, entre os colaboradores da sua supervisão.</p></div>
         </div>
+        <p class="hosp-colab-hint">Ao marcar um colaborador abaixo, informe para ele a data de entrada, o horário de chegada, as diárias previstas e o sexo.</p>
         <input id="hospBuscaColab" type="text" placeholder="Buscar por nome..." style="margin:10px 0" />
         <div id="hospColabLista">${renderColaboradorLista()}</div>
         <div class="hosp-colab-selecionados" id="hospColabSelecionados">${renderSelecionados()}</div>
@@ -456,12 +461,16 @@ function styles() {
   return `<style>
     .hosp-note{font-size:13px;color:var(--muted);margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(148,163,184,.06)}
     .hosp-form-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px}
+    .hosp-uf-cidade-row{display:flex;gap:10px}
+    .hosp-uf-cidade-row .hosp-field-uf{flex:none;width:64px}
+    .hosp-uf-cidade-row .ds-field:not(.hosp-field-uf){flex:1;min-width:0}
+    .hosp-colab-hint{font-size:12px;color:var(--muted);margin:8px 0}
     .hosp-colab-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px}
     .hosp-colab-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 6px;border-radius:8px}
     .hosp-colab-item:hover{background:rgba(148,163,184,.08)}
     .hosp-colab-item small{margin-left:auto}
     .hosp-colab-selecionados{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-top:10px;min-height:28px}
-    .hosp-colab-draft{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(148,163,184,.04)}
+    .hosp-colab-draft{border:1px solid rgba(22,163,74,.35);border-radius:12px;padding:12px;background:rgba(22,163,74,.05)}
     .hosp-colab-draft header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.hosp-colab-draft header button{border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
     .hosp-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px}.hosp-draft-grid label{font-size:11px;color:var(--muted)}.hosp-draft-grid input,.hosp-draft-grid select{margin-top:4px;width:100%}
     .hosp-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border-radius:999px;background:rgba(22,163,74,.14);border:1px solid rgba(22,163,74,.3);font-size:12px;font-weight:700}
@@ -701,10 +710,6 @@ function renderShell() {
   if (!content) return;
   content.innerHTML = `${styles()}
     <section class="card">
-      ${pageHeader({
-        titulo: 'Hospedagem',
-        subtitulo: 'Solicite hospedagem para colaboradores da sua equipe. A solicitação vai direto para a fila do administrativo de Hotéis.',
-      })}
       ${tabs({
         itens: [
           { id: 'nova', label: 'Nova solicitação' },

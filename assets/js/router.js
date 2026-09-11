@@ -45,7 +45,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js') }],
   ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js') }],
   ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
-  ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js') }],
+  ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js?v=20260911-hosp-v3-ui1') }],
   ['hotel-relatorio', { title: 'Relatório de Hospedagem', module: () => import('./hotel-relatorio.js') }],
   ['importar-colaboradores', { title: 'Importar Colaboradores', module: () => import('./importarColaboradores.js') }],
   ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],
@@ -115,7 +115,7 @@ const SOFT_NAV_PAGES = new Map([
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js') }],
   // Fase 3 (2026-07-04) — páginas críticas com muitos scripts, consolidação avaliada script a script
-  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260910-desloc-particular1'), extraModules: [
+  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260911-hosp-v3'), extraModules: [
     () => import('./programacao-supervisoes-cache.js?v=20260901-v6-ttl5min'),
     () => import('./programacao-ultima-programacao-fix.js'),
     () => import('./programacao-hospedagem-colaboradores-fix.js'),
@@ -126,7 +126,7 @@ const SOFT_NAV_PAGES = new Map([
     () => import('./programacao-gestor-fluxo-avancado.js?v=20260911-finaliza-libera-semos1'),
     () => import('./programacao-lista-drawer-fixo.js'),
     () => import('./programacao-lista-drawer-ux-hotfix.js'),
-    () => import('./programacao-pdf-tipo-fix.js?v=20260910-desloc-particular1'),
+    () => import('./programacao-pdf-tipo-fix.js?v=20260911-hosp-v3'),
     () => import('./programacao-indisponibilidade-sync.js'),
     () => import('./programacao-indisponibilidade-rh-lock.js'),
     () => import('./programacao-regional-colaboradores-strict.js'),
