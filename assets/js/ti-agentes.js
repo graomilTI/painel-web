@@ -82,8 +82,12 @@ const AGENTES = [
   // Abre a O.S. de verdade no GRM a partir de logistica_abertura_os (status
   // APROVADO pelo Operador de Logística) — ver grm-sync-abrir-os.js. Sem card
   // aqui até 10/09 (só existia na Fila V2); validado ao vivo nesta data
-  // (job 32acee7e, O.S. 92387 cadastrada em 61s, sem erro).
-  { id: 'sync-abrir-os', name: 'Abertura de O.S. (GRM)', freq: 'sob demanda (fila saida_os)', table: 'grm_abertura_os_execucoes', direction: 'saida', apiStatus: 'puppeteer' },
+  // (job 32acee7e, O.S. 92387 cadastrada em 61s, sem erro). Ganhou fila
+  // própria (saida_abertura_os) em 11/09 — antes dividia saida_os com
+  // sync-reabrir-os (mesmo mutex_group os_grm, então continua sem rodar ao
+  // mesmo tempo que reabrir-os/finalizar-os/lista-os, só não compete mais
+  // por posição na fila com eles).
+  { id: 'sync-abrir-os', name: 'Abertura de O.S. (GRM)', freq: 'sob demanda (fila saida_abertura_os)', table: 'grm_abertura_os_execucoes', direction: 'saida', apiStatus: 'puppeteer' },
   { id: 'sync-despesas-retroativas', name: 'Despesas Retroativas (GRM)', freq: 'diário', table: 'grm_despesas_retroativas_auditoria', direction: 'saida', apiStatus: 'api', apiNote: 'Já era 100% via API (login e chamadas via fetch direto, sem Puppeteer) — rótulo desatualizado corrigido em 05/09.' },
   { id: 'sync-liberacao-despesas', name: 'Liberação de Despesas (GRM)', freq: 'sob demanda', table: 'grm_despesas_fila', direction: 'saida', apiStatus: 'api', apiNote: 'Migrado 02/09: chama a API interna do Graint direto (grmserver-liberacao-despesas-api.js), ~10s por lote contra ~1min/CPF do fluxo Puppeteer antigo (mantido no disco pra rollback).' },
   { id: OUROSAFRA_AGENT_ID, name: 'Classificação Ouro Safra (Laudo)', freq: '10 min (fila 06 · Saída OS)', table: 'ouro_safra_classificacao_execucoes', direction: 'saida', apiStatus: 'hybrid', apiNote: 'A busca da classificação no GRM já usa API (PR #341). O preenchimento no painel Ouro Safra continua via Puppeteer, porque a Ouro Safra é Blazor Server e não tem API.' },

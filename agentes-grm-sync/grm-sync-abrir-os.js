@@ -713,7 +713,18 @@ async function preencherTestes(page, solicitacao) {
 // alimenta o autopreenchimento da tela de Abertura de O.S.), que TEM as 3
 // colunas. Busca por nome_local primeiro (mais específico), cai pra
 // embarque_label (formato "UF - CIDADE (LOCAL)") se não achar.
-async function resolverPontoEmbarque(valorArmazem) {
+// Prefixos genéricos de tipo de local — descartados da busca por palavra
+// (ver PALAVRAS_MIN_LEN abaixo) porque o nome digitado costuma abreviar
+// justamente essa parte ("ARM" em vez de "ARMAZEM"), nunca a parte
+// específica do nome.
+var PREFIXOS_GENERICOS_EMBARQUE = ['ARM', 'ARMAZEM', 'ARMAZÉM', 'SILO', 'FAZENDA', 'TERMINAL', 'PORTO', 'GALPAO', 'GALPÃO', 'SITIO', 'SÍTIO', 'ESTACAO', 'ESTAÇÃO'];
+function palavrasSignificativasEmbarque(texto) {
+  return norm(texto).split(/[^A-Z0-9]+/).filter(function (w) {
+    return w.length >= 3 && PREFIXOS_GENERICOS_EMBARQUE.indexOf(w) === -1;
+  });
+}
+
+async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao) {
   var texto = String(valorArmazem || '').trim();
   if (!texto) return null;
   var porNome = await supabase.from('operacional_pontos_embarque')
@@ -722,11 +733,27 @@ async function resolverPontoEmbarque(valorArmazem) {
   var porLabel = await supabase.from('operacional_pontos_embarque')
     .select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto).limit(1);
   if (!porLabel.error && porLabel.data && porLabel.data[0]) return porLabel.data[0];
+
+  // Fallback: nome digitado abreviado/parcial (ex.: "ARM três irmãos" pro
+  // cadastro real "ARMAZEM TRES IRMAOS - AGROPECUÁRIA 3 IRMÃOS" — confirmado
+  // ao vivo 11/09, solicitação c4396f64, cliente CARGILL/Tocantins). Exige
+  // TODAS as palavras significativas do texto digitado presentes no nome
+  // cadastrado, restrito à mesma cidade da solicitação quando ela existe —
+  // evita pegar local homônimo em outro município. Só devolve resultado
+  // quando sobra exatamente 1 candidato: com 0 ou 2+ é mais seguro manter o
+  // comportamento antigo (pular o campo) do que arriscar escolher errado.
+  var palavras = palavrasSignificativasEmbarque(texto);
+  if (!palavras.length) return null;
+  var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local');
+  palavras.forEach(function (p) { query = query.ilike('nome_local', '%' + p + '%'); });
+  if (cidadeSolicitacao) query = query.ilike('cidade', String(cidadeSolicitacao).trim());
+  var porPalavras = await query.limit(5);
+  if (!porPalavras.error && porPalavras.data && porPalavras.data.length === 1) return porPalavras.data[0];
   return null;
 }
 
 async function preencherEmbarque(page, solicitacao) {
-  var ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque);
+  var ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque);
   if (ponto) {
     log('INFO', 'Local de embarque "' + solicitacao.armazem_embarque + '" resolvido em operacional_pontos_embarque: ' + ponto.tipo_local + ' / ' + ponto.uf + ' / ' + ponto.cidade + ' / ' + ponto.nome_local);
     await preencherCampo(page, 'tipo_local', ['TIPO DO LOCAL'], ponto.tipo_local);
