@@ -162,9 +162,9 @@ function detalheHtml(row){
       <div><div class="ds-modal-label">Produtor</div><div class="ds-modal-value">${esc(row.produtor||'-')}</div></div>
       <div><div class="ds-modal-label">Número do contrato</div><div class="ds-modal-value">${esc(row.numero_contrato||'-')}</div></div>
       <div><div class="ds-modal-label">Armazém de embarque</div><div class="ds-modal-value">${esc(row.armazem_embarque||'-')}</div></div>
-      <div><div class="ds-modal-label">Cidade de embarque</div><div class="ds-modal-value">${esc(row.cidade_embarque||'-')}</div></div>
+      <div><div class="ds-modal-label">Cidade de embarque</div><div class="ds-modal-value">${esc([row.uf_embarque,row.cidade_embarque].filter(Boolean).join(' - ')||'-')}</div></div>
       <div><div class="ds-modal-label">Local de destino</div><div class="ds-modal-value">${esc(row.local_destino||'-')}</div></div>
-      <div><div class="ds-modal-label">Cidade de destino</div><div class="ds-modal-value">${esc(row.cidade_destino||'-')}</div></div>
+      <div><div class="ds-modal-label">Cidade de destino</div><div class="ds-modal-value">${esc([row.uf_destino,row.cidade_destino].filter(Boolean).join(' - ')||'-')}</div></div>
       <div><div class="ds-modal-label">Produto</div><div class="ds-modal-value">${esc(row.produto||'-')}</div></div>
       <div><div class="ds-modal-label">Tipo de produto</div><div class="ds-modal-value">${esc(row.tipo_produto||'-')}</div></div>
       <div><div class="ds-modal-label">Volume inicial</div><div class="ds-modal-value">${num(row.volume_inicial)} tons</div></div>

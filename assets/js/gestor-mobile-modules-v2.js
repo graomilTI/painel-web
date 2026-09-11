@@ -102,7 +102,7 @@ function logistica(){
   if(supervisao)supervisao.classList.remove('gm-full');
   const supSelect=q('#osRegional',form);filterSupervisoes(supSelect);
   if(!access.loaded&&!access.loading)loadGestorAccess().then(schedule);
-  [['osArmazemEmbarque','Dados do Embarque','emb'],['osCidadeDestino','Dados do Destino','dst']].forEach(([id,txt,key])=>{const t=q('#'+id,grid)?.closest('label');if(t&&!q('[data-gm-title="'+key+'"]',grid)){const d=document.createElement('div');d.className='gm-log-title';d.dataset.gmTitle=key;d.textContent=txt;t.before(d)}});
+  [['osArmazemEmbarque','Dados do Embarque','emb'],['osUfDestino','Dados do Destino','dst']].forEach(([id,txt,key])=>{const t=q('#'+id,grid)?.closest('label');if(t&&!q('[data-gm-title="'+key+'"]',grid)){const d=document.createElement('div');d.className='gm-log-title';d.dataset.gmTitle=key;d.textContent=txt;t.before(d)}});
   const title=qa('.log-subtitle',root).find(x=>/minhas solicita/i.test(x.textContent||'')),hist=title?.parentElement;hist?.classList.add('gm-log-history');
   let tb=q('#gmLogToolbar',root);if(!tb){tb=document.createElement('div');tb.id='gmLogToolbar';k.before(tb)}
   const up=q('#abrirOsUploadWrap');if(up&&up.parentElement!==tb)tb.append(up);
