@@ -88,20 +88,36 @@ function pontosProblemaHtml(row){
   return `<div class="ds-modal-full"><div class="ds-modal-label">❗ Pontos com problema reportados ao Gestor</div><div class="ds-modal-value">${ordenados.map(p=>`<div class="ab-ponto-problema-item">${esc(p.descricao||'-')}<span> · ${date(p.em,true)}</span></div>`).join('')}</div></div>`;
 }
 
-// ── busca de O.S. já existente pro mesmo cliente/contrato (evita duplicar) ──
-// operacional_os não tem coluna de filial, então o match automático é só
-// cliente+contrato; a filial fica pro ADM conferir visualmente na lista de
-// resultados antes de alocar.
+// ── busca de O.S. já existente pro mesmo cliente/filial/embarque/contrato (evita duplicar) ──
+// "SEM CTR" é um placeholder legítimo (cliente sem contrato obrigatório na O.S.),
+// não um número de contrato de verdade — não faz sentido comparar por ele.
+// operacional_os não tem colunas separadas de filial/armazém/cidade de embarque
+// (cliente e embarque vêm como texto combinado do GRM), então esses dois campos
+// são conferidos como substring do que a API devolveu, depois do match por
+// cliente+contrato no banco.
 async function buscarOsExistente(row){
   const contrato=String(row.numero_contrato||'').trim();
-  if(!contrato)return [];
+  if(!contrato || contrato.toUpperCase()==='SEM CTR') return [];
+
+  const cliente=String(row.contratante_cliente||'').trim();
+  if(!cliente) return [];
+  const filial=String(row.filial_pagadora||'').trim().toUpperCase();
+  const cidadeEmbarque=String(row.cidade_embarque||'').trim().toUpperCase();
+  const armazemEmbarque=String(row.armazem_embarque||'').trim().toUpperCase();
+
   const {data,error}=await supabase.from('operacional_os')
     .select('numero_os,situacao,financeiro,cliente,contrato,supervisao,embarque,destino,produto,data_os,remanescente')
     .ilike('contrato',contrato)
+    .ilike('cliente',`%${cliente}%`)
     .order('data_os',{ascending:false})
     .limit(5);
   if(error){console.error('[abertura-os-workflow] buscarOsExistente',error);return [];}
-  return (Array.isArray(data)?data:[]).filter(os=>String(os.financeiro||'').trim().toUpperCase()!=='FATURADA');
+
+  return (Array.isArray(data)?data:[])
+    .filter(os=>String(os.financeiro||'').trim().toUpperCase()!=='FATURADA')
+    .filter(os=>!filial || String(os.cliente||'').toUpperCase().includes(filial))
+    .filter(os=>!cidadeEmbarque || String(os.embarque||'').toUpperCase().includes(cidadeEmbarque))
+    .filter(os=>!armazemEmbarque || String(os.embarque||'').toUpperCase().includes(armazemEmbarque));
 }
 
 function existenteMatchHtml(os){
