@@ -378,11 +378,32 @@ function renderColaboradorLista() {
     return '<div class="hosp-note">Nenhum colaborador encontrado na sua supervisão.</div>';
   }
   if (!lista.length) return '<div class="hosp-note">Nenhum colaborador encontrado para essa busca.</div>';
-  return `<div class="hosp-colab-list">${lista.slice(0, 40).map((c) => {
-    const chave = colaboradorChave(c);
-    const marcado = state.selecionados.has(chave);
-    return `<label class="hosp-colab-item"><input type="checkbox" data-colab="${esc(chave)}" ${marcado ? 'checked' : ''}><span>${esc(c.nome)}</span><small class="muted">${esc(c.supervisao || '')}</small></label>`;
-  }).join('')}</div>`;
+
+  const LIMITE = 200;
+  const visiveis = lista.slice(0, LIMITE);
+  const restantes = lista.length - visiveis.length;
+
+  const grupos = new Map();
+  for (const c of visiveis) {
+    const grupo = c.supervisao?.trim() || 'Sem supervisão';
+    if (!grupos.has(grupo)) grupos.set(grupo, []);
+    grupos.get(grupo).push(c);
+  }
+  const gruposOrdenados = [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+  gruposOrdenados.forEach(([, pessoas]) => pessoas.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
+
+  const corpo = gruposOrdenados.map(([grupo, pessoas]) => `
+    <div class="hosp-colab-grupo">
+      <div class="hosp-colab-grupo-titulo"><span>${esc(grupo)}</span><span class="hosp-colab-grupo-qtd">${pessoas.length}</span></div>
+      ${pessoas.map((c) => {
+        const chave = colaboradorChave(c);
+        const marcado = state.selecionados.has(chave);
+        return `<label class="hosp-colab-item"><input type="checkbox" data-colab="${esc(chave)}" ${marcado ? 'checked' : ''}><span>${esc(c.nome)}</span></label>`;
+      }).join('')}
+    </div>`).join('');
+
+  const aviso = restantes > 0 ? `<div class="hosp-colab-mais">+${restantes} colaborador(es) fora da lista — refine a busca por nome para encontrá-los.</div>` : '';
+  return `<div class="hosp-colab-list">${corpo}</div>${aviso}`;
 }
 
 function renderSelecionados() {
@@ -465,10 +486,15 @@ function styles() {
     .hosp-uf-cidade-row .hosp-field-uf{flex:none;width:64px}
     .hosp-uf-cidade-row .ds-field:not(.hosp-field-uf){flex:1;min-width:0}
     .hosp-colab-hint{font-size:12px;color:var(--muted);margin:8px 0}
-    .hosp-colab-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:10px}
-    .hosp-colab-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 6px;border-radius:8px}
+    .hosp-colab-list{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 12px}
+    .hosp-colab-grupo{padding:6px 0}
+    .hosp-colab-grupo + .hosp-colab-grupo{border-top:1px solid var(--line)}
+    .hosp-colab-grupo-titulo{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panel,#15152a);padding:8px 4px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+    .hosp-colab-grupo-qtd{font-size:11px;font-weight:700;color:var(--muted);background:rgba(148,163,184,.14);border-radius:999px;padding:1px 8px}
+    .hosp-colab-item{display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 6px;border-radius:8px}
     .hosp-colab-item:hover{background:rgba(148,163,184,.08)}
-    .hosp-colab-item small{margin-left:auto}
+    .hosp-colab-item input{width:16px;height:16px;flex:none}
+    .hosp-colab-mais{font-size:12px;color:var(--muted);padding:8px 4px 0}
     .hosp-colab-selecionados{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-top:10px;min-height:28px}
     .hosp-colab-draft{border:1px solid rgba(22,163,74,.35);border-radius:12px;padding:12px;background:rgba(22,163,74,.05)}
     .hosp-colab-draft header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.hosp-colab-draft header button{border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
