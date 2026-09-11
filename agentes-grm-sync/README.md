@@ -221,9 +221,9 @@ order by created_at desc limit 5;
 
 ## Concorrência entre agentes — conflitos de banco (mapeamento 2026-08-12)
 
-> **Nota (atualizado 11/09, conferido ao vivo via `crontab -l` no servidor):** a seção "Arquitetura" acima descreve uma versão anterior do worker (poll único a cada 15s, 1 job por vez). O esquema de 3 lanes que sucedeu aquilo (`fixed_a`/`fixed_b`/`fixed_c` + `alteracoes` + `despesas_distribuicao`) também já foi substituído: desde **2026-08-18** roda a **V2 de 8 lanes**, ativada pelo flag `.grm-sync-v2-enabled` no servidor. A fila continua na mesma função Postgres `claim_next_grm_sync_job(p_lane, p_worker_id)` (`pg_advisory_xact_lock(872634503)` + `SELECT ... FOR UPDATE SKIP LOCKED`), consumida por `worker/grm-sync-job-worker.js --once --lane=<lane> --worker-id=<id>` via `worker/crontab-v2-8-lanes.txt` (8 processos cron, 1x/min, `flock -n`, cada um só roda se o flag V2 existir). Lease/heartbeat libera job travado sem heartbeat há 10-20min. A alocação de cada agente por lane não é fixa em código — fica em `public.grm_sync_agent_settings` (coluna `queue_lane`, editável pela tela TI > Agentes). Esta seção documenta o estado encontrado nessa data — reconferir a tabela (não só este README) se voltar a mexer na fila.
+> **Nota (atualizado 11/09, conferido ao vivo via `crontab -l` no servidor):** a seção "Arquitetura" acima descreve uma versão anterior do worker (poll único a cada 15s, 1 job por vez). O esquema de 3 lanes que sucedeu aquilo (`fixed_a`/`fixed_b`/`fixed_c` + `alteracoes` + `despesas_distribuicao`) também já foi substituído: desde **2026-08-18** roda a **V2 de lanes**, ativada pelo flag `.grm-sync-v2-enabled` no servidor (8 lanes originalmente, **9 desde 11/09** — ver abaixo). A fila continua na mesma função Postgres `claim_next_grm_sync_job(p_lane, p_worker_id)` (`pg_advisory_xact_lock(872634503)` + `SELECT ... FOR UPDATE SKIP LOCKED`), consumida por `worker/grm-sync-job-worker.js --once --lane=<lane> --worker-id=<id>` via `worker/crontab-v2-8-lanes.txt` (1 processo cron por lane, 1x/min, `flock -n`, cada um só roda se o flag V2 existir). Lease/heartbeat libera job travado sem heartbeat há 10-20min. A alocação de cada agente por lane não é fixa em código — fica em `public.grm_sync_agent_settings` (coluna `queue_lane`, editável pela tela TI > Agentes). Esta seção documenta o estado encontrado nessa data — reconferir a tabela (não só este README) se voltar a mexer na fila.
 
-**Capacidade concorrente por lane (8 lanes, 1 worker cada = máximo 8 agentes rodando ao mesmo tempo):**
+**Capacidade concorrente por lane (9 lanes, 1 worker cada = máximo 9 agentes rodando ao mesmo tempo — `grm_sync_runtime_policy.max_workers=9`):**
 
 | Lane | Agentes (`enabled=true` em `grm_sync_agent_settings`) |
 |---|---|
@@ -232,11 +232,14 @@ order by created_at desc limit 5;
 | `entrada_financeiro_a` | compras-match-nf, sync-adiantamentos, sync-auditorias, sync-contas-pagar, sync-notas-fiscais |
 | `entrada_financeiro_b` | sync-contas-receber, sync-despesas |
 | `entrada_cadastros_operacao` | sync-login-alimentacao, botconversa-sync, sync-btg-classificador, sync-btg-relatorios, sync-cargas-geofence, sync-clientes, sync-locais-embarque, sync-mapa-embarque, sync-patrimonios |
-| `saida_os` | sync-abrir-os, sync-reabrir-os |
+| `saida_os` | sync-reabrir-os |
+| `saida_abertura_os` | sync-abrir-os (fila exclusiva desde 11/09 — antes dividia `saida_os` com sync-reabrir-os, pedido do usuário depois de ver o abrir-os esperar reabertura de O.S. terminar) |
 | `saida_financeiro` | sync-bonus-caixa, sync-lancar-notas-fiscais, sync-liberacao-despesas, sync-bonus-desconto-caixa, sync-despesas-retroativas |
 | `saida_logistica` | aplicar-distribuicao-os, sync-lancar-nhe, sync-btg-checkin |
 
 Desabilitados no momento (`enabled=false`, ficam na tabela mas o worker pula): sync-operacional-os, sync-colaboradores, sync-distribuicao-os, sync-lista-os, sync-producao-diaria, sync-finalizar-os. `sync-baixa-notas-fiscais` não entra nessa tabela — roda só por disparo manual/auto-continuação (ver comentário no topo de `grmserver-baixa-notas-fiscais-api.js`).
+
+**Importante:** separar a lane NÃO tornou sync-abrir-os totalmente independente — ele continua no `mutex_group='os_grm'` (junto com sync-reabrir-os, sync-finalizar-os, sync-lista-os), de propósito, pra não reabrir o bug antigo de "captura de número de O.S. errada por colisão entre clientes" (2 scripts de O.S. mexendo na mesma tela ao mesmo tempo). Ou seja: abrir-os agora tem sua própria posição na fila (não compete mais por ordem de chegada com reabrir-os dentro de `saida_os`), mas ainda espera se reabrir-os/finalizar-os/lista-os estiver rodando nesse instante — decisão deliberada do usuário ao ser avisado do trade-off.
 
 `mutex_group` (não confundir com lane) impede que agentes do mesmo grupo rodem ao mesmo tempo mesmo em lanes diferentes: `staff_grm` (sync-bonus-caixa, sync-liberacao-despesas, sync-bonus-desconto-caixa, sync-despesas-retroativas, sync-colaboradores), `financeiro_grm` (sync-lancar-notas-fiscais), `nhe_grm` (sync-nhe, sync-lancar-nhe), `os_grm` (sync-abrir-os, sync-reabrir-os, sync-finalizar-os, sync-lista-os), `distribuicao_os_grm` (aplicar-distribuicao-os, sync-distribuicao-os).
 

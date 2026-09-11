@@ -1,10 +1,14 @@
-# GRM Sync V2 - 8 lanes simultâneas - instalado 2026-08-18 22:25 (flag .grm-sync-v2-enabled)
+# GRM Sync V2 - 9 lanes simultâneas - instalado 2026-08-18 22:25 (flag .grm-sync-v2-enabled)
 #
 # ATENÇÃO: este arquivo é só REFERÊNCIA/documentação. O deploy é manual via SSH
 # (`crontab -e` direto no servidor) — editar este .txt no repo NÃO muda o cron
 # real. Copiado ao vivo de `crontab -l` em server.grao1000.com.br (grao100) em
-# 11/09. Se for mexer na fila de novo, rode `crontab -l` no servidor primeiro
-# pra conferir que este arquivo ainda bate (ver painel-web-agentes-grm-sync-deploy-cpanel
+# 11/09 (2ª vez no mesmo dia: adicionada a 9ª lane `saida_abertura_os`,
+# exclusiva do sync-abrir-os — antes dividia `saida_os` com sync-reabrir-os;
+# `grm_sync_runtime_policy.max_workers` também subiu de 8 pra 9 pra não
+# starvar a lane nova quando as outras 8 estiverem todas ocupadas). Se for
+# mexer na fila de novo, rode `crontab -l` no servidor primeiro pra conferir
+# que este arquivo ainda bate (ver painel-web-agentes-grm-sync-deploy-cpanel
 # na memória/README pra credenciais de SSH).
 #
 # Substituiu o esquema anterior de 3 lanes (fixed_a/fixed_b/fixed_c + alteracoes +
@@ -22,6 +26,7 @@
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-entrada-financeiro-a.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=entrada_financeiro_a --worker-id=entrada-financeiro-a' >> /home/grao100/painel-scripts/grm-sync/logs/worker-entrada-financeiro-a.log 2>&1
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-entrada-financeiro-b.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=entrada_financeiro_b --worker-id=entrada-financeiro-b' >> /home/grao100/painel-scripts/grm-sync/logs/worker-entrada-financeiro-b.log 2>&1
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-saida-os.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=saida_os --worker-id=saida-os' >> /home/grao100/painel-scripts/grm-sync/logs/worker-saida-os.log 2>&1
+* * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-saida-abertura-os.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=saida_abertura_os --worker-id=saida-abertura-os' >> /home/grao100/painel-scripts/grm-sync/logs/worker-saida-abertura-os.log 2>&1
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-saida-financeiro.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=saida_financeiro --worker-id=saida-financeiro' >> /home/grao100/painel-scripts/grm-sync/logs/worker-saida-financeiro.log 2>&1
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-entrada-cadastros-operacao.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=entrada_cadastros_operacao --worker-id=entrada-cadastros-operacao' >> /home/grao100/painel-scripts/grm-sync/logs/worker-entrada-cadastros-operacao.log 2>&1
 * * * * * test -f /home/grao100/painel-scripts/grm-sync/.grm-sync-v2-enabled && /usr/bin/flock -n /home/grao100/tmp/grm-worker-saida-logistica.lock /bin/bash -lc 'cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 GRM_SYNC_NODE_BIN=/opt/node22/bin/node PATH=/opt/node22/bin:/home/grao100/bin:/usr/local/bin:/usr/bin:/bin /opt/node22/bin/node worker/grm-sync-job-worker.js --once --lane=saida_logistica --worker-id=saida-logistica' >> /home/grao100/painel-scripts/grm-sync/logs/worker-saida-logistica.log 2>&1
