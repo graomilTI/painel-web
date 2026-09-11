@@ -1086,7 +1086,20 @@ async function lancarBrowser() {
       '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
       '--disable-site-isolation-trials'
     ],
-    defaultViewport: { width: 1600, height: 900 }
+    // CAUSA RAIZ real do "preenchido como texto livre"/campo desabilitado em
+    // Local do Serviço, Supervisão, UF de Destino, Destino e Produto
+    // (confirmado ao vivo 11/09 via diagnóstico): com viewport de 900px de
+    // altura, o diálogo "ADICIONAR ORDEM DE SERVIÇO" é mais alto que isso —
+    // as seções de baixo (2ª linha de Dados do Embarque em diante, Destino,
+    // Produto e Testes) ficam com y > 900, fora da viewport. getBoundingClientRect
+    // devolve a posição real (fora da tela) e elementFromPoint(x,y) nesses
+    // pontos não acha nada (ou acha só o card de fundo do modal) — não é
+    // falta de espera, o clique cai fora da área visível do navegador.
+    // grm-sync-aplicar-distribuicao-os.js já usa 1920x1440 por causa de
+    // formulários longos parecidos; usa altura ainda maior aqui porque este
+    // diálogo tem mais seções (Cliente, Detalhes, Embarque, Destino, Produto
+    // e Testes, Itens de Classificação).
+    defaultViewport: { width: 1600, height: 2200 }
   });
 }
 
