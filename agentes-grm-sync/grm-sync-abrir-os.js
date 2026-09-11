@@ -792,23 +792,44 @@ async function clicarAdicionarDestino(page) {
     }, { x: box.x, y: box.y });
   }
   if (!alvo) { log('WARN', 'Botão "+" ao lado de Destino não encontrado (ou continua desabilitado) — destino pode não ter sido adicionado à lista.'); return; }
-  await page.mouse.click(alvo.x, alvo.y);
-  await wait(700);
 
-  // Confere de verdade se a linha entrou na tabela "DADOS DE DESTINO" (não
-  // só assume que o clique funcionou) — conta linhas de tabela dentro do
-  // diálogo antes inexistentes; se continuar em 0, avisa em vez de seguir
-  // silenciosamente como se tivesse dado certo.
-  var linhas = await page.evaluate(function () {
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
-    var dialog = overlays[overlays.length - 1];
-    if (!dialog) return 0;
-    return dialog.querySelectorAll('table tbody tr').length;
-  });
+  // O clique em si às vezes não "pega" na primeira tentativa mesmo com o
+  // botão já habilitado (confirmado ao vivo 11/09 — variação de run pra
+  // run) — confere se a linha realmente apareceu e clica de novo (achando
+  // o botão de novo, pode ter mudado de posição) até 3x antes de desistir.
+  var linhas = 0;
+  for (var tentativaClique = 0; tentativaClique < 3 && linhas === 0; tentativaClique++) {
+    if (tentativaClique > 0) {
+      alvo = await page.evaluate(function (payload) {
+        var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+        var dialog = overlays[overlays.length - 1];
+        if (!dialog) return null;
+        var melhor = null, menorDist = Infinity;
+        Array.from(dialog.querySelectorAll('button')).forEach(function (b) {
+          var r = b.getBoundingClientRect();
+          if (!r.width || !r.height || b.disabled || b.className.indexOf('--disabled') !== -1) return;
+          var cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+          if (cx <= payload.x || Math.abs(cy - payload.y) > 20) return;
+          var dist = cx - payload.x;
+          if (dist < menorDist) { menorDist = dist; melhor = { x: cx, y: cy }; }
+        });
+        return melhor;
+      }, { x: box.x, y: box.y });
+      if (!alvo) break;
+    }
+    await page.mouse.click(alvo.x, alvo.y);
+    await wait(800);
+    linhas = await page.evaluate(function () {
+      var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+      var dialog = overlays[overlays.length - 1];
+      if (!dialog) return 0;
+      return dialog.querySelectorAll('table tbody tr').length;
+    });
+  }
   if (linhas > 0) {
     log('INFO', 'Clicado botão "+" ao lado de Destino — ' + linhas + ' linha(s) na tabela "Dados de Destino".');
   } else {
-    log('WARN', 'Clicado botão "+" ao lado de Destino, mas nenhuma linha apareceu na tabela — destino pode não ter sido adicionado.');
+    log('WARN', 'Clicado botão "+" ao lado de Destino ' + tentativaClique + 'x, mas nenhuma linha apareceu na tabela — destino pode não ter sido adicionado.');
   }
 }
 
