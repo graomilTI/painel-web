@@ -6,7 +6,7 @@ import { initAgentDataMode } from './agentDataMode.js';
 import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
 import { initRouter } from './router.js';
-import './painel-design-system.js?v=20260724-layout1';
+import './painel-design-system.js?v=20260911-abas-sublinhado1';
 import './searchableSelect.js?v=20260819-respeita-hidden';
 import './logistica-saldo-filtros.js?v=20260803-saldo-filtros1';
 import './logistica-abertura-upload.js?v=20260803-upload-autofill1';
