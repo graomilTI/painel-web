@@ -1270,6 +1270,15 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
   if (error) throw error;
 
   const cpfCandidato = /^\d+$/.test(String(cand.colaboradorId)) ? String(cand.colaboradorId) : null;
+  // programacao_colaboradores tem um trigger (programacao_colaboradores_auto_
+  // transferir_rascunho_trg) que exige data_referencia preenchida — sem isso
+  // ele sempre lança "Programação de destino inválida para a data
+  // informada.", e como o erro abaixo só vira console.warn, o upsert falhava
+  // 100% das vezes em silêncio (achado ao vivo 11/09 testando a automação de
+  // "Informar colaborador" na Abertura de O.S.). data_referencia É a mesma
+  // data de programacao_dia (dataReferenciaDaProgramacao já existe mais
+  // abaixo neste arquivo pro marcarMapaRotasPendente — só adiantada aqui).
+  const dataReferenciaOs = await dataReferenciaDaProgramacao(programacaoId);
   const [vinculoRes, espelhoRes] = await Promise.all([
     supabase.from('operacional_os_colaboradores').delete().eq('os_id', os.id).eq('colaborador_key', cand.colaboradorId)
       .then(() => supabase.from('operacional_os_colaboradores').insert({
@@ -1282,6 +1291,7 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
       })),
     supabase.from('programacao_colaboradores').upsert({
       programacao_id: programacaoId,
+      data_referencia: dataReferenciaOs,
       colaborador_id: cand.colaboradorId,
       nome_colaborador: cand.nome,
       cargo: cand.cargo || null,
@@ -1295,7 +1305,7 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
   if (vinculoRes?.error) console.warn('[programacao-equipe] falha ao gravar colaborador adicional da OS.', vinculoRes.error);
   if (espelhoRes?.error) console.warn('[programacao-equipe] falha ao espelhar colaborador adicional.', espelhoRes.error);
   await reabrirDistribuicaoOs(os.id);
-  marcarMapaRotasPendente(os?.supervisao, await dataReferenciaDaProgramacao(programacaoId));
+  marcarMapaRotasPendente(os?.supervisao, dataReferenciaOs);
 
   return upsertRows?.[0] || { ...payload, id: null };
 }

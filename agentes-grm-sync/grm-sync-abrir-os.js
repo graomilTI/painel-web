@@ -66,6 +66,20 @@ function log(level, msg) {
   console.log('[' + level + '] ' + new Date().toISOString() + ' - ' + msg);
 }
 
+// Coleta os avisos de "campo não bateu com nenhuma opção do GRM" durante o
+// preenchimento — sozinhos eles só ficam no log do job (só eu conseguia ler
+// pra descobrir a causa real de um "diálogo continua aberto"). Anexados na
+// mensagem de erro final (ver salvarECapturarNumero), o ADM já vê a causa
+// provável direto no card da solicitação, sem precisar me pedir pra
+// investigar o log toda vez que um campo tiver um nome abreviado/divergente
+// do cadastro no GRM (já aconteceu com tipo_produto, embarque e produtor no
+// mesmo dia, 11/09). Resetado a cada solicitação em processarSolicitacao.
+var avisosCamposSuspeitos = [];
+function avisarCampoSuspeito(msg) {
+  log('WARN', msg);
+  avisosCamposSuspeitos.push(msg);
+}
+
 function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
 
 function assertConfig() {
@@ -541,8 +555,8 @@ async function selecionarOpcaoAberta(page, alvo, modo) {
 // só serve pra destravar a cascata, o ADM pode revisar/corrigir depois.
 async function selecionarPrimeiraOpcaoCascata(page, labels) {
   var box = await localizarCampoHabilitado(page, labels);
-  if (!box) { log('WARN', 'Campo cascata (' + labels.join(' / ') + ') não encontrado — pulando.'); return; }
-  if (box.disabled) { log('WARN', 'Campo cascata "' + box.label + '" continua desabilitado mesmo após esperar — pulando.'); return; }
+  if (!box) { avisarCampoSuspeito('Campo cascata (' + labels.join(' / ') + ') não encontrado — pulando.'); return; }
+  if (box.disabled) { avisarCampoSuspeito('Campo cascata "' + box.label + '" continua desabilitado mesmo após esperar — pulando.'); return; }
   await page.mouse.click(box.x, box.y);
   await wait(700);
   var escolhida = await page.evaluate(function () {
@@ -554,7 +568,7 @@ async function selecionarPrimeiraOpcaoCascata(page, labels) {
     return null;
   });
   if (!escolhida) {
-    log('WARN', 'Campo cascata "' + box.label + '": nenhuma opção apareceu ao abrir a lista — seguindo sem preencher.');
+    avisarCampoSuspeito('Campo cascata "' + box.label + '": nenhuma opção apareceu ao abrir a lista — seguindo sem preencher.');
     await page.keyboard.press('Escape').catch(function () {});
   } else {
     log('INFO', 'Campo cascata "' + box.label + '" preenchido com a 1ª opção disponível: ' + escolhida);
@@ -590,7 +604,7 @@ async function preencherCampo(page, campo, labels, valorBruto) {
 
   var box = await localizarCampoHabilitado(page, labels);
   if (!box) { log('WARN', 'Campo "' + campo + '" (rótulos: ' + labels.join(' / ') + ') não encontrado no formulário — verifique LABEL_MAP com --discover.'); return; }
-  if (box.disabled) { log('WARN', 'Campo "' + campo + '" ("' + box.label + '") continua desabilitado mesmo após esperar a cascata — pulando, a O.S. ficará sem esse valor.'); return; }
+  if (box.disabled) { avisarCampoSuspeito('Campo "' + campo + '" ("' + box.label + '") continua desabilitado mesmo após esperar a cascata — pulando, a O.S. ficará sem esse valor.'); return; }
 
   await page.mouse.click(box.x, box.y);
   await wait(400);
@@ -646,7 +660,7 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   if (opcaoAberta) {
     var escolhida = await selecionarOpcaoAberta(page, valor, 'substring');
     if (!escolhida) {
-      log('WARN', 'Campo "' + campo + '": lista de opções abriu mas nenhuma bateu com "' + valor + '" — fechando lista e seguindo com o texto digitado.');
+      avisarCampoSuspeito('Campo "' + campo + '": lista de opções abriu mas nenhuma bateu com "' + valor + '" — fechando lista e seguindo com o texto digitado.');
       await page.keyboard.press('Escape');
     } else {
       log('INFO', 'Campo "' + campo + '" selecionado: ' + escolhida);
@@ -683,8 +697,8 @@ async function preencherTestes(page, solicitacao) {
     if (!mapa) { log('WARN', 'Teste "' + key + '" sem mapeamento pro campo do GRM — pulando.'); continue; }
 
     var box = await localizarCampoHabilitado(page, mapa.campo);
-    if (!box) { log('WARN', 'Campo do teste "' + key + '" (' + mapa.campo.join('/') + ') não encontrado no formulário.'); continue; }
-    if (box.disabled) { log('WARN', 'Campo do teste "' + key + '" continua desabilitado mesmo após esperar — pulando.'); continue; }
+    if (!box) { avisarCampoSuspeito('Campo do teste "' + key + '" (' + mapa.campo.join('/') + ') não encontrado no formulário.'); continue; }
+    if (box.disabled) { avisarCampoSuspeito('Campo do teste "' + key + '" continua desabilitado mesmo após esperar — pulando.'); continue; }
 
     await page.mouse.click(box.x, box.y);
     var escolhida = null;
@@ -696,7 +710,7 @@ async function preencherTestes(page, solicitacao) {
       }
     }
     if (!escolhida) {
-      log('WARN', 'Não achei opção pro teste "' + key + '" no dropdown "' + mapa.campo[0] + '" — texto das opções não confirmado ao vivo, ajuste TESTES_GRM_MAP.');
+      avisarCampoSuspeito('Não achei opção pro teste "' + key + '" no dropdown "' + mapa.campo[0] + '" — texto das opções não confirmado ao vivo, ajuste TESTES_GRM_MAP.');
       await page.keyboard.press('Escape').catch(function () {});
       continue;
     }
@@ -761,7 +775,7 @@ async function preencherEmbarque(page, solicitacao) {
     await preencherCampo(page, 'cidade_embarque', ['CIDADE'], ponto.cidade);
     await preencherCampo(page, 'armazem_embarque', ['LOCAL DO SERVICO'], ponto.nome_local);
   } else {
-    log('WARN', 'Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — sem UF/Tipo do Local, Cidade e Local do Serviço provavelmente ficarão desabilitados.');
+    avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — sem UF/Tipo do Local, Cidade e Local do Serviço provavelmente ficarão desabilitados.');
     await preencherCampo(page, 'cidade_embarque', ['CIDADE'], solicitacao.cidade_embarque);
     await preencherCampo(page, 'armazem_embarque', ['LOCAL DO SERVICO'], solicitacao.armazem_embarque);
   }
@@ -1172,6 +1186,7 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
     // capturar o número de outro cliente (ver comentário na função).
     var numeroAntes = await lerNumeroTopoGrade(page);
 
+    avisosCamposSuspeitos = [];
     await preencherFormulario(page, solicitacao);
     if (debug) await shot(page, 'solicitacao-' + id + '-form-preenchido.png');
 
@@ -1192,6 +1207,15 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
     log('SUCCESS', 'Solicitação ' + id + ': O.S. ' + numeroOs + ' cadastrada no GRM.');
   } catch (error) {
     var msg = String(error.message || error);
+    // Anexa os avisos de campo coletados durante o preenchimento — na maioria
+    // dos casos de "diálogo continua aberto"/falha de Salvar, a causa real é
+    // um desses avisos (campo que não bateu com o GRM ou ficou desabilitado),
+    // não a mensagem genérica. Deixa isso visível direto no card da
+    // solicitação (erro_agente), pro ADM corrigir sem precisar pedir análise
+    // do log do job.
+    if (avisosCamposSuspeitos.length) {
+      msg += ' Possível(is) causa(s): ' + avisosCamposSuspeitos.join(' | ');
+    }
     log('ERROR', 'Solicitação ' + id + ': ' + msg);
     if (debug) await shot(page, 'solicitacao-' + id + '-erro.png');
     await marcarErro(id, msg);
