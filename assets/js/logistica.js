@@ -801,7 +801,28 @@ function buildTestesPayload(produto) {
 }
 
 async function handleSalvarAberturaOs(content) {
+  // A flag só era setada logo antes do insert (bem depois dos primeiros
+  // `await`, incluindo getSession() e, desde 11/09, os popups de
+  // colaborador) — entre o clique e ali tinha uma janela real onde um 2º
+  // clique passava pelo "if (state.aberturaSaving) return" antes do 1º
+  // clique setar a flag, duplicando a solicitação inteira (reportado pelo
+  // usuário 11/09: 2 linhas idênticas em "Minhas solicitações", mesmo
+  // segundo). Setar aqui, síncrono, antes de qualquer await, fecha a janela
+  // de verdade — dois cliques em sequência não têm como ambos passar pelo
+  // check antes de um deles já ter marcado a flag.
   if (state.aberturaSaving) return;
+  state.aberturaSaving = true;
+  const salvarBtn = content.querySelector?.('#abrirOsSalvarBtn') || document.getElementById('abrirOsSalvarBtn');
+  if (salvarBtn) salvarBtn.disabled = true;
+  try {
+    await handleSalvarAberturaOsInterno(content);
+  } finally {
+    state.aberturaSaving = false;
+    if (salvarBtn) salvarBtn.disabled = false;
+  }
+}
+
+async function handleSalvarAberturaOsInterno(content) {
   const produto = valById(content, 'osProduto');
   const session = await getSession().catch(() => null);
   const apelido = session?.user?.user_metadata?.apelido;
@@ -879,9 +900,7 @@ async function handleSalvarAberturaOs(content) {
     if (escolha) payload.raw = { colaborador_inicial: { ...escolha, aplicado: false } };
   }
 
-  state.aberturaSaving = true;
   const { error } = await supabase.from('logistica_abertura_os').insert(payload);
-  state.aberturaSaving = false;
   if (error) { alert(`${error.message}. Rode o SQL de abertura de OS no Supabase.`); return; }
   state.aberturaProdutoAtual = '';
   state.aberturaTestesSelecionados = [];
