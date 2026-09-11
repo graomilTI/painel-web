@@ -2,7 +2,13 @@ import { supabase } from './supabaseClient.js';
 
 const AGENT_META = {
   'sync-colaboradores': { name: 'Colaboradores', table: 'colaboradores' },
-  'sync-producao-diaria': { name: 'Produção Diária', table: 'grm_producao_diaria_importacoes' },
+  // sync-producao-diaria virou serviço contínuo (grmserver-producao-diaria-api-realtime.js,
+  // 01/09) que grava só em producao_snapshot — grm_producao_diaria_importacoes ficou
+  // congelada e grm_sync_jobs não recebe mais job novo desse agente (mesmo achado do
+  // card em ti-agentes.js, PR #344). syncHeartbeatColumn faz getLatestForAgent ler o
+  // created_at mais recente de producao_snapshot em vez do último job (permanentemente
+  // velho) ou de sincronizado_em (coluna que não existe nessa tabela).
+  'sync-producao-diaria': { name: 'Produção Diária', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at' },
   'sync-locais-embarque': { name: 'Locais de Embarque', table: 'grm_locais_embarque_importacoes' },
   'sync-resultado-diario': { name: 'Resultado Diário', table: 'grm_resultado_diario_importacoes' },
   'sync-despesas': { name: 'Despesas', table: 'grm_despesas_importacoes' },
@@ -171,45 +177,48 @@ function setPillUpdated(pill, row, agents) {
   pill.title = `${agentName} · última atualização com sucesso em ${label}`;
 }
 
-async function getLatestFromJobs(agents) {
-  const { data, error } = await supabase
-    .from('grm_sync_jobs')
-    .select('agente_id,status,created_at,finalizado_em')
-    .in('agente_id', agents)
-    .eq('status', 'sucesso')
-    .not('finalizado_em', 'is', null)
-    .order('finalizado_em', { ascending: false })
-    .limit(1);
+// Agentes com syncHeartbeatColumn viraram serviço contínuo fora da fila de
+// grm_sync_jobs (ver AGENT_META) — pra esses, o último job "sucesso" é sempre
+// de antes da migração e ficaria travado pra sempre se disputasse por
+// finalizado_em contra agentes que ainda usam a fila. Por isso cada agente
+// busca no source certo (job OU heartbeat da própria tabela de destino) e o
+// mais recente dentre eles é quem aparece no pill.
+async function getLatestForAgent(agentId) {
+  const meta = AGENT_META[agentId];
+  if (!meta) return null;
 
-  if (error) throw error;
-  return data?.[0] || null;
-}
-
-async function getLatestFromImportTables(agents) {
-  const rows = await Promise.all(agents.map(async (agentId) => {
-    const meta = AGENT_META[agentId];
-    if (!meta?.table) return null;
-
+  if (meta.syncHeartbeatColumn) {
     try {
       const { data, error } = await supabase
         .from(meta.table)
-        .select('sincronizado_em')
-        .not('sincronizado_em', 'is', null)
-        .order('sincronizado_em', { ascending: false })
+        .select(meta.syncHeartbeatColumn)
+        .not(meta.syncHeartbeatColumn, 'is', null)
+        .order(meta.syncHeartbeatColumn, { ascending: false })
         .limit(1);
-
       if (error) throw error;
-      const sincronizadoEm = data?.[0]?.sincronizado_em;
+      const sincronizadoEm = data?.[0]?.[meta.syncHeartbeatColumn];
       return sincronizadoEm ? { agente_id: agentId, sincronizado_em: sincronizadoEm } : null;
     } catch (error) {
-      console.warn('[agent update status] fallback falhou', agentId, error);
+      console.warn('[agent update status] heartbeat falhou', agentId, error);
       return null;
     }
-  }));
+  }
 
-  return rows
-    .filter(Boolean)
-    .sort((a, b) => new Date(b.sincronizado_em).getTime() - new Date(a.sincronizado_em).getTime())[0] || null;
+  try {
+    const { data, error } = await supabase
+      .from('grm_sync_jobs')
+      .select('agente_id,status,created_at,finalizado_em')
+      .eq('agente_id', agentId)
+      .eq('status', 'sucesso')
+      .not('finalizado_em', 'is', null)
+      .order('finalizado_em', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return data?.[0] || null;
+  } catch (error) {
+    console.warn('[agent update status] job falhou', agentId, error);
+    return null;
+  }
 }
 
 export async function initAgentUpdateStatus() {
@@ -221,17 +230,16 @@ export async function initAgentUpdateStatus() {
   if (!pill) return;
   setPillLoading(pill);
 
-  try {
-    const fromJobs = await getLatestFromJobs(agents);
-    if (fromJobs) {
-      setPillUpdated(pill, fromJobs, agents);
-      return;
-    }
-  } catch (error) {
-    console.warn('[agent update status] não foi possível ler grm_sync_jobs, usando fallback', error);
+  const results = (await Promise.all(agents.map(getLatestForAgent))).filter(Boolean);
+  if (!results.length) {
+    setPillEmpty(pill, agents);
+    return;
   }
 
-  const fallback = await getLatestFromImportTables(agents);
-  if (fallback) setPillUpdated(pill, fallback, agents);
-  else setPillEmpty(pill, agents);
+  const latest = results.reduce((best, row) => {
+    const value = new Date(row.finalizado_em || row.sincronizado_em || row.created_at).getTime();
+    const bestValue = new Date(best.finalizado_em || best.sincronizado_em || best.created_at).getTime();
+    return value > bestValue ? row : best;
+  });
+  setPillUpdated(pill, latest, agents);
 }
