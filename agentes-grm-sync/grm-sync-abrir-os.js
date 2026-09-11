@@ -182,6 +182,21 @@ var TIPO_PRODUTO_GRM_VALIDOS = [
   'AFLATOXINA NEGATIVO', 'CONVENCIONAL', 'DECLARADO INTACTA', 'INTACTA NEGATIVO',
   'INTACTA POSITIVO', 'NAO DEFINIDO', 'PARTICIPANTE', 'TRANSGENICO'
 ];
+var TIPO_PRODUTO_GRM_DISPLAY = {
+  'AFLATOXINA NEGATIVO': 'Aflatoxina Negativo', 'CONVENCIONAL': 'Convencional',
+  'DECLARADO INTACTA': 'Declarado Intacta', 'INTACTA NEGATIVO': 'Intacta Negativo',
+  'INTACTA POSITIVO': 'Intacta Positivo', 'NAO DEFINIDO': 'Não Definido',
+  'PARTICIPANTE': 'Participante', 'TRANSGENICO': 'Transgênico'
+};
+// A opção do GRM é sempre grafada no masculino ("Declarado Intacta",
+// "Transgênico") só que a solicitação às vezes registra concordando com o
+// gênero do produto (ex.: "Declarada Intacta" pra Soja) — sem isso, o valor
+// batia como tipo_produto "inválido" (confirmado ao vivo 11/09, solicitação
+// 20a2d763: Soja/"Declarada Intacta" travou o Salvar por campo obrigatório
+// vazio, mesmo sendo uma classificação real do GRM).
+function normTipoProduto(s) {
+  return norm(s).replace(/\bDECLARADA\b/g, 'DECLARADO').replace(/\bTRANSGENICA\b/g, 'TRANSGENICO');
+}
 
 // Botão "Adicionar" (tooltip confirmado ao vivo) — ícone "+" no canto direito
 // da MESMA barra de ferramentas do campo "Filtrar Pesquisa" (selector já
@@ -844,12 +859,17 @@ async function preencherFormulario(page, solicitacao) {
     // bloqueado; só passou quando testado manualmente com "Milho
     // Exportação". Tenta a combinação primeiro; preencherCampo já cai pro
     // texto puro se a combinação não bater com nenhuma opção real.
-    if (item.campo === 'produto' && solicitacao.tipo_produto && TIPO_PRODUTO_GRM_VALIDOS.indexOf(norm(solicitacao.tipo_produto)) === -1) {
+    if (item.campo === 'produto' && solicitacao.tipo_produto && TIPO_PRODUTO_GRM_VALIDOS.indexOf(normTipoProduto(solicitacao.tipo_produto)) === -1) {
       valorCampo = String(valorCampo || '') + ' ' + solicitacao.tipo_produto;
     }
-    if (item.campo === 'tipo_produto' && valorCampo && TIPO_PRODUTO_GRM_VALIDOS.indexOf(norm(valorCampo)) === -1) {
-      log('WARN', 'tipo_produto "' + valorCampo + '" não é uma opção válida do GRM (Tipo do Produto) — usando "Não Definido".');
-      valorCampo = 'Não Definido';
+    if (item.campo === 'tipo_produto' && valorCampo) {
+      var tpIdx = TIPO_PRODUTO_GRM_VALIDOS.indexOf(normTipoProduto(valorCampo));
+      if (tpIdx === -1) {
+        log('WARN', 'tipo_produto "' + valorCampo + '" não é uma opção válida do GRM (Tipo do Produto) — usando "Não Definido".');
+        valorCampo = 'Não Definido';
+      } else {
+        valorCampo = TIPO_PRODUTO_GRM_DISPLAY[TIPO_PRODUTO_GRM_VALIDOS[tpIdx]];
+      }
     }
     await preencherCampo(page, item.campo, item.labels, valorCampo);
     // "Cliente Final" (próximo item, filial_pagadora) só destrava depois que
