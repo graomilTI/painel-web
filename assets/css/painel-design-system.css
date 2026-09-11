@@ -411,9 +411,7 @@ html.painel-ui-v2 .page-main :where(
   .btn,
   .base-button,
   .users-action-btn,
-  .stepbtn,
-  .tab-btn,
-  [role="tab"]
+  .stepbtn
 ) {
   min-height: 38px;
   border: 1px solid var(--panel-line) !important;
@@ -429,7 +427,7 @@ html.painel-ui-v2 .page-main button:not(.leaflet-control-zoom-in):not(.leaflet-c
   font-family: inherit;
 }
 
-html.painel-ui-v2 .page-main :where(.btn, .base-button, .users-action-btn, .stepbtn, .tab-btn, [role="tab"]):hover:not(:disabled) {
+html.painel-ui-v2 .page-main :where(.btn, .base-button, .users-action-btn, .stepbtn):hover:not(:disabled) {
   border-color: var(--panel-line-strong) !important;
   background: var(--panel-green-soft) !important;
   color: #d8ffed !important;
@@ -441,13 +439,46 @@ html.painel-ui-v2 .page-main :where(
   .base-button.primary,
   .primary-btn,
   .action-primary,
-  .stepbtn.active,
-  .tab-btn.active,
-  [role="tab"][aria-selected="true"]
+  .stepbtn.active
 ) {
   border-color: rgba(18, 216, 143, 0.6) !important;
   background: var(--panel-green) !important;
   color: #002116 !important;
+}
+
+/* Abas (.tab-btn/[role="tab"]) — sublinhado, não pill de botão. Ajustado 11/09
+   pra virar o padrão de toda tela nova: texto + traço embaixo no item ativo,
+   sem fundo/borda de botão (mesmo visual já aplicado manualmente em
+   hospedagem.js e frotas-hub.css, que precisavam repetir a classe do wrapper +
+   !important pra vencer o pill que era o default daqui — ver
+   painel-web-painel-ui-v2-css-especificidade). Continua com !important porque
+   telas que ainda têm CSS próprio de pill pra abas (se houver) precisam ser
+   ajustadas à parte; isso aqui é só o piso comum. */
+html.painel-ui-v2 .page-main :where(.tab-btn, [role="tab"]) {
+  min-height: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  background: transparent !important;
+  color: var(--panel-muted) !important;
+  box-shadow: none !important;
+  font-weight: 800;
+  padding: 10px 14px 8px !important;
+  transition: color 0.16s ease, border-color 0.16s ease;
+}
+
+html.painel-ui-v2 .page-main :where(.tab-btn, [role="tab"]):hover:not(:disabled) {
+  border-color: transparent !important;
+  background: rgba(34, 197, 94, 0.035) !important;
+  color: #d8ffed !important;
+  transform: none;
+}
+
+html.painel-ui-v2 .page-main :where(.tab-btn.active, [role="tab"][aria-selected="true"]) {
+  border-color: transparent !important;
+  border-bottom-color: var(--panel-green) !important;
+  background: transparent !important;
+  color: var(--panel-green) !important;
 }
 
 html.painel-ui-v2 .page-main .btn-primary {
