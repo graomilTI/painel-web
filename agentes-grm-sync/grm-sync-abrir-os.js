@@ -1032,8 +1032,16 @@ async function processarSolicitacao(page, solicitacao, dryRun, debug) {
  * ---------------------------------------------------------------------- */
 
 async function lancarBrowser() {
+  // Old Headless (headless:true) é o modo deprecado do Puppeteer — tem bugs
+  // conhecidos de timing/rendering (requestAnimationFrame, repaint) que
+  // batem exatamente com o sintoma visto ao vivo 11/09: dropdowns do
+  // Vuetify (Local do Serviço, Produto, Supervisão, UF de Destino) às vezes
+  // nunca renderizavam as opções mesmo esperando 10s, enquanto o MESMO
+  // clique+digitação funcionava em <1s num Chrome comum. grm-sync-aplicar-
+  // distribuicao-os.js já usa 'new' como default por isso mesmo — alinhando
+  // este agente. Continua configurável via GRM_HEADLESS pra rollback rápido.
   return puppeteer.launch({
-    headless: process.env.GRM_HEADLESS === 'new' ? 'new' : true,
+    headless: process.env.GRM_HEADLESS === 'true' ? true : (process.env.GRM_HEADLESS === 'false' ? false : 'new'),
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     dumpio: true,
     args: [
