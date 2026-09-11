@@ -568,6 +568,18 @@ async function preencherFormulario(page, solicitacao) {
     await preencherCampo(page, item.campo, item.labels, solicitacao[item.campo]);
   }
   await preencherTestes(page, solicitacao);
+  // "Tipo do Transporte" existe no formulário do GRM mas não tem coluna
+  // correspondente na solicitação do painel-web (a tela de Abrir O.S. nunca
+  // pergunta isso) — ficava sempre em branco. Confirmado ao vivo em 11/09,
+  // reproduzindo manualmente a solicitação da GRAOMIL (id 8f1e8a62) que
+  // tinha travado em "diálogo continua aberto": o Salvar só passou depois de
+  // preencher esse campo (junto com Cliente Final, que o LABEL_MAP abaixo já
+  // tenta preencher via filial_pagadora). Deriva um valor: "Vagão" só quando
+  // o contrato indica saída de vagão (mesmo placeholder "VAGOES"/"SAIDA
+  // VAGOES" usado em numero_contrato, ver logistica_clientes_contrato_regras
+  // e a migration 20260827161500); "Caminhão" no resto — a grande maioria.
+  var ehVagao = /VAGA?O/i.test(String(solicitacao.numero_contrato || ''));
+  await preencherCampo(page, 'tipo_transporte', ['TIPO DO TRANSPORTE'], ehVagao ? 'Vagão' : 'Caminhão');
   // Não existe campo próprio de "Troca de Notas" neste formulário (confirmado
   // via --discover) — registra a informação no campo livre "Outras Informações".
   if (solicitacao.troca_notas) {
