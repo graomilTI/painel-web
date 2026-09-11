@@ -221,17 +221,24 @@ order by created_at desc limit 5;
 
 ## Concorrência entre agentes — conflitos de banco (mapeamento 2026-08-12)
 
-> **Nota:** a seção "Arquitetura" acima descreve uma versão anterior do worker (poll único a cada 15s, 1 job por vez). Desde então o sistema evoluiu para uma **fila em 3 lanes** controlada pela função Postgres `claim_next_grm_sync_job(p_lane, p_worker_id)` (`pg_advisory_xact_lock(872634503)` + `SELECT ... FOR UPDATE SKIP LOCKED`, migrations `20260805130142_grm_sync_three_lanes.sql` e `20260807191805_adiciona_lane_despesas_distribuicao.sql`), consumida por `worker/grm-sync-job-worker.js --once --lane=<lane> --worker-id=<id>` via `worker/crontab-three-lanes.txt` (4 processos cron, 1x/min, `flock -n`). Lease/heartbeat libera job travado sem heartbeat há 10-20min. A lane `fixed` também deixou de ser round-robin contínuo puro em 2026-08-11 (PR #132): agora é `fixed_a`/`fixed_b`, cada agente com intervalo configurável (ver tela TI > Agentes). Esta seção documenta o estado encontrado nessa data — reconferir se voltar a mexer na fila.
+> **Nota (atualizado 11/09, conferido ao vivo via `crontab -l` no servidor):** a seção "Arquitetura" acima descreve uma versão anterior do worker (poll único a cada 15s, 1 job por vez). O esquema de 3 lanes que sucedeu aquilo (`fixed_a`/`fixed_b`/`fixed_c` + `alteracoes` + `despesas_distribuicao`) também já foi substituído: desde **2026-08-18** roda a **V2 de 8 lanes**, ativada pelo flag `.grm-sync-v2-enabled` no servidor. A fila continua na mesma função Postgres `claim_next_grm_sync_job(p_lane, p_worker_id)` (`pg_advisory_xact_lock(872634503)` + `SELECT ... FOR UPDATE SKIP LOCKED`), consumida por `worker/grm-sync-job-worker.js --once --lane=<lane> --worker-id=<id>` via `worker/crontab-v2-8-lanes.txt` (8 processos cron, 1x/min, `flock -n`, cada um só roda se o flag V2 existir). Lease/heartbeat libera job travado sem heartbeat há 10-20min. A alocação de cada agente por lane não é fixa em código — fica em `public.grm_sync_agent_settings` (coluna `queue_lane`, editável pela tela TI > Agentes). Esta seção documenta o estado encontrado nessa data — reconferir a tabela (não só este README) se voltar a mexer na fila.
 
-**Capacidade concorrente por lane:**
+**Capacidade concorrente por lane (8 lanes, 1 worker cada = máximo 8 agentes rodando ao mesmo tempo):**
 
-| Lane | Cap. simultânea | Agentes |
-|---|---|---|
-| `fixed` | 2 | agentes com `enabled=true` em `public.grm_sync_agent_settings` (tela TI > Agentes) — **não** `worker/grm-sync-fixed-agents.js`, que é código morto desde a migração pra essa tabela (confirmado 01/09: editar aquele arquivo não muda nada em produção; `main()` de `grm-sync-auto-scheduler.js` só chama a RPC `ensure_grm_fixed_pipeline_capacity`, que lê `grm_sync_agent_settings` direto). Lista de referência (pode estar desatualizada, conferir a tabela): sync-colaboradores (pausado 31/08), sync-lista-os e sync-operacional-os (pausados 01/09, substituídos por sync direto na API), sync-patrimonios, sync-nhe, sync-distribuicao-os, sync-producao-diaria, sync-locais-embarque, sync-resultado-diario, sync-despesas, sync-notas-fiscais, sync-mapa-embarque, sync-contas-pagar, sync-contas-receber, sync-auditorias, sync-cargas-geofence, sync-btg-relatorios, sync-adiantamentos, botconversa-sync (+ sync-login-alimentacao, fora da esteira mas com prioridade na mesma lane) |
-| `alteracoes` | 1 | sync-lancar-nhe, sync-finalizar-os, sync-abrir-os, sync-despesas-retroativas, sync-btg-checkin, sync-btg-devolver-classificador |
-| `despesas_distribuicao` | 1 | sync-liberacao-despesas, aplicar-distribuicao-os |
+| Lane | Agentes (`enabled=true` em `grm_sync_agent_settings`) |
+|---|---|
+| `entrada_os` | sync-nhe |
+| `entrada_producao` | sync-classificacao-ourosafra, sync-resultado-diario |
+| `entrada_financeiro_a` | compras-match-nf, sync-adiantamentos, sync-auditorias, sync-contas-pagar, sync-notas-fiscais |
+| `entrada_financeiro_b` | sync-contas-receber, sync-despesas |
+| `entrada_cadastros_operacao` | sync-login-alimentacao, botconversa-sync, sync-btg-classificador, sync-btg-relatorios, sync-cargas-geofence, sync-clientes, sync-locais-embarque, sync-mapa-embarque, sync-patrimonios |
+| `saida_os` | sync-abrir-os, sync-reabrir-os |
+| `saida_financeiro` | sync-bonus-caixa, sync-lancar-notas-fiscais, sync-liberacao-despesas, sync-bonus-desconto-caixa, sync-despesas-retroativas |
+| `saida_logistica` | aplicar-distribuicao-os, sync-lancar-nhe, sync-btg-checkin |
 
-Total: no máximo **4 agentes rodando ao mesmo tempo** no sistema inteiro.
+Desabilitados no momento (`enabled=false`, ficam na tabela mas o worker pula): sync-operacional-os, sync-colaboradores, sync-distribuicao-os, sync-lista-os, sync-producao-diaria, sync-finalizar-os. `sync-baixa-notas-fiscais` não entra nessa tabela — roda só por disparo manual/auto-continuação (ver comentário no topo de `grmserver-baixa-notas-fiscais-api.js`).
+
+`mutex_group` (não confundir com lane) impede que agentes do mesmo grupo rodem ao mesmo tempo mesmo em lanes diferentes: `staff_grm` (sync-bonus-caixa, sync-liberacao-despesas, sync-bonus-desconto-caixa, sync-despesas-retroativas, sync-colaboradores), `financeiro_grm` (sync-lancar-notas-fiscais), `nhe_grm` (sync-nhe, sync-lancar-nhe), `os_grm` (sync-abrir-os, sync-reabrir-os, sync-finalizar-os, sync-lista-os), `distribuicao_os_grm` (aplicar-distribuicao-os, sync-distribuicao-os).
 
 **Tabelas escritas por agente e mecanismo de lock:**
 
