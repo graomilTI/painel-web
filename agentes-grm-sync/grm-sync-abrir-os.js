@@ -558,7 +558,16 @@ async function selecionarPrimeiraOpcaoCascata(page, labels) {
   if (!box) { avisarCampoSuspeito('Campo cascata (' + labels.join(' / ') + ') não encontrado — pulando.'); return; }
   if (box.disabled) { avisarCampoSuspeito('Campo cascata "' + box.label + '" continua desabilitado mesmo após esperar — pulando.'); return; }
   await page.mouse.click(box.x, box.y);
-  await wait(700);
+  await wait(400);
+  // Limpa texto que possa ter sobrado de uma tentativa anterior (ex.: valor
+  // digitado que não bateu com nenhuma opção) — sem isso a lista reabre
+  // filtrada por esse texto em vez de mostrar todas as opções, e a 1ª opção
+  // real (ex.: "Não Informado") nunca aparece.
+  await page.keyboard.down('Control');
+  await page.keyboard.press('A');
+  await page.keyboard.up('Control');
+  await page.keyboard.press('Backspace');
+  await wait(300);
   var escolhida = await page.evaluate(function () {
     var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
     for (var i = overlays.length - 1; i >= 0; i--) {
@@ -572,6 +581,51 @@ async function selecionarPrimeiraOpcaoCascata(page, labels) {
     await page.keyboard.press('Escape').catch(function () {});
   } else {
     log('INFO', 'Campo cascata "' + box.label + '" preenchido com a 1ª opção disponível: ' + escolhida);
+  }
+}
+
+// "Cliente Regional" sempre pegava a 1ª opção da lista (ver comentário
+// acima) — funciona quando o cliente só tem 1 regional cadastrada no GRM,
+// mas pra clientes com várias (ex.: "CARGILL AGRICOLA" tem BA/GO/TO/MT/...)
+// a 1ª opção raramente é a certa, e "Cliente Final" (filial_pagadora) só
+// lista as filiais DA regional escolhida — regional errada = filial_pagadora
+// nunca bate com nenhuma opção, Salvar trava (confirmado ao vivo 11/09,
+// solicitação c4396f64: pegava sempre "CARGILL AGRICOLA - BA", filial
+// pedida era "CARGILL AGRICOLA - TOCANTINS", nunca tinha chance de bater).
+// filial_pagadora geralmente carrega o nome da regional dentro do próprio
+// texto (ex.: "CARGILL AGRICOLA - TOCANTINS", "CARGILL AGRICOLA S A -
+// DIAMANTINO") — usa como pista pra achar a opção certa em vez de sempre a
+// 1ª, com o mesmo matching (startsWith > contains) já usado no resto do
+// arquivo. Sem pista ou sem bater com nada, cai pro comportamento antigo
+// (1ª opção) — nunca deixa o campo sem preencher.
+async function selecionarClienteRegional(page, filialPagadora) {
+  var box = await localizarCampoHabilitado(page, ['CLIENTE REGIONAL']);
+  if (!box) { avisarCampoSuspeito('Campo cascata (CLIENTE REGIONAL) não encontrado — pulando.'); return; }
+  if (box.disabled) { avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL" continua desabilitado mesmo após esperar — pulando.'); return; }
+  await page.mouse.click(box.x, box.y);
+  await wait(700);
+
+  var escolhida = filialPagadora ? await selecionarOpcaoAberta(page, filialPagadora, 'substring') : null;
+  if (!escolhida) {
+    var primeira = await page.evaluate(function () {
+      var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+      for (var i = overlays.length - 1; i >= 0; i--) {
+        var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
+        if (options.length) { var texto = (options[0].innerText || options[0].textContent || '').trim(); options[0].click(); return texto; }
+      }
+      return null;
+    });
+    if (primeira && filialPagadora) {
+      avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL": nenhuma opção bateu com filial_pagadora ("' + filialPagadora + '") — usando a 1ª opção disponível ("' + primeira + '") como fallback.');
+    }
+    escolhida = primeira;
+  }
+
+  if (!escolhida) {
+    avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL": nenhuma opção apareceu ao abrir a lista — seguindo sem preencher.');
+    await page.keyboard.press('Escape').catch(function () {});
+  } else {
+    log('INFO', 'Campo cascata "CLIENTE REGIONAL" selecionado: ' + escolhida);
   }
 }
 
@@ -598,13 +652,18 @@ function formatarValor(campo, valor) {
 // mais parecida (ou a única, se digitar não filtrar por texto igual);
 // se não aparecer nada, assume campo de texto livre — o valor já foi
 // digitado, então segue.
+// Retorna true só quando uma opção real do dropdown do GRM foi clicada — o
+// chamador usa isso pra decidir se precisa de um fallback seguro (ver
+// produtor em preencherFormulario) quando o valor digitado não bate com
+// nada. false em qualquer outro caminho (sem valor, campo não achado,
+// desabilitado, ou lista abriu mas nada bateu).
 async function preencherCampo(page, campo, labels, valorBruto) {
   var valor = formatarValor(campo, valorBruto);
-  if (!valor) { log('INFO', 'Campo "' + campo + '": sem valor, pulando.'); return; }
+  if (!valor) { log('INFO', 'Campo "' + campo + '": sem valor, pulando.'); return false; }
 
   var box = await localizarCampoHabilitado(page, labels);
-  if (!box) { log('WARN', 'Campo "' + campo + '" (rótulos: ' + labels.join(' / ') + ') não encontrado no formulário — verifique LABEL_MAP com --discover.'); return; }
-  if (box.disabled) { avisarCampoSuspeito('Campo "' + campo + '" ("' + box.label + '") continua desabilitado mesmo após esperar a cascata — pulando, a O.S. ficará sem esse valor.'); return; }
+  if (!box) { log('WARN', 'Campo "' + campo + '" (rótulos: ' + labels.join(' / ') + ') não encontrado no formulário — verifique LABEL_MAP com --discover.'); return false; }
+  if (box.disabled) { avisarCampoSuspeito('Campo "' + campo + '" ("' + box.label + '") continua desabilitado mesmo após esperar a cascata — pulando, a O.S. ficará sem esse valor.'); return false; }
 
   await page.mouse.click(box.x, box.y);
   await wait(400);
@@ -662,12 +721,13 @@ async function preencherCampo(page, campo, labels, valorBruto) {
     if (!escolhida) {
       avisarCampoSuspeito('Campo "' + campo + '": lista de opções abriu mas nenhuma bateu com "' + valor + '" — fechando lista e seguindo com o texto digitado.');
       await page.keyboard.press('Escape');
-    } else {
-      log('INFO', 'Campo "' + campo + '" selecionado: ' + escolhida);
+      return false;
     }
-  } else {
-    log('INFO', 'Campo "' + campo + '" preenchido como texto livre: ' + valor);
+    log('INFO', 'Campo "' + campo + '" selecionado: ' + escolhida);
+    return true;
   }
+  log('INFO', 'Campo "' + campo + '" preenchido como texto livre: ' + valor);
+  return false;
 }
 
 // Mapa logistica_abertura_os.testes.opcoes -> campo/opção do GRM. Os RÓTULOS
@@ -914,9 +974,9 @@ async function preencherFormulario(page, solicitacao) {
     }
     await preencherCampo(page, item.campo, item.labels, valorCampo);
     // "Cliente Final" (próximo item, filial_pagadora) só destrava depois que
-    // "Cliente Regional" é escolhido — ver selecionarPrimeiraOpcaoCascata.
+    // "Cliente Regional" é escolhido — ver selecionarClienteRegional.
     if (item.campo === 'contratante_cliente') {
-      await selecionarPrimeiraOpcaoCascata(page, ['CLIENTE REGIONAL']);
+      await selecionarClienteRegional(page, solicitacao.filial_pagadora);
     }
     // Embarque (Tipo do Local/UF/Cidade/Local do Serviço), Supervisão,
     // Produtor e Destino (UF/Cidade/Local) ficam entre Tamanho do Lote e
@@ -928,10 +988,21 @@ async function preencherFormulario(page, solicitacao) {
       await preencherCampo(page, 'regional', ['SUPERVISAO'], solicitacao.regional);
       // Produtor é obrigatório no GRM mas a solicitação nem sempre tem um
       // (fica null) — nesse caso o valor real é literalmente a opção "Não
-      // Informado" da lista (confirmado ao vivo), não "sem preencher".
-      if (solicitacao.produtor) {
-        await preencherCampo(page, 'produtor', ['PRODUTOR'], solicitacao.produtor);
-      } else {
+      // Informado" da lista (confirmado ao vivo), não "sem preencher". Pedido
+      // do usuário 11/09 (solicitação c4396f64, "Agropecuária três irmãos"
+      // sem opção correspondente no GRM): quando o nome digitado não bate
+      // com nenhuma opção real, cai pro mesmo "Não Informado" em vez de
+      // deixar o campo com texto livre travando o Salvar — a informação
+      // original continua visível em logistica_abertura_os.produtor pra
+      // quem revisar depois, só a O.S. em si que não fica mais bloqueada por
+      // causa disso.
+      var produtorSelecionado = solicitacao.produtor
+        ? await preencherCampo(page, 'produtor', ['PRODUTOR'], solicitacao.produtor)
+        : false;
+      if (!produtorSelecionado) {
+        if (solicitacao.produtor) {
+          avisarCampoSuspeito('Produtor "' + solicitacao.produtor + '" não bateu com nenhuma opção do GRM — usando "Não Informado".');
+        }
         await selecionarPrimeiraOpcaoCascata(page, ['PRODUTOR']);
       }
       await preencherDestino(page, solicitacao);
