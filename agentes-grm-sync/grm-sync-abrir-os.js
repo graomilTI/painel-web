@@ -606,20 +606,28 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   // se algum tem itens mesmo sem bater no filtro `[role=option]/.v-list-
   // item`) pra achar a causa real em vez de só aumentar timeout de novo.
   if (!opcaoAberta) {
+    // Re-localiza o campo do zero (por rótulo, não pelas coordenadas
+    // antigas) — se a posição mudou entre o clique original e agora, prova
+    // que o layout se moveu (scroll/re-render) embaixo do agente.
+    var boxFresco = await localizarCampoBox(page, labels);
     var diag = await page.evaluate(function (payload) {
-      var el = document.elementFromPoint(payload.x, payload.y);
-      var field = el && el.closest('.v-input, .v-select, .v-autocomplete, .v-field');
-      var input = field && (field.querySelector('input') || field.querySelector('textarea'));
-      var overlays = Array.from(document.querySelectorAll('.v-overlay'));
+      function lerCampo(x, y) {
+        var el = document.elementFromPoint(x, y);
+        var field = el && el.closest('.v-input, .v-select, .v-autocomplete, .v-field');
+        var input = field && (field.querySelector('input') || field.querySelector('textarea'));
+        return { elTag: el ? el.tagName + '.' + (el.className || '') : null, fieldClasses: field ? field.className : null, inputValue: input ? input.value : null };
+      }
       var overlaysAtivos = Array.from(document.querySelectorAll('.v-overlay--active'));
+      var dialog = overlaysAtivos[overlaysAtivos.length - 1];
       return {
-        inputValue: input ? input.value : null,
-        totalOverlays: overlays.length,
+        original: lerCampo(payload.xOrig, payload.yOrig),
+        fresco: payload.xNovo != null ? lerCampo(payload.xNovo, payload.yNovo) : null,
+        coordMudou: payload.xNovo != null && (Math.abs(payload.xNovo - payload.xOrig) > 2 || Math.abs(payload.yNovo - payload.yOrig) > 2),
         overlaysAtivos: overlaysAtivos.length,
-        overlaysAtivosClasses: overlaysAtivos.map(function (o) { return o.className; }),
-        fieldClasses: field ? field.className : null
+        dialogScrollTop: dialog ? dialog.scrollTop : null,
+        windowScrollY: window.scrollY
       };
-    }, { x: box.x, y: box.y });
+    }, { xOrig: box.x, yOrig: box.y, xNovo: boxFresco ? boxFresco.x : null, yNovo: boxFresco ? boxFresco.y : null });
     log('DEBUG', 'Campo "' + campo + '" sem opção após 10s — diagnóstico: ' + JSON.stringify(diag));
     if (DEBUG) await shot(page, 'sem-opcao-' + campo + '-' + Date.now() + '.png');
   }
