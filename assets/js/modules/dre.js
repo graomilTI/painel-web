@@ -10,7 +10,7 @@
     'NOTAS FISCAIS','DESCONTOS CONCEDIDOS+ACRÉSCIMOS','TOTAL DE IMPOSTOS','RECEITA LÍQUIDA',
     'TOTAL DE DESPESAS OPERACIONAIS','DESP COM VEICULOS+COMBUSTIVEIS','TOTAL DESPESAS PESSOAL',
     'LUCRO BRUTO','DESP ADM + COMERCIAL','LUCRO OPERACIONAL (EBTIDA)','DESPESAS FINANCEIRAS',
-    'LUCRO LÍQUIDO','EMPRESTIMOS TERCEIROS','ANTECIPAÇÕES A FORNECEDORES','INVESTIMENTOS','RESULTADO FINAL',
+    'LUCRO LÍQUIDO','EMPRESTIMOS TERCEIROS','ANTECIPAÇÕES A FORNECEDORES','INVESTIMENTOS','INVESTIMENTO LOG1000','RESULTADO FINAL',
     'TOTAL DESPESAS','TOTAL CUSTOS','CUSTO POR TONELADA','RECEITA POR TONELADA','MARGEM POR TONELADA',
     'CUSTO POR TONELADA DO VOLUME CLASSIFICADO','CUSTO POR TONELADA DO VOLUME TOTAL','RESULTADO POR TONELADA'
   ]);
@@ -84,6 +84,16 @@
   function sumMapMonth(map, mi){ return Object.values(map||{}).reduce((a,arr)=>a+n(arr?.[mi]),0); }
   function sumTopic(base, reg, topics, mi){ const target=topics.map(norm); const obj=base[reg]||{}; return Object.entries(obj).reduce((acc,[tp,arr])=> target.includes(norm(tp)) ? acc+n(arr?.[mi]) : acc,0); }
   function sumTopicsAll(base, topics, mi){ return Object.keys(base||{}).reduce((acc,reg)=>acc+sumTopic(base,reg,topics,mi),0); }
+  function sumTopicsAllExceptRegs(base, topics, mi, excludeRegs){
+    const exclude=(excludeRegs||[]).map(norm);
+    return Object.keys(base||{}).reduce((acc,reg)=> exclude.includes(norm(reg)) ? acc : acc+sumTopic(base,reg,topics,mi),0);
+  }
+  function sumAllTopicsForReg(base, reg, mi){
+    const target=norm(reg);
+    const key=Object.keys(base||{}).find(r=>norm(r)===target);
+    if(!key) return 0;
+    return Object.values(base[key]||{}).reduce((acc,arr)=>acc+n(arr?.[mi]),0);
+  }
   function geralTopic(geral, topics, mi){ return topics.reduce((a,tp)=>a+n(geral[tp]?.[mi]||geral[norm(tp)]?.[mi]),0); }
   function totalPatrimonioMes(desp, mi){
     return sumTopicsAll(desp?.base || {}, ['PATRIMONIO'], mi) + geralTopic(desp?.geral || {}, ['PATRIMONIO'], mi);
@@ -624,7 +634,7 @@
   function buildForRegional(reg, source){
     const {desp,nf,prod,antecipacoes}=source;
     const rows=[];
-    const vals={notas:Array(12).fill(0),desc:Array(12).fill(0),imp:Array(12).fill(0),rec:Array(12).fill(0),despOp:Array(12).fill(0),veic:Array(12).fill(0),pessoal:Array(12).fill(0),lb:Array(12).fill(0),adm:Array(12).fill(0),ebtida:Array(12).fill(0),fin:Array(12).fill(0),ll:Array(12).fill(0),emp:Array(12).fill(0),antec:Array(12).fill(0),inv:Array(12).fill(0),res:Array(12).fill(0),mb:Array(12).fill(0),me:Array(12).fill(0)};
+    const vals={notas:Array(12).fill(0),desc:Array(12).fill(0),imp:Array(12).fill(0),rec:Array(12).fill(0),despOp:Array(12).fill(0),veic:Array(12).fill(0),pessoal:Array(12).fill(0),lb:Array(12).fill(0),adm:Array(12).fill(0),ebtida:Array(12).fill(0),fin:Array(12).fill(0),ll:Array(12).fill(0),emp:Array(12).fill(0),antec:Array(12).fill(0),inv:Array(12).fill(0),investLog1000:Array(12).fill(0),res:Array(12).fill(0),mb:Array(12).fill(0),me:Array(12).fill(0)};
     for(let mi=0;mi<12;mi++){
       vals.notas[mi]=reg?n(getArr(nf.bruto,reg)[mi]):sumMapMonth(nf.bruto,mi);
       vals.desc[mi]=reg?n(getArr(nf.descAcresc,reg)[mi]):sumMapMonth(nf.descAcresc,mi);
@@ -638,19 +648,26 @@
         vals.fin[mi]=rateio(desp.base,desp.geral,reg,['DESPESAS FINANCEIRAS'],mi);
         vals.inv[mi]=investimentoRateadoPorAtivos(desp,reg,mi);
       } else {
-        vals.despOp[mi]=sumTopicsAll(desp.base,['DESPESAS OPERACIONAIS'],mi)+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
-        vals.veic[mi]=sumTopicsAll(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi)+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
-        vals.pessoal[mi]=sumTopicsAll(desp.base,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi)+geralTopic(desp.geral,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
-        vals.adm[mi]=sumTopicsAll(desp.base,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi)+geralTopic(desp.geral,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
-        vals.fin[mi]=sumTopicsAll(desp.base,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi)+geralTopic(desp.geral,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi);
-        vals.emp[mi]=sumTopicsAll(desp.base,['EMPRESTIMOS TERCEIROS'],mi)+geralTopic(desp.geral,['EMPRESTIMOS TERCEIROS'],mi);
+        // LOG1000 sai das linhas normais do DRE Geral e é consolidada à parte
+        // (vals.investLog1000 abaixo), com TODAS as suas despesas somadas em
+        // uma única linha "INVESTIMENTO LOG1000" - não só as marcadas como
+        // PATRIMONIO. Sem essa exclusão aqui, o valor entraria duas vezes no
+        // Resultado Final: uma dentro de cada categoria (Operacionais/Pessoal/
+        // Adm/Financeiras/Investimentos) e outra na linha consolidada.
+        vals.despOp[mi]=sumTopicsAllExceptRegs(desp.base,['DESPESAS OPERACIONAIS'],mi,['LOG1000'])+geralTopic(desp.geral,['DESPESAS OPERACIONAIS'],mi);
+        vals.veic[mi]=sumTopicsAllExceptRegs(desp.base,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi,['LOG1000'])+geralTopic(desp.geral,['COMBUSTIVEIS E LUBRIFICANTES','DESPESAS COM VEICULOS'],mi);
+        vals.pessoal[mi]=sumTopicsAllExceptRegs(desp.base,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi,['LOG1000'])+geralTopic(desp.geral,['DESPESAS RH','FOLHA DE PAGAMENTO','IMPOSTOS SOBRE FOLHA'],mi);
+        vals.adm[mi]=sumTopicsAllExceptRegs(desp.base,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi,['LOG1000'])+geralTopic(desp.geral,['DESPESAS ADMINISTRATIVAS','DESPESAS COMERCIAIS'],mi);
+        vals.fin[mi]=sumTopicsAllExceptRegs(desp.base,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi,['LOG1000'])+geralTopic(desp.geral,['DESPESAS FINANCEIRAS','RETIRADA SÓCIOS','RETIRADA SOCIOS'],mi);
+        vals.emp[mi]=sumTopicsAllExceptRegs(desp.base,['EMPRESTIMOS TERCEIROS'],mi,['LOG1000'])+geralTopic(desp.geral,['EMPRESTIMOS TERCEIROS'],mi);
         vals.antec[mi]=n(antecipacoes[mi]);
-        vals.inv[mi]=sumTopicsAll(desp.base,['PATRIMONIO'],mi)+geralTopic(desp.geral,['PATRIMONIO'],mi);
+        vals.inv[mi]=sumTopicsAllExceptRegs(desp.base,['PATRIMONIO'],mi,['LOG1000'])+geralTopic(desp.geral,['PATRIMONIO'],mi);
+        vals.investLog1000[mi]=sumAllTopicsForReg(desp.base,'LOG1000',mi);
       }
       vals.lb[mi]=vals.rec[mi]-vals.despOp[mi]-vals.veic[mi]-vals.pessoal[mi];
       vals.ebtida[mi]=vals.lb[mi]-vals.adm[mi];
       vals.ll[mi]=vals.ebtida[mi]-vals.fin[mi];
-      vals.res[mi]=vals.ll[mi]-vals.emp[mi]-vals.antec[mi]-vals.inv[mi];
+      vals.res[mi]=vals.ll[mi]-vals.emp[mi]-vals.antec[mi]-vals.inv[mi]-vals.investLog1000[mi];
       vals.mb[mi]=div(vals.lb[mi],vals.rec[mi]); vals.me[mi]=div(vals.ebtida[mi],vals.rec[mi]);
     }
     const push=(label,arr)=>rows.push({label,values:arr,total:PERCENT_ROWS.has(label)?0:total(arr)});
@@ -658,7 +675,9 @@
     push('TOTAL DE DESPESAS OPERACIONAIS',vals.despOp); push('DESP COM VEICULOS+COMBUSTIVEIS',vals.veic); push('TOTAL DESPESAS PESSOAL',vals.pessoal); push('LUCRO BRUTO',vals.lb);
     push('DESP ADM + COMERCIAL',vals.adm); push('LUCRO OPERACIONAL (EBTIDA)',vals.ebtida); push('DESPESAS FINANCEIRAS',vals.fin); push('LUCRO LÍQUIDO',vals.ll);
     if(!reg){ push('EMPRESTIMOS TERCEIROS',vals.emp); push('ANTECIPAÇÕES A FORNECEDORES',vals.antec); }
-    push('INVESTIMENTOS',vals.inv); push('RESULTADO FINAL',vals.res); rows.push({label:'MARGEM BRUTA',values:vals.mb,total:div(total(vals.lb),total(vals.rec))}); rows.push({label:'MARGEM EBTIDA',values:vals.me,total:div(total(vals.ebtida),total(vals.rec))});
+    push('INVESTIMENTOS',vals.inv);
+    if(!reg){ push('INVESTIMENTO LOG1000',vals.investLog1000); }
+    push('RESULTADO FINAL',vals.res); rows.push({label:'MARGEM BRUTA',values:vals.mb,total:div(total(vals.lb),total(vals.rec))}); rows.push({label:'MARGEM EBTIDA',values:vals.me,total:div(total(vals.ebtida),total(vals.rec))});
 
     const volClass=reg?getArr(prod.classificado,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.classificado,mi));
     // Volume Total no DRE: coluna Embarcado do Resultado Diário, que consolida Class + CAD + FOB + CIF.
@@ -669,7 +688,7 @@
     const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
     const prodColab=reg?getArr(prod.prodColab,reg):(prod.prodColabGeral || Array(12).fill(0));
     const prodColabGeral=prod.prodColabGeral || Array(12).fill(0);
-    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]);
+    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]+vals.investLog1000[mi]);
     const cptEmb=totalDesp.map((v,mi)=>div(v,volTotal[mi]));
     const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
     const receitaTon=vals.rec.map((v,mi)=>div(v,volTotal[mi]));
