@@ -462,6 +462,38 @@ async function selecionarOpcaoAberta(page, alvo, modo) {
   return clicked;
 }
 
+// "Cliente Regional" não tem coluna equivalente no painel-web (fica sempre
+// em branco) — mas confirmado ao vivo em 11/09 que "Cliente Final" só
+// destrava DEPOIS que "Cliente Regional" é escolhido (não basta escolher
+// "Cliente Nacional", como o comentário original do LABEL_MAP supunha).
+// Sem preencher esse campo intermediário, filial_pagadora ("Cliente
+// Final") nunca é escrito — fica em branco, e como é obrigatório, o
+// "Salvar" é bloqueado silenciosamente (mesmo sintoma de sempre: diálogo
+// não fecha). Como não há um valor "certo" vindo da solicitação pra esse
+// campo, abre a lista (sem digitar nada) e escolhe a 1ª opção disponível —
+// só serve pra destravar a cascata, o ADM pode revisar/corrigir depois.
+async function selecionarPrimeiraOpcaoCascata(page, labels) {
+  var box = await localizarCampoBox(page, labels);
+  if (!box) { log('WARN', 'Campo cascata (' + labels.join(' / ') + ') não encontrado — pulando.'); return; }
+  if (box.disabled) { log('WARN', 'Campo cascata "' + box.label + '" está desabilitado — pulando.'); return; }
+  await page.mouse.click(box.x, box.y);
+  await wait(700);
+  var escolhida = await page.evaluate(function () {
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    for (var i = overlays.length - 1; i >= 0; i--) {
+      var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
+      if (options.length) { var texto = (options[0].innerText || options[0].textContent || '').trim(); options[0].click(); return texto; }
+    }
+    return null;
+  });
+  if (!escolhida) {
+    log('WARN', 'Campo cascata "' + box.label + '": nenhuma opção apareceu ao abrir a lista — seguindo sem preencher.');
+    await page.keyboard.press('Escape').catch(function () {});
+  } else {
+    log('INFO', 'Campo cascata "' + box.label + '" preenchido com a 1ª opção disponível: ' + escolhida);
+  }
+}
+
 function formatarValor(campo, valor) {
   if (valor === null || valor === undefined) return '';
   if (campo === 'volume_inicial') {
@@ -585,6 +617,11 @@ async function preencherFormulario(page, solicitacao) {
       valorCampo = 'Não Definido';
     }
     await preencherCampo(page, item.campo, item.labels, valorCampo);
+    // "Cliente Final" (próximo item, filial_pagadora) só destrava depois que
+    // "Cliente Regional" é escolhido — ver selecionarPrimeiraOpcaoCascata.
+    if (item.campo === 'contratante_cliente') {
+      await selecionarPrimeiraOpcaoCascata(page, ['CLIENTE REGIONAL']);
+    }
   }
   await preencherTestes(page, solicitacao);
   // "Tipo do Transporte" existe no formulário do GRM mas não tem coluna
