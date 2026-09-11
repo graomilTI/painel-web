@@ -155,6 +155,20 @@ var LABEL_MAP = [
   { campo: 'tipo_produto', labels: ['TIPO DO PRODUTO'] }
 ];
 
+// "Tipo do Produto" no GRM é uma classificação (Convencional/Transgênico/
+// Declarado Intacta/etc.), não "Exportação"/"doméstico" — mas a tela de
+// Abrir O.S. do painel-web oferece "Exportação" como opção de
+// tipo_produto, um valor que não existe nesse dropdown do GRM. Quando isso
+// acontece, preencherCampo não acha opção nenhuma pra selecionar e deixa o
+// campo em branco — e como ele é obrigatório, o "Salvar" é bloqueado sem
+// erro nenhum (confirmado ao vivo 11/09, mesma solicitação da GRAOMIL que
+// motivou o fix de Tipo do Transporte: com os dois corrigidos ela ainda
+// travava, porque tipo_produto="Exportação" continuava sem bater com nada).
+var TIPO_PRODUTO_GRM_VALIDOS = [
+  'AFLATOXINA NEGATIVO', 'CONVENCIONAL', 'DECLARADO INTACTA', 'INTACTA NEGATIVO',
+  'INTACTA POSITIVO', 'NAO DEFINIDO', 'PARTICIPANTE', 'TRANSGENICO'
+];
+
 // Botão "Adicionar" (tooltip confirmado ao vivo) — ícone "+" no canto direito
 // da MESMA barra de ferramentas do campo "Filtrar Pesquisa" (selector já
 // usado em grm-sync-lista-os.js), depois da lupa e do filtro. Usar essa
@@ -565,7 +579,12 @@ async function preencherTestes(page, solicitacao) {
 async function preencherFormulario(page, solicitacao) {
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
-    await preencherCampo(page, item.campo, item.labels, solicitacao[item.campo]);
+    var valorCampo = solicitacao[item.campo];
+    if (item.campo === 'tipo_produto' && valorCampo && TIPO_PRODUTO_GRM_VALIDOS.indexOf(norm(valorCampo)) === -1) {
+      log('WARN', 'tipo_produto "' + valorCampo + '" não é uma opção válida do GRM (Tipo do Produto) — usando "Não Definido".');
+      valorCampo = 'Não Definido';
+    }
+    await preencherCampo(page, item.campo, item.labels, valorCampo);
   }
   await preencherTestes(page, solicitacao);
   // "Tipo do Transporte" existe no formulário do GRM mas não tem coluna
