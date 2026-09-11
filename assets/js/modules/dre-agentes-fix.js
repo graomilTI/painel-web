@@ -24,7 +24,10 @@
     IMPOSTOS: 'DESPESAS FINANCEIRAS'
   };
 
-  const REGIOES_IGNORADAS_DRE = new Set(['NULL', 'AGROTRADER', 'LOG1000', 'PARAGUAI']);
+  // LOG1000 saiu daqui de propósito: o DRE Geral agora consolida as despesas da
+  // LOG1000 na linha "INVESTIMENTO LOG1000" (assets/js/modules/dre.js), então elas
+  // precisam chegar até lá em vez de serem descartadas nesta normalização.
+  const REGIOES_IGNORADAS_DRE = new Set(['NULL', 'AGROTRADER', 'PARAGUAI']);
   const CAMPOS_VALOR = [
     'Valor Total', 'Valor', 'Valor Pago', 'V. Pago', 'Total Pago', 'Total',
     'valor_total', 'valor', 'valor_pago', 'total'
