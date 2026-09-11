@@ -15,7 +15,6 @@ const state = {
   supervisoes: [],
   colaboradoresEquipe: [],
   selecionados: new Map(), // id/cpf/nome -> colaborador
-  buscaColaborador: '',
   solicitacoes: [],
   checkoutDecisoes: [],
   solicitacoesStatus: 'idle', // idle | loading | loaded | error
@@ -369,41 +368,65 @@ async function onEncerrarEstadia(estadiaId) {
 }
 
 // ---------- "Nova solicitação" ----------
-function renderColaboradorLista() {
-  const q = norm(state.buscaColaborador);
-  const lista = q
-    ? state.colaboradoresEquipe.filter((c) => norm(c.nome).includes(q))
-    : state.colaboradoresEquipe;
+function contagemNomesEquipe() {
+  const contagem = new Map();
+  state.colaboradoresEquipe.forEach((c) => {
+    const k = norm(c.nome);
+    contagem.set(k, (contagem.get(k) || 0) + 1);
+  });
+  return contagem;
+}
+
+function rotuloColaborador(c, contagem) {
+  return contagem.get(norm(c.nome)) > 1 ? `${c.nome} — ${c.supervisao || 'Sem supervisão'}` : c.nome;
+}
+
+function renderColaboradorAdd() {
   if (!state.colaboradoresEquipe.length) {
     return '<div class="hosp-note">Nenhum colaborador encontrado na sua supervisão.</div>';
   }
-  if (!lista.length) return '<div class="hosp-note">Nenhum colaborador encontrado para essa busca.</div>';
+  const contagem = contagemNomesEquipe();
+  const disponiveis = state.colaboradoresEquipe.filter((c) => !state.selecionados.has(colaboradorChave(c)));
+  const opcoes = disponiveis
+    .map((c) => `<option value="${esc(rotuloColaborador(c, contagem))}">`).join('');
+  return `
+    <div class="hosp-colab-add-row">
+      <input id="hospColabInput" type="text" list="hospColabOptions" placeholder="Digite o nome do colaborador..." autocomplete="off" />
+      <datalist id="hospColabOptions">${opcoes}</datalist>
+      <button type="button" class="btn btn-primary hosp-colab-add-btn" id="hospColabAddBtn" aria-label="Adicionar colaborador">+</button>
+    </div>
+    <p class="hosp-colab-add-erro" id="hospColabAddErro"></p>`;
+}
 
-  const LIMITE = 200;
-  const visiveis = lista.slice(0, LIMITE);
-  const restantes = lista.length - visiveis.length;
-
-  const grupos = new Map();
-  for (const c of visiveis) {
-    const grupo = c.supervisao?.trim() || 'Sem supervisão';
-    if (!grupos.has(grupo)) grupos.set(grupo, []);
-    grupos.get(grupo).push(c);
+function localizarColaboradorPorTexto(texto) {
+  const alvo = norm(texto);
+  if (!alvo) return { erro: 'Digite o nome de um colaborador.' };
+  const contagem = contagemNomesEquipe();
+  const candidatos = state.colaboradoresEquipe
+    .filter((c) => !state.selecionados.has(colaboradorChave(c)))
+    .map((c) => ({ c, rotulo: rotuloColaborador(c, contagem) }));
+  let achado = candidatos.find((x) => norm(x.rotulo) === alvo) || candidatos.find((x) => norm(x.c.nome) === alvo);
+  if (!achado) {
+    const parciais = candidatos.filter((x) => norm(x.c.nome).includes(alvo));
+    if (parciais.length === 1) achado = parciais[0];
+    else if (parciais.length > 1) return { erro: 'Mais de um colaborador encontrado — escolha uma opção da lista ou digite o nome completo.' };
   }
-  const gruposOrdenados = [...grupos.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
-  gruposOrdenados.forEach(([, pessoas]) => pessoas.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
+  if (!achado) return { erro: 'Colaborador não encontrado na sua equipe.' };
+  return { colaborador: achado.c };
+}
 
-  const corpo = gruposOrdenados.map(([grupo, pessoas]) => `
-    <div class="hosp-colab-grupo">
-      <div class="hosp-colab-grupo-titulo"><span>${esc(grupo)}</span><span class="hosp-colab-grupo-qtd">${pessoas.length}</span></div>
-      ${pessoas.map((c) => {
-        const chave = colaboradorChave(c);
-        const marcado = state.selecionados.has(chave);
-        return `<label class="hosp-colab-item"><input type="checkbox" data-colab="${esc(chave)}" ${marcado ? 'checked' : ''}><span>${esc(c.nome)}</span></label>`;
-      }).join('')}
-    </div>`).join('');
-
-  const aviso = restantes > 0 ? `<div class="hosp-colab-mais">+${restantes} colaborador(es) fora da lista — refine a busca por nome para encontrá-los.</div>` : '';
-  return `<div class="hosp-colab-list">${corpo}</div>${aviso}`;
+function adicionarColaboradorPorTexto() {
+  const input = document.getElementById('hospColabInput');
+  const erroEl = document.getElementById('hospColabAddErro');
+  if (!input) return;
+  const { colaborador, erro } = localizarColaboradorPorTexto(input.value);
+  if (erro) { if (erroEl) erroEl.textContent = erro; return; }
+  state.selecionados.set(colaboradorChave(colaborador), {
+    ...colaborador,
+    _hosp: { checkin: new Date().toISOString().slice(0, 10), horario: '', dias: 1, sexo: colaborador.sexo || '' },
+  });
+  if (erroEl) erroEl.textContent = '';
+  atualizarColaboradorUI();
 }
 
 function renderSelecionados() {
@@ -462,11 +485,10 @@ function renderNovaSolicitacao() {
 
       <div class="hosp-colab-picker">
         <div class="section-head" style="margin-top:16px">
-          <div><h4 style="margin:0">Colaboradores *</h4><p class="muted" style="margin:4px 0 0">Selecione quem vai se hospedar, entre os colaboradores da sua supervisão.</p></div>
+          <div><h4 style="margin:0">Colaboradores *</h4><p class="muted" style="margin:4px 0 0">Digite o nome de quem vai se hospedar e clique em + pra adicionar.</p></div>
         </div>
-        <p class="hosp-colab-hint">Ao marcar um colaborador abaixo, informe para ele a data de entrada, o horário de chegada, as diárias previstas e o sexo.</p>
-        <input id="hospBuscaColab" type="text" placeholder="Buscar por nome..." style="margin:10px 0" />
-        <div id="hospColabLista">${renderColaboradorLista()}</div>
+        <div id="hospColabAddWrap">${renderColaboradorAdd()}</div>
+        <p class="hosp-colab-hint">Depois de adicionar, informe no card abaixo a data de entrada, o horário de chegada, as diárias previstas e o sexo.</p>
         <div class="hosp-colab-selecionados" id="hospColabSelecionados">${renderSelecionados()}</div>
       </div>
 
@@ -486,19 +508,31 @@ function styles() {
     .hosp-uf-cidade-row .hosp-field-uf{flex:none;width:64px}
     .hosp-uf-cidade-row .ds-field:not(.hosp-field-uf){flex:1;min-width:0}
     .hosp-colab-hint{font-size:12px;color:var(--muted);margin:8px 0}
-    .hosp-colab-list{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 12px}
-    .hosp-colab-grupo{padding:6px 0}
-    .hosp-colab-grupo + .hosp-colab-grupo{border-top:1px solid var(--line)}
-    .hosp-colab-grupo-titulo{position:sticky;top:0;z-index:1;display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--panel,#15152a);padding:8px 4px;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-    .hosp-colab-grupo-qtd{font-size:11px;font-weight:700;color:var(--muted);background:rgba(148,163,184,.14);border-radius:999px;padding:1px 8px}
-    .hosp-colab-item{display:flex;align-items:center;gap:10px;font-size:14px;padding:8px 6px;border-radius:8px}
-    .hosp-colab-item:hover{background:rgba(148,163,184,.08)}
-    .hosp-colab-item input{width:16px;height:16px;flex:none}
-    .hosp-colab-mais{font-size:12px;color:var(--muted);padding:8px 4px 0}
+    .hosp-colab-add-row{display:flex;gap:8px;align-items:stretch}
+    .hosp-colab-add-row input{flex:1;min-width:0}
+    .hosp-colab-add-btn{width:44px;flex:none;padding:0;font-size:20px;line-height:1;border-radius:11px}
+    .hosp-colab-add-erro{min-height:16px;margin:6px 0 0;font-size:12px;color:#fca5a5}
+
+    /* Padrão de cores/campos alinhado ao usado em adm-conferencia.js (pedido
+       11/09): rótulo pequeno em maiúsculas, campo escuro com borda azulada,
+       botões em pill — só dentro de #hospTabBody pra não vazar pro resto do app. */
+    #hospTabBody .ds-field label,#hospTabBody .hosp-colab-picker>.section-head h4{font-size:11px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:0 0 4px}
+    #hospTabBody .ds-field input,#hospTabBody .ds-field select,#hospTabBody .ds-field textarea,#hospTabBody .hosp-colab-add-row input{
+      width:100%;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:#15152a;color:#e2e2f0;
+      padding:7px 10px;font-size:13px;color-scheme:dark;box-sizing:border-box;
+    }
+    #hospTabBody .btn{border:1px solid rgba(111,208,165,.22);background:rgba(15,23,42,.78);color:#eef7f2;border-radius:12px;font-weight:800}
+    #hospTabBody .btn:hover{background:rgba(22,101,52,.28)}
+    #hospTabBody .btn-primary{background:#3fa878;color:#04130d;border-color:transparent}
+    #hospTabBody .btn-primary:hover{background:#35a06e}
+    #hospTabBody .btn-secondary{background:rgba(15,23,42,.78)}
+    #hospTabBody .btn-secondary.active{background:rgba(22,163,74,.18);border-color:rgba(22,163,74,.4)}
     .hosp-colab-selecionados{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-top:10px;min-height:28px}
     .hosp-colab-draft{border:1px solid rgba(22,163,74,.35);border-radius:12px;padding:12px;background:rgba(22,163,74,.05)}
     .hosp-colab-draft header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.hosp-colab-draft header button{border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
-    .hosp-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px}.hosp-draft-grid label{font-size:11px;color:var(--muted)}.hosp-draft-grid input,.hosp-draft-grid select{margin-top:4px;width:100%}
+    .hosp-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px}
+    .hosp-draft-grid label{font-size:11px;color:#dcfce7;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+    .hosp-draft-grid input,.hosp-draft-grid select{margin-top:4px;width:100%;border:1px solid rgba(96,165,250,.22);border-radius:11px;background:#15152a;color:#e2e2f0;padding:7px 10px;font-size:13px;color-scheme:dark;box-sizing:border-box}
     .hosp-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border-radius:999px;background:rgba(22,163,74,.14);border:1px solid rgba(22,163,74,.3);font-size:12px;font-weight:700}
     .hosp-chip button{border:none;background:transparent;color:inherit;cursor:pointer;font-size:15px;line-height:1;padding:2px 4px}
     .hosp-form-actions{display:flex;align-items:center;gap:14px;justify-content:flex-end;margin-top:18px}
@@ -532,13 +566,12 @@ function wireTabEvents() {
   if (state.tab === 'nova') {
     const form = document.getElementById('hospForm');
     form?.addEventListener('submit', onSubmit);
-    document.getElementById('hospBuscaColab')?.addEventListener('input', (e) => {
-      state.buscaColaborador = e.target.value;
-      const lista = document.getElementById('hospColabLista');
-      if (lista) lista.innerHTML = renderColaboradorLista();
-      wireColaboradorCheckboxes();
+    document.getElementById('hospColabAddBtn')?.addEventListener('click', adicionarColaboradorPorTexto);
+    document.getElementById('hospColabInput')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      adicionarColaboradorPorTexto();
     });
-    wireColaboradorCheckboxes();
     document.getElementById('hospColabSelecionados')?.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-remove-colab]');
       if (!btn) return;
@@ -628,28 +661,17 @@ function wireOcupantesEvents() {
   });
 }
 
-function wireColaboradorCheckboxes() {
-  document.querySelectorAll('#hospColabLista [data-colab]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const chave = input.dataset.colab;
-      if (input.checked) {
-        const c = state.colaboradoresEquipe.find((x) => colaboradorChave(x) === chave);
-        if (c) state.selecionados.set(chave, { ...c, _hosp: { checkin: new Date().toISOString().slice(0, 10), horario: '', dias: 1, sexo: c.sexo || '' } });
-      } else {
-        state.selecionados.delete(chave);
-      }
-      const sel = document.getElementById('hospColabSelecionados');
-      if (sel) sel.innerHTML = renderSelecionados();
-    });
-  });
-}
-
 function atualizarColaboradorUI() {
-  const lista = document.getElementById('hospColabLista');
+  const addWrap = document.getElementById('hospColabAddWrap');
   const sel = document.getElementById('hospColabSelecionados');
-  if (lista) lista.innerHTML = renderColaboradorLista();
+  if (addWrap) addWrap.innerHTML = renderColaboradorAdd();
   if (sel) sel.innerHTML = renderSelecionados();
-  wireColaboradorCheckboxes();
+  document.getElementById('hospColabAddBtn')?.addEventListener('click', adicionarColaboradorPorTexto);
+  document.getElementById('hospColabInput')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    adicionarColaboradorPorTexto();
+  });
 }
 
 function setFeedback(msg, tipo = '') {
@@ -724,7 +746,6 @@ async function onSubmit(event) {
 
   toast(`Solicitação ${data?.codigo || ''} enviada com sucesso.`, 'ok');
   state.selecionados = new Map();
-  state.buscaColaborador = '';
   state.solicitacoesStatus = 'idle';
   state.tab = 'minhas';
   renderShell();
