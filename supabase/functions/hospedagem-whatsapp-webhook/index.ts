@@ -42,7 +42,7 @@ function normalizePhone(value: unknown) {
 }
 
 function extractCode(text: string) {
-  return text.toUpperCase().match(/HOSP[-\s]?\d{3,}/)?.[0]?.replace(/\s/g, "-") || null;
+  return text.toUpperCase().match(/H(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\d{2,}|HOSP[-\s]?\d{3,}/)?.[0]?.replace(/\s/g, "-") || null;
 }
 
 function flattenValues(value: unknown, prefix = "", output = new Map<string, unknown>()) {
@@ -125,8 +125,12 @@ function quoteFields(body: any, text: string) {
     totalValue: parseMoney(valueFrom(values, ["valor_total", "total", "total_cotacao", "valor_total_cotacao"])),
     acceptsCheckout: parseBoolean(valueFrom(values, ["aceita_pagamento_checkout", "pagamento_checkout", "aceita_checkout", "pagar_checkout"])),
     breakfastIncluded: parseBoolean(valueFrom(values, ["cafe_incluso", "cafe_da_manha", "cafe_da_manha_incluso", "inclui_cafe"])),
+    lunchIncluded: parseBoolean(valueFrom(values, ["almoco_incluso", "almoco", "inclui_almoco"])),
+    dinnerIncluded: parseBoolean(valueFrom(values, ["janta_inclusa", "jantar_incluso", "janta", "inclui_janta"])),
     parkingIncluded: parseBoolean(valueFrom(values, ["estacionamento_incluso", "estacionamento", "inclui_estacionamento"])),
     emitsInvoice: parseBoolean(valueFrom(values, ["emite_nota_fiscal", "emite_nf", "nota_fiscal", "emissao_nota_fiscal"])),
+    paymentMethods: String(valueFrom(values, ["formas_pagamento", "forma_pagamento", "pagamento"] ) || "").split(/[,;|/]+/).map((v)=>v.trim()).filter(Boolean),
+    rooms: valueFrom(values, ["disponibilidade_quartos", "quartos", "composicao_quartos", "tipos_quartos"]),
     notes: String(valueFrom(values, ["observacoes", "observacao", "comentarios", "detalhes", "mensagem_final"]) || ""),
   };
 }
@@ -139,6 +143,8 @@ function hasStructuredQuote(fields: ReturnType<typeof quoteFields>) {
     fields.acceptsCheckout,
     fields.breakfastIncluded,
     fields.parkingIncluded,
+    fields.lunchIncluded,
+    fields.dinnerIncluded,
     fields.emitsInvoice,
   ].some((value) => value !== null) || Boolean(fields.notes || fields.code);
 }
@@ -149,6 +155,8 @@ function quoteSummary(fields: ReturnType<typeof quoteFields>) {
     fields.dailyValue === null ? "" : `Diária: R$ ${fields.dailyValue.toFixed(2)}`,
     fields.totalValue === null ? "" : `Total: R$ ${fields.totalValue.toFixed(2)}`,
     fields.breakfastIncluded === null ? "" : `Café: ${fields.breakfastIncluded ? "Sim" : "Não"}`,
+    fields.lunchIncluded === null ? "" : `Almoço: ${fields.lunchIncluded ? "Sim" : "Não"}`,
+    fields.dinnerIncluded === null ? "" : `Janta: ${fields.dinnerIncluded ? "Sim" : "Não"}`,
     fields.parkingIncluded === null ? "" : `Estacionamento: ${fields.parkingIncluded ? "Sim" : "Não"}`,
     fields.acceptsCheckout === null ? "" : `Pagamento no checkout: ${fields.acceptsCheckout ? "Sim" : "Não"}`,
     fields.emitsInvoice === null ? "" : `Emite NF: ${fields.emitsInvoice ? "Sim" : "Não"}`,
@@ -208,20 +216,47 @@ serve(async (req) => {
     let quote: any = null;
 
     if (code) {
-      const { data } = await supabase
-        .from("hospedagem_painel_geral")
-        .select("*")
-        .eq("codigo", code)
-        .maybeSingle();
-      solicitation = data;
+      if (/^H(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)/.test(code)) {
+        const { data: reservation } = await supabase.from("hospedagem_reservas").select("*,hospedagem_solicitacoes(*)").eq("codigo_operacional",code).order("confirmado_em",{ascending:false}).limit(1).maybeSingle();
+        if (reservation) solicitation={...(reservation as any).hospedagem_solicitacoes,reserva_id:reservation.id,hotel_id:reservation.hotel_id,codigo:code,solicitacao_id:reservation.solicitacao_id};
+      } else {
+        const { data } = await supabase.from("hospedagem_painel_geral").select("*").eq("codigo", code).maybeSingle();
+        solicitation = data;
+      }
     }
 
     if (phone) {
       const { data: hotels } = await supabase
         .from("hospedagem_hoteis")
-        .select("id,nome,whatsapp,emite_nota_fiscal")
+        .select("id,nome,whatsapp,emite_nota_fiscal,cnpj_cpf")
         .not("whatsapp", "is", null);
       hotel = (hotels || []).find((item: any) => normalizePhone(item.whatsapp) === phone) || null;
+    }
+
+    // Respostas estruturadas do fluxo v3 carregam o UUID enviado na mensagem.
+    // A validação do hotel impede que outro contato confirme o pedido.
+    const uuid = text.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0] || "";
+    const normalizedText = normalizeKey(text);
+    if (uuid && hotel?.id && normalizedText.includes("confirm")) {
+      const { data: pedido } = await supabase.from("hospedagem_reserva_pedidos").select("id,hotel_id,status").eq("id", uuid).maybeSingle();
+      if (pedido?.hotel_id === hotel.id && pedido.status === "AGUARDANDO_HOTEL") {
+        const { data, error } = await supabase.rpc("hospedagem_v3_confirmar_reserva_pedido", { p_pedido_id: uuid, p_resposta: text });
+        if (error) throw error;
+        return json({ ok: true, action: "reserva_confirmada", ...data });
+      }
+      const { data: decision } = await supabase.from("hospedagem_checkout_decisoes").select("id,reserva_id,status,hospedagem_reservas!inner(hotel_id)").eq("id", uuid).maybeSingle();
+      const decisionHotel=(decision as any)?.hospedagem_reservas?.hotel_id;
+      if (decision && decisionHotel === hotel.id && decision.status === "AGUARDANDO_HOTEL") {
+        const { error } = await supabase.rpc("hospedagem_v3_confirmar_checkout_hotel", { p_decisao_id: uuid, p_resposta: text });
+        if (error) throw error;
+        return json({ ok: true, action: "checkout_confirmado_para_validacao", decision_id: uuid });
+      }
+    }
+    if (uuid && hotel?.id && normalizedText.includes("recus")) {
+      const {data:pedido}=await supabase.from("hospedagem_reserva_pedidos").select("id,hotel_id,status").eq("id",uuid).maybeSingle();
+      if(pedido?.hotel_id===hotel.id&&pedido.status==="AGUARDANDO_HOTEL"){await supabase.from("hospedagem_reserva_pedidos").update({status:"RECUSADO",respondido_em:new Date().toISOString(),resposta_texto:text}).eq("id",uuid);const {data:links}=await supabase.from("hospedagem_reserva_pedido_colaboradores").select("solicitacao_colaborador_id").eq("pedido_id",uuid);if(links?.length)await supabase.from("hospedagem_solicitacao_colaboradores").update({status_item:"EM_COTACAO"}).in("id",links.map((l:any)=>l.solicitacao_colaborador_id));await supabase.from("painel_notificacoes").upsert({tipo:"hospedagem_reserva_recusada_hotel",titulo:"Hotel recusou a reserva",descricao:text,prioridade:"urgente",icone:"hotel-alert",modulo_url:"adm-hotel",destinatario_modulo:"HOSPEDAGEM",referencia_tabela:"hospedagem_reserva_pedidos",referencia_id:uuid,chave_dedup:`reserva-recusada:${uuid}`},{onConflict:"chave_dedup",ignoreDuplicates:true});return json({ok:true,action:"reserva_recusada",pedido_id:uuid});}
+      const {data:decision}=await supabase.from("hospedagem_checkout_decisoes").select("id,reserva_id,status,hospedagem_reservas!inner(hotel_id)").eq("id",uuid).maybeSingle();
+      if(decision&&(decision as any).hospedagem_reservas?.hotel_id===hotel.id&&decision.status==="AGUARDANDO_HOTEL"){await supabase.from("hospedagem_checkout_decisoes").update({status:"AGUARDANDO_ADM",hotel_aceitou:false,resposta_hotel:text,confirmado_hotel_em:new Date().toISOString()}).eq("id",uuid);await supabase.from("painel_notificacoes").upsert({tipo:"hospedagem_prorrogacao_recusada",titulo:"Hotel recusou a prorrogação",descricao:text,prioridade:"urgente",icone:"hotel-alert",modulo_url:"adm-hotel",destinatario_modulo:"HOSPEDAGEM",referencia_tabela:"hospedagem_checkout_decisoes",referencia_id:uuid,chave_dedup:`prorrogacao-recusada:${uuid}`},{onConflict:"chave_dedup",ignoreDuplicates:true});return json({ok:true,action:"prorrogacao_recusada",decision_id:uuid});}
     }
 
     if (solicitation && hotel?.id) {
@@ -269,7 +304,7 @@ serve(async (req) => {
     if (solicitation && !hotel && solicitation.hotel_id) {
       const { data } = await supabase
         .from("hospedagem_hoteis")
-        .select("id,nome,whatsapp,emite_nota_fiscal")
+        .select("id,nome,whatsapp,emite_nota_fiscal,cnpj_cpf")
         .eq("id", solicitation.hotel_id)
         .maybeSingle();
       hotel = data;
@@ -294,6 +329,41 @@ serve(async (req) => {
     if (fileUrl) {
       const lower = `${fileName} ${mimeType} ${text}`.toLowerCase();
       const type = lower.includes("nf") || lower.includes("nota") || lower.includes("nfs") ? "NFSE" : "OUTRO";
+      if (type === "NFSE" && solicitation.reserva_id && hotel?.id) {
+        const { data: payment } = await supabase.from("hospedagem_pagamentos_v3").select("id,reserva_id").eq("reserva_id",solicitation.reserva_id).neq("status","CANCELADO").order("created_at",{ascending:false}).limit(1).maybeSingle();
+        const { data: installment } = payment ? await supabase.from("hospedagem_pagamento_parcelas").select("id,valor").eq("pagamento_id",payment.id).in("nfse_status",["AGUARDANDO","RECEBIDA","DIVERGENTE"]).order("created_at",{ascending:false}).limit(1).maybeSingle() : {data:null};
+        if (installment) {
+          const {data:reservationDetails}=await supabase.from("hospedagem_reservas").select("data_checkin,data_checkout").eq("id",solicitation.reserva_id).maybeSingle();
+          const values=flattenValues(body);parseLabelledText(text,values);
+          const invoiceNumber=String(valueFrom(values,["numero_nfse","numero_nota","nfse","nota_fiscal"])||"").trim();
+          const invoiceValue=parseMoney(valueFrom(values,["valor_nfse","valor_nota","valor_total","valor"]));
+          const issuer=digits(valueFrom(values,["emitente_cnpj","cnpj_emitente","prestador_cnpj","cnpj_prestador"]));
+          const recipient=digits(valueFrom(values,["tomador_cnpj","cnpj_tomador","cliente_cnpj"]));
+          const recipientName=String(valueFrom(values,["tomador_razao_social","razao_social_tomador","nome_tomador"])||"").trim();
+          const periodStart=String(valueFrom(values,["periodo_inicio","data_inicio","checkin"])||"").slice(0,10)||null;
+          const periodEnd=String(valueFrom(values,["periodo_fim","data_fim","checkout"])||"").slice(0,10)||null;
+          const {data:fiscal}=await supabase.from("hospedagem_empresas_fiscais").select("cnpj,razao_social").eq("empresa",solicitation.empresa||"").eq("ativo",true).maybeSingle();
+          const errors:string[]=[];const expectedHotel=digits(hotel.cnpj_cpf);
+          if(!invoiceNumber)errors.push("Número da NFS-e não identificado");
+          if(invoiceValue===null||Math.abs(invoiceValue-Number(installment.valor))>0.01)errors.push("Valor diferente da parcela paga");
+          if(!expectedHotel||issuer!==expectedHotel)errors.push("CNPJ do hotel divergente ou não cadastrado");
+          if(!fiscal?.cnpj||recipient!==digits(fiscal.cnpj)||!recipientName||normalizeKey(recipientName)!==normalizeKey(fiscal.razao_social))errors.push("Tomador divergente ou empresa fiscal não configurada");
+          if(!periodStart||!periodEnd||periodStart!==reservationDetails?.data_checkin||periodEnd!==reservationDetails?.data_checkout)errors.push("Período da hospedagem divergente");
+          const ext=(mimeType.includes("xml")||fileName.toLowerCase().endsWith(".xml"))?"xml":"pdf";
+          if(!["pdf","xml"].includes(ext))errors.push("Formato deve ser PDF ou XML");
+          const fetched=await fetch(fileUrl);if(!fetched.ok)throw new Error(`Falha ao baixar NFS-e: HTTP ${fetched.status}`);
+          const storagePath=`v3/nfse/${installment.id}/${crypto.randomUUID()}.${ext}`;
+          const upload=await supabase.storage.from("hospedagem-documentos").upload(storagePath,await fetched.arrayBuffer(),{contentType:mimeType||fetched.headers.get("content-type")||undefined,upsert:false});if(upload.error)throw upload.error;
+          const status=errors.length?(invoiceNumber&&invoiceValue!==null?"DIVERGENTE":"REVISAO_MANUAL"):"VALIDO";
+          const {data:doc,error:docError}=await supabase.from("hospedagem_pagamento_documentos").insert({parcela_id:installment.id,tipo:ext==="xml"?"NFSE_XML":"NFSE_PDF",arquivo_url:fileUrl,storage_bucket:"hospedagem-documentos",storage_path:storagePath,mime_type:mimeType||null,numero_nfse:invoiceNumber||null,valor_nfse:invoiceValue,emitente_cnpj:issuer||null,tomador_cnpj:recipient||null,tomador_razao_social:recipientName||null,periodo_inicio:periodStart,periodo_fim:periodEnd,status_validacao:status,validacao_erros:errors}).select("id").single();if(docError)throw docError;
+          const {data:validDocs}=await supabase.from("hospedagem_pagamento_documentos").select("id,tipo").eq("parcela_id",installment.id).eq("status_validacao","VALIDO");
+          const complete=new Set((validDocs||[]).map((d:any)=>d.tipo));
+          await supabase.from("hospedagem_pagamento_parcelas").update({nfse_status:errors.length?"DIVERGENTE":complete.has("NFSE_PDF")&&complete.has("NFSE_XML")?"VALIDA":"RECEBIDA",proxima_cobranca_nfse_em:errors.length?new Date(Date.now()+172800000).toISOString():null}).eq("id",installment.id);
+          if(complete.has("NFSE_PDF")&&complete.has("NFSE_XML")){const pdf=(validDocs||[]).find((d:any)=>d.tipo==="NFSE_PDF");const queued=await supabase.rpc("hospedagem_v3_enfileirar_nfse",{p_documento_id:pdf?.id||doc.id});if(queued.error)throw queued.error;}
+          else await supabase.from("painel_notificacoes").upsert({tipo:"hospedagem_nfse_revisao",titulo:"NFS-e de hotel requer conferência",descricao:errors.join("; ")||"Aguardando o segundo arquivo (PDF/XML).",prioridade:"atencao",icone:"receipt",modulo_url:"adm-hotel",destinatario_modulo:"HOSPEDAGEM",referencia_tabela:"hospedagem_pagamento_documentos",referencia_id:doc.id,chave_dedup:`nfse-review:${doc.id}`},{onConflict:"chave_dedup",ignoreDuplicates:true});
+          return json({ok:true,action:"nfse_v3_recebida",document_id:doc.id,status,errors});
+        }
+      }
       const { data: documentRow, error } = await supabase
         .from("hospedagem_documentos")
         .upsert({
@@ -332,8 +402,9 @@ serve(async (req) => {
     }
 
     const responseText = text || quoteSummary(fields);
+    const structured = hasStructuredQuote(fields);
     const quotePayload: Record<string, unknown> = {
-      status: fields.availability === false ? "INDISPONIVEL" : "RESPONDIDA",
+      status: fields.availability === false ? "INDISPONIVEL" : structured ? "RESPONDIDA" : "REVISAO_MANUAL",
       resposta_texto: responseText || null,
       resposta_dados: body,
       resposta_flow_id: fields.flowId || "8660973",
@@ -344,19 +415,23 @@ serve(async (req) => {
     if (fields.totalValue !== null) quotePayload.valor_total = fields.totalValue;
     if (fields.acceptsCheckout !== null) quotePayload.aceita_pagamento_checkout = fields.acceptsCheckout;
     if (fields.breakfastIncluded !== null) quotePayload.cafe_incluso = fields.breakfastIncluded;
+    if (fields.lunchIncluded !== null) quotePayload.almoco_incluso = fields.lunchIncluded;
+    if (fields.dinnerIncluded !== null) quotePayload.janta_inclusa = fields.dinnerIncluded;
     if (fields.parkingIncluded !== null) quotePayload.estacionamento_incluso = fields.parkingIncluded;
+    if (fields.paymentMethods.length) quotePayload.formas_pagamento = fields.paymentMethods;
+    if (fields.rooms) quotePayload.disponibilidade_quartos = typeof fields.rooms === "object" ? fields.rooms : [{ descricao: String(fields.rooms) }];
     if (fields.notes) quotePayload.observacoes = fields.notes;
 
     if (quote?.id) {
       const { error } = await supabase.from("hospedagem_cotacoes").update(quotePayload).eq("id", quote.id);
       if (error) throw error;
     } else if (hotel?.id) {
-      const { error } = await supabase.from("hospedagem_cotacoes").upsert({
+      const { error } = await supabase.from("hospedagem_cotacoes").insert({
         solicitacao_id: solicitation.solicitacao_id,
         hotel_id: hotel.id,
         hotel_nome: hotel.nome || null,
         ...quotePayload,
-      }, { onConflict: "solicitacao_id,hotel_id" });
+      });
       if (error) throw error;
     }
 
@@ -382,6 +457,10 @@ serve(async (req) => {
       recebido_em: new Date().toISOString(),
     }, externalId ? { onConflict: "external_message_id" } : undefined);
 
+    if (!structured && quote?.id) {
+      await supabase.from("painel_notificacoes").upsert({tipo:"hospedagem_cotacao_revisao",titulo:"Resposta de hotel requer revisão",descricao:responseText||"Resposta livre sem campos reconhecidos.",prioridade:"atencao",icone:"hotel-alert",modulo_url:"adm-hotel",destinatario_modulo:"HOSPEDAGEM",referencia_tabela:"hospedagem_cotacoes",referencia_id:quote.id,chave_dedup:`cotacao-review:${externalId||quote.id}`},{onConflict:"chave_dedup",ignoreDuplicates:true});
+    }
+
     return json({
       ok: true,
       action: "cotacao_atualizada",
@@ -395,6 +474,9 @@ serve(async (req) => {
         aceita_pagamento_checkout: fields.acceptsCheckout,
         cafe_incluso: fields.breakfastIncluded,
         estacionamento_incluso: fields.parkingIncluded,
+        almoco_incluso: fields.lunchIncluded,
+        janta_inclusa: fields.dinnerIncluded,
+        formas_pagamento: fields.paymentMethods,
         emite_nota_fiscal: fields.emitsInvoice,
       },
     });

@@ -4,7 +4,7 @@
 // por adm-hotel-alojamentos-v2.js e companhia, via adm-hotel-deferred.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { ensureStyles, tabGroup, normalizeText, buildCotacaoMessage, toast, nightsBetween } from './adm-hotel-helpers.js';
+import { ensureStyles, tabGroup, normalizeText, buildCotacaoMessage, toast, nightsBetween, esc, brDate, money } from './adm-hotel-helpers.js';
 import {
   renderShellAlojamentos, renderTabsBar, renderTable, renderDetalhes,
   renderCotacoesSection, renderHoteisPicker, renderPickerList,
@@ -25,8 +25,10 @@ function currentMode() {
 const state = {
   rows: [], hotels: [], people: [], assignments: [], links: [], quotes: [], finance: [], documents: [],
   advances: [], advanceMoves: [], checkoutLots: [],
+  v3Items: [], v3Changes: [], v3Checkout: [], v3Payments: [], v3Installments: [],
   loading: false, error: null, loaded: false,
   activeTab: 'todas', openKpi: null,
+  v3Filters: { status:'',date:'',city:'',person:'',supervision:'' },
 };
 
 const picker = {
@@ -91,6 +93,119 @@ function renderTabsAndWire() {
   });
 }
 
+const V3_LABELS = { AGUARDANDO:'Aguardando',EM_COTACAO:'Em cotação',AGUARDANDO_HOTEL:'Aguardando hotel',RESERVADO:'Reservado',ALTERACAO_PENDENTE:'Alteração pendente',CHECKOUT_PENDENTE:'Checkout pendente',CHECKOUT:'Checkout',RECUSADO:'Recusado' };
+
+function renderV3Queue() {
+  const f=state.v3Filters;
+  const items = state.v3Items.filter((i) => i.status_item !== 'CANCELADO'
+    && (!f.status||i.status_item===f.status) && (!f.date||i.data_checkin_prevista===f.date)
+    && (!f.city||normalizeText(`${i.cidade} ${i.uf}`).includes(normalizeText(f.city)))
+    && (!f.person||normalizeText(i.nome_colaborador).includes(normalizeText(f.person)))
+    && (!f.supervision||normalizeText(i.supervisao).includes(normalizeText(f.supervision))));
+  if (!items.length) return '';
+  return `<style>.ah-v3-head,.ah-v3-item{display:grid;align-items:center;gap:12px}.ah-v3-head{grid-template-columns:1fr auto;margin-bottom:14px}.ah-v3-head h3{margin:3px 0}.ah-v3-filters{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:8px;margin-bottom:12px}.ah-v3-list{display:grid;gap:8px}.ah-v3-item{grid-template-columns:24px minmax(170px,1.2fr) minmax(180px,1fr) minmax(145px,.8fr) auto;padding:12px;border:1px solid var(--line);border-radius:12px}.ah-v3-item small,.ah-v3-status{display:block;margin-top:4px}.ah-v3-actions{display:flex;gap:6px}.ah-v3-actions .btn{width:auto;padding:7px 10px}.ah-v3-status{font-size:11px;font-weight:800;text-transform:uppercase}.ah-v3-modal-list{display:grid;gap:7px;padding:10px;border:1px solid var(--line);border-radius:10px}@media(max-width:900px){.ah-v3-filters{grid-template-columns:1fr 1fr}.ah-v3-item{grid-template-columns:24px 1fr}.ah-v3-actions{grid-column:2;flex-wrap:wrap}}</style><section class="card ah-v3" style="margin-bottom:16px"><div class="ah-v3-head"><div><span class="ah-eyebrow">NOVO FLUXO</span><h3>Solicitações por colaborador</h3></div><span>${items.length} item(ns)</span></div>
+    <div class="ah-v3-filters"><select data-v3-filter="status"><option value="">Todos os status</option>${Object.entries(V3_LABELS).map(([v,l])=>`<option value="${v}" ${f.status===v?'selected':''}>${l}</option>`).join('')}</select><input data-v3-filter="date" type="date" value="${esc(f.date)}"><input data-v3-filter="city" placeholder="Cidade/UF" value="${esc(f.city)}"><input data-v3-filter="person" placeholder="Colaborador" value="${esc(f.person)}"><input data-v3-filter="supervision" placeholder="Supervisão" value="${esc(f.supervision)}"></div>
+    <div class="ah-v3-list">${items.map((i) => `<article class="ah-v3-item">
+      <label class="ah-v3-check"><input type="checkbox" data-v3-select="${esc(i.item_id)}" ${['AGUARDANDO','EM_COTACAO'].includes(i.status_item) ? '' : 'disabled'}></label>
+      <div><b>${esc(i.nome_colaborador)}</b><small>${esc(i.supervisao || 'Sem supervisão')} · ${esc(i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente')}</small></div>
+      <div><b>${esc(i.cidade)}/${esc(i.uf)}</b><small>${brDate(i.data_checkin_prevista)} ${esc(String(i.horario_chegada_previsto || '').slice(0,5))} · ${i.quantidade_diarias_prevista} diária(s)</small></div>
+      <div><span class="ah-v3-status s-${esc(i.status_item)}">${esc(V3_LABELS[i.status_item] || i.status_item)}</span>${i.hotel ? `<small>${esc(i.hotel)} · ${esc(i.codigo_operacional || '')}</small>` : ''}</div>
+      <div class="ah-v3-actions">${['AGUARDANDO','EM_COTACAO'].includes(i.status_item) ? `<button class="btn btn-secondary" data-v3-cotar="${esc(i.item_id)}">Cotar</button><button class="btn btn-primary" data-v3-reservar="${esc(i.item_id)}">Reservar</button><button class="btn btn-ghost" data-v3-recusar="${esc(i.item_id)}">Recusar</button>` : ''}${i.status_item === 'RESERVADO' ? `<button class="btn btn-secondary" data-v3-extra="${esc(i.reserva_id)}">Despesa extra</button><button class="btn btn-secondary" data-v3-payment="${esc(i.reserva_id)}">Pagamento</button>` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? `<span class="muted">Aguardando confirmações</span>` : ''}</div>
+    </article>`).join('')}</div>
+    ${state.v3Checkout.filter((d)=>d.status==='AGUARDANDO_ADM').map((d)=>`<div class="hosp-note">Hotel confirmou ${esc(d.decisao || 'checkout')} · <button class="btn btn-primary" data-v3-validate-checkout="${esc(d.id)}">Validar e concluir</button></div>`).join('')}
+    ${state.v3Changes.map((a)=>`<div class="hosp-note">Alteração ${esc(a.tipo)} aguardando tratamento · ${brDate(a.solicitada_em)} ${['PRORROGACAO','CANCELAMENTO'].includes(a.tipo)&&a.status==='AGUARDANDO_ADM'?`<button class="btn btn-primary" data-v3-handle-change="${esc(a.id)}">Enviar ao hotel</button>`:''}${['MUDANCA_DATAS','MUDANCA_CIDADE'].includes(a.tipo)&&a.status==='AGUARDANDO_ADM'?`<button class="btn btn-primary" data-v3-new-change-reservation="${esc(a.id)}">Criar nova reserva</button>`:''}</div>`).join('')}
+    </section>`;
+}
+
+function selectedV3Ids(fallback) {
+  const ids = [...document.querySelectorAll('[data-v3-select]:checked')].map((el) => el.dataset.v3Select);
+  return ids.length ? ids : [fallback];
+}
+
+function v3EligibleTogether(base, candidate) {
+  return base.cidade === candidate.cidade && base.uf === candidate.uf && candidate.data_checkin_prevista < base.data_checkout_prevista && candidate.data_checkout_prevista > base.data_checkin_prevista && ['AGUARDANDO','EM_COTACAO'].includes(candidate.status_item);
+}
+
+function openV3Action(kind, itemId) {
+  const base = state.v3Items.find((i) => i.item_id === itemId);
+  if (!base) return;
+  const preselected = new Set(selectedV3Ids(itemId));
+  const candidates = state.v3Items.filter((i) => v3EligibleTogether(base,i));
+  const hotels = state.hotels.filter((h) => h.status !== 'INATIVO');
+  modalRoot().innerHTML = `<div class="ah-overlay"><div class="ah-modal"><header><div><span class="ah-eyebrow">${kind === 'quote' ? 'COTAÇÃO' : 'RESERVA'}</span><h2>${esc(base.cidade)}/${esc(base.uf)}</h2></div><button class="ah-x" data-v3-close>×</button></header>
+    <div class="ah-body"><div class="ds-field"><label>Colaboradores</label><div class="ah-v3-modal-list">${candidates.map((i) => `<label><input type="checkbox" data-v3-modal-item value="${esc(i.item_id)}" ${preselected.has(i.item_id) ? 'checked' : ''}> ${esc(i.nome_colaborador)} · ${brDate(i.data_checkin_prevista)}–${brDate(i.data_checkout_prevista)} · ${esc(i.sexo)}</label>`).join('')}</div></div>
+    <div class="ds-field"><label>Hotel *</label><select id="v3Hotel"><option value="">Selecione</option>${hotels.map((h) => `<option value="${esc(h.id)}">${esc(h.nome)} — ${esc(h.cidade || '')}/${esc(h.uf || '')}</option>`).join('')}</select><button type="button" class="btn btn-secondary" data-v3-new-hotel style="margin-top:8px">Cadastrar novo hotel</button></div>
+    ${kind === 'reserve' ? `<div class="ds-field"><label>Valor da diária *</label><input id="v3Daily" type="number" min="0" step="0.01"></div><div class="ds-field"><label>Composição dos quartos *</label><textarea id="v3Rooms" rows="4" placeholder="Ex.: 2 quartos duplos masculino, R$ 180 por quarto"></textarea></div><button class="btn btn-secondary" data-v3-suggest>Sugerir menor custo</button>` : ''}
+    <p class="ah-error" id="v3Error"></p></div><footer><button class="btn btn-secondary" data-v3-close>Cancelar</button><button class="btn btn-primary" data-v3-confirm>${kind === 'quote' ? 'Enviar cotação' : 'Solicitar reserva ao hotel'}</button></footer></div></div>`;
+  modalRoot().querySelectorAll('[data-v3-close]').forEach((b) => b.onclick = () => { modalRoot().innerHTML=''; });
+  modalRoot().querySelector('[data-v3-new-hotel]').onclick = () => createV3Hotel(base,kind,itemId);
+  modalRoot().querySelector('[data-v3-suggest]')?.addEventListener('click', () => suggestRooms(candidates.filter((i) => modalRoot().querySelector(`[data-v3-modal-item][value="${i.item_id}"]`)?.checked)));
+  modalRoot().querySelector('[data-v3-confirm]').onclick = () => submitV3Action(kind,base.solicitacao_id);
+}
+
+async function createV3Hotel(base,kind,itemId) {
+  const nome=window.prompt('Nome do hotel:')?.trim(); if(!nome)return;
+  const whatsapp=window.prompt('WhatsApp do hotel com DDD:')?.trim(); if(!whatsapp)return;
+  const link=window.prompt('Link de localização do hotel:')?.trim(); if(!link)return;
+  const {error}=await supabase.from('hospedagem_hoteis').insert({nome,cidade:base.cidade,uf:base.uf,whatsapp,link_maps:link,status:'ATIVO',recebe_cotacao:true});
+  if(error)return toast(error.message,'err');
+  toast('Hotel cadastrado.','ok'); await loadPainel(); openV3Action(kind,itemId);
+}
+
+function suggestRooms(items) {
+  const groups = ['MASCULINO','FEMININO'].map((sexo) => ({ sexo, total: items.filter((i) => i.sexo === sexo).length })).filter((g) => g.total);
+  const lines = groups.map((g) => g.total === 1 ? `1 quarto individual ${g.sexo.toLowerCase()}` : `${Math.floor(g.total/4)} quarto(s) quádruplo(s)${g.total%4 ? ` + 1 quarto para ${g.total%4}` : ''} ${g.sexo.toLowerCase()}`);
+  const el=modalRoot().querySelector('#v3Rooms'); if(el) el.value=lines.join('\n');
+}
+
+async function submitV3Action(kind,solicitacaoId) {
+  const root=modalRoot(); const itemIds=[...root.querySelectorAll('[data-v3-modal-item]:checked')].map((e)=>e.value); const hotelId=root.querySelector('#v3Hotel')?.value;
+  if(!itemIds.length||!hotelId){ root.querySelector('#v3Error').textContent='Selecione colaboradores e hotel.'; return; }
+  let result;
+  if(kind==='quote') result=await supabase.rpc('hospedagem_v3_iniciar_cotacao',{p_solicitacao_id:solicitacaoId,p_item_ids:itemIds,p_hotel_ids:[hotelId]});
+  else {
+    const daily=Number(root.querySelector('#v3Daily')?.value); const text=root.querySelector('#v3Rooms')?.value.trim();
+    if(!Number.isFinite(daily)||daily<0||!text){ root.querySelector('#v3Error').textContent='Informe valor e composição dos quartos.'; return; }
+    const selected=state.v3Items.filter((i)=>itemIds.includes(i.item_id));
+    const quartos=[];for(const [sexo,genero] of [['MASCULINO','MASC'],['FEMININO','FEM']]){let total=selected.filter((i)=>i.sexo===sexo).length;while(total>0){let cap;if(total===1)cap=1;else if(total%4===1)cap=3;else cap=Math.min(4,total);const tipo={1:'INDIVIDUAL',2:'DUPLO',3:'TRIPLO',4:'QUADRUPLO'}[cap];quartos.push({tipo_quarto:tipo,quantidade:1,genero,capacidade:cap,valor_diaria:daily,descricao:text});total-=cap;}}
+    result=await supabase.rpc('hospedagem_v3_solicitar_reserva',{p_solicitacao_id:solicitacaoId,p_hotel_id:hotelId,p_item_ids:itemIds,p_valor_diaria:daily,p_quartos:quartos,p_cotacao_id:null});
+  }
+  if(result.error){ root.querySelector('#v3Error').textContent=result.error.message; return; }
+  root.innerHTML=''; toast(kind==='quote'?'Cotação enviada ao hotel.':'Pedido enviado; o status mudará após confirmação do hotel.','ok'); await loadPainel();
+}
+
+function wireV3Queue(board) {
+  board.querySelectorAll('[data-v3-filter]').forEach((el)=>el.onchange=()=>{state.v3Filters[el.dataset.v3Filter]=el.value;renderBoard();});
+  board.querySelectorAll('[data-v3-cotar]').forEach((b)=>b.onclick=()=>openV3Action('quote',b.dataset.v3Cotar));
+  board.querySelectorAll('[data-v3-reservar]').forEach((b)=>b.onclick=()=>openV3Action('reserve',b.dataset.v3Reservar));
+  board.querySelectorAll('[data-v3-recusar]').forEach((b)=>b.onclick=async()=>{ const motivo=window.prompt('Informe o motivo obrigatório da recusa:'); if(!motivo?.trim()) return; const {error}=await supabase.rpc('hospedagem_v3_recusar_item',{p_item_id:b.dataset.v3Recusar,p_motivo:motivo.trim()}); if(error)return toast(error.message,'err'); toast('Solicitação recusada e gestor notificado.','ok'); await loadPainel(); });
+  board.querySelectorAll('[data-v3-payment]').forEach((b)=>b.onclick=()=>openV3Payment(b.dataset.v3Payment));
+  board.querySelectorAll('[data-v3-extra]').forEach((b)=>b.onclick=()=>openV3Extra(b.dataset.v3Extra));
+  board.querySelectorAll('[data-v3-validate-checkout]').forEach((b)=>b.onclick=async()=>{ const {error}=await supabase.rpc('hospedagem_v3_validar_checkout',{p_decisao_id:b.dataset.v3ValidateCheckout}); if(error)return toast(error.message,'err'); toast('Checkout validado.','ok'); await loadPainel(); });
+  board.querySelectorAll('[data-v3-handle-change]').forEach((b)=>b.onclick=async()=>{const {error}=await supabase.rpc('hospedagem_v3_tratar_alteracao',{p_alteracao_id:b.dataset.v3HandleChange});if(error)return toast(error.message,'err');toast('Alteração enviada ao hotel.','ok');await loadPainel();});
+  board.querySelectorAll('[data-v3-new-change-reservation]').forEach((b)=>b.onclick=async()=>{const {data,error}=await supabase.rpc('hospedagem_v3_preparar_nova_reserva_alteracao',{p_alteracao_id:b.dataset.v3NewChangeReservation});if(error)return toast(error.message,'err');await loadPainel();openV3Action('reserve',data.item_id);});
+}
+
+function openV3Extra(reservaId) {
+  const people=state.v3Items.filter((i)=>i.reserva_id===reservaId);
+  modalRoot().innerHTML=`<div class="ah-overlay"><form class="ah-modal" id="v3ExtraForm"><header><div><span class="ah-eyebrow">DESPESA EXTRA</span><h2>Conferir cobrança do hotel</h2></div><button type="button" class="ah-x" data-v3-close>×</button></header><div class="ah-body"><div class="ds-field"><label>Descrição *</label><input id="v3ExtraDesc" required></div><div class="ds-field"><label>Valor total *</label><input id="v3ExtraValue" type="number" min="0.01" step="0.01" required></div><p class="muted">Informe abaixo a parte indevida que deve ir ao caixa de cada colaborador. O restante será somado ao pagamento do hotel.</p>${people.map((p)=>`<div class="ds-field"><label>${esc(p.nome_colaborador)}</label><input data-v3-extra-split="${esc(p.item_id)}" type="number" min="0" step="0.01" value="0"></div>`).join('')}<p class="ah-error" id="v3ExtraError"></p></div><footer><button type="button" class="btn btn-secondary" data-v3-close>Cancelar</button><button class="btn btn-primary">Registrar</button></footer></form></div>`;
+  modalRoot().querySelectorAll('[data-v3-close]').forEach((b)=>b.onclick=()=>{modalRoot().innerHTML='';});
+  modalRoot().querySelector('#v3ExtraForm').onsubmit=async(e)=>{e.preventDefault();const root=modalRoot();const value=Number(root.querySelector('#v3ExtraValue').value);const rateios=[...root.querySelectorAll('[data-v3-extra-split]')].map((i)=>({item_id:i.dataset.v3ExtraSplit,valor:Number(i.value||0)})).filter((r)=>r.valor>0);if(rateios.reduce((s,r)=>s+r.valor,0)>value){root.querySelector('#v3ExtraError').textContent='O rateio não pode superar o valor total.';return;}const {error}=await supabase.rpc('hospedagem_v3_registrar_extra',{p_reserva_id:reservaId,p_descricao:root.querySelector('#v3ExtraDesc').value,p_valor:value,p_rateios:rateios});if(error){root.querySelector('#v3ExtraError').textContent=error.message;return;}root.innerHTML='';toast('Despesa extra registrada e rateada.','ok');await loadPainel();};
+}
+
+function openV3Payment(reservaId) {
+  const existing=state.v3Payments.find((p)=>p.reserva_id===reservaId);
+  const fields=existing
+    ? `<div class="hosp-note">Total ${money(existing.valor_total)} · pago ${money(existing.valor_pago)} · saldo ${money(existing.saldo)} · ${esc(existing.status)}</div><div class="ds-field"><label>Valor desta parcela *</label><input id="v3PartValue" type="number" min="0.01" max="${esc(existing.saldo)}" step="0.01" required></div><div class="ds-field"><label>Data do pagamento *</label><input id="v3PartDate" type="date" value="${new Date().toISOString().slice(0,10)}" required></div><div class="ds-field"><label>Comprovante *</label><input id="v3PartProof" type="file" accept="application/pdf,image/*" required></div><div class="ds-field"><label>Responsável</label><select id="v3PartSector"><option value="ADM">ADM/Hospedagem</option><option value="FINANCEIRO">Financeiro</option></select></div>`
+    : `<div class="ds-field"><label>Forma *</label><select id="v3PayMethod"><option value="PIX">PIX</option><option value="BOLETO">Boleto</option></select></div><div class="ds-field"><label>Valor total, incluindo extras *</label><input id="v3PayTotal" type="number" min="0.01" step="0.01" required></div><div class="ds-field"><label>Chave PIX</label><input id="v3PayPix"></div><div class="ds-field"><label>URL do boleto PDF</label><input id="v3PayBoleto" type="url"></div><div class="ds-field"><label>Vencimento</label><input id="v3PayDue" type="date"></div><label><input id="v3PayFinance" type="checkbox"> Enviar ao Financeiro agora</label>`;
+  modalRoot().innerHTML=`<div class="ah-overlay"><form class="ah-modal" id="v3PaymentForm"><header><div><span class="ah-eyebrow">FINANCEIRO</span><h2>${existing?'Registrar pagamento':'Novo lançamento consolidado'}</h2></div><button type="button" class="ah-x" data-v3-close>×</button></header><div class="ah-body">${fields}<p class="ah-error" id="v3PayError"></p></div><footer><button type="button" class="btn btn-secondary" data-v3-close>Cancelar</button><button class="btn btn-primary">${existing?'Registrar parcela':'Criar lançamento'}</button></footer></form></div>`;
+  modalRoot().querySelectorAll('[data-v3-close]').forEach((b)=>b.onclick=()=>{modalRoot().innerHTML='';});
+  modalRoot().querySelector('#v3PaymentForm').onsubmit=async(e)=>{e.preventDefault();const root=modalRoot();let error;
+    if(existing){const file=root.querySelector('#v3PartProof').files?.[0];if(!file)return;const path=`v3/comprovantes/${existing.id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await supabase.storage.from('hospedagem-documentos').upload(path,file,{upsert:false});if(up.error){error=up.error;}else{const signed=await supabase.storage.from('hospedagem-documentos').createSignedUrl(path,60*60*24*7);const result=await supabase.rpc('hospedagem_v3_registrar_parcela',{p_pagamento_id:existing.id,p_valor:Number(root.querySelector('#v3PartValue').value),p_data:root.querySelector('#v3PartDate').value,p_comprovante_url:signed.data?.signedUrl||path,p_setor:root.querySelector('#v3PartSector').value});error=result.error;}}
+    else{const result=await supabase.rpc('hospedagem_v3_criar_pagamento',{p_reserva_id:reservaId,p_forma:root.querySelector('#v3PayMethod').value,p_valor:Number(root.querySelector('#v3PayTotal').value),p_chave_pix:root.querySelector('#v3PayPix').value||null,p_boleto_url:root.querySelector('#v3PayBoleto').value||null,p_linha_digitavel:null,p_vencimento:root.querySelector('#v3PayDue').value||null,p_enviar_financeiro:root.querySelector('#v3PayFinance').checked});error=result.error;}
+    if(error){root.querySelector('#v3PayError').textContent=error.message;return;}root.innerHTML='';toast(existing?'Pagamento registrado e comprovante enviado ao hotel.':'Lançamento de hospedagem criado.','ok');await loadPainel();};
+}
+
 function renderBoard() {
   const board = document.getElementById('ahBoard');
   if (!board) return;
@@ -113,10 +228,11 @@ function renderBoard() {
     board.innerHTML = `<div class="card ah-empty ah-error">Erro ao carregar: ${state.error}</div>`;
     return;
   }
-  board.innerHTML = renderTable(visibleRows());
+  board.innerHTML = `${renderV3Queue()}${renderTable(visibleRows().filter((r) => Number(r.fluxo_versao || 2) !== 3))}`;
   board.querySelectorAll('[data-open]').forEach((b) => {
     b.addEventListener('click', () => openDetalhes(b.dataset.open));
   });
+  wireV3Queue(board);
 }
 
 function renderAll() {
@@ -128,7 +244,15 @@ async function loadPainel() {
   state.loading = true;
   state.error = null;
   renderAll();
-  const { data, error } = await supabase.rpc('hospedagem_carregar_painel_v2');
+  const [painel, itens, alteracoes, decisoes, pagamentos, parcelas] = await Promise.all([
+    supabase.rpc('hospedagem_carregar_painel_v2'),
+    supabase.from('hospedagem_v3_itens').select('*').neq('status_item','CANCELADO').order('data_checkin_prevista').order('horario_chegada_previsto').order('solicitado_em'),
+    supabase.from('hospedagem_alteracoes').select('*').in('status',['AGUARDANDO_ADM','ENVIADA_HOTEL']).order('created_at'),
+    supabase.from('hospedagem_checkout_decisoes').select('*').in('status',['AGUARDANDO_GESTOR','SEM_RESPOSTA','AGUARDANDO_HOTEL','AGUARDANDO_ADM']).order('data_checkout_prevista'),
+    supabase.from('hospedagem_pagamentos_v3').select('*').neq('status','CANCELADO').order('created_at',{ascending:false}),
+    supabase.from('hospedagem_pagamento_parcelas').select('*').order('created_at',{ascending:false}),
+  ]);
+  const { data, error } = painel;
   state.loading = false;
   if (error) {
     state.error = error.message;
@@ -146,6 +270,11 @@ async function loadPainel() {
   state.advances = data?.advances || [];
   state.advanceMoves = data?.advanceMoves || [];
   state.checkoutLots = data?.checkoutLots || [];
+  state.v3Items = itens.data || [];
+  state.v3Changes = alteracoes.data || [];
+  state.v3Checkout = decisoes.data || [];
+  state.v3Payments = pagamentos.data || [];
+  state.v3Installments = parcelas.data || [];
   state.loaded = true;
   renderAll();
 }
