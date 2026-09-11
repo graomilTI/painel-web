@@ -38,7 +38,13 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const NODE_BIN = process.env.GRM_SYNC_NODE_BIN || '/home/grao100/bin/node';
 const SAFE_TMP = process.env.GRM_SYNC_TMPDIR || `${WORKER_RUNTIME}/tmp`;
 const POLL_MS = Number(process.env.GRM_SYNC_JOB_POLL_MS || 15000);
-const MAX_OUTPUT = 30000;
+// 30000 já perdeu diagnóstico real 2x no mesmo dia (11/09): o log do Salvar
+// bem-sucedido da GRAOMIL ficou fora do buffer (sobrescrito pela CARGILL
+// processada depois no mesmo job) e, investigando o Cliente Regional da
+// CARGILL, a lista completa de 12 regionais capturada via CAPTURE_NET nunca
+// coube inteira. Custo de guardar mais texto na coluna jsonb é irrelevante
+// pro volume de jobs desse worker.
+const MAX_OUTPUT = 200000;
 
 fs.mkdirSync(`${WORKER_RUNTIME}/tmp`, { recursive: true });
 fs.mkdirSync(`${WORKER_RUNTIME}/cache`, { recursive: true });

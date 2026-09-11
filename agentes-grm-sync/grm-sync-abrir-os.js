@@ -598,14 +598,41 @@ async function selecionarPrimeiraOpcaoCascata(page, labels) {
 // 1ª, com o mesmo matching (startsWith > contains) já usado no resto do
 // arquivo. Sem pista ou sem bater com nada, cai pro comportamento antigo
 // (1ª opção) — nunca deixa o campo sem preencher.
-async function selecionarClienteRegional(page, filialPagadora) {
+// "Cliente Regional" no GRM segue o padrão "<nome do cliente> - <UF>" (ex.:
+// "CARGILL AGRICOLA -TO", espaço antes do hífen inconsistente entre
+// regionais) — confirmado ao vivo 11/09 pelo usuário direto no formulário
+// real. Bate melhor com a UF (2 letras, já vem limpa em uf_embarque/
+// uf_destino da solicitação) do que tentando casar com filial_pagadora
+// inteiro: filial_pagadora geralmente é "<cliente> - <nome da região por
+// extenso ou cidade>" (ex. "CARGILL AGRICOLA - TOCANTINS",
+// "CARGILL AGRICOLA S A - DIAMANTINO"), que não bate como substring com a
+// sigla curta da opção.
+async function selecionarOpcaoPorSufixoUf(page, uf) {
+  if (!uf) return null;
+  return page.evaluate(function (ufAlvo) {
+    function normJs(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ''); }
+    var alvo = '-' + normJs(ufAlvo);
+    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+    for (var i = overlays.length - 1; i >= 0; i--) {
+      var options = Array.from(overlays[i].querySelectorAll('[role="option"], .v-list-item'));
+      for (var o = 0; o < options.length; o++) {
+        var texto = (options[o].innerText || options[o].textContent || '').trim();
+        if (texto && normJs(texto).endsWith(alvo)) { options[o].click(); return texto; }
+      }
+    }
+    return null;
+  }, uf);
+}
+
+async function selecionarClienteRegional(page, filialPagadora, uf) {
   var box = await localizarCampoHabilitado(page, ['CLIENTE REGIONAL']);
   if (!box) { avisarCampoSuspeito('Campo cascata (CLIENTE REGIONAL) não encontrado — pulando.'); return; }
   if (box.disabled) { avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL" continua desabilitado mesmo após esperar — pulando.'); return; }
   await page.mouse.click(box.x, box.y);
   await wait(700);
 
-  var escolhida = filialPagadora ? await selecionarOpcaoAberta(page, filialPagadora, 'substring') : null;
+  var escolhida = await selecionarOpcaoPorSufixoUf(page, uf);
+  if (!escolhida && filialPagadora) escolhida = await selecionarOpcaoAberta(page, filialPagadora, 'substring');
   if (!escolhida) {
     var primeira = await page.evaluate(function () {
       var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
@@ -616,7 +643,7 @@ async function selecionarClienteRegional(page, filialPagadora) {
       return null;
     });
     if (primeira && filialPagadora) {
-      avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL": nenhuma opção bateu com filial_pagadora ("' + filialPagadora + '") — usando a 1ª opção disponível ("' + primeira + '") como fallback.');
+      avisarCampoSuspeito('Campo cascata "CLIENTE REGIONAL": nenhuma opção bateu com UF ("' + uf + '") nem com filial_pagadora ("' + filialPagadora + '") — usando a 1ª opção disponível ("' + primeira + '") como fallback.');
     }
     escolhida = primeira;
   }
@@ -976,7 +1003,7 @@ async function preencherFormulario(page, solicitacao) {
     // "Cliente Final" (próximo item, filial_pagadora) só destrava depois que
     // "Cliente Regional" é escolhido — ver selecionarClienteRegional.
     if (item.campo === 'contratante_cliente') {
-      await selecionarClienteRegional(page, solicitacao.filial_pagadora);
+      await selecionarClienteRegional(page, solicitacao.filial_pagadora, solicitacao.uf_embarque || solicitacao.uf_destino);
     }
     // Embarque (Tipo do Local/UF/Cidade/Local do Serviço), Supervisão,
     // Produtor e Destino (UF/Cidade/Local) ficam entre Tamanho do Lote e
