@@ -458,7 +458,7 @@ async function localizarCampoBox(page, labels) {
 // clicar/olhar a tela). Por isso localizarCampoBox agora tem essa variante
 // que tenta de novo por até ~2,4s antes de desistir.
 async function localizarCampoHabilitado(page, labels, tentativas, intervaloMs) {
-  tentativas = tentativas || 8;
+  tentativas = tentativas || 20;
   intervaloMs = intervaloMs || 500;
   var box = null;
   for (var i = 0; i < tentativas; i++) {
@@ -580,12 +580,17 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   // livre" mesmo tendo opção real pra selecionar, porque a lista ainda não
   // tinha renderizado no momento do check; sem a seleção de verdade, tudo
   // que cascateia de Produto — Tipo do Produto, Testes — ficava travado).
-  // 8x500ms (~4s) — confirmado ao vivo 11/09 que 4x400ms (~1,6s) ainda não
-  // era suficiente pra Local do Serviço/Produto em alguns runs (a mesma
-  // busca que renderizava rápido pra Tipo do Local/UF/Cidade, backed por
-  // uma lista provavelmente maior/mais lenta pra Produto/Local do Serviço).
+  // 8x500ms (~4s) ainda não foi suficiente pra Local do Serviço/Produto em
+  // testes ao vivo 11/09 — via Chrome comum (rede da usuária) a mesma busca
+  // renderiza em <1s com o EXATO mesmo mecanismo (clique+foco+ctrl+a+
+  // backspace+digitar), então não é bug de lógica; é o servidor cPanel
+  // levando mais tempo pra falar com a API de busca do GRM pra esses 2
+  // campos especificamente (Tipo do Local/UF/Cidade não têm esse problema).
+  // 20x500ms (~10s) dá bastante margem — o custo de esperar demais é
+  // irrelevante (job roda em fila, sem pressa), o de não esperar o
+  // suficiente é a O.S. inteira falhar.
   var opcaoAberta = false;
-  for (var tentativaOpcao = 0; tentativaOpcao < 8 && !opcaoAberta; tentativaOpcao++) {
+  for (var tentativaOpcao = 0; tentativaOpcao < 20 && !opcaoAberta; tentativaOpcao++) {
     await wait(500);
     opcaoAberta = await page.evaluate(function () {
       var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
