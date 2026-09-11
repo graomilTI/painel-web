@@ -824,7 +824,8 @@ async function preencherDestino(page, solicitacao) {
     await preencherCampo(page, 'cidade_destino', ['CIDADE DE DESTINO'], parsed.cidade);
     await preencherCampo(page, 'local_destino', ['DESTINO'], parsed.local);
   } else {
-    log('WARN', 'local_destino "' + solicitacao.local_destino + '" não bate no formato "UF - CIDADE (LOCAL)" — sem UF de Destino, Cidade de Destino provavelmente ficará desabilitada.');
+    log('WARN', 'local_destino "' + solicitacao.local_destino + '" não bate no formato "UF - CIDADE (LOCAL)" — usando uf_destino da solicitação como fallback.');
+    await preencherCampo(page, 'uf_destino', ['UF DE DESTINO'], solicitacao.uf_destino);
     await preencherCampo(page, 'cidade_destino', ['CIDADE DE DESTINO'], solicitacao.cidade_destino);
     await preencherCampo(page, 'local_destino', ['DESTINO'], solicitacao.local_destino);
   }

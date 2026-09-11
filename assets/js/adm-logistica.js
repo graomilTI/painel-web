@@ -2307,8 +2307,8 @@ export async function renderContent(content) {
           return `<tr>
             <td><div class="log-title">${brDate(r.created_at, true)}</div><div class="log-meta">Regional: ${esc(r.regional || '-')}</div><div class="log-meta">Solicitante: ${esc(r.solicitante_nome || '-')}</div></td>
             <td><div class="log-title">${esc(r.contratante_cliente || '-')}</div><div class="log-meta">Filial: ${esc(r.filial_pagadora || '-')}</div><div class="log-meta">Contrato: ${esc(r.numero_contrato || '-')}</div><div class="log-meta">Produtor: ${esc(r.produtor || '-')}</div></td>
-            <td><div class="log-title">${esc(r.armazem_embarque || '-')}</div><div class="log-meta">${esc(r.cidade_embarque || '-')}</div></td>
-            <td><div class="log-title">${esc(r.local_destino || '-')}</div><div class="log-meta">${esc(r.cidade_destino || '-')}</div></td>
+            <td><div class="log-title">${esc(r.armazem_embarque || '-')}</div><div class="log-meta">${esc([r.uf_embarque,r.cidade_embarque].filter(Boolean).join(' - ')||'-')}</div></td>
+            <td><div class="log-title">${esc(r.local_destino || '-')}</div><div class="log-meta">${esc([r.uf_destino,r.cidade_destino].filter(Boolean).join(' - ')||'-')}</div></td>
             <td><div class="log-title">${esc(r.produto || '-')}</div><div class="log-meta">${esc(r.tipo_produto || '-')}</div><div class="log-meta">Volume: ${BR_NUM.format(Number(r.volume_inicial) || 0)} tons · Troca notas: ${esc(r.troca_notas || '-')}</div></td>
             <td>${done ? `<span class="log-badge ok">Cadastrado: OS ${esc(r.numero_os_cadastrada || '-')}</span>` : `<div class="log-inline-actions"><input class="log-input" data-numero-os-abertura="${esc(String(r.id))}" placeholder="Número da OS"><button class="btn btn-primary" data-cadastrar-abertura-os="${esc(String(r.id))}" type="button">Cadastrado</button></div>`}<textarea class="log-input log-textarea" data-obs-abertura="${esc(String(r.id))}" placeholder="Observação ADM">${esc(r.observacao_adm || '')}</textarea></td>
           </tr>`;

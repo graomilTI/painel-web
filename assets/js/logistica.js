@@ -19,6 +19,53 @@ function dateFromTomorrowLock() {
   return d.toISOString().slice(0,10);
 }
 
+const UFS_BRASIL = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+
+// Cache de municípios do IBGE (mesma chave/TTL de programacao.js —
+// carregar aqui reaproveita o cache já escrito por lá e vice-versa, já que
+// municípios não mudam) pra popular a lista fixa de Cidade conforme a UF
+// escolhida em "Abrir OS".
+const CIDADES_CACHE_KEY = 'grm:cidades_ibge:v1';
+const CIDADES_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+function readCidadesCache() {
+  try {
+    const raw = localStorage.getItem(CIDADES_CACHE_KEY);
+    if (!raw) return null;
+    const { ts, data } = JSON.parse(raw);
+    if (!ts || Date.now() - ts > CIDADES_CACHE_TTL_MS || !Array.isArray(data) || !data.length) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+function writeCidadesCache(data) {
+  try {
+    localStorage.setItem(CIDADES_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    // localStorage indisponível/cheio — segue sem cache persistente.
+  }
+}
+async function loadCidadesBrasil() {
+  const cached = readCidadesCache();
+  if (cached) { state.cidadesIbge = cached; return; }
+  try {
+    const resp = await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome');
+    const data = await resp.json();
+    state.cidadesIbge = (Array.isArray(data) ? data : []).map((m) => ({
+      nome: m.nome,
+      uf: m.microrregiao?.mesorregiao?.UF?.sigla || '',
+    })).filter((m) => m.nome && m.uf);
+    writeCidadesCache(state.cidadesIbge);
+  } catch (error) {
+    console.warn('Não foi possível carregar cidades do IBGE.', error);
+    state.cidadesIbge = [];
+  }
+}
+function cidadesDaUf(uf) {
+  if (!uf) return [];
+  return state.cidadesIbge.filter((c) => c.uf === uf).map((c) => c.nome).sort((a,b) => a.localeCompare(b,'pt-BR'));
+}
+
 const TABS = ['abrir_os', 'atualizar'];
 const TAB_LABELS = { abrir_os: 'Abrir OS', atualizar: 'Atualizar' };
 const ACAO_LABELS = { conferencia: 'Conferir', saldo: 'Saldo', finalizar: 'Finalizar' };
@@ -37,6 +84,9 @@ const state = {
   aberturaSaving: false,
   aberturaProdutoAtual: '',
   aberturaTestesSelecionados: [],
+  aberturaUfEmbarque: '',
+  aberturaUfDestino: '',
+  cidadesIbge: [],
   osRegional: [],
   osRegionalLoading: false,
   loading: false,
@@ -157,6 +207,19 @@ export async function renderContent(content, userContext) {
         select.disabled = !filiais.length;
       }
       aplicarRegraContratoNoCampo(content, e.target.value);
+      return;
+    }
+    if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
+      const embarque = e.target.id === 'osUfEmbarque';
+      state[embarque ? 'aberturaUfEmbarque' : 'aberturaUfDestino'] = e.target.value;
+      const cidadeInput = content.querySelector(embarque ? '#osCidadeEmbarque' : '#osCidadeDestino');
+      const datalist = content.querySelector(embarque ? '#abrirOsCidadesEmbarque' : '#abrirOsCidadesDestino');
+      if (cidadeInput) {
+        cidadeInput.value = '';
+        cidadeInput.disabled = !e.target.value;
+        cidadeInput.placeholder = e.target.value ? 'Cidade' : 'Selecione a UF primeiro';
+      }
+      if (datalist) datalist.innerHTML = cidadesDaUf(e.target.value).map(v => `<option value="${esc(v)}"></option>`).join('');
       return;
     }
     const chk = e.target.closest('[data-teste-key]');
@@ -308,7 +371,7 @@ function aplicarRegraContratoNoCampo(content, clienteNome) {
 
 async function loadAberturaOs() {
   state.aberturaLoading = true;
-  await loadAberturaRefs();
+  await Promise.all([loadAberturaRefs(), loadCidadesBrasil()]);
   const { data, error } = await supabase
     .from('logistica_abertura_os')
     .select('*')
@@ -493,6 +556,8 @@ function renderAbrirOsTab() {
 
       <datalist id="abrirOsArmazens">${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
       <datalist id="abrirOsLocaisDestino">${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <datalist id="abrirOsCidadesEmbarque">${cidadesDaUf(state.aberturaUfEmbarque).map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <datalist id="abrirOsCidadesDestino">${cidadesDaUf(state.aberturaUfDestino).map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
 
       <div class="abrir-os-card">
         <h4>Dados da solicitação</h4>
@@ -501,8 +566,10 @@ function renderAbrirOsTab() {
           <label>Filial pagadora *<select id="osFilialPagadora" class="log-input" disabled><option value="">Selecione o cliente primeiro</option></select></label>
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
           <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
-          <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" placeholder="Cidade-UF"></label>
-          <label>Cidade destino *<input id="osCidadeDestino" class="log-input" placeholder="Cidade-UF"></label>
+          <label>UF de embarque *<select id="osUfEmbarque" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfEmbarque ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
+          <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" list="abrirOsCidadesEmbarque" autocomplete="off" placeholder="${state.aberturaUfEmbarque ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfEmbarque ? '' : 'disabled'}></label>
+          <label>UF destino *<select id="osUfDestino" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfDestino ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
+          <label>Cidade destino *<input id="osCidadeDestino" class="log-input" list="abrirOsCidadesDestino" autocomplete="off" placeholder="${state.aberturaUfDestino ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfDestino ? '' : 'disabled'}></label>
           <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
           <label><span id="osNumeroContratoLabel">Número contrato *</span><input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
           <label>Produto *<select id="osProduto" class="log-input"><option value="">Selecione</option>${Object.values(CATALOGO_PRODUTOS).map(p => `<option value="${esc(p.label)}" ${p.label === state.aberturaProdutoAtual ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
@@ -541,6 +608,8 @@ function renderAbrirOsTab() {
   `;
 }
 
+function ufCidade(uf, cidade) { return [uf, cidade].filter(Boolean).join(' - ') || '-'; }
+
 function testesResumo(testes) {
   const categoria = testes?.categoria;
   const opcoes = Array.isArray(testes?.opcoes) ? testes.opcoes : [];
@@ -571,7 +640,7 @@ function renderAberturaOsHistorico() {
     <tr class="${precisaCorrigir ? 'log-row-corrigir' : ''}">
       <td data-label="Data">${brDate(r.created_at)}<br><small class="muted">Regional: ${esc(r.regional || '-')}</small></td>
       <td data-label="Cliente / contrato"><strong>${esc(r.contratante_cliente || '-')}</strong><br><small class="muted">Filial: ${esc(r.filial_pagadora || '-')}</small><br><small class="muted">Contrato: ${esc(r.numero_contrato || '-')}</small></td>
-      <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(r.cidade_embarque || '-')} → ${esc(r.cidade_destino || '-')}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
+      <td data-label="Origem / destino"><strong>${esc(r.armazem_embarque || '-')}</strong><br><small class="muted">${esc(ufCidade(r.uf_embarque, r.cidade_embarque))} → ${esc(ufCidade(r.uf_destino, r.cidade_destino))}</small><br><small class="muted">Destino: ${esc(r.local_destino || '-')}</small></td>
       <td data-label="Produto">${esc(r.produto || '-')}<br><small class="muted">${esc(r.tipo_produto || '-')} · ${fmt(r.volume_inicial)} tons</small><br><small class="muted">${esc(r.servico || '-')}</small>${testesResumo(r.testes)}</td>
       <td data-label="Status"><span class="log-status-cell"><span class="log-chip ${String(r.status)==='CADASTRADO'?'ok':String(r.status)==='RECUSADO'?'red':'warn'}">${String(r.status)==='CADASTRADO' ? `OS ${esc(r.numero_os_cadastrada || '')}` : esc(r.status || 'PENDENTE')}</span>${precisaCorrigir ? `<button class="log-editar-corrigir-btn" data-editar-abertura="${esc(r.id)}" type="button" title="Corrigir e reenviar para Logística">✎</button>` : ''}</span>${camposCorrigirBadgesHtml(r)}${r.observacao_adm ? `<div class="log-obs">${esc(r.observacao_adm)}</div>` : ''}${pontoProblemaAvisoHtml(r)}</td>
     </tr>`;
@@ -742,7 +811,9 @@ async function handleSalvarAberturaOs(content) {
     filial_pagadora: valById(content, 'osFilialPagadora'),
     produtor: valById(content, 'osProdutor') || null,
     armazem_embarque: valById(content, 'osArmazemEmbarque'),
+    uf_embarque: valById(content, 'osUfEmbarque'),
     cidade_embarque: valById(content, 'osCidadeEmbarque'),
+    uf_destino: valById(content, 'osUfDestino'),
     cidade_destino: valById(content, 'osCidadeDestino'),
     local_destino: valById(content, 'osLocalDestino'),
     numero_contrato: valById(content, 'osNumeroContrato'),
@@ -765,8 +836,8 @@ async function handleSalvarAberturaOs(content) {
 
   const obrigatorios = [
     ['Contratante/Cliente', payload.contratante_cliente], ['Filial pagadora', payload.filial_pagadora],
-    ['Armazém de embarque', payload.armazem_embarque], ['Cidade de embarque', payload.cidade_embarque],
-    ['Cidade destino', payload.cidade_destino], ['Local de destino', payload.local_destino],
+    ['Armazém de embarque', payload.armazem_embarque], ['UF de embarque', payload.uf_embarque], ['Cidade de embarque', payload.cidade_embarque],
+    ['UF destino', payload.uf_destino], ['Cidade destino', payload.cidade_destino], ['Local de destino', payload.local_destino],
     ['Produto', payload.produto], ['Tipo de produto', payload.tipo_produto],
     ['Volume inicial', payload.volume_inicial], ['Regional', payload.regional], ['Troca de notas', payload.troca_notas],
     ['Serviço', payload.servico]
@@ -788,6 +859,8 @@ async function handleSalvarAberturaOs(content) {
   if (error) { alert(`${error.message}. Rode o SQL de abertura de OS no Supabase.`); return; }
   state.aberturaProdutoAtual = '';
   state.aberturaTestesSelecionados = [];
+  state.aberturaUfEmbarque = '';
+  state.aberturaUfDestino = '';
   await loadAberturaOs();
   render(content);
   alert('Solicitação enviada para a Logística ADM.');

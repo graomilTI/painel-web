@@ -24,6 +24,21 @@ const FIELD_IDS = {
   troca_notas: 'osTrocaNotas',
 };
 
+const UFS_BRASIL = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+
+// Cidade de embarque/destino virou dois campos (UF + Cidade, ver
+// [[painel-web-abertura-os-uf-embarque-destino]]) mas a IA/OCR ainda devolve
+// os dois juntos no mesmo texto (ex.: "Curitiba - PR"), igual sempre veio —
+// extrai a UF daqui em vez de mexer no prompt/schema da IA.
+function splitCidadeUf(value) {
+  const texto = String(value ?? '').trim();
+  const match = texto.match(/^(.+?)[\s/,-]+([A-Za-z]{2})$/);
+  if (match && UFS_BRASIL.includes(match[2].toUpperCase())) {
+    return { cidade: match[1].trim(), uf: match[2].toUpperCase() };
+  }
+  return { cidade: texto, uf: '' };
+}
+
 function normalize(value) {
   return String(value ?? '')
     .trim()
@@ -102,9 +117,14 @@ function applyFields(fields) {
   // Aplicando produto primeiro, a única re-render acontece antes de
   // qualquer outro campo ser tocado.
   if (applyField(FIELD_IDS.produto, fields?.produto)) filled += 1;
+  const embarque = splitCidadeUf(fields?.cidade_embarque);
+  const destino = splitCidadeUf(fields?.cidade_destino);
+  if (applyField('osUfEmbarque', embarque.uf)) filled += 1;
+  if (applyField('osUfDestino', destino.uf)) filled += 1;
   Object.entries(FIELD_IDS).forEach(([key, id]) => {
     if (key === 'produto') return;
-    if (applyField(id, fields?.[key])) filled += 1;
+    const value = key === 'cidade_embarque' ? embarque.cidade : key === 'cidade_destino' ? destino.cidade : fields?.[key];
+    if (applyField(id, value)) filled += 1;
   });
   filled += applyTestes(fields?.testes);
   return filled;
