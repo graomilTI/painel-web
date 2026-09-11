@@ -139,18 +139,24 @@ function norm(s) {
  * com WARN em vez de tentar digitar — não quebra o agente, só deixa esse
  * campo em branco na O.S. criada.
  * ---------------------------------------------------------------------- */
+// armazem_embarque/cidade_embarque (LOCAL DO SERVICO/CIDADE) e cidade_destino/
+// local_destino (CIDADE DE DESTINO/DESTINO) saíram daqui — confirmado ao vivo
+// em 11/09 que os dois lados têm cascata de verdade (Tipo do Local -> UF ->
+// Cidade -> Local do Serviço; UF de Destino -> Cidade de Destino -> Destino),
+// não só "campo desabilitado por um instante". Tratados à parte em
+// preencherEmbarque/preencherDestino, que resolvem Tipo do Local/UF a partir
+// de operacional_pontos_embarque (embarque) ou parseando o próprio
+// local_destino no formato "UF - CIDADE (LOCAL)" (destino).
+// regional (SUPERVISAO) e produtor (PRODUTOR) também saíram daqui: os dois
+// ficam dentro de "DADOS DO EMBARQUE" e cascateiam a partir de Cidade — só
+// fazem sentido depois de preencherEmbarque, não numa posição fixa no meio
+// da lista. Sequenciados manualmente em preencherFormulario.
 var LABEL_MAP = [
   { campo: 'contratante_cliente', labels: ['CLIENTE NACIONAL'] },
   { campo: 'filial_pagadora', labels: ['CLIENTE FINAL'] },
   { campo: 'numero_contrato', labels: ['CONTRATO'] },
   { campo: 'servico', labels: ['SERVICO'] },
   { campo: 'volume_inicial', labels: ['TAMANHO DO LOTE'] },
-  { campo: 'armazem_embarque', labels: ['LOCAL DO SERVICO'] },
-  { campo: 'cidade_embarque', labels: ['CIDADE'] },
-  { campo: 'regional', labels: ['SUPERVISAO'] },
-  { campo: 'produtor', labels: ['PRODUTOR'] },
-  { campo: 'cidade_destino', labels: ['CIDADE DE DESTINO'] },
-  { campo: 'local_destino', labels: ['DESTINO'] },
   { campo: 'produto', labels: ['PRODUTO'] },
   { campo: 'tipo_produto', labels: ['TIPO DO PRODUTO'] }
 ];
@@ -568,11 +574,20 @@ async function preencherCampo(page, campo, labels, valorBruto) {
     await page.keyboard.type(valor, { delay: 25 });
   }
 
-  await wait(700);
-  var opcaoAberta = await page.evaluate(function () {
-    var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
-    return overlays.some(function (o) { return o.querySelectorAll('[role="option"], .v-list-item').length > 0; });
-  });
+  // Retry: em campos cuja lista de opções depende de uma chamada de API do
+  // GRM (ex.: Produto), 1 wait único de 700ms às vezes não é suficiente —
+  // confirmado ao vivo em 11/09 (Produto acabava "preenchido como texto
+  // livre" mesmo tendo opção real pra selecionar, porque a lista ainda não
+  // tinha renderizado no momento do check; sem a seleção de verdade, tudo
+  // que cascateia de Produto — Tipo do Produto, Testes — ficava travado).
+  var opcaoAberta = false;
+  for (var tentativaOpcao = 0; tentativaOpcao < 4 && !opcaoAberta; tentativaOpcao++) {
+    await wait(400);
+    opcaoAberta = await page.evaluate(function () {
+      var overlays = Array.from(document.querySelectorAll('.v-overlay--active'));
+      return overlays.some(function (o) { return o.querySelectorAll('[role="option"], .v-list-item').length > 0; });
+    });
+  }
 
   if (opcaoAberta) {
     var escolhida = await selecionarOpcaoAberta(page, valor, 'substring');
@@ -633,6 +648,66 @@ async function preencherTestes(page, solicitacao) {
   }
 }
 
+// "Local do Serviço" (armazem_embarque) fica dentro de uma cascata real
+// Tipo do Local -> UF -> Cidade -> Local do Serviço (confirmado ao vivo
+// 11/09 — Cidade sozinha, sem UF antes, nem aceita digitação). A solicitação
+// do painel-web só guarda o nome do local (armazem_embarque) e a cidade
+// (cidade_embarque) soltos, sem UF/Tipo do Local — mas esse local quase
+// sempre já existe em operacional_pontos_embarque (mesma tabela que
+// alimenta o autopreenchimento da tela de Abertura de O.S.), que TEM as 3
+// colunas. Busca por nome_local primeiro (mais específico), cai pra
+// embarque_label (formato "UF - CIDADE (LOCAL)") se não achar.
+async function resolverPontoEmbarque(valorArmazem) {
+  var texto = String(valorArmazem || '').trim();
+  if (!texto) return null;
+  var porNome = await supabase.from('operacional_pontos_embarque')
+    .select('tipo_local,uf,cidade,nome_local').ilike('nome_local', texto).limit(1);
+  if (!porNome.error && porNome.data && porNome.data[0]) return porNome.data[0];
+  var porLabel = await supabase.from('operacional_pontos_embarque')
+    .select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto).limit(1);
+  if (!porLabel.error && porLabel.data && porLabel.data[0]) return porLabel.data[0];
+  return null;
+}
+
+async function preencherEmbarque(page, solicitacao) {
+  var ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque);
+  if (ponto) {
+    log('INFO', 'Local de embarque "' + solicitacao.armazem_embarque + '" resolvido em operacional_pontos_embarque: ' + ponto.tipo_local + ' / ' + ponto.uf + ' / ' + ponto.cidade + ' / ' + ponto.nome_local);
+    await preencherCampo(page, 'tipo_local', ['TIPO DO LOCAL'], ponto.tipo_local);
+    await preencherCampo(page, 'uf_embarque', ['UF'], ponto.uf);
+    await preencherCampo(page, 'cidade_embarque', ['CIDADE'], ponto.cidade);
+    await preencherCampo(page, 'armazem_embarque', ['LOCAL DO SERVICO'], ponto.nome_local);
+  } else {
+    log('WARN', 'Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — sem UF/Tipo do Local, Cidade e Local do Serviço provavelmente ficarão desabilitados.');
+    await preencherCampo(page, 'cidade_embarque', ['CIDADE'], solicitacao.cidade_embarque);
+    await preencherCampo(page, 'armazem_embarque', ['LOCAL DO SERVICO'], solicitacao.armazem_embarque);
+  }
+}
+
+// "Destino" não tem uma tabela de pontos equivalente — mas local_destino já
+// vem no mesmo formato "UF - CIDADE (LOCAL)" (ex.: "GO - GOIÂNIA (moinho
+// vitoria)"), então dá pra extrair UF/Cidade direto dali sem precisar de
+// outra fonte. Cai pro valor bruto se o texto não bater nesse padrão.
+function extrairLocalPadrao(texto) {
+  var m = String(texto || '').trim().match(/^([A-Za-z]{2})\s*-\s*([^(]+?)\s*\(([^)]+)\)\s*$/);
+  if (!m) return null;
+  return { uf: m[1].toUpperCase(), cidade: m[2].trim(), local: m[3].trim() };
+}
+
+async function preencherDestino(page, solicitacao) {
+  var parsed = extrairLocalPadrao(solicitacao.local_destino);
+  if (parsed) {
+    log('INFO', 'Destino "' + solicitacao.local_destino + '" parseado: UF=' + parsed.uf + ' Cidade=' + parsed.cidade + ' Local=' + parsed.local);
+    await preencherCampo(page, 'uf_destino', ['UF DE DESTINO'], parsed.uf);
+    await preencherCampo(page, 'cidade_destino', ['CIDADE DE DESTINO'], parsed.cidade);
+    await preencherCampo(page, 'local_destino', ['DESTINO'], parsed.local);
+  } else {
+    log('WARN', 'local_destino "' + solicitacao.local_destino + '" não bate no formato "UF - CIDADE (LOCAL)" — sem UF de Destino, Cidade de Destino provavelmente ficará desabilitada.');
+    await preencherCampo(page, 'cidade_destino', ['CIDADE DE DESTINO'], solicitacao.cidade_destino);
+    await preencherCampo(page, 'local_destino', ['DESTINO'], solicitacao.local_destino);
+  }
+}
+
 async function preencherFormulario(page, solicitacao) {
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
@@ -646,6 +721,24 @@ async function preencherFormulario(page, solicitacao) {
     // "Cliente Regional" é escolhido — ver selecionarPrimeiraOpcaoCascata.
     if (item.campo === 'contratante_cliente') {
       await selecionarPrimeiraOpcaoCascata(page, ['CLIENTE REGIONAL']);
+    }
+    // Embarque (Tipo do Local/UF/Cidade/Local do Serviço), Supervisão,
+    // Produtor e Destino (UF/Cidade/Local) ficam entre Tamanho do Lote e
+    // Produto no formulário real — cada um com sua própria cascata, por
+    // isso não entram no LABEL_MAP genérico (ver preencherEmbarque/
+    // preencherDestino acima).
+    if (item.campo === 'volume_inicial') {
+      await preencherEmbarque(page, solicitacao);
+      await preencherCampo(page, 'regional', ['SUPERVISAO'], solicitacao.regional);
+      // Produtor é obrigatório no GRM mas a solicitação nem sempre tem um
+      // (fica null) — nesse caso o valor real é literalmente a opção "Não
+      // Informado" da lista (confirmado ao vivo), não "sem preencher".
+      if (solicitacao.produtor) {
+        await preencherCampo(page, 'produtor', ['PRODUTOR'], solicitacao.produtor);
+      } else {
+        await selecionarPrimeiraOpcaoCascata(page, ['PRODUTOR']);
+      }
+      await preencherDestino(page, solicitacao);
     }
   }
   await preencherTestes(page, solicitacao);
