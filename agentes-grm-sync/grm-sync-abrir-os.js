@@ -152,6 +152,14 @@ function norm(s) {
 // fazem sentido depois de preencherEmbarque, não numa posição fixa no meio
 // da lista. Sequenciados manualmente em preencherFormulario.
 var LABEL_MAP = [
+  // "Data da Solicitação" nunca esteve nesta lista — descoberto ao vivo em
+  // 11/09 depois de TODOS os outros campos passarem a ser preenchidos/
+  // selecionados corretamente (Embarque, Destino com linha confirmada na
+  // tabela, Produto com a variante certa) e o Salvar continuar bloqueado
+  // mesmo assim: é um campo obrigatório que simplesmente nunca era tocado.
+  // Usa created_at da própria solicitação (data em que ela foi aberta no
+  // painel), formatado DD/MM/AAAA — ver formatarValor.
+  { campo: 'created_at', labels: ['DATA DA SOLICITACAO'] },
   { campo: 'contratante_cliente', labels: ['CLIENTE NACIONAL'] },
   { campo: 'filial_pagadora', labels: ['CLIENTE FINAL'] },
   { campo: 'numero_contrato', labels: ['CONTRATO'] },
@@ -545,6 +553,13 @@ function formatarValor(campo, valor) {
     if (!isFinite(n)) return String(valor);
     // Placeholder do campo "Tamanho do Lote" mostra 3 casas decimais (0,000 Ton).
     return n.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
+  if (campo === 'created_at') {
+    var d = new Date(valor);
+    if (isNaN(d.getTime())) return String(valor);
+    var dd = String(d.getDate()).padStart(2, '0');
+    var mm = String(d.getMonth() + 1).padStart(2, '0');
+    return dd + '/' + mm + '/' + d.getFullYear();
   }
   return String(valor);
 }
