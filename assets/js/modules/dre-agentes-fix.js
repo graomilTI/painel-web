@@ -330,7 +330,11 @@
       window.__dreDespesasSnapshotSeen = new Set();
       for (let i = sessionStorage.length - 1; i >= 0; i -= 1) {
         const key = sessionStorage.key(i) || '';
-        if (key.startsWith('grao1000:dre-despesas:') || key.startsWith('grao1000:dre-full:')) {
+        // Antes só limpava dre-despesas/dre-full: dre-nf, dre-diario, dre-colab
+        // e dre-ativos ficavam com até 2h (DRE_CACHE_TTL) de dados velhos por
+        // aba/sessão, então cada usuário podia ver números diferentes até o
+        // cache dele expirar ou a aba ser fechada.
+        if (key.startsWith('grao1000:dre-')) {
           sessionStorage.removeItem(key);
         }
       }
