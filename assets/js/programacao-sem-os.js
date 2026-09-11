@@ -514,8 +514,26 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     // programacao_equipe.colaborador_id no momento da confirmação. Nome
     // normalizado como 2ª rede de segurança: se bater o nome, também conta
     // como confirmado.
-    const confirmadosPorId = new Set(equipeRows.filter((r) => r.confirmado).map((r) => idKey(r.colaborador_id)));
-    const confirmadosPorNome = new Set(equipeRows.filter((r) => r.confirmado).map((r) => normalizeText(r.nome_colaborador)));
+    // O.S. já FINALIZAR não deve mais prender o colaborador fora da lista de
+    // Sem O.S. — o vínculo em programacao_equipe continua confirmado (a
+    // Conferência depende dele pra saber quem revisar), mas pro gestor o
+    // colaborador já terminou o atendimento e precisa poder liberar
+    // café/almoço/janta pelo fluxo Disponível (reportado pela usuária,
+    // 2026-09-11: colaborador finalizado sumia do Sem O.S. e travava a
+    // despesa).
+    const equipeOsIds = [...new Set(equipeRows.map((r) => r.os_id).filter(Boolean))];
+    let osFinalizadasIds = new Set();
+    if (equipeOsIds.length) {
+      const { data: osStatusRows, error: osStatusError } = await supabase
+        .from('operacional_os')
+        .select('id,status_gestor')
+        .in('id', equipeOsIds);
+      if (osStatusError) console.warn('[sem-os] falha ao checar status das O.S. vinculadas', osStatusError);
+      osFinalizadasIds = new Set((osStatusRows || []).filter((o) => o.status_gestor === 'FINALIZAR').map((o) => o.id));
+    }
+    const equipeAtiva = equipeRows.filter((r) => !osFinalizadasIds.has(r.os_id));
+    const confirmadosPorId = new Set(equipeAtiva.filter((r) => r.confirmado).map((r) => idKey(r.colaborador_id)));
+    const confirmadosPorNome = new Set(equipeAtiva.filter((r) => r.confirmado).map((r) => normalizeText(r.nome_colaborador)));
     const semOs = regional.filter((c) => !confirmadosPorId.has(idKey(c.colaboradorId)) && !confirmadosPorNome.has(normalizeText(c.nome)));
 
     const ids = semOs.map((c) => c.colaboradorId);

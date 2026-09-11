@@ -1,4 +1,4 @@
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260909-extra-zero-ok1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260911-finaliza-libera-semos1';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260910-desloc-particular1';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
