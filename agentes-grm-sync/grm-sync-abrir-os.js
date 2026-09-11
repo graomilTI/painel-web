@@ -438,6 +438,31 @@ async function localizarCampoBox(page, labels) {
   }, labels);
 }
 
+// A cascata de campos "--disabled" (Cliente Final, Local do Serviço, Cidade,
+// Supervisão, Cidade de Destino, Tipo do Produto, Testes) não destrava na
+// hora que o campo pai é escolhido — é assíncrono (o Vuetify/Vue reage à
+// mudança e só então habilita o(s) filho(s), às vezes esperando uma
+// chamada de API do próprio GRM pra popular as opções). Confirmado ao vivo
+// em 11/09: localizarCampoBox via preencherCampo checava "disabled"
+// literalmente milissegundos depois de selecionar o campo pai anterior e
+// via quase TUDO ainda desabilitado (Cliente Regional, Cliente Final,
+// Local do Serviço, Cidade, Supervisão, Cidade de Destino, Tipo do
+// Produto, Teste Aflatoxina — praticamente a cascata inteira), mesmo
+// funcionando bem quando testado manualmente (com os delays naturais de
+// clicar/olhar a tela). Por isso localizarCampoBox agora tem essa variante
+// que tenta de novo por até ~2,4s antes de desistir.
+async function localizarCampoHabilitado(page, labels, tentativas, intervaloMs) {
+  tentativas = tentativas || 6;
+  intervaloMs = intervaloMs || 400;
+  var box = null;
+  for (var i = 0; i < tentativas; i++) {
+    box = await localizarCampoBox(page, labels);
+    if (!box || !box.disabled) return box;
+    await wait(intervaloMs);
+  }
+  return box;
+}
+
 async function selecionarOpcaoAberta(page, alvo, modo) {
   await wait(700);
   var clicked = await page.evaluate(function (payload) {
@@ -473,9 +498,9 @@ async function selecionarOpcaoAberta(page, alvo, modo) {
 // campo, abre a lista (sem digitar nada) e escolhe a 1ª opção disponível —
 // só serve pra destravar a cascata, o ADM pode revisar/corrigir depois.
 async function selecionarPrimeiraOpcaoCascata(page, labels) {
-  var box = await localizarCampoBox(page, labels);
+  var box = await localizarCampoHabilitado(page, labels);
   if (!box) { log('WARN', 'Campo cascata (' + labels.join(' / ') + ') não encontrado — pulando.'); return; }
-  if (box.disabled) { log('WARN', 'Campo cascata "' + box.label + '" está desabilitado — pulando.'); return; }
+  if (box.disabled) { log('WARN', 'Campo cascata "' + box.label + '" continua desabilitado mesmo após esperar — pulando.'); return; }
   await page.mouse.click(box.x, box.y);
   await wait(700);
   var escolhida = await page.evaluate(function () {
@@ -514,9 +539,9 @@ async function preencherCampo(page, campo, labels, valorBruto) {
   var valor = formatarValor(campo, valorBruto);
   if (!valor) { log('INFO', 'Campo "' + campo + '": sem valor, pulando.'); return; }
 
-  var box = await localizarCampoBox(page, labels);
+  var box = await localizarCampoHabilitado(page, labels);
   if (!box) { log('WARN', 'Campo "' + campo + '" (rótulos: ' + labels.join(' / ') + ') não encontrado no formulário — verifique LABEL_MAP com --discover.'); return; }
-  if (box.disabled) { log('WARN', 'Campo "' + campo + '" ("' + box.label + '") está desabilitado (provável cascata — depende de outro campo escolhido antes) — pulando, a O.S. ficará sem esse valor.'); return; }
+  if (box.disabled) { log('WARN', 'Campo "' + campo + '" ("' + box.label + '") continua desabilitado mesmo após esperar a cascata — pulando, a O.S. ficará sem esse valor.'); return; }
 
   await page.mouse.click(box.x, box.y);
   await wait(400);
@@ -586,9 +611,9 @@ async function preencherTestes(page, solicitacao) {
     var mapa = TESTES_GRM_MAP[key];
     if (!mapa) { log('WARN', 'Teste "' + key + '" sem mapeamento pro campo do GRM — pulando.'); continue; }
 
-    var box = await localizarCampoBox(page, mapa.campo);
+    var box = await localizarCampoHabilitado(page, mapa.campo);
     if (!box) { log('WARN', 'Campo do teste "' + key + '" (' + mapa.campo.join('/') + ') não encontrado no formulário.'); continue; }
-    if (box.disabled) { log('WARN', 'Campo do teste "' + key + '" está desabilitado — pulando (confira se Produto foi selecionado antes).'); continue; }
+    if (box.disabled) { log('WARN', 'Campo do teste "' + key + '" continua desabilitado mesmo após esperar — pulando.'); continue; }
 
     await page.mouse.click(box.x, box.y);
     var escolhida = null;
