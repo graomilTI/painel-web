@@ -598,6 +598,32 @@ async function preencherCampo(page, campo, labels, valorBruto) {
     });
   }
 
+  // Diagnóstico temporário (11/09) — Local do Serviço/Supervisão/UF de
+  // Destino/Produto continuam caindo pro texto livre mesmo com 10s de
+  // espera, mas o MESMO clique+digitação abre a lista em <1s testado ao
+  // vivo num Chrome comum. Antes de desistir e cair pro texto livre, loga o
+  // estado exato da tela (valor real do input, quantos overlays existem,
+  // se algum tem itens mesmo sem bater no filtro `[role=option]/.v-list-
+  // item`) pra achar a causa real em vez de só aumentar timeout de novo.
+  if (!opcaoAberta) {
+    var diag = await page.evaluate(function (payload) {
+      var el = document.elementFromPoint(payload.x, payload.y);
+      var field = el && el.closest('.v-input, .v-select, .v-autocomplete, .v-field');
+      var input = field && (field.querySelector('input') || field.querySelector('textarea'));
+      var overlays = Array.from(document.querySelectorAll('.v-overlay'));
+      var overlaysAtivos = Array.from(document.querySelectorAll('.v-overlay--active'));
+      return {
+        inputValue: input ? input.value : null,
+        totalOverlays: overlays.length,
+        overlaysAtivos: overlaysAtivos.length,
+        overlaysAtivosClasses: overlaysAtivos.map(function (o) { return o.className; }),
+        fieldClasses: field ? field.className : null
+      };
+    }, { x: box.x, y: box.y });
+    log('DEBUG', 'Campo "' + campo + '" sem opção após 10s — diagnóstico: ' + JSON.stringify(diag));
+    if (DEBUG) await shot(page, 'sem-opcao-' + campo + '-' + Date.now() + '.png');
+  }
+
   if (opcaoAberta) {
     var escolhida = await selecionarOpcaoAberta(page, valor, 'substring');
     if (!escolhida) {
