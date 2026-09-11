@@ -661,11 +661,16 @@ async function main() {
         '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
         '--disable-site-isolation-trials',
       ],
-      defaultViewport: { width: 1680, height: 900 },
+      // Altura aumentada de 900 -> 2200 (mesmo fix de grm-sync-abrir-os.js,
+      // 11/09): viewport curto deixa campos das seções de baixo do diálogo
+      // Vuetify fora da área visível, então elementFromPoint(x,y) não acha
+      // nada nesses pontos mesmo com getBoundingClientRect "encontrando" o
+      // campo.
+      defaultViewport: { width: 1680, height: 2200 },
     });
     browserAtual = browser;
     const page = await browser.newPage();
-    await page.setViewport({ width: 1680, height: 900 });
+    await page.setViewport({ width: 1680, height: 2200 });
     page.setDefaultTimeout(30000);
 
     await login(page);

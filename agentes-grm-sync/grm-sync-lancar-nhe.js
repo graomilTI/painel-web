@@ -1886,7 +1886,13 @@ async function main() {
           '--disable-features=VizDisplayCompositor,AudioServiceOutOfProcess,IsolateOrigins,site-per-process',
           '--disable-site-isolation-trials'
         ],
-        defaultViewport: { width: 1600, height: 900 }
+        // Altura aumentada de 900 -> 2200 (mesmo fix aplicado em
+        // grm-sync-abrir-os.js, 11/09): com viewport curto, campos do diálogo
+        // Vuetify que ficam nas seções de baixo têm coordenadas fora da área
+        // visível — getBoundingClientRect acha o elemento mas
+        // elementFromPoint(x,y) não acerta nada nesse ponto, então o clique
+        // cai fora e o campo é tratado como "não encontrado"/desabilitado.
+        defaultViewport: { width: 1600, height: 2200 }
       });
       browserAtual = browser;
 
