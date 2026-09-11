@@ -3,6 +3,7 @@ import { getSession } from './auth.js';
 import { supabase } from './supabaseClient.js';
 import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
+import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
 
@@ -853,6 +854,29 @@ async function handleSalvarAberturaOs(content) {
       alert(`${contratoRotulo} do cliente ${payload.contratante_cliente} deve seguir o formato: ${contratoRegra.exemplo_formato}`);
       return;
     }
+  }
+
+  // Pedido do usuário (2026-09-11): perguntar já no ato de confirmar a
+  // abertura, não só depois que a O.S. existir de verdade (aquele fluxo
+  // continua em "Minhas solicitações" como reforço, ver
+  // logistica-abertura-os-informar-colaborador.js). A O.S. ainda não existe
+  // nesse momento (só vira real depois que a Logística ADM aprova e o
+  // agente cria no GRM), então não dá pra gravar em Programação agora — o
+  // resultado fica guardado em payload.raw.colaborador_inicial e uma
+  // varredura no banco (aplicar_colaboradores_iniciais_abertura_os, cron a
+  // cada poucos minutos) aplica de verdade assim que a O.S. virar CADASTRADO.
+  const querInformar = await abrirConfirmacaoSimNao({
+    titulo: 'Informar colaborador que atenderá?',
+    mensagem: 'Você já sabe quem vai atender essa O.S.? Se sim, informe o colaborador e as despesas do dia agora — assim que a O.S. for aberta no GRM, ele já aparece automaticamente em Gestor > Programação.',
+  });
+  if (querInformar) {
+    const escolha = await abrirPopupColaboradorDespesas({
+      titulo: 'Informar colaborador',
+      subtitulo: `${payload.contratante_cliente} · ${payload.armazem_embarque}`,
+      regional: payload.regional,
+      textoConfirmar: 'Salvar e enviar solicitação',
+    });
+    if (escolha) payload.raw = { colaborador_inicial: { ...escolha, aplicado: false } };
   }
 
   state.aberturaSaving = true;
