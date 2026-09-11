@@ -75,7 +75,7 @@ import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
   .then(async () => {
     applyPageIdentity();
     if (tab === 'abertura_os') {
-      await import('./logistica-abertura-os-workflow.js?v=20260910-alocarexistente1');
+      await import('./logistica-abertura-os-workflow.js?v=20260911-existentematch2');
     }
   })
   .catch(renderBootError);
