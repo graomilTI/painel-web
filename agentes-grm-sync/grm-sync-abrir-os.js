@@ -831,6 +831,17 @@ async function preencherFormulario(page, solicitacao) {
   for (var i = 0; i < LABEL_MAP.length; i++) {
     var item = LABEL_MAP[i];
     var valorCampo = solicitacao[item.campo];
+    // Quando tipo_produto não é uma classificação real do GRM (ex.:
+    // "Exportação"), ele na verdade está indicando qual VARIANTE de
+    // "Produto" escolher (ex.: "Milho Exportação" em vez de só "Milho") —
+    // confirmado ao vivo 11/09: com Produto="Milho" puro (sem a variante),
+    // mesmo com todo o resto do formulário certo, o Salvar continuava
+    // bloqueado; só passou quando testado manualmente com "Milho
+    // Exportação". Tenta a combinação primeiro; preencherCampo já cai pro
+    // texto puro se a combinação não bater com nenhuma opção real.
+    if (item.campo === 'produto' && solicitacao.tipo_produto && TIPO_PRODUTO_GRM_VALIDOS.indexOf(norm(solicitacao.tipo_produto)) === -1) {
+      valorCampo = String(valorCampo || '') + ' ' + solicitacao.tipo_produto;
+    }
     if (item.campo === 'tipo_produto' && valorCampo && TIPO_PRODUTO_GRM_VALIDOS.indexOf(norm(valorCampo)) === -1) {
       log('WARN', 'tipo_produto "' + valorCampo + '" não é uma opção válida do GRM (Tipo do Produto) — usando "Não Definido".');
       valorCampo = 'Não Definido';
