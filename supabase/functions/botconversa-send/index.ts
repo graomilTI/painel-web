@@ -180,20 +180,37 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ ok: false, error: "Método não permitido." }, 405);
 
-  const auth = await authorizeRequest(
-    req,
-    [
-      "financeiro_pagamentos",
-      "financeiro_fluxo_caixa",
-      "compras_adm",
-      "ti_contatos",
-      "hotel",
-      "hospedagem",
-      "adm_hotel",
-      "gestor_hospedagem",
-    ],
-    { requireEdit: true },
-  );
+  // Chamadas server-to-server (triggers de Postgres via net.http_post, ex.:
+  // notificar_rh_atestado_lancado, notificar_logistica_nova_abertura_os) se
+  // autenticam com o service_role_key direto no header, não com um JWT de
+  // usuário — authorizeRequest() sempre rejeitava isso com "Sessão inválida
+  // ou expirada" porque client.auth.getUser() não decodifica um
+  // service_role_key como sessão de usuário (achado ao vivo 11/09: a
+  // notificação de abertura de O.S. nunca saía, e o mesmo bug já existia
+  // silenciosamente na notificação de RH > Atestados). service_role_key só
+  // existe no servidor (nunca exposto a cliente/browser), então bater com
+  // ele aqui é seguro — equivale a "chamada interna confiável", sem precisar
+  // decodificar um JWT de usuário nem checar módulo/permissão.
+  const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const isServiceRoleCall = Boolean(serviceRoleKey) && authHeader === `Bearer ${serviceRoleKey}`;
+
+  const auth = isServiceRoleCall
+    ? { ok: true, status: 200 }
+    : await authorizeRequest(
+      req,
+      [
+        "financeiro_pagamentos",
+        "financeiro_fluxo_caixa",
+        "compras_adm",
+        "ti_contatos",
+        "hotel",
+        "hospedagem",
+        "adm_hotel",
+        "gestor_hospedagem",
+      ],
+      { requireEdit: true },
+    );
 
   // Retorna HTTP 200 para que o painel consiga exibir o motivo real da recusa.
   // A operação continua bloqueada quando não houver autorização.
