@@ -11,7 +11,7 @@ const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','P
 
 const state = {
   ctx: null,
-  tab: 'nova',
+  tab: 'hotel',
   supervisoes: [],
   colaboradoresEquipe: [],
   selecionados: new Map(), // id/cpf/nome -> colaborador
@@ -69,7 +69,7 @@ function colaboradorChave(c) {
 // ---------- "Minhas solicitações" ----------
 async function carregarMinhasSolicitacoes() {
   state.solicitacoesStatus = 'loading';
-  renderTabActive();
+  atualizarMinhasSolicitacoesUI();
   const myId = usuario().id;
   const [itens, decisoes] = await Promise.all([
     supabase.from('hospedagem_v3_itens').select('*').eq('solicitante_id', myId).order('solicitado_em', { ascending: false }).limit(500),
@@ -79,13 +79,24 @@ async function carregarMinhasSolicitacoes() {
   if (error) {
     console.warn('[hospedagem] minhas solicitações:', error);
     state.solicitacoesStatus = 'error';
-    renderTabActive();
+    atualizarMinhasSolicitacoesUI();
     return;
   }
   state.solicitacoes = data || [];
   state.checkoutDecisoes = decisoes.data || [];
   state.solicitacoesStatus = 'loaded';
-  renderTabActive();
+  atualizarMinhasSolicitacoesUI();
+}
+
+function quantidadeSolicitacoes() {
+  return new Set(state.solicitacoes.map((row) => row.solicitacao_id || row.item_id)).size;
+}
+
+function atualizarMinhasSolicitacoesUI() {
+  const conteudo = document.getElementById('hospSolicitacoesConteudo');
+  if (conteudo) conteudo.innerHTML = renderMinhasSolicitacoes();
+  const contador = document.getElementById('hospSolicitacoesCount');
+  if (contador) contador.textContent = String(quantidadeSolicitacoes());
 }
 
 function statusBadge(row) {
@@ -101,30 +112,52 @@ function renderMinhasSolicitacoes() {
   if (state.solicitacoesStatus === 'error') {
     return errorState('Não foi possível carregar suas solicitações.', { retryId: 'hospRetryMinhas' });
   }
-  const linhas = state.solicitacoes.map((row) => `
-    <tr>
-      <td><b>${esc(row.codigo_operacional || row.codigo_solicitacao || '—')}</b><br><small class="muted">${esc(brDate(row.solicitado_em))}</small></td>
-      <td>${esc(row.cidade || '—')}${row.uf ? `/${esc(row.uf)}` : ''}</td>
-      <td>${esc(brDate(row.data_checkin_prevista))} → ${esc(brDate(row.data_checkout_prevista))}</td>
-      <td style="max-width:260px"><b>${esc(row.nome_colaborador || '—')}</b>${row.motivo_recusa ? `<br><small class="muted">${esc(row.motivo_recusa)}</small>` : ''}</td>
-      <td>${statusBadge(row)}${row.hotel ? `<br><small>${esc(row.hotel)}</small>${row.hotel_localizacao ? ` · <a href="${esc(row.hotel_localizacao)}" target="_blank" rel="noopener">localização</a>` : ''}` : ''}</td>
-      <td>${state.checkoutDecisoes.find((d)=>d.solicitacao_colaborador_id===row.item_id) ? `<button type="button" class="btn btn-primary btn-sm" data-checkout-item="${esc(state.checkoutDecisoes.find((d)=>d.solicitacao_colaborador_id===row.item_id).id)}">Responder checkout</button>` : row.status_item === 'AGUARDANDO' ? `<button type="button" class="btn btn-secondary btn-sm" data-editar-solicitacao="${esc(row.solicitacao_id)}">Editar</button> <button type="button" class="btn btn-secondary btn-sm" data-cancelar-item="${esc(row.item_id)}">Cancelar</button>` : row.status_item === 'RESERVADO' ? `<button type="button" class="btn btn-secondary btn-sm" data-alterar-item="${esc(row.item_id)}">Solicitar alteração</button>` : ''}</td>
-    </tr>`).join('');
-  return `
-    <div class="hosp-note">Cada colaborador é acompanhado separadamente. Ao reservar, o hotel e sua localização aparecem aqui.</div>
-    ${table({
-      colunas: [
-        { id: 'codigo', label: 'Código' },
-        { id: 'cidade', label: 'Cidade/UF' },
-        { id: 'periodo', label: 'Período previsto' },
-        { id: 'colaboradores', label: 'Colaboradores' },
-        { id: 'status', label: 'Status' },
-        { id: 'acoes', label: 'Ações' },
-      ],
-      linhasHtml: linhas,
-      vazio: 'Você ainda não fez nenhuma solicitação de hospedagem.',
-      minWidth: 860,
-    })}`;
+  if (!state.solicitacoes.length) {
+    return emptyState('Você ainda não fez nenhuma solicitação de hospedagem.');
+  }
+
+  const grupos = new Map();
+  state.solicitacoes.forEach((row) => {
+    const chave = row.solicitacao_id || row.item_id;
+    if (!grupos.has(chave)) grupos.set(chave, []);
+    grupos.get(chave).push(row);
+  });
+
+  const acoesItem = (row) => {
+    const decisao = state.checkoutDecisoes.find((d) => d.solicitacao_colaborador_id === row.item_id);
+    if (decisao) return `<button type="button" class="btn btn-primary btn-sm" data-checkout-item="${esc(decisao.id)}">Responder checkout</button>`;
+    if (row.status_item === 'AGUARDANDO') return `<button type="button" class="btn btn-secondary btn-sm" data-editar-solicitacao="${esc(row.solicitacao_id)}">Editar</button><button type="button" class="btn btn-secondary btn-sm" data-cancelar-item="${esc(row.item_id)}">Cancelar</button>`;
+    if (row.status_item === 'RESERVADO') return `<button type="button" class="btn btn-secondary btn-sm" data-alterar-item="${esc(row.item_id)}">Solicitar alteração</button>`;
+    return '';
+  };
+
+  const cards = [...grupos.values()].map((rows) => {
+    const primeira = rows[0];
+    const codigo = primeira.codigo_solicitacao || primeira.codigo_operacional || 'Solicitação';
+    const itens = rows.map((row) => `
+      <div class="hosp-request-person">
+        <div class="hosp-person-main">
+          <strong>${esc(row.nome_colaborador || '—')}</strong>
+          <span>${esc(brDate(row.data_checkin_prevista))} → ${esc(brDate(row.data_checkout_prevista))}</span>
+          ${row.hotel ? `<span>${esc(row.hotel)}${row.hotel_localizacao ? ` · <a href="${esc(row.hotel_localizacao)}" target="_blank" rel="noopener">ver localização</a>` : ''}</span>` : ''}
+          ${row.motivo_recusa ? `<small>${esc(row.motivo_recusa)}</small>` : ''}
+        </div>
+        <div class="hosp-person-side">
+          ${statusBadge(row)}
+          <div class="hosp-row-actions">${acoesItem(row)}</div>
+        </div>
+      </div>`).join('');
+    return `
+      <article class="hosp-request-card">
+        <header>
+          <div><strong>${esc(codigo)}</strong><span>${esc(brDate(primeira.solicitado_em))}</span></div>
+          <div class="hosp-request-place">${esc(primeira.cidade || '—')}${primeira.uf ? `/${esc(primeira.uf)}` : ''}</div>
+        </header>
+        <div class="hosp-request-people">${itens}</div>
+      </article>`;
+  }).join('');
+
+  return `<div class="hosp-request-list">${cards}</div>`;
 }
 
 // ---------- "Alojamento" (informar colaborador alojado) ----------
@@ -445,7 +478,6 @@ function renderSelecionados() {
 }
 
 function renderNovaSolicitacao() {
-  const hoje = new Date().toISOString().slice(0, 10);
   return `
     <form id="hospForm" class="hosp-form">
       <div class="hosp-form-grid">
@@ -478,11 +510,6 @@ function renderNovaSolicitacao() {
         </div>
       </div>
 
-      <div class="ds-field" style="margin-top:12px">
-        <label for="hospObservacao">Observação</label>
-        <textarea id="hospObservacao" rows="3" maxlength="500" placeholder="Alguma informação importante para o administrativo?"></textarea>
-      </div>
-
       <div class="hosp-colab-picker">
         <div class="section-head" style="margin-top:16px">
           <div><h4 style="margin:0">Colaboradores *</h4><p class="muted" style="margin:4px 0 0">Digite o nome de quem vai se hospedar e clique em + pra adicionar.</p></div>
@@ -490,6 +517,11 @@ function renderNovaSolicitacao() {
         <div id="hospColabAddWrap">${renderColaboradorAdd()}</div>
         <p class="hosp-colab-hint">Depois de adicionar, informe no card abaixo a data de entrada, o horário de chegada, as diárias previstas e o sexo.</p>
         <div class="hosp-colab-selecionados" id="hospColabSelecionados">${renderSelecionados()}</div>
+      </div>
+
+      <div class="ds-field hosp-observacao-field">
+        <label for="hospObservacao">Observações</label>
+        <textarea id="hospObservacao" rows="3" maxlength="500" placeholder="Alguma informação importante para o administrativo?"></textarea>
       </div>
 
       <div class="hosp-form-actions">
@@ -503,10 +535,21 @@ function renderNovaSolicitacao() {
 function styles() {
   return `<style>
     .hosp-note{font-size:13px;color:var(--muted);margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(148,163,184,.06)}
-    .hosp-form-grid{display:grid;grid-template-columns:repeat(3,minmax(160px,1fr));gap:12px}
+    .hosp-tabs-bar{border-bottom:1px solid rgba(148,163,184,.14);margin:-4px -4px 18px;padding:0 4px}
+    .hosp-workspace{display:grid;grid-template-columns:minmax(360px,43%) minmax(460px,57%);min-height:560px;border:1px solid rgba(148,163,184,.14);border-radius:16px;overflow:hidden;background:rgba(8,14,26,.22)}
+    .hosp-pane{min-width:0;padding:22px}
+    .hosp-form-pane{border-right:1px solid rgba(148,163,184,.14);background:linear-gradient(145deg,rgba(20,83,45,.08),rgba(15,23,42,.18) 45%)}
+    .hosp-list-pane{background:rgba(15,23,42,.13)}
+    .hosp-pane-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:20px}
+    .hosp-pane-head h3{margin:0;color:#f1f7f4;font-size:18px;letter-spacing:-.01em}
+    .hosp-pane-head p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
+    .hosp-pane-kicker{display:block;margin-bottom:5px;color:#35e990;font-size:10px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+    .hosp-list-count{flex:none;min-width:32px;padding:5px 9px;border:1px solid rgba(53,233,144,.2);border-radius:999px;background:rgba(34,197,94,.08);color:#8df0ba;font-size:11px;font-weight:900;text-align:center}
+    .hosp-form-grid{display:grid;grid-template-columns:1fr;gap:12px}
     .hosp-uf-cidade-row{display:flex;gap:10px}
     .hosp-uf-cidade-row .hosp-field-uf{flex:none;width:64px}
     .hosp-uf-cidade-row .ds-field:not(.hosp-field-uf){flex:1;min-width:0}
+    .hosp-colab-picker{margin-top:18px;padding-top:18px;border-top:1px solid rgba(148,163,184,.12)}
     .hosp-colab-hint{font-size:12px;color:var(--muted);margin:8px 0}
     .hosp-colab-add-row{display:flex;gap:8px;align-items:stretch}
     .hosp-colab-add-row input{flex:1;min-width:0}
@@ -542,7 +585,7 @@ function styles() {
     #hospTabBody .btn-primary:hover{background:#35a06e}
     #hospTabBody .btn-secondary{background:rgba(15,23,42,.78)}
     #hospTabBody .btn-secondary.active{background:rgba(22,163,74,.18);border-color:rgba(22,163,74,.4)}
-    .hosp-colab-selecionados{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px;margin-top:10px;min-height:28px}
+    .hosp-colab-selecionados{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px;min-height:28px}
     .hosp-colab-draft{border:1px solid rgba(22,163,74,.35);border-radius:12px;padding:12px;background:rgba(22,163,74,.05)}
     .hosp-colab-draft header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.hosp-colab-draft header button{border:0;background:transparent;color:var(--muted);font-size:20px;cursor:pointer}
     .hosp-draft-grid{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px}
@@ -561,9 +604,21 @@ function styles() {
     .hosp-aloj-modebar{display:flex;gap:8px}
     .hosp-aloj-modebar .btn.active{background:rgba(22,163,74,.18);border-color:rgba(22,163,74,.4)}
     .hosp-aloj-toolbar input{flex:1 1 240px;min-width:180px}
+    .hosp-observacao-field{margin-top:18px}
+    .hosp-request-list{display:grid;gap:12px}
+    .hosp-request-card{overflow:hidden;border:1px solid rgba(96,165,250,.16);border-radius:14px;background:rgba(15,23,42,.48)}
+    .hosp-request-card>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(255,255,255,.018)}
+    .hosp-request-card>header>div:first-child{display:flex;align-items:baseline;gap:9px;min-width:0}
+    .hosp-request-card>header strong{color:#eef7f2;font-size:13px}.hosp-request-card>header span{color:var(--muted);font-size:11px}
+    .hosp-request-place{flex:none;color:#cfe9dc;font-size:12px;font-weight:800}
+    .hosp-request-person{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:13px 14px}
+    .hosp-request-person+.hosp-request-person{border-top:1px solid rgba(148,163,184,.1)}
+    .hosp-person-main{display:flex;min-width:0;flex-direction:column;gap:3px}.hosp-person-main strong{color:#f1f5f9;font-size:13px}.hosp-person-main span,.hosp-person-main small{color:var(--muted);font-size:11px;line-height:1.4}.hosp-person-main a{color:#71d9a2}
+    .hosp-person-side{display:flex;min-width:118px;flex-direction:column;align-items:flex-end;gap:8px}.hosp-row-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}
     .btn-sm{padding:5px 10px;font-size:12px;width:auto}
-    @media (max-width: 900px){ .hosp-form-grid{grid-template-columns:1fr 1fr} .hosp-aloj-add{grid-template-columns:1fr} }
-    @media (max-width: 600px){ .hosp-form-grid{grid-template-columns:1fr} }
+    @media (max-width: 1100px){.hosp-workspace{grid-template-columns:minmax(330px,42%) minmax(390px,58%)}.hosp-pane{padding:18px}}
+    @media (max-width: 820px){.hosp-workspace{display:block}.hosp-form-pane{border-right:0;border-bottom:1px solid rgba(148,163,184,.14)}.hosp-aloj-add{grid-template-columns:1fr}}
+    @media (max-width: 600px){.hosp-pane{padding:12px}.hosp-request-person{grid-template-columns:1fr}.hosp-person-side{align-items:flex-start}.hosp-row-actions{justify-content:flex-start}}
   </style>`;
 }
 
@@ -571,14 +626,25 @@ function styles() {
 function renderTabActive() {
   const body = document.getElementById('hospTabBody');
   if (!body) return;
-  if (state.tab === 'nova') body.innerHTML = renderNovaSolicitacao();
-  else if (state.tab === 'alojamento') body.innerHTML = renderAlojamento();
-  else body.innerHTML = renderMinhasSolicitacoes();
+  body.innerHTML = `
+    <div id="hospPanelHotel" ${state.tab === 'hotel' ? '' : 'hidden'}>
+      <div class="hosp-workspace">
+        <section class="hosp-pane hosp-form-pane" aria-labelledby="hospNovaTitle">
+          <div class="hosp-pane-head"><div><span class="hosp-pane-kicker">Hotéis</span><h3 id="hospNovaTitle">Nova solicitação</h3><p>Informe o destino e quem precisa de hospedagem.</p></div></div>
+          ${renderNovaSolicitacao()}
+        </section>
+        <section class="hosp-pane hosp-list-pane" aria-labelledby="hospEnviadasTitle">
+          <div class="hosp-pane-head"><div><span class="hosp-pane-kicker">Acompanhamento</span><h3 id="hospEnviadasTitle">Solicitações enviadas</h3><p>Acompanhe a reserva e o status de cada colaborador.</p></div><span class="hosp-list-count" id="hospSolicitacoesCount" title="Solicitações enviadas">${quantidadeSolicitacoes()}</span></div>
+          <div id="hospSolicitacoesConteudo">${renderMinhasSolicitacoes()}</div>
+        </section>
+      </div>
+    </div>
+    <div id="hospPanelAlojamento" ${state.tab === 'alojamento' ? '' : 'hidden'}>${renderAlojamento()}</div>`;
   wireTabEvents();
 }
 
 function wireTabEvents() {
-  if (state.tab === 'nova') {
+  if (state.tab === 'hotel') {
     const form = document.getElementById('hospForm');
     form?.addEventListener('submit', onSubmit);
     document.getElementById('hospColabAddBtn')?.addEventListener('click', adicionarColaboradorPorTexto);
@@ -602,7 +668,8 @@ function wireTabEvents() {
       c._hosp ||= {};
       c._hosp[field.dataset.draftField] = field.value;
     });
-  } else if (state.tab === 'alojamento') {
+  }
+  if (state.tab === 'alojamento') {
     document.getElementById('hospARetry')?.addEventListener('click', carregarAlojamentosRegional);
     document.getElementById('hospAAddBtn')?.addEventListener('click', onAdicionarAlojamento);
     document.getElementById('hospABusca')?.addEventListener('input', (e) => {
@@ -623,7 +690,8 @@ function wireTabEvents() {
       });
     });
     wireOcupantesEvents();
-  } else {
+  }
+  if (state.tab === 'hotel') {
     document.getElementById('hospRetryMinhas')?.addEventListener('click', carregarMinhasSolicitacoes);
     const tabBody = document.getElementById('hospTabBody');
     if (tabBody) tabBody.onclick = async (e) => {
@@ -762,7 +830,6 @@ async function onSubmit(event) {
   toast(`Solicitação ${data?.codigo || ''} enviada com sucesso.`, 'ok');
   state.selecionados = new Map();
   state.solicitacoesStatus = 'idle';
-  state.tab = 'minhas';
   renderShell();
   carregarMinhasSolicitacoes();
 }
@@ -772,14 +839,13 @@ function renderShell() {
   if (!content) return;
   content.innerHTML = `${styles()}
     <section class="card hosp-shell">
-      ${tabs({
+      <div class="hosp-tabs-bar">${tabs({
         itens: [
-          { id: 'nova', label: 'Nova solicitação' },
-          { id: 'minhas', label: 'Minhas solicitações' },
+          { id: 'hotel', label: 'Hotéis' },
           { id: 'alojamento', label: 'Alojamento' },
         ],
         ativo: state.tab,
-      })}
+      })}</div>
       <div id="hospTabBody" class="mt-16"></div>
     </section>`;
 
@@ -787,7 +853,7 @@ function renderShell() {
     btn.addEventListener('click', () => {
       state.tab = btn.dataset.dsTab;
       renderShell();
-      if (state.tab === 'minhas' && state.solicitacoesStatus === 'idle') carregarMinhasSolicitacoes();
+      if (state.tab === 'hotel' && state.solicitacoesStatus === 'idle') carregarMinhasSolicitacoes();
       if (state.tab === 'alojamento' && state.alojamentosStatus === 'idle') carregarAlojamentosRegional();
     });
   });
@@ -809,6 +875,7 @@ export async function renderContent(content, userContext) {
   }
   await carregarColaboradoresEquipe();
   renderShell();
+  carregarMinhasSolicitacoes();
 }
 
 initProtectedPage('Hospedagem', renderContent);
