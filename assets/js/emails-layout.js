@@ -312,8 +312,21 @@ function ensureKpis(wrap) {
   wrap.insertAdjacentHTML('afterbegin', `<div class="em-v2-kpis">${data.map(([k, l, i, a]) => `<div class="em-v2-kpi" data-accent="${a}" data-kpi="${k}" title="Clique para ver estes e-mails"><div class="em-v2-kpi-icon">${i}</div><div><div class="em-v2-kpi-label">${l}</div><div class="em-v2-kpi-value" data-kpi-value="${k}">—</div></div></div>`).join('')}</div>`);
 }
 
-function countBy(apply) {
-  const q = supabase.from('email_messages').select('id', { count: 'exact', head: true });
+// KPIs contam só a Central (escopo CENTRAL) — sem isso, um master/admin também
+// vê o total somado com a caixa pessoal do Gestor (escopo GESTOR) que ele mesmo
+// está logado, inflando "Novos"/"Pendentes" com e-mail que não é da Central.
+let centralAccountIdsCache = null;
+async function centralAccountIds() {
+  if (centralAccountIdsCache) return centralAccountIdsCache;
+  const { data } = await supabase.from('email_accounts_public').select('id').eq('escopo', 'CENTRAL');
+  centralAccountIdsCache = (data || []).map((a) => a.id);
+  return centralAccountIdsCache;
+}
+
+async function countBy(apply) {
+  const ids = await centralAccountIds();
+  if (!ids.length) return 0;
+  const q = supabase.from('email_messages').select('id', { count: 'exact', head: true }).in('account_id', ids);
   return apply(q).then(({ count }) => count ?? 0).catch(() => null);
 }
 
