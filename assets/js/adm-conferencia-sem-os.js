@@ -55,17 +55,30 @@ function lookup(rows) {
   return { id, name };
 }
 function find(map, p, c) { const i = idKey(c.colaboradorId || c.colaborador_id || c.cpf || c.id); const n = norm(c.nome || c.nome_colaborador); return map.id.get(`${p}::${i}`) || map.name.get(`${p}::${n}`) || null; }
+function lookupByDate(rows) {
+  const id = new Map(); const name = new Map();
+  for (const r of rows || []) {
+    const d = String(r.data_referencia || '').slice(0, 10); const i = idKey(r.colaborador_id || r.colaborador_cpf); const n = norm(r.colaborador_nome || r.nome_colaborador);
+    if (d && i) id.set(`${d}::${i}`, r); if (d && n) name.set(`${d}::${n}`, r);
+  }
+  return { id, name };
+}
+function findByDate(map, d, c) { const i = idKey(c.colaboradorId || c.colaborador_id || c.colaborador_cpf || c.cpf || c.id); const n = norm(c.nome || c.colaborador_nome || c.nome_colaborador); return map.id.get(`${d}::${i}`) || map.name.get(`${d}::${n}`) || null; }
 
 async function load() {
   const f = top(); let ini = f.inicio; let fim = f.fim; if (ini > fim) [ini, fim] = [fim, ini];
   const { data: programas, error } = await raw.from('programacao_dia').select('id,data_referencia,supervisao').gte('data_referencia', ini).lte('data_referencia', fim).limit(5000); if (error) throw error;
   const reg = norm(f.regional); const ps = (programas || []).filter((p) => !reg || norm(p.supervisao) === reg); const ids = ps.map((p) => p.id).filter(Boolean); if (!ids.length) return [];
-  const [sitRes, eqRes, inaRes] = await Promise.all([
+  const [sitRes, eqRes, inaRes, infRes] = await Promise.all([
     raw.from('programacao_colaboradores').select('*').in('programacao_id', ids).limit(10000),
     raw.from('programacao_equipe').select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado').in('programacao_id', ids).limit(10000),
     raw.from('programacao_inativacao_solicitacoes').select('programacao_id,colaborador_id,nome_colaborador,status').in('programacao_id', ids).eq('status', 'PENDENTE').limit(5000),
+    // É esta relação que Gestor > Programação > Sem O.S. grava ao marcar
+    // Atestado/Falta/Férias/Folga. Na prática programacao_id pode ser nulo,
+    // portanto o cruzamento correto é data + CPF/nome.
+    raw.from('programacao_indisponibilidade_informados').select('data_referencia,colaborador_id,colaborador_cpf,colaborador_nome,tipo,status').gte('data_referencia', ini).lte('data_referencia', fim).neq('status', 'CANCELADO').limit(10000),
   ]);
-  if (sitRes.error) throw sitRes.error; if (eqRes.error) throw eqRes.error;
+  if (sitRes.error) throw sitRes.error; if (eqRes.error) throw eqRes.error; if (infRes.error) throw infRes.error;
   // Replica a relação exibida em Gestor > Programação > Sem O.S. para cada
   // programação/data: somente vínculo confirmado em uma O.S. ainda ativa
   // retira o colaborador da relação. Vínculo não confirmado continua sendo
@@ -84,7 +97,7 @@ async function load() {
     osFinalizadasIds = new Set((osRows || []).filter((o) => o.status_gestor === 'FINALIZAR').map((o) => o.id));
   }
   const equipeAtivaConfirmada = equipeRows.filter((r) => r.confirmado && !osFinalizadasIds.has(r.os_id));
-  const sit = lookup(sitRes.data || []); const ina = lookup(inaRes.data || []); const byDate = new Map();
+  const sit = lookup(sitRes.data || []); const ina = lookup(inaRes.data || []); const informados = lookupByDate(infRes.data || []); const byDate = new Map();
   for (const p of ps) { const d = String(p.data_referencia || '').slice(0, 10); if (!byDate.has(d)) byDate.set(d, []); byDate.get(d).push(p); }
   const out = [];
   // O registro feito pelo gestor em "Sem O.S." e a fonte de verdade.
@@ -101,7 +114,7 @@ async function load() {
     const p = programaPorId.get(String(s.programacao_id || '')); if (!p) continue;
     const i = idKey(s.colaborador_id); const n = norm(s.nome_colaborador);
     if (vinculadoPorPrograma.has(`${p.id}::ID::${i}`) || vinculadoPorPrograma.has(`${p.id}::NOME::${n}`)) continue;
-    const inaRow = find(ina, String(p.id), s); const sc = inaRow ? 'INATIVAR' : code(s.disponibilidade);
+    const inaRow = find(ina, String(p.id), s); const informado = findByDate(informados, String(p.data_referencia || '').slice(0, 10), s); const sc = inaRow ? 'INATIVAR' : code(informado?.tipo || s.disponibilidade);
     // Sem motivo/situacao registrado pelo gestor em "Sem O.S." (nenhum botao
     // clicado) e uma decisao pendente, nao um residuo pra esconder — deve
     // aparecer como "Sem O.S." pra sinalizar que falta o gestor decidir.
@@ -115,7 +128,7 @@ async function load() {
     const pBySup = new Map(pDia.map((p) => [norm(p.supervisao), p]));
     for (const c of (candidatos || []).filter((c) => supSet.has(norm(c.supervisao)))) {
       const i = idKey(c.colaboradorId || c.colaborador_id || c.cpf || c.id); const n = norm(c.nome || c.nome_colaborador); if (cIds.has(i) || cNames.has(n)) continue;
-      const p = pBySup.get(norm(c.supervisao)); if (!p) continue; const s = find(sit, String(p.id), c); const inaRow = find(ina, String(p.id), c); const sc = inaRow ? 'INATIVAR' : code(s?.disponibilidade);
+      const p = pBySup.get(norm(c.supervisao)); if (!p) continue; const s = find(sit, String(p.id), c); const inaRow = find(ina, String(p.id), c); const informado = findByDate(informados, d, c); const sc = inaRow ? 'INATIVAR' : code(informado?.tipo || s?.disponibilidade);
       out.push({ data_referencia: d, regional: p.supervisao || c.supervisao || c.coordenacao || '-', colaborador: c.nome || c.nome_colaborador || '-', status_code: sc, status_label: labels[sc], id: i || n });
     }
   }
