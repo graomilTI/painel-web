@@ -141,7 +141,7 @@ function ensureStyles() {
   style.id = 'alojPayStyles';
   style.textContent = `
     .aloj-pay-tabs{display:inline-flex;gap:5px;padding:5px;border:1px solid rgba(74,222,128,.2);border-radius:14px;background:rgba(2,13,10,.78);margin-bottom:14px}.aloj-pay-tab{display:flex;align-items:center;gap:8px;border:0;border-radius:10px;background:transparent;color:#8fa69b;padding:10px 15px;font-weight:900;cursor:pointer}.aloj-pay-tab svg{width:17px;height:17px}.aloj-pay-tab.active{background:linear-gradient(180deg,rgba(22,101,52,.52),rgba(8,54,34,.52));color:#caffd9;box-shadow:inset 0 0 0 1px rgba(74,222,128,.2)}
-    .aloj-v2-shell.aloj-pay-mode>.aloj-v2-head,.aloj-v2-shell.aloj-pay-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-pay-mode>#alojV2List{display:none!important}.aloj-pay-panel{display:none}.aloj-v2-shell.aloj-pay-mode>.aloj-pay-panel{display:grid;gap:14px}
+    .aloj-v2-shell.aloj-pay-mode>.aloj-v2-head,.aloj-v2-shell.aloj-pay-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-pay-mode>#alojV2List,.aloj-v2-shell.aloj-buy-mode>.aloj-v2-head,.aloj-v2-shell.aloj-buy-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-buy-mode>#alojV2List{display:none!important}.aloj-pay-panel{display:none}.aloj-v2-shell.aloj-pay-mode>.aloj-pay-panel{display:grid;gap:14px}
     .aloj-pay-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px;border:1px solid rgba(74,222,128,.18);border-radius:18px;background:linear-gradient(145deg,rgba(12,31,24,.96),rgba(4,16,12,.98))}.aloj-pay-head h3{margin:4px 0;color:#f2fff7;font-size:22px}.aloj-pay-head p{margin:0;color:#8fa69b;font-size:12px}.aloj-pay-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.aloj-pay-search{min-width:280px;border:1px solid rgba(148,163,184,.14);background:#06130f;color:#ecfff4;border-radius:12px;padding:11px 13px;outline:none}.aloj-pay-primary{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(74,222,128,.34);background:linear-gradient(135deg,#15803d,#166534);color:#effff4;border-radius:12px;padding:11px 15px;font-weight:900;cursor:pointer}.aloj-pay-primary svg{width:16px;height:16px}
     .aloj-pay-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.aloj-pay-kpi{padding:14px 15px;border:1px solid rgba(74,222,128,.15);border-radius:15px;background:rgba(5,23,17,.72)}.aloj-pay-kpi span{display:block;color:#83998f;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.aloj-pay-kpi strong{display:block;color:#f2fff7;font-size:21px;margin-top:6px}.aloj-pay-kpi small{display:block;color:#63e993;font-size:10px;margin-top:5px}
     .aloj-pay-filter{display:flex;gap:7px;flex-wrap:wrap}.aloj-pay-filter button{border:1px solid rgba(148,163,184,.14);background:#071611;color:#9eb2a9;border-radius:999px;padding:8px 12px;font-size:11px;font-weight:900;cursor:pointer}.aloj-pay-filter button.active{border-color:rgba(74,222,128,.4);background:rgba(22,101,52,.3);color:#baffcf}
@@ -156,6 +156,7 @@ function ensureStyles() {
 function navHtml() {
   return `<div class="aloj-pay-tabs" role="tablist">
     <button type="button" class="aloj-pay-tab active" data-aloj-pay-mode="cadastro">${icon('list')} Alojamentos</button>
+    <button type="button" class="aloj-pay-tab" data-aloj-pay-mode="compras">${icon('plus')} Compras <span id="alojBuyPendingBadge"></span></button>
     <button type="button" class="aloj-pay-tab" data-aloj-pay-mode="pagamentos">${icon('pay')} Pagamentos <span id="alojPayPendingBadge"></span></button>
   </div>`;
 }
@@ -176,11 +177,13 @@ function modalHtml() {
 }
 
 function setMode(mode) {
-  state.mode = mode === 'pagamentos' ? 'pagamentos' : 'cadastro';
+  state.mode = ['pagamentos','compras'].includes(mode) ? mode : 'cadastro';
   const shell = $('.aloj-v2-shell');
   shell?.classList.toggle('aloj-pay-mode', state.mode === 'pagamentos');
+  shell?.classList.toggle('aloj-buy-mode', state.mode === 'compras');
   document.querySelectorAll('[data-aloj-pay-mode]').forEach((button) => button.classList.toggle('active', button.dataset.alojPayMode === state.mode));
   if (state.mode === 'pagamentos') loadData();
+  if (state.mode === 'compras') window.dispatchEvent(new CustomEvent('alojamentos:compras'));
 }
 
 function updateSelect() {

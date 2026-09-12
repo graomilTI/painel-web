@@ -539,22 +539,8 @@ function renderTestesBlock() {
 function renderAbrirOsTab() {
   if (state.aberturaLoading) return `<section class="card mt-16"><p class="muted" style="padding:16px">Carregando abertura de O.S...</p></section>`;
 
-  const opts = (arr) => arr.map(v => `<option value="${esc(v)}"></option>`).join('');
-  const pendentes = state.aberturaRows.filter(r => String(r.status || 'PENDENTE') === 'PENDENTE').length;
-  const cadastradas = state.aberturaRows.filter(r => String(r.status || '') === 'CADASTRADO').length;
-
   return `
     <section class="card mt-16">
-      <div class="section-head" style="margin-bottom:10px">
-        <h3 style="margin:0">Abrir OS</h3>
-        <button class="btn btn-secondary" id="abrirOsReload" type="button" onclick="location.reload()">↻ Atualizar</button>
-      </div>
-
-      <div class="fob-kpis">
-        <div class="fob-kpi"><strong>${pendentes}</strong><span>Aguardando ADM</span></div>
-        <div class="fob-kpi ok"><strong>${cadastradas}</strong><span>Cadastradas</span></div>
-      </div>
-
       <datalist id="abrirOsArmazens">${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
       <datalist id="abrirOsLocaisDestino">${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
       <datalist id="abrirOsCidadesEmbarque">${cidadesDaUf(state.aberturaUfEmbarque).map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>

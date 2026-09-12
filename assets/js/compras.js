@@ -7,9 +7,10 @@ async function loadCatalogo(){
   CATALOGO = await safe(()=>supabase.from('compras_catalogo').select('material,tipo,observacao').eq('ativo',true).order('material'));
 }
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
+const ALOJAMENTO_MATERIAIS = ['BELICHE','CAMA','COLCHÃO','LENÇOL','FRONHA','TRAVESSEIRO','COBERTOR','ARMÁRIO','PRATELEIRA','MESA','CADEIRA','VENTILADOR','CORTINA','VARAL','UTENSÍLIOS DE COZINHA'];
 const UF_LIST = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[] };
+const state = { mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[], alojamentoItens:[] };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return y&&m&&d?`${d}/${m}/${y}`:'-'; };
@@ -56,8 +57,8 @@ function uniformeCorOptions(value){
 function uniformeTamanhoOptions(value){
   return UNIFORME_TAMANHOS.map(t=>`<option value="${t}"${t===value?' selected':''}>${t}</option>`).join('');
 }
-async function notifyCompras(message){
-  const cfgs = await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor','COMPRAS').eq('ativo',true).limit(10));
+async function notifyCompras(message, setor='COMPRAS'){
+  const cfgs = await safe(()=>supabase.from('compras_notificacoes_config').select('*').eq('setor',setor).eq('ativo',true).limit(10));
   if(!cfgs.length) return {ok:false,msg:'Solicitação salva. Nenhum responsável configurado em compras_notificacoes_config.'};
   let ok=0;
   for(const cfg of cfgs){
@@ -380,6 +381,31 @@ function renderItensList(){
     renderItensList();
   });
 }
+function renderAlojamentoItens(){
+  const body=document.getElementById('cmpAlojBody');
+  if(!body) return;
+  body.innerHTML=state.alojamentoItens.length?state.alojamentoItens.map(i=>`<tr data-aloj-item-id="${esc(i._id)}"><td data-label="Un.">${esc(i.quantidade)}</td><td data-label="Item"><strong>${esc(i.material)}</strong></td><td data-label="Especificação">${esc(i.tamanho||'—')}</td><td><button class="btn btn-small btn-danger" type="button" data-del-aloj-item>Remover</button></td></tr>`).join(''):'<tr><td colspan="4" class="cmp-empty">Nenhum item de alojamento adicionado.</td></tr>';
+  body.querySelectorAll('[data-del-aloj-item]').forEach(btn=>btn.onclick=()=>{
+    const id=btn.closest('tr').dataset.alojItemId;
+    state.alojamentoItens=state.alojamentoItens.filter(i=>String(i._id)!==String(id));
+    renderAlojamentoItens();
+  });
+}
+function bindAlojamentoForm(){
+  const select=document.getElementById('cmpAlojMaterial');
+  const outro=document.getElementById('cmpAlojOutro');
+  const syncOutro=()=>{const custom=select.value==='OUTRO';outro.hidden=!custom;outro.required=custom;if(!custom)outro.value='';};
+  select.onchange=syncOutro;
+  syncOutro();
+  document.getElementById('cmpAddAlojamento').onclick=()=>{
+    const material=(select.value==='OUTRO'?outro.value:select.value).trim().toUpperCase();
+    const quantidade=Math.max(1,Number(document.getElementById('cmpAlojQtd').value||1));
+    const detalhe=document.getElementById('cmpAlojDetalhe').value.trim();
+    if(!material){setMsg('cmpFeedback','Selecione ou informe o item de alojamento.',true);return;}
+    state.alojamentoItens.push({_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:quantidade,quantidade,material,tipo:'Alojamento',tamanho:detalhe||null});
+    select.value='';outro.value='';document.getElementById('cmpAlojQtd').value=1;document.getElementById('cmpAlojDetalhe').value='';syncOutro();renderAlojamentoItens();setMsg('cmpFeedback','Item de alojamento adicionado.');
+  };
+}
 function uniformRow(c){
   const cor=c._uniformeCor||'Verde';
   const tamanho=c._uniformeTamanho||'M';
@@ -473,6 +499,9 @@ async function insertSolicitacaoComCompatibilidade(header){
 async function salvarSolicitacao(ctx, tipo, itens){
   const u=usuario(ctx); const data=document.getElementById('cmpData').value || today();
   if(data < today()) throw new Error('A data da solicitação não pode ser anterior à data atual.');
+  const observacaoLivre=document.getElementById('cmpObs').value.trim();
+  const alojamentoDestino=tipo==='Alojamento'?document.getElementById('cmpAlojDestino')?.value.trim():'';
+  const observacoes=alojamentoDestino?[`Alojamento: ${alojamentoDestino}`,observacaoLivre].filter(Boolean).join('\n'):observacaoLivre;
   const header={
     data_solicitacao:data,
     solicitante_id:u.id||null,
@@ -482,7 +511,7 @@ async function salvarSolicitacao(ctx, tipo, itens){
     status:'pendente',
     cidade:document.getElementById('cmpCidade')?.value.trim()||null,
     uf:document.getElementById('cmpUf')?.value||null,
-    observacoes:document.getElementById('cmpObs').value.trim()||null,
+    observacoes:observacoes||null,
     fornecedor:document.getElementById('cmpFornecedor')?.value.trim()||null,
     telefone_fornecedor:document.getElementById('cmpTelFornecedor')?.value.replace(/\D/g,'')||null,
     created_by:u.id||null
@@ -523,6 +552,17 @@ async function submitUniformes(ctx){
   const itens=rows.map(tr=>{ const c=state.uniformes.find(x=>colaboradorKey(x)===tr.dataset.uniformeId) || {}; const qtd=Math.min(2,Math.max(1,Number(tr.querySelector('.uni-qtd').value||1))); return {unidade:qtd, quantidade:qtd, material:'UNIFORME', tipo:'Uniforme', tamanho:tr.querySelector('.uni-tam')?.value||c._uniformeTamanho||'M', colaborador_id:c.id||null, colaborador_nome:c.nome||'', colaborador_tipo:c.tipo||c.cargo||'', uniforme_cor:tr.querySelector('.uni-cor')?.value||c._uniformeCor||'Verde'}; });
   if(!itens.length) throw new Error('Adicione pelo menos um colaborador.');
   await salvarSolicitacao(ctx,'uniformes',itens);
+  return itens;
+}
+async function submitAlojamento(ctx){
+  const destino=document.getElementById('cmpAlojDestino')?.value.trim();
+  const cidade=document.getElementById('cmpCidade')?.value.trim();
+  const uf=document.getElementById('cmpUf')?.value;
+  if(!destino) throw new Error('Informe o alojamento ou local de destino.');
+  if(!cidade||!uf) throw new Error('Informe a cidade e a UF do alojamento.');
+  const itens=state.alojamentoItens.filter(i=>i.material).map(({_id,...item})=>item);
+  if(!itens.length) throw new Error('Adicione pelo menos um item para o alojamento.');
+  await salvarSolicitacao(ctx,'Alojamento',itens);
   return itens;
 }
 async function loadMinhas(userId){
@@ -581,8 +621,9 @@ function styles(){return `<style>
 body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;background:rgba(1,10,7,.8);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:9999;display:none;align-items:center;justify-content:center;padding:clamp(12px,3vw,32px)}.cmp-cel-modal.open{display:flex;animation:cmpBackdropIn .18s ease-out}.cmp-cel-card{width:min(600px,100%);max-height:min(90vh,780px);overflow:hidden;background:linear-gradient(155deg,#0d271d 0%,#071711 72%);border:1px solid rgba(111,208,165,.28);border-radius:24px;color:var(--text);box-shadow:0 28px 90px rgba(0,0,0,.58),inset 0 1px rgba(255,255,255,.04);animation:cmpDialogIn .24s cubic-bezier(.2,.8,.2,1)}.cmp-dialog-wide{width:min(760px,100%)}.cmp-dialog-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:22px 22px 18px;border-bottom:1px solid rgba(111,208,165,.14);background:linear-gradient(110deg,rgba(35,105,72,.24),transparent 68%)}.cmp-dialog-title{display:flex;align-items:flex-start;gap:13px}.cmp-dialog-icon{display:grid;place-items:center;flex:0 0 40px;height:40px;border-radius:13px;background:rgba(73,194,139,.14);border:1px solid rgba(111,208,165,.25);color:#8ee0b8;font-size:19px}.cmp-dialog-title small{display:block;color:#70c99d;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.11em;margin:0 0 4px}.cmp-dialog-title h3{margin:0;color:#f2fff8;font-size:21px;line-height:1.15}.cmp-dialog-title p{margin:6px 0 0;color:#9fb9ac;font-size:13px;line-height:1.45}.cmp-dialog-close{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:12px;border:1px solid rgba(148,163,184,.2);background:rgba(3,17,12,.62);color:#b9cec3;font-size:24px;line-height:1;cursor:pointer;transition:.18s ease}.cmp-dialog-close:hover,.cmp-dialog-close:focus-visible{color:#fff;background:rgba(220,38,38,.18);border-color:rgba(248,113,113,.35);outline:none;transform:rotate(4deg)}.cmp-dialog-body{padding:22px;overflow:auto;max-height:calc(min(90vh,780px) - 165px);scrollbar-color:#367d5c transparent}.cmp-dialog-footer{display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:16px 22px 20px;border-top:1px solid rgba(111,208,165,.14);background:rgba(3,14,10,.56)}.cmp-dialog-footer .cmp-feedback{margin-right:auto}.cmp-dialog-footer .btn{width:auto!important;margin:0!important;min-height:42px;padding-inline:18px!important}.cmp-dialog-list{display:grid;gap:8px;margin-bottom:18px}.cmp-dialog-list-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:11px 13px;border:1px solid rgba(111,208,165,.15);border-radius:13px;background:rgba(8,31,22,.58);font-size:13px}.cmp-dialog-subcard{background:linear-gradient(145deg,rgba(14,46,33,.75),rgba(5,22,15,.72));border:1px solid rgba(111,208,165,.18);border-radius:17px;padding:17px;margin-bottom:18px}@keyframes cmpBackdropIn{from{opacity:0}to{opacity:1}}@keyframes cmpDialogIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
 .cmp-workspace{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:16px;align-items:start}.cmp-request-card,.cmp-history-card{min-width:0}.cmp-request-card{position:sticky;top:16px}.cmp-request-card .section-head{align-items:flex-start;flex-direction:column}.cmp-request-card .cmp-tabs{order:-1}.cmp-request-card .cmp-grid{grid-template-columns:1fr}.cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) 110px}.cmp-request-card .cmp-add-box .cmp-field:nth-child(1){grid-column:1}.cmp-request-card .cmp-add-box .cmp-field:nth-child(2){grid-column:2/4}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3){grid-column:1/3}.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:3}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-request-card .cmp-add-action label{display:none}.cmp-request-card .cmp-add-action .btn,.cmp-request-card #cmpSolicitar{width:100%}.cmp-request-card .cmp-table{min-width:560px}.cmp-request-card .cmp-table-wrap{max-height:260px}.cmp-request-card #panel-uniformes .cmp-actions{display:grid}.cmp-request-card #panel-uniformes .cmp-field{min-width:0!important}.cmp-history-head{align-items:flex-end}.cmp-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.cmp-history-filter{width:auto!important;margin:0!important;border-radius:999px!important;padding:8px 16px!important}.cmp-history-filter.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;border-color:var(--green-2)!important;color:#f0fff7!important}.cmp-history-card .cmp-table-wrap{border-radius:16px}.cmp-history-card .cmp-table td{padding-top:16px;padding-bottom:16px}.cmp-items-cell{display:grid;gap:5px}.cmp-items-cell span{display:block}.cmp-items-cell small{color:var(--muted);margin-left:4px}.cmp-request-card .form-actions{display:grid;gap:10px}.cmp-feedback{line-height:1.45}
 .cmp-uniforme-add{display:grid;grid-template-columns:minmax(0,1fr) 82px 90px;gap:10px;align-items:end}.cmp-uniforme-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.cmp-uniforme-actions .btn{width:100%;margin:0!important;padding-inline:10px!important}
+.cmp-aloj-intro{display:flex;gap:11px;align-items:flex-start;margin-bottom:14px;padding:12px 13px;border:1px solid rgba(74,222,128,.17);border-radius:13px;background:rgba(22,101,52,.08);color:#a8c8b8;font-size:12px;line-height:1.45}.cmp-aloj-intro strong{display:block;color:#d9fbe8;margin-bottom:2px}.cmp-aloj-icon{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:rgba(74,222,128,.12);color:#75e2a7;font-size:17px}.cmp-aloj-destino{margin-bottom:12px}.cmp-aloj-add{display:grid;grid-template-columns:76px minmax(130px,1fr) minmax(130px,1fr) auto;gap:10px;align-items:end}.cmp-aloj-add .btn{white-space:nowrap}.cmp-aloj-outro[hidden]{display:none}.cmp-aloj-table{margin-top:14px}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
-@media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}}
+@media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}.cmp-aloj-add{grid-template-columns:76px 1fr}.cmp-aloj-add .cmp-field:nth-child(3){grid-column:1/-1}.cmp-aloj-add .cmp-add-action{grid-column:1/-1}}
 @media(max-width:960px){.cmp-workspace{grid-template-columns:1fr}.cmp-request-card{position:static}.cmp-request-card .cmp-add-box{grid-template-columns:90px minmax(0,1fr) 130px}.cmp-history-head{align-items:flex-start}}
 @media(max-width:760px){
   .cmp-workspace,.cmp-request-card,#panel-uniformes{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
@@ -626,7 +667,7 @@ async function renderSolicitacaoTab(content, userContext){
   await loadColaboradores();
   await loadCatalogo();
   content.innerHTML=`${styles()}
-  <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button></div></div>
+  <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
     <input id="cmpObs" type="hidden" value="">
     <div class="cmp-add-box cmp-header-box">
       <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
@@ -644,11 +685,22 @@ async function renderSolicitacaoTab(content, userContext){
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-alojamento" class="cmp-panel mt-16">
+      <div class="cmp-aloj-intro"><span class="cmp-aloj-icon" aria-hidden="true">⌂</span><div><strong>Compras para alojamento</strong>Beliches, camas, enxoval, prateleiras e demais itens serão enviados diretamente para Hospedagem &gt; Alojamentos.</div></div>
+      <div class="cmp-field cmp-aloj-destino"><label>Alojamento ou local de destino *</label><input id="cmpAlojDestino" type="text" maxlength="140" placeholder="Ex.: Alojamento Rondonópolis Centro"></div>
+      <div class="cmp-aloj-add">
+        <div class="cmp-field"><label>Un.</label><input id="cmpAlojQtd" type="number" min="1" value="1"></div>
+        <div class="cmp-field"><label>Item</label><select id="cmpAlojMaterial"><option value="">Selecione</option>${ALOJAMENTO_MATERIAIS.map(item=>`<option value="${item}">${item}</option>`).join('')}<option value="OUTRO">Outro item...</option></select><input class="cmp-aloj-outro" id="cmpAlojOutro" maxlength="120" placeholder="Nome do item" hidden></div>
+        <div class="cmp-field"><label>Medida / especificação</label><input id="cmpAlojDetalhe" maxlength="120" placeholder="Ex.: solteiro, 90 cm, cor branca"></div>
+        <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddAlojamento" type="button">Adicionar item</button></div>
+      </div>
+      <div class="cmp-table-wrap cmp-aloj-table"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Especificação</th><th></th></tr></thead><tbody id="cmpAlojBody"></tbody></table></div>
+    </div>
     <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
   <section class="card cmp-history-card"><div class="section-head cmp-history-head" style="margin-bottom:12px"><div><h3 style="margin:0">Pendentes e histórico</h3><p class="muted" style="margin:2px 0 0">Acompanhe o andamento. Uniformes podem ser ajustados até o fechamento da solicitação.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><span class="cmp-feedback cmp-history-feedback" id="cmpHistoryFeedback"></span><div class="cmp-history-filters"><button class="btn btn-secondary cmp-history-filter active" data-history-filter="pendentes" type="button">Pendentes</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="concluidos" type="button">Concluídos</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="cancelados" type="button">Cancelados</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section></div>`;
-  state.itens=[]; bindItemForm(); renderItensList(); renderUniformes(); setupColabSearch();
+  state.itens=[]; state.alojamentoItens=[]; bindItemForm(); bindAlojamentoForm(); renderItensList(); renderUniformes(); renderAlojamentoItens(); setupColabSearch();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.querySelectorAll('[data-history-filter]').forEach(btn=>btn.onclick=()=>{ state.historyFilter=btn.dataset.historyFilter; renderMinhas(); });
   const userId=usuario(userContext).id||null;
@@ -658,12 +710,16 @@ async function renderSolicitacaoTab(content, userContext){
     btn.disabled=true;
     try{
       setMsg('cmpFeedback','Salvando solicitação...');
-      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):await submitUniformes(userContext);
-      const n=await notifyCompras(buildMessage(userContext,state.mode,itens));
+      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):state.mode==='uniformes'?await submitUniformes(userContext):await submitAlojamento(userContext);
+      const n=state.mode==='alojamento'
+        ? {ok:true,msg:'Pedido disponível em Hospedagem > Alojamentos > Compras.'}
+        : await notifyCompras(buildMessage(userContext,state.mode,itens));
       setMsg('cmpFeedback',`Solicitação enviada. ${n.msg}`,!n.ok);
       document.getElementById('cmpObs').value='';
       state.itens=[]; renderItensList();
       state.uniformes=[]; renderUniformes();
+      state.alojamentoItens=[]; renderAlojamentoItens();
+      const alojDestino=document.getElementById('cmpAlojDestino');if(alojDestino)alojDestino.value='';
       await loadMinhas(userId);
     }catch(e){ setMsg('cmpFeedback',e.message||'Erro ao solicitar.',true); }
     finally{ btn.disabled=false; }
