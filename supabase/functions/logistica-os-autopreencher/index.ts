@@ -181,7 +181,15 @@ Retorne SOMENTE JSON válido, sem markdown, com exatamente estes campos:
   "troca_notas": "",
   "testes": []
 }
-Regras: não invente dados; use string vazia quando não localizar; volume_inicial deve ser número em toneladas; troca_notas deve ser SIM, NAO ou vazio; preserve nomes de clientes, locais, cidades, contratos e supervisões como aparecem no documento.
+Regras: não invente dados; use string vazia quando não localizar; volume_inicial deve ser número em toneladas (se o documento escrever "2.000" ou "15.000", o ponto é separador de milhar — o número é 2000/15000, não 2 ou 15); troca_notas deve ser SIM, NAO ou vazio; preserve nomes de clientes, locais, cidades, contratos e supervisões como aparecem no documento.
+Regras para templates de "LIBERAÇÃO DE EMBARQUE" (comum em e-mails de Cargill/cooperativas):
+- "Cliente:" no topo é sempre contratante_cliente, mesmo que outra empresa apareça depois nos dados de faturamento.
+- "Dados emissão notas fiscais" ou "Frete por conta" indicam a empresa que fatura de verdade — isso é filial_pagadora (Cliente Final no GRM), MESMO quando é uma empresa diferente do "Cliente:" declarado (ex.: Cliente=COTRIJAL, mas NF/frete emitidos por CARGILL AGRÍCOLA S/A → filial_pagadora="CARGILL AGRÍCOLA S/A").
+- "Embarque referente ao contrato" é numero_contrato.
+- "Instrução de carregamento de" é produto.
+- "Da sua unidade de" é armazem_embarque (o local físico de retirada).
+- "Endereço retirada" é cidade_embarque.
+- "Valor saca", "Classificação" e "Transportadora(s) autorizada(s)" não correspondem a nenhum campo — ignore.
 Regras para "testes" (array de strings, só os valores abaixo, vazio se não mencionado): o teste válido depende do produto.
 - Se produto for Milho ou Sorgo e o documento mencionar teste de Aflatoxina: use "AFLATOXINA_QUALITATIVO", "AFLATOXINA_QUANTITATIVO" ou "AFLATOXINA_QUALI_QUANTI" (qualitativo e quantitativo juntos).
 - Se produto for Soja: use "INTACTA" e/ou "GMO_FREE" se mencionados (pode ter os dois).
@@ -388,6 +396,9 @@ function parseNumber(value: unknown): number | null {
   if (!text) return null;
   if (text.includes(",") && text.includes(".")) text = text.lastIndexOf(",") > text.lastIndexOf(".") ? text.replace(/\./g, "").replace(",", ".") : text.replace(/,/g, "");
   else if (text.includes(",")) text = text.replace(/\./g, "").replace(",", ".");
+  // Só ponto, em grupos de 3 dígitos (ex. "2.000", "15.000"): separador de
+  // milhar padrão BR, não decimal — sem isso Number("2.000") vira 2.
+  else if (/^\d{1,3}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, "");
   const number = Number(text);
   return Number.isFinite(number) ? number : null;
 }
@@ -425,7 +436,7 @@ function inferTestes(text: string, produto: string): string[] {
 
 function structure(text: string): Campos {
   const source = lines(text);
-  let produto = extract(source, ["Produto", "Cultura", "Mercadoria"]);
+  let produto = extract(source, ["Produto", "Cultura", "Mercadoria", "Instrução de carregamento de", "Instrucao de carregamento de"]);
   if (!produto) produto = infer(text, ["Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
   let tipoProduto = extract(source, ["Tipo de produto", "Tipo produto", "Tecnologia", "Variedade"]);
   if (!tipoProduto) tipoProduto = infer(text, ["Aflatoxina Negativo", "Declarado Intacta", "Intacta Negativo", "Intacta Positivo", "Não Definido", "OS com teste", "Participante", "Transgênico", "Convencional"]);
@@ -436,17 +447,22 @@ function structure(text: string): Campos {
   return normalizeCampos({
     testes: inferTestes(text, produto),
     contratante_cliente: extract(source, ["Contratante / Cliente", "Contratante", "Cliente nacional", "Cliente"], ["cliente final", "filial", "cidade"]),
-    filial_pagadora: extract(source, ["Filial pagadora", "Cliente final / filial", "Cliente final", "Filial"]),
+    // "Dados emissão notas fiscais"/"Frete por conta" vêm do template
+    // "LIBERAÇÃO DE EMBARQUE" (Cargill/coops): a empresa que emite a NF ou
+    // paga o frete é o Cliente Final/filial pagadora de verdade no GRM,
+    // mesmo quando o "Cliente:" do topo do e-mail é outra empresa (ex.:
+    // Cliente=COTRIJAL, NF/frete=CARGILL — O.S. 92511 real).
+    filial_pagadora: extract(source, ["Filial pagadora", "Cliente final / filial", "Cliente final", "Dados emissão notas fiscais", "Dados emissao notas fiscais", "Frete por conta", "Filial"]),
     produtor: extract(source, ["Produtor", "Nome do produtor"]),
-    armazem_embarque: extract(source, ["Armazém de embarque", "Armazem de embarque", "Local de embarque", "Ponto de embarque"]),
-    cidade_embarque: extract(source, ["Cidade de embarque", "Município de embarque", "Municipio de embarque", "Origem cidade"]),
+    armazem_embarque: extract(source, ["Armazém de embarque", "Armazem de embarque", "Local de embarque", "Ponto de embarque", "Da sua unidade de", "Unidade de embarque"]),
+    cidade_embarque: extract(source, ["Cidade de embarque", "Município de embarque", "Municipio de embarque", "Origem cidade", "Endereço retirada", "Endereco retirada"]),
     cidade_destino: extract(source, ["Cidade destino", "Cidade de destino", "Município destino", "Municipio destino"]),
     local_destino: extract(source, ["Local de destino", "Destino final", "Ponto de destino"]),
-    numero_contrato: extract(source, ["Número contrato", "Numero contrato", "Nº contrato", "Contrato"]),
+    numero_contrato: extract(source, ["Número contrato", "Numero contrato", "Nº contrato", "Embarque referente ao contrato", "Contrato"]),
     produto,
     tipo_produto: tipoProduto,
     servico,
-    volume_inicial: parseNumber(extract(source, ["Volume inicial (Tons)", "Volume inicial", "Volume", "Quantidade", "Toneladas"])),
+    volume_inicial: parseNumber(extract(source, ["Volume inicial (Tons)", "Volume inicial", "Volume(Ton)", "Volume (Ton)", "Volume", "Quantidade", "Toneladas"])),
     regional: extract(source, ["Supervisão", "Supervisao", "Regional", "Coordenação", "Coordenacao"]),
     troca_notas: trocaNotas,
   });
