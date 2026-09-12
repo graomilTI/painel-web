@@ -23,17 +23,23 @@ const KEYS = [
 
 const FIELD_ALIASES = [
   ['contratante_cliente', ['contratante / cliente', 'cliente contratante', 'contratante', 'cliente nacional', 'cliente']],
-  ['filial_pagadora', ['filial pagadora', 'cliente final / filial', 'cliente final', 'filial']],
+  // "dados emissao notas fiscais"/"emissao das notas fiscais" e "frete por
+  // conta" vêm do template "LIBERAÇÃO DE EMBARQUE" (visto ao vivo em e-mails
+  // Cargill/coops): quem emite a NF ou paga o frete é o Cliente Final/filial
+  // pagadora de verdade no GRM, mesmo quando o "CLIENTE:" declarado no topo
+  // do e-mail é outra empresa (ex.: CLIENTE=COTRIJAL, NF/frete=CARGILL —
+  // ver [[painel-web-abrir-os-endpoint-capturado]], O.S. 92511 real).
+  ['filial_pagadora', ['filial pagadora', 'cliente final / filial', 'cliente final', 'dados emissao notas fiscais', 'dados emissão notas fiscais', 'emissao das notas fiscais', 'emissão das notas fiscais', 'frete por conta', 'filial']],
   ['produtor', ['nome do produtor', 'produtor']],
-  ['armazem_embarque', ['armazem de embarque', 'armazém de embarque', 'local de embarque', 'ponto de embarque', 'fazenda de origem', 'origem']],
-  ['cidade_embarque', ['cidade de embarque', 'cidade embarque', 'municipio de embarque', 'município de embarque', 'cidade origem', 'municipio origem', 'município origem']],
+  ['armazem_embarque', ['armazem de embarque', 'armazém de embarque', 'local de embarque', 'ponto de embarque', 'fazenda de origem', 'da sua unidade de', 'sua unidade de', 'unidade de embarque', 'origem']],
+  ['cidade_embarque', ['cidade de embarque', 'cidade embarque', 'municipio de embarque', 'município de embarque', 'cidade origem', 'municipio origem', 'município origem', 'endereco retirada', 'endereço retirada', 'retirada']],
   ['cidade_destino', ['cidade de destino', 'cidade destino', 'municipio de destino', 'município de destino', 'municipio destino', 'município destino']],
   ['local_destino', ['local de destino', 'local destino', 'destino final', 'ponto de destino', 'porto destino']],
-  ['numero_contrato', ['numero do contrato', 'número do contrato', 'numero contrato', 'número contrato', 'nº contrato', 'n° contrato', 'contrato']],
+  ['numero_contrato', ['numero do contrato', 'número do contrato', 'numero contrato', 'número contrato', 'nº contrato', 'n° contrato', 'embarque referente ao contrato', 'contrato']],
   ['tipo_produto', ['tipo de produto', 'tipo produto', 'tecnologia do produto', 'tecnologia', 'variedade']],
-  ['produto', ['produto', 'cultura', 'mercadoria', 'grao', 'grão']],
+  ['produto', ['instrucao de carregamento de', 'instrução de carregamento de', 'produto', 'cultura', 'mercadoria', 'grao', 'grão']],
   ['servico', ['tipo de servico', 'tipo de serviço', 'servico', 'serviço', 'operacao', 'operação']],
-  ['volume_inicial', ['volume inicial (tons)', 'volume inicial tons', 'volume inicial', 'volume em tons', 'volume', 'quantidade tons', 'toneladas']],
+  ['volume_inicial', ['volume inicial (tons)', 'volume inicial tons', 'volume inicial', 'volume em tons', 'volume(ton)', 'volume (ton)', 'volume(tons)', 'volume (tons)', 'volume', 'quantidade tons', 'toneladas']],
   ['regional', ['supervisao', 'supervisão', 'regional', 'coordenacao', 'coordenação']],
   ['troca_notas', ['troca de notas', 'troca notas', 'troca de nf', 'troca nf', 'troca nfe']],
 ];
@@ -166,6 +172,12 @@ function parseNumber(value) {
       : text.replace(/,/g, '');
   } else if (text.includes(',')) {
     text = text.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(text)) {
+    // Só ponto, em grupos de 3 dígitos (ex. "2.000", "15.000"): separador de
+    // milhar padrão BR, não decimal. Sem isso, Number("2.000") vira 2 em vez
+    // de 2000 — bug real visto num e-mail de liberação de embarque (volume
+    // "2.000" tons virando "2" tons no formulário).
+    text = text.replace(/\./g, '');
   }
   const number = Number(text);
   return Number.isFinite(number) ? number : null;
@@ -332,11 +344,12 @@ Interpretation rules:
 - ORIGEM, fazenda, armazém or ponto de origem normally means armazem_embarque, not cidade_embarque.
 - Keep cidade_embarque and cidade_destino separate from local/armazém.
 - Preserve leading zeroes in numero_contrato.
-- volume_inicial is a number in tons.
+- volume_inicial is a number in tons. Brazilian formatting: "2.000" or "15.000" means 2000/15000 (dot is a thousands separator), not 2 or 15.
 - troca_notas must be SIM, NAO, or empty.
 - Canonical tipo_produto options: Aflatoxina Negativo, Convencional, Declarado Intacta, Intacta Negativo, Intacta Positivo, Não Definido, OS com teste, Participante, Transgênico.
 - Canonical servico options: FOB, CIF, AUDITORIA, CLASSIFICAÇÃO TRANSB. SAÍDA, ACOMPANHAMENTO DE EMBARQUE, CLASSIFICAÇÃO TRANSB. ENTRADA.
 - Phrases such as "Intacta declarada", "declarada Intacta" or "Intacta declarada NF" map to "Declarado Intacta".
+- "LIBERAÇÃO DE EMBARQUE" templates (common in Cargill/cooperativa forwarded e-mails): "Cliente:" at the top is always contratante_cliente. "Dados emissão notas fiscais" or "Frete por conta" name the company that actually invoices/pays — that is filial_pagadora, even when it differs from the "Cliente:" at the top (e.g. Cliente=COTRIJAL but NF/frete=CARGILL AGRÍCOLA S/A → filial_pagadora="CARGILL AGRÍCOLA S/A"). "Embarque referente ao contrato" is numero_contrato. "Instrução de carregamento de" is produto. "Da sua unidade de" is armazem_embarque. "Endereço retirada" is cidade_embarque. "Valor saca", "Classificação" and "Transportadora(s) autorizada(s)" map to no field — ignore them.
 
 SOURCE TEXT:
 ${String(text).slice(0, 12000)}`;
