@@ -35,10 +35,15 @@ style.textContent = `
   /* Conferência = só os laudos anexados: esconde o resumo operacional (Cargas/FOB/NHE) */
   .logistica-os-page #section-conferencias > .section-head,
   .logistica-os-page #logConferenciasList { display:none!important; }
-  /* Cabeçalho compacto: só a barra de abas + reload (o título "O.S" já está na topbar) */
-  .logistica-os-page #logisticaOsHeader { padding:10px 14px!important; }
+  /* Cabeçalho compacto: só a barra de abas + reload (o título "O.S" já está na topbar).
+     Padrão de abas com sublinhado (mesmo de adm-conferencia-entry.js .conf-tab), em vez
+     das pílulas antigas do #logTabs original. */
+  .logistica-os-page #logisticaOsHeader { padding:0 16px!important; min-height:58px!important; }
   .logistica-os-page #logisticaOsHeader .los-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .logistica-os-page #logisticaOsHeader .log-tabs { margin:0; }
+  .logistica-os-page #logisticaOsHeader .log-tabs { margin:0; gap:2px; overflow-x:auto; flex-wrap:nowrap; }
+  .logistica-os-page #logisticaOsHeader .log-tab { border:0; border-radius:0; background:transparent; padding:18px 16px 15px; color:#a9b8b1; font-size:13px; font-weight:800; white-space:nowrap; border-bottom:2px solid transparent; }
+  .logistica-os-page #logisticaOsHeader .log-tab:hover { color:#d9fbe8; background:rgba(34,197,94,.035); }
+  .logistica-os-page #logisticaOsHeader .log-tab.active { color:#35e990; background:transparent; border-bottom-color:#22e58a; }
   .logistica-os-page #logisticaOsHeader #logisticaOsReload { flex:0 0 auto; }
   /* KPIs "Pendentes/Cadastradas" da aba Abertura: .metric/.card globais são
      pensados pra hero cards de página inteira (fonte 40px+, padding 18px) —
