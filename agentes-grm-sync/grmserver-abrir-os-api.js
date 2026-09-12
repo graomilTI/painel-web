@@ -3,16 +3,17 @@
 /**
  * Abertura de O.S. no GRM via API direta (sem Puppeteer/navegador).
  *
- * STATUS (11/09/2026): recém-escrito a partir do endpoint e payload
- * capturados ao vivo em grm-sync-abrir-os.js (CAPTURE_NET=true, O.S. 92511
- * real, CARGILL/RS) — ver memória painel-web-abrir-os-endpoint-capturado.
- * NÃO está ligado em grm_sync_agent_settings/SCRIPT_MAP ainda. Rodar
- * primeiro várias vezes com --dry-run contra solicitações reais (inclusive
- * já CADASTRADAS, pra comparar o payload montado aqui com o que realmente
- * foi salvo) antes de cogitar substituir o Puppeteer (grm-sync-abrir-os.js)
- * na fila de produção — essa versão pula toda a validação client-side do
- * formulário do GRM, então um campo mal resolvido aqui pode criar uma O.S.
- * errada sem nenhum aviso visual como o navegador dava.
+ * STATUS (12/09/2026): escrito a partir do endpoint e payload capturados ao
+ * vivo em grm-sync-abrir-os.js (CAPTURE_NET=true, O.S. 92511 real,
+ * CARGILL/RS) — ver memória painel-web-abrir-os-endpoint-capturado. Validado
+ * com --dry-run/--test-payload contra solicitações reais (inclusive já
+ * CADASTRADAS, comparando o payload montado aqui com o que realmente foi
+ * salvo) e agora é o script ligado em 'sync-abrir-os' no SCRIPT_MAP (worker/
+ * grm-sync-job-worker.js), substituindo o Puppeteer. grm-sync-abrir-os.js
+ * mantido no disco pra rollback — essa versão pula toda a validação
+ * client-side do formulário do GRM, então um campo mal resolvido aqui pode
+ * criar uma O.S. errada sem nenhum aviso visual como o navegador dava; se
+ * aparecer, reverter o SCRIPT_MAP pro Puppeteer enquanto investiga.
  *
  * Vantagem real sobre o Puppeteer: a resposta do POST de criação já devolve
  * o número da O.S. direto (`recordCode`) — elimina de vez a classe de bugs

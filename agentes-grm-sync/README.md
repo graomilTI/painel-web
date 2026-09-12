@@ -187,6 +187,46 @@ substitui as datas presentes na janela consultada, histórico mais antigo
 fica intacto). Para reprocessar um período fora da janela de 7 dias, rodar
 manualmente com `GRM_RESULTADO_DIARIO_DAYS_BACK` maior.
 
+## Abertura de O.S. pela API (sem Puppeteer)
+
+`grmserver-abrir-os-api.js` substitui `grm-sync-abrir-os.js` (Puppeteer) no
+`SCRIPT_MAP` de `sync-abrir-os` desde 12/09. Mesmo contrato de dados
+(`logistica_abertura_os` status `APROVADO` → `PROCESSANDO` → `CADASTRADO`/`ERRO`,
+mais `grm_abertura_os_execucoes`) e mesmo modo de execução do worker (roda sem
+args, processa todas as solicitações `APROVADO` a cada chamada) — por isso a
+troca no `SCRIPT_MAP` foi só apontar o nome do script.
+
+Login e toda a cadeia de resolução de códigos (Cliente Nacional → Regional →
+Final, ponto de embarque → cidade/local/supervisão, produto/tipo/serviço,
+destino, itens de classificação) são feitos por POST direto nos endpoints do
+GRM (`user/login`, `client/*/getForSelect`, `address/getCities`,
+`servicePlaces/getRecords`, `supervision/getSupervisionByCitAndSPlaceType`,
+`product/*`, etc. — ver comentário no topo do arquivo pra cadeia completa), e
+a criação em si é um único `POST serviceOrder/setRecord`, que já devolve o
+número da O.S. (`recordCode`) na resposta — elimina a classe de bugs de
+"captura de número errado por colisão" que o Puppeteer tinha (ver
+`painel-web-abertura-os-numero-captura-errada-colisao` na memória).
+
+**Trade-off aceito:** essa versão pula toda a validação client-side que o
+formulário do GRM fazia no navegador — se algum campo for mal resolvido (ex.:
+fuzzy match errado de Cliente Regional/Final, ponto de embarque não
+encontrado em `operacional_pontos_embarque`), a O.S. pode ser criada errada
+sem nenhum aviso visual. `avisarCampoSuspeito()` registra esses casos em
+`erro_agente`/no log da execução quando dá pra detectar (ex.: nenhuma opção
+bateu e caiu no fallback "1ª disponível"), mas não cobre tudo. Rodar
+`node grmserver-abrir-os-api.js --test-payload <id>` compara o payload
+montado com o que foi salvo de verdade numa solicitação já `CADASTRADO`, sem
+tocar em status/execuções — útil pra conferir a cadeia de resolução depois de
+qualquer mudança. `grm-sync-abrir-os.js` (Puppeteer) continua no disco como
+rollback: se aparecer O.S. criada errada em produção, reverter o `SCRIPT_MAP`
+pra ele enquanto investiga.
+
+```bash
+cd /home/grao100/painel-scripts/grm-sync
+/home/grao100/bin/node grmserver-abrir-os-api.js --dry-run   # monta payload de todas APROVADO, não envia ao GRM
+/home/grao100/bin/node grmserver-abrir-os-api.js --test-payload <id>  # só imprime o payload de uma solicitação
+```
+
 ## Rodar manualmente (debug)
 
 ```bash

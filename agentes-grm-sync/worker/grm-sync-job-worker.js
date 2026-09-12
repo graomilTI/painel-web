@@ -139,7 +139,12 @@ const SCRIPT_MAP = {
   'sync-baixa-notas-fiscais': 'grmserver-baixa-notas-fiscais-api.js',
   'sync-finalizar-os': 'grm-sync-finalizar-os.js',
   'sync-reabrir-os': 'grm-sync-reabrir-os.js',
-  'sync-abrir-os': 'grm-sync-abrir-os.js',
+  // Migrado pra API direta em 12/09 (serviceOrder/setRecord, endpoint capturado
+  // ao vivo em 11/09 — ver comentário no topo de grmserver-abrir-os-api.js).
+  // Mesmo contrato (logistica_abertura_os + grm_abertura_os_execucoes), roda
+  // sem args igual o Puppeteer antigo. grm-sync-abrir-os.js mantido no disco
+  // pra rollback.
+  'sync-abrir-os': 'grmserver-abrir-os-api.js',
   // Migrado pra API direta em 02/09 (ver memória painel-web-grm-liberacao-despesas-api-descoberta).
   // grm-sync-liberacao-despesas.js (Puppeteer) mantido no disco pra rollback.
   'sync-liberacao-despesas': 'grmserver-liberacao-despesas-api.js',
