@@ -546,9 +546,17 @@ export function renderContent(content, userContext) {
   async function loadAccounts() {
     const { data, error } = await supabase.from('email_accounts_public').select('*').order('nome');
     if (error) throw error;
-    state.accounts = data || [];
+    // A Central é administrativa (escopo CENTRAL): caixas pessoais do Gestor
+    // (escopo GESTOR) ficam de fora daqui, mesmo que o usuário logado (master/admin)
+    // enxergue todas as contas via RLS — senão a Central mistura e-mail pessoal
+    // de quem está logado com o e-mail corporativo (ex: Comercial).
+    state.accounts = (data || []).filter((a) => (a.escopo || 'CENTRAL') === 'CENTRAL');
     renderAccountOptions();
     renderAccounts();
+  }
+
+  function centralAccountIds() {
+    return state.accounts.map((a) => a.id);
   }
 
   function renderAccounts() {
@@ -631,7 +639,13 @@ export function renderContent(content, userContext) {
   async function loadEmails() {
     const list = document.getElementById('emList');
     list.innerHTML = `<div class="em-empty">Carregando e-mails...</div>`;
-    let q = supabase.from('email_messages').select(EMAIL_LIST_SELECT).order('data_recebimento', { ascending: false }).limit(80);
+    const contaIds = centralAccountIds();
+    if (!contaIds.length) {
+      state.emails = [];
+      renderEmails();
+      return;
+    }
+    let q = supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('account_id', contaIds).order('data_recebimento', { ascending: false }).limit(80);
     if (state.conta) q = q.eq('account_id', state.conta);
     if (state.status) q = q.in('status', state.status.split(','));
     const { data, error } = await q;
@@ -861,7 +875,12 @@ export function renderContent(content, userContext) {
   async function loadPerigo() {
     const list = document.getElementById('emPerigoList');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('risco', ['ALTO', 'CRITICO']).not('status', 'in', '(ARQUIVADO,RESOLVIDO)').order('data_recebimento', { ascending: false }).limit(100);
+    const contaIds = centralAccountIds();
+    if (!contaIds.length) {
+      list.innerHTML = `<div class="em-empty">✅ Nenhum e-mail de risco detectado.</div>`;
+      return;
+    }
+    const { data, error } = await supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('account_id', contaIds).in('risco', ['ALTO', 'CRITICO']).not('status', 'in', '(ARQUIVADO,RESOLVIDO)').order('data_recebimento', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
@@ -904,7 +923,12 @@ export function renderContent(content, userContext) {
   async function loadOutbox() {
     const list = document.getElementById('emOutboxBody');
     list.innerHTML = `<div class="em-empty">Carregando...</div>`;
-    const { data, error } = await supabase.from('email_outbox').select('*').order('created_at', { ascending: false }).limit(100);
+    const contaIds = centralAccountIds();
+    if (!contaIds.length) {
+      list.innerHTML = `<div class="em-empty">Nenhuma resposta na fila.</div>`;
+      return;
+    }
+    const { data, error } = await supabase.from('email_outbox').select('*').in('account_id', contaIds).order('created_at', { ascending: false }).limit(100);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}</div>`;
       return;
