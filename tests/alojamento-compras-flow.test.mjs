@@ -12,6 +12,7 @@ test('Gestor envia compras de alojamento pelo fluxo compartilhado de Compras', (
   assert.match(compras, /salvarSolicitacao\(ctx,'Alojamento',itens\)/);
   assert.match(compras, /tipo:'Alojamento'/);
   assert.match(compras, /Hospedagem > Alojamentos > Compras/);
+  assert.match(compras, /\.cmp-header-box\{grid-template-columns:minmax\(0,1fr\) 64px!important\}/);
 });
 
 test('Hospedagem carrega menu e fila filtrada de compras de alojamento', () => {
