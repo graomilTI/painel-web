@@ -70,7 +70,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
-  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260912-alojamentos-compras1'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20260912-alojamentos-compras1')] }],
+  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20260912-alojamentos-compras2'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20260912-alojamentos-compras1')] }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js?v=20260912-remove-resumo-abertura1'), extraModules: [() => import('./logistica-abertura-os-correcao.js'), () => import('./logistica-clientes-filiais-pagadoras.js?v=20260903-clientes-filiais-master1')] }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js?v=20260910-3') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
