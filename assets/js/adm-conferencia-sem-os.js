@@ -62,10 +62,28 @@ async function load() {
   const reg = norm(f.regional); const ps = (programas || []).filter((p) => !reg || norm(p.supervisao) === reg); const ids = ps.map((p) => p.id).filter(Boolean); if (!ids.length) return [];
   const [sitRes, eqRes, inaRes] = await Promise.all([
     raw.from('programacao_colaboradores').select('*').in('programacao_id', ids).limit(10000),
-    raw.from('programacao_equipe').select('programacao_id,colaborador_id,nome_colaborador,confirmado').in('programacao_id', ids).limit(10000),
+    raw.from('programacao_equipe').select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado').in('programacao_id', ids).limit(10000),
     raw.from('programacao_inativacao_solicitacoes').select('programacao_id,colaborador_id,nome_colaborador,status').in('programacao_id', ids).eq('status', 'PENDENTE').limit(5000),
   ]);
   if (sitRes.error) throw sitRes.error; if (eqRes.error) throw eqRes.error;
+  // Replica a relação exibida em Gestor > Programação > Sem O.S. para cada
+  // programação/data: somente vínculo confirmado em uma O.S. ainda ativa
+  // retira o colaborador da relação. Vínculo não confirmado continua sendo
+  // Sem O.S.; O.S. finalizada também o libera novamente (a linha da equipe é
+  // preservada no banco para a Conferência, mas não representa atendimento
+  // ativo na Programação).
+  const equipeRows = eqRes.data || [];
+  const equipeOsIds = [...new Set(equipeRows.map((r) => r.os_id).filter(Boolean))];
+  let osFinalizadasIds = new Set();
+  if (equipeOsIds.length) {
+    const { data: osRows, error: osError } = await raw
+      .from('operacional_os')
+      .select('id,status_gestor')
+      .in('id', equipeOsIds);
+    if (osError) console.warn('[conf-sem-os] falha ao checar status das O.S. vinculadas', osError);
+    osFinalizadasIds = new Set((osRows || []).filter((o) => o.status_gestor === 'FINALIZAR').map((o) => o.id));
+  }
+  const equipeAtivaConfirmada = equipeRows.filter((r) => r.confirmado && !osFinalizadasIds.has(r.os_id));
   const sit = lookup(sitRes.data || []); const ina = lookup(inaRes.data || []); const byDate = new Map();
   for (const p of ps) { const d = String(p.data_referencia || '').slice(0, 10); if (!byDate.has(d)) byDate.set(d, []); byDate.get(d).push(p); }
   const out = [];
@@ -75,7 +93,7 @@ async function load() {
   // (cadastro historico, CPF/supervisao divergente etc.), o motivo salvo
   // existia no banco mas nunca chegava a aba Disponiveis.
   const programaPorId = new Map(ps.map((p) => [String(p.id), p]));
-  const vinculadoPorPrograma = new Set((eqRes.data || []).flatMap((r) => {
+  const vinculadoPorPrograma = new Set(equipeAtivaConfirmada.flatMap((r) => {
     const p = String(r.programacao_id || ''); const i = idKey(r.colaborador_id); const n = norm(r.nome_colaborador); const keys = [];
     if (p && i) keys.push(`${p}::ID::${i}`); if (p && n) keys.push(`${p}::NOME::${n}`); return keys;
   }));
@@ -92,7 +110,7 @@ async function load() {
   for (const [d, pDia] of byDate) {
     const sups = [...new Set(pDia.map((p) => p.supervisao).filter(Boolean))];
     const candidatos = await loadColaboradoresRegional(sups.length === 1 ? sups[0] : sups); const supSet = new Set(sups.map(norm));
-    const equipe = (eqRes.data || []).filter((r) => pDia.some((p) => String(p.id) === String(r.programacao_id)));
+    const equipe = equipeAtivaConfirmada.filter((r) => pDia.some((p) => String(p.id) === String(r.programacao_id)));
     const cIds = new Set(equipe.map((r) => idKey(r.colaborador_id)).filter(Boolean)); const cNames = new Set(equipe.map((r) => norm(r.nome_colaborador)).filter(Boolean));
     const pBySup = new Map(pDia.map((p) => [norm(p.supervisao), p]));
     for (const c of (candidatos || []).filter((c) => supSet.has(norm(c.supervisao)))) {
