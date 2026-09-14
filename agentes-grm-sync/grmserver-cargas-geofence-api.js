@@ -699,10 +699,13 @@ async function main() {
 
 if (require.main === module) {
   main();
+  // 120s bastava quando só buscava "hoje" (algumas centenas de cargas). Com a
+  // reconciliação de 30 dias (RECONCILIACAO_DIAS), o volume sobe pra dezenas
+  // de milhares de linhas -- só o upsert em lotes de 100 já passa de 2min.
   setTimeout(function () {
     log('ERROR', 'Timeout geral do agente atingido.');
     process.exit(1);
-  }, Number(process.env.CARGAS_AGENT_TIMEOUT_MS || 120000));
+  }, Number(process.env.CARGAS_AGENT_TIMEOUT_MS || 600000));
 }
 
 module.exports = {
