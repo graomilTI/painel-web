@@ -67,7 +67,11 @@ function jsonField(json, names) {
 function isFaturado(json) {
   const bilCode = json?.bilCode ?? json?.bil_code;
   if (bilCode != null && bilCode !== '') return Number(bilCode) > 0;
-  return normCode(json?.situacao ?? '') === 'FATURADA';
+  // Acesso direto (json.situacao) não bate: a chave real vem como "Situação"
+  // (maiúscula, com acento) nesse import -- por isso usa a mesma busca
+  // tolerante a acento/maiúscula que jsonField() já usa pros outros campos.
+  const situacao = normCode(jsonField(json, ['Situação', 'Situacao']).value ?? '');
+  return situacao === 'FATURADA';
 }
 
 function systemLoad(row, index) {
