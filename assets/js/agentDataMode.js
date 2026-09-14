@@ -1,5 +1,4 @@
 const ROUTES_WITH_AGENT_DATA = new Set([
-  'desempenho',
   'metas',
   'dre',
   'adm-logistica',
@@ -14,7 +13,6 @@ const ROUTES_WITH_AGENT_DATA = new Set([
 ]);
 
 const ROUTE_LABELS = {
-  desempenho: 'Desempenho',
   metas: 'Metas',
   dre: 'DRE',
   financeiro: 'Financeiro',
