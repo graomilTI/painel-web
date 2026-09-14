@@ -13,9 +13,6 @@ export function renderContent(content, ctx) {
     api: { supabase },
     auth: ctx,
     user: ctx?.user || null,
-    onBack: () => {
-      window.location.href = './dre.html';
-    }
   });
 }
 
