@@ -68,6 +68,7 @@ const COM_ESTADIA = new Set(['PERNOITE', 'ALOJAMENTO', 'HOTEL']);
 // Só as 5 opções que fazem sentido pro gestor escolher aqui (pedido do
 // usuário, 2026-07-17) — Ônibus/Outro removidos.
 const TIPOS_DESLOC = ['MOTORISTA FROTA', 'CARONA FROTA', 'UBER/TÁXI', 'REEMBOLSO KM', 'PARTICULAR/CARONA CAMINHÃO'];
+const TIPO_DESLOC_DEFAULT = 'PARTICULAR/CARONA CAMINHÃO';
 // Reduzido pras 4 opções que o gestor realmente usa (pedido do usuário,
 // 2026-07-23) — registros antigos com os tipos removidos continuam salvos
 // no banco, só não aparecem mais selecionados no combo se reabertos.
@@ -492,7 +493,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
   const dias = diasFromEstadia(est);
   const placaAuto = placasPorCpf.get(String(row.colaboradorId).replace(/\D/g, '')) || '';
   const placa = des.placa_veiculo || placaAuto || '';
-  const tipoDesl = des.tipo_deslocamento || (placa ? 'MOTORISTA FROTA' : '');
+  const tipoDesl = des.tipo_deslocamento || TIPO_DESLOC_DEFAULT;
   const extras = extrasPorColab.get(row.colaboradorId) || [];
   const letraContrato = tipoContratoLetra(tipoContratoPorCpf.get(String(row.colaboradorId).replace(/\D/g, '')) || '');
 
@@ -529,7 +530,7 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
     <div class="peqd-sec" data-sec="deslocamento">
       <div class="peqd-sec-label">🚐 Deslocamento</div>
       <div class="peqd-row">
-        <select class="peqd-inp peqd-tipo-desl" data-tab="deslocamento" data-fld="tipo_deslocamento"><option value="" ${tipoDesl ? '' : 'selected'}>— não definido —</option>${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
+        <select class="peqd-inp peqd-tipo-desl" data-tab="deslocamento" data-fld="tipo_deslocamento">${TIPOS_DESLOC.map((t) => `<option value="${esc(t)}" ${normalizeText(tipoDesl) === normalizeText(t) ? 'selected' : ''}>${esc(deslocLabel(t))}</option>`).join('')}</select>
         <input class="peqd-inp peqd-placa peqd-veic-combo-input" data-tab="deslocamento" data-fld="placa_veiculo" value="${esc(onlyPlate(placa))}" placeholder="Placa" title="${placaAuto && !des.placa_veiculo ? 'Puxada da leitura do veículo' : 'Placa do veículo'}" autocomplete="off" spellcheck="false" />
         <input class="peqd-inp peqd-km" data-tab="deslocamento" data-fld="km" type="number" min="0" step="0.01" value="${esc(des.km ?? '')}" placeholder="KM" />
         <input class="peqd-inp peqd-valor" data-tab="deslocamento" data-fld="valor" type="text" value="${esc(des.valor || '')}" placeholder="R$ 0,00" />
@@ -850,7 +851,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
       });
     } else if (tabela === 'programacao_deslocamento') {
       Object.assign(payload, {
-        tipo_deslocamento: card.querySelector('[data-fld="tipo_deslocamento"]')?.value || '',
+        tipo_deslocamento: card.querySelector('[data-fld="tipo_deslocamento"]')?.value || TIPO_DESLOC_DEFAULT,
         placa_veiculo: onlyPlate(card.querySelector('[data-fld="placa_veiculo"]')?.value || ''),
         // km/valor são NOT NULL (default 0) no banco — enviar null explícito
         // ignora o default e viola a constraint (ex.: Uber/Táxi sem km digitado).
