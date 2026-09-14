@@ -36,6 +36,15 @@ var GRM_WEB_HEADERS = {
 
 var RAIO_M = Number(process.env.CARGAS_RAIO_M || 2000);
 var MAX_LOOKUP_ROWS = Number(process.env.CARGAS_OS_LOOKUP_LIMIT || 5000);
+// O agente só consultava "Data de Classificação = hoje", então o Situação/
+// bilCode de uma carga ficava congelado pra sempre no valor do dia em que
+// ela foi importada -- faturamento que acontece dias/semanas depois nunca
+// era refletido em grm_cargas_importacoes (bug real visto na Pré-Conferência
+// da O.S. 61744: 578 cargas "Não Faturada" no banco, mas 122 já faturadas de
+// verdade no GRM). Agora, quando roda sem "--data" explícito (uso normal do
+// cron), busca também os últimos N dias, não só hoje, pra reupsertar
+// (chave_unica) e assim atualizar o status de faturamento de cargas antigas.
+var RECONCILIACAO_DIAS = Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30);
 
 var REPORT_CONFIG = {
   name: 'Relatório de Cargas - Geofence',
@@ -97,6 +106,13 @@ function todayLocalYmd() {
   var m = String(now.getMonth() + 1).padStart(2, '0');
   var d = String(now.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + d;
+}
+
+function ymdMinusDays(ymd, dias) {
+  var p = String(ymd).split('-').map(Number);
+  var d = new Date(p[0], p[1] - 1, p[2]);
+  d.setDate(d.getDate() - dias);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 function ymdToBr(ymd) {
@@ -167,12 +183,13 @@ async function login() {
   return response.token;
 }
 
-async function buscarRelatorioCargasApi(token, dataYmd) {
-  var dataBr = ymdToBr(dataYmd);
-  log('INFO', 'Consultando API do Relatório de Cargas em ' + dataBr + '...');
+async function buscarRelatorioCargasApi(token, dataDeYmd, dataAteYmd) {
+  var dataDeBr = ymdToBr(dataDeYmd);
+  var dataAteBr = ymdToBr(dataAteYmd || dataDeYmd);
+  log('INFO', 'Consultando API do Relatório de Cargas de ' + dataDeBr + ' até ' + dataAteBr + '...');
   var json = await postJson(GRM_BASE_URL + 'reports/classification/loads', {
-    loaDateFrom: dataBr,
-    loaDateTo: dataBr,
+    loaDateFrom: dataDeBr,
+    loaDateTo: dataAteBr,
     loaType: 'EMB',
     includeTotal: 'N',
     addStaffInfo: 'S',
@@ -596,14 +613,19 @@ async function main() {
 
   var args = parseArgs(process.argv.slice(2));
   var dataYmd = args.data || todayLocalYmd();
+  // Com --data explícito (backfill/reprocesso manual de um dia específico),
+  // mantém o comportamento antigo de um único dia. Sem --data (rodada normal
+  // do cron), amplia pra [hoje - RECONCILIACAO_DIAS, hoje] -- ver comentário
+  // de RECONCILIACAO_DIAS acima.
+  var dataDeYmd = args.data ? dataYmd : ymdMinusDays(dataYmd, RECONCILIACAO_DIAS);
   var runId = null;
 
   try {
-    log('INFO', '=== ' + REPORT_CONFIG.name + ' (API) | ' + dataYmd + ' ===');
+    log('INFO', '=== ' + REPORT_CONFIG.name + ' (API) | ' + dataDeYmd + ' a ' + dataYmd + ' ===');
     runId = await criarExecucao(dataYmd);
 
     var token = await login();
-    var linhas = await buscarRelatorioCargasApi(token, dataYmd);
+    var linhas = await buscarRelatorioCargasApi(token, dataDeYmd, dataYmd);
     await salvarImportacao(linhas);
 
     var cacheOs = Object.create(null);
