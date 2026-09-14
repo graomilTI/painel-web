@@ -36,6 +36,7 @@
     totals: null,
     regionais: [],
     headcountAsOf: null,
+    headcountSource: null,
     error: null
   };
 
@@ -185,6 +186,19 @@
     return dateKey(data?.[0]?.data_referencia) || null;
   }
 
+  // Quadro atual sincronizado direto do GRM (agentes-grm-sync/grmserver-colaboradores-api-realtime.js),
+  // sem granularidade diária — usado quando não há histórico salvo para o período selecionado.
+  // data_referencia é fixada bem no passado (não a data de hoje) para que o quadro se aplique a
+  // todos os dias exibidos: buildActiveMapsByDay só considera uma linha "conhecida" a partir da
+  // sua data_referencia, e a data real da sincronização fica em state.headcountAsOf, só para exibição.
+  const LIVE_SYNC_SENTINEL_DATE = '1970-01-01';
+
+  async function loadColaboradoresAtual(supabase) {
+    const select = 'cpf,nome,situacao,coordenacao,supervisao,tipo,cargo';
+    const rows = await fetchAllRows(supabase, 'colaboradores', select, (q) => q);
+    return rows.map((row) => ({ ...row, data_referencia: LIVE_SYNC_SENTINEL_DATE }));
+  }
+
   async function loadClassificadoresHistorico(supabase) {
     const start = isoDate(addDays(firstDay(state.year, state.month), -45));
     const end = isoDate(nextMonthDay(state.year, state.month));
@@ -212,8 +226,19 @@
 
     if (rows.length) return rows;
 
-    // Sem histórico no período (ex.: importação parada): usa o snapshot mais recente disponível
-    // como quadro de referência, avisando na tela que o headcount está desatualizado.
+    // Sem histórico no período (ex.: importação parada): prioriza o quadro ao vivo da
+    // sincronização com o GRM (tabela `colaboradores`) antes de cair pro snapshot antigo.
+    try {
+      const live = await loadColaboradoresAtual(supabase);
+      if (live.length) {
+        state.headcountAsOf = isoDate(new Date());
+        state.headcountSource = 'live';
+        return live;
+      }
+    } catch (error) {
+      console.warn('[DESEMPENHO] Falha ao buscar quadro atual em colaboradores (sync GRM).', error);
+    }
+
     const candidateTables = table === 'historico_colaboradores'
       ? ['historico_colaboradores', 'colaborador_snapshot']
       : ['colaborador_snapshot', 'historico_colaboradores'];
@@ -225,6 +250,7 @@
         const snapshot = await fetchAllRows(supabase, fallbackTable, select, (q) => q.eq('data_referencia', latest));
         if (snapshot.length) {
           state.headcountAsOf = latest;
+          state.headcountSource = 'historico';
           return snapshot;
         }
       } catch (error) {
@@ -555,7 +581,8 @@
 
         ${state.error ? `<div class="des-status err"><strong>Erro:</strong> ${esc(state.error)}</div>` : ''}
         ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e histórico diário de colaboradores.</div>` : ''}
-        ${state.headcountAsOf ? `<div class="des-status err"><strong>Atenção:</strong> não há histórico de colaboradores para o período selecionado. Os classificadores exibidos usam o último quadro disponível (${esc(brDay(state.headcountAsOf))}/${esc(state.headcountAsOf.slice(0, 4))}) — atualize a importação de colaboradores para números precisos do mês.</div>` : ''}
+        ${state.headcountAsOf && state.headcountSource === 'live' ? `<div class="des-status"><strong>Aviso:</strong> não há histórico diário de colaboradores salvo para o período selecionado. Os classificadores exibidos usam o quadro atual sincronizado com o GRM (agora), sem variação dia a dia dentro do mês.</div>` : ''}
+        ${state.headcountAsOf && state.headcountSource === 'historico' ? `<div class="des-status err"><strong>Atenção:</strong> não há histórico de colaboradores para o período selecionado nem quadro ao vivo do GRM disponível. Os classificadores exibidos usam o último quadro salvo (${esc(brDay(state.headcountAsOf))}/${esc(state.headcountAsOf.slice(0, 4))}) — verifique a sincronização de colaboradores.</div>` : ''}
         ${renderKpis()}
         ${renderTable()}
       </section>
@@ -600,6 +627,7 @@
       state.loading = true;
       state.error = null;
       state.headcountAsOf = null;
+      state.headcountSource = null;
       render(container);
       const supabase = state.supabase;
       if (!supabase) throw new Error('Cliente Supabase não disponível.');
