@@ -222,6 +222,12 @@ async function submitJob(client: SupabaseClient, auth: AuthResult, body: Record<
     .select("*")
     .eq("request_user_id", auth.userId)
     .eq("document_url", url)
+    // Também precisa bater o tipo: sem isso, um job antigo criado com tipo
+    // errado (ex.: um .xlsx que um dia foi enviado como "pdf" por um bug já
+    // corrigido no front) ficava sendo reaproveitado pra sempre pela mesma
+    // URL, mesmo depois do front passar a mandar o tipo certo -- o resultado
+    // ruim daquele job errado nunca mais saía da tela até expirar as 6h.
+    .eq("file_type", fileType)
     .in("status", ["PENDENTE", "PROCESSANDO", "CONCLUIDO"])
     .gte("created_at", recentSince)
     .order("created_at", { ascending: false })
