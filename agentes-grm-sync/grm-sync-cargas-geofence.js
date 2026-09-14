@@ -36,6 +36,15 @@ var GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 var RAIO_M = Number(process.env.CARGAS_RAIO_M || 2000);
 var DOWNLOAD_TIMEOUT_MS = Number(process.env.CARGAS_DOWNLOAD_TIMEOUT_MS || 90000);
 var MAX_LOOKUP_ROWS = Number(process.env.CARGAS_OS_LOOKUP_LIMIT || 5000);
+// O agente só consultava "Data de Classificação = hoje", então o Situação/
+// bilCode de uma carga ficava congelado pra sempre no valor do dia em que
+// ela foi importada -- faturamento que acontece dias/semanas depois nunca
+// era refletido em grm_cargas_importacoes (bug real visto na Pré-Conferência
+// da O.S. 61744: 578 cargas "Não Faturada" no banco, mas 122 já faturadas de
+// verdade no GRM). Agora, quando roda sem "--data" explícito (uso normal do
+// cron), busca também os últimos N dias, não só hoje, pra reupsertar
+// (chave_unica) e assim atualizar o status de faturamento de cargas antigas.
+var RECONCILIACAO_DIAS = Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30);
 // O modo "new" do headless não sustenta --single-process (usado nos flags de memória
 // abaixo) e trava com "Check failed: false" em partition_address_space.cc em hosts como
 // esse cPanel. Os outros agentes da esteira (ex.: grm-sync-lista-os.js) usam o modo
@@ -169,6 +178,13 @@ function todayLocalYmd() {
   return y + '-' + m + '-' + d;
 }
 
+function ymdMinusDays(ymd, dias) {
+  var p = String(ymd).split('-').map(Number);
+  var d = new Date(p[0], p[1] - 1, p[2]);
+  d.setDate(d.getDate() - dias);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
 function ymdToBr(ymd) {
   var p = String(ymd).split('-');
   return p[2] + '/' + p[1] + '/' + p[0];
@@ -200,10 +216,11 @@ async function login(page) {
   log('SUCCESS', 'Login realizado');
 }
 
-async function buscarRelatorioCargasApi(page, dataYmd) {
-  var dataBr = ymdToBr(dataYmd);
-  log('INFO', 'Consultando API do Relatório de Cargas em ' + dataBr + '...');
-  var groups = await page.evaluate(async function (dateValue) {
+async function buscarRelatorioCargasApi(page, dataDeYmd, dataAteYmd) {
+  var dataDeBr = ymdToBr(dataDeYmd);
+  var dataAteBr = ymdToBr(dataAteYmd || dataDeYmd);
+  log('INFO', 'Consultando API do Relatório de Cargas de ' + dataDeBr + ' até ' + dataAteBr + '...');
+  var groups = await page.evaluate(async function (dateFromValue, dateToValue) {
     var token = '';
     for (var t = 0; t < localStorage.length; t++) {
       try { var value = JSON.parse(localStorage.getItem(localStorage.key(t))); if (value && value.userToken) token = value.userToken; } catch (e) {}
@@ -212,8 +229,8 @@ async function buscarRelatorioCargasApi(page, dataYmd) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
       body: JSON.stringify({
-        loaDateFrom: dateValue,
-        loaDateTo: dateValue,
+        loaDateFrom: dateFromValue,
+        loaDateTo: dateToValue,
         loaType: 'EMB',
         includeTotal: 'N',
         addStaffInfo: 'S',
@@ -226,7 +243,7 @@ async function buscarRelatorioCargasApi(page, dataYmd) {
     var json = await response.json();
     if (!response.ok || !json.result) throw new Error(json.message || ('HTTP ' + response.status));
     return json.searchData || [];
-  }, dataBr);
+  }, dataDeBr, dataAteBr);
 
   var rows = [];
   for (var g = 0; g < groups.length; g++) {
@@ -1206,11 +1223,16 @@ async function main() {
 
   var args = parseArgs(process.argv.slice(2));
   var dataYmd = args.data || todayLocalYmd();
+  // Com --data explícito (backfill/reprocesso manual de um dia específico),
+  // mantém o comportamento antigo de um único dia. Sem --data (rodada normal
+  // do cron), amplia pra [hoje - RECONCILIACAO_DIAS, hoje] -- ver comentário
+  // de RECONCILIACAO_DIAS acima.
+  var dataDeYmd = args.data ? dataYmd : ymdMinusDays(dataYmd, RECONCILIACAO_DIAS);
   var debug = args.debug || String(process.env.GRM_DEBUG || '').toLowerCase() === 'true';
   var runId = null;
 
   try {
-    log('INFO', '=== ' + REPORT_CONFIG.name + ' | ' + dataYmd + ' ===');
+    log('INFO', '=== ' + REPORT_CONFIG.name + ' | ' + dataDeYmd + ' a ' + dataYmd + ' ===');
     runId = await criarExecucao(dataYmd);
 
     var linhas;
@@ -1223,7 +1245,7 @@ async function main() {
       try {
         var page = await browser.newPage();
         await login(page);
-        linhas = await buscarRelatorioCargasApi(page, dataYmd);
+        linhas = await buscarRelatorioCargasApi(page, dataDeYmd, dataYmd);
       } finally {
         browserAtual = null;
         await browser.close();
