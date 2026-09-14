@@ -8,7 +8,7 @@ import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
-} from './programacao-despesas.js?v=20260911-hosp-v3';
+} from './programacao-despesas.js?v=20260914-desloc-particular2';
 import { loadCustos } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 
 function normalizeText(value) {

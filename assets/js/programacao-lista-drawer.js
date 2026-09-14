@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260911-hosp-v3';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260914-desloc-particular2';
 
 function esc(value) {
   return String(value ?? '')
