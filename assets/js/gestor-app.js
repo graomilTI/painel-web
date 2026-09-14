@@ -1571,7 +1571,7 @@ function openLaudoModal(recordId, osNumero) {
       <div id="laudo-dropzone" style="border:2px dashed rgba(239,68,68,.35);border-radius:14px;padding:28px 16px;text-align:center;color:#6b7280;cursor:pointer;margin-top:8px;font-size:13px;transition:border-color .15s">
         Clique ou arraste arquivos aqui<br><small style="font-size:11px">imagens, PDF, Excel, CSV</small>
       </div>
-      <input id="laudo-file-input" type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" style="display:none" />
+      <input id="laudo-file-input" type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv,.docx" style="display:none" />
       <div id="laudo-file-list" style="margin-top:8px;font-size:12px;color:#bbf7d0;min-height:20px"></div>
       <div class="kg-modal-actions">
         <button class="kg-btn-cancel" id="laudoCancelar">Cancelar</button>

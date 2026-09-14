@@ -3,14 +3,17 @@
 
 Fluxo:
 1. Reserva atomicamente um job no Supabase;
-2. baixa o PDF/imagem para diretório temporário;
-3. executa PaddleOCR localmente, página por página;
+2. baixa o documento (PDF/imagem/planilha/docx) para diretório temporário;
+3. PDF com texto nativo e planilhas (xlsx/xls/csv) e docx são lidos
+   diretamente (sem OCR); PDF escaneado e imagens passam pelo PaddleOCR,
+   página por página;
 4. identifica placa, carga/romaneio/ticket, peso e NF;
 5. grava resultado/progresso no Supabase.
 """
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import math
@@ -28,21 +31,37 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 
 import fitz  # PyMuPDF
+import openpyxl
 import requests
+import xlrd
+from docx import Document as DocxDocument
 from paddleocr import PaddleOCR
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 LOGGER = logging.getLogger("grao1000.paddleocr")
 STOP_REQUESTED = False
 
 PLATE_RE = re.compile(r"\b[A-Z]{3}[\s.\-/]?[0-9][A-Z0-9][\s.\-/]?[0-9]{2}\b", re.IGNORECASE)
 NUMBER_RE = re.compile(r"(?<![A-Z0-9])([0-9][0-9.\s]*(?:,[0-9]+)?)(?![A-Z0-9])", re.IGNORECASE)
 
-HEADER_ALIASES: dict[str, tuple[str, ...]] = {
-    "placa": ("placa", "veiculo", "veículo"),
-    "carga": ("carga", "ticket", "romaneio", "laudo", "ordem", "controle"),
-    "peso": ("peso", "liquido", "líquido", "quantidade", "qtd", "tonelada", "tons", "kg"),
-    "nota_fiscal": ("nota fiscal", "nfe", "nf-e", "nf"),
+# Cada chave tem 1+ "tiers" de aliases, do mais específico pro mais genérico.
+# Relatórios reais costumam ter VÁRIAS colunas de peso na mesma tabela (peso
+# entrada, peso saída, peso origem, peso balança, peso líquido, peso CCT...)
+# -- pegar a primeira que bater com "peso" pega o peso bruto/entrada. Pra
+# conferência o que importa é o PESO BALANÇA (leitura da balança), por isso
+# ele é o tier mais específico; "líquido" fica como fallback pra relatórios
+# que não têm coluna de balança. table_columns() usa o tier mais específico
+# que encontrar entre TODAS as colunas do cabeçalho, não a primeira coluna
+# da esquerda pra direita.
+HEADER_ALIASES: dict[str, tuple[tuple[str, ...], ...]] = {
+    "placa": (("placa", "veiculo", "veículo"),),
+    "carga": (("carga", "ticket", "romaneio", "laudo", "ordem", "controle"),),
+    "peso": (
+        ("peso balanca", "balanca"),
+        ("peso liq", "liquido"),
+        ("peso", "quantidade", "qtd", "tonelada", "tons", "kg"),
+    ),
+    "nota_fiscal": (("nota fiscal", "nfe", "nf-e", "nf"),),
 }
 
 
@@ -101,6 +120,18 @@ class ExtractedLoad:
             "confianca": self.confianca,
             "origem": self.origem,
         }
+
+
+@dataclass(slots=True)
+class PageUnit:
+    """Uma "página" a processar. kind="ocr" (imagem renderizada, passa pelo
+    PaddleOCR) ou kind="rows" (texto/planilha já estruturado — PDF com texto
+    nativo, xlsx/xls/csv, docx — não precisa de OCR)."""
+
+    page_number: int
+    kind: str
+    image_path: Path | None = None
+    rows: list[OcrRow] | None = None
 
 
 class SupabaseRest:
@@ -376,28 +407,56 @@ def group_rows(items: Sequence[OcrItem]) -> list[OcrRow]:
     return rows
 
 
-def header_key(text: str) -> str | None:
+def header_key_rank(text: str) -> tuple[str, int] | None:
+    """Acha a chave (placa/carga/peso/nota_fiscal) do cabeçalho, junto com o
+    índice do tier que bateu (0 = mais específico). Ver comentário em
+    HEADER_ALIASES sobre por que isso importa pra "peso"."""
     normalized = normalize(text)
-    for key, aliases in HEADER_ALIASES.items():
-        if any(alias in normalized for alias in aliases):
-            return key
+    for key, tiers in HEADER_ALIASES.items():
+        for tier_index, aliases in enumerate(tiers):
+            if any(alias in normalized for alias in aliases):
+                return key, tier_index
     return None
 
 
 def table_columns(header: OcrRow) -> dict[str, tuple[float, str]]:
-    columns: dict[str, tuple[float, str]] = {}
+    best: dict[str, tuple[int, float, str]] = {}
     for item in header.items:
-        key = header_key(item.text)
-        if key and key not in columns:
-            columns[key] = (item.cx, item.text)
-    return columns
+        found = header_key_rank(item.text)
+        if not found:
+            continue
+        key, tier = found
+        current = best.get(key)
+        # Entre colunas que batem com a mesma chave (ex.: "peso entrada" e
+        # "peso liq." batem as duas com "peso"), fica com a de tier mais
+        # específico; em empate de tier, fica com a primeira da esquerda.
+        if current is None or tier < current[0]:
+            best[key] = (tier, item.cx, item.text)
+    return {key: (cx, text) for key, (_tier, cx, text) in best.items()}
 
 
-def row_cells(row: OcrRow, columns: dict[str, tuple[float, str]]) -> dict[str, str]:
+def typical_column_width(header: OcrRow) -> float:
+    """Espaçamento típico entre colunas nesse cabeçalho (mediana da distância
+    entre células vizinhas), usado como raio de tolerância em row_cells. Não
+    dá pra usar a distância entre as colunas RECONHECIDAS pra isso — um
+    relatório real tem muito mais colunas do que as que sabemos nomear (ex.:
+    40 colunas, só reconhecemos "placa" e "peso"), e a distância entre essas
+    duas pode ser enorme mesmo com colunas bem próximas entre si."""
+    xs = sorted(item.cx for item in header.items)
+    gaps = [b - a for a, b in zip(xs, xs[1:]) if b > a]
+    return statistics.median(gaps) if gaps else math.inf
+
+
+def row_cells(row: OcrRow, columns: dict[str, tuple[float, str]], max_distance: float) -> dict[str, str]:
+    # Célula só é considerada parte de uma coluna reconhecida se estiver a
+    # no máximo meia largura de coluna dela — sem isso, colunas não
+    # reconhecidas (a maioria, normalmente) grudavam inteiras na coluna
+    # reconhecida mais próxima, embaralhando vários campos num só.
     assigned: dict[str, list[str]] = {key: [] for key in columns}
     for item in row.items:
         key = min(columns, key=lambda name: abs(item.cx - columns[name][0]))
-        assigned[key].append(item.text)
+        if abs(item.cx - columns[key][0]) <= max_distance:
+            assigned[key].append(item.text)
     return {key: " ".join(values).strip() for key, values in assigned.items()}
 
 
@@ -412,10 +471,11 @@ def extract_from_table(rows: Sequence[OcrRow], page_number: int) -> list[Extract
         columns = table_columns(header)
         if "placa" not in columns or len(columns) < 2:
             continue
+        max_distance = typical_column_width(header) / 2
         for row in rows[header_index + 1 :]:
             if row is not header and "placa" in table_columns(row):
                 break
-            cells = row_cells(row, columns)
+            cells = row_cells(row, columns, max_distance)
             plates = find_plates(cells.get("placa", "") or row.text)
             if not plates:
                 continue
@@ -493,11 +553,82 @@ def merge_loads(loads: Iterable[ExtractedLoad]) -> list[ExtractedLoad]:
     return sorted(merged.values(), key=lambda item: (item.pagina, item.placa, item.carga))
 
 
+def rows_from_matrix(matrix: Sequence[Sequence[Any]]) -> list[OcrRow]:
+    """Converte uma matriz de células (planilha/tabela docx) em OcrRow,
+    reaproveitando a mesma lógica de coluna-por-posição (x) do OCR — aqui a
+    posição é sintética (índice da coluna * largura fixa), não pixel real."""
+    rows: list[OcrRow] = []
+    for row_index, cells in enumerate(matrix):
+        items: list[OcrItem] = []
+        for col_index, cell in enumerate(cells):
+            text = "" if cell is None else str(cell).strip()
+            if not text:
+                continue
+            x1 = col_index * 120.0
+            items.append(OcrItem(text=text, score=1.0, x1=x1, y1=row_index * 24.0, x2=x1 + 110.0, y2=row_index * 24.0 + 20.0))
+        if items:
+            rows.append(OcrRow(items=items))
+    return rows
+
+
+def read_xlsx_sheets(source: Path) -> list[tuple[str, list[list[str]]]]:
+    workbook = openpyxl.load_workbook(source, data_only=True, read_only=True)
+    try:
+        return [
+            (
+                name,
+                [["" if cell is None else str(cell) for cell in row] for row in workbook[name].iter_rows(values_only=True)],
+            )
+            for name in workbook.sheetnames
+        ]
+    finally:
+        workbook.close()
+
+
+def read_xls_sheets(source: Path) -> list[tuple[str, list[list[str]]]]:
+    book = xlrd.open_workbook(str(source))
+    return [
+        (
+            sheet.name,
+            [
+                ["" if sheet.cell_value(r, c) is None else str(sheet.cell_value(r, c)) for c in range(sheet.ncols)]
+                for r in range(sheet.nrows)
+            ],
+        )
+        for sheet in book.sheets()
+    ]
+
+
+def read_csv_rows(source: Path) -> list[tuple[str, list[list[str]]]]:
+    with source.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+        sample = handle.read(4096)
+        handle.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")
+        except csv.Error:
+            dialect = csv.excel
+        matrix = list(csv.reader(handle, dialect))
+    return [("CSV", matrix)]
+
+
+def read_docx_rows(source: Path) -> list[OcrRow]:
+    document = DocxDocument(str(source))
+    rows: list[OcrRow] = []
+    for table in document.tables:
+        rows.extend(rows_from_matrix([[cell.text for cell in table_row.cells] for table_row in table.rows]))
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            rows.extend(rows_from_matrix([[text]]))
+    return rows
+
+
 class PaddleProcessor:
     def __init__(self) -> None:
         self.minimum_score = float(os.getenv("PADDLE_OCR_MIN_SCORE", "0.35"))
         self.render_dpi = int(os.getenv("OCR_RENDER_DPI", "180"))
         self.max_pages = int(os.getenv("OCR_MAX_PAGES", "200"))
+        self.max_total_pages = int(os.getenv("OCR_MAX_TOTAL_PAGES", "3000"))
         self.ocr = PaddleOCR(
             lang=os.getenv("PADDLE_OCR_LANG", "pt"),
             ocr_version=os.getenv("PADDLE_OCR_VERSION", "PP-OCRv5"),
@@ -507,26 +638,75 @@ class PaddleProcessor:
             device=os.getenv("PADDLE_OCR_DEVICE", "cpu"),
         )
 
-    def page_images(self, source: Path, file_type: str, work_dir: Path) -> tuple[int, Iterator[tuple[int, Path]]]:
-        if file_type != "pdf":
-            return 1, iter([(1, source)])
+    def plan_units(self, source: Path, file_type: str, work_dir: Path) -> tuple[int, Iterator[PageUnit]]:
+        if file_type == "pdf":
+            return self._plan_pdf_units(source, work_dir)
+        if file_type == "xlsx":
+            return self._plan_sheet_units(read_xlsx_sheets(source))
+        if file_type == "xls":
+            return self._plan_sheet_units(read_xls_sheets(source))
+        if file_type == "csv":
+            return self._plan_sheet_units(read_csv_rows(source))
+        if file_type == "docx":
+            return 1, iter([PageUnit(page_number=1, kind="rows", rows=read_docx_rows(source))])
+        # jpg/jpeg/png/gif/webp: página única, sempre via OCR.
+        return 1, iter([PageUnit(page_number=1, kind="ocr", image_path=source)])
 
+    def _plan_sheet_units(self, sheets: list[tuple[str, list[list[str]]]]) -> tuple[int, Iterator[PageUnit]]:
+        units = [
+            PageUnit(page_number=index + 1, kind="rows", rows=rows_from_matrix(matrix))
+            for index, (_name, matrix) in enumerate(sheets)
+        ] or [PageUnit(page_number=1, kind="rows", rows=[])]
+        return len(units), iter(units)
+
+    def _plan_pdf_units(self, source: Path, work_dir: Path) -> tuple[int, Iterator[PageUnit]]:
         document = fitz.open(source)
         total = len(document)
-        if total > self.max_pages:
+        if total > self.max_total_pages:
             document.close()
-            raise RuntimeError(f"PDF possui {total} páginas; limite configurado é {self.max_pages}.")
+            raise RuntimeError(f"PDF possui {total} páginas; limite configurado é {self.max_total_pages}.")
 
-        def iterator() -> Iterator[tuple[int, Path]]:
+        # Página com texto nativo (PDF gerado digitalmente) é lida direto
+        # pelo PyMuPDF — sem render de imagem nem OCR, ordens de magnitude
+        # mais rápido e sem o limite apertado do OCR. Só cai em OCR (lento,
+        # limite mais baixo) quem realmente não tem texto embutido (página
+        # escaneada/fotografada).
+        natives: list[list[OcrRow] | None] = []
+        for page in document:
+            text = page.get_text("text") or ""
+            if len(text.strip()) < 20:
+                natives.append(None)
+                continue
+            words = page.get_text("words") or []
+            items = [
+                OcrItem(text=str(word[4]).strip(), score=1.0, x1=float(word[0]), y1=float(word[1]), x2=float(word[2]), y2=float(word[3]))
+                for word in words
+                if str(word[4]).strip()
+            ]
+            natives.append(group_rows(items) if items else None)
+
+        ocr_pages = sum(1 for rows in natives if rows is None)
+        if ocr_pages > self.max_pages:
+            document.close()
+            raise RuntimeError(f"PDF possui {ocr_pages} página(s) sem texto nativo (exigem OCR); limite configurado é {self.max_pages}.")
+
+        render_dpi = self.render_dpi
+
+        def iterator() -> Iterator[PageUnit]:
             try:
-                zoom = self.render_dpi / 72.0
+                zoom = render_dpi / 72.0
                 matrix = fitz.Matrix(zoom, zoom)
-                for page_index in range(total):
-                    page = document.load_page(page_index)
+                for index in range(total):
+                    page_number = index + 1
+                    rows = natives[index]
+                    if rows is not None:
+                        yield PageUnit(page_number=page_number, kind="rows", rows=rows)
+                        continue
+                    page = document.load_page(index)
                     pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-                    image_path = work_dir / f"pagina-{page_index + 1:04d}.png"
+                    image_path = work_dir / f"pagina-{page_number:04d}.png"
                     pixmap.save(image_path)
-                    yield page_index + 1, image_path
+                    yield PageUnit(page_number=page_number, kind="ocr", image_path=image_path)
             finally:
                 document.close()
 
@@ -598,17 +778,27 @@ def handle_job(db: SupabaseRest, processor: PaddleProcessor, worker_id: str, job
         source = download_document(document_url, file_type, work_dir, max_bytes)
         db.update_job(job_id, {"progress": 8, "locked_at": utc_now(), "updated_at": utc_now()})
 
-        page_total, pages = processor.page_images(source, file_type, work_dir)
+        page_total, units = processor.plan_units(source, file_type, work_dir)
         db.update_job(job_id, {"page_total": page_total, "page_current": 0, "progress": 10, "locked_at": utc_now(), "updated_at": utc_now()})
 
         all_loads: list[ExtractedLoad] = []
         raw_pages: list[dict[str, Any]] = []
-        for page_number, image_path in pages:
+        for unit in units:
             if STOP_REQUESTED:
                 raise RuntimeError("Worker interrompido durante o processamento.")
-            page_loads, raw_page = processor.process_page(image_path, page_number)
+            if unit.kind == "ocr":
+                page_loads, raw_page = processor.process_page(unit.image_path, unit.page_number)
+            else:
+                rows = unit.rows or []
+                page_loads = merge_loads([*extract_from_table(rows, unit.page_number), *extract_from_context(rows, unit.page_number)])
+                raw_page = {
+                    "pagina": unit.page_number,
+                    "texto": "\n".join(row.text for row in rows),
+                    "linhas": [{"texto": row.text, "y": round(row.cy, 2), "confianca": None} for row in rows],
+                }
             all_loads.extend(page_loads)
             raw_pages.append(raw_page)
+            page_number = unit.page_number
             progress = min(95, 10 + round(page_number / max(1, page_total) * 85))
             db.update_job(
                 job_id,
@@ -628,9 +818,9 @@ def handle_job(db: SupabaseRest, processor: PaddleProcessor, worker_id: str, job
         elapsed_ms = round((time.monotonic() - started_monotonic) * 1000)
 
         if document_type == "cargas" and not merged:
-            raise RuntimeError("O PaddleOCR leu o documento, mas não identificou nenhuma placa válida.")
+            raise RuntimeError("O documento foi lido, mas não identificou nenhuma placa válida.")
         if document_type == "texto_livre" and not raw_text.strip():
-            raise RuntimeError("O PaddleOCR não reconheceu nenhum texto no documento.")
+            raise RuntimeError("Não foi reconhecido nenhum texto no documento.")
 
         db.update_job(
             job_id,
@@ -705,14 +895,20 @@ def main() -> int:
                 handle_job(db, processor, worker_id, job)
                 db.heartbeat(worker_id, "ONLINE", None, {"ultimo_job": job_id})
             except Exception as error:  # noqa: BLE001 - precisa registrar qualquer falha do job
-                detail = f"{type(error).__name__}: {error}"
+                # RuntimeError é sempre levantado por nós com mensagem já
+                # amigável em português (limite de páginas, tipo não
+                # suportado etc.) — mostra só ela pro usuário. Qualquer outra
+                # exceção é um bug inesperado: guarda o tipo pra facilitar o
+                # diagnóstico, mas sem o traceback completo (esse já fica no
+                # journalctl do serviço, não precisa poluir o modal da tela).
+                user_message = str(error) if isinstance(error, RuntimeError) else f"{type(error).__name__}: {error}"
                 trace = traceback.format_exc(limit=20)
-                LOGGER.error("Job %s falhou: %s\n%s", job_id, detail, trace)
+                LOGGER.error("Job %s falhou: %s\n%s", job_id, user_message, trace)
                 db.update_job(
                     job_id,
                     {
                         "status": "ERRO",
-                        "error": f"{detail}\n{trace}"[:8000],
+                        "error": user_message[:2000],
                         "locked_at": None,
                         "completed_at": utc_now(),
                         "updated_at": utc_now(),

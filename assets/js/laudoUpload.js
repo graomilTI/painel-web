@@ -7,6 +7,16 @@
 // sendo aceito normalmente (só perde o sinal para a aba "Alertas").
 import { supabase } from './supabaseClient.js';
 
+// O Supabase Storage rejeita ("Invalid key") qualquer caractere fora de
+// [a-zA-Z0-9._-] na chave do objeto -- nome de arquivo com acento (comum em
+// "RELATÓRIO...", "EMBARQUE...") sempre falhava porque só espaço virava "_".
+// Tira o acento primeiro (NFD + remove marca de combinação) pra manter o
+// nome legível, só troca por "_" o que sobrar de realmente não permitido.
+export function sanitizeFileName(name) {
+  const base = String(name || 'arquivo').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return base.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
 export function capturarGeolocalizacao(timeoutMs = 6000) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) { resolve(null); return; }
@@ -23,7 +33,7 @@ export async function anexarLaudoComGeolocalizacao(osId, files, { origem, usuari
 
   const urls = [];
   for (const file of files) {
-    const path = `${osId}/${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+    const path = `${osId}/${Date.now()}_${sanitizeFileName(file.name)}`;
     const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
     if (upErr) throw upErr;
     const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);

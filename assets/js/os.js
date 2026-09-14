@@ -831,7 +831,7 @@ export async function renderOsModule(content, options = {}) {
         <div id="laudoDropzone" style="border:2px dashed rgba(239,68,68,.4);border-radius:12px;padding:22px;text-align:center;cursor:pointer;color:#6b7280;font-size:13px;transition:border-color .2s">
           <div style="font-size:22px;margin-bottom:6px">📎</div>
           Clique ou arraste arquivos aqui<br><small>Imagens, PDF, planilhas (.xlsx, .csv)</small>
-          <input id="laudoInput" type="file" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple style="display:none" />
+          <input id="laudoInput" type="file" accept="image/*,.pdf,.xlsx,.xls,.csv,.docx" multiple style="display:none" />
         </div>
         <div id="laudoFileList" style="font-size:12px;color:#bbf7d0;min-height:18px"></div>
         <div class="kg-modal-actions">

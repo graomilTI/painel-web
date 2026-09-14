@@ -65,7 +65,12 @@ function systemLoad(row, index) {
   const nf = row.nota_fiscal ?? jsonField(json, ['Nota fiscal', 'NF', 'NFe']).value ?? '';
   const weightField = jsonField(json, ['Peso líquido kg', 'Peso líquido', 'Peso kg', 'Peso', 'Quantidade kg', 'Toneladas', 'Tons']);
   let weight = numberValue(row.peso_kg ?? row.peso ?? weightField.value);
-  if (weight != null && normCode(weightField.key).includes('TON')) weight *= 1000;
+  // Só multiplica por 1000 se o campo parece ser toneladas E o valor já não
+  // está numa faixa plausível de kg -- sem essa segunda checagem, um campo
+  // tipo "Toneladas"/"Tons" que na prática já guarda kg (inconsistência do
+  // lado da importação) inflava o peso 1000x (ex.: 50880 kg virando
+  // "50.880.000 kg" na tela de Pré-Conferência).
+  if (weight != null && weight < 1000 && normCode(weightField.key).includes('TON')) weight *= 1000;
   return { id: row.id ?? `sys-${index}`, carga: String(load).trim(), placa: String(plate).trim(), pesoKg: weight, nf: String(nf).trim() };
 }
 
@@ -294,7 +299,14 @@ async function getSystemLoads(row) {
 }
 
 const OCR_PROMPT = `Extraia placa, carga/ticket/romaneio/laudo, peso em quilogramas, nota fiscal e página de cada veículo do relatório.`;
-function fileType(url) { const ext = String(url).split('?')[0].split('.').pop()?.toLowerCase(); return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'].includes(ext) ? ext : 'pdf'; }
+const SUPPORTED_TYPES = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'xlsx', 'xls', 'csv', 'docx'];
+function fileType(url) {
+  const ext = String(url).split('?')[0].split('.').pop()?.toLowerCase();
+  if (!SUPPORTED_TYPES.includes(ext)) {
+    throw new Error(`Formato ".${ext || '?'}" não é suportado na leitura automática. Envie imagem, PDF, XLSX, XLS, CSV ou DOCX.`);
+  }
+  return ext;
+}
 
 async function functionError(error, fallback) {
   let details = null;
