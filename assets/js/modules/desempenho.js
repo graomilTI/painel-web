@@ -581,7 +581,6 @@
 
         ${state.error ? `<div class="des-status err"><strong>Erro:</strong> ${esc(state.error)}</div>` : ''}
         ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e histórico diário de colaboradores.</div>` : ''}
-        ${state.headcountAsOf && state.headcountSource === 'live' ? `<div class="des-status"><strong>Aviso:</strong> não há histórico diário de colaboradores salvo para o período selecionado. Os classificadores exibidos usam o quadro atual sincronizado com o GRM (agora), sem variação dia a dia dentro do mês.</div>` : ''}
         ${state.headcountAsOf && state.headcountSource === 'historico' ? `<div class="des-status err"><strong>Atenção:</strong> não há histórico de colaboradores para o período selecionado nem quadro ao vivo do GRM disponível. Os classificadores exibidos usam o último quadro salvo (${esc(brDay(state.headcountAsOf))}/${esc(state.headcountAsOf.slice(0, 4))}) — verifique a sincronização de colaboradores.</div>` : ''}
         ${renderKpis()}
         ${renderTable()}
