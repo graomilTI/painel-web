@@ -1,5 +1,5 @@
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260911-finaliza-libera-semos1';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260911-hosp-v3';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260914-programacao-id-busca-remota-fix';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 
 // Programação Gestor (2026-07-21, "lista + painel lateral"): o botão Carregar

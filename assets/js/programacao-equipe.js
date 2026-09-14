@@ -431,6 +431,46 @@ export async function loadOsRelevantes(supervisao, dataReferencia) {
   return [...porId.values()];
 }
 
+// Busca por os_id em vez de programacao_id — usada quando a O.S. veio da
+// busca remota por número (loadOsRelevantePorNumero), que ignora o
+// intervalo de datas já carregado. Sem isso, equipeRowsAtual nunca ganha as
+// linhas de programacao_equipe dessa O.S. (o programacao_id dela pode ser
+// de outra data, fora de programacaoIdQuery) e a equipe confirmada aparece
+// vazia mesmo com o colaborador corretamente confirmado no banco (achado
+// investigando sumiço aparente do Cássio Pelissaro na OS 91491, 2026-09-14
+// — o vínculo nunca saiu de programacao_equipe, só não era buscado).
+export async function loadEquipeDaOsPorId(osId) {
+  const { data, error } = await supabase.from('programacao_equipe').select('*').eq('os_id', osId);
+  if (error) throw error;
+  return data || [];
+}
+
+// Resolve (ou cria) o id de programacao_dia pra uma (data, supervisão)
+// específica — mesmo padrão do ensureProgramacaoDia local que já existia
+// duplicado em programacao.js e logistica-abertura-os-informar-colaborador.js,
+// centralizado aqui pra quem mais precisar (ex.: gravar vínculo de
+// colaborador numa O.S. de outra data achada pela busca remota do número,
+// ver programacaoIdParaOs em programacao-lista-drawer.js).
+export async function ensureProgramacaoDia(dataReferencia, supervisao, coordenacao = '') {
+  const { data: existente, error: selError } = await supabase.from('programacao_dia')
+    .select('id').eq('data_referencia', dataReferencia).eq('supervisao', supervisao).maybeSingle();
+  if (selError) throw selError;
+  if (existente) return existente.id;
+  const usuario = await getCurrentUser();
+  const { data: criada, error: insError } = await supabase.from('programacao_dia')
+    .insert({
+      data_referencia: dataReferencia,
+      supervisao,
+      coordenacao: coordenacao || null,
+      regional: supervisao || null,
+      status: 'rascunho',
+      criado_por: usuario?.id || null,
+    })
+    .select('id').single();
+  if (insError) throw insError;
+  return criada.id;
+}
+
 export async function loadOsRelevantePorNumero(supervisao, numeroOs) {
   let query = supabase
     .from('operacional_os')
