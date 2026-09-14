@@ -44,7 +44,9 @@ var MAX_LOOKUP_ROWS = Number(process.env.CARGAS_OS_LOOKUP_LIMIT || 5000);
 // verdade no GRM). Agora, quando roda sem "--data" explícito (uso normal do
 // cron), busca também os últimos N dias, não só hoje, pra reupsertar
 // (chave_unica) e assim atualizar o status de faturamento de cargas antigas.
-var RECONCILIACAO_DIAS = Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30);
+// A API do GRM (report/classification/loads) não aceita intervalo maior que
+// 30 dias -- por isso o teto aqui, mesmo que alguém configure a env maior.
+var RECONCILIACAO_DIAS = Math.min(30, Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30));
 // O modo "new" do headless não sustenta --single-process (usado nos flags de memória
 // abaixo) e trava com "Check failed: false" em partition_address_space.cc em hosts como
 // esse cPanel. Os outros agentes da esteira (ex.: grm-sync-lista-os.js) usam o modo
