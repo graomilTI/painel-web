@@ -384,13 +384,30 @@ async function salvarImportacao(rows) {
 
   records = dedupePorChaveUnicaV2(records, 'importacoes');
 
-  for (var i = 0; i < records.length; i += 100) {
-    var chunk = records.slice(i, i + 100);
-    var res = await supabase.from(REPORT_CONFIG.tableImportacoes).upsert(chunk, { onConflict: 'chave_unica' });
-    if (res.error) {
-      log('WARN', 'Falha salvando importação de cargas: ' + res.error.message);
-      return;
+  // Com a reconciliação de 30 dias o volume passou de algumas centenas pra
+  // dezenas de milhares de linhas -- gravar 100 por vez em sequência (~500+
+  // idas e vindas ao banco, uma de cada vez) estourava o timeout de
+  // segurança do agente. Lotes de 100 continuam pequenos o bastante pra não
+  // arriscar timeout do lado do Postgres, mas roda MAX_UPSERT_CONCORRENTE
+  // lotes ao mesmo tempo em vez de um por um.
+  var MAX_UPSERT_CONCORRENTE = Number(process.env.CARGAS_UPSERT_CONCORRENCIA || 6);
+  var chunks = [];
+  for (var i = 0; i < records.length; i += 100) chunks.push(records.slice(i, i + 100));
+
+  var gravados = 0;
+  for (var b = 0; b < chunks.length; b += MAX_UPSERT_CONCORRENTE) {
+    var lote = chunks.slice(b, b + MAX_UPSERT_CONCORRENTE);
+    var resultados = await Promise.all(lote.map(function (chunk) {
+      return supabase.from(REPORT_CONFIG.tableImportacoes).upsert(chunk, { onConflict: 'chave_unica' });
+    }));
+    for (var r = 0; r < resultados.length; r++) {
+      if (resultados[r].error) {
+        log('WARN', 'Falha salvando importação de cargas: ' + resultados[r].error.message);
+        return;
+      }
+      gravados += lote[r].length;
     }
+    log('INFO', 'Cargas gravadas: ' + gravados + '/' + records.length);
   }
 }
 
