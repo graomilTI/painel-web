@@ -172,14 +172,23 @@ async function carregarColaboradoresElegiveis(originalFrom, supervisao) {
 
 async function limparConfirmadosBloqueados(originalFrom, rows) {
   const ids = unique(rows.map((r) => r.id));
-  const osIds = unique(rows.map((r) => r.os_id));
+  const osColabPares = rows
+    .filter((r) => r.os_id && r.colaborador_id)
+    .map((r) => ({ osId: r.os_id, colaboradorId: String(r.colaborador_id) }));
   const pares = rows
     .filter((r) => r.programacao_id && r.colaborador_id)
     .map((r) => ({ programacaoId: r.programacao_id, colaboradorId: String(r.colaborador_id) }));
 
   try {
     if (ids.length) await originalFrom('programacao_equipe').delete().in('id', ids);
-    if (osIds.length) await originalFrom('operacional_os_colaboradores').delete().in('os_id', osIds);
+    // Apagar só o vínculo do colaborador bloqueado — filtrar apenas por
+    // os_id apagava também colaboradores válidos que compartilham a mesma
+    // O.S. (achado: O.S. 92489 perdendo colaborador "Efetivo" ao lado de um
+    // "Intermitente" com cargo bloqueado, 2026-09-14).
+    await Promise.all(osColabPares.map((p) => originalFrom('operacional_os_colaboradores')
+      .delete()
+      .eq('os_id', p.osId)
+      .eq('colaborador_key', p.colaboradorId)));
     await Promise.all(pares.map((p) => originalFrom('programacao_colaboradores')
       .update({ disponibilidade: 'SEM EMBARQUE' })
       .eq('programacao_id', p.programacaoId)
