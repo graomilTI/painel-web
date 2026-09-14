@@ -337,6 +337,33 @@ async function carregarGruposPendentes({ apenasNovoDia = false } = {}) {
   const osRows = [...osPorDataOs, ...osExtras];
   const osById = new Map(osRows.map((row) => [String(row.id), row]));
 
+  // OS reaproveitada de um dia pra outro pode ter equipe confirmada só numa
+  // data fora da janela (ex.: 92099 confirmada em 10/09, hoje 14/09 sem
+  // reconfirmação) — o par sintético (os_id, data_os) abaixo não acha
+  // programados pra ela e, sem essa checagem, seria tratado como "esperado
+  // vazio", apagando o vínculo real no Graint (achado ao vivo 14/09: OS
+  // 92099/92117 zeradas dessa forma). Só sabemos se é esse caso consultando
+  // programacao_equipe sem filtro de data — se existe QUALQUER confirmação
+  // pra essa OS, ela é "reaproveitada com equipe desatualizada" e a rodada
+  // pula (não mexe no Graint) em vez de zerar; só quando não há confirmação
+  // em nenhuma data é que o vínculo é mesmo residual e pode ser limpo.
+  const idsParaChecarConfirmacao = osRows.map((row) => String(row.id));
+  const osIdsComConfirmacaoQualquerData = new Set();
+  for (let i = 0; i < idsParaChecarConfirmacao.length; i += CHUNK) {
+    const chunk = idsParaChecarConfirmacao.slice(i, i + CHUNK);
+    const linhas = await carregarPaginado(
+      (offset, pageSize) => supabase
+        .from('programacao_equipe')
+        .select('os_id')
+        .eq('confirmado', true)
+        .in('os_id', chunk)
+        .order('id', { ascending: true })
+        .range(offset, offset + pageSize - 1),
+      'Falha ao consultar programacao_equipe (confirmação em qualquer data)'
+    );
+    linhas.forEach((r) => { if (r.os_id) osIdsComConfirmacaoQualquerData.add(String(r.os_id)); });
+  }
+
   // Todo par (os_id, data) com programação confirmada participa — mesmo que a
   // OS também tenha uma outra data com programação (ver comentário acima).
   // O data_os atual da OS entra como fallback, só pra continuar cobrindo o caso
@@ -344,7 +371,11 @@ async function carregarGruposPendentes({ apenasNovoDia = false } = {}) {
   const paresOsData = new Set(programadosPorOsData.keys());
   for (const row of osRows) {
     const data = dateKey(row.data_os || row.configurada_em);
-    if (data) paresOsData.add(`${String(row.id)}|${data}`);
+    if (!data) continue;
+    const key = `${String(row.id)}|${data}`;
+    if (paresOsData.has(key) || !osIdsComConfirmacaoQualquerData.has(String(row.id))) {
+      paresOsData.add(key);
+    }
   }
 
   const grupos = new Map();
