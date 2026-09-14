@@ -1,7 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession } from './auth.js';
 import { supabase } from './supabaseClient.js';
-import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
+import { anexarLaudoComGeolocalizacao, sanitizeFileName } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
@@ -669,7 +669,7 @@ function acaoPainelHtml(row) {
 
   if (aberta === 'conferencia') {
     return `<div class="atz-painel">
-      <input type="file" id="conf-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+      <input type="file" id="conf-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv,.docx" multiple>
       <button type="button" class="log-btn-ok mt-8" data-conf-send="${id}">Enviar</button>
     </div>`;
   }
@@ -684,7 +684,7 @@ function acaoPainelHtml(row) {
   }
   if (aberta === 'finalizar') {
     return `<div class="atz-painel">
-      <input type="file" id="final-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv" multiple>
+      <input type="file" id="final-file-${id}" class="log-file-input" accept="image/*,.pdf,.xlsx,.xls,.csv,.docx" multiple>
       <button type="button" class="log-btn-ok mt-8" data-final-send="${id}">Enviar</button>
     </div>`;
   }
@@ -969,7 +969,7 @@ async function uploadAnexoLogistica(osId, files, origem) {
   const usuario = currentUsuario();
   const urls = [];
   for (const file of files) {
-    const path = `${osId}/${origem}_${Date.now()}_${(file.name || 'anexo').replace(/\s+/g, '_')}`;
+    const path = `${osId}/${origem}_${Date.now()}_${sanitizeFileName(file.name || 'anexo')}`;
     const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
     if (upErr) throw upErr;
     const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);

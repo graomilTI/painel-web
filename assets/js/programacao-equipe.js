@@ -8,7 +8,7 @@
 // usada em Frotas Roteirização, ver supabase/functions/frotas-roteirizar).
 import { supabase } from './supabaseClient.js';
 import { getUserContext, getCurrentUser } from './auth.js';
-import { anexarLaudoComGeolocalizacao, capturarGeolocalizacao } from './laudoUpload.js';
+import { anexarLaudoComGeolocalizacao, capturarGeolocalizacao, sanitizeFileName } from './laudoUpload.js';
 import { marcarMapaRotasPendente } from './programacao-equipe-mapa-rotas-trigger.js';
 
 let currentUserIsMaster = false;
@@ -1125,7 +1125,7 @@ export async function anexarAnexoSaldo(osId, files, { usuario } = {}) {
   const geo = await capturarGeolocalizacao();
   const urls = [];
   for (const file of files) {
-    const path = `${osId}/saldo_${Date.now()}_${(file.name || 'anexo.png').replace(/\s+/g, '_')}`;
+    const path = `${osId}/saldo_${Date.now()}_${sanitizeFileName(file.name || 'anexo.png')}`;
     const { data: up, error: upErr } = await supabase.storage.from('os-laudos').upload(path, file, { upsert: true });
     if (upErr) throw upErr;
     const { data: urlData } = supabase.storage.from('os-laudos').getPublicUrl(up.path);

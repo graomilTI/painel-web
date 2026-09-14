@@ -14,7 +14,7 @@ const ALLOWED_MODULES = new Set([
   // ver menuConfig.js:34 — diferente do "logistica_os" da tela do ADM.
   "logistica_gestor",
 ]);
-const ALLOWED_TYPES = new Set(["jpg", "jpeg", "png", "gif", "webp", "pdf"]);
+const ALLOWED_TYPES = new Set(["jpg", "jpeg", "png", "gif", "webp", "pdf", "xlsx", "xls", "csv", "docx"]);
 const MAX_INSTRUCTION_LENGTH = 3000;
 const RECENT_JOB_HOURS = 6;
 
