@@ -241,8 +241,18 @@ async function carregarPendenciasNovoDia() {
     .eq('processado', false);
   if (error) throw new Error(`Falha ao consultar programacao_distribuicao_agendada: ${error.message}`);
 
+  const { data: supervisoesFlag, error: errorFlag } = await supabase
+    .from('supervisoes')
+    .select('nome, distribuicao_os_automatica');
+  if (errorFlag) throw new Error(`Falha ao consultar supervisoes: ${errorFlag.message}`);
+
+  const automaticaPorNome = new Map(
+    safe(supervisoesFlag).map((s) => [normalize(s.nome), Boolean(s.distribuicao_os_automatica)])
+  );
+
   const chaves = new Set();
   for (const p of safe(pendentes)) {
+    if (!automaticaPorNome.get(normalize(p.supervisao))) continue;
     chaves.add(`${dateKey(p.data_referencia)}|${normalize(p.supervisao)}`);
   }
   return chaves;
