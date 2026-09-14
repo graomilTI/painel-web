@@ -79,7 +79,11 @@ function systemLoad(row, index) {
   const load = row.carga ?? jsonField(json, ['Carga', 'Nº carga', 'Ticket', 'Romaneio', 'Laudo']).value ?? row.laudo ?? '';
   const plate = row.placa ?? jsonField(json, ['Placa', 'Placa veículo']).value ?? '';
   const nf = row.nota_fiscal ?? jsonField(json, ['Nota fiscal', 'NF', 'NFe']).value ?? '';
-  const weightField = jsonField(json, ['Peso líquido kg', 'Peso líquido', 'Peso kg', 'Peso', 'Quantidade kg', 'Toneladas', 'Tons']);
+  // loaWeight é o campo bruto da API do GRM (grmserver-cargas-geofence-api.js)
+  // -- já vem em kg (ver comentário no sync: "A API retorna o peso em kg; o
+  // XLS histórico expunha toneladas"), por isso não entra na lista de nomes
+  // que disparam a multiplicação por 1000 abaixo.
+  const weightField = jsonField(json, ['Peso líquido kg', 'Peso líquido', 'Peso kg', 'Peso', 'Quantidade kg', 'Toneladas', 'Tons', 'loaWeight']);
   let weight = numberValue(row.peso_kg ?? row.peso ?? weightField.value);
   // Só multiplica por 1000 se o campo parece ser toneladas E o valor já não
   // está numa faixa plausível de kg -- sem essa segunda checagem, um campo
