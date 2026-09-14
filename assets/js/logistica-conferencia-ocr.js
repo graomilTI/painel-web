@@ -58,6 +58,18 @@ function jsonField(json, names) {
   return { value: null, key: '' };
 }
 
+// bilCode é o campo bruto que o sync do GRM traz por carga (0/nulo = ainda
+// não faturada, >0 = faturada) -- é de onde vem o rótulo "Faturada"/"Não
+// Faturada" que a própria tela do GRM mostra (ver
+// agentes-grm-sync/grm-sync-cargas-geofence.js). Algumas O.S. faturam placa
+// por placa "em partes": nessas, cargas já faturadas separadamente não
+// devem contar como divergência na Pré-Conferência.
+function isFaturado(json) {
+  const bilCode = json?.bilCode ?? json?.bil_code;
+  if (bilCode != null && bilCode !== '') return Number(bilCode) > 0;
+  return normCode(json?.situacao ?? '') === 'FATURADA';
+}
+
 function systemLoad(row, index) {
   const json = row.dados_json || {};
   const load = row.carga ?? jsonField(json, ['Carga', 'Nº carga', 'Ticket', 'Romaneio', 'Laudo']).value ?? row.laudo ?? '';
@@ -71,7 +83,7 @@ function systemLoad(row, index) {
   // lado da importação) inflava o peso 1000x (ex.: 50880 kg virando
   // "50.880.000 kg" na tela de Pré-Conferência).
   if (weight != null && weight < 1000 && normCode(weightField.key).includes('TON')) weight *= 1000;
-  return { id: row.id ?? `sys-${index}`, carga: String(load).trim(), placa: String(plate).trim(), pesoKg: weight, nf: String(nf).trim() };
+  return { id: row.id ?? `sys-${index}`, carga: String(load).trim(), placa: String(plate).trim(), pesoKg: weight, nf: String(nf).trim(), faturado: isFaturado(json) };
 }
 
 function reportLoad(row, index, url) {
@@ -215,6 +227,7 @@ function installStyle() {
     .pc-body{min-height:0;flex:1;display:flex;flex-direction:column;padding:12px 16px;overflow:hidden}
     .pc-kpis{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,minmax(100px,1fr));gap:7px;margin-bottom:10px}.pc-kpi{min-height:55px;padding:8px 10px;border:1px solid rgba(52,211,153,.15);border-radius:12px;background:rgba(2,17,12,.6)}.pc-kpi small{display:block;color:#83a697;font-size:10px;text-transform:uppercase}.pc-kpi b{font-size:19px}
     .pc-docs{flex:0 0 auto;display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}.pc-docs a{color:#9cf5c8;text-decoration:none;border:1px solid rgba(52,211,153,.2);border-radius:999px;padding:6px 9px}
+    .pc-faturada-toggle{flex:0 0 auto;display:flex;align-items:center;gap:7px;margin-bottom:9px;color:#c8e8d9;font-size:12px;cursor:pointer;user-select:none}.pc-faturada-toggle input{cursor:pointer}
     .pc-table-wrap{min-height:0;flex:1;overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:12px}.pc-table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:12px}.pc-table th{position:sticky;top:0;z-index:2;background:#06251a;color:#8ef0bd;padding:8px 6px;text-align:left;font-size:9px;line-height:1.2;text-transform:uppercase;white-space:normal}.pc-table td{padding:8px 6px;border-top:1px solid rgba(148,163,184,.1);vertical-align:top;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
     .pc-table th:nth-child(1),.pc-table td:nth-child(1){width:7%}.pc-table th:nth-child(2),.pc-table td:nth-child(2){width:11%}.pc-table th:nth-child(3),.pc-table td:nth-child(3),.pc-table th:nth-child(4),.pc-table td:nth-child(4){width:8%}.pc-table th:nth-child(5),.pc-table td:nth-child(5),.pc-table th:nth-child(6),.pc-table td:nth-child(6){width:10%}.pc-table th:nth-child(7),.pc-table td:nth-child(7){width:7%}.pc-table th:nth-child(8),.pc-table td:nth-child(8){width:5%;text-align:center}.pc-table th:nth-child(9),.pc-table td:nth-child(9){width:6%;text-align:center}.pc-table th:nth-child(10),.pc-table td:nth-child(10){width:18%}
     .pc-tag{display:inline-flex;max-width:100%;padding:4px 6px;border-radius:8px;font-size:9px;line-height:1.2;font-weight:900;white-space:normal;text-align:center}.pc-ok{background:rgba(34,197,94,.14);color:#bbf7d0}.pc-warn{background:rgba(245,158,11,.14);color:#fde68a}.pc-bad{background:rgba(239,68,68,.14);color:#fecaca}
@@ -269,17 +282,40 @@ function modalError(row, error) {
   el.querySelector('#pcBody').innerHTML = `<div class="pc-error">${esc(error?.message || error)}</div>`;
 }
 
+// Só nesta sessão de navegação (não grava no banco): lembra, por O.S., se o
+// usuário pediu pra excluir da comparação as placas já faturadas em outra
+// remessa -- caso das O.S. que faturam placa por placa "em partes".
+const excludeFaturadasState = new Map();
+
+function faturadaPlateSet(system) {
+  return new Set(system.filter((s) => s.faturado).map((s) => normPlate(s.placa)).filter(Boolean));
+}
+
+function filteredResult(analysis, exclude) {
+  const plates = faturadaPlateSet(analysis.system);
+  if (!exclude || !plates.size) return { result: analysis.result, plateCount: plates.size };
+  const system = analysis.system.filter((s) => !plates.has(normPlate(s.placa)));
+  const report = analysis.report.filter((r) => !plates.has(normPlate(r.placa)));
+  return { result: compare(system, report), plateCount: plates.size };
+}
+
 function showResult(row, analysis) {
-  const el = modal(); const count = totals(analysis.result); const badgeClass = (status) => status === LABEL.OK ? 'pc-ok' : [LABEL.PLATE, LABEL.WEIGHT].includes(status) ? 'pc-warn' : 'pc-bad';
+  const id = String(row.id);
+  const exclude = excludeFaturadasState.get(id) || false;
+  const { result, plateCount } = filteredResult(analysis, exclude);
+  const el = modal(); const count = totals(result); const badgeClass = (status) => status === LABEL.OK ? 'pc-ok' : [LABEL.PLATE, LABEL.WEIGHT].includes(status) ? 'pc-warn' : 'pc-bad';
   el.hidden = false; document.body.style.overflow = 'hidden';
   el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`;
   el.querySelector('#pcSub').textContent = `${analysis.system.length} carga(s) no sistema · ${analysis.report.length} lida(s) pelo PaddleOCR`;
   el.querySelector('#pcBody').innerHTML = `
     <div class="pc-kpis"><div class="pc-kpi"><small>Total</small><b>${count.total}</b></div><div class="pc-kpi"><small>OK</small><b>${count[LABEL.OK] || 0}</b></div><div class="pc-kpi"><small>Placa/Peso</small><b>${(count[LABEL.PLATE] || 0) + (count[LABEL.WEIGHT] || 0)}</b></div><div class="pc-kpi"><small>Falta lançar</small><b>${count[LABEL.MISSING] || 0}</b></div><div class="pc-kpi"><small>Não localizada</small><b>${count[LABEL.NOT_FOUND] || 0}</b></div></div>
     <div class="pc-docs">${analysis.urls.map((url, i) => `<a href="${esc(url)}" target="_blank" rel="noopener">Relatório ${i + 1}</a>`).join('')}</div>
+    ${plateCount ? `<label class="pc-faturada-toggle"><input type="checkbox" id="pcExcluirFaturadas" ${exclude ? 'checked' : ''}> Excluir ${plateCount} placa(s) já faturada(s) em outra remessa</label>` : ''}
     <div class="pc-table-wrap"><table class="pc-table"><thead><tr><th>Status</th><th>Carga</th><th>Placa sistema</th><th>Placa relatório</th><th>Peso sistema</th><th>Peso relatório</th><th>NF</th><th>Página</th><th>Conf.</th><th>Anotação</th></tr></thead><tbody>
-      ${analysis.result.map((item) => `<tr><td><span class="pc-tag ${badgeClass(item.status)}">${esc(item.status)}</span></td><td>${esc(item.system?.carga || item.report?.carga || '-')}</td><td>${esc(formatPlate(item.system?.placa))}</td><td>${esc(formatPlate(item.report?.placa))}</td><td>${esc(formatKg(item.system?.pesoKg))}</td><td>${esc(formatKg(item.report?.pesoKg))}</td><td>${esc(item.report?.nf || item.system?.nf || '-')}</td><td>${esc(item.report?.pagina || '-')}</td><td>${esc(formatConfidence(item.report?.confianca))}</td><td>${esc(item.note)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma carga encontrada.</td></tr>'}
+      ${result.map((item) => `<tr><td><span class="pc-tag ${badgeClass(item.status)}">${esc(item.status)}</span></td><td>${esc(item.system?.carga || item.report?.carga || '-')}</td><td>${esc(formatPlate(item.system?.placa))}</td><td>${esc(formatPlate(item.report?.placa))}</td><td>${esc(formatKg(item.system?.pesoKg))}</td><td>${esc(formatKg(item.report?.pesoKg))}</td><td>${esc(item.report?.nf || item.system?.nf || '-')}</td><td>${esc(item.report?.pagina || '-')}</td><td>${esc(formatConfidence(item.report?.confianca))}</td><td>${esc(item.note)}</td></tr>`).join('') || '<tr><td colspan="10">Nenhuma carga encontrada.</td></tr>'}
     </tbody></table></div>`;
+  const toggle = el.querySelector('#pcExcluirFaturadas');
+  if (toggle) toggle.addEventListener('change', () => { excludeFaturadasState.set(id, toggle.checked); showResult(row, analysis); });
 }
 
 async function getOs(id) {
@@ -390,7 +426,8 @@ async function confirm(id, button) {
   let analysis = cache.get(String(id));
   if (!analysis) { try { analysis = JSON.parse(sessionStorage.getItem(`pre-conferencia-os:${id}`) || 'null'); } catch { analysis = null; } }
   if (!analysis) return alert('Execute a Pré-Conferência antes de confirmar.');
-  const count = totals(analysis.result); const question = count.errors ? `Existem ${count.errors} divergência(s). Confirmar mesmo assim?` : 'Todas as cargas estão OK. Confirmar?';
+  const { result } = filteredResult(analysis, excludeFaturadasState.get(String(id)) || false);
+  const count = totals(result); const question = count.errors ? `Existem ${count.errors} divergência(s). Confirmar mesmo assim?` : 'Todas as cargas estão OK. Confirmar?';
   if (!window.confirm(question)) return;
   button.disabled = true; button.textContent = 'Confirmando…';
   try {
