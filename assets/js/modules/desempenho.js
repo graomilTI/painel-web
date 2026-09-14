@@ -46,12 +46,11 @@
     style.id = STYLE_ID;
     style.textContent = `
       .des-page{--bg:#020617;--panel:#0d0d18;--card:rgba(15,23,42,.92);--line:rgba(148,163,184,.18);--text:#e2e2f0;--muted:#6b7280;--green:#22c55e;--green2:#166534;--red:#ef4444;--yellow:#facc15;color:var(--text);width:100%}
-      .des-page *{box-sizing:border-box}.des-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:end;margin-bottom:18px;padding:20px;border:1px solid rgba(34,197,94,.22);border-radius:26px;background:radial-gradient(circle at 10% 0%,rgba(34,197,94,.22),transparent 30%),radial-gradient(circle at 90% 0%,rgba(20,184,166,.16),transparent 28%),linear-gradient(145deg,rgba(15,23,42,.96),rgba(2,6,23,.82));box-shadow:0 22px 70px rgba(0,0,0,.24)}
-      .des-kicker{font-size:12px;color:#bbf7d0;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.des-hero h1{margin:6px 0 4px;font-size:30px;letter-spacing:-.045em}.des-hero p{margin:0;color:var(--muted);max-width:820px;line-height:1.5}.des-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.des-btn,.des-field select,.des-field input{height:42px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;padding:0 12px;font-weight:850;color-scheme:dark}.des-btn{cursor:pointer;background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border:0}.des-btn.secondary{background:#0d0d18;color:#e2e2f0;border:1px solid rgba(255,255,255,0.08)}.des-btn:disabled{opacity:.55;cursor:not-allowed}.des-field select option{background:#0d0d18;color:#e2e2f0}.des-field select option:checked{background:#166534;color:#fff}
-      .des-filter-card,.des-card,.des-table-card{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.88));border:1px solid var(--line);border-radius:22px;box-shadow:0 18px 40px rgba(0,0,0,.26)}.des-filter-card{padding:16px;margin-bottom:16px}.des-filters{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto;gap:12px;align-items:end}.des-field label{display:block;font-size:11px;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em}.des-field select,.des-field input{width:100%}
+      .des-page *{box-sizing:border-box}.des-btn,.des-field select,.des-field input{height:42px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;padding:0 12px;font-weight:850;color-scheme:dark}.des-btn{cursor:pointer;background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border:0}.des-btn.secondary{background:#0d0d18;color:#e2e2f0;border:1px solid rgba(255,255,255,0.08)}.des-btn:disabled{opacity:.55;cursor:not-allowed}.des-field select option{background:#0d0d18;color:#e2e2f0}.des-field select option:checked{background:#166534;color:#fff}
+      .des-filter-card,.des-card,.des-table-card{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.88));border:1px solid var(--line);border-radius:22px;box-shadow:0 18px 40px rgba(0,0,0,.26)}.des-filter-card{padding:16px;margin-bottom:16px}.des-filters{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto auto;gap:12px;align-items:end}.des-field label{display:block;font-size:11px;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em}.des-field select,.des-field input{width:100%}
       .des-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.des-card{padding:16px}.des-card span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.des-card strong{display:block;margin-top:8px;font-size:24px;letter-spacing:-.035em}.des-card small{display:block;margin-top:4px;color:#6b7280}.des-status{margin-bottom:14px;padding:12px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.72);color:var(--muted)}.des-status strong{color:var(--text)}.des-status.err{border-color:rgba(239,68,68,.45);color:#fecaca;background:rgba(127,29,29,.22)}
       .des-table-card{overflow:hidden}.des-table-top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}.des-table-top h2{margin:0;font-size:18px}.des-table-top p{margin:4px 0 0;color:var(--muted);font-size:12px}.des-table-wrap{overflow:auto;background:transparent}.des-table{width:100%;border-collapse:collapse;font-size:12px;min-width:980px;color:var(--text)}.des-table th{position:sticky;top:0;z-index:1;background:#0d0d18;color:#bbf7d0;text-align:center;font-weight:900;padding:8px;border:1px solid rgba(255,255,255,0.1);white-space:nowrap}.des-table th.sortable{cursor:pointer;user-select:none}.des-table th.sortable:hover{background:#166534}.des-table td{padding:7px 8px;border:1px solid rgba(255,255,255,0.08);text-align:right;white-space:nowrap;background:rgba(15,23,42,.55);color:var(--text)}.des-table td:first-child{text-align:left;font-weight:900;color:var(--text);min-width:240px}.des-table tr.total td{background:rgba(22,101,52,.35)!important;font-weight:950;color:#dcfce7}.des-table tr.empty td{background:transparent!important;text-align:center;color:var(--muted)}.des-val{font-variant-numeric:tabular-nums}.des-muted{color:#6b7280}.des-cell-low{background:rgba(239,68,68,.22)!important}.des-cell-mid{background:rgba(250,204,21,.16)!important}.des-cell-high{background:rgba(34,197,94,.32)!important;color:#dcfce7!important;font-weight:900}.des-cell-zero{background:rgba(127,29,29,.28)!important;color:#fca5a5!important}.des-footer-note{padding:12px 16px;color:var(--muted);background:transparent;border-top:1px solid var(--line);font-size:12px}
-      @media(max-width:1180px){.des-hero{grid-template-columns:1fr}.des-actions{justify-content:flex-start}.des-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.des-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.des-kpis,.des-filters{grid-template-columns:1fr}.des-btn{width:100%}}
+      @media(max-width:1180px){.des-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.des-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.des-kpis,.des-filters{grid-template-columns:1fr}.des-btn{width:100%}}
     `;
     document.head.appendChild(style);
   }
@@ -550,18 +549,6 @@
     const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
     container.innerHTML = `
       <section class="des-page">
-        <div class="des-hero">
-          <div>
-            <div class="des-kicker">Diretoria · Desempenho</div>
-            <h1>Desempenho por coordenação</h1>
-            <p>Comparativo diário e mensal de volume por colaborador, usando o Resultado Diário já importado no DRE e o histórico diário de colaboradores ativos com cargo <b>Classificador</b>.</p>
-          </div>
-          <div class="des-actions">
-            <button class="des-btn secondary" type="button" data-des-back>Voltar</button>
-            <button class="des-btn" type="button" data-des-refresh ${state.loading ? 'disabled' : ''}>${state.loading ? 'Carregando...' : 'Atualizar'}</button>
-          </div>
-        </div>
-
         <div class="des-filter-card">
           <div class="des-filters">
             <div class="des-field"><label>Mês</label><select data-des-month>${MONTHS.map((m, idx) => `<option value="${idx + 1}" ${state.month === idx + 1 ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></div>
@@ -575,6 +562,7 @@
               <option value="regional:asc" ${state.sort.key === 'regional' && state.sort.dir === 'asc' ? 'selected' : ''}>Coordenação A → Z</option>
               <option value="regional:desc" ${state.sort.key === 'regional' && state.sort.dir === 'desc' ? 'selected' : ''}>Coordenação Z → A</option>
             </select></div>
+            <button class="des-btn secondary" type="button" data-des-refresh ${state.loading ? 'disabled' : ''}>${state.loading ? 'Carregando...' : 'Atualizar'}</button>
             <button class="des-btn" type="button" data-des-apply ${state.loading ? 'disabled' : ''}>Aplicar</button>
           </div>
         </div>
@@ -590,10 +578,6 @@
   }
 
   function bind(container) {
-    container.querySelector('[data-des-back]')?.addEventListener('click', () => {
-      if (state.onBack) state.onBack();
-      else window.location.href = './dre.html';
-    });
     container.querySelector('[data-des-refresh]')?.addEventListener('click', () => load(container));
     container.querySelector('[data-des-apply]')?.addEventListener('click', () => {
       state.month = Number(container.querySelector('[data-des-month]')?.value || state.month);
@@ -655,7 +639,6 @@
   function openHome(container, opts = {}) {
     injectStyle();
     state.supabase = opts.supabase || opts.api?.supabase;
-    state.onBack = opts.onBack;
     render(container);
     load(container);
   }
