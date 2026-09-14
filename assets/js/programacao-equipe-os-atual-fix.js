@@ -45,10 +45,16 @@ function escolherProgramacao(programacoes, dataReferencia) {
 
   if (!dataReferencia) return ordenadas[0];
 
-  // Prioridade: a própria data aberta. Se a O.S. não tem vínculo exatamente
-  // nela (caso comum ao pesquisar uma O.S. antiga enquanto se está em hoje),
-  // usa a programação mais recente até a data aberta e nunca "puxa" o futuro.
-  return ordenadas.find((p) => String(p.data_referencia).slice(0, 10) <= dataReferencia) || ordenadas[0];
+  // Reconfirmação diária é obrigatória: uma O.S. reaproveitada de um dia pro
+  // outro só mostra equipe no card se alguém confirmou especificamente para a
+  // data aberta — nunca herda automaticamente a confirmação de um dia
+  // anterior (decisão de negócio 14/09; antes o fallback pra "mais recente
+  // até a data aberta" fazia o card mostrar colaborador de dias passados sem
+  // reconfirmação, e também alimentava esperado=[] no Graint quando o par
+  // sintético usado por aplicar-distribuicao-os não encontrava programação
+  // pra data de hoje). Pra O.S. em atendimento contínuo, o caminho é
+  // "Duplicar programação" copiar a equipe confirmada pra frente.
+  return ordenadas.find((p) => String(p.data_referencia).slice(0, 10) === dataReferencia) || null;
 }
 
 export async function loadEquipeDaOsPorId(osId) {
