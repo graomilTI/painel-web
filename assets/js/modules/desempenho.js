@@ -30,11 +30,12 @@
     year: new Date().getFullYear(),
     month: new Date().getMonth() + 1,
     volumeType: 'toneladas',
-    sort: { key: 'media', dir: 'desc' },
+    sort: { key: 'volume', dir: 'desc' },
     rows: [],
     days: [],
     totals: null,
     regionais: [],
+    headcountAsOf: null,
     error: null
   };
 
@@ -48,7 +49,7 @@
       .des-kicker{font-size:12px;color:#bbf7d0;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.des-hero h1{margin:6px 0 4px;font-size:30px;letter-spacing:-.045em}.des-hero p{margin:0;color:var(--muted);max-width:820px;line-height:1.5}.des-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}.des-btn,.des-field select,.des-field input{height:42px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#e2e2f0;padding:0 12px;font-weight:850;color-scheme:dark}.des-btn{cursor:pointer;background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border:0}.des-btn.secondary{background:#0d0d18;color:#e2e2f0;border:1px solid rgba(255,255,255,0.08)}.des-btn:disabled{opacity:.55;cursor:not-allowed}.des-field select option{background:#0d0d18;color:#e2e2f0}.des-field select option:checked{background:#166534;color:#fff}
       .des-filter-card,.des-card,.des-table-card{background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(2,6,23,.88));border:1px solid var(--line);border-radius:22px;box-shadow:0 18px 40px rgba(0,0,0,.26)}.des-filter-card{padding:16px;margin-bottom:16px}.des-filters{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto;gap:12px;align-items:end}.des-field label{display:block;font-size:11px;color:var(--muted);margin:0 0 6px;text-transform:uppercase;letter-spacing:.08em}.des-field select,.des-field input{width:100%}
       .des-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.des-card{padding:16px}.des-card span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.des-card strong{display:block;margin-top:8px;font-size:24px;letter-spacing:-.035em}.des-card small{display:block;margin-top:4px;color:#6b7280}.des-status{margin-bottom:14px;padding:12px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.72);color:var(--muted)}.des-status strong{color:var(--text)}.des-status.err{border-color:rgba(239,68,68,.45);color:#fecaca;background:rgba(127,29,29,.22)}
-      .des-table-card{overflow:hidden}.des-table-top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}.des-table-top h2{margin:0;font-size:18px}.des-table-top p{margin:4px 0 0;color:var(--muted);font-size:12px}.des-table-wrap{overflow:auto;background:#fff}.des-table{width:100%;border-collapse:collapse;font-size:12px;min-width:980px;color:#10101e}.des-table th{position:sticky;top:0;z-index:1;background:#e2e2f0;color:#10101e;text-align:center;font-weight:900;padding:8px;border:1px solid #9ca3af;white-space:nowrap}.des-table th.sortable{cursor:pointer;user-select:none}.des-table th.sortable:hover{background:#bbf7d0}.des-table td{padding:7px 8px;border:1px solid #cbd5e1;text-align:right;white-space:nowrap}.des-table td:first-child{text-align:left;font-weight:900;color:#10101e;min-width:240px}.des-table tr.total td{background:#f8fafc!important;font-weight:950}.des-table tr.empty td{background:#fff!important;text-align:center;color:#64748b}.des-val{font-variant-numeric:tabular-nums}.des-muted{color:#6b7280}.des-cell-low{background:#fecaca}.des-cell-mid{background:#bbf7d0}.des-cell-high{background:#22c55e;color:#052e16;font-weight:900}.des-cell-zero{background:#fee2e2;color:#991b1b}.des-footer-note{padding:12px 16px;color:#64748b;background:#fff;border-top:1px solid #e2e2f0;font-size:12px}
+      .des-table-card{overflow:hidden}.des-table-top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}.des-table-top h2{margin:0;font-size:18px}.des-table-top p{margin:4px 0 0;color:var(--muted);font-size:12px}.des-table-wrap{overflow:auto;background:transparent}.des-table{width:100%;border-collapse:collapse;font-size:12px;min-width:980px;color:var(--text)}.des-table th{position:sticky;top:0;z-index:1;background:#0d0d18;color:#bbf7d0;text-align:center;font-weight:900;padding:8px;border:1px solid rgba(255,255,255,0.1);white-space:nowrap}.des-table th.sortable{cursor:pointer;user-select:none}.des-table th.sortable:hover{background:#166534}.des-table td{padding:7px 8px;border:1px solid rgba(255,255,255,0.08);text-align:right;white-space:nowrap;background:rgba(15,23,42,.55);color:var(--text)}.des-table td:first-child{text-align:left;font-weight:900;color:var(--text);min-width:240px}.des-table tr.total td{background:rgba(22,101,52,.35)!important;font-weight:950;color:#dcfce7}.des-table tr.empty td{background:transparent!important;text-align:center;color:var(--muted)}.des-val{font-variant-numeric:tabular-nums}.des-muted{color:#6b7280}.des-cell-low{background:rgba(239,68,68,.22)!important}.des-cell-mid{background:rgba(250,204,21,.16)!important}.des-cell-high{background:rgba(34,197,94,.32)!important;color:#dcfce7!important;font-weight:900}.des-cell-zero{background:rgba(127,29,29,.28)!important;color:#fca5a5!important}.des-footer-note{padding:12px 16px;color:var(--muted);background:transparent;border-top:1px solid var(--line);font-size:12px}
       @media(max-width:1180px){.des-hero{grid-template-columns:1fr}.des-actions{justify-content:flex-start}.des-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.des-filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.des-kpis,.des-filters{grid-template-columns:1fr}.des-btn{width:100%}}
     `;
     document.head.appendChild(style);
@@ -174,27 +175,64 @@
     );
   }
 
+  async function fetchLatestReferenceDate(supabase, table) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('data_referencia')
+      .order('data_referencia', { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return dateKey(data?.[0]?.data_referencia) || null;
+  }
+
   async function loadClassificadoresHistorico(supabase) {
     const start = isoDate(addDays(firstDay(state.year, state.month), -45));
     const end = isoDate(nextMonthDay(state.year, state.month));
     const select = 'cpf,nome,situacao,ativo,coordenacao,supervisao,tipo,cargo,data_referencia';
 
+    let table = 'historico_colaboradores';
+    let rows = [];
     try {
-      return await fetchAllRows(
+      rows = await fetchAllRows(
         supabase,
-        'historico_colaboradores',
+        table,
         select,
         (q) => q.gte('data_referencia', start).lt('data_referencia', end).order('data_referencia', { ascending: true })
       );
     } catch (error) {
       console.warn('[DESEMPENHO] historico_colaboradores indisponível; usando colaborador_snapshot como fallback.', error);
-      return fetchAllRows(
+      table = 'colaborador_snapshot';
+      rows = await fetchAllRows(
         supabase,
-        'colaborador_snapshot',
+        table,
         select,
         (q) => q.gte('data_referencia', start).lt('data_referencia', end).order('data_referencia', { ascending: true })
       );
     }
+
+    if (rows.length) return rows;
+
+    // Sem histórico no período (ex.: importação parada): usa o snapshot mais recente disponível
+    // como quadro de referência, avisando na tela que o headcount está desatualizado.
+    const candidateTables = table === 'historico_colaboradores'
+      ? ['historico_colaboradores', 'colaborador_snapshot']
+      : ['colaborador_snapshot', 'historico_colaboradores'];
+
+    for (const fallbackTable of candidateTables) {
+      try {
+        const latest = await fetchLatestReferenceDate(supabase, fallbackTable);
+        if (!latest) continue;
+        const snapshot = await fetchAllRows(supabase, fallbackTable, select, (q) => q.eq('data_referencia', latest));
+        if (snapshot.length) {
+          state.headcountAsOf = latest;
+          return snapshot;
+        }
+      } catch (error) {
+        console.warn(`[DESEMPENHO] Falha ao buscar snapshot mais recente em ${fallbackTable}.`, error);
+      }
+    }
+
+    return [];
   }
 
   function buildProducedPeopleByDayRegional(prodRows) {
@@ -504,12 +542,12 @@
             <div class="des-field"><label>Ano</label><select data-des-year>${years.map((y) => `<option value="${y}" ${state.year === y ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
             <div class="des-field"><label>Indicador</label><select data-des-volume>${volumeOptions}</select></div>
             <div class="des-field"><label>Ordenação</label><select data-des-sort>
+              <option value="volume:desc" ${state.sort.key === 'volume' && state.sort.dir === 'desc' ? 'selected' : ''}>Maior volume</option>
+              <option value="volume:asc" ${state.sort.key === 'volume' && state.sort.dir === 'asc' ? 'selected' : ''}>Menor volume</option>
               <option value="media:desc" ${state.sort.key === 'media' && state.sort.dir === 'desc' ? 'selected' : ''}>Maior média mensal</option>
               <option value="media:asc" ${state.sort.key === 'media' && state.sort.dir === 'asc' ? 'selected' : ''}>Menor média mensal</option>
               <option value="regional:asc" ${state.sort.key === 'regional' && state.sort.dir === 'asc' ? 'selected' : ''}>Coordenação A → Z</option>
               <option value="regional:desc" ${state.sort.key === 'regional' && state.sort.dir === 'desc' ? 'selected' : ''}>Coordenação Z → A</option>
-              <option value="volume:desc" ${state.sort.key === 'volume' && state.sort.dir === 'desc' ? 'selected' : ''}>Maior volume</option>
-              <option value="volume:asc" ${state.sort.key === 'volume' && state.sort.dir === 'asc' ? 'selected' : ''}>Menor volume</option>
             </select></div>
             <button class="des-btn" type="button" data-des-apply ${state.loading ? 'disabled' : ''}>Aplicar</button>
           </div>
@@ -517,6 +555,7 @@
 
         ${state.error ? `<div class="des-status err"><strong>Erro:</strong> ${esc(state.error)}</div>` : ''}
         ${state.loading ? `<div class="des-status"><strong>Carregando dados...</strong> Consultando produção e histórico diário de colaboradores.</div>` : ''}
+        ${state.headcountAsOf ? `<div class="des-status err"><strong>Atenção:</strong> não há histórico de colaboradores para o período selecionado. Os classificadores exibidos usam o último quadro disponível (${esc(brDay(state.headcountAsOf))}/${esc(state.headcountAsOf.slice(0, 4))}) — atualize a importação de colaboradores para números precisos do mês.</div>` : ''}
         ${renderKpis()}
         ${renderTable()}
       </section>
@@ -560,6 +599,7 @@
     try {
       state.loading = true;
       state.error = null;
+      state.headcountAsOf = null;
       render(container);
       const supabase = state.supabase;
       if (!supabase) throw new Error('Cliente Supabase não disponível.');
