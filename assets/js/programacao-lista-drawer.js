@@ -16,7 +16,7 @@ import { getCurrentUser } from './auth.js';
 import { confirmar } from './core/ui.js';
 import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 import {
-  loadOsRelevantes, loadOsRelevantePorNumero, loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
+  loadOsRelevantes, loadOsRelevantePorNumero, loadEquipeExistente, loadEquipeDaOsPorId, ensureProgramacaoDia, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato,
   loadColaboradoresRegional, loadIndisponiveisNaData, loadPontos, loadCandidatosPorOs,
   aplicarSugestoesRegionais, loadDisponibilidadeConfirmados,
   ordenarCandidatosPorEmbarque, candCardHtml, tipoTone, avatarBadgeHtml, embarqueHtml,
@@ -26,7 +26,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260828-merge-readmitido-save-confirmado';
+} from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260911-hosp-v3';
 
 function esc(value) {
@@ -278,7 +278,23 @@ function statusToneClass(os) {
   return 'tone-pendente';
 }
 
-function programacaoIdParaOs(os, programacaoId, programacaoIdMap) {
+// O.S. achada pela busca remota (número fora do intervalo de datas
+// carregado na tela) não pode ganhar vínculo novo gravado no programacao_id
+// da data atualmente aberta — isso criaria o registro na data errada em vez
+// da data real da O.S. (mesma causa raiz do sumiço aparente do Cássio
+// Pelissaro na OS 91491, 2026-09-14: lá era só leitura, aqui é escrita).
+// Se já existe alguma linha de equipe pra essa O.S. (carregada à parte em
+// abrirDrawer via loadEquipeDaOsPorId), usa o programacao_id real dela;
+// senão resolve/cria o programacao_dia certo pra (data_os, supervisao).
+async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, dataReferencia) {
+  const linhaExistente = equipeRowsAtual.find((r) => String(r.os_id) === String(os?.id));
+  if (linhaExistente) return linhaExistente.programacao_id;
+
+  const dataDaOs = String(os?.data_os || '').slice(0, 10);
+  const dataCarregada = String(dataReferencia || '').slice(0, 10);
+  if (dataDaOs && dataCarregada && dataDaOs !== dataCarregada) {
+    return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
+  }
   return programacaoIdMap?.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
 }
 
@@ -643,7 +659,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         return;
       }
 
-      const programacaoIdDaOs = rows[0]?.programacao_id || programacaoIdParaOs(os, programacaoId, programacaoIdMap);
+      const programacaoIdDaOs = rows[0]?.programacao_id || await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia);
       const { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId } = await carregarColaboradoresConfirmados(os, rows);
       const cardsHtml = rows.map((r) => colaboradorRowWrapHtml(
         { colaboradorId: r.colaborador_id, nome: r.nome_colaborador || r.colaborador_id, programacaoId: r.programacao_id || programacaoIdDaOs, osIds: new Set([os.id]), equipeRowId: r.id },
@@ -752,6 +768,18 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       <div id="pldProgBody"></div>
     `;
     drawerEl.scrollTop = 0;
+    // O.S. achada pela busca remota (campo de busca aceita número fora do
+    // intervalo de datas carregado) pode ter seu programacao_id de fora de
+    // programacaoIdQuery — sem isso, equipeRowsDaOs(os.id) nunca encontra a
+    // equipe já confirmada dela, mesmo que exista no banco.
+    if (!equipeRowsAtual.some((r) => String(r.os_id) === String(os.id))) {
+      try {
+        const extras = await loadEquipeDaOsPorId(os.id);
+        if (extras.length) equipeRowsAtual = [...equipeRowsAtual, ...extras];
+      } catch (error) {
+        console.warn('[programacao-lista-drawer] falha ao buscar equipe da O.S. fora do intervalo carregado.', error);
+      }
+    }
     await montarProgramacaoBody(os);
   }
 
@@ -979,7 +1007,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         const { candidatos } = await carregarCandidatoSugerido(os);
         const cand = candidatos.find((c) => String(c.colaboradorId) === confirmarCandBtn.dataset.confirmarCandidato) || candidatos[0];
         if (cand) {
-          const equipeRow = await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          const equipeRow = await confirmarCandidato(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), os, cand);
           await refreshAposAcao(os, { equipe: true, equipeRow });
         }
       } catch (error) {
@@ -1003,7 +1031,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         if (!motivo) return;
         addConfirmBtn.disabled = true;
         try {
-          const equipeRow = await adicionarColaboradorOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          const equipeRow = await adicionarColaboradorOs(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), os, cand);
           logActivity('action', 'justificativa_multiplos_colaboradores_os', 'programacao', {
             os_id: os.id, numero_os: os.numero_os,
             colaboradores: [...rowsAtuais.map((r) => r.colaborador_id), cand.colaboradorId],
@@ -1020,7 +1048,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       } else {
         addConfirmBtn.disabled = true;
         try {
-          const equipeRow = await confirmarCandidato(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, cand);
+          const equipeRow = await confirmarCandidato(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), os, cand);
           await refreshAposAcao(os, { equipe: true, equipeRow });
         } catch (error) {
           alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o colaborador.'));
@@ -1041,7 +1069,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const motorista = { colaboradorId: sel.value, nome: opt?.dataset.nome || sel.value };
       addFrotaConfirmBtn.disabled = true;
       try {
-        const equipeRow = await adicionarFrotaOs(programacaoIdParaOs(os, programacaoId, programacaoIdMap), os, motorista);
+        const equipeRow = await adicionarFrotaOs(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), os, motorista);
         await refreshAposAcao(os, { equipe: true, equipeRow });
       } catch (error) {
         alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível adicionar o motorista de Frota.'));
@@ -1057,8 +1085,15 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const os = osAtual();
       if (!os || !removerBtn.dataset.removerColab) return;
       if (!(await confirmar({ titulo: 'Remover colaborador', mensagem: 'Remover este colaborador da O.S.?' }))) return;
+      const colabCard = removerBtn.closest('.pld-colab-card');
+      const colaboradorId = colabCard?.dataset.colabWrap || null;
+      const colaboradorNome = colabCard?.querySelector('.pld-colab-nome')?.textContent || null;
       try {
-        await removerConfirmacao(programacaoIdParaOs(os, programacaoId, programacaoIdMap), removerBtn.dataset.removerColab);
+        await removerConfirmacao(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), removerBtn.dataset.removerColab);
+        logActivity('action', 'remocao_colaborador_os', 'programacao', {
+          os_id: os.id, numero_os: os.numero_os,
+          colaborador_id: colaboradorId, nome_colaborador: colaboradorNome,
+        });
         await refreshAposAcao(os, { equipe: true });
       } catch (error) {
         alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível remover o colaborador.'));
