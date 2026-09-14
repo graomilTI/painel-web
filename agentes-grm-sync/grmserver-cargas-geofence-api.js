@@ -44,7 +44,9 @@ var MAX_LOOKUP_ROWS = Number(process.env.CARGAS_OS_LOOKUP_LIMIT || 5000);
 // verdade no GRM). Agora, quando roda sem "--data" explícito (uso normal do
 // cron), busca também os últimos N dias, não só hoje, pra reupsertar
 // (chave_unica) e assim atualizar o status de faturamento de cargas antigas.
-var RECONCILIACAO_DIAS = Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30);
+// A API do GRM (report/classification/loads) não aceita intervalo maior que
+// 30 dias -- por isso o teto aqui, mesmo que alguém configure a env maior.
+var RECONCILIACAO_DIAS = Math.min(30, Number(process.env.CARGAS_RECONCILIACAO_DIAS || 30));
 
 var REPORT_CONFIG = {
   name: 'Relatório de Cargas - Geofence',
