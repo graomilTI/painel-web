@@ -13,10 +13,13 @@ test('colaborador de O.S. ainda ATENDER de outro dia continua com card na Etapa 
   // tinha card renderizado. loadEquipeReaproveitada() busca qualquer O.S.
   // ainda ATENDER da(s) supervisão(ões) em foco que não apareceu no dia de
   // hoje, e usa a confirmação mais recente de qualquer dia.
-  assert.match(source, /async function loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia\)/);
-  assert.match(source, /\.from\('operacional_os'\)\.select\('id'\)\.eq\('status_gestor', 'ATENDER'\)/);
+  assert.match(source, /export async function loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia, programacaoIdQuery\)/);
+  assert.match(source, /\.from\('operacional_os'\)\.select\('id, supervisao'\)\.eq\('status_gestor', 'ATENDER'\)/);
   assert.match(source, /export async function loadRosterDoDia\(programacaoIdQuery, supervisaoQuery\)/);
-  assert.match(source, /const equipeReaproveitada = await loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia\);/);
+  assert.match(
+    source,
+    /const equipeReaproveitada = await loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia, programacaoIdQuery\);/,
+  );
 });
 
 test('todo consumidor de loadRosterDoDia passa supervisaoQuery (senão a O.S. reaproveitada fica sem card de novo)', async () => {

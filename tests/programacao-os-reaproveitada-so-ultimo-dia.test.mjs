@@ -20,6 +20,6 @@ test('loadEquipeReaproveitada traz só a confirmação mais recente por O.S., n�
   );
   assert.match(
     source,
-    /return \(data \|\| \[\]\)\.filter\(\(row\) => programacaoIdVencedorPorOs\.get\(String\(row\.os_id\)\) === String\(row\.programacao_id\)\);/,
+    /const ultimasConfirmacoes = \(data \|\| \[\]\)\.filter\(\(row\) => programacaoIdVencedorPorOs\.get\(String\(row\.os_id\)\) === String\(row\.programacao_id\)\);/,
   );
 });

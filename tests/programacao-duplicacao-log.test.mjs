@@ -21,5 +21,5 @@ test('atualiza a versão do módulo para entregar o novo registro sem cache anti
   // arquivo (ver também programacao-deslocamento-default.test.mjs) — checa
   // a versão atual, não a original desta feature, pra não travar em cache
   // antigo depois de outro fix legítimo bumpar de novo.
-  assert.match(router, /programacao\.js\?v=20260915-reaproveitada-card3/);
+  assert.match(router, /programacao\.js\?v=20260915-reaproveitada-card4/);
 });
