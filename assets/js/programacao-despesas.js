@@ -426,21 +426,71 @@ function isDataPassada(dataReferencia) {
   return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
+// O.S. "reaproveitada" (continua ATENDER de um dia pro outro sem reconfirmação
+// no dia de hoje) não tinha NENHUM card na Etapa 3 quando o gestor abria a
+// Programação de hoje — o colaborador estava confirmado (e até já
+// sincronizado no GRM) só que sob o programacao_id de ONTEM, e
+// loadEquipeExistente(hoje) só olha o programacao_id de hoje. Parecia que o
+// colaborador "não tinha sido salvo" (relato do Jean Carlos, 15/09/2026,
+// O.S. 92659/92611 — Londrina), quando na verdade só não tinha card nenhum
+// pra ele hoje. Mesma regra de "OS reaproveitada" já usada pelo agente de
+// distribuição do GRM (ver carregarGruposPendentes em
+// grmserver-aplicar-distribuicao-os-api.js): toda O.S. ainda ATENDER da(s)
+// supervisão(ões) em foco cuja equipe confirmada não apareceu no dia de hoje
+// entra mesmo assim, usando a confirmação mais recente de qualquer dia.
+// CAVEAT conhecido: o card resultante usa o programacao_id de ONTEM (não
+// existe um de hoje pra essas O.S.) — uma despesa nova digitada nele grava
+// com esse programacao_id antigo. Resolve o "colaborador sumiu do card" que
+// bloqueava o gestor; não resolve por si só o descompasso de programacao_id
+// nas despesas novas.
+async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
+  if (!supervisaoQuery) return [];
+  let query = supabase.from('operacional_os').select('id').eq('status_gestor', 'ATENDER');
+  query = Array.isArray(supervisaoQuery) ? query.in('supervisao', supervisaoQuery) : query.eq('supervisao', supervisaoQuery);
+  const { data: osAbertas, error: osError } = await query.limit(2000);
+  if (osError) { console.warn('[programacao-despesas] falha ao buscar O.S. reaproveitadas:', osError); return []; }
+
+  const idsFaltantes = (osAbertas || []).map((o) => String(o.id)).filter((id) => !osIdsDoDia.has(id));
+  if (!idsFaltantes.length) return [];
+
+  const { data, error } = await supabase
+    .from('programacao_equipe')
+    .select('*')
+    .eq('confirmado', true)
+    .in('os_id', idsFaltantes)
+    .order('updated_at', { ascending: false });
+  if (error) { console.warn('[programacao-despesas] falha ao buscar equipe reaproveitada:', error); return []; }
+  return data || [];
+}
+
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
 // deduplicado por colaborador_id — a mesma pessoa pode aparecer em mais de uma
 // linha se foi escalada como adicional em 2+ O.S. no mesmo dia. programacao_id
 // vem direto da própria linha (mais correto sob "Todas" do que recalcular pela
-// supervisão selecionada no combo).
-export async function loadRosterDoDia(programacaoIdQuery) {
+// supervisão selecionada no combo). supervisaoQuery é opcional só pra não
+// quebrar quem ainda chama sem ele — sem ele, O.S. reaproveitadas continuam
+// sem card (comportamento antigo).
+export async function loadRosterDoDia(programacaoIdQuery, supervisaoQuery) {
   const equipeRows = await loadEquipeExistente(programacaoIdQuery);
   const porColab = new Map();
+  const osIdsDoDia = new Set();
   equipeRows.filter((r) => r.confirmado).forEach((r) => {
+    const id = String(r.colaborador_id);
+    if (!porColab.has(id)) {
+      porColab.set(id, { colaboradorId: id, nome: r.nome_colaborador || id, programacaoId: r.programacao_id, osIds: new Set() });
+    }
+    if (r.os_id) { porColab.get(id).osIds.add(r.os_id); osIdsDoDia.add(String(r.os_id)); }
+  });
+
+  const equipeReaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia);
+  equipeReaproveitada.forEach((r) => {
     const id = String(r.colaborador_id);
     if (!porColab.has(id)) {
       porColab.set(id, { colaboradorId: id, nome: r.nome_colaborador || id, programacaoId: r.programacao_id, osIds: new Set() });
     }
     if (r.os_id) porColab.get(id).osIds.add(r.os_id);
   });
+
   return [...porColab.values()];
 }
 
@@ -623,7 +673,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
     const scroller = silent ? scrollParentDe(rootEl) : null;
     const scrollPos = scroller ? scroller.scrollTop : 0;
     if (!silent) rootEl.innerHTML = '<div class="peqd-empty peqd-loading"><span class="peqd-spinner" aria-hidden="true"></span><span>Carregando equipe do dia...</span></div>';
-    roster = await loadRosterDoDia(programacaoIdQuery);
+    roster = await loadRosterDoDia(programacaoIdQuery, supervisaoQuery);
     if (!roster.length) {
       rootEl.innerHTML = '<div class="peqd-empty">Nenhum colaborador confirmado ainda. Volte à Etapa 2 (Equipe + Mapa) e confirme quem vai atender antes de lançar despesas.</div>';
       return;

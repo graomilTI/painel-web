@@ -4,7 +4,7 @@ import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-despesa-compartilhada1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-reaproveitada-card1';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
@@ -2299,7 +2299,7 @@ export function renderContent(content) {
     try {
       const programacaoIdQuery = state.programacaoIdMap.size ? [...state.programacaoIdMap.values()] : state.programacaoId;
       const supervisaoQuery = state.programacaoIdMap.size ? [...state.programacaoIdMap.keys()] : state.supervisao;
-      const roster = await loadRosterDoDia(programacaoIdQuery);
+      const roster = await loadRosterDoDia(programacaoIdQuery, supervisaoQuery);
       if (!roster.length) {
         setFeedback('Nenhum colaborador confirmado nesta programação ainda.', 'warn');
         return;

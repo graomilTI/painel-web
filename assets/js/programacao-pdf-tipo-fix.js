@@ -8,7 +8,7 @@ import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
-} from './programacao-despesas.js?v=20260915-despesa-compartilhada1';
+} from './programacao-despesas.js?v=20260915-reaproveitada-card1';
 import { loadCustos } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 
 function normalizeText(value) {
@@ -248,7 +248,7 @@ async function gerarPdfComTipo(button) {
       : document.getElementById('progSup')?.value;
     const dataReferencia = window.__progGetDataReferencia?.() || document.getElementById('progDataRef')?.value || todayIso();
 
-    const roster = await loadRosterDoDia(programacaoIdQuery);
+    const roster = await loadRosterDoDia(programacaoIdQuery, supervisaoQuery);
 
     const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
     const colaboradorIds = roster.map((row) => row.colaboradorId);
@@ -389,9 +389,12 @@ async function montarTextoCompartilhar() {
   if (!programacaoId && !temMapa) throw new Error('Carregue um contexto antes de compartilhar.');
 
   const programacaoIdQuery = temMapa ? [...programacaoIdMap.values()] : programacaoId;
+  const supervisaoQuery = temMapa
+    ? [...programacaoIdMap.keys()]
+    : document.getElementById('progSup')?.value;
   const dataReferencia = window.__progGetDataReferencia?.() || document.getElementById('progDataRef')?.value || todayIso();
 
-  const roster = await loadRosterDoDia(programacaoIdQuery);
+  const roster = await loadRosterDoDia(programacaoIdQuery, supervisaoQuery);
 
   const osIds = [...new Set(roster.flatMap((row) => [...row.osIds]))];
   const [custos, osResumoPorId, vinculosRes] = await Promise.all([
