@@ -19,6 +19,9 @@ test('gaveta da Lista de O.S. não perde o colaborador confirmado de O.S. reapro
     source,
     /const hoje = await loadEquipeExistente\(programacaoIdQuery\);\s*\n\s*const osIdsDoDia = new Set\(hoje\.filter/,
   );
-  assert.match(source, /const reaproveitada = await loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia\);/);
+  assert.match(
+    source,
+    /const reaproveitada = await loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia, programacaoIdQuery\);/,
+  );
   assert.match(source, /equipeRowsAtual = \[\.\.\.hoje, \.\.\.reaproveitada\];/);
 });

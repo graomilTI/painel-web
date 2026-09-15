@@ -445,14 +445,23 @@ function isDataPassada(dataReferencia) {
 // 15/09/2026, logo depois do fix anterior). A query já vem ordenada por
 // updated_at desc — o PRIMEIRO programacao_id visto por os_id é o vencedor;
 // só linhas desse mesmo par (os_id, programacao_id) entram.
-// CAVEAT conhecido: o card resultante usa o programacao_id do dia dessa
-// última confirmação (não existe um de hoje pra essas O.S.) — uma despesa
-// nova digitada nele grava com esse programacao_id antigo. Resolve o
-// "colaborador sumiu do card" que bloqueava o gestor; não resolve por si só
-// o descompasso de programacao_id nas despesas novas.
-export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
+// Achado 15/09/2026 (Kawan Egon, O.S. 92489, Lucas do Rio Verde/Nova Mutum):
+// devolver a confirmação de ontem só pra EXIBIÇÃO quebrava a sincronização
+// com o GRM — uma despesa nova (ex.: Almoço marcado hoje) era salva com
+// data_referencia=hoje mas programacao_id=ontem (o único que o card tinha),
+// e a publicação pro GRM (grm-liberacao-despesas-publicar, disparada por
+// programacao-grm-despesas-sync.js) só olha o programacao_id de HOJE — a
+// despesa nunca saía da fila. Em vez de só exibir, agora GRAVA de verdade
+// uma confirmação pra HOJE (mesma O.S., mesmo colaborador) sempre que
+// existir um programacao_id de hoje pra essa supervisão — assim toda
+// escrita nova (despesa, distribuição pro GRM) usa o programacao_id certo,
+// sem precisar de mais nenhum caso especial daqui pra frente. Idempotente:
+// upsert por (programacao_id, os_id, colaborador_id) via unique key da
+// própria tabela — repetir a cada carregamento não duplica nem sobrescreve
+// score/rota já calculados.
+export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, programacaoIdQuery) {
   if (!supervisaoQuery) return [];
-  let query = supabase.from('operacional_os').select('id').eq('status_gestor', 'ATENDER');
+  let query = supabase.from('operacional_os').select('id, supervisao').eq('status_gestor', 'ATENDER');
   query = Array.isArray(supervisaoQuery) ? query.in('supervisao', supervisaoQuery) : query.eq('supervisao', supervisaoQuery);
   const { data: osAbertas, error: osError } = await query.limit(2000);
   if (osError) { console.warn('[programacao-despesas] falha ao buscar O.S. reaproveitadas:', osError); return []; }
@@ -473,7 +482,41 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
     const osId = String(row.os_id);
     if (!programacaoIdVencedorPorOs.has(osId)) programacaoIdVencedorPorOs.set(osId, String(row.programacao_id));
   });
-  return (data || []).filter((row) => programacaoIdVencedorPorOs.get(String(row.os_id)) === String(row.programacao_id));
+  const ultimasConfirmacoes = (data || []).filter((row) => programacaoIdVencedorPorOs.get(String(row.os_id)) === String(row.programacao_id));
+
+  const supervisaoPorOs = new Map((osAbertas || []).map((o) => [String(o.id), o.supervisao]));
+  const programacaoIdHojePorSupervisao = new Map();
+  if (programacaoIdQuery) {
+    const supervisoes = Array.isArray(supervisaoQuery) ? supervisaoQuery : [supervisaoQuery];
+    const idsHoje = Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery];
+    supervisoes.forEach((sup, idx) => { if (sup && idsHoje[idx]) programacaoIdHojePorSupervisao.set(sup, idsHoje[idx]); });
+  }
+
+  const paraLevarPraHoje = [];
+  const semProgramacaoHoje = [];
+  ultimasConfirmacoes.forEach((row) => {
+    const programacaoIdHoje = programacaoIdHojePorSupervisao.get(supervisaoPorOs.get(String(row.os_id)));
+    if (programacaoIdHoje && String(programacaoIdHoje) !== String(row.programacao_id)) {
+      paraLevarPraHoje.push({ programacao_id: programacaoIdHoje, os_id: row.os_id, colaborador_id: row.colaborador_id, nome_colaborador: row.nome_colaborador, confirmado: true });
+    } else {
+      // Sem programacao_id de hoje pra essa supervisão (ex.: "Todas" não
+      // carregou essa supervisão específica) — devolve só pra exibição,
+      // como antes.
+      semProgramacaoHoje.push(row);
+    }
+  });
+
+  if (!paraLevarPraHoje.length) return semProgramacaoHoje;
+
+  const { data: gravadas, error: upsertError } = await supabase
+    .from('programacao_equipe')
+    .upsert(paraLevarPraHoje, { onConflict: 'programacao_id,os_id,colaborador_id' })
+    .select('*');
+  if (upsertError) {
+    console.warn('[programacao-despesas] falha ao levar confirmação de O.S. reaproveitada pro dia de hoje:', upsertError);
+    return [...semProgramacaoHoje, ...paraLevarPraHoje];
+  }
+  return [...semProgramacaoHoje, ...(gravadas || paraLevarPraHoje)];
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
@@ -495,7 +538,7 @@ export async function loadRosterDoDia(programacaoIdQuery, supervisaoQuery) {
     if (r.os_id) { porColab.get(id).osIds.add(r.os_id); osIdsDoDia.add(String(r.os_id)); }
   });
 
-  const equipeReaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia);
+  const equipeReaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, programacaoIdQuery);
   equipeReaproveitada.forEach((r) => {
     const id = String(r.colaborador_id);
     if (!porColab.has(id)) {

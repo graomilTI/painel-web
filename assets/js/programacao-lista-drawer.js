@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card3';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card4';
 
 function esc(value) {
   return String(value ?? '')
@@ -396,7 +396,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   async function recarregarEquipeRows() {
     const hoje = await loadEquipeExistente(programacaoIdQuery);
     const osIdsDoDia = new Set(hoje.filter((r) => r.confirmado && r.os_id).map((r) => String(r.os_id)));
-    const reaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia);
+    const reaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, programacaoIdQuery);
     equipeRowsAtual = [...hoje, ...reaproveitada];
     return equipeRowsAtual;
   }
