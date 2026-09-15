@@ -1162,6 +1162,12 @@ function getByAliases(obj, aliases) {
 }
 
 function gerarChaveCarga(r) {
+  // loaCode é o ID interno do GRM pra carga -- estável mesmo se data de
+  // classificação ou coordenada forem editadas depois. Ver comentário na
+  // versão API (grmserver-cargas-geofence-api.js) sobre o caso real de
+  // duplicata que isso corrige (O.S. 61744, NF 441793, loaCode 2670725).
+  var loaCode = r.raw && r.raw.loaCode != null && r.raw.loaCode !== '' ? String(r.raw.loaCode) : null;
+  if (loaCode) return 'loaCode:' + loaCode;
   return [
     r.data_classificacao || '',
     r.os || '',
