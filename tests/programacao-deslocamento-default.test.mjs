@@ -30,6 +30,6 @@ test('referências da tela usam a versão nova dos módulos de deslocamento/desp
   ]);
 
   for (const source of [programacao, drawer, fluxo, pdf, router, html]) {
-    assert.match(source, /20260915-reaproveitada-card2/);
+    assert.match(source, /20260915-reaproveitada-card3/);
   }
 });

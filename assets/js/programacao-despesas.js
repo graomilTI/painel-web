@@ -437,12 +437,19 @@ function isDataPassada(dataReferencia) {
 // distribuição do GRM (ver carregarGruposPendentes em
 // grmserver-aplicar-distribuicao-os-api.js): toda O.S. ainda ATENDER da(s)
 // supervisão(ões) em foco cuja equipe confirmada não apareceu no dia de hoje
-// entra mesmo assim, usando a confirmação mais recente de qualquer dia.
-// CAVEAT conhecido: o card resultante usa o programacao_id de ONTEM (não
-// existe um de hoje pra essas O.S.) — uma despesa nova digitada nele grava
-// com esse programacao_id antigo. Resolve o "colaborador sumiu do card" que
-// bloqueava o gestor; não resolve por si só o descompasso de programacao_id
-// nas despesas novas.
+// entra mesmo assim, usando a confirmação mais recente de qualquer dia — só
+// ela, não o histórico inteiro. Uma O.S. reaproveitada por semanas pode ter
+// tido gente diferente confirmada em dias diferentes (giro de motorista/
+// ajudante); sem filtrar pra só o programacao_id mais recente por O.S., ela
+// aparecia "lotada" com todo mundo que já passou por ela algum dia (achado
+// 15/09/2026, logo depois do fix anterior). A query já vem ordenada por
+// updated_at desc — o PRIMEIRO programacao_id visto por os_id é o vencedor;
+// só linhas desse mesmo par (os_id, programacao_id) entram.
+// CAVEAT conhecido: o card resultante usa o programacao_id do dia dessa
+// última confirmação (não existe um de hoje pra essas O.S.) — uma despesa
+// nova digitada nele grava com esse programacao_id antigo. Resolve o
+// "colaborador sumiu do card" que bloqueava o gestor; não resolve por si só
+// o descompasso de programacao_id nas despesas novas.
 export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
   if (!supervisaoQuery) return [];
   let query = supabase.from('operacional_os').select('id').eq('status_gestor', 'ATENDER');
@@ -460,7 +467,13 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
     .in('os_id', idsFaltantes)
     .order('updated_at', { ascending: false });
   if (error) { console.warn('[programacao-despesas] falha ao buscar equipe reaproveitada:', error); return []; }
-  return data || [];
+
+  const programacaoIdVencedorPorOs = new Map();
+  (data || []).forEach((row) => {
+    const osId = String(row.os_id);
+    if (!programacaoIdVencedorPorOs.has(osId)) programacaoIdVencedorPorOs.set(osId, String(row.programacao_id));
+  });
+  return (data || []).filter((row) => programacaoIdVencedorPorOs.get(String(row.os_id)) === String(row.programacao_id));
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
