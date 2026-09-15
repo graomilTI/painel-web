@@ -346,7 +346,7 @@ async function loadData() {
   renderBody();
 }
 
-const COL_VALOR_ALIASES = ['Valor', 'Valor Desconto', 'Valor do Desconto', 'Desconto', 'Valor Auditoria'];
+const COL_VALOR_ALIASES = ['Valor Total no Caixa', 'Valor', 'Valor Desconto', 'Valor do Desconto', 'Desconto', 'Valor Auditoria'];
 const COL_DESCRICAO_ALIASES = ['Descrição', 'Descricao', 'Motivo', 'Observação', 'Observacao'];
 
 function parseBrNumber(value) {
