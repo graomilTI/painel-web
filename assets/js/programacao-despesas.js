@@ -443,7 +443,7 @@ function isDataPassada(dataReferencia) {
 // com esse programacao_id antigo. Resolve o "colaborador sumiu do card" que
 // bloqueava o gestor; não resolve por si só o descompasso de programacao_id
 // nas despesas novas.
-async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
+export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia) {
   if (!supervisaoQuery) return [];
   let query = supabase.from('operacional_os').select('id').eq('status_gestor', 'ATENDER');
   query = Array.isArray(supervisaoQuery) ? query.in('supervisao', supervisaoQuery) : query.eq('supervisao', supervisaoQuery);
