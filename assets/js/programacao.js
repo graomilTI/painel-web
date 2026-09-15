@@ -1,6 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
+import { logActivity } from './activityLogger.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-despesa-compartilhada1';
@@ -633,6 +634,16 @@ export function renderContent(content) {
       if (error) throw error;
       const copiadas = Array.isArray(data?.copiadas) ? data.copiadas : [];
       const ignoradas = Array.isArray(data?.ignoradas) ? data.ignoradas : [];
+      if (copiadas.length) {
+        logActivity('action', 'programacao_duplicada', 'programacao', {
+          programacao_origem_id: state.programacaoId,
+          data_origem: state.dataReferencia,
+          datas_copiadas: copiadas,
+          datas_preservadas: ignoradas,
+          supervisao: state.supervisao,
+          copiar_estadias: el.duplicateCopyStays.checked,
+        });
+      }
       closeDuplicateModal();
       const resumo = copiadas.length ? `Programação duplicada para ${copiadas.map(brDate).join(', ')}.` : 'Nenhuma programação foi duplicada.';
       const preservadas = ignoradas.length ? ` Datas já preenchidas e preservadas: ${ignoradas.map(brDate).join(', ')}.` : '';
