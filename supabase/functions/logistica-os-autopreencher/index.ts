@@ -34,9 +34,10 @@ type Campos = {
   testes: string[];
 };
 
-// Mesmo vocabulário de assets/js/logistica.js:TESTES_POR_PRODUTO — qual
-// teste é válido depende do produto (Milho/Sorgo: intensidade de Aflatoxina;
-// Soja: Intacta e/ou GMO Free; Trigo: Vomitoxina).
+// Mesmo vocabulário de assets/js/logistica-abertura-os-produtos.js:
+// CATALOGO_PRODUTOS — qual teste é válido depende do produto (Milho/Sorgo/
+// Farelo de Polpa Cítrica: intensidade de Aflatoxina; Soja em grão: Intacta
+// e/ou GMO Free; Trigo: Vomitoxina; Farelo de Soja: nenhum).
 const TESTES_VOCAB = new Set([
   "AFLATOXINA_QUALITATIVO",
   "AFLATOXINA_QUANTITATIVO",
@@ -191,9 +192,10 @@ Regras para templates de "LIBERAÇÃO DE EMBARQUE" (comum em e-mails de Cargill/
 - "Endereço retirada" é cidade_embarque.
 - "Valor saca", "Classificação" e "Transportadora(s) autorizada(s)" não correspondem a nenhum campo — ignore.
 Regras para "testes" (array de strings, só os valores abaixo, vazio se não mencionado): o teste válido depende do produto.
-- Se produto for Milho ou Sorgo e o documento mencionar teste de Aflatoxina: use "AFLATOXINA_QUALITATIVO", "AFLATOXINA_QUANTITATIVO" ou "AFLATOXINA_QUALI_QUANTI" (qualitativo e quantitativo juntos).
-- Se produto for Soja: use "INTACTA" e/ou "GMO_FREE" se mencionados (pode ter os dois).
+- Se produto for Milho, Sorgo ou Farelo de Polpa Cítrica e o documento mencionar teste de Aflatoxina: use "AFLATOXINA_QUALITATIVO", "AFLATOXINA_QUANTITATIVO" ou "AFLATOXINA_QUALI_QUANTI" (qualitativo e quantitativo juntos).
+- Se produto for Soja (grão): use "INTACTA" e/ou "GMO_FREE" se mencionados (pode ter os dois).
 - Se produto for Trigo e o documento mencionar teste de Vomitoxina: use "VOMITOXINA".
+- Farelo de Soja não tem nenhum teste disponível no GRM — nunca use INTACTA/GMO_FREE pra esse produto, mesmo que o nome contenha "Soja".
 - Não inclua nenhum teste que não esteja explicitamente mencionado no documento.`;
 }
 
@@ -417,7 +419,14 @@ function inferTestes(text: string, produto: string): string[] {
   const whole = normalize(text);
   const cat = normalize(produto);
   const out: string[] = [];
-  if (cat.includes("milho") || cat.includes("sorgo")) {
+  // "farelo de soja" precisa ser checado ANTES de cat.includes("soja") —
+  // senão cairia no ramo de Soja em grão (Intacta/GMO Free), testes que o
+  // GRM não habilita pra Farelo de Soja (proEnableIntactaTest/SoyFreeTest
+  // ambos "N" pro proCode 18 — ver auditar-testes-produtos.js). Farelo de
+  // Soja não tem teste algum hoje, então nem entra num ramo abaixo.
+  if (cat.includes("farelo de soja")) {
+    // sem testes
+  } else if (cat.includes("milho") || cat.includes("sorgo") || cat.includes("farelo de polpa")) {
     if (whole.includes("aflatoxina")) {
       const quali = whole.includes("qualitativo");
       const quanti = whole.includes("quantitativo");
@@ -437,7 +446,12 @@ function inferTestes(text: string, produto: string): string[] {
 function structure(text: string): Campos {
   const source = lines(text);
   let produto = extract(source, ["Produto", "Cultura", "Mercadoria", "Instrução de carregamento de", "Instrucao de carregamento de"]);
-  if (!produto) produto = infer(text, ["Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
+  // Nomes compostos ("Farelo de X") vêm ANTES dos genéricos ("Soja", "Milho")
+  // de propósito — infer() usa o primeiro que bater por substring, e "Farelo
+  // de Soja" também contém "Soja", então checar o genérico primeiro faria
+  // "Farelo de Soja" virar "Soja" por engano (produto errado: Farelo de Soja
+  // não tem os mesmos testes de Soja em grão — ver CATALOGO_PRODUTOS).
+  if (!produto) produto = infer(text, ["Farelo de Polpa Cítrica", "Farelo de Soja", "Soja", "Milho", "Trigo", "Sorgo", "Ervilha"]);
   let tipoProduto = extract(source, ["Tipo de produto", "Tipo produto", "Tecnologia", "Variedade"]);
   if (!tipoProduto) tipoProduto = infer(text, ["Aflatoxina Negativo", "Declarado Intacta", "Intacta Negativo", "Intacta Positivo", "Não Definido", "OS com teste", "Participante", "Transgênico", "Convencional"]);
   let servico = extract(source, ["Serviço", "Tipo de serviço", "Operação"]);

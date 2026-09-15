@@ -5,11 +5,18 @@
 // Soja é "Declarada Intacta", não "Declarado Intacta") — daí os campos preenchidos
 // errado a partir de e-mail. Um só lugar evita esse drift de novo.
 //
-// Testes exigidos na abertura variam por produto (regra passada pela operação
-// 03/08): Milho/Sorgo pedem intensidade do teste de Aflatoxina; Soja pode pedir
-// Intacta e/ou GMO Free (independentes); Trigo pede Vomitoxina. As chaves aqui
-// (ex.: AFLATOXINA_QUALITATIVO) são o vocabulário usado em
-// logistica_abertura_os.testes.opcoes e em grm-sync-abrir-os.js.
+// Testes exigidos na abertura variam por produto. Regra original (operação
+// 03/08): Milho/Sorgo pedem intensidade do teste de Aflatoxina; Soja pode
+// pedir Intacta e/ou GMO Free (independentes); Trigo pede Vomitoxina.
+// Ampliada em 13/09 após auditoria direta do catálogo de produtos do GRM
+// (product/getForSelect, flags proEnableXxxTest — ver
+// agentes-grm-sync/auditar-testes-produtos.js): Farelo de Polpa Cítrica
+// também tem proEnableAflatoxinsTest="S" no GRM e estava faltando aqui, e
+// Farelo de Soja é um produto ativo no GRM (proCode 18) que nem aparecia
+// neste catálogo — sem nenhum dos dois, uma solicitação pra esses produtos
+// não dava pra ser aberta certa pelo painel. As chaves aqui (ex.:
+// AFLATOXINA_QUALITATIVO) são o vocabulário usado em
+// logistica_abertura_os.testes.opcoes e em grmserver-abrir-os-api.js.
 export const CATALOGO_PRODUTOS = {
   MILHO: { label: 'Milho', tipos: ['Exportação', 'Tipo Exportação'], testes: [
     { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
@@ -25,7 +32,11 @@ export const CATALOGO_PRODUTOS = {
     { key: 'GMO_FREE', label: 'Teste GMO Free' },
   ] },
   CANOLA: { label: 'Canola', tipos: ['Não Definido'], testes: [] },
-  FARELO_POLPA_CITRICA: { label: 'Farelo de Polpa Cítrica', tipos: ['Não Definido'], testes: [] },
+  FARELO_POLPA_CITRICA: { label: 'Farelo de Polpa Cítrica', tipos: ['Não Definido'], testes: [
+    { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
+    { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
+  ] },
+  FARELO_SOJA: { label: 'Farelo de Soja', tipos: ['Não Definido'], testes: [] },
   ARROZ_CASCA_NATURAL_TIPO_1: { label: 'Arroz em Casca Natural Tipo 1', tipos: ['Não Definido'], testes: [] },
   MILHETO: { label: 'Milheto', tipos: ['Não Definido'], testes: [] },
   TRITICALE: { label: 'Triticale', tipos: ['Não Definido'], testes: [] },

@@ -112,7 +112,11 @@ function canonicalYesNo(value) {
 // sua própria lista de 5 nomes (incluía "Ervilha", que não existe mais no
 // catálogo, e faltavam Triguilho/Canola/Milheto/Triticale/etc.), então um
 // produto reconhecido aqui podia não bater com nenhuma opção do select.
-const CATALOGO_LABELS = Object.values(CATALOGO_PRODUTOS).map((p) => p.label);
+// Do mais específico pro mais genérico (ex.: "Farelo de Soja" antes de
+// "Soja") — senão um nome composto que contém um label mais curto (like
+// "Farelo de Soja" contendo "Soja") "casaria" com o errado dependendo só da
+// ordem de inserção em CATALOGO_PRODUTOS.
+const CATALOGO_LABELS = Object.values(CATALOGO_PRODUTOS).map((p) => p.label).sort((a, b) => b.length - a.length);
 
 function canonicalProduct(value, wholeText = '') {
   const text = normalize(value || wholeText);

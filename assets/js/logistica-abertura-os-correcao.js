@@ -16,8 +16,12 @@ const val = (id) => document.getElementById(id)?.value?.trim() || '';
 const parseNum = (v) => Number(String(v ?? '').replace(/\./g,'').replace(',','.')) || 0;
 
 // Mesma regra de assets/js/logistica.js:categoriaProduto — duplicada aqui
-// porque este módulo roda como patch isolado (não importa o outro).
-function categoriaProduto(valor){const t=String(valor||'').trim().toUpperCase();return {MILHO:'MILHO',SORGO:'SORGO',SOJA:'SOJA',TRIGO:'TRIGO'}[t]||null;}
+// porque este módulo roda como patch isolado (não importa o outro). Só
+// precisa cobrir categorias que têm testes de verdade (ver
+// CATALOGO_PRODUTOS em logistica-abertura-os-produtos.js) — as demais
+// (Canola, Farelo de Soja, Arroz, Milheto, Triticale, Triguilho) não têm
+// checkbox de teste nenhum, então testes:{} pra elas não perde informação.
+function categoriaProduto(valor){const t=String(valor||'').trim().toUpperCase();return {MILHO:'MILHO',SORGO:'SORGO',SOJA:'SOJA',TRIGO:'TRIGO','FARELO DE POLPA CÍTRICA':'FARELO_POLPA_CITRICA'}[t]||null;}
 function testesSelecionados(){return [...document.querySelectorAll('[data-teste-key]:checked')].map(el=>el.dataset.testeKey);}
 function payload(){const opcoes=testesSelecionados();const categoria=categoriaProduto(val('osProduto'));return {contratante_cliente:val('osContratante'),filial_pagadora:val('osFilialPagadora'),produtor:val('osProdutor')||null,armazem_embarque:val('osArmazemEmbarque'),uf_embarque:val('osUfEmbarque'),cidade_embarque:val('osCidadeEmbarque'),uf_destino:val('osUfDestino'),cidade_destino:val('osCidadeDestino'),local_destino:val('osLocalDestino'),numero_contrato:val('osNumeroContrato'),produto:val('osProduto'),tipo_produto:val('osTipoProduto'),volume_inicial:parseNum(val('osVolumeInicial')),regional:val('osRegional'),troca_notas:val('osTrocaNotas'),servico:val('osServico'),testes:categoria?{categoria,opcoes}:{}};}
 function missing(p){return [['Contratante/Cliente',p.contratante_cliente],['Filial pagadora',p.filial_pagadora],['Armazém de embarque',p.armazem_embarque],['UF de embarque',p.uf_embarque],['Cidade de embarque',p.cidade_embarque],['UF destino',p.uf_destino],['Cidade destino',p.cidade_destino],['Local de destino',p.local_destino],['Número contrato',p.numero_contrato],['Produto',p.produto],['Tipo de produto',p.tipo_produto],['Volume inicial',p.volume_inicial],['Regional',p.regional],['Troca de notas',p.troca_notas],['Serviço',p.servico]].filter(([,v])=>!v).map(([k])=>k);}
