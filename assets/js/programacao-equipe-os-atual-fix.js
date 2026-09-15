@@ -5,12 +5,14 @@
 //
 // Este módulo reexporta toda a API original e substitui somente essa leitura.
 // O histórico continua intacto no banco; retornamos apenas a programação
-// pertinente ao contexto de data aberto no painel (ou a mais recente anterior).
+// pertinente ao contexto de data aberto no painel (ou a mais recente anterior
+// — ver escolherProgramacao(); a exigência de reconfirmação diária exata que
+// esteve aqui entre 14/09 e 15/09 foi revertida, ver comentário na função).
 
 import { supabase } from './supabaseClient.js';
-import { loadEquipeDaOsPorId as loadEquipeDaOsPorIdOriginal } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix-base';
+import { loadEquipeDaOsPorId as loadEquipeDaOsPorIdOriginal } from './programacao-equipe.js?v=20260915-remocao-os-reaproveitada-base1';
 
-export * from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix-base';
+export * from './programacao-equipe.js?v=20260915-remocao-os-reaproveitada-base1';
 
 function dataReferenciaDoContexto() {
   try {
@@ -45,16 +47,19 @@ function escolherProgramacao(programacoes, dataReferencia) {
 
   if (!dataReferencia) return ordenadas[0];
 
-  // Reconfirmação diária é obrigatória: uma O.S. reaproveitada de um dia pro
-  // outro só mostra equipe no card se alguém confirmou especificamente para a
-  // data aberta — nunca herda automaticamente a confirmação de um dia
-  // anterior (decisão de negócio 14/09; antes o fallback pra "mais recente
-  // até a data aberta" fazia o card mostrar colaborador de dias passados sem
-  // reconfirmação, e também alimentava esperado=[] no Graint quando o par
-  // sintético usado por aplicar-distribuicao-os não encontrava programação
-  // pra data de hoje). Pra O.S. em atendimento contínuo, o caminho é
-  // "Duplicar programação" copiar a equipe confirmada pra frente.
-  return ordenadas.find((p) => String(p.data_referencia).slice(0, 10) === dataReferencia) || null;
+  // Reverte a decisão de negócio de 14/09 ("reconfirmação diária
+  // obrigatória", exigia achar exatamente a data aberta e nunca herdava a
+  // confirmação de um dia anterior). Essa regra é exatamente o problema
+  // relatado em 15/09 (Jean Carlos, O.S. 92611/92659; Kawan Egon, O.S.
+  // 92489): o gestor não deveria precisar reconfirmar toda O.S. em
+  // atendimento contínuo todo dia. loadEquipeReaproveitada() em
+  // programacao-despesas.js já grava uma confirmação de hoje de verdade
+  // quando encontra uma O.S. ainda ATENDER sem reconfirmação — aqui, quando
+  // não há confirmação exata pra data aberta, cai pra mais recente ATÉ essa
+  // data (nunca uma futura), voltando ao comportamento anterior ao hotfix.
+  const exata = ordenadas.find((p) => String(p.data_referencia).slice(0, 10) === dataReferencia);
+  if (exata) return exata;
+  return ordenadas.find((p) => String(p.data_referencia).slice(0, 10) <= dataReferencia) || null;
 }
 
 export async function loadEquipeDaOsPorId(osId) {

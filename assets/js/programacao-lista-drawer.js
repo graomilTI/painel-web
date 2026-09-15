@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card5';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card6';
 
 function esc(value) {
   return String(value ?? '')
@@ -395,7 +395,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // atendendo de verdade. Mesmo helper usado pelo card de Despesas (Etapa 3).
   async function recarregarEquipeRows() {
     const hoje = await loadEquipeExistente(programacaoIdQuery);
-    const osIdsDoDia = new Set(hoje.filter((r) => r.confirmado && r.os_id).map((r) => String(r.os_id)));
+    // confirmado=false é uma remoção explícita do dia e também precisa
+    // bloquear o reaproveitamento automático da confirmação anterior.
+    const osIdsDoDia = new Set(hoje.filter((r) => r.os_id).map((r) => String(r.os_id)));
     const reaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, programacaoIdQuery);
     equipeRowsAtual = [...hoje, ...reaproveitada];
     return equipeRowsAtual;

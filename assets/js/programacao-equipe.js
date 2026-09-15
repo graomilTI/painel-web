@@ -1351,13 +1351,23 @@ export async function adicionarColaboradorOs(programacaoId, os, cand) {
 }
 
 export async function removerConfirmacao(programacaoId, equipeRowId) {
-  const { data: rows, error: selErr } = await supabase.from('programacao_equipe').select('colaborador_id,os_id').eq('id', equipeRowId).limit(1);
+  const { data: rows, error: selErr } = await supabase.from('programacao_equipe').select('programacao_id,colaborador_id,os_id').eq('id', equipeRowId).limit(1);
   if (selErr) throw selErr;
+  if (!rows?.length) throw new Error('Vínculo do colaborador com a O.S. não encontrado. Recarregue a tela e tente novamente.');
+  const programacaoIdEfetivo = rows[0].programacao_id || programacaoId;
   const colaboradorId = rows?.[0]?.colaborador_id;
   const osId = rows?.[0]?.os_id;
 
-  const { error } = await supabase.from('programacao_equipe').delete().eq('id', equipeRowId);
+  // Não apaga a linha: confirmado=false é a decisão explícita de remoção
+  // nesta data. Sem esse marcador, O.S. reaproveitada era recarregada logo
+  // depois e loadEquipeReaproveitada recriava o vínculo a partir do dia
+  // anterior, fazendo o botão "Remover" parecer inoperante.
+  const { data: removidas, error } = await supabase.from('programacao_equipe')
+    .update({ confirmado: false })
+    .eq('id', equipeRowId)
+    .select('id');
   if (error) throw error;
+  if (!removidas?.length) throw new Error('O vínculo não foi removido. Recarregue a tela e tente novamente.');
 
   if (osId) {
     const { error: vinculoErr } = await supabase
@@ -1370,11 +1380,24 @@ export async function removerConfirmacao(programacaoId, equipeRowId) {
   }
 
   if (colaboradorId) {
-    const { error: updErr } = await supabase
-      .from('programacao_colaboradores')
-      .update({ disponibilidade: 'SEM EMBARQUE' })
-      .eq('programacao_id', programacaoId)
-      .eq('colaborador_id', colaboradorId);
-    if (updErr) console.warn('[programacao-equipe] falha ao reverter disponibilidade.', updErr);
+    // Se a pessoa continua confirmada em outra O.S. da mesma programação,
+    // remover só este vínculo não pode transformá-la em SEM EMBARQUE.
+    const { data: outrasOs, error: outrasOsError } = await supabase
+      .from('programacao_equipe')
+      .select('id')
+      .eq('programacao_id', programacaoIdEfetivo)
+      .eq('colaborador_id', colaboradorId)
+      .eq('confirmado', true)
+      .neq('id', equipeRowId)
+      .limit(1);
+    if (outrasOsError) throw outrasOsError;
+    if (!outrasOs?.length) {
+      const { error: updErr } = await supabase
+        .from('programacao_colaboradores')
+        .update({ disponibilidade: 'SEM EMBARQUE' })
+        .eq('programacao_id', programacaoIdEfetivo)
+        .eq('colaborador_id', colaboradorId);
+      if (updErr) console.warn('[programacao-equipe] falha ao reverter disponibilidade.', updErr);
+    }
   }
 }

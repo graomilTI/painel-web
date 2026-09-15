@@ -15,10 +15,8 @@ test('gaveta da Lista de O.S. não perde o colaborador confirmado de O.S. reapro
   // de verdade. Mesmo helper loadEquipeReaproveitada já usado pelo card de
   // Despesas (ver tests/programacao-os-reaproveitada-card.test.mjs).
   assert.match(source, /loadEquipeReaproveitada\s*\}\s*from\s*'\.\/programacao-despesas\.js/);
-  assert.match(
-    source,
-    /const hoje = await loadEquipeExistente\(programacaoIdQuery\);\s*\n\s*const osIdsDoDia = new Set\(hoje\.filter/,
-  );
+  assert.match(source, /const hoje = await loadEquipeExistente\(programacaoIdQuery\);/);
+  assert.match(source, /const osIdsDoDia = new Set\(hoje\.filter/);
   assert.match(
     source,
     /const reaproveitada = await loadEquipeReaproveitada\(supervisaoQuery, osIdsDoDia, programacaoIdQuery\);/,
