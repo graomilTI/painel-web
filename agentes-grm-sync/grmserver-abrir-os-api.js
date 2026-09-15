@@ -219,19 +219,41 @@ function extrairLocalPadrao(texto) {
   return { uf: m[1].toUpperCase(), cidade: m[2].trim(), local: m[3].trim() };
 }
 
-// Inferido por semelhança de nome com proEnableXxxTest — NENHUMA captura
-// real teve testes.opcoes não-vazio até agora, então isso nunca foi
-// confirmado contra um payload de verdade. Revisar com CAPTURE_NET na
-// próxima solicitação real que use algum desses testes antes de confiar
-// cegamente.
+// sorIntactaTest/sorSoyFreeTest/sorVomitoxinTest são flags simples "S"/"N"
+// (option code:"N"/"S", label "Não Será Realizado"/"Será Realizado") —
+// confirmado lendo o próprio bundle do front-end do GRM (chunk
+// ServiceOrder-*.js, array `options` de cada campo `type:"select"`), não só
+// por semelhança de nome.
 var TESTES_API_MAP = {
-  AFLATOXINA_QUALITATIVO: 'sorAflatoxinTest',
-  AFLATOXINA_QUANTITATIVO: 'sorAflatoxinTest',
-  AFLATOXINA_QUALI_QUANTI: 'sorAflatoxinTest',
   INTACTA: 'sorIntactaTest',
   GMO_FREE: 'sorSoyFreeTest',
   VOMITOXINA: 'sorVomitoxinTest',
 };
+
+// sorAflatoxinTest NÃO é booleano — é um select de 4 opções com códigos
+// próprios. Confirmado lendo o bundle do front-end do GRM em
+// assets/ServiceOrder-*.js (baixado de https://www.grmserver.com.br/,
+// procurando `id:"sorAflatoxinTest"`):
+//   options:[{code:"N",label:"Não Será Realizado"},
+//            {code:"QT",label:"Qualitativo e Quantitativo"},
+//            {code:"Q",label:"Somente Qualitativo"},
+//            {code:"T",label:"Somente Quantitativo"}]
+// Mandar "S" (como o código fazia antes) não bate com nenhuma dessas opções
+// — foi exatamente o que quebrou a Teste Aflatoxina da O.S. 92531
+// (GRAOMIL/Milho, 13/09/2026).
+var AFLATOXINA_CODE_MAP = {
+  AFLATOXINA_QUALITATIVO: 'Q',
+  AFLATOXINA_QUANTITATIVO: 'T',
+  AFLATOXINA_QUALI_QUANTI: 'QT',
+};
+var AFLATOXINA_KEYS = Object.keys(AFLATOXINA_CODE_MAP);
+function codigoAflatoxina(opcoes) {
+  var quali = opcoes.indexOf('AFLATOXINA_QUALITATIVO') !== -1;
+  var quanti = opcoes.indexOf('AFLATOXINA_QUANTITATIVO') !== -1;
+  if (opcoes.indexOf('AFLATOXINA_QUALI_QUANTI') !== -1 || (quali && quanti)) return 'QT';
+  if (quanti) return 'T';
+  return 'Q';
+}
 
 // ---------------------------------------------------------------------
 // Resolução de cada código GRM
@@ -416,10 +438,12 @@ async function montarPayload(token, solicitacao) {
 
   const testesFlags = { sorAflatoxinTest: 'N', sorIntactaTest: 'N', sorSoyFreeTest: 'N', sorVomitoxinTest: 'N', sorFallingNumberTest: 'N' };
   const opcoesTestes = (solicitacao.testes && Array.isArray(solicitacao.testes.opcoes)) ? solicitacao.testes.opcoes : [];
+  const temAflatoxina = opcoesTestes.some((key) => AFLATOXINA_KEYS.indexOf(key) !== -1);
+  if (temAflatoxina) testesFlags.sorAflatoxinTest = codigoAflatoxina(opcoesTestes);
   opcoesTestes.forEach((key) => {
+    if (AFLATOXINA_KEYS.indexOf(key) !== -1) return; // já tratado acima via codigoAflatoxina()
     const campo = TESTES_API_MAP[key];
     if (!campo) { avisarCampoSuspeito('Teste "' + key + '" sem mapeamento pro payload da API — ignorado.'); return; }
-    avisarCampoSuspeito('Teste "' + key + '" -> ' + campo + '="S" (mapeamento NÃO validado ao vivo, conferir a O.S. criada).');
     testesFlags[campo] = 'S';
   });
 
