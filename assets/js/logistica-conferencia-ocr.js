@@ -11,6 +11,7 @@ const LABEL = {
   MISSING: 'Falta lançar',
   PLATE: 'Placa errada',
   WEIGHT: 'Peso errado',
+  DUPLICATE: 'Duplicada',
 };
 const cache = new Map();
 let currentUser = null;
@@ -154,6 +155,18 @@ function compare(systemRows, reportRows) {
   const result = [];
   const used = new Set();
 
+  // Import do GRM às vezes traz a mesma carga repetida (mesma carga+placa em
+  // 2+ linhas do sistema). Só uma "casa" com o relatório; a sobra precisa
+  // aparecer como duplicata, não como "Falta lançar" (que sugere um
+  // lançamento de verdade faltando).
+  const systemDupeKey = (s) => (s.carga || s.placa ? `${normCode(s.carga)}|${normPlate(s.placa)}` : '');
+  const systemDupeCounts = new Map();
+  systemRows.forEach((s) => {
+    const key = systemDupeKey(s);
+    if (!key) return;
+    systemDupeCounts.set(key, (systemDupeCounts.get(key) || 0) + 1);
+  });
+
   reportRows.forEach((report) => {
     const available = systemRows.map((system, index) => ({ system, index })).filter(({ index }) => !used.has(index));
     const reportPlate = normPlate(report.placa);
@@ -178,6 +191,22 @@ function compare(systemRows, reportRows) {
       }
     }
 
+    // Mesma NF no sistema e no relatório, mas placa diferente: sinal bem mais
+    // forte de erro de digitação da placa do que "carga sumiu" -- sem isso
+    // virava duas linhas soltas (uma "Não localizada", outra "Falta lançar")
+    // em vez de apontar a placa provavelmente errada.
+    if (!found) {
+      const reportNfCode = normCode(report.nf);
+      if (reportNfCode) {
+        const sameNf = available.filter(({ system }) => normCode(system.nf) === reportNfCode);
+        if (sameNf.length === 1) {
+          found = sameNf[0];
+          status = LABEL.PLATE;
+          note = `Mesma nota fiscal no sistema e no relatório, mas placa diverge — provável erro de digitação: sistema ${formatPlate(found.system.placa)} × relatório ${formatPlate(report.placa)}.`;
+        }
+      }
+    }
+
     if (!found) {
       result.push({ status: LABEL.NOT_FOUND, system: null, report, note: 'Não consta nesta O.S.' });
       return;
@@ -198,10 +227,16 @@ function compare(systemRows, reportRows) {
   });
 
   systemRows.forEach((system, index) => {
-    if (!used.has(index)) result.push({ status: LABEL.MISSING, system, report: null, note: 'Não identificada no relatório.' });
+    if (used.has(index)) return;
+    const key = systemDupeKey(system);
+    if (key && (systemDupeCounts.get(key) || 0) > 1) {
+      result.push({ status: LABEL.DUPLICATE, system, report: null, note: 'Carga duplicada no sistema — mesma carga/placa aparece mais de uma vez em grm_cargas_importacoes.' });
+    } else {
+      result.push({ status: LABEL.MISSING, system, report: null, note: 'Não identificada no relatório.' });
+    }
   });
 
-  const order = { [LABEL.NOT_FOUND]: 1, [LABEL.MISSING]: 2, [LABEL.PLATE]: 3, [LABEL.WEIGHT]: 4, [LABEL.OK]: 5 };
+  const order = { [LABEL.NOT_FOUND]: 1, [LABEL.MISSING]: 2, [LABEL.DUPLICATE]: 3, [LABEL.PLATE]: 4, [LABEL.WEIGHT]: 5, [LABEL.OK]: 6 };
   return result.sort((a, b) => order[a.status] - order[b.status]);
 }
 
@@ -233,7 +268,7 @@ function installStyle() {
     .pc-box{width:min(1580px,98vw);height:min(880px,96vh);max-height:96vh;display:flex;flex-direction:column;background:#031b12;border:1px solid rgba(52,211,153,.3);border-radius:18px;overflow:hidden;color:#e5f7ee}
     .pc-head,.pc-foot{display:flex;flex:0 0 auto;justify-content:space-between;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid rgba(52,211,153,.18)}.pc-head h2{margin:0}.pc-head p{margin:4px 0 0;color:#8dac9d;font-size:12px}
     .pc-body{min-height:0;flex:1;display:flex;flex-direction:column;padding:12px 16px;overflow:hidden}
-    .pc-kpis{flex:0 0 auto;display:grid;grid-template-columns:repeat(5,minmax(100px,1fr));gap:7px;margin-bottom:10px}.pc-kpi{min-height:55px;padding:8px 10px;border:1px solid rgba(52,211,153,.15);border-radius:12px;background:rgba(2,17,12,.6)}.pc-kpi small{display:block;color:#83a697;font-size:10px;text-transform:uppercase}.pc-kpi b{font-size:19px}
+    .pc-kpis{flex:0 0 auto;display:grid;grid-template-columns:repeat(6,minmax(90px,1fr));gap:7px;margin-bottom:10px}.pc-kpi{min-height:55px;padding:8px 10px;border:1px solid rgba(52,211,153,.15);border-radius:12px;background:rgba(2,17,12,.6)}.pc-kpi small{display:block;color:#83a697;font-size:10px;text-transform:uppercase}.pc-kpi b{font-size:19px}
     .pc-docs{flex:0 0 auto;display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}.pc-docs a{color:#9cf5c8;text-decoration:none;border:1px solid rgba(52,211,153,.2);border-radius:999px;padding:6px 9px}
     .pc-faturada-toggle{flex:0 0 auto;display:flex;align-items:center;gap:7px;margin-bottom:9px;color:#c8e8d9;font-size:12px;cursor:pointer;user-select:none}.pc-faturada-toggle input{cursor:pointer}
     .pc-table-wrap{min-height:0;flex:1;overflow:auto;border:1px solid rgba(52,211,153,.16);border-radius:12px}.pc-table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:12px}.pc-table th{position:sticky;top:0;z-index:2;background:#06251a;color:#8ef0bd;padding:8px 6px;text-align:left;font-size:9px;line-height:1.2;text-transform:uppercase;white-space:normal}.pc-table th.pc-sortable{cursor:pointer;user-select:none}.pc-table th.pc-sortable:hover{color:#c8ffe4}.pc-table th.pc-sort-active{color:#fff}.pc-table td{padding:8px 6px;border-top:1px solid rgba(148,163,184,.1);vertical-align:top;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
@@ -342,12 +377,12 @@ function showResult(row, analysis) {
   const id = String(row.id);
   const exclude = excludeFaturadasState.get(id) || false;
   const { result, plateCount } = filteredResult(analysis, exclude);
-  const el = modal(); const count = totals(result); const badgeClass = (status) => status === LABEL.OK ? 'pc-ok' : [LABEL.PLATE, LABEL.WEIGHT].includes(status) ? 'pc-warn' : 'pc-bad';
+  const el = modal(); const count = totals(result); const badgeClass = (status) => status === LABEL.OK ? 'pc-ok' : [LABEL.PLATE, LABEL.WEIGHT, LABEL.DUPLICATE].includes(status) ? 'pc-warn' : 'pc-bad';
   el.hidden = false; document.body.style.overflow = 'hidden';
   el.querySelector('#pcTitle').textContent = `Pré-Conferência — O.S. ${osNumber(row)}`;
   el.querySelector('#pcSub').textContent = `${analysis.system.length} carga(s) no sistema · ${analysis.report.length} lida(s) pelo PaddleOCR`;
   el.querySelector('#pcBody').innerHTML = `
-    <div class="pc-kpis"><div class="pc-kpi"><small>Total</small><b>${count.total}</b></div><div class="pc-kpi"><small>OK</small><b>${count[LABEL.OK] || 0}</b></div><div class="pc-kpi"><small>Placa/Peso</small><b>${(count[LABEL.PLATE] || 0) + (count[LABEL.WEIGHT] || 0)}</b></div><div class="pc-kpi"><small>Falta lançar</small><b>${count[LABEL.MISSING] || 0}</b></div><div class="pc-kpi"><small>Não localizada</small><b>${count[LABEL.NOT_FOUND] || 0}</b></div></div>
+    <div class="pc-kpis"><div class="pc-kpi"><small>Total</small><b>${count.total}</b></div><div class="pc-kpi"><small>OK</small><b>${count[LABEL.OK] || 0}</b></div><div class="pc-kpi"><small>Placa/Peso</small><b>${(count[LABEL.PLATE] || 0) + (count[LABEL.WEIGHT] || 0)}</b></div><div class="pc-kpi"><small>Falta lançar</small><b>${count[LABEL.MISSING] || 0}</b></div><div class="pc-kpi"><small>Não localizada</small><b>${count[LABEL.NOT_FOUND] || 0}</b></div><div class="pc-kpi"><small>Duplicada</small><b>${count[LABEL.DUPLICATE] || 0}</b></div></div>
     <div class="pc-docs">${analysis.urls.map((url, i) => `<a href="${esc(url)}" target="_blank" rel="noopener">Relatório ${i + 1}</a>`).join('')}</div>
     ${plateCount ? `<label class="pc-faturada-toggle"><input type="checkbox" id="pcExcluirFaturadas" ${exclude ? 'checked' : ''}> Excluir ${plateCount} placa(s) já faturada(s) em outra remessa</label>` : ''}
     <div class="pc-table-wrap"><table class="pc-table"><thead><tr>${SORT_COLUMNS.map(([key, label]) => {
