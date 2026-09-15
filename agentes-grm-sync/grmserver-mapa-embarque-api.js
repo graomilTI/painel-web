@@ -236,7 +236,14 @@ async function main() {
   const dataHoje = todayBr();
   const data = rows.map((row) => mapBoardingRow(row, dataHoje));
   await upsertData(data);
-  await processarAlertasDeAtualizacao();
+  try {
+    await processarAlertasDeAtualizacao();
+  } catch (error) {
+    // Alertas (WhatsApp) são um passo secundário — o mapa já foi sincronizado com
+    // sucesso acima. O scan() da edge function pode passar de 30s quando há muitas
+    // O.S. elegíveis (consultas sequenciais por O.S.); não deixar isso derrubar o job.
+    log('WARN', `Alertas do Mapa de Embarque falharam (mapa já sincronizado): ${error.message}`);
+  }
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
