@@ -426,6 +426,73 @@ function isDataPassada(dataReferencia) {
   return !currentUserIsMaster && !!dataReferencia && dataReferencia < todayIso();
 }
 
+// Quando uma O.S. de ontem continua ATENDER hoje, o card pode ter sido aberto
+// antes de loadEquipeReaproveitada() criar a confirmação do dia. Nesse intervalo
+// o autosave grava a despesa com data_referencia=hoje, mas programacao_id=ontem.
+// Assim que a confirmação de hoje existe, move esses lançamentos para o mesmo
+// programacao_id dela. Alimentação/estadia/deslocamento têm chave única por
+// programação+colaborador; se já houver uma linha legítima no destino, ela
+// prevalece e o registro antigo fica intocado para não perder dados.
+async function reancorarDespesasJaLancadas(movimentos) {
+  if (!movimentos.length) return;
+
+  const destinoIds = [...new Set(movimentos.map((m) => String(m.destinoId)))];
+  const { data: programacoesDestino, error: destinoError } = await supabase
+    .from('programacao_dia')
+    .select('id,data_referencia')
+    .in('id', destinoIds);
+  if (destinoError) {
+    console.warn('[programacao-despesas] falha ao resolver data da reancoragem:', destinoError);
+    return;
+  }
+  const dataPorDestino = new Map((programacoesDestino || []).map((p) => [String(p.id), p.data_referencia]));
+
+  const grupos = new Map();
+  movimentos.forEach((m) => {
+    const dataReferencia = dataPorDestino.get(String(m.destinoId));
+    if (!dataReferencia || String(m.origemId) === String(m.destinoId)) return;
+    const key = `${m.origemId}::${m.destinoId}::${dataReferencia}`;
+    if (!grupos.has(key)) grupos.set(key, { ...m, dataReferencia, colaboradorIds: new Set() });
+    grupos.get(key).colaboradorIds.add(String(m.colaboradorId));
+  });
+
+  const tabelasUnicas = ['programacao_alimentacao', 'programacao_estadia', 'programacao_deslocamento'];
+  for (const grupo of grupos.values()) {
+    const colaboradorIds = [...grupo.colaboradorIds];
+    for (const tabela of tabelasUnicas) {
+      // Exclui colisões antes do UPDATE para uma linha já correta no destino
+      // nunca ser sobrescrita nem fazer a reancoragem inteira falhar.
+      const { data: existentes, error: existentesError } = await supabase
+        .from(tabela)
+        .select('colaborador_id')
+        .eq('programacao_id', grupo.destinoId)
+        .in('colaborador_id', colaboradorIds);
+      if (existentesError) {
+        console.warn(`[programacao-despesas] falha ao conferir destino em ${tabela}:`, existentesError);
+        continue;
+      }
+      const jaNoDestino = new Set((existentes || []).map((r) => String(r.colaborador_id)));
+      const idsSemColisao = colaboradorIds.filter((id) => !jaNoDestino.has(id));
+      if (!idsSemColisao.length) continue;
+      const { error } = await supabase.from(tabela)
+        .update({ programacao_id: grupo.destinoId })
+        .eq('programacao_id', grupo.origemId)
+        .eq('data_referencia', grupo.dataReferencia)
+        .in('colaborador_id', idsSemColisao);
+      if (error) console.warn(`[programacao-despesas] falha ao reancorar ${tabela}:`, error);
+    }
+
+    // Extras não têm chave única programacao_id+colaborador_id; todas as linhas
+    // do colaborador/data podem ser movidas sem risco de colisão.
+    const { error: extrasError } = await supabase.from('programacao_extras')
+      .update({ programacao_id: grupo.destinoId })
+      .eq('programacao_id', grupo.origemId)
+      .eq('data_referencia', grupo.dataReferencia)
+      .in('colaborador_id', colaboradorIds);
+    if (extrasError) console.warn('[programacao-despesas] falha ao reancorar programacao_extras:', extrasError);
+  }
+}
+
 // O.S. "reaproveitada" (continua ATENDER de um dia pro outro sem reconfirmação
 // no dia de hoje) não tinha NENHUM card na Etapa 3 quando o gestor abria a
 // Programação de hoje — o colaborador estava confirmado (e até já
@@ -493,11 +560,13 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, progr
   }
 
   const paraLevarPraHoje = [];
+  const reancoragens = [];
   const semProgramacaoHoje = [];
   ultimasConfirmacoes.forEach((row) => {
     const programacaoIdHoje = programacaoIdHojePorSupervisao.get(supervisaoPorOs.get(String(row.os_id)));
     if (programacaoIdHoje && String(programacaoIdHoje) !== String(row.programacao_id)) {
       paraLevarPraHoje.push({ programacao_id: programacaoIdHoje, os_id: row.os_id, colaborador_id: row.colaborador_id, nome_colaborador: row.nome_colaborador, confirmado: true });
+      reancoragens.push({ origemId: row.programacao_id, destinoId: programacaoIdHoje, colaboradorId: row.colaborador_id });
     } else {
       // Sem programacao_id de hoje pra essa supervisão (ex.: "Todas" não
       // carregou essa supervisão específica) — devolve só pra exibição,
@@ -516,6 +585,7 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, progr
     console.warn('[programacao-despesas] falha ao levar confirmação de O.S. reaproveitada pro dia de hoje:', upsertError);
     return [...semProgramacaoHoje, ...paraLevarPraHoje];
   }
+  await reancorarDespesasJaLancadas(reancoragens);
   return [...semProgramacaoHoje, ...(gravadas || paraLevarPraHoje)];
 }
 
