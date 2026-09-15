@@ -8,7 +8,7 @@ import {
   loadRosterDoDia,
   loadOsResumo,
   loadExtras,
-} from './programacao-despesas.js?v=20260915-reaproveitada-card5';
+} from './programacao-despesas.js?v=20260915-reaproveitada-card6';
 import { loadCustos } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 
 function normalizeText(value) {

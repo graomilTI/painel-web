@@ -4,7 +4,7 @@ import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-reaproveitada-card5';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-reaproveitada-card6';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },

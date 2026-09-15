@@ -599,13 +599,17 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, progr
 export async function loadRosterDoDia(programacaoIdQuery, supervisaoQuery) {
   const equipeRows = await loadEquipeExistente(programacaoIdQuery);
   const porColab = new Map();
-  const osIdsDoDia = new Set();
+  // Inclui também confirmado=false. Essa linha é o marcador de que o gestor
+  // removeu explicitamente a pessoa da O.S. nesta data; se considerarmos só
+  // as confirmações positivas, loadEquipeReaproveitada restaura o vínculo do
+  // dia anterior no refresh.
+  const osIdsDoDia = new Set(equipeRows.filter((r) => r.os_id).map((r) => String(r.os_id)));
   equipeRows.filter((r) => r.confirmado).forEach((r) => {
     const id = String(r.colaborador_id);
     if (!porColab.has(id)) {
       porColab.set(id, { colaboradorId: id, nome: r.nome_colaborador || id, programacaoId: r.programacao_id, osIds: new Set() });
     }
-    if (r.os_id) { porColab.get(id).osIds.add(r.os_id); osIdsDoDia.add(String(r.os_id)); }
+    if (r.os_id) porColab.get(id).osIds.add(r.os_id);
   });
 
   const equipeReaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, programacaoIdQuery);
