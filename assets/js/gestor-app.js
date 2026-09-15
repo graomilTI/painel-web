@@ -160,6 +160,33 @@ function clearCache() {
   try { localStorage.removeItem(CACHE_KEY); } catch {}
 }
 
+// O botão "Atualizar" só limpava o cache de DADOS (localStorage) — o
+// service-worker.js serve JS/CSS/HTML pelo cache dele mesmo quando já tem uma
+// versão nova no ar (estratégia "cache || network": responde o cache
+// imediatamente e só atualiza a entrada em segundo plano, então o pedido
+// atual sempre volta com o bundle antigo). Resultado: usuário clicava em
+// Atualizar, os dados vinham novos, mas o app continuava rodando o JS/CSS
+// antigo até um reload manual "de verdade" (Ctrl+Shift+R). Hard refresh de
+// PWA não tem um equivalente direto de JS pro Ctrl+Shift+R — o mais próximo é
+// desregistrar o service worker e apagar o Cache Storage dele antes de
+// recarregar, forçando toda a rede a buscar tudo de novo.
+async function hardRefreshApp() {
+  try {
+    if ('serviceWorker' in navigator) {
+      const registros = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registros.map((registro) => registro.unregister()));
+    }
+    if ('caches' in window) {
+      const chaves = await caches.keys();
+      await Promise.all(chaves.map((chave) => caches.delete(chave)));
+    }
+  } catch (error) {
+    console.warn('[gestor-app] falha ao limpar cache do service worker pro hard refresh:', error);
+  }
+  clearCache();
+  window.location.reload();
+}
+
 function showToast(message, type = 'ok') {
   let wrap = document.querySelector('.toast-wrap');
   if (!wrap) {
@@ -283,10 +310,8 @@ function renderShell() {
     window.location.replace(panelHref('login'));
   });
   document.getElementById('refreshBtn')?.addEventListener('click', async () => {
-    clearCache();
-    await Promise.all([loadData({ useCache: false }), loadDashboard({ force: true })]);
-    renderCurrentTab();
-    showToast('Dados atualizados.');
+    showToast('Atualizando...');
+    await hardRefreshApp();
   });
   document.getElementById('bottomNav')?.addEventListener('click', async (event) => {
     const btn = event.target.closest('[data-tab]');
