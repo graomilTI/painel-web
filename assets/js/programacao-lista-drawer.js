@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas } from './programacao-despesas.js?v=20260915-reaproveitada-card1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card2';
 
 function esc(value) {
   return String(value ?? '')
@@ -387,8 +387,17 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   const getTipoContrato = () => memoized('tipoContrato', () => loadCruzamentoTipoContrato(supervisaoQuery));
   const getVeiculos = () => memoized('veiculos', () => loadVeiculosAtivos(supervisaoQuery));
 
+  // O.S. ainda ATENDER "reaproveitada" de um dia pro outro (ex.: 92611/92659,
+  // Londrina, relato do Jean Carlos em 15/09/2026) fica confirmada sob o
+  // programacao_id de ONTEM — loadEquipeExistente(hoje) não a acha. Sem isso,
+  // a gaveta achava que a O.S. não tinha ninguém confirmado e caía pro estado
+  // de "candidato sugerido" a cada Carregar, escondendo quem já estava
+  // atendendo de verdade. Mesmo helper usado pelo card de Despesas (Etapa 3).
   async function recarregarEquipeRows() {
-    equipeRowsAtual = await loadEquipeExistente(programacaoIdQuery);
+    const hoje = await loadEquipeExistente(programacaoIdQuery);
+    const osIdsDoDia = new Set(hoje.filter((r) => r.confirmado && r.os_id).map((r) => String(r.os_id)));
+    const reaproveitada = await loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia);
+    equipeRowsAtual = [...hoje, ...reaproveitada];
     return equipeRowsAtual;
   }
 
