@@ -533,8 +533,7 @@ function startPolling() {
   if (pollTimer) return;
   pollTimer = window.setInterval(() => {
     if (document.visibilityState !== 'visible' || !isProduction()) return;
-    const hasPending = [...lancamentos.values()].some((row) => canonicalLaunchStatus(row.status) === 'PENDENTE');
-    if (hasPending) void loadCaixaStatus(true);
+    void loadCaixaStatus(true);
   }, POLL_MS);
 }
 
