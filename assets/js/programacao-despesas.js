@@ -451,6 +451,47 @@ export async function loadOsResumo(osIds) {
   return new Map((data || []).map((o) => [String(o.id), o]));
 }
 
+// Despesa liberada pro colaborador (ex.: modal "Liberar despesas" de Sem O.S.,
+// ver programacao-sem-os.js) fica com o programacao_id da supervisão de
+// ORIGEM dele. Se ele depois é escalado a uma O.S. de OUTRA supervisão,
+// loadCustos()/loadExtras() acima — filtrados por programacao_id da
+// supervisão em foco — não acham o registro, e o café/almoço/estadia/extra
+// já liberado "some" do card mesmo tendo sido salvo (reportado pela usuária,
+// 2026-09-15). programacao_despesas_os_compartilhadas junta por
+// data_referencia+colaborador_id (não depende do programacao_id bater) —
+// usamos ela só pra PREENCHER as lacunas, sem substituir o que já veio certo
+// da consulta direta (que reflete edições ainda não persistidas na view).
+async function complementarComDespesasCompartilhadas(custos, extrasPorColab, dataReferencia, colaboradorIds) {
+  if (!dataReferencia || !colaboradorIds.length) return;
+  const { data, error } = await supabase
+    .from('programacao_despesas_os_compartilhadas')
+    .select('despesa_id,tipo_registro,colaborador_id,detalhes')
+    .eq('data_referencia', dataReferencia)
+    .in('colaborador_id', colaboradorIds);
+  if (error) { console.warn('[programacao-despesas] falha ao buscar despesas compartilhadas:', error); return; }
+
+  const mapaPorTipo = { ESTADIA: custos.est, ALIMENTACAO: custos.ali, DESLOCAMENTO: custos.des };
+  const extrasJaPresentes = new Map();
+  extrasPorColab.forEach((lista, colabId) => {
+    extrasJaPresentes.set(colabId, new Set(lista.map((r) => String(r.id))));
+  });
+
+  (data || []).forEach((row) => {
+    const colabId = String(row.colaborador_id);
+    if (row.tipo_registro === 'EXTRA') {
+      const vistos = extrasJaPresentes.get(colabId) || new Set();
+      if (vistos.has(String(row.despesa_id))) return;
+      vistos.add(String(row.despesa_id));
+      extrasJaPresentes.set(colabId, vistos);
+      if (!extrasPorColab.has(colabId)) extrasPorColab.set(colabId, []);
+      extrasPorColab.get(colabId).push(row.detalhes || {});
+      return;
+    }
+    const mapa = mapaPorTipo[row.tipo_registro];
+    if (mapa && !mapa.has(colabId)) mapa.set(colabId, row.detalhes || {});
+  });
+}
+
 export async function loadExtras(programacaoIdQuery, colaboradorIds) {
   if (!colaboradorIds.length) return new Map();
   const ids = Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery];
@@ -596,6 +637,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
       loadOsResumo(osIds),
       loadExtras(programacaoIdQuery, colaboradorIds),
     ]);
+    await complementarComDespesasCompartilhadas(custos, extrasPorColab, options.dataReferencia, colaboradorIds);
     await loadAlojamentos();
     rootEl.innerHTML = roster.map((row) => colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCpf, osResumoPorId, extrasPorColab)).join('');
     if (silent && scroller) scroller.scrollTop = scrollPos;

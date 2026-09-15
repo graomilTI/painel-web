@@ -19,7 +19,7 @@ test('despesa compartilhada vazia também preserva o padrão Particular', async 
   assert.match(source, /des\.tipo_deslocamento \|\| TIPO_DESLOC_DEFAULT/);
 });
 
-test('referências da tela usam a versão nova dos módulos de deslocamento', async () => {
+test('referências da tela usam a versão nova dos módulos de deslocamento/despesas', async () => {
   const [programacao, drawer, fluxo, pdf, router, html] = await Promise.all([
     read('assets/js/programacao.js'),
     read('assets/js/programacao-lista-drawer.js'),
@@ -30,6 +30,6 @@ test('referências da tela usam a versão nova dos módulos de deslocamento', as
   ]);
 
   for (const source of [programacao, drawer, fluxo, pdf, router, html]) {
-    assert.match(source, /20260914-desloc-particular2/);
+    assert.match(source, /20260915-despesa-compartilhada1/);
   }
 });

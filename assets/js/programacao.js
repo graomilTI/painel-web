@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { TODAS_SUPERVISOES } from './programacao-gestor-filtro-fix.js';
 import { loadCustos, loadColaboradoresRegional } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260914-desloc-particular2';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260915-despesa-compartilhada1';
 
 const STEPS = [
   { code: 'A', label: 'Disponibilidade' },
