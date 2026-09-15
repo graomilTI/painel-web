@@ -569,6 +569,17 @@ function getByAliases(obj, aliases) {
 }
 
 function gerarChaveCarga(r) {
+  // loaCode é o ID interno do GRM pra carga -- estável mesmo se data de
+  // classificação ou coordenada forem editadas depois. Antes a chave só
+  // usava esses campos "mutáveis" (data+os+laudo+placa+nf+lat+lng): quando
+  // alguém corrigia a data de classificação de uma carga no GRM, a chave
+  // mudava inteira e o upsert (onConflict chave_unica) criava uma linha
+  // NOVA em vez de atualizar a existente, deixando a antiga órfã --
+  // duplicata real no nosso banco (nunca existiu duplicada no GRM). Ver
+  // caso confirmado: O.S. 61744, NF 441793, loaCode 2670725, duas linhas.
+  var loaCode = r.raw && r.raw.loaCode != null && r.raw.loaCode !== '' ? String(r.raw.loaCode) : null;
+  if (loaCode) return 'loaCode:' + loaCode;
+  // Fallback pra registros sem loaCode no payload bruto (import antigo).
   return [
     r.data_classificacao || '',
     r.os || '',
