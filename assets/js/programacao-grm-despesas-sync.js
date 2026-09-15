@@ -6,7 +6,16 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient.js';
 
 const FUNCTION_NAME = 'grm-liberacao-despesas-publicar';
-const IDLE_MS = 5 * 60 * 1000;
+// Era 5 minutos — o gestor via a despesa "parada" no painel por até 5min
+// antes de qualquer tentativa de chegar no GRM, e mais o ciclo do worker
+// (~1min) por cima. Reduzido pra poucos segundos pra ficar "tempo real" sem
+// tocar na parte que já protege contra concorrência (fila versionada por
+// hash + claim atômico no worker, RECONCILIACAO/SALVAR_MANUAL forçando com
+// force:true, o guard de publishing simultâneo e o dedup de 15s abaixo) —
+// pedido do usuário, 15/09/2026. O reason continua 'INATIVIDADE_5_MIN' de
+// propósito: é só o valor de auditoria que a Edge Function já aceita
+// (VALID_REASONS), renomear exigiria deploy dela sem ganho nenhum.
+const IDLE_MS = 4000;
 const SETTLE_MS = 1200;
 
 let idleTimer = null;
@@ -92,7 +101,10 @@ function shouldMarkDirty(target, eventType) {
 function scheduleIdlePublish() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    publishVersion('INATIVIDADE_5_MIN', { settleMs: 0 }).catch((error) => {
+    // settleMs padrão (não 0 como antes) — com IDLE_MS na casa dos segundos,
+    // ainda vale a margem de segurança pro autosave do campo (debounce de
+    // 450ms) terminar antes da Edge Function ler o banco.
+    publishVersion('INATIVIDADE_5_MIN', { settleMs: SETTLE_MS }).catch((error) => {
       console.warn('[programacao-grm-despesas] publicação por inatividade falhou:', error);
     });
   }, IDLE_MS);
