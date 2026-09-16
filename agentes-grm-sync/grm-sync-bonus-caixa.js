@@ -1542,7 +1542,11 @@ async function main() {
   await recoverStaleProcessing();
   const jobs = await loadPendingJobs();
   if (!jobs.length) {
-    log('INFO', 'Nenhum Bônus pendente para lançar.');
+    log('INFO', 'Nenhum Bônus utilizável nesta execução (lote vazio ou todos isolados por erro).');
+    // loadPendingJobs() pode isolar o único item do lote (MAX_POR_EXECUCAO=1)
+    // e devolver usable=[] mesmo havendo outros PENDENTE atrás dele na fila —
+    // sem chamar enqueueFollowupIfNeeded aqui, esses itens ficam órfãos.
+    await enqueueFollowupIfNeeded();
     return;
   }
 
