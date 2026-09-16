@@ -252,12 +252,73 @@ async function promoverPontosEmbarque(rows) {
   log('SUCCESS', `[locais-embarque] ${sincronizados} pontos georreferenciados promovidos para operacional_pontos_embarque${ignoradosPorColisao ? ` (${ignoradosPorColisao} ignorados por colisão de cadastro duplicado)` : ''}.`);
 }
 
+// splHasIssueHistory ("S"/"N") só existe em servicePlaces/getRecords — o
+// relatório reports/classification/servicePlaces (usado acima) não traz esse
+// campo. É a mesma flag que gera o aviso "Este Local de Serviço tem
+// histórico de problemas, favor alertar a operação!" na tela de Abrir OS do
+// GRM; confirmado ao vivo em 16/09 contra dezenas de fazendas reais com a
+// flag "S". Um sptCode+limit alto basta pra trazer o catálogo inteiro
+// daquele tipo de local de uma vez (7901 registros em "Fazenda" numa única
+// chamada), sem precisar varrer cidade por cidade.
+async function fetchHistoricoProblemasFlags(token) {
+  const tiposRes = await postJson(`${GRM_BASE_URL}servicePlacesType/getRecords`, {}, authHeaders(token));
+  const tipos = tiposRes.searchData || [];
+  const flags = new Map();
+  for (const tipo of tipos) {
+    const res = await postJson(`${GRM_BASE_URL}servicePlaces/getRecords`, { sptCode: tipo.sptCode, splStatus: 'A', limit: 100000 }, authHeaders(token));
+    (res.searchData || []).forEach((r) => {
+      const key = pontoKey({ uf: r.staAbreviation, cidade: r.citName, nome_local: r.splName });
+      flags.set(key, r.splHasIssueHistory === 'S');
+    });
+  }
+  return flags;
+}
+
+// Aplica as flags coletadas acima nos pontos já promovidos em
+// operacional_pontos_embarque (mesma chave normalizada nome_local+cidade+uf
+// usada no onConflict do upsert acima), pra alimentar o alerta de risco do
+// Gestor em Gestor > Logística > Abrir OS.
+async function sincronizarHistoricoProblemas(token) {
+  const flags = await fetchHistoricoProblemasFlags(token);
+  log('INFO', `[historico-problemas] ${flags.size} locais consultados no GRM.`);
+
+  const { data: pontos, error } = await supabase
+    .from('operacional_pontos_embarque')
+    .select('id,nome_local,cidade,uf,tem_historico_problemas')
+    .eq('ativo', true);
+  if (error) { log('WARN', `[historico-problemas] falha ao ler operacional_pontos_embarque: ${error.message}`); return; }
+
+  let atualizados = 0;
+  let marcadosComRisco = 0;
+  for (const ponto of pontos || []) {
+    const key = pontoKey({ uf: ponto.uf, cidade: ponto.cidade, nome_local: ponto.nome_local });
+    if (!flags.has(key)) continue;
+    const flag = flags.get(key);
+    if (flag === ponto.tem_historico_problemas) continue;
+    const { error: updError } = await supabase
+      .from('operacional_pontos_embarque')
+      .update({ tem_historico_problemas: flag })
+      .eq('id', ponto.id);
+    if (updError) { log('WARN', `[historico-problemas] falha ao atualizar ponto ${ponto.id}: ${updError.message}`); continue; }
+    atualizados++;
+    if (flag) marcadosComRisco++;
+  }
+  log('SUCCESS', `[historico-problemas] ${atualizados} pontos atualizados (${marcadosComRisco} marcados com histórico de problemas).`);
+}
+
 async function main() {
   log('INFO', `=== ${REPORT_CONFIG.name} (API) ===`);
   const token = await login();
   const data = await fetchReportApi(token);
   await upsertData(data);
   await promoverPontosEmbarque(data);
+  try {
+    await sincronizarHistoricoProblemas(token);
+  } catch (error) {
+    // Falha aqui não pode derrubar a sincronização principal de locais —
+    // é um enriquecimento por cima, não o dado essencial.
+    log('WARN', `[historico-problemas] etapa ignorada por erro: ${error.message}`);
+  }
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
