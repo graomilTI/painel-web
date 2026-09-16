@@ -545,9 +545,9 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   // em si não muda com essas ações, só status_gestor (patcheado localmente) ou
   // a equipe. Só recarrega programacao_equipe quando pedido (add/remover) e
   // remonta o corpo do painel da O.S. aberta.
-  async function refreshAposAcao(os, { equipe = false, equipeRow = null } = {}) {
+  async function refreshAposAcao(os, { equipe = false, equipeRow = null, equipeJaAtualizada = false } = {}) {
     if (equipeRow) aplicarEquipeRowSalva(equipeRow);
-    else if (equipe) await recarregarEquipeRows();
+    else if (equipe && !equipeJaAtualizada) await recarregarEquipeRows();
     renderLista();
     if (String(state.osAbertaId) === String(os.id)) await abrirDrawer(os, { silent: true });
     // A aba Sem O.S. é montada em paralelo e mantinha a fotografia anterior
@@ -1099,15 +1099,25 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       const colabCard = removerBtn.closest('.pld-colab-card');
       const colaboradorId = colabCard?.dataset.colabWrap || null;
       const colaboradorNome = colabCard?.querySelector('.pld-colab-nome')?.textContent || null;
+      const equipeRowId = removerBtn.dataset.removerColab;
+      removerBtn.disabled = true;
       try {
-        await removerConfirmacao(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), removerBtn.dataset.removerColab);
+        await removerConfirmacao(await programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, options.dataReferencia), equipeRowId);
         logActivity('action', 'remocao_colaborador_os', 'programacao', {
           os_id: os.id, numero_os: os.numero_os,
           colaborador_id: colaboradorId, nome_colaborador: colaboradorNome,
         });
-        await refreshAposAcao(os, { equipe: true });
+        // Patch local em vez de recarregarEquipeRows(): removerConfirmacao já
+        // fez o confirmado=false valer no banco, e recarregarEquipeRows() bate
+        // 2 queries sequenciais (hoje + reaproveitada) só pra confirmar o que
+        // já sabemos, fazendo o card ficar visível por um tempo depois do
+        // clique em Remover (relato do gestor, 2026-09-16).
+        equipeRowsAtual = equipeRowsAtual.map((r) => (String(r.id || '') === String(equipeRowId) ? { ...r, confirmado: false } : r));
+        await refreshAposAcao(os, { equipe: true, equipeJaAtualizada: true });
       } catch (error) {
         alert(await mensagemFalhaSalvar(error, error.message || 'Não foi possível remover o colaborador.'));
+      } finally {
+        removerBtn.disabled = false;
       }
       return;
     }
