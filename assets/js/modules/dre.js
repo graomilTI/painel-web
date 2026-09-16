@@ -383,10 +383,16 @@
     // parecendo um loop infinito; a tabela também foi limpa dessas ~285 mil
     // linhas órfãs em 24/08). Agora usa a RPC dre_notas_fiscais_deduplicadas,
     // que já devolve a tabela deduplicada direto no banco. A chave de dedupe é
-    // (Empresa, Fatura) - não (Empresa, N.F.): uma N.F. pode agrupar várias
+    // Fatura - não N.F.: uma N.F. pode agrupar várias
     // Faturas (cargas/carregamentos distintos, cada um com seu próprio Valor
     // Bruto), então dedupar por N.F. descartava a maioria delas em silêncio
-    // (achado 24/08, buraco de ~R$9,36mi/23,6% da receita). Não rededuplica no
+    // (achado 24/08, buraco de ~R$9,36mi/23,6% da receita). De 24/08 a 16/09
+    // a chave foi (Empresa, Fatura), mas Fatura já é única por conta própria -
+    // a mesma Fatura pode vir gravada com "Empresa" diferente (visto em
+    // ELIZEU MOTA / GRÃO1000, repasse da mesma carga), e (Empresa, Fatura)
+    // deixava as duas linhas passarem, duplicando o valor da nota no DRE e no
+    // Dashboard do Sócio (achado 16/09, ~0,5-3%/R$30-167mil por mês em
+    // mar-jul/2026). Não rededuplica no
     // cliente - a RPC já é a fonte da verdade; um segundo dedupe aqui (por
     // numero_nf) desfaria o fix. O Supabase ainda limita cada resposta a 1000
     // linhas mesmo pra uma function - com poucos milhares de Faturas distintas
