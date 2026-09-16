@@ -560,12 +560,14 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, progr
   }
 
   const paraLevarPraHoje = [];
+  const origensParaHoje = [];
   const reancoragens = [];
   const semProgramacaoHoje = [];
   ultimasConfirmacoes.forEach((row) => {
     const programacaoIdHoje = programacaoIdHojePorSupervisao.get(supervisaoPorOs.get(String(row.os_id)));
     if (programacaoIdHoje && String(programacaoIdHoje) !== String(row.programacao_id)) {
       paraLevarPraHoje.push({ programacao_id: programacaoIdHoje, os_id: row.os_id, colaborador_id: row.colaborador_id, nome_colaborador: row.nome_colaborador, confirmado: true });
+      origensParaHoje.push(row);
       reancoragens.push({ origemId: row.programacao_id, destinoId: programacaoIdHoje, colaboradorId: row.colaborador_id });
     } else {
       // Sem programacao_id de hoje pra essa supervisão (ex.: "Todas" não
@@ -577,16 +579,40 @@ export async function loadEquipeReaproveitada(supervisaoQuery, osIdsDoDia, progr
 
   if (!paraLevarPraHoje.length) return semProgramacaoHoje;
 
-  const { data: gravadas, error: upsertError } = await supabase
+  // Upsert linha a linha, não em lote: um colaborador com regional
+  // incompatível pra O.S. de hoje (trigger programacao_equipe_validar_
+  // regional_trg) fazia o upsert em array único falhar por INTEIRO,
+  // derrubando todo mundo do lote junto — cada um voltava no shape
+  // sintético acima, que não tem `id`, deixando o botão Remover mudo (data-
+  // remover-colab vazio) pra qualquer colaborador que por acaso estivesse na
+  // mesma leva. Achado ao vivo 16/09: EDUARDO SILVA DOS ANJOS (O.S. 92349)
+  // não conseguia ser removido só porque GUSTAVO HENRIQUE SOARES, levado no
+  // mesmo lote, tinha regional cadastrada diferente da O.S. dele.
+  const resultados = await Promise.allSettled(paraLevarPraHoje.map((linha) => supabase
     .from('programacao_equipe')
-    .upsert(paraLevarPraHoje, { onConflict: 'programacao_id,os_id,colaborador_id' })
-    .select('*');
-  if (upsertError) {
-    console.warn('[programacao-despesas] falha ao levar confirmação de O.S. reaproveitada pro dia de hoje:', upsertError);
-    return [...semProgramacaoHoje, ...paraLevarPraHoje];
-  }
-  await reancorarDespesasJaLancadas(reancoragens);
-  return [...semProgramacaoHoje, ...(gravadas || paraLevarPraHoje)];
+    .upsert(linha, { onConflict: 'programacao_id,os_id,colaborador_id' })
+    .select('*')
+    .single()));
+
+  const gravadas = [];
+  const reancoragensOk = [];
+  resultados.forEach((resultado, i) => {
+    const erro = resultado.status === 'rejected' ? resultado.reason : resultado.value?.error;
+    if (erro) {
+      // Mantém o colaborador visível usando a linha antiga (tem `id` válido,
+      // só que ainda apontando pra programação de origem) em vez do shape
+      // sintético sem id — pior caso vira "removível, mas não reancorado pra
+      // hoje", não "botão Remover morto pro resto da sessão".
+      console.warn('[programacao-despesas] falha ao levar confirmação de O.S. reaproveitada pro dia de hoje (mantido só pra exibição, com o id antigo):', paraLevarPraHoje[i], erro);
+      gravadas.push(origensParaHoje[i]);
+      return;
+    }
+    gravadas.push(resultado.value.data);
+    reancoragensOk.push(reancoragens[i]);
+  });
+
+  await reancorarDespesasJaLancadas(reancoragensOk);
+  return [...semProgramacaoHoje, ...gravadas];
 }
 
 // Roster do dia: só quem foi de fato confirmado (programacao_equipe.confirmado),
