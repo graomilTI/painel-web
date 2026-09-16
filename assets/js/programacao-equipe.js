@@ -969,11 +969,21 @@ async function dataReferenciaDaProgramacao(programacaoId) {
 const AGENTE_DISTRIBUICAO_OS = 'aplicar-distribuicao-os';
 
 async function enfileirarDistribuicaoOs() {
+  // Só evita duplicar um job 'pendente' (ainda não iniciado). Um job 'rodando'
+  // já leu o snapshot do banco no início da execução dele — não vê confirmações
+  // feitas depois que ele começou. Bloquear o enfileiramento também nesse caso
+  // fazia a confirmação ficar sem NENHUM job de acompanhamento agendado, à
+  // espera de outra ação qualquer (em qualquer OS/gestor) disparar o próximo
+  // ciclo — um gap de vários minutos observado em produção (achado ao vivo
+  // 16/09, OS 92871: confirmação às 16:14:28 só foi refletida no Graint às
+  // 16:30, porque o job das 16:14:19-16:15:07 já estava rodando e engoliu o
+  // disparo). Deixando o novo job 'pendente' seguir, ele é reconciliado com
+  // segurança pela lock de claim_next_grm_sync_job (só roda depois do atual).
   const { data: jobAtivo, error: consultaError } = await supabase
     .from('grm_sync_jobs')
     .select('id')
     .eq('agente_id', AGENTE_DISTRIBUICAO_OS)
-    .in('status', ['pendente', 'rodando'])
+    .eq('status', 'pendente')
     .limit(1)
     .maybeSingle();
   if (consultaError) throw new Error(`A O.S. voltou para a fila, mas não foi possível verificar o disparo do agente: ${consultaError.message}`);
