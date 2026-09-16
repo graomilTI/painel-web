@@ -174,6 +174,25 @@ function melhorCorrespondenciaPorSufixoUf(lista, campo, uf) {
   return null;
 }
 
+// Cliente Regional de alguns clientes (ex. LOUIS DREYFUS) agrupa por código
+// composto de UFs (ex. "PR/SP", "GO/MG"), não por UF única — nesse caso nem
+// o match por uf_embarque nem o fuzzy por filial_pagadora batem no clrName
+// (que não traz nome de cidade), e caía direto pro "1º disponível" errado.
+// Mapa alimentado a partir de feedback confirmado ao vivo (filial "PONTA
+// GROSSA" -> regional "PR/SP", 16/09/2026) — adicionar mais entradas aqui
+// conforme forem confirmadas, não advinhar.
+var FILIAL_REGIONAL_CONHECIDO = {
+  'PONTA GROSSA': 'PR/SP',
+};
+function inferirRegionalPorFilial(filialPagadora) {
+  var alvo = norm(filialPagadora);
+  if (!alvo) return null;
+  for (var filial in FILIAL_REGIONAL_CONHECIDO) {
+    if (alvo.indexOf(norm(filial)) !== -1) return FILIAL_REGIONAL_CONHECIDO[filial];
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------
 // Portado 1:1 de grm-sync-abrir-os.js (lógica pura, sem Puppeteer)
 // ---------------------------------------------------------------------
@@ -194,6 +213,24 @@ function normTipoProduto(s) {
 var PREFIXOS_GENERICOS_EMBARQUE = ['ARM', 'ARMAZEM', 'ARMAZÉM', 'SILO', 'FAZENDA', 'TERMINAL', 'PORTO', 'GALPAO', 'GALPÃO', 'SITIO', 'SÍTIO', 'ESTACAO', 'ESTAÇÃO'];
 function palavrasSignificativasEmbarque(texto) {
   return norm(texto).split(/[^A-Z0-9]+/).filter((w) => w.length >= 3 && PREFIXOS_GENERICOS_EMBARQUE.indexOf(w) === -1);
+}
+
+// Mesmos prefixos de PREFIXOS_GENERICOS_EMBARQUE, mapeados pro tipo_local
+// canônico (valores reais vistos em operacional_pontos_embarque/GRM
+// sptName: "Armazém / Silo", "Fazenda", "Transbordo - Terminal"). Usado só
+// como fallback quando o ponto não está cadastrado em
+// operacional_pontos_embarque — ex. "FAZENDA PALHOCA" sem registro no banco
+// ainda dá pra inferir tipo_local "Fazenda" pelo prefixo do nome.
+var PREFIXO_TIPO_LOCAL = {
+  ARM: 'Armazém / Silo', ARMAZEM: 'Armazém / Silo', 'ARMAZÉM': 'Armazém / Silo',
+  SILO: 'Armazém / Silo', GALPAO: 'Armazém / Silo', 'GALPÃO': 'Armazém / Silo',
+  FAZENDA: 'Fazenda', SITIO: 'Fazenda', 'SÍTIO': 'Fazenda',
+  TERMINAL: 'Transbordo - Terminal', PORTO: 'Transbordo - Terminal',
+  ESTACAO: 'Transbordo - Terminal', 'ESTAÇÃO': 'Transbordo - Terminal',
+};
+function inferirTipoLocalPorPrefixo(texto) {
+  var primeiraPalavra = norm(texto).split(/[^A-Z0-9]+/)[0];
+  return PREFIXO_TIPO_LOCAL[primeiraPalavra] || null;
 }
 
 async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao) {
@@ -288,6 +325,13 @@ async function resolverClienteRegional(token, clnCode, uf, filialPagadora) {
     item = melhorCorrespondencia(lista, 'clrName', filialPagadora);
     if (item) avisarCampoSuspeito('Cliente Regional: nenhuma opção bateu com UF ("' + uf + '") — usando fuzzy match por filial_pagadora ("' + item.clrName + '").');
   }
+  if (!item) {
+    const regionalConhecido = inferirRegionalPorFilial(filialPagadora);
+    if (regionalConhecido) {
+      item = melhorCorrespondenciaPorSufixoUf(lista, 'clrName', regionalConhecido);
+      if (item) avisarCampoSuspeito('Cliente Regional: nenhuma opção bateu com UF nem filial_pagadora — usando regional conhecido pra filial "' + filialPagadora + '" ("' + regionalConhecido + '").');
+    }
+  }
   if (!item && lista[0]) {
     item = lista[0];
     avisarCampoSuspeito('Cliente Regional: nenhuma opção bateu com UF nem filial_pagadora — usando a 1ª disponível ("' + item.clrName + '") como fallback.');
@@ -381,7 +425,12 @@ async function resolverEmbarque(token, solicitacao) {
     uf = ponto.uf; cidade = ponto.cidade; tipoLocalNome = ponto.tipo_local;
     log('INFO', 'Local de embarque "' + solicitacao.armazem_embarque + '" resolvido em operacional_pontos_embarque: ' + ponto.tipo_local + ' / ' + ponto.uf + ' / ' + ponto.cidade + ' / ' + ponto.nome_local);
   } else {
-    avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — tipo do local não pode ser inferido.');
+    tipoLocalNome = inferirTipoLocalPorPrefixo(solicitacao.armazem_embarque);
+    if (tipoLocalNome) {
+      avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — tipo do local inferido pelo prefixo do nome ("' + tipoLocalNome + '"); cadastre o ponto pra evitar depender do fallback.');
+    } else {
+      avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — tipo do local não pode ser inferido.');
+    }
   }
 
   const tiposRes = await postJson('servicePlacesType/getRecords', {}, token);
