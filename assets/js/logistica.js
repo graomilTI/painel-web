@@ -14,6 +14,14 @@ function esc(v) { return String(v ?? '').replaceAll('&','&amp;').replaceAll('<',
 function safe(d) { return Array.isArray(d) ? d : []; }
 function normalizeText(v) { return String(v ?? '').trim().toUpperCase(); }
 function chaveContrato(v) { return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); }
+// Mesma normalização de chaveContrato, usada pra casar Armazém/UF/Cidade
+// digitados no formulário contra operacional_pontos_embarque.tem_historico_problemas
+// (populado por grmserver-locais-embarque-api.js a partir do
+// splHasIssueHistory do GRM — o aviso "Local de Serviço tem histórico de
+// problemas" da tela de Abrir OS de lá).
+function localRiscoKey(uf, cidade, nomeLocal) {
+  return [uf, cidade, nomeLocal].map(chaveContrato).join('|');
+}
 function dateFromTomorrowLock() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -81,6 +89,7 @@ const state = {
   allOsLoading: false,
   aberturaRows: [],
   aberturaRefs: { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] },
+  aberturaLocaisRisco: new Set(),
   aberturaLoading: false,
   aberturaSaving: false,
   aberturaProdutoAtual: '',
@@ -196,6 +205,8 @@ export async function renderContent(content, userContext) {
       const testes = content.querySelector('#abrirOsTestesContainer');
       if (testes) testes.innerHTML = renderTestesBlock();
     }
+
+    if (e.target.id === 'osArmazemEmbarque' || e.target.id === 'osCidadeEmbarque') atualizarAlertaLocalRisco(content);
   });
 
   content.addEventListener('change', (e) => {
@@ -221,6 +232,7 @@ export async function renderContent(content, userContext) {
         cidadeInput.placeholder = e.target.value ? 'Cidade' : 'Selecione a UF primeiro';
       }
       if (datalist) datalist.innerHTML = cidadesDaUf(e.target.value).map(v => `<option value="${esc(v)}"></option>`).join('');
+      if (embarque) atualizarAlertaLocalRisco(content);
       return;
     }
     const chk = e.target.closest('[data-teste-key]');
@@ -268,14 +280,16 @@ async function loadAllOs() {
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
-  const [prod, os, sup, nacInativos, aliases, contratoRegras] = await Promise.all([
+  const [prod, os, sup, nacInativos, aliases, contratoRegras, locaisRisco] = await Promise.all([
     supabase.from('relatorio_resultado_diario').select('cliente_nacional,cliente_regional,cliente_final,local_embarque,destino').limit(5000),
     supabase.from('operacional_os').select('cliente,embarque,destino,supervisao').limit(5000),
     supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome', { ascending: true }).limit(1000),
     supabase.from('clientes_nacionais').select('nome').eq('ativo', false).limit(1000),
     supabase.from('logistica_clientes_nacionais_aliases').select('alias_normalizado,canonical').limit(1000),
     supabase.from('logistica_clientes_contrato_regras').select('cliente,aliases,tipo,regex_formato,exemplo_formato,rotulo_campo').limit(200),
+    supabase.from('operacional_pontos_embarque').select('uf,cidade,nome_local').eq('ativo', true).eq('tem_historico_problemas', true).limit(5000),
   ]);
+  state.aberturaLocaisRisco = new Set(safe(locaisRisco.data).map(r => localRiscoKey(r.uf, r.cidade, r.nome_local)));
   // Padrão/obrigatoriedade do número de contrato por cliente (planilha da
   // usuária, 27/08) — mesmo esquema de match de precisaAnexoSaldo() em
   // programacao-equipe.js: substring normalizada (sem acento/pontuação/
@@ -555,6 +569,7 @@ function renderAbrirOsTab() {
           <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
           <label>UF de embarque *<select id="osUfEmbarque" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfEmbarque ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" list="abrirOsCidadesEmbarque" autocomplete="off" placeholder="${state.aberturaUfEmbarque ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfEmbarque ? '' : 'disabled'}></label>
+          <div id="osArmazemRiscoAlerta" class="log-alerta-risco" hidden>⚠️ Este Local de Serviço tem histórico de problemas — alerte a operação.</div>
           <label>UF destino *<select id="osUfDestino" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfDestino ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" list="abrirOsCidadesDestino" autocomplete="off" placeholder="${state.aberturaUfDestino ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfDestino ? '' : 'disabled'}></label>
           <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
@@ -596,6 +611,15 @@ function renderAbrirOsTab() {
 }
 
 function ufCidade(uf, cidade) { return [uf, cidade].filter(Boolean).join(' - ') || '-'; }
+
+function atualizarAlertaLocalRisco(content) {
+  const alerta = content.querySelector('#osArmazemRiscoAlerta');
+  if (!alerta) return;
+  const nomeLocal = content.querySelector('#osArmazemEmbarque')?.value || '';
+  const uf = content.querySelector('#osUfEmbarque')?.value || '';
+  const cidade = content.querySelector('#osCidadeEmbarque')?.value || '';
+  alerta.hidden = !(nomeLocal && cidade && state.aberturaLocaisRisco.has(localRiscoKey(uf, cidade, nomeLocal)));
+}
 
 function testesResumo(testes) {
   const categoria = testes?.categoria;

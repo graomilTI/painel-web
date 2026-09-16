@@ -377,6 +377,18 @@ body.logistica-gestor-page #abrirOsSalvarBtn:active {
   transform: translateY(0);
 }
 
+body.logistica-gestor-page .log-alerta-risco {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 11px 14px;
+  border: 1px solid rgba(240, 160, 60, 0.45);
+  border-radius: 11px;
+  background: rgba(90, 58, 10, 0.55);
+  color: #ffd9a0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 /* Histórico */
 body.logistica-gestor-page .abrir-os-card + .mt-16 {
   margin-top: 14px;

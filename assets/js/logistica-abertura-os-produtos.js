@@ -18,7 +18,7 @@
 // AFLATOXINA_QUALITATIVO) são o vocabulário usado em
 // logistica_abertura_os.testes.opcoes e em grmserver-abrir-os-api.js.
 export const CATALOGO_PRODUTOS = {
-  MILHO: { label: 'Milho', tipos: ['Exportação', 'Tipo Exportação'], testes: [
+  MILHO: { label: 'Milho', tipos: ['Exportação', 'Tipo Exportação', 'Interno'], testes: [
     { key: 'AFLATOXINA_QUALITATIVO', label: 'Teste Aflatoxina — Qualitativo' },
     { key: 'AFLATOXINA_QUANTITATIVO', label: 'Teste Aflatoxina — Quantitativo' },
   ] },
