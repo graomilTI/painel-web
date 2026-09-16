@@ -15,8 +15,13 @@ test('confirmação de O.S. reaproveitada é gravada de verdade para hoje, não 
   // upsertada de verdade pra hoje — toda escrita nova usa o id certo.
   assert.match(source, /const programacaoIdHojePorSupervisao = new Map\(\);/);
   assert.match(source, /if \(programacaoIdHoje && String\(programacaoIdHoje\) !== String\(row\.programacao_id\)\)/);
+  // Upsert linha a linha desde 16/09 (não mais em array único): um
+  // colaborador com regional incompatível derrubava o lote inteiro e todo
+  // mundo saía sem `id`. Continua sendo um upsert de verdade pra hoje, com o
+  // mesmo onConflict — só isolado por linha via Promise.allSettled.
   assert.match(
     source,
-    /\.from\('programacao_equipe'\)\s*\n\s*\.upsert\(paraLevarPraHoje, \{ onConflict: 'programacao_id,os_id,colaborador_id' \}\)/,
+    /\.from\('programacao_equipe'\)\s*\n\s*\.upsert\(linha, \{ onConflict: 'programacao_id,os_id,colaborador_id' \}\)/,
   );
+  assert.match(source, /const resultados = await Promise\.allSettled\(paraLevarPraHoje\.map/);
 });

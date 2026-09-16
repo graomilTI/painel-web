@@ -7,7 +7,10 @@ const source = readFileSync(new URL('../assets/js/programacao-despesas.js', impo
 test('confirmação reaproveitada reancora despesas já salvas com a data de hoje no programacao_id antigo', () => {
   assert.match(source, /async function reancorarDespesasJaLancadas\(movimentos\)/);
   assert.match(source, /reancoragens\.push\(\{ origemId: row\.programacao_id, destinoId: programacaoIdHoje, colaboradorId: row\.colaborador_id \}\)/);
-  assert.match(source, /await reancorarDespesasJaLancadas\(reancoragens\)/);
+  // Upsert linha a linha (16/09): só reancora quem realmente foi levado pra
+  // hoje com sucesso — reancoragensOk, não a lista bruta reancoragens, que
+  // inclui até colaboradores cujo upsert falhou (ex.: regional incompatível).
+  assert.match(source, /await reancorarDespesasJaLancadas\(reancoragensOk\)/);
 
   for (const tabela of ['programacao_alimentacao', 'programacao_estadia', 'programacao_deslocamento']) {
     assert.match(source, new RegExp(`['"]${tabela}['"]`));
