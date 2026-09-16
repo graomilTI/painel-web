@@ -51,6 +51,7 @@ const state = {
   pagina: 0,
   total: 0,
   linhas: [],
+  requestSeq: 0,
 };
 
 function esc(value) {
@@ -168,6 +169,7 @@ async function fetchKpis() {
 }
 
 async function fetchLogs() {
+  const meuRequestId = ++state.requestSeq;
   const start = dayBounds(state.de).start;
   const end = dayBounds(state.ate).end;
   const buscarLogs = !state.tipo || state.tipo !== 'mudanca';
@@ -234,6 +236,13 @@ async function fetchLogs() {
   }
 
   combinado.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  // Cada busca dispara 2 queries em paralelo; se o usuário trocar filtro/página
+  // antes da resposta anterior chegar, essa resposta desatualizada não pode
+  // sobrescrever o resultado de uma busca mais recente (senão a tela "pisca"
+  // de volta pro resultado velho — o filtro parece instável).
+  if (meuRequestId !== state.requestSeq) return null;
+
   state.total = combinado.length;
   state.linhas = combinado;
   const from = state.pagina * PAGE_SIZE;
@@ -395,6 +404,7 @@ export async function renderContent(content) {
     table.innerHTML = '<div class="lu-empty">Carregando...</div>';
     try {
       const pagina = await fetchLogs();
+      if (pagina === null) return; // busca obsoleta: uma mais recente já está em andamento
       table.innerHTML = renderTable(pagina);
       pagination.innerHTML = renderPagination();
       pagination.querySelector('#btnPrev')?.addEventListener('click', () => { state.pagina -= 1; refresh(); });
