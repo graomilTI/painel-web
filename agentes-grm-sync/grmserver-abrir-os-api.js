@@ -474,7 +474,7 @@ async function montarPayload(token, solicitacao) {
     proCodeOriginal: '',
     ptyCode: tipoProduto.ptyCode,
     ptyNeedIntactaTest: tipoProduto.ptyNeedIntactaTest || 'N', // vem do TIPO DO PRODUTO escolhido (productType/getRecords), não do produto — achado comparando com o payload real capturado (O.S. 92511: "N" pra Declarado Intacta, eu tinha derivado errado de proEnableIntactaTest)
-    sorPermitChangeProductType: 'S',
+    sorPermitChangeProductType: 'N',
     sorAflatoxinTest: testesFlags.sorAflatoxinTest,
     sorIntactaTest: testesFlags.sorIntactaTest,
     sorSoyFreeTest: testesFlags.sorSoyFreeTest,
