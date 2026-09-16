@@ -142,8 +142,9 @@ const SCRIPT_MAP = {
   // Migrado pra API direta em 12/09 (serviceOrder/setRecord, endpoint capturado
   // ao vivo em 11/09 — ver comentário no topo de grmserver-abrir-os-api.js).
   // Mesmo contrato (logistica_abertura_os + grm_abertura_os_execucoes), roda
-  // sem args igual o Puppeteer antigo. grm-sync-abrir-os.js mantido no disco
-  // pra rollback.
+  // sem args igual o Puppeteer antigo. grm-sync-abrir-os.js (Puppeteer)
+  // removido em 15/09 — já validado e sem uso há 3 dias; ver histórico do git
+  // pra rollback se precisar.
   'sync-abrir-os': 'grmserver-abrir-os-api.js',
   // Migrado pra API direta em 02/09 (ver memória painel-web-grm-liberacao-despesas-api-descoberta).
   // grm-sync-liberacao-despesas.js (Puppeteer) mantido no disco pra rollback.
