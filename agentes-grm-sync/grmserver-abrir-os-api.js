@@ -199,18 +199,33 @@ function palavrasSignificativasEmbarque(texto) {
 async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao) {
   var texto = String(valorArmazem || '').trim();
   if (!texto) return null;
-  var porNome = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('nome_local', texto).limit(1);
-  if (!porNome.error && porNome.data && porNome.data[0]) return porNome.data[0];
-  var porLabel = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto).limit(1);
-  if (!porLabel.error && porLabel.data && porLabel.data[0]) return porLabel.data[0];
+  var cidade = cidadeSolicitacao ? String(cidadeSolicitacao).trim() : null;
+
+  var porNomeRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('nome_local', texto);
+  var porNome = (!porNomeRes.error && porNomeRes.data) ? porNomeRes.data[0] : null;
+  // Match exato de nome_local/embarque_label, mas só aceita de cara se a
+  // cidade bater — nomes curtos (ex. "Coplacana") colidem entre unidades
+  // reais diferentes (unidade "COPLACANA" pura em Quirinópolis/GO x
+  // "COPLACANA - TAQUARITUBA" em SP, achado ao vivo na O.S. 92883: o exato
+  // "vencia" e mandava a O.S. pro armazém errado, numa cidade/UF errada,
+  // antes mesmo de chegar no fallback por palavras+cidade abaixo). Se não
+  // bater, guarda pra usar só como último recurso no final.
+  if (porNome && (!cidade || norm(porNome.cidade) === norm(cidade))) return porNome;
+
+  var porLabelRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto);
+  var porLabel = (!porLabelRes.error && porLabelRes.data) ? porLabelRes.data[0] : null;
+  if (porLabel && (!cidade || norm(porLabel.cidade) === norm(cidade))) return porLabel;
+
   var palavras = palavrasSignificativasEmbarque(texto);
-  if (!palavras.length) return null;
-  var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local');
-  palavras.forEach((p) => { query = query.ilike('nome_local', '%' + p + '%'); });
-  if (cidadeSolicitacao) query = query.ilike('cidade', String(cidadeSolicitacao).trim());
-  var porPalavras = await query.limit(5);
-  if (!porPalavras.error && porPalavras.data && porPalavras.data.length === 1) return porPalavras.data[0];
-  return null;
+  if (palavras.length) {
+    var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local');
+    palavras.forEach((p) => { query = query.ilike('nome_local', '%' + p + '%'); });
+    if (cidade) query = query.ilike('cidade', cidade);
+    var porPalavras = await query.limit(5);
+    if (!porPalavras.error && porPalavras.data && porPalavras.data.length === 1) return porPalavras.data[0];
+  }
+
+  return porNome || porLabel || null;
 }
 
 function extrairLocalPadrao(texto) {
