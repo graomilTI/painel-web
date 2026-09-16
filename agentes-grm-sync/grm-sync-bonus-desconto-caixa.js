@@ -764,14 +764,20 @@ async function loadPendingJobs() {
 }
 
 async function loadCollaborators() {
-  const { data, error } = await supabase
-    .from('vw_colaboradores_atuais')
-    .select('nome,cpf,ativo,situacao')
-    .limit(2000);
-  if (error) throw error;
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('vw_colaboradores_atuais')
+      .select('nome,cpf,ativo,situacao')
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
 
   const map = new Map();
-  for (const row of data || []) {
+  for (const row of rows) {
     const key = nameKey(row.nome);
     const cpf = digits(row.cpf);
     if (!key || !cpf) continue;

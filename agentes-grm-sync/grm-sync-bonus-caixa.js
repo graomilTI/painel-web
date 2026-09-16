@@ -1284,67 +1284,87 @@ async function loadPendingJobs() {
   if (error) throw error;
   const jobs = data || [];
   const byCompetence = new Map();
+  const usable = [];
 
   for (const job of jobs) {
-    const competence = String(job.competencia || '').slice(0, 10);
-    if (!byCompetence.has(competence)) {
-      const { data: production, error: productionError } = await supabase
-        .rpc('bonus_producao_competencia', { p_competencia: competence });
-      if (productionError) throw productionError;
-      byCompetence.set(competence, new Map(
-        (production || []).map((row) => [
-          nameKey(row.colaborador || row.colaborador_nome || row.nome),
-          row,
-        ]),
-      ));
-    }
+    try {
+      const competence = String(job.competencia || '').slice(0, 10);
+      if (!byCompetence.has(competence)) {
+        const { data: production, error: productionError } = await supabase
+          .rpc('bonus_producao_competencia', { p_competencia: competence });
+        if (productionError) throw productionError;
+        byCompetence.set(competence, new Map(
+          (production || []).map((row) => [
+            nameKey(row.colaborador || row.colaborador_nome || row.nome),
+            row,
+          ]),
+        ));
+      }
 
-    const current = byCompetence.get(competence).get(nameKey(job.colaborador_nome));
-    if (!current || norm(current.status) !== 'APTO') {
-      throw new Error(
-        `Bônus atual não está Apto para ${job.colaborador_nome} na competência ${competence}.`,
-      );
-    }
+      const current = byCompetence.get(competence).get(nameKey(job.colaborador_nome));
+      if (!current || norm(current.status) !== 'APTO') {
+        throw new Error(
+          `Bônus atual não está Apto para ${job.colaborador_nome} na competência ${competence}.`,
+        );
+      }
 
-    const currentTons = Number(current.tons || 0);
-    const currentValue = Number(current.valor || 0);
-    if (
-      Math.abs(Number(job.tons || 0) - currentTons) > 0.001
-      || Math.abs(Number(job.valor || 0) - currentValue) > 0.001
-    ) {
-      const { error: refreshError } = await supabase
-        .from('bonus_caixa_lancamentos')
-        .update({
-          tons: currentTons,
-          valor: currentValue,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', job.id)
-        .eq('status', 'PENDENTE');
-      if (refreshError) throw refreshError;
-      log('INFO', `${job.colaborador_nome}: fila atualizada com a produção vigente.`, {
-        tons_anterior: Number(job.tons || 0),
-        tons_atual: currentTons,
-        valor_anterior: Number(job.valor || 0),
-        valor_atual: currentValue,
-      });
-      job.tons = currentTons;
-      job.valor = currentValue;
+      const currentTons = Number(current.tons || 0);
+      const currentValue = Number(current.valor || 0);
+      if (
+        Math.abs(Number(job.tons || 0) - currentTons) > 0.001
+        || Math.abs(Number(job.valor || 0) - currentValue) > 0.001
+      ) {
+        const { error: refreshError } = await supabase
+          .from('bonus_caixa_lancamentos')
+          .update({
+            tons: currentTons,
+            valor: currentValue,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', job.id)
+          .eq('status', 'PENDENTE');
+        if (refreshError) throw refreshError;
+        log('INFO', `${job.colaborador_nome}: fila atualizada com a produção vigente.`, {
+          tons_anterior: Number(job.tons || 0),
+          tons_atual: currentTons,
+          valor_anterior: Number(job.valor || 0),
+          valor_atual: currentValue,
+        });
+        job.tons = currentTons;
+        job.valor = currentValue;
+      }
+
+      usable.push(job);
+    } catch (error) {
+      // Isola o erro por colaborador: um item inapto/inconsistente não pode
+      // derrubar o lote inteiro e impedir o reenfileiramento dos demais.
+      log('ERROR', `${job.colaborador_nome}: removido do lote (${error.message}).`);
+      try {
+        await markError(job, error);
+      } catch (markErrorFailure) {
+        log('ERROR', `Falha ao registrar erro de pré-checagem para ${job.id}: ${markErrorFailure.message}`);
+      }
     }
   }
 
-  return jobs;
+  return usable;
 }
 
 async function loadCollaborators() {
-  const { data, error } = await supabase
-    .from('vw_colaboradores_atuais')
-    .select('nome,cpf,ativo,situacao')
-    .limit(2000);
-  if (error) throw error;
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('vw_colaboradores_atuais')
+      .select('nome,cpf,ativo,situacao')
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
 
   const map = new Map();
-  for (const row of data || []) {
+  for (const row of rows) {
     const key = nameKey(row.nome);
     const cpf = digits(row.cpf);
     if (!key || !cpf) continue;
