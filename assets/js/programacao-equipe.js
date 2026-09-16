@@ -952,7 +952,16 @@ async function dataReferenciaDaProgramacao(programacaoId) {
   if (!programacaoId) return null;
   if (dataReferenciaCache.has(programacaoId)) return dataReferenciaCache.get(programacaoId);
   const { data, error } = await supabase.from('programacao_dia').select('data_referencia').eq('id', programacaoId).maybeSingle();
-  const valor = error ? null : (data?.data_referencia || null);
+  // Só cacheia sucesso (data_referencia é NOT NULL — se a linha existe, vem
+  // preenchida). Cachear o null de uma falha transitória de rede (ex.: DB sob
+  // carga) travava esse programacaoId em null pro resto da sessão, fazendo
+  // "Adicionar colaborador" gravar programacao_colaboradores sem
+  // data_referencia e o trigger auto_transferir_rascunho rejeitar com
+  // "Programação de destino inválida" — só em console.warn, silencioso pro
+  // usuário (achado ao vivo 16/09, relato da Juliana logo depois de um pico
+  // de "statement timeout" no Postgres).
+  if (error) { console.warn('[programacao-equipe] falha ao buscar data_referencia da programação (não cacheado, tenta de novo na próxima).', error); return null; }
+  const valor = data?.data_referencia || null;
   dataReferenciaCache.set(programacaoId, valor);
   return valor;
 }
