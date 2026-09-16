@@ -615,10 +615,9 @@ async function processarSolicitacao(token, solicitacao, dryRun) {
     await finalizarExecucao(execucaoId, { status: 'SUCESSO', numero_os: resultado.recordCode });
     log('SUCCESS', 'Solicitação ' + id + ': O.S. ' + resultado.recordCode + ' cadastrada no GRM via API.');
   } catch (error) {
-    let msg = String(error.message || error);
-    if (avisosCamposSuspeitos.length) msg += ' Possível(is) causa(s): ' + avisosCamposSuspeitos.join(' | ');
-    log('ERROR', 'Solicitação ' + id + ': ' + msg);
-    await marcarErro(id, msg);
+    const msg = String(error.message || error);
+    log('ERROR', 'Solicitação ' + id + ': ' + msg + (avisosCamposSuspeitos.length ? ' Possível(is) causa(s): ' + avisosCamposSuspeitos.join(' | ') : ''));
+    await marcarErro(id, msg); // marcarErro já anexa avisosCamposSuspeitos — não duplicar aqui
     await finalizarExecucao(execucaoId, { status: 'ERRO', mensagem: msg.slice(0, 2000) });
   }
 }

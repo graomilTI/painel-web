@@ -204,11 +204,21 @@ function acoesDetalheHtml(row){
     <div class="ab-subpainel" id="abPainelProblema" hidden></div>`;
 }
 
-function painelCorrigirHtml(){
-  return `<p class="log-meta">Marque os campos que precisam de correção:</p>
+// Campos editáveis pelo próprio ADM (tudo exceto "testes", que é um objeto
+// {categoria,opcoes} — editar isso via texto livre teria alto risco de gravar
+// um formato inválido; quem precisa mudar teste continua indo pelo caminho
+// "devolver ao Gestor" abaixo, que reusa o form real de Abrir O.S.).
+const CAMPOS_AUTOCORRIGIVEIS = CAMPOS_ABERTURA_OS.filter(c => c.key !== 'testes');
+
+function painelCorrigirHtml(row){
+  return `<p class="log-meta"><strong>Corrigir agora</strong> — edite os campos necessários e reenvie direto para o agente tentar de novo no GRM, sem passar pelo Gestor:</p>
+    <div class="ab-campos-editar-grid">${CAMPOS_AUTOCORRIGIVEIS.map(c=>`<label class="ab-campo-editar"><span>${esc(c.label)}</span><input type="text" class="log-input" data-corrigir-valor="${c.key}" value="${esc(row[c.key] ?? '')}"></label>`).join('')}</div>
+    <div class="ab-subpainel-actions"><button class="btn btn-secondary" data-abertura-cancelar type="button">Cancelar</button><button class="btn btn-primary" data-abertura-confirmar="AUTOCORRIGIR" type="button">Corrigir e reenviar ao agente</button></div>
+    <hr class="ab-corrigir-divisor">
+    <p class="log-meta">Ou devolva para o Gestor corrigir e reenviar — marque os campos errados:</p>
     <div class="ab-campos-grid">${CAMPOS_ABERTURA_OS.map(c=>`<label class="ab-campo-chk"><input type="checkbox" data-corrigir-campo="${c.key}"> ${esc(c.label)}</label>`).join('')}</div>
     <textarea class="log-input log-textarea" data-ab-obs placeholder="Descreva o que precisa ser corrigido (obrigatório)"></textarea>
-    <div class="ab-subpainel-actions"><button class="btn btn-secondary" data-abertura-cancelar type="button">Cancelar</button><button class="btn btn-primary" data-abertura-confirmar="CORRIGIR" type="button">Enviar correção</button></div>`;
+    <div class="ab-subpainel-actions"><button class="btn btn-secondary" data-abertura-cancelar type="button">Cancelar</button><button class="btn btn-primary" data-abertura-confirmar="CORRIGIR" type="button">Enviar correção ao Gestor</button></div>`;
 }
 function painelRecusarHtml(){
   return `<textarea class="log-input log-textarea" data-ab-obs placeholder="Motivo da recusa (obrigatório)"></textarea>
@@ -220,9 +230,9 @@ function painelProblemaHtml(){
 }
 
 function hidePaineis(overlay){['abPainelCorrigir','abPainelRecusar','abPainelProblema'].forEach(pid=>{const el=overlay.querySelector('#'+pid);if(el){el.hidden=true;el.innerHTML='';}});}
-function showPainel(overlay,kind){
+function showPainel(overlay,kind,row){
   hidePaineis(overlay);
-  const map={corrigir:['abPainelCorrigir',painelCorrigirHtml],recusar:['abPainelRecusar',painelRecusarHtml],problema:['abPainelProblema',painelProblemaHtml]};
+  const map={corrigir:['abPainelCorrigir',()=>painelCorrigirHtml(row)],recusar:['abPainelRecusar',painelRecusarHtml],problema:['abPainelProblema',painelProblemaHtml]};
   const entry=map[kind];
   if(!entry)return;
   const [pid,fn]=entry;
@@ -246,6 +256,20 @@ async function decide(id,action,{obs=null,campos=[]}={},button){
   if(action==='OK')toast(`Solicitação aprovada.${data?.job_id?' Agente enfileirado para abrir no GRM.':''}`,'ok');
   else if(action==='CORRIGIR')toast('Correção solicitada ao Gestor.','ok');
   else toast('Solicitação recusada.','ok');
+}
+
+async function autocorrigir(id,payload,button){
+  const original=button?.textContent;
+  if(button){button.disabled=true;button.textContent='Reenviando...';}
+  const {error}=await supabase.rpc('corrigir_e_reenviar_abertura_os',{p_id:id,p_payload:payload});
+  if(error){
+    toast(error.message,'err');
+    if(button){button.disabled=false;button.textContent=original;}
+    return;
+  }
+  closeModal('aberturaDetalheModal');
+  await load();
+  toast('Solicitação corrigida e reenviada ao agente.','ok');
 }
 
 async function alocarOsExistente(id,numeroOs,button){
@@ -277,7 +301,7 @@ function abrirDetalhe(row){
       return;
     }
     const toggle=event.target.closest('[data-abertura-toggle]');
-    if(toggle){showPainel(overlay,toggle.dataset.aberturaToggle);return;}
+    if(toggle){showPainel(overlay,toggle.dataset.aberturaToggle,row);return;}
     const cancelar=event.target.closest('[data-abertura-cancelar]');
     if(cancelar){hidePaineis(overlay);return;}
 
@@ -285,6 +309,16 @@ function abrirDetalhe(row){
     if(btnOk){
       const ok=await confirmar({titulo:'Confirmar abertura de O.S.',mensagem:'O agente será enfileirado para abrir a O.S. no GRM e devolver o número. Confirmar?',confirmarLabel:'Confirmar'});
       if(ok)await decide(row.id,'OK',{},btnOk);
+      return;
+    }
+
+    const btnAutoCorrigir=event.target.closest('[data-abertura-confirmar="AUTOCORRIGIR"]');
+    if(btnAutoCorrigir){
+      const painel=overlay.querySelector('#abPainelCorrigir');
+      const payload={};
+      painel.querySelectorAll('[data-corrigir-valor]').forEach(input=>{payload[input.dataset.corrigirValor]=input.value;});
+      const ok=await confirmar({titulo:'Corrigir e reenviar',mensagem:'A solicitação será atualizada com os valores acima e reenviada ao agente para tentar abrir a O.S. no GRM novamente. Confirmar?',confirmarLabel:'Reenviar'});
+      if(ok)await autocorrigir(row.id,payload,btnAutoCorrigir);
       return;
     }
 
@@ -328,7 +362,7 @@ function abrirDetalhe(row){
   });
 }
 
-function injectStyle(){if(document.getElementById('abertura-workflow-style'))return;const style=document.createElement('style');style.id='abertura-workflow-style';style.textContent=`.abertura-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-bottom:14px}.abertura-kpis article.card{padding:10px 12px}.abertura-kpis h3{font-size:11px;margin:0 0 2px;text-transform:uppercase;color:#9fb7aa}.abertura-kpis .metric{font-size:22px;margin:0}.abertura-kpis .muted{font-size:10px;margin:2px 0 0}.ab-abrir-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}.ab-problema-dot{font-size:14px;cursor:default}.abertura-recusar{background:rgba(127,29,29,.82)!important;color:#fecaca!important;border:1px solid rgba(239,68,68,.35)!important}.ab-icon-actions{display:flex;gap:8px;margin-top:6px}.ab-icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid transparent;font-size:18px;font-weight:900;line-height:1;cursor:pointer;transition:transform .14s ease}.ab-icon-btn:hover{transform:translateY(-1px)}.ab-icon-btn:disabled{opacity:.4;cursor:wait;transform:none}.ab-icon-btn.ok{border-color:rgba(22,215,144,.34);background:rgba(22,215,144,.13);color:#75edb7}.ab-icon-btn.correct{border-color:rgba(250,204,21,.34);background:rgba(250,204,21,.13);color:#fde68a}.ab-icon-btn.reject{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.1);color:#fca5a5}.ab-icon-btn.alert{border-color:rgba(251,146,60,.34);background:rgba(251,146,60,.13);color:#fdba74}.ab-subpainel{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(15,23,42,.36)}.ab-campos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin:8px 0}.ab-campo-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1}.ab-campo-badge{display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;border-radius:999px;background:rgba(250,204,21,.14);color:#fde68a;font-size:11px;font-weight:700}.ab-ponto-problema-item{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);color:#fdba74}.ab-ponto-problema-item:last-child{border-bottom:0}.ab-ponto-problema-item span{color:#8fa1b5;font-size:11px}.ab-subpainel-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.ab-os-existente-box{margin:12px 0;display:flex;flex-direction:column;gap:8px}.ab-os-existente-alerta{padding:10px 12px;border-radius:10px;border:1px solid rgba(250,204,21,.34);background:rgba(250,204,21,.1);color:#fde68a;font-size:12px}.ab-os-existente-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(15,23,42,.36)}.ab-os-existente-info{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#cbd5e1}.ab-os-existente-info strong{font-size:13px;color:#e2e8f0}@media(max-width:1100px){.abertura-kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.abertura-kpis{grid-template-columns:repeat(2,1fr)}}`;document.head.appendChild(style);}
+function injectStyle(){if(document.getElementById('abertura-workflow-style'))return;const style=document.createElement('style');style.id='abertura-workflow-style';style.textContent=`.abertura-kpis{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-bottom:14px}.abertura-kpis article.card{padding:10px 12px}.abertura-kpis h3{font-size:11px;margin:0 0 2px;text-transform:uppercase;color:#9fb7aa}.abertura-kpis .metric{font-size:22px;margin:0}.abertura-kpis .muted{font-size:10px;margin:2px 0 0}.ab-abrir-cell{display:flex;align-items:center;justify-content:flex-end;gap:8px}.ab-problema-dot{font-size:14px;cursor:default}.abertura-recusar{background:rgba(127,29,29,.82)!important;color:#fecaca!important;border:1px solid rgba(239,68,68,.35)!important}.ab-icon-actions{display:flex;gap:8px;margin-top:6px}.ab-icon-btn{width:38px;height:38px;border-radius:10px;border:1px solid transparent;font-size:18px;font-weight:900;line-height:1;cursor:pointer;transition:transform .14s ease}.ab-icon-btn:hover{transform:translateY(-1px)}.ab-icon-btn:disabled{opacity:.4;cursor:wait;transform:none}.ab-icon-btn.ok{border-color:rgba(22,215,144,.34);background:rgba(22,215,144,.13);color:#75edb7}.ab-icon-btn.correct{border-color:rgba(250,204,21,.34);background:rgba(250,204,21,.13);color:#fde68a}.ab-icon-btn.reject{border-color:rgba(248,113,113,.3);background:rgba(248,113,113,.1);color:#fca5a5}.ab-icon-btn.alert{border-color:rgba(251,146,60,.34);background:rgba(251,146,60,.13);color:#fdba74}.ab-subpainel{margin-top:12px;padding:12px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(15,23,42,.36)}.ab-campos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin:8px 0}.ab-campo-chk{display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1}.ab-campos-editar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin:10px 0}.ab-campo-editar{display:flex;flex-direction:column;gap:4px;font-size:11px;color:#9fb7aa}.ab-corrigir-divisor{border:none;border-top:1px solid rgba(255,255,255,.08);margin:16px 0}.ab-campo-badge{display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;border-radius:999px;background:rgba(250,204,21,.14);color:#fde68a;font-size:11px;font-weight:700}.ab-ponto-problema-item{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.06);color:#fdba74}.ab-ponto-problema-item:last-child{border-bottom:0}.ab-ponto-problema-item span{color:#8fa1b5;font-size:11px}.ab-subpainel-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.ab-os-existente-box{margin:12px 0;display:flex;flex-direction:column;gap:8px}.ab-os-existente-alerta{padding:10px 12px;border-radius:10px;border:1px solid rgba(250,204,21,.34);background:rgba(250,204,21,.1);color:#fde68a;font-size:12px}.ab-os-existente-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(15,23,42,.36)}.ab-os-existente-info{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#cbd5e1}.ab-os-existente-info strong{font-size:13px;color:#e2e8f0}@media(max-width:1100px){.abertura-kpis{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.abertura-kpis{grid-template-columns:repeat(2,1fr)}}`;document.head.appendChild(style);}
 
 async function boot(){
   const list=await waitFor('#aberturaOsList');injectStyle();

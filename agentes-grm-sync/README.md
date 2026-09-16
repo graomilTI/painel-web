@@ -217,9 +217,9 @@ bateu e caiu no fallback "1ª disponível"), mas não cobre tudo. Rodar
 `node grmserver-abrir-os-api.js --test-payload <id>` compara o payload
 montado com o que foi salvo de verdade numa solicitação já `CADASTRADO`, sem
 tocar em status/execuções — útil pra conferir a cadeia de resolução depois de
-qualquer mudança. `grm-sync-abrir-os.js` (Puppeteer) continua no disco como
-rollback: se aparecer O.S. criada errada em produção, reverter o `SCRIPT_MAP`
-pra ele enquanto investiga.
+qualquer mudança. `grm-sync-abrir-os.js` (Puppeteer) foi removido em 15/09
+depois de 3 dias validado em produção sem incidente — usar `git log` /
+`git show` pra recuperar o arquivo se precisar reverter.
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
