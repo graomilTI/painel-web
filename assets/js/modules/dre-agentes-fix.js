@@ -22,12 +22,7 @@
     // canonicalCategory), agora entra em Despesas Financeiras a pedido da gestora
     // (17/09), pra bater com o DRE manual dela. Chave normalizada (sem espaço/acento).
     RETIRADASOCIOS: 'RETIRADA SÓCIOS',
-    RETIRADASOCIO: 'RETIRADA SÓCIOS',
-    // "IMPOSTOS" genérico (não ligado à folha, diferente de "Impostos sobre Folha" e
-    // de "Impostos Parcelados") - tirado de Despesas Financeiras mais cedo em 17/09,
-    // a gestora pediu pra voltar a incluir no mesmo dia. Volta pro mapeamento original
-    // de 24/06/2026 (antes disso o valor sumia do DRE em silêncio).
-    IMPOSTOS: 'DESPESAS FINANCEIRAS'
+    RETIRADASOCIO: 'RETIRADA SÓCIOS'
   };
 
   // LOG1000 saiu daqui de propósito: o DRE Geral agora consolida as despesas da
@@ -101,10 +96,14 @@
   function canonicalCategory(value) {
     const key = norm(value);
     if (!key || key === 'TOTAL' || key === 'TOTALCOLUNAS' || key === 'NAODEFINIDO') return '';
-    // IMPOSTOSPARCELADOS fica fora (double-conta um imposto que já foi lançado
-    // integralmente antes de ser parcelado). "IMPOSTOS" genérico tem alias pra
-    // Despesas Financeiras em CATEGORY_ALIASES (ver comentário lá).
-    if (key === 'IMPOSTOSPARCELADOS') return '';
+    // "IMPOSTOS" genérico (não ligado à folha) fora de Despesas Financeiras -
+    // confirmado 17/09 comparando 8 meses (jan-ago/2026) do DRE manual da gestora
+    // contra o painel: 7 de 8 batiam exato SEM essa categoria (só incluindo Retirada
+    // de Sócios), e nenhum batia incluindo Impostos genérico. Exclusão intencional,
+    // não lacuna de mapeamento. IMPOSTOSPARCELADOS fica fora pelo mesmo motivo de
+    // sempre (double-conta um imposto que já foi lançado integralmente antes de
+    // ser parcelado).
+    if (key === 'IMPOSTOSPARCELADOS' || key === 'IMPOSTOS') return '';
     const categoria = CATEGORY_ALIASES[key] || '';
     // O GRM pode renomear/adicionar uma categoria de despesa sem aviso - sem isso, o
     // valor some do DRE em silêncio (mesma causa raiz do bug de Notas Fiscais, só que
