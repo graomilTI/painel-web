@@ -113,8 +113,8 @@ async function login() {
   return response.token;
 }
 
-async function fetchReportData(token) {
-  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
+  const dateRange = calculateDateRange(daysBack);
   log('INFO', `Consultando ${REPORT_CONFIG.name} via API: ${dateRange.from} até ${dateRange.to}`);
   const json = await postJson(`${GRM_BASE_URL}reports/finance/invoices`, {
     biiDateFrom: dateRange.from,
@@ -145,9 +145,9 @@ async function fetchReportData(token) {
   return data;
 }
 
-async function upsertData(data) {
+async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
-  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  const dateRange = calculateDateRange(daysBack);
   const mappedRecords = data.map(row => ({
     data_nota_de: toIso(dateRange.from),
     data_nota_ate: toIso(dateRange.to),
@@ -199,4 +199,4 @@ if (require.main === module) {
   setTimeout(() => process.exit(1), 120000);
 }
 
-module.exports = { fetchReportData, login };
+module.exports = { fetchReportData, login, upsertData };
