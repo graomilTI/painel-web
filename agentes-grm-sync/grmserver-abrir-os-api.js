@@ -233,36 +233,53 @@ function inferirTipoLocalPorPrefixo(texto) {
   return PREFIXO_TIPO_LOCAL[primeiraPalavra] || null;
 }
 
-async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao) {
+async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao, ufSolicitacao) {
   var texto = String(valorArmazem || '').trim();
   if (!texto) return null;
   var cidade = cidadeSolicitacao ? String(cidadeSolicitacao).trim() : null;
+  var uf = ufSolicitacao ? String(ufSolicitacao).trim() : null;
+
+  // Confere UF -> CIDADE -> LOCAL nessa ordem: só aceita um cadastro de
+  // operacional_pontos_embarque se ele bater com a UF e a cidade da
+  // solicitação (quando informadas). Nomes de local colidem entre unidades
+  // reais diferentes (ex. "ARMAZÉM FRISIA" cadastrado em Tibagi/PR E em
+  // Paraíso do Tocantins/TO) — aceitar por nome sem confirmar UF/cidade já
+  // mandou uma O.S. pro armazém errado, numa cidade/UF errada (O.S. 92999,
+  // 17/09/2026: solicitação PR/Tibagi abriu em TO/Paraíso do Tocantins).
+  function bateLocal(p) {
+    if (uf && norm(p.uf) !== norm(uf)) return false;
+    if (cidade && norm(p.cidade) !== norm(cidade)) return false;
+    return true;
+  }
 
   var porNomeRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('nome_local', texto);
-  var porNome = (!porNomeRes.error && porNomeRes.data) ? porNomeRes.data[0] : null;
-  // Match exato de nome_local/embarque_label, mas só aceita de cara se a
-  // cidade bater — nomes curtos (ex. "Coplacana") colidem entre unidades
-  // reais diferentes (unidade "COPLACANA" pura em Quirinópolis/GO x
-  // "COPLACANA - TAQUARITUBA" em SP, achado ao vivo na O.S. 92883: o exato
-  // "vencia" e mandava a O.S. pro armazém errado, numa cidade/UF errada,
-  // antes mesmo de chegar no fallback por palavras+cidade abaixo). Se não
-  // bater, guarda pra usar só como último recurso no final.
-  if (porNome && (!cidade || norm(porNome.cidade) === norm(cidade))) return porNome;
+  var porNomeLista = (!porNomeRes.error && porNomeRes.data) ? porNomeRes.data : [];
+  var porNome = porNomeLista.find(bateLocal);
+  if (porNome) return porNome;
 
   var porLabelRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto);
-  var porLabel = (!porLabelRes.error && porLabelRes.data) ? porLabelRes.data[0] : null;
-  if (porLabel && (!cidade || norm(porLabel.cidade) === norm(cidade))) return porLabel;
+  var porLabelLista = (!porLabelRes.error && porLabelRes.data) ? porLabelRes.data : [];
+  var porLabel = porLabelLista.find(bateLocal);
+  if (porLabel) return porLabel;
 
   var palavras = palavrasSignificativasEmbarque(texto);
   if (palavras.length) {
     var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local');
     palavras.forEach((p) => { query = query.ilike('nome_local', '%' + p + '%'); });
+    if (uf) query = query.ilike('uf', uf);
     if (cidade) query = query.ilike('cidade', cidade);
     var porPalavras = await query.limit(5);
     if (!porPalavras.error && porPalavras.data && porPalavras.data.length === 1) return porPalavras.data[0];
   }
 
-  return porNome || porLabel || null;
+  // Sem UF nem cidade informada na solicitação: usa o 1º cadastro por nome
+  // como melhor esforço (nada pra confirmar contra). Com UF/cidade
+  // informada e nenhum cadastro batendo, NÃO cai mais pro 1º nome — melhor
+  // deixar o resto da cadeia (resolverEmbarque) buscar direto no GRM usando
+  // a UF/cidade da própria solicitação do que arriscar abrir a O.S. no
+  // armazém errado.
+  if (!cidade && !uf) return porNomeLista[0] || porLabelLista[0] || null;
+  return null;
 }
 
 function extrairLocalPadrao(texto) {
@@ -419,7 +436,7 @@ async function resolverProdutor(token, splCode, nomeProdutor) {
 }
 
 async function resolverEmbarque(token, solicitacao) {
-  const ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque);
+  const ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque, solicitacao.uf_embarque);
   let uf = solicitacao.uf_embarque, cidade = solicitacao.cidade_embarque, tipoLocalNome = null;
   if (ponto) {
     uf = ponto.uf; cidade = ponto.cidade; tipoLocalNome = ponto.tipo_local;
