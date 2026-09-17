@@ -22,7 +22,13 @@
     // canonicalCategory), agora entra em Despesas Financeiras a pedido da gestora
     // (17/09), pra bater com o DRE manual dela. Chave normalizada (sem espaço/acento).
     RETIRADASOCIOS: 'RETIRADA SÓCIOS',
-    RETIRADASOCIO: 'RETIRADA SÓCIOS'
+    RETIRADASOCIO: 'RETIRADA SÓCIOS',
+    // "IMPOSTOS" genérico (não ligado à folha, diferente de "Impostos sobre Folha" e
+    // de "Impostos Parcelados") entra em Despesas Financeiras (mapeamento original de
+    // 24/06/2026). O DRE manual da gestora bate 7/8 meses sem essa categoria, mas ela
+    // confirmou (17/09) que é a PLANILHA MANUAL que está sem Impostos por acidente,
+    // não o sistema - mantém incluído aqui.
+    IMPOSTOS: 'DESPESAS FINANCEIRAS'
   };
 
   // LOG1000 saiu daqui de propósito: o DRE Geral agora consolida as despesas da
@@ -96,14 +102,11 @@
   function canonicalCategory(value) {
     const key = norm(value);
     if (!key || key === 'TOTAL' || key === 'TOTALCOLUNAS' || key === 'NAODEFINIDO') return '';
-    // "IMPOSTOS" genérico (não ligado à folha) fora de Despesas Financeiras -
-    // confirmado 17/09 comparando 8 meses (jan-ago/2026) do DRE manual da gestora
-    // contra o painel: 7 de 8 batiam exato SEM essa categoria (só incluindo Retirada
-    // de Sócios), e nenhum batia incluindo Impostos genérico. Exclusão intencional,
-    // não lacuna de mapeamento. IMPOSTOSPARCELADOS fica fora pelo mesmo motivo de
-    // sempre (double-conta um imposto que já foi lançado integralmente antes de
-    // ser parcelado).
-    if (key === 'IMPOSTOSPARCELADOS' || key === 'IMPOSTOS') return '';
+    // IMPOSTOSPARCELADOS fica fora (double-conta um imposto que já foi lançado
+    // integralmente antes de ser parcelado). "IMPOSTOS" genérico tem alias pra
+    // Despesas Financeiras em CATEGORY_ALIASES (ver comentário lá - a planilha
+    // manual da gestora é que está sem essa categoria por acidente, não o painel).
+    if (key === 'IMPOSTOSPARCELADOS') return '';
     const categoria = CATEGORY_ALIASES[key] || '';
     // O GRM pode renomear/adicionar uma categoria de despesa sem aviso - sem isso, o
     // valor some do DRE em silêncio (mesma causa raiz do bug de Notas Fiscais, só que
