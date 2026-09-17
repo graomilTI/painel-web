@@ -199,8 +199,13 @@ function movementDate(row) {
   ]));
 }
 
+// 'lnsDate' é o campo cru da API (grmserver-nhe-api.js, migrado 05/09) —
+// grm_nhe_importacoes parou de gravar o formato antigo em estilo planilha
+// ('Data'/'Última Atualização'). Sem esse alias, serviceDate() nunca batia
+// com nenhuma linha e a tela nunca reconhecia um NHE já lançado (achado
+// 17/09, junto do caso da O.S. 92847).
 function serviceDate(row) {
-  return ymd(pick(row, ['Data', 'Última Atualização', 'Ultima Atualizacao']));
+  return ymd(pick(row, ['Data', 'Última Atualização', 'Ultima Atualizacao', 'lnsDate']));
 }
 
 async function fetchPaged(builder, maxRows) {
@@ -467,7 +472,9 @@ function compareFob(movementRows, productionRows, nheRows) {
 
   const setNheOsOnly = new Set();
   nheRows.forEach((row) => {
-    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S']));
+    // 'sorCode' é o campo cru da API (grmserver-nhe-api.js) — ver comentário
+    // em serviceDate() acima.
+    const os = normOs(pick(row, ['O.S.', 'OS', 'O.S', 'O S', 'sorCode']));
     if (os) setNheOsOnly.add(os);
   });
 
