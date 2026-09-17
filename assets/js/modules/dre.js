@@ -94,7 +94,24 @@
     if(!key) return 0;
     return Object.values(base[key]||{}).reduce((acc,arr)=>acc+n(arr?.[mi]),0);
   }
-  function geralTopic(geral, topics, mi){ return topics.reduce((a,tp)=>a+n(geral[tp]?.[mi]||geral[norm(tp)]?.[mi]),0); }
+  function geralTopic(geral, topics, mi){
+    // sumTopic() é imune a nomes duplicados na lista de tópicos porque itera sobre as
+    // chaves dos DADOS (cada categoria só existe uma vez lá). geralTopic() iterava sobre
+    // a própria lista de tópicos - se dois nomes da lista normalizassem pra mesma chave
+    // (ex.: 'RETIRADA SÓCIOS' e 'RETIRADA SOCIOS', usados juntos em vals.fin), o valor
+    // era somado 2x. Achado 17/09 comparando o DRE com o DRE manual da gestora: Despesas
+    // Financeiras de Janeiro/2026 vinha R$302.028,35 no lugar de R$238.068,49 (a diferença
+    // batia exatamente com Retirada Sócios do GERAL contada 2x). Dedupa por chave normalizada.
+    const seen = new Set();
+    let total = 0;
+    for (const tp of topics) {
+      const key = norm(tp);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      total += n(geral[tp]?.[mi] ?? geral[key]?.[mi]);
+    }
+    return total;
+  }
   function totalPatrimonioMes(desp, mi){
     return sumTopicsAll(desp?.base || {}, ['PATRIMONIO'], mi) + geralTopic(desp?.geral || {}, ['PATRIMONIO'], mi);
   }
