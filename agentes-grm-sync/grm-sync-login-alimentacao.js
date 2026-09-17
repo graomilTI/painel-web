@@ -1640,6 +1640,75 @@ async function saveEligible(rows, fromYmd, toYmd) {
   }
 }
 
+// A API do GRM corta o resultado do loginReport em 300 linhas quando a
+// consulta não é filtrada por Coordenação (achado em 2026-09-17, caso O.S.
+// 92849/RAFAEL RICARDO CACERES DE OLIVEIRA: o login das 16:42 em 16/09,
+// bem próximo da O.S., sumia da consulta sem filtro — só apareceu ao
+// filtrar por olcCode=18/MATO GROSSO DO SUL, junto com outras 29 linhas).
+// Por isso a coleta é feita Coordenação por Coordenação, não mais numa
+// chamada única pra empresa toda.
+async function fetchCoordenacoesAtivas(page) {
+  var json = await page.evaluate(async function () {
+    var token = '';
+    for (var i = 0; i < localStorage.length; i += 1) {
+      try { var value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value && value.userToken) token = value.userToken; } catch (_) {}
+    }
+    var response = await fetch('/api/coordination/getForSelect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ olcStatus: 'A' })
+    });
+    var data = await response.json();
+    if (!response.ok || data.result === false) throw new Error(JSON.stringify(data).slice(0, 500));
+    return data.searchData || [];
+  });
+  return json;
+}
+
+async function collectReportPorCoordenacao(page, fromYmd, toYmd) {
+  var coordenacoes = await fetchCoordenacoesAtivas(page);
+  if (!coordenacoes.length) throw new Error('Nenhuma Coordenação ativa retornada pela API.');
+  log('INFO', coordenacoes.length + ' Coordenação(ões) ativa(s); consultando o loginReport de cada uma pra não bater no limite de 300 linhas da API.');
+
+  var todas = [];
+  var vistos = {};
+  for (var i = 0; i < coordenacoes.length; i++) {
+    var olcCode = coordenacoes[i].olcCode;
+    var olcName = coordenacoes[i].olcName || String(olcCode);
+    try {
+      var json = await page.evaluate(async function (body) {
+        var token = '';
+        for (var j = 0; j < localStorage.length; j += 1) {
+          try { var value = JSON.parse(localStorage.getItem(localStorage.key(j))); if (value && value.userToken) token = value.userToken; } catch (_) {}
+        }
+        var response = await fetch('/api/reports/classification/staff/loginReport', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify(body)
+        });
+        var data = await response.json();
+        if (!response.ok || data.result === false) throw new Error(JSON.stringify(data).slice(0, 500));
+        return data.searchData || [];
+      }, { stlDateFrom: ymdToBr(fromYmd), stlDateTo: ymdToBr(toYmd), olcCode: olcCode });
+
+      if (json.length >= 300) {
+        log('WARN', 'Coordenação ' + olcName + ' (olcCode=' + olcCode + ') retornou ' + json.length + ' linha(s) — pode estar batendo no limite de 300 da API mesmo filtrada; considerar paginar também por Supervisão.');
+      }
+      json.forEach(function (row) {
+        var key = row.stlCode !== undefined && row.stlCode !== null ? row.stlCode : JSON.stringify(row);
+        if (vistos[key]) return;
+        vistos[key] = true;
+        todas.push(row);
+      });
+      log('INFO', 'Coordenação ' + olcName + ': ' + json.length + ' linha(s).');
+    } catch (err) {
+      log('WARN', 'Falha consultando loginReport da Coordenação ' + olcName + ' (olcCode=' + olcCode + '): ' + err.message);
+    }
+    await wait(250);
+  }
+  return todas;
+}
+
 async function collectReport(fromYmd, toYmd, debug) {
   var browser;
   var captured;
@@ -1675,21 +1744,12 @@ async function collectReport(fromYmd, toYmd, debug) {
     captured = startApiCapture(page);
 
     await login(page);
-    var directRows = await page.evaluate(async function (body) {
-      var token = '';
-      for (var i = 0; i < localStorage.length; i += 1) {
-        try { var value = JSON.parse(localStorage.getItem(localStorage.key(i))); if (value && value.userToken) token = value.userToken; } catch (_) {}
-      }
-      var response = await fetch('/api/reports/classification/staff/loginReport', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-        body: JSON.stringify(body)
-      });
-      var json = await response.json();
-      if (!response.ok || json.result === false) throw new Error(JSON.stringify(json).slice(0, 500));
-      return json.searchData || [];
-    }, { stlDateFrom: ymdToBr(fromYmd), stlDateTo: ymdToBr(toYmd) });
-    if (directRows.length) return directRows;
+    try {
+      var directRows = await collectReportPorCoordenacao(page, fromYmd, toYmd);
+      if (directRows.length) return directRows;
+    } catch (apiError) {
+      log('WARN', 'Falha na coleta via API por Coordenação: ' + apiError.message + '. Caindo pro fluxo via tela.');
+    }
     log('INFO', 'Abrindo ' + REPORT_CONFIG.url);
     await page.goto(REPORT_CONFIG.url, { waitUntil: 'networkidle2', timeout: 60000 });
     await wait(2500);

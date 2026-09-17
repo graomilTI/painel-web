@@ -215,6 +215,31 @@ function palavrasSignificativasEmbarque(texto) {
   return norm(texto).split(/[^A-Z0-9]+/).filter((w) => w.length >= 3 && PREFIXOS_GENERICOS_EMBARQUE.indexOf(w) === -1);
 }
 
+// Fallback pro splName real do GRM quando o nome cadastrado internamente em
+// operacional_pontos_embarque (vindo de importação de planilha) diverge
+// textualmente do nome oficial do local, mesmo sendo o mesmo lugar — ex.
+// "MOAGEIRA IRATI CEREAIS S/A (MATRIZ)" cadastrado aqui vs splName real
+// "MOAGEIRA - IRATI" (splCode 7496, O.S. 92-alguma/LOUIS DREYFUS,
+// 17/09/2026): nenhum é substring do outro, então melhorCorrespondencia
+// (substring puro) não acha nada. Casa pela opção com MAIS palavras
+// significativas em comum (>=3 letras, sem prefixo genérico de tipo de
+// local); exige pelo menos 2 em comum e nenhum empate no topo, pra não
+// arriscar casar só pela cidade repetida no nome (ex. "- IRATI" aparece em
+// vários locais da mesma cidade).
+function melhorCorrespondenciaPorPalavrasComuns(lista, campo, alvo) {
+  var palavrasAlvo = palavrasSignificativasEmbarque(alvo);
+  if (!palavrasAlvo.length || !lista || !lista.length) return null;
+  var melhor = null, melhorScore = 0, empate = false;
+  lista.forEach((item) => {
+    var palavrasItem = palavrasSignificativasEmbarque(item[campo]);
+    var score = palavrasAlvo.filter((p) => palavrasItem.indexOf(p) !== -1).length;
+    if (score > melhorScore) { melhor = item; melhorScore = score; empate = false; }
+    else if (score === melhorScore && score > 0) { empate = true; }
+  });
+  if (melhorScore < 2 || empate) return null;
+  return melhor;
+}
+
 // Mesmos prefixos de PREFIXOS_GENERICOS_EMBARQUE, mapeados pro tipo_local
 // canônico (valores reais vistos em operacional_pontos_embarque/GRM
 // sptName: "Armazém / Silo", "Fazenda", "Transbordo - Terminal"). Usado só
@@ -461,7 +486,12 @@ async function resolverEmbarque(token, solicitacao) {
   if (!cidadeItem) throw new Error('Cidade de embarque "' + cidade + '" (UF ' + uf + ') não encontrada no GRM.');
 
   const locaisRes = await postJson('servicePlaces/getRecords', { citCode: cidadeItem.citCode, sptCode: tipoLocal.sptCode, splStatus: 'A', limit: 1000 }, token);
-  const localItem = melhorCorrespondencia(safe(locaisRes.searchData), 'splName', ponto ? ponto.nome_local : solicitacao.armazem_embarque);
+  const nomeAlvoLocal = ponto ? ponto.nome_local : solicitacao.armazem_embarque;
+  let localItem = melhorCorrespondencia(safe(locaisRes.searchData), 'splName', nomeAlvoLocal);
+  if (!localItem) {
+    localItem = melhorCorrespondenciaPorPalavrasComuns(safe(locaisRes.searchData), 'splName', nomeAlvoLocal);
+    if (localItem) avisarCampoSuspeito('Local do Serviço "' + nomeAlvoLocal + '" não bateu por substring — casado por palavras em comum com "' + localItem.splName + '" (splCode ' + localItem.splCode + ').');
+  }
   if (!localItem) throw new Error('Local do Serviço "' + solicitacao.armazem_embarque + '" não encontrado em ' + cidade + '/' + uf + '.');
 
   // olsCode vem do PAR citCode+sptCode do embarque — validado ao vivo 11/09
