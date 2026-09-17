@@ -27,7 +27,7 @@ import {
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
 } from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260915-reaproveitada-card6';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
 
 function esc(value) {
   return String(value ?? '')
@@ -610,6 +610,13 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       loadDisponibilidadeConfirmados(programacaoIdQuery, colaboradorIds),
       getVeiculos(),
     ]);
+    // Deslocamento/estadia/alimentação são únicos por colaborador + data. O
+    // registro físico pode estar ancorado na programação de outra supervisão
+    // (ou em outra O.S. do mesmo dia); nesse caso, a consulta acima por
+    // programacao_id não o encontra e o card cairia indevidamente no padrão
+    // "Particular" ao ser reaberto. Complete as lacunas com a visão diária,
+    // sem sobrescrever dados que a consulta direta já encontrou.
+    await complementarComDespesasCompartilhadas(custos, extrasPorColab, options.dataReferencia, colaboradorIds);
     await loadAlojamentos();
     const osResumoPorId = new Map([[String(os.id), { id: os.id, numero_os: os.numero_os, cliente: os.cliente, embarque: os.embarque }]]);
     return { custos, placasPorCpf, tipoContratoPorCpf, extrasPorColab, osResumoPorId, dispPorColaborador };
