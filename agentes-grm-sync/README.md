@@ -22,7 +22,9 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 */5 * * * * cd /home/grao100/painel-scripts/grm-sync && HOME=/home/grao100 TMPDIR=/home/grao100/tmp TMP=/home/grao100/tmp TEMP=/home/grao100/tmp PATH=/home/grao100/bin:/opt/cpanel/ea-nodejs10/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /home/grao100/bin/node worker/grm-sync-auto-scheduler.js >> logs/auto-scheduler.log 2>&1
 ```
 
-`grm-sync-job-worker.js --once` roda a cada minuto (pega no máximo 1 job pendente e sai); `grm-sync-auto-scheduler.js` roda a cada 5 minutos (enfileira jobs novos e libera jobs travados). Node real: `/home/grao100/bin/node`.
+`grm-sync-job-worker.js --once` roda a cada minuto (pega no máximo 1 job pendente e sai); `grm-sync-auto-scheduler.js` roda a cada 5 minutos (enfileira jobs novos e libera jobs travados).
+
+**⚠️ `/home/grao100/bin/node` (usado acima e nos exemplos de "rodar manualmente" abaixo) está quebrado/desatualizado** — falha com `ReferenceError: Headers is not defined` ao importar `@supabase/supabase-js` (não tem fetch/Headers nativo, achado ao vivo 17/09). O Node real usado em produção é `/opt/node22/bin/node` — é o que o `crontab -l` de verdade usa pra todo o worker V2 de 9 lanes (`GRM_SYNC_NODE_BIN=/opt/node22/bin/node`, ver seção "Concorrência entre agentes" abaixo). Pra rodar qualquer script manualmente (debug, dry-run, deploy), use `/opt/node22/bin/node`, não `/home/grao100/bin/node`.
 
 ## Agentes ativos (SCRIPT_MAP em worker/grm-sync-job-worker.js)
 
@@ -105,7 +107,7 @@ para rollback, mas não rode os dois como fonte principal ao mesmo tempo.
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
-GRM_COLABORADORES_POLL_MS=5000 /home/grao100/bin/node grmserver-colaboradores-api-realtime.js
+GRM_COLABORADORES_POLL_MS=5000 /opt/node22/bin/node grmserver-colaboradores-api-realtime.js
 ```
 
 Antes de iniciar o serviço, aplique a migration
@@ -159,7 +161,7 @@ pausa do agente antigo.
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
-/home/grao100/bin/node grmserver-producao-diaria-api-realtime.js
+/opt/node22/bin/node grmserver-producao-diaria-api-realtime.js
 ```
 
 `grm-sync-producao-diaria.js` (Puppeteer, janela de 30 dias) continua no
@@ -236,15 +238,15 @@ depois de 3 dias validado em produção sem incidente — usar `git log` /
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
-/home/grao100/bin/node grmserver-abrir-os-api.js --dry-run   # monta payload de todas APROVADO, não envia ao GRM
-/home/grao100/bin/node grmserver-abrir-os-api.js --test-payload <id>  # só imprime o payload de uma solicitação
+/opt/node22/bin/node grmserver-abrir-os-api.js --dry-run   # monta payload de todas APROVADO, não envia ao GRM
+/opt/node22/bin/node grmserver-abrir-os-api.js --test-payload <id>  # só imprime o payload de uma solicitação
 ```
 
 ## Rodar manualmente (debug)
 
 ```bash
 cd /home/grao100/painel-scripts/grm-sync
-/home/grao100/bin/node grmserver-colaboradores-sync.js
+/opt/node22/bin/node grmserver-colaboradores-sync.js
 ```
 
 Um run saudável demora ~80-120s (login + download + parse + upsert) e imprime `[INFO]`/`[SUCCESS]` a cada etapa. **Se o script terminar em menos de 1s sem nenhum log, o arquivo está quebrado/truncado** — foi exatamente isso que aconteceu com `grmserver-colaboradores-sync.js` entre 29/06 e 02/07: alguém salvou só um trecho do arquivo (a função de login) por cima do script inteiro, e o job continuava marcando "sucesso" em `grm_sync_jobs` porque o processo saía com código 0.
