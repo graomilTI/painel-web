@@ -194,11 +194,189 @@ async function setSearchCpf(page, cpf) {
   await sleep(1200);
 }
 
+async function clickStaffSearch(page) {
+  const searchButton = await page.$('.staff-act-search button') || await page.$('.staff-act-search');
+  if (!searchButton) {
+    throw new Error('Botão Pesquisar não localizado na tela de Funcionários do GRM.');
+  }
+  await page.evaluate((btn) => btn.click(), searchButton);
+  await sleep(1200);
+}
+
+async function waitStaffCpfRow(page, cpf, timeout = 5000) {
+  const target = digits(cpf);
+  try {
+    await page.waitForFunction((targetCpf) => [...document.querySelectorAll('tr')]
+      .some((row) => String(row.innerText || '').replace(/\D/g, '').includes(targetCpf)),
+    { timeout }, target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Localiza e altera o combobox "Situação" (Vuetify) da tela de Funcionários
+// do GRM. Colaboradores inativos/desligados só aparecem com Situação =
+// "Não Ativos" — sem isso, a busca por CPF nunca encontra a linha e trava
+// até estourar o timeout ("Waiting failed: 45000ms exceeded").
+async function setStaffSituation(page, targetSituation) {
+  const target = String(targetSituation || '').normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+  const targetPrefix = target.startsWith('INATIV') ? 'INATIV' : target;
+
+  const filterButton = await page.$('.staff-act-filter button') || await page.$('.staff-act-filter');
+  if (!filterButton) throw new Error('Botão Filtros não localizado na tela de Funcionários do GRM.');
+  await page.evaluate((btn) => btn.click(), filterButton);
+  await sleep(650);
+
+  const prepared = await page.evaluate(() => {
+    const normalize = (value) => String(value || '').normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toUpperCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    document.querySelectorAll('[data-grm-bonus-situation-combo]').forEach((el) => delete el.dataset.grmBonusSituationCombo);
+    document.querySelectorAll('[data-grm-bonus-situation-root]').forEach((el) => delete el.dataset.grmBonusSituationRoot);
+    const roots = [...document.querySelectorAll('.v-input,.v-select,.v-autocomplete,.v-field,[class*="field"]')].filter(visible).filter((el) => normalize(el.textContent).includes('SITUACAO'));
+    let chosenRoot = null;
+    let combo = null;
+    for (const root of roots) {
+      const candidate = [...root.querySelectorAll('input[role="combobox"],input')].find(visible);
+      if (candidate) { chosenRoot = root; combo = candidate; break; }
+    }
+    if (!combo) return { ok: false, reason: 'SITUATION_COMBOBOX_NOT_FOUND' };
+    combo.dataset.grmBonusSituationCombo = '1';
+    if (chosenRoot) chosenRoot.dataset.grmBonusSituationRoot = '1';
+    return { ok: true, value: combo.value || '', ariaExpanded: combo.getAttribute('aria-expanded'), ariaControls: combo.getAttribute('aria-controls'), rootText: normalize(chosenRoot?.textContent).slice(0, 180) };
+  });
+
+  if (!prepared.ok) throw new Error('Campo Situação não localizado: ' + JSON.stringify(prepared));
+  const comboSelector = '[data-grm-bonus-situation-combo="1"]';
+
+  await page.evaluate((selector) => {
+    const el = document.querySelector(selector);
+    if (!el) return;
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+    el.click();
+    el.focus();
+  }, comboSelector);
+  await sleep(500);
+
+  let menuInfo = await page.evaluate(() => {
+    const combo = document.querySelector('[data-grm-bonus-situation-combo="1"]');
+    const id = combo?.getAttribute('aria-controls') || combo?.getAttribute('aria-owns') || '';
+    const menu = id ? document.getElementById(id) : null;
+    return { id, exists: !!menu, text: String(menu?.innerText || menu?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500) };
+  });
+
+  if (!menuInfo.exists) {
+    await page.focus(comboSelector);
+    await page.keyboard.press('ArrowDown');
+    await sleep(500);
+    menuInfo = await page.evaluate(() => {
+      const combo = document.querySelector('[data-grm-bonus-situation-combo="1"]');
+      const id = combo?.getAttribute('aria-controls') || combo?.getAttribute('aria-owns') || '';
+      const menu = id ? document.getElementById(id) : null;
+      return { id, exists: !!menu, text: String(menu?.innerText || menu?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500) };
+    });
+  }
+
+  const selected = await page.evaluate((prefix) => {
+    const normalize = (value) => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const visible = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden';
+    const combo = document.querySelector('[data-grm-bonus-situation-combo="1"]');
+    const id = combo?.getAttribute('aria-controls') || combo?.getAttribute('aria-owns') || '';
+    const menu = id ? document.getElementById(id) : null;
+    if (!menu) return { ok: false, reason: 'MENU_NOT_FOUND', id };
+    const all = [menu, ...menu.querySelectorAll('*')].filter(visible);
+    const exact = all.filter((el) => normalize(el.textContent) === prefix || normalize(el.textContent) === 'INATIVOS');
+    const starts = all.filter((el) => normalize(el.textContent).startsWith(prefix));
+    const raw = exact[0] || starts.sort((a, b) => String(a.textContent || '').length - String(b.textContent || '').length)[0];
+    if (!raw) {
+      return { ok: false, reason: 'OPTION_NOT_FOUND', id, menuText: normalize(menu.textContent).slice(0, 500), childTexts: all.map((el) => normalize(el.textContent)).filter(Boolean).slice(0, 40) };
+    }
+    const clickable = raw.closest('[role="option"],.v-list-item,button,[tabindex]') || raw;
+    clickable.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    clickable.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+    clickable.click();
+    return { ok: true, id, text: normalize(raw.textContent), tag: clickable.tagName, cls: clickable.className };
+  }, targetPrefix);
+
+  if (!selected.ok) {
+    const diag = await page.evaluate(() => {
+      const combo = document.querySelector('[data-grm-bonus-situation-combo="1"]');
+      const id = combo?.getAttribute('aria-controls') || combo?.getAttribute('aria-owns') || '';
+      const menu = id ? document.getElementById(id) : null;
+      return { value: combo?.value || '', ariaExpanded: combo?.getAttribute('aria-expanded'), ariaControls: id, menuExists: !!menu, menuText: String(menu?.innerText || menu?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 800), menuHtml: String(menu?.innerHTML || '').slice(0, 1600) };
+    });
+    throw new Error('Não foi possível selecionar ' + targetSituation + ' pelo menu controlado: ' + JSON.stringify({ selected, diag, menuInfo }));
+  }
+
+  // confirmacao pre-pesquisa v7: o GRM re-renderiza os filtros ao clicar em
+  // Pesquisar e remove os data-* usados para localizar o combobox. Por isso
+  // a confirmação precisa ocorrer antes da pesquisa, enquanto o valor
+  // selecionado ainda está no campo.
+  await sleep(650);
+
+  const confirmed = await page.evaluate((expected) => {
+    const normalize = (value) => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const markedCombo = document.querySelector('[data-grm-bonus-situation-combo="1"]');
+    const markedRoot = document.querySelector('[data-grm-bonus-situation-root="1"]');
+    const marked = normalize((markedCombo?.value || '') + ' ' + (markedRoot?.textContent || ''));
+    if (marked.includes(expected)) {
+      return { ok: true, method: 'marked', combined: marked.slice(0, 220) };
+    }
+
+    const roots = [...document.querySelectorAll('.v-input,.v-select,.v-autocomplete,.v-field,[class*="field"]')];
+    const snapshots = [];
+    for (const root of roots) {
+      const text = normalize(root.textContent || '');
+      const inputs = [...root.querySelectorAll('input[role="combobox"],input')];
+      const values = inputs.map((el) => normalize(el.value || '')).filter(Boolean);
+      const combined = normalize(text + ' ' + values.join(' '));
+      if (text.includes('SITUACAO') || values.some((v) => v.includes(expected))) {
+        snapshots.push({ text: text.slice(0, 180), values: values.slice(0, 6), combined: combined.slice(0, 220) });
+      }
+      if (combined.includes(expected)) {
+        return { ok: true, method: 'rediscovered', combined: combined.slice(0, 220), snapshots: snapshots.slice(0, 6) };
+      }
+    }
+
+    const allCombos = [...document.querySelectorAll('input[role="combobox"]')].map((el) => ({
+      value: normalize(el.value || ''),
+      ariaExpanded: el.getAttribute('aria-expanded'),
+      ariaControls: el.getAttribute('aria-controls'),
+      hostText: normalize((el.closest('.v-input,.v-select,.v-autocomplete,.v-field') || el.parentElement)?.textContent || '').slice(0, 180),
+    }));
+    const direct = allCombos.find((item) => item.value.includes(expected) || item.hostText.includes(expected));
+    if (direct) return { ok: true, method: 'all-combos', direct };
+
+    return { ok: false, expected, marked: marked.slice(0, 220), snapshots: snapshots.slice(0, 8), allCombos: allCombos.slice(0, 12) };
+  }, targetPrefix);
+
+  if (!confirmed.ok) throw new Error('Filtro Situação não confirmou ' + targetSituation + ' antes da pesquisa: ' + JSON.stringify(confirmed));
+  log('INFO', 'Filtro Situação confirmado como ' + targetSituation + ' antes da pesquisa.', { selected, confirmed });
+
+  await clickStaffSearch(page);
+}
+
 async function selectExactStaffRow(page, cpf) {
   const target = digits(cpf);
-  await page.waitForFunction((targetCpf) => [...document.querySelectorAll('tr')]
-    .some((row) => String(row.innerText || '').replace(/\D/g, '').includes(targetCpf)),
-  { timeout: DEFAULT_TIMEOUT }, target);
+
+  let found = await waitStaffCpfRow(page, target, 5000);
+  if (!found) {
+    log('INFO', `CPF ${target} não localizado entre Ativos; tentando Situação = Não Ativos.`);
+    await setStaffSituation(page, 'Não Ativos');
+    await setSearchCpf(page, target);
+    found = await waitStaffCpfRow(page, target, DEFAULT_TIMEOUT);
+  }
+  if (!found) {
+    throw new Error(`Funcionário não localizado pelo CPF ${target} nem em Ativos nem em Não Ativos.`);
+  }
 
   const prepared = await page.evaluate((targetCpf) => {
     const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
@@ -347,15 +525,33 @@ async function openExpensesSection(page) {
       }
     }
 
-    if (!clickable) return { ok: false };
-    clickable.dataset.grmDescontoExpenses = '1';
-    return { ok: true, selector: '[data-grm-desconto-expenses="1"]' };
+    if (clickable) {
+      clickable.dataset.grmDescontoExpenses = '1';
+      return { ok: true, selector: '[data-grm-desconto-expenses="1"]', already: false };
+    }
+
+    // O modal "CAIXA OPERACIONAL" (aberto por clickCash) passou a exibir a
+    // tabela de despesas direto, sem aba "DESPESAS" separada pra clicar
+    // (confirmado por screenshot de erro: 2026-09-16, colaborador ativo,
+    // cadastro completo — a tabela já estava visível). Se a tabela já tem
+    // as colunas esperadas, não há nada pra clicar; segue em frente.
+    const headerTexts = [...scope.querySelectorAll('th,[role="columnheader"]')]
+      .filter(visible)
+      .map((el) => normalize(el.textContent || ''));
+    const hasTable = ['DESCRICAO', 'TIPO DE DESPESA', 'VALOR'].every((col) => headerTexts.includes(col));
+    if (hasTable) {
+      return { ok: true, already: true, headerTexts: headerTexts.slice(0, 12) };
+    }
+
+    return { ok: false, headerTexts: headerTexts.slice(0, 12) };
   });
 
-  if (!found?.ok) throw new Error('Seção DESPESAS não localizada no cadastro do colaborador.');
+  if (!found?.ok) throw new Error('Seção DESPESAS não localizada no cadastro do colaborador: ' + JSON.stringify(found));
 
-  await page.click(found.selector);
-  await sleep(1000);
+  if (!found.already) {
+    await page.click(found.selector);
+    await sleep(1000);
+  }
 }
 
 async function inspectExpenseDescriptions(page, descriptions) {
@@ -767,9 +963,18 @@ async function loadCollaborators() {
   const pageSize = 1000;
   const rows = [];
   for (let from = 0; ; from += pageSize) {
+    // vw_colaboradores_atuais ordena por "tem lançamento PENDENTE/PROCESSANDO
+    // agora" antes do nome — essa ordem muda em tempo real enquanto este
+    // próprio agente (ou o sync-bonus-caixa, na mesma janela) processa o
+    // lote (status indo PENDENTE -> PROCESSANDO -> LANCADO). Sem um order()
+    // estável e independente disso, o range() pode pular ou repetir linhas
+    // entre uma página e outra, derrubando colaboradores existentes da lista
+    // ("CPF não resolvido... 0 correspondência(s)" mesmo com o colaborador
+    // cadastrado normalmente).
     const { data, error } = await supabase
       .from('vw_colaboradores_atuais')
       .select('nome,cpf,ativo,situacao')
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw error;
     rows.push(...(data || []));
