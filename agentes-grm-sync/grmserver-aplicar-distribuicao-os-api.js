@@ -231,9 +231,14 @@ async function carregarPaginado(factory, contexto) {
 // Usado só em RESET_DIA: restringe a reconciliação às supervisão+data que têm
 // pendência de "novo dia" registrada (programacao_distribuicao_agendada) — a
 // Programação é a única fonte de verdade pra TODAS as supervisões, sem exceção
-// (o antigo gate supervisoes.distribuicao_os_automatica foi removido daqui e
-// do cron das 02h: uma supervisão sem programação também precisa ser varrida,
-// senão o vínculo feito manualmente no Graint nunca é limpo).
+// (o antigo gate supervisoes.distribuicao_os_automatica foi removido do cron
+// das 02h em 20260910120000_distribuicao_os_remove_gate_supervisao.sql, mas
+// continuava filtrando AQUI — achado ao vivo 17/09 com RIO GRANDE DO SUL -
+// Cruz Alta, automatica=false: o cron enfileirava o job normalmente, mas o
+// script descartava a pendência em silêncio e logava "0 supervisões para
+// reconciliar", deixando a supervisão presa no aviso "dados do último dia
+// válido" do Graint. Uma supervisão sem programação também precisa ser
+// varrida, senão o vínculo feito manualmente no Graint nunca é limpo).
 async function carregarPendenciasNovoDia() {
   const { data: pendentes, error } = await supabase
     .from('programacao_distribuicao_agendada')
@@ -241,18 +246,8 @@ async function carregarPendenciasNovoDia() {
     .eq('processado', false);
   if (error) throw new Error(`Falha ao consultar programacao_distribuicao_agendada: ${error.message}`);
 
-  const { data: supervisoesFlag, error: errorFlag } = await supabase
-    .from('supervisoes')
-    .select('nome, distribuicao_os_automatica');
-  if (errorFlag) throw new Error(`Falha ao consultar supervisoes: ${errorFlag.message}`);
-
-  const automaticaPorNome = new Map(
-    safe(supervisoesFlag).map((s) => [normalize(s.nome), Boolean(s.distribuicao_os_automatica)])
-  );
-
   const chaves = new Set();
   for (const p of safe(pendentes)) {
-    if (!automaticaPorNome.get(normalize(p.supervisao))) continue;
     chaves.add(`${dateKey(p.data_referencia)}|${normalize(p.supervisao)}`);
   }
   return chaves;
@@ -755,7 +750,18 @@ async function main() {
           throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
         }
         await processarSupervisao(token, olsCode, grupo, RESET_DIA);
-        if (!DRY_RUN) await marcarAgendamentoReconciliado(grupo);
+        // Só o run RESET_DIA pode consumir a pendência: ele é o único que
+        // garante o "limpa+redistribui" forçado. O run normal (contínuo,
+        // roda a cada evento) também passa por aqui pra TODA supervisão —
+        // sem esse gate, ele marcava a pendência como processada no próximo
+        // ciclo (segundos depois de criada) mesmo sem nunca ter forçado
+        // nada, porque no modo normal ele só pula ("já está correto")
+        // quando o resultado bate com o que o Graint já mostra — exatamente
+        // o caso que o reset-dia existe pra resolver. Achado ao vivo 17/09
+        // com RIO GRANDE DO SUL - Cruz Alta: pendência marcada processada às
+        // 12:42:21 por um run normal, sem nenhuma escrita real, e o cron de
+        // reset-dia (12:43:03) já não achou mais nada pra fazer.
+        if (!DRY_RUN && RESET_DIA) await marcarAgendamentoReconciliado(grupo);
         ok += 1;
       } catch (error) {
         falhas += 1;
