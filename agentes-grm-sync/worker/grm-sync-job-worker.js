@@ -66,6 +66,12 @@ const SCRIPT_MAP = {
   // Migrado pra API direta em 05/09 (reports/finance/invoices, mesmo motivo do
   // locais-embarque acima). Script Puppeteer antigo mantido no disco pra rollback.
   'sync-notas-fiscais': 'grmserver-notas-fiscais-api.js',
+  // Novo em 17/09: reconciliação diária com janela de 120 dias (vs. 30 dias do
+  // agente rápido acima), pra pegar nota lançada atrasada na GRM que "perde o
+  // trem" da janela rolante antes mesmo de existir no sistema - achado
+  // investigando divergência entre o DRE e o Relatório de Notas Fiscais oficial.
+  // Mesma tabela/onConflict do agente rápido, só muda a janela.
+  'sync-notas-fiscais-reconciliacao': 'grmserver-notas-fiscais-reconciliacao-api.js',
   // Migrado pra API direta em 05/09 (manager/boardPanel/getDayBoardingData). O script
   // Puppeteer antigo baixava um XLS gerado 100% client-side (exceljs) a partir dos MESMOS
   // dados dessa chamada — mapeamento de colunas extraído do bundle JS da tela

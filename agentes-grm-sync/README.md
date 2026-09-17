@@ -34,6 +34,7 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 | sync-resultado-diario | grm-sync-resultado-diario.js | relatorio_resultado_diario (via staging) |
 | sync-despesas | grm-sync-despesas.js | grm_despesas_importacoes |
 | sync-notas-fiscais | grm-sync-notas-fiscais.js | grm_notas_fiscais_importacoes |
+| sync-notas-fiscais-reconciliacao | grmserver-notas-fiscais-reconciliacao-api.js | grm_notas_fiscais_importacoes |
 | sync-mapa-embarque | grm-sync-mapa-embarque.js | grm_mapa_embarque_importacoes |
 | sync-patrimonios | grm-sync-patrimonios.js | grm_patrimonios_importacoes |
 | sync-contas-pagar | grm-sync-contas-pagar.js | grm_contas_pagar_importacoes |
@@ -63,6 +64,14 @@ Precisa de `OUROSAFRA_USER`/`OUROSAFRA_PASSWORD` no `.env` (ver `.env.example`) 
 
 **Estado em produção (28/08/2026):** `sync-classificacao-ourosafra` está no `SCRIPT_MAP` (deployado no servidor antes de estar no git — corrigido aqui) e associado, via `grm_sync_agent_settings`, à fila `saida_os` ("06 · Saída OS") com `interval_minutes=10`, `enabled=true` — o scheduler (`ensure_grm_scheduled_agents()`) já vinha rodando o agente a cada ~30min desde ~15:10 UTC (antes na fila `entrada_cadastros_operacao`, herdada de um valor default); 5 execuções reais até agora, todas `sucesso` com 0 placas pendentes, nenhuma linha ainda em `ouro_safra_classificacao_execucoes`. KPI de acompanhamento em TI > Agentes (aba Saída) lê direto dessa tabela + do último job em `grm_sync_jobs`.
 
+### `grmserver-notas-fiscais-reconciliacao-api.js` (novo, 17/09 — em cron desde 17/09, mesma lane `entrada_financeiro_a` do agente rápido, `interval_minutes=1440`)
+
+Reconciliação diária de Notas Fiscais: mesma tabela e mesmo `onConflict` (`empresa,fatura`) do agente rápido `sync-notas-fiscais` (janela de 30 dias), mas com janela de 120 dias (`GRM_NOTAS_RECONCILIACAO_DIAS`). Achado 17/09 comparando o DRE (`assets/js/modules/dre.js`) com o Relatório de Notas Fiscais oficial da GRM: sobravam de 2 a 7 notas por mês (~R$4-33 mil) que nunca chegavam a sincronizar. Causa mais provável: nota lançada atrasada na GRM (Data N.F. de um dia, cadastrada no sistema só semanas depois) "perde o trem" da janela rolante de 30 dias antes mesmo de existir no GRM. Rodando 1x/dia com janela de 120 dias, a nota atrasada tem várias chances de ser pega antes de sair também dessa janela maior.
+
+Reaproveita `login`/`fetchReportData`/`upsertData` exportados por `grmserver-notas-fiscais-api.js` (só passa um `daysBack` maior) — não duplica a lógica de fetch/parse/upsert. Registrado em `grm_sync_agent_settings` na mesma lane do agente rápido (migration `20260917000000_grm_notas_fiscais_reconciliacao_agent_settings.sql`); como o worker de cada lane só roda 1 job por vez, os dois agentes nunca disputam a API do GRM em paralelo, só se revezam na fila.
+
+Isso corrige nota **faltando** na sincronização. Não corrige diferença de **duplicação** (isso já foi corrigido separadamente trocando a chave de dedupe das RPCs `dre_notas_fiscais_deduplicadas()`/`resumo_faturamento_notas_periodo()` de `(empresa, fatura)` para `fatura`, migration `20260916180000_dre_notas_fiscais_dedupe_por_fatura_global.sql`).
+
 ## Variáveis de ambiente (`.env`)
 
 ```
@@ -74,6 +83,10 @@ SUPABASE_URL=https://jbzmcyycanrlnfhedcup.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 # Opcional: latência de detecção do cadastro de colaboradores (mínimo 2000 ms)
 GRM_COLABORADORES_POLL_MS=5000
+# Opcional: janela do agente rápido de Notas Fiscais (dias)
+GRM_NOTAS_DIAS=30
+# Opcional: janela da reconciliação diária de Notas Fiscais (dias)
+GRM_NOTAS_RECONCILIACAO_DIAS=120
 ```
 
 ## Colaboradores pela API (quase em tempo real)
@@ -269,7 +282,7 @@ order by created_at desc limit 5;
 |---|---|
 | `entrada_os` | sync-nhe |
 | `entrada_producao` | sync-classificacao-ourosafra, sync-resultado-diario |
-| `entrada_financeiro_a` | compras-match-nf, sync-adiantamentos, sync-auditorias, sync-contas-pagar, sync-notas-fiscais |
+| `entrada_financeiro_a` | compras-match-nf, sync-adiantamentos, sync-auditorias, sync-contas-pagar, sync-notas-fiscais, sync-notas-fiscais-reconciliacao |
 | `entrada_financeiro_b` | sync-contas-receber, sync-despesas |
 | `entrada_cadastros_operacao` | sync-login-alimentacao, botconversa-sync, sync-btg-classificador, sync-btg-relatorios, sync-cargas-geofence, sync-clientes, sync-locais-embarque, sync-mapa-embarque, sync-patrimonios |
 | `saida_os` | sync-reabrir-os |
