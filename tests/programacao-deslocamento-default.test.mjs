@@ -30,6 +30,19 @@ test('referências da tela usam a versão nova dos módulos de deslocamento/desp
   ]);
 
   for (const source of [programacao, drawer, fluxo, pdf, router, html]) {
-    assert.match(source, /20260915-reaproveitada-card6/);
+    assert.match(source, /20260917-deslocamento-persistido1/);
   }
+});
+
+test('gaveta da O.S. restaura o deslocamento salvo para o colaborador na data', async () => {
+  const [despesas, drawer] = await Promise.all([
+    read('assets/js/programacao-despesas.js'),
+    read('assets/js/programacao-lista-drawer.js'),
+  ]);
+
+  assert.match(despesas, /export async function complementarComDespesasCompartilhadas/);
+  assert.match(
+    drawer,
+    /await complementarComDespesasCompartilhadas\(custos, extrasPorColab, options\.dataReferencia, colaboradorIds\);/,
+  );
 });

@@ -667,7 +667,7 @@ export async function loadOsResumo(osIds) {
 // data_referencia+colaborador_id (não depende do programacao_id bater) —
 // usamos ela só pra PREENCHER as lacunas, sem substituir o que já veio certo
 // da consulta direta (que reflete edições ainda não persistidas na view).
-async function complementarComDespesasCompartilhadas(custos, extrasPorColab, dataReferencia, colaboradorIds) {
+export async function complementarComDespesasCompartilhadas(custos, extrasPorColab, dataReferencia, colaboradorIds) {
   if (!dataReferencia || !colaboradorIds.length) return;
   const { data, error } = await supabase
     .from('programacao_despesas_os_compartilhadas')
