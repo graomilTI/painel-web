@@ -24,9 +24,10 @@
     RETIRADASOCIOS: 'RETIRADA SÓCIOS',
     RETIRADASOCIO: 'RETIRADA SÓCIOS',
     // "IMPOSTOS" genérico (não ligado à folha, diferente de "Impostos sobre Folha" e
-    // de "Impostos Parcelados") - tirado de Despesas Financeiras mais cedo em 17/09,
-    // a gestora pediu pra voltar a incluir no mesmo dia. Volta pro mapeamento original
-    // de 24/06/2026 (antes disso o valor sumia do DRE em silêncio).
+    // de "Impostos Parcelados") entra em Despesas Financeiras (mapeamento original de
+    // 24/06/2026). O DRE manual da gestora bate 7/8 meses sem essa categoria, mas ela
+    // confirmou (17/09) que é a PLANILHA MANUAL que está sem Impostos por acidente,
+    // não o sistema - mantém incluído aqui.
     IMPOSTOS: 'DESPESAS FINANCEIRAS'
   };
 
@@ -103,7 +104,8 @@
     if (!key || key === 'TOTAL' || key === 'TOTALCOLUNAS' || key === 'NAODEFINIDO') return '';
     // IMPOSTOSPARCELADOS fica fora (double-conta um imposto que já foi lançado
     // integralmente antes de ser parcelado). "IMPOSTOS" genérico tem alias pra
-    // Despesas Financeiras em CATEGORY_ALIASES (ver comentário lá).
+    // Despesas Financeiras em CATEGORY_ALIASES (ver comentário lá - a planilha
+    // manual da gestora é que está sem essa categoria por acidente, não o painel).
     if (key === 'IMPOSTOSPARCELADOS') return '';
     const categoria = CATEGORY_ALIASES[key] || '';
     // O GRM pode renomear/adicionar uma categoria de despesa sem aviso - sem isso, o
