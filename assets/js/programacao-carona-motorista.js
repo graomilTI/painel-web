@@ -11,8 +11,6 @@ let model = {
   supervisionByProgram: new Map(),
   supervisionByColabProgram: new Map(),
   vehiclesBySupervision: new Map(),
-  driversByProgram: new Map(),
-  displacementRows: [],
 };
 let refreshTimer = null;
 let refreshing = false;
@@ -194,72 +192,6 @@ function vehiclesForProgram(programId, colabId = '') {
   return model.vehiclesBySupervision.get(norm(supervisao)) || [];
 }
 
-function isPlateAvailable(programId, colabId, placa) {
-  const normalized = plate(placa);
-  if (!normalized) return false;
-  return vehiclesForProgram(programId, colabId).some((item) => item.placa === normalized);
-}
-
-function driversFromRows(displacementRows) {
-  const map = new Map();
-  for (const row of displacementRows) {
-    if (norm(row.tipo_deslocamento) !== TIPO_MOTORISTA) continue;
-    const placa = plate(row.placa_veiculo);
-    const pid = String(row.programacao_id || '');
-    const colabId = String(row.colaborador_id || '');
-    if (!placa || !pid || !isPlateAvailable(pid, colabId, placa)) continue;
-    if (!map.has(pid)) map.set(pid, []);
-    map.get(pid).push({
-      programacaoId: pid,
-      colaboradorId: colabId,
-      nome: String(row.nome_colaborador || 'Motorista').trim(),
-      placa,
-    });
-  }
-  return map;
-}
-
-function mergeDriversFromDom(displacementRows) {
-  const map = driversFromRows(displacementRows);
-  document.querySelectorAll('tr[data-table="programacao_deslocamento"]').forEach((tr) => {
-    const tipo = norm(tr.querySelector('[data-field="tipo_deslocamento"]')?.value);
-    if (tipo !== TIPO_MOTORISTA) return;
-    const placa = plate(tr.querySelector('[data-field="placa_veiculo"]')?.value);
-    if (!placa) return;
-    const pid = rowProgramId(tr, displacementRows);
-    if (!pid) return;
-    const colabId = String(tr.dataset.colabId || '');
-    if (!isPlateAvailable(pid, colabId, placa)) return;
-    const nome = tr.querySelector('.prog-colab-name, strong')?.textContent?.trim() || 'Motorista';
-    if (!map.has(pid)) map.set(pid, []);
-    const list = map.get(pid);
-    if (!list.some((item) => item.placa === placa && item.colaboradorId === colabId)) {
-      list.push({ programacaoId: pid, colaboradorId: colabId, nome, placa });
-    }
-  });
-  for (const [pid, items] of map) {
-    const dedup = new Map();
-    items.forEach((item) => dedup.set(`${item.colaboradorId}|${item.placa}`, item));
-    map.set(pid, [...dedup.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')));
-  }
-  return map;
-}
-
-function driverOptions(programId, currentPlate, colabId) {
-  const drivers = (model.driversByProgram.get(programId) || [])
-    .filter((item) => item.colaboradorId !== String(colabId || ''));
-  const current = plate(currentPlate);
-  const hasCurrent = drivers.some((item) => item.placa === current);
-  const options = ['<option value="">Selecione o motorista / placa</option>'];
-  if (current && !hasCurrent) {
-    options.push(`<option value="${esc(current)}" selected>⚠ ${esc(current)} — vínculo inválido</option>`);
-  }
-  for (const item of drivers) {
-    options.push(`<option value="${esc(item.placa)}" ${item.placa === current ? 'selected' : ''}>${esc(item.nome)} — ${esc(item.placa)}</option>`);
-  }
-  return { drivers, html: options.join(''), hasCurrent };
-}
-
 function vehicleOptions(programId, colabId, currentPlate) {
   const vehicles = vehiclesForProgram(programId, colabId);
   const current = plate(currentPlate);
@@ -289,7 +221,7 @@ function ensureAlert(tr) {
 
 function restorePlateInput(tr) {
   const field = tr.querySelector('[data-field="placa_veiculo"]');
-  if (!field || field.tagName !== 'SELECT' || (!field.classList.contains('prog-carona-driver-select') && !field.classList.contains('prog-supervisao-vehicle-select'))) return;
+  if (!field || field.tagName !== 'SELECT' || !field.classList.contains('prog-supervisao-vehicle-select')) return;
   const input = document.createElement('input');
   input.setAttribute('data-field', 'placa_veiculo');
   input.setAttribute('list', 'progVeiculosFrotaList');
@@ -353,49 +285,7 @@ function ensureVehicleSelect(tr, displacementRows, role) {
 function enhanceCaronaRow(tr, displacementRows) {
   const tipo = norm(tr.querySelector('[data-field="tipo_deslocamento"]')?.value);
   if (tipo !== TIPO_CARONA) return false;
-
-  const pid = rowProgramId(tr, displacementRows);
-  const existing = tr.querySelector('[data-field="placa_veiculo"]');
-  const current = plate(existing?.value);
-  const blocked = existing?.disabled;
-  const alert = ensureAlert(tr);
-
-  if (!pid) {
-    alert.textContent = 'Não foi possível identificar a programação deste colaborador. Recarregue a programação antes de definir a carona.';
-    alert.classList.add('show', 'danger');
-    return true;
-  }
-
-  const { drivers, html, hasCurrent } = driverOptions(pid, current, tr.dataset.colabId);
-  let select = existing;
-  if (!select || select.tagName !== 'SELECT' || !select.classList.contains('prog-carona-driver-select')) {
-    select = document.createElement('select');
-    select.setAttribute('data-field', 'placa_veiculo');
-    select.className = 'prog-carona-driver-select';
-    if (blocked) select.disabled = true;
-    existing?.replaceWith(select);
-  }
-  select.innerHTML = html;
-  if (current) select.value = current;
-  select.disabled = Boolean(blocked) || drivers.length === 0;
-
-  const supervisao = rowSupervision(tr, pid);
-  if (!drivers.length) {
-    alert.textContent = `Defina primeiro um MOTORISTA FROTA com placa ATIVA de Patrimônios da supervisão ${supervisao || 'desta programação'}.`;
-    alert.classList.add('show', 'danger');
-  } else if (current && !hasCurrent) {
-    alert.textContent = 'Esta placa não possui MOTORISTA FROTA válido nesta programação/supervisão. Selecione um motorista válido.';
-    alert.classList.add('show', 'danger');
-  } else if (!current) {
-    alert.textContent = 'Selecione quem dará a carona. A placa será vinculada ao motorista escolhido.';
-    alert.classList.add('show');
-    alert.classList.remove('danger');
-  } else {
-    const selected = drivers.find((item) => item.placa === current);
-    alert.textContent = selected ? `Carona com ${selected.nome} — ${selected.placa}` : '';
-    alert.classList.toggle('show', Boolean(selected));
-    alert.classList.remove('danger');
-  }
+  ensureVehicleSelect(tr, displacementRows, 'Carona - Frota');
   return true;
 }
 
@@ -444,8 +334,6 @@ async function refreshModelAndUi() {
     model.supervisionByColabProgram = programMaps.supervisionByColabProgram;
     model.supervisionByProgram = buildSupervisionMap(programDayRows);
     model.vehiclesBySupervision = buildVehicleMap(patrimonioRows);
-    model.displacementRows = displacementRows;
-    model.driversByProgram = mergeDriversFromDom(displacementRows);
 
     document.querySelectorAll('tr[data-table="programacao_deslocamento"], tr[data-table="programacao_colaboradores"]').forEach((tr) => enhanceRow(tr, displacementRows));
   } catch (error) {
@@ -460,25 +348,7 @@ function scheduleRefresh(delay = 250) {
   refreshTimer = setTimeout(refreshModelAndUi, delay);
 }
 
-function programForRowCached(tr) {
-  const candidates = model.programByColab.get(String(tr?.dataset?.colabId || '')) || [];
-  return candidates.length === 1 ? candidates[0] : null;
-}
-
-function hasDriverForRow(tr) {
-  const pid = rowProgramId(tr, model.displacementRows);
-  if (!pid) return false;
-  const colabId = String(tr.dataset.colabId || '');
-  return (model.driversByProgram.get(pid) || []).some((item) => item.colaboradorId !== colabId && item.placa);
-}
-
 function bindGuards() {
-  document.addEventListener('focusin', (event) => {
-    if (event.target.matches('tr[data-table="programacao_deslocamento"] [data-field="tipo_deslocamento"]')) {
-      event.target.dataset.previousValue = event.target.value || 'NÃO PRECISA';
-    }
-  }, true);
-
   document.addEventListener('change', (event) => {
     const field = event.target;
     const tr = field.closest?.('tr[data-table="programacao_deslocamento"], tr[data-table="programacao_colaboradores"]');
@@ -489,15 +359,8 @@ function bindGuards() {
       if (tipo === TIPO_CARONA) {
         event.stopImmediatePropagation();
         event.stopPropagation();
-        if (!hasDriverForRow(tr)) {
-          const previous = field.dataset.previousValue || 'NÃO PRECISA';
-          field.value = previous === TIPO_CARONA ? 'NÃO PRECISA' : previous;
-          toast('Defina primeiro um MOTORISTA FROTA com uma placa ATIVA da supervisão em Patrimônios.', 'warn');
-          scheduleRefresh(50);
-          return;
-        }
         scheduleRefresh(50);
-        toast('Agora selecione “Motorista — Placa” na coluna de placa para confirmar a carona.', 'ok');
+        toast('Agora selecione a placa ATIVA da supervisão para confirmar Carona - Frota.', 'ok');
         return;
       }
       if (tipo === TIPO_MOTORISTA) {
@@ -507,17 +370,6 @@ function bindGuards() {
         toast('Selecione uma placa ATIVA de Patrimônios da supervisão desta programação.', 'ok');
         return;
       }
-    }
-
-    if (field.matches('[data-field="placa_veiculo"].prog-carona-driver-select')) {
-      if (!field.value) {
-        event.stopImmediatePropagation();
-        event.stopPropagation();
-        toast('Selecione um motorista de frota para confirmar a carona.', 'warn');
-        return;
-      }
-      scheduleRefresh(REFRESH_AFTER_SAVE_MS);
-      return;
     }
 
     if (field.matches('[data-field="placa_veiculo"].prog-supervisao-vehicle-select')) {
@@ -549,7 +401,7 @@ function injectStyles() {
   const style = document.createElement('style');
   style.id = 'progCaronaMotoristaStyles';
   style.textContent = `
-    .prog-carona-driver-select,.prog-supervisao-vehicle-select{min-width:210px;max-width:360px}
+    .prog-supervisao-vehicle-select{min-width:210px;max-width:360px}
     .prog-carona-motorista-alert{display:none;margin-top:5px;font-size:10px;line-height:1.35;color:#9fb0a8}
     .prog-carona-motorista-alert.show{display:block}
     .prog-carona-motorista-alert.danger{color:#ff9a9a;font-weight:700}
