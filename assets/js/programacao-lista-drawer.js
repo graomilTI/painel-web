@@ -283,11 +283,21 @@ function statusToneClass(os) {
 // da data atualmente aberta — isso criaria o registro na data errada em vez
 // da data real da O.S. (mesma causa raiz do sumiço aparente do Cássio
 // Pelissaro na OS 91491, 2026-09-14: lá era só leitura, aqui é escrita).
-// Se já existe alguma linha de equipe pra essa O.S. (carregada à parte em
-// abrirDrawer via loadEquipeDaOsPorId), usa o programacao_id real dela;
-// senão resolve/cria o programacao_dia certo pra (data_os, supervisao).
+// Se já existe alguma linha de equipe CONFIRMADA pra essa O.S. (carregada à
+// parte em abrirDrawer via loadEquipeDaOsPorId), usa o programacao_id real
+// dela; senão resolve/cria o programacao_dia certo pra (data_os, supervisao).
+//
+// O filtro por confirmado é obrigatório: loadEquipeDaOsPorId também traz
+// vínculos confirmado=false (história de dias em que a O.S. pertencia a
+// outra regional, quebrados pelo trigger programacao_equipe_validar_regional
+// ao detectar a transferência — ver migration 20260904160000). Sem esse
+// filtro, adicionar um colaborador novo reaproveitava o programacao_id
+// antigo/errado e o insert era rejeitado pelo trigger citando a regional
+// velha, mesmo com a O.S. já corretamente cadastrada na regional nova
+// (achado 17/09/2026: O.S. 92407, Cascavel, bloqueando Rui Marcos por causa
+// de um vínculo morto de Ponta Grossa de dias anteriores).
 async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, dataReferencia) {
-  const linhaExistente = equipeRowsAtual.find((r) => String(r.os_id) === String(os?.id));
+  const linhaExistente = equipeRowsAtual.find((r) => r.confirmado && String(r.os_id) === String(os?.id));
   if (linhaExistente) return linhaExistente.programacao_id;
 
   const dataDaOs = String(os?.data_os || '').slice(0, 10);
