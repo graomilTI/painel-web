@@ -17,11 +17,12 @@
     DESPESASFINANCEIRAS: 'DESPESAS FINANCEIRAS',
     EMPRESTIMOSTERCEIROS: 'EMPRESTIMOS TERCEIROS',
     PATRIMONIO: 'PATRIMONIO',
-    // Categoria "IMPOSTOS" (genérica, diferente de "IMPOSTOS SOBRE FOLHA" e de
-    // "IMPOSTOS PARCELADOS") passou a existir nas linhas de despesas do GRM em 24/06/2026
-    // e não tinha mapeamento - o valor era descartado em silêncio. Entra em DESPESAS
-    // FINANCEIRAS por ser imposto não ligado à folha.
-    IMPOSTOS: 'DESPESAS FINANCEIRAS'
+    // "RETIRADA SÓCIOS/SOCIO" (distribuição de lucro pros sócios, não despesa
+    // operacional) - antes descartada por completo (ver antiga exclusão em
+    // canonicalCategory), agora entra em Despesas Financeiras a pedido da gestora
+    // (17/09), pra bater com o DRE manual dela. Chave normalizada (sem espaço/acento).
+    RETIRADASOCIOS: 'RETIRADA SÓCIOS',
+    RETIRADASOCIO: 'RETIRADA SÓCIOS'
   };
 
   // LOG1000 saiu daqui de propósito: o DRE Geral agora consolida as despesas da
@@ -95,7 +96,12 @@
   function canonicalCategory(value) {
     const key = norm(value);
     if (!key || key === 'TOTAL' || key === 'TOTALCOLUNAS' || key === 'NAODEFINIDO') return '';
-    if (key === 'IMPOSTOSPARCELADOS' || key === 'RETIRADASOCIOS' || key === 'RETIRADASOCIO') return '';
+    // "IMPOSTOS" genérico (não ligado à folha) ficava dentro de Despesas Financeiras
+    // desde 24/06/2026; a gestora pediu pra tirar de lá (17/09) e não entrar em nenhuma
+    // outra linha do DRE por enquanto - exclusão intencional, não lacuna de mapeamento.
+    // IMPOSTOSPARCELADOS continua fora (double-conta um imposto que já foi lançado
+    // integralmente antes de ser parcelado).
+    if (key === 'IMPOSTOSPARCELADOS' || key === 'IMPOSTOS') return '';
     const categoria = CATEGORY_ALIASES[key] || '';
     // O GRM pode renomear/adicionar uma categoria de despesa sem aviso - sem isso, o
     // valor some do DRE em silêncio (mesma causa raiz do bug de Notas Fiscais, só que
