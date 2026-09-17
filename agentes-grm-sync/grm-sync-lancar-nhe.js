@@ -418,31 +418,42 @@ async function fetchProducaoSnapshotDia(dataIso) {
 
 // Mesma regra de assets/js/logistica-fob-page-v9.js:compareFob — só o
 // suficiente para chegar às linhas PENDENTE com "funcionario".
-// Só resolvido dentro de calcularPendentes (por O.S., data_os <= referência,
-// já traz servico pro filtro FOB/CIF); ver resolverCoordenadaOs (versão
-// avulsa, usada só no modo manual --os) logo abaixo para o mesmo critério.
+// Só resolvido dentro de calcularPendentes (por O.S., data_os <= referência
+// OU O.S. em atendimento — ver comentário abaixo); ver resolverCoordenadaOs
+// (versão avulsa, usada só no modo manual --os) logo abaixo para o mesmo
+// critério.
 async function resolverCoordenadasEmLote(numerosOs) {
   var unique = Array.from(new Set(numerosOs.filter(Boolean)));
   var resolvido = {};
   if (!unique.length) return resolvido;
   var pageSize = 200;
+  var refIso = referenceIso();
   for (var i = 0; i < unique.length; i += pageSize) {
     var chunk = unique.slice(i, i + pageSize);
     var result = await supabase
       .from('operacional_os')
-      .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
+      .select('numero_os,data_os,status_gestor,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
       .in('numero_os', chunk)
-      .lte('data_os', referenceIso())
       .order('data_os', { ascending: false });
     if (result.error) throw result.error;
     (result.data || []).forEach(function (row) {
-      // A 1ª linha de cada numero_os já é a mais recente <= referência (order
-      // by data_os desc) — não sobrescrever com uma mais antiga. Isso evita
-      // pegar coordenada/serviço de uma reabertura do MESMO número de O.S. em
-      // data futura (ex.: O.S. reaproveitada hoje pra outro embarque) — só
-      // aceitamos o que já existia até a data de referência (pedido do
-      // usuário 21/07, achado com a O.S. 87597).
+      // A 1ª linha de cada numero_os já é a mais recente (order by data_os
+      // desc) — não sobrescrever com uma mais antiga.
       if (resolvido[row.numero_os]) return;
+      // O.S. com status_gestor ATENDER/FINALIZAR tem data_os empurrado pra
+      // "hoje" todo dia pelo trigger programacao_equipe_marca_os_atender
+      // (grmserver-lista-os-api-realtime.js) — não indica uma reocorrência
+      // nova, só a mesma O.S. seguindo em atendimento. Por isso não filtramos
+      // essas por data. Uma reabertura de fato (novo sorDate) zera
+      // status_gestor ("nova ocorrência", mesmo arquivo), então continua
+      // sujeita ao filtro de data abaixo — evita pegar coordenada/serviço de
+      // uma reabertura do MESMO número de O.S. em data futura (pedido do
+      // usuário 21/07, achado com a O.S. 87597). Sem a exceção ATENDER/
+      // FINALIZAR, toda O.S. em atendimento cujo catch-up só roda no dia
+      // seguinte (quando data_os já avançou) fica invisível pro agente pra
+      // sempre — achado com a O.S. 92847 (16-17/09).
+      var emAtendimento = row.status_gestor === 'ATENDER' || row.status_gestor === 'FINALIZAR';
+      if (!emAtendimento && row.data_os > refIso) return;
       resolvido[row.numero_os] = {
         lat: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_latitude) : null,
         lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
@@ -673,20 +684,24 @@ function isValidCoord(lat, lng) {
 }
 
 // Versão avulsa de resolverCoordenadasEmLote, usada só no modo manual (--os).
-// Mesmo critério: só considera operacional_os com data_os <= data de
-// referência (não pega reabertura futura do mesmo número de O.S.).
+// Mesmo critério (ver comentário em resolverCoordenadasEmLote): aceita a
+// linha mais recente se ela for <= data de referência OU se a O.S. estiver
+// em atendimento (status_gestor ATENDER/FINALIZAR, data_os empurrado pro dia
+// atual de propósito) — achado com a O.S. 92847 (16-17/09).
 async function resolverCoordenadaOs(numeroOs, dataReferencia) {
+  var refIso = dataReferencia || referenceIso();
   var result = await supabase
     .from('operacional_os')
-    .select('numero_os,data_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
+    .select('numero_os,data_os,status_gestor,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude,servico,supervisao,situacao,observacao_logistica')
     .eq('numero_os', numeroOs)
-    .lte('data_os', dataReferencia || referenceIso())
     .order('data_os', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (result.error) throw result.error;
   var row = result.data;
   if (!row) return null;
+  var emAtendimento = row.status_gestor === 'ATENDER' || row.status_gestor === 'FINALIZAR';
+  if (!emAtendimento && row.data_os > refIso) return null;
   return {
     lat: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_latitude) : null,
     lng: isValidCoord(row.ponto1_latitude, row.ponto1_longitude) ? Number(row.ponto1_longitude) : null,
