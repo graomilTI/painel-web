@@ -164,6 +164,7 @@ function updateValidationText(reportPages, inactiveCount, productionCount) {
 async function applyEffectiveFix() {
   if (applying || !effectiveModeActive()) return;
   const reportPages = document.getElementById('liReportPages');
+  if (reportPages?.dataset.efetivosReportKind === 'mensal') return;
   const reportCount = document.getElementById('liReportCount');
   const feedback = document.getElementById('liFeedback');
   const reportFrom = document.getElementById('liEfetivosDateFrom')?.value;
