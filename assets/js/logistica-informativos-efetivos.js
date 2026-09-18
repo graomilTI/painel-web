@@ -9,6 +9,10 @@ const efetivosState = {
   rows: [],
   sort: { index: 0, direction: 'asc' },
   sourceLabel: '',
+  reportKind: 'lista',
+  monthlyGroups: [],
+  monthlyDates: [],
+  monthlySourceLabel: '',
 };
 
 function esc(value) {
@@ -90,6 +94,28 @@ function enumerateDates(from, to) {
     cursor = addDaysISO(cursor, 1);
   }
   return dates;
+}
+
+function isWeekendDate(value) {
+  const date = dateFromISO(value);
+  if (!date) return false;
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function monthBounds(monthValue) {
+  const match = String(monthValue || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const from = `${match[1]}-${match[2]}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const to = `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`;
+  return { from, to };
+}
+
+function defaultMonthlyMonth() {
+  return saoPauloTodayISO().slice(0, 7);
 }
 
 function saoPauloTodayISO() {
@@ -200,6 +226,30 @@ async function loadLoadNames(from, to) {
   return new Set(rows.map((row) => norm(row.funcionario)).filter(Boolean));
 }
 
+async function loadMonthlyProductionRows(from, to) {
+  return fetchAll(
+    'relatorio_resultado_diario',
+    'funcionario,data,cargas,motivo_nhe,observacoes_nhe',
+    (query) => query.gte('data', from).lte('data', to),
+    100000
+  );
+}
+
+function buildDailyStatusMap(rows) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const name = norm(row.funcionario);
+    const date = isoDate(row.data);
+    if (!name || !date) return;
+    const key = `${name}|${date}`;
+    const entry = map.get(key) || { cargas: 0, nhe: false };
+    entry.cargas += Number(row.cargas) || 0;
+    if (clean(row.motivo_nhe) || clean(row.observacoes_nhe)) entry.nhe = true;
+    map.set(key, entry);
+  });
+  return map;
+}
+
 async function loadUuidDirectory(uuids) {
   const result = new Map();
   const unique = [...new Set(uuids.filter(Boolean))];
@@ -303,6 +353,7 @@ function renderEffectiveReport(elements, from, to) {
   elements.reportCount.textContent = `${rows.length} registro${rows.length === 1 ? '' : 's'}`;
   elements.downloadAll.disabled = !rows.length || efetivosState.busy;
   elements.reportPages.innerHTML = '';
+  elements.reportPages.dataset.efetivosReportKind = 'lista';
 
   if (!rows.length) {
     elements.reportPages.innerHTML = '<div class="li-empty">Todos os efetivos ativos aparecem no relatório de cargas ou estão cobertos por indisponibilidade no período.</div>';
@@ -349,7 +400,11 @@ function setEffectiveBusy(elements, busy, message = '') {
   efetivosState.busy = busy;
   elements.generate.disabled = busy;
   elements.effectiveButton.disabled = busy;
-  elements.downloadAll.disabled = busy || !efetivosState.rows.length;
+  elements.monthlyButton.disabled = busy;
+  const hasContent = efetivosState.reportKind === 'mensal'
+    ? efetivosState.monthlyGroups.some((group) => group.employees.length)
+    : efetivosState.rows.length;
+  elements.downloadAll.disabled = busy || !hasContent;
   if (message) setFeedback(elements, message);
 }
 
@@ -365,6 +420,7 @@ async function buildEffectiveReport(elements) {
     return;
   }
 
+  efetivosState.reportKind = 'lista';
   setEffectiveBusy(elements, true, 'Cruzando efetivos ativos, cargas e indisponibilidades...');
   try {
     const [employees, loadNames, unavailableIntervals] = await Promise.all([
@@ -391,12 +447,163 @@ async function buildEffectiveReport(elements) {
   } catch (error) {
     console.error('[informativos/efetivos] falha ao gerar relatório', error);
     efetivosState.rows = [];
+    elements.reportPages.dataset.efetivosReportKind = 'lista';
     elements.reportPages.innerHTML = '<div class="li-empty">Não foi possível gerar o relatório de efetivos.</div>';
     elements.reportCount.textContent = '0 registros';
     setFeedback(elements, `Não foi possível gerar o relatório de efetivos: ${error.message || error}`, true);
   } finally {
     setEffectiveBusy(elements, false);
   }
+}
+
+function monthLabel(monthValue) {
+  const bounds = monthBounds(monthValue);
+  if (!bounds) return monthValue;
+  const date = dateFromISO(bounds.from);
+  return date ? date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) : monthValue;
+}
+
+function monthlyReportTitle(monthValue) {
+  return `Efetivos - Cargas e NHE do mês - ${monthLabel(monthValue)}`;
+}
+
+function dayHeaderLabel(date) {
+  const parsed = dateFromISO(date);
+  return parsed ? String(parsed.getDate()).padStart(2, '0') : date;
+}
+
+async function buildMonthlyReport(elements) {
+  const monthValue = elements.effectiveMonth.value;
+  const bounds = monthBounds(monthValue);
+  if (!bounds) {
+    setFeedback(elements, 'Informe um mês válido.', true);
+    return;
+  }
+  const today = saoPauloTodayISO();
+  if (bounds.from > today) {
+    setFeedback(elements, 'Esse mês ainda não começou.', true);
+    return;
+  }
+  const rangeFrom = bounds.from;
+  const rangeTo = bounds.to > today ? today : bounds.to;
+
+  efetivosState.reportKind = 'mensal';
+  setEffectiveBusy(elements, true, 'Cruzando efetivos ativos, cargas e NHE do mês...');
+  try {
+    const [employees, productionRows, unavailableIntervals] = await Promise.all([
+      loadEffectiveEmployees(rangeFrom, rangeTo),
+      loadMonthlyProductionRows(rangeFrom, rangeTo),
+      loadUnavailabilityIntervals(rangeFrom, rangeTo),
+    ]);
+
+    const statusMap = buildDailyStatusMap(productionRows);
+    const dates = enumerateDates(rangeFrom, rangeTo);
+
+    const groups = new Map();
+    employees.forEach((employee) => {
+      const coordenacao = employee.coordenacao || 'Sem Coordenação';
+      if (!groups.has(coordenacao)) groups.set(coordenacao, []);
+      const activeFrom = employee.admission && employee.admission > rangeFrom ? employee.admission : rangeFrom;
+      const activeTo = employee.dismissal && employee.dismissal < rangeTo ? employee.dismissal : rangeTo;
+
+      const cells = dates.map((date) => {
+        if (date < activeFrom || date > activeTo) return { date, status: 'inativo', label: '' };
+        if (isCoveredByUnavailable(employee, date, unavailableIntervals)) return { date, status: 'afastado', label: 'Afast.' };
+        const entry = statusMap.get(`${norm(employee.name)}|${date}`);
+        if (entry?.cargas > 0) return { date, status: 'cargas', label: String(Math.round(entry.cargas * 100) / 100) };
+        if (entry?.nhe) return { date, status: 'nhe', label: 'NHE' };
+        if (isWeekendDate(date)) return { date, status: 'fds', label: '' };
+        return { date, status: 'faltante', label: '' };
+      });
+
+      groups.get(coordenacao).push({ name: employee.name, cells });
+    });
+
+    efetivosState.monthlyDates = dates;
+    efetivosState.monthlyGroups = [...groups.entries()]
+      .sort((a, b) => PT.compare(a[0], b[0]))
+      .map(([coordenacao, list]) => ({
+        coordenacao,
+        employees: list.sort((a, b) => PT.compare(a.name, b.name)),
+      }));
+    efetivosState.monthlySourceLabel = `Cruzamento do painel/Supabase: ${employees.length} efetivos ativos, ${productionRows.length} lançamentos de cargas/NHE analisados.`;
+    renderMonthlyReport(elements, monthValue);
+
+    const totalFaltante = efetivosState.monthlyGroups.reduce((total, group) => total
+      + group.employees.reduce((sub, employee) => sub + employee.cells.filter((cell) => cell.status === 'faltante').length, 0), 0);
+    setFeedback(elements, `Relatório mensal gerado: ${employees.length} efetivo(s) em ${efetivosState.monthlyGroups.length} coordenação(ões); ${totalFaltante} dia(s) útil(eis) sem cargas nem NHE.`);
+  } catch (error) {
+    console.error('[informativos/efetivos] falha ao gerar relatório mensal', error);
+    efetivosState.monthlyGroups = [];
+    elements.reportPages.dataset.efetivosReportKind = 'mensal';
+    elements.reportPages.innerHTML = '<div class="li-empty">Não foi possível gerar o relatório mensal.</div>';
+    elements.reportCount.textContent = '0 registros';
+    setFeedback(elements, `Não foi possível gerar o relatório mensal: ${error.message || error}`, true);
+  } finally {
+    setEffectiveBusy(elements, false);
+  }
+}
+
+function renderMonthlyReport(elements, monthValue) {
+  const groups = efetivosState.monthlyGroups || [];
+  const dates = efetivosState.monthlyDates || [];
+  elements.reportPages.innerHTML = '';
+  elements.reportPages.dataset.efetivosReportKind = 'mensal';
+
+  const totalEmployees = groups.reduce((total, group) => total + group.employees.length, 0);
+  elements.reportCount.textContent = `${totalEmployees} efetivo${totalEmployees === 1 ? '' : 's'} em ${groups.length} coordenação${groups.length === 1 ? '' : 'ões'}`;
+  elements.downloadAll.disabled = !totalEmployees || efetivosState.busy;
+
+  if (!groups.length) {
+    elements.reportPages.innerHTML = '<div class="li-empty">Nenhum efetivo ativo encontrado para o mês selecionado.</div>';
+    return;
+  }
+
+  let pageIndex = 0;
+  groups.forEach((group) => {
+    const totalPages = Math.max(1, Math.ceil(group.employees.length / ROWS_PER_PAGE));
+    for (let localPage = 0; localPage < totalPages; localPage += 1) {
+      const pageEmployees = group.employees.slice(localPage * ROWS_PER_PAGE, (localPage + 1) * ROWS_PER_PAGE);
+      const section = document.createElement('section');
+      section.className = 'li-report-page li-monthly-page';
+      section.id = `li-report-page-${pageIndex}`;
+      section.innerHTML = `
+        <div class="li-report-head">
+          <div>
+            <h3>${esc(monthlyReportTitle(monthValue))}</h3>
+            <p>${esc(group.coordenacao)} · ${esc(efetivosState.monthlySourceLabel)}</p>
+          </div>
+          <span>Coordenação · Página ${localPage + 1} de ${totalPages}</span>
+        </div>
+        <div class="li-report-table-wrap">
+          <table class="li-monthly-table">
+            <thead>
+              <tr>
+                <th class="li-monthly-name-head">Colaborador</th>
+                ${dates.map((date) => `<th class="${isWeekendDate(date) ? 'li-monthly-weekend' : ''}">${esc(dayHeaderLabel(date))}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>${pageEmployees.map((employee) => `
+                <tr>
+                  <td class="li-monthly-name">${esc(employee.name)}</td>
+                  ${employee.cells.map((cell) => `<td class="li-monthly-cell li-monthly-${cell.status}">${esc(cell.label)}</td>`).join('')}
+                </tr>`).join('')}</tbody>
+          </table>
+        </div>
+        <div class="li-monthly-legend">
+          <span><span class="li-monthly-swatch li-monthly-faltante"></span>Sem carga nem NHE</span>
+          <span><span class="li-monthly-swatch li-monthly-nhe"></span>NHE</span>
+          <span><span class="li-monthly-swatch li-monthly-cargas"></span>Cargas produzidas</span>
+          <span><span class="li-monthly-swatch li-monthly-afastado"></span>Afastado/férias/atestado</span>
+          <span><span class="li-monthly-swatch li-monthly-fds"></span>Fim de semana</span>
+        </div>
+        <div class="li-page-actions" data-html2canvas-ignore>
+          <button class="btn btn-secondary" type="button" data-efetivos-download-page="${pageIndex}">Baixar PNG desta página</button>
+        </div>`;
+      elements.reportPages.appendChild(section);
+      pageIndex += 1;
+    }
+  });
 }
 
 async function ensureHtml2Canvas() {
@@ -430,7 +637,9 @@ async function downloadEffectivePage(pageIndex, elements) {
     useCORS: true,
     logging: false,
   });
-  const title = reportTitle(elements.effectiveDateFrom.value, elements.effectiveDateTo.value);
+  const title = efetivosState.reportKind === 'mensal'
+    ? monthlyReportTitle(elements.effectiveMonth.value)
+    : reportTitle(elements.effectiveDateFrom.value, elements.effectiveDateTo.value);
   const link = document.createElement('a');
   link.download = `${slugify(title)}_pag_${pageIndex + 1}.png`;
   link.href = canvas.toDataURL('image/png');
@@ -473,6 +682,28 @@ function injectEnhancementStyles() {
     #liEfetivosControls{grid-template-columns:repeat(3,minmax(180px,1fr))}
     @media(max-width:800px){#liEfetivosControls{grid-template-columns:1fr 1fr}.li-generate-field{grid-column:1/-1}}
     @media(max-width:520px){#liEfetivosControls{grid-template-columns:1fr}.li-generate-field{grid-column:auto}}
+    .li-monthly-generate-field{display:flex;align-items:flex-end}
+    .li-monthly-generate-field .btn{width:100%;min-height:40px}
+    .li-monthly-table{width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed}
+    html.painel-ui-v2 .page-main .li-monthly-table th,
+    html.painel-ui-v2 .page-main .li-monthly-table td{border:1px solid #cbd5e1!important;padding:4px 3px;text-align:center;white-space:nowrap}
+    html.painel-ui-v2 .page-main .li-monthly-table thead th{background:#b6d7a8!important;color:#111827!important;font-weight:800}
+    html.painel-ui-v2 .page-main .li-monthly-table thead th.li-monthly-weekend{background:#94b98a!important}
+    .li-monthly-name-head{text-align:left!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-name{text-align:left!important;min-width:140px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#111827!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-faltante{background:#fecaca!important;color:#7f1d1d!important;font-weight:800}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-nhe{background:#fef08a!important;color:#713f12!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-cargas{background:#bbf7d0!important;color:#14532d!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-afastado{background:#e2e8f0!important;color:#334155!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-fds{background:#f1f5f9!important;color:#94a3b8!important}
+    html.painel-ui-v2 .page-main .li-monthly-table td.li-monthly-inativo{background:#f8fafc!important;color:#cbd5e1!important}
+    .li-monthly-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:10px;font-size:10px;color:#475569}
+    .li-monthly-swatch{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:middle;border:1px solid #cbd5e1}
+    .li-monthly-swatch.li-monthly-faltante{background:#fecaca}
+    .li-monthly-swatch.li-monthly-nhe{background:#fef08a}
+    .li-monthly-swatch.li-monthly-cargas{background:#bbf7d0}
+    .li-monthly-swatch.li-monthly-afastado{background:#e2e8f0}
+    .li-monthly-swatch.li-monthly-fds{background:#f1f5f9}
   `;
   document.head.appendChild(style);
 }
@@ -546,7 +777,9 @@ function installEnhancements() {
   effectiveControls.hidden = true;
   effectiveControls.innerHTML = `
     <div class="li-field"><label>Data inicial</label><input type="date" id="liEfetivosDateFrom" value="${range.from}" /></div>
-    <div class="li-field"><label>Data final</label><input type="date" id="liEfetivosDateTo" value="${range.to}" /></div>`;
+    <div class="li-field"><label>Data final</label><input type="date" id="liEfetivosDateTo" value="${range.to}" /></div>
+    <div class="li-field"><label>Mês do relatório</label><input type="month" id="liEfetivosMonth" value="${defaultMonthlyMonth()}" /></div>
+    <div class="li-field li-monthly-generate-field"><label>&nbsp;</label><button class="btn btn-secondary" type="button" id="liEfetivosMonthlyButton">Gerar relatório do mês</button></div>`;
   nheControls.insertAdjacentElement('afterend', effectiveControls);
 
   const elements = {
@@ -558,6 +791,8 @@ function installEnhancements() {
     effectiveControls,
     effectiveDateFrom: effectiveControls.querySelector('#liEfetivosDateFrom'),
     effectiveDateTo: effectiveControls.querySelector('#liEfetivosDateTo'),
+    effectiveMonth: effectiveControls.querySelector('#liEfetivosMonth'),
+    monthlyButton: effectiveControls.querySelector('#liEfetivosMonthlyButton'),
     generate,
     feedback,
     reportCount,
@@ -590,6 +825,19 @@ function installEnhancements() {
     });
   });
 
+  elements.monthlyButton.addEventListener('click', (event) => {
+    if (!efetivosState.active || efetivosState.busy) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    buildMonthlyReport(elements);
+  });
+
+  elements.effectiveMonth.addEventListener('change', () => {
+    if (efetivosState.active && !efetivosState.busy && efetivosState.reportKind === 'mensal') {
+      buildMonthlyReport(elements);
+    }
+  });
+
   reportPages.addEventListener('click', (event) => {
     if (!efetivosState.active) return;
     const download = event.target.closest('[data-efetivos-download-page]');
@@ -600,6 +848,7 @@ function installEnhancements() {
         .catch((error) => setFeedback(elements, error.message, true));
       return;
     }
+    if (efetivosState.reportKind === 'mensal') return;
     const sort = event.target.closest('[data-efetivos-sort]');
     if (!sort) return;
     event.preventDefault();
