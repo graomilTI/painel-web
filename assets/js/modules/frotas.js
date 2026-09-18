@@ -1213,7 +1213,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const updated = Number(res?.updated || res?.atualizados || 0);
       const total = Number(res?.total || res?.total_registros || res?.linhas || inserted + updated || 0);
       const errors = Number(res?.errors || res?.erros || 0);
-      toast(`BFleet sincronizado: ${total || 'N'} registro(s) lido(s), ${inserted} novo(s), ${updated} atualizado(s)${errors ? ` · ${errors} erro(s)` : ''}.`, errors ? 'error' : 'success');
+      const ocorrencias = Number(res?.ocorrencias || 0);
+      const historyOk = Number(res?.ocorrencias_com_history || 0);
+      const fallback = Number(res?.ocorrencias_fallback || 0);
+      toast(`BFleet/RedGPS sincronizado: ${total || 'N'} registro(s) · ${ocorrencias} ocorrência(s) · ${historyOk} com km RedGPS${fallback ? ` · ${fallback} estimada(s)` : ''}${errors ? ` · ${errors} erro(s)` : ''}.`, errors ? 'error' : 'success');
       await fetchForaHorario(root, opts, isPeriod ? readForaHorarioReportPeriod(root) : null);
     } catch (err) {
       console.error('[FROTAS] Sync BFleet fora do horário:', err);
