@@ -88,7 +88,7 @@ const SOFT_NAV_PAGES = new Map([
   ['ti-integracoes', { title: 'TI · Integrações', module: () => import('./ti-integracoes.js') }],
   ['distribuir-os', { title: 'Distribuir O.S', module: () => import('./distribuir-os.js') }],
   ['adm-patrimonio', { title: 'Relatórios de Patrimônios', module: () => import('./patrimonioRelatorios.js') }],
-  ['frotas', { title: 'Frotas', module: () => import('./frotas.js') }],
+  ['frotas', { title: 'Frotas', module: () => import('./frotas.js?v=20260918-fora-horario1') }],
   ['frotas-cadastros', { title: 'Frotas · Cadastros', module: () => import('./frotas-cadastros.js?v=20260829-abas-flush') }],
   ['frotas-manutencao-grupo', { title: 'Frotas · Manutenção', module: () => import('./frotas-manutencao-grupo.js?v=20260829-abas-flush') }],
   ['frotas-ocorrencias', { title: 'Frotas · Ocorrências', module: () => import('./frotas-ocorrencias.js?v=20260829-abas-flush') }],
