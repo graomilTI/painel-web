@@ -1238,22 +1238,95 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       renderForaHorarioList(root);
       const period = periodOverride || readForaHorarioReportPeriod(root);
       let query = supabase
-        .from('frotas_fora_horario')
-        .select('id,data_evento,hora_evento,placa,motorista_planilha,patrimonio_funcionario,endereco,latitude,longitude,mapa_url,created_at');
+        .from('frotas_fora_horario_ocorrencias')
+        .select('id,data_evento,placa,motorista,hora_inicio,hora_fim,km_00_05,valor_km,valor_caixa,endereco_inicio,endereco_fim,mapa_url,status_calculo,fonte_calculo,status_notificacao,mensagem_gerada,justificativa,status_caixa,gerado_em,gerado_por_nome,justificado_em,justificado_por_nome,caixa_solicitado_em,caixa_solicitado_por_nome,created_at,updated_at');
       if (period.start) query = query.gte('data_evento', period.start);
       if (period.end) query = query.lte('data_evento', period.end);
       const { data, error } = await query
         .order('data_evento', { ascending: false })
-        .order('hora_evento', { ascending: false })
+        .order('hora_inicio', { ascending: true })
         .limit(500);
       if (error) throw error;
       state.foraHorario = Array.isArray(data) ? data : [];
     } catch (err) {
-      console.warn('[FROTAS] Não foi possível carregar registros de fora do horário:', err);
+      console.warn('[FROTAS] Não foi possível carregar ocorrências de fora do horário:', err);
       state.foraHorario = [];
     } finally {
       state.foraHorarioLoaded = true;
       renderForaHorarioList(root);
+    }
+  }
+
+  function formatKmForaHorario(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : '0,00';
+  }
+
+  function formatMoneyForaHorario(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
+  }
+
+  function statusLabelForaHorario(row) {
+    if (String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA') return 'Justificada';
+    if (String(row.status_caixa || '').toUpperCase() === 'LANCADO') return 'Caixa lançado';
+    if (['PENDENTE','PROCESSANDO'].includes(String(row.status_caixa || '').toUpperCase())) return 'Caixa pendente';
+    if (String(row.status_notificacao || '').toUpperCase() === 'GERADA') return 'Notificação gerada';
+    if (String(row.status_calculo || '').toUpperCase() === 'ERRO') return 'Erro no cálculo';
+    if (String(row.status_calculo || '').toUpperCase() === 'SEM_HISTORICO') return 'Sem histórico GPS';
+    return 'Pendente';
+  }
+
+  async function agirForaHorario(root, opts, rowId, action) {
+    const supabase = resolveSupabase(opts);
+    if (!supabase || typeof supabase.rpc !== 'function') return toast('Supabase indisponível.', 'error');
+    const row = (state.foraHorario || []).find((item) => String(item.id) === String(rowId));
+    if (!row) return toast('Ocorrência não localizada.', 'error');
+
+    let justificativa = null;
+    if (action === 'JUSTIFICAR') {
+      justificativa = window.prompt('Informe a justificativa para o uso do veículo fora do expediente:');
+      if (justificativa === null) return;
+      justificativa = String(justificativa || '').trim();
+      if (!justificativa) return toast('Informe a justificativa.', 'error');
+    }
+
+    if (action === 'CAIXA') {
+      const km = Number(row.km_00_05 || 0);
+      if (!(km > 0)) return toast('A quilometragem entre 00h e 05h ainda não foi calculada.', 'error');
+      const valor = km * Number(row.valor_km || 4);
+      const ok = window.confirm(`Enviar ao Caixa: ${formatKmForaHorario(km)} km × R$ 4,00 = ${formatMoneyForaHorario(valor)}?`);
+      if (!ok) return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('frotas_fora_horario_acao_v2', {
+        p_ocorrencia_id: row.id,
+        p_acao: action,
+        p_justificativa: justificativa
+      });
+      if (error) throw error;
+
+      if (action === 'GERAR') {
+        const message = String(data?.message || '');
+        if (message) {
+          try { await navigator.clipboard.writeText(message); } catch (_) {}
+          toast('Notificação gerada e copiada.');
+        } else {
+          toast('Notificação gerada.');
+        }
+      } else if (action === 'JUSTIFICAR') {
+        toast('Justificativa registrada.');
+      } else if (action === 'CAIXA') {
+        const agentReady = data?.agent_ready !== false;
+        const valor = formatMoneyForaHorario(data?.valor || (Number(row.km_00_05 || 0) * 4));
+        toast(agentReady ? `Lançamento de ${valor} enviado ao Caixa.` : `Lançamento de ${valor} preparado; agente do Caixa ainda está desativado.`, agentReady ? 'success' : 'error');
+      }
+
+      await fetchForaHorario(root, opts);
+    } catch (err) {
+      console.error('[FROTAS] Ação fora do horário:', err);
+      toast(err.message || 'Não foi possível concluir a ação.', 'error');
     }
   }
 
@@ -1263,7 +1336,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (!tbody) return;
 
     if (!state.foraHorarioLoaded) {
-      tbody.innerHTML = '<tr><td colspan="4" class="speed-import-empty">Carregando registros...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="speed-import-empty">Carregando ocorrências...</td></tr>';
       if (count) count.textContent = 'Carregando...';
       return;
     }
@@ -1271,57 +1344,45 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const term = normalizeName(state.foraHorarioSearchTerm || '');
     const rows = (state.foraHorario || []).filter((row) => {
       if (!term) return true;
-      const motorista = normalizeName(row.patrimonio_funcionario || row.motorista_planilha || '');
-      const placa = normalizeName(row.placa || '');
-      return motorista.includes(term) || placa.includes(term);
+      return normalizeName(row.motorista || '').includes(term) || normalizeName(row.placa || '').includes(term);
     });
 
-    if (count) count.textContent = `${rows.length} registro(s) carregado(s)`;
+    if (count) count.textContent = `${rows.length} ocorrência(s) carregada(s)`;
 
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="speed-import-empty">Nenhum registro de fora do horário encontrado. Clique em Sincronizar para buscar da BFleet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="speed-import-empty">Nenhuma ocorrência encontrada. Sincronize o período para consultar a RedGPS/BFleet.</td></tr>';
       return;
     }
 
-    const routeGroups = new Map();
-    rows.forEach((row) => {
-      const key = `${onlyPlate(row.placa)}|${normalizeDateForMatch(row.data_evento)}`;
-      if (!routeGroups.has(key)) routeGroups.set(key, []);
-      routeGroups.get(key).push(row);
-    });
-    const routeByGroup = new Map();
-    routeGroups.forEach((groupRows, key) => {
-      const points = groupRows
-        .slice()
-        .sort((a, b) => String(a.hora_evento || '').localeCompare(String(b.hora_evento || '')))
-        .map((item) => {
-          const lat = Number(item.latitude);
-          const lng = Number(item.longitude);
-          if (item.latitude !== null && item.latitude !== '' && item.longitude !== null && item.longitude !== '' && Number.isFinite(lat) && Number.isFinite(lng)) return `${lat},${lng}`;
-          const match = String(item.mapa_url || '').match(/[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/i);
-          return match ? `${match[1]},${match[2]}` : '';
-        })
-        .filter((point, index, list) => point && point !== list[index - 1]);
-      if (!points.length) return;
-      if (points.length === 1) {
-        routeByGroup.set(key, { url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(points[0])}`, count: 1 });
-        return;
-      }
-      const params = new URLSearchParams({ api: '1', origin: points[0], destination: points[points.length - 1], travelmode: 'driving' });
-      if (points.length > 2) params.set('waypoints', points.slice(1, -1).join('|'));
-      routeByGroup.set(key, { url: `https://www.google.com/maps/dir/?${params.toString()}`, count: points.length });
-    });
-
     tbody.innerHTML = rows.map((row) => {
       const placa = escapeHtml(onlyPlate(row.placa) || '-');
-      const motorista = escapeHtml(row.patrimonio_funcionario || row.motorista_planilha || 'Não identificado');
-      const horario = escapeHtml(`${row.data_evento ? formatDateBR(row.data_evento) : ''} ${row.hora_evento || ''}`.trim() || '-');
-      const routeKey = `${onlyPlate(row.placa)}|${normalizeDateForMatch(row.data_evento)}`;
-      const route = routeByGroup.get(routeKey);
-      const rota = route
-        ? `<a href="${escapeHtml(route.url)}" target="_blank" rel="noopener noreferrer" title="Rota cronológica com ${route.count} ponto(s)">Ver rota · ${route.count} ponto(s)</a>`
-        : '<span style="color:#6b7280">Sem link</span>';
-      return `<tr><td>${placa}</td><td>${motorista}</td><td>${horario}</td><td>${rota}</td></tr>`;
+      const motorista = escapeHtml(row.motorista || 'Não identificado');
+      const data = escapeHtml(formatDateBR(row.data_evento) || '-');
+      const inicio = String(row.hora_inicio || '').slice(0, 5) || '--:--';
+      const fim = String(row.hora_fim || '').slice(0, 5) || '--:--';
+      const km = Number(row.km_00_05 || 0);
+      const valor = Number(row.valor_caixa || (km * Number(row.valor_km || 4)));
+      const rota = row.mapa_url
+        ? `<a href="${escapeHtml(row.mapa_url)}" target="_blank" rel="noopener noreferrer">Ver rota</a>`
+        : '<span style="color:#6b7280">Sem rota</span>';
+      const status = escapeHtml(statusLabelForaHorario(row));
+      const calculo = String(row.status_calculo || '').toUpperCase();
+      const disabledCaixa = !(km > 0) || String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA' || ['PENDENTE','PROCESSANDO','LANCADO'].includes(String(row.status_caixa || '').toUpperCase());
+      const disabledJustificar = ['PENDENTE','PROCESSANDO','LANCADO'].includes(String(row.status_caixa || '').toUpperCase());
+      return `<tr>
+        <td><strong>${data}</strong></td>
+        <td><strong>${placa}</strong><div style="margin-top:5px">${rota}</div></td>
+        <td>${motorista}</td>
+        <td><strong>${escapeHtml(inicio)} → ${escapeHtml(fim)}</strong><div style="margin-top:5px;color:#94a3b8">${escapeHtml(calculo || 'PENDENTE')}</div></td>
+        <td><strong>${formatKmForaHorario(km)} km</strong></td>
+        <td><strong>${formatMoneyForaHorario(valor)}</strong><div style="margin-top:5px;color:#94a3b8">R$ 4,00/km</div></td>
+        <td>${status}</td>
+        <td><div class="fora-horario-actions">
+          <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fora-action="GERAR" data-id="${escapeHtml(row.id)}">Gerar</button>
+          <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="JUSTIFICAR" data-id="${escapeHtml(row.id)}" ${disabledJustificar ? 'disabled' : ''}>Justificar</button>
+          <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="CAIXA" data-id="${escapeHtml(row.id)}" ${disabledCaixa ? 'disabled' : ''}>Caixa</button>
+        </div></td>
+      </tr>`;
     }).join('');
   }
 
@@ -2460,7 +2521,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fora-horario-sync{height:64px;min-width:248px;border-radius:18px;padding:0 28px}
                 .fora-horario-refresh{width:64px;height:64px;min-height:64px;border-radius:18px;padding:0}
                 .fora-horario-table{border-color:rgba(34,197,94,.20);border-radius:20px;background:rgba(2,6,23,.30)}
-                .fora-horario-table .hist-table{min-width:720px}
+                .fora-horario-table .hist-table{min-width:1180px}
+                .fora-horario-actions{display:flex;gap:7px;flex-wrap:wrap}
+                .fora-horario-actions .speed-btn{min-height:34px;padding:7px 10px;border-radius:10px}
+                .fora-horario-actions .speed-btn:disabled{opacity:.42;cursor:not-allowed}
                 .fora-horario-table .hist-table th{height:58px;padding:0 18px;color:#34d399;background:rgba(2,44,30,.76);font-size:12px}
                 .fora-horario-table .hist-table td{padding:18px;color:#f8fafc;font-size:13px}
                 .fora-horario-table .speed-import-empty{border:0;border-radius:0;background:transparent;color:#f8fafc}
@@ -2476,7 +2540,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                   <button class="speed-btn speed-btn-soft fora-horario-refresh" type="button" data-refresh-fora-horario title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button>
                 </div>
                 <p class="fora-horario-count" data-fora-horario-count>Nenhum registro carregado</p>
-                <div class="hist-table-wrap fora-horario-table"><table class="hist-table"><thead><tr><th>Placa</th><th>Motorista</th><th>Horário</th><th>Rota visual</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="4" class="speed-import-empty">Carregando registros...</td></tr></tbody></table></div>
+                <div class="hist-table-wrap fora-horario-table"><table class="hist-table"><thead><tr><th>Data</th><th>Placa / Rota</th><th>Motorista</th><th>Deslocamento</th><th>KM 00h–05h</th><th>Caixa</th><th>Status</th><th>Ações</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="8" class="speed-import-empty">Carregando ocorrências...</td></tr></tbody></table></div>
               </div>
             </div>
           </div>
@@ -2546,6 +2610,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     container.querySelector('[data-sync-bfleet-fora-horario]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'yesterday'));
     container.querySelector('[data-sync-bfleet-fora-horario-periodo]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'period'));
     container.querySelector('[data-refresh-fora-horario]')?.addEventListener('click', () => fetchForaHorario(container, opts));
+    container.querySelector('[data-fora-horario-table]')?.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-fora-action]');
+      if (!btn || btn.disabled) return;
+      agirForaHorario(container, opts, btn.dataset.id, btn.dataset.foraAction);
+    });
     container.querySelector('[data-fora-horario-search]')?.addEventListener('input', (ev) => {
       state.foraHorarioSearchTerm = ev.target.value;
       renderForaHorarioList(container);
