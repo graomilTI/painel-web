@@ -687,6 +687,293 @@ async function fetchReport(cfg: any, token: string) {
   );
 }
 
+
+function service24Endpoint(cfg: any, endpoint: string) {
+  let base = asString(cfg.baseUrl).replace(/\/+$/, "");
+  if (!/\/api\/v1$/i.test(base)) base = joinUrl(base, "/api/v1");
+  return joinUrl(base, endpoint);
+}
+
+function apiObjectRows(payload: any, signatureKeys: string[] = []) {
+  const candidates = [
+    payload?.data?.result,
+    payload?.data?.rows,
+    payload?.data?.records,
+    payload?.data,
+    payload?.result,
+    payload?.rows,
+    payload?.records,
+    payload,
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate.filter((item) => item && typeof item === "object");
+    if (!candidate || typeof candidate !== "object") continue;
+    if (signatureKeys.some((key) => Object.prototype.hasOwnProperty.call(candidate, key))) return [candidate];
+    const values = Object.values(candidate).filter((item) => item && typeof item === "object");
+    if (values.length && values.every((item) => !Array.isArray(item))) {
+      const signed = values.filter((item: any) => signatureKeys.some((key) => Object.prototype.hasOwnProperty.call(item, key)));
+      if (signed.length) return signed;
+    }
+  }
+  return [];
+}
+
+async function service24Post(cfg: any, token: string, endpoint: string, fields: Record<string, string>, label: string) {
+  const form = new FormData();
+  form.append("apikey", asString(cfg.apiKey));
+  form.append("token", asString(token));
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value !== undefined && value !== null && String(value) !== "") form.append(key, String(value));
+  }
+  return fetchJson(service24Endpoint(cfg, endpoint), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: form,
+  }, label);
+}
+
+async function fetchVehicleGpsMap(cfg: any, token: string) {
+  const payload = await service24Post(cfg, token, "vehicleGetAll", {}, "Lista de veículos RedGPS");
+  const rows = apiObjectRows(payload, ["patente", "idgps", "placa", "licensePlate"]);
+  const map = new Map<string, any>();
+  for (const row of rows) {
+    const placa = onlyPlate(pick(row, ["patente", "Patente", "placa", "Placa", "licensePlate"]));
+    if (!placa) continue;
+    map.set(placa, {
+      vehicleId: asString(pick(row, ["id", "idvehiculo", "vehicleId"])),
+      idgps: asString(pick(row, ["idgps", "equipo", "imei", "gpsId"])),
+      conductor: normalizeText(pick(row, ["conductor", "Conductor", "driver", "motorista"])),
+      raw: row,
+    });
+  }
+  return map;
+}
+
+function parseNumeric(value: any) {
+  const raw = String(value ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function timeSeconds(value: any) {
+  const time = parseTimeText(value);
+  if (!time) return null;
+  const match = time.match(/^(\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+function dateTimeSecondsFromDay(value: any, baseDate: string) {
+  const text = asString(value);
+  const date = toIsoDate(text) || baseDate;
+  const seconds = timeSeconds(text);
+  if (seconds === null) return null;
+  if (!date || !baseDate) return seconds;
+  const base = Date.parse(baseDate + "T00:00:00Z");
+  const current = Date.parse(date + "T00:00:00Z");
+  if (!Number.isFinite(base) || !Number.isFinite(current)) return seconds;
+  return Math.round((current - base) / 1000) + seconds;
+}
+
+function secondsToTime(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return null;
+  const total = Math.max(0, Math.min(86399, Math.round(value)));
+  const hh = Math.floor(total / 3600);
+  const mm = Math.floor((total % 3600) / 60);
+  const ss = total % 60;
+  return pad2(hh) + ":" + pad2(mm) + ":" + pad2(ss);
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const r = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+}
+
+function reportWindowSummary(rows: any[], dataEvento: string) {
+  const windowStart = 0;
+  const windowEnd = 5 * 3600;
+  let km = 0;
+  let firstSec: number | null = null;
+  let lastSec: number | null = null;
+  let firstRaw: any = null;
+  let lastRaw: any = null;
+  const trechos: any[] = [];
+
+  for (const item of rows || []) {
+    const raw = item?.raw || {};
+    const start = dateTimeSecondsFromDay(pick(raw, ["Inicio", "Início", "start", "inicio"]), dataEvento)
+      ?? timeSeconds(item?.hora_evento);
+    const end = dateTimeSecondsFromDay(pick(raw, ["Final", "Fim", "end", "final"]), dataEvento)
+      ?? start;
+    if (start === null || end === null) continue;
+    const realEnd = end < start ? end + 86400 : end;
+    const overlapStart = Math.max(windowStart, start);
+    const overlapEnd = Math.min(windowEnd, realEnd);
+    if (overlapEnd <= overlapStart) continue;
+
+    const distance = parseNumeric(pick(raw, ["Distancia", "Distância", "distance", "distancia"])) || 0;
+    const duration = Math.max(1, realEnd - start);
+    const overlap = overlapEnd - overlapStart;
+    const proportional = distance > 0 ? distance * (overlap / duration) : 0;
+    km += proportional;
+
+    if (firstSec === null || overlapStart < firstSec) {
+      firstSec = overlapStart;
+      firstRaw = raw;
+    }
+    if (lastSec === null || overlapEnd > lastSec) {
+      lastSec = overlapEnd;
+      lastRaw = raw;
+    }
+    trechos.push({
+      inicio: secondsToTime(overlapStart),
+      fim: secondsToTime(overlapEnd),
+      km_relatorio: Number(distance.toFixed(3)),
+      km_proporcional_00_05: Number(proportional.toFixed(3)),
+    });
+  }
+
+  return {
+    km: Number(km.toFixed(3)),
+    firstSec,
+    lastSec,
+    firstRaw,
+    lastRaw,
+    trechos,
+  };
+}
+
+async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataEvento: string) {
+  if (!idgps) throw new Error("Veículo sem idgps na RedGPS.");
+  const payload = await service24Post(cfg, token, "historyGet", {
+    equipo: idgps,
+    fechaIni: dataEvento + " 00:00:00",
+    fechaFin: dataEvento + " 05:00:00",
+    format: "DateTime",
+    limite: "10000",
+  }, "Histórico RedGPS");
+
+  const rows = apiObjectRows(payload, ["fecha", "hora", "odometro", "velocidad", "latitud", "latitude"]);
+  const points = rows.map((row: any) => {
+    const fecha = pick(row, ["fecha", "Fecha", "datetime", "dateTime", "fecha_hora"]);
+    const hora = pick(row, ["hora", "Hora", "time"]);
+    const sec = dateTimeSecondsFromDay(fecha || (dataEvento + " " + asString(hora)), dataEvento);
+    const lat = parseNumeric(pick(row, ["latitud", "Latitud", "latitude", "Latitude", "lat"]));
+    const lng = parseNumeric(pick(row, ["longitud", "Longitud", "longitude", "Longitude", "lng", "lon"]));
+    return {
+      sec,
+      odoM: parseNumeric(pick(row, ["odometro", "Odometro", "odómetro", "odometer"])),
+      speed: parseNumeric(pick(row, ["velocidad", "Velocidad", "speed", "velocidade"])) || 0,
+      ignition: parseNumeric(pick(row, ["ignicion", "Ignicion", "ignição", "ignition"])),
+      lat,
+      lng,
+      address: normalizeText(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"])),
+      raw: row,
+    };
+  }).filter((p: any) => p.sec !== null && p.sec >= 0 && p.sec <= 5 * 3600)
+    .sort((a: any, b: any) => a.sec - b.sec);
+
+  let km = 0;
+  let odometerKm = 0;
+  let gpsKm = 0;
+  let firstMove: any = null;
+  let lastMove: any = null;
+  let odoStart: number | null = null;
+  let odoEnd: number | null = null;
+  let acceptedSegments = 0;
+
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const dt = Math.max(1, cur.sec - prev.sec);
+    const maxPlausibleKm = Math.max(1.5, (dt / 3600) * 220 + 0.5);
+    let segmentKm: number | null = null;
+    let source = "";
+
+    if (prev.odoM !== null && cur.odoM !== null) {
+      const deltaKm = (cur.odoM - prev.odoM) / 1000;
+      if (deltaKm >= 0 && deltaKm <= maxPlausibleKm) {
+        segmentKm = deltaKm;
+        source = "odometro";
+      }
+    }
+
+    if ((segmentKm === null || segmentKm === 0) && prev.lat !== null && prev.lng !== null && cur.lat !== null && cur.lng !== null) {
+      const gpsDelta = haversineKm(prev.lat, prev.lng, cur.lat, cur.lng);
+      const isMoving = prev.speed >= 3 || cur.speed >= 3 || prev.ignition === 1 || cur.ignition === 1;
+      if (isMoving && gpsDelta >= 0 && gpsDelta <= maxPlausibleKm) {
+        segmentKm = gpsDelta;
+        source = "gps";
+      }
+    }
+
+    if (segmentKm === null || segmentKm < 0.001) continue;
+    km += segmentKm;
+    if (source === "odometro") odometerKm += segmentKm;
+    if (source === "gps") gpsKm += segmentKm;
+    acceptedSegments += 1;
+    if (!firstMove) firstMove = prev;
+    lastMove = cur;
+    if (odoStart === null && prev.odoM !== null) odoStart = prev.odoM;
+    if (cur.odoM !== null) odoEnd = cur.odoM;
+  }
+
+  return {
+    km: Number(km.toFixed(3)),
+    horaInicio: firstMove ? secondsToTime(firstMove.sec) : null,
+    horaFim: lastMove ? secondsToTime(lastMove.sec) : null,
+    odometroInicioM: odoStart,
+    odometroFimM: odoEnd,
+    enderecoInicio: firstMove?.address || null,
+    enderecoFim: lastMove?.address || null,
+    latitudeInicio: firstMove?.lat ?? null,
+    longitudeInicio: firstMove?.lng ?? null,
+    latitudeFim: lastMove?.lat ?? null,
+    longitudeFim: lastMove?.lng ?? null,
+    pontos: points.length,
+    segmentos: acceptedSegments,
+    odometroKm: Number(odometerKm.toFixed(3)),
+    gpsKm: Number(gpsKm.toFixed(3)),
+  };
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T, index: number) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) break;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+function occurrenceMapUrl(summary: any, fallback?: string | null) {
+  const a = summary?.latitudeInicio;
+  const b = summary?.longitudeInicio;
+  const c = summary?.latitudeFim;
+  const d = summary?.longitudeFim;
+  if ([a, b, c, d].every((v) => v !== null && v !== undefined && Number.isFinite(Number(v)))) {
+    const params = new URLSearchParams({
+      api: "1",
+      origin: String(a) + "," + String(b),
+      destination: String(c) + "," + String(d),
+      travelmode: "driving",
+    });
+    return "https://www.google.com/maps/dir/?" + params.toString();
+  }
+  return asString(fallback) || null;
+}
+
+
 function mapReportRow(row: any, arquivoNome = "BFleet API") {
   const placa = onlyPlate(pick(row, ["Placa", "plate", "vehiclePlate", "patente", "licensePlate", "placaVeiculo"]));
   const dataEvento = toIsoDate(pick(row, ["Data", "Fecha", "Inicio", "date", "data_evento", "Data Evento", "Fecha Evento", "eventDate", "dateTime", "Data/Hora", "Data Hora", "Fecha/Hora", "Fecha Hora"]));
@@ -790,24 +1077,38 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
       report = await fetchReport(cfg, token);
     } catch (err) {
       const apiError = err instanceof Error ? err.message : String(err);
-      throw new Error(`${webError ? `Falha no relatório web: ${webError}. ` : ""}Falha no relatório programado: ${apiError}`);
+      throw new Error((webError ? "Falha no relatório web: " + webError + ". " : "") + "Falha no relatório programado: " + apiError);
     }
   }
 
-  const mappedAll = report.rows.map((r: any) => mapReportRow(r, `BFleet · relatório ${cfg.reportId}`)).filter(Boolean) as any[];
+  const mappedAll = report.rows
+    .map((r: any) => mapReportRow(r, "BFleet · relatório " + cfg.reportId))
+    .filter(Boolean) as any[];
   const mapped = mappedAll.filter(isBrasiliaOutsideHours);
 
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
   const patrimonioMap = await loadPatrimonioMap(supabase).catch(() => new Map());
 
+  let apiToken = "";
+  let gpsVehicleMap = new Map<string, any>();
+  let gpsSetupError = "";
+  try {
+    apiToken = await getToken(cfg);
+    gpsVehicleMap = await fetchVehicleGpsMap(cfg, apiToken);
+  } catch (err) {
+    gpsSetupError = err instanceof Error ? err.message : String(err);
+  }
+
   const cruzados = mapped.map((r) => {
     const v = vehicleMap.get(r.placa);
     const p = patrimonioMap.get(r.placa);
-    const motorista = p?.funcionario || v?.patrimonio_funcionario || v?.motorista_atual || r.motorista_planilha || null;
+    const gps = gpsVehicleMap.get(r.placa);
+    const motorista = p?.funcionario || v?.patrimonio_funcionario || v?.motorista_atual || gps?.conductor || r.motorista_planilha || null;
     return {
       ...r,
       bfleet_report_id: String(cfg.reportId || ""),
+      bfleet_vehicle_id: gps?.vehicleId || null,
       patrimonio_id: p?.id || null,
       patrimonio_codigo: p?.patrimonio_codigo || null,
       patrimonio_funcionario: motorista,
@@ -824,6 +1125,123 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     const { error } = await supabase.from("frotas_fora_horario").upsert(batch, { onConflict: "import_hash" });
     if (error) throw new Error(error.message || "Falha ao gravar registros de fora do horário.");
     insertedOrUpdated += batch.length;
+  }
+
+  const groups = new Map<string, any[]>();
+  for (const row of cruzados) {
+    const key = row.data_evento + "|" + row.placa;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+
+  const groupEntries = Array.from(groups.entries());
+  const ocorrencias = await mapWithConcurrency(groupEntries, 5, async ([key, groupRows]) => {
+    const sample = groupRows[0];
+    const dataEvento = sample.data_evento;
+    const placa = sample.placa;
+    const fallback = reportWindowSummary(groupRows, dataEvento);
+    const gpsVehicle = gpsVehicleMap.get(placa);
+    let history: any = null;
+    let historyError = "";
+
+    if (apiToken && gpsVehicle?.idgps) {
+      try {
+        history = await fetchHistorySummary(cfg, apiToken, gpsVehicle.idgps, dataEvento);
+      } catch (err) {
+        historyError = err instanceof Error ? err.message : String(err);
+      }
+    } else {
+      historyError = gpsSetupError || (gpsVehicle ? "Veículo sem idgps na RedGPS." : "Placa não localizada em vehicleGetAll.");
+    }
+
+    const useHistory = history && history.km > 0;
+    const km = useHistory ? history.km : fallback.km;
+    const horaInicio = (useHistory ? history.horaInicio : secondsToTime(fallback.firstSec)) || sample.hora_evento || null;
+    const horaFim = (useHistory ? history.horaFim : secondsToTime(fallback.lastSec)) || null;
+    const firstRaw = fallback.firstRaw || sample.raw || {};
+    const lastRaw = fallback.lastRaw || firstRaw;
+    const enderecoInicio = (useHistory ? history.enderecoInicio : null)
+      || normalizeText(pick(firstRaw, ["Domicilio Inicial", "Domicílio Inicial", "endereco_inicio"]))
+      || sample.endereco || null;
+    const enderecoFim = (useHistory ? history.enderecoFim : null)
+      || normalizeText(pick(lastRaw, ["Domicilio Final", "Domicílio Final", "endereco_fim"]))
+      || null;
+    const latitudeInicio = useHistory && history.latitudeInicio !== null
+      ? history.latitudeInicio
+      : normalizeNumber(pick(firstRaw, ["Latitud Inicio", "Latitude Inicio", "latitude_inicio"]));
+    const longitudeInicio = useHistory && history.longitudeInicio !== null
+      ? history.longitudeInicio
+      : normalizeNumber(pick(firstRaw, ["Longitud Inicio", "Longitude Inicio", "longitude_inicio"]));
+    const latitudeFim = useHistory && history.latitudeFim !== null
+      ? history.latitudeFim
+      : normalizeNumber(pick(lastRaw, ["Latitud Fin", "Latitude Fim", "latitude_fim"]));
+    const longitudeFim = useHistory && history.longitudeFim !== null
+      ? history.longitudeFim
+      : normalizeNumber(pick(lastRaw, ["Longitud Fin", "Longitude Fim", "longitude_fim"]));
+
+    const statusCalculo = useHistory ? "OK" : (fallback.km > 0 ? "FALLBACK_RELATORIO" : "SEM_HISTORICO");
+    const fonteCalculo = useHistory ? "REDGPS_HISTORYGET" : "BFLEET_RELATORIO_PROPORCIONAL";
+    const motorista = sample.patrimonio_funcionario || sample.motorista_planilha || gpsVehicle?.conductor || null;
+
+    const summaryForMap = {
+      latitudeInicio,
+      longitudeInicio,
+      latitudeFim,
+      longitudeFim,
+    };
+
+    return {
+      data_evento: dataEvento,
+      placa,
+      motorista,
+      patrimonio_id: sample.patrimonio_id || null,
+      patrimonio_codigo: sample.patrimonio_codigo || null,
+      coordenacao: sample.coordenacao || null,
+      supervisao: sample.supervisao || null,
+      hora_inicio: horaInicio,
+      hora_fim: horaFim,
+      km_00_05: Number((km || 0).toFixed(3)),
+      valor_km: 4.00,
+      endereco_inicio: enderecoInicio,
+      endereco_fim: enderecoFim,
+      latitude_inicio: latitudeInicio,
+      longitude_inicio: longitudeInicio,
+      latitude_fim: latitudeFim,
+      longitude_fim: longitudeFim,
+      mapa_url: occurrenceMapUrl(summaryForMap, sample.mapa_url),
+      status_calculo: statusCalculo,
+      fonte_calculo: fonteCalculo,
+      calculo_detalhes: {
+        janela: "00:00:00-05:00:00",
+        timezone_regra: "America/Sao_Paulo",
+        history: history ? {
+          pontos: history.pontos,
+          segmentos: history.segmentos,
+          odometro_km: history.odometroKm,
+          gps_km: history.gpsKm,
+          odometro_inicio_m: history.odometroInicioM,
+          odometro_fim_m: history.odometroFimM,
+        } : null,
+        fallback_relatorio: {
+          km: fallback.km,
+          trechos: fallback.trechos,
+        },
+        history_error: historyError || null,
+        idgps: gpsVehicle?.idgps || null,
+        vehicle_id: gpsVehicle?.vehicleId || null,
+        registros_bfleet: groupRows.length,
+      },
+      updated_at: new Date().toISOString(),
+    };
+  });
+
+  if (ocorrencias.length) {
+    for (let i = 0; i < ocorrencias.length; i += 200) {
+      const { error } = await supabase
+        .from("frotas_fora_horario_ocorrencias")
+        .upsert(ocorrencias.slice(i, i + 200), { onConflict: "data_evento,placa" });
+      if (error) throw new Error(error.message || "Falha ao consolidar ocorrências de uso fora do expediente.");
+    }
   }
 
   const importedDates = Array.from(new Set(mappedAll.map((r) => r.data_evento).filter(Boolean)));
@@ -849,10 +1267,14 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     upserted: insertedOrUpdated,
     inserted: insertedOrUpdated,
     updated: 0,
+    ocorrencias: ocorrencias.length,
+    ocorrencias_com_history: ocorrencias.filter((r: any) => r.status_calculo === "OK").length,
+    ocorrencias_fallback: ocorrencias.filter((r: any) => r.status_calculo === "FALLBACK_RELATORIO").length,
     identificados: cruzados.filter((r) => r.patrimonio_funcionario).length,
     pendentes: cruzados.filter((r) => !r.patrimonio_funcionario).length,
-    mapas_validos: cruzados.filter((r) => /^https?:\/\//i.test(asString(r.mapa_url))).length,
+    mapas_validos: ocorrencias.filter((r: any) => /^https?:\/\//i.test(asString(r.mapa_url))).length,
     placas: placas.length,
+    redgps_erro: gpsSetupError || null,
     web_fallback_error: webError || null,
   };
 }
