@@ -2,12 +2,11 @@
 'use strict';
 
 /*
- * GRM Server - Lançamento do Adiantamento de uso de veículo fora do expediente no Caixa do colaborador.
+ * GRM Server - Lançamento no Caixa por uso de veículo fora do expediente.
  *
- * Fila: frotas_fora_horario_caixa_lancamentos (gerada por bonus_substituir_auditoria ao
- * importar a planilha de auditoria em Conferência > Bônus). Cada linha já vem com o
- * valor RESPEITANDO o teto de R$500,00 comprometido por colaborador — esse teto é
- * calculado no banco (RPC), este agente só executa o que já está na fila.
+ * Fila: frotas_fora_horario_caixa_lancamentos. Cada linha é criada somente após o
+ * responsável do setor clicar em "Caixa" no painel de Frotas. O valor é calculado
+ * pela ocorrência consolidada: km rodados entre 00h e 05h x R$ 4,00/km.
  *
  * Fluxo no GRM: Funcionário -> abrir cadastro -> Caixa -> Despesas -> Adicionar
  * -> Tipo = Adiantamento -> Descrição / Valor / Data -> Salvar.
@@ -43,7 +42,7 @@ const GRM_USER = process.env.GRMSERVER_USER;
 const GRM_PASSWORD = process.env.GRMSERVER_PASSWORD;
 
 const LOGIN_URL = process.env.GRMSERVER_LOGIN_URL || 'https://www.grmserver.com.br/login';
-const STAFF_URL = process.env.GRM_BONUS_CAIXA_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
+const STAFF_URL = process.env.GRM_FROTAS_CAIXA_STAFF_URL || process.env.GRM_BONUS_CAIXA_STAFF_URL || 'https://www.grmserver.com.br/adm/team/staff';
 const HEADLESS = String(process.env.GRM_HEADLESS ?? 'true').toLowerCase() !== 'false';
 const DEBUG = String(process.env.GRM_FROTAS_FORA_HORARIO_CAIXA_DEBUG ?? 'false').toLowerCase() === 'true';
 // Fluxo validado ao vivo em 10/09/2026 (ver comentário acima) — padrão FALSE.
@@ -104,7 +103,8 @@ function todayBrDate() {
 function descriptionFor(job) {
   const descricao = String(job.descricao || '').trim();
   if (descricao) return descricao.slice(0, 250);
-  return `Frotas - Uso de veículo fora do expediente - placa ${String(job.placa || '').toUpperCase()} - ${String(job.data_evento || '')} - ${Number(job.km_00_05 || 0).toFixed(3).replace('.', ',')} km x R$ 4,00/km`.slice(0, 250);
+  const placa = String(job.placa || '').trim().toUpperCase();
+  return (`Frotas - Uso de veículo fora do expediente${placa ? ` - placa ${placa}` : ''}`).slice(0, 250);
 }
 
 function ensureDir(dir) {
@@ -1063,7 +1063,7 @@ async function enqueueFollowupIfNeeded() {
   const { error: insertError } = await supabase.from('grm_sync_jobs').insert({
     agente_id: 'sync-frotas-fora-horario-caixa',
     status: 'pendente',
-    payload: { origem: 'bonus_desconto_caixa_continuacao' },
+    payload: { origem: 'frotas_fora_horario_caixa_continuacao' },
   });
   if (insertError) log('WARN', `Falha ao enfileirar continuação: ${insertError.message}`);
 }
@@ -1148,7 +1148,7 @@ async function main() {
   await recoverStaleProcessing();
   const jobs = await loadPendingJobs();
   if (!jobs.length) {
-    log('INFO', 'Nenhum Adiantamento de uso de veículo fora do expediente pendente para lançar.');
+    log('INFO', 'Nenhum lançamento de Frota pendente para o Caixa.');
     return;
   }
 
@@ -1184,7 +1184,7 @@ async function main() {
     await enqueueFollowupIfNeeded();
   }
 
-  log(errors ? 'WARN' : 'SUCCESS', 'Agente de Adiantamento de uso de veículo fora do expediente concluído.', {
+  log(errors ? 'WARN' : 'SUCCESS', 'Agente de Caixa de uso de veículo fora do expediente concluído.', {
     processados: jobs.length,
     sucesso: success,
     erros: errors,
@@ -1197,6 +1197,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  log('ERROR', `Erro fatal no agente de Adiantamento de uso de veículo fora do expediente: ${error.message}`, { stack: error.stack });
+  log('ERROR', `Erro fatal no agente de Caixa de uso fora do expediente: ${error.message}`, { stack: error.stack });
   process.exitCode = 1;
 });
