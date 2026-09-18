@@ -997,9 +997,89 @@ function mapReportRow(row: any, arquivoNome = "BFleet API") {
   return mapped;
 }
 
-function isBrasiliaOutsideHours(row: any) {
-  const time = parseTimeText(row?.hora_evento);
-  return Boolean(time && time >= "00:00:00" && time < "05:00:00");
+function addIsoDays(value: string, delta: number) {
+  const date = toIsoDate(value);
+  if (!date) return value;
+  const dt = new Date(date + "T12:00:00Z");
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+}
+
+function saoPauloIsoDate(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
+  return get("year") + "-" + get("month") + "-" + get("day");
+}
+
+function requestedWindow(cfg: any) {
+  const explicitStart = toIsoDate(cfg?.dataInicial);
+  const explicitEnd = toIsoDate(cfg?.dataFinal);
+  if (explicitStart && explicitEnd) return { start: explicitStart, end: explicitEnd };
+  if (normalizeKey(cfg?.rangeTimeVal) === "YESTERDAY") {
+    const yesterday = addIsoDays(saoPauloIsoDate(), -1);
+    return { start: yesterday, end: yesterday };
+  }
+  return { start: null, end: null };
+}
+
+function expandBrasiliaOutsideRows(rows: any[]) {
+  const expanded: any[] = [];
+  for (const row of rows || []) {
+    const raw = row?.raw || {};
+    const startText = pick(raw, ["Inicio", "Início", "start", "inicio"]) || row?.hora_evento;
+    const endText = pick(raw, ["Final", "Fim", "end", "final"]);
+    const startDate = toIsoDate(startText) || toIsoDate(row?.data_evento);
+    const endDate = toIsoDate(endText) || startDate;
+    const startSec = timeSeconds(startText);
+    const endSec = timeSeconds(endText);
+
+    if (!startDate || startSec === null) continue;
+
+    if (endSec === null || !endDate) {
+      if (startSec >= 0 && startSec < 5 * 3600) expanded.push(row);
+      continue;
+    }
+
+    const startDayMs = Date.parse(startDate + "T00:00:00Z");
+    const endDayMs = Date.parse(endDate + "T00:00:00Z");
+    if (!Number.isFinite(startDayMs) || !Number.isFinite(endDayMs)) continue;
+
+    let absoluteStart = Math.round(startDayMs / 1000) + startSec;
+    let absoluteEnd = Math.round(endDayMs / 1000) + endSec;
+    if (absoluteEnd < absoluteStart) absoluteEnd += 86400;
+
+    const firstDay = Math.floor(absoluteStart / 86400) * 86400;
+    const lastDay = Math.floor(absoluteEnd / 86400) * 86400;
+
+    for (let day = firstDay; day <= lastDay && day <= firstDay + 3 * 86400; day += 86400) {
+      const windowStart = day;
+      const windowEnd = day + 5 * 3600;
+      const overlapStart = Math.max(absoluteStart, windowStart);
+      const overlapEnd = Math.min(absoluteEnd, windowEnd);
+      if (overlapEnd <= overlapStart) continue;
+
+      const dataEvento = new Date(day * 1000).toISOString().slice(0, 10);
+      const clone = {
+        ...row,
+        data_evento: dataEvento,
+        hora_evento: secondsToTime(overlapStart - day),
+        raw: {
+          ...raw,
+          _fora_horario_data_referencia: dataEvento,
+          _fora_horario_inicio_janela: secondsToTime(overlapStart - day),
+          _fora_horario_fim_janela: secondsToTime(overlapEnd - day),
+        },
+      };
+      clone.import_hash = buildHash(clone);
+      expanded.push(clone);
+    }
+  }
+  return expanded;
 }
 
 async function loadVehicleMap(supabase: any, placas: string[]) {
@@ -1062,19 +1142,28 @@ async function loadPatrimonioMap(supabase: any) {
 
 async function syncForaHorario(supabase: any, requestBody: any = {}) {
   const cfg = await buildConfig(supabase, requestBody);
+  const targetWindow = requestedWindow(cfg);
+  const reportCfg = { ...cfg };
+  if (targetWindow.start && targetWindow.end) {
+    // Busca também o dia anterior para capturar uma viagem iniciada antes da meia-noite
+    // e que continue dentro da janela 00h-05h do dia auditado.
+    reportCfg.dataInicial = addIsoDays(targetWindow.start, -1);
+    reportCfg.dataFinal = targetWindow.end;
+  }
+
   let report: any;
   let webError = "";
-  if (cfg.preferWebReport) {
+  if (reportCfg.preferWebReport) {
     try {
-      report = await fetchWebReport(cfg);
+      report = await fetchWebReport(reportCfg);
     } catch (err) {
       webError = err instanceof Error ? err.message : String(err);
     }
   }
   if (!report) {
-    const token = await getToken(cfg);
+    const token = await getToken(reportCfg);
     try {
-      report = await fetchReport(cfg, token);
+      report = await fetchReport(reportCfg, token);
     } catch (err) {
       const apiError = err instanceof Error ? err.message : String(err);
       throw new Error((webError ? "Falha no relatório web: " + webError + ". " : "") + "Falha no relatório programado: " + apiError);
@@ -1084,7 +1173,9 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   const mappedAll = report.rows
     .map((r: any) => mapReportRow(r, "BFleet · relatório " + cfg.reportId))
     .filter(Boolean) as any[];
-  const mapped = mappedAll.filter(isBrasiliaOutsideHours);
+  let mapped = expandBrasiliaOutsideRows(mappedAll);
+  if (targetWindow.start) mapped = mapped.filter((r) => r.data_evento >= targetWindow.start);
+  if (targetWindow.end) mapped = mapped.filter((r) => r.data_evento <= targetWindow.end);
 
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
@@ -1244,7 +1335,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     }
   }
 
-  const importedDates = Array.from(new Set(mappedAll.map((r) => r.data_evento).filter(Boolean)));
+  const importedDates = Array.from(new Set(mapped.map((r) => r.data_evento).filter(Boolean)));
   if (importedDates.length) {
     const { error: cleanupError } = await supabase
       .from("frotas_fora_horario")
@@ -1258,8 +1349,8 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   return {
     ok: true,
     endpoint: report.endpoint,
-    periodo_inicio: cfg.dataInicial || cfg.rangeTimeVal || "yesterday",
-    periodo_fim: cfg.dataFinal || cfg.rangeTimeVal || "yesterday",
+    periodo_inicio: targetWindow.start || cfg.dataInicial || cfg.rangeTimeVal || "yesterday",
+    periodo_fim: targetWindow.end || cfg.dataFinal || cfg.rangeTimeVal || "yesterday",
     total: mapped.length,
     total_origem: mappedAll.length,
     descartados_fora_da_janela: mappedAll.length - mapped.length,
