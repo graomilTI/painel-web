@@ -10,7 +10,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';
   const BFLEET_EXCESSO_FUNCTION = window.FROTAS_CONFIG?.BFLEET_EXCESSO_FUNCTION || 'sync-bfleet-excesso-velocidade';
   const BFLEET_FORA_HORARIO_FUNCTION = window.FROTAS_CONFIG?.BFLEET_FORA_HORARIO_FUNCTION || 'sync-bfleet-fora-horario';
-  const FROTA_FORA_HORARIO_ACTION_FUNCTION = window.FROTAS_CONFIG?.FROTA_FORA_HORARIO_ACTION_FUNCTION || 'frotas-fora-horario-acoes';
   const BFLEET_FORA_HORARIO_REPORT_ID = '85075';
 
   const ICO_REFRESH = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -1324,7 +1323,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         button.disabled = true;
         button.textContent = action === 'GERAR' ? 'Gerando...' : action === 'JUSTIFICAR' ? 'Salvando...' : 'Enviando...';
       }
-      const res = await callEdgeFunction(currentRenderOpts, FROTA_FORA_HORARIO_ACTION_FUNCTION, body);
+      const supabase = resolveSupabase(currentRenderOpts);
+    if (!supabase || typeof supabase.rpc !== 'function') throw new Error('Conexão com o Supabase não disponível.');
+    const { data: res, error } = await supabase.rpc('frotas_fora_horario_acao', {
+      p_ocorrencia_id: row.id,
+      p_acao: action,
+      p_justificativa: body.justificativa || null
+    });
+    if (error) throw error;
       if (action === 'GERAR') {
         if (res?.message) {
           try {
