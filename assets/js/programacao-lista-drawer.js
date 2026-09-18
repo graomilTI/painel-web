@@ -278,25 +278,24 @@ function statusToneClass(os) {
   return 'tone-pendente';
 }
 
-// O.S. achada pela busca remota (número fora do intervalo de datas
-// carregado na tela) não pode ganhar vínculo novo gravado no programacao_id
-// da data atualmente aberta — isso criaria o registro na data errada em vez
-// da data real da O.S. (mesma causa raiz do sumiço aparente do Cássio
-// Pelissaro na OS 91491, 2026-09-14: lá era só leitura, aqui é escrita).
-// Se já existe alguma linha de equipe CONFIRMADA pra essa O.S. (carregada à
-// parte em abrirDrawer via loadEquipeDaOsPorId), usa o programacao_id real
-// dela; senão resolve/cria o programacao_dia certo pra (data_os, supervisao).
+// O.S. da lista normal pertence ao contexto/data que o gestor carregou.
+// Isso vale também para O.S. reaproveitada que continua ATENDER de ontem:
+// antes de a primeira confirmação de hoje, operacional_os.data_os ainda pode
+// apontar para ontem. Usar essa data antiga fazia o clique "Adicionar" gravar
+// a equipe na programação de ontem, aparecer na tela pelo patch local e sumir
+// no próximo Carregar (achado em produção 18/09/2026: O.S. 92845 / Josafa).
 //
-// O filtro por confirmado é obrigatório: loadEquipeDaOsPorId também traz
-// vínculos confirmado=false (história de dias em que a O.S. pertencia a
-// outra regional, quebrados pelo trigger programacao_equipe_validar_regional
-// ao detectar a transferência — ver migration 20260904160000). Sem esse
-// filtro, adicionar um colaborador novo reaproveitava o programacao_id
-// antigo/errado e o insert era rejeitado pelo trigger citando a regional
-// velha, mesmo com a O.S. já corretamente cadastrada na regional nova
-// (achado 17/09/2026: O.S. 92407, Cascavel, bloqueando Rui Marcos por causa
-// de um vínculo morto de Ponta Grossa de dias anteriores).
+// Só O.S. encontrada pela BUSCA REMOTA (fora da lista/contexto carregado) deve
+// respeitar a data_os própria, porque aí realmente podemos estar editando uma
+// O.S. de outra data. Nessas O.S. remotas, se já houver vínculo confirmado,
+// preservamos o programacao_id real desse vínculo.
 async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, dataReferencia) {
+  const programacaoIdDaTela = programacaoIdMap?.size
+    ? (programacaoIdMap.get(os?.supervisao) || null)
+    : programacaoId;
+
+  if (!os?.__pldBuscaRemota && programacaoIdDaTela) return programacaoIdDaTela;
+
   const linhaExistente = equipeRowsAtual.find((r) => r.confirmado && String(r.os_id) === String(os?.id));
   if (linhaExistente) return linhaExistente.programacao_id;
 
@@ -305,7 +304,7 @@ async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRo
   if (dataDaOs && dataCarregada && dataDaOs !== dataCarregada) {
     return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
   }
-  return programacaoIdMap?.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
+  return programacaoIdDaTela;
 }
 
 export async function renderProgramacaoListaDrawer(content, options = {}) {
@@ -965,7 +964,12 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       try {
         const os = await loadOsRelevantePorNumero(supervisaoQuery, numeroOs);
         if (seq !== buscaRemotaSeq || String(state.busca || '').trim() !== numeroOs || !os) return;
-        if (!osTodasAtual.some((row) => String(row.id) === String(os.id))) osTodasAtual.push(os);
+        // Marca somente o objeto vindo da busca remota. programacaoIdParaOs()
+        // usa este sinal para não confundir O.S. ATENDER reaproveitada da lista
+        // normal (data_os de ontem, mas programação aberta é hoje) com O.S.
+        // realmente pesquisada fora do contexto/data carregado.
+        const osBuscaRemota = { ...os, __pldBuscaRemota: true };
+        if (!osTodasAtual.some((row) => String(row.id) === String(os.id))) osTodasAtual.push(osBuscaRemota);
         renderLista();
       } catch (error) {
         console.warn('[programacao-lista-drawer] busca remota de O.S.:', error);
