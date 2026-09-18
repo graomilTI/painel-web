@@ -196,13 +196,6 @@ function fmtPercent(value) {
   return Number(value).toFixed(2).replace('.', ',');
 }
 
-function parseBrNumber(text) {
-  if (text == null) return null;
-  const cleaned = String(text).replace(/\./g, '').replace(',', '.').replace('%', '').trim();
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : null;
-}
-
 // A Ouro Safra normaliza a placa sem hífen (ex.: "EOE5D72"), enquanto o GRM
 // usa o formato com hífen na posição do padrão Mercosul/antigo (ex.:
 // "EOE-5D72", confirmado ao vivo com BDP-1G46 — ver nota no topo do
@@ -332,15 +325,19 @@ async function clickNthButtonInRow(row, index) {
 const ITENS_POR_PAGINA = 70;
 
 async function definirItensPorPagina(page, valor) {
+  const t0 = Date.now();
+  log('DEBUG', `[timing:definirItensPorPagina] inicio em 0ms`);
   const dropdownHandle = await page.evaluateHandle(() => {
     const table = Array.from(document.querySelectorAll('table')).find((t) => Array.from(t.tHead?.rows[0]?.cells || []).some((th) => th.textContent.trim().toLowerCase().includes('placa')));
     const container = table?.closest('.rz-data-grid');
     return container?.querySelector('.rz-paginator .rz-dropdown') || null;
   });
+  log('DEBUG', `[timing:definirItensPorPagina] achou dropdown em ${Date.now() - t0}ms`);
   const dropdownEl = dropdownHandle.asElement();
   if (!dropdownEl) return false;
 
   const jaEsta = await page.evaluate((el, valor) => el.querySelector('.rz-dropdown-label')?.textContent.trim() === String(valor), dropdownEl, valor);
+  log('DEBUG', `[timing:definirItensPorPagina] checou jaEsta=${jaEsta} em ${Date.now() - t0}ms`);
   if (jaEsta) return true;
 
   // A página tem VÁRIOS .rz-dropdown-panel ao mesmo tempo (o combo de mês
@@ -349,15 +346,19 @@ async function definirItensPorPagina(page, valor) {
   // 28/08). O painel de cada dropdown Radzen tem id="popup-<id-do-dropdown>",
   // usa isso pra achar o painel certo.
   const dropdownId = await page.evaluate((el) => el.id, dropdownEl);
+  log('DEBUG', `[timing:definirItensPorPagina] dropdownId=${dropdownId} em ${Date.now() - t0}ms`);
   await dropdownEl.click();
+  log('DEBUG', `[timing:definirItensPorPagina] click dropdown em ${Date.now() - t0}ms`);
   await wait(300);
   const opcaoHandle = await page.evaluateHandle((valor, dropdownId) => {
     const panel = document.getElementById(`popup-${dropdownId}`);
     return Array.from(panel?.querySelectorAll('li[role="option"]') || []).find((li) => li.textContent.trim() === String(valor)) || null;
   }, valor, dropdownId);
+  log('DEBUG', `[timing:definirItensPorPagina] achou opcao em ${Date.now() - t0}ms`);
   const opcaoEl = opcaoHandle.asElement();
   if (!opcaoEl) return false;
   await opcaoEl.click();
+  log('DEBUG', `[timing:definirItensPorPagina] click opcao em ${Date.now() - t0}ms`);
   await wait(500);
   return true;
 }
@@ -380,7 +381,18 @@ async function listarAgendamentosPorCard(page, label) {
 }
 
 async function listarAgendamentosPorCardInterno(page, label) {
+  // Instrumentação temporária (17/09/2026) pra achar o ponto exato em que a
+  // listagem trava/estoura o protocolTimeout — 95% das execuções desde
+  // 15/09 vêm falhando aqui com "Runtime.callFunctionOn timed out" e o
+  // agente não processa uma placa real desde 28/08 (ver memória do
+  // projeto). Cada checkpoint loga o tempo decorrido desde o início desta
+  // chamada; remover assim que a causa for identificada e corrigida.
+  const t0 = Date.now();
+  const checkpoint = (etapa) => log('DEBUG', `[timing:${label}] ${etapa} em ${Date.now() - t0}ms`);
+
+  checkpoint('inicio');
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
+  checkpoint('goto concluido');
   // Um wait fixo de 2s às vezes não é suficiente pro painel de KPIs (cards)
   // terminar de renderizar via SignalR (Blazor Server) — o script concluía
   // "0 placas" por engano mesmo com itens reais na tela, pulando o card
@@ -388,6 +400,7 @@ async function listarAgendamentosPorCardInterno(page, label) {
   // pelo menos 1 .rz-card aparecer antes de decidir se o card do status
   // existe ou não.
   await page.waitForFunction(() => document.querySelectorAll('.rz-card').length > 0, { timeout: 15000 }).catch(() => {});
+  checkpoint('waitForFunction rz-card concluido');
   await wait(500);
   // Os cards do painel (Carregando / Aguardando Classificação / Aguardando
   // Laudo Classificação) são <div class="rz-card">, não <button> — e o card
@@ -398,12 +411,21 @@ async function listarAgendamentosPorCardInterno(page, label) {
     card.click();
     return true;
   }, label);
+  checkpoint(`card clicado=${cardClicado}`);
   if (!cardClicado) {
     log('INFO', `Card "${label}" não existe agora (0 placas).`);
     return [];
   }
   await wait(1500);
+  // Diagnóstico temporário (17/09/2026): screenshot logo antes do passo que
+  // trava (definirItensPorPagina) — captura da tela funciona mesmo com a
+  // thread de JS da página ocupada (é um comando do compositor, não
+  // Runtime.callFunctionOn), então mostra o estado real sem depender do
+  // próprio passo que está hipoteticamente travando.
+  await page.screenshot({ path: `/home/grao100/painel-scripts/grm-sync/logs/debug-screenshot-${label.replace(/[^a-zA-Z0-9]/g, '')}.png`, fullPage: true }).catch((e) => log('DEBUG', `screenshot falhou: ${e.message}`));
+  checkpoint('screenshot tirado');
   await definirItensPorPagina(page, ITENS_POR_PAGINA);
+  checkpoint('definirItensPorPagina concluido');
   await wait(500);
 
   const agendamentos = await page.evaluate(() => {
@@ -431,6 +453,7 @@ async function listarAgendamentosPorCardInterno(page, label) {
       })
       .filter((r) => r.placa);
   });
+  checkpoint(`leitura da tabela concluida (${agendamentos.length} linha(s))`);
 
   // A Ouro Safra mostra a placa sem hífen (ex.: "EOE5D72") — reformata pro
   // padrão com hífen (ver normalizePlaca) antes de usar em qualquer busca no GRM.
@@ -471,7 +494,23 @@ async function abrirAgendamento(page, rowIndex) {
     () => Array.from(document.querySelectorAll('*')).some((el) => (el.textContent || '').trim().startsWith('Classificação - Agendamento')),
     { timeout: 15000 }
   );
-  await wait(500);
+  await wait(1500);
+  // Descoberta ao vivo em 17/09/2026: o modal abre SEM a tabela "Itens da
+  // Classificação" na primeira vez (só tem os campos de metadado) — precisa
+  // clicar em "Salvar" uma vez (mesmo com tudo vazio/default) pra criar o
+  // registro de classificação no Ouro Safra; a mesma tela então passa a
+  // mostrar a tabela de itens (Impureza/Umidade/Avariados, todos a 0,00%)
+  // sem precisar fechar/reabrir o modal. Só faz esse Salvar extra quando a
+  // tabela ainda não existe (idempotente — se já existir, não clica de novo).
+  const temTabelaDeItens = async () => page.evaluate(() => Array.from(document.querySelectorAll('body *')).some((e) => e.children.length === 0 && (e.textContent || '').toUpperCase().includes('IMPUREZA')));
+  if (!(await temTabelaDeItens())) {
+    await clickButtonByText(page, 'Salvar', { exact: true });
+    await wait(2000);
+    if (!(await temTabelaDeItens())) {
+      throw new Error('Clicou em Salvar pra criar o registro de classificação, mas a tabela de itens continua sem aparecer.');
+    }
+    log('INFO', 'Registro de classificação criado (Salvar inicial) — tabela de itens liberada.');
+  }
 }
 
 async function preencherItensClassificacao(page, valores) {
@@ -483,20 +522,50 @@ async function preencherItensClassificacao(page, valores) {
   ];
   for (const [label, valor] of itens) {
     const formatted = fmtPercent(valor);
-    let row = await getRowHandleByLabel(page, label);
-    await clickNthButtonInRow(row, 0); // lápis
-    await wait(500);
-    row = await getRowHandleByLabel(page, label);
-    const input = await row.$('input');
-    if (!input) throw new Error(`Campo de percentual não encontrado para ${label}`);
-    await input.click({ clickCount: 3 });
-    await page.keyboard.press('Backspace');
-    await input.type(formatted, { delay: 30 });
-    await wait(200);
-    row = await getRowHandleByLabel(page, label);
-    await clickNthButtonInRow(row, 0); // confirmar (check verde)
-    await wait(800);
-    log('INFO', `${label} = ${formatted}%`);
+    let passo = 'lápis';
+    try {
+      let row = await getRowHandleByLabel(page, label);
+      await clickNthButtonInRow(row, 0); // lápis
+      await wait(500);
+      passo = 'input';
+      row = await getRowHandleByLabel(page, label);
+      // Achado ao vivo 18/09/2026: em modo de edição a coluna "Descrição"
+      // também vira um componente (dropdown do Radzen) que tem seu PRÓPRIO
+      // <input> oculto/readonly (helper de acessibilidade, aria-label
+      // "Select customer") ANTES do campo de percentual de verdade no HTML
+      // — row.$('input') pegava esse input errado (invisível, sem
+      // boundingBox) e o .click() falhava com "Node is either not
+      // clickable". Filtra por não-readonly pra achar o campo certo.
+      const candidatos = await row.$$('input');
+      let input = null;
+      for (const candidato of candidatos) {
+        const somenteLeitura = await page.evaluate((el) => el.readOnly, candidato);
+        if (!somenteLeitura) { input = candidato; break; }
+      }
+      if (!input) throw new Error(`Campo de percentual não encontrado para ${label}`);
+      await input.click({ clickCount: 3 });
+      await page.keyboard.press('Backspace');
+      await input.type(formatted, { delay: 30 });
+      await wait(200);
+      passo = 'confirmar';
+      row = await getRowHandleByLabel(page, label);
+      await clickNthButtonInRow(row, 0); // confirmar (check verde)
+      await wait(800);
+      log('INFO', `${label} = ${formatted}%`);
+    } catch (err) {
+      // Diagnóstico temporário (18/09/2026): "Node is either not clickable
+      // or not an HTMLElement" apareceu em 100% das placas reais desde que
+      // o Salvar inicial passou a liberar a tabela de itens — precisa saber
+      // em qual dos 3 cliques (lápis/input/confirmar) e pra qual item isso
+      // acontece antes de decidir a correção certa.
+      await page.screenshot({ path: `/home/grao100/painel-scripts/grm-sync/logs/debug-erro-item-${label}.png`, fullPage: true }).catch(() => {});
+      const rowHtml = await page.evaluate((label) => {
+        const row = Array.from(document.querySelectorAll('table tr')).find((r) => (r.textContent || '').toUpperCase().includes(label.toUpperCase()));
+        return row ? row.outerHTML.slice(0, 1500) : null;
+      }, label).catch(() => null);
+      log('DEBUG', `[diag:preencherItensClassificacao] falhou no passo "${passo}" pro item ${label}: ${err.message} | linha: ${rowHtml}`);
+      throw err;
+    }
   }
 }
 
@@ -650,8 +719,11 @@ function buscarClassificacaoGRM(loadsGRM, placa) {
 async function baixarLaudoDaOS(page, browser, numeroOS, placa) {
   await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2000);
-  await preencherCampoTexto(page, 'O.S.', String(numeroOS)).catch(() => {});
-  // campo de busca livre da toolbar como alternativa
+  // Busca pelo número da O.S. no campo de busca livre da toolbar (única
+  // implementação real — uma chamada anterior a uma função inexistente
+  // "preencherCampoTexto" foi removida em 18/09/2026: sempre lançava
+  // ReferenceError antes mesmo do .catch() poder suprimir, então nunca
+  // executou nada além do que este trecho já faz).
   await page.evaluate((numeroOS) => {
     const input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
     if (input) {
@@ -664,51 +736,79 @@ async function baixarLaudoDaOS(page, browser, numeroOS, placa) {
   await page.keyboard.press('Enter');
   await wait(1500);
 
+  // CORREÇÃO 18/09/2026: todos os cliques daqui pra baixo usavam .click()
+  // sintético DENTRO de page.evaluate() — o mesmo erro que o topo do
+  // arquivo já documentava pra outros elementos ("Blazor Server só reage a
+  // eventos de clique de verdade via CDP"). Isso fazia o modal "Lista de
+  // Cargas" NUNCA abrir de verdade (confirmado ao vivo: diagnóstico mostrou
+  // temModalListaCargas=false toda vez), e por consequência a placa nunca
+  // era encontrada mais adiante — o erro "Placa não encontrada na lista de
+  // Cargas" era só um sintoma. Trocado por evaluateHandle + ElementHandle
+  // .click() (clique real via CDP) em cada etapa, no mesmo padrão já usado
+  // em abrirAgendamento().
+
   // marca a checkbox da linha da O.S. e abre o modal "Cargas"
-  await page.evaluate(() => {
+  const checkboxOSHandle = await page.evaluateHandle(() => {
     const row = document.querySelector('table tbody tr');
-    const checkbox = row?.querySelector('input[type=checkbox]');
-    checkbox?.click();
+    return row?.querySelector('input[type=checkbox]') || null;
   });
+  const checkboxOSEl = checkboxOSHandle.asElement();
+  if (checkboxOSEl) await checkboxOSEl.click();
   await wait(500);
   // 4º ícone da toolbar principal = "Cargas" (confirmado manualmente)
-  await page.evaluate(() => {
+  const btnCargasHandle = await page.evaluateHandle(() => {
     const toolbar = document.querySelector('.toolbar, [class*="toolbar"]') || document;
-    const buttons = Array.from(toolbar.querySelectorAll('button'));
-    buttons[3]?.click();
+    return Array.from(toolbar.querySelectorAll('button'))[3] || null;
   });
+  const btnCargasEl = btnCargasHandle.asElement();
+  if (btnCargasEl) await btnCargasEl.click();
   await wait(1500);
 
-  // expande o grupo de data cujo cadastro bate com a data de hoje/ontem e marca a placa
-  await page.evaluate((placa) => {
-    const groups = Array.from(document.querySelectorAll('[class*="date"], tr, div')).filter((el) => /\d{2}\/\d{2}\/\d{4}/.test(el.textContent || '') && (el.textContent || '').length < 60);
-    groups.forEach((g) => g.click());
-  }, placa);
+  // expande o(s) grupo(s) de data — CORREÇÃO 18/09/2026: a versão anterior
+  // (ainda com clique sintético) selecionava QUALQUER elemento (div/tr) com
+  // um padrão de data no texto, sem filtrar qual data — trocar isso pra
+  // clique real (obrigatório pra Blazor reagir) sem restringir a busca
+  // fazia o loop percorrer centenas de elementos candidatos na página
+  // inteira, cada um com 2 round-trips ao navegador, travando por vários
+  // minutos. Restringe aos grupos de HOJE/ONTEM (a intenção original do
+  // comentário) usando as mesmas funções de data já usadas no resto do
+  // arquivo — no máximo ~2 cliques reais em vez de uma quantidade
+  // desconhecida.
+  const hoje = hojeBrasilia();
+  const ontem = new Date(hoje.getTime() - 24 * 60 * 60 * 1000);
+  const datasAlvo = [toBrDate(hoje), toBrDate(ontem)];
+  for (const dataAlvo of datasAlvo) {
+    const grupoHandle = await page.evaluateHandle((dataAlvo) => Array.from(document.querySelectorAll('[class*="date"], tr, div')).find((el) => (el.textContent || '').includes(dataAlvo) && (el.textContent || '').length < 60), dataAlvo);
+    const grupoEl = grupoHandle.asElement();
+    if (grupoEl) await grupoEl.click().catch(() => {});
+  }
   await wait(1000);
-  const placaMarcada = await page.evaluate((placa) => {
+  await page.screenshot({ path: `/home/grao100/painel-scripts/grm-sync/logs/debug-cargas-${placa.replace(/[^a-zA-Z0-9]/g, '')}.png`, fullPage: true }).catch(() => {});
+
+  const placaMarcadaHandle = await page.evaluateHandle((placa) => {
     // Compara ignorando hífen dos dois lados — a Ouro Safra normaliza sem
     // hífen e não dá pra garantir que a lista de Cargas do GRM sempre mostre
     // a placa formatada do mesmo jeito que o restante do GRM.
     const alvo = placa.toUpperCase().replace(/-/g, '');
     const row = Array.from(document.querySelectorAll('table tr')).find((r) => (r.textContent || '').toUpperCase().replace(/-/g, '').includes(alvo));
-    const checkbox = row?.querySelector('input[type=checkbox]');
-    if (!checkbox) return false;
-    checkbox.click();
-    return true;
+    return row?.querySelector('input[type=checkbox]') || null;
   }, placa);
-  if (!placaMarcada) {
+  const placaMarcadaEl = placaMarcadaHandle.asElement();
+  if (!placaMarcadaEl) {
     throw new Error(`Placa ${placa} não encontrada na lista de Cargas da O.S. ${numeroOS} — laudo não baixado.`);
   }
+  await placaMarcadaEl.click();
   await wait(500);
 
   const newTargetPromise = browser.waitForTarget((t) => t.url().startsWith('blob:'), { timeout: 20000 });
   // 2º ícone da barra do modal de cargas = "Imprimir Laudo" (confirmado manualmente)
-  await page.evaluate(() => {
+  const btnImprimirHandle = await page.evaluateHandle(() => {
     const modal = Array.from(document.querySelectorAll('*')).find((el) => (el.textContent || '').includes('Lista de Cargas'))?.closest('div');
     const toolbar = modal?.querySelector('[class*="toolbar"]') || modal;
-    const buttons = Array.from((toolbar || document).querySelectorAll('button'));
-    buttons[1]?.click();
+    return Array.from((toolbar || document).querySelectorAll('button'))[1] || null;
   });
+  const btnImprimirEl = btnImprimirHandle.asElement();
+  if (btnImprimirEl) await btnImprimirEl.click();
   const target = await newTargetPromise;
   const laudoPage = await target.page();
   await wait(1000);
@@ -752,10 +852,24 @@ async function processarPlaca(pageOuroSafra, pageGRM, browserGRM, agendamento, c
       return;
     }
 
+    // BUG CRÍTICO corrigido em 17/09/2026: grm.materiasImp/umidade/avariadoTotal
+    // vêm de load.cItems[].lciValue da API do GRM (ver buscarClassificacaoGRM),
+    // que já é um NUMBER nativo do JSON (ex.: 12.2) — não um texto brasileiro
+    // com vírgula decimal. parseBrNumber() foi escrito pra texto raspado de
+    // tabela HTML (era o fluxo ANTES da migração pra API em 01/09/2026) e
+    // trata "." como separador de milhar: ao rodar String(12.2) -> "12.2" ->
+    // remove o ponto -> "122", INFLANDO todo valor ~10-1000x (confirmado ao
+    // vivo: PPB-4E37 tinha Umidade real 12,2% no GRM e o dry-run calculou
+    // 122,00%; ILS-0C10 tinha 1,398% e virou 1398,00%). Como a produção roda
+    // sem DRY_RUN, isso escreveria classificação errada na Ouro Safra em
+    // qualquer ciclo que conseguisse casar uma placa — só não aconteceu
+    // ainda porque o bug de timeout na listagem (ver memória do projeto)
+    // impediu 95% dos ciclos de chegar até aqui. Os valores já vêm certos da
+    // API, só precisam de Number() por segurança (ex.: string vinda de JSON).
     const valores = {
-      impureza: parseBrNumber(grm.materiasImp),
-      umidade: parseBrNumber(grm.umidade),
-      avariados: parseBrNumber(grm.avariadoTotal),
+      impureza: Number.isFinite(Number(grm.materiasImp)) ? Number(grm.materiasImp) : null,
+      umidade: Number.isFinite(Number(grm.umidade)) ? Number(grm.umidade) : null,
+      avariados: Number.isFinite(Number(grm.avariadoTotal)) ? Number(grm.avariadoTotal) : null,
     };
     if (valores.impureza == null || valores.umidade == null || valores.avariados == null) {
       throw new Error(`Valores de classificação incompletos do GRM: ${JSON.stringify(grm)}`);
@@ -851,11 +965,18 @@ async function main() {
     const classificacoesGRM = await fetchClassificacoesGRM(tokenGrmApi);
     log('INFO', `${classificacoesGRM.length} carga(s) classificada(s) no GRM nos últimos ${DIAS_BUSCA_GRM} dia(s).`);
 
-    // "Carregando" e "Aguardando Classificação" são processados igual: a
-    // janela do agendamento tem a MESMA tabela de itens (Impureza/Umidade/
-    // Avariados) nos dois casos, só que mais abaixo na página (confirmado ao
-    // vivo 28/08 — não é um passo separado de "confirmar vazio", a
-    // classificação só é preenchida quando o laudo já existe no GRM).
+    // "Carregando" e "Aguardando Classificação" SÃO processados igual, mas
+    // não do jeito que o comentário original (28/08) descrevia. Descoberta
+    // ao vivo em 17/09/2026 (com ajuda do usuário, que apontou o passo
+    // certo): o modal de uma placa em "Carregando" abre só com os campos de
+    // metadado (Empresa/Local/Classificadora/Produto) e SEM a tabela de
+    // itens — mas clicar em "Salvar" mesmo vazio cria o registro de
+    // classificação (toast "Classificação criada com sucesso") e a MESMA
+    // tela, sem precisar fechar/reabrir, passa a mostrar a seção "Itens da
+    // Classificação" com Impureza/Umidade/Avariados editáveis (ver
+    // abrirAgendamento). Ou seja, o "Carregando" não é um bloqueio de
+    // negócio — só falta esse Salvar inicial pra "destravar" a placa,
+    // independente do card em que ela está.
     const carregando = await listarAgendamentosCarregando(pageOuroSafra);
     const pendentes = await listarAgendamentosPendentes(pageOuroSafra);
     log('INFO', `${carregando.length} placa(s) em "Carregando", ${pendentes.length} em "Aguardando Classificação"`);
