@@ -278,33 +278,31 @@ function statusToneClass(os) {
   return 'tone-pendente';
 }
 
-// O.S. da lista normal pertence ao contexto/data que o gestor carregou.
-// Isso vale também para O.S. reaproveitada que continua ATENDER de ontem:
-// antes de a primeira confirmação de hoje, operacional_os.data_os ainda pode
-// apontar para ontem. Usar essa data antiga fazia o clique "Adicionar" gravar
-// a equipe na programação de ontem, aparecer na tela pelo patch local e sumir
-// no próximo Carregar (achado em produção 18/09/2026: O.S. 92845 / Josafa).
+// Toda O.S. acionável exibida neste drawer pertence ao contexto de
+// programação que o gestor abriu. loadOsRelevantes() e a busca por número
+// usam a mesma supervisão/status; a busca remota só atualiza o snapshot da
+// lista e não significa que a O.S. pertença a outra data.
 //
-// Só O.S. encontrada pela BUSCA REMOTA (fora da lista/contexto carregado) deve
-// respeitar a data_os própria, porque aí realmente podemos estar editando uma
-// O.S. de outra data. Nessas O.S. remotas, se já houver vínculo confirmado,
-// preservamos o programacao_id real desse vínculo.
+// Isso é essencial para O.S. reaproveitada que continua ATENDER de ontem:
+// antes da primeira confirmação de hoje, operacional_os.data_os pode seguir
+// apontando para ontem. A gravação, porém, precisa usar o programacao_id da
+// data aberta na tela (achado em produção 18/09/2026: O.S. 92845 / Josafa).
 async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, dataReferencia) {
   const programacaoIdDaTela = programacaoIdMap?.size
     ? (programacaoIdMap.get(os?.supervisao) || null)
     : programacaoId;
 
-  if (!os?.__pldBuscaRemota && programacaoIdDaTela) return programacaoIdDaTela;
+  if (programacaoIdDaTela) return programacaoIdDaTela;
 
+  // Fallback defensivo para contextos legados/raros em que a tela não
+  // conseguiu resolver programacao_id: preserva um vínculo confirmado
+  // existente e, por último, resolve pela data da própria O.S.
   const linhaExistente = equipeRowsAtual.find((r) => r.confirmado && String(r.os_id) === String(os?.id));
   if (linhaExistente) return linhaExistente.programacao_id;
 
   const dataDaOs = String(os?.data_os || '').slice(0, 10);
-  const dataCarregada = String(dataReferencia || '').slice(0, 10);
-  if (dataDaOs && dataCarregada && dataDaOs !== dataCarregada) {
-    return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
-  }
-  return programacaoIdDaTela;
+  if (dataDaOs) return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
+  return null;
 }
 
 export async function renderProgramacaoListaDrawer(content, options = {}) {
@@ -964,12 +962,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       try {
         const os = await loadOsRelevantePorNumero(supervisaoQuery, numeroOs);
         if (seq !== buscaRemotaSeq || String(state.busca || '').trim() !== numeroOs || !os) return;
-        // Marca somente o objeto vindo da busca remota. programacaoIdParaOs()
-        // usa este sinal para não confundir O.S. ATENDER reaproveitada da lista
-        // normal (data_os de ontem, mas programação aberta é hoje) com O.S.
-        // realmente pesquisada fora do contexto/data carregado.
-        const osBuscaRemota = { ...os, __pldBuscaRemota: true };
-        if (!osTodasAtual.some((row) => String(row.id) === String(os.id))) osTodasAtual.push(osBuscaRemota);
+        if (!osTodasAtual.some((row) => String(row.id) === String(os.id))) osTodasAtual.push(os);
         renderLista();
       } catch (error) {
         console.warn('[programacao-lista-drawer] busca remota de O.S.:', error);
