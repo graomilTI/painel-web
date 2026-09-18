@@ -278,34 +278,31 @@ function statusToneClass(os) {
   return 'tone-pendente';
 }
 
-// O.S. achada pela busca remota (número fora do intervalo de datas
-// carregado na tela) não pode ganhar vínculo novo gravado no programacao_id
-// da data atualmente aberta — isso criaria o registro na data errada em vez
-// da data real da O.S. (mesma causa raiz do sumiço aparente do Cássio
-// Pelissaro na OS 91491, 2026-09-14: lá era só leitura, aqui é escrita).
-// Se já existe alguma linha de equipe CONFIRMADA pra essa O.S. (carregada à
-// parte em abrirDrawer via loadEquipeDaOsPorId), usa o programacao_id real
-// dela; senão resolve/cria o programacao_dia certo pra (data_os, supervisao).
+// Toda O.S. acionável exibida neste drawer pertence ao contexto de
+// programação que o gestor abriu. loadOsRelevantes() e a busca por número
+// usam a mesma supervisão/status; a busca remota só atualiza o snapshot da
+// lista e não significa que a O.S. pertença a outra data.
 //
-// O filtro por confirmado é obrigatório: loadEquipeDaOsPorId também traz
-// vínculos confirmado=false (história de dias em que a O.S. pertencia a
-// outra regional, quebrados pelo trigger programacao_equipe_validar_regional
-// ao detectar a transferência — ver migration 20260904160000). Sem esse
-// filtro, adicionar um colaborador novo reaproveitava o programacao_id
-// antigo/errado e o insert era rejeitado pelo trigger citando a regional
-// velha, mesmo com a O.S. já corretamente cadastrada na regional nova
-// (achado 17/09/2026: O.S. 92407, Cascavel, bloqueando Rui Marcos por causa
-// de um vínculo morto de Ponta Grossa de dias anteriores).
+// Isso é essencial para O.S. reaproveitada que continua ATENDER de ontem:
+// antes da primeira confirmação de hoje, operacional_os.data_os pode seguir
+// apontando para ontem. A gravação, porém, precisa usar o programacao_id da
+// data aberta na tela (achado em produção 18/09/2026: O.S. 92845 / Josafa).
 async function programacaoIdParaOs(os, programacaoId, programacaoIdMap, equipeRowsAtual, dataReferencia) {
+  const programacaoIdDaTela = programacaoIdMap?.size
+    ? (programacaoIdMap.get(os?.supervisao) || null)
+    : programacaoId;
+
+  if (programacaoIdDaTela) return programacaoIdDaTela;
+
+  // Fallback defensivo para contextos legados/raros em que a tela não
+  // conseguiu resolver programacao_id: preserva um vínculo confirmado
+  // existente e, por último, resolve pela data da própria O.S.
   const linhaExistente = equipeRowsAtual.find((r) => r.confirmado && String(r.os_id) === String(os?.id));
   if (linhaExistente) return linhaExistente.programacao_id;
 
   const dataDaOs = String(os?.data_os || '').slice(0, 10);
-  const dataCarregada = String(dataReferencia || '').slice(0, 10);
-  if (dataDaOs && dataCarregada && dataDaOs !== dataCarregada) {
-    return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
-  }
-  return programacaoIdMap?.size ? (programacaoIdMap.get(os?.supervisao) || null) : programacaoId;
+  if (dataDaOs) return ensureProgramacaoDia(dataDaOs, os.supervisao, os.coordenacao || '');
+  return null;
 }
 
 export async function renderProgramacaoListaDrawer(content, options = {}) {
