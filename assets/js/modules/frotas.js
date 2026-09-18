@@ -1325,7 +1325,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       }
       const supabase = resolveSupabase(currentRenderOpts);
     if (!supabase || typeof supabase.rpc !== 'function') throw new Error('Conexão com o Supabase não disponível.');
-    const { data: res, error } = await supabase.rpc('frotas_fora_horario_acao', {
+    const { data: res, error } = await supabase.rpc('frotas_fora_horario_acao_v2', {
       p_ocorrencia_id: row.id,
       p_acao: action,
       p_justificativa: body.justificativa || null
@@ -1345,7 +1345,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       } else if (action === 'JUSTIFICAR') {
         toast('Justificativa registrada.');
       } else {
+        if (res?.agent_ready === false) {
+        toast(`Caixa registrado: ${formatCurrencyForaHorario(res?.valor || row.valor_caixa || 0)}. Lançamento no GRM aguardando habilitação do agente do VPS.`, 'error');
+      } else {
         toast(`Caixa solicitado: ${formatCurrencyForaHorario(res?.valor || row.valor_caixa || 0)}.`);
+      }
       }
       await fetchForaHorario(root, currentRenderOpts);
     } catch (err) {
@@ -1405,7 +1409,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const notif = String(row.status_notificacao || 'PENDENTE').toUpperCase();
       const caixa = String(row.status_caixa || 'NAO_SOLICITADO').toUpperCase();
       const hasDriver = Boolean(String(row.motorista || '').trim());
-      const caixaLocked = ['PENDENTE', 'PROCESSANDO', 'LANCADO'].includes(caixa);
+      const caixaLocked = ['PROCESSANDO', 'LANCADO'].includes(caixa);
       const justified = notif === 'JUSTIFICADA';
       return `<tr>
         <td>${data}</td>
