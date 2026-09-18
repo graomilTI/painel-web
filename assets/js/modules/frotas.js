@@ -1363,6 +1363,79 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
   }
 
+  function formatKmForaHorario(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 }) : '0,00';
+  }
+
+  function formatMoneyForaHorario(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
+  }
+
+  function statusLabelForaHorario(row) {
+    if (String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA') return 'Justificada';
+    if (String(row.status_caixa || '').toUpperCase() === 'LANCADO') return 'Caixa lançado';
+    if (['PENDENTE','PROCESSANDO'].includes(String(row.status_caixa || '').toUpperCase())) return 'Caixa pendente';
+    if (String(row.status_notificacao || '').toUpperCase() === 'GERADA') return 'Notificação gerada';
+    if (String(row.status_calculo || '').toUpperCase() === 'ERRO') return 'Erro no cálculo';
+    if (String(row.status_calculo || '').toUpperCase() === 'SEM_HISTORICO') return 'Sem histórico GPS';
+    return 'Pendente';
+  }
+
+  async function agirForaHorario(root, opts, rowId, action) {
+    const supabase = resolveSupabase(opts);
+    if (!supabase || typeof supabase.rpc !== 'function') return toast('Supabase indisponível.', 'error');
+    const row = (state.foraHorario || []).find((item) => String(item.id) === String(rowId));
+    if (!row) return toast('Ocorrência não localizada.', 'error');
+
+    let justificativa = null;
+    if (action === 'JUSTIFICAR') {
+      justificativa = window.prompt('Informe a justificativa para o uso do veículo fora do expediente:');
+      if (justificativa === null) return;
+      justificativa = String(justificativa || '').trim();
+      if (!justificativa) return toast('Informe a justificativa.', 'error');
+    }
+
+    if (action === 'CAIXA') {
+      const km = Number(row.km_00_05 || 0);
+      if (!(km > 0)) return toast('A quilometragem entre 00h e 05h ainda não foi calculada.', 'error');
+      const valor = km * Number(row.valor_km || 4);
+      const ok = window.confirm(`Enviar ao Caixa: ${formatKmForaHorario(km)} km × R$ 4,00 = ${formatMoneyForaHorario(valor)}?`);
+      if (!ok) return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('frotas_fora_horario_acao_v2', {
+        p_ocorrencia_id: row.id,
+        p_acao: action,
+        p_justificativa: justificativa
+      });
+      if (error) throw error;
+
+      if (action === 'GERAR') {
+        const message = String(data?.message || '');
+        if (message) {
+          try { await navigator.clipboard.writeText(message); } catch (_) {}
+          toast('Notificação gerada e copiada.');
+        } else {
+          toast('Notificação gerada.');
+        }
+      } else if (action === 'JUSTIFICAR') {
+        toast('Justificativa registrada.');
+      } else if (action === 'CAIXA') {
+        const agentReady = data?.agent_ready !== false;
+        const valor = formatMoneyForaHorario(data?.valor || (Number(row.km_00_05 || 0) * 4));
+        toast(agentReady ? `Lançamento de ${valor} enviado ao Caixa.` : `Lançamento de ${valor} preparado; agente do Caixa ainda está desativado.`, agentReady ? 'success' : 'error');
+      }
+
+      await fetchForaHorario(root, opts);
+    } catch (err) {
+      console.error('[FROTAS] Ação fora do horário:', err);
+      toast(err.message || 'Não foi possível concluir a ação.', 'error');
+    }
+  }
+
   function renderForaHorarioList(root) {
     const tbody = root.querySelector('[data-fora-horario-table]');
     const count = root.querySelector('[data-fora-horario-count]');
@@ -2578,7 +2651,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fora-horario-sync{height:64px;min-width:248px;border-radius:18px;padding:0 28px}
                 .fora-horario-refresh{width:64px;height:64px;min-height:64px;border-radius:18px;padding:0}
                 .fora-horario-table{border-color:rgba(34,197,94,.20);border-radius:20px;background:rgba(2,6,23,.30)}
-                .fora-horario-table .hist-table{min-width:720px}
+                .fora-horario-table .hist-table{min-width:1180px}
+                .fora-horario-actions{display:flex;gap:7px;flex-wrap:wrap}
+                .fora-horario-actions .speed-btn{min-height:34px;padding:7px 10px;border-radius:10px}
+                .fora-horario-actions .speed-btn:disabled{opacity:.42;cursor:not-allowed}
                 .fora-horario-table .hist-table th{height:58px;padding:0 18px;color:#34d399;background:rgba(2,44,30,.76);font-size:12px}
                 .fora-horario-table .hist-table td{padding:18px;color:#f8fafc;font-size:13px}
                 .fora-horario-table .speed-import-empty{border:0;border-radius:0;background:transparent;color:#f8fafc}
@@ -2665,6 +2741,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     container.querySelector('[data-sync-bfleet-fora-horario]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'yesterday'));
     container.querySelector('[data-sync-bfleet-fora-horario-periodo]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'period'));
     container.querySelector('[data-refresh-fora-horario]')?.addEventListener('click', () => fetchForaHorario(container, opts));
+    container.querySelector('[data-fora-horario-table]')?.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-fora-action]');
+      if (!btn || btn.disabled) return;
+      agirForaHorario(container, opts, btn.dataset.id, btn.dataset.foraAction);
+    });
     container.querySelector('[data-fora-horario-search]')?.addEventListener('input', (ev) => {
       state.foraHorarioSearchTerm = ev.target.value;
       renderForaHorarioList(container);
