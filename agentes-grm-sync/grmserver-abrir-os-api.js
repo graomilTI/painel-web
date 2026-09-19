@@ -253,6 +253,7 @@ var PREFIXO_TIPO_LOCAL = {
   TERMINAL: 'Transbordo - Terminal', PORTO: 'Transbordo - Terminal',
   ESTACAO: 'Transbordo - Terminal', 'ESTAÇÃO': 'Transbordo - Terminal',
 };
+var TIPO_LOCAL_PADRAO = 'Armazém / Silo';
 function inferirTipoLocalPorPrefixo(texto) {
   var primeiraPalavra = norm(texto).split(/[^A-Z0-9]+/)[0];
   return PREFIXO_TIPO_LOCAL[primeiraPalavra] || null;
@@ -464,14 +465,19 @@ async function resolverEmbarque(token, solicitacao) {
   const ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque, solicitacao.uf_embarque);
   let uf = solicitacao.uf_embarque, cidade = solicitacao.cidade_embarque, tipoLocalNome = null;
   if (ponto) {
-    uf = ponto.uf; cidade = ponto.cidade; tipoLocalNome = ponto.tipo_local;
-    log('INFO', 'Local de embarque "' + solicitacao.armazem_embarque + '" resolvido em operacional_pontos_embarque: ' + ponto.tipo_local + ' / ' + ponto.uf + ' / ' + ponto.cidade + ' / ' + ponto.nome_local);
+    uf = ponto.uf; cidade = ponto.cidade;
+    tipoLocalNome = ponto.tipo_local || inferirTipoLocalPorPrefixo(ponto.nome_local) || TIPO_LOCAL_PADRAO;
+    log('INFO', 'Local de embarque "' + solicitacao.armazem_embarque + '" resolvido em operacional_pontos_embarque: ' + tipoLocalNome + ' / ' + ponto.uf + ' / ' + ponto.cidade + ' / ' + ponto.nome_local);
+    if (!ponto.tipo_local) {
+      avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" sem tipo_local informado — usando "' + tipoLocalNome + '".');
+    }
   } else {
-    tipoLocalNome = inferirTipoLocalPorPrefixo(solicitacao.armazem_embarque);
-    if (tipoLocalNome) {
+    const tipoInferido = inferirTipoLocalPorPrefixo(solicitacao.armazem_embarque);
+    tipoLocalNome = tipoInferido || TIPO_LOCAL_PADRAO;
+    if (tipoInferido) {
       avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — tipo do local inferido pelo prefixo do nome ("' + tipoLocalNome + '"); cadastre o ponto pra evitar depender do fallback.');
     } else {
-      avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque — tipo do local não pode ser inferido.');
+      avisarCampoSuspeito('Local de embarque "' + solicitacao.armazem_embarque + '" não encontrado em operacional_pontos_embarque e sem tipo_local informado — usando "' + TIPO_LOCAL_PADRAO + '".');
     }
   }
 
