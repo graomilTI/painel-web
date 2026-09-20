@@ -1,4 +1,7 @@
-const CACHE_NAME = 'g1000-painel-pwa-v16';
+// v17 invalida qualquer JS/CSS anterior à consolidação da Programação.
+// O activate abaixo remove todos os caches antigos do painel, impedindo que
+// módulos *-fix excluídos continuem disponíveis para abas/PWAs instalados.
+const CACHE_NAME = 'g1000-painel-pwa-v17';
 const SHARE_CACHE = 'g1000-shared-file';
 
 const STATIC_URLS = [
