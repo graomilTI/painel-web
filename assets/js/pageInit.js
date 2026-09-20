@@ -10,7 +10,7 @@ import './painel-design-system.js?v=20260911-abas-sublinhado1';
 import './searchableSelect.js?v=20260819-respeita-hidden';
 import './logistica-saldo-filtros.js?v=20260803-saldo-filtros1';
 import './logistica-abertura-upload.js?v=20260803-upload-autofill1';
-import './pwa-register.js?v=20260713-cache-v10';
+import './pwa-register.js?v=20260920-cache-v17';
 
 // Algumas páginas são compostas por vários módulos complementares ou ainda
 // executam boot próprio no topo do módulo. A navegação suave pode importar o
