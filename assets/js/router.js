@@ -14,7 +14,8 @@
 //   3. Extrair a função de render pra `export async function renderContent(container, userContext)`.
 //   4. Auditar a função por suposições de "só roda uma vez" (listeners/timers
 //      sem guarda) e adicionar guard tipo `window.__xInited` onde precisar.
-//   5. Se precisar de CSS extra, adicionar um carregamento de <link> na entrada (ver TODO extraStyles).
+//   5. Se precisar de CSS extra (só do <head> do .html original), adicionar
+//      `extraStyles: ['./assets/css/arquivo.css?v=...']` na entrada (ver ensureStylesheet).
 //   6. Adicionar entrada em SOFT_NAV_PAGES abaixo.
 //   7. Testar manualmente: carga direta, navegação suave até a página, navegação
 //      suave pra longe e de volta (confirma que o cache de módulo ES re-renderiza
@@ -114,23 +115,9 @@ const SOFT_NAV_PAGES = new Map([
   ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js?v=20260912-central-escopo1'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js?v=20260912-central-escopo1')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js?v=20260911-owner-filter1') }],
-  // Fase 3 (2026-07-04) — páginas críticas com muitos scripts, consolidação avaliada script a script
-  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260917-deslocamento-persistido1'), extraModules: [
-    () => import('./programacao-supervisoes-cache.js?v=20260901-v6-ttl5min'),
-    () => import('./programacao-ultima-programacao-fix.js'),
-    () => import('./programacao-hospedagem-colaboradores-fix.js'),
-    () => import('./programacao-gestor-ajustes.js?v=20260909-header-grid1'),
-    () => import('./programacao-kpi-inline-patch.js'),
-    () => import('./programacao-gestor-filtro-fix.js'),
-    () => import('./programacao-mobile-ui-fix.js?v=20260909-header-grid1'),
-    () => import('./programacao-gestor-fluxo-avancado.js?v=20260917-deslocamento-persistido1'),
-    () => import('./programacao-lista-drawer-fixo.js'),
-    () => import('./programacao-lista-drawer-ux-hotfix.js'),
-    () => import('./programacao-pdf-tipo-fix.js?v=20260917-deslocamento-persistido1'),
-    () => import('./programacao-indisponibilidade-sync.js'),
-    () => import('./programacao-indisponibilidade-rh-lock.js'),
-    () => import('./programacao-regional-colaboradores-strict.js'),
-    () => import('./programacao-grm-despesas-sync.js'),
+  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260920-consolidado1'), extraStyles: [
+    './assets/css/programacao-redesign.css?v=20260920-base1',
+    './assets/css/programacao-toolbar.css?v=20260920-integrado1',
   ] }],
   ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [
     () => import('./financeiro-access.js'),
@@ -213,6 +200,36 @@ function ensureClassicScript(src) {
   });
 }
 
+const loadedStylesheets = new Set();
+
+// Carrega um <link rel="stylesheet"> próprio da página uma única vez por
+// sessão, deduplicado por href. Sem isso, uma página com CSS específico no
+// <head> do seu .html (ex.: programacao-redesign.css) fica sem esse CSS
+// quando chega via navegação suave — o router troca só #pageContent e nunca
+// visita o HTML de destino, então o <link> original nunca é lido. Item 5 do
+// checklist no topo deste arquivo ("TODO extraStyles") ficou pendente desde
+// a criação da soft-nav; implementado ao consolidar programacao.js, cuja
+// página só ficava alinhada depois de um hard refresh por causa disso.
+function ensureStylesheet(href) {
+  if (loadedStylesheets.has(href)) return Promise.resolve();
+  const existing = document.querySelector(`link[rel="stylesheet"][href="${href}"]`);
+  if (existing) {
+    loadedStylesheets.add(href);
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.onload = () => {
+      loadedStylesheets.add(href);
+      resolve();
+    };
+    link.onerror = () => reject(new Error(`Falha ao carregar estilo externo: ${href}`));
+    document.head.appendChild(link);
+  });
+}
+
 function renderRoute(routeName, entry, mod, userContext) {
   if (entry.title) document.title = `${entry.title} · Painel`;
 
@@ -263,6 +280,9 @@ async function navigateSoft(routeName, href) {
 
   setTransitioning(true);
   try {
+    if (Array.isArray(entry.extraStyles)) {
+      for (const href of entry.extraStyles) await ensureStylesheet(href);
+    }
     if (Array.isArray(entry.extraScripts)) {
       for (const src of entry.extraScripts) await ensureClassicScript(src);
     }
@@ -328,6 +348,9 @@ function onPopState() {
 
   setTransitioning(true);
   (async () => {
+    if (Array.isArray(entry.extraStyles)) {
+      for (const href of entry.extraStyles) await ensureStylesheet(href);
+    }
     if (Array.isArray(entry.extraScripts)) {
       for (const src of entry.extraScripts) await ensureClassicScript(src);
     }

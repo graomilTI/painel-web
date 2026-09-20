@@ -13,8 +13,9 @@
  */
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OUT = join(ROOT, 'docs', 'inventario');
 mkdirSync(OUT, { recursive: true });
 
@@ -30,7 +31,7 @@ function walk(dir, acc = []) {
 }
 
 const files = walk(ROOT);
-const rel = (f) => f.slice(ROOT.length).replace(/^\/+/, '');
+const rel = (f) => f.slice(ROOT.length).replace(/\\/g, '/').replace(/^\/+/, '');
 
 const htmlPages = files.filter((f) => extname(f) === '.html' && !rel(f).includes('/'));
 const jsFiles = files.filter((f) => extname(f) === '.js' && rel(f).startsWith('assets/js'));

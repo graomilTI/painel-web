@@ -26,7 +26,7 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260914-equipe-os-busca-remota-fix';
+} from './programacao-equipe.js?v=20260920-equipe-contexto1';
 import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
 
 function esc(value) {
@@ -71,9 +71,9 @@ const state = {
   sortDir: 'asc',
 };
 
-// Mesma extração de "UF - Cidade (Local)" usada em programacao-despesas.js/
-// programacao-hospedagem-colaboradores-fix.js — só a cidade, sem o local
-// específico entre parênteses.
+// Mesma extração de "UF - Cidade (Local)" usada em programacao-despesas.js e
+// no bloco "Ajustes pontuais de embarque/hospedagem" em programacao.js — só a
+// cidade, sem o local específico entre parênteses.
 function cidadeFromEmbarque(embarque) {
   const m = /^[A-Z]{2}\s*-\s*([^(]+)/.exec(String(embarque || '').trim());
   return m ? m[1].trim() : '';
@@ -124,7 +124,7 @@ function injectStyles() {
     /* A lista rola dentro da própria caixa (altura travada ao viewport), em
        vez de crescer com a página inteira — assim ela tem rolagem
        independente do painel lateral fixo (que já rola sozinho, ver
-       .pld-drawer em programacao-lista-drawer-fixo.js), e cabem todas as O.S.
+       .pld-drawer no bloco "Layout fixo do painel lateral" em programacao.js), e cabem todas as O.S.
        de uma vez sem paginação (pedido do usuário, 2026-07-22). */
     .pld-table-wrap{border:1px solid rgba(52,211,153,.16);border-radius:16px;background:rgba(2,6,23,.28);max-height:calc(100vh - 300px);overflow-y:auto}
     .pld-table{width:100%;border-collapse:separate;border-spacing:0}
@@ -211,8 +211,8 @@ function injectStyles() {
        "layout" de cor (gradiente diagonal + borda na mesma tonalidade),
        só trocando verde por vermelho, em vez de um sólido e outro
        translúcido (pedido 30/07). Fontes do card em si compactadas junto
-       com o resto do painel lateral, ver #pldOverlayRoot .peqb-cand-* em
-       programacao-lista-drawer-fixo.js. */
+       com o resto do painel lateral, ver #pldOverlayRoot .peqb-cand-* no
+       bloco "Layout fixo do painel lateral" em programacao.js. */
     .pld-cand-wrap{display:flex;align-items:stretch;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
     .pld-cand-wrap .peqb-cand-sub,.pld-cand-wrap .peqb-score,.pld-cand-wrap .peqb-cand-cost{display:none}

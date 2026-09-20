@@ -1,10 +1,10 @@
 import { supabase } from './supabaseClient.js';
 
-// Hotfix de persistência da Programação (21/08/2026).
+// Proteção de persistência e troca de contexto da Programação.
 //
 // O programacao.js usa autosave com debounce de 450 ms. O saveRow() resolve
 // programacao_id e data_referencia a partir do `state` no MOMENTO EM QUE O
-// timer executa. Antes deste hotfix, clicar em "Carregar" podia trocar o
+// timer executa. Sem esta proteção, clicar em "Carregar" pode trocar o
 // contexto antes do timer terminar e fazer uma definição/despesa do contexto
 // anterior ser gravada no dia/supervisão seguinte.
 //

@@ -10,7 +10,7 @@
 // recalculada (achado 11/08, última linha gerada em 07/08).
 //
 // Mesmo padrão idle/troca-de-tela/fechar-aba já usado por
-// solicitar_finalizacao_os_gestor (programacao-runtime-fixes.js) e por
+// solicitar_finalizacao_os_gestor (programacao-runtime.js) e por
 // aplicar-distribuicao-os (programacao-equipe.js:enfileirarDistribuicaoOs):
 // acumula supervisão+data pendentes e dispara em lote depois de 5 min parado,
 // ao trocar de tela ou ao fechar a aba — evita 1 chamada por clique.

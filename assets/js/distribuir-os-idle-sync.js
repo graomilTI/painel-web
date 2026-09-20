@@ -1,6 +1,6 @@
 // Dispara o agente aplicar-distribuicao-os quando o gestor fica 5 min sem
 // atividade em Distribuir O.S, troca de tela ou fecha a aba — mesmo padrão
-// de solicitar_finalizacao_os_gestor em assets/js/programacao-runtime-fixes.js.
+// de solicitar_finalizacao_os_gestor em assets/js/programacao-runtime.js.
 // Substitui o cron fixo de 15 min (ver supabase/migrations/20260810160100_*).
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient.js';
 

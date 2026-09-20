@@ -1,4 +1,4 @@
-/* Programação — patch visual aplicado no head para evitar piscada dos KPIs/layout antigo durante o carregamento. */
+/* Programação — layout definitivo da barra de contexto e dos KPIs. */
 /* Cabeçalho (Supervisão/Data/Carregar + abas de etapa) ocupava 2 linhas
    inteiras com rótulo em cima de cada campo — comprimido numa linha só
    (pedido do usuário, 2026-07-21: "dar mais visibilidade às ferramentas").
@@ -44,13 +44,14 @@
 /* Reorganização do cabeçalho v2 (pedido do usuário, 08/09/2026): layout
    explícito em vez de depender de flex-wrap "sobrando"/"quebrando" — vira
    um grid de verdade. Linha 1: Supervisão/Data/Carregar à esquerda, Salvar
-   e Duplicar à direita. Linha 2: abas O.S./Sem O.S. à esquerda (Recusas
-   saiu — ver programacao-gestor-ajustes.js), Gerar PDF e Compartilhar à
-   direita — junto com Salvar/Duplicar formam uma grade 2x2 no canto
-   direito. .prog-actions-block e .prog-action-row viram display:contents
-   pra Gerar PDF/Compartilhar/Duplicar saírem do aninhamento e virarem
-   células próprias do grid (mesmo truque de display:contents já usado
-   acima pras 2 linhas originais). */
+   e Duplicar à direita. Linha 2: abas O.S./Sem O.S. à esquerda, Gerar PDF e
+   Compartilhar à direita — junto com Salvar/Duplicar formam uma grade 2x2
+   no canto direito. .prog-actions-block e .prog-action-row viram
+   display:contents pra Gerar PDF/Compartilhar/Duplicar saírem do
+   aninhamento e virarem células próprias do grid. Tentativa v3
+   (2026-09-17, tudo numa linha só) causou sobreposição de Carregar com
+   Salvar — revertido pra v2, só com botões mais baixos (pedido do usuário)
+   pra não crescer a altura total com a 2ª linha de volta. */
 .prog-toolbar{display:grid!important;grid-template-columns:1fr auto auto!important;grid-template-rows:auto auto auto!important;column-gap:10px!important;row-gap:8px!important;align-items:center!important}
 .prog-toolbar .prog-actions-block,.prog-toolbar .prog-action-row{display:contents!important}
 .prog-toolbar .prog-toolbar-spacer,.prog-toolbar #progSearchWrap{display:none!important}
@@ -61,11 +62,25 @@
 .prog-toolbar #progGerarPdf{grid-area:2/2/3/3!important}
 .prog-toolbar #progCompartilhar{grid-area:2/3/3/4!important}
 .prog-toolbar #progCtxFeedback{grid-area:3/1/4/4!important;text-align:left!important;flex:none!important}
+/* Campo de Supervisão reservava até 380px de largura mesmo quando o nome
+   selecionado era curto, empurrando a Data pra longe dele visualmente
+   (pedido do usuário, 2026-09-17: "data mais próxima da supervisão"). */
+.prog-toolbar .prog-context-group .prog-tfield-sup{flex:0 0 340px!important;width:340px!important;max-width:340px!important}
+/* O campo tinha 4 filhos flex disputando espaço: label, #progSupCombo (o
+   combo de verdade, de programacao-gestor-ajustes.js) e um 2º combo oculto
+   inserido pelo searchableSelect.js global (regra "select com muitas
+   opções" de pageInit.js, que não sabe que este select já tem combo
+   próprio) — dividiam os 340px entre os dois, deixando o visível com só
+   ~137px mesmo com flex:0 0 340px no wrapper (achado ao inspecionar,
+   2026-09-17: "campo ainda encolhendo" mesmo depois do ajuste anterior).
+   Tira o duplicado do fluxo e deixa o combo de verdade esticar. */
+.prog-toolbar .prog-context-group .prog-tfield-sup .ssel-wrap{display:none!important}
+.prog-toolbar .prog-context-group .prog-tfield-sup #progSupCombo{flex:1 1 0!important;min-width:0!important;width:auto!important}
 /* #progGerarPdf/#progCompartilhar repetem o seletor ".prog-action-row>"
    da regra de altura de 40px (2026-07-22, acima) — mesma especificidade
    (2 classes+1 id), só assim esta regra (mais nova no arquivo) vence o
    empate; um seletor mais "raso" (só ".prog-toolbar #id") perderia. */
-.prog-toolbar .prog-action-row>#progGerarPdf,.prog-toolbar .prog-action-row>#progCompartilhar,.prog-toolbar #progDuplicar,.prog-toolbar .prog-save-main{height:32px!important;min-height:32px!important;padding:0 14px!important}
+.prog-toolbar .prog-action-row>#progGerarPdf,.prog-toolbar .prog-action-row>#progCompartilhar,.prog-toolbar #progDuplicar,.prog-toolbar .prog-save-main{height:27px!important;min-height:27px!important;padding:0 14px!important}
 @media(max-width:900px){.prog-toolbar .prog-context-group{flex:1 1 100%!important;flex-wrap:wrap!important}.prog-toolbar .prog-context-group .prog-tfield-sup{flex:1 1 100%!important;max-width:none!important}.prog-toolbar .prog-context-group .prog-tfield-date{flex:1 1 180px!important}.prog-toolbar .prog-context-group #progLoadContext{flex:1 1 120px!important}.prog-toolbar .prog-actions-block{width:100%!important}.prog-toolbar .prog-action-row>*{flex:1!important}}
 /* Cartões Colaboradores/Km total/OS com equipe (Etapa 2) — mesmo espírito,
    metade da folga vertical. */

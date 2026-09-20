@@ -1,3 +1,4 @@
+// Compartilhamento do resumo de uma O.S. a partir da tela de Programação.
 import { supabase } from './supabaseClient.js';
 
 function normalizeText(value) {
@@ -214,7 +215,7 @@ async function compartilhar(button) {
   }
 }
 
-// Este listener é carregado antes do patch legado de PDF/Compartilhar.
+// Este listener é carregado antes da montagem dos controles de PDF/Compartilhar.
 // Captura o clique primeiro e impede que a rotina antiga (que podia retornar
 // somente a data quando o roster ficava vazio/stale) seja executada.
 document.addEventListener('click', (event) => {

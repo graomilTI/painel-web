@@ -1,3 +1,4 @@
+// Interface de seleção de datas para duplicação da programação.
 const MAX_SELECTED_DATES = 5;
 
 function todayIsoLocal() {
@@ -35,7 +36,7 @@ function setFeedback(message, type = 'warn') {
   feedback.textContent = message;
 }
 
-function patchDuplicateCalendar() {
+function renderDuplicateCalendarSelection() {
   const sourceIso = duplicateSourceIso();
   const todayIso = todayIsoLocal();
   const dates = document.getElementById('progDuplicateDates');
@@ -60,35 +61,35 @@ function patchDuplicateCalendar() {
   }
 }
 
-let duplicateCalendarPatchQueued = false;
+let duplicateCalendarRenderQueued = false;
 
-function scheduleDuplicateCalendarPatch() {
-  if (duplicateCalendarPatchQueued) return;
-  duplicateCalendarPatchQueued = true;
+function scheduleDuplicateCalendarRender() {
+  if (duplicateCalendarRenderQueued) return;
+  duplicateCalendarRenderQueued = true;
 
   requestAnimationFrame(() => {
-    duplicateCalendarPatchQueued = false;
-    patchDuplicateCalendar();
+    duplicateCalendarRenderQueued = false;
+    renderDuplicateCalendarSelection();
   });
 }
 
-function installDuplicateTodayFix() {
+function installDuplicateCalendar() {
   const duplicateButton = document.getElementById('progDuplicar');
   const modal = document.getElementById('progDuplicateModal');
   if (!duplicateButton || !modal) return false;
-  if (duplicateButton.dataset.duplicateTodayFix === '1') return true;
+  if (duplicateButton.dataset.duplicateCalendarEnhanced === '1') return true;
 
-  duplicateButton.dataset.duplicateTodayFix = '1';
+  duplicateButton.dataset.duplicateCalendarEnhanced = '1';
 
   // A renderização original pode acontecer de forma síncrona ou ser refeita
   // logo depois da abertura. Agenda o primeiro ajuste após o clique e observa
   // qualquer re-render do modal para garantir que "Hoje" não seja removido.
   duplicateButton.addEventListener('click', () => {
-    queueMicrotask(scheduleDuplicateCalendarPatch);
+    queueMicrotask(scheduleDuplicateCalendarRender);
   });
 
   const modalObserver = new MutationObserver(() => {
-    scheduleDuplicateCalendarPatch();
+    scheduleDuplicateCalendarRender();
   });
   modalObserver.observe(modal, { childList: true, subtree: true });
 
@@ -109,9 +110,9 @@ function installDuplicateTodayFix() {
   return true;
 }
 
-if (!installDuplicateTodayFix()) {
+if (!installDuplicateCalendar()) {
   const observer = new MutationObserver(() => {
-    if (installDuplicateTodayFix()) observer.disconnect();
+    if (installDuplicateCalendar()) observer.disconnect();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }

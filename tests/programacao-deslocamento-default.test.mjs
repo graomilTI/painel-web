@@ -14,24 +14,24 @@ test('Programação usa Particular como deslocamento padrão e não oferece a op
 });
 
 test('despesa compartilhada vazia também preserva o padrão Particular', async () => {
-  const source = await read('assets/js/programacao-despesas-os-visual-fix.js');
+  const source = await read('assets/js/programacao-despesas-os-visual.js');
 
   assert.match(source, /des\.tipo_deslocamento \|\| TIPO_DESLOC_DEFAULT/);
 });
 
-test('referências da tela usam a versão nova dos módulos de deslocamento/despesas', async () => {
-  const [programacao, drawer, fluxo, pdf, router, html] = await Promise.all([
+test('carregamento direto e navegação interna usam a versão consolidada', async () => {
+  const [programacao, drawer, router, html] = await Promise.all([
     read('assets/js/programacao.js'),
     read('assets/js/programacao-lista-drawer.js'),
-    read('assets/js/programacao-gestor-fluxo-avancado.js'),
-    read('assets/js/programacao-pdf-tipo-fix.js'),
     read('assets/js/router.js'),
     read('programacao.html'),
   ]);
 
-  for (const source of [programacao, drawer, fluxo, pdf, router, html]) {
-    assert.match(source, /20260917-deslocamento-persistido1/);
-  }
+  assert.match(programacao, /programacao-despesas\.js\?v=20260917-deslocamento-persistido1/);
+  assert.match(programacao, /programacao-despesas-os-visual\.js\?v=20260920-integrado1/);
+  assert.match(drawer, /programacao-despesas\.js\?v=20260917-deslocamento-persistido1/);
+  assert.match(router, /programacao\.js\?v=20260920-consolidado1/);
+  assert.match(html, /programacao\.js\?v=20260920-consolidado1/);
 });
 
 test('gaveta da O.S. restaura o deslocamento salvo para o colaborador na data', async () => {
