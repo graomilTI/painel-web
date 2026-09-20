@@ -25,11 +25,8 @@ test('colaborador de O.S. ainda ATENDER de outro dia continua com card na Etapa 
 test('todo consumidor de loadRosterDoDia passa supervisaoQuery (senão a O.S. reaproveitada fica sem card de novo)', async () => {
   const { readFile } = await import('node:fs/promises');
   const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
-  const [programacao, pdfFix] = await Promise.all([
-    read('assets/js/programacao.js'),
-    read('assets/js/programacao-pdf-tipo-fix.js'),
-  ]);
-  for (const src of [source, programacao, pdfFix]) {
+  const programacao = await read('assets/js/programacao.js');
+  for (const src of [source, programacao]) {
     assert.doesNotMatch(src, /loadRosterDoDia\(programacaoIdQuery\)/);
   }
 });

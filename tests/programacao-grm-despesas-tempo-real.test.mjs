@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(new URL('../assets/js/programacao-grm-despesas-sync.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../assets/js/programacao.js', import.meta.url), 'utf8');
 
 test('liberação de despesas publica em poucos segundos de inatividade, não mais em 5 minutos', () => {
   // Pedido do usuário (15/09/2026): reduzir a latência de "despesa marcada

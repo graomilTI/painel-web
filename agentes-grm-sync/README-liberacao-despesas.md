@@ -23,7 +23,7 @@ O agente pesquisa o funcionário por **CPF**, substitui somente as linhas de Cai
 
 ## Gatilhos no painel
 
-O arquivo `assets/js/programacao-grm-despesas-sync.js` publica uma versão:
+O módulo consolidado `assets/js/programacao.js` publica uma versão:
 
 1. após poucos segundos sem alteração (reduzido de 5 minutos em 15/09/2026 pra ficar "tempo real" — reason continua `INATIVIDADE_5_MIN` por compatibilidade com a Edge Function, só o timer no painel mudou);
 2. ao clicar em **Salvar programação**;

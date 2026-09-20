@@ -1,8 +1,8 @@
 // Etapa 3 — Despesas: 1 card por colaborador confirmado (Estadia + Alimentação +
 // Deslocamento + Extras juntos), substituindo de fato o stepper clássico B-E
 // (Estadia/Alimentação/Deslocamento/Extras de assets/js/programacao.js), que
-// ficou inacessível pela UI do gestor depois que programacao-gestor-ajustes.js
-// passou a reescrever #progSteps só com os botões das 3 etapas novas.
+// ficou inacessível pela UI do gestor depois que o bloco "Botões de etapa" em
+// programacao.js passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
@@ -272,7 +272,7 @@ function alojamentoOptions(selectedId, uf) {
 // Combobox do alojamento: o <select> nativo fica escondido (fonte da verdade
 // pro autosave, que lê [data-fld="alojamento_id"]) e a lista de opções é
 // desenhada num portal fixo em document.body — mesma técnica de
-// programacao-gestor-ajustes.js (#progSupCombo) — pra não ficar clipada
+// o bloco "Botões de etapa" em programacao.js (#progSupCombo) — pra não ficar clipada
 // pelas bordas do card quando aberta perto do fim da lista rolável.
 let alojDropdownEl = null;
 let alojComboState = { input: null, select: null };
@@ -373,12 +373,21 @@ export function injectStylesDespesas() {
     .peqd-sec:first-of-type{margin-top:0;padding-top:0;border-top:0}
     .peqd-sec-label{font-size:10.5px;font-weight:850;letter-spacing:.06em;text-transform:uppercase;color:#6fd0a5;margin-bottom:7px;display:flex;align-items:center;gap:6px}
     .peqd-row{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+    /* Qualquer regra de autor que defina display em .peqd-row (aqui ou nos
+       overrides do drawer) empata em especificidade com o [hidden] nativo do
+       navegador — e autor vence UA em empate, então a linha de campos do
+       Hotel (peqd-hotel-fields, também .peqd-row) aparecia mesmo com o
+       atributo hidden presente (reportado pela usuária, 2026-09-17: campos
+       de horário/UF/Sexo visíveis com Casa selecionada). Reforça o hidden
+       como regra de segurança pra qualquer elemento, não só este caso. */
+    [hidden]{display:none!important}
     .peqd-inp{min-height:34px;border:1px solid rgba(111,208,165,.3);background:#06130e;color:#eef7f2;border-radius:8px;padding:5px 8px;font-size:12px;color-scheme:dark;box-sizing:border-box}
     .peqd-inp-sm{flex:1 1 130px;min-width:100px}
     .peqd-inp-na{color:#5f7a6d;font-size:12px;flex:1 1 130px}
     .peqd-hotel-badge{font-size:10px;font-weight:850;padding:3px 9px;border-radius:999px;background:rgba(34,197,94,.18);color:#86efac;border:1px solid rgba(34,197,94,.4);white-space:nowrap}
     .peqd-hotel-badge[hidden]{display:none}
     .peqd-hotel-badge.erro{background:rgba(239,68,68,.14);color:#fecaca;border-color:rgba(239,68,68,.4)}
+    .peqd-hotel-badge.aviso{background:rgba(245,158,11,.14);color:#fde68a;border-color:rgba(245,158,11,.4)}
     .peqd-tipo-est{flex:0 0 120px}
     .peqd-dias{flex:0 0 60px;width:60px!important;text-align:center}
     .peqd-tipo-desl{flex:0 0 110px}
@@ -517,7 +526,7 @@ async function reancorarDespesasJaLancadas(movimentos) {
 // com o GRM — uma despesa nova (ex.: Almoço marcado hoje) era salva com
 // data_referencia=hoje mas programacao_id=ontem (o único que o card tinha),
 // e a publicação pro GRM (grm-liberacao-despesas-publicar, disparada por
-// programacao-grm-despesas-sync.js) só olha o programacao_id de HOJE — a
+// bloco "Publica versão de despesas..." em programacao.js) só olha o programacao_id de HOJE — a
 // despesa nunca saía da fila. Em vez de só exibir, agora GRAVA de verdade
 // uma confirmação pra HOJE (mesma O.S., mesmo colaborador) sempre que
 // existir um programacao_id de hoje pra essa supervisão — assim toda
@@ -765,7 +774,6 @@ export function colaboradorCardHtml(row, custos, placasPorCpf, tipoContratoPorCp
         <input class="peqd-inp" data-hotel-horario type="time" aria-label="Horário de chegada ao hotel" title="Horário de chegada ao hotel" />
         <input class="peqd-inp" data-hotel-uf value="${esc(ufFromEmbarque(embarqueRef))}" maxlength="2" placeholder="UF *" aria-label="UF do hotel" />
         <select class="peqd-inp" data-hotel-sexo aria-label="Sexo do colaborador"><option value="">Sexo *</option><option value="MASCULINO">Masculino</option><option value="FEMININO">Feminino</option></select>
-        <button type="button" class="peqd-extra-add" data-solicitar-hotel>Solicitar hotel</button>
       </div>
     </div>
 
@@ -851,8 +859,8 @@ export async function renderProgramacaoDespesas(content, options = {}) {
 
   // Ponte pra refresh sem remontar a aba inteira (perdia a rolagem toda vez
   // que um vínculo era feito em outro lugar — drag no mapa, sugestão de
-  // equipe, etc. — ver window.__pgcRefreshDespesas em
-  // programacao-gestor-fluxo-avancado.js, que agora prefere este caminho).
+  // equipe, etc. — ver window.__pgcRefreshDespesas no bloco "Monta as 2 abas"
+  // em programacao.js, que agora prefere este caminho).
   window.__pgcSilentRefreshDespesas = () => carregar({ silent: true });
 
   wireDespesasCards(rootEl, {
@@ -870,7 +878,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
 // programação, período, cidade e supervisão compartilham uma solicitação;
 // assim Hospedagem > Hotéis recebe um único KPI e consegue montar quartos
 // duplos, triplos etc. Colunas normalizadas automaticamente por
-// programacao-hospedagem-colaboradores-fix.js (patch global no supabase.from).
+// o bloco "Ajustes pontuais de embarque/hospedagem" em programacao.js (patch global no supabase.from).
 async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
   const badge = card.querySelector('[data-hotel-badge]');
   const colabId = card.dataset.colabId;
@@ -893,7 +901,12 @@ async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
     // Novo fluxo: cada marcação HOTEL gera seu card operacional e pode ser
     // agrupada posteriormente pelo ADM com outras pessoas/períodos compatíveis.
     if (card.querySelector('[data-hotel-fields]')) {
-      if (!cidade || !uf || !horario || !sexo) throw new Error('Informe cidade, UF, horário de chegada e sexo antes de solicitar o hotel.');
+      if (!cidade || !uf || !horario || !sexo) {
+        const faltando = [!cidade && 'cidade', !uf && 'UF', !horario && 'horário', !sexo && 'sexo'].filter(Boolean).join(', ');
+        const error = new Error(`Preencha ${faltando} para solicitar o hotel.`);
+        error.hotelInfoIncompleta = true;
+        throw error;
+      }
       const cpfDigits = String(colabId || '').replace(/\D/g, '');
       let cadastro = null;
       if (/^[0-9a-f-]{36}$/i.test(String(colabId))) {
@@ -908,8 +921,8 @@ async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
       const p_colaboradores = [{ colaborador_id:cadastro.id, nome_colaborador:nome, cpf:cadastro.cpf||null, tipo_colaborador:cadastro.tipo||null, empresa:cadastro.empresa||null, coordenacao:cadastro.coordenacao||null, supervisao:cadastro.supervisao||supervisao||null, data_checkin_prevista:dataCheckin, horario_chegada_previsto:horario, quantidade_diarias_prevista:dias, sexo }];
       const { data, error } = await supabase.rpc('hospedagem_v3_criar_solicitacao',{p_solicitacao,p_colaboradores});
       if (error) throw error;
-      if (badge) { badge.hidden=false;badge.classList.remove('erro');badge.textContent=`✓ Hotel solicitado (${data?.codigo||''})`; }
-      delete card.dataset.hotelPendente;
+      if (badge) { badge.hidden=false;badge.classList.remove('erro','aviso');badge.textContent=`✓ Hotel solicitado (${data?.codigo||''})`; }
+      card.dataset.hotelSolicitado = '1';
       return;
     }
 
@@ -1167,6 +1180,7 @@ export function wireDespesasCards(containerEl, ctx = {}) {
   }
 
   const timers = new Map();
+  const hotelTimers = new Map();
   function scheduleSaveCampo(card, tabela) {
     const key = `${tabela}:${card.dataset.colabId}`;
     clearTimeout(timers.get(key));
@@ -1257,17 +1271,38 @@ export function wireDespesasCards(containerEl, ctx = {}) {
     }
   });
 
-  // Dispara a solicitação de Hotel represada em card.dataset.hotelPendente
-  // assim que o gestor mexer em qualquer campo FORA da seção Estadia (garante
-  // que cidade/diárias já estão com o valor final antes de solicitar).
+  // Solicita o hotel sozinho assim que cidade/UF/horário/sexo estiverem todos
+  // preenchidos — sem botão manual (pedido do usuário, 2026-09-17). Debounced
+  // por card pra não disparar uma tentativa a cada tecla digitada; enquanto
+  // faltar algum dado, o badge some avisando o que falta em vez de tentar e
+  // falhar silenciosamente. Roda em qualquer edição do card (não só fora da
+  // Estadia): os próprios campos de horário/UF/sexo ficam dentro dela.
   function talvezDispararHotelPendente(event) {
     const card = event.target.closest?.('.peqd-card');
-    if (!card || card.dataset.hotelPendente !== '1') return;
-    if (event.target.closest('[data-sec="estadia"]')) return;
-    delete card.dataset.hotelPendente;
-    criarSolicitacaoHotelSeNecessario(card, getDataReferencia()).catch((error) => {
-      console.error('[despesas] solicitação de hotel', error);
-    });
+    if (!card) return;
+    const tipoAtual = normalizeText(card.querySelector('[data-fld="tipo_estadia"]')?.value || '');
+    if (tipoAtual !== 'HOTEL' || card.dataset.hotelSolicitado === '1') return;
+
+    const key = card.dataset.colabId;
+    clearTimeout(hotelTimers.get(key));
+    hotelTimers.set(key, setTimeout(() => {
+      criarSolicitacaoHotelSeNecessario(card, getDataReferencia()).catch((error) => {
+        const badge = card.querySelector('[data-hotel-badge]');
+        if (!badge) return;
+        if (error?.hotelInfoIncompleta) {
+          badge.hidden = false;
+          badge.classList.remove('erro');
+          badge.classList.add('aviso');
+          badge.textContent = error.message;
+        } else {
+          console.error('[despesas] solicitação de hotel', error);
+          badge.hidden = false;
+          badge.classList.remove('aviso');
+          badge.classList.add('erro');
+          badge.textContent = `⚠ ${error?.message || 'Falha ao solicitar hotel'}`;
+        }
+      });
+    }, 600));
   }
 
   containerEl.addEventListener('input', (event) => {
@@ -1316,21 +1351,18 @@ export function wireDespesasCards(containerEl, ctx = {}) {
         card.querySelectorAll('.peqd-chip[data-ref].on').forEach((c) => c.classList.remove('on'));
         scheduleSaveCampo(card, 'programacao_alimentacao');
       }
-      // Hotel cria a solicitação em Hospedagem > Hotel, mas só depois que o
-      // gestor mexer em algum campo FORA da Estadia (pedido do usuário,
-      // 2026-07-23) — dispara cedo demais pegava cidade/diárias com o valor
-      // ainda default, antes do gestor corrigir. Arma um "pendente" aqui;
-      // talvezDispararHotelPendente() (chamado pelos handlers de input/change/
-      // click abaixo) decide a hora certa de disparar.
+      // Hotel solicita sozinho assim que cidade/UF/horário/sexo estiverem
+      // completos (talvezDispararHotelPendente, chamado pelos handlers de
+      // input/change abaixo) — sem botão manual (pedido do usuário,
+      // 2026-09-17). Ao sair de Hotel, permite solicitar de novo numa
+      // próxima marcação.
       const badge = card.querySelector('[data-hotel-badge]');
+      const hotelFields = card.querySelector('[data-hotel-fields]');
       if (normalizeText(sel.value) === 'HOTEL') {
-        card.dataset.hotelPendente = '1';
-        const hotelFields = card.querySelector('[data-hotel-fields]');
         if (hotelFields) hotelFields.hidden = false;
       } else {
-        delete card.dataset.hotelPendente;
+        delete card.dataset.hotelSolicitado;
         if (badge) badge.hidden = true;
-        const hotelFields = card.querySelector('[data-hotel-fields]');
         if (hotelFields) hotelFields.hidden = true;
       }
     }
@@ -1354,15 +1386,6 @@ export function wireDespesasCards(containerEl, ctx = {}) {
   containerEl.addEventListener('click', async (event) => {
     if (isReadOnly()) return;
     talvezDispararHotelPendente(event);
-    const hotelBtn = event.target.closest('[data-solicitar-hotel]');
-    if (hotelBtn) {
-      const card = hotelBtn.closest('.peqd-card');
-      hotelBtn.disabled = true;
-      try { await criarSolicitacaoHotelSeNecessario(card, getDataReferencia()); }
-      catch (error) { console.error('[despesas] solicitação de hotel', error); const badge=card?.querySelector('[data-hotel-badge]'); if(badge){badge.hidden=false;badge.classList.add('erro');badge.textContent=`⚠ ${error.message||'Falha ao solicitar hotel'}`;} }
-      finally { hotelBtn.disabled = false; }
-      return;
-    }
     const chip = event.target.closest('.peqd-chip[data-ref]');
     if (chip) {
       chip.classList.toggle('on');

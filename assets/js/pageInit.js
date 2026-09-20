@@ -4,7 +4,7 @@ import { bindLayoutActions } from './layoutActions.js';
 import { initAgentUpdateStatus } from './agentUpdateStatus.js';
 import { initAgentDataMode } from './agentDataMode.js';
 import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
-import { initProgramacaoRuntimeFixes } from './programacao-runtime-fixes.js';
+import { initProgramacaoRuntime } from './programacao-runtime.js';
 import { initRouter } from './router.js';
 import './painel-design-system.js?v=20260911-abas-sublinhado1';
 import './searchableSelect.js?v=20260819-respeita-hidden';
@@ -229,7 +229,7 @@ export async function initProtectedPage(title, renderContent) {
     });
 
     try {
-      initProgramacaoRuntimeFixes(content);
+      initProgramacaoRuntime(content);
       // Informativos já faz o carregamento automático internamente.
       // Evita que a camada auxiliar dispare cliques duplicados e carregue a mesma base duas vezes.
       if (currentRouteName() !== 'logistica-informativos') initAgentDataMode(content);

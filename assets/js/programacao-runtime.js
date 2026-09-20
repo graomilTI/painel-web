@@ -23,9 +23,9 @@ function normalize(value) {
 }
 
 function injectStyles() {
-  if (document.getElementById('programacaoRuntimeFixesStyles')) return;
+  if (document.getElementById('programacaoRuntimeStyles')) return;
   const style = document.createElement('style');
-  style.id = 'programacaoRuntimeFixesStyles';
+  style.id = 'programacaoRuntimeStyles';
   style.textContent = `
     .prog-estadia-selector{grid-template-columns:repeat(4,minmax(72px,1fr))!important;min-width:340px!important}
     @media(max-width:680px){.prog-estadia-selector{grid-template-columns:repeat(2,minmax(96px,1fr))!important;min-width:220px!important}}
@@ -73,13 +73,13 @@ function ensureCasaButton(selector) {
   }
 }
 
-function patchEstadiaRows(content) {
+function syncEstadiaRows(content) {
   content.querySelectorAll('.prog-estadia-selector').forEach(ensureCasaButton);
 }
 
 function bindClickGuard(content) {
-  if (content.dataset.programacaoRuntimeFixesClickGuard === '1') return;
-  content.dataset.programacaoRuntimeFixesClickGuard = '1';
+  if (content.dataset.programacaoRuntimeClickGuard === '1') return;
+  content.dataset.programacaoRuntimeClickGuard = '1';
 
   content.addEventListener('click', (event) => {
     const btn = event.target.closest('.prog-estadia-card[data-estadia-tipo]');
@@ -240,16 +240,16 @@ function initFinalizacaoAgentTrigger() {
 // alimenta Logística > O.S. > Finalização. O agente só é enfileirado pelo
 // Check da Logística, portanto não há disparo por inatividade ou saída da tela.
 
-export function initProgramacaoRuntimeFixes(content = document.getElementById('pageContent')) {
+export function initProgramacaoRuntime(content = document.getElementById('pageContent')) {
   if (!content || routeName() !== 'programacao') return;
 
   injectStyles();
-  patchEstadiaRows(content);
+  syncEstadiaRows(content);
   bindClickGuard(content);
 
-  if (content.dataset.programacaoRuntimeFixesObserver === '1') return;
-  content.dataset.programacaoRuntimeFixesObserver = '1';
+  if (content.dataset.programacaoRuntimeObserver === '1') return;
+  content.dataset.programacaoRuntimeObserver = '1';
 
-  const observer = new MutationObserver(() => patchEstadiaRows(content));
+  const observer = new MutationObserver(() => syncEstadiaRows(content));
   observer.observe(content, { childList: true, subtree: true });
 }

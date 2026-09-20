@@ -1,4 +1,4 @@
-// Programação > Gestor — restaura visualmente as despesas associadas a cada O.S.
+// Programação > Gestor — apresenta as despesas associadas a cada O.S.
 // usando a view programacao_despesas_os_compartilhadas. A view foi criada para
 // exibir a mesma despesa em todas as O.S. atendidas pelo colaborador no dia sem
 // duplicar o registro físico, inclusive quando a despesa nasceu em outra
@@ -140,25 +140,6 @@ function aplicarExtras(card, rows) {
   list.innerHTML = rows.map(extraHtml).join('');
 }
 
-function aplicarResumo(card, rows) {
-  card.querySelector('.pdof-assoc')?.remove();
-  if (!rows.length) return;
-  const tipos = new Set(rows.map((r) => r.tipo_registro));
-  const labels = [
-    ['ESTADIA', '🛏 Estadia'],
-    ['ALIMENTACAO', '🍽 Alimentação'],
-    ['DESLOCAMENTO', '🚐 Deslocamento'],
-    ['EXTRA', '💰 Extras'],
-  ].filter(([tipo]) => tipos.has(tipo));
-  const compartilhada = rows.some((r) => String(r.programacao_origem_id || '') !== String(r.programacao_exibicao_id || ''));
-  const resumo = document.createElement('div');
-  resumo.className = 'pdof-assoc';
-  resumo.innerHTML = `
-    <span class="pdof-assoc-title">Despesas vinculadas a esta O.S.</span>
-    <span class="pdof-assoc-chips">${labels.map(([, label]) => `<span>${label}</span>`).join('')}${compartilhada ? '<span class="shared" title="Despesa salva em outra programação do mesmo colaborador e compartilhada com esta O.S.">↔ Compartilhada</span>' : ''}</span>`;
-  card.querySelector('.peqd-head')?.insertAdjacentElement('afterend', resumo);
-}
-
 async function carregar(osId, dia) {
   const key = `${dia}:${osId}`;
   const hit = cache.get(key);
@@ -202,11 +183,10 @@ async function aplicar() {
       aplicarAlimentacao(card, first('ALIMENTACAO'));
       aplicarDeslocamento(card, first('DESLOCAMENTO'));
       aplicarExtras(card, colabRows.filter((r) => r.tipo_registro === 'EXTRA'));
-      aplicarResumo(card, colabRows);
       card.dataset.pdofApplied = applyKey;
     });
   } catch (error) {
-    console.error('[programacao-despesas-os-visual-fix]', error);
+    console.error('[programacao-despesas-os-visual]', error);
   }
 }
 
@@ -220,11 +200,6 @@ function injectStyle() {
   const style = document.createElement('style');
   style.id = 'pdofStyles';
   style.textContent = `
-    .pdof-assoc{display:flex;flex-direction:column;gap:6px;margin:-2px 0 10px;padding:8px 10px;border:1px solid rgba(52,211,153,.22);background:rgba(16,185,129,.07);border-radius:9px}
-    .pdof-assoc-title{font-size:9.5px;font-weight:900;letter-spacing:.07em;text-transform:uppercase;color:#7dd3a9}
-    .pdof-assoc-chips{display:flex;flex-wrap:wrap;gap:5px}
-    .pdof-assoc-chips>span{display:inline-flex;align-items:center;min-height:21px;padding:2px 7px;border-radius:999px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.55);color:#dbeafe;font-size:9.5px;font-weight:800}
-    .pdof-assoc-chips>span.shared{border-color:rgba(56,189,248,.32);background:rgba(14,116,144,.13);color:#bae6fd}
     .pdof-destino-salvo{font-size:11px;color:#a7f3d0;font-weight:800;white-space:nowrap}
   `;
   document.head.appendChild(style);

@@ -23,6 +23,6 @@ test('trigger valida Patrimônios, mas não procura linha separada de Motorista 
 });
 
 test('Programação carrega a versão corrigida do seletor de placa', async () => {
-  const html = await read('programacao.html');
-  assert.match(html, /programacao-carona-motorista\.js\?v=20260917-v6-carona-por-placa/);
+  const source = await read('assets/js/programacao.js');
+  assert.match(source, /programacao-carona-motorista\.js\?v=20260917-v6-carona-por-placa/);
 });

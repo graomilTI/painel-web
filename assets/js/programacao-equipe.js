@@ -431,18 +431,79 @@ export async function loadOsRelevantes(supervisao, dataReferencia) {
   return [...porId.values()];
 }
 
-// Busca por os_id em vez de programacao_id — usada quando a O.S. veio da
-// busca remota por número (loadOsRelevantePorNumero), que ignora o
-// intervalo de datas já carregado. Sem isso, equipeRowsAtual nunca ganha as
-// linhas de programacao_equipe dessa O.S. (o programacao_id dela pode ser
-// de outra data, fora de programacaoIdQuery) e a equipe confirmada aparece
-// vazia mesmo com o colaborador corretamente confirmado no banco (achado
-// investigando sumiço aparente do Cássio Pelissaro na OS 91491, 2026-09-14
-// — o vínculo nunca saiu de programacao_equipe, só não era buscado).
-export async function loadEquipeDaOsPorId(osId) {
+function dataReferenciaDoContexto() {
+  try {
+    if (typeof window !== 'undefined' && typeof window.__progGetDataReferencia === 'function') {
+      const valor = String(window.__progGetDataReferencia() || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor;
+    }
+    if (typeof document !== 'undefined') {
+      const valor = String(document.getElementById('progDataRef')?.value || '').slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) return valor;
+    }
+  } catch (_) {}
+  return '';
+}
+
+function programacaoTimestamp(row) {
+  return Date.parse(row?.updated_at || row?.created_at || '') || 0;
+}
+
+function escolherProgramacaoDaEquipe(programacoes, dataReferencia) {
+  const validas = (programacoes || []).filter((row) => (
+    row?.id && /^\d{4}-\d{2}-\d{2}$/.test(String(row.data_referencia || '').slice(0, 10))
+  ));
+  if (!validas.length) return null;
+
+  const ordenadas = [...validas].sort((a, b) => {
+    const dataA = String(a.data_referencia).slice(0, 10);
+    const dataB = String(b.data_referencia).slice(0, 10);
+    if (dataA !== dataB) return dataB.localeCompare(dataA);
+    return programacaoTimestamp(b) - programacaoTimestamp(a) || String(b.id).localeCompare(String(a.id));
+  });
+
+  if (!dataReferencia) return ordenadas[0];
+  return ordenadas.find((row) => String(row.data_referencia).slice(0, 10) === dataReferencia)
+    || ordenadas.find((row) => String(row.data_referencia).slice(0, 10) <= dataReferencia)
+    || null;
+}
+
+async function loadEquipeDaOsPorIdLegado(osId) {
   const { data, error } = await supabase.from('programacao_equipe').select('*').eq('os_id', osId);
   if (error) throw error;
   return data || [];
+}
+
+// Busca a equipe da programação pertinente ao contexto aberto. A view elimina
+// snapshots concorrentes da mesma O.S./data; quando não existe confirmação na
+// data exata, preserva a programação mais recente anterior para O.S. contínua.
+export async function loadEquipeDaOsPorId(osId) {
+  if (!osId) return [];
+
+  try {
+    const { data: rows, error } = await supabase
+      .from('programacao_equipe_ultima')
+      .select('*')
+      .eq('os_id', osId);
+    if (error) throw error;
+    if (!rows?.length) return [];
+
+    const programacaoIds = [...new Set(rows.map((row) => row.programacao_id).filter(Boolean))];
+    if (!programacaoIds.length) return [];
+
+    const { data: programacoes, error: programacaoError } = await supabase
+      .from('programacao_dia_ultima')
+      .select('id,data_referencia,created_at,updated_at')
+      .in('id', programacaoIds);
+    if (programacaoError) throw programacaoError;
+
+    const escolhida = escolherProgramacaoDaEquipe(programacoes, dataReferenciaDoContexto());
+    if (!escolhida) return [];
+    return rows.filter((row) => String(row.programacao_id) === String(escolhida.id));
+  } catch (error) {
+    console.warn('[programacao] falha ao filtrar equipe atual da O.S.; usando leitura legada.', error);
+    return loadEquipeDaOsPorIdLegado(osId);
+  }
 }
 
 // Resolve (ou cria) o id de programacao_dia pra uma (data, supervisão)
@@ -692,7 +753,7 @@ export async function loadIndisponiveisNaData(dataReferencia) {
         .lte('data_inicio', dia).gte('data_fim', dia),
       // Tabela legada `indisponibilidades` (colaborador_cpf/colaborador_nome,
       // sem colaborador_id) — cadastro avulso feito direto na tela de
-      // Programação (programacao-indisponibilidade-sync.js), separado do
+      // Programação (bloco "Sincroniza indisponibilidade do RH" em programacao.js), separado do
       // fluxo oficial de RH acima. Um colaborador cadastrado só aqui (caso
       // real: atestado registrado nessa tabela mas nunca lançado em
       // rh_atestados) passava batido por este filtro e virava sugestão da
