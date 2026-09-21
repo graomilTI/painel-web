@@ -50,6 +50,16 @@ function toIso(brDate) {
   return `${year}-${month}-${day}`;
 }
 
+function apiDateToIso(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(raw);
+  if (br) return `${br[3]}-${String(Number(br[2])).padStart(2, '0')}-${String(Number(br[1])).padStart(2, '0')}`;
+  return null;
+}
+
 function requestJson(url, method = 'GET', body = null, headers = {}) {
   const parsed = new URL(url);
   const payload = body == null ? '' : JSON.stringify(body);
@@ -113,13 +123,13 @@ async function login() {
   return response.token;
 }
 
-async function fetchReportDataRange(token, dateRange) {
-  log('INFO', `Consultando ${REPORT_CONFIG.name} via API: ${dateRange.from} até ${dateRange.to}`);
+async function fetchReportDataRange(token, dateRange, invoiceRange = dateRange) {
+  log('INFO', `Consultando ${REPORT_CONFIG.name} via API: NF ${dateRange.from} até ${dateRange.to} | Fatura ${invoiceRange.from} até ${invoiceRange.to}`);
   const json = await postJson(`${GRM_BASE_URL}reports/finance/invoices`, {
     biiDateFrom: dateRange.from,
     biiDateTo: dateRange.to,
-    bilDateFrom: dateRange.from,
-    bilDateTo: dateRange.to,
+    bilDateFrom: invoiceRange.from,
+    bilDateTo: invoiceRange.to,
   }, authHeaders(token));
   if (!json.result) throw new Error(json.message || 'reports/finance/invoices falhou');
   const rows = json.searchData || [];
@@ -148,19 +158,21 @@ async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
   return fetchReportDataRange(token, calculateDateRange(daysBack));
 }
 
-async function upsertDataRange(data, dateRange) {
+async function upsertDataRange(data, dateRange, invoiceRange = dateRange, options = {}) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
   const syncRunAt = new Date().toISOString();
   const mappedRecords = data.map(row => ({
     data_nota_de: toIso(dateRange.from),
     data_nota_ate: toIso(dateRange.to),
-    data_fatura_de: toIso(dateRange.from),
-    data_fatura_ate: toIso(dateRange.to),
+    data_fatura_de: toIso(invoiceRange.from),
+    data_fatura_ate: toIso(invoiceRange.to),
     cliente_nacional: row['Cliente Nacional'] || null,
     numero_nf: row['Número NF'] || row['NF'] || null,
     empresa: row['Empresa'] || null,
     fatura: row['Fatura'] != null ? String(row['Fatura']) : null,
     valor_total: parseFloat(row['Valor Total'] || row['Valor']) || null,
+    data_nota_real: apiDateToIso(row['Data N.F.'] || row['Data da NF'] || row['Data NF']),
+    valor_nota_real: Number(row['Valor Bruto'] || 0) || 0,
     dados_json: row,
     data_sincronizacao: syncRunAt, sincronizado_em: syncRunAt,
   }));
@@ -187,7 +199,7 @@ async function upsertDataRange(data, dateRange) {
   // registros atuais foram gravados com o mesmo syncRunAt, removemos linhas
   // antigas que continuam no banco mas já não aparecem no relatório oficial
   // (cancelamentos/correções retroativas). Sem isso, o DRE fica superavaliado.
-  if (records.length > 0) {
+  if (options.cleanup === true && records.length > 0) {
     const fromIso = toIso(dateRange.from);
     const toIsoDate = toIso(dateRange.to);
     const { error: cleanupError } = await supabase
@@ -198,7 +210,7 @@ async function upsertDataRange(data, dateRange) {
       .lt('data_sincronizacao', syncRunAt);
     if (cleanupError) throw cleanupError;
     log('INFO', `Reconciliação da janela concluída: removidas linhas obsoletas entre ${fromIso} e ${toIsoDate}.`);
-  } else {
+  } else if (options.cleanup === true) {
     log('WARN', 'API retornou 0 registros; limpeza de linhas obsoletas foi ignorada por segurança.');
   }
 
@@ -206,15 +218,16 @@ async function upsertDataRange(data, dateRange) {
 }
 
 async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
-  return upsertDataRange(data, calculateDateRange(daysBack));
+  const dateRange = calculateDateRange(daysBack);
+  return upsertDataRange(data, dateRange, dateRange);
 }
 
 async function main() {
   log('INFO', `=== ${REPORT_CONFIG.name} (API) ===`);
   const token = await login();
   const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
-  const data = await fetchReportDataRange(token, dateRange);
-  await upsertDataRange(data, dateRange);
+  const data = await fetchReportDataRange(token, dateRange, dateRange);
+  await upsertDataRange(data, dateRange, dateRange);
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
