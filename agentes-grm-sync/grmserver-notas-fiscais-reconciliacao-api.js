@@ -19,6 +19,10 @@ const { login, fetchReportDataRange, upsertDataRange } = require('./grmserver-no
 
 const diasConfigurados = Number(process.env.GRM_NOTAS_RECONCILIACAO_DIAS || 400);
 const DIAS_RECONCILIACAO = Number.isFinite(diasConfigurados) ? Math.max(400, diasConfigurados) : 400;
+const COMPETENCIA = String(process.env.GRM_NOTAS_COMPETENCIA || '').trim();
+const faturaLookbackConfigurado = Number(process.env.GRM_NOTAS_FATURA_LOOKBACK_MESES || 12);
+const FATURA_LOOKBACK_MESES = Number.isFinite(faturaLookbackConfigurado) ? Math.max(1, faturaLookbackConfigurado) : 12;
+const FATURA_CHUNK_MESES = 9;
 
 function log(level, msg) { console.log(`[${level}] ${new Date().toISOString()} - ${msg}`); }
 
@@ -26,33 +30,69 @@ function formatBrDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
+function parseCompetencia(value) {
+  const m = /^(20\d{2})-(0[1-9]|1[0-2])$/.exec(String(value || '').trim());
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, 1, 12, 0, 0, 0);
+}
+
+function splitInvoiceRange(start, end, chunkMonths = FATURA_CHUNK_MESES) {
+  const chunks = [];
+  let cursor = new Date(start);
+
+  while (cursor <= end) {
+    let chunkEnd = new Date(cursor.getFullYear(), cursor.getMonth() + chunkMonths, 0, 12, 0, 0, 0);
+    if (chunkEnd > end) chunkEnd = new Date(end);
+    chunks.push({ from: formatBrDate(cursor), to: formatBrDate(chunkEnd) });
+    cursor = new Date(chunkEnd.getFullYear(), chunkEnd.getMonth() + 1, 1, 12, 0, 0, 0);
+  }
+
+  return chunks;
+}
+
 function buildMonthRanges(daysBack) {
   const today = new Date();
   today.setHours(12, 0, 0, 0);
-  const start = new Date(today);
-  start.setDate(start.getDate() - daysBack);
-  start.setDate(1);
+
+  const competenciaDate = parseCompetencia(COMPETENCIA);
+  if (COMPETENCIA && !competenciaDate) {
+    throw new Error('GRM_NOTAS_COMPETENCIA inválida. Use YYYY-MM, por exemplo 2026-01.');
+  }
+
+  const start = competenciaDate || (() => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - daysBack);
+    d.setDate(1);
+    return d;
+  })();
 
   const ranges = [];
   let cursor = new Date(start);
 
   while (cursor <= today) {
     const noteStart = new Date(cursor);
-    const noteEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 12, 0, 0, 0);
-    if (noteEnd > today) noteEnd.setTime(today.getTime());
+    let noteEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 12, 0, 0, 0);
+    if (noteEnd > today) noteEnd = new Date(today);
 
-    // A tela/API aplica Data N.F. e Data da Fatura ao mesmo tempo. Para não
-    // perder NFs cujo faturamento é anterior à emissão da nota, mantemos a
-    // competência da NF exata e abrimos uma janela de 9 meses para a Fatura.
-    // Nove meses já é um intervalo aceito pela API (a consulta Jan-Set funciona)
-    // e cobre faturamentos bem anteriores sem cair em invalidDateRangeMonths.
-    const invoiceStart = new Date(noteStart.getFullYear(), noteStart.getMonth() - 8, 1, 12, 0, 0, 0);
+    // Procura faturamentos antigos sem ultrapassar o limite aceito pela API.
+    // Ex.: NF em 01/2026 pode ter Fatura em 27/03/2025. Em vez de pedir uma
+    // janela enorme de uma vez (invalidDateRangeMonths), a Data da Fatura é
+    // dividida em blocos de no máximo 9 meses, mantendo a Data N.F. fixa.
+    const invoiceStart = new Date(
+      noteStart.getFullYear(),
+      noteStart.getMonth() - FATURA_LOOKBACK_MESES,
+      1, 12, 0, 0, 0
+    );
+    const invoiceChunks = splitInvoiceRange(invoiceStart, noteEnd);
 
     ranges.push({
       note: { from: formatBrDate(noteStart), to: formatBrDate(noteEnd) },
-      invoice: { from: formatBrDate(invoiceStart), to: formatBrDate(noteEnd) },
+      invoiceStart: formatBrDate(invoiceStart),
+      invoiceEnd: formatBrDate(noteEnd),
+      invoiceChunks,
     });
 
+    if (competenciaDate) break;
     cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0, 0);
   }
 
@@ -60,21 +100,39 @@ function buildMonthRanges(daysBack) {
 }
 
 async function main() {
-  log('INFO', `=== Notas Fiscais - Reconciliação (${DIAS_RECONCILIACAO} dias, por mês de Data N.F.) ===`);
+  const escopo = COMPETENCIA ? `competência ${COMPETENCIA}` : `${DIAS_RECONCILIACAO} dias`;
+  log('INFO', `=== Notas Fiscais - Reconciliação (${escopo}, faturas até ${FATURA_LOOKBACK_MESES} meses anteriores) ===`);
   const token = await login();
   const ranges = buildMonthRanges(DIAS_RECONCILIACAO);
 
   for (let i = 0; i < ranges.length; i += 1) {
-    const { note, invoice } = ranges[i];
-    log('INFO', `Faixa ${i + 1}/${ranges.length}: NF ${note.from} até ${note.to} | Fatura ${invoice.from} até ${invoice.to}`);
-    const data = await fetchReportDataRange(token, note, invoice);
-    // Cleanup fica desligado nesta rodada de correção: primeiro reidratamos
-    // registros que a consulta anual anterior pode ter excluído. Depois da
-    // conferência com o XLS oficial, a limpeza pode ser reativada com segurança.
-    await upsertDataRange(data, note, invoice, { cleanup: false });
+    const { note, invoiceStart, invoiceEnd, invoiceChunks } = ranges[i];
+    log('INFO', `Competência ${i + 1}/${ranges.length}: NF ${note.from} até ${note.to} | Fatura ${invoiceStart} até ${invoiceEnd} em ${invoiceChunks.length} bloco(s)`);
+
+    const merged = new Map();
+    for (let j = 0; j < invoiceChunks.length; j += 1) {
+      const invoice = invoiceChunks[j];
+      log('INFO', `  Bloco fatura ${j + 1}/${invoiceChunks.length}: ${invoice.from} até ${invoice.to}`);
+      const data = await fetchReportDataRange(token, note, invoice);
+      for (const row of data) {
+        const empresa = String(row['Empresa'] || '').trim();
+        const fatura = String(row['Fatura'] ?? '').trim();
+        const key = empresa && fatura ? `${empresa}|${fatura}` : JSON.stringify(row);
+        merged.set(key, row);
+      }
+    }
+
+    const data = [...merged.values()];
+    log('INFO', `Competência consolidada: ${data.length} registro(s) únicos.`);
+    await upsertDataRange(
+      data,
+      note,
+      { from: invoiceStart, to: invoiceEnd },
+      { cleanup: false }
+    );
   }
 
-  log('SUCCESS', `Reconciliação de Notas Fiscais concluída em ${ranges.length} faixa(s) mensais!`);
+  log('SUCCESS', `Reconciliação de Notas Fiscais concluída em ${ranges.length} competência(s)!`);
 }
 
 if (require.main === module) {
@@ -82,7 +140,7 @@ if (require.main === module) {
     log('ERROR', error.stack || error.message);
     process.exit(1);
   });
-  // A reconciliação consulta competência por competência de Data N.F.; o timeout
-  // cobre todas as faixas mensais sequenciais.
+  // A reconciliação consulta competência por competência e pode dividir a Data
+  // da Fatura em vários blocos; o timeout cobre as consultas sequenciais.
   setTimeout(() => process.exit(1), 600000);
 }
