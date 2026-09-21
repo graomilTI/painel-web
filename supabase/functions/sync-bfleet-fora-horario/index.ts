@@ -132,7 +132,7 @@ function pad2(n: number) {
 
 function toIsoDate(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`;
+    return saoPauloIsoDate(value);
   }
   const raw = asString(value);
   if (!raw) return null;
@@ -144,7 +144,9 @@ function toIsoDate(value: unknown) {
     return `${y}-${pad2(Number(br[2]))}-${pad2(Number(br[1]))}`;
   }
   const dt = new Date(raw);
-  if (!Number.isNaN(dt.getTime())) return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+  // Datas/horas com offset (ex.: -03:00) precisam ser normalizadas pela data
+  // civil de Brasília, e não pelos getters UTC do runtime da Edge Function.
+  if (!Number.isNaN(dt.getTime())) return saoPauloIsoDate(dt);
   return null;
 }
 
@@ -533,13 +535,17 @@ async function fetchWebReport(cfg: any) {
   const cookie = await resolveWebCookie(cfg);
   if (!cookie) throw new Error("Configure as credenciais web da BFleet para consultar o relatório Fora do horário.");
   const dataJson = await loadSavedWebReport(cfg, cookie);
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const yesterdayIso = addIsoDays(saoPauloIsoDate(), -1);
   if (cfg.dataInicial && cfg.dataFinal) {
     dataJson.fecha_inicio = toIsoDate(cfg.dataInicial) || cfg.dataInicial;
     dataJson.fecha_fin = toIsoDate(cfg.dataFinal) || cfg.dataFinal;
   } else if (normalizeKey(cfg.rangeTimeVal) === "YESTERDAY") {
-    dataJson.fecha_inicio = formatBrDate(yesterday);
-    dataJson.fecha_fin = formatBrDate(yesterday);
+    // O runtime do Supabase opera em UTC. Converte explicitamente o "ontem"
+    // da conta para a data civil de Brasília antes de consultar a BFleet.
+    const [y, m, d] = yesterdayIso.split("-");
+    const yesterdayBr = `${d}/${m}/${y}`;
+    dataJson.fecha_inicio = yesterdayBr;
+    dataJson.fecha_fin = yesterdayBr;
   }
   dataJson.hora_inicio = "00:00:00";
   dataJson.hora_fin = "23:59:59";
@@ -1145,9 +1151,9 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   const targetWindow = requestedWindow(cfg);
   const reportCfg = { ...cfg };
   if (targetWindow.start && targetWindow.end) {
-    // Busca também o dia anterior para capturar uma viagem iniciada antes da meia-noite
-    // e que continue dentro da janela 00h-05h do dia auditado.
-    reportCfg.dataInicial = addIsoDays(targetWindow.start, -1);
+    // Consulta exatamente o período solicitado no relatório BFleet.
+    // A janela 00h-05h é aplicada somente ao cálculo de km/caixa, não às ocorrências.
+    reportCfg.dataInicial = targetWindow.start;
     reportCfg.dataFinal = targetWindow.end;
   }
 
@@ -1173,7 +1179,10 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   const mappedAll = report.rows
     .map((r: any) => mapReportRow(r, "BFleet · relatório " + cfg.reportId))
     .filter(Boolean) as any[];
-  let mapped = expandBrasiliaOutsideRows(mappedAll);
+  // O relatório "Fora do horário" da BFleet já determina quais eventos estão
+  // fora do expediente. Não reduza as ocorrências à janela 00h-05h aqui:
+  // essa janela é usada somente para calcular a quilometragem financeira.
+  let mapped = mappedAll.slice();
   if (targetWindow.start) mapped = mapped.filter((r) => r.data_evento >= targetWindow.start);
   if (targetWindow.end) mapped = mapped.filter((r) => r.data_evento <= targetWindow.end);
 
@@ -1227,7 +1236,11 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
 
   const groupEntries = Array.from(groups.entries());
   const ocorrencias = await mapWithConcurrency(groupEntries, 5, async ([key, groupRows]) => {
-    const sample = groupRows[0];
+    const orderedGroupRows = [...groupRows].sort((a, b) =>
+      asString(a?.hora_evento || "").localeCompare(asString(b?.hora_evento || ""))
+    );
+    const sample = orderedGroupRows[0] || groupRows[0];
+    const lastSample = orderedGroupRows[orderedGroupRows.length - 1] || sample;
     const dataEvento = sample.data_evento;
     const placa = sample.placa;
     const fallback = reportWindowSummary(groupRows, dataEvento);
@@ -1247,8 +1260,22 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
 
     const useHistory = history && history.km > 0;
     const km = useHistory ? history.km : fallback.km;
-    const horaInicio = (useHistory ? history.horaInicio : secondsToTime(fallback.firstSec)) || sample.hora_evento || null;
-    const horaFim = (useHistory ? history.horaFim : secondsToTime(fallback.lastSec)) || null;
+
+    // "Deslocamento" mostra o horário real da ocorrência BFleet em Brasília.
+    // O histórico 00h-05h serve apenas para a quilometragem/caixa.
+    const bfleetHoraInicio = parseTimeText(
+      pick(sample?.raw || {}, ["Inicio", "Início", "start", "inicio", "Hora", "time", "dateTime"])
+    ) || sample.hora_evento || null;
+    const bfleetHoraFim = parseTimeText(
+      pick(lastSample?.raw || {}, ["Final", "Fim", "end", "final", "Hora Fim", "hora_fim"])
+    ) || null;
+    const horaInicio = bfleetHoraInicio
+      || (useHistory ? history.horaInicio : secondsToTime(fallback.firstSec))
+      || null;
+    const horaFim = bfleetHoraFim
+      || (useHistory ? history.horaFim : secondsToTime(fallback.lastSec))
+      || horaInicio
+      || null;
     const firstRaw = fallback.firstRaw || sample.raw || {};
     const lastRaw = fallback.lastRaw || firstRaw;
     const enderecoInicio = (useHistory ? history.enderecoInicio : null)
@@ -1304,7 +1331,9 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
       fonte_calculo: fonteCalculo,
       calculo_detalhes: {
         janela: "00:00:00-05:00:00",
+        janela_tipo: "CALCULO_KM_CAIXA",
         timezone_regra: "America/Sao_Paulo",
+        horario_ocorrencia_fonte: "BFLEET_RELATORIO_FORA_HORARIO",
         history: history ? {
           pontos: history.pontos,
           segmentos: history.segmentos,
@@ -1335,17 +1364,6 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     }
   }
 
-  const importedDates = Array.from(new Set(mapped.map((r) => r.data_evento).filter(Boolean)));
-  if (importedDates.length) {
-    const { error: cleanupError } = await supabase
-      .from("frotas_fora_horario")
-      .delete()
-      .eq("origem", "bfleet_api")
-      .in("data_evento", importedDates)
-      .or("hora_evento.is.null,hora_evento.gte.05:00:00");
-    if (cleanupError) throw new Error(cleanupError.message || "Falha ao remover registros fora da janela de 00h às 05h.");
-  }
-
   return {
     ok: true,
     endpoint: report.endpoint,
@@ -1354,7 +1372,9 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     total: mapped.length,
     total_origem: mappedAll.length,
     descartados_fora_da_janela: mappedAll.length - mapped.length,
-    janela_horario_brasilia: "00:00:00-04:59:59",
+    timezone_regra: "America/Sao_Paulo",
+    janela_ocorrencias: "RELATORIO_BFLEET_COMPLETO",
+    janela_calculo_km_brasilia: "00:00:00-04:59:59",
     upserted: insertedOrUpdated,
     inserted: insertedOrUpdated,
     updated: 0,
