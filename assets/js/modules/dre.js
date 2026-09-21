@@ -144,6 +144,16 @@
       return {...out, regionais:new Set(out.regionais)};
     }catch{ return null; }
   }
+  function clearDreSourceCaches(year){
+    const keys=[
+      `grao1000:dre-nf:v2:${year}`,
+      `grao1000:dre-diario:${year}`,
+      `grao1000:dre-despesas:${year}`,
+      `grao1000:dre-colab:${year}`,
+      `grao1000:dre-ativos:${year}`
+    ];
+    try{ keys.forEach(key=>sessionStorage.removeItem(key)); }catch{}
+  }
 
   function parseManifest(report){
     const raw=String(report?.observacoes||'').trim();
@@ -387,7 +397,7 @@
   // rolante de ~35 dias (não o ano inteiro), então meses fora dessa janela continuam
   // vindo do upload manual.
   async function loadNotasFiscaisFromDb(supabase, year){
-    const cached=dreFromCache(`grao1000:dre-nf:${year}`);
+    const cached=dreFromCache(`grao1000:dre-nf:v2:${year}`);
     if(cached) return cached;
     const out={bruto:{}, descAcresc:{}, impostos:{}, regionais:new Set(), totalRows:0};
     if(!supabase || !year) return out;
@@ -441,7 +451,7 @@
     // Só cacheia em caso de sucesso: cachear um resultado vazio de uma falha de rede/timeout
     // travava as Notas Fiscais em zero por até DRE_CACHE_TTL (2h), mesmo já tendo dados reais
     // no banco - o botão "Atualizar DRE" também não limpa esse cache específico.
-    if(!fetchFailed) dreCache(`grao1000:dre-nf:${year}`, out);
+    if(!fetchFailed) dreCache(`grao1000:dre-nf:v2:${year}`, out);
     return out;
   }
 
@@ -1057,19 +1067,30 @@
     return target;
   }
 
-  // Notas Fiscais: mesma estratégia "melhor mês" da Produção/Despesas.
-  function mergeNFMelhorMes(target, source){
+  // Notas Fiscais: o relatório importado é a fonte oficial do mês inteiro.
+  // O banco sincronizado pelo agente só preenche meses ausentes no relatório.
+  // Nunca escolhemos "o maior valor" por regional, pois isso misturava duas
+  // versões diferentes do mesmo mês e gerava um DRE híbrido.
+  function nfMonthHasValues(source, mi){
+    return [source?.bruto, source?.descAcresc, source?.impostos].some(map =>
+      Object.values(map || {}).some(arr => Math.abs(n(arr?.[mi])) > 0)
+    );
+  }
+  function mergeNFPriorizaRelatorio(target, source){
     if(!source) return target;
-    const regs=new Set([...Object.keys(target.bruto||{}),...Object.keys(source.bruto||{})]);
-    for(const reg of regs){
-      for(let mi=0;mi<12;mi++){
-        const atualPontuacao=Math.abs(getArrVal(target.bruto, reg, mi))+Math.abs(getArrVal(target.impostos, reg, mi));
-        const novoPontuacao=Math.abs(getArrVal(source.bruto, reg, mi))+Math.abs(getArrVal(source.impostos, reg, mi));
-        if(novoPontuacao > atualPontuacao){
-          setArrVal(target.bruto, reg, mi, getArrVal(source.bruto, reg, mi));
-          setArrVal(target.descAcresc, reg, mi, getArrVal(source.descAcresc, reg, mi));
-          setArrVal(target.impostos, reg, mi, getArrVal(source.impostos, reg, mi));
-        }
+    const regs=new Set([
+      ...Object.keys(source.bruto||{}),
+      ...Object.keys(source.descAcresc||{}),
+      ...Object.keys(source.impostos||{})
+    ]);
+    for(let mi=0;mi<12;mi++){
+      // Se o upload oficial contém qualquer dado nesse mês, preserva o mês
+      // completo do relatório e não mistura regionais vindas do banco.
+      if(nfMonthHasValues(target, mi)) continue;
+      for(const reg of regs){
+        setArrVal(target.bruto, reg, mi, getArrVal(source.bruto, reg, mi));
+        setArrVal(target.descAcresc, reg, mi, getArrVal(source.descAcresc, reg, mi));
+        setArrVal(target.impostos, reg, mi, getArrVal(source.impostos, reg, mi));
       }
     }
     mergeSet(target.regionais, source.regionais);
@@ -1164,13 +1185,13 @@
     }
 
     if(nfDb.totalRows > 0){
-      mergeNFMelhorMes(src.nf, nfDb);
+      mergeNFPriorizaRelatorio(src.nf, nfDb);
       if(!state.sourceAudit) state.sourceAudit = { used: [], ignored: [] };
       state.sourceAudit.used.push({
         tipo: 'notas-fiscais-agente-db',
         nome: `grm_notas_fiscais_importacoes (${nfDb.totalRows} linhas)`,
-        status: 'fonte_mensal_segura',
-        modo: 'merge_best_month',
+        status: 'fonte_mensal_fallback',
+        modo: 'fill_missing_months',
         created_at: new Date().toISOString()
       });
     }
@@ -1473,7 +1494,10 @@
     });
     container.querySelector('#regionalSelect').addEventListener('change',e=>{state.regional=e.target.value; renderReport(container);});
     container.querySelectorAll('.dre-tab').forEach(btn=>btn.addEventListener('click',()=>{state.tab=btn.dataset.tab; container.querySelectorAll('.dre-tab').forEach(b=>b.classList.toggle('active',b===btn)); if(state.data) renderReport(container);}));
-    container.querySelector('#refreshDre').addEventListener('click',()=>runDreRefresh(container, opts, setStatus));
+    container.querySelector('#refreshDre').addEventListener('click',()=>{
+      clearDreSourceCaches(state.year);
+      runDreRefresh(container, opts, setStatus);
+    });
     container.querySelector('#exportPdf').addEventListener('click',exportPdf); container.querySelector('#exportAllPdfs').addEventListener('click',exportAllRegionalPdfs); container.querySelector('#exportImg').addEventListener('click',exportImage);
 
     const cached=loadFullReportCache(state.year);
