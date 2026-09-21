@@ -148,6 +148,7 @@ async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
 async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
   const dateRange = calculateDateRange(daysBack);
+  const syncRunAt = new Date().toISOString();
   const mappedRecords = data.map(row => ({
     data_nota_de: toIso(dateRange.from),
     data_nota_ate: toIso(dateRange.to),
@@ -159,7 +160,7 @@ async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
     fatura: row['Fatura'] != null ? String(row['Fatura']) : null,
     valor_total: parseFloat(row['Valor Total'] || row['Valor']) || null,
     dados_json: row,
-    data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString(),
+    data_sincronizacao: syncRunAt, sincronizado_em: syncRunAt,
   }));
   // "N.F." (numero_nf) NAO identifica uma linha unica: uma mesma nota fiscal pode
   // agrupar varias Faturas (cargas/carregamentos distintos, cada um com seu proprio
@@ -178,6 +179,25 @@ async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
     const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'empresa,fatura' });
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
+  }
+
+  // A API retorna o retrato completo da janela consultada. Depois que todos os
+  // registros atuais foram gravados com o mesmo syncRunAt, removemos linhas
+  // antigas que continuam no banco mas já não aparecem no relatório oficial
+  // (cancelamentos/correções retroativas). Sem isso, o DRE fica superavaliado.
+  if (records.length > 0) {
+    const fromIso = toIso(dateRange.from);
+    const toIsoDate = toIso(dateRange.to);
+    const { error: cleanupError } = await supabase
+      .from(REPORT_CONFIG.tableName)
+      .delete()
+      .gte('data_nota_real', fromIso)
+      .lte('data_nota_real', toIsoDate)
+      .lt('data_sincronizacao', syncRunAt);
+    if (cleanupError) throw cleanupError;
+    log('INFO', `Reconciliação da janela concluída: removidas linhas obsoletas entre ${fromIso} e ${toIsoDate}.`);
+  } else {
+    log('WARN', 'API retornou 0 registros; limpeza de linhas obsoletas foi ignorada por segurança.');
   }
 
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
