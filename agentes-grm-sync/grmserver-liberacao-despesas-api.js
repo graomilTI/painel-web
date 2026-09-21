@@ -500,8 +500,7 @@ async function updateStateIfCurrent(job, patch) {
     .update(patch)
     .eq('cpf', digits(job.cpf))
     .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
-    .eq('hash_desejado', job.hash_desejado)
-    .eq('versao_desejada_id', job.versao_id);
+    .eq('hash_desejado', job.hash_desejado);
   if (error) throw error;
 }
 
@@ -511,7 +510,7 @@ async function markSuperseded(job, state) {
     locked_at: null,
     finalizado_em: new Date().toISOString(),
     diagnostico: {
-      motivo: 'Versão ou hash mais novo encontrado antes de acessar o GRM.',
+      motivo: 'Hash mais novo encontrado antes de acessar o GRM.',
       versao_job: job.versao_id,
       versao_atual: state?.versao_desejada_id || null,
       hash_job: job.hash_desejado,
@@ -539,6 +538,28 @@ async function markSuccess(job, result) {
   });
 
   await updateStateIfCurrent(job, { hash_aplicado: job.hash_desejado, status_aplicacao: finalStatus, aplicado_em: now });
+
+  // Republicações com o mesmo hash geram itens pendentes redundantes: o GRM
+  // acabou de ser conferido com exatamente este estado, então não há o que
+  // reaplicar (evita nova visita ao GRM e o item voltar pro fim da fila).
+  const { error: dupError } = await supabase
+    .from('grm_despesas_fila')
+    .update({
+      status: 'IGNORADO_VERSAO_SUPERADA',
+      locked_at: null,
+      finalizado_em: now,
+      diagnostico: {
+        motivo: 'Mesmo hash já aplicado e conferido por outro item da fila.',
+        aplicado_por: job.id,
+        hash_job: job.hash_desejado,
+      },
+    })
+    .eq('cpf', job.cpf)
+    .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
+    .eq('hash_desejado', job.hash_desejado)
+    .eq('status', 'PENDENTE')
+    .neq('id', job.id);
+  if (dupError) log('WARN', `Não foi possível encerrar duplicados do hash ${job.hash_desejado}: ${dupError.message}`);
 }
 
 async function markFailure(job, error) {
@@ -645,7 +666,7 @@ async function processDryRun(token, ctx) {
   for (const job of jobs) {
     try {
       const state = await getLatestState(job.cpf, job.data_referencia);
-      if (!state || state.hash_desejado !== job.hash_desejado || state.versao_desejada_id !== job.versao_id) {
+      if (!state || state.hash_desejado !== job.hash_desejado) {
         log('INFO', `DRY_RUN: job ${job.id} está superado; será ignorado apenas em execução real.`);
         continue;
       }
@@ -707,7 +728,7 @@ async function processReal(token, ctx) {
 
     try {
       const state = await getLatestState(job.cpf, job.data_referencia);
-      if (!state || state.hash_desejado !== job.hash_desejado || state.versao_desejada_id !== job.versao_id) {
+      if (!state || state.hash_desejado !== job.hash_desejado) {
         await markSuperseded(job, state);
         log('INFO', `Job ${job.id} ignorado: versão superada.`);
         continue;

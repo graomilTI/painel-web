@@ -202,8 +202,12 @@ function canonicalRules(rules) {
   const unique = new Map();
 
   for (const raw of Array.isArray(rules) ? rules : []) {
+    const rawType = String(raw.tipo_despesa || '').trim();
+    const canonicalType = norm(rawType) === 'LAVAGEM DE VEICULO'
+      ? 'Lavagem Veículo'
+      : rawType;
     const rule = {
-      tipo_despesa: String(raw.tipo_despesa || '').trim(),
+      tipo_despesa: canonicalType,
       exibir: raw.exibir !== false,
       valor_maximo: Number(raw.valor_maximo || 0),
       auto: raw.auto === true,
@@ -1669,6 +1673,9 @@ async function addCashRuleRow(page) {
 }
 
 async function chooseRuleType(page, rowIndex, typeText) {
+  const selectableTypeText = norm(typeText) === 'LAVAGEM DE VEICULO'
+    ? 'Lavagem Veículo'
+    : typeText;
   const descriptor = await page.evaluate((index) => {
     const normalize = (value) =>
       String(value || '')
@@ -1746,8 +1753,16 @@ async function chooseRuleType(page, rowIndex, typeText) {
       })),
     );
 
+    const requestedType = norm(typeText);
+    const aliases = {
+      'LAVAGEM DE VEICULO': ['LAVAGEM VEICULO'],
+    };
+    const acceptedTypes = new Set([
+      requestedType,
+      ...(aliases[requestedType] || []),
+    ]);
     const match = options.find((option) =>
-      norm(option.text) === norm(typeText));
+      acceptedTypes.has(norm(option.text)));
 
     if (!match) {
       const error = new Error(
@@ -1784,7 +1799,7 @@ async function chooseRuleType(page, rowIndex, typeText) {
     await page.keyboard.up('Control');
   }
 
-  await input.type(typeText, {
+  await input.type(selectableTypeText, {
     delay: 20,
   });
 
@@ -1819,7 +1834,7 @@ async function chooseRuleType(page, rowIndex, typeText) {
 
       exact.click();
       return { selected: true, labels };
-    }, typeText);
+    }, selectableTypeText);
 
     selected = lookup.selected;
     availableTypes = lookup.labels;
@@ -2438,8 +2453,7 @@ async function updateStateIfCurrent(job, patch) {
     .update(patch)
     .eq('cpf', digits(job.cpf))
     .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
-    .eq('hash_desejado', job.hash_desejado)
-    .eq('versao_desejada_id', job.versao_id);
+    .eq('hash_desejado', job.hash_desejado);
 
   if (error) throw error;
 }
@@ -2450,7 +2464,7 @@ async function markSuperseded(job, state) {
     locked_at: null,
     finalizado_em: new Date().toISOString(),
     diagnostico: {
-      motivo: 'Versão ou hash mais novo encontrado antes de acessar o GRM.',
+      motivo: 'Hash mais novo encontrado antes de acessar o GRM.',
       versao_job: job.versao_id,
       versao_atual: state?.versao_desejada_id || null,
       hash_job: job.hash_desejado,
@@ -2487,6 +2501,31 @@ async function markSuccess(job, result, screenshot) {
     status_aplicacao: finalStatus,
     aplicado_em: now,
   });
+
+  // Republicações com o mesmo hash geram itens pendentes redundantes: o GRM
+  // acabou de ser conferido com exatamente este estado, então não há o que
+  // reaplicar (evita nova visita ao GRM e o item voltar pro fim da fila).
+  const { error: dupError } = await supabase
+    .from('grm_despesas_fila')
+    .update({
+      status: 'IGNORADO_VERSAO_SUPERADA',
+      locked_at: null,
+      finalizado_em: now,
+      diagnostico: {
+        motivo: 'Mesmo hash já aplicado e conferido por outro item da fila.',
+        aplicado_por: job.id,
+        hash_job: job.hash_desejado,
+      },
+    })
+    .eq('cpf', job.cpf)
+    .eq('data_referencia', String(job.data_referencia || '').slice(0, 10))
+    .eq('hash_desejado', job.hash_desejado)
+    .eq('status', 'PENDENTE')
+    .neq('id', job.id);
+
+  if (dupError) {
+    log('WARN', `Não foi possível encerrar duplicados do hash ${job.hash_desejado}: ${dupError.message}`);
+  }
 }
 
 async function markFailure(job, error, screenshot) {
@@ -2618,7 +2657,6 @@ async function processDryRun(page) {
       if (
         !state
         || state.hash_desejado !== job.hash_desejado
-        || state.versao_desejada_id !== job.versao_id
       ) {
         log(
           'INFO',
@@ -2730,7 +2768,6 @@ async function processReal(page) {
       if (
         !state
         || state.hash_desejado !== job.hash_desejado
-        || state.versao_desejada_id !== job.versao_id
       ) {
         await markSuperseded(job, state);
 
