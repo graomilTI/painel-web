@@ -37,5 +37,5 @@ if (require.main === module) {
   });
   // Janela maior = mais linhas que o agente rápido; timeout generoso pra não
   // matar o processo no meio de um upsert grande.
-  setTimeout(() => process.exit(1), 300000);
+  setTimeout(() => process.exit(1), 600000);
 }
