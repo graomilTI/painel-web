@@ -36,7 +36,7 @@ function digits(value: unknown): string {
 function norm(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
@@ -455,14 +455,22 @@ Deno.serve(async (req) => {
     );
     const globalOsIds = activePrograms.map((row) => clean(row.id)).filter(Boolean);
     const globalLinks: Record<string, unknown>[] = [];
+    // Sem paginar, o PostgREST corta em 1000 linhas sem erro: em 21/09/2026 eram
+    // 1196 vínculos confirmados, e os CPFs cortados deixavam de contar como
+    // "atuando em outra regional". Aí a regional de cadastro emitia LIMPAR pra
+    // quem estava trabalhando em outra, e a cada reconciliação (10 min) o estado
+    // alternava APLICAR/LIMPAR.
     for (const ids of chunk(globalOsIds)) {
-      const { data, error } = await service
-        .from('programacao_equipe')
-        .select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado,created_at')
-        .in('programacao_id', ids)
-        .eq('confirmado', true);
-      if (error) throw error;
-      globalLinks.push(...(data || []).map((row) => ({
+      const rows = await paginateAll<Record<string, unknown>>(
+        (from, to) => service
+          .from('programacao_equipe')
+          .select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado,created_at')
+          .in('programacao_id', ids)
+          .eq('confirmado', true)
+          .order('id')
+          .range(from, to),
+      );
+      globalLinks.push(...rows.map((row) => ({
         ...row,
         colaborador_key: row.colaborador_id,
         colaborador_cpf: row.colaborador_id,
@@ -488,13 +496,16 @@ Deno.serve(async (req) => {
       cpfsAuthorizedInActiveWindow.add(resolved.cpf);
     }
     for (const ids of chunk(globalOsIds)) {
-      const { data, error } = await service
-        .from('programacao_colaboradores')
-        .select('programacao_id,colaborador_id,nome_colaborador')
-        .in('programacao_id', ids)
-        .eq('disponibilidade', 'DISPONIVEL');
-      if (error) throw error;
-      for (const row of data || []) {
+      const availableGlobalRows = await paginateAll<Record<string, unknown>>(
+        (from, to) => service
+          .from('programacao_colaboradores')
+          .select('programacao_id,colaborador_id,nome_colaborador')
+          .in('programacao_id', ids)
+          .eq('disponibilidade', 'DISPONIVEL')
+          .order('id')
+          .range(from, to),
+      );
+      for (const row of availableGlobalRows) {
         const resolved = resolveLinkCpf({
           colaborador_key: row.colaborador_id,
           colaborador_cpf: row.colaborador_id,
