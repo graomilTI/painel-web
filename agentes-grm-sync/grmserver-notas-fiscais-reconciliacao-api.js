@@ -26,43 +26,55 @@ function formatBrDate(date) {
   return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
 }
 
-function buildYearRanges(daysBack) {
+function buildMonthRanges(daysBack) {
   const today = new Date();
   today.setHours(12, 0, 0, 0);
   const start = new Date(today);
   start.setDate(start.getDate() - daysBack);
+  start.setDate(1);
 
   const ranges = [];
   let cursor = new Date(start);
 
   while (cursor <= today) {
-    const end = new Date(cursor.getFullYear(), 11, 31, 12, 0, 0, 0);
-    if (end > today) end.setTime(today.getTime());
+    const noteStart = new Date(cursor);
+    const noteEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 12, 0, 0, 0);
+    if (noteEnd > today) noteEnd.setTime(today.getTime());
+
+    // A tela/API aplica Data N.F. e Data da Fatura ao mesmo tempo. Para não
+    // perder NFs cujo faturamento é anterior à emissão da nota, mantemos a
+    // competência da NF exata e abrimos uma janela de 9 meses para a Fatura.
+    // Nove meses já é um intervalo aceito pela API (a consulta Jan-Set funciona)
+    // e cobre faturamentos bem anteriores sem cair em invalidDateRangeMonths.
+    const invoiceStart = new Date(noteStart.getFullYear(), noteStart.getMonth() - 8, 1, 12, 0, 0, 0);
 
     ranges.push({
-      from: formatBrDate(cursor),
-      to: formatBrDate(end),
+      note: { from: formatBrDate(noteStart), to: formatBrDate(noteEnd) },
+      invoice: { from: formatBrDate(invoiceStart), to: formatBrDate(noteEnd) },
     });
 
-    cursor = new Date(end.getFullYear() + 1, 0, 1, 12, 0, 0, 0);
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0, 0);
   }
 
   return ranges;
 }
 
 async function main() {
-  log('INFO', `=== Notas Fiscais - Reconciliação (${DIAS_RECONCILIACAO} dias, por ano) ===`);
+  log('INFO', `=== Notas Fiscais - Reconciliação (${DIAS_RECONCILIACAO} dias, por mês de Data N.F.) ===`);
   const token = await login();
-  const ranges = buildYearRanges(DIAS_RECONCILIACAO);
+  const ranges = buildMonthRanges(DIAS_RECONCILIACAO);
 
   for (let i = 0; i < ranges.length; i += 1) {
-    const dateRange = ranges[i];
-    log('INFO', `Faixa ${i + 1}/${ranges.length}: ${dateRange.from} até ${dateRange.to}`);
-    const data = await fetchReportDataRange(token, dateRange);
-    await upsertDataRange(data, dateRange);
+    const { note, invoice } = ranges[i];
+    log('INFO', `Faixa ${i + 1}/${ranges.length}: NF ${note.from} até ${note.to} | Fatura ${invoice.from} até ${invoice.to}`);
+    const data = await fetchReportDataRange(token, note, invoice);
+    // Cleanup fica desligado nesta rodada de correção: primeiro reidratamos
+    // registros que a consulta anual anterior pode ter excluído. Depois da
+    // conferência com o XLS oficial, a limpeza pode ser reativada com segurança.
+    await upsertDataRange(data, note, invoice, { cleanup: false });
   }
 
-  log('SUCCESS', `Reconciliação de Notas Fiscais concluída em ${ranges.length} faixa(s)!`);
+  log('SUCCESS', `Reconciliação de Notas Fiscais concluída em ${ranges.length} faixa(s) mensais!`);
 }
 
 if (require.main === module) {
@@ -70,7 +82,7 @@ if (require.main === module) {
     log('ERROR', error.stack || error.message);
     process.exit(1);
   });
-  // A API do GRM rejeita intervalos que atravessam muitos meses. A reconciliação
-  // divide a janela por ano, e o timeout cobre todas as faixas sequenciais.
+  // A reconciliação consulta competência por competência de Data N.F.; o timeout
+  // cobre todas as faixas mensais sequenciais.
   setTimeout(() => process.exit(1), 600000);
 }
