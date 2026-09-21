@@ -113,8 +113,7 @@ async function login() {
   return response.token;
 }
 
-async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
-  const dateRange = calculateDateRange(daysBack);
+async function fetchReportDataRange(token, dateRange) {
   log('INFO', `Consultando ${REPORT_CONFIG.name} via API: ${dateRange.from} até ${dateRange.to}`);
   const json = await postJson(`${GRM_BASE_URL}reports/finance/invoices`, {
     biiDateFrom: dateRange.from,
@@ -145,9 +144,12 @@ async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
   return data;
 }
 
-async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
+async function fetchReportData(token, daysBack = REPORT_CONFIG.daysBack) {
+  return fetchReportDataRange(token, calculateDateRange(daysBack));
+}
+
+async function upsertDataRange(data, dateRange) {
   log('INFO', `Iniciando upsert de ${data.length} registros...`);
-  const dateRange = calculateDateRange(daysBack);
   const syncRunAt = new Date().toISOString();
   const mappedRecords = data.map(row => ({
     data_nota_de: toIso(dateRange.from),
@@ -203,11 +205,16 @@ async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
+async function upsertData(data, daysBack = REPORT_CONFIG.daysBack) {
+  return upsertDataRange(data, calculateDateRange(daysBack));
+}
+
 async function main() {
   log('INFO', `=== ${REPORT_CONFIG.name} (API) ===`);
   const token = await login();
-  const data = await fetchReportData(token);
-  await upsertData(data);
+  const dateRange = calculateDateRange(REPORT_CONFIG.daysBack);
+  const data = await fetchReportDataRange(token, dateRange);
+  await upsertDataRange(data, dateRange);
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
@@ -219,4 +226,4 @@ if (require.main === module) {
   setTimeout(() => process.exit(1), 120000);
 }
 
-module.exports = { fetchReportData, login, upsertData };
+module.exports = { calculateDateRange, fetchReportData, fetchReportDataRange, login, upsertData, upsertDataRange };
