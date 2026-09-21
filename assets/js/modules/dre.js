@@ -719,7 +719,9 @@
     const cargas=reg?getArr(prod.cargas,reg):Array.from({length:12},(_,mi)=>sumMapMonth(prod.cargas,mi));
     const prodColab=reg?getArr(prod.prodColab,reg):(prod.prodColabGeral || Array(12).fill(0));
     const prodColabGeral=prod.prodColabGeral || Array(12).fill(0);
-    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.inv[mi]+vals.investLog1000[mi]);
+    // vals.emp só é preenchido no DRE Geral (nas regionais fica 0); Total Custos precisa
+    // incluir Empréstimos Terceiros, senão não fecha com Receita Líquida - Resultado Final.
+    const totalDesp=vals.despOp.map((_,mi)=>vals.despOp[mi]+vals.veic[mi]+vals.pessoal[mi]+vals.adm[mi]+vals.fin[mi]+vals.emp[mi]+vals.inv[mi]+vals.investLog1000[mi]);
     const cptEmb=totalDesp.map((v,mi)=>div(v,volTotal[mi]));
     const cptClass=totalDesp.map((v,mi)=>div(v,volClass[mi]));
     const receitaTon=vals.rec.map((v,mi)=>div(v,volTotal[mi]));
