@@ -68,7 +68,7 @@ Precisa de `OUROSAFRA_USER`/`OUROSAFRA_PASSWORD` no `.env` (ver `.env.example`) 
 
 ### `grmserver-notas-fiscais-reconciliacao-api.js` (novo, 17/09 — em cron desde 17/09, mesma lane `entrada_financeiro_a` do agente rápido, `interval_minutes=1440`)
 
-Reconciliação diária de Notas Fiscais: mesma tabela e mesmo `onConflict` (`empresa,fatura`) do agente rápido `sync-notas-fiscais` (janela de 30 dias), mas com janela de 120 dias (`GRM_NOTAS_RECONCILIACAO_DIAS`). Achado 17/09 comparando o DRE (`assets/js/modules/dre.js`) com o Relatório de Notas Fiscais oficial da GRM: sobravam de 2 a 7 notas por mês (~R$4-33 mil) que nunca chegavam a sincronizar. Causa mais provável: nota lançada atrasada na GRM (Data N.F. de um dia, cadastrada no sistema só semanas depois) "perde o trem" da janela rolante de 30 dias antes mesmo de existir no GRM. Rodando 1x/dia com janela de 120 dias, a nota atrasada tem várias chances de ser pega antes de sair também dessa janela maior.
+Reconciliação diária de Notas Fiscais: mesma tabela e mesmo `onConflict` (`empresa,fatura`) do agente rápido `sync-notas-fiscais` (janela de 30 dias), mas com janela mínima de 400 dias (`GRM_NOTAS_RECONCILIACAO_DIAS`). Achado 17/09 comparando o DRE (`assets/js/modules/dre.js`) com o Relatório de Notas Fiscais oficial da GRM: sobravam de 2 a 7 notas por mês (~R$4-33 mil) que nunca chegavam a sincronizar. Causa mais provável: nota lançada atrasada na GRM (Data N.F. de um dia, cadastrada no sistema só semanas depois) "perde o trem" da janela rolante de 30 dias antes mesmo de existir no GRM. Rodando 1x/dia com janela mínima de 400 dias, a nota atrasada tem várias chances de ser pega antes de sair também dessa janela maior.
 
 Reaproveita `login`/`fetchReportData`/`upsertData` exportados por `grmserver-notas-fiscais-api.js` (só passa um `daysBack` maior) — não duplica a lógica de fetch/parse/upsert. Registrado em `grm_sync_agent_settings` na mesma lane do agente rápido (migration `20260917000000_grm_notas_fiscais_reconciliacao_agent_settings.sql`); como o worker de cada lane só roda 1 job por vez, os dois agentes nunca disputam a API do GRM em paralelo, só se revezam na fila.
 
@@ -88,7 +88,7 @@ GRM_COLABORADORES_POLL_MS=5000
 # Opcional: janela do agente rápido de Notas Fiscais (dias)
 GRM_NOTAS_DIAS=30
 # Opcional: janela da reconciliação diária de Notas Fiscais (dias)
-GRM_NOTAS_RECONCILIACAO_DIAS=120
+GRM_NOTAS_RECONCILIACAO_DIAS=400
 ```
 
 ## Colaboradores pela API (quase em tempo real)

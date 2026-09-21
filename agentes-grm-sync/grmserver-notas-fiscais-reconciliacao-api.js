@@ -2,13 +2,13 @@
 
 /**
  * Reconciliação de Notas Fiscais: re-sincroniza uma janela bem mais larga
- * (padrão 120 dias) do que o agente rápido (grmserver-notas-fiscais-api.js,
+ * (padrão mínimo de 400 dias) do que o agente rápido (grmserver-notas-fiscais-api.js,
  * 30 dias). Achado 17/09 comparando o DRE com o Relatório de Notas Fiscais
  * oficial da GRM: sobravam algumas notas por mês (2 a 7, ~R$4-33 mil) que
  * nunca chegavam a sincronizar - a hipótese mais provável é nota lançada
  * atrasada na GRM (Data N.F. de um dia, mas só cadastrada no sistema semanas
  * depois), que "perde o trem" da janela rolante de 30 dias antes mesmo de
- * existir na GRM. Rodando 1x/dia com uma janela de 120 dias, qualquer nota
+ * existir na GRM. Rodando 1x/dia com uma janela mínima de 400 dias, qualquer nota
  * atrasada tem várias chances de ser pega antes de sair da janela também
  * dessa reconciliação. Reaproveita login/fetch/upsert do agente rápido -
  * mesma tabela, mesmo onConflict (empresa,fatura); só muda o daysBack.
@@ -17,7 +17,8 @@
 require('dotenv').config();
 const { login, fetchReportData, upsertData } = require('./grmserver-notas-fiscais-api');
 
-const DIAS_RECONCILIACAO = Number(process.env.GRM_NOTAS_RECONCILIACAO_DIAS || 120);
+const diasConfigurados = Number(process.env.GRM_NOTAS_RECONCILIACAO_DIAS || 400);
+const DIAS_RECONCILIACAO = Number.isFinite(diasConfigurados) ? Math.max(400, diasConfigurados) : 400;
 
 function log(level, msg) { console.log(`[${level}] ${new Date().toISOString()} - ${msg}`); }
 
@@ -36,5 +37,5 @@ if (require.main === module) {
   });
   // Janela maior = mais linhas que o agente rápido; timeout generoso pra não
   // matar o processo no meio de um upsert grande.
-  setTimeout(() => process.exit(1), 300000);
+  setTimeout(() => process.exit(1), 600000);
 }
