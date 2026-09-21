@@ -15,19 +15,54 @@
  */
 
 require('dotenv').config();
-const { login, fetchReportData, upsertData } = require('./grmserver-notas-fiscais-api');
+const { login, fetchReportDataRange, upsertDataRange } = require('./grmserver-notas-fiscais-api');
 
 const diasConfigurados = Number(process.env.GRM_NOTAS_RECONCILIACAO_DIAS || 400);
 const DIAS_RECONCILIACAO = Number.isFinite(diasConfigurados) ? Math.max(400, diasConfigurados) : 400;
 
 function log(level, msg) { console.log(`[${level}] ${new Date().toISOString()} - ${msg}`); }
 
+function formatBrDate(date) {
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+}
+
+function buildYearRanges(daysBack) {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(start.getDate() - daysBack);
+
+  const ranges = [];
+  let cursor = new Date(start);
+
+  while (cursor <= today) {
+    const end = new Date(cursor.getFullYear(), 11, 31, 12, 0, 0, 0);
+    if (end > today) end.setTime(today.getTime());
+
+    ranges.push({
+      from: formatBrDate(cursor),
+      to: formatBrDate(end),
+    });
+
+    cursor = new Date(end.getFullYear() + 1, 0, 1, 12, 0, 0, 0);
+  }
+
+  return ranges;
+}
+
 async function main() {
-  log('INFO', `=== Notas Fiscais - Reconciliação (${DIAS_RECONCILIACAO} dias) ===`);
+  log('INFO', `=== Notas Fiscais - Reconciliação (${DIAS_RECONCILIACAO} dias, por ano) ===`);
   const token = await login();
-  const data = await fetchReportData(token, DIAS_RECONCILIACAO);
-  await upsertData(data, DIAS_RECONCILIACAO);
-  log('SUCCESS', 'Reconciliação de Notas Fiscais concluída!');
+  const ranges = buildYearRanges(DIAS_RECONCILIACAO);
+
+  for (let i = 0; i < ranges.length; i += 1) {
+    const dateRange = ranges[i];
+    log('INFO', `Faixa ${i + 1}/${ranges.length}: ${dateRange.from} até ${dateRange.to}`);
+    const data = await fetchReportDataRange(token, dateRange);
+    await upsertDataRange(data, dateRange);
+  }
+
+  log('SUCCESS', `Reconciliação de Notas Fiscais concluída em ${ranges.length} faixa(s)!`);
 }
 
 if (require.main === module) {
@@ -35,7 +70,7 @@ if (require.main === module) {
     log('ERROR', error.stack || error.message);
     process.exit(1);
   });
-  // Janela maior = mais linhas que o agente rápido; timeout generoso pra não
-  // matar o processo no meio de um upsert grande.
+  // A API do GRM rejeita intervalos que atravessam muitos meses. A reconciliação
+  // divide a janela por ano, e o timeout cobre todas as faixas sequenciais.
   setTimeout(() => process.exit(1), 600000);
 }
