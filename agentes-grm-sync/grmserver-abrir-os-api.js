@@ -81,7 +81,7 @@ function avisarCampoSuspeito(msg) {
 function safe(data) { return Array.isArray(data) ? data : []; }
 
 function norm(s) {
-  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').toUpperCase().trim();
 }
 
 // ---------------------------------------------------------------------
@@ -482,7 +482,7 @@ async function resolverEmbarque(token, solicitacao) {
   }
 
   const tiposRes = await postJson('servicePlacesType/getRecords', {}, token);
-  const tipoLocal = tipoLocalNome
+  let tipoLocal = tipoLocalNome
     ? melhorCorrespondencia(safe(tiposRes.searchData), 'sptName', tipoLocalNome)
     : null;
   if (!tipoLocal) throw new Error('Tipo do Local de embarque não resolvido (ponto "' + solicitacao.armazem_embarque + '" sem tipo_local válido).');
@@ -491,12 +491,33 @@ async function resolverEmbarque(token, solicitacao) {
   const cidadeItem = melhorCorrespondencia(safe(citiesRes.searchData), 'citName', cidade);
   if (!cidadeItem) throw new Error('Cidade de embarque "' + cidade + '" (UF ' + uf + ') não encontrada no GRM.');
 
-  const locaisRes = await postJson('servicePlaces/getRecords', { citCode: cidadeItem.citCode, sptCode: tipoLocal.sptCode, splStatus: 'A', limit: 1000 }, token);
   const nomeAlvoLocal = ponto ? ponto.nome_local : solicitacao.armazem_embarque;
-  let localItem = melhorCorrespondencia(safe(locaisRes.searchData), 'splName', nomeAlvoLocal);
+  const buscarLocal = (lista) => {
+    let item = melhorCorrespondencia(lista, 'splName', nomeAlvoLocal);
+    if (!item) {
+      item = melhorCorrespondenciaPorPalavrasComuns(lista, 'splName', nomeAlvoLocal);
+      if (item) avisarCampoSuspeito('Local do Serviço "' + nomeAlvoLocal + '" não bateu por substring — casado por palavras em comum com "' + item.splName + '" (splCode ' + item.splCode + ').');
+    }
+    return item;
+  };
+  const locaisRes = await postJson('servicePlaces/getRecords', { citCode: cidadeItem.citCode, sptCode: tipoLocal.sptCode, splStatus: 'A', limit: 1000 }, token);
+  let localItem = buscarLocal(safe(locaisRes.searchData));
   if (!localItem) {
-    localItem = melhorCorrespondenciaPorPalavrasComuns(safe(locaisRes.searchData), 'splName', nomeAlvoLocal);
-    if (localItem) avisarCampoSuspeito('Local do Serviço "' + nomeAlvoLocal + '" não bateu por substring — casado por palavras em comum com "' + localItem.splName + '" (splCode ' + localItem.splCode + ').');
+    // tipo_local do cadastro interno pode divergir do tipo real no GRM (ex.
+    // "Fazenda Santana do iapo" cadastrada como "Armazém / Silo" mas é
+    // "Fazenda" no GRM, 21/09/2026) — busca em todos os tipos da cidade e
+    // adota o sptCode do local achado.
+    const todosRes = await postJson('servicePlaces/getRecords', { citCode: cidadeItem.citCode, splStatus: 'A', limit: 1000 }, token);
+    localItem = buscarLocal(safe(todosRes.searchData));
+    if (localItem && localItem.sptCode != null && localItem.sptCode !== tipoLocal.sptCode) {
+      const tipoReal = safe(tiposRes.searchData).find((t) => t.sptCode === localItem.sptCode);
+      if (tipoReal) {
+        avisarCampoSuspeito('Local do Serviço "' + localItem.splName + '" não existe como "' + tipoLocal.sptName + '" em ' + cidade + '/' + uf + ' — usando o tipo real do GRM ("' + tipoReal.sptName + '"); corrija tipo_local em operacional_pontos_embarque.');
+        tipoLocal = tipoReal;
+      } else {
+        localItem = null;
+      }
+    }
   }
   if (!localItem) throw new Error('Local do Serviço "' + solicitacao.armazem_embarque + '" não encontrado em ' + cidade + '/' + uf + '.');
 
