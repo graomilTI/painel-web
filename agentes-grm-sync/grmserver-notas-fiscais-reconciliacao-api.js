@@ -20,8 +20,10 @@ const { login, fetchReportDataRange, upsertDataRange } = require('./grmserver-no
 const diasConfigurados = Number(process.env.GRM_NOTAS_RECONCILIACAO_DIAS || 400);
 const DIAS_RECONCILIACAO = Number.isFinite(diasConfigurados) ? Math.max(400, diasConfigurados) : 400;
 const COMPETENCIA = String(process.env.GRM_NOTAS_COMPETENCIA || '').trim();
-const faturaLookbackConfigurado = Number(process.env.GRM_NOTAS_FATURA_LOOKBACK_MESES || 12);
-const FATURA_LOOKBACK_MESES = Number.isFinite(faturaLookbackConfigurado) ? Math.max(1, faturaLookbackConfigurado) : 12;
+const faturaLookbackConfigurado = Number(process.env.GRM_NOTAS_FATURA_LOOKBACK_MESES || 24);
+const FATURA_LOOKBACK_MESES = Number.isFinite(faturaLookbackConfigurado) ? Math.max(1, faturaLookbackConfigurado) : 24;
+const faturaLookaheadConfigurado = Number(process.env.GRM_NOTAS_FATURA_LOOKAHEAD_MESES || 6);
+const FATURA_LOOKAHEAD_MESES = Number.isFinite(faturaLookaheadConfigurado) ? Math.max(0, faturaLookaheadConfigurado) : 6;
 const FATURA_CHUNK_MESES = 9;
 
 function log(level, msg) { console.log(`[${level}] ${new Date().toISOString()} - ${msg}`); }
@@ -74,21 +76,26 @@ function buildMonthRanges(daysBack) {
     let noteEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 12, 0, 0, 0);
     if (noteEnd > today) noteEnd = new Date(today);
 
-    // Procura faturamentos antigos sem ultrapassar o limite aceito pela API.
-    // Ex.: NF em 01/2026 pode ter Fatura em 27/03/2025. Em vez de pedir uma
-    // janela enorme de uma vez (invalidDateRangeMonths), a Data da Fatura é
-    // dividida em blocos de no máximo 9 meses, mantendo a Data N.F. fixa.
+    // Procura faturamentos muito anteriores OU posteriores à competência da NF
+    // sem ultrapassar o limite aceito pela API. Ex.: NF em 01/2026 com Fatura
+    // em 27/03/2025, ou NF em 08/2026 com Fatura em 23/09/2026. A Data da
+    // Fatura é dividida em blocos de no máximo 9 meses, mantendo a Data N.F. fixa.
     const invoiceStart = new Date(
       noteStart.getFullYear(),
       noteStart.getMonth() - FATURA_LOOKBACK_MESES,
       1, 12, 0, 0, 0
     );
-    const invoiceChunks = splitInvoiceRange(invoiceStart, noteEnd);
+    const invoiceEnd = new Date(
+      noteStart.getFullYear(),
+      noteStart.getMonth() + FATURA_LOOKAHEAD_MESES + 1,
+      0, 12, 0, 0, 0
+    );
+    const invoiceChunks = splitInvoiceRange(invoiceStart, invoiceEnd);
 
     ranges.push({
       note: { from: formatBrDate(noteStart), to: formatBrDate(noteEnd) },
       invoiceStart: formatBrDate(invoiceStart),
-      invoiceEnd: formatBrDate(noteEnd),
+      invoiceEnd: formatBrDate(invoiceEnd),
       invoiceChunks,
     });
 
@@ -101,7 +108,7 @@ function buildMonthRanges(daysBack) {
 
 async function main() {
   const escopo = COMPETENCIA ? `competência ${COMPETENCIA}` : `${DIAS_RECONCILIACAO} dias`;
-  log('INFO', `=== Notas Fiscais - Reconciliação (${escopo}, faturas até ${FATURA_LOOKBACK_MESES} meses anteriores) ===`);
+  log('INFO', `=== Notas Fiscais - Reconciliação (${escopo}, faturas ${FATURA_LOOKBACK_MESES} meses antes até ${FATURA_LOOKAHEAD_MESES} meses depois) ===`);
   const token = await login();
   const ranges = buildMonthRanges(DIAS_RECONCILIACAO);
 
