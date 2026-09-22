@@ -1,4 +1,4 @@
-const CACHE_NAME = 'grao1000-gestor-pwa-v16';
+const CACHE_NAME = 'grao1000-gestor-pwa-v17';
 const STATIC_ASSETS = [
   '/painel/gestor-app',
   '/gestor-app.html',
@@ -47,14 +47,25 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     caches.match(req).then((cached) => {
-      const network = fetch(req).then((res) => {
+      if (cached) {
+        // Já tem no cache: responde na hora e revalida em segundo plano —
+        // erro de rede aqui não pode derrubar a resposta já entregue.
+        fetch(req).then((res) => {
+          if (res && res.status === 200) caches.open(CACHE_NAME).then((cache) => cache.put(req, res)).catch(() => null);
+        }).catch(() => null);
+        return cached;
+      }
+      // Sem cache ainda (ex: versão nova do arquivo): precisa mesmo da rede.
+      // Se a rede falhar aqui, deixa o erro propagar de verdade em vez de
+      // responder com `undefined` (isso quebra o fetch do jeito errado e
+      // trava o app sem nenhum aviso, em vez de simplesmente falhar).
+      return fetch(req).then((res) => {
         if (res && res.status === 200) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => null);
         }
         return res;
-      }).catch(() => cached);
-      return cached || network;
+      });
     })
   );
 });
