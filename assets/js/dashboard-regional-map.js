@@ -84,13 +84,16 @@ const ZOOM_ANCHOR = {
 // runtime (foi isso que causou os bugs das tentativas anteriores com
 // painéis HTML separados: mapa encolhido demais, cone esticando errado).
 // Alargar o viewBox encolhe TUDO proporcionalmente (o mapa e os % que já
-// existiam nele) — por isso a faixa lateral é enxuta (170 de 800, ~21%
-// de cada lado): dá pra caber os painéis sem devolver o mapa ao tamanho
-// minúsculo da tentativa anterior.
-const OVERLAY_VIEWBOX = { x: -170, y: 0, w: 1140, h: 796 };
+// existiam nele). Painéis maiores (pedido do usuário) do que a primeira
+// versão — mapa fica um pouco menor em troca, mas ainda bem maior que a
+// tentativa original com painéis HTML.
+const OVERLAY_VIEWBOX = { x: -210, y: 0, w: 1220, h: 796 };
+// y mais baixo que o centro vertical do mapa (398) pra encaixar a caixa
+// na reentrância/curva do contorno de MT e PR (pedido do usuário: "ocupar
+// a curva do Brasil" em vez de ficar reto no meio da lateral).
 const ZOOM_BOX = {
-  MT: { x: -170, y: 283, w: 170, h: 230 },
-  PR: { x: 800, y: 283, w: 170, h: 230 },
+  MT: { x: -210, y: 380, w: 210, h: 280 },
+  PR: { x: 800, y: 380, w: 210, h: 280 },
 };
 
 function zoomTransform(uf) {
@@ -498,7 +501,7 @@ function createZoomBox(uf, data) {
         { x: pos.x * t.scale + t.tx, y: pos.y * t.scale + t.ty },
         info,
         palette,
-        uf === 'PR' ? 12 : 13
+        uf === 'PR' ? 14 : 15
       );
     }
   }
@@ -514,8 +517,14 @@ function createZoomBox(uf, data) {
       <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${nearX}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
       <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${nearX}" y2="${box.y + box.h}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
       <text x="${box.x + box.w / 2}" y="${box.y - 10}" text-anchor="middle" style="font-size:13px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;fill:#94a3b8;">${title}</text>
+      <!-- O clip-path NÃO leva o transform aqui: o <g> logo abaixo já tem
+           esse mesmo transform, e clipPathUnits="userSpaceOnUse" (padrão)
+           já avalia o clip no espaço de coordenadas de quem o referencia.
+           Aplicar dos dois lados dobrava o transform e descasava o recorte
+           da geometria real — era por isso que o preenchimento das
+           coordenações sumia (ficava tudo recortado fora). -->
       <defs>
-        <clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}" transform="${transform}"/></clipPath>
+        <clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}"/></clipPath>
       </defs>
       <path d="${STATE_PATHS[uf]}" transform="${transform}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" vector-effect="non-scaling-stroke"/>
       <g clip-path="url(#${clipId})" transform="${transform}">${regionsHtml}</g>
@@ -532,7 +541,6 @@ function createRegionalOverlay(data) {
 }
 
 async function applyMapMode() {
-  window.__dbRegionalApplyCount = (window.__dbRegionalApplyCount || 0) + 1;
   ensureStyles();
   ensureToggle();
 
@@ -540,48 +548,48 @@ async function applyMapMode() {
   // .db-prod-left só existe no painel do gestor-app.js, que nem importa
   // este módulo) — era por isso que a sobreposição regional nunca prendia.
   const svg = document.querySelector('.db-prod-center .db-state-svg');
-  // DEBUG TEMPORÁRIO — remover depois de achar por que a aplicação
-  // automática nunca dispara a busca de dados (só funciona clicando
-  // manualmente no toggle).
-  console.debug('[db-regional DEBUG] applyMapMode start', {
-    svgFound: !!svg,
-    pathCount: svg?.querySelectorAll('path').length,
-    isMaster: isMasterBrazilMap(svg),
-    mode: getCurrentMode(),
-  });
-  if (!isMasterBrazilMap(svg)) { console.debug('[db-regional DEBUG] bail: not master map'); return; }
+  if (!isMasterBrazilMap(svg)) return;
 
   removeRegionalOverlay(svg);
 
   const mode = getCurrentMode();
-  if (mode !== 'regional') { console.debug('[db-regional DEBUG] bail: mode is', mode); return; }
+  if (mode !== 'regional') return;
 
-  console.debug('[db-regional DEBUG] entering try, about to loadRegionalData()');
   try {
     const data = await loadRegionalData();
-    console.debug('[db-regional DEBUG] data loaded', { svgStillConnected: svg.isConnected, sameSvgNow: svg === document.querySelector('.db-prod-center .db-state-svg') });
+
+    // dashboard.js pode re-renderizar .db-prod-center enquanto os dados
+    // carregam (await acima); se isso trocou o <svg> por um novo, o que
+    // capturamos no início já não está mais na página — inserir nele não
+    // dá erro nenhum, só fica invisível pra sempre. A próxima mutação já
+    // dispara scheduleApply() de novo pro <svg> atual.
+    if (!svg.isConnected) return;
 
     if (!svg.dataset.dbOriginalViewBox) {
       svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
     }
     svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
-    console.debug('[db-regional DEBUG] overlay inserted');
   } catch (error) {
-    console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error, error?.stack);
+    console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
   }
 }
 
 function scheduleApply() {
-  window.__dbRegionalScheduleCount = (window.__dbRegionalScheduleCount || 0) + 1;
   if (pendingApply) return;
   pendingApply = true;
 
-  requestAnimationFrame(async () => {
-    window.__dbRegionalRafCount = (window.__dbRegionalRafCount || 0) + 1;
+  // setTimeout, não requestAnimationFrame: rAF fica suspenso em abas sem
+  // foco/não visíveis (o Chrome joga a prioridade lá embaixo pra
+  // economizar recurso) — era por isso que a sobreposição regional só
+  // aparecia depois de um clique manual no toggle (o clique "acordava" a
+  // aba o suficiente pra 1 frame rodar), nunca sozinha em segundo plano.
+  // Confirmado ao vivo: com rAF, nenhuma das 3 chamadas automáticas do
+  // carregamento da página chegava a rodar o callback.
+  setTimeout(async () => {
     pendingApply = false;
     await applyMapMode();
-  });
+  }, 0);
 }
 
 ensureStyles();
