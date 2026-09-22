@@ -481,6 +481,30 @@ async function resolverCoordenadasEmLote(numerosOs) {
 
 var SERVICOS_FOB_CIF = ['CLASSIFICACAO FOB', 'CLASSIFICACAO CIF'];
 
+function selecionarUmPendentePorLocal(candidatos) {
+  var porLocal = new Map();
+  var semLocal = [];
+  (candidatos || []).forEach(function (item) {
+    if (!item.grupoLocal) {
+      semLocal.push(item);
+      return;
+    }
+    var atual = porLocal.get(item.grupoLocal);
+    var itemTemFuncionario = !!normText(item.funcionario);
+    var atualTemFuncionario = atual ? !!normText(atual.funcionario) : false;
+    var osMenor = atual && String(item.os).localeCompare(String(atual.os), 'pt-BR', { numeric: true }) < 0;
+    if (!atual || (itemTemFuncionario && !atualTemFuncionario) || (itemTemFuncionario === atualTemFuncionario && osMenor)) {
+      porLocal.set(item.grupoLocal, item);
+    }
+  });
+
+  return Array.from(porLocal.values()).concat(semLocal).map(function (item) {
+    var limpo = Object.assign({}, item);
+    delete limpo.grupoLocal;
+    return limpo;
+  });
+}
+
 async function calcularPendentes(movementRows, productionRows, nheRows) {
   var setCargaRealOs = {};
   var setNheEmProducaoOs = {};
@@ -541,14 +565,15 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
   var base = brutos.filter(function (item) { return servicoValido(item.os); });
 
   // Na lista de O.S., a coluna Embarque segue "UF - CIDADE (Embarque)".
-  // O mesmo embarque é definido pelo valor COMPLETO dessa coluna. Assim,
-  // armazéns com o mesmo nome em cidades/UFs diferentes não são agrupados.
-  // Mantemos Cliente na chave para preservar a regra FOB original.
+  // O mesmo local é definido pelo valor COMPLETO dessa coluna, sem separar
+  // por Cliente: se duas ou mais O.S. apontam para o mesmo local físico, uma
+  // carga em qualquer delas bloqueia o FOB de todas; sem carga, o agente deve
+  // lançar FOB em somente uma O.S. do local. Assim, armazéns homônimos em
+  // cidades/UFs diferentes continuam sem ser agrupados.
   function clusterKeys(item) {
     var info = coordPorOs[item.os] || {};
-    var cliente = normText(item.cliente || info.cliente);
-    var embarque = normText(info.embarque);
-    return cliente && embarque ? [cliente + '|embarque:' + embarque] : [];
+    var embarque = normText(info.embarque || info.local || item.local);
+    return embarque ? ['embarque:' + embarque] : [];
   }
 
   var grupos = {};
@@ -585,7 +610,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
     if (info && info.temLaudo) marcarPonto({ os: os, cliente: info.cliente, local: info.local }, 'temLaudo');
   });
 
-  var pendentes = [];
+  var candidatosPendentes = [];
   var bloqueadasCargaMesmoPonto = 0;
   base.forEach(function (item) {
     if (temCargaReal(item.os)) return;
@@ -601,7 +626,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
 
     var status = relacionados.some(function (g) { return g.temNhe || g.temLaudo; }) ? 'DOIS EMBARQUES' : 'PENDENTE';
     if (status !== 'PENDENTE') return;
-    pendentes.push({
+    candidatosPendentes.push({
       data: item.date,
       data_br: brDate(item.date),
       os: item.os,
@@ -609,12 +634,24 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
       local: item.local,
       supervisao: item.supervisao,
       funcionario: item.funcionario,
+      grupoLocal: clusterKeys(item)[0] || '',
       // já resolvido acima (coordenada + serviço) — evita nova consulta.
       osCoord: coordPorOs[item.os] || null
     });
   });
+
+  // Sem embarque/NHE/laudo no local, várias O.S. representam uma única
+  // falta de caminhão. Mantemos somente uma candidata por local para impedir
+  // lançamentos FOB duplicados. Quando houver escolha, priorizamos uma O.S.
+  // com Funcionário (necessário para a geofence) e depois o menor número de
+  // O.S., deixando o resultado determinístico entre execuções.
+  var pendentes = selecionarUmPendentePorLocal(candidatosPendentes);
+  var duplicadasMesmoPonto = candidatosPendentes.length - pendentes.length;
   if (bloqueadasCargaMesmoPonto) {
-    log('INFO', bloqueadasCargaMesmoPonto + ' O.S. bloqueada(s): existe carga real do mesmo cliente no mesmo embarque (UF - CIDADE (EMBARQUE)).');
+    log('INFO', bloqueadasCargaMesmoPonto + ' O.S. bloqueada(s): existe carga real no mesmo local de embarque (UF - CIDADE (EMBARQUE)).');
+  }
+  if (duplicadasMesmoPonto) {
+    log('INFO', duplicadasMesmoPonto + ' O.S. agrupada(s): sem embarque no local, o FOB será lançado em somente uma O.S. (UF - CIDADE (EMBARQUE)).');
   }
   return pendentes;
 }
@@ -2079,6 +2116,7 @@ if (require.main === module) {
 
 module.exports = {
   calcularPendentes: calcularPendentes,
+  selecionarUmPendentePorLocal: selecionarUmPendentePorLocal,
   haversineMeters: haversineMeters,
   normOs: normOs,
   normText: normText,
