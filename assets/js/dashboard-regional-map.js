@@ -187,7 +187,12 @@ function ensureStyles() {
       border: 1px solid rgba(255,255,255,.09);
       border-radius: 14px;
       background: rgba(13,13,24,.55);
-      animation: db-fade-up .3s ease both;
+      /* Sem animação de entrada aqui: este módulo remove e recria os
+         painéis a cada scheduleApply() (MutationObserver dispara a cada
+         mutação no body). Reinserir um elemento com animation-fill-mode
+         "both" nesse ritmo faz o navegador travar no keyframe inicial
+         (opacity:0) de forma intermitente — confirmado ao vivo em prod,
+         era por isso que os painéis existiam no DOM mas nunca apareciam. */
     }
 
     .db-regional-callout-title {
