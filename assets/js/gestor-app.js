@@ -26,6 +26,48 @@ const ICO_CONFERIR  = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height
 
 const app = document.getElementById('app');
 
+// Rede de segurança pra qualquer chamada do boot que fique pendurada sem
+// nunca resolver nem rejeitar (comum em celular com sinal ruim: a requisição
+// não recebe resposta nem erro, o fetch fica pra sempre "em voo"). Sem isso o
+// app fica preso na tela "Carregando App Gestor..." pra sempre, sem nenhum
+// botão pra tentar de novo (o botão Atualizar só existe depois que a tela
+// principal renderiza).
+function withBootTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[gestor-app] tempo excedido no boot: ${label}`);
+      resolve({ timedOut: true });
+    }, ms);
+  });
+  return Promise.race([promise.then((value) => ({ value })), timeout]).finally(() => clearTimeout(timer));
+}
+
+// Se o boot inteiro não terminar em tempo hábil (trava real, não só lentidão —
+// as chamadas de auth já têm timeout próprio), oferece um jeito de sair da
+// tela de carregamento em vez de deixar o usuário preso sem saída.
+const BOOT_WATCHDOG_MS = 35000;
+let bootWatchdogTimer = setTimeout(() => {
+  if (app?.classList.contains('is-loading')) renderBootStuckFallback();
+}, BOOT_WATCHDOG_MS);
+
+function clearBootWatchdog() {
+  clearTimeout(bootWatchdogTimer);
+}
+
+function renderBootStuckFallback(message) {
+  if (!app) return;
+  app.innerHTML = `
+    <div class="app-loader">
+      <img src="./logo-grao1000.svg" alt="Grão 1000" />
+      <strong>${escapeHtml(message || 'O app está demorando demais pra abrir.')}</strong>
+      <span>Isso pode acontecer com sinal fraco ou uma versão antiga guardada no celular.</span>
+      <button type="button" class="btn primary" id="bootHardRefreshBtn" style="margin-top:12px;">Atualizar app</button>
+    </div>
+  `;
+  document.getElementById('bootHardRefreshBtn')?.addEventListener('click', () => hardRefreshApp());
+}
+
 const state = {
   user: null,
   context: null,
@@ -213,12 +255,16 @@ async function boot() {
 
   state.user = await getCurrentUser();
   state.context = await getUserContext(state.user?.id).catch(() => null);
-  const { data: appUser } = await supabase
-    .from('app_usuarios')
-    .select('id,nome,email,setor,supervisao,coordenacao,empresa,status')
-    .eq('auth_user_id', state.user?.id)
-    .maybeSingle();
-  state.appUser = appUser || null;
+  const appUserResult = await withBootTimeout(
+    supabase
+      .from('app_usuarios')
+      .select('id,nome,email,setor,supervisao,coordenacao,empresa,status')
+      .eq('auth_user_id', state.user?.id)
+      .maybeSingle(),
+    8000,
+    'busca de app_usuarios',
+  );
+  state.appUser = appUserResult?.value?.data || null;
 
   const role = state.context?.user?.role || state.context?.perfil_codigo || state.context?.perfil_nome || state.context?.role || '';
   const setor = appUser?.setor || state.context?.setor || state.context?.department?.name || '';
@@ -278,6 +324,7 @@ function startOsPrefetch() {
 }
 
 function renderShell() {
+  clearBootWatchdog();
   const name = state.appUser?.nome || state.context?.user?.name || state.user?.email || 'Gestor';
   app.className = 'gestor-app';
   app.innerHTML = `
@@ -1933,5 +1980,6 @@ function debounce(fn, wait = 250) {
 
 boot().catch((error) => {
   console.error(error);
-  app.innerHTML = `<div class="app-loader"><strong>Erro ao abrir o app</strong><span>${escapeHtml(error.message || error)}</span></div>`;
+  clearBootWatchdog();
+  renderBootStuckFallback(`Erro ao abrir o app: ${error.message || error}`);
 });
