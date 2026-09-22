@@ -229,13 +229,21 @@ function mapServiceOrder(row, synchronizedAt) {
     destino: normalizeText(row.sorDestinationLocal),
     contrato: normalizeText(row.sorContract),
     produto: normalizeText(row.proName),
-    lote: Number(row.sorLotSize) || 0,
-    remanescente: Number(row.totalRemain) || 0,
+    // sorLotSize/totalRemain/totalLoadsWeight vêm da API em kg (confirmado
+    // comparando com a tela do GRM, 2026-09-17: O.S. 92639 retornava
+    // sorLotSize=1800000/totalRemain=1781240/totalLoadsWeight=18760 enquanto
+    // a tela mostrava 1.800,00/1.781,24/18,76 toneladas — sem dividir por
+    // 1000, lote/remanescente/embarcado ficavam 1000x maiores que o real em
+    // toda O.S. sincronizada por este agente). O comentário no topo do
+    // arquivo sobre "confirmado batendo" (01/09) validou só a
+    // correspondência de linhas/coordenação, não a escala numérica.
+    lote: (Number(row.sorLotSize) || 0) / 1000,
+    remanescente: (Number(row.totalRemain) || 0) / 1000,
     situacao: statusLabel(row.sorStatus),
     financeiro: billedLabel(row.sorBilled),
     servico: normalizeText(row.serName),
     supervisao: normalizeText(row.olsName),
-    embarcado: Number(row.totalLoadsWeight) || 0,
+    embarcado: (Number(row.totalLoadsWeight) || 0) / 1000,
     arquivo_origem: 'agente:grmserver-lista-os-api-realtime',
     updated_at: synchronizedAt,
     raw: row,
