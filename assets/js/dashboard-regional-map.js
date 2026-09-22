@@ -539,23 +539,35 @@ async function applyMapMode() {
   // .db-prod-left só existe no painel do gestor-app.js, que nem importa
   // este módulo) — era por isso que a sobreposição regional nunca prendia.
   const svg = document.querySelector('.db-prod-center .db-state-svg');
-  if (!isMasterBrazilMap(svg)) return;
+  // DEBUG TEMPORÁRIO — remover depois de achar por que a aplicação
+  // automática nunca dispara a busca de dados (só funciona clicando
+  // manualmente no toggle).
+  console.debug('[db-regional DEBUG] applyMapMode start', {
+    svgFound: !!svg,
+    pathCount: svg?.querySelectorAll('path').length,
+    isMaster: isMasterBrazilMap(svg),
+    mode: getCurrentMode(),
+  });
+  if (!isMasterBrazilMap(svg)) { console.debug('[db-regional DEBUG] bail: not master map'); return; }
 
   removeRegionalOverlay(svg);
 
   const mode = getCurrentMode();
-  if (mode !== 'regional') return;
+  if (mode !== 'regional') { console.debug('[db-regional DEBUG] bail: mode is', mode); return; }
 
+  console.debug('[db-regional DEBUG] entering try, about to loadRegionalData()');
   try {
     const data = await loadRegionalData();
+    console.debug('[db-regional DEBUG] data loaded', { svgStillConnected: svg.isConnected, sameSvgNow: svg === document.querySelector('.db-prod-center .db-state-svg') });
 
     if (!svg.dataset.dbOriginalViewBox) {
       svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
     }
     svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
+    console.debug('[db-regional DEBUG] overlay inserted');
   } catch (error) {
-    console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
+    console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error, error?.stack);
   }
 }
 
