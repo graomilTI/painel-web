@@ -218,6 +218,9 @@ const AGENTE_OUTROS_CATEGORIAS = [
   /(^| )COMERCIAL CLIENTE( |$)/,
   /(^| )(CORREIOS|POSTAGEM(NS)?|FRETE(S)?)( |$)/,
   /(^| )LIMPEZA( |$)/,
+  // Serviços de Auditoria — mapeada em 22/09/2026 (colaborador com "Serviço
+  // de auditoria" digitado no fluxo Disponível nunca configurado no GRM).
+  /(^| )AUDITORIA(S)?( |$)/,
 ];
 
 function isExtraOutrosNaoMapeado(item) {
