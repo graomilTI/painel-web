@@ -59,15 +59,47 @@ const LABEL_POS = {
   PR_PONTA_GROSSA: { x: 489, y: 610.5 },
 };
 
-// Janela de recorte (viewBox) de cada painel de "zoom" — o retângulo que
-// envolve o estado (bbox do STATE_PATHS) com uma margem, para desenhar o
-// contorno das coordenações bem maior do que cabe no mapa do Brasil
-// inteiro (era isso que causava o efeito "manchado": a grade do mosaico
-// ficava espremida em poucos pixels dentro do estadinho minúsculo).
-const CALLOUTS = {
-  MT: { x: 255, y: 257, w: 232, h: 220 },
-  PR: { x: 390, y: 553, w: 140, h: 91 },
+// Bbox real de cada estado dentro do viewBox 800x796 do mapa do Brasil
+// (calculado a partir dos vértices de STATE_PATHS).
+const STATE_BBOX = {
+  MT: { minX: 261.17, minY: 263.61, w: 219.82, h: 207.09 },
+  PR: { minX: 396.31, minY: 559.61, w: 127.39, h: 78.48 },
 };
+
+// Ponto de "foco da lupa" em cada estado no mapa do Brasil inteiro: o
+// centro vertical do lado que encosta na caixa de zoom (borda oeste de
+// MT, que aponta pra baixo-esquerda; borda leste de PR, pra baixo-direita).
+const ZOOM_ANCHOR = {
+  MT: { x: 261.17, y: 367.16 },
+  PR: { x: 523.70, y: 598.85 },
+};
+
+// O mapa do Brasil (viewBox 0 0 800 796) ganha uma faixa extra embaixo
+// pra caber as duas caixas de zoom ampliado, lado a lado, conectadas ao
+// estado real por 2 linhas finas (efeito lupa) — tudo no MESMO <svg>, um
+// só sistema de coordenadas, sem precisar medir pixel de elementos
+// diferentes em runtime (foi isso que causou os bugs de altura/posição
+// das tentativas anteriores com painéis HTML separados).
+const OVERLAY_VIEWBOX_HEIGHT = 1060;
+const ZOOM_BOX = {
+  MT: { x: 40, y: 820, w: 340, h: 220 },
+  PR: { x: 420, y: 820, w: 340, h: 220 },
+};
+
+function zoomTransform(uf) {
+  const bbox = STATE_BBOX[uf];
+  const box = ZOOM_BOX[uf];
+  const scale = Math.min(box.w / bbox.w, box.h / bbox.h);
+  const bboxCenterX = bbox.minX + bbox.w / 2;
+  const bboxCenterY = bbox.minY + bbox.h / 2;
+  const boxCenterX = box.x + box.w / 2;
+  const boxCenterY = box.y + box.h / 2;
+  return {
+    scale,
+    tx: boxCenterX - bboxCenterX * scale,
+    ty: boxCenterY - bboxCenterY * scale,
+  };
+}
 
 const SEGMENT_BY_ALIAS = new Map();
 for (const [key, region] of Object.entries(REGIONS)) {
@@ -159,109 +191,19 @@ function ensureStyles() {
       box-shadow: 0 0 0 1px rgba(45,212,160,.18) inset;
     }
 
-    .db-state-svg .db-regional-highlight path {
-      transition: all .25s ease;
-    }
-
-    .db-prod-center.db-has-regional-callouts {
-      flex-wrap: wrap;
-      gap: 6px;
-      /* .db-prod-layout (dashboard.js) usa align-items:stretch na grid,
-         então sem isso .db-prod-center herdava a altura da coluna lateral
-         inteira (os 3 cards de gauge empilhados, ~900px) — e o cone,
-         com align-self:stretch, esticava até essa altura toda em vez da
-         altura real do mapa/painéis (~150px). Fixa a altura do próprio
-         .db-prod-center no conteúdo dele, não na da grid. */
-      align-self: center;
-    }
-
-    /* .db-state-svg usa width:100% — sem uma base própria ele pode
-       encolher demais ao virar flex-item ao lado dos painéis de zoom.
-       max-width mais enxuto do que o normal pra sobrar espaço pros cones
-       + painéis sem quebrar linha na largura real do card (~660px). */
-    .db-prod-center.db-has-regional-callouts .db-state-wrap {
-      flex: 1 1 180px;
-      min-width: 140px;
-      max-width: 200px;
-    }
-
-    /* Cone/lupa: um "funil" que liga visualmente o estadinho destacado no
-       mapa do Brasil (o traço tracejado) ao painel ampliado do lado —
-       estreito perto do mapa, alargando até a altura inteira do painel.
-       align-self:stretch (não o align-items do container, que continua
-       centralizando o mapa e os painéis normalmente) faz a altura do cone
-       acompanhar a do painel vizinho automaticamente, sem medir pixel em
-       runtime. */
-    .db-regional-cone {
-      position: relative;
-      align-self: stretch;
-      flex: 0 0 24px;
-      width: 24px;
-      min-height: 60px;
-    }
-    .db-regional-cone svg {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-    .db-regional-lens-dot {
-      position: absolute;
-      top: 50%;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: rgba(110,231,183,.95);
-      box-shadow: 0 0 0 4px rgba(110,231,183,.16);
-      transform: translateY(-50%);
-    }
-    .db-regional-cone[data-side="left"] .db-regional-lens-dot { right: 1px; }
-    .db-regional-cone[data-side="right"] .db-regional-lens-dot { left: 1px; }
-
-    @media(max-width: 900px) {
-      .db-regional-cone { display: none; }
-    }
-
-    .db-regional-callout {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 10px 12px 12px;
-      border: 1px solid rgba(255,255,255,.09);
-      border-radius: 14px;
-      background: rgba(13,13,24,.55);
-      /* Sem animação de entrada aqui: este módulo remove e recria os
-         painéis a cada scheduleApply() (MutationObserver dispara a cada
-         mutação no body). Reinserir um elemento com animation-fill-mode
-         "both" nesse ritmo faz o navegador travar no keyframe inicial
-         (opacity:0) de forma intermitente — confirmado ao vivo em prod,
-         era por isso que os painéis existiam no DOM mas nunca apareciam. */
-    }
-
-    .db-regional-callout-title {
-      font-size: 10px;
-      font-weight: 950;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-      color: #94a3b8;
-    }
-
-    .db-regional-callout svg {
-      display: block;
-    }
-
-    .db-regional-callout .db-regional-segment path,
-    .db-regional-callout .db-regional-segment text {
+    /* Tudo (mapa + destaque + caixas de zoom de MT/PR) é desenhado dentro
+       do mesmo <svg> do mapa do Brasil (viewBox esticado pra baixo) — não
+       precisa de layout flex/grid próprio nem medir pixel em runtime.
+       Isso evitou dois bugs das versões anteriores (painéis HTML ao lado
+       encolhendo o mapa; cone esticando pela altura da grid pai). */
+    .db-state-svg .db-regional-highlight path,
+    .db-state-svg .db-regional-zoom-box path {
       transition: all .25s ease;
     }
 
     @media(max-width: 700px) {
       .db-map-mode-toggle { width: 100%; justify-content: space-between; }
       .db-map-mode-btn { flex: 1; }
-    }
-
-    @media(max-width: 900px) {
-      .db-regional-callout svg { width: 140px; height: auto; }
     }
   `;
   document.head.appendChild(style);
@@ -449,12 +391,12 @@ function isMasterBrazilMap(svg) {
 
 function removeRegionalOverlay(svg) {
   if (!svg) return;
-  svg.querySelectorAll('.db-regional-highlight').forEach((el) => el.remove());
-
-  const center = svg.closest('.db-state-wrap')?.parentElement;
-  if (!center) return;
-  center.querySelectorAll('.db-regional-callout, .db-regional-cone').forEach((el) => el.remove());
-  center.classList.remove('db-has-regional-callouts');
+  svg.querySelectorAll('.db-regional-overlay').forEach((el) => el.remove());
+  // Restaura o viewBox original (a versão regional estica ele pra baixo
+  // pra caber as caixas de zoom de MT/PR).
+  if (svg.dataset.dbOriginalViewBox) {
+    svg.setAttribute('viewBox', svg.dataset.dbOriginalViewBox);
+  }
 }
 
 function createRegionalLabel(key, pos, info, palette, fontSize = 20) {
@@ -483,19 +425,10 @@ function createRegionalLabel(key, pos, info, palette, fontSize = 20) {
   `;
 }
 
-// Destaque discreto de MT/PR no mapa do Brasil inteiro, sinalizando que a
-// divisão por coordenação está ampliada nos painéis ao lado — sem repetir
-// o mosaico em cima do estadinho minúsculo (era isso que "manchava").
-// Ponto de "foco da lupa" em cada estado no mapa do Brasil inteiro: o
-// centro vertical do lado que encosta no painel de zoom (borda oeste de
-// MT, que puxa pra esquerda; borda leste de PR, que puxa pra direita).
-// Mesma cor do cone/lupa do lado do painel, pra ligar as duas pontas
-// visualmente mesmo sendo dois <svg> com escalas diferentes.
-const ZOOM_ANCHOR = {
-  MT: { x: 261.17, y: 367.16 },
-  PR: { x: 523.70, y: 598.85 },
-};
-
+// Destaque discreto de MT/PR no mapa do Brasil inteiro (tamanho normal,
+// sem encolher) sinalizando que a divisão por coordenação está ampliada
+// na caixa de zoom logo abaixo — sem repetir o mosaico em cima do
+// estadinho minúsculo (era isso que "manchava" nas tentativas anteriores).
 function createStateHighlight() {
   const paths = ['MT', 'PR'].map((uf) => `
     <path
@@ -513,36 +446,18 @@ function createStateHighlight() {
   return `<g class="db-regional-highlight">${paths}</g>`;
 }
 
-function createConeConnector(side) {
-  // side 'left' = cone entre o painel de MT e o mapa (ponta estreita à
-  // direita, encostando no mapa); 'right' = o mesmo espelhado pro PR.
-  const nearX = side === 'left' ? 30 : 0;  // ponta estreita (lado do mapa)
-  const farX = side === 'left' ? 0 : 30;   // ponta larga (lado do painel)
-  const d = `M${farX},0 L${nearX},42 L${nearX},58 L${farX},100 Z`;
+// Caixa de zoom de um estado: os polígonos de REGION_PATHS reaproveitados
+// tal como são (mesmas coordenadas do mapa grande), só que envoltos num
+// <g transform="translate(...) scale(...)"> que os reposiciona/redimensiona
+// pra dentro de ZOOM_BOX[uf] — sem duplicar geometria, sem medir pixel em
+// runtime. vector-effect="non-scaling-stroke" mantém o traço fino e
+// constante mesmo com a escala diferente de cada estado.
+function createZoomBox(uf, data) {
+  const box = ZOOM_BOX[uf];
+  const t = zoomTransform(uf);
+  const transform = `translate(${t.tx.toFixed(2)},${t.ty.toFixed(2)}) scale(${t.scale.toFixed(4)})`;
+  const clipId = `dbZoomClip${uf}`;
 
-  return `
-    <div class="db-regional-cone" data-side="${side}">
-      <svg viewBox="0 0 30 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="${d}" fill="rgba(110,231,183,.09)" />
-        <line x1="${farX}" y1="0" x2="${nearX}" y2="42" stroke="rgba(110,231,183,.5)" stroke-width="1.3" />
-        <line x1="${farX}" y1="100" x2="${nearX}" y2="58" stroke="rgba(110,231,183,.5)" stroke-width="1.3" />
-      </svg>
-      <span class="db-regional-lens-dot"></span>
-    </div>
-  `;
-}
-
-// Painel de "zoom": recorta só a janela (CALLOUTS[uf]) ao redor do estado
-// e desenha o mosaico nela — mesmo dado, mas ocupando o painel inteiro em
-// vez de uma fração minúscula do mapa do Brasil.
-function createCalloutPanel(uf, data) {
-  const box = CALLOUTS[uf];
-  const viewBox = `${box.x} ${box.y} ${box.w} ${box.h}`;
-  const aspect = (box.w / box.h).toFixed(3);
-
-  // Labels de % ficam FORA do clip-path do contorno do estado (não dentro
-  // do <g clip-path>): um texto dentro do clip pode ser cortado sem aviso
-  // quando o centroide da região cai perto de uma reentrância da borda.
   let regionsHtml = '';
   let labelsHtml = '';
   for (const [key, region] of Object.entries(REGIONS)) {
@@ -559,30 +474,50 @@ function createCalloutPanel(uf, data) {
         stroke="rgba(255,255,255,.30)"
         stroke-width="1"
         stroke-linejoin="round"
-        stroke-linecap="round"
+        vector-effect="non-scaling-stroke"
       >
         <title>${region.name} — ${fmtPct(info?.pct || 0)}</title>
       </path>
     `;
-    labelsHtml += createRegionalLabel(key, LABEL_POS[key], info, palette, uf === 'PR' ? 11 : 15);
+
+    // Rótulo fora do <g transform>, já na coordenada final da tela — um
+    // texto dentro do clip/transform pode ser cortado sem aviso quando o
+    // centroide da região cai perto de uma reentrância da borda.
+    const pos = LABEL_POS[key];
+    const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
+    if (pos && hasData) {
+      labelsHtml += createRegionalLabel(
+        key,
+        { x: pos.x * t.scale + t.tx, y: pos.y * t.scale + t.ty },
+        info,
+        palette,
+        uf === 'PR' ? 15 : 16
+      );
+    }
   }
 
   const title = uf === 'MT' ? 'Mato Grosso' : 'Paraná';
 
   return `
-    <div class="db-regional-callout" data-uf="${uf}">
-      <div class="db-regional-callout-title">${title}</div>
-      <svg viewBox="${viewBox}" style="width:${uf === 'MT' ? 160 : 170}px;aspect-ratio:${aspect}" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <clipPath id="dbCalloutClip${uf}"><path d="${STATE_PATHS[uf]}"/></clipPath>
-        </defs>
-        <path d="${STATE_PATHS[uf]}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" stroke-width="1" stroke-linejoin="round"/>
-        <g clip-path="url(#dbCalloutClip${uf})">${regionsHtml}</g>
-        <path d="${STATE_PATHS[uf]}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" stroke-linejoin="round"/>
-        ${labelsHtml}
-      </svg>
-    </div>
+    <g class="db-regional-zoom-box" data-uf="${uf}">
+      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${box.x}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${box.x + box.w}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
+      <text x="${box.x + box.w / 2}" y="${box.y - 10}" text-anchor="middle" style="font-size:13px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;fill:#94a3b8;">${title}</text>
+      <defs>
+        <clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}" transform="${transform}"/></clipPath>
+      </defs>
+      <path d="${STATE_PATHS[uf]}" transform="${transform}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" vector-effect="non-scaling-stroke"/>
+      <g clip-path="url(#${clipId})" transform="${transform}">${regionsHtml}</g>
+      <path d="${STATE_PATHS[uf]}" transform="${transform}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      ${labelsHtml}
+    </g>
   `;
+}
+
+function createRegionalOverlay(data) {
+  const highlight = createStateHighlight();
+  const zoomBoxes = Object.keys(ZOOM_BOX).map((uf) => createZoomBox(uf, data)).join('');
+  return `<g class="db-regional-overlay">${highlight}${zoomBoxes}</g>`;
 }
 
 async function applyMapMode() {
@@ -600,24 +535,14 @@ async function applyMapMode() {
   const mode = getCurrentMode();
   if (mode !== 'regional') return;
 
-  const stateWrap = svg.closest('.db-state-wrap');
-  const center = stateWrap?.parentElement;
-  if (!stateWrap || !center) return;
-
   try {
     const data = await loadRegionalData();
 
-    svg.insertAdjacentHTML('beforeend', createStateHighlight());
-
-    center.classList.add('db-has-regional-callouts');
-    // Ordem final na linha: [painel MT][cone][mapa][cone][painel PR].
-    // insertAdjacentHTML('beforebegin'/'afterend', ...) sempre encosta no
-    // elemento-alvo (stateWrap) — por isso o painel entra primeiro (fica
-    // mais longe) e o cone depois (fica colado no mapa) em cada lado.
-    stateWrap.insertAdjacentHTML('beforebegin', createCalloutPanel('MT', data));
-    stateWrap.insertAdjacentHTML('beforebegin', createConeConnector('left'));
-    stateWrap.insertAdjacentHTML('afterend', createCalloutPanel('PR', data));
-    stateWrap.insertAdjacentHTML('afterend', createConeConnector('right'));
+    if (!svg.dataset.dbOriginalViewBox) {
+      svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
+    }
+    svg.setAttribute('viewBox', `0 0 800 ${OVERLAY_VIEWBOX_HEIGHT}`);
+    svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
   } catch (error) {
     console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
   }
