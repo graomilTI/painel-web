@@ -8,86 +8,60 @@ const STATE_PATHS = {
   PR: 'M425.27,559.61L489.95,568.76L500.82,598.10L523.70,610.95L512.53,625.47L501.43,625.47L494.59,629.85L487.22,626.22L473.99,626.37L471.33,630.23L460.84,631.67L458.56,638.09L414.71,630.91L408.70,618.89L396.31,617.98L402.93,587.74L408.63,576.09L415.70,566.34Z',
 };
 
-const SEGMENTS = [
-  {
-    key: 'MT1',
-    state: 'MT',
-    name: 'Sinop',
-    aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'],
-    path: 'M238 238 H372 C373 282 374 324 382 371 C340 381 294 386 238 388 Z',
-    labelX: 315,
-    labelY: 344,
-  },
-  {
-    key: 'MT3',
-    state: 'MT',
-    name: 'Confresa',
-    aliases: ['MT3', 'MATO GROSSO MT3', 'MATO GROSSO MT3 CONFRESA', 'MATO GROSSO MT3 QUERENCIA', 'CONFRESA', 'QUERENCIA'],
-    path: 'M372 238 H520 V392 C468 386 421 378 382 371 C374 324 373 282 372 238 Z',
-    labelX: 428,
-    labelY: 345,
-  },
-  {
-    key: 'MT4',
-    state: 'MT',
-    name: 'Campo Novo do Parecis',
-    aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'],
-    path: 'M238 388 C294 386 340 381 382 371 C378 413 380 452 392 506 H238 Z',
-    labelX: 318,
-    labelY: 424,
-  },
-  {
-    key: 'MT2',
-    state: 'MT',
-    name: 'Primavera do Leste',
-    aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'],
-    path: 'M382 371 C421 378 468 386 520 392 V506 H392 C380 452 378 413 382 371 Z',
-    labelX: 426,
-    labelY: 424,
-  },
+// Coordenações reais (campo "Coordenação" do GRM) dentro de cada estado.
+// Fonte: operacional_pontos_embarque (5.041 locais geocodificados, seed
+// "Locais de Serviço"), cruzando cidade -> coordenação sem nenhum conflito
+// (cada cidade pertence a exatamente 1 coordenação — 90 cidades em MT,
+// 241 em PR). Os aliases antigos ("CURITIBA", "MT3" solto, etc.) foram
+// mantidos para não perder metas já cadastradas com esses nomes.
+const REGIONS = {
+  MT1: { state: 'MT', name: 'Sinop', aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'] },
+  MT2: { state: 'MT', name: 'Primavera do Leste', aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'] },
+  MT3_CONFRESA: { state: 'MT', name: 'Confresa', aliases: ['MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 CONFRESA', 'CONFRESA'] },
+  MT3_QUERENCIA: { state: 'MT', name: 'Querência', aliases: ['MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT3 QUERENCIA', 'QUERENCIA'] },
+  MT4: { state: 'MT', name: 'Campo Novo do Parecis', aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'] },
+  PR_CASCAVEL: { state: 'PR', name: 'Cascavel', aliases: ['CASCAVEL'] },
+  PR_LONDRINA: { state: 'PR', name: 'Londrina', aliases: ['LONDRINA'] },
+  PR_MARINGA: { state: 'PR', name: 'Maringá', aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'] },
+  PR_PONTA_GROSSA: { state: 'PR', name: 'Ponta Grossa', aliases: ['PONTA GROSSA', 'PONTA GROSSA PR', 'CURITIBA', 'PARANA CURITIBA', 'PARANÁ CURITIBA'] },
+};
 
-  {
-    key: 'PR_MARINGA',
-    state: 'PR',
-    name: 'Maringá',
-    aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'],
-    path: 'M378 542 H463 C462 565 462 584 463 600 C438 600 411 596 378 596 Z',
-    labelX: 435,
-    labelY: 584,
-  },
-  {
-    key: 'PR_LONDRINA',
-    state: 'PR',
-    name: 'Londrina',
-    aliases: ['LONDRINA'],
-    path: 'M463 542 H548 V603 C519 603 490 601 463 600 C462 584 462 565 463 542 Z',
-    labelX: 493,
-    labelY: 584,
-  },
-  {
-    key: 'PR_CASCAVEL',
-    state: 'PR',
-    name: 'Cascavel',
-    aliases: ['CASCAVEL'],
-    path: 'M378 596 C411 596 438 600 463 600 C465 618 463 636 456 660 H378 Z',
-    labelX: 435,
-    labelY: 620,
-  },
-  {
-    key: 'PR_CURITIBA',
-    state: 'PR',
-    name: 'Curitiba',
-    aliases: ['CURITIBA', 'PONTA GROSSA', 'PONTA GROSSA PR', 'PARANA CURITIBA', 'PARANÁ CURITIBA'],
-    path: 'M463 600 C490 601 519 603 548 603 V660 H456 C463 636 465 618 463 600 Z',
-    labelX: 493,
-    labelY: 620,
-  },
-];
+// Mosaico geográfico por coordenação: grade de 5x5 (unidades do viewBox
+// 800x796) recortada dentro do contorno real de cada estado, rotulando
+// cada célula pela coordenação da cidade mais próxima (equivalente a um
+// diagrama de Voronoi discretizado — mesma técnica de "vizinho mais
+// próximo", só que pré-computada em vez de calculada no navegador).
+// Gerado a partir das 331 cidades reais de MT/PR em operacional_pontos_embarque;
+// script de geração em docs (analisar novamente se a base de locais mudar
+// significativamente). Linhas mescladas horizontalmente para reduzir a
+// quantidade de retângulos.
+const MOSAIC = {
+  MT: [
+    [326.2,268.6,5,5,'MT1'],[326.2,273.6,10,5,'MT1'],[326.2,278.6,15,5,'MT1'],[321.2,283.6,5,5,'MT4'],[326.2,283.6,15,5,'MT1'],[321.2,288.6,5,5,'MT4'],[326.2,288.6,20,5,'MT1'],[261.2,293.6,65,5,'MT4'],[326.2,293.6,25,5,'MT1'],[261.2,298.6,65,5,'MT4'],[326.2,298.6,25,5,'MT1'],[261.2,303.6,60,5,'MT4'],[321.2,303.6,65,5,'MT1'],[261.2,308.6,45,5,'MT4'],[306.2,308.6,110,5,'MT1'],[416.2,308.6,45,5,'MT3_CONFRESA'],[261.2,313.6,50,5,'MT4'],[311.2,313.6,105,5,'MT1'],[416.2,313.6,15,5,'MT3_CONFRESA'],[431.2,313.6,10,5,'MT3_QUERENCIA'],[441.2,313.6,5,5,'MT3_CONFRESA'],[446.2,313.6,5,5,'MT3_QUERENCIA'],[451.2,313.6,30,5,'MT3_CONFRESA'],[261.2,318.6,55,5,'MT4'],[316.2,318.6,105,5,'MT1'],[421.2,318.6,45,5,'MT3_QUERENCIA'],[466.2,318.6,10,5,'MT3_CONFRESA'],[261.2,323.6,60,5,'MT4'],[321.2,323.6,95,5,'MT1'],[416.2,323.6,60,5,'MT3_QUERENCIA'],[261.2,328.6,60,5,'MT4'],[321.2,328.6,85,5,'MT1'],[406.2,328.6,70,5,'MT3_QUERENCIA'],[296.2,333.6,30,5,'MT4'],[326.2,333.6,75,5,'MT1'],[401.2,333.6,70,5,'MT3_QUERENCIA'],[296.2,338.6,35,5,'MT4'],[331.2,338.6,70,5,'MT1'],[401.2,338.6,70,5,'MT3_QUERENCIA'],[296.2,343.6,40,5,'MT4'],[336.2,343.6,60,5,'MT1'],[396.2,343.6,75,5,'MT3_QUERENCIA'],[296.2,348.6,40,5,'MT4'],[336.2,348.6,60,5,'MT1'],[396.2,348.6,40,5,'MT3_QUERENCIA'],[436.2,348.6,10,5,'MT2'],[446.2,348.6,25,5,'MT3_QUERENCIA'],[296.2,353.6,45,5,'MT4'],[341.2,353.6,55,5,'MT1'],[396.2,353.6,35,5,'MT3_QUERENCIA'],[431.2,353.6,20,5,'MT2'],[451.2,353.6,20,5,'MT3_CONFRESA'],[296.2,358.6,40,5,'MT4'],[336.2,358.6,65,5,'MT1'],[401.2,358.6,30,5,'MT3_QUERENCIA'],[431.2,358.6,20,5,'MT2'],[451.2,358.6,20,5,'MT3_CONFRESA'],[291.2,363.6,45,5,'MT4'],[336.2,363.6,75,5,'MT1'],[411.2,363.6,20,5,'MT3_QUERENCIA'],[431.2,363.6,15,5,'MT2'],[446.2,363.6,25,5,'MT3_CONFRESA'],[286.2,368.6,55,5,'MT4'],[341.2,368.6,75,5,'MT1'],[416.2,368.6,35,5,'MT3_QUERENCIA'],[451.2,368.6,25,5,'MT3_CONFRESA'],[286.2,373.6,60,5,'MT4'],[346.2,373.6,35,5,'MT1'],[381.2,373.6,5,5,'MT2'],[386.2,373.6,30,5,'MT1'],[416.2,373.6,10,5,'MT2'],[426.2,373.6,30,5,'MT3_QUERENCIA'],[456.2,373.6,15,5,'MT3_CONFRESA'],[281.2,378.6,75,5,'MT4'],[356.2,378.6,15,5,'MT1'],[371.2,378.6,20,5,'MT2'],[391.2,378.6,20,5,'MT1'],[411.2,378.6,15,5,'MT2'],[426.2,378.6,30,5,'MT3_QUERENCIA'],[456.2,378.6,15,5,'MT3_CONFRESA'],[281.2,383.6,55,5,'MT4'],[336.2,383.6,25,5,'MT1'],[361.2,383.6,30,5,'MT2'],[391.2,383.6,15,5,'MT1'],[406.2,383.6,25,5,'MT2'],[431.2,383.6,25,5,'MT3_QUERENCIA'],[456.2,383.6,15,5,'MT3_CONFRESA'],[281.2,388.6,55,5,'MT4'],[336.2,388.6,5,5,'MT2'],[341.2,388.6,20,5,'MT1'],[361.2,388.6,30,5,'MT2'],[391.2,388.6,10,5,'MT1'],[401.2,388.6,30,5,'MT2'],[431.2,388.6,20,5,'MT3_QUERENCIA'],[451.2,388.6,20,5,'MT3_CONFRESA'],[286.2,393.6,45,5,'MT4'],[331.2,393.6,20,5,'MT2'],[351.2,393.6,10,5,'MT1'],[361.2,393.6,70,5,'MT2'],[431.2,393.6,35,5,'MT3_CONFRESA'],[286.2,398.6,40,5,'MT4'],[326.2,398.6,25,5,'MT2'],[351.2,398.6,10,5,'MT1'],[361.2,398.6,70,5,'MT2'],[431.2,398.6,25,5,'MT3_CONFRESA'],[456.2,398.6,10,5,'MT3_QUERENCIA'],[286.2,403.6,40,5,'MT4'],[326.2,403.6,15,5,'MT2'],[341.2,403.6,20,5,'MT1'],[361.2,403.6,75,5,'MT2'],[436.2,403.6,10,5,'MT3_CONFRESA'],[446.2,403.6,20,5,'MT3_QUERENCIA'],[286.2,408.6,40,5,'MT4'],[326.2,408.6,20,5,'MT2'],[346.2,408.6,15,5,'MT1'],[361.2,408.6,80,5,'MT2'],[441.2,408.6,25,5,'MT3_QUERENCIA'],[281.2,413.6,40,5,'MT4'],[321.2,413.6,35,5,'MT2'],[356.2,413.6,5,5,'MT1'],[361.2,413.6,80,5,'MT2'],[441.2,413.6,10,5,'MT3_QUERENCIA'],[286.2,418.6,30,5,'MT4'],[316.2,418.6,65,5,'MT2'],[381.2,418.6,10,5,'MT1'],[391.2,418.6,55,5,'MT2'],[446.2,418.6,5,5,'MT3_QUERENCIA'],[286.2,423.6,25,5,'MT4'],[311.2,423.6,65,5,'MT2'],[376.2,423.6,10,5,'MT1'],[386.2,423.6,60,5,'MT2'],[446.2,423.6,5,5,'MT3_QUERENCIA'],[286.2,428.6,25,5,'MT4'],[311.2,428.6,60,5,'MT2'],[371.2,428.6,10,5,'MT1'],[381.2,428.6,60,5,'MT2'],[286.2,433.6,20,5,'MT4'],[306.2,433.6,60,5,'MT2'],[366.2,433.6,5,5,'MT1'],[371.2,433.6,65,5,'MT2'],[326.2,438.6,105,5,'MT2'],[326.2,443.6,100,5,'MT2'],[326.2,448.6,100,5,'MT2'],[326.2,453.6,35,5,'MT2'],[371.2,453.6,40,5,'MT2'],[416.2,453.6,10,5,'MT2'],[331.2,458.6,20,5,'MT2'],[381.2,458.6,25,5,'MT2'],[416.2,458.6,5,5,'MT2'],[336.2,463.6,10,5,'MT2'],[411.2,463.6,10,5,'MT2']
+  ],
+  PR: [
+    [421.3,559.6,20,5,'PR_MARINGA'],[416.3,564.6,40,5,'PR_MARINGA'],[456.3,564.6,20,5,'PR_LONDRINA'],[411.3,569.6,50,5,'PR_MARINGA'],[461.3,569.6,15,5,'PR_LONDRINA'],[476.3,569.6,5,5,'PR_CASCAVEL'],[481.3,569.6,10,5,'PR_LONDRINA'],[406.3,574.6,20,5,'PR_CASCAVEL'],[426.3,574.6,30,5,'PR_MARINGA'],[456.3,574.6,35,5,'PR_LONDRINA'],[406.3,579.6,20,5,'PR_CASCAVEL'],[426.3,579.6,45,5,'PR_MARINGA'],[471.3,579.6,20,5,'PR_LONDRINA'],[491.3,579.6,5,5,'PR_CASCAVEL'],[401.3,584.6,40,5,'PR_CASCAVEL'],[441.3,584.6,30,5,'PR_MARINGA'],[471.3,584.6,5,5,'PR_LONDRINA'],[476.3,584.6,10,5,'PR_PONTA_GROSSA'],[486.3,584.6,10,5,'PR_LONDRINA'],[401.3,589.6,45,5,'PR_CASCAVEL'],[446.3,589.6,30,5,'PR_MARINGA'],[476.3,589.6,15,5,'PR_PONTA_GROSSA'],[491.3,589.6,5,5,'PR_LONDRINA'],[401.3,594.6,50,5,'PR_CASCAVEL'],[451.3,594.6,20,5,'PR_MARINGA'],[471.3,594.6,25,5,'PR_PONTA_GROSSA'],[496.3,594.6,5,5,'PR_LONDRINA'],[401.3,599.6,55,5,'PR_CASCAVEL'],[456.3,599.6,10,5,'PR_MARINGA'],[466.3,599.6,10,5,'PR_CASCAVEL'],[476.3,599.6,25,5,'PR_PONTA_GROSSA'],[501.3,599.6,5,5,'PR_LONDRINA'],[396.3,604.6,70,5,'PR_CASCAVEL'],[466.3,604.6,45,5,'PR_PONTA_GROSSA'],[511.3,604.6,5,5,'PR_CASCAVEL'],[396.3,609.6,70,5,'PR_CASCAVEL'],[466.3,609.6,45,5,'PR_PONTA_GROSSA'],[511.3,609.6,10,5,'PR_CASCAVEL'],[396.3,614.6,70,5,'PR_CASCAVEL'],[466.3,614.6,45,5,'PR_PONTA_GROSSA'],[511.3,614.6,10,5,'PR_CASCAVEL'],[411.3,619.6,55,5,'PR_CASCAVEL'],[466.3,619.6,45,5,'PR_PONTA_GROSSA'],[511.3,619.6,5,5,'PR_CASCAVEL'],[411.3,624.6,60,5,'PR_CASCAVEL'],[491.3,624.6,10,5,'PR_PONTA_GROSSA'],[421.3,629.6,40,5,'PR_CASCAVEL'],[451.3,634.6,10,5,'PR_CASCAVEL']
+  ],
+};
+
+// Posição do rótulo (%) de cada coordenação = centroide (ponderado por
+// área) das células do mosaico daquela coordenação.
+const LABEL_POS = {
+  MT1: { x: 365, y: 342.6 },
+  MT4: { x: 303.8, y: 358.6 },
+  MT3_CONFRESA: { x: 454, y: 359.7 },
+  MT3_QUERENCIA: { x: 437.6, y: 354.2 },
+  MT2: { x: 383.4, y: 421.2 },
+  PR_MARINGA: { x: 446.2, y: 579.6 },
+  PR_LONDRINA: { x: 478.4, y: 578.8 },
+  PR_CASCAVEL: { x: 436.5, y: 608.5 },
+  PR_PONTA_GROSSA: { x: 488, y: 609.9 },
+};
 
 const SEGMENT_BY_ALIAS = new Map();
-for (const segment of SEGMENTS) {
-  for (const alias of segment.aliases) {
-    SEGMENT_BY_ALIAS.set(normalizeStr(alias), segment.key);
+for (const [key, region] of Object.entries(REGIONS)) {
+  for (const alias of region.aliases) {
+    SEGMENT_BY_ALIAS.set(normalizeStr(alias), key);
   }
 }
 
@@ -99,7 +73,7 @@ let pendingApply = false;
 function normalizeStr(value) {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
@@ -175,7 +149,8 @@ function ensureStyles() {
     }
 
     .db-state-svg .db-regional-overlay path,
-    .db-state-svg .db-regional-overlay text {
+    .db-state-svg .db-regional-overlay text,
+    .db-state-svg .db-regional-overlay rect {
       transition: all .25s ease;
     }
 
@@ -304,8 +279,8 @@ async function loadRegionalData() {
     if (metaRes.error) throw metaRes.error;
 
     const map = Object.fromEntries(
-      SEGMENTS.map((seg) => [seg.key, {
-        key: seg.key,
+      Object.keys(REGIONS).map((key) => [key, {
+        key,
         meta: 0,
         produzido: 0,
         pct: 0,
@@ -357,17 +332,20 @@ function removeRegionalOverlay(svg) {
   svg.querySelectorAll('.db-regional-overlay').forEach((el) => el.remove());
 }
 
-function createRegionalLabel(seg, info, palette) {
+function createRegionalLabel(key, uf, info, palette) {
   const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
   if (!hasData) return '';
 
-  const fontSize = seg.state === 'PR' ? 12 : 18;
-  const strokeWidth = seg.state === 'PR' ? 4 : 6;
+  const pos = LABEL_POS[key];
+  if (!pos) return '';
+
+  const fontSize = uf === 'PR' ? 12 : 18;
+  const strokeWidth = uf === 'PR' ? 4 : 6;
 
   return `
     <text
-      x="${seg.labelX}"
-      y="${seg.labelY}"
+      x="${pos.x}"
+      y="${pos.y}"
       text-anchor="middle"
       dominant-baseline="central"
       style="
@@ -401,23 +379,33 @@ function createRegionalOverlay(data) {
     />
   `).join('');
 
-  const segments = SEGMENTS.map((seg) => {
-    const info = data.segments[seg.key];
-    const palette = getPalette(info);
+  const mosaics = ['MT', 'PR'].map((uf) => {
+    // Agrupa as células do mosaico por coordenação para poder colocar
+    // um único <title> (tooltip) por região sobre o conjunto de retângulos.
+    const byKey = {};
+    for (const [x, y, w, h, key] of MOSAIC[uf]) {
+      (byKey[key] ||= []).push([x, y, w, h]);
+    }
 
-    return `
-      <g class="db-regional-segment" clip-path="url(#dbRegionalClip${seg.state})">
-        <title>${seg.name} — ${fmtPct(info?.pct || 0)}</title>
-        <path
-          d="${seg.path}"
-          fill="${palette.fill}"
-          stroke="rgba(255,255,255,.28)"
-          stroke-width="1.15"
-          stroke-linejoin="round"
-        />
-      </g>
-      ${createRegionalLabel(seg, info, palette)}
-    `;
+    const groups = Object.entries(byKey).map(([key, cells]) => {
+      const region = REGIONS[key];
+      const info = data.segments[key];
+      const palette = getPalette(info);
+      const rects = cells.map(([x, y, w, h]) => `
+        <rect x="${x}" y="${y}" width="${w}" height="${h}"
+          fill="${palette.fill}" stroke="${palette.fill}" stroke-width="0.6" />
+      `).join('');
+
+      return `
+        <g class="db-regional-segment">
+          <title>${region?.name || key} — ${fmtPct(info?.pct || 0)}</title>
+          ${rects}
+        </g>
+        ${createRegionalLabel(key, uf, info, palette)}
+      `;
+    }).join('');
+
+    return `<g clip-path="url(#dbRegionalClip${uf})">${groups}</g>`;
   }).join('');
 
   const outlines = ['MT', 'PR'].map((uf) => `
@@ -434,7 +422,7 @@ function createRegionalOverlay(data) {
     <g class="db-regional-overlay">
       ${defs}
       ${stateCovers}
-      ${segments}
+      ${mosaics}
       ${outlines}
     </g>
   `;
