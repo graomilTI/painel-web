@@ -36,6 +36,45 @@
       <span>Preparando módulos do gestor.</span>
     </div>
   </div>
+  <script>
+    // Rede de segurança que NÃO depende de nenhum arquivo .js externo carregar.
+    // Se o service worker/rede falhar bem no fetch do gestor-app.js (comum em
+    // sinal fraco de celular), o módulo nunca executa e o app fica preso na
+    // tela estática de "Carregando..." pra sempre, sem nenhum jeito de sair —
+    // porque o botão de recuperação normal também vive dentro desse mesmo
+    // arquivo que falhou. Este script roda inline, então funciona mesmo assim.
+    (function () {
+      setTimeout(function () {
+        var app = document.getElementById('app');
+        if (!app || !app.classList.contains('is-loading')) return;
+        app.innerHTML =
+          '<div class="app-loader">' +
+          '<img src="./logo-grao1000.svg" alt="Grão 1000" />' +
+          '<strong>O app não conseguiu carregar.</strong>' +
+          '<span>Pode ser sinal fraco ou uma versão antiga guardada no celular.</span>' +
+          '<button type="button" id="staticHardRefreshBtn" style="margin-top:12px;padding:12px 20px;border-radius:10px;border:none;background:#1fae63;color:#fff;font-weight:600;font-size:15px;">Atualizar app</button>' +
+          '</div>';
+        var btn = document.getElementById('staticHardRefreshBtn');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          btn.disabled = true;
+          btn.textContent = 'Atualizando...';
+          var tasks = [];
+          if ('serviceWorker' in navigator) {
+            tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+              return Promise.all(regs.map(function (r) { return r.unregister(); }));
+            }).catch(function () {}));
+          }
+          if ('caches' in window) {
+            tasks.push(caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }).catch(function () {}));
+          }
+          Promise.all(tasks).finally(function () { location.reload(); });
+        });
+      }, 14000);
+    })();
+  </script>
   <script type="module" src="./assets/js/gestor-app-dashboard-live-fix.js?v=20260909-patrimonio-null-atrasado"></script>
   <script type="module" src="./assets/js/gestor-app.js?v=20260922-boot-watchdog2"></script>
   <script type="module" src="./assets/js/gestor-app-supervisao-fix.js?v=20260702-coordfix1"></script>
