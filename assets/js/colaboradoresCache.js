@@ -6,30 +6,21 @@
 // que ainda não possuem a tabela nova.
 //
 // O cache guarda somente os campos cadastrais usados pelos módulos do painel;
-// campos sensíveis da tabela não são persistidos no sessionStorage. O TTL de
-// 10min é só a rede de segurança: a inscrição Realtime abaixo invalida antes
-// disso sempre que a tabela colaboradores muda, para as ~13 telas que usam
-// getColaboradores()/searchColaboradores() acompanharem o agente novo sem
-// esperar o TTL vencer.
+// campos sensíveis da tabela não saem do sessionStorage da aba. O cache dura
+// 10min e as invalidações explícitas são propagadas entre abas só por um
+// timestamp, sem persistir os dados pessoais no localStorage. Não assinamos
+// `colaboradores` via Realtime: o agente atualiza essa tabela continuamente e
+// cada assinatura fazia o banco reler o WAL, além de invalidar o cache a cada
+// linha alterada.
 
 import { supabase } from './supabaseClient.js';
 
-const CACHE_KEY = 'grm:colaboradores:v3';
+const CACHE_KEY = 'grm:colaboradores:v4-stable';
+const PREVIOUS_CACHE_KEY = 'grm:colaboradores:v3';
 const LEGACY_CACHE_KEY = 'grm:colaboradores_atuais:v1';
+const INVALIDATION_KEY = 'grm:colaboradores:invalidated-at';
 const TTL_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 1000;
-
-let realtimeChannel = null;
-
-function garantirInscricaoRealtime() {
-  if (realtimeChannel) return;
-  realtimeChannel = supabase
-    .channel('colaboradores-cache-invalidacao')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'colaboradores' }, () => {
-      invalidateColaboradores();
-    })
-    .subscribe();
-}
 
 const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,sexo,whatsapp';
 const CAMPOS_MINIMOS = 'id,nome,cpf,tipo,supervisao,coordenacao,empresa,situacao,sexo,whatsapp';
@@ -42,7 +33,8 @@ function lerCache() {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const { ts, data } = JSON.parse(raw);
-    if (!ts || (Date.now() - ts) > TTL_MS) return null;
+    const invalidatedAt = Number(localStorage.getItem(INVALIDATION_KEY) || 0);
+    if (!ts || ts < invalidatedAt || (Date.now() - ts) > TTL_MS) return null;
     return Array.isArray(data) ? data : null;
   } catch {
     return null;
@@ -52,6 +44,7 @@ function lerCache() {
 function gravarCache(data) {
   try {
     sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+    sessionStorage.removeItem(PREVIOUS_CACHE_KEY);
     sessionStorage.removeItem(LEGACY_CACHE_KEY);
   } catch {
     // sessionStorage cheio/indisponível — segue sem cache persistente.
@@ -161,8 +154,6 @@ async function carregarBase() {
 export async function getColaboradores(opts = {}) {
   const { force = false, somenteAtivos = false } = opts;
 
-  garantirInscricaoRealtime();
-
   if (!force) {
     const cache = lerCache();
     if (cache) return somenteAtivos ? cache.filter(normalizarAtivo) : cache;
@@ -199,6 +190,8 @@ export async function searchColaboradores(termo, opts = {}) {
 /** Invalida o cache após sincronização/importação. */
 export function invalidateColaboradores() {
   try {
+    localStorage.setItem(INVALIDATION_KEY, String(Date.now()));
+    sessionStorage.removeItem(PREVIOUS_CACHE_KEY);
     sessionStorage.removeItem(CACHE_KEY);
     sessionStorage.removeItem(LEGACY_CACHE_KEY);
   } catch {}
