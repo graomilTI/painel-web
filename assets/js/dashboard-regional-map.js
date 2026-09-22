@@ -166,6 +166,13 @@ function ensureStyles() {
     .db-prod-center.db-has-regional-callouts {
       flex-wrap: wrap;
       gap: 6px;
+      /* .db-prod-layout (dashboard.js) usa align-items:stretch na grid,
+         então sem isso .db-prod-center herdava a altura da coluna lateral
+         inteira (os 3 cards de gauge empilhados, ~900px) — e o cone,
+         com align-self:stretch, esticava até essa altura toda em vez da
+         altura real do mapa/painéis (~150px). Fixa a altura do próprio
+         .db-prod-center no conteúdo dele, não na da grid. */
+      align-self: center;
     }
 
     /* .db-state-svg usa width:100% — sem uma base própria ele pode
