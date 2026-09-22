@@ -432,7 +432,10 @@ async function applyMapMode() {
   ensureStyles();
   ensureToggle();
 
-  const svg = document.querySelector('.db-prod-left .db-state-svg');
+  // dashboard.js renderiza o mapa dentro de .db-prod-center (a classe
+  // .db-prod-left só existe no painel do gestor-app.js, que nem importa
+  // este módulo) — era por isso que a sobreposição regional nunca prendia.
+  const svg = document.querySelector('.db-prod-center .db-state-svg');
   if (!isMasterBrazilMap(svg)) return;
 
   removeRegionalOverlay(svg);
