@@ -398,11 +398,16 @@ async function replacePainelResultadoDiario(data) {
 }
 
 async function upsertData(data) {
-  log('INFO', `Iniciando upsert de ${data.length} registros...`);
+  log('INFO', `Iniciando gravação de ${data.length} registros...`);
   const dateRange = calculateDateRange();
+  const janelaDe = toIso(dateRange.from);
+  const janelaAte = toIso(dateRange.to);
+  // Um único carimbo por execução: é ele que separa o snapshot novo dos
+  // anteriores da mesma janela na limpeza abaixo.
+  const syncAt = new Date().toISOString();
   const records = data.map(row => ({
-    data_classificacao_de: toIso(dateRange.from),
-    data_classificacao_ate: toIso(dateRange.to),
+    data_classificacao_de: janelaDe,
+    data_classificacao_ate: janelaAte,
     cliente_nacional: row['Cliente Nacional'] || null,
     uf_embarque: row['UF de Embarque'] || null,
     uf_destino: row['UF de Destino'] || null,
@@ -410,18 +415,43 @@ async function upsertData(data) {
     coordenacao: row['Coordenação'] || null,
     resultado: parseFloat(row['Resultado'] || row['Valor']) || null,
     dados_json: row,
-    data_sincronizacao: new Date().toISOString(), sincronizado_em: new Date().toISOString()
+    data_sincronizacao: syncAt, sincronizado_em: syncAt
   }));
 
+  // Sem `id` nos registros o banco gera um UUID novo por linha, então isto
+  // sempre foi INSERT puro (o antigo upsert onConflict:'id' nunca casava).
   for (let i = 0; i < records.length; i += 100) {
     const chunk = records.slice(i, i + 100);
-    const { error } = await supabase.from(REPORT_CONFIG.tableName).upsert(chunk, { onConflict: 'id' });
+    const { error } = await supabase.from(REPORT_CONFIG.tableName).insert(chunk);
     if (error) throw error;
     log('INFO', `Progresso: ${Math.min(i + 100, records.length)}/${records.length}`);
   }
 
-  log('SUCCESS', `Upsert concluído: ${records.length} registros`);
+  log('SUCCESS', `Gravação concluída: ${records.length} registros`);
+  await removeSnapshotsAnteriores(janelaDe, janelaAte, syncAt, records.length);
   await replacePainelResultadoDiario(data);
+}
+
+// Essa tabela cresceu ~20 GB porque cada execução (de hora em hora) acrescentava
+// o resultado inteiro da janela e nada apagava os snapshots antigos. Depois de
+// gravar o novo com sucesso, remove os anteriores da MESMA janela (de/ate, que
+// é por data — todas as execuções do dia compartilham). Só roda com o snapshot
+// novo já completo (nunca deixa a janela vazia) e uma falha aqui não aborta o
+// sync: os dados novos já estão gravados e a próxima execução refaz a limpeza.
+async function removeSnapshotsAnteriores(janelaDe, janelaAte, syncAt, novos) {
+  if (!novos) return;
+  const { error, count } = await supabase
+    .from(REPORT_CONFIG.tableName)
+    .delete({ count: 'exact' })
+    .eq('data_classificacao_de', janelaDe)
+    .eq('data_classificacao_ate', janelaAte)
+    .lt('data_sincronizacao', syncAt);
+
+  if (error) {
+    log('WARN', `Não foi possível limpar snapshots anteriores de ${REPORT_CONFIG.tableName}: ${error.message}`);
+    return;
+  }
+  log('INFO', `Snapshots anteriores da janela ${janelaDe}..${janelaAte} removidos: ${count ?? 0} linhas.`);
 }
 
 async function main() {
