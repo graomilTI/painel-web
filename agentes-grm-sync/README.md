@@ -196,7 +196,9 @@ GRM_RESULTADO_DIARIO_MIN_ROWS=200    # guarda contra promover a janela vazia/par
 ```
 
 Continua gravando nas duas tabelas de sempre: `grm_resultado_diario_importacoes`
-(log bruto, upsert por `id` — não deduplica de fato, é log de auditoria) e
+(snapshot bruto por janela: cada execução insere o resultado e, com o insert
+completo, apaga os snapshots anteriores da mesma janela `de/ate` — antes era
+append puro e a tabela chegou a ~20 GB, ver `removeSnapshotsAnteriores`) e
 `relatorio_resultado_diario` (via staging, `replaceTablePeriodSafely` — só
 substitui as datas presentes na janela consultada, histórico mais antigo
 fica intacto). Para reprocessar um período fora da janela de 7 dias, rodar
