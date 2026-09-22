@@ -69,7 +69,16 @@
       if(!isNaN(d)) return {month:d.getUTCMonth(), year:d.getUTCFullYear()};
     }
     const raw=String(value??'').trim();
-    let m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[2]-1,year:+m[3]};
+    // ISO (YYYY-MM-DD, vindo de colunas date/timestamp do Postgres): parse manual, sem
+    // passar por new Date()+getMonth()/getFullYear() locais - isso interpretava a string
+    // como UTC e voltava 1 dia em fusos negativos (BRT=UTC-3), jogando o 1º dia de cada
+    // mês pro mês anterior no DRE (achado 22/09/2026 comparando com relatório baixado do
+    // GRM: Fevereiro inteiro do dia 1 vazando pra Janeiro em loadResultadoDiarioFromDb/
+    // loadProduzidoColaboradorFromDb/loadMediaAtivosPorRegionalFromDb, que leem "data"/
+    // "data_referencia" direto do banco). Mesma causa raiz do fix já aplicado em
+    // loadDespesasFromDb, generalizada aqui pra valer pra todo mundo que chama monthFrom().
+    let m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return {month:+m[2]-1,year:+m[1]};
+    m=raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[2]-1,year:+m[3]};
     m=raw.match(/^(\d{1,2})[\/\-.](\d{4})$/); if(m) return {month:+m[1]-1,year:+m[2]};
     const map={JAN:0,FEV:1,FEB:1,MAR:2,ABR:3,APR:3,MAI:4,MAY:4,JUN:5,JUL:6,AGO:7,AUG:7,SET:8,SEP:8,OUT:9,OCT:9,NOV:10,DEZ:11,DEC:11};
     m=raw.match(/^([A-Za-zÀ-ÿ]{3,})[\/\-. ]?(\d{4})?$/); if(m){const mo=map[norm(m[1]).slice(0,3)]; if(mo!=null) return {month:mo,year:m[2]?+m[2]:state.year};}
