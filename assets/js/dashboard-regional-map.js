@@ -532,6 +532,7 @@ function createRegionalOverlay(data) {
 }
 
 async function applyMapMode() {
+  window.__dbRegionalApplyCount = (window.__dbRegionalApplyCount || 0) + 1;
   ensureStyles();
   ensureToggle();
 
@@ -572,10 +573,12 @@ async function applyMapMode() {
 }
 
 function scheduleApply() {
+  window.__dbRegionalScheduleCount = (window.__dbRegionalScheduleCount || 0) + 1;
   if (pendingApply) return;
   pendingApply = true;
 
   requestAnimationFrame(async () => {
+    window.__dbRegionalRafCount = (window.__dbRegionalRafCount || 0) + 1;
     pendingApply = false;
     await applyMapMode();
   });
