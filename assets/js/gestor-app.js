@@ -267,11 +267,11 @@ async function boot() {
   state.appUser = appUserResult?.value?.data || null;
 
   const role = state.context?.user?.role || state.context?.perfil_codigo || state.context?.perfil_nome || state.context?.role || '';
-  const setor = appUser?.setor || state.context?.setor || state.context?.department?.name || '';
+  const setor = state.appUser?.setor || state.context?.setor || state.context?.department?.name || '';
   state.isMaster = Boolean(state.context?.user?.is_master || state.context?.is_master || normalize(role) === 'MASTER');
   const isGestor = normalize(role) === 'GESTOR' || normalize(setor) === 'GESTOR' || normalize(state.context?.department?.code) === 'GESTOR';
   state.allowedSupervisoes = [
-    ...parseList(appUser?.supervisao),
+    ...parseList(state.appUser?.supervisao),
     ...parseList(state.context?.user?.supervisao),
     ...parseList(state.context?.user?.supervisoes),
     ...parseList(state.context?.supervisao),
