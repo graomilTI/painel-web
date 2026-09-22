@@ -137,7 +137,9 @@ function setupColaboradoresRealtime() {
   if (colaboradoresRealtimeChannel) supabase.removeChannel(colaboradoresRealtimeChannel);
   colaboradoresRealtimeChannel = supabase
     .channel('relatorio-colaboradores-realtime')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'colaboradores' }, scheduleRealtimeReload)
+    // O journal recebe somente mudanças cadastrais reais. Assinar a tabela
+    // principal também fazia o Realtime reler toda a alta frequência do sync
+    // e disparava duas recargas para a mesma alteração.
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'colaboradores_alteracoes' }, scheduleRealtimeReload)
     .subscribe();
 }
