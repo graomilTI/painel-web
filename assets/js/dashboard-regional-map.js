@@ -68,22 +68,29 @@ const STATE_BBOX = {
 
 // Ponto de "foco da lupa" em cada estado no mapa do Brasil inteiro: o
 // centro vertical do lado que encosta na caixa de zoom (borda oeste de
-// MT, que aponta pra baixo-esquerda; borda leste de PR, pra baixo-direita).
+// MT, que aponta pra esquerda; borda leste de PR, pra direita).
 const ZOOM_ANCHOR = {
   MT: { x: 261.17, y: 367.16 },
   PR: { x: 523.70, y: 598.85 },
 };
 
-// O mapa do Brasil (viewBox 0 0 800 796) ganha uma faixa extra embaixo
-// pra caber as duas caixas de zoom ampliado, lado a lado, conectadas ao
-// estado real por 2 linhas finas (efeito lupa) — tudo no MESMO <svg>, um
-// só sistema de coordenadas, sem precisar medir pixel de elementos
-// diferentes em runtime (foi isso que causou os bugs de altura/posição
-// das tentativas anteriores com painéis HTML separados).
-const OVERLAY_VIEWBOX_HEIGHT = 1060;
+// O viewBox do mapa do Brasil (originalmente "0 0 800 796") ganha uma
+// faixa extra dos DOIS LADOS — não embaixo — pra caber as caixas de zoom
+// de MT/PR ao lado do mapa, do jeito pedido. As coordenadas do mapa em si
+// (STATE_PATHS, REGION_PATHS, 0-800) não mudam nada: só o min-x e a
+// largura do viewBox mudam, abrindo espaço nas laterais sem deslocar
+// nenhum path existente. Tudo no MESMO <svg>, um só sistema de
+// coordenadas, sem precisar medir pixel de elementos diferentes em
+// runtime (foi isso que causou os bugs das tentativas anteriores com
+// painéis HTML separados: mapa encolhido demais, cone esticando errado).
+// Alargar o viewBox encolhe TUDO proporcionalmente (o mapa e os % que já
+// existiam nele) — por isso a faixa lateral é enxuta (170 de 800, ~21%
+// de cada lado): dá pra caber os painéis sem devolver o mapa ao tamanho
+// minúsculo da tentativa anterior.
+const OVERLAY_VIEWBOX = { x: -170, y: 0, w: 1140, h: 796 };
 const ZOOM_BOX = {
-  MT: { x: 40, y: 820, w: 340, h: 220 },
-  PR: { x: 420, y: 820, w: 340, h: 220 },
+  MT: { x: -170, y: 283, w: 170, h: 230 },
+  PR: { x: 800, y: 283, w: 170, h: 230 },
 };
 
 function zoomTransform(uf) {
@@ -192,9 +199,9 @@ function ensureStyles() {
     }
 
     /* Tudo (mapa + destaque + caixas de zoom de MT/PR) é desenhado dentro
-       do mesmo <svg> do mapa do Brasil (viewBox esticado pra baixo) — não
-       precisa de layout flex/grid próprio nem medir pixel em runtime.
-       Isso evitou dois bugs das versões anteriores (painéis HTML ao lado
+       do mesmo <svg> do mapa do Brasil (viewBox esticado pros lados) —
+       não precisa de layout flex/grid próprio nem medir pixel em runtime.
+       Isso evitou os bugs das versões anteriores (painéis HTML ao lado
        encolhendo o mapa; cone esticando pela altura da grid pai). */
     .db-state-svg .db-regional-highlight path,
     .db-state-svg .db-regional-zoom-box path {
@@ -392,8 +399,8 @@ function isMasterBrazilMap(svg) {
 function removeRegionalOverlay(svg) {
   if (!svg) return;
   svg.querySelectorAll('.db-regional-overlay').forEach((el) => el.remove());
-  // Restaura o viewBox original (a versão regional estica ele pra baixo
-  // pra caber as caixas de zoom de MT/PR).
+  // Restaura o viewBox original (a versão regional estica ele pros
+  // lados pra caber as caixas de zoom de MT/PR).
   if (svg.dataset.dbOriginalViewBox) {
     svg.setAttribute('viewBox', svg.dataset.dbOriginalViewBox);
   }
@@ -491,17 +498,21 @@ function createZoomBox(uf, data) {
         { x: pos.x * t.scale + t.tx, y: pos.y * t.scale + t.ty },
         info,
         palette,
-        uf === 'PR' ? 15 : 16
+        uf === 'PR' ? 12 : 13
       );
     }
   }
 
   const title = uf === 'MT' ? 'Mato Grosso' : 'Paraná';
+  // As linhas conectam no lado da caixa que encosta no mapa: a borda
+  // direita da caixa de MT (que fica à esquerda do mapa) e a borda
+  // esquerda da caixa de PR (que fica à direita).
+  const nearX = uf === 'MT' ? box.x + box.w : box.x;
 
   return `
     <g class="db-regional-zoom-box" data-uf="${uf}">
-      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${box.x}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
-      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${box.x + box.w}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${nearX}" y2="${box.y}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="${ZOOM_ANCHOR[uf].x}" y1="${ZOOM_ANCHOR[uf].y}" x2="${nearX}" y2="${box.y + box.h}" stroke="rgba(110,231,183,.45)" stroke-width="1.5" stroke-linecap="round"/>
       <text x="${box.x + box.w / 2}" y="${box.y - 10}" text-anchor="middle" style="font-size:13px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;fill:#94a3b8;">${title}</text>
       <defs>
         <clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}" transform="${transform}"/></clipPath>
@@ -541,7 +552,7 @@ async function applyMapMode() {
     if (!svg.dataset.dbOriginalViewBox) {
       svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
     }
-    svg.setAttribute('viewBox', `0 0 800 ${OVERLAY_VIEWBOX_HEIGHT}`);
+    svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
   } catch (error) {
     console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
