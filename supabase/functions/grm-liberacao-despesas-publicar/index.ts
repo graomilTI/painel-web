@@ -206,6 +206,11 @@ function configKeyExtra(value: unknown, description?: unknown): string {
     if (desc.includes('PEDAGIO')) return 'EXTRA_PEDAGIO';
     if (desc.includes('PASSAGEM')) return 'EXTRA_PASSAGEM';
     if (desc.includes('MANUTENCAO') || desc.includes('TROCA DE PNEU')) return 'EXTRA_MANUTENCAO_VEICULO';
+    // Mapeada em 22/09/2026: colaborador com "Serviço de auditoria" digitado
+    // no fluxo Disponível nunca gerava regra alguma (categoria ausente aqui,
+    // no client AGENTE_OUTROS_CATEGORIAS e na função SQL
+    // grm_filtrar_regras_programacao) — ficava pendência manual pra sempre.
+    if (desc.includes('AUDITORIA')) return 'EXTRA_AUDITORIA';
   }
   return 'EXTRA_OUTROS';
 }
@@ -338,6 +343,10 @@ function buildRulesForStaff(args: {
       // pedágio/passagem/manutenção sem valor nenhum é mais provável ser
       // rascunho incompleto do que despesa real ainda não apurada.
       'EXTRA_BONUS',
+      // EXTRA_AUDITORIA abre a zero (22/09/2026): caso real observado veio
+      // com valor R$ 0,00 (liberado no fluxo Disponível só pra sinalizar o
+      // serviço, sem valor apurado ainda).
+      'EXTRA_AUDITORIA',
     ].includes(key);
     if (extraValue > 0 || abreComZero) {
       requireConfig(key, true, extraValue, abreComZero);
