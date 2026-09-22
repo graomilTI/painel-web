@@ -49,13 +49,26 @@ const MOSAIC = {
 const LABEL_POS = {
   MT1: { x: 365, y: 342.6 },
   MT4: { x: 303.8, y: 358.6 },
-  MT3_CONFRESA: { x: 454, y: 359.7 },
-  MT3_QUERENCIA: { x: 437.6, y: 354.2 },
+  // Confresa/Querência: usa o ponto médio da faixa contígua mais larga de
+  // cada região (não o centroide de área) — o centroide das duas caía a
+  // menos de 6 unidades de distância uma da outra e os rótulos colidiam.
+  MT3_CONFRESA: { x: 438.7, y: 308.6 },
+  MT3_QUERENCIA: { x: 433.7, y: 343.6 },
   MT2: { x: 383.4, y: 421.2 },
   PR_MARINGA: { x: 446.2, y: 579.6 },
   PR_LONDRINA: { x: 478.4, y: 578.8 },
   PR_CASCAVEL: { x: 436.5, y: 608.5 },
   PR_PONTA_GROSSA: { x: 488, y: 609.9 },
+};
+
+// Janela de recorte (viewBox) de cada painel de "zoom" — o retângulo que
+// envolve o estado (bbox do STATE_PATHS) com uma margem, para desenhar o
+// contorno das coordenações bem maior do que cabe no mapa do Brasil
+// inteiro (era isso que causava o efeito "manchado": a grade do mosaico
+// ficava espremida em poucos pixels dentro do estadinho minúsculo).
+const CALLOUTS = {
+  MT: { x: 255, y: 257, w: 232, h: 220, side: 'left' },
+  PR: { x: 390, y: 553, w: 140, h: 91, side: 'right' },
 };
 
 const SEGMENT_BY_ALIAS = new Map();
@@ -148,15 +161,59 @@ function ensureStyles() {
       box-shadow: 0 0 0 1px rgba(45,212,160,.18) inset;
     }
 
-    .db-state-svg .db-regional-overlay path,
-    .db-state-svg .db-regional-overlay text,
-    .db-state-svg .db-regional-overlay rect {
+    .db-state-svg .db-regional-highlight path {
+      transition: all .25s ease;
+    }
+
+    .db-prod-center.db-has-regional-callouts {
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    /* .db-state-svg usa width:100% — sem uma base própria ele pode
+       encolher demais ao virar flex-item ao lado dos painéis de zoom. */
+    .db-prod-center.db-has-regional-callouts .db-state-wrap {
+      flex: 1 1 240px;
+      min-width: 180px;
+      max-width: 360px;
+    }
+
+    .db-regional-callout {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px 12px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 14px;
+      background: rgba(13,13,24,.55);
+      animation: db-fade-up .3s ease both;
+    }
+
+    .db-regional-callout-title {
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #94a3b8;
+    }
+
+    .db-regional-callout svg {
+      display: block;
+    }
+
+    .db-regional-callout .db-regional-segment path,
+    .db-regional-callout .db-regional-segment text {
       transition: all .25s ease;
     }
 
     @media(max-width: 700px) {
       .db-map-mode-toggle { width: 100%; justify-content: space-between; }
       .db-map-mode-btn { flex: 1; }
+    }
+
+    @media(max-width: 900px) {
+      .db-regional-callout svg { width: 140px; height: auto; }
     }
   `;
   document.head.appendChild(style);
@@ -329,18 +386,19 @@ function isMasterBrazilMap(svg) {
 
 function removeRegionalOverlay(svg) {
   if (!svg) return;
-  svg.querySelectorAll('.db-regional-overlay').forEach((el) => el.remove());
+  svg.querySelectorAll('.db-regional-highlight').forEach((el) => el.remove());
+
+  const center = svg.closest('.db-state-wrap')?.parentElement;
+  if (!center) return;
+  center.querySelectorAll('.db-regional-callout').forEach((el) => el.remove());
+  center.classList.remove('db-has-regional-callouts');
 }
 
-function createRegionalLabel(key, uf, info, palette) {
+function createRegionalLabel(key, pos, info, palette, fontSize = 20) {
   const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
-  if (!hasData) return '';
+  if (!hasData || !pos) return '';
 
-  const pos = LABEL_POS[key];
-  if (!pos) return '';
-
-  const fontSize = uf === 'PR' ? 12 : 18;
-  const strokeWidth = uf === 'PR' ? 4 : 6;
+  const strokeWidth = Math.max(1.5, +(fontSize / 6.5).toFixed(1));
 
   return `
     <text
@@ -350,81 +408,92 @@ function createRegionalLabel(key, uf, info, palette) {
       dominant-baseline="central"
       style="
         font-size:${fontSize}px;
-        font-weight:1000;
+        font-weight:800;
         letter-spacing:-.02em;
         fill:${palette.text};
         paint-order:stroke fill;
-        stroke:rgba(0,0,0,.78);
+        stroke:rgba(0,0,0,.85);
         stroke-width:${strokeWidth}px;
+        stroke-linejoin:round;
       "
     >${fmtPct(info.pct)}</text>
   `;
 }
 
-function createRegionalOverlay(data) {
-  const defs = `
-    <defs>
-      <clipPath id="dbRegionalClipMT"><path d="${STATE_PATHS.MT}"/></clipPath>
-      <clipPath id="dbRegionalClipPR"><path d="${STATE_PATHS.PR}"/></clipPath>
-    </defs>
-  `;
-
-  const stateCovers = ['MT', 'PR'].map((uf) => `
+// Destaque discreto de MT/PR no mapa do Brasil inteiro, sinalizando que a
+// divisão por coordenação está ampliada nos painéis ao lado — sem repetir
+// o mosaico em cima do estadinho minúsculo (era isso que "manchava").
+function createStateHighlight() {
+  const paths = ['MT', 'PR'].map((uf) => `
     <path
       d="${STATE_PATHS[uf]}"
-      fill="rgba(13,13,24,.96)"
-      stroke="rgba(255,255,255,.11)"
-      stroke-width="1"
+      fill="rgba(110,231,183,.10)"
+      stroke="rgba(110,231,183,.85)"
+      stroke-width="1.6"
+      stroke-dasharray="4 3"
       stroke-linejoin="round"
     />
   `).join('');
 
-  const mosaics = ['MT', 'PR'].map((uf) => {
-    // Agrupa as células do mosaico por coordenação para poder colocar
-    // um único <title> (tooltip) por região sobre o conjunto de retângulos.
-    const byKey = {};
-    for (const [x, y, w, h, key] of MOSAIC[uf]) {
-      (byKey[key] ||= []).push([x, y, w, h]);
-    }
+  return `<g class="db-regional-highlight">${paths}</g>`;
+}
 
-    const groups = Object.entries(byKey).map(([key, cells]) => {
-      const region = REGIONS[key];
-      const info = data.segments[key];
-      const palette = getPalette(info);
-      const rects = cells.map(([x, y, w, h]) => `
-        <rect x="${x}" y="${y}" width="${w}" height="${h}"
-          fill="${palette.fill}" stroke="${palette.fill}" stroke-width="0.6" />
-      `).join('');
+// Painel de "zoom": recorta só a janela (CALLOUTS[uf]) ao redor do estado
+// e desenha o mosaico nela — mesmo dado, mas ocupando o painel inteiro em
+// vez de uma fração minúscula do mapa do Brasil.
+function createCalloutPanel(uf, data) {
+  const box = CALLOUTS[uf];
+  const viewBox = `${box.x} ${box.y} ${box.w} ${box.h}`;
+  const aspect = (box.w / box.h).toFixed(3);
 
-      return `
-        <g class="db-regional-segment">
-          <title>${region?.name || key} — ${fmtPct(info?.pct || 0)}</title>
-          ${rects}
-        </g>
-        ${createRegionalLabel(key, uf, info, palette)}
-      `;
-    }).join('');
+  const byKey = {};
+  for (const [x, y, w, h, key] of MOSAIC[uf]) {
+    (byKey[key] ||= []).push([x, y, w, h]);
+  }
 
-    return `<g clip-path="url(#dbRegionalClip${uf})">${groups}</g>`;
-  }).join('');
+  // Os retângulos do mosaico ficam DENTRO do clip-path (recortados no
+  // contorno exato do estado); os labels de % ficam FORA dele. Colocar o
+  // texto dentro do clip cortava o "6" de "60%" sem aviso nenhum sempre
+  // que o centroide da região caía perto de uma reentrância da borda
+  // (ex.: MT4/Campo Novo do Parecis, faixa estreita a oeste de MT).
+  let rectsHtml = '';
+  let labelsHtml = '';
+  for (const [key, cells] of Object.entries(byKey)) {
+    const region = REGIONS[key];
+    const info = data.segments[key];
+    const palette = getPalette(info);
 
-  const outlines = ['MT', 'PR'].map((uf) => `
-    <path
-      d="${STATE_PATHS[uf]}"
-      fill="none"
-      stroke="rgba(255,255,255,.22)"
-      stroke-width="1.1"
-      stroke-linejoin="round"
-    />
-  `).join('');
+    // shape-rendering="crispEdges" alinha as células da grade sem
+    // anti-aliasing entre elas — era a sobreposição de bordas translúcidas
+    // (stroke em cada célula) que criava o efeito "manchado"/listrado.
+    const rects = cells.map(([x, y, w, h]) => `
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${palette.fill}" />
+    `).join('');
+
+    rectsHtml += `
+      <g class="db-regional-segment" shape-rendering="crispEdges">
+        <title>${region?.name || key} — ${fmtPct(info?.pct || 0)}</title>
+        ${rects}
+      </g>
+    `;
+    labelsHtml += createRegionalLabel(key, LABEL_POS[key], info, palette, uf === 'PR' ? 11 : 15);
+  }
+
+  const title = uf === 'MT' ? 'Mato Grosso' : 'Paraná';
 
   return `
-    <g class="db-regional-overlay">
-      ${defs}
-      ${stateCovers}
-      ${mosaics}
-      ${outlines}
-    </g>
+    <div class="db-regional-callout" data-uf="${uf}">
+      <div class="db-regional-callout-title">${title}</div>
+      <svg viewBox="${viewBox}" style="width:${uf === 'MT' ? 200 : 210}px;aspect-ratio:${aspect}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <clipPath id="dbCalloutClip${uf}"><path d="${STATE_PATHS[uf]}"/></clipPath>
+        </defs>
+        <path d="${STATE_PATHS[uf]}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" stroke-width="1" stroke-linejoin="round"/>
+        <g clip-path="url(#dbCalloutClip${uf})">${rectsHtml}</g>
+        <path d="${STATE_PATHS[uf]}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" stroke-linejoin="round"/>
+        ${labelsHtml}
+      </svg>
+    </div>
   `;
 }
 
@@ -443,9 +512,24 @@ async function applyMapMode() {
   const mode = getCurrentMode();
   if (mode !== 'regional') return;
 
+  const stateWrap = svg.closest('.db-state-wrap');
+  const center = stateWrap?.parentElement;
+  if (!stateWrap || !center) return;
+
   try {
     const data = await loadRegionalData();
-    svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
+
+    svg.insertAdjacentHTML('beforeend', createStateHighlight());
+
+    center.classList.add('db-has-regional-callouts');
+    for (const uf of Object.keys(CALLOUTS)) {
+      const html = createCalloutPanel(uf, data);
+      if (CALLOUTS[uf].side === 'left') {
+        stateWrap.insertAdjacentHTML('beforebegin', html);
+      } else {
+        stateWrap.insertAdjacentHTML('afterend', html);
+      }
+    }
   } catch (error) {
     console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
   }
