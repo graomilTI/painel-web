@@ -170,12 +170,12 @@ function ensureStyles() {
 
     /* .db-state-svg usa width:100% — sem uma base própria ele pode
        encolher demais ao virar flex-item ao lado dos painéis de zoom.
-       max-width um pouco mais enxuto do que antes pra sobrar espaço pros
-       cones + painéis sem quebrar linha nas larguras normais do card. */
+       max-width mais enxuto do que o normal pra sobrar espaço pros cones
+       + painéis sem quebrar linha na largura real do card (~660px). */
     .db-prod-center.db-has-regional-callouts .db-state-wrap {
-      flex: 1 1 220px;
-      min-width: 160px;
-      max-width: 300px;
+      flex: 1 1 180px;
+      min-width: 140px;
+      max-width: 200px;
     }
 
     /* Cone/lupa: um "funil" que liga visualmente o estadinho destacado no
@@ -188,8 +188,8 @@ function ensureStyles() {
     .db-regional-cone {
       position: relative;
       align-self: stretch;
-      flex: 0 0 30px;
-      width: 30px;
+      flex: 0 0 24px;
+      width: 24px;
       min-height: 60px;
     }
     .db-regional-cone svg {
@@ -565,7 +565,7 @@ function createCalloutPanel(uf, data) {
   return `
     <div class="db-regional-callout" data-uf="${uf}">
       <div class="db-regional-callout-title">${title}</div>
-      <svg viewBox="${viewBox}" style="width:${uf === 'MT' ? 200 : 210}px;aspect-ratio:${aspect}" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="${viewBox}" style="width:${uf === 'MT' ? 160 : 170}px;aspect-ratio:${aspect}" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <clipPath id="dbCalloutClip${uf}"><path d="${STATE_PATHS[uf]}"/></clipPath>
         </defs>
