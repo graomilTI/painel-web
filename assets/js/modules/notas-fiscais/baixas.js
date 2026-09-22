@@ -98,7 +98,7 @@ function acoesLinha(row) {
   if (row.status === 'AGUARDANDO_REVISAO') {
     botoes.push(`<button class="ds-btn ds-btn-primary" data-baixa-revisar="${esc(row.id)}" type="button">Revisar</button>`);
   }
-  if (row.status === 'ERRO') {
+  if (row.status === 'ERRO' || row.status === 'AGUARDANDO_REVISAO') {
     botoes.push(`<button class="ds-btn" data-baixa-relancar="${esc(row.id)}" type="button">Relançar</button>`);
   }
   if (['NOVO', 'PROCESSANDO', 'AGUARDANDO_REVISAO', 'ERRO'].includes(row.status)) {
@@ -169,7 +169,7 @@ async function abrirRevisao(id, aoAtualizar) {
           <span style="color:#94a3b8;font-size:13px">Doc ${esc(c.pinDocNumber || '-')} · vencimento ${c.pinDueDate ? dataBR(c.pinDueDate) : '-'} · pinCode ${esc(c.pinCode)}</span>
         </span>
       </label>`).join('')
-    : `<p style="color:#94a3b8">Nenhum lançamento em aberto no GRM bateu com empresa + valor pra este comprovante. Confira se o holerite/NF já foi lançado (Painel de Notas Fiscais &gt; Pendentes, ou direto no GRM) antes de relançar.</p>`;
+    : `<p style="color:#94a3b8">${esc(row.erro || 'Nenhum lançamento em aberto no GRM bateu com empresa + valor pra este comprovante.')} Confira se o holerite/NF já foi lançado (Painel de Notas Fiscais &gt; Pendentes, ou direto no GRM) antes de relançar.</p>`;
 
   const overlay = openModal({
     id: 'baixaRevisaoModal',
