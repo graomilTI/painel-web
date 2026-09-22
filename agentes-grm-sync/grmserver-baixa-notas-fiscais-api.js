@@ -668,6 +668,39 @@ function findCandidates(openInvoices, { scpCode, valor, favorecidoNome }) {
   return preferirVencimentoMaisRecente(candidatos);
 }
 
+// Quando zero candidatos sobram (nem isolado, nem por soma, nem parcial),
+// diz EXATAMENTE qual dos 2 critérios (nome, valor) não bateu, em vez do
+// genérico "nenhum lançamento bate" — dá pra decidir na tela se é OCR errado,
+// parcela já paga/lançada com outro valor, ou pessoa errada, sem abrir o GRM.
+function diagnosticarDivergencia(openInvoices, { scpCode, valor, favorecidoNome }) {
+  const daEmpresa = openInvoices.filter((inv) => Number(inv.scpCode) === Number(scpCode));
+  if (!daEmpresa.length) {
+    return `Não há nenhuma parcela em aberto no GRM para essa empresa (scpCode ${scpCode}).`;
+  }
+
+  const alvoNome = normalizeText(favorecidoNome);
+  const alvoCentavos = Math.round(Number(valor) * 100);
+  const porNome = daEmpresa.filter((inv) => nomesCompativeis(alvoNome, normalizeText(inv.favoredName)));
+  const porValor = daEmpresa.filter((inv) => Math.round(Number(inv.pinInstallmentValue) * 100) === alvoCentavos);
+
+  const listar = (lista, mapear) => {
+    const unicos = [...new Set(lista.map(mapear))];
+    const cortado = unicos.slice(0, 3).join(', ');
+    return unicos.length > 3 ? `${cortado} e mais ${unicos.length - 3}` : cortado;
+  };
+
+  if (porNome.length && !porValor.length) {
+    return `Nome bate ("${favorecidoNome}"), mas o valor não: comprovante R$ ${formatMoney(valor)} x parcela(s) em aberto de R$ ${listar(porNome, (inv) => formatMoney(inv.pinInstallmentValue))}.`;
+  }
+  if (porValor.length && !porNome.length) {
+    return `Valor bate (R$ ${formatMoney(valor)}), mas o nome não: comprovante "${favorecidoNome}" x favorecido(s) em aberto "${listar(porValor, (inv) => inv.favoredName)}".`;
+  }
+  if (!porNome.length && !porValor.length) {
+    return `Nem o nome ("${favorecidoNome}") nem o valor (R$ ${formatMoney(valor)}) batem com nenhuma parcela em aberto dessa empresa.`;
+  }
+  return `Nome bate com uma parcela e valor bate com outra, mas nenhuma bate nos dois ao mesmo tempo — comprovante "${favorecidoNome}" R$ ${formatMoney(valor)}.`;
+}
+
 function combinacoes(lista, tamanho) {
   const resultado = [];
   const atual = [];
@@ -1049,7 +1082,7 @@ async function processBaixa(row, runId) {
             scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
           })),
           erro: candidatos.length === 0
-            ? 'Nenhum lançamento aberto no GRM bate com empresa + valor + nome do favorecido (isolado, somado com outros comprovantes já na fila, ou como parcial).'
+            ? diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
             : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.`,
         });
         log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
