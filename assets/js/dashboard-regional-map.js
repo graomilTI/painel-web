@@ -231,7 +231,22 @@ function ensureToggle() {
       <button type="button" class="db-map-mode-btn" data-mode="estado">Estado</button>
       <button type="button" class="db-map-mode-btn" data-mode="regional">Regional</button>
     `;
-    head.appendChild(wrap);
+
+    // .db-section-head usa justify-content:space-between esperando 2
+    // filhos (grupo do período à esquerda, botão "Atualizar" à direita).
+    // Um appendChild simples criava um 3º filho e o space-between
+    // empurrava o botão de atualizar pro meio do cabeçalho — agrupa os
+    // dois num wrapper só em vez de soltar o toggle como filho direto.
+    const lastChild = head.lastElementChild;
+    if (lastChild) {
+      const rightGroup = document.createElement('div');
+      rightGroup.style.cssText = 'display:flex;align-items:center;gap:10px';
+      head.insertBefore(rightGroup, lastChild);
+      rightGroup.appendChild(lastChild);
+      rightGroup.appendChild(wrap);
+    } else {
+      head.appendChild(wrap);
+    }
 
     wrap.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-mode]');
