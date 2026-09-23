@@ -163,8 +163,6 @@ const SCRIPT_MAP = {
   // de propósito, pra não rodar Puppeteer sozinho assim que alguém sobe a planilha.
   // Formulário Adiantamento validado ao vivo em 10/09/2026.
   'sync-bonus-desconto-caixa': 'grm-sync-bonus-desconto-caixa.js',
-  // Multa de uso de veículo fora do expediente: fila criada manualmente pelo
-  // responsável de Frotas no painel após analisar a ocorrência RedGPS/BFleet.
   'sync-frotas-fora-horario-caixa': 'grm-sync-frotas-fora-horario-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
