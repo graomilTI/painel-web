@@ -202,7 +202,9 @@ function mapLocalEmbarqueRow(d) {
     cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município', 'splCitName'])),
     latitude,
     longitude,
-    ativo: true,
+    // Não grava `ativo` de propósito: o upsert só atualiza as colunas enviadas, então um local
+    // desativado manualmente (ativo=false) não é reativado por esta sincronização; locais novos
+    // entram ativos pelo DEFAULT true da coluna.
   };
 }
 
