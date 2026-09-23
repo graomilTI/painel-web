@@ -159,7 +159,7 @@ function activate(key) {
   const locaisSection = document.getElementById('logisticaOsLocais');
   if (locaisSection) locaisSection.style.display = isLocais ? '' : 'none';
   if (isLocais && locaisSection) {
-    import('./logistica-locais-embarque.js?v=20260923-v1').then((m) => m.mountLocaisEmbarque(locaisSection));
+    import('./logistica-locais-embarque.js?v=20260923-v2').then((m) => m.mountLocaisEmbarque(locaisSection));
   }
   // Barra de filtros só faz sentido na Finalização (data/coordenação/status/busca);
   // Abertura, Conferência (laudos) e Ajuste ignoram esses filtros.
