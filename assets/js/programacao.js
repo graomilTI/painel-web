@@ -1390,6 +1390,23 @@ export function renderContent(content) {
   async function ensureDefaultRows() {
     if (!state.programacaoId && !state.programacaoIdMap.size) return;
     if (!state.colaboradores.length) return;
+
+    const programacaoIds = state.programacaoIdMap.size
+      ? [...state.programacaoIdMap.values()]
+      : [state.programacaoId];
+
+    // Antes de upsertar, guarda quem já tinha linha nesta programação. A
+    // promoção SEM EMBARQUE -> OK abaixo só pode valer pra quem NÃO existia
+    // ainda (default de criação) — senão ela reclassifica, a cada "Carregar",
+    // uma decisão manual que o gestor já tinha salvo (ex.: programação feita
+    // um dia adiantada), fazendo a escolha "sumir" no carregamento seguinte.
+    const { data: existentes, error: existentesError } = await supabase
+      .from('programacao_colaboradores')
+      .select('programacao_id,colaborador_id')
+      .in('programacao_id', programacaoIds);
+    if (existentesError) throw existentesError;
+    const jaExistiam = new Set((existentes || []).map((r) => `${r.programacao_id}:${r.colaborador_id}`));
+
     const payload = state.colaboradores.map((colab) => {
       const motivo = disponibilidadeNorm(colab.indisponibilidade?.motivo || '');
       const veiculoVinculado = !colab.indisponibilidade && !colaboradorPodeFicarOk(colab) ? suggestVeiculoForColab(colab) : null;
@@ -1414,13 +1431,15 @@ export function renderContent(content) {
       .upsert(payload, { onConflict: 'programacao_id,colaborador_id', ignoreDuplicates: true });
     if (error) throw error;
 
-    // Promove SEM EMBARQUE → OK para colaboradores que agora têm OS em ATENDER
+    // Promove SEM EMBARQUE → OK só para quem acabou de ser criado agora
     // (agrupado por programacao_id, pois sob "Todas" cada supervisão tem o seu)
     const porProgramacaoId = new Map();
-    payload.filter((p) => p.disponibilidade === 'OK').forEach((p) => {
-      if (!porProgramacaoId.has(p.programacao_id)) porProgramacaoId.set(p.programacao_id, []);
-      porProgramacaoId.get(p.programacao_id).push(p.colaborador_id);
-    });
+    payload
+      .filter((p) => p.disponibilidade === 'OK' && !jaExistiam.has(`${p.programacao_id}:${p.colaborador_id}`))
+      .forEach((p) => {
+        if (!porProgramacaoId.has(p.programacao_id)) porProgramacaoId.set(p.programacao_id, []);
+        porProgramacaoId.get(p.programacao_id).push(p.colaborador_id);
+      });
     await Promise.all([...porProgramacaoId.entries()].map(([pid, ids]) => supabase
       .from('programacao_colaboradores')
       .update({ disponibilidade: 'OK' })
