@@ -11,6 +11,7 @@ const PAGE = 1000; // limite padrão do PostgREST por requisição
 let root = null;
 let map = null;
 let layer = null;
+const marcadores = new Map(); // id -> circleMarker
 let locais = [];
 let carregado = false;
 let carregando = false;
@@ -30,6 +31,14 @@ style.textContent = `
   #logisticaOsLocais .lc-kpi.warn { border-color:rgba(250,204,21,.3);background:rgba(250,204,21,.08); }
   #logisticaOsLocais .lc-kpi.warn strong { color:#fde68a; }
   #logisticaOsLocais .lc-grid { display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:12px;align-items:start; }
+  #logisticaOsLocais .lc-mapbox { position:relative; }
+  #logisticaOsLocais .lc-busca-mapa { position:absolute;top:10px;left:56px;z-index:1000;width:min(340px,calc(100% - 76px)); }
+  #logisticaOsLocais .lc-busca-mapa input { width:100%;box-shadow:0 4px 14px rgba(0,0,0,.4); }
+  #logisticaOsLocais .lc-resultados { max-height:260px;overflow:auto;margin-top:4px;border:1px solid rgba(52,211,153,.25);border-radius:10px;background:rgba(7,17,13,.97); }
+  #logisticaOsLocais .lc-resultados:empty { display:none; }
+  #logisticaOsLocais .lc-resultados button { display:block;width:100%;text-align:left;padding:7px 10px;border:0;border-bottom:1px solid rgba(148,163,184,.1);background:transparent;cursor:pointer;color:#f1fbf6;font-size:12px; }
+  #logisticaOsLocais .lc-resultados button:hover { background:rgba(34,229,138,.1); }
+  #logisticaOsLocais .lc-resultados button span { display:block;color:#748a7f;font-size:10px; }
   #logisticaOsLocais .lc-map { height:calc(100vh - 260px);min-height:420px;border-radius:14px;border:1px solid rgba(52,211,153,.16);overflow:hidden;background:#07110d; }
   #logisticaOsLocais .lc-side { display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:420px;border:1px solid rgba(52,211,153,.16);border-radius:14px;background:rgba(2,6,23,.25);overflow:hidden; }
   #logisticaOsLocais .lc-side-head { padding:10px 12px;border-bottom:1px solid rgba(148,163,184,.12); }
@@ -95,13 +104,24 @@ function renderShell() {
       </div>
     </div>
     <div class="lc-grid">
-      <div class="lc-map" id="lcMap"></div>
+      <div class="lc-mapbox">
+        <div class="lc-busca-mapa">
+          <input class="log-input" id="lcBuscaMapa" type="search" placeholder="Buscar local com coordenadas (nome ou cidade)" autocomplete="off" />
+          <div class="lc-resultados" id="lcResultados"></div>
+        </div>
+        <div class="lc-map" id="lcMap"></div>
+      </div>
       <aside class="lc-side">
         <div class="lc-side-head"><b>Sem coordenadas</b><input class="log-input" id="lcBusca" type="search" placeholder="Buscar local ou cidade" /></div>
         <div class="lc-list" id="lcSemLista"><div class="lc-empty">Carregando...</div></div>
       </aside>
     </div>`;
   root.querySelector('#lcBusca').addEventListener('input', renderSemCoord);
+  root.querySelector('#lcBuscaMapa').addEventListener('input', renderResultadosMapa);
+  root.querySelector('#lcResultados').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-id]');
+    if (btn) irParaLocal(btn.dataset.id);
+  });
 }
 
 function renderMapa() {
@@ -115,16 +135,38 @@ function renderMapa() {
     layer = L.layerGroup().addTo(map);
   }
   layer.clearLayers();
+  marcadores.clear();
   const bounds = [];
   comCoord.forEach((p) => {
     const ll = [Number(p.latitude), Number(p.longitude)];
-    L.circleMarker(ll, { radius: 5, weight: 1, color: '#fff', fillColor: '#22e58a', fillOpacity: 0.9 })
+    const marker = L.circleMarker(ll, { radius: 5, weight: 1, color: '#fff', fillColor: '#22e58a', fillOpacity: 0.9 })
       .bindTooltip(`${esc(p.nome_local)}<br><span style="font-weight:400">${esc(p.cidade)} - ${esc(p.uf)}${p.tipo_local ? ' · ' + esc(p.tipo_local) : ''}</span>`, { className: 'lc-tt' })
       .addTo(layer);
+    marcadores.set(String(p.id), marker);
     bounds.push(ll);
   });
   if (bounds.length) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 9 });
   requestAnimationFrame(() => map.invalidateSize());
+}
+
+function renderResultadosMapa() {
+  const q = norm(root.querySelector('#lcBuscaMapa').value).trim();
+  const box = root.querySelector('#lcResultados');
+  if (q.length < 2) { box.innerHTML = ''; return; }
+  const achados = locais.filter(temCoord).filter((p) => norm(`${p.nome_local} ${p.cidade} ${p.uf}`).includes(q));
+  box.innerHTML = achados.length
+    ? achados.slice(0, 50).map((p) => `<button type="button" data-id="${esc(p.id)}">${esc(p.nome_local)}<span>${esc(p.cidade)} - ${esc(p.uf)}${p.tipo_local ? ' · ' + esc(p.tipo_local) : ''}</span></button>`).join('')
+      + (achados.length > 50 ? `<div class="lc-empty">+${achados.length - 50} resultados — refine a busca.</div>` : '')
+    : '<div class="lc-empty">Nenhum local com coordenadas encontrado.</div>';
+}
+
+function irParaLocal(id) {
+  const marker = marcadores.get(String(id));
+  if (!marker || !map) return;
+  map.flyTo(marker.getLatLng(), 14, { duration: 0.8 });
+  marker.setStyle({ fillColor: '#facc15', radius: 8 });
+  marker.openTooltip();
+  root.querySelector('#lcResultados').innerHTML = '';
 }
 
 function renderSemCoord() {
