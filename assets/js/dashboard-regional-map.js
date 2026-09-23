@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { getUserContext } from './auth.js';
 
 const REGIONAL_MAP_CACHE_MS = 1000 * 60 * 15;
 const MAP_MODE_KEY = 'grao1000:dashboard-map-mode';
@@ -41,8 +42,8 @@ const REGION_PATHS = {
   MT3_CONFRESA: 'M395.89,355.98L472.27,354.23L473.35,363.53L474.07,369.84L466.72,400.92L464.04,412.25L454.00,413.92L449.75,428.43L449.10,428.54L441.74,417.65L441.91,409.86L432.49,403.31L433.65,395.46L427.00,376.66L424.28,374.02L420.69,374.15L417.54,373.13Z',
   PR_CASCAVEL: 'M433.86,586.18L437.98,583.26L439.17,583.78L439.54,587.54L444.04,588.83L444.28,589.15L444.35,590.12L446.61,592.51L448.77,593.06L450.56,598.49L450.39,599.59L458.11,601.92L458.13,602.00L460.92,604.83L465.71,606.89L464.38,611.63L468.17,622.72L468.56,622.70L475.32,625.47L475.83,626.35L473.99,626.37L471.33,630.23L460.92,631.66L460.84,631.67L460.75,631.90L459.67,633.55L465.70,624.44L460.92,631.66L460.75,631.90L459.87,634.40L458.56,638.09L444.58,635.80L438.68,634.84L435.27,634.27L432.95,633.89L430.30,633.46L430.28,633.46L425.39,632.66L422.98,632.26L416.21,631.15L415.37,631.02L414.71,630.91L413.75,629.00L413.36,628.20L411.73,624.94L411.10,623.69L410.18,621.85L408.70,618.89L406.89,618.75L401.35,618.35L399.16,618.19L396.31,617.98L397.06,614.56L397.44,612.85L398.53,607.85L399.32,604.23L400.31,599.72L401.70,593.33L402.93,587.74L404.33,584.88L404.62,584.28L408.63,576.09L409.02,575.55L415.25,577.42L421.18,575.89L426.36,576.77L426.68,577.29L427.11,581.78L430.61,585.74L432.10,586.25L433.86,586.18Z',
   PR_MARINGA: 'M458.44,577.26L463.65,578.83L464.65,577.98L467.32,578.29L468.93,578.11L469.56,578.22L470.46,579.16L471.45,581.68L471.29,586.97L475.99,588.68L476.95,591.37L471.79,597.33L468.38,597.77L468.06,598.09L467.13,605.21L465.90,606.77L465.71,606.89L460.92,604.83L458.13,602.00L458.11,601.92L450.39,599.59L450.56,598.49L448.77,593.06L446.61,592.51L444.35,590.12L444.28,589.15L444.04,588.83L439.54,587.54L439.17,583.78L437.98,583.26L433.86,586.18L432.10,586.25L430.61,585.74L427.11,581.78L426.68,577.29L426.36,576.77L421.18,575.89L415.25,577.42L409.02,575.55L415.70,566.34L416.56,565.74L421.76,562.08L425.27,559.61L436.61,561.22L450.82,563.23L450.76,563.48L451.83,564.82L454.02,566.04L455.90,568.07L455.50,569.78L456.39,570.83L460.06,572.62L459.96,572.89L460.13,574.62L458.44,577.26Z',
-  PR_LONDRINA: 'M469.56,578.22L468.93,578.11L467.32,578.29L464.65,577.98L463.65,578.83L458.44,577.26L460.13,574.62L459.96,572.89L460.06,572.62L456.39,570.83L455.50,569.78L455.90,568.07L454.02,566.04L451.83,564.82L450.76,563.48L450.82,563.23L456.43,564.01L459.45,564.45L459.22,566.47L463.06,567.80L464.13,566.17L463.61,565.03L466.79,565.49L472.33,566.27L474.92,566.63L478.85,567.19L481.30,567.53L485.19,568.09L488.36,568.53L489.95,568.76L490.66,570.67L491.77,573.67L492.39,575.36L494.23,580.30L491.24,581.43L489.86,583.36L491.21,588.57L495.50,583.76L497.35,588.74L497.52,589.21L497.98,590.42L500.82,598.10L510.58,603.59L504.99,604.47L494.68,595.28L491.85,594.35L490.40,589.63L486.44,589.50L482.25,583.85L480.60,584.17L475.99,588.68L471.29,586.97L471.45,581.68L470.46,579.16L469.56,578.22Z',
-  PR_PONTA_GROSSA: 'M476.37,604.85L478.63,602.90L478.26,601.67L471.79,597.33L476.95,591.37L475.99,588.68L480.60,584.17L482.25,583.85L486.44,589.50L490.40,589.63L491.85,594.35L494.68,595.28L504.99,604.47L510.58,603.59L513.55,605.25L512.37,625.47L511.17,625.47L501.43,625.47L496.99,628.32L494.59,629.85L489.90,627.54L487.22,626.22L475.83,626.35L475.32,625.47L468.56,622.70L468.17,622.72L464.38,611.63L465.71,606.89L465.90,606.77L467.13,605.21L476.37,604.85Z M471.79,597.33L478.26,601.67L478.63,602.90L476.37,604.85L467.13,605.21L468.06,598.09L468.38,597.77Z',
+  PR_LONDRINA: 'M469.56,578.22L468.93,578.11L467.32,578.29L464.65,577.98L463.65,578.83L458.44,577.26L460.13,574.62L459.96,572.89L460.06,572.62L456.39,570.83L455.50,569.78L455.90,568.07L454.02,566.04L451.83,564.82L450.76,563.48L450.82,563.23L456.43,564.01L459.45,564.45L459.22,566.47L463.06,567.80L464.13,566.17L463.61,565.03L466.79,565.49L472.33,566.27L474.92,566.63L478.85,567.19L481.30,567.53L485.19,568.09L488.36,568.53L489.95,568.76L490.66,570.67L491.77,573.67L492.39,575.36L494.23,580.30L491.24,581.43L489.86,583.36L491.21,588.57L495.50,583.76L497.35,588.74L497.52,589.21L497.98,590.42L500.82,598.10L510.58,603.59L504.99,604.47L494.68,595.28L491.85,594.35L490.40,589.63L486.44,589.50L482.25,583.85L480.60,584.17L475.99,588.68L471.29,586.97L471.45,581.68L470.46,579.16L469.56,578.22Z M494.23,580.30L491.24,581.43L489.86,583.36L491.21,588.57L495.50,583.76Z M459.45,564.45L459.22,566.47L463.06,567.80L464.13,566.17L463.61,565.03Z',
+  PR_PONTA_GROSSA: 'M476.37,604.85L478.63,602.90L478.26,601.67L471.79,597.33L476.95,591.37L475.99,588.68L480.60,584.17L482.25,583.85L486.44,589.50L490.40,589.63L491.85,594.35L494.68,595.28L504.99,604.47L510.58,603.59L513.55,605.25L512.37,625.47L511.17,625.47L501.43,625.47L496.99,628.32L494.59,629.85L489.90,627.54L487.22,626.22L475.83,626.35L475.32,625.47L468.56,622.70L468.17,622.72L464.38,611.63L465.71,606.89L465.90,606.77L467.13,605.21L476.37,604.85Z M471.79,597.33L478.26,601.67L478.63,602.90L476.37,604.85L467.13,605.21L468.06,598.09L468.38,597.77Z M513.55,605.25L523.70,610.95L512.53,625.47L512.37,625.47Z',
 };
 
 // Posição do rótulo (%) de cada coordenação = centroide da maior peça do
@@ -122,6 +123,7 @@ let cachedRegionalData = null;
 let cachedRegionalDataAt = 0;
 let pendingLoad = null;
 let pendingApply = false;
+let cachedViewer = null;
 
 function normalizeStr(value) {
   return String(value ?? '')
@@ -544,14 +546,99 @@ function createRegionalOverlay(data) {
   return `<g class="db-regional-overlay">${highlight}${zoomBoxes}</g>`;
 }
 
+
+// Quem está olhando: master vê o Brasil (com o toggle Estado/Regional);
+// gestor de uma coordenação vê só o estado dela, com a coordenação dele
+// destacada e o percentual correspondente (MT1 vê MT1, Londrina vê Londrina).
+async function loadViewer() {
+  if (cachedViewer) return cachedViewer;
+  try {
+    const ctx = await getUserContext();
+    const isMaster = !!ctx?.user?.is_master;
+    const key = isMaster ? null : resolveRegionalKey(ctx?.user?.coordenacao);
+    cachedViewer = { isMaster, key };
+  } catch {
+    cachedViewer = { isMaster: true, key: null };
+  }
+  return cachedViewer;
+}
+
+function createGestorStateView(key, data) {
+  const uf = REGIONS[key].state;
+  const bbox = STATE_BBOX[uf];
+  const pad = 14;
+  const viewBox = `${bbox.minX - pad} ${bbox.minY - pad} ${bbox.w + pad * 2} ${bbox.h + pad * 2}`;
+  const info = data.segments[key];
+  const palette = getPalette(info);
+  const clipId = 'dbGestorStateClip';
+
+  let regionsHtml = '';
+  for (const [k, region] of Object.entries(REGIONS)) {
+    if (region.state !== uf || !REGION_PATHS[k]) continue;
+    const own = k === key;
+    regionsHtml += `
+      <path d="${REGION_PATHS[k]}"
+        fill="${own ? palette.fill : 'rgba(255,255,255,.045)'}"
+        stroke="${own ? palette.stroke : 'rgba(255,255,255,.16)'}"
+        stroke-width="${own ? 2 : 1}"
+        stroke-linejoin="round"
+        vector-effect="non-scaling-stroke">
+        <title>${region.name}${own ? ` — ${fmtPct(info?.pct || 0)}` : ''}</title>
+      </path>`;
+  }
+
+  const pos = LABEL_POS[key];
+  const fontSize = Math.round(bbox.w / 6.5);
+  const label = pos
+    ? createRegionalLabel(key, pos, info, palette, fontSize)
+    : '';
+  const nameLabel = pos
+    ? `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${Math.round(fontSize * 0.42)}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:3px">${REGIONS[key].name}</text>`
+    : '';
+
+  return {
+    viewBox,
+    html: `
+      <defs><clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}"/></clipPath></defs>
+      <path d="${STATE_PATHS[uf]}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" vector-effect="non-scaling-stroke"/>
+      <g clip-path="url(#${clipId})">${regionsHtml}</g>
+      <path d="${STATE_PATHS[uf]}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
+      ${label}${nameLabel}`,
+  };
+}
+
 async function applyMapMode() {
   ensureStyles();
-  ensureToggle();
 
   // dashboard.js renderiza o mapa dentro de .db-prod-center (a classe
   // .db-prod-left só existe no painel do gestor-app.js, que nem importa
   // este módulo) — era por isso que a sobreposição regional nunca prendia.
-  const svg = document.querySelector('.db-prod-center .db-state-svg');
+  const anySvg = document.querySelector('.db-prod-center .db-state-svg');
+  if (!anySvg) { ensureToggle(); return; }
+
+  const viewer = await loadViewer();
+
+  if (!viewer.isMaster) {
+    // Gestor: sem toggle, só a coordenação dele.
+    document.querySelector('.db-map-mode-toggle')?.style.setProperty('display', 'none');
+    if (!viewer.key) return;
+    const svg = document.querySelector('.db-prod-center .db-state-svg');
+    if (!svg || svg.dataset.dbGestorView) return;
+    try {
+      const data = await loadRegionalData();
+      if (!svg.isConnected || svg.dataset.dbGestorView) return;
+      const view = createGestorStateView(viewer.key, data);
+      svg.dataset.dbGestorView = '1';
+      svg.setAttribute('viewBox', view.viewBox);
+      svg.innerHTML = view.html;
+    } catch (error) {
+      console.warn('[dashboard-regional-map] erro na visão da coordenação:', error?.message || error);
+    }
+    return;
+  }
+
+  ensureToggle();
+  const svg = anySvg;
   if (!isMasterBrazilMap(svg)) return;
 
   removeRegionalOverlay(svg);
@@ -599,15 +686,12 @@ function scheduleApply() {
 }
 
 ensureStyles();
-ensureToggle();
 
 scheduleApply();
 setTimeout(scheduleApply, 600);
 setTimeout(scheduleApply, 1600);
 
 new MutationObserver(() => {
-  ensureToggle();
-  updateToggleUI();
   scheduleApply();
 }).observe(document.body, {
   childList: true,
