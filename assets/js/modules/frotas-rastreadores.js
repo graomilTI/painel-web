@@ -3,7 +3,7 @@
 
   const styles = `
     <style>
-      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:1480px;table-layout:fixed}.fr-table th{padding:10px 12px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fr-table td{padding:9px 12px;height:48px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;line-height:1.3;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-td-wrap{white-space:normal!important}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-icon-btn{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;font-size:14px;line-height:1;border-radius:9px;flex:none}.fr-icon-btn.soft{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.22);color:#4ade80}.fr-icon-btn.soft:hover{border-color:rgba(34,197,94,.85);background:rgba(34,197,94,.34);color:#86efac}.fr-icon-btn.danger{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.22);color:#f87171}.fr-icon-btn.danger:hover{border-color:rgba(239,68,68,.85);background:rgba(239,68,68,.34);color:#fca5a5}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
+      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:1480px;table-layout:fixed}.fr-table th{padding:10px 12px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fr-table td{padding:9px 12px;height:48px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;line-height:1.3;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-td-wrap{white-space:normal!important}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-icon-btn{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;font-size:14px;line-height:1;border-radius:9px;flex:none}.fr-icon-btn.soft{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.22);color:#4ade80}.fr-icon-btn.soft:hover{border-color:rgba(34,197,94,.85);background:rgba(34,197,94,.34);color:#86efac}.fr-icon-btn.danger{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.22);color:#f87171}.fr-icon-btn.danger:hover{border-color:rgba(239,68,68,.85);background:rgba(239,68,68,.34);color:#fca5a5}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-obs-add{display:grid;grid-template-columns:150px 1fr 30px;gap:8px;align-items:center;margin-bottom:10px}.fr-obs-add input{height:38px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 10px;outline:none;font-size:13px;color-scheme:dark}.fr-obs-table{width:100%;border-collapse:collapse}.fr-obs-table th{padding:6px 10px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16)}.fr-obs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:13px;vertical-align:top}.fr-field input[readonly]{opacity:.85;cursor:default}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
     </style>`;
 
   let _opts = {};
@@ -12,11 +12,13 @@
     veiculos: [],
     rastreadores: [],
     removidos: [],
+    motoristas: [],
+    colaboradores: [],
     merged: [],
     loading: false,
     syncing: false,
     filtro: 'todos',
-    filtros: { placa: '', estado: '', cidade: '', responsavel: '' },
+    filtros: { placa: '', estado: '', cidade: '' },
     busca: '',
     sortCol: 'placa',
     sortDir: 'asc'
@@ -92,6 +94,7 @@
     agendado:             ['progress', '📅 Agendado'],
     aguardando_motorista: ['progress', '⏳ Aguard. motorista'],
     sem_rastreador:       ['none',     '— Sem rastreador'],
+    manutencao:           ['err',      '🔧 Manutenção'],
     removido:             ['removed',  'REMOVIDO'],
   };
 
@@ -101,7 +104,39 @@
     return `<span class="fr-badge ${cls}">${label}</span>${frus}`;
   }
 
-  const RESPONSAVEIS = ['Anderson', 'Cleverson'];
+  const STATUS_MANUTENCAO = 'manutencao';
+
+  function fmtTelefone(v) {
+    const d = String(v || '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return String(v || '');
+  }
+
+  function fmtDataBr(v) {
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : (v || '—');
+  }
+
+  function isMaster() {
+    return Boolean(_opts.auth?.user?.is_master || _opts.auth?.is_master || String(_opts.auth?.user?.role || '').toLowerCase() === 'master');
+  }
+
+  // Motorista vem sempre de frotas_veiculos.motorista_atual (atualizado pela sync de patrimônios);
+  // contato e endereço vêm do cadastro de motoristas, com fallback nos colaboradores.
+  function getMotoristaInfo(row) {
+    const nome = row?.motorista_atual || '';
+    const key = norm(nome).trim();
+    if (!key) return { nome: '', contato: '', endereco: '' };
+    const m = state.motoristas.find(x => norm(x.nome).trim() === key);
+    const c = state.colaboradores.find(x => norm(x.nome).trim() === key);
+    const endColab = c ? [c.endereco, c.bairro, [c.cidade, c.estado].filter(Boolean).join('/'), c.cep].filter(Boolean).join(', ') : '';
+    return {
+      nome,
+      contato: fmtTelefone(m?.telefone || c?.whatsapp || ''),
+      endereco: m?.endereco || endColab || ''
+    };
+  }
 
   function mergeData() {
     const rastrMap = new Map((state.rastreadores || []).map(r => [placaKey(r.placa), r]));
@@ -131,9 +166,8 @@
       case 'status':             return r?.status || 'sem_rastreador';
       case 'data_instalacao':    return r?.data_instalacao || '';
       case 'agendamentos':       return r?.agendamentos_frustrados || 0;
-      case 'contato':            return r?.contato || row.motorista_atual || '';
+      case 'contato':            return row.motorista_atual || r?.contato || '';
       case 'infleet':            return r?.infleet || '';
-      case 'responsavel':        return r?.responsavel || '';
       default:                   return '';
     }
   }
@@ -178,16 +212,13 @@
       if (state.filtro === 'sem_rastreador' && status !== 'sem_rastreador') return false;
       if (state.filtro === 'em_andamento' && !EM_ANDAMENTO.includes(status)) return false;
       if (state.filtro === 'concluido' && status !== 'concluido') return false;
+      if (state.filtro === STATUS_MANUTENCAO && status !== STATUS_MANUTENCAO) return false;
       if (state.filtro === 'bfleet' && !row._hasBfleet) return false;
 
       const estadoRow = r?.estado || coordToEstado(row.coordenacao);
       if (state.filtros.placa && row.placa !== state.filtros.placa) return false;
       if (state.filtros.estado && estadoRow !== state.filtros.estado) return false;
       if (state.filtros.cidade && (r?.cidade || '') !== state.filtros.cidade) return false;
-      if (state.filtros.responsavel) {
-        if (state.filtros.responsavel === '__sem__') { if (r?.responsavel) return false; }
-        else if ((r?.responsavel || '') !== state.filtros.responsavel) return false;
-      }
 
       if (!busca) return true;
       const efImei = r?.imei || row.bfleet_idgps || '';
@@ -216,7 +247,8 @@
     const sem = state.merged.filter(r => !r._rastr || r._rastr.status === 'sem_rastreador').length;
     const andamento = state.merged.filter(r => EM_ANDAMENTO.includes(r._rastr?.status)).length;
     const concluido = state.merged.filter(r => r._rastr?.status === 'concluido').length;
-    return { total, bfleetTotal, sem, andamento, concluido, removidos };
+    const manutencao = state.merged.filter(r => r._rastr?.status === STATUS_MANUTENCAO).length;
+    return { total, bfleetTotal, sem, andamento, concluido, manutencao, removidos };
   }
 
   function renderKpis(root) {
@@ -233,6 +265,7 @@
       item('sem_rastreador', 'Sem rastreador', k.sem, '#94a3b8'),
       item('em_andamento', 'Em andamento', k.andamento, '#fde68a'),
       item('concluido', 'Instalados', k.concluido, '#86efac'),
+      item('manutencao', 'Manutenção', k.manutencao, '#fdba74'),
       item('removidos', 'Removidos', k.removidos, '#fca5a5'),
     ].join('');
   }
@@ -296,7 +329,7 @@
         : '';
       const estadoEfetivo = r?.estado || coordToEstado(row.coordenacao);
 
-      const contatoNome = r?.contato || row.motorista_atual || '—';
+      const contatoNome = row.motorista_atual || r?.contato || '—';
       const localInstalacao = r?.local_instalacao || '—';
 
       return `<tr>
@@ -334,6 +367,7 @@
     const r = row._rastr || {};
     const bfleetImei = row.bfleet_idgps || '';
     const isBfleet = row._hasBfleet;
+    const mot = getMotoristaInfo(row);
     const estadoSugerido = r.estado || coordToEstado(row.coordenacao);
 
     const backdrop = document.createElement('div');
@@ -343,7 +377,7 @@
         <div class="fr-modal-head">
           <div>
             <h3>Rastreador · ${esc(placa)} ${isBfleet ? '<span class="fr-badge bfleet" style="font-size:11px">BFleet</span>' : ''}</h3>
-            <p>${esc(row.nome || row.marca || '')} ${esc(row.modelo || '')} · Motorista: ${esc(row.motorista_atual || '—')}</p>
+            <p>${esc(row.nome || row.marca || '')} ${esc(row.modelo || '')} · Motorista: ${esc(mot.nome || '—')}</p>
           </div>
           <button class="fr-btn ghost fr-mini" data-close>✕</button>
         </div>
@@ -400,6 +434,7 @@
                 <option value="aguardando_motorista" ${r.status === 'aguardando_motorista' ? 'selected' : ''}>Aguardando resposta motorista</option>
                 <option value="agendado" ${r.status === 'agendado' ? 'selected' : ''}>Agendado instalação</option>
                 <option value="concluido" ${(r.status === 'concluido' || (isBfleet && !r.status)) ? 'selected' : ''}>Instalado</option>
+                <option value="manutencao" ${r.status === 'manutencao' ? 'selected' : ''}>Em manutenção</option>
               </select>
             </div>
             <div class="fr-field">
@@ -428,27 +463,35 @@
             </div>
           </div>
 
-          <div class="fr-divider">Contato e Observações</div>
+          <div class="fr-divider">Motorista</div>
           <div class="fr-form">
-            <div class="fr-field half">
-              <label>Contato (Motorista/Colaborador)</label>
-              <input name="contato" value="${esc(r.contato || row.motorista_atual || '')}" placeholder="Nome ou telefone" />
+            <div class="fr-field">
+              <label>Motorista</label>
+              <input value="${esc(mot.nome || '')}" placeholder="—" readonly />
+              <span class="fr-hint">Atualizado pela sync de patrimônios.</span>
+            </div>
+            <div class="fr-field">
+              <label>Contato</label>
+              <input value="${esc(mot.contato)}" placeholder="Sem telefone cadastrado" readonly />
+            </div>
+            <div class="fr-field">
+              <label>Endereço</label>
+              <input value="${esc(mot.endereco)}" placeholder="Sem endereço cadastrado" readonly />
             </div>
             <div class="fr-field">
               <label>Agendamentos frustrados</label>
               <input type="number" name="agendamentos_frustrados" value="${r.agendamentos_frustrados || 0}" min="0" />
             </div>
-            <div class="fr-field">
-              <label>Responsável</label>
-              <select name="responsavel">
-                <option value="" ${!r.responsavel ? 'selected' : ''}>— Selecionar —</option>
-                ${RESPONSAVEIS.map(n => `<option value="${esc(n)}" ${r.responsavel === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}
-              </select>
+          </div>
+
+          <div class="fr-divider">Observações</div>
+          <div class="fr-obs" data-obs>
+            <div class="fr-obs-add">
+              <input type="date" data-obs-data value="${new Date().toISOString().slice(0, 10)}" />
+              <input type="text" data-obs-desc placeholder="Descrição da observação" maxlength="500" />
+              <button type="button" class="fr-btn soft fr-icon-btn" data-obs-add title="Adicionar observação" aria-label="Adicionar observação">+</button>
             </div>
-            <div class="fr-field full">
-              <label>Observações</label>
-              <textarea name="observacoes">${esc(r.observacoes || '')}</textarea>
-            </div>
+            <table class="fr-obs-table"><thead><tr><th style="width:110px">Data</th><th>Descrição</th><th style="width:40px"></th></tr></thead><tbody data-obs-list><tr><td colspan="3" class="fr-empty">Carregando...</td></tr></tbody></table>
           </div>
         </div>
         <div class="fr-modal-foot">
@@ -463,6 +506,61 @@
     backdrop.querySelector('[data-save]').addEventListener('click', async () => {
       await saveRastreador(root, placa, row.id, backdrop);
     });
+    initObservacoes(backdrop, placa);
+  }
+
+  // Observações são registros datados gravados na hora (+); excluir só master (também garantido por RLS).
+  async function initObservacoes(backdrop, placa) {
+    const list = backdrop.querySelector('[data-obs-list]');
+    const key = rawPlaca(placa);
+    const master = isMaster();
+
+    const render = (rows) => {
+      if (!rows.length) { list.innerHTML = '<tr><td colspan="3" class="fr-empty" style="padding:14px!important">Nenhuma observação.</td></tr>'; return; }
+      list.innerHTML = rows.map(o => `<tr>
+        <td>${esc(fmtDataBr(o.data))}</td>
+        <td class="fr-td-wrap" title="${esc(o.criado_por_nome || '')}">${esc(o.descricao)}</td>
+        <td>${master ? `<button type="button" class="fr-btn danger fr-mini fr-icon-btn" data-obs-del="${esc(o.id)}" title="Excluir (master)" aria-label="Excluir">✕</button>` : ''}</td>
+      </tr>`).join('');
+      list.querySelectorAll('[data-obs-del]').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Excluir esta observação?')) return;
+        const { error } = await _opts.supabase.from('frotas_rastreadores_observacoes').delete().eq('id', b.dataset.obsDel);
+        if (error) { toast(error.message || 'Sem permissão para excluir.', true); return; }
+        await load();
+      }));
+    };
+
+    const load = async () => {
+      const { data, error } = await _opts.supabase
+        .from('frotas_rastreadores_observacoes')
+        .select('id,data,descricao,criado_por_nome,created_at')
+        .eq('placa', key)
+        .order('data', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (error) { list.innerHTML = `<tr><td colspan="3" class="fr-empty">${esc(error.message || 'Erro ao carregar observações.')}</td></tr>`; return; }
+      render(data || []);
+    };
+
+    backdrop.querySelector('[data-obs-add]').addEventListener('click', async () => {
+      const descEl = backdrop.querySelector('[data-obs-desc]');
+      const dataEl = backdrop.querySelector('[data-obs-data]');
+      const descricao = descEl.value.trim();
+      if (!descricao) { descEl.focus(); return; }
+      const { error } = await _opts.supabase.from('frotas_rastreadores_observacoes').insert({
+        placa: key,
+        data: dataEl.value || new Date().toISOString().slice(0, 10),
+        descricao,
+        criado_por_nome: _opts.auth?.user?.full_name || _opts.auth?.user?.nome || _opts.auth?.profile?.full_name || _opts.user?.email || null
+      });
+      if (error) { toast(error.message || 'Erro ao adicionar observação.', true); return; }
+      descEl.value = '';
+      await load();
+    });
+    backdrop.querySelector('[data-obs-desc]').addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); backdrop.querySelector('[data-obs-add]').click(); }
+    });
+
+    await load();
   }
 
   function readModal(backdrop) {
@@ -483,10 +581,7 @@
       previsao_chegada: get('previsao_chegada') || null,
       data_instalacao: get('data_instalacao') || null,
       agendamentos_frustrados: num('agendamentos_frustrados'),
-      contato: get('contato'),
-      observacoes: get('observacoes'),
-      infleet: get('infleet') || null,
-      responsavel: get('responsavel') || null
+      infleet: get('infleet') || null
     };
   }
 
@@ -642,8 +737,7 @@
           placa: v.placa,
           veiculo_id: v.id || null,
           imei: v.bfleet_idgps,
-          status: 'concluido',
-          contato: v.motorista_atual || null
+          status: 'concluido'
         }, { onConflict: 'placa' });
         if (!error) criados++;
       } else if (!existente.imei && v.bfleet_idgps) {
@@ -694,100 +788,24 @@
     fill('[data-filter-cidade]', getCidadesDisponiveis(), state.filtros.cidade, 'Todas as cidades');
   }
 
-  // Atribui (ou remove) o responsável de todos os veículos de um estado de uma vez,
-  // evitando ter que editar veículo por veículo.
-  function openBulkResponsavelModal(root) {
-    const estados = getEstadosDisponiveis();
-    if (!estados.length) { toast('Nenhum estado encontrado nos veículos.', true); return; }
-
-    const backdrop = document.createElement('div');
-    backdrop.className = 'fr-modal-backdrop';
-    backdrop.innerHTML = `
-      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(520px,96vw)">
-        <div class="fr-modal-head">
-          <div>
-            <h3>Responsável por Estado</h3>
-            <p>Define de uma vez o responsável de todos os veículos de um estado.</p>
-          </div>
-          <button class="fr-btn ghost fr-mini" data-close>✕</button>
-        </div>
-        <div class="fr-modal-body">
-          <div class="fr-form" style="grid-template-columns:1fr 1fr">
-            <div class="fr-field">
-              <label>Estado</label>
-              <select name="bulk_estado">
-                ${estados.map(e => `<option value="${esc(e)}">${esc(e)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="fr-field">
-              <label>Responsável</label>
-              <select name="bulk_responsavel">
-                <option value="">— Remover responsável</option>
-                ${RESPONSAVEIS.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
-          <p class="fr-hint" data-bulk-count style="margin-top:10px"></p>
-        </div>
-        <div class="fr-modal-foot">
-          <button class="fr-btn ghost" data-close>Cancelar</button>
-          <button class="fr-btn primary" data-apply-bulk>Aplicar</button>
-        </div>
-      </div>`;
-
-    document.body.appendChild(backdrop);
-
-    const selEstado = backdrop.querySelector('[name="bulk_estado"]');
-    const updateCount = () => {
-      const total = state.merged.filter(row => (row._rastr?.estado || coordToEstado(row.coordenacao)) === selEstado.value).length;
-      backdrop.querySelector('[data-bulk-count]').textContent = `${total} veículo(s) serão atualizados.`;
-    };
-    updateCount();
-    selEstado.addEventListener('change', updateCount);
-
-    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
-    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
-    backdrop.querySelector('[data-apply-bulk]').addEventListener('click', async () => {
-      await applyBulkResponsavel(root, backdrop);
-    });
-  }
-
-  async function applyBulkResponsavel(root, backdrop) {
-    const estado = backdrop.querySelector('[name="bulk_estado"]').value;
-    const responsavel = backdrop.querySelector('[name="bulk_responsavel"]').value || null;
-    const alvos = state.merged.filter(row => (row._rastr?.estado || coordToEstado(row.coordenacao)) === estado);
-
-    const btn = backdrop.querySelector('[data-apply-bulk]');
-    btn.textContent = 'Aplicando...';
-    btn.disabled = true;
-
-    let ok = 0, falhas = 0;
-    for (const row of alvos) {
-      const r = row._rastr || {};
-      const { error } = await _opts.supabase
-        .from('frotas_rastreadores')
-        .upsert({ placa: rawPlaca(row.placa), veiculo_id: row.id || r.veiculo_id || null, responsavel }, { onConflict: 'placa' });
-      if (error) falhas++; else ok++;
-    }
-
-    toast(`Responsável atualizado em ${ok} veículo(s) de ${estado}.${falhas ? ` ${falhas} falha(s).` : ''}`, falhas > 0 && ok === 0);
-    backdrop.remove();
-    await loadData(root);
-  }
-
   async function loadData(root) {
     state.loading = true;
     renderTable(root);
 
-    const [resV, resR, resRem] = await Promise.all([
+    const [resV, resR, resRem, resMot, resCol] = await Promise.all([
       _opts.supabase
         .from('frotas_veiculos')
         .select('id,placa,nome,marca,modelo,motorista_atual,coordenacao,status,bfleet_idgps,bfleet_confirmado,rastreador_bfleet,bfleet_rastreador,bfleet_status')
         .eq('status', 'ATIVO')
         .order('placa'),
       _opts.supabase.from('frotas_rastreadores').select('*').order('placa'),
-      _opts.supabase.from('frotas_rastreadores_removidos').select('*').order('removido_em', { ascending: false })
+      _opts.supabase.from('frotas_rastreadores_removidos').select('*').order('removido_em', { ascending: false }),
+      _opts.supabase.from('frotas_motoristas').select('nome,telefone,endereco'),
+      _opts.supabase.from('colaboradores_atuais').select('nome,whatsapp,endereco,bairro,cidade,estado,cep')
     ]);
+
+    state.motoristas = Array.isArray(resMot.data) ? resMot.data : [];
+    state.colaboradores = Array.isArray(resCol.data) ? resCol.data : [];
 
     if (resV.error) toast(resV.error.message || 'Erro ao carregar veículos.', true);
     else state.veiculos = Array.isArray(resV.data) ? resV.data : [];
@@ -824,6 +842,7 @@
             <button class="fr-tab" data-filter="sem_rastreador">Sem Rastreador</button>
             <button class="fr-tab" data-filter="em_andamento">Em Andamento</button>
             <button class="fr-tab" data-filter="concluido">Concluído</button>
+            <button class="fr-tab" data-filter="manutencao">Manutenção</button>
             <button class="fr-tab" data-filter="removidos">REMOVIDOS</button>
           </div>
 
@@ -832,7 +851,6 @@
               <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, contato..." data-search />
               <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
               <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
-              <button class="fr-btn ghost" data-bulk-responsavel>👤 Responsável por Estado</button>
             </div>
 
             <div class="fr-filter-row">
@@ -845,12 +863,8 @@
                 <option value="sem_rastreador">Sem rastreador</option>
                 <option value="em_andamento">Em andamento</option>
                 <option value="concluido">Concluído</option>
+                <option value="manutencao">Manutenção</option>
                 <option value="removidos">REMOVIDOS</option>
-              </select>
-              <select class="fr-select" data-filter-responsavel>
-                <option value="">Todos os responsáveis</option>
-                <option value="__sem__">— Sem responsável —</option>
-                ${RESPONSAVEIS.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
               </select>
               <button class="fr-btn ghost" data-clear-filters>Limpar filtros</button>
             </div>
@@ -878,7 +892,7 @@
                     <th class="fr-th-sort" data-sort="cod_rastreio">Cód. Rastreio</th>
                     <th class="fr-th-sort" data-sort="status">Status</th>
                     <th class="fr-th-sort" data-sort="data_instalacao">Data Instalação</th>
-                    <th class="fr-th-sort" data-sort="contato">Contato</th>
+                    <th class="fr-th-sort" data-sort="contato">Motorista</th>
                     <th class="fr-th-sort" data-sort="infleet">Infleet</th>
                     <th></th>
                   </tr>
@@ -904,13 +918,12 @@
     container.querySelector('[data-filter-placa]').addEventListener('change', e => { state.filtros.placa = e.target.value; renderTable(container); });
     container.querySelector('[data-filter-estado]').addEventListener('change', e => { state.filtros.estado = e.target.value; renderTable(container); });
     container.querySelector('[data-filter-cidade]').addEventListener('change', e => { state.filtros.cidade = e.target.value; renderTable(container); });
-    container.querySelector('[data-filter-responsavel]').addEventListener('change', e => { state.filtros.responsavel = e.target.value; renderTable(container); });
 
     container.querySelector('[data-clear-filters]').addEventListener('click', () => {
       state.busca = '';
-      state.filtros = { placa: '', estado: '', cidade: '', responsavel: '' };
+      state.filtros = { placa: '', estado: '', cidade: '' };
       container.querySelector('[data-search]').value = '';
-      ['[data-filter-placa]', '[data-filter-estado]', '[data-filter-cidade]', '[data-filter-responsavel]'].forEach(sel => {
+      ['[data-filter-placa]', '[data-filter-estado]', '[data-filter-cidade]'].forEach(sel => {
         const el = container.querySelector(sel);
         if (el) el.value = '';
       });
@@ -925,7 +938,6 @@
 
     container.querySelector('[data-refresh]').addEventListener('click', () => loadData(container));
     container.querySelector('[data-sync-bfleet]').addEventListener('click', () => syncFromBfleet(container));
-    container.querySelector('[data-bulk-responsavel]').addEventListener('click', () => openBulkResponsavelModal(container));
 
     container.querySelector('[data-thead]').addEventListener('click', e => {
       const th = e.target.closest('[data-sort]');
