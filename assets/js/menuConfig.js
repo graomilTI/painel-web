@@ -127,7 +127,7 @@ export const MENU_CONFIG = [
   {
     grupo: "FROTAS",
     itens: [
-      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_RASTREADORES", "RASTREADORES", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
+      item("frotas_dashboard", "Dashboard", "frotas-dashboard", ["FROTAS_DASHBOARD", "FROTAS", "EXCESSO_VELOCIDADE", "FROTAS_EXCESSO_VELOCIDADE", "FROTAS_VEICULOS", "VEICULOS", "FROTAS_MOTORISTAS", "MOTORISTAS", "FROTAS_MULTAS", "MULTAS", "FROTAS_HISTORICO", "HISTORICO_FROTAS", "FROTAS_MANUTENCAO", "MANUTENCAO", "FROTAS_TROCA_OLEO", "TROCA_OLEO", "FROTAS_CHECKLISTS", "CHECKLISTS"]),
       // Grupos visíveis na sidebar (janelas dentro de cada hub). Os itens
       // individuais abaixo continuam existindo (rota e permissão válidas,
       // usados pela navegação cruzada interna entre as telas antigas), só
