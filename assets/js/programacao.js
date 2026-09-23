@@ -827,11 +827,29 @@ export function renderContent(content) {
     }
   }
 
+  // operacional_pontos_embarque espelha o cadastro do GRM (~10 mil locais ativos) e o PostgREST
+  // devolve no máximo 1000 linhas por requisição: pagina por range em vez de um único .limit(8000).
+  async function fetchTodosPontosAtivos(colunas) {
+    const rows = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from('operacional_pontos_embarque')
+        .select(colunas)
+        .eq('ativo', true)
+        .order('id', { ascending: true })
+        .range(from, from + 999);
+      if (error) return { data: null, error };
+      rows.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    return { data: rows, error: null };
+  }
+
   async function loadBaseOperacional() {
     try {
       const [colabs, pontos] = await Promise.all([
         supabase.from('operacional_colaborador_base').select('id,colaborador_id,nome,cpf,latitude,longitude,ativo').eq('ativo', true).limit(5000),
-        supabase.from('operacional_pontos_embarque').select('id,nome_local,cidade,uf,latitude,longitude,ativo').eq('ativo', true).limit(8000),
+        fetchTodosPontosAtivos('id,nome_local,cidade,uf,latitude,longitude,ativo'),
       ]);
       if (!colabs.error) state.operacionalColabs = colabs.data || [];
       if (!pontos.error) state.pontosEmbarque = pontos.data || [];

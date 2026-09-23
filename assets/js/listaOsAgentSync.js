@@ -167,6 +167,12 @@ function mapLocalEmbarqueRow(d) {
 }
 
 async function sincronizarLocaisEmbarqueDoAgente() {
+  // Desativado: os pontos de embarque agora são espelhados direto do cadastro do GRM
+  // (servicePlaces/getRecords) por agentes-grm-sync/grmserver-locais-embarque-api.js. Promover
+  // a partir do último lote do relatório de classificação (lista antiga) reinseria locais que
+  // já não existem mais no GRM e sobrescrevia as coordenadas do espelho.
+  return { ignorado: true, linhas: 0, motivo: 'substituido_pelo_espelho_do_cadastro_grm' };
+  // eslint-disable-next-line no-unreachable
   const rows = await buscarUltimoLote('grm_locais_embarque_importacoes', 20000);
   if (!rows.length) return { ignorado: true, linhas: 0, motivo: 'sem_lote' };
 
