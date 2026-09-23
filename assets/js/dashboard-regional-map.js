@@ -211,6 +211,10 @@ function ensureStyles() {
       transition: all .25s ease;
     }
 
+    /* Modo regional: o SVG é bem mais largo (caixas de zoom dos lados), então
+       libera o max-width:480px do wrap pra ele ocupar a coluna central toda. */
+    .db-state-wrap.is-regional { max-width: none; }
+
     @media(max-width: 700px) {
       .db-map-mode-toggle { width: 100%; justify-content: space-between; }
       .db-map-mode-btn { flex: 1; }
@@ -551,6 +555,7 @@ async function applyMapMode() {
   if (!isMasterBrazilMap(svg)) return;
 
   removeRegionalOverlay(svg);
+  svg.closest('.db-state-wrap')?.classList.remove('is-regional');
 
   const mode = getCurrentMode();
   if (mode !== 'regional') return;
@@ -568,6 +573,7 @@ async function applyMapMode() {
     if (!svg.dataset.dbOriginalViewBox) {
       svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
     }
+    svg.closest('.db-state-wrap')?.classList.add('is-regional');
     svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
   } catch (error) {
