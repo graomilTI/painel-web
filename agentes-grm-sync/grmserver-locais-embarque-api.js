@@ -1,14 +1,23 @@
 #!/usr/bin/env node
 
 /**
- * Sincroniza Locais de Embarque direto pela API do Graint, substituindo o
- * fluxo Puppeteer (grm-sync-locais-embarque.js) — mesmo padrão de
- * grmserver-patrimonios-api.js. O script Puppeteer antigo já fazia
- * `fetch('/api/reports/classification/servicePlaces', ...)` de DENTRO da
- * página (o download de XLS via downloadReport/parseXLS já era código
- * morto, nunca chamado por main()); aqui o login também é via API e roda
- * sem navegador. Mantém o mesmo efeito colateral de promover os locais
- * georreferenciados válidos para operacional_pontos_embarque.
+ * Sincroniza Locais de Embarque direto pela API do Graint (sem navegador).
+ *
+ * Duas etapas:
+ *  1) Relatório reports/classification/servicePlaces (janela de 30 dias) -> tabela
+ *     grm_locais_embarque_importacoes. Continua só porque alimenta o card de status do agente
+ *     e as opções de filtro da lista da Programação; NÃO promove mais pontos.
+ *  2) Espelho do cadastro: servicePlaces/getRecords (o mesmo endpoint da tela Operação > Locais de
+ *     Serviço do GRM; a tela mostra só 400 porque o limite padrão da consulta é 400) ->
+ *     operacional_pontos_embarque. O GRM é a fonte da verdade: casa por spl_code (e adota linhas
+ *     antigas por nome+cidade+UF), atualiza tipo/coordenadas/flag de histórico de problemas,
+ *     insere locais novos com coordenada e marca ativo=false o que saiu do GRM ou está inativo lá.
+ *
+ * Antes a promoção partia do relatório de classificação dos últimos 30 dias — uma lista antiga que
+ * continuava trazendo locais que já não existem mais no GRM.
+ *
+ * Modos: `--dry-run` (ou GRM_LOCAIS_DRY_RUN=1) só loga o que faria, sem gravar nada;
+ * GRM_LOCAIS_FORCE=1 libera a trava que impede inativar muitos locais de uma vez.
  */
 
 require('dotenv').config();
@@ -50,7 +59,7 @@ function toIso(brDate) {
   return `${year}-${month}-${day}`;
 }
 
-function requestJson(url, method = 'GET', body = null, headers = {}) {
+function requestJson(url, method = 'GET', body = null, headers = {}, timeoutMs = 30000) {
   const parsed = new URL(url);
   const payload = body == null ? '' : JSON.stringify(body);
   return new Promise((resolve, reject) => {
@@ -60,7 +69,7 @@ function requestJson(url, method = 'GET', body = null, headers = {}) {
       port: parsed.port || 443,
       path: `${parsed.pathname}${parsed.search}`,
       method,
-      timeout: 30000,
+      timeout: timeoutMs,
       headers: {
         accept: 'application/json',
         'content-type': 'application/json',
@@ -91,7 +100,7 @@ function requestJson(url, method = 'GET', body = null, headers = {}) {
     request.end(payload || undefined);
   });
 }
-function postJson(url, body, headers = {}) { return requestJson(url, 'POST', body, headers); }
+function postJson(url, body, headers = {}, timeoutMs = 30000) { return requestJson(url, 'POST', body, headers, timeoutMs); }
 function authHeaders(token) { return { ...GRM_WEB_HEADERS, authorization: `Bearer ${token}` }; }
 
 async function login() {
@@ -151,10 +160,20 @@ async function upsertData(data) {
   log('SUCCESS', `Upsert concluído: ${records.length} registros`);
 }
 
-// Promove os locais válidos direto do lote que acabamos de baixar para
-// operacional_pontos_embarque (lookup geográfico usado por TODA O.S. via
-// trg_operacional_os_resolver_ponto).
-const LOTE_MINIMO_LOCAIS = 10;
+
+// ---------------------------------------------------------------------------
+// Espelho do cadastro de Locais de Serviço do GRM -> operacional_pontos_embarque
+// (lookup geográfico usado por TODA O.S. via trg_operacional_os_resolver_ponto).
+// ---------------------------------------------------------------------------
+const DRY_RUN = process.argv.includes('--dry-run') || process.env.GRM_LOCAIS_DRY_RUN === '1';
+const FORCE = process.env.GRM_LOCAIS_FORCE === '1';
+// Trava: se o GRM devolver muito menos que o esperado (~18 mil ativos), algo deu errado na
+// consulta — não pode virar "inativar tudo que não veio".
+const MIN_GRM_ATIVOS = 5000;
+// Trava: inativar mais que isso (e mais que 50% dos ativos) de uma vez exige GRM_LOCAIS_FORCE=1.
+const MAX_INATIVAR_SEM_FORCE = 300;
+const PAGE = 1000;
+const CHUNK = 500;
 
 function normKey(value) {
   return String(value || '')
@@ -183,144 +202,179 @@ function isGeoBrasil(lat, lng) {
   return a >= -34.5 && a <= 6 && b >= -75 && b <= -33;
 }
 
-function getField(row, aliases = []) {
-  if (!row) return null;
-  for (const alias of aliases) {
-    if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
-  }
-  const map = new Map();
-  Object.keys(row).forEach((key) => map.set(normKey(key), row[key]));
-  for (const alias of aliases) {
-    const hit = map.get(normKey(alias));
-    if (hit !== undefined) return hit;
-  }
-  return null;
-}
-
 function pontoKey({ uf, cidade, nome_local }) {
   return `${normKey(uf)}|${normKey(cidade)}|${normKey(nome_local)}`;
 }
 
-function mapLocalEmbarqueRow(d) {
-  const latitude = toGeoNum(getField(d, ['Latitude', 'Lat', 'splLat']));
-  const longitude = toGeoNum(getField(d, ['Longitude', 'Long', 'Lng', 'splLon']));
+// Mesma chave do índice único parcial (ativo=true): upper(btrim(uf)), upper(btrim(cidade)), upper(btrim(nome_local)).
+function chaveAtiva({ uf, cidade, nome_local }) {
+  return [uf, cidade, nome_local].map((v) => String(v || '').trim().toUpperCase()).join('|');
+}
+
+function mesmaCoord(a, b) {
+  if (a == null || b == null) return a == null && b == null;
+  return Number(a).toFixed(7) === Number(b).toFixed(7);
+}
+
+// GET sem filtro de status devolve TODOS (ativos "A" e inativos "N") — 18.141 em 23/09/2026.
+// A tela do GRM só mostra 400 porque `limit` padrão é 400; com limit alto vem o cadastro inteiro.
+async function fetchCadastroGrm(token) {
+  const json = await postJson(`${GRM_BASE_URL}servicePlaces/getRecords`, { limit: 100000 }, authHeaders(token), 120000);
+  if (json.result === false) throw new Error(JSON.stringify(json).slice(0, 500));
+  const data = json.searchData || [];
+  log('SUCCESS', `[cadastro-grm] ${data.length} locais de serviço recebidos do GRM`);
+  return data;
+}
+
+function mapCadastroGrm(r) {
+  const lat = toGeoNum(r.splLat);
+  const lng = toGeoNum(r.splLon);
+  const geoOk = isGeoBrasil(lat, lng);
   return {
-    tipo_local: toText(getField(d, ['Tipo do Local', 'Tipo Local', 'Tipo', 'sptName'])),
-    nome_local: toText(getField(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque', 'splName'])),
-    uf: toText(getField(d, ['UF', 'Estado', 'splCitUF'])),
-    cidade: toText(getField(d, ['Cidade', 'Municipio', 'Município', 'splCitName'])),
-    latitude,
-    longitude,
-    // Não grava `ativo` de propósito: o upsert só atualiza as colunas enviadas, então um local
-    // desativado manualmente (ativo=false) não é reativado por esta sincronização; locais novos
-    // entram ativos pelo DEFAULT true da coluna.
+    spl_code: Number(r.splCode),
+    ativoGrm: r.splStatus === 'A',
+    nome_local: toText(r.splName),
+    uf: toText(r.staAbreviation || r.splCitUF),
+    cidade: toText(r.citName || r.splCitName),
+    tipo_local: toText(r.sptName),
+    latitude: geoOk ? lat : null,
+    longitude: geoOk ? lng : null,
+    tem_historico_problemas: r.splHasIssueHistory === 'S',
   };
 }
 
-async function promoverPontosEmbarque(rows) {
-  const locaisMap = new Map();
-  rows.forEach((raw) => {
-    const local = mapLocalEmbarqueRow(raw);
-    if (!local.uf || !local.cidade || !local.nome_local) return;
-    if (!isGeoBrasil(local.latitude, local.longitude)) return;
-    locaisMap.set(pontoKey(local), local);
-  });
+async function buscarPontosExistentes() {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('operacional_pontos_embarque')
+      .select('id,nome_local,uf,cidade,tipo_local,latitude,longitude,ativo,spl_code,tem_historico_problemas')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows;
+}
 
-  if (locaisMap.size < LOTE_MINIMO_LOCAIS) {
-    log('WARN', `[locais-embarque] lote com poucos locais válidos (${locaisMap.size}/${rows.length}); promoção para operacional_pontos_embarque ignorada.`);
+async function espelharCadastroGrm(token) {
+  const grm = (await fetchCadastroGrm(token))
+    .map(mapCadastroGrm)
+    .filter((g) => Number.isInteger(g.spl_code) && g.nome_local && g.uf && g.cidade);
+  const ativosGrm = grm.filter((g) => g.ativoGrm).sort((a, b) => a.spl_code - b.spl_code);
+  if (ativosGrm.length < MIN_GRM_ATIVOS) {
+    log('WARN', `[cadastro-grm] só ${ativosGrm.length} locais ativos no GRM (mínimo ${MIN_GRM_ATIVOS}); espelho ignorado por segurança.`);
     return;
   }
 
-  const locais = [...locaisMap.values()];
-  let sincronizados = 0;
-  let ignoradosPorColisao = 0;
-  for (let i = 0; i < locais.length; i += 500) {
-    const chunk = locais.slice(i, i + 500);
-    const { error } = await supabase
-      .from('operacional_pontos_embarque')
-      .upsert(chunk, { onConflict: 'nome_local,cidade,uf' });
-    if (!error) { sincronizados += chunk.length; continue; }
+  const existentes = await buscarPontosExistentes();
+  const porSpl = new Map();
+  const porKey = new Map();
+  existentes.forEach((p) => {
+    if (p.spl_code != null) porSpl.set(p.spl_code, p);
+    const k = pontoKey(p);
+    if (!porKey.has(k)) porKey.set(k, []);
+    porKey.get(k).push(p);
+  });
 
-    log('WARN', `[locais-embarque] chunk falhou (${error.message}); tentando linha a linha...`);
-    for (const local of chunk) {
-      const { error: rowError } = await supabase
-        .from('operacional_pontos_embarque')
-        .upsert([local], { onConflict: 'nome_local,cidade,uf' });
-      if (rowError) ignoradosPorColisao++;
-      else sincronizados++;
+  const alvoIds = new Set(); // linhas existentes que continuam válidas no GRM
+  const chavesAtivas = new Set(); // evita 2 ativos com a mesma chave (índice único parcial)
+  const atualizacoes = [];
+  const insercoes = [];
+  let semCoordenada = 0;
+  let homonimosIgnorados = 0;
+
+  for (const g of ativosGrm) {
+    let ex = porSpl.get(g.spl_code);
+    if (!ex) {
+      const candidatos = (porKey.get(pontoKey(g)) || []).filter((p) => p.spl_code == null && !alvoIds.has(p.id));
+      ex = candidatos.find((p) => p.ativo) || candidatos[0];
+    }
+
+    const latitude = g.latitude ?? ex?.latitude ?? null;
+    const longitude = g.longitude ?? ex?.longitude ?? null;
+    if (latitude == null || longitude == null) { semCoordenada++; continue; }
+
+    const nomeFinal = ex ? { nome_local: ex.nome_local, uf: ex.uf, cidade: ex.cidade } : { nome_local: g.nome_local, uf: g.uf, cidade: g.cidade };
+    const chave = chaveAtiva(nomeFinal);
+    if (chavesAtivas.has(chave)) { homonimosIgnorados++; continue; } // mesmo nome/cidade/UF com outro splCode
+    chavesAtivas.add(chave);
+
+    if (ex) {
+      alvoIds.add(ex.id);
+      const mudou = ex.spl_code !== g.spl_code || !ex.ativo
+        || (g.tipo_local && ex.tipo_local !== g.tipo_local)
+        || !mesmaCoord(ex.latitude, latitude) || !mesmaCoord(ex.longitude, longitude)
+        || ex.tem_historico_problemas !== g.tem_historico_problemas;
+      if (mudou) {
+        atualizacoes.push({
+          id: ex.id, ...nomeFinal, spl_code: g.spl_code, tipo_local: g.tipo_local ?? ex.tipo_local,
+          latitude, longitude, tem_historico_problemas: g.tem_historico_problemas, ativo: true,
+        });
+      }
+    } else {
+      insercoes.push({
+        ...nomeFinal, spl_code: g.spl_code, tipo_local: g.tipo_local, latitude, longitude,
+        tem_historico_problemas: g.tem_historico_problemas, origem: 'grm_cadastro', ativo: true,
+      });
     }
   }
 
-  log('SUCCESS', `[locais-embarque] ${sincronizados} pontos georreferenciados promovidos para operacional_pontos_embarque${ignoradosPorColisao ? ` (${ignoradosPorColisao} ignorados por colisão de cadastro duplicado)` : ''}.`);
-}
+  // Ativos no painel que o GRM não confirma (saiu do cadastro, status "N" ou sem coordenada) -> inativar.
+  const inativar = existentes.filter((p) => p.ativo && !alvoIds.has(p.id));
+  const totalAtivos = existentes.filter((p) => p.ativo).length;
 
-// splHasIssueHistory ("S"/"N") só existe em servicePlaces/getRecords — o
-// relatório reports/classification/servicePlaces (usado acima) não traz esse
-// campo. É a mesma flag que gera o aviso "Este Local de Serviço tem
-// histórico de problemas, favor alertar a operação!" na tela de Abrir OS do
-// GRM; confirmado ao vivo em 16/09 contra dezenas de fazendas reais com a
-// flag "S". Um sptCode+limit alto basta pra trazer o catálogo inteiro
-// daquele tipo de local de uma vez (7901 registros em "Fazenda" numa única
-// chamada), sem precisar varrer cidade por cidade.
-async function fetchHistoricoProblemasFlags(token) {
-  const tiposRes = await postJson(`${GRM_BASE_URL}servicePlacesType/getRecords`, {}, authHeaders(token));
-  const tipos = tiposRes.searchData || [];
-  const flags = new Map();
-  for (const tipo of tipos) {
-    const res = await postJson(`${GRM_BASE_URL}servicePlaces/getRecords`, { sptCode: tipo.sptCode, splStatus: 'A', limit: 100000 }, authHeaders(token));
-    (res.searchData || []).forEach((r) => {
-      const key = pontoKey({ uf: r.staAbreviation, cidade: r.citName, nome_local: r.splName });
-      flags.set(key, r.splHasIssueHistory === 'S');
-    });
+  log('INFO', `[cadastro-grm] GRM ativos=${ativosGrm.length} | painel ativos=${totalAtivos} | atualizar=${atualizacoes.length} inserir=${insercoes.length} inativar=${inativar.length} | sem coordenada=${semCoordenada} homônimos ignorados=${homonimosIgnorados}`);
+
+  if (inativar.length > MAX_INATIVAR_SEM_FORCE && inativar.length > totalAtivos * 0.5 && !FORCE) {
+    throw new Error(`[cadastro-grm] trava: ${inativar.length} de ${totalAtivos} locais seriam inativados de uma vez. Confira com --dry-run e rode com GRM_LOCAIS_FORCE=1 se estiver correto.`);
   }
-  return flags;
-}
-
-// Aplica as flags coletadas acima nos pontos já promovidos em
-// operacional_pontos_embarque (mesma chave normalizada nome_local+cidade+uf
-// usada no onConflict do upsert acima), pra alimentar o alerta de risco do
-// Gestor em Gestor > Logística > Abrir OS.
-async function sincronizarHistoricoProblemas(token) {
-  const flags = await fetchHistoricoProblemasFlags(token);
-  log('INFO', `[historico-problemas] ${flags.size} locais consultados no GRM.`);
-
-  const { data: pontos, error } = await supabase
-    .from('operacional_pontos_embarque')
-    .select('id,nome_local,cidade,uf,tem_historico_problemas')
-    .eq('ativo', true);
-  if (error) { log('WARN', `[historico-problemas] falha ao ler operacional_pontos_embarque: ${error.message}`); return; }
-
-  let atualizados = 0;
-  let marcadosComRisco = 0;
-  for (const ponto of pontos || []) {
-    const key = pontoKey({ uf: ponto.uf, cidade: ponto.cidade, nome_local: ponto.nome_local });
-    if (!flags.has(key)) continue;
-    const flag = flags.get(key);
-    if (flag === ponto.tem_historico_problemas) continue;
-    const { error: updError } = await supabase
-      .from('operacional_pontos_embarque')
-      .update({ tem_historico_problemas: flag })
-      .eq('id', ponto.id);
-    if (updError) { log('WARN', `[historico-problemas] falha ao atualizar ponto ${ponto.id}: ${updError.message}`); continue; }
-    atualizados++;
-    if (flag) marcadosComRisco++;
+  if (DRY_RUN) {
+    log('INFO', '[cadastro-grm] --dry-run: nada foi gravado.');
+    return;
   }
-  log('SUCCESS', `[historico-problemas] ${atualizados} pontos atualizados (${marcadosComRisco} marcados com histórico de problemas).`);
+
+  // Ordem importa por causa do índice único parcial (ativo=true): primeiro libera quem sai, depois grava quem fica.
+  for (let i = 0; i < inativar.length; i += CHUNK) {
+    const ids = inativar.slice(i, i + CHUNK).map((p) => p.id);
+    const { error } = await supabase.from('operacional_pontos_embarque').update({ ativo: false }).in('id', ids);
+    if (error) throw error;
+  }
+  for (let i = 0; i < atualizacoes.length; i += CHUNK) {
+    const chunk = atualizacoes.slice(i, i + CHUNK);
+    const { error } = await supabase.from('operacional_pontos_embarque').upsert(chunk, { onConflict: 'id' });
+    if (!error) continue;
+    log('WARN', `[cadastro-grm] chunk de atualização falhou (${error.message}); tentando linha a linha...`);
+    for (const row of chunk) {
+      const { error: rowError } = await supabase.from('operacional_pontos_embarque').upsert([row], { onConflict: 'id' });
+      if (rowError) log('WARN', `[cadastro-grm] atualização ignorada (splCode ${row.spl_code}): ${rowError.message}`);
+    }
+  }
+  let inseridos = 0;
+  let colisoes = 0;
+  for (let i = 0; i < insercoes.length; i += CHUNK) {
+    const chunk = insercoes.slice(i, i + CHUNK);
+    const { error } = await supabase.from('operacional_pontos_embarque').insert(chunk);
+    if (!error) { inseridos += chunk.length; continue; }
+    log('WARN', `[cadastro-grm] chunk de inserção falhou (${error.message}); tentando linha a linha...`);
+    for (const row of chunk) {
+      const { error: rowError } = await supabase.from('operacional_pontos_embarque').insert([row]);
+      if (rowError) colisoes++; else inseridos++;
+    }
+  }
+
+  log('SUCCESS', `[cadastro-grm] espelho concluído: ${atualizacoes.length} atualizados, ${inseridos} inseridos${colisoes ? ` (${colisoes} ignorados por colisão)` : ''}, ${inativar.length} inativados.`);
 }
 
 async function main() {
-  log('INFO', `=== ${REPORT_CONFIG.name} (API) ===`);
+  log('INFO', `=== ${REPORT_CONFIG.name} (API)${DRY_RUN ? ' [DRY-RUN]' : ''} ===`);
   const token = await login();
-  const data = await fetchReportApi(token);
-  await upsertData(data);
-  await promoverPontosEmbarque(data);
-  try {
-    await sincronizarHistoricoProblemas(token);
-  } catch (error) {
-    // Falha aqui não pode derrubar a sincronização principal de locais —
-    // é um enriquecimento por cima, não o dado essencial.
-    log('WARN', `[historico-problemas] etapa ignorada por erro: ${error.message}`);
+  if (!DRY_RUN) {
+    const data = await fetchReportApi(token);
+    await upsertData(data);
   }
+  await espelharCadastroGrm(token);
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
@@ -332,4 +386,4 @@ if (require.main === module) {
   setTimeout(() => process.exit(1), 300000);
 }
 
-module.exports = { fetchReportApi, login };
+module.exports = { fetchReportApi, fetchCadastroGrm, login };

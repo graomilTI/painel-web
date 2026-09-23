@@ -291,6 +291,24 @@ async function boot() {
   startOsPrefetch();
 }
 
+// operacional_pontos_embarque espelha o cadastro do GRM (~10 mil locais ativos) e o PostgREST
+// devolve no máximo 1000 linhas por requisição: pagina por range em vez de um único .limit(8000).
+async function fetchTodosPontosAtivos(colunas) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('operacional_pontos_embarque')
+      .select(colunas)
+      .eq('ativo', true)
+      .order('id', { ascending: true })
+      .range(from, from + 999);
+    if (error) return { data: null, error };
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return { data: rows, error: null };
+}
+
 async function fetchFreshOs() {
   let query = supabase.from('operacional_os').select('*').limit(1000);
   if (!state.isMaster && state.allowedSupervisoes.length) query = query.in('supervisao', state.allowedSupervisoes);
@@ -418,7 +436,7 @@ async function loadData({ useCache = true } = {}) {
       fetchFreshOs().then((data) => ({ data, error: null })).catch((error) => ({ data: null, error })),
       supabase.from('operacional_os_colaboradores').select('*').limit(5000),
       supabase.from('operacional_colaborador_base').select('id,nome,cpf,tipo_mao_obra,empresa,coordenacao,supervisao,cidade_base,uf_base,latitude,longitude,ativo,nome_chave,telefone').eq('ativo', true).limit(5000),
-      supabase.from('operacional_pontos_embarque').select('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo').eq('ativo', true).limit(8000),
+      fetchTodosPontosAtivos('id,tipo_local,nome_local,uf,cidade,latitude,longitude,supervisao,coordenacao,ativo'),
     ]);
 
     if (osRes.error) throw osRes.error;
