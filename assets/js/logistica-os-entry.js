@@ -13,6 +13,8 @@ const TABS = [
   { key: 'conferencia', realTab: 'conferencias', label: 'Conferência', listId: 'logConferenciasLaudos' },
   { key: 'ajuste',      realTab: 'ajuste',       label: 'Ajuste',     listId: 'logAjusteList' },
   { key: 'finalizacao', realTab: 'finalizacao',  label: 'Finalização', listId: 'logFinalizacaoList' },
+  // Aba própria (sem seção no adm-logistica.js): montada por logistica-locais-embarque.js
+  { key: 'locais',      realTab: null,           label: 'Locais de embarque', listId: null },
 ];
 
 document.documentElement.classList.add('logistica-os-page');
@@ -26,6 +28,8 @@ style.textContent = `
   .logistica-os-page #logTabs,
   .logistica-os-page #logStats,
   .logistica-os-page #logFeedback { display:none!important; }
+  /* Aba "Locais de embarque" tem seção própria (#logisticaOsLocais) */
+  .los-locais-active .log-section { display:none!important; }
   /* Só as 4 seções desta página participam; as demais nunca aparecem */
   .logistica-os-page #section-os,
   .logistica-os-page #section-fob,
@@ -113,7 +117,7 @@ function tabFromHash() {
   // direto pra #conferencias caía no default "abertura" (nunca batia com a
   // key "conferencia", que tem uma letra a menos).
   const h = String(window.location.hash || '').replace('#', '').toLowerCase();
-  const match = TABS.find((t) => t.key === h) || TABS.find((t) => t.realTab.toLowerCase() === h);
+  const match = TABS.find((t) => t.key === h) || TABS.find((t) => t.realTab && t.realTab.toLowerCase() === h);
   return match?.key || 'abertura';
 }
 
@@ -146,8 +150,17 @@ function activate(key) {
   // Dispara o clique no botão real (oculto) do #logTabs: isso deixa o próprio
   // adm-logistica.js trocar state.tab, marcar a .log-section ativa e disparar
   // o loader sob demanda daquela aba.
-  const realBtn = document.querySelector(`#logTabs .log-tab[data-tab="${target.realTab}"]`);
+  const realBtn = target.realTab && document.querySelector(`#logTabs .log-tab[data-tab="${target.realTab}"]`);
   if (realBtn) realBtn.click();
+  // Aba "Locais de embarque": esconde todas as .log-section (CSS em
+  // logistica-locais-embarque.js) e mostra a seção própria.
+  const isLocais = target.key === 'locais';
+  document.documentElement.classList.toggle('los-locais-active', isLocais);
+  const locaisSection = document.getElementById('logisticaOsLocais');
+  if (locaisSection) locaisSection.style.display = isLocais ? '' : 'none';
+  if (isLocais && locaisSection) {
+    import('./logistica-locais-embarque.js?v=20260923-v1').then((m) => m.mountLocaisEmbarque(locaisSection));
+  }
   // Barra de filtros só faz sentido na Finalização (data/coordenação/status/busca);
   // Abertura, Conferência (laudos) e Ajuste ignoram esses filtros.
   if (introCard) introCard.style.display = target.key === 'finalizacao' ? '' : 'none';
@@ -194,6 +207,12 @@ async function setup() {
       <button class="btn btn-secondary" id="logisticaOsReload" type="button">↻ Atualizar</button>
     </div>`;
   content.insertBefore(header, content.firstChild);
+
+  const locaisSection = document.createElement('section');
+  locaisSection.className = 'card mt-16';
+  locaisSection.id = 'logisticaOsLocais';
+  locaisSection.style.display = 'none';
+  header.after(locaisSection);
 
   header.querySelector('#logisticaOsTabs').addEventListener('click', (event) => {
     const btn = event.target.closest('[data-key]');
