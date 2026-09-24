@@ -258,10 +258,13 @@ async function buscarPontosExistentes() {
   return rows;
 }
 
-async function espelharCadastroGrm(token) {
-  const grm = (await fetchCadastroGrm(token))
+async function carregarCadastroGrm(token) {
+  return (await fetchCadastroGrm(token))
     .map(mapCadastroGrm)
     .filter((g) => Number.isInteger(g.spl_code) && g.nome_local && g.uf && g.cidade);
+}
+
+async function espelharCadastroGrm(grm) {
   const ativosGrm = grm.filter((g) => g.ativoGrm).sort((a, b) => a.spl_code - b.spl_code);
   if (ativosGrm.length < MIN_GRM_ATIVOS) {
     log('WARN', `[cadastro-grm] só ${ativosGrm.length} locais ativos no GRM (mínimo ${MIN_GRM_ATIVOS}); espelho ignorado por segurança.`);
@@ -367,6 +370,57 @@ async function espelharCadastroGrm(token) {
   log('SUCCESS', `[cadastro-grm] espelho concluído: ${atualizacoes.length} atualizados, ${inseridos} inseridos${colisoes ? ` (${colisoes} ignorados por colisão)` : ''}, ${inativar.length} inativados.`);
 }
 
+// Espelho COMPLETO do cadastro (inclusive locais sem coordenada) em grm_locais_servico. É a lista de
+// "locais que já existem" usada para limitar a abertura de O.S. (Gestor > Logística > Abrir OS).
+async function espelharLocaisServico(grm) {
+  const ativosGrm = grm.filter((g) => g.ativoGrm);
+  if (ativosGrm.length < MIN_GRM_ATIVOS) {
+    log('WARN', `[locais-servico] só ${ativosGrm.length} locais ativos no GRM (mínimo ${MIN_GRM_ATIVOS}); espelho ignorado por segurança.`);
+    return;
+  }
+
+  const existentes = new Map();
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('grm_locais_servico')
+      .select('spl_code,nome_local,uf,cidade,tipo_local,ativo,latitude,longitude')
+      .order('spl_code', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    (data || []).forEach((r) => existentes.set(r.spl_code, r));
+    if (!data || data.length < PAGE) break;
+  }
+
+  const noGrm = new Set(grm.map((g) => g.spl_code));
+  const mudancas = [];
+  for (const g of grm) {
+    const ex = existentes.get(g.spl_code);
+    if (ex && ex.nome_local === g.nome_local && ex.uf === g.uf && ex.cidade === g.cidade
+      && ex.tipo_local === g.tipo_local && ex.ativo === g.ativoGrm
+      && mesmaCoord(ex.latitude, g.latitude) && mesmaCoord(ex.longitude, g.longitude)) continue;
+    mudancas.push({
+      spl_code: g.spl_code, nome_local: g.nome_local, uf: g.uf, cidade: g.cidade, tipo_local: g.tipo_local,
+      ativo: g.ativoGrm, latitude: g.latitude, longitude: g.longitude,
+      nome_norm: normKey(g.nome_local), cidade_norm: normKey(g.cidade), updated_at: new Date().toISOString(),
+    });
+  }
+  // Sumiu do retorno do GRM (excluído lá) -> inativa.
+  const sumidos = [...existentes.values()].filter((r) => r.ativo && !noGrm.has(r.spl_code)).map((r) => r.spl_code);
+
+  log('INFO', `[locais-servico] GRM ativos=${ativosGrm.length} | na tabela=${existentes.size} | gravar=${mudancas.length} | inativar sumidos=${sumidos.length}`);
+  if (DRY_RUN) { log('INFO', '[locais-servico] --dry-run: nada foi gravado.'); return; }
+
+  for (let i = 0; i < mudancas.length; i += CHUNK) {
+    const { error } = await supabase.from('grm_locais_servico').upsert(mudancas.slice(i, i + CHUNK), { onConflict: 'spl_code' });
+    if (error) throw error;
+  }
+  for (let i = 0; i < sumidos.length; i += CHUNK) {
+    const { error } = await supabase.from('grm_locais_servico').update({ ativo: false, updated_at: new Date().toISOString() }).in('spl_code', sumidos.slice(i, i + CHUNK));
+    if (error) throw error;
+  }
+  log('SUCCESS', `[locais-servico] espelho concluído: ${mudancas.length} gravados, ${sumidos.length} inativados.`);
+}
+
 async function main() {
   log('INFO', `=== ${REPORT_CONFIG.name} (API)${DRY_RUN ? ' [DRY-RUN]' : ''} ===`);
   const token = await login();
@@ -374,7 +428,9 @@ async function main() {
     const data = await fetchReportApi(token);
     await upsertData(data);
   }
-  await espelharCadastroGrm(token);
+  const cadastro = await carregarCadastroGrm(token);
+  await espelharLocaisServico(cadastro);
+  await espelharCadastroGrm(cadastro);
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 

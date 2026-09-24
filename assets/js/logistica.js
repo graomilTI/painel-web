@@ -6,6 +6,7 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
+import { locaisDaCidade, validarLocalEmbarque } from './logistica-locais-servico.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -221,6 +222,7 @@ export async function renderContent(content, userContext) {
       aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
+    if (e.target.id === 'osCidadeEmbarque') { atualizarLocaisEmbarque(content); return; }
     if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
       const embarque = e.target.id === 'osUfEmbarque';
       state[embarque ? 'aberturaUfEmbarque' : 'aberturaUfDestino'] = e.target.value;
@@ -232,7 +234,7 @@ export async function renderContent(content, userContext) {
         cidadeInput.placeholder = e.target.value ? 'Cidade' : 'Selecione a UF primeiro';
       }
       if (datalist) datalist.innerHTML = cidadesDaUf(e.target.value).map(v => `<option value="${esc(v)}"></option>`).join('');
-      if (embarque) atualizarAlertaLocalRisco(content);
+      if (embarque) { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); }
       return;
     }
     const chk = e.target.closest('[data-teste-key]');
@@ -612,6 +614,26 @@ function renderAbrirOsTab() {
 
 function ufCidade(uf, cidade) { return [uf, cidade].filter(Boolean).join(' - ') || '-'; }
 
+// A abertura de O.S. só aceita local que já existe no cadastro do GRM (grm_locais_servico):
+// depois de escolher UF + cidade, as sugestões do campo Armazém passam a ser exatamente os locais
+// cadastrados nessa cidade (antes vinham do histórico de O.S., que inclui nomes que não existem mais).
+async function atualizarLocaisEmbarque(content) {
+  const datalist = content.querySelector('#abrirOsArmazens');
+  const input = content.querySelector('#osArmazemEmbarque');
+  const uf = content.querySelector('#osUfEmbarque')?.value || '';
+  const cidade = content.querySelector('#osCidadeEmbarque')?.value || '';
+  if (!datalist || !input || !uf || !cidade) return;
+  try {
+    const locais = await locaisDaCidade(uf, cidade);
+    // Ignora resposta atrasada de uma cidade que o usuário já trocou.
+    if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade) return;
+    datalist.innerHTML = locais.map((l) => `<option value="${esc(l.nome_local)}">${esc(l.tipo_local || '')}</option>`).join('');
+    input.placeholder = locais.length ? `Escolha um dos ${locais.length} locais cadastrados no GRM` : 'Nenhum local cadastrado nesta cidade no GRM';
+  } catch (error) {
+    console.warn('[abrir-os] não foi possível carregar os locais do GRM para a cidade', error);
+  }
+}
+
 function atualizarAlertaLocalRisco(content) {
   const alerta = content.querySelector('#osArmazemRiscoAlerta');
   if (!alerta) return;
@@ -879,6 +901,9 @@ async function handleSalvarAberturaOsInterno(content) {
   if (contratoRegra?.tipo !== 'nao_obrigatorio') obrigatorios.push([contratoRotulo, payload.numero_contrato]);
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
+
+  const localValido = await validarLocalEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque });
+  if (!localValido.ok) { alert(localValido.motivo); return; }
 
   if (contratoRegra?.tipo === 'formato' && payload.numero_contrato) {
     if (!new RegExp(contratoRegra.regex_formato, 'i').test(payload.numero_contrato)) {
