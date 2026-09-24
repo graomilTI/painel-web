@@ -6,8 +6,8 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
-import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo1';
-import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo1';
+import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo2';
+import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo2';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -658,7 +658,7 @@ async function atualizarLocaisEmbarque(content) {
     // Ignora resposta atrasada de uma cidade que o usuário já trocou.
     if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade
       || (content.querySelector('#osUfEmbarque')?.value || '') !== uf) return;
-    preencherSelectLocais(select, locais, 'Nenhum local cadastrado nesta cidade no GRM');
+    preencherSelectLocais(select, locais, 'Nenhum local cadastrado nesta cidade — clique para cadastrar');
     configurarGanchosLocais(select);
     restaurarLocalNovo(select, uf, cidade);
     atualizarAlertaLocalRisco(content);
@@ -668,15 +668,17 @@ async function atualizarLocaisEmbarque(content) {
   }
 }
 
-// Dropdown do Armazém: quando nada casa com o digitado, tenta "Você quis dizer X?" (erro de digitação);
-// se o usuário disser Não (ou não há sugestão), oferece cadastrar um novo local. O botão de novo local
-// também fica fixo no rodapé da lista.
+// Dropdown do Armazém: quando nada casa com o digitado, tenta "Você quis dizer X?" (erro de digitação).
+// O botão de cadastrar novo local só aparece quando o local não foi encontrado: depois que o usuário
+// clica em "Não" na sugestão, ou direto quando não há nenhuma sugestão parecida. Nunca com a lista de
+// resultados nem junto da pergunta "Você quis dizer".
 function configurarGanchosLocais(select) {
   select._sselHooks = {
     empty(query) {
       const q = String(query || '').trim();
       if (!q || select.disabled) return '<div class="ssel-empty">Nenhum local encontrado.</div>';
-      const semResposta = `<div class="ssel-empty">Nenhum local encontrado para “${esc(q)}”. Você pode cadastrar um novo local abaixo.</div>`;
+      const semResposta = `<div class="ssel-empty">Nenhum local encontrado para “${esc(q)}”.</div>`
+        + '<div class="ssel-footer"><small>Não encontrou o local?</small><button type="button" data-ssel-action="novo">+ Cadastrar novo local de embarque</button></div>';
       if (select._novoModoQuery === q) return semResposta;
       const nomes = [...select.options].filter((o) => o.value && !o.dataset.novoId).map((o) => o.value);
       const sugestao = sugerirLocal(q, nomes);
@@ -685,8 +687,11 @@ function configurarGanchosLocais(select) {
         + `<div class="ssel-actions"><button type="button" data-ssel-action="sim" data-value="${esc(sugestao)}">Sim</button>`
         + '<button type="button" class="is-secondary" data-ssel-action="nao">Não</button></div>';
     },
-    footer() {
-      return '<div class="ssel-footer"><small>Não encontrou o local?</small><button type="button" data-ssel-action="novo">+ Cadastrar novo local de embarque</button></div>';
+    // Cidade sem nenhum local cadastrado: não há o que achar, então já oferece cadastrar.
+    footer(query, total) {
+      if (!total) return ''; // sem resultados o próprio empty() já oferece o cadastro
+      const temLocais = [...select.options].some((o) => o.value && !o.dataset.novoId);
+      return temLocais ? '' : '<div class="ssel-footer"><small>Nenhum local cadastrado nesta cidade.</small><button type="button" data-ssel-action="novo">+ Cadastrar novo local de embarque</button></div>';
     },
   };
 }
