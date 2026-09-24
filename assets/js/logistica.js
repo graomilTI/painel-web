@@ -222,7 +222,7 @@ export async function renderContent(content, userContext) {
       aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
-    if (e.target.id === 'osCidadeEmbarque') { atualizarLocaisEmbarque(content); return; }
+    if (e.target.id === 'osCidadeEmbarque') { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); return; }
     if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
       const embarque = e.target.id === 'osUfEmbarque';
       state[embarque ? 'aberturaUfEmbarque' : 'aberturaUfDestino'] = e.target.value;
@@ -568,9 +568,9 @@ function renderAbrirOsTab() {
           <label>Contratante / Cliente *<select id="osContratante" class="log-input"><option value="">Selecione</option>${state.aberturaRefs.clientes.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></label>
           <label>Filial pagadora *<select id="osFilialPagadora" class="log-input" disabled><option value="">Selecione o cliente primeiro</option></select></label>
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
-          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" placeholder="Armazém/local de embarque"></label>
           <label>UF de embarque *<select id="osUfEmbarque" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfEmbarque ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" list="abrirOsCidadesEmbarque" autocomplete="off" placeholder="${state.aberturaUfEmbarque ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfEmbarque ? '' : 'disabled'}></label>
+          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" autocomplete="off" placeholder="Selecione a UF e a cidade primeiro" disabled></label>
           <div id="osArmazemRiscoAlerta" class="log-alerta-risco" hidden>⚠️ Este Local de Serviço tem histórico de problemas — alerte a operação.</div>
           <label>UF destino *<select id="osUfDestino" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfDestino ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" list="abrirOsCidadesDestino" autocomplete="off" placeholder="${state.aberturaUfDestino ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfDestino ? '' : 'disabled'}></label>
@@ -622,17 +622,33 @@ async function atualizarLocaisEmbarque(content) {
   const input = content.querySelector('#osArmazemEmbarque');
   const uf = content.querySelector('#osUfEmbarque')?.value || '';
   const cidade = content.querySelector('#osCidadeEmbarque')?.value || '';
-  if (!datalist || !input || !uf || !cidade) return;
+  if (!datalist || !input) return;
+  // Cascata UF -> Cidade -> Armazém: o local só é liberado depois de escolher a cidade.
+  if (!uf || !cidade) {
+    datalist.innerHTML = '';
+    input.value = '';
+    input.disabled = true;
+    input.placeholder = uf ? 'Selecione a cidade primeiro' : 'Selecione a UF e a cidade primeiro';
+    return;
+  }
   try {
     const locais = await locaisDaCidade(uf, cidade);
     // Ignora resposta atrasada de uma cidade que o usuário já trocou.
     if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade) return;
     datalist.innerHTML = locais.map((l) => `<option value="${esc(l.nome_local)}">${esc(l.tipo_local || '')}</option>`).join('');
+    input.disabled = false;
     input.placeholder = locais.length ? `Escolha um dos ${locais.length} locais cadastrados no GRM` : 'Nenhum local cadastrado nesta cidade no GRM';
+    // Trocou de cidade: o local anterior (de outra cidade) não vale mais. Valores preenchidos pela
+    // leitura do documento (os-upload-filled) são mantidos para o usuário revisar; o envio valida.
+    const atual = normalizeLocalDigitado(input.value);
+    if (atual && !input.classList.contains('os-upload-filled') && !locais.some((l) => normalizeLocalDigitado(l.nome_local) === atual)) input.value = '';
   } catch (error) {
+    input.disabled = false;
     console.warn('[abrir-os] não foi possível carregar os locais do GRM para a cidade', error);
   }
 }
+
+function normalizeLocalDigitado(v) { return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 
 function atualizarAlertaLocalRisco(content) {
   const alerta = content.querySelector('#osArmazemRiscoAlerta');
