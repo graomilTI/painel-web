@@ -13,7 +13,7 @@ type QueueRow = {
 
 type DriverRow = Record<string, any>;
 type LocalMotoristaRow = Record<string, any>;
-type ContactFallback = { email: string; telefone: string };
+type ContactFallback = { email: string; telefone: string; cpf: string };
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -277,7 +277,7 @@ function createDriverPayload(params: { apiKey: string; token: string; local: Loc
     numero: '',
     alias: cleanStr(params.condutorNome),
     identificador: '',
-    cedula: onlyDigits(params.local?.cpf),
+    cedula: onlyDigits(params.local?.cpf) || params.fallback.cpf,
     idgrupo: cleanStr(params.local?.bfleet_idgrupo),
     observaciones: cleanStr(params.local?.observacoes),
     idvehiculo: params.vehicleId,
@@ -299,7 +299,7 @@ function updateDriverPayload(params: { apiKey: string; token: string; driver: Dr
     numero: cleanStr(params.driver.numero),
     alias: cleanStr(params.driver.alias),
     identificador: cleanStr(params.driver.identificador),
-    cedula: onlyDigits(params.local?.cpf) || cleanStr(params.driver.cedula),
+    cedula: onlyDigits(params.local?.cpf) || params.fallback.cpf || cleanStr(params.driver.cedula),
     idgrupo: cleanStr(params.driver.idgrupo),
     observaciones: cleanStr(params.local?.observacoes) || cleanStr(params.driver.observaciones),
     idvehiculo: params.vehicleId,
@@ -351,16 +351,21 @@ Deno.serve(async (req) => {
     let driverGetAllError = '';
     let driversByName = new Map<string, DriverRow>();
 
-    const colaboradores = await fetchAllRows((a, b) => supabase.from('colaboradores_atuais').select('nome,email_empresa,email_pessoal,whatsapp').order('nome').range(a, b));
+    const colaboradores = await fetchAllRows((a, b) => supabase.from('colaboradores_atuais').select('nome,cpf,email_empresa,email_pessoal,whatsapp').order('nome').range(a, b));
     const contactByName = new Map<string, ContactFallback>();
     for (const c of (colaboradores || []) as any[]) {
       const key = normalizeName(c.nome);
       if (!key || contactByName.has(key)) continue;
-      contactByName.set(key, { email: cleanStr(c.email_empresa) || cleanStr(c.email_pessoal), telefone: onlyDigits(c.whatsapp) });
+      contactByName.set(key, { email: cleanStr(c.email_empresa) || cleanStr(c.email_pessoal), telefone: onlyDigits(c.whatsapp), cpf: onlyDigits(c.cpf) });
     }
 
     const motoristas = await fetchAllRows((a, b) => supabase.from('frotas_motoristas').select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes').order('nome').range(a, b));
     const motoristasByName = buildLocalMotoristaIndex((motoristas || []) as LocalMotoristaRow[]);
+    const motoristasByCpf = new Map<string, LocalMotoristaRow>();
+    for (const m of (motoristas || []) as LocalMotoristaRow[]) {
+      const cpf = onlyDigits(m.cpf);
+      if (cpf && !motoristasByCpf.has(cpf)) motoristasByCpf.set(cpf, m);
+    }
 
     const placasFiltro = Array.isArray(body?.placas) ? body.placas.map((p: unknown) => normalizePlate(p)).filter(Boolean) : [];
     let q = supabase.from('frotas_bfleet_condutores_fila').select('*').in('status', mode === 'retry_all' ? ['PENDENTE', 'ERRO'] : ['PENDENTE']).order('tentativas', { ascending: true }).order('created_at', { ascending: true }).limit(limit);
@@ -485,8 +490,9 @@ Deno.serve(async (req) => {
         continue;
       }
       const nameKey = normalizeName(condutorNome);
-      const local = motoristasByName.get(nameKey) || null;
-      const fallback = contactByName.get(nameKey) || { email: '', telefone: '' };
+      const fallback = contactByName.get(nameKey) || { email: '', telefone: '', cpf: '' };
+      // Nome do GRM pode divergir do cadastro de Motoristas; o CPF do colaborador é a ponte.
+      const local = motoristasByName.get(nameKey) || (fallback.cpf ? motoristasByCpf.get(fallback.cpf) : null) || null;
       let driver = driversByName.get(nameKey);
 
       if (!driver) {
