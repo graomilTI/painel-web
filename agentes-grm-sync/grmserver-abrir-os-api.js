@@ -562,6 +562,18 @@ async function resolverDestino(token, solicitacao) {
 // ---------------------------------------------------------------------
 // Monta o payload final de POST /api/serviceOrder/setRecord
 // ---------------------------------------------------------------------
+// "Troca de notas" do formulário de Abrir OS corresponde ao campo "Módulo Integra" do GRM
+// (sorModIntegra "S"/"N", label enableIntegra no front do GRM). Ao virar "S" a própria tela do GRM
+// também força "Precisa dos dados do motorista" (sorNeedTruckDetails) para "S"
+// (updateSOrderDriveDetails copia o valor e desabilita o campo) — replicado em montarPayload.
+function moduloIntegraDaSolicitacao(trocaNotas) {
+  const v = String(trocaNotas || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  if (v === 'SIM' || v === 'S') return 'S';
+  if (v === 'NAO' || v === 'N') return 'N';
+  avisarCampoSuspeito('Troca de notas "' + (trocaNotas || '') + '" não reconhecida (esperado Sim/Não) — Módulo Integra ficou "N".');
+  return 'N';
+}
+
 async function montarPayload(token, solicitacao) {
   const clienteNacional = await resolverClienteNacional(token, solicitacao.contratante_cliente);
   const clienteRegional = await resolverClienteRegional(token, clienteNacional.clnCode, solicitacao.uf_embarque, solicitacao.filial_pagadora);
@@ -573,6 +585,8 @@ async function montarPayload(token, solicitacao) {
   const tipoProduto = await resolverTipoProduto(token, solicitacao.tipo_produto);
   const cItems = await resolverCItems(token, produto.proCode);
   const destino = await resolverDestino(token, solicitacao);
+  const moduloIntegra = moduloIntegraDaSolicitacao(solicitacao.troca_notas);
+  log('INFO', 'Troca de notas "' + (solicitacao.troca_notas || '') + '" -> Módulo Integra "' + moduloIntegra + '".');
 
   const testesFlags = { sorAflatoxinTest: 'N', sorIntactaTest: 'N', sorSoyFreeTest: 'N', sorVomitoxinTest: 'N', sorFallingNumberTest: 'N' };
   const opcoesTestes = (solicitacao.testes && Array.isArray(solicitacao.testes.opcoes)) ? solicitacao.testes.opcoes : [];
@@ -603,10 +617,10 @@ async function montarPayload(token, solicitacao) {
     sorContract: solicitacao.numero_contrato || '',
     sorLotNumber: '',
     sorOCC: 'N',
-    sorModIntegra: 'N',
+    sorModIntegra: moduloIntegra,
     sorModIntegraFiles: null,
     lftCode: null,
-    sorNeedTruckDetails: 'N',
+    sorNeedTruckDetails: moduloIntegra, // com Integra "S" o GRM força "S" e bloqueia o campo
     sorBlockOnFullLot: 'S',
     proCode: produto.proCode,
     proCodeOriginal: '',
@@ -653,7 +667,7 @@ async function montarPayload(token, solicitacao) {
     staAbreviationDestination: '',
     citCodeDestination: '',
     sorDestination: '',
-    sorOtherInfos: solicitacao.troca_notas ? ('Troca de notas: ' + solicitacao.troca_notas) : '',
+    sorOtherInfos: '', // "Troca de notas" agora vai no campo próprio (sorModIntegra), não mais como texto livre
   };
 }
 
