@@ -102,3 +102,60 @@ export function preencherSelectLocais(select, locais, placeholderVazio) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Local de destino: o usuário vê/digita só o LOCAL (texto livre, com sugestões do histórico da
+// UF+cidade de destino). O valor gravado continua no formato que o agente do GRM espera
+// ("UF - CIDADE (LOCAL)", ver extrairLocalPadrao em grmserver-abrir-os-api.js).
+// ---------------------------------------------------------------------------
+// Aceita os formatos que existem no histórico: "UF - CIDADE (LOCAL)", "UF - CIDADE - LOCAL" e
+// "CIDADE - UF - LOCAL". Devolve null quando não há local no texto (ex.: só "CIDADE - UF").
+export function parseDestino(texto) {
+  let p = parseDestinoUmaVez(texto);
+  // Há registros com UF/cidade repetidas dentro do local ("BA - CANDEIAS (BA - CANDEIAS - SC PORTO)"):
+  // desce enquanto o interior repetir a mesma UF+cidade.
+  for (let i = 0; p && i < 3; i += 1) {
+    const q = parseDestinoUmaVez(p.local);
+    if (!q || q.uf !== p.uf || chaveLocal(q.cidade) !== chaveLocal(p.cidade)) break;
+    p = { ...p, local: q.local };
+  }
+  return p;
+}
+
+function parseDestinoUmaVez(texto) {
+  const t = String(texto ?? '').trim();
+  let m = t.match(/^([A-Za-z]{2})\s+-\s+([^()]+?)\s*\((.+)\)\s*$/);
+  if (m && !/\s-\s/.test(m[2])) return { uf: m[1].toUpperCase(), cidade: m[2].trim(), local: m[3].trim() };
+  m = t.match(/^([A-Za-z]{2})\s+-\s+(.+?)\s+-\s+(.+)$/);
+  if (m) return { uf: m[1].toUpperCase(), cidade: m[2].trim(), local: m[3].trim() };
+  m = t.match(/^(.+?)\s+-\s+([A-Za-z]{2})\s+-\s+(.+)$/);
+  if (m) return { uf: m[2].toUpperCase(), cidade: m[1].trim(), local: m[3].trim() };
+  return null;
+}
+
+// Só o local, sem UF/cidade (o que aparece no campo).
+export function localSemUfCidade(texto) {
+  return parseDestino(texto)?.local ?? String(texto ?? '').trim();
+}
+
+// Valor gravado em local_destino: "UF - CIDADE (LOCAL)".
+export function comporLocalDestino(uf, cidade, local) {
+  const nome = localSemUfCidade(local);
+  if (!nome) return '';
+  return `${String(uf || '').trim().toUpperCase()} - ${String(cidade || '').trim().toUpperCase()} (${nome})`;
+}
+
+// Locais já usados como destino na UF+cidade (sem repetir, ignorando acento/caixa).
+export function sugestoesLocaisDestino(historico, uf, cidade) {
+  const ufKey = String(uf || '').trim().toUpperCase();
+  const cidadeKey = chaveLocal(cidade);
+  if (!ufKey || !cidadeKey) return [];
+  const vistos = new Map();
+  (historico || []).forEach((valor) => {
+    const p = parseDestino(valor);
+    if (!p || p.uf !== ufKey || chaveLocal(p.cidade) !== cidadeKey) return;
+    const k = chaveLocal(p.local);
+    if (k && !vistos.has(k)) vistos.set(k, p.local);
+  });
+  return [...vistos.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
