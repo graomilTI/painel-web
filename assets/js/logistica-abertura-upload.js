@@ -1,7 +1,7 @@
 import { supabase } from './supabaseClient.js';
 import { browserOcrFile } from './logistica-browser-ocr.js?v=20260803-browser-ocr1';
 import { enhanceLogisticaOsFields } from './logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1';
-import { localSemUfCidade } from './logistica-locais-servico.js?v=20260924-novo2';
+import { localSemUfCidade } from './logistica-locais-servico.js?v=20260924-novo3';
 
 const UPLOAD_ID = 'abrirOsUploadWrap';
 const MAX_TECHNICAL_BYTES = 15 * 1024 * 1024;
