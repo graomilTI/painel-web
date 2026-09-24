@@ -21,6 +21,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+const DEFAULT_CNH_VALIDADE = '2099-12-31';
 const TOKEN_VALIDITY_MS = 6 * 60 * 60 * 1000;
 const TOKEN_RENEW_MARGIN_MS = 10 * 60 * 1000;
 
@@ -54,6 +55,17 @@ function pickSecret(secrets: Map<string, SecretRow>, ...keys: string[]): string 
     if (val) return val;
   }
   return '';
+}
+// PostgREST corta em 1000 linhas; pagina para não perder cadastros (ex.: colaboradores_atuais tem 2000+).
+async function fetchAllRows(build: (from: number, to: number) => any): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await build(from, from + 999);
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
 }
 async function readBody(req: Request) { try { return await req.json(); } catch { return {}; } }
 
@@ -230,6 +242,10 @@ function formatDateOnly(value: unknown): string {
   if (br) return `${br[3]}-${br[2]}-${br[1]}`;
   return s;
 }
+function validVigencia(v: unknown): string {
+  const s = formatDateOnly(v);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && !s.startsWith('0000') && !s.includes('-00') ? s : DEFAULT_CNH_VALIDADE;
+}
 function localEmail(local: LocalMotoristaRow | null | undefined, fallback: ContactFallback) {
   return cleanStr(local?.email) || fallback.email || '';
 }
@@ -241,31 +257,29 @@ function localAddress(local: LocalMotoristaRow | null | undefined) {
 }
 function validateLocalForCreate(local: LocalMotoristaRow | null | undefined, fallback: ContactFallback) {
   const missing: string[] = [];
-  if (!local) missing.push('cadastro em frotas_motoristas');
-  if (local && !localPhone(local, fallback)) missing.push('telefone');
-  if (local && !localEmail(local, fallback)) missing.push('email');
-  if (local && !cleanStr(local.cnh_numero)) missing.push('CNH');
-  if (local && !cleanStr(local.cnh_validade)) missing.push('validade da CNH');
+  // Sem cadastro em frotas_motoristas (ou sem CNH) o condutor é criado com CNH placeholder,
+  // como os demais condutores do BFleet; exige só um contato vindo de colaboradores/frotas.
+  if (!localPhone(local, fallback) && !localEmail(local, fallback)) missing.push('telefone/email (frotas_motoristas ou colaboradores)');
   return missing;
 }
-function createDriverPayload(params: { apiKey: string; token: string; local: LocalMotoristaRow; condutorNome: string; vehicleId: string; fallback: ContactFallback }) {
-  const names = splitDriverName(params.local.nome || params.condutorNome);
+function createDriverPayload(params: { apiKey: string; token: string; local: LocalMotoristaRow | null; condutorNome: string; vehicleId: string; fallback: ContactFallback }) {
+  const names = splitDriverName(params.local?.nome || params.condutorNome);
   return {
     apikey: params.apiKey,
     token: params.token,
     nombre: names.nombre,
     apellido: names.apellido,
     telefono: localPhone(params.local, params.fallback),
-    licencia: cleanStr(params.local.cnh_numero),
-    vigencia: formatDateOnly(params.local.cnh_validade),
+    licencia: cleanStr(params.local?.cnh_numero) || '000',
+    vigencia: formatDateOnly(params.local?.cnh_validade) || DEFAULT_CNH_VALIDADE,
     direccion: localAddress(params.local),
     email: localEmail(params.local, params.fallback),
     numero: '',
     alias: cleanStr(params.condutorNome),
     identificador: '',
-    cedula: onlyDigits(params.local.cpf),
-    idgrupo: cleanStr(params.local.bfleet_idgrupo),
-    observaciones: cleanStr(params.local.observacoes),
+    cedula: onlyDigits(params.local?.cpf),
+    idgrupo: cleanStr(params.local?.bfleet_idgrupo),
+    observaciones: cleanStr(params.local?.observacoes),
     idvehiculo: params.vehicleId,
   };
 }
@@ -279,7 +293,7 @@ function updateDriverPayload(params: { apiKey: string; token: string; driver: Dr
     apellido: cleanStr(params.driver.apellido) || names.apellido,
     telefono: localPhone(params.local, params.fallback) || cleanStr(params.driver.telefono),
     licencia: cleanStr(params.local?.cnh_numero) || cleanStr(params.driver.licencia),
-    vigencia: formatDateOnly(params.local?.cnh_validade) || cleanStr(params.driver.vigencia),
+    vigencia: formatDateOnly(params.local?.cnh_validade) || validVigencia(params.driver.vigencia),
     direccion: localAddress(params.local) || cleanStr(params.driver.direccion),
     email: localEmail(params.local, params.fallback) || cleanStr(params.driver.email),
     numero: cleanStr(params.driver.numero),
@@ -337,7 +351,7 @@ Deno.serve(async (req) => {
     let driverGetAllError = '';
     let driversByName = new Map<string, DriverRow>();
 
-    const { data: colaboradores } = await supabase.from('colaboradores_atuais').select('nome,email_empresa,email_pessoal,whatsapp');
+    const colaboradores = await fetchAllRows((a, b) => supabase.from('colaboradores_atuais').select('nome,email_empresa,email_pessoal,whatsapp').order('nome').range(a, b));
     const contactByName = new Map<string, ContactFallback>();
     for (const c of (colaboradores || []) as any[]) {
       const key = normalizeName(c.nome);
@@ -345,7 +359,7 @@ Deno.serve(async (req) => {
       contactByName.set(key, { email: cleanStr(c.email_empresa) || cleanStr(c.email_pessoal), telefone: onlyDigits(c.whatsapp) });
     }
 
-    const { data: motoristas } = await supabase.from('frotas_motoristas').select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes');
+    const motoristas = await fetchAllRows((a, b) => supabase.from('frotas_motoristas').select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes').order('nome').range(a, b));
     const motoristasByName = buildLocalMotoristaIndex((motoristas || []) as LocalMotoristaRow[]);
 
     const placasFiltro = Array.isArray(body?.placas) ? body.placas.map((p: unknown) => normalizePlate(p)).filter(Boolean) : [];
@@ -484,7 +498,7 @@ Deno.serve(async (req) => {
           detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg, matchMode });
           continue;
         }
-        const createPayload = createDriverPayload({ apiKey, token, local: local as LocalMotoristaRow, condutorNome, vehicleId, fallback });
+        const createPayload = createDriverPayload({ apiKey, token, local, condutorNome, vehicleId, fallback });
         let createResp = await bfleetCall(apiBase, 'createDriver', createPayload);
         if (isAuthError(createResp)) {
           token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
