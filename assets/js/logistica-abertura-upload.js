@@ -82,7 +82,12 @@ function applyField(id, value) {
 
   if (field instanceof HTMLSelectElement) {
     const option = matchingOption(field, value);
-    if (!option) return false;
+    if (!option) {
+      // Armazém de embarque só aceita local existente do GRM e a lista carrega depois de UF+cidade:
+      // guarda o valor extraído (dataset.desejado) para logistica.js escolher quando a lista chegar.
+      if (id === 'osArmazemEmbarque') { field.dataset.desejado = String(value).trim(); field.classList.add('os-upload-filled'); }
+      return false;
+    }
     field.value = option.value;
   } else if (field.type === 'number') {
     const raw = String(value).trim();
