@@ -87,7 +87,7 @@ export function preencherSelectLocais(select, locais, placeholderVazio) {
   const placeholder = nomes.length ? 'Selecione ou digite para buscar o local' : placeholderVazio;
   select.innerHTML = `<option value="">${escHtml(placeholder)}</option>`
     + nomes.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
-  select.disabled = !nomes.length;
+  select.disabled = false; // cidade sem locais continua clicável: dá para cadastrar um novo local
   delete select.dataset.desejado;
 
   const alvo = chaveLocal(desejado);

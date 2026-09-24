@@ -3,7 +3,7 @@
 // O novo local NÃO é criado no GRM: fica em logistica_locais_embarque_novos (PENDENTE) e a O.S. segue
 // marcada como "local novo" para a Logística cadastrar no GRM.
 import { supabase } from './supabaseClient.js';
-import { centroDaCidade, chaveLocal, locaisProximos, RAIO_PROXIMIDADE_KM } from './logistica-locais-servico.js?v=20260924-novo1';
+import { centroDaCidade, chaveLocal, locaisProximos, RAIO_PROXIMIDADE_KM } from './logistica-locais-servico.js?v=20260924-novo2';
 
 const LEAFLET_CSS_HREF = './assets/vendor/leaflet/leaflet.css';
 const LEAFLET_JS_SRC = './assets/vendor/leaflet/leaflet.js';
@@ -101,9 +101,12 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
     let ponto = null; // { lat, lng }
     let proximos = [];
     let ocupado = false;
+    let fechado = false;
 
     function fechar(resultado) {
+      fechado = true;
       try { map?.remove(); } catch { /* ignore */ }
+      map = null;
       overlay.remove();
       resolve(resultado);
     }
@@ -132,21 +135,23 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
       } else marker.setLatLng([lat, lng]);
       atualizarBotao();
       try { proximos = await locaisProximos(lat, lng); } catch (e) { console.warn('[novo-local] proximidade', e); proximos = []; }
-      if (ponto && ponto.lat === lat && ponto.lng === lng) renderProximos();
+      if (!fechado && ponto && ponto.lat === lat && ponto.lng === lng) renderProximos();
     }
 
     async function centralizarCidade() {
-      if (!map) return;
+      if (!map || fechado) return;
       const u = $('#nleUf').value;
       const c = $('#nleCidade').value.trim();
       const centro = (u && c && await centroDaCidade(u, c)) || null;
+      if (fechado || !map) return;
       const alvo = centro || BRASIL;
       map.setView([alvo.lat, alvo.lng], alvo.zoom);
       // Locais já cadastrados na cidade (com coordenada) como referência no mapa.
       camada?.clearLayers();
-      if (u && c) {
+      if (u && c && !fechado) {
         const { data } = await supabase.from('grm_locais_servico').select('nome_local,latitude,longitude')
           .eq('ativo', true).eq('uf', u).eq('cidade_norm', chaveLocal(c)).not('latitude', 'is', null).limit(300);
+        if (fechado || !camada) return;
         (data || []).forEach((l) => window.L.circleMarker([Number(l.latitude), Number(l.longitude)], { radius: 5, weight: 1, color: '#fff', fillColor: '#64748b', fillOpacity: 0.85 })
           .bindTooltip(esc(l.nome_local)).addTo(camada));
       }
@@ -154,6 +159,7 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
 
     (async () => {
       const ok = await ensureLeaflet();
+      if (fechado) return;
       if (!ok) { $('#nleMap').innerHTML = '<div style="padding:18px;color:#fca5a5">Não foi possível carregar o mapa.</div>'; return; }
       const L = window.L;
       map = L.map($('#nleMap'), { center: [BRASIL.lat, BRASIL.lng], zoom: BRASIL.zoom });
@@ -161,7 +167,7 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
       camada = L.layerGroup().addTo(map);
       map.on('click', (e) => pontoMarcado(e.latlng.lat, e.latlng.lng));
-      requestAnimationFrame(() => map.invalidateSize());
+      requestAnimationFrame(() => { if (!fechado && map) map.invalidateSize(); });
       centralizarCidade();
     })();
 

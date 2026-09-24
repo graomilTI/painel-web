@@ -354,6 +354,58 @@ body.logistica-gestor-page .abrir-os-grid select.log-input {
   color: #e5f1eb;
 }
 
+/* Campos com busca (searchableSelect.js troca o <select> por <input class="ssel-input">): o styles.css
+   global os pinta de azul-marinho com !important e o rótulo (font-weight 800) vaza o negrito para
+   dentro do campo. Aqui ficam idênticos aos demais campos da solicitação (fundo/borda/peso/seta). */
+body.logistica-gestor-page .abrir-os-grid .ssel-input {
+  min-height: 41px;
+  margin-top: 5px;
+  padding: 9px 11px;
+  border: 1px solid rgba(90, 148, 124, 0.30) !important;
+  border-radius: 11px;
+  background: var(--log-field) !important;
+  color: #e5f1eb !important;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.012);
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+body.logistica-gestor-page .abrir-os-grid .ssel-input:hover {
+  background: var(--log-field-hover) !important;
+  border-color: rgba(22, 215, 144, 0.28) !important;
+}
+
+body.logistica-gestor-page .abrir-os-grid .ssel-input:focus {
+  background: var(--log-field) !important;
+  border-color: rgba(22, 215, 144, 0.72) !important;
+  box-shadow: 0 0 0 3px rgba(22, 215, 144, 0.09) !important;
+  outline: none;
+}
+
+body.logistica-gestor-page .abrir-os-grid .ssel-input::placeholder {
+  color: #6f877c;
+  opacity: 1;
+}
+
+/* Seta dos campos de escolha: mesma imagem nos <select> nativos e nos campos com busca (o
+   `background` com !important acima zera background-image, então a seta também vai com !important).
+   O campo de texto livre com sugestões (.ssel-input-freetext, sem .ssel-wrap) não leva seta. */
+body.logistica-gestor-page .abrir-os-grid select.log-input,
+body.logistica-gestor-page .abrir-os-grid .ssel-wrap > .ssel-input {
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%236fd0a5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 14px !important;
+}
+
+/* Texto livre com sugestões: mesma cor de texto dos demais campos de digitação. */
+body.logistica-gestor-page .abrir-os-grid .ssel-input-freetext {
+  color: var(--log-text) !important;
+}
+
 body.logistica-gestor-page #abrirOsSalvarBtn {
   min-height: 42px;
   padding: 10px 20px;
