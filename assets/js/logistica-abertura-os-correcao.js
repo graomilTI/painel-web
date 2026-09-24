@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { validarLocalEmbarque } from './logistica-locais-servico.js';
 
 // Lado Gestor da correção: quando o ADM marca uma solicitação como CORRIGIR
 // (assets/js/logistica-abertura-os-workflow.js), a própria linha em "Minhas
@@ -43,6 +44,6 @@ function fill(row){const values={osContratante:row.contratante_cliente,osFilialP
 
 async function load(){const {data,error}=await supabase.from('logistica_abertura_os').select('*').eq('status','CORRIGIR').limit(200);rows=error?[]:(data||[]);}
 
-async function boot(){await waitFor('#abrirOsSalvarBtn');await load();document.addEventListener('click',async event=>{const edit=event.target.closest('[data-editar-abertura]');if(edit){event.preventDefault();event.stopImmediatePropagation();const row=rows.find(r=>String(r.id)===String(edit.dataset.editarAbertura));if(row)fill(row);return;}const save=event.target.closest('#abrirOsSalvarBtn');if(!save||!editingId)return;event.preventDefault();event.stopImmediatePropagation();const p=payload();const faltando=missing(p);if(faltando.length){alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`);return;}save.disabled=true;save.textContent='Reenviando...';const {error}=await supabase.rpc('reenviar_abertura_os_corrigida',{p_id:editingId,p_payload:p});if(error){alert(error.message);save.disabled=false;save.textContent='Corrigir e reenviar para o ADM';return;}editingId=null;alert('Correção reenviada para análise do ADM.');location.reload();},true);}
+async function boot(){await waitFor('#abrirOsSalvarBtn');await load();document.addEventListener('click',async event=>{const edit=event.target.closest('[data-editar-abertura]');if(edit){event.preventDefault();event.stopImmediatePropagation();const row=rows.find(r=>String(r.id)===String(edit.dataset.editarAbertura));if(row)fill(row);return;}const save=event.target.closest('#abrirOsSalvarBtn');if(!save||!editingId)return;event.preventDefault();event.stopImmediatePropagation();const p=payload();const faltando=missing(p);if(faltando.length){alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`);return;}const localValido=await validarLocalEmbarque({uf:p.uf_embarque,cidade:p.cidade_embarque,nome:p.armazem_embarque});if(!localValido.ok){alert(localValido.motivo);return;}save.disabled=true;save.textContent='Reenviando...';const {error}=await supabase.rpc('reenviar_abertura_os_corrigida',{p_id:editingId,p_payload:p});if(error){alert(error.message);save.disabled=false;save.textContent='Corrigir e reenviar para o ADM';return;}editingId=null;alert('Correção reenviada para análise do ADM.');location.reload();},true);}
 
 boot().catch(error=>console.error('[logistica-abertura-correcao]',error));
