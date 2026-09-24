@@ -6,7 +6,7 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
-import { locaisDaCidade, validarLocalEmbarque } from './logistica-locais-servico.js';
+import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais } from './logistica-locais-servico.js?v=20260924-select1';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -222,6 +222,7 @@ export async function renderContent(content, userContext) {
       aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
+    if (e.target.id === 'osArmazemEmbarque') { atualizarAlertaLocalRisco(content); return; }
     if (e.target.id === 'osCidadeEmbarque') { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); return; }
     if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
       const embarque = e.target.id === 'osUfEmbarque';
@@ -570,7 +571,7 @@ function renderAbrirOsTab() {
           <label>Produtor<input id="osProdutor" class="log-input" placeholder="Opcional"></label>
           <label>UF de embarque *<select id="osUfEmbarque" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfEmbarque ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade de embarque *<input id="osCidadeEmbarque" class="log-input" list="abrirOsCidadesEmbarque" autocomplete="off" placeholder="${state.aberturaUfEmbarque ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfEmbarque ? '' : 'disabled'}></label>
-          <label>Armazém de embarque *<input id="osArmazemEmbarque" class="log-input" list="abrirOsArmazens" autocomplete="off" placeholder="Selecione a UF e a cidade primeiro" disabled></label>
+          <label>Armazém de embarque *<select id="osArmazemEmbarque" class="log-input" data-searchable-select disabled><option value="">Selecione a UF e a cidade primeiro</option></select></label>
           <div id="osArmazemRiscoAlerta" class="log-alerta-risco" hidden>⚠️ Este Local de Serviço tem histórico de problemas — alerte a operação.</div>
           <label>UF destino *<select id="osUfDestino" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfDestino ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" list="abrirOsCidadesDestino" autocomplete="off" placeholder="${state.aberturaUfDestino ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfDestino ? '' : 'disabled'}></label>
@@ -614,41 +615,38 @@ function renderAbrirOsTab() {
 
 function ufCidade(uf, cidade) { return [uf, cidade].filter(Boolean).join(' - ') || '-'; }
 
-// A abertura de O.S. só aceita local que já existe no cadastro do GRM (grm_locais_servico):
-// depois de escolher UF + cidade, as sugestões do campo Armazém passam a ser exatamente os locais
-// cadastrados nessa cidade (antes vinham do histórico de O.S., que inclui nomes que não existem mais).
+// A abertura de O.S. só aceita local que já existe no cadastro do GRM (grm_locais_servico): o
+// Armazém de embarque é um select pesquisável (digita para filtrar, mas só dá para escolher um
+// local existente), liberado depois de escolher UF + cidade e populado com os locais dessa cidade.
 async function atualizarLocaisEmbarque(content) {
-  const datalist = content.querySelector('#abrirOsArmazens');
-  const input = content.querySelector('#osArmazemEmbarque');
+  const select = content.querySelector('#osArmazemEmbarque');
+  if (!select) return;
   const uf = content.querySelector('#osUfEmbarque')?.value || '';
   const cidade = content.querySelector('#osCidadeEmbarque')?.value || '';
-  if (!datalist || !input) return;
-  // Cascata UF -> Cidade -> Armazém: o local só é liberado depois de escolher a cidade.
+  // Cascata UF -> Cidade -> Armazém: sem UF+cidade o local fica bloqueado e vazio.
   if (!uf || !cidade) {
-    datalist.innerHTML = '';
-    input.value = '';
-    input.disabled = true;
-    input.placeholder = uf ? 'Selecione a cidade primeiro' : 'Selecione a UF e a cidade primeiro';
+    delete select.dataset.desejado;
+    select.innerHTML = `<option value="">${uf ? 'Selecione a cidade primeiro' : 'Selecione a UF e a cidade primeiro'}</option>`;
+    select.disabled = true;
     return;
   }
+  // Guarda a escolha anterior (ou a preenchida por documento/correção) para reaplicar quando a lista chegar.
+  const previo = select.value || select.dataset.desejado || '';
+  if (previo) select.dataset.desejado = previo;
+  select.innerHTML = '<option value="">Carregando locais do GRM...</option>';
+  select.disabled = true;
   try {
     const locais = await locaisDaCidade(uf, cidade);
     // Ignora resposta atrasada de uma cidade que o usuário já trocou.
-    if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade) return;
-    datalist.innerHTML = locais.map((l) => `<option value="${esc(l.nome_local)}">${esc(l.tipo_local || '')}</option>`).join('');
-    input.disabled = false;
-    input.placeholder = locais.length ? `Escolha um dos ${locais.length} locais cadastrados no GRM` : 'Nenhum local cadastrado nesta cidade no GRM';
-    // Trocou de cidade: o local anterior (de outra cidade) não vale mais. Valores preenchidos pela
-    // leitura do documento (os-upload-filled) são mantidos para o usuário revisar; o envio valida.
-    const atual = normalizeLocalDigitado(input.value);
-    if (atual && !input.classList.contains('os-upload-filled') && !locais.some((l) => normalizeLocalDigitado(l.nome_local) === atual)) input.value = '';
+    if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade
+      || (content.querySelector('#osUfEmbarque')?.value || '') !== uf) return;
+    preencherSelectLocais(select, locais, 'Nenhum local cadastrado nesta cidade no GRM');
+    atualizarAlertaLocalRisco(content);
   } catch (error) {
-    input.disabled = false;
     console.warn('[abrir-os] não foi possível carregar os locais do GRM para a cidade', error);
+    select.innerHTML = '<option value="">Não foi possível carregar os locais — atualize a página</option>';
   }
 }
-
-function normalizeLocalDigitado(v) { return String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 
 function atualizarAlertaLocalRisco(content) {
   const alerta = content.querySelector('#osArmazemRiscoAlerta');

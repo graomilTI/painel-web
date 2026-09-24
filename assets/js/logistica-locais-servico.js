@@ -67,3 +67,38 @@ export async function validarLocalEmbarque({ uf, cidade, nome }) {
   }
   return { ok: false, motivo: `"${nome}" não existe no cadastro de Locais de Serviço do GRM em ${cidade}/${uf}. Escolha um dos locais da lista (${locais.length} disponíveis nesta cidade). A O.S. só pode ser aberta em local já cadastrado.` };
 }
+
+function escHtml(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Popula o <select> de Armazém de embarque com os locais existentes da cidade (só dá para escolher
+// um deles). Mantém a escolha anterior — ou o valor pendente (dataset.desejado) deixado pela leitura
+// de documento/correção enquanto a lista ainda carregava — quando ela existe na lista.
+export function preencherSelectLocais(select, locais, placeholderVazio) {
+  const desejado = select.value || select.dataset.desejado || '';
+  const vistos = new Set();
+  const nomes = [];
+  locais.forEach((l) => {
+    if (vistos.has(l.nome_norm)) return; // homônimos no mesmo município: uma opção só
+    vistos.add(l.nome_norm);
+    nomes.push(l.nome_local);
+  });
+  const placeholder = nomes.length ? 'Selecione ou digite para buscar o local' : placeholderVazio;
+  select.innerHTML = `<option value="">${escHtml(placeholder)}</option>`
+    + nomes.map((n) => `<option value="${escHtml(n)}">${escHtml(n)}</option>`).join('');
+  select.disabled = !nomes.length;
+  delete select.dataset.desejado;
+
+  const alvo = chaveLocal(desejado);
+  if (!alvo) return;
+  let achado = nomes.find((n) => chaveLocal(n) === alvo);
+  if (!achado && alvo.length >= 6) {
+    const parecidos = nomes.filter((n) => { const k = chaveLocal(n); return k.includes(alvo) || alvo.includes(k); });
+    if (parecidos.length === 1) achado = parecidos[0]; // só aceita aproximação quando é inequívoca
+  }
+  if (achado) {
+    select.value = achado;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}
