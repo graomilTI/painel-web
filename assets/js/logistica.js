@@ -6,7 +6,7 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
-import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais } from './logistica-locais-servico.js?v=20260924-select1';
+import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino } from './logistica-locais-servico.js?v=20260924-destino1';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -223,6 +223,7 @@ export async function renderContent(content, userContext) {
       return;
     }
     if (e.target.id === 'osArmazemEmbarque') { atualizarAlertaLocalRisco(content); return; }
+    if (e.target.id === 'osCidadeDestino') { atualizarLocaisDestino(content, { limpar: true }); return; }
     if (e.target.id === 'osCidadeEmbarque') { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); return; }
     if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
       const embarque = e.target.id === 'osUfEmbarque';
@@ -236,6 +237,7 @@ export async function renderContent(content, userContext) {
       }
       if (datalist) datalist.innerHTML = cidadesDaUf(e.target.value).map(v => `<option value="${esc(v)}"></option>`).join('');
       if (embarque) { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); }
+      else atualizarLocaisDestino(content, { limpar: true });
       return;
     }
     const chk = e.target.closest('[data-teste-key]');
@@ -559,7 +561,7 @@ function renderAbrirOsTab() {
   return `
     <section class="card mt-16">
       <datalist id="abrirOsArmazens">${state.aberturaRefs.armazens.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
-      <datalist id="abrirOsLocaisDestino">${state.aberturaRefs.locaisDestino.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
+      <datalist id="abrirOsLocaisDestino"></datalist>
       <datalist id="abrirOsCidadesEmbarque">${cidadesDaUf(state.aberturaUfEmbarque).map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
       <datalist id="abrirOsCidadesDestino">${cidadesDaUf(state.aberturaUfDestino).map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>
 
@@ -575,7 +577,7 @@ function renderAbrirOsTab() {
           <div id="osArmazemRiscoAlerta" class="log-alerta-risco" hidden>⚠️ Este Local de Serviço tem histórico de problemas — alerte a operação.</div>
           <label>UF destino *<select id="osUfDestino" class="log-input"><option value="">Selecione</option>${UFS_BRASIL.map(uf => `<option value="${uf}" ${uf === state.aberturaUfDestino ? 'selected' : ''}>${uf}</option>`).join('')}</select></label>
           <label>Cidade destino *<input id="osCidadeDestino" class="log-input" list="abrirOsCidadesDestino" autocomplete="off" placeholder="${state.aberturaUfDestino ? 'Cidade' : 'Selecione a UF primeiro'}" ${state.aberturaUfDestino ? '' : 'disabled'}></label>
-          <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" placeholder="Local de destino"></label>
+          <label>Local de destino *<input id="osLocalDestino" class="log-input" list="abrirOsLocaisDestino" autocomplete="off" placeholder="Digite o local ou escolha da lista"></label>
           <label><span id="osNumeroContratoLabel">Número contrato *</span><input id="osNumeroContrato" class="log-input" placeholder="Aceita letras, números e símbolos"></label>
           <label>Produto *<select id="osProduto" class="log-input"><option value="">Selecione</option>${Object.values(CATALOGO_PRODUTOS).map(p => `<option value="${esc(p.label)}" ${p.label === state.aberturaProdutoAtual ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select></label>
           <label>Tipo de produto *
@@ -646,6 +648,20 @@ async function atualizarLocaisEmbarque(content) {
     console.warn('[abrir-os] não foi possível carregar os locais do GRM para a cidade', error);
     select.innerHTML = '<option value="">Não foi possível carregar os locais — atualize a página</option>';
   }
+}
+
+// Local de destino: texto livre, mas com sugestões (só o nome do local, sem UF/cidade) dos locais já
+// usados como destino na UF+cidade escolhidas. Trocar UF/cidade zera o local e as sugestões.
+function atualizarLocaisDestino(content, { limpar = false } = {}) {
+  const datalist = content.querySelector('#abrirOsLocaisDestino');
+  const input = content.querySelector('#osLocalDestino');
+  if (!datalist) return;
+  if (limpar && input) input.value = '';
+  const uf = content.querySelector('#osUfDestino')?.value || '';
+  const cidade = content.querySelector('#osCidadeDestino')?.value || '';
+  const locais = sugestoesLocaisDestino(state.aberturaRefs.locaisDestino, uf, cidade);
+  datalist.innerHTML = locais.map((l) => `<option value="${esc(l)}"></option>`).join('');
+  if (input) input.placeholder = !uf ? 'Selecione a UF e a cidade de destino' : !cidade ? 'Selecione a cidade de destino' : 'Digite o local ou escolha da lista';
 }
 
 function atualizarAlertaLocalRisco(content) {
@@ -915,6 +931,9 @@ async function handleSalvarAberturaOsInterno(content) {
   if (contratoRegra?.tipo !== 'nao_obrigatorio') obrigatorios.push([contratoRotulo, payload.numero_contrato]);
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
+
+  // O campo mostra só o local; grava no formato "UF - CIDADE (LOCAL)" que o agente do GRM espera.
+  payload.local_destino = comporLocalDestino(payload.uf_destino, payload.cidade_destino, payload.local_destino);
 
   const localValido = await validarLocalEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque });
   if (!localValido.ok) { alert(localValido.motivo); return; }
