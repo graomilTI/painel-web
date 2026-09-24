@@ -519,6 +519,11 @@ async function resolverEmbarque(token, solicitacao) {
       }
     }
   }
+  if (!localItem && solicitacao.raw && solicitacao.raw.local_embarque_novo) {
+    // O usuário criou este local pelo mapa na abertura (logistica_locais_embarque_novos): ele ainda não
+    // existe no cadastro do GRM. A Logística precisa cadastrá-lo no GRM antes de a O.S. ser aberta.
+    throw new Error('Local de embarque NOVO "' + solicitacao.armazem_embarque + '" (' + cidade + '/' + uf + ') ainda não está cadastrado no GRM — cadastre o local no GRM e reenvie a solicitação.');
+  }
   if (!localItem) throw new Error('Local do Serviço "' + solicitacao.armazem_embarque + '" não encontrado em ' + cidade + '/' + uf + '.');
 
   // olsCode vem do PAR citCode+sptCode do embarque — validado ao vivo 11/09

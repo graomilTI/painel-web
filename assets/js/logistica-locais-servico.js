@@ -159,3 +159,115 @@ export function sugestoesLocaisDestino(historico, uf, cidade) {
   });
   return [...vistos.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
+
+// ---------------------------------------------------------------------------
+// "Você quis dizer...?": tolera erro de digitação no Armazém de embarque.
+// ---------------------------------------------------------------------------
+// Distância de edição com transposição (Damerau/OSA): "cvael" -> "cvale" custa 1.
+function distanciaEdicao(a, b) {
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const d = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i += 1) d[i][0] = i;
+  for (let j = 0; j <= n; j += 1) d[0][j] = j;
+  for (let i = 1; i <= m; i += 1) {
+    for (let j = 1; j <= n; j += 1) {
+      const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + custo);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[m][n];
+}
+
+// Melhor sugestão entre os locais da cidade para o texto digitado, ou null. Compara sem acento,
+// caixa e pontuação ("CVale" ~ "C.VALE"), com a "marca" (texto antes de " - ", ex.: "C.VALE" de
+// "C.VALE - RIO BRILHANTE"), com o nome inteiro e com cada palavra do nome. Devolve a marca quando
+// ela é o que casou — o usuário então escolhe a filial na lista.
+export function sugerirLocal(query, nomes) {
+  const q = chaveLocal(query);
+  if (q.length < 3) return null;
+  const limite = Math.max(1, Math.floor(q.length * 0.34));
+  let melhor = null;
+  const considerar = (texto, chave, peso) => {
+    if (!chave) return;
+    // Inteiro, ou só o começo (usuário digitou o início do nome).
+    let d = distanciaEdicao(q, chave);
+    if (chave.length > q.length) d = Math.min(d, distanciaEdicao(q, chave.slice(0, q.length)) + 0.5);
+    if (d > limite) return;
+    const nota = d + peso;
+    if (!melhor || nota < melhor.nota || (nota === melhor.nota && texto.length < melhor.texto.length)) melhor = { texto, nota };
+  };
+  for (const nome of nomes) {
+    const marca = String(nome).split(' - ')[0].trim();
+    considerar(marca, chaveLocal(marca), 0);
+    if (marca !== nome) considerar(nome, chaveLocal(nome), 0.2);
+    String(nome).split(/[^A-Za-z0-9]+/).filter((w) => w.length >= 4).forEach((w) => {
+      // Palavra que casou está na marca? sugere a marca (o usuário escolhe a filial); senão o nome todo.
+      considerar(chaveLocal(marca).includes(chaveLocal(w)) ? marca : nome, chaveLocal(w), 0.4);
+    });
+  }
+  return melhor ? melhor.texto : null;
+}
+
+// ---------------------------------------------------------------------------
+// Novo local de embarque: proximidade (raio de 2 km) e centro da cidade para o mapa.
+// ---------------------------------------------------------------------------
+export const RAIO_PROXIMIDADE_KM = 2;
+
+export function distanciaKm(lat1, lon1, lat2, lon2) {
+  const rad = (g) => (g * Math.PI) / 180;
+  const dLat = rad(lat2 - lat1);
+  const dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(a));
+}
+
+// Locais (do GRM e novos pendentes) dentro do raio, do mais perto para o mais longe.
+export async function locaisProximos(lat, lng, raioKm = RAIO_PROXIMIDADE_KM) {
+  const dLat = raioKm / 111.32;
+  const dLng = raioKm / (111.32 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const caixa = (q) => q.gte('latitude', lat - dLat).lte('latitude', lat + dLat).gte('longitude', lng - dLng).lte('longitude', lng + dLng);
+  const [grm, novos] = await Promise.all([
+    caixa(supabase.from('grm_locais_servico').select('spl_code,nome_local,uf,cidade,latitude,longitude').eq('ativo', true)).limit(300),
+    caixa(supabase.from('logistica_locais_embarque_novos').select('id,nome_local,uf,cidade,latitude,longitude').eq('status', 'PENDENTE')).limit(100),
+  ]);
+  if (grm.error) throw grm.error;
+  const linhas = [
+    ...(grm.data || []).map((r) => ({ ...r, novo: false })),
+    ...(novos.error ? [] : (novos.data || []).map((r) => ({ ...r, novo: true }))),
+  ];
+  return linhas
+    .map((r) => ({ ...r, km: distanciaKm(lat, lng, Number(r.latitude), Number(r.longitude)) }))
+    .filter((r) => r.km <= raioKm)
+    .sort((a, b) => a.km - b.km);
+}
+
+// Onde centralizar o mapa da cidade: média dos locais do GRM com coordenada nela; senão geocodifica
+// "cidade, UF" (OpenStreetMap/Nominatim); senão null (o mapa abre no Brasil).
+export async function centroDaCidade(uf, cidade) {
+  try {
+    const { data } = await supabase
+      .from('grm_locais_servico')
+      .select('latitude,longitude')
+      .eq('ativo', true).eq('uf', String(uf || '').toUpperCase()).eq('cidade_norm', chaveLocal(cidade))
+      .not('latitude', 'is', null)
+      .limit(200);
+    if (data && data.length) {
+      const lat = data.reduce((t, r) => t + Number(r.latitude), 0) / data.length;
+      const lng = data.reduce((t, r) => t + Number(r.longitude), 0) / data.length;
+      return { lat, lng, zoom: 13 };
+    }
+  } catch { /* segue para o geocoder */ }
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 6000);
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(`${cidade}, ${uf}, Brasil`)}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const arr = await resp.json();
+    if (Array.isArray(arr) && arr[0]) return { lat: Number(arr[0].lat), lng: Number(arr[0].lon), zoom: 13 };
+  } catch { /* sem centro */ }
+  return null;
+}

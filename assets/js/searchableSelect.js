@@ -54,6 +54,15 @@ function injectStyle() {
     /* input[list] continua editável livremente — cursor de texto, não de
        "abrir dropdown" como o combobox do <select> (que só permite escolher). */
     .ssel-input-freetext{cursor:text}
+    /* Ganchos opcionais (select._sselHooks): dica "você quis dizer" e ação de rodapé. */
+    .ssel-hint{padding:12px 14px 6px;font-size:13px;color:#e2e2f0}
+    .ssel-hint b{color:#5eead4}
+    .ssel-actions{display:flex;gap:8px;padding:6px 14px 12px}
+    .ssel-actions button,.ssel-footer button{font:inherit;font-size:13px;font-weight:700;padding:7px 14px;border-radius:10px;border:1px solid rgba(45,212,160,.35);background:rgba(45,212,160,.12);color:#d9fbe8;cursor:pointer}
+    .ssel-actions button:hover,.ssel-footer button:hover{background:rgba(45,212,160,.24)}
+    .ssel-actions button.is-secondary{background:transparent;border-color:rgba(148,163,184,.35);color:#a9b8b1}
+    .ssel-footer{padding:8px 14px 10px;border-top:1px solid rgba(148,163,184,.14);position:sticky;bottom:0;background:#0d0d18}
+    .ssel-footer small{display:block;margin-bottom:6px;color:#7d8aa3;font-size:12px}
   `;
   document.head.appendChild(style);
 }
@@ -126,9 +135,14 @@ function buildCombobox(select) {
     const q = normalize(query);
     const matches = [...select.options].filter((opt) => !q || normalize(opt.textContent).includes(q)).slice(0, 200);
 
-    list.innerHTML = matches.length
+    // Ganchos opcionais definidos por quem usa o select (ex.: Armazém de embarque em logistica.js):
+    // empty(query) -> html quando nada casa; footer(query, total) -> html fixo no fim da lista.
+    const hooks = select._sselHooks || null;
+    let html = matches.length
       ? matches.map((opt) => `<div class="ssel-item${opt.value === select.value ? ' is-active' : ''}" data-value="${opt.value}">${opt.textContent}</div>`).join('')
-      : '<div class="ssel-empty">Nenhum resultado encontrado.</div>';
+      : (hooks?.empty ? hooks.empty(query) : '<div class="ssel-empty">Nenhum resultado encontrado.</div>');
+    if (hooks?.footer) html += hooks.footer(query, matches.length);
+    list.innerHTML = html;
     posicionarLista();
     list.hidden = false;
     // Rolar a página (não a própria lista) invalidaria a posição calculada —
@@ -174,11 +188,28 @@ function buildCombobox(select) {
   });
 
   list.addEventListener('mousedown', (event) => {
+    // Botões de ação dos ganchos (data-ssel-action): avisa quem usa o select via evento "ssel-action".
+    const action = event.target.closest('[data-ssel-action]');
+    if (action) {
+      event.preventDefault();
+      select.dispatchEvent(new CustomEvent('ssel-action', {
+        bubbles: true,
+        detail: { action: action.dataset.sselAction, value: action.dataset.value || '', query: input.value },
+      }));
+      return;
+    }
     const item = event.target.closest('.ssel-item');
     if (!item) return;
     event.preventDefault();
     selectValue(item.dataset.value);
   });
+
+  // API para quem usa o select: preencher o texto de busca mantendo a lista aberta, redesenhar, fechar.
+  select._ssel = {
+    setQuery(text) { input.value = text; input.focus(); renderList(text); },
+    rerender() { renderList(input.value); },
+    close() { closeList(); },
+  };
 
   // Vários módulos repopulam o <select> (innerHTML novo, value setado por
   // código) depois de carregar dados — refletimos isso no combobox.

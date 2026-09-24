@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.js';
-import { validarLocalEmbarque, comporLocalDestino, localSemUfCidade } from './logistica-locais-servico.js?v=20260924-destino1';
+import { validarLocalEmbarque, comporLocalDestino, localSemUfCidade } from './logistica-locais-servico.js?v=20260924-novo1';
 
 // Lado Gestor da correção: quando o ADM marca uma solicitação como CORRIGIR
 // (assets/js/logistica-abertura-os-workflow.js), a própria linha em "Minhas
