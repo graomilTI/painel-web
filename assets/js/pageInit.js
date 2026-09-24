@@ -7,7 +7,7 @@ import { initGestorMenuAjustes } from './gestor-menu-ajustes.js';
 import { initProgramacaoRuntime } from './programacao-runtime.js';
 import { initRouter } from './router.js';
 import './painel-design-system.js?v=20260911-abas-sublinhado1';
-import './searchableSelect.js?v=20260819-respeita-hidden';
+import './searchableSelect.js?v=20260924-hooks1';
 import './logistica-saldo-filtros.js?v=20260803-saldo-filtros1';
 import './logistica-abertura-upload.js?v=20260924-destino1';
 import './pwa-register.js?v=20260920-cache-v17';

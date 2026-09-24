@@ -161,7 +161,7 @@ function detalheHtml(row){
       <div><div class="ds-modal-label">Filial pagadora</div><div class="ds-modal-value">${esc(row.filial_pagadora||'-')}</div></div>
       <div><div class="ds-modal-label">Produtor</div><div class="ds-modal-value">${esc(row.produtor||'-')}</div></div>
       <div><div class="ds-modal-label">Número do contrato</div><div class="ds-modal-value">${esc(row.numero_contrato||'-')}</div></div>
-      <div><div class="ds-modal-label">Armazém de embarque</div><div class="ds-modal-value">${esc(row.armazem_embarque||'-')}</div></div>
+      <div><div class="ds-modal-label">Armazém de embarque</div><div class="ds-modal-value">${esc(row.armazem_embarque||'-')}${row.raw?.local_embarque_novo?`<div style="margin-top:6px;padding:6px 8px;border:1px solid rgba(250,204,21,.4);border-radius:8px;background:rgba(250,204,21,.1);color:#fde68a;font-size:12px"><b>Local novo</b> — ainda não existe no GRM. Cadastre no GRM antes de aprovar.<br>Ponto marcado: ${esc(Number(row.raw.local_embarque_novo.latitude).toFixed(6))}, ${esc(Number(row.raw.local_embarque_novo.longitude).toFixed(6))}</div>`:''}</div></div>
       <div><div class="ds-modal-label">Cidade de embarque</div><div class="ds-modal-value">${esc([row.uf_embarque,row.cidade_embarque].filter(Boolean).join(' - ')||'-')}</div></div>
       <div><div class="ds-modal-label">Local de destino</div><div class="ds-modal-value">${esc(row.local_destino||'-')}</div></div>
       <div><div class="ds-modal-label">Cidade de destino</div><div class="ds-modal-value">${esc([row.uf_destino,row.cidade_destino].filter(Boolean).join(' - ')||'-')}</div></div>

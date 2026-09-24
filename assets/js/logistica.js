@@ -6,7 +6,8 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
-import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino } from './logistica-locais-servico.js?v=20260924-destino1';
+import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo1';
+import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo1';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }
@@ -91,6 +92,7 @@ const state = {
   aberturaRows: [],
   aberturaRefs: { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] },
   aberturaLocaisRisco: new Set(),
+  aberturaLocalNovo: null, // novo local de embarque solicitado (logistica_locais_embarque_novos) escolhido no formulário
   aberturaLoading: false,
   aberturaSaving: false,
   aberturaProdutoAtual: '',
@@ -210,6 +212,16 @@ export async function renderContent(content, userContext) {
     if (e.target.id === 'osArmazemEmbarque' || e.target.id === 'osCidadeEmbarque') atualizarAlertaLocalRisco(content);
   });
 
+  // Ações do dropdown de Armazém de embarque (ganchos do searchableSelect.js): "você quis dizer" e novo local.
+  content.addEventListener('ssel-action', async (e) => {
+    const select = e.target;
+    if (select?.id !== 'osArmazemEmbarque') return;
+    const { action, value, query } = e.detail || {};
+    if (action === 'sim') { select._novoModoQuery = null; select._ssel?.setQuery(value); return; }
+    if (action === 'nao') { select._novoModoQuery = String(query || '').trim(); select._ssel?.rerender(); return; }
+    if (action === 'novo') { select._ssel?.close(); await criarNovoLocalEmbarque(content, String(query || '').trim()); }
+  });
+
   content.addEventListener('change', (e) => {
     if (e.target.id === 'osContratante') {
       const cliente = normalizeText(e.target.value);
@@ -222,7 +234,11 @@ export async function renderContent(content, userContext) {
       aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
-    if (e.target.id === 'osArmazemEmbarque') { atualizarAlertaLocalRisco(content); return; }
+    if (e.target.id === 'osArmazemEmbarque') {
+      if (state.aberturaLocalNovo && e.target.value !== state.aberturaLocalNovo.nome_local) state.aberturaLocalNovo = null;
+      atualizarAlertaLocalRisco(content);
+      return;
+    }
     if (e.target.id === 'osCidadeDestino') { atualizarLocaisDestino(content, { limpar: true }); return; }
     if (e.target.id === 'osCidadeEmbarque') { atualizarAlertaLocalRisco(content); atualizarLocaisEmbarque(content); return; }
     if (e.target.id === 'osUfEmbarque' || e.target.id === 'osUfDestino') {
@@ -643,11 +659,81 @@ async function atualizarLocaisEmbarque(content) {
     if ((content.querySelector('#osCidadeEmbarque')?.value || '') !== cidade
       || (content.querySelector('#osUfEmbarque')?.value || '') !== uf) return;
     preencherSelectLocais(select, locais, 'Nenhum local cadastrado nesta cidade no GRM');
+    configurarGanchosLocais(select);
+    restaurarLocalNovo(select, uf, cidade);
     atualizarAlertaLocalRisco(content);
   } catch (error) {
     console.warn('[abrir-os] não foi possível carregar os locais do GRM para a cidade', error);
     select.innerHTML = '<option value="">Não foi possível carregar os locais — atualize a página</option>';
   }
+}
+
+// Dropdown do Armazém: quando nada casa com o digitado, tenta "Você quis dizer X?" (erro de digitação);
+// se o usuário disser Não (ou não há sugestão), oferece cadastrar um novo local. O botão de novo local
+// também fica fixo no rodapé da lista.
+function configurarGanchosLocais(select) {
+  select._sselHooks = {
+    empty(query) {
+      const q = String(query || '').trim();
+      if (!q || select.disabled) return '<div class="ssel-empty">Nenhum local encontrado.</div>';
+      const semResposta = `<div class="ssel-empty">Nenhum local encontrado para “${esc(q)}”. Você pode cadastrar um novo local abaixo.</div>`;
+      if (select._novoModoQuery === q) return semResposta;
+      const nomes = [...select.options].filter((o) => o.value && !o.dataset.novoId).map((o) => o.value);
+      const sugestao = sugerirLocal(q, nomes);
+      if (!sugestao) return semResposta;
+      return `<div class="ssel-hint">Você quis dizer <b>${esc(sugestao)}</b>?</div>`
+        + `<div class="ssel-actions"><button type="button" data-ssel-action="sim" data-value="${esc(sugestao)}">Sim</button>`
+        + '<button type="button" class="is-secondary" data-ssel-action="nao">Não</button></div>';
+    },
+    footer() {
+      return '<div class="ssel-footer"><small>Não encontrou o local?</small><button type="button" data-ssel-action="novo">+ Cadastrar novo local de embarque</button></div>';
+    },
+  };
+}
+
+// Mantém no select o novo local (ainda não existe no GRM) enquanto UF+cidade continuarem os mesmos.
+function restaurarLocalNovo(select, uf, cidade) {
+  const novo = state.aberturaLocalNovo;
+  if (!novo) return;
+  if (String(novo.uf).toUpperCase() !== String(uf).toUpperCase() || chaveLocal(novo.cidade) !== chaveLocal(cidade)) { state.aberturaLocalNovo = null; return; }
+  if (![...select.options].some((o) => o.value === novo.nome_local)) {
+    const opt = document.createElement('option');
+    opt.value = novo.nome_local;
+    opt.dataset.novoId = novo.id;
+    opt.textContent = `${novo.nome_local} (novo local — aguardando cadastro no GRM)`;
+    select.appendChild(opt);
+  }
+  select.disabled = false;
+  select.value = novo.nome_local;
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+async function criarNovoLocalEmbarque(content, nomeInicial) {
+  const resultado = await abrirNovoLocalEmbarque({
+    uf: content.querySelector('#osUfEmbarque')?.value || '',
+    cidade: content.querySelector('#osCidadeEmbarque')?.value || '',
+    nome: nomeInicial,
+    ufs: UFS_BRASIL,
+    cidadesDaUf,
+    solicitante: { id: state.ctx?.user?.id || null, nome: state.ctx?.user?.name || null },
+  });
+  if (!resultado) return;
+  await aplicarLocalEscolhido(content, resultado);
+}
+
+// Aplica no formulário o local escolhido no modal (UF e cidade podem ter mudado): refaz a cascata
+// UF -> Cidade -> Armazém e seleciona o local (existente do GRM, ou o novo pendente).
+async function aplicarLocalEscolhido(content, resultado) {
+  const alvo = resultado.tipo === 'novo' ? resultado.local : { uf: resultado.uf, cidade: resultado.cidade, nome_local: resultado.nome_local };
+  state.aberturaLocalNovo = resultado.tipo === 'novo' ? resultado.local : null;
+  const ufSel = content.querySelector('#osUfEmbarque');
+  const cidadeInput = content.querySelector('#osCidadeEmbarque');
+  const select = content.querySelector('#osArmazemEmbarque');
+  if (!ufSel || !cidadeInput || !select) return;
+  if (ufSel.value !== alvo.uf) { ufSel.value = alvo.uf; ufSel.dispatchEvent(new Event('change', { bubbles: true })); }
+  cidadeInput.value = alvo.cidade;
+  select.dataset.desejado = alvo.nome_local; // selecionado quando a lista da cidade chegar
+  cidadeInput.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 // Local de destino: texto livre, mas com sugestões (só o nome do local, sem UF/cidade) dos locais já
@@ -935,7 +1021,16 @@ async function handleSalvarAberturaOsInterno(content) {
   // O campo mostra só o local; grava no formato "UF - CIDADE (LOCAL)" que o agente do GRM espera.
   payload.local_destino = comporLocalDestino(payload.uf_destino, payload.cidade_destino, payload.local_destino);
 
-  const localValido = await validarLocalEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque });
+  // Novo local de embarque escolhido no mapa (ainda não existe no GRM): não valida contra o cadastro e
+  // segue marcado na solicitação para a Logística cadastrar no GRM.
+  const localNovo = state.aberturaLocalNovo && payload.armazem_embarque === state.aberturaLocalNovo.nome_local ? state.aberturaLocalNovo : null;
+  if (localNovo) {
+    payload.raw = { ...payload.raw, local_embarque_novo: {
+      id: localNovo.id, nome_local: localNovo.nome_local, uf: localNovo.uf, cidade: localNovo.cidade,
+      latitude: localNovo.latitude, longitude: localNovo.longitude, status: 'PENDENTE',
+    } };
+  }
+  const localValido = localNovo ? { ok: true } : await validarLocalEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque });
   if (!localValido.ok) { alert(localValido.motivo); return; }
 
   if (contratoRegra?.tipo === 'formato' && payload.numero_contrato) {
@@ -965,7 +1060,7 @@ async function handleSalvarAberturaOsInterno(content) {
       regional: payload.regional,
       textoConfirmar: 'Salvar e enviar solicitação',
     });
-    if (escolha) payload.raw = { colaborador_inicial: { ...escolha, aplicado: false } };
+    if (escolha) payload.raw = { ...payload.raw, colaborador_inicial: { ...escolha, aplicado: false } };
   }
 
   const { error } = await supabase.from('logistica_abertura_os').insert(payload);
@@ -974,6 +1069,7 @@ async function handleSalvarAberturaOsInterno(content) {
   state.aberturaTestesSelecionados = [];
   state.aberturaUfEmbarque = '';
   state.aberturaUfDestino = '';
+  state.aberturaLocalNovo = null;
   await loadAberturaOs();
   render(content);
   alert('Solicitação enviada para a Logística ADM.');
