@@ -189,8 +189,10 @@ function buildDriverIndex(rows: DriverRow[]) {
 function buildLocalMotoristaIndex(rows: LocalMotoristaRow[]) {
   const byName = new Map<string, LocalMotoristaRow>();
   for (const row of rows || []) {
-    const key = normalizeName(row.nome);
-    if (key && !byName.has(key)) byName.set(key, row);
+    // colaborador_nome guarda o nome como vem do GRM quando difere do nome cadastrado.
+    for (const key of [normalizeName(row.nome), normalizeName(row.colaborador_nome)]) {
+      if (key && !byName.has(key)) byName.set(key, row);
+    }
   }
   return byName;
 }
@@ -359,7 +361,7 @@ Deno.serve(async (req) => {
       contactByName.set(key, { email: cleanStr(c.email_empresa) || cleanStr(c.email_pessoal), telefone: onlyDigits(c.whatsapp), cpf: onlyDigits(c.cpf) });
     }
 
-    const motoristas = await fetchAllRows((a, b) => supabase.from('frotas_motoristas').select('nome,cpf,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes').order('nome').range(a, b));
+    const motoristas = await fetchAllRows((a, b) => supabase.from('frotas_motoristas').select('nome,cpf,colaborador_nome,telefone,email,cnh_numero,cnh_validade,endereco,status,observacoes').order('nome').range(a, b));
     const motoristasByName = buildLocalMotoristaIndex((motoristas || []) as LocalMotoristaRow[]);
     const motoristasByCpf = new Map<string, LocalMotoristaRow>();
     for (const m of (motoristas || []) as LocalMotoristaRow[]) {
