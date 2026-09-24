@@ -245,8 +245,44 @@ export async function locaisProximos(lat, lng, raioKm = RAIO_PROXIMIDADE_KM) {
     .sort((a, b) => a.km - b.km);
 }
 
-// Onde centralizar o mapa da cidade: média dos locais do GRM com coordenada nela; senão geocodifica
-// "cidade, UF" (OpenStreetMap/Nominatim); senão null (o mapa abre no Brasil).
+// Contorno oficial do município (malha do IBGE, GeoJSON) para enquadrar o mapa na cidade escolhida.
+// Os locais do GRM ficam espalhados pelo município e arredores (fazendas), então a média das coordenadas
+// deles NÃO é o centro da cidade — o contorno é a referência correta. Devolve null se o IBGE não responder.
+const municipiosPorUf = new Map();
+const malhaPorCidade = new Map();
+
+export async function limitesDaCidade(uf, cidade) {
+  const ufKey = String(uf || '').trim().toUpperCase();
+  const cidadeKey = chaveLocal(cidade);
+  if (!ufKey || !cidadeKey) return null;
+  const key = `${ufKey}|${cidadeKey}`;
+  if (malhaPorCidade.has(key)) return malhaPorCidade.get(key);
+  let geo = null;
+  try {
+    if (!municipiosPorUf.has(ufKey)) {
+      const resp = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufKey}/municipios`);
+      municipiosPorUf.set(ufKey, await resp.json());
+    }
+    const municipio = (municipiosPorUf.get(ufKey) || []).find((m) => chaveLocal(m.nome) === cidadeKey);
+    if (municipio) {
+      const resp = await fetch(`https://servicodados.ibge.gov.br/api/v3/malhas/municipios/${municipio.id}?formato=application/vnd.geo+json&qualidade=intermediaria`);
+      if (resp.ok) geo = await resp.json();
+    }
+  } catch (error) {
+    console.warn('[novo-local] não foi possível obter o contorno da cidade no IBGE', error);
+  }
+  if (geo) malhaPorCidade.set(key, geo); // só guarda sucesso: falha de rede pode ser tentada de novo
+  return geo;
+}
+
+const mediana = (nums) => {
+  const v = nums.slice().sort((a, b) => a - b);
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+// Plano B quando não há contorno: mediana (não a média, que as fazendas distantes puxam) dos locais do
+// GRM com coordenada na cidade; senão geocodifica "cidade, UF" (OpenStreetMap/Nominatim); senão null.
 export async function centroDaCidade(uf, cidade) {
   try {
     const { data } = await supabase
@@ -256,9 +292,7 @@ export async function centroDaCidade(uf, cidade) {
       .not('latitude', 'is', null)
       .limit(200);
     if (data && data.length) {
-      const lat = data.reduce((t, r) => t + Number(r.latitude), 0) / data.length;
-      const lng = data.reduce((t, r) => t + Number(r.longitude), 0) / data.length;
-      return { lat, lng, zoom: 13 };
+      return { lat: mediana(data.map((r) => Number(r.latitude))), lng: mediana(data.map((r) => Number(r.longitude))), zoom: 11 };
     }
   } catch { /* segue para o geocoder */ }
   try {
@@ -267,7 +301,7 @@ export async function centroDaCidade(uf, cidade) {
     const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(`${cidade}, ${uf}, Brasil`)}`, { signal: ctrl.signal });
     clearTimeout(timer);
     const arr = await resp.json();
-    if (Array.isArray(arr) && arr[0]) return { lat: Number(arr[0].lat), lng: Number(arr[0].lon), zoom: 13 };
+    if (Array.isArray(arr) && arr[0]) return { lat: Number(arr[0].lat), lng: Number(arr[0].lon), zoom: 12 };
   } catch { /* sem centro */ }
   return null;
 }

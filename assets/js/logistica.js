@@ -6,8 +6,8 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
-import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo2';
-import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo2';
+import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo3';
+import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo3';
 
 const BR = new Intl.NumberFormat('pt-BR');
 function fmt(v) { return BR.format(Number(v) || 0); }

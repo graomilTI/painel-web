@@ -3,7 +3,7 @@
 // O novo local NÃO é criado no GRM: fica em logistica_locais_embarque_novos (PENDENTE) e a O.S. segue
 // marcada como "local novo" para a Logística cadastrar no GRM.
 import { supabase } from './supabaseClient.js';
-import { centroDaCidade, chaveLocal, locaisProximos, RAIO_PROXIMIDADE_KM } from './logistica-locais-servico.js?v=20260924-novo2';
+import { centroDaCidade, limitesDaCidade, chaveLocal, locaisProximos, RAIO_PROXIMIDADE_KM } from './logistica-locais-servico.js?v=20260924-novo3';
 
 const LEAFLET_CSS_HREF = './assets/vendor/leaflet/leaflet.css';
 const LEAFLET_JS_SRC = './assets/vendor/leaflet/leaflet.js';
@@ -98,6 +98,7 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
     let map = null;
     let marker = null;
     let camada = null;
+    let limite = null; // contorno do município (IBGE)
     let ponto = null; // { lat, lng }
     let proximos = [];
     let ocupado = false;
@@ -142,10 +143,21 @@ export function abrirNovoLocalEmbarque({ uf = '', cidade = '', nome = '', ufs = 
       if (!map || fechado) return;
       const u = $('#nleUf').value;
       const c = $('#nleCidade').value.trim();
-      const centro = (u && c && await centroDaCidade(u, c)) || null;
+      // 1) contorno oficial do município (IBGE): enquadra a cidade inteira e a desenha no mapa;
+      // 2) sem contorno: mediana dos locais do GRM na cidade / geocodificação; 3) Brasil.
+      const geo = (u && c && await limitesDaCidade(u, c)) || null;
+      const centro = geo ? null : ((u && c && await centroDaCidade(u, c)) || null);
       if (fechado || !map) return;
-      const alvo = centro || BRASIL;
-      map.setView([alvo.lat, alvo.lng], alvo.zoom);
+      limite?.remove();
+      limite = null;
+      map.invalidateSize();
+      if (geo) {
+        limite = window.L.geoJSON(geo, { style: { color: '#22e58a', weight: 2, fillColor: '#22e58a', fillOpacity: 0.06, interactive: false } }).addTo(map);
+        map.fitBounds(limite.getBounds(), { padding: [16, 16] });
+      } else {
+        const alvo = centro || BRASIL;
+        map.setView([alvo.lat, alvo.lng], alvo.zoom);
+      }
       // Locais já cadastrados na cidade (com coordenada) como referência no mapa.
       camada?.clearLayers();
       if (u && c && !fechado) {
