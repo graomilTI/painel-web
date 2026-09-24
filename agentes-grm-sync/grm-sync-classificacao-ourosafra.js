@@ -746,15 +746,49 @@ async function anexarLaudo(page, pdfPath) {
     await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-upload-laudo.png', fullPage: true }).catch(() => {});
     throw new Error('Sub-modal "Upload Laudo Classificação" com botão Salvar não encontrado depois do uploadFile.');
   }
-  await page.mouse.click(rectSalvarUpload.x, rectSalvarUpload.y);
+  // Empresa/Filial do agendamento — o erro `sys_Arquivo violates not-null
+  // constraint` (bytes do arquivo não chegam ao servidor) apareceu só em
+  // parte das placas (OS Bom Despacho/OS Tibagi; OS Cuiabá funcionou), então
+  // registra pra correlacionar.
+  const empresaFilial = await page.evaluate(() => {
+    // Rótulos SELECIONADOS dos dropdowns Radzen (Empresa, Local, Classificadora,
+    // Produto do modal e Filial/Tipo do sub-modal), na ordem do DOM.
+    return Array.from(document.querySelectorAll('.rz-dropdown-label')).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 8);
+  }).catch(() => null);
+  log('DEBUG', `[diag:upload-empresa] ${JSON.stringify(empresaFilial)}`);
+
+  // Até 3 tentativas: clica Salvar; se o sub-modal não fechar (toast de erro
+  // sys_Arquivo), reenvia o arquivo no mesmo input e tenta Salvar de novo.
   let subModalFechou = false;
-  for (let t = 0; t < 20 && !subModalFechou; t += 1) {
-    await wait(500);
-    subModalFechou = !(await page.evaluate(() => Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'))));
+  for (let tentativa = 1; tentativa <= 3 && !subModalFechou; tentativa += 1) {
+    if (tentativa > 1) {
+      const inputDeNovo = await page.$('input[type=file]');
+      if (!inputDeNovo) break;
+      await inputDeNovo.uploadFile(pdfPath);
+      await page.waitForNetworkIdle({ idleTime: 1500, timeout: 15000 }).catch(() => {});
+      await wait(5000);
+    }
+    const rect = tentativa === 1 ? rectSalvarUpload : await page.evaluate(() => {
+      const ehSalvar = (b) => { const t = (b.textContent || '').replace(/\s+/g, ' ').trim(); return t === 'Salvar' || t.endsWith(' Salvar'); };
+      const titulo = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'));
+      let el = titulo;
+      while (el && !Array.from(el.querySelectorAll('button')).some(ehSalvar)) el = el.parentElement;
+      const btn = el ? Array.from(el.querySelectorAll('button')).find(ehSalvar) : null;
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    if (!rect) break;
+    await page.mouse.click(rect.x, rect.y);
+    for (let t = 0; t < 16 && !subModalFechou; t += 1) {
+      await wait(500);
+      subModalFechou = !(await page.evaluate(() => Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'))));
+    }
+    if (!subModalFechou) log('WARN', `Upload do laudo: sub-modal não fechou na tentativa ${tentativa}/3.`);
   }
   await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-pos-salvar-upload-laudo.png', fullPage: false }).catch(() => {});
   if (!subModalFechou) {
-    throw new Error('Clicou em Salvar no sub-modal de upload do laudo, mas ele não fechou — anexo não confirmado.');
+    throw new Error('Clicou em Salvar no sub-modal de upload do laudo (3 tentativas), mas ele não fechou — anexo não confirmado.');
   }
   log('SUCCESS', 'Laudo anexado');
 }
@@ -1467,6 +1501,24 @@ async function main() {
         const antes = fila.length;
         fila = fila.filter((a) => !jaFeitos.has(String(a.id)));
         if (antes !== fila.length) log('INFO', `${antes - fila.length} placa(s) já concluída(s) com sucesso em ciclos anteriores — ignorada(s).`);
+      }
+
+      // 24/09/2026 (pedido do usuário): placas que já falharam no upload do
+      // laudo (Ouro Safra rejeita com `sys_Arquivo violates not-null
+      // constraint` em algumas filiais, problema do lado deles) não são
+      // reprocessadas a cada ciclo — só geravam ruído e repetiam a edição dos
+      // itens. Pra reprocessá-las depois que o Ouro Safra for corrigido, rode
+      // com OUROSAFRA_REPROCESSAR_FALHAS_UPLOAD=true.
+      if (process.env.OUROSAFRA_REPROCESSAR_FALHAS_UPLOAD !== 'true') {
+        const { data: falhasUpload, error: erroFalhas } = await supabase.from(EXEC_TABLE).select('agendamento_id').eq('status', 'erro').ilike('erro', '%sub-modal de upload%').in('agendamento_id', idsFila);
+        if (erroFalhas) {
+          log('WARN', `Não consegui consultar falhas de upload anteriores (${erroFalhas.message}) — seguindo sem esse filtro.`);
+        } else {
+          const comFalha = new Set((falhasUpload || []).map((r) => String(r.agendamento_id)));
+          const antesFalhas = fila.length;
+          fila = fila.filter((a) => !comFalha.has(String(a.id)));
+          if (antesFalhas !== fila.length) log('INFO', `${antesFalhas - fila.length} placa(s) com falha de upload anterior — reprocesso pausado.`);
+        }
       }
     }
 
