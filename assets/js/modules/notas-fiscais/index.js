@@ -8,7 +8,7 @@
 import { pageHeader, tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
 import { normalizarTexto } from '../../core/supabaseService.js';
 import { nfState } from './state.js';
-import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf } from './service.js';
+import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf, enviarNfAoGrm } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
 import { renderBaixas, vincularEventosBaixas, carregarBaixas, contarRevisaoPendente } from './baixas.js';
@@ -18,7 +18,7 @@ let bootId = 0; // evita boot/listeners duplicados em soft-nav
 let baixasRevisaoPendente = null; // null = ainda não carregado (sem badge)
 
 function gruposVisiveis(estado) {
-  let grupos = agruparPorNf(estado.itens, estado.pagamentos)
+  let grupos = agruparPorNf(estado.itens, estado.pagamentos, estado.fila)
     .filter((g) => (estado.janela === 'lancados' ? g.nf_lancado : !g.nf_lancado));
 
   const termo = normalizarTexto(estado.busca);
@@ -46,7 +46,7 @@ function render() {
     return;
   }
 
-  const todosGrupos = agruparPorNf(estado.itens, estado.pagamentos);
+  const todosGrupos = agruparPorNf(estado.itens, estado.pagamentos, estado.fila);
   const r = resumo(todosGrupos);
   const grupos = gruposVisiveis(estado);
   const total = grupos.length;
@@ -207,6 +207,16 @@ function vincularEventos(grupos) {
     });
   });
 
+  raiz.querySelectorAll('[data-enviar-grm]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const grupo = grupos.find((g) => g.key === b.dataset.enviarGrm);
+      if (!grupo) return;
+      b.disabled = true;
+      const ok = await enviarGrm(grupo);
+      if (!ok) b.disabled = false;
+    });
+  });
+
   raiz.querySelectorAll('[data-estornar]').forEach((b) => {
     b.addEventListener('click', async () => {
       const grupo = grupos.find((g) => g.key === b.dataset.estornar);
@@ -244,6 +254,25 @@ async function estornar(grupo) {
   }
 }
 
+async function enviarGrm(grupo) {
+  const relancar = grupo.grm?.status === 'ERRO';
+  const confirmado = await confirmar({
+    titulo: relancar ? 'Relançar no GRM' : 'Enviar ao GRM',
+    mensagem: `${relancar ? 'Reenviar' : 'Enviar'} esta NF de ${dinheiro(grupo.valor_total)} (${grupo.regional}) pro agente lançar no Contas a Pagar do GRM? Ela só aparece como Lançada depois que o GRM confirmar.`,
+    confirmarLabel: relancar ? 'Relançar' : 'Enviar',
+  });
+  if (!confirmado) return false;
+  try {
+    await enviarNfAoGrm(grupo);
+    toast('NF enviada pro agente do GRM. Ele roda em até 1 minuto.', 'ok', 6000);
+    await carregar();
+    return true;
+  } catch (error) {
+    toast(`Erro ao enviar ao GRM: ${String(error?.message || error)}`, 'err', 6000);
+    return false;
+  }
+}
+
 async function lancar(grupo) {
   const confirmado = await confirmar({
     titulo: 'Lançar NF',
@@ -253,13 +282,13 @@ async function lancar(grupo) {
   if (!confirmado) return false;
 
   try {
-    const { quando, enviadoGrm } = await lancarNf(grupo);
+    const { quando } = await lancarNf(grupo);
     const estado = nfState.get();
     const itens = estado.itens.map((r) => (grupo.ids.includes(r.id)
       ? { ...r, nf_lancado: true, nf_lancado_em: quando }
       : r));
     nfState.set({ itens });
-    toast(enviadoGrm ? 'NF marcada como lançada e enviada pra fila de lançamento do GRM.' : 'NF marcada como lançada.', 'ok');
+    toast('NF marcada como lançada.', 'ok');
     render();
     return true;
   } catch (error) {
@@ -273,9 +302,9 @@ async function carregar() {
   nfState.set({ status: 'loading', erro: null });
   render();
   try {
-    const { itens, pagamentos, duracaoMs, atualizadoEm } = await carregarNotas({ chaveCorrida: 'notas-fiscais' });
+    const { itens, pagamentos, fila, duracaoMs, atualizadoEm } = await carregarNotas({ chaveCorrida: 'notas-fiscais' });
     if (meuBoot !== bootId) return;
-    nfState.set({ status: 'ok', itens, pagamentos, duracaoMs, atualizadoEm });
+    nfState.set({ status: 'ok', itens, pagamentos, fila, duracaoMs, atualizadoEm });
   } catch (error) {
     if (meuBoot !== bootId) return;
     nfState.set({ status: 'error', erro: String(error?.message || error) });

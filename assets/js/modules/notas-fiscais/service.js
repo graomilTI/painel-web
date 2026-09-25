@@ -6,6 +6,7 @@
 import {
   listarItensComNf,
   listarPagamentosPorItens,
+  listarFilaGrmPorPaths,
   marcarItensLancados,
   estornarItens,
   salvarDadosNfNoPagamento,
@@ -18,17 +19,21 @@ import { supabase } from '../../supabaseClient.js';
 export async function carregarNotas({ chaveCorrida } = {}) {
   const inicio = performance.now();
   const itens = await listarItensComNf({ chaveCorrida });
-  const pagamentos = await listarPagamentosPorItens(itens.map((r) => r.id).filter(Boolean));
+  const [pagamentos, fila] = await Promise.all([
+    listarPagamentosPorItens(itens.map((r) => r.id).filter(Boolean)),
+    listarFilaGrmPorPaths([...new Set(itens.map((r) => storagePathDoBucket(r.nf_url, 'notas-fiscais')).filter(Boolean))]),
+  ]);
   return {
     itens,
     pagamentos,
+    fila,
     duracaoMs: Math.round(performance.now() - inicio),
     atualizadoEm: new Date().toISOString(),
   };
 }
 
 // ── agrupamento por NF ───────────────────────────────────────────────────────
-export function agruparPorNf(itens, pagamentos) {
+export function agruparPorNf(itens, pagamentos, fila = {}) {
   const mapa = new Map();
   for (const r of itens) {
     const key = r.nf_url;
@@ -40,6 +45,8 @@ export function agruparPorNf(itens, pagamentos) {
     const sol0 = first.compras_solicitacoes || {};
     const lancadoEm = grupo.filter((r) => r.nf_lancado_em).map((r) => r.nf_lancado_em).sort().pop() || null;
     const pag = grupo.reduce((found, r) => found || pagamentos[r.id] || null, null);
+    const storagePath = storagePathDoBucket(first.nf_url, 'notas-fiscais');
+    const grm = storagePath ? fila[storagePath] || null : null;
     return {
       key: first.nf_url,
       ids: grupo.map((r) => r.id),
@@ -49,15 +56,20 @@ export function agruparPorNf(itens, pagamentos) {
       comprado_em: grupo.map((r) => r.comprado_em || '').sort().pop() || sol0.data_solicitacao || '',
       regional: sol0.coordenacao || '-',
       solicitante: [...new Set(grupo.map((r) => (r.compras_solicitacoes || {}).solicitante).filter(Boolean))].join(', ') || '-',
-      fornecedor: pag?.fornecedor || pag?.favorecido_nome || '-',
-      cnpj: pag?.favorecido_documento || '-',
-      numero: pag?.nf_numero || null,
+      // Dados lidos pelo agente do GRM na própria NF têm prioridade: o
+      // financeiro_pagamentos de Compras às vezes nem existe ou traz o CNPJ
+      // da GRAOMIL (pagador) no lugar do fornecedor.
+      fornecedor: grm?.fornecedor_nome || pag?.fornecedor || pag?.favorecido_nome || '-',
+      cnpj: grm?.fornecedor_cnpj || pag?.favorecido_documento || '-',
+      numero: grm?.numero_documento || pag?.nf_numero || null,
+      storage_path: storagePath,
+      grm,
       nf_lancado: grupo.every((r) => r.nf_lancado),
       nf_lancado_em: lancadoEm,
       itens: grupo,
     };
   }).map((g) => {
-    g.categoria = sugerirCategoria(g);
+    g.categoria = g.grm?.categoria || sugerirCategoria(g);
     g.pendencias = pendenciasDoGrupo(g);
     return g;
   }).sort((a, b) => (b.comprado_em > a.comprado_em ? 1 : -1));
@@ -89,6 +101,15 @@ export function sugerirCategoria(grupo) {
 /** Pendências objetivas de um grupo de NF (plano 6.4): o que falta para o
  *  lançamento ficar completo, exibido como badges na janela Pendentes. */
 export function pendenciasDoGrupo(grupo) {
+  // NF que já passou pelo agente: as pendências reais são as dele.
+  if (grupo.grm) {
+    if (grupo.grm.status === 'ERRO') return [grupo.grm.erro || 'Erro no lançamento do GRM'];
+    if (/^AGUARDANDO/.test(grupo.grm.status)) {
+      const erros = Array.isArray(grupo.grm.validacao_erros) ? grupo.grm.validacao_erros : [];
+      return erros.length ? erros : [grupo.grm.erro || 'Aguardando dados'];
+    }
+    return [];
+  }
   const p = [];
   if (!grupo.numero) p.push('Sem número de NF (OCR não processado)');
   if (!grupo.cnpj || grupo.cnpj === '-') p.push('Sem CNPJ do fornecedor');
@@ -132,26 +153,51 @@ function storagePathDoBucket(url, bucket) {
   catch { return url.slice(indice + marcador.length); }
 }
 
-// Ponte Compras → GRM: o botão "Lançar" aqui sempre só marcou nf_lancado=true
-// em compras_itens (bookkeeping interno), sem nunca ter chamado o GRM de
-// verdade. Agora, quando a NF já é um arquivo real no bucket notas-fiscais,
-// a mesma ação também cria uma linha em grm_nf_lancamentos — a fila que o
-// agente de lançamento (grmserver-lancar-notas-fiscais-api.js) processa de
-// verdade. Retorna true se enfileirou (ou já estava enfileirada de um
-// lançamento anterior), false quando não há arquivo pra mandar.
-async function enviarParaFilaGrm(grupo) {
+// Ponte Compras → GRM. Desde 25/09 a NF que é arquivo no bucket
+// notas-fiscais entra sozinha na fila do agente (trigger
+// compras_itens_enfileirar_nf_grm) e nf_lancado só vira true quando o agente
+// lança de verdade no GRM (grmserver-lancar-notas-fiscais-api.js). Aqui fica
+// o envio manual: NFs anteriores ao trigger e o "Relançar" de quem deu ERRO
+// (a policy só permite ERRO -> NOVO). Não marca nada como lançado.
+export async function enviarNfAoGrm(grupo) {
   const path = storagePathDoBucket(grupo.nf_url, 'notas-fiscais');
-  if (!path) return false;
+  if (!path) throw new Error('Esta NF não é um arquivo anexado (link externo ou número digitado); marque como lançada manualmente.');
+  if (grupo.grm && grupo.grm.status !== 'ERRO') {
+    throw new Error(`Esta NF já está com o agente do GRM (status ${grupo.grm.status}).`);
+  }
   const { data: { session } } = await supabase.auth.getSession();
-  const { error } = await supabase.from('grm_nf_lancamentos').insert({
-    storage_bucket: 'notas-fiscais',
-    storage_path: path,
-    arquivo_nome: path.split('/').pop(),
-    setor: 'COMPRAS',
-    status: 'NOVO',
-    enviado_por: session?.user?.id || null,
+  if (grupo.grm) {
+    const { error } = await supabase.from('grm_nf_lancamentos')
+      .update({ status: 'NOVO', erro: null })
+      .eq('id', grupo.grm.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from('grm_nf_lancamentos').insert({
+      storage_bucket: 'notas-fiscais',
+      storage_path: path,
+      arquivo_nome: path.split('/').pop(),
+      setor: 'COMPRAS',
+      status: 'NOVO',
+      enviado_por: session?.user?.id || null,
+      extraido_json: { origem: 'COMPRAS', compras_item_id: grupo.ids?.[0] || null },
+    });
+    if (error && error.code !== '23505') throw error; // 23505 = essa NF já estava na fila
+  }
+  const { data: ativos } = await supabase.from('grm_sync_jobs')
+    .select('id').eq('agente_id', 'sync-lancar-notas-fiscais').in('status', ['pendente', 'rodando']).limit(1);
+  if (!ativos?.length) {
+    await supabase.from('grm_sync_jobs').insert({
+      agente_id: 'sync-lancar-notas-fiscais', status: 'pendente', lane: 'alteracoes',
+      solicitado_por: session?.user?.email || session?.user?.id || null,
+    });
+  }
+  await registrarAuditoria({
+    modulo: 'notas-fiscais',
+    tabela: 'grm_nf_lancamentos',
+    registroId: grupo.grm?.id || path,
+    acao: grupo.grm ? 'nf_relancada_grm' : 'nf_enviada_grm',
+    valorNovo: { storage_path: path, compras_item_ids: grupo.ids, valor_total: grupo.valor_total },
   });
-  if (error && error.code !== '23505') throw error; // 23505 = essa NF já estava na fila
   return true;
 }
 
@@ -174,16 +220,14 @@ export async function lancarNf(grupo) {
       throw error;
     }
   }
-  let enviadoGrm = false;
-  let erroGrm = null;
+  // NF em arquivo vai pro agente (enviarNfAoGrm) e só vira lançada quando
+  // o GRM confirmar; marcação manual é só pra link externo/número digitado.
+  if (storagePathDoBucket(grupo.nf_url, 'notas-fiscais')) {
+    throw new Error('NF anexada é lançada pelo agente do GRM; use "Enviar ao GRM".');
+  }
+  const enviadoGrm = false;
   try {
     await marcarItensLancados(grupo.ids, quando);
-    try {
-      enviadoGrm = await enviarParaFilaGrm(grupo);
-    } catch (error) {
-      erroGrm = error;
-      console.warn('[notas-fiscais] não consegui enviar pra fila de lançamento do GRM:', error.message);
-    }
     await registrarAuditoria({
       modulo: 'notas-fiscais',
       tabela: 'compras_itens',
@@ -192,7 +236,7 @@ export async function lancarNf(grupo) {
       valorAnterior: { nf_lancado: false },
       valorNovo: {
         nf_lancado: true, nf_lancado_em: quando, nf_url: grupo.nf_url, valor_total: grupo.valor_total,
-        enviado_fila_grm: enviadoGrm, erro_fila_grm: erroGrm?.message || null,
+        manual: true,
       },
     });
     return { quando, enviadoGrm };

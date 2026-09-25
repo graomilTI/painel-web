@@ -8,6 +8,7 @@ export const nfState = createState({
   erro: null,
   itens: [],
   pagamentos: {},
+  fila: {},                   // grm_nf_lancamentos por storage_path (andamento no GRM)
   janela: 'pendentes',        // pendentes | lancados (demanda 6.1: sem Resumo Financeiro)
   busca: '',
   ordenacao: { coluna: 'comprado_em', asc: false },

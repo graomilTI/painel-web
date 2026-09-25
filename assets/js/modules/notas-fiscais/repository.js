@@ -50,6 +50,22 @@ export async function listarPagamentosPorItens(ids) {
 }
 
 /**
+ * Andamento no agente de lançamento do GRM (grm_nf_lancamentos) das NFs de
+ * Compras, por storage_path do arquivo da NF.
+ */
+export async function listarFilaGrmPorPaths(paths) {
+  if (!paths?.length) return {};
+  const { rows } = await listar('grm_nf_lancamentos', {
+    select: 'id, storage_path, status, erro, validacao_erros, fornecedor_nome, fornecedor_cnpj, numero_documento, grupo_categoria, categoria, grm_codigo, lancado_em, updated_at',
+    filtros: [{ coluna: 'storage_path', op: 'in', valor: paths }],
+    porPagina: 0,
+  });
+  const mapa = {};
+  for (const r of rows) mapa[r.storage_path] = r;
+  return mapa;
+}
+
+/**
  * Marca os itens de uma NF como lançados.
  */
 export async function marcarItensLancados(ids, quandoISO) {

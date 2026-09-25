@@ -4,6 +4,36 @@
 import { table, pagination, badge, esc, dinheiro, dataBR, emptyState, errorState, loadingState } from '../../../core/ui.js';
 import { isUrl } from '../service.js';
 
+// Andamento da NF no agente de lançamento do GRM (grm_nf_lancamentos).
+const STATUS_GRM = {
+  NOVO: ['Na fila do GRM', 'neutral'],
+  PROCESSANDO: ['Lançando no GRM…', 'neutral'],
+  VALIDADO: ['Lançando no GRM…', 'neutral'],
+  DRY_RUN_OK: ['Conferido (teste)', 'neutral'],
+  AGUARDANDO_DADOS: ['GRM: faltam dados', 'warn'],
+  AGUARDANDO_CLASSIFICACAO: ['GRM: sem categoria', 'warn'],
+  DUPLICADO: ['GRM: duplicada', 'warn'],
+  ERRO: ['Erro no GRM', 'danger'],
+  LANCADO: ['Lançado no GRM', 'ok'],
+  CANCELADO: ['Cancelado', 'warn'],
+};
+
+function statusGrm(g) {
+  if (!g.grm) return badge(g.storage_path ? 'Não enviado ao GRM' : 'Pendente', 'warn');
+  const [label, tipo] = STATUS_GRM[g.grm.status] || [g.grm.status, 'warn'];
+  return badge(label, tipo);
+}
+
+function acaoLancamento(g) {
+  if (g.nf_lancado) return '';
+  if (!g.storage_path) {
+    return `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button" title="NF sem arquivo anexado: marca como lançada sem passar pelo agente">Marcar lançado</button>`;
+  }
+  if (!g.grm) return `<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Enviar ao GRM</button>`;
+  if (g.grm.status === 'ERRO') return `<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Relançar</button>`;
+  return '';
+}
+
 export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, porPagina, total }) {
   if (status === 'loading') return loadingState('Consultando Notas Fiscais...');
   if (status === 'error') return errorState(erro, { retryId: 'nfRetry' });
@@ -21,12 +51,12 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
       : '';
     const statusCell = (g.nf_lancado
       ? badge(`Lançado ${dataBR(g.nf_lancado_em)}`, 'ok')
-      : badge('Pendente', 'warn')) + pendencias;
+      : statusGrm(g)) + pendencias;
     const acoes = [
       `<button class="ds-btn" data-consultar="${esc(g.key)}" type="button">Consultar</button>`,
       isUrl(g.nf_url) ? `<a class="ds-btn" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : '',
       isUrl(g.comprovante_url) ? `<a class="ds-btn" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>` : '',
-      !g.nf_lancado ? `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button">Lançado</button>` : '',
+      acaoLancamento(g),
       g.nf_lancado ? `<button class="ds-btn ds-btn-danger" data-estornar="${esc(g.key)}" type="button">Estornar</button>` : '',
     ].filter(Boolean).join(' ');
     return `<tr>

@@ -83,7 +83,7 @@ const GRM_PASSWORD = process.env.GRMSERVER_PASSWORD || '';
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.SB_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SB_SERVICE_KEY || process.env.SUPABASE_KEY || '';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_OCR_MODEL = process.env.GRM_LANCAR_NF_GROQ_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GROQ_OCR_MODEL = process.env.GRM_LANCAR_NF_GROQ_MODEL || 'qwen/qwen3.8-27b';
 
 const GRM_WEB_HEADERS = {
   origin: 'https://www.grmserver.com.br',
@@ -510,7 +510,9 @@ async function groqOcrImage(imagePath) {
     method: 'POST', hostname: 'api.groq.com', path: '/openai/v1/chat/completions',
     headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
   }, body, 'json');
-  const text = response?.choices?.[0]?.message?.content || '';
+  // Modelos Qwen (o llama-4-scout saiu do Groq em 09/2026) podem devolver o
+  // raciocínio num bloco <think> antes da transcrição.
+  const text = String(response?.choices?.[0]?.message?.content || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   if (!text) throw new Error(`Groq não retornou texto para ${path.basename(imagePath)}.`);
   return text;
 }
@@ -583,6 +585,26 @@ function extractFromText(text, mimeOrExt) {
   ]);
   const fornecedor = firstMatch(raw, [/(?:RAZ[ÃA]O\s+SOCIAL|PRESTADOR(?:A)?\s+DE\s+SERVI[ÇC]OS|EMITENTE|FORNECEDOR)\s*[:\-]?\s*([^\n]{3,100})/i]);
   const isNfse = /NFS[-\s]?E|NOTA\s+FISCAL\s+(?:ELETR[ÔO]NICA\s+)?DE\s+SERVI[ÇC]OS/i.test(raw);
+  const danfe = isNfse ? null : extractDanfeFields(raw);
+  if (danfe) {
+    return {
+      origem_extracao: mimeOrExt === '.pdf' ? 'PDF_TEXTO_OU_OCR' : 'IMAGEM_OCR',
+      texto_extraido: raw.slice(0, 250000),
+      chave_acesso: danfe.chave,
+      numero_documento: danfe.numero || numero,
+      numero_nf: danfe.numero || numero,
+      data_emissao: danfe.emissao || toBrDate(emissao && emissao.replace(/-/g, '/')),
+      data_conta: danfe.emissao || toBrDate(emissao && emissao.replace(/-/g, '/')),
+      data_vencimento: danfe.parcelas.length === 1 ? danfe.parcelas[0].vencimento : null,
+      valor_total: danfe.valor_total != null ? danfe.valor_total : parseMoney(valorRaw),
+      fornecedor: danfe.fornecedor || (fornecedor ? fornecedor.replace(/\s{2,}.*/, '').trim() : null),
+      fornecedor_cnpj: danfe.fornecedor_cnpj || supplierDoc,
+      destinatario_cnpj: destinatarioDoc,
+      forma_pagamento: inferPaymentMethod(raw),
+      tipo_documento: 'DANFe',
+      parcelas: danfe.parcelas,
+    };
+  }
   return {
     origem_extracao: mimeOrExt === '.pdf' ? 'PDF_TEXTO_OU_OCR' : 'IMAGEM_OCR',
     texto_extraido: raw.slice(0, 250000),
@@ -599,6 +621,116 @@ function extractFromText(text, mimeOrExt) {
     tipo_documento: isNfse ? 'NFS-e' : 'DANFe',
     parcelas: [],
   };
+}
+
+// DANFe em PDF: os regex genéricos acima erram nesse layout (tabela em
+// colunas — o valor fica na linha de baixo do cabeçalho, "Nº: 000.002.982"
+// virava número "000", "VALOR TOTAL DA NOTA" pegava o 0,00 do frete). A
+// chave de acesso (44 dígitos) traz CNPJ do emitente e número da NF sem
+// ambiguidade; o canhoto ("RECEBEMOS DE X", "EMISSÃO: dd/mm/aaaa",
+// "VALOR TOTAL: R$ x") e o quadro FATURA/DUPLICATAS completam o resto.
+// Achado com as NFs de Compras paradas em 25/09 (NF 2982/2999 Callibra,
+// 6460 Girardello, 12 Alvacir).
+function extractDanfeFields(raw) {
+  const text = String(raw || '');
+  const chave = (text.match(/\b\d{4}(?:\s?\d{4}){10}\b/g) || [])
+    .map(onlyDigits)
+    .find((c) => c.length === 44 && c.slice(20, 22) === '55') || null;
+  const chaveOk = Boolean(chave);
+  if (!chaveOk && !/DANFE/i.test(text)) return null;
+
+  const fornecedor = firstMatch(text, [/RECEBEMOS\s+DE\s+(.+?)\s+OS\s+PRODUTOS/i]);
+  const emissao = firstMatch(text, [
+    /EMISS[ÃA]O\s*:\s*(\d{2}\/\d{2}\/\d{4})/i,
+    /DATA\s+D[AE]\s+EMISS[ÃA]O[^\n]*\n[^\n]*?(\d{2}\/\d{2}\/\d{4})/i,
+  ]);
+  let valor = parseMoney(firstMatch(text, [
+    /VALOR\s+TOTAL\s*:\s*R\$\s*([\d.]+,\d{2})/i,
+    /VALOR\s+(?:DA\s+)?NOTA\s*\n[^\n]*?R\$\s*([\d.]+,\d{2})/i,
+  ]));
+  if (valor == null) {
+    // Cabeçalho "VALOR TOTAL DA NOTA" é a última coluna da linha; o valor é
+    // o último número da linha seguinte.
+    const m = text.match(/VALOR\s+TOTAL\s+DA\s+NOTA[^\n]*\n([^\n]*)/i);
+    const nums = m ? m[1].match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) : null;
+    if (nums && nums.length) valor = parseMoney(nums[nums.length - 1]);
+  }
+  return {
+    chave: chaveOk ? chave : null,
+    fornecedor_cnpj: chaveOk ? chave.slice(6, 20) : null,
+    numero: chaveOk ? String(Number(chave.slice(25, 34))) : (onlyDigits(firstMatch(text, [/N[º°]\s*[:.]?\s*(\d{3}\.\d{3}\.\d{3})/i])) || null),
+    emissao: emissao ? toBrDate(emissao) : null,
+    valor_total: valor,
+    fornecedor: fornecedor ? fornecedor.replace(/\s+/g, ' ').trim() : null,
+    parcelas: extractDanfeDuplicatas(text),
+  };
+}
+
+// Quadro FATURA / DUPLICATAS do DANFe: pares (vencimento, valor), com ou
+// sem o número da duplicata na frente, podendo vir várias por linha.
+function extractDanfeDuplicatas(text) {
+  const m = String(text || '').match(/(?:^|\n)\s*(?:FATURAS?|DUPLICATAS?)\b([\s\S]{0,1500}?)C[ÁA]LCULO\s+DO\s+IMPOSTO/i);
+  if (!m) return [];
+  const out = [];
+  const re = /(?:\b(\d{1,3}(?:\/\d{1,3})?)\s+)?(\d{2}\/\d{2}\/\d{4})\s+(?:R\$\s*)?(\d{1,3}(?:\.\d{3})*,\d{2})/g;
+  let d;
+  while ((d = re.exec(m[1]))) {
+    out.push({ numero: d[1] || String(out.length + 1).padStart(3, '0'), vencimento: toBrDate(d[2]), valor: parseMoney(d[3]) });
+  }
+  return out;
+}
+
+// Boleto: vencimento e valor saem da linha digitável (campo 5 = fator de
+// vencimento + valor), que é o dado que o banco usa de verdade. O fator
+// reiniciou em 1000 em 22/02/2025 (Febraban); pra desambiguar entre a base
+// antiga (07/10/1997) e a nova, fica a data mais próxima de hoje.
+function parseBoletos(text) {
+  const out = new Map();
+  const re = /\b(\d{5}\.?\d{5})\s+(\d{5}\.?\d{6})\s+(\d{5}\.?\d{6})\s+(\d)\s+(\d{14})\b/g;
+  let m;
+  while ((m = re.exec(String(text || '')))) {
+    const campo5 = m[5];
+    const fator = Number(campo5.slice(0, 4));
+    const valor = Number(campo5.slice(4)) / 100;
+    let vencimento = null;
+    if (fator >= 1000) {
+      const day = 24 * 60 * 60 * 1000;
+      const candidatos = [Date.UTC(1997, 9, 7) + fator * day, Date.UTC(2025, 1, 22) + (fator - 1000) * day];
+      const agora = Date.now();
+      const escolhido = candidatos.sort((a, b) => Math.abs(a - agora) - Math.abs(b - agora))[0];
+      vencimento = toBrDate(new Date(escolhido).toISOString().slice(0, 10));
+    }
+    const linha = onlyDigits(m.slice(1, 6).join(''));
+    if (!out.has(linha)) out.set(linha, { linha, vencimento, valor: Math.round(valor * 100) / 100 });
+  }
+  return Array.from(out.values());
+}
+
+// Comprovante de pagamento à vista (PIX/cartão/transferência): data do
+// pagamento + forma, pra virar parcela única já no vencimento pago.
+function parseComprovantePagamento(text) {
+  const raw = String(text || '');
+  const normalized = normalizeText(raw);
+  let data = firstMatch(raw, [
+    /(?:DATA\s+(?:DO\s+|DA\s+)?(?:PAGAMENTO|TRANSA[ÇC][ÃA]O|TRANSFER[ÊE]NCIA|OPERA[ÇC][ÃA]O)|REALIZAD[OA]\s+EM|EFETUAD[OA]\s+EM|PAGO\s+EM)\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i,
+  ]);
+  if (!data) {
+    // Itaú e outros apps: "14 set. 2026, 17:05:05" / "14 de setembro de 2026".
+    const meses = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+    const m = normalizeText(raw).match(/\b(\d{1,2})\s*(?:DE\s+)?(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*\.?\s*(?:DE\s+)?(20\d{2})\b/);
+    if (m) data = `${m[1].padStart(2, '0')}/${String(meses[m[2]]).padStart(2, '0')}/${m[3]}`;
+  }
+  if (!data) data = firstMatch(raw, [/(\d{2}\/\d{2}\/\d{4})/]);
+  if (!data) {
+    const curto = raw.match(/\b(\d{2})\/(\d{2})\/(\d{2})\b/);
+    if (curto) data = `${curto[1]}/${curto[2]}/20${curto[3]}`;
+  }
+  let forma = null;
+  if (normalized.includes('PIX')) forma = 'PIX';
+  else if (/CARTAO\s+DE\s+CREDITO|CREDITO\s+A\s+VISTA|\bCREDITO\b/.test(normalized)) forma = 'Cartão de Crédito';
+  else if (/CARTAO\s+DE\s+DEBITO|\bDEBITO\b/.test(normalized)) forma = 'Cartão de Débito';
+  else if (/TRANSFERENCIA|\bTED\b|\bDOC\b/.test(normalized)) forma = 'Depósito / Transferência';
+  return { data_pagamento: data ? toBrDate(data) : null, forma_pagamento: forma };
 }
 
 async function extractFileData(filePath, file) {
@@ -851,6 +983,202 @@ function applyInvoiceRules(extracted, row) {
   return data;
 }
 
+// ---------------------------------------------------------------------------
+// NFs do módulo Compras (setor COMPRAS). A fila recebe só o arquivo da NF;
+// o resto (itens, tipo, regional, comprovante/boleto) vem de compras_itens,
+// achado pelo nf_url que aponta pra este mesmo arquivo do Storage.
+function isComprasRow(row) {
+  return normalizeText(row?.setor) === 'COMPRAS';
+}
+
+function publicStorageUrl(bucket, storagePath) {
+  return `${String(SUPABASE_URL).replace(/\/$/, '')}/storage/v1/object/public/${bucket}/${storagePath}`;
+}
+
+function storagePathFromPublicUrl(url) {
+  const m = String(url || '').match(/\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+  if (!m) return null;
+  let p = m[2].split('?')[0];
+  try { p = decodeURIComponent(p); } catch (_) { /* mantém como veio */ }
+  return { bucket: m[1], path: p };
+}
+
+async function loadComprasContext(row) {
+  const bucket = row.storage_bucket || 'notas-fiscais';
+  const urls = Array.from(new Set([
+    publicStorageUrl(bucket, row.storage_path),
+    publicStorageUrl(bucket, encodeURI(row.storage_path)),
+  ]));
+  const { data: itens, error } = await supabase.from('compras_itens')
+    .select('id,material,tipo,quantidade,valor_total,comprado_em,nf_url,comprovante_url,nf_lancado,compras_solicitacoes(solicitante,coordenacao)')
+    .in('nf_url', urls);
+  if (error) throw new Error(`Falha lendo compras_itens da NF: ${error.message}`);
+  const lista = safe(itens);
+  if (!lista.length) return null;
+  const { data: pagamentos } = await supabase.from('financeiro_pagamentos')
+    .select('origem_id,forma_pagamento,fornecedor,favorecido_documento')
+    .eq('origem', 'COMPRAS')
+    .in('origem_id', lista.map((i) => i.id));
+  return { itens: lista, pagamentos: safe(pagamentos) };
+}
+
+function comprasCategoriaDoItem(item) {
+  const regras = config.compras?.regras || [];
+  const limite = Number(config.compras?.limite_imobilizado || 500);
+  const tipo = normalizeText(item.tipo);
+  const material = ` ${normalizeText(item.material)} `;
+  const qtd = Number(item.quantidade) > 0 ? Number(item.quantidade) : 1;
+  const unitario = Number(item.valor_total || 0) / qtd;
+  for (const regra of regras) {
+    const porTipo = (regra.tipos || []).some((t) => normalizeText(t) === tipo);
+    const porPalavra = (regra.keywords || []).some((k) => new RegExp(`[^A-Z0-9]${normalizeText(k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}S?[^A-Z0-9]`).test(material));
+    if (!porTipo && !porPalavra) continue;
+    if (regra.unitario_acima_limite && !(unitario > limite)) continue;
+    return { ...regra.set, regra: regra.nome };
+  }
+  return { ...(config.compras?.padrao || {}), regra: 'padrão' };
+}
+
+// Categoria da NF inteira = a de maior valor somado entre os itens (decisão
+// de 25/09: um lançamento por NF, sem separar por categoria).
+function comprasCategoriaDaNf(itens) {
+  const somas = new Map();
+  for (const item of itens) {
+    const cat = comprasCategoriaDoItem(item);
+    const key = `${cat.grupo_categoria}|${cat.categoria}`;
+    const atual = somas.get(key) || { ...cat, valor: 0, itens: [] };
+    atual.valor += Number(item.valor_total || 0);
+    atual.itens.push(item.material);
+    somas.set(key, atual);
+  }
+  const ordenadas = Array.from(somas.values()).sort((a, b) => b.valor - a.valor);
+  return { escolhida: ordenadas[0] || null, todas: ordenadas };
+}
+
+function comprasCoordenacao(itens) {
+  const somas = new Map();
+  for (const item of itens) {
+    const nome = String(item.compras_solicitacoes?.coordenacao || '').trim();
+    if (!nome) continue;
+    somas.set(nome, (somas.get(nome) || 0) + Number(item.valor_total || 0));
+  }
+  return Array.from(somas.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+}
+
+async function readComprovanteCompras(ctx, workDir) {
+  const url = ctx.itens.map((i) => i.comprovante_url).find(Boolean);
+  if (!url) return null;
+  const ref = storagePathFromPublicUrl(url);
+  if (!ref) return { url, erro: 'comprovante fora do Storage' };
+  const localPath = path.join(workDir, `comprovante-${sanitizeFileName(path.basename(ref.path))}`);
+  await downloadFromStorage({ storage_bucket: ref.bucket, storage_path: ref.path }, localPath);
+  const ext = extensionOf(localPath);
+  let text = '';
+  if (ext === '.pdf') {
+    text = await extractPdfText(localPath);
+    if (normalizeText(text).length < 60) text = await ocrPdf(localPath, fs.mkdtempSync(path.join(workDir, 'ocr-comp-')));
+  } else if (['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) {
+    text = await groqOcrImage(localPath);
+  }
+  const boletos = parseBoletos(text);
+  const pagamento = parseComprovantePagamento(text);
+  return { url, arquivo: path.basename(ref.path), boletos, pagamento, texto: String(text || '').slice(0, 20000) };
+}
+
+function sameMoney(a, b) {
+  return a != null && b != null && Math.abs(Number(a) - Number(b)) <= 0.01;
+}
+
+function applyComprasRules(data, ctx, comprovante) {
+  const avisos = [];
+  const pendencias = [];
+
+  const cat = comprasCategoriaDaNf(ctx.itens);
+  if (cat.escolhida) {
+    data.grupo_categoria = cat.escolhida.grupo_categoria;
+    data.categoria = cat.escolhida.categoria;
+  }
+
+  const somaItens = Math.round(ctx.itens.reduce((s, i) => s + Number(i.valor_total || 0), 0) * 100) / 100;
+  if (data.valor_total == null && somaItens > 0) {
+    data.valor_total = somaItens;
+    avisos.push(`Valor total não lido na NF; usado o total dos itens do Compras (R$ ${formatMoneyInput(somaItens)}).`);
+  } else if (data.valor_total != null && !sameMoney(data.valor_total, somaItens)) {
+    avisos.push(`Valor da NF (R$ ${formatMoneyInput(data.valor_total)}) difere do total dos itens no Compras (R$ ${formatMoneyInput(somaItens)}); lançado o valor da NF.`);
+  }
+
+  const coordenacao = comprasCoordenacao(ctx.itens);
+  data.rateio = {
+    ...(data.rateio || {}),
+    tipo_participacao: 'Coordenação',
+    identificacao: coordenacao || config.compras?.coordenacao_fallback || 'GERAL',
+    identificacao_fallback: config.compras?.coordenacao_fallback || 'GERAL',
+    valor: data.valor_total,
+  };
+
+  // Parcelas: boleto anexado => duplicatas da NF conferidas com o(s)
+  // boleto(s); sem duplicatas na NF, os boletos viram as parcelas. Sem
+  // boleto (comprovante PIX/cartão) => parcela única na data do pagamento.
+  const duplicatas = Array.isArray(data.parcelas) ? data.parcelas.filter((p) => p.vencimento && p.valor != null) : [];
+  const boletos = comprovante?.boletos || [];
+  const formaCompras = normalizeText(ctx.pagamentos.map((p) => p.forma_pagamento).find(Boolean) || '');
+  let parcelas = [];
+  if (boletos.length) {
+    data.forma_pagamento = 'Boleto';
+    if (duplicatas.length) {
+      const semBoleto = [];
+      for (const b of boletos) {
+        const par = duplicatas.find((d) => toIsoDate(d.vencimento) === toIsoDate(b.vencimento) && sameMoney(d.valor, b.valor));
+        if (!par) pendencias.push(`boleto (venc. ${b.vencimento}, R$ ${formatMoneyInput(b.valor)}) não bate com nenhuma duplicata da NF`);
+      }
+      for (const d of duplicatas) {
+        if (!boletos.some((b) => toIsoDate(d.vencimento) === toIsoDate(b.vencimento) && sameMoney(d.valor, b.valor))) semBoleto.push(`${d.numero} ${d.vencimento}`);
+      }
+      if (semBoleto.length) avisos.push(`Duplicata(s) sem boleto anexado: ${semBoleto.join(', ')} — lançadas pela NF.`);
+      parcelas = duplicatas;
+    } else {
+      parcelas = boletos.map((b, i) => ({ numero: String(i + 1).padStart(3, '0'), vencimento: b.vencimento, valor: b.valor }));
+    }
+  } else if (comprovante && !comprovante.erro && (comprovante.pagamento?.data_pagamento || comprovante.texto)) {
+    const dataPag = comprovante.pagamento?.data_pagamento || toBrDate(ctx.itens.map((i) => i.comprado_em).filter(Boolean).sort()[0]);
+    if (!comprovante.pagamento?.data_pagamento) avisos.push('Data do pagamento não lida no comprovante; usada a data da compra.');
+    data.forma_pagamento = comprovante.pagamento?.forma_pagamento
+      || (formaCompras.includes('PIX') ? 'PIX' : formaCompras.includes('CARTAO') ? 'Cartão de Crédito' : null)
+      || data.forma_pagamento || 'PIX';
+    parcelas = [{ numero: '001', vencimento: dataPag, valor: data.valor_total }];
+  } else if (formaCompras.includes('BOLETO')) {
+    pendencias.push('forma de pagamento é boleto, mas o boleto anexado não foi reconhecido (linha digitável não lida)');
+  } else if (duplicatas.length) {
+    parcelas = duplicatas;
+  } else {
+    pendencias.push('comprovante de pagamento não reconhecido');
+  }
+
+  if (parcelas.length) {
+    const soma = Math.round(parcelas.reduce((s, p) => s + Number(p.valor || 0), 0) * 100) / 100;
+    if (!sameMoney(soma, data.valor_total)) pendencias.push(`soma das parcelas (R$ ${formatMoneyInput(soma)}) difere do valor da NF (R$ ${formatMoneyInput(data.valor_total)})`);
+    parcelas.sort((a, b) => String(toIsoDate(a.vencimento)).localeCompare(String(toIsoDate(b.vencimento))));
+    data.parcelas = parcelas.map((p, i) => ({ numero: p.numero || String(i + 1).padStart(3, '0'), vencimento: toBrDate(p.vencimento), valor: parseMoney(p.valor) }));
+    data.qtd_parcelas = data.parcelas.length;
+    data.intervalo_cobranca = data.parcelas.length > 1 ? 'Parcelas explícitas' : 'Não Parcelar';
+    data.data_vencimento = data.parcelas[0].vencimento;
+  }
+
+  const materiais = ctx.itens.map((i) => i.material).filter(Boolean);
+  data.descricao = `Compras: ${materiais.join(', ')}`.slice(0, 500);
+  data.compras = {
+    item_ids: ctx.itens.map((i) => i.id),
+    solicitantes: Array.from(new Set(ctx.itens.map((i) => i.compras_solicitacoes?.solicitante).filter(Boolean))),
+    coordenacao_solicitacao: coordenacao,
+    soma_itens: somaItens,
+    categorias: cat.todas.map((c) => ({ grupo: c.grupo_categoria, categoria: c.categoria, regra: c.regra, valor: c.valor, itens: c.itens })),
+    comprovante: comprovante ? { arquivo: comprovante.arquivo, boletos: comprovante.boletos, pagamento: comprovante.pagamento, erro: comprovante.erro || null } : null,
+    avisos,
+    pendencias,
+  };
+  return data;
+}
+
 function validateData(data) {
   const missing = [];
   const classificationMissing = [];
@@ -877,6 +1205,7 @@ function validateData(data) {
     if (Array.isArray(data.funcionarios_encontrados) && data.funcionarios_encontrados.length > 1) missing.push('PDF contém mais de um funcionário; envie um arquivo por funcionário');
   }
   if (Array.isArray(data.parcelas) && data.parcelas.length > 1 && normalizeText(data.intervalo_cobranca) === 'NAO PARCELAR') missing.push('parcelas múltiplas exigem intervalo e quantidade revisados');
+  if (Array.isArray(data.compras?.pendencias)) missing.push(...data.compras.pendencias);
   return { missing, classificationMissing, ok: !missing.length && !classificationMissing.length };
 }
 
@@ -1027,7 +1356,10 @@ async function resolveCategoria(categoriaNome) {
 
 async function resolveTipoDocumento(nome) {
   const tipos = await getCatalog('payInvoiceDocType', 'payInvoiceDocType/getRecords');
-  const found = tipos.find((t) => normalizeText(t.pdtName) === normalizeText(nome));
+  // Sem pontuação: a extração devolve "NFS-e", o GRM chama de "NFSe".
+  const semPontuacao = (v) => normalizeText(v).replace(/[^A-Z0-9]/g, '');
+  const found = tipos.find((t) => normalizeText(t.pdtName) === normalizeText(nome))
+    || tipos.find((t) => semPontuacao(t.pdtName) === semPontuacao(nome));
   return found ? found.pdtCode : null;
 }
 
@@ -1039,7 +1371,10 @@ async function resolveFormaPagamento(nome) {
 
 async function resolveCoordenacao(nome) {
   const lista = await getCatalog('coordination', 'coordination/getRecords');
-  const found = lista.find((c) => normalizeText(c.olcName) === normalizeText(nome)) || lista[0] || null;
+  // Antes caía em lista[0] (BAHIA) quando o nome não existia — rateava em
+  // coordenação aleatória sem avisar. Agora não achou = null; quem chama
+  // decide o fallback (Compras cai em GERAL com aviso).
+  const found = lista.find((c) => normalizeText(c.olcName) === normalizeText(nome)) || null;
   return found ? found.olcCode : null;
 }
 
@@ -1089,16 +1424,25 @@ async function resolveFuncionario(data) {
 async function resolveFornecedor(data) {
   const cnpj = onlyDigits(data.fornecedor_cnpj);
   const nome = String(data.fornecedor || '').trim();
-  const searches = Array.from(new Set([cnpj, nome].filter(Boolean)));
+  // supDocument no GRM é gravado formatado ("21.948.503/0001-63") e a busca
+  // por só dígitos não acha nada — confirmado ao vivo em 25/09 com Callibra,
+  // Girardello e Alvacir (todos cadastrados, nenhum achado por dígitos).
+  const formatado = cnpj.length === 14
+    ? cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+    : cnpj.length === 11 ? cnpj.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : '';
+  const searches = Array.from(new Set([formatado, cnpj, nome].filter(Boolean)));
   for (const search of searches) {
     const response = await apiPost('suppliers/getRecords', { supName: '', supDocument: '', supStatus: 'A', groupSearch: search });
     if (!response.result) continue;
     const rows = safe(response.searchData);
-    if (rows.length === 1) return rows[0];
-    if (rows.length > 1 && cnpj) {
+    if (cnpj) {
+      // Com documento conhecido, só aceita o cadastro do mesmo CNPJ (busca
+      // por nome traz filiais/homônimos: "CALLIBRA" devolve 3 cadastros).
       const exact = rows.find((r) => onlyDigits(r.supDocument) === cnpj);
       if (exact) return exact;
+      continue;
     }
+    if (rows.length === 1) return rows[0];
   }
   return null;
 }
@@ -1137,6 +1481,13 @@ async function resolveGrmCodes(data) {
   let olcCode = 0;
   if (tipoParticipacao === 'COORDENACAO' || tipoParticipacao === 'SUPERVISAO') {
     olcCode = await resolveCoordenacao(data.rateio.identificacao) || 0;
+    const fallback = data.rateio.identificacao_fallback;
+    if (!olcCode && fallback && normalizeText(fallback) !== normalizeText(data.rateio.identificacao)) {
+      log('WARN', `Coordenação "${data.rateio.identificacao}" não existe no GRM; rateio vai em ${fallback}.`);
+      if (data.compras?.avisos) data.compras.avisos.push(`Coordenação "${data.rateio.identificacao}" não existe no GRM; rateado em ${fallback}.`);
+      data.rateio.identificacao = fallback;
+      olcCode = await resolveCoordenacao(fallback) || 0;
+    }
     if (!olcCode) throw new Error(`Coordenação "${data.rateio.identificacao}" não encontrada no GRM (coordination).`);
   }
 
@@ -1176,7 +1527,24 @@ function buildRateioEntry(data, resolved) {
   return entry;
 }
 
+// Parcelas: no GRM cada parcela vira um payInvoice próprio ligado pelo
+// pinMainCode, mas o formulário envia todas no array pinInstallment. Com
+// datas/valores explícitos (duplicatas/boletos) o intervalo é só rótulo —
+// existem lançamentos reais de DANFe com parcelas de valor e data
+// irregulares (ex.: pinMainCode 95240). Usamos "M" (mensal) quando há mais
+// de uma, que é o que o financeiro usa em boletos parcelados.
+function buildInstallments(data) {
+  const parcelas = Array.isArray(data.parcelas) && data.parcelas.length > 1 ? data.parcelas : null;
+  if (!parcelas) {
+    return [{ pinInstallmentNumber: 1, pinInstallmentValue: data.valor_total, pinDueDate: data.data_vencimento, pinStatus: 'A' }];
+  }
+  return parcelas.map((p, i) => ({
+    pinInstallmentNumber: i + 1, pinInstallmentValue: p.valor, pinDueDate: toBrDate(p.vencimento), pinStatus: 'A',
+  }));
+}
+
 function buildPayInvoicePayload(data, resolved) {
+  const installments = buildInstallments(data);
   return {
     scpCode: resolved.scpCode,
     pinTitle: data.identificacao,
@@ -1186,10 +1554,10 @@ function buildPayInvoicePayload(data, resolved) {
     picCode: resolved.picCode,
     payInvoiceMainCategory: resolved.payInvoiceMainCategory,
     pinDate: data.data_conta,
-    pinDueDate: data.data_vencimento,
-    pinInstallmentTotal: 1,
+    pinDueDate: installments[0].pinDueDate,
+    pinInstallmentTotal: installments.length,
     pinInstallmentNumber: 1,
-    pinInstallmentInterval: 'N',
+    pinInstallmentInterval: installments.length > 1 ? 'M' : 'N',
     pinTotalValue: data.valor_total,
     pdtCode: resolved.pdtCode,
     pinDocNumber: data.numero_documento,
@@ -1198,9 +1566,7 @@ function buildPayInvoicePayload(data, resolved) {
     pinStatus: 'A',
     pinDividedProrated: 'N',
     proratedInvoices: [buildRateioEntry(data, resolved)],
-    pinInstallment: [{
-      pinInstallmentNumber: 1, pinInstallmentValue: data.valor_total, pinDueDate: data.data_vencimento, pinStatus: 'A',
-    }],
+    pinInstallment: installments,
     isEditRecord: 'N',
     moreThenOneCompany: resolved.moreThenOneCompany,
   };
@@ -1280,7 +1646,16 @@ async function processUpload(row, runId) {
       log('WARN', `${row.arquivo_nome}: ${payrollEmployees(extracted.texto_extraido || '').length} funcionários detectados no texto, mas não foi possível dividir o PDF por página.`);
     }
 
-    const data = documentKind === 'HOLERITE' ? applyPayslipRules(extracted, row) : applyInvoiceRules(extracted, row);
+    let data = documentKind === 'HOLERITE' ? applyPayslipRules(extracted, row) : applyInvoiceRules(extracted, row);
+    if (documentKind !== 'HOLERITE' && isComprasRow(row)) {
+      const ctx = await loadComprasContext(row);
+      if (!ctx) {
+        data.compras = { pendencias: ['nenhum item do Compras aponta pra este arquivo de NF'], avisos: [] };
+      } else {
+        const comprovante = await readComprovanteCompras(ctx, workDir);
+        data = applyComprasRules(data, ctx, comprovante);
+      }
+    }
     data.tipo_documento_fluxo = documentKind;
     data.fingerprint = fingerprintOf(data);
 
@@ -1329,8 +1704,15 @@ async function processUpload(row, runId) {
       lancado_em: DRY_RUN ? null : isoNow(),
       grm_codigo: result.recordCode ? String(result.recordCode) : null,
       grm_resposta: result,
+      extraido_json: data,
       erro: null,
     });
+    if (!DRY_RUN && data.compras?.item_ids?.length) {
+      const { error: comprasError } = await supabase.from('compras_itens')
+        .update({ nf_lancado: true, nf_lancado_em: isoNow() })
+        .in('id', data.compras.item_ids);
+      if (comprasError) log('WARN', `${row.arquivo_nome}: lançado no GRM, mas não consegui marcar os itens do Compras: ${comprasError.message}`);
+    }
     log('SUCCESS', `${row.arquivo_nome}: ${DRY_RUN ? 'payload validado sem enviar' : `lançamento salvo (código ${result.recordCode})`}.`);
     return DRY_RUN ? 'dry_run' : 'lancado';
   } catch (error) {
@@ -1447,5 +1829,6 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, comprasCategoriaDaNf, buildInstallments,
   };
 }
