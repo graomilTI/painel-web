@@ -1492,6 +1492,7 @@ export function renderContent(content, userContext) {
         .select('*')
         .neq('status', 'PAGO')
         .neq('status', 'RECUSADO')
+        .neq('status', 'AGENDADO') // boleto com "OK — Ciente": fica a pagar no GRM
         .is('comprovante_url', null)
         .order('created_at', { ascending: false })
         .limit(500),
@@ -1717,7 +1718,36 @@ export function renderContent(content, userContext) {
     </div>`;
     modal.classList.add('open');
     modal.querySelector('#finBoletoClose').onclick = () => modal.classList.remove('open');
-    modal.querySelector('#finBoletoOk').onclick = () => modal.classList.remove('open');
+    // "OK — Ciente" só fechava o modal, sem gravar nada: o card de boleto
+    // voltava PENDENTE pra sempre (achado 25/09, NF 2982 Callibra). Boleto é
+    // meio de pagamento — não há comprovante pra anexar aqui; o registro
+    // passa pra AGENDADO (ciente, pago no vencimento) e sai da lista. A
+    // quitação em si o financeiro dá no GRM.
+    modal.querySelector('#finBoletoOk').onclick = async () => {
+      const btn = modal.querySelector('#finBoletoOk');
+      const fb = modal.querySelector('#finBoletoFeedback');
+      if (String(row.id).startsWith('compra_')) { modal.classList.remove('open'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        let { error } = await supabase.from('financeiro_pagamentos').update({
+          status: 'AGENDADO',
+          atualizado_por: session?.user?.id || null,
+          atualizado_por_nome: window.currentUser?.nome || session?.user?.email || null,
+        }).eq('id', row.id);
+        if (error && isMissingColumnError(error)) {
+          ({ error } = await supabase.from('financeiro_pagamentos').update({ status: 'AGENDADO' }).eq('id', row.id));
+        }
+        if (error) throw error;
+        modal.classList.remove('open');
+        await loadSetorPagamentos();
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'OK — Ciente';
+        if (fb) { fb.textContent = `Erro: ${err.message}`; fb.className = 'fin-feedback err'; }
+      }
+    };
   }
 
   async function ativarEpiRegistros(row) {

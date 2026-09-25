@@ -74,6 +74,7 @@ const execFile = util.promisify(childProcess.execFile);
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
 const TABLE_ITEMS = process.env.GRM_LANCAR_NF_TABLE || 'grm_nf_lancamentos';
 const TABLE_RUNS = process.env.GRM_LANCAR_NF_RUNS_TABLE || 'grm_nf_lancamento_execucoes';
+const BAIXA_CONFIG_PATH = process.env.GRM_BAIXA_NF_CONFIG || path.join(__dirname, 'config', 'grm-baixa-notas-fiscais.json');
 const CONFIG_PATH = process.env.GRM_LANCAR_NF_CONFIG || path.join(__dirname, 'config', 'grm-lancar-notas-fiscais.json');
 const MAX_PER_RUN = positiveInt(process.env.GRM_LANCAR_NF_MAX_POR_EXECUCAO, 5);
 const DEBUG = envBool('GRM_LANCAR_NF_DEBUG', false);
@@ -127,7 +128,7 @@ function envBool(name, fallback) {
 
 function parseArgs(argv) {
   const out = {
-    dryRun: false, real: false, force: false, debug: false, limit: null, uploadId: null, file: null, extractOnly: false,
+    dryRun: false, real: false, force: false, debug: false, limit: null, uploadId: null, file: null, extractOnly: false, enfileirarBaixa: null,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -139,6 +140,7 @@ function parseArgs(argv) {
     else if (a === '--limit') out.limit = positiveInt(argv[++i], null);
     else if (a === '--upload-id') out.uploadId = argv[++i] || null;
     else if (a === '--file' || a === '--pdf') out.file = argv[++i] || null;
+    else if (a === '--enfileirar-baixa') out.enfileirarBaixa = argv[++i] || null;
   }
   return out;
 }
@@ -720,6 +722,9 @@ function parseComprovantePagamento(text) {
     const m = normalizeText(raw).match(/\b(\d{1,2})\s*(?:DE\s+)?(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)[A-Z]*\.?\s*(?:DE\s+)?(20\d{2})\b/);
     if (m) data = `${m[1].padStart(2, '0')}/${String(meses[m[2]]).padStart(2, '0')}/${m[3]}`;
   }
+  // Até aqui a data veio de um rótulo/formato de comprovante; daqui pra
+  // baixo é "primeira data do texto" — serve pra vencimento, NÃO pra baixa.
+  const dataConfiavel = Boolean(data);
   if (!data) data = firstMatch(raw, [/(\d{2}\/\d{2}\/\d{4})/]);
   if (!data) {
     const curto = raw.match(/\b(\d{2})\/(\d{2})\/(\d{2})\b/);
@@ -730,7 +735,25 @@ function parseComprovantePagamento(text) {
   else if (/CARTAO\s+DE\s+CREDITO|CREDITO\s+A\s+VISTA|\bCREDITO\b/.test(normalized)) forma = 'Cartão de Crédito';
   else if (/CARTAO\s+DE\s+DEBITO|\bDEBITO\b/.test(normalized)) forma = 'Cartão de Débito';
   else if (/TRANSFERENCIA|\bTED\b|\bDOC\b/.test(normalized)) forma = 'Depósito / Transferência';
-  return { data_pagamento: data ? toBrDate(data) : null, forma_pagamento: forma };
+  const valor = parseMoney(firstMatch(raw, [
+    /VALOR\s+(?:DA\s+TRANSFER[ÊE]NCIA|DO\s+PAGAMENTO|PAGO|TOTAL|DO\s+PIX|TRANSFERIDO)?\s*[:\-]?\s*R\$\s*([\d.]+,\d{2})/i,
+    /R\$\s*([\d.]+,\d{2})/i,
+  ]));
+  // Conta pagadora: todas as ocorrências "agência X ... conta Y" (a do
+  // pagador costuma vir primeiro; quem escolhe é o mapa de contas da
+  // baixa, que só conhece as contas das nossas empresas).
+  const contas = [];
+  const reConta = /AG(?:E|Ê)NCIA\s*:?\s*(\d{3,5})(?:-\d)?\s*[-\/|,]?\s*(?:C\/C|CONTA(?:\s+CORRENTE)?)\s*:?\s*([\d.]+-?[\dX]?)/gi;
+  let c;
+  while ((c = reConta.exec(raw))) contas.push({ agencia: onlyDigits(c[1]), conta: onlyDigits(c[2]) });
+  return {
+    data_pagamento: data ? toBrDate(data) : null,
+    data_confiavel: dataConfiavel,
+    forma_pagamento: forma,
+    valor,
+    contas,
+    cnpjs: allCnpjs(raw),
+  };
 }
 
 async function extractFileData(filePath, file) {
@@ -1082,7 +1105,7 @@ async function readComprovanteCompras(ctx, workDir) {
   }
   const boletos = parseBoletos(text);
   const pagamento = parseComprovantePagamento(text);
-  return { url, arquivo: path.basename(ref.path), boletos, pagamento, texto: String(text || '').slice(0, 20000) };
+  return { url, ref, arquivo: path.basename(ref.path), boletos, pagamento, texto: String(text || '').slice(0, 20000) };
 }
 
 function sameMoney(a, b) {
@@ -1177,6 +1200,88 @@ function applyComprasRules(data, ctx, comprovante) {
     pendencias,
   };
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Baixa automática de Compras pago à vista. Boleto é MEIO de pagamento, não
+// comprovante: o título fica "a pagar" e quem paga/baixa é o financeiro
+// (regra do usuário, 25/09). Só comprovante de pagamento de verdade
+// (PIX/cartão/transferência) gera baixa — e só com data lida no próprio
+// comprovante, valor igual ao lançado e conta pagadora conhecida da MESMA
+// empresa. A linha entra em grm_nf_baixas já casada (VALIDADO + pin_code),
+// então o agente de baixa (grmserver-baixa-notas-fiscais-api.js) só envia o
+// payInvoice/payment, sem tentar reconhecer o comprovante por template de
+// banco (foto de WhatsApp não tem template).
+let baixaConfig;
+function contasPagadoras() {
+  if (baixaConfig === undefined) baixaConfig = loadJson(BAIXA_CONFIG_PATH, false) || {};
+  return Array.isArray(baixaConfig.contas_pagadoras) ? baixaConfig.contas_pagadoras : [];
+}
+
+function resolveContaPagadoraComprovante(pagamento) {
+  const contas = contasPagadoras();
+  for (const c of pagamento?.contas || []) {
+    const found = contas.find((x) => x.match?.agencia && x.match?.conta
+      && onlyDigits(x.match.agencia) === c.agencia && onlyDigits(x.match.conta) === c.conta);
+    if (found) return found;
+  }
+  for (const cnpj of pagamento?.cnpjs || []) {
+    const found = contas.find((x) => x.match?.cnpj && onlyDigits(x.match.cnpj) === cnpj);
+    if (found) return found;
+  }
+  return null;
+}
+
+// Decide se a NF de Compras pode ter baixa automática; devolve o motivo
+// quando não pode (vira aviso "baixa manual" na fila).
+function avaliarBaixaCompras(data, comprovante, resolved) {
+  if (!comprovante || comprovante.erro) return { ok: false, motivo: 'sem comprovante legível' };
+  if (comprovante.boletos?.length) return { ok: false, motivo: 'boleto: fica a pagar (baixa pelo financeiro)', aPagar: true };
+  if (Array.isArray(data.parcelas) && data.parcelas.length > 1) return { ok: false, motivo: 'mais de uma parcela' };
+  const pag = comprovante.pagamento || {};
+  if (!pag.data_pagamento || !pag.data_confiavel) return { ok: false, motivo: 'data do pagamento não lida no comprovante' };
+  if (!sameMoney(pag.valor, data.valor_total)) return { ok: false, motivo: `valor do comprovante (${pag.valor == null ? '?' : `R$ ${formatMoneyInput(pag.valor)}`}) difere do lançado (R$ ${formatMoneyInput(data.valor_total)})` };
+  const conta = resolveContaPagadoraComprovante(pag);
+  if (!conta) return { ok: false, motivo: 'conta pagadora do comprovante não mapeada em grm-baixa-notas-fiscais.json' };
+  if (resolved && Number(conta.scpCode) !== Number(resolved.scpCode)) return { ok: false, motivo: `conta pagadora é da ${conta.empresa}, lançamento é de outra empresa` };
+  return { ok: true, conta };
+}
+
+async function enfileirarBaixaCompras(row, data, comprovante, resolved, pinCode) {
+  const avaliacao = avaliarBaixaCompras(data, comprovante, resolved);
+  if (!avaliacao.ok) return { status: avaliacao.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: avaliacao.motivo };
+  const { conta } = avaliacao;
+  const payload = {
+    storage_bucket: comprovante.ref.bucket,
+    storage_path: comprovante.ref.path,
+    arquivo_nome: comprovante.arquivo,
+    status: 'VALIDADO',
+    favorecido_nome: data.fornecedor || null,
+    favorecido_documento: data.fornecedor_cnpj || null,
+    valor: data.valor_total,
+    data_pagamento: toIsoDate(comprovante.pagamento.data_pagamento),
+    empresa_detectada: conta.empresa,
+    bacc_code: conta.baccCode,
+    pat_code: resolved.patCode,
+    pin_code: String(pinCode),
+    pin_codes_json: [{ pinCode: String(pinCode), patCode: resolved.patCode, valor: data.valor_total, pinDocNumber: data.numero_documento }],
+    parcela_valor_total: data.valor_total,
+    saldo_pendente: 0,
+    grm_nf_lancamento_id: row.id,
+    extraido_json: { origem: 'COMPRAS', pinDocNumber: data.numero_documento, forma: comprovante.pagamento.forma_pagamento, compras_item_ids: data.compras?.item_ids || [] },
+  };
+  const { data: inserted, error } = await supabase.from('grm_nf_baixas').insert(payload).select('id').single();
+  if (error) {
+    // 23505: o mesmo comprovante já está na fila de baixas (ex.: 1 PIX
+    // pagando 2 NFs) — aí quem decide é o financeiro.
+    return { status: 'BAIXA_MANUAL', motivo: error.code === '23505' ? 'comprovante já está na fila de baixas (usado em outra NF?)' : `falha ao enfileirar baixa: ${error.message}` };
+  }
+  const { data: ativos } = await supabase.from('grm_sync_jobs').select('id')
+    .eq('agente_id', 'sync-baixa-notas-fiscais').in('status', ['pendente', 'rodando']).limit(1);
+  if (!ativos?.length) {
+    await supabase.from('grm_sync_jobs').insert({ agente_id: 'sync-baixa-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'compras-auto' });
+  }
+  return { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName };
 }
 
 function validateData(data) {
@@ -1647,13 +1752,14 @@ async function processUpload(row, runId) {
     }
 
     let data = documentKind === 'HOLERITE' ? applyPayslipRules(extracted, row) : applyInvoiceRules(extracted, row);
+    let comprovanteCompras = null;
     if (documentKind !== 'HOLERITE' && isComprasRow(row)) {
       const ctx = await loadComprasContext(row);
       if (!ctx) {
         data.compras = { pendencias: ['nenhum item do Compras aponta pra este arquivo de NF'], avisos: [] };
       } else {
-        const comprovante = await readComprovanteCompras(ctx, workDir);
-        data = applyComprasRules(data, ctx, comprovante);
+        comprovanteCompras = await readComprovanteCompras(ctx, workDir);
+        data = applyComprasRules(data, ctx, comprovanteCompras);
       }
     }
     data.tipo_documento_fluxo = documentKind;
@@ -1715,6 +1821,23 @@ async function processUpload(row, runId) {
       return 'duplicado';
     }
 
+    if (data.compras) {
+      if (DRY_RUN) {
+        const a = avaliarBaixaCompras(data, comprovanteCompras, resolved);
+        data.compras.baixa = a.ok
+          ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName }
+          : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
+      } else {
+        // O título já existe no GRM: falha aqui não pode virar ERRO do lançamento.
+        try {
+          data.compras.baixa = await enfileirarBaixaCompras(row, data, comprovanteCompras, resolved, result.recordCode);
+        } catch (baixaError) {
+          data.compras.baixa = { status: 'BAIXA_MANUAL', motivo: `falha ao enfileirar baixa: ${baixaError.message}` };
+        }
+      }
+      if (data.compras.baixa.status === 'BAIXA_MANUAL') data.compras.avisos.push(`Baixa manual: ${data.compras.baixa.motivo}.`);
+      log('INFO', `${row.arquivo_nome}: pagamento — ${data.compras.baixa.status}${data.compras.baixa.motivo ? ` (${data.compras.baixa.motivo})` : ''}.`);
+    }
     const finalStatus = DRY_RUN ? 'DRY_RUN_OK' : 'LANCADO';
     await updateItem(row.id, {
       status: finalStatus,
@@ -1742,6 +1865,38 @@ async function processUpload(row, runId) {
     });
     log('ERROR', `${row.arquivo_nome}: ${error.message}`);
     return 'erro';
+  } finally {
+    try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* noop */ }
+  }
+}
+
+// --enfileirar-baixa <id de grm_nf_lancamentos>: pra NF de Compras que já
+// foi lançada (LANCADO) antes de existir a baixa automática — relê o
+// comprovante e enfileira a baixa com as mesmas travas do fluxo normal.
+async function runEnfileirarBaixa(id) {
+  const { data: row, error } = await supabase.from(TABLE_ITEMS).select('*').eq('id', id).single();
+  if (error) throw error;
+  if (row.status !== 'LANCADO' || !row.grm_codigo) throw new Error(`Lançamento ${id} não está LANCADO no GRM (status ${row.status}).`);
+  if (!isComprasRow(row)) throw new Error('Só NFs de Compras têm baixa automática.');
+  const data = row.extraido_json || {};
+  const ctx = await loadComprasContext(row);
+  if (!ctx) throw new Error('Nenhum item do Compras aponta pra esta NF.');
+  const workDir = fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'grm-baixa-compras-'));
+  try {
+    grmToken = await grmLogin();
+    const comprovante = await readComprovanteCompras(ctx, workDir);
+    const empresa = await resolveEmpresaScpCode(data.empresa);
+    const resolved = { scpCode: empresa?.scpCode, patCode: await resolveFormaPagamento(data.forma_pagamento) };
+    let baixa;
+    if (DRY_RUN) {
+      const a = avaliarBaixaCompras(data, comprovante, resolved);
+      baixa = a.ok ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName } : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
+    } else {
+      baixa = await enfileirarBaixaCompras(row, data, comprovante, resolved, row.grm_codigo);
+      data.compras = { ...(data.compras || {}), baixa };
+      await updateItem(row.id, { extraido_json: data });
+    }
+    log(baixa.status === 'BAIXA_MANUAL' ? 'WARN' : 'SUCCESS', `${row.arquivo_nome} (pinCode ${row.grm_codigo}): ${baixa.status}${baixa.motivo ? ` — ${baixa.motivo}` : ''}${baixa.conta ? ` — conta ${baixa.conta}` : ''}.`);
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (_) { /* noop */ }
   }
@@ -1777,6 +1932,7 @@ async function main() {
   try {
     assertConfig({ extractOnly: args.extractOnly });
     if (args.extractOnly) { await runExtractOnly(args.file); return; }
+    if (args.enfileirarBaixa) { await runEnfileirarBaixa(args.enfileirarBaixa); return; }
     if (!scheduledEnabled && !args.force && !args.uploadId && !args.real && !args.dryRun) {
       log('INFO', 'GRM_LANCAR_NF_AGENDAR=false: execução automática desativada. Use --force, --dry-run ou --real.');
       return;
