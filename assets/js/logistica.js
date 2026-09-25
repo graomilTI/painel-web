@@ -1,5 +1,5 @@
 import { initProtectedPage } from './pageInit.js';
-import { getSession } from './auth.js';
+import { getSession, getUserContext } from './auth.js';
 import { supabase } from './supabaseClient.js';
 import { anexarLaudoComGeolocalizacao, sanitizeFileName } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
@@ -381,6 +381,23 @@ async function loadAberturaRefs() {
   safe(sup.data).forEach(r => add(refs.regionais, r.nome));
 
   refs.clientes = refs.clientes.filter(c => !clientesInativos.has(normalizeText(c)));
+
+  // Supervisão: só as liberadas ao usuário em programacao_usuario_supervisoes
+  // (mesma regra da aba Atualizar). Master vê todas; se a permissão não puder
+  // ser validada, falha fechada (lista vazia).
+  try {
+    const ctx = await getUserContext();
+    if (!ctx?.user?.is_master) {
+      const semAcento = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+      const { data, error } = await supabase.from('programacao_usuario_supervisoes').select('supervisao').eq('ativo', true);
+      if (error) throw error;
+      const liberadas = new Set(safe(data).map(r => semAcento(r.supervisao)).filter(Boolean));
+      refs.regionais = refs.regionais.filter(r => liberadas.has(semAcento(r)));
+    }
+  } catch (e) {
+    console.error('[logistica#abrir] Falha ao validar supervisões liberadas:', e);
+    refs.regionais = [];
+  }
 
   ['clientes', 'armazens', 'destinos', 'locaisDestino', 'regionais'].forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   Object.values(refs.filiaisPorCliente).forEach(list => list.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
