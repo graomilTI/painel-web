@@ -77,6 +77,47 @@ function cidadesDaUf(uf) {
   return state.cidadesIbge.filter((c) => c.uf === uf).map((c) => c.nome).sort((a,b) => a.localeCompare(b,'pt-BR'));
 }
 
+// Regras por cliente: a Filial pagadora define a cidade (e UF) automaticamente.
+//  - DISAM: filial ("Cascavel/Cachoeira") = cidade de EMBARQUE; Cachoeira é distrito e não
+//    existe na base do IBGE, então vale Cascavel (PR).
+//  - SEARA ALIMENTOS: filial = cidade de DESTINO.
+const REGRAS_FILIAL_CIDADE = [
+  { cliente: 'DISAM', campo: 'Embarque', ufPreferida: 'PR' },
+  { cliente: 'SEARA', campo: 'Destino', ufPreferida: '' },
+];
+const semAcentoUpper = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+
+// Acha { uf, cidade } no texto da filial cruzando com os municípios do IBGE.
+// Ambíguo (mesmo nome em várias UFs, sem UF no texto nem preferida) => null.
+function cidadeDaFilial(filial, ufPreferida = '') {
+  const fragmentos = semAcentoUpper(filial).split(/[\/,;()\-–]+/).map(s => s.trim()).filter(Boolean);
+  const ufNoTexto = fragmentos.find(f => /^[A-Z]{2}$/.test(f) && state.cidadesIbge.some(c => c.uf === f)) || '';
+  for (const frag of fragmentos) {
+    const candidatas = state.cidadesIbge.filter(c => semAcentoUpper(c.nome) === frag);
+    if (!candidatas.length) continue;
+    const uf = ufNoTexto || ufPreferida;
+    const escolhida = (uf && candidatas.find(c => c.uf === uf)) || (candidatas.length === 1 ? candidatas[0] : null);
+    if (escolhida) return { uf: escolhida.uf, cidade: escolhida.nome };
+  }
+  return null;
+}
+
+function preencherCidadePelaFilial(content) {
+  const cliente = semAcentoUpper(content.querySelector('#osContratante')?.value);
+  const regra = REGRAS_FILIAL_CIDADE.find(r => cliente.includes(r.cliente));
+  const filial = content.querySelector('#osFilialPagadora')?.value;
+  if (!regra || !filial) return;
+  const achada = cidadeDaFilial(filial, regra.ufPreferida);
+  if (!achada) return;
+  const ufSel = content.querySelector(`#osUf${regra.campo}`);
+  const cidadeInput = content.querySelector(`#osCidade${regra.campo}`);
+  if (!ufSel || !cidadeInput) return;
+  ufSel.value = achada.uf;
+  ufSel.dispatchEvent(new Event('change', { bubbles: true })); // limpa a cidade e recarrega a lista da UF
+  cidadeInput.value = achada.cidade;
+  cidadeInput.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 const TABS = ['abrir_os', 'atualizar'];
 const TAB_LABELS = { abrir_os: 'Abrir OS', atualizar: 'Atualizar' };
 const ACAO_LABELS = { conferencia: 'Conferir', saldo: 'Saldo', finalizar: 'Finalizar' };
@@ -249,6 +290,7 @@ export async function renderContent(content, userContext) {
       aplicarRegraContratoNoCampo(content, e.target.value);
       return;
     }
+    if (e.target.id === 'osFilialPagadora') { preencherCidadePelaFilial(content); return; }
     if (e.target.id === 'osArmazemEmbarque') {
       if (state.aberturaLocalNovo && e.target.value !== state.aberturaLocalNovo.nome_local) state.aberturaLocalNovo = null;
       atualizarAlertaLocalRisco(content);
