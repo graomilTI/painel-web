@@ -44,7 +44,8 @@ create policy push_subscriptions_delete_own on public.push_subscriptions
 -- ---------------------------------------------------------------------------
 -- 2) Destinatários (inscrições) de uma notificação
 --    Regras: usuário direto | perfil (+supervisão) | módulo. Masters só recebem
---    push quando são o destinatário direto (senão receberiam tudo). Quem gerou
+--    push quando são destinatário direto ou têm o módulo atribuído direto ao
+--    usuário (senão, sendo donos de todos os módulos, receberiam tudo). Quem gerou
 --    a notificação não recebe o próprio aviso.
 -- ---------------------------------------------------------------------------
 create or replace function public.push_destinatarios(p_notificacao_id uuid)
@@ -93,7 +94,6 @@ as $function$
     select u.uid
       from u, n
      where n.destinatario_modulo is not null
-       and u.perfil <> 'MASTER'
        and (
          exists (
            select 1
