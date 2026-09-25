@@ -51,9 +51,11 @@ export async function abrirModalNf(grupo, { pagamentos, aoLancar }) {
       <div class="ds-modal-full" style="display:flex;gap:10px;flex-wrap:wrap;padding-top:4px">
         ${isUrl(grupo.nf_url) ? `<a class="ds-btn" href="${esc(grupo.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : `<span style="color:#94a3b8;font-size:13px">NF: ${esc(grupo.nf_url || '-')}</span>`}
         ${isUrl(grupo.comprovante_url) ? `<a class="ds-btn" href="${esc(grupo.comprovante_url)}" target="_blank" rel="noopener">Baixar Comprovante</a>` : ''}
-        ${!grupo.nf_lancado
-          ? `<button class="ds-btn ds-btn-primary" id="nfModalLancar" type="button">Lançado</button>`
-          : badge(`Lançado ${dataBR(grupo.nf_lancado_em)}`, 'ok')}
+        ${grupo.nf_lancado
+          ? badge(`Lançado ${dataBR(grupo.nf_lancado_em)}`, 'ok')
+          : grupo.storage_path
+            ? badge(grupo.grm ? `GRM: ${grupo.grm.status}${grupo.grm.categoria ? ` · ${grupo.grm.categoria}` : ''}` : 'Não enviado ao GRM', grupo.grm?.status === 'ERRO' ? 'danger' : 'neutral')
+            : `<button class="ds-btn ds-btn-primary" id="nfModalLancar" type="button">Marcar lançado</button>`}
       </div>
     </div>`;
 
@@ -65,7 +67,7 @@ export async function abrirModalNf(grupo, { pagamentos, aoLancar }) {
       btnLancar.textContent = 'Salvando...';
       const ok = await aoLancar(grupo);
       if (ok) closeModal('nfModal');
-      else { btnLancar.disabled = false; btnLancar.textContent = 'Lançado'; }
+      else { btnLancar.disabled = false; btnLancar.textContent = 'Marcar lançado'; }
     });
   }
 }

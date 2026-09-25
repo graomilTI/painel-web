@@ -45,13 +45,13 @@
     "feriados": []
   },
   "payment_code_map": {
+    "15": "Boleto",
+    "16": "Depósito / Transferência",
+    "17": "PIX",
+    "18": "Depósito / Transferência",
     "01": "Dinheiro",
     "03": "Cartão de Crédito",
-    "04": "Cartão de Débito",
-    "15": "Boleto",
-    "16": "Depósito Bancário",
-    "17": "PIX",
-    "18": "Transferência"
+    "04": "Cartão de Débito"
   },
   "payment_rules": [
     {
@@ -74,7 +74,7 @@
         "TED",
         "DADOS BANCÁRIOS"
       ],
-      "forma_pagamento": "Transferência"
+      "forma_pagamento": "Depósito / Transferência"
     }
   ],
   "setor_rules": [
@@ -95,13 +95,6 @@
       "setor_contains": "RH",
       "set": {
         "grupo_categoria": "DESPESAS RH"
-      }
-    },
-    {
-      "setor_contains": "COMPRAS",
-      "set": {
-        "grupo_categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM",
-        "categoria": "PREENCHER_EXATAMENTE_COMO_APARECE_NO_GRM"
       }
     }
   ],
@@ -198,5 +191,211 @@
         "categoria": "MATERIAL EXPEDIENTE"
       }
     }
-  ]
+  ],
+  "compras": {
+    "_comentario": "NFs vindas do módulo Compras (setor COMPRAS). Categoria por item (tipo do Compras + palavra no material), na ordem abaixo; a NF inteira vai na categoria de maior valor somado. Patrimônio decide pelo valor UNITÁRIO. Aprovado em 25/09/2026.",
+    "limite_imobilizado": 500,
+    "regras": [
+      {
+        "nome": "Uniforme",
+        "tipos": [
+          "UNIFORME"
+        ],
+        "keywords": [
+          "CAMISA",
+          "CAMISETA",
+          "CALCA",
+          "CALÇA",
+          "JAQUETA",
+          "BONE",
+          "BONÉ",
+          "UNIFORME",
+          "BLUSA",
+          "MOLETOM",
+          "FARDA",
+          "CRACHA",
+          "CRACHÁ"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS RH",
+          "categoria": "UNIFORME/CRACHA"
+        }
+      },
+      {
+        "nome": "EPI",
+        "tipos": [
+          "EPI"
+        ],
+        "keywords": [
+          "BOTA",
+          "LUVA",
+          "CAPACETE",
+          "OCULOS",
+          "ÓCULOS",
+          "PROTETOR",
+          "EPI",
+          "ABAFADOR",
+          "MASCARA",
+          "MÁSCARA",
+          "RESPIRADOR",
+          "CAPA DE CHUVA"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS RH",
+          "categoria": "EPI - EQUIP DE PROTECAO INDIVIDUAL"
+        }
+      },
+      {
+        "nome": "Patrimônio > limite",
+        "tipos": [
+          "PATRIMONIO"
+        ],
+        "unitario_acima_limite": true,
+        "set": {
+          "grupo_categoria": "PATRIMONIO",
+          "categoria": "IMOBILIZADO (MAIOR QUE 500,00)"
+        }
+      },
+      {
+        "nome": "Patrimônio <= limite",
+        "tipos": [
+          "PATRIMONIO"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS OPERACIONAIS",
+          "categoria": "MAQ. E EQUIPAMENTOS < 500"
+        }
+      },
+      {
+        "nome": "Informática",
+        "keywords": [
+          "MOUSE",
+          "TECLADO",
+          "MONITOR",
+          "NOTEBOOK",
+          "CELULAR",
+          "CARREGADOR",
+          "PEN DRIVE",
+          "HD EXTERNO",
+          "SSD",
+          "ROTEADOR",
+          "WEBCAM",
+          "HEADSET"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+          "categoria": "MOVEIS E EQUIP. INFORMATICA < 500"
+        }
+      },
+      {
+        "nome": "Expediente",
+        "keywords": [
+          "PAPEL",
+          "SULFITE",
+          "CANETA",
+          "TONER",
+          "CARTUCHO",
+          "TINTA EPSON",
+          "TINTA HP",
+          "TINTA CANON",
+          "TINTA BROTHER",
+          "TINTA PARA IMPRESSORA",
+          "TINTA IMPRESSORA",
+          "BOBINA",
+          "GRAMPEADOR",
+          "GRAMPO",
+          "ENVELOPE",
+          "PASTA",
+          "ETIQUETA",
+          "CLIPS",
+          "LAPIS",
+          "LÁPIS",
+          "BORRACHA",
+          "CADERNO"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+          "categoria": "MATERIAL EXPEDIENTE"
+        }
+      },
+      {
+        "nome": "Limpeza",
+        "keywords": [
+          "DETERGENTE",
+          "SABAO",
+          "SABÃO",
+          "DESINFETANTE",
+          "VASSOURA",
+          "RODO",
+          "LIMPEZA",
+          "ALCOOL",
+          "ÁLCOOL",
+          "PAPEL HIGIENICO",
+          "PAPEL HIGIÊNICO",
+          "PAPEL TOALHA",
+          "SACO DE LIXO"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+          "categoria": "UTENSILIOS/LIMPEZA"
+        }
+      },
+      {
+        "nome": "Água mineral",
+        "keywords": [
+          "AGUA MINERAL",
+          "ÁGUA MINERAL",
+          "GALAO DE AGUA",
+          "GALÃO DE ÁGUA"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS ADMINISTRATIVAS",
+          "categoria": "AGUA MINERAL NFE"
+        }
+      },
+      {
+        "nome": "Alimentação",
+        "keywords": [
+          "CAFE",
+          "CAFÉ",
+          "ACUCAR",
+          "AÇÚCAR",
+          "LANCHE",
+          "BISCOITO",
+          "MARMITA",
+          "ALIMENTO"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS OPERACIONAIS",
+          "categoria": "ALIMENTACAO"
+        }
+      },
+      {
+        "nome": "Insumos/ferramentas",
+        "keywords": [
+          "ALICATE",
+          "CHAVE",
+          "MARTELO",
+          "FURADEIRA",
+          "SERRA",
+          "TRENA",
+          "FERRAMENTA",
+          "PARAFUSADEIRA",
+          "CALADOR",
+          "QUARTEADOR",
+          "SACO",
+          "SACOS"
+        ],
+        "set": {
+          "grupo_categoria": "DESPESAS OPERACIONAIS",
+          "categoria": "INSUMOS OPERAÇÃO"
+        }
+      }
+    ],
+    "padrao": {
+      "grupo_categoria": "DESPESAS OPERACIONAIS",
+      "categoria": "INSUMOS OPERAÇÃO"
+    },
+    "coordenacao_fallback": "GERAL"
+  }
 }
