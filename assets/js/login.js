@@ -53,7 +53,27 @@ form?.addEventListener('submit', async (e) => {
   }
 
   try {
-    const authData = await signInWithPassword(emailInput.value.trim(), passwordInput.value);
+    // Em alguns celulares a promise do signIn nunca resolve (lock interno do
+    // Supabase / rede instável) mesmo com o servidor respondendo 200. Sem limite
+    // a tela ficava eternamente em "Entrando...". Se estourar, tenta aproveitar a
+    // sessão que o cliente já gravou antes de desistir.
+    let authData;
+    try {
+      authData = await Promise.race([
+        signInWithPassword(emailInput.value.trim(), passwordInput.value),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('__login_timeout__')), 15000)),
+      ]);
+    } catch (err) {
+      if (err?.message !== '__login_timeout__') throw err;
+      const session = await Promise.race([
+        getSession().catch(() => null),
+        new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+      ]);
+      if (!session?.user) {
+        throw new Error('O login demorou demais para responder. Verifique a conexão, feche e reabra o navegador e tente novamente.');
+      }
+      authData = { user: session.user };
+    }
     const userId = authData.user?.id;
     if (!userId) throw new Error('Usuário não encontrado após login.');
 
