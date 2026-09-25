@@ -53,6 +53,23 @@ function normalizeText(v) {
     .toUpperCase();
 }
 
+// Milho "Tipo Exportação" só existe para os serviços de classificação em
+// transbordo (entrada/saída); nos demais serviços o tipo não é oferecido.
+const TIPO_SO_EM_SERVICOS = {
+  'TIPO EXPORTACAO': ['CLASSIFICACAO TRANSB. ENTRADA', 'CLASSIFICACAO TRANSB. SAIDA'],
+};
+
+// Tipos válidos do produto para o serviço escolhido (servico vazio = ainda não
+// escolhido, então as opções restritas por serviço ficam de fora).
+export function tiposDoProduto(categoria, servico) {
+  const tipos = CATALOGO_PRODUTOS[categoria]?.tipos || [];
+  const svc = normalizeText(servico);
+  return tipos.filter((tipo) => {
+    const permitidos = TIPO_SO_EM_SERVICOS[normalizeText(tipo)];
+    return !permitidos || permitidos.includes(svc);
+  });
+}
+
 export function categoriaProduto(valor) {
   const t = normalizeText(valor);
   if (!t) return null;

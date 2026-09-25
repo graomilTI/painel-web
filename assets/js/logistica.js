@@ -5,7 +5,7 @@ import { anexarLaudoComGeolocalizacao, sanitizeFileName } from './laudoUpload.js
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
-import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
+import { CATALOGO_PRODUTOS, categoriaProduto, tiposDoProduto } from './logistica-abertura-os-produtos.js';
 import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo3';
 import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo3';
 
@@ -204,7 +204,7 @@ export async function renderContent(content, userContext) {
       const chaves = categoria ? CATALOGO_PRODUTOS[categoria].testes.map(o => o.key) : [];
       state.aberturaTestesSelecionados = state.aberturaTestesSelecionados.filter(k => chaves.includes(k));
       const tipo = content.querySelector('#osTipoProduto');
-      if (tipo) tipo.innerHTML = `<option value="">${categoria ? 'Selecione' : 'Selecione o produto primeiro'}</option>${(CATALOGO_PRODUTOS[categoria]?.tipos || []).map(v => `<option>${esc(v)}</option>`).join('')}`;
+      if (tipo) tipo.innerHTML = `<option value="">${categoria ? 'Selecione' : 'Selecione o produto primeiro'}</option>${tiposDoProduto(categoria, valById(content, 'osServico')).map(v => `<option>${esc(v)}</option>`).join('')}`;
       const testes = content.querySelector('#abrirOsTestesContainer');
       if (testes) testes.innerHTML = renderTestesBlock();
     }
@@ -223,6 +223,16 @@ export async function renderContent(content, userContext) {
   });
 
   content.addEventListener('change', (e) => {
+    if (e.target.id === 'osServico') {
+      const tipo = content.querySelector('#osTipoProduto');
+      const categoria = categoriaProduto(state.aberturaProdutoAtual);
+      if (tipo && categoria) {
+        const atual = tipo.value;
+        const tipos = tiposDoProduto(categoria, e.target.value);
+        tipo.innerHTML = `<option value="">Selecione</option>${tipos.map(v => `<option>${esc(v)}</option>`).join('')}`;
+        if (tipos.includes(atual)) tipo.value = atual;
+      }
+    }
     if (e.target.id === 'osContratante') {
       const cliente = normalizeText(e.target.value);
       const filiais = state.aberturaRefs.filiaisPorCliente[cliente] || [];
@@ -599,7 +609,7 @@ function renderAbrirOsTab() {
           <label>Tipo de produto *
             <select id="osTipoProduto" class="log-input">
               <option value="">${state.aberturaProdutoAtual ? 'Selecione' : 'Selecione o produto primeiro'}</option>
-              ${(CATALOGO_PRODUTOS[categoriaProduto(state.aberturaProdutoAtual)]?.tipos || []).map(tipo => `<option>${esc(tipo)}</option>`).join('')}
+              ${tiposDoProduto(categoriaProduto(state.aberturaProdutoAtual), '').map(tipo => `<option>${esc(tipo)}</option>`).join('')}
             </select>
           </label>
           <label>Serviço *
@@ -1022,6 +1032,11 @@ async function handleSalvarAberturaOsInterno(content) {
   if (contratoRegra?.tipo !== 'nao_obrigatorio') obrigatorios.push([contratoRotulo, payload.numero_contrato]);
   const faltando = obrigatorios.filter(([,v]) => !v || Number(v) === 0 && typeof v === 'number').map(([k]) => k);
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
+
+  if (!tiposDoProduto(categoriaProduto(payload.produto), payload.servico).includes(payload.tipo_produto)) {
+    alert(`O tipo "${payload.tipo_produto}" não é permitido para o serviço ${payload.servico}. "Tipo Exportação" é só para CLASSIFICAÇÃO TRANSB. ENTRADA ou SAÍDA.`);
+    return;
+  }
 
   // O campo mostra só o local; grava no formato "UF - CIDADE (LOCAL)" que o agente do GRM espera.
   payload.local_destino = comporLocalDestino(payload.uf_destino, payload.cidade_destino, payload.local_destino);

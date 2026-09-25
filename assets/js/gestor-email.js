@@ -74,7 +74,7 @@ async function abrirOsFromEmail(event) {
     } catch (err) {
       console.warn('[gestor-email] leitura online indisponível, tentando IA local', err);
     }
-    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1');
+    const { enhanceLogisticaOsFields } = await import('./logistica-os-ai-structurer.js?v=20260925-tipo-exportacao1');
     const campos = await enhanceLogisticaOsFields(texto, camposOnline, (progress) => { button.textContent = progress; });
     sessionStorage.setItem('logisticaAberturaOsEmailPrefill', JSON.stringify(campos));
     location.href = `${toPanelUrl('logistica')}#abrir_os`;
