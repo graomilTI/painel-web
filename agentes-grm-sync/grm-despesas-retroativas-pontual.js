@@ -785,6 +785,11 @@ async function processDate(page, date, budget) {
       try {
         assertDirectExpenseAllowed(expense, { cafeAuthorized, hasLaudo: candidate.hasLaudo });
         if (decision.action === 'NONE') summary.unchanged += 1;
+        else if (decision.action === 'CREATE' && norm(expense.oexName) === 'CAFE') {
+          // Café é aberto pelo agente de liberação; retroativo só aprova pendência existente.
+          audit.acao = 'SEM_PENDENCIA';
+          audit.diagnostico.motivo = 'cafe_so_aprova_pendencia_existente';
+        }
         else if (!useBudget(budget)) {
           summary.adiados += 1;
           audit.sucesso = false;
