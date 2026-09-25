@@ -1,10 +1,12 @@
 import { supabase } from './supabaseClient.js';
+import { getUserContext } from './auth.js';
 
 const MAX_WIDTH = 768;
 let saldoFiltro = '';
 let raf = 0;
 let supervisoesLiberadas = null;
 let supervisoesErro = '';
+let usuarioMaster = false;
 let supervisoesPromise = null;
 
 function isGestorMobile() {
@@ -33,6 +35,20 @@ async function carregarSupervisoesLiberadas() {
   }
 
   supervisoesPromise = (async () => {
+    try {
+      const ctx = await getUserContext();
+      usuarioMaster = Boolean(ctx?.user?.is_master);
+    } catch (_) {
+      usuarioMaster = false;
+    }
+
+    if (usuarioMaster) {
+      // Master enxerga todas as supervisões.
+      supervisoesLiberadas = new Set();
+      supervisoesErro = '';
+      return;
+    }
+
     const { data, error } = await supabase
       .from('programacao_usuario_supervisoes')
       .select('supervisao')
@@ -86,7 +102,7 @@ function supervisaoDaLinha(row) {
 function atualizarAvisoSupervisao() {
   let aviso = document.getElementById('logisticaSupervisaoAviso');
 
-  if (!isAtualizarTab() || supervisoesLiberadas === null || supervisoesLiberadas.size > 0) {
+  if (usuarioMaster || !isAtualizarTab() || supervisoesLiberadas === null || supervisoesLiberadas.size > 0) {
     aviso?.remove();
     return;
   }
@@ -117,6 +133,12 @@ function aplicarFiltroSupervisao() {
 
   if (supervisoesLiberadas === null) {
     rows.forEach((row) => row.classList.add('atz-supervisao-hidden'));
+    return;
+  }
+
+  if (usuarioMaster) {
+    rows.forEach((row) => row.classList.remove('atz-supervisao-hidden'));
+    atualizarAvisoSupervisao();
     return;
   }
 
