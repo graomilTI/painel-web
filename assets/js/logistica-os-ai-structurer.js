@@ -222,6 +222,8 @@ function canonicalize(fields, wholeText = '') {
   result.produto = canonicalProduct(result.produto, wholeText);
   result.servico = canonicalService(result.servico);
   result.tipo_produto = canonicalProductType(result.tipo_produto, result.produto, result.servico);
+  const tiposValidos = tiposDoProduto(categoriaProduto(result.produto), result.servico);
+  if (categoriaProduto(result.produto) === 'MILHO' && tiposValidos.length === 1) result.tipo_produto = tiposValidos[0];
   result.troca_notas = canonicalYesNo(result.troca_notas);
   result.volume_inicial = parseNumber(result.volume_inicial);
   result.numero_contrato = clean(result.numero_contrato).replace(/\s+/g, '');

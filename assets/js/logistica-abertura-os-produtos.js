@@ -64,6 +64,8 @@ const TIPO_SO_EM_SERVICOS = {
 export function tiposDoProduto(categoria, servico) {
   const tipos = CATALOGO_PRODUTOS[categoria]?.tipos || [];
   const svc = normalizeText(servico);
+  // Milho em classificação de transbordo: o único tipo válido é "Tipo Exportação".
+  if (categoria === 'MILHO' && TIPO_SO_EM_SERVICOS['TIPO EXPORTACAO'].includes(svc)) return ['Tipo Exportação'];
   return tipos.filter((tipo) => {
     const permitidos = TIPO_SO_EM_SERVICOS[normalizeText(tipo)];
     return !permitidos || permitidos.includes(svc);

@@ -204,7 +204,11 @@ export async function renderContent(content, userContext) {
       const chaves = categoria ? CATALOGO_PRODUTOS[categoria].testes.map(o => o.key) : [];
       state.aberturaTestesSelecionados = state.aberturaTestesSelecionados.filter(k => chaves.includes(k));
       const tipo = content.querySelector('#osTipoProduto');
-      if (tipo) tipo.innerHTML = `<option value="">${categoria ? 'Selecione' : 'Selecione o produto primeiro'}</option>${tiposDoProduto(categoria, valById(content, 'osServico')).map(v => `<option>${esc(v)}</option>`).join('')}`;
+      if (tipo) {
+        const tiposValidos = tiposDoProduto(categoria, valById(content, 'osServico'));
+        tipo.innerHTML = `<option value="">${categoria ? 'Selecione' : 'Selecione o produto primeiro'}</option>${tiposValidos.map(v => `<option>${esc(v)}</option>`).join('')}`;
+        if (categoria === 'MILHO' && tiposValidos.length === 1) tipo.value = tiposValidos[0];
+      }
       const testes = content.querySelector('#abrirOsTestesContainer');
       if (testes) testes.innerHTML = renderTestesBlock();
     }
@@ -231,6 +235,7 @@ export async function renderContent(content, userContext) {
         const tipos = tiposDoProduto(categoria, e.target.value);
         tipo.innerHTML = `<option value="">Selecione</option>${tipos.map(v => `<option>${esc(v)}</option>`).join('')}`;
         if (tipos.includes(atual)) tipo.value = atual;
+        else if (categoria === 'MILHO' && tipos.length === 1) tipo.value = tipos[0];
       }
     }
     if (e.target.id === 'osContratante') {
@@ -1059,7 +1064,7 @@ async function handleSalvarAberturaOsInterno(content) {
   if (faltando.length) { alert(`Preencha os campos obrigatórios: ${faltando.join(', ')}`); return; }
 
   if (!tiposDoProduto(categoriaProduto(payload.produto), payload.servico).includes(payload.tipo_produto)) {
-    alert(`O tipo "${payload.tipo_produto}" não é permitido para o serviço ${payload.servico}. "Tipo Exportação" é só para CLASSIFICAÇÃO TRANSB. ENTRADA ou SAÍDA.`);
+    alert(`O tipo "${payload.tipo_produto}" não é permitido para o serviço ${payload.servico}. Milho em CLASSIFICAÇÃO TRANSB. ENTRADA ou SAÍDA deve ser "Tipo Exportação", e esse tipo é só para esses serviços.`);
     return;
   }
 
