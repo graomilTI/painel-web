@@ -44,6 +44,43 @@ async function redirectIfSessionExists() {
   }
 }
 
+function clearSupabaseAuthStorage() {
+  for (const store of [window.localStorage, window.sessionStorage]) {
+    try {
+      Object.keys(store)
+        .filter((k) => /^sb-.*-(auth-token|code-verifier)/.test(k))
+        .forEach((k) => store.removeItem(k));
+    } catch {}
+  }
+  try { sessionStorage.removeItem('grao1000:user-ctx:v1'); } catch {}
+}
+
+async function retryWithFreshClient(email, password) {
+  clearSupabaseAuthStorage();
+  const [{ createClient }, { SUPABASE_URL, SUPABASE_ANON_KEY }] = await Promise.all([
+    import('https://esm.sh/@supabase/supabase-js@2'),
+    import('./supabaseClient.js'),
+  ]);
+  const fresh = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      lock: async (_name, _timeout, fn) => fn(),
+    },
+  });
+  const { data, error } = await Promise.race([
+    fresh.auth.signInWithPassword({ email, password }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('O login demorou demais para responder. Verifique a conexão, feche e reabra o navegador e tente novamente.')), 15000)),
+  ]);
+  if (error) throw error;
+  if (!data?.session) throw new Error('Não foi possível iniciar a sessão. Tente novamente.');
+  // A sessão já ficou gravada no storage; o contexto do usuário é carregado no
+  // boot da página seguinte (requireAuth).
+  feedback.textContent = 'Login realizado com sucesso.';
+  window.location.replace(toPanelUrl('dashboard'));
+}
+
 form?.addEventListener('submit', async (e) => {
   e.preventDefault();
   feedback.textContent = 'Entrando...';
@@ -69,10 +106,15 @@ form?.addEventListener('submit', async (e) => {
         getSession().catch(() => null),
         new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
       ]);
-      if (!session?.user) {
-        throw new Error('O login demorou demais para responder. Verifique a conexão, feche e reabra o navegador e tente novamente.');
+      if (session?.user) {
+        authData = { user: session.user };
+      } else {
+        // Cliente travado (dados de sessão antigos/lock preso no Safari): limpa o
+        // que o Supabase gravou e refaz o login com um cliente novo, sem lock.
+        feedback.textContent = 'Reconectando...';
+        await retryWithFreshClient(emailInput.value.trim(), passwordInput.value);
+        return;
       }
-      authData = { user: session.user };
     }
     const userId = authData.user?.id;
     if (!userId) throw new Error('Usuário não encontrado após login.');
