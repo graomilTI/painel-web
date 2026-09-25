@@ -6,7 +6,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 
-const VERSION = 'V6.1-API-DIRETA-ALMOCO-PROGRAMACAO-JANTA-19H-LOCAL';
+const VERSION = 'V6.2-API-DIRETA-CAFE-JANTA-SO-APROVA';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
 ).replace(/\/?$/, '/');
@@ -58,6 +58,14 @@ function assertDirectExpenseAllowed(
     error.code = 'JANTA_SEM_AUTORIZACAO_OPERACIONAL';
     throw error;
   }
+}
+
+// Café e Janta são abertos (lançados) pelo agente de liberação/operação; o
+// retroativo só pode APROVAR a pendência que já existe no GRM (e só se as
+// regras de autorização acima estiverem cumpridas) — nunca criar.
+function isCafeOuJanta(expense) {
+  const key = norm(expense?.oexName);
+  return key === 'CAFE' || key === 'JANTA';
 }
 
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
@@ -560,6 +568,7 @@ async function main() {
     janta_autorizada_laudo_19h: 0,
     janta_bloqueada_laudo_19h: 0,
     orfas_recusadas: 0,
+    sem_pendencia_cafe_janta: 0,
   };
   let actionCount = 0;
 
@@ -640,6 +649,10 @@ async function main() {
         assertDirectExpenseAllowed(expense, { cafeAuthorized, jantaAuthorized });
         if (decision.action === 'NONE') {
           summary.unchanged += 1;
+        } else if (decision.action === 'CREATE' && isCafeOuJanta(expense)) {
+          summary.sem_pendencia_cafe_janta += 1;
+          audit.acao = 'SEM_PENDENCIA';
+          audit.diagnostico.motivo = 'cafe_janta_so_aprova_pendencia_existente';
         } else if (actionCount >= MAX_ACTIONS) {
           summary.adiados += 1;
           audit.sucesso = false;
