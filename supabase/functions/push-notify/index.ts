@@ -30,6 +30,7 @@ async function enviar(
   const mortas: string[] = [];
   let enviados = 0;
   let falhas = 0;
+  const erros: string[] = [];
 
   await Promise.all(subs.map(async (s) => {
     try {
@@ -42,6 +43,7 @@ async function enviar(
     } catch (err) {
       falhas++;
       const status = (err as { statusCode?: number }).statusCode;
+      erros.push(`${status ?? '?'}: ${String((err as { body?: string }).body ?? (err as Error).message).slice(0, 160)}`);
       // 404/410: inscrição expirada ou revogada no aparelho — remove.
       if (status === 404 || status === 410) mortas.push(String(s.sub_id ?? s.id));
       else console.warn("[push-notify] falha", status, (err as Error).message);
@@ -49,7 +51,7 @@ async function enviar(
   }));
 
   if (mortas.length) await supabase.from("push_subscriptions").delete().in("id", mortas);
-  return { enviados, falhas, removidas: mortas.length };
+  return { enviados, falhas, removidas: mortas.length, erros };
 }
 
 serve(async (req) => {
