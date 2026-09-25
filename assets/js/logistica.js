@@ -308,6 +308,24 @@ async function loadAllOs() {
   state.allOsLoading = false;
 }
 
+const semAcentoSup = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+
+// Supervisões liberadas ao usuário em programacao_usuario_supervisoes (mesma
+// regra da aba Atualizar). Retorna null para master (sem restrição) e um Set
+// vazio se a permissão não puder ser validada (falha fechada).
+async function getSupervisoesLiberadas() {
+  try {
+    const ctx = await getUserContext();
+    if (ctx?.user?.is_master) return null;
+    const { data, error } = await supabase.from('programacao_usuario_supervisoes').select('supervisao').eq('ativo', true);
+    if (error) throw error;
+    return new Set(safe(data).map(r => semAcentoSup(r.supervisao)).filter(Boolean));
+  } catch (e) {
+    console.error('[logistica] Falha ao validar supervisões liberadas:', e);
+    return new Set();
+  }
+}
+
 async function loadAberturaRefs() {
   const refs = { clientes: [], filiaisPorCliente: {}, armazens: [], destinos: [], locaisDestino: [], regionais: [] };
 
@@ -382,22 +400,9 @@ async function loadAberturaRefs() {
 
   refs.clientes = refs.clientes.filter(c => !clientesInativos.has(normalizeText(c)));
 
-  // Supervisão: só as liberadas ao usuário em programacao_usuario_supervisoes
-  // (mesma regra da aba Atualizar). Master vê todas; se a permissão não puder
-  // ser validada, falha fechada (lista vazia).
-  try {
-    const ctx = await getUserContext();
-    if (!ctx?.user?.is_master) {
-      const semAcento = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
-      const { data, error } = await supabase.from('programacao_usuario_supervisoes').select('supervisao').eq('ativo', true);
-      if (error) throw error;
-      const liberadas = new Set(safe(data).map(r => semAcento(r.supervisao)).filter(Boolean));
-      refs.regionais = refs.regionais.filter(r => liberadas.has(semAcento(r)));
-    }
-  } catch (e) {
-    console.error('[logistica#abrir] Falha ao validar supervisões liberadas:', e);
-    refs.regionais = [];
-  }
+  // Supervisão: só as liberadas ao usuário (master vê todas; falha fechada).
+  const liberadas = await getSupervisoesLiberadas();
+  if (liberadas) refs.regionais = refs.regionais.filter(r => liberadas.has(semAcentoSup(r)));
 
   ['clientes', 'armazens', 'destinos', 'locaisDestino', 'regionais'].forEach(k => refs[k].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
   Object.values(refs.filiaisPorCliente).forEach(list => list.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')));
@@ -434,18 +439,21 @@ function aplicarRegraContratoNoCampo(content, clienteNome) {
 
 async function loadAberturaOs() {
   state.aberturaLoading = true;
-  await Promise.all([loadAberturaRefs(), loadCidadesBrasil()]);
+  const [, , liberadas] = await Promise.all([loadAberturaRefs(), loadCidadesBrasil(), getSupervisoesLiberadas()]);
   const { data, error } = await supabase
     .from('logistica_abertura_os')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(500);
+    .limit(1000);
 
   if (error) {
     console.error(error);
     state.aberturaRows = [];
   } else {
-    state.aberturaRows = safe(data);
+    // "Minhas solicitações": só as da(s) própria(s) supervisão(ões); master vê todas.
+    state.aberturaRows = liberadas
+      ? safe(data).filter(r => liberadas.has(semAcentoSup(r.regional)))
+      : safe(data);
   }
   state.aberturaLoading = false;
 }
