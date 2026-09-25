@@ -93,6 +93,7 @@ export async function enviarTestePush() {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.ok) throw new Error(body.error || 'Falha ao enviar o teste.');
+  if (!body.enviados) throw new Error(`O envio falhou (${(body.erros || []).join(' | ') || 'sem detalhe'}).${body.removidas ? ' Ative os avisos novamente.' : ''}`);
   return body;
 }
 
