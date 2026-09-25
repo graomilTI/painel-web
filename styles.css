@@ -2570,6 +2570,8 @@ body.mobile-panel-mode #topbarAppsBtn { display: none !important; }
 
 #sidebarMenu {
   flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .sidebar-footer {
