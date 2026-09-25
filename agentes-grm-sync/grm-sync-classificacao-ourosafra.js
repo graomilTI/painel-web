@@ -538,10 +538,23 @@ async function abrirAgendamento(page, rowIndex) {
   const btn = await row.$('td button, td a');
   if (!btn) throw new Error('Botão de ação não encontrado na linha');
   await btn.click();
-  await page.waitForFunction(
-    () => Array.from(document.querySelectorAll('*')).some((el) => (el.textContent || '').trim().startsWith('Classificação - Agendamento')),
-    { timeout: 15000 }
-  );
+  try {
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('*')).some((el) => (el.textContent || '').trim().startsWith('Classificação - Agendamento')),
+      { timeout: 15000 }
+    );
+  } catch (err) {
+    // 25/09/2026: QJN-6E14 (O.S. 92833) falhou aqui em 4 ciclos seguidos
+    // (16:03-16:25) e depois saiu do card (equipe ajustou manualmente, então
+    // não deu pra reproduzir). Registra o que a tela mostra pra próxima vez.
+    const tela = await page.evaluate(() => ({
+      avisos: Array.from(document.querySelectorAll('.rz-notification, .rz-growl, [class*="notification"], [class*="alert"], [class*="dialog"]')).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 4),
+      textoDaLinha: (document.activeElement && document.activeElement.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    })).catch(() => null);
+    log('DEBUG', `[diag:abrirAgendamento] modal não abriu em 15s: ${JSON.stringify(tela)}`);
+    await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-abrir-agendamento.png', fullPage: false }).catch(() => {});
+    throw err;
+  }
   await wait(1500);
   // Descoberta ao vivo em 17/09/2026: o modal abre SEM a tabela "Itens da
   // Classificação" na primeira vez (só tem os campos de metadado) — precisa
@@ -1154,6 +1167,20 @@ async function main() {
       // reprocessadas a cada ciclo — só geravam ruído e repetiam a edição dos
       // itens. Pra reprocessá-las depois que o Ouro Safra for corrigido, rode
       // com OUROSAFRA_REPROCESSAR_FALHAS_UPLOAD=true.
+      // Mesma ideia pra falha de ABERTURA do agendamento ("Waiting failed"): só
+      // pausa depois de 3 ocorrências no dia (pode ser a equipe mexendo na
+      // placa na hora — QJN-6E14, 25/09 — e passa sozinha).
+      {
+        const { data: falhasAbrir, error: erroAbrir } = await supabase.from(EXEC_TABLE).select('agendamento_id').eq('status', 'erro').ilike('erro', '%Waiting failed%').in('agendamento_id', idsFila).gte('iniciado_em', `${hojeISO}T03:00:00Z`);
+        if (!erroAbrir) {
+          const contagem = new Map();
+          for (const r of falhasAbrir || []) contagem.set(String(r.agendamento_id), (contagem.get(String(r.agendamento_id)) || 0) + 1);
+          const antesAbrir = fila.length;
+          fila = fila.filter((a) => (contagem.get(String(a.id)) || 0) < 3);
+          if (antesAbrir !== fila.length) log('INFO', `${antesAbrir - fila.length} placa(s) com 3+ falhas ao abrir o agendamento hoje — pausada(s) até amanhã.`);
+        }
+      }
+
       if (process.env.OUROSAFRA_REPROCESSAR_FALHAS_UPLOAD !== 'true') {
         const { data: falhasUpload, error: erroFalhas } = await supabase.from(EXEC_TABLE).select('agendamento_id').eq('status', 'erro').ilike('erro', '%sub-modal de upload%').in('agendamento_id', idsFila);
         if (erroFalhas) {
