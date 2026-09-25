@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { browserOcrFile } from './logistica-browser-ocr.js?v=20260803-browser-ocr1';
-import { enhanceLogisticaOsFields } from './logistica-os-ai-structurer.js?v=20260905-catalogo-produtos1';
+import { enhanceLogisticaOsFields } from './logistica-os-ai-structurer.js?v=20260925-tipo-exportacao1';
 import { localSemUfCidade } from './logistica-locais-servico.js?v=20260924-novo3';
 
 const UPLOAD_ID = 'abrirOsUploadWrap';
@@ -128,8 +128,11 @@ function applyFields(fields) {
   const destino = splitCidadeUf(fields?.cidade_destino);
   if (applyField('osUfEmbarque', embarque.uf)) filled += 1;
   if (applyField('osUfDestino', destino.uf)) filled += 1;
+  // Serviço antes do tipo: "Tipo Exportação" (Milho) só é oferecido para os
+  // serviços de classificação em transbordo.
+  if (applyField(FIELD_IDS.servico, fields?.servico)) filled += 1;
   Object.entries(FIELD_IDS).forEach(([key, id]) => {
-    if (key === 'produto') return;
+    if (key === 'produto' || key === 'servico') return;
     const value = key === 'cidade_embarque' ? embarque.cidade : key === 'cidade_destino' ? destino.cidade : fields?.[key];
     if (applyField(id, value)) filled += 1;
   });

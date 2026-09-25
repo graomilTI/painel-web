@@ -2,7 +2,7 @@
 // Prioridade: campos explicitamente rotulados -> IA nativa do Chrome -> leitura anterior.
 // A IA roda localmente pelo Prompt API/Gemini Nano quando disponível.
 
-import { CATALOGO_PRODUTOS, categoriaProduto } from './logistica-abertura-os-produtos.js';
+import { CATALOGO_PRODUTOS, categoriaProduto, tiposDoProduto } from './logistica-abertura-os-produtos.js';
 
 const KEYS = [
   'contratante_cliente',
@@ -132,9 +132,9 @@ function canonicalProduct(value, wholeText = '') {
 // "Declarada Intacta" (feminino, concordando com "Soja") — o campo nunca
 // batia com nenhuma opção. Agora só aceita um candidato se ele realmente for
 // uma opção válida para o produto já resolvido.
-function canonicalProductType(value, produtoResolvido) {
+function canonicalProductType(value, produtoResolvido, servicoResolvido = '') {
   const categoria = categoriaProduto(produtoResolvido);
-  const tiposPermitidos = categoria ? CATALOGO_PRODUTOS[categoria].tipos : null;
+  const tiposPermitidos = categoria ? tiposDoProduto(categoria, servicoResolvido) : null;
   const text = normalize(value);
   if (!text || !tiposPermitidos?.length) return '';
 
@@ -220,8 +220,8 @@ function discardLabelBleed(fields) {
 function canonicalize(fields, wholeText = '') {
   const result = { ...blankFields(), ...discardLabelBleed(fields || {}) };
   result.produto = canonicalProduct(result.produto, wholeText);
-  result.tipo_produto = canonicalProductType(result.tipo_produto, result.produto);
   result.servico = canonicalService(result.servico);
+  result.tipo_produto = canonicalProductType(result.tipo_produto, result.produto, result.servico);
   result.troca_notas = canonicalYesNo(result.troca_notas);
   result.volume_inicial = parseNumber(result.volume_inicial);
   result.numero_contrato = clean(result.numero_contrato).replace(/\s+/g, '');
