@@ -1695,7 +1695,25 @@ async function processUpload(row, runId) {
     log('INFO', `${row.arquivo_nome}: ${DRY_RUN ? 'resolvendo cadastros no GRM (dry-run)' : 'lançando no GRM'} - ${documentLabel} ${data.numero_documento}, ${data.fornecedor || data.fornecedor_cnpj}, R$ ${formatMoneyInput(data.valor_total)}.`);
 
     const resolved = await resolveGrmCodes(data);
-    const result = await submitPayInvoice(data, resolved, localPath, row.arquivo_nome);
+    let result;
+    try {
+      result = await submitPayInvoice(data, resolved, localPath, row.arquivo_nome);
+    } catch (error) {
+      // O GRM recusa número de documento repetido do mesmo favorecido: a NF
+      // já foi lançada (normalmente à mão, antes do agente — ex.: NF 6460
+      // Girardello, pinCode 120403, em 25/09). Não é erro do agente: marca
+      // DUPLICADO e, se veio do Compras, tira da lista de pendentes.
+      if (!/docNumberAlreadyExists/i.test(String(error.message))) throw error;
+      await updateItem(row.id, {
+        status: 'DUPLICADO', execucao_id: runId, extraido_json: data,
+        erro: `Já existe lançamento no GRM com o documento ${data.numero_documento} deste fornecedor (lançado fora do agente).`,
+      });
+      if (data.compras?.item_ids?.length) {
+        await supabase.from('compras_itens').update({ nf_lancado: true, nf_lancado_em: isoNow() }).in('id', data.compras.item_ids);
+      }
+      log('WARN', `${row.arquivo_nome}: documento ${data.numero_documento} já existe no GRM — marcado DUPLICADO.`);
+      return 'duplicado';
+    }
 
     const finalStatus = DRY_RUN ? 'DRY_RUN_OK' : 'LANCADO';
     await updateItem(row.id, {
