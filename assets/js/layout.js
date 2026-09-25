@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient.js';
 import { clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
 import { initNotificacoesEngine } from './notificacoes-engine.js';
+import { renderControlePush, sincronizarPush } from './push-notificacoes.js';
 
 const SIDEBAR_COLLAPSED_KEY = 'painel_sidebar_collapsed';
 const MOBILE_BREAKPOINT = 768;
@@ -490,6 +491,11 @@ function injectNotifStyles() {
     .notif-dd-footer{padding:10px 16px;border-top:1px solid rgba(255,255,255,.06);text-align:center}
     .notif-dd-footer a{font-size:12px;color:#6dffbc;text-decoration:none;font-weight:700;opacity:.8}
     .notif-dd-footer a:hover{opacity:1}
+    .push-ctl{padding:12px 16px;border-top:1px solid rgba(255,255,255,.06);font-size:12px;color:#94a3b8;line-height:1.45}
+    .push-ctl-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .push-ctl-acoes .btn{min-height:32px;padding:0 12px;font-size:12px}
+    .push-ctl-msg{margin-top:6px;color:#6dffbc}
+    .push-ctl[data-estado="ativo"] .push-ctl-txt{color:#6dffbc}
     @media(max-width:480px){.notif-dropdown{right:-8px;width:calc(100vw - 16px)}}
   `;
   document.head.appendChild(s);
@@ -570,6 +576,7 @@ function ensureTopbarIconButtons() {
       <a href="${toPanelUrl('notificacoes')}" class="notif-dd-ver-todas">Ver todas</a>
     </div>
     <div id="topbarNotifList" class="notif-dd-list"></div>
+    <div id="topbarNotifPush"></div>
     <div class="notif-dd-footer"><a href="${toPanelUrl('notificacoes')}">Central de notificações →</a></div>
   `;
 
@@ -584,6 +591,9 @@ function ensureTopbarIconButtons() {
   notifBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     dropdown.classList.toggle('open');
+    if (dropdown.classList.contains('open')) {
+      renderControlePush(document.getElementById('topbarNotifPush'), window.__painelNotifUserId).catch(() => {});
+    }
   });
 
   // Fecha ao clicar fora
@@ -830,6 +840,8 @@ async function initNotifBell(userContext) {
     engine.onUpdate((newList, newCount) => updateNotifBell(newList, newCount, engine));
     // Expõe o engine globalmente para uso pelos módulos
     window.__painelNotifEngine = engine;
+    window.__painelNotifUserId = userContext?.user?.id || null;
+    sincronizarPush(window.__painelNotifUserId);
   } catch (err) {
     console.error('[notif bell]', err);
   }

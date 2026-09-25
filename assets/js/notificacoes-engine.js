@@ -25,6 +25,11 @@ export const NOTIF_META = {
   os_atender:           { prioridade: 'atencao',     icone: 'clipboard-check', label: 'OS para Conferência',   modulo_url: 'distribuir-os' },
   compra_realizada:     { prioridade: 'informativo', icone: 'shopping-bag',    label: 'Compra Realizada',      modulo_url: 'compras' },
   despesa_conferencia:  { prioridade: 'atencao',     icone: 'receipt',         label: 'Despesa para Conferir', modulo_url: 'adm-conferencia' },
+  os_solicitada:        { prioridade: 'atencao',     icone: 'clipboard-check', label: 'Solicitação de O.S.',   modulo_url: 'logistica-os' },
+  os_correcao:          { prioridade: 'urgente',     icone: 'clipboard-alert', label: 'Correção de O.S.',      modulo_url: 'logistica' },
+  os_recusada:          { prioridade: 'atencao',     icone: 'clipboard-alert', label: 'O.S. recusada',         modulo_url: 'logistica' },
+  os_cadastrada:        { prioridade: 'normal',      icone: 'check-circle',    label: 'O.S. cadastrada',       modulo_url: 'logistica' },
+  os_erro:              { prioridade: 'urgente',     icone: 'clipboard-alert', label: 'Erro ao cadastrar O.S.', modulo_url: 'logistica-os' },
 };
 
 const PRIORIDADE_ORDER = { urgente: 0, atencao: 1, normal: 2, informativo: 3 };

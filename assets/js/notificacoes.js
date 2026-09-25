@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { initNotificacoesEngine, NOTIF_META } from './notificacoes-engine.js';
+import { renderControlePush } from './push-notificacoes.js';
 import { toPanelUrl } from './paths.js';
 
 const PRIORIDADE_LABEL = { urgente: 'Urgente', atencao: 'Atenção', normal: 'Normal', informativo: 'Informativo' };
@@ -58,6 +59,7 @@ function injectStyles() {
     .pn-icon-btn-exec{background:rgba(22,101,52,.28);border-color:rgba(45,212,160,.35);color:#bbf7d0}
     .pn-icon-btn-exec.is-done{background:rgba(45,212,160,.22);border-color:rgba(45,212,160,.5);color:#6ee7b7;cursor:default}
     .pn-icon-btn[disabled]{opacity:.6;cursor:wait}
+    .pn-push .push-ctl{margin-bottom:16px;border:1px solid rgba(148,163,184,.12);border-radius:16px;background:#0d0d18;font-size:13px}
     .pn-empty{padding:32px;text-align:center;color:#475569;font-size:14px}
     .pn-master-table{overflow:auto;border:1px solid rgba(148,163,184,.12);border-radius:16px}
     .pn-table{width:100%;border-collapse:collapse;min-width:900px;background:#0d0d18;font-size:13px}
@@ -107,6 +109,8 @@ export async function renderContent(content, userContext) {
         <p>Acompanhe todas as notificações do painel em tempo real.</p>
       </div>
 
+      <div id="pnPushCtl" class="pn-push"></div>
+
       <div class="pn-filters" id="pnFilters">
         <span style="font-size:13px;color:#64748b;font-weight:700">Filtrar:</span>
         <button class="pn-filter-btn active" data-filter="todas">Todas</button>
@@ -150,6 +154,7 @@ export async function renderContent(content, userContext) {
 
   try {
     // Reutiliza o engine já inicializado pelo layout, se disponível
+    renderControlePush(content.querySelector('#pnPushCtl'), userContext?.user?.id).catch(() => {});
     engine = window.__painelNotifEngine || await initNotificacoesEngine(userContext);
     if (!window.__painelNotifEngine) window.__painelNotifEngine = engine;
   } catch (err) {

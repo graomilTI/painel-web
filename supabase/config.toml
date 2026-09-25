@@ -88,3 +88,8 @@ verify_jwt = false
 
 [functions.grm-liberacao-despesas-publicar]
 verify_jwt = true
+
+# Chamada pelo trigger de Postgres com service_role_key (nao e JWT de usuario) ou
+# pelo usuario logado no modo teste; a autorizacao e feita dentro da funcao.
+[functions.push-notify]
+verify_jwt = false
