@@ -73,9 +73,13 @@
  * ao vivo: mesmo período de 10 dias, resposta traz cItems com um código
  * semântico estável por item (pctCodeATT: 'umidade'/'impureza'/'avariado')
  * que independe do rótulo específico por cliente (ex.: "Matérias E. e Imp."
- * vs "Materias E. e imp." têm o mesmo pctCodeATT). O download do laudo
- * (baixarLaudoDaOS) e todo o fluxo Ouro Safra continuam via Puppeteer —
- * sem alternativa de API pra essas partes.
+ * vs "Materias E. e imp." têm o mesmo pctCodeATT).
+ *
+ * ATUALIZAÇÃO 24/09/2026 — o download do laudo também migrou pra API do GRM
+ * (POST /api/load/generateLoadPDF com o loaCode da carga, returnType base64;
+ * baixarLaudoViaApi): o caminho antigo via Puppeteer (aba blob:) devolvia um
+ * PDF vazio de 583 bytes. O GRM não usa mais Puppeteer nenhum; só o fluxo do
+ * Ouro Safra (Blazor Server, sem API) continua via Puppeteer.
  */
 
 require('dotenv').config();
@@ -238,23 +242,6 @@ async function clearAndType(page, selector, value) {
 // Login
 // ---------------------------------------------------------------------------
 
-async function loginGRM(page) {
-  log('INFO', 'Login GRM...');
-  await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2', timeout: 60000 });
-  await page.waitForSelector('input#input-v-2', { timeout: 30000 });
-  await clearAndType(page, 'input#input-v-2', process.env.GRMSERVER_USER);
-  await clearAndType(page, 'input#input-v-5', process.env.GRMSERVER_PASSWORD);
-  await page.click('button.submit-btn');
-  for (let i = 0; i < 45; i += 1) {
-    await wait(1000);
-    if (!page.url().includes('/login')) {
-      log('SUCCESS', 'Login GRM OK');
-      return;
-    }
-  }
-  throw new Error('Login GRM falhou: página não saiu de /login após 45s.');
-}
-
 async function loginOuroSafra(page) {
   log('INFO', 'Login Ouro Safra...');
   await page.goto('https://app.ourosafra.com.br/app/cdci', { waitUntil: 'networkidle2', timeout: 60000 });
@@ -350,12 +337,6 @@ async function linhaEmEdicao(page, label) {
   } catch (e) {
     return false;
   }
-}
-
-async function clickNthButtonInRow(row, index) {
-  const buttons = await row.$$('button');
-  if (!buttons[index]) throw new Error(`Botão índice ${index} não encontrado na linha (${buttons.length} botões)`);
-  await buttons[index].click();
 }
 
 // ---------------------------------------------------------------------------
@@ -971,340 +952,6 @@ async function baixarLaudoViaApi(token, loaCode) {
   return pdf;
 }
 
-async function baixarLaudoDaOS(page, browser, numeroOS, placa) {
-  // Diagnóstico temporário (22/09/2026): investigar a causa do travamento
-  // intermitente (~500s, "Runtime.callFunctionOn timed out") logo depois da
-  // busca da O.S. Esse listener NÃO depende de nenhum evaluate — é
-  // orientado a eventos de rede via CDP (Network domain), então continua
-  // logando normalmente mesmo que a thread de JS da página trave (o que
-  // seria a própria causa do problema, no mesmo padrão já confirmado pro
-  // lado do Ouro Safra com o Google Maps). Se durante o travamento aparecer
-  // uma requisição repetindo sem parar (polling, websocket, retry), é forte
-  // candidato à causa raiz.
-  const t0Rede = Date.now();
-  const onRequest = (req) => {
-    const tipo = req.resourceType();
-    if (tipo === 'image' || tipo === 'font' || tipo === 'stylesheet') return;
-    log('DEBUG', `[rede-grm +${Date.now() - t0Rede}ms] ${tipo} ${req.method()} ${req.url().slice(0, 150)}`);
-  };
-  page.on('request', onRequest);
-  try {
-    return await baixarLaudoDaOSInterno(page, browser, numeroOS, placa);
-  } finally {
-    page.off('request', onRequest);
-  }
-}
-
-async function baixarLaudoDaOSInterno(page, browser, numeroOS, placa) {
-  const t0 = Date.now();
-  const checkpoint = (etapa) => log('DEBUG', `[timing:baixarLaudoDaOS] ${etapa} em ${Date.now() - t0}ms`);
-  checkpoint('inicio');
-  await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
-  checkpoint('goto concluido');
-  // Hipótese 23/09/2026: em produção o navegador tem 2 abas (Ouro Safra +
-  // GRM); a do GRM fica em segundo plano e o Chrome throttla rAF/render, o
-  // que pode impedir o Vuetify de montar o conteúdo dos painéis de data do
-  // modal (o diagnóstico isolado, de aba única em primeiro plano, achava a
-  // placa; produção não). Traz a aba pra frente.
-  await page.bringToFront().catch(() => {});
-  await wait(2000);
-  // Busca pelo número da O.S. no campo de busca livre da toolbar (única
-  // implementação real — uma chamada anterior a uma função inexistente
-  // "preencherCampoTexto" foi removida em 18/09/2026: sempre lançava
-  // ReferenceError antes mesmo do .catch() poder suprimir, então nunca
-  // executou nada além do que este trecho já faz).
-  await page.evaluate((numeroOS) => {
-    const input = document.querySelector('input[placeholder="Filtrar Pesquisa"]');
-    if (input) {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-      setter.call(input, String(numeroOS));
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-  }, numeroOS);
-  await page.keyboard.press('Enter');
-  checkpoint('busca da O.S. concluida');
-  // Hipótese testada em 22/09/2026: logo depois da busca, a página do GRM
-  // dispara uma rajada de ~8 chamadas AJAX de uma vez (getForSelect dos
-  // dropdowns de Serviço/Cliente/Coordenação/Produto, getStates, e o
-  // getRecords que efetivamente popula a tabela de resultados) — confirmado
-  // ao vivo pelo log de rede (log de requisições, não depende de nenhum
-  // evaluate). As duas travadas capturadas ao vivo aconteceram bem depois
-  // dessa rajada, exatamente ao tentar CLICAR na checkbox recém-encontrada
-  // — suspeita de que o re-render disparado por essas respostas (populando
-  // a tabela) ocupa a thread de JS da página por um tempo, no mesmo padrão
-  // já confirmado com o Google Maps do lado do Ouro Safra. Espera a rede
-  // ficar realmente ociosa (não só o fixed wait de antes) antes de mexer no
-  // DOM da tabela.
-  await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => {});
-  checkpoint('rede ociosa apos busca (ou timeout de 15s)');
-  await wait(1500);
-
-  // CORREÇÃO 18/09/2026: todos os cliques daqui pra baixo usavam .click()
-  // sintético DENTRO de page.evaluate() — o mesmo erro que o topo do
-  // arquivo já documentava pra outros elementos ("Blazor Server só reage a
-  // eventos de clique de verdade via CDP"). Isso fazia o modal "Lista de
-  // Cargas" NUNCA abrir de verdade (confirmado ao vivo: diagnóstico mostrou
-  // temModalListaCargas=false toda vez), e por consequência a placa nunca
-  // era encontrada mais adiante — o erro "Placa não encontrada na lista de
-  // Cargas" era só um sintoma. Trocado por evaluateHandle + ElementHandle
-  // .click() (clique real via CDP) em cada etapa, no mesmo padrão já usado
-  // em abrirAgendamento().
-
-  // marca a checkbox da linha da O.S. e abre o modal "Cargas"
-  // CORREÇÃO 22/09/2026: nas 3 reproduções ao vivo capturadas com
-  // checkpoints, travava sempre no MESMO ponto exato — achar a checkbox via
-  // evaluateHandle funcionava rápido, mas o .click() (ElementHandle real,
-  // via CDP) sobre ela travava ~500s até o protocolTimeout. waitForNetworkIdle
-  // não resolveu (a rede já estava ociosa quando travou). Hipótese: seguar
-  // um ElementHandle vivo entre o evaluateHandle e o .click() faz o
-  // ElementHandle.click() precisar computar a posição na tela via CDP
-  // (DOM.getBoxModel) sobre um nó que pode estar sendo re-renderizado
-  // àquela altura, e é exatamente aí que trava.
-  // TENTATIVA (revertida no mesmo dia): achar+clicar num só page.evaluate()
-  // com .click() sintético eliminou o travamento, mas reintroduziu o bug já
-  // documentado em 18/09 logo abaixo — o clique sintético NUNCA abre o modal
-  // "Lista de Cargas" no GRM (confirmado ao vivo pelo screenshot de debug:
-  // checkbox aparecia marcada — isso é comportamento nativo do input,
-  // acontece mesmo sem handler nenhum reagir — mas o modal simplesmente não
-  // abria, e a rede não mostrava nenhuma chamada de dados da O.S. depois do
-  // clique no botão Cargas). CORREÇÃO FINAL: pega a posição do elemento
-  // (getBoundingClientRect) dentro de um evaluate atômico — sem manter
-  // handle vivo, sem DOM.getBoxModel — e dispara o clique de verdade via
-  // page.mouse.click(x, y) (Input.dispatchMouseEvent via CDP, clique
-  // confiável/isTrusted, mas independente de qualquer referência a nó do
-  // DOM). Isso junta as duas propriedades: sem janela de corrida com handle
-  // velho E com clique de verdade que o GRM exige pra reagir.
-  const checkboxRect = await page.evaluate(() => {
-    const row = document.querySelector('table tbody tr');
-    const checkbox = row?.querySelector('input[type=checkbox]');
-    if (!checkbox) return null;
-    checkbox.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-    const r = checkbox.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  if (checkboxRect) await page.mouse.click(checkboxRect.x, checkboxRect.y);
-  checkpoint(`checkbox O.S. clicada (real, sucesso=${!!checkboxRect})`);
-
-  // Espera de verdade o botão "Cargas" ficar habilitado (em vez de um wait
-  // fixo) — CORREÇÃO 23/09/2026: com wait(500) fixo, uma fração das
-  // tentativas em produção clicava no botão Cargas ANTES do Vue terminar de
-  // reagir à checkbox (re-render que tira `v-btn--disabled` do botão), e o
-  // clique nesse estado intermediário não abre o modal (confirmado ao vivo:
-  // screenshot mostrava a mesma tela de listagem, sem modal e sem nenhum
-  // efeito visível, depois de "sucesso=true" no clique — ou seja, achou e
-  // clicou no botão certo, só que ele ainda não reagia).
-  const CARGAS_POLL_TIMEOUT_MS = 5000;
-  async function acharBotaoCargasHabilitado() {
-    const t0Poll = Date.now();
-    while (Date.now() - t0Poll < CARGAS_POLL_TIMEOUT_MS) {
-      const rect = await page.evaluate(() => {
-        const toolbar = document.querySelector('header.action-bar, [class*="action-bar"]') || document;
-        const btn = Array.from(toolbar.querySelectorAll('button'))[3];
-        if (!btn || btn.disabled || btn.className.includes('v-btn--disabled')) return null;
-        btn.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-        const r = btn.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      });
-      if (rect) return rect;
-      await wait(200);
-    }
-    return null;
-  }
-  // 4º ícone da toolbar principal = "Cargas" (confirmado manualmente).
-  // BUG ENCONTRADO 22/09/2026 (diagnóstico ao vivo, script read-only à
-  // parte): `.toolbar, [class*="toolbar"]` casa com QUALQUER elemento cujo
-  // className contenha "toolbar" — e o PRIMEIRO em ordem de documento não é
-  // a barra de ações da O.S. (que fica mais abaixo na página), é o HEADER
-  // GLOBAL do GRM (Vuetify `v-app-bar topbar`). O botão índice [3] desse
-  // header global é o botão da CONTA do usuário — confirmado ao vivo que
-  // era exatamente esse o "clique fantasma" que abria o dropdown "Mobile
-  // Key/Minha Conta/Logout" nos screenshots de debug, nunca a Cargas de
-  // verdade. A barra de ações real da O.S. tem classe própria
-  // `action-bar legend-data` (elemento `<header class="... action-bar ...">`),
-  // sem colisão com o header global (que não tem "action-bar" na classe).
-  // Confirmado ao vivo: com esse seletor corrigido, o índice [3] dentro
-  // dela É o ícone de caminhão (Cargas) — abre o modal "Lista de Cargas" de
-  // verdade (validado via diagnóstico dedicado, sem esse fix o modal nunca
-  // abria em nenhuma das reproduções).
-  let cargasRect = await acharBotaoCargasHabilitado();
-  if (cargasRect) await page.mouse.click(cargasRect.x, cargasRect.y);
-  checkpoint(`botao Cargas clicado (real, sucesso=${!!cargasRect})`);
-
-  // Espera de verdade o modal "Lista de Cargas" abrir (em vez de wait fixo);
-  // se não abrir dentro do timeout, tenta clicar de novo uma vez (pode ter
-  // sido um clique perdido por transição de estado do botão).
-  async function modalCargasAbriu() {
-    const t0Poll = Date.now();
-    while (Date.now() - t0Poll < 4000) {
-      const abriu = await page.evaluate(() => !!document.querySelector('.modal-wrp') && (document.querySelector('.modal-wrp').textContent || '').includes('Lista de Cargas'));
-      if (abriu) return true;
-      await wait(200);
-    }
-    return false;
-  }
-  if (!(await modalCargasAbriu())) {
-    checkpoint('modal Lista de Cargas nao abriu na 1a tentativa, retentando clique');
-    cargasRect = await acharBotaoCargasHabilitado();
-    if (cargasRect) await page.mouse.click(cargasRect.x, cargasRect.y);
-    await modalCargasAbriu();
-  }
-  checkpoint('modal Lista de Cargas confirmado aberto (ou timeout apos retry)');
-
-  // expande o(s) grupo(s) de data — CORREÇÃO 18/09/2026: a versão anterior
-  // (ainda com clique sintético) selecionava QUALQUER elemento (div/tr) com
-  // um padrão de data no texto, sem filtrar qual data — trocar isso pra
-  // clique real (obrigatório pra Blazor reagir) sem restringir a busca
-  // fazia o loop percorrer centenas de elementos candidatos na página
-  // inteira, cada um com 2 round-trips ao navegador, travando por vários
-  // minutos. Restringe aos grupos de HOJE/ONTEM (a intenção original do
-  // comentário) usando as mesmas funções de data já usadas no resto do
-  // arquivo — no máximo ~2 cliques reais em vez de uma quantidade
-  // desconhecida. CORREÇÃO 22/09/2026: coordenadas via evaluate atômico +
-  // clique de verdade via page.mouse.click (mesmo motivo do bloco acima —
-  // clique sintético não abre/expande nada no GRM).
-  // BUG ENCONTRADO 22/09/2026 (2ª rodada, depois de corrigir o botão
-  // Cargas): a lista de grupos é um ACORDEÃO de verdade
-  // (`v-expansion-panels--variant-accordion`, confirmado ao vivo) — abrir um
-  // grupo FECHA o anterior automaticamente, removendo do DOM as linhas que
-  // acabaram de aparecer. O código antigo clicava em HOJE e depois em ONTEM
-  // sem procurar a placa entre um clique e outro — se a placa estava no
-  // grupo de HOJE, o clique seguinte em ONTEM fechava esse grupo antes da
-  // busca da placa rodar, fazendo dar "não encontrada" mesmo com a placa lá
-  // (confirmado ao vivo: script de diagnóstico isolado, clicando só em
-  // HOJE e sem tocar em ONTEM, achou a placa numa O.S. que a produção
-  // reportava repetidamente como "não encontrada"). Corrigido: clica numa
-  // data, procura a placa NA HORA, só passa pra próxima data se não achou.
-  // BUG ENCONTRADO 23/09/2026 (3ª rodada): o localizador do grupo buscava
-  // `div/tr` com o texto da data no DOCUMENTO INTEIRO — a linha da própria
-  // O.S. (atrás do modal) também mostra uma data (a da O.S., que em O.S. novas
-  // é hoje/ontem) e casava ANTES do painel do modal, então o clique caía na
-  // tela errada e o painel nunca abria ("tentativa na data ... sucesso=false"
-  // em O.S. novas, mesmo com a placa presente na lista — confirmado ao vivo
-  // com diagnóstico isolado na O.S. 93641, que achou as 3 placas que a
-  // produção reportava como não encontradas). Corrigido: escopa tudo ao
-  // modal (`.modal-wrp`) e itera pelos painéis reais (título do acordeão) em
-  // ordem — os mais recentes vêm primeiro — em vez de casar por texto de
-  // data. Limita a 5 painéis pra não varrer O.S. antigas inteiras.
-  // 23/09/2026 (4ª rodada): mesmo escopado ao modal, produção ainda falhava
-  // com a placa presente (diagnóstico isolado, com a MESMA lógica de busca,
-  // achava a placa + checkbox na O.S. 93409). Única diferença real: timing —
-  // o diagnóstico espera 3s depois de abrir o modal antes de clicar nos
-  // painéis; produção clicava assim que o cabeçalho "Lista de Cargas"
-  // aparecia, e o re-render que vem com a resposta de getDaysAndLoads pode
-  // resetar o painel recém-aberto. Agora: espera a lista de painéis
-  // estabilizar, confere `aria-expanded` depois do clique (reclica se não
-  // abriu) e faz polling pela linha da placa em vez de uma checagem só.
-  async function contarPaineis() {
-    return page.evaluate(() => document.querySelectorAll('.modal-wrp button.v-expansion-panel-title').length).catch(() => 0);
-  }
-  let qtdPaineis = 0;
-  for (let t = 0; t < 25 && qtdPaineis === 0; t += 1) {
-    qtdPaineis = await contarPaineis();
-    if (qtdPaineis === 0) await wait(200);
-  }
-  await wait(1500);
-  qtdPaineis = await contarPaineis();
-  checkpoint(`paineis de data no modal: ${qtdPaineis}`);
-  const buscarPlacaNoModal = (placaBusca) => page.evaluate((placaAlvo) => {
-    // Compara ignorando hífen dos dois lados — a Ouro Safra normaliza sem
-    // hífen e não dá pra garantir que a lista de Cargas do GRM sempre
-    // mostre a placa formatada do mesmo jeito que o restante do GRM.
-    const alvo = placaAlvo.toUpperCase().replace(/-/g, '');
-    const row = Array.from(document.querySelectorAll('.modal-wrp table tr')).find((r) => (r.textContent || '').toUpperCase().replace(/-/g, '').includes(alvo));
-    const checkbox = row?.querySelector('input[type=checkbox]');
-    if (!checkbox) return null;
-    checkbox.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-    const r = checkbox.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  }, placaBusca);
-  const rectTituloPainel = (idx) => page.evaluate((i) => {
-    const titulo = document.querySelectorAll('.modal-wrp button.v-expansion-panel-title')[i];
-    if (!titulo) return null;
-    titulo.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-    const r = titulo.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, expandido: titulo.getAttribute('aria-expanded') === 'true' };
-  }, idx).catch(() => null);
-  let placaRect = null;
-  for (let i = 0; i < Math.min(qtdPaineis, 5) && !placaRect; i += 1) {
-    let titulo = await rectTituloPainel(i);
-    if (!titulo) continue;
-    if (!titulo.expandido) await page.mouse.click(titulo.x, titulo.y).catch(() => {});
-    for (let t = 0; t < 8 && !placaRect; t += 1) {
-      await wait(400);
-      placaRect = await buscarPlacaNoModal(placa);
-      if (!placaRect && t === 2) {
-        titulo = await rectTituloPainel(i);
-        if (titulo && !titulo.expandido) await page.mouse.click(titulo.x, titulo.y).catch(() => {});
-      }
-    }
-    checkpoint(`tentativa no painel ${i} (real, sucesso=${!!placaRect})`);
-  }
-  await page.screenshot({ path: `/home/grao100/painel-scripts/grm-sync/logs/debug-cargas-${placa.replace(/[^a-zA-Z0-9]/g, '')}.png`, fullPage: true }).catch(() => {});
-
-  checkpoint(`placa marcada na lista de Cargas (real, sucesso=${!!placaRect})`);
-  if (!placaRect) {
-    const diagFalha = await page.evaluate(() => ({
-      visibilidade: document.visibilityState,
-      modais: document.querySelectorAll('.modal-wrp').length,
-      tabelasNoModal: document.querySelectorAll('.modal-wrp table').length,
-      trsNoModal: document.querySelectorAll('.modal-wrp table tr').length,
-      paineis: Array.from(document.querySelectorAll('.modal-wrp button.v-expansion-panel-title')).map((b) => b.getAttribute('aria-expanded')),
-      placasVisiveis: Array.from(document.querySelectorAll('.modal-wrp table tr')).map((t) => (t.textContent || '').match(/[A-Z]{3}-?[0-9][A-Z0-9][0-9]{2}/i)?.[0]).filter(Boolean),
-    })).catch((e) => ({ erroDiag: e.message }));
-    log('DEBUG', `[diag:placa-nao-encontrada] ${JSON.stringify(diagFalha)}`);
-    throw new Error(`Placa ${placa} não encontrada na lista de Cargas da O.S. ${numeroOS} — laudo não baixado.`);
-  }
-  await page.mouse.click(placaRect.x, placaRect.y);
-  await wait(500);
-
-  const newTargetPromise = browser.waitForTarget((t) => t.url().startsWith('blob:'), { timeout: 20000 });
-  // 2º ícone da barra do modal de cargas = "Imprimir Laudo" (confirmado
-  // manualmente e revalidado ao vivo em 22/09/2026 — alterna de desabilitado
-  // pra habilitado exatamente quando uma carga é selecionada, mesma posição
-  // de sempre). BUG ENCONTRADO 22/09/2026: o localizador do modal
-  // (`document.querySelectorAll('*').find(...).closest('div')`) sempre
-  // resolvia pra `null` — `querySelectorAll('*')` lista elementos em ordem
-  // de documento, então o PRIMEIRO cujo textContent (agregado dos
-  // descendentes) contém "Lista de Cargas" é ancestral de tudo (tipo
-  // `<html>`/`<body>`), que não tem nenhum `<div>` acima — `.closest('div')`
-  // sempre dava `null`, caindo no fallback `document` inteiro e clicando em
-  // qualquer botão aleatório da página toda. Corrigido: usa a classe real do
-  // card do modal (`.modal-wrp`, confirmada ao vivo via inspeção da árvore
-  // DOM) em vez de tentar re-derivar o container a partir do texto.
-  const imprimirRect = await page.evaluate(() => {
-    const modal = document.querySelector('.modal-wrp');
-    const toolbar = modal?.querySelector('[class*="action-bar"]') || modal;
-    // ÍNDICE 2 (não 1) — confirmado ao vivo em 23/09/2026: [0] é o contador
-    // de cargas selecionadas ("1"), [1] é o lápis EDITAR (abre o formulário
-    // de edição da carga — chamadas productType/conveyor/restrictiveSeed),
-    // e [2] é o ícone de documento que chama POST /api/load/generateLoadPDF
-    // e abre a aba blob: com o laudo. Com [1], o script nunca recebia o
-    // target blob: e estourava "waiting for target failed: timeout".
-    const btn = Array.from((toolbar || document).querySelectorAll('button'))[2];
-    if (!btn) return null;
-    btn.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-    const r = btn.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  if (imprimirRect) await page.mouse.click(imprimirRect.x, imprimirRect.y);
-  checkpoint(`botao Imprimir Laudo clicado (real, sucesso=${!!imprimirRect})`);
-  const target = await newTargetPromise;
-  checkpoint('target blob: recebido');
-  const laudoPage = await target.page();
-  await wait(1000);
-  const base64 = await laudoPage.evaluate(async (url) => {
-    const res = await fetch(url);
-    const buf = await res.arrayBuffer();
-    let binary = '';
-    const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
-  }, laudoPage.url());
-  await laudoPage.close();
-  return Buffer.from(base64, 'base64');
-}
-
 // ---------------------------------------------------------------------------
 // Execução / auditoria
 // ---------------------------------------------------------------------------
@@ -1373,20 +1020,7 @@ async function processarPlaca(pageOuroSafra, tokenGrmApi, agendamento, classific
     const pdfBuffer = await baixarLaudoViaApi(tokenGrmApi, grm.loaCode);
     const tmpPath = path.join(os.tmpdir(), `laudo-${agendamento.placa}-${grm.os}.pdf`);
     fs.writeFileSync(tmpPath, pdfBuffer);
-    // Diagnóstico 23/09/2026: Ouro Safra rejeitou o upload com "sys_Arquivo
-    // violates not-null constraint" (bytes não chegaram) — confere se o PDF
-    // baixado do GRM tem conteúdo/cabeçalho válidos e guarda uma cópia.
     log('INFO', `Laudo baixado: ${pdfBuffer.length} bytes, cabeçalho="${pdfBuffer.slice(0, 5).toString('latin1')}"`);
-    try { fs.copyFileSync(tmpPath, '/home/grao100/painel-scripts/grm-sync/logs/debug-ultimo-laudo.pdf'); } catch (e) { /* diagnóstico */ }
-
-    // 23/09/2026: baixarLaudoDaOS traz a aba do GRM pra frente
-    // (bringToFront), deixando a do Ouro Safra em segundo plano — e o
-    // FileChooser do Upload Laudo não abre numa aba em segundo plano
-    // ("Waiting for FileChooser failed: 15000ms exceeded", confirmado ao vivo
-    // logo depois do PDF ser baixado com sucesso). Devolve o foco.
-    await pageOuroSafra.bringToFront().catch(() => {});
-    await wait(500);
-    await pageOuroSafra.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-antes-upload-laudo.png', fullPage: false }).catch(() => {});
     await anexarLaudo(pageOuroSafra, tmpPath);
     fs.rmSync(tmpPath, { force: true });
 
