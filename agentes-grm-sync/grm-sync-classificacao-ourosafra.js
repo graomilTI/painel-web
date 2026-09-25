@@ -691,106 +691,117 @@ async function preencherItensClassificacao(page, valores) {
   }
 }
 
-async function anexarLaudo(page, pdfPath) {
-  // 23/09/2026: o clique em "Upload Laudo" (habilitado) nunca abria o file
-  // chooser em headless; o <input type=file> só passa a existir DEPOIS do
-  // clique (confirmado: inputsArquivo=0 antes, 1 depois) — clica, espera o
-  // input aparecer e anexa direto nele (uploadFile dispara o change que o
-  // Blazor escuta).
-  try {
-    await clickButtonByText(page, 'Upload Laudo');
-    const inputArquivo = await page.waitForSelector('input[type=file]', { timeout: 8000 }).catch(() => null);
-    if (!inputArquivo) throw new Error('input[type=file] não apareceu depois de clicar em Upload Laudo');
-    await inputArquivo.uploadFile(pdfPath);
-    await page.waitForNetworkIdle({ idleTime: 1500, timeout: 15000 }).catch(() => {});
-    await wait(3000);
-    const estadoUpload = await inputArquivo.evaluate((el) => {
-      const raiz = el.closest('.rz-fileupload') || el.parentElement?.parentElement || el.parentElement;
-      return { arquivos: el.files ? Array.from(el.files).map((f) => `${f.name}:${f.size}`) : null, html: raiz ? raiz.outerHTML.replace(/\s+/g, ' ').slice(0, 700) : null };
-    }).catch((e) => ({ erroDiag: e.message }));
-    log('DEBUG', `[diag:upload] ${JSON.stringify(estadoUpload)}`);
-    await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-pos-upload-laudo.png', fullPage: false }).catch(() => {});
-  } catch (err) {
-    const diag = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button')).find((b) => (b.textContent || '').includes('Upload Laudo'));
-      return {
-        visibilidade: document.visibilityState,
-        botaoExiste: !!btn,
-        botaoDesabilitado: btn ? (btn.disabled || btn.className.includes('rz-state-disabled')) : null,
-        inputsArquivo: document.querySelectorAll('input[type=file]').length,
-      };
-    }).catch((e) => ({ erroDiag: e.message }));
-    log('DEBUG', `[diag:anexarLaudo] ${JSON.stringify(diag)}`);
-    await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-upload-laudo.png', fullPage: true }).catch(() => {});
-    throw err;
+// 25/09/2026: o upload do Blazor não tem indicador visível de conclusão, e o
+// conteúdo do PDF NÃO trafega pelo WebSocket na hora da seleção (medido: só 8
+// bytes de heartbeat em 30s após o uploadFile) — o Ouro Safra só lê o arquivo
+// no Salvar. Hipótese sendo testada: o <input type=file> pode ser RECRIADO
+// pelo Blazor entre a seleção e o Salvar (aí o arquivo se perde e o servidor
+// grava sys_Arquivo nulo). Por isso o input é marcado (data-lg=1) e conferido
+// antes do Salvar; se foi substituído/vazio, reenvia no input atual.
+async function conferirInputUpload(page, pdfPath, rotulo) {
+  const estado = await page.evaluate(() => {
+    const el = document.querySelector('input[type=file]');
+    return { existe: !!el, marcado: !!el && el.dataset.lg === '1', arquivos: el && el.files ? el.files.length : 0 };
+  }).catch(() => null);
+  log('DEBUG', `[diag:upload-input] ${rotulo}: ${JSON.stringify(estado)}`);
+  if (estado && estado.existe && (!estado.marcado || estado.arquivos === 0)) {
+    const atual = await page.$('input[type=file]');
+    if (atual) {
+      await atual.evaluate((el) => { el.dataset.lg = '1'; });
+      await atual.uploadFile(pdfPath);
+      log('DEBUG', `[diag:upload-input] ${rotulo}: input tinha sido substituído/vazio — arquivo reenviado`);
+      await wait(4000);
+    }
   }
-  await wait(1000);
-  // Depois do uploadFile abre o sub-modal "Upload Laudo Classificação #<id>"
-  // (Filial/Tipo Arquivo/Referência + arquivo escolhido) que tem o SEU PRÓPRIO
-  // "Salvar" — o clickButtonByText('Salvar') global pegava o primeiro "Salvar"
-  // do documento (o do modal de trás), então o upload nunca era salvo e o
-  // "Laudo anexado" era logado sem confirmação (screenshot 23/09/2026). Acha o
-  // Salvar do sub-modal (menor ancestral do título que contém um Salvar),
-  // clica de verdade e só considera anexado se o sub-modal fechar.
-  const rectSalvarUpload = await page.evaluate(() => {
-    const ehSalvar = (b) => { const t = (b.textContent || '').replace(/\s+/g, ' ').trim(); return t === 'Salvar' || t.endsWith(' Salvar'); };
+}
+
+// Wrapper (25/09/2026): captura erros/avisos do console e exceções da página
+// durante o upload — a falha `sys_Arquivo not-null` não tem causa visível na
+// tela; um erro de SignalR (ex.: limite de tamanho de mensagem) apareceria aqui.
+async function anexarLaudo(page, pdfPath) {
+  const msgs = [];
+  const onConsole = (m) => { if (['error', 'warning'].includes(m.type())) msgs.push(`${m.type()}: ${m.text().slice(0, 240)}`); };
+  const onPageError = (e) => msgs.push(`pageerror: ${String(e.message || e).slice(0, 240)}`);
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  try {
+    await anexarLaudoInterno(page, pdfPath);
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+    if (msgs.length > 0) log('DEBUG', `[diag:console-upload] ${JSON.stringify(msgs.slice(0, 12))}`);
+  }
+}
+
+// Localiza, no sub-modal "Upload Laudo Classificação #<id>", o botão cujo texto
+// bate (menor ancestral do título que contém esse botão — o global pegaria o
+// "Salvar"/"Fechar" do modal de trás). Devolve coordenadas ou null.
+function rectBotaoSubModal(page, texto, exato) {
+  return page.evaluate((alvo, ex) => {
+    const bate = (b) => { const t = (b.textContent || '').replace(/\s+/g, ' ').trim(); return ex ? (t === alvo || t.endsWith(` ${alvo}`)) : t.includes(alvo); };
     const titulo = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'));
     let el = titulo;
-    while (el && !Array.from(el.querySelectorAll('button')).some(ehSalvar)) el = el.parentElement;
-    const btn = el ? Array.from(el.querySelectorAll('button')).find(ehSalvar) : null;
+    while (el && !Array.from(el.querySelectorAll('button')).some(bate)) el = el.parentElement;
+    const btn = el ? Array.from(el.querySelectorAll('button')).find(bate) : null;
     if (!btn) return null;
     const r = btn.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  if (!rectSalvarUpload) {
-    await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-upload-laudo.png', fullPage: true }).catch(() => {});
-    throw new Error('Sub-modal "Upload Laudo Classificação" com botão Salvar não encontrado depois do uploadFile.');
-  }
-  // Empresa/Filial do agendamento — o erro `sys_Arquivo violates not-null
-  // constraint` (bytes do arquivo não chegam ao servidor) apareceu só em
-  // parte das placas (OS Bom Despacho/OS Tibagi; OS Cuiabá funcionou), então
-  // registra pra correlacionar.
-  const empresaFilial = await page.evaluate(() => {
-    // Rótulos SELECIONADOS dos dropdowns Radzen (Empresa, Local, Classificadora,
-    // Produto do modal e Filial/Tipo do sub-modal), na ordem do DOM.
-    return Array.from(document.querySelectorAll('.rz-dropdown-label')).map((e) => (e.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 8);
-  }).catch(() => null);
-  log('DEBUG', `[diag:upload-empresa] ${JSON.stringify(empresaFilial)}`);
+  }, texto, exato);
+}
 
-  // Até 3 tentativas: clica Salvar; se o sub-modal não fechar (toast de erro
-  // sys_Arquivo), reenvia o arquivo no mesmo input e tenta Salvar de novo.
-  let subModalFechou = false;
-  for (let tentativa = 1; tentativa <= 3 && !subModalFechou; tentativa += 1) {
-    if (tentativa > 1) {
-      const inputDeNovo = await page.$('input[type=file]');
-      if (!inputDeNovo) break;
-      await inputDeNovo.uploadFile(pdfPath);
-      await page.waitForNetworkIdle({ idleTime: 1500, timeout: 15000 }).catch(() => {});
-      await wait(5000);
+function subModalUploadAberto(page) {
+  return page.evaluate(() => Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação')));
+}
+
+// 25/09/2026: até 3 tentativas INDEPENDENTES. As tentativas dentro do mesmo
+// sub-modal falhavam juntas (o `sys_Arquivo violates not-null constraint` do
+// Ouro Safra se repetia), então a cada falha fecha o sub-modal e reabre "Upload
+// Laudo" (campo de arquivo novo, estado limpo). O sub-modal tem o SEU PRÓPRIO
+// "Salvar"; só considera anexado se ele fechar. O <input type=file> só existe
+// DEPOIS do clique em "Upload Laudo"; o conteúdo do PDF só é lido pelo
+// servidor no Salvar (medido: não trafega pelo WebSocket na seleção).
+async function anexarLaudoInterno(page, pdfPath) {
+  const TENTATIVAS = 3;
+  for (let tentativa = 1; tentativa <= TENTATIVAS; tentativa += 1) {
+    if (!(await subModalUploadAberto(page))) {
+      await clickButtonByText(page, 'Upload Laudo');
     }
-    const rect = tentativa === 1 ? rectSalvarUpload : await page.evaluate(() => {
-      const ehSalvar = (b) => { const t = (b.textContent || '').replace(/\s+/g, ' ').trim(); return t === 'Salvar' || t.endsWith(' Salvar'); };
-      const titulo = Array.from(document.querySelectorAll('*')).find((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'));
-      let el = titulo;
-      while (el && !Array.from(el.querySelectorAll('button')).some(ehSalvar)) el = el.parentElement;
-      const btn = el ? Array.from(el.querySelectorAll('button')).find(ehSalvar) : null;
-      if (!btn) return null;
-      const r = btn.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-    });
-    if (!rect) break;
-    await page.mouse.click(rect.x, rect.y);
-    for (let t = 0; t < 16 && !subModalFechou; t += 1) {
+    const inputArquivo = await page.waitForSelector('input[type=file]', { timeout: 8000 }).catch(() => null);
+    if (!inputArquivo) {
+      await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-upload-laudo.png', fullPage: true }).catch(() => {});
+      throw new Error('input[type=file] não apareceu depois de clicar em Upload Laudo');
+    }
+    await inputArquivo.evaluate((el) => { el.dataset.lg = '1'; });
+    await inputArquivo.uploadFile(pdfPath);
+    await page.waitForNetworkIdle({ idleTime: 1500, timeout: 15000 }).catch(() => {});
+    await wait(8000 + (tentativa - 1) * 2000);
+    await conferirInputUpload(page, pdfPath, `tentativa ${tentativa}`);
+
+    const rectSalvar = await rectBotaoSubModal(page, 'Salvar', true);
+    if (!rectSalvar) {
+      await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-erro-upload-laudo.png', fullPage: true }).catch(() => {});
+      throw new Error('Sub-modal "Upload Laudo Classificação" com botão Salvar não encontrado depois do uploadFile.');
+    }
+    await page.mouse.click(rectSalvar.x, rectSalvar.y);
+    let fechou = false;
+    for (let t = 0; t < 16 && !fechou; t += 1) {
       await wait(500);
-      subModalFechou = !(await page.evaluate(() => Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && (e.textContent || '').includes('Upload Laudo Classificação'))));
+      fechou = !(await subModalUploadAberto(page));
     }
-    if (!subModalFechou) log('WARN', `Upload do laudo: sub-modal não fechou na tentativa ${tentativa}/3.`);
+    await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-pos-salvar-upload-laudo.png', fullPage: false }).catch(() => {});
+    if (fechou) {
+      log('SUCCESS', `Laudo anexado${tentativa > 1 ? ` (tentativa ${tentativa}/${TENTATIVAS})` : ''}`);
+      return;
+    }
+    log('WARN', `Upload do laudo: sub-modal não fechou na tentativa ${tentativa}/${TENTATIVAS}.`);
+    if (tentativa < TENTATIVAS) {
+      const rectFechar = await rectBotaoSubModal(page, 'Fechar', false);
+      if (rectFechar) await page.mouse.click(rectFechar.x, rectFechar.y);
+      for (let t = 0; t < 10 && (await subModalUploadAberto(page)); t += 1) await wait(500);
+      await wait(1500);
+    }
   }
-  await page.screenshot({ path: '/home/grao100/painel-scripts/grm-sync/logs/debug-pos-salvar-upload-laudo.png', fullPage: false }).catch(() => {});
-  if (!subModalFechou) {
-    throw new Error('Clicou em Salvar no sub-modal de upload do laudo (3 tentativas), mas ele não fechou — anexo não confirmado.');
-  }
-  log('SUCCESS', 'Laudo anexado');
+  throw new Error('Clicou em Salvar no sub-modal de upload do laudo (3 tentativas), mas ele não fechou — anexo não confirmado.');
 }
 
 // ---------------------------------------------------------------------------
