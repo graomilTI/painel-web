@@ -1180,6 +1180,18 @@ async function main() {
       log('INFO', `Fallback por placa: ${classificacoesGRM.length} carga(s) obtida(s) pra ${placasUnicas.length} placa(s) da fila.`);
     }
 
+    // 25/09/2026 (encurtar o ciclo): o loop relista a grade do Ouro Safra (~6s)
+    // a cada placa — com 60-70 placas na fila eram 6-7 min por ciclo gastos só
+    // relistando placas que NEM TÊM carga do GRM ainda (e cada uma gravava uma
+    // linha 'sem-correspondencia' no banco). Agora só entram no loop as placas
+    // que já têm carga do GRM de hoje; as demais são só contadas no log.
+    const filaComCarga = fila.filter((a) => {
+      const g = buscarClassificacaoGRM(classificacoesGRM, a.placa, a.dataISO);
+      return g && g.os;
+    });
+    log('INFO', `${filaComCarga.length} placa(s) com carga do GRM de hoje pra processar; ${fila.length - filaComCarga.length} sem correspondência ainda (ignoradas neste ciclo).`);
+    fila = filaComCarga;
+
     for (const agendamento of fila) {
       // relista a cada iteração: abrir/fechar o modal e navegar re-renderiza a tabela
       // e invalida rowIndex/handles anteriores.
