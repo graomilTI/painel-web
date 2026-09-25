@@ -178,3 +178,49 @@ async function handleShareTarget(request) {
 
   return Response.redirect('/painel/comprovante-mobile.html?shared=1', 303);
 }
+
+// ---------------------------------------------------------------------------
+// Web Push: avisos do painel (nova O.S., correção pedida etc.) no celular e na
+// área de notificações do computador, mesmo com o painel fechado.
+// Payload enviado pela edge function push-notify: { title, body, url, tag }.
+// ---------------------------------------------------------------------------
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { title: 'Painel Grão1000', body: event.data ? event.data.text() : '' };
+  }
+
+  const title = data.title || 'Painel Grão1000';
+  const urgente = data.prioridade === 'urgente';
+  event.waitUntil(self.registration.showNotification(title, {
+    body: data.body || '',
+    icon: '/painel/assets/icons/pwa-192.png',
+    badge: '/painel/assets/icons/pwa-192.png',
+    tag: data.tag || undefined,
+    renotify: Boolean(data.tag),
+    requireInteraction: urgente,
+    data: { url: data.url || '/painel/notificacoes' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '/painel/notificacoes', self.location.origin).href;
+
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if (new URL(client.url).origin !== self.location.origin) continue;
+      try {
+        await client.focus();
+        if ('navigate' in client) await client.navigate(target);
+        return;
+      } catch {
+        // tenta a próxima janela / abre uma nova
+      }
+    }
+    await self.clients.openWindow(target);
+  })());
+});

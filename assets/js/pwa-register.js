@@ -1,4 +1,4 @@
-const SW_VERSION = '20260920-programacao-consolidada-v17';
+const SW_VERSION = '20260925-push-notificacoes-v1';
 
 export function registerPanelPwa() {
   if (!('serviceWorker' in navigator)) return;
