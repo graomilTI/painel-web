@@ -396,7 +396,7 @@ function observeConferenceUi() {
 }
 
 // Carrega a tela somente depois que o filtro de segurança estiver instalado.
-import('./adm-conferencia.js?v=20260911-abas-sublinhado1')
+import('./adm-conferencia.js?v=20260926-tiles-esri1')
   .then(() => {
     enhanceConferenceUi();
     observeConferenceUi();
