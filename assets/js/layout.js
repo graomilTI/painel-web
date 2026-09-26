@@ -666,7 +666,7 @@ function getProgramacaoTourSteps() {
   const context = pick('.prog-context-group', '.prog-toolbar-row:first-child');
   const osStep = pick('#progSteps [data-ui-step="1"]', '#progSteps .stepbtn:first-child');
   const semOsStep = pick('#progSteps [data-ui-step="2"]', '#progSteps .stepbtn:nth-child(2)');
-  const recusasStep = pick('#progSteps [data-ui-step="3"]', '#progSteps .stepbtn:nth-child(3)');
+  const transferenciasStep = pick('#progSteps [data-ui-step="3"]', '#progSteps .stepbtn:nth-child(3)');
   const filters = pick('.pld-filters', '#pgcPane1', '#progList');
   const osList = pick('.pld-table-wrap', '#pldListaBody', '#pgcPane1');
   const actions = pick('.prog-actions-block', '#progGerarPdf', '.prog-toolbar');
@@ -675,7 +675,7 @@ function getProgramacaoTourSteps() {
     {
       el: document.getElementById('pageTitle') || context,
       title: 'Como fazer a programação',
-      text: 'Este guia mostra o fluxo completo do gestor. Você vai carregar o dia, tratar cada O.S., conferir quem ficou sem O.S. e resolver despesas recusadas.'
+      text: 'Este guia mostra o fluxo completo do gestor. Você vai carregar o dia, tratar cada O.S., conferir quem ficou sem O.S. e transferir colaboradores entre supervisões.'
     },
     context && {
       el: context,
@@ -721,10 +721,10 @@ function getProgramacaoTourSteps() {
       title: '8. Trate quem ficou sem O.S.',
       text: 'Abra Sem O.S. para conferir colaboradores sem atendimento no dia. Informe a situação correta — como folga, falta ou atestado — e registre observações quando necessário.'
     },
-    recusasStep && {
-      el: recusasStep,
-      title: '9. Corrija as recusas',
-      text: 'Nesta aba ficam despesas devolvidas pela Conferência. Leia o motivo, faça a correção solicitada e acompanhe até a pendência ser resolvida.'
+    transferenciasStep && {
+      el: transferenciasStep,
+      title: '9. Transfira colaboradores',
+      text: 'Peça a transferência de um colaborador para outra supervisão e diga se os patrimônios vão junto. O gestor de destino recebe um aviso e aceita ou recusa nesta mesma aba; depois do aceite o GRM é atualizado automaticamente.'
     },
     actions && {
       el: actions,

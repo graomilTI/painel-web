@@ -155,6 +155,10 @@ const SCRIPT_MAP = {
   // Migrado pra API direta em 02/09 (ver memória painel-web-grm-liberacao-despesas-api-descoberta).
   // grm-sync-liberacao-despesas.js (Puppeteer) mantido no disco pra rollback.
   'sync-liberacao-despesas': 'grmserver-liberacao-despesas-api.js',
+  // Programação > 3 · Transferências (26/09): troca a Supervisão do
+  // colaborador no GRM (staff/setRecord + changeAssetSupervision) depois do
+  // aceite do gestor de destino. Job criado por programacao_transferencia_responder.
+  'sync-transferir-colaborador': 'grmserver-transferir-colaborador-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
   // Bônus. A fila (bonus_desconto_caixa_lancamentos) é alimentada na importação da
