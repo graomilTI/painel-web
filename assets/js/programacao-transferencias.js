@@ -141,8 +141,11 @@ async function loadColaboradoresOrigem(supervisoes) {
   });
 }
 
+// Todas as supervisões ativas (não só as liberadas do usuário): quem decide é
+// o gestor de destino. Não usa from('supervisoes') porque na Programação essa
+// consulta é interceptada e devolve só as supervisões liberadas.
 async function loadSupervisoesDestino() {
-  const { data, error } = await supabase.from('supervisoes').select('nome').eq('ativo', true).order('nome');
+  const { data, error } = await supabase.rpc('programacao_transferencia_destinos');
   if (error) throw error;
   return (data || []).map((r) => r.nome).filter(Boolean);
 }
@@ -414,11 +417,11 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     const acao = btn.dataset.ptrAcao;
     if (acao === 'recusar') { abrirModalRecusa(id); return; }
     const confirmacoes = {
-      aceitar: 'Aceitar a transferência? O agente vai mudar a supervisão do colaborador no GRM.',
       cancelar: 'Cancelar este pedido de transferência?',
       reenviar: 'Reenviar esta transferência para o agente do GRM?',
     };
-    if (!window.confirm(confirmacoes[acao])) return;
+    // Aceitar não pede confirmação: o botão já é a decisão do gestor de destino.
+    if (confirmacoes[acao] && !window.confirm(confirmacoes[acao])) return;
     btn.disabled = true;
     const chamadas = {
       aceitar: () => supabase.rpc('programacao_transferencia_responder', { p_id: id, p_aceitar: true, p_motivo: null }),

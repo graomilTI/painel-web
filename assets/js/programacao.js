@@ -6,7 +6,7 @@ import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipo
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260918-os-reaproveitada-contexto1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260911-finaliza-libera-semos1';
-import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20260926-transferencias1';
+import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20260926-destinos-todos1';
 import './programacao-persistencia-contexto.js?v=20260920-integrado1';
 import './programacao-duplicacao-calendario.js?v=20260920-integrado1';
 import './programacao-despesas-os-visual.js?v=20260920-integrado1';
