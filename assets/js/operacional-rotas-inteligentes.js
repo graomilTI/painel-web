@@ -5,7 +5,7 @@
 // dois. Os patches de rota/pareamento foram removidos (motor de sugestão saiu do mapa em 2026-07-23);
 // o que resta são placa por motorista, carona/custo (aba Sugerido x Registrado) e popups de street view.
 
-const SMART_VERSION = '20260723-sem-motor-sugestao';
+const SMART_VERSION = '20260926-tiles-esri1';
 
 function replaceOrKeep(source, search, replacement, label) {
   if (!source.includes(search)) {

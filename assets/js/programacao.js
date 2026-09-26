@@ -4,7 +4,7 @@ import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
 import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260918-os-reaproveitada-contexto1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260923-locais-agente1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260911-finaliza-libera-semos1';
 import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20260926-destinos-todos1';
 import './programacao-persistencia-contexto.js?v=20260920-integrado1';

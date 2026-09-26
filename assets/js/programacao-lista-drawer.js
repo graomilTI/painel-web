@@ -79,6 +79,63 @@ function cidadeFromEmbarque(embarque) {
   return m ? m[1].trim() : '';
 }
 
+function getFieldJson(row, aliases) {
+  if (!row) return null;
+  for (const alias of aliases) {
+    if (Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
+  }
+  return null;
+}
+
+// Opções dos filtros Cidade/Local vêm de grm_locais_embarque_importacoes (relatório
+// GRM "Locais de Embarque" que o agente grm-sync-locais-embarque baixa e grava cru em
+// dados_json), não mais de os.embarque — os.embarque só tem os locais das O.S. já
+// carregadas na tela, então o dropdown ficava incompleto/desatualizado em relação à
+// lista real de locais que o agente coleta do GRM (pedido do usuário, 2026-09-23).
+// Mesma lógica de "pega só o lote mais sincronizado" usada em buscarUltimoLote
+// (agentes-grm-sync/grm-sync-operacional-os.js): a tabela acumula histórico de vários
+// syncs (upsert por id novo a cada linha), então pegamos só as linhas com created_at
+// dentro de 5min do created_at mais recente.
+async function loadLocaisEmbarqueAgente() {
+  const { data: maxRows, error: maxErr } = await supabase
+    .from('grm_locais_embarque_importacoes')
+    .select('created_at')
+    .order('created_at', { ascending: false })
+    .limit(1);
+  if (maxErr) throw maxErr;
+  const maxCreatedAt = maxRows?.[0]?.created_at;
+  if (!maxCreatedAt) return [];
+  const threshold = new Date(new Date(maxCreatedAt).getTime() - 5 * 60 * 1000).toISOString();
+
+  const pageSize = 1000;
+  const limite = 20000;
+  const rows = [];
+  for (let from = 0; from < limite; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from('grm_locais_embarque_importacoes')
+      .select('dados_json')
+      .gte('created_at', threshold)
+      .range(from, to);
+    if (error) throw error;
+    const chunk = data || [];
+    rows.push(...chunk.map((r) => r.dados_json).filter(Boolean));
+    if (chunk.length < pageSize) break;
+  }
+
+  const map = new Map();
+  rows.forEach((d) => {
+    const uf = String(getFieldJson(d, ['UF', 'Estado', 'splCitUF']) || '').trim();
+    const cidade = String(getFieldJson(d, ['Cidade', 'Municipio', 'Município', 'splCitName']) || '').trim();
+    const local = String(getFieldJson(d, ['Local', 'Nome Local', 'Nome do Local', 'Local de Embarque', 'splName']) || '').trim();
+    if (!uf || !cidade || !local) return;
+    const key = normalizeText(`${uf} ${cidade} ${local}`);
+    if (!key || map.has(key)) return;
+    map.set(key, { uf, cidade, local, key, cidadeKey: normalizeText(cidade) });
+  });
+  return [...map.values()];
+}
+
 function injectStyles() {
   if (document.getElementById('pldStyles')) return;
   const style = document.createElement('style');
@@ -393,6 +450,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   const getPlacas = () => memoized('placas', () => loadCruzamentoPlacas(supervisaoQuery));
   const getTipoContrato = () => memoized('tipoContrato', () => loadCruzamentoTipoContrato(supervisaoQuery));
   const getVeiculos = () => memoized('veiculos', () => loadVeiculosAtivos(supervisaoQuery));
+  const getLocaisAgente = () => memoized('locaisAgente', () => loadLocaisEmbarqueAgente());
 
   // O.S. ainda ATENDER "reaproveitada" de um dia pro outro (ex.: 92611/92659,
   // Londrina, relato do Jean Carlos em 15/09/2026) fica confirmada sob o
@@ -435,7 +493,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     return equipeRowsAtual.filter((r) => r.confirmado && String(r.os_id) === String(osId));
   }
 
-  function popularFiltros() {
+  async function popularFiltros() {
     const clienteSel = content.querySelector('#pldCliente');
     const cidadeSel = content.querySelector('#pldCidade');
     const localSel = content.querySelector('#pldLocal');
@@ -443,22 +501,33 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const cidadeAtual = cidadeSel.value;
     const localAtual = localSel.value;
     const clientes = [...new Set(osTodasAtual.map((os) => os.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    const cidades = [...new Set(osTodasAtual.map((os) => cidadeFromEmbarque(os.embarque)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    const locais = [...new Set(osTodasAtual.map((os) => os.embarque).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     clienteSel.innerHTML = '<option value="">Todos os clientes</option>' + clientes.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    cidadeSel.innerHTML = '<option value="">Todas as cidades</option>' + cidades.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-    localSel.innerHTML = '<option value="">Todos os locais</option>' + locais.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
     clienteSel.value = clientes.includes(clienteAtual) ? clienteAtual : '';
-    cidadeSel.value = cidades.includes(cidadeAtual) ? cidadeAtual : '';
-    localSel.value = locais.includes(localAtual) ? localAtual : '';
+
+    let locaisAgente = [];
+    try {
+      locaisAgente = await getLocaisAgente();
+    } catch (error) {
+      console.warn('[programacao-lista-drawer] falha ao carregar locais de embarque do agente:', error?.message || error);
+    }
+
+    const cidadesMap = new Map();
+    locaisAgente.forEach((p) => { if (!cidadesMap.has(p.cidadeKey)) cidadesMap.set(p.cidadeKey, p.cidade); });
+    const cidades = [...cidadesMap.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
+    const locais = [...locaisAgente].sort((a, b) => `${a.uf} ${a.cidade} ${a.local}`.localeCompare(`${b.uf} ${b.cidade} ${b.local}`, 'pt-BR'));
+
+    cidadeSel.innerHTML = '<option value="">Todas as cidades</option>' + cidades.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
+    localSel.innerHTML = '<option value="">Todos os locais</option>' + locais.map((l) => `<option value="${esc(l.key)}">${esc(`${l.uf} - ${l.cidade} (${l.local})`)}</option>`).join('');
+    cidadeSel.value = cidadesMap.has(cidadeAtual) ? cidadeAtual : '';
+    localSel.value = locais.some((l) => l.key === localAtual) ? localAtual : '';
   }
 
   function osFiltradas() {
     const busca = normalizeText(state.busca);
     const filtradas = osTodasAtual.filter((os) => {
       if (state.cliente && os.cliente !== state.cliente) return false;
-      if (state.cidade && cidadeFromEmbarque(os.embarque) !== state.cidade) return false;
-      if (state.local && os.embarque !== state.local) return false;
+      if (state.cidade && normalizeText(cidadeFromEmbarque(os.embarque)) !== state.cidade) return false;
+      if (state.local && normalizeText(os.embarque) !== state.local) return false;
       if (state.soRemanescente && !(Number(os.remanescente) > 0)) return false;
       if (busca && !normalizeText(`${os.numero_os} ${os.cliente} ${os.embarque}`).includes(busca)) return false;
       return true;
@@ -535,7 +604,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
         recarregarEquipeRows(),
       ]);
       osTodasAtual = osTodas;
-      popularFiltros();
+      await popularFiltros();
       renderLista();
       if (manterDrawer && state.osAbertaId) {
         const os = osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
