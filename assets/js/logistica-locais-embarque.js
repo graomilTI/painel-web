@@ -129,8 +129,8 @@ function renderMapa() {
   const comCoord = locais.filter(temCoord);
   if (!map) {
     map = L.map(root.querySelector('#lcMap'), { preferCanvas: true, center: [-14.235, -51.925], zoom: 4 });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19, attribution: '&copy; OSM &copy; CARTO', subdomains: 'abcd',
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri'
     }).addTo(map);
     layer = L.layerGroup().addTo(map);
   }

@@ -2062,10 +2062,9 @@ async function desenharVerRotaMapa(row) {
 
   const map = L.map(mountEl, { zoomControl: true, scrollWheelZoom: true, center: [-14.235, -51.925], zoom: 4 });
   vrmMapState = map;
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OSM &copy; CARTO',
-    subdomains: 'abcd',
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19, maxNativeZoom: 16,
+    attribution: 'Tiles &copy; Esri',
   }).addTo(map);
 
   const loginTitulo = row.login_hora ? `Login mais próximo: ${String(row.login_hora).slice(0, 5)} (${row.login_distancia_km ?? '-'} km)` : 'Login mais próximo: sem login na data';
