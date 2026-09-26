@@ -802,7 +802,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 
 function reportWindowSummary(rows: any[], dataEvento: string) {
   const windowStart = 0;
-  const windowEnd = 5 * 3600;
+  const windowEnd = 4 * 3600;
   let km = 0;
   let firstSec: number | null = null;
   let lastSec: number | null = null;
@@ -840,7 +840,7 @@ function reportWindowSummary(rows: any[], dataEvento: string) {
       inicio: secondsToTime(overlapStart),
       fim: secondsToTime(overlapEnd),
       km_relatorio: Number(distance.toFixed(3)),
-      km_proporcional_00_05: Number(proportional.toFixed(3)),
+      km_proporcional_00_04: Number(proportional.toFixed(3)),
     });
   }
 
@@ -859,7 +859,7 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
   const payload = await service24Post(cfg, token, "historyGet", {
     equipo: idgps,
     fechaIni: dataEvento + " 00:00:00",
-    fechaFin: dataEvento + " 05:00:00",
+    fechaFin: dataEvento + " 04:00:00",
     format: "DateTime",
     limite: "10000",
   }, "Histórico RedGPS");
@@ -881,7 +881,7 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
       address: normalizeText(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"])),
       raw: row,
     };
-  }).filter((p: any) => p.sec !== null && p.sec >= 0 && p.sec <= 5 * 3600)
+  }).filter((p: any) => p.sec !== null && p.sec >= 0 && p.sec <= 4 * 3600)
     .sort((a: any, b: any) => a.sec - b.sec);
 
   let km = 0;
@@ -929,6 +929,14 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
     if (cur.odoM !== null) odoEnd = cur.odoM;
   }
 
+  const rota = points.map((p: any) => ({
+    hora: secondsToTime(p.sec),
+    latitude: p.lat,
+    longitude: p.lng,
+    endereco: p.address || null,
+    velocidade: p.speed,
+  }));
+
   return {
     km: Number(km.toFixed(3)),
     horaInicio: firstMove ? secondsToTime(firstMove.sec) : null,
@@ -945,6 +953,7 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
     segmentos: acceptedSegments,
     odometroKm: Number(odometerKm.toFixed(3)),
     gpsKm: Number(gpsKm.toFixed(3)),
+    rota,
   };
 }
 
@@ -1047,7 +1056,7 @@ function expandBrasiliaOutsideRows(rows: any[]) {
     if (!startDate || startSec === null) continue;
 
     if (endSec === null || !endDate) {
-      if (startSec >= 0 && startSec < 5 * 3600) expanded.push(row);
+      if (startSec >= 0 && startSec < 4 * 3600) expanded.push(row);
       continue;
     }
 
@@ -1064,7 +1073,7 @@ function expandBrasiliaOutsideRows(rows: any[]) {
 
     for (let day = firstDay; day <= lastDay && day <= firstDay + 3 * 86400; day += 86400) {
       const windowStart = day;
-      const windowEnd = day + 5 * 3600;
+      const windowEnd = day + 4 * 3600;
       const overlapStart = Math.max(absoluteStart, windowStart);
       const overlapEnd = Math.min(absoluteEnd, windowEnd);
       if (overlapEnd <= overlapStart) continue;
@@ -1152,7 +1161,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   const reportCfg = { ...cfg };
   if (targetWindow.start && targetWindow.end) {
     // Consulta exatamente o período solicitado no relatório BFleet.
-    // A janela 00h-05h é aplicada somente ao cálculo de km/caixa, não às ocorrências.
+    // A janela 00h-04h é aplicada somente ao cálculo de km/caixa, não às ocorrências.
     reportCfg.dataInicial = targetWindow.start;
     reportCfg.dataFinal = targetWindow.end;
   }
@@ -1180,7 +1189,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     .map((r: any) => mapReportRow(r, "BFleet · relatório " + cfg.reportId))
     .filter(Boolean) as any[];
   // O relatório "Fora do horário" da BFleet já determina quais eventos estão
-  // fora do expediente. Não reduza as ocorrências à janela 00h-05h aqui:
+  // fora do expediente. Não reduza as ocorrências à janela 00h-04h aqui:
   // essa janela é usada somente para calcular a quilometragem financeira.
   let mapped = mappedAll.slice();
   if (targetWindow.start) mapped = mapped.filter((r) => r.data_evento >= targetWindow.start);
@@ -1262,7 +1271,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     const km = useHistory ? history.km : fallback.km;
 
     // "Deslocamento" mostra o horário real da ocorrência BFleet em Brasília.
-    // O histórico 00h-05h serve apenas para a quilometragem/caixa.
+    // O histórico 00h-04h serve apenas para a quilometragem/caixa.
     const bfleetHoraInicio = parseTimeText(
       pick(sample?.raw || {}, ["Inicio", "Início", "start", "inicio", "Hora", "time", "dateTime"])
     ) || sample.hora_evento || null;
@@ -1330,7 +1339,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
       status_calculo: statusCalculo,
       fonte_calculo: fonteCalculo,
       calculo_detalhes: {
-        janela: "00:00:00-05:00:00",
+        janela: "00:00:00-04:00:00",
         janela_tipo: "CALCULO_KM_CAIXA",
         timezone_regra: "America/Sao_Paulo",
         horario_ocorrencia_fonte: "BFLEET_RELATORIO_FORA_HORARIO",
@@ -1341,6 +1350,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
           gps_km: history.gpsKm,
           odometro_inicio_m: history.odometroInicioM,
           odometro_fim_m: history.odometroFimM,
+          rota: history.rota || [],
         } : null,
         fallback_relatorio: {
           km: fallback.km,
@@ -1374,7 +1384,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     descartados_fora_da_janela: mappedAll.length - mapped.length,
     timezone_regra: "America/Sao_Paulo",
     janela_ocorrencias: "RELATORIO_BFLEET_COMPLETO",
-    janela_calculo_km_brasilia: "00:00:00-04:59:59",
+    janela_calculo_km_brasilia: "00:00:00-04:00:00",
     upserted: insertedOrUpdated,
     inserted: insertedOrUpdated,
     updated: 0,
