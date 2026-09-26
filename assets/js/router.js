@@ -43,7 +43,7 @@ const SOFT_NAV_PAGES = new Map([
   ['desempenho', { title: 'Desempenho', module: () => import('./desempenho.js') }],
   ['dre', { title: 'DRE', module: () => import('./dre.js') }],
   ['efetivos-sem-producao', { title: 'Efetivos sem Produção', module: () => import('./efetivosSemProducao.js') }],
-  ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js') }],
+  ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js?v=20260926-rota-00-04') }],
   ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js') }],
   ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
   ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js?v=20260912-hosp-workspace1') }],
@@ -92,7 +92,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas', { title: 'Frotas', module: () => import('./frotas.js') }],
   ['frotas-cadastros', { title: 'Frotas · Cadastros', module: () => import('./frotas-cadastros.js?v=20260829-abas-flush') }],
   ['frotas-manutencao-grupo', { title: 'Frotas · Manutenção', module: () => import('./frotas-manutencao-grupo.js?v=20260829-abas-flush') }],
-  ['frotas-ocorrencias', { title: 'Frotas · Ocorrências', module: () => import('./frotas-ocorrencias.js?v=20260829-abas-flush') }],
+  ['frotas-ocorrencias', { title: 'Frotas · Ocorrências', module: () => import('./frotas-ocorrencias.js?v=20260926-rota-00-04') }],
   ['epi-rh', { title: 'EPI', module: () => import('./epiRh.js?v=20260831-comprados-gestor'), extraModules: [() => import('./epiRhPresetPatch.js')] }],
   ['admin-usuarios', { title: 'Usuários e acessos', module: () => import('./admin-usuarios.js'), extraModules: [() => import('./admin-usuarios-create-password.js')] }],
   // relatorio-importador.js é compartilhado por 8 rotas — todas levam ao mesmo hub genérico de importação (confirmado: openHome() não depende da URL/rota).
