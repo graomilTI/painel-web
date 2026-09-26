@@ -6,6 +6,7 @@ import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipo
 import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260918-os-reaproveitada-contexto1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260911-finaliza-libera-semos1';
+import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20260926-transferencias1';
 import './programacao-persistencia-contexto.js?v=20260920-integrado1';
 import './programacao-duplicacao-calendario.js?v=20260920-integrado1';
 import './programacao-despesas-os-visual.js?v=20260920-integrado1';
@@ -3381,11 +3382,10 @@ function injectMobileStyles() {
       font-size: 12.5px !important;
     }
 
-    /* Só O.S./Sem O.S. (Recusas saiu da toolbar, 08/09/2026 — ver
-       programacao-gestor-ajustes.js) — 2 colunas, não 3. */
+    /* O.S. / Sem O.S. / Transferências (26/09/2026) — 3 colunas. */
     body.mobile-gestor-mode #progSteps {
       display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
       gap: 7px !important;
       grid-column: 1 / -1 !important;
       width: 100% !important;
@@ -5651,6 +5651,9 @@ let supComboState = { input: null, onSelect: null };
 const STEP_LABELS = {
   '1': { label: 'Programação de O.S.', title: 'O.S.' },
   '2': { label: 'Colaboradores sem O.S.', title: 'Sem O.S.' },
+  // 26/09/2026: transferência de colaborador entre supervisões, com aceite do
+  // gestor de destino (programacao-transferencias.js).
+  '3': { label: 'Transferências de colaboradores', title: 'Transferências' },
 };
 
 function debounce(fn, wait) {
@@ -5890,6 +5893,7 @@ function configureSteps() {
   const layout = [
     { ui: '1', label: STEP_LABELS['1'].title },
     { ui: '2', label: STEP_LABELS['2'].title },
+    { ui: '3', label: STEP_LABELS['3'].title },
   ];
 
   layout.forEach((step, index) => {
@@ -6102,7 +6106,7 @@ else boot();
 // renderProgramacaoEquipe, também removida).
 
 const state = {
-  activeStep: '1',
+  activeStep: String(window.location.hash || '').toLowerCase() === '#transferencias' ? '3' : '1',
   renderingAll: false,
   renderToken: 0,
   panes: null,
@@ -6326,10 +6330,12 @@ function mountShell() {
     <div class="pgc-tabs-shell" id="pgcTabsShell">
       <section class="pgc-tab-pane" id="pgcPane1" data-pgc-pane="1">${loadingHtml('O.S.')}</section>
       <section class="pgc-tab-pane" id="pgcPane2" data-pgc-pane="2" hidden>${loadingHtml('Sem O.S.')}</section>
+      <section class="pgc-tab-pane" id="pgcPane3" data-pgc-pane="3" hidden>${loadingHtml('Transferências')}</section>
     </div>`;
   state.panes = {
     '1': document.getElementById('pgcPane1'),
     '2': document.getElementById('pgcPane2'),
+    '3': document.getElementById('pgcPane3'),
   };
   setActiveStep(state.activeStep);
   return state.panes;
@@ -6364,6 +6370,7 @@ async function renderAllTabs({ force = false } = {}) {
     const results = await Promise.allSettled([
       renderProgramacaoListaDrawer(panes['1'], common),
       renderProgramacaoSemOs(panes['2'], common),
+      renderProgramacaoTransferencias(panes['3'], common),
     ]);
     if (token !== state.renderToken) return;
     const falhas = results.filter((r) => r.status === 'rejected');
