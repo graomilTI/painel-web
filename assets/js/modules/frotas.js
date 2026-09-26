@@ -1239,7 +1239,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const period = periodOverride || readForaHorarioReportPeriod(root);
       let query = supabase
         .from('frotas_fora_horario_ocorrencias')
-        .select('id,data_evento,placa,motorista,hora_inicio,hora_fim,km_00_05,valor_km,valor_caixa,endereco_inicio,endereco_fim,mapa_url,status_calculo,fonte_calculo,status_notificacao,mensagem_gerada,justificativa,status_caixa,gerado_em,gerado_por_nome,justificado_em,justificado_por_nome,caixa_solicitado_em,caixa_solicitado_por_nome,created_at,updated_at');
+        .select('id,data_evento,placa,motorista,hora_inicio,hora_fim,km_00_05,valor_km,valor_caixa,endereco_inicio,endereco_fim,mapa_url,status_calculo,fonte_calculo,calculo_detalhes,status_notificacao,mensagem_gerada,justificativa,status_caixa,gerado_em,gerado_por_nome,justificado_em,justificado_por_nome,caixa_solicitado_em,caixa_solicitado_por_nome,created_at,updated_at');
       if (period.start) query = query.gte('data_evento', period.start);
       if (period.end) query = query.lte('data_evento', period.end);
       const { data, error } = await query
@@ -1293,7 +1293,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     if (action === 'CAIXA') {
       const km = Number(row.km_00_05 || 0);
-      if (!(km > 0)) return toast('A quilometragem entre 00h e 05h ainda não foi calculada.', 'error');
+      if (!(km > 0)) return toast('A quilometragem entre 00h e 04h ainda não foi calculada.', 'error');
       const valor = km * Number(row.valor_km || 4);
       const ok = window.confirm(`Enviar ao Caixa: ${formatKmForaHorario(km)} km × R$ 4,00 = ${formatMoneyForaHorario(valor)}?`);
       if (!ok) return;
@@ -1362,9 +1362,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const fim = String(row.hora_fim || '').slice(0, 5) || '--:--';
       const km = Number(row.km_00_05 || 0);
       const valor = Number(row.valor_caixa || (km * Number(row.valor_km || 4)));
-      const rota = row.mapa_url
-        ? `<a href="${escapeHtml(row.mapa_url)}" target="_blank" rel="noopener noreferrer">Ver rota</a>`
-        : '<span style="color:#6b7280">Sem rota</span>';
+      const temPontosRota = !!(row.calculo_detalhes?.history?.rota?.length || row.calculo_detalhes?.fallback_relatorio?.trechos?.length);
+      const linkMapa = row.mapa_url
+        ? `<a href="${escapeHtml(row.mapa_url)}" target="_blank" rel="noopener noreferrer">Ver no mapa</a>`
+        : '<span style="color:#6b7280">Sem mapa</span>';
+      const rota = temPontosRota
+        ? `${linkMapa} · <button type="button" class="fora-horario-link-btn" data-ver-rota data-id="${escapeHtml(row.id)}">Detalhar rota</button>`
+        : linkMapa;
       const status = escapeHtml(statusLabelForaHorario(row));
       const calculo = String(row.status_calculo || '').toUpperCase();
       const disabledCaixa = !(km > 0) || String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA' || ['PENDENTE','PROCESSANDO','LANCADO'].includes(String(row.status_caixa || '').toUpperCase());
@@ -1384,6 +1388,60 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         </div></td>
       </tr>`;
     }).join('');
+  }
+
+  function formatCoordForaHorario(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(6) : '-';
+  }
+
+  function openRotaModal(root, rowId) {
+    const row = (state.foraHorario || []).find((item) => String(item.id) === String(rowId));
+    if (!row) return toast('Ocorrência não localizada.', 'error');
+
+    const modal = root.querySelector('[data-rota-modal]');
+    if (!modal) return;
+    const titleEl = modal.querySelector('[data-rota-modal-title]');
+    const kmEl = modal.querySelector('[data-rota-modal-km]');
+    const hintEl = modal.querySelector('[data-rota-modal-hint]');
+    const bodyEl = modal.querySelector('[data-rota-modal-body]');
+    const linkEl = modal.querySelector('[data-rota-modal-link]');
+
+    const placa = onlyPlate(row.placa) || '-';
+    const data = formatDateBR(row.data_evento) || '-';
+    if (titleEl) titleEl.textContent = `Rota · ${placa} · ${data}`;
+    if (kmEl) kmEl.textContent = `${formatKmForaHorario(Number(row.km_00_05 || 0))} km (00h–04h)`;
+    if (linkEl) {
+      if (row.mapa_url) { linkEl.href = row.mapa_url; linkEl.hidden = false; }
+      else linkEl.hidden = true;
+    }
+
+    const pontos = row.calculo_detalhes?.history?.rota || [];
+    const trechos = row.calculo_detalhes?.fallback_relatorio?.trechos || [];
+
+    if (bodyEl) {
+      if (pontos.length) {
+        if (hintEl) hintEl.textContent = `${pontos.length} ponto(s) de GPS registrados entre 00h e 04h, na ordem em que ocorreram.`;
+        bodyEl.innerHTML = pontos.map((p) => `<tr>
+          <td><strong>${escapeHtml(String(p.hora || '--:--:--'))}</strong></td>
+          <td>${escapeHtml(p.endereco || '-')}</td>
+          <td>${escapeHtml(formatCoordForaHorario(p.latitude))}</td>
+          <td>${escapeHtml(formatCoordForaHorario(p.longitude))}</td>
+          <td>${Number.isFinite(Number(p.velocidade)) ? Number(p.velocidade).toFixed(0) : '-'}</td>
+        </tr>`).join('');
+      } else if (trechos.length) {
+        if (hintEl) hintEl.textContent = 'Sem GPS detalhado da RedGPS para esta ocorrência; km estimado por trecho a partir do relatório BFleet.';
+        bodyEl.innerHTML = trechos.map((t) => `<tr>
+          <td colspan="4"><strong>${escapeHtml(t.inicio || '--:--:--')} → ${escapeHtml(t.fim || '--:--:--')}</strong></td>
+          <td>${formatKmForaHorario(Number(t.km_proporcional_00_04 || 0))} km</td>
+        </tr>`).join('');
+      } else {
+        if (hintEl) hintEl.textContent = 'Nenhum ponto de rota disponível para esta ocorrência.';
+        bodyEl.innerHTML = '<tr><td colspan="5" class="speed-import-empty">Sem dados de rota.</td></tr>';
+      }
+    }
+
+    modal.hidden = false;
   }
 
   async function markSelectedImportedGroupAsGenerated(root, opts, message) {
@@ -2529,6 +2587,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fora-horario-table .hist-table td{padding:18px;color:#f8fafc;font-size:13px}
                 .fora-horario-table .speed-import-empty{border:0;border-radius:0;background:transparent;color:#f8fafc}
                 .fora-horario-count{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+                .fora-horario-link-btn{border:0;background:transparent;padding:0;color:#86efac;font-weight:800;font-size:inherit;cursor:pointer;text-decoration:underline}
+                .fora-horario-link-btn:hover{color:#bbf7d0}
+                .rota-modal-table td small{display:block;color:#6b7280;margin-top:2px}
                 @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}
                 @media(max-width:520px){.fora-horario-toolbar{grid-template-columns:1fr 54px}.fora-horario-date{grid-column:1}.fora-horario-sync{grid-column:1}.fora-horario-refresh{grid-column:2;grid-row:1/4;width:54px}.fora-horario-date .speed-input{font-size:14px}}
               </style>
@@ -2540,7 +2601,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                   <button class="speed-btn speed-btn-soft fora-horario-refresh" type="button" data-refresh-fora-horario title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button>
                 </div>
                 <p class="fora-horario-count" data-fora-horario-count>Nenhum registro carregado</p>
-                <div class="hist-table-wrap fora-horario-table"><table class="hist-table"><thead><tr><th>Data</th><th>Placa / Rota</th><th>Motorista</th><th>Deslocamento</th><th>KM 00h–05h</th><th>Caixa</th><th>Status</th><th>Ações</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="8" class="speed-import-empty">Carregando ocorrências...</td></tr></tbody></table></div>
+                <div class="hist-table-wrap fora-horario-table"><table class="hist-table"><thead><tr><th>Data</th><th>Placa / Rota</th><th>Motorista</th><th>Deslocamento</th><th>KM 00h–04h</th><th>Caixa</th><th>Status</th><th>Ações</th></tr></thead><tbody data-fora-horario-table><tr><td colspan="8" class="speed-import-empty">Carregando ocorrências...</td></tr></tbody></table></div>
               </div>
             </div>
           </div>
@@ -2583,6 +2644,17 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             </div>
           </div>
         </div>
+        <div class="speed-modal-overlay" data-rota-modal hidden>
+          <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Rota do veículo">
+            <div class="speed-modal-head">
+              <div><h3 data-rota-modal-title>Rota do veículo</h3><span class="speed-step-pill" data-rota-modal-km>0,00 km</span></div>
+              <button class="speed-modal-close" type="button" data-rota-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
+            </div>
+            <p class="speed-hint" data-rota-modal-hint></p>
+            <div class="hist-table-wrap"><table class="hist-table rota-modal-table"><thead><tr><th>Horário</th><th>Endereço</th><th>Latitude</th><th>Longitude</th><th>Vel. (km/h)</th></tr></thead><tbody data-rota-modal-body></tbody></table></div>
+            <p class="speed-hint"><a data-rota-modal-link href="#" target="_blank" rel="noopener noreferrer" hidden>Abrir trajeto no Google Maps</a></p>
+          </div>
+        </div>
       </section>`;
 
     renderRecords(container);
@@ -2611,6 +2683,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     container.querySelector('[data-sync-bfleet-fora-horario-periodo]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'period'));
     container.querySelector('[data-refresh-fora-horario]')?.addEventListener('click', () => fetchForaHorario(container, opts));
     container.querySelector('[data-fora-horario-table]')?.addEventListener('click', (ev) => {
+      const rotaBtn = ev.target.closest('[data-ver-rota]');
+      if (rotaBtn) { openRotaModal(container, rotaBtn.dataset.id); return; }
       const btn = ev.target.closest('[data-fora-action]');
       if (!btn || btn.disabled) return;
       agirForaHorario(container, opts, btn.dataset.id, btn.dataset.foraAction);
@@ -2631,6 +2705,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const closeEditModal = () => { if (editModal) editModal.hidden = true; };
     container.querySelector('[data-edit-modal-close]')?.addEventListener('click', closeEditModal);
     editModal?.addEventListener('click', (ev) => { if (ev.target === editModal) closeEditModal(); });
+
+    const rotaModal = container.querySelector('[data-rota-modal]');
+    const closeRotaModal = () => { if (rotaModal) rotaModal.hidden = true; };
+    container.querySelector('[data-rota-modal-close]')?.addEventListener('click', closeRotaModal);
+    rotaModal?.addEventListener('click', (ev) => { if (ev.target === rotaModal) closeRotaModal(); });
 
     const importedSearchInput = container.querySelector('[data-imported-search]');
     const importedStatusSelect = container.querySelector('[data-imported-status-filter]');
