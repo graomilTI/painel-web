@@ -16,15 +16,18 @@ import { getCurrentUser } from './auth.js';
   const LEAFLET_CSS = 'leaflet-css-mapaop';
   const LEAFLET_JS = 'leaflet-js-mapaop';
   const TILE_LAYERS = {
+    // CARTO (basemaps.cartocdn.com) passou a exigir API key em 09/2026 — os tiles vinham com
+    // marca d'água "API KEY REQUIRED". Trocado por Esri (sem chave): Dark Gray Canvas + camada de
+    // rótulos por cima; a base só tem tile nativo até z16, acima disso o Leaflet amplia.
     escuro: {
-      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      options: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM &copy; CARTO' },
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      labels: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      options: { maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri' },
     },
-    // Voyager (CARTO) — mesma infra gratuita/sem chave do "Escuro", só troca o estilo: visual
-    // colorido e limpo, mais "bonito" que o OSM padrão puro (pedido da usuária, 2026-07-30).
+    // "Colorido" — era o Voyager da CARTO; agora Esri World Street Map (colorido, sem chave).
     voyager: {
-      url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      options: { maxZoom: 19, subdomains: 'abcd', attribution: '&copy; OSM &copy; CARTO' },
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+      options: { maxZoom: 19, attribution: 'Tiles &copy; Esri' },
     },
     real: {
       url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -472,7 +475,9 @@ import { getCurrentUser } from './auth.js';
     if (!st.map || !window.L) return;
     const cfg = TILE_LAYERS[st.mapaBase] || TILE_LAYERS.escuro;
     if (st.tileLayer) { try { st.map.removeLayer(st.tileLayer); } catch {} }
-    st.tileLayer = window.L.tileLayer(cfg.url, cfg.options).addTo(st.map);
+    const camadas = [window.L.tileLayer(cfg.url, cfg.options)];
+    if (cfg.labels) camadas.push(window.L.tileLayer(cfg.labels, { ...cfg.options, attribution: '' }));
+    st.tileLayer = window.L.layerGroup(camadas).addTo(st.map);
   }
 
   function rotaTooltip(r) {
