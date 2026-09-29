@@ -1200,6 +1200,19 @@ async function selecionarOpcaoAberta(page, alvo, modo) {
   return null;
 }
 
+// Fecha só o menu do autocomplete (overlay ativo que NÃO é o diálogo
+// "Adicionar NHE"). Escape sem menu aberto fecharia o próprio diálogo, por isso
+// só pressiona se houver um menu.
+async function fecharMenuAbertoNhe(page) {
+  var temMenu = await page.evaluate(function () {
+    function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+    return Array.from(document.querySelectorAll('.v-overlay--active')).some(function (o) {
+      return norm(o.innerText || '').indexOf('ADICIONAR NHE') === -1;
+    });
+  });
+  if (temMenu) await page.keyboard.press('Escape');
+}
+
 async function abrirOsEModalCargas(page, numeroOs) {
   await page.goto('https://www.grmserver.com.br/operation/serviceOrder', { waitUntil: 'networkidle2', timeout: 60000 });
   await wait(2500);
@@ -1444,15 +1457,28 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   // senão a lista ainda está vazia (confirmado ao vivo: sem essa espera extra
   // o campo abre sem nenhuma opção).
   await wait(1200);
-  await realClickCampoNhe(page, 'Supervisão');
   var supervisaoAlvo = candidato.viaGestor
     ? (candidato.gestorSupervisao || '')
     : ((candidato.loginMatch && candidato.loginMatch.supervisao) || '');
-  var supEscolhida = supervisaoAlvo ? await selecionarOpcaoAberta(page, supervisaoAlvo, 'substring') : null;
-  // Sem opção batendo com a supervisão do colaborador (ou só existe 1 opção
-  // mesmo, caso mais comum quando a Coordenação já é bem específica): cai
-  // pra "primeira" — a lista continua aberta porque nenhum clique aconteceu.
-  if (!supEscolhida) supEscolhida = await selecionarOpcaoAberta(page, '', 'primeira');
+  // Achado 29/09/2026 (O.S. 94151; antes 87773, 88474 e 90288, ~4 em 770
+  // lançamentos): às vezes a lista de Supervisão fica vazia depois da
+  // Coordenação (fetch em cascata lento/falho) e o lançamento inteiro caía em
+  // ERRO. Reabre o campo até 3 vezes antes de desistir; a 1ª tentativa é
+  // idêntica ao fluxo anterior.
+  var supEscolhida = null;
+  for (var tentSup = 1; tentSup <= 3 && !supEscolhida; tentSup++) {
+    if (tentSup > 1) {
+      log('WARN', 'Lista de Supervisão vazia; reabrindo o campo (tentativa ' + tentSup + '/3)...');
+      await fecharMenuAbertoNhe(page);
+      await wait(1500 * tentSup);
+    }
+    await realClickCampoNhe(page, 'Supervisão');
+    supEscolhida = supervisaoAlvo ? await selecionarOpcaoAberta(page, supervisaoAlvo, 'substring') : null;
+    // Sem opção batendo com a supervisão do colaborador (ou só existe 1 opção
+    // mesmo, caso mais comum quando a Coordenação já é bem específica): cai
+    // pra "primeira" — a lista continua aberta porque nenhum clique aconteceu.
+    if (!supEscolhida) supEscolhida = await selecionarOpcaoAberta(page, '', 'primeira');
+  }
   if (!supEscolhida) throw new Error('Não consegui selecionar Supervisão (nenhuma opção na lista).');
   log('INFO', 'Supervisão selecionada: ' + supEscolhida);
 
