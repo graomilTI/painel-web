@@ -418,13 +418,16 @@ async function resolverProduto(token, nomeProduto, tipoProduto) {
   return item;
 }
 
-async function resolverTipoProduto(token, valor) {
+async function resolverTipoProduto(token, valor, produto) {
   const res = await postJson('productType/getRecords', { ptyStatus: 'A', ptyShowOnServiceOrder: 'S' }, token);
   const lista = safe(res.searchData);
   const alvoNorm = normTipoProduto(valor);
   const idx = TIPO_PRODUTO_GRM_VALIDOS.indexOf(alvoNorm);
   if (idx === -1) {
-    avisarCampoSuspeito('Tipo do Produto "' + valor + '" não é uma opção válida do GRM — usando "Não Definido".');
+    // Tipo que virou variante do Produto (ex. "Trigo Tipo 1", "Milho Exportação"):
+    // o Tipo do Produto no GRM fica "Não Definido" de propósito, sem aviso.
+    const virouVariante = produto && norm(produto.proName).indexOf(norm(valor)) !== -1;
+    if (!virouVariante) avisarCampoSuspeito('Tipo do Produto "' + valor + '" não é uma opção válida do GRM — usando "Não Definido".');
     return melhorCorrespondencia(lista, 'ptyName', 'Não Definido') || lista[0];
   }
   const nomeCanonico = TIPO_PRODUTO_GRM_DISPLAY[TIPO_PRODUTO_GRM_VALIDOS[idx]];
@@ -587,7 +590,7 @@ async function montarPayload(token, solicitacao) {
   const produtor = await resolverProdutor(token, embarque.splCode, solicitacao.produtor);
   const servico = await resolverServico(token, solicitacao.servico);
   const produto = await resolverProduto(token, solicitacao.produto, solicitacao.tipo_produto);
-  const tipoProduto = await resolverTipoProduto(token, solicitacao.tipo_produto);
+  const tipoProduto = await resolverTipoProduto(token, solicitacao.tipo_produto, produto);
   const cItems = await resolverCItems(token, produto.proCode);
   const destino = await resolverDestino(token, solicitacao);
   const moduloIntegra = moduloIntegraDaSolicitacao(solicitacao.troca_notas);

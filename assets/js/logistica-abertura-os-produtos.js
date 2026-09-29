@@ -40,7 +40,10 @@ export const CATALOGO_PRODUTOS = {
   ARROZ_CASCA_NATURAL_TIPO_1: { label: 'Arroz em Casca Natural Tipo 1', tipos: ['Não Definido'], testes: [] },
   MILHETO: { label: 'Milheto', tipos: ['Não Definido'], testes: [] },
   TRITICALE: { label: 'Triticale', tipos: ['Não Definido'], testes: [] },
-  TRIGO: { label: 'Trigo', tipos: ['Não Definido'], testes: [
+  // "Tipo 1"/"Tipo 2" não são tipos de produto do GRM: na abertura da O.S. eles
+  // são variantes do próprio Produto ("Trigo Tipo 1", "Trigo Tipo 2"), resolvidas
+  // em resolverProduto (grmserver-abrir-os-api.js) — mesmo mecanismo do Milho Exportação.
+  TRIGO: { label: 'Trigo', tipos: ['Não Definido', 'Tipo 1', 'Tipo 2'], testes: [
     { key: 'VOMITOXINA', label: 'Teste Vomitoxina' },
   ] },
 };
