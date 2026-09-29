@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
+import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
 
 const MAX_WIDTH = 768;
 let saldoFiltro = '';
@@ -49,18 +50,9 @@ async function carregarSupervisoesLiberadas() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('programacao_usuario_supervisoes')
-      .select('supervisao')
-      .eq('ativo', true);
+    const nomes = await carregarSupervisoesLiberadas();
 
-    if (error) throw error;
-
-    supervisoesLiberadas = new Set(
-      (Array.isArray(data) ? data : [])
-        .map((row) => normalizeSupervisao(row?.supervisao))
-        .filter(Boolean)
-    );
+    supervisoesLiberadas = new Set(nomes.map(normalizeSupervisao).filter(Boolean));
     supervisoesErro = '';
   })().catch((error) => {
     console.error('[logistica#atualizar] Falha ao carregar supervisões liberadas:', error);
