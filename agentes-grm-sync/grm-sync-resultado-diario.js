@@ -465,5 +465,13 @@ async function main() {
   log('SUCCESS', `Sincronização ${REPORT_CONFIG.name} concluída!`);
 }
 
-main().then(() => process.exit(0)).catch(err => { log('ERROR', err.stack || err.message); process.exit(1); });
-setTimeout(() => process.exit(0), 300000);
+// Guard: a reconciliação (grm-sync-resultado-diario-reconciliacao.js) reaproveita
+// login/mapeamento daqui via require, sem disparar uma sincronização de 7 dias.
+if (require.main === module) {
+  main().then(() => process.exit(0)).catch(err => { log('ERROR', err.stack || err.message); process.exit(1); });
+  setTimeout(() => process.exit(0), 300000);
+}
+
+module.exports = {
+  supabase, login, fetchResultadoDiarioApi, mapApiRowsToFriendlyKeys, mapResultadoDiarioToPainelRows, formatDateBr, log,
+};

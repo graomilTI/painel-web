@@ -57,6 +57,10 @@ const SCRIPT_MAP = {
   // era código morto). Script Puppeteer antigo mantido no disco pra rollback.
   'sync-locais-embarque': 'grmserver-locais-embarque-api.js',
   'sync-resultado-diario': 'grm-sync-resultado-diario.js',
+  // Reconciliação diária (45 dias, blocos de 7): pega correções feitas no GRM depois que o
+  // dia saiu da janela de 7 dias do agente rápido acima. Mesma lane (entrada_producao), então
+  // nunca roda em paralelo com ele (ambos usam a mesma staging).
+  'sync-resultado-diario-reconciliacao': 'grm-sync-resultado-diario-reconciliacao.js',
   // Migrado pra API direta em 05/09 (reports/expenses). O agrupamento via UI que o
   // script Puppeteer antigo clicava (Coordenação/Grupo de Categoria) nunca influenciava
   // a resposta — o fetch já mandava selectRow/selectColumn fixos no corpo; confirmado

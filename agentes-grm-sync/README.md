@@ -34,6 +34,7 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 | sync-producao-diaria | grm-sync-producao-diaria.js | grm_producao_diaria_importacoes / producao_snapshot |
 | sync-locais-embarque | grm-sync-locais-embarque.js | grm_locais_embarque_importacoes |
 | sync-resultado-diario | grm-sync-resultado-diario.js | relatorio_resultado_diario (via staging) |
+| sync-resultado-diario-reconciliacao | grm-sync-resultado-diario-reconciliacao.js | relatorio_resultado_diario (via staging, 45 dias em blocos de 7) |
 | sync-despesas | grm-sync-despesas.js | grm_despesas_importacoes |
 | sync-notas-fiscais | grm-sync-notas-fiscais.js | grm_notas_fiscais_importacoes |
 | sync-notas-fiscais-reconciliacao | grmserver-notas-fiscais-reconciliacao-api.js | grm_notas_fiscais_importacoes |
@@ -345,7 +346,7 @@ order by created_at desc limit 5;
 | Lane | Agentes (`enabled=true` em `grm_sync_agent_settings`) |
 |---|---|
 | `entrada_os` | sync-nhe |
-| `entrada_producao` | sync-classificacao-ourosafra, sync-resultado-diario |
+| `entrada_producao` | sync-classificacao-ourosafra, sync-resultado-diario, sync-resultado-diario-reconciliacao |
 | `entrada_financeiro_a` | compras-match-nf, sync-adiantamentos, sync-auditorias, sync-contas-pagar, sync-notas-fiscais, sync-notas-fiscais-reconciliacao |
 | `entrada_financeiro_b` | sync-contas-receber, sync-despesas |
 | `entrada_cadastros_operacao` | sync-login-alimentacao, botconversa-sync, sync-btg-classificador, sync-btg-relatorios, sync-cargas-geofence, sync-clientes, sync-locais-embarque, sync-mapa-embarque, sync-patrimonios |
