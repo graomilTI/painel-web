@@ -34,7 +34,7 @@ Não usa mais Docker, PM2 nem Edge Functions (arquiteturas antigas, abandonadas 
 | sync-producao-diaria | grm-sync-producao-diaria.js | grm_producao_diaria_importacoes / producao_snapshot |
 | sync-locais-embarque | grm-sync-locais-embarque.js | grm_locais_embarque_importacoes |
 | sync-resultado-diario | grm-sync-resultado-diario.js | relatorio_resultado_diario (via staging) |
-| sync-resultado-diario-reconciliacao | grm-sync-resultado-diario-reconciliacao.js | relatorio_resultado_diario (via staging, 45 dias em blocos de 7) |
+| sync-resultado-diario-reconciliacao | grm-sync-resultado-diario-reconciliacao.js | relatorio_resultado_diario (via staging, 75 dias em blocos de 7) |
 | sync-despesas | grm-sync-despesas.js | grm_despesas_importacoes |
 | sync-notas-fiscais | grm-sync-notas-fiscais.js | grm_notas_fiscais_importacoes |
 | sync-notas-fiscais-reconciliacao | grmserver-notas-fiscais-reconciliacao-api.js | grm_notas_fiscais_importacoes |
