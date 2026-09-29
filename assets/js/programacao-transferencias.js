@@ -400,7 +400,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     };
   }
 
-  async function abrirModalNova() {
+  async function abrirModalNova(cpfPreSelecionado = '') {
     modalEl.innerHTML = `<div class="ptr-card" role="dialog" aria-modal="true" aria-label="Nova transferência">
       <h3>Nova transferência</h3>
       <p class="ptr-hint">O gestor da supervisão de destino será avisado para aceitar ou recusar.</p>
@@ -518,7 +518,20 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       : `<option value="">${ok.colabErro ? 'Erro ao carregar colaboradores' : 'Nenhum colaborador ativo'}</option>`;
     if (ok.destinoErro) f.destino.innerHTML = '<option value="">Erro ao carregar supervisões</option>';
     else renderDestinos();
+    // Vindo do Sem O.S. (Deslocamento): colaborador já escolhido. Se ele não
+    // estiver na lista (ex.: cadastro sem CPF), fica em "Selecione...".
+    const cpfAlvo = String(cpfPreSelecionado || '').replace(/\D/g, '');
+    if (cpfAlvo && colaboradores.some((c) => c.cpf === cpfAlvo)) {
+      f.colab.value = cpfAlvo;
+      atualizarPatrimonios();
+    }
   }
+
+  // Chamado pelo Sem O.S.: leva pra aba Transferências e abre o pedido.
+  window.__pgcAbrirTransferencia = (cpf) => {
+    document.querySelector('#progSteps .stepbtn[data-ui-step="3"]')?.click();
+    return abrirModalNova(cpf);
+  };
 
   async function executarAcao(btn) {
     const id = btn.dataset.id;
