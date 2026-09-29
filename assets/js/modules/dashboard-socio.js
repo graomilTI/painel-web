@@ -168,6 +168,7 @@
         .from('relatorio_resultado_diario')
         .select('toneladas, valor_embarcado, total_embarcado_mais_teste, coordenacao, funcionario, supervisao, cliente_final, data')
         .gte('data', inicio).lt('data', fim)
+        .order('id') // sem ORDER BY a paginação repete/pula linhas (ver dre.js)
         .range(from, from + pageSize - 1);
       if (error) throw error;
       const rows = data || [];
@@ -189,6 +190,7 @@
         .from('relatorio_resultado_diario')
         .select('toneladas, valor_embarcado')
         .gte('data', inicio).lt('data', fim)
+        .order('id')
         .range(from, from + pageSize - 1);
       if (error) throw error;
       const rows = data || [];

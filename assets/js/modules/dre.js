@@ -294,6 +294,10 @@
     const pageSize=1000;
     let from=0;
     let fetchFailed=false;
+    // Toda leitura paginada (.range) precisa de .order('id') (aqui e nos outros loaders). Sem
+    // ORDER BY o Postgres não garante a mesma ordem entre páginas: em 29/09 o DRE lia 89.720
+    // linhas do Resultado Diário com 19.910 duplicadas (e outras tantas nunca lidas), então o
+    // volume de cada mês saía muito acima ou abaixo do GRM (fev -20%, abr -56%, jul +35%).
 
     while(true){
       const {data,error}=await supabase
@@ -301,6 +305,7 @@
         .select('data,coordenacao,cargas,toneladas,embarcado,valor_embarcado,total_afla,total_vomitoxina,total_falling_number,total_intacta,total_gmo')
         .gte('data', start)
         .lt('data', end)
+        .order('id')
         .range(from, from + pageSize - 1);
 
       if(error){
@@ -366,6 +371,7 @@
         .from('grm_despesas_importacoes')
         .select('coordenacao,data_conta_de,dados_json')
         .gte('created_at', threshold)
+        .order('id')
         .range(from, from+pageSize-1);
       if(error){ console.warn('DRE: falha ao paginar despesas sincronizadas pelo agente.', error); fetchFailed=true; break; }
       const batch=data||[]; rows.push(...batch);
@@ -475,6 +481,7 @@
         .from('historico_colaboradores')
         .select('data_referencia,nome,situacao,coordenacao,tipo,origem')
         .gte('data_referencia', start).lt('data_referencia', end)
+        .order('id')
         .range(from, from + pageSize - 1);
       if(error) throw error;
       const rows=data||[]; all.push(...rows);
@@ -502,6 +509,7 @@
             .from('relatorio_resultado_diario')
             .select('data,coordenacao,funcionario,cargas,toneladas')
             .gte('data', start).lt('data', end)
+            .order('id')
             .range(from, from + pageSize - 1);
           if(error) throw error;
           const rows=data||[]; all.push(...rows);
