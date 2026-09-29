@@ -83,10 +83,47 @@ var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
 var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
 var TABLE_LOGIN = 'grm_login_movimentos_importacoes';
 
+// Supabase às vezes devolve 502/503/504 do Cloudflare (achado 29/09/2026: um 502
+// na gravação de LOTE_EXCEDIDO derrubou a continuação e deixou 20 O.S. sem
+// lançar até o dia seguinte). fetch com nova tentativa nesses casos + resposta
+// de erro curta em vez do HTML inteiro do Cloudflare.
+var SUPABASE_RETRY_ATTEMPTS = Math.max(1, Number(process.env.NHE_LANCAMENTO_SUPABASE_TENTATIVAS) || 4);
+var SUPABASE_RETRY_STATUS = { 502: true, 503: true, 504: true, 520: true, 522: true, 524: true };
+
+async function fetchComTentativas(input, init) {
+  var baseFetch = globalThis.fetch;
+  var ultimaResposta = null;
+  for (var tentativa = 1; tentativa <= SUPABASE_RETRY_ATTEMPTS; tentativa++) {
+    try {
+      var resposta = await baseFetch(input, init);
+      if (!SUPABASE_RETRY_STATUS[resposta.status]) return resposta;
+      ultimaResposta = resposta;
+      if (tentativa < SUPABASE_RETRY_ATTEMPTS) {
+        console.log('[WARN] ' + new Date().toISOString() + ' - Supabase respondeu ' + resposta.status + '; nova tentativa ' + (tentativa + 1) + '/' + SUPABASE_RETRY_ATTEMPTS + '.');
+      }
+    } catch (err) {
+      if (tentativa >= SUPABASE_RETRY_ATTEMPTS) throw err;
+      console.log('[WARN] ' + new Date().toISOString() + ' - Falha de rede no Supabase (' + (err && err.message) + '); nova tentativa ' + (tentativa + 1) + '/' + SUPABASE_RETRY_ATTEMPTS + '.');
+    }
+    if (tentativa < SUPABASE_RETRY_ATTEMPTS) await wait(2000 * tentativa);
+  }
+  var status = ultimaResposta.status;
+  return new Response(JSON.stringify({ message: 'Supabase indisponível (HTTP ' + status + ' após ' + SUPABASE_RETRY_ATTEMPTS + ' tentativas)', code: 'SUPABASE_GATEWAY_' + status }), {
+    status: status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
 var supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   realtime: { transport: WebSocket },
-  auth: { persistSession: false, autoRefreshToken: false }
+  auth: { persistSession: false, autoRefreshToken: false },
+  global: typeof globalThis.fetch === 'function' ? { fetch: fetchComTentativas } : undefined
 });
+
+function erroTransienteSupabase(error) {
+  var texto = String((error && (error.code || error.message)) || '');
+  return /SUPABASE_GATEWAY_|fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/i.test(texto);
+}
 
 var browserAtual = null;
 
@@ -2101,6 +2138,19 @@ async function main() {
   } catch (error) {
     log('ERROR', error.stack || error.message);
     await finalizarExecucao(runId, { status: 'ERRO', erro: String(error.message || error).slice(0, 4000) }).catch(function () {});
+    // Falha no meio do lote não pode matar a cadeia de continuação: se houve
+    // progresso nesta execução ou o erro foi só instabilidade do Supabase
+    // (502 etc.), enfileira nova continuação pra não deixar as O.S. restantes
+    // paradas até o dia seguinte. Erro determinístico sem progresso não
+    // reenfileira (evita loop).
+    if (!DRY_RUN && AUTO_CONTINUACAO && ((loteProgresso || 0) > 0 || erroTransienteSupabase(error))) {
+      try {
+        var criadaNoErro = await enfileirarContinuacao();
+        log('WARN', 'Execução interrompida por erro; continuação ' + (criadaNoErro ? 'enfileirada' : 'já estava pendente') + ' para retomar as O.S. restantes.');
+      } catch (filaErr) {
+        log('ERROR', 'Não consegui enfileirar continuação após erro: ' + filaErr.message);
+      }
+    }
     throw error;
   }
 }
