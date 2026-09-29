@@ -460,6 +460,7 @@ Deno.serve(async (req) => {
     if (unmatchedIds.length) {
       await updateInBatches(supabase, unmatchedIds, {
         rastreador_bfleet: false,
+        bfleet_rastreador: false, // flag legada: telas do painel ainda somam ela com rastreador_bfleet
         bfleet_confirmado: false,
         bfleet_status: 'SEM_RASTREADOR',
         bfleet_mensagem: 'Não localizado no vehicleGetAll BFleet/Service24GPS.',
@@ -475,6 +476,7 @@ Deno.serve(async (req) => {
       const tracker = getTrackerId(row);
       const patch = {
         rastreador_bfleet: true,
+        bfleet_rastreador: true,
         bfleet_confirmado: true,
         bfleet_status: 'COM_RASTREADOR',
         bfleet_placa: bfleetPlate,
