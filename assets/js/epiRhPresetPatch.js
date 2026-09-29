@@ -1,4 +1,4 @@
-// Pré-seleção de EPIs por cargo de contratação no modal do RH > EPI.
+// Pré-seleção de EPIs por setor (cargo de contratação) no modal do RH > EPI.
 
 const PRESETS_EPI_CARGO = {
   operacional_i: [
@@ -41,48 +41,23 @@ function marcarPresetEpi(modal, tipo) {
   });
 }
 
-function localizarBlocoEpis(modal) {
-  const checkboxes = [...modal.querySelectorAll('input[type="checkbox"][id^="epiCheck_"]')];
-  if (!checkboxes.length) return null;
+// O Setor (OPERACIONAL 1/2) já define o cargo de contratação: ao escolhê-lo na
+// nova ficha, pré-marca os EPIs do preset. Na edição não mexe nos EPIs salvos.
+const PRESET_POR_SETOR = { 'OPERACIONAL 1': 'operacional_i', 'OPERACIONAL 2': 'operacional_ii' };
 
-  let node = checkboxes[0];
-  while (node && node !== modal) {
-    if (node.classList?.contains('mt-20')) return node;
-    node = node.parentElement;
-  }
-
-  return checkboxes[0].closest('label')?.parentElement?.parentElement || null;
-}
-
-function inserirSeletorCargo(modal) {
-  if (!modal || modal.querySelector('#epiCargoContratacao')) return;
-  if (!modal.querySelector('#solColabInput')) return;
-
-  const blocoEpis = localizarBlocoEpis(modal);
-  if (!blocoEpis) return;
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'mt-16';
-  wrapper.setAttribute('data-epi-cargo-wrapper', '1');
-  wrapper.innerHTML = `
-    <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700">
-      Cargo de contratação <span style="color:#fde68a;font-size:11px;text-transform:none;letter-spacing:0">* selecione para pré-marcar os EPIs</span>
-      <select id="epiCargoContratacao" style="width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark;font-size:14px;text-transform:none;letter-spacing:0">
-        <option value="">Selecione...</option>
-        <option value="operacional_i">OPERACIONAL I</option>
-        <option value="operacional_ii">OPERACIONAL II</option>
-      </select>
-    </label>
-  `;
-
-  blocoEpis.parentNode.insertBefore(wrapper, blocoEpis);
-
-  const select = wrapper.querySelector('#epiCargoContratacao');
-  select.addEventListener('change', () => marcarPresetEpi(modal, select.value));
+function ligarPresetAoSetor(modal) {
+  const setor = modal?.querySelector('#solSetor');
+  if (!setor || setor.dataset.presetLigado) return;
+  if (!modal.querySelector('#solSolicitar')) return;
+  setor.dataset.presetLigado = '1';
+  setor.addEventListener('change', () => {
+    const tipo = PRESET_POR_SETOR[setor.value];
+    if (tipo) marcarPresetEpi(modal, tipo);
+  });
 }
 
 function iniciarPatchPresetEpi() {
-  const aplicar = () => inserirSeletorCargo(document.getElementById('epiModal'));
+  const aplicar = () => ligarPresetAoSetor(document.getElementById('epiModal'));
   const observer = new MutationObserver(aplicar);
   observer.observe(document.body, { childList: true, subtree: true });
   aplicar();
