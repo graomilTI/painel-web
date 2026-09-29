@@ -135,7 +135,11 @@ async function main() {
       data,
       note,
       { from: invoiceStart, to: invoiceEnd },
-      { cleanup: false }
+      // cleanup: remove do banco notas canceladas/alteradas no GRM (some da resposta da API
+      // da competência inteira). Sem isso o DRE fica superavaliado (achado 29/09: 9 faturas
+      // de ago/set, R$40 mil, que já não existiam no GRM). Protegido por trava de 20% em
+      // upsertDataRange.
+      { cleanup: true }
     );
   }
 

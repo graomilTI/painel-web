@@ -202,6 +202,25 @@ async function upsertDataRange(data, dateRange, invoiceRange = dateRange, option
   if (options.cleanup === true && records.length > 0) {
     const fromIso = toIso(dateRange.from);
     const toIsoDate = toIso(dateRange.to);
+    // Trava de segurança: se a limpeza fosse apagar mais de 20% das linhas da janela,
+    // a resposta da API provavelmente veio incompleta - melhor não apagar nada.
+    const { count: totalJanela, error: countError } = await supabase
+      .from(REPORT_CONFIG.tableName)
+      .select('id', { count: 'exact', head: true })
+      .gte('data_nota_real', fromIso)
+      .lte('data_nota_real', toIsoDate);
+    const { count: obsoletas, error: obsoletasError } = await supabase
+      .from(REPORT_CONFIG.tableName)
+      .select('id', { count: 'exact', head: true })
+      .gte('data_nota_real', fromIso)
+      .lte('data_nota_real', toIsoDate)
+      .lt('data_sincronizacao', syncRunAt);
+    if (countError || obsoletasError) throw countError || obsoletasError;
+    if (totalJanela > 0 && obsoletas / totalJanela > 0.2) {
+      log('WARN', `Limpeza ignorada (${fromIso} a ${toIsoDate}): apagaria ${obsoletas} de ${totalJanela} linhas (>20%). Resposta da API possivelmente incompleta.`);
+      log('SUCCESS', `Upsert concluído: ${records.length} registros`);
+      return;
+    }
     const { error: cleanupError } = await supabase
       .from(REPORT_CONFIG.tableName)
       .delete()
