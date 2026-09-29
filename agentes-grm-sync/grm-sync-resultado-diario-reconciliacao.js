@@ -25,7 +25,10 @@ const diasCfg = Number(process.env.GRM_RESULTADO_RECON_DIAS || 45);
 const DIAS = Number.isFinite(diasCfg) ? Math.min(120, Math.max(8, Math.floor(diasCfg))) : 45;
 const BLOCO_DIAS = 7;
 // Piso de sanidade: ~20 linhas/dia (o volume real é ~330/dia). Abaixo disso a resposta é suspeita.
-const MIN_ROWS = Math.max(1, Number(process.env.GRM_RESULTADO_RECON_MIN_ROWS || DIAS * 20));
+const DIAS_JANELA = (process.env.GRM_RESULTADO_RECON_INICIO && process.env.GRM_RESULTADO_RECON_FIM)
+  ? Math.max(1, Math.round((new Date(process.env.GRM_RESULTADO_RECON_FIM) - new Date(process.env.GRM_RESULTADO_RECON_INICIO)) / 86400000) + 1)
+  : DIAS;
+const MIN_ROWS = Math.max(1, Number(process.env.GRM_RESULTADO_RECON_MIN_ROWS || DIAS_JANELA * 20));
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,11 +36,23 @@ function hojeSaoPaulo() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
+// Modo pontual (backfill): GRM_RESULTADO_RECON_INICIO / _FIM (YYYY-MM-DD) substituem a janela
+// "últimos N dias". Ex.: reprocessar jan-mai/2026 em duas execuções.
+function parseIso(value) {
+  const m = /^(20\d{2})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0) : null;
+}
+const INICIO_FIXO = parseIso(process.env.GRM_RESULTADO_RECON_INICIO);
+const FIM_FIXO = parseIso(process.env.GRM_RESULTADO_RECON_FIM);
+if ((process.env.GRM_RESULTADO_RECON_INICIO || process.env.GRM_RESULTADO_RECON_FIM) && !(INICIO_FIXO && FIM_FIXO && INICIO_FIXO <= FIM_FIXO)) {
+  throw new Error('GRM_RESULTADO_RECON_INICIO e GRM_RESULTADO_RECON_FIM precisam ser datas YYYY-MM-DD válidas (início <= fim).');
+}
+
 function buildBlocks() {
-  const fim = hojeSaoPaulo();
+  const fim = FIM_FIXO ? new Date(FIM_FIXO) : hojeSaoPaulo();
   fim.setHours(12, 0, 0, 0);
-  const inicio = new Date(fim);
-  inicio.setDate(inicio.getDate() - (DIAS - 1));
+  const inicio = INICIO_FIXO ? new Date(INICIO_FIXO) : new Date(fim);
+  if (!INICIO_FIXO) inicio.setDate(inicio.getDate() - (DIAS - 1));
   const blocks = [];
   let cursor = new Date(inicio);
   while (cursor <= fim) {
