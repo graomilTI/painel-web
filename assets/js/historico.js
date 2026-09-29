@@ -44,12 +44,13 @@ async function fetchHistoricoData(ctx) {
       .select('data,coordenacao,funcionario,tons')
       .gte('data', dataIni)
       .lt('data', dataFim)
-      .order('data', { ascending: true });
+      .order('data', { ascending: true })
+      .order('id', { ascending: true }); // desempate: sem chave única a paginação repete/pula linhas
     if (!isMaster && coordenacao) q = q.eq('coordenacao', coordenacao);
     return q;
   };
 
-  let patriQuery = supabase.from('patrimonios_snapshot').select('coordenacao,situacao,dias_sem_leitura').eq('situacao', 'Ativo');
+  let patriQuery = supabase.from('patrimonios_snapshot').select('coordenacao,situacao,dias_sem_leitura').eq('situacao', 'Ativo').order('id', { ascending: true });
   if (!isMaster && coordenacao) patriQuery = patriQuery.eq('coordenacao', coordenacao);
 
   const [metaRes, prodRows, patriRows] = await Promise.all([

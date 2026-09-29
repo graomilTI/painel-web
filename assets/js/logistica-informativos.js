@@ -201,6 +201,7 @@ async function loadResultadoDiarioRange(fields, from, to) {
       .from('relatorio_resultado_diario')
       .select(fields)
       .order('data', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + pageSize - 1);
 
     if (from) query = query.gte('data', from);

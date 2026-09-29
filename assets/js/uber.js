@@ -436,7 +436,8 @@ async function loadProducaoForRows(rows) {
       let query = supabase
         .from('relatorio_resultado_diario')
         .select('*')
-        .order('data', { ascending: false, nullsFirst: false });
+        .order('data', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false }); // desempate: sem chave única a paginação repete/pula linhas
       query = query.gte('data', period.inicio).lte('data', period.fim);
       return query;
     }, 20000);
@@ -486,7 +487,8 @@ async function loadRows(options = {}) {
       let query = supabase
         .from('vw_conferencia_uber_corridas')
         .select('*')
-        .order('data_solicitacao_local', { ascending: false, nullsFirst: false });
+        .order('data_solicitacao_local', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false }); // desempate: sem chave única a paginação repete/pula linhas
       if (state.filters.inicio) query = query.gte('data_solicitacao_local', state.filters.inicio);
       if (state.filters.fim) query = query.lte('data_solicitacao_local', state.filters.fim);
       return query;

@@ -205,6 +205,7 @@ async function loadSnapshotRows() {
       .select('coordenacao, supervisao, dias_sem_leitura')
       .order('coordenacao', { ascending: true })
       .order('supervisao', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + FETCH_BATCH_SIZE - 1);
 
     if (error) throw error;

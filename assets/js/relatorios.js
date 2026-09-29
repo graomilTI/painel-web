@@ -1303,6 +1303,7 @@
       const { data, error } = await opts.supabase
         .from('patrimonios_snapshot')
         .select('id,patrimonio_codigo,coordenacao,supervisao,funcionario,identificacao,categoria,situacao,ultima_leitura')
+        .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
         .range(from, from + pageSize - 1);
       if (error) {
         console.warn('[RELATORIOS] Não foi possível carregar patrimônios para cruzamento:', error);

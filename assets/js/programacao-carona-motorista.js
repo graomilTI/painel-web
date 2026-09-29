@@ -77,6 +77,7 @@ async function fetchAll(table, fields, column, values) {
       .from(table)
       .select(fields)
       .in(column, unique)
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to);
     if (error) throw error;
     const batch = data || [];
@@ -100,6 +101,7 @@ async function fetchPatrimonioVehicles(supervisoes) {
       .in('supervisao', unique)
       .eq('categoria', 'VEICULOS')
       .eq('situacao', 'Ativo')
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to);
     if (error) throw error;
     const batch = data || [];

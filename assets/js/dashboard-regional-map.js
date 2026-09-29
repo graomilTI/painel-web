@@ -351,6 +351,7 @@ async function loadRegionalData() {
           .gte('data', dataIni)
           .lt('data', dataFim)
           .order('data', { ascending: true })
+          .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       ),
     ]);
 

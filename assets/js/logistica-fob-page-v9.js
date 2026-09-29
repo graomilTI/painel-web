@@ -254,6 +254,7 @@ async function fetchByCreatedAt(table, maxRows, dias = FOB_JANELA_DIAS) {
     .select('id,dados_json,created_at')
     .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
+    .order('id', { ascending: false }) // desempate: sem chave única a paginação repete/pula linhas
     .range(from, to), maxRows);
 }
 
@@ -267,6 +268,7 @@ async function fetchLoteRecente(table, maxRows) {
     return await fetchPaged((from, to) => supabase
       .rpc('fob_lote_recente', { p_table: table, p_dias: FOB_JANELA_DIAS })
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to), maxRows);
   } catch (error) {
     console.warn(`[FOB v9] RPC fob_lote_recente indisponível para ${table}; usando fallback created_at.`, error);
@@ -302,6 +304,7 @@ async function fetchProducaoSnapshotDia(dataIso) {
       .from('producao_snapshot')
       .select('os,cargas,created_at')
       .eq('data', dataIso)
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to), 20000);
     const batchAt = rows.reduce((max, row) => (row.created_at && (!max || row.created_at > max) ? row.created_at : max), null);
     return {

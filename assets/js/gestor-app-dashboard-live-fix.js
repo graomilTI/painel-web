@@ -122,7 +122,8 @@ async function buildFreshPayload(userInfo) {
     .select('data,coordenacao,supervisao,tons')
     .gte('data', dataIni)
     .lt('data', dataFim)
-    .order('data', { ascending: true }), 1000, 50);
+    .order('data', { ascending: true })
+    .order('id', { ascending: true }), 1000, 50); // desempate: sem chave única a paginação repete/pula linhas
   const prodRows = userInfo.isMaster ? prodRowsAll : prodRowsAll.filter((row) => matchesRegional(row, userInfo.coordenacao, userInfo.allowed));
   const produzido = prodRows.reduce((sum, row) => sum + Number(row.tons || 0), 0);
 
@@ -158,7 +159,8 @@ async function buildFreshPayload(userInfo) {
 
   const patrimonioRows = await fetchAll(() => supabase
     .from('patrimonios_snapshot')
-    .select('situacao,status,situacao_patrimonio,coordenacao,regional,supervisao,dias_sem_leitura'), 1000, 30).catch(() => []);
+    .select('situacao,status,situacao_patrimonio,coordenacao,regional,supervisao,dias_sem_leitura')
+    .order('id', { ascending: true }), 1000, 30).catch(() => []);
   const patrimonioFiltered = patrimonioRows
     .filter(activePatrimonio)
     .filter((row) => userInfo.isMaster || matchesRegional(row, userInfo.coordenacao, userInfo.allowed));

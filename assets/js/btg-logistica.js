@@ -1137,6 +1137,7 @@ async function fetchColaboradoresComWhatsapp() {
       .select('nome, whatsapp')
       .not('whatsapp', 'is', null)
       .neq('whatsapp', '')
+      .order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + PAGE - 1);
     if (error) return { data: null, error };
     all.push(...(data || []));

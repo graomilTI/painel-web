@@ -556,7 +556,8 @@ async function fetchDashDataLive() {
       .select('data,coordenacao,tons')
       .gte('data', dataIni)
       .lt('data', dataFim)
-      .order('data', { ascending: true });
+      .order('data', { ascending: true })
+      .order('id', { ascending: true }); // desempate: sem chave única a paginação repete/pula linhas
     if (!state.isMaster && coordenacao) q = q.eq('coordenacao', coordenacao);
     return q;
   };
@@ -1872,6 +1873,7 @@ async function renderPatrimonioLeitura(main) {
     let q = supabase.from('vw_patrimonios_atual')
       .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
       .order('dias_sem_leitura', { ascending: false })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(page * PAGE, (page + 1) * PAGE - 1);
     if (sups.length) q = q.in('supervisao', sups);
     const { data, error: err } = await q;

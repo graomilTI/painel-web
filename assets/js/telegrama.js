@@ -203,6 +203,7 @@ async function fetchAllDestinatariosTel() {
       .select('id, nome, cpf_cnpj, cidade, uf, cep, logradouro, numero, complemento, bairro')
       .eq('ativo', true)
       .order('nome')
+      .order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + 999);
     dests = dests.concat(data ?? []);
     if (!data || data.length < 1000) break;
@@ -225,7 +226,7 @@ async function fetchAllClinicasTel() {
       .from('rh_clinicas_sst')
       .select('id,nome,cidade,estado,endereco,telefone,celular,observacoes')
       .eq('ativo', true)
-      .order('estado').order('cidade').order('nome')
+      .order('estado').order('cidade').order('nome').order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + 999);
     clinicas = clinicas.concat(data ?? []);
     if (!data || data.length < 1000) break;

@@ -12,7 +12,7 @@ function date(){return document.getElementById('opDate')?.value||new Date(Date.n
 function next(d){const x=new Date(`${d}T12:00:00`);x.setDate(x.getDate()+1);return x.toISOString().slice(0,10)}
 function meta(card){const p=String(card.dataset.operationKey||'').split('|'),i=p.indexOf('PLACA');return i>0&&p[i+1]?{card,key:card.dataset.operationKey,programId:p[0],plate:plate(p[i+1])}:null}
 async function paged(f,max=30){const out=[];for(let i=0;i<max;i++){const {data,error}=await f().range(i*1000,i*1000+999);if(error)throw error;out.push(...(data||[]));if((data||[]).length<1000)break}return out}
-async function sel(t,fields,col,vals){vals=[...new Set(vals.filter(Boolean))];return vals.length?paged(()=>supabase.from(t).select(fields).in(col,vals)):[]}
+async function sel(t,fields,col,vals){vals=[...new Set(vals.filter(Boolean))];return vals.length?paged(()=>supabase.from(t).select(fields).in(col,vals).order('id',{ascending:true})):[]}
 async function hotels(programIds){
   const out=new Map(),s=await sel('hospedagem_solicitacoes','id,programacao_id,cidade,uf','programacao_id',programIds).catch(()=>[]),sids=s.map(x=>x.id);
   if(!sids.length)return out;
@@ -29,13 +29,13 @@ async function load(d,metas){
     sel('programacao_deslocamento','programacao_id,nome_colaborador,tipo_deslocamento,placa_veiculo','programacao_id',ids),
     sel('programacao_equipe','programacao_id,os_id,nome_colaborador,ordem_rota','programacao_id',ids),
     sel('programacao_estadia','programacao_id,nome_colaborador,tipo_estadia,alojamento_id,alojamento_nome,cidade,uf','programacao_id',ids),
-    paged(()=>supabase.from('colaborador_cruzamento').select('nome,nome_chave,latitude,longitude,endereco_base'),4).catch(()=>[]),
-    paged(()=>supabase.from('hospedagem_alojamentos').select('id,nome,latitude,longitude,cidade,uf'),3).catch(()=>[]),
+    paged(()=>supabase.from('colaborador_cruzamento').select('nome,nome_chave,latitude,longitude,endereco_base').order('colaborador_id',{ascending:true}),4).catch(()=>[]),
+    paged(()=>supabase.from('hospedagem_alojamentos').select('id,nome,latitude,longitude,cidade,uf').order('id',{ascending:true}),3).catch(()=>[]),
     hotels(ids)
   ]);
   const osIds=[...new Set(team.map(x=>x.os_id).filter(Boolean))],os=osIds.length?await sel('operacional_os','id,numero_os,cliente,embarque,ponto1_nome,ponto1_latitude,ponto1_longitude','id',osIds):[];
   const start=`${d}T00:00:00-03:00`,end=`${next(d)}T00:00:00-03:00`;
-  const gps=plates.length?await paged(()=>supabase.from('frotas_posicoes_historico').select('placa,latitude,longitude,reportado_em').in('placa',plates).gte('reportado_em',start).lt('reportado_em',end).order('reportado_em',{ascending:true}),50).catch(()=>[]):[];
+  const gps=plates.length?await paged(()=>supabase.from('frotas_posicoes_historico').select('placa,latitude,longitude,reportado_em').in('placa',plates).gte('reportado_em',start).lt('reportado_em',end).order('reportado_em',{ascending:true}).order('id',{ascending:true}),50).catch(()=>[]):[];
   return {moves,team,stays,people,aloj,hotelMap,os,gps};
 }
 function maps(d){const pm=new Map();for(const x of d.people)for(const k of [norm(x.nome),norm(x.nome_chave)].filter(Boolean))if(!pm.has(k))pm.set(k,x);return {people:pm,os:new Map(d.os.map(x=>[x.id,x])),alojId:new Map(d.aloj.map(x=>[x.id,x])),alojName:new Map(d.aloj.map(x=>[norm(x.nome),x]))}}

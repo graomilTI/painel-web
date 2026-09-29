@@ -154,6 +154,8 @@
     while (true) {
       let query = supabase.from(table).select(select).range(from, from + pageSize - 1);
       if (typeof applyQuery === 'function') query = applyQuery(query);
+      // desempate: sem chave única a paginação repete/pula linhas (ver dre.js)
+      query = query.order('id', { ascending: true });
       const { data, error } = await query;
       if (error) throw error;
       const rows = Array.isArray(data) ? data : [];

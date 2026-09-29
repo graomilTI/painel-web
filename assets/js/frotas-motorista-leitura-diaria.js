@@ -68,6 +68,7 @@ async function loadDailyReadings(originalFrom, dates) {
         .select('patrimonio_codigo,funcionario,identificacao,coordenacao,supervisao,data_upload,ultima_leitura')
         .gte('data_upload', `${date}T00:00:00`)
         .lt('data_upload', `${nextDate(date)}T00:00:00`)
+        .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
         .range(offset, offset + PAGE_SIZE - 1);
 
       if (error) throw error;

@@ -209,7 +209,8 @@ function buildQuery({ userContext, filters, bounds }) {
       .lt('data', filters.dia ? nextDay(filters.dia) : bounds.end)
       .order('data', { ascending: false })
       .order('coordenacao', { ascending: true })
-      .order('funcionario', { ascending: true });
+      .order('funcionario', { ascending: true })
+      .order('id', { ascending: true }); // desempate: sem chave única a paginação repete/pula linhas
 
     if (!master && regionalUsuario) query = query.eq('coordenacao', regionalUsuario);
     if (master && filters.coordenacao) query = query.ilike('coordenacao', `%${filters.coordenacao}%`);

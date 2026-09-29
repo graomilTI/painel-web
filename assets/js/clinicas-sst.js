@@ -328,6 +328,7 @@ async function loadClinicas(container) {
       .order('estado')
       .order('cidade')
       .order('nome')
+      .order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + pageSize - 1);
 
     if (error) { console.error('[clinicas-sst]', error); break; }

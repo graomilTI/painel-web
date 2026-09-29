@@ -423,7 +423,8 @@ async function fetchGestorDataLive(ctx) {
   const makeChecklistsQuery = () => supabase
     .from('frotas_checklists')
     .select('veiculo_id,proxima_data,data_execucao')
-    .order('data_execucao', { ascending: false });
+    .order('data_execucao', { ascending: false })
+    .order('id', { ascending: false }); // desempate: sem chave única a paginação repete/pula linhas
 
   const [metaRes, prodRes, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
     await Promise.all([

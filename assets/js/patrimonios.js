@@ -39,6 +39,7 @@ async function loadHistorico(){
     let q=supabase.from('vw_patrimonios_atual')
       .select('patrimonio_codigo,funcionario,identificacao,dias_sem_leitura,supervisao,situacao')
       .order('patrimonio_codigo',{ascending:true})
+      .order('id',{ascending:true})
       .range(page*PAGE,(page+1)*PAGE-1);
     const {data,error:err}=await q;
     if(err){error=err;break}

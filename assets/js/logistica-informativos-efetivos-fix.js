@@ -41,6 +41,7 @@ async function fetchAll(table, select, maxRows = 50000) {
     const { data, error } = await supabase
       .from(table)
       .select(select)
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + pageSize - 1);
     if (error) throw error;
     rows.push(...(data || []));
@@ -59,6 +60,7 @@ async function fetchProductionRange(from, to, maxRows = 50000) {
       .gte('data', from)
       .lte('data', to)
       .order('data', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + pageSize - 1);
     if (error) throw error;
     rows.push(...(data || []));

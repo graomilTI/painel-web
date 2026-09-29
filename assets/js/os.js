@@ -350,7 +350,7 @@ export async function renderOsModule(content, options = {}) {
     for (let page = 0; ; page++) {
       const from = page * PAGE;
       const to = from + PAGE - 1;
-      let q = supabase.from('operacional_os').select('*').range(from, to);
+      let q = supabase.from('operacional_os').select('*').order('id', { ascending: true }).range(from, to); // desempate: sem chave única a paginação repete/pula linhas
       if (state.access.restricted) q = q.in('supervisao', state.access.allowedSupervisoes);
       const { data, error } = await q;
       if (error) throw new Error(error.message || 'Falha ao consultar operacional_os.');

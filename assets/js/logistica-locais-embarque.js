@@ -84,7 +84,7 @@ async function buscarLocais() {
       .from('operacional_pontos_embarque')
       .select('id,nome_local,tipo_local,cidade,uf,latitude,longitude')
       .eq('ativo', true)
-      .order('uf').order('cidade').order('nome_local')
+      .order('uf').order('cidade').order('nome_local').order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + PAGE - 1);
     if (error) throw error;
     todos.push(...(data || []));

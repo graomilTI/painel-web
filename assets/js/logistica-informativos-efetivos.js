@@ -145,6 +145,7 @@ async function fetchAll(table, select = '*', configure = null, maxRows = 20000) 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     let query = supabase.from(table).select(select).range(offset, offset + pageSize - 1);
     if (configure) query = configure(query);
+    query = query.order('id', { ascending: true }); // desempate: sem chave única a paginação repete/pula linhas
     const { data, error } = await query;
     if (error) throw error;
     rows.push(...(data || []));
