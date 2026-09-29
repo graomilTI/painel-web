@@ -142,6 +142,14 @@ function injectStyles() {
   document.head.appendChild(style);
 }
 
+// Deslocamento reaproveita a disponibilidade DISPONIVEL (é ela que a edge
+// grm-liberacao-despesas-publicar e a Conferência leem pra liberar/conferir as
+// despesas); o que o distingue de "Disponível" é a observação gravada com esse
+// prefixo. Não vira um valor novo de disponibilidade de propósito.
+const DESLOCAMENTO_OBS = 'Deslocamento';
+const isDeslocamento = (row) => normalizeText(row?.disponibilidade) === 'DISPONIVEL'
+  && normalizeText(row?.observacao).startsWith('DESLOCAMENTO');
+
 function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo) {
   const situacaoAtual = normalizeText(row?.disponibilidade || '');
   const dis = readOnly ? 'disabled' : '';
@@ -150,7 +158,8 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
   const indispBadge = indispMotivo
     ? `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`
     : '';
-  const disponivel = situacaoAtual === 'DISPONIVEL';
+  const deslocamento = isDeslocamento(row);
+  const disponivel = situacaoAtual === 'DISPONIVEL' && !deslocamento;
   return `<article class="pso-card" data-colab-id="${esc(colab.colaboradorId)}">
     <div class="pso-name">
       <span class="pso-av" title="Tipo de contrato">${esc(tipoContratoLetra(tipoContratoCru || colab.tipoLabel))}</span>
@@ -161,6 +170,7 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
     </div>
     <div class="pso-situacoes">
       <button type="button" class="pso-disponivel-btn ${disponivel ? 'on' : ''}" data-disponivel ${dis}>${disponivel ? 'Disponível ✓' : 'Disponível'}</button>
+      <button type="button" class="pso-disponivel-btn ${deslocamento ? 'on' : ''}" data-deslocamento ${dis}>${deslocamento ? 'Deslocamento ✓' : 'Deslocamento'}</button>
       <button type="button" class="pso-inativar-btn ${pendente ? 'pendente' : ''}" data-inativar ${inativarDis}>${esc(inativarLabel)}</button>
       ${SITUACOES.map(([valor, label]) => `<button type="button" class="pso-sit-btn ${situacaoAtual === valor ? 'on' : ''}" data-situacao="${esc(valor)}" ${dis}>${esc(label)}</button>`).join('')}
     </div>
@@ -371,11 +381,35 @@ export async function renderProgramacaoSemOs(content, options = {}) {
   // informativa (não bloqueia mais nada, ver commit anterior), o modal
   // renderiza na hora e a consulta roda em paralelo, preenchendo o aviso
   // "Dia anterior: ..." só quando/se voltar.
-  function abrirModalDisponivel(colab) {
+  // Depois de liberar as despesas do deslocamento, pergunta se o colaborador
+  // vai mudar de regional; "Sim" abre o pedido da Etapa 3 (Transferências) já
+  // com ele selecionado.
+  function perguntarTransferirRegional(colab) {
+    modalEl.innerHTML = `<div class="pso-modal-card">
+      <h3>Transferir de regional?</h3>
+      <p class="muted" style="margin:0"><strong>${esc(colab.nome)}</strong> está em deslocamento. Deseja transferi-lo para outra regional?</p>
+      <div class="pso-modal-actions">
+        <button type="button" class="btn btn-primary" id="psoTransfSim">Sim</button>
+        <button type="button" class="btn btn-secondary" id="psoTransfNao">Não</button>
+      </div>
+    </div>`;
+    modalEl.classList.add('open');
+    modalEl.querySelector('#psoTransfNao').onclick = fecharModal;
+    modalEl.querySelector('#psoTransfSim').onclick = () => {
+      fecharModal();
+      if (typeof window.__pgcAbrirTransferencia === 'function') {
+        window.__pgcAbrirTransferencia(colab.colaboradorId);
+      } else {
+        document.querySelector('#progSteps .stepbtn[data-ui-step="3"]')?.click();
+      }
+    };
+  }
+
+  function abrirModalDisponivel(colab, { deslocamento = false } = {}) {
     let estadiaAnterior = null;
     modalEl.innerHTML = `<div class="pso-modal-card">
-      <h3>Liberar despesas de ${esc(colab.nome)}</h3>
-      <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia disponível.</p>
+      <h3>${deslocamento ? 'Despesas do deslocamento de' : 'Liberar despesas de'} ${esc(colab.nome)}</h3>
+      <p class="muted" style="margin:0">Selecione somente as despesas autorizadas para o dia ${deslocamento ? 'de deslocamento' : 'disponível'}.</p>
       <div class="pso-disp-origin" id="psoDispOrigin" hidden></div>
       <div class="pso-disp-options">
         <label class="pso-disp-option"><input type="checkbox" data-disp-ref="cafe"> Café</label>
@@ -445,7 +479,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       try {
         const base = { programacao_id: programacaoId, data_referencia: dataReferencia, colaborador_id: colab.colaboradorId, nome_colaborador: colab.nome };
         const writes = [
-          supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: estadiaAnterior ? `Disponível após ${estadiaAnterior.tipo_estadia}` : 'Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
+          supabase.from('programacao_colaboradores').upsert({ ...base, cargo: colab.cargo || null, coordenacao: colab.coordenacao || null, supervisao: colab.supervisao || null, disponibilidade: 'DISPONIVEL', observacao: deslocamento ? DESLOCAMENTO_OBS : (estadiaAnterior ? `Disponível após ${estadiaAnterior.tipo_estadia}` : 'Disponível') }, { onConflict: 'programacao_id,colaborador_id' }),
           supabase.from('programacao_alimentacao').upsert({ ...base, cafe: selected('cafe'), almoco: selected('almoco'), janta: selected('janta'), observacao: 'Liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }),
         ];
         if (selected('pernoite')) writes.push(supabase.from('programacao_estadia').upsert({ ...base, tipo_estadia: 'PERNOITE', tem_estadia: true, checkin: dataReferencia, checkout: addDaysIso(dataReferencia, 1), observacao: 'Pernoite liberado no fluxo Disponível' }, { onConflict: 'programacao_id,colaborador_id' }));
@@ -469,6 +503,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
         await window.__publicarGrmLiberacaoDespesas?.('SALVAR_MANUAL');
         fecharModal();
         await carregar({ silent: true });
+        if (deslocamento) perguntarTransferirRegional(colab);
       } catch (error) {
         fb.textContent = error.message || 'Não foi possível liberar as despesas.'; fb.classList.add('err'); btn.disabled = false;
       }
@@ -605,6 +640,22 @@ export async function renderProgramacaoSemOs(content, options = {}) {
         return;
       }
       abrirModalDisponivel(colab);
+      return;
+    }
+    const deslocamentoBtn = event.target.closest('[data-deslocamento]');
+    if (deslocamentoBtn) {
+      const card = deslocamentoBtn.closest('.pso-card');
+      const colab = colabsAtual.find((c) => c.colaboradorId === card?.dataset.colabId);
+      if (!colab) return;
+      if (deslocamentoBtn.classList.contains('on')) {
+        deslocamentoBtn.classList.remove('on');
+        deslocamentoBtn.textContent = 'Deslocamento';
+        const obsInput = card.querySelector('[data-obs]');
+        if (obsInput && normalizeText(obsInput.value).startsWith('DESLOCAMENTO')) obsInput.value = '';
+        salvar(colab.colaboradorId, { disponibilidade: null, observacao: obsInput ? obsInput.value : null });
+        return;
+      }
+      abrirModalDisponivel(colab, { deslocamento: true });
       return;
     }
     const inativarBtn = event.target.closest('[data-inativar]');
