@@ -2,11 +2,13 @@
 
 /**
  * Reconciliação diária do Resultado Diário: re-sincroniza uma janela bem maior
- * (padrão 45 dias) do que o agente rápido (grm-sync-resultado-diario.js, 7 dias).
+ * (padrão 75 dias) do que o agente rápido (grm-sync-resultado-diario.js, 7 dias).
  * Achado 29/09 comparando o painel com o GRM: jan/abr batiam exatamente, mas os
  * meses recentes acumulavam diferença (jul/ago ~0,3% no embarcado, set -0,4% nas
  * toneladas) porque o GRM corrige lançamentos depois que o dia sai da janela de 7
- * dias e nada os reprocessava. Só afeta volume/indicadores por tonelada do DRE.
+ * dias e nada os reprocessava. Em 29/09 a janela de 45 dias ainda deixava de fora correções
+ * do GRM em 21/07-03/08 (mudança de dia de carga, ~0,02% em jul), por isso subiu para 75.
+ * Só afeta volume/indicadores por tonelada do DRE.
  *
  * O GRM recusa intervalos grandes (invalidDateRangeDays; 10 dias já falhou), então
  * a janela é consultada em blocos de 7 dias. Tudo-ou-nada: se qualquer bloco falhar
@@ -21,8 +23,8 @@ const {
 } = require('./grm-sync-resultado-diario');
 const { replaceTablePeriodSafely } = require('./safe-table-load');
 
-const diasCfg = Number(process.env.GRM_RESULTADO_RECON_DIAS || 45);
-const DIAS = Number.isFinite(diasCfg) ? Math.min(120, Math.max(8, Math.floor(diasCfg))) : 45;
+const diasCfg = Number(process.env.GRM_RESULTADO_RECON_DIAS || 75);
+const DIAS = Number.isFinite(diasCfg) ? Math.min(120, Math.max(8, Math.floor(diasCfg))) : 75;
 const BLOCO_DIAS = 7;
 // Piso de sanidade: ~20 linhas/dia (o volume real é ~330/dia). Abaixo disso a resposta é suspeita.
 const DIAS_JANELA = (process.env.GRM_RESULTADO_RECON_INICIO && process.env.GRM_RESULTADO_RECON_FIM)
