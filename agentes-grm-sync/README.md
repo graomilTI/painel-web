@@ -244,6 +244,66 @@ cd /home/grao100/painel-scripts/grm-sync
 /opt/node22/bin/node grmserver-abrir-os-api.js --test-payload <id>  # só imprime o payload de uma solicitação
 ```
 
+## Lançamento automático de NHE (`sync-lancar-nhe`)
+
+`grm-sync-lancar-nhe.js` (Puppeteer, lane `saida_logistica`, `mutex_group` `nhe_grm`) lança no GRM as NHE
+("Falta de Caminhão") das O.S. de FOB/CIF que ficaram sem carga no dia anterior. Grava o resultado por O.S. em
+`logistica_nhe_lancamentos_auto` (upsert `chave_unica` = `data|os`) e o resumo de cada execução em
+`logistica_nhe_lancamentos_execucoes`.
+
+**Fluxo de uma execução**
+
+1. **Disparo diário:** um job `pendente` é criado uma vez por dia por `pg_cron` (migration
+   `20260805111600_cron_sync_lancar_nhe_02h.sql`; nos jobs de produção aparece por volta das 06:00 UTC = 03h Brasília)
+   e o worker da lane `saida_logistica` o pega em ~1-2 min. Trata a data de **ontem**.
+2. **Cálculo dos pendentes:** recalcula a regra do FOB para a data e cruza O.S. sem carga real no mesmo local de
+   embarque com o login do colaborador (`grm_login_movimentos_importacoes`). Também repesca pendências dos últimos
+   `NHE_LANCAMENTO_REPROCESSAR_DIAS` dias (padrão 3) com status `SEM_LOGIN`, `SEM_COORDENADA_OS`, `FORA_DO_RAIO`,
+   `ERRO`, `SEM_FUNCIONARIO` ou `LOTE_EXCEDIDO`.
+3. **Elegibilidade:** colaborador a até `NHE_LANCAMENTO_RAIO_M` (2000 m) do ponto da O.S. Fora do raio, lança no nome do
+   gestor da regional (`viaGestor`). Sem login, sem coordenada da O.S. ou sem gestor → fica como pendência manual.
+   Um grupo Cliente + ponto de embarque só recebe uma NHE.
+4. **Lote de no máximo 8 lançamentos por execução** (`NHE_LANCAMENTO_LOTE`, teto 8; cada lançamento leva ~35-50 s no
+   navegador e o watchdog do worker é de 12 min). Os candidatos cortados são gravados como `LOTE_EXCEDIDO`.
+5. **Continuação encadeada:** se sobraram candidatos e o lote andou (`loteProgresso > 0`), o script insere em
+   `grm_sync_jobs` um job `sync-lancar-nhe` com `payload = {"continuacao": true}` (só se não houver outro `pendente`).
+   O worker o pega ~4 min depois e repete o ciclo até esvaziar. Um dia grande (ex.: 28/09/2026 com 28 candidatas) leva
+   4 jobs seguidos.
+6. **Refresh do relatório:** após lançar, enfileira `sync-nhe` para atualizar `grm_nhe_importacoes`.
+
+**Pontos de falha conhecidos (e o que já cobre)**
+
+- **502/503/504 do Supabase:** um 502 na gravação de `LOTE_EXCEDIDO` derrubou uma continuação em 29/09/2026 e deixou 20
+  O.S. paradas até o dia seguinte (a cadeia só é reenfileirada no fim do script). Agora o cliente Supabase tenta de novo
+  (`NHE_LANCAMENTO_SUPABASE_TENTATIVAS`, padrão 4, espera crescente), devolve erro curto em vez do HTML do Cloudflare, e o
+  `catch` de `main()` reenfileira a continuação se houve progresso ou o erro foi instabilidade do Supabase.
+- **Lista de Supervisão vazia** após escolher a Coordenação no modal (intermitente, ~4 em 770 lançamentos): o script
+  reabre o campo até 3 vezes (fecha só o menu aberto — Escape sem menu fecharia o modal).
+- Erros de tela do GRM sem tratamento próprio (ex.: ação "+NHE" indisponível para a conta de automação, funcionário
+  não encontrado na lista) caem em `ERRO` e são repescados no dia seguinte.
+
+**Diagnóstico**
+
+```sql
+-- execuções e continuações do dia (stdout completo do script em output->>'stdout')
+select id, status, payload, iniciado_em, finalizado_em, erro, output->>'stdout' as stdout
+from public.grm_sync_jobs
+where agente_id = 'sync-lancar-nhe'
+order by solicitado_em desc limit 10;
+
+-- situação por O.S. da data de referência
+select numero_os, status, erro, lancado_em
+from public.logistica_nhe_lancamentos_auto
+where data_referencia = '2026-09-28' order by status, numero_os;
+```
+
+- Resumo final de cada execução: linha `Concluído: {"pendentes":…,"candidatos":…,"sucesso":…,"erro":…}` no log/stdout.
+- Um job de continuação que falha cedo pode não aparecer em `logs/worker-saida-logistica.log`; o stdout fica na coluna
+  `output` do job.
+- **Retomar manualmente** (lança NHE de verdade no GRM): confirmar que não há job `pendente`/`rodando` e inserir
+  `{agente_id: 'sync-lancar-nhe', status: 'pendente', payload: {continuacao: true}}` em `grm_sync_jobs`.
+- Modo avulso (não passa pela fila): `node grm-sync-lancar-nhe.js --os <número> --data AAAA-MM-DD [--dry-run] [--debug] [--forcar]`.
+
 ## Rodar manualmente (debug)
 
 ```bash
