@@ -1,6 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { getSession, getUserContext } from './auth.js';
 import { supabase } from './supabaseClient.js';
+import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
 import { anexarLaudoComGeolocalizacao, sanitizeFileName } from './laudoUpload.js';
 import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnexoSaldo, atualizarStatusOsCore } from './programacao-equipe.js';
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
@@ -364,9 +365,8 @@ async function getSupervisoesLiberadas() {
   try {
     const ctx = await getUserContext();
     if (ctx?.user?.is_master) return null;
-    const { data, error } = await supabase.from('programacao_usuario_supervisoes').select('supervisao').eq('ativo', true);
-    if (error) throw error;
-    return new Set(safe(data).map(r => semAcentoSup(r.supervisao)).filter(Boolean));
+    const nomes = await carregarSupervisoesLiberadas();
+    return new Set(nomes.map(semAcentoSup).filter(Boolean));
   } catch (e) {
     console.error('[logistica] Falha ao validar supervisões liberadas:', e);
     return new Set();
