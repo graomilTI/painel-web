@@ -167,7 +167,7 @@ async function fetchOsRows(serverFilter = true) {
   for (let page = 0; page < 20; page += 1) {
     const from = page * PAGE;
     const to = from + PAGE - 1;
-    let q = supabase.from('operacional_os').select('*').range(from, to);
+    let q = supabase.from('operacional_os').select('*').order('id', { ascending: true }).range(from, to); // desempate: sem chave única a paginação repete/pula linhas
     if (serverFilter && state.access.restricted && state.access.coordenacao) q = q.ilike('coordenacao', `%${state.access.coordenacao}%`);
     const { data, error } = await q;
     if (error) throw error;

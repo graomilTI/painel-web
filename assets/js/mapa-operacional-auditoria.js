@@ -97,6 +97,7 @@ async function loadHistory(date, plates) {
       .gte('reportado_em', start)
       .lt('reportado_em', end)
       .order('reportado_em', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to);
     if (error) throw error;
     const batch = data || [];

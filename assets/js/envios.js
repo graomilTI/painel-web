@@ -119,6 +119,7 @@ async function fetchAllDestinatarios() {
       .select('id, nome, cidade, uf, cep, matricula, logradouro, numero, complemento, bairro, email, telefone, cpf_cnpj, origem')
       .eq('ativo', true)
       .order('nome')
+      .order('id') // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + 999);
     dests = dests.concat(data ?? []);
     if (!data || data.length < 1000) break;
@@ -184,6 +185,7 @@ async function importarDestinatariosColaboradores() {
       .select('nome, email_pessoal, whatsapp, cep, estado, cidade, bairro, endereco, complemento')
       .eq('ativo', true)
       .order('data_referencia', { ascending: false })
+      .order('id', { ascending: false }) // desempate: sem chave única a paginação repete/pula linhas
       .range(offset, offset + PAGE - 1);
     if (error) { setFeedback('Erro ao buscar colaboradores: ' + error.message, true); return; }
     colabs = colabs.concat(data ?? []);

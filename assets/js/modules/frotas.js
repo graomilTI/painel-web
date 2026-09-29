@@ -654,6 +654,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       if (orderColumn) {
         query = query.order(orderColumn, { ascending: true });
       }
+      query = query.order('id', { ascending: true }); // desempate: orderColumn nem sempre é único
 
       const { data, error } = await query;
       if (error) throw error;

@@ -394,6 +394,7 @@ async function loadOsAbertasPaginadas(supervisao) {
     const { data, error } = await query
       .order('data_os', { ascending: false })
       .order('numero_os', { ascending: false })
+      .order('id', { ascending: false }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + OS_PAGE_SIZE - 1);
     if (error) throw error;
 

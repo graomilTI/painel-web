@@ -1228,6 +1228,7 @@ async function loadExecutions(forceRender = false) {
         .select(baseFields)
         .gte('created_at', since)
         .order('created_at', { ascending: false })
+        .order('id', { ascending: false }) // desempate: sem chave única a paginação repete/pula linhas
         .range(start, start + 999))),
       supabase
         .from('grm_sync_jobs')

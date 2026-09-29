@@ -118,12 +118,16 @@ export function normalizarTexto(value = '') {
  *   porPagina  — tamanho da página (default 50, com count exato)
  *   cacheMs    — cache do resultado por N milissegundos (invalidável por tabela)
  *   chaveCorrida — string p/ cancelar consultas anteriores da mesma tela
+ *   desempate  — coluna única acrescentada ao ORDER BY nas listagens paginadas (default 'id';
+ *                null desliga). Sem ela, empates na ordenação fazem o Postgres devolver linhas
+ *                repetidas/faltando entre páginas. Se a tabela/view não tiver a coluna (42703),
+ *                a consulta é refeita sem o desempate.
  * @returns {Promise<{rows, total, pagina, porPagina, cancelada}>}
  */
 export async function listar(tabela, opts = {}) {
   const {
     select = '*', filtros = [], busca = null, ordenar = [],
-    pagina = 1, porPagina = 50, cacheMs = 0, chaveCorrida = null, head = false,
+    pagina = 1, porPagina = 50, cacheMs = 0, chaveCorrida = null, head = false, desempate = 'id',
   } = opts;
 
   const chaveCache = cacheMs > 0 ? `${tabela}:${JSON.stringify([select, filtros, busca, ordenar, pagina, porPagina])}` : null;
@@ -134,7 +138,7 @@ export async function listar(tabela, opts = {}) {
 
   const aindaValida = chaveCorrida ? iniciarCorrida(chaveCorrida) : () => true;
 
-  const executar = async () => {
+  const executar = async (comDesempate = true) => {
     let query = supabase.from(tabela).select(select, { count: 'exact', head });
 
     for (const f of filtros) {
@@ -156,12 +160,17 @@ export async function listar(tabela, opts = {}) {
     const ordens = ordenar.length ? ordenar : [];
     for (const o of ordens) query = query.order(o.coluna, { ascending: o.asc !== false });
 
+    const usaDesempate = comDesempate && desempate && porPagina > 0 && !head
+      && !ordens.some((o) => o.coluna === desempate);
+    if (usaDesempate) query = query.order(desempate, { ascending: true });
+
     if (porPagina > 0) {
       const de = (Math.max(1, pagina) - 1) * porPagina;
       query = query.range(de, de + porPagina - 1);
     }
 
     const { data, error, count } = await query;
+    if (error && usaDesempate && error.code === '42703') return executar(false);
     if (error) lancar(error, tabela);
     return { rows: data || [], total: count ?? (data?.length || 0), pagina, porPagina, cancelada: false };
   };

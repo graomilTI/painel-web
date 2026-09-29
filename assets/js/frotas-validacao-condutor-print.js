@@ -64,7 +64,7 @@ function isActive(row) {
 async function fetchRows(table, select) {
   const all = [];
   for (let offset = 0; offset < 20000; offset += 1000) {
-    const { data, error } = await client.from(table).select(select).range(offset, offset + 999);
+    const { data, error } = await client.from(table).select(select).order('id').range(offset, offset + 999); // desempate: sem chave única a paginação repete/pula linhas
     if (error) throw error;
     const rows = Array.isArray(data) ? data : [];
     all.push(...rows);

@@ -99,6 +99,7 @@ async function buscarUltimoLoteAgente(limite) {
       .select('dados_json')
       .gte('created_at', threshold)
       .order('created_at', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, to);
     if (error) throw error;
     const chunk = data || [];

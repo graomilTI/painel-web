@@ -722,6 +722,7 @@ async function loadSnapshotRows() {
       .order('coordenacao', { ascending: true })
       .order('supervisao', { ascending: true })
       .order('funcionario', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + FETCH_BATCH_SIZE - 1);
 
     if (error) throw error;

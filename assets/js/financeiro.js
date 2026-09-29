@@ -596,7 +596,7 @@ async function buscarUltimoLoteAgente(tabela, limite) {
   let from = 0;
   while (rows.length < limite) {
     const { data, error } = await supabase
-      .from(tabela).select('dados_json').gte('created_at', threshold).range(from, from + pageSize - 1);
+      .from(tabela).select('dados_json').gte('created_at', threshold).order('created_at').order('id').range(from, from + pageSize - 1); // desempate: sem chave única a paginação repete/pula linhas
     if (error) throw error;
     const page = data || [];
     rows.push(...page.map((row) => row.dados_json));

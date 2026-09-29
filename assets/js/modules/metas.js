@@ -1078,9 +1078,16 @@ import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
     return null;
   }
 
-  async function fetchAllRows(queryBuilder, pageSize = 1000, maxRows = 50000) {
+  // `desempate` (coluna única, default 'id') entra no ORDER BY depois de qualquer ordem que o
+  // chamador já tenha aplicado: sem ele o Postgres não garante a mesma ordem entre páginas .range()
+  // e o resultado sai com linhas repetidas/faltando (ver dre.js). Passe null para tabela sem `id`.
+  async function fetchAllRows(queryBuilder, pageSize = 1000, maxRows = 50000, desempate = 'id') {
     const rows = [];
     let from = 0;
+
+    if (desempate && typeof queryBuilder.range === 'function' && typeof queryBuilder.order === 'function') {
+      queryBuilder = queryBuilder.order(desempate, { ascending: true });
+    }
 
     while (from < maxRows) {
       const to = from + pageSize - 1;

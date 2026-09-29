@@ -114,6 +114,7 @@ async function buscarPaginado(tabela, colunas) {
       .from(tabela)
       .select(colunas)
       .order('nome', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(inicio, inicio + PAGE_SIZE - 1);
 
     if (error) throw error;

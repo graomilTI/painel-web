@@ -238,6 +238,7 @@
       let query = supabase.from(table).select(columns);
       if (typeof configureQuery === 'function') query = configureQuery(query);
       if (orderBy) query = query.order(orderBy, { ascending: true });
+      query = query.order('id', { ascending: true }); // desempate: orderBy nem sempre é único
       query = query.range(from, from + pageSize - 1);
 
       const { data, error } = await query;

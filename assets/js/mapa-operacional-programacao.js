@@ -106,7 +106,7 @@ async function fetchPaged(factory, { pageSize = 1000, maxPages = 30 } = {}) {
 async function selectIn(table, fields, column, values) {
   const clean = [...new Set((values || []).filter(Boolean))];
   if (!clean.length) return [];
-  return fetchPaged(() => supabase.from(table).select(fields).in(column, clean));
+  return fetchPaged(() => supabase.from(table).select(fields).in(column, clean).order('id', { ascending: true })); // desempate: sem chave única a paginação repete/pula linhas
 }
 
 async function loadHotelAssignments(programIds) {
@@ -165,14 +165,16 @@ async function loadPositions(date, plates) {
     .in('placa', clean)
     .gte('reportado_em', start)
     .lt('reportado_em', end)
-    .order('reportado_em', { ascending: true }), { pageSize: 1000, maxPages: 50 });
+    .order('reportado_em', { ascending: true })
+    .order('id', { ascending: true }), { pageSize: 1000, maxPages: 50 });
 }
 
 async function loadRaw(date) {
   const programacoes = await fetchPaged(() => supabase
     .from('programacao_dia')
     .select('id,data_referencia,coordenacao,supervisao,regional,status,updated_at')
-    .eq('data_referencia', date));
+    .eq('data_referencia', date)
+    .order('id', { ascending: true }));
   const programIds = programacoes.map((row) => row.id).filter(Boolean);
   if (!programIds.length) {
     return {
@@ -186,10 +188,10 @@ async function loadRaw(date) {
     selectIn('programacao_deslocamento', 'id,programacao_id,data_referencia,colaborador_id,nome_colaborador,tipo_deslocamento,origem,destino,km,valor,observacao,placa_veiculo,updated_at', 'programacao_id', programIds),
     selectIn('programacao_estadia', 'id,programacao_id,data_referencia,colaborador_id,nome_colaborador,tem_estadia,tipo_estadia,cidade,uf,diarias,checkin,checkout,observacao,alojamento_id,alojamento_nome,updated_at', 'programacao_id', programIds),
     selectIn('programacao_equipe', 'id,programacao_id,os_id,colaborador_id,nome_colaborador,km_estimado,duracao_min,ordem_rota,confirmado,rota_geometria,rota_calculada_em,updated_at', 'programacao_id', programIds),
-    fetchPaged(() => supabase.from('colaborador_cruzamento').select('colaborador_id,nome,nome_chave,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa,salario'), { pageSize: 1000, maxPages: 4 }).catch(() => []),
-    fetchPaged(() => supabase.from('frotas_veiculos').select('id,placa,placa_normalizada,nome,marca,modelo,tipo,status,valor_km,rs_km,motorista_atual,bfleet_condutor,possui_rastreador,rastreador_bfleet,bfleet_rastreador,bfleet_confirmado,bfleet_status,bfleet_device_id'), { pageSize: 1000, maxPages: 3 }).catch(() => []),
-    fetchPaged(() => supabase.from('vw_patrimonios_atual').select('patrimonio_codigo,supervisao,funcionario,identificacao,categoria,marca,modelo,situacao').eq('categoria', 'VEICULOS'), { pageSize: 1000, maxPages: 3 }).catch(() => []),
-    fetchPaged(() => supabase.from('hospedagem_alojamentos').select('id,nome,cidade,uf,endereco,latitude,longitude,status'), { pageSize: 1000, maxPages: 3 }).catch(() => []),
+    fetchPaged(() => supabase.from('colaborador_cruzamento').select('colaborador_id,nome,nome_chave,supervisao,coordenacao,tipo_contrato,latitude,longitude,endereco_base,veiculo_id,veiculo_placa,salario').order('colaborador_id', { ascending: true }), { pageSize: 1000, maxPages: 4 }).catch(() => []),
+    fetchPaged(() => supabase.from('frotas_veiculos').select('id,placa,placa_normalizada,nome,marca,modelo,tipo,status,valor_km,rs_km,motorista_atual,bfleet_condutor,possui_rastreador,rastreador_bfleet,bfleet_rastreador,bfleet_confirmado,bfleet_status,bfleet_device_id').order('id', { ascending: true }), { pageSize: 1000, maxPages: 3 }).catch(() => []),
+    fetchPaged(() => supabase.from('vw_patrimonios_atual').select('patrimonio_codigo,supervisao,funcionario,identificacao,categoria,marca,modelo,situacao').eq('categoria', 'VEICULOS').order('id', { ascending: true }), { pageSize: 1000, maxPages: 3 }).catch(() => []),
+    fetchPaged(() => supabase.from('hospedagem_alojamentos').select('id,nome,cidade,uf,endereco,latitude,longitude,status').order('id', { ascending: true }), { pageSize: 1000, maxPages: 3 }).catch(() => []),
     loadHotelAssignments(programIds),
   ]);
 

@@ -416,6 +416,7 @@ async function loadColaboradores() {
       .select('cpf,nome,situacao,empresa,coordenacao,supervisao,cargo,email_empresa,email_pessoal,whatsapp,tipo')
       .eq('situacao', 'Ativo')
       .order('nome', { ascending: true })
+      .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
       .range(from, from + pageSize - 1);
 
     const { data, error } = await query;
