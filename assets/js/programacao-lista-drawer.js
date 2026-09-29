@@ -26,8 +26,8 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260920-equipe-contexto1';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260917-deslocamento-persistido1';
+} from './programacao-equipe.js?v=20260929-deslocamento1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260929-deslocamento1';
 
 function esc(value) {
   return String(value ?? '')
@@ -789,9 +789,11 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     const sel = progBodySelectAtual();
     if (!sel) return;
     const jaNaOs = new Set(rowsAtuais.map((r) => String(r.colaborador_id)));
-    const regional = await getRegional();
+    const [regional, indisponiveis] = await Promise.all([getRegional(), getIndisponiveis()]);
     const escalados = new Set(equipeRowsAtual.filter((r) => r.confirmado).map((r) => String(r.colaborador_id)));
-    const opcoes = regional.filter((c) => c.colaboradorId && !jaNaOs.has(String(c.colaboradorId)));
+    // Quem foi transferido mas ainda está em deslocamento não pode ser escalado
+    // (o banco também recusa — ver programacao_equipe_bloqueia_em_deslocamento).
+    const opcoes = regional.filter((c) => c.colaboradorId && !jaNaOs.has(String(c.colaboradorId)) && !indisponiveis.emDeslocamento(c));
     sel.innerHTML = '<option value="">Escolha um colaborador…</option>' + opcoes.map((c) => {
       const id = String(c.colaboradorId);
       const jaEmOutra = escalados.has(id);

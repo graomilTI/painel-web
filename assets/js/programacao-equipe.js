@@ -738,11 +738,12 @@ export async function loadDisponibilidadeConfirmados(programacaoId, colaboradorI
 // resolvemos uuid -> cpf/nome aqui e casamos por chave de CPF E por nome
 // normalizado. Falha aberta: qualquer erro devolve "ninguém indisponível"
 // (melhor sugerir alguém de férias do que travar a programação inteira).
+export const MOTIVO_EM_DESLOCAMENTO = 'Em deslocamento';
 export async function loadIndisponiveisNaData(dataReferencia) {
-  const vazio = { chavesRpc: [], match: () => false, motivo: () => null };
+  const vazio = { chavesRpc: [], match: () => false, motivo: () => null, emDeslocamento: () => false };
   const dia = String(dataReferencia || todayIso()).slice(0, 10);
   try {
-    const [ferias, atestados, legado] = await Promise.all([
+    const [ferias, atestados, legado, deslocamento] = await Promise.all([
       supabase.from('rh_ferias')
         .select('colaborador_id,colaborador_nome')
         .in('status', ['programada', 'em_gozo'])
@@ -764,6 +765,18 @@ export async function loadIndisponiveisNaData(dataReferencia) {
         .select('colaborador_cpf,colaborador_nome,motivo')
         .lte('data_inicio', dia)
         .or(`data_fim.is.null,data_fim.gte.${dia}`),
+      // Transferência aceita com colaborador em deslocamento: ele já trocou de
+      // supervisão no GRM mas ainda não chegou — indisponível pra programação
+      // até a chegada ser confirmada ou chegar o dia previsto (ver migration
+      // 20260929120000). Erro aqui (ex.: coluna ainda não migrada) NÃO pode
+      // derrubar as outras fontes: cai pra "ninguém em deslocamento".
+      supabase.from('programacao_transferencias')
+        .select('colaborador_cpf,colaborador_nome')
+        .eq('status', 'ACEITA')
+        .eq('em_deslocamento', true)
+        .is('chegada_confirmada_em', null)
+        .gt('chegada_prevista', dia)
+        .then((res) => res, () => ({ data: [], error: null })),
     ]);
     if (ferias.error) throw ferias.error;
     if (atestados.error) throw atestados.error;
@@ -783,6 +796,12 @@ export async function loadIndisponiveisNaData(dataReferencia) {
         colaborador_nome: r.colaborador_nome,
         colaborador_cpf: r.colaborador_cpf,
         motivoLabel: motivoLegado(r.motivo),
+      })),
+      ...(deslocamento?.error ? [] : (deslocamento?.data || [])).map((r) => ({
+        colaborador_id: null,
+        colaborador_nome: r.colaborador_nome,
+        colaborador_cpf: r.colaborador_cpf,
+        motivoLabel: MOTIVO_EM_DESLOCAMENTO,
       })),
     ];
     if (!rows.length) return vazio;
@@ -815,7 +834,12 @@ export async function loadIndisponiveisNaData(dataReferencia) {
       const id = String(c?.colaboradorId ?? c?.colaborador_id ?? '').trim();
       return (id && motivoPorChave.get(id)) || motivoPorNome.get(normalizeText(c?.nome)) || null;
     };
-    return { chavesRpc: [...motivoPorChave.keys()], match: (c) => motivo(c) != null, motivo };
+    return {
+      chavesRpc: [...motivoPorChave.keys()],
+      match: (c) => motivo(c) != null,
+      motivo,
+      emDeslocamento: (c) => motivo(c) === MOTIVO_EM_DESLOCAMENTO,
+    };
   } catch (e) {
     console.warn('[equipe] indisponibilidade RH indisponível (ignorando)', e);
     return vazio;

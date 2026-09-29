@@ -62,6 +62,23 @@ function statusInfo(t) {
   return { label: 'Atualizando GRM', cls: 'info' };
 }
 
+function todayIso() {
+  const n = new Date();
+  return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+// Data pura (YYYY-MM-DD) -> dd/mm/aaaa, sem passar por fuso.
+function formatDateIso(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+
+// Colaborador transferido que ainda não chegou (bloqueado na Programação).
+function aguardandoChegada(t) {
+  return t.status === 'ACEITA' && t.em_deslocamento && !t.chegada_confirmada_em
+    && String(t.chegada_prevista || '') > todayIso();
+}
+
 function patrimoniosResumo(t) {
   const qtd = Array.isArray(t.patrimonios) ? t.patrimonios.length : 0;
   if (!qtd) return 'Sem patrimônios';
@@ -141,6 +158,11 @@ function injectStyles() {
     .ptr-patr-list li{font-size:12px;color:#cbd5e1}
     .ptr-patr-list li b{color:#f8fafc;margin-right:6px}
     .ptr-card-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:6px;flex-wrap:wrap}
+    .ptr-tag{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:rgba(245,158,11,.14);color:#fde68a;border:1px solid rgba(245,158,11,.35);vertical-align:middle;white-space:nowrap}
+    .ptr-desloc{border:1px solid rgba(245,158,11,.3);background:rgba(120,53,15,.16);border-radius:12px;padding:11px 12px;margin-bottom:14px}
+    .ptr-desloc label.ptr-check{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;font-weight:800;color:#fde68a;cursor:pointer}
+    .ptr-desloc input[type=date]{margin-top:10px;min-height:38px;padding:7px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:#020617;color:#e2e8f0;font-size:13px;width:100%;box-sizing:border-box;color-scheme:dark}
+    .ptr-desloc small{display:block;margin-top:6px;font-size:11.5px;color:#cbd5e1;line-height:1.4}
     .ptr-fb{font-size:12.5px;font-weight:700;margin-right:auto}
     .ptr-fb.err{color:#fca5a5}
     .ptr-fb.ok{color:#86efac}
@@ -228,6 +250,9 @@ function rowHtml(t, minhas, aberta) {
   } else if (pendente && souOrigem) {
     acoes.push(`<button type="button" class="ptr-btn ghost" data-ptr-acao="cancelar" data-id="${esc(t.id)}">Cancelar</button>`);
   }
+  if (aguardandoChegada(t) && souDestino) {
+    acoes.push(`<button type="button" class="ptr-btn pri" data-ptr-acao="chegada" data-id="${esc(t.id)}">Confirmar chegada</button>`);
+  }
   if (t.status === 'ACEITA' && t.grm_status === 'ERRO') {
     acoes.push(`<button type="button" class="ptr-btn ghost" data-ptr-acao="reenviar" data-id="${esc(t.id)}">Reenviar ao GRM</button>`);
   }
@@ -235,6 +260,9 @@ function rowHtml(t, minhas, aberta) {
     ['Pedido', `${esc(t.solicitado_por_nome || '—')} · ${esc(formatDateTime(t.solicitado_em))}`],
     t.respondido_em && [t.status === 'CANCELADA' ? 'Cancelado' : 'Resposta', `${esc(t.respondido_por_nome || '—')} · ${esc(formatDateTime(t.respondido_em))}`],
     ['Patrimônios', esc(patrimoniosResumo(t)) + (t.transferir_patrimonios || !t.patrimonios?.length ? '' : ' na origem')],
+    t.em_deslocamento && ['Deslocamento', t.chegada_confirmada_em
+      ? `Chegada confirmada por ${esc(t.chegada_confirmada_por_nome || '—')} · ${esc(formatDateTime(t.chegada_confirmada_em))}`
+      : `Chegada prevista em ${esc(formatDateIso(t.chegada_prevista))} — até lá não pode ser escalado em O.S.`],
     t.motivo && ['Motivo', esc(t.motivo)],
     t.motivo_recusa && ['Recusa', `<span class="err">${esc(t.motivo_recusa)}</span>`],
     t.grm_aplicado_em && ['GRM', `Atualizado em ${esc(formatDateTime(t.grm_aplicado_em))}`],
@@ -246,7 +274,7 @@ function rowHtml(t, minhas, aberta) {
         <div class="ptr-who">
           <div class="ptr-av">${esc(iniciais(t.colaborador_nome))}</div>
           <div style="min-width:0">
-            <div class="ptr-name">${esc(t.colaborador_nome)}</div>
+            <div class="ptr-name">${esc(t.colaborador_nome)}${aguardandoChegada(t) ? `<span class="ptr-tag" title="Ainda não chegou na supervisão de destino">🚚 chega ${esc(formatDateIso(t.chegada_prevista).slice(0, 5))}</span>` : ''}</div>
             <div class="ptr-sub">${esc([t.colaborador_cargo, formatDate(t.solicitado_em)].filter(Boolean).join(' · '))}</div>
           </div>
         </div>
@@ -400,7 +428,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     };
   }
 
-  async function abrirModalNova(cpfPreSelecionado = '') {
+  async function abrirModalNova(cpfPreSelecionado = '', opcoes = {}) {
     modalEl.innerHTML = `<div class="ptr-card" role="dialog" aria-modal="true" aria-label="Nova transferência">
       <h3>Nova transferência</h3>
       <p class="ptr-hint">O gestor da supervisão de destino será avisado para aceitar ou recusar.</p>
@@ -420,6 +448,13 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
             <button type="button" data-patr="N" disabled>Não, ficam na origem</button>
           </div>
           <div class="ptr-patr-note" id="ptrPatr">Selecione o colaborador para ver os patrimônios.</div>
+        </div>
+        <div class="ptr-desloc">
+          <label class="ptr-check"><input type="checkbox" id="ptrDesloc"> <span>Colaborador em deslocamento — ainda não chegou na supervisão de destino</span></label>
+          <div id="ptrDeslocData" hidden>
+            <input type="date" id="ptrChegada" min="${todayIso()}" aria-label="Data prevista de chegada">
+            <small>Até essa data (ou até o gestor de destino confirmar a chegada) o colaborador não poderá ser escalado em O.S. na programação do destino.</small>
+          </div>
         </div>
         <div class="ptr-field">
           <label for="ptrMotivo">Motivo <span style="color:#64748b;font-weight:600">(opcional)</span></label>
@@ -441,6 +476,9 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       patr: modalEl.querySelector('#ptrPatr'),
       seg: [...modalEl.querySelectorAll('[data-patr]')],
       motivo: modalEl.querySelector('#ptrMotivo'),
+      desloc: modalEl.querySelector('#ptrDesloc'),
+      deslocData: modalEl.querySelector('#ptrDeslocData'),
+      chegada: modalEl.querySelector('#ptrChegada'),
       enviar: modalEl.querySelector('#ptrEnviar'),
       fb: modalEl.querySelector('#ptrFb'),
     };
@@ -485,6 +523,10 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     }
 
     f.seg.forEach((b) => b.addEventListener('click', () => setSeg(b.dataset.patr === 'S')));
+    const syncDesloc = () => { f.deslocData.hidden = !f.desloc.checked; };
+    f.desloc.addEventListener('change', syncDesloc);
+    f.desloc.checked = !!opcoes.deslocamento;
+    syncDesloc();
     f.colab.addEventListener('change', () => { setFb(''); atualizarPatrimonios(); });
 
     f.form.addEventListener('submit', async (event) => {
@@ -493,6 +535,9 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       if (!colab) { setFb('Selecione o colaborador.', 'err'); return; }
       if (!f.destino.value) { setFb('Selecione a supervisão de destino.', 'err'); return; }
       if (transferirPatrimonios === null) { setFb('Diga se os patrimônios vão junto.', 'err'); return; }
+      const emDeslocamento = f.desloc.checked;
+      if (emDeslocamento && !f.chegada.value) { setFb('Informe a data prevista de chegada.', 'err'); return; }
+      if (emDeslocamento && f.chegada.value < todayIso()) { setFb('A data de chegada não pode ser no passado.', 'err'); return; }
       f.enviar.disabled = true;
       setFb('Enviando...');
       const destino = f.destino.value;
@@ -501,6 +546,8 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
         p_supervisao_destino: destino,
         p_transferir_patrimonios: transferirPatrimonios,
         p_motivo: f.motivo.value.trim() || null,
+        p_em_deslocamento: emDeslocamento,
+        p_chegada_prevista: emDeslocamento ? f.chegada.value : null,
       });
       if (error) { f.enviar.disabled = false; setFb(rpcErrorMessage(error), 'err'); return; }
       fecharModal();
@@ -528,9 +575,9 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
   }
 
   // Chamado pelo Sem O.S.: leva pra aba Transferências e abre o pedido.
-  window.__pgcAbrirTransferencia = (cpf) => {
+  window.__pgcAbrirTransferencia = (cpf, opcoes = {}) => {
     document.querySelector('#progSteps .stepbtn[data-ui-step="3"]')?.click();
-    return abrirModalNova(cpf);
+    return abrirModalNova(cpf, opcoes);
   };
 
   async function executarAcao(btn) {
@@ -540,6 +587,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     const confirmacoes = {
       cancelar: 'Cancelar este pedido de transferência?',
       reenviar: 'Reenviar esta transferência para o agente do GRM?',
+      chegada: 'Confirmar que o colaborador já chegou? Ele passa a poder ser escalado em O.S. na sua programação.',
     };
     // Aceitar não pede confirmação: o botão já é a decisão do gestor de destino.
     if (confirmacoes[acao] && !window.confirm(confirmacoes[acao])) return;
@@ -548,6 +596,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       aceitar: () => supabase.rpc('programacao_transferencia_responder', { p_id: id, p_aceitar: true, p_motivo: null }),
       cancelar: () => supabase.rpc('programacao_transferencia_cancelar', { p_id: id }),
       reenviar: () => supabase.rpc('programacao_transferencia_reenviar_grm', { p_id: id }),
+      chegada: () => supabase.rpc('programacao_transferencia_confirmar_chegada', { p_id: id }),
     };
     const { error } = await chamadas[acao]();
     if (error) {
@@ -555,7 +604,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       window.alert(rpcErrorMessage(error));
       return;
     }
-    toast({ aceitar: 'Transferência aceita. O GRM será atualizado.', cancelar: 'Pedido cancelado.', reenviar: 'Reenviado ao GRM.' }[acao]);
+    toast({ aceitar: 'Transferência aceita. O GRM será atualizado.', cancelar: 'Pedido cancelado.', reenviar: 'Reenviado ao GRM.', chegada: 'Chegada confirmada. O colaborador já pode ser escalado.' }[acao]);
     await recarregarListas();
   }
 

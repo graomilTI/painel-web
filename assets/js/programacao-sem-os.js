@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData } from './programacao-equipe.js?v=20260828-desligamento-readmitido1';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData, MOTIVO_EM_DESLOCAMENTO } from './programacao-equipe.js?v=20260929-deslocamento1';
 import { anexoFieldHtml, resolverAnexo, upsertAtestado } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 
@@ -155,8 +155,11 @@ function cardHtml(colab, row, readOnly, pendente, tipoContratoCru, indispMotivo)
   const dis = readOnly ? 'disabled' : '';
   const inativarDis = readOnly || pendente ? 'disabled' : '';
   const inativarLabel = pendente ? 'Inativação solicitada' : 'Inativar';
+  const emDeslocamento = indispMotivo === MOTIVO_EM_DESLOCAMENTO;
   const indispBadge = indispMotivo
-    ? `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`
+    ? (emDeslocamento
+      ? `<span class="pso-indisp" title="Transferência aceita — ainda não chegou na supervisão, não pode ser escalado em O.S. até a chegada">🚚 ${esc(indispMotivo)}</span>`
+      : `<span class="pso-indisp" title="Lançado em RH > Indisponibilidade — não aparece como candidato na Etapa 2">${indispMotivo === 'Férias' ? '🏖' : '🤒'} ${esc(indispMotivo)} (RH)</span>`)
     : '';
   const deslocamento = isDeslocamento(row);
   const disponivel = situacaoAtual === 'DISPONIVEL' && !deslocamento;
@@ -227,7 +230,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
 
   let colabsAtual = [];
   let pendentesAtual = new Set();
-  let indisponiveisAtual = { chavesRpc: [], match: () => false, motivo: () => null };
+  let indisponiveisAtual = { chavesRpc: [], match: () => false, motivo: () => null, emDeslocamento: () => false };
 
   function fecharModal() { modalEl.classList.remove('open'); modalEl.innerHTML = ''; }
 
@@ -398,7 +401,7 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     modalEl.querySelector('#psoTransfSim').onclick = () => {
       fecharModal();
       if (typeof window.__pgcAbrirTransferencia === 'function') {
-        window.__pgcAbrirTransferencia(colab.colaboradorId);
+        window.__pgcAbrirTransferencia(colab.colaboradorId, { deslocamento: true });
       } else {
         document.querySelector('#progSteps .stepbtn[data-ui-step="3"]')?.click();
       }
