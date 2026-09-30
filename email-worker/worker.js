@@ -1288,13 +1288,137 @@ async function processOutbox() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Painel -> IMAP (só caixa pessoal do Gestor). O painel grava lido/favorito/arquivado/
+// excluído no banco e marca imap_pendente; aqui a mudança é aplicada no servidor de e-mail.
+// Excluir = mover para a Lixeira (nunca EXPUNGE), arquivar = mover para a pasta Arquivo.
+// A mensagem é localizada pelo Message-ID (não pelo UID, que muda a cada movimentação).
+// ---------------------------------------------------------------------------
+const IMAP_CHANGES_BATCH = 50;
+
+function findFolderPath(listed, specialUse, nameRegex) {
+  const bySpecialUse = listed.find((mailbox) => mailboxFlagList(mailbox).includes(specialUse));
+  if (bySpecialUse) return bySpecialUse.path;
+  const byName = listed.find((mailbox) => nameRegex.test(mailboxKey(mailbox.path)));
+  return byName ? byName.path : null;
+}
+
+async function ensureFolder(client, listed, path) {
+  if (listed.some((mailbox) => mailbox.path === path)) return path;
+  await client.mailboxCreate(path);
+  listed.push({ path, flags: new Set() });
+  return path;
+}
+
+async function findMessageUids(client, path, msgId) {
+  let lock;
+  try {
+    lock = await client.getMailboxLock(path);
+  } catch (error) {
+    return { lock: null, uids: [] };
+  }
+  const uids = await client.search({ header: { 'message-id': msgId } }, { uid: true });
+  if (uids && uids.length) return { lock, uids };
+  lock.release();
+  return { lock: null, uids: [] };
+}
+
+async function applyImapChanges(account) {
+  const { data: rows, error } = await supabase
+    .from('email_messages')
+    .select('id, message_id, mailbox_path, imap_mailbox, lido, favorito, arquivado_em, excluido_em, raw')
+    .eq('account_id', account.id)
+    .eq('imap_pendente', true)
+    .limit(IMAP_CHANGES_BATCH);
+  if (error) throw error;
+  if (!rows || !rows.length) return;
+
+  console.log(`Aplicando ${rows.length} alteração(ões) do painel no IMAP de ${account.email}...`);
+  const client = new ImapFlow({
+    host: account.imap_host,
+    port: account.imap_port,
+    secure: account.imap_secure,
+    auth: { user: account.username, pass: decryptCredential(account.password_cipher) },
+    tls: { rejectUnauthorized: false },
+    logger: false
+  });
+  await client.connect();
+  try {
+    const listed = await client.list();
+    // cPanel/Dovecot costuma usar "INBOX." como prefixo das subpastas.
+    const prefix = listed.some((mailbox) => /^INBOX\./i.test(mailbox.path)) ? 'INBOX.' : '';
+    let archivePath = findFolderPath(listed, '\\Archive', /archive|arquiv/);
+    let trashPath = findFolderPath(listed, '\\Trash', /trash|lixeira|deleted/);
+
+    for (const row of rows) {
+      let imapErro = null;
+      let finalPath = row.imap_mailbox || (row.raw && row.raw.mailbox) || 'INBOX';
+      try {
+        const desired = row.excluido_em ? 'trash' : row.arquivado_em ? 'archive' : 'origin';
+        let target = row.mailbox_path || 'INBOX';
+        if (desired === 'archive') {
+          if (!archivePath) archivePath = await ensureFolder(client, listed, `${prefix}Archive`);
+          target = archivePath;
+        } else if (desired === 'trash') {
+          if (!trashPath) trashPath = await ensureFolder(client, listed, `${prefix}Trash`);
+          target = trashPath;
+        }
+
+        const candidates = [row.imap_mailbox, row.raw && row.raw.mailbox, row.mailbox_path, target, 'INBOX']
+          .filter((path, index, all) => path && all.indexOf(path) === index);
+        let found = null;
+        for (const path of candidates) {
+          const result = await findMessageUids(client, path, row.message_id);
+          if (result.uids.length) { found = { path, ...result }; break; }
+        }
+        if (!found) {
+          imapErro = 'Mensagem não encontrada no servidor de e-mail (pode ter sido movida ou apagada pelo webmail).';
+        } else {
+          try {
+            const seenOp = row.lido ? 'messageFlagsAdd' : 'messageFlagsRemove';
+            const flaggedOp = row.favorito ? 'messageFlagsAdd' : 'messageFlagsRemove';
+            await client[seenOp](found.uids, ['\\Seen'], { uid: true });
+            await client[flaggedOp](found.uids, ['\\Flagged'], { uid: true });
+            finalPath = found.path;
+            if (found.path !== target) {
+              if (!listed.some((mailbox) => mailbox.path === target)) await ensureFolder(client, listed, target);
+              await client.messageMove(found.uids, target, { uid: true });
+              finalPath = target;
+            }
+          } finally {
+            found.lock.release();
+          }
+        }
+      } catch (rowError) {
+        imapErro = String(rowError.responseText || rowError.message || rowError).slice(0, 500);
+        console.error(`Falha ao aplicar alteração no IMAP (mensagem ${row.id}) de ${account.email}:`, rowError);
+      }
+
+      await supabase.from('email_messages').update({ imap_mailbox: finalPath, imap_erro: imapErro }).eq('id', row.id);
+      // Só limpa a marca se nada mudou no painel enquanto o worker trabalhava; se mudou,
+      // continua pendente e o próximo ciclo aplica o estado mais novo.
+      let clear = supabase.from('email_messages').update({ imap_pendente: false }).eq('id', row.id)
+        .eq('lido', row.lido).eq('favorito', row.favorito).eq('mailbox_path', row.mailbox_path);
+      clear = row.arquivado_em ? clear.eq('arquivado_em', row.arquivado_em) : clear.is('arquivado_em', null);
+      clear = row.excluido_em ? clear.eq('excluido_em', row.excluido_em) : clear.is('excluido_em', null);
+      await clear;
+    }
+  } finally {
+    await client.logout().catch(() => {});
+  }
+}
+
 async function runOnce() {
   regionalChecksCache = await loadRegionalChecks();
   const rules = await loadRules();
   const gestores = await loadGestoresRegionais();
   const { data: accounts, error } = await supabase.from('email_accounts').select('*').eq('ativo', true).order('nome');
   if (error) throw error;
-  for (const account of accounts || []) await syncAccount(account, rules, gestores);
+  for (const account of accounts || []) {
+    // Antes de ler a caixa: leva pro servidor o que o Gestor fez no painel (lido/arquivado/excluído).
+    if (account.escopo === 'GESTOR') await applyImapChanges(account).catch((error) => console.error(`Falha ao aplicar alterações do painel no IMAP de ${account.email}:`, error));
+    await syncAccount(account, rules, gestores);
+  }
   await processOutbox();
 }
 
