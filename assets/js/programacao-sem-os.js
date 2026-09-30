@@ -618,6 +618,10 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     if (!programacaoId) return;
     const { error } = await supabase.from('programacao_colaboradores').upsert({
       programacao_id: programacaoId,
+      // O trigger auto_transferir_rascunho roda no INSERT do upsert (mesmo
+      // quando a linha já existe) e rejeita data_referencia nula — sem ela
+      // Folga/Falta/Férias/Atestado nunca gravavam (2026-09-16 em diante).
+      data_referencia: options.dataReferencia || todayIso(),
       colaborador_id: colaboradorId,
       nome_colaborador: colab.nome,
       cargo: colab.cargo || null,
@@ -625,7 +629,12 @@ export async function renderProgramacaoSemOs(content, options = {}) {
       supervisao: colab.supervisao || null,
       ...patch,
     }, { onConflict: 'programacao_id,colaborador_id' });
-    if (error) console.error('[sem-os] salvar', error);
+    if (error) {
+      console.error('[sem-os] salvar', error);
+      // O botão já foi pintado antes de gravar — desfaz mostrando o estado real.
+      window.alert(`Não foi possível salvar: ${error.message || 'erro desconhecido'}`);
+      carregar({ silent: true });
+    }
   }
 
   const obsTimers = new Map();
