@@ -25,6 +25,13 @@
  * GRM_LOGIN_COOLDOWN_MIN (padrão 10).
  * Para forçar novo login após resolver o captcha: apagar .grm-login-cooldown-*.json
  * no diretório dos scripts.
+ *
+ * Login com Cloudflare Turnstile: desde 30/09/2026 o user/login do GRM exige o
+ * token do Turnstile (captcha_invalid), que só um navegador consegue. Nesse
+ * caso um humano entra no GRM pelo navegador e grava o token da sessão aqui:
+ *   node grm-token-cache.js salvar [--validade-horas N]
+ * (cola o token — com ou sem "Bearer" — e Enter; ou GRM_TOKEN=... no ambiente).
+ * O token é conferido no GRM antes de ser salvo e nunca é impresso.
  */
 
 const fs = require('fs');
@@ -70,7 +77,8 @@ function gravarJson(file, data) {
 function apagar(file) { try { fs.unlinkSync(file); } catch { /* já não existe */ } }
 
 // Se o token é um JWT com exp, usa essa validade (com 2 min de folga); senão MAX_AGE.
-function expiraEm(token, salvoEm) {
+function expiraEm(token, salvoEm, expiraEmExplicito) {
+  if (Number(expiraEmExplicito) > 0) return Number(expiraEmExplicito);
   try {
     const partes = String(token).split('.');
     if (partes.length === 3) {
@@ -84,7 +92,9 @@ function expiraEm(token, salvoEm) {
 // Chamada leve autenticada (a mesma que o agente de distribuição já usa). Só
 // 401/403 ou result:false contam como token recusado; erro de rede/5xx mantém o
 // token para não trocar por login à toa quando o GRM está instável.
-function tokenAindaValido(token) {
+function tokenAindaValido(token, estrito = false) {
+  // estrito: sem resposta definitiva do GRM (rede/5xx/corpo ilegível) devolve null em vez de true.
+  const incerto = estrito ? null : true;
   return new Promise((resolve) => {
     const payload = JSON.stringify({ olsStatus: 'A' });
     const url = new URL(`${GRM_BASE_URL}supervision/getForSelect`);
@@ -108,13 +118,13 @@ function tokenAindaValido(token) {
       res.on('end', () => {
         if (res.statusCode === 401 || res.statusCode === 403) return resolve(false);
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          try { return resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')).result !== false); } catch { return resolve(true); }
+          try { return resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')).result !== false); } catch { return resolve(incerto); }
         }
-        return resolve(true);
+        return resolve(incerto);
       });
     });
     req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', () => resolve(true));
+    req.on('error', () => resolve(incerto));
     req.end(payload);
   });
 }
@@ -122,7 +132,7 @@ function tokenAindaValido(token) {
 async function tokenEmCache(p, validar) {
   const salvo = lerJson(p.token);
   if (!salvo || !salvo.token) return null;
-  if (Date.now() >= expiraEm(salvo.token, salvo.savedAt)) { apagar(p.token); return null; }
+  if (Date.now() >= expiraEm(salvo.token, salvo.savedAt, salvo.expiraEm)) { apagar(p.token); return null; }
   if (await validar(salvo.token)) return salvo.token;
   log('token em cache recusado pelo GRM; será feito novo login.');
   apagar(p.token);
@@ -179,6 +189,9 @@ async function obterTokenGrm({ login, validar = tokenAindaValido } = {}) {
       // Login recusado pelo GRM (captcha, senha, bloqueio): não insistir a cada execução.
       if (/recusado|captcha/i.test(String(error && error.message))) {
         gravarJson(p.cooldown, { ate: Date.now() + COOLDOWN_MS, motivo: String(error.message).slice(0, 200) });
+        if (/captcha/i.test(String(error.message))) {
+          error.message += ' — grave um token de sessão do navegador: node grm-token-cache.js salvar';
+        }
       }
       throw error;
     }
@@ -191,4 +204,53 @@ function limparTokenGrm() {
   apagar(paths().token);
 }
 
+function lerTokenDoTerminal() {
+  return new Promise((resolve) => {
+    if (process.env.GRM_TOKEN) return resolve(process.env.GRM_TOKEN);
+    if (process.stdin.isTTY) process.stderr.write('Cole o token e tecle Enter (não será exibido de volta): ');
+    let dados = '';
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      dados += chunk;
+      if (dados.includes('\n')) { process.stdin.pause(); resolve(dados); }
+    });
+    process.stdin.on('end', () => resolve(dados));
+  });
+}
+
+async function salvarTokenManual() {
+  const args = process.argv.slice(3);
+  const i = args.indexOf('--validade-horas');
+  const horas = i >= 0 ? Number(args[i + 1]) : 0;
+  if (i >= 0 && !(horas > 0)) { console.error('Informe um número de horas > 0 em --validade-horas.'); return 1; }
+
+  const token = String(await lerTokenDoTerminal()).trim().replace(/^bearer\s+/i, '').replace(/^["']|["']$/g, '').trim();
+  if (!token || /\s/.test(token)) { console.error('Token vazio ou inválido (não deve ter espaços).'); return 1; }
+  if (!process.env.GRMSERVER_USER) require('dotenv').config();
+  if (!process.env.GRMSERVER_USER) { console.error('GRMSERVER_USER não definido (.env) — o cache é por usuário.'); return 1; }
+
+  const agora = Date.now();
+  const expJwt = expiraEm(token, agora);
+  const expira = horas > 0 ? agora + horas * 3600000 : expJwt;
+  if (expira <= agora) { console.error('Token já expirado.'); return 1; }
+  const aceito = await tokenAindaValido(token, true);
+  if (aceito === false) { console.error('O GRM recusou este token — nada foi salvo.'); return 1; }
+  if (aceito === null) { console.error('Não consegui confirmar o token no GRM (rede/erro do GRM) — nada foi salvo; tente de novo.'); return 1; }
+
+  const p = paths();
+  gravarJson(p.token, { token, savedAt: agora, expiraEm: expira });
+  apagar(p.cooldown);
+  console.log(`Token salvo. Válido até ${new Date(expira).toISOString()} (${horas > 0 ? 'informado' : (expJwt === agora + MAX_AGE_MS ? 'padrão: token sem exp' : 'exp do JWT')}).`);
+  return 0;
+}
+
 module.exports = { obterTokenGrm, limparTokenGrm };
+
+if (require.main === module) {
+  if (process.argv[2] === 'salvar') {
+    salvarTokenManual().then((code) => process.exit(code)).catch((e) => { console.error(e.message); process.exit(1); });
+  } else {
+    console.error('Uso: node grm-token-cache.js salvar [--validade-horas N]');
+    process.exit(1);
+  }
+}
