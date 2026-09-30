@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Favorito: copiar token do GRM</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 32px auto; padding: 0 16px; line-height: 1.5; color: #1a1a1a; }
+  h1 { font-size: 1.3rem; }
+  .bm { display: inline-block; padding: 10px 18px; background: #1f7a3d; color: #fff; border-radius: 8px; text-decoration: none; font-weight: 600; cursor: grab; }
+  code, pre { background: #f2f2f2; padding: 2px 6px; border-radius: 4px; font-size: .9rem; }
+  pre { padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  ol li { margin: 6px 0; }
+  .aviso { background: #fff4e5; border-left: 4px solid #e69500; padding: 8px 12px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Favorito: copiar o token do GRM</h1>
+
+<p>Arraste o botão abaixo para a barra de favoritos do navegador (ou crie um favorito e cole o código da seção "Sem arrastar" como URL).</p>
+
+<p><a id="bm" class="bm" href="#">Copiar token GRM</a></p>
+
+<h2>Uso diário (depois da meia-noite)</h2>
+<ol>
+  <li>Entre no GRM (<code>grmserver.com.br</code>) pelo navegador e espere o painel abrir.</li>
+  <li>Clique no favorito <b>Copiar token GRM</b>. Ele copia o token e mostra até quando vale.</li>
+  <li>No servidor, rode como <code>grao100</code>:
+    <pre>cd /home/grao100/painel-scripts/grm-sync &amp;&amp; /opt/node22/bin/node grm-token-cache.js salvar</pre>
+  </li>
+  <li>Só quando aparecer <code>Cole o token e tecle Enter</code>, cole (Ctrl+V) e tecle Enter.</li>
+</ol>
+
+<p class="aviso"><b>Cuidado:</b> o token vale como senha da conta do GRM. Ele só vai para a área de transferência do seu computador, nada é enviado pela internet. Não cole no chat, e-mail nem em outro prompt do servidor.</p>
+
+<h2>Sem arrastar</h2>
+<p>Crie um favorito novo com qualquer nome e cole isto no campo URL:</p>
+<pre id="codigo"></pre>
+
+<script>
+  // Lê o token que o próprio site do GRM guarda no navegador (localStorage, chave do store do usuário);
+  // se a chave mudar, procura qualquer JWT no localStorage. Não envia nada para lugar nenhum.
+  const codigo = `(async()=>{try{
+let t=null;
+try{const u=JSON.parse(localStorage.getItem('1e467a08-19f3')||'null');t=u&&u.userToken}catch(e){}
+const jwt=/^eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+$/;
+if(!t||!jwt.test(t)){t=null;for(let i=0;i<localStorage.length;i++){const m=(localStorage.getItem(localStorage.key(i))||'').match(/eyJ[\\w-]+\\.[\\w-]+\\.[\\w-]+/);if(m){t=m[0];break}}}
+if(!t){alert('Token nao encontrado. Entre no GRM e espere o painel abrir.');return}
+let venceu=false,exp='';
+try{const p=JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));exp=new Date(p.exp*1000).toLocaleString('pt-BR');venceu=p.exp*1000<Date.now()}catch(e){}
+if(venceu){alert('Este token JA VENCEU ('+exp+'). Saia do GRM, entre de novo e clique outra vez.');return}
+try{await navigator.clipboard.writeText(t);alert('Token copiado! Vale ate '+exp+'.\\nCole no servidor quando o comando pedir.')}
+catch(e){prompt('Copie o token (Ctrl+C). Vale ate '+exp+':',t)}
+}catch(e){alert('Erro: '+e.message)}})();`.replace(/\n/g, '');
+  const href = 'javascript:' + encodeURIComponent(codigo);
+  document.getElementById('bm').href = href;
+  document.getElementById('codigo').textContent = href;
+</script>
+</body>
+</html>
