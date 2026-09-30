@@ -239,6 +239,23 @@ function bindWorkspace(content){
 }
 
 async function loadAll(content){try{await loadAccount();if(!state.account){renderConnect(content);return}await loadMessages();renderWorkspace(content);}catch(error){content.innerHTML=`<div class="card"><h3>Não foi possível abrir sua caixa de e-mail</h3><p class="muted">${esc(error.message)}</p></div>`;}}
-async function renderContent(){const content=document.getElementById('pageContent');state.user=await getCurrentUser();await loadAll(content);}
+// O worker traz para o painel o que o Gestor fez no webmail/celular (lido, favorito, lixeira,
+// arquivo). Recarrega a lista ao voltar para a aba e a cada 3 min, mas nunca com algo aberto/em uso.
+let refreshBound = false;
+async function refreshFromServer(content){
+  if(!state.account||document.hidden||state.refreshing)return;
+  const busy=document.querySelector('.gm-modal:not([hidden])')||document.activeElement?.id==='gmSearch';
+  if(busy)return;
+  state.refreshing=true;
+  try{await loadMessages();renderWorkspace(content)}catch(error){console.warn('[gestor-email] atualização automática falhou',error)}finally{state.refreshing=false}
+}
+function bindAutoRefresh(content){
+  if(refreshBound)return;
+  refreshBound=true;
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshFromServer(content)});
+  setInterval(()=>refreshFromServer(content),3*60*1000);
+}
+
+async function renderContent(){const content=document.getElementById('pageContent');state.user=await getCurrentUser();await loadAll(content);bindAutoRefresh(content);}
 
 initProtectedPage('E-mail',renderContent);

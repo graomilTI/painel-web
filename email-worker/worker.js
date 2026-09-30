@@ -974,8 +974,11 @@ async function processMailbox(client, account, rules, gestores, mailbox, state) 
         const parsed = await simpleParser(item.source);
         const id = messageId(parsed.messageId);
         const from = parsed.from?.value?.[0] || {};
-        const exists = await supabase.from('email_messages').select('id').eq('account_id', account.id).eq('message_id', id).maybeSingle();
-        if (exists.data?.id) continue;
+        const exists = await supabase.from('email_messages').select('id, mailbox_path, imap_pendente, imap_mailbox, arquivado_em, excluido_em, raw').eq('account_id', account.id).eq('message_id', id).maybeSingle();
+        if (exists.data?.id) {
+          if (account.escopo === 'GESTOR') await relocateKnownMessage(exists.data, mailboxPath, item, uidValidity);
+          continue;
+        }
         const input = { subject: text(parsed.subject) || '(sem assunto)', fromText: text(parsed.from?.text || from.address), text: text(parsed.text), html: text(parsed.html) };
         const isGestorMailbox = account.escopo === 'GESTOR';
         // Caixa pessoal do Gestor pula classificação de categoria/encaminhamento
@@ -1107,6 +1110,7 @@ async function syncAccount(account, rules, gestores) {
     let mailboxErrors = 0;
     let primaryMaxUid = Number(account.ultima_uid || 0);
     const syncedPaths = [];
+    const flagMaps = new Map();
 
     for (const mailbox of mailboxes) {
       try {
@@ -1114,6 +1118,13 @@ async function syncAccount(account, rules, gestores) {
         inserted += result.inserted;
         failed += result.failed;
         syncedPaths.push(mailbox.path);
+        if (account.escopo === 'GESTOR') {
+          try {
+            flagMaps.set(mailbox.path, await fetchFlagMap(client, mailbox.path));
+          } catch (flagError) {
+            console.warn(`Não foi possível ler as marcas de ${mailbox.path} (${account.email}):`, flagError.message || flagError);
+          }
+        }
         if (mailbox.path === (account.pasta_entrada || 'INBOX')) primaryMaxUid = result.maxUid;
       } catch (mailboxError) {
         mailboxErrors++;
@@ -1127,6 +1138,14 @@ async function syncAccount(account, rules, gestores) {
     }
 
     await client.logout();
+    if (account.escopo === 'GESTOR') {
+      try {
+        const changed = await reconcileFlagsFromServer(account, flagMaps);
+        if (changed) console.log(`${changed} mensagem(ns) de ${account.email} atualizada(s) com o estado do servidor (lido/favorito).`);
+      } catch (reconcileError) {
+        console.error(`Falha ao reconciliar lido/favorito de ${account.email}:`, reconcileError);
+      }
+    }
     await supabase.from('email_accounts').update({
       ultima_uid: primaryMaxUid,
       ultima_sync_em: new Date().toISOString(),
@@ -1289,6 +1308,113 @@ async function processOutbox() {
 }
 
 // ---------------------------------------------------------------------------
+// IMAP -> painel (só caixa pessoal do Gestor). O que o Gestor faz no webmail/celular
+// (ler, favoritar, apagar, arquivar, marcar spam) aparece no painel:
+//  1) relocateKnownMessage: a mensagem reaparece numa pasta com UID novo (o e-mail já existe
+//     no banco, então o import a ignora) -> atualiza pasta/UID e os estados de lixeira/arquivo;
+//  2) fetchFlagMap + reconcileFlagsFromServer: compara \Seen/\Flagged de cada pasta com o banco.
+// Nada é sobrescrito enquanto houver alteração do painel pendente (imap_pendente).
+// ---------------------------------------------------------------------------
+const FLAG_MAP_MAX_MESSAGES = 5000;
+
+function imapFolderType(path) {
+  const key = mailboxKey(path);
+  if (/sent|enviad/.test(key)) return 'sent';
+  if (/draft|rascun/.test(key)) return 'drafts';
+  if (/trash|lixeira|deleted/.test(key)) return 'trash';
+  if (/junk|spam/.test(key)) return 'spam';
+  if (/archive|arquiv/.test(key)) return 'archive';
+  return 'other';
+}
+
+function lowerFlags(flags) {
+  return Array.from(flags || []).map((flag) => String(flag).toLowerCase());
+}
+
+async function relocateKnownMessage(row, mailboxPath, item, uidValidity) {
+  if (row.imap_pendente) return;
+  const destType = imapFolderType(mailboxPath);
+  const current = row.imap_mailbox || (row.raw && row.raw.mailbox) || 'INBOX';
+  const rowState = row.excluido_em ? 'trash' : row.arquivado_em ? 'archive' : 'normal';
+  // Cópia da mesma mensagem em Entrada/Enviados (e-mail enviado pra si mesmo) não é movimentação
+  // do usuário: só interessa quando o destino é Lixeira/Arquivo/Spam ou quando ela sai de um deles.
+  const relevant = ['trash', 'archive', 'spam'].includes(destType) || rowState !== 'normal' || imapFolderType(current) === 'spam';
+  if (!relevant) return;
+  const flags = lowerFlags(item.flags);
+  const now = new Date().toISOString();
+  await supabase.from('email_messages').update({
+    mailbox_path: mailboxPath,
+    imap_mailbox: mailboxPath,
+    imap_uid: Number(item.uid) || null,
+    imap_uid_validity: uidValidity,
+    imap_erro: null,
+    lido: flags.includes('\\seen'),
+    favorito: flags.includes('\\flagged'),
+    arquivado_em: destType === 'archive' ? (row.arquivado_em || now) : null,
+    excluido_em: destType === 'trash' ? (row.excluido_em || now) : null
+  }).eq('id', row.id).eq('imap_pendente', false);
+}
+
+async function fetchFlagMap(client, mailboxPath) {
+  const lock = await client.getMailboxLock(mailboxPath);
+  try {
+    const validity = client.mailbox && client.mailbox.uidValidity ? String(client.mailbox.uidValidity) : null;
+    const total = Number((client.mailbox && client.mailbox.exists) || 0);
+    const map = new Map();
+    if (total > 0) {
+      const range = total > FLAG_MAP_MAX_MESSAGES ? `${total - FLAG_MAP_MAX_MESSAGES + 1}:*` : '1:*';
+      for await (const item of client.fetch(range, { uid: true, flags: true })) {
+        const flags = lowerFlags(item.flags);
+        map.set(Number(item.uid), { seen: flags.includes('\\seen'), flagged: flags.includes('\\flagged') });
+      }
+    }
+    return { validity, map };
+  } finally {
+    lock.release();
+  }
+}
+
+async function reconcileFlagsFromServer(account, flagMaps) {
+  if (!flagMaps.size) return 0;
+  let changed = 0;
+  for (let from = 0; ; from += 1000) {
+    const { data: rows, error } = await supabase
+      .from('email_messages')
+      .select('id, uid, lido, favorito, imap_mailbox, imap_uid, imap_uid_validity, origem:raw->>mailbox, origem_validade:raw->>uid_validity')
+      .eq('account_id', account.id)
+      .eq('imap_pendente', false)
+      .order('id')
+      .range(from, from + 999);
+    if (error) throw error;
+    for (const row of rows || []) {
+      let path;
+      let uid;
+      let validity;
+      if (row.imap_uid !== null && row.imap_uid !== undefined) {
+        path = row.imap_mailbox; uid = row.imap_uid; validity = row.imap_uid_validity;
+      } else if (row.imap_mailbox && row.imap_mailbox !== row.origem) {
+        continue; // mudou de pasta e o novo UID ainda não foi identificado
+      } else {
+        path = row.origem; uid = row.uid; validity = row.origem_validade;
+      }
+      const folder = flagMaps.get(path);
+      if (!folder) continue;
+      if (validity && folder.validity && String(validity) !== String(folder.validity)) continue;
+      const state = folder.map.get(Number(uid));
+      if (!state) continue;
+      if (state.seen === row.lido && state.flagged === row.favorito) continue;
+      // Guarda contra corrida: se o painel mexeu agora há pouco, a linha já não bate e é ignorada.
+      const { error: updateError } = await supabase.from('email_messages')
+        .update({ lido: state.seen, favorito: state.flagged })
+        .eq('id', row.id).eq('imap_pendente', false).eq('lido', row.lido).eq('favorito', row.favorito);
+      if (!updateError) changed++;
+    }
+    if (!rows || rows.length < 1000) break;
+  }
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
 // Painel -> IMAP (só caixa pessoal do Gestor). O painel grava lido/favorito/arquivado/
 // excluído no banco e marca imap_pendente; aqui a mudança é aplicada no servidor de e-mail.
 // Excluir = mover para a Lixeira (nunca EXPUNGE), arquivar = mover para a pasta Arquivo.
@@ -1394,7 +1520,9 @@ async function applyImapChanges(account) {
         console.error(`Falha ao aplicar alteração no IMAP (mensagem ${row.id}) de ${account.email}:`, rowError);
       }
 
-      await supabase.from('email_messages').update({ imap_mailbox: finalPath, imap_erro: imapErro }).eq('id', row.id);
+      const previousPath = row.imap_mailbox || (row.raw && row.raw.mailbox) || 'INBOX';
+      const positionPatch = finalPath !== previousPath ? { imap_mailbox: finalPath, imap_uid: null, imap_uid_validity: null } : {};
+      await supabase.from('email_messages').update({ ...positionPatch, imap_erro: imapErro }).eq('id', row.id);
       // Só limpa a marca se nada mudou no painel enquanto o worker trabalhava; se mudou,
       // continua pendente e o próximo ciclo aplica o estado mais novo.
       let clear = supabase.from('email_messages').update({ imap_pendente: false }).eq('id', row.id)

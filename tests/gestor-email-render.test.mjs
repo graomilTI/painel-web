@@ -105,6 +105,8 @@ async function renderGestor(messages, folder) {
     createElement: () => { const t = { set innerHTML(v) { this.value = String(v).replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'); } }; return t; },
   };
   globalThis.sessionStorage = { setItem() {} };
+  globalThis.document.addEventListener = () => {};
+  globalThis.setInterval = () => 0; // a atualização automática não pode manter o teste vivo
   await import(`../assets/js/gestor-email.js?t=${Math.random()}`);
   await globalThis.__gmRender();
   return content.innerHTML;

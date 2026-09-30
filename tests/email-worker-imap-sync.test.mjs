@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 // Executa o trecho "Painel -> IMAP" do worker com um servidor IMAP e um Supabase falsos.
 const worker = await readFile(new URL('../email-worker/worker.js', import.meta.url), 'utf8');
-const start = worker.indexOf('const IMAP_CHANGES_BATCH');
+const start = worker.indexOf('const FLAG_MAP_MAX_MESSAGES');
 const end = worker.indexOf('async function runOnce()');
 assert.ok(start > 0 && end > start, 'trecho do worker não encontrado');
 const block = worker.slice(start, end);
@@ -47,15 +47,15 @@ function build({ rows, folders, messagesByFolder }) {
     return chain;
   };
   const fn = new Function('supabase', 'ImapFlow', 'decryptCredential', 'mailboxFlagList', 'mailboxKey',
-    `${block}; return applyImapChanges;`);
-  const applyImapChanges = fn(
+    `${block}; return { applyImapChanges, relocateKnownMessage, fetchFlagMap, reconcileFlagsFromServer };`);
+  const api = fn(
     { from: query },
     function ImapFlow() { return fakeClient; },
     (v) => v,
     (m) => Array.from(m.flags || []),
     (v) => String(v).toLowerCase(),
   );
-  return { applyImapChanges, calls, dbUpdates };
+  return { ...api, calls, dbUpdates };
 }
 
 const account = { id: 'a1', email: 'g@x.com', imap_host: 'h', imap_port: 993, imap_secure: true, username: 'g', password_cipher: 'x' };
@@ -107,4 +107,89 @@ test('painel só marca imap_pendente e o worker só roda isso para caixas GESTOR
   assert.match(web, /update\.imap_pendente=true/);
   assert.match(web, /lido:true,imap_pendente:true/);
   assert.match(worker, /account\.escopo === 'GESTOR'\) await applyImapChanges/);
+});
+
+// --- IMAP -> painel -------------------------------------------------------------------------
+
+const dbRow = (over) => ({ id: 'm1', mailbox_path: 'INBOX', imap_pendente: false, imap_mailbox: null, arquivado_em: null, excluido_em: null, raw: { mailbox: 'INBOX' }, ...over });
+
+test('apagou no webmail: mensagem que reaparece na Lixeira vira excluída no painel', async () => {
+  const { relocateKnownMessage, dbUpdates } = build({ rows: [], folders: [], messagesByFolder: {} });
+  await relocateKnownMessage(dbRow(), 'INBOX.Trash', { uid: 44, flags: new Set(['\\Seen']) }, '99');
+  const patch = dbUpdates.at(-1).patch;
+  assert.equal(patch.mailbox_path, 'INBOX.Trash');
+  assert.equal(patch.imap_uid, 44);
+  assert.equal(patch.lido, true);
+  assert.ok(patch.excluido_em);
+  assert.equal(patch.arquivado_em, null);
+});
+
+test('arquivou no webmail: vira arquivada e sai da Lixeira se estava nela', async () => {
+  const { relocateKnownMessage, dbUpdates } = build({ rows: [], folders: [], messagesByFolder: {} });
+  await relocateKnownMessage(dbRow({ excluido_em: '2026-09-29T10:00:00Z', mailbox_path: 'Trash' }), 'INBOX.Archive', { uid: 5, flags: new Set() }, '99');
+  const patch = dbUpdates.at(-1).patch;
+  assert.ok(patch.arquivado_em);
+  assert.equal(patch.excluido_em, null);
+  assert.equal(patch.lido, false);
+});
+
+test('restaurou no webmail: volta pra Entrada e limpa lixeira/arquivo', async () => {
+  const { relocateKnownMessage, dbUpdates } = build({ rows: [], folders: [], messagesByFolder: {} });
+  await relocateKnownMessage(dbRow({ excluido_em: '2026-09-29T10:00:00Z', mailbox_path: 'INBOX.Trash', imap_mailbox: 'INBOX.Trash' }), 'INBOX', { uid: 90, flags: new Set(['\\Seen']) }, '7');
+  const patch = dbUpdates.at(-1).patch;
+  assert.equal(patch.excluido_em, null);
+  assert.equal(patch.mailbox_path, 'INBOX');
+});
+
+test('cópia da mesma mensagem entre Entrada e Enviados não é tratada como movimentação', async () => {
+  const { relocateKnownMessage, dbUpdates } = build({ rows: [], folders: [], messagesByFolder: {} });
+  await relocateKnownMessage(dbRow({ mailbox_path: 'INBOX.Sent', raw: { mailbox: 'INBOX.Sent' } }), 'INBOX', { uid: 3, flags: new Set() }, '7');
+  assert.equal(dbUpdates.length, 0);
+});
+
+test('alteração do painel ainda pendente nunca é sobrescrita pelo servidor', async () => {
+  const { relocateKnownMessage, dbUpdates } = build({ rows: [], folders: [], messagesByFolder: {} });
+  await relocateKnownMessage(dbRow({ imap_pendente: true }), 'INBOX.Trash', { uid: 44, flags: new Set() }, '99');
+  assert.equal(dbUpdates.length, 0);
+});
+
+test('lido/favorito mudados no webmail atualizam o painel; linhas sem mudança ficam quietas', async () => {
+  const rows = [
+    { id: 'a', uid: 10, lido: false, favorito: false, imap_mailbox: null, imap_uid: null, imap_uid_validity: null, origem: 'INBOX', origem_validade: '5' },
+    { id: 'b', uid: 11, lido: true, favorito: false, imap_mailbox: null, imap_uid: null, imap_uid_validity: null, origem: 'INBOX', origem_validade: '5' },
+    { id: 'c', uid: 12, lido: false, favorito: false, imap_mailbox: 'INBOX.Trash', imap_uid: 3, imap_uid_validity: '9', origem: 'INBOX', origem_validade: '5' },
+    { id: 'd', uid: 13, lido: false, favorito: false, imap_mailbox: 'INBOX.Archive', imap_uid: null, imap_uid_validity: null, origem: 'INBOX', origem_validade: '5' },
+    { id: 'e', uid: 14, lido: false, favorito: false, imap_mailbox: null, imap_uid: null, imap_uid_validity: null, origem: 'INBOX', origem_validade: '999' },
+  ];
+  const { reconcileFlagsFromServer, dbUpdates } = build({ rows, folders: [], messagesByFolder: {} });
+  const flagMaps = new Map([
+    ['INBOX', { validity: '5', map: new Map([[10, { seen: true, flagged: true }], [11, { seen: true, flagged: false }], [14, { seen: true, flagged: false }]]) }],
+    ['INBOX.Trash', { validity: '9', map: new Map([[3, { seen: true, flagged: false }]]) }],
+  ]);
+  const changed = await reconcileFlagsFromServer(account, flagMaps);
+  const seen = new Set();
+  const patches = dbUpdates.filter((u) => 'lido' in u.patch && !seen.has(u.patch) && seen.add(u.patch));
+  assert.equal(changed, 2);
+  assert.deepEqual(patches.map((u) => u.filters.find((f) => f[0] === 'eq' && f[1] === 'id')[2]), ['a', 'c']);
+  assert.deepEqual(patches[0].patch, { lido: true, favorito: true });
+  // d (mudou de pasta, UID ainda desconhecido) e e (UIDVALIDITY diferente) não podem ser tocadas
+});
+
+test('fetchFlagMap lê UID -> \Seen/\Flagged da pasta e libera o lock', async () => {
+  const { fetchFlagMap } = build({ rows: [], folders: [], messagesByFolder: {} });
+  const released = [];
+  const client = {
+    mailbox: { uidValidity: 42n, exists: 2 },
+    getMailboxLock: async () => ({ release: () => released.push(true) }),
+    fetch: async function* () { yield { uid: 1, flags: new Set(['\\Seen']) }; yield { uid: 2, flags: new Set(['\\Flagged']) }; },
+  };
+  const result = await fetchFlagMap(client, 'INBOX');
+  assert.equal(result.validity, '42');
+  assert.deepEqual([...result.map], [[1, { seen: true, flagged: false }], [2, { seen: false, flagged: true }]]);
+  assert.equal(released.length, 1);
+});
+
+test('worker só reconcilia caixas GESTOR e o import chama relocateKnownMessage para e-mails já conhecidos', async () => {
+  assert.match(worker, /if \(account\.escopo === 'GESTOR'\) await relocateKnownMessage/);
+  assert.match(worker, /reconcileFlagsFromServer\(account, flagMaps\)/);
 });
