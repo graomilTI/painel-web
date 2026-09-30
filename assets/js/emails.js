@@ -243,7 +243,10 @@ const ATTACHMENT_ICONS = {
   zip: '🗜️', rar: '🗜️', '7z': '🗜️', txt: '📃', xml: '🧾', eml: '✉️'
 };
 
-const DANGEROUS_EXTENSIONS = /\.(exe|com|bat|cmd|msi|scr|vbs|js|jar|dll|sys|drv|ps1|pif|pst|reg|vsd|ppt|pptx|doc|docx|xls|xlsx)$/i;
+// Mesma lista que o worker usa pra marcar risco (email-worker/worker.js), mais os formatos
+// do Office COM macro (docm/xlsm/pptm). Word/Excel/PowerPoint "comuns" são anexo do dia a dia
+// da operação e não devem aparecer como suspeitos.
+const DANGEROUS_EXTENSIONS = /\.(exe|com|bat|cmd|msi|scr|vbs|js|jar|dll|sys|drv|ps1|pif|pst|reg|vsd|hta|lnk|docm|xlsm|pptm)$/i;
 const DANGEROUS_MIMETYPES = ['application/x-msdownload', 'application/x-executable', 'application/x-msdos-program', 'application/x-dosexec'];
 const EMAIL_LIST_SELECT = 'id,account_id,remetente_nome,remetente_email,assunto,data_recebimento,regional,categoria,prioridade,resumo_ia,precisa_resposta,status,risco';
 
@@ -648,16 +651,16 @@ export function renderContent(content, userContext) {
     let q = supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('account_id', contaIds).order('data_recebimento', { ascending: false }).limit(80);
     if (state.conta) q = q.eq('account_id', state.conta);
     if (state.status) q = q.in('status', state.status.split(','));
+    // A busca vai pro servidor: filtrar só no navegador enxergava apenas os 80 e-mails
+    // mais recentes já carregados. Vírgula/parêntese/aspas quebrariam a sintaxe do .or().
+    const termo = state.busca.replace(/[,()"\\%*]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (termo) q = q.or(['assunto', 'remetente_email', 'remetente_nome', 'regional', 'categoria', 'resumo_ia'].map((c) => `${c}.ilike.%${termo}%`).join(','));
     const { data, error } = await q;
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}<br>Execute a migration 20260610_central_emails.sql.</div>`;
       return;
     }
-    const busca = state.busca.toLowerCase().trim();
-    state.emails = attachAccountInfo(data).filter((e) => {
-      if (!busca) return true;
-      return [e.assunto, e.remetente_email, e.remetente_nome, e.regional, e.categoria, e.resumo_ia].some((v) => String(v || '').toLowerCase().includes(busca));
-    });
+    state.emails = attachAccountInfo(data);
     renderEmails();
   }
 
@@ -695,6 +698,7 @@ export function renderContent(content, userContext) {
       supabase.from('email_attachments').select('*').eq('email_id', id).order('created_at'),
       supabase.from('email_outbox').select('*').eq('email_id', id).order('created_at', { ascending: false })
     ]);
+    if (state.selected?.id !== id) return; // usuário já clicou em outro e-mail enquanto carregava
     if (emailError) {
       document.getElementById('emDetail').innerHTML = `<div class="em-empty em-danger">${esc(emailError.message)}</div>`;
       return;
@@ -886,6 +890,7 @@ export function renderContent(content, userContext) {
       return;
     }
     const rows = attachAccountInfo(data);
+    state.perigo = rows;
     if (!rows.length) {
       list.innerHTML = `<div class="em-empty">✅ Nenhum e-mail de risco detectado.</div>`;
       return;
@@ -906,18 +911,6 @@ export function renderContent(content, userContext) {
         <div class="em-snippet em-danger">⚠️ ${esc((resumoLegivel(e.resumo_ia) || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
     `).join('');
-    document.getElementById('emPerigoList').addEventListener('click', async (event) => {
-      const excluirBtn = event.target.closest('[data-excluir-perigo]');
-      if (excluirBtn) {
-        if (!confirm('Excluir este e-mail da lista de risco? Ele não aparece mais aqui (continua guardado como arquivado).')) return;
-        const { error: delError } = await supabase.from('email_messages').update({ status: 'ARQUIVADO' }).eq('id', excluirBtn.dataset.excluirPerigo);
-        if (delError) return alert(delError.message);
-        await loadPerigo();
-        return;
-      }
-      const row = event.target.closest('[data-email-id]');
-      if (row) selectEmail(row.dataset.emailId);
-    });
   }
 
   async function loadOutbox() {
@@ -950,6 +943,7 @@ export function renderContent(content, userContext) {
         <div class="em-meta">Para: ${esc(o.para)}${o.cc ? ` · Cc: ${esc(o.cc)}` : ''} · ${esc(o.email_accounts?.nome || '')} · ${brDate(o.created_at)}</div>
         ${o.aprovado_por_nome ? `<div class="em-actions"><span class="em-badge arquivado">Aprovado por ${esc(o.aprovado_por_nome)}</span></div>` : ''}
         ${o.erro ? `<div class="em-danger em-small">${esc(o.erro)}</div>` : ''}
+        ${o.status === 'ERRO' ? `<div class="em-actions"><button class="btn btn-secondary" type="button" data-retry-outbox="${esc(o.id)}">↻ Tentar enviar de novo</button></div>` : ''}
       </div>
     `).join('');
   }
@@ -1008,9 +1002,13 @@ export function renderContent(content, userContext) {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (!action || !state.selected) return;
     const next = action === 'resolved' ? 'RESOLVIDO' : action === 'archive' ? 'ARQUIVADO' : 'PENDENTE';
-    await updateEmail(state.selected.id, { status: next }, userContext);
-    await loadEmails();
+    try {
+      await updateEmail(state.selected.id, { status: next }, userContext);
+    } catch (err) {
+      return alert(`Não foi possível atualizar o status: ${err.message}`);
+    }
     state.selected = null;
+    await loadEmails();
     document.getElementById('emDetail').innerHTML = `<div class="em-empty">Status atualizado.</div>`;
     document.getElementById('emAction').innerHTML = `<div class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>`;
   });
@@ -1023,6 +1021,44 @@ export function renderContent(content, userContext) {
     if (sync) syncAccount(sync);
   });
   document.getElementById('emLoadOutbox').addEventListener('click', loadOutbox);
+
+  // Um único listener (registrado aqui, não dentro de loadPerigo — senão cada recarga da aba
+  // empilhava mais um e o "Excluir" pedia confirmação/arquivava várias vezes).
+  document.getElementById('emPerigoList').addEventListener('click', async (event) => {
+    const excluirBtn = event.target.closest('[data-excluir-perigo]');
+    if (excluirBtn) {
+      if (!confirm('Excluir este e-mail da lista de risco? Ele não aparece mais aqui (continua guardado como arquivado).')) return;
+      try {
+        await updateEmail(excluirBtn.dataset.excluirPerigo, { status: 'ARQUIVADO' }, userContext);
+      } catch (delError) {
+        return alert(delError.message);
+      }
+      await loadPerigo();
+      return;
+    }
+    const row = event.target.closest('[data-email-id]');
+    if (!row) return;
+    // O detalhe do e-mail fica no painel da Entrada (escondido enquanto a aba PERIGO está aberta):
+    // volta pra ela e garante que o e-mail esteja na lista, mesmo fora do filtro atual.
+    const summary = (state.perigo || []).find((e) => String(e.id) === row.dataset.emailId);
+    if (summary && !state.emails.some((e) => e.id === summary.id)) state.emails.unshift(summary);
+    setTab('entrada');
+    renderEmails();
+    selectEmail(row.dataset.emailId);
+  });
+
+  // Reenvio de itens da fila que falharam (ERRO): volta pra PENDENTE e o worker tenta de novo.
+  document.getElementById('emOutboxBody').addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-retry-outbox]');
+    if (!btn) return;
+    btn.disabled = true;
+    const { error } = await supabase.from('email_outbox').update({ status: 'PENDENTE', erro: null, updated_at: new Date().toISOString() }).eq('id', btn.dataset.retryOutbox);
+    if (error) {
+      btn.disabled = false;
+      return alert(error.message);
+    }
+    await loadOutbox();
+  });
 
   const emGuia = document.getElementById('emGuia');
   const emGuiaAbrir = document.getElementById('emGuiaAbrir');

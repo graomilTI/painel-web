@@ -17,9 +17,16 @@ import './pwa-register.js?v=20260925-push1';
 // módulo e, ao mesmo tempo, chamar renderContent(), causando dois boots e duas
 // cargas concorrentes. Essas rotas usam navegação completa; os módulos da
 // própria página já possuem versão para invalidação de cache.
+//
+// E-mails: a Central monta o visual em camadas (emails.js + emails-layout.js +
+// emails-focus.js, esse último só carregado pelo <script> do HTML) e o Gestor
+// depende do gestor-email.css do HTML e não exporta renderContent — em navegação
+// suave a Central perdia o modo foco e o Gestor caía em reload com erro no console.
 const FULL_PAGE_ROUTES = new Set([
   'adm-hotel',
   'adm-logistica',
+  'emails',
+  'gestor-email',
 ]);
 
 function routeFromPath(pathname) {
