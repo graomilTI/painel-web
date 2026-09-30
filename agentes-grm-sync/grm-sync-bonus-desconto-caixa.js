@@ -153,6 +153,10 @@ async function launchBrowser() {
 }
 
 async function login(page) {
+  // Login pelo formulário é barrado pelo Turnstile (30/09/2026): usa o token de sessão em cache.
+  if (String(process.env.GRM_LOGIN_MODE || '').toLowerCase() !== 'form') {
+    return require('./grm-token-browser').autenticarPaginaComToken(page);
+  }
   await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('input#input-v-2', { timeout: DEFAULT_TIMEOUT });
   await page.waitForSelector('input#input-v-5', { timeout: DEFAULT_TIMEOUT });
