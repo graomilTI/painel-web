@@ -243,7 +243,14 @@ function mapProducaoSnapshotRow(row) {
   };
 }
 
+// Token em cache compartilhado (grm-token-cache.js): evita login a cada execução
+// e o captcha_invalid que o GRM passou a devolver em 30/09/2026.
+const { obterTokenGrm } = require('./grm-token-cache');
 async function login() {
+  return obterTokenGrm({ login: loginDireto });
+}
+
+async function loginDireto() {
   const userEmail = requiredEnv('GRMSERVER_USER');
   const userPass = requiredEnv('GRMSERVER_PASSWORD');
   const response = await postJson(`${GRM_BASE_URL}user/login`, {
