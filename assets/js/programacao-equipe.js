@@ -1263,6 +1263,22 @@ export async function anexarLaudo(osId, files) {
   });
 }
 
+// Quem está confirmado na O.S. (programacao_equipe.confirmado) em algum dia de
+// hoje em diante. Já reflete a linha recém-desconfirmada/confirmada, pois é
+// lido depois do update.
+async function colaboradoresConfirmadosNaOs(osId) {
+  const { data: equipe, error } = await supabase.from('programacao_equipe')
+    .select('colaborador_id,programacao_id').eq('os_id', osId).eq('confirmado', true);
+  if (error) throw error;
+  const progIds = [...new Set((equipe || []).map((r) => r.programacao_id).filter(Boolean))];
+  if (!progIds.length) return new Set();
+  const { data: dias, error: diasErr } = await supabase.from('programacao_dia')
+    .select('id').in('id', progIds).gte('data_referencia', todayIso());
+  if (diasErr) throw diasErr;
+  const diasValidos = new Set((dias || []).map((d) => d.id));
+  return new Set((equipe || []).filter((r) => diasValidos.has(r.programacao_id)).map((r) => String(r.colaborador_id)));
+}
+
 export async function confirmarCandidato(programacaoId, os, cand) {
   if (!programacaoId) throw new Error('Programação da supervisão não encontrada. Recarregue a data e tente novamente.');
   const payload = {
@@ -1286,8 +1302,21 @@ export async function confirmarCandidato(programacaoId, os, cand) {
   // operacional_os_colaboradores é o vínculo OS<->colaborador usado por outras
   // telas (Frotas Roteirização, relatórios) — replica aqui o mesmo padrão
   // "substitui a atribuição da OS" que a distribuição manual já fazia.
-  const { error: delErr } = await supabase.from('operacional_os_colaboradores').delete().eq('os_id', os.id);
-  if (delErr) console.warn('[programacao-equipe] falha ao limpar vínculo anterior da OS.', delErr);
+  //
+  // Só some o vínculo de quem NÃO está mais confirmado na O.S. (hoje em
+  // diante) — apagar tudo derrubava o vínculo dos outros já confirmados,
+  // deixando-os na equipe mas fora de Frotas/relatórios/regra do "OK".
+  const confirmadosNaOs = await colaboradoresConfirmadosNaOs(os.id);
+  const { data: vinculosAtuais, error: vinculosErr } = await supabase
+    .from('operacional_os_colaboradores').select('id,colaborador_key').eq('os_id', os.id);
+  if (vinculosErr) console.warn('[programacao-equipe] falha ao ler vínculo anterior da OS.', vinculosErr);
+  const idsObsoletos = (vinculosAtuais || [])
+    .filter((v) => !confirmadosNaOs.has(String(v.colaborador_key)) || String(v.colaborador_key) === String(cand.colaboradorId))
+    .map((v) => v.id);
+  if (idsObsoletos.length) {
+    const { error: delErr } = await supabase.from('operacional_os_colaboradores').delete().in('id', idsObsoletos);
+    if (delErr) console.warn('[programacao-equipe] falha ao limpar vínculo anterior da OS.', delErr);
+  }
   const cpfCandidato = /^\d+$/.test(cand.colaboradorId) ? cand.colaboradorId : null;
   const { error: vinculoErr } = await supabase.from('operacional_os_colaboradores').insert({
     os_id: os.id,
@@ -1475,12 +1504,17 @@ export async function removerConfirmacao(programacaoId, equipeRowId) {
   if (!removidas?.length) throw new Error('O vínculo não foi removido. Recarregue a tela e tente novamente.');
 
   if (osId) {
-    const { error: vinculoErr } = await supabase
-      .from('operacional_os_colaboradores')
-      .delete()
-      .eq('os_id', osId)
-      .eq('colaborador_key', colaboradorId);
-    if (vinculoErr) console.warn('[programacao-equipe] falha ao remover vínculo OS<->colaborador.', vinculoErr);
+    // O vínculo é da O.S. inteira, a confirmação é por dia: se a pessoa segue
+    // confirmada em outro dia (hoje em diante), o vínculo fica.
+    const aindaConfirmada = (await colaboradoresConfirmadosNaOs(osId)).has(String(colaboradorId));
+    if (!aindaConfirmada) {
+      const { error: vinculoErr } = await supabase
+        .from('operacional_os_colaboradores')
+        .delete()
+        .eq('os_id', osId)
+        .eq('colaborador_key', colaboradorId);
+      if (vinculoErr) console.warn('[programacao-equipe] falha ao remover vínculo OS<->colaborador.', vinculoErr);
+    }
     await reabrirDistribuicaoOs(osId);
   }
 
