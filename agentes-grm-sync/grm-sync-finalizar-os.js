@@ -846,6 +846,10 @@ async function enqueueNextGestorJobIfNeeded(remainingEligible = 0) {
 }
 
 async function login(page) {
+  // Login pelo formulário é barrado pelo Turnstile (30/09/2026): usa o token de sessão em cache.
+  if (String(process.env.GRM_LOGIN_MODE || '').toLowerCase() !== 'form') {
+    return require('./grm-token-browser').autenticarPaginaComToken(page);
+  }
   log('INFO', 'Iniciando login no GRM Server...');
   await page.goto(LOGIN_URL, { waitUntil: 'networkidle2', timeout: 60000 });
   await page.waitForSelector('input#input-v-2', { timeout: 30000 });

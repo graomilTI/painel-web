@@ -20,6 +20,10 @@ function log(level, msg) {
 }
 
 async function login(page) {
+  // Login pelo formulário é barrado pelo Turnstile (30/09/2026): usa o token de sessão em cache.
+  if (String(process.env.GRM_LOGIN_MODE || '').toLowerCase() !== 'form') {
+    return require('./grm-token-browser').autenticarPaginaComToken(page);
+  }
   log('INFO', 'Iniciando login...');
   await page.goto('https://www.grmserver.com.br/login', { waitUntil: 'networkidle2' });
   await page.type('input#input-v-2', process.env.GRMSERVER_USER);
