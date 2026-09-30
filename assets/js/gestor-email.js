@@ -136,7 +136,7 @@ async function loadMessages(){if(!state.account){state.messages=[];return}const{
 async function selectMessage(id,content){
   state.selected=state.messages.find(m=>m.id===id)||null;
   if(state.selected&&!state.selected.lido){
-    const{error}=await supabase.from('email_messages').update({lido:true}).eq('id',id);
+    const{error}=await supabase.from('email_messages').update({lido:true,imap_pendente:true}).eq('id',id);
     if(!error)state.selected.lido=true;
   }
   const{data}=await supabase.from('email_attachments').select('id,nome_arquivo,mime_type,tamanho_bytes,storage_path').eq('email_id',id).order('created_at');
@@ -195,6 +195,8 @@ async function messageAction(action,content){
   if(action==='archive')update={arquivado_em:new Date().toISOString(),mailbox_path:'Archive'};
   if(action==='trash')update={excluido_em:new Date().toISOString(),mailbox_path:'Trash'};
   if(action==='restore')update={arquivado_em:null,excluido_em:null,mailbox_path:m.origem&&!/trash|lixeira|archive|arquiv/i.test(m.origem)?m.origem:'INBOX'};
+  // imap_pendente: o worker leva a mudança pro servidor de e-mail (flags e pastas) no próximo ciclo.
+  update.imap_pendente=true;
   const{error}=await supabase.from('email_messages').update(update).eq('id',m.id);
   if(error)return alert(error.message);
   // Ler/marcar e favoritar mantêm a mensagem aberta; mover de pasta fecha o leitor.
