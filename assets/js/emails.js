@@ -464,6 +464,10 @@ export function renderContent(content, userContext) {
       .em-btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:700}
       .em-btn-ghost:hover{border-color:var(--green-2);color:var(--green-2);background:var(--green-soft)}
 
+      .em-sync-alert{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:14px 18px;border:1px solid rgba(248,113,113,.45);border-radius:14px;background:rgba(248,113,113,.10);color:#fecaca;font-size:13px;line-height:1.5}
+      .em-sync-alert[hidden]{display:none!important}
+      .em-sync-alert b{color:#fff}
+      .em-sync-alert .em-sync-lines{display:grid;gap:4px}
       .em-bulkbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#0a1c17;box-shadow:0 6px 14px rgba(0,0,0,.35);font-size:12px;color:var(--muted)}
       .em-bulkbar label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-weight:700}
       .em-bulkbar .em-bulk-actions{display:flex;gap:6px;flex-wrap:wrap}
@@ -503,6 +507,8 @@ export function renderContent(content, userContext) {
         </ol>
       </div>
       <button class="em-guia-toggle" type="button" id="emGuiaAbrir" style="display:none">❓ Como funciona esta tela?</button>
+
+      <div class="em-sync-alert" id="emSyncAlert" role="alert" hidden></div>
 
       <div class="em-tabs">
         <button class="em-tab active" data-tab="entrada" type="button">Entrada</button>
@@ -622,6 +628,49 @@ export function renderContent(content, userContext) {
     state.accounts = (data || []).filter((a) => (a.escopo || 'CENTRAL') === 'CENTRAL');
     renderAccountOptions();
     renderAccounts();
+    checkSyncHealth().catch((err) => console.warn('[emails] não foi possível checar a saúde da sincronização', err));
+  }
+
+  // Conta com senha recusada ou worker parado deixava a Central sem e-mail novo por semanas sem nenhum aviso
+  // (o erro só aparecia dentro da aba Contas). Agora vira um alerta fixo no topo.
+  const SYNC_STALE_MS = 30 * 60 * 1000;
+
+  function syncProblem(account) {
+    if (account.ativo === false) return null;
+    const erro = String(account.ultima_sync_erro || '');
+    if (/authentication|invalid credentials|login failed|senha/i.test(erro)) {
+      return 'o servidor de e-mail recusou a senha — a Central não recebe e-mails novos desta conta até a senha ser atualizada';
+    }
+    if (account.conexao_status === 'ERRO' || String(account.ultima_sync_status || '').toUpperCase().startsWith('ERRO')) {
+      return erro ? `falha na sincronização (${erro.slice(0, 140)})` : 'falha na sincronização';
+    }
+    const ultima = account.ultima_sync_em ? new Date(account.ultima_sync_em).getTime() : 0;
+    if (ultima && Date.now() - ultima > SYNC_STALE_MS) return `o worker não sincroniza desde ${brDate(account.ultima_sync_em)}`;
+    return null;
+  }
+
+  async function checkSyncHealth() {
+    const el = document.getElementById('emSyncAlert');
+    if (!el) return;
+    const problems = state.accounts.map((account) => ({ account, motivo: syncProblem(account) })).filter((p) => p.motivo);
+    if (!problems.length) {
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+    const lasts = await Promise.all(problems.map(({ account }) => supabase.from('email_messages').select('created_at').eq('account_id', account.id).order('created_at', { ascending: false }).limit(1).maybeSingle()));
+    const lines = problems.map(({ account, motivo }, i) => {
+      const last = lasts[i]?.data?.created_at;
+      return `<div><b>${esc(account.nome)}</b> (${esc(account.email)}): ${esc(motivo)}.${last ? ` Último e-mail recebido em ${esc(brDate(last))}.` : ' Nenhum e-mail recebido até agora.'}</div>`;
+    }).join('');
+    el.innerHTML = `<div class="em-sync-lines"><strong>⚠ A Central pode estar sem receber e-mails</strong>${lines}</div><button class="btn btn-secondary" type="button" id="emSyncAlertGo">Corrigir na aba Contas</button>`;
+    el.hidden = false;
+    document.getElementById('emSyncAlertGo').onclick = () => {
+      setTab('contas');
+      fillAccountForm(problems[0].account);
+      document.getElementById('emAccountForm')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('accPassword')?.focus();
+    };
   }
 
   function centralAccountIds() {

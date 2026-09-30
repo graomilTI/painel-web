@@ -61,3 +61,13 @@ test('modo foco não reescreve o DOM ocioso (isso travava o debounce do emails-l
   assert.match(focus, /b\.textContent!==tx\(a\)/);
   assert.match(focus, /c\.dataset\.k==='__vazio'/);
 });
+
+test('Central avisa no topo quando uma conta está com senha recusada ou worker parado', async () => {
+  const src = await read('assets/js/emails.js');
+  assert.match(src, /id="emSyncAlert"/);
+  assert.match(src, /async function checkSyncHealth\(\)/);
+  assert.match(src, /authentication\|invalid credentials\|login failed\|senha/);
+  assert.match(src, /em-sync-alert\[hidden\]\{display:none!important\}/);
+  // o alerta usa o último e-mail realmente ingerido (created_at), não data_recebimento (há datas de 2027 no banco)
+  assert.match(src, /select\('created_at'\)/);
+});
