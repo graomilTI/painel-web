@@ -1216,6 +1216,15 @@ async function appendToSentFolder(account, rawMessage) {
   }
 }
 
+async function loadReplyHeaders(emailId) {
+  const { data } = await supabase.from('email_messages').select('message_id, references_header').eq('id', emailId).maybeSingle();
+  const id = text(data?.message_id);
+  if (!id || id.startsWith('sem-message-id-')) return {};
+  const inReplyTo = `<${id}>`;
+  const refs = text(data?.references_header).split(/\s+/).filter(Boolean).map((ref) => (ref.startsWith('<') ? ref : `<${ref}>`));
+  return { inReplyTo, references: [...refs.filter((ref) => ref !== inReplyTo), inReplyTo] };
+}
+
 async function processOutbox() {
   const { data: rows, error } = await supabase
     .from('email_outbox')
@@ -1237,7 +1246,10 @@ async function processOutbox() {
         auth: { user: account.username, pass: decryptCredential(account.password_cipher) }
       });
       const attachments = row.tipo === 'ENCAMINHAMENTO' ? await loadForwardAttachments(row.email_id) : [];
+      // Sem In-Reply-To/References a resposta chegava como e-mail solto, fora da conversa do destinatário.
+      const threadHeaders = row.tipo === 'RESPOSTA' && row.email_id ? await loadReplyHeaders(row.email_id) : {};
       const mailOptions = {
+        ...threadHeaders,
         from: `${account.nome || account.email} <${account.email}>`,
         to: row.para,
         cc: row.cc || undefined,
