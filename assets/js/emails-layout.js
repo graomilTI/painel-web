@@ -371,7 +371,9 @@ function bindKpiClicks() {
 const extraFilter = { regional: '', categoria: '', prioridade: '' };
 
 const REGIONAL_OPTIONS = ['BAHIA', 'GOIAS', 'MARANHAO', 'MATO GROSSO DO SUL', 'MINAS GERAIS', 'MATO GROSSO MT1', 'MATO GROSSO MT2', 'MATO GROSSO MT3', 'MATO GROSSO MT4', 'PARA', 'PARAGUAI', 'PR PONTA GROSSA', 'PR CASCAVEL', 'PR LONDRINA', 'PR MARINGA', 'RIO GRANDE DO SUL', 'SAO PAULO', 'TOCANTINS'];
-const CATEGORIA_OPTIONS = ['LOGÍSTICA', 'LOGISTICA', 'QUALIDADE', 'NOTAS FISCAIS', 'NOTAS_FISCAIS', 'FINANCEIRO', 'FROTAS', 'RH', 'COMERCIAL', 'COTACAO', 'CONTRATO', 'PROPOSTA', 'PHISHING', 'GERAL'];
+// [valor enviado ao filtro, rótulo]. O banco grava LOGISTICA/NOTAS_FISCAIS sem acento; o filtro
+// (emails.js) cobre as duas grafias.
+const CATEGORIA_OPTIONS = [['LOGISTICA', 'Logística'], ['QUALIDADE', 'Qualidade'], ['NOTAS FISCAIS', 'Notas fiscais'], ['FINANCEIRO', 'Financeiro'], ['ATENDIMENTO', 'Atendimento'], ['FROTAS', 'Frotas'], ['RH', 'RH'], ['COMERCIAL', 'Comercial'], ['COTACAO', 'Cotação'], ['CONTRATO', 'Contrato'], ['JURIDICO', 'Jurídico'], ['TI', 'TI'], ['PROPOSTA', 'Proposta'], ['PHISHING', 'Suspeita de golpe'], ['GERAL', 'Sem categoria']];
 
 function ensureExtraFilters() {
   const filterForm = document.getElementById('emFilter');
@@ -380,8 +382,8 @@ function ensureExtraFilters() {
   holder.className = 'em-v3-extra-filters';
   holder.innerHTML = `
     <select id="emV3Regional" title="Filtrar por regional"><option value="">🗺️ Todas as regionais</option>${REGIONAL_OPTIONS.map((r) => `<option value="${r}">${r}</option>`).join('')}<option value="__SEM__">— Sem regional identificada —</option></select>
-    <select id="emV3Categoria" title="Filtrar por categoria"><option value="">🏷️ Todas as categorias</option>${[...new Set(CATEGORIA_OPTIONS)].map((c) => `<option value="${c}">${c}</option>`).join('')}</select>
-    <select id="emV3Prioridade" title="Filtrar por prioridade"><option value="">⚡ Todas as prioridades</option><option value="URGENTE">URGENTE</option><option value="ALTA">ALTA</option><option value="NORMAL">NORMAL</option><option value="BAIXA">BAIXA</option></select>
+    <select id="emV3Categoria" title="Filtrar por categoria"><option value="">🏷️ Todas as categorias</option>${CATEGORIA_OPTIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+    <select id="emV3Prioridade" title="Filtrar por prioridade"><option value="">⚡ Todas as prioridades</option><option value="ALTA,URGENTE">ALTA + URGENTE</option><option value="URGENTE">URGENTE</option><option value="ALTA">ALTA</option><option value="NORMAL">NORMAL</option><option value="BAIXA">BAIXA</option></select>
     <button type="button" class="em-v3-clear" id="emV3Clear">Limpar filtros</button>
   `;
   filterForm.after(holder);
@@ -390,7 +392,7 @@ function ensureExtraFilters() {
       extraFilter.regional = document.getElementById('emV3Regional').value;
       extraFilter.categoria = document.getElementById('emV3Categoria').value;
       extraFilter.prioridade = document.getElementById('emV3Prioridade').value;
-      applyExtraFilters();
+      document.getElementById('emFilter')?.requestSubmit?.();
     });
   });
   document.getElementById('emV3Clear').addEventListener('click', () => {
@@ -405,48 +407,9 @@ function ensureExtraFilters() {
   });
 }
 
-// A filtragem extra é feita em cima das linhas já renderizadas (não refaz a
-// query): cada linha exibe badges com regional/categoria/prioridade, então dá
-// pra filtrar pelo texto delas sem alterar emails.js.
-let applyingFilters = false;
+// Regional/categoria/prioridade agora são filtros de banco (emails.js lê os selects no submit).
+// Aqui só sobra atualizar a contagem da lista.
 function applyExtraFilters() {
-  if (applyingFilters) return;
-  applyingFilters = true;
-  try { applyExtraFiltersInner(); } finally { applyingFilters = false; }
-}
-
-function applyExtraFiltersInner() {
-  const rows = document.querySelectorAll('#emList .em-row');
-  rows.forEach((row) => {
-    const texto = (row.textContent || '').toUpperCase();
-    let ok = true;
-    if (extraFilter.regional === '__SEM__') ok = texto.includes('SEM REGIONAL');
-    else if (extraFilter.regional) {
-      const alias = {
-        'BAHIA': ['BAHIA'], 'GOIAS': ['GOIÁS', 'GOIAS'], 'MARANHAO': ['MARANHÃO', 'MARANHAO'],
-        'MATO GROSSO DO SUL': ['MATO GROSSO DO SUL'], 'MINAS GERAIS': ['MINAS GERAIS'],
-        'MATO GROSSO MT1': ['MT1'], 'MATO GROSSO MT2': ['MT2'], 'MATO GROSSO MT3': ['MT3'], 'MATO GROSSO MT4': ['MT4'],
-        'PARA': ['PARÁ', 'PARA'], 'PARAGUAI': ['PARAGUAI'],
-        'PR PONTA GROSSA': ['PONTA GROSSA'], 'PR CASCAVEL': ['CASCAVEL'], 'PR LONDRINA': ['LONDRINA'], 'PR MARINGA': ['MARINGÁ', 'MARINGA'],
-        'RIO GRANDE DO SUL': ['RIO GRANDE DO SUL'], 'SAO PAULO': ['SÃO PAULO', 'SAO PAULO'], 'TOCANTINS': ['TOCANTINS']
-      }[extraFilter.regional] || [extraFilter.regional];
-      ok = alias.some((a) => texto.includes(a));
-    }
-    if (ok && extraFilter.categoria) {
-      const aliasCat = {
-        'LOGISTICA': ['LOGÍSTICA', 'LOGISTICA', 'EMBARQUE'], 'LOGÍSTICA': ['LOGÍSTICA', 'LOGISTICA', 'EMBARQUE'],
-        'NOTAS FISCAIS': ['NOTAS FISCAIS', 'NOTA FISCAL'], 'NOTAS_FISCAIS': ['NOTAS FISCAIS', 'NOTAS_FISCAIS', 'NOTA FISCAL'],
-        'QUALIDADE': ['QUALIDADE'], 'FINANCEIRO': ['FINANCEIRO'], 'FROTAS': ['FROTAS', 'MULTA'], 'RH': ['RECURSOS HUMANOS', 'RH'],
-        'COMERCIAL': ['COMERCIAL'], 'COTACAO': ['COTAÇÃO', 'COTACAO'], 'CONTRATO': ['CONTRATO'],
-        'PROPOSTA': ['PROPOSTA'], 'PHISHING': ['GOLPE', 'PHISHING'], 'GERAL': ['SEM CATEGORIA', 'GERAL']
-      }[extraFilter.categoria] || [extraFilter.categoria];
-      ok = aliasCat.some((a) => texto.includes(a));
-    }
-    if (ok && extraFilter.prioridade) ok = texto.includes(extraFilter.prioridade);
-    const display = ok ? '' : 'none';
-    // Só toca no DOM quando muda de verdade — evita retrigger do MutationObserver.
-    if (row.style.display !== display) row.style.display = display;
-  });
   updateInboxCount();
 }
 
@@ -458,7 +421,9 @@ function visibleRows() {
 function updateInboxCount() {
   const count = document.getElementById('emInboxCount');
   if (!count) return;
-  const label = `${visibleRows().length} e-mail(s) na lista`;
+  const total = Number(document.getElementById('emList')?.dataset.total || 0);
+  const shown = visibleRows().length;
+  const label = total > shown ? `${shown} de ${total} e-mail(s)` : `${shown} e-mail(s) na lista`;
   if (count.textContent !== label) count.textContent = label;
 }
 

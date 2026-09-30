@@ -10,8 +10,25 @@ const state = {
   emails: [],
   selected: null,
   attachments: [],
-  outbox: []
+  outbox: [],
+  perigo: [],
+  // filtros extras (aplicados no banco, não só nas linhas carregadas)
+  regional: '',
+  categoria: '',
+  prioridade: '',
+  limit: 80,
+  total: 0,
+  // triagem em lote
+  checked: new Set(),
+  allFilter: false,
+  lastAnchor: null,
+  lastBulk: null,
+  filterSig: ''
 };
+
+const PAGE_SIZE = 80;
+const BULK_MAX = 2000;
+const BULK_CHUNK = 100;
 
 function esc(value) {
   return String(value ?? '')
@@ -171,13 +188,43 @@ const CATEGORIA_DESC = {
   'GERAL': 'Não bateu com nenhuma regra automática. Vale conferir manualmente.'
 };
 
+// O banco grava "LOGISTICA" e "NOTAS_FISCAIS" (sem acento, com underscore); os rótulos acima usam
+// a grafia bonita. Compara sem acento/underscore pra não mostrar o valor cru na tela.
+function categoriaKey(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/_/g, ' ').trim().toUpperCase();
+}
+
+const CATEGORIA_LABELS_BY_KEY = Object.fromEntries([
+  ...Object.entries(CATEGORIA_LABELS).map(([k, v]) => [categoriaKey(k), v]),
+  ['ATENDIMENTO', 'Atendimento'], ['TI', 'Tecnologia (TI)'], ['JURIDICO', 'Jurídico'],
+  ['COTACAO', 'Cotação'], ['COMERCIAL', 'Comercial'], ['CONTRATO', 'Contrato']
+]);
+const CATEGORIA_DESC_BY_KEY = Object.fromEntries(Object.entries(CATEGORIA_DESC).map(([k, v]) => [categoriaKey(k), v]));
+
 function categoriaLabel(categoria) {
-  return CATEGORIA_LABELS[categoria] || categoria || 'Sem categoria definida';
+  return CATEGORIA_LABELS_BY_KEY[categoriaKey(categoria)] || categoria || 'Sem categoria definida';
 }
 
 function categoriaDesc(categoria) {
-  return CATEGORIA_DESC[categoria] || '';
+  return CATEGORIA_DESC_BY_KEY[categoriaKey(categoria)] || '';
 }
+
+// Filtros por regional/categoria vão pro banco. O banco tem várias grafias por regional
+// ("MATO GROSSO MT1", "MATO GROSSO MT1 - Geral", "Maringa e Terminais", "SP - Avaré"...),
+// então cada opção da tela vira uma lista de padrões.
+const REGIONAL_PATTERNS = {
+  BAHIA: ['BAHIA%'], GOIAS: ['GOIAS%'], MARANHAO: ['MARANHAO%'],
+  'MATO GROSSO DO SUL': ['MATO GROSSO DO SUL%'], 'MINAS GERAIS': ['MINAS GERAIS%'],
+  'MATO GROSSO MT1': ['MATO GROSSO MT1%'], 'MATO GROSSO MT2': ['MATO GROSSO MT2%'],
+  'MATO GROSSO MT3': ['MATO GROSSO MT3%'], 'MATO GROSSO MT4': ['MATO GROSSO MT4%'],
+  PARAGUAI: ['PARAGUAI%'],
+  'PR PONTA GROSSA': ['PR PONTA GROSSA%', 'PONTA GROSSA%'], 'PR CASCAVEL': ['PR CASCAVEL%', 'CASCAVEL%'],
+  'PR LONDRINA': ['PR LONDRINA%', 'LONDRINA%'], 'PR MARINGA': ['PR MARINGA%', 'MARINGA%'],
+  'RIO GRANDE DO SUL': ['RIO GRANDE DO SUL%'], 'SAO PAULO': ['SAO PAULO%', 'SP - %'], TOCANTINS: ['TOCANTINS%']
+};
+const CATEGORIA_VARIANTS = {
+  LOGISTICA: ['LOGISTICA', 'LOGÍSTICA'], 'NOTAS FISCAIS': ['NOTAS_FISCAIS', 'NOTAS FISCAIS']
+};
 
 const REGIONAL_LABELS = {
   BAHIA: 'Bahia',
@@ -236,6 +283,12 @@ function dadosDetectadosEntries(dados) {
     return s.length <= (DADOS_MAX_LEN[k] || 200);
   });
 }
+
+const BULK_LABELS = {
+  RESOLVIDO: { verbo: 'marcar como resolvido', feito: 'marcado(s) como resolvido' },
+  ARQUIVADO: { verbo: 'arquivar', feito: 'arquivado(s)' },
+  PENDENTE: { verbo: 'marcar como pendente', feito: 'marcado(s) como pendente' }
+};
 
 const ATTACHMENT_ICONS = {
   pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', csv: '📊',
@@ -411,6 +464,19 @@ export function renderContent(content, userContext) {
       .em-btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);font-weight:700}
       .em-btn-ghost:hover{border-color:var(--green-2);color:var(--green-2);background:var(--green-soft)}
 
+      .em-bulkbar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#0a1c17;box-shadow:0 6px 14px rgba(0,0,0,.35);font-size:12px;color:var(--muted)}
+      .em-bulkbar label{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-weight:700}
+      .em-bulkbar .em-bulk-actions{display:flex;gap:6px;flex-wrap:wrap}
+      .em-bulkbar [hidden]{display:none!important}
+      .em-bulkbar button{border:1px solid var(--line);border-radius:9px;background:var(--bg-soft);color:var(--text);padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+      .em-bulkbar button:hover{border-color:var(--green-2);color:var(--green-2)}
+      .em-bulkbar .em-bulk-link{border:0;background:none;color:var(--green-2);text-decoration:underline;padding:0}
+      .em-bulkbar .em-bulk-hint{margin-left:auto;font-size:10.5px}
+      .em-bulk-undo{flex-basis:100%;display:flex;gap:10px;align-items:center;color:var(--green-2);font-weight:700}
+      .em-rowcheck{flex:none;width:16px;height:16px;margin:0;accent-color:var(--green-2);cursor:pointer}
+      .em-row.checked{border-color:var(--green-2)}
+      body.email-focus #emList .em-meta,body.email-focus #emList .em-row>.em-actions{margin-left:66px!important}
+      .em-more{width:100%;margin-top:4px}
       .em-empty{color:var(--muted);text-align:center;padding:40px;border:1px dashed var(--line);border-radius:16px;font-size:14px;line-height:1.6}
       .em-muted{color:var(--muted)}.em-small{font-size:12px}.em-danger{color:var(--danger);font-weight:700}.em-ok{color:var(--green-2);font-weight:700}
       .em-account-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.em-account-grid .wide{grid-column:1/-1}.em-check{display:flex;align-items:center;gap:10px;color:var(--text);font-size:13px;margin-top:24px;font-family:'DM Sans',sans-serif}
@@ -639,43 +705,102 @@ export function renderContent(content, userContext) {
     alert('Conta salva. Execute o worker no servidor para sincronizar/enviar e-mails.');
   }
 
+  // Mesma consulta pra lista, pra contagem total e pras ações em lote — assim "selecionar todos do
+  // filtro" age exatamente nos e-mails que o filtro mostra.
+  function emailQuery(columns, options) {
+    let q = supabase.from('email_messages').select(columns, options).in('account_id', centralAccountIds());
+    if (state.conta) q = q.eq('account_id', state.conta);
+    if (state.status) q = q.in('status', state.status.split(','));
+    if (state.prioridade) q = q.in('prioridade', state.prioridade.split(','));
+    if (state.categoria) q = q.in('categoria', CATEGORIA_VARIANTS[state.categoria] || [state.categoria]);
+    if (state.regional === '__SEM__') q = q.is('regional', null);
+    else if (state.regional) {
+      const patterns = REGIONAL_PATTERNS[state.regional];
+      q = q.or(patterns ? patterns.map((pt) => `regional.ilike."${pt}"`).join(',') : `regional.eq."${state.regional.replace(/"/g, '')}"`);
+    }
+    // A busca vai pro servidor: filtrar só no navegador enxergava apenas os e-mails já carregados.
+    // Vírgula/parêntese/aspas quebrariam a sintaxe do .or().
+    const termo = state.busca.replace(/[,()"\\%*]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (termo) q = q.or(['assunto', 'remetente_email', 'remetente_nome', 'regional', 'categoria', 'resumo_ia'].map((c) => `${c}.ilike.%${termo}%`).join(','));
+    return q;
+  }
+
+  function filterSignature() {
+    return [state.conta, state.status, state.regional, state.categoria, state.prioridade, state.busca.trim().toLowerCase()].join('|');
+  }
+
   async function loadEmails() {
     const list = document.getElementById('emList');
+    // Filtro mudou de verdade (e não é só a atualização automática): volta pra 1ª página e limpa a seleção em lote.
+    const sig = filterSignature();
+    if (sig !== state.filterSig) {
+      state.filterSig = sig;
+      state.limit = PAGE_SIZE;
+      state.checked.clear();
+      state.allFilter = false;
+      state.lastAnchor = null;
+    }
     list.innerHTML = `<div class="em-empty">Carregando e-mails...</div>`;
-    const contaIds = centralAccountIds();
-    if (!contaIds.length) {
+    if (!centralAccountIds().length) {
       state.emails = [];
+      state.total = 0;
       renderEmails();
       return;
     }
-    let q = supabase.from('email_messages').select(EMAIL_LIST_SELECT).in('account_id', contaIds).order('data_recebimento', { ascending: false }).limit(80);
-    if (state.conta) q = q.eq('account_id', state.conta);
-    if (state.status) q = q.in('status', state.status.split(','));
-    // A busca vai pro servidor: filtrar só no navegador enxergava apenas os 80 e-mails
-    // mais recentes já carregados. Vírgula/parêntese/aspas quebrariam a sintaxe do .or().
-    const termo = state.busca.replace(/[,()"\\%*]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (termo) q = q.or(['assunto', 'remetente_email', 'remetente_nome', 'regional', 'categoria', 'resumo_ia'].map((c) => `${c}.ilike.%${termo}%`).join(','));
-    const { data, error } = await q;
+    const { data, error, count } = await emailQuery(EMAIL_LIST_SELECT, { count: 'exact' }).order('data_recebimento', { ascending: false }).limit(state.limit);
     if (error) {
       list.innerHTML = `<div class="em-empty em-danger">${esc(error.message)}<br>Execute a migration 20260610_central_emails.sql.</div>`;
       return;
     }
     state.emails = attachAccountInfo(data);
+    state.total = count ?? state.emails.length;
+    // some da seleção quem não está mais na lista (foi resolvido/arquivado por outro caminho)
+    if (!state.allFilter) {
+      const ids = new Set(state.emails.map((e) => e.id));
+      [...state.checked].forEach((id) => { if (!ids.has(id)) state.checked.delete(id); });
+    }
     renderEmails();
+  }
+
+  function bulkCount() {
+    return state.allFilter ? state.total : state.checked.size;
+  }
+
+  function bulkBarHtml() {
+    const n = bulkCount();
+    const all = state.emails.length > 0 && state.emails.every((e) => state.checked.has(e.id));
+    const podeTodos = all && !state.allFilter && state.total > state.emails.length;
+    const undo = state.lastBulk
+      ? `<div class="em-bulk-undo"><span>✔ ${state.lastBulk.ids.length} e-mail(s) ${esc(BULK_LABELS[state.lastBulk.next].feito)}.</span><button type="button" id="emBulkUndo">↶ Desfazer</button></div>`
+      : '';
+    return `<div class="em-bulkbar" id="emBulkBar">
+      <label title="Atalhos: J/K navegam · E arquiva · Y resolve · X marca · Shift+clique seleciona faixa"><input type="checkbox" class="em-rowcheck" id="emCheckAll" ${all || state.allFilter ? 'checked' : ''}> <span id="emBulkLabel">${n ? `${n} selecionado(s)${state.allFilter ? ' (todo o filtro)' : ''}` : 'Selecionar'}</span></label>
+      ${podeTodos ? `<button type="button" class="em-bulk-link" id="emSelectAllFilter">Selecionar os ${state.total} e-mails do filtro</button>` : ''}
+      <span class="em-bulk-actions" id="emBulkActions" ${n ? '' : 'hidden'}>
+        <button type="button" data-bulk="RESOLVIDO">✔ Resolver</button>
+        <button type="button" data-bulk="ARQUIVADO">🗄 Arquivar</button>
+        <button type="button" data-bulk="PENDENTE">⏳ Pendente</button>
+        <button type="button" id="emBulkClear">Limpar</button>
+      </span>
+      ${undo}
+    </div>`;
   }
 
   function renderEmails() {
     const list = document.getElementById('emList');
+    list.dataset.total = String(state.total);
     if (!state.emails.length) {
-      list.innerHTML = `<div class="em-empty">Nenhum e-mail encontrado para os filtros.</div>`;
+      list.innerHTML = state.lastBulk ? bulkBarHtml() + `<div class="em-empty">Nenhum e-mail encontrado para os filtros.</div>` : `<div class="em-empty">Nenhum e-mail encontrado para os filtros.</div>`;
       document.getElementById('emDetail').innerHTML = `<div class="em-empty">Selecione um e-mail para visualizar.</div>`;
       document.getElementById('emAction').innerHTML = `<div class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>`;
       return;
     }
-    list.innerHTML = state.emails.map((e) => `
-      <div class="em-row ${state.selected?.id === e.id ? 'active' : ''}" data-email-id="${esc(e.id)}">
+    const restam = state.total - state.emails.length;
+    list.innerHTML = bulkBarHtml() + state.emails.map((e) => `
+      <div class="em-row ${state.selected?.id === e.id ? 'active' : ''} ${state.checked.has(e.id) || state.allFilter ? 'checked' : ''}" data-email-id="${esc(e.id)}">
         <div class="em-row-top">
           <div class="em-row-from">
+            <input type="checkbox" class="em-rowcheck" data-check-id="${esc(e.id)}" ${state.checked.has(e.id) || state.allFilter ? 'checked' : ''} aria-label="Selecionar e-mail">
             <span class="em-avatar sm" style="background:${avatarColor(e.remetente_email || e.remetente_nome)}">${esc(initials(e.remetente_nome, e.remetente_email))}</span>
             <div class="em-subject">${esc(e.assunto || '(sem assunto)')}</div>
           </div>
@@ -685,7 +810,99 @@ export function renderContent(content, userContext) {
         <div class="em-actions">${prioBadge(e.prioridade)}<span class="em-badge arquivado" title="${esc(categoriaDesc(e.categoria))}">${esc(categoriaLabel(e.categoria))}</span><span class="em-badge arquivado">${esc(regionalLabel(e.regional))}</span></div>
         <div class="em-snippet">${esc((resumoLegivel(e.resumo_ia) || onlyText(e.corpo_texto || e.corpo_html)).slice(0, 160))}</div>
       </div>
-    `).join('');
+    `).join('') + (restam > 0 ? `<button type="button" class="btn btn-secondary em-more" id="emLoadMore">Carregar mais (${Math.min(PAGE_SIZE, restam)} de ${restam} restantes)</button>` : '');
+    if (state.lastBulk) scheduleUndoExpiry();
+  }
+
+  // Atualiza só as caixas e a barra (sem redesenhar a lista) quando a seleção muda.
+  function syncBulkUi() {
+    document.querySelectorAll('#emList .em-row').forEach((row) => {
+      const on = state.allFilter || state.checked.has(row.dataset.emailId);
+      row.classList.toggle('checked', on);
+      const box = row.querySelector('.em-rowcheck');
+      if (box) box.checked = on;
+    });
+    const bar = document.getElementById('emBulkBar');
+    if (!bar) return;
+    const fresh = document.createElement('div');
+    fresh.innerHTML = bulkBarHtml();
+    bar.replaceWith(fresh.firstElementChild);
+  }
+
+  let undoTimer = null;
+  function scheduleUndoExpiry() {
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => {
+      state.lastBulk = null;
+      document.querySelector('#emBulkBar .em-bulk-undo')?.remove();
+    }, 60000);
+  }
+
+  function toggleCheck(id, withShift) {
+    if (state.allFilter) {
+      // sair do "todo o filtro" ao desmarcar um item: vira seleção manual da página
+      state.allFilter = false;
+      state.checked = new Set(state.emails.map((e) => e.id));
+    }
+    if (withShift && state.lastAnchor && state.lastAnchor !== id) {
+      const ids = state.emails.map((e) => e.id);
+      const [from, to] = [ids.indexOf(state.lastAnchor), ids.indexOf(id)].sort((x, y) => x - y);
+      ids.slice(from, to + 1).forEach((rid) => state.checked.add(rid));
+    } else if (state.checked.has(id)) state.checked.delete(id);
+    else state.checked.add(id);
+    state.lastAnchor = id;
+    syncBulkUi();
+  }
+
+  async function setStatusMany(ids, status, detalhe) {
+    const now = new Date().toISOString();
+    const who = userContext?.profile?.full_name || userContext?.user?.email || null;
+    for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+      const chunk = ids.slice(i, i + BULK_CHUNK);
+      const { error } = await supabase.from('email_messages').update({ status, updated_at: now }).in('id', chunk);
+      if (error) throw error;
+      await supabase.from('email_historico').insert(chunk.map((id) => ({
+        email_id: id, usuario_id: userContext?.user?.id || null, usuario_nome: who, acao: 'ATUALIZACAO_MANUAL', detalhes: { status, ...detalhe }
+      })));
+    }
+  }
+
+  async function bulkApply(next) {
+    let targets;
+    if (state.allFilter) {
+      const { data, error } = await emailQuery('id,status').order('data_recebimento', { ascending: false }).range(0, BULK_MAX - 1);
+      if (error) return alert(error.message);
+      targets = data || [];
+    } else {
+      targets = state.emails.filter((e) => state.checked.has(e.id)).map((e) => ({ id: e.id, status: e.status }));
+    }
+    if (!targets.length) return;
+    const limite = state.allFilter && state.total > targets.length ? `\n\nO limite por operação é de ${BULK_MAX} e-mails; os demais continuam na lista.` : '';
+    if (!confirm(`Confirma ${BULK_LABELS[next].verbo} ${targets.length} e-mail(s)?${limite}\n\nDá pra desfazer logo depois.`)) return;
+    try {
+      await setStatusMany(targets.map((t) => t.id), next, { lote: true });
+    } catch (err) {
+      return alert(`Não foi possível atualizar em lote: ${err.message}`);
+    }
+    state.lastBulk = { ids: targets.map((t) => t.id), prev: targets, next };
+    state.checked.clear();
+    state.allFilter = false;
+    state.selected = null;
+    await loadEmails();
+  }
+
+  async function bulkUndo() {
+    const last = state.lastBulk;
+    if (!last) return;
+    const byStatus = new Map();
+    last.prev.forEach((t) => { if (!byStatus.has(t.status)) byStatus.set(t.status, []); byStatus.get(t.status).push(t.id); });
+    try {
+      for (const [status, ids] of byStatus) await setStatusMany(ids, status, { lote: true, desfazer: true });
+    } catch (err) {
+      return alert(`Não foi possível desfazer: ${err.message}`);
+    }
+    state.lastBulk = null;
+    await loadEmails();
   }
 
   async function selectEmail(id) {
@@ -959,9 +1176,45 @@ export function renderContent(content, userContext) {
     state.conta = document.getElementById('emConta').value;
     state.status = document.getElementById('emStatus').value;
     state.busca = document.getElementById('emBusca').value;
+    // regional/categoria/prioridade são criados pela camada de layout (emails-layout.js)
+    state.regional = document.getElementById('emV3Regional')?.value || '';
+    state.categoria = document.getElementById('emV3Categoria')?.value || '';
+    state.prioridade = document.getElementById('emV3Prioridade')?.value || '';
     loadEmails();
   });
   document.getElementById('emList').addEventListener('click', (event) => {
+    const box = event.target.closest('.em-rowcheck');
+    if (box) {
+      if (box.id === 'emCheckAll') {
+        const marcarTodos = box.checked;
+        state.allFilter = false;
+        state.checked = marcarTodos ? new Set(state.emails.map((e) => e.id)) : new Set();
+        syncBulkUi();
+      } else {
+        toggleCheck(box.dataset.checkId, event.shiftKey);
+      }
+      return;
+    }
+    if (event.target.closest('#emSelectAllFilter')) {
+      state.allFilter = true;
+      syncBulkUi();
+      return;
+    }
+    if (event.target.closest('#emBulkClear')) {
+      state.checked.clear();
+      state.allFilter = false;
+      syncBulkUi();
+      return;
+    }
+    const bulk = event.target.closest('[data-bulk]');
+    if (bulk) { bulkApply(bulk.dataset.bulk); return; }
+    if (event.target.closest('#emBulkUndo')) { bulkUndo(); return; }
+    if (event.target.closest('#emLoadMore')) {
+      state.limit += PAGE_SIZE;
+      loadEmails();
+      return;
+    }
+    if (event.target.closest('#emBulkBar')) return;
     const row = event.target.closest('[data-email-id]');
     if (row) selectEmail(row.dataset.emailId);
   });
@@ -1000,18 +1253,57 @@ export function renderContent(content, userContext) {
       return;
     }
     const action = event.target.closest('[data-action]')?.dataset.action;
-    if (!action || !state.selected) return;
+    if (action) await applyStatusAction(action);
+  });
+
+  // Resolver/arquivar/pendente num e-mail só e já abrir o vizinho: quem triageia não fica caindo numa tela vazia.
+  async function applyStatusAction(action) {
+    if (!state.selected) return;
     const next = action === 'resolved' ? 'RESOLVIDO' : action === 'archive' ? 'ARQUIVADO' : 'PENDENTE';
+    const id = state.selected.id;
+    const idx = state.emails.findIndex((e) => e.id === id);
+    const neighbor = state.emails[idx + 1] || state.emails[idx - 1] || null;
     try {
-      await updateEmail(state.selected.id, { status: next }, userContext);
+      await updateEmail(id, { status: next }, userContext);
     } catch (err) {
       return alert(`Não foi possível atualizar o status: ${err.message}`);
     }
     state.selected = null;
+    state.checked.delete(id);
     await loadEmails();
+    if (neighbor && state.emails.some((e) => e.id === neighbor.id)) {
+      await selectEmail(neighbor.id);
+      return;
+    }
     document.getElementById('emDetail').innerHTML = `<div class="em-empty">Status atualizado.</div>`;
     document.getElementById('emAction').innerHTML = `<div class="em-empty">Selecione um e-mail pra ver o que fazer com ele.</div>`;
-  });
+  }
+
+  function moveSelection(step) {
+    if (!state.emails.length) return;
+    const idx = state.emails.findIndex((e) => e.id === state.selected?.id);
+    const target = state.emails[Math.min(state.emails.length - 1, Math.max(0, idx + step))];
+    if (!target || target.id === state.selected?.id) return;
+    selectEmail(target.id);
+    document.querySelector(`#emList [data-email-id="${CSS.escape(String(target.id))}"]`)?.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Atalhos só com a Entrada aberta e sem foco em campo de texto.
+  if (!window.__emShortcutsBound) {
+    window.__emShortcutsBound = true;
+    document.addEventListener('keydown', (event) => {
+      if (state.tab !== 'entrada' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (!document.getElementById('emList')) return;
+      const t = event.target;
+      if (t.closest?.('input:not(.em-rowcheck),textarea,select,[contenteditable="true"]')) return;
+      const key = event.key.toLowerCase();
+      if (key === 'j') { event.preventDefault(); moveSelection(1); }
+      else if (key === 'k') { event.preventDefault(); moveSelection(-1); }
+      else if (key === 'e' && state.selected) { event.preventDefault(); applyStatusAction('archive'); }
+      else if (key === 'y' && state.selected) { event.preventDefault(); applyStatusAction('resolved'); }
+      else if (key === 'x' && state.selected) { event.preventDefault(); toggleCheck(state.selected.id, false); }
+    });
+  }
   document.getElementById('emAccountForm').addEventListener('submit', saveAccount);
   document.getElementById('accClear').addEventListener('click', () => fillAccountForm(null));
   document.getElementById('emAccountsList').addEventListener('click', (event) => {
