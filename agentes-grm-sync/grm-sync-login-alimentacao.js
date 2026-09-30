@@ -357,6 +357,67 @@ async function login(page) {
   log('SUCCESS', 'Login realizado');
 }
 
+// Desde 30/09/2026 o formulário de login do GRM exige Cloudflare Turnstile e o
+// navegador automatizado não passa ("a página não saiu de /login"). Em vez de
+// logar, reaproveita o token de sessão gravado por um humano
+// (grm-token-cache.js salvar) e monta no localStorage o mesmo estado que o site
+// grava depois de logar (stores "userStore" e "menusStore" do Pinia). GRM_LOGIN_MODE=form
+// volta ao login pelo formulário.
+var GRM_USER_STORE_KEY = '1e467a08-19f3';
+var GRM_MENUS_STORE_KEY = '482e8da0-bde1';
+
+function grmApiPost(pathname, body, token) {
+  var https = require('https');
+  var payload = JSON.stringify(body);
+  return new Promise(function (resolve, reject) {
+    var req = https.request({
+      hostname: 'www.grmserver.com.br', path: '/api/' + pathname, method: 'POST', timeout: 30000,
+      headers: {
+        accept: 'application/json', 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload),
+        origin: 'https://www.grmserver.com.br', referer: 'https://www.grmserver.com.br/',
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+        authorization: 'Bearer ' + token
+      }
+    }, function (res) {
+      var chunks = [];
+      res.on('data', function (c) { chunks.push(c); });
+      res.on('end', function () {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+        catch (e) { reject(new Error('GRM retornou conteúdo inválido (HTTP ' + res.statusCode + ').')); }
+      });
+    });
+    req.on('timeout', function () { req.destroy(new Error('Timeout ao consultar o GRM.')); });
+    req.on('error', reject);
+    req.end(payload);
+  });
+}
+
+async function loginComToken(page) {
+  log('INFO', 'Autenticando com o token de sessão em cache (login pelo formulário é barrado pelo Turnstile)...');
+  var token = await require('./grm-token-cache').obterTokenGrm({
+    login: function () {
+      return Promise.reject(new Error('Sem token de sessão válido em cache. Grave um: node grm-token-cache.js salvar'));
+    }
+  });
+  var claims = JSON.parse(Buffer.from(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  var acesso = await grmApiPost('user/getUserDataAccess', { userCode: claims.userCode, userEmail: claims.userEmail, userLanguage: 'br' }, token);
+  if (!acesso || !acesso.result || !acesso.userData) {
+    throw new Error('GRM recusou o token de sessão (getUserDataAccess: ' + ((acesso && acesso.message) || 'sem detalhes') + ').');
+  }
+  var userStore = JSON.stringify({ userData: acesso.userData, userToken: token, userLoginEmail: claims.userEmail });
+  var menusStore = JSON.stringify({ menuData: acesso.menuData || [] });
+  await page.evaluateOnNewDocument(function (userKey, userValue, menusKey, menusValue) {
+    if (location.origin === 'https://www.grmserver.com.br') {
+      localStorage.setItem(userKey, userValue);
+      localStorage.setItem(menusKey, menusValue);
+    }
+  }, GRM_USER_STORE_KEY, userStore, GRM_MENUS_STORE_KEY, menusStore);
+  await page.goto('https://www.grmserver.com.br/', { waitUntil: 'networkidle2', timeout: 60000 });
+  await wait(1500);
+  if (page.url().indexOf('/login') !== -1) throw new Error('Sessão por token recusada: o site redirecionou para /login.');
+  log('SUCCESS', 'Sessão autenticada com o token em cache');
+}
+
 async function clearAndType(page, selector, value) {
   await page.waitForSelector(selector, { timeout: 30000 });
   await page.focus(selector);
@@ -1743,7 +1804,8 @@ async function collectReport(fromYmd, toYmd, debug) {
     await page.setViewport({ width: 1920, height: 1440 });
     captured = startApiCapture(page);
 
-    await login(page);
+    if (String(process.env.GRM_LOGIN_MODE || '').toLowerCase() === 'form') await login(page);
+    else await loginComToken(page);
     try {
       var directRows = await collectReportPorCoordenacao(page, fromYmd, toYmd);
       if (directRows.length) return directRows;
