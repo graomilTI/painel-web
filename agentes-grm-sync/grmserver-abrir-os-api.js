@@ -129,7 +129,14 @@ function postJson(url, body, token) {
   return requestJson(GRM_BASE_URL + url, 'POST', body, headers);
 }
 
+// Token em cache compartilhado (grm-token-cache.js): evita login a cada execução
+// e o captcha_invalid que o GRM passou a devolver em 30/09/2026.
+const { obterTokenGrm } = require('./grm-token-cache');
 async function login() {
+  return obterTokenGrm({ login: loginDireto });
+}
+
+async function loginDireto() {
   if (!GRM_USER || !GRM_PASSWORD) throw new Error('Credenciais GRMSERVER_USER/GRMSERVER_PASSWORD ausentes.');
   const response = await postJson('user/login', {
     userEmail: GRM_USER,

@@ -6,3 +6,7 @@ node_modules/
 agentes-grm-sync/logs/*.log
 agentes-grm-sync/exploracao-distribuicao-os/
 supabase/.temp/
+
+# Cache de token/cooldown do login GRM (agentes-grm-sync/grm-token-cache.js)
+agentes-grm-sync/.grm-token-*.json
+agentes-grm-sync/.grm-login-*

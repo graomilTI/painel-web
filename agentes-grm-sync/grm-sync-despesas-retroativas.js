@@ -450,7 +450,14 @@ async function grmRequest(path, body, token = null, multipart = false) {
   return json;
 }
 
+// Token em cache compartilhado (grm-token-cache.js): evita login a cada execução
+// e o captcha_invalid que o GRM passou a devolver em 30/09/2026.
+const { obterTokenGrm } = require('./grm-token-cache');
 async function login() {
+  return obterTokenGrm({ login: loginDireto });
+}
+
+async function loginDireto() {
   log('INFO', 'Autenticando diretamente na API do GRM.');
   const response = await grmRequest('user/login', {
     userEmail: process.env.GRMSERVER_USER,
