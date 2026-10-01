@@ -733,7 +733,7 @@
 
     const headers = [
       ['data', 'Data'], ['nome', 'Colaborador'], ['coordenacao', 'Coordenação'], ['tipo', 'Tipo'],
-      ['producao', 'Produção (t)'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
+      ['producao', 'Tons'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
     ].map(([key, label]) => `<th class="sortable" data-sort="${key}">${label}${sortMark(key)}</th>`).join('');
 
     let body = '';
@@ -878,7 +878,7 @@
       downloadCsv(lines, `produtividade_periodo_${p.from}_${p.to}.csv`);
       return;
     }
-    const lines = [['Data', 'Colaborador', 'Coordenação', 'Tipo', 'Produção (t)', 'Faturado', 'Custo', 'Saldo'].join(';')];
+    const lines = [['Data', 'Colaborador', 'Coordenação', 'Tipo', 'Tons', 'Faturado', 'Custo', 'Saldo'].join(';')];
     for (const r of sortRows(filteredRows())) {
       lines.push([brDate(r.data), r.nome, r.coordenacao, r.tipo, num(r.producao), num(r.faturado), num(r.custo), num(saldo(r))].map(csvCell).join(';'));
     }
