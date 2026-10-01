@@ -3,8 +3,8 @@
  * Relatório por data: Colaborador · Tipo · Produção · Faturado · Custo · Saldo.
  *
  * Fontes:
- *  - Produção e Faturado: public.relatorio_resultado_diario (toneladas e valor_embarcado
- *    = embarcado × valor/ton, já com a cadência mínima aplicada pelo GRM).
+ *  - Produção e Faturado: public.relatorio_resultado_diario (toneladas; Faturado =
+ *    toneladas × valor_ton, definido pela diretoria em 01/10).
  *  - Tipo e remuneração: public.colaboradores (quadro ao vivo do sync GRM). O
  *    historico_colaboradores está sem importação desde setembro, então não é usado.
  *
@@ -201,7 +201,7 @@
   function loadProducao(from, to) {
     return fetchAllRows(
       'relatorio_resultado_diario',
-      'data,coordenacao,funcionario,toneladas,valor_embarcado',
+      'data,coordenacao,funcionario,toneladas,valor_ton,valor_embarcado',
       (q) => q.gte('data', from).lte('data', to)
     );
   }
@@ -313,8 +313,9 @@
       const nameKey = keyText(nome);
       if (!data || !nameKey) continue;
       const ton = toNumber(r.toneladas);
-      const fat = toNumber(r.valor_embarcado);
-      if (ton <= 0 && fat <= 0) continue;
+      // Faturado = toneladas × R$/Ton; a linha só conta como produção se tiver toneladas ou valor embarcado.
+      const fat = ton * toNumber(r.valor_ton);
+      if (ton <= 0 && toNumber(r.valor_embarcado) <= 0) continue;
       const key = `${data}|${nameKey}`;
       let item = agg.get(key);
       if (!item) {
@@ -522,7 +523,7 @@
         diasFolgados,
         dsr: toNumber(r.dias_fim_semana),
         producao: toNumber(r.toneladas),
-        faturado: toNumber(r.valor_embarcado),
+        faturado: toNumber(r.valor_faturado),
         custoAprovado,
         custoSalario,
         custo: custoAprovado + custoSalario,
@@ -666,7 +667,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Folga = dias úteis (seg–sex) no quadro em que o efetivo não embarcou. DSR = dias trabalhados em sábado e domingo. Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = toneladas × R$/Ton do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Folga = dias úteis (seg–sex) no quadro em que o efetivo não embarcou. DSR = dias trabalhados em sábado e domingo. Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
       </section>
     `;
   }
@@ -696,7 +697,7 @@
     return `
       <div class="prd-kpis">
         <article class="prd-card"><span>Produção</span><strong>${fmtNumber(t.producao, 2)} t</strong><small>${fmtNumber(colabs, 0)} colaboradores com produção</small></article>
-        <article class="prd-card"><span>Faturado</span><strong>${fmtMoney(t.faturado)}</strong><small>Valor embarcado no Resultado Diário</small></article>
+        <article class="prd-card"><span>Faturado</span><strong>${fmtMoney(t.faturado)}</strong><small>Toneladas × R$/Ton do Resultado Diário</small></article>
         <article class="prd-card"><span>Custo</span><strong>${fmtMoney(t.custo)}</strong><small>Aprovado no Caixa + salário ÷ 30 dos efetivos</small></article>
         <article class="prd-card ${s < 0 ? 'neg' : 'pos'}"><span>Saldo</span><strong>${fmtMoney(s)}</strong><small>Margem ${fmtNumber(margem, 1)}%</small></article>
       </div>
@@ -784,7 +785,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. O efetivo (exceto Administrativo) aparece em todo dia útil, com ou sem produção (faturado zero); sábado e domingo só se produziu.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = toneladas × R$/Ton do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. O efetivo (exceto Administrativo) aparece em todo dia útil, com ou sem produção (faturado zero); sábado e domingo só se produziu.${esc(cortado)}</div>
       </section>
     `;
   }
