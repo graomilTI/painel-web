@@ -655,7 +655,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Dias folgados = dias úteis (seg–sex) no quadro em que o efetivo não embarcou. DSR = dias trabalhados em sábado e domingo. Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Folga = dias úteis (seg–sex) no quadro em que o efetivo não embarcou. DSR = dias trabalhados em sábado e domingo. Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
       </section>
     `;
   }
