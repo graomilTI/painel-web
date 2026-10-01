@@ -285,19 +285,19 @@ async function resolverPontoEmbarque(valorArmazem, cidadeSolicitacao, ufSolicita
     return true;
   }
 
-  var porNomeRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('nome_local', texto);
+  var porNomeRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local,supervisao').ilike('nome_local', texto);
   var porNomeLista = (!porNomeRes.error && porNomeRes.data) ? porNomeRes.data : [];
   var porNome = porNomeLista.find(bateLocal);
   if (porNome) return porNome;
 
-  var porLabelRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local').ilike('embarque_label', texto);
+  var porLabelRes = await supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local,supervisao').ilike('embarque_label', texto);
   var porLabelLista = (!porLabelRes.error && porLabelRes.data) ? porLabelRes.data : [];
   var porLabel = porLabelLista.find(bateLocal);
   if (porLabel) return porLabel;
 
   var palavras = palavrasSignificativasEmbarque(texto);
   if (palavras.length) {
-    var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local');
+    var query = supabase.from('operacional_pontos_embarque').select('tipo_local,uf,cidade,nome_local,supervisao');
     palavras.forEach((p) => { query = query.ilike('nome_local', '%' + p + '%'); });
     if (uf) query = query.ilike('uf', uf);
     if (cidade) query = query.ilike('cidade', cidade);
@@ -471,6 +471,25 @@ async function resolverProdutor(token, splCode, nomeProdutor) {
   return lista.find((i) => i.pdcCode === 0) || lista[0] || { pdcCode: 0 };
 }
 
+// Supervisão pelo cadastro interno (operacional_pontos_embarque): 1) a do próprio
+// ponto; 2) se o ponto não tem, a da cidade quando TODOS os pontos da cidade que
+// têm supervisão concordam. Existe porque a consulta do GRM por cidade+tipo de
+// local (supervision/getSupervisionByCitAndSPlaceType) devolve um valor único por
+// par e erra: O.S. 94523 (01/10/2026), BURIGRÃOS em Buri/SP, saiu em "SP - Araçatuba"
+// pelo GRM, mas Buri é regional "SP - Avaré" (cadastro interno do Armazém Jequitibá,
+// também em Buri, já diz Avaré).
+async function supervisaoInternaDoEmbarque(ponto, uf, cidade) {
+  if (ponto && ponto.supervisao) return String(ponto.supervisao).trim();
+  if (!uf || !cidade) return null;
+  var res = await supabase.from('operacional_pontos_embarque').select('supervisao')
+    .ilike('uf', uf).ilike('cidade', cidade).not('supervisao', 'is', null).limit(200);
+  if (res.error || !res.data) return null;
+  var nomes = {};
+  res.data.forEach((r) => { var n = norm(r.supervisao); if (n) nomes[n] = String(r.supervisao).trim(); });
+  var chaves = Object.keys(nomes);
+  return chaves.length === 1 ? nomes[chaves[0]] : null;
+}
+
 async function resolverEmbarque(token, solicitacao) {
   const ponto = await resolverPontoEmbarque(solicitacao.armazem_embarque, solicitacao.cidade_embarque, solicitacao.uf_embarque);
   let uf = solicitacao.uf_embarque, cidade = solicitacao.cidade_embarque, tipoLocalNome = null;
@@ -536,18 +555,37 @@ async function resolverEmbarque(token, solicitacao) {
   }
   if (!localItem) throw new Error('Local do Serviço "' + solicitacao.armazem_embarque + '" não encontrado em ' + cidade + '/' + uf + '.');
 
-  // olsCode vem do PAR citCode+sptCode do embarque — validado ao vivo 11/09
-  // contra a O.S. 92511 real (searchData da API é o olsCode cru, não uma
-  // lista). Só cai pro fallback de casar solicitacao.regional por texto
-  // quando essa consulta não acha nada.
+  // 1º cadastro interno (supervisão do ponto/cidade), 2º par citCode+sptCode
+  // do GRM — validado ao vivo 11/09 contra a O.S. 92511 (searchData é o
+  // olsCode cru, não uma lista) mas errado em cidades com mais de uma
+  // regional (ver supervisaoInternaDoEmbarque) —, 3º casar
+  // solicitacao.regional por texto.
   let olsCode = null;
+  let olsApi = null;
   const supRes = await postJson('supervision/getSupervisionByCitAndSPlaceType', { citCode: cidadeItem.citCode, sptCode: tipoLocal.sptCode }, token);
-  if (supRes.result && typeof supRes.searchData === 'number') {
-    olsCode = supRes.searchData;
-  } else {
-    avisarCampoSuspeito('Supervisão não resolvida por cidade+tipo de local — tentando casar "' + solicitacao.regional + '" pelo nome.');
+  if (supRes.result && typeof supRes.searchData === 'number' && supRes.searchData > 0) olsApi = supRes.searchData;
+
+  let todasSup = null;
+  const supInterna = await supervisaoInternaDoEmbarque(ponto, uf, cidade);
+  if (supInterna) {
     const todasRes = await postJson('supervision/getForSelect', { olsStatus: 'A' }, token);
-    const sup = melhorCorrespondencia(safe(todasRes.searchData), 'olsName', solicitacao.regional);
+    todasSup = safe(todasRes.searchData);
+    const exata = todasSup.find((s) => norm(s.olsName) === norm(supInterna));
+    if (exata) {
+      olsCode = exata.olsCode;
+      log('INFO', 'Supervisão pelo cadastro interno: "' + supInterna + '" (olsCode ' + olsCode + ')' + (olsApi != null && olsApi !== olsCode ? ' — difere da sugestão do GRM por cidade+tipo (olsCode ' + olsApi + '), mantida a do cadastro.' : '.'));
+    } else {
+      avisarCampoSuspeito('Supervisão "' + supInterna + '" do cadastro interno não existe no GRM — ignorada.');
+    }
+  }
+  if (olsCode == null && olsApi != null) olsCode = olsApi;
+  if (olsCode == null) {
+    avisarCampoSuspeito('Supervisão não resolvida por cadastro interno nem por cidade+tipo de local — tentando casar "' + solicitacao.regional + '" pelo nome.');
+    if (!todasSup) {
+      const todasRes = await postJson('supervision/getForSelect', { olsStatus: 'A' }, token);
+      todasSup = safe(todasRes.searchData);
+    }
+    const sup = melhorCorrespondencia(todasSup, 'olsName', solicitacao.regional);
     if (sup) olsCode = sup.olsCode;
   }
   if (olsCode == null) throw new Error('Supervisão (olsCode) não resolvida pro embarque "' + solicitacao.armazem_embarque + '".');
