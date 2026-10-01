@@ -50,6 +50,7 @@ const SOFT_NAV_PAGES = new Map([
   ['hotel-relatorio', { title: 'Relatório de Hospedagem', module: () => import('./hotel-relatorio.js') }],
   ['importar-colaboradores', { title: 'Importar Colaboradores', module: () => import('./importarColaboradores.js') }],
   ['importar-patrimonios', { title: 'Importar Patrimônios', module: () => import('./importarPatrimonios.js') }],
+  ['produtividade', { title: 'Produtividade', module: () => import('./produtividade.js') }],
   ['metas', { title: 'METAS', module: () => import('./metas.js'), extraModules: [
     () => import('./metasDespesasAgente.js'),
     () => import('./metasNavObjetivo.js'),
