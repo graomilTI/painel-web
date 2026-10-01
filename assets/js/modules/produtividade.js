@@ -155,9 +155,9 @@
     return String(value || '').trim();
   }
 
-  // Administrativo fica fora da lista de efetivos sem produção (decisão da diretoria).
+  // Administrativo e equipe da coordenação GERAL ficam fora da lista de efetivos sem produção (decisão da diretoria).
   function isAdministrativo(row) {
-    return keyText(row?.cargo).includes('ADMINISTRATIV');
+    return keyText(row?.cargo).includes('ADMINISTRATIV') || keyText(row?.coordenacao) === 'GERAL';
   }
 
   function isActive(row) {
