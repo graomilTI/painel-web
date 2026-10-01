@@ -41,6 +41,7 @@ const ROUTE_AGENT_MAP = {
   dashboard: [...PRODUCAO_AGENTS, 'sync-patrimonios'],
   'dashboard-socio': [...PRODUCAO_AGENTS, ...FINANCEIRO_AGENTS],
   desempenho: PRODUCAO_AGENTS,
+  produtividade: PRODUCAO_AGENTS,
   metas: PRODUCAO_AGENTS,
   dre: FINANCEIRO_AGENTS,
 

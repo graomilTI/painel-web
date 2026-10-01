@@ -60,7 +60,7 @@ const MODULE_GROUP_FALLBACKS = [
   { group: 'FROTAS', terms: ['frotas', 'excesso de velocidade', 'veiculos', 'veículos', 'multas', 'historico frotas', 'histórico frotas'] },
   { group: 'FINANCEIRO', terms: ['financeiro', 'fluxo de caixa', 'pagamentos', 'adiantamentos', 'alimentacao', 'alimentação'] },
   { group: 'LOGÍSTICA', terms: ['logistica', 'logística', 'finalizacao de o.s', 'finalização de o.s', 'finalizacao os', 'finalização os', 'classificadores'] },
-  { group: 'DIRETORIA', terms: ['diretoria', 'dre', 'metas', 'desempenho'] },
+  { group: 'DIRETORIA', terms: ['diretoria', 'dre', 'metas', 'desempenho', 'produtividade'] },
   { group: 'RELATÓRIOS', terms: ['importar relatorios', 'importar relatórios', 'relatorios', 'relatórios', 'resultado diario', 'resultado diário', 'producao', 'produção'] },
   { group: 'RECURSOS HUMANOS', terms: ['contatos e cadastros', 'contatos', 'colaboradores', 'admissao', 'admissão', 'graint', 'integracao', 'integração', 'ferias', 'férias', 'atestados', 'indisponibilidade', 'epi', 'cat', 'seguranca do trabalho', 'segurança do trabalho', 'exames', 'clinicas', 'clínicas', 'contrato de experiencia', 'contrato de experiência', 'rescisao', 'rescisão', 'rescisoes', 'rescisões', 'cartao ponto', 'cartão ponto', 'ponto eletronico', 'ponto eletrônico', 'advertencia', 'advertência', 'holerite', 'folha de pagamento', 'folha'] },
   { group: 'TI', terms: ['integracoes', 'integrações', 'ti'] },
