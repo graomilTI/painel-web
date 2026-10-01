@@ -614,7 +614,7 @@
     const mark = (key) => (p.sort.key === key ? (p.sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
     const headers = [
       ['nome', 'Colaborador'], ['coordenacao', 'Coordenação'], ['tipo', 'Tipo'], ['dias', 'Produção'],
-      ['diasFolgados', 'Dias folgados'], ['dsr', 'DSR'], ['producao', 'Tons'], ['media', 'Média t/dia'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
+      ['diasFolgados', 'Folga'], ['dsr', 'DSR'], ['producao', 'Tons'], ['media', 'Média t/dia'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
     ].map(([key, label]) => `<th class="sortable" data-sort-periodo="${key}">${label}${mark(key)}</th>`).join('');
 
     const t = totalsOf(rows);
@@ -871,7 +871,7 @@
     const num = (v) => toNumber(v).toFixed(2).replace('.', ',');
     if (state.tab === 'periodo') {
       const p = state.periodo;
-      const lines = [['Colaborador', 'Coordenação', 'Tipo', 'Produção', 'Dias folgados', 'DSR', 'Tons', 'Média t/dia', 'Faturado', 'Custo', 'Saldo'].join(';')];
+      const lines = [['Colaborador', 'Coordenação', 'Tipo', 'Produção', 'Folga', 'DSR', 'Tons', 'Média t/dia', 'Faturado', 'Custo', 'Saldo'].join(';')];
       for (const r of sortPeriodo(filteredRows(p.rows))) {
         lines.push([r.nome, r.coordenacao, r.tipo, r.dias, r.diasFolgados, r.dsr, num(r.producao), num(r.dias ? r.producao / r.dias : 0), num(r.faturado), num(r.custo), num(saldo(r))].map(csvCell).join(';'));
       }
