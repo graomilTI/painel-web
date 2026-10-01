@@ -501,13 +501,18 @@
       const colab = byName.get(nameKey);
       const tipo = colab ? tipoCanon(colab.tipo) : '';
       const custoAprovado = aprovadoDe(nameKey);
-      const custoSalario = colab ? custoSalarioDia(tipo, colab.salario) * (diasNoQuadro(colab, from, to) + toNumber(r.dias_fim_semana)) : 0;
+      const diasQuadro = colab ? diasNoQuadro(colab, from, to) : 0;
+      const custoSalario = colab ? custoSalarioDia(tipo, colab.salario) * (diasQuadro + toNumber(r.dias_fim_semana)) : 0;
+      // Dias folgados (só efetivo): dias úteis seg–sex no quadro em que não embarcou (produção em fim de semana não abate).
+      const diasFolgados = tipo === 'Efetivo' ? Math.max(0, diasQuadro - (toNumber(r.dias) - toNumber(r.dias_fim_semana))) : 0;
       produziu.add(nameKey);
       rows.push({
         nome: String(r.funcionario).trim(),
         coordenacao: String(r.coordenacao || colab?.coordenacao || '').trim(),
         tipo: tipo || '—',
         dias: toNumber(r.dias),
+        diasFolgados,
+        dsr: toNumber(r.dias_fim_semana),
         producao: toNumber(r.toneladas),
         faturado: toNumber(r.valor_embarcado),
         custoAprovado,
@@ -531,6 +536,8 @@
         coordenacao: String(c.coordenacao || '').trim(),
         tipo: 'Efetivo',
         dias: 0,
+        diasFolgados: dias,
+        dsr: 0,
         producao: 0,
         faturado: 0,
         custoAprovado,
@@ -550,6 +557,8 @@
         coordenacao: String(item.colab?.coordenacao || '').trim(),
         tipo: tipo || '—',
         dias: 0,
+        diasFolgados: 0,
+        dsr: 0,
         producao: 0,
         faturado: 0,
         custoAprovado: item.total,
@@ -587,6 +596,8 @@
         <td>${esc(r.coordenacao || '-')}</td>
         <td style="text-align:center">${tipoTag(r.tipo)}</td>
         <td class="num">${r.dias ? fmtNumber(r.dias, 0) : '<span class="prd-muted">-</span>'}</td>
+        <td class="num" title="Dias úteis (seg–sex) no quadro em que o efetivo não embarcou">${r.diasFolgados ? fmtNumber(r.diasFolgados, 0) : '<span class="prd-muted">-</span>'}</td>
+        <td class="num" title="Dias trabalhados em sábado ou domingo">${r.dsr ? fmtNumber(r.dsr, 0) : '<span class="prd-muted">-</span>'}</td>
         <td class="num">${r.producao ? fmtNumber(r.producao, 2) : '<span class="prd-muted">-</span>'}</td>
         <td class="num">${media ? fmtNumber(media, 2) : '<span class="prd-muted">-</span>'}</td>
         <td class="num">${r.faturado ? fmtMoney(r.faturado) : '<span class="prd-muted">-</span>'}</td>
@@ -603,23 +614,27 @@
     const mark = (key) => (p.sort.key === key ? (p.sort.dir === 'asc' ? ' ▲' : ' ▼') : '');
     const headers = [
       ['nome', 'Colaborador'], ['coordenacao', 'Coordenação'], ['tipo', 'Tipo'], ['dias', 'Dias c/ produção'],
-      ['producao', 'Produção (t)'], ['media', 'Média t/dia'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
+      ['diasFolgados', 'Dias folgados'], ['dsr', 'DSR'], ['producao', 'Produção (t)'], ['media', 'Média t/dia'], ['faturado', 'Faturado'], ['custo', 'Custo'], ['saldo', 'Saldo']
     ].map(([key, label]) => `<th class="sortable" data-sort-periodo="${key}">${label}${mark(key)}</th>`).join('');
 
     const t = totalsOf(rows);
     const diasTotal = rows.reduce((n, r) => n + r.dias, 0);
+    const folgadosTotal = rows.reduce((n, r) => n + r.diasFolgados, 0);
+    const dsrTotal = rows.reduce((n, r) => n + r.dsr, 0);
     const body = shown.length
       ? shown.map(periodoRow).join('') + `
         <tr class="total">
           <td colspan="3">Total do período</td>
           <td class="num">${fmtNumber(diasTotal, 0)}</td>
+          <td class="num">${fmtNumber(folgadosTotal, 0)}</td>
+          <td class="num">${fmtNumber(dsrTotal, 0)}</td>
           <td class="num">${fmtNumber(t.producao, 2)}</td>
           <td class="num">${diasTotal ? fmtNumber(t.producao / diasTotal, 2) : '-'}</td>
           <td class="num">${fmtMoney(t.faturado)}</td>
           <td class="num">${fmtMoney(t.custo)}</td>
           <td class="num">${fmtMoney(t.faturado - t.custo)}</td>
         </tr>`
-      : '<tr class="empty"><td colspan="9">Nenhum registro localizado para os filtros selecionados.</td></tr>';
+      : '<tr class="empty"><td colspan="11">Nenhum registro localizado para os filtros selecionados.</td></tr>';
 
     const cortado = sorted.length > shown.length
       ? ` Mostrando as primeiras ${fmtNumber(shown.length, 0)} de ${fmtNumber(sorted.length, 0)} linhas — os totais e a exportação consideram todas.`
@@ -635,12 +650,12 @@
           <button class="prd-btn secondary" type="button" data-prd-export ${rows.length ? '' : 'disabled'}>Exportar CSV</button>
         </div>
         <div class="prd-table-wrap">
-          <table class="prd-table" style="min-width:980px">
+          <table class="prd-table" style="min-width:1140px">
             <thead><tr>${headers}</tr></thead>
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Dias folgados = dias úteis (seg–sex) no quadro em que o efetivo não embarcou. DSR = dias trabalhados em sábado e domingo. Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
       </section>
     `;
   }
@@ -856,9 +871,9 @@
     const num = (v) => toNumber(v).toFixed(2).replace('.', ',');
     if (state.tab === 'periodo') {
       const p = state.periodo;
-      const lines = [['Colaborador', 'Coordenação', 'Tipo', 'Dias com produção', 'Produção (t)', 'Média t/dia', 'Faturado', 'Custo', 'Saldo'].join(';')];
+      const lines = [['Colaborador', 'Coordenação', 'Tipo', 'Dias com produção', 'Dias folgados', 'DSR', 'Produção (t)', 'Média t/dia', 'Faturado', 'Custo', 'Saldo'].join(';')];
       for (const r of sortPeriodo(filteredRows(p.rows))) {
-        lines.push([r.nome, r.coordenacao, r.tipo, r.dias, num(r.producao), num(r.dias ? r.producao / r.dias : 0), num(r.faturado), num(r.custo), num(saldo(r))].map(csvCell).join(';'));
+        lines.push([r.nome, r.coordenacao, r.tipo, r.dias, r.diasFolgados, r.dsr, num(r.producao), num(r.dias ? r.producao / r.dias : 0), num(r.faturado), num(r.custo), num(saldo(r))].map(csvCell).join(';'));
       }
       downloadCsv(lines, `produtividade_periodo_${p.from}_${p.to}.csv`);
       return;
