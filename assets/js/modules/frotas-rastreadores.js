@@ -5,11 +5,8 @@
     <style>
       .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:936px;table-layout:fixed}.fr-table th{padding:10px 6px;color:#bfdbfe;font-size:11px;letter-spacing:.06em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fr-table td{padding:8px 6px;height:44px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:12.5px;line-height:1.3;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-td-wrap{white-space:normal!important}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-icon-btn{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;font-size:14px;line-height:1;border-radius:9px;flex:none}.fr-icon-btn.soft{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.22);color:#4ade80}.fr-icon-btn.soft:hover{border-color:rgba(34,197,94,.85);background:rgba(34,197,94,.34);color:#86efac}.fr-icon-btn.danger{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.22);color:#f87171}.fr-icon-btn.danger:hover{border-color:rgba(239,68,68,.85);background:rgba(239,68,68,.34);color:#fca5a5}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-obs-add{display:grid;grid-template-columns:150px 1fr 30px;gap:8px;align-items:center;margin-bottom:10px}.fr-obs-add input{height:38px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 10px;outline:none;font-size:13px;color-scheme:dark}.fr-obs-table{width:100%;border-collapse:collapse}.fr-obs-table th{padding:6px 10px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16)}.fr-obs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:13px;vertical-align:top}.fr-field input[readonly]{opacity:.85;cursor:default}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(min-width:901px){.fr-modal-wide{width:min(1060px,96vw);max-height:96vh}.fr-modal-wide .fr-modal-head{padding:14px 20px}.fr-modal-wide .fr-modal-head h3{font-size:18px}.fr-modal-wide .fr-modal-head p{margin-top:2px}.fr-modal-wide .fr-modal-body{padding:6px 20px 14px}.fr-modal-wide .fr-modal-foot{padding:12px 20px}}.fr-modal-wide .fr-field input,.fr-modal-wide .fr-field select{padding:8px 10px;height:38px;box-sizing:border-box}.fr-modal-wide .fr-form{gap:10px}.fr-modal-wide .fr-check-row label{font-size:12px;white-space:nowrap;text-transform:none;letter-spacing:0}.fr-modal-wide .fr-divider{margin:12px 0 8px;padding-bottom:4px}.fr-cols2{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;align-items:start}.fr-g-loc{grid-template-columns:76px 1fr 1.3fr!important}.fr-g-3{grid-template-columns:repeat(3,minmax(0,1fr))!important}.fr-g-2{grid-template-columns:repeat(2,minmax(0,1fr))!important}.fr-obs-scroll{max-height:clamp(72px,calc(100vh - 580px),260px);overflow:auto;border:1px solid rgba(148,163,184,.12);border-radius:12px}.fr-obs-scroll .fr-empty{padding:12px!important}.fr-obs-scroll .fr-obs-table th{position:sticky;top:0;background:#0d0d18}.fr-modal-wide .fr-obs-add{grid-template-columns:130px 1fr 30px;margin-bottom:8px}@media(max-width:900px){.fr-cols2{grid-template-columns:1fr}.fr-g-loc,.fr-g-3,.fr-g-2{grid-template-columns:1fr!important}}@media(max-width:1500px){.fr-body{padding:12px}.fr-toolbar,.fr-filter-row{gap:8px;margin-bottom:10px}.fr-kpis{gap:8px;margin:10px 0}.fr-kpi{padding:10px 12px;border-radius:14px}.fr-kpi span{font-size:10px;letter-spacing:.06em}.fr-kpi strong{font-size:20px;margin-top:4px}.fr-tabs{padding:10px 12px;gap:8px}.fr-tab{padding:8px 14px}.fr-head{margin-bottom:12px}.fr-title{margin:4px 0}}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
       .fr-icon-btn.warn{border:1px solid rgba(245,158,11,.55);background:rgba(245,158,11,.18);color:#fbbf24;font-weight:950}.fr-icon-btn.warn:hover{border-color:rgba(245,158,11,.9);background:rgba(245,158,11,.32);color:#fde68a}.fr-icon-btn.warn.active{background:#f59e0b;border-color:#f59e0b;color:#1c1203}
-      .fr-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}.fr-col-board{border:1px solid rgba(148,163,184,.14);border-radius:18px;background:rgba(2,6,23,.32);padding:10px;min-height:140px}.fr-col-board h4{margin:2px 4px 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#bfdbfe;font-size:11px;letter-spacing:.08em;text-transform:uppercase}.fr-col-board h4 b{background:rgba(245,158,11,.16);color:#fde68a;border-radius:999px;padding:2px 9px;font-size:11px}.fr-mcard{width:100%;text-align:left;font-family:inherit;border:1px solid rgba(245,158,11,.28);background:rgba(15,23,42,.8);color:#e2e2f0;border-radius:14px;padding:11px 12px;margin-bottom:8px;cursor:pointer;display:block;transition:.15s}.fr-mcard:hover{border-color:rgba(245,158,11,.7);background:rgba(30,41,59,.9)}.fr-mcard strong{font-size:14px;color:#fff}.fr-mcard small{display:block;margin-top:4px;color:#94a3b8;font-size:11.5px;line-height:1.35;white-space:normal}.fr-mcard .fr-mrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.fr-col-empty{color:#64748b;text-align:center;font-size:12px;padding:18px 6px}
-      .fr-hist-title{margin:20px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}
-      .fr-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:16px}.fr-step{border:1px solid rgba(148,163,184,.18);border-radius:12px;padding:9px 10px;font-size:11.5px;font-weight:900;color:#94a3b8;background:rgba(15,23,42,.6);display:flex;align-items:center;gap:8px}.fr-step i{font-style:normal;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(148,163,184,.18);color:#cbd5e1;font-size:11px;flex:none}.fr-step.done{border-color:rgba(34,197,94,.4);color:#bbf7d0}.fr-step.done i{background:#22c55e;color:#052e16}.fr-step.current{border-color:rgba(245,158,11,.7);color:#fde68a;background:rgba(245,158,11,.12)}.fr-step.current i{background:#f59e0b;color:#1c1203}
-      .fr-msec{border:1px solid rgba(148,163,184,.14);border-radius:14px;padding:12px 14px;margin-bottom:10px;background:rgba(2,6,23,.3)}.fr-msec.current{border-color:rgba(245,158,11,.5)}.fr-msec.locked{opacity:.45}.fr-msec h5{margin:0 0 10px;color:#fde68a;font-size:12px;letter-spacing:.06em;text-transform:uppercase}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-timeline{margin:6px 0 0;padding:0;list-style:none;font-size:11.5px;color:#94a3b8;display:grid;gap:3px}.fr-modal-foot .fr-spacer{margin-right:auto}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
-      @media(max-width:1100px){.fr-board{grid-template-columns:repeat(2,minmax(0,1fr))}.fr-steps{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){.fr-board,.fr-steps{grid-template-columns:1fr}}
+      .fr-act-row{display:flex;gap:6px;flex-wrap:nowrap}.fr-act{width:30px;height:30px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.72);color:#94a3b8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:.15s}.fr-act svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fr-act:hover:not(:disabled){color:#e2e2f0;border-color:rgba(148,163,184,.65)}.fr-act.done{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.16);color:#4ade80}.fr-act.current{border-color:rgba(245,158,11,.85);background:rgba(245,158,11,.2);color:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.18)}.fr-act.final.current{border-color:#22c55e;background:rgba(34,197,94,.3);color:#86efac;box-shadow:0 0 0 2px rgba(34,197,94,.2)}.fr-act:disabled{opacity:.3;cursor:not-allowed}.fr-act.cancel:hover{border-color:rgba(239,68,68,.75);color:#f87171;background:rgba(239,68,68,.14)}
+      .fr-hist-title{margin:22px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
     </style>`;
 
   let _opts = {};
@@ -193,6 +190,12 @@
       case 'data_instalacao':    return r?.data_instalacao || '';
       case 'agendamentos':       return r?.agendamentos_frustrados || 0;
             case 'infleet':            return r?.infleet || '';
+      case 'motorista':          return row.motorista_atual || '';
+      case 'motivo':             return manutAberta(row.placa)?.motivo || '';
+      case 'dias':               return diasDesde(manutAberta(row.placa)?.aberta_em);
+      case 'etapa':              return ETAPAS.findIndex(e => e[0] === (manutAberta(row.placa)?.etapa || 'disponibilidade'));
+      case 'tecnico':            return manutAberta(row.placa)?.tecnico_nome || '';
+      case 'agendada':           return manutAberta(row.placa)?.data_agendada || '';
       default:                   return '';
     }
   }
@@ -312,6 +315,11 @@
     ['imei', 'IMEI', 118], ['previsao_chegada', 'Prev. Cheg.', 82], ['cod_rastreio', 'Rastreio', 100],
     ['status', 'Status', 112], ['data_instalacao', 'Instalação', 82], ['infleet', 'Infleet', 80], [null, '', 108]
   ];
+  const COLS_MANUT = [
+    ['placa', 'Placa', 80], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['motorista', 'Motorista', 0],
+    ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 192], ['tecnico', 'Técnico', 110],
+    ['agendada', 'Agendada', 104], [null, 'Ações', 192]
+  ];
   const COLS_REMOVIDOS = [
     ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
     ['imei', 'IMEI', 124], ['cod_rastreio', 'Rastreio', 108], ['removido_em', 'Removido em', 130],
@@ -319,27 +327,26 @@
   ];
 
   function renderHead(root) {
-    const cols = state.filtro === 'removidos' ? COLS_REMOVIDOS : COLS_NORMAL;
+    const cols = state.filtro === 'removidos' ? COLS_REMOVIDOS : state.filtro === 'manutencao' ? COLS_MANUT : COLS_NORMAL;
     const table = root.querySelector('.fr-table');
-    const key = cols === COLS_REMOVIDOS ? 'removidos' : 'normal';
+    const key = cols === COLS_REMOVIDOS ? 'removidos' : cols === COLS_MANUT ? 'manut' : 'normal';
     if (!table || table.dataset.cols === key) return;
     table.dataset.cols = key;
+    table.style.minWidth = key === 'manut' ? '1300px' : '';
     table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
     table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
       ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
-      : '<th></th>').join('');
+      : `<th>${c[1]}</th>`).join('');
   }
 
   function renderTable(root) {
     const el = root.querySelector('[data-table]');
     if (!el) return;
     const modoManut = state.filtro === 'manutencao';
-    const board = root.querySelector('[data-board]');
-    const tableWrap = root.querySelector('.fr-table-wrap');
-    if (board) board.hidden = !modoManut;
-    if (tableWrap) tableWrap.hidden = modoManut;
-    if (modoManut) { renderBoard(root); return; }
+    const hist = root.querySelector('[data-hist]');
+    if (hist) { hist.hidden = !modoManut; if (!modoManut) hist.innerHTML = ''; }
     renderHead(root);
+    if (modoManut) { renderManutencao(root, el); return; }
     const rows = getFiltered();
     const ncols = state.filtro === 'removidos' ? COLS_REMOVIDOS.length : COLS_NORMAL.length;
     if (state.loading) { el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Carregando...</td></tr>`; return; }
@@ -409,7 +416,7 @@
     el.querySelectorAll('[data-manut]').forEach(btn => {
       btn.addEventListener('click', () => {
         const row = state.merged.find(v => v.placa === btn.dataset.manut);
-        if (row?._rastr?.status === STATUS_MANUTENCAO) openManutModal(root, btn.dataset.manut);
+        if (row?._rastr?.status === STATUS_MANUTENCAO) setFiltro(root, STATUS_MANUTENCAO);
         else openManutStart(root, btn.dataset.manut);
       });
     });
@@ -757,210 +764,217 @@
     });
   }
 
-  function openManutModal(root, placa) {
+  // Etapa atual derivada dos dados: a primeira que ainda não foi registrada.
+  function etapaDe(m) {
+    if (!m?.disponibilidade_motorista) return 'disponibilidade';
+    if (!m?.tecnico_nome) return 'tecnico';
+    if (!m?.data_agendada) return 'agendamento';
+    return 'finalizar';
+  }
+
+  const ETAPA_STATUS = {
+    disponibilidade: ['progress', '1 · Disponibilidade'],
+    tecnico: ['progress', '2 · Alinhar técnico'],
+    agendamento: ['progress', '3 · Agendar'],
+    finalizar: ['ok', '4 · Pronto p/ concluir']
+  };
+
+  const ICONS = {
+    disponibilidade: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
+    tecnico: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L3 17.7 6.3 21l6.3-6.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
+    agendamento: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+    finalizar: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    cancelar: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+  };
+
+  // Grava campos de uma ação (cria o registro se a placa estava em manutenção sem ele) e recalcula a etapa.
+  async function gravarManutencao(row, patch, evento) {
+    let rec = manutAberta(row.placa);
+    if (!rec) rec = await criarManutencao(row, null);
+    const linha = [...(rec.linha_tempo || [])];
+    if (evento) linha.push({ evento, em: new Date().toISOString(), por: userName() });
+    const full = { ...patch, linha_tempo: linha };
+    if (!patch.situacao) full.etapa = etapaDe({ ...rec, ...patch });
+    const { data, error } = await _opts.supabase.from(TABLE_MANUT).update(full).eq('id', rec.id).select().single();
+    if (error) throw error;
+    return data;
+  }
+
+  const ACOES = {
+    disponibilidade: { titulo: 'Disponibilidade com o motorista', evento: () => 'Disponibilidade do motorista registrada' },
+    tecnico: { titulo: 'Alinhar com o técnico', evento: p => `Técnico definido: ${p.tecnico_nome}` },
+    agendamento: { titulo: 'Agendar', evento: p => `Agendada para ${fmtDataBr(p.data_agendada)}${p.hora_agendada ? ' ' + p.hora_agendada : ''}` },
+    finalizar: { titulo: 'Concluir manutenção', evento: () => 'Manutenção concluída' }
+  };
+
+  function openManutAcao(root, placa, tipo) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
-    let rec = manutAberta(row.placa);
+    const rec = manutAberta(row.placa);
     const mot = getMotoristaInfo(row);
-    const sb = _opts.supabase;
+    const cfg = ACOES[tipo];
+    const v = (k) => esc(rec?.[k] || '');
+
+    const campos = {
+      disponibilidade: `<div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>`,
+      tecnico: `<div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>`,
+      agendamento: `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div></div>`,
+      finalizar: `<div class="fr-mot-box">${rec ? `<strong>Motivo:</strong> ${esc(rec.motivo || '—')}<br><strong>Motorista:</strong> ${esc(rec.disponibilidade_motorista || '—')}<br><strong>Técnico:</strong> ${esc(rec.tecnico_nome || '—')}<br><strong>Agendada:</strong> ${rec.data_agendada ? esc(fmtDataBr(rec.data_agendada)) + (rec.hora_agendada ? ' ' + esc(rec.hora_agendada) : '') : '—'}` : 'Sem registro de etapas.'}</div><div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${v('resolucao')}</textarea></div><div class="fr-hint">Ao concluir, o rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.</div>`
+    };
 
     const backdrop = document.createElement('div');
     backdrop.className = 'fr-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(620px,96vw)">
+        <div class="fr-modal-head">
+          <div>
+            <h3>${esc(cfg.titulo)} · ${esc(row.placa)}</h3>
+            <p>${esc(mot.nome || 'Sem motorista')} · ${esc(mot.contato || 'sem telefone cadastrado')}${mot.endereco ? ' · ' + esc(mot.endereco) : ''}</p>
+          </div>
+          <button class="fr-btn ghost fr-mini" data-close>✕</button>
+        </div>
+        <div class="fr-modal-body">${campos[tipo]}</div>
+        <div class="fr-modal-foot">
+          <button class="fr-btn ghost" data-close>Cancelar</button>
+          <button class="fr-btn ${tipo === 'finalizar' ? 'primary' : 'warn'}" data-salvar>${tipo === 'finalizar' ? '✓ Concluir manutenção' : 'Salvar'}</button>
+        </div>
+      </div>`;
+
     document.body.appendChild(backdrop);
     const close = () => backdrop.remove();
-    const idxAtual = () => Math.max(0, ETAPAS.findIndex(e => e[0] === rec?.etapa));
-
-    const readFields = () => {
-      const g = (n) => backdrop.querySelector(`[name="${n}"]`)?.value?.trim() || null;
-      return {
-        motivo: g('motivo'),
-        disponibilidade_motorista: g('disponibilidade_motorista'),
-        tecnico_nome: g('tecnico_nome'),
-        tecnico_contato: g('tecnico_contato'),
-        data_agendada: g('data_agendada'),
-        hora_agendada: g('hora_agendada'),
-        local_agendado: g('local_agendado'),
-        resolucao: g('resolucao')
-      };
-    };
-
-    const faltando = (i, f) => {
-      if (i === 0 && !f.disponibilidade_motorista) return 'Informe a disponibilidade do motorista.';
-      if (i === 1 && !f.tecnico_nome) return 'Informe o técnico.';
-      if (i === 2 && !f.data_agendada) return 'Informe a data agendada.';
-      if (i === 3 && !f.resolucao) return 'Descreva o que foi feito para finalizar.';
-      return '';
-    };
-
-    // Grava os campos do formulário + alterações da etapa; cria o registro se a placa estava em manutenção sem ele.
-    const salvar = async (patch = {}, evento = '') => {
-      const campos = readFields();
-      if (!rec) rec = await criarManutencao(row, campos.motivo);
-      const linha = [...(rec.linha_tempo || [])];
-      if (evento) linha.push({ evento, em: new Date().toISOString(), por: userName() });
-      const { data, error } = await sb.from(TABLE_MANUT)
-        .update({ ...campos, ...patch, linha_tempo: linha })
-        .eq('id', rec.id).select().single();
-      if (error) throw error;
-      rec = data;
-    };
-
-    const encerrar = (situacao, evento) => salvar({
-      situacao,
-      encerrada_em: new Date().toISOString(),
-      encerrada_por_nome: userName()
-    }, evento);
-
-    const paint = () => {
-      const idx = idxAtual();
-      const ultima = idx === ETAPAS.length - 1;
-      const dis = (i) => (i > idx ? 'disabled' : '');
-      const sec = (i, corpo) => `<div class="fr-msec${i === idx ? ' current' : ''}${i > idx ? ' locked' : ''}"><h5>${i + 1}. ${esc(ETAPAS[i][1])}</h5>${corpo}</div>`;
-      const v = (k) => esc(rec?.[k] || '');
-      const linha = (rec?.linha_tempo || []).slice().reverse();
-
-      backdrop.innerHTML = `
-        <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(760px,96vw)">
-          <div class="fr-modal-head">
-            <div>
-              <h3>Manutenção · ${esc(row.placa)}</h3>
-              <p>${esc([row.nome || row.marca, row.modelo].filter(Boolean).join(' '))}${(row.nome || row.marca || row.modelo) ? ' · ' : ''}${rec ? `Em manutenção há ${diasDesde(rec.aberta_em)} dia(s) · aberta em ${esc(fmtDateTime(rec.aberta_em))}${rec.aberta_por_nome ? ' por ' + esc(rec.aberta_por_nome) : ''}` : 'Sem registro de etapas — preencha e salve para iniciar.'}</p>
-            </div>
-            <button class="fr-btn ghost fr-mini" data-m-close>✕</button>
-          </div>
-          <div class="fr-modal-body">
-            <div class="fr-steps">${ETAPAS.map((e, i) => `<div class="fr-step ${i < idx ? 'done' : i === idx ? 'current' : ''}"><i>${i < idx ? '✓' : i + 1}</i>${esc(e[1])}</div>`).join('')}</div>
-
-            <div class="fr-mot-box">
-              <strong>Motorista:</strong> ${esc(mot.nome || '—')} · <strong>Contato:</strong> ${esc(mot.contato || 'sem telefone cadastrado')}<br>
-              <strong>Endereço:</strong> ${esc(mot.endereco || 'sem endereço cadastrado')}${row._rastr?.cidade ? ` · <strong>Cidade:</strong> ${esc(row._rastr.cidade)}` : ''}
-            </div>
-
-            <div class="fr-field full" style="margin-bottom:12px">
-              <label>Motivo da manutenção</label>
-              <input name="motivo" value="${v('motivo')}" placeholder="Ex: rastreador parou de comunicar" />
-            </div>
-
-            ${sec(0, `<div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" ${dis(0)} placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>`)}
-            ${sec(1, `<div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" ${dis(1)} value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" ${dis(1)} value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>`)}
-            ${sec(2, `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" ${dis(2)} value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" ${dis(2)} value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" ${dis(2)} value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div></div>`)}
-            ${sec(3, `<div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" ${dis(3)} placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${v('resolucao')}</textarea></div>`)}
-
-            ${linha.length ? `<div class="fr-divider">Linha do tempo</div><ul class="fr-timeline">${linha.map(l => `<li>${esc(fmtDateTime(l.em))} — ${esc(l.evento)}${l.por ? ' (' + esc(l.por) + ')' : ''}</li>`).join('')}</ul>` : ''}
-          </div>
-          <div class="fr-modal-foot">
-            <button class="fr-btn danger" data-m-cancel>Cancelar manutenção</button>
-            <span class="fr-spacer"></span>
-            <button class="fr-btn ghost" data-m-close>Fechar</button>
-            ${idx > 0 ? '<button class="fr-btn ghost" data-m-back>← Voltar etapa</button>' : ''}
-            <button class="fr-btn soft" data-m-save>Salvar</button>
-            <button class="fr-btn ${ultima ? 'primary' : 'warn'}" data-m-next>${ultima ? '✓ Finalizar manutenção' : 'Avançar →'}</button>
-          </div>
-        </div>`;
-
-      const busy = async (fn) => {
-        const btns = backdrop.querySelectorAll('.fr-modal-foot button');
-        btns.forEach(b => { b.disabled = true; });
-        try { await fn(); }
-        catch (err) { toast(err?.message || 'Erro ao salvar a manutenção.', true); }
-        finally { btns.forEach(b => { b.disabled = false; }); }
-      };
-
-      backdrop.querySelectorAll('[data-m-close]').forEach(b => b.addEventListener('click', close));
-
-      backdrop.querySelector('[data-m-save]').addEventListener('click', () => busy(async () => {
-        await salvar();
-        await loadData(root);
-        toast('Manutenção salva.');
-        paint();
-      }));
-
-      backdrop.querySelector('[data-m-back]')?.addEventListener('click', () => busy(async () => {
-        await salvar({ etapa: ETAPAS[idx - 1][0] }, `Voltou para: ${ETAPAS[idx - 1][1]}`);
-        await loadData(root);
-        paint();
-      }));
-
-      backdrop.querySelector('[data-m-next]').addEventListener('click', () => busy(async () => {
-        const msg = faltando(idx, readFields());
-        if (msg) { toast(msg, true); return; }
-
-        if (!ultima) {
-          await salvar({ etapa: ETAPAS[idx + 1][0] }, `Avançou para: ${ETAPAS[idx + 1][1]}`);
-          await loadData(root);
-          paint();
-          return;
-        }
-
-        if (!confirm(`Finalizar a manutenção de ${row.placa}? O rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.`)) return;
-        const abertaEm = rec?.aberta_em;
-        await encerrar('finalizada', 'Manutenção finalizada');
-        const { error } = await setStatusRastreador(row, 'concluido');
-        if (error) toast(`Manutenção finalizada, mas o status não voltou para Instalado: ${error.message}`, true);
-
-        const partes = [
-          `Manutenção finalizada${abertaEm ? ` (aberta em ${fmtDataBr(abertaEm)})` : ''}.`,
-          rec.motivo ? `Motivo: ${rec.motivo}.` : '',
-          rec.tecnico_nome ? `Técnico: ${rec.tecnico_nome}.` : '',
-          rec.data_agendada ? `Agendada para ${fmtDataBr(rec.data_agendada)}${rec.hora_agendada ? ' ' + rec.hora_agendada : ''}.` : '',
-          `Resolução: ${rec.resolucao}`
-        ].filter(Boolean).join(' ');
-        const { error: obsError } = await sb.from('frotas_rastreadores_observacoes').insert({
-          placa: rawPlaca(row.placa),
-          data: new Date().toISOString().slice(0, 10),
-          descricao: partes,
-          criado_por_nome: userName()
-        });
-        if (obsError) console.warn('[FROTAS_RASTREADORES] Falha ao registrar observação da manutenção:', obsError);
-
-        if (!error) toast(`${row.placa} voltou para Instalado (Com BFleet).`);
-        close();
-        await loadData(root);
-      }));
-
-      backdrop.querySelector('[data-m-cancel]').addEventListener('click', () => busy(async () => {
-        if (!confirm(`Cancelar a manutenção de ${row.placa}? Ela sai da aba Manutenção e o rastreador volta ao status anterior.`)) return;
-        const anterior = rec?.status_anterior || 'concluido';
-        if (rec) await encerrar('cancelada', 'Manutenção cancelada');
-        const { error } = await setStatusRastreador(row, anterior);
-        if (error) throw error;
-        toast('Manutenção cancelada.');
-        close();
-        await loadData(root);
-      }));
-    };
-
+    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
-    paint();
+    backdrop.querySelector('input,textarea')?.focus();
+
+    const get = (n) => backdrop.querySelector(`[name="${n}"]`)?.value?.trim() || null;
+    const NOMES = {
+      disponibilidade: ['disponibilidade_motorista'],
+      tecnico: ['tecnico_nome', 'tecnico_contato'],
+      agendamento: ['data_agendada', 'hora_agendada', 'local_agendado'],
+      finalizar: ['resolucao']
+    };
+    const OBRIGATORIO = {
+      disponibilidade: ['disponibilidade_motorista', 'Informe a disponibilidade do motorista.'],
+      tecnico: ['tecnico_nome', 'Informe o técnico.'],
+      agendamento: ['data_agendada', 'Informe a data agendada.'],
+      finalizar: ['resolucao', 'Descreva o que foi feito para concluir.']
+    };
+
+    backdrop.querySelector('[data-salvar]').addEventListener('click', async () => {
+      const patch = Object.fromEntries(NOMES[tipo].map(n => [n, get(n)]));
+      const [obrig, msg] = OBRIGATORIO[tipo];
+      if (!patch[obrig]) { toast(msg, true); return; }
+      if (tipo === 'finalizar' && !confirm(`Concluir a manutenção de ${row.placa}? O rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.`)) return;
+
+      const btn = backdrop.querySelector('[data-salvar]');
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      try {
+        if (tipo !== 'finalizar') {
+          await gravarManutencao(row, patch, cfg.evento(patch));
+          toast(`${cfg.titulo}: salvo.`);
+        } else {
+          const fim = await gravarManutencao(row, {
+            ...patch,
+            situacao: 'finalizada',
+            etapa: 'finalizar',
+            encerrada_em: new Date().toISOString(),
+            encerrada_por_nome: userName()
+          }, cfg.evento(patch));
+          const { error } = await setStatusRastreador(row, 'concluido');
+          if (error) toast(`Manutenção concluída, mas o status não voltou para Instalado: ${error.message}`, true);
+
+          const descricao = [
+            `Manutenção concluída (aberta em ${fmtDataBr(fim.aberta_em)}).`,
+            fim.motivo ? `Motivo: ${fim.motivo}.` : '',
+            fim.tecnico_nome ? `Técnico: ${fim.tecnico_nome}.` : '',
+            fim.data_agendada ? `Agendada para ${fmtDataBr(fim.data_agendada)}${fim.hora_agendada ? ' ' + fim.hora_agendada : ''}.` : '',
+            `Resolução: ${fim.resolucao}`
+          ].filter(Boolean).join(' ');
+          const { error: obsError } = await _opts.supabase.from('frotas_rastreadores_observacoes').insert({
+            placa: rawPlaca(row.placa),
+            data: new Date().toISOString().slice(0, 10),
+            descricao,
+            criado_por_nome: userName()
+          });
+          if (obsError) console.warn('[FROTAS_RASTREADORES] Falha ao registrar observação da manutenção:', obsError);
+          if (!error) toast(`${row.placa} concluída: voltou para Instalado (Com BFleet).`);
+        }
+        close();
+        await loadData(root);
+      } catch (err) {
+        toast(err?.message || 'Erro ao salvar a manutenção.', true);
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
   }
 
-  function renderBoard(root) {
-    const board = root.querySelector('[data-board]');
-    if (!board) return;
-    if (state.loading) { board.innerHTML = '<div class="fr-empty">Carregando...</div>'; return; }
+  async function cancelarManutencao(root, placa) {
+    const row = state.merged.find(v => v.placa === placa);
+    if (!row) return;
+    if (!confirm(`Cancelar a manutenção de ${row.placa}? Ela sai da lista e o rastreador volta ao status anterior.`)) return;
+    try {
+      const rec = manutAberta(row.placa);
+      if (rec) {
+        await gravarManutencao(row, { situacao: 'cancelada', encerrada_em: new Date().toISOString(), encerrada_por_nome: userName() }, 'Manutenção cancelada');
+      }
+      const { error } = await setStatusRastreador(row, rec?.status_anterior || 'concluido');
+      if (error) throw error;
+      toast('Manutenção cancelada.');
+      await loadData(root);
+    } catch (err) {
+      toast(err?.message || 'Erro ao cancelar a manutenção.', true);
+    }
+  }
 
-    const colunas = ETAPAS.map(([key, label]) => ({ key, label, itens: [] }));
-    getFiltered().forEach(row => {
+  function renderManutencao(root, el) {
+    const ncols = COLS_MANUT.length;
+    const hist = root.querySelector('[data-hist]');
+    if (state.loading) { el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Carregando...</td></tr>`; return; }
+
+    const rows = getFiltered();
+    if (!rows.length) el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Nenhum veículo em manutenção.</td></tr>`;
+    else el.innerHTML = rows.map(row => {
       const m = manutAberta(row.placa);
-      (colunas.find(c => c.key === m?.etapa) || colunas[0]).itens.push({ row, m });
-    });
+      const etapa = m?.etapa || etapaDe(null);
+      const [cls, label] = ETAPA_STATUS[etapa];
+      const detalhes = {
+        disponibilidade: m?.disponibilidade_motorista,
+        tecnico: m?.tecnico_nome ? `${m.tecnico_nome}${m.tecnico_contato ? ' · ' + m.tecnico_contato : ''}` : '',
+        agendamento: m?.data_agendada ? `${fmtDataBr(m.data_agendada)}${m.hora_agendada ? ' ' + m.hora_agendada : ''}${m.local_agendado ? ' · ' + m.local_agendado : ''}` : '',
+        finalizar: ''
+      };
+      const titulos = {
+        disponibilidade: 'Disponibilidade com o motorista',
+        tecnico: 'Alinhar com o técnico',
+        agendamento: 'Agendar',
+        finalizar: 'Concluir manutenção'
+      };
+      const btn = (tipo) => {
+        const feito = Boolean(detalhes[tipo]);
+        const atual = etapa === tipo;
+        const bloqueado = tipo === 'finalizar' && etapa !== 'finalizar';
+        const tip = bloqueado ? 'Concluir (registre disponibilidade, técnico e agendamento antes)' : `${titulos[tipo]}${detalhes[tipo] ? ' — ' + detalhes[tipo] : ''}`;
+        return `<button type="button" class="fr-act${tipo === 'finalizar' ? ' final' : ''}${feito ? ' done' : ''}${atual ? ' current' : ''}" data-macao="${tipo}" data-placa="${esc(row.placa)}" title="${esc(tip)}" aria-label="${esc(titulos[tipo])}"${bloqueado ? ' disabled' : ''}>${ICONS[tipo]}</button>`;
+      };
+      const local = row._rastr?.cidade || '—';
+      return `<tr>
+        <td><strong>${esc(row.placa)}</strong></td>
+        <td>${esc(ufDaLinha(row) || '—')}</td>
+        <td title="${esc(local)}">${esc(local)}</td>
+        <td title="${esc(row.motorista_atual || '—')}">${esc(row.motorista_atual || '—')}</td>
+        <td title="${esc(m?.motivo || '—')}">${esc(m?.motivo || '—')}</td>
+        <td>${m ? diasDesde(m.aberta_em) + 'd' : '—'}</td>
+        <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
+        <td title="${esc(m?.tecnico_nome || '—')}">${esc(m?.tecnico_nome || '—')}</td>
+        <td>${m?.data_agendada ? esc(fmtDataBr(m.data_agendada)) + (m.hora_agendada ? ' ' + esc(m.hora_agendada) : '') : '—'}</td>
+        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
+      </tr>`;
+    }).join('');
 
-    const card = ({ row, m }) => {
-      const local = [row._rastr?.cidade, ufDaLinha(row)].filter(Boolean).join('/');
-      const sub = [row.motorista_atual, local].filter(Boolean).join(' · ');
-      const badges = [
-        m ? `<span class="fr-badge progress">${diasDesde(m.aberta_em)}d em manutenção</span>` : '<span class="fr-badge err">sem registro de etapas</span>',
-        m?.data_agendada ? `<span class="fr-badge ok">📅 ${esc(fmtDataBr(m.data_agendada))}${m.hora_agendada ? ' ' + esc(m.hora_agendada) : ''}</span>` : '',
-        m?.tecnico_nome ? `<span class="fr-badge none">🔧 ${esc(m.tecnico_nome)}</span>` : ''
-      ].join('');
-      return `<button type="button" class="fr-mcard" data-manut="${esc(row.placa)}">
-        <strong>${esc(row.placa)}</strong>
-        <small>${esc(sub || '—')}</small>
-        ${m?.motivo ? `<small>${esc(m.motivo)}</small>` : ''}
-        <div class="fr-mrow">${badges}</div>
-      </button>`;
-    };
-
+    if (!hist) return;
     const busca = norm(state.busca);
     const chave = state.filtros.placa ? placaKey(state.filtros.placa) : '';
     const historico = state.manutencoes.filter(m => {
@@ -969,17 +983,9 @@
       if (!busca) return true;
       return norm([...placaCandidates(m.placa), m.motivo, m.tecnico_nome, m.resolucao, m.aberta_por_nome].join(' ')).includes(busca);
     });
-
-    const situacaoBadge = (s) => s === 'finalizada' ? '<span class="fr-badge ok">Finalizada</span>' : '<span class="fr-badge none">Cancelada</span>';
+    const situacaoBadge = (s) => s === 'finalizada' ? '<span class="fr-badge ok">Concluída</span>' : '<span class="fr-badge none">Cancelada</span>';
     const cel = (txt) => `<td title="${esc(txt || '—')}">${esc(txt || '—')}</td>`;
-
-    board.innerHTML = `
-      <div class="fr-board">${colunas.map(c => `
-        <div class="fr-col-board">
-          <h4><span>${esc(c.label)}</span><b>${c.itens.length}</b></h4>
-          ${c.itens.length ? c.itens.sort((a, b) => String(a.m?.aberta_em || '').localeCompare(String(b.m?.aberta_em || ''))).map(card).join('') : '<div class="fr-col-empty">Nenhuma placa</div>'}
-        </div>`).join('')}
-      </div>
+    hist.innerHTML = `
       <div class="fr-hist-title">Histórico de manutenções (${historico.length})</div>
       <div class="fr-table-wrap">
         <table class="fr-table" style="min-width:900px">
@@ -993,7 +999,7 @@
             ${cel(m.motivo)}${cel(m.tecnico_nome)}
             <td>${m.data_agendada ? esc(fmtDataBr(m.data_agendada)) : '—'}</td>
             ${cel(m.resolucao)}
-          </tr>`).join('') : '<tr><td class="fr-empty" colspan="8">Nenhuma manutenção finalizada ainda.</td></tr>'}</tbody>
+          </tr>`).join('') : '<tr><td class="fr-empty" colspan="8">Nenhuma manutenção concluída ainda.</td></tr>'}</tbody>
         </table>
       </div>`;
   }
@@ -1295,7 +1301,7 @@
               </table>
             </div>
 
-            <div data-board hidden></div>
+            <div data-hist hidden></div>
           </div>
         </div>
       </div>`;
@@ -1332,9 +1338,11 @@
       setFiltro(container, btn.dataset.kpiFilter);
     });
 
-    container.querySelector('[data-board]').addEventListener('click', e => {
-      const card = e.target.closest('[data-manut]');
-      if (card) openManutModal(container, card.dataset.manut);
+    container.querySelector('[data-table]').addEventListener('click', e => {
+      const acao = e.target.closest('[data-macao]');
+      if (acao) { openManutAcao(container, acao.dataset.placa, acao.dataset.macao); return; }
+      const cancel = e.target.closest('[data-mcancel]');
+      if (cancel) cancelarManutencao(container, cancel.dataset.mcancel);
     });
 
     container.querySelector('[data-refresh]').addEventListener('click', () => loadData(container));
