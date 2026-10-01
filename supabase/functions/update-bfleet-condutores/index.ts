@@ -315,9 +315,9 @@ async function markErro(supabase: any, item: QueueRow, msg: string) {
   await supabase.from('frotas_bfleet_condutores_fila').update({ status: 'ERRO', erro: msg, tentativas: Number(item.tentativas || 0) + 1, updated_at: new Date().toISOString() }).eq('id', item.id);
   if (item.veiculo_id) await supabase.from('frotas_veiculos').update({ bfleet_condutor_status: 'ERRO', bfleet_condutor_erro: msg }).eq('id', item.veiculo_id);
 }
-async function markOk(supabase: any, item: QueueRow) {
+async function markOk(supabase: any, item: QueueRow, condutorNome: string) {
   await supabase.from('frotas_bfleet_condutores_fila').update({ status: 'OK', erro: null, atualizado_em: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', item.id);
-  if (item.veiculo_id) await supabase.from('frotas_veiculos').update({ bfleet_condutor_status: 'OK', bfleet_condutor_atualizado_em: new Date().toISOString(), bfleet_condutor_erro: null }).eq('id', item.veiculo_id);
+  if (item.veiculo_id) await supabase.from('frotas_veiculos').update({ bfleet_condutor: condutorNome, bfleet_condutor_status: 'OK', bfleet_condutor_atualizado_em: new Date().toISOString(), bfleet_condutor_erro: null }).eq('id', item.veiculo_id);
 }
 
 Deno.serve(async (req) => {
@@ -389,12 +389,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    const precisaVehicleGetAll = ((fila || []) as QueueRow[]).some((item) => {
-      const v = item.veiculo_id ? veiculosPainelById.get(cleanStr(item.veiculo_id)) : null;
-      return !painelVehicleDirectId(v);
-    });
-
-    if (precisaVehicleGetAll) {
+    // Sempre lista os veículos quando há fila: o bfleet_id do painel só é confiável se a placa dele na BFleet bate com a do painel.
+    if ((fila || []).length) {
       let vehiclesResp = await fetchVehicles(apiBase, apiKey, token);
       if (isAuthError(vehiclesResp.resp)) {
         token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
@@ -434,6 +430,7 @@ Deno.serve(async (req) => {
 
     let updated = 0, created = 0, errors = 0, skipped = 0;
     const detalhes: any[] = [];
+    const aVerificar: { item: QueueRow; detalhe: any; condutorNome: string; nameKey: string; vehicleId: string; driverId: string }[] = [];
     for (const item of (fila || []) as QueueRow[]) {
       const veiculoPainel = item.veiculo_id ? veiculosPainelById.get(cleanStr(item.veiculo_id)) : null;
       const plate = normalizePlate(item.placa || veiculoPainel?.placa || veiculoPainel?.bfleet_placa || veiculoPainel?.bfleet_patente);
@@ -443,9 +440,23 @@ Deno.serve(async (req) => {
       let matchMode = '';
       let veiculoBf: DriverRow | undefined;
 
+      let avisoId = '';
       if (directVehicleId) {
-        veiculoBf = byVehicleId.get(directVehicleId) || { id: directVehicleId, idvehiculo: directVehicleId, patente: plate };
-        matchMode = byVehicleId.has(directVehicleId) ? 'bfleet_id_vehicleGetAll' : 'bfleet_id_painel';
+        const porId = byVehicleId.get(directVehicleId);
+        const placaDoId = porId ? vehiclePlateFromRow(porId) : '';
+        if (porId && (!plate || !placaDoId || placaDoId === plate)) {
+          veiculoBf = porId;
+          matchMode = 'bfleet_id_vehicleGetAll';
+        } else if (porId) {
+          // bfleet_id do painel aponta para o veículo de outra placa: vincular por ele colocaria o condutor no carro errado.
+          avisoId = `bfleet_id ${directVehicleId} do painel pertence à placa ${placaDoId} na BFleet; ignorado.`;
+        } else if (vehicleGetAllError) {
+          // Sem lista da BFleet não dá para validar; mantém o comportamento anterior.
+          veiculoBf = { id: directVehicleId, idvehiculo: directVehicleId, patente: plate };
+          matchMode = 'bfleet_id_painel';
+        } else {
+          avisoId = `bfleet_id ${directVehicleId} do painel não existe mais na BFleet; ignorado.`;
+        }
       }
 
       if (!veiculoBf) {
@@ -477,7 +488,8 @@ Deno.serve(async (req) => {
           ? `Não localizei o veículo e o vehicleGetAll falhou: ${vehicleGetAllError}`
           : (veiculoPainel?.bfleet_confirmado
             ? 'Veículo confirmado BFleet no painel, mas não localizado por bfleet_id, bfleet_idgps nem placa no vehicleGetAll.'
-            : 'Placa não encontrada no vehicleGetAll BFleet e veículo sem BFleet confirmado no painel.');
+            : 'Placa não encontrada no vehicleGetAll BFleet e veículo sem BFleet confirmado no painel.')
+          + (avisoId ? ` ${avisoId}` : '');
         await markErro(supabase, item, msg);
         detalhes.push({ placa: item.placa, status: 'ERRO', erro: msg });
         continue;
@@ -541,9 +553,11 @@ Deno.serve(async (req) => {
         resp = await bfleetCall(apiBase, 'updateDriver', { ...payload, token });
       }
       if (isBfleetOk(resp)) {
-        updated++;
-        await markOk(supabase, item);
-        detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'OK', matchMode });
+        // A BFleet responde 200 mesmo quando o vínculo não fica; só marca OK depois de reler o condutor (abaixo).
+        const detalhe: any = { placa: item.placa, motorista: condutorNome, status: 'OK', matchMode };
+        if (avisoId) detalhe.aviso = avisoId;
+        detalhes.push(detalhe);
+        aVerificar.push({ item, detalhe, condutorNome, nameKey, vehicleId, driverId: cleanStr(payload.idConductor) });
       } else {
         errors++;
         const msg = `BFleet updateDriver (${resp.status}): ${resp.text.slice(0, 500)} | payload: ${JSON.stringify(safePayload(payload))}`;
@@ -551,7 +565,41 @@ Deno.serve(async (req) => {
         detalhes.push({ placa: item.placa, motorista: condutorNome, status: 'ERRO', erro: msg, matchMode });
       }
     }
-    return json({ ok: true, total_fila: (fila || []).length, created, updated, errors, skipped, vehicleGetAllError, driverGetAllError, detalhes });
+
+    let naoVerificados = 0;
+    if (aVerificar.length) {
+      let verif = await fetchDrivers(apiBase, apiKey, token);
+      if (isAuthError(verif.resp)) {
+        token = await getValidToken({ supabase, integracaoId: integracao.id, secrets, apiBase, apiKey, username, password, force: true });
+        verif = await fetchDrivers(apiBase, apiKey, token);
+      }
+      const verificou = verif.resp.ok || Number(verif.resp.parsed?.status) === 200;
+      const porId = new Map<string, DriverRow>();
+      for (const row of verif.rows) { const id = cleanStr(row.id ?? row.idConductor ?? row.id_conductor); if (id) porId.set(id, row); }
+      const porNome = buildDriverIndex(verif.rows);
+      for (const v of aVerificar) {
+        const driverBf = verificou ? ((v.driverId && porId.get(v.driverId)) || porNome.get(v.nameKey)) : null;
+        const vinculado = cleanStr(driverBf?.idvehiculo ?? driverBf?.id_vehiculo);
+        if (verificou && vinculado === v.vehicleId) {
+          updated++;
+          await markOk(supabase, v.item, v.condutorNome);
+        } else if (verificou) {
+          errors++;
+          const onde = vinculado && vinculado !== '0' ? `ao veículo ${vehiclePlateFromRow(byVehicleId.get(vinculado) || {}) || vinculado}` : 'a nenhum veículo';
+          const msg = `BFleet respondeu OK ao updateDriver, mas o condutor "${v.condutorNome}" ficou vinculado ${onde} (esperado idvehiculo ${v.vehicleId}).`;
+          await markErro(supabase, v.item, msg);
+          v.detalhe.status = 'ERRO';
+          v.detalhe.erro = msg;
+        } else {
+          // Não deu para reler a BFleet: mantém o comportamento anterior, sinalizando que não foi conferido.
+          naoVerificados++;
+          updated++;
+          await markOk(supabase, v.item, v.condutorNome);
+          v.detalhe.aviso = [v.detalhe.aviso, 'vínculo não conferido (driverGetAll falhou)'].filter(Boolean).join(' ');
+        }
+      }
+    }
+    return json({ ok: true, total_fila: (fila || []).length, created, updated, errors, skipped, naoVerificados, vehicleGetAllError, driverGetAllError, detalhes });
   } catch (err) {
     const e = err as any;
     return json({ error: e?.message || String(e) }, 500);
