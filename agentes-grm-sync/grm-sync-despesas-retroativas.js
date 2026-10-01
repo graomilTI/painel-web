@@ -184,15 +184,17 @@ function decide(existing) {
 // Pernoite lançado pelo colaborador (pendente no Caixa) só é aprovado quando:
 //  1) o gestor programou Pernoite pra ele na data (programacao_estadia);
 //  2) existe a pendência (status P) lançada pelo colaborador — nunca cria;
-//  3) não há NENHUM lançamento de Café, Almoço ou Janta ativo (P ou A) no
+//  3) embarque = SIM: o colaborador tem produção/laudo OU NHE na data;
+//  4) não há NENHUM lançamento de Café, Almoço ou Janta ativo (P ou A) no
 //     dia — hospedagem cobre a alimentação, o mesmo princípio do pontual.
 // movements = todos os lançamentos do colaborador na data. Devolve null
 // quando não há pendência de Pernoite (nada a fazer nem a auditar).
-function decidePernoite(movements, { programado = false } = {}) {
+function decidePernoite(movements, { programado = false, comEmbarque = false } = {}) {
   const day = movements.filter((row) => row.ofmType === 'D');
   const pernoite = day.filter((row) => norm(row.oexName) === 'PERNOITE');
   if (!pernoite.some((row) => row.ofmStatus === 'P')) return null;
   if (!programado) return { action: 'PERNOITE_BLOQUEADO', motivo: 'sem_pernoite_na_programacao', orphans: [] };
+  if (!comEmbarque) return { action: 'PERNOITE_BLOQUEADO', motivo: 'sem_producao_ou_nhe_no_dia', orphans: [] };
   const refeicoes = day.filter((row) => isRefeicao({ oexName: row.oexName })
     && String(row.ofmStatus).toUpperCase() !== 'N');
   if (refeicoes.length) {
@@ -339,7 +341,18 @@ async function loadPernoiteProgramado(date) {
       if (name) names.add(name);
     }
   }
-  return { cpfs, names, total: estadias.length };
+  const producao = await queryAll('producao_snapshot', 'funcionario', (q) => q.eq('data', date).not('funcionario', 'is', null));
+  const embarqueNomes = new Set(producao.map((row) => norm(row.funcionario)).filter(Boolean));
+  // NHE (grm_nhe_importacoes.dados_json): formato novo traz lnsDate (ISO) +
+  // staName; o antigo, em estilo planilha, Data (dd/mm/aaaa) + Classificador.
+  const [nheNovo, nheAntigo] = await Promise.all([
+    queryAll('grm_nhe_importacoes', 'dados_json', (q) => q.eq('dados_json->>lnsDate', date).order('id')),
+    queryAll('grm_nhe_importacoes', 'dados_json', (q) => q.eq('dados_json->>Data', isoToBr(date)).order('id')),
+  ]);
+  for (const row of nheNovo) embarqueNomes.add(norm(row.dados_json?.staName));
+  for (const row of nheAntigo) embarqueNomes.add(norm(row.dados_json?.Classificador));
+  embarqueNomes.delete('');
+  return { cpfs, names, embarqueNomes, total: estadias.length };
 }
 
 async function validateCafeAuthorization(candidate, date) {
@@ -671,7 +684,8 @@ async function processPernoite(token, { date, grm, summary, actionCount, refeica
     const nameKey = norm(staff.staName);
     const isProgramado = (cpf && programado.cpfs.has(cpf)) || programado.names.has(nameKey);
     const movements = grm.movements.filter((row) => Number(row.staCode) === staCode);
-    const decision = decidePernoite(movements, { programado: isProgramado });
+    const comEmbarque = programado.embarqueNomes.has(nameKey);
+    const decision = decidePernoite(movements, { programado: isProgramado, comEmbarque });
     if (!decision) continue;
 
     const rows = movements.filter((row) => norm(row.oexName) === 'PERNOITE');
@@ -693,6 +707,7 @@ async function processPernoite(token, { date, grm, summary, actionCount, refeica
       dry_run: DRY_RUN,
       diagnostico: {
         pernoite_programado: isProgramado,
+        com_producao_ou_nhe_no_dia: comEmbarque,
         motivo: decision.motivo || null,
         refeicoes_lancadas: decision.refeicoes || [],
         existentes: rows.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
