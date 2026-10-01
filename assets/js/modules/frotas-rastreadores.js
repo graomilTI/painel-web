@@ -3,7 +3,7 @@
 
   const styles = `
     <style>
-      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:1480px;table-layout:fixed}.fr-table th{padding:10px 12px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fr-table td{padding:9px 12px;height:48px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;line-height:1.3;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-td-wrap{white-space:normal!important}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-icon-btn{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;font-size:14px;line-height:1;border-radius:9px;flex:none}.fr-icon-btn.soft{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.22);color:#4ade80}.fr-icon-btn.soft:hover{border-color:rgba(34,197,94,.85);background:rgba(34,197,94,.34);color:#86efac}.fr-icon-btn.danger{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.22);color:#f87171}.fr-icon-btn.danger:hover{border-color:rgba(239,68,68,.85);background:rgba(239,68,68,.34);color:#fca5a5}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-obs-add{display:grid;grid-template-columns:150px 1fr 30px;gap:8px;align-items:center;margin-bottom:10px}.fr-obs-add input{height:38px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 10px;outline:none;font-size:13px;color-scheme:dark}.fr-obs-table{width:100%;border-collapse:collapse}.fr-obs-table th{padding:6px 10px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16)}.fr-obs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:13px;vertical-align:top}.fr-field input[readonly]{opacity:.85;cursor:default}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
+      .fr-shell{color:#e2e2f0}.fr-head{margin-bottom:18px}.fr-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fr-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fr-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fr-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fr-tabs{display:flex;gap:10px;flex-wrap:wrap;padding:14px;border-bottom:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.36)}.fr-tab{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;border-radius:999px;padding:10px 16px;font-weight:950;cursor:pointer;font-size:13px;transition:.15s}.fr-tab.active,.fr-tab:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.35);color:#f8fafc}.fr-body{padding:18px}.fr-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px;align-items:center}.fr-filter-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}.fr-input,.fr-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fr-select option{background:#0d0d18;color:#e2e2f0}.fr-btn{border:0;border-radius:14px;min-height:42px;padding:0 16px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:13px;white-space:nowrap}.fr-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fr-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fr-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fr-btn.danger{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fca5a5}.fr-btn:disabled{opacity:.5;cursor:not-allowed}.fr-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;margin:14px 0}.fr-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px;padding:14px;width:100%;text-align:left;cursor:pointer;font-family:inherit;transition:.15s}.fr-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(2,6,23,.5)}.fr-kpi.active{border-color:rgba(34,197,94,.7);background:rgba(22,101,52,.22);box-shadow:0 0 0 1px rgba(34,197,94,.35) inset}.fr-kpi span{display:block;color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.1em;text-transform:uppercase}.fr-kpi strong{display:block;margin-top:8px;color:#fff;font-size:24px}.fr-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fr-table{width:100%;border-collapse:collapse;min-width:936px;table-layout:fixed}.fr-table th{padding:10px 6px;color:#bfdbfe;font-size:11px;letter-spacing:.06em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fr-table td{padding:8px 6px;height:44px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:12.5px;line-height:1.3;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-td-wrap{white-space:normal!important}.fr-table tr:hover td{background:rgba(22,101,52,.08)}.fr-badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:4px 10px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fr-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fr-badge.progress{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fr-badge.none{border-color:rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#94a3b8}.fr-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fr-badge.bfleet{border-color:rgba(99,102,241,.35);background:rgba(99,102,241,.12);color:#a5b4fc}.fr-badge.removed{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.12);color:#fecaca}.fr-imei-bfleet{font-family:monospace;font-size:12px;color:#a5b4fc;opacity:.8}.fr-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fr-icon-btn{width:30px;height:30px;min-height:30px;min-width:30px;padding:0;font-size:14px;line-height:1;border-radius:9px;flex:none}.fr-icon-btn.soft{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.22);color:#4ade80}.fr-icon-btn.soft:hover{border-color:rgba(34,197,94,.85);background:rgba(34,197,94,.34);color:#86efac}.fr-icon-btn.danger{border-color:rgba(239,68,68,.55);background:rgba(239,68,68,.22);color:#f87171}.fr-icon-btn.danger:hover{border-color:rgba(239,68,68,.85);background:rgba(239,68,68,.34);color:#fca5a5}.fr-resp-select{width:100%;min-width:112px;height:34px;border:1px solid rgba(148,163,184,.18);border-radius:10px;background:#0d0d18;color:#e2e2f0;padding:0 8px;font-size:12px;font-weight:700;outline:none;color-scheme:dark}.fr-resp-select option{background:#0d0d18;color:#e2e2f0}.fr-resp-select.is-anderson{border-color:rgba(99,102,241,.4);color:#a5b4fc}.fr-resp-select.is-cleverson{border-color:rgba(245,158,11,.4);color:#fde68a}.fr-obs-add{display:grid;grid-template-columns:150px 1fr 30px;gap:8px;align-items:center;margin-bottom:10px}.fr-obs-add input{height:38px;border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:0 10px;outline:none;font-size:13px;color-scheme:dark}.fr-obs-table{width:100%;border-collapse:collapse}.fr-obs-table th{padding:6px 10px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16)}.fr-obs-table td{padding:8px 10px;border-bottom:1px solid rgba(148,163,184,.10);font-size:13px;vertical-align:top}.fr-field input[readonly]{opacity:.85;cursor:default}.fr-empty{text-align:center;color:#94a3b8;padding:34px!important}.fr-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fr-modal{width:min(860px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fr-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fr-modal-head h3{margin:0;color:#fff;font-size:20px}.fr-modal-head p{margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.45}.fr-modal-body{padding:20px}.fr-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.fr-field{display:flex;flex-direction:column;gap:6px}.fr-field.full{grid-column:1/-1}.fr-field.half{grid-column:span 2}.fr-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fr-field input,.fr-field select,.fr-field textarea{border:1px solid rgba(148,163,184,.18);border-radius:12px;background:#0d0d18;color:#e2e2f0;padding:10px 12px;outline:none;font-size:13px;color-scheme:dark}.fr-field textarea{min-height:70px;resize:vertical}.fr-field select option{background:#0d0d18}.fr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;accent-color:#22c55e}.fr-check-row{display:flex;align-items:center;gap:10px;padding:10px 0}.fr-check-row label{color:#e2e2f0;font-size:13px;font-weight:600;cursor:pointer}.fr-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}.fr-hint{font-size:11px;color:#6366f1;margin-top:3px}.fr-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fr-toast.show{opacity:1;transform:translateY(0)}.fr-divider{margin:16px 0 10px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid rgba(34,197,94,.18);padding-bottom:6px}.fr-th-sort{cursor:pointer;user-select:none;white-space:nowrap}.fr-th-sort:hover{color:#e2e2f0}.fr-th-sort::after{content:' ⇅';opacity:.35;font-size:10px}.fr-th-sort.asc::after{content:' ↑';opacity:1;color:#86efac}.fr-th-sort.desc::after{content:' ↓';opacity:1;color:#86efac}@media(max-width:1500px){.fr-body{padding:12px}.fr-toolbar,.fr-filter-row{gap:8px;margin-bottom:10px}.fr-kpis{gap:8px;margin:10px 0}.fr-kpi{padding:10px 12px;border-radius:14px}.fr-kpi span{font-size:10px;letter-spacing:.06em}.fr-kpi strong{font-size:20px;margin-top:4px}.fr-tabs{padding:10px 12px;gap:8px}.fr-tab{padding:8px 14px}.fr-head{margin-bottom:12px}.fr-title{margin:4px 0}}@media(max-width:1100px){.fr-toolbar{grid-template-columns:1fr 1fr}.fr-filter-row{grid-template-columns:repeat(3,1fr)}.fr-kpis{grid-template-columns:repeat(3,1fr)}.fr-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fr-toolbar,.fr-filter-row,.fr-kpis,.fr-form{grid-template-columns:1fr}}
     </style>`;
 
   let _opts = {};
@@ -74,6 +74,25 @@
     return COORD_ESTADO[String(coord).trim().toUpperCase()] || '';
   }
 
+  // Estado sempre exibido/filtrado como UF; o cadastro pode ter nome completo ("Paraná") ou sigla.
+  const UF_POR_NOME = {
+    'acre':'AC','alagoas':'AL','amapa':'AP','amazonas':'AM','bahia':'BA','ceara':'CE','distrito federal':'DF',
+    'espirito santo':'ES','goias':'GO','maranhao':'MA','mato grosso':'MT','mato grosso do sul':'MS',
+    'minas gerais':'MG','para':'PA','paraiba':'PB','parana':'PR','pernambuco':'PE','piaui':'PI',
+    'rio de janeiro':'RJ','rio grande do norte':'RN','rio grande do sul':'RS','rondonia':'RO','roraima':'RR',
+    'santa catarina':'SC','sao paulo':'SP','sergipe':'SE','tocantins':'TO'
+  };
+  const UFS = Object.values(UF_POR_NOME).sort();
+  function toUF(v) {
+    const t = String(v || '').trim();
+    if (!t) return '';
+    if (t.length === 2) return t.toUpperCase();
+    return UF_POR_NOME[norm(t)] || t;
+  }
+  function ufDaLinha(row) {
+    return toUF(row?._rastr?.estado || coordToEstado(row?.coordenacao));
+  }
+
   function hasBfleet(v) {
     const st = String(v?.bfleet_status || '').toUpperCase();
     return Boolean(v?.bfleet_confirmado || v?.rastreador_bfleet || v?.bfleet_rastreador || st === 'COM_RASTREADOR' || st === 'ATIVO' || st === 'OK');
@@ -100,8 +119,8 @@
 
   function statusBadge(status, agendFrus) {
     const [cls, label] = STATUS_LABEL[status] || STATUS_LABEL.sem_rastreador;
-    const frus = agendFrus > 0 ? ` <span class="fr-badge err" style="font-size:9px">✕ ${agendFrus}x frustrado</span>` : '';
-    return `<span class="fr-badge ${cls}">${label}</span>${frus}`;
+    const frus = agendFrus > 0 ? ` <span class="fr-badge err" style="font-size:9px;padding:3px 6px" title="${agendFrus} agendamento(s) frustrado(s)">✕${agendFrus}</span>` : '';
+    return `<span class="fr-badge ${cls}" title="${label}">${label}</span>${frus}`;
   }
 
   const STATUS_MANUTENCAO = 'manutencao';
@@ -153,7 +172,7 @@
 
   function getSortVal(row, col) {
     const r = row._rastr;
-    const estado = r?.estado || coordToEstado(row.coordenacao);
+    const estado = ufDaLinha(row);
     switch (col) {
       case 'placa':              return row.placa || '';
       case 'estado':             return estado || '';
@@ -166,8 +185,7 @@
       case 'status':             return r?.status || 'sem_rastreador';
       case 'data_instalacao':    return r?.data_instalacao || '';
       case 'agendamentos':       return r?.agendamentos_frustrados || 0;
-      case 'contato':            return row.motorista_atual || r?.contato || '';
-      case 'infleet':            return r?.infleet || '';
+            case 'infleet':            return r?.infleet || '';
       default:                   return '';
     }
   }
@@ -180,7 +198,7 @@
       const filtrados = removidos.filter(r => {
         if (!busca) return true;
         const placas = placaCandidates(r.placa);
-        return norm([...placas, r.motivo_remocao, r.removido_por_nome, r.snapshot?.nome, r.snapshot?.motorista_atual, r.snapshot?.cidade, r.snapshot?.imei].join(' ')).includes(busca);
+        return norm([...placas, r.motivo_remocao, r.removido_por_nome, r.snapshot?.nome, r.snapshot?.motorista_atual, toUF(r.snapshot?.estado), r.snapshot?.cidade, r.snapshot?.imei].join(' ')).includes(busca);
       });
 
       filtrados.sort((a, b) => {
@@ -188,10 +206,10 @@
           switch (col) {
             case 'placa': return r.placa || '';
             case 'status': return 'removido';
-            case 'contato': return r.snapshot?.contato || r.snapshot?.motorista_atual || '';
-            case 'data_instalacao': return r.removido_em || '';
+            case 'motivo': return r.motivo_remocao || '';
+            case 'removido_por': return r.removido_por_nome || '';
             case 'cidade': return r.snapshot?.cidade || '';
-            case 'estado': return r.snapshot?.estado || '';
+            case 'estado': return toUF(r.snapshot?.estado);
             case 'imei': return r.snapshot?.imei || '';
             default: return r[col] || r.snapshot?.[col] || '';
           }
@@ -215,7 +233,7 @@
       if (state.filtro === STATUS_MANUTENCAO && status !== STATUS_MANUTENCAO) return false;
       if (state.filtro === 'bfleet' && !row._hasBfleet) return false;
 
-      const estadoRow = r?.estado || coordToEstado(row.coordenacao);
+      const estadoRow = ufDaLinha(row);
       if (state.filtros.placa && row.placa !== state.filtros.placa) return false;
       if (state.filtros.estado && estadoRow !== state.filtros.estado) return false;
       if (state.filtros.cidade && (r?.cidade || '') !== state.filtros.cidade) return false;
@@ -224,7 +242,7 @@
       const efImei = r?.imei || row.bfleet_idgps || '';
       const placas = placaCandidates(row.placa).concat(r?.placa ? placaCandidates(r.placa) : []);
       return norm([...placas, row.nome, row.marca, row.modelo, row.motorista_atual,
-        r?.estado, r?.cidade, r?.local_instalacao, efImei, r?.cod_rastreio, r?.contato].join(' ')).includes(busca);
+        ufDaLinha(row), r?.estado, r?.cidade, r?.local_instalacao, efImei, r?.cod_rastreio, r?.contato].join(' ')).includes(busca);
     });
 
     const { sortCol, sortDir } = state;
@@ -281,30 +299,53 @@
     renderTable(container);
   }
 
+  // Colunas da tabela: a visão REMOVIDOS mostra outros campos, então cabeçalho e larguras trocam junto.
+  const COLS_NORMAL = [
+    ['placa', 'Placa', 76], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
+    ['imei', 'IMEI', 118], ['previsao_chegada', 'Prev. Cheg.', 82], ['cod_rastreio', 'Rastreio', 100],
+    ['status', 'Status', 112], ['data_instalacao', 'Instalação', 82], ['infleet', 'Infleet', 80], [null, '', 72]
+  ];
+  const COLS_REMOVIDOS = [
+    ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
+    ['imei', 'IMEI', 124], ['cod_rastreio', 'Rastreio', 108], ['removido_em', 'Removido em', 130],
+    ['motivo', 'Motivo', 0], ['removido_por', 'Removido por', 120]
+  ];
+
+  function renderHead(root) {
+    const cols = state.filtro === 'removidos' ? COLS_REMOVIDOS : COLS_NORMAL;
+    const table = root.querySelector('.fr-table');
+    const key = cols === COLS_REMOVIDOS ? 'removidos' : 'normal';
+    if (!table || table.dataset.cols === key) return;
+    table.dataset.cols = key;
+    table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
+    table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
+      ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
+      : '<th></th>').join('');
+  }
+
   function renderTable(root) {
     const el = root.querySelector('[data-table]');
     if (!el) return;
+    renderHead(root);
     const rows = getFiltered();
-    if (state.loading) { el.innerHTML = '<tr><td class="fr-empty" colspan="13">Carregando...</td></tr>'; return; }
-    if (!rows.length) { el.innerHTML = '<tr><td class="fr-empty" colspan="13">Nenhum veículo encontrado.</td></tr>'; return; }
+    const ncols = state.filtro === 'removidos' ? COLS_REMOVIDOS.length : COLS_NORMAL.length;
+    if (state.loading) { el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Carregando...</td></tr>`; return; }
+    if (!rows.length) { el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Nenhum veículo encontrado.</td></tr>`; return; }
 
     if (state.filtro === 'removidos') {
       el.innerHTML = rows.map(r => {
         const snap = r.snapshot || {};
+        const uf = toUF(snap.estado) || '—';
         return `<tr>
           <td><strong>${esc(r.placa)}</strong></td>
-          <td title="${esc(snap.estado || '—')}">${esc(snap.estado || '—')}</td>
+          <td title="${esc(uf)}">${esc(uf)}</td>
           <td title="${esc(snap.cidade || '—')}">${esc(snap.cidade || '—')}</td>
           <td title="${esc(snap.local_instalacao || '—')}">${esc(snap.local_instalacao || '—')}</td>
-          <td>${snap.imei ? `<span style="font-family:monospace;font-size:12px">${esc(snap.imei)}</span>` : '—'}</td>
-          <td>${snap.data_envio ? fmtDate(snap.data_envio) : '—'}</td>
-          <td>${snap.previsao_chegada ? fmtDate(snap.previsao_chegada) : '—'}</td>
-          <td style="font-family:monospace;font-size:12px">${esc(snap.cod_rastreio || '—')}</td>
-          <td><span class="fr-badge removed">REMOVIDO</span></td>
-          <td>${r.removido_em ? new Date(r.removido_em).toLocaleString('pt-BR') : '—'}</td>
-          <td title="${esc(r.motivo_remocao || '—')}"><strong>Motivo:</strong> ${esc(r.motivo_remocao || '—')}</td>
+          <td>${snap.imei ? `<span style="font-family:monospace;font-size:11.5px">${esc(snap.imei)}</span>` : '—'}</td>
+          <td style="font-family:monospace;font-size:11.5px">${esc(snap.cod_rastreio || '—')}</td>
+          <td>${r.removido_em ? new Date(r.removido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
+          <td title="${esc(r.motivo_remocao || '—')}">${esc(r.motivo_remocao || '—')}</td>
           <td title="${esc(r.removido_por_nome || '—')}">${esc(r.removido_por_nome || '—')}</td>
-          <td></td>
         </tr>`;
       }).join('');
       return;
@@ -315,35 +356,31 @@
       const status = r?.status || 'sem_rastreador';
       const agendFrus = r?.agendamentos_frustrados || 0;
 
-      // IMEI: manual tem prioridade; fallback é idgps da BFleet (estilo diferente)
+      // IMEI: manual tem prioridade; fallback é idgps da BFleet (cor roxa indica a origem)
       const imeiManual = r?.imei;
       const imeiBfleet = row.bfleet_idgps;
       const imeiCell = imeiManual
-        ? `<span style="font-family:monospace;font-size:12px">${esc(imeiManual)}</span>`
+        ? `<span style="font-family:monospace;font-size:11.5px">${esc(imeiManual)}</span>`
         : imeiBfleet
-          ? `<span class="fr-imei-bfleet">${esc(imeiBfleet)}</span> <span class="fr-badge bfleet" style="font-size:9px">BFleet</span>`
+          ? `<span class="fr-imei-bfleet" title="IMEI vindo da BFleet">${esc(imeiBfleet)}</span>`
           : '—';
 
       const bfleetTag = row._hasBfleet && !r
-        ? ' <span class="fr-badge bfleet" style="font-size:9px">BFleet</span>'
+        ? ' <span class="fr-badge bfleet" style="font-size:9px;padding:3px 6px">BFleet</span>'
         : '';
-      const estadoEfetivo = r?.estado || coordToEstado(row.coordenacao);
-
-      const contatoNome = row.motorista_atual || r?.contato || '—';
+      const uf = ufDaLinha(row) || '—';
       const localInstalacao = r?.local_instalacao || '—';
 
       return `<tr>
         <td><strong>${esc(row.placa)}</strong>${bfleetTag}</td>
-        <td title="${esc(estadoEfetivo || '—')}">${esc(estadoEfetivo || '—')}</td>
+        <td title="${esc(uf)}">${esc(uf)}</td>
         <td title="${esc(r?.cidade || '—')}">${esc(r?.cidade || '—')}</td>
         <td title="${esc(localInstalacao)}">${esc(localInstalacao)}</td>
         <td>${imeiCell}</td>
-        <td>${r?.data_envio ? fmtDate(r.data_envio) : '—'}</td>
         <td>${r?.previsao_chegada ? fmtDate(r.previsao_chegada) : '—'}</td>
-        <td style="font-family:monospace;font-size:12px">${esc(r?.cod_rastreio || '—')}</td>
+        <td style="font-family:monospace;font-size:11.5px">${esc(r?.cod_rastreio || '—')}</td>
         <td>${statusBadge(status, agendFrus)}</td>
         <td>${r?.data_instalacao ? fmtDate(r.data_instalacao) : '—'}</td>
-        <td title="${esc(contatoNome)}">${esc(contatoNome)}</td>
         <td>${r?.infleet === 'RETIRADO'
           ? '<span class="fr-badge ok">RETIRADO</span>'
           : r?.infleet === 'PENDENTE'
@@ -368,7 +405,9 @@
     const bfleetImei = row.bfleet_idgps || '';
     const isBfleet = row._hasBfleet;
     const mot = getMotoristaInfo(row);
-    const estadoSugerido = r.estado || coordToEstado(row.coordenacao);
+    const estadoSugerido = toUF(r.estado || coordToEstado(row.coordenacao));
+    const ufOpcoes = (UFS.includes(estadoSugerido) || !estadoSugerido ? UFS : [...UFS, estadoSugerido].sort())
+      .map(u => `<option value="${esc(u)}" ${u === estadoSugerido ? 'selected' : ''}>${esc(u)}</option>`).join('');
 
     const backdrop = document.createElement('div');
     backdrop.className = 'fr-modal-backdrop';
@@ -385,8 +424,8 @@
           <div class="fr-divider">Localização</div>
           <div class="fr-form">
             <div class="fr-field">
-              <label>Estado</label>
-              <input name="estado" value="${esc(estadoSugerido)}" placeholder="Ex: SP" />
+              <label>UF</label>
+              <select name="estado"><option value="">—</option>${ufOpcoes}</select>
             </div>
             <div class="fr-field">
               <label>Cidade</label>
@@ -759,7 +798,7 @@
   function getEstadosDisponiveis() {
     const set = new Set();
     state.merged.forEach(row => {
-      const estado = row._rastr?.estado || coordToEstado(row.coordenacao);
+      const estado = ufDaLinha(row);
       if (estado) set.add(estado);
     });
     return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -785,7 +824,7 @@
       sel.innerHTML = `<option value="">${placeholder}</option>` + values.map(v => `<option value="${esc(v)}" ${v === valid ? 'selected' : ''}>${esc(v)}</option>`).join('');
     };
     fill('[data-filter-placa]', getPlacasDisponiveis(), state.filtros.placa, 'Todas as placas');
-    fill('[data-filter-estado]', getEstadosDisponiveis(), state.filtros.estado, 'Todos os estados');
+    fill('[data-filter-estado]', getEstadosDisponiveis(), state.filtros.estado, 'Todas as UFs');
     fill('[data-filter-cidade]', getCidadesDisponiveis(), state.filtros.cidade, 'Todas as cidades');
   }
 
@@ -849,14 +888,14 @@
 
           <div class="fr-body">
             <div class="fr-toolbar">
-              <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, contato..." data-search />
+              <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, motorista..." data-search />
               <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
               <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
             </div>
 
             <div class="fr-filter-row">
               <select class="fr-select" data-filter-placa><option value="">Todas as placas</option></select>
-              <select class="fr-select" data-filter-estado><option value="">Todos os estados</option></select>
+              <select class="fr-select" data-filter-estado><option value="">Todas as UFs</option></select>
               <select class="fr-select" data-filter-cidade><option value="">Todas as cidades</option></select>
               <select class="fr-select" data-search-status>
                 <option value="">Todos os status</option>
@@ -874,30 +913,8 @@
 
             <div class="fr-table-wrap">
               <table class="fr-table">
-                <colgroup>
-                  <col style="width:90px"><col style="width:140px"><col style="width:110px">
-                  <col style="width:150px"><col style="width:130px"><col style="width:95px">
-                  <col style="width:95px"><col style="width:110px"><col style="width:120px">
-                  <col style="width:105px"><col style="width:170px"><col style="width:95px">
-                  <col style="width:76px">
-                </colgroup>
-                <thead>
-                  <tr data-thead>
-                    <th class="fr-th-sort" data-sort="placa">Placa</th>
-                    <th class="fr-th-sort" data-sort="estado">Estado</th>
-                    <th class="fr-th-sort" data-sort="cidade">Cidade</th>
-                    <th class="fr-th-sort" data-sort="local_instalacao">Local Instalação</th>
-                    <th class="fr-th-sort" data-sort="imei">IMEI</th>
-                    <th class="fr-th-sort" data-sort="data_envio">Data Envio</th>
-                    <th class="fr-th-sort" data-sort="previsao_chegada">Prev. Chegada</th>
-                    <th class="fr-th-sort" data-sort="cod_rastreio">Cód. Rastreio</th>
-                    <th class="fr-th-sort" data-sort="status">Status</th>
-                    <th class="fr-th-sort" data-sort="data_instalacao">Data Instalação</th>
-                    <th class="fr-th-sort" data-sort="contato">Motorista</th>
-                    <th class="fr-th-sort" data-sort="infleet">Infleet</th>
-                    <th></th>
-                  </tr>
-                </thead>
+                <colgroup></colgroup>
+                <thead><tr data-thead></tr></thead>
                 <tbody data-table></tbody>
               </table>
             </div>
