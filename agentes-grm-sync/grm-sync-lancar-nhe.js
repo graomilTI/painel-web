@@ -229,7 +229,14 @@ function toNumberLoose(value) {
   return isFinite(parsed) ? parsed : 0;
 }
 
+// NHE_LANCAMENTO_DATA_REFERENCIA=AAAA-MM-DD: reprocessa um dia específico (uso manual,
+// recuperação de vários dias). Precisa de NHE_LANCAMENTO_FOB_DIAS cobrindo a distância
+// até hoje e de NHE_LANCAMENTO_AUTO_CONTINUACAO=false (o job de continuação não herda a data).
 function referenceDate() {
+  var forcada = String(process.env.NHE_LANCAMENTO_DATA_REFERENCIA || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(forcada)) {
+    return new Date(forcada + 'T12:00:00');
+  }
   var date = new Date();
   date.setHours(12, 0, 0, 0);
   date.setDate(date.getDate() - 1);
