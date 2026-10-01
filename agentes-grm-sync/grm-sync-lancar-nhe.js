@@ -1011,8 +1011,11 @@ function identidadeGrupoEmbarque(candidato) {
   };
 }
 
+// Asterisco no fim = lançado no nome do gestor porque o bot não achou o colaborador
+// na lista de Funcionário do GRM (ele estava dentro do raio; o certo seria o nome dele).
+// Assim a equipe sabe que precisa ajustar. Fora do raio segue sem asterisco.
 function observacaoPara(candidato) {
-  return OBS_FIXA;
+  return candidato && candidato.gestorPorColaboradorNaoEncontrado ? OBS_FIXA + '*' : OBS_FIXA;
 }
 
 async function salvarResultado(candidato, patch) {
@@ -1029,9 +1032,9 @@ async function salvarResultado(candidato, patch) {
     distancia_m: candidato.loginMatch ? Math.round(candidato.loginMatch.distancia) : null,
     raio_m: RAIO_M,
     motivo: MOTIVO_FIXO,
-    observacao: candidato.loginMatch ? observacaoPara(candidato) : OBS_FIXA,
+    observacao: observacaoPara(candidato),
     erro: null,
-    raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome } : null,
+    raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome, colaborador_nao_encontrado: !!candidato.gestorPorColaboradorNaoEncontrado } : null,
     updated_at: now
   }, patch);
 
@@ -1524,7 +1527,11 @@ async function preencherEModalNhe(page, candidato, dryRun, debug) {
   }
   await wait(1500);
   var funcEscolhido = await selecionarOpcaoAberta(page, nomeParaFuncionario, 'substring');
-  if (!funcEscolhido) throw new Error('Não achei "' + nomeParaFuncionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
+  if (!funcEscolhido) {
+    var erroFunc = new Error('Não achei "' + nomeParaFuncionario + '" na lista de Funcionário (busquei por "' + primeiroNome + '").');
+    erroFunc.code = 'FUNCIONARIO_NAO_ENCONTRADO';
+    throw erroFunc;
+  }
   log('INFO', 'Funcionário selecionado: ' + funcEscolhido);
 
   // O GRM atualizado passou a exigir interação real para atualizar o model da Data.
@@ -2061,7 +2068,26 @@ async function main() {
             }
 
             log('INFO', 'Lançando NHE para O.S. ' + candidato.os + ' (' + (candidato.viaGestor ? 'via gestor ' + candidato.gestorNome + ', colaborador original=' + candidato.funcionario : 'colaborador=' + candidato.funcionario) + ', distância=' + Math.round(candidato.loginMatch.distancia) + 'm)...');
-            await lancarNheParaCandidato(page, candidato, dryRun, debug);
+            try {
+              await lancarNheParaCandidato(page, candidato, dryRun, debug);
+            } catch (erroLancamento) {
+              // Colaborador não aparece na lista de Funcionário do GRM (ex.: O.S. 93315,
+              // 25/09/2026): lança no nome do gestor da regional com 'Aprovado pelo Gestor*' (o asterisco avisa a equipe que o certo seria o nome do colaborador)
+              // (pedido do usuário 01/10), igual ao fluxo de colaborador fora do raio.
+              if (!erroLancamento || erroLancamento.code !== 'FUNCIONARIO_NAO_ENCONTRADO' || candidato.viaGestor) throw erroLancamento;
+              var coordDaOsFallback = candidato.osCoord && candidato.osCoord.supervisao ? String(candidato.osCoord.supervisao).split(' - ')[0].trim() : null;
+              var gestorFallback = await buscarGestorRegional(coordDaOsFallback, candidato.osCoord && candidato.osCoord.supervisao);
+              if (!gestorFallback) throw erroLancamento;
+              log('WARN', 'O.S. ' + candidato.os + ': ' + erroLancamento.message + ' Repetindo no nome do gestor ' + gestorFallback.nome + '.');
+              await fecharModais(page);
+              stats.viaGestor++;
+              candidato.viaGestor = true;
+              candidato.gestorPorColaboradorNaoEncontrado = true;
+              candidato.gestorNome = gestorFallback.nome;
+              candidato.gestorCoordenacao = gestorFallback.coordenacao;
+              candidato.gestorSupervisao = gestorFallback.supervisao;
+              await lancarNheParaCandidato(page, candidato, dryRun, debug);
+            }
 
             if (dryRun) {
               await salvarResultado(candidato, { status: 'DRY_RUN_OK', lancado_em: null, erro: null });
