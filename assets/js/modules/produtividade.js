@@ -11,7 +11,7 @@
  * Custo do dia = TODOS os custos aprovados no Caixa Operacional do GRM para o colaborador na data
  * (Café, Almoço, Janta, Pernoite, Serviços Terceirizados dos diaristas e Salário de Intermitente),
  * lidos de grm_despesas_retroativas_auditoria via RPC produtividade_custos_aprovados, mais:
- *  - Efetivo: salário ÷ 30 por dia listado. O efetivo aparece em todo dia útil (seg–sex), com ou
+ *  - Efetivo (exceto cargo Administrativo): salário ÷ 30 por dia listado. O efetivo aparece em todo dia útil (seg–sex), com ou
  *    sem produção, porque o custo existe mesmo sem produtividade (faturado 0, saldo negativo);
  *    sábado/domingo só entra se produziu. Dá pra esconder as linhas sem produção pelo filtro.
  */
@@ -153,6 +153,11 @@
     if (k.includes('DIARISTA') || k.includes('SAFRISTA')) return 'Diarista';
     if (k.includes('INTERMITENTE')) return 'Intermitente';
     return String(value || '').trim();
+  }
+
+  // Administrativo fica fora da lista de efetivos sem produção (decisão da diretoria).
+  function isAdministrativo(row) {
+    return keyText(row?.cargo).includes('ADMINISTRATIV');
   }
 
   function isActive(row) {
@@ -343,7 +348,7 @@
 
     // 2) Efetivos sem produção em dia útil (custo sem receita)
     const hoje = todayLocalIso();
-    const efetivos = colabRows.filter((c) => tipoCanon(c.tipo) === 'Efetivo' && keyText(c.nome));
+    const efetivos = colabRows.filter((c) => tipoCanon(c.tipo) === 'Efetivo' && !isAdministrativo(c) && keyText(c.nome));
     for (const day of daysBetween(from, to)) {
       if (day > hoje) break;
       if (!isDiaUtil(day)) continue;
@@ -514,7 +519,7 @@
     }
 
     for (const c of colabRows) {
-      if (tipoCanon(c.tipo) !== 'Efetivo') continue;
+      if (tipoCanon(c.tipo) !== 'Efetivo' || isAdministrativo(c)) continue;
       const nameKey = keyText(c.nome);
       if (!nameKey || produziu.has(nameKey)) continue;
       const dias = diasNoQuadro(c, from, to);
@@ -753,7 +758,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. O efetivo aparece em todo dia útil, com ou sem produção (faturado zero); sábado e domingo só se produziu.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. O efetivo (exceto Administrativo) aparece em todo dia útil, com ou sem produção (faturado zero); sábado e domingo só se produziu.${esc(cortado)}</div>
       </section>
     `;
   }
