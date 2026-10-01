@@ -155,29 +155,31 @@ console.log('OK: Almoço exige programação específica; Café e Janta mantêm 
 
 // Pernoite: aprova só a pendência lançada pelo colaborador, se programado e sem refeição no dia.
 const mov = (oexName, ofmStatus, ofmCode) => ({ ofmType: 'D', oexName, ofmStatus, ofmCode });
-assert.equal(decidePernoite([mov('Almoço', 'P', 1)], { programado: true }), null);
-assert.equal(decidePernoite([mov('Pernoite', 'A', 1)], { programado: true }), null);
-assert.equal(decidePernoite([mov('Pernoite', 'N', 1)], { programado: true }), null);
-assert.equal(decidePernoite([mov('Pernoite', 'P', 1)], { programado: false }).motivo, 'sem_pernoite_na_programacao');
-assert.equal(decidePernoite([mov('Pernoite', 'P', 1)], { programado: true }).action, 'APPROVE');
+assert.equal(decidePernoite([mov('Almoço', 'P', 1)], { programado: true, comEmbarque: true }), null);
+assert.equal(decidePernoite([mov('Pernoite', 'A', 1)], { programado: true, comEmbarque: true }), null);
+assert.equal(decidePernoite([mov('Pernoite', 'N', 1)], { programado: true, comEmbarque: true }), null);
+assert.equal(decidePernoite([mov('Pernoite', 'P', 1)], { programado: false, comEmbarque: true }).motivo, 'sem_pernoite_na_programacao');
+assert.equal(decidePernoite([mov('Pernoite', 'P', 1)], { programado: true, comEmbarque: true }).action, 'APPROVE');
 for (const refeicao of ['Café', 'Almoço', 'Janta']) {
   for (const status of ['P', 'A']) {
     assert.equal(
-      decidePernoite([mov('Pernoite', 'P', 1), mov(refeicao, status, 2)], { programado: true }).action,
+      decidePernoite([mov('Pernoite', 'P', 1), mov(refeicao, status, 2)], { programado: true, comEmbarque: true }).action,
       'PERNOITE_BLOQUEADO',
       `${refeicao} ${status} deve bloquear o Pernoite`,
     );
   }
 }
+// Sem produção/laudo nem NHE no dia (embarque NÃO): não aprova.
+assert.equal(decidePernoite([mov('Pernoite', 'P', 1)], { programado: true, comEmbarque: false }).motivo, 'sem_producao_ou_nhe_no_dia');
 // Refeição recusada (N) não conta como lançamento.
 assert.equal(
-  decidePernoite([mov('Pernoite', 'P', 1), mov('Almoço', 'N', 2)], { programado: true }).action,
+  decidePernoite([mov('Pernoite', 'P', 1), mov('Almoço', 'N', 2)], { programado: true, comEmbarque: true }).action,
   'APPROVE',
 );
 // Pernoite duplicado: aprova o primeiro e devolve o resto como órfão; com um já aprovado, NONE.
-const dup = decidePernoite([mov('Pernoite', 'P', 5), mov('Pernoite', 'P', 3)], { programado: true });
+const dup = decidePernoite([mov('Pernoite', 'P', 5), mov('Pernoite', 'P', 3)], { programado: true, comEmbarque: true });
 assert.equal(dup.row.ofmCode, 3);
 assert.equal(dup.orphans.length, 1);
-assert.equal(decidePernoite([mov('Pernoite', 'A', 1), mov('Pernoite', 'P', 2)], { programado: true }).action, 'NONE');
+assert.equal(decidePernoite([mov('Pernoite', 'A', 1), mov('Pernoite', 'P', 2)], { programado: true, comEmbarque: true }).action, 'NONE');
 
 console.log('OK: Pernoite só aprova com programação do gestor e sem Café/Almoço/Janta no dia');
