@@ -68,7 +68,7 @@
       .prd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.prd-card{padding:16px}.prd-card span{display:block;color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.04em}.prd-card strong{display:block;margin-top:8px;font-size:24px;letter-spacing:-.035em}.prd-card small{display:block;margin-top:4px;color:#6b7280}.prd-card.pos strong{color:#86efac}.prd-card.neg strong{color:#fca5a5}
       .prd-status{margin-bottom:14px;padding:12px 14px;border-radius:16px;border:1px solid var(--line);background:rgba(15,23,42,.72);color:var(--muted)}.prd-status strong{color:var(--text)}.prd-status.err{border-color:rgba(239,68,68,.45);color:#fecaca;background:rgba(127,29,29,.22)}
       .prd-table-card{overflow:hidden}.prd-table-top{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}.prd-table-top h2{margin:0;font-size:18px}.prd-table-top p{margin:4px 0 0;color:var(--muted);font-size:12px}.prd-table-wrap{overflow:auto;max-height:70vh}.prd-table{width:100%;border-collapse:collapse;font-size:12px;min-width:880px;color:var(--text)}.prd-table th{position:sticky;top:0;z-index:1;background:#0d0d18;color:#bbf7d0;text-align:center;font-weight:900;padding:8px;border:1px solid rgba(255,255,255,0.1);white-space:nowrap}.prd-table th.sortable{cursor:pointer;user-select:none}.prd-table th.sortable:hover{background:#166534}.prd-table td{padding:7px 8px;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;background:rgba(15,23,42,.55)}.prd-table td.num{text-align:right;font-variant-numeric:tabular-nums}.prd-table td.nome{font-weight:900;min-width:240px}
-      .prd-table tr.sub td{background:rgba(22,101,52,.35)!important;font-weight:950;color:#dcfce7}.prd-table tr.total td{background:rgba(22,101,52,.55)!important;font-weight:950;color:#dcfce7}.prd-table tr.empty td{background:transparent!important;text-align:center;color:var(--muted)}.prd-pos{color:#86efac}.prd-neg{color:#fca5a5}.prd-muted{color:#6b7280}.prd-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(148,163,184,.14)}.prd-tag.efetivo{background:rgba(59,130,246,.2);color:#bfdbfe}.prd-tag.diarista{background:rgba(250,204,21,.16);color:#fde68a}.prd-tag.intermitente{background:rgba(168,85,247,.2);color:#e9d5ff}
+      .prd-table tr.sub td{background:rgba(22,101,52,.35)!important;font-weight:950;color:#dcfce7}.prd-table tr.total td{background:rgba(22,101,52,.55)!important;font-weight:950;color:#dcfce7}.prd-table tr.empty td{background:transparent!important;text-align:center;color:var(--muted)}.prd-pos{color:#86efac}.prd-neg{color:#fca5a5}.prd-table td.prd-inativo{color:#f87171;font-weight:900}.prd-muted{color:#6b7280}.prd-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:900;background:rgba(148,163,184,.14)}.prd-tag.efetivo{background:rgba(59,130,246,.2);color:#bfdbfe}.prd-tag.diarista{background:rgba(250,204,21,.16);color:#fde68a}.prd-tag.intermitente{background:rgba(168,85,247,.2);color:#e9d5ff}
       .prd-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}.prd-tab{height:40px;padding:0 18px;border-radius:14px;border:1px solid rgba(255,255,255,0.08);background:#0d0d18;color:#9ca3af;font-weight:900;cursor:pointer}.prd-tab.active{background:linear-gradient(135deg,#166534,#22c55e);color:#052e16;border-color:transparent}
       .prd-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.prd-chip{height:36px;padding:0 14px;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:#0d0d18;color:#e2e2f0;font-weight:850;cursor:pointer}.prd-chip.active{background:#166534;color:#dcfce7;border-color:#22c55e}.prd-chip:disabled{opacity:.55;cursor:not-allowed}.prd-range{margin:0 0 12px;color:var(--muted);font-size:12px}.prd-range strong{color:var(--text)}
       .prd-periodo-filters{display:grid;grid-template-columns:repeat(2,minmax(130px,.8fr)) repeat(2,minmax(150px,1fr)) minmax(180px,1.2fr) auto;gap:12px;align-items:end}
@@ -158,6 +158,11 @@
   // Administrativo e equipe da coordenação GERAL ficam fora da lista de efetivos sem produção (decisão da diretoria).
   function isAdministrativo(row) {
     return keyText(row?.cargo).includes('ADMINISTRATIV') || keyText(row?.coordenacao) === 'GERAL';
+  }
+
+  // Colaborador com cadastro e situação inativa/desligada (as linhas dele saem em vermelho).
+  function inativoDe(colab) {
+    return Boolean(colab) && !isActive(colab);
   }
 
   function isActive(row) {
@@ -342,6 +347,7 @@
         custoSalario,
         custo: custoAprovado + custoSalario,
         semCadastro: !colab,
+        inativo: inativoDe(colab),
         ocioso: false
       });
     }
@@ -371,6 +377,7 @@
           custoSalario,
           custo: custoAprovado + custoSalario,
           semCadastro: false,
+          inativo: inativoDe(c),
           ocioso: true
         });
       }
@@ -394,6 +401,7 @@
         custoSalario: 0,
         custo: item.total,
         semCadastro: !item.colab,
+        inativo: inativoDe(item.colab),
         ocioso: true
       });
     }
@@ -519,6 +527,7 @@
         custoSalario,
         custo: custoAprovado + custoSalario,
         semCadastro: !colab,
+        inativo: inativoDe(colab),
         ocioso: false
       });
     }
@@ -544,6 +553,7 @@
         custoSalario,
         custo: custoAprovado + custoSalario,
         semCadastro: false,
+        inativo: inativoDe(c),
         ocioso: true
       });
     }
@@ -565,6 +575,7 @@
         custoSalario: 0,
         custo: item.total,
         semCadastro: !item.colab,
+        inativo: inativoDe(item.colab),
         ocioso: true
       });
     }
@@ -592,7 +603,7 @@
     const media = r.dias ? r.producao / r.dias : 0;
     return `
       <tr>
-        <td class="nome">${esc(r.nome)}${r.semCadastro ? ' <span class="prd-muted" title="Colaborador sem cadastro correspondente: custo não calculado">(sem cadastro)</span>' : ''}</td>
+        <td class="nome${r.inativo ? ' prd-inativo' : ''}"${r.inativo ? ' title="Colaborador inativo"' : ''}>${esc(r.nome)}${r.semCadastro ? ' <span class="prd-muted" title="Colaborador sem cadastro correspondente: custo não calculado">(sem cadastro)</span>' : ''}</td>
         <td>${esc(r.coordenacao || '-')}</td>
         <td style="text-align:center">${tipoTag(r.tipo)}</td>
         <td class="num">${r.dias ? fmtNumber(r.dias, 0) : '<span class="prd-muted">-</span>'}</td>
@@ -702,7 +713,7 @@
     return `
       <tr>
         <td>${esc(brDate(r.data))}</td>
-        <td class="nome">${esc(r.nome)}${r.semCadastro ? ' <span class="prd-muted" title="Colaborador sem cadastro correspondente: custo não calculado">(sem cadastro)</span>' : ''}</td>
+        <td class="nome${r.inativo ? ' prd-inativo' : ''}"${r.inativo ? ' title="Colaborador inativo"' : ''}>${esc(r.nome)}${r.semCadastro ? ' <span class="prd-muted" title="Colaborador sem cadastro correspondente: custo não calculado">(sem cadastro)</span>' : ''}</td>
         <td>${esc(r.coordenacao || '-')}</td>
         <td style="text-align:center">${tipoTag(r.tipo)}</td>
         <td class="num">${r.producao ? fmtNumber(r.producao, 2) : '<span class="prd-muted">-</span>'}</td>
