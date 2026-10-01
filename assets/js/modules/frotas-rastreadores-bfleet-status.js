@@ -78,13 +78,15 @@
         const jaTemImei = Boolean(existente?.imei);
         const precisaImei = Boolean(veiculo.bfleet_idgps && !jaTemImei);
 
-        if (existente && jaInstalado && !precisaImei) continue;
+        // Em manutenção o status é controlado pelo fluxo da aba Manutenção; a sync não pode devolver a "Instalado".
+        const emManutencao = existente?.status === 'manutencao';
+        if (existente && (jaInstalado || emManutencao) && !precisaImei) continue;
 
         const payload = {
           placa: rawPlaca(existente?.placa || veiculo.placa),
-          veiculo_id: veiculo.id || existente?.veiculo_id || null,
-          status: INSTALLED_STATUS
+          veiculo_id: veiculo.id || existente?.veiculo_id || null
         };
+        if (!emManutencao) payload.status = INSTALLED_STATUS;
 
         if (precisaImei) payload.imei = veiculo.bfleet_idgps;
         if (!existente && veiculo.motorista_atual) payload.contato = veiculo.motorista_atual;
