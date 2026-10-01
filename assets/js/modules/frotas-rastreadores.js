@@ -7,6 +7,7 @@
       .fr-icon-btn.warn{border:1px solid rgba(245,158,11,.55);background:rgba(245,158,11,.18);color:#fbbf24;font-weight:950}.fr-icon-btn.warn:hover{border-color:rgba(245,158,11,.9);background:rgba(245,158,11,.32);color:#fde68a}.fr-icon-btn.warn.active{background:#f59e0b;border-color:#f59e0b;color:#1c1203}
       .fr-act-row{display:flex;gap:6px;flex-wrap:nowrap}.fr-act{width:30px;height:30px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.72);color:#94a3b8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:.15s}.fr-act svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fr-act:hover:not(:disabled){color:#e2e2f0;border-color:rgba(148,163,184,.65)}.fr-act.done{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.16);color:#4ade80}.fr-act.current{border-color:rgba(245,158,11,.85);background:rgba(245,158,11,.2);color:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.18)}.fr-act.final.current{border-color:#22c55e;background:rgba(34,197,94,.3);color:#86efac;box-shadow:0 0 0 2px rgba(34,197,94,.2)}.fr-act:disabled{opacity:.3;cursor:not-allowed}.fr-act.cancel:hover{border-color:rgba(239,68,68,.75);color:#f87171;background:rgba(239,68,68,.14)}
       .fr-hist-title{margin:22px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
+      .fr-link{background:none;border:0;padding:0;font:inherit;color:#86efac;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:rgba(134,239,172,.35);text-underline-offset:3px}.fr-link:hover{color:#bbf7d0;text-decoration-color:currentColor}.fr-dl{display:grid;grid-template-columns:110px 1fr;gap:10px 14px;margin:0;font-size:13.5px}.fr-dl dt{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;align-self:center}.fr-dl dd{margin:0;color:#e2e2f0}
     </style>`;
 
   let _opts = {};
@@ -150,14 +151,16 @@
   function getMotoristaInfo(row) {
     const nome = row?.motorista_atual || '';
     const key = norm(nome).trim();
-    if (!key) return { nome: '', contato: '', endereco: '' };
+    if (!key) return { nome: '', contato: '', endereco: '', cidade: '', uf: '' };
     const m = state.motoristas.find(x => norm(x.nome).trim() === key);
     const c = state.colaboradores.find(x => norm(x.nome).trim() === key);
     const endColab = c ? [c.endereco, c.bairro, [c.cidade, c.estado].filter(Boolean).join('/'), c.cep].filter(Boolean).join(', ') : '';
     return {
       nome,
       contato: fmtTelefone(m?.telefone || c?.whatsapp || ''),
-      endereco: m?.endereco || endColab || ''
+      endereco: m?.endereco || endColab || '',
+      cidade: c?.cidade || row?._rastr?.cidade || '',
+      uf: toUF(c?.estado) || ufDaLinha(row)
     };
   }
 
@@ -911,6 +914,33 @@
     });
   }
 
+  function openMotoristaInfo(placa) {
+    const row = state.merged.find(v => v.placa === placa);
+    if (!row) return;
+    const mot = getMotoristaInfo(row);
+    const dado = (v) => esc(v || '—');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fr-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(460px,96vw)">
+        <div class="fr-modal-head">
+          <div><h3>Motorista · ${esc(row.placa)}</h3></div>
+          <button class="fr-btn ghost fr-mini" data-close>✕</button>
+        </div>
+        <div class="fr-modal-body">
+          <dl class="fr-dl">
+            <dt>Nome</dt><dd>${dado(mot.nome)}</dd>
+            <dt>Telefone</dt><dd>${dado(mot.contato)}</dd>
+            <dt>Cidade</dt><dd>${dado(mot.cidade)}</dd>
+            <dt>UF</dt><dd>${dado(mot.uf)}</dd>
+          </dl>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  }
+
   async function cancelarManutencao(root, placa) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
@@ -964,7 +994,7 @@
         <td><strong>${esc(row.placa)}</strong></td>
         <td>${esc(ufDaLinha(row) || '—')}</td>
         <td title="${esc(local)}">${esc(local)}</td>
-        <td title="${esc(row.motorista_atual || '—')}">${esc(row.motorista_atual || '—')}</td>
+        <td title="${esc(row.motorista_atual || '—')}">${row.motorista_atual ? `<button type="button" class="fr-link" data-mmot="${esc(row.placa)}" title="Ver dados do motorista">${esc(row.motorista_atual)}</button>` : '—'}</td>
         <td title="${esc(m?.motivo || '—')}">${esc(m?.motivo || '—')}</td>
         <td>${m ? diasDesde(m.aberta_em) + 'd' : '—'}</td>
         <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
@@ -1341,6 +1371,8 @@
     container.querySelector('[data-table]').addEventListener('click', e => {
       const acao = e.target.closest('[data-macao]');
       if (acao) { openManutAcao(container, acao.dataset.placa, acao.dataset.macao); return; }
+      const mot = e.target.closest('[data-mmot]');
+      if (mot) { openMotoristaInfo(mot.dataset.mmot); return; }
       const cancel = e.target.closest('[data-mcancel]');
       if (cancel) cancelarManutencao(container, cancel.dataset.mcancel);
     });
