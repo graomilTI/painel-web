@@ -33,58 +33,13 @@ function parseEmbarque(embarque) {
   };
 }
 
-function formatMoney(value) {
-  return Number(value || 0).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    minimumFractionDigits: 2,
-  });
-}
-
-function detalheMap(rows) {
+function detalheDeslocamento(rows) {
   const map = new Map();
   (rows || []).forEach((row) => {
-    const key = `${String(row.os_id)}|${String(row.colaborador_id)}`;
-    if (!map.has(key)) map.set(key, { ALIMENTACAO: null, ESTADIA: null, DESLOCAMENTO: null, EXTRA: [] });
-    const alvo = map.get(key);
-    if (row.tipo_registro === 'EXTRA') alvo.EXTRA.push(row.detalhes || {});
-    else alvo[row.tipo_registro] = row.detalhes || {};
+    if (row.tipo_registro !== 'DESLOCAMENTO') return;
+    map.set(`${String(row.os_id)}|${String(row.colaborador_id)}`, row.detalhes || {});
   });
   return map;
-}
-
-function resumoDespesas(despesas) {
-  if (!despesas) return [];
-  const partes = [];
-  const ali = despesas.ALIMENTACAO || {};
-  const refeicoes = [ali.cafe ? 'Café' : '', ali.almoco ? 'Almoço' : '', ali.janta ? 'Janta' : ''].filter(Boolean);
-  if (refeicoes.length) partes.push(refeicoes.join('/'));
-
-  const est = despesas.ESTADIA || {};
-  const tipoEstadia = normalizeText(est.tipo_estadia || '');
-  if (tipoEstadia && tipoEstadia !== 'CASA') {
-    let label = ({ PERNOITE: 'Pernoite', ALOJAMENTO: 'Alojamento', HOTEL: 'Hotel' })[tipoEstadia] || est.tipo_estadia;
-    if (est.alojamento_nome) label += ` ${est.alojamento_nome}`;
-    partes.push(label);
-  }
-
-  const des = despesas.DESLOCAMENTO || {};
-  const tipoDes = normalizeText(des.tipo_deslocamento || '');
-  if (tipoDes && tipoDes !== 'NAO PRECISA') {
-    const label = ({
-      'MOTORISTA FROTA': 'Motorista Frota',
-      'CARONA FROTA': 'Carona Frota',
-      'UBER TAXI': 'Uber/Táxi',
-      'REEMBOLSO KM': 'Reembolso KM',
-    })[tipoDes] || des.tipo_deslocamento;
-    partes.push(des.placa_veiculo ? `${label} ${des.placa_veiculo}` : label);
-  }
-
-  (despesas.EXTRA || []).forEach((extra) => {
-    const nome = extra.tipo_despesa || extra.descricao || 'Extra';
-    partes.push(Number(extra.valor) > 0 ? `${nome} ${formatMoney(extra.valor)}` : nome);
-  });
-  return partes;
 }
 
 async function montarTextoCompartilharPorOs() {
@@ -118,6 +73,7 @@ async function montarTextoCompartilharPorOs() {
     supabase
       .from('programacao_despesas_os_compartilhadas')
       .select('tipo_registro,colaborador_id,nome_colaborador,os_id,detalhes')
+      .eq('tipo_registro', 'DESLOCAMENTO')
       .eq('data_referencia', dataReferencia)
       .in('os_id', osIds),
   ]);
@@ -125,7 +81,7 @@ async function montarTextoCompartilharPorOs() {
   if (despesasRes.error) throw despesasRes.error;
 
   const osPorId = new Map((osRes.data || []).map((os) => [String(os.id), os]));
-  const despesasPorVinculo = detalheMap(despesasRes.data || []);
+  const deslocamentoPorVinculo = detalheDeslocamento(despesasRes.data || []);
   const grupos = new Map();
 
   equipeRows.forEach((row) => {
@@ -138,11 +94,9 @@ async function montarTextoCompartilharPorOs() {
     const osKey = String(os.id);
     if (!grupo.os.has(osKey)) grupo.os.set(osKey, { numero: os.numero_os || '-', colaboradores: [] });
 
-    const despesas = despesasPorVinculo.get(`${osKey}|${String(row.colaborador_id)}`);
     grupo.os.get(osKey).colaboradores.push({
       nome: row.nome_colaborador || row.colaborador_id,
-      despesas: resumoDespesas(despesas),
-      deslocamento: despesas?.DESLOCAMENTO || {},
+      deslocamento: deslocamentoPorVinculo.get(`${osKey}|${String(row.colaborador_id)}`) || {},
     });
   });
 
@@ -158,7 +112,7 @@ async function montarTextoCompartilharPorOs() {
       linhas.push(`O.S.: ${osInfo.numero}`);
       linhas.push('Colaboradores:');
       for (const colab of osInfo.colaboradores) {
-        linhas.push(`• ${colab.nome}${colab.despesas.length ? ` — ${colab.despesas.join(', ')}` : ''}`);
+        linhas.push(`• ${colab.nome}`);
         const tipo = normalizeText(colab.deslocamento.tipo_deslocamento || '');
         const placa = String(colab.deslocamento.placa_veiculo || '').trim().toUpperCase();
         if (tipo === 'MOTORISTA FROTA' && placa) motoristas.set(placa, colab.nome);

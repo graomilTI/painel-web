@@ -116,7 +116,7 @@ const SOFT_NAV_PAGES = new Map([
   ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js'), extraModules: [() => import('./pwa-register.js'), () => import('./compras-estoque-agrupamento.js'), () => import('./compras-estoque-layout.js')] }],
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js?v=20260930-triagem2'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js?v=20260930-triagem1')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js?v=20260911-owner-filter1') }],
-  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20260927-layout-clean1'), extraStyles: [
+  ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20261001-sem-despesas'), extraStyles: [
     './assets/css/programacao-redesign.css?v=20260920-base1',
     './assets/css/programacao-toolbar.css?v=20260920-integrado1',
   ] }],
