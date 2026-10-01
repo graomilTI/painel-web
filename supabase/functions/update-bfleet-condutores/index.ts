@@ -296,7 +296,8 @@ function updateDriverPayload(params: { apiKey: string; token: string; driver: Dr
     telefono: localPhone(params.local, params.fallback) || cleanStr(params.driver.telefono),
     licencia: cleanStr(params.local?.cnh_numero) || cleanStr(params.driver.licencia),
     vigencia: formatDateOnly(params.local?.cnh_validade) || validVigencia(params.driver.vigencia),
-    direccion: localAddress(params.local) || cleanStr(params.driver.direccion),
+    // Endereço do painel > o que já está na BFleet > placeholder (só se a BFleet exigir preenchido).
+    direccion: cleanStr(params.local?.endereco) || cleanStr(params.driver.direccion) || 'Não informado',
     email: localEmail(params.local, params.fallback) || cleanStr(params.driver.email),
     numero: cleanStr(params.driver.numero),
     alias: cleanStr(params.driver.alias),
