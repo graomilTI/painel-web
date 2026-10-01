@@ -10,7 +10,7 @@ import { renderProgramacaoTransferencias } from './programacao-transferencias.js
 import './programacao-persistencia-contexto.js?v=20260920-integrado1';
 import './programacao-duplicacao-calendario.js?v=20260920-integrado1';
 import './programacao-despesas-os-visual.js?v=20260920-integrado1';
-import './programacao-compartilhar-os.js?v=20260920-integrado1';
+import './programacao-compartilhar-os.js?v=20261001-sem-despesas';
 import './programacao-carona-motorista.js?v=20260917-v6-carona-por-placa';
 import './programacao-lista-prioridade-nao-atender.js?v=20260907-null-primeiro2';
 import './gestor-mobile-modules-v2.js?v=20260813-modelos-v3';
@@ -4041,19 +4041,7 @@ async function montarTextoCompartilhar() {
     .in('programacao_id', Array.isArray(programacaoIdQuery) ? programacaoIdQuery : [programacaoIdQuery])
     .eq('disponibilidade', 'DISPONIVEL');
   if (disponiveisError) throw disponiveisError;
-  const disponiveisIds = (disponiveisRows || []).map((row) => row.colaborador_id);
-  const extrasDisponiveis = disponiveisIds.length ? await loadExtras(programacaoIdQuery, disponiveisIds) : new Map();
-  const blocosDisponiveis = (disponiveisRows || []).map((row) => {
-    const ali = custos.ali.get(row.colaborador_id) || {};
-    const est = custos.est.get(row.colaborador_id) || {};
-    const extras = extrasDisponiveis.get(row.colaborador_id) || [];
-    const despesas = [
-      ali.cafe ? 'Café' : '', ali.almoco ? 'Almoço' : '', ali.janta ? 'Janta' : '',
-      normalizeText(est.tipo_estadia) === 'PERNOITE' ? 'Pernoite' : '',
-      ...extras.map((item) => `${item.tipo_despesa || 'Extra'}${Number(item.valor) > 0 ? ` R$ ${(Number(item.valor)).toFixed(2)}` : ''}`),
-    ].filter(Boolean);
-    return `• ${row.nome_colaborador || row.colaborador_id}${despesas.length ? ` — ${despesas.join(', ')}` : ''}`;
-  });
+  const blocosDisponiveis = (disponiveisRows || []).map((row) => `• ${row.nome_colaborador || row.colaborador_id}`);
 
   const partes = [`📋 Programação — ${brDate(dataReferencia)}`, ...blocosLocal];
   if (blocosMotorista.length) partes.push(...blocosMotorista);
