@@ -6,7 +6,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 
-const VERSION = 'V6.2-API-DIRETA-CAFE-JANTA-SO-APROVA';
+const VERSION = 'V6.3-API-DIRETA-PERNOITE-SO-APROVA';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
 ).replace(/\/?$/, '/');
@@ -66,6 +66,11 @@ function assertDirectExpenseAllowed(
 function isCafeOuJanta(expense) {
   const key = norm(expense?.oexName);
   return key === 'CAFE' || key === 'JANTA';
+}
+
+function isRefeicao(expense) {
+  const key = norm(expense?.oexName);
+  return key === 'CAFE' || key === 'ALMOCO' || key === 'JANTA';
 }
 
 function digits(value) { return String(value || '').replace(/\D/g, ''); }
@@ -176,6 +181,31 @@ function decide(existing) {
   return { action: 'CREATE', orphans: [] };
 }
 
+// Pernoite lançado pelo colaborador (pendente no Caixa) só é aprovado quando:
+//  1) o gestor programou Pernoite pra ele na data (programacao_estadia);
+//  2) existe a pendência (status P) lançada pelo colaborador — nunca cria;
+//  3) não há NENHUM lançamento de Café, Almoço ou Janta ativo (P ou A) no
+//     dia — hospedagem cobre a alimentação, o mesmo princípio do pontual.
+// movements = todos os lançamentos do colaborador na data. Devolve null
+// quando não há pendência de Pernoite (nada a fazer nem a auditar).
+function decidePernoite(movements, { programado = false } = {}) {
+  const day = movements.filter((row) => row.ofmType === 'D');
+  const pernoite = day.filter((row) => norm(row.oexName) === 'PERNOITE');
+  if (!pernoite.some((row) => row.ofmStatus === 'P')) return null;
+  if (!programado) return { action: 'PERNOITE_BLOQUEADO', motivo: 'sem_pernoite_na_programacao', orphans: [] };
+  const refeicoes = day.filter((row) => isRefeicao({ oexName: row.oexName })
+    && String(row.ofmStatus).toUpperCase() !== 'N');
+  if (refeicoes.length) {
+    return {
+      action: 'PERNOITE_BLOQUEADO',
+      motivo: 'refeicao_lancada_no_dia',
+      refeicoes: refeicoes.map((row) => ({ tipo: row.oexName, ofmCode: row.ofmCode, status: row.ofmStatus })),
+      orphans: [],
+    };
+  }
+  return decide(pernoite);
+}
+
 async function queryAll(table, select, configure) {
   const pageSize = 1000;
   const rows = [];
@@ -281,6 +311,35 @@ async function loadCandidates(date) {
     almocosProgramados: alimentation.filter((row) => row.almoco === true).length,
     jantasProgramadas: alimentation.filter((row) => row.janta === true).length,
   };
+}
+
+// Colaboradores com Pernoite na Programação do gestor na data. Guarda CPFs e
+// nomes normalizados pra casar com o cadastro do GRM (colaborador_id da
+// programação pode ser UUID, então resolve o CPF via colaborador_cruzamento).
+async function loadPernoiteProgramado(date) {
+  const programacoes = await queryAll('programacao_dia', 'id', (q) => q.eq('data_referencia', date));
+  const ids = programacoes.map((row) => row.id).filter(Boolean);
+  const estadias = ids.length
+    ? await queryAll(
+      'programacao_estadia',
+      'colaborador_id,nome_colaborador,tipo_estadia',
+      (q) => q.in('programacao_id', ids).ilike('tipo_estadia', 'PERNOITE'),
+    )
+    : [];
+  const cpfs = new Set();
+  const names = new Set();
+  if (estadias.length) {
+    const contracts = await queryAll('colaborador_cruzamento', 'colaborador_id,cpf', (q) => q.order('colaborador_id'));
+    const cpfById = new Map(contracts.map((row) => [String(row.colaborador_id || ''), digits(row.cpf)]));
+    for (const row of estadias) {
+      const id = String(row.colaborador_id || '');
+      const cpf = cpfById.get(id) || (digits(id).length === 11 ? digits(id) : '');
+      if (cpf) cpfs.add(cpf);
+      const name = norm(row.nome_colaborador);
+      if (name) names.add(name);
+    }
+  }
+  return { cpfs, names, total: estadias.length };
 }
 
 async function validateCafeAuthorization(candidate, date) {
@@ -541,6 +600,147 @@ async function recordAudit(row) {
   if (error) throw error;
 }
 
+// Recusa pendências duplicadas que sobraram (já existe uma aprovada, ou só a
+// primeira pendência foi aprovada) — sem isso ficavam paradas em GRM como
+// risco de pagamento em dobro se alguém aprovasse manualmente depois.
+async function reproveOrphans(token, { date, candidate, staff, expense, decision, summary, actionCount }) {
+  for (const orphan of decision.orphans || []) {
+    const orphanAudit = {
+      data_referencia: date,
+      cpf: digits(candidate.cpf),
+      colaborador: candidate.nome,
+      sta_code: Number(staff.staCode),
+      tipo_contrato: candidate.tipo_contrato,
+      tipo_despesa: expense.oexName,
+      oex_code: Number(expense.oexCode),
+      valor: Number(orphan.ofmValue) || 0,
+      acao: 'REPROVE',
+      dry_run: DRY_RUN,
+      diagnostico: {
+        motivo: 'pendencia_orfa_apos_dedupe',
+        decisao_original: decision.action,
+      },
+    };
+    try {
+      if (actionCount >= MAX_ACTIONS) {
+        summary.adiados += 1;
+        orphanAudit.sucesso = false;
+        orphanAudit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
+        log('WARN', `${candidate.nome} / ${expense.oexName}: recusa de pendência órfã (ofm ${orphan.ofmCode}) adiada.`);
+      } else {
+        actionCount += 1;
+        orphanAudit.ofm_code = Number(orphan.ofmCode);
+        if (!DRY_RUN) {
+          await reprove(token, orphan, 'Recusa automática: pendência duplicada para a mesma despesa/dia.');
+        }
+        summary.orfas_recusadas += 1;
+        orphanAudit.sucesso = true;
+      }
+    } catch (error) {
+      summary.errors += 1;
+      orphanAudit.sucesso = false;
+      orphanAudit.erro = error.message;
+      log('ERROR', `${candidate.nome} / ${expense.oexName}: falha ao recusar pendência órfã (ofm ${orphan.ofmCode}): ${error.message}`);
+    }
+    await recordAudit(orphanAudit);
+  }
+  return actionCount;
+}
+
+// Aprova o Pernoite que o colaborador lançou no Caixa, respeitando as regras
+// de decidePernoite(). refeicaoStaCodes = quem teve Café/Almoço/Janta
+// aprovado ou criado nesta mesma execução (ainda não está em grm.movements).
+async function processPernoite(token, { date, grm, summary, actionCount, refeicaoStaCodes }) {
+  const programado = await loadPernoiteProgramado(date);
+  summary.pernoite_programado = programado.total;
+  const contracts = await queryAll('colaborador_cruzamento', 'cpf,tipo_contrato', (q) => q.order('colaborador_id'));
+  const contractByCpf = new Map(contracts.map((row) => [digits(row.cpf), row.tipo_contrato]));
+
+  const staffCodes = [...new Set(grm.movements
+    .filter((row) => row.ofmType === 'D' && norm(row.oexName) === 'PERNOITE' && row.ofmStatus === 'P')
+    .map((row) => Number(row.staCode)))];
+
+  for (const staCode of staffCodes) {
+    const staff = grm.staff.find((row) => Number(row.staCode) === staCode);
+    if (!staff) {
+      summary.unresolved += 1;
+      log('WARN', 'Pernoite pendente de colaborador não localizado no cadastro do GRM.', { staCode });
+      continue;
+    }
+    const cpf = digits(staff.staCPF);
+    const nameKey = norm(staff.staName);
+    const isProgramado = (cpf && programado.cpfs.has(cpf)) || programado.names.has(nameKey);
+    const movements = grm.movements.filter((row) => Number(row.staCode) === staCode);
+    const decision = decidePernoite(movements, { programado: isProgramado });
+    if (!decision) continue;
+
+    const rows = movements.filter((row) => norm(row.oexName) === 'PERNOITE');
+    const reference = (decision.row || rows.find((row) => row.ofmStatus === 'P') || rows[0]);
+    const expense = { oexName: reference.oexName, oexCode: reference.oexCode };
+    const candidate = { cpf, nome: staff.staName, tipo_contrato: contractByCpf.get(cpf) || '' };
+    summary.checked += 1;
+
+    const audit = {
+      data_referencia: date,
+      cpf,
+      colaborador: staff.staName,
+      sta_code: staCode,
+      tipo_contrato: candidate.tipo_contrato,
+      tipo_despesa: reference.oexName,
+      oex_code: Number(reference.oexCode),
+      valor: Number(reference.ofmValue) || 0,
+      acao: decision.action,
+      dry_run: DRY_RUN,
+      diagnostico: {
+        pernoite_programado: isProgramado,
+        motivo: decision.motivo || null,
+        refeicoes_lancadas: decision.refeicoes || [],
+        existentes: rows.map((r) => ({ ofmCode: r.ofmCode, status: r.ofmStatus, valor: r.ofmValue })),
+        duplicados_pendentes: (decision.orphans || []).length,
+      },
+    };
+
+    try {
+      if (decision.action === 'APPROVE' && refeicaoStaCodes.has(staCode)) {
+        audit.acao = 'PERNOITE_BLOQUEADO';
+        audit.diagnostico.motivo = 'refeicao_lancada_nesta_execucao';
+        summary.pernoite_bloqueado += 1;
+      } else if (decision.action === 'PERNOITE_BLOQUEADO') {
+        summary.pernoite_bloqueado += 1;
+      } else if (decision.action === 'NONE') {
+        summary.unchanged += 1;
+      } else if (actionCount >= MAX_ACTIONS) {
+        summary.adiados += 1;
+        audit.sucesso = false;
+        audit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
+        log('WARN', `${staff.staName} / Pernoite: ${audit.erro}`);
+        await recordAudit(audit);
+        continue;
+      } else {
+        summary.approve += 1;
+        summary.pernoite_aprovado += 1;
+        actionCount += 1;
+        audit.ofm_code = Number(decision.row.ofmCode);
+        if (!DRY_RUN) await approve(token, decision.row);
+      }
+      audit.sucesso = true;
+    } catch (error) {
+      summary.errors += 1;
+      audit.sucesso = false;
+      audit.erro = error.message;
+      log('ERROR', `${staff.staName} / Pernoite: ${error.message}`);
+    }
+    await recordAudit(audit);
+
+    if (audit.sucesso && (audit.acao === 'APPROVE' || audit.acao === 'NONE')) {
+      actionCount = await reproveOrphans(token, {
+        date, candidate, staff, expense, decision, summary, actionCount,
+      });
+    }
+  }
+  return actionCount;
+}
+
 async function main() {
   if (!process.env.GRMSERVER_USER || !process.env.GRMSERVER_PASSWORD) {
     throw new Error('Credenciais GRM ausentes.');
@@ -576,8 +776,14 @@ async function main() {
     janta_bloqueada_laudo_19h: 0,
     orfas_recusadas: 0,
     sem_pendencia_cafe_janta: 0,
+    pernoite_programado: 0,
+    pernoite_aprovado: 0,
+    pernoite_bloqueado: 0,
   };
   let actionCount = 0;
+  // Quem teve Café/Almoço/Janta aprovado ou criado nesta execução — o passo de
+  // Pernoite (abaixo) não enxerga isso em grm.movements, que é o retrato do início.
+  const refeicaoStaCodes = new Set();
 
   for (const candidate of source.candidates) {
     let cafeAuthorized = false;
@@ -671,6 +877,7 @@ async function main() {
           summary.approve += 1;
           actionCount += 1;
           audit.ofm_code = Number(decision.row.ofmCode);
+          if (isRefeicao(expense)) refeicaoStaCodes.add(Number(staff.staCode));
           if (!DRY_RUN) await approve(token, decision.row);
         } else {
           if (!(Number(expense.amount) > 0)) {
@@ -678,6 +885,7 @@ async function main() {
           }
           summary.create += 1;
           actionCount += 1;
+          if (isRefeicao(expense)) refeicaoStaCodes.add(Number(staff.staCode));
           if (!DRY_RUN) {
             await create(token, staff, expense, date, { cafeAuthorized, jantaAuthorized });
             const refreshed = await api(token, '/api/reports/finance/operatingFlow', {
@@ -705,52 +913,15 @@ async function main() {
       }
       await recordAudit(audit);
 
-      // Recusa pendências duplicadas que sobraram (já existe uma aprovada, ou
-      // só a primeira pendência foi aprovada acima) — sem isso ficavam
-      // paradas em GRM como risco de pagamento em dobro se alguém aprovasse
-      // manualmente depois.
-      for (const orphan of decision.orphans || []) {
-        const orphanAudit = {
-          data_referencia: date,
-          cpf: digits(candidate.cpf),
-          colaborador: candidate.nome,
-          sta_code: Number(staff.staCode),
-          tipo_contrato: candidate.tipo_contrato,
-          tipo_despesa: expense.oexName,
-          oex_code: Number(expense.oexCode),
-          valor: Number(orphan.ofmValue) || 0,
-          acao: 'REPROVE',
-          dry_run: DRY_RUN,
-          diagnostico: {
-            motivo: 'pendencia_orfa_apos_dedupe',
-            decisao_original: decision.action,
-          },
-        };
-        try {
-          if (actionCount >= MAX_ACTIONS) {
-            summary.adiados += 1;
-            orphanAudit.sucesso = false;
-            orphanAudit.erro = `Limite de ${MAX_ACTIONS} ações atingido nesta execução; adiado para a próxima.`;
-            log('WARN', `${candidate.nome} / ${expense.oexName}: recusa de pendência órfã (ofm ${orphan.ofmCode}) adiada.`);
-          } else {
-            actionCount += 1;
-            orphanAudit.ofm_code = Number(orphan.ofmCode);
-            if (!DRY_RUN) {
-              await reprove(token, orphan, 'Recusa automática: pendência duplicada para a mesma despesa/dia.');
-            }
-            summary.orfas_recusadas += 1;
-            orphanAudit.sucesso = true;
-          }
-        } catch (error) {
-          summary.errors += 1;
-          orphanAudit.sucesso = false;
-          orphanAudit.erro = error.message;
-          log('ERROR', `${candidate.nome} / ${expense.oexName}: falha ao recusar pendência órfã (ofm ${orphan.ofmCode}): ${error.message}`);
-        }
-        await recordAudit(orphanAudit);
-      }
+      actionCount = await reproveOrphans(token, {
+        date, candidate, staff, expense, decision, summary, actionCount,
+      });
     }
   }
+
+  actionCount = await processPernoite(token, {
+    date, grm, summary, actionCount, refeicaoStaCodes,
+  });
 
   log(summary.errors ? 'WARN' : 'SUCCESS', 'Execução concluída.', summary);
   if (summary.errors) process.exitCode = 1;
@@ -770,6 +941,7 @@ module.exports = {
   registerDateAtPoint,
   requiredExpenses,
   decide,
+  decidePernoite,
   assertDirectExpenseAllowed,
   validateCafeAuthorization,
   validateJantaAuthorization,
