@@ -11,8 +11,9 @@
  * Custo do dia = TODOS os custos aprovados no Caixa Operacional do GRM para o colaborador na data
  * (Café, Almoço, Janta, Pernoite, Serviços Terceirizados dos diaristas e Salário de Intermitente),
  * lidos de grm_despesas_retroativas_auditoria via RPC produtividade_custos_aprovados, mais:
- *  - Efetivo: salário ÷ 30, todos os dias. Efetivos classificadores sem produção também
- *    entram na lista (faturado 0, saldo negativo) — dá pra esconder pelo filtro.
+ *  - Efetivo: salário ÷ 30 por dia listado. O efetivo aparece em todo dia útil (seg–sex), com ou
+ *    sem produção, porque o custo existe mesmo sem produtividade (faturado 0, saldo negativo);
+ *    sábado/domingo só entra se produziu. Dá pra esconder as linhas sem produção pelo filtro.
  */
 (function () {
   'use strict';
@@ -135,6 +136,12 @@
     return out;
   }
 
+  // Segunda a sexta (a data é AAAA-MM-DD; o dia da semana é calculado em UTC pra não depender do fuso).
+  function isDiaUtil(iso) {
+    const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
+    return dow >= 1 && dow <= 5;
+  }
+
   function todayLocalIso() {
     const n = new Date();
     return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
@@ -151,10 +158,6 @@
   function isActive(row) {
     const s = keyText(row?.situacao);
     return Boolean(s) && !s.includes('INATIVO') && !s.includes('NAOATIVO') && !s.includes('DESLIG');
-  }
-
-  function isClassificador(row) {
-    return keyText(row?.cargo).includes('CLASSIFICADOR');
   }
 
   async function fetchAllRows(table, select, applyQuery, pageSize = 1000) {
@@ -338,11 +341,12 @@
       });
     }
 
-    // 2) Efetivos classificadores sem produção no dia (custo sem receita)
+    // 2) Efetivos sem produção em dia útil (custo sem receita)
     const hoje = todayLocalIso();
-    const efetivos = colabRows.filter((c) => tipoCanon(c.tipo) === 'Efetivo' && isClassificador(c) && keyText(c.nome));
+    const efetivos = colabRows.filter((c) => tipoCanon(c.tipo) === 'Efetivo' && keyText(c.nome));
     for (const day of daysBetween(from, to)) {
       if (day > hoje) break;
+      if (!isDiaUtil(day)) continue;
       for (const c of efetivos) {
         const adm = dateKey(c.admissao);
         const desl = dateKey(c.desligamento);
@@ -463,7 +467,7 @@
     })();
   }
 
-  // Dias corridos do período em que o efetivo estava no quadro (admissão/desligamento) e que já passaram.
+  // Dias úteis (seg–sex) do período em que o efetivo estava no quadro (admissão/desligamento) e que já passaram.
   function diasNoQuadro(colab, from, to) {
     let ini = from;
     let fim = to < todayLocalIso() ? to : todayLocalIso();
@@ -472,7 +476,7 @@
     if (adm && adm > ini) ini = adm;
     if (desl && desl < fim) fim = desl;
     if (!desl && !isActive(colab)) return 0;
-    return ini > fim ? 0 : daysBetween(ini, fim).length;
+    return ini > fim ? 0 : daysBetween(ini, fim).filter(isDiaUtil).length;
   }
 
   function buildPeriodoRows(rpcRows, colabRows, from, to, custoRows) {
@@ -492,7 +496,7 @@
       const colab = byName.get(nameKey);
       const tipo = colab ? tipoCanon(colab.tipo) : '';
       const custoAprovado = aprovadoDe(nameKey);
-      const custoSalario = colab ? custoSalarioDia(tipo, colab.salario) * diasNoQuadro(colab, from, to) : 0;
+      const custoSalario = colab ? custoSalarioDia(tipo, colab.salario) * (diasNoQuadro(colab, from, to) + toNumber(r.dias_fim_semana)) : 0;
       produziu.add(nameKey);
       rows.push({
         nome: String(r.funcionario).trim(),
@@ -510,7 +514,7 @@
     }
 
     for (const c of colabRows) {
-      if (tipoCanon(c.tipo) !== 'Efetivo' || !isClassificador(c)) continue;
+      if (tipoCanon(c.tipo) !== 'Efetivo') continue;
       const nameKey = keyText(c.nome);
       if (!nameKey || produziu.has(nameKey)) continue;
       const dias = diasNoQuadro(c, from, to);
@@ -631,7 +635,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias corridos no quadro (efetivo). Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador no período (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 × dias úteis (seg–sex) no quadro, mais os fins de semana em que produziu (efetivo). Passe o mouse sobre o custo para ver a composição.${esc(cortado)}</div>
       </section>
     `;
   }
@@ -749,7 +753,7 @@
             <tbody>${body}</tbody>
           </table>
         </div>
-        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. Linhas sem produção (faturado zero) mostram custo aprovado ou salário sem receita.${esc(cortado)}</div>
+        <div class="prd-footer-note">Faturado = valor embarcado do Resultado Diário. Custo = tudo que foi aprovado no Caixa Operacional do GRM para o colaborador na data (alimentação, pernoite, serviços terceirizados dos diaristas e salário dos intermitentes) + salário ÷ 30 do efetivo. Passe o mouse sobre o custo para ver a composição. O efetivo aparece em todo dia útil, com ou sem produção (faturado zero); sábado e domingo só se produziu.${esc(cortado)}</div>
       </section>
     `;
   }
@@ -769,7 +773,7 @@
     const coordenacoes = [...new Set(source.map((r) => r.coordenacao).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const coordOptions = ['<option value="">Todas</option>', ...coordenacoes.map((c) => `<option value="${esc(c)}" ${state.coordenacao === c ? 'selected' : ''}>${esc(c)}</option>`)].join('');
     const tipoOptions = ['<option value="">Todos</option>', ...TIPOS.map((t) => `<option value="${t}" ${state.tipo === t ? 'selected' : ''}>${t}</option>`)].join('');
-    const ociososCheck = `<label class="prd-check"><input type="checkbox" data-prd-ociosos ${state.incluirOciosos ? 'checked' : ''} /> Incluir colaboradores sem produção (efetivos classificadores e custos aprovados sem faturamento)</label>`;
+    const ociososCheck = `<label class="prd-check"><input type="checkbox" data-prd-ociosos ${state.incluirOciosos ? 'checked' : ''} /> Incluir colaboradores sem produção (efetivos nos dias úteis e custos aprovados sem faturamento)</label>`;
     const tabs = `
       <div class="prd-tabs">
         <button class="prd-tab ${periodo ? '' : 'active'}" type="button" data-prd-tab="diario">Relatório diário</button>
