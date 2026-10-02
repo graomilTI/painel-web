@@ -159,6 +159,23 @@ function assertDirectExpenseAllowed(
   }
 }
 
+// Intermitente só tem direito ao salário a partir da admissão atual no cadastro:
+// antes disso o colaborador era Diarista (ou outro vínculo) e o contrato
+// de hoje não vale pra datas passadas. Sem admissão legível, mantém o contrato.
+function admissaoIso(value) {
+  const text = String(value || '').trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : '';
+}
+
+function contractTypeOnDate(contractType, admissao, date) {
+  const admissionDate = admissaoIso(admissao);
+  if (norm(contractType) === 'INTERMITENTE' && admissionDate && date < admissionDate) return '';
+  return contractType;
+}
+
 function requiredExpenses(
   contractType,
   salary,
@@ -233,8 +250,13 @@ function addToIndex(map, key, row) {
   map.get(key).push(row);
 }
 
+async function loadAdmissaoByCpf() {
+  const rows = await queryAll('colaboradores', 'cpf,admissao', (q) => q.order('id'));
+  return new Map(rows.map((row) => [digits(row.cpf), row.admissao]));
+}
+
 async function loadCandidates(date) {
-  const [programmed, alimentation, production, contracts] = await Promise.all([
+  const [programmed, alimentation, production, contracts, admissaoByCpf] = await Promise.all([
     queryAll(
       'programacao_colaboradores',
       'programacao_id,colaborador_id,nome_colaborador,coordenacao,supervisao,data_referencia',
@@ -247,6 +269,7 @@ async function loadCandidates(date) {
     ),
     queryAll('producao_snapshot', 'funcionario,data,os,cargas,tons', (q) => q.eq('data', date)),
     queryAll('colaborador_cruzamento', 'colaborador_id,cpf,nome,tipo_contrato,salario,atualizado_em', (q) => q.order('atualizado_em', { ascending: false })),
+    loadAdmissaoByCpf(),
   ]);
 
   const laudoNames = new Set(production.map((row) => norm(row.funcionario)).filter(Boolean));
@@ -299,6 +322,7 @@ async function loadCandidates(date) {
 
     unique.set(digits(contract.cpf) || name, {
       ...contract,
+      contrato_na_data: contractTypeOnDate(contract.tipo_contrato, admissaoByCpf.get(digits(contract.cpf)), date),
       nameKey: name,
       programmed: isProgrammed,
       hasLaudo,
@@ -746,7 +770,7 @@ async function processDate(page, date, budget) {
     const hasPernoite = pernoiteStaCodes.has(Number(staff.staCode));
     if (hasPernoite && (candidate.hasLaudo || cafeAuthorized)) summary.pernoite_pulados += 1;
     const expenses = requiredExpenses(
-      candidate.tipo_contrato,
+      candidate.contrato_na_data,
       candidate.salario,
       grm.expenseTypes,
       { hasLaudo: candidate.hasLaudo, cafeAuthorized, hasPernoite },
