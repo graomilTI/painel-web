@@ -47,8 +47,14 @@ function injectStyles() {
     .fv-create-bar{display:flex;justify-content:flex-start;margin:0 0 14px}
     .fv-form[hidden]{display:none!important}
     .fv-form-actions{display:flex!important;align-items:center;gap:10px;flex-wrap:wrap}
-    .fv-table{min-width:1420px!important;table-layout:auto}
+    .fv-table{min-width:1360px!important;table-layout:auto}
     .fv-table th,.fv-table td{vertical-align:middle}
+    .fv-shell .fv-table td{padding:6px 11px;line-height:1.25}
+    .fv-shell .fv-table th{padding:9px 11px}
+    .fv-table td small{font-size:11px;line-height:1.2}
+    .fv-valid{display:flex;flex-wrap:wrap;gap:4px}
+    .fv-valid .fv-badge{padding:2px 7px}
+    .fv-table .fv-mini{min-height:28px}
     .fv-table th:nth-child(1),.fv-table td:nth-child(1){min-width:125px}
     .fv-table th:nth-child(2),.fv-table td:nth-child(2){min-width:115px;white-space:nowrap}
     .fv-table th:nth-child(3),.fv-table td:nth-child(3){min-width:130px;white-space:nowrap}
@@ -65,11 +71,11 @@ function injectStyles() {
     .fv-sort-button:focus-visible{box-shadow:inset 0 -2px 0 #22c55e}
     .fv-sort-indicator{min-width:12px;color:#64748b;font-size:12px;line-height:1}
     .fv-table th[aria-sort="ascending"] .fv-sort-indicator,.fv-table th[aria-sort="descending"] .fv-sort-indicator{color:#86efac}
-    .fv-days{display:inline-flex;min-width:62px;justify-content:center;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:700;background:#eef2f7;color:#52606d}
+    .fv-days{display:inline-flex;min-width:62px;justify-content:center;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;background:#eef2f7;color:#52606d}
     .fv-days.is-ok{background:#e7f7ee;color:#18794e}
     .fv-days.is-warn{background:#fff4d6;color:#8a6100}
     .fv-days.is-late{background:#fde8e7;color:#b42318}
-    .fv-plate-equivalent{display:block;margin-top:4px;color:#86efac;font-size:10px;font-weight:800;letter-spacing:.02em}
+    .fv-plate-equivalent{display:block;margin-top:1px;color:#86efac;font-size:10px;font-weight:800;letter-spacing:.02em}
     .fv-table td:last-child .fv-btn{padding-left:10px;padding-right:10px}
     @media (max-width:760px){.fv-create-bar{margin-bottom:10px}.fv-form-actions{grid-column:1/-1}.fv-table{min-width:1320px!important}}
   `;
