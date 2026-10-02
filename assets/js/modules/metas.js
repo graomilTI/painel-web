@@ -2158,6 +2158,22 @@ import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
     }
   }
 
+  // O Dashboard lê a meta de um cache de 1h (dashboard_cache + localStorage);
+  // sem invalidar, a meta recém-salva só aparece lá depois que o cache vence.
+  async function invalidarCacheDashboard(supabase) {
+    try {
+      Object.keys(localStorage || {}).forEach((key) => {
+        if (key.startsWith('grao1000:gestor-dash')) localStorage.removeItem(key);
+      });
+    } catch {}
+    try {
+      const { error } = await supabase.rpc('invalidar_dashboard_cache_segmentado', { p_origem: 'metas' });
+      if (error) throw error;
+    } catch (error) {
+      console.warn('[METAS] Não foi possível invalidar o cache do dashboard:', error?.message || error);
+    }
+  }
+
   async function salvarMeta(form, state, supabase, rerender) {
     const fd = new FormData(form);
 
@@ -2185,6 +2201,8 @@ import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
       alert('Erro ao salvar meta: ' + error.message);
       return;
     }
+
+    await invalidarCacheDashboard(supabase);
 
     state.ano = payload.ano;
     state.mes = payload.mes;
@@ -2231,6 +2249,8 @@ import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
       alert('Erro ao salvar lista de metas: ' + error.message);
       return;
     }
+
+    await invalidarCacheDashboard(supabase);
 
     state.estado = '';
     state.regional = '';
