@@ -43,8 +43,8 @@
   }
 
   const TERMO_BULLETS = [
-    'Zelar pela conservação do veículo da empresa e mensalmente, no dia 20 de cada mês, preencher o checklist através do aplicativo Infleet-Motorista, com as informações sobre as condições do veículo da empresa.',
-    'Comunicar diretamente à EMPRESA a necessidade de manutenção ou conserto do veículo, não podendo esse procedimento (conserto ou manutenção) ser feito sem prévio consentimento ou por pessoa não autorizada pela EMPRESA, excetuando-se aquelas de pequena monta, imprescindíveis à continuidade de viagens. Esta comunicação deverá ser através do aplicativo Infleet-Motorista, onde será inserida a informação da manutenção necessária, juntamente com a foto da peça/serviço solicitado.',
+    'Zelar pela conservação do veículo da empresa e mensalmente, no dia 20 de cada mês, preencher o checklist através do app Bfleet, com as informações sobre as condições do veículo da empresa.',
+    'Comunicar diretamente à EMPRESA a necessidade de manutenção ou conserto do veículo, não podendo esse procedimento (conserto ou manutenção) ser feito sem prévio consentimento ou por pessoa não autorizada pela EMPRESA, excetuando-se aquelas de pequena monta, imprescindíveis à continuidade de viagens. Esta comunicação deverá ser através do app Bfleet, onde será inserida a informação da manutenção necessária, juntamente com a foto da peça/serviço solicitado.',
     'Comunicar imediatamente a empresa qualquer ocorrência relacionada ao veículo, tais como, danos, avarias e roubo ou furto.',
     'Comunicar imediatamente a empresa em caso de recebimento de multa por qualquer tipo de infração de trânsito.',
     'Pagar as multas decorrentes de infração de trânsito de minha responsabilidade.',
@@ -68,7 +68,7 @@
     'E por estar de pleno acordo com as condições ora pactuadas, assino o presente instrumento.',
   ];
 
-  async function gerarPdfTermo({ nome, cnhNumero, cnhValidadeBr }) {
+  async function gerarPdfTermo({ nome, empresa, cnhNumero, cnhValidadeBr }) {
     const JsPDF = await loadJsPdf();
     const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const marginX = 20;
@@ -127,7 +127,7 @@
 
     ensureSpace(40);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Empresa: ${EMPRESA_NOME}`, marginX, y); y += 6;
+    doc.text(`Empresa: ${String(empresa || EMPRESA_NOME).toUpperCase()}`, marginX, y); y += 6;
     doc.text(`Colaborador Condutor ${nome.toUpperCase()}`, marginX, y); y += 6;
     doc.text(`CNH ${cnhNumero}  B ${cnhValidadeBr}`, marginX, y); y += 16;
     doc.line(marginX, y, marginX + 90, y);
@@ -144,7 +144,7 @@
     if (!termo || termo.trim().length < 3) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
     const { data, error } = await opts.supabase
       .from('colaboradores_atuais')
-      .select('nome,cpf,whatsapp,email_empresa,email_pessoal,endereco,bairro,cidade,estado,cep')
+      .select('nome,cpf,empresa,whatsapp,email_empresa,email_pessoal,endereco,bairro,cidade,estado,cep')
       .ilike('nome', `%${termo.trim()}%`)
       .limit(8);
     if (error || !data?.length) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
@@ -194,7 +194,7 @@
     state.gerando = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Gerando...'; }
     try {
-      await gerarPdfTermo({ nome: state.colaborador.nome, cnhNumero, cnhValidadeBr: dateInputToBr(cnhValidade) });
+      await gerarPdfTermo({ nome: state.colaborador.nome, empresa: state.colaborador.empresa, cnhNumero, cnhValidadeBr: dateInputToBr(cnhValidade) });
       const resultado = await salvarMotorista(opts, state.colaborador, cnhNumero, cnhValidade);
       toast(`Termo gerado e ${state.colaborador.nome} ${resultado === 'atualizado' ? 'atualizado(a)' : 'cadastrado(a)'} em Motoristas.`);
       state.colaborador = null;
