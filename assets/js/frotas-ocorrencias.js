@@ -76,9 +76,6 @@ export function renderContent(content, ctx) {
 
   content.innerHTML = `
     <section class="card mt-16">
-      <div class="frotas-hub-kicker">Frotas · Ocorrências</div>
-      <h1 class="frotas-hub-title">Ocorrências</h1>
-      <p class="frotas-hub-subtitle">Notificações de excesso de velocidade, multas e histórico dos colaboradores.</p>
       <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}</div>
       <div class="frotas-hub-tab-body" id="frotasOcorrenciasTabBody"></div>
     </section>`;
