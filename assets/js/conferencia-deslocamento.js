@@ -180,9 +180,13 @@ function injectStyles() {
     .cd-toggle-btn{font-family:inherit;font-size:11px;font-weight:800;padding:6px 12px;border-radius:999px;cursor:pointer;border:1px solid rgba(148,163,184,.3);background:rgba(148,163,184,.1);color:#cbd5e1;white-space:nowrap}
     .cd-toggle-btn:hover{background:rgba(148,163,184,.2)}
     .cd-toggle-btn.on{background:rgba(63,168,120,.22);color:#86efac;border-color:rgba(134,239,172,.4)}
-    .cd-cfg-row{display:grid;grid-template-columns:minmax(180px,1fr) 190px 150px minmax(150px,auto);align-items:center;gap:14px;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:12px;padding:10px 14px;margin-bottom:8px;font-size:12.5px;color:#9fb7aa}
+    .cd-cfg-row{display:grid;grid-template-columns:minmax(180px,1fr) 190px 150px minmax(150px,auto);align-items:center;gap:14px;background:rgba(8,22,17,.72);border:1px solid rgba(111,208,165,.16);border-radius:10px;padding:4px 12px;margin-bottom:4px;font-size:12px;color:#9fb7aa}
     @media (max-width:760px){.cd-cfg-row{grid-template-columns:1fr}}
-    .cd-cfg-nome{font-size:13.5px;font-weight:800;color:#f8fafc;min-width:0}
+    .cd-cfg-nome{font-size:12.5px;font-weight:800;color:#f8fafc;min-width:0}
+    .cd-cfg-row .cd-select{padding:3px 9px;font-size:12.5px;border-radius:8px}
+    .cd-cfg-row .cd-tarifa-input{padding:3px 7px;font-size:12px}
+    .cd-cfg-row .cd-pill{padding:2px 8px;font-size:10.5px}
+    .cd-cfg-row .cd-del{margin-left:6px;font-size:12px}
     .cd-cfg-tarifa{display:flex;align-items:center;gap:6px;visibility:hidden}
     .cd-cfg-tarifa.cd-cfg-tarifa--on{visibility:visible}
     .cd-cfg-status{display:flex;align-items:center}
@@ -197,7 +201,7 @@ function injectStyles() {
     .cd-cfg-group[open] .cd-cfg-chevron{transform:rotate(45deg)}
     .cd-cfg-group-nome{font-size:12.5px;font-weight:800;color:#dcfce7;text-transform:uppercase;letter-spacing:.03em}
     .cd-cfg-group-count{font-size:11px;font-weight:800;color:#6fd0a5;background:rgba(111,208,165,.14);border-radius:999px;padding:2px 9px}
-    .cd-cfg-group-rows{display:flex;flex-direction:column;gap:8px;padding-top:2px}
+    .cd-cfg-group-rows{display:flex;flex-direction:column;gap:4px;padding-top:2px}
     .cd-cfg-group-rows .cd-cfg-row{margin-bottom:0}
   `;
   document.head.appendChild(st);
