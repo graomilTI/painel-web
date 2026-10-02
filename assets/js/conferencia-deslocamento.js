@@ -33,6 +33,7 @@ let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
 let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km, tipo_deslocamento, km)
 let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
+let inativosCfg = { chaves: new Set(), nomes: new Set() }; // desligados (operacional_colaborador_base.ativo = false)
 let cfgFiltro = '';
 let cfgAgrupar = false;         // agrupa a lista por supervisão
 let cfgGruposAbertos = new Set(); // supervisões com o grupo expandido (persiste entre re-renders)
@@ -469,6 +470,13 @@ async function limparInativosDaLista() {
   if (error) { console.warn('[conf-desloc] checar inativos', error); return; }
 
   const statusPorChave = new Map((data || []).map((r) => [chaveDe(r.cpf, r.nome), !!r.ativo]));
+  // Desligados também ficam fora da tela quando o registro antigo tem outra chave
+  // (CPF formatado, só nome...) e por isso não casa com a base ativa.
+  const nomesAtivos = new Set(baseColabs.map((c) => c.nomeNorm));
+  inativosCfg = {
+    chaves: new Set((data || []).filter((r) => !r.ativo).map((r) => chaveDe(r.cpf, r.nome))),
+    nomes: new Set((data || []).filter((r) => !r.ativo && !nomesAtivos.has(norm(r.nome))).map((r) => norm(r.nome))),
+  };
   const paraRemover = lista.filter((l) => statusPorChave.get(l.colaborador_id) === false);
   if (!paraRemover.length) return;
 
@@ -501,7 +509,9 @@ function configUnificado() {
   // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado —
   // sem supervisão conhecida, caem no grupo "Sem supervisão" ao agrupar.
   lista.forEach((l) => {
-    if (!vistos.has(String(l.colaborador_id))) linhas.push({ ...l, supervisao: '', _existe: true });
+    const chave = String(l.colaborador_id);
+    if (inativosCfg.chaves.has(chave) || inativosCfg.nomes.has(norm(l.nome))) return;
+    if (!vistos.has(chave)) linhas.push({ ...l, supervisao: '', _existe: true });
   });
   const termo = norm(cfgFiltro);
   const filtradas = termo ? linhas.filter((c) => norm(c.nome).includes(termo)) : linhas;
