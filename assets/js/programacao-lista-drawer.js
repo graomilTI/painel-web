@@ -513,10 +513,24 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
       console.warn('[programacao-lista-drawer] falha ao carregar locais de embarque do agente:', error?.message || error);
     }
 
+    // Só cidades/locais das O.S. da supervisão carregada: o relatório do agente
+    // traz TODOS os locais do GRM, então usamos ele só pra rotular e restringimos
+    // pelo que existe em osTodasAtual (relato da supervisão, 2026-10-02).
+    const cidadesDasOs = new Map();
+    const locaisDasOs = new Set();
+    osTodasAtual.forEach((os) => {
+      const cidade = cidadeFromEmbarque(os.embarque);
+      if (cidade) cidadesDasOs.set(normalizeText(cidade), cidade);
+      const localKey = normalizeText(os.embarque);
+      if (localKey) locaisDasOs.add(localKey);
+    });
     const cidadesMap = new Map();
-    locaisAgente.forEach((p) => { if (!cidadesMap.has(p.cidadeKey)) cidadesMap.set(p.cidadeKey, p.cidade); });
+    locaisAgente.forEach((p) => {
+      if (cidadesDasOs.has(p.cidadeKey) && !cidadesMap.has(p.cidadeKey)) cidadesMap.set(p.cidadeKey, p.cidade);
+    });
+    cidadesDasOs.forEach((label, key) => { if (!cidadesMap.has(key)) cidadesMap.set(key, label); });
     const cidades = [...cidadesMap.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
-    const locais = [...locaisAgente].sort((a, b) => `${a.uf} ${a.cidade} ${a.local}`.localeCompare(`${b.uf} ${b.cidade} ${b.local}`, 'pt-BR'));
+    const locais = locaisAgente.filter((l) => locaisDasOs.has(l.key)).sort((a, b) => `${a.uf} ${a.cidade} ${a.local}`.localeCompare(`${b.uf} ${b.cidade} ${b.local}`, 'pt-BR'));
 
     cidadeSel.innerHTML = '<option value="">Todas as cidades</option>' + cidades.map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
     localSel.innerHTML = '<option value="">Todos os locais</option>' + locais.map((l) => `<option value="${esc(l.key)}">${esc(`${l.uf} - ${l.cidade} (${l.local})`)}</option>`).join('');
