@@ -4,7 +4,7 @@
 
   const styles = `
     <style>
-      .fv-shell{color:#e2e2f0}.fv-head{margin-bottom:18px}.fv-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fv-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fv-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fv-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fv-body{padding:18px}.fv-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto;gap:10px;margin-bottom:14px}.fv-toolbar.extra{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:-4px}.fv-input,.fv-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fv-select option{background:#0d0d18;color:#e2e2f0}.fv-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fv-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fv-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fv-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fv-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}.fv-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0}.fv-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fv-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fv-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fv-table{width:100%;border-collapse:collapse;min-width:1120px}.fv-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fv-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fv-table tr:hover td{background:rgba(22,101,52,.08)}.fv-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fv-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fv-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fv-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fv-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}.fv-actions .fv-btn{white-space:nowrap}.fv-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1200px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
+      .fv-shell{color:#e2e2f0}.fv-head{margin-bottom:18px}.fv-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fv-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fv-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fv-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fv-body{padding:18px}.fv-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto auto;gap:10px;margin-bottom:14px}.fv-toolbar.extra{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:-4px}.fv-input,.fv-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fv-select option{background:#0d0d18;color:#e2e2f0}.fv-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fv-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fv-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fv-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fv-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}.fv-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0;text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s}.fv-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.14)}.fv-kpi.active{border-color:#22c55e;background:rgba(22,101,52,.28);box-shadow:0 0 0 1px #22c55e inset}.fv-kpi:focus-visible{outline:2px solid #22c55e;outline-offset:2px}.fv-btn:disabled{opacity:.6;cursor:progress}.fv-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fv-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fv-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fv-table{width:100%;border-collapse:collapse;min-width:1120px}.fv-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fv-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fv-table tr:hover td{background:rgba(22,101,52,.08)}.fv-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fv-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fv-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fv-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fv-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}.fv-actions .fv-btn{white-space:nowrap}.fv-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1200px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
     </style>`;
 
   const state = { veiculos: [], loading: false, filtro: 'todos', busca: '' };
@@ -214,28 +214,23 @@
     }catch(err){ toast(err.message || 'Falha ao consultar DETRAN.', true); }
   }
 
-  async function sincronizarFrota(root, opts){
-    try{
-      toast('Sincronizando veículos no DETRAN...');
-      const veiculos = await callFunction(opts, 'sync-veiculos-detran', { mode:'all' });
-      const totalVeiculos = Number(veiculos?.total || 0);
-      toast(`Veículos atualizados: ${totalVeiculos}. Sincronizando multas em lotes...`);
-      let offset=0, limit=15, totalMultas=0, totalProcessados=0, inserted=0, updated=0, errors=0, totalDisponivel=null;
-      for(let i=0;i<80;i++){
-        const lote = await callFunction(opts, 'sync-multas-detran', { mode:'all', offset, limit });
-        totalMultas += Number(lote?.total_multas || 0);
-        totalProcessados += Number(lote?.total_veiculos || 0);
-        inserted += Number(lote?.inserted || 0);
-        updated += Number(lote?.updated || 0);
-        errors += Number(lote?.errors || 0);
-        totalDisponivel = lote?.total_disponivel ?? totalDisponivel;
-        offset = Number(lote?.next_offset || offset + limit);
-        toast(`Multas: ${Math.min(offset, Number(totalDisponivel || offset))}/${totalDisponivel || '?'} veículos processados...`);
-        if(!lote?.has_more) break;
-      }
-      toast(`Sincronização concluída: ${totalVeiculos} veículo(s), ${totalMultas} multa(s), ${inserted} nova(s), ${updated} atualizada(s)${errors ? `, ${errors} erro(s)` : ''}.`, Boolean(errors));
-      await loadVeiculos(root, opts);
-    }catch(err){ toast(err.message || 'Falha ao sincronizar veículos/multas.', true); }
+  async function sincronizarFrota(root, opts, progress){
+    progress('DETRAN: sincronizando veículos...');
+    const veiculos = await callFunction(opts, 'sync-veiculos-detran', { mode:'all' });
+    const totalVeiculos = Number(veiculos?.total || 0);
+    let offset=0, limit=15, totalMultas=0, inserted=0, updated=0, errors=0, totalDisponivel=null;
+    for(let i=0;i<80;i++){
+      const lote = await callFunction(opts, 'sync-multas-detran', { mode:'all', offset, limit });
+      totalMultas += Number(lote?.total_multas || 0);
+      inserted += Number(lote?.inserted || 0);
+      updated += Number(lote?.updated || 0);
+      errors += Number(lote?.errors || 0);
+      totalDisponivel = lote?.total_disponivel ?? totalDisponivel;
+      offset = Number(lote?.next_offset || offset + limit);
+      progress(`DETRAN: multas ${Math.min(offset, Number(totalDisponivel || offset))}/${totalDisponivel || '?'} veículos...`);
+      if(!lote?.has_more) break;
+    }
+    return { texto: `DETRAN: ${totalVeiculos} veículo(s), ${totalMultas} multa(s), ${inserted} nova(s), ${updated} atualizada(s)${errors ? `, ${errors} erro(s)` : ''}`, erro: Boolean(errors) };
   }
 
 
@@ -298,18 +293,14 @@
     return { atualizados, criados, ignorados };
   }
 
-  async function sincronizarBFleet(root, opts){
-    try{
-      toast('Sincronizando BFleet...');
-      const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync', normalizacao_placa:'robusta', criar_ausentes:true });
-      const correcao = await aplicarCorrecaoBfleetLocal(root, opts, res, true);
-      const rastreadores = Number(res?.rastreadores || res?.matched || 0) + correcao.atualizados + correcao.criados;
-      const total = Number(res?.total_bfleet || res?.total || res?.linhas_lidas_api || res?.placas_lidas || 0);
-      const divergencias = Number(res?.divergencias || 0);
-      const extra = (correcao.atualizados || correcao.criados) ? ` · ${correcao.atualizados} corrigido(s) · ${correcao.criados} cadastrado(s) BFleet` : '';
-      toast(`BFleet sincronizado: ${rastreadores} veículo(s) com rastreador de ${total || 'N'} registro(s) lido(s)${divergencias ? ` · ${divergencias} divergência(s)` : ''}${extra}.`, Boolean(res?.warning));
-      await loadVeiculos(root, opts);
-    }catch(err){ toast(err.message || 'Falha ao sincronizar BFleet.', true); }
+  async function sincronizarBFleet(root, opts, progress){
+    progress('BFleet: sincronizando rastreadores...');
+    const res = await callFunction(opts, 'sync-bfleet-veiculos', { mode:'sync', normalizacao_placa:'robusta', criar_ausentes:true });
+    const correcao = await aplicarCorrecaoBfleetLocal(root, opts, res, true);
+    const rastreadores = Number(res?.rastreadores || res?.matched || 0) + correcao.atualizados + correcao.criados;
+    const total = Number(res?.total_bfleet || res?.total || res?.linhas_lidas_api || res?.placas_lidas || 0);
+    const divergencias = Number(res?.divergencias || 0);
+    return { texto: `BFleet: ${rastreadores} com rastreador de ${total || 'N'}${divergencias ? `, ${divergencias} divergência(s)` : ''}`, erro: Boolean(res?.warning) };
   }
 
 
@@ -346,23 +337,50 @@
     }catch(err){ toast(err.message || 'Falha ao gerar diagnóstico BFleet.', true); }
   }
 
-  async function associarMotoristasPatrimonio(root, opts){
-    try{
-      toast('Associando motoristas pela planilha de Patrimônios...');
-      const { data, error } = await opts.supabase.rpc('sincronizar_frotas_veiculos_patrimonios');
-      if(error) throw error;
-      toast(`Patrimônios associados: ${Number(data?.veiculos_atualizados || 0)} veículo(s) atualizado(s).`);
-      await loadVeiculos(root, opts);
-    }catch(err){ toast(err.message || 'Falha ao associar motoristas dos patrimônios.', true); }
+  async function associarMotoristasPatrimonio(root, opts, progress){
+    progress('Patrimônios: associando motoristas...');
+    const { data, error } = await opts.supabase.rpc('sincronizar_frotas_veiculos_patrimonios');
+    if(error) throw error;
+    return { texto: `Patrimônios: ${Number(data?.veiculos_atualizados || 0)} atualizado(s)`, erro: false };
   }
 
-  async function atualizarCondutoresBFleet(root, opts){
-    try{
-      toast('Atualizando condutores no BFleet...');
-      const res = await callFunction(opts, 'update-bfleet-condutores', { mode:'pending', limit: 50 });
-      toast(`Condutores atualizados: ${Number(res?.updated || 0)} veículo(s)${res?.errors ? ` · ${res.errors} erro(s)` : ''}.`, Boolean(res?.errors));
-      await loadVeiculos(root, opts);
-    }catch(err){ toast(err.message || 'Falha ao atualizar condutores BFleet.', true); }
+  async function atualizarCondutoresBFleet(root, opts, progress){
+    progress('Condutores: enviando ao BFleet...');
+    const res = await callFunction(opts, 'update-bfleet-condutores', { mode:'pending', limit: 50 });
+    return { texto: `Condutores: ${Number(res?.updated || 0)} atualizado(s)${res?.errors ? `, ${res.errors} erro(s)` : ''}`, erro: Boolean(res?.errors) };
+  }
+
+  // Fallback manual: as mesmas sincronizações rodam sozinhas no servidor (cron).
+  // Cada etapa é independente: se uma falhar, as demais continuam.
+  async function sincronizarTudo(root, opts){
+    if(state.syncing) return;
+    state.syncing = true;
+    const btn = root.querySelector('[data-sync-all]');
+    const label = btn?.textContent;
+    if(btn) btn.disabled = true;
+    const progress = (msg) => { toast(msg); if(btn) btn.textContent = msg.split(':')[0] + '...'; };
+    const etapas = [
+      ['BFleet', sincronizarBFleet],
+      ['Patrimônios', associarMotoristasPatrimonio],
+      ['Condutores', atualizarCondutoresBFleet],
+      ['DETRAN', sincronizarFrota]
+    ];
+    const resumo = [];
+    let falhou = false;
+    for(const [nome, fn] of etapas){
+      try{
+        const r = await fn(root, opts, progress);
+        resumo.push(r.texto);
+        if(r.erro) falhou = true;
+      }catch(err){
+        falhou = true;
+        resumo.push(`${nome}: falhou (${err?.message || 'erro'})`);
+      }
+    }
+    state.syncing = false;
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+    toast(`Sincronização concluída · ${resumo.join(' · ')}`, falhou);
+    await loadVeiculos(root, opts);
   }
 
   async function consultarMultas(root, opts, v){
@@ -386,6 +404,10 @@
     const tr=root.querySelector('[data-kpi-rastreadores]'); if(tr) tr.textContent=rastreadores;
     const div=root.querySelector('[data-kpi-divergencias]'); if(div) div.textContent=divergencias;
     root.querySelector('[data-kpi-sem-renavam]').textContent=sem;
+    root.querySelectorAll('[data-kpi-filter]').forEach(card=>{
+      const ativo=card.dataset.kpiFilter===state.filtro;
+      card.classList.toggle('active',ativo); card.setAttribute('aria-pressed',String(ativo));
+    });
   }
 
   function renderTable(root, opts){
@@ -402,7 +424,7 @@
         <td>${esc(v.motorista_atual || v.patrimonio_funcionario || '—')}<br><small>${v.patrimonio_funcionario && v.motorista_atual !== v.patrimonio_funcionario ? 'Patrimônio' : ''}</small></td>
         <td>${esc(v.coordenacao || v.patrimonio_coordenacao || '—')}<br><small>${esc(v.supervisao || v.patrimonio_supervisao || '')}</small></td>
         <td>${fmtMoney(v.valor_mensal || 0)}<br><small>${v.valor_km ? `${fmtMoney(v.valor_km)}/km` : ''}</small></td>
-        <td>${statusBadge(v)}<br>${trackerBadge(v)}<br><small>${esc(v.bfleet_mensagem || v.detran_mensagem || '')}</small></td>
+        <td><div class="fv-valid" title="${esc(v.bfleet_mensagem || v.detran_mensagem || '')}">${statusBadge(v)}${trackerBadge(v)}</div></td>
         <td><span class="fv-badge">${esc(v.status || 'ATIVO')}</span></td>
         <td><div class="fv-actions"><button class="fv-btn ghost fv-mini" data-edit="${v.id}">Editar</button><button class="fv-btn primary fv-mini" data-multas="${v.id}">Multas</button><button class="fv-btn soft fv-mini" data-detran="${v.id}">DETRAN</button></div></td>
       </tr>`).join('');
@@ -412,16 +434,19 @@
   }
 
   function openHome(container, opts={}){
-    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base oficial de veículos, validação DETRAN e rastreadores BFleet. Veículos com rastreador aparecem com a marcação <strong>BFleet</strong>.</p></div><div class="fv-card"><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number"></div><div class="fv-field"><label>Tipo</label><input class="fv-input" name="tipo" placeholder="Próprio/Locado"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao"></div><div class="fv-field"><label>Motorista atual</label><input class="fv-input" name="motorista_atual"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento</label><input class="fv-input" name="dia_vencimento" type="number"></div><div class="fv-field"><label>R$/Km</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field"><label>Status</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option><option value="rastreador">Com rastreador BFleet</option><option value="sem_rastreador">Sem rastreador</option><option value="divergencias">Divergências BFleet</option></select><button class="fv-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fv-btn primary" type="button" data-sync-detran>Puxar frota DETRAN</button></div><div class="fv-toolbar extra"><button class="fv-btn ghost" type="button" data-sync-bfleet>Sincronizar BFleet</button><button class="fv-btn ghost" type="button" data-diag-bfleet>Diagnóstico BFleet</button><button class="fv-btn soft" type="button" data-sync-patrimonio>Associar Patrimônios</button><button class="fv-btn soft" type="button" data-sync-drivers>Atualizar condutores</button></div><div class="fv-grid"><div class="fv-kpi"><span>Total</span><strong data-kpi-total>0</strong></div><div class="fv-kpi"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></div><div class="fv-kpi"><span>Rastreadores</span><strong data-kpi-rastreadores>0</strong></div><div class="fv-kpi"><span>Divergências</span><strong data-kpi-divergencias>0</strong></div><div class="fv-kpi"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></div></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa / Empresa</th><th>RENAVAM</th><th>Veículo</th><th>Motorista</th><th>Coordenação</th><th>Custo</th><th>Validação</th><th>Status</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Ao fazer upload do relatório de veículos em <strong>Relatórios</strong>, o painel organiza automaticamente placa e RENAVAM nesta tela. O botão <strong>Puxar frota DETRAN</strong> atualiza a frota oficial; <strong>Sincronizar BFleet</strong> cruza rastreadores por placa; <strong>Associar Patrimônios</strong> busca o motorista pela placa dentro do campo Identificação da planilha de Patrimônios; <strong>Atualizar condutores</strong> envia o condutor atual para a plataforma BFleet quando configurado.</div></div></div></section>`;
+    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base oficial de veículos, validação DETRAN e rastreadores BFleet. Veículos com rastreador aparecem com a marcação <strong>BFleet</strong>.</p></div><div class="fv-card"><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number"></div><div class="fv-field"><label>Tipo</label><input class="fv-input" name="tipo" placeholder="Próprio/Locado"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao"></div><div class="fv-field"><label>Motorista atual</label><input class="fv-input" name="motorista_atual"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento</label><input class="fv-input" name="dia_vencimento" type="number"></div><div class="fv-field"><label>R$/Km</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field"><label>Status</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option><option value="rastreador">Com rastreador BFleet</option><option value="sem_rastreador">Sem rastreador</option><option value="divergencias">Divergências BFleet</option></select><button class="fv-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fv-btn ghost" type="button" data-diag-bfleet>Diagnóstico BFleet</button><button class="fv-btn primary" type="button" data-sync-all title="Roda em sequência: BFleet, Patrimônios, Condutores e DETRAN. Também acontece automaticamente.">Sincronizar tudo</button></div><div class="fv-grid"><button type="button" class="fv-kpi" data-kpi-filter="todos" aria-pressed="false"><span>Total</span><strong data-kpi-total>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="detran" aria-pressed="false"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="rastreador" aria-pressed="false"><span>Rastreadores</span><strong data-kpi-rastreadores>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="divergencias" aria-pressed="false"><span>Divergências</span><strong data-kpi-divergencias>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="sem_renavam" aria-pressed="false"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></button></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa / Empresa</th><th>RENAVAM</th><th>Veículo</th><th>Motorista</th><th>Coordenação</th><th>Custo</th><th>Validação</th><th>Status</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Ao fazer upload do relatório de veículos em <strong>Relatórios</strong>, o painel organiza automaticamente placa e RENAVAM nesta tela. Tudo é sincronizado automaticamente; o botão <strong>Sincronizar tudo</strong> é um fallback que roda em sequência: BFleet (cruza rastreadores por placa), Patrimônios (motorista pela placa na planilha de Patrimônios), Condutores (envia o condutor atual ao BFleet) e DETRAN (frota oficial e multas). Clique nos cards de totais para filtrar a tabela.</div></div></div></section>`;
     container.querySelector('[data-save-veiculo]')?.addEventListener('click',()=>saveVeiculo(container, opts));
     container.querySelector('[data-refresh]')?.addEventListener('click',()=>loadVeiculos(container, opts));
-    container.querySelector('[data-sync-detran]')?.addEventListener('click',()=>sincronizarFrota(container, opts));
-    container.querySelector('[data-sync-bfleet]')?.addEventListener('click',()=>sincronizarBFleet(container, opts));
+    container.querySelector('[data-sync-all]')?.addEventListener('click',()=>sincronizarTudo(container, opts));
     container.querySelector('[data-diag-bfleet]')?.addEventListener('click',()=>diagnosticarBFleet(container, opts));
-    container.querySelector('[data-sync-patrimonio]')?.addEventListener('click',()=>associarMotoristasPatrimonio(container, opts));
-    container.querySelector('[data-sync-drivers]')?.addEventListener('click',()=>atualizarCondutoresBFleet(container, opts));
     container.querySelector('[data-search]')?.addEventListener('input',(e)=>{state.busca=e.target.value; renderTable(container, opts);});
     container.querySelector('[data-filter]')?.addEventListener('change',(e)=>{state.filtro=e.target.value; renderStats(container); renderTable(container, opts);});
+    container.querySelectorAll('[data-kpi-filter]').forEach(card=>card.addEventListener('click',()=>{
+      const alvo=card.dataset.kpiFilter;
+      state.filtro=(state.filtro===alvo && alvo!=='todos')?'todos':alvo;
+      const sel=container.querySelector('[data-filter]'); if(sel) sel.value=state.filtro;
+      renderStats(container); renderTable(container, opts);
+    }));
     container.querySelector('input[name="placa"]')?.addEventListener('input',(e)=>{e.target.value=normalizarPlaca(e.target.value);});
     container.querySelector('input[name="renavam"]')?.addEventListener('input',(e)=>{e.target.value=onlyDigits(e.target.value);});
     loadVeiculos(container, opts);
