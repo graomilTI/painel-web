@@ -1,17 +1,15 @@
 const STYLE_ID = 'frotas-veiculos-ui-styles';
-const TOTAL_COLUMNS = 11;
+const TOTAL_COLUMNS = 9;
 const MERCOSUL_TO_DIGIT = Object.freeze({ A: '0', B: '1', C: '2', D: '3', E: '4', F: '5', G: '6', H: '7', I: '8', J: '9' });
 const SORT_COLUMNS = Object.freeze([
-  { key: 'placa', label: 'PLACA / EMPRESA' },
+  { key: 'placa', label: 'PLACA' },
+  { key: 'empresa', label: 'EMPRESA' },
   { key: 'patrimonio', label: 'PATRIMÔNIO' },
   { key: 'renavam', label: 'RENAVAM' },
-  { key: 'veiculo', label: 'VEÍCULO' },
   { key: 'motorista', label: 'MOTORISTA' },
   { key: 'dias', label: 'DIAS SEM LEITURA' },
   { key: 'coordenacao', label: 'COORDENAÇÃO' },
-  { key: 'custo', label: 'CUSTO' },
   { key: 'validacao', label: 'VALIDAÇÃO' },
-  { key: 'status', label: 'STATUS' },
   null
 ]);
 
@@ -47,7 +45,7 @@ function injectStyles() {
     .fv-create-bar{display:flex;justify-content:flex-start;margin:0 0 14px}
     .fv-form[hidden]{display:none!important}
     .fv-form-actions{display:flex!important;align-items:center;gap:10px;flex-wrap:wrap}
-    .fv-table{min-width:1360px!important;table-layout:auto}
+    .fv-table{min-width:1100px!important;table-layout:auto}
     .fv-table th,.fv-table td{vertical-align:middle}
     .fv-shell .fv-table td{padding:6px 11px;line-height:1.25}
     .fv-shell .fv-table th{padding:9px 11px}
@@ -55,17 +53,15 @@ function injectStyles() {
     .fv-valid{display:flex;flex-wrap:wrap;gap:4px}
     .fv-valid .fv-badge{padding:2px 7px}
     .fv-table .fv-mini{min-height:28px}
-    .fv-table th:nth-child(1),.fv-table td:nth-child(1){min-width:125px}
-    .fv-table th:nth-child(2),.fv-table td:nth-child(2){min-width:115px;white-space:nowrap}
-    .fv-table th:nth-child(3),.fv-table td:nth-child(3){min-width:130px;white-space:nowrap}
-    .fv-table th:nth-child(4),.fv-table td:nth-child(4){min-width:185px}
+    .fv-table th:nth-child(1),.fv-table td:nth-child(1){min-width:100px;white-space:nowrap}
+    .fv-table th:nth-child(2),.fv-table td:nth-child(2){min-width:140px}
+    .fv-table th:nth-child(3),.fv-table td:nth-child(3){min-width:115px;white-space:nowrap}
+    .fv-table th:nth-child(4),.fv-table td:nth-child(4){min-width:130px;white-space:nowrap}
     .fv-table th:nth-child(5),.fv-table td:nth-child(5){min-width:180px}
     .fv-table th:nth-child(6),.fv-table td:nth-child(6){min-width:120px;white-space:nowrap;text-align:center}
-    .fv-table th:nth-child(7),.fv-table td:nth-child(7){min-width:160px}
-    .fv-table th:nth-child(8),.fv-table td:nth-child(8){min-width:115px;white-space:nowrap}
-    .fv-table th:nth-child(9),.fv-table td:nth-child(9){min-width:155px}
-    .fv-table th:nth-child(10),.fv-table td:nth-child(10){min-width:90px;white-space:nowrap}
-    .fv-table th:nth-child(11),.fv-table td:nth-child(11){min-width:150px;white-space:nowrap}
+    .fv-table th:nth-child(7),.fv-table td:nth-child(7){min-width:150px}
+    .fv-table th:nth-child(8),.fv-table td:nth-child(8){min-width:155px}
+    .fv-table th:nth-child(9),.fv-table td:nth-child(9){min-width:130px;white-space:nowrap}
     .fv-sort-button{width:100%;border:0;background:transparent;color:inherit;padding:0;display:flex;align-items:center;justify-content:space-between;gap:8px;font:inherit;letter-spacing:inherit;text-transform:inherit;text-align:left;cursor:pointer}
     .fv-sort-button:hover,.fv-sort-button:focus-visible{color:#f8fafc;outline:none}
     .fv-sort-button:focus-visible{box-shadow:inset 0 -2px 0 #22c55e}
@@ -76,8 +72,8 @@ function injectStyles() {
     .fv-days.is-warn{background:#fff4d6;color:#8a6100}
     .fv-days.is-late{background:#fde8e7;color:#b42318}
     .fv-plate-equivalent{display:block;margin-top:1px;color:#86efac;font-size:10px;font-weight:800;letter-spacing:.02em}
-    .fv-table td:last-child .fv-btn{padding-left:10px;padding-right:10px}
-    @media (max-width:760px){.fv-create-bar{margin-bottom:10px}.fv-form-actions{grid-column:1/-1}.fv-table{min-width:1320px!important}}
+    .fv-table td:last-child .fv-icon{padding:0}
+    @media (max-width:760px){.fv-create-bar{margin-bottom:10px}.fv-form-actions{grid-column:1/-1}.fv-table{min-width:1060px!important}}
   `;
   document.head.appendChild(style);
 }
@@ -96,7 +92,7 @@ function ensureHeaders(table) {
   const original = Array.from(row.children);
   if (original.length < 5) return;
 
-  row.insertBefore(makeHeader('PATRIMÔNIO', 'fvPatrimonioHeader'), original[1]);
+  row.insertBefore(makeHeader('PATRIMÔNIO', 'fvPatrimonioHeader'), original[2]);
   row.insertBefore(makeHeader('DIAS SEM LEITURA', 'fvDiasHeader'), original[4]);
 }
 
@@ -261,19 +257,17 @@ function reconcileRenderedRows(tbody, vehiclesById) {
 function sortValue(vehicle, key) {
   switch (key) {
     case 'placa': return mercosulPlateKey(vehicle.placa);
+    case 'empresa': return vehicle.empresa;
     case 'patrimonio': return vehicle.patrimonio_codigo;
     case 'renavam': return vehicle.renavam;
-    case 'veiculo': return [vehicle.marca, vehicle.modelo, vehicle.nome].filter(Boolean).join(' ');
     case 'motorista': return vehicle.motorista_atual;
     case 'dias': return vehicle.patrimonio_dias_sem_leitura;
-    case 'coordenacao': return [vehicle.coordenacao, vehicle.supervisao].filter(Boolean).join(' ');
-    case 'custo': return vehicle.valor_mensal;
+    case 'coordenacao': return vehicle.coordenacao;
     case 'validacao': {
       const detran = vehicle.detran_confirmado || ['CONFIRMADO', 'DETRAN'].includes(String(vehicle.detran_status || '').toUpperCase()) ? 2 : vehicle.renavam ? 1 : 0;
       const tracker = vehicle.rastreador_bfleet || vehicle.bfleet_confirmado || ['OK', 'ATIVO', 'COM_RASTREADOR'].includes(String(vehicle.bfleet_status || '').toUpperCase()) ? 1 : 0;
       return detran * 10 + tracker;
     }
-    case 'status': return vehicle.status;
     default: return '';
   }
 }
@@ -330,7 +324,7 @@ function applyVehicleColumns(container, tbody, vehiclesById, sortState) {
       patrimonioCell = document.createElement('td');
       patrimonioCell.dataset.fvExtraCell = 'true';
       patrimonioCell.dataset.fvPatrimonioCell = 'true';
-      row.insertBefore(patrimonioCell, originalCells[1]);
+      row.insertBefore(patrimonioCell, originalCells[2]);
     }
     patrimonioCell.textContent = vehicle.patrimonio_codigo || '—';
 
