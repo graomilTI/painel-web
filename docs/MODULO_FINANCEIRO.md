@@ -76,6 +76,7 @@ Nenhuma tela financeira digita dado "do zero" para o GRM — tudo nasce de sincr
 | sync-lancar-nhe | `alteracoes` | `logistica_nhe_lancamentos_auto/_execucoes` | Lança NHE automático por geofence de login (< 2km) |
 | Lançar Notas Fiscais / Holerite (`grmserver-lancar-notas-fiscais-api.js`) | fila de Notas Fiscais | `grm_nf_lancamentos` | Migrado de Puppeteer para API; usado tanto por "Lançar" em Compras quanto por "Nova Folha" do RH |
 | sync-despesas-retroativas | `alteracoes` | `grm_despesas_retroativas_auditoria` + GRM Caixa Operacional | Script pontual, sem passar por Programação |
+| sync-despesas-duplicadas | `alteracoes` | `grm_despesas_retroativas_auditoria` + GRM Caixa Operacional | Auxiliar do retroativas: recusa duplicadas ("lançamento duplicado"/"Duplicata") e corrige a data citada na observação |
 
 Todos os agentes financeiros de leitura gravam por `upsert` com chave de conflito própria (idempotentes); nenhum deles compartilha tabela de escrita com outro agente do domínio financeiro, então não há colisão conhecida entre eles (diferente de `sync-lista-os`/`sync-auditorias`, que são os pontos frágeis do sistema como um todo).
 

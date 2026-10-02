@@ -175,6 +175,10 @@ const SCRIPT_MAP = {
   // responsável de Frotas no painel após analisar a ocorrência RedGPS/BFleet.
   'sync-frotas-fora-horario-caixa': 'grm-sync-frotas-fora-horario-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
+  // Auxiliar do retroativas (02/10): recusa despesas duplicadas lançadas pelo
+  // colaborador ("lançamento duplicado" / "Duplicata" pela data da observação) e
+  // corrige a data quando a observação aponta um dia sem lançamento e dentro das regras.
+  'sync-despesas-duplicadas': 'grm-sync-despesas-duplicadas.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
   'sync-classificacao-ourosafra': 'grm-sync-classificacao-ourosafra.js',
 };

@@ -28,6 +28,7 @@ const AGENT_NAMES = {
   'aplicar-distribuicao-os': 'Aplicar Distribuição de OS (Graint)',
   'sync-lancar-nhe': 'Lançamento Automático de NHE (Graint)',
   'sync-despesas-retroativas': 'Despesas Retroativas (GRM)',
+  'sync-despesas-duplicadas': 'Despesas Duplicadas (GRM)',
   'sync-liberacao-despesas': 'Liberação de Despesas (GRM)',
   'sync-lancar-notas-fiscais': 'Lançar Notas Fiscais (GRM)',
   'sync-bonus-caixa': 'Bônus de Caixa (GRM)',
