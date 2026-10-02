@@ -3,6 +3,7 @@ const assert = require('assert');
 const {
   norm,
   requiredExpenses,
+  contractTypeOnDate,
   decide,
   decidePernoite,
   assertDirectExpenseAllowed,
@@ -30,6 +31,14 @@ assert.deepEqual(
   requiredExpenses('Diarista', 95, types).map((x) => [x.oexCode, x.amount]),
   [[65, 95]],
 );
+
+// Intermitente só vale a partir da admissão atual; antes disso não há salário.
+assert.equal(contractTypeOnDate('Intermitente', '2026-08-03', '2026-07-31'), '');
+assert.equal(contractTypeOnDate('Intermitente', '2026-08-03', '2026-08-03'), 'Intermitente');
+assert.equal(contractTypeOnDate('Intermitente', '03/08/2026', '2026-07-31'), '');
+assert.equal(contractTypeOnDate('Intermitente', '', '2026-07-31'), 'Intermitente');
+assert.equal(contractTypeOnDate('Diarista', '2026-08-03', '2026-07-31'), 'Diarista');
+assert.deepEqual(requiredExpenses(contractTypeOnDate('Intermitente', '2026-08-03', '2026-07-31'), 105, types), []);
 
 // Almoço exige explicitamente Almoço=SIM na programação de alimentação.
 assert.deepEqual(
