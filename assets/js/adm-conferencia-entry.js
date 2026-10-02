@@ -327,6 +327,29 @@ function mergeConferidosIntoSingleTable() {
   const emptyRow = mainBody.querySelector('.conf-empty')?.closest('tr');
   emptyRow?.remove();
   confirmedRows.forEach((row) => mainBody.appendChild(row));
+  resortMergedRows(mainBody);
+}
+
+// A fila e os conferidos chegam ordenados cada um por si; depois de juntar, reaplica a ordenação ativa.
+function resortMergedRows(body) {
+  const activeIcon = body.closest('table')?.querySelector('.conf-sort-icon.active');
+  const button = activeIcon?.closest('[data-sort-column]');
+  if (!button) return;
+  const cellIndex = { colaborador: 0, regional: 1, status: 2 }[button.dataset.sortColumn];
+  if (cellIndex === undefined) return;
+
+  const factor = activeIcon.textContent.trim() === '↓' ? -1 : 1;
+  const normalize = (value) => String(value ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase();
+  const keyOf = (row) => {
+    const cell = row.children[cellIndex];
+    const main = cell?.querySelector('strong') || cell;
+    return normalize(main?.firstChild?.nodeType === 3 ? main.firstChild.textContent : main?.textContent);
+  };
+
+  const rows = [...body.querySelectorAll(':scope > tr')];
+  const keyed = rows.map((row, index) => ({ row, index, key: keyOf(row) }));
+  keyed.sort((a, b) => a.key.localeCompare(b.key, 'pt-BR', { numeric: true, sensitivity: 'base' }) * factor || a.index - b.index);
+  keyed.forEach(({ row }) => body.appendChild(row));
 }
 
 function simplifyActions(root = document) {
