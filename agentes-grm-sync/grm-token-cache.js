@@ -31,7 +31,9 @@
  * caso um humano entra no GRM pelo navegador e grava o token da sessão aqui:
  *   node grm-token-cache.js salvar [--validade-horas N]
  * (cola o token — com ou sem "Bearer" — e Enter; ou GRM_TOKEN=... no ambiente).
- * O token é conferido no GRM antes de ser salvo e nunca é impresso.
+ * O token é conferido no GRM antes de ser salvo e nunca é impresso. O ideal é
+ * rodar como grao100 (su - grao100); se rodar como root, o arquivo é gravado
+ * com o dono da pasta para os agentes conseguirem ler.
  */
 
 const fs = require('fs');
@@ -68,9 +70,20 @@ function lerJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
+// Rodando como root (ex.: terminal do WHM), o arquivo nasceria de root com modo 0600 e os
+// agentes (usuário grao100) não conseguiriam ler o token; passa o dono da pasta para ele.
+function herdarDonoDaPasta(file) {
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0) return;
+  try {
+    const { uid, gid } = fs.statSync(CACHE_DIR);
+    if (uid !== 0) fs.chownSync(file, uid, gid);
+  } catch { /* melhor esforço: sem permissão para trocar o dono, segue como está */ }
+}
+
 function gravarJson(file, data) {
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data), { mode: 0o600 });
+  herdarDonoDaPasta(tmp);
   fs.renameSync(tmp, file);
 }
 
