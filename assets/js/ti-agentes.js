@@ -31,6 +31,8 @@ const OUROSAFRA_AGENT_ID = 'sync-classificacao-ourosafra';
 //   'puppeteer' - ainda 100% Puppeteer, sujeito à rotação da fila fixa.
 //   'paused'    - agente pausado/substituído, mantido só pra referência/rollback.
 // apiNote complementa o card/detalhe com o "porquê" do estado.
+const MANUAL_NOTE_CONTINUO = 'Serviço contínuo (systemd no VPS), fora da fila: não existe execução manual. Ele já consulta a API do GRM sozinho a cada ciclo; o status deste card vem do heartbeat. O agente antigo da fila segue desativado, por isso o painel não o enfileira.';
+
 const AGENTES = [
   // Colaboradores e Lista de OS migraram pra API direta em 01/09
   // (grmserver-colaboradores-api-realtime.js / grmserver-lista-os-api-realtime.js,
@@ -43,11 +45,11 @@ const AGENTES = [
   // "sync-lista-os" têm enabled=false em grm_sync_agent_settings (agente antigo
   // pausado) e o trigger trg_grm_sync_guard_disabled_agent bloqueia insert em
   // grm_sync_jobs pra QUALQUER job com esse agente_id, inclusive o heartbeat.
-  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'], apiStatus: 'api', apiNote: 'Migrado 31/08-01/09 (PR #330/#331): serviço systemd contínuo faz poll em staff/getRecords e grava só o que muda. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-colaboradores', name: 'Colaboradores', freq: 'contínuo (API)', table: 'colaboradores', aliases: ['sync-colaboradores-realtime'], manualRun: false, manualNote: MANUAL_NOTE_CONTINUO, apiStatus: 'api', apiNote: 'Migrado 31/08-01/09 (PR #330/#331): serviço systemd contínuo faz poll em staff/getRecords e grava só o que muda. Script Puppeteer antigo mantido no disco pra rollback.' },
   // Lista de OS agora escreve direto em operacional_os (upsert quase em tempo
   // real); grm_lista_os_importacoes é a tabela de import do agente Puppeteer
   // antigo, pausada e congelada desde a migração.
-  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'], apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #332): serviço systemd contínuo faz poll em serviceOrder/getRecords e grava direto em operacional_os. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-lista-os', name: 'Lista de OS', freq: 'contínuo (API)', table: 'operacional_os', aliases: ['sync-lista-os-realtime'], manualRun: false, manualNote: MANUAL_NOTE_CONTINUO, apiStatus: 'api', apiNote: 'Migrado 01/09 (PR #332): serviço systemd contínuo faz poll em serviceOrder/getRecords e grava direto em operacional_os. Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-patrimonios', name: 'Patrimônios', freq: 'fila fixa', table: 'grm_patrimonios_importacoes', apiStatus: 'api', apiNote: 'Migrado 04/09: chama a API interna do Graint direto (grmserver-patrimonios-api.js, patrimonies/getRecords). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-clientes', name: 'Clientes (Nacionais/Finais)', freq: 'fila fixa', table: 'clientes_nacionais', apiStatus: 'api', apiNote: 'Criado em 07/09 direto via API (grmserver-clientes-api.js, client/national/getRecords + client/last/getRecords), nunca teve fluxo Puppeteer. Sincroniza clientes_nacionais e faturamento_clientes, incluindo status ativo/inativo (antes só visível pela cor da linha na UI do GRM) — atualização em faturamento_clientes preserva periodicidade/prazos/observações configurados manualmente.' },
   { id: 'sync-nhe', name: 'NHE', freq: 'fila fixa', table: 'grm_nhe_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-nhe-api.js, reports/classification/nhe). Script Puppeteer antigo mantido no disco pra rollback.' },
@@ -56,13 +58,13 @@ const AGENTES = [
   // Card mantido pra rollback/histórico; "Erro" aqui é esperado até ser
   // removido ou reaproveitado.
   { id: 'sync-operacional-os', name: 'Operacional · OS', freq: 'fila fixa', table: 'operacional_os', apiStatus: 'paused', apiNote: 'Pausado em 01/09 (enabled=false em grm_sync_agent_settings): derivava operacional_os a partir do lote de sync-lista-os, que agora grava direto via API/tempo real. Mantido só pra referência/rollback.' },
-  { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes', apiStatus: 'puppeteer' },
+  { id: 'sync-distribuicao-os', name: 'Distribuição de OS', freq: 'fila fixa', table: 'grm_distribuicao_os_importacoes', manualNote: 'Este card é o agente Puppeteer antigo, desativado na fila. A distribuição que roda hoje é "Aplicar Distribuição de OS (Graint)", na aba Saída — o disparo manual não é redirecionado pra lá porque aquele agente aplica a distribuição no Graint de verdade.', apiStatus: 'puppeteer' },
   // Migrado pra API direta em 01/09 (grmserver-producao-diaria-api-realtime.js,
   // ver memória painel-web-lancamento-automatico-nhe): roda como serviço contínuo
   // no VPS, fora da fila grm_sync_jobs, gravando direto em producao_snapshot.
   // grm_producao_diaria_importacoes ficou congelada (agente Puppeteer pausado em
   // grm_sync_agent_settings) — usar producao_snapshot.created_at como sinal de vida.
-  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20, apiStatus: 'api', apiNote: 'Migrado 01/09: serviço systemd contínuo grava direto em producao_snapshot. Script Puppeteer antigo mantido no disco pra rollback.' },
+  { id: 'sync-producao-diaria', name: 'Produção Diária', freq: 'contínuo (API)', table: 'producao_snapshot', syncHeartbeatColumn: 'created_at', syncHeartbeatMinutes: 20, manualRun: false, manualNote: MANUAL_NOTE_CONTINUO, apiStatus: 'api', apiNote: 'Migrado 01/09: serviço systemd contínuo grava direto em producao_snapshot. Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-locais-embarque', name: 'Locais de Embarque', freq: 'fila fixa', table: 'grm_locais_embarque_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-locais-embarque-api.js, reports/classification/servicePlaces). Script Puppeteer antigo mantido no disco pra rollback.' },
   { id: 'sync-resultado-diario', name: 'Resultado Diário', freq: 'fila fixa', table: 'grm_resultado_diario_importacoes', apiStatus: 'api', apiNote: 'Migrado 02/09: login via API direto (user/login), sem abrir navegador — já buscava os dados via fetch antes, só o login usava Puppeteer. Continua job pontual na fila fixa (não virou serviço contínuo); janela reduzida de 30 pra 7 dias.' },
   { id: 'sync-despesas', name: 'Despesas', freq: 'fila fixa', table: 'grm_despesas_importacoes', apiStatus: 'api', apiNote: 'Migrado 05/09: chama a API interna do Graint direto (grmserver-despesas-api.js, reports/expenses). Script Puppeteer antigo mantido no disco pra rollback.' },
@@ -484,6 +486,24 @@ function getAgentDefinition(agentId) {
   return AGENTES.find((agent) => getAgentIds(agent).includes(agentId));
 }
 
+// Diz se o disparo manual de um agente é possível. Retorna null quando pode
+// enfileirar, ou { label, reason } quando o card/botão deve ficar bloqueado:
+//  - manualRun:false → serviço contínuo (systemd), que não passa pela fila;
+//  - enabled=false em grm_sync_agent_settings → o trigger do banco rejeita o job.
+// Aceita alias (ex.: heartbeat 'sync-colaboradores-realtime'), que resolve pro card.
+function getManualRunBlock(agentId) {
+  const def = getAgentDefinition(agentId);
+  if (def?.manualRun === false) return { label: 'Serviço contínuo', reason: def.manualNote };
+  const setting = state.agentSettings.find((item) => item.agent_id === (def?.id || agentId));
+  if (setting?.enabled === false) {
+    return {
+      label: 'Agente desativado',
+      reason: def?.manualNote || 'Desativado na política de execução da fila. O painel não permite disparo manual enquanto estiver desativado.',
+    };
+  }
+  return null;
+}
+
 function getExecutionAgentName(agentId) {
   return getAgentDefinition(agentId)?.name || agentId || 'Agente não identificado';
 }
@@ -623,6 +643,8 @@ function renderExecutions() {
         const meta = getExecutionStatusMeta(job);
         const error = getExecutionError(job);
         const diag = getExecutionDiagnostic(job);
+        const retryId = getAgentDefinition(job.agente_id)?.id || job.agente_id;
+        const canRetry = Boolean(diag) && !getManualRunBlock(retryId);
         const output = [job.erro, job.output?.stderr, job.output?.stdout].filter(Boolean).join('\n\n').slice(-6000);
         return `<details class="ag-exec-row" style="--status-color:${meta.color}">
           <summary style="display:contents;cursor:pointer">
@@ -631,7 +653,9 @@ function renderExecutions() {
             <div class="ag-exec-time">${esc(meta.label)} · ${formatDate(job.created_at)}</div>
             <div class="ag-exec-duration">${esc(formatDuration(getExecutionDuration(job)))} · ${job.finalizado_em ? 'encerrada' : 'em andamento'}</div>
             ${diag
-              ? `<div class="ag-exec-error" title="${esc(diag.action)}"><strong>${esc(diag.label)}</strong><span>${esc(diag.action)}</span></div><button class="ag-exec-retry" type="button" title="Reprocessar agora" onclick="event.preventDefault();event.stopPropagation();executeAgent('${esc(job.agente_id)}')">↻ Reprocessar</button>`
+              ? `<div class="ag-exec-error" title="${esc(diag.action)}"><strong>${esc(diag.label)}</strong><span>${esc(diag.action)}</span></div>${canRetry
+                ? `<button class="ag-exec-retry" type="button" title="Reprocessar agora" onclick="event.preventDefault();event.stopPropagation();executeAgent('${esc(retryId)}')">↻ Reprocessar</button>`
+                : `<span title="${esc(getManualRunBlock(retryId)?.reason || '')}">${esc(getManualRunBlock(retryId)?.label || '')}</span>`}`
               : `<div class="ag-exec-error" title="${esc(error)}">${esc(error)}</div><span></span>`}
             <div class="ag-exec-chevron">⌄</div>
           </summary>
@@ -803,6 +827,7 @@ function renderAgentes() {
 function renderAgentDetails(agente) {
   const meta = getAgenteMeta(agente);
   const apiMeta = getApiStatusMeta(agente);
+  const manualBlock = getManualRunBlock(agente.id);
   const aliases = agente.aliases?.length ? `<p><strong>Aliases monitorados:</strong> ${esc(agente.aliases.join(', '))}</p>` : '';
   return `<div class="ag-details">
     <div class="ag-details-header"><div class="ag-details-title">${esc(agente.name)} - Detalhes</div><button class="ag-details-close" onclick="closeDetails()">✕</button></div>
@@ -823,8 +848,11 @@ function renderAgentDetails(agente) {
     <div style="margin-top:16px"><p style="margin-bottom:8px"><strong>${agente.source === 'botconversa' ? 'Resumo do job:' : 'Log do Worker:'}</strong></p><div class="ag-log-box">${renderLog(agente.last_job)}</div></div>
     ${agente.source === 'botconversa' ? renderBotConversaFailures() : ''}
     ${agente.id === DISTRIBUICAO_OS_AGENT_ID ? renderDistribuicaoSupervisoes() : ''}
+    ${manualBlock ? `<div class="ag-details-api">⏸ ${esc(manualBlock.reason)}</div>` : ''}
     <div style="margin-top:16px">
-      <button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>
+      ${manualBlock
+        ? `<button class="ag-btn ag-btn-primary" type="button" disabled title="${esc(manualBlock.reason)}">⏸ ${esc(manualBlock.label)}</button>`
+        : `<button class="ag-btn ag-btn-primary" onclick="executeAgent('${agente.id}')">▶️ Executar Agora</button>`}
       <button class="ag-btn ag-btn-danger" onclick="viewLogs('${agente.id}')" style="margin-left:8px">📊 ${agente.source === 'botconversa' ? 'Onde ver os logs' : 'Ver Log cPanel'}</button>
     </div>
   </div>`;
@@ -1002,6 +1030,12 @@ window.closeDetails = () => {
 
 window.executeAgent = async (agentId) => {
   const agenteDef = AGENTES.find((a) => a.id === agentId);
+
+  const block = getManualRunBlock(agentId);
+  if (block) {
+    alert(`⏸ ${block.label}: ${agenteDef?.name || agentId} não pode ser disparado manualmente.\n\n${block.reason}`);
+    return;
+  }
 
   if (agenteDef?.source === 'botconversa') {
     if (!confirm('Disparar agora a sincronização de contatos do BotConversa?')) return;
@@ -1280,6 +1314,7 @@ async function loadAgentSettings() {
       .order('agent_id');
     if (error) throw error;
     state.agentSettings = data || [];
+    render();
   } catch (error) {
     console.error('Erro carregando configuração dos agentes:', error);
   }
