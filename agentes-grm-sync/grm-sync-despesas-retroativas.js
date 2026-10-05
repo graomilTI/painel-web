@@ -33,10 +33,7 @@ function getSupabase() {
   return supabase;
 }
 
-function norm(value) {
-  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
-}
+const { norm, motivoParaManterPendente } = require('./grm-despesas-guardas');
 
 function assertDirectExpenseAllowed(
   expense,
@@ -193,8 +190,9 @@ function requiredExpenses(
 function decide(existing) {
   const pending = existing.filter((row) => row.ofmStatus === 'P')
     .sort((a, b) => Number(a.ofmCode) - Number(b.ofmCode));
-  if (existing.some((row) => row.ofmStatus === 'A')) return { action: 'NONE', orphans: pending };
-  if (pending.length) return { action: 'APPROVE', row: pending[0], orphans: pending.slice(1) };
+  const aprovada = existing.find((row) => row.ofmStatus === 'A');
+  if (aprovada) return { action: 'NONE', mantido: aprovada, orphans: pending };
+  if (pending.length) return { action: 'APPROVE', row: pending[0], mantido: pending[0], orphans: pending.slice(1) };
   return { action: 'CREATE', orphans: [] };
 }
 
@@ -642,6 +640,14 @@ async function recordAudit(row) {
 // risco de pagamento em dobro se alguém aprovasse manualmente depois.
 async function reproveOrphans(token, { date, candidate, staff, expense, decision, summary, actionCount }) {
   for (const orphan of decision.orphans || []) {
+    // Só recusa o que é mesmo cópia do lançamento que fica. Observação que cita outra data/despesa/
+    // pessoa, extra (Salário Família...) ou valor maior que o mantido ficam pendentes p/ revisão humana.
+    const manter = motivoParaManterPendente(orphan, decision.mantido, { comData: true });
+    if (manter) {
+      summary.orfas_mantidas_pendentes += 1;
+      log('INFO', `${candidate.nome} / ${expense.oexName}: pendência ofm ${orphan.ofmCode} (valor ${orphan.ofmValue}) mantida para revisão — ${manter}${decision.mantido ? ` (ficaria ofm ${decision.mantido.ofmCode} valor ${decision.mantido.ofmValue})` : ''} — "${String(orphan.ofmDescription || '').replace(/\s+/g, ' ').slice(0, 80)}".`);
+      continue;
+    }
     const orphanAudit = {
       data_referencia: date,
       cpf: digits(candidate.cpf),
@@ -814,6 +820,7 @@ async function main() {
     janta_autorizada_laudo_19h: 0,
     janta_bloqueada_laudo_19h: 0,
     orfas_recusadas: 0,
+    orfas_mantidas_pendentes: 0,
     sem_pendencia_cafe_janta: 0,
     pernoite_programado: 0,
     pernoite_aprovado: 0,

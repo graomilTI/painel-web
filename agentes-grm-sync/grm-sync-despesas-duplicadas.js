@@ -31,6 +31,11 @@
  * efetiva) sobrevive um só: o aprovado, senão a pendência lançada direto na data
  * (sem data divergente na observação), senão a de menor ofmCode.
  *
+ * Travas (grm-despesas-guardas.js): nunca recusa quando a observação cita outra despesa
+ * ("janta", "km rodado"), outra pessoa ("Almoço do Bruno") ou um extra (Salário Família), nem
+ * quando o valor é MAIOR que o do lançamento que ficaria (Almoço R$ 30 x R$ 3 aprovado).
+ * Esses casos ficam pendentes para revisão humana (log "Mantida pendente", resumo revisao_humana).
+ *
  * Auditoria: grm_despesas_retroativas_auditoria (mesma tabela do agente
  * principal) com diagnostico.agente = 'sync-despesas-duplicadas'. Recusas entram
  * como REPROVE; a correção de data entra como CREATE (custo aprovado na data
@@ -45,10 +50,13 @@ require('dotenv').config({ path: '.env.production' });
 
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
-const { norm, registerDateAtPoint } = require('./grm-sync-despesas-retroativas');
+const { registerDateAtPoint } = require('./grm-sync-despesas-retroativas');
+const {
+  norm, addDias, dateFromObs, grupoDespesa, categoriaDivergente, observacaoNaoRepete, valorMaiorQueMantido,
+} = require('./grm-despesas-guardas');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.0-AUXILIAR-DUPLICADAS';
+const VERSION = 'V1.1-AUXILIAR-DUPLICADAS-TRAVAS';
 const AGENTE_ID = 'sync-despesas-duplicadas';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -98,66 +106,6 @@ function hojeSaoPaulo(now = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-function addDias(iso, n) {
-  return new Date(Date.parse(iso) + n * 86400000).toISOString().slice(0, 10);
-}
-
-// ---- data citada na observação --------------------------------------------------
-// Devolve a data (ISO) citada na observação ou null. Só vale entre 45 dias antes e
-// 7 dias depois da data do lançamento. Mesma regra dos scripts pontuais de 01/10.
-const DATE_RE = /(?<!\d)(\d{1,2})\s*([/.-])\s*(\d{1,2})(?:\s*[/.-]?\s*(\d{4}|\d{2}))?(?!\d)/g;
-function dateFromObs(obs, ofmIso) {
-  const text = String(obs || '');
-  const [y0, m0] = ofmIso.split('-').map(Number);
-  const valid = (y, m, d) => {
-    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return null;
-    const dt = new Date(Date.UTC(y, m - 1, d));
-    if (dt.getUTCMonth() !== m - 1) return null;
-    const iso = dt.toISOString().slice(0, 10);
-    const dias = (Date.parse(ofmIso) - Date.parse(iso)) / 86400000;
-    return dias >= -7 && dias <= 45 ? iso : null;
-  };
-  for (const m of text.matchAll(DATE_RE)) {
-    if (m[2] === '.' && m[4] === undefined) continue; // "5.5 litros" não é data
-    const r = valid(y0, Number(m[3]), Number(m[1]));
-    if (r) return r;
-  }
-  const dia = text.match(/\bdia\s+(\d{1,2})(?!\d|\s*[/.-]\s*\d)/i);
-  if (dia) {
-    const d = Number(dia[1]);
-    const r = valid(y0, m0, d) || valid(m0 === 1 ? y0 - 1 : y0, m0 === 1 ? 12 : m0 - 1, d);
-    if (r) return r;
-  }
-  const t = norm(text);
-  if (/\bANTEONTEM\b/.test(t)) return addDias(ofmIso, -2);
-  if (/\bONTEM\b/.test(t)) return addDias(ofmIso, -1);
-  return null;
-}
-
-// ---- classificação das despesas ---------------------------------------------------
-// Grupo de duplicidade: Salário de Intermitente e Serviços Terceirizados (> 45) são a
-// mesma Diária. Devolve null pra despesas que este agente não trata.
-function grupoDespesa(row) {
-  const c = norm(row?.oexName);
-  if (c === 'SERVICOS TERCEIRIZADOS') return Number(row.ofmValue) <= 45 ? 'ALMOCO' : 'DIARIA';
-  if (c === 'SALARIO DE INTERMITENTE') return 'DIARIA';
-  if (c === 'ALMOCO' || c === 'CAFE' || c === 'JANTA' || c === 'PERNOITE') return c;
-  return null;
-}
-
-// O colaborador às vezes lança na despesa errada e diz a certa na observação (ex.:
-// Pernoite com obs "janta", Almoço com obs "na verdade é janta"). Esse lançamento não é
-// duplicata da despesa em que foi lançado — o agente não mexe nele (revisão humana).
-const PALAVRAS_CATEGORIA = [
-  ['CAFE', /\bCAFE\b/], ['ALMOCO', /\bALMOCO\b/], ['JANTA', /\bJANTAR?\b/],
-  ['PERNOITE', /\bPERNOITE\b/], ['DIARIA', /\bDIARIA\b/],
-];
-function categoriaDivergente(row) {
-  const texto = norm(row.ofmDescription);
-  const citadas = PALAVRAS_CATEGORIA.filter(([, re]) => re.test(texto)).map(([nome]) => nome);
-  return citadas.length > 0 && !citadas.includes(grupoDespesa(row)) ? citadas : null;
-}
-
 function infoLancamento(row) {
   const ofmIso = String(row.ofmDate).slice(0, 10);
   const obsData = dateFromObs(row.ofmDescription, ofmIso);
@@ -172,7 +120,7 @@ function montarIndice(rows) {
   const vistos = new Set();
   for (const row of rows) {
     if (row.ofmType !== 'D' || !['P', 'A'].includes(row.ofmStatus) || !grupoDespesa(row)) continue;
-    if (categoriaDivergente(row)) continue;
+    if (categoriaDivergente(row) || observacaoNaoRepete(row)) continue;
     if (vistos.has(Number(row.ofmCode))) continue;
     vistos.add(Number(row.ofmCode));
     const info = infoLancamento(row);
@@ -195,15 +143,27 @@ function compararRank(a, b) {
 // Decide o que fazer com UMA pendência. Devolve:
 //   { acao: 'RECUSAR', motivo, referencia }   -> há lançamento melhor na mesma data efetiva
 //   { acao: 'AVALIAR_DATA' }                  -> sem duplicata, data da observação diferente
+//   { acao: 'REVISAR', motivo }               -> parece cópia, mas a observação/valor mostram que não é:
+//                                                fica pendente para revisão humana (grm-despesas-guardas.js)
 //   { acao: 'NADA' }                          -> sem duplicata e sem data divergente
 function classificar(row, indice) {
   const info = infoLancamento(row);
   if (categoriaDivergente(row)) return { acao: 'NADA', info };
+  const naoRepete = observacaoNaoRepete(row);
+  if (naoRepete) return { acao: 'REVISAR', motivo: naoRepete, info };
   const grupo = indice.get(chaveGrupo(row, info)) || [];
   const eu = grupo.find((item) => Number(item.row.ofmCode) === Number(row.ofmCode)) || { row, info };
   const melhor = grupo
     .filter((item) => Number(item.row.ofmCode) !== Number(row.ofmCode) && compararRank(item, eu) < 0)
     .sort(compararRank)[0];
+  if (melhor && valorMaiorQueMantido(row, melhor.row)) {
+    return {
+      acao: 'REVISAR',
+      motivo: 'valor_maior_que_o_mantido',
+      referencia: { ofmCode: Number(melhor.row.ofmCode), status: melhor.row.ofmStatus, valor: Number(melhor.row.ofmValue) },
+      info,
+    };
+  }
   if (melhor) {
     return {
       acao: 'RECUSAR',
@@ -390,14 +350,23 @@ async function auditar(cad, row, dataRef, acao, sucesso, diagnostico, erro) {
 }
 
 // ---- execução ----------------------------------------------------------------------------
-async function corrigirData(token, row, info) {
+// Serviços Terceirizados de valor <= 45 é Almoço digitado na despesa errada: o lançamento novo
+// nasce como Almoço (a despesa que a Conferência/Produtividade esperam), não como Terceirizados.
+// O código do Almoço vem de qualquer Almoço já lido do GRM nesta execução; sem ele, copia o original.
+function modeloParaCriar(row, todos) {
+  if (norm(row.oexName) !== 'SERVICOS TERCEIRIZADOS' || grupoDespesa(row) !== 'ALMOCO') return row;
+  const almoco = [...todos.values()].find((r) => norm(r.oexName) === 'ALMOCO');
+  return almoco ? { ...row, oexCode: almoco.oexCode, odtCode: almoco.odtCode ?? row.odtCode } : row;
+}
+
+async function corrigirData(token, row, info, modelo = row) {
   const marca = `original ${row.ofmCode}`;
   const doDestino = async () => (await fluxoDia(token, info.dataEf)).filter((y) => y.ofmType === 'D'
-    && Number(y.staCode) === Number(row.staCode) && Number(y.oexCode) === Number(row.oexCode));
+    && Number(y.staCode) === Number(row.staCode) && Number(y.oexCode) === Number(modelo.oexCode));
   // idempotência: uma tentativa anterior pode ter criado o lançamento e falhado antes de aprovar
   let novo = (await doDestino()).find((y) => String(y.ofmDescription || '').includes(marca));
   if (!novo) {
-    await criar(token, row, info.dataEf, `${row.ofmDescription || ''} (data corrigida; ${marca})`.trim());
+    await criar(token, modelo, info.dataEf, `${row.ofmDescription || ''} (data corrigida; ${marca})`.trim());
     novo = (await doDestino()).filter((y) => String(y.ofmDescription || '').includes(marca))
       .sort((a, b) => Number(b.ofmCode) - Number(a.ofmCode))[0];
     if (!novo) throw new Error('Lançamento criado não apareceu na conferência — original mantido pendente.');
@@ -442,13 +411,18 @@ async function main() {
 
   const resumo = {
     pendentes: pendentes.length, categoria_divergente: tratadas.length - pendentes.length, recusadas_duplicado: 0, recusadas_duplicata: 0, datas_corrigidas: 0,
-    sem_regra: 0, sem_acao: 0, adiados: 0, errors: 0,
+    sem_regra: 0, sem_acao: 0, revisao_humana: 0, adiados: 0, errors: 0,
   };
   const naoAptos = {};
   const plano = [];
   for (const row of pendentes) {
     const decisao = classificar(row, indice);
     if (decisao.acao === 'NADA') { resumo.sem_acao += 1; continue; }
+    if (decisao.acao === 'REVISAR') {
+      resumo.revisao_humana += 1;
+      log('INFO', `Mantida pendente: ${row.staName} / ${row.oexName.trim()} / ofm ${row.ofmCode} / valor ${row.ofmValue}: ${decisao.motivo}${decisao.referencia ? ` (ficaria ofm ${decisao.referencia.ofmCode} ${decisao.referencia.status} valor ${decisao.referencia.valor})` : ''} — "${String(row.ofmDescription || '').replace(/\s+/g, ' ').slice(0, 80)}".`);
+      continue;
+    }
     if (decisao.acao === 'RECUSAR') { plano.push({ row, decisao }); continue; }
     const regras = await avaliarRegras(row, decisao.info, indice, hoje);
     if (!regras.ok) {
@@ -491,7 +465,7 @@ async function main() {
         await auditar(cad, row, decisao.info.dataEf, 'REPROVE', true, { ...base, motivo: decisao.motivo, repete: decisao.referencia });
       } else {
         log('INFO', `${DRY_RUN ? '[DRY-RUN] ' : ''}Corrigir data de ${rotulo}: ${decisao.info.ofmIso} → ${decisao.info.dataEf} (${decisao.evidencia}).`);
-        const novoCodigo = DRY_RUN ? null : await corrigirData(token, row, decisao.info);
+        const novoCodigo = DRY_RUN ? null : await corrigirData(token, row, decisao.info, modeloParaCriar(row, todos));
         resumo.datas_corrigidas += 1;
         await auditar(cad, row, decisao.info.dataEf, 'CREATE', true, {
           ...base, origem: 'data_corrigida_observacao', evidencia: decisao.evidencia, ofm_code_original: Number(row.ofmCode), ofm_code_aprovado: novoCodigo,
@@ -522,6 +496,7 @@ module.exports = {
   infoLancamento,
   montarIndice,
   classificar,
+  modeloParaCriar,
   MOTIVO_DUPLICADO,
   MOTIVO_DUPLICATA,
 };
