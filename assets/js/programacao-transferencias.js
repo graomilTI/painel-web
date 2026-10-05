@@ -9,6 +9,13 @@
 // Layout (27/09): cabeçalho com "Nova transferência" (formulário em modal),
 // filtros Para aceitar / Enviadas / Todas + busca, e lista compacta com um
 // único status por linha; detalhes abrem ao clicar na linha.
+//
+// Solicitar colaborador (06/10): o sentido inverso. O gestor que vai receber o
+// colaborador (que vem de outra regional, mas o supervisor da origem ainda não
+// transferiu) pede ele; quem aceita/recusa é o gestor da supervisão de ORIGEM
+// (migration 20261006120000). Mesma tabela, coluna `tipo`:
+//   TRANSFERENCIA = origem pede, destino responde;
+//   SOLICITACAO   = destino pede, origem responde.
 import { supabase } from './supabaseClient.js';
 
 const TODAS_SUPERVISOES = '__TODAS__';
@@ -85,6 +92,17 @@ function patrimoniosResumo(t) {
   return `${qtd} patrimônio${qtd > 1 ? 's' : ''} ${t.transferir_patrimonios ? 'vão junto' : 'ficam'}`;
 }
 
+// SOLICITACAO = o destino pediu o colaborador; quem responde é a origem. Na
+// TRANSFERENCIA é o contrário. Só decide quais botões aparecem; as RPCs validam.
+const ehSolicitacao = (t) => t.tipo === 'SOLICITACAO';
+const supRespostaDe = (t) => (ehSolicitacao(t) ? t.supervisao_origem : t.supervisao_destino);
+const supPedidoDe = (t) => (ehSolicitacao(t) ? t.supervisao_destino : t.supervisao_origem);
+
+// itens: [{ codigo, descricao }]
+function patrimoniosDetalhesHtml(itens) {
+  return `<details><summary>${itens.length} patrimônio${itens.length > 1 ? 's' : ''} no nome do colaborador</summary><ul class="ptr-patr-list">${itens.map((p) => `<li><b>${esc(p.codigo)}</b>${esc(p.descricao || '')}</li>`).join('')}</ul></details>`;
+}
+
 function injectStyles() {
   if (document.getElementById('progTransferenciasStyles')) return;
   const style = document.createElement('style');
@@ -94,6 +112,7 @@ function injectStyles() {
     .ptr-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
     .ptr-head h4{margin:0;font-size:17px;color:#f8fafc}
     .ptr-head p{margin:4px 0 0;font-size:12.5px;color:#94a3b8;max-width:620px;line-height:1.45}
+    .ptr-head-btns{display:flex;gap:8px;flex-wrap:wrap}
     .ptr-new{white-space:nowrap}
     .ptr-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
     .ptr-tabs{display:inline-flex;padding:3px;border-radius:12px;background:rgba(15,23,42,.55);border:1px solid rgba(148,163,184,.14);gap:2px}
@@ -146,8 +165,11 @@ function injectStyles() {
     .ptr-card .ptr-hint{margin:4px 0 16px;font-size:12.5px;color:#94a3b8}
     .ptr-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
     .ptr-field > label,.ptr-field > .ptr-lbl{font-size:12px;font-weight:800;color:#cbd5e1}
-    .ptr-field select,.ptr-field textarea{min-height:40px;padding:8px 11px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:#020617;color:#e2e8f0;font-size:13px;width:100%;box-sizing:border-box}
+    .ptr-field select,.ptr-field textarea,.ptr-field input[type=search]{min-height:40px;padding:8px 11px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:#020617;color:#e2e8f0;font-size:13px;width:100%;box-sizing:border-box}
     .ptr-field textarea{resize:vertical;min-height:64px}
+    .ptr-field select[size]{padding:4px}
+    .ptr-field select[size] option{padding:6px 8px;border-radius:6px}
+    .ptr-field select[size] option:disabled{color:#64748b}
     .ptr-seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
     .ptr-seg button{border:1px solid rgba(148,163,184,.24);background:transparent;color:#94a3b8;border-radius:10px;padding:9px 10px;font-size:12.5px;font-weight:800;cursor:pointer}
     .ptr-seg button.on{border-color:#10b981;background:rgba(16,185,129,.14);color:#d1fae5}
@@ -159,6 +181,7 @@ function injectStyles() {
     .ptr-patr-list li b{color:#f8fafc;margin-right:6px}
     .ptr-card-foot{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:6px;flex-wrap:wrap}
     .ptr-tag{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:800;background:rgba(245,158,11,.14);color:#fde68a;border:1px solid rgba(245,158,11,.35);vertical-align:middle;white-space:nowrap}
+    .ptr-tag.sol{background:rgba(96,165,250,.14);color:#bfdbfe;border-color:rgba(96,165,250,.35)}
     .ptr-desloc{border:1px solid rgba(245,158,11,.3);background:rgba(120,53,15,.16);border-radius:12px;padding:11px 12px;margin-bottom:14px}
     .ptr-desloc label.ptr-check{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;font-weight:800;color:#fde68a;cursor:pointer}
     .ptr-desloc input[type=date]{margin-top:10px;min-height:38px;padding:7px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.24);background:#020617;color:#e2e8f0;font-size:13px;width:100%;box-sizing:border-box;color-scheme:dark}
@@ -186,6 +209,13 @@ function minhasSupervisoes() {
   const select = document.getElementById('progSup');
   if (!select) return new Set();
   return new Set([...select.options].map((opt) => opt.value).filter((v) => v && v !== TODAS_SUPERVISOES).map(normalize));
+}
+
+// Mesma fonte, com os nomes como estão no combo (pro "Supervisão que vai receber").
+function minhasSupervisoesNomes() {
+  const select = document.getElementById('progSup');
+  if (!select) return [];
+  return [...new Set([...select.options].map((opt) => opt.value).filter((v) => v && v !== TODAS_SUPERVISOES))];
 }
 
 async function loadColaboradoresOrigem(supervisoes) {
@@ -239,15 +269,17 @@ async function loadTransferencias() {
 }
 
 function rowHtml(t, minhas, aberta) {
+  const sol = ehSolicitacao(t);
   const souDestino = minhas.has(normalize(t.supervisao_destino));
-  const souOrigem = minhas.has(normalize(t.supervisao_origem));
+  const souResponsavel = minhas.has(normalize(supRespostaDe(t)));
+  const souSolicitante = minhas.has(normalize(supPedidoDe(t)));
   const pendente = t.status === 'PENDENTE';
   const st = statusInfo(t);
   const acoes = [];
-  if (pendente && souDestino) {
+  if (pendente && souResponsavel) {
     acoes.push(`<button type="button" class="ptr-btn pri" data-ptr-acao="aceitar" data-id="${esc(t.id)}">Aceitar</button>`);
     acoes.push(`<button type="button" class="ptr-btn danger" data-ptr-acao="recusar" data-id="${esc(t.id)}">Recusar</button>`);
-  } else if (pendente && souOrigem) {
+  } else if (pendente && souSolicitante) {
     acoes.push(`<button type="button" class="ptr-btn ghost" data-ptr-acao="cancelar" data-id="${esc(t.id)}">Cancelar</button>`);
   }
   if (aguardandoChegada(t) && souDestino) {
@@ -257,9 +289,12 @@ function rowHtml(t, minhas, aberta) {
     acoes.push(`<button type="button" class="ptr-btn ghost" data-ptr-acao="reenviar" data-id="${esc(t.id)}">Reenviar ao GRM</button>`);
   }
   const detalhes = [
+    sol && ['Tipo', `Pedido de colaborador feito por ${esc(t.supervisao_destino)}`],
     ['Pedido', `${esc(t.solicitado_por_nome || '—')} · ${esc(formatDateTime(t.solicitado_em))}`],
     t.respondido_em && [t.status === 'CANCELADA' ? 'Cancelado' : 'Resposta', `${esc(t.respondido_por_nome || '—')} · ${esc(formatDateTime(t.respondido_em))}`],
-    ['Patrimônios', esc(patrimoniosResumo(t)) + (t.transferir_patrimonios || !t.patrimonios?.length ? '' : ' na origem')],
+    ['Patrimônios', esc(patrimoniosResumo(t))
+      + (t.transferir_patrimonios || !t.patrimonios?.length ? '' : ' na origem')
+      + (sol && pendente && t.patrimonios?.length ? ' (proposta de quem pediu; a origem confirma ao aceitar)' : '')],
     t.em_deslocamento && ['Deslocamento', t.chegada_confirmada_em
       ? `Chegada confirmada por ${esc(t.chegada_confirmada_por_nome || '—')} · ${esc(formatDateTime(t.chegada_confirmada_em))}`
       : `Chegada prevista em ${esc(formatDateIso(t.chegada_prevista))} — até lá não pode ser escalado em O.S.`],
@@ -269,12 +304,12 @@ function rowHtml(t, minhas, aberta) {
     t.grm_status === 'ERRO' && t.grm_erro && ['Erro', `<span class="err">${esc(t.grm_erro)}</span>`],
   ].filter(Boolean);
   return `
-    <div class="ptr-row ${pendente && souDestino ? 'mine' : ''} ${aberta ? 'open' : ''}" data-row="${esc(t.id)}">
+    <div class="ptr-row ${pendente && souResponsavel ? 'mine' : ''} ${aberta ? 'open' : ''}" data-row="${esc(t.id)}">
       <div class="ptr-line">
         <div class="ptr-who">
           <div class="ptr-av">${esc(iniciais(t.colaborador_nome))}</div>
           <div style="min-width:0">
-            <div class="ptr-name">${esc(t.colaborador_nome)}${aguardandoChegada(t) ? `<span class="ptr-tag" title="Ainda não chegou na supervisão de destino">🚚 chega ${esc(formatDateIso(t.chegada_prevista).slice(0, 5))}</span>` : ''}</div>
+            <div class="ptr-name">${esc(t.colaborador_nome)}${sol ? `<span class="ptr-tag sol" title="${esc(t.supervisao_destino)} pediu este colaborador; quem responde é a supervisão de origem">📥 pedido</span>` : ''}${aguardandoChegada(t) ? `<span class="ptr-tag" title="Ainda não chegou na supervisão de destino">🚚 chega ${esc(formatDateIso(t.chegada_prevista).slice(0, 5))}</span>` : ''}</div>
             <div class="ptr-sub">${esc([t.colaborador_cargo, formatDate(t.solicitado_em)].filter(Boolean).join(' · '))}</div>
           </div>
         </div>
@@ -321,9 +356,12 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       <div class="ptr-head">
         <div>
           <h4>Transferências</h4>
-          <p>Mova colaboradores entre supervisões. O gestor de destino aceita ou recusa, e o GRM é atualizado automaticamente depois do aceite.</p>
+          <p>Mova colaboradores entre supervisões. O gestor de destino aceita ou recusa, e o GRM é atualizado automaticamente depois do aceite. Se o colaborador está vindo de outra regional e o supervisor dele ainda não transferiu, use <b>Solicitar colaborador</b>.</p>
         </div>
-        <button type="button" class="btn btn-primary ptr-new" id="ptrNova">+ Nova transferência</button>
+        <div class="ptr-head-btns">
+          <button type="button" class="btn btn-secondary ptr-new" id="ptrSolicitar">Solicitar colaborador</button>
+          <button type="button" class="btn btn-primary ptr-new" id="ptrNova">+ Nova transferência</button>
+        </div>
       </div>
       <div class="ptr-toolbar">
         <div class="ptr-tabs" role="tablist">
@@ -355,8 +393,8 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
 
   function grupos() {
     const minhas = minhasSupervisoes();
-    const aceitar = transferencias.filter((t) => t.status === 'PENDENTE' && minhas.has(normalize(t.supervisao_destino)));
-    const enviadas = transferencias.filter((t) => minhas.has(normalize(t.supervisao_origem)) && !aceitar.includes(t));
+    const aceitar = transferencias.filter((t) => t.status === 'PENDENTE' && minhas.has(normalize(supRespostaDe(t))));
+    const enviadas = transferencias.filter((t) => minhas.has(normalize(supPedidoDe(t))) && !aceitar.includes(t));
     return { minhas, aceitar, enviadas, todas: transferencias };
   }
 
@@ -375,7 +413,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
       || normalize(`${t.colaborador_nome} ${t.supervisao_origem} ${t.supervisao_destino}`).includes(termo));
     const vazio = {
       aceitar: 'Nenhuma transferência aguardando seu aceite.',
-      enviadas: 'Você ainda não pediu nenhuma transferência.',
+      enviadas: 'Você ainda não fez nenhum pedido de transferência ou de colaborador.',
       todas: 'Nenhuma transferência ainda.',
     };
     listaEl.innerHTML = itens.length
@@ -514,7 +552,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
         const lista = await loadPatrimoniosColaborador(colab.nome);
         if (token !== patrimoniosToken) return;
         f.patr.innerHTML = lista.length
-          ? `<details><summary>${lista.length} patrimônio${lista.length > 1 ? 's' : ''} no nome do colaborador</summary><ul class="ptr-patr-list">${lista.map((p) => `<li><b>${esc(p.patrimonio_codigo)}</b>${esc(p.identificacao || p.categoria || '')}</li>`).join('')}</ul></details>`
+          ? patrimoniosDetalhesHtml(lista.map((p) => ({ codigo: p.patrimonio_codigo, descricao: p.identificacao || p.categoria })))
           : 'Nenhum patrimônio ativo no nome do colaborador.';
       } catch (error) {
         if (token !== patrimoniosToken) return;
@@ -574,6 +612,197 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     }
   }
 
+  // Solicitar colaborador: o gestor que vai receber pede alguém que hoje está
+  // em outra supervisão. O colaborador vem de uma busca no servidor (o combo
+  // da tela só tem os da própria supervisão).
+  function abrirModalSolicitar() {
+    const meus = minhasSupervisoesNomes();
+    modalEl.innerHTML = `<div class="ptr-card" role="dialog" aria-modal="true" aria-label="Solicitar colaborador">
+      <h3>Solicitar colaborador</h3>
+      <p class="ptr-hint">Para colaborador que vem de outra regional e ainda não foi transferido pelo supervisor dele. O gestor da supervisão atual do colaborador é avisado para aceitar ou recusar.</p>
+      <form id="ptrSolForm" autocomplete="off">
+        <div class="ptr-field">
+          <label for="ptrSolDestino">Supervisão que vai receber</label>
+          <select id="ptrSolDestino">${meus.length === 1 ? '' : '<option value="">Selecione...</option>'}${meus.map((nome) => `<option value="${esc(nome)}">${esc(nome)}</option>`).join('')}</select>
+        </div>
+        <div class="ptr-field">
+          <label for="ptrSolBusca">Colaborador</label>
+          <input type="search" id="ptrSolBusca" placeholder="Digite o nome ou o CPF (mínimo 3 letras)">
+          <select id="ptrSolColab" size="5" hidden aria-label="Resultados da busca"></select>
+          <div class="ptr-patr-note" id="ptrSolInfo">Busque pelo nome ou CPF do colaborador.</div>
+        </div>
+        <div class="ptr-field">
+          <span class="ptr-lbl">Os patrimônios dele vêm junto?</span>
+          <div class="ptr-seg" role="radiogroup">
+            <button type="button" data-patr="S" disabled>Sim, trazer</button>
+            <button type="button" data-patr="N" disabled>Não, ficam na origem</button>
+          </div>
+          <div class="ptr-patr-note" id="ptrSolPatr">Selecione o colaborador para ver os patrimônios. É uma proposta: o gestor da origem confirma ao aceitar.</div>
+        </div>
+        <div class="ptr-field">
+          <label for="ptrSolMotivo">Motivo <span style="color:#64748b;font-weight:600">(opcional)</span></label>
+          <textarea id="ptrSolMotivo" rows="2" placeholder="Ex.: ele já está a caminho para reforçar a equipe"></textarea>
+        </div>
+        <div class="ptr-card-foot">
+          <span class="ptr-fb" id="ptrSolFb"></span>
+          <button type="button" class="ptr-btn ghost" data-fechar>Cancelar</button>
+          <button type="submit" class="ptr-btn pri" id="ptrSolEnviar">Solicitar</button>
+        </div>
+      </form>
+    </div>`;
+    modalEl.classList.add('open');
+
+    const f = {
+      form: modalEl.querySelector('#ptrSolForm'),
+      destino: modalEl.querySelector('#ptrSolDestino'),
+      busca: modalEl.querySelector('#ptrSolBusca'),
+      colab: modalEl.querySelector('#ptrSolColab'),
+      info: modalEl.querySelector('#ptrSolInfo'),
+      patr: modalEl.querySelector('#ptrSolPatr'),
+      seg: [...modalEl.querySelectorAll('[data-patr]')],
+      motivo: modalEl.querySelector('#ptrSolMotivo'),
+      enviar: modalEl.querySelector('#ptrSolEnviar'),
+      fb: modalEl.querySelector('#ptrSolFb'),
+    };
+    const INFO_PADRAO = 'Busque pelo nome ou CPF do colaborador.';
+    let resultados = [];
+    let transferirPatrimonios = null;
+    let buscaToken = 0;
+    let patrimoniosToken = 0;
+    let buscaTimer = null;
+    const setFb = (text, tone = '') => { f.fb.className = `ptr-fb ${tone}`; f.fb.textContent = text; };
+    const colabSelecionado = () => resultados.find((r) => r.cpf === f.colab.value) || null;
+
+    modalEl.querySelector('[data-fechar]').onclick = fecharModal;
+
+    function setSeg(valor) {
+      transferirPatrimonios = valor;
+      f.seg.forEach((b) => b.classList.toggle('on', valor !== null && (b.dataset.patr === 'S') === valor));
+    }
+
+    async function atualizarPatrimonios() {
+      const colab = colabSelecionado();
+      setSeg(null);
+      f.seg.forEach((b) => { b.disabled = !colab; });
+      const token = ++patrimoniosToken;
+      if (!colab) { f.patr.textContent = 'Selecione o colaborador para ver os patrimônios. É uma proposta: o gestor da origem confirma ao aceitar.'; return; }
+      f.info.innerHTML = `Hoje em <b>${esc(colab.supervisao)}</b>. O gestor dessa supervisão será avisado para aceitar ou recusar.`;
+      f.patr.textContent = 'Buscando patrimônios...';
+      try {
+        const lista = await loadPatrimoniosColaborador(colab.nome);
+        if (token !== patrimoniosToken) return;
+        f.patr.innerHTML = lista.length
+          ? patrimoniosDetalhesHtml(lista.map((p) => ({ codigo: p.patrimonio_codigo, descricao: p.identificacao || p.categoria })))
+          : 'Nenhum patrimônio ativo no nome do colaborador.';
+      } catch (error) {
+        if (token !== patrimoniosToken) return;
+        f.patr.textContent = `Não foi possível listar os patrimônios (${rpcErrorMessage(error)}).`;
+      }
+    }
+
+    function limparResultados(mensagem) {
+      resultados = [];
+      f.colab.hidden = true;
+      f.colab.innerHTML = '';
+      f.info.textContent = mensagem;
+      atualizarPatrimonios();
+    }
+
+    async function buscar() {
+      if (!modalEl.contains(f.busca)) return;
+      const termo = f.busca.value.trim();
+      const token = ++buscaToken;
+      if (!f.destino.value) { limparResultados('Escolha primeiro a supervisão que vai receber.'); return; }
+      if (normalize(termo).length < 3) { limparResultados(INFO_PADRAO); return; }
+      f.info.textContent = 'Buscando...';
+      const { data, error } = await supabase.rpc('programacao_transferencia_buscar_colaboradores', {
+        p_termo: termo,
+        p_supervisao_destino: f.destino.value,
+      });
+      if (token !== buscaToken || !modalEl.contains(f.busca)) return;
+      if (error) { limparResultados(rpcErrorMessage(error)); return; }
+      resultados = data || [];
+      if (!resultados.length) { limparResultados('Nenhum colaborador ativo de outra supervisão encontrado.'); return; }
+      f.colab.innerHTML = resultados.map((r) => `<option value="${esc(r.cpf)}"${r.pendente ? ' disabled' : ''}>${esc(r.nome)}${r.cargo ? ` — ${esc(r.cargo)}` : ''} (${esc(r.supervisao)})${r.pendente ? ' · já tem transferência pendente' : ''}</option>`).join('');
+      f.colab.selectedIndex = -1;
+      f.colab.hidden = false;
+      f.info.textContent = resultados.length >= 30 ? 'Mostrando os 30 primeiros; refine a busca.' : 'Clique no colaborador.';
+      atualizarPatrimonios();
+    }
+
+    f.busca.addEventListener('input', () => { setFb(''); clearTimeout(buscaTimer); buscaTimer = setTimeout(buscar, 300); });
+    f.destino.addEventListener('change', () => { setFb(''); buscar(); });
+    f.colab.addEventListener('change', () => { setFb(''); atualizarPatrimonios(); });
+    f.seg.forEach((b) => b.addEventListener('click', () => setSeg(b.dataset.patr === 'S')));
+    if (meus.length === 1) f.destino.value = meus[0];
+
+    f.form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const colab = colabSelecionado();
+      if (!f.destino.value) { setFb('Selecione a supervisão que vai receber.', 'err'); return; }
+      if (!colab) { setFb('Busque e selecione o colaborador.', 'err'); return; }
+      if (transferirPatrimonios === null) { setFb('Diga se os patrimônios vêm junto.', 'err'); return; }
+      f.enviar.disabled = true;
+      setFb('Enviando...');
+      const { error } = await supabase.rpc('programacao_transferencia_solicitar_colaborador', {
+        p_colaborador_cpf: colab.cpf,
+        p_supervisao_destino: f.destino.value,
+        p_transferir_patrimonios: transferirPatrimonios,
+        p_motivo: f.motivo.value.trim() || null,
+      });
+      if (error) { f.enviar.disabled = false; setFb(rpcErrorMessage(error), 'err'); return; }
+      fecharModal();
+      toast(`Pedido enviado. O gestor de ${colab.supervisao} foi avisado.`);
+      filtro = 'enviadas';
+      await recarregarListas();
+    });
+
+    f.busca.focus();
+  }
+
+  // Aceite de uma SOLICITACAO: os patrimônios são da origem, então quem aceita
+  // confirma (ou muda) se eles vão junto. Começa com a proposta de quem pediu.
+  function abrirModalAceiteSolicitacao(t) {
+    const itens = (Array.isArray(t.patrimonios) ? t.patrimonios : [])
+      .map((p) => ({ codigo: p.codigo, descricao: p.identificacao || p.categoria }));
+    let transferir = !!t.transferir_patrimonios;
+    modalEl.innerHTML = `<div class="ptr-card" role="dialog" aria-modal="true" aria-label="Aceitar pedido de colaborador">
+      <h3>Aceitar pedido de colaborador</h3>
+      <p class="ptr-hint"><b>${esc(t.colaborador_nome)}</b> sai de ${esc(t.supervisao_origem)} e vai para <b>${esc(t.supervisao_destino)}</b>. Pedido de ${esc(t.solicitado_por_nome || '—')}.${t.motivo ? ` Motivo: ${esc(t.motivo)}.` : ''}</p>
+      <div class="ptr-field">
+        <span class="ptr-lbl">Os patrimônios vão junto?</span>
+        <div class="ptr-seg" role="radiogroup">
+          <button type="button" data-patr="S">Sim, transferir</button>
+          <button type="button" data-patr="N">Não, ficam na origem</button>
+        </div>
+        <div class="ptr-patr-note">${itens.length ? patrimoniosDetalhesHtml(itens) : 'Nenhum patrimônio ativo no nome do colaborador.'}</div>
+      </div>
+      <div class="ptr-card-foot">
+        <span class="ptr-fb err" id="ptrAceiteFb"></span>
+        <button type="button" class="ptr-btn ghost" data-fechar>Voltar</button>
+        <button type="button" class="ptr-btn pri" id="ptrAceiteOk">Aceitar e transferir</button>
+      </div>
+    </div>`;
+    modalEl.classList.add('open');
+    const seg = [...modalEl.querySelectorAll('[data-patr]')];
+    const pintar = () => seg.forEach((b) => b.classList.toggle('on', (b.dataset.patr === 'S') === transferir));
+    seg.forEach((b) => b.addEventListener('click', () => { transferir = b.dataset.patr === 'S'; pintar(); }));
+    pintar();
+    modalEl.querySelector('[data-fechar]').onclick = fecharModal;
+    modalEl.querySelector('#ptrAceiteOk').onclick = async (event) => {
+      const btn = event.currentTarget;
+      const fb = modalEl.querySelector('#ptrAceiteFb');
+      btn.disabled = true;
+      const { error } = await supabase.rpc('programacao_transferencia_responder', {
+        p_id: t.id, p_aceitar: true, p_motivo: null, p_transferir_patrimonios: transferir,
+      });
+      if (error) { fb.textContent = rpcErrorMessage(error); btn.disabled = false; return; }
+      fecharModal();
+      toast('Pedido aceito. O GRM será atualizado.');
+      await recarregarListas();
+    };
+  }
+
   // Chamado pelo Sem O.S.: leva pra aba Transferências e abre o pedido.
   window.__pgcAbrirTransferencia = (cpf, opcoes = {}) => {
     document.querySelector('#progSteps .stepbtn[data-ui-step="3"]')?.click();
@@ -584,6 +813,10 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     const id = btn.dataset.id;
     const acao = btn.dataset.ptrAcao;
     if (acao === 'recusar') { abrirModalRecusa(id); return; }
+    if (acao === 'aceitar') {
+      const t = transferencias.find((x) => x.id === id);
+      if (t && ehSolicitacao(t)) { abrirModalAceiteSolicitacao(t); return; }
+    }
     const confirmacoes = {
       cancelar: 'Cancelar este pedido de transferência?',
       reenviar: 'Reenviar esta transferência para o agente do GRM?',
@@ -614,6 +847,7 @@ export async function renderProgramacaoTransferencias(content, options = {}) {
     const tab = event.target.closest('.ptr-tab');
     if (tab) { filtro = tab.dataset.filtro; renderLista(); return; }
     if (event.target.closest('#ptrNova')) { abrirModalNova(); return; }
+    if (event.target.closest('#ptrSolicitar')) { abrirModalSolicitar(); return; }
     const line = event.target.closest('.ptr-line');
     if (line) {
       const row = line.closest('.ptr-row');
