@@ -29,7 +29,8 @@ export function colabAutocomplete(modal, inputSel, sugSel, onPick) {
     if (q.length < 2) { sug.style.display = 'none'; return; }
     clearTimeout(debounce);
     debounce = setTimeout(async () => {
-      const lista = await searchColaboradores(q, { limite: 10 });
+      // RH também lança rescisão, exame demissional, holerite e atestado de quem já foi desligado.
+      const lista = await searchColaboradores(q, { limite: 10, somenteAtivos: false });
       if (!lista.length) { sug.style.display = 'none'; return; }
       sug.innerHTML = lista.map((c, idx) => `<button type="button" data-idx="${idx}" style="display:block;width:100%;text-align:left;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px;margin-bottom:4px;cursor:pointer">${esc(c.nome)}</button>`).join('');
       sug.style.display = 'block';

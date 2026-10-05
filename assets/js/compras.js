@@ -1,6 +1,6 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20260827-situacao';
+import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20261005-situacao-ativo';
 
 let CATALOGO = [];
 async function loadCatalogo(){

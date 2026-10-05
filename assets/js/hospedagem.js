@@ -5,7 +5,7 @@ import {
   table, toast,
 } from './core/ui.js';
 import { brDate, statusLabel, preferenciaLabel } from './adm-hotel-helpers.js';
-import { getColaboradores } from './colaboradoresCache.js?v=20260911-hosp-v3';
+import { getColaboradores } from './colaboradoresCache.js?v=20261005-situacao-ativo';
 
 const UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
