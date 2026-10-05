@@ -29,6 +29,7 @@ const AGENT_NAMES = {
   'sync-lancar-nhe': 'Lançamento Automático de NHE (Graint)',
   'sync-despesas-retroativas': 'Despesas Retroativas (GRM)',
   'sync-despesas-duplicadas': 'Despesas Duplicadas (GRM)',
+  'sync-aprovar-pendencias': 'Aprovar Pendências do Caixa (GRM)',
   'sync-liberacao-despesas': 'Liberação de Despesas (GRM)',
   'sync-lancar-notas-fiscais': 'Lançar Notas Fiscais (GRM)',
   'sync-bonus-caixa': 'Bônus de Caixa (GRM)',

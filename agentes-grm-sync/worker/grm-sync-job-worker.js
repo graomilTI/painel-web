@@ -179,6 +179,10 @@ const SCRIPT_MAP = {
   // colaborador ("lançamento duplicado" / "Duplicata" pela data da observação) e
   // corrige a data quando a observação aponta um dia sem lançamento e dentro das regras.
   'sync-despesas-duplicadas': 'grm-sync-despesas-duplicadas.js',
+  // Auxiliar do retroativas (05/10): aprova as pendências de Café/Almoço/Janta/Pernoite do Caixa que
+  // cumprem as regras de 01/10 (movimento no dia; Janta laudo >=19h; Café laudo <07h; Pernoite sem
+  // refeição) — o retroativas só aprova o que está na Programação do Painel e só olha D-1.
+  'sync-aprovar-pendencias': 'grm-sync-aprovar-pendencias.js',
   'botconversa-sync': 'grm-sync-botconversa.js',
   'sync-classificacao-ourosafra': 'grm-sync-classificacao-ourosafra.js',
 };
