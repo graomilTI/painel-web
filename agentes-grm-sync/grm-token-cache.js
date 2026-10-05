@@ -213,6 +213,14 @@ async function obterTokenGrm({ login, validar = tokenAindaValido } = {}) {
   }
 }
 
+// Há token de sessão utilizável em cache? Não tenta login (o Turnstile barra) nem mexe em
+// lock/cooldown: serve para o agente adiar o trabalho em vez de falhar quando o token do dia
+// ainda não foi gravado (node grm-token-cache.js salvar).
+async function tokenGrmEmCacheValido({ validar = tokenAindaValido } = {}) {
+  if (String(process.env.GRM_TOKEN_CACHE || '').toLowerCase() === 'off') return true;
+  return Boolean(await tokenEmCache(paths(), validar));
+}
+
 function limparTokenGrm() {
   apagar(paths().token);
 }
@@ -257,7 +265,7 @@ async function salvarTokenManual() {
   return 0;
 }
 
-module.exports = { obterTokenGrm, limparTokenGrm };
+module.exports = { obterTokenGrm, limparTokenGrm, tokenGrmEmCacheValido };
 
 if (require.main === module) {
   if (process.argv[2] === 'salvar') {

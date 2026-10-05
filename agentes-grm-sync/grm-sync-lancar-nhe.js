@@ -78,6 +78,13 @@ var DRY_RUN = String(process.env.NHE_LANCAMENTO_DRY_RUN || '').toLowerCase() ===
 var AUTO_CONTINUACAO = String(process.env.NHE_LANCAMENTO_AUTO_CONTINUACAO || 'true').toLowerCase() !== 'false';
 // Somente diagnóstico manual: permite repetir SALVO_NAO_CONFIRMADO de uma O.S. explícita.
 var REPETIR_NAO_CONFIRMADO = String(process.env.NHE_LANCAMENTO_REPETIR_NAO_CONFIRMADO || 'false').toLowerCase() === 'true';
+// O token de sessão do GRM vence todo dia às 23:59 e só é regravado à mão (grm-token-cache.js
+// salvar), às vezes de manhã. Sem ele o job das 03h dava erro e as O.S. ficavam esperando alguém
+// rodar na mão (01–04/10/2026). Agora o agente adia: sai com sucesso e deixa o marcador abaixo
+// no stdout; o cron sync-lancar-nhe-aguarda-token (a cada 5 min, até 18h BRT) enfileira de novo
+// até o token valer. NHE_LANCAMENTO_AGUARDAR_TOKEN=false volta a falhar na hora (diagnóstico).
+var AGUARDAR_TOKEN = String(process.env.NHE_LANCAMENTO_AGUARDAR_TOKEN || 'true').toLowerCase() !== 'false';
+var MARCADOR_AGUARDANDO_TOKEN = '[NHE_AGUARDANDO_TOKEN]';
 
 var TABLE_RESULTADOS = 'logistica_nhe_lancamentos_auto';
 var TABLE_EXECUCOES = 'logistica_nhe_lancamentos_execucoes';
@@ -1059,6 +1066,12 @@ async function finalizarExecucao(runId, patch) {
   if (result.error) log('WARN', 'Falha ao finalizar execução: ' + result.error.message);
 }
 
+async function tokenDeSessaoDisponivel() {
+  // GRM_LOGIN_MODE=form faz login pelo formulário (não usa o token em cache).
+  if (!AGUARDAR_TOKEN || String(process.env.GRM_LOGIN_MODE || '').toLowerCase() === 'form') return true;
+  return require('./grm-token-cache').tokenGrmEmCacheValido();
+}
+
 async function enfileirarContinuacao() {
   var aberto = await supabase
     .from('grm_sync_jobs')
@@ -1750,6 +1763,12 @@ async function main() {
 
   try {
     log('INFO', '=== Lançamento automático de NHE (raio=' + RAIO_M + 'm, motivo="' + MOTIVO_FIXO + '"' + (dryRun ? ', DRY-RUN' : '') + ') ===');
+    // Antes de qualquer gravação: sem token não há como lançar, então não cria execução nem
+    // calcula nada; o cron de espera tenta de novo em 5 min.
+    if (!(await tokenDeSessaoDisponivel())) {
+      log('WARN', MARCADOR_AGUARDANDO_TOKEN + ' Sem token de sessão válido do GRM (venceu às 23:59; grave um novo: node grm-token-cache.js salvar). Execução adiada; o cron tenta de novo a cada 5 min (até 18h BRT) e roda assim que o token for gravado.');
+      return;
+    }
     var dataReferencia = referenceIso();
     runId = await criarExecucao(dataReferencia);
 
