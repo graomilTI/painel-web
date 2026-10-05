@@ -17,6 +17,8 @@ const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return
 const today = ()=>new Date().toISOString().slice(0,10);
 const money = (v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const norm = (v)=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+// `ativo` \u00e9 o booleano da view ou a situa\u00e7\u00e3o ('Ativo' / 'N\u00e3o Ativo' / 'Inativo'); s\u00f3 'Ativo' conta.
+const colabAtivo = (c)=>['ativo','true','1','sim'].includes(norm(c.ativo??'ativo'));
 function usuario(ctx){ return ctx?.user || {}; }
 function solicitanteNome(ctx){ return usuario(ctx).name || usuario(ctx).email || 'Usuário logado'; }
 function setMsg(id,msg,err=false){ const el=document.getElementById(id); if(el){ el.textContent=msg||''; el.classList.toggle('err',!!err); }}
@@ -200,7 +202,7 @@ function openCelularModal(baseItem){
     celDebounce=setTimeout(async()=>{
       const data=await searchColaboradores(q,{limite:60}); // cache local
       const seen=new Set();
-      const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
+      const list=(data||[]).filter(c=>{if(!colabAtivo(c))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
       colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}" data-ctipo="${esc(c.tipo||c.cargo||'')}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
       colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome,tipo:b.dataset.ctipo}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
     },250);
@@ -313,7 +315,7 @@ function openDistribModal(onConfirm){
       dcDebounce=setTimeout(async()=>{
         const data=await searchColaboradores(q,{limite:60}); // cache local
         const seen=new Set();
-        const list=(data||[]).filter(c=>{const t=norm(c.ativo??'ativo');if(['false','0','inativo','desligado'].includes(t))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
+        const list=(data||[]).filter(c=>{if(!colabAtivo(c))return false;const k=norm(c.nome||'');if(seen.has(k))return false;seen.add(k);return true;}).slice(0,12);
         colabSug.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.cargo||c.tipo||'')}</small></button>`).join('');
         colabSug.querySelectorAll('button').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); selectedColab={id:b.dataset.cid,nome:b.dataset.cnome}; colabInput.value=b.dataset.cnome; colabSug.innerHTML='';});
       },250);
