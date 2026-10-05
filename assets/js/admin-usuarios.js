@@ -325,14 +325,14 @@ function renderSkeleton(content) {
 }
 
 function applyFilters() {
-  const q = state.filters.q.trim().toLowerCase();
+  const q = normalizeModuleText(state.filters.q);
   const perfil = state.filters.perfil.trim().toLowerCase();
   const status = state.filters.status.trim().toLowerCase();
 
   state.filteredUsers = state.users.filter((user) => {
     const matchQ = !q || [user.nome, user.email, user.empresa, user.coordenacao, user.supervisao, user.setor]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(q));
+      .some((value) => normalizeModuleText(value).includes(q));
     const matchPerfil = !perfil || String(user.perfil_codigo || '').toLowerCase() === perfil;
     const matchStatus = !status || String(user.status || '').toLowerCase() === status;
     return matchQ && matchPerfil && matchStatus;
