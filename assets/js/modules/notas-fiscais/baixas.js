@@ -15,11 +15,14 @@ import {
   table, pagination, badge, openModal, closeModal, confirmar, toast,
   esc, dinheiro, dataBR, dataHoraBR,
 } from '../../core/ui.js';
-import { listar, atualizar, inserir, mensagemDeErro } from '../../core/supabaseService.js';
+import {
+  supabase, listar, atualizar, inserir, mensagemDeErro,
+} from '../../core/supabaseService.js';
 
 const TABELA = 'grm_nf_baixas';
 const TABELA_JOBS = 'grm_sync_jobs';
 const AGENTE_ID = 'sync-baixa-notas-fiscais';
+const BUCKET = 'notas-fiscais';
 
 const STATUS_LABEL = {
   NOVO: 'Na fila',
@@ -93,16 +96,40 @@ export async function contarRevisaoPendente() {
   }
 }
 
+// O bucket é público (a tela de Envios abre os arquivos dele assim): a URL leva
+// direto ao PDF do comprovante, pra quem revisa conferir o que foi pago.
+function urlComprovante(row) {
+  if (!row?.storage_path) return null;
+  const { data } = supabase.storage.from(row.storage_bucket || BUCKET).getPublicUrl(row.storage_path);
+  return data?.publicUrl || null;
+}
+
+function abrirComprovante(id) {
+  const url = urlComprovante(estado.itens.find((r) => r.id === id));
+  if (!url) {
+    toast('Não encontrei o arquivo deste comprovante.', 'warn');
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function botaoIcone(atributo, id, icone, titulo, estilo = '') {
+  return `<button class="ds-btn-icon" ${atributo}="${esc(id)}" type="button" title="${esc(titulo)}" aria-label="${esc(titulo)}"${estilo ? ` style="${estilo}"` : ''}>${icone}</button>`;
+}
+
 function acoesLinha(row) {
   const botoes = [];
+  if (row.storage_path) {
+    botoes.push(botaoIcone('data-baixa-abrir', row.id, '📄', 'Abrir o comprovante', 'border-color:rgba(90,150,230,.5);background:rgba(90,150,230,.12);color:#a9c8f5'));
+  }
   if (row.status === 'AGUARDANDO_REVISAO') {
-    botoes.push(`<button class="ds-btn ds-btn-primary" data-baixa-revisar="${esc(row.id)}" type="button">Revisar</button>`);
+    botoes.push(botaoIcone('data-baixa-revisar', row.id, '🔍', 'Revisar e escolher a parcela', 'border-color:rgba(214,170,60,.5);background:rgba(214,170,60,.12);color:#f0d27a'));
   }
   if (row.status === 'ERRO' || row.status === 'AGUARDANDO_REVISAO') {
-    botoes.push(`<button class="ds-btn" data-baixa-relancar="${esc(row.id)}" type="button">Relançar</button>`);
+    botoes.push(botaoIcone('data-baixa-relancar', row.id, '↻', 'Relançar (volta pra fila)', 'border-color:rgba(63,168,120,.45);background:rgba(63,168,120,.12);color:#9fe6c0'));
   }
   if (['NOVO', 'PROCESSANDO', 'AGUARDANDO_REVISAO', 'ERRO'].includes(row.status)) {
-    botoes.push(`<button class="ds-btn ds-btn-danger" data-baixa-cancelar="${esc(row.id)}" type="button">Cancelar</button>`);
+    botoes.push(botaoIcone('data-baixa-cancelar', row.id, '✕', 'Cancelar comprovante'));
   }
   return botoes.join('');
 }
@@ -135,7 +162,7 @@ function linhaHtml(row) {
       <td>${row.data_pagamento ? dataBR(row.data_pagamento) : '-'}</td>
       <td>${badge(STATUS_LABEL[row.status] || row.status, STATUS_BADGE[row.status] || 'neutral')}</td>
       <td style="max-width:260px;color:#94a3b8;font-size:13px">${detalheLinha(row)}</td>
-      <td style="display:flex;gap:6px;flex-wrap:wrap">${acoesLinha(row)}</td>
+      <td style="display:flex;gap:6px">${acoesLinha(row)}</td>
     </tr>`;
 }
 
@@ -187,12 +214,14 @@ async function abrirRevisao(id, aoAtualizar) {
     conteudoHtml: `
       <h3 class="ds-modal-title">Revisar baixa — ${esc(row.arquivo_nome)}</h3>
       <p class="ds-modal-text">Comprovante: ${esc(row.favorecido_nome || '-')} · ${row.valor != null ? dinheiro(row.valor) : '-'} · pago em ${row.data_pagamento ? dataBR(row.data_pagamento) : '-'} · ${esc(row.empresa_detectada || '-')}</p>
+      <button class="ds-btn" data-baixa-abrir-modal type="button" title="Abre o comprovante em outra aba pra conferir antes de escolher">📄 Abrir comprovante</button>
       <div style="max-height:340px;overflow:auto;margin:12px 0">${opcoesHtml}</div>
       <div class="ds-modal-actions">
         <button class="ds-btn" data-ds-cancel type="button">Fechar</button>
         ${candidatos.length ? '<button class="ds-btn ds-btn-primary" data-baixa-confirmar type="button">Confirmar candidato</button>' : ''}
       </div>`,
   });
+  overlay.querySelector('[data-baixa-abrir-modal]').addEventListener('click', () => abrirComprovante(row.id));
   overlay.querySelector('[data-ds-cancel]').addEventListener('click', () => closeModal('baixaRevisaoModal'));
   overlay.querySelector('[data-baixa-confirmar]')?.addEventListener('click', async () => {
     const idx = Number(overlay.querySelector('input[name="baixaCandidato"]:checked')?.value);
@@ -277,6 +306,9 @@ export function vincularEventosBaixas(container, { aoAtualizar }) {
       await carregarBaixas();
       aoAtualizar();
     });
+  });
+  container.querySelectorAll('[data-baixa-abrir]').forEach((b) => {
+    b.addEventListener('click', () => abrirComprovante(b.dataset.baixaAbrir));
   });
   container.querySelectorAll('[data-baixa-revisar]').forEach((b) => {
     b.addEventListener('click', () => abrirRevisao(b.dataset.baixaRevisar, aoAtualizar));
