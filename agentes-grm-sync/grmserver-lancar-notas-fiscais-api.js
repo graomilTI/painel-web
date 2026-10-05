@@ -141,6 +141,7 @@ function parseArgs(argv) {
     else if (a === '--upload-id') out.uploadId = argv[++i] || null;
     else if (a === '--file' || a === '--pdf') out.file = argv[++i] || null;
     else if (a === '--enfileirar-baixa') out.enfileirarBaixa = argv[++i] || null;
+    else if (a === '--sync-catalogo') out.syncCatalogo = true;
   }
   return out;
 }
@@ -1007,6 +1008,65 @@ function applyInvoiceRules(extracted, row) {
   return data;
 }
 
+// Campos digitados à mão no painel (✎ Completar dados). Valem mais que a
+// extração e as regras: quem preencheu viu o documento e o agente não achou.
+// Só mexe nos campos que o formulário oferece; o resto segue a extração.
+function applyManualOverrides(data, ajustes) {
+  if (!ajustes || typeof ajustes !== 'object') return data;
+  const texto = (campo) => String(ajustes[campo] ?? '').trim();
+  const holerite = data.tipo_documento_fluxo === 'HOLERITE';
+
+  if (texto('numero_documento')) {
+    data.numero_documento = texto('numero_documento');
+    // A identificação automática embute o número ("NF 123 - FORNECEDOR").
+    if (!holerite && /^NF /i.test(String(data.identificacao || ''))) {
+      data.identificacao = `NF ${data.numero_documento} - ${data.fornecedor || 'FORNECEDOR'}`;
+    }
+  }
+  if (texto('forma_pagamento')) data.forma_pagamento = texto('forma_pagamento');
+  if (texto('data_vencimento')) data.data_vencimento = toBrDate(texto('data_vencimento'));
+  if (texto('data_conta')) {
+    const anterior = data.data_conta;
+    data.data_conta = toBrDate(texto('data_conta'));
+    data.data_emissao = data.data_emissao || data.data_conta;
+    data.rateio = data.rateio || {};
+    if (!data.rateio.data_participacao || data.rateio.data_participacao === anterior) data.rateio.data_participacao = data.data_conta;
+  }
+  if (holerite && texto('tipo_contrato')) {
+    data.tipo_contrato = texto('tipo_contrato');
+    data.grupo_categoria = 'FOLHA DE PAGAMENTO';
+    data.categoria = data.tipo_contrato === 'Intermitente' ? 'SALÁRIO DE INTERMITENTE' : 'SALÁRIO FIXO';
+  } else if (texto('categoria')) {
+    data.categoria = texto('categoria');
+    if (texto('grupo_categoria')) data.grupo_categoria = texto('grupo_categoria');
+  }
+  data.ajustes_manuais = ajustes;
+  return data;
+}
+
+// Catálogo do GRM (categorias-folha e formas de pagamento) pro painel montar os
+// selects do ✎ Completar dados com os nomes exatos que resolveGrmCodes aceita.
+async function publicarCatalogo() {
+  const [categorias, formas] = await Promise.all([
+    getCatalog('payInvoiceCategory', 'payInvoiceCategory/getRecords'),
+    getCatalog('paymentType', 'paymentType/getRecords'),
+  ]);
+  const agora = isoNow();
+  const linhas = [
+    ...categorias
+      .filter((c) => Number(c.picParent) !== 0 && (c.picStatus || 'A') === 'A' && c.picName)
+      .map((c) => ({ tipo: 'CATEGORIA', nome: String(c.picName).trim(), grupo: String(c.picParentName || '').trim(), atualizado_em: agora })),
+    ...formas
+      .filter((f) => (f.patStatus || 'A') === 'A' && f.patName)
+      .map((f) => ({ tipo: 'FORMA_PAGAMENTO', nome: String(f.patName).trim(), grupo: '', atualizado_em: agora })),
+  ];
+  if (!linhas.length) return 0;
+  const { error } = await supabase.from('grm_nf_catalogo').upsert(linhas, { onConflict: 'tipo,nome,grupo' });
+  if (error) throw error;
+  await supabase.from('grm_nf_catalogo').delete().lt('atualizado_em', agora);
+  return linhas.length;
+}
+
 // ---------------------------------------------------------------------------
 // NFs do módulo Compras (setor COMPRAS). A fila recebe só o arquivo da NF;
 // o resto (itens, tipo, regional, comprovante/boleto) vem de compras_itens,
@@ -1771,6 +1831,7 @@ async function processUpload(row, runId) {
       }
     }
     data.tipo_documento_fluxo = documentKind;
+    applyManualOverrides(data, row.ajustes_manuais);
     data.fingerprint = fingerprintOf(data);
 
     const validation = validateData(data);
@@ -1941,6 +2002,11 @@ async function main() {
     assertConfig({ extractOnly: args.extractOnly });
     if (args.extractOnly) { await runExtractOnly(args.file); return; }
     if (args.enfileirarBaixa) { await runEnfileirarBaixa(args.enfileirarBaixa); return; }
+    if (args.syncCatalogo) {
+      grmToken = await grmLogin();
+      log('SUCCESS', `Catálogo do GRM publicado: ${await publicarCatalogo()} registro(s).`);
+      return;
+    }
     if (!scheduledEnabled && !args.force && !args.uploadId && !args.real && !args.dryRun) {
       log('INFO', 'GRM_LANCAR_NF_AGENDAR=false: execução automática desativada. Use --force, --dry-run ou --real.');
       return;
@@ -1969,6 +2035,8 @@ async function main() {
 
     grmToken = await grmLogin();
     log('SUCCESS', 'Login no GRM ok.');
+    // Best-effort: o catálogo só alimenta os selects do painel, não pode derrubar o lote.
+    try { await publicarCatalogo(); } catch (error) { log('WARN', `Não consegui publicar o catálogo do GRM: ${error.message}`); }
 
     for (const row of rows) {
       const result = await processUpload(row, runId);
@@ -2011,6 +2079,6 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, comprasCategoriaDaNf, buildInstallments,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
   };
 }
