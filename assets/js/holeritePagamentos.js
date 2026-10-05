@@ -688,7 +688,7 @@ export async function renderContent(content, userContext) {
     <div class="hp-table-wrap mt-16"><table class="hp-table"><thead><tr><th>Enviada em</th><th>Colaborador / Empresa</th><th>Competência</th><th>Líquido</th><th>Holerite</th><th>Status</th><th>Ações</th></tr></thead><tbody id="hpBody"><tr><td colspan="7" class="hp-empty">Carregando...</td></tr></tbody></table></div>
   </div>
   <div id="hpPainelContas" hidden>
-    <div class="section-head mt-16"><div><h3>Contas de pagamento</h3><p class="muted">Contas fora do padrão: colaborador que recebe em conta de outro titular (CPF diferente do dele) e contas para débito de pensão.</p></div><button class="btn btn-primary" id="hpcNova" type="button">+ Nova Conta</button></div>
+    <div class="section-head mt-16"><div><h3>Contas de pagamento</h3><p class="muted">Contas fora do padrão: colaborador que recebe em conta de outro titular (CPF diferente do dele) e contas para débito de pensão. Na baixa dos holerites, o comprovante pago ao titular/beneficiário cadastrado aqui é casado com o colaborador — por isso o nome e o CPF do titular precisam estar certos.</p></div><button class="btn btn-primary" id="hpcNova" type="button">+ Nova Conta</button></div>
     <div class="rh-filtros mt-16">
       <input id="hpcFilNome" type="search" placeholder="Filtrar por colaborador ou titular..." autocomplete="off">
       <select id="hpcFilTipo"><option value="">Todos os tipos</option>${Object.entries(TIPOS_CONTA).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('')}</select>

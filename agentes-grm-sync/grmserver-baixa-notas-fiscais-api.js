@@ -742,6 +742,107 @@ function findCandidates(openInvoices, { scpCode, valor, favorecidoNome }) {
   return preferirVencimentoMaisRecente(candidatos);
 }
 
+// ---------------------------------------------------------------------------
+// Contas cadastradas em RH > Folha e Holerite > Contas (rh_contas_pagamento).
+//
+// O casamento acima é por NOME do favorecido, mas o comprovante traz o nome de
+// quem RECEBEU o PIX/TED, e nem sempre é o colaborador:
+//   - outro_titular: o colaborador recebe numa conta de outra pessoa;
+//   - pensao: parte do pagamento vai pro beneficiário da pensão alimentícia.
+// Nos dois casos o nome do comprovante nunca bate com o favorecido da parcela
+// ("Valor bate, mas o nome não") e o comprovante parava em revisão manual.
+// Com a conta cadastrada, o titular/beneficiário vira "apelido" do colaborador:
+// procura a parcela aberta do colaborador com empresa + valor exato.
+//
+// Só entram contas ativas; se a tabela não carregar o agente segue como antes.
+let contasCadastradas = [];
+
+async function carregarContasCadastradas() {
+  const { data, error } = await supabase.from('rh_contas_pagamento')
+    .select('id,tipo,colaborador_id,colaborador_nome,colaborador_cpf,titular_nome,titular_documento')
+    .eq('ativo', true);
+  if (error) {
+    log('WARN', `Não consegui carregar as contas cadastradas (rh_contas_pagamento): ${error.message}. Seguindo só com o casamento por nome.`);
+    contasCadastradas = [];
+    return;
+  }
+  contasCadastradas = safe(data);
+  log('INFO', `Contas cadastradas ativas (outro titular / pensão): ${contasCadastradas.length}.`);
+}
+
+function rotuloConta(tipo) { return tipo === 'pensao' ? 'pensão' : 'conta de outro titular'; }
+
+// O comprovante imprime o documento do recebedor de 3 jeitos: completo
+// (CPF/CNPJ), mascarado no padrão dos bancos ("***.123.456-**": só os 6
+// dígitos do meio do CPF) ou nenhum. Devolve true/false quando dá pra
+// comparar e null quando não dá (ausente ou formato desconhecido). `completo`
+// diz se a comparação foi pelo documento inteiro (mais forte que o nome).
+function compararDocumento(docComprovante, docTitular) {
+  const titular = onlyDigits(docTitular);
+  const texto = String(docComprovante || '');
+  if (!titular || !texto.trim()) return { igual: null, completo: false };
+  const mascarado = texto.match(/\*{3}\.?(\d{3})\.?(\d{3})-?\*{2}/);
+  if (mascarado) {
+    if (titular.length !== 11) return { igual: null, completo: false };
+    return { igual: titular.slice(3, 9) === `${mascarado[1]}${mascarado[2]}`, completo: false };
+  }
+  const cnpj = texto.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/);
+  const cpf = texto.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+  const achado = onlyDigits((cnpj || cpf || [])[0]);
+  if (achado.length !== 11 && achado.length !== 14) return { igual: null, completo: false };
+  return { igual: achado === titular, completo: true };
+}
+
+// Contas ativas cujo titular/beneficiário é quem recebeu este comprovante.
+// Documento completo igual basta; documento que conflita elimina; nos demais
+// casos exige nome compatível (mesma tolerância do casamento por nome).
+function contasDoFavorecido(contas, { favorecidoNome, favorecidoDocumento }) {
+  const alvo = normalizeText(favorecidoNome);
+  return (contas || []).filter((c) => {
+    const doc = compararDocumento(favorecidoDocumento, c.titular_documento);
+    if (doc.igual === false) return false;
+    if (doc.igual === true && doc.completo) return true;
+    return Boolean(alvo) && nomesCompativeis(alvo, normalizeText(c.titular_nome));
+  });
+}
+
+// Parcelas abertas do(s) colaborador(es) dono(s) das contas, com empresa +
+// valor exato. O GRM guarda o CPF do favorecido (favoredDocument): se o
+// cadastro e a parcela têm CPF e eles diferem, é outra pessoa (homônimo).
+function findCandidatesViaContas(openInvoices, contas, { scpCode, valor }) {
+  const achados = new Map();
+  for (const c of contas) {
+    const cpfColab = onlyDigits(c.colaborador_cpf);
+    for (const inv of findCandidates(openInvoices, { scpCode, valor, favorecidoNome: c.colaborador_nome })) {
+      const cpfInv = onlyDigits(inv.favoredDocument);
+      if (cpfColab.length === 11 && cpfInv.length === 11 && cpfColab !== cpfInv) continue;
+      achados.set(String(inv.pinCode), { inv, conta: c });
+    }
+  }
+  return [...achados.values()];
+}
+
+function unirCandidatos(diretos, viaContas) {
+  const porPin = new Map(diretos.map((inv) => [String(inv.pinCode), inv]));
+  for (const { inv } of viaContas) porPin.set(String(inv.pinCode), inv);
+  return preferirVencimentoMaisRecente([...porPin.values()]);
+}
+
+// Mesmo papel de diagnosticarDivergencia, mas pro caso em que o favorecido do
+// comprovante é um titular/beneficiário cadastrado: explica que a conta foi
+// reconhecida e por que, mesmo assim, não achou a parcela do colaborador.
+function diagnosticarViaContas(openInvoices, contas, { scpCode, valor, favorecidoNome }) {
+  return contas.map((c) => {
+    const quem = c.tipo === 'pensao' ? 'beneficiário de pensão' : 'titular de conta de outro titular';
+    const base = `"${favorecidoNome}" é ${quem} cadastrado na aba Contas (colaborador ${c.colaborador_nome})`;
+    const doColab = openInvoices.filter((inv) => Number(inv.scpCode) === Number(scpCode)
+      && nomesCompativeis(normalizeText(c.colaborador_nome), normalizeText(inv.favoredName)));
+    if (!doColab.length) return `${base}, mas não há parcela em aberto no nome de ${c.colaborador_nome} nessa empresa no GRM.`;
+    const valores = [...new Set(doColab.map((inv) => formatMoney(inv.pinInstallmentValue)))].slice(0, 4).join(', ');
+    return `${base}, mas nenhuma parcela em aberto no nome de ${c.colaborador_nome} bate com R$ ${formatMoney(valor)} (em aberto: R$ ${valores}).`;
+  }).join(' ');
+}
+
 // Quando zero candidatos sobram (nem isolado, nem por soma, nem parcial),
 // diz EXATAMENTE qual dos 2 critérios (nome, valor) não bateu, em vez do
 // genérico "nenhum lançamento bate" — dá pra decidir na tela se é OCR errado,
@@ -935,8 +1036,14 @@ async function findGrmNfLancamentoId(pinCode) {
 function buildPaymentPayload(resolved) {
   const docs = resolved.itens.map((i) => i.pinDocNumber || i.pinCode).join(', ');
   const pinCodes = resolved.itens.map((i) => i.pinCode).join(',');
+  // Pagamento que foi pra conta de outro titular / beneficiário de pensão: o
+  // extrato do banco mostra o nome de quem recebeu, então a descrição diz de
+  // qual colaborador é a parcela.
+  const destino = resolved.viaConta
+    ? `${resolved.favorecidoNome} (${rotuloConta(resolved.viaConta.tipo)} de ${resolved.viaConta.colaborador_nome})`
+    : resolved.favorecidoNome;
   return {
-    ppyMovBancDescription: `Pagamento ${resolved.favorecidoNome}. Doc ${docs}. Conta: ${pinCodes}`,
+    ppyMovBancDescription: `Pagamento ${destino}. Doc ${docs}. Conta: ${pinCodes}`,
     patCode: resolved.itens[0].patCode,
     baccCode: resolved.baccCode,
     ppyPaidDate: resolved.dataPagamento,
@@ -1075,6 +1182,7 @@ async function processBaixa(row, runId) {
         favorecidoNome: row.favorecido_nome, valor: Number(row.valor), dataPagamento: row.data_pagamento,
         parcelaValorTotal: row.parcela_valor_total != null ? Number(row.parcela_valor_total) : Number(row.valor),
         saldoPendente: Number(row.saldo_pendente || 0),
+        viaConta: row.extraido_json?.via_conta_cadastrada || null,
       };
     } else {
       const divididos = await splitComprovanteBatch(row, localPath, workDir);
@@ -1113,6 +1221,29 @@ async function processBaixa(row, runId) {
         return 'erro';
       }
 
+      const openInvoices = await getOpenInvoicesCache();
+      const diretos = findCandidates(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome });
+      // Favorecido do comprovante é titular de conta de outro titular ou
+      // beneficiário de pensão cadastrado na aba Contas? Aí a parcela é do
+      // colaborador dono da conta (ver bloco "Contas cadastradas" acima). Os
+      // candidatos por conta se somam aos por nome: se os dois apontam parcelas
+      // diferentes, é empate e vai pra revisão como qualquer outro.
+      const contasDoComprovante = contasDoFavorecido(contasCadastradas, parsed);
+      const viaContas = contasDoComprovante.length
+        ? findCandidatesViaContas(openInvoices, contasDoComprovante, { scpCode: conta.scpCode, valor: parsed.valor })
+        : [];
+      const candidatos = viaContas.length ? unirCandidatos(diretos, viaContas) : diretos;
+      const contaUsada = candidatos.length === 1
+        ? (viaContas.find((v) => String(v.inv.pinCode) === String(candidatos[0].pinCode))?.conta || null)
+        : null;
+      const viaConta = contaUsada ? {
+        conta_id: contaUsada.id, tipo: contaUsada.tipo,
+        colaborador_nome: contaUsada.colaborador_nome, titular_nome: contaUsada.titular_nome,
+      } : null;
+      if (viaConta) {
+        log('INFO', `${row.arquivo_nome}: favorecido "${parsed.favorecidoNome}" é ${rotuloConta(viaConta.tipo)} cadastrada de ${viaConta.colaborador_nome} — casando com a parcela desse colaborador pela aba Contas.`);
+      }
+
       const baseUpdate = {
         fingerprint,
         favorecido_nome: parsed.favorecidoNome,
@@ -1123,12 +1254,9 @@ async function processBaixa(row, runId) {
         agencia_conta_pagador: parsed.agencia ? `${parsed.agencia}/${parsed.conta}` : null,
         empresa_detectada: conta.empresa,
         bacc_code: conta.baccCode,
-        extraido_json: parsed,
+        extraido_json: viaConta ? { ...parsed, via_conta_cadastrada: viaConta } : parsed,
         execucao_id: runId,
       };
-
-      const openInvoices = await getOpenInvoicesCache();
-      const candidatos = findCandidates(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome });
       // Ordem de tentativas quando a parcela única não bate isolada (só
       // entram aqui com candidatos.length === 0): 1) soma exata de
       // comprovantes-irmãos já na fila pra 1 parcela; 2) este comprovante
@@ -1156,8 +1284,10 @@ async function processBaixa(row, runId) {
             scpName: c.scpName, pinDocNumber: c.pinDocNumber, pinDueDate: c.pinDueDate, patCode: c.patCode,
           })),
           erro: candidatos.length === 0
-            ? diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
-            : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.`,
+            ? (contasDoComprovante.length
+              ? diagnosticarViaContas(openInvoices, contasDoComprovante, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome })
+              : diagnosticarDivergencia(openInvoices, { scpCode: conta.scpCode, valor: parsed.valor, favorecidoNome: parsed.favorecidoNome }))
+            : `${candidatos.length} lançamentos abertos batem com empresa + valor — escolha manualmente qual é o certo.${viaContas.length ? ` (inclui parcela(s) de colaborador cadastrado na aba Contas como ${rotuloConta(contasDoComprovante[0].tipo)} de "${parsed.favorecidoNome}".)` : ''}`,
         });
         log('WARN', `${row.arquivo_nome}: ${candidatos.length} candidato(s) — foi pra AGUARDANDO_REVISAO.`);
         return 'aguardando_revisao';
@@ -1240,7 +1370,7 @@ async function processBaixa(row, runId) {
         itens: [{ pinCode: String(candidato.pinCode), patCode: candidato.patCode, valor: valorParaGrm, pinDocNumber: candidato.pinDocNumber }],
         baccCode: conta.baccCode,
         favorecidoNome: parsed.favorecidoNome, valor: valorParaGrm, dataPagamento: parsed.dataPagamento,
-        parcelaValorTotal, saldoPendente,
+        parcelaValorTotal, saldoPendente, viaConta,
       };
       await updateItem(row.id, {
         ...baseUpdate,
@@ -1350,6 +1480,7 @@ async function main() {
 
     grmToken = await grmLogin();
     log('SUCCESS', 'Login no GRM ok.');
+    await carregarContasCadastradas();
 
     for (const row of rows) {
       const result = await processBaixa(row, runId);
@@ -1391,5 +1522,7 @@ if (require.main === module) {
     findFallbackPartialMatch, findPendingCompletionMatch, buildPaymentPayload,
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
     uploadComprovanteAnexo,
+    compararDocumento, contasDoFavorecido, findCandidatesViaContas, unirCandidatos,
+    diagnosticarViaContas,
   };
 }
