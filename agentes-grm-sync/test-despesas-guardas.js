@@ -33,6 +33,9 @@ assert.equal(categoriaDivergente(lanc({ oexName: 'Serviços Terceirizados', ofmV
 // despesa de outra pessoa / extra: não é repetição
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço do Bruno, funcionário em treinamento' })), 'observacao_cita_outra_pessoa');
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço da equipe' })), 'observacao_cita_outra_pessoa');
+assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'janta paga para o colaborador CPF 123' })), 'observacao_cita_outra_pessoa');
+assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'COLABORADOR JOSE PEDRO - DESLOCAMENTO DE CAMPO VERDE' })), 'observacao_cita_outra_pessoa');
+assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'almoço pago pelo cliente' })), 'observacao_cita_outra_pessoa');
 assert.equal(observacaoNaoRepete(lanc({ oexName: 'Salário de Intermitente', ofmValue: 30.5, ofmDescription: 'SALARIO FAMILIA 08/2026' })), 'observacao_de_extra');
 assert.equal(observacaoNaoRepete(lanc({ oexName: 'Salário de Intermitente', ofmValue: 67.54, ofmDescription: 'Sal Fam 08 2026' })), 'observacao_de_extra');
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'almoço, diferença de valor' })), 'observacao_de_extra');
