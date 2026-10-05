@@ -1214,6 +1214,11 @@ async function processJob(page, job, collaborators) {
 
   const existing = await inspectExpenseDescriptions(page, [description]);
   const avaliacao = regras.avaliarExistente(existing, job, TIPO_DESPESA);
+  if (DEBUG) {
+    log('DEBUG', `${job.colaborador_nome}: ${existing.length} linha(s) com a descrição; decisão ${avaliacao.acao}.`, {
+      linhas: existing.map((row) => ({ cells: row.cells, text: String(row.text || '').slice(0, 300), movimento: regras.movimentoDaLinha(row, TIPO_DESPESA) })),
+    });
+  }
   if (avaliacao.acao === 'DIVERGENTE') {
     throw new Error(`Já existe ${rotulo} com esta descrição no GRM, mas com valor divergente. Lançamento automático bloqueado para evitar duplicidade.`);
   }
