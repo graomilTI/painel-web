@@ -32,6 +32,8 @@ const state = { solicitacoes:[], empresas:[], solFilter:'concluido', compradosGe
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-';};
 const norm = (v)=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+// `ativo` aqui \u00e9 o booleano da view ou a situa\u00e7\u00e3o ('Ativo' / 'N\u00e3o Ativo' / 'Inativo'); s\u00f3 'Ativo' conta.
+const colabAtivo = (c)=>['ativo','true','1','sim'].includes(norm(c.ativo??'ativo'));
 const today = ()=>{
   const agora=new Date();
   const ano=agora.getFullYear();
@@ -367,7 +369,7 @@ function openNovasSolicitacaoModal(userContext){
     debounce=setTimeout(async()=>{
       const data=await buscarColaboradoresPorNome(q);
       const seen=new Set();
-      const list=data.filter(c=>{const t=norm(c.ativo??'ativo'); if(['false','0','inativo','desligado'].includes(t)) return false; const k=norm(c.nome||''); if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,12);
+      const list=data.filter(c=>{if(!colabAtivo(c)) return false; const k=norm(c.nome||''); if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,12);
       if(!list.length){sug.innerHTML='';sug.style.display='none';return;}
       sug.innerHTML=list.map((c,idx)=>`<button type="button" data-idx="${idx}">${esc(c.nome)} <small>${esc(c.supervisao||c.cargo||c.coordenacao||'')}</small></button>`).join('');
       sug.style.display='block';
@@ -459,7 +461,7 @@ function openEditarSolicitacaoModal(id){
     debounce=setTimeout(async()=>{
       const data=await buscarColaboradoresPorNome(q);
       const seen=new Set();
-      const list=data.filter(c=>{const t=norm(c.ativo??'ativo'); if(['false','0','inativo','desligado'].includes(t)) return false; const k=norm(c.nome||''); if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,12);
+      const list=data.filter(c=>{if(!colabAtivo(c)) return false; const k=norm(c.nome||''); if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,12);
       if(!list.length){sug.innerHTML='';sug.style.display='none';return;}
       sug.innerHTML=list.map((c,idx)=>`<button type="button" data-idx="${idx}">${esc(c.nome)} <small>${esc(c.supervisao||c.coordenacao||'')}</small></button>`).join('');
       sug.style.display='block';
