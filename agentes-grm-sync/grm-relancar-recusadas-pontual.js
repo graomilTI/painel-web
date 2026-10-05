@@ -8,6 +8,8 @@
  *
  * Plano (JSON): [{ "ofm": <ofmCode da recusada>, "dataLanc": "AAAA-MM-DD", "dataAlvo": "AAAA-MM-DD" }]
  *   dataLanc = dia em que a recusada foi lançada (onde ela está no Caixa); dataAlvo = dia citado.
+ *   Despesa APAGADA (lixeira do GRM): { "excluida": true, "ofm", "cpf", "tipo", "valor", "obs", "dataLanc", "dataAlvo", "motivoExclusao" } —
+ *   monta o lançamento pelo CPF/tipo; Intermitente não é relançado antes da admissão (decisão de 03/10).
  *
  * Para cada item, nesta ordem:
  *   1) a recusada ainda está recusada (status N) — senão pula;
@@ -224,15 +226,46 @@ async function main() {
   const token = await login();
 
   // 1) recusadas no GRM
+  const TODOS = ['P', 'A', 'N', 'D'];
   const cacheDia = new Map();
-  const lerDia = async (iso, status) => {
+  const tipos = new Map(); // despesa -> { oexCode, odtCode, scpCode }, aprendido das linhas lidas do GRM
+  const lerDia = async (iso, status = TODOS) => {
     const k = `${iso}|${status.join('')}`;
-    if (!cacheDia.has(k)) { cacheDia.set(k, await fluxoDia(token, iso, status)); await sleep(150); }
+    if (!cacheDia.has(k)) {
+      const rows = await fluxoDia(token, iso, status);
+      rows.forEach((r) => { if (r.oexName && !tipos.has(norm(r.oexName))) tipos.set(norm(r.oexName), { oexCode: r.oexCode, odtCode: r.odtCode, scpCode: r.scpCode }); });
+      cacheDia.set(k, rows);
+      await sleep(150);
+    }
     return cacheDia.get(k);
   };
+
+  // itens "excluida": despesa APAGADA do GRM (lixeira) — não há linha para ler; monta a partir do plano
+  // (CPF -> colaborador ativo no GRM; despesa -> código aprendido do GRM; admissão do Intermitente).
+  const temExcluidas = plano.some((p) => p.excluida);
+  const staffPorCpf = new Map();
+  const admissaoPorCpf = new Map();
+  if (temExcluidas) {
+    ((await grmRequest('/api/staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A' }, token)).searchData || [])
+      .forEach((st) => staffPorCpf.set(digits(st.staCPF), st));
+    (await queryAll('colaboradores', 'cpf,admissao', (q) => q.order('cpf'))).forEach((c) => { if (c.admissao) admissaoPorCpf.set(digits(c.cpf), String(c.admissao).slice(0, 10)); });
+  }
+
   const itens = [];
   for (const p of plano) {
-    const original = (await lerDia(p.dataLanc, ['P', 'A', 'N', 'D'])).find((r) => Number(r.ofmCode) === Number(p.ofm));
+    if (p.excluida) {
+      const st = staffPorCpf.get(digits(p.cpf));
+      if (!st) { itens.push({ ...p, resultado: 'PULADO', motivo: 'colaborador_nao_encontrado_ativo_no_grm' }); continue; }
+      await lerDia(p.dataAlvo);
+      const t = tipos.get(norm(p.tipo));
+      if (!t) { itens.push({ ...p, resultado: 'PULADO', motivo: 'tipo_de_despesa_desconhecido_no_grm' }); continue; }
+      const original = { ofmCode: p.ofm, ofmStatus: 'EXCLUIDA', staCode: st.staCode, staName: st.staName, oexCode: t.oexCode, oexName: p.tipo, odtCode: t.odtCode, scpCode: t.scpCode, ofmValue: p.valor, ofmDescription: p.obs };
+      const adm = admissaoPorCpf.get(digits(p.cpf));
+      if (norm(p.tipo) === 'SALARIO DE INTERMITENTE' && adm && p.dataAlvo < adm) { itens.push({ ...p, original, resultado: 'PULADO', motivo: `antes_da_admissao (${adm})` }); continue; }
+      itens.push({ ...p, original });
+      continue;
+    }
+    const original = (await lerDia(p.dataLanc)).find((r) => Number(r.ofmCode) === Number(p.ofm));
     if (!original) { itens.push({ ...p, resultado: 'PULADO', motivo: 'recusada_nao_encontrada_no_dia' }); continue; }
     if (original.ofmStatus !== 'N') { itens.push({ ...p, original, resultado: 'PULADO', motivo: `status_atual_${original.ofmStatus}` }); continue; }
     itens.push({ ...p, original });
@@ -248,7 +281,7 @@ async function main() {
   // 3) já existe na data alvo? 4) evidência
   for (const it of itens.filter((i) => !i.resultado)) {
     const grupo = grupoDespesa(it.original);
-    const ativos = (await lerDia(it.dataAlvo, ['P', 'A'])).filter((r) => r.ofmType === 'D'
+    const ativos = (await lerDia(it.dataAlvo)).filter((r) => r.ofmType === 'D' && ['P', 'A'].includes(r.ofmStatus)
       && Number(r.staCode) === Number(it.original.staCode) && grupoDespesa(r) === grupo);
     if (ativos.length) { it.resultado = 'PULADO'; it.motivo = `ja_existe_na_data_alvo (ofm ${ativos[0].ofmCode} ${ativos[0].ofmStatus} R$${ativos[0].ofmValue})`; continue; }
     const ev = await avaliarEvidencia(it.original, it.dataAlvo);
@@ -270,7 +303,7 @@ async function main() {
   let erros = 0;
   for (const it of aRelancar) {
     const o = it.original;
-    const base = { ofm_code_original: Number(o.ofmCode), data_lancamento: it.dataLanc, data_efetiva: it.dataAlvo, observacao: o.ofmDescription || '', evidencia: it.evidencia, origem: 'relancado_recusa_indevida' };
+    const base = { ofm_code_original: Number(o.ofmCode), data_lancamento: it.dataLanc, data_efetiva: it.dataAlvo, observacao: o.ofmDescription || '', evidencia: it.evidencia, origem: it.excluida ? 'relancado_excluida_obs_data' : 'relancado_recusa_indevida', ...(it.excluida ? { excluida_motivo: it.motivoExclusao || null } : {}) };
     try {
       const novo = await relancar(token, o, it.dataAlvo);
       it.novo = novo;
