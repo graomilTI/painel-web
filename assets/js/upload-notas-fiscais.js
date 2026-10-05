@@ -117,6 +117,12 @@ function detalhesDocumento(row) {
 }
 
 async function uploadArquivo(file, setor, userId) {
+  // Arquivo de 0 bytes sobe normalmente pro Storage e só estoura no agente
+  // ("pdftoppm: Document stream is empty", 05/10). Costuma ser download que não
+  // terminou, anexo de e-mail que não baixou ou arquivo só na nuvem (OneDrive).
+  if (!file.size) {
+    throw new Error(`"${file.name}" está vazio (0 bytes) — baixe o arquivo de novo e reenvie.`);
+  }
   const ano = new Date().getFullYear();
   const path = `financeiro/lancamento-nf/${ano}/${Date.now()}_${safeFileName(file.name)}`;
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
