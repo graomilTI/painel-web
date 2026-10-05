@@ -159,6 +159,28 @@ function acaoRelancar(row) {
   return `<button class="ds-btn-icon" data-unf-relancar="${esc(row.id)}" data-unf-arquivo="${esc(row.arquivo_nome)}" type="button" title="Relançar (volta pra fila)" style="border-color:rgba(63,168,120,.45);background:rgba(63,168,120,.12);color:#9fe6c0">↻</button>`;
 }
 
+// O bucket é público (as outras telas abrem os arquivos dele assim): a URL leva
+// direto ao PDF/XML/imagem que foi enviado, pra quem corrige conferir o documento.
+function urlDocumento(row) {
+  if (!row?.storage_path) return null;
+  const { data } = supabase.storage.from(row.storage_bucket || BUCKET).getPublicUrl(row.storage_path);
+  return data?.publicUrl || null;
+}
+
+function abrirDocumento(id) {
+  const url = urlDocumento(linhasPorId.get(id));
+  if (!url) {
+    toast('Não encontrei o arquivo deste envio.', 'warn');
+    return;
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function acaoAbrir(row) {
+  if (!row.storage_path) return '';
+  return `<button class="ds-btn-icon" data-unf-abrir="${esc(row.id)}" type="button" title="Abrir o arquivo enviado" style="border-color:rgba(90,150,230,.5);background:rgba(90,150,230,.12);color:#a9c8f5">📄</button>`;
+}
+
 const STATUS_COMPLETAVEIS = new Set(['AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'ERRO']);
 
 function acaoCompletar(row) {
@@ -175,7 +197,7 @@ function renderLinhas(linhas) {
       <td>${esc(dataHora(r.created_at))}</td>
       <td>${badge(STATUS_LABEL[r.status] || r.status, STATUS_BADGE[r.status] || 'neutral')}</td>
       <td>${detalhesDocumento(r)}</td>
-      <td style="display:flex;gap:6px">${acaoCompletar(r)}${acaoRelancar(r)}${acaoCancelar(r)}</td>
+      <td style="display:flex;gap:6px">${acaoAbrir(r)}${acaoCompletar(r)}${acaoRelancar(r)}${acaoCancelar(r)}</td>
     </tr>`).join('');
 }
 
@@ -295,6 +317,7 @@ async function abrirCompletar(id) {
     conteudoHtml: `
       <h3 class="ds-modal-title">Completar dados</h3>
       <p class="ds-modal-text">${esc(row.arquivo_nome)} — preencha o que o agente não encontrou. Só os campos alterados são enviados; o resto segue como o agente leu.</p>
+      <button class="ds-btn" data-unfc-abrir type="button" title="Abre o arquivo enviado em outra aba pra conferir o que corrigir">📄 Abrir documento</button>
       ${aviso}
       <div style="display:grid;gap:12px;margin-top:8px">${campos}</div>
       <div class="ds-modal-actions">
@@ -316,6 +339,7 @@ async function abrirCompletar(id) {
     return valores;
   };
 
+  overlay.querySelector('[data-unfc-abrir]').addEventListener('click', () => abrirDocumento(row.id));
   overlay.querySelector('[data-unfc-cancelar]').addEventListener('click', () => closeModal('unfCompletarModal'));
   const salvar = async (lancar) => {
     const valores = coletar();
@@ -419,7 +443,7 @@ async function carregarTabela() {
   try {
     const statusDaJanela = JANELA_STATUS[tabelaEstado.janela] || [];
     const { rows, total } = await listar(TABELA, {
-      select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json,validacao_erros',
+      select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json,validacao_erros,storage_bucket,storage_path',
       filtros: [{ coluna: 'status', valor: statusDaJanela, op: 'in' }],
       ordenar: [{ coluna: 'created_at', asc: false }],
       pagina: tabelaEstado.pagina,
@@ -443,6 +467,9 @@ async function carregarTabela() {
       : emptyState('Nenhum documento nessa janela.');
     alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
       btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
+    });
+    alvo.querySelectorAll('[data-unf-abrir]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirDocumento(btn.dataset.unfAbrir));
     });
     alvo.querySelectorAll('[data-unf-completar]').forEach((btn) => {
       btn.addEventListener('click', () => abrirCompletar(btn.dataset.unfCompletar));
