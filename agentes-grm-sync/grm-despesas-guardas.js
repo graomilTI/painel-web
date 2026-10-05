@@ -79,6 +79,27 @@ function categoriaDivergente(row) {
   return citadas.length > 0 && !citadas.includes(grupoDespesa(row)) ? citadas : null;
 }
 
+// Regra de 05/10/2026: toda despesa deve ser lançada no campo correspondente. Se a observação diz que o
+// lançamento é de OUTRA despesa (campo Almoço com "janta dia tal"), a pendência é recusada na hora com
+// MOTIVO_TIPO_INCORRETO. Mais estrita que categoriaDivergente (que segura também km/combustível/pedágio,
+// palavras que aparecem em descrição de local): só dispara com Café, Almoço, Janta, Pernoite e Diária.
+// Exceções para não recusar lançamento certo: Pernoite aceita "diária" (diária do hotel) e "café da manhã"
+// (incluso no hotel); Serviços Terceirizados <= R$ 45 não conta (o grupo Almoço dele é só pelo valor).
+const MOTIVO_TIPO_INCORRETO = 'Tipo de despesa incorreto. lançar despesa no campo correspondente';
+const TIPOS_DE_RECUSA = new Set(['CAFE', 'ALMOCO', 'JANTA', 'PERNOITE', 'DIARIA']);
+function tipoIncorretoNaObs(row) {
+  const grupo = grupoDespesa(row);
+  if (!grupo || !TIPOS_DE_RECUSA.has(grupo)) return null;
+  if (norm(row.oexName) === 'SERVICOS TERCEIRIZADOS' && grupo === 'ALMOCO') return null;
+  let texto = norm(row.ofmDescription);
+  if (grupo === 'PERNOITE') texto = texto.replace(/\bCAFE DA MANHA\b|\bCAFE INCLUSO\b|\bCAFE INCLUIDO\b|\bCOM CAFE\b/g, ' ');
+  const citadas = PALAVRAS_CATEGORIA
+    .filter(([nome, re]) => TIPOS_DE_RECUSA.has(nome) && re.test(texto))
+    .map(([nome]) => nome)
+    .filter((nome) => !(grupo === 'PERNOITE' && nome === 'DIARIA'));
+  return citadas.length > 0 && !citadas.includes(grupo) ? citadas : null;
+}
+
 // Observação que mostra que o lançamento NÃO repete o outro do dia: é de outra pessoa
 // ("Almoço do Bruno, funcionário em treinamento") ou é um extra (Salário Família, complemento,
 // diferença de valor). Devolve o motivo ou null.
@@ -119,6 +140,8 @@ module.exports = {
   dateFromObs,
   grupoDespesa,
   categoriaDivergente,
+  tipoIncorretoNaObs,
+  MOTIVO_TIPO_INCORRETO,
   observacaoNaoRepete,
   valorMaiorQueMantido,
   motivoParaManterPendente,

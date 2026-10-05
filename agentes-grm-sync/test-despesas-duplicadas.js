@@ -118,7 +118,20 @@ assert.equal(grupoDespesa({ oexName: 'Combustível', ofmValue: 30 }), null);
   assert.equal(categoriaDivergente(lanc({ ofmDescription: 'lancei errado' })), null);
   const aprovada = lanc({ ofmStatus: 'A' });
   const errada = lanc({ ofmDescription: 'Janta' }); // Almoço com obs "Janta"
-  assert.equal(classificar(errada, montarIndice([aprovada, errada])).acao, 'NADA');
+  // regra de 05/10: campo errado = recusa imediata com o texto padrão (antes ficava pendente)
+  const rec = classificar(errada, montarIndice([aprovada, errada]));
+  assert.equal(rec.acao, 'RECUSAR');
+  assert.equal(rec.motivo, 'Tipo de despesa incorreto. lançar despesa no campo correspondente');
+  assert.deepEqual(rec.tipoCitado, ['JANTA']);
+  assert.equal(rec.referencia, undefined);
+  // sozinha (sem outro Almoço no dia) também é recusada: não depende de duplicata
+  assert.equal(classificar(errada, montarIndice([errada])).acao, 'RECUSAR');
+  // observação de km/combustível só segura (não recusa)
+  const km = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'km rodado dia 22/09/2026' });
+  assert.equal(classificar(km, montarIndice([km])).acao, 'NADA');
+  // Pernoite com "café da manhã incluso" não é campo errado
+  const hotel = lanc({ oexName: 'Pernoite', ofmDescription: 'Hotel Ibis, café da manhã incluso' });
+  assert.equal(classificar(hotel, montarIndice([hotel])).acao, 'NADA');
   // e ela não conta como "melhor" lançamento para os outros
   const outra = lanc({});
   assert.equal(classificar(outra, montarIndice([errada, outra])).acao, 'NADA');
