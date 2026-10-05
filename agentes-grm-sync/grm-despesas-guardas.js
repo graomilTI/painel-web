@@ -82,7 +82,7 @@ function categoriaDivergente(row) {
 // Observação que mostra que o lançamento NÃO repete o outro do dia: é de outra pessoa
 // ("Almoço do Bruno, funcionário em treinamento") ou é um extra (Salário Família, complemento,
 // diferença de valor). Devolve o motivo ou null.
-const TERCEIRO_RE = /\b(FUNCIONARIO|ESTAGIARIO|TREINAMENTO|TREINANDO|AJUDANTE|ACOMPANHANTE|VISITANTE|EQUIPE)\b/;
+const TERCEIRO_RE = /\b(FUNCIONARIO|ESTAGIARIO|TREINAMENTO|TREINANDO|AJUDANTE|ACOMPANHANTE|VISITANTE|EQUIPE|COLABORADOR|COLABORADORA|COLEGA|COLEGAS)\b|\b(PAGA|PAGO|PAGAS|PAGOS)\s+(PARA|AO|A|PELO|PELA)\b/;
 const DE_OUTRA_PESSOA_RE = /\b(ALMOCO|JANTA|JANTAR|CAFE|DIARIA|PERNOITE)\s+(DO|DA|DOS|DAS)\s+(?!DIA\b|DATA\b|MANHA\b|TARDE\b|NOITE\b|FAZENDA\b|FAZ\b|FZ\b|FZD\b|CLIENTE\b|EMPRESA\b|ARMAZEM\b|LOCAL\b|VIAGEM\b|SEMANA\b|MES\b)[A-Z]{3,}/;
 const EXTRA_RE = /\b(SALARIO FAMILIA|SAL FAM|COMPLEMENT\w*|COMPLETAR|DIFERENCA|AJUSTE|ADICIONAL|REEMBOLSO|BONUS|ACERTO)\b/;
 function observacaoNaoRepete(row) {
