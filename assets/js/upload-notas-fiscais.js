@@ -6,7 +6,7 @@
 
 import { initProtectedPage } from './pageInit.js';
 import {
-  pageHeader, table, pagination, tabs, badge, toast, confirmar,
+  pageHeader, table, pagination, tabs, badge, toast, confirmar, openModal, closeModal,
   loadingState, emptyState, errorState, esc,
 } from './core/ui.js';
 import {
@@ -75,6 +75,8 @@ let disparando = false;
 let resumo = { pendentes: 0, erros: 0, lancados: 0, jobAtivo: null };
 let contagens = { pendente: 0, processando: 0, erro: 0, concluido: 0 };
 let tabelaEstado = { janela: 'pendente', pagina: 1, porPagina: 25 };
+let linhasPorId = new Map();
+let catalogoGrm = null;
 
 function safeFileName(name) {
   return String(name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
@@ -157,6 +159,13 @@ function acaoRelancar(row) {
   return `<button class="ds-btn-icon" data-unf-relancar="${esc(row.id)}" data-unf-arquivo="${esc(row.arquivo_nome)}" type="button" title="Relançar (volta pra fila)" style="border-color:rgba(63,168,120,.45);background:rgba(63,168,120,.12);color:#9fe6c0">↻</button>`;
 }
 
+const STATUS_COMPLETAVEIS = new Set(['AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'ERRO']);
+
+function acaoCompletar(row) {
+  if (!STATUS_COMPLETAVEIS.has(row.status)) return '';
+  return `<button class="ds-btn-icon" data-unf-completar="${esc(row.id)}" type="button" title="Completar dados e relançar" style="border-color:rgba(214,170,60,.5);background:rgba(214,170,60,.12);color:#f0d27a">✎</button>`;
+}
+
 function renderLinhas(linhas) {
   return linhas.map((r) => `
     <tr>
@@ -166,8 +175,177 @@ function renderLinhas(linhas) {
       <td>${esc(dataHora(r.created_at))}</td>
       <td>${badge(STATUS_LABEL[r.status] || r.status, STATUS_BADGE[r.status] || 'neutral')}</td>
       <td>${detalhesDocumento(r)}</td>
-      <td style="display:flex;gap:6px">${acaoRelancar(r)}${acaoCancelar(r)}</td>
+      <td style="display:flex;gap:6px">${acaoCompletar(r)}${acaoRelancar(r)}${acaoCancelar(r)}</td>
     </tr>`).join('');
+}
+
+// ── completar dados pendentes ────────────────────────────────────────────────
+// O agente grava em validacao_erros o que não conseguiu extrair. Aqui a pessoa
+// preenche olhando o documento; os valores vão pra ajustes_manuais (RPC
+// completar_lancamento_nf) e o agente aplica por cima da extração ao relançar.
+const FORMAS_PAGAMENTO_PADRAO = [
+  'Boleto', 'Cartão de Crédito', 'Cartão de Débito', 'Cheque', 'Débito em Conta',
+  'Depósito / Transferência', 'Dinheiro', 'PIX',
+];
+
+function campoDaPendencia(texto) {
+  const t = String(texto || '');
+  if (t === 'grupo_categoria' || t === 'categoria') return 'categoria';
+  if (t.startsWith('tipo_contrato')) return 'tipo_contrato';
+  return ['data_vencimento', 'forma_pagamento', 'numero_documento', 'data_conta'].includes(t) ? t : null;
+}
+
+function dataBrParaIso(valor) {
+  const m = String(valor || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return /^\d{4}-\d{2}-\d{2}/.test(String(valor || '')) ? String(valor).slice(0, 10) : '';
+}
+
+async function carregarCatalogo() {
+  if (catalogoGrm) return catalogoGrm;
+  const { data, error } = await supabase.from('grm_nf_catalogo').select('tipo,nome,grupo').order('nome');
+  if (error) throw error;
+  const rows = data || [];
+  catalogoGrm = {
+    categorias: rows.filter((r) => r.tipo === 'CATEGORIA'),
+    formas: rows.filter((r) => r.tipo === 'FORMA_PAGAMENTO').map((r) => r.nome),
+  };
+  return catalogoGrm;
+}
+
+function opcoesCategoria(categorias, atual) {
+  const grupos = new Map();
+  categorias.forEach((c) => {
+    if (!grupos.has(c.grupo)) grupos.set(c.grupo, []);
+    grupos.get(c.grupo).push(c);
+  });
+  const conhecida = categorias.some((c) => c.nome === atual);
+  const extra = atual && !conhecida ? `<option value="${esc(atual)}" data-grupo="" selected>${esc(atual)}</option>` : '';
+  return `<option value="">Selecione…</option>${extra}${Array.from(grupos.entries()).sort(([a], [b]) => a.localeCompare(b, 'pt-BR')).map(([grupo, itens]) => `
+    <optgroup label="${esc(grupo || 'Sem grupo')}">${itens.map((c) => `<option value="${esc(c.nome)}" data-grupo="${esc(c.grupo)}"${c.nome === atual ? ' selected' : ''}>${esc(c.nome)}</option>`).join('')}</optgroup>`).join('')}`;
+}
+
+function campoCompletar({ id, label, pendente, html }) {
+  const aviso = pendente ? '<small style="color:#e0a93b">● pendente — o agente não achou no documento</small>' : '';
+  return `<div class="ds-field"><label for="unfc_${id}">${esc(label)}</label>${html}${aviso}</div>`;
+}
+
+async function abrirCompletar(id) {
+  const row = linhasPorId.get(id);
+  if (!row) return;
+  let catalogo;
+  try {
+    catalogo = await carregarCatalogo();
+  } catch (error) {
+    toast(mensagemDeErro(error, 'grm_nf_catalogo'), 'danger', 6000);
+    return;
+  }
+
+  const extraido = row.extraido_json || {};
+  const holerite = fluxoDocumento(row) === 'HOLERITE';
+  const pendencias = new Set((row.validacao_erros || []).map(campoDaPendencia).filter(Boolean));
+  const foraDoAlcance = (row.validacao_erros || []).filter((p) => !campoDaPendencia(p));
+  const limpa = (v) => (/^PREENCHER/i.test(String(v || '')) ? '' : String(v || ''));
+  const inicial = {
+    data_vencimento: dataBrParaIso(extraido.data_vencimento),
+    data_conta: dataBrParaIso(extraido.data_conta),
+    forma_pagamento: limpa(extraido.forma_pagamento),
+    categoria: limpa(extraido.categoria),
+    numero_documento: limpa(extraido.numero_documento),
+    tipo_contrato: limpa(extraido.tipo_contrato),
+  };
+  const formas = catalogo.formas.length ? catalogo.formas : FORMAS_PAGAMENTO_PADRAO;
+  const formaAtual = inicial.forma_pagamento;
+  const optForma = `<option value="">Selecione…</option>${formaAtual && !formas.includes(formaAtual) ? `<option value="${esc(formaAtual)}" selected>${esc(formaAtual)}</option>` : ''}${formas.map((f) => `<option value="${esc(f)}"${f === formaAtual ? ' selected' : ''}>${esc(f)}</option>`).join('')}`;
+
+  const campos = [
+    holerite
+      ? campoCompletar({
+        id: 'tipo_contrato', label: 'Tipo de contrato', pendente: pendencias.has('tipo_contrato'),
+        html: `<select id="unfc_tipo_contrato" data-campo="tipo_contrato"><option value="">Selecione…</option>${['Mensalista', 'Intermitente'].map((t) => `<option value="${t}"${t === inicial.tipo_contrato ? ' selected' : ''}>${t}</option>`).join('')}</select>`,
+      })
+      : campoCompletar({
+        id: 'categoria', label: 'Categoria', pendente: pendencias.has('categoria'),
+        html: `<select id="unfc_categoria" data-campo="categoria">${opcoesCategoria(catalogo.categorias, inicial.categoria)}</select>`,
+      }),
+    campoCompletar({
+      id: 'forma_pagamento', label: 'Forma de pagamento', pendente: pendencias.has('forma_pagamento'),
+      html: `<select id="unfc_forma_pagamento" data-campo="forma_pagamento">${optForma}</select>`,
+    }),
+    campoCompletar({
+      id: 'data_vencimento', label: 'Data de vencimento', pendente: pendencias.has('data_vencimento'),
+      html: `<input id="unfc_data_vencimento" data-campo="data_vencimento" type="date" value="${esc(inicial.data_vencimento)}">`,
+    }),
+    campoCompletar({
+      id: 'data_conta', label: 'Data da conta (emissão)', pendente: pendencias.has('data_conta'),
+      html: `<input id="unfc_data_conta" data-campo="data_conta" type="date" value="${esc(inicial.data_conta)}">`,
+    }),
+    holerite ? '' : campoCompletar({
+      id: 'numero_documento', label: 'Número do documento', pendente: pendencias.has('numero_documento'),
+      html: `<input id="unfc_numero_documento" data-campo="numero_documento" type="text" maxlength="60" value="${esc(inicial.numero_documento)}">`,
+    }),
+  ].join('');
+
+  const aviso = foraDoAlcance.length
+    ? `<p class="ds-modal-text" style="color:#e0a93b">Também pendente, mas não editável aqui: ${esc(foraDoAlcance.join(', '))}. Se for o caso, cancele e reenvie o documento.</p>`
+    : '';
+
+  const overlay = openModal({
+    id: 'unfCompletarModal',
+    conteudoHtml: `
+      <h3 class="ds-modal-title">Completar dados</h3>
+      <p class="ds-modal-text">${esc(row.arquivo_nome)} — preencha o que o agente não encontrou. Só os campos alterados são enviados; o resto segue como o agente leu.</p>
+      ${aviso}
+      <div style="display:grid;gap:12px;margin-top:8px">${campos}</div>
+      <div class="ds-modal-actions">
+        <button class="ds-btn" data-unfc-cancelar type="button">Cancelar</button>
+        <button class="ds-btn" data-unfc-salvar type="button" title="Guarda os dados e devolve o documento pra fila">Salvar</button>
+        <button class="ds-btn ds-btn-primary" data-unfc-lancar type="button" title="Guarda os dados e dispara o agente agora (lança de verdade no GRM)">Salvar e lançar</button>
+      </div>`,
+  });
+
+  const coletar = () => {
+    const valores = {};
+    overlay.querySelectorAll('[data-campo]').forEach((el) => {
+      const campo = el.dataset.campo;
+      const valor = String(el.value || '').trim();
+      if (!valor || valor === inicial[campo]) return;
+      valores[campo] = valor;
+      if (campo === 'categoria') valores.grupo_categoria = el.selectedOptions[0]?.dataset.grupo || '';
+    });
+    return valores;
+  };
+
+  overlay.querySelector('[data-unfc-cancelar]').addEventListener('click', () => closeModal('unfCompletarModal'));
+  const salvar = async (lancar) => {
+    const valores = coletar();
+    if (!Object.keys(valores).length) {
+      toast('Nenhum campo foi alterado.', 'warn');
+      return;
+    }
+    overlay.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+    try {
+      const { error } = await supabase.rpc('completar_lancamento_nf', { p_id: row.id, p_ajustes: valores });
+      if (error) throw error;
+      closeModal('unfCompletarModal');
+      if (lancar && !resumo.jobAtivo) {
+        await enfileirarAgente();
+        toast('Dados salvos. O agente roda em até 1 minuto e leva alguns minutos por lote.', 'ok', 6000);
+      } else if (lancar) {
+        toast('Dados salvos. Já há um processamento em andamento — o documento entra no próximo lote.', 'ok', 6000);
+      } else {
+        toast('Dados salvos. O documento voltou pra fila (use Processamento pra lançar).', 'ok', 6000);
+      }
+      await carregarResumo();
+      if (raiz) { renderResumo(); renderJanelas(); }
+      await carregarTabela();
+    } catch (error) {
+      overlay.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      toast(mensagemDeErro(error, TABELA), 'danger', 6000);
+    }
+  };
+  overlay.querySelector('[data-unfc-salvar]').addEventListener('click', () => salvar(false));
+  overlay.querySelector('[data-unfc-lancar]').addEventListener('click', () => salvar(true));
 }
 
 async function cancelarLancamento(id, nomeArquivo) {
@@ -241,13 +419,14 @@ async function carregarTabela() {
   try {
     const statusDaJanela = JANELA_STATUS[tabelaEstado.janela] || [];
     const { rows, total } = await listar(TABELA, {
-      select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json',
+      select: 'id,arquivo_nome,setor,status,erro,created_at,extraido_json,validacao_erros',
       filtros: [{ coluna: 'status', valor: statusDaJanela, op: 'in' }],
       ordenar: [{ coluna: 'created_at', asc: false }],
       pagina: tabelaEstado.pagina,
       porPagina: tabelaEstado.porPagina,
     });
     if (!raiz) return;
+    linhasPorId = new Map(rows.map((r) => [r.id, r]));
     alvo.innerHTML = rows.length
       ? `${table({
         colunas: [
@@ -264,6 +443,9 @@ async function carregarTabela() {
       : emptyState('Nenhum documento nessa janela.');
     alvo.querySelectorAll('[data-unf-cancelar]').forEach((btn) => {
       btn.addEventListener('click', () => cancelarLancamento(btn.dataset.unfCancelar, btn.dataset.unfArquivo));
+    });
+    alvo.querySelectorAll('[data-unf-completar]').forEach((btn) => {
+      btn.addEventListener('click', () => abrirCompletar(btn.dataset.unfCompletar));
     });
     alvo.querySelectorAll('[data-unf-relancar]').forEach((btn) => {
       btn.addEventListener('click', () => relancarLancamento(btn.dataset.unfRelancar, btn.dataset.unfArquivo));
@@ -319,6 +501,16 @@ function renderResumo() {
   botao.onclick = dispararAgente;
 }
 
+async function enfileirarAgente() {
+  const { data: { session } } = await supabase.auth.getSession();
+  await inserir(TABELA_JOBS, {
+    agente_id: AGENTE_ID,
+    status: 'pendente',
+    lane: 'alteracoes',
+    solicitado_por: session?.user?.email || session?.user?.id || null,
+  });
+}
+
 async function dispararAgente() {
   if (disparando || !raiz) return;
   if (resumo.jobAtivo) {
@@ -336,13 +528,7 @@ async function dispararAgente() {
   const botao = raiz.querySelector('#unfProcessar');
   if (botao) { botao.disabled = true; botao.textContent = 'Disparando…'; }
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    await inserir(TABELA_JOBS, {
-      agente_id: AGENTE_ID,
-      status: 'pendente',
-      lane: 'alteracoes',
-      solicitado_por: session?.user?.email || session?.user?.id || null,
-    });
+    await enfileirarAgente();
     toast('Processamento disparado. O agente roda em até 1 minuto e leva alguns minutos por lote.', 'ok', 6000);
     await carregarResumo();
     if (raiz) renderResumo();
