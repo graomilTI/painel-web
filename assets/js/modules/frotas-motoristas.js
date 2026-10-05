@@ -167,6 +167,7 @@
     const { data, error } = await opts.supabase
       .from('colaboradores_atuais')
       .select('nome,cpf,whatsapp,email_empresa,email_pessoal,endereco,bairro,cidade,estado,cep')
+      .eq('ativo', true) // só situação 'Ativo' (view: ativo = situacao = 'Ativo')
       .ilike('nome', `%${termo.trim()}%`)
       .limit(8);
     if(error || !data?.length){ wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
