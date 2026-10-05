@@ -107,11 +107,22 @@ function acoesLinha(row) {
   return botoes.join('');
 }
 
+// O agente grava via_conta_cadastrada quando o favorecido do comprovante é
+// titular de conta de outro titular / beneficiário de pensão cadastrado em RH >
+// Folha e Holerite > Contas e a baixa foi casada com a parcela do colaborador.
+// Sem esse aviso o financeiro veria favorecido diferente da parcela no GRM.
+function viaContaTexto(row) {
+  const via = row.extraido_json?.via_conta_cadastrada;
+  if (!via) return '';
+  const tipo = via.tipo === 'pensao' ? 'pensão' : 'conta de outro titular';
+  return `<br>Casou pela aba Contas: ${tipo} de ${esc(via.colaborador_nome)}`;
+}
+
 function detalheLinha(row) {
-  if (row.status === 'BAIXADO') return `pinCode ${esc(row.pin_code || '-')}`;
-  if (row.status === 'VALIDADO') return `Aguardando o agente confirmar no GRM (pinCode ${esc(row.pin_code || '-')})`;
+  if (row.status === 'BAIXADO') return `pinCode ${esc(row.pin_code || '-')}${viaContaTexto(row)}`;
+  if (row.status === 'VALIDADO') return `Aguardando o agente confirmar no GRM (pinCode ${esc(row.pin_code || '-')})${viaContaTexto(row)}`;
   if (row.status === 'DIVIDIDO') return `Lote com ${esc(row.extraido_json?.paginas ?? '?')} comprovante(s) — cada um virou um item novo na fila`;
-  return esc(row.erro || '-');
+  return `${esc(row.erro || '-')}${viaContaTexto(row)}`;
 }
 
 function linhaHtml(row) {
