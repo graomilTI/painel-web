@@ -33,7 +33,9 @@ let baseColabs = [];     // { chave, nome, nomeNorm, supervisao }
 let lista = [];          // linhas de programacao_veiculo_proprio (colaborador_id, nome, ativo, tarifa_km, tipo_deslocamento, km)
 let tarifaPorChave = new Map();
 let tarifaPorNome = new Map();
-let inativosCfg = { chaves: new Set(), nomes: new Set() }; // desligados (operacional_colaborador_base.ativo = false)
+let rhPorChave = new Map(); // chave (CPF ou nome) -> ativo? — todos os colaboradores do RH (colaboradores_atuais)
+let rhPorNome = new Map();  // nome normalizado -> false, só desligados sem homônimo ativo (registro antigo sem CPF)
+let rhCarregado = false;    // só remove/esconde desligado quando o RH carregou por inteiro
 let cfgFiltro = '';
 let cfgAgrupar = false;         // agrupa a lista por supervisão
 let cfgGruposAbertos = new Set(); // supervisões com o grupo expandido (persiste entre re-renders)
@@ -431,20 +433,61 @@ function wireAbaResumo() {
 
 /* ========================== ABA 2 · CONFIGURAÇÃO ========================== */
 
+const PAGE_SIZE = 1000; // teto de linhas por requisição do PostgREST — a view tem mais que isso
+
+async function buscarPaginado(montar) {
+  const rows = [];
+  for (let inicio = 0; ; inicio += PAGE_SIZE) {
+    const { data, error } = await montar().range(inicio, inicio + PAGE_SIZE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+// Fonte: colaboradores_atuais (RH, sincronizada com o GRM — a mesma que a
+// Programação usa), NÃO operacional_colaborador_base: aquela é uma importação
+// de planilha parada, com desligados ainda marcados como ativos e supervisão
+// vazia/trocada. Traz ativos e desligados juntos: os ativos viram a base da
+// tela e o status de todos serve pra limpar a Configuração.
 async function loadBase() {
-  const { data, error } = await supabase
-    .from('operacional_colaborador_base')
-    .select('cpf,nome,supervisao')
-    .eq('ativo', true)
-    .order('nome')
-    .limit(2000);
-  if (error) { console.warn('[conf-desloc] base', error); return; }
-  baseColabs = (data || []).map((r) => ({
-    chave: chaveDe(r.cpf, r.nome),
-    nome: r.nome || '',
-    nomeNorm: norm(r.nome),
-    supervisao: r.supervisao || '',
-  }));
+  baseColabs = [];
+  rhPorChave = new Map();
+  rhPorNome = new Map();
+  rhCarregado = false;
+  let rows;
+  try {
+    rows = await buscarPaginado(() => supabase
+      .from('colaboradores_atuais')
+      .select('id,cpf,nome,supervisao,ativo')
+      .order('nome')
+      .order('id')); // desempate: sem chave única a paginação repete/pula linhas
+  } catch (error) {
+    console.warn('[conf-desloc] colaboradores', error);
+    return;
+  }
+  const nomesAtivos = new Set();
+  for (const r of rows) {
+    const chave = chaveDe(r.cpf, r.nome);
+    const ativo = r.ativo === true;
+    rhPorChave.set(chave, ativo);
+    if (ativo) nomesAtivos.add(norm(r.nome));
+    if (!ativo) continue;
+    baseColabs.push({
+      chave,
+      nome: r.nome || '',
+      nomeNorm: norm(r.nome),
+      supervisao: (r.supervisao || '').trim(),
+    });
+  }
+  // por nome só vale o que não tem homônimo ativo (registro antigo sem CPF não pode
+  // ser dado como desligado se existe uma pessoa ativa com o mesmo nome)
+  for (const r of rows) {
+    const n = norm(r.nome);
+    if (!r.ativo && !nomesAtivos.has(n)) rhPorNome.set(n, false);
+  }
+  rhCarregado = true;
 }
 
 async function loadLista() {
@@ -457,27 +500,26 @@ async function loadLista() {
   montarTarifas();
 }
 
-// #35: colaborador desligado (inativo em operacional_colaborador_base) sai
-// automaticamente da configuração (baseColabs só traz os ativos, usado
-// pra busca/adição), então checamos o status real de cada um já presente na
-// lista contra a base completa antes de decidir remover.
-async function limparInativosDaLista() {
-  if (!lista.length) return;
-  const { data, error } = await supabase
-    .from('operacional_colaborador_base')
-    .select('cpf,nome,ativo')
-    .limit(5000);
-  if (error) { console.warn('[conf-desloc] checar inativos', error); return; }
+// A chave da lista pode vir com CPF formatado (registro antigo) — compara só os dígitos.
+function chaveCfg(id) {
+  const s = String(id ?? '').trim();
+  const digitos = s.replace(/\D/g, '');
+  return digitos.length === 11 ? digitos : s;
+}
 
-  const statusPorChave = new Map((data || []).map((r) => [chaveDe(r.cpf, r.nome), !!r.ativo]));
-  // Desligados também ficam fora da tela quando o registro antigo tem outra chave
-  // (CPF formatado, só nome...) e por isso não casa com a base ativa.
-  const nomesAtivos = new Set(baseColabs.map((c) => c.nomeNorm));
-  inativosCfg = {
-    chaves: new Set((data || []).filter((r) => !r.ativo).map((r) => chaveDe(r.cpf, r.nome))),
-    nomes: new Set((data || []).filter((r) => !r.ativo && !nomesAtivos.has(norm(r.nome))).map((r) => norm(r.nome))),
-  };
-  const paraRemover = lista.filter((l) => statusPorChave.get(l.colaborador_id) === false);
+// true só quando o RH confirma que a pessoa está desligada; quem o RH não
+// conhece continua na tela (não some dado cadastrado à mão).
+function cfgEhInativo(l) {
+  if (!rhCarregado) return false;
+  const porChave = rhPorChave.get(chaveCfg(l.colaborador_id));
+  if (porChave !== undefined) return porChave === false;
+  return rhPorNome.get(norm(l.nome)) === false;
+}
+
+// #35: colaborador desligado (não ativo no RH) sai automaticamente da
+// configuração — apaga o registro dele em programacao_veiculo_proprio.
+async function limparInativosDaLista() {
+  const paraRemover = lista.filter(cfgEhInativo);
   if (!paraRemover.length) return;
 
   const { error: delErr } = await supabase
@@ -491,12 +533,12 @@ async function limparInativosDaLista() {
   montarTarifas();
 }
 
-// Une TODOS os colaboradores ativos (operacional_colaborador_base) com o que já
-// está registrado em programacao_veiculo_proprio — quem ainda não tem registro
-// aparece do mesmo jeito, com tipo/tarifa em branco pra preencher. Editar
-// qualquer campo de uma linha "não registrada" cria o registro na hora (upsert).
+// Une TODOS os colaboradores ativos do RH (colaboradores_atuais, com a supervisão
+// de lá) com o que já está registrado em programacao_veiculo_proprio — quem ainda
+// não tem registro aparece do mesmo jeito, com tipo/tarifa em branco pra preencher.
+// Editar qualquer campo de uma linha "não registrada" cria o registro na hora (upsert).
 function configUnificado() {
-  const porChave = new Map(lista.map((l) => [String(l.colaborador_id), l]));
+  const porChave = new Map(lista.map((l) => [chaveCfg(l.colaborador_id), l]));
   const vistos = new Set();
   const linhas = baseColabs.map((c) => {
     const existente = porChave.get(c.chave);
@@ -507,11 +549,11 @@ function configUnificado() {
   });
   // colaboradores registrados que não bateram com a base ativa (ex.: nome cadastrado
   // manualmente sem CPF correspondente) continuam aparecendo pra não sumir o dado —
-  // sem supervisão conhecida, caem no grupo "Sem supervisão" ao agrupar.
+  // sem supervisão conhecida, caem no grupo "Sem supervisão" ao agrupar. Desligados
+  // no RH ficam de fora mesmo se a remoção do registro falhou.
   lista.forEach((l) => {
-    const chave = String(l.colaborador_id);
-    if (inativosCfg.chaves.has(chave) || inativosCfg.nomes.has(norm(l.nome))) return;
-    if (!vistos.has(chave)) linhas.push({ ...l, supervisao: '', _existe: true });
+    if (cfgEhInativo(l)) return;
+    if (!vistos.has(chaveCfg(l.colaborador_id))) linhas.push({ ...l, supervisao: '', _existe: true });
   });
   const termo = norm(cfgFiltro);
   const filtradas = termo ? linhas.filter((c) => norm(c.nome).includes(termo)) : linhas;
