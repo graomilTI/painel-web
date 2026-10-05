@@ -581,6 +581,73 @@ const TEMPLATES = [
       };
     },
   },
+  {
+    // "Comprovante de pagamento de boleto" (Itaú Sispag): quem recebe é o
+    // Beneficiário/Razão Social (a Razão Social sai cortada em ~30 caracteres,
+    // então vale o nome mais longo dos dois — o match por prefixo cobre o
+    // resto). O valor pago fica na linha de baixo do rótulo "(=) Valor do
+    // pagamento (R$):", é o último número da linha do pagador. Achado com
+    // "NEOGEN DO BRASIL ... 77.429,95" (ERRO "nenhum template bateu").
+    id: 'ITAU_BOLETO_SISPAG',
+    banco: 'Itaú (boleto Sispag)',
+    detect: (t) => /Comprovante de pagamento de boleto/i.test(t) && /Dados da conta debitada/i.test(t),
+    parse: (t) => {
+      const contaOrigem = String(t).match(/Ag[eê]ncia\/conta:\s*(\d+)\s*\/\s*(\d+)\s*-\s*(\d+)/i);
+      const beneficiario = match(t, /Benefici[aá]rio:\s+(.+?)\s{2,}CPF\/CNPJ do benefici/i);
+      const razaoSocial = match(t, /Raz[aã]o Social:\s+(.+?)(?:\s{2,}|$)/im);
+      const nomes = [beneficiario, razaoSocial].filter(Boolean).sort((a, b) => b.length - a.length);
+      const valor = match(t, /Valor do pagamento\s*\(R\$\)\s*:?\s*([\d.]+,\d{2})/i)
+        || match(t, /Valor do pagamento\s*\(R\$\)\s*:?[^\n]*\n[^\n]*?(\d{1,3}(?:\.\d{3})*,\d{2})[ \t]*(?:\n|$)/i);
+      return {
+        valor: parseMoneyBR(valor),
+        dataPagamento: toIsoFromBR(match(t, /Data de pagamento:\s*\n?\s*(\d{2}\/\d{2}\/\d{4})/i) || match(t, /Opera[cç][aã]o efetuada em\s*(\d{2}\/\d{2}\/\d{4})/i)),
+        favorecidoNome: nomes[0] || null,
+        favorecidoDocumento: match(t, /Raz[aã]o Social:.*?(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i),
+        cnpjPagador: match(t, /Dados da conta debitada[^\n]*\n[^\n]*CPF\/CNPJ:\s*([\d.\/-]+)/i),
+        agencia: contaOrigem ? contaOrigem[1] : null,
+        conta: contaOrigem ? `${contaOrigem[2]}${contaOrigem[3]}` : null,
+      };
+    },
+  },
+  {
+    // Internet Banking Sicredi, "Transferência Entre Contas" (impresso do
+    // navegador, sem CNPJ do pagador — a conta de origem identifica a empresa).
+    id: 'SICREDI_TRANSFERENCIA_ENTRE_CONTAS',
+    banco: 'Sicredi (Internet Banking)',
+    detect: (t) => /Internet Banking Sicredi/i.test(t) && /Transfer[eê]ncia Entre Contas/i.test(t),
+    parse: (t) => ({
+      valor: parseMoneyBR(match(t, /Valor Transferido\s*\(R\$\)\s*:\s*([\d.,]+)/i)),
+      dataPagamento: toIsoFromBR(match(t, /Data da Transfer[eê]ncia:\s*(\d{2}\/\d{2}\/\d{4})/i)),
+      favorecidoNome: match(t, /Favorecido:\s*(.+)/i),
+      favorecidoDocumento: null,
+      cnpjPagador: null,
+      agencia: match(t, /Cooperativa Origem:\s*(\d+)/i),
+      conta: onlyDigits(match(t, /Conta Origem:\s*([\d-]+)/i)) || null,
+    }),
+  },
+  {
+    // "comprovante de transferência para conta corrente" (Itaú Sispag,
+    // salários): rótulo e valor na mesma linha, e a agência/conta vem com
+    // zeros à esquerda ("0932/0029222-0") — tira os zeros pra casar com o
+    // mapa de contas ("292220").
+    id: 'ITAU_TRANSFERENCIA_CONTA_CORRENTE',
+    banco: 'Itaú (transferência conta corrente)',
+    detect: (t) => /comprovante de transfer[eê]ncia para conta/i.test(t) && /dados do benefici[aá]rio/i.test(t),
+    parse: (t) => {
+      const pagadorBlock = (String(t).match(/dados do pagador([\s\S]*?)dados do benefici[aá]rio/i) || [])[1] || '';
+      const beneficiarioBlock = (String(t).match(/dados do benefici[aá]rio([\s\S]*?)dados da transa[cç][aã]o/i) || [])[1] || '';
+      const contaOrigem = pagadorBlock.match(/ag[eê]ncia\/conta\s+(\d+)\s*\/\s*(\d+)\s*-\s*(\d+)/i);
+      return {
+        valor: parseMoneyBR(match(t, /valor do pagamento\s+R\$\s*([\d.,]+)/i)),
+        dataPagamento: toIsoFromBR(match(t, /data do pagamento\s+(\d{2}\/\d{2}\/\d{4})/i)),
+        favorecidoNome: match(beneficiarioBlock, /\bnome\s+(.+)/i),
+        favorecidoDocumento: null,
+        cnpjPagador: null,
+        agencia: contaOrigem ? contaOrigem[1] : null,
+        conta: contaOrigem ? `${contaOrigem[2]}${contaOrigem[3]}`.replace(/^0+/, '') : null,
+      };
+    },
+  },
 ];
 
 function detectTemplate(texto) {

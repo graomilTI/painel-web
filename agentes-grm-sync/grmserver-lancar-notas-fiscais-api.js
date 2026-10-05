@@ -791,6 +791,58 @@ function detectDocumentKind(extracted, row) {
   return score >= 6 ? 'HOLERITE' : 'NOTA_FISCAL';
 }
 
+// Comprovante bancário (PIX/TED/boleto pago) enviado pela tela de NF em vez
+// da aba de Baixas. extractFromText cai em 'DANFe' por padrão, então sem esta
+// checagem o arquivo vira "NF" sem número/valor/fornecedor e fica parado em
+// "Falta classificar" (85 comprovantes de pagamento em 21/09). DANFe/NFS-e/XML
+// nunca entram aqui: chave de acesso ou palavra de nota fiscal no texto vence.
+function looksLikeBankPaymentReceipt(extracted, row) {
+  if (extensionOf(row?.arquivo_nome) === '.xml') return false;
+  if (extracted?.chave_acesso) return false;
+  const text = normalizeText(extracted?.texto_extraido);
+  if (!text) return false;
+  if (/\bDANFE\b|NOTA FISCAL|\bNFS-?E\b|\bNF-?E\b/.test(text)) return false;
+  const titulo = /COMPROVANTE (?:DE )?(?:TRANSFERENCIA|PAGAMENTO|PIX|TED|TEV|DOC|DEPOSITO)\b/.test(text);
+  const pagadorRecebedor = /DADOS DO PAGADOR/.test(text) && /DADOS DO (?:RECEBEDOR|BENEFICIARIO|FAVORECIDO)/.test(text);
+  const itauApp = /DADOS DE QUEM ESTA PAGANDO/.test(text) && /DADOS DE QUEM ESTA RECEBENDO/.test(text);
+  const sicredi = /INTERNET BANKING SICREDI/.test(text) && /TRANSFERENCIA ENTRE CONTAS/.test(text);
+  return titulo || pagadorRecebedor || itauApp || sicredi;
+}
+
+// Move o arquivo pra fila de Baixas (grm_nf_baixas, agente
+// sync-baixa-notas-fiscais) e tira da lista de NFs. 23505 = o mesmo arquivo
+// já está lá (storage_path é único), então só encerra este lado.
+async function redirectReceiptToBaixas(row, runId) {
+  const { error } = await supabase.from('grm_nf_baixas').insert({
+    storage_bucket: row.storage_bucket || 'notas-fiscais',
+    storage_path: row.storage_path,
+    arquivo_nome: row.arquivo_nome,
+    arquivo_mime_type: row.arquivo_mime_type || null,
+    enviado_por: row.enviado_por || null,
+    status: 'NOVO',
+  });
+  const jaNaFila = error && error.code === '23505';
+  if (error && !jaNaFila) throw error;
+  await updateItem(row.id, {
+    status: 'CANCELADO', execucao_id: runId, origem_extracao: 'COMPROVANTE_PAGAMENTO',
+    extraido_json: { tipo_documento_fluxo: 'COMPROVANTE_PAGAMENTO' },
+    erro: jaNaFila
+      ? 'Comprovante de pagamento (não é nota fiscal) — já estava na fila de Baixas.'
+      : 'Comprovante de pagamento (não é nota fiscal) — enviado automaticamente pra fila de Baixas.',
+  });
+  return !jaNaFila;
+}
+
+async function enqueueBaixaJob() {
+  const { data: pendente } = await supabase.from('grm_sync_jobs').select('id')
+    .eq('agente_id', 'sync-baixa-notas-fiscais').eq('status', 'pendente').limit(1);
+  if (pendente && pendente.length) return;
+  const { error } = await supabase.from('grm_sync_jobs').insert({
+    agente_id: 'sync-baixa-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'sync-lancar-notas-fiscais',
+  });
+  if (error) log('WARN', `Falha ao enfileirar o agente de baixas: ${error.message}`);
+}
+
 function payrollReference(text) {
   const normalized = normalizeText(text);
   const match = normalized.match(/\b(JANEIRO|FEVEREIRO|MARCO|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\s+DE\s+(20\d{2})\b/);
@@ -1805,6 +1857,12 @@ async function processUpload(row, runId) {
     const extracted = await extractFileData(localPath, { name: row.arquivo_nome });
     const documentKind = detectDocumentKind(extracted, row);
 
+    if (documentKind !== 'HOLERITE' && !isComprasRow(row) && looksLikeBankPaymentReceipt(extracted, row)) {
+      const novo = await redirectReceiptToBaixas(row, runId);
+      log('SUCCESS', `${row.arquivo_nome}: é comprovante de pagamento, não NF — ${novo ? 'enviado pra' : 'já estava na'} fila de Baixas.`);
+      return 'encaminhado';
+    }
+
     if (documentKind === 'HOLERITE' && extensionOf(row.arquivo_nome) === '.pdf' && payrollEmployees(extracted.texto_extraido || '').length > 1) {
       const split = await splitPayrollByEmployee(localPath, workDir);
       if (split && split.length > 1) {
@@ -1996,7 +2054,7 @@ async function main() {
   let runId = null;
   const stats = {
     encontrados: 0, selecionados: 0, lancados: 0, dry_run: 0, aguardando_dados: 0,
-    aguardando_classificacao: 0, divididos: 0, duplicados: 0, ignorados: 0, erros: 0,
+    aguardando_classificacao: 0, divididos: 0, encaminhados: 0, duplicados: 0, ignorados: 0, erros: 0,
   };
   try {
     assertConfig({ extractOnly: args.extractOnly });
@@ -2045,9 +2103,11 @@ async function main() {
       else if (result === 'aguardando_dados') stats.aguardando_dados += 1;
       else if (result === 'aguardando_classificacao') stats.aguardando_classificacao += 1;
       else if (result === 'dividido') stats.divididos += 1;
+      else if (result === 'encaminhado') stats.encaminhados += 1;
       else if (result === 'duplicado') stats.duplicados += 1;
       else if (result === 'erro') stats.erros += 1;
     }
+    if (stats.encaminhados && !DRY_RUN) await enqueueBaixaJob();
 
     const status = stats.erros ? 'ERRO_PARCIAL' : 'SUCESSO';
     await finishRun(runId, status, stats, stats.erros ? `${stats.erros} arquivo(s) com erro.` : null);
@@ -2078,7 +2138,7 @@ if (require.main === module) {
     resolveGrmCodes, buildPayInvoicePayload, buildRateioEntry, grmLogin, apiPost,
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
-    applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind,
+    applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
     parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
   };
 }
