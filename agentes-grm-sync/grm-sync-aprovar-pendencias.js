@@ -22,8 +22,8 @@
  *   - Diária de vínculo incompatível: Salário de Intermitente só para Intermitente a partir da admissão
  *     (decisão de 03/10: nada de Intermitente antes da admissão); Serviços Terceirizados só para Diarista
  *     (ou Intermitente em data anterior à admissão, quando ainda era diarista); sem salário no cadastro;
- *   - há outro lançamento ativo (P/A) da mesma despesa no dia (duplicata: o sync-despesas-duplicadas
- *     recusa e, na rodada seguinte, a que sobra é avaliada aqui).
+ *   - há outro lançamento ativo (P/A) da mesma despesa na mesma data EFETIVA (a citada na observação, senão a do
+ *     lançamento) — duplicata: o sync-despesas-duplicadas recusa e, na rodada seguinte, a que sobra é avaliada aqui.
  *
  * Auditoria: grm_despesas_retroativas_auditoria, acao APPROVE, diagnostico.agente =
  * 'sync-aprovar-pendencias' (mesma tabela do retroativas; a view da Produtividade usa o registro mais
@@ -44,7 +44,7 @@ const {
 const { evidenciaDia, avaliarRegra } = require('./grm-despesas-evidencia');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.1-APROVAR-PENDENCIAS-COM-DIARIA';
+const VERSION = 'V1.2-APROVAR-PENDENCIAS-DUPLICATA-POR-DATA-EFETIVA';
 const AGENTE_ID = 'sync-aprovar-pendencias';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -93,6 +93,9 @@ function hojeSaoPaulo(now = new Date()) {
 
 // ---- decisão (pura) ------------------------------------------------------------------
 const diaDe = (row) => String(row.ofmDate).slice(0, 10);
+// Data efetiva do lançamento = data citada na observação ou, sem ela, a do lançamento (mesmo critério do
+// sync-despesas-duplicadas): "Janta referente ao dia 29/09" lançada em 01/10 é do dia 29/09, não do dia 01/10.
+const efetivaDe = (row) => dateFromObs(row.ofmDescription, diaDe(row)) || diaDe(row);
 
 // Grupo aprovável da pendência (Café, Almoço, Janta, Pernoite ou Diária lançados com a despesa certa) ou null.
 // Diária = Salário de Intermitente / Serviços Terceirizados > R$ 45 (Terceirizados <= 45 é Almoço digitado
@@ -138,10 +141,16 @@ function decidir(row, ativos, ev, cadastro = {}) {
     return { acao: 'MANTER', motivo: 'valor_fora_do_padrao' };
   }
 
+  // Lançamentos do mesmo colaborador cuja data EFETIVA é o dia da pendência.
   const doColaboradorNoDia = ativos.filter((r) => r.ofmType === 'D' && Number(r.staCode) === Number(row.staCode)
-    && Number(r.ofmCode) !== Number(row.ofmCode) && diaDe(r) === dia);
-  if (doColaboradorNoDia.some((r) => grupoDespesa(r) === grupo)) return { acao: 'MANTER', motivo: 'ha_outro_lancamento_ativo_no_dia' };
+    && Number(r.ofmCode) !== Number(row.ofmCode) && efetivaDe(r) === dia);
+  // Duplicata: observação que cita outra despesa/pessoa/extra não é repetição (o duplicadas também as ignora).
+  if (doColaboradorNoDia.some((r) => grupoDespesa(r) === grupo && !categoriaDivergente(r) && !observacaoNaoRepete(r))) {
+    return { acao: 'MANTER', motivo: 'ha_outro_lancamento_ativo_no_dia' };
+  }
 
+  // Pernoite: QUALQUER Café/Almoço/Janta ativo no dia bloqueia (a hospedagem cobre a alimentação), inclusive
+  // reembolso de refeição; só não conta o que, pela observação, é de outro dia.
   const refeicoesNoDia = doColaboradorNoDia
     .filter((r) => REFEICOES.has(grupoDespesa(r)))
     .map((r) => `${String(r.oexName).trim()} ${r.ofmCode} ${r.ofmStatus}`);
@@ -261,11 +270,12 @@ async function main() {
 
   const token = await login();
   const ativos = [];
-  for (let d = inicio; d <= fim; d = addDias(d, 1)) {
+  // busca até hoje: um lançamento de hoje pode citar (na observação) o dia da pendência
+  for (let d = inicio; d <= hoje; d = addDias(d, 1)) {
     ativos.push(...(await fluxoDia(token, d)).filter((r) => r.ofmType === 'D' && ['P', 'A'].includes(r.ofmStatus)));
     await sleep(150);
   }
-  const pendentes = ativos.filter((r) => r.ofmStatus === 'P' && grupoAprovavel(r))
+  const pendentes = ativos.filter((r) => r.ofmStatus === 'P' && grupoAprovavel(r) && diaDe(r) <= fim)
     .sort((a, b) => Number(a.ofmCode) - Number(b.ofmCode));
 
   const cad = await carregarCadastros(token);

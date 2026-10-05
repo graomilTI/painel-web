@@ -114,6 +114,26 @@ assert.equal(decC(diaria({ ofmDescription: 'SALARIO FAMILIA 08/2026', ofmValue: 
 // Terceirizados <= R$ 45 é Almoço digitado errado: fora deste agente
 assert.equal(decC(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 30 }), [], evMov, diarista).motivo, 'despesa_nao_tratada');
 
+// ---- duplicata pela data EFETIVA (a citada na observação), como no sync-despesas-duplicadas ----
+{
+  // Janta "Hotel" de 01/10 x Janta aprovada lançada em 01/10 mas "referente ao dia 29/09": não são duplicatas
+  const outroDia = lanc({ oexName: 'Janta', ofmStatus: 'A', ofmDate: '2026-10-02', ofmDescription: 'Hotel, referente ao dia 29/09' });
+  assert.equal(dec(lanc({ oexName: 'Janta', ofmDescription: 'Hotel' }), [outroDia], evLaudo(20)).acao, 'APROVAR');
+  // lançamento feito DEPOIS (data de lançamento 05/10) citando o dia 02/10: esse sim repete a pendência de 02/10
+  const depois = lanc({ oexName: 'Janta', ofmStatus: 'P', ofmDate: '2026-10-05', ofmDescription: 'janta referente ao dia 02/10' });
+  assert.equal(dec(lanc({ oexName: 'Janta', ofmDescription: '' }), [depois], evLaudo(20)).motivo, 'ha_outro_lancamento_ativo_no_dia');
+  // Almoço lançado com observação "Janta" (despesa errada) não conta como Almoço repetido
+  const errado = lanc({ ofmStatus: 'A', ofmDescription: 'Janta' });
+  assert.equal(dec(lanc({}), [errado], evMov).acao, 'APROVAR');
+  // observação de terceiro/extra também não conta
+  assert.equal(dec(lanc({}), [lanc({ ofmStatus: 'A', ofmDescription: 'Almoço do Bruno, funcionário em treinamento' })], evMov).acao, 'APROVAR');
+  // Pernoite: reembolso de refeição NO MESMO DIA bloqueia (é refeição ativa), mesmo sendo "extra" para a duplicata
+  assert.equal(dec(lanc({ oexName: 'Pernoite' }), [lanc({ ofmStatus: 'A', ofmDescription: 'Reembolso alimentação almoço' })], evMov).motivo, 'refeicao_lancada_no_dia');
+  assert.equal(dec(lanc({ oexName: 'Pernoite' }), [lanc({ ofmStatus: 'A', oexName: 'Janta', ofmDescription: 'Almoço do Bruno, funcionário em treinamento' })], evMov).motivo, 'refeicao_lancada_no_dia');
+  // Pernoite: refeição "referente a outro dia" não bloqueia o Pernoite deste dia
+  assert.equal(dec(lanc({ oexName: 'Pernoite' }), [lanc({ ofmStatus: 'A', ofmDescription: 'Referente ao dia 29/09' })], evMov).acao, 'APROVAR');
+}
+
 // avaliarRegra direto
 assert.equal(avaliarRegra('ALMOCO', NOME, evMov).ok, true);
 assert.equal(avaliarRegra('DIARIA', NOME, evMov).ok, true);
