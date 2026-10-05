@@ -19,7 +19,10 @@ const dec = (row, ativos, ev) => decidir(row, [row, ...ativos], ev);
 
 // despesas tratadas
 assert.equal(grupoAprovavel(lanc({ oexName: 'Café' })), 'CAFE');
-assert.equal(grupoAprovavel(lanc({ oexName: 'Salário de Intermitente' })), null);
+assert.equal(grupoAprovavel(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105 })), 'DIARIA');
+assert.equal(grupoAprovavel(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 105 })), 'DIARIA');
+assert.equal(grupoAprovavel(lanc({ oexName: 'Pernoite' })), 'PERNOITE');
+assert.equal(grupoAprovavel(lanc({ oexName: 'Combustível' })), null);
 assert.equal(grupoAprovavel(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 30 })), null);
 
 // Almoço: movimento no dia
@@ -72,8 +75,49 @@ for (const obs of ['', 'Almoço', 'atender fazenda são Sebastião', 'Embarque C
 // data de hoje na observação ("referente ao dia 02/10" no próprio dia) não conta como outra data
 assert.equal(dec(lanc({ ofmDescription: 'referente ao dia 02/10/2026' }), [], evMov).acao, 'APROVAR');
 
+// ---- Diária (Salário de Intermitente / Serviços Terceirizados > R$ 45) ----
+const interm = { salario: 105, contrato: 'INTERMITENTE', admissao: '2026-08-03' };
+const diarista = { salario: 105, contrato: 'DIARISTA', admissao: '' };
+const diaria = (over) => lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ...over });
+const terc = (over) => lanc({ oexName: 'Serviços Terceirizados', ofmValue: 105, ...over });
+const decC = (row, ativos, ev, cad) => decidir(row, [row, ...ativos], ev, cad);
+
+// Intermitente com movimento, valor = salário, depois da admissão
+assert.equal(decC(diaria({}), [], evMov, interm).acao, 'APROVAR');
+assert.equal(decC(diaria({}), [], evLaudo(11), interm).acao, 'APROVAR'); // laudo conta como movimento
+assert.equal(decC(diaria({}), [], evSem, interm).motivo, 'sem_embarque_na_data');
+// valor diferente do salário (R$ 30, R$ 75, R$ 94,50) e sem salário no cadastro
+assert.equal(decC(diaria({ ofmValue: 30 }), [], evMov, interm).motivo, 'valor_diferente_do_salario');
+assert.equal(decC(diaria({ ofmValue: 75 }), [], evMov, interm).motivo, 'valor_diferente_do_salario');
+assert.equal(decC(diaria({}), [], evMov, { ...interm, salario: 0 }).motivo, 'sem_salario_no_cadastro');
+assert.equal(decC(diaria({}), [], evMov, {}).motivo, 'sem_salario_no_cadastro');
+// Intermitente antes da admissão: nada é aprovado (decisão de 03/10)
+assert.equal(decC(diaria({}), [], evMov, { ...interm, admissao: '2026-10-05' }).motivo, 'antes_da_admissao');
+assert.equal(decC(diaria({ ofmDate: '2026-08-03' }), [], evMov, interm).acao, 'APROVAR'); // no dia da admissão já vale
+// tipo x vínculo
+assert.equal(decC(diaria({}), [], evMov, diarista).motivo, 'vinculo_incompativel'); // Intermitente lançado por Diarista
+assert.equal(decC(terc({}), [], evMov, diarista).acao, 'APROVAR');
+assert.equal(decC(terc({}), [], evMov, interm).motivo, 'vinculo_incompativel'); // Intermitente já admitido lançando Terceirizados
+assert.equal(decC(terc({}), [], evMov, { ...interm, admissao: '2026-10-05' }).acao, 'APROVAR'); // ainda era diarista
+assert.equal(decC(terc({}), [], evMov, { salario: 105, contrato: 'EFETIVO', admissao: '' }).motivo, 'vinculo_incompativel');
+// duplicata: outra Diária ativa no dia (qualquer das duas despesas) segura; Almoço/outro dia/outra pessoa não
+assert.equal(decC(diaria({}), [terc({ ofmStatus: 'A' })], evMov, interm).motivo, 'ha_outro_lancamento_ativo_no_dia');
+assert.equal(decC(diaria({}), [diaria({ ofmStatus: 'A' })], evMov, interm).motivo, 'ha_outro_lancamento_ativo_no_dia');
+assert.equal(decC(diaria({}), [lanc({ ofmStatus: 'A' }), terc({ ofmDate: '2026-10-01', ofmStatus: 'A' }), terc({ staCode: 8, ofmStatus: 'A' })], evMov, interm).acao, 'APROVAR');
+// observações: "Diária" é comum e não atrapalha; "almoço"/janta/km/outra data/pessoa seguram
+assert.equal(decC(diaria({ ofmDescription: 'Diária' }), [], evMov, interm).acao, 'APROVAR');
+assert.equal(decC(diaria({ ofmDescription: 'Cotrijal encruzilhada' }), [], evMov, interm).acao, 'APROVAR');
+assert.equal(decC(diaria({ ofmDescription: 'almoço do dia 15' }), [], evMov, interm).motivo, 'observacao_cita_outra_despesa');
+assert.equal(decC(diaria({ ofmDescription: 'km rodado dia 22/09/2026' }), [], evMov, interm).motivo, 'observacao_cita_outra_despesa');
+assert.equal(decC(diaria({ ofmDescription: 'Diária atrasada do dia 09/09' }), [], evMov, interm).motivo, 'observacao_cita_outra_data');
+assert.equal(decC(diaria({ ofmDescription: 'SALARIO FAMILIA 08/2026', ofmValue: 105 }), [], evMov, interm).motivo, 'observacao_de_extra');
+// Terceirizados <= R$ 45 é Almoço digitado errado: fora deste agente
+assert.equal(decC(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 30 }), [], evMov, diarista).motivo, 'despesa_nao_tratada');
+
 // avaliarRegra direto
 assert.equal(avaliarRegra('ALMOCO', NOME, evMov).ok, true);
-assert.equal(avaliarRegra('DIARIA', NOME, evMov).motivo, 'despesa_nao_tratada');
+assert.equal(avaliarRegra('DIARIA', NOME, evMov).ok, true);
+assert.equal(avaliarRegra('DIARIA', NOME, evSem).motivo, 'sem_embarque_na_data');
+assert.equal(avaliarRegra('OUTRA', NOME, evMov).motivo, 'despesa_nao_tratada');
 
 console.log('test-aprovar-pendencias: ok');

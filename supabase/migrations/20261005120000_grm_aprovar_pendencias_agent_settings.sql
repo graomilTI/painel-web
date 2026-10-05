@@ -1,5 +1,5 @@
 -- Registra 'sync-aprovar-pendencias', auxiliar do sync-despesas-retroativas: aprova as pendências de
--- Café, Almoço, Janta e Pernoite do Caixa Operacional que cumprem as regras decididas em 01/10/2026
+-- Café, Almoço, Janta, Pernoite e Diária do Caixa Operacional que cumprem as regras decididas em 01/10/2026
 -- (movimento no dia; Janta laudo >=19h; Café laudo <07h; Pernoite sem refeição no dia).
 --
 -- O retroativas só aprova o que está na Programação do Painel e só olha D-1; as regras de 01/10
