@@ -22,6 +22,7 @@
  *
  *   node grm-relancar-recusadas-pontual.js plano.json            (dry-run, padrão)
  *   node grm-relancar-recusadas-pontual.js plano.json --executar
+ *   ... --ignorar-evidencia   só por decisão explícita do usuário: pula o passo 4 (fica na auditoria)
  */
 
 require('dotenv').config();
@@ -36,6 +37,9 @@ const { obterTokenGrm } = require('./grm-token-cache');
 
 const AGENTE_ID = 'relancar-recusadas-pontual';
 const EXECUTAR = process.argv.includes('--executar');
+// Decisão explícita do usuário (05/10/2026): relança mesmo sem produção/laudo/NHE no dia citado.
+// Continua barrando recusada que não está mais recusada, duplicata no plano e despesa que já existe na data.
+const IGNORAR_EVIDENCIA = process.argv.includes('--ignorar-evidencia');
 const PLANO = process.argv.slice(2).find((a) => !a.startsWith('--'));
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
 const GRM_WEB_HEADERS = {
@@ -248,8 +252,8 @@ async function main() {
       && Number(r.staCode) === Number(it.original.staCode) && grupoDespesa(r) === grupo);
     if (ativos.length) { it.resultado = 'PULADO'; it.motivo = `ja_existe_na_data_alvo (ofm ${ativos[0].ofmCode} ${ativos[0].ofmStatus} R$${ativos[0].ofmValue})`; continue; }
     const ev = await avaliarEvidencia(it.original, it.dataAlvo);
-    if (!ev.ok) { it.resultado = 'PULADO'; it.motivo = ev.motivo; continue; }
-    it.evidencia = ev.evidencia;
+    if (!ev.ok && !IGNORAR_EVIDENCIA) { it.resultado = 'PULADO'; it.motivo = ev.motivo; continue; }
+    it.evidencia = ev.ok ? ev.evidencia : `SEM evidência (${ev.motivo}); relançado por decisão do usuário (--ignorar-evidencia)`;
     it.resultado = 'RELANCAR';
   }
 
