@@ -36,6 +36,11 @@
  * quando o valor é MAIOR que o do lançamento que ficaria (Almoço R$ 30 x R$ 3 aprovado).
  * Esses casos ficam pendentes para revisão humana (log "Mantida pendente", resumo revisao_humana).
  *
+ * Tipo de despesa incorreto (regra de 05/10/2026): toda despesa deve ser lançada no campo correspondente.
+ * Pendência cuja observação diz que é de OUTRA despesa (campo Almoço com "janta dia tal") é recusada na hora com
+ * "Tipo de despesa incorreto. lançar despesa no campo correspondente" (tipoIncorretoNaObs em
+ * grm-despesas-guardas.js; km/combustível/pedágio só seguram a pendência).
+ *
  * Auditoria: grm_despesas_retroativas_auditoria (mesma tabela do agente
  * principal) com diagnostico.agente = 'sync-despesas-duplicadas'. Recusas entram
  * como REPROVE; a correção de data entra como CREATE (custo aprovado na data
@@ -52,11 +57,12 @@ const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 const { registerDateAtPoint } = require('./grm-sync-despesas-retroativas');
 const {
-  norm, addDias, dateFromObs, grupoDespesa, categoriaDivergente, observacaoNaoRepete, valorMaiorQueMantido,
+  norm, addDias, dateFromObs, grupoDespesa, categoriaDivergente, tipoIncorretoNaObs, MOTIVO_TIPO_INCORRETO,
+  observacaoNaoRepete, valorMaiorQueMantido,
 } = require('./grm-despesas-guardas');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.1-AUXILIAR-DUPLICADAS-TRAVAS';
+const VERSION = 'V1.2-AUXILIAR-DUPLICADAS-TIPO-INCORRETO';
 const AGENTE_ID = 'sync-despesas-duplicadas';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -141,6 +147,7 @@ function compararRank(a, b) {
 }
 
 // Decide o que fazer com UMA pendência. Devolve:
+//   { acao: 'RECUSAR', motivo, tipoCitado }   -> observação diz que é de OUTRA despesa (campo errado): recusa imediata
 //   { acao: 'RECUSAR', motivo, referencia }   -> há lançamento melhor na mesma data efetiva
 //   { acao: 'AVALIAR_DATA' }                  -> sem duplicata, data da observação diferente
 //   { acao: 'REVISAR', motivo }               -> parece cópia, mas a observação/valor mostram que não é:
@@ -148,6 +155,9 @@ function compararRank(a, b) {
 //   { acao: 'NADA' }                          -> sem duplicata e sem data divergente
 function classificar(row, indice) {
   const info = infoLancamento(row);
+  // Regra de 05/10: toda despesa deve ser lançada no campo correspondente — observação de outra despesa = recusa
+  const tipoCitado = tipoIncorretoNaObs(row);
+  if (tipoCitado) return { acao: 'RECUSAR', motivo: MOTIVO_TIPO_INCORRETO, tipoCitado, info };
   if (categoriaDivergente(row)) return { acao: 'NADA', info };
   const naoRepete = observacaoNaoRepete(row);
   if (naoRepete) return { acao: 'REVISAR', motivo: naoRepete, info };
@@ -398,8 +408,10 @@ async function main() {
 
   // datas citadas nas observações das pendências podem cair fora da janela
   const tratadas = [...todos.values()].filter((row) => row.ofmType === 'D' && row.ofmStatus === 'P' && grupoDespesa(row));
-  const pendentes = tratadas.filter((row) => !categoriaDivergente(row));
-  for (const row of tratadas.filter((r) => categoriaDivergente(r))) {
+  // categoria divergente "forte" (Café/Almoço/Janta/Pernoite/Diária) é recusada; a "fraca" (km, combustível,
+  // pedágio) só fica pendente para revisão
+  const pendentes = tratadas.filter((row) => !categoriaDivergente(row) || tipoIncorretoNaObs(row));
+  for (const row of tratadas.filter((r) => categoriaDivergente(r) && !tipoIncorretoNaObs(r))) {
     log('INFO', `Mantida pendente: ${row.staName} / ${row.oexName.trim()} / ofm ${row.ofmCode}: observação cita outra despesa (${categoriaDivergente(row).join(', ')}) — "${String(row.ofmDescription || '').replace(/\s+/g, ' ').slice(0, 80)}".`);
   }
   for (const row of pendentes) {
@@ -410,7 +422,7 @@ async function main() {
   pendentes.sort((a, b) => Number(a.ofmCode) - Number(b.ofmCode));
 
   const resumo = {
-    pendentes: pendentes.length, categoria_divergente: tratadas.length - pendentes.length, recusadas_duplicado: 0, recusadas_duplicata: 0, datas_corrigidas: 0,
+    pendentes: pendentes.length, categoria_divergente: tratadas.length - pendentes.length, recusadas_duplicado: 0, recusadas_duplicata: 0, recusadas_tipo_incorreto: 0, datas_corrigidas: 0,
     sem_regra: 0, sem_acao: 0, revisao_humana: 0, adiados: 0, errors: 0,
   };
   const naoAptos = {};
@@ -435,6 +447,7 @@ async function main() {
   }
   log('INFO', 'Plano.', {
     recusar: plano.filter((p) => p.decisao.acao === 'RECUSAR').length,
+    recusar_tipo_incorreto: plano.filter((p) => p.decisao.acao === 'RECUSAR' && p.decisao.tipoCitado).length,
     corrigir_data: plano.filter((p) => p.decisao.acao === 'CORRIGIR_DATA').length,
     nao_aptos: naoAptos,
   });
@@ -459,10 +472,14 @@ async function main() {
     acoes += 1;
     try {
       if (decisao.acao === 'RECUSAR') {
-        log('INFO', `${DRY_RUN ? '[DRY-RUN] ' : ''}Recusar ${rotulo} (${decisao.motivo}) — repete ofm ${decisao.referencia.ofmCode} (${decisao.referencia.status}).`);
+        const tipoIncorreto = !!decisao.tipoCitado;
+        log('INFO', `${DRY_RUN ? '[DRY-RUN] ' : ''}Recusar ${rotulo} (${decisao.motivo})${tipoIncorreto ? ` — observação cita ${decisao.tipoCitado.join(', ')}` : ` — repete ofm ${decisao.referencia.ofmCode} (${decisao.referencia.status})`}.`);
         if (!DRY_RUN) await recusar(token, row, decisao.motivo);
-        if (decisao.motivo === MOTIVO_DUPLICATA) resumo.recusadas_duplicata += 1; else resumo.recusadas_duplicado += 1;
-        await auditar(cad, row, decisao.info.dataEf, 'REPROVE', true, { ...base, motivo: decisao.motivo, repete: decisao.referencia });
+        if (tipoIncorreto) resumo.recusadas_tipo_incorreto += 1;
+        else if (decisao.motivo === MOTIVO_DUPLICATA) resumo.recusadas_duplicata += 1; else resumo.recusadas_duplicado += 1;
+        await auditar(cad, row, decisao.info.dataEf, 'REPROVE', true, {
+          ...base, motivo: decisao.motivo, ...(tipoIncorreto ? { tipo_citado: decisao.tipoCitado } : { repete: decisao.referencia }),
+        });
       } else {
         log('INFO', `${DRY_RUN ? '[DRY-RUN] ' : ''}Corrigir data de ${rotulo}: ${decisao.info.ofmIso} → ${decisao.info.dataEf} (${decisao.evidencia}).`);
         const novoCodigo = DRY_RUN ? null : await corrigirData(token, row, decisao.info, modeloParaCriar(row, todos));
@@ -499,4 +516,5 @@ module.exports = {
   modeloParaCriar,
   MOTIVO_DUPLICADO,
   MOTIVO_DUPLICATA,
+  MOTIVO_TIPO_INCORRETO,
 };

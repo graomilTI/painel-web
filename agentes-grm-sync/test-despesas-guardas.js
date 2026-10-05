@@ -30,6 +30,36 @@ assert.deepEqual(categoriaDivergente(lanc({ oexName: 'Salário de Intermitente',
 assert.deepEqual(categoriaDivergente(lanc({ ofmDescription: 'Jajta ref ao dia 1/10' })), ['JANTA']);
 assert.equal(categoriaDivergente(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 105, ofmDescription: 'Diária referente ao dia 24/09/2026' })), null);
 
+// ---- recusa imediata: observação de OUTRA despesa (campo errado) ----
+{
+  const { tipoIncorretoNaObs, MOTIVO_TIPO_INCORRETO } = require('./grm-despesas-guardas');
+  assert.equal(MOTIVO_TIPO_INCORRETO, 'Tipo de despesa incorreto. lançar despesa no campo correspondente');
+  // o exemplo do pedido: campo Almoço com "janta dia tal"
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ ofmDescription: 'janta dia 29/09' })), ['JANTA']);
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ oexName: 'Janta', ofmDescription: 'Almoço' })), ['ALMOCO']);
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ oexName: 'Café', ofmValue: 10, ofmDescription: 'Jajta ref ao dia 1/10' })), ['JANTA']); // typo
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ ofmDescription: 'diária' })), ['DIARIA']);
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ oexName: 'Pernoite', ofmDescription: 'Referente ao dia 20/09 janta' })), ['JANTA']);
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Almoço Armazém Mocambinho cliente cofco' })), ['ALMOCO']);
+  assert.deepEqual(tipoIncorretoNaObs(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 105, ofmDescription: 'almoço' })), ['ALMOCO']);
+  // não recusa: a observação cita a própria despesa (mesmo junto de outra) ou não cita nenhuma
+  assert.equal(tipoIncorretoNaObs(lanc({ ofmDescription: 'Almoço' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ ofmDescription: 'almoço e janta no hotel' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Diária em viagem' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ ofmDescription: 'atender fazenda são Sebastião' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ ofmDescription: '' })), null);
+  // exceções do Pernoite: diária do hotel e café da manhã incluso não são "outra despesa"
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Pernoite', ofmDescription: 'diária' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Pernoite', ofmDescription: 'Hotel Ibis, café da manhã incluso' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Pernoite', ofmDescription: 'pernoite hotel com café' })), null);
+  // km/combustível/pedágio não disparam recusa (aparecem em descrição de local); só seguram a pendência
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'km rodado dia 22/09/2026' })), null);
+  assert.deepEqual(categoriaDivergente(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'km rodado dia 22/09/2026' })), ['KM']);
+  // Serviços Terceirizados <= R$ 45 (Almoço só pelo valor) e despesas fora do escopo não entram
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Serviços Terceirizados', ofmValue: 37, ofmDescription: 'diária volta do armazém' })), null);
+  assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Combustível', ofmDescription: 'almoço' })), null);
+}
+
 // despesa de outra pessoa / extra: não é repetição
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço do Bruno, funcionário em treinamento' })), 'observacao_cita_outra_pessoa');
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço da equipe' })), 'observacao_cita_outra_pessoa');
