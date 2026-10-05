@@ -137,6 +137,8 @@ const SOFT_NAV_PAGES = new Map([
   ['cartao-ponto', { title: 'Cartão Ponto', module: () => import('./cartaoPonto.js') }],
   ['advertencias', { title: 'Advertências', module: () => import('./advertenciasRh.js') }],
   ['holerite-pagamentos', { title: 'Folha e Holerite', module: () => import('./holeritePagamentos.js') }],
+  // Financeiro > Ajuda de Custo (06/10): relação mensal do RH, planilhas iFood/Flash e lançamento no Caixa do GRM.
+  ['financeiro-ajuda-custo', { title: 'Ajuda de Custo', module: () => import('./financeiroAjudaCusto.js') }],
 ]);
 
 function routeNameFromUrl(url) {
