@@ -180,6 +180,7 @@ export const MENU_CONFIG = [
       item("financeiro_fluxo_caixa", "Fluxo de Caixa", "financeiro", ["FINANCEIRO", "FLUXO_CAIXA", "FINANCEIRO_FLUXO_CAIXA"]),
       item("financeiro_pagamentos", "Pagamentos", "financeiro#pagamentos", ["FINANCEIRO", "PAGAMENTOS", "FINANCEIRO_PAGAMENTOS"]),
       item("financeiro_adiantamentos", "Adiantamentos", "financeiro#despesas?modo=adiantamentos", ["ADIANTAMENTOS", "FINANCEIRO_ADIANTAMENTOS"]),
+      item("financeiro_ajuda_custo", "Ajuda de Custo", "financeiro-ajuda-custo", ["FINANCEIRO_AJUDA_CUSTO", "AJUDA_CUSTO"]),
       item("financeiro_hospedagem", "Hospedagem", "adm-hotel#financeiro", ["FINANCEIRO_HOSPEDAGEM"])
     ]
   },

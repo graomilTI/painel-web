@@ -174,6 +174,11 @@ const SCRIPT_MAP = {
   // Multa de uso de veículo fora do expediente: fila criada manualmente pelo
   // responsável de Frotas no painel após analisar a ocorrência RedGPS/BFleet.
   'sync-frotas-fora-horario-caixa': 'grm-sync-frotas-fora-horario-caixa.js',
+  // Ajuda de Custo (RH > Folha e Holerite > aba Ajuda de custo): quando o Financeiro baixa as
+  // planilhas PGTO_IFOOD/PGTO_FLASH em Financeiro > Ajuda de Custo (RPC ajuda_custo_gerar_lote),
+  // lança no Caixa do colaborador um Adiantamento e um Comprovante (Tipo da Despesa = Ajuda de
+  // Custo), com data 15/MM do mês de referência. Também enfileirado por ajuda_custo_reenviar_caixa.
+  'sync-ajuda-custo-caixa': 'grm-sync-ajuda-custo-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   // Auxiliar do retroativas (02/10): recusa despesas duplicadas lançadas pelo
   // colaborador ("lançamento duplicado" / "Duplicata" pela data da observação) e

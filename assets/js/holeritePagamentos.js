@@ -21,6 +21,7 @@ const state = {
   folhas: [], ctx: null, filtros: null, itensPorFolha: {}, empresas: null,
   aba: 'folhas',
   contas: [], contasCarregadas: false, contasErro: null, filtrosContas: null,
+  ajudaCarregada: false,
 };
 
 const money = (v) => v == null ? '-' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -672,15 +673,28 @@ function selecionarAba(content, aba) {
   });
   content.querySelector('#hpPainelFolhas').hidden = aba !== 'folhas';
   content.querySelector('#hpPainelContas').hidden = aba !== 'contas';
+  content.querySelector('#hpPainelAjuda').hidden = aba !== 'ajuda';
   if (aba === 'contas' && !state.contasCarregadas) loadContas();
+  if (aba === 'ajuda' && !state.ajudaCarregada) {
+    state.ajudaCarregada = true;
+    // Aba de ajuda de custo vive em módulo próprio, carregado só quando é aberta.
+    import('./ajudaCustoRh.js?v=20261006-ajuda1')
+      .then((m) => m.renderAjudaCustoRh(content.querySelector('#hpPainelAjuda'), state.ctx))
+      .catch((e) => {
+        state.ajudaCarregada = false;
+        console.warn('[Ajuda de custo]', e);
+        content.querySelector('#hpPainelAjuda').innerHTML = `<p class="hp-empty mt-16">Não foi possível abrir a aba Ajuda de custo: ${esc(e.message)}</p>`;
+      });
+  }
 }
 
 export async function renderContent(content, userContext) {
   state.ctx = userContext;
-  content.innerHTML = `${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>Folha e Holerite</h2><p>Folha de pagamento, holerites e contas de pagamento dos colaboradores.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section>
+  content.innerHTML = `${styles()}<section class="hero-card"><div><div class="eyebrow">Recursos Humanos</div><h2>Folha e Holerite</h2><p>Folha de pagamento, holerites, contas de pagamento e ajuda de custo dos colaboradores.</p></div><div class="hero-badge-wrap"><span class="hero-badge">RH</span></div></section>
   <div class="hp-tabs mt-16" role="tablist">
     <button class="hp-tab active" data-hp-tab="folhas" type="button" role="tab" aria-selected="true">Folhas</button>
     <button class="hp-tab" data-hp-tab="contas" type="button" role="tab" aria-selected="false">Contas</button>
+    <button class="hp-tab" data-hp-tab="ajuda" type="button" role="tab" aria-selected="false">Ajuda de custo</button>
   </div>
   <div id="hpPainelFolhas">
     <div class="section-head mt-16"><div><h3>Folhas lançadas</h3><p class="muted">Uma linha por lote (empresa + holerites enviados). A busca também filtra por competência (ex.: 07/2026), já identificada pelo agente.</p></div><button class="btn btn-primary" id="hpNova" type="button">+ Nova Folha</button></div>
@@ -697,6 +711,7 @@ export async function renderContent(content, userContext) {
     </div>
     <div class="hp-table-wrap mt-16"><table class="hp-table" style="min-width:980px"><thead><tr><th>Colaborador</th><th>Tipo</th><th>Titular / Beneficiário</th><th>Banco / Conta</th><th>PIX</th><th>Autorização</th><th>Status</th><th>Ações</th></tr></thead><tbody id="hpcBody"><tr><td colspan="8" class="hp-empty">Carregando...</td></tr></tbody></table></div>
   </div>
+  <div id="hpPainelAjuda" hidden></div>
   <div class="hp-modal" id="hpModal"></div>`;
   content.querySelectorAll('[data-hp-tab]').forEach((b) => { b.onclick = () => selecionarAba(content, b.dataset.hpTab); });
   content.querySelector('#hpNova').onclick = () => openNovaFolhaModal();
