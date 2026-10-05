@@ -1149,6 +1149,64 @@ async function findDuplicateFingerprint(fingerprint, excludeId) {
   return (data || []).find((r) => r.id !== excludeId) || null;
 }
 
+// Trava de comprovante repetido. O sha256 do arquivo (acima) só pega arquivo
+// idêntico; o mesmo comprovante reenviado em outro arquivo ou como página de
+// um lote passava, e o agente baixava OUTRA parcela em aberto da mesma pessoa
+// (05/10: 28 baixas indevidas de comprovantes de 06/08 já baixados em 21/09).
+// Se já existe baixa do mesmo favorecido + valor + data de pagamento na mesma
+// conta pagadora, só segue se os identificadores do comprovante (autenticação,
+// ID da transação, controle) provarem que é outro pagamento — assim dois Pix
+// iguais no mesmo dia (ex.: 2 x R$ 500 pra completar uma parcela) continuam
+// passando. Sem identificador de um dos lados, vale a suspeita: DUPLICADO.
+function extractComprovanteIds(texto) {
+  const t = String(texto || '').toUpperCase();
+  const ids = new Set();
+  const add = (v) => { const s = String(v || '').replace(/[.\s]/g, ''); if (s.length >= 9) ids.add(s); };
+  for (const m of t.matchAll(/\b[0-9A-F]{40}\b/g)) add(m[0]);
+  for (const m of t.matchAll(/\b(?:[0-9A-F]{4}\.){7}[0-9A-F]{4}\b/g)) add(m[0]);
+  for (const m of t.matchAll(/ID DA TRANSA[CÇ][AÃ]O:?\s*([A-Z0-9]{20,})/g)) add(m[1]);
+  for (const m of t.matchAll(/CONTROLE:?\s*(\d{9,})/g)) add(m[1]);
+  for (const m of t.matchAll(/\bCTRL\s+(\d{9,})/g)) add(m[1]);
+  for (const m of t.matchAll(/CHAVE DE SEGURAN[CÇ]A:?\s*([A-Z0-9]{10,})/g)) add(m[1]);
+  for (const m of t.matchAll(/C[OÓ]DIGO DA OPERA[CÇ][AÃ]O:?\s*(\d{9,})/g)) add(m[1]);
+  return [...ids];
+}
+
+// Linhas antigas não guardaram os identificadores: relê o arquivo da baixa
+// anterior (só acontece quando já há suspeita de repetição, então é raro).
+async function comprovanteIdsDaLinha(prev, workDir) {
+  try {
+    const filePath = path.join(workDir, `anterior-${prev.id}.pdf`);
+    await downloadFromStorage(prev, filePath);
+    return extractComprovanteIds(await extractPdfText(filePath));
+  } catch (_) { return null; }
+}
+
+async function findBaixaAnterior(row, parsed, conta, ids, workDir, opcoes = {}) {
+  let query = supabase.from(TABLE_ITEMS)
+    .select('id,arquivo_nome,status,favorecido_nome,pin_code,bacc_code,baixado_em,extraido_json,storage_bucket,storage_path')
+    .in('status', ['BAIXADO', 'BAIXADO_PARCIAL'])
+    .eq('valor', parsed.valor)
+    .eq('data_pagamento', parsed.dataPagamento)
+    .neq('id', row.id)
+    .order('baixado_em', { ascending: true })
+    .limit(20);
+  if (opcoes.antesDe) query = query.lt('baixado_em', opcoes.antesDe);
+  const { data, error } = await query;
+  if (error) throw error;
+  const alvoNome = normalizeText(parsed.favorecidoNome);
+  for (const prev of data || []) {
+    if (prev.bacc_code != null && conta.baccCode != null && Number(prev.bacc_code) !== Number(conta.baccCode)) continue;
+    const nomePrev = normalizeText(prev.favorecido_nome);
+    if (!nomePrev || !nomesCompativeis(alvoNome, nomePrev)) continue;
+    const guardados = prev.extraido_json?.comprovante_ids;
+    const idsPrev = Array.isArray(guardados) && guardados.length ? guardados : await comprovanteIdsDaLinha(prev, workDir);
+    if (ids.length && idsPrev && idsPrev.length && !ids.some((id) => idsPrev.includes(id))) continue;
+    return prev;
+  }
+  return null;
+}
+
 async function marcarErro(id, runId, mensagem, extraido) {
   await updateItem(id, { status: 'ERRO', execucao_id: runId, erro: mensagem.slice(0, 4000), ...(extraido ? { extraido_json: extraido } : {}) });
 }
@@ -1219,6 +1277,21 @@ async function processBaixa(row, runId) {
       if (!conta) {
         await marcarErro(row.id, runId, `Conta pagadora não mapeada em ${path.basename(CONFIG_PATH)} (agência/conta: ${parsed.agencia || '?'}/${parsed.conta || '?'}, CNPJ: ${parsed.cnpjPagador || '?'}).`, parsed);
         return 'erro';
+      }
+
+      parsed.comprovante_ids = extractComprovanteIds(texto);
+      const anterior = args.force ? null : await findBaixaAnterior(row, parsed, conta, parsed.comprovante_ids, workDir);
+      if (anterior) {
+        const quando = anterior.baixado_em ? new Date(anterior.baixado_em).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '?';
+        await updateItem(row.id, {
+          status: 'DUPLICADO', execucao_id: runId, fingerprint,
+          favorecido_nome: parsed.favorecidoNome, favorecido_documento: parsed.favorecidoDocumento,
+          valor: parsed.valor, data_pagamento: parsed.dataPagamento, banco_pagador: template.banco,
+          empresa_detectada: conta.empresa, bacc_code: conta.baccCode, extraido_json: parsed,
+          erro: `Comprovante já baixado antes: mesmo favorecido, valor e data de pagamento (arquivo "${anterior.arquivo_nome}", pinCode ${anterior.pin_code || '?'}, baixado em ${quando}). Não baixa de novo.`,
+        });
+        log('WARN', `${row.arquivo_nome}: já baixado antes (${anterior.arquivo_nome}, pinCode ${anterior.pin_code || '?'}) — marcado DUPLICADO, sem tocar no GRM.`);
+        return 'duplicado';
       }
 
       const openInvoices = await getOpenInvoicesCache();
@@ -1523,6 +1596,6 @@ if (require.main === module) {
     parseMoneyBR, toIsoFromBR, normalizeText, loadConfig, grmLogin, apiPost,
     uploadComprovanteAnexo,
     compararDocumento, contasDoFavorecido, findCandidatesViaContas, unirCandidatos,
-    diagnosticarViaContas,
+    diagnosticarViaContas, assertConfig, extractComprovanteIds, findBaixaAnterior,
   };
 }
