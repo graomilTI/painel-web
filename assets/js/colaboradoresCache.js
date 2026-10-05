@@ -22,7 +22,9 @@ const INVALIDATION_KEY = 'grm:colaboradores:invalidated-at';
 const TTL_MS = 10 * 60 * 1000;
 const PAGE_SIZE = 1000;
 
-const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,sexo,whatsapp';
+// public.colaboradores não tem coluna `ativo` (só `situacao`); pedir `ativo` aqui
+// dava erro de coluna ausente a cada carga e caía em CAMPOS_MINIMOS.
+const CAMPOS_COMPLETOS = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,sexo,whatsapp';
 const CAMPOS_MINIMOS = 'id,nome,cpf,tipo,supervisao,coordenacao,empresa,situacao,sexo,whatsapp';
 const CAMPOS_FALLBACK = 'id,nome,cpf,tipo,cargo,supervisao,coordenacao,empresa,situacao,ativo,data_referencia,sexo,whatsapp';
 
@@ -73,15 +75,18 @@ function normalizarLinha(row = {}) {
   };
 }
 
+function semAcento(value) {
+  return texto(value).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Só a situação 'Ativo' conta como ativo (mesmo critério da view
+// colaboradores_atuais: ativo = situacao = 'Ativo'). Lista de exclusão deixava
+// passar 'Não Ativo', que é o valor real dos desligados em colaboradores.
 function normalizarAtivo(row = {}) {
   if (typeof row.ativo === 'boolean') return row.ativo;
   if (typeof row.ativo === 'number') return row.ativo === 1;
 
-  const valor = texto(row.ativo || row.situacao || 'ativo').toLowerCase();
-  return ![
-    'false', '0', 'inativo', 'inactive', 'desligado', 'demitido',
-    'afastado definitivo', 'cancelado', 'nao', 'não',
-  ].includes(valor);
+  return ['ativo', 'true', '1', 'sim'].includes(semAcento(row.ativo || row.situacao));
 }
 
 function deduplicar(rows) {
