@@ -579,7 +579,10 @@ function aplicarResultadoGps(resultado) {
   if (!resultado?.id) return;
   const row = state.rows.find((item) => String(item.id) === String(resultado.id));
   if (!row) return;
-  if (resultado.geocodificado !== false) row.partida_latitude = row.partida_latitude ?? true;
+  if (resultado.geocodificado !== false) {
+    row.partida_latitude = resultado.partida_latitude ?? row.partida_latitude ?? true;
+    row.partida_longitude = resultado.partida_longitude ?? row.partida_longitude ?? true;
+  }
   if (resultado.validado) {
     Object.assign(row, {
       status_validacao: 'VALIDADO',
@@ -612,7 +615,8 @@ async function geocodificarCorrida(id, btn) {
     if (resultado?.validado) {
       setFeedback(`Corrida validada automaticamente: O.S. ${resultado.os} encontrada a ${Math.round(resultado.distancia_m)}m com laudo do colaborador.`);
     } else if (resultado?.geocodificado === false) {
-      setFeedback('Não foi possível localizar o endereço no mapa. Confira o endereço ou valide manualmente.', true);
+      const detalhe = resultado?.detalhe ? ` ${resultado.detalhe}` : '';
+      setFeedback(`Não foi possível localizar o endereço no mapa.${detalhe} Confira o endereço ou tente novamente.`, true);
     } else {
       setFeedback('Endereço convertido em GPS. Nenhuma O.S. com laudo do colaborador em raio de 2km — confira manualmente.');
     }
@@ -637,7 +641,8 @@ async function converterGpsPendentes(root) {
     if (data?.error) throw new Error(data.error);
     (data?.resultados || []).forEach(aplicarResultadoGps);
     saveCache();
-    setFeedback(`${data?.geocodificados ?? 0} corrida(s) convertida(s) em GPS, ${data?.validados ?? 0} validada(s) automaticamente por O.S. com laudo dentro de 2km.`);
+    const falhas = (data?.resultados || []).filter((item) => item?.geocodificado === false || item?.ok === false).length;
+    setFeedback(`${data?.geocodificados ?? 0} corrida(s) convertida(s) em GPS, ${data?.validados ?? 0} validada(s) automaticamente por O.S. com laudo dentro de 2km${falhas ? ` e ${falhas} não localizada(s) nesta tentativa` : ''}.`, falhas > 0);
     renderData();
   } catch (error) {
     console.error('[Uber] converterGpsPendentes:', error);
