@@ -5,7 +5,8 @@
  * Aprova as pendências (status P) de Café, Almoço, Janta e Pernoite do Caixa Operacional do GRM
  * que o colaborador lançou e que cumprem as regras decididas em 01/10/2026 (grm-despesas-evidencia.js):
  *
- *   Almoço / Pernoite : movimento no dia (produção, laudo ou NHE); Pernoite sem Café/Almoço/Janta no dia;
+ *   Almoço / Diária / Pernoite : movimento no dia (produção, laudo ou NHE); Pernoite sem Café/Almoço/Janta no dia;
+ *                       Diária = Salário de Intermitente ou Serviços Terceirizados > R$ 45;
  *   Janta             : laudo a partir das 19h no horário local do embarque;
  *   Café              : laudo antes das 07h no horário local do embarque.
  *
@@ -17,7 +18,10 @@
  * Só aprova quando a pendência é "limpa" — NÃO aprova (fica para revisão humana / outro agente):
  *   - observação cita outra despesa, outra pessoa ou extra (grm-despesas-guardas.js);
  *   - observação cita outra data (é do sync-despesas-duplicadas: corrige a data ou recusa);
- *   - valor diferente do padrão (Café R$ 10; Almoço, Janta e Pernoite R$ 30);
+ *   - valor diferente do padrão (Café R$ 10; Almoço, Janta e Pernoite R$ 30; Diária = salário do cadastro);
+ *   - Diária de vínculo incompatível: Salário de Intermitente só para Intermitente a partir da admissão
+ *     (decisão de 03/10: nada de Intermitente antes da admissão); Serviços Terceirizados só para Diarista
+ *     (ou Intermitente em data anterior à admissão, quando ainda era diarista); sem salário no cadastro;
  *   - há outro lançamento ativo (P/A) da mesma despesa no dia (duplicata: o sync-despesas-duplicadas
  *     recusa e, na rodada seguinte, a que sobra é avaliada aqui).
  *
@@ -40,7 +44,7 @@ const {
 const { evidenciaDia, avaliarRegra } = require('./grm-despesas-evidencia');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.0-APROVAR-PENDENCIAS-REGRAS-0110';
+const VERSION = 'V1.1-APROVAR-PENDENCIAS-COM-DIARIA';
 const AGENTE_ID = 'sync-aprovar-pendencias';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -57,7 +61,7 @@ const DRY_RUN = process.argv.includes('--dry-run')
 const JANELA_DIAS = Math.max(1, Number(process.env.GRM_APROVAR_PENDENCIAS_JANELA_DIAS || 10));
 const MAX_ACTIONS = Math.max(1, Number(process.env.GRM_APROVAR_PENDENCIAS_MAX_ACOES || 100));
 
-const GRUPOS = new Set(['CAFE', 'ALMOCO', 'JANTA', 'PERNOITE']);
+const GRUPOS = new Set(['CAFE', 'ALMOCO', 'JANTA', 'PERNOITE', 'DIARIA']);
 const REFEICOES = new Set(['CAFE', 'ALMOCO', 'JANTA']);
 const VALOR_PADRAO = { CAFE: 10, ALMOCO: 30, JANTA: 30, PERNOITE: 30 };
 
@@ -90,15 +94,35 @@ function hojeSaoPaulo(now = new Date()) {
 // ---- decisão (pura) ------------------------------------------------------------------
 const diaDe = (row) => String(row.ofmDate).slice(0, 10);
 
-// Grupo aprovável da pendência (Café, Almoço, Janta ou Pernoite lançados com a despesa certa) ou null.
+// Grupo aprovável da pendência (Café, Almoço, Janta, Pernoite ou Diária lançados com a despesa certa) ou null.
+// Diária = Salário de Intermitente / Serviços Terceirizados > R$ 45 (Terceirizados <= 45 é Almoço digitado
+// errado: não é tratado aqui).
 function grupoAprovavel(row) {
   const c = norm(row?.oexName);
-  return GRUPOS.has(c) ? c : null;
+  if (c === 'CAFE' || c === 'ALMOCO' || c === 'JANTA' || c === 'PERNOITE') return c;
+  return grupoDespesa(row) === 'DIARIA' ? 'DIARIA' : null;
+}
+
+// Diária: valor tem que ser o salário do cadastro e o tipo lançado tem que combinar com o vínculo.
+// cadastro = { salario, contrato (normalizado), admissao (AAAA-MM-DD ou '') }. Devolve o motivo ou null.
+function motivoDiariaInvalida(row, cadastro = {}) {
+  if (!(Number(cadastro.salario) > 0)) return 'sem_salario_no_cadastro';
+  if (Math.abs(Number(row.ofmValue) - Number(cadastro.salario)) > 0.005) return 'valor_diferente_do_salario';
+  const dia = diaDe(row);
+  const antesDaAdmissao = !!cadastro.admissao && dia < cadastro.admissao;
+  if (norm(row.oexName) === 'SALARIO DE INTERMITENTE') {
+    if (cadastro.contrato !== 'INTERMITENTE') return 'vinculo_incompativel';
+    if (antesDaAdmissao) return 'antes_da_admissao';
+    return null;
+  }
+  // Serviços Terceirizados: Diarista, ou Intermitente em data anterior à admissão (ainda era diarista)
+  if (cadastro.contrato === 'DIARISTA' || (cadastro.contrato === 'INTERMITENTE' && antesDaAdmissao)) return null;
+  return 'vinculo_incompativel';
 }
 
 // ativos = linhas P/A do período (todas as despesas). Devolve { acao: 'APROVAR'|'MANTER', motivo, evidencia }.
-// `ev` é a evidência do dia da pendência (grm-despesas-evidencia.js).
-function decidir(row, ativos, ev) {
+// `ev` é a evidência do dia da pendência (grm-despesas-evidencia.js); `cadastro` só é usado na Diária.
+function decidir(row, ativos, ev, cadastro = {}) {
   const grupo = grupoAprovavel(row);
   if (!grupo) return { acao: 'MANTER', motivo: 'despesa_nao_tratada' };
   if (categoriaDivergente(row)) return { acao: 'MANTER', motivo: 'observacao_cita_outra_despesa' };
@@ -107,7 +131,12 @@ function decidir(row, ativos, ev) {
   const dia = diaDe(row);
   const citada = dateFromObs(row.ofmDescription, dia);
   if (citada && citada !== dia) return { acao: 'MANTER', motivo: 'observacao_cita_outra_data' };
-  if (Number(row.ofmValue) !== VALOR_PADRAO[grupo]) return { acao: 'MANTER', motivo: 'valor_fora_do_padrao' };
+  if (grupo === 'DIARIA') {
+    const invalida = motivoDiariaInvalida(row, cadastro);
+    if (invalida) return { acao: 'MANTER', motivo: invalida };
+  } else if (Number(row.ofmValue) !== VALOR_PADRAO[grupo]) {
+    return { acao: 'MANTER', motivo: 'valor_fora_do_padrao' };
+  }
 
   const doColaboradorNoDia = ativos.filter((r) => r.ofmType === 'D' && Number(r.staCode) === Number(row.staCode)
     && Number(r.ofmCode) !== Number(row.ofmCode) && diaDe(r) === dia);
@@ -167,19 +196,39 @@ const fluxoDia = async (token, iso) => (await grmRequest('/api/reports/finance/o
 const aprovar = (token, row) => grmRequest('/api/oFlow/approve', { ofmCode: Number(row.ofmCode), reproveReason: '', type: 'A' }, token);
 
 // ---- auditoria -------------------------------------------------------------------------
+async function lerTudo(tabela, colunas, ordem) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await getSupabase().from(tabela).select(colunas).order(ordem).range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < 1000) return rows;
+  }
+}
+
+const admissaoIso = (value) => {
+  const text = String(value || '').trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : '';
+};
+
 async function carregarCadastros(token) {
   const staff = (await grmRequest('/api/staff/getRecords', { staName: '', staCPF: '', staEmail: '', staStatus: 'A' }, token)).searchData || [];
-  const contratos = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await getSupabase().from('colaborador_cruzamento').select('cpf,tipo_contrato').order('colaborador_id').range(from, from + 999);
-    if (error) throw error;
-    contratos.push(...(data || []));
-    if (!data || data.length < 1000) break;
-  }
-  return {
+  const contratos = await lerTudo('colaborador_cruzamento', 'cpf,tipo_contrato,salario', 'colaborador_id');
+  const admissoes = await lerTudo('colaboradores', 'cpf,admissao', 'cpf');
+  const cad = {
     cpfPorSta: new Map(staff.map((s) => [Number(s.staCode), digits(s.staCPF)])),
     contratoPorCpf: new Map(contratos.map((c) => [digits(c.cpf), c.tipo_contrato])),
+    salarioPorCpf: new Map(contratos.map((c) => [digits(c.cpf), Number(c.salario) || 0])),
+    admissaoPorCpf: new Map(admissoes.map((c) => [digits(c.cpf), admissaoIso(c.admissao)])),
   };
+  cad.de = (row) => {
+    const cpf = cad.cpfPorSta.get(Number(row.staCode)) || '';
+    return { salario: cad.salarioPorCpf.get(cpf) || 0, contrato: norm(cad.contratoPorCpf.get(cpf)), admissao: cad.admissaoPorCpf.get(cpf) || '' };
+  };
+  return cad;
 }
 
 async function auditar(cad, row, sucesso, diagnostico, erro) {
@@ -219,12 +268,13 @@ async function main() {
   const pendentes = ativos.filter((r) => r.ofmStatus === 'P' && grupoAprovavel(r))
     .sort((a, b) => Number(a.ofmCode) - Number(b.ofmCode));
 
+  const cad = await carregarCadastros(token);
   const resumo = { pendentes: pendentes.length, aprovadas: 0, mantidas: 0, adiados: 0, errors: 0 };
   const motivos = {};
   const plano = [];
   for (const row of pendentes) {
     const ev = await evidenciaDia(getSupabase(), diaDe(row));
-    const decisao = decidir(row, ativos, ev);
+    const decisao = decidir(row, ativos, ev, cad.de(row));
     if (decisao.acao === 'APROVAR') { plano.push({ row, decisao }); continue; }
     resumo.mantidas += 1;
     motivos[decisao.motivo] = (motivos[decisao.motivo] || 0) + 1;
@@ -236,7 +286,6 @@ async function main() {
     return;
   }
 
-  const cad = await carregarCadastros(token);
   let acoes = 0;
   for (const { row, decisao } of plano) {
     const rotulo = `${String(row.staName).trim()} / ${String(row.oexName).trim()} / ofm ${row.ofmCode} / ${diaDe(row)} / R$ ${row.ofmValue}`;
@@ -267,4 +316,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { decidir, grupoAprovavel, VALOR_PADRAO };
+module.exports = { decidir, grupoAprovavel, motivoDiariaInvalida, VALOR_PADRAO };

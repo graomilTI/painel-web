@@ -4,7 +4,8 @@
  * Evidência de trabalho no dia (regras decididas em 01/10/2026) para aprovar despesas do
  * Caixa Operacional do GRM. Usado pelo sync-aprovar-pendencias.
  *
- *   Almoço / Pernoite : movimento no dia (produção, laudo ou NHE) — "Embarque SIM";
+ *   Almoço / Diária / Pernoite : movimento no dia (produção, laudo ou NHE) — "Embarque SIM";
+ *                       (Diária = Salário de Intermitente ou Serviços Terceirizados > R$ 45);
  *                       Pernoite também não pode ter Café/Almoço/Janta ativo no dia
  *                       (a hospedagem cobre a alimentação);
  *   Janta             : laudo registrado a partir das 19h no horário local do embarque;
@@ -65,7 +66,7 @@ async function evidenciaDia(sb, dataIso) {
   return resultado;
 }
 
-// Função pura: grupo (CAFE | ALMOCO | JANTA | PERNOITE), nome normalizado, evidência do dia e,
+// Função pura: grupo (CAFE | ALMOCO | JANTA | PERNOITE | DIARIA), nome normalizado, evidência do dia e,
 // para Pernoite, as refeições ativas do colaborador no dia. Devolve { ok, evidencia | motivo }.
 function avaliarRegra(grupo, nome, ev, { refeicoesNoDia = [] } = {}) {
   const laudos = ev.laudos.get(nome) || [];
@@ -81,7 +82,7 @@ function avaliarRegra(grupo, nome, ev, { refeicoesNoDia = [] } = {}) {
       ? { ok: true, evidencia: `laudo ${apto.laudo} OS ${apto.os} às ${apto.local} (a partir das 19h local)` }
       : { ok: false, motivo: 'sem_laudo_a_partir_das_19h_na_data' };
   }
-  if (grupo !== 'ALMOCO' && grupo !== 'PERNOITE') return { ok: false, motivo: 'despesa_nao_tratada' };
+  if (grupo !== 'ALMOCO' && grupo !== 'PERNOITE' && grupo !== 'DIARIA') return { ok: false, motivo: 'despesa_nao_tratada' };
   if (!ev.nomes.has(nome) && !laudos.length) return { ok: false, motivo: 'sem_embarque_na_data' };
   if (grupo === 'PERNOITE' && refeicoesNoDia.length) return { ok: false, motivo: 'refeicao_lancada_no_dia', refeicoes: refeicoesNoDia };
   return { ok: true, evidencia: 'Embarque SIM na data (produção/laudo/NHE)' };
