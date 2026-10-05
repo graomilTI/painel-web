@@ -325,6 +325,7 @@ async function downloadFromStorage(row, targetPath) {
     .download(row.storage_path);
   if (error) throw new Error(`Falha ao baixar "${row.storage_path}" do Storage: ${error.message}`);
   const buffer = Buffer.from(await data.arrayBuffer());
+  if (!buffer.length) throw new Error(`O arquivo "${row.arquivo_nome}" chegou vazio (0 bytes) no Storage — cancele este envio e reenvie o arquivo.`);
   ensureDir(path.dirname(targetPath));
   fs.writeFileSync(targetPath, buffer);
   return targetPath;
