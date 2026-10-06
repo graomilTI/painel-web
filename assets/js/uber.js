@@ -5,7 +5,12 @@ import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 const MONEY = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const MAX_UBER_ROWS = 30000;
 const PAGE_SIZE = 1000;
-const CACHE_KEY = 'uberConferenciaCache_v1';
+const CACHE_DB = 'painelUberConferencia';
+const CACHE_STORE = 'cache';
+const CACHE_ID = 'ultimo';
+const CACHE_LEGADO_SESSAO = 'uberConferenciaCache_v1';
+const CACHES_LEGADOS_LOCAIS = ['uberConferenciaCache_persist_v2', 'uberConferenciaCache_default_period_v1'];
+let cacheDbPromise = null;
 
 const state = {
   loading: false,
@@ -449,32 +454,136 @@ async function loadProducaoForRows(rows) {
   }
 }
 
+// Cache das corridas já carregadas: IndexedDB (sobrevive a fechar a aba/navegador e
+// não tem o teto de ~5 MB do localStorage/sessionStorage, que estoura com a base
+// crescendo). Guarda só as corridas + filtros; a Produção Diária inteira (14 mil
+// linhas) não entra — o que ela decide (Embarque) já vai dentro de cada corrida.
+function abrirCacheDb() {
+  if (!cacheDbPromise) {
+    cacheDbPromise = new Promise((resolve) => {
+      try {
+        if (typeof indexedDB === 'undefined') return resolve(null);
+        const req = indexedDB.open(CACHE_DB, 1);
+        req.onupgradeneeded = () => req.result.createObjectStore(CACHE_STORE);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch (error) {
+        resolve(null);
+      }
+    });
+  }
+  return cacheDbPromise;
+}
+
+async function lerCacheDb() {
+  const db = await abrirCacheDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(CACHE_STORE, 'readonly').objectStore(CACHE_STORE).get(CACHE_ID);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (error) {
+      resolve(null);
+    }
+  });
+}
+
+async function gravarCacheDb(payload) {
+  const db = await abrirCacheDb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(CACHE_STORE, 'readwrite');
+      tx.objectStore(CACHE_STORE).put(payload, CACHE_ID);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (error) {
+      resolve(false);
+    }
+  });
+}
+
+// A Produção Diária casada com a corrida (Embarque) é um objeto grande; o painel só usa estes campos.
+function compactEmbarqueMatch(match) {
+  if (!match || typeof match !== 'object') return match ?? null;
+  const campos = ['os', 'numero_os', 'cliente', 'local', 'local_embarque', 'embarque', 'origem', 'cidade', 'cidade_embarque', 'armazem', 'armazém', 'produtor'];
+  return Object.fromEntries(campos.map((campo) => [campo, match[campo] ?? null]));
+}
+
+// Mesmo período padrão do organizador da tela (ontem → hoje).
+function periodoPadraoUber() {
+  const iso = (offset) => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() + offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  return { inicio: iso(-1), fim: iso(0) };
+}
+
 function saveCache() {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({
-      rows: state.rows,
-      producao: state.producao,
-      filters: state.filters,
-    }));
+    const padrao = periodoPadraoUber();
+    const payload = {
+      v: 2,
+      cachedAt: new Date().toISOString(),
+      filters: { ...state.filters },
+      // Estava no período padrão: ao reabrir em outro dia, avança pro período de hoje.
+      periodoPadrao: state.filters.inicio === padrao.inicio && state.filters.fim === padrao.fim,
+      rows: state.rows.map((row) => (Object.prototype.hasOwnProperty.call(row, '__embarqueMatch')
+        ? { ...row, __embarqueMatch: compactEmbarqueMatch(row.__embarqueMatch) }
+        : row)),
+    };
+    gravarCacheDb(payload).then((ok) => { if (ok) limparCacheAntigo(); });
   } catch (error) {
     console.warn('[Uber] saveCache:', error);
   }
 }
 
-function loadCache() {
+// Caches antigos (sessionStorage/localStorage) ocupavam a cota e só valiam por aba.
+function limparCacheAntigo() {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return false;
-    const cached = JSON.parse(raw);
-    if (!Array.isArray(cached?.rows)) return false;
-    state.rows = cached.rows;
-    state.producao = Array.isArray(cached.producao) ? cached.producao : [];
-    state.filters = { ...state.filters, ...(cached.filters || {}) };
-    return true;
+    sessionStorage.removeItem(CACHE_LEGADO_SESSAO);
+    CACHES_LEGADOS_LOCAIS.forEach((chave) => localStorage.removeItem(chave));
   } catch (error) {
-    console.warn('[Uber] loadCache:', error);
-    return false;
+    // storage bloqueado: nada a limpar
   }
+}
+
+// Primeira abertura depois da troca: aproveita o último conjunto completo que o cache antigo tinha.
+function lerCacheLegado() {
+  try {
+    const raw = localStorage.getItem('uberConferenciaCache_persist_v2');
+    if (!raw) return null;
+    const salvo = JSON.parse(raw);
+    return Array.isArray(salvo?.rows) ? salvo : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function restaurarCache() {
+  const limite = new Promise((resolve) => setTimeout(() => resolve(null), 2000)); // IndexedDB travado: abre sem cache
+  const salvo = (await Promise.race([lerCacheDb(), limite])) || lerCacheLegado();
+  if (!salvo || !Array.isArray(salvo.rows)) return false;
+
+  let { rows } = salvo;
+  let filters = { inicio: '', fim: '', q: '', status: '', ...(salvo.filters || {}) };
+  const padrao = periodoPadraoUber();
+  if (salvo.periodoPadrao && (filters.inicio !== padrao.inicio || filters.fim !== padrao.fim)) {
+    rows = rows.filter((row) => {
+      const dia = dateKey(row.data_solicitacao_local || row.data_corrida || row.data);
+      return dia >= padrao.inicio && dia <= padrao.fim;
+    });
+    filters = { ...filters, inicio: padrao.inicio, fim: padrao.fim };
+  }
+  state.rows = rows;
+  state.producao = [];
+  state.filters = { ...state.filters, ...filters };
+  return true;
 }
 
 async function loadRows(options = {}) {
@@ -750,7 +859,10 @@ function bindEvents(root) {
 }
 
 export async function renderContent(content) {
-  const cached = loadCache();
+  // Voltou pra tela na mesma sessão: as corridas já estão em memória. Senão, restaura o último estado salvo.
+  const cached = state.rows.length > 0 || await restaurarCache();
+  // Avisa o organizador da tela (uber-despesas-sync.js) pra não trocar o filtro por ontem→hoje.
+  window.__uberCacheRestaurado = Boolean(cached);
   renderShell(content);
   if (cached) {
     renderData();
