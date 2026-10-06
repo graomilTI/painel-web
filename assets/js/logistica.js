@@ -7,6 +7,7 @@ import { registrarSaldoKg, anexarAnexoSaldo, precisaAnexoSaldo, ensureRegrasAnex
 import { abrirConfirmacaoSimNao, abrirPopupColaboradorDespesas } from './colaborador-despesas-popup.js';
 import { labelCampoAberturaOs } from './logistica-abertura-os-campos.js';
 import { CATALOGO_PRODUTOS, categoriaProduto, tiposDoProduto } from './logistica-abertura-os-produtos.js';
+import { validarSupervisaoEmbarque } from './logistica-supervisao-embarque.js?v=20261006-sup1';
 import { locaisDaCidade, validarLocalEmbarque, preencherSelectLocais, comporLocalDestino, sugestoesLocaisDestino, sugerirLocal, chaveLocal } from './logistica-locais-servico.js?v=20260924-novo3';
 import { abrirNovoLocalEmbarque } from './logistica-novo-local.js?v=20260924-novo3';
 
@@ -1124,6 +1125,10 @@ async function handleSalvarAberturaOsInterno(content) {
   }
   const localValido = localNovo ? { ok: true } : await validarLocalEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque });
   if (!localValido.ok) { alert(localValido.motivo); return; }
+
+  // O agente abre a O.S. na supervisão escolhida aqui: se o cadastro do local indica outra, pede confirmação.
+  const supervisaoValida = localNovo ? { ok: true } : await validarSupervisaoEmbarque({ uf: payload.uf_embarque, cidade: payload.cidade_embarque, nome: payload.armazem_embarque, regional: payload.regional });
+  if (!supervisaoValida.ok && !(await abrirConfirmacaoSimNao({ titulo: 'Supervisão diferente do cadastro', mensagem: supervisaoValida.motivo, textoSim: 'Enviar mesmo assim', textoNao: 'Voltar e corrigir' }))) return;
 
   if (contratoRegra?.tipo === 'formato' && payload.numero_contrato) {
     if (!new RegExp(contratoRegra.regex_formato, 'i').test(payload.numero_contrato)) {
