@@ -373,13 +373,36 @@ function embarqueMotivo(row) {
   return partes.join(' · ');
 }
 
+// Gorjeta: cada uma vira um Adiantamento automático no Caixa do colaborador no GRM
+// (tabela uber_gorjeta_caixa_lancamentos, preenchida por gatilho na importação).
+function gorjetaCaixaTexto(row) {
+  const info = row.__gorjetaCaixa;
+  if (!info) return '';
+  if (info.status === 'LANCADO') {
+    const quando = info.processado_em ? new Date(info.processado_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    return `Lançada no Caixa do colaborador (GRM)${quando ? ` em ${quando}` : ''}.`;
+  }
+  if (info.status === 'ERRO') return `Erro ao lançar no Caixa: ${String(info.ultimo_erro || 'sem detalhe').slice(0, 180)}`;
+  return 'Aguardando lançamento no Caixa do colaborador (GRM).';
+}
+
+function gorjetaPodeReenviar(row) {
+  const info = row.__gorjetaCaixa;
+  if (!info) return false;
+  if (info.status === 'ERRO') return true;
+  // PENDENTE há mais de 1h: o agente não rodou (ex.: token do GRM vencido) — religa.
+  return info.status === 'PENDENTE' && info.solicitado_em && (Date.now() - new Date(info.solicitado_em).getTime()) > 60 * 60 * 1000;
+}
+
 function renderRow(row) {
   const isEmb = computedStatus(row) === 'EMBARQUE';
-  const motivo = isEmb
+  const baseMotivo = isEmb
     ? embarqueMotivo(row)
     : isUsoPessoal(row)
       ? 'Atenção: observação/detalhamento contém "Pessoal".'
       : (row.motivo_validacao || row.observacao_validacao || row.detalhamento_despesa || row.observacao || '-');
+  const caixaTexto = gorjetaCaixaTexto(row);
+  const motivo = caixaTexto ? `${baseMotivo === '-' ? '' : `${baseMotivo} `}${caixaTexto}` : baseMotivo;
   return `<tr>
     <td>${brDate(row.data_solicitacao_local || row.data_corrida || row.data)}<small>${escapeHtml(row.hora_solicitacao_local || row.hora || '')}</small></td>
     <td><strong>${escapeHtml(row.nome_colaborador || row.nome || '-')}</strong><small>${escapeHtml(row.email || row.matricula || '')}</small></td>
@@ -395,6 +418,7 @@ function renderRow(row) {
       <button class="uber-btn danger" type="button" data-action="CAIXA_COLABORADOR" data-id="${escapeHtml(row.id)}">Caixa</button>
       <button class="uber-btn" type="button" data-action="ATENCAO" data-id="${escapeHtml(row.id)}">Atenção</button>
       <button class="uber-btn" type="button" data-gps data-id="${escapeHtml(row.id)}">${row.partida_latitude != null ? 'GPS ✓' : 'GPS'}</button>
+      ${gorjetaPodeReenviar(row) ? `<button class="uber-btn" type="button" data-gorjeta-reenviar data-caixa-id="${escapeHtml(row.__gorjetaCaixa.id)}">Reenviar ao Caixa</button>` : ''}
     </div></td>
   </tr>`;
 }
@@ -586,6 +610,44 @@ async function restaurarCache() {
   return true;
 }
 
+// Situação do lançamento de cada gorjeta no Caixa (ignora as CANCELADAS: gorjetas anteriores ao
+// lançamento automático). Falha aqui não pode atrapalhar a tela.
+async function carregarGorjetasCaixa(rows) {
+  try {
+    const { data, error } = await supabase
+      .from('uber_gorjeta_caixa_lancamentos')
+      .select('id,corrida_id,status,ultimo_erro,processado_em,solicitado_em')
+      .neq('status', 'CANCELADO')
+      .order('solicitado_em', { ascending: false })
+      .limit(2000);
+    if (error) throw error;
+    const porCorrida = new Map((data || []).map((item) => [String(item.corrida_id), item]));
+    rows.forEach((row) => {
+      const info = porCorrida.get(String(row.id));
+      if (info) row.__gorjetaCaixa = info; else delete row.__gorjetaCaixa;
+    });
+  } catch (error) {
+    console.warn('[Uber] Situação das gorjetas no Caixa indisponível:', error);
+  }
+}
+
+async function reenviarGorjetaCaixa(caixaId) {
+  setFeedback('Reenviando gorjeta ao Caixa...');
+  try {
+    const { data, error } = await supabase.rpc('uber_gorjeta_reenviar_caixa', { p_ids: caixaId ? [caixaId] : null });
+    if (error) throw error;
+    await carregarGorjetasCaixa(state.rows);
+    saveCache();
+    renderData();
+    setFeedback(data?.job_id
+      ? 'Gorjeta reenviada: o agente do Caixa foi acionado e lança em alguns minutos.'
+      : 'Gorjeta reenviada à fila do Caixa.');
+  } catch (error) {
+    console.error('[Uber] reenviarGorjetaCaixa:', error);
+    setFeedback(`Não foi possível reenviar ao Caixa: ${error.message}`, true);
+  }
+}
+
 async function loadRows(options = {}) {
   const { silent = false } = options;
   if (state.loading) return;
@@ -604,6 +666,7 @@ async function loadRows(options = {}) {
     });
 
     state.rows = rows;
+    await carregarGorjetasCaixa(rows);
     if (!silent) setFeedback('Cruzando lançamentos Uber com Produção Diária...');
     await loadProducaoForRows(rows);
 
@@ -845,6 +908,11 @@ function bindEvents(root) {
       const key = kpi.dataset.kpi;
       state.filters.status = state.filters.status === key ? '' : key;
       renderData();
+      return;
+    }
+    const reenviarBtn = event.target.closest('[data-gorjeta-reenviar]');
+    if (reenviarBtn) {
+      reenviarGorjetaCaixa(reenviarBtn.dataset.caixaId);
       return;
     }
     const gpsBtn = event.target.closest('[data-gps]');
