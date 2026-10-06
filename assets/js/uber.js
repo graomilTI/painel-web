@@ -649,7 +649,9 @@ async function converterGpsPendentes(root) {
     // repete até acabarem as pendentes. `corte` (hora do servidor) impede que as
     // corridas já tentadas nesta rodada voltem pra fila.
     let corte = '';
+    let ultimoRender = 0;
     for (let lote = 0; lote < MAX_LOTES_GPS; lote += 1) {
+      if (btn && !btn.isConnected) break; // saiu da página (o router troca o conteúdo): não segue em segundo plano
       const { data, error } = await supabase.functions.invoke('uber-geocodificar-gps', {
         body: { modo: 'pendentes', limite: 10, ...(corte ? { antes_de: corte } : {}) },
       });
@@ -663,13 +665,14 @@ async function converterGpsPendentes(root) {
       total.validados += data?.validados ?? 0;
       total.falhas += resultados.filter((item) => item?.geocodificado === false || item?.ok === false).length;
       total.indisponivel += resultados.filter((item) => item?.motivo === 'provedor_indisponivel').length;
-      saveCache();
-      renderData();
       setFeedback(`Convertendo GPS... ${total.geocodificados} convertida(s), ${total.falhas} não localizada(s) até agora.`);
+      // Redesenhar a tabela inteira a cada lote trava a aba; o resumo acima já mostra o andamento.
+      if (Date.now() - ultimoRender > 3000) { renderData(); ultimoRender = Date.now(); }
       if (resultados.every((item) => item?.ok === false)) break; // sem progresso: não insiste
       if (resultados.every((item) => item?.motivo === 'provedor_indisponivel')) break; // mapa fora do ar: não martela
     }
     const sufixo = total.indisponivel ? ` ${total.indisponivel} falharam por indisponibilidade do serviço de mapas — tente de novo mais tarde.` : '';
+    saveCache();
     setFeedback(`${total.geocodificados} corrida(s) convertida(s) em GPS, ${total.validados} validada(s) automaticamente por O.S. com laudo dentro de 2km${total.falhas ? ` e ${total.falhas} não localizada(s)` : ''}.${sufixo}`, total.falhas > 0);
     renderData();
   } catch (error) {
