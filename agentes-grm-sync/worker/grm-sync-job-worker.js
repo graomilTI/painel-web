@@ -179,6 +179,10 @@ const SCRIPT_MAP = {
   // lança no Caixa do colaborador um Adiantamento e um Comprovante (Tipo da Despesa = Ajuda de
   // Custo), com data 15/MM do mês de referência. Também enfileirado por ajuda_custo_reenviar_caixa.
   'sync-ajuda-custo-caixa': 'grm-sync-ajuda-custo-caixa.js',
+  // Gorjeta do Uber: cada gorjeta nova importada em conferencia_uber_corridas (external_id com :TIP:)
+  // entra em uber_gorjeta_caixa_lancamentos por gatilho e este agente lança um Adiantamento no Caixa
+  // do colaborador (data = dia da corrida, valor integral). Também enfileirado por uber_gorjeta_reenviar_caixa.
+  'sync-uber-gorjeta-caixa': 'grm-sync-uber-gorjeta-caixa.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   // Auxiliar do retroativas (02/10): recusa despesas duplicadas lançadas pelo
   // colaborador ("lançamento duplicado" / "Duplicata" pela data da observação) e
