@@ -3,6 +3,7 @@ const assert = require('assert');
 const {
   norm,
   requiredExpenses,
+  temPernoiteAtivo,
   contractTypeOnDate,
   decide,
   decidePernoite,
@@ -131,6 +132,33 @@ assert.deepEqual(
   }).map((x) => [x.oexCode, x.amount]),
   [[63, 105], [13, 30], [15, 30]],
 );
+
+// Com Pernoite no dia o bot não lança Almoço (a hospedagem cobre a alimentação); o salário segue.
+assert.deepEqual(
+  requiredExpenses('Intermitente', 105, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: true,
+    hasPernoite: true,
+  }).map((x) => [x.oexCode, x.amount]),
+  [[63, 105]],
+);
+assert.deepEqual(
+  requiredExpenses('Efetivo', 100, types, {
+    programmed: true,
+    almocoProgrammed: true,
+    hasLaudo: true,
+    hasPernoite: true,
+  }),
+  [],
+);
+const movPernoite = (oexName, ofmStatus, staCode) => ({ ofmType: 'D', oexName, ofmStatus, staCode });
+assert.equal(temPernoiteAtivo([movPernoite('Pernoite', 'A', 7)], 7), true);
+assert.equal(temPernoiteAtivo([movPernoite('Pernoite', 'P', 7)], 7), true);
+assert.equal(temPernoiteAtivo([movPernoite('Pernoite', 'N', 7)], 7), false);
+assert.equal(temPernoiteAtivo([movPernoite('Pernoite', 'A', 8)], 7), false);
+assert.equal(temPernoiteAtivo([movPernoite('Almoço', 'A', 7)], 7), false);
+assert.equal(temPernoiteAtivo([], 7), false);
 
 assert.throws(
   () => assertDirectExpenseAllowed(types.get('CAFE')),
