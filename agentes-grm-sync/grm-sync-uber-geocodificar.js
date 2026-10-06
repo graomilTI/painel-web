@@ -153,7 +153,7 @@ async function main() {
       if (quando > Date.now() - ERRO_RETRY_HORAS * 60 * 60 * 1000) return { result: null, error: null, definitive: true };
     }
 
-    const busca = await geocodificarEndereco(endereco, { aguardar, estado, userAgent: USER_AGENT, email: 'tecnologia@grao1000.com.br', maxPhoton: 3 });
+    const busca = await geocodificarEndereco(endereco, { aguardar, estado, userAgent: USER_AGENT, email: 'tecnologia@grao1000.com.br', maxPhoton: 2 });
     // Só vira cache o que é resposta firme: achou, ou nenhum provedor falhou nem ficou de fora.
     if (!DRY_RUN && (busca.result || (busca.definitive && !busca.error))) {
       const { error } = await supabase.from('geocode_cache').upsert({
@@ -194,7 +194,8 @@ async function main() {
       atualizar.partida_latitude = geoPartida.lat;
       atualizar.partida_longitude = geoPartida.lng;
     }
-    if (item.incluir_destino && corrida.endereco_destino && (corrida.destino_latitude == null || corrida.destino_longitude == null)) {
+    // Sem a partida o destino não adianta (a validação por O.S. usa a partida): economiza as consultas.
+    if (geoPartida && item.incluir_destino && corrida.endereco_destino && (corrida.destino_latitude == null || corrida.destino_longitude == null)) {
       const destino = (await buscar(corrida.endereco_destino)).result;
       if (destino) { atualizar.destino_latitude = destino.lat; atualizar.destino_longitude = destino.lng; }
     }
