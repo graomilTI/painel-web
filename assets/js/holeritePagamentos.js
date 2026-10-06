@@ -489,7 +489,7 @@ function renderContasTable() {
       <td><b>${esc(c.colaborador_nome)}</b></td>
       <td>${esc(TIPOS_CONTA[c.tipo]?.label || c.tipo)}</td>
       <td>${esc(c.titular_nome)}<span class="hp-sub">${esc(fmtDocumento(c.titular_documento))}${c.vinculo ? ` · ${esc(c.vinculo)}` : ''}</span></td>
-      <td>${esc(c.banco)}${detalhes ? `<span class="hp-sub">${esc(detalhes)}</span>` : ''}</td>
+      <td>${esc(c.banco || '-')}${detalhes ? `<span class="hp-sub">${esc(detalhes)}</span>` : ''}</td>
       <td>${esc(c.chave_pix || '-')}</td>
       <td>${autorizacao}</td>
       <td>${pill(c.ativo ? 'Ativa' : 'Inativa', c.ativo)}</td>
@@ -548,7 +548,7 @@ function openContaModal(row = null) {
       <label><span id="hpcDocumentoLbl"></span><input id="hpcDocumento" type="text" inputmode="numeric" maxlength="18" autocomplete="off" value="${esc(row ? fmtDocumento(row.titular_documento) : '')}"></label>
       <label>Vínculo com o colaborador<input id="hpcVinculo" type="text" autocomplete="off" value="${esc(row?.vinculo || '')}"></label>
       <label>Tipo de conta bancária<select id="hpcTipoConta">${optsTipoConta(row?.tipo_conta || '')}</select></label>
-      <label>Banco *<input id="hpcBanco" type="text" placeholder="Ex.: 341 - Itaú, Nubank" autocomplete="off" value="${esc(row?.banco || '')}"></label>
+      <label>Banco<input id="hpcBanco" type="text" placeholder="Ex.: 341 - Itaú, Nubank" autocomplete="off" value="${esc(row?.banco || '')}"></label>
       <label>Agência<input id="hpcAgencia" type="text" autocomplete="off" value="${esc(row?.agencia || '')}"></label>
       <label>Conta (com dígito)<input id="hpcConta" type="text" autocomplete="off" value="${esc(row?.conta || '')}"></label>
       <label>Chave PIX<input id="hpcPix" type="text" autocomplete="off" value="${esc(row?.chave_pix || '')}"></label>
@@ -618,7 +618,6 @@ function openContaModal(row = null) {
     if (tipo === 'outro_titular' && cpfColab && documento === cpfColab) {
       return erro('O CPF do titular é o mesmo do colaborador — essa é a conta dele e não precisa de cadastro aqui.');
     }
-    if (!banco) return erro('Informe o banco.');
     if (!pix && !(agencia && conta)) return erro('Informe agência e conta, ou a chave PIX.');
 
     // Pra pagar, só uma conta de outro titular pode valer por vez.
@@ -639,7 +638,7 @@ function openContaModal(row = null) {
         titular_nome: titular,
         titular_documento: documento,
         vinculo: valor('#hpcVinculo') || null,
-        banco,
+        banco: banco || null,
         agencia: agencia || null,
         conta: conta || null,
         tipo_conta: campo('#hpcTipoConta').value || null,
