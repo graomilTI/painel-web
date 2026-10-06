@@ -6,6 +6,7 @@
  * que o colaborador lançou e que cumprem as regras decididas em 01/10/2026 (grm-despesas-evidencia.js):
  *
  *   Almoço / Diária / Pernoite : movimento no dia (produção, laudo ou NHE); Pernoite sem Café/Almoço/Janta no dia;
+ *                       Almoço não é aprovado se há Pernoite ativo (P/A) no dia (a hospedagem cobre a alimentação);
  *                       Diária = Salário de Intermitente ou Serviços Terceirizados > R$ 45;
  *   Janta             : laudo a partir das 19h no horário local do embarque;
  *   Café              : laudo antes das 07h no horário local do embarque.
@@ -44,7 +45,7 @@ const {
 const { evidenciaDia, avaliarRegra } = require('./grm-despesas-evidencia');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.2-APROVAR-PENDENCIAS-DUPLICATA-POR-DATA-EFETIVA';
+const VERSION = 'V1.3-APROVAR-PENDENCIAS-SEM-ALMOCO-COM-PERNOITE';
 const AGENTE_ID = 'sync-aprovar-pendencias';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -147,6 +148,13 @@ function decidir(row, ativos, ev, cadastro = {}) {
   // Duplicata: observação que cita outra despesa/pessoa/extra não é repetição (o duplicadas também as ignora).
   if (doColaboradorNoDia.some((r) => grupoDespesa(r) === grupo && !categoriaDivergente(r) && !observacaoNaoRepete(r))) {
     return { acao: 'MANTER', motivo: 'ha_outro_lancamento_ativo_no_dia' };
+  }
+
+  // Almoço: QUALQUER Pernoite ativo (P/A) do colaborador no dia bloqueia — a hospedagem cobre a alimentação
+  // (regra de 06/10, a mesma do agente retroativo). Pernoite pendente + Almoço pendente fica parado dos dois
+  // lados (o Pernoite é barrado pelo Almoço, abaixo): decisão humana.
+  if (grupo === 'ALMOCO' && doColaboradorNoDia.some((r) => grupoDespesa(r) === 'PERNOITE')) {
+    return { acao: 'MANTER', motivo: 'pernoite_ativo_no_dia' };
   }
 
   // Pernoite: QUALQUER Café/Almoço/Janta ativo no dia bloqueia (a hospedagem cobre a alimentação), inclusive

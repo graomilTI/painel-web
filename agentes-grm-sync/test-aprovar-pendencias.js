@@ -49,6 +49,20 @@ assert.equal(dec(lanc({ oexName: 'Pernoite' }), [], evMov).acao, 'APROVAR');
 }
 assert.equal(dec(lanc({ oexName: 'Pernoite' }), [], evSem).motivo, 'sem_embarque_na_data');
 
+// Almoço: Pernoite ativo (P ou A) do mesmo colaborador no dia bloqueia (hospedagem cobre a alimentação)
+for (const status of ['A', 'P']) {
+  const r = dec(lanc({}), [lanc({ oexName: 'Pernoite', ofmStatus: status })], evMov);
+  assert.equal(r.acao, 'MANTER', `Pernoite ${status} deve segurar o Almoço`);
+  assert.equal(r.motivo, 'pernoite_ativo_no_dia');
+}
+// Pernoite de outro dia ou de outro colaborador não segura o Almoço
+assert.equal(dec(lanc({}), [lanc({ oexName: 'Pernoite', ofmStatus: 'A', ofmDate: '2026-10-01' })], evMov).acao, 'APROVAR');
+assert.equal(dec(lanc({}), [lanc({ oexName: 'Pernoite', ofmStatus: 'A', staCode: 8 })], evMov).acao, 'APROVAR');
+// Pernoite "referente a outro dia" (data efetiva diferente) não segura o Almoço deste dia
+assert.equal(dec(lanc({}), [lanc({ oexName: 'Pernoite', ofmStatus: 'A', ofmDescription: 'Referente ao dia 29/09' })], evMov).acao, 'APROVAR');
+// Janta/Café não são afetados pela regra do Almoço
+assert.equal(dec(lanc({ oexName: 'Janta' }), [lanc({ oexName: 'Pernoite', ofmStatus: 'A' })], evLaudo(19)).acao, 'APROVAR');
+
 // valor fora do padrão fica para revisão (Almoço R$ 24,24; Pernoite R$ 10; Café R$ 30)
 assert.equal(dec(lanc({ ofmValue: 24.24 }), [], evMov).motivo, 'valor_fora_do_padrao');
 assert.equal(dec(lanc({ oexName: 'Pernoite', ofmValue: 10 }), [], evMov).motivo, 'valor_fora_do_padrao');
