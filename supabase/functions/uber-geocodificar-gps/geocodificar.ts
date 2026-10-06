@@ -1,6 +1,8 @@
 // Cadeia de geocodificação do endereço de partida/destino da corrida Uber:
 //   1. Nominatim (OSM) com consultas montadas a partir do endereço interpretado;
-//   2. Photon (OSM, outro índice) quando há nome de rua;
+//   2. Photon (OSM, outro índice) quando há nome de rua. É o único que responde quando o
+//      OpenStreetMap bloqueia o IP do servidor (HTTP 403 do Nominatim em 06/10/2026 para o
+//      IP de saída do Supabase): o bloqueio é lembrado por 10 min e o Nominatim é pulado.
 // Sem fallback por CEP: as bases de CEP→coordenada testadas erram vários km em
 // algumas cidades, e um ponto errado pode validar corrida sozinha por engano.
 // Sem dependência de Deno/Supabase para poder ser testado em Node.
@@ -31,9 +33,14 @@ export type GeoSearch = {
   result: GeoResult | null;
   error: string | null;
   definitive: boolean; // false = falha transitória (não vale cachear como "não existe")
-  motivo?: string; // 'endereco_incompleto' quando não há o que procurar
+  motivo?: string; // 'endereco_incompleto' (nada a procurar) | 'busca_parcial' (Nominatim bloqueado, só Photon consultado)
+  bloqueado?: boolean; // provedor recusou este servidor (HTTP 403/429)
   tentativas?: string[];
 };
+
+/** Estado compartilhado entre chamadas de um mesmo processo (quem chama guarda o objeto). */
+export type EstadoProvedores = { nominatimBloqueadoAte: number };
+const BLOQUEIO_MS = 10 * 60 * 1000;
 
 export type Opcoes = {
   /** Chamada antes de cada requisição a Nominatim/Photon (respeita 1 req/s). */
@@ -41,6 +48,9 @@ export type Opcoes = {
   fetchFn?: typeof fetch;
   userAgent?: string;
   email?: string;
+  estado?: EstadoProvedores;
+  /** Máximo de consultas ao Photon por endereço (cada uma leva ~4,5 s a partir do Supabase). */
+  maxPhoton?: number;
 };
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
@@ -67,6 +77,9 @@ async function nominatimSearch(cand: Candidato, info: EnderecoInterpretado, o: O
       headers: { 'User-Agent': o.userAgent || 'PainelGrao1000/1.0', 'Accept-Language': 'pt-BR' },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    if (res.status === 403 || res.status === 429) {
+      return { result: null, error: `Nominatim HTTP ${res.status} (bloqueou este servidor)`, definitive: false, bloqueado: true };
+    }
     if (!res.ok) return { result: null, error: `Nominatim HTTP ${res.status}`, definitive: false };
     const data = await res.json();
     const itens: any[] = Array.isArray(data) ? data : [];
@@ -149,6 +162,15 @@ async function photonSearch(cand: Candidato, info: EnderecoInterpretado, o: Opco
   }
 }
 
+// O Photon é tolerante a texto livre: a consulta mais específica e a só da rua cobrem quase tudo;
+// as do meio só gastam tempo (testado em 155 endereços reais).
+function escolherPhoton(candidatos: Candidato[], max: number): Candidato[] {
+  const lista = candidatos.filter((c) => c.nivel !== 'bairro');
+  if (lista.length <= max) return lista;
+  if (max <= 1) return lista.slice(-1);
+  return [lista[0], ...lista.slice(-(max - 1))];
+}
+
 export async function geocodificarEndereco(endereco: string, o: Opcoes): Promise<GeoSearch> {
   const info = interpretarEndereco(endereco);
   if (!temLocalEspecifico(info)) {
@@ -158,19 +180,30 @@ export async function geocodificarEndereco(endereco: string, o: Opcoes): Promise
 
   const candidatos = candidatosBusca(info);
   const tentativas: string[] = [];
+  const estado = o.estado ?? { nominatimBloqueadoAte: 0 };
   let ultimoErro: string | null = null;
   let transitorio = false;
+  let nominatimFora = Date.now() < estado.nominatimBloqueadoAte;
 
-  for (const cand of candidatos) {
-    await o.aguardar();
-    tentativas.push(`nominatim: ${cand.query}`);
-    const r = await nominatimSearch(cand, info, o);
-    if (r.result) return { ...r, tentativas };
-    if (r.error) { ultimoErro = r.error; transitorio = true; break; } // bloqueio/limite: não insiste nos demais
+  if (!nominatimFora) {
+    for (const cand of candidatos) {
+      await o.aguardar();
+      tentativas.push(`nominatim: ${cand.query}`);
+      const r = await nominatimSearch(cand, info, o);
+      if (r.result) return { ...r, tentativas };
+      if (r.bloqueado) {
+        // IP do servidor barrado: não insiste (nem nos próximos endereços) e segue pro Photon.
+        estado.nominatimBloqueadoAte = Date.now() + BLOQUEIO_MS;
+        nominatimFora = true;
+        ultimoErro = r.error;
+        break;
+      }
+      if (r.error) { ultimoErro = r.error; transitorio = true; break; } // falha passageira: não insiste nos demais
+    }
   }
 
   if (info.rua && !ehCodigoRodovia(info.rua)) {
-    for (const cand of candidatos.filter((c) => c.nivel !== 'bairro')) {
+    for (const cand of escolherPhoton(candidatos, o.maxPhoton ?? 2)) {
       await o.aguardar();
       tentativas.push(`photon: ${cand.query}`);
       const r = await photonSearch(cand, info, o);
@@ -179,5 +212,12 @@ export async function geocodificarEndereco(endereco: string, o: Opcoes): Promise
     }
   }
 
-  return { result: null, error: ultimoErro, definitive: !transitorio, tentativas };
+  // Sem o Nominatim a resposta "não achei" vale pouco: não vira cache de "inexistente".
+  return {
+    result: null,
+    error: ultimoErro,
+    definitive: !transitorio && !nominatimFora,
+    motivo: nominatimFora && !transitorio ? 'busca_parcial' : undefined,
+    tentativas,
+  };
 }

@@ -179,16 +179,45 @@ test('viaCompativel: tolera grafia e título, exige tipo e nome completos', () =
   assert.equal(viaCompativel('Rua Gana', ''), true); // provedor sem nome: não rejeita
 });
 
-test('bloqueio do Nominatim (HTTP 429) não vira "endereço inexistente"', async () => {
+test('Nominatim bloqueado (403): usa o Photon, lembra do bloqueio e não cacheia "não achei"', async () => {
+  const estado = { nominatimBloqueadoAte: 0 };
+  const chamadas = [];
   const fetchFn = async (url) => {
     const u = String(url);
-    if (u.includes('nominatim')) return resposta({}, 429);
+    chamadas.push(u.includes('nominatim') ? 'nominatim' : 'photon');
+    if (u.includes('nominatim')) return resposta({}, 403);
+    if (u.includes('Gana')) {
+      return resposta({ features: [{
+        geometry: { coordinates: [-48.24, -18.95] },
+        properties: { type: 'house', street: 'Rua Gana', city: 'Uberlândia', countrycode: 'BR' },
+      }] });
+    }
     return resposta({ features: [] });
   };
-  const r = await geocodificarEndereco('Rua Gana, 87 - Laranjeiras - Uberlândia - MG, 38410-266', { aguardar: semEspera, fetchFn });
+  const opcoes = { aguardar: semEspera, fetchFn, estado };
+
+  const achou = await geocodificarEndereco('Rua Gana, 87 - Laranjeiras - Uberlândia - MG, 38410-266', opcoes);
+  assert.equal(achou.result?.provider, 'photon');
+  assert.ok(estado.nominatimBloqueadoAte > Date.now(), 'bloqueio lembrado');
+  assert.equal(chamadas.filter((c) => c === 'nominatim').length, 1, 'só uma tentativa antes de desistir');
+
+  chamadas.length = 0;
+  const naoAchou = await geocodificarEndereco('Rua Inexistente, 10 - Centro - Uberlândia - MG', opcoes);
+  assert.equal(naoAchou.result, null);
+  assert.equal(chamadas.filter((c) => c === 'nominatim').length, 0, 'Nominatim pulado enquanto bloqueado');
+  assert.equal(naoAchou.motivo, 'busca_parcial');
+  assert.equal(naoAchou.definitive, false, 'sem o Nominatim, "não achei" não vira cache de endereço inexistente');
+});
+
+test('Nominatim com falha passageira (HTTP 500) não é tratado como bloqueio', async () => {
+  const estado = { nominatimBloqueadoAte: 0 };
+  const fetchFn = async (url) => (String(url).includes('nominatim') ? resposta({}, 500) : resposta({ features: [] }));
+  const r = await geocodificarEndereco('Rua Gana, 87 - Laranjeiras - Uberlândia - MG, 38410-266', { aguardar: semEspera, fetchFn, estado });
   assert.equal(r.result, null);
   assert.equal(r.definitive, false);
-  assert.match(r.error, /429/);
+  assert.equal(r.motivo, undefined);
+  assert.match(r.error, /500/);
+  assert.equal(estado.nominatimBloqueadoAte, 0);
 });
 
 test('endereço só com cidade não chama provedor algum', async () => {

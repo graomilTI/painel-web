@@ -748,10 +748,20 @@ async function updateStatus(id, status) {
 }
 
 const MENSAGEM_GPS_FALHA = {
+  busca_parcial: 'Não localizado na busca alternativa (o mapa principal está bloqueando o servidor). Confira o endereço, valide manualmente ou tente mais tarde.',
   endereco_incompleto: 'O endereço de partida não tem rua nem bairro (só cidade/CEP), então não dá pra localizar no mapa. Valide manualmente.',
   provedor_indisponivel: 'Serviço de mapas indisponível agora. Tente converter o GPS de novo mais tarde.',
   endereco_nao_localizado: 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.',
 };
+
+// A linha mostra motivo_validacao (que vem da view) antes de observacao_validacao: pra o texto novo
+// aparecer sem recarregar, os dois campos recebem o mesmo valor.
+function definirObservacaoGps(row, texto) {
+  row.observacao_validacao = texto;
+  row.motivo_validacao = texto;
+}
+
+const AVISO_NAO_CONVERTIDO = 'Endereço ainda não convertido em GPS. Clique em GPS ou Converter GPS pendentes para validar o raio de 2 km.';
 
 function aplicarResultadoGps(resultado) {
   if (!resultado?.id) return;
@@ -760,6 +770,12 @@ function aplicarResultadoGps(resultado) {
   if (resultado.geocodificado !== false) {
     row.partida_latitude = resultado.partida_latitude ?? row.partida_latitude ?? true;
     row.partida_longitude = resultado.partida_longitude ?? row.partida_longitude ?? true;
+    // Converteu agora: some o aviso de falha de uma tentativa anterior.
+    const atual = row.motivo_validacao || row.observacao_validacao;
+    if (atual && (Object.values(MENSAGEM_GPS_FALHA).includes(atual) || String(atual).startsWith('Não foi possível localizar'))) {
+      row.observacao_validacao = null;
+      row.motivo_validacao = AVISO_NAO_CONVERTIDO;
+    }
   }
   if (resultado.validado) {
     Object.assign(row, {
@@ -770,11 +786,11 @@ function aplicarResultadoGps(resultado) {
       validado_em: new Date().toISOString(),
     });
   } else if (resultado.motivo === 'fora_do_raio') {
-    row.observacao_validacao = `O.S. ${resultado.os} tem laudo do colaborador na data, mas a ${(resultado.distancia_m / 1000).toFixed(1)} km da partida (fora do raio de 2km).`;
+    definirObservacaoGps(row, `O.S. ${resultado.os} tem laudo do colaborador na data, mas a ${(resultado.distancia_m / 1000).toFixed(1)} km da partida (fora do raio de 2km).`);
   } else if (resultado.motivo === 'sem_correspondencia') {
-    row.observacao_validacao = 'Nenhuma O.S. com laudo do colaborador encontrada na data da corrida.';
+    definirObservacaoGps(row, 'Nenhuma O.S. com laudo do colaborador encontrada na data da corrida.');
   } else if (resultado.geocodificado === false) {
-    row.observacao_validacao = MENSAGEM_GPS_FALHA[resultado.motivo] || MENSAGEM_GPS_FALHA.endereco_nao_localizado;
+    definirObservacaoGps(row, MENSAGEM_GPS_FALHA[resultado.motivo] || MENSAGEM_GPS_FALHA.endereco_nao_localizado);
   }
 }
 
