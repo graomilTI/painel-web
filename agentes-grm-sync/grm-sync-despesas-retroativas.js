@@ -6,7 +6,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 
-const VERSION = 'V6.3-API-DIRETA-PERNOITE-SO-APROVA';
+const VERSION = 'V6.4-API-DIRETA-SEM-ALMOCO-COM-PERNOITE';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
 ).replace(/\/?$/, '/');
@@ -135,6 +135,15 @@ function contractTypeOnDate(contractType, admissao, date) {
   return contractType;
 }
 
+// Pernoite ativo (P ou A) do colaborador no dia; recusado (N) não conta.
+// movements = lançamentos do GRM na data (retrato do início da execução).
+function temPernoiteAtivo(movements, staCode) {
+  return movements.some((row) => row.ofmType === 'D'
+    && Number(row.staCode) === Number(staCode)
+    && norm(row.oexName) === 'PERNOITE'
+    && String(row.ofmStatus).toUpperCase() !== 'N');
+}
+
 function requiredExpenses(
   contractType,
   salary,
@@ -145,6 +154,7 @@ function requiredExpenses(
     hasLaudo = true,
     cafeAuthorized = false,
     jantaAuthorized = false,
+    hasPernoite = false,
   } = {},
 ) {
   const type = norm(contractType);
@@ -160,7 +170,8 @@ function requiredExpenses(
       if (!item) throw new Error('Categoria Serviços Terceirizados não encontrada no GRM.');
       result.push({ ...item, amount: Number(salary || 0) });
     }
-    if (almocoProgrammed) {
+    // Com Pernoite no Caixa nessa data a hospedagem cobre a alimentação: não cria nem aprova Almoço.
+    if (almocoProgrammed && !hasPernoite) {
       const lunch = expenseTypes.get('ALMOCO');
       if (!lunch) throw new Error('Categoria Almoço não encontrada no GRM.');
       result.push({ ...lunch, amount: Number(lunch.oexMaxOperatingFlowValue || 30) });
@@ -814,6 +825,7 @@ async function main() {
     adiados: 0,
     cafe_programado: 0,
     almoco_programado: 0,
+    almoco_pulado_pernoite: 0,
     cafe_autorizado_login: 0,
     cafe_bloqueado_login: 0,
     janta_programada: 0,
@@ -854,6 +866,13 @@ async function main() {
 
     if (candidate.almocoProgrammed) summary.almoco_programado += 1;
 
+    const staff = findStaff(candidate, grm.staff);
+    const hasPernoite = staff ? temPernoiteAtivo(grm.movements, staff.staCode) : false;
+    if (hasPernoite && candidate.hasLaudo && candidate.almocoProgrammed) {
+      summary.almoco_pulado_pernoite += 1;
+      log('INFO', `${candidate.nome}: Almoço não lançado — já há Pernoite no Caixa em ${date}.`);
+    }
+
     const expenses = requiredExpenses(
       candidate.contrato_na_data,
       candidate.salario,
@@ -864,11 +883,11 @@ async function main() {
         hasLaudo: candidate.hasLaudo,
         cafeAuthorized,
         jantaAuthorized,
+        hasPernoite,
       },
     );
     if (!expenses.length) continue;
 
-    const staff = findStaff(candidate, grm.staff);
     if (!staff) {
       summary.unresolved += 1;
       log('WARN', 'Colaborador não localizado no GRM.', { nome: candidate.nome, cpf: candidate.cpf });
@@ -986,6 +1005,7 @@ module.exports = {
   pointOffsetFromSaoPauloHours,
   registerDateAtPoint,
   requiredExpenses,
+  temPernoiteAtivo,
   contractTypeOnDate,
   decide,
   decidePernoite,
