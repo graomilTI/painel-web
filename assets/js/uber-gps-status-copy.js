@@ -11,6 +11,8 @@ function ajustarMensagemGps(root = document) {
     const textoAtual = observacao.textContent.trim();
 
     if (!gpsConvertido) {
+      // Já tentou converter e falhou: o motivo (endereço sem rua, mapa fora do ar...) vale mais que o texto genérico.
+      if (/^(?:não foi possível localizar|o endereço de partida não tem rua|serviço de mapas indisponível)/i.test(textoAtual)) return;
       observacao.textContent = 'Endereço sem coordenadas GPS. Converta o endereço para verificar se existe ponto de embarque em um raio de 2 km.';
       return;
     }

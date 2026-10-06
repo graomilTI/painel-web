@@ -575,6 +575,12 @@ async function updateStatus(id, status) {
   }
 }
 
+const MENSAGEM_GPS_FALHA = {
+  endereco_incompleto: 'O endereço de partida não tem rua nem bairro (só cidade/CEP), então não dá pra localizar no mapa. Valide manualmente.',
+  provedor_indisponivel: 'Serviço de mapas indisponível agora. Tente converter o GPS de novo mais tarde.',
+  endereco_nao_localizado: 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.',
+};
+
 function aplicarResultadoGps(resultado) {
   if (!resultado?.id) return;
   const row = state.rows.find((item) => String(item.id) === String(resultado.id));
@@ -596,7 +602,7 @@ function aplicarResultadoGps(resultado) {
   } else if (resultado.motivo === 'sem_correspondencia') {
     row.observacao_validacao = 'Nenhuma O.S. com laudo do colaborador encontrada na data da corrida.';
   } else if (resultado.geocodificado === false) {
-    row.observacao_validacao = 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.';
+    row.observacao_validacao = MENSAGEM_GPS_FALHA[resultado.motivo] || MENSAGEM_GPS_FALHA.endereco_nao_localizado;
   }
 }
 
@@ -615,8 +621,8 @@ async function geocodificarCorrida(id, btn) {
     if (resultado?.validado) {
       setFeedback(`Corrida validada automaticamente: O.S. ${resultado.os} encontrada a ${Math.round(resultado.distancia_m)}m com laudo do colaborador.`);
     } else if (resultado?.geocodificado === false) {
-      const detalhe = resultado?.detalhe ? ` ${resultado.detalhe}` : '';
-      setFeedback(`Não foi possível localizar o endereço no mapa.${detalhe} Confira o endereço ou tente novamente.`, true);
+      const detalhe = resultado?.detalhe ? ` (${resultado.detalhe})` : '';
+      setFeedback(`${MENSAGEM_GPS_FALHA[resultado.motivo] || MENSAGEM_GPS_FALHA.endereco_nao_localizado}${detalhe}`, true);
     } else {
       setFeedback('Endereço convertido em GPS. Nenhuma O.S. com laudo do colaborador em raio de 2km — confira manualmente.');
     }
@@ -629,24 +635,48 @@ async function geocodificarCorrida(id, btn) {
   }
 }
 
+const MAX_LOTES_GPS = 60;
+
 async function converterGpsPendentes(root) {
   if (state.convertendoGps) return;
   state.convertendoGps = true;
   const btn = root.querySelector('[data-gps-pendentes]');
   if (btn) { btn.disabled = true; btn.textContent = 'Convertendo...'; }
   setFeedback('Convertendo endereços pendentes em GPS...');
+  const total = { geocodificados: 0, validados: 0, falhas: 0, indisponivel: 0 };
   try {
-    const { data, error } = await supabase.functions.invoke('uber-geocodificar-gps', { body: { modo: 'pendentes', limite: 10 } });
-    if (error) throw error;
-    if (data?.error) throw new Error(data.error);
-    (data?.resultados || []).forEach(aplicarResultadoGps);
-    saveCache();
-    const falhas = (data?.resultados || []).filter((item) => item?.geocodificado === false || item?.ok === false).length;
-    setFeedback(`${data?.geocodificados ?? 0} corrida(s) convertida(s) em GPS, ${data?.validados ?? 0} validada(s) automaticamente por O.S. com laudo dentro de 2km${falhas ? ` e ${falhas} não localizada(s) nesta tentativa` : ''}.`, falhas > 0);
+    // A função converte poucas corridas por chamada (limite de tempo do servidor):
+    // repete até acabarem as pendentes. `corte` (hora do servidor) impede que as
+    // corridas já tentadas nesta rodada voltem pra fila.
+    let corte = '';
+    for (let lote = 0; lote < MAX_LOTES_GPS; lote += 1) {
+      const { data, error } = await supabase.functions.invoke('uber-geocodificar-gps', {
+        body: { modo: 'pendentes', limite: 10, ...(corte ? { antes_de: corte } : {}) },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      corte = data?.corte || corte;
+      const resultados = data?.resultados || [];
+      if (!resultados.length) break;
+      resultados.forEach(aplicarResultadoGps);
+      total.geocodificados += data?.geocodificados ?? 0;
+      total.validados += data?.validados ?? 0;
+      total.falhas += resultados.filter((item) => item?.geocodificado === false || item?.ok === false).length;
+      total.indisponivel += resultados.filter((item) => item?.motivo === 'provedor_indisponivel').length;
+      saveCache();
+      renderData();
+      setFeedback(`Convertendo GPS... ${total.geocodificados} convertida(s), ${total.falhas} não localizada(s) até agora.`);
+      if (resultados.every((item) => item?.ok === false)) break; // sem progresso: não insiste
+      if (resultados.every((item) => item?.motivo === 'provedor_indisponivel')) break; // mapa fora do ar: não martela
+    }
+    const sufixo = total.indisponivel ? ` ${total.indisponivel} falharam por indisponibilidade do serviço de mapas — tente de novo mais tarde.` : '';
+    setFeedback(`${total.geocodificados} corrida(s) convertida(s) em GPS, ${total.validados} validada(s) automaticamente por O.S. com laudo dentro de 2km${total.falhas ? ` e ${total.falhas} não localizada(s)` : ''}.${sufixo}`, total.falhas > 0);
     renderData();
   } catch (error) {
     console.error('[Uber] converterGpsPendentes:', error);
-    setFeedback(`Falha ao converter GPS pendentes: ${error.message}`, true);
+    saveCache();
+    renderData();
+    setFeedback(`Falha ao converter GPS pendentes${total.geocodificados ? ` (${total.geocodificados} já convertida(s))` : ''}: ${error.message}`, true);
   } finally {
     state.convertendoGps = false;
     if (btn) { btn.disabled = false; btn.textContent = 'Converter GPS pendentes'; }
