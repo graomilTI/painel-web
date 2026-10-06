@@ -5,6 +5,8 @@
 // dentro de 2km — só então a corrida é validada automaticamente.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 import { authorizeRequest } from '../_shared/authorization.ts';
+import { normKey } from './endereco.ts';
+import { geocodificarEndereco, type GeoSearch } from './geocodificar.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -12,12 +14,18 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
-const PHOTON_BASE = 'https://photon.komoot.io/api/';
 const NOMINATIM_USER_AGENT = 'PainelGrao1000/1.0 (tecnologia@grao1000.com.br)';
 const NOMINATIM_DELAY_MS = 1100;
 const ERRO_RETRY_HORAS = 24;
 const PREFIXO_CHAVE = 'uber_endereco:';
+// Edge Function tem tempo limite: pára de pegar corridas novas antes dele e
+// devolve `restantes` pro painel chamar de novo.
+const ORCAMENTO_MS = 90_000;
+const MENSAGEM_FALHA: Record<string, string> = {
+  endereco_incompleto: 'O endereço de partida não tem rua nem bairro (só cidade/CEP), então não dá pra localizar no mapa. Valide manualmente.',
+  provedor_indisponivel: 'Serviço de mapas indisponível agora. Tente converter o GPS de novo mais tarde.',
+  endereco_nao_localizado: 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.',
+};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -32,143 +40,6 @@ function sleep(ms: number) {
 
 async function readBody(req: Request) {
   try { return await req.json(); } catch { return {}; }
-}
-
-function normKey(v: unknown): string {
-  return String(v ?? '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-}
-
-type GeoResult = { lat: number; lng: number; display: string; query: string; provider: string };
-type GeoSearch = { result: GeoResult | null; error: string | null; definitive: boolean };
-
-function normalizarEndereco(endereco: string): string {
-  return endereco
-    .replace(/\s+/g, ' ')
-    .replace(/\s*,\s*/g, ', ')
-    .replace(/(?:,\s*Brasil\s*)+$/i, ', Brasil')
-    .trim();
-}
-
-function candidatosEndereco(endereco: string): string[] {
-  const completo = normalizarEndereco(endereco);
-  const semPais = completo.replace(/,\s*Brasil$/i, '').trim();
-  const cep = semPais.match(/\b\d{5}-?\d{3}\b/)?.[0] || '';
-  const partes = semPais.split(',').map((parte) => parte.trim()).filter(Boolean);
-  const cidadeUf = partes.find((parte) => /-\s*[A-Z]{2}\s*$/i.test(parte) && !/\d{5}-?\d{3}/.test(parte)) || '';
-  const numero = partes[1]?.match(/^\d+[A-Za-z]?\b/)?.[0] || '';
-  const rua = [partes[0]?.replace(/\s+-\s+.*$/, '').trim(), numero].filter(Boolean).join(', ');
-  const candidatos = [
-    completo,
-    [rua, cidadeUf, cep, 'Brasil'].filter(Boolean).join(', '),
-    [cep, cidadeUf, 'Brasil'].filter(Boolean).join(', '),
-    [rua, cidadeUf, 'Brasil'].filter(Boolean).join(', '),
-  ];
-  return [...new Set(candidatos.map(normalizarEndereco).filter((item) => item.length > 8))];
-}
-
-function tokensRelevantes(value: unknown): string[] {
-  const ignorados = new Set(['rua', 'r', 'avenida', 'av', 'rodovia', 'rod', 'estrada', 'de', 'da', 'do', 'das', 'dos']);
-  return normKey(value).split(' ').filter((token) => token.length >= 3 && !ignorados.has(token));
-}
-
-function photonCompativel(endereco: string, properties: Record<string, unknown>): boolean {
-  const semPais = normalizarEndereco(endereco).replace(/,\s*Brasil$/i, '');
-  const partes = semPais.split(',').map((parte) => parte.trim()).filter(Boolean);
-  const ruaEsperada = partes[0] || '';
-  const cidadeUf = partes.find((parte) => /-\s*[A-Z]{2}\s*$/i.test(parte) && !/\d{5}-?\d{3}/.test(parte)) || '';
-  const cidadeEsperada = cidadeUf.replace(/\s*-\s*[A-Z]{2}\b.*$/i, '').trim();
-  const textoLocal = [properties.name, properties.street].filter(Boolean).join(' ');
-  const textoCidade = [properties.city, properties.locality, properties.county].filter(Boolean).join(' ');
-  const ruaTokens = tokensRelevantes(ruaEsperada);
-  const localTokens = new Set(tokensRelevantes(textoLocal));
-  const acertosRua = ruaTokens.filter((token) => localTokens.has(token)).length;
-  const ruaCompativel = !ruaTokens.length || acertosRua / ruaTokens.length >= 0.5;
-  const cidadeCompativel = !cidadeEsperada || normKey(textoCidade).includes(normKey(cidadeEsperada));
-  const pais = normKey(properties.countrycode || properties.country);
-  return ruaCompativel && cidadeCompativel && (!pais || pais === 'br' || pais === 'brasil' || pais === 'brazil');
-}
-
-async function nominatimSearch(query: string): Promise<GeoSearch> {
-  try {
-    const qs = new URLSearchParams({
-      q: query,
-      format: 'jsonv2',
-      limit: '1',
-      countrycodes: 'br',
-      email: 'tecnologia@grao1000.com.br',
-    });
-    const res = await fetch(`${NOMINATIM_BASE}?${qs.toString()}`, {
-      headers: { 'User-Agent': NOMINATIM_USER_AGENT, 'Accept-Language': 'pt-BR' },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) {
-      return {
-        result: null,
-        error: `Nominatim HTTP ${res.status}`,
-        definitive: false,
-      };
-    }
-    const data = await res.json();
-    const item = Array.isArray(data) ? data[0] : null;
-    if (!item) return { result: null, error: null, definitive: true };
-    const lat = Number(item.lat);
-    const lng = Number(item.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return { result: null, error: 'Resposta do Nominatim sem coordenadas válidas.', definitive: false };
-    }
-    return {
-      result: { lat, lng, display: String(item.display_name || '').trim(), query, provider: 'nominatim' },
-      error: null,
-      definitive: true,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { result: null, error: `Falha ao consultar Nominatim: ${message}`, definitive: false };
-  }
-}
-
-async function photonSearch(query: string, enderecoOriginal: string): Promise<GeoSearch> {
-  try {
-    const qs = new URLSearchParams({ q: query, limit: '5' });
-    const res = await fetch(`${PHOTON_BASE}?${qs.toString()}`, {
-      headers: { 'User-Agent': NOMINATIM_USER_AGENT, 'Accept-Language': 'pt-BR' },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!res.ok) {
-      return { result: null, error: `Photon HTTP ${res.status}`, definitive: false };
-    }
-    const data = await res.json();
-    const features = Array.isArray(data?.features) ? data.features : [];
-    const feature = features.find((item: any) =>
-      Array.isArray(item?.geometry?.coordinates)
-      && photonCompativel(enderecoOriginal, item?.properties || {})
-    );
-    if (!feature) return { result: null, error: null, definitive: true };
-    const lng = Number(feature.geometry.coordinates[0]);
-    const lat = Number(feature.geometry.coordinates[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return { result: null, error: 'Resposta do Photon sem coordenadas válidas.', definitive: false };
-    }
-    const properties = feature.properties || {};
-    const display = [
-      properties.name,
-      properties.street,
-      properties.city,
-      properties.state,
-      properties.postcode,
-      properties.country,
-    ].filter(Boolean).filter((item, index, all) => all.indexOf(item) === index).join(', ');
-    return {
-      result: { lat, lng, display, query, provider: 'photon' },
-      error: null,
-      definitive: true,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { result: null, error: `Falha ao consultar Photon: ${message}`, definitive: false };
-  }
 }
 
 Deno.serve(async (req) => {
@@ -196,6 +67,7 @@ Deno.serve(async (req) => {
     }
     const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
+    const inicio = Date.now();
     let ids: string[] = [];
     if (Array.isArray((body as any)?.ids)) {
       ids = (body as any).ids.map(String).filter(Boolean);
@@ -203,21 +75,24 @@ Deno.serve(async (req) => {
       ids = [String((body as any).id)];
     } else if ((body as any)?.modo === 'pendentes') {
       const limite = Math.max(1, Math.min(30, Number((body as any)?.limite) || 10));
-      const { data, error } = await supabase
+      // `antes_de`: o painel repete a chamada até acabar; corridas já tentadas
+      // nesta rodada (updated_at novo) ficam de fora e o laço termina.
+      const antesDe = String((body as any)?.antes_de || '');
+      let query = supabase
         .from('conferencia_uber_corridas')
         .select('id')
         .in('status_validacao', ['PENDENTE', 'ATENCAO', 'ATENÇÃO'])
         .is('partida_latitude', null)
-        .not('endereco_partida', 'is', null)
-        // Falhas recentes vão para o fim da fila, evitando que as mesmas
-        // corridas bloqueiem para sempre a conversão das demais.
-        .order('updated_at', { ascending: true })
-        .limit(limite);
+        .not('endereco_partida', 'is', null);
+      if (antesDe && !Number.isNaN(Date.parse(antesDe))) query = query.lt('updated_at', antesDe);
+      // Falhas recentes vão para o fim da fila, evitando que as mesmas
+      // corridas bloqueiem para sempre a conversão das demais.
+      const { data, error } = await query.order('updated_at', { ascending: true }).limit(limite);
       if (error) throw error;
       ids = (data || []).map((r: any) => r.id);
     }
 
-    if (!ids.length) return json({ ok: true, total: 0, geocodificados: 0, validados: 0, sem_endereco: 0, resultados: [] });
+    if (!ids.length) return json({ ok: true, total: 0, geocodificados: 0, validados: 0, sem_endereco: 0, restantes: 0, resultados: [] });
 
     const geocodarDestino = ids.length === 1; // no botão GPS de uma linha só; no lote, só partida (mais rápido)
     let lastCallAt = 0;
@@ -237,6 +112,7 @@ Deno.serve(async (req) => {
             display: cache.endereco_resolvido || '',
             query: 'cache',
             provider: 'cache',
+            precisao: 'endereco',
           },
           error: null,
           definitive: true,
@@ -249,47 +125,16 @@ Deno.serve(async (req) => {
         }
       }
 
-      let result: GeoResult | null = null;
-      let lastError: string | null = null;
-      let definitive = true;
-      const candidatos = candidatosEndereco(endereco);
-      for (const candidato of candidatos) {
-        const wait = lastCallAt + NOMINATIM_DELAY_MS - Date.now();
-        if (wait > 0) await sleep(wait);
-        lastCallAt = Date.now();
-        const tentativa = await nominatimSearch(candidato);
-        if (tentativa.result) {
-          result = tentativa.result;
-          lastError = null;
-          break;
-        }
-        if (tentativa.error) lastError = tentativa.error;
-        if (!tentativa.definitive) {
-          definitive = false;
-          break;
-        }
-      }
-
-      if (!result) {
-        definitive = true;
-        for (const candidato of candidatos) {
+      const busca = await geocodificarEndereco(endereco, {
+        aguardar: async () => {
           const wait = lastCallAt + NOMINATIM_DELAY_MS - Date.now();
           if (wait > 0) await sleep(wait);
           lastCallAt = Date.now();
-          const tentativa = await photonSearch(candidato, endereco);
-          if (tentativa.result) {
-            result = tentativa.result;
-            lastError = null;
-            break;
-          }
-          if (tentativa.error) {
-            lastError = tentativa.error;
-            definitive = false;
-            break;
-          }
-          lastError = null;
-        }
-      }
+        },
+        userAgent: NOMINATIM_USER_AGENT,
+        email: 'tecnologia@grao1000.com.br',
+      });
+      const { result, error: lastError, definitive } = busca;
 
       // geocode_cache mantém um CHECK legado com apenas "cep" e "cidade".
       // A chave prefixada identifica endereços Uber sem quebrar consumidores antigos.
@@ -308,16 +153,17 @@ Deno.serve(async (req) => {
         if (cacheWriteError) console.warn('[uber-geocodificar-gps] Falha ao gravar cache:', cacheWriteError.message);
       }
 
-      return { result, error: lastError, definitive };
+      return busca;
     }
 
     const resultados: any[] = [];
-    let geocodificados = 0, validados = 0, semEndereco = 0;
+    let geocodificados = 0, validados = 0, semEndereco = 0, restantes = 0;
 
     for (const id of ids) {
+      if (ids.length > 1 && Date.now() - inicio > ORCAMENTO_MS) { restantes++; continue; }
       const { data: row, error: rowErr } = await supabase
         .from('conferencia_uber_corridas')
-        .select('id,endereco_partida,endereco_destino,partida_latitude,partida_longitude,destino_latitude,destino_longitude')
+        .select('id,endereco_partida,endereco_destino,partida_latitude,partida_longitude,destino_latitude,destino_longitude,observacao_validacao')
         .eq('id', id)
         .maybeSingle();
       if (rowErr || !row) { resultados.push({ id, ok: false, error: rowErr?.message || 'Corrida não encontrada.' }); continue; }
@@ -335,6 +181,7 @@ Deno.serve(async (req) => {
             display: '',
             query: 'banco',
             provider: 'banco',
+            precisao: 'endereco',
           },
           error: null,
           definitive: true,
@@ -352,8 +199,13 @@ Deno.serve(async (req) => {
         if (destinoGeo) { update.destino_latitude = destinoGeo.lat; update.destino_longitude = destinoGeo.lng; }
       }
 
+      const motivoFalha = partidaSearch.motivo === 'endereco_incompleto'
+        ? 'endereco_incompleto'
+        : partidaSearch.error ? 'provedor_indisponivel' : 'endereco_nao_localizado';
       if (!partidaGeo) {
-        update.observacao_validacao = 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.';
+        update.observacao_validacao = MENSAGEM_FALHA[motivoFalha];
+      } else if (String(row.observacao_validacao || '').startsWith('Não foi possível localizar')) {
+        update.observacao_validacao = null; // aviso de tentativa anterior que não vale mais
       }
       if (Object.keys(update).length) {
         update.updated_at = new Date().toISOString();
@@ -369,7 +221,7 @@ Deno.serve(async (req) => {
           id,
           ok: true,
           geocodificado: false,
-          motivo: partidaSearch.error ? 'provedor_indisponivel' : 'endereco_nao_localizado',
+          motivo: motivoFalha,
           detalhe: partidaSearch.error,
         });
         continue;
@@ -387,11 +239,12 @@ Deno.serve(async (req) => {
         partida_longitude: partidaGeo.lng,
         consulta: partidaGeo.query,
         provedor: partidaGeo.provider,
+        precisao: partidaGeo.precisao,
         ...validacao,
       });
     }
 
-    return json({ ok: true, total: ids.length, geocodificados, validados, sem_endereco: semEndereco, resultados });
+    return json({ ok: true, total: ids.length, geocodificados, validados, sem_endereco: semEndereco, restantes, corte: String((body as any)?.antes_de || '') || new Date(inicio).toISOString(), resultados });
   } catch (err) {
     console.error('[uber-geocodificar-gps]', err);
     return json({ ok: false, error: (err as any)?.message || String(err) }, 500);
