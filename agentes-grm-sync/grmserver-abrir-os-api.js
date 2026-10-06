@@ -478,11 +478,16 @@ async function resolverProdutor(token, splCode, nomeProdutor) {
 // par e erra: O.S. 94523 (01/10/2026), BURIGRÃOS em Buri/SP, saiu em "SP - Araçatuba"
 // pelo GRM, mas Buri é regional "SP - Avaré" (cadastro interno do Armazém Jequitibá,
 // também em Buri, já diz Avaré).
-async function supervisaoInternaDoEmbarque(ponto, uf, cidade) {
+// O fallback por cidade só considera pontos do MESMO tipo de local: o GRM atribui
+// supervisão por cidade+tipo, e herdar a de outro tipo errou nas O.S. 94879/94881
+// (05/10/2026), Fazenda Estrela D'Alva em Diamantino/MT — o único ponto da cidade
+// com supervisão era um Armazém/Silo (MT4 - GERAL) e a O.S. saiu fora da regional
+// pedida (MT1 - Lucas do Rio Verde/Nova Mutum, igual à sugestão do GRM).
+async function supervisaoInternaDoEmbarque(ponto, uf, cidade, tipoLocalNome) {
   if (ponto && ponto.supervisao) return String(ponto.supervisao).trim();
-  if (!uf || !cidade) return null;
+  if (!uf || !cidade || !tipoLocalNome) return null;
   var res = await supabase.from('operacional_pontos_embarque').select('supervisao')
-    .ilike('uf', uf).ilike('cidade', cidade).not('supervisao', 'is', null).limit(200);
+    .ilike('uf', uf).ilike('cidade', cidade).ilike('tipo_local', tipoLocalNome).not('supervisao', 'is', null).limit(200);
   if (res.error || !res.data) return null;
   var nomes = {};
   res.data.forEach((r) => { var n = norm(r.supervisao); if (n) nomes[n] = String(r.supervisao).trim(); });
@@ -566,7 +571,7 @@ async function resolverEmbarque(token, solicitacao) {
   if (supRes.result && typeof supRes.searchData === 'number' && supRes.searchData > 0) olsApi = supRes.searchData;
 
   let todasSup = null;
-  const supInterna = await supervisaoInternaDoEmbarque(ponto, uf, cidade);
+  const supInterna = await supervisaoInternaDoEmbarque(ponto, uf, cidade, tipoLocalNome);
   if (supInterna) {
     const todasRes = await postJson('supervision/getForSelect', { olsStatus: 'A' }, token);
     todasSup = safe(todasRes.searchData);
