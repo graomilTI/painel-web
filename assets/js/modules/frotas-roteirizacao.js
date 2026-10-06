@@ -433,16 +433,18 @@
     if (state.busy) return;
     state.busy = true;
     render();
-    let ok = 0, erro = 0, restantes = Infinity;
+    let ok = 0, erro = 0, restantes = Infinity, adiados = 0;
     try {
       for (let i = 0; i < 10 && restantes !== 0; i++) {
         const resp = await callEdgeFunction(_opts, GEOCODE_FUNCTION, { limite: 30 });
         ok += resp.ok || 0;
         erro += resp.erro || 0;
         restantes = resp.restantes ?? 0;
-        if (!resp.processados) break;
+        // Serviço de mapas fora do ar (bloqueio/timeout): os CEPs ficam pendentes, repetir agora não adianta.
+        adiados = resp.transitorios || 0;
+        if (!resp.processados || adiados) break;
       }
-      toast(`Geocodificação: ${ok} endereço(s) resolvido(s)${erro ? `, ${erro} com erro` : ''}${restantes ? ` · ${restantes} restante(s)` : ''}.`);
+      toast(`Geocodificação: ${ok} endereço(s) resolvido(s)${erro ? `, ${erro} com erro` : ''}${restantes ? ` · ${restantes} restante(s)` : ''}${adiados ? ` · ${adiados} adiado(s): serviço de mapas indisponível, tente mais tarde` : ''}.`);
     } catch (e) {
       toast(e?.message || 'Falha ao geocodificar endereços.', true);
     } finally {

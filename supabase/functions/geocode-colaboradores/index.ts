@@ -1,4 +1,10 @@
+// Geocodifica o CEP dos colaboradores de O.S. ativas (geocode_cache) pra roteirização.
+// Falha do provedor (HTTP 403/429/5xx, timeout) NÃO é "CEP não encontrado": não grava 'erro'
+// em geocode_cache (o cache de erro esconde o CEP por 7 dias) e devolve o motivo. Se o Nominatim
+// barrar o IP do Supabase (403, 06/10/2026), o CEP cai pro ponto da cidade via Photon — o mesmo
+// nível que já era gravado quando o CEP não existia no Nominatim (ver _shared/geocode-localidade.ts).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { criarGeocodificador, embaralhar } from '../_shared/geocode-localidade.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -6,10 +12,12 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 const NOMINATIM_USER_AGENT = 'PainelGrao1000/1.0 (tecnologia@grao1000.com.br)';
 const NOMINATIM_DELAY_MS = 1100; // política de uso do Nominatim: máx. 1 req/s
 const ERRO_RETRY_DIAS = 7;
+// O front (frotas-roteirizacao.js) e o pg_cron esperam resposta rápida: o que sobrar fica pra próxima.
+const PRAZO_PADRAO_MS = 40_000;
+const PRAZO_FOLGA_MS = 10_000; // o item em andamento quando o prazo vence ainda pode terminar
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,38 +43,8 @@ function normalizeCep(v: unknown): string {
   return String(v ?? '').replace(/\D/g, '');
 }
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 async function readBody(req: Request) {
   try { return await req.json(); } catch { return {}; }
-}
-
-type GeoResult = { lat: number; lng: number; display: string } | null;
-
-async function nominatimSearch(params: Record<string, string>): Promise<GeoResult> {
-  try {
-    const qs = new URLSearchParams({ ...params, country: 'Brazil', format: 'jsonv2', limit: '1' });
-    const res = await fetch(`${NOMINATIM_BASE}?${qs.toString()}`, {
-      headers: { 'User-Agent': NOMINATIM_USER_AGENT, 'Accept-Language': 'pt-BR' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const item = Array.isArray(data) ? data[0] : null;
-    if (!item) return null;
-    const lat = Number(item.lat);
-    const lng = Number(item.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng, display: cleanStr(item.display_name) };
-  } catch {
-    return null;
-  }
-}
-
-function formatCepBR(cep8: string): string {
-  return `${cep8.slice(0, 5)}-${cep8.slice(5)}`;
 }
 
 Deno.serve(async (req) => {
@@ -156,43 +134,51 @@ Deno.serve(async (req) => {
     const pendentes = todosCeps.filter((cep) => !jaResolvidos.has(cep));
 
     // 6) Geocodificar até `limite` CEPs pendentes (1 req/s, política do Nominatim)
-    let lastCallAt = 0;
-    async function throttledSearch(params: Record<string, string>): Promise<GeoResult> {
-      const wait = lastCallAt + NOMINATIM_DELAY_MS - Date.now();
-      if (wait > 0) await sleep(wait);
-      lastCallAt = Date.now();
-      return nominatimSearch(params);
-    }
+    const prazoMs = Math.max(5_000, Math.min(120_000, Number((body as any)?.prazo_ms) || PRAZO_PADRAO_MS));
+    const inicio = Date.now();
+    const geo = criarGeocodificador({ userAgent: NOMINATIM_USER_AGENT, delayMs: NOMINATIM_DELAY_MS, prazoAte: inicio + prazoMs + PRAZO_FOLGA_MS });
 
-    const lote = pendentes.slice(0, limite);
+    const lote = embaralhar(pendentes).slice(0, limite);
     let ok = 0;
     let erro = 0;
+    let transitorios = 0;
+    const porProvedor = { nominatim: 0, photon: 0 };
+    const motivos = new Set<string>();
 
     for (const cep of lote) {
+      if (Date.now() - inicio > prazoMs) break; // o resto fica pra próxima execução
       const info = cepInfo.get(cep)!;
-      let resultado = await throttledSearch({ postalcode: formatCepBR(cep) });
-      let tipo: 'cep' | 'cidade' = 'cep';
+      const r = await geo.cep({ cep, cidade: info.cidade, uf: info.estado });
 
-      if (!resultado && info.cidade && info.estado) {
-        resultado = await throttledSearch({ city: info.cidade, state: info.estado });
-        tipo = 'cidade';
+      // Falha do provedor (bloqueio/timeout) não é "CEP inexistente": não grava no cache.
+      if (!r.ponto && !r.conclusivo) {
+        transitorios++;
+        if (r.motivo) motivos.add(r.motivo);
+        continue;
       }
 
-      const row = resultado
-        ? { chave: cep, tipo, latitude: resultado.lat, longitude: resultado.lng, endereco_resolvido: resultado.display, status: 'ok', atualizado_em: new Date().toISOString() }
-        : { chave: cep, tipo: 'cep', latitude: null, longitude: null, endereco_resolvido: null, status: 'erro', atualizado_em: new Date().toISOString() };
+      const agora = new Date().toISOString();
+      const row = r.ponto
+        ? { chave: cep, tipo: r.tipo, latitude: r.ponto.lat, longitude: r.ponto.lng, endereco_resolvido: r.ponto.display, status: 'ok', atualizado_em: agora }
+        : { chave: cep, tipo: 'cep', latitude: null, longitude: null, endereco_resolvido: null, status: 'erro', atualizado_em: agora };
 
       const { error: upErr } = await supabase.from('geocode_cache').upsert(row, { onConflict: 'chave' });
       if (upErr) throw upErr;
 
-      if (resultado) ok++; else erro++;
+      if (r.ponto) { ok++; porProvedor[r.ponto.provider]++; } else erro++;
     }
 
+    // `processados` só conta o que foi resolvido ou recusado de vez: o front repete a chamada
+    // enquanto houver processados, então um lote todo transitório (provedor fora) encerra o laço.
+    const processados = ok + erro;
     return json({
-      processados: lote.length,
+      processados,
       ok,
       erro,
-      restantes: Math.max(0, pendentes.length - lote.length),
+      transitorios,
+      por_provedor: porProvedor,
+      motivos_transitorios: [...motivos].slice(0, 5),
+      restantes: Math.max(0, pendentes.length - processados), // inclui os transitórios
       total_ceps: todosCeps.length,
     });
   } catch (err) {

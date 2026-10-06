@@ -12,7 +12,14 @@
 // — deixar o Postgres calcular nome_chave evita reimplementar a normalização
 // do trigger operacional_colaborador_base_set_updated_at() em JS (tentativa
 // anterior divergiu em casos de borda e gerava duplicate key).
+//
+// Falha do provedor (HTTP 403/429/5xx, timeout) NÃO é "CEP não encontrado": não grava 'erro'
+// em geocode_cache (o cache de erro esconde o CEP por 7 dias) e o colaborador fica pendente pra
+// próxima execução. Se o Nominatim barrar o IP do Supabase (403, 06/10/2026), o CEP cai pro ponto
+// da cidade via Photon — o mesmo nível que já era gravado quando o CEP não existia no Nominatim
+// (ver _shared/geocode-localidade.ts).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
+import { criarGeocodificador, embaralhar } from '../_shared/geocode-localidade.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -20,10 +27,13 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 const NOMINATIM_USER_AGENT = 'PainelGrao1000/1.0 (tecnologia@grao1000.com.br)';
 const NOMINATIM_DELAY_MS = 1100; // política de uso do Nominatim: máx. 1 req/s
 const ERRO_RETRY_DIAS = 7;
+// O pg_cron chama com timeout de 60 s (pg_net) e ainda sobra a sincronização BFleet: o que
+// não couber nesse prazo fica pra próxima execução (a cada 2 min).
+const PRAZO_PADRAO_MS = 30_000;
+const PRAZO_FOLGA_MS = 8_000; // o item em andamento quando o prazo vence ainda pode terminar
 const ORIGEM = 'geocode_auto_colaboradores';
 const BFLEET_PREFIX = 'G1000 COLAB';
 const TOKEN_VALIDITY_MS = 55 * 60 * 1000;
@@ -52,32 +62,7 @@ async function readBody(req: Request) {
   try { return await req.json(); } catch { return {}; }
 }
 
-type GeoResult = { lat: number; lng: number; display: string } | null;
 type SecretRow = { id?: string; integracao_id?: string; chave: string; valor: string; ativo?: boolean };
-
-async function nominatimSearch(params: Record<string, string>): Promise<GeoResult> {
-  try {
-    const qs = new URLSearchParams({ ...params, country: 'Brazil', format: 'jsonv2', limit: '1' });
-    const res = await fetch(`${NOMINATIM_BASE}?${qs.toString()}`, {
-      headers: { 'User-Agent': NOMINATIM_USER_AGENT, 'Accept-Language': 'pt-BR' },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const item = Array.isArray(data) ? data[0] : null;
-    if (!item) return null;
-    const lat = Number(item.lat);
-    const lng = Number(item.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { lat, lng, display: cleanStr(item.display_name) };
-  } catch {
-    return null;
-  }
-}
-
-function formatCepBR(cep8: string): string {
-  return `${cep8.slice(0, 5)}-${cep8.slice(5)}`;
-}
 
 // CEP válido sempre vira chave. Sem CEP, só vale a pena tentar "cidade:" se
 // cidade E estado existirem — cidade/estado vazios geravam a chave degenerada
@@ -495,39 +480,47 @@ Deno.serve(async (req) => {
       return chaveCep ? (!cacheOk.has(chaveCep) && !cacheErroRecente.has(chaveCep)) : true; // cidade: sempre tenta (não tem cache dedicado)
     });
 
-    let lastCallAt = 0;
-    async function throttledSearch(params: Record<string, string>): Promise<GeoResult> {
-      const wait = lastCallAt + NOMINATIM_DELAY_MS - Date.now();
-      if (wait > 0) await sleep(wait);
-      lastCallAt = Date.now();
-      return nominatimSearch(params);
-    }
+    const prazoMs = Math.max(5_000, Math.min(120_000, Number((body as any)?.prazo_ms) || PRAZO_PADRAO_MS));
+    const inicio = Date.now();
+    const geo = criarGeocodificador({ userAgent: NOMINATIM_USER_AGENT, delayMs: NOMINATIM_DELAY_MS, prazoAte: inicio + prazoMs + PRAZO_FOLGA_MS });
 
-    const lote = pendentes.slice(0, limite);
+    const lote = embaralhar(pendentes).slice(0, limite);
     let geocodificadosNovo = 0;
+    let transitorios = 0;
+    const porProvedor = { nominatim: 0, photon: 0 };
+    const motivos = new Set<string>();
     for (const chave of lote) {
+      if (Date.now() - inicio > prazoMs) break; // o resto fica pra próxima execução
       if (chave.startsWith('cidade:')) {
         const [cidade, estado] = chave.slice(7).split('|');
-        const resultado = await throttledSearch({ city: cidade, state: estado });
-        if (resultado) {
-          cacheOk.set(chave, resultado);
+        const r = await geo.cidade({ cidade, uf: estado }, { country: 'Brazil' });
+        if (r.ponto) {
+          cacheOk.set(chave, r.ponto);
           geocodificadosNovo++;
+          porProvedor[r.ponto.provider]++;
+        } else if (!r.conclusivo) {
+          transitorios++;
+          if (r.motivo) motivos.add(r.motivo);
         }
         continue;
       }
       const info = faltantes.find((c) => c.cep === chave);
-      let resultado = await throttledSearch({ postalcode: formatCepBR(chave) });
-      let tipo: 'cep' | 'cidade' = 'cep';
-      if (!resultado && info?.cidade && info?.estado) {
-        resultado = await throttledSearch({ city: info.cidade, state: info.estado });
-        tipo = 'cidade';
+      const r = await geo.cep({ cep: chave, cidade: info?.cidade, uf: info?.estado });
+
+      // Falha do provedor (bloqueio/timeout) não é "CEP inexistente": não grava no cache.
+      if (!r.ponto && !r.conclusivo) {
+        transitorios++;
+        if (r.motivo) motivos.add(r.motivo);
+        continue;
       }
-      const row = resultado
-        ? { chave, tipo, latitude: resultado.lat, longitude: resultado.lng, endereco_resolvido: resultado.display, status: 'ok', atualizado_em: new Date().toISOString() }
-        : { chave, tipo: 'cep', latitude: null, longitude: null, endereco_resolvido: null, status: 'erro', atualizado_em: new Date().toISOString() };
+
+      const agora = new Date().toISOString();
+      const row = r.ponto
+        ? { chave, tipo: r.tipo, latitude: r.ponto.lat, longitude: r.ponto.lng, endereco_resolvido: r.ponto.display, status: 'ok', atualizado_em: agora }
+        : { chave, tipo: 'cep', latitude: null, longitude: null, endereco_resolvido: null, status: 'erro', atualizado_em: agora };
       const { error: upErr } = await supabase.from('geocode_cache').upsert(row, { onConflict: 'chave' });
       if (upErr) throw upErr;
-      if (resultado) { cacheOk.set(chave, resultado); geocodificadosNovo++; }
+      if (r.ponto) { cacheOk.set(chave, r.ponto); geocodificadosNovo++; porProvedor[r.ponto.provider]++; }
     }
 
     // 4) Grava operacional_colaborador_base para os faltantes cuja chave já
@@ -576,6 +569,9 @@ Deno.serve(async (req) => {
       faltantes: faltantes.length,
       chaves_pendentes_antes: pendentes.length,
       geocodificados_novo: geocodificadosNovo,
+      por_provedor: porProvedor,
+      transitorios,
+      motivos_transitorios: [...motivos].slice(0, 5),
       gravados,
       falhas_gravacao: falhas.length,
       falhas_detalhe: falhas.slice(0, 10),
