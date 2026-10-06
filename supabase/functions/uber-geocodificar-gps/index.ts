@@ -6,7 +6,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
 import { authorizeRequest } from '../_shared/authorization.ts';
 import { normKey } from './endereco.ts';
-import { geocodificarEndereco, type EstadoProvedores, type GeoSearch } from './geocodificar.ts';
+import { ehAvisoDeFalha, geocodificarEndereco, MENSAGEM_FALHA, type EstadoProvedores, type GeoSearch } from './geocodificar.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -21,19 +21,8 @@ const PREFIXO_CHAVE = 'uber_endereco:';
 // Edge Function tem tempo limite: pára de pegar corridas novas antes dele e
 // devolve `restantes` pro painel chamar de novo.
 const ORCAMENTO_MS = 90_000;
-// Textos gravados por esta função quando não consegue converter (e versões antigas deles).
-function ehAvisoDeFalha(texto: string): boolean {
-  return texto.startsWith('Não foi possível localizar') || Object.values(MENSAGEM_FALHA).includes(texto);
-}
-
 // Guarda "Nominatim bloqueou este servidor" entre chamadas enquanto o processo da função estiver vivo.
 const estadoProvedores: EstadoProvedores = { nominatimBloqueadoAte: 0 };
-const MENSAGEM_FALHA: Record<string, string> = {
-  busca_parcial: 'Não localizado na busca alternativa (o mapa principal está bloqueando o servidor). Confira o endereço, valide manualmente ou tente mais tarde.',
-  endereco_incompleto: 'O endereço de partida não tem rua nem bairro (só cidade/CEP), então não dá pra localizar no mapa. Valide manualmente.',
-  provedor_indisponivel: 'Serviço de mapas indisponível agora. Tente converter o GPS de novo mais tarde.',
-  endereco_nao_localizado: 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.',
-};
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

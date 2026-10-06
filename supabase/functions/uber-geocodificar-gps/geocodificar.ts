@@ -20,6 +20,20 @@ import {
   viaCompativel,
 } from './endereco.ts';
 
+// Textos gravados em conferencia_uber_corridas.observacao_validacao quando a conversão falha
+// (usados pela Edge Function e pelo agente do servidor).
+export const MENSAGEM_FALHA: Record<string, string> = {
+  busca_parcial: 'Não localizado na busca alternativa (o mapa principal está bloqueando o servidor). Confira o endereço, valide manualmente ou tente mais tarde.',
+  endereco_incompleto: 'O endereço de partida não tem rua nem bairro (só cidade/CEP), então não dá pra localizar no mapa. Valide manualmente.',
+  provedor_indisponivel: 'Serviço de mapas indisponível agora. Tente converter o GPS de novo mais tarde.',
+  endereco_nao_localizado: 'Não foi possível localizar o endereço de partida no mapa. Confira o endereço ou valide manualmente.',
+};
+
+/** Texto de uma tentativa anterior que falhou (some quando a corrida passa a converter). */
+export function ehAvisoDeFalha(texto: string): boolean {
+  return texto.startsWith('Não foi possível localizar') || Object.values(MENSAGEM_FALHA).includes(texto);
+}
+
 export type Precisao = 'endereco' | 'rua' | 'bairro';
 export type GeoResult = {
   lat: number;

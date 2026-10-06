@@ -183,6 +183,10 @@ const SCRIPT_MAP = {
   // entra em uber_gorjeta_caixa_lancamentos por gatilho e este agente lança um Adiantamento no Caixa
   // do colaborador (data = dia da corrida, valor integral). Também enfileirado por uber_gorjeta_reenviar_caixa.
   'sync-uber-gorjeta-caixa': 'grm-sync-uber-gorjeta-caixa.js',
+  // Conversão de endereço do Uber em GPS (botões GPS / Converter GPS pendentes da tela Uber, via RPC
+  // uber_gps_solicitar -> fila uber_gps_fila). Roda aqui porque o OpenStreetMap bloqueia o IP das Edge
+  // Functions do Supabase (403 em 06/10/2026). Não abre o GRM nem precisa do token diário.
+  'sync-uber-geocodificar': 'grm-sync-uber-geocodificar.js',
   'sync-despesas-retroativas': 'grm-sync-despesas-retroativas.js',
   // Auxiliar do retroativas (02/10): recusa despesas duplicadas lançadas pelo
   // colaborador ("lançamento duplicado" / "Duplicata" pela data da observação) e
