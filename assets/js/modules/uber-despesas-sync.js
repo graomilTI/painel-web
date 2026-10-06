@@ -1,11 +1,7 @@
 import { supabase } from '../supabaseClient.js';
 
 const PATCH_FLAG = '__uberDespesasSyncPatch';
-const CACHE_BRIDGE_FLAG = '__uberPersistentScreenCacheV2';
 const UI_ORGANIZER_FLAG = '__uberUiOrganizerV1';
-const UBER_SESSION_CACHE_KEY = 'uberConferenciaCache_v1';
-const UBER_PERSISTENT_CACHE_KEY = 'uberConferenciaCache_persist_v2';
-const UBER_DEFAULT_CACHE_KEY = 'uberConferenciaCache_default_period_v1';
 
 function localDateISO(offsetDays = 0) {
   const date = new Date();
@@ -23,220 +19,6 @@ function defaultUberPeriod() {
     fim: localDateISO(0),
   };
 }
-
-function rowDateKey(row) {
-  return String(row?.data_solicitacao_local || row?.data_corrida || row?.data || '').slice(0, 10);
-}
-
-function compactEmbarqueMatch(match) {
-  if (!match || typeof match !== 'object') return match ?? null;
-  return {
-    os: match.os ?? null,
-    numero_os: match.numero_os ?? null,
-    cliente: match.cliente ?? null,
-    local: match.local ?? null,
-    local_embarque: match.local_embarque ?? null,
-    embarque: match.embarque ?? null,
-    origem: match.origem ?? null,
-    cidade: match.cidade ?? null,
-    cidade_embarque: match.cidade_embarque ?? null,
-    armazem: match.armazem ?? null,
-    armazém: match.armazém ?? null,
-    produtor: match.produtor ?? null,
-  };
-}
-
-function compactUberCache(serialized) {
-  try {
-    const payload = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
-    if (!payload || !Array.isArray(payload.rows)) return null;
-
-    const rows = payload.rows.map((row) => {
-      if (!row || typeof row !== 'object') return row;
-      const compact = { ...row };
-      if (Object.prototype.hasOwnProperty.call(compact, '__embarqueMatch')) {
-        compact.__embarqueMatch = compactEmbarqueMatch(compact.__embarqueMatch);
-      }
-      return compact;
-    });
-
-    const filters = {
-      inicio: payload?.filters?.inicio || '',
-      fim: payload?.filters?.fim || '',
-      q: payload?.filters?.q || '',
-      status: payload?.filters?.status || '',
-    };
-
-    const sessionSerialized = JSON.stringify({
-      rows,
-      producao: [],
-      filters,
-      cachedAt: new Date().toISOString(),
-    });
-
-    const isFullDataset = !filters.inicio && !filters.fim;
-    const persistentSerialized = isFullDataset
-      ? JSON.stringify({
-          rows,
-          producao: [],
-          filters: { inicio: '', fim: '', q: '', status: '' },
-          cachedAt: new Date().toISOString(),
-        })
-      : null;
-
-    return { rows, filters, sessionSerialized, persistentSerialized };
-  } catch (error) {
-    console.warn('[Uber] Não foi possível compactar o cache da tela:', error);
-    return null;
-  }
-}
-
-function isDefaultPeriod(filters) {
-  const period = defaultUberPeriod();
-  return filters?.inicio === period.inicio && filters?.fim === period.fim;
-}
-
-function rowIdentity(row, index) {
-  return String(
-    row?.id ||
-    row?.trip_id ||
-    row?.trip_uuid ||
-    row?.uuid ||
-    row?.identificador_corrida ||
-    `${rowDateKey(row)}|${row?.nome_colaborador || row?.nome || ''}|${row?.hora_solicitacao_local || ''}|${index}`
-  );
-}
-
-function buildDefaultPeriodCache(persistentRaw, defaultRaw, sessionRaw) {
-  const period = defaultUberPeriod();
-
-  // uberConferenciaCache_default_period_v1 é a foto dedicada e já confirmada
-  // do período padrão (inclusive quando a resposta real foi "0 corridas").
-  // Se ela bate com o período de hoje, usar direto em vez de exigir merge
-  // com linhas — senão um período sem nenhuma corrida nunca vira cache e a
-  // tela volta a "Carregando..." a cada visita.
-  if (defaultRaw) {
-    try {
-      const payload = JSON.parse(defaultRaw);
-      if (Array.isArray(payload?.rows) && payload?.filters?.inicio === period.inicio && payload?.filters?.fim === period.fim) {
-        return JSON.stringify({
-          rows: payload.rows,
-          producao: [],
-          filters: { inicio: period.inicio, fim: period.fim, q: '', status: '' },
-          cachedAt: payload.cachedAt || new Date().toISOString(),
-        });
-      }
-    } catch (error) {
-      console.warn('[Uber] Cache do período padrão inválido, tentando reconstruir por merge:', error);
-    }
-  }
-
-  const merged = new Map();
-  for (const serialized of [persistentRaw, sessionRaw]) {
-    if (!serialized) continue;
-    try {
-      const payload = typeof serialized === 'string' ? JSON.parse(serialized) : serialized;
-      if (!Array.isArray(payload?.rows)) continue;
-      payload.rows.forEach((row, index) => {
-        const date = rowDateKey(row);
-        if (!date || date < period.inicio || date > period.fim) return;
-        merged.set(rowIdentity(row, index), row);
-      });
-    } catch (error) {
-      console.warn('[Uber] Cache anterior ignorado ao montar período padrão:', error);
-    }
-  }
-
-  if (!merged.size) return null;
-  const rows = [...merged.values()].sort((a, b) => {
-    const dateCmp = rowDateKey(b).localeCompare(rowDateKey(a));
-    if (dateCmp) return dateCmp;
-    return String(b?.hora_solicitacao_local || '').localeCompare(String(a?.hora_solicitacao_local || ''));
-  });
-
-  return JSON.stringify({
-    rows,
-    producao: [],
-    filters: { inicio: period.inicio, fim: period.fim, q: '', status: '' },
-    cachedAt: new Date().toISOString(),
-  });
-}
-
-function installUberPersistentCacheBridge() {
-  if (typeof window === 'undefined' || typeof Storage === 'undefined') return;
-  if (window[CACHE_BRIDGE_FLAG]) return;
-
-  const storageProto = Storage.prototype;
-  const originalSetItem = storageProto.setItem;
-  const originalGetItem = storageProto.getItem;
-  const originalRemoveItem = storageProto.removeItem;
-
-  try {
-    const sessionRaw = originalGetItem.call(window.sessionStorage, UBER_SESSION_CACHE_KEY);
-    const persistentRaw = originalGetItem.call(window.localStorage, UBER_PERSISTENT_CACHE_KEY);
-    const defaultRaw = originalGetItem.call(window.localStorage, UBER_DEFAULT_CACHE_KEY);
-
-    if (sessionRaw) {
-      const compact = compactUberCache(sessionRaw);
-      if (compact?.persistentSerialized) {
-        originalSetItem.call(window.localStorage, UBER_PERSISTENT_CACHE_KEY, compact.persistentSerialized);
-      }
-      if (compact && isDefaultPeriod(compact.filters)) {
-        originalSetItem.call(window.localStorage, UBER_DEFAULT_CACHE_KEY, compact.sessionSerialized);
-      }
-    }
-
-    const defaultSnapshot = buildDefaultPeriodCache(persistentRaw, defaultRaw, sessionRaw);
-    if (defaultSnapshot) {
-      originalSetItem.call(window.sessionStorage, UBER_SESSION_CACHE_KEY, defaultSnapshot);
-    } else {
-      originalRemoveItem.call(window.sessionStorage, UBER_SESSION_CACHE_KEY);
-    }
-  } catch (error) {
-    console.warn('[Uber] Não foi possível restaurar o cache persistente da tela:', error);
-  }
-
-  storageProto.setItem = function patchedStorageSetItem(key, value) {
-    if (this === window.sessionStorage && key === UBER_SESSION_CACHE_KEY) {
-      const compact = compactUberCache(value);
-      const sessionValue = compact?.sessionSerialized || String(value ?? '');
-
-      try {
-        originalSetItem.call(this, key, sessionValue);
-      } catch (error) {
-        try {
-          originalRemoveItem.call(this, key);
-          originalSetItem.call(this, key, sessionValue);
-        } catch (retryError) {
-          console.warn('[Uber] Não foi possível salvar o cache leve da tela:', retryError || error);
-        }
-      }
-
-      if (compact?.persistentSerialized) {
-        try {
-          originalSetItem.call(window.localStorage, UBER_PERSISTENT_CACHE_KEY, compact.persistentSerialized);
-        } catch (error) {
-          console.warn('[Uber] Não foi possível salvar o cache persistente da tela:', error);
-        }
-      }
-
-      if (compact && isDefaultPeriod(compact.filters)) {
-        try {
-          originalSetItem.call(window.localStorage, UBER_DEFAULT_CACHE_KEY, compact.sessionSerialized);
-        } catch (error) {
-          console.warn('[Uber] Não foi possível salvar o cache do período padrão:', error);
-        }
-      }
-      return;
-    }
-
-    return originalSetItem.call(this, key, value);
-  };
-
-  window[CACHE_BRIDGE_FLAG] = true;
-}
-
-installUberPersistentCacheBridge();
 
 const sortState = {
   conferir: { index: null, direction: 'asc' },
@@ -367,6 +149,9 @@ function applyDefaultDateInputs() {
   end.dataset.uberDefaultInitialized = '1';
 
   if (start.value || end.value) return false;
+  // A tela abriu com as corridas do cache (uber.js) e o filtro que o usuário deixou, mesmo sem datas:
+  // trocar por ontem→hoje e recarregar descartaria o que já estava carregado.
+  if (window.__uberCacheRestaurado) return false;
 
   const period = defaultUberPeriod();
   start.value = period.inicio;
