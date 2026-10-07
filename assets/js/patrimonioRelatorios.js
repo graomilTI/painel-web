@@ -501,88 +501,57 @@ const PDF_TABLE_STYLES = {
   alternateRowStyles: { fillColor: [248, 250, 252] },
 };
 
-/**
- * Gera o PDF (sem baixar). `secoes`: [{ titulo, subtitulo, stats, rows }], cada uma
- * começa em página nova e tem a própria numeração "Página x/y". `resumo`, quando
- * informado, vira a primeira página (uma linha por regional).
- */
-function gerarPdfPatrimonios(secoes, resumo) {
+/** Gera o PDF (sem baixar) de uma lista: `{ titulo, subtitulo, stats, rows }`. */
+function gerarPdfPatrimonios(secao) {
   if (!window.jspdf?.jsPDF) throw new Error('jsPDF não encontrado.');
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
   if (typeof doc.autoTable !== 'function') throw new Error('jsPDF-AutoTable não encontrado.');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const intervalos = [];
-  let primeiraPagina = true;
+  const situacoes = secao.rows.map((row) => {
+    const info = getDiasInfo(row);
+    if (!info.hasValue) return 'vazio';
+    return info.value > DIAS_LIMITE_ATRASO ? 'atrasado' : 'ok';
+  });
 
-  if (resumo?.length) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(...PDF_COLOR_ESCURO);
-    doc.text('Resumo por regional', PDF_MARGIN.left, 32);
-    doc.autoTable({
-      ...PDF_TABLE_STYLES,
-      startY: 46,
-      margin: { ...PDF_MARGIN, top: 46 },
-      head: [['REGIONAL', 'REGISTROS', 'EM DIA', 'EM ATRASO', 'SEM DIAS']],
-      body: resumo.map((item) => [pdfText(item.regional), item.registros, item.emDia, item.atrasados, item.semDias]),
-      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
-    });
-    primeiraPagina = false;
-  }
-
-  secoes.forEach((secao) => {
-    if (!primeiraPagina) doc.addPage();
-    primeiraPagina = false;
-    const inicio = doc.getNumberOfPages();
-    const situacoes = secao.rows.map((row) => {
+  doc.autoTable({
+    ...PDF_TABLE_STYLES,
+    startY: PDF_MARGIN.top,
+    margin: PDF_MARGIN,
+    head: [['PATRIMÔNIO', 'SUPERVISÃO', 'NOME', 'IDENTIFICAÇÃO', 'ÚLTIMA LEITURA', 'DIAS']],
+    body: secao.rows.map((row) => {
       const info = getDiasInfo(row);
-      if (!info.hasValue) return 'vazio';
-      return info.value > DIAS_LIMITE_ATRASO ? 'atrasado' : 'ok';
-    });
-
-    doc.autoTable({
-      ...PDF_TABLE_STYLES,
-      startY: PDF_MARGIN.top,
-      margin: PDF_MARGIN,
-      head: [['PATRIMÔNIO', 'SUPERVISÃO', 'NOME', 'IDENTIFICAÇÃO', 'ÚLTIMA LEITURA', 'DIAS']],
-      body: secao.rows.map((row) => {
-        const info = getDiasInfo(row);
-        return [
-          pdfText(row.patrimonio_codigo),
-          pdfText(row.supervisao),
-          pdfText(row.funcionario),
-          pdfText(row.identificacao),
-          pdfText(row.ultima_leitura_fmt),
-          info.hasValue ? String(info.value) : '-',
-        ];
-      }),
-      columnStyles: {
-        0: { cellWidth: 'wrap' },
-        4: { cellWidth: 'wrap' },
-        5: { cellWidth: 'wrap', halign: 'center', fontStyle: 'bold' },
-      },
-      didParseCell: (data) => {
-        if (data.section !== 'body' || data.column.index !== 5) return;
-        const situacao = situacoes[data.row.index];
-        data.cell.styles.textColor = situacao === 'atrasado' ? PDF_COLOR_ATRASO : situacao === 'ok' ? PDF_COLOR_OK : PDF_COLOR_NEUTRO;
-      },
-      didDrawPage: () => desenharCabecalhoPdf(doc, secao),
-    });
-    intervalos.push({ inicio, fim: doc.getNumberOfPages() });
+      return [
+        pdfText(row.patrimonio_codigo),
+        pdfText(row.supervisao),
+        pdfText(row.funcionario),
+        pdfText(row.identificacao),
+        pdfText(row.ultima_leitura_fmt),
+        info.hasValue ? String(info.value) : '-',
+      ];
+    }),
+    columnStyles: {
+      0: { cellWidth: 'wrap' },
+      4: { cellWidth: 'wrap' },
+      5: { cellWidth: 'wrap', halign: 'center', fontStyle: 'bold' },
+    },
+    didParseCell: (data) => {
+      if (data.section !== 'body' || data.column.index !== 5) return;
+      const situacao = situacoes[data.row.index];
+      data.cell.styles.textColor = situacao === 'atrasado' ? PDF_COLOR_ATRASO : situacao === 'ok' ? PDF_COLOR_OK : PDF_COLOR_NEUTRO;
+    },
+    didDrawPage: () => desenharCabecalhoPdf(doc, secao),
   });
 
-  // A numeração "Página x/y" só pode ser escrita depois, quando o total de cada seção é conhecido.
-  intervalos.forEach(({ inicio, fim }) => {
-    const total = fim - inicio + 1;
-    for (let pagina = inicio; pagina <= fim; pagina += 1) {
-      doc.setPage(pagina);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(...PDF_COLOR_NEUTRO);
-      doc.text(`Página ${pagina - inicio + 1}/${total}`, pageWidth - PDF_MARGIN.right, 32, { align: 'right' });
-    }
-  });
+  // A numeração "Página x/y" só pode ser escrita depois, quando o total de páginas é conhecido.
+  const total = doc.getNumberOfPages();
+  for (let pagina = 1; pagina <= total; pagina += 1) {
+    doc.setPage(pagina);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(...PDF_COLOR_NEUTRO);
+    doc.text(`Página ${pagina}/${total}`, pageWidth - PDF_MARGIN.right, 32, { align: 'right' });
+  }
 
   return doc;
 }
@@ -814,6 +783,16 @@ async function ensureExportLib(url, globalName, isLoaded = () => Boolean(window[
     script.onerror = () => reject(new Error(`Não foi possível carregar ${globalName}.`));
     document.head.appendChild(script);
   });
+}
+
+// "Mato Grosso do Sul" -> "relatorios-patrimonios-mato-grosso-do-sul.pdf"; nomes que
+// virariam o mesmo slug ganham sufixo para um download não sobrescrever o outro.
+function nomeArquivoRegional(regional, usados) {
+  const slug = normalizeKey(regional).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'sem-regional';
+  let nome = `relatorios-patrimonios-${slug}`;
+  for (let n = 2; usados.has(nome); n += 1) nome = `relatorios-patrimonios-${slug}-${n}`;
+  usados.add(nome);
+  return `${nome}.pdf`;
 }
 
 function groupRowsByRegional(rows) {
@@ -1151,12 +1130,12 @@ export function renderContent(content) {
       setFeedback('Montando PDF...');
       await ensurePdfLibs();
       await aguardarPintura();
-      const doc = gerarPdfPatrimonios([{
+      const doc = gerarPdfPatrimonios({
         titulo: buildReportTitle(readFilters().tipo),
         subtitulo: `Base filtrada em ${agoraFormatado()}`,
         stats: computeStats(state.filteredRows),
         rows: state.filteredRows,
-      }]);
+      });
       doc.save('relatorios-patrimonios.pdf');
       setFeedback('PDF gerado com sucesso.');
     } catch (error) {
@@ -1172,35 +1151,36 @@ export function renderContent(content) {
     }
 
     try {
-      setFeedback('Montando PDF por regional...');
+      setFeedback('Montando PDFs por regional...');
       await ensurePdfLibs();
-      await aguardarPintura();
 
       const tipo = readFilters().tipo;
       const geradoEm = agoraFormatado();
-      const secoes = [];
-      const resumo = [];
-      const orderedRows = [];
+      const grupos = groupRowsByRegional(state.filteredRows);
+      const nomesUsados = new Set();
 
-      for (const [regional, rows] of groupRowsByRegional(state.filteredRows)) {
-        const regionalStats = computeStats(rows);
-        secoes.push({
+      // Um PDF por Coordenação, no mesmo formato do "Exportar PDF". Os downloads saem
+      // em sequência (o Chrome pede uma única vez para permitir vários downloads).
+      for (let i = 0; i < grupos.length; i += 1) {
+        const [regional, rows] = grupos[i];
+        setFeedback(`Gerando PDF ${i + 1}/${grupos.length}: ${regional}...`);
+        // eslint-disable-next-line no-await-in-loop
+        await aguardarPintura();
+        const doc = gerarPdfPatrimonios({
           titulo: buildReportTitle(tipo, regional),
           subtitulo: `Regional ${regional} | gerado em ${geradoEm}`,
-          stats: regionalStats,
+          stats: computeStats(rows),
           rows,
         });
-        orderedRows.push(...rows);
-        resumo.push({ regional, registros: rows.length, emDia: regionalStats.emDia, atrasados: regionalStats.atrasados, semDias: regionalStats.semDias });
+        doc.save(nomeArquivoRegional(regional, nomesUsados));
+        // eslint-disable-next-line no-await-in-loop
+        if (i < grupos.length - 1) await new Promise((resolve) => setTimeout(resolve, 400));
       }
 
-      const doc = gerarPdfPatrimonios(secoes, resumo);
-      doc.save('relatorios-patrimonios-por-regional.pdf');
-      downloadBlob('relatorios-patrimonios-por-regional.csv', new Blob([toCsv(orderedRows)], { type: 'text/csv;charset=utf-8' }));
-      setFeedback('PDF e CSV por regional gerados com sucesso.');
+      setFeedback(`${grupos.length} PDF(s) gerados, um por regional.`);
     } catch (error) {
       console.error(error);
-      setFeedback(error?.message || 'Não foi possível gerar o PDF por regional.', true);
+      setFeedback(error?.message || 'Não foi possível gerar os PDFs por regional.', true);
     }
   }));
 
