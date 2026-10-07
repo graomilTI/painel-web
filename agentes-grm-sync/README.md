@@ -275,11 +275,15 @@ cd /home/grao100/painel-scripts/grm-sync
    e o worker da lane `saida_logistica` o pega em ~1-2 min. Trata a data de **ontem**.
 2. **Cálculo dos pendentes:** recalcula a regra do FOB para a data e cruza O.S. sem carga real no mesmo local de
    embarque com o login do colaborador (`grm_login_movimentos_importacoes`). Também repesca pendências dos últimos
-   `NHE_LANCAMENTO_REPROCESSAR_DIAS` dias (padrão 3) com status `SEM_LOGIN`, `SEM_COORDENADA_OS`, `FORA_DO_RAIO`,
-   `ERRO`, `SEM_FUNCIONARIO` ou `LOTE_EXCEDIDO`.
+   `NHE_LANCAMENTO_REPROCESSAR_DIAS` dias (padrão 3) com status `SEM_LOGIN`, `FORA_DO_RAIO`, `ERRO`,
+   `SEM_FUNCIONARIO` ou `LOTE_EXCEDIDO`. `SEM_COORDENADA_OS` tem janela própria de
+   `NHE_LANCAMENTO_REPROCESSAR_SEM_COORDENADA_DIAS` dias (padrão 14), porque o ponto de embarque pode demorar a ganhar
+   coordenada no cadastro do GRM (O.S. 94005: 28/09–02/10 sem coordenada, ponto só entrou em 06/10).
 3. **Elegibilidade:** colaborador a até `NHE_LANCAMENTO_RAIO_M` (2000 m) do ponto da O.S. Fora do raio, lança no nome do
    gestor da regional (`viaGestor`). Sem login, sem coordenada da O.S. ou sem gestor → fica como pendência manual.
-   Um grupo Cliente + ponto de embarque só recebe uma NHE.
+   Um grupo Cliente + ponto de embarque só recebe uma NHE **por dia** (a chave inclui a data; antes a 2ª data
+   pendente da mesma O.S. era barrada como `MESMO_PONTO_AGRUPADO` "contra si mesma" e nunca lançada — 94005 em
+   05/10 e 94517 em 06/10, 07/10/2026). Linhas assim, já gravadas, são repescadas.
 4. **Lote de no máximo 8 lançamentos por execução** (`NHE_LANCAMENTO_LOTE`, teto 8; cada lançamento leva ~35-50 s no
    navegador e o watchdog do worker é de 12 min). Os candidatos cortados são gravados como `LOTE_EXCEDIDO`.
 5. **Continuação encadeada:** se sobraram candidatos e o lote andou (`loteProgresso > 0`), o script insere em
