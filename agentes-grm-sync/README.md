@@ -323,7 +323,11 @@ where data_referencia = '2026-09-28' order by status, numero_os;
   `output` do job.
 - **Retomar manualmente** (lança NHE de verdade no GRM): confirmar que não há job `pendente`/`rodando` e inserir
   `{agente_id: 'sync-lancar-nhe', status: 'pendente', payload: {continuacao: true}}` em `grm_sync_jobs`.
-- Modo avulso (não passa pela fila): `node grm-sync-lancar-nhe.js --os <número> --data AAAA-MM-DD [--dry-run] [--debug] [--forcar]`.
+- Modo avulso (não passa pela fila): `node grm-sync-lancar-nhe.js --os <número> --data AAAA-MM-DD [--dry-run] [--debug] [--forcar] [--gestor "NOME"]`.
+  Com `--os` + `--data`, reabre também linha já gravada como `DRY_RUN_OK`, `FORA_DO_RAIO`, `SEM_LOGIN`,
+  `SEM_FUNCIONARIO` ou `ERRO` (as travas reais são revalidadas). `--gestor` só vale quando o colaborador está fora do
+  raio: lança em nome desse colaborador ativo (qualquer cargo) em vez do Supervisor/Coordenador da regional — usado
+  quando a regional não tem gestor ativo cadastrado (91497, "PARA - Norte", 07/10/2026, Suporte Maria Eduarda).
 
 ## Rodar manualmente (debug)
 
