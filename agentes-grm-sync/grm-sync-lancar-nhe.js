@@ -163,6 +163,7 @@ function parseArgs(argv) {
     else if (argv[i] === '--dry-run') out.dryRun = true;
     else if (argv[i] === '--funcionario') out.funcionario = argv[++i];
     else if (argv[i] === '--forcar') out.forcar = true;
+    else if (argv[i] === '--gestor') out.gestor = argv[++i];
   }
   return out;
 }
@@ -914,6 +915,19 @@ async function buscarGestorRegional(coordenacao, supervisao) {
     if (porCoordenacao) return porCoordenacao;
   }
   return null;
+}
+
+// Modo manual (--gestor): regional sem Supervisor/Coordenador ativo cadastrado (ex.: "PARA - Norte",
+// 07/10/2026, onde quem responde é o Suporte). Aceita qualquer cargo ativo, pelo nome exato.
+async function buscarColaboradorAtivoPorNome(nome) {
+  var wanted = normText(nome);
+  if (!wanted) return null;
+  var result = await supabase
+    .from('colaboradores')
+    .select('nome,cargo,coordenacao,supervisao')
+    .eq('situacao', 'Ativo');
+  if (result.error) throw result.error;
+  return (result.data || []).find(function (row) { return normText(row.nome) === wanted; }) || null;
 }
 
 async function buscarLoginColaborador(dataYmd, funcionario, osCoord) {
@@ -1862,7 +1876,10 @@ async function main() {
           .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
           .eq('data_referencia', dataSolicitada)
           .eq('numero_os', osSolicitada)
-          .eq('status', 'DRY_RUN_OK')
+          // Além de DRY_RUN_OK, reabre pendência manual já gravada com um desses status (fora da janela
+          // da repescagem, ex.: FORA_DO_RAIO sem gestor). Nunca SUCESSO/JA_EXISTIA_*; as travas reais
+          // abaixo continuam sendo recalculadas antes de qualquer Salvar.
+          .in('status', ['DRY_RUN_OK', 'FORA_DO_RAIO', 'SEM_LOGIN', 'SEM_FUNCIONARIO', 'ERRO'])
           .limit(1)
           .maybeSingle();
         if (dryResult.error) throw dryResult.error;
@@ -1877,9 +1894,9 @@ async function main() {
             funcionario: dryRow.raw && dryRow.raw.colaborador_original ? dryRow.raw.colaborador_original : dryRow.funcionario,
             osCoord: undefined,
             reprocessamento: true,
-            statusAnterior: 'DRY_RUN_OK'
+            statusAnterior: dryRow.status
           }];
-          log('INFO', 'O.S. ' + osSolicitada + ' em ' + dataSolicitada + ': reaberta manualmente após DRY_RUN_OK; travas de segurança serão revalidadas.');
+          log('INFO', 'O.S. ' + osSolicitada + ' em ' + dataSolicitada + ': reaberta manualmente após ' + dryRow.status + '; travas de segurança serão revalidadas.');
         }
       }
 
@@ -2014,7 +2031,11 @@ async function main() {
         // (texto "MATO GROSSO MT4 - Geral"); a coordenação é o prefixo antes
         // do " - " (mesmo padrão usado pro campo Coordenação do GRM alhures).
         var coordenacaoDaOs = osCoord.supervisao ? String(osCoord.supervisao).split(' - ')[0].trim() : null;
-        var gestor = await buscarGestorRegional(coordenacaoDaOs, osCoord.supervisao);
+        // --gestor "NOME" (manual, só vale aqui, no ramo fora do raio): lança em nome desse colaborador
+        // ativo em vez do Supervisor/Coordenador da regional.
+        var gestor = args.gestor
+          ? await buscarColaboradorAtivoPorNome(args.gestor)
+          : await buscarGestorRegional(coordenacaoDaOs, osCoord.supervisao);
         if (gestor) {
           stats.viaGestor++;
           candidatos.push(Object.assign({}, p, {
@@ -2027,7 +2048,7 @@ async function main() {
           }));
         } else {
           stats.foraDoRaio++;
-          await salvarResultado(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }), { status: 'FORA_DO_RAIO', erro: 'Sem gestor regional identificado para lançar em nome dele.' });
+          await salvarResultado(Object.assign({}, p, { osCoord: osCoord, loginMatch: loginMatch }), { status: 'FORA_DO_RAIO', erro: args.gestor ? 'Colaborador informado em --gestor não encontrado entre os ativos: ' + args.gestor : 'Sem gestor regional identificado para lançar em nome dele.' });
         }
         continue;
       }
@@ -2327,5 +2348,6 @@ module.exports = {
   agruparCandidatosPorPontoEDia: agruparCandidatosPorPontoEDia,
   agrupadoComElaMesma: agrupadoComElaMesma,
   colaboradorOriginalDaLinha: colaboradorOriginalDaLinha,
-  filtrarPendenciasAnteriores: filtrarPendenciasAnteriores
+  filtrarPendenciasAnteriores: filtrarPendenciasAnteriores,
+  parseArgs: parseArgs
 };

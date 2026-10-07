@@ -11,6 +11,7 @@ const {
   agrupadoComElaMesma,
   colaboradorOriginalDaLinha,
   filtrarPendenciasAnteriores,
+  parseArgs,
 } = require('../agentes-grm-sync/grm-sync-lancar-nhe.js');
 
 const osCoord = { embarque: 'BA - LUÍS EDUARDO MAGALHÃES (FAZENDA SANTA IZABEL)', cliente: 'COFCO' };
@@ -85,4 +86,12 @@ test('repescagem so reaproveita MESMO_PONTO_AGRUPADO quando agrupada contra si m
   ];
   const mantidas = filtrarPendenciasAnteriores(rows, '2026-10-03', '2026-09-22').map((r) => r.numero_os);
   assert.deepEqual(mantidas, ['94005']);
+});
+
+test('--gestor e lido junto de --os/--data (recuperacao manual com gestor informado)', () => {
+  const args = parseArgs(['--os', '91497', '--data', '2026-09-07', '--gestor', 'MARIA EDUARDA SOUSA SILVA']);
+  assert.equal(args.os, '91497');
+  assert.equal(args.data, '2026-09-07');
+  assert.equal(args.gestor, 'MARIA EDUARDA SOUSA SILVA');
+  assert.equal(parseArgs(['--os', '1']).gestor, undefined);
 });
