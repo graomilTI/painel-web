@@ -175,12 +175,12 @@ async function ajustarRegionalVeiculosPorLeitura(rows) {
   const leituras = rows
     .filter((row) => row.coordenacao && row.identificacao)
     .flatMap((row) => extrairPlacasKeys(row.identificacao).map((key) => ({
-      key, coordenacao: row.coordenacao, ultima_leitura: row.ultima_leitura, data_upload: row.data_upload,
+      key, coordenacao: row.coordenacao, supervisao: row.supervisao, ultima_leitura: row.ultima_leitura, data_upload: row.data_upload,
     })));
   if (!leituras.length) return 0;
 
   const { data: veiculos, error } = await supabase
-    .from('frotas_veiculos').select('id,placa,coordenacao,status').eq('status', 'ATIVO').limit(10000);
+    .from('frotas_veiculos').select('id,placa,coordenacao,supervisao,status').eq('status', 'ATIVO').limit(10000);
   if (error) throw error;
 
   const porPlaca = new Map((veiculos || []).map((v) => [placaKey(v.placa), v]));
@@ -195,9 +195,15 @@ async function ajustarRegionalVeiculosPorLeitura(rows) {
   });
 
   let atualizados = 0;
-  for (const { veiculo, coordenacao } of melhorPorVeiculo.values()) {
-    if (veiculo.coordenacao === coordenacao) continue;
-    const { error: updError } = await supabase.from('frotas_veiculos').update({ coordenacao }).eq('id', veiculo.id);
+  for (const { veiculo, coordenacao, supervisao } of melhorPorVeiculo.values()) {
+    // A supervisão acompanha a coordenação: a Programação lista as placas de uma
+    // supervisão por frotas_veiculos.supervisao, e ela só era preenchida quando
+    // vazia — placa que mudava de supervisão no Patrimônios sumia da lista
+    // (RVH2C89, 2026-10-07).
+    const supervisaoMudou = !!supervisao && veiculo.supervisao !== supervisao;
+    if (veiculo.coordenacao === coordenacao && !supervisaoMudou) continue;
+    const payload = supervisao ? { coordenacao, supervisao } : { coordenacao };
+    const { error: updError } = await supabase.from('frotas_veiculos').update(payload).eq('id', veiculo.id);
     if (!updError) atualizados += 1;
   }
   return atualizados;
