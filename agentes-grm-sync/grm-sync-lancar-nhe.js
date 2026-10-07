@@ -67,6 +67,11 @@ var FOB_JANELA_DIAS = Number(process.env.NHE_LANCAMENTO_FOB_DIAS || 3);
 var MAX_MOV_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_MOV_ROWS || 100000);
 var MAX_NHE_ROWS = Number(process.env.NHE_LANCAMENTO_MAX_NHE_ROWS || 10000);
 var REPROCESSAR_DIAS = Math.max(1, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_DIAS) || 3);
+// SEM_COORDENADA_OS espera o ponto de embarque ganhar coordenada (cadastro do GRM → espelho
+// por hora → operacional_pontos_embarque), que pode levar mais que REPROCESSAR_DIAS: a O.S.
+// 94005 ficou 28/09–02/10 sem coordenada, o ponto só entrou em 06/10 e as 5 datas já tinham
+// saído da repescagem (nunca lançadas). Janela própria e maior só para esse status.
+var REPROCESSAR_SEM_COORDENADA_DIAS = Math.max(REPROCESSAR_DIAS, Number(process.env.NHE_LANCAMENTO_REPROCESSAR_SEM_COORDENADA_DIAS) || 14);
 // Cada lançamento leva em média 35-50s. O lote fica limitado a 8 para que a
 // execução conclua antes do watchdog; os restantes são enfileirados pela
 // continuação automática já existente.
@@ -717,25 +722,61 @@ async function buscarPendentes() {
   return pendentes;
 }
 
-async function buscarPendenciasAnteriores(dataReferencia) {
+function inicioJanela(dataReferencia, dias) {
   var inicio = new Date(dataReferencia + 'T12:00:00');
-  inicio.setDate(inicio.getDate() - REPROCESSAR_DIAS);
+  inicio.setDate(inicio.getDate() - dias);
+  return ymd(inicio);
+}
+
+// MESMO_PONTO_AGRUPADO "contra si mesma": a trava de grupo comparava só Cliente + embarque,
+// sem a data, então a 2ª data pendente da MESMA O.S. na mesma execução era barrada como
+// "já representada pela O.S. <ela mesma>" (94005 em 05/10 e 94517 em 06/10, 07/10/2026) e
+// ficava como resolvida sem NHE no GRM. Linhas assim nunca foram um agrupamento de verdade.
+function agrupadoComElaMesma(row) {
+  var raw = row && row.raw;
+  return !!(row && row.status === 'MESMO_PONTO_AGRUPADO' && raw && raw.agrupado_com_os
+    && normOs(raw.agrupado_com_os) === normOs(row.numero_os));
+}
+
+// Quem era o colaborador de verdade, para refazer a geofence na repescagem. Em lançamento via
+// gestor, `funcionario` guarda o gestor; o original fica em raw.colaborador_original — mas a
+// linha MESMO_PONTO_AGRUPADO sobrescrevia o raw e só `colaborador_chave` preservava o nome.
+function colaboradorOriginalDaLinha(row) {
+  if (row.raw && row.raw.colaborador_original) return row.raw.colaborador_original;
+  if (row.status === 'MESMO_PONTO_AGRUPADO' && row.colaborador_chave) return row.colaborador_chave;
+  return row.funcionario;
+}
+
+// Janela por status: SEM_COORDENADA_OS usa a maior (REPROCESSAR_SEM_COORDENADA_DIAS), as demais
+// REPROCESSAR_DIAS; MESMO_PONTO_AGRUPADO só volta quando for o agrupamento contra si mesma.
+function filtrarPendenciasAnteriores(rows, inicioPadrao, inicioSemCoordenada) {
+  return (rows || []).filter(function (row) {
+    var data = String(row.data_referencia || '');
+    if (row.status === 'SEM_COORDENADA_OS') return data >= inicioSemCoordenada;
+    if (row.status === 'MESMO_PONTO_AGRUPADO' && !agrupadoComElaMesma(row)) return false;
+    return data >= inicioPadrao;
+  });
+}
+
+async function buscarPendenciasAnteriores(dataReferencia) {
+  var inicioPadrao = inicioJanela(dataReferencia, REPROCESSAR_DIAS);
+  var inicioSemCoordenada = inicioJanela(dataReferencia, REPROCESSAR_SEM_COORDENADA_DIAS);
   // LOTE_EXCEDIDO incluído aqui (03/09/2026): candidato cortado pelo cap
   // MAX_LANCAMENTOS_POR_EXECUCAO sem a continuação automática ter conseguido
   // reprocessar no mesmo dia (ver comentário em main() sobre `loteProgresso`)
   // — sem isso, virava pendência fantasma permanente assim que a referência
   // mudava de dia (casos reais: O.S. 89301 e 91561 em 02/09/2026).
-  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO', 'LOTE_EXCEDIDO'];
+  var statusesHistoricos = ['SEM_LOGIN', 'SEM_COORDENADA_OS', 'FORA_DO_RAIO', 'ERRO', 'SEM_FUNCIONARIO', 'LOTE_EXCEDIDO', 'MESMO_PONTO_AGRUPADO'];
   if (REPETIR_NAO_CONFIRMADO) statusesHistoricos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
-    .select('data_referencia,numero_os,cliente,supervisao,funcionario,status,raw')
-    .gte('data_referencia', ymd(inicio))
+    .select('data_referencia,numero_os,cliente,supervisao,funcionario,colaborador_chave,status,raw')
+    .gte('data_referencia', inicioSemCoordenada)
     .lt('data_referencia', dataReferencia)
     .in('status', statusesHistoricos)
     .order('data_referencia', { ascending: true });
   if (result.error) throw result.error;
-  return (result.data || []).map(function (row) {
+  return filtrarPendenciasAnteriores(result.data, inicioPadrao, inicioSemCoordenada).map(function (row) {
     return {
       data: row.data_referencia,
       data_br: brDate(row.data_referencia),
@@ -744,7 +785,7 @@ async function buscarPendenciasAnteriores(dataReferencia) {
       supervisao: row.supervisao,
       // Em lançamentos via gestor, `funcionario` guarda quem seria escolhido
       // no modal; para refazer a geofence precisamos do colaborador original.
-      funcionario: row.raw && row.raw.colaborador_original ? row.raw.colaborador_original : row.funcionario,
+      funcionario: colaboradorOriginalDaLinha(row),
       osCoord: undefined,
       reprocessamento: true,
       statusAnterior: row.status
@@ -988,13 +1029,17 @@ async function carregarJaLancadas(dataReferencia) {
   if (!REPETIR_NAO_CONFIRMADO) statusesResolvidos.push('SALVO_NAO_CONFIRMADO');
   var result = await supabase
     .from(TABLE_RESULTADOS)
-    .select('data_referencia,numero_os,status')
+    .select('data_referencia,numero_os,status,raw')
     .gte('data_referencia', ymd(inicio))
     .lte('data_referencia', dataReferencia)
     .in('status', statusesResolvidos);
   if (result.error) throw result.error;
   var set = {};
-  (result.data || []).forEach(function (row) { set[chaveUnica(row.data_referencia, row.numero_os)] = true; });
+  (result.data || []).forEach(function (row) {
+    // agrupada contra si mesma não é resolvida: nenhuma NHE foi lançada (ver agrupadoComElaMesma)
+    if (agrupadoComElaMesma(row)) return;
+    set[chaveUnica(row.data_referencia, row.numero_os)] = true;
+  });
   return set;
 }
 
@@ -1003,6 +1048,26 @@ function chaveGrupoEmbarque(candidato) {
   var cliente = normText((candidato && candidato.cliente) || info.cliente);
   var embarque = normText(info.embarque || info.local);
   return cliente && embarque ? cliente + '|embarque:' + embarque : '';
+}
+
+// Uma NHE por Cliente + ponto de embarque POR DIA: a NHE é por O.S.+data no GRM (a trava ao
+// vivo existeNheMesmoPontoNoGrmAoVivo também confere a data). Sem a data na chave, duas datas
+// pendentes do mesmo local — inclusive da mesma O.S. — viravam "grupo" e a 2ª nunca era lançada.
+function agruparCandidatosPorPontoEDia(candidatos) {
+  var representantes = {};
+  var unicos = [];
+  var agrupados = [];
+  (candidatos || []).forEach(function (cand) {
+    var chaveGrupo = chaveGrupoEmbarque(cand);
+    var chaveDia = chaveGrupo ? String(cand.data) + '|' + chaveGrupo : '';
+    if (chaveDia && representantes[chaveDia]) {
+      agrupados.push({ candidato: cand, representante: representantes[chaveDia] });
+      return;
+    }
+    if (chaveDia) representantes[chaveDia] = cand.os;
+    unicos.push(cand);
+  });
+  return { unicos: unicos, agrupados: agrupados };
 }
 
 function identidadeGrupoEmbarque(candidato) {
@@ -1973,29 +2038,26 @@ async function main() {
     // REGRA OPERACIONAL: somente uma NHE por Cliente + ponto de embarque.
     // Duas O.S. irmãs podem chegar PENDENTE no mesmo cálculo; apenas uma segue
     // para o GRM e as demais ficam auditadas como agrupadas.
-    var gruposCandidatos = {};
-    var candidatosUnicos = [];
-    for (var u = 0; u < candidatos.length; u++) {
-      var cand = candidatos[u];
-      var chaveGrupo = chaveGrupoEmbarque(cand);
-      if (chaveGrupo && gruposCandidatos[chaveGrupo]) {
-        stats.mesmoPontoAgrupado++;
-        await salvarResultado(cand, {
-          status: 'MESMO_PONTO_AGRUPADO',
-          lancado_em: null,
-          erro: null,
-          raw: {
-            agrupado_com_os: gruposCandidatos[chaveGrupo],
-            regra: 'MESMO_CLIENTE_MESMO_PONTO_UMA_NHE'
-          }
-        });
-        log('INFO', 'O.S. ' + cand.os + ': mesma combinação Cliente + Embarque já representada pela O.S. ' + gruposCandidatos[chaveGrupo] + '; lançamento bloqueado.');
-        continue;
-      }
-      if (chaveGrupo) gruposCandidatos[chaveGrupo] = cand.os;
-      candidatosUnicos.push(cand);
+    var agrupamento = agruparCandidatosPorPontoEDia(candidatos);
+    for (var u = 0; u < agrupamento.agrupados.length; u++) {
+      var cand = agrupamento.agrupados[u].candidato;
+      var representante = agrupamento.agrupados[u].representante;
+      stats.mesmoPontoAgrupado++;
+      await salvarResultado(cand, {
+        status: 'MESMO_PONTO_AGRUPADO',
+        lancado_em: null,
+        erro: null,
+        raw: {
+          agrupado_com_os: representante,
+          regra: 'MESMO_CLIENTE_MESMO_PONTO_UMA_NHE',
+          // salvarResultado grava `funcionario` = gestor nas linhas via gestor; sem isto a
+          // repescagem perderia o colaborador original
+          colaborador_original: cand.funcionario
+        }
+      });
+      log('INFO', 'O.S. ' + cand.os + ' em ' + cand.data + ': mesma combinação Cliente + Embarque no mesmo dia já representada pela O.S. ' + representante + '; lançamento bloqueado.');
     }
-    candidatos = candidatosUnicos;
+    candidatos = agrupamento.unicos;
 
     stats.candidatos = candidatos.length;
     log('SUCCESS', candidatos.length + ' grupo(s) único(s) Cliente + Embarque elegível(is); ' + stats.mesmoPontoAgrupado + ' O.S. irmã(s) agrupada(s).');
@@ -2261,5 +2323,9 @@ module.exports = {
   existeNheReal: existeNheReal,
   existeMovimentoReal: existeMovimentoReal,
   chaveGrupoEmbarque: chaveGrupoEmbarque,
-  identidadeGrupoEmbarque: identidadeGrupoEmbarque
+  identidadeGrupoEmbarque: identidadeGrupoEmbarque,
+  agruparCandidatosPorPontoEDia: agruparCandidatosPorPontoEDia,
+  agrupadoComElaMesma: agrupadoComElaMesma,
+  colaboradorOriginalDaLinha: colaboradorOriginalDaLinha,
+  filtrarPendenciasAnteriores: filtrarPendenciasAnteriores
 };
