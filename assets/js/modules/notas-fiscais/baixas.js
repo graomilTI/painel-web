@@ -13,7 +13,7 @@
 
 import {
   table, pagination, badge, openModal, closeModal, confirmar, toast,
-  esc, dinheiro, dataBR, dataHoraBR,
+  esc, dinheiro, dataBR, dataHoraBR, debounce,
 } from '../../core/ui.js';
 import {
   supabase, listar, atualizar, inserir, mensagemDeErro,
@@ -56,8 +56,17 @@ const FILTROS = [
   { id: 'ERRO', label: 'Erro' },
 ];
 
+// Colunas que a busca por "Descrição" varre: tudo que aparece em texto na linha
+// (arquivo, favorecido, empresa, detalhe/erro) mais o pinCode da baixa.
+const COLUNAS_BUSCA = ['arquivo_nome', 'favorecido_nome', 'empresa_detectada', 'erro', 'pin_code'];
+
+const FILTROS_VAZIOS = {
+  descricao: '', dataDe: '', dataAte: '', valorDe: '', valorAte: '',
+};
+
 let estado = {
   status: 'loading', erro: null, itens: [], total: 0, filtro: 'todos', pagina: 1, porPagina: 20,
+  campos: { ...FILTROS_VAZIOS },
 };
 
 function usuarioAtual() {
@@ -68,17 +77,49 @@ export function baixasFiltroAtivo() {
   return estado.filtro;
 }
 
+// "948,82", "1.234,56", "948.82" e "R$ 1.234,56" viram número; texto inválido vira null.
+function numeroDoCampo(texto) {
+  let t = String(texto ?? '').replace(/[^\d.,-]/g, '');
+  if (!t) return null;
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (!/^-?\d+\.\d{1,2}$/.test(t)) t = t.replace(/\./g, '');
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+// O termo vai dentro de um .or() do PostgREST: vírgula, parênteses, aspas e
+// curingas quebrariam a expressão, então saem do termo.
+function termoBusca(texto) {
+  return String(texto ?? '').replace(/[(),"\\%*]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function filtrosAtivos(campos = estado.campos) {
+  return Object.values(campos).some((v) => String(v).trim() !== '');
+}
+
 export async function carregarBaixas() {
   estado = { ...estado, status: 'loading', erro: null };
   try {
+    const { descricao, dataDe, dataAte, valorDe, valorAte } = estado.campos;
     const filtros = [];
     if (estado.filtro !== 'todos') filtros.push({ coluna: 'status', valor: [estado.filtro], op: 'in' });
-    const { rows, total } = await listar(TABELA, {
+    if (dataDe) filtros.push({ coluna: 'data_pagamento', op: 'gte', valor: dataDe });
+    if (dataAte) filtros.push({ coluna: 'data_pagamento', op: 'lte', valor: dataAte });
+    const vDe = numeroDoCampo(valorDe);
+    const vAte = numeroDoCampo(valorAte);
+    if (vDe != null) filtros.push({ coluna: 'valor', op: 'gte', valor: vDe });
+    if (vAte != null) filtros.push({ coluna: 'valor', op: 'lte', valor: vAte });
+    const termo = termoBusca(descricao);
+    const { rows, total, cancelada } = await listar(TABELA, {
       filtros,
+      busca: termo ? { colunas: COLUNAS_BUSCA, termo } : null,
       ordenar: [{ coluna: 'updated_at', asc: false }],
       pagina: estado.pagina,
       porPagina: estado.porPagina,
+      chaveCorrida: 'nf-baixas',
     });
+    // Consulta mais nova já foi disparada (filtro mudou no meio): ela é quem grava o resultado.
+    if (cancelada) return;
     estado = { ...estado, status: 'ok', itens: rows, total };
   } catch (error) {
     estado = { ...estado, status: 'error', erro: mensagemDeErro(error, TABELA) };
@@ -166,8 +207,26 @@ function linhaHtml(row) {
     </tr>`;
 }
 
-export function renderBaixas() {
-  const corpo = estado.status === 'ok'
+function camposFiltroHtml() {
+  const c = estado.campos;
+  const campo = (id, rotulo, atributos, valor, estilo) => `
+      <div class="ds-field" style="${estilo}">
+        <label for="${id}">${rotulo}</label>
+        <input id="${id}" value="${esc(valor)}" autocomplete="off" ${atributos}>
+      </div>`;
+  return `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:0 0 14px">
+      ${campo('baixaFiltroDescricao', 'Descrição', 'type="search" placeholder="Arquivo, favorecido, empresa ou detalhe"', c.descricao, 'flex:2 1 260px')}
+      ${campo('baixaFiltroDataDe', 'Pago de', 'type="date"', c.dataDe, 'flex:1 1 150px')}
+      ${campo('baixaFiltroDataAte', 'Pago até', 'type="date"', c.dataAte, 'flex:1 1 150px')}
+      ${campo('baixaFiltroValorDe', 'Valor de', 'type="text" inputmode="decimal" placeholder="0,00"', c.valorDe, 'flex:1 1 120px')}
+      ${campo('baixaFiltroValorAte', 'Valor até', 'type="text" inputmode="decimal" placeholder="0,00"', c.valorAte, 'flex:1 1 120px')}
+      <button class="ds-btn" data-baixa-limpar type="button" ${filtrosAtivos() ? '' : 'hidden'}>Limpar filtros</button>
+    </div>`;
+}
+
+function corpoTabelaHtml() {
+  return estado.status === 'ok'
     ? `${table({
       colunas: [
         { id: 'arquivo', label: 'Arquivo' },
@@ -180,17 +239,20 @@ export function renderBaixas() {
         { id: 'acoes', label: '' },
       ],
       linhasHtml: estado.itens.map(linhaHtml).join(''),
-      vazio: 'Nenhum comprovante nessa janela.',
+      vazio: filtrosAtivos() ? 'Nenhum comprovante encontrado com esses filtros.' : 'Nenhum comprovante nessa janela.',
     })}${pagination({ pagina: estado.pagina, porPagina: estado.porPagina, total: estado.total, attr: 'data-baixa-pagina' })}`
     : estado.status === 'error'
       ? `<div class="ds-state ds-empty">${esc(estado.erro)}</div>`
       : '<div class="ds-state ds-loading"><span class="ds-spinner"></span>Carregando...</div>';
+}
 
+export function renderBaixas() {
   return `
     <div class="fin-setor-filter" style="margin:0 0 14px">
       ${FILTROS.map((f) => `<button class="fin-setor-btn ${estado.filtro === f.id ? 'active' : ''}" data-baixa-filtro="${esc(f.id)}" type="button">${esc(f.label)}</button>`).join('')}
     </div>
-    <div id="baixasTabelaWrap">${corpo}</div>`;
+    ${camposFiltroHtml()}
+    <div id="baixasTabelaWrap">${corpoTabelaHtml()}</div>`;
 }
 
 async function abrirRevisao(id, aoAtualizar) {
@@ -289,34 +351,90 @@ async function cancelar(id, aoAtualizar) {
   }
 }
 
+// Eventos da tabela (paginação e ações da linha). Ficam separados porque, ao
+// filtrar, só o #baixasTabelaWrap é redesenhado — redesenhar a tela inteira
+// tiraria o foco do campo que a pessoa está digitando.
+function vincularEventosTabela(container, aoAtualizar) {
+  const wrap = container.querySelector('#baixasTabelaWrap');
+  if (!wrap) return;
+  wrap.querySelectorAll('[data-baixa-pagina]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const p = Number(b.dataset.baixaPagina);
+      if (!Number.isFinite(p) || p < 1) return;
+      estado = { ...estado, pagina: p };
+      await recarregarTabela(container, aoAtualizar);
+    });
+  });
+  wrap.querySelectorAll('[data-baixa-abrir]').forEach((b) => {
+    b.addEventListener('click', () => abrirComprovante(b.dataset.baixaAbrir));
+  });
+  wrap.querySelectorAll('[data-baixa-revisar]').forEach((b) => {
+    b.addEventListener('click', () => abrirRevisao(b.dataset.baixaRevisar, aoAtualizar));
+  });
+  wrap.querySelectorAll('[data-baixa-relancar]').forEach((b) => {
+    b.addEventListener('click', () => relancar(b.dataset.baixaRelancar, aoAtualizar));
+  });
+  wrap.querySelectorAll('[data-baixa-cancelar]').forEach((b) => {
+    b.addEventListener('click', () => cancelar(b.dataset.baixaCancelar, aoAtualizar));
+  });
+}
+
+async function recarregarTabela(container, aoAtualizar) {
+  const wrap = container.querySelector('#baixasTabelaWrap');
+  if (wrap) wrap.style.opacity = '.55';
+  await carregarBaixas();
+  // Ainda "loading": outra consulta mais nova está em andamento e vai redesenhar.
+  if (estado.status === 'loading') return;
+  const atual = container.querySelector('#baixasTabelaWrap');
+  if (!atual) return;
+  atual.style.opacity = '';
+  atual.innerHTML = corpoTabelaHtml();
+  vincularEventosTabela(container, aoAtualizar);
+  const limpar = container.querySelector('[data-baixa-limpar]');
+  if (limpar) limpar.hidden = !filtrosAtivos();
+}
+
+const CAMPOS_FILTRO = [
+  { id: 'baixaFiltroDescricao', chave: 'descricao', evento: 'input' },
+  { id: 'baixaFiltroDataDe', chave: 'dataDe', evento: 'change' },
+  { id: 'baixaFiltroDataAte', chave: 'dataAte', evento: 'change' },
+  { id: 'baixaFiltroValorDe', chave: 'valorDe', evento: 'input' },
+  { id: 'baixaFiltroValorAte', chave: 'valorAte', evento: 'input' },
+];
+
 export function vincularEventosBaixas(container, { aoAtualizar }) {
   container.querySelectorAll('[data-baixa-filtro]').forEach((b) => {
     b.addEventListener('click', async () => {
       if (b.dataset.baixaFiltro === estado.filtro) return;
       estado = { ...estado, filtro: b.dataset.baixaFiltro, pagina: 1 };
       await carregarBaixas();
-      aoAtualizar();
+      if (estado.status !== 'loading') aoAtualizar();
     });
   });
-  container.querySelectorAll('[data-baixa-pagina]').forEach((b) => {
-    b.addEventListener('click', async () => {
-      const p = Number(b.dataset.baixaPagina);
-      if (!Number.isFinite(p) || p < 1) return;
-      estado = { ...estado, pagina: p };
-      await carregarBaixas();
-      aoAtualizar();
+
+  const aplicar = debounce(() => {
+    estado = { ...estado, pagina: 1 };
+    recarregarTabela(container, aoAtualizar);
+  }, 400);
+  CAMPOS_FILTRO.forEach(({ id, chave, evento }) => {
+    container.querySelector(`#${id}`)?.addEventListener(evento, (e) => {
+      estado = { ...estado, campos: { ...estado.campos, [chave]: e.target.value } };
+      const limpar = container.querySelector('[data-baixa-limpar]');
+      if (limpar) limpar.hidden = !filtrosAtivos();
+      // Data é escolhida de uma vez no seletor; texto e valor esperam a pessoa parar de digitar.
+      if (evento === 'change') {
+        estado = { ...estado, pagina: 1 };
+        recarregarTabela(container, aoAtualizar);
+      } else {
+        aplicar();
+      }
     });
   });
-  container.querySelectorAll('[data-baixa-abrir]').forEach((b) => {
-    b.addEventListener('click', () => abrirComprovante(b.dataset.baixaAbrir));
+  container.querySelector('[data-baixa-limpar]')?.addEventListener('click', async () => {
+    estado = { ...estado, campos: { ...FILTROS_VAZIOS }, pagina: 1 };
+    await carregarBaixas();
+    if (estado.status !== 'loading') aoAtualizar();
   });
-  container.querySelectorAll('[data-baixa-revisar]').forEach((b) => {
-    b.addEventListener('click', () => abrirRevisao(b.dataset.baixaRevisar, aoAtualizar));
-  });
-  container.querySelectorAll('[data-baixa-relancar]').forEach((b) => {
-    b.addEventListener('click', () => relancar(b.dataset.baixaRelancar, aoAtualizar));
-  });
-  container.querySelectorAll('[data-baixa-cancelar]').forEach((b) => {
-    b.addEventListener('click', () => cancelar(b.dataset.baixaCancelar, aoAtualizar));
-  });
+
+  vincularEventosTabela(container, aoAtualizar);
 }
