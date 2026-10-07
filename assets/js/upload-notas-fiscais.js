@@ -3,6 +3,10 @@
 // O upload vai para o bucket 'notas-fiscais' e cria uma linha em
 // grm_nf_lancamentos. O agente identifica automaticamente se o arquivo é
 // holerite ou documento fiscal e aplica o fluxo correspondente.
+// O processamento é automático: um gatilho no banco (migration
+// 20261007140000_nf_processamento_automatico) enfileira o agente quando a linha
+// entra ou volta em NOVO, e um cron reenfileira o que ficar parado. A tela só
+// mostra o andamento — não há botão pra disparar.
 
 import { initProtectedPage } from './pageInit.js';
 import {
@@ -18,6 +22,8 @@ const TABELA = 'grm_nf_lancamentos';
 const TABELA_JOBS = 'grm_sync_jobs';
 const AGENTE_ID = 'sync-lancar-notas-fiscais';
 const ACCEPT = '.pdf,.xml,.png,.jpg,.jpeg,.webp';
+// Enquanto há documento na fila, a lista se atualiza sozinha pra mostrar o andamento.
+const INTERVALO_ATUALIZACAO_MS = 20000;
 
 const SETORES = [
   { valor: 'AUTO', label: 'Reconhecimento automático' },
@@ -71,7 +77,7 @@ const JANELAS = [
 let raiz = null;
 let bootId = 0;
 let enviando = false;
-let disparando = false;
+let timerAtualizacao = null;
 let resumo = { pendentes: 0, erros: 0, lancados: 0, jobAtivo: null };
 let contagens = { pendente: 0, processando: 0, erro: 0, concluido: 0 };
 let tabelaEstado = { janela: 'pendente', pagina: 1, porPagina: 25 };
@@ -322,8 +328,7 @@ async function abrirCompletar(id) {
       <div style="display:grid;gap:12px;margin-top:8px">${campos}</div>
       <div class="ds-modal-actions">
         <button class="ds-btn" data-unfc-cancelar type="button">Cancelar</button>
-        <button class="ds-btn" data-unfc-salvar type="button" title="Guarda os dados e devolve o documento pra fila">Salvar</button>
-        <button class="ds-btn ds-btn-primary" data-unfc-lancar type="button" title="Guarda os dados e dispara o agente agora (lança de verdade no GRM)">Salvar e lançar</button>
+        <button class="ds-btn ds-btn-primary" data-unfc-lancar type="button" title="Guarda os dados e devolve o documento pra fila — o agente lança sozinho no GRM">Salvar e lançar</button>
       </div>`,
   });
 
@@ -341,7 +346,7 @@ async function abrirCompletar(id) {
 
   overlay.querySelector('[data-unfc-abrir]').addEventListener('click', () => abrirDocumento(row.id));
   overlay.querySelector('[data-unfc-cancelar]').addEventListener('click', () => closeModal('unfCompletarModal'));
-  const salvar = async (lancar) => {
+  const salvar = async () => {
     const valores = coletar();
     if (!Object.keys(valores).length) {
       toast('Nenhum campo foi alterado.', 'warn');
@@ -352,14 +357,7 @@ async function abrirCompletar(id) {
       const { error } = await supabase.rpc('completar_lancamento_nf', { p_id: row.id, p_ajustes: valores });
       if (error) throw error;
       closeModal('unfCompletarModal');
-      if (lancar && !resumo.jobAtivo) {
-        await enfileirarAgente();
-        toast('Dados salvos. O agente roda em até 1 minuto e leva alguns minutos por lote.', 'ok', 6000);
-      } else if (lancar) {
-        toast('Dados salvos. Já há um processamento em andamento — o documento entra no próximo lote.', 'ok', 6000);
-      } else {
-        toast('Dados salvos. O documento voltou pra fila (use Processamento pra lançar).', 'ok', 6000);
-      }
+      toast('Dados salvos. O documento voltou pra fila e o agente lança sozinho em instantes.', 'ok', 6000);
       await carregarResumo();
       if (raiz) { renderResumo(); renderJanelas(); }
       await carregarTabela();
@@ -368,8 +366,7 @@ async function abrirCompletar(id) {
       toast(mensagemDeErro(error, TABELA), 'danger', 6000);
     }
   };
-  overlay.querySelector('[data-unfc-salvar]').addEventListener('click', () => salvar(false));
-  overlay.querySelector('[data-unfc-lancar]').addEventListener('click', () => salvar(true));
+  overlay.querySelector('[data-unfc-lancar]').addEventListener('click', salvar);
 }
 
 async function cancelarLancamento(id, nomeArquivo) {
@@ -398,7 +395,7 @@ async function cancelarLancamento(id, nomeArquivo) {
 async function relancarLancamento(id, nomeArquivo) {
   const ok = await confirmar({
     titulo: 'Relançar envio',
-    mensagem: `Voltar "${nomeArquivo}" pra fila? O agente tenta lançar de novo no próximo ciclo.`,
+    mensagem: `Voltar "${nomeArquivo}" pra fila? O agente tenta lançar de novo automaticamente.`,
     confirmarLabel: 'Relançar',
     cancelarLabel: 'Voltar',
   });
@@ -409,7 +406,7 @@ async function relancarLancamento(id, nomeArquivo) {
       erro: null,
       updated_at: new Date().toISOString(),
     });
-    toast('Envio voltou pra fila.', 'ok');
+    toast('Envio voltou pra fila — o agente processa sozinho em instantes.', 'ok');
     await carregarResumo();
     if (raiz) { renderResumo(); renderJanelas(); }
     await carregarTabela();
@@ -436,10 +433,10 @@ function renderJanelas() {
   });
 }
 
-async function carregarTabela() {
+async function carregarTabela({ silencioso = false } = {}) {
   const alvo = raiz?.querySelector('#unfTabela');
   if (!alvo) return;
-  alvo.innerHTML = loadingState('Carregando envios...');
+  if (!silencioso) alvo.innerHTML = loadingState('Carregando envios...');
   try {
     const statusDaJanela = JANELA_STATUS[tabelaEstado.janela] || [];
     const { rows, total } = await listar(TABELA, {
@@ -486,7 +483,7 @@ async function carregarTabela() {
       });
     });
   } catch (error) {
-    if (!raiz) return;
+    if (!raiz || silencioso) return; // na atualização automática, mantém a lista atual e tenta na próxima volta
     alvo.innerHTML = errorState(mensagemDeErro(error, TABELA), { retryId: 'unfRetry' });
     raiz.querySelector('#unfRetry')?.addEventListener('click', carregarTabela);
   }
@@ -516,54 +513,50 @@ async function carregarResumo() {
   };
 }
 
+// Indicador no lugar do antigo botão "Processamento": o agente é enfileirado pelo
+// banco, aqui só se mostra em que ponto está.
 function renderResumo() {
-  const botao = raiz?.querySelector('#unfProcessar');
-  if (!botao) return;
-  const emAndamento = Boolean(resumo.jobAtivo);
-  botao.disabled = resumo.pendentes === 0;
-  botao.textContent = emAndamento ? 'Processando…' : `Processamento (${resumo.pendentes})`;
-  botao.title = emAndamento
-    ? 'O agente já está rodando ou na fila — aguarde terminar antes de disparar de novo.'
-    : `Lança até 5 das ${resumo.pendentes} notas/holerites pendentes de verdade no GRM (não é teste).`;
-  botao.onclick = dispararAgente;
-}
-
-async function enfileirarAgente() {
-  const { data: { session } } = await supabase.auth.getSession();
-  await inserir(TABELA_JOBS, {
-    agente_id: AGENTE_ID,
-    status: 'pendente',
-    lane: 'alteracoes',
-    solicitado_por: session?.user?.email || session?.user?.id || null,
-  });
-}
-
-async function dispararAgente() {
-  if (disparando || !raiz) return;
+  const alvo = raiz?.querySelector('#unfAuto');
+  if (!alvo) return;
+  let selo;
+  let texto;
   if (resumo.jobAtivo) {
-    toast('Já existe um processamento em andamento para este agente.', 'warn');
-    return;
+    selo = badge('Processando agora', 'neutral');
+    texto = resumo.pendentes
+      ? `${resumo.pendentes} na fila — o agente lança em lotes e continua sozinho até acabar.`
+      : 'O agente está finalizando o lote.';
+  } else if (resumo.pendentes) {
+    selo = badge(`${resumo.pendentes} na fila`, 'warn');
+    texto = 'O agente inicia sozinho em até 1 minuto.';
+  } else {
+    selo = badge('Processamento automático', 'ok');
+    texto = 'Documentos enviados são lançados sozinhos — não precisa clicar em nada.';
   }
-  const confirmado = await confirmar({
-    titulo: 'Processar pendentes agora',
-    mensagem: `Isso vai lançar de verdade no GRM até 5 das ${resumo.pendentes} notas/holerites pendentes (sem revisão manual por item). Confirmar?`,
-    confirmarLabel: 'Processar agora',
-  });
-  if (!confirmado) return;
+  alvo.innerHTML = `${selo}<small style="color:#94a3b8">${esc(texto)}</small>`;
+}
 
-  disparando = true;
-  const botao = raiz.querySelector('#unfProcessar');
-  if (botao) { botao.disabled = true; botao.textContent = 'Disparando…'; }
-  try {
-    await enfileirarAgente();
-    toast('Processamento disparado. O agente roda em até 1 minuto e leva alguns minutos por lote.', 'ok', 6000);
-    await carregarResumo();
-    if (raiz) renderResumo();
-  } catch (error) {
-    toast(mensagemDeErro(error, TABELA_JOBS), 'danger', 6000);
-  } finally {
-    disparando = false;
-  }
+// Enquanto houver documento na fila ou agente rodando, recarrega a lista a cada
+// poucos segundos pra o andamento aparecer sem apertar F5. Sem fila, não consulta nada.
+function agendarAtualizacao() {
+  if (timerAtualizacao) clearInterval(timerAtualizacao);
+  timerAtualizacao = setInterval(async () => {
+    if (!raiz?.isConnected) {
+      clearInterval(timerAtualizacao);
+      timerAtualizacao = null;
+      return;
+    }
+    if (document.hidden || enviando) return;
+    if (!resumo.pendentes && !resumo.jobAtivo && !contagens.processando) return;
+    try {
+      await carregarResumo();
+      if (!raiz?.isConnected) return;
+      renderResumo();
+      renderJanelas();
+      await carregarTabela({ silencioso: true });
+    } catch (_) {
+      // próxima volta tenta de novo
+    }
+  }, INTERVALO_ATUALIZACAO_MS);
 }
 
 function render() {
@@ -572,7 +565,7 @@ function render() {
     <section style="display:grid;gap:18px">
       ${pageHeader({
         titulo: 'Enviar Notas Fiscais e Holerites',
-        subtitulo: 'Envie XML, PDF ou imagem. O agente reconhece automaticamente o tipo do documento e usa o fluxo correto no Contas a Pagar do GRM.',
+        subtitulo: 'Envie XML, PDF ou imagem. O agente reconhece automaticamente o tipo do documento e lança sozinho no Contas a Pagar do GRM — holerites, notas fiscais e comprovantes de pagamento.',
       })}
 
       <article class="ds-card" style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
@@ -588,7 +581,7 @@ function render() {
                  title="Holerite: envie um arquivo por funcionário. Duas vias do mesmo funcionário no mesmo PDF são aceitas.">
         </div>
         <button class="ds-btn ds-btn-primary" id="unfEnviar" type="button">Enviar</button>
-        <button class="ds-btn ds-btn-primary" id="unfProcessar" type="button">Processamento</button>
+        <div id="unfAuto" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:200px;max-width:320px"></div>
       </article>
 
       <article class="ds-card" style="display:grid;gap:14px">
@@ -635,7 +628,7 @@ async function aoEnviar() {
     }
   }
 
-  if (sucesso) toast(`${sucesso} arquivo(s) enviado(s) para reconhecimento.`, 'ok');
+  if (sucesso) toast(`${sucesso} arquivo(s) enviado(s). O agente reconhece e lança sozinho em instantes.`, 'ok');
   enviando = false;
   if (botao) { botao.disabled = false; botao.textContent = 'Enviar'; }
   if (input) input.value = '';
@@ -657,6 +650,7 @@ export async function renderContent(content) {
   if (meuBoot !== bootId) return;
   renderResumo();
   renderJanelas();
+  agendarAtualizacao();
 }
 
 initProtectedPage('Enviar Notas Fiscais e Holerites', renderContent);
