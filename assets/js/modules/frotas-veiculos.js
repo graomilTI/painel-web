@@ -200,6 +200,16 @@
     const form=root.querySelector('[data-veiculo-form]'); if(!form) return;
     const set=(k,val)=>{ const input=form.querySelector(`[name="${k}"]`); if(input) input.value=val ?? ''; };
     ['placa','renavam','nome','empresa','cnpj','marca','modelo','cor','ano','tipo','coordenacao','supervisao','motorista_atual','hodometro','valor_mensal','dia_vencimento','valor_km','status','observacoes'].forEach(k=>set(k,v?.[k]));
+    // Com patrimônio associado, o banco força supervisao = patrimonio_supervisao em qualquer
+    // gravação; o campo fica só leitura pra não parecer que a edição manual vale.
+    const supInput=form.querySelector('[name="supervisao"]');
+    if(supInput){
+      const doPatrimonio=String(v?.patrimonio_supervisao||'').trim();
+      supInput.readOnly=!!doPatrimonio;
+      supInput.title=doPatrimonio?'Vem do GRM Patrimônios (não editável enquanto o veículo tiver patrimônio associado).':'';
+      if(doPatrimonio) supInput.value=doPatrimonio;
+      form.addEventListener('reset',()=>{ supInput.readOnly=false; supInput.title=''; },{once:true});
+    }
     form.scrollIntoView({behavior:'smooth',block:'center'});
   }
 
