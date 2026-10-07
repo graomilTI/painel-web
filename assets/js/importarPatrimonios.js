@@ -201,7 +201,7 @@ async function sincronizarRegionaisVeiculosPorLeitura(rows = []) {
 
   const { data: veiculos, error } = await supabase
     .from('frotas_veiculos')
-    .select('id,placa,coordenacao,status')
+    .select('id,placa,coordenacao,supervisao,status')
     .eq('status', 'ATIVO')
     .limit(10000);
 
@@ -223,11 +223,20 @@ async function sincronizarRegionaisVeiculosPorLeitura(rows = []) {
   for (const item of melhorLeituraPorVeiculo.values()) {
     const regionalAtual = normalizeKey(item.veiculo.coordenacao);
     const regionalLeitura = normalizeKey(item.coordenacao);
-    if (!regionalLeitura || regionalAtual === regionalLeitura) continue;
+    if (!regionalLeitura) continue;
+    // A supervisão precisa acompanhar a coordenação: a Programação lista as placas
+    // de uma supervisão por frotas_veiculos.supervisao, e ela só era preenchida
+    // quando vazia — placa que mudava de supervisão no Patrimônios sumia da lista
+    // (RVH2C89, 2026-10-07).
+    const supervisaoLeitura = normalizeText(item.supervisao);
+    const supervisaoMudou = !!supervisaoLeitura && normalizeKey(item.veiculo.supervisao) !== normalizeKey(supervisaoLeitura);
+    if (regionalAtual === regionalLeitura && !supervisaoMudou) continue;
 
+    const payload = { coordenacao: item.coordenacao };
+    if (supervisaoLeitura) payload.supervisao = supervisaoLeitura;
     const { error: updError } = await supabase
       .from('frotas_veiculos')
-      .update({ coordenacao: item.coordenacao })
+      .update(payload)
       .eq('id', item.veiculo.id);
 
     if (updError) throw updError;
