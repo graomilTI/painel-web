@@ -1,14 +1,8 @@
-﻿import { initProtectedPage } from './pageInit.js';
+﻿﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
 
-const EXPORT_W = 1920;
-// Página em retrato (mais alta que larga) com bem mais espaço vertical, pra
-// caber muito mais linhas por página e reduzir o total de páginas geradas.
-const EXPORT_H = 5000;
-const EXPORT_SCALE = 2;
-const DEFAULT_ROWS_PER_PAGE = 200;
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
 const FETCH_BATCH_SIZE = 1000;
@@ -32,12 +26,6 @@ function escapeHtml(v) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function chunkArray(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
 }
 
 function normalizeText(value) {
@@ -472,198 +460,131 @@ function downloadBlob(filename, blob) {
   setTimeout(() => URL.revokeObjectURL(url), 3000);
 }
 
-function ensureExportHost() {
-  let host = document.getElementById('patrimonio-export-host');
-  if (!host) {
-    host = document.createElement('div');
-    host.id = 'patrimonio-export-host';
-    host.style.position = 'fixed';
-    host.style.left = '-99999px';
-    host.style.top = '0';
-    host.style.zIndex = '-1';
-    document.body.appendChild(host);
-  }
-  return host;
+// PDF de texto (vetorial) montado com jsPDF + autoTable. Antes cada página era
+// "fotografada" com html2canvas (canvas de 3840x10000 px por página, convertido
+// em PNG e colado no PDF): levava minutos, estourava memória em bases grandes e
+// gerava arquivos de dezenas de MB. Escrever o texto direto leva poucos segundos.
+const PDF_MARGIN = { top: 74, right: 28, bottom: 30, left: 28 };
+const PDF_COLOR_ESCURO = [13, 13, 24];
+const PDF_COLOR_ATRASO = [185, 28, 28];
+const PDF_COLOR_OK = [22, 101, 52];
+const PDF_COLOR_NEUTRO = [71, 85, 105];
+
+// A fonte padrão do PDF só cobre Latin-1 e alguns sinais tipográficos; qualquer
+// outro caractere sairia como lixo, então vira "?".
+function pdfText(value) {
+  return String(value ?? '').replace(/[^ -ÿ–—‘-”•…€]/g, '?');
 }
 
-function buildPageHtml({ titulo, subtitulo, stats, rows, pageIndex, pageCount }) {
-  const statHtml = [
-    `<div class="gstat"><span class="glabel">Registros:</span><strong>${stats.registros}</strong></div>`,
-    `<div class="gstat"><span class="glabel">Em dia:</span><strong>${stats.emDia}</strong></div>`,
-    `<div class="gstat"><span class="glabel">Em atraso:</span><strong>${stats.atrasados}</strong></div>`,
-    `<div class="gstat"><span class="glabel">% em dia:</span><strong>${stats.percentual}</strong></div>`
-  ].join('');
-
-  const bodyRows = rows.map((item) => {
-    const diasInfo = getDiasInfo(item);
-    const dias = diasInfo.hasValue ? diasInfo.value : '-';
-    const rowClass = !diasInfo.hasValue ? 'is-empty' : diasInfo.value > DIAS_LIMITE_ATRASO ? 'is-atrasado' : 'is-ok';
-    return `
-      <tr class="${rowClass}">
-        <td class="col-pat">${escapeHtml(item.patrimonio_codigo ?? '')}</td>
-        <td class="col-sup">${escapeHtml(item.supervisao ?? '')}</td>
-        <td class="col-nome">${escapeHtml(item.funcionario ?? '')}</td>
-        <td class="col-id">${escapeHtml(item.identificacao ?? '')}</td>
-        <td class="col-leitura">${escapeHtml(item.ultima_leitura_fmt ?? '')}</td>
-        <td class="col-dias">${escapeHtml(dias)}</td>
-      </tr>`;
-  }).join('');
-
-  return `
-    <div class="g1000-export-page">
-      <div class="g1000-header">
-        <div>
-          <h1>${escapeHtml(titulo)}</h1>
-          <p>${escapeHtml(subtitulo)}</p>
-        </div>
-        <div class="gpage-badge">Página ${pageIndex + 1}/${pageCount}</div>
-      </div>
-      <div class="gstats">${statHtml}</div>
-      <div class="gtable-wrap">
-        <table class="gtable">
-          <thead>
-            <tr>
-              <th class="col-pat">PATRIMÔNIO</th>
-              <th class="col-sup">SUPERVISÃO</th>
-              <th class="col-nome">NOME</th>
-              <th class="col-id">IDENTIFICAÇÃO</th>
-              <th class="col-leitura">ÚLTIMA LEITURA</th>
-              <th class="col-dias">DIAS</th>
-            </tr>
-          </thead>
-          <tbody>${bodyRows}</tbody>
-        </table>
-      </div>
-    </div>`;
+function desenharCabecalhoPdf(doc, { titulo, subtitulo, stats }) {
+  doc.setTextColor(...PDF_COLOR_ESCURO);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.text(pdfText(titulo), PDF_MARGIN.left, 32);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(...PDF_COLOR_NEUTRO);
+  doc.text(pdfText(subtitulo), PDF_MARGIN.left, 45);
+  doc.setFontSize(8.5);
+  doc.setTextColor(...PDF_COLOR_ESCURO);
+  doc.text(
+    `Registros: ${stats.registros}     Em dia: ${stats.emDia}     Em atraso: ${stats.atrasados}     % em dia: ${stats.percentual}`,
+    PDF_MARGIN.left,
+    59
+  );
 }
 
-function ensureStyles() {
-  if (document.getElementById('patrimonio-export-styles')) return;
-  const style = document.createElement('style');
-  style.id = 'patrimonio-export-styles';
-  style.textContent = `
-    .g1000-export-page {
-      width: ${EXPORT_W}px;
-      min-height: ${EXPORT_H}px;
-      box-sizing: border-box;
-      padding: 22px 30px;
-      background: #f8fafc;
-      color: #0d0d18;
-      font-family: Arial, Helvetica, sans-serif;
-    }
-    .g1000-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 10px; }
-    .g1000-header h1 { margin: 0; font-size: 24px; line-height: 1.1; }
-    .g1000-header p { margin: 4px 0 0; font-size: 12px; color: #475569; }
-    .gpage-badge { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700; white-space: nowrap; }
-    .gstats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
-    .gstat { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 6px 12px; min-width: 120px; font-size: 12px; }
-    .glabel { color: #475569; margin-right: 6px; }
-    .gtable-wrap { background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08); }
-    .gtable { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .gtable thead th { background: #0d0d18; color: #fff; font-size: 11px; letter-spacing: .03em; text-align: left; padding: 6px 8px; border-right: 1px solid rgba(255,255,255,.15); }
-    .gtable tbody td { font-size: 11px; padding: 4px 8px; border: 1px solid #dbe4ef; vertical-align: top; word-break: break-word; line-height: 1.25; }
-    .gtable tbody tr.is-atrasado td.col-dias { color: #b91c1c; font-weight: 700; }
-    .gtable tbody tr.is-ok td.col-dias { color: #166534; font-weight: 700; }
-    .gtable tbody tr.is-empty td.col-dias { color: #475569; font-weight: 700; }
-    .col-pat { width: 8%; white-space: nowrap; }
-    .col-sup { width: 13%; }
-    .col-nome { width: 22%; }
-    .col-id { width: 35%; }
-    .col-leitura { width: 14%; white-space: nowrap; font-size: 12px; }
-    .col-dias { width: 8%; text-align: center; white-space: nowrap; }
-    @media print { @page { size: portrait; margin: 10mm; } }
-  `;
-  document.head.appendChild(style);
-}
+const PDF_TABLE_STYLES = {
+  theme: 'grid',
+  styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.5, lineColor: [219, 228, 239], lineWidth: 0.4, textColor: PDF_COLOR_ESCURO, overflow: 'linebreak' },
+  headStyles: { fillColor: PDF_COLOR_ESCURO, textColor: [255, 255, 255], fontStyle: 'bold' },
+  alternateRowStyles: { fillColor: [248, 250, 252] },
+};
 
-async function domToPng(node) {
-  if (!window.html2canvas) throw new Error('html2canvas não encontrado.');
-  // Usa a altura real do conteúdo (nunca menor que EXPORT_H): se linhas com texto
-  // longo quebrarem em mais de uma linha, a página cresce em vez de cortar
-  // as últimas linhas fora da imagem capturada.
-  const height = Math.max(EXPORT_H, node.scrollHeight);
-  const canvas = await window.html2canvas(node, {
-    scale: EXPORT_SCALE,
-    backgroundColor: '#f8fafc',
-    useCORS: true,
-    logging: false,
-    width: EXPORT_W,
-    height,
-    windowWidth: EXPORT_W,
-    windowHeight: height
-  });
-  return { dataUrl: canvas.toDataURL('image/png'), height };
-}
-
-async function gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats, rowsPerPage = DEFAULT_ROWS_PER_PAGE }) {
-  ensureStyles();
-  const host = ensureExportHost();
-  host.innerHTML = '';
-  const pages = chunkArray(rows, rowsPerPage);
-  const results = [];
-
-  for (let i = 0; i < pages.length; i += 1) {
-    const wrap = document.createElement('div');
-    wrap.innerHTML = buildPageHtml({ titulo, subtitulo, stats, rows: pages[i], pageIndex: i, pageCount: pages.length });
-    const page = wrap.firstElementChild;
-    host.appendChild(page);
-    // eslint-disable-next-line no-await-in-loop
-    results.push(await domToPng(page));
-    page.remove();
-  }
-
-  return results;
-}
-
-const RESUMO_LINE_HEIGHT = 28;
-const RESUMO_TOP = 130;
-const RESUMO_BOTTOM_MARGIN = 40;
-const RESUMO_LINES_PER_PAGE = Math.floor((EXPORT_H - RESUMO_BOTTOM_MARGIN - RESUMO_TOP) / RESUMO_LINE_HEIGHT);
-// jsPDF monta o PDF juntando todas as páginas numa única string; com bases
-// grandes (dezenas/centenas de páginas de imagem em alta resolução) isso
-// estoura "RangeError: Invalid string length" no navegador. Em vez de um
-// PDF gigante, quebra em vários arquivos menores, todos baixados sem ZIP.
-const PDF_IMAGES_PER_FILE = 2;
-
-function criarDocPaginas(jsPDF, primeiraAltura) {
-  return new jsPDF({ orientation: 'portrait', unit: 'px', format: [EXPORT_W, primeiraAltura || EXPORT_H], hotfixes: ['px_scaling'] });
-}
-
-async function baixarPdfDeImagens(images, pdfName, resumoLines) {
+/**
+ * Gera o PDF (sem baixar). `secoes`: [{ titulo, subtitulo, stats, rows }], cada uma
+ * começa em página nova e tem a própria numeração "Página x/y". `resumo`, quando
+ * informado, vira a primeira página (uma linha por regional).
+ */
+function gerarPdfPatrimonios(secoes, resumo) {
   if (!window.jspdf?.jsPDF) throw new Error('jsPDF não encontrado.');
   const { jsPDF } = window.jspdf;
-  const baseName = pdfName.replace(/\.pdf$/i, '');
-  const imageChunks = chunkArray(images, PDF_IMAGES_PER_FILE);
-  const totalFiles = imageChunks.length + (resumoLines?.length ? 1 : 0);
-  const sufixo = (i) => (totalFiles > 1 ? `-parte-${i}-de-${totalFiles}` : '');
-  let arquivoIndex = 0;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
+  if (typeof doc.autoTable !== 'function') throw new Error('jsPDF-AutoTable não encontrado.');
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const intervalos = [];
+  let primeiraPagina = true;
 
-  if (resumoLines?.length) {
-    arquivoIndex += 1;
-    const resumoPages = chunkArray(resumoLines, RESUMO_LINES_PER_PAGE);
-    const doc = criarDocPaginas(jsPDF, EXPORT_H);
-    resumoPages.forEach((lines, pageIndex) => {
-      if (pageIndex > 0) doc.addPage([EXPORT_W, EXPORT_H], 'portrait');
-      doc.setFontSize(28);
-      doc.text(pageIndex === 0 ? 'Resumo por regional' : 'Resumo por regional (continuação)', 60, 80);
-      doc.setFontSize(16);
-      lines.forEach((line, i) => doc.text(line, 60, RESUMO_TOP + i * RESUMO_LINE_HEIGHT));
+  if (resumo?.length) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(...PDF_COLOR_ESCURO);
+    doc.text('Resumo por regional', PDF_MARGIN.left, 32);
+    doc.autoTable({
+      ...PDF_TABLE_STYLES,
+      startY: 46,
+      margin: { ...PDF_MARGIN, top: 46 },
+      head: [['REGIONAL', 'REGISTROS', 'EM DIA', 'EM ATRASO', 'SEM DIAS']],
+      body: resumo.map((item) => [pdfText(item.regional), item.registros, item.emDia, item.atrasados, item.semDias]),
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
     });
-    doc.save(`${baseName}-resumo${sufixo(arquivoIndex)}.pdf`);
+    primeiraPagina = false;
   }
 
-  for (const chunk of imageChunks) {
-    arquivoIndex += 1;
-    const doc = criarDocPaginas(jsPDF, chunk[0]?.height);
-    chunk.forEach((img, i) => {
-      const pageHeight = img.height || EXPORT_H;
-      if (i > 0) doc.addPage([EXPORT_W, pageHeight], 'portrait');
-      doc.addImage(img.dataUrl, 'PNG', 0, 0, EXPORT_W, pageHeight);
+  secoes.forEach((secao) => {
+    if (!primeiraPagina) doc.addPage();
+    primeiraPagina = false;
+    const inicio = doc.getNumberOfPages();
+    const situacoes = secao.rows.map((row) => {
+      const info = getDiasInfo(row);
+      if (!info.hasValue) return 'vazio';
+      return info.value > DIAS_LIMITE_ATRASO ? 'atrasado' : 'ok';
     });
-    doc.save(`${baseName}${sufixo(arquivoIndex)}.pdf`);
-  }
 
-  return { totalFiles };
+    doc.autoTable({
+      ...PDF_TABLE_STYLES,
+      startY: PDF_MARGIN.top,
+      margin: PDF_MARGIN,
+      head: [['PATRIMÔNIO', 'SUPERVISÃO', 'NOME', 'IDENTIFICAÇÃO', 'ÚLTIMA LEITURA', 'DIAS']],
+      body: secao.rows.map((row) => {
+        const info = getDiasInfo(row);
+        return [
+          pdfText(row.patrimonio_codigo),
+          pdfText(row.supervisao),
+          pdfText(row.funcionario),
+          pdfText(row.identificacao),
+          pdfText(row.ultima_leitura_fmt),
+          info.hasValue ? String(info.value) : '-',
+        ];
+      }),
+      columnStyles: {
+        0: { cellWidth: 'wrap' },
+        4: { cellWidth: 'wrap' },
+        5: { cellWidth: 'wrap', halign: 'center', fontStyle: 'bold' },
+      },
+      didParseCell: (data) => {
+        if (data.section !== 'body' || data.column.index !== 5) return;
+        const situacao = situacoes[data.row.index];
+        data.cell.styles.textColor = situacao === 'atrasado' ? PDF_COLOR_ATRASO : situacao === 'ok' ? PDF_COLOR_OK : PDF_COLOR_NEUTRO;
+      },
+      didDrawPage: () => desenharCabecalhoPdf(doc, secao),
+    });
+    intervalos.push({ inicio, fim: doc.getNumberOfPages() });
+  });
+
+  // A numeração "Página x/y" só pode ser escrita depois, quando o total de cada seção é conhecido.
+  intervalos.forEach(({ inicio, fim }) => {
+    const total = fim - inicio + 1;
+    for (let pagina = inicio; pagina <= fim; pagina += 1) {
+      doc.setPage(pagina);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(...PDF_COLOR_NEUTRO);
+      doc.text(`Página ${pagina - inicio + 1}/${total}`, pageWidth - PDF_MARGIN.right, 32, { align: 'right' });
+    }
+  });
+
+  return doc;
 }
 
 function computeStats(rows) {
@@ -883,8 +804,8 @@ function setFeedback(message, isError = false) {
   el.style.color = isError ? '#fca5a5' : '#cbd5e1';
 }
 
-async function ensureExportLib(url, globalName) {
-  if (window[globalName]) return;
+async function ensureExportLib(url, globalName, isLoaded = () => Boolean(window[globalName])) {
+  if (isLoaded()) return;
   await new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = url;
@@ -1208,21 +1129,36 @@ export function renderContent(content) {
     }
   };
 
+  // jsPDF antes do AutoTable: o plugin se registra no jsPDF já carregado.
+  const ensurePdfLibs = async () => {
+    await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
+    await ensureExportLib(
+      'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js',
+      'jspdfAutoTable',
+      () => typeof window.jspdf?.jsPDF?.API?.autoTable === 'function'
+    );
+  };
+  // Dá um respiro pro navegador pintar a mensagem antes do trabalho síncrono de montar o PDF.
+  const aguardarPintura = () => new Promise((resolve) => setTimeout(resolve, 30));
+  const agoraFormatado = () => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date());
+
   document.getElementById('btnPdf')?.addEventListener('click', withExportLock(async () => {
     if (!state.filteredRows.length) {
       setFeedback('Não há registros filtrados para exportar.', true);
       return;
     }
     try {
-      setFeedback('Carregando bibliotecas de exportação e montando páginas...');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
-      const stats = computeStats(state.filteredRows);
-      const titulo = buildReportTitle(readFilters().tipo);
-      const subtitulo = `Base filtrada em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
-      const images = await gerarPacoteImagensPaginado({ rows: state.filteredRows, titulo, subtitulo, stats });
-      const { totalFiles } = await baixarPdfDeImagens(images, 'relatorios-patrimonios.pdf');
-      setFeedback(totalFiles > 1 ? `PDF gerado em ${totalFiles} arquivos (base grande demais para 1 PDF só).` : 'PDF gerado com sucesso.');
+      setFeedback('Montando PDF...');
+      await ensurePdfLibs();
+      await aguardarPintura();
+      const doc = gerarPdfPatrimonios([{
+        titulo: buildReportTitle(readFilters().tipo),
+        subtitulo: `Base filtrada em ${agoraFormatado()}`,
+        stats: computeStats(state.filteredRows),
+        rows: state.filteredRows,
+      }]);
+      doc.save('relatorios-patrimonios.pdf');
+      setFeedback('PDF gerado com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o PDF.', true);
@@ -1236,30 +1172,32 @@ export function renderContent(content) {
     }
 
     try {
-      setFeedback('Carregando bibliotecas e preparando páginas por regional...');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'html2canvas');
-      await ensureExportLib('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'jspdf');
+      setFeedback('Montando PDF por regional...');
+      await ensurePdfLibs();
+      await aguardarPintura();
 
-      const groups = groupRowsByRegional(state.filteredRows);
+      const tipo = readFilters().tipo;
+      const geradoEm = agoraFormatado();
+      const secoes = [];
       const resumo = [];
-      const allImages = [];
       const orderedRows = [];
 
-      for (const [regional, rows] of groups) {
+      for (const [regional, rows] of groupRowsByRegional(state.filteredRows)) {
         const regionalStats = computeStats(rows);
-        const titulo = buildReportTitle(readFilters().tipo, regional);
-        const subtitulo = `Regional ${regional} • gerado em ${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}`;
-        // eslint-disable-next-line no-await-in-loop
-        const images = await gerarPacoteImagensPaginado({ rows, titulo, subtitulo, stats: regionalStats });
-        allImages.push(...images);
+        secoes.push({
+          titulo: buildReportTitle(tipo, regional),
+          subtitulo: `Regional ${regional} | gerado em ${geradoEm}`,
+          stats: regionalStats,
+          rows,
+        });
         orderedRows.push(...rows);
-        resumo.push(`${regional}: ${rows.length} registro(s) | Em dia: ${regionalStats.emDia} | Em atraso: ${regionalStats.atrasados} | Sem dias: ${regionalStats.semDias}`);
+        resumo.push({ regional, registros: rows.length, emDia: regionalStats.emDia, atrasados: regionalStats.atrasados, semDias: regionalStats.semDias });
       }
 
-      const { totalFiles } = await baixarPdfDeImagens(allImages, 'relatorios-patrimonios-por-regional.pdf', resumo);
-      const csvBlob = new Blob([toCsv(orderedRows)], { type: 'text/csv;charset=utf-8' });
-      downloadBlob('relatorios-patrimonios-por-regional.csv', csvBlob);
-      setFeedback(totalFiles > 1 ? `PDF gerado em ${totalFiles} arquivos + CSV (base grande demais para 1 PDF só).` : 'PDF e CSV por regional gerados com sucesso.');
+      const doc = gerarPdfPatrimonios(secoes, resumo);
+      doc.save('relatorios-patrimonios-por-regional.pdf');
+      downloadBlob('relatorios-patrimonios-por-regional.csv', new Blob([toCsv(orderedRows)], { type: 'text/csv;charset=utf-8' }));
+      setFeedback('PDF e CSV por regional gerados com sucesso.');
     } catch (error) {
       console.error(error);
       setFeedback(error?.message || 'Não foi possível gerar o PDF por regional.', true);
@@ -1315,8 +1253,3 @@ export function renderContent(content) {
 }
 
 initProtectedPage('Relatórios de Patrimônios', renderContent);
-
-window.PATRIMONIO_RELATORIOS = window.PATRIMONIO_RELATORIOS || {};
-window.PATRIMONIO_RELATORIOS.gerarPacoteImagensPaginado = gerarPacoteImagensPaginado;
-window.PATRIMONIO_RELATORIOS.baixarPdfDeImagens = baixarPdfDeImagens;
-window.PATRIMONIO_RELATORIOS.EXPORT_CONFIG = { width: EXPORT_W, height: EXPORT_H, rowsPerPage: DEFAULT_ROWS_PER_PAGE };
