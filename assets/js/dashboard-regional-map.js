@@ -555,7 +555,9 @@ async function loadViewer() {
   if (cachedViewer) return cachedViewer;
   try {
     const ctx = await getUserContext();
-    const isMaster = !!ctx?.user?.is_master;
+    const perfil = String(ctx?.user?.role || ctx?.perfil_codigo || ctx?.perfil_nome || '').trim().toUpperCase();
+    // Perfil administrativo vê o Brasil inteiro, igual ao master.
+    const isMaster = !!ctx?.user?.is_master || perfil === 'ADM' || perfil === 'ADMIN';
     const key = isMaster ? null : resolveRegionalKey(ctx?.user?.coordenacao);
     cachedViewer = { isMaster, key };
   } catch {

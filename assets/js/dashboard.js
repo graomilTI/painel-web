@@ -151,10 +151,21 @@ function fmtDelta(val) {
   return (v >= 0 ? '+' : '−') + BR.format(Math.round(Math.abs(v))) + ' t';
 }
 
+function isAdminProfile(ctx) {
+  const role = normalizeStr(ctx?.user?.role || ctx?.perfil_codigo || ctx?.perfil_nome || '');
+  return role === 'ADM' || role === 'ADMIN';
+}
+
+// Master e perfil administrativo (ADM/ADMIN) enxergam o dashboard completo, com o
+// mapa do Brasil e os números de todas as regionais — sem filtro de coordenação.
+function seesGlobalDashboard(ctx) {
+  return !!ctx?.user?.is_master || isAdminProfile(ctx);
+}
+
 function isGestorOrMaster(ctx) {
   const role = normalizeStr(ctx?.user?.role || ctx?.perfil_codigo || ctx?.perfil_nome || '');
   const dept = normalizeStr(ctx?.department?.code || ctx?.department?.name || ctx?.setor || '');
-  return !!ctx?.user?.is_master || role === 'GESTOR' || dept === 'GESTOR' || role === 'MASTER';
+  return seesGlobalDashboard(ctx) || role === 'GESTOR' || dept === 'GESTOR' || role === 'MASTER';
 }
 
 function injectDashStyles() {
@@ -363,7 +374,7 @@ async function saveDashboardCacheSegment(ref, payload, { isMaster, ano, mes } = 
 }
 
 async function fetchGestorData(ctx, { force = false } = {}) {
-  const isMaster = !!ctx?.user?.is_master;
+  const isMaster = seesGlobalDashboard(ctx);
   const coordenacao = ctx?.user?.coordenacao || '';
   const now = new Date();
   const ano = now.getFullYear();
@@ -388,7 +399,7 @@ async function fetchGestorDataLive(ctx) {
   // gravou 169k t em vez de 1,33M t). Por isso esperamos ela terminar antes de somar.
   await sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[dashboard] falha ao sincronizar producao_snapshot:', error?.message || error));
 
-  const isMaster = !!ctx?.user?.is_master;
+  const isMaster = seesGlobalDashboard(ctx);
   const coordenacao = ctx?.user?.coordenacao || '';
   const now = new Date();
   const ano = now.getFullYear();
@@ -940,7 +951,7 @@ export async function renderContent(content, userContext) {
     const ano = now.getFullYear();
     const mes = now.getMonth() + 1;
     const ref = dashCacheReference({
-      isMaster: !!userContext?.user?.is_master,
+      isMaster: seesGlobalDashboard(userContext),
       coordenacao: userContext?.user?.coordenacao || '',
       ano,
       mes,
