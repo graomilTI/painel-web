@@ -337,6 +337,45 @@ where data_referencia = '2026-09-28' order by status, numero_os;
   raio: lança em nome desse colaborador ativo (qualquer cargo) em vez do Supervisor/Coordenador da regional — usado
   quando a regional não tem gestor ativo cadastrado (91497, "PARA - Norte", 07/10/2026, Suporte Maria Eduarda).
 
+## Cadastro de veículo novo no GRM (`sync-cadastrar-veiculo`)
+
+`grmserver-cadastrar-veiculo-api.js` (API direta, lane `saida_financeiro`, sob demanda) cria no GRM, para todo
+veículo **novo** cadastrado em Frotas > Veículos ("Adicionar Novo"), os dois registros que o GRM exige:
+
+- **Patrimônios** — `patrimonies/setRecord`: categoria `VEICULOS` (pcaCode 70), `patType` `M`, `patName` =
+  `PLACA MARCA MODELO COR` (mesmo formato dos ~315 já cadastrados), número digitado no campo Patrimônio do painel.
+  O GRM está com `cfgEnableCloudFlareR2 = S`, então o POST vai em JSON (com `N` o front manda multipart; o agente lê a
+  flag em `sysConfig/getSysConfig` e imita o front).
+- **Veículos** — `vehicle/setRecord`: placa com hífen (`ABC-1D23`), marca/modelo do catálogo, Próprio/Alugado/Terceiro,
+  Hodômetro, Cor, Ano. Chassi e ano-modelo vão como melhor esforço (o formulário do Graint não tem esses campos; se o
+  GRM recusar, reenvia sem eles).
+
+Fila = colunas `grm_cadastro_*` de `frotas_veiculos` (`PENDENTE → PROCESSANDO → CONCLUIDO | ERRO`). O job é criado pelo
+gatilho `frotas_veiculos_grm_enfileirar_job` (veículo novo ou "Reenviar GRM") e por um cron de 5 min
+(`frotas-veiculo-grm-reenfileirar-paradas-5min`) para o caso do job cair sem token do GRM. Sem item na fila o script sai
+antes de falar com o GRM. A mensagem de erro aparece na linha do veículo no painel.
+
+Regras que o agente aplica:
+
+- **Idempotente**: se a placa já existe em Patrimônios e/ou Veículos, só cria a tela que falta (reenviar nunca duplica).
+- **Marca/modelo só do catálogo do GRM** (nunca cria catálogo). O catálogo tem marcas duplicadas (FIAT 147/225,
+  CHEVROLET 156/235...): usa o código mais usado pelos registros existentes; o modelo manda e puxa a marca do mesmo
+  código. Sem correspondência → `ERRO` com a lista de parecidos. O agente regrava `grm_veiculo_catalogo` (autocompletar
+  do formulário) a cada execução.
+- **Coordenação/Supervisão/Funcionário por nome exato**; o Graint só aceita funcionário da própria supervisão e supervisão
+  da coordenação, então divergência → `ERRO`. Sem Supervisão, herda do Funcionário.
+- Número de patrimônio já usado por outro registro → `ERRO` (nunca sobrescreve).
+- Depois de criar, confere no GRM e enfileira `sync-patrimonios` para o painel ligar a placa ao patrimônio.
+- Só veículos com status `ATIVO`/`MANUTENCAO` entram na fila (Situação → `patSituation`: ATIVO=A, MANUTENCAO=M,
+  INATIVO=E, VENDIDO=B).
+
+```bash
+/opt/node22/bin/node grmserver-cadastrar-veiculo-api.js --catalogo                       # só atualiza grm_veiculo_catalogo
+/opt/node22/bin/node grmserver-cadastrar-veiculo-api.js --dry-run --placa=ABC1D23        # lê o GRM e mostra o que enviaria
+/opt/node22/bin/node grmserver-cadastrar-veiculo-api.js --dry-run --simular=/tmp/v.json  # veículo fictício, sem linha no banco
+node test-cadastrar-veiculo.js                                                            # testes das funções puras
+```
+
 ## Rodar manualmente (debug)
 
 ```bash

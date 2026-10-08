@@ -73,6 +73,10 @@ function injectStyles() {
     .fv-days.is-late{background:#fde8e7;color:#b42318}
     .fv-plate-equivalent{display:block;margin-top:1px;color:#86efac;font-size:10px;font-weight:800;letter-spacing:.02em}
     .fv-table td:last-child .fv-icon{padding:0}
+    .fv-form-sep{margin-top:4px;padding-top:10px;border-top:1px solid rgba(148,163,184,.16);color:#93c5fd;font-size:11px;font-weight:950;letter-spacing:.12em;text-transform:uppercase}
+    .fv-note-grm{padding:10px 12px;border:1px dashed rgba(34,197,94,.28);border-radius:12px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}
+    .fv-grm-erro{display:block;max-width:270px;margin-top:4px;color:#fecaca;font-size:11px;line-height:1.3;white-space:normal;text-align:left}
+    .fv-table td:last-child .fv-actions{flex-wrap:wrap}
     @media (max-width:760px){.fv-create-bar{margin-bottom:10px}.fv-form-actions{grid-column:1/-1}.fv-table{min-width:1060px!important}}
   `;
   document.head.appendChild(style);

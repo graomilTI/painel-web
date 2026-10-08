@@ -163,6 +163,10 @@ const SCRIPT_MAP = {
   // colaborador no GRM (staff/setRecord + changeAssetSupervision) depois do
   // aceite do gestor de destino. Job criado por programacao_transferencia_responder.
   'sync-transferir-colaborador': 'grmserver-transferir-colaborador-api.js',
+  // Frotas > Veículos (08/10): veículo novo do painel vira Patrimônio (VEICULOS) + Veículo no GRM
+  // (patrimonies/setRecord + vehicle/setRecord). Job criado por gatilho em frotas_veiculos
+  // (grm_cadastro_status = PENDENTE) e pelo cron de 5 min; sem itens na fila o script sai na hora.
+  'sync-cadastrar-veiculo': 'grmserver-cadastrar-veiculo-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
   // Bônus. A fila (bonus_desconto_caixa_lancamentos) é alimentada na importação da
