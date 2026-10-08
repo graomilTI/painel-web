@@ -152,6 +152,111 @@ async function tokenEmCache(p, validar) {
   return null;
 }
 
+// Entrega pelo painel: depois de entrar no GRM pelo navegador, a pessoa clica no favorito
+// "Enviar token GRM" (ou cola o token em TI > Integrações) e o painel guarda o token em
+// public.grm_token_entregas. Sem token válido em cache, o agente busca a entrega mais recente
+// aqui, confere no GRM, grava no cache (como o `salvar`) e apaga o token da tabela. É só leitura
+// de uma tabela do Supabase — não faz login nem contorna o captcha. Qualquer falha nesse caminho
+// (sem .env, rede, tabela ausente) é silenciosa e cai no fluxo de antes.
+// GRM_TOKEN_ENTREGA=off desliga.
+const ENTREGA_TENTATIVAS_MAX = 5;
+
+function configSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.SB_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SB_SERVICE_KEY || process.env.SUPABASE_KEY;
+  if (!url || !key) return null;
+  return { url: String(url).replace(/\/+$/, ''), key };
+}
+
+// Resolve { ok, dados }; nunca rejeita. PostgREST: filtro no PATCH é atômico (só um processo reivindica a linha).
+function restSupabase(cfg, method, caminho, corpo) {
+  return new Promise((resolve) => {
+    let url;
+    try { url = new URL(`${cfg.url}/rest/v1/${caminho}`); } catch { return resolve({ ok: false, dados: null }); }
+    const lib = url.protocol === 'http:' ? require('http') : https;
+    const payload = corpo === undefined ? null : JSON.stringify(corpo);
+    const req = lib.request({
+      protocol: url.protocol,
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'http:' ? 80 : 443),
+      path: `${url.pathname}${url.search}`,
+      method,
+      timeout: 15000,
+      headers: {
+        accept: 'application/json',
+        apikey: cfg.key,
+        authorization: `Bearer ${cfg.key}`,
+        ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload), prefer: 'return=representation' } : {}),
+      },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
+        let dados = null;
+        try { dados = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* corpo vazio */ }
+        resolve({ ok, dados });
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', () => resolve({ ok: false, dados: null }));
+    req.end(payload || undefined);
+  });
+}
+
+function formatarBrasilia(ms) {
+  try { return new Date(ms).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }); } catch { return new Date(ms).toISOString(); }
+}
+
+async function receberTokenEntregue(p, validar) {
+  if (String(process.env.GRM_TOKEN_ENTREGA || '').toLowerCase() === 'off') return null;
+  const cfg = configSupabase();
+  if (!cfg) return null;
+  try {
+    const lista = await restSupabase(cfg, 'GET', 'grm_token_entregas?select=id,tentativas&status=eq.pendente&token=not.is.null&order=enviado_em.desc&limit=1');
+    if (!lista.ok || !Array.isArray(lista.dados) || !lista.dados.length) return null;
+    const { id, tentativas } = lista.dados[0];
+
+    const tomada = await restSupabase(cfg, 'PATCH', `grm_token_entregas?id=eq.${encodeURIComponent(id)}&status=eq.pendente`, { status: 'processando', tentativas: (Number(tentativas) || 0) + 1 });
+    if (!tomada.ok || !Array.isArray(tomada.dados) || !tomada.dados.length) return null; // outro processo levou
+    const token = String(tomada.dados[0].token || '');
+    const tentativa = Number(tomada.dados[0].tentativas) || 1;
+    const fechar = (status, mensagem, extra = {}) => restSupabase(cfg, 'PATCH', `grm_token_entregas?id=eq.${encodeURIComponent(id)}`, { status, mensagem, token: null, aplicado_em: new Date().toISOString(), ...extra });
+
+    const agora = Date.now();
+    const expira = expiraEm(token, agora);
+    if (!token || expira <= agora) {
+      await fechar('expirado', 'O token enviado já estava vencido. Entre no GRM de novo e envie outro.');
+      return null;
+    }
+
+    const aceito = await validar(token, true);
+    if (aceito === false) {
+      await fechar('recusado', 'O GRM recusou este token. Entre no GRM de novo e envie outro.');
+      log('token entregue pelo painel foi recusado pelo GRM.');
+      return null;
+    }
+    if (aceito === null || aceito === undefined) {
+      if (tentativa >= ENTREGA_TENTATIVAS_MAX) {
+        await fechar('recusado', 'Não consegui confirmar o token no GRM (rede/erro do GRM) depois de várias tentativas. Envie de novo.');
+      } else {
+        await restSupabase(cfg, 'PATCH', `grm_token_entregas?id=eq.${encodeURIComponent(id)}`, { status: 'pendente', mensagem: 'Aguardando confirmação do GRM (nova tentativa na próxima execução).' });
+      }
+      return null;
+    }
+
+    gravarJson(p.token, { token, savedAt: agora, expiraEm: expira });
+    apagar(p.cooldown);
+    await fechar('aplicado', `Aplicado no servidor. Válido até ${formatarBrasilia(expira)} (Brasília).`);
+    await restSupabase(cfg, 'PATCH', 'grm_token_entregas?status=eq.pendente', { status: 'substituido', token: null, mensagem: 'Substituído por uma entrega mais nova.' });
+    log(`token entregue pelo painel aplicado (válido até ${new Date(expira).toISOString()}).`);
+    return token;
+  } catch (error) {
+    log(`entrega pelo painel indisponível: ${String(error && error.message).slice(0, 120)}`);
+    return null;
+  }
+}
+
 function assumirLock(p) {
   try {
     fs.closeSync(fs.openSync(p.lock, 'wx'));
@@ -171,6 +276,8 @@ async function obterTokenGrm({ login, validar = tokenAindaValido } = {}) {
   const p = paths();
   const emCache = await tokenEmCache(p, validar);
   if (emCache) return emCache;
+  const entregue = await receberTokenEntregue(p, validar);
+  if (entregue) return entregue;
 
   const inicio = Date.now();
   let temLock = assumirLock(p);
@@ -213,12 +320,13 @@ async function obterTokenGrm({ login, validar = tokenAindaValido } = {}) {
   }
 }
 
-// Há token de sessão utilizável em cache? Não tenta login (o Turnstile barra) nem mexe em
-// lock/cooldown: serve para o agente adiar o trabalho em vez de falhar quando o token do dia
-// ainda não foi gravado (node grm-token-cache.js salvar).
+// Há token de sessão utilizável em cache (ou entregue pelo painel)? Não tenta login (o Turnstile
+// barra) nem mexe em lock/cooldown: serve para o agente adiar o trabalho em vez de falhar quando o
+// token do dia ainda não foi gravado (node grm-token-cache.js salvar, ou o envio pelo painel).
 async function tokenGrmEmCacheValido({ validar = tokenAindaValido } = {}) {
   if (String(process.env.GRM_TOKEN_CACHE || '').toLowerCase() === 'off') return true;
-  return Boolean(await tokenEmCache(paths(), validar));
+  const p = paths();
+  return Boolean(await tokenEmCache(p, validar)) || Boolean(await receberTokenEntregue(p, validar));
 }
 
 function limparTokenGrm() {
@@ -265,13 +373,20 @@ async function salvarTokenManual() {
   return 0;
 }
 
-module.exports = { obterTokenGrm, limparTokenGrm, tokenGrmEmCacheValido };
+module.exports = { obterTokenGrm, limparTokenGrm, tokenGrmEmCacheValido, receberTokenEntregue };
 
 if (require.main === module) {
   if (process.argv[2] === 'salvar') {
     salvarTokenManual().then((code) => process.exit(code)).catch((e) => { console.error(e.message); process.exit(1); });
+  } else if (process.argv[2] === 'receber') {
+    // Busca agora a entrega pendente do painel (os agentes já fazem isso sozinhos ao faltar token).
+    if (!process.env.GRMSERVER_USER || !process.env.SUPABASE_URL) require('dotenv').config();
+    if (!process.env.GRMSERVER_USER) { console.error('GRMSERVER_USER não definido (.env) — o cache é por usuário.'); process.exit(1); }
+    receberTokenEntregue(paths(), tokenAindaValido)
+      .then((token) => { console.log(token ? 'Token do painel aplicado no cache.' : 'Nada aplicado (sem entrega pendente, token recusado ou GRM sem resposta — veja o status em TI > Integrações).'); process.exit(token ? 0 : 2); })
+      .catch((e) => { console.error(e.message); process.exit(1); });
   } else {
-    console.error('Uso: node grm-token-cache.js salvar [--validade-horas N]');
+    console.error('Uso: node grm-token-cache.js salvar [--validade-horas N] | receber');
     process.exit(1);
   }
 }

@@ -108,6 +108,14 @@ GRM_NOTAS_DIAS=30
 GRM_NOTAS_RECONCILIACAO_DIAS=400
 ```
 
+## Token de sessão do GRM (login com Turnstile)
+
+Desde 30/09/2026 o `user/login` do GRM exige Cloudflare Turnstile, então só um humano num navegador consegue token novo, e ele vence todo dia às 23:59:59 BRT. `grm-token-cache.js` (usado por todos os agentes via `obterTokenGrm`) guarda o token em `.grm-token-*.json`. Não existe renovação automática, e não se contorna o captcha.
+
+**Como renovar (depois da meia-noite, sem SSH):** entre no GRM pelo navegador e clique no favorito **Enviar token GRM** (arraste o botão de Painel > TI > Integrações > "Token de sessão do GRM" para a barra de favoritos; ou use "Colar da área de transferência e enviar" na mesma tela). O painel chama a RPC `grm_token_entregar`, que grava o token em `grm_token_entregas` (RLS sem acesso para anon/authenticated). Sem token válido em cache, o primeiro agente que rodar (`receberTokenEntregue`) pega a entrega pendente mais recente, confere no GRM, grava o cache, apaga o token da tabela e marca `aplicado` (ou `recusado`/`expirado`). Os agentes retomam sozinhos em até ~2 min; a tela acompanha o status. `GRM_TOKEN_ENTREGA=off` desliga; `node grm-token-cache.js receber` busca a entrega na hora. Teste: `node test-grm-token-entrega.js`.
+
+Plano B (painel fora do ar): no servidor, como `grao100`, `node grm-token-cache.js salvar` e colar o token só depois do prompt. O alerta de WhatsApp às ~00:05 (`grm_alerta_login_parado`) avisa quando o token do dia venceu.
+
 ## Colaboradores pela API (quase em tempo real)
 
 `grmserver-colaboradores-api-realtime.js` substitui, somente para o cadastro de
