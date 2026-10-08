@@ -18,6 +18,19 @@ let rendering = false;
 
 const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const num = (v) => new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:3}).format(Number(v)||0);
+// Número digitado em pt-BR: com vírgula, o ponto é milhar e a vírgula é o decimal ("1.500,5" e
+// "67,09"); sem vírgula, só vira milhar se estiver agrupado de 3 em 3 ("67.090"), senão é decimal
+// com ponto ("67.09"). Devolve null se não for um número positivo.
+function parseVolumeBr(valor){
+  const txt=String(valor??'').trim().replace(/\s+/g,'');
+  if(!txt)return null;
+  let normalizado=txt;
+  if(txt.includes(','))normalizado=txt.replace(/\./g,'').replace(',','.');
+  else if(/^\d{1,3}(\.\d{3})+$/.test(txt))normalizado=txt.replace(/\./g,'');
+  if(!/^\d+(\.\d+)?$/.test(normalizado))return null;
+  const n=Number(normalizado);
+  return Number.isFinite(n)&&n>0?n:null;
+}
 const date = (v, time=false) => { const d=new Date(v); return !v||Number.isNaN(d.getTime())?'-':time?d.toLocaleString('pt-BR'):d.toLocaleDateString('pt-BR'); };
 
 // Mesmo vocabulário de assets/js/logistica.js:TESTES_POR_PRODUTO — só pra
@@ -316,8 +329,22 @@ function abrirDetalhe(row){
     if(btnAutoCorrigir){
       const painel=overlay.querySelector('#abPainelCorrigir');
       const payload={};
-      painel.querySelectorAll('[data-corrigir-valor]').forEach(input=>{payload[input.dataset.corrigirValor]=input.value;});
-      const ok=await confirmar({titulo:'Corrigir e reenviar',mensagem:'A solicitação será atualizada com os valores acima e reenviada ao agente para tentar abrir a O.S. no GRM novamente. Confirmar?',confirmarLabel:'Reenviar'});
+      let volumeInvalido=false;
+      painel.querySelectorAll('[data-corrigir-valor]').forEach(input=>{
+        const key=input.dataset.corrigirValor;
+        let valor=input.value;
+        // Volume editado vai pra RPC como numeric: "67,090" digitado em pt-BR estoura
+        // "invalid input syntax for type numeric". Sem edição, segue o valor cru do banco.
+        if(key==='volume_inicial'&&valor!==input.defaultValue){
+          const n=parseVolumeBr(valor);
+          if(n==null)volumeInvalido=true;
+          else valor=String(n);
+        }
+        payload[key]=valor;
+      });
+      if(volumeInvalido){toast('Volume inicial inválido. Use apenas números (ex.: 1500 ou 67,09).','err');return;}
+      const volumeEditado=payload.volume_inicial!==String(row.volume_inicial??'');
+      const ok=await confirmar({titulo:'Corrigir e reenviar',mensagem:'A solicitação será atualizada com os valores acima e reenviada ao agente para tentar abrir a O.S. no GRM novamente.'+(volumeEditado?` O volume inicial será gravado como ${num(payload.volume_inicial)} tons.`:'')+' Confirmar?',confirmarLabel:'Reenviar'});
       if(ok)await autocorrigir(row.id,payload,btnAutoCorrigir);
       return;
     }
