@@ -443,9 +443,39 @@ async function resolverTipoProduto(token, valor, produto) {
   return item;
 }
 
-async function resolverCItems(token, proCode) {
+// Entre 01/10 e 07/10/2026 o GRM passou a recusar a criação ("cItemLimitOrder", "Limites fora
+// de ordem") quando um item de classificação marcado não respeita a ordem dos limites: máximo
+// (pciMaxValue "S") EMB <= PFPB <= Aceito; mínimo ("N") EMB >= PFPB >= Aceito — mesma regra
+// isCItemLimitOrderValid do front. O catálogo tem itens que já nascem fora dessa ordem (Sorgo/
+// Mofados 6/6/5; O.S. 93407 e 94523 foram criadas assim, antes da validação), então o default
+// do catálogo não pode ser enviado cru.
+function limitesEmOrdem(emb, pfpb, aceito, maxValue) {
+  const e = Number(emb) || 0, p = Number(pfpb) || 0, a = Number(aceito) || 0;
+  return maxValue === 'N' ? (e >= p && p >= a) : (e <= p && p <= a);
+}
+
+// EMB/PFPB que passam do Aceito (o que o destino realmente recebe) descem até ele — o lado mais
+// restrito, nunca afrouxa o Aceito. Se continuar fora de ordem (ex. Triguilho/PH 72/0/0, cadastrado
+// como máximo sendo um mínimo) não há conserto seguro por código: erro claro antes de bater no GRM.
+function normalizarLimitesCItem(item, proName) {
+  if (limitesEmOrdem(item.sciValue, item.sciPFPBValue, item.sciAcceptedValue, item.pciMaxValue)) return;
+  const antes = item.sciValue + '/' + item.sciPFPBValue + '/' + item.sciAcceptedValue;
+  const aceito = Number(item.sciAcceptedValue) || 0;
+  if (aceito > 0) {
+    item.sciValue = item.pciMaxValue === 'N' ? Math.max(Number(item.sciValue) || 0, aceito) : Math.min(Number(item.sciValue) || 0, aceito);
+    item.sciPFPBValue = item.pciMaxValue === 'N' ? Math.max(Number(item.sciPFPBValue) || 0, aceito) : Math.min(Number(item.sciPFPBValue) || 0, aceito);
+  }
+  if (limitesEmOrdem(item.sciValue, item.sciPFPBValue, item.sciAcceptedValue, item.pciMaxValue)) {
+    avisarCampoSuspeito('Limites de "' + item.pciName + '" no catálogo do GRM fora de ordem (EMB/PFPB/Aceito ' + antes + ') — ajustados para ' + item.sciValue + '/' + item.sciPFPBValue + '/' + item.sciAcceptedValue + ' pra passar na validação do GRM.');
+    return;
+  }
+  throw new Error('Cadastro do produto "' + (proName || item.proCode) + '" no GRM está inconsistente: item "' + item.pciName + '" com EMB/PFPB/Aceito ' + antes + ' ('
+    + (item.pciMaxValue === 'N' ? 'mínimo: precisa EMB ≥ PFPB ≥ Aceito' : 'máximo: precisa EMB ≤ PFPB ≤ Aceito') + '). Corrigir em Cadastros > Produtos do GRM e reenviar.');
+}
+
+async function resolverCItems(token, proCode, proName) {
   const res = await postJson('product/cItems/getRecords', { proCode, pciStatus: 'A' }, token);
-  return safe(res.searchData).map((item) => ({
+  const itens = safe(res.searchData).map((item) => ({
     sciCode: 0,
     pciCode: item.pciCode,
     sciChecked: 'S',
@@ -458,6 +488,8 @@ async function resolverCItems(token, proCode) {
     pciName: item.pciName,
     pciRequired: item.pciRequired,
   }));
+  itens.forEach((item) => normalizarLimitesCItem(item, proName));
+  return itens;
 }
 
 async function resolverProdutor(token, splCode, nomeProdutor) {
@@ -618,7 +650,7 @@ async function montarPayload(token, solicitacao) {
   const servico = await resolverServico(token, solicitacao.servico);
   const produto = await resolverProduto(token, solicitacao.produto, solicitacao.tipo_produto);
   const tipoProduto = await resolverTipoProduto(token, solicitacao.tipo_produto, produto);
-  const cItems = await resolverCItems(token, produto.proCode);
+  const cItems = await resolverCItems(token, produto.proCode, produto.proName);
   const destino = await resolverDestino(token, solicitacao);
   const moduloIntegra = moduloIntegraDaSolicitacao(solicitacao.troca_notas);
   log('INFO', 'Troca de notas "' + (solicitacao.troca_notas || '') + '" -> Módulo Integra "' + moduloIntegra + '".');
@@ -796,7 +828,8 @@ async function processarSolicitacao(token, solicitacao, dryRun) {
 
     const resultado = await postJson('serviceOrder/setRecord', payload, token);
     if (!resultado.result || !resultado.recordCode) {
-      throw new Error('GRM recusou a criação: ' + (resultado.message || resultado.error || 'sem detalhes'));
+      const motivo = resultado.message || resultado.error || 'sem detalhes';
+      throw new Error('GRM recusou a criação: ' + (motivo === 'cItemLimitOrder' ? 'cItemLimitOrder (limites EMB/PFPB/Aceito de um item de classificação fora de ordem)' : motivo));
     }
     await marcarCadastrada(id, resultado.recordCode);
     await finalizarExecucao(execucaoId, { status: 'SUCESSO', numero_os: resultado.recordCode });
