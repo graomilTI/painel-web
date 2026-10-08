@@ -2,6 +2,8 @@
 // Exclui contas a pagar do GRM (payInvoice/deleteByMainCode = conta inteira, definitivo). Padrão = DRY-RUN.
 //   node grm-excluir-contas-pagar-pontual.js plano.json saida.json                (dry-run)
 //   node grm-excluir-contas-pagar-pontual.js plano.json saida.json --executar [--limite N]
+//   --permitir-parcelas-2025: aceita contas que também têm parcelas de 2025 em diante (a conta inteira sai);
+//     exige ao menos uma parcela vencida antes de 2025 e, como sempre, todas abertas e sem valor pago.
 // Plano: { plano: [{ main, favorecido, titulo, parcelas: [{ code, venc, valor }] }] }
 // Para cada conta, ANTES de apagar (na lista completa e de novo na consulta individual): as parcelas são
 // exatamente as do plano, todas abertas (A), vencidas antes de 2025 e sem valor pago. Guarda a linha COMPLETA
@@ -18,6 +20,7 @@ const EXECUTAR = process.argv.includes('--executar');
 const limIdx = process.argv.indexOf('--limite');
 const LIMITE = limIdx >= 0 ? Number(process.argv[limIdx + 1]) : Infinity;
 const CORTE = '2025-01-01';
+const PERMITE_2025 = process.argv.includes('--permitir-parcelas-2025');
 const H = { accept: 'application/json', origin: 'https://www.grmserver.com.br', 'content-type': 'application/json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const dinheiro = (v) => Number(v || 0);
@@ -42,9 +45,10 @@ const dinheiro = (v) => Number(v || 0);
     for (const x of linhas) {
       if (Number(x.pinMainCode) !== Number(p.main)) return `grupo_diferente_${x.pinMainCode}`;
       if (x.pinStatus !== 'A') return `parcela_${x.pinCode}_status_${x.pinStatus}`;
-      if (!(String(x.pinDueDate) < CORTE)) return `parcela_${x.pinCode}_vence_${x.pinDueDate}`;
+      if (!PERMITE_2025 && !(String(x.pinDueDate) < CORTE)) return `parcela_${x.pinCode}_vence_${x.pinDueDate}`;
       if (dinheiro(x.pinTotalPaidValue) > 0 || dinheiro(x.pinPaidValue) > 0 || x.pinPaidDate || x.ppyPaidDate) return `parcela_${x.pinCode}_tem_pagamento`;
     }
+    if (PERMITE_2025 && !linhas.some((x) => String(x.pinDueDate) < CORTE)) return 'nenhuma_parcela_vencida_antes_de_2025';
     return null;
   };
 
