@@ -18,7 +18,7 @@
 .fv-chip-manutencao{color:#f5d761;border-color:rgba(250,204,21,.2)}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1200px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
     </style>`;
 
-  const state = { veiculos: [], loading: false, filtro: 'todos', status: '', busca: '' };
+  const state = { veiculos: [], loading: false, filtro: 'todos', status: '', busca: '', catalogo: { marcas: new Map(), modelos: new Map() }, pollGrm: null };
 
   function onlyPlate(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7); }
 
@@ -120,6 +120,86 @@
   function fmtMoney(v){ const n=Number(v||0); return MONEY_FMT.format(Number.isFinite(n)?n:0); }
   function toast(msg, error=false){ let el=document.querySelector('.fv-toast'); if(!el){el=document.createElement('div');el.className='fv-toast';document.body.appendChild(el);} el.textContent=msg; el.style.background=error?'rgba(127,29,29,.96)':'rgba(22,101,52,.96)'; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),3200); }
 
+  // Tipo do cadastro: o GRM só tem Próprio / Alugado / Terceiro. O texto livre antigo ("PROPIO", "Locado") vira um deles.
+  function tipoCanonico(v){
+    const t=norm(v).trim().toUpperCase();
+    if(!t) return '';
+    if(/^(P|PROPRIO|PROPIO|PROPRIA)$/.test(t)) return 'Próprio';
+    if(/^(A|ALUGADO|ALUGADA|LOCADO|LOCADA|LOCACAO|ALUGUEL)$/.test(t)) return 'Alugado';
+    if(/^(T|TERCEIRO|TERCEIRIZADO|TERCEIRA|TERCEIROS)$/.test(t)) return 'Terceiro';
+    return '';
+  }
+
+  // Mesma chave tolerante do banco (public.frotas_chave_placa): Mercosul A-J na 5ª posição == dígito 0-9.
+  function chavePlacaPainel(p){
+    const x=normalizarPlaca(p);
+    return (x.length===7 && /[A-J]/.test(x[4])) ? x.slice(0,4)+String(x.charCodeAt(4)-65)+x.slice(5) : x;
+  }
+
+  const GRM_EM_ANDAMENTO=['PENDENTE','PROCESSANDO'];
+  const grmStatusDe=(v)=>String(v?.grm_cadastro_status||'').toUpperCase();
+
+  function grmBadge(v){
+    const st=grmStatusDe(v);
+    if(!st) return '';
+    const msg=esc(v.grm_cadastro_mensagem||'');
+    if(st==='CONCLUIDO') return `<span class="fv-badge ok" title="${msg}">✓ GRM</span>`;
+    if(st==='ERRO') return `<span class="fv-badge err" title="${msg}">GRM: erro</span>`;
+    return '<span class="fv-badge warn" title="Aguardando o agente cadastrar no GRM (Patrimônios e Veículos).">GRM: enviando…</span>';
+  }
+
+  function grmLinhaErro(v){
+    if(grmStatusDe(v)!=='ERRO' || !v.grm_cadastro_mensagem) return '';
+    const m=String(v.grm_cadastro_mensagem);
+    return `<small class="fv-grm-erro" title="${esc(m)}">${esc(m.length>170?m.slice(0,170)+'…':m)}</small>`;
+  }
+
+  function precisaEnviarGrm(existente, payload){
+    if(!existente) return ['ATIVO','MANUTENCAO'].includes(statusKey(payload));
+    return ['ERRO','PENDENTE'].includes(grmStatusDe(existente));
+  }
+
+  // Dados que o GRM exige nas duas telas (Patrimônios e Veículos). O agente confere de novo no GRM.
+  function validarParaGrm(p, patrimonio, existente){
+    const falta=[];
+    if(p.placa.length!==7) falta.push('Placa (7 caracteres)');
+    const ren=onlyDigits(p.renavam);
+    if(ren.length<9 || ren.length>11) falta.push('RENAVAM (9 a 11 números)');
+    if(!p.marca) falta.push('Marca');
+    if(!p.modelo) falta.push('Modelo');
+    if(!Number.isInteger(p.ano) || p.ano<1950 || p.ano>new Date().getFullYear()+1) falta.push('Ano (4 dígitos)');
+    if(!p.cor) falta.push('Cor');
+    if(!p.tipo) falta.push('Tipo');
+    if(!/^\d{1,9}$/.test(patrimonio||'')) falta.push('Patrimônio (só números, até 9 dígitos)');
+    if(!p.coordenacao && !p.supervisao && !p.motorista_atual) falta.push('Coordenação');
+    if(p.tipo==='Alugado'){
+      if(!(p.valor_mensal>0)) falta.push('Valor mensal (Alugado)');
+      if(!Number.isInteger(p.dia_vencimento) || p.dia_vencimento<1 || p.dia_vencimento>31) falta.push('Dia de vencimento 1-31 (Alugado)');
+    }
+    if(p.tipo==='Terceiro' && !(p.valor_km>0)) falta.push('R$/Km (Terceiro)');
+    if(/^\d{1,9}$/.test(patrimonio||'')){
+      const emUso=state.veiculos.find(v=>v.id!==existente?.id && (String(v.patrimonio_codigo||'')===patrimonio || String(v.grm_patrimonio_numero||'')===patrimonio));
+      if(emUso) falta.push(`Patrimônio ${patrimonio} já é do veículo ${emUso.placa}`);
+    }
+    return falta;
+  }
+
+  // Catálogo de marcas/modelos do GRM (preenchido pelo agente) só para autocompletar e avisar cedo.
+  const chaveCatalogo=(v)=>norm(v).trim().toUpperCase();
+  // Devolve o nome da marca como está no catálogo ("VW" -> "VOLKSWAGEN/VW") ou null.
+  function marcaNoCatalogo(nome){
+    const k=chaveCatalogo(nome); if(!k) return null;
+    if(state.catalogo.marcas.has(k)) return state.catalogo.marcas.get(k);
+    for(const [chave,exibe] of state.catalogo.marcas){ if(chave.split(/[/\-,]/).map(x=>x.trim()).includes(k)) return exibe; }
+    return null;
+  }
+  // Devolve o modelo com a grafia do catálogo para a marca informada, ou null.
+  function modeloNoCatalogo(marcaCatalogo, modelo){
+    const grupo=state.catalogo.modelos.get(chaveCatalogo(marcaCatalogo));
+    const alvo=chaveCatalogo(modelo);
+    return (grupo && [...grupo].find(m=>chaveCatalogo(m)===alvo)) || null;
+  }
+
   function statusBadge(v){
     if (v?.detran_confirmado || String(v?.detran_status||'').toUpperCase()==='CONFIRMADO' || String(v?.detran_status||'').toUpperCase()==='DETRAN') return '<span class="fv-badge ok">✓ DETRAN</span>';
     if (!v?.renavam || String(v.renavam).replace(/\D/g,'') === '0') return '<span class="fv-badge err">Sem RENAVAM</span>';
@@ -157,16 +237,74 @@
       if(state.filtro==='divergencias' && !v.bfleet_divergencia) return false;
       if(state.status && statusKey(v)!==state.status) return false;
       if(!busca) return true;
-      return norm([v.placa,v.renavam,v.nome,v.marca,v.modelo,v.empresa,v.motorista_atual,v.patrimonio_funcionario,v.coordenacao,v.supervisao,v.bfleet_nome,v.bfleet_idgps].join(' ')).includes(busca);
+      return norm([v.placa,v.renavam,v.nome,v.marca,v.modelo,v.chassi,v.patrimonio_codigo,v.grm_patrimonio_numero,v.empresa,v.motorista_atual,v.patrimonio_funcionario,v.coordenacao,v.supervisao,v.bfleet_nome,v.bfleet_idgps].join(' ')).includes(busca);
     });
   }
 
-  async function loadVeiculos(root, opts){
-    state.loading=true; renderTable(root, opts);
+  async function loadVeiculos(root, opts, silent=false){
+    if(!silent){ state.loading=true; renderTable(root, opts); }
     const { data, error } = await opts.supabase.from('frotas_veiculos').select('*').order('placa',{ascending:true});
-    if(error){ toast(error.message || 'Erro ao carregar veículos.', true); state.veiculos=[]; }
+    if(error){ if(!silent){ toast(error.message || 'Erro ao carregar veículos.', true); state.veiculos=[]; } }
     else state.veiculos=Array.isArray(data)?data:[];
     state.loading=false; renderStats(root); renderTable(root, opts);
+    renderSugestoes(root);
+    acompanharGrm(root, opts);
+  }
+
+  // Enquanto algum veículo está esperando o agente cadastrar no GRM, recarrega a tabela sem piscar.
+  function acompanharGrm(root, opts){
+    clearTimeout(state.pollGrm);
+    if(!root.isConnected || !state.veiculos.some(v=>GRM_EM_ANDAMENTO.includes(grmStatusDe(v)))) return;
+    state.pollGrm=setTimeout(()=>{ if(root.isConnected) loadVeiculos(root, opts, true); }, 15000);
+  }
+
+  async function carregarCatalogo(root, opts){
+    const { data, error } = await opts.supabase.from('grm_veiculo_catalogo').select('marca,modelo').limit(2000);
+    if(error || !Array.isArray(data)) return;
+    const marcas=new Map(), modelos=new Map();
+    for(const r of data){
+      const mk=norm(r.marca).trim().toUpperCase(); if(!mk) continue;
+      if(!marcas.has(mk)) marcas.set(mk, String(r.marca).trim());
+      if(r.modelo){ if(!modelos.has(mk)) modelos.set(mk,new Set()); modelos.get(mk).add(String(r.modelo).trim()); }
+    }
+    state.catalogo={ marcas, modelos };
+    renderSugestoes(root);
+  }
+
+  function preencherDatalist(root, id, valores){
+    const dl=root.querySelector('#'+id); if(!dl) return;
+    const uniq=[...new Set(valores.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    dl.innerHTML=uniq.map(v=>`<option value="${esc(v)}"></option>`).join('');
+  }
+
+  function renderSugestoes(root){
+    preencherDatalist(root,'fv-dl-empresas', state.veiculos.map(v=>v.empresa));
+    preencherDatalist(root,'fv-dl-coordenacoes', state.veiculos.flatMap(v=>[v.coordenacao,v.patrimonio_coordenacao]));
+    preencherDatalist(root,'fv-dl-supervisoes', state.veiculos.flatMap(v=>[v.supervisao,v.patrimonio_supervisao]));
+    preencherDatalist(root,'fv-dl-marcas', [...state.catalogo.marcas.values()]);
+    atualizarModelos(root);
+  }
+
+  function atualizarModelos(root){
+    const marca=root.querySelector('input[name="marca"]')?.value||'';
+    const grupo=state.catalogo.modelos.get(norm(marca).trim().toUpperCase());
+    preencherDatalist(root,'fv-dl-modelos', grupo ? [...grupo] : [...state.catalogo.modelos.values()].flatMap(s=>[...s]));
+  }
+
+  async function carregarFuncionarios(root){
+    try{
+      const mod=await import('../colaboradoresCache.js');
+      const lista=await mod.getColaboradores({ somenteAtivos:true });
+      preencherDatalist(root,'fv-dl-funcionarios', (lista||[]).map(c=>c.nome));
+    }catch(err){ console.warn('[Frotas] Lista de funcionários indisponível para sugestão:', err); }
+  }
+
+  async function reenviarGrm(root, opts, v){
+    if(!v?.id) return;
+    const { error } = await opts.supabase.rpc('frotas_veiculo_grm_reenviar',{ p_id:v.id });
+    if(error) return toast(error.message || 'Não foi possível reenviar ao GRM.', true);
+    toast('Reenviado: o agente cadastra no GRM em instantes.');
+    await loadVeiculos(root, opts, true);
   }
 
   function readForm(root){
@@ -175,14 +313,17 @@
     return {
       placa: normalizarPlaca(get('placa')),
       renavam: onlyDigits(get('renavam')) || null,
+      chassi: get('chassi').trim().toUpperCase() || null,
+      apolice_seguro: get('apolice_seguro').trim() || null,
+      seguro_vencimento: get('seguro_vencimento') || null,
       nome: get('nome').trim() || null,
       empresa: get('empresa').trim() || null,
       cnpj: onlyDigits(get('cnpj')) || null,
       marca: get('marca').trim() || null,
       modelo: get('modelo').trim() || null,
-      cor: get('cor').trim() || null,
+      cor: get('cor').trim().toUpperCase() || null,
       ano: num(get('ano')),
-      tipo: get('tipo').trim() || null,
+      tipo: tipoCanonico(get('tipo')) || (get('tipo').trim() || null),
       coordenacao: get('coordenacao').trim() || null,
       supervisao: get('supervisao').trim() || null,
       motorista_atual: get('motorista_atual').trim() || null,
@@ -199,7 +340,25 @@
   function fillForm(root, v){
     const form=root.querySelector('[data-veiculo-form]'); if(!form) return;
     const set=(k,val)=>{ const input=form.querySelector(`[name="${k}"]`); if(input) input.value=val ?? ''; };
-    ['placa','renavam','nome','empresa','cnpj','marca','modelo','cor','ano','tipo','coordenacao','supervisao','motorista_atual','hodometro','valor_mensal','dia_vencimento','valor_km','status','observacoes'].forEach(k=>set(k,v?.[k]));
+    ['placa','renavam','chassi','nome','empresa','cnpj','marca','modelo','cor','ano','coordenacao','supervisao','motorista_atual','hodometro','valor_mensal','dia_vencimento','valor_km','status','apolice_seguro','seguro_vencimento','observacoes'].forEach(k=>set(k,v?.[k]));
+    // Tipo é lista fechada (Próprio/Alugado/Terceiro); valor antigo fora da lista vira opção extra pra não ser apagado ao salvar.
+    const tipoSel=form.querySelector('[name="tipo"]');
+    if(tipoSel){
+      const canon=tipoCanonico(v?.tipo);
+      if(!canon && v?.tipo && ![...tipoSel.options].some(o=>o.value===v.tipo)) tipoSel.add(new Option(v.tipo,v.tipo));
+      tipoSel.value=canon || v?.tipo || '';
+    }
+    // Patrimônio: editável só enquanto o cadastro no GRM não foi concluído; depois vem do GRM.
+    const patInput=form.querySelector('[name="patrimonio_numero"]');
+    if(patInput){
+      const st=grmStatusDe(v);
+      const editavel=!v || ['ERRO','PENDENTE'].includes(st);
+      patInput.value=v?.patrimonio_codigo || v?.grm_patrimonio_numero || '';
+      patInput.readOnly=!editavel;
+      patInput.title=editavel?'':'Número do patrimônio no GRM (não editável aqui).';
+      form.addEventListener('reset',()=>{ patInput.readOnly=false; patInput.title=''; },{once:true});
+    }
+    atualizarModelos(root);
     // Com patrimônio associado, o banco força supervisao = patrimonio_supervisao em qualquer
     // gravação; o campo fica só leitura pra não parecer que a edição manual vale.
     const supInput=form.querySelector('[name="supervisao"]');
@@ -216,10 +375,44 @@
   async function saveVeiculo(root, opts){
     const payload=readForm(root);
     if(!payload.placa) return toast('Informe a placa do veículo.', true);
+    const form=root.querySelector('[data-veiculo-form]');
+    const patInput=form?.querySelector('[name="patrimonio_numero"]');
+    const patrimonio=onlyDigits(patInput?.value);
+    const existente=state.veiculos.find(v=>normalizarPlaca(v.placa)===payload.placa);
+
+    if(!existente){
+      const equivalente=state.veiculos.find(v=>chavePlacaPainel(v.placa)===chavePlacaPainel(payload.placa));
+      if(equivalente && !window.confirm(`Já existe o veículo ${equivalente.placa} (mesma placa em outro formato: antiga/Mercosul). Cadastrar ${payload.placa} mesmo assim?`)) return;
+    }
+
+    // Veículo novo (ou em erro de envio) vai para o GRM: Patrimônios + Veículos.
+    if(precisaEnviarGrm(existente, payload)){
+      const falta=validarParaGrm(payload, patrimonio, existente);
+      if(falta.length) return toast('Para cadastrar no GRM falta: '+falta.join('; ')+'.', true);
+      if(state.catalogo.marcas.size){
+        const marcaCat=marcaNoCatalogo(payload.marca);
+        const modeloCat=marcaCat ? modeloNoCatalogo(marcaCat, payload.modelo) : null;
+        if(marcaCat && modeloCat){
+          // Grava no painel com a mesma grafia do GRM (maiúsculas, nome do catálogo).
+          payload.marca=marcaCat; payload.modelo=modeloCat;
+        }else{
+          const aviso=marcaCat ? `o modelo "${payload.modelo}" não está no catálogo do GRM para ${marcaCat}` : `a marca "${payload.marca}" não está no catálogo do GRM`;
+          if(!window.confirm(`Atenção: ${aviso}. O cadastro no GRM vai dar erro se o nome não bater (escolha da lista). Enviar mesmo assim?`)) return;
+        }
+      }
+      Object.assign(payload,{
+        grm_patrimonio_numero: patrimonio,
+        grm_cadastro_status: 'PENDENTE',
+        grm_cadastro_tentativas: 0,
+        grm_cadastro_mensagem: null,
+        grm_cadastro_travado_em: null,
+      });
+    }
+
     const { error } = await opts.supabase.from('frotas_veiculos').upsert(payload,{onConflict:'placa'});
     if(error) return toast(error.message || 'Erro ao salvar veículo.', true);
-    toast('Veículo salvo.');
-    root.querySelector('[data-veiculo-form]')?.reset();
+    toast(payload.grm_cadastro_status==='PENDENTE' ? 'Veículo salvo. Cadastro no GRM (Patrimônios e Veículos) em andamento.' : 'Veículo salvo.');
+    form?.reset();
     await loadVeiculos(root, opts);
   }
 
@@ -461,16 +654,17 @@
         <td>${esc(v.renavam || '—')}</td>
         <td>${esc(v.motorista_atual || v.patrimonio_funcionario || '—')}</td>
         <td>${esc(v.coordenacao || v.patrimonio_coordenacao || '—')}</td>
-        <td><div class="fv-valid" title="${esc(v.bfleet_mensagem || v.detran_mensagem || '')}">${statusBadge(v)}${trackerBadge(v)}</div></td>
-        <td><div class="fv-actions"><button class="fv-btn ghost fv-mini fv-icon" data-edit="${v.id}" title="Editar" aria-label="Editar">${ICON_EDITAR}</button><button class="fv-btn primary fv-mini fv-icon" data-multas="${v.id}" title="Multas" aria-label="Multas">${ICON_MULTAS}</button><button class="fv-btn soft fv-mini fv-icon" data-detran="${v.id}" title="DETRAN" aria-label="DETRAN">${ICON_DETRAN}</button></div></td>
+        <td><div class="fv-valid" title="${esc(v.bfleet_mensagem || v.detran_mensagem || '')}">${statusBadge(v)}${trackerBadge(v)}${grmBadge(v)}</div>${grmLinhaErro(v)}</td>
+        <td><div class="fv-actions"><button class="fv-btn ghost fv-mini fv-icon" data-edit="${v.id}" title="Editar" aria-label="Editar">${ICON_EDITAR}</button><button class="fv-btn primary fv-mini fv-icon" data-multas="${v.id}" title="Multas" aria-label="Multas">${ICON_MULTAS}</button><button class="fv-btn soft fv-mini fv-icon" data-detran="${v.id}" title="DETRAN" aria-label="DETRAN">${ICON_DETRAN}</button>${['ERRO','PENDENTE'].includes(grmStatusDe(v))?`<button class="fv-btn soft fv-mini" data-grm-reenviar="${v.id}" title="Reenviar o cadastro ao GRM (Patrimônios e Veículos)">Reenviar GRM</button>`:''}</div></td>
       </tr>`).join('');
     tbody.querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click',()=>fillForm(root, state.veiculos.find(v=>v.id===btn.dataset.edit))));
     tbody.querySelectorAll('[data-detran]').forEach(btn=>btn.addEventListener('click',()=>confirmarDetran(root, opts, state.veiculos.find(v=>v.id===btn.dataset.detran))));
     tbody.querySelectorAll('[data-multas]').forEach(btn=>btn.addEventListener('click',()=>consultarMultas(root, opts, state.veiculos.find(v=>v.id===btn.dataset.multas))));
+    tbody.querySelectorAll('[data-grm-reenviar]').forEach(btn=>btn.addEventListener('click',()=>reenviarGrm(root, opts, state.veiculos.find(v=>v.id===btn.dataset.grmReenviar))));
   }
 
   function openHome(container, opts={}){
-    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base oficial de veículos, validação DETRAN e rastreadores BFleet. Veículos com rastreador aparecem com a marcação <strong>BFleet</strong>.</p></div><div class="fv-card"><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number"></div><div class="fv-field"><label>Tipo</label><input class="fv-input" name="tipo" placeholder="Próprio/Locado"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao"></div><div class="fv-field"><label>Motorista atual</label><input class="fv-input" name="motorista_atual"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento</label><input class="fv-input" name="dia_vencimento" type="number"></div><div class="fv-field"><label>R$/Km</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field"><label>Status</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option><option value="rastreador">Com rastreador BFleet</option><option value="sem_rastreador">Sem rastreador</option><option value="divergencias">Divergências BFleet</option></select><button class="fv-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fv-btn ghost" type="button" data-diag-bfleet>Diagnóstico BFleet</button><button class="fv-btn primary" type="button" data-sync-all title="Roda em sequência: BFleet, Patrimônios, Condutores e DETRAN. Também acontece automaticamente.">Sincronizar tudo</button></div><div class="fv-grid"><button type="button" class="fv-kpi" data-kpi-filter="todos" aria-pressed="false"><span>Total</span><strong data-kpi-total>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="detran" aria-pressed="false"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="rastreador" aria-pressed="false"><span>Rastreadores</span><strong data-kpi-rastreadores>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="divergencias" aria-pressed="false"><span>Divergências</span><strong data-kpi-divergencias>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="sem_renavam" aria-pressed="false"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></button></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-status-chips" data-status-chips aria-label="Filtrar por status"></div><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa</th><th>Empresa</th><th>RENAVAM</th><th>Motorista</th><th>Coordenação</th><th>Validação</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Ao fazer upload do relatório de veículos em <strong>Relatórios</strong>, o painel organiza automaticamente placa e RENAVAM nesta tela. Tudo é sincronizado automaticamente; o botão <strong>Sincronizar tudo</strong> é um fallback que roda em sequência: BFleet (cruza rastreadores por placa), Patrimônios (motorista pela placa na planilha de Patrimônios), Condutores (envia o condutor atual ao BFleet) e DETRAN (frota oficial e multas). Clique nos cards de totais para filtrar a tabela.</div></div></div></section>`;
+    container.innerHTML=`${styles}<section class="fv-shell"><div class="fv-head"><div class="fv-kicker">Frotas · Cadastro</div><h1 class="fv-title">Veículos</h1><p class="fv-sub">Base oficial de veículos, validação DETRAN e rastreadores BFleet. Veículos com rastreador aparecem com a marcação <strong>BFleet</strong>.</p></div><div class="fv-card"><div class="fv-body"><form class="fv-form" data-veiculo-form><div class="fv-field"><label>Empresa</label><input class="fv-input" name="empresa" list="fv-dl-empresas" autocomplete="off"></div><div class="fv-field"><label>Coordenação</label><input class="fv-input" name="coordenacao" list="fv-dl-coordenacoes" autocomplete="off" placeholder="Como no GRM"></div><div class="fv-field"><label>Supervisão</label><input class="fv-input" name="supervisao" list="fv-dl-supervisoes" autocomplete="off" placeholder="Como no GRM"></div><div class="fv-field"><label>Funcionário</label><input class="fv-input" name="motorista_atual" list="fv-dl-funcionarios" autocomplete="off" placeholder="Nome como no GRM"></div><div class="fv-field"><label>Placa</label><input class="fv-input" name="placa" placeholder="ABC1D23" maxlength="8"></div><div class="fv-field"><label>RENAVAM</label><input class="fv-input" name="renavam" placeholder="somente números"></div><div class="fv-field"><label>Marca</label><input class="fv-input" name="marca" list="fv-dl-marcas" autocomplete="off" placeholder="Marca do catálogo do GRM"></div><div class="fv-field"><label>Modelo</label><input class="fv-input" name="modelo" list="fv-dl-modelos" autocomplete="off" placeholder="Modelo do catálogo do GRM"></div><div class="fv-field"><label>Ano</label><input class="fv-input" name="ano" type="number" min="1950" max="2100" placeholder="2024"></div><div class="fv-field"><label>Chassi</label><input class="fv-input" name="chassi" maxlength="17" placeholder="17 caracteres"></div><div class="fv-field"><label>Cor</label><input class="fv-input" name="cor" list="fv-dl-cores" autocomplete="off" placeholder="Ex.: BRANCA"></div><div class="fv-field"><label>Tipo</label><select class="fv-select" name="tipo"><option value="">Selecione</option><option>Próprio</option><option>Alugado</option><option>Terceiro</option></select></div><div class="fv-field"><label>Patrimônio (nº no GRM)</label><input class="fv-input" name="patrimonio_numero" inputmode="numeric" maxlength="9" placeholder="Número do patrimônio"></div><div class="fv-field"><label>Situação</label><select class="fv-select" name="status"><option>ATIVO</option><option>INATIVO</option><option>VENDIDO</option><option>MANUTENCAO</option></select></div><div class="fv-field"><label>Apólice seguro</label><input class="fv-input" name="apolice_seguro" placeholder="Nº da apólice"></div><div class="fv-field"><label>Vcto seguro</label><input class="fv-input" name="seguro_vencimento" type="date"></div><div class="fv-field full fv-form-sep">Outros dados</div><div class="fv-field"><label>Nome interno</label><input class="fv-input" name="nome" placeholder="Ex.: ABC1D23"></div><div class="fv-field"><label>CNPJ</label><input class="fv-input" name="cnpj"></div><div class="fv-field"><label>Hodômetro</label><input class="fv-input" name="hodometro" type="number" step="0.01"></div><div class="fv-field"><label>Valor mensal (Alugado)</label><input class="fv-input" name="valor_mensal" type="number" step="0.01"></div><div class="fv-field"><label>Dia vencimento (Alugado)</label><input class="fv-input" name="dia_vencimento" type="number" min="1" max="31"></div><div class="fv-field"><label>R$/Km (Terceiro)</label><input class="fv-input" name="valor_km" type="number" step="0.01"></div><div class="fv-field full"><label>Observações</label><textarea name="observacoes" placeholder="Observações internas"></textarea></div><div class="fv-field full fv-note-grm">Veículo <strong>novo</strong> é cadastrado também no <strong>GRM</strong> (Patrimônios e Veículos) automaticamente. Exigidos: Placa, RENAVAM, Marca, Modelo, Ano, Cor, Tipo, Patrimônio e Coordenação (marca e modelo precisam existir no catálogo do GRM — escolha da lista). Alugado exige valor mensal e dia de vencimento; Terceiro exige R$/Km. Funcionário, se informado, precisa ser da Supervisão. Chassi, apólice e vencimento do seguro ficam só no painel.</div><div class="fv-field full"><button class="fv-btn primary" type="button" data-save-veiculo>Salvar veículo</button></div><datalist id="fv-dl-empresas"></datalist><datalist id="fv-dl-coordenacoes"></datalist><datalist id="fv-dl-supervisoes"></datalist><datalist id="fv-dl-funcionarios"></datalist><datalist id="fv-dl-marcas"></datalist><datalist id="fv-dl-modelos"></datalist><datalist id="fv-dl-cores"><option value="BRANCA"><option value="PRATA"><option value="PRETA"><option value="CINZA"><option value="VERMELHA"><option value="AZUL"><option value="VERDE"><option value="AMARELA"></datalist></form><div class="fv-toolbar"><input class="fv-input" placeholder="Buscar por placa, RENAVAM, modelo, motorista..." data-search><select class="fv-select" data-filter><option value="todos">Todos</option><option value="detran">Confirmados DETRAN</option><option value="pendentes">Pendentes DETRAN</option><option value="sem_renavam">Sem RENAVAM</option><option value="rastreador">Com rastreador BFleet</option><option value="sem_rastreador">Sem rastreador</option><option value="divergencias">Divergências BFleet</option></select><button class="fv-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fv-btn ghost" type="button" data-diag-bfleet>Diagnóstico BFleet</button><button class="fv-btn primary" type="button" data-sync-all title="Roda em sequência: BFleet, Patrimônios, Condutores e DETRAN. Também acontece automaticamente.">Sincronizar tudo</button></div><div class="fv-grid"><button type="button" class="fv-kpi" data-kpi-filter="todos" aria-pressed="false"><span>Total</span><strong data-kpi-total>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="detran" aria-pressed="false"><span>DETRAN OK</span><strong data-kpi-detran>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="rastreador" aria-pressed="false"><span>Rastreadores</span><strong data-kpi-rastreadores>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="divergencias" aria-pressed="false"><span>Divergências</span><strong data-kpi-divergencias>0</strong></button><button type="button" class="fv-kpi" data-kpi-filter="sem_renavam" aria-pressed="false"><span>Sem RENAVAM</span><strong data-kpi-sem-renavam>0</strong></button></div><p class="fv-sub" data-count>0 veículo(s) encontrado(s)</p><div class="fv-status-chips" data-status-chips aria-label="Filtrar por status"></div><div class="fv-table-wrap"><table class="fv-table"><thead><tr><th>Placa</th><th>Empresa</th><th>RENAVAM</th><th>Motorista</th><th>Coordenação</th><th>Validação</th><th>Ações</th></tr></thead><tbody data-veiculos-table></tbody></table></div><div class="fv-note">Ao fazer upload do relatório de veículos em <strong>Relatórios</strong>, o painel organiza automaticamente placa e RENAVAM nesta tela. Tudo é sincronizado automaticamente; o botão <strong>Sincronizar tudo</strong> é um fallback que roda em sequência: BFleet (cruza rastreadores por placa), Patrimônios (motorista pela placa na planilha de Patrimônios), Condutores (envia o condutor atual ao BFleet) e DETRAN (frota oficial e multas). Clique nos cards de totais para filtrar a tabela.</div></div></div></section>`;
     container.querySelector('[data-save-veiculo]')?.addEventListener('click',()=>saveVeiculo(container, opts));
     container.querySelector('[data-refresh]')?.addEventListener('click',()=>loadVeiculos(container, opts));
     container.querySelector('[data-sync-all]')?.addEventListener('click',()=>sincronizarTudo(container, opts));
@@ -490,7 +684,12 @@
     });
     container.querySelector('input[name="placa"]')?.addEventListener('input',(e)=>{e.target.value=normalizarPlaca(e.target.value);});
     container.querySelector('input[name="renavam"]')?.addEventListener('input',(e)=>{e.target.value=onlyDigits(e.target.value);});
+    container.querySelector('input[name="marca"]')?.addEventListener('input',()=>atualizarModelos(container));
+    container.querySelector('input[name="chassi"]')?.addEventListener('input',(e)=>{e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,'');});
+    container.querySelector('input[name="patrimonio_numero"]')?.addEventListener('input',(e)=>{e.target.value=onlyDigits(e.target.value);});
     loadVeiculos(container, opts);
+    carregarCatalogo(container, opts);
+    carregarFuncionarios(container);
   }
 
   window[MODULE_NAME]=window[MODULE_NAME]||{};

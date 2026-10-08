@@ -37,6 +37,7 @@ const AGENT_NAMES = {
   'sync-abrir-os': 'Abrir OS (GRM)',
   'sync-finalizar-os': 'Finalizar OS (GRM)',
   'sync-reabrir-os': 'Reabrir OS (GRM)',
+  'sync-cadastrar-veiculo': 'Cadastro de Veículo (GRM)',
 };
 
 const state = {
