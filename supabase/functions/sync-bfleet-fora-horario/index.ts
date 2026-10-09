@@ -53,13 +53,19 @@ function decodeHtml(value: unknown) {
     .replace(/&quot;/gi, '"')
     .replace(/&#039;/gi, "'")
     .replace(/&#39;/gi, "'")
-    // Acentos nomeados (&ecirc; &atilde; &ccedil; ...) que a RedGPS manda nos endereços.
-    .replace(/&([a-z])(acute|grave|circ|tilde|uml);/gi, (_m, letter, accent) =>
-      (letter + ({ acute: "́", grave: "̀", circ: "̂", tilde: "̃", uml: "̈" } as Record<string, string>)[accent.toLowerCase()]).normalize("NFC"))
-    .replace(/&ccedil;/g, "ç")
-    .replace(/&Ccedil;/g, "Ç")
     .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_m, n) => String.fromCharCode(parseInt(n, 16)));
+}
+
+// Acentos nomeados (&ecirc; &atilde; &ccedil; ...) que a RedGPS manda nos endereços da rota.
+// Fica separado do decodeHtml de propósito: o endereço do relatório entra no import_hash de
+// frotas_fora_horario, e mudar o texto dele faria cada re-sincronização duplicar as linhas.
+function decodeAccentEntities(value: unknown) {
+  const accents: Record<string, string> = { acute: "́", grave: "̀", circ: "̂", tilde: "̃", uml: "̈" };
+  return asString(value)
+    .replace(/&([a-z])(acute|grave|circ|tilde|uml);/gi, (_m, letter, accent) => (letter + accents[accent.toLowerCase()]).normalize("NFC"))
+    .replace(/&ccedil;/g, "ç")
+    .replace(/&Ccedil;/g, "Ç");
 }
 
 function stripHtml(value: unknown) {
@@ -600,6 +606,15 @@ async function fetchWebReport(cfg: any) {
     if (runtimeDataMatch?.[1]) {
       try { runtimeData = JSON.parse(runtimeDataMatch[1]); } catch { runtimeData = dataJson; }
     }
+    if (cfg.dataInicial && cfg.dataFinal) {
+      // Período explícito: reaplica as datas pedidas no dataJson devolvido pela página, como faz o
+      // sync-bfleet-excesso-velocidade. Obs.: em 09/10 o relatório pesado só terminou para "ontem"
+      // (~5 min); datas mais antigas ficaram sem resposta mesmo com isto (ver memória do projeto).
+      runtimeData.fecha_inicio = dataJson.fecha_inicio;
+      runtimeData.fecha_fin = dataJson.fecha_fin;
+      runtimeData.hora_inicio = dataJson.hora_inicio;
+      runtimeData.hora_fin = dataJson.hora_fin;
+    }
     const savedReportIds = Array.from(text.matchAll(/idreporte_guardado\s*=\s*(\d+)/g)).map((match) => match[1]).filter((id) => id !== "0");
     const uniqueIds = Array.from(text.matchAll(/uniq_id\s*=\s*["']([^"']+)["']/g)).map((match) => match[1]).filter(Boolean);
     const savedReportId = savedReportIds[savedReportIds.length - 1] || String(cfg.reportId);
@@ -904,7 +919,7 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
       ignition: parseNumeric(pick(row, ["ignicion", "Ignicion", "ignição", "ignition"])),
       lat,
       lng,
-      address: normalizeText(decodeHtml(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"]))),
+      address: normalizeText(decodeAccentEntities(decodeHtml(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"])))),
       raw: row,
     };
   }).filter((p: any) => p.sec !== null && p.sec >= 0 && p.sec <= 4 * 3600)
@@ -1452,20 +1467,28 @@ serve(async (req) => {
     try { requestBody = await req.json(); } catch { requestBody = {}; }
     resetTimeline();
     let deadlineTimer: number | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      deadlineTimer = setTimeout(() => reject(new Error(
-        `Tempo limite de ${RUN_DEADLINE_MS / 1000}s excedido. Última etapa concluída: ${runTimeline[runTimeline.length - 1] || "(nenhuma)"}. Linha do tempo: ${runTimeline.join(" > ")}`,
-      )), RUN_DEADLINE_MS);
+    const deadline = new Promise<{ pending: true }>((resolve) => {
+      deadlineTimer = setTimeout(() => resolve({ pending: true }), RUN_DEADLINE_MS);
     });
     const work = syncForaHorario(supabase, requestBody);
     // O idle timeout da resposta é 150 s, mas o relógio da function é maior: se a BFleet demorar,
-    // responde com o diagnóstico no prazo e deixa a sincronização terminar (e gravar) em segundo plano.
+    // responde 202 com a linha do tempo no prazo e deixa a sincronização terminar (e gravar) em segundo plano
+    // (a BFleet chega a levar 4-5 min no relatório pesado; sem isso o dia inteiro se perdia).
     (globalThis as any).EdgeRuntime?.waitUntil?.(work.then(
       (r) => console.log("[sync-bfleet-fora-horario] concluído em segundo plano", JSON.stringify({ total: r?.total, ocorrencias: r?.ocorrencias, etapas: r?.etapas })),
       (e) => console.error("[sync-bfleet-fora-horario] falha em segundo plano", e),
     ));
     try {
       const result = await Promise.race([work, deadline]);
+      if ((result as { pending?: boolean })?.pending) {
+        return json({
+          ok: true,
+          em_andamento: true,
+          aviso: `A BFleet ainda não respondeu após ${RUN_DEADLINE_MS / 1000}s; a sincronização continua em segundo plano e grava ao concluir.`,
+          ultima_etapa: runTimeline[runTimeline.length - 1] || null,
+          etapas: [...runTimeline],
+        }, 202);
+      }
       return json(result);
     } finally {
       clearTimeout(deadlineTimer);

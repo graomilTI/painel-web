@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
 import { installPreviousWeekDefaults } from './frotas-periodo-semana-anterior.js?v=20260615d';
 import { installIntuitiveFleetLayout } from './frotas-layout-intuitivo.js?v=20260804b';
-import './modules/frotas.js?v=20261009-prints-foco';
+import './modules/frotas.js?v=20261009-sync-andamento';
 
 function installFleetHeaderCleanup(root = document) {
   if (root.getElementById('frotasHeaderCleanupStyles')) return;
