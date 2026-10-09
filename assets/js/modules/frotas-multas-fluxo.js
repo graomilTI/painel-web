@@ -674,11 +674,12 @@ async function consolidar(ctx, multaId) {
   const membros = h.dossieMembers(m).slice().sort(porDataInfracao(h));
   const termo = (ctx.state.anexosPorDossie.get(chave) || []).find((a) => a.tipo === 'termo_assinado');
   const autos = membros.map((x) => ctx.state.anexosPorMulta.get(x.id));
-  if (!termo || autos.some((a) => !a)) return { gerado: false };
+  // Identificar dispensa o termo (1 anexo: o auto); Dobrar exige os dois.
+  if ((h.exigeTermo(membros) && !termo) || autos.some((a) => !a)) return { gerado: false };
 
   const PDFLib = await carregarPdfLib();
   const out = await PDFLib.PDFDocument.create();
-  for (const anexo of [termo, ...autos]) await paginasDoAnexo(PDFLib, out, sb, anexo);
+  for (const anexo of [termo, ...autos].filter(Boolean)) await paginasDoAnexo(PDFLib, out, sb, anexo);
   const bytes = await out.save();
 
   const { pasta } = pastaDoDossie(h, membros);
@@ -769,7 +770,8 @@ function abrirAnexos(ctx, multaId) {
     const doss = ctx.state.anexosPorDossie.get(chave) || [];
     const termo = doss.find((a) => a.tipo === 'termo_assinado');
     const cons = doss.find((a) => a.tipo === 'consolidado');
-    const completo = Boolean(termo) && membros.every((x) => ctx.state.anexosPorMulta.has(x.id));
+    const exige = h.exigeTermo(membros);
+    const completo = membros.every((x) => ctx.state.anexosPorMulta.has(x.id)) && (!exige || Boolean(termo));
     const { pasta } = pastaDoDossie(h, membros);
     const botoes = (anexo, alvo) => `<div class="fm-flow-btns">
       <button type="button" class="fm-btn ${anexo ? 'soft' : 'primary'}" data-flow-up="${alvo}">${anexo ? 'Substituir' : 'Anexar'}</button>
@@ -787,15 +789,15 @@ function abrirAnexos(ctx, multaId) {
 
     el.innerHTML = `<div class="fm-modal fm-flow wide" role="dialog" aria-modal="true">
       <h3>Anexos da multa</h3>
-      <p><strong>${h.esc(limpar(m.motorista))}</strong> · ${membros.length} multa${membros.length > 1 ? 's' : ''} no dossiê. Anexe o auto de infração de cada multa e o termo de desconto assinado; com todos enviados o painel junta tudo num único PDF e salva na pasta do condutor no Drive (a mesma do excesso de velocidade).</p>
+      <p><strong>${h.esc(limpar(m.motorista))}</strong> · ${membros.length} multa${membros.length > 1 ? 's' : ''} no dossiê. Anexos exigidos: ${exige ? '<strong>Dobrar = 2</strong> (auto de infração + termo de desconto assinado)' : '<strong>Identificar = 1</strong> (auto de infração)'}. Com tudo enviado, o painel gera o PDF único e salva na pasta do condutor no Drive (a mesma do excesso de velocidade). O OK da multa só é liberado com esses anexos.</p>
       <div class="fm-flow-list">
         ${linhasAutos}
-        <div class="fm-flow-item${termo ? ' ok' : ''}">
+        ${exige || termo ? `<div class="fm-flow-item${termo ? ' ok' : ''}">
           <div class="grow"><strong>Termo de desconto em folha assinado</strong>
           <small>${termo ? arquivo(termo) : 'Gere o termo (ícone de documento), colha a assinatura e anexe aqui.'}</small></div>${botoes(termo, 'termo')}
-        </div>
+        </div>` : ''}
         <div class="fm-flow-item${cons ? ' ok' : ''}">
-          <div class="grow"><strong>PDF único (termo + autos)</strong>
+          <div class="grow"><strong>PDF único (${exige || termo ? 'termo + autos' : 'auto de infração'})</strong>
           <small>${cons ? `${arquivo(cons)}<br>${cons.drive_url
             ? `Drive: <a data-flow-drive="${cons.id}" title="Abrir no Drive">abrir pasta do condutor${cons.drive_pasta ? ' — ' + h.esc(cons.drive_pasta) : ''}</a> · enviado em ${h.esc(agoraBr(cons.drive_enviado_em))}`
             : 'Drive: ainda não enviado para a pasta do condutor.'}<br>Cópia de segurança no painel: ${h.esc(BUCKET)}/${h.esc(pasta)}/`
