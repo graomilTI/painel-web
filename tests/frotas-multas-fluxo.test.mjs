@@ -118,3 +118,71 @@ test('termo de desconto usa a redação revisada pelo RH (09/10/2026)', async ()
   assert.match(src, /Comprometo-me ainda a respeitar a legislação de trânsito, utilizar os veículos da empresa com zelo e comunicar imediatamente qualquer ocorrência ou autuação recebida\./);
   assert.doesNotMatch(src, /no qual me comprometo a pagar as multas/);
 });
+
+// ── OK (arquivar) só depois dos anexos: Dobrar = 2 (auto + termo assinado), Identificar = 1 (auto) ──
+const ctxMultas = window.FROTAS_MULTAS.getContext();
+const ID = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const indicar = (n, extra = {}) => ({ id: ID(n), grupo_id: null, identificar_solicitado_em: '2026-10-08T10:00:00Z', ...extra });
+const dobrar = (n, extra = {}) => ({ id: ID(n), grupo_id: null, dobrar_solicitado_em: '2026-10-08T10:00:00Z', ...extra });
+const auto = (multaId) => ({ id: `a-${multaId}`, tipo: 'auto_infracao', multa_id: multaId });
+const termo = (dossieId) => ({ id: `t-${dossieId}`, tipo: 'termo_assinado', dossie_id: dossieId });
+function cenario(multas, anexos = [], { indisponivel = false } = {}) {
+  ctxMultas.state.multas = multas;
+  ctxMultas.state.anexos = anexos;
+  ctxMultas.state.anexosIndisponiveis = indisponivel;
+  ctxMultas.reindex();
+  return ctxMultas.helpers.okBloqueio;
+}
+
+test('OK: multa sem ação (nem Identificar nem Dobrar) fica bloqueada', () => {
+  const ok = cenario([{ id: ID(1), grupo_id: null }], [auto(ID(1)), termo(ID(1))]);
+  assert.match(ok({ id: ID(1), grupo_id: null }), /escolha a ação da multa \(Identificar ou Dobrar\)/);
+});
+
+test('OK em Identificar exige 1 anexo: o auto de infração', () => {
+  const m = indicar(1);
+  assert.match(cenario([m])(m), /Identificar exige 1 anexo: falta o auto de infração/);
+  assert.equal(cenario([m], [auto(m.id)])(m), '');
+  // o termo não é exigido nem substitui o auto
+  assert.match(cenario([m], [termo(m.id)])(m), /falta o auto de infração/);
+});
+
+test('OK em Dobrar exige 2 anexos: auto de infração + termo de desconto assinado', () => {
+  const m = dobrar(1);
+  assert.match(cenario([m])(m), /Dobrar exige 2 anexos: falta o auto de infração e o termo de desconto assinado/);
+  assert.match(cenario([m], [auto(m.id)])(m), /falta o termo de desconto assinado/);
+  assert.match(cenario([m], [termo(m.id)])(m), /falta o auto de infração/);
+  assert.equal(cenario([m], [auto(m.id), termo(m.id)])(m), '');
+});
+
+test('OK em grupo: o termo vale para o grupo, o auto é de cada multa', () => {
+  const G = '11111111-1111-4111-8111-111111111111';
+  const a = dobrar(1, { grupo_id: G });
+  const b = dobrar(2, { grupo_id: G });
+  const ok = cenario([a, b], [auto(a.id), termo(G)]);
+  assert.equal(ok(a), '');
+  assert.match(ok(b), /Dobrar exige 2 anexos: falta o auto de infração\./);
+});
+
+test('termo só é dispensado quando todas as multas do dossiê são Identificar', () => {
+  const G = '22222222-2222-4222-8222-222222222222';
+  const i1 = indicar(1, { grupo_id: G });
+  const i2 = indicar(2, { grupo_id: G });
+  const d1 = dobrar(3, { grupo_id: G });
+  cenario([i1, i2]);
+  assert.equal(ctxMultas.helpers.exigeTermo([i1, i2]), false);
+  assert.equal(ctxMultas.helpers.exigeTermo([i1, d1]), true);
+  assert.equal(ctxMultas.helpers.exigeTermo([{ id: ID(9) }]), true); // sem ação ainda: mantém o termo
+  assert.equal(ctxMultas.helpers.anexosStatus(i1).esperado, 2); // 2 autos, sem termo
+});
+
+test('OK: sem como conferir os anexos (tabela indisponível) não libera', () => {
+  const m = indicar(1);
+  assert.match(cenario([m], [auto(m.id)], { indisponivel: true })(m), /Não foi possível conferir os anexos/);
+});
+
+test('arquivar (OK) consulta a trava antes de gravar', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../assets/js/modules/frotas-multas.js', import.meta.url), 'utf8');
+  assert.match(src, /async function archiveMulta[\s\S]*?okBloqueio\(multa\)[\s\S]*?return;[\s\S]*?safeUpdate\(opts,multa\.id,\{arquivada_em/);
+});
