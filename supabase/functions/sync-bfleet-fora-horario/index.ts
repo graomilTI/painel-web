@@ -536,14 +536,30 @@ async function loadSavedWebReport(cfg: any, cookie: string) {
   try { return JSON.parse(text); } catch { throw new Error(`Configuração web BFleet inválida: ${text.slice(0, 300)}`); }
 }
 
+// Linha do tempo da execução: quando a function estoura o limite, o erro devolve em qual etapa travou
+// (antes só aparecia um 504 IDLE_TIMEOUT mudo, sem nenhum dado gravado).
+let runStartedAt = Date.now();
+let runTimeline: string[] = [];
+function resetTimeline() { runStartedAt = Date.now(); runTimeline = []; }
+function mark(stage: string) { runTimeline.push(`${stage}@${((Date.now() - runStartedAt) / 1000).toFixed(1)}s`); }
+
 async function fetchWebReport(cfg: any) {
+  mark("web:login");
   const cookie = await resolveWebCookie(cfg);
+  mark("web:login ok");
   if (!cookie) throw new Error("Configure as credenciais web da BFleet para consultar o relatório Fora do horário.");
   const dataJson = await loadSavedWebReport(cfg, cookie);
+  mark("web:relatorio salvo ok");
   const yesterdayIso = addIsoDays(saoPauloIsoDate(), -1);
   if (cfg.dataInicial && cfg.dataFinal) {
-    dataJson.fecha_inicio = toIsoDate(cfg.dataInicial) || cfg.dataInicial;
-    dataJson.fecha_fin = toIsoDate(cfg.dataFinal) || cfg.dataFinal;
+    // A BFleet espera dd/mm/aaaa (igual ao "ontem" abaixo e ao sync-bfleet-excesso-velocidade).
+    // Em ISO o relatório não responde e a function estoura os 150 s (504) sem gravar nada.
+    const toBfleetDate = (value: unknown) => {
+      const iso = toIsoDate(value);
+      return iso ? iso.split("-").reverse().join("/") : asString(value);
+    };
+    dataJson.fecha_inicio = toBfleetDate(cfg.dataInicial);
+    dataJson.fecha_fin = toBfleetDate(cfg.dataFinal);
   } else if (normalizeKey(cfg.rangeTimeVal) === "YESTERDAY") {
     // O runtime do Supabase opera em UTC. Converte explicitamente o "ontem"
     // da conta para a data civil de Brasília antes de consultar a BFleet.
@@ -573,6 +589,7 @@ async function fetchWebReport(cfg: any) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Endpoint web BFleet ${url}: HTTP ${res.status} ${text.slice(0, 300)}`);
+  mark("web:resultadoreporte ok");
   const reportCookie = mergeCookieHeader(cookie, getSetCookieHeaders(res.headers));
   let rows = parseWebRows(text, dataJson.caja_multisel_columnas);
   let endpoint = url;
@@ -605,6 +622,7 @@ async function fetchWebReport(cfg: any) {
       body: dataParams.toString(),
     });
     const dataText = await dataResponse.text();
+    mark("web:flotaFueraHorario ok");
     if (!dataResponse.ok) throw new Error(`Endpoint web BFleet ${dataUrl}: HTTP ${dataResponse.status} ${dataText.slice(0, 300)}`);
     rows = parseWebRows(dataText, runtimeData.caja_multisel_columnas || dataJson.caja_multisel_columnas);
     endpoint = dataUrl;
@@ -1181,10 +1199,13 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
       report = await fetchWebReport(reportCfg);
     } catch (err) {
       webError = err instanceof Error ? err.message : String(err);
+      mark("web:erro");
     }
   }
   if (!report) {
+    mark("api:token");
     const token = await getToken(reportCfg);
+    mark("api:relatorio");
     try {
       report = await fetchReport(reportCfg, token);
     } catch (err) {
@@ -1203,9 +1224,12 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   if (targetWindow.start) mapped = mapped.filter((r) => r.data_evento >= targetWindow.start);
   if (targetWindow.end) mapped = mapped.filter((r) => r.data_evento <= targetWindow.end);
 
+  mark(`relatorio ok (${mappedAll.length} linhas)`);
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
+  mark("veiculos/patrimonio");
   const patrimonioMap = await loadPatrimonioMap(supabase).catch(() => new Map());
+  mark("patrimonio ok");
 
   let apiToken = "";
   let gpsVehicleMap = new Map<string, any>();
@@ -1216,6 +1240,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   } catch (err) {
     gpsSetupError = err instanceof Error ? err.message : String(err);
   }
+  mark("redgps veiculos ok");
 
   const cruzados = mapped.map((r) => {
     const v = vehicleMap.get(r.placa);
@@ -1251,6 +1276,7 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     groups.get(key)!.push(row);
   }
 
+  mark(`bruto gravado (${insertedOrUpdated})`);
   const groupEntries = Array.from(groups.entries());
   const ocorrencias = await mapWithConcurrency(groupEntries, 5, async ([key, groupRows]) => {
     const orderedGroupRows = [...groupRows].sort((a, b) =>
@@ -1407,8 +1433,11 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
     placas: placas.length,
     redgps_erro: gpsSetupError || null,
     web_fallback_error: webError || null,
+    etapas: [...runTimeline, `fim@${((Date.now() - runStartedAt) / 1000).toFixed(1)}s`],
   };
 }
+
+const RUN_DEADLINE_MS = 125_000;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -1421,8 +1450,26 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
     let requestBody: any = {};
     try { requestBody = await req.json(); } catch { requestBody = {}; }
-    const result = await syncForaHorario(supabase, requestBody);
-    return json(result);
+    resetTimeline();
+    let deadlineTimer: number | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      deadlineTimer = setTimeout(() => reject(new Error(
+        `Tempo limite de ${RUN_DEADLINE_MS / 1000}s excedido. Última etapa concluída: ${runTimeline[runTimeline.length - 1] || "(nenhuma)"}. Linha do tempo: ${runTimeline.join(" > ")}`,
+      )), RUN_DEADLINE_MS);
+    });
+    const work = syncForaHorario(supabase, requestBody);
+    // O idle timeout da resposta é 150 s, mas o relógio da function é maior: se a BFleet demorar,
+    // responde com o diagnóstico no prazo e deixa a sincronização terminar (e gravar) em segundo plano.
+    (globalThis as any).EdgeRuntime?.waitUntil?.(work.then(
+      (r) => console.log("[sync-bfleet-fora-horario] concluído em segundo plano", JSON.stringify({ total: r?.total, ocorrencias: r?.ocorrencias, etapas: r?.etapas })),
+      (e) => console.error("[sync-bfleet-fora-horario] falha em segundo plano", e),
+    ));
+    try {
+      const result = await Promise.race([work, deadline]);
+      return json(result);
+    } finally {
+      clearTimeout(deadlineTimer);
+    }
   } catch (err) {
     console.error("[sync-bfleet-fora-horario]", err);
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
