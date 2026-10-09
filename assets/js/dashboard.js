@@ -3,6 +3,8 @@ import { flattenAllowedMenu, buildAllowedMenu } from './menuBuilder.js';
 import { toPanelUrl } from './paths.js';
 import { supabase } from './supabaseClient.js';
 import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
+import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
+import { calcularEscopoGestor, chaveEscopo } from './dashboardEscopoGestor.js';
 
 const ICON_MODULES = `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
 const ICON_USER    = `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
@@ -322,10 +324,61 @@ function dashPeriodKey(ano, mes) {
   return `${ano}-${String(mes).padStart(2, '0')}`;
 }
 
-function dashCacheReference({ isMaster, coordenacao, ano, mes }) {
+// v7: o cartão do gestor soma todas as coordenações dele (antes só a principal)
+// e a contagem de O.S. passou a filtrar por supervisão; a chave leva o escopo
+// inteiro pra dois gestores só dividirem cache se enxergarem exatamente o mesmo.
+function dashCacheReference({ isMaster, escopo, ano, mes }) {
   const period = dashPeriodKey(ano, mes);
   if (isMaster) return `v6:master:${period}`;
-  return `v6:regional:${normalizeStr(coordenacao) || 'sem_regional'}:${period}`;
+  return `v7:regional:${chaveEscopo(escopo)}:${period}`;
+}
+
+// Coordenações e supervisões do gestor: a principal do cadastro mais as de cada
+// supervisão liberada a ele (mesma fonte do mapa regional). Não derruba o
+// dashboard se falhar — cai pra coordenação principal, como era antes.
+let escopoGestorPromise = null;
+function resolverEscopoGestor(ctx, { force = false } = {}) {
+  if (!escopoGestorPromise || force) {
+    const now = new Date();
+    const principal = ctx?.user?.coordenacao || '';
+    escopoGestorPromise = (async () => {
+      try {
+        const [supervisoes, metas] = await Promise.all([
+          carregarSupervisoesLiberadas(),
+          supabase.from('metas_producao').select('regional').eq('ano', now.getFullYear()).eq('mes', now.getMonth() + 1).eq('ativo', true),
+        ]);
+        if (metas.error) throw metas.error;
+        return calcularEscopoGestor({ principal, supervisoes, regionaisMetas: (metas.data || []).map((r) => r.regional) });
+      } catch (error) {
+        console.warn('[dashboard] escopo do gestor indisponível, usando só a coordenação principal:', error?.message || error);
+        escopoGestorPromise = null; // a próxima carga tenta de novo
+        return calcularEscopoGestor({ principal });
+      }
+    })();
+  }
+  return escopoGestorPromise;
+}
+
+// Meta do mês somada das coordenações do gestor. Casa pelo nome exato (sem
+// acento/caixa) e, se a coordenação não tiver linha própria, pela regra antiga
+// de prefixo. null = nenhuma das coordenações tem meta cadastrada.
+function somarMetasDasCoordenacoes(metaRows, coordenacoes) {
+  const usadas = new Set();
+  let total = 0;
+  for (const coordenacao of coordenacoes) {
+    const alvo = normalizeStr(coordenacao);
+    let achadas = metaRows.filter((r) => normalizeStr(r.regional) === alvo);
+    if (!achadas.length) {
+      const aproximada = metaRows.find((r) => alvo.startsWith(normalizeStr(r.regional)) || normalizeStr(r.regional).startsWith(alvo));
+      achadas = aproximada ? [aproximada] : [];
+    }
+    for (const row of achadas) {
+      if (usadas.has(row)) continue;
+      usadas.add(row);
+      total += Number(row.meta_tons || 0);
+    }
+  }
+  return usadas.size ? total : null;
 }
 
 function dashLocalCacheKey(ref) {
@@ -373,26 +426,25 @@ async function saveDashboardCacheSegment(ref, payload, { isMaster, ano, mes } = 
   }
 }
 
-async function fetchGestorData(ctx, { force = false } = {}) {
+async function fetchGestorData(ctx, { force = false, escopo = null } = {}) {
   const isMaster = seesGlobalDashboard(ctx);
-  const coordenacao = ctx?.user?.coordenacao || '';
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
-  const ref = dashCacheReference({ isMaster, coordenacao, ano, mes });
+  const ref = dashCacheReference({ isMaster, escopo, ano, mes });
 
   if (!force) {
     const cached = await readDashboardCacheSegment(ref);
     if (cached) return cached;
   }
 
-  const fresh = await fetchGestorDataLive(ctx);
+  const fresh = await fetchGestorDataLive(ctx, escopo);
   const payload = { ...fresh, cache_ref: ref, cache_source: 'live', cache_atualizado_em: new Date().toISOString() };
   saveDashboardCacheSegment(ref, payload, { isMaster, ano, mes });
   return payload;
 }
 
-async function fetchGestorDataLive(ctx) {
+async function fetchGestorDataLive(ctx, escopo = null) {
   // producao_snapshot é a base da Meta Mensal. A sincronização faz delete+insert
   // do mês inteiro; se disparada sem esperar, a leitura abaixo pode acontecer no
   // meio do delete e contar um total muito menor que o real (bug 23/07 — cache
@@ -400,7 +452,11 @@ async function fetchGestorDataLive(ctx) {
   await sincronizarProducaoSnapshotDoAgente().catch((error) => console.warn('[dashboard] falha ao sincronizar producao_snapshot:', error?.message || error));
 
   const isMaster = seesGlobalDashboard(ctx);
-  const coordenacao = ctx?.user?.coordenacao || '';
+  // Gestor: soma de todas as coordenações dele (a principal vem primeiro). Sem
+  // nenhuma coordenação conhecida não filtra, como sempre foi.
+  const coordenacoes = isMaster ? [] : (escopo?.coordenacoes || []);
+  const supervisoesOs = isMaster ? [] : (escopo?.supervisoes || []);
+  const coordenacao = coordenacoes[0] || '';
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
@@ -422,14 +478,24 @@ async function fetchGestorDataLive(ctx) {
   let osTotalBase   = supabase.from('operacional_os').select('*',{count:'exact',head:true});
   let veiculosBase  = supabase.from('frotas_veiculos').select('id').neq('status', 'INATIVO');
 
-  if (!isMaster && coordenacao) {
-    patriBase     = patriBase.eq('coordenacao', coordenacao);
-    patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
-    osPendBase    = osPendBase.eq('coordenacao', coordenacao);
-    osAtendBase   = osAtendBase.eq('coordenacao', coordenacao);
-    osTotalBase   = osTotalBase.eq('coordenacao', coordenacao);
-    veiculosBase  = veiculosBase.eq('coordenacao', coordenacao);
+  if (coordenacoes.length) {
+    patriBase     = patriBase.in('coordenacao', coordenacoes);
+    patriLateBase = patriLateBase.in('coordenacao', coordenacoes);
+    veiculosBase  = veiculosBase.in('coordenacao', coordenacoes);
   }
+
+  // operacional_os não tem coluna "coordenacao", só "supervisao" (o filtro por
+  // coordenação que existia aqui falhava em silêncio e o cartão de Atendimento
+  // do gestor sempre mostrava 0/0). O escopo das O.S. são as supervisões
+  // liberadas a ele; sem nenhuma, o cartão fica zerado em vez de mostrar tudo.
+  const osEscopado = !isMaster && (coordenacoes.length > 0 || supervisoesOs.length > 0);
+  const osSemSupervisao = osEscopado && !supervisoesOs.length;
+  if (osEscopado && supervisoesOs.length) {
+    osPendBase  = osPendBase.in('supervisao', supervisoesOs);
+    osAtendBase = osAtendBase.in('supervisao', supervisoesOs);
+    osTotalBase = osTotalBase.in('supervisao', supervisoesOs);
+  }
+  const osZerado = { count: 0, error: null };
 
   const makeChecklistsQuery = () => supabase
     .from('frotas_checklists')
@@ -437,25 +503,36 @@ async function fetchGestorDataLive(ctx) {
     .order('data_execucao', { ascending: false })
     .order('id', { ascending: false }); // desempate: sem chave única a paginação repete/pula linhas
 
-  const [metaRes, prodRes, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
+  // A RPC de produção agrega por (dia, coordenação) e aceita uma coordenação só:
+  // uma chamada por coordenação do gestor, em paralelo.
+  const prodCalls = (coordenacoes.length ? coordenacoes : [null]).map((c) => supabase.rpc('dashboard_producao_agregada', {
+    p_data_ini: dataIni,
+    p_data_fim: dataFim,
+    p_coordenacao: c,
+  }));
+
+  const [metaRes, prodResList, patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes, checklistRows] =
     await Promise.all([
       supabase.from('metas_producao').select('meta_tons,regional').eq('ano',ano).eq('mes',mes).eq('ativo',true),
-      supabase.rpc('dashboard_producao_agregada', {
-        p_data_ini: dataIni,
-        p_data_fim: dataFim,
-        p_coordenacao: !isMaster && coordenacao ? coordenacao : null,
-      }),
+      Promise.all(prodCalls),
       patriBase,
       patriLateBase,
-      osPendBase,
-      osAtendBase,
-      osTotalBase,
+      osSemSupervisao ? osZerado : osPendBase,
+      osSemSupervisao ? osZerado : osAtendBase,
+      osSemSupervisao ? osZerado : osTotalBase,
       veiculosBase,
       fetchAllRows(makeChecklistsQuery),
     ]);
 
-  if (prodRes.error) throw prodRes.error;
-  const prodRows = prodRes.data || [];
+  const prodErro = prodResList.find((res) => res.error)?.error;
+  if (prodErro) throw prodErro;
+  const prodRows = prodResList.flatMap((res) => res.data || []);
+
+  // Contagens com erro viravam 0 sem aviso (foi assim que o filtro de O.S. por
+  // uma coluna inexistente passou despercebido).
+  [patriTotalRes, patriLateRes, osPendRes, osAtendRes, osTotalRes, veiculosRes].forEach((res) => {
+    if (res?.error) console.warn('[dashboard] consulta do cartão falhou:', res.error.message || res.error);
+  });
 
   // Um veículo está "em dia" se o checklist mais recente dele (a primeira
   // ocorrência já que checklistRows vem ordenado por data_execucao desc) tem
@@ -492,12 +569,7 @@ async function fetchGestorDataLive(ctx) {
     if (isMaster) {
       meta = metaRes.data.reduce((s,r) => s + Number(r.meta_tons||0), 0);
     } else {
-      const hit = metaRes.data.find(r =>
-        normalizeStr(r.regional) === normalizeStr(coordenacao) ||
-        normalizeStr(coordenacao).startsWith(normalizeStr(r.regional)) ||
-        normalizeStr(r.regional).startsWith(normalizeStr(coordenacao))
-      );
-      meta = hit ? Number(hit.meta_tons) : null;
+      meta = coordenacoes.length ? somarMetasDasCoordenacoes(metaRes.data, coordenacoes) : null;
     }
   }
 
@@ -506,7 +578,7 @@ async function fetchGestorDataLive(ctx) {
     : {};
 
   return {
-    ano, mes, coordenacao, isMaster,
+    ano, mes, coordenacao, coordenacoes, isMaster,
     produzido, diasComDados, meta, daily7, mapaEstados,
     patriTotal: patriTotalRes.count ?? 0,
     patriAtrasados: patriLateRes.count ?? 0,
@@ -707,7 +779,7 @@ function renderGestorSkeleton() {
 }
 
 function renderGestorDashboard(container, data) {
-  const { ano, mes, coordenacao, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal, veiculosTotal, veiculosEmDia } = data;
+  const { ano, mes, coordenacao, coordenacoes, isMaster, produzido, diasComDados, meta, daily7, mapaEstados, patriTotal, patriAtrasados, osPendentes, osAtender, osTotal, veiculosTotal, veiculosEmDia } = data;
   const now = new Date();
   const diaAtual    = now.getDate();
   const diasNoMes   = new Date(ano, mes, 0).getDate();
@@ -724,7 +796,12 @@ function renderGestorDashboard(container, data) {
   const veiculosPct = veiculosTotal > 0 ? (veiculosEmDia / veiculosTotal * 100) : 100;
   const veiculosPendentes = veiculosTotal - veiculosEmDia;
   const miniChart   = renderMiniChart(daily7);
-  const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (coordenacao || 'REGIONAL');
+  // Gestor com várias coordenações: os números do cartão são a soma delas; o
+  // nome de cada uma está no mapa e na dica (title) desta etiqueta.
+  const listaCoordenacoes = Array.isArray(coordenacoes) && coordenacoes.length ? coordenacoes : (coordenacao ? [coordenacao] : []);
+  const somaCoordenacoes = !isMaster && listaCoordenacoes.length > 1;
+  const regionLabel = isMaster ? 'TODAS AS REGIONAIS' : (somaCoordenacoes ? `${listaCoordenacoes.length} COORDENAÇÕES` : (listaCoordenacoes[0] || 'REGIONAL'));
+  const regionTitle = somaCoordenacoes ? `Soma de: ${listaCoordenacoes.join(' · ')}` : '';
   const estado      = isMaster ? 'BR' : (resolveStateFromRegionalName(coordenacao) || null);
   const patrimonioLeituraUrl = toPanelUrl('patrimonios');
 
@@ -736,7 +813,7 @@ function renderGestorDashboard(container, data) {
             <span class="db-period-month">${MESES_FULL[mes-1].toUpperCase()}</span>
             <span class="db-period-year">${ano}</span>
           </div>
-          <span class="db-region-tag">${esc(regionLabel)}</span>
+          <span class="db-region-tag"${regionTitle ? ` title="${esc(regionTitle)}"` : ''}>${esc(regionLabel)}</span>
         </div>
         <button class="db-refresh-btn" id="dbRefreshBtn" type="button">↻ Atualizar</button>
       </div>
@@ -950,12 +1027,11 @@ export async function renderContent(content, userContext) {
     const now = new Date();
     const ano = now.getFullYear();
     const mes = now.getMonth() + 1;
-    const ref = dashCacheReference({
-      isMaster: seesGlobalDashboard(userContext),
-      coordenacao: userContext?.user?.coordenacao || '',
-      ano,
-      mes,
-    });
+    // O escopo (quais coordenações somar) entra na chave do cache, então precisa
+    // estar resolvido antes de ler qualquer cache. Master não tem escopo.
+    const isMasterUser = seesGlobalDashboard(userContext);
+    const escopo = isMasterUser ? null : await resolverEscopoGestor(userContext, { force });
+    const ref = dashCacheReference({ isMaster: isMasterUser, escopo, ano, mes });
     const localKey = dashLocalCacheKey(ref);
 
     // staleData: uma leitura anterior do localStorage, mesmo vencida. Mostrá-la
@@ -986,7 +1062,7 @@ export async function renderContent(content, userContext) {
     if (staleData) renderAndAnimate(staleData);
 
     try {
-      const data = await fetchGestorData(userContext, { force });
+      const data = await fetchGestorData(userContext, { force, escopo });
       try { localStorage.setItem(localKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
       renderAndAnimate(data);
     } catch (e) {
