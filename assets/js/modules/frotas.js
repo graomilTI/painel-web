@@ -2626,7 +2626,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         </div>
         <button class="speed-fab" type="button" data-open-prints-modal title="Anexar prints" aria-label="Anexar prints">${ICO_PAPERCLIP} Anexar prints</button>
         <div class="speed-modal-overlay" data-prints-modal hidden>
-          <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Anexar prints">
+          <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Anexar prints" tabindex="-1" style="outline:none">
             <div class="speed-modal-head">
               <div><h3>Painel 2 · Enviar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
               <button class="speed-modal-close" type="button" data-prints-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
@@ -2696,11 +2696,35 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
 
     const printsModal = container.querySelector('[data-prints-modal]');
-    const openPrintsModal = () => { if (printsModal) printsModal.hidden = false; };
-    const closePrintsModal = () => { if (printsModal) printsModal.hidden = true; };
-    container.querySelector('[data-open-prints-modal]')?.addEventListener('click', openPrintsModal);
+    const printsOpenBtn = container.querySelector('[data-open-prints-modal]');
+    const printsFocusables = () => Array.from(printsModal?.querySelectorAll('button, input, [tabindex="0"]') || [])
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+    const openPrintsModal = () => {
+      if (!printsModal) return;
+      printsModal.hidden = false;
+      // Foco direto na área de colagem: o Ctrl+V já funciona sem precisar clicar de novo.
+      const zone = printsModal.querySelector('[data-paste-zone]');
+      (zone || printsModal.querySelector('.speed-modal'))?.focus({ preventScroll: true });
+    };
+    const closePrintsModal = () => {
+      if (!printsModal || printsModal.hidden) return;
+      printsModal.hidden = true;
+      printsOpenBtn?.focus({ preventScroll: true });
+    };
+    printsOpenBtn?.addEventListener('click', openPrintsModal);
     container.querySelector('[data-prints-modal-close]')?.addEventListener('click', closePrintsModal);
     printsModal?.addEventListener('click', (ev) => { if (ev.target === printsModal) closePrintsModal(); });
+    printsModal?.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); closePrintsModal(); return; }
+      if (ev.key !== 'Tab') return;
+      // Mantém o Tab dentro do modal (aria-modal): não deixa o foco ir para a tela de trás.
+      const items = printsFocusables();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (ev.shiftKey && (document.activeElement === first || document.activeElement === printsModal.querySelector('.speed-modal'))) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+    });
 
     const editModal = container.querySelector('[data-edit-modal]');
     const closeEditModal = () => { if (editModal) editModal.hidden = true; };
