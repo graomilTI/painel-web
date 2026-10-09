@@ -134,9 +134,37 @@ function cenario(multas, anexos = [], { indisponivel = false } = {}) {
   return ctxMultas.helpers.okBloqueio;
 }
 
-test('OK: multa sem ação (nem Identificar nem Dobrar) fica bloqueada', () => {
-  const ok = cenario([{ id: ID(1), grupo_id: null }], [auto(ID(1)), termo(ID(1))]);
-  assert.match(ok({ id: ID(1), grupo_id: null }), /escolha a ação da multa \(Identificar ou Dobrar\)/);
+test('OK em multa sem ação: não é bloqueado, mas passa pela janela do motivo', () => {
+  const m = { id: ID(1), grupo_id: null };
+  const ok = cenario([m]);
+  assert.equal(ctxMultas.helpers.semAcao(m), true);
+  assert.equal(ok(m), ''); // sem bloqueio: o clique abre a janela de motivo
+  // multa com ação não passa por ela
+  assert.equal(ctxMultas.helpers.semAcao(indicar(2)), false);
+  assert.equal(ctxMultas.helpers.semAcao(dobrar(3)), false);
+});
+
+test('motivo do arquivamento sem processar: mínimo de 10 caracteres', () => {
+  const erro = ctxMultas.helpers.motivoArquivamentoErro;
+  assert.match(erro(''), /pelo menos 10 caracteres/);
+  assert.match(erro('   curto   '), /pelo menos 10 caracteres/);
+  assert.equal(erro('Multa cancelada pelo órgão autuador'), '');
+});
+
+test('arquivar sem processar grava o motivo nas colunas protegidas do sync e quem deu o OK', () => {
+  const gerar = ctxMultas.helpers.payloadArquivarSemProcessar;
+  const agora = '2026-10-09T18:00:00.000Z';
+  const p = gerar('  Veículo   já vendido  antes da infração ', { id: ID(77) }, agora);
+  assert.equal(p.motivo_arquivamento, 'Veículo já vendido antes da infração');
+  assert.equal(p.ok_observacao, 'Arquivada sem processar: Veículo já vendido antes da infração');
+  assert.equal(p.arquivada_em, agora);
+  assert.equal(p.ok_em, agora);
+  assert.equal(p.ok_por, ID(77));
+  assert.equal(p.arquivada_por, ID(77));
+  // id de usuário que não é uuid não pode ir para colunas uuid
+  const q = gerar('Motivo com mais de dez caracteres', { id: 'abc' }, agora);
+  assert.equal('ok_por' in q, false);
+  assert.equal('arquivada_por' in q, false);
 });
 
 test('OK em Identificar exige 1 anexo: o auto de infração', () => {
@@ -181,8 +209,13 @@ test('OK: sem como conferir os anexos (tabela indisponível) não libera', () =>
   assert.match(cenario([m], [auto(m.id)], { indisponivel: true })(m), /Não foi possível conferir os anexos/);
 });
 
-test('arquivar (OK) consulta a trava antes de gravar', async () => {
+test('arquivar (OK): sem ação abre a janela do motivo; com ação consulta a trava antes de gravar', async () => {
   const { readFile } = await import('node:fs/promises');
   const src = await readFile(new URL('../assets/js/modules/frotas-multas.js', import.meta.url), 'utf8');
+  // sem ação: abre a janela e NÃO grava direto
+  assert.match(src, /async function archiveMulta[\s\S]*?if\(semAcao\(multa\)\)\{openArquivarSemProcessarModal\(root,opts,multa\);render\(root,opts\);return;\}/);
+  // com ação: consulta a trava antes de gravar
   assert.match(src, /async function archiveMulta[\s\S]*?okBloqueio\(multa\)[\s\S]*?return;[\s\S]*?safeUpdate\(opts,multa\.id,\{arquivada_em/);
+  // a janela só grava depois de validar o motivo
+  assert.match(src, /function openArquivarSemProcessarModal[\s\S]*?motivoArquivamentoErro\(area\.value\)[\s\S]*?if\(msg\)\{[\s\S]*?return;\}[\s\S]*?safeUpdate\(opts,multa\.id,payload\)/);
 });
