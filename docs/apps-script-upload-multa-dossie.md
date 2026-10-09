@@ -91,15 +91,31 @@ function handleUploadMultaDossie_(data) {
 
 ## 2) Ligue a ação no `doPost`
 
-No `doPost(e)` do script, logo depois de o corpo ser lido como JSON e **antes** do tratamento atual
-de `upload_excesso_velocidade`, adicione (troque `data` pelo nome da variável que o seu `doPost` usa
-para o JSON já convertido):
+No `doPost(e)` do script, cole **logo na primeira linha de dentro da função**, antes de qualquer outro
+código (não depende do nome das variáveis que o seu `doPost` já usa):
 
 ```javascript
-if (data && data.action === 'upload_multa_dossie') {
+var __multa = null;
+try { __multa = JSON.parse(e.postData.contents); } catch (err) { /* não é JSON: segue o fluxo normal */ }
+if (__multa && __multa.action === 'upload_multa_dossie') {
   return ContentService
-    .createTextOutput(JSON.stringify(handleUploadMultaDossie_(data)))
+    .createTextOutput(JSON.stringify(handleUploadMultaDossie_(__multa)))
     .setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+Teste opcional (não cria nada): cole também esta função, escolha-a no menu de execução do editor e clique
+em Executar; o log mostra se a subpasta do condutor é encontrada.
+
+```javascript
+function testarBuscaPastaCondutor() {
+  var nome = normalizarNomePasta_('JOAO PEDRO CERUTTI CERQUEIRA'); // troque por um condutor real
+  var it = DriveApp.getFolderById('1q5Ba5qqNJEBUZYA8GNRZmXZZsJ8U0YIr').getFolders();
+  while (it.hasNext()) {
+    var f = it.next();
+    if (normalizarNomePasta_(f.getName()) === nome) { Logger.log('ENCONTRADA: ' + f.getName() + ' (' + f.getUrl() + ')'); return; }
+  }
+  Logger.log('NÃO encontrada: ' + nome);
 }
 ```
 
