@@ -895,7 +895,11 @@ async function carregarGestores() {
 // pro Coordenador da mesma Coordenação. Sem nenhum dos dois, retorna null e
 // o chamador mantém o comportamento antigo (fica PENDENTE).
 async function buscarGestorRegional(coordenacao, supervisao) {
-  var gestores = await carregarGestores();
+  return escolherGestorRegional(await carregarGestores(), coordenacao, supervisao);
+}
+
+// Parte pura (sem banco) de buscarGestorRegional, separada para teste.
+function escolherGestorRegional(gestores, coordenacao, supervisao) {
   var alvoSupervisao = normText(supervisao);
   if (alvoSupervisao) {
     var porSupervisao = gestores.find(function (g) { return g.cargo === 'Supervisor' && normText(g.supervisao) === alvoSupervisao; });
@@ -913,6 +917,20 @@ async function buscarGestorRegional(coordenacao, supervisao) {
   if (alvoCoordenacao) {
     var porCoordenacao = gestores.find(function (g) { return g.cargo === 'Coordenador' && normText(g.coordenacao) === alvoCoordenacao; });
     if (porCoordenacao) return porCoordenacao;
+
+    // Achado 09/10/2026 (RS - Santa Rosa, RS - Cruz Alta, PARA - Norte): a regional
+    // ficou sem Supervisor/Coordenador ativo e 7 FOBs de 06–08/10 ficaram em
+    // FORA_DO_RAIO. Pedido do usuário: usar um gestor ativo da MESMA Coordenação
+    // (Coordenador antes de Supervisor, depois por nome, pra escolha estável).
+    // O modal usa a região do próprio gestor, então funciona como os demais.
+    var daCoordenacao = gestores
+      .filter(function (g) { return normText(g.coordenacao) === alvoCoordenacao; })
+      .sort(function (a, b) {
+        var pa = a.cargo === 'Coordenador' ? 0 : 1;
+        var pb = b.cargo === 'Coordenador' ? 0 : 1;
+        return pa - pb || String(a.nome).localeCompare(String(b.nome), 'pt-BR');
+      });
+    if (daCoordenacao.length) return Object.assign({}, daCoordenacao[0], { foraDaRegional: true });
   }
   return null;
 }
@@ -1120,7 +1138,7 @@ async function salvarResultado(candidato, patch) {
     motivo: MOTIVO_FIXO,
     observacao: observacaoPara(candidato),
     erro: null,
-    raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome, colaborador_nao_encontrado: !!candidato.gestorPorColaboradorNaoEncontrado } : null,
+    raw: candidato.viaGestor ? { via_gestor: true, colaborador_original: candidato.funcionario, gestor: candidato.gestorNome, colaborador_nao_encontrado: !!candidato.gestorPorColaboradorNaoEncontrado, gestor_de_outra_regional: !!candidato.gestorForaDaRegional } : null,
     updated_at: now
   }, patch);
 
@@ -2044,7 +2062,8 @@ async function main() {
             viaGestor: true,
             gestorNome: gestor.nome,
             gestorCoordenacao: gestor.coordenacao,
-            gestorSupervisao: gestor.supervisao
+            gestorSupervisao: gestor.supervisao,
+            gestorForaDaRegional: !!gestor.foraDaRegional
           }));
         } else {
           stats.foraDoRaio++;
@@ -2188,6 +2207,7 @@ async function main() {
               candidato.gestorNome = gestorFallback.nome;
               candidato.gestorCoordenacao = gestorFallback.coordenacao;
               candidato.gestorSupervisao = gestorFallback.supervisao;
+              candidato.gestorForaDaRegional = !!gestorFallback.foraDaRegional;
               await lancarNheParaCandidato(page, candidato, dryRun, debug);
             }
 
@@ -2341,6 +2361,7 @@ module.exports = {
   buscarLoginColaborador: buscarLoginColaborador,
   resolverCoordenadaOs: resolverCoordenadaOs,
   buscarGestorRegional: buscarGestorRegional,
+  escolherGestorRegional: escolherGestorRegional,
   existeNheReal: existeNheReal,
   existeMovimentoReal: existeMovimentoReal,
   chaveGrupoEmbarque: chaveGrupoEmbarque,
