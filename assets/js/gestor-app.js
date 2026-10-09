@@ -4,6 +4,8 @@ import { toPanelUrl } from './paths.js';
 import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
 import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
+import { calcularEscopoGestor, chaveEscopo, somarMetasDasCoordenacoes } from './dashboardEscopoGestor.js';
+import { resolverEscopoGestor } from './dashboardEscopoCarregar.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -98,6 +100,7 @@ const state = {
   tomorrow: new Set(),
   installPrompt: null,
   dashboard: null,
+  escopo: null,
   osPrefetchTimer: null,
 };
 
@@ -286,7 +289,9 @@ async function boot() {
 
   renderShell();
   setupPwaInstall();
-  await Promise.all([loadData({ useCache: true }), loadDashboard()]);
+  // force: o dashboard é recalculado a cada abertura do app (papel do antigo
+  // gestor-app-dashboard-live-fix.js, que gravava o cache antes do app ler).
+  await Promise.all([loadData({ useCache: true }), loadDashboard({ force: true })]);
   renderCurrentTab();
   startOsPrefetch();
 }
@@ -460,10 +465,23 @@ function appDashPeriodKey(ano, mes) {
   return `${ano}-${String(mes).padStart(2, '0')}`;
 }
 
-function appDashCacheReference({ isMaster, coordenacao, ano, mes }) {
+// v7: o cartão do gestor soma todas as coordenações dele (antes só a principal); a
+// chave leva o escopo inteiro pra gestores com escopos diferentes não dividirem cache.
+function appDashCacheReference({ isMaster, escopo, ano, mes }) {
   const period = appDashPeriodKey(ano, mes);
   if (isMaster) return `master:${period}`;
-  return `regional:${normalize(coordenacao) || 'sem_regional'}:${period}`;
+  return `v7:regional:${chaveEscopo(escopo)}:${period}`;
+}
+
+// Coordenações e supervisões do gestor (a principal + as das supervisões liberadas
+// a ele). Master não tem escopo. Se não resolver em 8 s, usa só a principal, pra
+// não deixar o boot do app pendurado.
+async function escopoDoGestor({ force = false } = {}) {
+  if (state.isMaster) return null;
+  const principal = state.appUser?.coordenacao || '';
+  const res = await withBootTimeout(resolverEscopoGestor(principal, { force, tag: 'gestor-app' }), 8000, 'escopo do gestor');
+  state.escopo = res?.value || calcularEscopoGestor({ principal });
+  return state.escopo;
 }
 
 function appDashLocalCacheKey(ref) {
@@ -511,25 +529,24 @@ async function saveAppDashboardCacheSegment(ref, payload, { isMaster, ano, mes }
   }
 }
 
-async function fetchDashData({ force = false } = {}) {
+async function fetchDashData({ force = false, escopo = null } = {}) {
   const now = new Date();
   const ano = now.getFullYear();
   const mes = now.getMonth() + 1;
-  const coordenacao = state.appUser?.coordenacao || '';
-  const ref = appDashCacheReference({ isMaster: state.isMaster, coordenacao, ano, mes });
+  const ref = appDashCacheReference({ isMaster: state.isMaster, escopo, ano, mes });
 
   if (!force) {
     const cached = await readAppDashboardCacheSegment(ref);
     if (cached) return cached;
   }
 
-  const fresh = await fetchDashDataLive();
+  const fresh = await fetchDashDataLive(escopo);
   const payload = { ...fresh, cache_ref: ref, cache_source: 'live', cache_atualizado_em: new Date().toISOString() };
   saveAppDashboardCacheSegment(ref, payload, { isMaster: state.isMaster, ano, mes });
   return payload;
 }
 
-async function fetchDashDataLive() {
+async function fetchDashDataLive(escopo = null) {
   // producao_snapshot é a base da meta mensal aqui. A sincronização faz delete+insert
   // do mês inteiro; se disparada sem esperar, a leitura abaixo pode acontecer no meio
   // do delete e contar um total muito menor que o real (bug 23/07 — cache gravou
@@ -543,41 +560,45 @@ async function fetchDashDataLive() {
   const mes = now.getMonth() + 1;
   const diaAtual = now.getDate();
   const diasNoMes = new Date(ano, mes, 0).getDate();
-  const coordenacao = state.appUser?.coordenacao || '';
+  // Gestor: soma de todas as coordenações dele (a principal vem primeiro). Sem
+  // nenhuma coordenação conhecida não filtra, como sempre foi.
+  const coordenacoes = state.isMaster ? [] : (escopo?.coordenacoes || []);
+  const coordenacao = coordenacoes[0] || '';
   const dataIni = `${ano}-${String(mes).padStart(2, '0')}-01`;
   const dataFim = mes === 12 ? `${ano + 1}-01-01` : `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
   const d7 = new Date(now); d7.setDate(d7.getDate() - 6);
   const dataD7   = `${d7.getFullYear()}-${String(d7.getMonth()+1).padStart(2,'0')}-${String(d7.getDate()).padStart(2,'0')}`;
   const dataHoje = `${ano}-${String(mes).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
-  const makeProdQuery = () => {
-    let q = supabase
-      .from('producao_snapshot')
-      .select('data,coordenacao,tons')
-      .gte('data', dataIni)
-      .lt('data', dataFim)
-      .order('data', { ascending: true })
-      .order('id', { ascending: true }); // desempate: sem chave única a paginação repete/pula linhas
-    if (!state.isMaster && coordenacao) q = q.eq('coordenacao', coordenacao);
-    return q;
-  };
+  // A RPC agrega por (dia, coordenação) no banco e aceita uma coordenação só: uma
+  // chamada por coordenação do gestor, em paralelo (~30 linhas cada) em vez de
+  // paginar milhares de linhas de producao_snapshot pelo celular.
+  const prodCalls = (coordenacoes.length ? coordenacoes : [null]).map((c) => supabase.rpc('dashboard_producao_agregada', {
+    p_data_ini: dataIni,
+    p_data_fim: dataFim,
+    p_coordenacao: c,
+  }));
 
   let patriBase     = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo');
   // dias_sem_leitura NULL = patrimônio nunca lido, pior caso possível — conta como atrasado
   // (um .gt() puro ignora NULL silenciosamente e o contava como "em dia").
   let patriLateBase = supabase.from('patrimonios_snapshot').select('*', { count: 'exact', head: true }).eq('situacao', 'Ativo').or('dias_sem_leitura.gt.7,dias_sem_leitura.is.null');
 
-  if (!state.isMaster && coordenacao) {
-    patriBase     = patriBase.eq('coordenacao', coordenacao);
-    patriLateBase = patriLateBase.eq('coordenacao', coordenacao);
+  if (coordenacoes.length) {
+    patriBase     = patriBase.in('coordenacao', coordenacoes);
+    patriLateBase = patriLateBase.in('coordenacao', coordenacoes);
   }
 
-  const [metaRes, prodRows, patriTotalRes, patriLateRes] = await Promise.all([
+  const [metaRes, prodResList, patriTotalRes, patriLateRes] = await Promise.all([
     supabase.from('metas_producao').select('meta_tons,regional').eq('ano', ano).eq('mes', mes).eq('ativo', true),
-    appFetchAllRows(makeProdQuery),
+    Promise.all(prodCalls),
     patriBase,
     patriLateBase,
   ]);
+
+  const prodErro = prodResList.find((res) => res.error)?.error;
+  if (prodErro) throw prodErro;
+  const prodRows = prodResList.flatMap((res) => res.data || []);
 
   const produzido = prodRows.reduce((s, r) => s + Number(r.tons || 0), 0);
 
@@ -597,12 +618,7 @@ async function fetchDashDataLive() {
     if (state.isMaster) {
       meta = metaRes.data.reduce((s, r) => s + Number(r.meta_tons || 0), 0);
     } else {
-      const hit = metaRes.data.find((r) =>
-        normalize(r.regional) === normalize(coordenacao) ||
-        normalize(coordenacao).startsWith(normalize(r.regional)) ||
-        normalize(r.regional).startsWith(normalize(coordenacao))
-      );
-      meta = hit ? Number(hit.meta_tons) : null;
+      meta = coordenacoes.length ? somarMetasDasCoordenacoes(metaRes.data, coordenacoes) : null;
     }
   }
 
@@ -611,7 +627,7 @@ async function fetchDashDataLive() {
     : {};
 
   return {
-    loading: false, coordenacao, ano, mes, meta, produzido, daily7, mapaEstados,
+    loading: false, coordenacao, coordenacoes, ano, mes, meta, produzido, daily7, mapaEstados,
     patrimonios: { total: patriTotalRes.count ?? 0, atrasados: patriLateRes.count ?? 0 },
   };
 }
@@ -623,7 +639,10 @@ async function loadDashboard({ force = false } = {}) {
   const mes = now.getMonth() + 1;
   const empty = { loading: false, coordenacao, ano, mes, meta: null, produzido: 0, daily7: [], patrimonios: { total: 0, atrasados: 0 } };
 
-  const ref = appDashCacheReference({ isMaster: state.isMaster, coordenacao, ano, mes });
+  // O escopo (quais coordenações somar) entra na chave do cache, então precisa
+  // estar resolvido antes de ler qualquer cache.
+  const escopo = await escopoDoGestor({ force });
+  const ref = appDashCacheReference({ isMaster: state.isMaster, escopo, ano, mes });
   const localKey = appDashLocalCacheKey(ref);
 
   if (!force) {
@@ -640,7 +659,7 @@ async function loadDashboard({ force = false } = {}) {
   }
 
   try {
-    const data = await fetchDashData({ force });
+    const data = await fetchDashData({ force, escopo });
     try { localStorage.setItem(localKey, JSON.stringify({ ts: Date.now(), data })); } catch {}
     state.dashboard = data;
   } catch (e) {
@@ -1009,20 +1028,6 @@ function getStatePaletteApp(pct, onTrack) {
   return { fill: `rgba(253,230,138,${alpha})`, stroke: 'rgba(253,230,138,.85)', text: 'rgba(255,248,220,.95)' };
 }
 
-async function appFetchAllRows(makeQuery, pageSize = 1000, maxPages = 30) {
-  const rows = [];
-  for (let page = 0; page < maxPages; page += 1) {
-    const from = page * pageSize;
-    const to = from + pageSize - 1;
-    const { data, error } = await makeQuery().range(from, to);
-    if (error) throw error;
-    const chunk = data || [];
-    rows.push(...chunk);
-    if (chunk.length < pageSize) break;
-  }
-  return rows;
-}
-
 function appRenderStateFill({ pct, onTrack, estado, mapaEstados }) {
   const uf       = estado && estado !== 'BR' ? estado : null;
   const isBR     = !uf;
@@ -1153,6 +1158,11 @@ function renderInicio(main) {
   const projetado = diaAtual > 0 ? produzido / diaAtual * diasNoMes : 0;
   const delta = produzido - ritmoEsperado;
   const coordenacaoApp = dash?.coordenacao || (state.appUser?.coordenacao || '');
+  // Gestor com várias coordenações: os números são a soma delas; os nomes estão no
+  // mapa (toque numa coordenação) e na dica (title) desta etiqueta.
+  const listaCoordenacoes = Array.isArray(dash?.coordenacoes) && dash.coordenacoes.length ? dash.coordenacoes : (coordenacaoApp ? [coordenacaoApp] : []);
+  const somaCoordenacoes = !state.isMaster && listaCoordenacoes.length > 1;
+  const regiaoLabel = somaCoordenacoes ? `${listaCoordenacoes.length} COORDENAÇÕES` : (dash?.coordenacao || (state.isMaster ? 'TODAS AS REGIONAIS' : 'REGIONAL'));
   const estadoApp = state.isMaster ? 'BR' : (resolveStateFromRegionalNameApp(coordenacaoApp) || null);
 
   const patri = dash?.patrimonios || { total: 0, atrasados: 0 };
@@ -1179,7 +1189,7 @@ function renderInicio(main) {
         <span class="db-period-month">${mesFull.toUpperCase()}</span>
         <span class="db-period-year">${now.getFullYear()}</span>
       </div>
-      <div class="db-region">${escapeHtml(dash?.coordenacao || (state.isMaster ? 'TODAS AS REGIONAIS' : 'REGIONAL'))}</div>
+      <div class="db-region"${somaCoordenacoes ? ` title="${escapeHtml(`Soma de: ${listaCoordenacoes.join(' · ')}`)}"` : ''}>${escapeHtml(regiaoLabel)}</div>
     </div>
 
     <div class="db-prod-card ${onTrack ? 'is-on-track' : 'is-off-track'}">
