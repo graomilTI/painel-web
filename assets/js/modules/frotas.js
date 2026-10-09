@@ -1209,6 +1209,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
       toast(`Sincronizando relatório Fora do horário da BFleet (${label})...`);
       const res = await callEdgeFunction(opts, BFLEET_FORA_HORARIO_FUNCTION, body);
+      if (res?.em_andamento) {
+        // A BFleet leva alguns minutos no relatório pesado: a function segue gravando em segundo plano.
+        toast('A BFleet ainda está gerando o relatório. A sincronização continua em segundo plano — atualize a lista em alguns minutos.');
+        return;
+      }
       const inserted = Number(res?.inserted || res?.inseridos || res?.created || res?.novos || 0);
       const updated = Number(res?.updated || res?.atualizados || 0);
       const total = Number(res?.total || res?.total_registros || res?.linhas || inserted + updated || 0);
