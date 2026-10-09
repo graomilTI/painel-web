@@ -3,8 +3,8 @@ import { flattenAllowedMenu, buildAllowedMenu } from './menuBuilder.js';
 import { toPanelUrl } from './paths.js';
 import { supabase } from './supabaseClient.js';
 import { sincronizarProducaoSnapshotDoAgente } from './producaoSnapshotAgentSync.js';
-import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
-import { calcularEscopoGestor, chaveEscopo } from './dashboardEscopoGestor.js';
+import { chaveEscopo, somarMetasDasCoordenacoes } from './dashboardEscopoGestor.js';
+import { resolverEscopoGestor } from './dashboardEscopoCarregar.js';
 
 const ICON_MODULES = `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
 const ICON_USER    = `<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>`;
@@ -331,54 +331,6 @@ function dashCacheReference({ isMaster, escopo, ano, mes }) {
   const period = dashPeriodKey(ano, mes);
   if (isMaster) return `v6:master:${period}`;
   return `v7:regional:${chaveEscopo(escopo)}:${period}`;
-}
-
-// Coordenações e supervisões do gestor: a principal do cadastro mais as de cada
-// supervisão liberada a ele (mesma fonte do mapa regional). Não derruba o
-// dashboard se falhar — cai pra coordenação principal, como era antes.
-let escopoGestorPromise = null;
-function resolverEscopoGestor(ctx, { force = false } = {}) {
-  if (!escopoGestorPromise || force) {
-    const now = new Date();
-    const principal = ctx?.user?.coordenacao || '';
-    escopoGestorPromise = (async () => {
-      try {
-        const [supervisoes, metas] = await Promise.all([
-          carregarSupervisoesLiberadas(),
-          supabase.from('metas_producao').select('regional').eq('ano', now.getFullYear()).eq('mes', now.getMonth() + 1).eq('ativo', true),
-        ]);
-        if (metas.error) throw metas.error;
-        return calcularEscopoGestor({ principal, supervisoes, regionaisMetas: (metas.data || []).map((r) => r.regional) });
-      } catch (error) {
-        console.warn('[dashboard] escopo do gestor indisponível, usando só a coordenação principal:', error?.message || error);
-        escopoGestorPromise = null; // a próxima carga tenta de novo
-        return calcularEscopoGestor({ principal });
-      }
-    })();
-  }
-  return escopoGestorPromise;
-}
-
-// Meta do mês somada das coordenações do gestor. Casa pelo nome exato (sem
-// acento/caixa) e, se a coordenação não tiver linha própria, pela regra antiga
-// de prefixo. null = nenhuma das coordenações tem meta cadastrada.
-function somarMetasDasCoordenacoes(metaRows, coordenacoes) {
-  const usadas = new Set();
-  let total = 0;
-  for (const coordenacao of coordenacoes) {
-    const alvo = normalizeStr(coordenacao);
-    let achadas = metaRows.filter((r) => normalizeStr(r.regional) === alvo);
-    if (!achadas.length) {
-      const aproximada = metaRows.find((r) => alvo.startsWith(normalizeStr(r.regional)) || normalizeStr(r.regional).startsWith(alvo));
-      achadas = aproximada ? [aproximada] : [];
-    }
-    for (const row of achadas) {
-      if (usadas.has(row)) continue;
-      usadas.add(row);
-      total += Number(row.meta_tons || 0);
-    }
-  }
-  return usadas.size ? total : null;
 }
 
 function dashLocalCacheKey(ref) {
@@ -1030,7 +982,7 @@ export async function renderContent(content, userContext) {
     // O escopo (quais coordenações somar) entra na chave do cache, então precisa
     // estar resolvido antes de ler qualquer cache. Master não tem escopo.
     const isMasterUser = seesGlobalDashboard(userContext);
-    const escopo = isMasterUser ? null : await resolverEscopoGestor(userContext, { force });
+    const escopo = isMasterUser ? null : await resolverEscopoGestor(userContext?.user?.coordenacao || '', { force });
     const ref = dashCacheReference({ isMaster: isMasterUser, escopo, ano, mes });
     const localKey = dashLocalCacheKey(ref);
 

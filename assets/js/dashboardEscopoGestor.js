@@ -69,6 +69,32 @@ export function calcularEscopoGestor({ principal = '', supervisoes = [], regiona
   return { coordenacoes, supervisoes: nomesSupervisoes };
 }
 
+// Meta do mês somada das coordenações do gestor. Casa pelo nome exato (sem
+// acento/caixa) e, se a coordenação não tiver linha própria, pela regra antiga
+// de prefixo. null = nenhuma das coordenações tem meta cadastrada.
+export function somarMetasDasCoordenacoes(metaRows, coordenacoes) {
+  const usadas = new Set();
+  let total = 0;
+  for (const coordenacao of coordenacoes || []) {
+    const alvo = normEscopo(coordenacao);
+    if (!alvo) continue;
+    let achadas = (metaRows || []).filter((r) => normEscopo(r.regional) === alvo);
+    if (!achadas.length) {
+      const aproximada = (metaRows || []).find((r) => {
+        const regional = normEscopo(r.regional);
+        return regional && (alvo.startsWith(regional) || regional.startsWith(alvo));
+      });
+      achadas = aproximada ? [aproximada] : [];
+    }
+    for (const row of achadas) {
+      if (usadas.has(row)) continue;
+      usadas.add(row);
+      total += Number(row.meta_tons || 0);
+    }
+  }
+  return usadas.size ? total : null;
+}
+
 // Chave estável do escopo para o cache do dashboard (compartilhado entre
 // gestores com o mesmo escopo, diferente entre escopos diferentes).
 export function chaveEscopo({ coordenacoes = [], supervisoes = [] } = {}) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calcularEscopoGestor, chaveEscopo } from '../assets/js/dashboardEscopoGestor.js';
+import { calcularEscopoGestor, chaveEscopo, somarMetasDasCoordenacoes } from '../assets/js/dashboardEscopoGestor.js';
 
 // metas_producao.regional de 10/2026 (grafia exata das coordenações no banco).
 const REGIONAIS = [
@@ -82,4 +82,26 @@ test('chaveEscopo: igual para o mesmo escopo em outra ordem, diferente para esco
   assert.notEqual(chaveEscopo({ coordenacoes: ['MATO GROSSO MT1'], supervisoes: [] }), chaveEscopo({ coordenacoes: ['MATO GROSSO MT1', 'MATO GROSSO MT2'], supervisoes: [] }));
 
   assert.equal(chaveEscopo({ coordenacoes: [], supervisoes: ['x'] }), 'sem_regional');
+});
+
+const METAS = [
+  { regional: 'MATO GROSSO MT1', meta_tons: 1000 }, { regional: 'MATO GROSSO MT2', meta_tons: 800 },
+  { regional: 'MATO GROSSO MT3 - CONFRESA', meta_tons: 400 }, { regional: 'MATO GROSSO MT3 - QUERENCIA', meta_tons: 500 },
+  { regional: 'MATO GROSSO MT4', meta_tons: 600 }, { regional: 'CASCAVEL', meta_tons: 700 },
+];
+
+test('somarMetasDasCoordenacoes soma só as coordenações do gestor', () => {
+  assert.equal(somarMetasDasCoordenacoes(METAS, ['MATO GROSSO MT1', 'MATO GROSSO MT2', 'MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT4']), 3300);
+  assert.equal(somarMetasDasCoordenacoes(METAS, ['MATO GROSSO MT3 - QUERENCIA']), 500);
+});
+
+test('somarMetasDasCoordenacoes: sem linha exata usa o prefixo, sem contar a mesma meta duas vezes', () => {
+  assert.equal(somarMetasDasCoordenacoes(METAS, ['MATO GROSSO MT1 - Sinop']), 1000);
+  assert.equal(somarMetasDasCoordenacoes(METAS, ['MATO GROSSO MT1', 'MATO GROSSO MT1 - Sinop']), 1000);
+});
+
+test('somarMetasDasCoordenacoes devolve null quando nenhuma coordenação tem meta', () => {
+  assert.equal(somarMetasDasCoordenacoes(METAS, ['GERAL']), null);
+  assert.equal(somarMetasDasCoordenacoes(METAS, []), null);
+  assert.equal(somarMetasDasCoordenacoes([], ['CASCAVEL']), null);
 });

@@ -5,6 +5,12 @@ import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
 const REGIONAL_MAP_CACHE_MS = 1000 * 60 * 15;
 const MAP_MODE_KEY = 'grao1000:dashboard-map-mode';
 
+// O app do gestor (gestor-app.html) usa o mesmo mapa, mas dentro de .db-prod-left
+// (não .db-prod-center), numa coluna estreita de celular, e só tem a visão do
+// gestor — nada de toggle Estado/Regional nem mapa do Brasil.
+const SVG_SELECTOR = '.db-prod-center .db-state-svg, .db-prod-left .db-state-svg';
+const emApp = () => !!document.querySelector('.gestor-app');
+
 const STATE_PATHS = {
   MT: 'M278.20,387.30L294.39,360.23L294.54,335.13L261.17,334.75L261.32,292.49L322.05,292.04L326.84,263.61L354.21,304.06L480.99,312.53L471.03,343.45L474.07,369.84L464.04,412.25L454.00,413.92L449.75,428.43L441.31,429.79L426.94,448.17L422.31,463.67L425.50,470.62L406.42,470.70L413.72,463.82L413.80,454.97L405.66,463.44L386.28,463.89L369.63,454.44L355.50,457.77L340.37,469.26L323.88,456.48L323.88,437.05L287.93,437.13L287.70,422.31L280.10,413.84L286.48,414.14L286.10,404.77L283.59,393.50Z',
   PR: 'M425.27,559.61L489.95,568.76L500.82,598.10L523.70,610.95L512.53,625.47L501.43,625.47L494.59,629.85L487.22,626.22L473.99,626.37L471.33,630.23L460.84,631.67L458.56,638.09L414.71,630.91L408.70,618.89L396.31,617.98L402.93,587.74L408.63,576.09L415.70,566.34Z',
@@ -17,17 +23,18 @@ const STATE_PATHS = {
 // 241 em PR). Os aliases antigos ("CURITIBA", "MT3" solto, etc.) foram
 // mantidos para não perder metas já cadastradas com esses nomes.
 // `short` é o rótulo curto usado dentro do mapa quando o gestor enxerga várias
-// coordenações de uma vez (o nome inteiro não cabe no recorte de cada uma).
+// coordenações de uma vez (o nome inteiro não cabe no recorte de cada uma);
+// `code` é o de 3-4 letras pro mapa estreito do app no celular.
 const REGIONS = {
-  MT1: { state: 'MT', name: 'Sinop', short: 'Sinop', aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'] },
-  MT2: { state: 'MT', name: 'Primavera do Leste', short: 'Prim. do Leste', aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'] },
-  MT3_CONFRESA: { state: 'MT', name: 'Confresa', short: 'Confresa', aliases: ['MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 CONFRESA', 'CONFRESA'] },
-  MT3_QUERENCIA: { state: 'MT', name: 'Querência', short: 'Querência', aliases: ['MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT3 QUERENCIA', 'QUERENCIA'] },
-  MT4: { state: 'MT', name: 'Campo Novo do Parecis', short: 'C. N. Parecis', aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'] },
-  PR_CASCAVEL: { state: 'PR', name: 'Cascavel', short: 'Cascavel', aliases: ['CASCAVEL'] },
-  PR_LONDRINA: { state: 'PR', name: 'Londrina', short: 'Londrina', aliases: ['LONDRINA'] },
-  PR_MARINGA: { state: 'PR', name: 'Maringá', short: 'Maringá', aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'] },
-  PR_PONTA_GROSSA: { state: 'PR', name: 'Ponta Grossa', short: 'P. Grossa', aliases: ['PONTA GROSSA', 'PONTA GROSSA PR', 'CURITIBA', 'PARANA CURITIBA', 'PARANÁ CURITIBA'] },
+  MT1: { state: 'MT', name: 'Sinop', short: 'Sinop', code: 'MT1', aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'] },
+  MT2: { state: 'MT', name: 'Primavera do Leste', short: 'Prim. do Leste', code: 'MT2', aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'] },
+  MT3_CONFRESA: { state: 'MT', name: 'Confresa', short: 'Confresa', code: 'CONF', aliases: ['MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 CONFRESA', 'CONFRESA'] },
+  MT3_QUERENCIA: { state: 'MT', name: 'Querência', short: 'Querência', code: 'QUER', aliases: ['MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT3 QUERENCIA', 'QUERENCIA'] },
+  MT4: { state: 'MT', name: 'Campo Novo do Parecis', short: 'C. N. Parecis', code: 'MT4', aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'] },
+  PR_CASCAVEL: { state: 'PR', name: 'Cascavel', short: 'Cascavel', code: 'CASC', aliases: ['CASCAVEL'] },
+  PR_LONDRINA: { state: 'PR', name: 'Londrina', short: 'Londrina', code: 'LOND', aliases: ['LONDRINA'] },
+  PR_MARINGA: { state: 'PR', name: 'Maringá', short: 'Maringá', code: 'MARI', aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'] },
+  PR_PONTA_GROSSA: { state: 'PR', name: 'Ponta Grossa', short: 'P. Grossa', code: 'P.G.', aliases: ['PONTA GROSSA', 'PONTA GROSSA PR', 'CURITIBA', 'PARANA CURITIBA', 'PARANÁ CURITIBA'] },
 };
 
 // Contorno real de cada coordenação: diagrama de Voronoi (vizinho mais
@@ -230,6 +237,8 @@ function ensureStyles() {
 
     .db-rg-detail { margin: 12px auto 0; max-width: 520px; }
     .db-rg-detail[hidden] { display: none; }
+    /* No app o painel entra entre a grade do mapa e o selo de ritmo: dá respiro embaixo. */
+    .gestor-app .db-rg-detail { margin-bottom: 12px; }
     .db-rg-hint { text-align: center; font-size: 11px; font-weight: 700; color: #6b7280; }
     .db-rg-card {
       border: 1px solid rgba(255,255,255,.09);
@@ -362,6 +371,35 @@ async function fetchAllRows(makeQuery, pageSize = 1000, maxPages = 30) {
   return rows;
 }
 
+// A RPC já agrega por (dia, coordenação) no banco: ~600 linhas no mês em vez das
+// ~16 mil de producao_snapshot, que pesavam no celular (app do gestor). Se ela
+// falhar ou encostar no limite de 1000 linhas do PostgREST (resultado cortado),
+// cai na leitura linha a linha de antes.
+async function loadProducaoDoMes(dataIni, dataFim) {
+  try {
+    const { data, error } = await supabase.rpc('dashboard_producao_agregada', {
+      p_data_ini: dataIni,
+      p_data_fim: dataFim,
+      p_coordenacao: null,
+    });
+    if (error) throw error;
+    const rows = data || [];
+    if (rows.length >= 1000) throw new Error('resultado da RPC pode estar cortado');
+    return rows;
+  } catch (error) {
+    console.warn('[dashboard-regional-map] RPC de produção indisponível, lendo producao_snapshot:', error?.message || error);
+    return fetchAllRows(() =>
+      supabase
+        .from('producao_snapshot')
+        .select('data,coordenacao,tons')
+        .gte('data', dataIni)
+        .lt('data', dataFim)
+        .order('data', { ascending: true })
+        .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
+    );
+  }
+}
+
 async function loadRegionalData() {
   const nowMs = Date.now();
   if (cachedRegionalData && (nowMs - cachedRegionalDataAt) < REGIONAL_MAP_CACHE_MS) {
@@ -389,15 +427,7 @@ async function loadRegionalData() {
         .eq('mes', mes)
         .eq('ativo', true),
 
-      fetchAllRows(() =>
-        supabase
-          .from('producao_snapshot')
-          .select('data,coordenacao,tons')
-          .gte('data', dataIni)
-          .lt('data', dataFim)
-          .order('data', { ascending: true })
-          .order('id', { ascending: true }) // desempate: sem chave única a paginação repete/pula linhas
-      ),
+      loadProducaoDoMes(dataIni, dataFim),
     ]);
 
     if (metaRes.error) throw metaRes.error;
@@ -464,7 +494,7 @@ function removeRegionalOverlay(svg) {
 // Coordenação escolhida no clique. Fica guardada fora do DOM porque o mapa é
 // redesenhado (refresh do dashboard, dados novos) e a seleção precisa sobreviver.
 let selectedRegion = null;
-const HINT_CLIQUE = 'Clique em uma coordenação para ver os valores dela.';
+const hintClique = () => `${emApp() ? 'Toque' : 'Clique'} em uma coordenação para ver os valores dela.`;
 
 // Atributos de um polígono clicável (a classe db-rg-hit vai junto, no chamador).
 function hitAttrs(key) {
@@ -506,21 +536,31 @@ function regionDetailHtml(key, info) {
     </div>`;
 }
 
-// (Re)desenha o painel de detalhe logo abaixo do mapa e marca a coordenação
-// selecionada. Fica dentro de .db-state-wrap (e não ao lado do mapa) porque
-// .db-prod-center é um flex em linha: um irmão do wrap viraria uma coluna.
-function renderRegionDetail(svg, hint = '') {
-  const wrap = svg.closest('.db-state-wrap');
-  if (!wrap) return;
-  wrap.dataset.dbRgHint = hint;
-  bindRegionClicks(wrap);
+// Raiz dos cliques e do painel: o cartão de produtividade (no app o painel fica
+// fora da coluna estreita do mapa, então precisa de um ancestral comum).
+function regionRoot(svg) {
+  return svg.closest('.db-prod-card') || svg.closest('.db-state-wrap') || svg.parentElement;
+}
 
-  let panel = wrap.querySelector('.db-rg-detail');
+// (Re)desenha o painel de detalhe logo abaixo do mapa e marca a coordenação
+// selecionada. No dashboard fica dentro de .db-state-wrap (e não ao lado do
+// mapa) porque .db-prod-center é um flex em linha: um irmão do wrap viraria uma
+// coluna. No app (.db-prod-body, grade de duas colunas) entra depois da grade,
+// na largura do cartão.
+function renderRegionDetail(svg, hint = '') {
+  const root = regionRoot(svg);
+  if (!root) return;
+  root.dataset.dbRgHint = hint;
+  bindRegionClicks(root);
+
+  let panel = root.querySelector('.db-rg-detail');
   if (!panel) {
     panel = document.createElement('div');
     panel.className = 'db-rg-detail';
     panel.setAttribute('aria-live', 'polite');
-    wrap.appendChild(panel);
+    const body = svg.closest('.db-prod-body');
+    if (body) body.insertAdjacentElement('afterend', panel);
+    else (svg.closest('.db-state-wrap') || root).appendChild(panel);
   }
 
   svg.querySelectorAll('.db-rg-hit.is-selected').forEach((el) => el.classList.remove('is-selected'));
@@ -539,30 +579,30 @@ function renderRegionDetail(svg, hint = '') {
   panel.innerHTML = regionDetailHtml(selectedRegion, cachedRegionalData?.segments?.[selectedRegion]);
 }
 
-function removeRegionDetail(wrap) {
-  wrap?.querySelector('.db-rg-detail')?.remove();
+function removeRegionDetail(svg) {
+  regionRoot(svg)?.querySelector('.db-rg-detail')?.remove();
 }
 
-// Um listener só por .db-state-wrap, delegado: o <svg> tem o conteúdo trocado
-// a cada redesenho, mas o wrap permanece.
-function bindRegionClicks(wrap) {
-  if (wrap.dataset.dbRgBound) return;
-  wrap.dataset.dbRgBound = '1';
+// Um listener só por cartão, delegado: o <svg> tem o conteúdo trocado a cada
+// redesenho, mas o cartão permanece.
+function bindRegionClicks(root) {
+  if (root.dataset.dbRgBound) return;
+  root.dataset.dbRgBound = '1';
 
   const select = (key) => {
     // Clicar de novo na mesma coordenação desmarca.
     selectedRegion = key && key !== selectedRegion ? key : null;
-    const svg = wrap.querySelector('.db-state-svg');
-    if (svg) renderRegionDetail(svg, wrap.dataset.dbRgHint || '');
+    const svg = root.querySelector('.db-state-svg');
+    if (svg) renderRegionDetail(svg, root.dataset.dbRgHint || '');
   };
 
-  wrap.addEventListener('click', (event) => {
+  root.addEventListener('click', (event) => {
     if (event.target.closest('[data-rg-close]')) { select(null); return; }
     const hit = event.target.closest('[data-region]');
     if (hit) select(hit.dataset.region);
   });
 
-  wrap.addEventListener('keydown', (event) => {
+  root.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     const hit = event.target.closest?.('[data-region]');
     if (!hit) return;
@@ -774,6 +814,8 @@ function regionTitle(key, info, isOwn) {
 function createGestorStateView(keys, data) {
   const own = new Set(keys);
   const multi = own.size > 1;
+  // Mapa estreito do app: com várias coordenações o nome não fica legível, vai o código.
+  const compact = multi && emApp();
   const ufs = [...new Set(keys.map((k) => REGIONS[k].state))];
   const boxes = ufs.map((uf) => STATE_BBOX[uf]);
   const minX = Math.min(...boxes.map((b) => b.minX));
@@ -818,7 +860,7 @@ function createGestorStateView(keys, data) {
   }
 
   // Rótulos por último, por cima de todos os estados.
-  const nameSize = Math.max(6, Math.round(fontSize * (multi ? 0.5 : 0.42)));
+  const nameSize = Math.max(6, Math.round(fontSize * (compact ? 0.72 : multi ? 0.5 : 0.42)));
   const nameStroke = multi ? Math.max(1.5, +(nameSize / 4).toFixed(1)) : 3;
   let labelsHtml = '';
   for (const k of own) {
@@ -826,7 +868,7 @@ function createGestorStateView(keys, data) {
     if (!pos) continue;
     const info = data.segments[k];
     labelsHtml += createRegionalLabel(k, pos, info, getPalette(info), fontSize);
-    labelsHtml += `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${nameSize}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:${nameStroke}px;pointer-events:none">${multi ? REGIONS[k].short : REGIONS[k].name}</text>`;
+    labelsHtml += `<text x="${pos.x}" y="${pos.y + fontSize * (compact ? 1.12 : 0.95)}" text-anchor="middle" style="font-size:${nameSize}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:${nameStroke}px;pointer-events:none">${compact ? REGIONS[k].code : multi ? REGIONS[k].short : REGIONS[k].name}</text>`;
   }
 
   return { viewBox, html: `${statesHtml}${labelsHtml}` };
@@ -838,7 +880,7 @@ async function applyMapMode() {
   // dashboard.js renderiza o mapa dentro de .db-prod-center (a classe
   // .db-prod-left só existe no painel do gestor-app.js, que nem importa
   // este módulo) — era por isso que a sobreposição regional nunca prendia.
-  const anySvg = document.querySelector('.db-prod-center .db-state-svg');
+  const anySvg = document.querySelector(SVG_SELECTOR);
   if (!anySvg) { ensureToggle(); return; }
 
   const viewer = await loadViewer();
@@ -847,7 +889,7 @@ async function applyMapMode() {
     // Gestor: sem toggle, só as coordenações a que ele tem acesso.
     document.querySelector('.db-map-mode-toggle')?.style.setProperty('display', 'none');
     if (!viewer.keys.length) return;
-    const svg = document.querySelector('.db-prod-center .db-state-svg');
+    const svg = document.querySelector(SVG_SELECTOR);
     if (!svg || svg.dataset.dbGestorView) return;
     try {
       const data = await loadRegionalData();
@@ -856,13 +898,14 @@ async function applyMapMode() {
       svg.dataset.dbGestorView = '1';
       svg.setAttribute('viewBox', view.viewBox);
       svg.innerHTML = view.html;
-      renderRegionDetail(svg, viewer.keys.length > 1 ? HINT_CLIQUE : '');
+      renderRegionDetail(svg, viewer.keys.length > 1 ? hintClique() : '');
     } catch (error) {
       console.warn('[dashboard-regional-map] erro na visão da coordenação:', error?.message || error);
     }
     return;
   }
 
+  if (emApp()) return; // master no app: segue com o mapa do Brasil do próprio app
   ensureToggle();
   const svg = anySvg;
   if (!isMasterBrazilMap(svg)) return;
@@ -872,7 +915,7 @@ async function applyMapMode() {
   if (mode !== 'regional') {
     removeRegionalOverlay(svg);
     wrap?.classList.remove('is-regional');
-    removeRegionDetail(wrap);
+    removeRegionDetail(svg);
     return;
   }
 
@@ -902,7 +945,7 @@ async function applyMapMode() {
     svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
     svg.dataset.dbOverlayAt = stamp;
-    renderRegionDetail(svg, HINT_CLIQUE);
+    renderRegionDetail(svg, hintClique());
   } catch (error) {
     console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
   }
