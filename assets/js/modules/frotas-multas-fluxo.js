@@ -287,7 +287,7 @@ function montarPdfTermo(JsPDF, { nome, cpf, empresa, multas, h }) {
   paragrafo(
     `Eu, ${nome.toUpperCase()}, portador(a) do CPF nº ${cpf ? fmtCpf(cpf) : '______________________'}, colaborador(a) da empresa ${empresa.toUpperCase()}, `
     + `condutor(a) do${plural ? 's' : ''} veículo${plural ? 's' : ''} identificado${plural ? 's' : ''} no quadro abaixo à época d${plural ? 'as infrações' : 'a infração'} de trânsito nele discriminad${plural ? 'as' : 'a'}, `
-    + `declaro estar ciente d${plural ? 'as autuações' : 'a autuação'} e AUTORIZO, de forma livre e expressa, a EMPRESA a descontar de minha remuneração (folha de pagamento) `
+    + `reconheço que fui responsável ${plural ? 'pelas infrações' : 'pela infração'} e AUTORIZO, de forma livre e expressa, a EMPRESA a descontar de minha remuneração (folha de pagamento) `
     + `o valor total de ${moeda(total)}, correspondente a ${multas.length} multa${plural ? 's' : ''} de trânsito de minha responsabilidade.`,
     { gap: 6 },
   );
@@ -334,8 +334,8 @@ function montarPdfTermo(JsPDF, { nome, cpf, empresa, multas, h }) {
 
   paragrafo('Forma de desconto: em ______ parcela(s) mensal(is) e consecutiva(s), a partir da folha de pagamento de ______ / ________.');
   paragrafo(
-    'A presente autorização é dada nos termos do art. 462, §1º, da CLT e do Termo de Responsabilidade por Utilização de Veículo da Empresa por mim assinado, '
-    + 'no qual me comprometo a pagar as multas decorrentes de infração de trânsito de minha responsabilidade.',
+    'A presente autorização é dada nos termos do art. 462, §1º, da CLT e do Termo de Responsabilidade por Utilização de Veículo da Empresa por mim assinado. '
+    + 'Comprometo-me ainda a respeitar a legislação de trânsito, utilizar os veículos da empresa com zelo e comunicar imediatamente qualquer ocorrência ou autuação recebida.',
   );
   paragrafo(`Declaro ter tido acesso ao${plural ? 's' : ''} auto${plural ? 's' : ''} de infração acima identificado${plural ? 's' : ''}.`);
   paragrafo('E por estar de pleno acordo, assino o presente instrumento.', { gap: 8 });
@@ -882,4 +882,4 @@ export function installMultasFluxo(container) {
 }
 
 // Funções puras expostas só para os testes (tests/frotas-multas-fluxo.test.mjs).
-export const __teste = { montarMensagem, normalizarFone, slug, limpar, tituloDossie, MENSAGEM_PADRAO };
+export const __teste = { montarMensagem, normalizarFone, slug, limpar, tituloDossie, montarPdfTermo, MENSAGEM_PADRAO };

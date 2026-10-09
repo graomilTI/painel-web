@@ -107,3 +107,14 @@ test('pasta do motorista no storage: slug sem acento nem caractere especial', ()
   assert.equal(slug('JOÃO D\'ÁVILA  da Silva'), 'joao-d-avila-da-silva');
   assert.equal(slug(''), 'sem-nome');
 });
+
+test('termo de desconto usa a redação revisada pelo RH (09/10/2026)', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../assets/js/modules/frotas-multas-fluxo.js', import.meta.url), 'utf8');
+  // reconhecimento da responsabilidade no lugar de "ciente da autuação"
+  assert.match(src, /reconheço que fui responsável \$\{plural \? 'pelas infrações' : 'pela infração'\} e AUTORIZO/);
+  assert.doesNotMatch(src, /declaro estar ciente/);
+  // compromissos adicionais no lugar de "me comprometo a pagar as multas"
+  assert.match(src, /Comprometo-me ainda a respeitar a legislação de trânsito, utilizar os veículos da empresa com zelo e comunicar imediatamente qualquer ocorrência ou autuação recebida\./);
+  assert.doesNotMatch(src, /no qual me comprometo a pagar as multas/);
+});
