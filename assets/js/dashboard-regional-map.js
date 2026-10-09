@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
+import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
 
 const REGIONAL_MAP_CACHE_MS = 1000 * 60 * 15;
 const MAP_MODE_KEY = 'grao1000:dashboard-map-mode';
@@ -15,16 +16,18 @@ const STATE_PATHS = {
 // (cada cidade pertence a exatamente 1 coordenação — 90 cidades em MT,
 // 241 em PR). Os aliases antigos ("CURITIBA", "MT3" solto, etc.) foram
 // mantidos para não perder metas já cadastradas com esses nomes.
+// `short` é o rótulo curto usado dentro do mapa quando o gestor enxerga várias
+// coordenações de uma vez (o nome inteiro não cabe no recorte de cada uma).
 const REGIONS = {
-  MT1: { state: 'MT', name: 'Sinop', aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'] },
-  MT2: { state: 'MT', name: 'Primavera do Leste', aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'] },
-  MT3_CONFRESA: { state: 'MT', name: 'Confresa', aliases: ['MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 CONFRESA', 'CONFRESA'] },
-  MT3_QUERENCIA: { state: 'MT', name: 'Querência', aliases: ['MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT3 QUERENCIA', 'QUERENCIA'] },
-  MT4: { state: 'MT', name: 'Campo Novo do Parecis', aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'] },
-  PR_CASCAVEL: { state: 'PR', name: 'Cascavel', aliases: ['CASCAVEL'] },
-  PR_LONDRINA: { state: 'PR', name: 'Londrina', aliases: ['LONDRINA'] },
-  PR_MARINGA: { state: 'PR', name: 'Maringá', aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'] },
-  PR_PONTA_GROSSA: { state: 'PR', name: 'Ponta Grossa', aliases: ['PONTA GROSSA', 'PONTA GROSSA PR', 'CURITIBA', 'PARANA CURITIBA', 'PARANÁ CURITIBA'] },
+  MT1: { state: 'MT', name: 'Sinop', short: 'Sinop', aliases: ['MT1', 'MATO GROSSO MT1', 'SINOP'] },
+  MT2: { state: 'MT', name: 'Primavera do Leste', short: 'Prim. do Leste', aliases: ['MT2', 'MATO GROSSO MT2', 'PRIMAVERA DO LESTE', 'PRIMAVERA'] },
+  MT3_CONFRESA: { state: 'MT', name: 'Confresa', short: 'Confresa', aliases: ['MATO GROSSO MT3 - CONFRESA', 'MATO GROSSO MT3 CONFRESA', 'CONFRESA'] },
+  MT3_QUERENCIA: { state: 'MT', name: 'Querência', short: 'Querência', aliases: ['MATO GROSSO MT3 - QUERENCIA', 'MATO GROSSO MT3 QUERENCIA', 'QUERENCIA'] },
+  MT4: { state: 'MT', name: 'Campo Novo do Parecis', short: 'C. N. Parecis', aliases: ['MT4', 'MATO GROSSO MT4', 'CAMPO NOVO DO PARECIS', 'CAMPO NOVO', 'PARECIS'] },
+  PR_CASCAVEL: { state: 'PR', name: 'Cascavel', short: 'Cascavel', aliases: ['CASCAVEL'] },
+  PR_LONDRINA: { state: 'PR', name: 'Londrina', short: 'Londrina', aliases: ['LONDRINA'] },
+  PR_MARINGA: { state: 'PR', name: 'Maringá', short: 'Maringá', aliases: ['MARINGA', 'MARINGÁ', 'MARINGA E TERMINAIS', 'MARINGÁ E TERMINAIS'] },
+  PR_PONTA_GROSSA: { state: 'PR', name: 'Ponta Grossa', short: 'P. Grossa', aliases: ['PONTA GROSSA', 'PONTA GROSSA PR', 'CURITIBA', 'PARANA CURITIBA', 'PARANÁ CURITIBA'] },
 };
 
 // Contorno real de cada coordenação: diagrama de Voronoi (vizinho mais
@@ -123,7 +126,7 @@ let cachedRegionalData = null;
 let cachedRegionalDataAt = 0;
 let pendingLoad = null;
 let pendingApply = false;
-let cachedViewer = null;
+let viewerPromise = null;
 
 function normalizeStr(value) {
   return String(value ?? '')
@@ -548,66 +551,129 @@ function createRegionalOverlay(data) {
 }
 
 
-// Quem está olhando: master vê o Brasil (com o toggle Estado/Regional);
-// gestor de uma coordenação vê só o estado dela, com a coordenação dele
-// destacada e o percentual correspondente (MT1 vê MT1, Londrina vê Londrina).
-async function loadViewer() {
-  if (cachedViewer) return cachedViewer;
+// Coordenações (chaves de REGIONS) que o gestor enxerga: a principal do cadastro
+// (app_usuarios.coordenacao) mais as de cada supervisão liberada a ele em
+// programacao_usuario_supervisoes. As supervisões são mais finas que a
+// coordenação ("MATO GROSSO MT1 - Sinop", "CASCAVEL - Campo Mourão"), então
+// várias delas caem na mesma chave — o Set tira a repetição. Nomes que não são
+// uma coordenação do mapa ("GERAL - Frota", "SP - Avaré") não resolvem e saem.
+async function loadViewerKeys(ctx) {
+  const keys = new Set();
+  const principal = resolveRegionalKey(ctx?.user?.coordenacao);
+  if (principal) keys.add(principal);
+
+  try {
+    const supervisoes = await carregarSupervisoesLiberadas();
+    for (const nome of supervisoes) {
+      const key = resolveRegionalKey(nome);
+      if (key) keys.add(key);
+    }
+  } catch (error) {
+    // Sem conseguir validar as supervisões, mostra só a coordenação principal
+    // (comportamento de antes) em vez de esconder o mapa.
+    console.warn('[dashboard-regional-map] supervisões liberadas indisponíveis:', error?.message || error);
+  }
+
+  return [...keys];
+}
+
+async function resolveViewer() {
   try {
     const ctx = await getUserContext();
     const perfil = String(ctx?.user?.role || ctx?.perfil_codigo || ctx?.perfil_nome || '').trim().toUpperCase();
     // Perfil administrativo vê o Brasil inteiro, igual ao master.
     const isMaster = !!ctx?.user?.is_master || perfil === 'ADM' || perfil === 'ADMIN';
-    const key = isMaster ? null : resolveRegionalKey(ctx?.user?.coordenacao);
-    cachedViewer = { isMaster, key };
+    const keys = isMaster ? [] : await loadViewerKeys(ctx);
+    return { isMaster, keys };
   } catch {
-    cachedViewer = { isMaster: true, key: null };
+    return { isMaster: true, keys: [] };
   }
-  return cachedViewer;
 }
 
-function createGestorStateView(key, data) {
-  const uf = REGIONS[key].state;
-  const bbox = STATE_BBOX[uf];
-  const pad = 14;
-  const viewBox = `${bbox.minX - pad} ${bbox.minY - pad} ${bbox.w + pad * 2} ${bbox.h + pad * 2}`;
-  const info = data.segments[key];
-  const palette = getPalette(info);
-  const clipId = 'dbGestorStateClip';
+// Quem está olhando: master vê o Brasil (com o toggle Estado/Regional);
+// gestor vê só o estado das coordenações dele, com cada coordenação a que ele
+// tem acesso destacada e o percentual correspondente (MT1 vê MT1, Londrina vê
+// Londrina, quem tem MT1 a MT4 vê as cinco de Mato Grosso). A Promise é
+// guardada (não o resultado) porque o MutationObserver chama applyMapMode várias
+// vezes antes da primeira resposta chegar.
+function loadViewer() {
+  if (!viewerPromise) viewerPromise = resolveViewer();
+  return viewerPromise;
+}
 
-  let regionsHtml = '';
-  for (const [k, region] of Object.entries(REGIONS)) {
-    if (region.state !== uf || !REGION_PATHS[k]) continue;
-    const own = k === key;
-    regionsHtml += `
+function fmtTonsCurto(value) {
+  return `${Math.round(Number(value) || 0).toLocaleString('pt-BR')} t`;
+}
+
+function regionTitle(key, info, isOwn) {
+  const region = REGIONS[key];
+  if (!isOwn) return region.name;
+  const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
+  const detalhe = hasData ? ` (${fmtTonsCurto(info.produzido)} de ${fmtTonsCurto(info.meta)})` : '';
+  return `${region.name} — ${fmtPct(info?.pct || 0)}${detalhe}`;
+}
+
+// Mapa do gestor: desenha o estado de cada coordenação a que ele tem acesso.
+// Normalmente é um estado só (MT ou PR); se as coordenações dele cobrem MT e PR,
+// os dois entram no mesmo viewBox, na posição real que têm no mapa do Brasil.
+function createGestorStateView(keys, data) {
+  const own = new Set(keys);
+  const multi = own.size > 1;
+  const ufs = [...new Set(keys.map((k) => REGIONS[k].state))];
+  const boxes = ufs.map((uf) => STATE_BBOX[uf]);
+  const minX = Math.min(...boxes.map((b) => b.minX));
+  const minY = Math.min(...boxes.map((b) => b.minY));
+  const maxX = Math.max(...boxes.map((b) => b.minX + b.w));
+  const maxY = Math.max(...boxes.map((b) => b.minY + b.h));
+  const pad = 14;
+  const viewBox = `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`;
+
+  // Uma coordenação só: rótulo grande, como sempre foi. Várias: rótulo menor
+  // (proporcional ao menor estado em tela) pra caber um por coordenação.
+  const fontSize = multi
+    ? Math.max(9, Math.round(Math.min(...boxes.map((b) => b.w)) / 12))
+    : Math.round(boxes[0].w / 6.5);
+
+  let statesHtml = '';
+  for (const uf of ufs) {
+    const clipId = `dbGestorStateClip${uf}`;
+    let regionsHtml = '';
+    for (const [k, region] of Object.entries(REGIONS)) {
+      if (region.state !== uf || !REGION_PATHS[k]) continue;
+      const isOwn = own.has(k);
+      const info = data.segments[k];
+      const palette = getPalette(info);
+      regionsHtml += `
       <path d="${REGION_PATHS[k]}"
-        fill="${own ? palette.fill : 'rgba(255,255,255,.045)'}"
-        stroke="${own ? palette.stroke : 'rgba(255,255,255,.16)'}"
-        stroke-width="${own ? 2 : 1}"
+        fill="${isOwn ? palette.fill : 'rgba(255,255,255,.045)'}"
+        stroke="${isOwn ? palette.stroke : 'rgba(255,255,255,.16)'}"
+        stroke-width="${isOwn ? 2 : 1}"
         stroke-linejoin="round"
         vector-effect="non-scaling-stroke">
-        <title>${region.name}${own ? ` — ${fmtPct(info?.pct || 0)}` : ''}</title>
+        <title>${regionTitle(k, info, isOwn)}</title>
       </path>`;
-  }
+    }
 
-  const pos = LABEL_POS[key];
-  const fontSize = Math.round(bbox.w / 6.5);
-  const label = pos
-    ? createRegionalLabel(key, pos, info, palette, fontSize)
-    : '';
-  const nameLabel = pos
-    ? `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${Math.round(fontSize * 0.42)}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:3px">${REGIONS[key].name}</text>`
-    : '';
-
-  return {
-    viewBox,
-    html: `
+    statesHtml += `
       <defs><clipPath id="${clipId}"><path d="${STATE_PATHS[uf]}"/></clipPath></defs>
       <path d="${STATE_PATHS[uf]}" fill="rgba(13,13,24,.96)" stroke="rgba(255,255,255,.14)" vector-effect="non-scaling-stroke"/>
       <g clip-path="url(#${clipId})">${regionsHtml}</g>
-      <path d="${STATE_PATHS[uf]}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" vector-effect="non-scaling-stroke"/>
-      ${label}${nameLabel}`,
-  };
+      <path d="${STATE_PATHS[uf]}" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="1.3" vector-effect="non-scaling-stroke"/>`;
+  }
+
+  // Rótulos por último, por cima de todos os estados.
+  const nameSize = Math.max(6, Math.round(fontSize * (multi ? 0.5 : 0.42)));
+  const nameStroke = multi ? Math.max(1.5, +(nameSize / 4).toFixed(1)) : 3;
+  let labelsHtml = '';
+  for (const k of own) {
+    const pos = LABEL_POS[k];
+    if (!pos) continue;
+    const info = data.segments[k];
+    labelsHtml += createRegionalLabel(k, pos, info, getPalette(info), fontSize);
+    labelsHtml += `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${nameSize}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:${nameStroke}px">${multi ? REGIONS[k].short : REGIONS[k].name}</text>`;
+  }
+
+  return { viewBox, html: `${statesHtml}${labelsHtml}` };
 }
 
 async function applyMapMode() {
@@ -622,15 +688,15 @@ async function applyMapMode() {
   const viewer = await loadViewer();
 
   if (!viewer.isMaster) {
-    // Gestor: sem toggle, só a coordenação dele.
+    // Gestor: sem toggle, só as coordenações a que ele tem acesso.
     document.querySelector('.db-map-mode-toggle')?.style.setProperty('display', 'none');
-    if (!viewer.key) return;
+    if (!viewer.keys.length) return;
     const svg = document.querySelector('.db-prod-center .db-state-svg');
     if (!svg || svg.dataset.dbGestorView) return;
     try {
       const data = await loadRegionalData();
       if (!svg.isConnected || svg.dataset.dbGestorView) return;
-      const view = createGestorStateView(viewer.key, data);
+      const view = createGestorStateView(viewer.keys, data);
       svg.dataset.dbGestorView = '1';
       svg.setAttribute('viewBox', view.viewBox);
       svg.innerHTML = view.html;
