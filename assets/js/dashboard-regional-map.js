@@ -220,6 +220,48 @@ function ensureStyles() {
        libera o max-width:480px do wrap pra ele ocupar a coluna central toda. */
     .db-state-wrap.is-regional { max-width: none; }
 
+    /* Coordenações clicáveis: o clique abre o painel .db-rg-detail logo abaixo
+       do mapa com os valores só daquela coordenação. */
+    .db-rg-hit { cursor: pointer; transition: filter .15s ease; }
+    .db-rg-hit:hover { filter: brightness(1.18); }
+    .db-rg-hit:focus { outline: none; }
+    .db-rg-hit:focus-visible,
+    .db-rg-hit.is-selected { stroke: #fff; stroke-width: 3; }
+
+    .db-rg-detail { margin: 12px auto 0; max-width: 520px; }
+    .db-rg-detail[hidden] { display: none; }
+    .db-rg-hint { text-align: center; font-size: 11px; font-weight: 700; color: #6b7280; }
+    .db-rg-card {
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: linear-gradient(160deg, rgba(255,255,255,.04), rgba(255,255,255,0) 55%), rgba(255,255,255,.02);
+    }
+    .db-rg-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+    .db-rg-name { font-size: 13px; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; color: #e2e8f0; }
+    .db-rg-close {
+      border: 0; background: transparent; color: #94a3b8; font-size: 18px; line-height: 1;
+      cursor: pointer; padding: 2px 8px; border-radius: 8px;
+    }
+    .db-rg-close:hover { color: #e2e8f0; background: rgba(255,255,255,.06); }
+    .db-rg-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .db-rg-label { font-size: 9px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; color: #6b7280; margin-bottom: 6px; }
+    .db-rg-value {
+      font-family: 'Syne', system-ui, sans-serif; font-size: 20px; font-weight: 800;
+      letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: #e2e2f0; line-height: 1.05;
+    }
+    .db-rg-value.is-green { color: #00c87a; }
+    .db-rg-value.is-amber { color: #fde68a; }
+    .db-rg-sub { font-size: 10px; font-weight: 700; color: #6b7280; margin-top: 4px; }
+    .db-rg-sub.is-pos { color: #00c87a; }
+    .db-rg-sub.is-neg { color: #fde68a; }
+    .db-rg-empty { font-size: 12px; font-weight: 700; color: #94a3b8; }
+
+    @media(max-width: 480px) {
+      .db-rg-grid { grid-template-columns: 1fr 1fr; }
+      .db-rg-value { font-size: 18px; }
+    }
+
     @media(max-width: 700px) {
       .db-map-mode-toggle { width: 100%; justify-content: space-between; }
       .db-map-mode-btn { flex: 1; }
@@ -419,6 +461,116 @@ function removeRegionalOverlay(svg) {
   }
 }
 
+// Coordenação escolhida no clique. Fica guardada fora do DOM porque o mapa é
+// redesenhado (refresh do dashboard, dados novos) e a seleção precisa sobreviver.
+let selectedRegion = null;
+const HINT_CLIQUE = 'Clique em uma coordenação para ver os valores dela.';
+
+// Atributos de um polígono clicável (a classe db-rg-hit vai junto, no chamador).
+function hitAttrs(key) {
+  return `data-region="${key}" tabindex="0" role="button" aria-label="${REGIONS[key].name} — ver valores"`;
+}
+
+function regionDetailHtml(key, info) {
+  const region = REGIONS[key];
+  const close = '<button type="button" class="db-rg-close" data-rg-close aria-label="Fechar detalhes">×</button>';
+  const head = `<div class="db-rg-card-head"><span class="db-rg-name">${region.name}</span>${close}</div>`;
+  const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
+  if (!hasData) {
+    return `<div class="db-rg-card">${head}<div class="db-rg-empty">Sem meta nem produção neste mês.</div></div>`;
+  }
+
+  const tone = info.onTrack ? 'is-green' : 'is-amber';
+  const temMeta = Number(info.meta) > 0;
+  const delta = Number(info.produzido) - Number(info.ritmo);
+  const deltaTxt = `${delta >= 0 ? '+' : '−'}${fmtTonsCurto(Math.abs(delta))}`;
+  return `
+    <div class="db-rg-card">
+      ${head}
+      <div class="db-rg-grid">
+        <div>
+          <div class="db-rg-label">Meta do mês</div>
+          <div class="db-rg-value">${temMeta ? fmtTonsCurto(info.meta) : '—'}</div>
+        </div>
+        <div>
+          <div class="db-rg-label">Produção atual</div>
+          <div class="db-rg-value ${tone}">${fmtTonsCurto(info.produzido)}</div>
+          <div class="db-rg-sub">${temMeta ? `${fmtPct(info.pct)} da meta` : 'sem meta cadastrada'}</div>
+        </div>
+        <div>
+          <div class="db-rg-label">Vs ritmo do dia</div>
+          <div class="db-rg-value ${temMeta ? tone : ''}">${temMeta ? deltaTxt : '—'}</div>
+          <div class="db-rg-sub ${temMeta ? (info.onTrack ? 'is-pos' : 'is-neg') : ''}">${temMeta ? (info.onTrack ? 'No ritmo esperado' : 'Abaixo do ritmo') : ''}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// (Re)desenha o painel de detalhe logo abaixo do mapa e marca a coordenação
+// selecionada. Fica dentro de .db-state-wrap (e não ao lado do mapa) porque
+// .db-prod-center é um flex em linha: um irmão do wrap viraria uma coluna.
+function renderRegionDetail(svg, hint = '') {
+  const wrap = svg.closest('.db-state-wrap');
+  if (!wrap) return;
+  wrap.dataset.dbRgHint = hint;
+  bindRegionClicks(wrap);
+
+  let panel = wrap.querySelector('.db-rg-detail');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.className = 'db-rg-detail';
+    panel.setAttribute('aria-live', 'polite');
+    wrap.appendChild(panel);
+  }
+
+  svg.querySelectorAll('.db-rg-hit.is-selected').forEach((el) => el.classList.remove('is-selected'));
+
+  // A seleção só vale se essa coordenação ainda é clicável na tela atual.
+  const hit = selectedRegion ? svg.querySelector(`[data-region="${selectedRegion}"]`) : null;
+  if (!hit) {
+    selectedRegion = null;
+    panel.innerHTML = hint ? `<div class="db-rg-hint">${hint}</div>` : '';
+    panel.hidden = !hint;
+    return;
+  }
+
+  hit.classList.add('is-selected');
+  panel.hidden = false;
+  panel.innerHTML = regionDetailHtml(selectedRegion, cachedRegionalData?.segments?.[selectedRegion]);
+}
+
+function removeRegionDetail(wrap) {
+  wrap?.querySelector('.db-rg-detail')?.remove();
+}
+
+// Um listener só por .db-state-wrap, delegado: o <svg> tem o conteúdo trocado
+// a cada redesenho, mas o wrap permanece.
+function bindRegionClicks(wrap) {
+  if (wrap.dataset.dbRgBound) return;
+  wrap.dataset.dbRgBound = '1';
+
+  const select = (key) => {
+    // Clicar de novo na mesma coordenação desmarca.
+    selectedRegion = key && key !== selectedRegion ? key : null;
+    const svg = wrap.querySelector('.db-state-svg');
+    if (svg) renderRegionDetail(svg, wrap.dataset.dbRgHint || '');
+  };
+
+  wrap.addEventListener('click', (event) => {
+    if (event.target.closest('[data-rg-close]')) { select(null); return; }
+    const hit = event.target.closest('[data-region]');
+    if (hit) select(hit.dataset.region);
+  });
+
+  wrap.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const hit = event.target.closest?.('[data-region]');
+    if (!hit) return;
+    event.preventDefault();
+    select(hit.dataset.region);
+  });
+}
+
 function createRegionalLabel(key, pos, info, palette, fontSize = 20) {
   const hasData = !!info && (Number(info.meta) > 0 || Number(info.produzido) > 0);
   if (!hasData || !pos) return '';
@@ -440,6 +592,7 @@ function createRegionalLabel(key, pos, info, palette, fontSize = 20) {
         stroke:rgba(0,0,0,.85);
         stroke-width:${strokeWidth}px;
         stroke-linejoin:round;
+        pointer-events:none;
       "
     >${fmtPct(info.pct)}</text>
   `;
@@ -490,6 +643,8 @@ function createZoomBox(uf, data) {
     regionsHtml += `
       <path
         d="${d}"
+        ${hitAttrs(key)}
+        class="db-rg-hit"
         fill="${palette.fill}"
         stroke="rgba(255,255,255,.30)"
         stroke-width="1"
@@ -645,6 +800,7 @@ function createGestorStateView(keys, data) {
       const palette = getPalette(info);
       regionsHtml += `
       <path d="${REGION_PATHS[k]}"
+        ${isOwn ? `${hitAttrs(k)} class="db-rg-hit"` : ''}
         fill="${isOwn ? palette.fill : 'rgba(255,255,255,.045)'}"
         stroke="${isOwn ? palette.stroke : 'rgba(255,255,255,.16)'}"
         stroke-width="${isOwn ? 2 : 1}"
@@ -670,7 +826,7 @@ function createGestorStateView(keys, data) {
     if (!pos) continue;
     const info = data.segments[k];
     labelsHtml += createRegionalLabel(k, pos, info, getPalette(info), fontSize);
-    labelsHtml += `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${nameSize}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:${nameStroke}px">${multi ? REGIONS[k].short : REGIONS[k].name}</text>`;
+    labelsHtml += `<text x="${pos.x}" y="${pos.y + fontSize * 0.95}" text-anchor="middle" style="font-size:${nameSize}px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;fill:rgba(255,255,255,.75);paint-order:stroke fill;stroke:rgba(0,0,0,.8);stroke-width:${nameStroke}px;pointer-events:none">${multi ? REGIONS[k].short : REGIONS[k].name}</text>`;
   }
 
   return { viewBox, html: `${statesHtml}${labelsHtml}` };
@@ -700,6 +856,7 @@ async function applyMapMode() {
       svg.dataset.dbGestorView = '1';
       svg.setAttribute('viewBox', view.viewBox);
       svg.innerHTML = view.html;
+      renderRegionDetail(svg, viewer.keys.length > 1 ? HINT_CLIQUE : '');
     } catch (error) {
       console.warn('[dashboard-regional-map] erro na visão da coordenação:', error?.message || error);
     }
@@ -710,11 +867,14 @@ async function applyMapMode() {
   const svg = anySvg;
   if (!isMasterBrazilMap(svg)) return;
 
-  removeRegionalOverlay(svg);
-  svg.closest('.db-state-wrap')?.classList.remove('is-regional');
-
+  const wrap = svg.closest('.db-state-wrap');
   const mode = getCurrentMode();
-  if (mode !== 'regional') return;
+  if (mode !== 'regional') {
+    removeRegionalOverlay(svg);
+    wrap?.classList.remove('is-regional');
+    removeRegionDetail(wrap);
+    return;
+  }
 
   try {
     const data = await loadRegionalData();
@@ -726,12 +886,23 @@ async function applyMapMode() {
     // dispara scheduleApply() de novo pro <svg> atual.
     if (!svg.isConnected) return;
 
+    // O MutationObserver chama applyMapMode a cada mudança no DOM, inclusive as
+    // que o próprio overlay e o painel de detalhe causam. Redesenhar a cada
+    // chamada recriava os polígonos em loop e engolia o clique (o elemento do
+    // mousedown já não era o do mouseup). Só redesenha se o overlay que está na
+    // tela não é o dos dados atuais.
+    const stamp = String(cachedRegionalDataAt);
+    if (svg.querySelector('.db-regional-overlay') && svg.dataset.dbOverlayAt === stamp) return;
+
+    removeRegionalOverlay(svg);
     if (!svg.dataset.dbOriginalViewBox) {
       svg.dataset.dbOriginalViewBox = svg.getAttribute('viewBox') || '0 0 800 796';
     }
-    svg.closest('.db-state-wrap')?.classList.add('is-regional');
+    wrap?.classList.add('is-regional');
     svg.setAttribute('viewBox', `${OVERLAY_VIEWBOX.x} ${OVERLAY_VIEWBOX.y} ${OVERLAY_VIEWBOX.w} ${OVERLAY_VIEWBOX.h}`);
     svg.insertAdjacentHTML('beforeend', createRegionalOverlay(data));
+    svg.dataset.dbOverlayAt = stamp;
+    renderRegionDetail(svg, HINT_CLIQUE);
   } catch (error) {
     console.warn('[dashboard-regional-map] erro ao aplicar modo regional:', error?.message || error);
   }
