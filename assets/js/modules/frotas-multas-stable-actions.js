@@ -12,28 +12,29 @@ export function installStableMultasActions(container) {
 
   let savedRows = null;
   let busyButton = null;
-  let originalText = '';
+  let originalHtml = '';
   let resetTimer = null;
 
   function resetBusyButton() {
     window.clearTimeout(resetTimer);
     if (busyButton?.isConnected) {
       busyButton.disabled = false;
-      busyButton.textContent = originalText;
+      busyButton.innerHTML = originalHtml;
     }
     busyButton = null;
-    originalText = '';
+    originalHtml = '';
   }
 
   function beginStableUpdate(button, label = 'Salvando...') {
     savedRows = Array.from(tbody.childNodes);
     busyButton = button || null;
-    originalText = button?.textContent || '';
+    originalHtml = button?.innerHTML || '';
 
     window.setTimeout(() => {
       if (!busyButton?.isConnected) return;
       busyButton.disabled = true;
-      busyButton.textContent = label;
+      // Botões só-ícone mantêm o ícone (ficam desabilitados); os de texto mostram o rótulo.
+      if (!busyButton.classList.contains('fm-icon-btn')) busyButton.textContent = label;
     }, 0);
 
     window.clearTimeout(resetTimer);
