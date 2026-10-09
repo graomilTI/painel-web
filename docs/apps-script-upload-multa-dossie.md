@@ -1,5 +1,10 @@
 # Apps Script: ação `upload_multa_dossie` (PDF único das multas → pasta do condutor no Drive)
 
+> **Versão pronta:** [`docs/apps-script/frotas-web-app.gs`](apps-script/frotas-web-app.gs) é o `Código.gs` completo do
+> Web App (o `doPost` original do excesso de velocidade + esta ação, reaproveitando os helpers de pasta dele).
+> Basta substituir o conteúdo do arquivo no editor do Apps Script por ele e publicar uma nova versão na
+> implantação existente. Os passos 1 e 2 abaixo servem só para quem prefere colar por partes.
+
 Frotas > Ocorrências > Multas > **Anexos**: quando o auto de infração e o termo de desconto assinado
 estão anexados, o painel junta tudo num único PDF e o envia ao Drive **na subpasta do condutor dentro
 de "CONDUTORES FROTA"** (a mesma pasta dos prints de excesso de velocidade), com o título
