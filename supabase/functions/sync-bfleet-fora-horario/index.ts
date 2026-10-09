@@ -53,6 +53,11 @@ function decodeHtml(value: unknown) {
     .replace(/&quot;/gi, '"')
     .replace(/&#039;/gi, "'")
     .replace(/&#39;/gi, "'")
+    // Acentos nomeados (&ecirc; &atilde; &ccedil; ...) que a RedGPS manda nos endereços.
+    .replace(/&([a-z])(acute|grave|circ|tilde|uml);/gi, (_m, letter, accent) =>
+      (letter + ({ acute: "́", grave: "̀", circ: "̂", tilde: "̃", uml: "̈" } as Record<string, string>)[accent.toLowerCase()]).normalize("NFC"))
+    .replace(/&ccedil;/g, "ç")
+    .replace(/&Ccedil;/g, "Ç")
     .replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_m, n) => String.fromCharCode(parseInt(n, 16)));
 }
@@ -866,9 +871,12 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
 
   const rows = apiObjectRows(payload, ["fecha", "hora", "odometro", "velocidad", "latitud", "latitude"]);
   const points = rows.map((row: any) => {
-    const fecha = pick(row, ["fecha", "Fecha", "datetime", "dateTime", "fecha_hora"]);
-    const hora = pick(row, ["hora", "Hora", "time"]);
-    const sec = dateTimeSecondsFromDay(fecha || (dataEvento + " " + asString(hora)), dataEvento);
+    const fecha = asString(pick(row, ["fecha", "Fecha", "datetime", "dateTime", "fecha_hora"]));
+    const hora = asString(pick(row, ["hora", "Hora", "time"]));
+    // A RedGPS devolve "fecha" só com a data (2026-10-08) e a hora em "hora". Usar "fecha"
+    // sozinha descartava todos os pontos (sem hora => sec null). Só vale sozinha se já trouxer a hora.
+    const stamp = fecha && parseTimeText(fecha) ? fecha : `${fecha || dataEvento} ${hora}`;
+    const sec = dateTimeSecondsFromDay(stamp, dataEvento);
     const lat = parseNumeric(pick(row, ["latitud", "Latitud", "latitude", "Latitude", "lat"]));
     const lng = parseNumeric(pick(row, ["longitud", "Longitud", "longitude", "Longitude", "lng", "lon"]));
     return {
@@ -878,7 +886,7 @@ async function fetchHistorySummary(cfg: any, token: string, idgps: string, dataE
       ignition: parseNumeric(pick(row, ["ignicion", "Ignicion", "ignição", "ignition"])),
       lat,
       lng,
-      address: normalizeText(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"])),
+      address: normalizeText(decodeHtml(pick(row, ["domicilio", "Domicilio", "direccion", "Dirección", "endereco", "address"]))),
       raw: row,
     };
   }).filter((p: any) => p.sec !== null && p.sec >= 0 && p.sec <= 4 * 3600)
@@ -1350,7 +1358,9 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
           gps_km: history.gpsKm,
           odometro_inicio_m: history.odometroInicioM,
           odometro_fim_m: history.odometroFimM,
-          rota: history.rota || [],
+          // Veículo parado também reporta pontos o tempo todo: só grava a rota quando houve deslocamento
+          // (evita ~300 pontos por veículo/dia no JSONB sem nada para mostrar).
+          rota: history.km > 0 ? (history.rota || []) : [],
         } : null,
         fallback_relatorio: {
           km: fallback.km,
