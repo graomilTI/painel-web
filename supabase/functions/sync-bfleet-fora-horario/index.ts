@@ -556,6 +556,9 @@ async function fetchWebReport(cfg: any) {
   if (!cookie) throw new Error("Configure as credenciais web da BFleet para consultar o relatório Fora do horário.");
   const dataJson = await loadSavedWebReport(cfg, cookie);
   mark("web:relatorio salvo ok");
+  // Diagnóstico (sem segredos): campos de intervalo do relatório salvo.
+  const rangeKeys = (obj: any) => JSON.stringify(Object.fromEntries(Object.entries(obj || {}).filter(([k, v]) => /rang|fecha|hora|tiempo|period|date|dia/i.test(k) && typeof v !== "object")));
+  mark(`dataJson salvo ${rangeKeys(dataJson)}`);
   const yesterdayIso = addIsoDays(saoPauloIsoDate(), -1);
   if (cfg.dataInicial && cfg.dataFinal) {
     // A BFleet espera dd/mm/aaaa (igual ao "ontem" abaixo e ao sync-bfleet-excesso-velocidade).
@@ -606,14 +609,21 @@ async function fetchWebReport(cfg: any) {
     if (runtimeDataMatch?.[1]) {
       try { runtimeData = JSON.parse(runtimeDataMatch[1]); } catch { runtimeData = dataJson; }
     }
+    mark(`dataJson eco ${rangeKeys(runtimeData)}`);
     if (cfg.dataInicial && cfg.dataFinal) {
-      // Período explícito: reaplica as datas pedidas no dataJson devolvido pela página, como faz o
-      // sync-bfleet-excesso-velocidade. Obs.: em 09/10 o relatório pesado só terminou para "ontem"
-      // (~5 min); datas mais antigas ficaram sem resposta mesmo com isto (ver memória do projeto).
-      runtimeData.fecha_inicio = dataJson.fecha_inicio;
-      runtimeData.fecha_fin = dataJson.fecha_fin;
-      runtimeData.hora_inicio = dataJson.hora_inicio;
-      runtimeData.hora_fin = dataJson.hora_fin;
+      // Período explícito. A página ignora as datas do POST inicial e devolve o eco da predefinição
+      // "ontem" (rango_tiempo_id=2): sem reaplicar, o relatório pesado trazia SEMPRE o dia anterior e o
+      // filtro de janela descartava tudo (o backfill nunca gravava). A chamada pesada espera datas em
+      // ISO, fecha_fin = dia seguinte (igual ao eco de "ontem": 2026-10-08 .. 2026-10-09) e horas 00:00:00.
+      // Formatos BR ou fecha_fin no mesmo dia voltam 0 linhas. O relatório leva ~5 min (responde 202).
+      const inicioIso = toIsoDate(cfg.dataInicial);
+      const fimIso = toIsoDate(cfg.dataFinal);
+      if (inicioIso && fimIso) {
+        runtimeData.fecha_inicio = inicioIso;
+        runtimeData.fecha_fin = addIsoDays(fimIso, 1);
+        runtimeData.hora_inicio = "00:00:00";
+        runtimeData.hora_fin = "00:00:00";
+      }
     }
     const savedReportIds = Array.from(text.matchAll(/idreporte_guardado\s*=\s*(\d+)/g)).map((match) => match[1]).filter((id) => id !== "0");
     const uniqueIds = Array.from(text.matchAll(/uniq_id\s*=\s*["']([^"']+)["']/g)).map((match) => match[1]).filter(Boolean);
@@ -1240,6 +1250,12 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   if (targetWindow.end) mapped = mapped.filter((r) => r.data_evento <= targetWindow.end);
 
   mark(`relatorio ok (${mappedAll.length} linhas)`);
+  if (requestBody?.dryRun) {
+    // Só consulta a BFleet e conta as linhas por dia; não grava nada.
+    const porDia: Record<string, number> = {};
+    for (const r of mappedAll) porDia[r.data_evento] = (porDia[r.data_evento] || 0) + 1;
+    return { ok: true, dry_run: true, total_origem: mappedAll.length, por_dia: porDia, etapas: [...runTimeline] };
+  }
   const placas = Array.from(new Set(mapped.map((r) => r.placa).filter(Boolean)));
   const vehicleMap = await loadVehicleMap(supabase, placas).catch(() => new Map());
   mark("veiculos/patrimonio");
@@ -1452,7 +1468,6 @@ async function syncForaHorario(supabase: any, requestBody: any = {}) {
   };
 }
 
-const RUN_DEADLINE_MS = 125_000;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -1466,33 +1481,17 @@ serve(async (req) => {
     let requestBody: any = {};
     try { requestBody = await req.json(); } catch { requestBody = {}; }
     resetTimeline();
-    let deadlineTimer: number | undefined;
-    const deadline = new Promise<{ pending: true }>((resolve) => {
-      deadlineTimer = setTimeout(() => resolve({ pending: true }), RUN_DEADLINE_MS);
-    });
+    // Fica bloqueado até concluir (como sempre foi: o cron já aguardava e gravava mesmo depois do
+    // timeout do pg_net). A BFleet leva de ~1 a 5 min no relatório pesado. Tentativa de responder
+    // 202 cedo e seguir em segundo plano foi descartada: em 09/10 alguns workers eram encerrados
+    // antes de gravar. A conclusão (ou falha) e a linha do tempo por etapa vão para os logs.
     const work = syncForaHorario(supabase, requestBody);
-    // O idle timeout da resposta é 150 s, mas o relógio da function é maior: se a BFleet demorar,
-    // responde 202 com a linha do tempo no prazo e deixa a sincronização terminar (e gravar) em segundo plano
-    // (a BFleet chega a levar 4-5 min no relatório pesado; sem isso o dia inteiro se perdia).
     (globalThis as any).EdgeRuntime?.waitUntil?.(work.then(
-      (r) => console.log("[sync-bfleet-fora-horario] concluído em segundo plano", JSON.stringify({ total: r?.total, ocorrencias: r?.ocorrencias, etapas: r?.etapas })),
-      (e) => console.error("[sync-bfleet-fora-horario] falha em segundo plano", e),
+      (r: any) => console.log("[sync-bfleet-fora-horario] concluído", JSON.stringify({ total: r?.total, ocorrencias: r?.ocorrencias, etapas: r?.etapas })),
+      () => { /* o erro é tratado e logado no catch abaixo */ },
     ));
-    try {
-      const result = await Promise.race([work, deadline]);
-      if ((result as { pending?: boolean })?.pending) {
-        return json({
-          ok: true,
-          em_andamento: true,
-          aviso: `A BFleet ainda não respondeu após ${RUN_DEADLINE_MS / 1000}s; a sincronização continua em segundo plano e grava ao concluir.`,
-          ultima_etapa: runTimeline[runTimeline.length - 1] || null,
-          etapas: [...runTimeline],
-        }, 202);
-      }
-      return json(result);
-    } finally {
-      clearTimeout(deadlineTimer);
-    }
+    const result = await work;
+    return json(result);
   } catch (err) {
     console.error("[sync-bfleet-fora-horario]", err);
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
