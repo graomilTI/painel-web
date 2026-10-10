@@ -1340,6 +1340,28 @@ export async function renderContent(content) {
     return (data || []).map((row) => agentRowToHeaderObject(row.dados_json));
   }
 
+  // sync-producao-diaria (Puppeteer/XLS -> grm_producao_diaria_importacoes) foi
+  // pausado em 01/09, substituído por grmserver-producao-diaria-api-realtime.js,
+  // que grava só em producao_snapshot (mesmo fix já aplicado em
+  // logistica-fob-page-v9.js/PR #342 e grm-sync-lancar-nhe.js). Sem isso, a
+  // comparação automática de FOB desta tela ficaria presa na foto de 31/08.
+  // producao_snapshot tem colunas próprias (não dados_json) e "Cargas" agora é
+  // numérico (countLoads da API), não mais o texto "NHE" — compararFob só usa
+  // esse campo pra procurar cargas === 'NHE', então o sinal fica sempre vazio
+  // (mesmo achado do v9: não tira nenhuma O.S. do escopo, setNheOsOnly via
+  // grm_nhe_importacoes continua sendo a fonte de verdade real).
+  async function buscarProducaoSnapshotFobAgente(dataRef) {
+    const dataIso = ymd(dataRef);
+    const { data, error } = await supabase
+      .from('producao_snapshot')
+      .select('os,cargas')
+      .eq('servico', 'Classificação FOB')
+      .eq('data', dataIso)
+      .limit(20000);
+    if (error) throw error;
+    return (data || []).map((row) => agentRowToHeaderObject({ 'O.S.': row.os, Cargas: row.cargas }));
+  }
+
   function hojeBr() {
     const d = new Date();
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -1359,7 +1381,7 @@ export async function renderContent(content) {
       const dataRef = ontemBr();
       const [movRows, prodRows, nheRows] = await Promise.all([
         buscarMovimentoAgente(dataRef),
-        buscarServicoFobAgente('grm_producao_diaria_importacoes', dataRef),
+        buscarProducaoSnapshotFobAgente(dataRef),
         buscarServicoFobAgente('grm_nhe_importacoes', dataRef),
       ]);
 
