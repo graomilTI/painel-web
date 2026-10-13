@@ -8,7 +8,7 @@
       .fr-act-row{display:flex;gap:6px;flex-wrap:nowrap}.fr-act{width:30px;height:30px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.72);color:#94a3b8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:.15s}.fr-act svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fr-act:hover:not(:disabled){color:#e2e2f0;border-color:rgba(148,163,184,.65)}.fr-act.done{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.16);color:#4ade80}.fr-act.current{border-color:rgba(245,158,11,.85);background:rgba(245,158,11,.2);color:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.18)}.fr-act.final.current{border-color:#22c55e;background:rgba(34,197,94,.3);color:#86efac;box-shadow:0 0 0 2px rgba(34,197,94,.2)}.fr-act:disabled{opacity:.3;cursor:not-allowed}.fr-act.cancel:hover{border-color:rgba(239,68,68,.75);color:#f87171;background:rgba(239,68,68,.14)}
       .fr-hist-title{margin:22px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
       .fr-link{background:none;border:0;padding:0;font:inherit;color:#86efac;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:rgba(134,239,172,.35);text-underline-offset:3px}.fr-link:hover{color:#bbf7d0;text-decoration-color:currentColor}.fr-dl{display:grid;grid-template-columns:110px 1fr;gap:10px 14px;margin:0;font-size:13.5px}.fr-dl dt{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;align-self:center}.fr-dl dd{margin:0;color:#e2e2f0}
-      .fr-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}.fr-act.obs:hover:not(:disabled){border-color:rgba(99,102,241,.75);color:#a5b4fc;background:rgba(99,102,241,.14)}.fr-maps{color:#86efac;text-decoration:none;margin-left:4px}.fr-maps:hover{color:#bbf7d0}.fr-tab-agenda{margin-left:auto;display:inline-flex;align-items:center;gap:8px}.fr-tab-agenda svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .fr-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}.fr-act.obs:hover:not(:disabled),.fr-act.swap:hover:not(:disabled){border-color:rgba(99,102,241,.75);color:#a5b4fc;background:rgba(99,102,241,.14)}.fr-maps{color:#86efac;text-decoration:none;margin-left:4px}.fr-maps:hover{color:#bbf7d0}.fr-tab-agenda{margin-left:auto;display:inline-flex;align-items:center;gap:8px}.fr-tab-agenda svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
       .fr-ag-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}.fr-ag-nav{display:flex;align-items:center;gap:8px}.fr-ag-mes{min-width:200px;text-align:center;color:#f8fafc;font-size:18px;font-weight:950}.fr-ag-spacer{flex:1}.fr-ag-bar .fr-select{width:auto;min-width:150px}.fr-ag-bar .fr-input{width:230px}.fr-ag-chk{display:inline-flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;font-weight:700;cursor:pointer}.fr-ag-chk input{width:16px;height:16px;accent-color:#22c55e;cursor:pointer}
       .fr-ag-legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 12px;color:#94a3b8;font-size:12px}.fr-ag-legend span{display:inline-flex;align-items:center;gap:6px}.fr-ag-dot{width:10px;height:10px;border-radius:3px;display:inline-block}.fr-ag-dot.inst{background:#818cf8}.fr-ag-dot.manut{background:#f59e0b}.fr-ag-dot.done{background:#475569}.fr-ag-dot.late{background:transparent;box-shadow:0 0 0 1.5px #ef4444}
       .fr-ag-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}.fr-ag-cal{border:1px solid rgba(148,163,184,.14);border-radius:18px;overflow:hidden}.fr-ag-dow,.fr-ag-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.fr-ag-dow div{padding:9px 6px;text-align:center;color:#bfdbfe;font-size:11px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;background:rgba(2,6,23,.38);border-bottom:1px solid rgba(148,163,184,.16)}
@@ -335,7 +335,7 @@
   const COLS_MANUT = [
     ['placa', 'Placa', 80], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['motorista', 'Motorista', 0],
     ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 124], ['tecnico', 'Técnico', 110],
-    ['agendada', 'Agendada', 150], [null, 'Ações', 238]
+    ['agendada', 'Agendada', 150], [null, 'Ações', 272]
   ];
   const COLS_REMOVIDOS = [
     ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
@@ -349,7 +349,7 @@
     const key = cols === COLS_REMOVIDOS ? 'removidos' : cols === COLS_MANUT ? 'manut' : 'normal';
     if (!table || table.dataset.cols === key) return;
     table.dataset.cols = key;
-    table.style.minWidth = key === 'manut' ? '1340px' : '';
+    table.style.minWidth = key === 'manut' ? '1374px' : '';
     table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
     table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
       ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
@@ -828,6 +828,7 @@
     tecnico: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L3 17.7 6.3 21l6.3-6.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
     agendamento: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     finalizar: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    motorista: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="8" r="3.5"/><path d="M2 20c0-3.6 2.8-6 6.5-6 1.4 0 2.6.3 3.6.9"/><path d="M14.5 17h7M19 14.5l2.5 2.5-2.5 2.5"/></svg>',
     observacoes: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 14h4"/></svg>',
     cancelar: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
   };
@@ -845,14 +846,14 @@
     return data;
   }
 
+  const eventoMotorista = (p, ctx) => [
+    ctx.nomeAlterado ? `Motorista alterado para ${ctx.nomeNovo}` : (ctx.contatoAlterado ? 'Telefone do motorista atualizado' : ''),
+    ctx.disponibilidadeAlterada ? 'Disponibilidade do motorista registrada' : ''
+  ].filter(Boolean).join(' · ');
+
   const ACOES = {
-    disponibilidade: {
-      titulo: 'Disponibilidade com o motorista',
-      evento: (p, ctx) => [
-        ctx.nomeAlterado ? `Motorista alterado para ${ctx.nomeNovo}` : (ctx.contatoAlterado ? 'Telefone do motorista atualizado' : ''),
-        ctx.disponibilidadeAlterada ? 'Disponibilidade do motorista registrada' : ''
-      ].filter(Boolean).join(' · ')
-    },
+    disponibilidade: { titulo: 'Disponibilidade com o motorista', evento: eventoMotorista },
+    motorista: { titulo: 'Alterar motorista', evento: eventoMotorista },
     tecnico: { titulo: 'Alinhar com o técnico', evento: p => `Técnico definido: ${p.tecnico_nome}` },
     agendamento: { titulo: 'Agendar', evento: p => `Agendada para ${fmtDataBr(p.data_agendada)}${p.hora_agendada ? ' ' + p.hora_agendada : ''}${p.local_maps_url ? ' (com link do Maps)' : ''}` },
     finalizar: { titulo: 'Concluir manutenção', evento: () => 'Manutenção concluída' }
@@ -881,8 +882,12 @@
     const v = (k) => esc(rec?.[k] || '');
     const dlId = `fr-dl-mot-${Date.now()}`;
 
+    const dicaMotorista = '<div class="fr-hint">Trocar o motorista vale só para esta manutenção; o cadastro do veículo continua vindo da sync de patrimônios.</div>';
+    const blocoMotorista = (margem) => `<div class="fr-form fr-g-2"${margem ? ` style="margin-bottom:${margem}px"` : ''}><div class="fr-field"><label>Motorista</label><input name="motorista_nome" value="${esc(mot.nome)}" list="${dlId}" autocomplete="off" placeholder="Nome do motorista" /><datalist id="${dlId}"></datalist></div><div class="fr-field"><label>Telefone</label><input name="motorista_contato" value="${esc(mot.contato)}" placeholder="(00) 00000-0000" /></div></div>`;
+
     const campos = {
-      disponibilidade: `<div class="fr-form fr-g-2" style="margin-bottom:14px"><div class="fr-field"><label>Motorista</label><input name="motorista_nome" value="${esc(mot.nome)}" list="${dlId}" autocomplete="off" placeholder="Nome do motorista" /><datalist id="${dlId}"></datalist></div><div class="fr-field"><label>Telefone</label><input name="motorista_contato" value="${esc(mot.contato)}" placeholder="(00) 00000-0000" /></div></div><div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div><div class="fr-hint">Trocar o motorista vale só para esta manutenção; o cadastro do veículo continua vindo da sync de patrimônios.</div>`,
+      disponibilidade: `${blocoMotorista(14)}<div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>${dicaMotorista}`,
+      motorista: `${blocoMotorista(0)}${dicaMotorista}`,
       tecnico: `<div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>`,
       agendamento: `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div><div class="fr-field full"><label>Link do Maps (localização)</label><input name="local_maps_url" value="${v('local_maps_url')}" placeholder="Cole o link do Google Maps do local" inputmode="url" autocomplete="off" /></div></div>`,
       finalizar: `<div class="fr-mot-box">${rec ? `<strong>Motivo:</strong> ${esc(rec.motivo || '—')}<br><strong>Motorista:</strong> ${esc(rec.disponibilidade_motorista || '—')}<br><strong>Técnico:</strong> ${esc(rec.tecnico_nome || '—')}<br><strong>Agendada:</strong> ${rec.data_agendada ? esc(fmtDataBr(rec.data_agendada)) + (rec.hora_agendada ? ' ' + esc(rec.hora_agendada) : '') : '—'}` : 'Sem registro de etapas.'}</div><div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${v('resolucao')}</textarea></div><div class="fr-hint">Ao concluir, o rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.</div>`
@@ -910,11 +915,14 @@
     const close = () => backdrop.remove();
     backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    const trocaMotorista = tipo === 'disponibilidade' || tipo === 'motorista';
     (tipo === 'disponibilidade' ? backdrop.querySelector('textarea') : backdrop.querySelector('input,textarea'))?.focus();
+    if (tipo === 'motorista') backdrop.querySelector('[name="motorista_nome"]').select();
 
     const get = (n) => backdrop.querySelector(`[name="${n}"]`)?.value?.trim() || null;
     const NOMES = {
       disponibilidade: ['disponibilidade_motorista'],
+      motorista: [],
       tecnico: ['tecnico_nome', 'tecnico_contato'],
       agendamento: ['data_agendada', 'hora_agendada', 'local_agendado'],
       finalizar: ['resolucao']
@@ -927,7 +935,7 @@
     };
 
     // Troca de motorista: sugere nomes conhecidos e preenche o telefone do cadastro enquanto o campo não for editado à mão.
-    if (tipo === 'disponibilidade') {
+    if (trocaMotorista) {
       const nomeEl = backdrop.querySelector('[name="motorista_nome"]');
       const telEl = backdrop.querySelector('[name="motorista_contato"]');
       const lista = backdrop.querySelector('datalist');
@@ -937,7 +945,7 @@
       nomeEl.addEventListener('input', () => {
         const q = norm(nomeEl.value).trim();
         lista.innerHTML = q.length < 2 ? '' : pessoas.filter(n => norm(n).includes(q)).slice(0, 40).map(n => `<option value="${esc(n)}"></option>`).join('');
-        if (!telManual) telEl.value = getMotoristaInfo({}, { nome: nomeEl.value.trim() }).contato;
+        if (!telManual) telEl.value = getMotoristaInfo(row, { nome: nomeEl.value.trim() }).contato;
       });
     }
 
@@ -945,7 +953,7 @@
       const patch = Object.fromEntries(NOMES[tipo].map(n => [n, get(n)]));
       let ctx = {};
 
-      if (tipo === 'disponibilidade') {
+      if (trocaMotorista) {
         // Só guarda motorista/telefone quando diferem do cadastro, para a manutenção seguir o veículo nos demais casos.
         const nomeDigitado = get('motorista_nome');
         const nomeEfetivo = nomeDigitado || row.motorista_atual || '';
@@ -959,7 +967,10 @@
           contatoAlterado: soDigitos(contatoDigitado || contatoCadastro) !== soDigitos(mot.contato),
           disponibilidadeAlterada: Boolean(patch.disponibilidade_motorista) && patch.disponibilidade_motorista !== (rec?.disponibilidade_motorista || null)
         };
-        if (!patch.disponibilidade_motorista && !ctx.nomeAlterado && !ctx.contatoAlterado) { toast('Informe a disponibilidade do motorista ou altere o motorista.', true); return; }
+        if (!patch.disponibilidade_motorista && !ctx.nomeAlterado && !ctx.contatoAlterado) {
+          toast(tipo === 'motorista' ? 'Informe o novo motorista ou telefone.' : 'Informe a disponibilidade do motorista ou altere o motorista.', true);
+          return;
+        }
       } else {
         const [obrig, msg] = OBRIGATORIO[tipo];
         if (!patch[obrig]) { toast(msg, true); return; }
@@ -980,7 +991,7 @@
       try {
         if (tipo !== 'finalizar') {
           await gravarManutencao(row, patch, cfg.evento(patch, ctx));
-          toast(`${cfg.titulo}: salvo.`);
+          toast(tipo === 'motorista' ? 'Motorista atualizado.' : `${cfg.titulo}: salvo.`);
         } else {
           const fim = await gravarManutencao(row, {
             ...patch,
@@ -1143,7 +1154,7 @@
         <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
         <td title="${esc(m?.tecnico_nome || '—')}">${esc(m?.tecnico_nome || '—')}</td>
         <td>${m?.data_agendada ? esc(fmtDataBr(m.data_agendada)) + (m.hora_agendada ? ' ' + esc(m.hora_agendada) : '') + mapsLink(m.local_maps_url) : '—'}</td>
-        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act obs" data-mobs="${esc(row.placa)}" title="Observações" aria-label="Observações">${ICONS.observacoes}</button><button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
+        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act swap" data-macao="motorista" data-placa="${esc(row.placa)}" title="${esc('Alterar motorista' + (motorista ? ' — atual: ' + motorista : ''))}" aria-label="Alterar motorista">${ICONS.motorista}</button><button type="button" class="fr-act obs" data-mobs="${esc(row.placa)}" title="Observações" aria-label="Observações">${ICONS.observacoes}</button><button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
       </tr>`;
     }).join('');
 
