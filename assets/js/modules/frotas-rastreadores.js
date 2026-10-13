@@ -880,9 +880,11 @@
     [].concat(evento || []).filter(Boolean).forEach(e => linha.push({ evento: e, em: new Date().toISOString(), por: userName() }));
     const full = { ...patch, linha_tempo: linha };
     if (!patch.situacao) full.etapa = etapaDe({ ...rec, ...patch });
-    const { data, error } = await _opts.supabase.from(TABLE_MANUT).update(full).eq('id', rec.id).select().single();
+    // Sem .single(): a RLS barra o UPDATE sem erro (0 linhas) e o PostgREST responderia só "Cannot coerce the result...".
+    const { data, error } = await _opts.supabase.from(TABLE_MANUT).update(full).eq('id', rec.id).select();
     if (error) throw error;
-    return data;
+    if (!data?.length) throw new Error('Não foi possível gravar: seu usuário não tem permissão de edição no módulo Rastreadores (ou a manutenção já foi encerrada). Peça a um administrador para liberar a edição.');
+    return data[0];
   }
 
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
