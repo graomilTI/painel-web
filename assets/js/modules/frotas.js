@@ -12,6 +12,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   const BFLEET_FORA_HORARIO_FUNCTION = window.FROTAS_CONFIG?.BFLEET_FORA_HORARIO_FUNCTION || 'sync-bfleet-fora-horario';
   const BFLEET_FORA_HORARIO_REPORT_ID = '85075';
   const FORA_HORARIO_DOSSIE_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_DOSSIE_FUNCTION || 'frotas-fora-horario-dossie';
+  const FORA_HORARIO_ROTA_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_ROTA_FUNCTION || 'frotas-fora-horario-rota';
+  const FORA_HORARIO_LISTA_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa,tem_rota_caixa,sem_ocorrencia,dossie_id,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em';
   const FORA_HORARIO_DOSSIE_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em';
 
   const ICO_REFRESH = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -45,7 +47,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     foraHorarioDossieDisponivel: true,
     foraHorarioRecalculando: false,
     foraHorarioDossieAberto: null,
-    foraHorarioDossieChave: ''
+    foraHorarioDossieChave: '',
+    foraHorarioPedido: 0,
+    foraHorarioSync: []
   };
 
   let currentRenderOpts = {};
@@ -1247,16 +1251,18 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       return;
     }
 
+    // Se a data mudar de novo enquanto esta consulta roda, só a última resposta vale.
+    const pedido = ++state.foraHorarioPedido;
     try {
       state.foraHorarioLoaded = false;
       renderForaHorarioList(root);
       const period = periodOverride || readForaHorarioReportPeriod(root);
 
-      // O PostgREST devolve no máximo 1000 linhas por chamada: pagina até acabar (teto de 5 mil por tabela).
-      const fetchAll = async (buildQuery) => {
+      // O PostgREST devolve no máximo 1000 linhas por chamada: pagina até acabar (teto de 5 mil).
+      const paginar = async (montar) => {
         const rows = [];
         for (let from = 0; from < 5000; from += 1000) {
-          const { data, error } = await buildQuery().range(from, from + 999);
+          const { data, error } = await montar().range(from, from + 999);
           if (error) throw error;
           const page = Array.isArray(data) ? data : [];
           rows.push(...page);
@@ -1265,58 +1271,59 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         return rows;
       };
 
-      const ocorrencias = await fetchAll(() => {
-        let query = supabase
-          .from('frotas_fora_horario_ocorrencias')
-          .select('id,data_evento,placa,motorista,hora_inicio,hora_fim,km_00_05,valor_km,valor_caixa,endereco_inicio,endereco_fim,mapa_url,status_calculo,fonte_calculo,calculo_detalhes,status_notificacao,mensagem_gerada,justificativa,status_caixa,gerado_em,gerado_por_nome,justificado_em,justificado_por_nome,caixa_solicitado_em,caixa_solicitado_por_nome,created_at,updated_at');
-        if (period.start) query = query.gte('data_evento', period.start);
-        if (period.end) query = query.lte('data_evento', period.end);
-        return query
-          .order('data_evento', { ascending: false })
-          .order('hora_inicio', { ascending: true })
-          .order('id', { ascending: true });
-      });
-
-      // Dossiê (viagens GPS × informativos × produção × celular). Se a tabela ainda não existir, a lista segue como antes.
-      let dossies = [];
+      // O dossiê é calculado todo dia de madrugada e fica no banco: aqui só se lê (view já junta ocorrência + dossiê).
       state.foraHorarioDossieDisponivel = true;
-      try {
-        dossies = await fetchAll(() => {
-          let query = supabase.from('frotas_fora_horario_dossie').select(FORA_HORARIO_DOSSIE_COLUNAS);
+      const lerLista = async () => {
+        try {
+          return await paginar(() => {
+            let query = supabase.from('frotas_fora_horario_lista').select(FORA_HORARIO_LISTA_COLUNAS);
+            if (period.start) query = query.gte('data_evento', period.start);
+            if (period.end) query = query.lte('data_evento', period.end);
+            return query.order('data_evento', { ascending: false }).order('placa', { ascending: true });
+          });
+        } catch (listaErr) {
+          // Ambiente sem a view: cai para o relatório bruto, sem dossiê.
+          console.warn('[FROTAS] Lista do dossiê indisponível:', listaErr);
+          state.foraHorarioDossieDisponivel = false;
+          return paginar(() => {
+            let query = supabase.from('frotas_fora_horario_ocorrencias')
+              .select('id,data_evento,placa,motorista,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa');
+            if (period.start) query = query.gte('data_evento', period.start);
+            if (period.end) query = query.lte('data_evento', period.end);
+            return query.order('data_evento', { ascending: false }).order('placa', { ascending: true });
+          });
+        }
+      };
+      const lerControle = async () => {
+        try {
+          let query = supabase.from('frotas_fora_horario_sync_dia').select('data_evento,status,dossie_em,atualizado_em');
           if (period.start) query = query.gte('data_evento', period.start);
           if (period.end) query = query.lte('data_evento', period.end);
-          return query.order('data_evento', { ascending: false }).order('placa', { ascending: true });
-        });
-      } catch (dossieErr) {
-        state.foraHorarioDossieDisponivel = false;
-        console.warn('[FROTAS] Dossiê de fora do horário indisponível:', dossieErr);
-      }
+          const { data, error } = await query.order('data_evento', { ascending: false }).limit(62);
+          if (error) throw error;
+          return Array.isArray(data) ? data : [];
+        } catch (controleErr) {
+          console.warn('[FROTAS] Andamento da sincronização indisponível:', controleErr);
+          return [];
+        }
+      };
 
-      const chave = (row) => `${row.data_evento}|${onlyPlate(row.placa)}`;
-      const dossiePorChave = new Map(dossies.map((item) => [chave(item), item]));
-      const usadas = new Set();
-      const linhas = ocorrencias.map((ocorrencia) => {
-        const dossie = dossiePorChave.get(chave(ocorrencia)) || null;
-        if (dossie) usadas.add(chave(ocorrencia));
-        return { ...ocorrencia, dossie };
-      });
-      // Dia/placa com dossiê mas sem ocorrência consolidada (sync da BFleet incompleto): aparece sem as ações de notificação/Caixa.
-      dossies.forEach((dossie) => {
-        if (usadas.has(chave(dossie))) return;
-        linhas.push({
-          id: null, semOcorrencia: true, data_evento: dossie.data_evento, placa: dossie.placa, motorista: dossie.motorista,
-          hora_inicio: null, hora_fim: null, km_00_05: 0, valor_km: 4, valor_caixa: 0, status_calculo: 'SEM_HISTORICO',
-          status_notificacao: 'PENDENTE', status_caixa: 'NAO_SOLICITADO', dossie
-        });
-      });
-      state.foraHorario = linhas;
+      const [linhas, controle] = await Promise.all([lerLista(), lerControle()]);
+      if (pedido !== state.foraHorarioPedido) return;
+      state.foraHorarioSync = controle;
+      state.foraHorario = linhas.map((linha) => ({
+        ...linha,
+        semOcorrencia: !!linha.sem_ocorrencia,
+        dossie: linha.dossie_id ? linha : null
+      }));
     } catch (err) {
+      if (pedido !== state.foraHorarioPedido) return;
       console.warn('[FROTAS] Não foi possível carregar ocorrências de fora do horário:', err);
       state.foraHorario = [];
-    } finally {
-      state.foraHorarioLoaded = true;
-      renderForaHorarioList(root);
+      state.foraHorarioSync = [];
     }
+    state.foraHorarioLoaded = true;
+    renderForaHorarioList(root);
   }
 
   function formatKmForaHorario(value) {
@@ -1599,6 +1606,277 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       </div>`;
   }
 
+  function fhDiasPendentes() {
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    return (state.foraHorarioSync || [])
+      .filter((c) => c.status !== 'OK' && c.data_evento < hoje)
+      .map((c) => formatDateBR(c.data_evento).slice(0, 5))
+      .reverse();
+  }
+
+  // "Atualizado em ..." vem do controle diário gravado no banco.
+  function renderFrescorForaHorario(root) {
+    const el = root.querySelector('[data-fh-fresco]');
+    if (!el) return;
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const { end } = readForaHorarioReportPeriod(root);
+    const partes = [];
+    const atualizacoes = (state.foraHorarioSync || []).map((c) => c.dossie_em).filter(Boolean).sort();
+    if (atualizacoes.length) {
+      const quando = new Date(atualizacoes[atualizacoes.length - 1]).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      partes.push(`Atualizado em ${quando.replace(',', ' às')}`);
+    }
+    const pendentes = fhDiasPendentes();
+    if (pendentes.length) partes.push(`sincronizando automaticamente: ${pendentes.join(', ')}`);
+    if (end && end >= hoje) partes.push('o dia de hoje só fecha depois da meia-noite');
+    el.textContent = partes.join(' · ');
+    el.hidden = !partes.length;
+  }
+
+  // ── Consultar rota: trajeto GPS do dia no mapa ──────────────────────────────
+  // Pontos da RedGPS (edge function frotas-fora-horario-rota): [segundos desde 00:00, lat, lng, km/h].
+
+  let fhMapa = null;
+  let fhMapaMarcador = null;
+
+  function fhHoraSeg(segundos) {
+    const total = Math.max(0, Math.round(Number(segundos) || 0));
+    const p2 = (n) => String(n).padStart(2, '0');
+    return `${p2(Math.floor(total / 3600) % 24)}:${p2(Math.floor((total % 3600) / 60))}:${p2(total % 60)}`;
+  }
+
+  function fhDistanciaKm(la1, lo1, la2, lo2) {
+    const rad = (v) => (v * Math.PI) / 180;
+    const a = Math.sin(rad(la2 - la1) / 2) ** 2 + Math.cos(rad(la1)) * Math.cos(rad(la2)) * Math.sin(rad(lo2 - lo1) / 2) ** 2;
+    return 2 * 6371 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+  }
+
+  async function fhGarantirLeaflet() {
+    if (window.L) return true;
+    try {
+      if (!document.getElementById('fh-leaflet-css')) {
+        await new Promise((resolve) => {
+          const link = document.createElement('link');
+          link.id = 'fh-leaflet-css'; link.rel = 'stylesheet'; link.href = './assets/vendor/leaflet/leaflet.css';
+          link.onload = resolve; link.onerror = resolve;
+          document.head.appendChild(link);
+        });
+      }
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = './assets/vendor/leaflet/leaflet.js'; script.async = true;
+        script.onload = resolve; script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      return Boolean(window.L);
+    } catch (err) {
+      console.warn('[FROTAS] Leaflet indisponível:', err);
+      return false;
+    }
+  }
+
+  // Locais para conferir na rota: O.S. escalada na Programação, endereço cadastrado do colaborador e onde o veículo dormiu.
+  function fhPontosReferencia(dos) {
+    const det = dos.detalhes || {};
+    const finito = (n) => n !== null && n !== undefined && n !== '' && Number.isFinite(Number(n));
+    const lista = [];
+    const vistas = new Set();
+    (det.programacao?.os || []).forEach((o) => {
+      if (!finito(o.la) || !finito(o.lo) || vistas.has(o.os)) return;
+      vistas.add(o.os);
+      lista.push({
+        tipo: 'os', sigla: 'O.S.', lat: Number(o.la), lng: Number(o.lo),
+        titulo: `O.S. ${o.os} · local de embarque programado`,
+        detalhe: [o.local || o.cliente, o.papel === 'CARONA' ? `de ${fhTitulo(o.quem)} (carona)` : ''].filter(Boolean).join(' · ')
+      });
+    });
+    (det.enderecos || []).forEach((e) => {
+      if (!finito(e.lat) || !finito(e.lng)) return;
+      lista.push({
+        tipo: 'casa', sigla: 'C', lat: Number(e.lat), lng: Number(e.lng),
+        titulo: `Endereço cadastrado de ${fhTitulo(e.quem)}${e.papel === 'CARONA' ? ' (carona)' : ''}`,
+        detalhe: e.endereco || 'endereço não informado no cadastro'
+      });
+    });
+    const cm = det.casa_manha;
+    if (cm && finito(cm.lat) && finito(cm.lng)) {
+      lista.push({ tipo: 'pernoite', sigla: 'P', lat: Number(cm.lat), lng: Number(cm.lng), titulo: 'Onde o veículo dormiu', detalhe: cm.endereco || '' });
+    }
+    return lista;
+  }
+
+  function fhMaisProximo(pontos, lat, lng) {
+    let melhor = null;
+    pontos.forEach((p) => {
+      const km = fhDistanciaKm(p[1], p[2], lat, lng);
+      if (!melhor || km < melhor.km) melhor = { km, sec: p[0] };
+    });
+    return melhor;
+  }
+
+  function fhMapaCorpoHtml(dos, rota, referencias) {
+    const pontos = rota.pontos || [];
+    const origem = rota.fonte === 'cache' ? 'consulta guardada' : 'consultada agora na RedGPS';
+    if (!pontos.length) {
+      return '<div class="speed-import-empty">A RedGPS não devolveu pontos de GPS para este veículo neste dia.</div>';
+    }
+    const refs = referencias.map((r, i) => {
+      const prox = fhMaisProximo(pontos, r.lat, r.lng);
+      const txt = !prox ? '' : (prox.km <= 2
+        ? `A rota passou a ${fhKm(prox.km)} km, às ${fhHm(`T${fhHoraSeg(prox.sec)}`)}.`
+        : `A rota ficou a no mínimo ${fhKm(prox.km)} km deste ponto.`);
+      return `<div class="fh-ref">
+        <span class="fh-pin fh-pin-${r.tipo}">${escapeHtml(r.sigla)}</span>
+        <div><b>${escapeHtml(r.titulo)}</b><small>${escapeHtml(r.detalhe || '')}</small><small class="fh-ref-prox">${escapeHtml(txt)}</small></div>
+        <button type="button" class="fora-horario-link-btn" data-rota-mapa-ir="${i}">Ver no mapa</button>
+      </div>`;
+    }).join('');
+    return `
+      <p class="fh-m-sub">Trajeto do veículo em ${escapeHtml(formatDateBR(dos.data_evento))} (${pontos.length} pontos, ${escapeHtml(origem)}). Azul: dentro do horário permitido · vermelho: fora do horário · etiquetas: horário no trajeto · círculo verde: saída · círculo branco: chegada.</p>
+      <div class="fh-mapa" data-rota-mapa-el></div>
+      <div class="fh-mapa-slider">
+        <input type="range" min="0" max="${pontos.length - 1}" value="0" step="1" data-rota-mapa-slider aria-label="Horário no trajeto">
+        <span data-rota-mapa-slider-txt></span>
+      </div>
+      <h4 class="fh-h4">Pontos de referência</h4>
+      ${refs ? `<div class="fh-refs">${refs}</div>` : '<p class="speed-hint">Sem O.S. programada nem endereço cadastrado com coordenada para este dia.</p>'}`;
+  }
+
+  function fhRenderMapa(root, dos, rota, referencias) {
+    const L = window.L;
+    const el = root.querySelector('[data-rota-mapa-el]');
+    const pontos = rota.pontos || [];
+    if (!L || !el || !pontos.length) return;
+    if (fhMapa) { fhMapa.remove(); fhMapa = null; }
+    fhMapa = L.map(el, { zoomControl: true, scrollWheelZoom: true, center: [pontos[0][1], pontos[0][2]], zoom: 12, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false });
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri'
+    }).addTo(fhMapa);
+
+    // Trajeto: trechos azuis dentro do horário permitido e vermelhos fora dele.
+    const jIniMin = fhMinutosDoDia(dos.janela_inicio, dos.data_evento);
+    const jFimMin = fhMinutosDoDia(dos.janela_fim, dos.data_evento);
+    const fora = (seg) => jIniMin === null || jFimMin === null || seg < jIniMin * 60 || seg > jFimMin * 60;
+    let corrente = [];
+    let correnteFora = null;
+    const fecharTrecho = () => {
+      if (corrente.length > 1) L.polyline(corrente, { color: correnteFora ? '#f87171' : '#60a5fa', weight: 4, opacity: 0.9 }).addTo(fhMapa);
+    };
+    pontos.forEach((p) => {
+      const f = fora(p[0]);
+      if (correnteFora === null) correnteFora = f;
+      if (f !== correnteFora) {
+        corrente.push([p[1], p[2]]);
+        fecharTrecho();
+        corrente = [[p[1], p[2]]];
+        correnteFora = f;
+      } else {
+        corrente.push([p[1], p[2]]);
+      }
+    });
+    fecharTrecho();
+
+    // Etiqueta de hora na 1ª posição de cada hora (sem empilhar etiquetas no mesmo lugar).
+    let ultima = null;
+    for (let h = 0; h < 24; h += 1) {
+      const p = pontos.find((item) => item[0] >= h * 3600 && item[0] < (h + 1) * 3600);
+      if (!p) continue;
+      if (ultima && fhDistanciaKm(ultima[0], ultima[1], p[1], p[2]) < 0.3) continue;
+      ultima = [p[1], p[2]];
+      L.marker([p[1], p[2]], {
+        interactive: false,
+        icon: L.divIcon({ className: '', html: `<div class="fh-hora">${String(h).padStart(2, '0')}h</div>`, iconSize: [30, 16], iconAnchor: [15, 8] })
+      }).addTo(fhMapa);
+    }
+
+    // Saída e chegada de cada viagem, com o horário.
+    ((dos.detalhes || {}).viagens || []).forEach((v) => {
+      if (Number(v.km) < 0.1) return;
+      const ok = (n) => n !== null && n !== undefined && Number.isFinite(Number(n));
+      if (ok(v.la1) && ok(v.lo1)) {
+        L.circleMarker([Number(v.la1), Number(v.lo1)], { radius: 5, color: '#fff', weight: 1.5, fillColor: '#22c55e', fillOpacity: 1 })
+          .bindTooltip(`${fhHm(v.ini)} · saída · ${escapeHtml(v.de || '')}`).addTo(fhMapa);
+      }
+      if (ok(v.la2) && ok(v.lo2)) {
+        L.circleMarker([Number(v.la2), Number(v.lo2)], { radius: 5, color: '#475569', weight: 2, fillColor: '#f8fafc', fillOpacity: 1 })
+          .bindTooltip(`${fhHm(v.fim)} · chegada · ${escapeHtml(v.para || '')}`).addTo(fhMapa);
+      }
+    });
+
+    // Pontos de referência (O.S. programada, endereço cadastrado, pernoite).
+    const marcadoresRef = referencias.map((r) => L.marker([r.lat, r.lng], {
+      icon: L.divIcon({ className: '', html: `<div class="fh-pin fh-pin-${r.tipo}">${escapeHtml(r.sigla)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
+      zIndexOffset: 500
+    }).bindTooltip(`<b>${escapeHtml(r.titulo)}</b>${r.detalhe ? `<br>${escapeHtml(r.detalhe)}` : ''}`).addTo(fhMapa));
+
+    const limites = L.latLngBounds(pontos.map((p) => [p[1], p[2]]));
+    // Referências muito longe da rota (endereço cadastrado desatualizado) não esticam o enquadramento.
+    referencias.forEach((r) => { if (limites.pad(0.5).contains([r.lat, r.lng])) limites.extend([r.lat, r.lng]); });
+    fhMapa.invalidateSize();
+    fhMapa.fitBounds(limites, { padding: [30, 30], maxZoom: 16, animate: false });
+    const mapaAtual = fhMapa;
+    window.setTimeout(() => {
+      if (fhMapa !== mapaAtual) return;
+      mapaAtual.invalidateSize();
+      mapaAtual.fitBounds(limites, { padding: [30, 30], maxZoom: 16, animate: false });
+    }, 150);
+
+    // Deslizador de horário.
+    fhMapaMarcador = L.circleMarker([pontos[0][1], pontos[0][2]], { radius: 9, color: '#fff', weight: 2, fillColor: '#fbbf24', fillOpacity: 1 }).addTo(fhMapa);
+    const slider = root.querySelector('[data-rota-mapa-slider]');
+    const texto = root.querySelector('[data-rota-mapa-slider-txt]');
+    const mover = () => {
+      const p = pontos[Number(slider.value)] || pontos[0];
+      const ll = [p[1], p[2]];
+      fhMapaMarcador.setLatLng(ll);
+      if (!fhMapa.getBounds().contains(ll)) fhMapa.panTo(ll, { animate: false });
+      texto.textContent = `${fhHoraSeg(p[0])} · ${Number(p[3]) || 0} km/h`;
+    };
+    slider?.addEventListener('input', mover);
+    mover();
+
+    root.querySelectorAll('[data-rota-mapa-ir]').forEach((btn) => btn.addEventListener('click', () => {
+      const r = referencias[Number(btn.dataset.rotaMapaIr)];
+      if (!r) return;
+      fhMapa.setView([r.lat, r.lng], 15, { animate: false });
+      const m = marcadoresRef[Number(btn.dataset.rotaMapaIr)];
+      if (m) m.openTooltip();
+    }));
+  }
+
+  async function abrirRotaMapa(root, opts) {
+    const dos = state.foraHorarioDossieAberto;
+    const modal = root.querySelector('[data-rota-mapa-modal]');
+    if (!dos || !modal) return;
+    const corpo = modal.querySelector('[data-rota-mapa-corpo]');
+    modal.querySelector('[data-rota-mapa-titulo]').textContent = `Rota realizada · ${dos.placa} · ${formatDateBR(dos.data_evento)}`;
+    corpo.innerHTML = '<div class="speed-import-empty">Consultando a rota do veículo...</div>';
+    modal.hidden = false;
+    modal.querySelector('.speed-modal')?.focus({ preventScroll: true });
+    try {
+      const rota = await callEdgeFunction(opts, FORA_HORARIO_ROTA_FUNCTION, { placa: dos.placa, data: dos.data_evento });
+      if (modal.hidden) return;
+      const referencias = fhPontosReferencia(dos);
+      corpo.innerHTML = fhMapaCorpoHtml(dos, rota, referencias);
+      if (!(rota.pontos || []).length) return;
+      if (!(await fhGarantirLeaflet())) {
+        corpo.innerHTML = '<div class="speed-import-empty">Não foi possível carregar o mapa neste navegador.</div>';
+        return;
+      }
+      fhRenderMapa(root, dos, rota, referencias);
+    } catch (err) {
+      console.error('[FROTAS] Rota do dia:', err);
+      corpo.innerHTML = `<div class="speed-import-empty">${escapeHtml(err.message || 'Não foi possível consultar a rota.')}<br><button type="button" class="fora-horario-link-btn" data-rota-mapa-tentar>Tentar de novo</button></div>`;
+    }
+  }
+
+  function fecharRotaMapa(root) {
+    const modal = root.querySelector('[data-rota-mapa-modal]');
+    if (modal) modal.hidden = true;
+    if (fhMapa) { fhMapa.remove(); fhMapa = null; }
+    fhMapaMarcador = null;
+  }
+
   function atualizarFiltrosForaHorario(root, contagem) {
     root.querySelectorAll('[data-fh-filter]').forEach((btn) => {
       const chave = btn.dataset.fhFilter;
@@ -1652,6 +1930,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const contagem = { FORA_HORARIO: 0, ATENCAO: 0, DENTRO_HORARIO: 0, SEM_DOSSIE: 0, TODOS: buscadas.length };
     buscadas.forEach((row) => { contagem[row.dossie?.veredito || 'SEM_DOSSIE'] += 1; });
     atualizarFiltrosForaHorario(root, contagem);
+    renderFrescorForaHorario(root);
 
     const filtro = state.foraHorarioFiltro;
     const rows = buscadas.filter((row) => filtro === 'TODOS' || (row.dossie?.veredito || 'SEM_DOSSIE') === filtro);
@@ -1676,9 +1955,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
 
     if (!rows.length) {
+      const pendentes = fhDiasPendentes();
       const vazio = (state.foraHorario || []).length
         ? 'Nenhuma ocorrência neste filtro para o período. Troque o filtro acima para ver as demais.'
-        : 'Nenhuma ocorrência encontrada. Sincronize o período para consultar a RedGPS/BFleet.';
+        : (pendentes.length
+          ? `Os dados de ${pendentes.join(', ')} ainda estão sendo sincronizados automaticamente (a verificação roda a cada 20 min, de madrugada e de manhã). Volte em alguns minutos.`
+          : 'Nenhuma ocorrência encontrada para o período. Use "Sincronizar período" para consultar a RedGPS/BFleet.');
       lista.innerHTML = `<div class="speed-import-empty">${vazio}</div>`;
       return;
     }
@@ -1938,9 +2220,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const casaNoite = det.casa_noite || {};
     const linkCasa = fhLinkPonto(casaManha.lat, casaManha.lng);
     const pernoite = `<p class="speed-hint">Considerado como "casa" o lugar onde o veículo dormiu: ${escapeHtml(casaManha.endereco || '—')}${linkCasa ? ` · <a href="${escapeHtml(linkCasa)}" target="_blank" rel="noopener noreferrer">ver no mapa</a>` : ''}${casaNoite.endereco && casaNoite.endereco !== casaManha.endereco ? `<br>O veículo terminou o dia em: ${escapeHtml(casaNoite.endereco)}` : ''}</p>`;
-    const temPontosRota = !!(row?.calculo_detalhes?.history?.rota?.length || row?.calculo_detalhes?.fallback_relatorio?.trechos?.length);
+    const temPontosRota = !!row?.tem_rota_caixa;
     const rotaCaixa = row?.id && temPontosRota
-      ? `<p class="speed-hint">Rota usada na quilometragem do Caixa (00h às 04h): <button type="button" class="fora-horario-link-btn" data-ver-rota data-id="${escapeHtml(row.id)}">ver rota</button></p>`
+      ? `<p class="speed-hint">Pontos de GPS usados na quilometragem do Caixa (00h às 04h): <button type="button" class="fora-horario-link-btn" data-ver-rota data-id="${escapeHtml(row.id)}">ver pontos</button></p>`
       : '';
 
     return `
@@ -1983,7 +2265,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const copiarBtn = modal.querySelector('[data-dossie-copiar]');
     if (tituloEl) tituloEl.textContent = `${fhTitulo(row.motorista) || 'Colaborador não identificado'} · ${onlyPlate(row.placa)}`;
     if (corpoEl) corpoEl.innerHTML = '<div class="speed-import-empty">Carregando detalhes...</div>';
+    const rotaBtn = modal.querySelector('[data-dossie-rota]');
     if (copiarBtn) copiarBtn.hidden = true;
+    if (rotaBtn) rotaBtn.hidden = true;
     state.foraHorarioDossieAberto = null;
     state.foraHorarioDossieChave = chave;
     atualizarRodapeDossie(root);
@@ -2003,6 +2287,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       state.foraHorarioDossieAberto = data;
       if (corpoEl) corpoEl.innerHTML = renderDossieHtml(data, row);
       if (copiarBtn) copiarBtn.hidden = false;
+      if (rotaBtn) rotaBtn.hidden = false;
     } catch (err) {
       console.error('[FROTAS] Dossiê fora do horário:', err);
       if (corpoEl) corpoEl.innerHTML = `<div class="speed-import-empty">${escapeHtml(err.message || 'Não foi possível carregar o dossiê.')}</div>`;
@@ -2014,7 +2299,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return Number.isFinite(n) ? n.toFixed(6) : '-';
   }
 
-  function openRotaModal(root, rowId) {
+  async function openRotaModal(root, rowId, opts = currentRenderOpts) {
     const row = (state.foraHorario || []).find((item) => String(item.id) === String(rowId));
     if (!row) return toast('Ocorrência não localizada.', 'error');
 
@@ -2028,15 +2313,30 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     const placa = onlyPlate(row.placa) || '-';
     const data = formatDateBR(row.data_evento) || '-';
-    if (titleEl) titleEl.textContent = `Rota · ${placa} · ${data}`;
+    if (titleEl) titleEl.textContent = `Rota 00h–04h do Caixa · ${placa} · ${data}`;
     if (kmEl) kmEl.textContent = `${formatKmForaHorario(Number(row.km_00_05 || 0))} km (00h–04h)`;
-    if (linkEl) {
-      if (row.mapa_url) { linkEl.href = row.mapa_url; linkEl.hidden = false; }
-      else linkEl.hidden = true;
-    }
+    if (linkEl) linkEl.hidden = true;
+    if (hintEl) hintEl.textContent = '';
+    if (bodyEl) bodyEl.innerHTML = '<tr><td colspan="5" class="speed-import-empty">Carregando rota...</td></tr>';
+    modal.hidden = false;
 
-    const pontos = row.calculo_detalhes?.history?.rota || [];
-    const trechos = row.calculo_detalhes?.fallback_relatorio?.trechos || [];
+    // O detalhe do cálculo é pesado: fica fora da lista e só é lido aqui.
+    let detalhes = null;
+    let mapaUrl = '';
+    try {
+      const supabase = resolveSupabase(opts);
+      const { data: ocorrencia, error } = await supabase
+        .from('frotas_fora_horario_ocorrencias').select('calculo_detalhes,mapa_url').eq('id', rowId).maybeSingle();
+      if (error) throw error;
+      detalhes = ocorrencia?.calculo_detalhes || null;
+      mapaUrl = ocorrencia?.mapa_url || '';
+    } catch (err) {
+      console.warn('[FROTAS] Rota do Caixa:', err);
+    }
+    if (linkEl && mapaUrl) { linkEl.href = mapaUrl; linkEl.hidden = false; }
+
+    const pontos = detalhes?.history?.rota || [];
+    const trechos = detalhes?.fallback_relatorio?.trechos || [];
 
     if (bodyEl) {
       if (pontos.length) {
@@ -2059,8 +2359,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         bodyEl.innerHTML = '<tr><td colspan="5" class="speed-import-empty">Sem dados de rota.</td></tr>';
       }
     }
-
-    modal.hidden = false;
   }
 
   async function markSelectedImportedGroupAsGenerated(root, opts, message) {
@@ -3308,6 +3606,21 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-m-rodape{position:sticky;bottom:-20px;margin:18px -20px -20px;padding:12px 20px;background:#0d0d18;border-top:1px solid rgba(148,163,184,.16);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
                 .fh-m-rodape-info{display:flex;flex-direction:column;gap:2px}
                 .fh-m-rodape-info:empty{display:none}
+                .fh-fresco{margin:0;color:#6b7280;font-size:12px}
+                .fh-fresco[hidden]{display:none}
+                .speed-modal.fh-modal-mapa{max-width:1100px}
+                .fh-mapa{height:480px;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,.2);isolation:isolate;background:#0b1220}
+                .fh-mapa-slider{display:flex;align-items:center;gap:12px;margin-top:10px}
+                .fh-mapa-slider input{flex:1;accent-color:#fbbf24}
+                .fh-mapa-slider span{min-width:130px;color:#fde68a;font-weight:900;font-size:13px;text-align:right}
+                .fh-refs{display:grid;gap:8px}
+                .fh-ref{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center;border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 12px;background:rgba(15,23,42,.5)}
+                .fh-ref b{display:block;color:#f8fafc;font-size:13px}
+                .fh-ref small{display:block;color:#94a3b8;font-size:12px;line-height:1.4}
+                .fh-ref small.fh-ref-prox{color:#bbf7d0}
+                .fh-pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+                .fh-pin-os{background:#f59e0b}.fh-pin-casa{background:#3b82f6}.fh-pin-pernoite{background:#64748b}
+                .fh-hora{background:rgba(2,6,23,.88);color:#e2e8f0;border:1px solid rgba(148,163,184,.45);border-radius:6px;padding:0 5px;font-size:10px;font-weight:800;line-height:15px;text-align:center;white-space:nowrap}
                 @media(max-width:900px){.fh-linha{grid-template-columns:10px 1fr auto}.fh-l-resumo{grid-column:2/-1;grid-row:2}.fh-l-fim{grid-column:2;grid-row:3}.fh-linha .fh-btn-dossie{grid-column:3;grid-row:1}.fh-l-fim:empty{display:none}}
                 @media(max-width:760px){.fh-filtros{display:grid}.fh-busca{width:100%}.fh-passo{grid-template-columns:1fr;gap:4px}.fh-m-manchete{font-size:20px}}
                 @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}
@@ -3331,6 +3644,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                   <div class="speed-search-field fh-busca">${ICO_SEARCH}<input class="speed-input" type="text" placeholder="Buscar colaborador ou placa" data-fora-horario-search></div>
                 </div>
                 <p class="fh-alerta" data-fh-alerta hidden></p>
+                <p class="fh-fresco" data-fh-fresco hidden></p>
                 <details class="fh-ajuda">
                   <summary>Como funciona</summary>
                   <p>Mostra os veículos usados fora do horário de trabalho de cada colaborador. O horário de trabalho vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga. Clique em "Ver detalhes" para ver o dia completo e gerar a notificação.</p>
@@ -3401,12 +3715,22 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             <div class="speed-modal-head">
               <div><h3 data-dossie-title>Dossiê</h3></div>
               <div style="display:flex;gap:8px;align-items:center">
+                <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-dossie-rota hidden>Consultar rota</button>
                 <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-dossie-copiar hidden>${ICO_COPY} Copiar resumo</button>
                 <button class="speed-modal-close" type="button" data-dossie-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
               </div>
             </div>
             <div data-dossie-body></div>
             <div class="fh-m-rodape" data-dossie-rodape></div>
+          </div>
+        </div>
+        <div class="speed-modal-overlay" data-rota-mapa-modal hidden>
+          <div class="speed-modal fh-modal fh-modal-mapa" role="dialog" aria-modal="true" aria-label="Rota realizada" tabindex="-1" style="outline:none">
+            <div class="speed-modal-head">
+              <div><h3 data-rota-mapa-titulo>Rota realizada</h3></div>
+              <button class="speed-modal-close" type="button" data-rota-mapa-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
+            </div>
+            <div data-rota-mapa-corpo></div>
           </div>
         </div>
       </section>`;
@@ -3459,9 +3783,32 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       renderForaHorarioList(container);
     });
 
+    // Trocar a data consulta direto o banco (sem precisar clicar em nada).
+    let temporizadorDatas = null;
+    container.querySelectorAll('[data-fora-horario-report-start], [data-fora-horario-report-end]').forEach((input) => input.addEventListener('change', () => {
+      const inicio = container.querySelector('[data-fora-horario-report-start]');
+      const fim = container.querySelector('[data-fora-horario-report-end]');
+      if (inicio?.value && fim?.value && inicio.value > fim.value) {
+        if (input === inicio) fim.value = inicio.value; else inicio.value = fim.value;
+      }
+      window.clearTimeout(temporizadorDatas);
+      temporizadorDatas = window.setTimeout(() => {
+        const { start, end } = readForaHorarioReportPeriod(container);
+        if (start && end && start <= end) fetchForaHorario(container, opts);
+      }, 250);
+    }));
+
     const dossieModal = container.querySelector('[data-dossie-modal]');
     const closeDossieModal = () => { if (dossieModal) dossieModal.hidden = true; };
     container.querySelector('[data-dossie-modal-close]')?.addEventListener('click', closeDossieModal);
+    container.querySelector('[data-dossie-rota]')?.addEventListener('click', () => abrirRotaMapa(container, opts));
+    const rotaMapaModal = container.querySelector('[data-rota-mapa-modal]');
+    container.querySelector('[data-rota-mapa-close]')?.addEventListener('click', () => fecharRotaMapa(container));
+    rotaMapaModal?.addEventListener('click', (ev) => {
+      if (ev.target === rotaMapaModal) { fecharRotaMapa(container); return; }
+      if (ev.target.closest('[data-rota-mapa-tentar]')) abrirRotaMapa(container, opts);
+    });
+    rotaMapaModal?.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') fecharRotaMapa(container); });
     dossieModal?.addEventListener('click', (ev) => {
       const alternar = ev.target.closest('[data-fh-alternar-viagens]');
       if (!alternar) return;
