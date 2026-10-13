@@ -253,6 +253,7 @@ declare
   prog_map jsonb; prog jsonb; pessoas jsonb; pessoa jsonb; os_item jsonb; prog_os jsonb; caronas_json jsonb;
   cond_esc text; cond_confere boolean; vistos text[]; chaves text[]; v_quem text; v_papel text;
   enderecos jsonb; vistos_end text[]; end_la float8; end_lo float8; end_txt text; end_achou boolean; v_chave_end text;
+  eq_map jsonb; pcol_map jsonb; pcol jsonb; eq_chave text; v_logisticas text[]; logistica_json jsonb;
 begin
   -- Informativos do colaborador (Mapa de Embarque): quem atualizou + quando + O.S./local.
   select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into inf_map
@@ -369,6 +370,33 @@ begin
     group by s.placa_p
   ) g;
 
+  -- O.S. escalada (atendimento) de cada colaborador no dia, mesmo quem não tem linha de deslocamento.
+  select coalesce(jsonb_object_agg(g.nome, g.oss), '{}'::jsonb) into eq_map
+  from (
+    select upper(unaccent(trim(e.nome_colaborador))) as nome,
+           jsonb_agg(distinct jsonb_build_object('os', o.numero_os, 'cliente', o.cliente, 'local', coalesce(pe.nome_local, o.ponto1_nome),
+                'la', coalesce(pe.latitude, o.ponto1_latitude)::float8, 'lo', coalesce(pe.longitude, o.ponto1_longitude)::float8)) as oss
+    from public.programacao_equipe e
+    join public.programacao_dia pd on pd.id = e.programacao_id
+    join public.operacional_os o on o.id = e.os_id
+    left join public.operacional_pontos_embarque pe on pe.id = o.ponto_embarque_id
+    where pd.data_referencia = p_data and e.confirmado = true and coalesce(trim(e.nome_colaborador), '') <> ''
+    group by 1
+  ) g;
+
+  -- Colaboradores ligados a cada placa na Programação (ex.: LOGISTICA = condutor da carona frota), com ou sem linha de deslocamento.
+  select coalesce(jsonb_object_agg(g.placa_p, g.pessoas), '{}'::jsonb) into pcol_map
+  from (
+    select regexp_replace(upper(c.placa_veiculo), '[^A-Z0-9]', '', 'g') as placa_p,
+           jsonb_agg(distinct jsonb_build_object('nome', upper(trim(c.nome_colaborador)), 'disp', upper(trim(coalesce(c.disponibilidade, ''))))) as pessoas
+    from public.programacao_colaboradores c
+    join public.programacao_dia pd on pd.id = c.programacao_id
+    where pd.data_referencia = p_data
+      and regexp_replace(upper(coalesce(c.placa_veiculo, '')), '[^A-Z0-9]', '', 'g') <> ''
+      and (p_placa is null or regexp_replace(upper(c.placa_veiculo), '[^A-Z0-9]', '', 'g') = p_placa)
+    group by 1
+  ) g;
+
   for pl in select jsonb_object_keys(trips_map) loop
     trips := trips_map -> pl;
     n := jsonb_array_length(trips);
@@ -386,6 +414,7 @@ begin
     -- Pessoas do veículo no dia: motorista cadastrado, condutor escalado na Programação e colegas de carona.
     prog := prog_map -> pl;
     pessoas := '[]'::jsonb; prog_os := '[]'::jsonb; caronas_json := '[]'::jsonb;
+    v_logisticas := '{}'; logistica_json := '[]'::jsonb;
     cond_esc := null; cond_confere := null;
     if coalesce(trim(mot), '') <> '' then
       pessoas := pessoas || jsonb_build_object('nome', upper(trim(mot)), 'papel', 'MOTORISTA');
@@ -405,11 +434,68 @@ begin
         end if;
         if jsonb_typeof(pessoa -> 'oss') = 'array' then
           for os_item in select * from jsonb_array_elements(pessoa -> 'oss') loop
-            prog_os := prog_os || (os_item || jsonb_build_object('quem', pessoa ->> 'nome', 'papel', pessoa ->> 'papel'));
+            prog_os := prog_os || (os_item || jsonb_build_object('quem', pessoa ->> 'nome', 'papel', pessoa ->> 'papel', 'logistica', pessoa -> 'logistica'));
           end loop;
         end if;
       end loop;
     end if;
+
+    -- Colaboradores ligados à placa na Programação (LOGISTICA = condutor da carona frota), com ou sem linha de deslocamento.
+    if pcol_map ? pl then
+      for pcol in select * from jsonb_array_elements(pcol_map -> pl) loop
+        v_chave_end := upper(unaccent(trim(coalesce(pcol ->> 'nome', ''))));
+        if v_chave_end = '' then continue; end if;
+        if (pcol ->> 'disp') = 'LOGISTICA' then
+          v_logisticas := v_logisticas || v_chave_end;
+          logistica_json := logistica_json || to_jsonb(pcol ->> 'nome');
+          if position((pcol ->> 'nome') in coalesce(cond_esc, '')) = 0 then
+            cond_esc := coalesce(cond_esc || ', ', '') || (pcol ->> 'nome');
+          end if;
+          if coalesce(trim(mot), '') <> '' then
+            cond_confere := coalesce(cond_confere, false)
+              or v_chave_end = upper(unaccent(trim(mot))) or similarity(v_chave_end, upper(unaccent(trim(mot)))) >= 0.85;
+          end if;
+        end if;
+        if exists (
+          select 1 from jsonb_array_elements(pessoas) x where upper(unaccent(trim(coalesce(x ->> 'nome', '')))) = v_chave_end
+        ) then continue; end if;
+        pessoas := pessoas || jsonb_build_object('nome', pcol ->> 'nome',
+          'papel', case when (pcol ->> 'disp') = 'LOGISTICA' then 'CONDUTOR' else 'EQUIPE' end,
+          'logistica', (pcol ->> 'disp') = 'LOGISTICA');
+      end loop;
+    end if;
+
+    -- O.S. escalada (atendimento) de quem ainda não tem O.S. vinda da linha de deslocamento: motorista cadastrado,
+    -- condutor/logística e equipe do veículo.
+    for pessoa in select * from jsonb_array_elements(pessoas) loop
+      if jsonb_typeof(pessoa -> 'oss') = 'array' and jsonb_array_length(pessoa -> 'oss') > 0 then continue; end if;
+      v_chave_end := upper(unaccent(trim(coalesce(pessoa ->> 'nome', ''))));
+      if v_chave_end = '' then continue; end if;
+      eq_chave := null;
+      if eq_map ? v_chave_end then
+        eq_chave := v_chave_end;
+      else
+        select w.k into eq_chave from (
+          select q.key as k, similarity(q.key, v_chave_end) as s from (select jsonb_object_keys(eq_map) as key) q
+        ) w
+        where w.s >= 0.85
+        order by w.s desc
+        limit 1;
+      end if;
+      if eq_chave is null then continue; end if;
+      for os_item in select * from jsonb_array_elements(eq_map -> eq_chave) loop
+        prog_os := prog_os || (os_item || jsonb_build_object('quem', pessoa ->> 'nome', 'papel', pessoa ->> 'papel', 'logistica', pessoa -> 'logistica'));
+      end loop;
+    end loop;
+
+    select coalesce(jsonb_agg(q.item order by q.ord), '[]'::jsonb) into prog_os
+    from (
+      select distinct on (upper(unaccent(trim(t.item ->> 'quem'))), t.item ->> 'os')
+             case when upper(unaccent(trim(t.item ->> 'quem'))) = any(v_logisticas) then t.item || jsonb_build_object('logistica', true) else t.item end as item,
+             t.ord
+      from jsonb_array_elements(prog_os) with ordinality as t(item, ord)
+      order by upper(unaccent(trim(t.item ->> 'quem'))), t.item ->> 'os', t.ord
+    ) q;
 
     -- Endereço cadastrado de cada pessoa do veículo (coordenada do cadastro, para mostrar no mapa da rota).
     enderecos := '[]'::jsonb; vistos_end := '{}';
@@ -739,7 +825,7 @@ begin
     motivos := v_motivos;
     condutor_escalado := cond_esc; caronas := caronas_json;
     detalhes := jsonb_build_object(
-      'programacao', jsonb_build_object('condutores', cond_esc, 'caronas', caronas_json, 'os', prog_os, 'divergente', cond_confere is false),
+      'programacao', jsonb_build_object('condutores', cond_esc, 'caronas', caronas_json, 'logistica', logistica_json, 'os', prog_os, 'divergente', cond_confere is false),
       'enderecos', enderecos,
       'tolerancia_min', p_tol_min, 'fator_rota', p_fator, 'vel_media_kmh', p_vel_kmh,
       't_ida_min', t_ida, 't_volta_min', t_volta,
