@@ -33,6 +33,7 @@ export const NOTIF_META = {
   frotas_rastreador_manutencao: { prioridade: 'normal', icone: 'wrench',         label: 'Manutenção de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores&filtro=manutencao' },
   frotas_rastreador_observacao: { prioridade: 'normal', icone: 'message-square', label: 'Observação de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores' },
   frotas_rastreador:            { prioridade: 'normal', icone: 'wrench',         label: 'Rastreador',               modulo_url: 'frotas-cadastros?aba=rastreadores' },
+  frotas_rastreador_manutencao_auto: { prioridade: 'atencao', icone: 'wrench',    label: 'Manutenção automática de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores&filtro=manutencao' },
 };
 
 const PRIORIDADE_ORDER = { urgente: 0, atencao: 1, normal: 2, informativo: 3 };
