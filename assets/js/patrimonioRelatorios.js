@@ -74,7 +74,7 @@ function injectVisualStyles() {
     }
     .patrimonio-relatorios-page .pat-filtros-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 150px));
+      grid-template-columns: repeat(4, minmax(0, 150px));
       gap: 10px;
       align-items: end;
       flex: 1 1 auto;
@@ -200,7 +200,16 @@ function injectVisualStyles() {
     .legend-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
     .legend-dot.ok { background: #22c55e; }
     .legend-dot.atraso { background: #ef4444; }
-    .legend-dot.neutro { background: #6b7280; }
+    .legend-chip.pat-filter-chip {
+      font: inherit;
+      font-size: .84rem;
+      cursor: pointer;
+      transition: background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .legend-chip.pat-filter-chip:hover { border-color: rgba(148, 163, 184, 0.4); }
+    .legend-chip.pat-filter-chip:focus-visible { outline: 2px solid #2dd4a0; outline-offset: 2px; }
+    .legend-chip.pat-filter-chip[aria-pressed="true"][data-filter-tipo="emdia"] { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.55); color: #dcfce7; }
+    .legend-chip.pat-filter-chip[aria-pressed="true"][data-filter-tipo="atrasados"] { background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.55); color: #fee2e2; }
     .table-shell {
       border: 1px solid rgba(148, 163, 184, 0.14);
       border-radius: 18px;
@@ -268,7 +277,6 @@ function injectVisualStyles() {
     }
     .pat-tag.ok { color: #dcfce7; background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.34); }
     .pat-tag.danger { color: #fee2e2; background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.34); }
-    .pat-tag.neutral { color: #e2e8f0; background: rgba(148, 163, 184, 0.16); border-color: rgba(148, 163, 184, 0.34); }
     .pat-regional-badge {
       display: inline-flex;
       max-width: 100%;
@@ -384,6 +392,13 @@ function getDiasInfo(row) {
   }
   const n = Number(row.dias_sem_leitura);
   return Number.isFinite(n) ? { hasValue: true, value: n } : { hasValue: false, value: null };
+}
+
+// Sem leitura informada (dias_sem_leitura nulo) conta como atraso, igual ao
+// Dashboard/gestor-app/histórico: patrimônio nunca lido é o pior caso.
+function isAtraso(row) {
+  const info = getDiasInfo(row);
+  return !info.hasValue || info.value > DIAS_LIMITE_ATRASO;
 }
 
 function getRegional(row) {
@@ -508,11 +523,7 @@ function gerarPdfPatrimonios(secao) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4', compress: true });
   if (typeof doc.autoTable !== 'function') throw new Error('jsPDF-AutoTable não encontrado.');
   const pageWidth = doc.internal.pageSize.getWidth();
-  const situacoes = secao.rows.map((row) => {
-    const info = getDiasInfo(row);
-    if (!info.hasValue) return 'vazio';
-    return info.value > DIAS_LIMITE_ATRASO ? 'atrasado' : 'ok';
-  });
+  const situacoes = secao.rows.map((row) => (isAtraso(row) ? 'atrasado' : 'ok'));
 
   doc.autoTable({
     ...PDF_TABLE_STYLES,
@@ -538,7 +549,7 @@ function gerarPdfPatrimonios(secao) {
     didParseCell: (data) => {
       if (data.section !== 'body' || data.column.index !== 5) return;
       const situacao = situacoes[data.row.index];
-      data.cell.styles.textColor = situacao === 'atrasado' ? PDF_COLOR_ATRASO : situacao === 'ok' ? PDF_COLOR_OK : PDF_COLOR_NEUTRO;
+      data.cell.styles.textColor = situacao === 'atrasado' ? PDF_COLOR_ATRASO : PDF_COLOR_OK;
     },
     didDrawPage: () => desenharCabecalhoPdf(doc, secao),
   });
@@ -560,20 +571,12 @@ function computeStats(rows) {
   const registros = rows.length;
   let emDia = 0;
   let atrasados = 0;
-  let semDias = 0;
 
   rows.forEach((row) => {
-    const diasInfo = getDiasInfo(row);
-    if (!diasInfo.hasValue) {
-      semDias += 1;
-    } else if (diasInfo.value > DIAS_LIMITE_ATRASO) {
-      atrasados += 1;
-    } else {
-      emDia += 1;
-    }
+    if (isAtraso(row)) atrasados += 1; else emDia += 1;
   });
 
-  return { registros, emDia, atrasados, semDias, percentual: formatPercent(emDia, emDia + atrasados) };
+  return { registros, emDia, atrasados, percentual: formatPercent(emDia, registros) };
 }
 
 function buildReportTitle(tipo, regional = '') {
@@ -586,16 +589,14 @@ function buildReportTitle(tipo, regional = '') {
 function applyFilters(rows, filters) {
   return rows.filter((row) => {
     const situacao = normalizeKey(row.situacao);
-    const diasInfo = getDiasInfo(row);
     const searchBase = normalizeKey(`${row.funcionario || ''} ${row.identificacao || ''} ${row.patrimonio_codigo || ''} ${getRegional(row)}`);
 
     if (filters.excluirIgnorados && IGNORED_STATUS.has(situacao)) return false;
     if (filters.coordenacao && normalizeKey(getRegional(row)) !== normalizeKey(filters.coordenacao)) return false;
     if (filters.supervisao && normalizeKey(row.supervisao) !== normalizeKey(filters.supervisao)) return false;
     if (filters.busca && !searchBase.includes(normalizeKey(filters.busca))) return false;
-    if (filters.tipo === 'atrasados' && (!diasInfo.hasValue || diasInfo.value <= DIAS_LIMITE_ATRASO)) return false;
-    if (filters.tipo === 'emdia' && (!diasInfo.hasValue || diasInfo.value > DIAS_LIMITE_ATRASO)) return false;
-    if (filters.tipo === 'semdias' && diasInfo.hasValue) return false;
+    if (filters.tipo === 'atrasados' && !isAtraso(row)) return false;
+    if (filters.tipo === 'emdia' && isAtraso(row)) return false;
     return true;
   });
 }
@@ -666,14 +667,14 @@ function renderGroupedRows(rows, page, expanded, viewMode) {
     const open = expanded.has(key);
     const first = group.rows[0];
     const maxDias = Math.max(...group.rows.map((row) => getDiasInfo(row).value ?? -1));
-    const tagClass = maxDias < 0 ? 'neutral' : maxDias > DIAS_LIMITE_ATRASO ? 'danger' : 'ok';
+    const tagClass = group.rows.some(isAtraso) ? 'danger' : 'ok';
     const detailHeaderExtra = isRegional ? '<th>Colaborador</th>' : '<th>Material</th>';
     const details = group.rows.map((row) => `<tr>
       <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
       <td>${escapeHtml(isRegional ? (row.funcionario || '-') : (row.identificacao || '-'))}</td>
       <td>${escapeHtml(normalizeText(row.situacao) || 'Sem situação')}</td>
       <td>${escapeHtml(row.ultima_leitura_fmt || '-')}</td>
-      <td><span class="pat-tag ${getDiasInfo(row).hasValue ? (getDiasInfo(row).value > DIAS_LIMITE_ATRASO ? 'danger' : 'ok') : 'neutral'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
+      <td><span class="pat-tag ${isAtraso(row) ? 'danger' : 'ok'}">${escapeHtml(getDiasInfo(row).hasValue ? getDiasInfo(row).value : '-')}</span></td>
     </tr>`).join('');
     const colInfoCell = isRegional
       ? `<span class="pat-count-badge">${new Set(group.rows.map((row) => normalizeKey(row.funcionario))).size} colab.</span>`
@@ -698,7 +699,7 @@ function renderFlatRows(rows, page) {
 
   tbody.innerHTML = pageRows.map((row) => {
     const diasInfo = getDiasInfo(row);
-    const tagClass = !diasInfo.hasValue ? 'neutral' : diasInfo.value > DIAS_LIMITE_ATRASO ? 'danger' : 'ok';
+    const tagClass = isAtraso(row) ? 'danger' : 'ok';
     return `<tr>
       <td class="pat-cell-patrimonio">${escapeHtml(row.patrimonio_codigo || '-')}</td>
       <td>${escapeHtml(row.funcionario || '-')}</td>
@@ -746,7 +747,6 @@ function updateSummary(rows) {
   set('sumRegistros', stats.registros);
   set('sumEmDia', stats.emDia);
   set('sumAtrasados', stats.atrasados);
-  set('sumSemDias', stats.semDias);
   set('sumPercentual', stats.percentual);
 }
 
@@ -831,15 +831,6 @@ export function renderContent(content) {
               <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
             </div>
             <div class="base-field">
-              <label class="base-label" for="fTipo">Situação</label>
-              <select class="base-select" id="fTipo">
-                <option value="geral">Geral</option>
-                <option value="atrasados">Somente atrasados</option>
-                <option value="emdia">Somente em dia</option>
-                <option value="semdias">Somente sem dias</option>
-              </select>
-            </div>
-            <div class="base-field">
               <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
               <select class="base-select" id="fIgnorados">
                 <option value="mostrar">Mostrar</option>
@@ -872,10 +863,9 @@ export function renderContent(content) {
             <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
           </div>
           <div class="pat-toolbar-right">
-            <div class="patrimonio-legend">
-              <span class="legend-chip"><span class="legend-dot ok"></span> Em dia</span>
-              <span class="legend-chip"><span class="legend-dot atraso"></span> Em atraso</span>
-              <span class="legend-chip"><span class="legend-dot neutro"></span> Sem dias informados</span>
+            <div class="patrimonio-legend" role="group" aria-label="Filtrar pela situação da leitura">
+              <button class="legend-chip pat-filter-chip" type="button" data-filter-tipo="emdia" aria-pressed="false" title="Mostrar somente os em dia (clique de novo para limpar)"><span class="legend-dot ok"></span> Em dia</button>
+              <button class="legend-chip pat-filter-chip" type="button" data-filter-tipo="atrasados" aria-pressed="false" title="Mostrar somente os em atraso, incluindo os sem leitura (clique de novo para limpar)"><span class="legend-dot atraso"></span> Em atraso</button>
             </div>
             <div class="pat-pagination">
               <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
@@ -920,7 +910,10 @@ export function renderContent(content) {
     sort: { column: '', direction: 'asc' },
     expanded: new Set(),
     exportando: false,
-    viewMode: 'colaborador'
+    viewMode: 'colaborador',
+    // 'geral' | 'emdia' | 'atrasados' — escolhido pelos chips acima da tabela e
+    // usado também pelas exportações (CSV/PDF), que partem de state.filteredRows.
+    tipo: 'geral'
   };
 
   renderThead(state.sort, state.viewMode);
@@ -953,7 +946,7 @@ export function renderContent(content) {
   const readFilters = () => ({
     coordenacao: document.getElementById('fCoordenacao')?.value || '',
     supervisao: document.getElementById('fSupervisao')?.value || '',
-    tipo: document.getElementById('fTipo')?.value || 'geral',
+    tipo: state.tipo,
     busca: document.getElementById('fBusca')?.value || '',
     excluirIgnorados: (document.getElementById('fIgnorados')?.value || 'mostrar') === 'excluir'
   });
@@ -964,6 +957,22 @@ export function renderContent(content) {
     renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
     updateSummary(state.filteredRows);
   };
+
+  const syncTipoChips = () => {
+    document.querySelectorAll('[data-filter-tipo]').forEach((chip) => {
+      chip.setAttribute('aria-pressed', String(chip.dataset.filterTipo === state.tipo));
+    });
+  };
+
+  // Clicar no chip ativo desmarca (volta para "geral", sem filtro).
+  document.querySelectorAll('[data-filter-tipo]').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      state.tipo = state.tipo === chip.dataset.filterTipo ? 'geral' : chip.dataset.filterTipo;
+      state.page = 1;
+      syncTipoChips();
+      applyAndRender();
+    });
+  });
 
   async function loadDesligados() {
     const target = document.getElementById('patDesligadosList');
@@ -1053,7 +1062,8 @@ export function renderContent(content) {
     document.getElementById('fCoordenacao').value = '';
     refreshSupervisoes();
     document.getElementById('fSupervisao').value = '';
-    document.getElementById('fTipo').value = 'geral';
+    state.tipo = 'geral';
+    syncTipoChips();
     document.getElementById('fIgnorados').value = 'mostrar';
     document.getElementById('fBusca').value = '';
     state.page = 1;
@@ -1065,7 +1075,6 @@ export function renderContent(content) {
     applyAndRender();
   });
   document.getElementById('fSupervisao')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
-  document.getElementById('fTipo')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
   document.getElementById('fIgnorados')?.addEventListener('change', () => { state.page = 1; applyAndRender(); });
   document.getElementById('fBusca')?.addEventListener('input', () => { state.page = 1; applyAndRender(); });
 
