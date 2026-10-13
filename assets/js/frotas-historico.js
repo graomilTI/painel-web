@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261013-fora-horario-os-escalada';
+import './modules/frotas.js?v=20261013-fora-horario-janelas';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {
