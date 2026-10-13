@@ -7,6 +7,8 @@
 --     + "Última Atualização");
 --   * produção diária (producao_snapshot: check-in/check-out por O.S.);
 --   * rastro do celular do colaborador (grm_login_movimentos_importacoes), só os pings feitos longe de casa.
+--   * Programação do dia (programacao_deslocamento): condutor escalado, colegas de carona e a O.S. de cada um;
+--     a passagem do veículo pelo local da O.S. (< 2 km) ou pela casa do colega de carona (< 1,5 km) conta como trabalho.
 -- Janela permitida = [1º registro de trabalho − tempo de ida − 20 min ; último registro + tempo de volta + 20 min].
 -- Tempo de ida/volta = distância em linha reta casa↔local × fator de rota ÷ velocidade média.
 -- O que passar dessa janela é "uso fora do horário"; o dossiê guarda a linha do tempo para conferência.
@@ -43,9 +45,17 @@ create table if not exists public.frotas_fora_horario_dossie (
   atraso_retorno_min integer,
   motivos jsonb not null default '[]'::jsonb,
   detalhes jsonb not null default '{}'::jsonb,
+  resumo_dia jsonb not null default '[]'::jsonb,
+  condutor_escalado text,
+  caronas jsonb not null default '[]'::jsonb,
   calculado_em timestamptz not null default now(),
   constraint frotas_fora_horario_dossie_dia_placa_key unique (data_evento, placa)
 );
+
+-- Instalações anteriores: a coluna entra depois (resumo compacto das viagens para o cartão da lista).
+alter table public.frotas_fora_horario_dossie add column if not exists resumo_dia jsonb not null default '[]'::jsonb;
+alter table public.frotas_fora_horario_dossie add column if not exists condutor_escalado text;
+alter table public.frotas_fora_horario_dossie add column if not exists caronas jsonb not null default '[]'::jsonb;
 
 comment on table public.frotas_fora_horario_dossie is
   'Dossiê de uso do veículo fora do expediente (viagens GPS × informativos × produção × celular). Horários em Brasília, sem fuso.';
@@ -165,6 +175,9 @@ $$;
 -- Montagem do dossiê de um dia (sem gravar). Uma linha por placa com viagens no dia.
 -- ---------------------------------------------------------------------------------------------
 
+-- O formato de saída (RETURNS TABLE) mudou entre versões: recria a função.
+drop function if exists public.frotas_fora_horario_dossie_montar(date, text, integer, numeric, numeric, numeric, time, time);
+
 create or replace function public.frotas_fora_horario_dossie_montar(
   p_data date,
   p_placa text default null,
@@ -203,7 +216,9 @@ returns table (
   retorno_previsto timestamp,
   atraso_retorno_min integer,
   motivos jsonb,
-  detalhes jsonb
+  detalhes jsonb,
+  condutor_escalado text,
+  caronas jsonb
 )
 language plpgsql
 stable
@@ -235,6 +250,8 @@ declare
   atraso_ret int; saida_ant int;
   viagens_out jsonb; v_motivos jsonb; vered text; v_conf text; v_crit text;
   flag_percurso boolean; viagem_vespera boolean;
+  prog_map jsonb; prog jsonb; pessoas jsonb; pessoa jsonb; os_item jsonb; prog_os jsonb; caronas_json jsonb;
+  cond_esc text; cond_confere boolean; vistos text[]; chaves text[]; v_quem text; v_papel text;
 begin
   -- Informativos do colaborador (Mapa de Embarque): quem atualizou + quando + O.S./local.
   select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into inf_map
@@ -316,6 +333,41 @@ begin
     group by c.placa_v
   ) g;
 
+  -- Programação do dia: quem está escalado como condutor (MOTORISTA FROTA) e quem vai de carona (CARONA FROTA)
+  -- em cada placa, com a O.S. escalada de cada um e a casa cadastrada dos caronas.
+  select coalesce(jsonb_object_agg(g.placa_p, g.info), '{}'::jsonb) into prog_map
+  from (
+    select s.placa_p, jsonb_build_object('pessoas', jsonb_agg(jsonb_build_object(
+             'nome', s.nome, 'papel', s.papel, 'casa_la', s.casa_la, 'casa_lo', s.casa_lo, 'oss', s.oss) order by s.papel, s.nome)) as info
+    from (
+      select distinct
+        regexp_replace(upper(c.placa_veiculo), '[^A-Z0-9]', '', 'g') as placa_p,
+        upper(trim(c.nome_colaborador)) as nome,
+        case when upper(trim(c.tipo_deslocamento)) = 'MOTORISTA FROTA' then 'CONDUTOR' else 'CARONA' end as papel,
+        cz.latitude as casa_la, cz.longitude as casa_lo,
+        (select jsonb_agg(jsonb_build_object('os', o.numero_os, 'cliente', o.cliente, 'local', coalesce(pe.nome_local, o.ponto1_nome),
+                'la', coalesce(pe.latitude, o.ponto1_latitude)::float8, 'lo', coalesce(pe.longitude, o.ponto1_longitude)::float8))
+           from public.programacao_equipe e
+           join public.operacional_os o on o.id = e.os_id
+           left join public.operacional_pontos_embarque pe on pe.id = o.ponto_embarque_id
+          where e.programacao_id = c.programacao_id and e.colaborador_id = c.colaborador_id and e.confirmado = true) as oss
+      from public.programacao_deslocamento c
+      join public.programacao_dia d on d.id = c.programacao_id
+      left join lateral (
+        select z.latitude::float8 as latitude, z.longitude::float8 as longitude
+        from public.colaborador_cruzamento z
+        where z.cpf <> '' and z.cpf = regexp_replace(coalesce(c.colaborador_id, ''), '\D', '', 'g')
+        order by z.atualizado_em desc
+        limit 1
+      ) cz on true
+      where d.data_referencia = p_data
+        and upper(trim(c.tipo_deslocamento)) in ('MOTORISTA FROTA', 'CARONA FROTA')
+        and regexp_replace(upper(coalesce(c.placa_veiculo, '')), '[^A-Z0-9]', '', 'g') <> ''
+        and (p_placa is null or regexp_replace(upper(c.placa_veiculo), '[^A-Z0-9]', '', 'g') = p_placa)
+    ) s
+    group by s.placa_p
+  ) g;
+
   for pl in select jsonb_object_keys(trips_map) loop
     trips := trips_map -> pl;
     n := jsonb_array_length(trips);
@@ -330,25 +382,33 @@ begin
     left join public.frotas_fora_horario_ocorrencias o on o.data_evento = p_data and o.placa = pl
     left join public.frotas_veiculos v on v.placa = pl;
 
-    nome := upper(unaccent(trim(coalesce(mot, ''))));
-    nome_chave := null;
-    if nome <> '' then
-      if inf_map ? nome or prod_map ? nome or ping_map ? nome then
-        nome_chave := nome;
-      else
-        select w.k into nome_chave from (
-          select q.key as k, similarity(q.key, nome) as s from (
-            select jsonb_object_keys(inf_map) as key union select jsonb_object_keys(prod_map) union select jsonb_object_keys(ping_map)
-          ) q
-        ) w
-        where w.s >= 0.85
-        order by w.s desc
-        limit 1;
-      end if;
+    -- Pessoas do veículo no dia: motorista cadastrado, condutor escalado na Programação e colegas de carona.
+    prog := prog_map -> pl;
+    pessoas := '[]'::jsonb; prog_os := '[]'::jsonb; caronas_json := '[]'::jsonb;
+    cond_esc := null; cond_confere := null;
+    if coalesce(trim(mot), '') <> '' then
+      pessoas := pessoas || jsonb_build_object('nome', upper(trim(mot)), 'papel', 'MOTORISTA');
     end if;
-    inf_arr := case when nome_chave is not null then coalesce(inf_map -> nome_chave, '[]'::jsonb) else '[]'::jsonb end;
-    prod_arr := case when nome_chave is not null then coalesce(prod_map -> nome_chave, '[]'::jsonb) else '[]'::jsonb end;
-    ping_arr := case when nome_chave is not null then coalesce(ping_map -> nome_chave, '[]'::jsonb) else '[]'::jsonb end;
+    if prog is not null then
+      for pessoa in select * from jsonb_array_elements(prog -> 'pessoas') loop
+        pessoas := pessoas || pessoa;
+        if (pessoa ->> 'papel') = 'CONDUTOR' then
+          cond_esc := coalesce(cond_esc || ', ', '') || (pessoa ->> 'nome');
+          nome := upper(unaccent(pessoa ->> 'nome'));
+          if coalesce(trim(mot), '') <> '' then
+            cond_confere := coalesce(cond_confere, false)
+              or nome = upper(unaccent(trim(mot))) or similarity(nome, upper(unaccent(trim(mot)))) >= 0.85;
+          end if;
+        else
+          caronas_json := caronas_json || to_jsonb(pessoa ->> 'nome');
+        end if;
+        if jsonb_typeof(pessoa -> 'oss') = 'array' then
+          for os_item in select * from jsonb_array_elements(pessoa -> 'oss') loop
+            prog_os := prog_os || (os_item || jsonb_build_object('quem', pessoa ->> 'nome', 'papel', pessoa ->> 'papel'));
+          end loop;
+        end if;
+      end loop;
+    end if;
 
     -- Casa = origem da 1ª viagem do dia (onde o veículo dormiu); à noite = destino da última, encaixado na casa se < 1 km.
     t := trips -> 0;
@@ -362,27 +422,90 @@ begin
     end if;
 
     -- Evidências de trabalho: só valem as registradas longe de casa.
-    evs := '[]'::jsonb;
-    for e in select * from jsonb_array_elements(inf_arr) loop
-      evs := evs || jsonb_build_object('ts', e ->> 'ts', 'tipo', 'INFORMATIVO', 'os', e ->> 'os', 'local', e ->> 'local');
-    end loop;
-    for e in select * from jsonb_array_elements(prod_arr) loop
-      evs := evs || jsonb_build_object('ts', e ->> 'ci', 'tipo', 'CHECKIN', 'os', e ->> 'os', 'local', e ->> 'local', 'cargas', e -> 'cargas');
-      if (e ->> 'co') is not null then
-        evs := evs || jsonb_build_object('ts', e ->> 'co', 'tipo', 'CHECKOUT', 'os', e ->> 'os', 'local', e ->> 'local');
+    evs := '[]'::jsonb; vistos := '{}'; chaves := '{}';
+    for pessoa in select * from jsonb_array_elements(pessoas) loop
+      nome := upper(unaccent(trim(coalesce(pessoa ->> 'nome', ''))));
+      if nome = '' or nome = any(vistos) then continue; end if;
+      vistos := vistos || nome;
+      nome_chave := null;
+      if inf_map ? nome or prod_map ? nome or ping_map ? nome then
+        nome_chave := nome;
+      else
+        select w.k into nome_chave from (
+          select q.key as k, similarity(q.key, nome) as s from (
+            select jsonb_object_keys(inf_map) as key union select jsonb_object_keys(prod_map) union select jsonb_object_keys(ping_map)
+          ) q
+        ) w
+        where w.s >= 0.85
+        order by w.s desc
+        limit 1;
       end if;
+      if nome_chave is null then continue; end if;
+      v_quem := pessoa ->> 'nome';
+      v_papel := pessoa ->> 'papel';
+      for e in select * from jsonb_array_elements(coalesce(inf_map -> nome_chave, '[]'::jsonb)) loop
+        evs := evs || jsonb_build_object('ts', e ->> 'ts', 'tipo', 'INFORMATIVO', 'os', e ->> 'os', 'local', e ->> 'local', 'quem', v_quem, 'papel', v_papel);
+      end loop;
+      for e in select * from jsonb_array_elements(coalesce(prod_map -> nome_chave, '[]'::jsonb)) loop
+        evs := evs || jsonb_build_object('ts', e ->> 'ci', 'tipo', 'CHECKIN', 'os', e ->> 'os', 'local', e ->> 'local', 'cargas', e -> 'cargas', 'quem', v_quem, 'papel', v_papel);
+        if (e ->> 'co') is not null then
+          evs := evs || jsonb_build_object('ts', e ->> 'co', 'tipo', 'CHECKOUT', 'os', e ->> 'os', 'local', e ->> 'local', 'quem', v_quem, 'papel', v_papel);
+        end if;
+      end loop;
+      for e in select * from jsonb_array_elements(coalesce(ping_map -> nome_chave, '[]'::jsonb)) loop
+        evs := evs || jsonb_build_object('ts', e ->> 'ts', 'tipo', 'CELULAR', 'la', e -> 'la', 'lo', e -> 'lo', 'local', e ->> 'local',
+          'quem', v_quem, 'papel', v_papel, 'cl', pessoa -> 'casa_la', 'co', pessoa -> 'casa_lo');
+      end loop;
     end loop;
-    for e in select * from jsonb_array_elements(ping_arr) loop
-      evs := evs || jsonb_build_object('ts', e ->> 'ts', 'tipo', 'CELULAR', 'la', e -> 'la', 'lo', e -> 'lo', 'local', e ->> 'local');
+
+    -- Cruza a rota do veículo com o local das O.S. escaladas (condutor e caronas) e com a casa dos colegas de carona:
+    -- chegada/saída do veículo nesses pontos também é trabalho (a O.S. deve estar a menos de 2 km; a casa, a menos de 1,5 km).
+    for i in 0..n - 1 loop
+      t := trips -> i;
+      for os_item in select * from jsonb_array_elements(prog_os) loop
+        if (os_item ->> 'la') is null or (os_item ->> 'lo') is null then continue; end if;
+        if public.frotas_dossie_hav((t ->> 'la2')::float8, (t ->> 'lo2')::float8, (os_item ->> 'la')::float8, (os_item ->> 'lo')::float8) < 2.0
+           and not ((t ->> 'fim') || 'c' || (os_item ->> 'os')) = any(chaves) then
+          chaves := chaves || ((t ->> 'fim') || 'c' || (os_item ->> 'os'));
+          evs := evs || jsonb_build_object('ts', t ->> 'fim', 'tipo', 'OS_PROGRAMADA', 'sentido', 'chegada', 'os', os_item ->> 'os',
+            'local', coalesce(os_item ->> 'local', os_item ->> 'cliente'), 'la', os_item -> 'la', 'lo', os_item -> 'lo',
+            'quem', os_item ->> 'quem', 'papel', os_item ->> 'papel');
+        end if;
+        if public.frotas_dossie_hav((t ->> 'la1')::float8, (t ->> 'lo1')::float8, (os_item ->> 'la')::float8, (os_item ->> 'lo')::float8) < 2.0
+           and not ((t ->> 'ini') || 's' || (os_item ->> 'os')) = any(chaves) then
+          chaves := chaves || ((t ->> 'ini') || 's' || (os_item ->> 'os'));
+          evs := evs || jsonb_build_object('ts', t ->> 'ini', 'tipo', 'OS_PROGRAMADA', 'sentido', 'saida', 'os', os_item ->> 'os',
+            'local', coalesce(os_item ->> 'local', os_item ->> 'cliente'), 'la', os_item -> 'la', 'lo', os_item -> 'lo',
+            'quem', os_item ->> 'quem', 'papel', os_item ->> 'papel');
+        end if;
+      end loop;
+      for pessoa in select * from jsonb_array_elements(pessoas) where (value ->> 'papel') = 'CARONA' loop
+        if (pessoa ->> 'casa_la') is null or (pessoa ->> 'casa_lo') is null then continue; end if;
+        if public.frotas_dossie_hav((t ->> 'la2')::float8, (t ->> 'lo2')::float8, (pessoa ->> 'casa_la')::float8, (pessoa ->> 'casa_lo')::float8) < 1.5
+           and not ((t ->> 'fim') || 'h' || (pessoa ->> 'nome')) = any(chaves) then
+          chaves := chaves || ((t ->> 'fim') || 'h' || (pessoa ->> 'nome'));
+          evs := evs || jsonb_build_object('ts', t ->> 'fim', 'tipo', 'CARONA', 'sentido', 'chegada', 'local', pessoa ->> 'nome',
+            'la', pessoa -> 'casa_la', 'lo', pessoa -> 'casa_lo', 'quem', pessoa ->> 'nome', 'papel', 'CARONA');
+        end if;
+        if public.frotas_dossie_hav((t ->> 'la1')::float8, (t ->> 'lo1')::float8, (pessoa ->> 'casa_la')::float8, (pessoa ->> 'casa_lo')::float8) < 1.5
+           and not ((t ->> 'ini') || 'j' || (pessoa ->> 'nome')) = any(chaves) then
+          chaves := chaves || ((t ->> 'ini') || 'j' || (pessoa ->> 'nome'));
+          evs := evs || jsonb_build_object('ts', t ->> 'ini', 'tipo', 'CARONA', 'sentido', 'saida', 'local', pessoa ->> 'nome',
+            'la', pessoa -> 'casa_la', 'lo', pessoa -> 'casa_lo', 'quem', pessoa ->> 'nome', 'papel', 'CARONA');
+        end if;
+      end loop;
     end loop;
 
     a_ini := null; a_fim := null; fontes := '{}'; ev := '[]'::jsonb;
     for e in select * from jsonb_array_elements(evs) order by (value ->> 'ts')::timestamp loop
       e_ts := (e ->> 'ts')::timestamp; e_tipo := e ->> 'tipo';
-      if e_tipo = 'CELULAR' then
+      if (e ->> 'la') is not null and (e ->> 'lo') is not null then
+        -- registro com coordenada própria (celular, local da O.S., casa de carona): vale se não for a casa do condutor/colega
         e_la := (e ->> 'la')::float8; e_lo := (e ->> 'lo')::float8;
         e_casa := public.frotas_dossie_hav(e_la, e_lo, casa_la, casa_lo) < p_raio_casa_km
-               or public.frotas_dossie_hav(e_la, e_lo, noite_la, noite_lo) < p_raio_casa_km;
+               or public.frotas_dossie_hav(e_la, e_lo, noite_la, noite_lo) < p_raio_casa_km
+               or (e_tipo = 'CELULAR' and (e ->> 'cl') is not null and (e ->> 'co') is not null
+                   and public.frotas_dossie_hav(e_la, e_lo, (e ->> 'cl')::float8, (e ->> 'co')::float8) < p_raio_casa_km);
       else
         e_pos := public.frotas_dossie_posicao_em(trips, e_ts, casa_la, casa_lo, 'fim');
         e_la := (e_pos ->> 'la')::float8; e_lo := (e_pos ->> 'lo')::float8;
@@ -390,7 +513,7 @@ begin
           and (public.frotas_dossie_hav(e_la, e_lo, casa_la, casa_lo) < p_raio_casa_km
                or public.frotas_dossie_hav(e_la, e_lo, noite_la, noite_lo) < p_raio_casa_km);
       end if;
-      ev := ev || (e || jsonb_build_object('em_casa', coalesce(e_casa, false)));
+      ev := ev || ((e - 'cl' - 'co') || jsonb_build_object('em_casa', coalesce(e_casa, false)));
       if not coalesce(e_casa, false) then
         a_ini := least(coalesce(a_ini, e_ts), e_ts);
         a_fim := greatest(coalesce(a_fim, e_ts), e_ts);
@@ -399,7 +522,8 @@ begin
     end loop;
     select min((x ->> 'ts')::timestamp), max((x ->> 'ts')::timestamp), count(*)::int
       into prim_inf, ult_inf, qtd_inf
-    from jsonb_array_elements(inf_arr) x;
+    from jsonb_array_elements(evs) x
+    where (x ->> 'tipo') = 'INFORMATIVO' and (x ->> 'papel') in ('MOTORISTA', 'CONDUTOR');
 
     fonte := case when a_ini is null then 'PADRAO' else array_to_string(fontes, '+') end;
 
@@ -532,41 +656,45 @@ begin
                       and v_km_dia <= desloc_km * p_fator * 1.6 + 20;
 
     if km_antes >= 1 then
-      v_motivos := v_motivos || to_jsonb(format('%s km em %s min antes da saída esperada de casa (%s)',
-        public.frotas_dossie_fmt(km_antes), round(min_antes), to_char(w_ini, 'HH24:MI')));
+      v_motivos := v_motivos || to_jsonb(format('Rodou %s km antes das %s, horário em que deveria sair de casa para o trabalho (%s min).',
+        public.frotas_dossie_fmt(km_antes), to_char(w_ini, 'HH24:MI'), round(min_antes)));
     end if;
     if km_apos >= 1 then
       v_motivos := v_motivos || to_jsonb(case when w_ini is null
-        then format('%s km em dia sem expediente registrado (sem informativo, produção ou sinal de trabalho)', public.frotas_dossie_fmt(km_apos))
-        else format('%s km em %s min depois do limite de retorno (%s)', public.frotas_dossie_fmt(km_apos), round(min_apos), to_char(w_fim, 'HH24:MI')) end);
+        then format('Rodou %s km em dia sem expediente registrado (sem informativo, produção ou sinal de trabalho).', public.frotas_dossie_fmt(km_apos))
+        else format('Rodou %s km (%s min) depois das %s, limite para o veículo estar em casa.', public.frotas_dossie_fmt(km_apos), round(min_apos), to_char(w_fim, 'HH24:MI')) end);
     end if;
     if v_km_apos_chegada >= 0.5 then
-      v_motivos := v_motivos || to_jsonb(format('Veículo voltou a circular depois de chegar em casa (%s): %s km em %s viagem(ns)',
+      v_motivos := v_motivos || to_jsonb(format('Depois de chegar em casa às %s, voltou a usar o veículo: %s km em %s viagem(ns).',
         to_char(v_chegada_casa, 'HH24:MI'), public.frotas_dossie_fmt(v_km_apos_chegada), n_apos_chegada));
     end if;
     if v_km_noturno >= 1 then
-      v_motivos := v_motivos || to_jsonb(format('%s km rodados de madrugada/noite (22:00–05:00) fora do expediente', public.frotas_dossie_fmt(v_km_noturno)));
+      v_motivos := v_motivos || to_jsonb(format('Rodou %s km de madrugada ou à noite (entre 22h e 5h) fora do expediente.', public.frotas_dossie_fmt(v_km_noturno)));
     end if;
     if a_ini is null then
-      v_motivos := v_motivos || to_jsonb('Sem informativo, produção nem sinal do celular fora de casa neste dia: usada a janela padrão (05:30–20:00, seg–sáb).'::text);
+      v_motivos := v_motivos || to_jsonb('Neste dia não há informativo, produção nem sinal do celular fora de casa: foi usado o horário padrão (05:30 às 20:00, de segunda a sábado).'::text);
     end if;
     if viagem_vespera then
-      v_motivos := v_motivos || to_jsonb(format('Dormiu a %s km da base, por trajeto direto: possível deslocamento a serviço para o dia seguinte (conferir programação).', round(desloc_km::numeric, 0)));
+      v_motivos := v_motivos || to_jsonb(format('Dormiu a %s km de onde começou o dia, por um trajeto direto: pode ser deslocamento a serviço para o dia seguinte (conferir a programação).', round(desloc_km::numeric, 0)));
     end if;
     flag_percurso := false;
     if km_ida_real > 0 and d_ida is not null and km_ida_real > d_ida * p_fator * 1.6 + 5 then
       flag_percurso := true;
-      v_motivos := v_motivos || to_jsonb(format('Percurso até o 1º registro de trabalho longo: %s km rodados contra ~%s km estimados em linha reta ajustada',
+      v_motivos := v_motivos || to_jsonb(format('No caminho até o primeiro registro de trabalho rodou %s km; o trajeto direto seria cerca de %s km.',
         public.frotas_dossie_fmt(km_ida_real), public.frotas_dossie_fmt((d_ida * p_fator)::numeric)));
     end if;
     if km_volta_real > 0 and d_volta is not null and km_volta_real > d_volta * p_fator * 1.6 + 5 then
       flag_percurso := true;
-      v_motivos := v_motivos || to_jsonb(format('Percurso de volta para casa longo: %s km rodados contra ~%s km estimados em linha reta ajustada',
+      v_motivos := v_motivos || to_jsonb(format('Na volta para casa rodou %s km; o trajeto direto seria cerca de %s km.',
         public.frotas_dossie_fmt(km_volta_real), public.frotas_dossie_fmt((d_volta * p_fator)::numeric)));
     end if;
     if atraso_ret is not null and atraso_ret > p_tol_min then
-      v_motivos := v_motivos || to_jsonb(format('Chegou em casa às %s, %s min depois do previsto (%s)',
+      v_motivos := v_motivos || to_jsonb(format('Chegou em casa às %s, %s min depois do previsto (%s).',
         to_char(v_chegada_casa, 'HH24:MI'), atraso_ret, to_char(v_retorno_prev, 'HH24:MI')));
+    end if;
+
+    if cond_esc is not null and cond_confere is false then
+      v_motivos := v_motivos || to_jsonb(format('Na Programação do dia o condutor deste veículo é %s, diferente do motorista cadastrado (%s).', cond_esc, mot));
     end if;
 
     vered := case
@@ -586,7 +714,9 @@ begin
     saida_casa := v_saida_casa; chegada_casa := v_chegada_casa; retorno_previsto := v_retorno_prev;
     atraso_retorno_min := atraso_ret;
     motivos := v_motivos;
+    condutor_escalado := cond_esc; caronas := caronas_json;
     detalhes := jsonb_build_object(
+      'programacao', jsonb_build_object('condutores', cond_esc, 'caronas', caronas_json, 'os', prog_os, 'divergente', cond_confere is false),
       'tolerancia_min', p_tol_min, 'fator_rota', p_fator, 'vel_media_kmh', p_vel_kmh,
       't_ida_min', t_ida, 't_volta_min', t_volta,
       'km_ida', round(km_ida_real, 1), 'km_volta', round(km_volta_real, 1),
@@ -626,13 +756,24 @@ begin
     inicio_expediente, fim_expediente, primeiro_informativo, ultimo_informativo, qtd_informativos,
     janela_inicio, janela_fim, tolerancia_min, km_dia, km_fora, min_fora, km_noturno, km_apos_chegada,
     viagens_dia, viagens_fora, saida_casa, chegada_casa, retorno_previsto, atraso_retorno_min,
-    motivos, detalhes, calculado_em
+    motivos, detalhes, resumo_dia, condutor_escalado, caronas, calculado_em
   )
   select p_data, n.placa, n.motorista, n.coordenacao, n.supervisao, n.veredito, n.confianca, n.criterio, n.fonte_expediente,
          n.inicio_expediente, n.fim_expediente, n.primeiro_informativo, n.ultimo_informativo, n.qtd_informativos,
          n.janela_inicio, n.janela_fim, coalesce((n.detalhes ->> 'tolerancia_min')::int, 20), n.km_dia, n.km_fora, n.min_fora,
          n.km_noturno, n.km_apos_chegada, n.viagens_dia, n.viagens_fora, n.saida_casa, n.chegada_casa, n.retorno_previsto,
-         n.atraso_retorno_min, n.motivos, n.detalhes, now()
+         n.atraso_retorno_min, n.motivos, n.detalhes,
+         (select coalesce(jsonb_agg(jsonb_build_object(
+            'i', round(extract(epoch from ((v ->> 'ini')::timestamp - p_data::timestamp)) / 60)::int,
+            'f', round(extract(epoch from ((v ->> 'fim')::timestamp - p_data::timestamp)) / 60)::int,
+            'k', (v ->> 'km')::numeric,
+            'o', (v ->> 'fora_km')::numeric,
+            's', case when v ->> 'fora_ini' is not null then round(extract(epoch from ((v ->> 'fora_ini')::timestamp - p_data::timestamp)) / 60)::int end,
+            'x', case v ->> 'fase' when 'IDA' then 'I' when 'EXPEDIENTE' then 'E' when 'VOLTA' then 'V'
+                   when 'ANTES_EXPEDIENTE' then 'A' when 'APOS_EXPEDIENTE' then 'P' when 'APOS_CHEGADA_EM_CASA' then 'C' end
+          ) order by v ->> 'ini'), '[]'::jsonb)
+          from jsonb_array_elements(n.detalhes -> 'viagens') v),
+         n.condutor_escalado, n.caronas, now()
   from _dossie_novo n
   on conflict (data_evento, placa) do update set
     motorista = excluded.motorista, coordenacao = excluded.coordenacao, supervisao = excluded.supervisao,
@@ -646,6 +787,7 @@ begin
     viagens_dia = excluded.viagens_dia, viagens_fora = excluded.viagens_fora,
     saida_casa = excluded.saida_casa, chegada_casa = excluded.chegada_casa, retorno_previsto = excluded.retorno_previsto,
     atraso_retorno_min = excluded.atraso_retorno_min, motivos = excluded.motivos, detalhes = excluded.detalhes,
+    resumo_dia = excluded.resumo_dia, condutor_escalado = excluded.condutor_escalado, caronas = excluded.caronas,
     calculado_em = now();
   get diagnostics v_qtd = row_count;
 
