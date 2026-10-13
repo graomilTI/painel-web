@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261013-dossie-fora-horario';
+import './modules/frotas.js?v=20261013-fora-horario-simples';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {
