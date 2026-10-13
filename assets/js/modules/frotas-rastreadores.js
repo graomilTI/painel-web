@@ -837,7 +837,8 @@
     return 'finalizar';
   }
 
-  // Status mostrado na lista: o mais avançado que já foi registrado (a etapa acima só diz qual é a próxima ação).
+  // Status da manutenção: o usuário escolhe na modal Editar (coluna status_manut). A modal sugere o status
+  // conforme os campos são preenchidos, mas quem decide é o usuário. A etapa acima só diz qual é a próxima ação.
   const STATUS_MANUT_ORDEM = ['pendente', 'motorista', 'tecnico', 'agendado'];
   const STATUS_MANUT_LABEL = {
     pendente: ['none', 'Pendente'],
@@ -846,11 +847,16 @@
     agendado: ['ok', 'Agendado']
   };
 
-  function statusManut(m) {
+  // O mais avançado que os campos preenchidos indicam.
+  function statusDosCampos(m) {
     if (m?.data_agendada) return 'agendado';
     if (m?.tecnico_nome) return 'tecnico';
     if (m?.disponibilidade_motorista) return 'motorista';
     return 'pendente';
+  }
+
+  function statusManut(m) {
+    return STATUS_MANUT_ORDEM.includes(m?.status_manut) ? m.status_manut : statusDosCampos(m);
   }
 
   function motoristaDaManut(row, m) {
@@ -918,7 +924,8 @@
     const mot = motoristaDaManut(row, rec);
     const v = (k) => esc(rec?.[k] || '');
     const dlId = `fr-dl-mot-${Date.now()}`;
-    const [clsStatus, labelStatus] = STATUS_MANUT_LABEL[statusManut(rec)];
+    const statusAtual = statusManut(rec);
+    const [clsStatus, labelStatus] = STATUS_MANUT_LABEL[statusAtual];
     const sub = [rec?.motivo, rec ? `aberta há ${diasDesde(rec.aberta_em)}d` : 'sem registro de etapas'].filter(Boolean).join(' · ');
 
     // O wrapper [data-mot-campos] é quem recebe `hidden`: .fr-form tem display:grid e anularia o atributo.
@@ -945,6 +952,11 @@
           <button class="fr-btn ghost fr-mini" data-close>✕</button>
         </div>
         <div class="fr-modal-body">
+          <div class="fr-field" style="max-width:340px;margin:14px 0 4px">
+            <label>Status da manutenção</label>
+            <select name="status_manut">${STATUS_MANUT_ORDEM.map(k => `<option value="${k}"${k === statusAtual ? ' selected' : ''}>${STATUS_MANUT_LABEL[k][1]}</option>`).join('')}</select>
+            <div class="fr-hint">Sobe sozinho ao preencher motorista, técnico e agendamento; ajuste se precisar.</div>
+          </div>
           <div class="fr-cols2">
             <div class="fr-col">
               <div class="fr-divider">Motorista</div>
@@ -1013,8 +1025,20 @@
       lista.innerHTML = '';
     });
 
+    // O status sobe conforme os campos são preenchidos (nunca abaixo do já gravado), até o usuário escolher na lista.
+    const seletorStatus = campo('status_manut');
+    let statusManual = false;
+    seletorStatus.addEventListener('change', () => { statusManual = true; });
+    const sugerirStatus = () => {
+      if (statusManual) return;
+      const dosCampos = statusDosCampos({ disponibilidade_motorista: get('disponibilidade_motorista'), tecnico_nome: get('tecnico_nome'), data_agendada: get('data_agendada') });
+      seletorStatus.value = STATUS_MANUT_ORDEM[Math.max(STATUS_MANUT_ORDEM.indexOf(dosCampos), STATUS_MANUT_ORDEM.indexOf(statusAtual))];
+    };
+    ['disponibilidade_motorista', 'tecnico_nome', 'data_agendada'].forEach(n => campo(n).addEventListener('input', sugerirStatus));
+
     backdrop.querySelector('[data-salvar]').addEventListener('click', async () => {
       const patch = {
+        status_manut: seletorStatus.value,
         disponibilidade_motorista: get('disponibilidade_motorista'),
         tecnico_nome: get('tecnico_nome'),
         tecnico_contato: get('tecnico_contato'),
@@ -1045,6 +1069,7 @@
         else if (soDigitos(contatoDigitado || contatoCadastro) !== soDigitos(mot.contato)) eventos.push('Telefone do motorista atualizado');
       }
       const mudou = (k) => (patch[k] || null) !== (rec?.[k] || null);
+      if (patch.status_manut !== statusAtual) eventos.push(`Status: ${STATUS_MANUT_LABEL[statusAtual][1]} → ${STATUS_MANUT_LABEL[patch.status_manut][1]}`);
       if (mudou('disponibilidade_motorista')) eventos.push(patch.disponibilidade_motorista ? 'Disponibilidade do motorista registrada' : 'Disponibilidade do motorista removida');
       if (mudou('tecnico_nome') || mudou('tecnico_contato')) eventos.push(patch.tecnico_nome ? `Técnico definido: ${patch.tecnico_nome}` : 'Técnico removido');
       if (['data_agendada', 'hora_agendada', 'local_agendado', 'local_maps_url'].some(mudou)) {
@@ -1210,9 +1235,9 @@
       const m = manutAberta(row.placa);
       const [cls, label] = STATUS_MANUT_LABEL[statusManut(m)];
       const motorista = motoristaDaManut(row, m).nome;
-      // Concluir só libera com motorista, técnico e agendamento registrados.
-      const pronto = etapaDe(m) === 'finalizar';
-      const tipConcluir = pronto ? 'Concluir manutenção' : 'Concluir (registre disponibilidade do motorista, técnico e agendamento antes)';
+      // Concluir só libera com o status em Agendado (motorista, técnico e agendamento já resolvidos).
+      const pronto = statusManut(m) === 'agendado';
+      const tipConcluir = pronto ? 'Concluir manutenção' : 'Concluir (mude o status para Agendado em Editar antes)';
       const local = row._rastr?.cidade || '—';
       return `<tr>
         <td><strong>${esc(row.placa)}</strong></td>
