@@ -8,6 +8,15 @@
       .fr-act-row{display:flex;gap:6px;flex-wrap:nowrap}.fr-act{width:30px;height:30px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.72);color:#94a3b8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:.15s}.fr-act svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fr-act:hover:not(:disabled){color:#e2e2f0;border-color:rgba(148,163,184,.65)}.fr-act.done{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.16);color:#4ade80}.fr-act.current{border-color:rgba(245,158,11,.85);background:rgba(245,158,11,.2);color:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.18)}.fr-act.final.current{border-color:#22c55e;background:rgba(34,197,94,.3);color:#86efac;box-shadow:0 0 0 2px rgba(34,197,94,.2)}.fr-act:disabled{opacity:.3;cursor:not-allowed}.fr-act.cancel:hover{border-color:rgba(239,68,68,.75);color:#f87171;background:rgba(239,68,68,.14)}
       .fr-hist-title{margin:22px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
       .fr-link{background:none;border:0;padding:0;font:inherit;color:#86efac;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:rgba(134,239,172,.35);text-underline-offset:3px}.fr-link:hover{color:#bbf7d0;text-decoration-color:currentColor}.fr-dl{display:grid;grid-template-columns:110px 1fr;gap:10px 14px;margin:0;font-size:13.5px}.fr-dl dt{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;align-self:center}.fr-dl dd{margin:0;color:#e2e2f0}
+      .fr-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}.fr-act.obs:hover:not(:disabled){border-color:rgba(99,102,241,.75);color:#a5b4fc;background:rgba(99,102,241,.14)}.fr-maps{color:#86efac;text-decoration:none;margin-left:4px}.fr-maps:hover{color:#bbf7d0}.fr-tab-agenda{margin-left:auto;display:inline-flex;align-items:center;gap:8px}.fr-tab-agenda svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .fr-ag-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}.fr-ag-nav{display:flex;align-items:center;gap:8px}.fr-ag-mes{min-width:200px;text-align:center;color:#f8fafc;font-size:18px;font-weight:950}.fr-ag-spacer{flex:1}.fr-ag-bar .fr-select{width:auto;min-width:150px}.fr-ag-bar .fr-input{width:230px}.fr-ag-chk{display:inline-flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;font-weight:700;cursor:pointer}.fr-ag-chk input{width:16px;height:16px;accent-color:#22c55e;cursor:pointer}
+      .fr-ag-legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 12px;color:#94a3b8;font-size:12px}.fr-ag-legend span{display:inline-flex;align-items:center;gap:6px}.fr-ag-dot{width:10px;height:10px;border-radius:3px;display:inline-block}.fr-ag-dot.inst{background:#818cf8}.fr-ag-dot.manut{background:#f59e0b}.fr-ag-dot.done{background:#475569}.fr-ag-dot.late{background:transparent;box-shadow:0 0 0 1.5px #ef4444}
+      .fr-ag-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}.fr-ag-cal{border:1px solid rgba(148,163,184,.14);border-radius:18px;overflow:hidden}.fr-ag-dow,.fr-ag-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.fr-ag-dow div{padding:9px 6px;text-align:center;color:#bfdbfe;font-size:11px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;background:rgba(2,6,23,.38);border-bottom:1px solid rgba(148,163,184,.16)}
+      .fr-ag-cell{min-height:108px;padding:6px;border:0;border-right:1px solid rgba(148,163,184,.10);border-bottom:1px solid rgba(148,163,184,.10);background:transparent;color:inherit;font-family:inherit;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:3px;overflow:hidden;transition:.12s}.fr-ag-cell:nth-child(7n){border-right:0}.fr-ag-cell:hover{background:rgba(22,101,52,.10)}.fr-ag-cell.fora{opacity:.45}.fr-ag-cell.sel{background:rgba(22,101,52,.22);box-shadow:inset 0 0 0 2px rgba(34,197,94,.65)}.fr-ag-num{font-size:12px;font-weight:950;color:#cbd5e1;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%}.fr-ag-cell.hoje .fr-ag-num{background:#22c55e;color:#052e16}
+      .fr-ag-chip{display:block;font-size:11px;font-weight:800;line-height:1.25;padding:2px 6px;border-radius:6px;border-left:3px solid;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fr-ag-chip.inst{background:rgba(99,102,241,.18);border-color:#818cf8;color:#c7d2fe}.fr-ag-chip.manut{background:rgba(245,158,11,.16);border-color:#f59e0b;color:#fde68a}.fr-ag-chip.done{background:rgba(71,85,105,.22);border-color:#475569;color:#94a3b8}.fr-ag-chip.late{box-shadow:0 0 0 1px rgba(239,68,68,.75)}.fr-ag-mais{font-size:11px;font-weight:950;color:#86efac;padding-left:4px}
+      .fr-ag-side{border:1px solid rgba(148,163,184,.14);border-radius:18px;padding:14px;background:rgba(2,6,23,.32)}.fr-ag-side h4{margin:0 0 2px;color:#f8fafc;font-size:15px}.fr-ag-side .sub{color:#94a3b8;font-size:12px;margin-bottom:12px}.fr-ag-ev{border:1px solid rgba(148,163,184,.16);border-left:4px solid;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:rgba(15,23,42,.6)}.fr-ag-ev.inst{border-left-color:#818cf8}.fr-ag-ev.manut{border-left-color:#f59e0b}.fr-ag-ev.done{opacity:.7}.fr-ag-ev-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}.fr-ag-ev-placa{font-size:15px;font-weight:950;color:#f8fafc}.fr-ag-ev-linha{font-size:12.5px;color:#cbd5e1;line-height:1.55;word-break:break-word}.fr-ag-ev-linha b{color:#bbf7d0;font-weight:900;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}.fr-ag-ev-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+      .fr-ag-aviso{border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.10);color:#fde68a;border-radius:14px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7}.fr-ag-aviso .fr-link{color:#fde68a;font-weight:900}
+      @media(max-width:1100px){.fr-ag-layout{grid-template-columns:1fr}}@media(max-width:680px){.fr-ag-cell{min-height:64px;padding:4px}.fr-ag-chip{font-size:10px;padding:1px 4px}.fr-ag-bar .fr-input,.fr-ag-bar .fr-select{width:100%}.fr-ag-mes{min-width:0;flex:1}}
     </style>`;
 
   let _opts = {};
@@ -26,7 +35,8 @@
     filtros: { placa: '', estado: '', cidade: '' },
     busca: '',
     sortCol: 'placa',
-    sortDir: 'asc'
+    sortDir: 'asc',
+    agenda: { ano: null, mes: null, dia: null, tipo: '', busca: '', concluidos: true }
   };
 
   function norm(v) { return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
@@ -148,8 +158,9 @@
 
   // Motorista vem sempre de frotas_veiculos.motorista_atual (atualizado pela sync de patrimônios);
   // contato e endereço vêm do cadastro de motoristas, com fallback nos colaboradores.
-  function getMotoristaInfo(row) {
-    const nome = row?.motorista_atual || '';
+  // `ov` permite trocar o motorista só para uma manutenção ({ nome, contato }), sem mexer no cadastro do veículo.
+  function getMotoristaInfo(row, ov = {}) {
+    const nome = ov.nome || row?.motorista_atual || '';
     const key = norm(nome).trim();
     if (!key) return { nome: '', contato: '', endereco: '', cidade: '', uf: '' };
     const m = state.motoristas.find(x => norm(x.nome).trim() === key);
@@ -157,7 +168,7 @@
     const endColab = c ? [c.endereco, c.bairro, [c.cidade, c.estado].filter(Boolean).join('/'), c.cep].filter(Boolean).join(', ') : '';
     return {
       nome,
-      contato: fmtTelefone(m?.telefone || c?.whatsapp || ''),
+      contato: ov.contato || fmtTelefone(m?.telefone || c?.whatsapp || ''),
       endereco: m?.endereco || endColab || '',
       cidade: c?.cidade || row?._rastr?.cidade || '',
       uf: toUF(c?.estado) || ufDaLinha(row)
@@ -193,10 +204,10 @@
       case 'data_instalacao':    return r?.data_instalacao || '';
       case 'agendamentos':       return r?.agendamentos_frustrados || 0;
             case 'infleet':            return r?.infleet || '';
-      case 'motorista':          return row.motorista_atual || '';
+      case 'motorista':          return motoristaDaManut(row, manutAberta(row.placa)).nome;
       case 'motivo':             return manutAberta(row.placa)?.motivo || '';
       case 'dias':               return diasDesde(manutAberta(row.placa)?.aberta_em);
-      case 'etapa':              return ETAPAS.findIndex(e => e[0] === (manutAberta(row.placa)?.etapa || 'disponibilidade'));
+      case 'etapa':              return STATUS_MANUT_ORDEM.indexOf(statusManut(manutAberta(row.placa)));
       case 'tecnico':            return manutAberta(row.placa)?.tecnico_nome || '';
       case 'agendada':           return manutAberta(row.placa)?.data_agendada || '';
       default:                   return '';
@@ -254,7 +265,7 @@
       if (!busca) return true;
       const efImei = r?.imei || row.bfleet_idgps || '';
       const placas = placaCandidates(row.placa).concat(r?.placa ? placaCandidates(r.placa) : []);
-      return norm([...placas, row.nome, row.marca, row.modelo, row.motorista_atual,
+      return norm([...placas, row.nome, row.marca, row.modelo, row.motorista_atual, manutAberta(row.placa)?.motorista_nome,
         ufDaLinha(row), r?.estado, r?.cidade, r?.local_instalacao, efImei, r?.cod_rastreio, r?.contato].join(' ')).includes(busca);
     });
 
@@ -305,9 +316,12 @@
   // mantém os três sincronizados visualmente.
   function setFiltro(container, value) {
     state.filtro = value || 'todos';
+    const agenda = state.filtro === 'agenda';
     container.querySelectorAll('[data-filter]').forEach(t => t.classList.toggle('active', t.dataset.filter === state.filtro));
     const sel = container.querySelector('[data-search-status]');
-    if (sel) sel.value = state.filtro === 'todos' ? '' : state.filtro;
+    if (sel) sel.value = state.filtro === 'todos' || agenda ? '' : state.filtro;
+    container.querySelector('[data-list-view]').hidden = agenda;
+    container.querySelector('[data-agenda-view]').hidden = !agenda;
     renderKpis(container);
     renderTable(container);
   }
@@ -320,8 +334,8 @@
   ];
   const COLS_MANUT = [
     ['placa', 'Placa', 80], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['motorista', 'Motorista', 0],
-    ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 192], ['tecnico', 'Técnico', 110],
-    ['agendada', 'Agendada', 104], [null, 'Ações', 192]
+    ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 124], ['tecnico', 'Técnico', 110],
+    ['agendada', 'Agendada', 150], [null, 'Ações', 238]
   ];
   const COLS_REMOVIDOS = [
     ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
@@ -335,7 +349,7 @@
     const key = cols === COLS_REMOVIDOS ? 'removidos' : cols === COLS_MANUT ? 'manut' : 'normal';
     if (!table || table.dataset.cols === key) return;
     table.dataset.cols = key;
-    table.style.minWidth = key === 'manut' ? '1300px' : '';
+    table.style.minWidth = key === 'manut' ? '1340px' : '';
     table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
     table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
       ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
@@ -345,6 +359,7 @@
   function renderTable(root) {
     const el = root.querySelector('[data-table]');
     if (!el) return;
+    if (state.filtro === 'agenda') { renderAgenda(root); return; }
     const modoManut = state.filtro === 'manutencao';
     const hist = root.querySelector('[data-hist]');
     if (hist) { hist.hidden = !modoManut; if (!modoManut) hist.innerHTML = ''; }
@@ -502,8 +517,8 @@
                 <input type="date" name="previsao_chegada" value="${r.previsao_chegada || ''}" />
               </div>
               <div class="fr-field">
-                <label>Instalação</label>
-                <input type="date" name="data_instalacao" value="${r.data_instalacao || ''}" />
+                <label title="Com status Agendado, esta é a data da instalação que aparece na Agenda">Instalação</label>
+                <input type="date" name="data_instalacao" value="${r.data_instalacao || ''}" title="Com status Agendado, esta é a data da instalação que aparece na Agenda" />
               </div>
             </div>
             </div>
@@ -669,12 +684,6 @@
   // Etapas: disponibilidade com o motorista → alinhar com o técnico → agendar → finalizar.
   // Finalizar devolve o rastreador para "Instalado" (Com BFleet) e a linha fica no histórico.
   const TABLE_MANUT = 'frotas_rastreadores_manutencoes';
-  const ETAPAS = [
-    ['disponibilidade', 'Disponibilidade com o motorista'],
-    ['tecnico', 'Alinhar com o técnico'],
-    ['agendamento', 'Agendar'],
-    ['finalizar', 'Finalizar']
-  ];
 
   function userName() {
     const u = _opts.auth?.user;
@@ -779,18 +788,47 @@
     return 'finalizar';
   }
 
-  const ETAPA_STATUS = {
-    disponibilidade: ['progress', '1 · Disponibilidade'],
-    tecnico: ['progress', '2 · Alinhar técnico'],
-    agendamento: ['progress', '3 · Agendar'],
-    finalizar: ['ok', '4 · Pronto p/ concluir']
+  // Status mostrado na lista: o mais avançado que já foi registrado (a etapa acima só diz qual é a próxima ação).
+  const STATUS_MANUT_ORDEM = ['pendente', 'motorista', 'tecnico', 'agendado'];
+  const STATUS_MANUT_LABEL = {
+    pendente: ['none', 'Pendente'],
+    motorista: ['progress', 'Motorista OK'],
+    tecnico: ['info', 'Técnico OK'],
+    agendado: ['ok', 'Agendado']
   };
+
+  function statusManut(m) {
+    if (m?.data_agendada) return 'agendado';
+    if (m?.tecnico_nome) return 'tecnico';
+    if (m?.disponibilidade_motorista) return 'motorista';
+    return 'pendente';
+  }
+
+  function motoristaDaManut(row, m) {
+    return getMotoristaInfo(row, { nome: m?.motorista_nome, contato: m?.motorista_contato });
+  }
+
+  // Só http(s): o link vem de digitação livre e vai parar num href.
+  function safeUrl(v) {
+    const s = String(v || '').trim();
+    if (!s) return '';
+    try {
+      const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(s) ? s : 'https://' + s);
+      return /^https?:$/.test(u.protocol) ? u.href : '';
+    } catch (e) { return ''; }
+  }
+
+  function mapsLink(url) {
+    const href = safeUrl(url);
+    return href ? `<a class="fr-maps" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="Abrir a localização no Maps" aria-label="Abrir a localização no Maps">📍</a>` : '';
+  }
 
   const ICONS = {
     disponibilidade: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
     tecnico: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L3 17.7 6.3 21l6.3-6.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
     agendamento: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     finalizar: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    observacoes: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 14h4"/></svg>',
     cancelar: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
   };
 
@@ -808,24 +846,45 @@
   }
 
   const ACOES = {
-    disponibilidade: { titulo: 'Disponibilidade com o motorista', evento: () => 'Disponibilidade do motorista registrada' },
+    disponibilidade: {
+      titulo: 'Disponibilidade com o motorista',
+      evento: (p, ctx) => [
+        ctx.nomeAlterado ? `Motorista alterado para ${ctx.nomeNovo}` : (ctx.contatoAlterado ? 'Telefone do motorista atualizado' : ''),
+        ctx.disponibilidadeAlterada ? 'Disponibilidade do motorista registrada' : ''
+      ].filter(Boolean).join(' · ')
+    },
     tecnico: { titulo: 'Alinhar com o técnico', evento: p => `Técnico definido: ${p.tecnico_nome}` },
-    agendamento: { titulo: 'Agendar', evento: p => `Agendada para ${fmtDataBr(p.data_agendada)}${p.hora_agendada ? ' ' + p.hora_agendada : ''}` },
+    agendamento: { titulo: 'Agendar', evento: p => `Agendada para ${fmtDataBr(p.data_agendada)}${p.hora_agendada ? ' ' + p.hora_agendada : ''}${p.local_maps_url ? ' (com link do Maps)' : ''}` },
     finalizar: { titulo: 'Concluir manutenção', evento: () => 'Manutenção concluída' }
   };
+
+  const soDigitos = (s) => String(s || '').replace(/\D/g, '');
+
+  // Nomes do cadastro de motoristas e dos colaboradores, sem repetição, para sugerir na troca de motorista.
+  function nomesDePessoas() {
+    const vistos = new Set();
+    const nomes = [];
+    [...state.motoristas, ...state.colaboradores].forEach(p => {
+      const nome = String(p.nome || '').trim();
+      const k = norm(nome);
+      if (nome && !vistos.has(k)) { vistos.add(k); nomes.push(nome); }
+    });
+    return nomes;
+  }
 
   function openManutAcao(root, placa, tipo) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
     const rec = manutAberta(row.placa);
-    const mot = getMotoristaInfo(row);
+    const mot = motoristaDaManut(row, rec);
     const cfg = ACOES[tipo];
     const v = (k) => esc(rec?.[k] || '');
+    const dlId = `fr-dl-mot-${Date.now()}`;
 
     const campos = {
-      disponibilidade: `<div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>`,
+      disponibilidade: `<div class="fr-form fr-g-2" style="margin-bottom:14px"><div class="fr-field"><label>Motorista</label><input name="motorista_nome" value="${esc(mot.nome)}" list="${dlId}" autocomplete="off" placeholder="Nome do motorista" /><datalist id="${dlId}"></datalist></div><div class="fr-field"><label>Telefone</label><input name="motorista_contato" value="${esc(mot.contato)}" placeholder="(00) 00000-0000" /></div></div><div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div><div class="fr-hint">Trocar o motorista vale só para esta manutenção; o cadastro do veículo continua vindo da sync de patrimônios.</div>`,
       tecnico: `<div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>`,
-      agendamento: `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div></div>`,
+      agendamento: `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div><div class="fr-field full"><label>Link do Maps (localização)</label><input name="local_maps_url" value="${v('local_maps_url')}" placeholder="Cole o link do Google Maps do local" inputmode="url" autocomplete="off" /></div></div>`,
       finalizar: `<div class="fr-mot-box">${rec ? `<strong>Motivo:</strong> ${esc(rec.motivo || '—')}<br><strong>Motorista:</strong> ${esc(rec.disponibilidade_motorista || '—')}<br><strong>Técnico:</strong> ${esc(rec.tecnico_nome || '—')}<br><strong>Agendada:</strong> ${rec.data_agendada ? esc(fmtDataBr(rec.data_agendada)) + (rec.hora_agendada ? ' ' + esc(rec.hora_agendada) : '') : '—'}` : 'Sem registro de etapas.'}</div><div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${v('resolucao')}</textarea></div><div class="fr-hint">Ao concluir, o rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.</div>`
     };
 
@@ -851,7 +910,7 @@
     const close = () => backdrop.remove();
     backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
-    backdrop.querySelector('input,textarea')?.focus();
+    (tipo === 'disponibilidade' ? backdrop.querySelector('textarea') : backdrop.querySelector('input,textarea'))?.focus();
 
     const get = (n) => backdrop.querySelector(`[name="${n}"]`)?.value?.trim() || null;
     const NOMES = {
@@ -867,10 +926,51 @@
       finalizar: ['resolucao', 'Descreva o que foi feito para concluir.']
     };
 
+    // Troca de motorista: sugere nomes conhecidos e preenche o telefone do cadastro enquanto o campo não for editado à mão.
+    if (tipo === 'disponibilidade') {
+      const nomeEl = backdrop.querySelector('[name="motorista_nome"]');
+      const telEl = backdrop.querySelector('[name="motorista_contato"]');
+      const lista = backdrop.querySelector('datalist');
+      const pessoas = nomesDePessoas();
+      let telManual = false;
+      telEl.addEventListener('input', () => { telManual = true; });
+      nomeEl.addEventListener('input', () => {
+        const q = norm(nomeEl.value).trim();
+        lista.innerHTML = q.length < 2 ? '' : pessoas.filter(n => norm(n).includes(q)).slice(0, 40).map(n => `<option value="${esc(n)}"></option>`).join('');
+        if (!telManual) telEl.value = getMotoristaInfo({}, { nome: nomeEl.value.trim() }).contato;
+      });
+    }
+
     backdrop.querySelector('[data-salvar]').addEventListener('click', async () => {
       const patch = Object.fromEntries(NOMES[tipo].map(n => [n, get(n)]));
-      const [obrig, msg] = OBRIGATORIO[tipo];
-      if (!patch[obrig]) { toast(msg, true); return; }
+      let ctx = {};
+
+      if (tipo === 'disponibilidade') {
+        // Só guarda motorista/telefone quando diferem do cadastro, para a manutenção seguir o veículo nos demais casos.
+        const nomeDigitado = get('motorista_nome');
+        const nomeEfetivo = nomeDigitado || row.motorista_atual || '';
+        patch.motorista_nome = nomeDigitado && norm(nomeDigitado).trim() !== norm(row.motorista_atual).trim() ? nomeDigitado : null;
+        const contatoCadastro = getMotoristaInfo(row, { nome: patch.motorista_nome }).contato;
+        const contatoDigitado = fmtTelefone(get('motorista_contato') || '');
+        patch.motorista_contato = contatoDigitado && soDigitos(contatoDigitado) !== soDigitos(contatoCadastro) ? contatoDigitado : null;
+        ctx = {
+          nomeNovo: nomeEfetivo,
+          nomeAlterado: norm(nomeEfetivo).trim() !== norm(mot.nome).trim(),
+          contatoAlterado: soDigitos(contatoDigitado || contatoCadastro) !== soDigitos(mot.contato),
+          disponibilidadeAlterada: Boolean(patch.disponibilidade_motorista) && patch.disponibilidade_motorista !== (rec?.disponibilidade_motorista || null)
+        };
+        if (!patch.disponibilidade_motorista && !ctx.nomeAlterado && !ctx.contatoAlterado) { toast('Informe a disponibilidade do motorista ou altere o motorista.', true); return; }
+      } else {
+        const [obrig, msg] = OBRIGATORIO[tipo];
+        if (!patch[obrig]) { toast(msg, true); return; }
+      }
+
+      if (tipo === 'agendamento' && get('local_maps_url')) {
+        patch.local_maps_url = safeUrl(get('local_maps_url'));
+        if (!patch.local_maps_url) { toast('Link do Maps inválido. Cole o endereço completo (https://...).', true); return; }
+      } else if (tipo === 'agendamento') {
+        patch.local_maps_url = null;
+      }
       if (tipo === 'finalizar' && !confirm(`Concluir a manutenção de ${row.placa}? O rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.`)) return;
 
       const btn = backdrop.querySelector('[data-salvar]');
@@ -879,7 +979,7 @@
       btn.textContent = 'Salvando...';
       try {
         if (tipo !== 'finalizar') {
-          await gravarManutencao(row, patch, cfg.evento(patch));
+          await gravarManutencao(row, patch, cfg.evento(patch, ctx));
           toast(`${cfg.titulo}: salvo.`);
         } else {
           const fim = await gravarManutencao(row, {
@@ -888,7 +988,7 @@
             etapa: 'finalizar',
             encerrada_em: new Date().toISOString(),
             encerrada_por_nome: userName()
-          }, cfg.evento(patch));
+          }, cfg.evento(patch, ctx));
           const { error } = await setStatusRastreador(row, 'concluido');
           if (error) toast(`Manutenção concluída, mas o status não voltou para Instalado: ${error.message}`, true);
 
@@ -921,7 +1021,7 @@
   function openMotoristaInfo(placa) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
-    const mot = getMotoristaInfo(row);
+    const mot = motoristaDaManut(row, manutAberta(row.placa));
     const dado = (v) => esc(v || '—');
     const backdrop = document.createElement('div');
     backdrop.className = 'fr-modal-backdrop';
@@ -943,6 +1043,44 @@
     document.body.appendChild(backdrop);
     backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
     backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  }
+
+  // Mesmo histórico de observações do cadastro (Todos → editar): é uma lista única por placa.
+  function openObservacoes(placa) {
+    const row = state.merged.find(v => v.placa === placa);
+    if (!row) return;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fr-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(760px,96vw)">
+        <div class="fr-modal-head">
+          <div>
+            <h3>Observações · ${esc(row.placa)}</h3>
+            <p>Histórico por data. As mesmas observações aparecem no cadastro do rastreador (aba Todos).</p>
+          </div>
+          <button class="fr-btn ghost fr-mini" data-close>✕</button>
+        </div>
+        <div class="fr-modal-body">
+          <div class="fr-obs" data-obs>
+            <div class="fr-obs-add">
+              <input type="date" data-obs-data value="${new Date().toISOString().slice(0, 10)}" />
+              <input type="text" data-obs-desc placeholder="Descrição da observação" maxlength="500" />
+              <button type="button" class="fr-btn soft fr-icon-btn" data-obs-add title="Adicionar observação" aria-label="Adicionar observação">+</button>
+            </div>
+            <div class="fr-obs-scroll" style="max-height:min(52vh,420px)">
+              <table class="fr-obs-table"><thead><tr><th style="width:92px">Data</th><th>Descrição</th><th style="width:110px">Usuário</th><th style="width:36px"></th></tr></thead><tbody data-obs-list><tr><td colspan="4" class="fr-empty">Carregando...</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
+        <div class="fr-modal-foot">
+          <button class="fr-btn ghost" data-close>Fechar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+    initObservacoes(backdrop, row.placa);
+    backdrop.querySelector('[data-obs-desc]').focus();
   }
 
   async function cancelarManutencao(root, placa) {
@@ -972,8 +1110,9 @@
     if (!rows.length) el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Nenhum veículo em manutenção.</td></tr>`;
     else el.innerHTML = rows.map(row => {
       const m = manutAberta(row.placa);
-      const etapa = m?.etapa || etapaDe(null);
-      const [cls, label] = ETAPA_STATUS[etapa];
+      const etapa = etapaDe(m);
+      const [cls, label] = STATUS_MANUT_LABEL[statusManut(m)];
+      const motorista = motoristaDaManut(row, m).nome;
       const detalhes = {
         disponibilidade: m?.disponibilidade_motorista,
         tecnico: m?.tecnico_nome ? `${m.tecnico_nome}${m.tecnico_contato ? ' · ' + m.tecnico_contato : ''}` : '',
@@ -998,13 +1137,13 @@
         <td><strong>${esc(row.placa)}</strong></td>
         <td>${esc(ufDaLinha(row) || '—')}</td>
         <td title="${esc(local)}">${esc(local)}</td>
-        <td title="${esc(row.motorista_atual || '—')}">${row.motorista_atual ? `<button type="button" class="fr-link" data-mmot="${esc(row.placa)}" title="Ver dados do motorista">${esc(row.motorista_atual)}</button>` : '—'}</td>
+        <td title="${esc(motorista || '—')}">${motorista ? `<button type="button" class="fr-link" data-mmot="${esc(row.placa)}" title="Ver dados do motorista">${esc(motorista)}</button>` : '—'}</td>
         <td title="${esc(m?.motivo || '—')}">${esc(m?.motivo || '—')}</td>
         <td>${m ? diasDesde(m.aberta_em) + 'd' : '—'}</td>
         <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
         <td title="${esc(m?.tecnico_nome || '—')}">${esc(m?.tecnico_nome || '—')}</td>
-        <td>${m?.data_agendada ? esc(fmtDataBr(m.data_agendada)) + (m.hora_agendada ? ' ' + esc(m.hora_agendada) : '') : '—'}</td>
-        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
+        <td>${m?.data_agendada ? esc(fmtDataBr(m.data_agendada)) + (m.hora_agendada ? ' ' + esc(m.hora_agendada) : '') + mapsLink(m.local_maps_url) : '—'}</td>
+        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act obs" data-mobs="${esc(row.placa)}" title="Observações" aria-label="Observações">${ICONS.observacoes}</button><button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
       </tr>`;
     }).join('');
 
@@ -1036,6 +1175,222 @@
           </tr>`).join('') : '<tr><td class="fr-empty" colspan="8">Nenhuma manutenção concluída ainda.</td></tr>'}</tbody>
         </table>
       </div>`;
+  }
+
+  // ── Agenda ──────────────────────────────────────────────────────────────────
+  // Calendário das datas marcadas: manutenção (data agendada) e instalação (campo "Instalação" do cadastro,
+  // que com status Agendado é a data prevista e com status Instalado é a data em que foi feita).
+  const TIPO_AGENDA = { inst: 'Instalação', manut: 'Manutenção' };
+  const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const isoDia = (ano, mes, dia) => `${ano}-${pad2(mes + 1)}-${pad2(dia)}`;
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const primeiroNome = (n) => { const p = String(n || '').trim().split(/\s+/)[0] || ''; return p.charAt(0) + p.slice(1).toLowerCase(); };
+
+  function hojeIso() {
+    const d = new Date();
+    return isoDia(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+
+  function dataDeIso(iso) {
+    const [a, m, d] = String(iso).split('-').map(Number);
+    return new Date(a, m - 1, d);
+  }
+
+  function agendaEventos() {
+    const porPlaca = new Map(state.merged.map(v => [placaKey(v.placa), v]));
+    const hoje = hojeIso();
+    const eventos = [];
+
+    state.manutencoes.forEach(m => {
+      if (m.situacao === 'cancelada' || !m.data_agendada) return;
+      const row = porPlaca.get(placaKey(m.placa));
+      if (!row) return;
+      const mot = motoristaDaManut(row, m);
+      const concluido = m.situacao === 'finalizada';
+      eventos.push({
+        tipo: 'manut', data: m.data_agendada, hora: m.hora_agendada || '', placa: row.placa,
+        motorista: mot.nome, contato: mot.contato, local: m.local_agendado || '', maps: safeUrl(m.local_maps_url),
+        tecnico: m.tecnico_nome || '', cidade: row._rastr?.cidade || '', uf: ufDaLinha(row),
+        concluido, atrasado: !concluido && m.data_agendada < hoje
+      });
+    });
+
+    state.rastreadores.forEach(r => {
+      if (!r.data_instalacao || !['agendado', 'concluido'].includes(r.status)) return;
+      const row = porPlaca.get(placaKey(r.placa));
+      if (!row) return;
+      const mot = getMotoristaInfo(row);
+      const concluido = r.status === 'concluido';
+      eventos.push({
+        tipo: 'inst', data: r.data_instalacao, hora: '', placa: row.placa,
+        motorista: mot.nome, contato: mot.contato, local: r.local_instalacao || '', maps: '',
+        tecnico: '', cidade: r.cidade || '', uf: ufDaLinha(row),
+        concluido, atrasado: !concluido && r.data_instalacao < hoje
+      });
+    });
+    return eventos;
+  }
+
+  function agendaFiltrados() {
+    const { tipo, busca, concluidos } = state.agenda;
+    const q = norm(busca);
+    return agendaEventos().filter(e => {
+      if (tipo && e.tipo !== tipo) return false;
+      if (!concluidos && e.concluido) return false;
+      if (!q) return true;
+      return norm([...placaCandidates(e.placa), e.motorista, e.cidade, e.local, e.tecnico].join(' ')).includes(q);
+    });
+  }
+
+  const ordenaEvento = (a, b) => (a.hora || '99:99').localeCompare(b.hora || '99:99') || a.placa.localeCompare(b.placa);
+
+  function cardEvento(ev) {
+    const situacao = ev.concluido
+      ? `<span class="fr-badge ok">${ev.tipo === 'inst' ? 'Instalada' : 'Concluída'}</span>`
+      : ev.atrasado ? '<span class="fr-badge err" title="A data já passou e ainda não foi concluída">Data passada</span>'
+        : '<span class="fr-badge progress">Agendada</span>';
+    const linha = (rotulo, valor) => valor ? `<div class="fr-ag-ev-linha"><b>${rotulo}</b>${esc(valor)}</div>` : '';
+    const acoes = [
+      ev.maps ? `<a class="fr-btn ghost fr-mini" href="${esc(ev.maps)}" target="_blank" rel="noopener noreferrer">📍 Abrir no Maps</a>` : '',
+      ev.tipo === 'manut' && !ev.concluido ? `<button type="button" class="fr-btn soft fr-mini" data-ag-edit="manut" data-placa="${esc(ev.placa)}">✎ Editar agendamento</button>` : '',
+      ev.tipo === 'inst' ? `<button type="button" class="fr-btn soft fr-mini" data-ag-edit="inst" data-placa="${esc(ev.placa)}">✎ Abrir cadastro</button>` : ''
+    ].filter(Boolean).join('');
+    return `<div class="fr-ag-ev ${ev.tipo}${ev.concluido ? ' done' : ''}">
+      <div class="fr-ag-ev-top">
+        <span class="fr-ag-ev-placa">${esc(ev.placa)}</span>
+        <span class="fr-badge ${ev.tipo === 'inst' ? 'info' : 'progress'}">${TIPO_AGENDA[ev.tipo]}</span>${situacao}${ev.hora ? `<span class="fr-badge none">🕒 ${esc(ev.hora)}</span>` : ''}
+      </div>
+      ${linha('Motorista', [ev.motorista, ev.contato].filter(Boolean).join(' · '))}
+      ${linha('Local', ev.local)}
+      ${linha('Técnico', ev.tecnico)}
+      ${linha('Cidade', [ev.cidade, ev.uf].filter(Boolean).join(' / '))}
+      ${acoes ? `<div class="fr-ag-ev-acoes">${acoes}</div>` : ''}
+    </div>`;
+  }
+
+  function renderAgendaConteudo(el) {
+    const ag = state.agenda;
+    const eventos = agendaFiltrados();
+    const porDia = new Map();
+    eventos.forEach(ev => { if (!porDia.has(ev.data)) porDia.set(ev.data, []); porDia.get(ev.data).push(ev); });
+    porDia.forEach(lista => lista.sort(ordenaEvento));
+
+    const prefixoMes = `${ag.ano}-${pad2(ag.mes + 1)}-`;
+    const tituloMes = cap(new Date(ag.ano, ag.mes, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }));
+    el.querySelector('[data-ag-titulo]').textContent = tituloMes;
+    el.querySelector('[data-ag-resumo]').textContent = `${eventos.filter(e => e.data.startsWith(prefixoMes)).length} agendamento(s) em ${tituloMes}`;
+
+    // Grade: semanas completas (domingo a sábado) cobrindo o mês.
+    const deslocamento = new Date(ag.ano, ag.mes, 1).getDay();
+    const diasNoMes = new Date(ag.ano, ag.mes + 1, 0).getDate();
+    const celulas = Math.ceil((deslocamento + diasNoMes) / 7) * 7;
+    const hoje = hojeIso();
+    let grade = '';
+    for (let i = 0; i < celulas; i++) {
+      const d = new Date(ag.ano, ag.mes, 1 - deslocamento + i);
+      const iso = isoDia(d.getFullYear(), d.getMonth(), d.getDate());
+      const evs = porDia.get(iso) || [];
+      const chips = evs.slice(0, 3).map(ev => `<span class="fr-ag-chip ${ev.tipo}${ev.concluido ? ' done' : ''}${ev.atrasado ? ' late' : ''}" title="${esc(`${TIPO_AGENDA[ev.tipo]}: ${ev.placa}${ev.motorista ? ' — ' + ev.motorista : ''}`)}">${ev.hora ? esc(ev.hora) + ' ' : ''}${esc(ev.placa)}${ev.motorista ? ' · ' + esc(primeiroNome(ev.motorista)) : ''}</span>`).join('');
+      grade += `<button type="button" class="fr-ag-cell${d.getMonth() !== ag.mes ? ' fora' : ''}${iso === ag.dia ? ' sel' : ''}${iso === hoje ? ' hoje' : ''}" data-ag-day="${iso}"><span class="fr-ag-num">${d.getDate()}</span>${chips}${evs.length > 3 ? `<span class="fr-ag-mais">+${evs.length - 3} mais</span>` : ''}</button>`;
+    }
+    el.querySelector('[data-ag-grid]').innerHTML = grade;
+
+    const doDia = porDia.get(ag.dia) || [];
+    const diaTitulo = cap(dataDeIso(ag.dia).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }));
+    el.querySelector('[data-ag-dia]').innerHTML = `<h4>${esc(diaTitulo)}</h4><div class="sub">${doDia.length ? `${doDia.length} agendamento(s)` : 'Sem agendamentos'}</div>${doDia.map(cardEvento).join('') || '<div class="fr-empty" style="padding:18px 0!important">Nenhum agendamento neste dia.</div>'}`;
+
+    const semData = ag.tipo === 'manut' ? [] : state.merged.filter(r => r._rastr?.status === 'agendado' && !r._rastr.data_instalacao);
+    el.querySelector('[data-ag-aviso]').innerHTML = semData.length
+      ? `<div class="fr-ag-aviso">⚠️ ${semData.length} instalação(ões) com status <strong>Agendado</strong> sem data. Preencha <strong>Instalação</strong> no cadastro para aparecer na agenda: ${semData.map(r => `<button type="button" class="fr-link" data-ag-edit="inst" data-placa="${esc(r.placa)}">${esc(r.placa)}</button>`).join(', ')}</div>`
+      : '';
+  }
+
+  function renderAgenda(root) {
+    const el = root.querySelector('[data-agenda-view]');
+    if (!el) return;
+    const ag = state.agenda;
+    if (ag.ano === null) {
+      const h = new Date();
+      ag.ano = h.getFullYear();
+      ag.mes = h.getMonth();
+      ag.dia = hojeIso();
+    }
+
+    if (!el.dataset.ready) {
+      el.dataset.ready = '1';
+      el.innerHTML = `
+        <div class="fr-ag-bar">
+          <div class="fr-ag-nav">
+            <button type="button" class="fr-btn ghost fr-mini" style="font-size:16px;min-width:38px" data-ag-nav="-1" title="Mês anterior" aria-label="Mês anterior">‹</button>
+            <div class="fr-ag-mes" data-ag-titulo></div>
+            <button type="button" class="fr-btn ghost fr-mini" style="font-size:16px;min-width:38px" data-ag-nav="1" title="Próximo mês" aria-label="Próximo mês">›</button>
+            <button type="button" class="fr-btn soft fr-mini" data-ag-hoje>Hoje</button>
+          </div>
+          <div class="fr-ag-spacer"></div>
+          <input class="fr-input" type="search" placeholder="Buscar placa, motorista, cidade..." data-ag-busca />
+          <select class="fr-select" data-ag-tipo>
+            <option value="">Instalação e manutenção</option>
+            <option value="inst">Só instalação</option>
+            <option value="manut">Só manutenção</option>
+          </select>
+          <label class="fr-ag-chk"><input type="checkbox" data-ag-concl checked /> Mostrar concluídos</label>
+        </div>
+        <div class="fr-ag-legend">
+          <span><i class="fr-ag-dot inst"></i>Instalação</span>
+          <span><i class="fr-ag-dot manut"></i>Manutenção</span>
+          <span><i class="fr-ag-dot done"></i>Concluído</span>
+          <span><i class="fr-ag-dot late"></i>Data passada, não concluído</span>
+          <span data-ag-resumo style="margin-left:auto"></span>
+        </div>
+        <div data-ag-aviso></div>
+        <div class="fr-ag-layout">
+          <div class="fr-ag-cal">
+            <div class="fr-ag-dow">${DIAS_SEMANA.map(d => `<div>${d}</div>`).join('')}</div>
+            <div class="fr-ag-grid" data-ag-grid></div>
+          </div>
+          <aside class="fr-ag-side" data-ag-dia></aside>
+        </div>`;
+
+      el.addEventListener('click', e => {
+        const nav = e.target.closest('[data-ag-nav]');
+        if (nav) {
+          const d = new Date(ag.ano, ag.mes + Number(nav.dataset.agNav), 1);
+          ag.ano = d.getFullYear();
+          ag.mes = d.getMonth();
+          ag.dia = hojeIso().startsWith(`${ag.ano}-${pad2(ag.mes + 1)}-`) ? hojeIso() : isoDia(ag.ano, ag.mes, 1);
+          renderAgendaConteudo(el);
+          return;
+        }
+        if (e.target.closest('[data-ag-hoje]')) {
+          const h = new Date();
+          ag.ano = h.getFullYear();
+          ag.mes = h.getMonth();
+          ag.dia = hojeIso();
+          renderAgendaConteudo(el);
+          return;
+        }
+        const dia = e.target.closest('[data-ag-day]');
+        if (dia) {
+          ag.dia = dia.dataset.agDay;
+          const d = dataDeIso(ag.dia);
+          ag.ano = d.getFullYear();
+          ag.mes = d.getMonth();
+          renderAgendaConteudo(el);
+          return;
+        }
+        const edit = e.target.closest('[data-ag-edit]');
+        if (edit) {
+          if (edit.dataset.agEdit === 'manut') openManutAcao(root, edit.dataset.placa, 'agendamento');
+          else openModal(root, edit.dataset.placa);
+        }
+      });
+      el.querySelector('[data-ag-busca]').addEventListener('input', e => { ag.busca = e.target.value; renderAgendaConteudo(el); });
+      el.querySelector('[data-ag-tipo]').addEventListener('change', e => { ag.tipo = e.target.value; renderAgendaConteudo(el); });
+      el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
+    }
+
+    renderAgendaConteudo(el);
   }
 
   function openRemoveModal(root, placa) {
@@ -1366,9 +1721,12 @@
             <button class="fr-tab" data-filter="concluido">Concluído</button>
             <button class="fr-tab" data-filter="manutencao">Manutenção</button>
             <button class="fr-tab" data-filter="removidos">REMOVIDOS</button>
+            <button class="fr-tab fr-tab-agenda" data-filter="agenda" title="Agenda de instalações e manutenções" aria-label="Agenda"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Agenda</button>
           </div>
 
           <div class="fr-body">
+            <div data-agenda-view hidden></div>
+            <div data-list-view>
             <div class="fr-toolbar">
               <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, motorista..." data-search />
               <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
@@ -1402,6 +1760,7 @@
             </div>
 
             <div data-hist hidden></div>
+            </div>
           </div>
         </div>
       </div>`;
@@ -1443,6 +1802,8 @@
       if (acao) { openManutAcao(container, acao.dataset.placa, acao.dataset.macao); return; }
       const mot = e.target.closest('[data-mmot]');
       if (mot) { openMotoristaInfo(mot.dataset.mmot); return; }
+      const obs = e.target.closest('[data-mobs]');
+      if (obs) { openObservacoes(obs.dataset.mobs); return; }
       const cancel = e.target.closest('[data-mcancel]');
       if (cancel) cancelarManutencao(container, cancel.dataset.mcancel);
     });
