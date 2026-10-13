@@ -326,7 +326,7 @@
   const COLS_REMOVIDOS = [
     ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
     ['imei', 'IMEI', 124], ['cod_rastreio', 'Rastreio', 108], ['removido_em', 'Removido em', 130],
-    ['motivo', 'Motivo', 0], ['removido_por', 'Removido por', 120]
+    ['motivo', 'Motivo', 0], ['removido_por', 'Removido por', 120], [null, '', 104]
   ];
 
   function renderHead(root) {
@@ -369,8 +369,12 @@
           <td>${r.removido_em ? new Date(r.removido_em).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</td>
           <td title="${esc(r.motivo_remocao || '—')}">${esc(r.motivo_remocao || '—')}</td>
           <td title="${esc(r.removido_por_nome || '—')}">${esc(r.removido_por_nome || '—')}</td>
+          <td><button class="fr-btn soft fr-mini" data-restore="${esc(r.id)}" title="Desfazer a remoção e devolver à relação de instalação">↺ Restaurar</button></td>
         </tr>`;
       }).join('');
+      el.querySelectorAll('[data-restore]').forEach(btn => {
+        btn.addEventListener('click', () => openRestoreModal(root, btn.dataset.restore));
+      });
       return;
     }
 
@@ -1129,6 +1133,72 @@
     }
 
     toast('Rastreador movido para REMOVIDOS.');
+    backdrop.remove();
+    await loadData(root);
+  }
+
+  function openRestoreModal(root, removidoId) {
+    const rem = state.removidos.find(r => r.id === removidoId);
+    if (!rem) return;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fr-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(560px,96vw)">
+        <div class="fr-modal-head">
+          <div>
+            <h3>Restaurar rastreador · ${esc(rem.placa)}</h3>
+            <p>O veículo volta para a relação de instalação com os dados que tinha no momento da remoção (status, IMEI, local, rastreio, etc.) e sai de <strong>REMOVIDOS</strong>.</p>
+          </div>
+          <button class="fr-btn ghost fr-mini" data-close>✕</button>
+        </div>
+        <div class="fr-modal-foot">
+          <button class="fr-btn ghost" data-close>Cancelar</button>
+          <button class="fr-btn primary" data-confirm-restore>Restaurar</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(backdrop);
+    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+    backdrop.querySelector('[data-confirm-restore]').addEventListener('click', async () => {
+      await restoreRastreador(root, rem, backdrop);
+    });
+  }
+
+  // Desfaz removeRastreador: recria a linha em frotas_rastreadores a partir do snapshot e apaga o registro de remoção.
+  async function restoreRastreador(root, rem, backdrop) {
+    const btn = backdrop.querySelector('[data-confirm-restore]');
+    btn.textContent = 'Restaurando...';
+    btn.disabled = true;
+    const falhou = (msg) => {
+      toast(msg, true);
+      btn.textContent = 'Restaurar';
+      btn.disabled = false;
+    };
+
+    const snap = rem.snapshot || {};
+    const jaExiste = (state.rastreadores || []).some(r => placaKey(r.placa) === placaKey(rem.placa));
+
+    // Só recria a linha se havia rastreador cadastrado na remoção e a placa não voltou a ter outro.
+    // Sem linha, o veículo reaparece como "Sem rastreador" ao sair de REMOVIDOS.
+    if (snap.id && !jaExiste) {
+      const colunas = ['id', 'veiculo_id', 'placa', 'estado', 'cidade', 'local_instalacao', 'imei', 'data_envio',
+        'previsao_chegada', 'cod_rastreio', 'status', 'data_instalacao', 'nao_atendido', 'contato', 'observacoes',
+        'created_at', 'contrato', 'contrato_assinado', 'agendamentos_frustrados', 'termo_assinado', 'infleet', 'responsavel'];
+      const payload = {};
+      colunas.forEach(c => { if (snap[c] !== undefined) payload[c] = snap[c]; });
+      payload.placa = rem.placa;
+      payload.veiculo_id = snap.veiculo_id || rem.veiculo_id || null;
+
+      const { error: insertError } = await _opts.supabase.from('frotas_rastreadores').upsert(payload, { onConflict: 'placa' });
+      if (insertError) { falhou(insertError.message || 'Erro ao devolver o rastreador à relação.'); return; }
+    }
+
+    const { error: deleteError } = await _opts.supabase.from('frotas_rastreadores_removidos').delete().eq('id', rem.id);
+    if (deleteError) { falhou(deleteError.message || 'Rastreador devolvido, mas não foi possível limpar o registro de remoção. Tente novamente.'); return; }
+
+    toast('Rastreador restaurado.');
     backdrop.remove();
     await loadData(root);
   }
