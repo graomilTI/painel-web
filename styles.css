@@ -3986,3 +3986,15 @@ body.mobile-panel-mode .topbar {
 html.is-route-ready:not(.is-app-booted) .app-shell {
   animation: routeFadeIn .22s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
+
+/* ── Janelas (modais) dentro de cards ───────────────────────────────────────
+   As janelas são position: fixed. Com transform em um ancestral, o fixed passa a valer em relação a ele e não à
+   tela. O .card subia (translateY) no :hover — e o mouse está sobre o card ao clicar no botão que abre a janela —,
+   então, com o card alto (lista longa), a janela abria no meio dele, fora da tela, e era preciso rolar para achá-la.
+   Os cards continuam reagindo ao mouse pela borda e pela sombra; só não se deslocam mais. ── */
+html .card:hover,
+html .mini-card:hover,
+html .base-card:hover,
+html .hero-card:hover {
+  transform: none !important;
+}
