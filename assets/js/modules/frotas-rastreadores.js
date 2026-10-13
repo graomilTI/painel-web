@@ -206,6 +206,7 @@
             case 'infleet':            return r?.infleet || '';
       case 'motorista':          return motoristaDaManut(row, manutAberta(row.placa)).nome;
       case 'motivo':             return manutAberta(row.placa)?.motivo || '';
+      case 'solicitado':         return manutAberta(row.placa)?.aberta_em || '';
       case 'dias':               return diasDesde(manutAberta(row.placa)?.aberta_em);
       case 'etapa':              return STATUS_MANUT_ORDEM.indexOf(statusManut(manutAberta(row.placa)));
       case 'tecnico':            return manutAberta(row.placa)?.tecnico_nome || '';
@@ -334,7 +335,7 @@
   ];
   const COLS_MANUT = [
     ['placa', 'Placa', 80], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['motorista', 'Motorista', 0],
-    ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 124], ['tecnico', 'Técnico', 110],
+    ['motivo', 'Motivo', 0], ['solicitado', 'Solicitado', 96], ['dias', 'Dias', 56], ['etapa', 'Status', 124], ['tecnico', 'Técnico', 110],
     ['agendada', 'Agendada', 150], [null, 'Ações', 112]
   ];
   const COLS_REMOVIDOS = [
@@ -349,7 +350,7 @@
     const key = cols === COLS_REMOVIDOS ? 'removidos' : cols === COLS_MANUT ? 'manut' : 'normal';
     if (!table || table.dataset.cols === key) return;
     table.dataset.cols = key;
-    table.style.minWidth = key === 'manut' ? '1212px' : '';
+    table.style.minWidth = key === 'manut' ? '1310px' : '';
     table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
     table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
       ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
@@ -736,9 +737,15 @@
     return state.manutencoes.find(m => m.situacao === 'aberta' && placaKey(m.placa) === key) || null;
   }
 
+  // Data em que a placa entrou em manutenção, sempre no horário de Brasília.
+  function fmtDataSolicitada(v) {
+    const d = new Date(v);
+    return isNaN(d) ? '—' : d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+
   function fmtDateTime(v) {
     const d = new Date(v);
-    return isNaN(d) ? '—' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+    return isNaN(d) ? '—' : d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
   }
 
   function diasDesde(iso) {
@@ -1213,6 +1220,7 @@
         <td title="${esc(local)}">${esc(local)}</td>
         <td title="${esc(motorista || '—')}">${motorista ? `<button type="button" class="fr-link" data-mmot="${esc(row.placa)}" title="Ver dados do motorista">${esc(motorista)}</button>` : '—'}</td>
         <td title="${esc(m?.motivo || '—')}">${esc(m?.motivo || '—')}</td>
+        <td title="${esc(m ? 'Solicitada em ' + fmtDateTime(m.aberta_em) : '—')}">${m ? esc(fmtDataSolicitada(m.aberta_em)) : '—'}</td>
         <td>${m ? diasDesde(m.aberta_em) + 'd' : '—'}</td>
         <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
         <td title="${esc(m?.tecnico_nome || '—')}">${esc(m?.tecnico_nome || '—')}</td>
