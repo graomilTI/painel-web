@@ -6,6 +6,7 @@
     <style>
       .fv-shell{color:#e2e2f0}.fv-head{margin-bottom:18px}.fv-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fv-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fv-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fv-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fv-body{padding:18px}.fv-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px auto auto auto;gap:10px;margin-bottom:14px}.fv-toolbar.extra{grid-template-columns:repeat(4,minmax(0,1fr));margin-top:-4px}.fv-input,.fv-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fv-select option{background:#0d0d18;color:#e2e2f0}.fv-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fv-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fv-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fv-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fv-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}.fv-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0;text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s}.fv-kpi:hover{border-color:rgba(34,197,94,.45);background:rgba(22,101,52,.14)}.fv-kpi.active{border-color:#22c55e;background:rgba(22,101,52,.28);box-shadow:0 0 0 1px #22c55e inset}.fv-kpi:focus-visible{outline:2px solid #22c55e;outline-offset:2px}.fv-btn:disabled{opacity:.6;cursor:progress}.fv-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fv-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fv-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fv-table{width:100%;border-collapse:collapse;min-width:1120px}.fv-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fv-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fv-table tr:hover td{background:rgba(22,101,52,.08)}.fv-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fv-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fv-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fv-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fv-actions{display:flex;gap:8px;flex-wrap:nowrap;align-items:center}.fv-actions .fv-btn{white-space:nowrap}.fv-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}
 .fv-icon{width:34px;padding:0}
+.fv-motorista-inativo{color:#ef4444;font-weight:900}
 .fv-status-chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
 .fv-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid rgba(148,163,184,.14);border-radius:999px;background:rgba(15,23,42,.28);color:#afbeb7;font:inherit;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer;transition:transform .12s ease,background .12s ease}
 .fv-chip:hover{background:rgba(15,23,42,.5);transform:translateY(-1px)}
@@ -18,7 +19,7 @@
 .fv-chip-manutencao{color:#f5d761;border-color:rgba(250,204,21,.2)}.fv-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fv-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fv-field.full{grid-column:1/-1}.fv-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fv-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fv-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fv-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.72);display:flex;align-items:center;justify-content:center;padding:22px}.fv-modal{width:min(1120px,96vw);max-height:86vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fv-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px;border-bottom:1px solid rgba(148,163,184,.16)}.fv-modal-head h3{margin:0;color:#fff;font-size:20px}.fv-modal-head p{margin:6px 0 0;color:#6b7280;line-height:1.45}.fv-modal-body{padding:18px}.fv-diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.fv-diag-card{border:1px solid rgba(34,197,94,.18);border-radius:16px;background:rgba(2,6,23,.36);padding:12px}.fv-diag-card span{display:block;color:#93c5fd;font-size:10px;font-weight:950;text-transform:uppercase;letter-spacing:.1em}.fv-diag-card strong{display:block;margin-top:6px;color:#fff;font-size:22px}.fv-diag-section{margin-top:14px}.fv-diag-section h4{margin:0 0 8px;color:#bbf7d0}.fv-diag-table{width:100%;border-collapse:collapse;min-width:900px}.fv-diag-table th,.fv-diag-table td{padding:10px;border-bottom:1px solid rgba(148,163,184,.12);font-size:12px;text-align:left;vertical-align:top}.fv-diag-table th{color:#bfdbfe;text-transform:uppercase;letter-spacing:.08em;font-size:10px;background:rgba(2,6,23,.32)}.fv-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fv-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1200px){.fv-toolbar{grid-template-columns:1fr 1fr}.fv-grid{grid-template-columns:repeat(2,1fr)}.fv-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fv-toolbar,.fv-grid,.fv-form{grid-template-columns:1fr}}
     </style>`;
 
-  const state = { veiculos: [], loading: false, filtro: 'todos', status: '', busca: '', catalogo: { marcas: new Map(), modelos: new Map() }, pollGrm: null };
+  const state = { veiculos: [], loading: false, filtro: 'todos', status: '', busca: '', catalogo: { marcas: new Map(), modelos: new Map() }, pollGrm: null, motoristasInativos: new Map() };
 
   function onlyPlate(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,7); }
 
@@ -116,6 +117,19 @@
   function onlyDigits(v){ return String(v||'').replace(/\D/g,''); }
   function norm(v){ return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(); }
   function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
+
+  // Mesma normalização de frotas_veiculos_motoristas_inativos(): sem acento, caixa alta, espaços colapsados.
+  function chaveNome(v){ return norm(v).toUpperCase().replace(/\s+/g,' ').trim(); }
+
+  // Nome do motorista na tabela; em vermelho quando o colaborador está inativo no GRM (ou inativo em Motoristas).
+  function motoristaCell(v){
+    const nome=v.motorista_atual || v.patrimonio_funcionario;
+    if(!nome) return '—';
+    const motivo=state.motoristasInativos.get(chaveNome(nome));
+    if(!motivo) return esc(nome);
+    const dica=motivo==='RH' ? 'Colaborador inativo no GRM' : 'Motorista inativo no cadastro de Motoristas';
+    return `<span class="fv-motorista-inativo" title="${dica}">${esc(nome)}</span>`;
+  }
   function num(v){ const n=Number(v); return Number.isFinite(n)?n:null; }
   function fmtMoney(v){ const n=Number(v||0); return MONEY_FMT.format(Number.isFinite(n)?n:0); }
   function toast(msg, error=false){ let el=document.querySelector('.fv-toast'); if(!el){el=document.createElement('div');el.className='fv-toast';document.body.appendChild(el);} el.textContent=msg; el.style.background=error?'rgba(127,29,29,.96)':'rgba(22,101,52,.96)'; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),3200); }
@@ -243,7 +257,15 @@
 
   async function loadVeiculos(root, opts, silent=false){
     if(!silent){ state.loading=true; renderTable(root, opts); }
-    const { data, error } = await opts.supabase.from('frotas_veiculos').select('*').order('placa',{ascending:true});
+    // A lista de motoristas inativos só é relida nas cargas "de verdade" (a recarga silenciosa do GRM roda a cada 15 s).
+    const [{ data, error }, resInativos] = await Promise.all([
+      opts.supabase.from('frotas_veiculos').select('*').order('placa',{ascending:true}),
+      silent && state.motoristasInativos.size ? Promise.resolve(null) : opts.supabase.rpc('frotas_veiculos_motoristas_inativos')
+    ]);
+    if(resInativos){
+      if(resInativos.error) console.warn('[Frotas] Motoristas inativos indisponíveis para destaque:', resInativos.error);
+      else state.motoristasInativos=new Map((resInativos.data||[]).map(r=>[r.chave, r.motivo]));
+    }
     if(error){ if(!silent){ toast(error.message || 'Erro ao carregar veículos.', true); state.veiculos=[]; } }
     else state.veiculos=Array.isArray(data)?data:[];
     state.loading=false; renderStats(root); renderTable(root, opts);
@@ -652,7 +674,7 @@
         <td><strong>${esc(v.placa)}</strong></td>
         <td>${esc(v.empresa || '—')}</td>
         <td>${esc(v.renavam || '—')}</td>
-        <td>${esc(v.motorista_atual || v.patrimonio_funcionario || '—')}</td>
+        <td>${motoristaCell(v)}</td>
         <td>${esc(v.coordenacao || v.patrimonio_coordenacao || '—')}</td>
         <td><div class="fv-valid" title="${esc(v.bfleet_mensagem || v.detran_mensagem || '')}">${statusBadge(v)}${trackerBadge(v)}${grmBadge(v)}</div>${grmLinhaErro(v)}</td>
         <td><div class="fv-actions"><button class="fv-btn ghost fv-mini fv-icon" data-edit="${v.id}" title="Editar" aria-label="Editar">${ICON_EDITAR}</button><button class="fv-btn primary fv-mini fv-icon" data-multas="${v.id}" title="Multas" aria-label="Multas">${ICON_MULTAS}</button><button class="fv-btn soft fv-mini fv-icon" data-detran="${v.id}" title="DETRAN" aria-label="DETRAN">${ICON_DETRAN}</button>${['ERRO','PENDENTE'].includes(grmStatusDe(v))?`<button class="fv-btn soft fv-mini" data-grm-reenviar="${v.id}" title="Reenviar o cadastro ao GRM (Patrimônios e Veículos)">Reenviar GRM</button>`:''}</div></td>
