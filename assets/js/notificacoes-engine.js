@@ -30,6 +30,9 @@ export const NOTIF_META = {
   os_recusada:          { prioridade: 'atencao',     icone: 'clipboard-alert', label: 'O.S. recusada',         modulo_url: 'logistica' },
   os_cadastrada:        { prioridade: 'normal',      icone: 'check-circle',    label: 'O.S. cadastrada',       modulo_url: 'logistica' },
   os_erro:              { prioridade: 'urgente',     icone: 'clipboard-alert', label: 'Erro ao cadastrar O.S.', modulo_url: 'logistica-os' },
+  frotas_rastreador_manutencao: { prioridade: 'normal', icone: 'wrench',         label: 'Manutenção de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores&filtro=manutencao' },
+  frotas_rastreador_observacao: { prioridade: 'normal', icone: 'message-square', label: 'Observação de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores' },
+  frotas_rastreador:            { prioridade: 'normal', icone: 'wrench',         label: 'Rastreador',               modulo_url: 'frotas-cadastros?aba=rastreadores' },
 };
 
 const PRIORIDADE_ORDER = { urgente: 0, atencao: 1, normal: 2, informativo: 3 };
@@ -220,6 +223,8 @@ async function refreshComputed() {
 
 // ---------- notificações evento (banco) ----------
 function notifIsForMe(n) {
+  // Avisos de ação de equipe (meta.excluir_autor) não voltam para quem os gerou, nem para o master que gerou.
+  if (n.meta?.excluir_autor && n.gerado_por_usuario_id && n.gerado_por_usuario_id === userId()) return false;
   if (isMaster()) return true;
   const uid = userId();
   if (n.destinatario_usuario_id && n.destinatario_usuario_id === uid) return true;

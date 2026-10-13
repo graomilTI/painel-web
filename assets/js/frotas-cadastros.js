@@ -40,7 +40,9 @@ const CARDS = [
         import('./modules/frotas-rastreadores.js'),
         import('./modules/frotas-rastreadores-bfleet-status.js'),
       ]);
-      window.FROTAS_RASTREADORES.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
+      const inicial = state.rastreadoresInicial;
+      state.rastreadoresInicial = { filtro: '', placa: '' };
+      window.FROTAS_RASTREADORES.openHome(body, { supabase, auth: ctx, user: ctx?.user || null, inicial });
     },
   },
   {
@@ -55,7 +57,13 @@ const CARDS = [
   },
 ];
 
-const state = { tab: null };
+// Links de notificação abrem direto numa aba/filtro/placa: ?aba=rastreadores&filtro=manutencao&placa=ABC1D23.
+// Vale só na primeira montagem; depois o usuário navega normalmente.
+const deepLink = new URLSearchParams(window.location.search);
+const state = {
+  tab: deepLink.get('aba') || null,
+  rastreadoresInicial: { filtro: deepLink.get('filtro') || '', placa: deepLink.get('placa') || '' },
+};
 
 function montarTabAtiva(content, ctx, visiveis) {
   const card = visiveis.find((c) => c.id === state.tab);
