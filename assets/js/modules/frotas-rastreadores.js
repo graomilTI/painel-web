@@ -8,7 +8,7 @@
       .fr-act-row{display:flex;gap:6px;flex-wrap:nowrap}.fr-act{width:30px;height:30px;border-radius:9px;border:1px solid rgba(148,163,184,.25);background:rgba(15,23,42,.72);color:#94a3b8;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;flex:none;transition:.15s}.fr-act svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fr-act:hover:not(:disabled){color:#e2e2f0;border-color:rgba(148,163,184,.65)}.fr-act.done{border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.16);color:#4ade80}.fr-act.current{border-color:rgba(245,158,11,.85);background:rgba(245,158,11,.2);color:#fbbf24;box-shadow:0 0 0 2px rgba(245,158,11,.18)}.fr-act.final.current{border-color:#22c55e;background:rgba(34,197,94,.3);color:#86efac;box-shadow:0 0 0 2px rgba(34,197,94,.2)}.fr-act:disabled{opacity:.3;cursor:not-allowed}.fr-act.cancel:hover{border-color:rgba(239,68,68,.75);color:#f87171;background:rgba(239,68,68,.14)}
       .fr-hist-title{margin:22px 2px 8px;color:#86efac;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.12em}.fr-mot-box{border:1px dashed rgba(34,197,94,.28);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.55;color:#bfdbfe}.fr-btn.warn{background:linear-gradient(135deg,#d97706,#f59e0b);color:#1c1203}
       .fr-link{background:none;border:0;padding:0;font:inherit;color:#86efac;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-decoration-color:rgba(134,239,172,.35);text-underline-offset:3px}.fr-link:hover{color:#bbf7d0;text-decoration-color:currentColor}.fr-dl{display:grid;grid-template-columns:110px 1fr;gap:10px 14px;margin:0;font-size:13.5px}.fr-dl dt{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;align-self:center}.fr-dl dd{margin:0;color:#e2e2f0}
-      .fr-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}.fr-act.obs:hover:not(:disabled){border-color:rgba(99,102,241,.75);color:#a5b4fc;background:rgba(99,102,241,.14)}.fr-maps{color:#86efac;text-decoration:none;margin-left:4px}.fr-maps:hover{color:#bbf7d0}.fr-tab-agenda{margin-left:auto;display:inline-flex;align-items:center;gap:8px}.fr-tab-agenda svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .fr-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}.fr-maps{color:#86efac;text-decoration:none;margin-left:4px}.fr-maps:hover{color:#bbf7d0}.fr-tab-agenda{margin-left:auto;display:inline-flex;align-items:center;gap:8px}.fr-tab-agenda svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
       .fr-ag-bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px}.fr-ag-nav{display:flex;align-items:center;gap:8px}.fr-ag-mes{min-width:200px;text-align:center;color:#f8fafc;font-size:18px;font-weight:950}.fr-ag-spacer{flex:1}.fr-ag-bar .fr-select{width:auto;min-width:150px}.fr-ag-bar .fr-input{width:230px}.fr-ag-chk{display:inline-flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;font-weight:700;cursor:pointer}.fr-ag-chk input{width:16px;height:16px;accent-color:#22c55e;cursor:pointer}
       .fr-ag-legend{display:flex;flex-wrap:wrap;gap:16px;margin:0 0 12px;color:#94a3b8;font-size:12px}.fr-ag-legend span{display:inline-flex;align-items:center;gap:6px}.fr-ag-dot{width:10px;height:10px;border-radius:3px;display:inline-block}.fr-ag-dot.inst{background:#818cf8}.fr-ag-dot.manut{background:#f59e0b}.fr-ag-dot.done{background:#475569}.fr-ag-dot.late{background:transparent;box-shadow:0 0 0 1.5px #ef4444}
       .fr-ag-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}.fr-ag-cal{border:1px solid rgba(148,163,184,.14);border-radius:18px;overflow:hidden}.fr-ag-dow,.fr-ag-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.fr-ag-dow div{padding:9px 6px;text-align:center;color:#bfdbfe;font-size:11px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;background:rgba(2,6,23,.38);border-bottom:1px solid rgba(148,163,184,.16)}
@@ -335,7 +335,7 @@
   const COLS_MANUT = [
     ['placa', 'Placa', 80], ['estado', 'UF', 40], ['cidade', 'Cidade', 0], ['motorista', 'Motorista', 0],
     ['motivo', 'Motivo', 0], ['dias', 'Dias', 56], ['etapa', 'Status', 124], ['tecnico', 'Técnico', 110],
-    ['agendada', 'Agendada', 150], [null, 'Ações', 238]
+    ['agendada', 'Agendada', 150], [null, 'Ações', 112]
   ];
   const COLS_REMOVIDOS = [
     ['placa', 'Placa', 80], ['estado', 'UF', 46], ['cidade', 'Cidade', 0], ['local_instalacao', 'Local', 0],
@@ -349,7 +349,7 @@
     const key = cols === COLS_REMOVIDOS ? 'removidos' : cols === COLS_MANUT ? 'manut' : 'normal';
     if (!table || table.dataset.cols === key) return;
     table.dataset.cols = key;
-    table.style.minWidth = key === 'manut' ? '1340px' : '';
+    table.style.minWidth = key === 'manut' ? '1212px' : '';
     table.querySelector('colgroup').innerHTML = cols.map(c => `<col${c[2] ? ` style="width:${c[2]}px"` : ''}>`).join('');
     table.querySelector('[data-thead]').innerHTML = cols.map(c => c[0]
       ? `<th class="fr-th-sort${state.sortCol === c[0] ? ' ' + state.sortDir : ''}" data-sort="${c[0]}">${c[1]}</th>`
@@ -824,39 +824,24 @@
   }
 
   const ICONS = {
-    disponibilidade: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>',
-    tecnico: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.1L3 17.7 6.3 21l6.3-6.3a4 4 0 0 0 5.1-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
-    agendamento: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
     finalizar: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-    observacoes: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/><path d="M8.5 10.5h7M8.5 14h4"/></svg>',
+    editar: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 7.5l3 3"/></svg>',
     cancelar: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>'
   };
 
-  // Grava campos de uma ação (cria o registro se a placa estava em manutenção sem ele) e recalcula a etapa.
+  // Grava campos da manutenção (cria o registro se a placa estava em manutenção sem ele) e recalcula a etapa.
+  // `evento` é um texto ou uma lista: cada item vira uma linha na linha do tempo.
   async function gravarManutencao(row, patch, evento) {
     let rec = manutAberta(row.placa);
     if (!rec) rec = await criarManutencao(row, null);
     const linha = [...(rec.linha_tempo || [])];
-    if (evento) linha.push({ evento, em: new Date().toISOString(), por: userName() });
+    [].concat(evento || []).filter(Boolean).forEach(e => linha.push({ evento: e, em: new Date().toISOString(), por: userName() }));
     const full = { ...patch, linha_tempo: linha };
     if (!patch.situacao) full.etapa = etapaDe({ ...rec, ...patch });
     const { data, error } = await _opts.supabase.from(TABLE_MANUT).update(full).eq('id', rec.id).select().single();
     if (error) throw error;
     return data;
   }
-
-  const ACOES = {
-    disponibilidade: {
-      titulo: 'Disponibilidade com o motorista',
-      evento: (p, ctx) => [
-        ctx.nomeAlterado ? `Motorista alterado para ${ctx.nomeNovo}` : (ctx.contatoAlterado ? 'Telefone do motorista atualizado' : ''),
-        ctx.disponibilidadeAlterada ? 'Disponibilidade do motorista registrada' : ''
-      ].filter(Boolean).join(' · ')
-    },
-    tecnico: { titulo: 'Alinhar com o técnico', evento: p => `Técnico definido: ${p.tecnico_nome}` },
-    agendamento: { titulo: 'Agendar', evento: p => `Agendada para ${fmtDataBr(p.data_agendada)}${p.hora_agendada ? ' ' + p.hora_agendada : ''}${p.local_maps_url ? ' (com link do Maps)' : ''}` },
-    finalizar: { titulo: 'Concluir manutenção', evento: () => 'Manutenção concluída' }
-  };
 
   const soDigitos = (s) => String(s || '').replace(/\D/g, '');
 
@@ -872,49 +857,72 @@
     return nomes;
   }
 
-  function openManutAcao(root, placa, tipo) {
+  // Edição da manutenção numa modal só: motorista (com opção de alterar) e disponibilidade, técnico,
+  // agendamento (com link do Maps) e observações. Salvar grava tudo de uma vez e registra na linha do
+  // tempo só o que mudou; as observações são gravadas na hora, como no cadastro do rastreador.
+  function openManutEditar(root, placa, foco) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
     const rec = manutAberta(row.placa);
     const mot = motoristaDaManut(row, rec);
-    const cfg = ACOES[tipo];
     const v = (k) => esc(rec?.[k] || '');
     const dlId = `fr-dl-mot-${Date.now()}`;
+    const [clsStatus, labelStatus] = STATUS_MANUT_LABEL[statusManut(rec)];
+    const sub = [rec?.motivo, rec ? `aberta há ${diasDesde(rec.aberta_em)}d` : 'sem registro de etapas'].filter(Boolean).join(' · ');
 
     // O wrapper [data-mot-campos] é quem recebe `hidden`: .fr-form tem display:grid e anularia o atributo.
     const blocoMotorista = `<div class="fr-mot-box">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-          <div><strong>Motorista:</strong> ${esc(mot.nome || 'sem motorista')}${mot.contato ? ' · ' + esc(mot.contato) : ''}</div>
-          <button type="button" class="fr-btn soft fr-mini" data-mot-alterar>✎ Alterar motorista</button>
-        </div>
-        <div data-mot-campos hidden>
-          <div class="fr-form fr-g-2" style="margin-top:12px"><div class="fr-field"><label>Novo motorista</label><input name="motorista_nome" value="${esc(mot.nome)}" list="${dlId}" autocomplete="off" placeholder="Nome do motorista" /><datalist id="${dlId}"></datalist></div><div class="fr-field"><label>Telefone</label><input name="motorista_contato" value="${esc(mot.contato)}" placeholder="(00) 00000-0000" /></div></div>
-          <div class="fr-hint">Vale só para esta manutenção; o cadastro do veículo continua vindo da sync de patrimônios.</div>
-        </div>
-      </div>`;
-
-    const campos = {
-      disponibilidade: `${blocoMotorista}<div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>`,
-      tecnico: `<div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>`,
-      agendamento: `<div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div><div class="fr-field full"><label>Link do Maps (localização)</label><input name="local_maps_url" value="${v('local_maps_url')}" placeholder="Cole o link do Google Maps do local" inputmode="url" autocomplete="off" /></div></div>`,
-      finalizar: `<div class="fr-mot-box">${rec ? `<strong>Motivo:</strong> ${esc(rec.motivo || '—')}<br><strong>Motorista:</strong> ${esc(rec.disponibilidade_motorista || '—')}<br><strong>Técnico:</strong> ${esc(rec.tecnico_nome || '—')}<br><strong>Agendada:</strong> ${rec.data_agendada ? esc(fmtDataBr(rec.data_agendada)) + (rec.hora_agendada ? ' ' + esc(rec.hora_agendada) : '') : '—'}` : 'Sem registro de etapas.'}</div><div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${v('resolucao')}</textarea></div><div class="fr-hint">Ao concluir, o rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.</div>`
-    };
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <div><strong>Motorista:</strong> ${esc(mot.nome || 'sem motorista')}${mot.contato ? ' · ' + esc(mot.contato) : ''}</div>
+            <button type="button" class="fr-btn soft fr-mini" data-mot-alterar>✎ Alterar motorista</button>
+          </div>
+          <div data-mot-campos hidden>
+            <div class="fr-form fr-g-2" style="margin-top:12px"><div class="fr-field"><label>Novo motorista</label><input name="motorista_nome" value="${esc(mot.nome)}" list="${dlId}" autocomplete="off" placeholder="Nome do motorista" /><datalist id="${dlId}"></datalist></div><div class="fr-field"><label>Telefone</label><input name="motorista_contato" value="${esc(mot.contato)}" placeholder="(00) 00000-0000" /></div></div>
+            <div class="fr-hint">Vale só para esta manutenção; o cadastro do veículo continua vindo da sync de patrimônios.</div>
+          </div>
+        </div>`;
 
     const backdrop = document.createElement('div');
     backdrop.className = 'fr-modal-backdrop';
     backdrop.innerHTML = `
-      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(620px,96vw)">
+      <div class="fr-modal fr-modal-wide" role="dialog" aria-modal="true">
         <div class="fr-modal-head">
           <div>
-            <h3>${esc(cfg.titulo)} · ${esc(row.placa)}</h3>
-            <p>${esc(mot.nome || 'Sem motorista')} · ${esc(mot.contato || 'sem telefone cadastrado')}${mot.endereco ? ' · ' + esc(mot.endereco) : ''}</p>
+            <h3>Editar manutenção · ${esc(row.placa)} <span class="fr-badge ${clsStatus}" style="font-size:11px">${esc(labelStatus)}</span></h3>
+            <p>${esc(sub)}</p>
           </div>
           <button class="fr-btn ghost fr-mini" data-close>✕</button>
         </div>
-        <div class="fr-modal-body">${campos[tipo]}</div>
+        <div class="fr-modal-body">
+          <div class="fr-cols2">
+            <div class="fr-col">
+              <div class="fr-divider">Motorista</div>
+              ${blocoMotorista}
+              <div class="fr-field full"><label>Disponibilidade do motorista</label><textarea name="disponibilidade_motorista" placeholder="Ex: disponível terça e quarta de manhã, na garagem">${v('disponibilidade_motorista')}</textarea></div>
+            </div>
+            <div class="fr-col">
+              <div class="fr-divider">Técnico</div>
+              <div class="fr-form fr-g-2"><div class="fr-field"><label>Técnico</label><input name="tecnico_nome" value="${v('tecnico_nome')}" placeholder="Nome do técnico" /></div><div class="fr-field"><label>Contato do técnico</label><input name="tecnico_contato" value="${v('tecnico_contato')}" placeholder="Telefone / WhatsApp" /></div></div>
+              <div class="fr-divider">Agendamento</div>
+              <div class="fr-form fr-g-3"><div class="fr-field"><label>Data</label><input type="date" name="data_agendada" value="${v('data_agendada')}" /></div><div class="fr-field"><label>Horário</label><input type="time" name="hora_agendada" value="${v('hora_agendada')}" /></div><div class="fr-field"><label>Local</label><input name="local_agendado" value="${v('local_agendado')}" placeholder="Ex: Garagem central" /></div><div class="fr-field full"><label>Link do Maps (localização)</label><input name="local_maps_url" value="${v('local_maps_url')}" placeholder="Cole o link do Google Maps do local" inputmode="url" autocomplete="off" /></div></div>
+            </div>
+          </div>
+
+          <div class="fr-divider">Observações</div>
+          <div class="fr-obs" data-obs>
+            <div class="fr-obs-add">
+              <input type="date" data-obs-data value="${new Date().toISOString().slice(0, 10)}" />
+              <input type="text" data-obs-desc placeholder="Descrição da observação" maxlength="500" />
+              <button type="button" class="fr-btn soft fr-icon-btn" data-obs-add title="Adicionar observação" aria-label="Adicionar observação">+</button>
+            </div>
+            <div class="fr-obs-scroll" style="max-height:220px">
+              <table class="fr-obs-table"><thead><tr><th style="width:92px">Data</th><th>Descrição</th><th style="width:110px">Usuário</th><th style="width:36px"></th></tr></thead><tbody data-obs-list><tr><td colspan="4" class="fr-empty">Carregando...</td></tr></tbody></table>
+            </div>
+          </div>
+        </div>
         <div class="fr-modal-foot">
           <button class="fr-btn ghost" data-close>Cancelar</button>
-          <button class="fr-btn ${tipo === 'finalizar' ? 'primary' : 'warn'}" data-salvar>${tipo === 'finalizar' ? '✓ Concluir manutenção' : 'Salvar'}</button>
+          <button class="fr-btn warn" data-salvar>Salvar</button>
         </div>
       </div>`;
 
@@ -922,125 +930,170 @@
     const close = () => backdrop.remove();
     backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
     backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
-    (tipo === 'disponibilidade' ? backdrop.querySelector('textarea') : backdrop.querySelector('input,textarea'))?.focus();
+    const campo = (n) => backdrop.querySelector(`[name="${n}"]`);
+    const get = (n) => campo(n)?.value?.trim() || null;
+    campo(foco === 'agendamento' ? 'data_agendada' : 'disponibilidade_motorista').focus();
+    initObservacoes(backdrop, row.placa);
 
-    const get = (n) => backdrop.querySelector(`[name="${n}"]`)?.value?.trim() || null;
-    const NOMES = {
-      disponibilidade: ['disponibilidade_motorista'],
-      tecnico: ['tecnico_nome', 'tecnico_contato'],
-      agendamento: ['data_agendada', 'hora_agendada', 'local_agendado'],
-      finalizar: ['resolucao']
-    };
-    const OBRIGATORIO = {
-      disponibilidade: ['disponibilidade_motorista', 'Informe a disponibilidade do motorista.'],
-      tecnico: ['tecnico_nome', 'Informe o técnico.'],
-      agendamento: ['data_agendada', 'Informe a data agendada.'],
-      finalizar: ['resolucao', 'Descreva o que foi feito para concluir.']
-    };
-
-    // Opção "Alterar motorista" da Disponibilidade: os campos só aparecem ao clicar e só valem se estiverem abertos.
+    // Opção "Alterar motorista": os campos só aparecem ao clicar e só valem se estiverem abertos.
     // Sugere nomes conhecidos e preenche o telefone do cadastro enquanto o campo não for editado à mão.
     let alterandoMotorista = false;
-    if (tipo === 'disponibilidade') {
-      const painel = backdrop.querySelector('[data-mot-campos]');
-      const botao = backdrop.querySelector('[data-mot-alterar]');
-      const nomeEl = backdrop.querySelector('[name="motorista_nome"]');
-      const telEl = backdrop.querySelector('[name="motorista_contato"]');
-      const lista = backdrop.querySelector('datalist');
-      const pessoas = nomesDePessoas();
-      let telManual = false;
-      telEl.addEventListener('input', () => { telManual = true; });
-      nomeEl.addEventListener('input', () => {
-        const q = norm(nomeEl.value).trim();
-        lista.innerHTML = q.length < 2 ? '' : pessoas.filter(n => norm(n).includes(q)).slice(0, 40).map(n => `<option value="${esc(n)}"></option>`).join('');
-        if (!telManual) telEl.value = getMotoristaInfo(row, { nome: nomeEl.value.trim() }).contato;
-      });
-      botao.addEventListener('click', () => {
-        alterandoMotorista = !alterandoMotorista;
-        painel.hidden = !alterandoMotorista;
-        botao.textContent = alterandoMotorista ? '↩ Manter motorista atual' : '✎ Alterar motorista';
-        if (alterandoMotorista) { nomeEl.focus(); nomeEl.select(); return; }
-        nomeEl.value = mot.nome;
-        telEl.value = mot.contato;
-        telManual = false;
-        lista.innerHTML = '';
-      });
-    }
+    const painel = backdrop.querySelector('[data-mot-campos]');
+    const botao = backdrop.querySelector('[data-mot-alterar]');
+    const nomeEl = campo('motorista_nome');
+    const telEl = campo('motorista_contato');
+    const lista = backdrop.querySelector('datalist');
+    const pessoas = nomesDePessoas();
+    let telManual = false;
+    telEl.addEventListener('input', () => { telManual = true; });
+    nomeEl.addEventListener('input', () => {
+      const q = norm(nomeEl.value).trim();
+      lista.innerHTML = q.length < 2 ? '' : pessoas.filter(n => norm(n).includes(q)).slice(0, 40).map(n => `<option value="${esc(n)}"></option>`).join('');
+      if (!telManual) telEl.value = getMotoristaInfo(row, { nome: nomeEl.value.trim() }).contato;
+    });
+    botao.addEventListener('click', () => {
+      alterandoMotorista = !alterandoMotorista;
+      painel.hidden = !alterandoMotorista;
+      botao.textContent = alterandoMotorista ? '↩ Manter motorista atual' : '✎ Alterar motorista';
+      if (alterandoMotorista) { nomeEl.focus(); nomeEl.select(); return; }
+      nomeEl.value = mot.nome;
+      telEl.value = mot.contato;
+      telManual = false;
+      lista.innerHTML = '';
+    });
 
     backdrop.querySelector('[data-salvar]').addEventListener('click', async () => {
-      const patch = Object.fromEntries(NOMES[tipo].map(n => [n, get(n)]));
-      let ctx = {};
-
-      if (tipo === 'disponibilidade') {
-        ctx.disponibilidadeAlterada = Boolean(patch.disponibilidade_motorista) && patch.disponibilidade_motorista !== (rec?.disponibilidade_motorista || null);
-        if (alterandoMotorista) {
-          // Só guarda motorista/telefone quando diferem do cadastro, para a manutenção seguir o veículo nos demais casos.
-          const nomeDigitado = get('motorista_nome');
-          const nomeEfetivo = nomeDigitado || row.motorista_atual || '';
-          patch.motorista_nome = nomeDigitado && norm(nomeDigitado).trim() !== norm(row.motorista_atual).trim() ? nomeDigitado : null;
-          const contatoCadastro = getMotoristaInfo(row, { nome: patch.motorista_nome }).contato;
-          const contatoDigitado = fmtTelefone(get('motorista_contato') || '');
-          patch.motorista_contato = contatoDigitado && soDigitos(contatoDigitado) !== soDigitos(contatoCadastro) ? contatoDigitado : null;
-          ctx.nomeNovo = nomeEfetivo;
-          ctx.nomeAlterado = norm(nomeEfetivo).trim() !== norm(mot.nome).trim();
-          ctx.contatoAlterado = soDigitos(contatoDigitado || contatoCadastro) !== soDigitos(mot.contato);
-        }
-        if (!patch.disponibilidade_motorista && !ctx.nomeAlterado && !ctx.contatoAlterado) {
-          toast(alterandoMotorista ? 'Informe a disponibilidade ou o novo motorista.' : 'Informe a disponibilidade do motorista.', true);
-          return;
-        }
-      } else {
-        const [obrig, msg] = OBRIGATORIO[tipo];
-        if (!patch[obrig]) { toast(msg, true); return; }
+      const patch = {
+        disponibilidade_motorista: get('disponibilidade_motorista'),
+        tecnico_nome: get('tecnico_nome'),
+        tecnico_contato: get('tecnico_contato'),
+        data_agendada: get('data_agendada'),
+        hora_agendada: get('hora_agendada'),
+        local_agendado: get('local_agendado'),
+        local_maps_url: get('local_maps_url')
+      };
+      const invalido = (msg, nome) => { toast(msg, true); campo(nome).focus(); };
+      if (patch.tecnico_contato && !patch.tecnico_nome) { invalido('Informe o nome do técnico.', 'tecnico_nome'); return; }
+      if (!patch.data_agendada && (patch.hora_agendada || patch.local_agendado || patch.local_maps_url)) { invalido('Informe a data agendada.', 'data_agendada'); return; }
+      if (patch.local_maps_url) {
+        patch.local_maps_url = safeUrl(patch.local_maps_url);
+        if (!patch.local_maps_url) { invalido('Link do Maps inválido. Cole o endereço completo (https://...).', 'local_maps_url'); return; }
       }
 
-      if (tipo === 'agendamento' && get('local_maps_url')) {
-        patch.local_maps_url = safeUrl(get('local_maps_url'));
-        if (!patch.local_maps_url) { toast('Link do Maps inválido. Cole o endereço completo (https://...).', true); return; }
-      } else if (tipo === 'agendamento') {
-        patch.local_maps_url = null;
+      // Só o que mudou vira evento na linha do tempo.
+      const eventos = [];
+      if (alterandoMotorista) {
+        // Só guarda motorista/telefone quando diferem do cadastro, para a manutenção seguir o veículo nos demais casos.
+        const nomeDigitado = get('motorista_nome');
+        const nomeEfetivo = nomeDigitado || row.motorista_atual || '';
+        patch.motorista_nome = nomeDigitado && norm(nomeDigitado).trim() !== norm(row.motorista_atual).trim() ? nomeDigitado : null;
+        const contatoCadastro = getMotoristaInfo(row, { nome: patch.motorista_nome }).contato;
+        const contatoDigitado = fmtTelefone(get('motorista_contato') || '');
+        patch.motorista_contato = contatoDigitado && soDigitos(contatoDigitado) !== soDigitos(contatoCadastro) ? contatoDigitado : null;
+        if (norm(nomeEfetivo).trim() !== norm(mot.nome).trim()) eventos.push(`Motorista alterado para ${nomeEfetivo}`);
+        else if (soDigitos(contatoDigitado || contatoCadastro) !== soDigitos(mot.contato)) eventos.push('Telefone do motorista atualizado');
       }
-      if (tipo === 'finalizar' && !confirm(`Concluir a manutenção de ${row.placa}? O rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.`)) return;
+      const mudou = (k) => (patch[k] || null) !== (rec?.[k] || null);
+      if (mudou('disponibilidade_motorista')) eventos.push(patch.disponibilidade_motorista ? 'Disponibilidade do motorista registrada' : 'Disponibilidade do motorista removida');
+      if (mudou('tecnico_nome') || mudou('tecnico_contato')) eventos.push(patch.tecnico_nome ? `Técnico definido: ${patch.tecnico_nome}` : 'Técnico removido');
+      if (['data_agendada', 'hora_agendada', 'local_agendado', 'local_maps_url'].some(mudou)) {
+        eventos.push(patch.data_agendada
+          ? `Agendada para ${fmtDataBr(patch.data_agendada)}${patch.hora_agendada ? ' ' + patch.hora_agendada : ''}${patch.local_maps_url ? ' (com link do Maps)' : ''}`
+          : 'Agendamento removido');
+      }
+      if (!eventos.length) { toast('Nenhuma alteração para salvar.'); return; }
+
+      const btn = backdrop.querySelector('[data-salvar]');
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      try {
+        await gravarManutencao(row, patch, eventos);
+        toast('Manutenção atualizada.');
+        close();
+        await loadData(root);
+      } catch (err) {
+        toast(err?.message || 'Erro ao salvar a manutenção.', true);
+        btn.disabled = false;
+        btn.textContent = 'Salvar';
+      }
+    });
+  }
+
+  // Concluir devolve o rastreador para Instalado (Com BFleet), deixa a manutenção no histórico e
+  // registra a resolução como observação do rastreador.
+  function openManutConcluir(root, placa) {
+    const row = state.merged.find(v => v.placa === placa);
+    if (!row) return;
+    const rec = manutAberta(row.placa);
+    const mot = motoristaDaManut(row, rec);
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'fr-modal-backdrop';
+    backdrop.innerHTML = `
+      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(620px,96vw)">
+        <div class="fr-modal-head">
+          <div>
+            <h3>Concluir manutenção · ${esc(row.placa)}</h3>
+            <p>${esc(mot.nome || 'Sem motorista')} · ${esc(mot.contato || 'sem telefone cadastrado')}${mot.endereco ? ' · ' + esc(mot.endereco) : ''}</p>
+          </div>
+          <button class="fr-btn ghost fr-mini" data-close>✕</button>
+        </div>
+        <div class="fr-modal-body">
+          <div class="fr-mot-box">${rec ? `<strong>Motivo:</strong> ${esc(rec.motivo || '—')}<br><strong>Motorista:</strong> ${esc(rec.disponibilidade_motorista || '—')}<br><strong>Técnico:</strong> ${esc(rec.tecnico_nome || '—')}<br><strong>Agendada:</strong> ${rec.data_agendada ? esc(fmtDataBr(rec.data_agendada)) + (rec.hora_agendada ? ' ' + esc(rec.hora_agendada) : '') : '—'}` : 'Sem registro de etapas.'}</div>
+          <div class="fr-field full"><label>O que foi feito</label><textarea name="resolucao" placeholder="Ex: trocado o rastreador, voltou a comunicar com a BFleet">${esc(rec?.resolucao || '')}</textarea></div>
+          <div class="fr-hint">Ao concluir, o rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.</div>
+        </div>
+        <div class="fr-modal-foot">
+          <button class="fr-btn ghost" data-close>Cancelar</button>
+          <button class="fr-btn primary" data-salvar>✓ Concluir manutenção</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) close(); });
+    backdrop.querySelector('textarea').focus();
+
+    backdrop.querySelector('[data-salvar]').addEventListener('click', async () => {
+      const resolucao = backdrop.querySelector('[name="resolucao"]').value.trim();
+      if (!resolucao) { toast('Descreva o que foi feito para concluir.', true); return; }
+      if (!confirm(`Concluir a manutenção de ${row.placa}? O rastreador volta para Instalado (Com BFleet) e a manutenção fica no histórico.`)) return;
 
       const btn = backdrop.querySelector('[data-salvar]');
       const label = btn.textContent;
       btn.disabled = true;
       btn.textContent = 'Salvando...';
       try {
-        if (tipo !== 'finalizar') {
-          await gravarManutencao(row, patch, cfg.evento(patch, ctx));
-          toast(`${cfg.titulo}: salvo.`);
-        } else {
-          const fim = await gravarManutencao(row, {
-            ...patch,
-            situacao: 'finalizada',
-            etapa: 'finalizar',
-            encerrada_em: new Date().toISOString(),
-            encerrada_por_nome: userName()
-          }, cfg.evento(patch, ctx));
-          const { error } = await setStatusRastreador(row, 'concluido');
-          if (error) toast(`Manutenção concluída, mas o status não voltou para Instalado: ${error.message}`, true);
+        const fim = await gravarManutencao(row, {
+          resolucao,
+          situacao: 'finalizada',
+          etapa: 'finalizar',
+          encerrada_em: new Date().toISOString(),
+          encerrada_por_nome: userName()
+        }, 'Manutenção concluída');
+        const { error } = await setStatusRastreador(row, 'concluido');
+        if (error) toast(`Manutenção concluída, mas o status não voltou para Instalado: ${error.message}`, true);
 
-          const descricao = [
-            `Manutenção concluída (aberta em ${fmtDataBr(fim.aberta_em)}).`,
-            fim.motivo ? `Motivo: ${fim.motivo}.` : '',
-            fim.tecnico_nome ? `Técnico: ${fim.tecnico_nome}.` : '',
-            fim.data_agendada ? `Agendada para ${fmtDataBr(fim.data_agendada)}${fim.hora_agendada ? ' ' + fim.hora_agendada : ''}.` : '',
-            `Resolução: ${fim.resolucao}`
-          ].filter(Boolean).join(' ');
-          const { error: obsError } = await _opts.supabase.from('frotas_rastreadores_observacoes').insert({
-            placa: rawPlaca(row.placa),
-            data: new Date().toISOString().slice(0, 10),
-            descricao,
-            criado_por_nome: userName()
-          });
-          if (obsError) console.warn('[FROTAS_RASTREADORES] Falha ao registrar observação da manutenção:', obsError);
-          if (!error) toast(`${row.placa} concluída: voltou para Instalado (Com BFleet).`);
-        }
+        const descricao = [
+          `Manutenção concluída (aberta em ${fmtDataBr(fim.aberta_em)}).`,
+          fim.motivo ? `Motivo: ${fim.motivo}.` : '',
+          fim.tecnico_nome ? `Técnico: ${fim.tecnico_nome}.` : '',
+          fim.data_agendada ? `Agendada para ${fmtDataBr(fim.data_agendada)}${fim.hora_agendada ? ' ' + fim.hora_agendada : ''}.` : '',
+          `Resolução: ${fim.resolucao}`
+        ].filter(Boolean).join(' ');
+        const { error: obsError } = await _opts.supabase.from('frotas_rastreadores_observacoes').insert({
+          placa: rawPlaca(row.placa),
+          data: new Date().toISOString().slice(0, 10),
+          descricao,
+          criado_por_nome: userName()
+        });
+        if (obsError) console.warn('[FROTAS_RASTREADORES] Falha ao registrar observação da manutenção:', obsError);
+        if (!error) toast(`${row.placa} concluída: voltou para Instalado (Com BFleet).`);
         close();
         await loadData(root);
       } catch (err) {
-        toast(err?.message || 'Erro ao salvar a manutenção.', true);
+        toast(err?.message || 'Erro ao concluir a manutenção.', true);
         btn.disabled = false;
         btn.textContent = label;
       }
@@ -1074,44 +1127,6 @@
     backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
   }
 
-  // Mesmo histórico de observações do cadastro (Todos → editar): é uma lista única por placa.
-  function openObservacoes(placa) {
-    const row = state.merged.find(v => v.placa === placa);
-    if (!row) return;
-    const backdrop = document.createElement('div');
-    backdrop.className = 'fr-modal-backdrop';
-    backdrop.innerHTML = `
-      <div class="fr-modal" role="dialog" aria-modal="true" style="width:min(760px,96vw)">
-        <div class="fr-modal-head">
-          <div>
-            <h3>Observações · ${esc(row.placa)}</h3>
-            <p>Histórico por data. As mesmas observações aparecem no cadastro do rastreador (aba Todos).</p>
-          </div>
-          <button class="fr-btn ghost fr-mini" data-close>✕</button>
-        </div>
-        <div class="fr-modal-body">
-          <div class="fr-obs" data-obs>
-            <div class="fr-obs-add">
-              <input type="date" data-obs-data value="${new Date().toISOString().slice(0, 10)}" />
-              <input type="text" data-obs-desc placeholder="Descrição da observação" maxlength="500" />
-              <button type="button" class="fr-btn soft fr-icon-btn" data-obs-add title="Adicionar observação" aria-label="Adicionar observação">+</button>
-            </div>
-            <div class="fr-obs-scroll" style="max-height:min(52vh,420px)">
-              <table class="fr-obs-table"><thead><tr><th style="width:92px">Data</th><th>Descrição</th><th style="width:110px">Usuário</th><th style="width:36px"></th></tr></thead><tbody data-obs-list><tr><td colspan="4" class="fr-empty">Carregando...</td></tr></tbody></table>
-            </div>
-          </div>
-        </div>
-        <div class="fr-modal-foot">
-          <button class="fr-btn ghost" data-close>Fechar</button>
-        </div>
-      </div>`;
-    document.body.appendChild(backdrop);
-    backdrop.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => backdrop.remove()));
-    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
-    initObservacoes(backdrop, row.placa);
-    backdrop.querySelector('[data-obs-desc]').focus();
-  }
-
   async function cancelarManutencao(root, placa) {
     const row = state.merged.find(v => v.placa === placa);
     if (!row) return;
@@ -1139,28 +1154,11 @@
     if (!rows.length) el.innerHTML = `<tr><td class="fr-empty" colspan="${ncols}">Nenhum veículo em manutenção.</td></tr>`;
     else el.innerHTML = rows.map(row => {
       const m = manutAberta(row.placa);
-      const etapa = etapaDe(m);
       const [cls, label] = STATUS_MANUT_LABEL[statusManut(m)];
       const motorista = motoristaDaManut(row, m).nome;
-      const detalhes = {
-        disponibilidade: m?.disponibilidade_motorista,
-        tecnico: m?.tecnico_nome ? `${m.tecnico_nome}${m.tecnico_contato ? ' · ' + m.tecnico_contato : ''}` : '',
-        agendamento: m?.data_agendada ? `${fmtDataBr(m.data_agendada)}${m.hora_agendada ? ' ' + m.hora_agendada : ''}${m.local_agendado ? ' · ' + m.local_agendado : ''}` : '',
-        finalizar: ''
-      };
-      const titulos = {
-        disponibilidade: 'Disponibilidade com o motorista',
-        tecnico: 'Alinhar com o técnico',
-        agendamento: 'Agendar',
-        finalizar: 'Concluir manutenção'
-      };
-      const btn = (tipo) => {
-        const feito = Boolean(detalhes[tipo]);
-        const atual = etapa === tipo;
-        const bloqueado = tipo === 'finalizar' && etapa !== 'finalizar';
-        const tip = bloqueado ? 'Concluir (registre disponibilidade, técnico e agendamento antes)' : `${titulos[tipo]}${detalhes[tipo] ? ' — ' + detalhes[tipo] : ''}`;
-        return `<button type="button" class="fr-act${tipo === 'finalizar' ? ' final' : ''}${feito ? ' done' : ''}${atual ? ' current' : ''}" data-macao="${tipo}" data-placa="${esc(row.placa)}" title="${esc(tip)}" aria-label="${esc(titulos[tipo])}"${bloqueado ? ' disabled' : ''}>${ICONS[tipo]}</button>`;
-      };
+      // Concluir só libera com motorista, técnico e agendamento registrados.
+      const pronto = etapaDe(m) === 'finalizar';
+      const tipConcluir = pronto ? 'Concluir manutenção' : 'Concluir (registre disponibilidade do motorista, técnico e agendamento antes)';
       const local = row._rastr?.cidade || '—';
       return `<tr>
         <td><strong>${esc(row.placa)}</strong></td>
@@ -1172,7 +1170,7 @@
         <td><span class="fr-badge ${cls}">${esc(label)}</span>${m ? '' : ' <span class="fr-badge err" title="Em manutenção sem registro de etapas">sem registro</span>'}</td>
         <td title="${esc(m?.tecnico_nome || '—')}">${esc(m?.tecnico_nome || '—')}</td>
         <td>${m?.data_agendada ? esc(fmtDataBr(m.data_agendada)) + (m.hora_agendada ? ' ' + esc(m.hora_agendada) : '') + mapsLink(m.local_maps_url) : '—'}</td>
-        <td><div class="fr-act-row">${['disponibilidade', 'tecnico', 'agendamento', 'finalizar'].map(btn).join('')}<button type="button" class="fr-act obs" data-mobs="${esc(row.placa)}" title="Observações" aria-label="Observações">${ICONS.observacoes}</button><button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
+        <td><div class="fr-act-row"><button type="button" class="fr-act final${pronto ? ' current' : ''}" data-mconcluir="${esc(row.placa)}" title="${esc(tipConcluir)}" aria-label="Concluir manutenção"${pronto ? '' : ' disabled'}>${ICONS.finalizar}</button><button type="button" class="fr-act" data-medit="${esc(row.placa)}" title="Editar manutenção (motorista, técnico, agendamento e observações)" aria-label="Editar manutenção">${ICONS.editar}</button><button type="button" class="fr-act cancel" data-mcancel="${esc(row.placa)}" title="Cancelar manutenção" aria-label="Cancelar manutenção">${ICONS.cancelar}</button></div></td>
       </tr>`;
     }).join('');
 
@@ -1410,7 +1408,7 @@
         }
         const edit = e.target.closest('[data-ag-edit]');
         if (edit) {
-          if (edit.dataset.agEdit === 'manut') openManutAcao(root, edit.dataset.placa, 'agendamento');
+          if (edit.dataset.agEdit === 'manut') openManutEditar(root, edit.dataset.placa, 'agendamento');
           else openModal(root, edit.dataset.placa);
         }
       });
@@ -1827,12 +1825,12 @@
     });
 
     container.querySelector('[data-table]').addEventListener('click', e => {
-      const acao = e.target.closest('[data-macao]');
-      if (acao) { openManutAcao(container, acao.dataset.placa, acao.dataset.macao); return; }
+      const concluir = e.target.closest('[data-mconcluir]');
+      if (concluir) { openManutConcluir(container, concluir.dataset.mconcluir); return; }
+      const editar = e.target.closest('[data-medit]');
+      if (editar) { openManutEditar(container, editar.dataset.medit); return; }
       const mot = e.target.closest('[data-mmot]');
       if (mot) { openMotoristaInfo(mot.dataset.mmot); return; }
-      const obs = e.target.closest('[data-mobs]');
-      if (obs) { openObservacoes(obs.dataset.mobs); return; }
       const cancel = e.target.closest('[data-mcancel]');
       if (cancel) cancelarManutencao(container, cancel.dataset.mcancel);
     });
