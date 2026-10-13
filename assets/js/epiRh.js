@@ -4,7 +4,7 @@ import { searchColaboradores } from './colaboradoresCache.js';
 
 const EPI_LISTA = [
   { material:'CAPACETE', label:'Capacete classe B', ca:'29792', ca_obrigatorio:true },
-  { material:'OCULOS DE PROTEÇÃO', label:'Óculos de Proteção', ca_obrigatorio:true },
+  { material:'OCULOS DE PROTEÇÃO', label:'Óculos de Proteção', ca:'26127', ca_obrigatorio:true },
   { material:'PROTETOR AURICULAR', label:'Protetor auricular plug', ca:'19578', ca_obrigatorio:true },
   { material:'MASCARA PFF2', label:'Máscara PFF 02', ca:'36857', ca_obrigatorio:true },
   { material:'COLETE REFLETIVO', label:'Colete Refletivo', ca_obrigatorio:false },
@@ -302,7 +302,8 @@ async function buscarUltimoCaPorMaterial(material){
   // Compatibilidade com ambientes que ainda não possuem comprado_em no cache da API.
   if(error) ({data,error}=await supabase.from('compras_itens').select('ca,created_at').eq('material',material).in('status',['comprado','concluido']).not('ca','is',null).order('created_at',{ascending:false}).limit(1));
   if(error) throw error;
-  return data?.[0]?.ca||null;
+  // Sem CA em nenhuma compra: usa o CA padrão da lista (itens antigos entram na ficha sem CA).
+  return data?.[0]?.ca||EPI_LISTA.find(e=>norm(e.material)===norm(material))?.ca||null;
 }
 
 function openSolicitacaoModal(id){
