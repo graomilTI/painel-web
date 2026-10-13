@@ -1428,6 +1428,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (e.tipo === 'OS_PROGRAMADA') base = e.sentido === 'saida' ? 'Veículo saiu do local da O.S. escalada' : 'Veículo chegou ao local da O.S. escalada';
     if (e.tipo === 'CARONA') base = `${e.sentido === 'saida' ? 'Veículo saiu da casa' : 'Veículo chegou à casa'} de ${fhPrimeiroNome(e.quem)} (carona)`;
     else if (e.papel === 'CARONA' && e.quem) base += ` — ${fhPrimeiroNome(e.quem)} (carona)`;
+    else if (e.papel === 'EQUIPE' && e.quem) base += ` — ${fhPrimeiroNome(e.quem)} (equipe)`;
     return base;
   }
 
@@ -1675,20 +1676,44 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
   }
 
+  function finito(n) {
+    return n !== null && n !== undefined && n !== '' && Number.isFinite(Number(n));
+  }
+
+  // Papel da O.S. na Programação: atendimento do condutor, logística (carona frota) ou destino da carona.
+  function fhPapelOs(o) {
+    const quem = fhTitulo(o.quem);
+    if (o.papel === 'CARONA') return `destino da carona de ${quem}`;
+    if (o.logistica === true || o.logistica === 'true') return `logística (carona frota) de ${quem}`;
+    if (o.papel === 'EQUIPE') return `equipe do veículo: ${quem}`;
+    return `atendimento escalado de ${quem}`;
+  }
+
+  function fhAgruparOs(prog) {
+    const grupos = new Map();
+    (prog?.os || []).forEach((o) => {
+      const chave = String(o.os);
+      if (!grupos.has(chave)) grupos.set(chave, { os: o.os, local: o.local || o.cliente || '', la: o.la, lo: o.lo, papeis: [] });
+      const grupo = grupos.get(chave);
+      const papel = fhPapelOs(o);
+      if (!grupo.papeis.includes(papel)) grupo.papeis.push(papel);
+    });
+    return [...grupos.values()];
+  }
+
   // Locais para conferir na rota: O.S. escalada na Programação, endereço cadastrado do colaborador e onde o veículo dormiu.
   function fhPontosReferencia(dos) {
     const det = dos.detalhes || {};
     const finito = (n) => n !== null && n !== undefined && n !== '' && Number.isFinite(Number(n));
     const lista = [];
-    const vistas = new Set();
-    (det.programacao?.os || []).forEach((o) => {
-      if (!finito(o.la) || !finito(o.lo) || vistas.has(o.os)) return;
-      vistas.add(o.os);
-      lista.push({
-        tipo: 'os', sigla: 'O.S.', lat: Number(o.la), lng: Number(o.lo),
-        titulo: `O.S. ${o.os} · local de embarque programado`,
-        detalhe: [o.local || o.cliente, o.papel === 'CARONA' ? `de ${fhTitulo(o.quem)} (carona)` : ''].filter(Boolean).join(' · ')
-      });
+    fhAgruparOs(det.programacao).forEach((g) => {
+      const base = {
+        tipo: 'os', sigla: 'O.S.',
+        titulo: `O.S. ${g.os} · local de embarque programado`,
+        detalhe: [g.local, g.papeis.join('; ')].filter(Boolean).join(' · ')
+      };
+      if (finito(g.la) && finito(g.lo)) lista.push({ ...base, lat: Number(g.la), lng: Number(g.lo) });
+      else lista.push({ ...base, sem: true });
     });
     (det.enderecos || []).forEach((e) => {
       if (!finito(e.lat) || !finito(e.lng)) return;
@@ -1721,6 +1746,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       return '<div class="speed-import-empty">A RedGPS não devolveu pontos de GPS para este veículo neste dia.</div>';
     }
     const refs = referencias.map((r, i) => {
+      if (r.sem) {
+        return `<div class="fh-ref">
+          <span class="fh-pin fh-pin-${r.tipo}">${escapeHtml(r.sigla)}</span>
+          <div><b>${escapeHtml(r.titulo)}</b><small>${escapeHtml(r.detalhe || '')}</small><small class="fh-ref-prox">O local desta O.S. não tem coordenada cadastrada: não dá para marcar no mapa.</small></div>
+          <span></span>
+        </div>`;
+      }
       const prox = fhMaisProximo(pontos, r.lat, r.lng);
       const txt = !prox ? '' : (prox.km <= 2
         ? `A rota passou a ${fhKm(prox.km)} km, às ${fhHm(`T${fhHoraSeg(prox.sec)}`)}.`
@@ -1804,14 +1836,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
 
     // Pontos de referência (O.S. programada, endereço cadastrado, pernoite).
-    const marcadoresRef = referencias.map((r) => L.marker([r.lat, r.lng], {
+    const marcadoresRef = referencias.map((r) => r.sem ? null : L.marker([r.lat, r.lng], {
       icon: L.divIcon({ className: '', html: `<div class="fh-pin fh-pin-${r.tipo}">${escapeHtml(r.sigla)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
       zIndexOffset: 500
     }).bindTooltip(`<b>${escapeHtml(r.titulo)}</b>${r.detalhe ? `<br>${escapeHtml(r.detalhe)}` : ''}`).addTo(fhMapa));
 
     const limites = L.latLngBounds(pontos.map((p) => [p[1], p[2]]));
     // Referências muito longe da rota (endereço cadastrado desatualizado) não esticam o enquadramento.
-    referencias.forEach((r) => { if (limites.pad(0.5).contains([r.lat, r.lng])) limites.extend([r.lat, r.lng]); });
+    referencias.forEach((r) => { if (!r.sem && limites.pad(0.5).contains([r.lat, r.lng])) limites.extend([r.lat, r.lng]); });
     fhMapa.invalidateSize();
     fhMapa.fitBounds(limites, { padding: [30, 30], maxZoom: 16, animate: false });
     const mapaAtual = fhMapa;
@@ -1837,7 +1869,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     root.querySelectorAll('[data-rota-mapa-ir]').forEach((btn) => btn.addEventListener('click', () => {
       const r = referencias[Number(btn.dataset.rotaMapaIr)];
-      if (!r) return;
+      if (!r || r.sem) return;
       fhMapa.setView([r.lat, r.lng], 15, { animate: false });
       const m = marcadoresRef[Number(btn.dataset.rotaMapaIr)];
       if (m) m.openTooltip();
@@ -2165,23 +2197,26 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     const passos = [];
     const prog = det.programacao || {};
-    const oss = [];
-    (prog.os || []).forEach((o) => {
-      const txt = `${o.os}${o.local || o.cliente ? ` (${o.local || o.cliente})` : ''}${o.papel === 'CARONA' ? `, de ${fhPrimeiroNome(o.quem)}` : ''}`;
-      if (!oss.includes(txt)) oss.push(txt);
-    });
+    const grupos = fhAgruparOs(prog);
+    const logistica = (prog.logistica || []).map(fhTitulo);
     const passagens = (det.evidencias || []).filter((e) => (e.tipo === 'OS_PROGRAMADA' || e.tipo === 'CARONA') && !e.em_casa).length;
-    if (prog.condutores || (prog.caronas || []).length || oss.length) {
+    if (prog.condutores || (prog.caronas || []).length || grupos.length || logistica.length) {
       const partes = [];
-      if (prog.condutores) partes.push(`Condutor escalado: ${fhTitulo(prog.condutores)}${prog.divergente ? ' (diferente do motorista cadastrado do veículo)' : ''}.`);
+      if (prog.condutores) {
+        partes.push(`Condutor escalado: ${fhTitulo(prog.condutores)}${logistica.length ? ' (logística / carona frota)' : ''}${prog.divergente ? ', diferente do motorista cadastrado do veículo' : ''}.`);
+      }
       if ((prog.caronas || []).length) partes.push(`Carona para: ${prog.caronas.map(fhTitulo).join(', ')}.`);
-      if (oss.length) partes.push(`O.S. escalada: ${oss.join('; ')}.`);
-      partes.push(passagens
-        ? `A rota do veículo passou ${passagens} vez(es) pelo local da O.S. ou pela casa do colega de carona, o que conta como trabalho.`
-        : 'A rota do veículo não passou perto do local da O.S. escalada nem da casa do colega de carona.');
+      if (grupos.length) {
+        partes.push(`O.S. escalada: ${grupos.map((g) => `${g.os}${g.local ? ` (${g.local})` : ''}: ${g.papeis.join('; ')}${finito(g.la) && finito(g.lo) ? '' : ' (sem coordenada cadastrada)'}`).join(' | ')}.`);
+        partes.push(passagens
+          ? `A rota do veículo passou ${passagens} vez(es) pelo local de uma O.S. escalada ou pela casa do colega de carona, o que conta como trabalho.`
+          : 'A rota do veículo não passou perto do local da O.S. escalada nem da casa do colega de carona.');
+      } else {
+        partes.push('A Programação não vincula nenhuma O.S. às pessoas deste veículo neste dia.');
+      }
       passos.push({ titulo: 'Programação do dia', texto: partes.join(' ') });
     } else {
-      passos.push({ titulo: 'Programação do dia', texto: 'Não há condutor nem carona escalado para esta placa na Programação deste dia.' });
+      passos.push({ titulo: 'Programação do dia', texto: 'Não há condutor, logística, carona nem O.S. escalada para esta placa na Programação deste dia.' });
     }
     passos.push({
       titulo: 'Trabalho registrado',
