@@ -252,6 +252,7 @@ declare
   flag_percurso boolean; viagem_vespera boolean;
   prog_map jsonb; prog jsonb; pessoas jsonb; pessoa jsonb; os_item jsonb; prog_os jsonb; caronas_json jsonb;
   cond_esc text; cond_confere boolean; vistos text[]; chaves text[]; v_quem text; v_papel text;
+  enderecos jsonb; vistos_end text[]; end_la float8; end_lo float8; end_txt text; end_achou boolean; v_chave_end text;
 begin
   -- Informativos do colaborador (Mapa de Embarque): quem atualizou + quando + O.S./local.
   select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into inf_map
@@ -338,13 +339,13 @@ begin
   select coalesce(jsonb_object_agg(g.placa_p, g.info), '{}'::jsonb) into prog_map
   from (
     select s.placa_p, jsonb_build_object('pessoas', jsonb_agg(jsonb_build_object(
-             'nome', s.nome, 'papel', s.papel, 'casa_la', s.casa_la, 'casa_lo', s.casa_lo, 'oss', s.oss) order by s.papel, s.nome)) as info
+             'nome', s.nome, 'papel', s.papel, 'casa_la', s.casa_la, 'casa_lo', s.casa_lo, 'endereco', s.endereco, 'oss', s.oss) order by s.papel, s.nome)) as info
     from (
       select distinct
         regexp_replace(upper(c.placa_veiculo), '[^A-Z0-9]', '', 'g') as placa_p,
         upper(trim(c.nome_colaborador)) as nome,
         case when upper(trim(c.tipo_deslocamento)) = 'MOTORISTA FROTA' then 'CONDUTOR' else 'CARONA' end as papel,
-        cz.latitude as casa_la, cz.longitude as casa_lo,
+        cz.latitude as casa_la, cz.longitude as casa_lo, cz.endereco_base as endereco,
         (select jsonb_agg(jsonb_build_object('os', o.numero_os, 'cliente', o.cliente, 'local', coalesce(pe.nome_local, o.ponto1_nome),
                 'la', coalesce(pe.latitude, o.ponto1_latitude)::float8, 'lo', coalesce(pe.longitude, o.ponto1_longitude)::float8))
            from public.programacao_equipe e
@@ -354,7 +355,7 @@ begin
       from public.programacao_deslocamento c
       join public.programacao_dia d on d.id = c.programacao_id
       left join lateral (
-        select z.latitude::float8 as latitude, z.longitude::float8 as longitude
+        select z.latitude::float8 as latitude, z.longitude::float8 as longitude, z.endereco_base
         from public.colaborador_cruzamento z
         where z.cpf <> '' and z.cpf = regexp_replace(coalesce(c.colaborador_id, ''), '\D', '', 'g')
         order by z.atualizado_em desc
@@ -409,6 +410,28 @@ begin
         end if;
       end loop;
     end if;
+
+    -- Endereço cadastrado de cada pessoa do veículo (coordenada do cadastro, para mostrar no mapa da rota).
+    enderecos := '[]'::jsonb; vistos_end := '{}';
+    for pessoa in select * from jsonb_array_elements(pessoas) loop
+      v_chave_end := upper(unaccent(trim(coalesce(pessoa ->> 'nome', ''))));
+      if v_chave_end = '' or v_chave_end = any(vistos_end) then continue; end if;
+      end_la := null; end_lo := null; end_txt := null; end_achou := false;
+      if (pessoa ->> 'casa_la') is not null and (pessoa ->> 'casa_lo') is not null then
+        end_la := (pessoa ->> 'casa_la')::float8; end_lo := (pessoa ->> 'casa_lo')::float8; end_txt := pessoa ->> 'endereco'; end_achou := true;
+      else
+        select z.latitude::float8, z.longitude::float8, z.endereco_base into end_la, end_lo, end_txt
+        from public.colaborador_cruzamento z
+        where upper(unaccent(trim(z.nome))) = v_chave_end and z.latitude is not null and z.longitude is not null
+        order by z.atualizado_em desc
+        limit 1;
+        end_achou := found;
+      end if;
+      vistos_end := vistos_end || v_chave_end;
+      if end_achou then
+        enderecos := enderecos || jsonb_build_object('quem', pessoa ->> 'nome', 'papel', pessoa ->> 'papel', 'lat', end_la, 'lng', end_lo, 'endereco', end_txt);
+      end if;
+    end loop;
 
     -- Casa = origem da 1ª viagem do dia (onde o veículo dormiu); à noite = destino da última, encaixado na casa se < 1 km.
     t := trips -> 0;
@@ -717,6 +740,7 @@ begin
     condutor_escalado := cond_esc; caronas := caronas_json;
     detalhes := jsonb_build_object(
       'programacao', jsonb_build_object('condutores', cond_esc, 'caronas', caronas_json, 'os', prog_os, 'divergente', cond_confere is false),
+      'enderecos', enderecos,
       'tolerancia_min', p_tol_min, 'fator_rota', p_fator, 'vel_media_kmh', p_vel_kmh,
       't_ida_min', t_ida, 't_volta_min', t_volta,
       'km_ida', round(km_ida_real, 1), 'km_volta', round(km_volta_real, 1),
@@ -807,22 +831,7 @@ revoke all on function public.frotas_fora_horario_dossie_gerar(date, text) from 
 grant execute on function public.frotas_fora_horario_dossie_montar(date, text, integer, numeric, numeric, numeric, time, time) to service_role;
 grant execute on function public.frotas_fora_horario_dossie_gerar(date, text) to service_role;
 
--- ---------------------------------------------------------------------------------------------
--- Rotina diária: recalcula ontem e anteontem (o dia anterior ganha registros de trabalho tardios).
--- Duas execuções: depois do sync da BFleet (07:00 BRT) e uma repescagem às 10:30 BRT.
--- ---------------------------------------------------------------------------------------------
-
-select cron.unschedule('frotas-fora-horario-dossie-diario')
-where exists (select 1 from cron.job where jobname = 'frotas-fora-horario-dossie-diario');
-
-select cron.schedule(
-  'frotas-fora-horario-dossie-diario',
-  '30 10,13 * * *',
-  $$
-  select public.frotas_fora_horario_dossie_gerar(((now() at time zone 'America/Sao_Paulo')::date - 1));
-  select public.frotas_fora_horario_dossie_gerar(((now() at time zone 'America/Sao_Paulo')::date - 2));
-  $$
-);
+-- A rotina diária (busca na BFleet + dossiê) foi para 20261013200000_frotas_fora_horario_pipeline_diario.sql.
 
 -- ---------------------------------------------------------------------------------------------
 -- Notificação "Gerar": a hora citada passa a ser a do 1º trecho FORA da janela do dossiê
