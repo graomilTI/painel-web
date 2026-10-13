@@ -620,6 +620,8 @@
         if (!confirm('Excluir esta observação?')) return;
         const { error } = await _opts.supabase.from('frotas_rastreadores_observacoes').delete().eq('id', b.dataset.obsDel);
         if (error) { toast(error.message || 'Sem permissão para excluir.', true); return; }
+        const apagada = rows.find(o => String(o.id) === b.dataset.obsDel);
+        notificarEquipe({ assunto: 'observacao', titulo: `Observação excluída · ${placa}`, descricao: apagada ? `${fmtDataBr(apagada.data)} — ${apagada.descricao}` : '', placa, filtro: manutAberta(placa) ? 'manutencao' : 'todos', prioridade: 'atencao' });
         await load();
       }));
     };
@@ -648,6 +650,7 @@
       });
       if (error) { toast(error.message || 'Erro ao adicionar observação.', true); return; }
       descEl.value = '';
+      notificarEquipe({ assunto: 'observacao', titulo: `Nova observação · ${placa}`, descricao: `${fmtDataBr(dataEl.value)} — ${descricao}`, placa, filtro: manutAberta(placa) ? 'manutencao' : 'todos' });
       await load();
     });
     backdrop.querySelector('[data-obs-desc]').addEventListener('keydown', e => {
@@ -688,6 +691,44 @@
   function userName() {
     const u = _opts.auth?.user;
     return u?.name || u?.full_name || u?.nome || _opts.auth?.profile?.full_name || u?.email || null;
+  }
+
+  // ── Notificações (sininho) ───────────────────────────────────────────────────
+  // Toda alteração feita aqui avisa a equipe com acesso a Rastreadores. Quem fez a ação não recebe o próprio
+  // aviso (meta.excluir_autor). O link abre direto na placa: aba Rastreadores + filtro + placa.
+  // Nunca bloqueia nem quebra a ação que o originou.
+  const NOTIF_MODULO = 'frotas_rastreadores';
+  const NOTIF_TIPOS = { manutencao: ['frotas_rastreador_manutencao', 'wrench'], observacao: ['frotas_rastreador_observacao', 'message-square'], cadastro: ['frotas_rastreador', 'wrench'] };
+
+  function linkRastreador(filtro, placa) {
+    const q = new URLSearchParams({ aba: 'rastreadores', filtro: filtro || 'todos' });
+    if (placa) q.set('placa', placa);
+    return `frotas-cadastros?${q}`;
+  }
+
+  async function notificarEquipe({ assunto, titulo, descricao, placa, filtro, prioridade }) {
+    try {
+      const [tipo, icone] = NOTIF_TIPOS[assunto];
+      const autor = userName();
+      const payload = {
+        tipo,
+        titulo,
+        descricao: `${autor ? autor + ': ' : ''}${descricao || ''}`.slice(0, 400),
+        prioridade: prioridade || 'normal',
+        icone,
+        modulo_url: linkRastreador(filtro, placa),
+        destinatario_modulo: NOTIF_MODULO,
+        referencia_tabela: 'frotas_rastreadores',
+        referencia_id: placa ? rawPlaca(placa) : null,
+        meta: { excluir_autor: true, placa: placa ? rawPlaca(placa) : null, por: autor }
+      };
+      const engine = window.__painelNotifEngine;
+      if (engine?.criarNotificacao) { await engine.criarNotificacao(payload); return; }
+      const { error } = await _opts.supabase.from('painel_notificacoes').insert({ ...payload, gerado_por_usuario_id: _opts.auth?.user?.id || null });
+      if (error) console.warn('[FROTAS_RASTREADORES] Falha ao notificar a equipe:', error);
+    } catch (err) {
+      console.warn('[FROTAS_RASTREADORES] Falha ao notificar a equipe:', err);
+    }
   }
 
   function manutAberta(placa) {
@@ -770,6 +811,7 @@
           throw error;
         }
         toast(`${placa} enviada para Manutenção.`);
+        notificarEquipe({ assunto: 'manutencao', titulo: `Rastreador enviado para manutenção · ${placa}`, descricao: backdrop.querySelector('[name="motivo"]').value.trim() || 'Sem motivo informado', placa, filtro: 'manutencao' });
         backdrop.remove();
         await loadData(root);
       } catch (err) {
@@ -1009,6 +1051,7 @@
       try {
         await gravarManutencao(row, patch, eventos);
         toast('Manutenção atualizada.');
+        notificarEquipe({ assunto: 'manutencao', titulo: `Manutenção atualizada · ${row.placa}`, descricao: eventos.join(' · '), placa: row.placa, filtro: 'manutencao' });
         close();
         await loadData(root);
       } catch (err) {
@@ -1090,6 +1133,7 @@
         });
         if (obsError) console.warn('[FROTAS_RASTREADORES] Falha ao registrar observação da manutenção:', obsError);
         if (!error) toast(`${row.placa} concluída: voltou para Instalado (Com BFleet).`);
+        notificarEquipe({ assunto: 'manutencao', titulo: `Manutenção concluída · ${row.placa}`, descricao: fim.resolucao, placa: row.placa, filtro: 'manutencao' });
         close();
         await loadData(root);
       } catch (err) {
@@ -1139,6 +1183,7 @@
       const { error } = await setStatusRastreador(row, rec?.status_anterior || 'concluido');
       if (error) throw error;
       toast('Manutenção cancelada.');
+      notificarEquipe({ assunto: 'manutencao', titulo: `Manutenção cancelada · ${row.placa}`, descricao: 'O rastreador voltou ao status anterior.', placa: row.placa, filtro: 'manutencao', prioridade: 'atencao' });
       await loadData(root);
     } catch (err) {
       toast(err?.message || 'Erro ao cancelar a manutenção.', true);
@@ -1515,6 +1560,7 @@
     }
 
     toast('Rastreador movido para REMOVIDOS.');
+    notificarEquipe({ assunto: 'cadastro', titulo: `Rastreador removido · ${row.placa}`, descricao: motivo, filtro: 'removidos', prioridade: 'atencao' });
     backdrop.remove();
     await loadData(root);
   }
@@ -1581,8 +1627,31 @@
     if (deleteError) { falhou(deleteError.message || 'Rastreador devolvido, mas não foi possível limpar o registro de remoção. Tente novamente.'); return; }
 
     toast('Rastreador restaurado.');
+    notificarEquipe({ assunto: 'cadastro', titulo: `Rastreador restaurado · ${rem.placa}`, descricao: 'Voltou para a relação de instalação.', placa: rem.placa, filtro: 'todos' });
     backdrop.remove();
     await loadData(root);
+  }
+
+  const STATUS_TEXTO = {
+    sem_rastreador: 'Sem rastreador', em_andamento: 'Em andamento', agendado: 'Agendado',
+    aguardando_motorista: 'Aguardando motorista', concluido: 'Instalado', manutencao: 'Manutenção'
+  };
+  const CAMPOS_CADASTRO = [
+    ['status', 'Status', v => STATUS_TEXTO[v] || v], ['estado', 'UF'], ['cidade', 'Cidade'], ['local_instalacao', 'Local de instalação'],
+    ['imei', 'IMEI'], ['cod_rastreio', 'Cód. rastreio'], ['data_envio', 'Envio', fmtDataBr], ['previsao_chegada', 'Prev. chegada', fmtDataBr],
+    ['data_instalacao', 'Instalação', fmtDataBr], ['contrato', 'Contrato'], ['contrato_assinado', 'Contrato assinado', v => (v ? 'sim' : 'não')],
+    ['termo_assinado', 'Termo assinado'], ['agendamentos_frustrados', 'Agend. frustrados'], ['infleet', 'Infleet']
+  ];
+
+  // Lista só o que mudou no cadastro: "Status: Agendado → Instalado · Instalação: 15/10/2026".
+  function mudancasCadastro(antes, depois) {
+    const vazio = v => v === null || v === undefined || v === '' || v === false || v === 0;
+    return CAMPOS_CADASTRO.filter(([k]) => (vazio(antes?.[k]) ? '' : String(antes[k]).trim()) !== (vazio(depois[k]) ? '' : String(depois[k]).trim()))
+      .map(([k, rotulo, fmt = x => x]) => {
+        const de = vazio(antes?.[k]) ? '' : fmt(antes[k]);
+        const para = vazio(depois[k]) ? '—' : fmt(depois[k]);
+        return de ? `${rotulo}: ${de} → ${para}` : `${rotulo}: ${para}`;
+      });
   }
 
   async function saveRastreador(root, placa, veiculo_id, backdrop) {
@@ -1590,10 +1659,13 @@
     btn.textContent = 'Salvando...';
     btn.disabled = true;
 
+    const dados = readModal(backdrop);
+    const antes = { ...(state.merged.find(v => v.placa === placa)?._rastr || {}) };
+
     // Usa a placa exatamente como está em frotas_veiculos (fonte canônica)
     const { error } = await _opts.supabase
       .from('frotas_rastreadores')
-      .upsert({ placa: rawPlaca(placa), veiculo_id: veiculo_id || null, ...readModal(backdrop) }, { onConflict: 'placa' });
+      .upsert({ placa: rawPlaca(placa), veiculo_id: veiculo_id || null, ...dados }, { onConflict: 'placa' });
 
     if (error) {
       toast(error.message || 'Erro ao salvar.', true);
@@ -1603,6 +1675,8 @@
     }
 
     toast('Rastreador salvo com sucesso.');
+    const mudancas = mudancasCadastro(antes, dados);
+    if (mudancas.length) notificarEquipe({ assunto: 'cadastro', titulo: `Rastreador atualizado · ${placa}`, descricao: mudancas.join(' · '), placa, filtro: 'todos' });
     backdrop.remove();
     await loadData(root);
   }
@@ -1650,6 +1724,7 @@
     }
 
     toast(`BFleet sincronizado: ${criados} novo(s) registro(s) criado(s), ${atualizados} IMEI(s) preenchido(s).`);
+    if (criados || atualizados) notificarEquipe({ assunto: 'cadastro', titulo: 'Sync BFleet executada', descricao: `${criados} novo(s) registro(s) criado(s), ${atualizados} IMEI(s) preenchido(s).`, filtro: 'todos' });
     state.syncing = false;
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Sync BFleet'; }
     await loadData(root);
@@ -1729,8 +1804,18 @@
     renderTable(root);
   }
 
+  const FILTROS_INICIAIS = ['todos', 'sem_rastreador', 'em_andamento', 'concluido', 'manutencao', 'removidos', 'agenda', 'bfleet'];
+
   function openHome(container, opts = {}) {
     _opts = opts;
+
+    // O DOM é refeito a cada montagem, então os filtros recomeçam junto com ele; o link de uma notificação
+    // pode abrir já num filtro e numa placa (frotas-cadastros?aba=rastreadores&filtro=manutencao&placa=ABC1D23).
+    const inicial = opts.inicial || {};
+    state.filtro = 'todos';
+    state.busca = '';
+    state.filtros = { placa: inicial.placa || '', estado: '', cidade: '' };
+    state.agenda.ano = null;
 
     container.innerHTML = styles + `
       <div class="fr-shell">
@@ -1855,6 +1940,7 @@
       renderTable(container);
     });
 
+    if (FILTROS_INICIAIS.includes(inicial.filtro) && inicial.filtro !== 'todos') setFiltro(container, inicial.filtro);
     loadData(container);
   }
 
