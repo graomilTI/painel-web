@@ -10,6 +10,8 @@ const {
   assertDirectExpenseAllowed,
   pointOffsetFromSaoPauloHours,
   registerDateAtPoint,
+  tokenDeSessaoDisponivel,
+  MARCADOR_AGUARDANDO_TOKEN,
 } = require('./grm-sync-despesas-retroativas');
 
 const types = new Map([
@@ -220,3 +222,14 @@ assert.equal(dup.orphans.length, 1);
 assert.equal(decidePernoite([mov('Pernoite', 'A', 1), mov('Pernoite', 'P', 2)], { programado: true, comEmbarque: true }).action, 'NONE');
 
 console.log('OK: Pernoite só aprova com programação do gestor e sem Café/Almoço/Janta no dia');
+
+// Sem token de sessão válido o agente adia (não tenta login nem falha); com token segue; o
+// interruptor GRM_DESPESAS_RETROATIVAS_AGUARDAR_TOKEN=false volta ao comportamento antigo.
+(async () => {
+  assert.equal(await tokenDeSessaoDisponivel({ aguardar: true, checar: async () => false }), false);
+  assert.equal(await tokenDeSessaoDisponivel({ aguardar: true, checar: async () => true }), true);
+  assert.equal(await tokenDeSessaoDisponivel({ aguardar: false, checar: async () => { throw new Error('não deveria checar'); } }), true);
+  // O cron de espera procura exatamente este texto no stdout do job.
+  assert.equal(MARCADOR_AGUARDANDO_TOKEN, '[RETROATIVAS_AGUARDANDO_TOKEN]');
+  console.log('OK: sem token válido o retroativo adia em vez de falhar');
+})().catch((error) => { console.error(error); process.exit(1); });

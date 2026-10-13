@@ -6,7 +6,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
 
-const VERSION = 'V6.4-API-DIRETA-SEM-ALMOCO-COM-PERNOITE';
+const VERSION = 'V6.5-API-DIRETA-SEM-ALMOCO-COM-PERNOITE-AGUARDA-TOKEN';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
 ).replace(/\/?$/, '/');
@@ -797,9 +797,32 @@ async function processPernoite(token, { date, grm, summary, actionCount, refeica
   return actionCount;
 }
 
+// O token de sessão do GRM vence todo dia às 23:59 e só é regravado à mão (painel ou
+// grm-token-cache.js salvar), às vezes de manhã. Sem ele o job das 04h dava erro
+// (captcha_invalid / "Login GRM em pausa") e o dia anterior ficava sem retroativo — o script só
+// olha D-1 e nada repescava (09/10 e 11/10/2026). Agora o agente adia: sai com sucesso e deixa o
+// marcador abaixo no stdout; o cron sync-despesas-retroativas-aguarda-token (a cada 5 min, até
+// 23:30 BRT, antes de D-1 virar outro dia) enfileira de novo até o token valer.
+// GRM_DESPESAS_RETROATIVAS_AGUARDAR_TOKEN=false volta a falhar na hora (diagnóstico).
+const MARCADOR_AGUARDANDO_TOKEN = '[RETROATIVAS_AGUARDANDO_TOKEN]';
+const AGUARDAR_TOKEN = String(process.env.GRM_DESPESAS_RETROATIVAS_AGUARDAR_TOKEN || 'true').toLowerCase() !== 'false';
+
+async function tokenDeSessaoDisponivel({
+  aguardar = AGUARDAR_TOKEN,
+  checar = () => require('./grm-token-cache').tokenGrmEmCacheValido(),
+} = {}) {
+  if (!aguardar) return true;
+  return Boolean(await checar());
+}
+
 async function main() {
   if (!process.env.GRMSERVER_USER || !process.env.GRMSERVER_PASSWORD) {
     throw new Error('Credenciais GRM ausentes.');
+  }
+  // Antes de qualquer consulta ou gravação: sem token não há como falar com o GRM.
+  if (!(await tokenDeSessaoDisponivel())) {
+    log('WARN', `${MARCADOR_AGUARDANDO_TOKEN} Sem token de sessão válido do GRM (venceu às 23:59; grave um novo pelo painel ou com node grm-token-cache.js salvar). Execução adiada; o cron tenta de novo a cada 5 min (até 23:30 BRT) e roda assim que o token for gravado.`);
+    return;
   }
   const date = process.env.GRM_DESPESAS_RETROATIVAS_DATA || yesterdaySaoPaulo();
   const source = await loadCandidates(date);
@@ -1002,6 +1025,8 @@ if (require.main === module) {
 module.exports = {
   norm,
   yesterdaySaoPaulo,
+  tokenDeSessaoDisponivel,
+  MARCADOR_AGUARDANDO_TOKEN,
   pointOffsetFromSaoPauloHours,
   registerDateAtPoint,
   requiredExpenses,
