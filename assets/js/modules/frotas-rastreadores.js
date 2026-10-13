@@ -28,6 +28,7 @@
     removidos: [],
     motoristas: [],
     colaboradores: [],
+    colaboradoresEm: 0,
     merged: [],
     loading: false,
     syncing: false,
@@ -1798,9 +1799,32 @@
     fill('[data-filter-cidade]', getCidadesDisponiveis(), state.filtros.cidade, 'Todas as cidades');
   }
 
-  async function loadData(root) {
+  // O PostgREST corta cada resposta em 1000 linhas e colaboradores_atuais tem mais que isso (2,4 mil): sem paginar,
+  // quem estava depois da linha 1000 ficava sem telefone/cidade na tela. Ordena por nome + id: sem chave única
+  // a paginação repete/pula linhas.
+  async function buscarPaginado(tabela, colunas) {
+    const TAMANHO = 1000;
+    const linhas = [];
+    for (let inicio = 0; ; inicio += TAMANHO) {
+      const { data, error } = await _opts.supabase.from(tabela).select(colunas)
+        .order('nome', { ascending: true }).order('id', { ascending: true })
+        .range(inicio, inicio + TAMANHO - 1);
+      if (error) return { data: null, error };
+      linhas.push(...(data || []));
+      if ((data || []).length < TAMANHO) break;
+    }
+    return { data: linhas, error: null };
+  }
+
+  const PESSOAS_TTL_MS = 10 * 60 * 1000;
+
+  // `recarregarPessoas` força a releitura dos colaboradores (botão Atualizar); sem isso a lista é reaproveitada por
+  // 10 min, porque cada gravação da tela chama loadData e a lista custa 3 requisições.
+  async function loadData(root, { recarregarPessoas = false } = {}) {
     state.loading = true;
     renderTable(root);
+
+    const precisaPessoas = recarregarPessoas || !state.colaboradores.length || (Date.now() - state.colaboradoresEm) > PESSOAS_TTL_MS;
 
     const [resV, resR, resRem, resMot, resCol, resManut] = await Promise.all([
       _opts.supabase
@@ -1811,7 +1835,7 @@
       _opts.supabase.from('frotas_rastreadores').select('*').order('placa'),
       _opts.supabase.from('frotas_rastreadores_removidos').select('*').order('removido_em', { ascending: false }),
       _opts.supabase.from('frotas_motoristas').select('nome,telefone,endereco'),
-      _opts.supabase.from('colaboradores_atuais').select('nome,whatsapp,endereco,bairro,cidade,estado,cep'),
+      precisaPessoas ? buscarPaginado('colaboradores_atuais', 'id,nome,whatsapp,endereco,bairro,cidade,estado,cep') : Promise.resolve(null),
       _opts.supabase.from(TABLE_MANUT).select('*').order('aberta_em', { ascending: false })
     ]);
 
@@ -1819,7 +1843,8 @@
     else state.manutencoes = Array.isArray(resManut.data) ? resManut.data : [];
 
     state.motoristas = Array.isArray(resMot.data) ? resMot.data : [];
-    state.colaboradores = Array.isArray(resCol.data) ? resCol.data : [];
+    if (resCol?.error) console.warn('[FROTAS_RASTREADORES] Falha ao carregar colaboradores (telefone/cidade dos motoristas):', resCol.error);
+    else if (resCol) { state.colaboradores = resCol.data || []; state.colaboradoresEm = Date.now(); }
 
     if (resV.error) toast(resV.error.message || 'Erro ao carregar veículos.', true);
     else state.veiculos = Array.isArray(resV.data) ? resV.data : [];
@@ -1955,7 +1980,7 @@
       if (cancel) cancelarManutencao(container, cancel.dataset.mcancel);
     });
 
-    container.querySelector('[data-refresh]').addEventListener('click', () => loadData(container));
+    container.querySelector('[data-refresh]').addEventListener('click', () => loadData(container, { recarregarPessoas: true }));
     container.querySelector('[data-sync-bfleet]').addEventListener('click', () => syncFromBfleet(container));
 
     container.querySelector('[data-thead]').addEventListener('click', e => {
