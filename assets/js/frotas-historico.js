@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261014-corrige-notificar';
+import './modules/frotas.js?v=20261014-frotas-modular1';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {
