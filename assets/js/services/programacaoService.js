@@ -84,7 +84,7 @@ export async function verificarIndisponibilidade({ colaboradorId, data = dataLoc
     }).catch(() => ({ rows: [] })),
   ]);
   const dentro = (ini, fim) => ini && data >= String(ini).slice(0, 10) && (!fim || data <= String(fim).slice(0, 10));
-  if ((ferias.rows || []).some((f) => dentro(f.inicio || f.data_inicio, f.fim || f.data_fim))) return 'férias';
+  if ((ferias.rows || []).some((f) => !f.permite_escala && dentro(f.inicio || f.data_inicio, f.fim || f.data_fim))) return 'férias';
   if ((atestados.rows || []).some((a) => dentro(a.inicio || a.data_inicio, a.fim || a.data_fim))) return 'atestado';
   return null;
 }

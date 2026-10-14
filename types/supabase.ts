@@ -21355,11 +21355,16 @@ export type Database = {
           data_inicio: string
           dias_direito: number
           dias_gozados: number | null
+          escala_autorizado_por: string | null
+          escala_liberada_em: string | null
+          escala_liberada_por: string | null
+          escala_motivo: string | null
           id: string
           observacoes: string | null
           periodo_aquisitivo_fim: string | null
           periodo_aquisitivo_inicio: string | null
           periodo_concessivo_limite: string | null
+          permite_escala: boolean
           status: string
           updated_at: string
         }
@@ -21372,11 +21377,16 @@ export type Database = {
           data_inicio: string
           dias_direito?: number
           dias_gozados?: number | null
+          escala_autorizado_por?: string | null
+          escala_liberada_em?: string | null
+          escala_liberada_por?: string | null
+          escala_motivo?: string | null
           id?: string
           observacoes?: string | null
           periodo_aquisitivo_fim?: string | null
           periodo_aquisitivo_inicio?: string | null
           periodo_concessivo_limite?: string | null
+          permite_escala?: boolean
           status?: string
           updated_at?: string
         }
@@ -21389,11 +21399,16 @@ export type Database = {
           data_inicio?: string
           dias_direito?: number
           dias_gozados?: number | null
+          escala_autorizado_por?: string | null
+          escala_liberada_em?: string | null
+          escala_liberada_por?: string | null
+          escala_motivo?: string | null
           id?: string
           observacoes?: string | null
           periodo_aquisitivo_fim?: string | null
           periodo_aquisitivo_inicio?: string | null
           periodo_concessivo_limite?: string | null
+          permite_escala?: boolean
           status?: string
           updated_at?: string
         }

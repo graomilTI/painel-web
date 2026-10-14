@@ -2,9 +2,9 @@
 // Extraído de programacao.js em 14/10/2026: era o bloco "Incorporado de programacao-pdf-tipo-fix.js" (consolidação de 20/09/2026).
 // O código do bloco foi movido sem alteração e continua rodando ao ser carregado; programacao.js importa
 // estes módulos na mesma ordem em que os blocos rodavam. Ao editar, aumente o ?v= do import em programacao.js.
-import { loadColaboradoresRegional, loadCruzamentoTipoContrato, loadCustos, tipoContratoLetra } from './programacao-equipe.js?v=20260929-deslocamento1';
+import { loadColaboradoresRegional, loadCruzamentoTipoContrato, loadCustos, tipoContratoLetra } from './programacao-equipe.js?v=20261015-ferias-escala1';
 import { supabase } from './supabaseClient.js';
-import { loadExtras, loadOsResumo, loadRosterDoDia } from './programacao-despesas.js?v=20260929-deslocamento1';
+import { loadExtras, loadOsResumo, loadRosterDoDia } from './programacao-despesas.js?v=20261015-ferias-escala1';
 
 {
 

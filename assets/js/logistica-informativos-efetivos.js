@@ -281,10 +281,12 @@ function addInterval(intervalsByKey, keys, interval) {
   });
 }
 
-async function safeUnavailabilityQuery(table, statuses, from, to) {
+async function safeUnavailabilityQuery(table, statuses, from, to, { somenteBloqueiaEscala = false } = {}) {
   try {
     let query = supabase.from(table).select('*').lte('data_inicio', to).gte('data_fim', from);
     if (statuses?.length) query = query.in('status', statuses);
+    // Férias com "pode ser escalado" (o colaborador trabalha) contam como efetivo.
+    if (somenteBloqueiaEscala) query = query.eq('permite_escala', false);
     const { data, error } = await query;
     if (error) throw error;
     return data || [];
@@ -296,7 +298,7 @@ async function safeUnavailabilityQuery(table, statuses, from, to) {
 
 async function loadUnavailabilityIntervals(from, to) {
   const [vacations, certificates, legacy] = await Promise.all([
-    safeUnavailabilityQuery('rh_ferias', ['programada', 'em_gozo'], from, to),
+    safeUnavailabilityQuery('rh_ferias', ['programada', 'em_gozo'], from, to, { somenteBloqueiaEscala: true }),
     safeUnavailabilityQuery('rh_atestados', ['lancado', 'aprovado'], from, to),
     safeUnavailabilityQuery('indisponibilidades', null, from, to),
   ]);

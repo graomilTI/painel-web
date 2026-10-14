@@ -5,7 +5,7 @@
 // Disponibilidade clássica de programacao.js, hoje inacessível pela UI nova).
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
-import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData, MOTIVO_EM_DESLOCAMENTO } from './programacao-equipe.js?v=20260929-deslocamento1';
+import { loadEquipeExistente, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra, loadIndisponiveisNaData, MOTIVO_EM_DESLOCAMENTO } from './programacao-equipe.js?v=20261015-ferias-escala1';
 import { anexoFieldHtml, resolverAnexo, upsertAtestado } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 

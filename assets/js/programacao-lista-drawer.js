@@ -26,8 +26,8 @@ import {
   atualizarStatusOsCore, registrarSaldoKg, anexarLaudo,
   injectStyles as injectStylesEquipe, ensureMasterPermission,
   ensureRegrasAnexoSaldo, precisaAnexoSaldo, anexarAnexoSaldo,
-} from './programacao-equipe.js?v=20260929-deslocamento1';
-import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20260929-deslocamento1';
+} from './programacao-equipe.js?v=20261015-ferias-escala1';
+import { loadExtras, colaboradorCardHtml, wireDespesasCards, loadAlojamentos, loadVeiculosAtivos, injectStylesDespesas, complementarComDespesasCompartilhadas, loadEquipeReaproveitada } from './programacao-despesas.js?v=20261015-ferias-escala1';
 
 function esc(value) {
   return String(value ?? '')
