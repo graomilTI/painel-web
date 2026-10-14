@@ -16,9 +16,11 @@
  * cadastro -> Caixa -> Despesas -> Adicionar.
  *
  * O Comprovante só é lançado depois do Adiantamento do mesmo item (senão o Caixa do
- * colaborador ficaria negativo). Duplicidade: antes de lançar, procura na lista do
- * Caixa um movimento do MESMO tipo com a descrição e o valor (regras puras em
- * grm-ajuda-custo-caixa-regras.js, testadas em test-ajuda-custo-caixa.js).
+ * colaborador ficaria negativo). Duplicidade: antes de lançar, procura no relatório de
+ * Caixa da API do GRM (mês da data do item) um movimento do MESMO tipo com a descrição e o
+ * valor; a conferência depois de salvar também é pela API. Não pela lista da tela: ela
+ * esconde datas futuras, e a data 15 costuma ser futura quando o lote é baixado (regras
+ * puras em grm-ajuda-custo-caixa-regras.js, testadas em tests/grm-ajuda-custo-caixa-regras.test.mjs).
  *
  * Modos de teste (GRM_AJUDA_CUSTO_CAIXA_DRY_RUN):
  *   true — abre o cadastro e confere a lista, mas não abre o formulário;
@@ -85,6 +87,7 @@ const {
   launchBrowser,
   login,
   openStaffPage,
+  movimentosCaixaGrm,
 } = caixaUi;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
@@ -719,23 +722,24 @@ async function saveExpense(page) {
 }
 
 
-async function verifyExpense(page, cpf, job) {
-  await closeDialogs(page);
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
+// Movimentos do colaborador no mês da data do item (data fixa, vinda da RPC), pela API do GRM:
+// a lista do Caixa na tela esconde a data 15 enquanto ela é futura (ver grm-caixa-ui).
+async function movimentosDoMes(cpf, job, semCache = false) {
+  const mes = String(job.data_lancamento || '').slice(0, 10);
+  return movimentosCaixaGrm({ cpf, de: mes, ate: mes, semCache });
+}
 
-  const description = descriptionFor(job);
-  let lastRows = [];
-
+// Conferência pós-salvar pela API.
+async function verifyExpense(cpf, job) {
+  let ultimos = [];
   for (let attempt = 1; attempt <= 5; attempt += 1) {
-    await sleep(attempt === 1 ? 700 : 1200);
-    const rows = await inspectExpenseDescriptions(page, [description]);
-    lastRows = rows;
-    const avaliacao = regras.avaliarExistente(rows, job, TIPO_DESPESA);
+    await sleep(attempt * 1500);
+    ultimos = await movimentosDoMes(cpf, job, true);
+    const avaliacao = regras.avaliarExistenteApi(ultimos, job, TIPO_DESPESA);
     if (avaliacao.acao === 'JA_EXISTE') return { ok: true, row: avaliacao.row, attempt };
   }
-
-  return { ok: false, row: null, rows: lastRows };
+  const descricao = regras.norm(descriptionFor(job));
+  return { ok: false, row: null, rows: ultimos.filter((m) => regras.norm(m.descricao) === descricao) };
 }
 
 async function recoverStaleProcessing() {
@@ -904,18 +908,22 @@ async function processJob(page, job, collaborators) {
 
   log('INFO', `${job.colaborador_nome}: preparando ${rotulo} "${description}" no valor de ${Number(job.valor || 0).toFixed(2)} (data ${date}).`);
 
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
-
-  const existing = await inspectExpenseDescriptions(page, [description]);
-  const avaliacao = regras.avaliarExistente(existing, job, TIPO_DESPESA);
+  // Trava contra duplicidade pela API, antes de abrir a tela. Se a API falhar, o job vai para
+  // ERRO sem lançar (nunca lança às cegas).
+  const movimentos = await movimentosDoMes(cpf, job);
+  const avaliacao = regras.avaliarExistenteApi(movimentos, job, TIPO_DESPESA);
   if (DEBUG) {
-    log('DEBUG', `${job.colaborador_nome}: ${existing.length} linha(s) com a descrição; decisão ${avaliacao.acao}.`, {
-      linhas: existing.map((row) => ({ cells: row.cells, text: String(row.text || '').slice(0, 300), movimento: regras.movimentoDaLinha(row, TIPO_DESPESA) })),
+    const descricao = regras.norm(description);
+    log('DEBUG', `${job.colaborador_nome}: ${movimentos.length} movimento(s) no mês; decisão ${avaliacao.acao}.`, {
+      mesmaDescricao: movimentos.filter((m) => regras.norm(m.descricao) === descricao)
+        .map((m) => ({ ...m, movimento: regras.movimentoDoRegistroApi(m, TIPO_DESPESA) })),
     });
   }
   if (avaliacao.acao === 'DIVERGENTE') {
-    throw new Error(`Já existe ${rotulo} com esta descrição no GRM, mas com valor divergente. Lançamento automático bloqueado para evitar duplicidade.`);
+    throw new Error(
+      `Já existe ${rotulo} com esta descrição no GRM, mas com valor divergente. Lançamento automático bloqueado para evitar duplicidade. `
+      + `Movimentos: ${JSON.stringify(avaliacao.rows.map((m) => ({ ofmCode: m.ofmCode, data: m.data, valor: m.valor, status: m.status })))}`
+    );
   }
   if (avaliacao.acao === 'JA_EXISTE') {
     await markSuccess(job, {
@@ -926,13 +934,18 @@ async function processJob(page, job, collaborators) {
       valor: Number(job.valor || 0),
       data: date,
       duplicate_guard: 'MOVIMENTO_JA_EXISTIA_NO_GRM',
+      verificado_via: 'api reports/finance/operatingFlow',
       criado_agora: false,
-      linha_grm: avaliacao.row.text,
+      ofmCode: avaliacao.row.ofmCode,
+      linha_grm: avaliacao.row,
       verificado_em: new Date().toISOString(),
     });
-    log('SUCCESS', `${job.colaborador_nome}: ${rotulo} já existia no GRM; duplicidade bloqueada.`);
+    log('SUCCESS', `${job.colaborador_nome}: ${rotulo} já existia no GRM (ofmCode ${avaliacao.row.ofmCode}); duplicidade bloqueada.`);
     return;
   }
+
+  await openEmployee(page, cpf);
+  await openExpensesSection(page);
 
   if (DRY_RUN) {
     let formulario = null;
@@ -962,11 +975,13 @@ async function processJob(page, job, collaborators) {
   const filled = await fillExpense(page, job);
   await saveExpense(page);
 
-  const verified = await verifyExpense(page, cpf, job);
+  const verified = await verifyExpense(cpf, job);
   if (!verified.ok) {
     throw new Error(
-      `GRM fechou o formulário, mas o ${rotulo} não foi localizado no Caixa `
-      + 'com a Descrição e Valor esperados. Não reprocesse sem conferir o cadastro para evitar duplicidade.'
+      `GRM confirmou o salvamento, mas o ${rotulo} não apareceu no relatório de Caixa da API `
+      + 'com a Descrição, o tipo e o Valor esperados. '
+      + `Movimentos com a descrição: ${JSON.stringify(verified.rows.map((m) => ({ ofmCode: m.ofmCode, data: m.data, tipo: m.tipo, tipoDespesa: m.tipoDespesa, valor: m.valor })))}. `
+      + 'Não reprocesse sem conferir o cadastro para evitar duplicidade.'
     );
   }
 
@@ -979,10 +994,12 @@ async function processJob(page, job, collaborators) {
     data: filled.date,
     criado_agora: true,
     verificado_no_grm: true,
-    linha_grm: verified.row?.text || null,
+    verificado_via: 'api reports/finance/operatingFlow',
+    ofmCode: verified.row.ofmCode,
+    linha_grm: verified.row,
     verificado_em: new Date().toISOString(),
   });
-  log('SUCCESS', `${job.colaborador_nome}: ${rotulo} lançado e verificado no GRM.`);
+  log('SUCCESS', `${job.colaborador_nome}: ${rotulo} lançado e verificado no GRM (ofmCode ${verified.row.ofmCode}).`);
 }
 
 async function main() {

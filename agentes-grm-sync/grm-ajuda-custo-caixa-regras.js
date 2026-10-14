@@ -66,7 +66,42 @@ function avaliarExistente(rows, job, tipoDespesa = TIPO_DESPESA_PADRAO) {
   return exato ? { acao: 'JA_EXISTE', row: exato } : { acao: 'DIVERGENTE', rows: doMesmoTipo };
 }
 
+// ---- Mesma decisão, a partir do relatório de Caixa da API (14/10/2026) ----
+// A lista do Caixa na tela só mostra uma janela de datas e esconde a data 15 quando ela ainda
+// é futura — a checagem acima ficava cega e a conferência pós-salvar dava falso erro (caso do
+// Bônus em 06/10). No relatório reports/finance/operatingFlow (movimentos já normalizados por
+// grm-caixa-ui.movimentosCaixaGrm) o tipo vem explícito:
+//   ofmType 'C' (Tipo da Despesa "Adiantamento")       -> ADIANTAMENTO
+//   ofmType 'D' com Tipo da Despesa = Ajuda de Custo    -> COMPROVANTE
+//   qualquer outro (Almoço, Diária...)                  -> null (não é deste agente)
+
+/** @param {{ tipo?: string, tipoDespesa?: string }} movimento */
+function movimentoDoRegistroApi(movimento, tipoDespesa = TIPO_DESPESA_PADRAO) {
+  if (movimento?.tipo === 'C') return 'ADIANTAMENTO';
+  if (movimento?.tipo === 'D' && norm(movimento.tipoDespesa) === norm(tipoDespesa)) return 'COMPROVANTE';
+  return null;
+}
+
+const mesmoValor = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.005;
+
+// movimentos: todos os do colaborador no mês da data de lançamento (a data do item é fixa).
+//   CRIAR / JA_EXISTE (com o movimento) / DIVERGENTE (com os do mesmo tipo e descrição).
+/**
+ * @param {Array<{ descricao?: string, valor?: number, tipo?: string, tipoDespesa?: string }>} movimentos
+ * @param {{ movimento: string, valor: number, descricao_grm?: string }} job
+ */
+function avaliarExistenteApi(movimentos, job, tipoDespesa = TIPO_DESPESA_PADRAO) {
+  const descricao = norm(descricaoGrm(job));
+  const doMesmoTipo = (movimentos || []).filter((m) => norm(m.descricao) === descricao
+    && movimentoDoRegistroApi(m, tipoDespesa) === job.movimento);
+  if (!doMesmoTipo.length) return { acao: 'CRIAR' };
+  const exato = doMesmoTipo.find((m) => mesmoValor(m.valor, job.valor));
+  return exato ? { acao: 'JA_EXISTE', row: exato } : { acao: 'DIVERGENTE', rows: doMesmoTipo };
+}
+
 module.exports = {
+  movimentoDoRegistroApi,
+  avaliarExistenteApi,
   TIPO_DESPESA_PADRAO,
   TIPO_DOCUMENTO_PADRAO,
   norm,
