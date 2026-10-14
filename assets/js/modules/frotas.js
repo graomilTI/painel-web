@@ -45,6 +45,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     foraHorarioSearchTerm: '',
     foraHorarioFiltro: 'ALERTAS',
     foraHorarioMapaBase: 'sat',
+    foraHorarioFeriados: {},
     foraHorarioDossieDisponivel: true,
     foraHorarioRecalculando: false,
     foraHorarioDossieAberto: null,
@@ -1332,9 +1333,24 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         }
       };
 
-      const [linhas, controle] = await Promise.all([lerLista(), lerControle()]);
+      const lerFeriados = async () => {
+        try {
+          let query = supabase.from('frotas_feriados').select('data,nome');
+          if (period.start) query = query.gte('data', period.start);
+          if (period.end) query = query.lte('data', period.end);
+          const { data, error } = await query;
+          if (error) throw error;
+          return Array.isArray(data) ? data : [];
+        } catch (feriadosErr) {
+          console.warn('[FROTAS] Feriados indisponíveis:', feriadosErr);
+          return [];
+        }
+      };
+
+      const [linhas, controle, feriados] = await Promise.all([lerLista(), lerControle(), lerFeriados()]);
       if (pedido !== state.foraHorarioPedido) return;
       state.foraHorarioSync = controle;
+      state.foraHorarioFeriados = Object.fromEntries(feriados.map((f) => [f.data, f.nome]));
       state.foraHorario = linhas.map((linha) => ({
         ...linha,
         semOcorrencia: !!linha.sem_ocorrencia,
@@ -1558,6 +1574,22 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   // Trajeto só conta como "fora do horário" na tela a partir de 1 km (movimentos de poucos metros são ruído).
   const FH_FORA_MIN_KM = 1;
 
+  // Domingo e feriado: só é autorizado rodar com embarque, em qualquer horário.
+  function fhDiaEspecial(d) {
+    const e = d?.detalhes?.dia_especial;
+    if (e) return { tipo: e.tipo, nome: e.nome, embarque: !!e.embarque };
+    if (d?.criterio === 'LIVRE' || d?.criterio === 'SEM_EMBARQUE') return { tipo: 'DOMINGO', nome: 'domingo', embarque: d.criterio === 'LIVRE' };
+    return null;
+  }
+
+  function fhDiaEspecialRotulo(e) {
+    return e.tipo === 'FERIADO' ? `feriado (${e.nome})` : 'domingo';
+  }
+
+  function fhMaiusc(texto) {
+    return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : texto;
+  }
+
   function fhNum(valor) {
     const n = Number(valor);
     return Number.isFinite(n) ? n : 0;
@@ -1623,7 +1655,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       let tipo;
       if (ep.tipos.C > 0) tipo = 'depois de chegar em casa';
       else if ((ep.tipos.A || 0) > (ep.tipos.P || 0)) tipo = 'antes do expediente';
-      else tipo = semJanela ? 'em dia sem expediente' : 'depois do expediente';
+      else tipo = semJanela ? (d.criterio === 'SEM_EMBARQUE' ? 'em dia sem embarque' : 'em dia sem expediente') : 'depois do expediente';
       const periodo = fhPeriodo(ep.ini);
       return { ...ep, rotulo: periodo ? `${periodo}, ${tipo}` : tipo };
     });
@@ -1673,6 +1705,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   function fhContexto(d) {
     if (!d) return '';
+    if (d.criterio === 'LIVRE') return 'Dia com embarque: uso liberado em qualquer horário.';
+    if (d.criterio === 'SEM_EMBARQUE') return 'Dia sem embarque: uso do veículo não autorizado.';
     if (d.criterio === 'PADRAO') return 'Sem registro de trabalho neste dia.';
     let texto = `Trabalhou das ${fhHm(d.inicio_expediente)} às ${fhHm(d.fim_expediente)}`;
     if (d.chegada_casa) {
@@ -2271,7 +2305,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       let cabecalho = '';
       if (row.data_evento !== diaAtual) {
         diaAtual = row.data_evento;
-        cabecalho = `<div class="fh-dia">${escapeHtml(fhDiaSemana(row.data_evento))}, ${escapeHtml(formatDateBR(row.data_evento))}<span>${porDia.get(row.data_evento)} veículo(s)</span></div>`;
+        const feriado = (state.foraHorarioFeriados || {})[row.data_evento];
+        const especial = feriado ? `feriado: ${feriado}` : (fhDiaSemana(row.data_evento) === 'domingo' ? 'domingo' : '');
+        cabecalho = `<div class="fh-dia">${escapeHtml(fhDiaSemana(row.data_evento))}, ${escapeHtml(formatDateBR(row.data_evento))}<span>${porDia.get(row.data_evento)} veículo(s)</span>${especial ? `<span class="fh-dia-esp">${escapeHtml(especial)} · uso só com embarque</span>` : ''}</div>`;
       }
       return cabecalho + fhLinhaHtml(row);
     }).join('');
@@ -2376,12 +2412,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     </div>`;
   }
 
-  function fhSituacaoViagem(v, semJanela) {
+  function fhSituacaoViagem(v, semJanela, rotuloSemJanela = 'em dia sem expediente') {
     const periodo = fhPeriodo(fhMinutosDoDia(v.fora_ini || v.ini, String(v.ini || '').slice(0, 10)) ?? 600);
     const prefixo = periodo ? `${periodo}, ` : '';
     if (v.fase === 'APOS_CHEGADA_EM_CASA') return `${prefixo}depois de chegar em casa`;
     if (v.fase === 'ANTES_EXPEDIENTE') return `${prefixo}antes do expediente`;
-    if (v.fase === 'APOS_EXPEDIENTE') return `${prefixo}${semJanela ? 'em dia sem expediente' : 'depois do expediente'}`;
+    if (v.fase === 'APOS_EXPEDIENTE') return `${prefixo}${semJanela ? rotuloSemJanela : 'depois do expediente'}`;
     return 'fora do horário';
   }
 
@@ -2396,7 +2432,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ? `<span class="fh-muted">Parado com o motor ligado em</span> ${curto(v.de)}`
       : `${curto(v.de)} <span class="fh-muted">→</span> ${curto(v.para)}${trajeto ? ` · <a href="${escapeHtml(trajeto)}" target="_blank" rel="noopener noreferrer">trajeto</a>` : ''}`;
     const marcas = [];
-    if (fora) marcas.push(`<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !dos.janela_inicio))}</span>`);
+    if (fora) marcas.push(`<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !dos.janela_inicio, dos.criterio === 'SEM_EMBARQUE' ? 'em dia sem embarque' : 'em dia sem expediente'))}</span>`);
     if (sem) marcas.push('<span class="fh-fase sem">sem justificativa</span>');
     if (excessos.length) {
       const vmax = Math.max(...excessos.map((x) => fhNum(x.vel)));
@@ -2542,6 +2578,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   // Três cartões: o que houve em cada frente. Clicar leva à aba com os detalhes.
   function fhCartoesHtml(dos, det, semViagens) {
     const f = fhFlags(dos);
+    const especial = fhDiaEspecial(dos);
     const excessos = det.excessos || [];
     const maior = excessos.slice().sort((a, b) => fhNum(b.vel) - fhNum(a.vel))[0];
     const cartao = (rotulo, classe, valor, detalhe, aba) => `<${aba ? 'button type="button"' : 'div'} class="fh-tile ${classe}"${aba ? ` data-fh-ir-aba="${aba}"` : ''}>
@@ -2552,11 +2589,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (semViagens) fh = cartao('Fora do horário', nada, 'Sem dados', 'O veículo não está no relatório de viagens', '');
     else if (f.fora || f.foraLeve) {
       fh = cartao('Fora do horário', f.fora ? 'fh-tile-fora' : 'fh-tile-atencao', fhNum(dos.km_fora) >= 1 ? `${fhKm(dos.km_fora)} km` : 'Conferir',
-        fhNum(dos.km_fora) >= 1 ? (fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado')
+        fhNum(dos.km_fora) >= 1 ? (especial && !especial.embarque ? `${fhMaiusc(fhDiaEspecialRotulo(especial))} sem embarque` : (fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado'))
           : (fhNum(dos.atraso_retorno_min) > 60 ? `Chegou em casa ${fhDuracao(dos.atraso_retorno_min)} depois do previsto` : (fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado')),
         'trajetos');
     } else {
-      fh = cartao('Fora do horário', nada, 'Nada', dos.janela_inicio ? `Horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}` : 'Dentro do horário', '');
+      fh = cartao('Fora do horário', nada, 'Nada',
+        especial ? `${fhMaiusc(fhDiaEspecialRotulo(especial))} ${especial.embarque ? 'com embarque: horário livre' : 'sem embarque'}`
+          : (dos.janela_inicio ? `Horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}` : 'Dentro do horário'), '');
     }
 
     let uso;
@@ -2581,6 +2620,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const det = dos.detalhes || {};
     const info = FH_VEREDITOS[dos.veredito] || { rotulo: dos.veredito, cls: 'fh-badge-nd' };
     const padrao = dos.criterio === 'PADRAO';
+    const especial = fhDiaEspecial(dos);
+    const rotuloEspecial = especial ? fhMaiusc(fhDiaEspecialRotulo(especial)) : '';
     const semJanela = !dos.janela_inicio;
     const semViagens = fhNum(dos.viagens_dia) === 0 && fhNum(dos.km_dia) === 0;
     const registros = (det.evidencias || []).filter((e) => !e.em_casa).length;
@@ -2616,7 +2657,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
     passos.push({
       titulo: 'Horário permitido para usar o veículo',
-      texto: semJanela
+      texto: especial
+        ? (especial.embarque
+          ? `${rotuloEspecial} com embarque: o uso do veículo é autorizado em qualquer horário.`
+          : `${rotuloEspecial} sem embarque: nesses dias só é autorizado rodar quando há embarque (informativo, produção ou O.S. escalada), então nenhum uso é autorizado.`)
+        : semJanela
         ? 'Dia sem expediente registrado (domingo): qualquer uso conta como fora do horário.'
         : `Das ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}.${padrao ? ' Como não há registros, vale o horário padrão.' : ` Inclui o tempo estimado de ida (${fhDuracao(det.t_ida_min)}) e de volta (${fhDuracao(det.t_volta_min)}) entre a casa e o trabalho, mais ${Number(dos.tolerancia_min) || 20} min de folga.`}${dos.criterio === 'AMPLIADO' ? ' Como há poucos registros, foi ampliado para 05:30 às 20:00 para evitar falso alarme.' : ''}`
     });
@@ -2658,7 +2703,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
     const aviso = avisos.map((texto) => `<p class="fh-nota">${escapeHtml(texto)}</p>`).join('');
 
-    const contexto = semViagens ? 'O veículo não aparece no relatório de viagens da BFleet neste dia' : [
+    const contexto = semViagens ? 'O veículo não aparece no relatório de viagens da BFleet neste dia' : especial ? [
+      `${rotuloEspecial} ${especial.embarque ? 'com embarque: uso liberado em qualquer horário' : 'sem embarque: uso não autorizado'}`,
+      dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}` : ''
+    ].filter(Boolean).join(' · ') : [
       padrao ? 'Sem registro de trabalho neste dia' : `Trabalhou das ${fhHm(dos.inicio_expediente)} às ${fhHm(dos.fim_expediente)}`,
       semJanela ? 'dia sem expediente' : `horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`,
       dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}${fhNum(dos.atraso_retorno_min) > 20 ? ` (${fhDuracao(dos.atraso_retorno_min)} depois do previsto)` : ''}` : ''
@@ -2705,6 +2753,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             <li><strong>Trabalho registrado:</strong> informativos do colaborador no Mapa de Embarque, check-in e check-out da produção diária e sinais de GPS do celular (app GRM). O que foi registrado em casa não conta.</li>
             <li><strong>Horário permitido:</strong> do primeiro registro (menos o tempo de ida) até o último registro (mais o tempo de volta), com ${Number(dos.tolerancia_min) || 20} min de folga. O tempo de ida e de volta é estimado pela distância em linha reta entre a casa e o local × ${escapeHtml(det.fator_rota ?? 1.4)} ÷ ${escapeHtml(det.vel_media_kmh ?? 60)} km/h.</li>
             <li><strong>Programação do dia:</strong> se o condutor ou um colega de carona estiver escalado em uma O.S., a chegada ou a saída do veículo a menos de 2 km do local dessa O.S. conta como trabalho; o mesmo vale para uma parada a menos de 1,5 km da casa cadastrada do colega de carona.</li>
+            <li><strong>Domingo e feriado:</strong> só é autorizado rodar com embarque (informativo ou check-in/out feitos longe de casa, ou O.S. escalada na Programação para alguém do veículo). Com embarque, o uso é liberado em qualquer horário; sem embarque, todo o uso conta como fora do horário. Os feriados vêm do calendário do sistema (nacionais); feriado regional ou municipal precisa ser cadastrado.</li>
             <li><strong>Pouco registro no dia</strong> (menos de 3 registros, ou menos de 3 h entre o primeiro e o último): o horário é ampliado para 05:30 às 20:00 (seg a sáb). Sem nenhum registro vale esse horário padrão; domingo sem registro, todo uso conta como fora do horário.</li>
             <li><strong>Fora do horário</strong> (vermelho): 25 km ou mais fora do horário permitido, 2 h ou mais, 5 km ou mais à noite (22h às 5h) ou 5 km ou mais depois de chegar em casa. <strong>Para conferir</strong> (amarelo): 5 km ou mais, algum km à noite, percurso bem mais longo que o direto ou chegada em casa com mais de 1 h de atraso.</li>
             <li>Quando uma viagem passa do limite, só a parte depois do limite conta (proporcional ao tempo).</li>
@@ -4001,6 +4050,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-lista{display:flex;flex-direction:column;gap:6px}
                 .fh-dia{margin:16px 0 4px;color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
                 .fh-dia:first-child{margin-top:4px}
+                .fh-dia .fh-dia-esp{color:#fbbf24;font-weight:800}
                 .fh-dia span{margin-left:10px;color:#6b7280;font-weight:700;text-transform:none;letter-spacing:0}
                 .fh-status{display:inline-flex;border-radius:999px;padding:3px 10px;background:rgba(34,197,94,.14);color:#bbf7d0;font-size:11px;font-weight:900;white-space:nowrap}
                 .fh-btn-dossie{background:rgba(96,165,250,.14);color:#bfdbfe;border:1px solid rgba(96,165,250,.4);white-space:nowrap}
@@ -4158,7 +4208,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 <p class="fh-fresco" data-fh-fresco hidden></p>
                 <details class="fh-ajuda">
                   <summary>Como funciona</summary>
-                  <p>Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, que vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação: uma só mensagem por veículo e dia, com as seções que se aplicam (uso fora do horário e/ou excesso de velocidade).</p>
+                  <p>Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, que vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Aos domingos e feriados só é autorizado rodar com embarque (em qualquer horário). Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação: uma só mensagem por veículo e dia, com as seções que se aplicam (uso fora do horário e/ou excesso de velocidade).</p>
                   <div class="fh-legenda">
                     <span><i class="fh-lg fh-lg-dot-fora"></i>Fora do horário</span>
                     <span><i class="fh-lg fh-lg-dot-sem"></i>Uso sem justificativa</span>

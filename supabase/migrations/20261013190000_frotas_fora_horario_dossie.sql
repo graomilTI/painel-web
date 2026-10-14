@@ -11,6 +11,8 @@
 --     a passagem do veículo pelo local da O.S. (< 2 km) ou pela casa do colega de carona (< 1,5 km) conta como trabalho.
 --   * excessos de velocidade do dia (frotas_excesso_velocidade) e trajetos sem justificativa (que não chegam a O.S. programada,
 --     carona nem local de registro de trabalho): o dossiê é único por placa e dia.
+--   * domingo e feriado (tabela frotas_feriados): só é autorizado rodar com embarque (informativo, check-in/out ou O.S. escalada),
+--     em qualquer horário; sem embarque, todo uso conta como fora do horário.
 -- Janela permitida = [1º registro de trabalho − tempo de ida − 20 min ; último registro + tempo de volta + 20 min].
 -- Tempo de ida/volta = distância em linha reta casa↔local × fator de rota ÷ velocidade média.
 -- O que passar dessa janela é "uso fora do horário"; o dossiê guarda a linha do tempo para conferência.
@@ -84,6 +86,45 @@ create policy frotas_fora_horario_dossie_authenticated_select
 revoke all on public.frotas_fora_horario_dossie from anon, authenticated;
 grant select on public.frotas_fora_horario_dossie to authenticated;
 grant all on public.frotas_fora_horario_dossie to service_role;
+
+-- ---------------------------------------------------------------------------------------------
+-- Feriados: em domingos e feriados só é autorizado rodar com embarque, em qualquer horário.
+-- ---------------------------------------------------------------------------------------------
+
+create table if not exists public.frotas_feriados (
+  data date primary key,
+  nome text not null,
+  escopo text not null default 'NACIONAL',
+  criado_em timestamptz not null default now()
+);
+
+comment on table public.frotas_feriados is
+  'Feriados considerados no dossiê de Frotas (como domingo: só é autorizado rodar com embarque). Feriado regional/municipal: inserir a data aqui.';
+
+alter table public.frotas_feriados enable row level security;
+drop policy if exists frotas_feriados_authenticated_select on public.frotas_feriados;
+create policy frotas_feriados_authenticated_select
+  on public.frotas_feriados
+  for select to authenticated
+  using (public.frotas_usuario_tem_acesso());
+revoke all on public.frotas_feriados from anon, authenticated;
+grant select on public.frotas_feriados to authenticated;
+grant all on public.frotas_feriados to service_role;
+
+-- Feriados nacionais (2025–2030): datas fixas + Sexta-feira Santa.
+insert into public.frotas_feriados (data, nome)
+select make_date(y, v.m, v.d), v.n
+from generate_series(2025, 2030) y
+cross join (values
+  (1, 1, 'Confraternização Universal'), (4, 21, 'Tiradentes'), (5, 1, 'Dia do Trabalho'),
+  (9, 7, 'Independência do Brasil'), (10, 12, 'Nossa Senhora Aparecida'), (11, 2, 'Finados'),
+  (11, 15, 'Proclamação da República'), (11, 20, 'Consciência Negra'), (12, 25, 'Natal')
+) as v(m, d, n)
+on conflict (data) do nothing;
+insert into public.frotas_feriados (data, nome) values
+  ('2025-04-18', 'Sexta-feira Santa'), ('2026-04-03', 'Sexta-feira Santa'), ('2027-03-26', 'Sexta-feira Santa'),
+  ('2028-04-14', 'Sexta-feira Santa'), ('2029-03-30', 'Sexta-feira Santa'), ('2030-04-19', 'Sexta-feira Santa')
+on conflict (data) do nothing;
 
 -- ---------------------------------------------------------------------------------------------
 -- Funções auxiliares
@@ -491,7 +532,22 @@ declare
   exc_map jsonb; exc_out jsonb; x_exc jsonb; exc_idx int; n_exc int; v_vmax numeric; v_vmax_hora text; n_exc_fora int; n_exc_ind int;
   uso_res jsonb; v_km_ind numeric; v_n_ind int; v_sem_base boolean; v_uso_ver text; v_exemplo text; v_extras text[];
   trips_k jsonb; leg_i text;
+  v_dia_tipo text; v_dia_nome text; v_embarque boolean; v_livre boolean;
 begin
+  -- Domingo ou feriado: só é autorizado rodar com embarque (informativo, produção ou O.S. escalada), em qualquer horário.
+  v_dia_tipo := null; v_dia_nome := null;
+  if dow = 0 then
+    v_dia_tipo := 'DOMINGO'; v_dia_nome := 'domingo';
+  end if;
+  select f.nome into v_dia_nome from public.frotas_feriados f where f.data = p_data;
+  if found then
+    v_dia_tipo := 'FERIADO';
+  elsif v_dia_tipo is null then
+    v_dia_nome := null;
+  else
+    v_dia_nome := 'domingo';
+  end if;
+
   -- Informativos do colaborador (Mapa de Embarque): quem atualizou + quando + O.S./local.
   select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into inf_map
   from (
@@ -925,6 +981,24 @@ begin
       end if;
     end if;
 
+    -- Embarque do dia: informativo ou check-in/out feitos longe de casa, ou O.S. escalada na Programação para alguém do veículo.
+    select exists (select 1 from jsonb_array_elements(ev) x
+                   where (x ->> 'tipo') in ('INFORMATIVO', 'CHECKIN', 'CHECKOUT') and (x ->> 'em_casa') = 'false')
+      into v_embarque;
+    v_embarque := coalesce(v_embarque, false) or jsonb_array_length(prog_os) > 0;
+    v_livre := false;
+    if v_dia_tipo is not null then
+      if v_embarque then
+        -- com embarque o uso é liberado em qualquer horário
+        v_livre := true; v_crit := 'LIVRE'; v_conf := 'ALTA';
+        w_ini := p_data::timestamp; w_fim := p_data::timestamp + interval '23 hours 59 minutes';
+      else
+        -- sem embarque nenhum uso é autorizado
+        v_crit := 'SEM_EMBARQUE'; v_conf := 'ALTA';
+        w_ini := null; w_fim := null;
+      end if;
+    end if;
+
     viagens_out := '[]'::jsonb; v_motivos := '[]'::jsonb;
     v_km_dia := 0; v_km_fora := 0; v_min_fora := 0; v_n_fora := 0; v_n_dia := 0;
     km_ida_real := 0; km_volta_real := 0; km_antes := 0; km_apos := 0; min_antes := 0; min_apos := 0;
@@ -971,7 +1045,7 @@ begin
       end if;
       -- Ida (casa → 1º local de trabalho) e volta (último local → casa) são percursos válidos, mesmo fora da janela.
       leg_i := uso_res -> 'viagens' -> i ->> 'leg';
-      if leg_i is not null then
+      if leg_i is not null or v_livre then
         out_secs := 0; p1_a := null; p2_a := null;
       end if;
       fora_ini := coalesce(p1_a, p2_a);
@@ -1069,6 +1143,9 @@ begin
                        then round(extract(epoch from (v_chegada_casa - v_retorno_prev)) / 60.0)::int end;
     saida_ant := case when v_saida_casa is not null and a_ini is not null
                       then round(extract(epoch from ((a_ini - (t_ida * interval '1 minute')) - v_saida_casa)) / 60.0)::int end;
+    if v_livre then
+      v_retorno_prev := null; atraso_ret := null; saida_ant := null;
+    end if;
 
     -- Deslocamento de véspera: sem registro de trabalho no dia, dormiu longe da base por um trajeto direto.
     viagem_vespera := a_ini is null and desloc_km is not null and desloc_km >= 30
@@ -1079,7 +1156,10 @@ begin
         public.frotas_dossie_fmt(km_antes), to_char(w_ini, 'HH24:MI'), round(min_antes)));
     end if;
     if km_apos >= 1 then
-      v_motivos := v_motivos || to_jsonb(case when w_ini is null
+      v_motivos := v_motivos || to_jsonb(case when w_ini is null and v_dia_tipo is not null
+        then format('Rodou %s km em %s sem embarque: nesses dias o uso do veículo só é autorizado quando há embarque.', public.frotas_dossie_fmt(km_apos),
+                    case when v_dia_tipo = 'FERIADO' then 'feriado (' || v_dia_nome || ')' else 'domingo' end)
+        when w_ini is null
         then format('Rodou %s km em dia sem expediente registrado (sem informativo, produção ou sinal de trabalho).', public.frotas_dossie_fmt(km_apos))
         else format('Rodou %s km (%s min) depois das %s, limite para o veículo estar em casa.', public.frotas_dossie_fmt(km_apos), round(min_apos), to_char(w_fim, 'HH24:MI')) end);
     end if;
@@ -1090,19 +1170,22 @@ begin
     if v_km_noturno >= 1 then
       v_motivos := v_motivos || to_jsonb(format('Rodou %s km de madrugada ou à noite (entre 22h e 5h) fora do expediente.', public.frotas_dossie_fmt(v_km_noturno)));
     end if;
-    if a_ini is null then
+    if v_dia_tipo is not null and not v_embarque then
+      v_motivos := v_motivos || to_jsonb(format('%s sem embarque: não há informativo, produção nem O.S. escalada para este veículo neste dia.',
+        case when v_dia_tipo = 'FERIADO' then 'Feriado (' || v_dia_nome || ')' else 'Domingo' end));
+    elsif a_ini is null and not v_livre then
       v_motivos := v_motivos || to_jsonb('Neste dia não há informativo, produção nem sinal do celular fora de casa: foi usado o horário padrão (05:30 às 20:00, de segunda a sábado).'::text);
     end if;
     if viagem_vespera then
       v_motivos := v_motivos || to_jsonb(format('Dormiu a %s km de onde começou o dia, por um trajeto direto: pode ser deslocamento a serviço para o dia seguinte (conferir a programação).', round(desloc_km::numeric, 0)));
     end if;
     flag_percurso := false;
-    if km_ida_real > 0 and d_ida is not null and km_ida_real > d_ida * p_fator * 1.6 + 5 then
+    if not v_livre and km_ida_real > 0 and d_ida is not null and km_ida_real > d_ida * p_fator * 1.6 + 5 then
       flag_percurso := true;
       v_motivos := v_motivos || to_jsonb(format('No caminho até o primeiro registro de trabalho rodou %s km; o trajeto direto seria cerca de %s km.',
         public.frotas_dossie_fmt(km_ida_real), public.frotas_dossie_fmt((d_ida * p_fator)::numeric)));
     end if;
-    if km_volta_real > 0 and d_volta is not null and km_volta_real > d_volta * p_fator * 1.6 + 5 then
+    if not v_livre and km_volta_real > 0 and d_volta is not null and km_volta_real > d_volta * p_fator * 1.6 + 5 then
       flag_percurso := true;
       v_motivos := v_motivos || to_jsonb(format('Na volta para casa rodou %s km; o trajeto direto seria cerca de %s km.',
         public.frotas_dossie_fmt(km_volta_real), public.frotas_dossie_fmt((d_volta * p_fator)::numeric)));
@@ -1173,6 +1256,7 @@ begin
       'casa_noite', jsonb_build_object('lat', noite_la, 'lng', noite_lo, 'endereco', noite_end),
       'primeiro_ponto', pini, 'ultimo_ponto', pfim,
       'evidencias', ev, 'viagens', viagens_out,
+      'dia_especial', case when v_dia_tipo is null then null else jsonb_build_object('tipo', v_dia_tipo, 'nome', v_dia_nome, 'embarque', v_embarque) end,
       'excessos', exc_out,
       'uso', jsonb_build_object('km_indevido', round(v_km_ind, 1), 'viagens_indevidas', v_n_ind, 'sem_base', v_sem_base,
                                 'locais', coalesce((uso_res ->> 'locais')::int, 0)));
