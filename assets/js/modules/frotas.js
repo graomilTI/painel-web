@@ -1564,12 +1564,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   }
 
   // Gera a notificação única do dia (fora do horário + excesso), copia o texto e atualiza lista, prints e dossiê aberto.
-  async function fhNotificarDia(root, opts, data) {
+  async function fhNotificarDia(root, opts, dataDia) {
     const dos = state.foraHorarioDossieAberto;
     const supabase = resolveSupabase(opts);
     if (!dos || !supabase || typeof supabase.rpc !== 'function') return toast('Dossiê não carregado.', 'error');
     try {
-      const { data, error } = await supabase.rpc('frotas_dossie_notificar', { p_data: data || dos.data_evento, p_placa: dos.placa });
+      const { data, error } = await supabase.rpc('frotas_dossie_notificar', { p_data: dataDia || dos.data_evento, p_placa: dos.placa });
       if (error) throw error;
       const mensagem = String(data?.message || '');
       if (mensagem) { try { await copyText(mensagem); } catch (_) { /* a mensagem fica no banco; segue sem copiar */ } }
