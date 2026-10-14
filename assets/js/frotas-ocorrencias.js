@@ -8,7 +8,7 @@ async function montarNotificacao(body, ctx) {
     import('./frotas-motorista-leitura-diaria.js'),
     import('./frotas-periodo-semana-anterior.js'),
     import('./frotas-layout-intuitivo.js'),
-    import('./modules/frotas.js?v=20261014-dossie-diario'),
+    import('./modules/frotas.js?v=20261014-dossie-limpo'),
   ]);
   installDailyDriverResolution(supabase);
   installPreviousWeekDefaults(document, supabase);
@@ -17,7 +17,7 @@ async function montarNotificacao(body, ctx) {
 }
 
 async function montarHistorico(body, ctx) {
-  await import('./modules/frotas.js?v=20261014-dossie-diario');
+  await import('./modules/frotas.js?v=20261014-dossie-limpo');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 

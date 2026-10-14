@@ -1541,6 +1541,19 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     NOTIFICADO: 'Notificado'
   };
 
+  // "Avenida Brasil, 6090, Centro, Salto, Paraná, Brazil" -> "Avenida Brasil, 6090 · Salto".
+  function fhEnderecoCurto(texto) {
+    const partes = String(texto || '').split(',').map((p) => p.trim()).filter(Boolean);
+    const comPais = partes.length && /^(brazil|brasil)$/i.test(partes[partes.length - 1]);
+    if (comPais) partes.pop();
+    if (comPais && partes.length >= 2) partes.pop();
+    if (!partes.length) return '';
+    if (partes.length === 1 || /^\d+\w?$/.test(partes[partes.length - 1])) return partes.join(', ');
+    const rua = /^\d+\w?$/.test(partes[1] || '') ? `${partes[0]}, ${partes[1]}` : partes[0];
+    const cidade = partes[partes.length - 1];
+    return rua === cidade ? cidade : `${rua} · ${cidade}`;
+  }
+
   function fhNum(valor) {
     const n = Number(valor);
     return Number.isFinite(n) ? n : 0;
@@ -1565,7 +1578,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       + (f.excessos > 0 ? 20 + Math.min(f.excessos, 20) : 0) + (fhNum(d.excessos_fora) > 0 ? 15 : 0);
   }
 
-  // Filtros da lista: ALERTAS = fora do horário, uso indevido ou excesso; CONFERIR = situações mais leves.
+  // Filtros da lista: ALERTAS = fora do horário, uso indevido ou excesso. Os casos leves ("para conferir") só aparecem em "Todos".
   function fhCategorias(row) {
     const f = fhFlags(row.dossie);
     if (!f) return ['SEM_DOSSIE'];
@@ -1574,7 +1587,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (f.fora) lista.push('FORA_HORARIO');
     if (f.indevido) lista.push('USO_INDEVIDO');
     if (f.excessos > 0) lista.push('EXCESSO');
-    if (f.foraLeve || f.indevidoLeve) lista.push('CONFERIR');
     return lista;
   }
 
@@ -1636,23 +1648,23 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return texto.charAt(0).toUpperCase() + texto.slice(1);
   }
 
-  // Etiquetas da lista: uma por frente que tem algo a mostrar.
-  function fhTagsHtml(d) {
+  // Três colunas fixas na lista: o que houve em cada frente (ou "—").
+  function fhCelulasHtml(d) {
     const f = fhFlags(d);
-    if (!f) return '';
-    const tags = [];
-    if (f.fora || f.foraLeve) {
-      const km = fhNum(d.km_fora) >= 1 ? ` · ${fhKm(d.km_fora)} km` : '';
-      tags.push(`<span class="fh-tag ${f.fora ? 'fh-tag-fora' : 'fh-tag-atencao'}">Fora do horário${km}</span>`);
-    }
-    if (f.indevido || f.indevidoLeve) {
-      const rotulo = f.indevido ? 'Uso indevido' : (d.uso_sem_base ? 'Sem O.S. nem registro' : 'Sem justificativa');
-      tags.push(`<span class="fh-tag ${f.indevido ? 'fh-tag-sem' : 'fh-tag-sem-leve'}">${rotulo} · ${fhKm(d.km_indevido)} km</span>`);
-    }
-    if (f.excessos > 0) {
-      tags.push(`<span class="fh-tag fh-tag-exc">${f.excessos} excesso(s) · máx. ${Math.round(fhNum(d.vel_max))} km/h</span>`);
-    }
-    return tags.join('');
+    const celula = (rotulo, classe, texto, titulo) => `<div class="fh-cel${classe ? '' : ' vazio'}" data-rotulo="${rotulo}" title="${escapeHtml(titulo || '')}"><span class="fh-c ${classe || 'fh-c-vazio'}">${texto}</span></div>`;
+    if (!f) return ['Fora do horário', 'Sem justificativa', 'Excessos'].map((r) => celula(r, '', '—')).join('');
+    const km = fhNum(d.km_fora) >= 1 ? `${fhKm(d.km_fora)} km` : 'conferir';
+    const fh = (f.fora || f.foraLeve)
+      ? celula('Fora do horário', f.fora ? 'fh-c-fora' : 'fh-c-atencao', km, `Rodou ${fhKm(d.km_fora)} km fora do horário permitido`)
+      : celula('Fora do horário', '', '—');
+    const uso = (f.indevido || f.indevidoLeve)
+      ? celula('Sem justificativa', f.indevido ? 'fh-c-sem' : 'fh-c-sem-leve', `${fhKm(d.km_indevido)} km`,
+        d.uso_sem_base ? 'Sem O.S. programada nem registro de trabalho para comparar' : 'Trajetos que não chegam a O.S. programada, carona nem local de registro de trabalho')
+      : celula('Sem justificativa', '', '—');
+    const exc = f.excessos > 0
+      ? celula('Excessos', 'fh-c-exc', `${f.excessos}× · ${Math.round(fhNum(d.vel_max))} km/h`, `${f.excessos} excesso(s) de velocidade, o maior de ${Math.round(fhNum(d.vel_max))} km/h`)
+      : celula('Excessos', '', '—');
+    return fh + uso + exc;
   }
 
   function fhContexto(d) {
@@ -1684,18 +1696,15 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   }
 
   // Uma linha: o maior trecho fora do horário (ou o primeiro ponto de atenção).
+  // Trecho fora do horário mais relevante, em palavras (usado no resumo do dossiê).
   function fhResumoLinha(d) {
     const episodios = d.veredito !== 'DENTRO_HORARIO' ? fhEpisodios(d) : [];
     if (episodios.length) {
       const maior = episodios.slice().sort((a, b) => b.km - a.km)[0];
       const extra = episodios.length > 1 ? ` · mais ${episodios.length - 1} trecho(s)` : '';
-      return `${fhHoraMin(maior.ini)} às ${fhHoraMin(maior.fim)} · ${fhKm(maior.km)} km · ${maior.rotulo}${extra}`;
+      return `${fhHoraMin(maior.ini)} às ${fhHoraMin(maior.fim)} · ${maior.rotulo}${extra}`;
     }
-    const motivos = d.motivos || [];
-    const f = fhFlags(d);
-    const relevante = f && d.veredito === 'DENTRO_HORARIO' && (f.indevido || f.indevidoLeve || f.excessos > 0)
-      ? motivos.find((m) => /sem justificativa|trajeto\(s\)|excesso|comparar/i.test(m)) : null;
-    return relevante || motivos[0] || fhContexto(d);
+    return fhContexto(d);
   }
 
   // Ações da ocorrência ficam dentro dos detalhes (a lista só mostra o essencial).
@@ -1879,7 +1888,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       </div>`;
     }).join('');
     return `
-      <p class="fh-m-sub">Trajeto do veículo em ${escapeHtml(formatDateBR(dos.data_evento))} (${pontos.length} pontos, ${escapeHtml(origem)}). Azul: trajeto justificado dentro do horário · roxo: trajeto sem justificativa · vermelho: fora do horário · círculo laranja: excesso de velocidade · etiquetas: horário no trajeto · círculo verde: saída · círculo branco: chegada.</p>
+      <p class="fh-m-sub">Trajeto do veículo em ${escapeHtml(formatDateBR(dos.data_evento))} (${pontos.length} pontos, ${escapeHtml(origem)}). Azul: trajeto normal · roxo: sem justificativa · vermelho: fora do horário · círculo laranja: excesso de velocidade · círculo verde: saída · círculo branco: chegada.</p>
       <div class="fh-mapa" data-rota-mapa-el></div>
       <div class="fh-mapa-slider">
         <input type="range" min="0" max="${pontos.length - 1}" value="0" step="1" data-rota-mapa-slider aria-label="Horário no trajeto">
@@ -2063,14 +2072,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const caronas = Array.isArray(d?.caronas) ? d.caronas : [];
     const detalhe = [onlyPlate(row.placa), d?.supervisao, caronas.length ? `carona: ${caronas.map(fhPrimeiroNome).join(', ')}` : '']
       .filter(Boolean).map(escapeHtml).join(' · ');
-    const tags = d ? fhTagsHtml(d) : '';
-    const principal = !d ? '<b>Dossiê ainda não calculado</b>' : (tags ? `<div class="fh-tags">${tags}</div>` : '<b>Sem alertas no dia</b>');
-    const resumo = d ? fhResumoLinha(d) : 'Recalcule o período para ver o resultado.';
     return `<article class="fh-linha ${classe}">
-      <span class="fh-ponto" title="${escapeHtml(d ? fhManchete(d) : 'Sem dossiê')}"></span>
-      <div class="fh-l-quem"><strong>${quem}</strong><small>${detalhe}</small></div>
-      <div class="fh-l-resumo">${principal}<small>${escapeHtml(resumo)}</small></div>
-      <div class="fh-l-fim">${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}</div>
+      <div class="fh-l-quem"><strong>${quem}</strong><small>${detalhe}${status ? ` · <span class="fh-status">${escapeHtml(status)}</span>` : ''}</small></div>
+      <div class="fh-cels">${fhCelulasHtml(d)}</div>
       <button class="speed-btn fh-btn-dossie speed-btn-compact" type="button" data-fh-dossie data-key="${escapeHtml(fhChave(row))}" ${d ? '' : 'disabled'}>Ver detalhes</button>
     </article>`;
   }
@@ -2093,7 +2097,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       return normalizeName(row.motorista || '').includes(term) || normalizeName(row.placa || '').includes(term);
     });
 
-    const contagem = { ALERTAS: 0, FORA_HORARIO: 0, USO_INDEVIDO: 0, EXCESSO: 0, CONFERIR: 0, SEM_DOSSIE: 0, TODOS: buscadas.length };
+    const contagem = { ALERTAS: 0, FORA_HORARIO: 0, USO_INDEVIDO: 0, EXCESSO: 0, SEM_DOSSIE: 0, TODOS: buscadas.length };
     buscadas.forEach((row) => { fhCategorias(row).forEach((categoria) => { contagem[categoria] += 1; }); });
     atualizarFiltrosForaHorario(root, contagem);
     renderFrescorForaHorario(root);
@@ -2199,43 +2203,37 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ? `<div class="fh-bar-janela" style="left:${pct(jIni).toFixed(2)}%;width:${Math.max(0, pct(jFim) - pct(jIni)).toFixed(2)}%" title="${escapeHtml(`Horário permitido: ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`)}"></div>`
       : '';
     const viagensDia = det.viagens || [];
+    let temFora = false;
+    let temSem = false;
     const viagens = viagensDia.map((v) => {
       const ini = fhMinutosDoDia(v.ini, dia);
       const fim = fhMinutosDoDia(v.fim, dia);
       if (ini === null || fim === null || Number(v.km) < 0.1) return '';
       const fora = Number(v.fora_km) >= 0.3;
       const sem = v.uso === 'SEM_JUSTIFICATIVA';
+      if (fora) temFora = true;
+      if (sem) temSem = true;
       const largura = Math.max(pct(fim) - pct(ini), 0.45);
       const motivoUso = sem ? ' · sem justificativa' : (FH_USOS[v.uso] ? ` · ${FH_USOS[v.uso]}` : '');
       const titulo = `${fhHm(v.ini)} às ${fhHm(v.fim)} · ${fhKm(v.km)} km${fora ? ` (${fhKm(v.fora_km)} km fora do horário)` : ''}${motivoUso}`;
       return `<div class="fh-bar-trip ${fora ? 'fora' : 'ok'}${sem ? ' sem' : ''}" style="left:${pct(ini).toFixed(2)}%;width:${largura.toFixed(2)}%" title="${escapeHtml(titulo)}"></div>`;
     }).join('');
-    const marcas = (det.evidencias || []).map((e) => {
-      const min = fhMinutosDoDia(e.ts, dia);
-      if (min === null) return '';
-      const titulo = `${fhHm(e.ts)} · ${fhEvidenciaRotulo(e)}${e.em_casa ? ' (em casa, não conta)' : ''}`;
-      return `<span class="fh-bar-ev${e.em_casa ? ' casa' : ''}" style="left:${pct(min).toFixed(2)}%" title="${escapeHtml(titulo)}"></span>`;
-    }).join('');
     const excessos = (det.excessos || []).map((x) => {
       const min = fhMinutosDoDia(x.ts, dia);
       if (min === null) return '';
-      const titulo = `${fhHm(x.ts)} · ${Math.round(fhNum(x.vel))} km/h${x.endereco ? ` · ${x.endereco}` : ''}`;
+      const titulo = `${fhHm(x.ts)} · ${Math.round(fhNum(x.vel))} km/h${x.endereco ? ` · ${fhEnderecoCurto(x.endereco)}` : ''}`;
       return `<span class="fh-bar-exc" style="left:${pct(min).toFixed(2)}%" title="${escapeHtml(titulo)}"></span>`;
     }).join('');
-    const temSem = viagensDia.some((v) => v.uso === 'SEM_JUSTIFICATIVA');
     return `<div class="fh-bar">
-      <div class="fh-bar-lane fh-bar-evs">${marcas}</div>
       <div class="fh-bar-lane fh-bar-trips">${janela}${viagens}</div>
       ${excessos ? `<div class="fh-bar-lane fh-bar-excs">${excessos}</div>` : ''}
       <div class="fh-bar-ticks">${ticks}</div>
     </div>
     <div class="fh-legend">
       <span><i class="fh-lg fh-lg-janela"></i>Horário permitido</span>
-      <span><i class="fh-lg fh-lg-ok"></i>Viagem dentro do horário</span>
-      <span><i class="fh-lg fh-lg-fora"></i>Viagem fora do horário</span>
-      ${temSem ? '<span><i class="fh-lg fh-lg-sem"></i>Trajeto sem justificativa</span>' : ''}
-      <span><i class="fh-lg fh-lg-ev"></i>Registro de trabalho</span>
-      <span><i class="fh-lg fh-lg-casa"></i>Registro feito em casa (não conta)</span>
+      <span><i class="fh-lg fh-lg-ok"></i>Viagem</span>
+      ${temFora ? '<span><i class="fh-lg fh-lg-fora"></i>Fora do horário</span>' : ''}
+      ${temSem ? '<span><i class="fh-lg fh-lg-sem"></i>Sem justificativa</span>' : ''}
       ${excessos ? '<span><i class="fh-lg fh-lg-exc"></i>Excesso de velocidade</span>' : ''}
     </div>`;
   }
@@ -2255,74 +2253,79 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const parado = Number(v.km) < 0.1;
     const minutos = (fhMinutosDoDia(v.fim, dos.data_evento) ?? 0) - (fhMinutosDoDia(v.ini, dos.data_evento) ?? 0);
     const trajeto = fhLinkTrajeto(v);
+    const curto = (texto) => `<span title="${escapeHtml(texto || '')}">${escapeHtml(fhEnderecoCurto(texto) || '—')}</span>`;
     const percurso = parado
-      ? `<span class="fh-muted">Parado com o motor ligado em</span> ${escapeHtml(v.de || '—')}`
-      : `${escapeHtml(v.de || '—')} <span class="fh-muted">→</span> ${escapeHtml(v.para || '—')}${trajeto ? ` · <a href="${escapeHtml(trajeto)}" target="_blank" rel="noopener noreferrer">ver trajeto</a>` : ''}`;
-    const chips = [fora
-      ? `<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !dos.janela_inicio))}</span>`
-      : '<span class="fh-fase ok">dentro do horário</span>'];
-    if (sem) {
-      chips.push('<span class="fh-fase sem">sem justificativa</span>');
-    } else if (!parado && FH_USOS[v.uso]) {
-      chips.push(`<span class="fh-fase uso">${escapeHtml(FH_USOS[v.uso])}</span>${v.uso_ref ? `<div class="fh-sub">${escapeHtml(String(v.uso_ref).slice(0, 80))}</div>` : ''}`);
-    }
+      ? `<span class="fh-muted">Parado com o motor ligado em</span> ${curto(v.de)}`
+      : `${curto(v.de)} <span class="fh-muted">→</span> ${curto(v.para)}${trajeto ? ` · <a href="${escapeHtml(trajeto)}" target="_blank" rel="noopener noreferrer">trajeto</a>` : ''}`;
+    const marcas = [];
+    if (fora) marcas.push(`<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !dos.janela_inicio))}</span>`);
+    if (sem) marcas.push('<span class="fh-fase sem">sem justificativa</span>');
     if (excessos.length) {
       const vmax = Math.max(...excessos.map((x) => fhNum(x.vel)));
-      chips.push(`<span class="fh-fase exc">${excessos.length} excesso(s) · até ${Math.round(vmax)} km/h</span>`);
+      marcas.push(`<span class="fh-fase exc">${excessos.length}× · até ${Math.round(vmax)} km/h</span>`);
     }
+    const motivoUso = !sem && !parado && FH_USOS[v.uso] ? FH_USOS[v.uso] : '';
+    const situacao = marcas.length
+      ? `<div class="fh-chips-cel">${marcas.join('')}</div>${motivoUso ? `<div class="fh-sub">${escapeHtml(motivoUso)}</div>` : ''}`
+      : `<span class="fh-muted">${escapeHtml(motivoUso || 'dentro do horário')}</span>`;
     const km = parado ? '—' : `${fhKm(v.km)} km${fora && Number(v.fora_km) + 0.05 < Number(v.km) ? `<div class="fh-sub">${fhKm(v.fora_km)} km fora</div>` : ''}`;
     return `<tr class="${fora ? 'fh-linha-fora' : (sem ? 'fh-linha-sem' : '')}">
       <td><strong>${fhHm(v.ini)} às ${fhHm(v.fim)}</strong><div class="fh-sub">${fhDuracao(minutos)}</div></td>
       <td>${percurso}</td>
       <td>${km}</td>
-      <td><div class="fh-chips-cel">${chips.join('')}</div></td>
+      <td>${situacao}</td>
     </tr>`;
   }
 
-  // Só os trajetos com alerta (fora do horário, sem justificativa ou com excesso); os demais ficam a um clique.
-  function fhPercursosHtml(dos, det) {
-    const viagens = (det.viagens || []).map((v, i) => ({ ...v, _i: i }))
-      .sort((a, b) => String(a.ini).localeCompare(String(b.ini)));
-    if (!viagens.length) return '<div class="speed-import-empty">Sem viagens no dia.</div>';
+  // Trajetos com alerta (fora do horário, sem justificativa ou com excesso), em ordem de horário.
+  function fhTrajetosAlerta(det) {
     const excPorViagem = new Map();
     (det.excessos || []).forEach((x) => {
       if (x.viagem === null || x.viagem === undefined) return;
       excPorViagem.set(Number(x.viagem), [...(excPorViagem.get(Number(x.viagem)) || []), x]);
     });
+    const viagens = (det.viagens || []).map((v, i) => ({ ...v, _i: i }))
+      .sort((a, b) => String(a.ini).localeCompare(String(b.ini)));
     const comAlerta = viagens.filter((v) => Number(v.fora_km) >= 0.3 || v.uso === 'SEM_JUSTIFICATIVA' || excPorViagem.has(v._i));
+    return { viagens, comAlerta, excPorViagem };
+  }
+
+  function fhPercursosHtml(dos, det) {
+    const { viagens, comAlerta, excPorViagem } = fhTrajetosAlerta(det);
+    if (!viagens.length) return '<div class="speed-import-empty">Sem viagens no dia.</div>';
     const cabecalho = '<thead><tr><th>Horário</th><th>Percurso</th><th>Distância</th><th>Situação</th></tr></thead>';
     const linha = (v) => fhViagemLinhaHtml(v, dos, excPorViagem.get(v._i) || []);
     const resumo = comAlerta.length
       ? `<table class="hist-table fh-tl">${cabecalho}<tbody>${comAlerta.map(linha).join('')}</tbody></table>`
       : '<div class="speed-import-empty">Nenhum trajeto com alerta neste dia.</div>';
-    return `<div class="fh-percursos" data-fh-percursos data-modo="resumo">
+    const demais = viagens.length - comAlerta.length;
+    return `<div class="fh-percursos" data-fh-percursos data-modo="resumo" data-demais="${demais}">
       <div class="hist-table-wrap fh-tl-wrap fh-tl-resumo">${resumo}</div>
       <div class="hist-table-wrap fh-tl-wrap fh-tl-completo"><table class="hist-table fh-tl">${cabecalho}<tbody>${viagens.map(linha).join('')}</tbody></table></div>
-      <button type="button" class="fora-horario-link-btn fh-alternar" data-fh-alternar-viagens>Ver todas as viagens do dia</button>
+      ${demais > 0 ? `<button type="button" class="fora-horario-link-btn fh-alternar" data-fh-alternar-viagens>Mostrar também os ${demais} trajeto(s) sem alerta</button>` : ''}
     </div>`;
   }
 
   // Excessos de velocidade do dia (lista do rastreador) com a situação de cada um no dossiê.
   function fhExcessosHtml(dos, det) {
     const lista = (det.excessos || []).slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
-    if (!lista.length) return '';
+    if (!lista.length) return '<div class="speed-import-empty">Nenhum excesso de velocidade neste dia.</div>';
     const linhas = lista.map((x) => {
       const mapa = fhLinkPonto(x.la, x.lo);
       const situacao = [];
       if (x.fora) situacao.push('<span class="fh-fase fora">fora do horário</span>');
-      if (x.indevido) situacao.push('<span class="fh-fase sem">trajeto sem justificativa</span>');
+      if (x.indevido) situacao.push('<span class="fh-fase sem">sem justificativa</span>');
       const status = String(x.status || '').toUpperCase();
       return `<tr>
-        <td><strong>${escapeHtml(String(x.ts || '').slice(11, 19) || '--:--:--')}</strong></td>
+        <td><strong>${escapeHtml(String(x.ts || '').slice(11, 16) || '--:--')}</strong></td>
         <td><span class="fh-fase exc">${Math.round(fhNum(x.vel))} km/h</span></td>
-        <td>${escapeHtml(x.endereco || '—')}${mapa ? ` · <a href="${escapeHtml(mapa)}" target="_blank" rel="noopener noreferrer">ver no mapa</a>` : ''}</td>
-        <td><div class="fh-chips-cel">${situacao.join('') || '<span class="fh-muted">—</span>'}</div></td>
-        <td>${escapeHtml(FH_STATUS_EXCESSO[status] || x.status || '—')}</td>
+        <td><span title="${escapeHtml(x.endereco || '')}">${escapeHtml(fhEnderecoCurto(x.endereco) || '—')}</span>${mapa ? ` · <a href="${escapeHtml(mapa)}" target="_blank" rel="noopener noreferrer">mapa</a>` : ''}</td>
+        <td>${situacao.length ? `<div class="fh-chips-cel">${situacao.join('')}</div>` : '<span class="fh-muted">—</span>'}</td>
+        <td><span class="fh-muted">${escapeHtml(FH_STATUS_EXCESSO[status] || x.status || '—')}</span></td>
       </tr>`;
     }).join('');
-    return `<h4 class="fh-h4">Excessos de velocidade (${lista.length})</h4>
-      <div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-exc"><thead><tr><th>Hora</th><th>Velocidade</th><th>Local</th><th>Situação</th><th>Notificação</th></tr></thead><tbody>${linhas}</tbody></table></div>
-      <p class="speed-hint"><button type="button" class="fora-horario-link-btn" data-fh-ir-excesso data-placa="${escapeHtml(onlyPlate(dos.placa))}">Gerar a notificação de excesso desta placa</button> (abre a aba "Notificar excessos" já filtrada).</p>`;
+    return `<div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-exc"><thead><tr><th>Hora</th><th>Velocidade</th><th>Local</th><th>Situação</th><th>Notificação</th></tr></thead><tbody>${linhas}</tbody></table></div>
+      <p class="speed-hint"><button type="button" class="fora-horario-link-btn" data-fh-ir-excesso data-placa="${escapeHtml(onlyPlate(dos.placa))}">Gerar a notificação de excesso desta placa</button></p>`;
   }
 
   function fhRegistrosHtml(dos, det) {
@@ -2399,15 +2402,39 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
   }
 
-  function fhBadgesHtml(d) {
-    const selos = [];
-    const info = FH_VEREDITOS[d.veredito];
-    if (fhNum(d.viagens_dia) === 0 && fhNum(d.km_dia) === 0) selos.push('<span class="fh-badge fh-badge-nd">Sem viagens no relatório</span>');
-    else if (info) selos.push(`<span class="fh-badge ${info.cls}">${escapeHtml(info.rotulo)}</span>`);
-    if (d.veredito_uso === 'INDEVIDO') selos.push('<span class="fh-badge fh-badge-sem">Uso indevido</span>');
-    else if (d.veredito_uso === 'ATENCAO') selos.push('<span class="fh-badge fh-badge-sem-leve">Trajetos para conferir</span>');
-    if (fhNum(d.qtd_excessos) > 0) selos.push(`<span class="fh-badge fh-badge-exc">${fhNum(d.qtd_excessos)} excesso(s) de velocidade</span>`);
-    return selos.join('') || '<span class="fh-badge fh-badge-nd">Sem dossiê</span>';
+  // Três cartões: o que houve em cada frente. Clicar leva à aba com os detalhes.
+  function fhCartoesHtml(dos, det, semViagens) {
+    const f = fhFlags(dos);
+    const excessos = det.excessos || [];
+    const maior = excessos.slice().sort((a, b) => fhNum(b.vel) - fhNum(a.vel))[0];
+    const cartao = (rotulo, classe, valor, detalhe, aba) => `<${aba ? 'button type="button"' : 'div'} class="fh-tile ${classe}"${aba ? ` data-fh-ir-aba="${aba}"` : ''}>
+      <span class="fh-tile-rot">${rotulo}</span><b>${valor}</b><small>${escapeHtml(detalhe)}</small></${aba ? 'button' : 'div'}>`;
+    const nada = 'fh-tile-nada';
+
+    let fh;
+    if (semViagens) fh = cartao('Fora do horário', nada, 'Sem dados', 'O veículo não está no relatório de viagens', '');
+    else if (f.fora || f.foraLeve) {
+      fh = cartao('Fora do horário', f.fora ? 'fh-tile-fora' : 'fh-tile-atencao', fhNum(dos.km_fora) >= 1 ? `${fhKm(dos.km_fora)} km` : 'Conferir', fhResumoLinha(dos), 'trajetos');
+    } else {
+      fh = cartao('Fora do horário', nada, 'Nada', dos.janela_inicio ? `Horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}` : 'Dentro do horário', '');
+    }
+
+    let uso;
+    if (semViagens) uso = cartao('Sem justificativa', nada, 'Sem dados', 'Sem viagens para comparar', '');
+    else if (f.indevido || f.indevidoLeve) {
+      const detalhe = (dos.uso_sem_base || (det.uso || {}).sem_base)
+        ? 'Sem O.S. nem registro de trabalho para comparar'
+        : `${fhNum(dos.viagens_indevidas)} trajeto(s) sem O.S. programada, carona nem registro de trabalho`;
+      uso = cartao(f.indevido ? 'Uso indevido' : 'Sem justificativa', f.indevido ? 'fh-tile-sem' : 'fh-tile-sem-leve', `${fhKm(dos.km_indevido)} km`, detalhe, 'trajetos');
+    } else {
+      uso = cartao('Sem justificativa', nada, 'Nada', fhNum(dos.km_indevido) > 0 ? `${fhKm(dos.km_indevido)} km sem justificativa, abaixo do limite de 15 km` : 'Todos os trajetos se justificam', fhNum(dos.km_indevido) > 0 ? 'trajetos' : '');
+    }
+
+    const exc = f.excessos > 0
+      ? cartao('Excesso de velocidade', 'fh-tile-exc', `${f.excessos} registro(s)`,
+        `Máx. ${Math.round(fhNum(dos.vel_max))} km/h${maior ? ` às ${fhHm(maior.ts)}` : ''}${fhNum(dos.excessos_fora) > 0 ? ` · ${fhNum(dos.excessos_fora)} fora do horário` : ''}`, 'excessos')
+      : cartao('Excesso de velocidade', nada, 'Nada', 'Nenhum registro no dia', '');
+    return `<div class="fh-tiles">${fh}${uso}${exc}</div>`;
   }
 
   function renderDossieHtml(dos, row) {
@@ -2506,20 +2533,28 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ? `<p class="speed-hint">Pontos de GPS usados na quilometragem do Caixa (00h às 04h): <button type="button" class="fora-horario-link-btn" data-ver-rota data-id="${escapeHtml(row.id)}">ver pontos</button></p>`
       : '';
 
+    const trajetosAlerta = fhTrajetosAlerta(det).comAlerta.length;
+    const abas = [
+      { chave: 'resumo', rotulo: 'Resumo' },
+      { chave: 'trajetos', rotulo: 'Trajetos', n: trajetosAlerta },
+      ...(excDia.length ? [{ chave: 'excessos', rotulo: 'Excessos', n: excDia.length }] : []),
+      { chave: 'metodo', rotulo: 'Como foi calculado' }
+    ];
+    const abasHtml = abas.map((aba, i) => `<button type="button" role="tab" class="fh-aba${i === 0 ? ' active' : ''}" data-fh-aba="${aba.chave}" aria-selected="${i === 0}">${aba.rotulo}${aba.n ? ` <b>${aba.n}</b>` : ''}</button>`).join('');
+
     return `
-      <div class="fh-dossie-topo">
-        ${fhBadgesHtml(dos)}
-        <span class="fh-dossie-quem">${[dos.supervisao, dos.coordenacao].filter(Boolean).map(escapeHtml).join(' · ')}</span>
+      <p class="fh-m-sub">${escapeHtml(fhDiaSemana(dos.data_evento))}, ${escapeHtml(formatDateBR(dos.data_evento))}${(dos.supervisao || dos.coordenacao) ? ` · ${escapeHtml(dos.supervisao || dos.coordenacao)}` : ''}</p>
+      ${fhCartoesHtml(dos, det, semViagens)}
+      <div class="fh-abas" role="tablist">${abasHtml}</div>
+      <div class="fh-painel" data-fh-pane="resumo">
+        <p class="fh-m-sub">${escapeHtml(contexto)}</p>
+        ${semViagens ? '' : fhBarraHtml(dos, det)}
+        <h4 class="fh-h4">O que chama atenção</h4>
+        ${motivos}${aviso}
       </div>
-      <h2 class="fh-m-manchete">${escapeHtml(fhManchete(dos))}</h2>
-      <p class="fh-m-sub">${escapeHtml(fhDiaSemana(dos.data_evento))}, ${escapeHtml(formatDateBR(dos.data_evento))} · ${escapeHtml(contexto)}</p>
-      ${fhBarraHtml(dos, det)}
-      <h4 class="fh-h4">O que chama atenção</h4>
-      ${motivos}${aviso}
-      <h4 class="fh-h4">Trajetos para conferir</h4>
-      ${fhPercursosHtml(dos, det)}
-      ${fhExcessosHtml(dos, det)}
-      <details class="fh-metodo"><summary>Como chegamos nesses números</summary>
+      <div class="fh-painel" data-fh-pane="trajetos" hidden>${fhPercursosHtml(dos, det)}</div>
+      ${excDia.length ? `<div class="fh-painel" data-fh-pane="excessos" hidden>${fhExcessosHtml(dos, det)}</div>` : ''}
+      <div class="fh-painel" data-fh-pane="metodo" hidden>
         <div class="fh-passos">${passos.map((p) => `<div class="fh-passo"><b>${escapeHtml(p.titulo)}</b><span>${escapeHtml(p.texto)}</span></div>`).join('')}</div>
         ${pernoite}${rotaCaixa}
         <details class="fh-metodo fh-interno"><summary>Registros de trabalho usados (${(det.evidencias || []).length})</summary>${fhRegistrosHtml(dos, det)}</details>
@@ -2535,7 +2570,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             <li><strong>Excesso de velocidade:</strong> registros do rastreador (BFleet/Infleet) no dia da placa; contam como fora do horário quando acontecem depois da janela permitida e como "sem justificativa" quando estavam num trajeto sem justificativa.</li>
           </ul>
         </details>
-      </details>`;
+      </div>`;
   }
 
   async function openDossieModal(root, opts, chave) {
@@ -3733,7 +3768,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const colaboradores = getColaboradores(opts);
     container.innerHTML = `${getStyles()}
       <section class="frotas-shell">
-        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificação</h1><p class="frotas-subtitle">O dossiê diário reúne, por veículo e por dia, o uso fora do horário, os trajetos sem justificativa e os excessos de velocidade. Na aba Notificar excessos, gere as mensagens em lote e envie os prints: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.</p></div></div>
+        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificação</h1><p class="frotas-subtitle" data-notif-subtitle>Um dossiê por veículo e por dia: uso fora do horário, trajetos sem justificativa e excessos de velocidade.</p></div></div>
         <div class="frotas-card">
           <div class="notif-subtabs" data-notif-subtabs><button class="notif-subtab active" type="button" data-notif-tab="fora_horario">Dossiê diário</button><button class="notif-subtab" type="button" data-notif-tab="excesso">Notificar excessos</button></div>
           <div class="frotas-body">
@@ -3821,29 +3856,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-badge-atencao{background:rgba(251,191,36,.14);border-color:rgba(251,191,36,.45);color:#fde68a}
                 .fh-badge-dentro{background:rgba(52,211,153,.14);border-color:rgba(52,211,153,.4);color:#a7f3d0}
                 .fh-badge-nd{background:rgba(148,163,184,.12);color:#cbd5e1}
-                .fh-badge-sem{background:rgba(192,132,252,.18);border-color:rgba(192,132,252,.55);color:#e9d5ff}
-                .fh-badge-sem-leve{background:rgba(192,132,252,.08);border-color:rgba(192,132,252,.35);color:#d8b4fe}
-                .fh-badge-exc{background:rgba(251,146,60,.16);border-color:rgba(251,146,60,.5);color:#fed7aa}
-                .fh-tags{display:flex;gap:6px;flex-wrap:wrap}
-                .fh-tag{display:inline-flex;align-items:center;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:900;border:1px solid transparent;white-space:nowrap}
-                .fh-tag-fora{background:rgba(248,113,113,.16);border-color:rgba(248,113,113,.45);color:#fecaca}
-                .fh-tag-atencao{background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.4);color:#fde68a}
-                .fh-tag-sem{background:rgba(192,132,252,.18);border-color:rgba(192,132,252,.5);color:#e9d5ff}
-                .fh-tag-sem-leve{background:rgba(192,132,252,.08);border-color:rgba(192,132,252,.32);color:#d8b4fe}
-                .fh-tag-exc{background:rgba(251,146,60,.16);border-color:rgba(251,146,60,.5);color:#fed7aa}
                 .fh-lista{display:flex;flex-direction:column;gap:6px}
                 .fh-dia{margin:16px 0 4px;color:#cbd5e1;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
                 .fh-dia:first-child{margin-top:4px}
                 .fh-dia span{margin-left:10px;color:#6b7280;font-weight:700;text-transform:none;letter-spacing:0}
-                .fh-linha{display:grid;grid-template-columns:10px minmax(190px,1fr) minmax(280px,2.2fr) minmax(0,150px) auto;align-items:center;gap:16px;padding:12px 16px;border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);border-radius:14px}
-                .fh-linha:hover{border-color:rgba(148,163,184,.3);background:rgba(15,23,42,.8)}
-                .fh-ponto{width:10px;height:10px;border-radius:50%;background:#64748b}
-                .fh-linha-fora .fh-ponto{background:#f87171}
-                .fh-linha-atencao .fh-ponto{background:#fbbf24}
-                .fh-linha-dentro .fh-ponto{background:#34d399}
-                .fh-l-quem strong{display:block;color:#f8fafc;font-size:14px;line-height:1.3}
-                .fh-l-quem small,.fh-l-resumo small{display:block;margin-top:3px;color:#94a3b8;font-size:12px;line-height:1.4}
-                .fh-l-resumo b{display:block;color:#f8fafc;font-size:14px;font-weight:800;line-height:1.3}
                 .fh-status{display:inline-flex;border-radius:999px;padding:3px 10px;background:rgba(34,197,94,.14);color:#bbf7d0;font-size:11px;font-weight:900;white-space:nowrap}
                 .fh-btn-dossie{background:rgba(96,165,250,.14);color:#bfdbfe;border:1px solid rgba(96,165,250,.4);white-space:nowrap}
                 .fh-btn-dossie:hover:not(:disabled){background:rgba(96,165,250,.26)}
@@ -3875,10 +3891,44 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-lg-ev{background:#fbbf24;border-radius:50%}
                 .fh-lg-casa{background:transparent;border:1.5px solid #6b7280;border-radius:50%;box-sizing:border-box}
                 .fh-lg-dot-fora{background:#f87171;border-radius:50%}.fh-lg-dot-atencao{background:#fbbf24;border-radius:50%}.fh-lg-dot-dentro{background:#34d399;border-radius:50%}
+                .fh-cab,.fh-linha{display:grid;grid-template-columns:minmax(190px,1.7fr) repeat(3,minmax(88px,.75fr)) 108px;align-items:center;gap:14px}
+                .fh-cab{padding:0 17px 0 19px;margin-top:6px;color:#6b7280;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em}
+                .fh-linha{padding:11px 16px;border:1px solid rgba(148,163,184,.13);border-left:3px solid rgba(148,163,184,.3);background:rgba(15,23,42,.5);border-radius:12px}
+                .fh-linha:hover{border-color:rgba(148,163,184,.3);background:rgba(15,23,42,.8)}
+                .fh-linha.fh-linha-fora{border-left-color:#f87171}.fh-linha.fh-linha-atencao{border-left-color:#fbbf24}.fh-linha.fh-linha-dentro{border-left-color:#34d399}
+                .fh-cels{display:contents}
+                .fh-linha .fh-btn-dossie{width:100%;justify-content:center}
+                .fh-cel{min-width:0}
+                .fh-c{display:inline-flex;align-items:center;border-radius:8px;padding:4px 9px;font-size:13px;font-weight:900;white-space:nowrap}
+                .fh-c-vazio{color:#475569;padding-left:0;font-weight:700}
+                .fh-c-fora{background:rgba(248,113,113,.16);color:#fecaca}
+                .fh-c-atencao{background:rgba(251,191,36,.12);color:#fde68a}
+                .fh-c-sem{background:rgba(192,132,252,.18);color:#e9d5ff}
+                .fh-c-sem-leve{background:rgba(192,132,252,.08);color:#d8b4fe}
+                .fh-c-exc{background:rgba(251,146,60,.16);color:#fed7aa}
+                .fh-l-quem strong{display:block;color:#f8fafc;font-size:14px;line-height:1.3}
+                .fh-l-quem small{display:block;margin-top:3px;color:#94a3b8;font-size:12px;line-height:1.4}
+                .fh-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:2px 0 16px}
+                .fh-tile{appearance:none;font:inherit;text-align:left;display:flex;flex-direction:column;gap:3px;padding:12px 14px;border-radius:14px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.55);color:#e2e8f0;cursor:default}
+                button.fh-tile{cursor:pointer}
+                button.fh-tile:hover{filter:brightness(1.18)}
+                .fh-tile-rot{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8}
+                .fh-tile b{font-size:22px;letter-spacing:-.02em;color:#f8fafc;line-height:1.2}
+                .fh-tile small{font-size:12px;color:#94a3b8;line-height:1.4}
+                .fh-tile-fora{border-color:rgba(248,113,113,.5);background:rgba(248,113,113,.1)}.fh-tile-fora .fh-tile-rot,.fh-tile-fora b{color:#fecaca}
+                .fh-tile-atencao{border-color:rgba(251,191,36,.4);background:rgba(251,191,36,.07)}.fh-tile-atencao .fh-tile-rot,.fh-tile-atencao b{color:#fde68a}
+                .fh-tile-sem{border-color:rgba(192,132,252,.5);background:rgba(192,132,252,.1)}.fh-tile-sem .fh-tile-rot,.fh-tile-sem b{color:#e9d5ff}
+                .fh-tile-sem-leve{border-color:rgba(192,132,252,.32);background:rgba(192,132,252,.05)}.fh-tile-sem-leve .fh-tile-rot,.fh-tile-sem-leve b{color:#d8b4fe}
+                .fh-tile-exc{border-color:rgba(251,146,60,.5);background:rgba(251,146,60,.1)}.fh-tile-exc .fh-tile-rot,.fh-tile-exc b{color:#fed7aa}
+                .fh-tile-nada b{color:#64748b;font-size:18px}
+                .fh-abas{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:14px}
+                .fh-aba{appearance:none;border:0;background:transparent;color:#94a3b8;font-weight:900;font-size:13px;padding:9px 14px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer}
+                .fh-aba b{background:rgba(148,163,184,.2);color:#f8fafc;border-radius:999px;padding:0 7px;font-size:11px;margin-left:4px}
+                .fh-aba:hover{color:#e2e8f0}
+                .fh-aba.active{color:#bbf7d0;border-bottom-color:#22c55e}
+                .fh-painel[hidden]{display:none}
+                @media(max-width:760px){.fh-cab{display:none}.fh-linha{grid-template-columns:1fr auto}.fh-linha .fh-btn-dossie{width:auto}.fh-cels{display:flex;flex-wrap:wrap;gap:6px 14px;grid-column:1/-1}.fh-cel.vazio{display:none}.fh-cel::before{content:attr(data-rotulo);display:block;margin:0 0 2px 2px;font-size:10px;color:#94a3b8}.fh-tiles{grid-template-columns:1fr}}
                 .speed-modal.fh-modal{max-width:980px}
-                .fh-dossie-topo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-                .fh-dossie-quem{color:#cbd5e1;font-size:13px}
-                .fh-m-manchete{margin:4px 0 4px;color:#f8fafc;font-size:24px;letter-spacing:-.03em;line-height:1.25}
                 .fh-m-sub{margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.5}
                 .fh-h4{margin:20px 0 8px;color:#f8fafc;font-size:14px;letter-spacing:.01em}
                 .fh-motivos{margin:0;padding-left:18px;color:#e2e8f0;font-size:13px;line-height:1.65}
@@ -3933,7 +3983,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.5)}
                 .fh-pin-os{background:#f59e0b}.fh-pin-casa{background:#3b82f6}.fh-pin-pernoite{background:#64748b}
                 .fh-hora{background:rgba(2,6,23,.88);color:#e2e8f0;border:1px solid rgba(148,163,184,.45);border-radius:6px;padding:0 5px;font-size:10px;font-weight:800;line-height:15px;text-align:center;white-space:nowrap}
-                @media(max-width:900px){.fh-linha{grid-template-columns:10px 1fr auto}.fh-l-resumo{grid-column:2/-1;grid-row:2}.fh-l-fim{grid-column:2;grid-row:3}.fh-linha .fh-btn-dossie{grid-column:3;grid-row:1}.fh-l-fim:empty{display:none}}
                 @media(max-width:760px){.fh-filtros{display:grid}.fh-busca{width:100%}.fh-passo{grid-template-columns:1fr;gap:4px}.fh-m-manchete{font-size:20px}}
                 @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}
                 @media(max-width:520px){.fora-horario-toolbar{grid-template-columns:1fr 54px}.fora-horario-date{grid-column:1}.fora-horario-sync{grid-column:1}.fora-horario-refresh{grid-column:2;grid-row:1/4;width:54px}.fora-horario-date .speed-input{font-size:14px}}
@@ -3951,7 +4000,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                     <button class="fh-chip" type="button" data-fh-filter="FORA_HORARIO">Fora do horário <b>0</b></button>
                     <button class="fh-chip" type="button" data-fh-filter="USO_INDEVIDO">Uso indevido <b>0</b></button>
                     <button class="fh-chip" type="button" data-fh-filter="EXCESSO">Excesso de velocidade <b>0</b></button>
-                    <button class="fh-chip" type="button" data-fh-filter="CONFERIR">Para conferir <b>0</b></button>
                     <button class="fh-chip" type="button" data-fh-filter="SEM_DOSSIE" hidden>Sem dossiê <b>0</b></button>
                     <button class="fh-chip" type="button" data-fh-filter="TODOS">Todos <b>0</b></button>
                   </div>
@@ -3971,6 +4019,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                   <p>Dados desatualizados? <button type="button" class="fora-horario-link-btn" data-recalcular-dossie>Recalcular dossiê</button></p>
                 </details>
                 <p class="fora-horario-count" data-fora-horario-count>Nenhum registro carregado</p>
+                <div class="fh-cab" aria-hidden="true"><span>Veículo</span><span>Fora do horário</span><span>Sem justificativa</span><span>Excessos</span><span></span></div>
                 <div class="fh-lista" data-fora-horario-table><div class="speed-import-empty">Carregando ocorrências...</div></div>
               </div>
             </div>
@@ -4067,6 +4116,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const notifFab = container.querySelector('[data-open-prints-modal]');
     function setNotifTab(tab) {
       state.notifTab = tab;
+      const subtitulo = container.querySelector('[data-notif-subtitle]');
+      if (subtitulo) {
+        subtitulo.textContent = tab === 'excesso'
+          ? 'Gere as notificações de excesso de velocidade aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.'
+          : 'Um dossiê por veículo e por dia: uso fora do horário, trajetos sem justificativa e excessos de velocidade.';
+      }
       container.querySelectorAll('[data-notif-tab]').forEach((btn) => btn.classList.toggle('active', btn.dataset.notifTab === tab));
       container.querySelectorAll('[data-notif-panel]').forEach((panel) => { panel.hidden = panel.dataset.notifPanel !== tab; });
       if (notifFab) notifFab.hidden = tab !== 'excesso';
@@ -4134,7 +4189,21 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       if (!bloco) return;
       const completo = bloco.dataset.modo !== 'completo';
       bloco.dataset.modo = completo ? 'completo' : 'resumo';
-      alternar.textContent = completo ? 'Ver só os trajetos com alerta' : 'Ver todas as viagens do dia';
+      alternar.textContent = completo ? 'Mostrar só os trajetos com alerta' : `Mostrar também os ${bloco.dataset.demais} trajeto(s) sem alerta`;
+    });
+    dossieModal?.addEventListener('click', (ev) => {
+      const aba = ev.target.closest('[data-fh-aba], [data-fh-ir-aba]');
+      if (!aba) return;
+      const alvo = aba.dataset.fhAba || aba.dataset.fhIrAba;
+      const corpo = dossieModal.querySelector('[data-dossie-body]');
+      if (!corpo || !corpo.querySelector(`[data-fh-pane="${alvo}"]`)) return;
+      corpo.querySelectorAll('[data-fh-aba]').forEach((botao) => {
+        const ativo = botao.dataset.fhAba === alvo;
+        botao.classList.toggle('active', ativo);
+        botao.setAttribute('aria-selected', String(ativo));
+      });
+      corpo.querySelectorAll('[data-fh-pane]').forEach((painel) => { painel.hidden = painel.dataset.fhPane !== alvo; });
+      corpo.querySelector('.fh-abas')?.scrollIntoView({ block: 'nearest' });
     });
     dossieModal?.addEventListener('click', (ev) => {
       const ir = ev.target.closest('[data-fh-ir-excesso]');

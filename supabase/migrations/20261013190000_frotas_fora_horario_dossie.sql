@@ -1057,7 +1057,7 @@ begin
       v_motivos := v_motivos || to_jsonb(format('Na Programação do dia o condutor deste veículo é %s, diferente do motorista cadastrado (%s).', cond_esc, mot));
     end if;
 
-    if v_km_ind >= 5 then
+    if v_km_ind >= 15 then
       if v_sem_base then
         v_motivos := v_motivos || to_jsonb(format('Neste dia não há O.S. programada com localização, carona nem registro de trabalho para comparar com o percurso: %s km ficaram sem justificativa.',
           public.frotas_dossie_fmt(v_km_ind)));
