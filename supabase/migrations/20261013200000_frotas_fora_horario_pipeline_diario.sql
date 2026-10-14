@@ -103,7 +103,7 @@ select
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
   d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
-  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base,
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base, d.continua_anterior, d.continua_seguinte,
   coalesce(ex.pendentes, 0)::int as exc_pendentes, coalesce(ex.gerados, 0)::int as exc_gerados, coalesce(ex.notificados, 0)::int as exc_notificados
 from public.frotas_fora_horario_ocorrencias o
 left join public.frotas_fora_horario_dossie d on d.data_evento = o.data_evento and d.placa = o.placa
@@ -127,7 +127,7 @@ select
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
   d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
-  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base,
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base, d.continua_anterior, d.continua_seguinte,
   coalesce(ex.pendentes, 0)::int, coalesce(ex.gerados, 0)::int, coalesce(ex.notificados, 0)::int
 from public.frotas_fora_horario_dossie d
 left join (

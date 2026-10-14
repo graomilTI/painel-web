@@ -13,6 +13,8 @@
 --     carona nem local de registro de trabalho): o dossiê é único por placa e dia.
 --   * domingo e feriado (tabela frotas_feriados): só é autorizado rodar com embarque (informativo, check-in/out ou O.S. escalada),
 --     em qualquer horário; sem embarque, todo uso conta como fora do horário.
+--   * rota que atravessa a meia-noite: o relatório da BFleet corta as viagens às 00:00; o dia seguinte herda a casa e a ida/volta
+--     em curso do dia anterior (continua_anterior / continua_seguinte) e a tela pode agrupar os dias por rota.
 -- Janela permitida = [1º registro de trabalho − tempo de ida − 20 min ; último registro + tempo de volta + 20 min].
 -- Tempo de ida/volta = distância em linha reta casa↔local × fator de rota ÷ velocidade média.
 -- O que passar dessa janela é "uso fora do horário"; o dossiê guarda a linha do tempo para conferência.
@@ -68,6 +70,9 @@ alter table public.frotas_fora_horario_dossie add column if not exists km_indevi
 alter table public.frotas_fora_horario_dossie add column if not exists viagens_indevidas integer not null default 0;
 alter table public.frotas_fora_horario_dossie add column if not exists veredito_uso text not null default 'REGULAR';
 alter table public.frotas_fora_horario_dossie add column if not exists uso_sem_base boolean not null default false;
+-- Rota que atravessa a meia-noite (o relatório da BFleet corta as viagens às 00:00): o dia continua a rota do anterior / segue no seguinte.
+alter table public.frotas_fora_horario_dossie add column if not exists continua_anterior boolean not null default false;
+alter table public.frotas_fora_horario_dossie add column if not exists continua_seguinte boolean not null default false;
 
 comment on table public.frotas_fora_horario_dossie is
   'Dossiê de uso do veículo fora do expediente (viagens GPS × informativos × produção × celular). Horários em Brasília, sem fuso.';
@@ -263,6 +268,7 @@ declare
   km_ind numeric := 0; n_ind int := 0; n_sites int;
   saida jsonb := '[]'::jsonb;
   houve_ancora boolean := false; ida_ok boolean; v_ult_la float8; v_ult_lo float8;
+  v_her text := p_det #>> '{heranca,leg}';
   n_pend int; k_fim int; d_la float8; d_lo float8;
 begin
   if n = 0 then
@@ -317,6 +323,11 @@ begin
   -- Ponto de partida do encadeamento: onde o veículo dormiu.
   ch_la := coalesce(casa_la, (trips -> 0 ->> 'la1')::float8);
   ch_lo := coalesce(casa_lo, (trips -> 0 ->> 'lo1')::float8);
+  -- Dia que continua uma rota da véspera: a ida ou a volta em curso segue valendo; o encadeamento parte de onde o dia começou.
+  if v_her in ('IDA', 'VOLTA') then
+    ch_la := (trips -> 0 ->> 'la1')::float8; ch_lo := (trips -> 0 ->> 'lo1')::float8;
+  end if;
+  if v_her = 'VOLTA' then houve_ancora := true; end if;
 
   for i in 0..n - 1 loop
     t := trips -> i;
@@ -493,7 +504,9 @@ returns table (
   km_indevido numeric,
   viagens_indevidas integer,
   veredito_uso text,
-  uso_sem_base boolean
+  uso_sem_base boolean,
+  continua_anterior boolean,
+  continua_seguinte boolean
 )
 language plpgsql
 stable
@@ -533,6 +546,7 @@ declare
   uso_res jsonb; v_km_ind numeric; v_n_ind int; v_sem_base boolean; v_uso_ver text; v_exemplo text; v_extras text[];
   trips_k jsonb; leg_i text;
   v_dia_tipo text; v_dia_nome text; v_embarque boolean; v_livre boolean;
+  viz_map jsonb; cont_ant boolean; cont_seg boolean; prev_det jsonb; heranca_leg text; ida_la float8; ida_lo float8;
 begin
   -- Domingo ou feriado: só é autorizado rodar com embarque (informativo, produção ou O.S. escalada), em qualquer horário.
   v_dia_tipo := null; v_dia_nome := null;
@@ -690,6 +704,34 @@ begin
     group by 1
   ) g;
 
+  -- Continuação de rota: a BFleet corta as viagens à meia-noite. Por placa: última viagem do dia anterior que terminou perto das 24h
+  -- e primeira viagem do dia seguinte que começou logo depois das 00h (posição, para conferir a continuidade).
+  with raw as (
+    select f.placa as placa_v, f.data_evento as dia,
+           (f.raw ->> 'Inicio')::timestamp as ini, (f.raw ->> 'Final')::timestamp as fim,
+           nullif(f.raw ->> 'Latitud Inicio', '')::float8 as la1, nullif(f.raw ->> 'Longitud Inicio', '')::float8 as lo1,
+           nullif(f.raw ->> 'Latitud Fin', '')::float8 as la2, nullif(f.raw ->> 'Longitud Fin', '')::float8 as lo2
+    from public.frotas_fora_horario f
+    where f.data_evento in (p_data - 1, p_data + 1) and (p_placa is null or f.placa = p_placa)
+      and f.raw ->> 'Inicio' ~ '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+      and f.raw ->> 'Final' ~ '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+  ), ant as (
+    select distinct on (placa_v) placa_v, la2, lo2 from raw
+    where dia = p_data - 1 and fim >= p_data::timestamp - interval '15 minutes'
+    order by placa_v, fim desc
+  ), seg as (
+    select distinct on (placa_v) placa_v, la1, lo1 from raw
+    where dia = p_data + 1 and ini <= (p_data + 1)::timestamp + interval '15 minutes'
+    order by placa_v, ini asc
+  )
+  select coalesce(jsonb_object_agg(x.placa_v, x.info), '{}'::jsonb) into viz_map
+  from (
+    select coalesce(a.placa_v, sg.placa_v) as placa_v,
+           jsonb_build_object('ant', case when a.placa_v is not null then jsonb_build_object('la', a.la2, 'lo', a.lo2) end,
+                              'seg', case when sg.placa_v is not null then jsonb_build_object('la', sg.la1, 'lo', sg.lo1) end) as info
+    from ant a full join seg sg on sg.placa_v = a.placa_v
+  ) x;
+
   -- Excessos de velocidade do dia (BFleet/Infleet), por placa. Sem repetir o mesmo registro (hora + velocidade).
   select coalesce(jsonb_object_agg(g.placa_p, g.itens), '{}'::jsonb) into exc_map
   from (
@@ -836,11 +878,44 @@ begin
     -- Casa = origem da 1ª viagem do dia (onde o veículo dormiu); à noite = destino da última, encaixado na casa se < 1 km.
     t := trips -> 0;
     casa_la := (t ->> 'la1')::float8; casa_lo := (t ->> 'lo1')::float8; casa_end := t ->> 'de';
+
+    -- Rota que atravessa a meia-noite: o dia seguinte começa no meio da rota. A "casa" passa a ser a do dia anterior e a ida/volta
+    -- em curso é herdada (a volta que começou antes das 00h continua válida depois).
+    cont_ant := false; cont_seg := false; heranca_leg := null; prev_det := null;
+    if (viz_map -> pl -> 'ant') is not null
+       and (trips -> 0 ->> 'ini')::timestamp <= p_data + interval '15 minutes'
+       and public.frotas_dossie_hav((viz_map -> pl -> 'ant' ->> 'la')::float8, (viz_map -> pl -> 'ant' ->> 'lo')::float8,
+                                    (trips -> 0 ->> 'la1')::float8, (trips -> 0 ->> 'lo1')::float8) <= 1.5 then
+      cont_ant := true;
+    end if;
+    if (viz_map -> pl -> 'seg') is not null
+       and (trips -> (n - 1) ->> 'fim')::timestamp >= p_data + interval '23 hours 45 minutes'
+       and public.frotas_dossie_hav((trips -> (n - 1) ->> 'la2')::float8, (trips -> (n - 1) ->> 'lo2')::float8,
+                                    (viz_map -> pl -> 'seg' ->> 'la')::float8, (viz_map -> pl -> 'seg' ->> 'lo')::float8) <= 1.5 then
+      cont_seg := true;
+    end if;
+    if cont_ant then
+      select d.detalhes into prev_det from public.frotas_fora_horario_dossie d where d.data_evento = p_data - 1 and d.placa = pl;
+      if prev_det is not null and (prev_det #>> '{casa_manha,lat}') is not null then
+        casa_la := (prev_det #>> '{casa_manha,lat}')::float8; casa_lo := (prev_det #>> '{casa_manha,lng}')::float8;
+        casa_end := prev_det #>> '{casa_manha,endereco}';
+        select pv.value ->> 'leg' into heranca_leg
+        from jsonb_array_elements(coalesce(prev_det -> 'viagens', '[]'::jsonb)) pv
+        order by pv.value ->> 'fim' desc
+        limit 1;
+      end if;
+    end if;
+
+    -- Tempo de ida: parte de onde o dia começou (no dia que continua uma rota, o veículo começa longe de casa).
+    ida_la := case when cont_ant then (trips -> 0 ->> 'la1')::float8 else casa_la end;
+    ida_lo := case when cont_ant then (trips -> 0 ->> 'lo1')::float8 else casa_lo end;
+
     t := trips -> (n - 1);
     fim_la := (t ->> 'la2')::float8; fim_lo := (t ->> 'lo2')::float8;
     noite_la := fim_la; noite_lo := fim_lo; noite_end := t ->> 'para';
     desloc_km := public.frotas_dossie_hav(fim_la, fim_lo, casa_la, casa_lo);
-    if desloc_km < 1.0 then
+    if desloc_km < 1.0 or cont_seg then
+      -- (rota que segue na madrugada: a volta é estimada até a casa, não até o ponto das 24h)
       noite_la := casa_la; noite_lo := casa_lo; noite_end := casa_end;
     end if;
 
@@ -962,7 +1037,7 @@ begin
     else
       pini := public.frotas_dossie_posicao_em(trips, a_ini, casa_la, casa_lo, 'fim');
       pfim := public.frotas_dossie_posicao_em(trips, a_fim, casa_la, casa_lo, 'inicio');
-      d_ida := public.frotas_dossie_hav(casa_la, casa_lo, (pini ->> 'la')::float8, (pini ->> 'lo')::float8);
+      d_ida := public.frotas_dossie_hav(ida_la, ida_lo, (pini ->> 'la')::float8, (pini ->> 'lo')::float8);
       d_volta := public.frotas_dossie_hav((pfim ->> 'la')::float8, (pfim ->> 'lo')::float8, noite_la, noite_lo);
       t_ida := case when d_ida is null or d_ida < 0.5 then 0 else round((d_ida * p_fator / p_vel_kmh * 60)::numeric, 0) end;
       t_volta := case when d_volta is null or d_volta < 0.5 then 0 else round((d_volta * p_fator / p_vel_kmh * 60)::numeric, 0) end;
@@ -1011,7 +1086,8 @@ begin
     uso_res := public.frotas_dossie_classificar_uso(jsonb_build_object(
       'viagens', trips_k, 'evidencias', ev, 'programacao', jsonb_build_object('os', prog_os),
       'enderecos', enderecos, 'casa_manha', jsonb_build_object('lat', casa_la, 'lng', casa_lo),
-      'casa_noite', jsonb_build_object('lat', noite_la, 'lng', noite_lo)));
+      'casa_noite', jsonb_build_object('lat', noite_la, 'lng', noite_lo),
+      'heranca', jsonb_build_object('leg', heranca_leg)));
 
     -- 1ª passada: chegada em casa depois do último registro de trabalho.
     if a_fim is not null then
@@ -1096,7 +1172,7 @@ begin
         'ini', to_char(t_ini, 'YYYY-MM-DD"T"HH24:MI:SS'), 'fim', to_char(t_fim, 'YYYY-MM-DD"T"HH24:MI:SS'),
         'km', t_dist, 'vmax', t ->> 'vmax', 'de', t ->> 'de', 'para', t ->> 'para',
         'la1', t -> 'la1', 'lo1', t -> 'lo1', 'la2', t -> 'la2', 'lo2', t -> 'lo2',
-        'fase', fase, 'fora_km', out_km, 'fora_min', round(out_secs / 60.0, 1),
+        'fase', fase, 'leg', leg_i, 'fora_km', out_km, 'fora_min', round(out_secs / 60.0, 1),
         'fora_ini', case when out_km >= 0.3 then to_char(fora_ini, 'YYYY-MM-DD"T"HH24:MI:SS') end);
     end loop;
 
@@ -1244,6 +1320,7 @@ begin
     condutor_escalado := cond_esc; caronas := caronas_json;
     qtd_excessos := n_exc; vel_max := v_vmax; excessos_fora := n_exc_fora;
     km_indevido := round(v_km_ind, 1); viagens_indevidas := v_n_ind; veredito_uso := v_uso_ver; uso_sem_base := v_sem_base;
+    continua_anterior := cont_ant; continua_seguinte := cont_seg;
     detalhes := jsonb_build_object(
       'programacao', jsonb_build_object('condutores', cond_esc, 'caronas', caronas_json, 'logistica', logistica_json, 'os', prog_os, 'divergente', cond_confere is false),
       'enderecos', enderecos,
@@ -1294,6 +1371,7 @@ begin
     condutor_escalado := null; caronas := '[]'::jsonb;
     qtd_excessos := n_exc; vel_max := v_vmax; excessos_fora := 0;
     km_indevido := 0; viagens_indevidas := 0; veredito_uso := 'REGULAR'; uso_sem_base := false;
+    continua_anterior := false; continua_seguinte := false;
     detalhes := jsonb_build_object('programacao', jsonb_build_object('condutores', null, 'caronas', '[]'::jsonb, 'logistica', '[]'::jsonb, 'os', '[]'::jsonb, 'divergente', false),
       'enderecos', '[]'::jsonb, 'tolerancia_min', p_tol_min, 'fator_rota', p_fator, 'vel_media_kmh', p_vel_kmh,
       'evidencias', '[]'::jsonb, 'viagens', '[]'::jsonb, 'excessos', exc_out,
@@ -1329,7 +1407,8 @@ begin
     janela_inicio, janela_fim, tolerancia_min, km_dia, km_fora, min_fora, km_noturno, km_apos_chegada,
     viagens_dia, viagens_fora, saida_casa, chegada_casa, retorno_previsto, atraso_retorno_min,
     motivos, detalhes, resumo_dia, condutor_escalado, caronas,
-    qtd_excessos, vel_max, excessos_fora, km_indevido, viagens_indevidas, veredito_uso, uso_sem_base, calculado_em
+    qtd_excessos, vel_max, excessos_fora, km_indevido, viagens_indevidas, veredito_uso, uso_sem_base,
+    continua_anterior, continua_seguinte, calculado_em
   )
   select p_data, n.placa, n.motorista, n.coordenacao, n.supervisao, n.veredito, n.confianca, n.criterio, n.fonte_expediente,
          n.inicio_expediente, n.fim_expediente, n.primeiro_informativo, n.ultimo_informativo, n.qtd_informativos,
@@ -1347,7 +1426,8 @@ begin
           ) order by v ->> 'ini'), '[]'::jsonb)
           from jsonb_array_elements(n.detalhes -> 'viagens') v),
          n.condutor_escalado, n.caronas,
-         n.qtd_excessos, n.vel_max, n.excessos_fora, n.km_indevido, n.viagens_indevidas, n.veredito_uso, n.uso_sem_base, now()
+         n.qtd_excessos, n.vel_max, n.excessos_fora, n.km_indevido, n.viagens_indevidas, n.veredito_uso, n.uso_sem_base,
+         n.continua_anterior, n.continua_seguinte, now()
   from _dossie_novo n
   on conflict (data_evento, placa) do update set
     motorista = excluded.motorista, coordenacao = excluded.coordenacao, supervisao = excluded.supervisao,
@@ -1365,6 +1445,7 @@ begin
     qtd_excessos = excluded.qtd_excessos, vel_max = excluded.vel_max, excessos_fora = excluded.excessos_fora,
     km_indevido = excluded.km_indevido, viagens_indevidas = excluded.viagens_indevidas,
     veredito_uso = excluded.veredito_uso, uso_sem_base = excluded.uso_sem_base,
+    continua_anterior = excluded.continua_anterior, continua_seguinte = excluded.continua_seguinte,
     calculado_em = now();
   get diagnostics v_qtd = row_count;
 
