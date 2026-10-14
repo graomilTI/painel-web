@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261014-domingo-feriado';
+import './modules/frotas.js?v=20261014-agrupar-rota';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {

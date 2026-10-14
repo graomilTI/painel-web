@@ -13,7 +13,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   const BFLEET_FORA_HORARIO_REPORT_ID = '85075';
   const FORA_HORARIO_DOSSIE_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_DOSSIE_FUNCTION || 'frotas-fora-horario-dossie';
   const FORA_HORARIO_ROTA_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_ROTA_FUNCTION || 'frotas-fora-horario-rota';
-  const FORA_HORARIO_LISTA_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa,tem_rota_caixa,sem_ocorrencia,dossie_id,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em,qtd_excessos,vel_max,excessos_fora,km_indevido,viagens_indevidas,veredito_uso,uso_sem_base,exc_pendentes,exc_gerados,exc_notificados';
+  const FORA_HORARIO_LISTA_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa,tem_rota_caixa,sem_ocorrencia,dossie_id,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em,qtd_excessos,vel_max,excessos_fora,km_indevido,viagens_indevidas,veredito_uso,uso_sem_base,continua_anterior,continua_seguinte,exc_pendentes,exc_gerados,exc_notificados';
   const FORA_HORARIO_DOSSIE_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em';
 
   const ICO_REFRESH = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -46,6 +46,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     foraHorarioFiltro: 'ALERTAS',
     foraHorarioMapaBase: 'sat',
     foraHorarioFeriados: {},
+    foraHorarioAgrupar: 'dia',
+    foraHorarioLinhas: new Map(),
     foraHorarioDossieDisponivel: true,
     foraHorarioRecalculando: false,
     foraHorarioDossieAberto: null,
@@ -1574,6 +1576,92 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   // Trajeto só conta como "fora do horário" na tela a partir de 1 km (movimentos de poucos metros são ruído).
   const FH_FORA_MIN_KM = 1;
 
+  function fhDiaSeguinte(iso) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + 1)).toISOString().slice(0, 10) : '';
+  }
+
+  function fhDataCurta(iso) {
+    return formatDateBR(iso).slice(0, 5);
+  }
+
+  const FH_ORDEM_VEREDITO = { FORA_HORARIO: 0, ATENCAO: 1, DENTRO_HORARIO: 2 };
+  const FH_ORDEM_USO = { INDEVIDO: 0, ATENCAO: 1, REGULAR: 2 };
+
+  function fhPior(valores, ordem) {
+    return valores.filter(Boolean).sort((a, b) => (ordem[a] ?? 9) - (ordem[b] ?? 9))[0];
+  }
+
+  // Vários dias seguidos de uma mesma rota viram um só resumo (usado na lista e no dossiê da rota).
+  function fhResumirDossies(lista) {
+    const soma = (campo) => lista.reduce((total, d) => total + fhNum(d[campo]), 0);
+    const primeiro = lista[0];
+    const ultimo = lista[lista.length - 1];
+    return {
+      ...primeiro,
+      veredito: fhPior(lista.map((d) => d.veredito), FH_ORDEM_VEREDITO) || primeiro.veredito,
+      veredito_uso: fhPior(lista.map((d) => d.veredito_uso), FH_ORDEM_USO) || primeiro.veredito_uso,
+      criterio: 'ROTA',
+      km_dia: soma('km_dia'), km_fora: soma('km_fora'), min_fora: soma('min_fora'),
+      km_noturno: soma('km_noturno'), km_apos_chegada: soma('km_apos_chegada'),
+      viagens_dia: soma('viagens_dia'), viagens_fora: soma('viagens_fora'),
+      km_indevido: soma('km_indevido'), viagens_indevidas: soma('viagens_indevidas'),
+      qtd_excessos: soma('qtd_excessos'), excessos_fora: soma('excessos_fora'),
+      vel_max: Math.max(0, ...lista.map((d) => fhNum(d.vel_max))) || null,
+      uso_sem_base: lista.every((d) => d.uso_sem_base),
+      atraso_retorno_min: Math.max(...lista.map((d) => fhNum(d.atraso_retorno_min))),
+      chegada_casa: ultimo.chegada_casa,
+      retorno_previsto: ultimo.retorno_previsto,
+      caronas: [...new Set(lista.flatMap((d) => (Array.isArray(d.caronas) ? d.caronas : [])))],
+      motivos: lista.flatMap((d) => (d.motivos || []).map((m) => `${fhDataCurta(d.data_evento)}: ${m}`))
+    };
+  }
+
+  // Rota = dias seguidos da mesma placa ligados pela meia-noite (o relatório da BFleet corta as viagens às 00h).
+  function fhAgruparPorRota(linhas) {
+    const porPlaca = new Map();
+    linhas.forEach((linha) => {
+      const chave = onlyPlate(linha.placa);
+      if (!porPlaca.has(chave)) porPlaca.set(chave, []);
+      porPlaca.get(chave).push(linha);
+    });
+    const montar = (dias) => {
+      if (dias.length === 1) return dias[0];
+      const comDossie = dias.filter((linha) => linha.dossie);
+      return { ...dias[0], rota: { dias }, dossie: comDossie.length ? fhResumirDossies(comDossie.map((linha) => linha.dossie)) : null };
+    };
+    const saida = [];
+    porPlaca.forEach((lista) => {
+      lista.sort((a, b) => String(a.data_evento).localeCompare(String(b.data_evento)));
+      let atual = null;
+      lista.forEach((linha) => {
+        const anterior = atual ? atual[atual.length - 1] : null;
+        const continua = anterior && anterior.dossie?.continua_seguinte && linha.dossie?.continua_anterior
+          && fhDiaSeguinte(anterior.data_evento) === linha.data_evento;
+        if (continua) { atual.push(linha); return; }
+        if (atual) saida.push(montar(atual));
+        atual = [linha];
+      });
+      if (atual) saida.push(montar(atual));
+    });
+    return saida;
+  }
+
+  // A linha (dia ou rota) que está aberta no dossiê.
+  function fhLinhaPorChave(chave) {
+    return state.foraHorarioLinhas?.get(chave) || (state.foraHorario || []).find((item) => fhChave(item) === chave);
+  }
+
+  function fhRotuloDias(dos) {
+    const dias = Array.isArray(dos.dias) ? dos.dias : null;
+    if (dias && dias.length > 1) {
+      const a = dias[0].data_evento;
+      const b = dias[dias.length - 1].data_evento;
+      return `rota de ${fhDiaSemana(a)}, ${formatDateBR(a)} a ${fhDiaSemana(b)}, ${formatDateBR(b)}`;
+    }
+    return `${fhDiaSemana(dos.data_evento)}, ${formatDateBR(dos.data_evento)}`;
+  }
+
   // Domingo e feriado: só é autorizado rodar com embarque, em qualquer horário.
   function fhDiaEspecial(d) {
     const e = d?.detalhes?.dia_especial;
@@ -1588,6 +1676,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   function fhMaiusc(texto) {
     return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : texto;
+  }
+
+  // "05:30 às 20:00"; quando a janela termina depois da meia-noite: "22:00 às 05:57 (dia seguinte)".
+  function fhJanelaTexto(d) {
+    const fim = String(d.janela_fim || '');
+    const dia = String(d.data_fim || d.data_evento || '').slice(0, 10);
+    const seguinte = dia && fim.slice(0, 10) > dia;
+    return `${fhHm(d.janela_inicio)} às ${fhHm(d.janela_fim)}${seguinte ? ' (dia seguinte)' : ''}`;
   }
 
   function fhNum(valor) {
@@ -1628,8 +1724,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   // Período do dia em que o trecho aconteceu, em palavras.
   function fhPeriodo(minutoInicial) {
-    if (minutoInicial < 300) return 'de madrugada';
-    if (minutoInicial >= 1320) return 'à noite';
+    const minuto = (((Number(minutoInicial) || 0) % 1440) + 1440) % 1440;
+    if (minuto < 300) return 'de madrugada';
+    if (minuto >= 1320) return 'à noite';
     return '';
   }
 
@@ -1722,6 +1819,17 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       .map((parte, i) => (i > 0 && miudas.has(parte) ? parte : parte.charAt(0).toUpperCase() + parte.slice(1))).join(' ');
   }
 
+  // Status da linha quando ela é uma rota de vários dias: igual em todos os dias ou "parcial".
+  function fhStatusRota(row) {
+    const dias = row.rota?.dias || [row];
+    const itens = dias.map((d) => ({ status: fhStatusCurto(d), aplica: fhAplicaNotificacao(d) }))
+      .filter((item) => item.aplica.fora || item.aplica.excesso || item.status);
+    if (!itens.length) return '';
+    const todos = itens.map((item) => item.status);
+    if (todos.every((status) => status && status === todos[0])) return todos[0];
+    return todos.some(Boolean) ? 'Notificação parcial' : '';
+  }
+
   // O dia tem algo a notificar em cada frente?
   function fhAplicaNotificacao(row) {
     const d = row?.dossie;
@@ -1756,15 +1864,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return `Maior trecho: ${fhHoraMin(maior.ini)} às ${fhHoraMin(maior.fim)}`;
   }
 
-  // Ações da ocorrência ficam dentro dos detalhes (a lista só mostra o essencial).
-  function atualizarRodapeDossie(root) {
-    const rodape = root.querySelector('[data-dossie-rodape]');
-    if (!rodape) return;
-    const row = (state.foraHorario || []).find((item) => fhChave(item) === state.foraHorarioDossieChave);
-    const aplica = row ? fhAplicaNotificacao(row) : { fora: false, excesso: false };
+  // Ações da ocorrência ficam dentro dos detalhes (a lista só mostra o essencial). Rota de vários dias: um bloco por dia.
+  function fhRodapeDia(row, rotulo) {
+    const aplica = fhAplicaNotificacao(row);
     // Excesso só entra na notificação enquanto houver registro PENDENTE/GERADA (os já arquivados por print ficam de fora).
     const excessoAberto = aplica.excesso && (fhNum(row.exc_pendentes) + fhNum(row.exc_gerados)) > 0;
-    if (!row || !row.dossie || (!aplica.fora && !excessoAberto)) { rodape.innerHTML = ''; return; }
+    if (!row.dossie || (!aplica.fora && !excessoAberto)) return '';
     const temOcorrencia = !!row.id && aplica.fora;
     const km = Number(row.km_00_05 || 0);
     const valor = Number(row.valor_caixa || (km * Number(row.valor_km || 4)));
@@ -1774,21 +1879,31 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const status = fhStatusCurto(row);
     const inclui = [aplica.fora ? 'uso fora do horário' : '', excessoAberto ? 'excesso de velocidade' : ''].filter(Boolean).join(' + ');
     const caixaInfo = temOcorrencia && km > 0 ? `Caixa: ${formatKmForaHorario(km)} km entre 00h e 04h × R$ 4,00 = ${formatMoneyForaHorario(valor)}` : '';
-    rodape.innerHTML = `<div class="fh-m-rodape-info">${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}<span class="fh-sub">Notificação única: ${escapeHtml(inclui)}</span>${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}</div>
+    return `<div class="fh-rodape-dia">
+      <div class="fh-m-rodape-info">${rotulo ? `<span class="fh-sub"><b>${escapeHtml(rotulo)}</b></span>` : ''}${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}<span class="fh-sub">Notificação única: ${escapeHtml(inclui)}</span>${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}</div>
       <div class="fora-horario-actions">
-        <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fh-notificar>Gerar notificação</button>
+        <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fh-notificar data-fh-data="${escapeHtml(row.data_evento)}">Gerar notificação</button>
         ${temOcorrencia ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="JUSTIFICAR" data-id="${escapeHtml(row.id)}" ${disabledJustificar ? 'disabled' : ''}>Justificar</button>` : ''}
         ${temOcorrencia && km > 0 ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="CAIXA" data-id="${escapeHtml(row.id)}" ${disabledCaixa ? 'disabled' : ''}>Enviar ao Caixa</button>` : ''}
-      </div>`;
+      </div>
+    </div>`;
+  }
+
+  function atualizarRodapeDossie(root) {
+    const rodape = root.querySelector('[data-dossie-rodape]');
+    if (!rodape) return;
+    const linha = fhLinhaPorChave(state.foraHorarioDossieChave);
+    const dias = linha ? (linha.rota ? linha.rota.dias : [linha]) : [];
+    rodape.innerHTML = dias.map((dia) => fhRodapeDia(dia, dias.length > 1 ? `${fhDiaSemana(dia.data_evento)}, ${fhDataCurta(dia.data_evento)}` : '')).filter(Boolean).join('');
   }
 
   // Gera a notificação única do dia (fora do horário + excesso), copia o texto e atualiza lista, prints e dossiê aberto.
-  async function fhNotificarDia(root, opts) {
+  async function fhNotificarDia(root, opts, data) {
     const dos = state.foraHorarioDossieAberto;
     const supabase = resolveSupabase(opts);
     if (!dos || !supabase || typeof supabase.rpc !== 'function') return toast('Dossiê não carregado.', 'error');
     try {
-      const { data, error } = await supabase.rpc('frotas_dossie_notificar', { p_data: dos.data_evento, p_placa: dos.placa });
+      const { data, error } = await supabase.rpc('frotas_dossie_notificar', { p_data: data || dos.data_evento, p_placa: dos.placa });
       if (error) throw error;
       const mensagem = String(data?.message || '');
       if (mensagem) { try { await copyText(mensagem); } catch (_) { /* a mensagem fica no banco; segue sem copiar */ } }
@@ -1810,7 +1925,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const corpo = root.querySelector('[data-dossie-body]');
     if (!dos || !corpo) return;
     const abaAtiva = corpo.querySelector('.fh-aba.active')?.dataset.fhAba;
-    const row = (state.foraHorario || []).find((item) => fhChave(item) === state.foraHorarioDossieChave);
+    const row = fhLinhaPorChave(state.foraHorarioDossieChave);
     corpo.innerHTML = renderDossieHtml(dos, row);
     if (abaAtiva && abaAtiva !== 'resumo') corpo.querySelector(`[data-fh-aba="${abaAtiva}"]`)?.click();
   }
@@ -2024,12 +2139,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     fhMapaDados = { pontos, dia: dos.data_evento, excessos: [] };
 
     // Trajeto: trechos azuis normais, vermelhos fora do horário e roxos sem justificativa.
-    const jIniMin = fhMinutosDoDia(dos.janela_inicio, dos.data_evento);
-    const jFimMin = fhMinutosDoDia(dos.janela_fim, dos.data_evento);
     // Vermelho só onde o banco marcou uso fora do horário (ida e volta ficam normais): a parte da viagem que passa da janela.
     const foraIntervalos = [];
     ((dos.detalhes || {}).viagens || []).forEach((v) => {
       if (fhNum(v.fora_km) < FH_FORA_MIN_KM) return;
+      const jIniMin = fhMinutosDoDia(v._ji ?? dos.janela_inicio, dos.data_evento);
+      const jFimMin = fhMinutosDoDia(v._jf ?? dos.janela_fim, dos.data_evento);
       const ini = (fhMinutosDoDia(v.ini, dos.data_evento) ?? 0) * 60;
       const fim = (fhMinutosDoDia(v.fim, dos.data_evento) ?? 0) * 60;
       if (jIniMin === null || jFimMin === null) {
@@ -2072,14 +2187,15 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     // Etiqueta de hora na 1ª posição de cada hora (sem empilhar etiquetas no mesmo lugar).
     let ultima = null;
-    for (let h = 0; h < 24; h += 1) {
+    const horasTotal = Math.max(24, Math.ceil(Math.max(...pontos.map((pt) => pt[0])) / 3600));
+    for (let h = 0; h < horasTotal; h += 1) {
       const p = pontos.find((item) => item[0] >= h * 3600 && item[0] < (h + 1) * 3600);
       if (!p) continue;
       if (ultima && fhDistanciaKm(ultima[0], ultima[1], p[1], p[2]) < 0.3) continue;
       ultima = [p[1], p[2]];
       L.marker([p[1], p[2]], {
         interactive: false,
-        icon: L.divIcon({ className: '', html: `<div class="fh-hora">${String(h).padStart(2, '0')}h</div>`, iconSize: [30, 16], iconAnchor: [15, 8] })
+        icon: L.divIcon({ className: '', html: `<div class="fh-hora">${String(h % 24).padStart(2, '0')}h</div>`, iconSize: [30, 16], iconAnchor: [15, 8] })
       }).addTo(fhMapa);
     }
 
@@ -2133,7 +2249,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const ll = [p[1], p[2]];
       fhMapaMarcador.setLatLng(ll);
       if (!fhMapa.getBounds().contains(ll)) fhMapa.panTo(ll, { animate: false });
-      texto.textContent = `${fhHoraSeg(p[0])} · ${Number(p[3]) || 0} km/h`;
+      texto.textContent = `${fhHoraSeg(p[0])}${p[0] >= 86400 ? ' (dia seguinte)' : ''} · ${Number(p[3]) || 0} km/h`;
     };
     slider?.addEventListener('input', mover);
     mover();
@@ -2159,7 +2275,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     fhMapaBases = null;
     painel.innerHTML = '<div class="fh-mapa-vazio">Consultando a rota do veículo...</div>';
     try {
-      const rota = await callEdgeFunction(opts, FORA_HORARIO_ROTA_FUNCTION, { placa: dos.placa, data: dos.data_evento });
+      // Rota que atravessa a meia-noite: uma consulta por dia, com os segundos do dia seguinte somados a 24 h.
+      const datas = Array.isArray(dos.dias) ? dos.dias.map((d) => d.data_evento) : [dos.data_evento];
+      const respostas = await Promise.all(datas.map((data) => callEdgeFunction(opts, FORA_HORARIO_ROTA_FUNCTION, { placa: dos.placa, data })));
+      const rota = {
+        fonte: respostas.every((r) => r.fonte === 'cache') ? 'cache' : 'rede',
+        pontos: respostas.flatMap((r, k) => (r.pontos || []).map((pt) => [pt[0] + 86400 * k, pt[1], pt[2], pt[3]]))
+      };
       if (pedido !== fhMapaPedido) return;
       const referencias = fhPontosReferencia(dos);
       painel.innerHTML = fhMapaCorpoHtml(dos, rota, referencias);
@@ -2231,10 +2353,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const forte = !!f && (f.fora || f.indevido);
     const leve = !!f && !forte && (f.foraLeve || f.indevidoLeve || f.excessos > 0);
     const classe = !d ? '' : (forte ? 'fh-linha-fora' : (leve ? 'fh-linha-atencao' : 'fh-linha-dentro'));
-    const status = fhStatusCurto(row);
+    const status = row.rota ? fhStatusRota(row) : fhStatusCurto(row);
     const quem = escapeHtml(fhTitulo(row.motorista) || 'Colaborador não identificado');
     const caronas = Array.isArray(d?.caronas) ? d.caronas : [];
-    const detalhe = [onlyPlate(row.placa), d?.supervisao, caronas.length ? `carona: ${caronas.map(fhPrimeiroNome).join(', ')}` : '']
+    const rotaRotulo = row.rota ? `rota de ${fhDataCurta(row.rota.dias[0].data_evento)} a ${fhDataCurta(row.rota.dias[row.rota.dias.length - 1].data_evento)}` : '';
+    const detalhe = [onlyPlate(row.placa), rotaRotulo, d?.supervisao, caronas.length ? `carona: ${caronas.map(fhPrimeiroNome).join(', ')}` : '']
       .filter(Boolean).map(escapeHtml).join(' · ');
     return `<article class="fh-linha ${classe}">
       <div class="fh-l-quem"><strong>${quem}</strong><small>${detalhe}${status ? ` · <span class="fh-status">${escapeHtml(status)}</span>` : ''}</small></div>
@@ -2256,7 +2379,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
 
     const term = normalizeName(state.foraHorarioSearchTerm || '');
-    const buscadas = (state.foraHorario || []).filter((row) => {
+    // "Rota" junta os dias seguidos ligados pela meia-noite; "Dia" mostra o relatório cortado às 00h.
+    const base = state.foraHorarioAgrupar === 'rota' ? fhAgruparPorRota(state.foraHorario || []) : (state.foraHorario || []);
+    state.foraHorarioLinhas = new Map(base.map((row) => [fhChave(row), row]));
+    const buscadas = base.filter((row) => {
       if (!term) return true;
       return normalizeName(row.motorista || '').includes(term) || normalizeName(row.placa || '').includes(term);
     });
@@ -2358,21 +2484,37 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   // ── Detalhes (modal) ───────────────────────────────────────────────────────
 
-  // Barra única do dia: faixa verde = horário permitido; viagens azuis, e só a parte que passa da janela fica vermelha;
-  // tira roxa embaixo = trajeto sem justificativa; triângulos laranja embaixo = excessos de velocidade.
+  // Barra única do dia (ou da rota, quando atravessa a meia-noite): faixa verde = horário permitido; viagens azuis, e só a parte que
+  // passa da janela fica vermelha; tira roxa embaixo = trajeto sem justificativa; triângulos laranja embaixo = excessos.
   function fhBarraHtml(dos, det) {
     const dia = dos.data_evento;
-    const pct = (min) => Math.max(0, Math.min(1440, Number(min) || 0)) / 14.4;
-    const jIni = fhMinutosDoDia(dos.janela_inicio, dia);
-    const jFim = fhMinutosDoDia(dos.janela_fim, dia);
+    const multi = Array.isArray(dos.dias) && dos.dias.length > 1;
+    const viagensDia = det.viagens || [];
+    // Dia: eixo de 0h a 24h. Rota de vários dias: do começo do 1º trecho (1 h antes) ao fim do último (1 h depois).
+    let eixoIni = 0;
+    let eixoFim = 1440;
+    if (multi) {
+      const minutos = viagensDia.flatMap((v) => [fhMinutosDoDia(v.ini, dia), fhMinutosDoDia(v.fim, dia)]).filter((m) => m !== null);
+      if (minutos.length) {
+        eixoIni = Math.max(0, Math.floor((Math.min(...minutos) - 60) / 60) * 60);
+        eixoFim = Math.ceil((Math.max(...minutos) + 60) / 60) * 60;
+      }
+    }
+    const largura = Math.max(60, eixoFim - eixoIni);
+    const pct = (min) => (Math.max(eixoIni, Math.min(eixoFim, Number(min) || 0)) - eixoIni) / largura * 100;
     const estilo = (ini, fim) => `left:${pct(ini).toFixed(2)}%;width:${Math.max(pct(fim) - pct(ini), 0.4).toFixed(2)}%`;
+    const janelasDia = multi ? dos.dias : [dos];
+    const janelas = janelasDia.map((d) => ({ ini: fhMinutosDoDia(d.janela_inicio, dia), fim: fhMinutosDoDia(d.janela_fim, dia), d }))
+      .filter((j) => j.ini !== null && j.fim !== null);
     let blocos = '';
     let tiras = '';
     let temFora = false;
-    (det.viagens || []).forEach((v) => {
+    viagensDia.forEach((v) => {
       const ini = fhMinutosDoDia(v.ini, dia);
       const fim = fhMinutosDoDia(v.fim, dia);
       if (ini === null || fim === null || Number(v.km) < 0.1) return;
+      const jIni = fhMinutosDoDia(v._ji ?? dos.janela_inicio, dia);
+      const jFim = fhMinutosDoDia(v._jf ?? dos.janela_fim, dia);
       const titulo = escapeHtml(`${fhHm(v.ini)} às ${fhHm(v.fim)} · ${fhKm(v.km)} km`);
       blocos += `<i class="fh-barra-bloco ok" style="${estilo(ini, fim)}" title="${titulo}"></i>`;
       // vermelho só nas viagens que o banco marcou como fora do horário (ida e volta ficam azuis), e só a parte que passa da janela
@@ -2389,17 +2531,24 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
     const excessos = (det.excessos || []).map((x) => {
       const min = fhMinutosDoDia(x.ts, dia);
-      if (min === null) return '';
+      if (min === null || min < eixoIni || min > eixoFim) return '';
       const titulo = `${fhHm(x.ts)} · ${Math.round(fhNum(x.vel))} km/h${x.endereco ? ` · ${fhEnderecoCurto(x.endereco)}` : ''}`;
       return `<i class="fh-barra-exc" style="left:${pct(min).toFixed(2)}%" title="${escapeHtml(titulo)}"></i>`;
     }).join('');
-    const janela = (jIni !== null && jFim !== null)
-      ? `<i class="fh-barra-janela" style="${estilo(jIni, jFim)}" title="${escapeHtml(`Horário permitido: ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`)}"></i>`
-      : '';
-    const horas = [0, 3, 6, 9, 12, 15, 18, 21, 24]
-      .map((h) => `<span class="fh-barra-hora" style="left:${(h / 24 * 100).toFixed(2)}%">${String(h).padStart(2, '0')}h</span>`).join('');
+    const janela = janelas.map((j) => `<i class="fh-barra-janela" style="${estilo(j.ini, j.fim)}" title="${escapeHtml(`Horário permitido: ${fhJanelaTexto(j.d)}`)}"></i>`).join('');
+    // meia-noite entre os dias da rota
+    let meiaNoite = '';
+    for (let m = 1440; m < eixoFim; m += 1440) {
+      if (m > eixoIni) meiaNoite += `<i class="fh-barra-div" style="left:${pct(m).toFixed(2)}%" title="Meia-noite"></i>`;
+    }
+    const passo = multi ? (largura <= 720 ? 60 : (largura <= 1440 ? 120 : 180)) : 180;
+    let horas = '';
+    for (let m = Math.ceil(eixoIni / passo) * passo; m <= eixoFim; m += passo) {
+      const rotulo = !multi && m === 1440 ? '24h' : `${String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, '0')}h`;
+      horas += `<span class="fh-barra-hora" style="left:${pct(m).toFixed(2)}%">${rotulo}</span>`;
+    }
     return `<div class="fh-barra">
-      <div class="fh-barra-trilho">${janela}${blocos}${tiras}</div>
+      <div class="fh-barra-trilho">${janela}${meiaNoite}${blocos}${tiras}</div>
       ${excessos ? `<div class="fh-barra-excs">${excessos}</div>` : ''}
       <div class="fh-barra-escala">${horas}</div>
     </div>
@@ -2409,6 +2558,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ${temFora ? '<span><i class="fh-lb fh-lb-fora"></i>Fora do horário</span>' : ''}
       ${tiras ? '<span><i class="fh-lb fh-lb-sem"></i>Sem justificativa</span>' : ''}
       ${excessos ? '<span><i class="fh-lb fh-lb-exc"></i>Excesso de velocidade</span>' : ''}
+      ${meiaNoite ? '<span><i class="fh-lb fh-lb-meia"></i>Meia-noite</span>' : ''}
     </div>`;
   }
 
@@ -2432,7 +2582,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ? `<span class="fh-muted">Parado com o motor ligado em</span> ${curto(v.de)}`
       : `${curto(v.de)} <span class="fh-muted">→</span> ${curto(v.para)}${trajeto ? ` · <a href="${escapeHtml(trajeto)}" target="_blank" rel="noopener noreferrer">trajeto</a>` : ''}`;
     const marcas = [];
-    if (fora) marcas.push(`<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !dos.janela_inicio, dos.criterio === 'SEM_EMBARQUE' ? 'em dia sem embarque' : 'em dia sem expediente'))}</span>`);
+    if (fora) marcas.push(`<span class="fh-fase fora">${escapeHtml(fhSituacaoViagem(v, !(v._ji ?? dos.janela_inicio), (v._criterio ?? dos.criterio) === 'SEM_EMBARQUE' ? 'em dia sem embarque' : 'em dia sem expediente'))}</span>`);
     if (sem) marcas.push('<span class="fh-fase sem">sem justificativa</span>');
     if (excessos.length) {
       const vmax = Math.max(...excessos.map((x) => fhNum(x.vel)));
@@ -2526,11 +2676,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const v = FH_VEREDITOS[dos.veredito];
     const linhas = [
       'DOSSIÊ DIÁRIO DO VEÍCULO (USO FORA DO HORÁRIO, TRAJETOS SEM JUSTIFICATIVA E EXCESSO DE VELOCIDADE)',
-      `${dos.motorista || 'Colaborador não identificado'} · placa ${dos.placa} · ${fhDiaSemana(dos.data_evento)}, ${formatDateBR(dos.data_evento)}`,
+      `${dos.motorista || 'Colaborador não identificado'} · placa ${dos.placa} · ${fhRotuloDias(dos)}`,
       `Resultado: ${v?.rotulo || dos.veredito}. ${fhManchete(dos)}.`,
       fhContexto(dos),
       dos.janela_inicio
-        ? `Horário permitido para usar o veículo: ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)} (inclui ida/volta e ${dos.tolerancia_min} min de folga).`
+        ? `Horário permitido para usar o veículo: ${fhJanelaTexto(dos)} (inclui ida/volta e ${dos.tolerancia_min} min de folga).`
         : 'Dia sem expediente registrado: qualquer uso conta como fora do horário.',
       `No dia o veículo rodou ${fhKm(dos.km_dia)} km; fora do horário: ${fhKm(dos.km_fora)} km em ${fhDuracao(dos.min_fora)}; sem justificativa: ${fhKm(dos.km_indevido)} km.`
     ];
@@ -2557,6 +2707,53 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       det.excessos.forEach((x) => linhas.push(`- ${String(x.ts || '').slice(11, 19)} · ${Math.round(fhNum(x.vel))} km/h · ${x.endereco || '—'}${x.fora ? ' · fora do horário' : ''}${x.indevido ? ' · trajeto sem justificativa' : ''}`));
     }
     return linhas.join('\n');
+  }
+
+  // Junta os dossiês dos dias de uma mesma rota num só (viagens, registros e excessos em ordem; cada viagem leva a janela do seu dia).
+  function fhMesclarDossies(lista) {
+    const primeiro = lista[0];
+    const ultimo = lista[lista.length - 1];
+    const viagens = [];
+    const evidencias = [];
+    const excessos = [];
+    const resumo = [];
+    const os = [];
+    lista.forEach((d, k) => {
+      const det = d.detalhes || {};
+      const deslocamento = viagens.length;
+      (det.viagens || []).forEach((v) => viagens.push({ ...v, _ji: d.janela_inicio, _jf: d.janela_fim, _criterio: d.criterio }));
+      (det.evidencias || []).forEach((e) => evidencias.push(e));
+      (det.excessos || []).forEach((x) => excessos.push({ ...x, viagem: x.viagem === null || x.viagem === undefined ? x.viagem : Number(x.viagem) + deslocamento }));
+      (d.resumo_dia || []).forEach((r) => resumo.push({ ...r, i: Number(r.i) + 1440 * k, f: Number(r.f) + 1440 * k, s: r.s === null || r.s === undefined ? r.s : Number(r.s) + 1440 * k }));
+      ((det.programacao || {}).os || []).forEach((item) => os.push(item));
+    });
+    const resumido = fhResumirDossies(lista);
+    return {
+      ...resumido,
+      dias: lista,
+      data_evento: primeiro.data_evento,
+      data_fim: ultimo.data_evento,
+      janela_inicio: primeiro.janela_inicio,
+      janela_fim: ultimo.janela_fim,
+      inicio_expediente: primeiro.inicio_expediente,
+      fim_expediente: ultimo.fim_expediente,
+      resumo_dia: resumo,
+      detalhes: {
+        ...(primeiro.detalhes || {}),
+        programacao: { ...((primeiro.detalhes || {}).programacao || {}), os },
+        casa_noite: (ultimo.detalhes || {}).casa_noite,
+        viagens,
+        evidencias,
+        excessos,
+        dia_especial: null,
+        uso: {
+          km_indevido: resumido.km_indevido,
+          viagens_indevidas: resumido.viagens_indevidas,
+          sem_base: resumido.uso_sem_base,
+          locais: lista.reduce((t, d) => t + fhNum(((d.detalhes || {}).uso || {}).locais), 0)
+        }
+      }
+    };
   }
 
   // Os excessos do dossiê guardam o status do momento do cálculo; a notificação pode ter andado depois.
@@ -2595,7 +2792,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     } else {
       fh = cartao('Fora do horário', nada, 'Nada',
         especial ? `${fhMaiusc(fhDiaEspecialRotulo(especial))} ${especial.embarque ? 'com embarque: horário livre' : 'sem embarque'}`
-          : (dos.janela_inicio ? `Horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}` : 'Dentro do horário'), '');
+          : (dos.janela_inicio ? `Horário permitido ${fhJanelaTexto(dos)}` : 'Dentro do horário'), '');
     }
 
     let uso;
@@ -2616,9 +2813,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return `<div class="fh-tiles">${fh}${uso}${exc}</div>`;
   }
 
-  function renderDossieHtml(dos, row) {
+  // Passo a passo de UM dia (na rota de vários dias aparece um bloco por dia).
+  function fhPassosDoDia(dos) {
     const det = dos.detalhes || {};
-    const info = FH_VEREDITOS[dos.veredito] || { rotulo: dos.veredito, cls: 'fh-badge-nd' };
     const padrao = dos.criterio === 'PADRAO';
     const especial = fhDiaEspecial(dos);
     const rotuloEspecial = especial ? fhMaiusc(fhDiaEspecialRotulo(especial)) : '';
@@ -2663,7 +2860,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
           : `${rotuloEspecial} sem embarque: nesses dias só é autorizado rodar quando há embarque (informativo, produção ou O.S. escalada), então nenhum uso é autorizado.`)
         : semJanela
         ? 'Dia sem expediente registrado (domingo): qualquer uso conta como fora do horário.'
-        : `Das ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}.${padrao ? ' Como não há registros, vale o horário padrão.' : ` Inclui o tempo estimado de ida (${fhDuracao(det.t_ida_min)}) e de volta (${fhDuracao(det.t_volta_min)}) entre a casa e o trabalho, mais ${Number(dos.tolerancia_min) || 20} min de folga.`}${dos.criterio === 'AMPLIADO' ? ' Como há poucos registros, foi ampliado para 05:30 às 20:00 para evitar falso alarme.' : ''}`
+        : `Das ${fhJanelaTexto(dos)}.${padrao ? ' Como não há registros, vale o horário padrão.' : ` Inclui o tempo estimado de ida (${fhDuracao(det.t_ida_min)}) e de volta (${fhDuracao(det.t_volta_min)}) entre a casa e o trabalho, mais ${Number(dos.tolerancia_min) || 20} min de folga.`}${dos.criterio === 'AMPLIADO' ? ' Como há poucos registros, foi ampliado para 05:30 às 20:00 para evitar falso alarme.' : ''}`
     });
     if (dos.chegada_casa) {
       const atraso = Number(dos.atraso_retorno_min);
@@ -2688,6 +2885,42 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         texto: `${excDia.length} registro(s) do rastreador no dia (limite de 120 km/h); o maior foi de ${Math.round(fhNum(dos.vel_max))} km/h. ${fhNum(dos.excessos_fora) > 0 ? `${fhNum(dos.excessos_fora)} aconteceram fora do horário permitido.` : 'Todos aconteceram dentro do horário permitido.'}`
       });
     }
+    return passos;
+  }
+
+  // Frase de fatos de UM dia.
+  function fhContextoDoDia(dos) {
+    const det = dos.detalhes || {};
+    const padrao = dos.criterio === 'PADRAO';
+    const especial = fhDiaEspecial(dos);
+    const rotuloEspecial = especial ? fhMaiusc(fhDiaEspecialRotulo(especial)) : '';
+    const semJanela = !dos.janela_inicio;
+    const semViagens = fhNum(dos.viagens_dia) === 0 && fhNum(dos.km_dia) === 0;
+    const registros = (det.evidencias || []).filter((e) => !e.em_casa).length;
+
+    const contexto = semViagens ? 'O veículo não aparece no relatório de viagens da BFleet neste dia' : especial ? [
+      `${rotuloEspecial} ${especial.embarque ? 'com embarque: uso liberado em qualquer horário' : 'sem embarque: uso não autorizado'}`,
+      dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}` : ''
+    ].filter(Boolean).join(' · ') : [
+      padrao ? 'Sem registro de trabalho neste dia' : `Trabalhou das ${fhHm(dos.inicio_expediente)} às ${fhHm(dos.fim_expediente)}`,
+      semJanela ? 'dia sem expediente' : `horário permitido ${fhJanelaTexto(dos)}`,
+      dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}${fhNum(dos.atraso_retorno_min) > 20 ? ` (${fhDuracao(dos.atraso_retorno_min)} depois do previsto)` : ''}` : ''
+    ].filter(Boolean).join(' · ');
+    return contexto;
+  }
+
+  function renderDossieHtml(dos, row) {
+    const det = dos.detalhes || {};
+    const info = FH_VEREDITOS[dos.veredito] || { rotulo: dos.veredito, cls: 'fh-badge-nd' };
+    const padrao = dos.criterio === 'PADRAO';
+    const especial = fhDiaEspecial(dos);
+    const rotuloEspecial = especial ? fhMaiusc(fhDiaEspecialRotulo(especial)) : '';
+    const semJanela = !dos.janela_inicio;
+    const semViagens = fhNum(dos.viagens_dia) === 0 && fhNum(dos.km_dia) === 0;
+    const registros = (det.evidencias || []).filter((e) => !e.em_casa).length;
+
+    const usoDia = det.uso || {};
+    const excDia = det.excessos || [];
 
     const motivos = (dos.motivos || []).length
       ? `<ul class="fh-motivos">${dos.motivos.map((m) => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`
@@ -2703,14 +2936,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
     const aviso = avisos.map((texto) => `<p class="fh-nota">${escapeHtml(texto)}</p>`).join('');
 
-    const contexto = semViagens ? 'O veículo não aparece no relatório de viagens da BFleet neste dia' : especial ? [
-      `${rotuloEspecial} ${especial.embarque ? 'com embarque: uso liberado em qualquer horário' : 'sem embarque: uso não autorizado'}`,
-      dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}` : ''
-    ].filter(Boolean).join(' · ') : [
-      padrao ? 'Sem registro de trabalho neste dia' : `Trabalhou das ${fhHm(dos.inicio_expediente)} às ${fhHm(dos.fim_expediente)}`,
-      semJanela ? 'dia sem expediente' : `horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`,
-      dos.chegada_casa ? `chegou em casa às ${fhHm(dos.chegada_casa)}${fhNum(dos.atraso_retorno_min) > 20 ? ` (${fhDuracao(dos.atraso_retorno_min)} depois do previsto)` : ''}` : ''
-    ].filter(Boolean).join(' · ');
+    const multi = Array.isArray(dos.dias) && dos.dias.length > 1;
+    const contextos = multi
+      ? dos.dias.map((d) => `${fhDiaSemana(d.data_evento)}, ${fhDataCurta(d.data_evento)}: ${fhContextoDoDia(d)}`)
+      : [fhContextoDoDia(dos)];
+    const passosHtml = (lista) => `<div class="fh-passos">${lista.map((p) => `<div class="fh-passo"><b>${escapeHtml(p.titulo)}</b><span>${escapeHtml(p.texto)}</span></div>`).join('')}</div>`;
+    const passosTodos = multi
+      ? dos.dias.map((d) => `<h4 class="fh-h4">${escapeHtml(fhDiaSemana(d.data_evento))}, ${escapeHtml(formatDateBR(d.data_evento))}</h4>${passosHtml(fhPassosDoDia(d))}`).join('')
+      : passosHtml(fhPassosDoDia(dos));
 
     const casaManha = det.casa_manha || {};
     const casaNoite = det.casa_noite || {};
@@ -2731,12 +2964,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const abasHtml = abas.map((aba, i) => `<button type="button" role="tab" class="fh-aba${i === 0 ? ' active' : ''}" data-fh-aba="${aba.chave}" aria-selected="${i === 0}">${aba.rotulo}${aba.n ? ` <b>${aba.n}</b>` : ''}</button>`).join('');
 
     return `
-      <p class="fh-m-sub">${escapeHtml(fhDiaSemana(dos.data_evento))}, ${escapeHtml(formatDateBR(dos.data_evento))}${(dos.supervisao || dos.coordenacao) ? ` · ${escapeHtml(dos.supervisao || dos.coordenacao)}` : ''}</p>
+      <p class="fh-m-sub">${escapeHtml(fhRotuloDias(dos))}${(dos.supervisao || dos.coordenacao) ? ` · ${escapeHtml(dos.supervisao || dos.coordenacao)}` : ''}</p>
       ${fhCartoesHtml(dos, det, semViagens)}
       <div class="fh-abas" role="tablist">${abasHtml}</div>
       <div class="fh-painel" data-fh-pane="resumo">
         ${semViagens ? '' : fhBarraHtml(dos, det)}
-        <p class="fh-fatos">${escapeHtml(contexto)}</p>
+        ${contextos.map((texto) => `<p class="fh-fatos">${escapeHtml(texto)}</p>`).join('')}
         ${aviso}
       </div>
       <div class="fh-painel" data-fh-pane="trajetos" hidden>${fhPercursosHtml(dos, det)}</div>
@@ -2745,7 +2978,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         <h4 class="fh-h4">O que chama atenção, em frases</h4>
         ${motivos}
         <h4 class="fh-h4">Passo a passo</h4>
-        <div class="fh-passos">${passos.map((p) => `<div class="fh-passo"><b>${escapeHtml(p.titulo)}</b><span>${escapeHtml(p.texto)}</span></div>`).join('')}</div>
+        ${passosTodos}
         ${pernoite}${rotaCaixa}
         <details class="fh-metodo fh-interno"><summary>Registros de trabalho usados (${(det.evidencias || []).length})</summary>${fhRegistrosHtml(dos, det)}</details>
         <details class="fh-metodo fh-interno"><summary>Regras do cálculo</summary>
@@ -2768,7 +3001,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   async function openDossieModal(root, opts, chave) {
     const modal = root.querySelector('[data-dossie-modal]');
     if (!modal) return;
-    const row = (state.foraHorario || []).find((item) => fhChave(item) === chave);
+    const row = fhLinhaPorChave(chave);
     if (!row?.dossie) { toast('Dossiê não disponível para esta ocorrência.', 'error'); return; }
 
     const tituloEl = modal.querySelector('[data-dossie-title]');
@@ -2788,14 +3021,20 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
     try {
       const supabase = resolveSupabase(opts);
-      const { data, error } = await supabase
-        .from('frotas_fora_horario_dossie')
-        .select('*')
-        .eq('data_evento', row.data_evento)
-        .eq('placa', row.dossie.placa)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) throw new Error('Dossiê não encontrado. Recalcule o período.');
+      const diasDaLinha = row.rota ? row.rota.dias : [row];
+      const dossies = [];
+      for (const dia of diasDaLinha) {
+        const { data: unico, error } = await supabase
+          .from('frotas_fora_horario_dossie')
+          .select('*')
+          .eq('data_evento', dia.data_evento)
+          .eq('placa', dia.dossie?.placa || dia.placa)
+          .maybeSingle();
+        if (error) throw error;
+        if (!unico) throw new Error('Dossiê não encontrado. Recalcule o período.');
+        dossies.push(unico);
+      }
+      const data = dossies.length > 1 ? fhMesclarDossies(dossies) : dossies[0];
       state.foraHorarioDossieAberto = data;
       await fhAtualizarStatusExcessos(supabase, data);
       if (corpoEl) corpoEl.innerHTML = renderDossieHtml(data, row);
@@ -4032,6 +4271,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-chip.active{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.6);color:#bbf7d0}
                 .fh-chip.active b{background:rgba(34,197,94,.3)}
                 .fh-busca{width:min(100%,300px);margin:0}
+                .fh-filtros-dir{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+                .fh-agrupar{display:inline-flex;align-items:center;gap:2px;padding:2px 2px 2px 10px;border-radius:12px;background:rgba(148,163,184,.12)}
+                .fh-agrupar span{color:#94a3b8;font-size:11px;font-weight:800;margin-right:6px}
+                .fh-agrupar button{appearance:none;border:0;background:transparent;color:#94a3b8;font-size:12px;font-weight:900;padding:7px 14px;border-radius:10px;cursor:pointer}
+                .fh-agrupar button.active{background:rgba(34,197,94,.25);color:#bbf7d0}
+                .fh-rodape-dia{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
                 .fh-alerta{margin:0;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08);border-radius:12px;padding:9px 12px;color:#fde68a;font-size:12px}
                 .fh-alerta[hidden]{display:none}
                 .fh-ajuda{color:#94a3b8;font-size:12px;line-height:1.55}
@@ -4106,6 +4351,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-barra-exc{position:absolute;top:0;width:0;height:0;margin-left:-5px;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #fb923c}
                 .fh-barra-escala{position:absolute;left:0;right:0;bottom:0;height:16px}
                 .fh-barra-hora{position:absolute;transform:translateX(-50%);font-size:10px;color:#6b7280}
+                .fh-barra-div{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed rgba(251,191,36,.85);z-index:2}
+                .fh-lb-meia{width:0;height:12px;border-left:2px dashed rgba(251,191,36,.85);border-radius:0}
                 .fh-barra-hora:first-child{transform:none}.fh-barra-hora:last-child{transform:translateX(-100%)}
                 .fh-legenda-barra{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;color:#94a3b8;font-size:11px}
                 .fh-legenda-barra span{display:inline-flex;align-items:center;gap:6px}
@@ -4165,7 +4412,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-metodo summary{cursor:pointer;font-weight:900;color:#bbf7d0}
                 .fh-metodo ul{margin:10px 0 2px;padding-left:18px;line-height:1.6}
                 .fh-metodo .fh-tl-wrap{margin-top:10px}
-                .fh-m-rodape{position:sticky;bottom:-20px;margin:18px -20px -20px;padding:12px 20px;background:#0d0d18;border-top:1px solid rgba(148,163,184,.16);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+                .fh-m-rodape{position:sticky;bottom:-20px;margin:18px -20px -20px;padding:12px 20px;background:#0d0d18;border-top:1px solid rgba(148,163,184,.16);display:flex;flex-direction:column;align-items:stretch;gap:10px}
                 .fh-m-rodape-info{display:flex;flex-direction:column;gap:2px}
                 .fh-m-rodape-info:empty{display:none}
                 .fh-fresco{margin:0;color:#6b7280;font-size:12px}
@@ -4202,7 +4449,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                     <button class="fh-chip" type="button" data-fh-filter="SEM_DOSSIE" hidden>Sem dossiê <b>0</b></button>
                     <button class="fh-chip" type="button" data-fh-filter="TODOS">Todos <b>0</b></button>
                   </div>
-                  <div class="speed-search-field fh-busca">${ICO_SEARCH}<input class="speed-input" type="text" placeholder="Buscar colaborador ou placa" data-fora-horario-search></div>
+                  <div class="fh-filtros-dir">
+                    <div class="fh-agrupar" data-fh-agrupar title="Rota junta num só item o percurso que atravessa a meia-noite (o relatório da BFleet corta as viagens às 00h)">
+                      <span>Ver por</span>
+                      <button type="button" data-agrupar="dia" class="active">Dia</button>
+                      <button type="button" data-agrupar="rota">Rota</button>
+                    </div>
+                    <div class="speed-search-field fh-busca">${ICO_SEARCH}<input class="speed-input" type="text" placeholder="Buscar colaborador ou placa" data-fora-horario-search></div>
+                  </div>
                 </div>
                 <p class="fh-alerta" data-fh-alerta hidden></p>
                 <p class="fh-fresco" data-fh-fresco hidden></p>
@@ -4340,6 +4594,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       state.foraHorarioFiltro = btn.dataset.fhFilter;
       renderForaHorarioList(container);
     }));
+    container.querySelectorAll('[data-fh-agrupar] [data-agrupar]').forEach((btn) => btn.addEventListener('click', () => {
+      state.foraHorarioAgrupar = btn.dataset.agrupar === 'rota' ? 'rota' : 'dia';
+      container.querySelectorAll('[data-fh-agrupar] [data-agrupar]').forEach((b) => b.classList.toggle('active', b === btn));
+      renderForaHorarioList(container);
+    }));
     const foraHorarioBusca = container.querySelector('[data-fora-horario-search]');
     if (foraHorarioBusca) foraHorarioBusca.value = state.foraHorarioSearchTerm;
     foraHorarioBusca?.addEventListener('input', (ev) => {
@@ -4410,7 +4669,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       if (notificar) {
         if (notificar.disabled) return;
         notificar.disabled = true;
-        try { await fhNotificarDia(container, opts); } finally { notificar.disabled = false; }
+        try { await fhNotificarDia(container, opts, notificar.dataset.fhData); } finally { notificar.disabled = false; }
         return;
       }
       const rota = ev.target.closest('[data-ver-rota]');
