@@ -9,7 +9,8 @@
 --  * frotas_fora_horario_garantir() roda a cada 20 min de madrugada/manhã: busca o dia anterior logo após 00:30,
 --    repete se faltar ou vier incompleto (até 4 tentativas por dia), refaz o dia anterior uma vez depois das 09:00
 --    (a BFleet entrega eventos do fim do dia com atraso), cobre os últimos 7 dias e recalcula o dossiê quando chega dado novo;
---  * frotas_fora_horario_lista junta ocorrência + dossiê no banco (uma consulta, só as colunas da lista);
+--  * frotas_fora_horario_lista junta ocorrência + dossiê no banco (uma consulta, só as colunas da lista; inclui excessos de
+--    velocidade e trajetos sem justificativa do dia);
 --  * frotas_fora_horario_rota guarda o trajeto GPS já consultado (botão "Consultar rota").
 
 -- ---------------------------------------------------------------------------------------------
@@ -101,7 +102,8 @@ select
   d.inicio_expediente, d.fim_expediente, d.janela_inicio, d.janela_fim,
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
-  d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em
+  d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base
 from public.frotas_fora_horario_ocorrencias o
 left join public.frotas_fora_horario_dossie d on d.data_evento = o.data_evento and d.placa = o.placa
 union all
@@ -115,7 +117,8 @@ select
   d.inicio_expediente, d.fim_expediente, d.janela_inicio, d.janela_fim,
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
-  d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em
+  d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base
 from public.frotas_fora_horario_dossie d
 where not exists (
   select 1 from public.frotas_fora_horario_ocorrencias o where o.data_evento = d.data_evento and o.placa = d.placa
@@ -141,7 +144,7 @@ declare
   v_hora time := (now() at time zone 'America/Sao_Paulo')::time;
   d date;
   c public.frotas_fora_horario_sync_dia%rowtype;
-  v_raw integer; v_ult_raw timestamptz; v_oc integer; v_dos integer; v_ult_dossie timestamptz;
+  v_raw integer; v_ult_raw timestamptz; v_oc integer; v_dos integer; v_ult_dossie timestamptz; v_ult_exc timestamptz;
   v_ok boolean; v_espera boolean; v_tent_hoje integer; v_dispara boolean; v_motivo text; v_tardia boolean;
   v_url text; v_key text;
   v_status text;
@@ -164,6 +167,8 @@ begin
     from public.frotas_fora_horario f where f.data_evento = d;
     select count(*) into v_oc from public.frotas_fora_horario_ocorrencias o where o.data_evento = d;
     select count(*), max(x.calculado_em) into v_dos, v_ult_dossie from public.frotas_fora_horario_dossie x where x.data_evento = d;
+    -- Excessos de velocidade do dia (sincronizados às 04:00 BRT por outro cron): entram no mesmo dossiê.
+    select max(greatest(x.created_at, x.updated_at)) into v_ult_exc from public.frotas_excesso_velocidade x where x.data_evento = d;
 
     -- Sincronizado = ocorrências consolidadas para (quase) todas as placas do relatório.
     v_ok := v_oc >= 20 and v_oc >= v_raw * 0.95;
@@ -203,10 +208,10 @@ begin
       v_log := v_log || jsonb_build_object('dia', d, 'acao', 'bfleet adiado', 'motivo', v_motivo);
     end if;
 
-    -- 3) Dossiê: calcula quando falta ou quando chegou dado novo da BFleet depois do último cálculo.
+    -- 3) Dossiê: calcula quando falta ou quando chegou dado novo (viagens da BFleet ou excessos de velocidade) depois do último cálculo.
     --    Não calcula no meio de uma busca em andamento (disparada há menos de 30 min e ainda incompleta).
     if v_raw > 0 and v_dossies < 2
-       and (v_dos = 0 or v_ult_raw > v_ult_dossie)
+       and (v_dos = 0 or v_ult_raw > v_ult_dossie or v_ult_exc > v_ult_dossie)
        and (v_ok or c.ultima_tentativa is null or v_agora - c.ultima_tentativa >= interval '30 minutes') then
       begin
         perform public.frotas_fora_horario_dossie_gerar(d);
