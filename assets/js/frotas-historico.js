@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261013-fora-horario-janelas';
+import './modules/frotas.js?v=20261014-dossie-diario';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {
