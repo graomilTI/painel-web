@@ -1,9 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
-import { installPreviousWeekDefaults } from './frotas-periodo-semana-anterior.js?v=20260615d';
-import { installIntuitiveFleetLayout } from './frotas-layout-intuitivo.js?v=20260804b';
-import './modules/frotas.js?v=20261014-agrupar-rota';
+import './modules/frotas.js?v=20261014-so-notificacoes';
 
 function installFleetHeaderCleanup(root = document) {
   if (root.getElementById('frotasHeaderCleanupStyles')) return;
@@ -20,8 +18,6 @@ function installFleetHeaderCleanup(root = document) {
 
 installFleetHeaderCleanup(document);
 installDailyDriverResolution(supabase);
-installPreviousWeekDefaults(document, supabase);
-installIntuitiveFleetLayout(document);
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHome(content, {

@@ -39,7 +39,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     activeImportedDateFilter: null,
     importedSearchTerm: '',
     importedStatusFilter: 'ALL',
-    notifTab: 'fora_horario',
     foraHorario: [],
     foraHorarioLoaded: false,
     foraHorarioSearchTerm: '',
@@ -76,25 +75,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   }
 
 
-  function panelUrl(target = '') {
-    const normalized = String(target || '').replace(/^\/+/, '').replace(/\.html$/i, '');
-    const host = String(window.location.hostname || '').toLowerCase();
-    if (host === 'grao1000.com.br' || host === 'www.grao1000.com.br') {
-      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
-    }
-    if (String(window.location.pathname || '').includes('/painel')) {
-      return normalized ? `/painel/${normalized}`.replace(/([^:]\/)\/+/g, '$1') : '/painel';
-    }
-    return normalized ? `./${normalized}` : './';
-  }
+  
 
   function todayBRShort() {
     return new Date().toLocaleDateString('pt-BR');
   }
 
-  function todayBRLong() {
-    return new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
-  }
+  
 
   function normalizeName(value) {
     return String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
@@ -257,11 +244,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     toast(`${prepared.length} print(s) adicionados para envio.`);
   }
 
-  function rememberGeneratedGroup(key) {
-    if (!key) return;
-    state.generatedImportedGroupKeys.add(key);
-    localStorage.setItem(GENERATED_GROUPS_KEY, JSON.stringify(Array.from(state.generatedImportedGroupKeys)));
-  }
+  
 
   function getCurrentUserName() {
     return window.AUTH?.user?.nome || window.currentUser?.nome || window.APP_USER?.nome || '';
@@ -616,34 +599,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
   }
 
-  function bindColaboradorAutocomplete(root, opts = {}) {
-    const input = root.querySelector('[data-speed-name]');
-    if (!input || input.dataset.autocompleteBound === '1') return;
-    input.dataset.autocompleteBound = '1';
-
-    input.addEventListener('input', () => updateColaboradorDropdown(root, opts));
-    input.addEventListener('focus', () => updateColaboradorDropdown(root, opts));
-    input.addEventListener('keydown', (ev) => {
-      const dropdown = root.querySelector('[data-colaborador-dropdown]');
-      if (!dropdown || dropdown.hidden) return;
-      if (ev.key === 'Escape') {
-        hideColaboradorDropdown(root);
-        return;
-      }
-      if (ev.key === 'Enter') {
-        const first = dropdown.querySelector('.colab-option');
-        if (first) {
-          ev.preventDefault();
-          first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-        }
-      }
-    });
-
-    document.addEventListener('mousedown', (ev) => {
-      const wrap = root.querySelector('[data-colaborador-autocomplete]');
-      if (wrap && !wrap.contains(ev.target)) hideColaboradorDropdown(root);
-    });
-  }
+  
 
   function isColaboradorAtivo(row) {
     if (!row) return false;
@@ -839,250 +795,19 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return Array.from(byName.values());
   }
 
-  function renderImportedExcessos(root) {
-    const list = root.querySelector('[data-imported-excess-list]');
-    const count = root.querySelector('[data-imported-excess-count]');
-    if (!list) return;
+  
 
-    const groups = groupImportedExcessos(state.importedExcessos);
-    const filter = state.activeImportedDateFilter;
-    const filterSuffix = filter ? ` · exibindo ${filter.label || `${formatDateBR(filter.start)} a ${formatDateBR(filter.end)}`}` : '';
-    if (count) count.textContent = groups.length ? `${groups.length} notificação(ões) pendente(s)${filterSuffix}` : `Nenhuma pendência carregada${filterSuffix}`;
+  
 
-    if (!state.importedExcessosLoaded) {
-      list.innerHTML = '<div class="speed-import-empty">Carregando registros importados...</div>';
-      return;
-    }
+  
 
-    if (!groups.length) {
-      const filter = state.activeImportedDateFilter;
-      const extra = filter ? ` no período ${escapeHtml(filter.label || `${formatDateBR(filter.start)} a ${formatDateBR(filter.end)}`)}` : '';
-      list.innerHTML = `<div class="speed-import-empty">Nenhum excesso de velocidade pendente encontrado${extra}. Clique em Sincronizar para buscar novos registros da BFleet.</div>`;
-      return;
-    }
-
-    const availableDates = Array.from(new Set((state.importedExcessos || [])
-      .filter((row) => ['PENDENTE', 'GERADA'].includes(String(row.status_notificacao || '').toUpperCase()))
-      .map((row) => normalizeDateForMatch(row.data_evento))
-      .filter(Boolean)))
-      .sort()
-      .reverse();
-
-    const defaultEndDate = availableDates[0] || '';
-    const bulkBar = `<div class="speed-import-bulk">
-      <div class="speed-field"><label>Data inicial para OK</label><input class="speed-input" type="date" list="speed-import-pending-dates" data-ok-imported-date-start value="${escapeHtml(defaultEndDate)}"></div>
-      <div class="speed-field"><label>Data final para OK</label><input class="speed-input" type="date" list="speed-import-pending-dates" data-ok-imported-date-end value="${escapeHtml(defaultEndDate)}"></div>
-      <datalist id="speed-import-pending-dates">${availableDates.map((d) => `<option value="${escapeHtml(d)}">${escapeHtml(formatDateBR(d))}</option>`).join('')}</datalist>
-      <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-ok-imported-date-btn>OK por período</button>
-    </div>`;
-
-    const groupStatus = (g) => {
-      const generated = state.generatedImportedGroupKeys.has(g.key) || (g.registros || []).some((r) => String(r.status_notificacao || '').toUpperCase() === 'GERADA');
-      if (generated) return 'GERADA';
-      return g.status_cruzamento === 'MOTORISTA_IDENTIFICADO' ? 'IDENTIFICADO' : 'CONFERIR';
-    };
-    const searchTerm = normalizeName(state.importedSearchTerm || '');
-    const searchPlate = onlyPlate(state.importedSearchTerm || '');
-    const statusFilterValue = state.importedStatusFilter || 'ALL';
-    const visibleGroups = groups.filter((g) => {
-      if (statusFilterValue !== 'ALL' && groupStatus(g) !== statusFilterValue) return false;
-      if (!searchTerm) return true;
-      return normalizeName(g.motorista || '').includes(searchTerm) || (searchPlate && onlyPlate(g.placa).includes(searchPlate));
-    });
-
-    const filterNote = filter ? `<div class="speed-import-filter-note">Mostrando somente registros do período <strong>${escapeHtml(filter.label || `${formatDateBR(filter.start)} a ${formatDateBR(filter.end)}`)}</strong>. Ao sincronizar outro período, esta lista é substituída automaticamente.</div>` : '';
-
-    if (!visibleGroups.length) {
-      list.innerHTML = filterNote + bulkBar + '<div class="speed-import-empty">Nenhuma pendência corresponde à busca/filtro atual.</div>';
-      return;
-    }
-
-    list.innerHTML = filterNote + bulkBar + visibleGroups.map((g, index) => {
-      const nome = g.motorista ? normalizeName(g.motorista) : 'Motorista não identificado';
-      const meta = [g.supervisao, g.coordenacao].filter(Boolean).join(' · ');
-      const periodo = g.periodoInicio === g.periodoFim ? formatDateBR(g.periodoInicio) : `${formatDateBR(g.periodoInicio)} a ${formatDateBR(g.periodoFim)}`;
-      const generated = state.generatedImportedGroupKeys.has(g.key) || (g.registros || []).some((r) => String(r.status_notificacao || '').toUpperCase() === 'GERADA');
-      const selected = state.selectedImportedGroupKey === g.key;
-      const badge = generated ? 'Mensagem copiada' : (g.status_cruzamento === 'MOTORISTA_IDENTIFICADO' ? 'Identificado pelo patrimônio' : 'Conferir motorista');
-      const fonteLabel = g.fonte === 'INFLEET' ? 'Infleet' : 'BFleet';
-      const fonteCls   = g.fonte === 'INFLEET' ? 'speed-fonte-infleet' : 'speed-fonte-bfleet';
-      return `<div class="speed-import-item ${selected ? 'selected' : ''} ${generated ? 'generated' : ''}" role="button" tabindex="0" data-imported-excess-index="${index}">
-        <strong>${escapeHtml(nome)} · ${escapeHtml(g.placa)}</strong>
-        <span>${escapeHtml(meta || 'Sem supervisão/coordenação')} · ${g.registros.length} data(s) considerada(s) · ${g.totalRegistrosOriginais || g.registros.length} registro(s) importado(s) · ${escapeHtml(periodo)} · maior ${escapeHtml(g.maxVelocidade)} km/h</span>
-        <div class="speed-import-footer">
-          <em class="speed-import-badge">${escapeHtml(badge)}</em>
-          <em class="speed-import-badge ${fonteCls}">${escapeHtml(fonteLabel)}</em>
-          <div class="speed-import-actions-row">
-            <button class="speed-import-action" type="button" data-copy-imported-group="${index}" title="Gerar e copiar mensagem" aria-label="Gerar e copiar mensagem">${ICO_COPY}</button>
-            <button class="speed-import-action" type="button" data-edit-imported-group="${index}" title="Editar no formulário" aria-label="Editar no formulário">${ICO_EDIT}</button>
-            <button class="speed-import-ok" type="button" data-ok-imported-group="${index}" title="Marcar esta pendência como OK e remover da tela">OK</button>
-          </div>
-        </div>
-      </div>`;
-    }).join('');
-
-    list.querySelector('[data-ok-imported-date-btn]')?.addEventListener('click', () => markImportedRowsOkByDate(root));
-
-    list.querySelectorAll('[data-ok-imported-group]').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const group = visibleGroups[Number(btn.getAttribute('data-ok-imported-group'))];
-        markImportedRowsOk(root, group?.originalRegistros || group?.registros || [], `OK manual aplicado por pendência (${group?.motorista || group?.placa || 'sem identificação'}).`, currentRenderOpts);
-      });
-    });
-
-    list.querySelectorAll('[data-copy-imported-group]').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const group = visibleGroups[Number(btn.getAttribute('data-copy-imported-group'))];
-        copyImportedGroupMessage(root, currentRenderOpts, group);
-      });
-    });
-
-    list.querySelectorAll('[data-edit-imported-group]').forEach((btn) => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const group = visibleGroups[Number(btn.getAttribute('data-edit-imported-group'))];
-        applyImportedExcessoGroup(root, group);
-      });
-    });
-
-    list.querySelectorAll('[data-imported-excess-index]').forEach((item) => {
-      const open = () => {
-        const group = visibleGroups[Number(item.getAttribute('data-imported-excess-index'))];
-        applyImportedExcessoGroup(root, group);
-      };
-      item.addEventListener('click', open);
-      item.addEventListener('keydown', (ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') {
-          ev.preventDefault();
-          open();
-        }
-      });
-    });
-  }
-
-  function getOpenImportedRows() {
-    return (state.importedExcessos || []).filter((row) => ['PENDENTE', 'GERADA'].includes(String(row.status_notificacao || '').toUpperCase()));
-  }
-
-  async function markImportedRowsOk(root, rows, reason = 'OK manual aplicado no painel.', opts = {}) {
-    const supabase = resolveSupabase(opts);
-    const ids = (Array.isArray(rows) ? rows : []).map((row) => row?.id).filter(Boolean);
-    if (!ids.length) {
-      toast('Nenhuma pendência encontrada para marcar como OK.', 'error');
-      return;
-    }
-    if (!supabase || typeof supabase.from !== 'function') {
-      toast('Supabase não encontrado para salvar o OK.', 'error');
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const userId = getCurrentUserId();
-    const userName = getCurrentUserName();
-    const payload = {
-      status_notificacao: 'NOTIFICADO',
-      notificado_em: nowIso,
-      observacoes: reason
-    };
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(userId || ''))) payload.notificado_por = userId;
-    if (userName) payload.notificado_por_nome = userName;
-
-    try {
-      const { error } = await supabase
-        .from('frotas_excesso_velocidade')
-        .update(payload)
-        .in('id', ids);
-      if (error) throw error;
-
-      const idSet = new Set(ids.map(String));
-      state.importedExcessos.forEach((row) => {
-        if (idSet.has(String(row.id))) row.status_notificacao = 'NOTIFICADO';
-      });
-      renderImportedExcessos(root);
-      toast(`${ids.length} registro(s) marcado(s) como OK e removido(s) das pendências.`);
-    } catch (err) {
-      console.warn('[FROTAS] Falha ao marcar pendências como OK:', err);
-      toast('Não foi possível marcar como OK no Supabase.', 'error');
-    }
-  }
-
-  function markImportedRowsOkByDate(root) {
-    const startRaw = root.querySelector('[data-ok-imported-date-start]')?.value || '';
-    const endRaw = root.querySelector('[data-ok-imported-date-end]')?.value || '';
-    const startDate = normalizeDateForMatch(startRaw || endRaw);
-    const endDate = normalizeDateForMatch(endRaw || startRaw);
-    if (!startDate || !endDate) {
-      toast('Selecione a data inicial e final para aplicar OK em lote.', 'error');
-      return;
-    }
-    const minDate = startDate <= endDate ? startDate : endDate;
-    const maxDate = startDate <= endDate ? endDate : startDate;
-    const rows = getOpenImportedRows().filter((row) => {
-      const rowDate = normalizeDateForMatch(row.data_evento);
-      return rowDate && rowDate >= minDate && rowDate <= maxDate;
-    });
-    const label = minDate === maxDate ? formatDateBR(minDate) : `${formatDateBR(minDate)} a ${formatDateBR(maxDate)}`;
-    markImportedRowsOk(root, rows, `OK manual aplicado em lote por período (${label}).`, currentRenderOpts);
-  }
+  
 
 
-  function applyImportedExcessoGroup(root, group) {
-    if (!group) return;
-    state.selectedImportedGroupKey = group.key || '';
-    const nomeInput = root.querySelector('[data-speed-name]');
-    const placaInput = root.querySelector('[data-speed-plate]');
-    if (nomeInput) nomeInput.value = group.motorista || '';
-    if (placaInput) placaInput.value = onlyPlate(group.placa);
-
-    const mapped = (group.registros || [])
-      .map((r) => ({ data: toInputDate(r.data || r.data_evento), velocidade: parseSpeed(r.velocidade) }))
-      .filter((r) => r.data && r.velocidade);
-    state.records = mapped.length ? mapped : [{ data: '', velocidade: '' }];
-    renderRecords(root);
-    renderImportedExcessos(root);
-    const editModal = root.querySelector('[data-edit-modal]');
-    if (editModal) editModal.hidden = false;
-    toast('Registros importados aplicados na notificação. Revise e clique em Gerar ✉️.');
-  }
+  
 
 
-  async function copyImportedGroupMessage(root, opts, group) {
-    if (!group) return;
-    const nome = isUnknownDriverName(group.motorista) ? '' : String(group.motorista || '').trim();
-    if (!nome) {
-      toast('Motorista não identificado. Use Editar para selecionar o colaborador antes de copiar.', 'error');
-      return;
-    }
-    const placa = onlyPlate(group.placa);
-    if (!placa || placa.length < 7) {
-      toast('Placa inválida para este registro. Use Editar para revisar.', 'error');
-      return;
-    }
-    const registros = (group.registros || [])
-      .map((r) => ({ data: r.data || r.data_evento, velocidade: r.velocidade }))
-      .filter((r) => r.data && parseSpeed(r.velocidade));
-    if (!registros.length) {
-      toast('Nenhum registro de velocidade válido para gerar a mensagem.', 'error');
-      return;
-    }
-
-    const cidadeData = `Cascavel, ${todayBRLong()}`;
-    const message = buildMessage({ nome, placa, registros, cidadeData });
-    state.selectedImportedGroupKey = group.key || '';
-    try {
-      await copyText(message);
-      await markSelectedImportedGroupAsGenerated(root, opts, message);
-      toast(`Mensagem de ${normalizeName(nome)} gerada e copiada.`);
-    } catch (err) {
-      console.warn('[FROTAS] Falha ao copiar mensagem do card:', err);
-      toast('Mensagem gerada, mas não foi possível copiar automaticamente.', 'error');
-    }
-  }
+  
 
   async function callEdgeFunction(opts, name, body) {
     const supabase = resolveSupabase(opts);
@@ -1113,78 +838,19 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return data || {};
   }
 
-  function readSyncReportPeriod(root) {
-    const start = root.querySelector('[data-sync-report-start]')?.value || '';
-    const end = root.querySelector('[data-sync-report-end]')?.value || '';
-    return { start, end };
-  }
+  
 
-  async function sincronizarRelatorioBFleet(root, opts = {}, mode = 'yesterday') {
-    const isPeriod = mode === 'period';
-    const btn = root.querySelector(isPeriod ? '[data-sync-bfleet-period]' : '[data-sync-bfleet-excessos]');
-    const originalText = btn?.textContent || (isPeriod ? 'Sincronizar período' : 'Sincronizar ontem');
-    try {
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Sincronizando...';
-      }
-
-      const body = { mode: 'sync', forceRefreshToken: true, preferWebReport: true, rangeTimeVal: 'yesterday' };
-      let label = 'yesterday';
-      let filterStart = yesterdayInputDate();
-      let filterEnd = filterStart;
-
-      if (isPeriod) {
-        const { start, end } = readSyncReportPeriod(root);
-        if (!start || !end) {
-          toast('Informe a data inicial e a data final do relatório para sincronizar o período.', 'error');
-          return;
-        }
-        if (start > end) {
-          toast('A data inicial do relatório não pode ser maior que a data final.', 'error');
-          return;
-        }
-        body.dataInicial = start;
-        body.dataFinal = end;
-        body.startDate = start;
-        body.endDate = end;
-        delete body.rangeTimeVal;
-        filterStart = start;
-        filterEnd = end;
-        label = `${formatDateBR(start)} a ${formatDateBR(end)}`;
-      }
-
-      toast(`Sincronizando relatório de excesso de velocidade da BFleet (${label})...`);
-      const res = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, body);
-      const inserted = Number(res?.inserted || res?.inseridos || res?.created || res?.novos || 0);
-      const updated = Number(res?.updated || res?.atualizados || 0);
-      const total = Number(res?.total || res?.total_registros || res?.linhas || res?.linhas_lidas_api || inserted + updated || 0);
-      const errors = Number(res?.errors || res?.erros || 0);
-      toast(`BFleet sincronizado: ${total || 'N'} registro(s) lido(s), ${inserted} novo(s), ${updated} atualizado(s)${errors ? ` · ${errors} erro(s)` : ''}.`, errors ? 'error' : 'success');
-      setImportedDateFilter(filterStart, filterEnd, label === 'yesterday' ? `ontem (${formatDateBR(filterStart)})` : label);
-      await fetchImportedExcessos(root, opts);
-    } catch (err) {
-      console.error('[FROTAS] Sync BFleet excesso:', err);
-      toast(err.message || 'Falha ao sincronizar relatório da BFleet.', 'error');
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
-    }
-  }
+  
 
   async function fetchImportedExcessos(root, opts = {}) {
     const supabase = resolveSupabase(opts);
     if (!supabase || typeof supabase.from !== 'function') {
       state.importedExcessosLoaded = true;
-      renderImportedExcessos(root);
       return;
     }
 
     try {
       state.importedExcessosLoaded = false;
-      renderImportedExcessos(root);
       let query = supabase
         .from('frotas_excesso_velocidade')
         .select('id,data_evento,hora_evento,placa,velocidade,endereco,motorista_planilha,patrimonio_funcionario,patrimonio_codigo,coordenacao,supervisao,status_cruzamento,status_notificacao,import_hash,created_at')
@@ -1204,7 +870,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       state.importedExcessos = [];
     } finally {
       state.importedExcessosLoaded = true;
-      renderImportedExcessos(root);
     }
   }
 
@@ -1243,6 +908,19 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         body.endDate = end;
         delete body.rangeTimeVal;
         label = `${formatDateBR(start)} a ${formatDateBR(end)}`;
+      }
+
+      // Excessos de velocidade do mesmo período (antes tinham botão próprio na aba "Excessos em lote").
+      try {
+        toast(`Sincronizando excessos de velocidade da BFleet (${label})...`);
+        const resExcessos = await callEdgeFunction(opts, BFLEET_EXCESSO_FUNCTION, { mode: 'sync', forceRefreshToken: true, preferWebReport: true,
+          ...(isPeriod ? { dataInicial: body.dataInicial, dataFinal: body.dataFinal, startDate: body.startDate, endDate: body.endDate } : { rangeTimeVal: 'yesterday' }) });
+        const novos = Number(resExcessos?.inserted || resExcessos?.inseridos || resExcessos?.created || resExcessos?.novos || 0);
+        toast(`Excessos de velocidade sincronizados: ${novos} novo(s).`, 'success');
+        await fetchImportedExcessos(root, opts);
+      } catch (excessoErr) {
+        console.error('[FROTAS] Sync BFleet excesso:', excessoErr);
+        toast(excessoErr.message || 'Não foi possível sincronizar os excessos de velocidade.', 'error');
       }
 
       toast(`Sincronizando relatório Fora do horário da BFleet (${label})...`);
@@ -1378,15 +1056,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return Number.isFinite(n) ? n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'R$ 0,00';
   }
 
-  function statusLabelForaHorario(row) {
-    if (String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA') return 'Justificada';
-    if (String(row.status_caixa || '').toUpperCase() === 'LANCADO') return 'Caixa lançado';
-    if (['PENDENTE','PROCESSANDO'].includes(String(row.status_caixa || '').toUpperCase())) return 'Caixa pendente';
-    if (String(row.status_notificacao || '').toUpperCase() === 'GERADA') return 'Notificação gerada';
-    if (String(row.status_calculo || '').toUpperCase() === 'ERRO') return 'Erro no cálculo';
-    if (String(row.status_calculo || '').toUpperCase() === 'SEM_HISTORICO') return 'Sem histórico GPS';
-    return 'Pendente';
-  }
+  
 
   async function agirForaHorario(root, opts, rowId, action) {
     const supabase = resolveSupabase(opts);
@@ -1538,11 +1208,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
   }
 
-  function fhBadge(dossie) {
-    const info = FH_VEREDITOS[dossie?.veredito];
-    if (!info) return '<span class="fh-badge fh-badge-nd">Sem dossiê</span>';
-    return `<span class="fh-badge ${info.cls}">${info.rotulo}</span>`;
-  }
+  
 
   // Para que o trajeto se justifique: chegou a O.S. programada, carona, local de registro de trabalho ou está no caminho.
   const FH_USOS = {
@@ -3115,70 +2781,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
   }
 
-  async function markSelectedImportedGroupAsGenerated(root, opts, message) {
-    const key = state.selectedImportedGroupKey;
-    if (!key) return;
-    rememberGeneratedGroup(key);
+  
 
-    const selectedRows = state.importedExcessos.filter((row) => {
-      const placa = onlyPlate(row.placa);
-      const motorista = getDriverFromExcesso(row);
-      const rowKey = `${normalizeName(motorista) || 'SEM MOTORISTA'}|${placa}`;
-      return rowKey === key;
-    });
+  
 
-    selectedRows.forEach((row) => {
-      row.status_notificacao = 'GERADA';
-      row.mensagem_gerada = message;
-    });
-    renderImportedExcessos(root);
-
-    const ids = selectedRows.map((row) => row.id).filter(Boolean);
-    const supabase = resolveSupabase(opts);
-    if (!ids.length || !supabase || typeof supabase.from !== 'function') return;
-
-    try {
-      const payload = {
-        status_notificacao: 'GERADA',
-        mensagem_gerada: message,
-        notificado_em: new Date().toISOString()
-      };
-      const userId = getCurrentUserId();
-      const userName = getCurrentUserName();
-      if (userId) payload.notificado_por = userId;
-      if (userName) payload.notificado_por_nome = userName;
-
-      const { error } = await supabase
-        .from('frotas_excesso_velocidade')
-        .update(payload)
-        .in('id', ids);
-      if (error) throw error;
-    } catch (err) {
-      console.warn('[FROTAS] Não foi possível atualizar status da notificação importada:', err);
-    }
-  }
-
-  function buildMessage({ nome, placa, registros, cidadeData }) {
-    const nomeFinal = normalizeName(nome);
-    const placaFinal = onlyPlate(placa);
-    const registrosValidos = dedupeHighestSpeedByDate(registros.map((r) => ({ data: formatDateBR(r.data), velocidade: parseSpeed(r.velocidade) })).filter((r) => r.data && r.velocidade));
-    const linhas = registrosValidos.map((r) => `* ${formatDateBR(r.data)} – ${r.velocidade} km/h`).join('\n');
-    return `${nomeFinal},\n\nConstatamos, por meio do sistema de rastreamento da frota, que V.S. excedeu de forma recorrente o limite máximo de velocidade permitido (120 km/h), conduzindo o veículo de placa ${placaFinal}, conforme registros abaixo:\n\n${linhas}\n\nOs registros demonstram reincidência contínua na prática de excesso de velocidade, ainda que com variações moderadas acima do limite permitido, evidenciando a necessidade de maior atenção e adequação imediata por parte do condutor.\n\nRessaltamos que o excesso de velocidade configura descumprimento das normas de trânsito e das diretrizes internas da empresa, podendo gerar riscos à segurança do próprio condutor, de terceiros e ao patrimônio da organização.\n\nDiante disso, reforçamos que é indispensável o cumprimento rigoroso dos limites estabelecidos e das políticas internas de condução segura.\n\nSolicitamos atenção redobrada quanto à condução do veículo, evitando novos registros e possíveis medidas administrativas futuras.\n\n${cidadeData}.`;
-  }
-
-  function validateForm(root) {
-    const nomeRaw = root.querySelector('[data-speed-name]')?.value || '';
-    const nome = isUnknownDriverName(nomeRaw) ? '' : nomeRaw;
-    const placa = root.querySelector('[data-speed-plate]')?.value || '';
-    const cidadeData = root.querySelector('[data-speed-city-date]')?.value || '';
-    const registros = Array.from(root.querySelectorAll('[data-speed-record]')).map((row) => ({ data: row.querySelector('[data-speed-date]')?.value || '', velocidade: row.querySelector('[data-speed-value]')?.value || '' }));
-    if (!nome.trim()) return { ok: false, message: 'Selecione ou informe o colaborador.' };
-    if (!onlyPlate(placa) || onlyPlate(placa).length < 7) return { ok: false, message: 'Preencha uma placa válida com 7 caracteres.' };
-    if (!cidadeData.trim()) return { ok: false, message: 'Preencha a cidade e data do documento.' };
-    const validRecords = registros.filter((r) => r.data && parseSpeed(r.velocidade));
-    if (!validRecords.length) return { ok: false, message: 'Informe pelo menos uma data e velocidade.' };
-    return { ok: true, payload: { nome, placa, cidadeData, registros: validRecords } };
-  }
+  
 
   async function copyText(text) {
     if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
@@ -3294,23 +2901,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return localInputDate(d);
   }
 
-  function setImportedDateFilter(start, end, label = '') {
-    const s = normalizeDateForMatch(start);
-    const e = normalizeDateForMatch(end || start);
-    if (!s || !e) {
-      state.activeImportedDateFilter = null;
-      return;
-    }
-    state.activeImportedDateFilter = {
-      start: s <= e ? s : e,
-      end: s <= e ? e : s,
-      label: label || (s === e ? formatDateBR(s) : `${formatDateBR(s)} a ${formatDateBR(e)}`)
-    };
-  }
+  
 
-  function clearImportedDateFilter() {
-    state.activeImportedDateFilter = null;
-  }
+  
 
   function normalizeTextForOcrMatch(value) {
     return String(value || '')
@@ -3524,18 +3117,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return match ? onlyPlate(match[1]) : '';
   }
 
-  function getGroupKeyFromRow(row) {
-    const placa = onlyPlate(row?.placa || '');
-    const motorista = getDriverFromExcesso(row);
-    return `${normalizeName(motorista) || 'SEM MOTORISTA'}|${placa}`;
-  }
+  
 
-  function rowBelongsToGeneratedGroup(row) {
-    // Mantido apenas para compatibilidade visual com o status GERADA/COPIADA.
-    // O arquivamento por print NÃO depende mais deste status.
-    const status = String(row?.status_notificacao || '').toUpperCase();
-    return status === 'GERADA' || state.generatedImportedGroupKeys.has(getGroupKeyFromRow(row));
-  }
+  
 
   async function persistOcrJob(supabase, plan, notificationDate) {
     const file = plan.file || {};
@@ -3615,7 +3199,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       state.importedExcessos.forEach((row) => {
         if (archivedIds.has(String(row.id))) row.status_notificacao = 'NOTIFICADO';
       });
-      renderImportedExcessos(root);
       if (archivedCount) toast(`${archivedCount} registro(s) arquivado(s) com auditoria do OCR.${reviewCount ? ` ${reviewCount} print(s) ficaram para conferência.` : ''}`);
       else toast(`${reviewCount || plans.length} print(s) registrado(s) para conferência. Nenhuma ocorrência foi baixada sem evidência suficiente.`, 'error');
       return { archivedCount, reviewCount };
@@ -4015,181 +3598,15 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   // ── INFLEET IMPORT ────────────────────────────────────────────────────────
 
-  async function loadSheetJs() {
-    if (window.XLSX && typeof window.XLSX.read === 'function') return true;
-    return new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[data-sheetjs]');
-      if (existing) { existing.addEventListener('load', () => resolve(Boolean(window.XLSX?.read)), { once: true }); return; }
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-      script.dataset.sheetjs = '1';
-      script.onload = () => resolve(Boolean(window.XLSX?.read));
-      script.onerror = () => reject(new Error('Falha ao carregar SheetJS. Verifique a conexão e tente novamente.'));
-      document.head.appendChild(script);
-    });
-  }
+  
 
-  function infleetBrDateToISO(value) {
-    const s = String(value || '').trim();
-    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    return m ? `${m[3]}-${m[2]}-${m[1]}` : s.slice(0, 10);
-  }
+  
 
-  function makeInfleetHash(placa, dataEvento, horaEvento, velocidade) {
-    return `INFLEET|${onlyPlate(placa)}|${String(dataEvento || '').slice(0, 10)}|${String(horaEvento || '').slice(0, 8)}|${Math.round(Number(velocidade) || 0)}`;
-  }
+  
 
-  function parseInfleetSheet(workbook) {
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const raw = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  
 
-    let headerRow = -1;
-    for (let i = 0; i < Math.min(raw.length, 6); i++) {
-      if ((raw[i] || []).some((cell) => /velocidade/i.test(String(cell || '')))) {
-        headerRow = i;
-        break;
-      }
-    }
-    if (headerRow < 0) return { rows: [], skipped: 0, error: 'Cabeçalho não encontrado. Verifique se o arquivo é uma planilha Infleet válida.' };
-
-    const headers = (raw[headerRow] || []).map((h) => String(h || '').trim());
-    const idx = (pattern) => headers.findIndex((h) => pattern.test(h));
-
-    const idxVeiculo    = idx(/ve.culo/i);
-    const idxDia        = idx(/^dia$/i);
-    const idxHora       = idx(/^hora$/i);
-    const idxVelocidade = idx(/velocidade\s*km/i);
-    const idxMotorista  = idx(/^motorista$/i);
-    const idxEndereco   = idx(/endere.o/i);
-
-    if (idxVeiculo < 0 || idxDia < 0 || idxVelocidade < 0) {
-      return { rows: [], skipped: 0, error: 'Colunas obrigatórias (Veículo, Dia, Velocidade Km/h) não encontradas. Confirme que é a planilha Infleet correta.' };
-    }
-
-    const result = [];
-    let skipped = 0;
-
-    for (let i = headerRow + 1; i < raw.length; i++) {
-      const row = raw[i] || [];
-      const placa = onlyPlate(String(row[idxVeiculo] || ''));
-      if (!placa) continue;
-
-      const velRaw = Number(String(row[idxVelocidade] || '0').replace(',', '.'));
-      if (!Number.isFinite(velRaw) || velRaw <= 120) { skipped++; continue; }
-
-      const dataEvento = infleetBrDateToISO(String(row[idxDia] || ''));
-      if (!dataEvento || dataEvento.length < 10) continue;
-
-      const horaEvento  = String(row[idxHora] || '').trim();
-      const velocidade  = Math.round(velRaw);
-      const motorista   = idxMotorista  >= 0 ? (String(row[idxMotorista]  || '').trim() || null) : null;
-      const endereco    = idxEndereco   >= 0 ? (String(row[idxEndereco]   || '').trim() || null) : null;
-
-      result.push({
-        placa,
-        data_evento:       dataEvento,
-        hora_evento:       horaEvento || null,
-        velocidade,
-        motorista_planilha: motorista,
-        endereco,
-        import_hash: makeInfleetHash(placa, dataEvento, horaEvento, velocidade)
-      });
-    }
-
-    return { rows: result, skipped, error: null };
-  }
-
-  async function importInfleetExcel(root, file, opts = {}) {
-    const sb = resolveSupabase(opts);
-    const btn = root.querySelector('[data-infleet-import-btn]');
-    const originalHtml = btn?.innerHTML ?? ICO_IMPORT;
-
-    try {
-      if (btn) { btn.disabled = true; btn.textContent = 'Carregando SheetJS...'; }
-      await loadSheetJs();
-
-      if (btn) btn.textContent = 'Lendo planilha...';
-      const buffer = await file.arrayBuffer();
-      const workbook = window.XLSX.read(new Uint8Array(buffer), { type: 'array' });
-      const { rows, skipped, error } = parseInfleetSheet(workbook);
-
-      if (error) { toast(error, 'error'); return; }
-      if (!rows.length) {
-        toast(`Nenhum registro com velocidade > 120 km/h encontrado.${skipped ? ` (${skipped} linha(s) ignoradas ≤ 120 km/h)` : ''}`, 'error');
-        return;
-      }
-
-      if (btn) btn.textContent = 'Cruzando placas com patrimônios...';
-      const uniquePlates = [...new Set(rows.map((r) => r.placa))];
-      const veiculosMap = new Map();
-
-      if (sb && typeof sb.from === 'function') {
-        const { data: veiculos } = await sb
-          .from('frotas_veiculos')
-          .select('placa,motorista_atual,patrimonio_funcionario,coordenacao,supervisao')
-          .in('placa', uniquePlates);
-        (veiculos || []).forEach((v) => veiculosMap.set(onlyPlate(v.placa), v));
-      }
-
-      const enriched = rows.map((row) => {
-        const v = veiculosMap.get(row.placa) || null;
-        const motoristaCruzado = v?.motorista_atual || v?.patrimonio_funcionario || null;
-        return {
-          ...row,
-          patrimonio_funcionario: motoristaCruzado,
-          coordenacao: v?.coordenacao || null,
-          supervisao:  v?.supervisao  || null,
-          status_cruzamento:   motoristaCruzado ? 'MOTORISTA_IDENTIFICADO' : 'PENDENTE_CONFERENCIA',
-          status_notificacao: 'PENDENTE'
-        };
-      });
-
-      if (!sb || typeof sb.from !== 'function') {
-        toast('Supabase não encontrado. Verifique a conexão.', 'error');
-        return;
-      }
-
-      const CHUNK = 200;
-      let totalOk = 0;
-      let totalErr = 0;
-
-      if (btn) btn.textContent = `Importando ${enriched.length} registro(s)...`;
-
-      for (let i = 0; i < enriched.length; i += CHUNK) {
-        const chunk = enriched.slice(i, i + CHUNK);
-        const { error: upsertError } = await sb
-          .from('frotas_excesso_velocidade')
-          .upsert(chunk, { onConflict: 'import_hash', ignoreDuplicates: true });
-
-        if (upsertError) {
-          // import_hash pode não existir — tenta insert simples sem esse campo
-          const sem = chunk.map(({ import_hash: _h, ...rest }) => rest);
-          const { error: insertError } = await sb.from('frotas_excesso_velocidade').insert(sem);
-          if (insertError) { console.warn('[FROTAS] Infleet insert fallback:', insertError); totalErr += chunk.length; }
-          else totalOk += chunk.length;
-        } else {
-          totalOk += chunk.length;
-        }
-      }
-
-      const identified = enriched.filter((r) => r.status_cruzamento === 'MOTORISTA_IDENTIFICADO').length;
-      const msg = [
-        `Infleet: ${rows.length} registro(s) acima de 120 km/h importado(s).`,
-        `${identified} colaborador(es) identificado(s) pela placa.`,
-        skipped  ? `${skipped} linha(s) ignoradas (≤ 120 km/h).`  : '',
-        totalErr ? `${totalErr} registro(s) com erro ao salvar.`   : ''
-      ].filter(Boolean).join(' ');
-
-      toast(msg, totalErr ? 'error' : 'success');
-      await fetchImportedExcessos(root, opts);
-    } catch (err) {
-      console.error('[FROTAS] Importar Infleet:', err);
-      toast(err.message || 'Erro ao importar planilha Infleet.', 'error');
-    } finally {
-      if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
-    }
-  }
+  
 
   // ── FIM INFLEET IMPORT ─────────────────────────────────────────────────────
 
@@ -4198,50 +3615,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const colaboradores = getColaboradores(opts);
     container.innerHTML = `${getStyles()}
       <section class="frotas-shell">
-        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificação</h1><p class="frotas-subtitle" data-notif-subtitle>Um dossiê por veículo e por dia, com uma única notificação para uso fora do horário e excesso de velocidade. Depois de enviar a mensagem, anexe o print.</p></div></div>
+        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificações</h1><p class="frotas-subtitle">Um dossiê por veículo e por dia, com uma única notificação para uso fora do horário e excesso de velocidade. Depois de enviar a mensagem, anexe o print.</p></div></div>
         <div class="frotas-card">
-          <div class="notif-subtabs" data-notif-subtabs><button class="notif-subtab active" type="button" data-notif-tab="fora_horario">Dossiê diário</button><button class="notif-subtab" type="button" data-notif-tab="excesso">Excessos em lote</button></div>
           <div class="frotas-body">
-            <div data-notif-panel="excesso" hidden>
-              <div class="speed-grid">
-                <div class="speed-panel">
-                  <div class="speed-step-title"><h3>Painel 1 · Copiar mensagem</h3><span class="speed-step-pill">maior velocidade por data</span></div>
-                  <div class="speed-import-card">
-                    <div class="speed-import-head"><h3>Registros importados</h3><div class="speed-import-actions"><button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-sync-bfleet-excessos>Sincronizar ontem</button><button class="speed-btn speed-btn-soft speed-icon-btn" type="button" data-infleet-import-btn title="Importar planilha Infleet" aria-label="Importar planilha Infleet">${ICO_IMPORT}</button><button class="speed-btn speed-btn-soft speed-icon-btn" type="button" data-refresh-imported-excessos title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button></div></div>
-                    <input type="file" accept=".xlsx,.xls" data-infleet-file hidden>
-                    <p class="speed-hint" data-imported-excess-count>Nenhuma pendência carregada</p>
-                    <div class="print-status-box">
-                      <strong>Sincronizar relatório da BFleet</strong>
-                      <p>Use <strong>Sincronizar ontem</strong> para o padrão diário. Para ajustar manualmente a data que vem da API, informe o período abaixo.</p>
-                      <div class="speed-sync-range">
-                        <div class="speed-field"><label>Data inicial do relatório</label><input class="speed-input" type="date" data-sync-report-start value="${yesterdayInputDate()}"></div>
-                        <div class="speed-field"><label>Data final do relatório</label><input class="speed-input" type="date" data-sync-report-end value="${yesterdayInputDate()}"></div>
-                      </div>
-                      <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-sync-bfleet-period>Sincronizar período</button>
-                    </div>
-                    <div class="print-status-box">
-                      <strong>Importar planilha Infleet</strong>
-                      <p>Clique em <strong>Importar Infleet</strong> para selecionar o arquivo .xlsx exportado da Infleet. O sistema filtra automaticamente os registros com <strong>Velocidade Km/h &gt; 120</strong>, cruza a placa com os patrimônios para identificar o colaborador e insere as pendências nesta lista.</p>
-                    </div>
-                    <p class="speed-hint">As datas de OK em lote aparecem junto das pendências e servem apenas para limpar/arquivar registros já importados.</p>
-                    <div class="speed-import-search">
-                      <div class="speed-search-field">${ICO_SEARCH}<input class="speed-input" type="text" placeholder="Buscar colaborador ou placa" data-imported-search></div>
-                      <select data-imported-status-filter>
-                        <option value="ALL">Todos os status</option>
-                        <option value="IDENTIFICADO">Identificado pelo patrimônio</option>
-                        <option value="CONFERIR">Conferir motorista</option>
-                        <option value="GERADA">Mensagem copiada</option>
-                      </select>
-                      <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-imported-clear-filters>Limpar</button>
-                    </div>
-                    <div class="speed-import-list" data-imported-excess-list><div class="speed-import-empty">Carregando registros importados...</div></div>
-                    <p class="speed-hint">Ao clicar em uma sugestão, o painel considera automaticamente somente a maior velocidade de cada data.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div data-notif-panel="fora_horario">
+            <div class="fh-conteudo">
               <style>
+                .print-driver-pending{border-radius:12px}
+                .print-driver-item{padding:14px 0}
+                @media(max-width:720px){.speed-fab span{display:none}}
                 .fora-horario-layout{display:grid;gap:14px;width:100%}
                 .fora-horario-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:0 0 14px;border-bottom:1px solid rgba(148,163,184,.14)}
                 .fora-horario-date{width:170px;margin:0}
@@ -4478,28 +3859,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             </div>
           </div>
         </div>
-        <div class="speed-modal-overlay" data-edit-modal hidden>
-          <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Editar notificação">
-            <div class="speed-modal-head">
-              <div><h3>Dados da notificação</h3><span class="speed-step-pill">maior velocidade por data</span></div>
-              <button class="speed-modal-close" type="button" data-edit-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
-            </div>
-            <div class="speed-field colab-autocomplete" data-colaborador-autocomplete><label>Colaborador / Motorista</label><input class="speed-input" type="text" autocomplete="off" placeholder="Digite para buscar o colaborador" data-speed-name><div class="colab-dropdown" data-colaborador-dropdown hidden></div><p class="speed-colab-status" data-colaborador-status>Carregando colaboradores da base...</p></div>
-            <div class="speed-field"><label>Placa do veículo</label><input class="speed-input" type="text" maxlength="8" placeholder="RVQ6J42" data-speed-plate></div>
-            <div class="speed-field"><label>Data da notificação</label><input class="speed-input" type="text" value="${escapeHtml(todayBRShort())}" data-notification-date><p class="speed-hint">Usada para definir o ano da notificação. No Drive será salvo como: <code>Xº NOTIFICAÇÃO DE VELOCIDADE ANO NOME DO COLABORADOR</code></p></div>
-            <div class="speed-field"><label>Cidade e data da mensagem</label><input class="speed-input" type="text" value="Cascavel, ${escapeHtml(todayBRLong())}" data-speed-city-date></div>
-            <div class="speed-field"><label>Registros de velocidade</label><div data-speed-records></div><button class="speed-btn speed-btn-soft" type="button" data-add-record>+ Adicionar data e velocidade</button></div>
-            <div class="speed-actions"><button class="speed-btn speed-btn-primary" type="button" data-generate-speed-message>Gerar e copiar mensagem</button><p class="speed-hint">Depois de gerar, a sugestão fica marcada como <strong>GERADA/COPIADA</strong> para não confundir na sequência.</p></div>
-            <div class="speed-divider"></div>
-            <h3>Mensagem gerada</h3>
-            <textarea class="speed-input speed-textarea speed-message small" readonly data-speed-output placeholder="A mensagem será gerada aqui e copiada automaticamente."></textarea>
-          </div>
-        </div>
         <button class="speed-fab" type="button" data-open-prints-modal title="Anexar prints" aria-label="Anexar prints">${ICO_PAPERCLIP} Anexar prints</button>
         <div class="speed-modal-overlay" data-prints-modal hidden>
           <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Anexar prints" tabindex="-1" style="outline:none">
             <div class="speed-modal-head">
-              <div><h3>Painel 2 · Enviar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
+              <div><h3>Anexar prints</h3><span class="speed-step-pill">colar direto aqui</span></div>
               <button class="speed-modal-close" type="button" data-prints-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
             </div>
             <div class="upload-box">
@@ -4511,7 +3875,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
               <div class="speed-field" style="margin-top:14px"><label>Selecionar prints em lote</label><input class="speed-input" type="file" accept="image/*" multiple data-print-files></div>
               <div data-upload-list class="upload-list"></div>
               <div class="upload-actions"><button class="speed-btn speed-btn-primary" type="button" data-upload-prints>Enviar prints e conferir por OCR</button></div>
-              <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>O Painel 1 apenas gera/copia a mensagem. O Painel 2 identifica o condutor pelo OCR e cruza número da notificação, motorista, placa, data e velocidade com as pendências abertas. Ele não depende da sugestão selecionada nem da mensagem marcada como copiada.</p></div>
+              <div class="print-status-box"><strong>Como o arquivamento funciona</strong><p>Depois de gerar a notificação no dossiê e enviá-la ao colaborador, anexe o print da conversa. O sistema identifica o condutor pelo OCR e cruza número da notificação, motorista, placa, data e velocidade com as pendências abertas, e salva o arquivo na pasta do motorista no Drive.</p></div>
               <div data-saved-list class="saved-list"></div>
             </div>
           </div>
@@ -4548,32 +3912,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     fhLiberarAncestrais(container);
     // Reaplica antes de qualquer clique abrir uma janela (o host pode ter trocado/embrulhado ancestrais depois).
     container.addEventListener('click', () => fhLiberarAncestrais(container), true);
-    renderRecords(container);
     renderUploadLists(container);
-    renderColaboradorStatus(container, opts);
-    bindColaboradorAutocomplete(container, opts);
-    loadColaboradoresFromSupabase(container, opts);
+    // Pendências de excesso (PENDENTE/GERADA): o OCR dos prints baixa os registros a partir delas.
     fetchImportedExcessos(container, opts);
-
-    container.querySelector('[data-sync-bfleet-excessos]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'yesterday'));
-    container.querySelector('[data-sync-bfleet-period]')?.addEventListener('click', () => sincronizarRelatorioBFleet(container, opts, 'period'));
-    container.querySelector('[data-refresh-imported-excessos]')?.addEventListener('click', () => fetchImportedExcessos(container, opts));
-
-    const notifFab = container.querySelector('[data-open-prints-modal]');
-    function setNotifTab(tab) {
-      state.notifTab = tab;
-      const subtitulo = container.querySelector('[data-notif-subtitle]');
-      if (subtitulo) {
-        subtitulo.textContent = tab === 'excesso'
-          ? 'Notificação de excesso de velocidade de vários dias de uma vez, por colaborador. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.'
-          : 'Um dossiê por veículo e por dia, com uma única notificação para uso fora do horário e excesso de velocidade. Depois de enviar a mensagem, anexe o print.';
-      }
-      container.querySelectorAll('[data-notif-tab]').forEach((btn) => btn.classList.toggle('active', btn.dataset.notifTab === tab));
-      container.querySelectorAll('[data-notif-panel]').forEach((panel) => { panel.hidden = panel.dataset.notifPanel !== tab; });
-      if (tab === 'fora_horario' && !state.foraHorarioLoaded) fetchForaHorario(container, opts);
-    }
-    container.querySelectorAll('[data-notif-tab]').forEach((btn) => btn.addEventListener('click', () => setNotifTab(btn.dataset.notifTab)));
-    setNotifTab(state.notifTab === 'excesso' ? 'excesso' : 'fora_horario');
+    if (!state.foraHorarioLoaded) fetchForaHorario(container, opts);
 
     container.querySelector('[data-sync-bfleet-fora-horario]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'yesterday'));
     container.querySelector('[data-sync-bfleet-fora-horario-periodo]')?.addEventListener('click', () => sincronizarForaHorario(container, opts, 'period'));
@@ -4723,48 +4065,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
     });
 
-    const editModal = container.querySelector('[data-edit-modal]');
-    const closeEditModal = () => { if (editModal) editModal.hidden = true; };
-    container.querySelector('[data-edit-modal-close]')?.addEventListener('click', closeEditModal);
-    editModal?.addEventListener('click', (ev) => { if (ev.target === editModal) closeEditModal(); });
-
     const rotaModal = container.querySelector('[data-rota-modal]');
     const closeRotaModal = () => { if (rotaModal) rotaModal.hidden = true; };
     container.querySelector('[data-rota-modal-close]')?.addEventListener('click', closeRotaModal);
     rotaModal?.addEventListener('click', (ev) => { if (ev.target === rotaModal) closeRotaModal(); });
 
-    const importedSearchInput = container.querySelector('[data-imported-search]');
-    const importedStatusSelect = container.querySelector('[data-imported-status-filter]');
-    if (importedSearchInput) importedSearchInput.value = state.importedSearchTerm;
-    if (importedStatusSelect) importedStatusSelect.value = state.importedStatusFilter;
-    importedSearchInput?.addEventListener('input', () => {
-      state.importedSearchTerm = importedSearchInput.value;
-      renderImportedExcessos(container);
-    });
-    importedStatusSelect?.addEventListener('change', () => {
-      state.importedStatusFilter = importedStatusSelect.value;
-      renderImportedExcessos(container);
-    });
-    container.querySelector('[data-imported-clear-filters]')?.addEventListener('click', () => {
-      state.importedSearchTerm = '';
-      state.importedStatusFilter = 'ALL';
-      if (importedSearchInput) importedSearchInput.value = '';
-      if (importedStatusSelect) importedStatusSelect.value = 'ALL';
-      renderImportedExcessos(container);
-    });
-
-    const infleetFileInput = container.querySelector('[data-infleet-file]');
-    container.querySelector('[data-infleet-import-btn]')?.addEventListener('click', () => infleetFileInput?.click());
-    infleetFileInput?.addEventListener('change', (ev) => {
-      const file = ev.target.files?.[0];
-      if (file) importInfleetExcel(container, file, opts);
-      ev.target.value = '';
-    });
-
-    const plate = container.querySelector('[data-speed-plate]');
-    if (plate) plate.addEventListener('input', () => { plate.value = onlyPlate(plate.value); });
-
-    container.querySelector('[data-add-record]')?.addEventListener('click', () => { syncRecordsFromDom(container); state.records.push({ data: '', velocidade: '' }); renderRecords(container); });
     container.querySelector('[data-print-files]')?.addEventListener('change', (ev) => { addUploadedFiles(container, ev.target.files || [], 'selecionado'); ev.target.value = ''; });
 
     const pasteZone = container.querySelector('[data-paste-zone]');
@@ -4798,17 +4103,6 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }
 
     container.querySelector('[data-upload-prints]')?.addEventListener('click', () => uploadPrints(container));
-    container.querySelector('[data-generate-speed-message]')?.addEventListener('click', async () => {
-      syncRecordsFromDom(container);
-      const validation = validateForm(container);
-      if (!validation.ok) return toast(validation.message, 'error');
-      const message = buildMessage(validation.payload);
-      state.lastMessage = message;
-      const output = container.querySelector('[data-speed-output]');
-      if (output) output.value = message;
-      try { await copyText(message); await markSelectedImportedGroupAsGenerated(container, opts, message); toast('Mensagem gerada, copiada e marcada como GERADA.'); }
-      catch (err) { console.warn('[FROTAS] Falha ao copiar mensagem:', err); toast('Mensagem gerada, mas não foi possível copiar automaticamente.', 'error'); }
-    });
   }
 
   function renderHome(container, opts = {}) { renderExcessoVelocidade(container, opts); }
