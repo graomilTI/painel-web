@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 /*
@@ -68,6 +69,7 @@ function grupoDespesa(row) {
 // O colaborador às vezes lança na despesa errada e diz a certa na observação (ex.:
 // Pernoite com obs "janta", Salário de Intermitente com obs "almoço", "km rodado"). Esse
 // lançamento não é duplicata da despesa em que foi lançado — não se recusa.
+/** @type {Array<[string, RegExp]>} */
 const PALAVRAS_CATEGORIA = [
   ['CAFE', /\bCAFE\b/], ['ALMOCO', /\bALMOCO\b/], ['JANTA', /\bJA[JN]TAR?\b/],
   ['PERNOITE', /\bPERNOITE\b/], ['DIARIA', /\bDIARIA\b/],

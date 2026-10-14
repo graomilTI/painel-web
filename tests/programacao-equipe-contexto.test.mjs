@@ -19,7 +19,7 @@ test('equipe da O.S. cai para a programação mais recente até a data aberta', 
 });
 
 test('drawer usa diretamente a implementação consolidada de programacao-equipe', () => {
-  assert.match(drawer, /from '\.\/programacao-equipe\.js\?v=20260920-equipe-contexto1';/);
+  assert.match(drawer, /from '\.\/programacao-equipe\.js\?v=[^'"\s]+';/);
   assert.doesNotMatch(html, /type="importmap"/);
   assert.match(equipe, /\.from\('programacao_equipe_ultima'\)/);
 });

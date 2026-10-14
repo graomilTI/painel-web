@@ -35,7 +35,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
-const lancar = require('./grmserver-lancar-notas-fiscais-api.js');
+const lancar = require('../grmserver-lancar-notas-fiscais-api.js');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY;
@@ -219,7 +219,7 @@ async function main() {
     }
   }
 
-  const logPath = path.join(__dirname, 'logs', `correcao-staff-errado-${Date.now()}.json`);
+  const logPath = path.join(__dirname, '..', 'logs', `correcao-staff-errado-${Date.now()}.json`);
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   fs.writeFileSync(logPath, JSON.stringify(resultado, null, 2));
   log('SUCCESS', `Concluído. Log salvo em ${logPath}.`, {

@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 
 /**
@@ -269,6 +270,9 @@ function assumirLock(p) {
   }
 }
 
+/**
+ * @param {{ login?: () => Promise<any>, validar?: (token: any, estrito?: boolean) => Promise<any> }} [opcoes]
+ */
 async function obterTokenGrm({ login, validar = tokenAindaValido } = {}) {
   if (typeof login !== 'function') throw new Error('obterTokenGrm: informe a função login.');
   if (String(process.env.GRM_TOKEN_CACHE || '').toLowerCase() === 'off') return login();

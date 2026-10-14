@@ -1,0 +1,22 @@
+{
+  // Checagem de tipos SEM build e SEM reescrever nada em TypeScript.
+  // checkJs fica desligado: só os arquivos com `// @ts-check` na 1ª linha são
+  // checados. Ligue arquivo por arquivo (comece pelos agentes que gravam no GRM)
+  // e rode `npm run typecheck`. Tipos do banco: types/supabase.ts
+  // (regerar com `supabase gen types typescript --linked --schema public > types/supabase.ts`).
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"]
+  },
+  "include": ["agentes-grm-sync/**/*.js", "assets/js/**/*.js", "types/**/*.ts"],
+  "exclude": ["**/node_modules/**", "agentes-grm-sync/exploracao-distribuicao-os/**", "agentes-grm-sync/_pontuais/**"]
+}

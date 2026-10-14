@@ -33,9 +33,9 @@ require('dotenv').config({ path: '.env.production' });
 const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
-const { registerDateAtPoint } = require('./grm-sync-despesas-retroativas');
-const { norm, addDias, grupoDespesa } = require('./grm-despesas-guardas');
-const { obterTokenGrm } = require('./grm-token-cache');
+const { registerDateAtPoint } = require('../grm-sync-despesas-retroativas');
+const { norm, addDias, grupoDespesa } = require('../grm-despesas-guardas');
+const { obterTokenGrm } = require('../grm-token-cache');
 
 const AGENTE_ID = 'relancar-recusadas-pontual';
 const EXECUTAR = process.argv.includes('--executar');

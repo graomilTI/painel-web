@@ -27,11 +27,12 @@ test('carregamento direto e navegação interna usam a versão consolidada', asy
     read('programacao.html'),
   ]);
 
-  assert.match(programacao, /programacao-despesas\.js\?v=20260917-deslocamento-persistido1/);
-  assert.match(programacao, /programacao-despesas-os-visual\.js\?v=20260920-integrado1/);
-  assert.match(drawer, /programacao-despesas\.js\?v=20260917-deslocamento-persistido1/);
-  assert.match(router, /programacao\.js\?v=20260920-consolidado1/);
-  assert.match(html, /programacao\.js\?v=20260920-consolidado1/);
+  // Só exige que os imports sejam versionados (?v=...); o valor muda a cada deploy.
+  assert.match(programacao, /programacao-despesas\.js\?v=[^'"\s]+/);
+  assert.match(programacao, /programacao-despesas-os-visual\.js\?v=[^'"\s]+/);
+  assert.match(drawer, /programacao-despesas\.js\?v=[^'"\s]+/);
+  assert.match(router, /programacao\.js\?v=[^'"\s]+/);
+  assert.match(html, /programacao\.js\?v=[^'"\s]+/);
 });
 
 test('gaveta da O.S. restaura o deslocamento salvo para o colaborador na data', async () => {

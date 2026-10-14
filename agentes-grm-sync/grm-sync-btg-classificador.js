@@ -201,58 +201,10 @@ async function putBtgClassifierContacts(page, contacts, classifierId = 6) {
   return result.json || result.text || true;
 }
 
-async function ensureBtgClassifierContact(page, counterpartyCode, pessoa, classifierId = 6) {
-  let contacts = [];
-
-  if (typeof fetchBtgClassifierContactsPaged === 'function') {
-    contacts = await fetchBtgClassifierContactsPaged(page, counterpartyCode);
-  } else if (typeof fetchClassifierContacts === 'function') {
-    contacts = await fetchClassifierContacts(page, counterpartyCode);
-  }
-
-  const foundBefore = typeof findBtgClassifierContact === 'function'
-    ? findBtgClassifierContact(contacts, pessoa)
-    : (typeof findClassifierContact === 'function' ? findClassifierContact(contacts, pessoa) : null);
-
-  if (foundBefore) {
-    return {
-      created: false,
-      contact: foundBefore
-    };
-  }
-
-  const novo = buildBtgClassifierContact(pessoa, classifierId);
-
-  if (!novo.name || !novo.email) {
-    throw new Error('Classificador sem nome ou e-mail para cadastrar na BTG: ' + JSON.stringify(pessoa));
-  }
-
-  const updated = [...contacts, novo];
-
-  await putBtgClassifierContacts(page, updated, classifierId);
-
-  let refreshed = [];
-
-  if (typeof fetchBtgClassifierContactsPaged === 'function') {
-    refreshed = await fetchBtgClassifierContactsPaged(page, counterpartyCode);
-  } else if (typeof fetchClassifierContacts === 'function') {
-    refreshed = await fetchClassifierContacts(page, counterpartyCode);
-  }
-
-  const foundAfter = typeof findBtgClassifierContact === 'function'
-    ? findBtgClassifierContact(refreshed, pessoa)
-    : (typeof findClassifierContact === 'function' ? findClassifierContact(refreshed, pessoa) : null);
-
-  if (!foundAfter) {
-    throw new Error('Contato cadastrado, mas não foi localizado no retorno da BTG.');
-  }
-
-  return {
-    created: true,
-    contact: foundAfter
-  };
-}
-
+// ensureBtgClassifierContact removida em 14/10/2026: nunca era chamada e dependia de
+// funções inexistentes (fetchBtgClassifierContactsPaged/findClassifierContact) — com a
+// lista vazia, o PUT de putBtgClassifierContacts SUBSTITUIRIA todos os contatos do
+// classificador na BTG só pelo novo. Se for reativar, buscar a lista real antes do PUT.
 
 async function fetchAllClassifications(page, counterpartyCode) {
   const all = [];

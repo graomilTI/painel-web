@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient.js';
 import { getUserContext } from './auth.js';
-import { carregarSupervisoesLiberadas } from './supervisoesLiberadas.js';
+import { carregarSupervisoesLiberadas as buscarSupervisoesLiberadas } from './supervisoesLiberadas.js';
 
 const MAX_WIDTH = 768;
 let saldoFiltro = '';
@@ -50,7 +50,7 @@ async function carregarSupervisoesLiberadas() {
       return;
     }
 
-    const nomes = await carregarSupervisoesLiberadas();
+    const nomes = await buscarSupervisoesLiberadas();
 
     supervisoesLiberadas = new Set(nomes.map(normalizeSupervisao).filter(Boolean));
     supervisoesErro = '';
