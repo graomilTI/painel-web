@@ -130,6 +130,7 @@ async function carregarIndisponiveis(dia = dataReferenciaAtual()) {
       supabase.from('rh_ferias')
         .select('colaborador_id,colaborador_nome,data_inicio,data_fim')
         .in('status', ['programada', 'em_gozo'])
+        .eq('permite_escala', false)
         .lte('data_inicio', dia)
         .gte('data_fim', dia),
       supabase.from('rh_atestados')

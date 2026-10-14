@@ -2,10 +2,10 @@
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
-import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20260929-deslocamento1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20260929-deslocamento1';
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20260929-deslocamento1';
-import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20260929-deslocamento1';
+import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20261015-ferias-escala1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20261015-ferias-escala1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20261015-ferias-escala1';
+import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20261015-ferias-escala1';
 import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20261006-solicitar1';
 import './programacao-persistencia-contexto.js?v=20260920-integrado1';
 import './programacao-duplicacao-calendario.js?v=20260920-integrado1';
@@ -19,14 +19,14 @@ import './programacao-supervisoes-cache.js?v=20261014-modular1';
 import './programacao-reabrir-ultima.js?v=20261014-modular1';
 import './programacao-kpi-inline.js?v=20261014-modular1';
 import './programacao-mobile-ui.js?v=20261014-modular1';
-import './programacao-pdf-resumo.js?v=20261014-modular1';
-import './programacao-indisponibilidade-sync.js?v=20261014-modular1';
+import './programacao-pdf-resumo.js?v=20261015-ferias-escala1';
+import './programacao-indisponibilidade-sync.js?v=20261015-ferias-escala1';
 import './programacao-indisponibilidade-rh-lock.js?v=20261014-modular1';
 import './programacao-hospedagem-embarque.js?v=20261014-modular1';
 import './programacao-regional-estrito.js?v=20261014-modular1';
 import './programacao-grm-despesas-sync.js?v=20261014-modular1';
 import './programacao-gestor-etapas.js?v=20261014-modular1';
-import './programacao-gestor-abas.js?v=20261014-modular1';
+import './programacao-gestor-abas.js?v=20261015-ferias-escala1';
 import './programacao-drawer-layout.js?v=20261014-modular1';
 import './programacao-drawer-ux.js?v=20261014-modular1';
 
@@ -1260,6 +1260,7 @@ export function renderContent(content) {
           .from('rh_ferias')
           .select('colaborador_id, colaborador_nome, data_inicio, data_fim')
           .in('status', ['programada', 'em_gozo'])
+          .eq('permite_escala', false)
           .lte('data_inicio', dataReferencia)
           .gte('data_fim', dataReferencia),
         supabase

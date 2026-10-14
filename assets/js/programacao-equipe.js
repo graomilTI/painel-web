@@ -745,9 +745,12 @@ export async function loadIndisponiveisNaData(dataReferencia) {
   const dia = String(dataReferencia || todayIso()).slice(0, 10);
   try {
     const [ferias, atestados, legado, deslocamento] = await Promise.all([
+      // permite_escala=true: férias lançadas, mas o colaborador vai trabalhar
+      // (RH > Indisponibilidade > Férias) — não bloqueia a programação.
       supabase.from('rh_ferias')
         .select('colaborador_id,colaborador_nome')
         .in('status', ['programada', 'em_gozo'])
+        .eq('permite_escala', false)
         .lte('data_inicio', dia).gte('data_fim', dia),
       supabase.from('rh_atestados')
         .select('colaborador_id,colaborador_nome')

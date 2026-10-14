@@ -6374,6 +6374,12 @@ CREATE TABLE public.rh_ferias (
   created_by uuid,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  permite_escala boolean NOT NULL DEFAULT false,
+  escala_autorizado_por text,
+  escala_motivo text,
+  escala_liberada_em timestamp with time zone,
+  escala_liberada_por uuid,
+  CONSTRAINT rh_ferias_permite_escala_check CHECK (((NOT permite_escala) OR ((NULLIF(btrim(escala_autorizado_por), ''::text) IS NOT NULL) AND (NULLIF(btrim(escala_motivo), ''::text) IS NOT NULL)))),
   CONSTRAINT rh_ferias_pkey PRIMARY KEY (id),
   CONSTRAINT rh_ferias_colaborador_id_fkey FOREIGN KEY (colaborador_id) REFERENCES colaboradores(id)
 );

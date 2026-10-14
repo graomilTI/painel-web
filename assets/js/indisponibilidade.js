@@ -45,6 +45,14 @@ function statusPill(status, map) {
   return `<span style="display:inline-flex;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:${cor[0]};background:${cor[1]};border:1px solid rgba(148,163,184,.2)">${esc(label)}</span>`;
 }
 
+// Férias com "pode ser escalado": o RH registra o gozo, mas a Programação
+// ignora o período (ver permite_escala em rh_ferias).
+function escalaBadge(f) {
+  if (!f?.permite_escala) return '';
+  const dica = `Autorizado por ${f.escala_autorizado_por || '-'} — ${f.escala_motivo || 'sem motivo'}`;
+  return ` <span title="${esc(dica)}" style="display:inline-flex;margin-left:6px;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;color:#bfdbfe;background:rgba(59,130,246,.12);border:1px solid rgba(147,197,253,.3)">Pode ser escalado</span>`;
+}
+
 function styles() {
   return `<style>
     .in-tabs{display:flex;gap:8px;flex-wrap:wrap}
@@ -60,6 +68,11 @@ function styles() {
     .in-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
     .in-grid input,.in-grid textarea,.in-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}
     .in-full{grid-column:1/-1}
+    .in-escala{border:1px solid rgba(147,197,253,.22);background:rgba(59,130,246,.06);border-radius:16px;padding:14px 16px}
+    .in-escala-check{display:flex;align-items:center;gap:10px;font-weight:800;cursor:pointer}
+    .in-escala-check input{width:auto;margin:0;accent-color:#3b82f6}
+    .in-escala p{margin:6px 0 0;font-size:12px;line-height:1.4}
+    .in-escala .in-grid[hidden]{display:none}
     .in-actions{display:flex;gap:10px;flex-wrap:wrap}
     .in-feedback{font-weight:700;display:block}
     .in-feedback.err{color:#fecaca}
@@ -227,7 +240,7 @@ function renderFeriasTable() {
     <td><b>${esc(f.colaborador_nome)}</b></td>
     <td>${brDate(f.data_inicio)} — ${brDate(f.data_fim)}</td>
     <td>${f.dias_direito ?? '-'} dias</td>
-    <td>${statusPill(f.status, STATUS_FERIAS)}</td>
+    <td>${statusPill(f.status, STATUS_FERIAS)}${escalaBadge(f)}</td>
     <td><select data-fer-status="${esc(f.id)}">${Object.entries(STATUS_FERIAS).map(([k, v]) => `<option value="${k}" ${k === f.status ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}</select></td>
     <td>${acoesHtml(f.id)}</td>
   </tr>`).join('');
@@ -256,6 +269,9 @@ function exportarFerias() {
     { key: 'periodo_aquisitivo_fim', label: 'Aquisitivo fim', fmt: brDate },
     { key: 'periodo_concessivo_limite', label: 'Limite concessivo', fmt: brDate },
     { key: 'status', label: 'Status', fmt: (v) => STATUS_FERIAS[v]?.label || v },
+    { key: 'permite_escala', label: 'Pode ser escalado', fmt: (v) => (v ? 'Sim' : 'Não') },
+    { key: 'escala_autorizado_por', label: 'Escala autorizada por' },
+    { key: 'escala_motivo', label: 'Motivo da escala' },
   ], feriasFiltradas());
 }
 
@@ -277,6 +293,14 @@ function openFeriasModal(row = null) {
       <label>Início do gozo *<input id="ferInicio" type="date" value="${d(row?.data_inicio)}"></label>
       <label>Fim do gozo *<input id="ferFim" type="date" value="${d(row?.data_fim)}"></label>
     </div>
+    <div class="in-escala mt-16">
+      <label class="in-escala-check"><input id="ferPermiteEscala" type="checkbox" ${row?.permite_escala ? 'checked' : ''}> Pode ser escalado em O.S. durante as férias</label>
+      <p class="muted">Use quando o colaborador vai trabalhar mesmo com as férias lançadas. Libera a escala em todo o período; as férias continuam registradas aqui.</p>
+      <div class="in-grid mt-16" id="ferEscalaCampos" ${row?.permite_escala ? '' : 'hidden'}>
+        <label>Autorizado por *<input id="ferEscalaAutorizado" type="text" placeholder="Quem autorizou" value="${esc(row?.escala_autorizado_por || '')}"></label>
+        <label>Motivo *<input id="ferEscalaMotivo" type="text" placeholder="Por que vai trabalhar" value="${esc(row?.escala_motivo || '')}"></label>
+      </div>
+    </div>
     <div class="in-actions mt-16"><button class="btn btn-primary" id="ferSalvar" type="button">Salvar</button><button class="btn btn-secondary" id="ferCancelar" type="button">Cancelar</button></div>
     <span class="in-feedback mt-8" id="ferFeedback"></span>
   </div>`;
@@ -284,13 +308,20 @@ function openFeriasModal(row = null) {
   colabAutocomplete(modal, '#ferColabInput', '#ferColabSug', (c) => { selecionado = c; });
   modal.querySelector('#mClose').onclick = () => modal.classList.remove('open');
   modal.querySelector('#ferCancelar').onclick = () => modal.classList.remove('open');
+  const chkEscala = modal.querySelector('#ferPermiteEscala');
+  const camposEscala = modal.querySelector('#ferEscalaCampos');
+  chkEscala.onchange = () => { camposEscala.hidden = !chkEscala.checked; };
   modal.querySelector('#ferSalvar').onclick = async () => {
     const fb = modal.querySelector('#ferFeedback');
     const nome = selecionado?.nome || modal.querySelector('#ferColabInput').value.trim();
     const inicio = modal.querySelector('#ferInicio').value;
     const fim = modal.querySelector('#ferFim').value;
+    const permiteEscala = chkEscala.checked;
+    const autorizadoPor = modal.querySelector('#ferEscalaAutorizado').value.trim();
+    const motivoEscala = modal.querySelector('#ferEscalaMotivo').value.trim();
     if (!nome) { fb.textContent = 'Selecione o colaborador.'; fb.classList.add('err'); return; }
     if (!inicio || !fim) { fb.textContent = 'Informe o início e o fim do gozo de férias.'; fb.classList.add('err'); return; }
+    if (permiteEscala && (!autorizadoPor || !motivoEscala)) { fb.textContent = 'Para liberar a escala, informe quem autorizou e o motivo.'; fb.classList.add('err'); return; }
     try {
       const payload = {
         colaborador_id: selecionado?.id || row?.colaborador_id || null,
@@ -301,6 +332,12 @@ function openFeriasModal(row = null) {
         dias_direito: Number(modal.querySelector('#ferDiasDireito').value || 30),
         data_inicio: inicio,
         data_fim: fim,
+        permite_escala: permiteEscala,
+        escala_autorizado_por: permiteEscala ? autorizadoPor : null,
+        escala_motivo: permiteEscala ? motivoEscala : null,
+        // quem/quando só muda na hora em que a liberação é concedida
+        escala_liberada_em: permiteEscala ? (row?.permite_escala && row.escala_liberada_em ? row.escala_liberada_em : new Date().toISOString()) : null,
+        escala_liberada_por: permiteEscala ? (row?.permite_escala && row.escala_liberada_por ? row.escala_liberada_por : (state.ctx?.user?.id || null)) : null,
       };
       if (row) {
         payload.updated_at = new Date().toISOString();
@@ -485,7 +522,7 @@ async function renderHistoricoTab(area) {
     safe(() => supabase.from('indisponibilidades').select('*').order('data_inicio', { ascending: false }).limit(200)),
   ]);
   const linhas = [
-    ...ferias.map((f) => ({ tipo: 'Férias', nome: f.colaborador_nome, inicio: f.data_inicio, fim: f.data_fim, detalhe: STATUS_FERIAS[f.status]?.label || f.status })),
+    ...ferias.map((f) => ({ tipo: 'Férias', nome: f.colaborador_nome, inicio: f.data_inicio, fim: f.data_fim, detalhe: (STATUS_FERIAS[f.status]?.label || f.status) + (f.permite_escala ? ' · pode ser escalado' : '') })),
     ...atestados.map((a) => ({ tipo: 'Atestado', nome: a.colaborador_nome, inicio: a.data_inicio, fim: a.data_fim, detalhe: a.cid || '-' })),
     ...legado.map((l) => ({ tipo: `${esc(l.motivo || 'Indisponibilidade')} (histórico)`, nome: l.colaborador_nome, inicio: l.data_inicio, fim: l.data_fim, detalhe: l.observacoes || '-' })),
   ].sort((x, y) => String(y.inicio || '').localeCompare(String(x.inicio || '')));
