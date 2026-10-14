@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas.js?v=20261014-notificacao-unica';
+import './modules/frotas.js?v=20261014-mapa-lateral';
 
 export function renderContent(content, ctx) {
   window.FROTAS.openHistorico(content, {

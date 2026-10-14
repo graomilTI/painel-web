@@ -1807,11 +1807,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     el.hidden = !partes.length;
   }
 
-  // ── Consultar rota: trajeto GPS do dia no mapa ──────────────────────────────
+  // ── Rota do dia: trajeto GPS no mapa, ao lado do dossiê ──────────────────────────────
   // Pontos da RedGPS (edge function frotas-fora-horario-rota): [segundos desde 00:00, lat, lng, km/h].
 
   let fhMapa = null;
   let fhMapaMarcador = null;
+  let fhMapaDados = null;
+  let fhMapaPedido = 0;
 
   function fhHoraSeg(segundos) {
     const total = Math.max(0, Math.round(Number(segundos) || 0));
@@ -1912,12 +1914,17 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return melhor;
   }
 
+  // Painel do mapa, ao lado do dossiê: título, mapa, deslizador de horário, legenda do que existe no dia e pontos de referência.
   function fhMapaCorpoHtml(dos, rota, referencias) {
     const pontos = rota.pontos || [];
     const origem = rota.fonte === 'cache' ? 'consulta guardada' : 'consultada agora na RedGPS';
     if (!pontos.length) {
-      return '<div class="speed-import-empty">A RedGPS não devolveu pontos de GPS para este veículo neste dia.</div>';
+      return '<div class="fh-mapa-vazio">A RedGPS não devolveu pontos de GPS para este veículo neste dia.</div>';
     }
+    const det = dos.detalhes || {};
+    const temFora = (det.viagens || []).some((v) => fhNum(v.fora_km) >= FH_FORA_MIN_KM);
+    const temSem = (det.viagens || []).some((v) => v.uso === 'SEM_JUSTIFICATIVA');
+    const temExc = (det.excessos || []).some((x) => finito(x.la) && finito(x.lo));
     const refs = referencias.map((r, i) => {
       if (r.sem) {
         return `<div class="fh-ref">
@@ -1937,14 +1944,21 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       </div>`;
     }).join('');
     return `
-      <p class="fh-m-sub">Trajeto do veículo em ${escapeHtml(formatDateBR(dos.data_evento))} (${pontos.length} pontos, ${escapeHtml(origem)}). Azul: trajeto normal · roxo: sem justificativa · vermelho: fora do horário · círculo laranja: excesso de velocidade · círculo verde: saída · círculo branco: chegada.</p>
+      <div class="fh-mapa-cab"><b>Rota realizada</b><span>${pontos.length} pontos · ${escapeHtml(origem)}</span></div>
       <div class="fh-mapa" data-rota-mapa-el></div>
       <div class="fh-mapa-slider">
         <input type="range" min="0" max="${pontos.length - 1}" value="0" step="1" data-rota-mapa-slider aria-label="Horário no trajeto">
         <span data-rota-mapa-slider-txt></span>
       </div>
-      <h4 class="fh-h4">Pontos de referência</h4>
-      ${refs ? `<div class="fh-refs">${refs}</div>` : '<p class="speed-hint">Sem O.S. programada nem endereço cadastrado com coordenada para este dia.</p>'}`;
+      <div class="fh-legenda-barra">
+        <span><i class="fh-lb fh-lb-ok"></i>Percurso</span>
+        ${temFora ? '<span><i class="fh-lb fh-lb-fora"></i>Fora do horário</span>' : ''}
+        ${temSem ? '<span><i class="fh-lb fh-lb-sem"></i>Sem justificativa</span>' : ''}
+        ${temExc ? '<span><i class="fh-lb fh-lb-excm"></i>Excesso de velocidade</span>' : ''}
+      </div>
+      <details class="fh-metodo fh-interno"><summary>Pontos de referência (${referencias.length})</summary>
+        ${refs ? `<div class="fh-refs">${refs}</div>` : '<p class="speed-hint">Sem O.S. programada nem endereço cadastrado com coordenada para este dia.</p>'}
+      </details>`;
   }
 
   function fhRenderMapa(root, dos, rota, referencias) {
@@ -1958,10 +1972,25 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri'
     }).addTo(fhMapa);
 
-    // Trajeto: trechos azuis dentro do horário permitido e vermelhos fora dele.
+    fhMapaDados = { pontos, dia: dos.data_evento, excessos: [] };
+
+    // Trajeto: trechos azuis normais, vermelhos fora do horário e roxos sem justificativa.
     const jIniMin = fhMinutosDoDia(dos.janela_inicio, dos.data_evento);
     const jFimMin = fhMinutosDoDia(dos.janela_fim, dos.data_evento);
-    const fora = (seg) => jIniMin === null || jFimMin === null || seg < jIniMin * 60 || seg > jFimMin * 60;
+    // Vermelho só onde o banco marcou uso fora do horário (ida e volta ficam normais): a parte da viagem que passa da janela.
+    const foraIntervalos = [];
+    ((dos.detalhes || {}).viagens || []).forEach((v) => {
+      if (fhNum(v.fora_km) < FH_FORA_MIN_KM) return;
+      const ini = (fhMinutosDoDia(v.ini, dos.data_evento) ?? 0) * 60;
+      const fim = (fhMinutosDoDia(v.fim, dos.data_evento) ?? 0) * 60;
+      if (jIniMin === null || jFimMin === null) {
+        foraIntervalos.push([ini, fim]);
+      } else {
+        if (ini < jIniMin * 60) foraIntervalos.push([ini, Math.min(fim, jIniMin * 60)]);
+        if (fim > jFimMin * 60) foraIntervalos.push([Math.max(ini, jFimMin * 60), fim]);
+      }
+    });
+    const fora = (seg) => foraIntervalos.some(([a, b]) => seg >= a && seg <= b);
     const semIntervalos = ((dos.detalhes || {}).viagens || [])
       .filter((v) => v.uso === 'SEM_JUSTIFICATIVA')
       .map((v) => [(fhMinutosDoDia(v.ini, dos.data_evento) ?? 0) * 60, (fhMinutosDoDia(v.fim, dos.data_evento) ?? 0) * 60]);
@@ -2019,9 +2048,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     // Excessos de velocidade do dia.
     ((dos.detalhes || {}).excessos || []).forEach((x) => {
       if (!finito(x.la) || !finito(x.lo)) return;
-      L.circleMarker([Number(x.la), Number(x.lo)], { radius: 7, color: '#fff', weight: 2, fillColor: '#fb923c', fillOpacity: 1 })
+      const marcador = L.circleMarker([Number(x.la), Number(x.lo)], { radius: 7, color: '#fff', weight: 2, fillColor: '#fb923c', fillOpacity: 1 })
         .bindTooltip(`${escapeHtml(String(x.ts || '').slice(11, 19))} · excesso de velocidade · ${Math.round(fhNum(x.vel))} km/h${x.endereco ? `<br>${escapeHtml(x.endereco)}` : ''}`)
         .addTo(fhMapa);
+      fhMapaDados.excessos.push({ la: Number(x.la), lo: Number(x.lo), marcador });
     });
 
     // Pontos de referência (O.S. programada, endereço cadastrado, pernoite).
@@ -2065,39 +2095,62 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }));
   }
 
-  async function abrirRotaMapa(root, opts) {
+  // Carrega a rota do dossiê aberto no painel ao lado (a consulta é guardada para dias encerrados).
+  async function fhCarregarMapa(root, opts) {
     const dos = state.foraHorarioDossieAberto;
-    const modal = root.querySelector('[data-rota-mapa-modal]');
-    if (!dos || !modal) return;
-    const corpo = modal.querySelector('[data-rota-mapa-corpo]');
-    modal.querySelector('[data-rota-mapa-titulo]').textContent = `Rota realizada · ${dos.placa} · ${formatDateBR(dos.data_evento)}`;
-    corpo.innerHTML = '<div class="speed-import-empty">Consultando a rota do veículo...</div>';
-    fhLiberarAncestrais(root);
-    modal.hidden = false;
-    fhEnquadrarJanela(modal);
-    modal.querySelector('.speed-modal')?.focus({ preventScroll: true });
+    const painel = root.querySelector('[data-dossie-mapa]');
+    if (!dos || !painel) return;
+    const pedido = ++fhMapaPedido;
+    if (fhMapa) { fhMapa.remove(); fhMapa = null; }
+    fhMapaMarcador = null;
+    fhMapaDados = null;
+    painel.innerHTML = '<div class="fh-mapa-vazio">Consultando a rota do veículo...</div>';
     try {
       const rota = await callEdgeFunction(opts, FORA_HORARIO_ROTA_FUNCTION, { placa: dos.placa, data: dos.data_evento });
-      if (modal.hidden) return;
+      if (pedido !== fhMapaPedido) return;
       const referencias = fhPontosReferencia(dos);
-      corpo.innerHTML = fhMapaCorpoHtml(dos, rota, referencias);
+      painel.innerHTML = fhMapaCorpoHtml(dos, rota, referencias);
       if (!(rota.pontos || []).length) return;
       if (!(await fhGarantirLeaflet())) {
-        corpo.innerHTML = '<div class="speed-import-empty">Não foi possível carregar o mapa neste navegador.</div>';
+        if (pedido === fhMapaPedido) painel.innerHTML = '<div class="fh-mapa-vazio">Não foi possível carregar o mapa neste navegador.</div>';
         return;
       }
+      if (pedido !== fhMapaPedido) return;
       fhRenderMapa(root, dos, rota, referencias);
     } catch (err) {
+      if (pedido !== fhMapaPedido) return;
       console.error('[FROTAS] Rota do dia:', err);
-      corpo.innerHTML = `<div class="speed-import-empty">${escapeHtml(err.message || 'Não foi possível consultar a rota.')}<br><button type="button" class="fora-horario-link-btn" data-rota-mapa-tentar>Tentar de novo</button></div>`;
+      painel.innerHTML = `<div class="fh-mapa-vazio">${escapeHtml(err.message || 'Não foi possível consultar a rota.')}<br><button type="button" class="fora-horario-link-btn" data-rota-mapa-tentar>Tentar de novo</button></div>`;
     }
   }
 
-  function fecharRotaMapa(root) {
-    const modal = root.querySelector('[data-rota-mapa-modal]');
-    if (modal) modal.hidden = true;
+  function fhFecharMapa(root) {
+    fhMapaPedido += 1;
     if (fhMapa) { fhMapa.remove(); fhMapa = null; }
     fhMapaMarcador = null;
+    fhMapaDados = null;
+    const painel = root.querySelector('[data-dossie-mapa]');
+    if (painel) painel.innerHTML = '';
+  }
+
+  // Clicar num trajeto da tabela enquadra aquele trecho no mapa; clicar num excesso leva ao ponto.
+  function fhMapaFocarIntervalo(ini, fim) {
+    if (!fhMapa || !fhMapaDados || !window.L) return;
+    const a = (fhMinutosDoDia(ini, fhMapaDados.dia) ?? 0) * 60;
+    const b = (fhMinutosDoDia(fim, fhMapaDados.dia) ?? 0) * 60;
+    const pts = fhMapaDados.pontos.filter((pt) => pt[0] >= a - 30 && pt[0] <= b + 30);
+    if (!pts.length) return;
+    fhMapa.fitBounds(window.L.latLngBounds(pts.map((pt) => [pt[1], pt[2]])), { padding: [40, 40], maxZoom: 16, animate: false });
+  }
+
+  // Ao redimensionar a janela o mapa precisa recalcular o tamanho (o painel muda de lado ou de altura).
+  window.addEventListener('resize', () => { if (fhMapa) fhMapa.invalidateSize(); });
+
+  function fhMapaFocarPonto(lat, lng) {
+    if (!fhMapa || !fhMapaDados) return;
+    fhMapa.setView([lat, lng], 16, { animate: false });
+    const perto = fhMapaDados.excessos.find((x) => Math.abs(x.la - lat) < 1e-6 && Math.abs(x.lo - lng) < 1e-6);
+    if (perto) perto.marcador.openTooltip();
   }
 
   function atualizarFiltrosForaHorario(root, contagem) {
@@ -2326,7 +2379,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       ? `<div class="fh-chips-cel">${marcas.join('')}</div>${motivoUso ? `<div class="fh-sub">${escapeHtml(motivoUso)}</div>` : ''}`
       : `<span class="fh-muted">${escapeHtml(motivoUso || 'dentro do horário')}</span>`;
     const km = parado ? '—' : `${fhKm(v.km)} km${fora && Number(v.fora_km) + 0.05 < Number(v.km) ? `<div class="fh-sub">${fhKm(v.fora_km)} km fora</div>` : ''}`;
-    return `<tr class="${fora ? 'fh-linha-fora' : (sem ? 'fh-linha-sem' : '')}">
+    return `<tr class="fh-clicavel ${fora ? 'fh-linha-fora' : (sem ? 'fh-linha-sem' : '')}" data-fh-foco-ini="${escapeHtml(v.ini)}" data-fh-foco-fim="${escapeHtml(v.fim)}" title="Ver este trajeto no mapa">
       <td><strong>${fhHm(v.ini)} às ${fhHm(v.fim)}</strong><div class="fh-sub">${fhDuracao(minutos)}</div></td>
       <td>${percurso}</td>
       <td>${km}</td>
@@ -2373,7 +2426,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       if (x.fora) situacao.push('<span class="fh-fase fora">fora do horário</span>');
       if (x.indevido) situacao.push('<span class="fh-fase sem">sem justificativa</span>');
       const status = String(x.status || '').toUpperCase();
-      return `<tr>
+      return `<tr${finito(x.la) && finito(x.lo) ? ` class="fh-clicavel" data-fh-foco-ponto="${Number(x.la)},${Number(x.lo)}" title="Ver este excesso no mapa"` : ''}>
         <td><strong>${escapeHtml(String(x.ts || '').slice(11, 16) || '--:--')}</strong></td>
         <td><span class="fh-fase exc">${Math.round(fhNum(x.vel))} km/h</span></td>
         <td><span title="${escapeHtml(x.endereco || '')}">${escapeHtml(fhEnderecoCurto(x.endereco) || '—')}</span>${mapa ? ` · <a href="${escapeHtml(mapa)}" target="_blank" rel="noopener noreferrer">mapa</a>` : ''}</td>
@@ -2571,9 +2624,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (dos.veredito_uso && dos.veredito_uso !== 'REGULAR' && (dos.uso_sem_base || usoDia.sem_base)) {
       avisos.push('Neste dia não há O.S. programada com localização, carona nem registro de trabalho: não há com o que comparar o percurso, vale conferir com o colaborador.');
     } else if (dos.veredito_uso === 'INDEVIDO') {
-      avisos.push('Trajetos sem justificativa podem ser falso alarme quando a O.S. está cadastrada longe do ponto real. Confira em "Consultar rota".');
+      avisos.push('Trajetos sem justificativa podem ser falso alarme quando a O.S. está cadastrada longe do ponto real. Confira no mapa ao lado.');
     } else if (dos.veredito_uso === 'ATENCAO' && padrao) {
-      avisos.push('Sem registro de trabalho neste dia, a falta de justificativa pode ser só falta de registro: confira em "Consultar rota" se o veículo passou perto da O.S. programada.');
+      avisos.push('Sem registro de trabalho neste dia, a falta de justificativa pode ser só falta de registro: confira no mapa se o veículo passou perto da O.S. programada.');
     }
     const aviso = avisos.map((texto) => `<p class="fh-nota">${escapeHtml(texto)}</p>`).join('');
 
@@ -2646,9 +2699,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const copiarBtn = modal.querySelector('[data-dossie-copiar]');
     if (tituloEl) tituloEl.textContent = `${fhTitulo(row.motorista) || 'Colaborador não identificado'} · ${onlyPlate(row.placa)}`;
     if (corpoEl) corpoEl.innerHTML = '<div class="speed-import-empty">Carregando detalhes...</div>';
-    const rotaBtn = modal.querySelector('[data-dossie-rota]');
     if (copiarBtn) copiarBtn.hidden = true;
-    if (rotaBtn) rotaBtn.hidden = true;
+    fhFecharMapa(root);
     state.foraHorarioDossieAberto = null;
     state.foraHorarioDossieChave = chave;
     atualizarRodapeDossie(root);
@@ -2671,7 +2723,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       await fhAtualizarStatusExcessos(supabase, data);
       if (corpoEl) corpoEl.innerHTML = renderDossieHtml(data, row);
       if (copiarBtn) copiarBtn.hidden = false;
-      if (rotaBtn) rotaBtn.hidden = false;
+      fhCarregarMapa(root, opts);
     } catch (err) {
       console.error('[FROTAS] Dossiê fora do horário:', err);
       if (corpoEl) corpoEl.innerHTML = `<div class="speed-import-empty">${escapeHtml(err.message || 'Não foi possível carregar o dossiê.')}</div>`;
@@ -3985,7 +4037,18 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-lb-exc{width:0;height:0;border-radius:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #fb923c}
                 .fh-fatos{margin:6px 0 0;color:#cbd5e1;font-size:13px;line-height:1.5}
                 .fh-nota{margin:10px 0 0;padding-left:10px;border-left:3px solid rgba(251,191,36,.5);color:#94a3b8;font-size:12px;line-height:1.5}
-                .speed-modal.fh-modal{max-width:980px}
+                .speed-modal.fh-modal{max-width:min(1480px,96vw)}
+                .fh-dossie-grade{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px;align-items:start}
+                .fh-dossie-detalhes{min-width:0}
+                .fh-dossie-mapa{position:sticky;top:0;min-width:0}
+                .fh-mapa-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 0 8px}
+                .fh-mapa-cab b{color:#f8fafc;font-size:14px}
+                .fh-mapa-cab span{color:#6b7280;font-size:11px}
+                .fh-mapa-vazio{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:24px 16px;color:#94a3b8;font-size:13px;text-align:center;line-height:1.6}
+                .fh-clicavel{cursor:pointer}
+                .fh-tl tr.fh-clicavel:hover td{background:rgba(96,165,250,.1)}
+                .fh-lb-excm{width:10px;height:10px;border-radius:50%;background:#fb923c}
+                @media(max-width:1100px){.fh-dossie-grade{grid-template-columns:1fr}.fh-dossie-mapa{position:static}.fh-mapa{height:340px !important}}
                 .fh-m-sub{margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.5}
                 .fh-h4{margin:20px 0 8px;color:#f8fafc;font-size:14px;letter-spacing:.01em}
                 .fh-motivos{margin:0;padding-left:18px;color:#e2e8f0;font-size:13px;line-height:1.65}
@@ -4026,8 +4089,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-m-rodape-info:empty{display:none}
                 .fh-fresco{margin:0;color:#6b7280;font-size:12px}
                 .fh-fresco[hidden]{display:none}
-                .speed-modal.fh-modal-mapa{max-width:1100px}
-                .fh-mapa{height:480px;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,.2);isolation:isolate;background:#0b1220}
+                .fh-mapa{height:clamp(340px,54vh,560px);border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,.2);isolation:isolate;background:#0b1220}
                 .fh-mapa-slider{display:flex;align-items:center;gap:12px;margin-top:10px}
                 .fh-mapa-slider input{flex:1;accent-color:#fbbf24}
                 .fh-mapa-slider span{min-width:130px;color:#fde68a;font-weight:900;font-size:13px;text-align:right}
@@ -4135,22 +4197,15 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             <div class="speed-modal-head">
               <div><h3 data-dossie-title>Dossiê</h3></div>
               <div style="display:flex;gap:8px;align-items:center">
-                <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-dossie-rota hidden>Consultar rota</button>
                 <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-dossie-copiar title="Copiar resumo" aria-label="Copiar resumo" hidden>${ICO_COPY}</button>
                 <button class="speed-modal-close" type="button" data-dossie-modal-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
               </div>
             </div>
-            <div data-dossie-body></div>
-            <div class="fh-m-rodape" data-dossie-rodape></div>
-          </div>
-        </div>
-        <div class="speed-modal-overlay" data-rota-mapa-modal hidden>
-          <div class="speed-modal fh-modal fh-modal-mapa" role="dialog" aria-modal="true" aria-label="Rota realizada" tabindex="-1" style="outline:none">
-            <div class="speed-modal-head">
-              <div><h3 data-rota-mapa-titulo>Rota realizada</h3></div>
-              <button class="speed-modal-close" type="button" data-rota-mapa-close title="Fechar" aria-label="Fechar">${ICO_CLOSE}</button>
+            <div class="fh-dossie-grade">
+              <div class="fh-dossie-detalhes"><div data-dossie-body></div></div>
+              <aside class="fh-dossie-mapa" data-dossie-mapa aria-label="Rota realizada"></aside>
             </div>
-            <div data-rota-mapa-corpo></div>
+            <div class="fh-m-rodape" data-dossie-rodape></div>
           </div>
         </div>
       </section>`;
@@ -4227,16 +4282,19 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     }));
 
     const dossieModal = container.querySelector('[data-dossie-modal]');
-    const closeDossieModal = () => { if (dossieModal) dossieModal.hidden = true; };
+    const closeDossieModal = () => { if (dossieModal) dossieModal.hidden = true; fhFecharMapa(container); };
     container.querySelector('[data-dossie-modal-close]')?.addEventListener('click', closeDossieModal);
-    container.querySelector('[data-dossie-rota]')?.addEventListener('click', () => abrirRotaMapa(container, opts));
-    const rotaMapaModal = container.querySelector('[data-rota-mapa-modal]');
-    container.querySelector('[data-rota-mapa-close]')?.addEventListener('click', () => fecharRotaMapa(container));
-    rotaMapaModal?.addEventListener('click', (ev) => {
-      if (ev.target === rotaMapaModal) { fecharRotaMapa(container); return; }
-      if (ev.target.closest('[data-rota-mapa-tentar]')) abrirRotaMapa(container, opts);
+    dossieModal?.addEventListener('click', (ev) => {
+      if (ev.target.closest('[data-rota-mapa-tentar]')) { fhCarregarMapa(container, opts); return; }
+      if (ev.target.closest('a, button, input, summary')) return;
+      const linhaViagem = ev.target.closest('[data-fh-foco-ini]');
+      if (linhaViagem) { fhMapaFocarIntervalo(linhaViagem.dataset.fhFocoIni, linhaViagem.dataset.fhFocoFim); return; }
+      const linhaExcesso = ev.target.closest('[data-fh-foco-ponto]');
+      if (linhaExcesso) {
+        const [lat, lng] = String(linhaExcesso.dataset.fhFocoPonto).split(',').map(Number);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) fhMapaFocarPonto(lat, lng);
+      }
     });
-    rotaMapaModal?.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') fecharRotaMapa(container); });
     dossieModal?.addEventListener('click', (ev) => {
       const alternar = ev.target.closest('[data-fh-alternar-viagens]');
       if (!alternar) return;
