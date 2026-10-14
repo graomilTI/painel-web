@@ -13,7 +13,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   const BFLEET_FORA_HORARIO_REPORT_ID = '85075';
   const FORA_HORARIO_DOSSIE_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_DOSSIE_FUNCTION || 'frotas-fora-horario-dossie';
   const FORA_HORARIO_ROTA_FUNCTION = window.FROTAS_CONFIG?.FORA_HORARIO_ROTA_FUNCTION || 'frotas-fora-horario-rota';
-  const FORA_HORARIO_LISTA_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa,tem_rota_caixa,sem_ocorrencia,dossie_id,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em,qtd_excessos,vel_max,excessos_fora,km_indevido,viagens_indevidas,veredito_uso,uso_sem_base';
+  const FORA_HORARIO_LISTA_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,km_00_05,valor_km,valor_caixa,status_calculo,status_notificacao,status_caixa,tem_rota_caixa,sem_ocorrencia,dossie_id,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em,qtd_excessos,vel_max,excessos_fora,km_indevido,viagens_indevidas,veredito_uso,uso_sem_base,exc_pendentes,exc_gerados,exc_notificados';
   const FORA_HORARIO_DOSSIE_COLUNAS = 'id,data_evento,placa,motorista,coordenacao,supervisao,veredito,confianca,criterio,fonte_expediente,inicio_expediente,fim_expediente,janela_inicio,janela_fim,km_dia,km_fora,min_fora,km_noturno,km_apos_chegada,viagens_dia,viagens_fora,chegada_casa,retorno_previsto,atraso_retorno_min,motivos,resumo_dia,condutor_escalado,caronas,calculado_em';
 
   const ICO_REFRESH = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
@@ -1687,18 +1687,33 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       .map((parte, i) => (i > 0 && miudas.has(parte) ? parte : parte.charAt(0).toUpperCase() + parte.slice(1))).join(' ');
   }
 
-  // Só o que importa para o gestor: andamento da notificação/Caixa. Em branco = ainda aguardando análise.
+  // O dia tem algo a notificar em cada frente?
+  function fhAplicaNotificacao(row) {
+    const d = row?.dossie;
+    const f = fhFlags(d);
+    if (!f) return { fora: false, excesso: false };
+    return {
+      fora: d.veredito === 'FORA_HORARIO' || fhNum(d.km_fora) >= 5,
+      excesso: f.excessos > 0
+    };
+  }
+
+  // Só o que importa para o gestor: andamento da notificação única do dia e do Caixa. Em branco = ainda a notificar.
   function fhStatusCurto(row) {
-    if (row.semOcorrencia) return 'Sem registro de notificação';
-    if (String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA') return 'Justificada';
+    const statusNot = String(row.status_notificacao || '').toUpperCase();
+    if (statusNot === 'JUSTIFICADA') return 'Justificada';
     const caixa = String(row.status_caixa || '').toUpperCase();
     if (caixa === 'LANCADO') return 'Caixa lançado';
     if (['PENDENTE', 'PROCESSANDO'].includes(caixa)) return 'Caixa pendente';
-    if (String(row.status_notificacao || '').toUpperCase() === 'GERADA') return 'Notificação gerada';
-    return '';
+    const aplica = fhAplicaNotificacao(row);
+    const foraOk = !row.semOcorrencia && statusNot === 'GERADA';
+    const excOk = (fhNum(row.exc_gerados) + fhNum(row.exc_notificados)) > 0 && fhNum(row.exc_pendentes) === 0;
+    if (aplica.fora && aplica.excesso) return foraOk && excOk ? 'Notificação gerada' : (foraOk || excOk ? 'Notificação parcial' : '');
+    if (aplica.fora) return foraOk ? 'Notificação gerada' : '';
+    if (aplica.excesso) return excOk ? (fhNum(row.exc_gerados) === 0 ? 'Excesso notificado' : 'Notificação gerada') : '';
+    return statusNot === 'GERADA' ? 'Notificação gerada' : '';
   }
 
-  // Uma linha: o maior trecho fora do horário (ou o primeiro ponto de atenção).
   function fhMaiorTrecho(d) {
     const episodios = d.veredito !== 'DENTRO_HORARIO' ? fhEpisodios(d) : [];
     if (!episodios.length) return '';
@@ -1711,21 +1726,58 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const rodape = root.querySelector('[data-dossie-rodape]');
     if (!rodape) return;
     const row = (state.foraHorario || []).find((item) => fhChave(item) === state.foraHorarioDossieChave);
-    // As ações (notificação, justificativa e Caixa) são do uso fora do horário: só aparecem quando há essa ocorrência.
-    if (!row || !row.id || !row.dossie || row.dossie.veredito === 'DENTRO_HORARIO') { rodape.innerHTML = ''; return; }
+    const aplica = row ? fhAplicaNotificacao(row) : { fora: false, excesso: false };
+    // Excesso só entra na notificação enquanto houver registro PENDENTE/GERADA (os já arquivados por print ficam de fora).
+    const excessoAberto = aplica.excesso && (fhNum(row.exc_pendentes) + fhNum(row.exc_gerados)) > 0;
+    if (!row || !row.dossie || (!aplica.fora && !excessoAberto)) { rodape.innerHTML = ''; return; }
+    const temOcorrencia = !!row.id && aplica.fora;
     const km = Number(row.km_00_05 || 0);
     const valor = Number(row.valor_caixa || (km * Number(row.valor_km || 4)));
     const statusCaixa = String(row.status_caixa || '').toUpperCase();
     const disabledCaixa = String(row.status_notificacao || '').toUpperCase() === 'JUSTIFICADA' || ['PENDENTE', 'PROCESSANDO', 'LANCADO'].includes(statusCaixa);
     const disabledJustificar = ['PENDENTE', 'PROCESSANDO', 'LANCADO'].includes(statusCaixa);
     const status = fhStatusCurto(row);
-    const caixaInfo = km > 0 ? `Caixa: ${formatKmForaHorario(km)} km entre 00h e 04h × R$ 4,00 = ${formatMoneyForaHorario(valor)}` : '';
-    rodape.innerHTML = `<div class="fh-m-rodape-info">${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}</div>
+    const inclui = [aplica.fora ? 'uso fora do horário' : '', excessoAberto ? 'excesso de velocidade' : ''].filter(Boolean).join(' + ');
+    const caixaInfo = temOcorrencia && km > 0 ? `Caixa: ${formatKmForaHorario(km)} km entre 00h e 04h × R$ 4,00 = ${formatMoneyForaHorario(valor)}` : '';
+    rodape.innerHTML = `<div class="fh-m-rodape-info">${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}<span class="fh-sub">Notificação única: ${escapeHtml(inclui)}</span>${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}</div>
       <div class="fora-horario-actions">
-        <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fora-action="GERAR" data-id="${escapeHtml(row.id)}">Gerar notificação</button>
-        <button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="JUSTIFICAR" data-id="${escapeHtml(row.id)}" ${disabledJustificar ? 'disabled' : ''}>Justificar</button>
-        ${km > 0 ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="CAIXA" data-id="${escapeHtml(row.id)}" ${disabledCaixa ? 'disabled' : ''}>Enviar ao Caixa</button>` : ''}
+        <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fh-notificar>Gerar notificação</button>
+        ${temOcorrencia ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="JUSTIFICAR" data-id="${escapeHtml(row.id)}" ${disabledJustificar ? 'disabled' : ''}>Justificar</button>` : ''}
+        ${temOcorrencia && km > 0 ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="CAIXA" data-id="${escapeHtml(row.id)}" ${disabledCaixa ? 'disabled' : ''}>Enviar ao Caixa</button>` : ''}
       </div>`;
+  }
+
+  // Gera a notificação única do dia (fora do horário + excesso), copia o texto e atualiza lista, prints e dossiê aberto.
+  async function fhNotificarDia(root, opts) {
+    const dos = state.foraHorarioDossieAberto;
+    const supabase = resolveSupabase(opts);
+    if (!dos || !supabase || typeof supabase.rpc !== 'function') return toast('Dossiê não carregado.', 'error');
+    try {
+      const { data, error } = await supabase.rpc('frotas_dossie_notificar', { p_data: dos.data_evento, p_placa: dos.placa });
+      if (error) throw error;
+      const mensagem = String(data?.message || '');
+      if (mensagem) { try { await copyText(mensagem); } catch (_) { /* a mensagem fica no banco; segue sem copiar */ } }
+      const partes = [data?.fora_horario ? 'uso fora do horário' : '', data?.excesso ? 'excesso de velocidade' : ''].filter(Boolean).join(' e ');
+      toast(mensagem ? `Notificação gerada e copiada (${partes}).` : `Notificação gerada (${partes}).`);
+      await Promise.all([fetchForaHorario(root, opts), fetchImportedExcessos(root, opts)]);
+      await fhAtualizarStatusExcessos(supabase, dos);
+      fhRenderDossieAberto(root);
+      atualizarRodapeDossie(root);
+    } catch (err) {
+      console.error('[FROTAS] Notificação do dia:', err);
+      toast(err.message || 'Não foi possível gerar a notificação.', 'error');
+    }
+  }
+
+  // Redesenha o dossiê aberto mantendo a aba em que o usuário estava.
+  function fhRenderDossieAberto(root) {
+    const dos = state.foraHorarioDossieAberto;
+    const corpo = root.querySelector('[data-dossie-body]');
+    if (!dos || !corpo) return;
+    const abaAtiva = corpo.querySelector('.fh-aba.active')?.dataset.fhAba;
+    const row = (state.foraHorario || []).find((item) => fhChave(item) === state.foraHorarioDossieChave);
+    corpo.innerHTML = renderDossieHtml(dos, row);
+    if (abaAtiva && abaAtiva !== 'resumo') corpo.querySelector(`[data-fh-aba="${abaAtiva}"]`)?.click();
   }
 
   function fhDiasPendentes() {
@@ -2329,8 +2381,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
         <td><span class="fh-muted">${escapeHtml(FH_STATUS_EXCESSO[status] || x.status || '—')}</span></td>
       </tr>`;
     }).join('');
-    return `<div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-exc"><thead><tr><th>Hora</th><th>Velocidade</th><th>Local</th><th>Situação</th><th>Notificação</th></tr></thead><tbody>${linhas}</tbody></table></div>
-      <p class="speed-hint"><button type="button" class="fora-horario-link-btn" data-fh-ir-excesso data-placa="${escapeHtml(onlyPlate(dos.placa))}">Gerar a notificação de excesso desta placa</button></p>`;
+    return `<div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-exc"><thead><tr><th>Hora</th><th>Velocidade</th><th>Local</th><th>Situação</th><th>Notificação</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
   }
 
   function fhRegistrosHtml(dos, det) {
@@ -3779,9 +3830,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     const colaboradores = getColaboradores(opts);
     container.innerHTML = `${getStyles()}
       <section class="frotas-shell">
-        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificação</h1><p class="frotas-subtitle" data-notif-subtitle>Um dossiê por veículo e por dia: uso fora do horário, trajetos sem justificativa e excessos de velocidade.</p></div></div>
+        <div class="frotas-header"><div><div class="frotas-kicker">Frotas · Notificações</div><h1 class="frotas-title">Notificação</h1><p class="frotas-subtitle" data-notif-subtitle>Um dossiê por veículo e por dia, com uma única notificação para uso fora do horário e excesso de velocidade. Depois de enviar a mensagem, anexe o print.</p></div></div>
         <div class="frotas-card">
-          <div class="notif-subtabs" data-notif-subtabs><button class="notif-subtab active" type="button" data-notif-tab="fora_horario">Dossiê diário</button><button class="notif-subtab" type="button" data-notif-tab="excesso">Notificar excessos</button></div>
+          <div class="notif-subtabs" data-notif-subtabs><button class="notif-subtab active" type="button" data-notif-tab="fora_horario">Dossiê diário</button><button class="notif-subtab" type="button" data-notif-tab="excesso">Excessos em lote</button></div>
           <div class="frotas-body">
             <div data-notif-panel="excesso" hidden>
               <div class="speed-grid">
@@ -4014,7 +4065,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 <p class="fh-fresco" data-fh-fresco hidden></p>
                 <details class="fh-ajuda">
                   <summary>Como funciona</summary>
-                  <p>Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, que vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação.</p>
+                  <p>Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, que vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação: uma só mensagem por veículo e dia, com as seções que se aplicam (uso fora do horário e/ou excesso de velocidade).</p>
                   <div class="fh-legenda">
                     <span><i class="fh-lg fh-lg-dot-fora"></i>Fora do horário</span>
                     <span><i class="fh-lg fh-lg-dot-sem"></i>Uso sem justificativa</span>
@@ -4124,12 +4175,11 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       const subtitulo = container.querySelector('[data-notif-subtitle]');
       if (subtitulo) {
         subtitulo.textContent = tab === 'excesso'
-          ? 'Gere as notificações de excesso de velocidade aos colaboradores. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.'
-          : 'Um dossiê por veículo e por dia: uso fora do horário, trajetos sem justificativa e excessos de velocidade.';
+          ? 'Notificação de excesso de velocidade de vários dias de uma vez, por colaborador. Depois, envie os prints em lote: o sistema identifica a placa/OCR e salva cada arquivo na pasta do motorista correspondente no Drive.'
+          : 'Um dossiê por veículo e por dia, com uma única notificação para uso fora do horário e excesso de velocidade. Depois de enviar a mensagem, anexe o print.';
       }
       container.querySelectorAll('[data-notif-tab]').forEach((btn) => btn.classList.toggle('active', btn.dataset.notifTab === tab));
       container.querySelectorAll('[data-notif-panel]').forEach((panel) => { panel.hidden = panel.dataset.notifPanel !== tab; });
-      if (notifFab) notifFab.hidden = tab !== 'excesso';
       if (tab === 'fora_horario' && !state.foraHorarioLoaded) fetchForaHorario(container, opts);
     }
     container.querySelectorAll('[data-notif-tab]').forEach((btn) => btn.addEventListener('click', () => setNotifTab(btn.dataset.notifTab)));
@@ -4210,20 +4260,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       corpo.querySelectorAll('[data-fh-pane]').forEach((painel) => { painel.hidden = painel.dataset.fhPane !== alvo; });
       corpo.querySelector('.fh-abas')?.scrollIntoView({ block: 'nearest' });
     });
-    dossieModal?.addEventListener('click', (ev) => {
-      const ir = ev.target.closest('[data-fh-ir-excesso]');
-      if (!ir) return;
-      closeDossieModal();
-      state.importedSearchTerm = ir.dataset.placa || '';
-      state.importedStatusFilter = 'ALL';
-      const campo = container.querySelector('[data-imported-search]');
-      if (campo) campo.value = state.importedSearchTerm;
-      const filtroStatus = container.querySelector('[data-imported-status-filter]');
-      if (filtroStatus) filtroStatus.value = 'ALL';
-      setNotifTab('excesso');
-      renderImportedExcessos(container);
-    });
     dossieModal?.addEventListener('click', async (ev) => {
+      const notificar = ev.target.closest('[data-fh-notificar]');
+      if (notificar) {
+        if (notificar.disabled) return;
+        notificar.disabled = true;
+        try { await fhNotificarDia(container, opts); } finally { notificar.disabled = false; }
+        return;
+      }
       const rota = ev.target.closest('[data-ver-rota]');
       if (rota) { closeDossieModal(); openRotaModal(container, rota.dataset.id); return; }
       const acao = ev.target.closest('[data-fora-action]');

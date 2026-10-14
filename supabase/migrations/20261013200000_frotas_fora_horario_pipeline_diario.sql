@@ -103,9 +103,18 @@ select
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
   d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
-  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base,
+  coalesce(ex.pendentes, 0)::int as exc_pendentes, coalesce(ex.gerados, 0)::int as exc_gerados, coalesce(ex.notificados, 0)::int as exc_notificados
 from public.frotas_fora_horario_ocorrencias o
 left join public.frotas_fora_horario_dossie d on d.data_evento = o.data_evento and d.placa = o.placa
+left join (
+  select x.data_evento, regexp_replace(upper(coalesce(x.placa, '')), '[^A-Z0-9]', '', 'g') as placa_n,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'PENDENTE') as pendentes,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'GERADA') as gerados,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'NOTIFICADO') as notificados
+  from public.frotas_excesso_velocidade x
+  group by 1, 2
+) ex on ex.data_evento = o.data_evento and ex.placa_n = o.placa
 union all
 -- dia/placa com dossiê mas sem ocorrência consolidada (sync da BFleet incompleto)
 select
@@ -118,8 +127,17 @@ select
   d.km_dia, d.km_fora, d.min_fora, d.km_noturno, d.km_apos_chegada, d.viagens_dia, d.viagens_fora,
   d.chegada_casa, d.retorno_previsto, d.atraso_retorno_min,
   d.motivos, d.resumo_dia, d.condutor_escalado, d.caronas, d.calculado_em,
-  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base
+  d.qtd_excessos, d.vel_max, d.excessos_fora, d.km_indevido, d.viagens_indevidas, d.veredito_uso, d.uso_sem_base,
+  coalesce(ex.pendentes, 0)::int, coalesce(ex.gerados, 0)::int, coalesce(ex.notificados, 0)::int
 from public.frotas_fora_horario_dossie d
+left join (
+  select x.data_evento, regexp_replace(upper(coalesce(x.placa, '')), '[^A-Z0-9]', '', 'g') as placa_n,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'PENDENTE') as pendentes,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'GERADA') as gerados,
+         count(*) filter (where upper(coalesce(x.status_notificacao, '')) = 'NOTIFICADO') as notificados
+  from public.frotas_excesso_velocidade x
+  group by 1, 2
+) ex on ex.data_evento = d.data_evento and ex.placa_n = d.placa
 where not exists (
   select 1 from public.frotas_fora_horario_ocorrencias o where o.data_evento = d.data_evento and o.placa = d.placa
 );
