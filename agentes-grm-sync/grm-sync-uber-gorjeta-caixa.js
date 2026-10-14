@@ -13,7 +13,9 @@
  * Funcionário -> abrir cadastro -> Caixa -> Despesas -> Adicionar -> Tipo = Adiantamento ->
  * Descrição / Valor / Data -> Salvar. A Data é o dia da corrida e a Descrição é única por
  * gorjeta ("Gorjeta Uber - dd/mm/aaaa hh:mm - corrida xxxxxxxx"), porque a trava de duplicidade
- * confere a descrição na lista do Caixa antes de lançar.
+ * confere a descrição no relatório de Caixa da API do GRM antes de lançar (e de novo depois de
+ * salvar). Não pela lista da tela: ela só mostra uma janela de datas e a data do lançamento é o
+ * dia da corrida. Regras puras em grm-uber-gorjeta-caixa-regras.js.
  *
  * O colaborador é resolvido pelo e-mail do Uber (e-mail pessoal/da empresa do cadastro) e pelo
  * nome; se os dois apontam para pessoas diferentes o lançamento é bloqueado (ERRO), para o
@@ -73,7 +75,9 @@ const {
   launchBrowser,
   login,
   openStaffPage,
+  movimentosCaixaGrm,
 } = caixaUi;
+const regras = require('./grm-uber-gorjeta-caixa-regras');
 
 if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
 if (!GRM_USER || !GRM_PASSWORD) throw new Error('Configure GRMSERVER_USER e GRMSERVER_PASSWORD.');
@@ -307,14 +311,13 @@ function brMoneyText(value) {
   return Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function verifyMovementRow(rows, job) {
-  const expectedValue = brMoneyText(job.valor);
-  const candidate = (rows || []).find((row) => {
-    const cells = row.cells || [];
-    const hasValue = cells.some((cell) => String(cell).includes(expectedValue)) || String(row.text).includes(expectedValue);
-    return hasValue;
-  });
-  return { found: !!candidate, row: candidate || null };
+// Movimentos do colaborador no mês da data do lançamento (= dia da corrida), pela API do GRM.
+// A lista do Caixa na tela só mostra uma janela de datas: corridas antigas (ou futuras) caem
+// fora dela e a trava contra duplicidade ficaria cega (ver grm-caixa-ui, caso do Bônus).
+async function movimentosDoMes(cpf, job, semCache = false) {
+  const [dia, mes, ano] = launchDateFor(job).split('/');
+  const dataIso = `${ano}-${mes}-${dia}`;
+  return movimentosCaixaGrm({ cpf, de: dataIso, ate: dataIso, semCache });
 }
 
 async function clickAddExpense(page) {
@@ -626,23 +629,18 @@ async function saveExpense(page) {
 }
 
 
-async function verifyExpense(page, cpf, job) {
-  await closeDialogs(page);
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
-
+// Conferência pós-salvar pela API.
+async function verifyExpense(cpf, job) {
   const description = descriptionFor(job);
-  let lastRows = [];
-
+  let ultimos = [];
   for (let attempt = 1; attempt <= 5; attempt += 1) {
-    await sleep(attempt === 1 ? 700 : 1200);
-    const rows = await inspectExpenseDescriptions(page, [description]);
-    lastRows = rows;
-    const verification = verifyMovementRow(rows, job);
-    if (verification.found) return { ok: true, row: verification.row, attempt };
+    await sleep(attempt * 1500);
+    ultimos = await movimentosDoMes(cpf, job, true);
+    const avaliacao = regras.avaliarExistenteApi(ultimos, description, job.valor);
+    if (avaliacao.acao === 'JA_EXISTE') return { ok: true, row: avaliacao.row, attempt };
   }
-
-  return { ok: false, row: null, rows: lastRows };
+  const alvo = regras.norm(description);
+  return { ok: false, row: null, rows: ultimos.filter((m) => regras.norm(m.descricao) === alvo) };
 }
 
 async function recoverStaleProcessing() {
@@ -797,15 +795,16 @@ async function processJob(page, job, collaborators) {
 
   log('INFO', `${job.colaborador_nome}: preparando Adiantamento "${description}" no valor de ${Number(job.valor || 0).toFixed(2)}.`);
 
-  await openEmployee(page, cpf);
-  await openExpensesSection(page);
-
-  const existing = await inspectExpenseDescriptions(page, [description]);
-  if (existing.length) {
-    const exact = verifyMovementRow(existing, job);
-    if (!exact.found) {
-      throw new Error('Já existe movimento com esta descrição no GRM, mas com valor divergente. Lançamento automático bloqueado para evitar duplicidade.');
-    }
+  // Trava contra duplicidade pela API, antes de abrir a tela. Se a API falhar, o job vai para
+  // ERRO sem lançar (nunca lança às cegas).
+  const avaliacao = regras.avaliarExistenteApi(await movimentosDoMes(cpf, job), description, job.valor);
+  if (avaliacao.acao === 'DIVERGENTE') {
+    throw new Error(
+      'Já existe movimento com esta descrição no GRM, mas com valor divergente. Lançamento automático bloqueado para evitar duplicidade. '
+      + `Movimentos: ${JSON.stringify(avaliacao.rows.map((m) => ({ ofmCode: m.ofmCode, data: m.data, valor: m.valor, status: m.status })))}`
+    );
+  }
+  if (avaliacao.acao === 'JA_EXISTE') {
     await markSuccess(job, {
       ok: true,
       cpf,
@@ -813,13 +812,18 @@ async function processJob(page, job, collaborators) {
       valor: Number(job.valor || 0),
       data: date,
       duplicate_guard: 'DESCRICAO_JA_EXISTIA_NO_GRM',
+      verificado_via: 'api reports/finance/operatingFlow',
       criado_agora: false,
-      linha_grm: exact.row.text,
+      ofmCode: avaliacao.row.ofmCode,
+      linha_grm: avaliacao.row,
       verificado_em: new Date().toISOString(),
     });
-    log('SUCCESS', `${job.colaborador_nome}: adiantamento já existia no GRM; duplicidade bloqueada.`);
+    log('SUCCESS', `${job.colaborador_nome}: adiantamento já existia no GRM (ofmCode ${avaliacao.row.ofmCode}); duplicidade bloqueada.`);
     return;
   }
+
+  await openEmployee(page, cpf);
+  await openExpensesSection(page);
 
   if (DRY_RUN) {
     await updateLaunch(job.id, {
@@ -842,11 +846,13 @@ async function processJob(page, job, collaborators) {
   const filled = await fillExpense(page, job);
   await saveExpense(page);
 
-  const verified = await verifyExpense(page, cpf, job);
+  const verified = await verifyExpense(cpf, job);
   if (!verified.ok) {
     throw new Error(
-      'GRM fechou o formulário, mas o lançamento do Adiantamento não foi localizado no Caixa '
-      + 'com a Descrição e Valor esperados. Não reprocesse sem conferir o cadastro para evitar duplicidade.'
+      'GRM confirmou o salvamento, mas o lançamento do Adiantamento não apareceu no relatório de Caixa da API '
+      + 'com a Descrição e Valor esperados. '
+      + `Movimentos com a descrição: ${JSON.stringify(verified.rows.map((m) => ({ ofmCode: m.ofmCode, data: m.data, tipo: m.tipo, valor: m.valor })))}. `
+      + 'Não reprocesse sem conferir o cadastro para evitar duplicidade.'
     );
   }
 
@@ -858,10 +864,12 @@ async function processJob(page, job, collaborators) {
     data: filled.date,
     criado_agora: true,
     verificado_no_grm: true,
-    linha_grm: verified.row?.text || null,
+    verificado_via: 'api reports/finance/operatingFlow',
+    ofmCode: verified.row.ofmCode,
+    linha_grm: verified.row,
     verificado_em: new Date().toISOString(),
   });
-  log('SUCCESS', `${job.colaborador_nome}: adiantamento lançado e verificado no GRM.`);
+  log('SUCCESS', `${job.colaborador_nome}: adiantamento lançado e verificado no GRM (ofmCode ${verified.row.ofmCode}).`);
 }
 
 async function main() {
