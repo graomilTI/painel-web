@@ -172,18 +172,27 @@ function setPillUpdated(pill, row, agents) {
   pill.title = `${agentName} · última atualização com sucesso em ${label}`;
 }
 
+// Uma consulta por agente (limit 1 cada): com "agente_id in (...)" + ordem por finalizado_em
+// o banco precisava ler todas as execuções com sucesso dos agentes (~7 mil linhas, 2 s) pra
+// devolver só a mais recente. Por agente, o índice parcial entrega a linha direto.
 async function getLatestFromJobs(agents) {
-  const { data, error } = await supabase
-    .from('grm_sync_jobs')
-    .select('agente_id,status,created_at,finalizado_em')
-    .in('agente_id', agents)
-    .eq('status', 'sucesso')
-    .not('finalizado_em', 'is', null)
-    .order('finalizado_em', { ascending: false })
-    .limit(1);
+  const rows = await Promise.all(agents.map(async (agentId) => {
+    const { data, error } = await supabase
+      .from('grm_sync_jobs')
+      .select('agente_id,status,created_at,finalizado_em')
+      .eq('agente_id', agentId)
+      .eq('status', 'sucesso')
+      .not('finalizado_em', 'is', null)
+      .order('finalizado_em', { ascending: false })
+      .limit(1);
 
-  if (error) throw error;
-  return data?.[0] || null;
+    if (error) throw error;
+    return data?.[0] || null;
+  }));
+
+  return rows
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.finalizado_em).getTime() - new Date(a.finalizado_em).getTime())[0] || null;
 }
 
 async function getLatestFromImportTables(agents) {
