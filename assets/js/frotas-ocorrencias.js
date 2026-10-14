@@ -4,20 +4,16 @@ import { esc, tabs } from './core/ui.js';
 import { temAcessoFrota } from './modules/frotas-permissoes.js';
 
 async function montarNotificacao(body, ctx) {
-  const [{ installDailyDriverResolution }, { installPreviousWeekDefaults }, { installIntuitiveFleetLayout }] = await Promise.all([
+  const [{ installDailyDriverResolution }] = await Promise.all([
     import('./frotas-motorista-leitura-diaria.js'),
-    import('./frotas-periodo-semana-anterior.js'),
-    import('./frotas-layout-intuitivo.js'),
-    import('./modules/frotas.js?v=20261014-agrupar-rota'),
+    import('./modules/frotas.js?v=20261014-so-notificacoes'),
   ]);
   installDailyDriverResolution(supabase);
-  installPreviousWeekDefaults(document, supabase);
-  installIntuitiveFleetLayout(document);
   window.FROTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
 async function montarHistorico(body, ctx) {
-  await import('./modules/frotas.js?v=20261014-agrupar-rota');
+  await import('./modules/frotas.js?v=20261014-so-notificacoes');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
@@ -38,7 +34,7 @@ const CARDS = [
   {
     id: 'notificacoes',
     titulo: 'Notificações',
-    descricao: 'Geração de notificação de excesso de velocidade aos motoristas.',
+    descricao: 'Dossiê diário dos veículos (fora do horário, trajetos sem justificativa e excesso de velocidade) e geração da notificação.',
     aliases: ['FROTAS_EXCESSO_VELOCIDADE', 'EXCESSO_VELOCIDADE'],
     montar: montarNotificacao,
   },
