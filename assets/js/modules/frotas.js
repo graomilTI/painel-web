@@ -44,6 +44,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     foraHorarioLoaded: false,
     foraHorarioSearchTerm: '',
     foraHorarioFiltro: 'ALERTAS',
+    foraHorarioMapaBase: 'sat',
     foraHorarioDossieDisponivel: true,
     foraHorarioRecalculando: false,
     foraHorarioDossieAberto: null,
@@ -1814,6 +1815,8 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   let fhMapaMarcador = null;
   let fhMapaDados = null;
   let fhMapaPedido = 0;
+  let fhMapaBases = null;
+  let fhMapaBaseAtiva = null;
 
   function fhHoraSeg(segundos) {
     const total = Math.max(0, Math.round(Number(segundos) || 0));
@@ -1944,7 +1947,13 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
       </div>`;
     }).join('');
     return `
-      <div class="fh-mapa-cab"><b>Rota realizada</b><span>${pontos.length} pontos · ${escapeHtml(origem)}</span></div>
+      <div class="fh-mapa-cab">
+        <div><b>Rota realizada</b><span>${pontos.length} pontos · ${escapeHtml(origem)}</span></div>
+        <div class="fh-mapa-base" data-mapa-base>
+          <button type="button" data-base="sat" class="${state.foraHorarioMapaBase === 'ruas' ? '' : 'active'}">Satélite</button>
+          <button type="button" data-base="ruas" class="${state.foraHorarioMapaBase === 'ruas' ? 'active' : ''}">Ruas</button>
+        </div>
+      </div>
       <div class="fh-mapa" data-rota-mapa-el></div>
       <div class="fh-mapa-slider">
         <input type="range" min="0" max="${pontos.length - 1}" value="0" step="1" data-rota-mapa-slider aria-label="Horário no trajeto">
@@ -1968,9 +1977,15 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (!L || !el || !pontos.length) return;
     if (fhMapa) { fhMapa.remove(); fhMapa = null; }
     fhMapa = L.map(el, { zoomControl: true, scrollWheelZoom: true, center: [pontos[0][1], pontos[0][2]], zoom: 12, zoomAnimation: false, fadeAnimation: false, markerZoomAnimation: false });
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, maxNativeZoom: 16, attribution: 'Tiles &copy; Esri'
-    }).addTo(fhMapa);
+    // Fundo "realista": imagem de satélite com nomes de cidades e estradas por cima; alternativa: mapa de ruas colorido.
+    const esri = (caminho, extra = {}) => L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/${caminho}/MapServer/tile/{z}/{y}/{x}`,
+      { maxZoom: 18, maxNativeZoom: 17, attribution: 'Imagens &copy; Esri, Maxar, Earthstar Geographics', ...extra });
+    fhMapaBases = {
+      sat: L.layerGroup([esri('World_Imagery'), esri('Reference/World_Transportation', { attribution: '' }), esri('Reference/World_Boundaries_and_Places', { attribution: '' })]),
+      ruas: L.layerGroup([esri('World_Street_Map')])
+    };
+    fhMapaBaseAtiva = fhMapaBases[state.foraHorarioMapaBase] ? state.foraHorarioMapaBase : 'sat';
+    fhMapaBases[fhMapaBaseAtiva].addTo(fhMapa);
 
     fhMapaDados = { pontos, dia: dos.data_evento, excessos: [] };
 
@@ -2002,7 +2017,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     let corrente = [];
     let correnteClasse = null;
     const fecharTrecho = () => {
-      if (corrente.length > 1) L.polyline(corrente, { color: corTrecho[correnteClasse], weight: 4, opacity: 0.9 }).addTo(fhMapa);
+      if (corrente.length > 1) {
+        L.polyline(corrente, { color: '#0b1220', weight: 8, opacity: 0.55 }).addTo(fhMapa);
+        L.polyline(corrente, { color: corTrecho[correnteClasse], weight: 4.5, opacity: 1 }).addTo(fhMapa);
+      }
     };
     pontos.forEach((p) => {
       const classe = classeDe(p[0]);
@@ -2104,6 +2122,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (fhMapa) { fhMapa.remove(); fhMapa = null; }
     fhMapaMarcador = null;
     fhMapaDados = null;
+    fhMapaBases = null;
     painel.innerHTML = '<div class="fh-mapa-vazio">Consultando a rota do veículo...</div>';
     try {
       const rota = await callEdgeFunction(opts, FORA_HORARIO_ROTA_FUNCTION, { placa: dos.placa, data: dos.data_evento });
@@ -2129,6 +2148,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     if (fhMapa) { fhMapa.remove(); fhMapa = null; }
     fhMapaMarcador = null;
     fhMapaDados = null;
+    fhMapaBases = null;
     const painel = root.querySelector('[data-dossie-mapa]');
     if (painel) painel.innerHTML = '';
   }
@@ -2145,6 +2165,14 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   // Ao redimensionar a janela o mapa precisa recalcular o tamanho (o painel muda de lado ou de altura).
   window.addEventListener('resize', () => { if (fhMapa) fhMapa.invalidateSize(); });
+
+  function fhMapaTrocarBase(chave) {
+    if (!fhMapa || !fhMapaBases || !fhMapaBases[chave] || chave === fhMapaBaseAtiva) return;
+    fhMapa.removeLayer(fhMapaBases[fhMapaBaseAtiva]);
+    fhMapaBases[chave].addTo(fhMapa);
+    fhMapaBaseAtiva = chave;
+    state.foraHorarioMapaBase = chave;
+  }
 
   function fhMapaFocarPonto(lat, lng) {
     if (!fhMapa || !fhMapaDados) return;
@@ -4041,9 +4069,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-dossie-grade{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:20px;align-items:start}
                 .fh-dossie-detalhes{min-width:0}
                 .fh-dossie-mapa{position:sticky;top:0;min-width:0}
-                .fh-mapa-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin:0 0 8px}
-                .fh-mapa-cab b{color:#f8fafc;font-size:14px}
+                .fh-mapa-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}
+                .fh-mapa-cab b{color:#f8fafc;font-size:14px;margin-right:8px}
                 .fh-mapa-cab span{color:#6b7280;font-size:11px}
+                .fh-mapa-base{display:inline-flex;gap:2px;padding:2px;border-radius:10px;background:rgba(148,163,184,.14)}
+                .fh-mapa-base button{appearance:none;border:0;background:transparent;color:#94a3b8;font-size:11px;font-weight:900;padding:5px 11px;border-radius:8px;cursor:pointer}
+                .fh-mapa-base button.active{background:rgba(34,197,94,.25);color:#bbf7d0}
                 .fh-mapa-vazio{border:1px dashed rgba(148,163,184,.25);border-radius:14px;padding:24px 16px;color:#94a3b8;font-size:13px;text-align:center;line-height:1.6}
                 .fh-clicavel{cursor:pointer}
                 .fh-tl tr.fh-clicavel:hover td{background:rgba(96,165,250,.1)}
@@ -4286,6 +4317,12 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     container.querySelector('[data-dossie-modal-close]')?.addEventListener('click', closeDossieModal);
     dossieModal?.addEventListener('click', (ev) => {
       if (ev.target.closest('[data-rota-mapa-tentar]')) { fhCarregarMapa(container, opts); return; }
+      const base = ev.target.closest('[data-mapa-base] [data-base]');
+      if (base) {
+        fhMapaTrocarBase(base.dataset.base);
+        base.closest('[data-mapa-base]').querySelectorAll('[data-base]').forEach((b) => b.classList.toggle('active', b === base));
+        return;
+      }
       if (ev.target.closest('a, button, input, summary')) return;
       const linhaViagem = ev.target.closest('[data-fh-foco-ini]');
       if (linhaViagem) { fhMapaFocarIntervalo(linhaViagem.dataset.fhFocoIni, linhaViagem.dataset.fhFocoFim); return; }
