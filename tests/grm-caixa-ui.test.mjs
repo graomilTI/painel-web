@@ -37,10 +37,10 @@ test('nenhum agente do Caixa volta a declarar uma cópia local das funções com
   }
 });
 
-// Etapa 2 (14/10/2026): fluxo de tela do lançamento + conferência pela API. Por enquanto só o
-// agente de Bônus usa as versões do módulo; os outros migram um por vez.
-const FLUXO_LANCAMENTO = ['brMoneyText', 'selectExactStaffRow', 'clickCash', 'openEmployee', 'clickAddExpense', 'markField', 'chooseMovementType', 'saveExpense', 'movimentosCaixaGrm'];
-const AGENTES_FLUXO_DO_MODULO = ['grm-sync-bonus-caixa.js'];
+// Etapa 2 (14/10/2026): fluxo de tela do lançamento (clicar no Caixa, adicionar, preencher, salvar)
+// e consulta de movimentos pela API, num módulo só para os 5 agentes.
+const FLUXO_LANCAMENTO = ['brMoneyText', 'selectExactStaffRow', 'clickCash', 'openEmployee', 'openExpensesSection', 'clickAddExpense', 'markField', 'chooseMovementType', 'saveExpense', 'movimentosCaixaGrm'];
+const AGENTES_FLUXO_DO_MODULO = AGENTES_CAIXA; // etapa 2 concluída nos 5 agentes (14/10/2026)
 
 test('agentes migrados usam o fluxo de lançamento do módulo, sem cópia local', () => {
   for (const nome of FLUXO_LANCAMENTO) assert.equal(typeof caixaUi[nome], 'function', `${nome} deveria ser exportada`);

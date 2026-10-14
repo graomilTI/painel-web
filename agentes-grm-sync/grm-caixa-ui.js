@@ -1007,6 +1007,78 @@ async function saveExpense(page, rotulo = 'Bônus') {
   return { ...confirmation, confirmedBy: 'FORM_CLOSED' };
 }
 
+async function openExpensesSection(page) {
+  const found = await page.evaluate(() => {
+    const normalize = (value) => String(value || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const visible = (el) => {
+      if (!el || !el.getClientRects().length) return false;
+      const style = getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    };
+
+    document.querySelectorAll('[data-grm-bonus-expenses]').forEach((el) => delete el.dataset.grmBonusExpenses);
+
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.v-overlay__content,.v-dialog,[class*="modal"],[class*="dialog"]')].filter(visible);
+    const scope = dialogs[dialogs.length - 1] || document.body;
+    const clickableSelector = 'button,[role="button"],[role="tab"],a,.v-tab,.v-list-item,.v-expansion-panel-title';
+
+    const direct = [...scope.querySelectorAll(clickableSelector)]
+      .filter(visible)
+      .filter((el) => !['I', 'SVG', 'PATH'].includes(el.tagName))
+      .filter((el) => {
+        const text = normalize(el.innerText || el.textContent || '');
+        return text === 'DESPESAS' || text === 'DESPESA';
+      });
+
+    let clickable = direct[direct.length - 1] || null;
+
+    if (!clickable) {
+      const labels = [...scope.querySelectorAll('*')]
+        .filter(visible)
+        .filter((el) => el.children.length === 0)
+        .filter((el) => {
+          const text = normalize(el.textContent || '');
+          return text === 'DESPESAS' || text === 'DESPESA';
+        });
+      for (let i = labels.length - 1; i >= 0; i -= 1) {
+        const parent = labels[i].closest(clickableSelector);
+        if (parent && visible(parent) && !['I', 'SVG', 'PATH'].includes(parent.tagName)) {
+          clickable = parent;
+          break;
+        }
+      }
+    }
+
+    if (clickable) {
+      clickable.dataset.grmBonusExpenses = '1';
+      return { ok: true, selector: '[data-grm-bonus-expenses="1"]', already: false };
+    }
+
+    // O modal "CAIXA OPERACIONAL" (aberto por clickCash) passou a exibir a
+    // tabela de despesas direto, sem aba "DESPESAS" separada pra clicar
+    // (confirmado por screenshot de erro: 2026-09-16, colaborador ativo,
+    // cadastro completo — a tabela já estava visível). Se a tabela já tem
+    // as colunas esperadas, não há nada pra clicar; segue em frente.
+    const headerTexts = [...scope.querySelectorAll('th,[role="columnheader"]')]
+      .filter(visible)
+      .map((el) => normalize(el.textContent || ''));
+    const hasTable = ['DESCRICAO', 'TIPO DE DESPESA', 'VALOR'].every((col) => headerTexts.includes(col));
+    if (hasTable) {
+      return { ok: true, already: true, headerTexts: headerTexts.slice(0, 12) };
+    }
+
+    return { ok: false, headerTexts: headerTexts.slice(0, 12) };
+  });
+
+  if (!found?.ok) throw new Error('Seção DESPESAS não localizada no cadastro do colaborador: ' + JSON.stringify(found));
+
+  if (!found.already) {
+    await page.click(found.selector);
+    await sleep(1000);
+  }
+}
+
 // ---- Movimentos do Caixa pela API do GRM (14/10/2026) ----
 // A tabela de despesas do modal "Caixa Operacional" só mostra uma JANELA de datas: esconde
 // lançamentos com data futura (o Bônus é lançado no dia 15; rodando antes do dia 15 a data é
@@ -1098,6 +1170,7 @@ async function movimentosCaixaGrm({ cpf, de, ate, semCache = false }) {
 }
 
 module.exports = {
+  openExpensesSection,
   movimentosCaixaGrm,
   mesesDoPeriodo,
   brMoneyText,
