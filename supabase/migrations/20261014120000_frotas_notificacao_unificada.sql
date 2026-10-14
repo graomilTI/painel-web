@@ -37,6 +37,9 @@ declare
   v_s1 text;
   v_s2 text;
   v_ambos boolean;
+  v_esp text;
+  v_motivo_fora text;
+  v_politica text;
 begin
   if p_data is null or v_placa = '' then
     raise exception 'Informe a data e a placa.';
@@ -89,12 +92,23 @@ begin
     limit 1;
     v_hora := coalesce(v_hora, nullif(substring(coalesce(v_oc.hora_inicio, '') from 1 for 5), ''));
 
+    -- domingo/feriado sem embarque: o motivo muda (nesses dias só é autorizado rodar com embarque)
+    v_esp := case when v_dos.criterio = 'SEM_EMBARQUE'
+                  then case when (v_dos.detalhes #>> '{dia_especial,tipo}') = 'FERIADO' then 'feriado' else 'domingo' end end;
+    v_motivo_fora := case when v_esp is null then 'fora do horário de expediente' else 'no ' || v_esp || ', sem embarque' end;
+    v_politica := case when v_esp is null
+      then 'Conforme a política interna da Grão1000, a utilização dos veículos da empresa fora do horário de expediente somente é permitida mediante autorização prévia da gestão.'
+      else 'Conforme a política interna da Grão1000, aos domingos e feriados a utilização dos veículos da empresa somente é permitida quando há embarque.' end;
+
     v_s1 := case when v_ambos
-        then 'Utilização do veículo fora do horário de expediente' || coalesce(', às ' || v_hora || 'h', '') || '.'
-        else 'Identificamos a utilização do veículo da empresa, placa ' || v_placa || ', fora do horário de expediente, no dia '
-             || to_char(p_data, 'DD/MM/YY') || coalesce(', às ' || v_hora || 'h', '') || '.' end
-      || E'\n\n' ||
-      'Conforme a política interna da Grão1000, a utilização dos veículos da empresa fora do horário de expediente somente é permitida mediante autorização prévia da gestão.' || E'\n\n' ||
+        then 'Utilização do veículo ' || v_motivo_fora || coalesce(', às ' || v_hora || 'h', '') || '.'
+        else 'Identificamos a utilização do veículo da empresa, placa ' || v_placa || ', '
+             || case when v_esp is null then 'fora do horário de expediente, no dia ' || to_char(p_data, 'DD/MM/YY')
+                     else 'no dia ' || to_char(p_data, 'DD/MM/YY') || ' ('
+                          || case when v_esp = 'feriado' then 'feriado: ' || coalesce(v_dos.detalhes #>> '{dia_especial,nome}', '') else 'domingo' end
+                          || '), sem embarque' end
+             || coalesce(', às ' || v_hora || 'h', '') || '.' end
+      || E'\n\n' || v_politica || E'\n\n' ||
       'Solicitamos os devidos esclarecimentos e a apresentação da justificativa referente à utilização do veículo nesse período.' || E'\n\n' ||
       'Informamos também que será realizado o levantamento da quilometragem percorrida indevidamente entre 00h e 05h. O total de quilômetros identificado será multiplicado pelo valor de R$ 4,00 por km, e o valor correspondente será lançado em seu Caixa.';
   end if;
