@@ -72,7 +72,7 @@ const state = {
 };
 
 // Mesma extração de "UF - Cidade (Local)" usada em programacao-despesas.js e
-// no bloco "Ajustes pontuais de embarque/hospedagem" em programacao.js — só a
+// no módulo programacao-hospedagem-embarque.js (bloco "Ajustes pontuais de embarque/hospedagem") — só a
 // cidade, sem o local específico entre parênteses.
 function cidadeFromEmbarque(embarque) {
   const m = /^[A-Z]{2}\s*-\s*([^(]+)/.exec(String(embarque || '').trim());
@@ -183,7 +183,7 @@ function injectStyles() {
     /* A lista rola dentro da própria caixa (altura travada ao viewport), em
        vez de crescer com a página inteira — assim ela tem rolagem
        independente do painel lateral fixo (que já rola sozinho, ver
-       .pld-drawer no bloco "Layout fixo do painel lateral" em programacao.js), e cabem todas as O.S.
+       .pld-drawer no módulo programacao-drawer-layout.js (bloco "Layout fixo do painel lateral")), e cabem todas as O.S.
        de uma vez sem paginação (pedido do usuário, 2026-07-22). */
     .pld-table-wrap{border:1px solid rgba(52,211,153,.16);border-radius:16px;background:rgba(2,6,23,.28);max-height:calc(100vh - 300px);overflow-y:auto}
     .pld-table{width:100%;border-collapse:separate;border-spacing:0}
@@ -271,7 +271,7 @@ function injectStyles() {
        só trocando verde por vermelho, em vez de um sólido e outro
        translúcido (pedido 30/07). Fontes do card em si compactadas junto
        com o resto do painel lateral, ver #pldOverlayRoot .peqb-cand-* no
-       bloco "Layout fixo do painel lateral" em programacao.js. */
+       módulo programacao-drawer-layout.js (bloco "Layout fixo do painel lateral"). */
     .pld-cand-wrap{display:flex;align-items:stretch;gap:8px;margin-bottom:10px}
     .pld-cand-wrap .peqb-cand{width:auto;flex:1 1 auto;margin-top:0}
     .pld-cand-wrap .peqb-cand-sub,.pld-cand-wrap .peqb-score,.pld-cand-wrap .peqb-cand-cost{display:none}

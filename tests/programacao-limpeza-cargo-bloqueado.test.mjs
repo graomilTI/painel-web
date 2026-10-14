@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync(new URL('../assets/js/programacao.js', import.meta.url), 'utf8');
+// O bloco de ajustes de embarque/hospedagem (patch em supabase.from) foi extraído de programacao.js em 14/10/2026.
+const source = readFileSync(new URL('../assets/js/programacao-hospedagem-embarque.js', import.meta.url), 'utf8');
 
 test('limpeza de cargo bloqueado (Auditor/Administrativo) remove só o vínculo do colaborador bloqueado', () => {
   // Regressão: antes a exclusão de operacional_os_colaboradores filtrava só

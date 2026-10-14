@@ -272,7 +272,7 @@ function alojamentoOptions(selectedId, uf) {
 // Combobox do alojamento: o <select> nativo fica escondido (fonte da verdade
 // pro autosave, que lê [data-fld="alojamento_id"]) e a lista de opções é
 // desenhada num portal fixo em document.body — mesma técnica de
-// o bloco "Botões de etapa" em programacao.js (#progSupCombo) — pra não ficar clipada
+// o módulo programacao-gestor-etapas.js (bloco "Botões de etapa") (#progSupCombo) — pra não ficar clipada
 // pelas bordas do card quando aberta perto do fim da lista rolável.
 let alojDropdownEl = null;
 let alojComboState = { input: null, select: null };
@@ -526,7 +526,7 @@ async function reancorarDespesasJaLancadas(movimentos) {
 // com o GRM — uma despesa nova (ex.: Almoço marcado hoje) era salva com
 // data_referencia=hoje mas programacao_id=ontem (o único que o card tinha),
 // e a publicação pro GRM (grm-liberacao-despesas-publicar, disparada por
-// bloco "Publica versão de despesas..." em programacao.js) só olha o programacao_id de HOJE — a
+// módulo programacao-grm-despesas-sync.js (bloco "Publica versão de despesas...")) só olha o programacao_id de HOJE — a
 // despesa nunca saía da fila. Em vez de só exibir, agora GRAVA de verdade
 // uma confirmação pra HOJE (mesma O.S., mesmo colaborador) sempre que
 // existir um programacao_id de hoje pra essa supervisão — assim toda
@@ -878,7 +878,7 @@ export async function renderProgramacaoDespesas(content, options = {}) {
 // programação, período, cidade e supervisão compartilham uma solicitação;
 // assim Hospedagem > Hotéis recebe um único KPI e consegue montar quartos
 // duplos, triplos etc. Colunas normalizadas automaticamente por
-// o bloco "Ajustes pontuais de embarque/hospedagem" em programacao.js (patch global no supabase.from).
+// o módulo programacao-hospedagem-embarque.js (bloco "Ajustes pontuais de embarque/hospedagem") (patch global no supabase.from).
 async function criarSolicitacaoHotelSeNecessario(card, dataReferencia) {
   const badge = card.querySelector('[data-hotel-badge]');
   const colabId = card.dataset.colabId;
