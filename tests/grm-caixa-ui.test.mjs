@@ -54,8 +54,9 @@ test('agentes migrados usam o fluxo de lançamento do módulo, sem cópia local'
 
 test('agentes que lançam no dia 15 conferem e checam duplicidade pela API, não pela tabela da tela', () => {
   // A tabela do modal Caixa Operacional esconde datas futuras: o Bônus (dia 15) virava falso ERRO
-  // e a trava contra duplicidade ficava cega (caso de 06/10/2026). Ajuda de custo também usa dia 15.
-  for (const arquivo of ['grm-sync-bonus-caixa.js', 'grm-sync-ajuda-custo-caixa.js']) {
+  // e a trava contra duplicidade ficava cega (caso de 06/10/2026). Ajuda de custo também usa dia 15;
+  // a gorjeta Uber usa o dia da corrida (pode ser antigo).
+  for (const arquivo of ['grm-sync-bonus-caixa.js', 'grm-sync-ajuda-custo-caixa.js', 'grm-sync-uber-gorjeta-caixa.js']) {
     const src = readFileSync(new URL(`../agentes-grm-sync/${arquivo}`, import.meta.url), 'utf8');
     assert.match(src, /movimentosCaixaGrm\(/, `${arquivo} deve consultar a API`);
     assert.doesNotMatch(src, /inspectExpenseDescriptions\(page/, `${arquivo} ainda confere pela tela`);
