@@ -25,7 +25,7 @@ require('dotenv').config();
 if (typeof globalThis.Headers === 'undefined') {
   let nodeFetch;
   try { nodeFetch = require('node-fetch'); } catch (_) {
-    nodeFetch = require('./node_modules/puppeteer/node_modules/node-fetch');
+    nodeFetch = require('../node_modules/puppeteer/node_modules/node-fetch');
   }
   globalThis.fetch = nodeFetch;
   globalThis.Headers = nodeFetch.Headers;

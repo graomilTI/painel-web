@@ -28,7 +28,7 @@
 require('dotenv').config();
 require('dotenv').config({ path: '.env.production' });
 const fs = require('fs');
-const { obterTokenGrm } = require('./grm-token-cache');
+const { obterTokenGrm } = require('../grm-token-cache');
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
 const GRM_WEB_HEADERS = {

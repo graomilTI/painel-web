@@ -13,7 +13,7 @@
 require('dotenv').config();
 require('dotenv').config({ path: '.env.production' });
 const fs = require('fs');
-const { obterTokenGrm } = require('./grm-token-cache');
+const { obterTokenGrm } = require('../grm-token-cache');
 
 const [PLANO, SAIDA] = process.argv.slice(2, 4);
 const EXECUTAR = process.argv.includes('--executar');

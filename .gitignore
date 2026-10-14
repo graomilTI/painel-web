@@ -10,3 +10,9 @@ supabase/.temp/
 # Cache de token/cooldown do login GRM (agentes-grm-sync/grm-token-cache.js)
 agentes-grm-sync/.grm-token-*.json
 agentes-grm-sync/.grm-login-*
+
+# Saídas de análises pontuais (planilhas, backups, relatórios avulsos). O repo é
+# PÚBLICO e o deploy do Pages publica tudo que é versionado — nunca commitar dados aqui.
+saidas/
+.tmp_sql/
+*.docx

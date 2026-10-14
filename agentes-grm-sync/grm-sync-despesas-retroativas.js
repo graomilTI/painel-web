@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 'use strict';
 
 require('dotenv').config();
@@ -42,16 +43,16 @@ function assertDirectExpenseAllowed(
   const expenseName = String(expense?.oexName || '').trim();
   const key = norm(expenseName);
   if (key === 'CAFE' && cafeAuthorized !== true) {
-    const error = new Error(
+    const error = /** @type {Error & { code?: string }} */ (new Error(
       `Despesa ${expenseName || key} bloqueada: Café exige Programação do Painel e login válido no ponto de embarque entre 04h e 07h no horário local.`,
-    );
+    ));
     error.code = 'CAFE_SEM_AUTORIZACAO_OPERACIONAL';
     throw error;
   }
   if (key === 'JANTA' && jantaAuthorized !== true) {
-    const error = new Error(
+    const error = /** @type {Error & { code?: string }} */ (new Error(
       `Despesa ${expenseName || key} bloqueada: Janta exige Programação do Painel e ao menos um laudo lançado a partir das 19h no horário local do ponto de embarque.`,
-    );
+    ));
     error.code = 'JANTA_SEM_AUTORIZACAO_OPERACIONAL';
     throw error;
   }
@@ -78,7 +79,7 @@ function log(level, message, data) {
 function yesterdaySaoPaulo(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(now).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  }).formatToParts(now).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), /** @type {Record<string, string>} */ ({}));
   const utc = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
   utc.setUTCDate(utc.getUTCDate() - 1);
   return utc.toISOString().slice(0, 10);

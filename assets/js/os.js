@@ -748,8 +748,8 @@ export async function renderOsModule(content, options = {}) {
           if (engine) {
             await engine.criarNotificacao({
               tipo: 'os_atender',
-              titulo: `OS ${esc(row.numero_os)} pronta para conferência`,
-              descricao: `${esc(row.supervisao || '')} — ${esc(row.cliente || '')} — ${esc(row.data_os || '')}`,
+              titulo: `OS ${escapeHtml(row.numero_os)} pronta para conferência`,
+              descricao: `${escapeHtml(row.supervisao || '')} — ${escapeHtml(row.cliente || '')} — ${escapeHtml(row.data_os || '')}`,
               destinatario_modulo: 'distribuir_os',
               supervisao: row.supervisao || null,
               referencia_tabela: 'operacional_os',

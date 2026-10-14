@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 
 const laneArg = process.argv.find((arg) => arg.startsWith('--lane='));
 const workerArg = process.argv.find((arg) => arg.startsWith('--worker-id='));

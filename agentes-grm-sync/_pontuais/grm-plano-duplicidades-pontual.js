@@ -8,8 +8,8 @@ require('dotenv').config({ path: '.env.production' });
 const fs = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 const WebSocket = require('ws');
-const G = require('./grm-despesas-guardas');
-const { obterTokenGrm } = require('./grm-token-cache');
+const G = require('../grm-despesas-guardas');
+const { obterTokenGrm } = require('../grm-token-cache');
 
 const INICIO = process.argv[2]; // primeiro dia de LANÇAMENTO a tratar
 const FIM = process.argv[3];    // hoje
