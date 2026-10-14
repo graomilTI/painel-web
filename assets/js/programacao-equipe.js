@@ -755,7 +755,7 @@ export async function loadIndisponiveisNaData(dataReferencia) {
         .lte('data_inicio', dia).gte('data_fim', dia),
       // Tabela legada `indisponibilidades` (colaborador_cpf/colaborador_nome,
       // sem colaborador_id) — cadastro avulso feito direto na tela de
-      // Programação (bloco "Sincroniza indisponibilidade do RH" em programacao.js), separado do
+      // Programação (módulo programacao-indisponibilidade-sync.js, bloco "Sincroniza indisponibilidade do RH"), separado do
       // fluxo oficial de RH acima. Um colaborador cadastrado só aqui (caso
       // real: atestado registrado nessa tabela mas nunca lançado em
       // rh_atestados) passava batido por este filtro e virava sugestão da
