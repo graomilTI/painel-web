@@ -37,6 +37,40 @@ test('nenhum agente do Caixa volta a declarar uma cópia local das funções com
   }
 });
 
+// Etapa 2 (14/10/2026): fluxo de tela do lançamento + conferência pela API. Por enquanto só o
+// agente de Bônus usa as versões do módulo; os outros migram um por vez.
+const FLUXO_LANCAMENTO = ['brMoneyText', 'selectExactStaffRow', 'clickCash', 'openEmployee', 'clickAddExpense', 'markField', 'chooseMovementType', 'saveExpense', 'movimentosCaixaGrm'];
+const AGENTES_FLUXO_DO_MODULO = ['grm-sync-bonus-caixa.js'];
+
+test('agentes migrados usam o fluxo de lançamento do módulo, sem cópia local', () => {
+  for (const nome of FLUXO_LANCAMENTO) assert.equal(typeof caixaUi[nome], 'function', `${nome} deveria ser exportada`);
+  for (const arquivo of AGENTES_FLUXO_DO_MODULO) {
+    const src = readFileSync(new URL(`../agentes-grm-sync/${arquivo}`, import.meta.url), 'utf8');
+    for (const nome of FLUXO_LANCAMENTO) {
+      assert.doesNotMatch(src, new RegExp(`^(async )?function ${nome}\\(`, 'm'), `${arquivo} redeclara ${nome}`);
+    }
+  }
+});
+
+test('agente de Bônus confere e checa duplicidade pela API, não pela tabela da tela', () => {
+  // A tabela do modal Caixa Operacional esconde datas futuras: o Bônus (dia 15) virava falso ERRO
+  // e a trava contra duplicidade ficava cega (caso de 06/10/2026).
+  const src = readFileSync(new URL('../agentes-grm-sync/grm-sync-bonus-caixa.js', import.meta.url), 'utf8');
+  assert.match(src, /movimentosCaixaGrm\(/);
+  assert.doesNotMatch(src, /inspectExpenseDescriptions\(page/);
+});
+
+test('mesesDoPeriodo quebra o período em meses inteiros (a API recusa mais de 1 mês)', () => {
+  assert.deepEqual(caixaUi.mesesDoPeriodo('2026-10-01', '2026-10-15'), [['01/10/2026', '31/10/2026']]);
+  assert.deepEqual(caixaUi.mesesDoPeriodo('2026-08-01', '2026-10-15'), [
+    ['01/08/2026', '31/08/2026'], ['01/09/2026', '30/09/2026'], ['01/10/2026', '31/10/2026'],
+  ]);
+  assert.deepEqual(caixaUi.mesesDoPeriodo('2026-12-01', '2027-02-15'), [
+    ['01/12/2026', '31/12/2026'], ['01/01/2027', '31/01/2027'], ['01/02/2027', '28/02/2027'],
+  ]);
+  assert.throws(() => caixaUi.mesesDoPeriodo('lixo', '2026-10-01'), /Período inválido/);
+});
+
 test('configurar exige a pasta de screenshots', () => {
   assert.throws(() => caixaUi.configurar({}), /screenshotDir/);
 });

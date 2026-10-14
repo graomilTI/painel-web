@@ -87,4 +87,4 @@ async function autenticarPaginaComToken(page) {
   log('SUCCESS', 'Sessão autenticada com o token em cache');
 }
 
-module.exports = { autenticarPaginaComToken };
+module.exports = { autenticarPaginaComToken, postGrm };
