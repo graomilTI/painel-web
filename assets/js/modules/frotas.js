@@ -1554,6 +1554,9 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     return rua === cidade ? cidade : `${rua} · ${cidade}`;
   }
 
+  // Trajeto só conta como "fora do horário" na tela a partir de 1 km (movimentos de poucos metros são ruído).
+  const FH_FORA_MIN_KM = 1;
+
   function fhNum(valor) {
     const n = Number(valor);
     return Number.isFinite(n) ? n : 0;
@@ -2186,49 +2189,57 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
 
   // ── Detalhes (modal) ───────────────────────────────────────────────────────
 
-  // Linha do tempo: uma faixa por assunto (horário permitido, percursos, sem justificativa, excessos), com rótulo à esquerda.
+  // Barra única do dia: faixa verde = horário permitido; viagens azuis, e só a parte que passa da janela fica vermelha;
+  // tira roxa embaixo = trajeto sem justificativa; triângulos laranja embaixo = excessos de velocidade.
   function fhBarraHtml(dos, det) {
     const dia = dos.data_evento;
     const pct = (min) => Math.max(0, Math.min(1440, Number(min) || 0)) / 14.4;
     const jIni = fhMinutosDoDia(dos.janela_inicio, dia);
     const jFim = fhMinutosDoDia(dos.janela_fim, dia);
-    const bloco = (ini, fim, classe, titulo) => `<i class="fh-lt-bloco ${classe}" style="left:${pct(ini).toFixed(2)}%;width:${Math.max(pct(fim) - pct(ini), 0.4).toFixed(2)}%" title="${escapeHtml(titulo)}"></i>`;
-    let percursos = '';
-    let foraDoHorario = '';
-    let semJustificativa = '';
+    const estilo = (ini, fim) => `left:${pct(ini).toFixed(2)}%;width:${Math.max(pct(fim) - pct(ini), 0.4).toFixed(2)}%`;
+    let blocos = '';
+    let tiras = '';
+    let temFora = false;
     (det.viagens || []).forEach((v) => {
       const ini = fhMinutosDoDia(v.ini, dia);
       const fim = fhMinutosDoDia(v.fim, dia);
       if (ini === null || fim === null || Number(v.km) < 0.1) return;
-      const titulo = `${fhHm(v.ini)} às ${fhHm(v.fim)} · ${fhKm(v.km)} km`;
-      percursos += bloco(ini, fim, 'ok', titulo);
-      // só a parte da viagem que passa da janela fica vermelha
-      if (jIni === null || jFim === null) {
-        foraDoHorario += bloco(ini, fim, 'fora', `${titulo} · fora do horário`);
+      const titulo = escapeHtml(`${fhHm(v.ini)} às ${fhHm(v.fim)} · ${fhKm(v.km)} km`);
+      blocos += `<i class="fh-barra-bloco ok" style="${estilo(ini, fim)}" title="${titulo}"></i>`;
+      // vermelho só nas viagens que o banco marcou como fora do horário (ida e volta ficam azuis), e só a parte que passa da janela
+      if (fhNum(v.fora_km) < FH_FORA_MIN_KM) {
+        // dentro do horário, na ida ou na volta
+      } else if (jIni === null || jFim === null) {
+        blocos += `<i class="fh-barra-bloco fora" style="${estilo(ini, fim)}" title="${titulo} · fora do horário"></i>`;
+        temFora = true;
       } else {
-        if (ini < jIni) foraDoHorario += bloco(ini, Math.min(fim, jIni), 'fora', `${titulo} · fora do horário`);
-        if (fim > jFim) foraDoHorario += bloco(Math.max(ini, jFim), fim, 'fora', `${titulo} · fora do horário`);
+        if (ini < jIni) { blocos += `<i class="fh-barra-bloco fora" style="${estilo(ini, Math.min(fim, jIni))}" title="${titulo} · fora do horário"></i>`; temFora = true; }
+        if (fim > jFim) { blocos += `<i class="fh-barra-bloco fora" style="${estilo(Math.max(ini, jFim), fim)}" title="${titulo} · fora do horário"></i>`; temFora = true; }
       }
-      if (v.uso === 'SEM_JUSTIFICATIVA') semJustificativa += bloco(ini, fim, 'sem', `${titulo} · sem justificativa`);
+      if (v.uso === 'SEM_JUSTIFICATIVA') tiras += `<i class="fh-barra-sem" style="${estilo(ini, fim)}" title="${titulo} · sem justificativa"></i>`;
     });
     const excessos = (det.excessos || []).map((x) => {
       const min = fhMinutosDoDia(x.ts, dia);
       if (min === null) return '';
       const titulo = `${fhHm(x.ts)} · ${Math.round(fhNum(x.vel))} km/h${x.endereco ? ` · ${fhEnderecoCurto(x.endereco)}` : ''}`;
-      return `<i class="fh-lt-exc" style="left:${pct(min).toFixed(2)}%" title="${escapeHtml(titulo)}"></i>`;
+      return `<i class="fh-barra-exc" style="left:${pct(min).toFixed(2)}%" title="${escapeHtml(titulo)}"></i>`;
     }).join('');
-    const permitido = (jIni !== null && jFim !== null)
-      ? bloco(jIni, jFim, 'janela', `Horário permitido: ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`)
+    const janela = (jIni !== null && jFim !== null)
+      ? `<i class="fh-barra-janela" style="${estilo(jIni, jFim)}" title="${escapeHtml(`Horário permitido: ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}`)}"></i>`
       : '';
-    const faixa = (rotulo, conteudo) => `<div class="fh-lt-linha"><span class="fh-lt-rot">${rotulo}</span><div class="fh-lt-trilho">${conteudo}</div></div>`;
     const horas = [0, 3, 6, 9, 12, 15, 18, 21, 24]
-      .map((h) => `<span class="fh-lt-hora" style="left:${(h / 24 * 100).toFixed(2)}%">${String(h).padStart(2, '0')}h</span>`).join('');
-    return `<div class="fh-lt">
-      ${faixa('Horário permitido', permitido)}
-      ${faixa('Percursos', percursos + foraDoHorario)}
-      ${semJustificativa ? faixa('Sem justificativa', semJustificativa) : ''}
-      ${excessos ? faixa('Excessos', excessos) : ''}
-      <div class="fh-lt-linha"><span></span><div class="fh-lt-escala">${horas}</div></div>
+      .map((h) => `<span class="fh-barra-hora" style="left:${(h / 24 * 100).toFixed(2)}%">${String(h).padStart(2, '0')}h</span>`).join('');
+    return `<div class="fh-barra">
+      <div class="fh-barra-trilho">${janela}${blocos}${tiras}</div>
+      ${excessos ? `<div class="fh-barra-excs">${excessos}</div>` : ''}
+      <div class="fh-barra-escala">${horas}</div>
+    </div>
+    <div class="fh-legenda-barra">
+      ${janela ? '<span><i class="fh-lb fh-lb-janela"></i>Horário permitido</span>' : ''}
+      <span><i class="fh-lb fh-lb-ok"></i>Percurso</span>
+      ${temFora ? '<span><i class="fh-lb fh-lb-fora"></i>Fora do horário</span>' : ''}
+      ${tiras ? '<span><i class="fh-lb fh-lb-sem"></i>Sem justificativa</span>' : ''}
+      ${excessos ? '<span><i class="fh-lb fh-lb-exc"></i>Excesso de velocidade</span>' : ''}
     </div>`;
   }
 
@@ -2242,7 +2253,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
   }
 
   function fhViagemLinhaHtml(v, dos, excessos = []) {
-    const fora = Number(v.fora_km) >= 0.3;
+    const fora = Number(v.fora_km) >= FH_FORA_MIN_KM;
     const sem = v.uso === 'SEM_JUSTIFICATIVA';
     const parado = Number(v.km) < 0.1;
     const minutos = (fhMinutosDoDia(v.fim, dos.data_evento) ?? 0) - (fhMinutosDoDia(v.ini, dos.data_evento) ?? 0);
@@ -2280,7 +2291,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     });
     const viagens = (det.viagens || []).map((v, i) => ({ ...v, _i: i }))
       .sort((a, b) => String(a.ini).localeCompare(String(b.ini)));
-    const comAlerta = viagens.filter((v) => Number(v.fora_km) >= 0.3 || v.uso === 'SEM_JUSTIFICATIVA' || excPorViagem.has(v._i));
+    const comAlerta = viagens.filter((v) => Number(v.fora_km) >= FH_FORA_MIN_KM || v.uso === 'SEM_JUSTIFICATIVA' || excPorViagem.has(v._i));
     return { viagens, comAlerta, excPorViagem };
   }
 
@@ -2408,7 +2419,10 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
     let fh;
     if (semViagens) fh = cartao('Fora do horário', nada, 'Sem dados', 'O veículo não está no relatório de viagens', '');
     else if (f.fora || f.foraLeve) {
-      fh = cartao('Fora do horário', f.fora ? 'fh-tile-fora' : 'fh-tile-atencao', fhNum(dos.km_fora) >= 1 ? `${fhKm(dos.km_fora)} km` : 'Conferir', fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado', 'trajetos');
+      fh = cartao('Fora do horário', f.fora ? 'fh-tile-fora' : 'fh-tile-atencao', fhNum(dos.km_fora) >= 1 ? `${fhKm(dos.km_fora)} km` : 'Conferir',
+        fhNum(dos.km_fora) >= 1 ? (fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado')
+          : (fhNum(dos.atraso_retorno_min) > 60 ? `Chegou em casa ${fhDuracao(dos.atraso_retorno_min)} depois do previsto` : (fhMaiorTrecho(dos) || 'Percurso ou retorno diferente do esperado')),
+        'trajetos');
     } else {
       fh = cartao('Fora do horário', nada, 'Nada', dos.janela_inicio ? `Horário permitido ${fhHm(dos.janela_inicio)} às ${fhHm(dos.janela_fim)}` : 'Dentro do horário', '');
     }
@@ -2562,6 +2576,7 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
             <li><strong>Pouco registro no dia</strong> (menos de 3 registros, ou menos de 3 h entre o primeiro e o último): o horário é ampliado para 05:30 às 20:00 (seg a sáb). Sem nenhum registro vale esse horário padrão; domingo sem registro, todo uso conta como fora do horário.</li>
             <li><strong>Fora do horário</strong> (vermelho): 25 km ou mais fora do horário permitido, 2 h ou mais, 5 km ou mais à noite (22h às 5h) ou 5 km ou mais depois de chegar em casa. <strong>Para conferir</strong> (amarelo): 5 km ou mais, algum km à noite, percurso bem mais longo que o direto ou chegada em casa com mais de 1 h de atraso.</li>
             <li>Quando uma viagem passa do limite, só a parte depois do limite conta (proporcional ao tempo).</li>
+            <li><strong>Ida e volta são válidas:</strong> o percurso da casa até o primeiro local de trabalho e o do último local de trabalho até a primeira chegada em casa nunca contam como fora do horário nem como sem justificativa, desde que não passem de 2,5 vezes o trajeto direto mais 20 km. O horário de chegada em casa continua sendo conferido (atraso).</li>
             <li><strong>Trajeto sem justificativa:</strong> a viagem não chega a uma O.S. programada (a menos de 3 km), à casa de um colega de carona, a um local onde houve registro de trabalho nem a um posto ou oficina, e o conjunto de trechos soltos entre dois desses locais passa de 1,6 vez o trajeto direto mais 5 km. <strong>Uso indevido</strong> (roxo): 40 km ou mais sem justificativa e pelo menos 25% do que o veículo rodou no dia. <strong>Para conferir</strong>: 15 km ou mais. Sem nenhum local conhecido no dia, o resultado nunca passa de "para conferir".</li>
             <li><strong>Excesso de velocidade:</strong> registros do rastreador (BFleet/Infleet) no dia da placa; contam como fora do horário quando acontecem depois da janela permitida e como "sem justificativa" quando estavam num trajeto sem justificativa.</li>
           </ul>
@@ -3900,20 +3915,25 @@ import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print
                 .fh-aba.active{color:#bbf7d0;border-bottom-color:#22c55e}
                 .fh-painel[hidden]{display:none}
                 @media(max-width:760px){.fh-cab{display:none}.fh-linha{grid-template-columns:1fr auto}.fh-linha .fh-btn-dossie{width:auto}.fh-cels{display:flex;flex-wrap:wrap;gap:6px 14px;grid-column:1/-1}.fh-cel.vazio{display:none}.fh-cel::before{content:attr(data-rotulo);display:block;margin:0 0 2px 2px;font-size:10px;color:#94a3b8}.fh-tiles{grid-template-columns:1fr}}
-                .fh-lt{display:grid;gap:6px;margin:4px 0 12px}
-                .fh-lt-linha{display:grid;grid-template-columns:124px minmax(0,1fr);gap:10px;align-items:center}
-                .fh-lt-rot{font-size:11px;font-weight:800;color:#94a3b8}
-                .fh-lt-trilho{position:relative;height:16px;border-radius:5px;background:rgba(148,163,184,.08)}
-                .fh-lt-bloco{position:absolute;top:0;bottom:0;border-radius:3px;min-width:3px}
-                .fh-lt-bloco.janela{background:rgba(34,197,94,.4)}
-                .fh-lt-bloco.ok{background:#60a5fa}.fh-lt-bloco.fora{background:#f87171}.fh-lt-bloco.sem{background:#c084fc}
-                .fh-lt-exc{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;border-radius:2px;background:#fb923c}
-                .fh-lt-escala{position:relative;height:14px}
-                .fh-lt-hora{position:absolute;transform:translateX(-50%);font-size:10px;color:#6b7280}
-                .fh-lt-hora:first-child{transform:none}.fh-lt-hora:last-child{transform:translateX(-100%)}
+                .fh-barra{position:relative;margin:4px 0 0;padding-bottom:20px}
+                .fh-barra-trilho{position:relative;height:36px;border-radius:8px;background:rgba(148,163,184,.08);border:1px solid rgba(148,163,184,.14);overflow:hidden}
+                .fh-barra-janela{position:absolute;top:0;bottom:0;background:rgba(34,197,94,.2);border-left:2px solid rgba(34,197,94,.7);border-right:2px solid rgba(34,197,94,.7)}
+                .fh-barra-bloco{position:absolute;top:6px;bottom:13px;border-radius:3px;min-width:3px}
+                .fh-barra-bloco.ok{background:#60a5fa}.fh-barra-bloco.fora{background:#f87171}
+                .fh-barra-sem{position:absolute;bottom:3px;height:6px;border-radius:3px;min-width:3px;background:#c084fc}
+                .fh-barra-excs{position:relative;height:12px;margin-top:3px}
+                .fh-barra-exc{position:absolute;top:0;width:0;height:0;margin-left:-5px;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:10px solid #fb923c}
+                .fh-barra-escala{position:absolute;left:0;right:0;bottom:0;height:16px}
+                .fh-barra-hora{position:absolute;transform:translateX(-50%);font-size:10px;color:#6b7280}
+                .fh-barra-hora:first-child{transform:none}.fh-barra-hora:last-child{transform:translateX(-100%)}
+                .fh-legenda-barra{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;color:#94a3b8;font-size:11px}
+                .fh-legenda-barra span{display:inline-flex;align-items:center;gap:6px}
+                .fh-lb{display:inline-block;width:12px;height:10px;border-radius:3px}
+                .fh-lb-janela{background:rgba(34,197,94,.35);border:1px solid rgba(34,197,94,.7)}
+                .fh-lb-ok{background:#60a5fa}.fh-lb-fora{background:#f87171}.fh-lb-sem{background:#c084fc;height:5px}
+                .fh-lb-exc{width:0;height:0;border-radius:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #fb923c}
                 .fh-fatos{margin:6px 0 0;color:#cbd5e1;font-size:13px;line-height:1.5}
                 .fh-nota{margin:10px 0 0;padding-left:10px;border-left:3px solid rgba(251,191,36,.5);color:#94a3b8;font-size:12px;line-height:1.5}
-                @media(max-width:560px){.fh-lt-linha{grid-template-columns:84px minmax(0,1fr)}.fh-lt-rot{font-size:10px}}
                 .speed-modal.fh-modal{max-width:980px}
                 .fh-m-sub{margin:0 0 14px;color:#94a3b8;font-size:13px;line-height:1.5}
                 .fh-h4{margin:20px 0 8px;color:#f8fafc;font-size:14px;letter-spacing:.01em}

@@ -185,6 +185,8 @@ $$;
 -- Uso sem justificativa: cada viagem tem que chegar a uma O.S. programada, a uma parada de carona ou a um local
 -- onde houve registro de trabalho (informativo, produção, celular); trechos soltos entre dois desses locais contam
 -- como "no caminho" enquanto não passam de 1,6x o trajeto direto + 5 km. O que sobra fica sem justificativa.
+-- A ida (casa → 1º local de trabalho) e a volta (último local → casa, até a 1ª chegada em casa) são sempre percursos
+-- válidos, mesmo fora da janela de horário, enquanto não passam de 2,5x o trajeto direto + 20 km.
 -- ---------------------------------------------------------------------------------------------
 
 -- Classifica cada viagem do dia: chegou a uma O.S. programada, a uma parada de carona ou a um local de registro de
@@ -205,19 +207,22 @@ declare
   n int := jsonb_array_length(trips);
   casa_la float8 := nullif(p_det #>> '{casa_manha,lat}', '')::float8;
   casa_lo float8 := nullif(p_det #>> '{casa_manha,lng}', '')::float8;
+  noite_la float8 := nullif(p_det #>> '{casa_noite,lat}', '')::float8;
+  noite_lo float8 := nullif(p_det #>> '{casa_noite,lng}', '')::float8;
   sites jsonb := '[]'::jsonb;
   rota jsonb := '[]'::jsonb;
-  usos text[]; refs text[];
+  usos text[]; refs text[]; legs text[];
   s jsonb; e jsonb; t jsonb; o jsonb; pos jsonb;
   i int; k int;
   e_ts timestamp; t_fim timestamp; dist numeric;
   ref text; nome1 text; prio int;
   d_site jsonb; ancora text; ancora_ref text;
   pend int[] := '{}'; pend_km numeric := 0;
-  ch_la float8; ch_lo float8; direto numeric; total numeric;
+  ch_la float8; ch_lo float8; direto numeric; total numeric; limite numeric;
   km_ind numeric := 0; n_ind int := 0; n_sites int;
   saida jsonb := '[]'::jsonb;
-  v_prim boolean := true; houve_ancora boolean := false; v_ult_la float8; v_ult_lo float8;
+  houve_ancora boolean := false; ida_ok boolean; v_ult_la float8; v_ult_lo float8;
+  n_pend int; k_fim int; d_la float8; d_lo float8;
 begin
   if n = 0 then
     return jsonb_build_object('viagens', '[]'::jsonb, 'km_indevido', 0, 'n_indevidas', 0, 'sem_base', true, 'locais', 0);
@@ -266,6 +271,7 @@ begin
   n_sites := jsonb_array_length(sites) + jsonb_array_length(rota);
   usos := array_fill(null::text, array[n]);
   refs := array_fill(null::text, array[n]);
+  legs := array_fill(null::text, array[n]);
 
   -- Ponto de partida do encadeamento: onde o veículo dormiu.
   ch_la := coalesce(casa_la, (trips -> 0 ->> 'la1')::float8);
@@ -304,19 +310,25 @@ begin
     end if;
 
     if ancora is not null then
-      -- fecha o encadeamento anterior: trechos soltos entre o local anterior e este
+      -- fecha o encadeamento anterior: trechos soltos entre o local anterior e este.
+      -- Até o 1º local de trabalho é a ida (casa → trabalho): tolerância maior.
+      ida_ok := true;
       if coalesce(array_length(pend, 1), 0) > 0 then
         total := pend_km + dist;
         direto := coalesce(public.frotas_dossie_hav(ch_la, ch_lo, (t ->> 'la2')::float8, (t ->> 'lo2')::float8), 0) * p_fator;
+        limite := case when houve_ancora then direto * 1.6 + 5 else direto * 2.5 + 20 end;
+        ida_ok := total <= limite;
         for k in 1..array_length(pend, 1) loop
-          if total > direto * 1.6 + 5 then
+          if total > limite then
             usos[pend[k] + 1] := 'SEM_JUSTIFICATIVA';
           else
             usos[pend[k] + 1] := 'CAMINHO'; refs[pend[k] + 1] := 'a caminho de ' || ancora_ref;
+            if not houve_ancora then legs[pend[k] + 1] := 'IDA'; end if;
           end if;
         end loop;
       end if;
       usos[i + 1] := ancora; refs[i + 1] := ancora_ref;
+      if not houve_ancora and ida_ok then legs[i + 1] := 'IDA'; end if;
       houve_ancora := true;
       ch_la := (t ->> 'la2')::float8; ch_lo := (t ->> 'lo2')::float8;
       pend := '{}'; pend_km := 0;
@@ -326,25 +338,60 @@ begin
     end if;
   end loop;
 
-  -- Trechos soltos depois do último local de trabalho (volta para casa ou pernoite).
-  if coalesce(array_length(pend, 1), 0) > 0 then
-    direto := coalesce(public.frotas_dossie_hav(ch_la, ch_lo, v_ult_la, v_ult_lo), 0) * p_fator;
-    for k in 1..array_length(pend, 1) loop
-      if pend_km > direto * 1.6 + 5 then
-        usos[pend[k] + 1] := 'SEM_JUSTIFICATIVA';
-      elsif houve_ancora then
-        usos[pend[k] + 1] := 'RETORNO'; refs[pend[k] + 1] := 'volta depois do último local de trabalho';
-      else
-        usos[pend[k] + 1] := 'CAMINHO'; refs[pend[k] + 1] := 'deslocamento curto, sem local de trabalho no dia';
+  -- Trechos soltos depois do último local de trabalho.
+  n_pend := coalesce(array_length(pend, 1), 0);
+  if n_pend > 0 then
+    if not houve_ancora then
+      -- dia sem nenhum local de trabalho: só passa o que for curto
+      direto := coalesce(public.frotas_dossie_hav(ch_la, ch_lo, v_ult_la, v_ult_lo), 0) * p_fator;
+      for k in 1..n_pend loop
+        if pend_km > direto * 1.6 + 5 then
+          usos[pend[k] + 1] := 'SEM_JUSTIFICATIVA';
+        else
+          usos[pend[k] + 1] := 'CAMINHO'; refs[pend[k] + 1] := 'deslocamento curto, sem local de trabalho no dia';
+        end if;
+      end loop;
+    else
+      -- a volta termina na primeira chegada em casa; o que vier depois é outro uso
+      k_fim := n_pend;
+      for k in 1..n_pend loop
+        d_la := (trips -> pend[k] ->> 'la2')::float8; d_lo := (trips -> pend[k] ->> 'lo2')::float8;
+        if (casa_la is not null and public.frotas_dossie_hav(d_la, d_lo, casa_la, casa_lo) < 1.0)
+           or (noite_la is not null and public.frotas_dossie_hav(d_la, d_lo, noite_la, noite_lo) < 1.0) then
+          k_fim := k; exit;
+        end if;
+      end loop;
+      total := 0;
+      for k in 1..k_fim loop total := total + coalesce((trips -> pend[k] ->> 'km')::numeric, 0); end loop;
+      direto := coalesce(public.frotas_dossie_hav(ch_la, ch_lo, (trips -> pend[k_fim] ->> 'la2')::float8, (trips -> pend[k_fim] ->> 'lo2')::float8), 0) * p_fator;
+      for k in 1..k_fim loop
+        if total > direto * 2.5 + 20 then
+          usos[pend[k] + 1] := 'SEM_JUSTIFICATIVA';
+        else
+          usos[pend[k] + 1] := 'RETORNO'; refs[pend[k] + 1] := 'volta para casa depois do último local de trabalho';
+          legs[pend[k] + 1] := 'VOLTA';
+        end if;
+      end loop;
+      if k_fim < n_pend then
+        total := 0;
+        for k in k_fim + 1..n_pend loop total := total + coalesce((trips -> pend[k] ->> 'km')::numeric, 0); end loop;
+        direto := coalesce(public.frotas_dossie_hav((trips -> pend[k_fim] ->> 'la2')::float8, (trips -> pend[k_fim] ->> 'lo2')::float8, v_ult_la, v_ult_lo), 0) * p_fator;
+        for k in k_fim + 1..n_pend loop
+          if total > direto * 1.6 + 5 then
+            usos[pend[k] + 1] := 'SEM_JUSTIFICATIVA';
+          else
+            usos[pend[k] + 1] := 'CAMINHO'; refs[pend[k] + 1] := 'deslocamento curto depois de chegar em casa';
+          end if;
+        end loop;
       end if;
-    end loop;
+    end if;
   end if;
 
   for i in 0..n - 1 loop
     if usos[i + 1] = 'SEM_JUSTIFICATIVA' then
       km_ind := km_ind + coalesce((trips -> i ->> 'km')::numeric, 0); n_ind := n_ind + 1;
     end if;
-    saida := saida || jsonb_build_object('i', i, 'uso', usos[i + 1], 'ref', refs[i + 1]);
+    saida := saida || jsonb_build_object('i', i, 'uso', usos[i + 1], 'ref', refs[i + 1], 'leg', legs[i + 1]);
   end loop;
 
   return jsonb_build_object('viagens', saida, 'km_indevido', round(km_ind, 1), 'n_indevidas', n_ind, 'sem_base', n_sites = 0, 'locais', n_sites);
@@ -443,6 +490,7 @@ declare
   eq_map jsonb; pcol_map jsonb; pcol jsonb; eq_chave text; v_logisticas text[]; logistica_json jsonb;
   exc_map jsonb; exc_out jsonb; x_exc jsonb; exc_idx int; n_exc int; v_vmax numeric; v_vmax_hora text; n_exc_fora int; n_exc_ind int;
   uso_res jsonb; v_km_ind numeric; v_n_ind int; v_sem_base boolean; v_uso_ver text; v_exemplo text; v_extras text[];
+  trips_k jsonb; leg_i text;
 begin
   -- Informativos do colaborador (Mapa de Embarque): quem atualizou + quando + O.S./local.
   select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into inf_map
@@ -883,6 +931,14 @@ begin
     v_km_noturno := 0; v_km_apos_chegada := 0; n_apos_chegada := 0; chegada_idx := null;
     v_saida_casa := null; v_chegada_casa := null;
 
+    -- Classificação das viagens (O.S./carona/registro de trabalho/ida/volta): feita antes de medir o que está fora da janela.
+    select coalesce(jsonb_agg(tk.item || jsonb_build_object('km', tk.item -> 'dist') order by tk.ord), '[]'::jsonb) into trips_k
+    from jsonb_array_elements(trips) with ordinality as tk(item, ord);
+    uso_res := public.frotas_dossie_classificar_uso(jsonb_build_object(
+      'viagens', trips_k, 'evidencias', ev, 'programacao', jsonb_build_object('os', prog_os),
+      'enderecos', enderecos, 'casa_manha', jsonb_build_object('lat', casa_la, 'lng', casa_lo),
+      'casa_noite', jsonb_build_object('lat', noite_la, 'lng', noite_lo)));
+
     -- 1ª passada: chegada em casa depois do último registro de trabalho.
     if a_fim is not null then
       for i in 0..n - 1 loop
@@ -913,6 +969,11 @@ begin
         end if;
         out_secs := least(out_secs, t_dur);
       end if;
+      -- Ida (casa → 1º local de trabalho) e volta (último local → casa) são percursos válidos, mesmo fora da janela.
+      leg_i := uso_res -> 'viagens' -> i ->> 'leg';
+      if leg_i is not null then
+        out_secs := 0; p1_a := null; p2_a := null;
+      end if;
       fora_ini := coalesce(p1_a, p2_a);
       if p1_a is not null then
         noite_s := noite_s + public.frotas_dossie_sobrep_s(p1_a, p1_b, p_data::timestamp, p_data + time '05:00')
@@ -930,7 +991,8 @@ begin
       elsif t_ini >= a_fim - interval '15 minutes' then fase := 'VOLTA';
       else fase := 'EXPEDIENTE';
       end if;
-      if v_chegada_casa is not null and i > chegada_idx and fase in ('APOS_EXPEDIENTE', 'VOLTA') and t_dist >= 0.3 then
+      if leg_i is not null then fase := leg_i; end if;
+      if v_chegada_casa is not null and i > chegada_idx and leg_i is null and fase in ('APOS_EXPEDIENTE', 'VOLTA') and t_dist >= 0.3 then
         fase := 'APOS_CHEGADA_EM_CASA';
       end if;
       out_km := round(t_dist * out_secs / t_dur, 2);
@@ -965,9 +1027,6 @@ begin
     end loop;
 
     -- Uso sem justificativa: cada viagem chega a O.S. programada, carona ou local de registro de trabalho?
-    uso_res := public.frotas_dossie_classificar_uso(jsonb_build_object(
-      'viagens', viagens_out, 'evidencias', ev, 'programacao', jsonb_build_object('os', prog_os),
-      'enderecos', enderecos, 'casa_manha', jsonb_build_object('lat', casa_la, 'lng', casa_lo)));
     select coalesce(jsonb_agg(vo.item || jsonb_build_object('uso', u.uso, 'uso_ref', u.ref) order by vo.ord), '[]'::jsonb)
       into viagens_out
     from jsonb_array_elements(viagens_out) with ordinality as vo(item, ord)
