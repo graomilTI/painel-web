@@ -118,6 +118,8 @@ Desde 30/09/2026 o `user/login` do GRM exige Cloudflare Turnstile, então só um
 
 Plano B (painel fora do ar): no servidor, como `grao100`, `node grm-token-cache.js salvar` e colar o token só depois do prompt. O alerta de WhatsApp às ~00:05 (`grm_alerta_login_parado`) avisa quando o token do dia venceu.
 
+**Bloqueio de rede (Cloudflare barrando o IP do servidor) — 15/10/2026:** `POST /api/*` do servidor passou a voltar `403` em HTML ("Sorry, you have been blocked"), enquanto de outro IP o mesmo POST chega ao GRM (401 em JSON). Isso NÃO é token vencido. O `grm-token-cache.js` distingue os dois casos: com 403/429 em HTML ele **não apaga** o token em cache nem a entrega do painel (a entrega fica `pendente`, tentativas intactas), e os agentes falham na hora com `GRM_BLOQUEIO_REDE`. Marca de espera em `.grm-rede-bloqueada-*.json`: durante ela ninguém chama o GRM; vencida, UMA chamada sem token decide (liberada → apaga a marca e tudo volta; ainda bloqueada → espera 2 → 5 → 10 min, teto `GRM_REDE_BLOQUEIO_MAX_MIN`). Para conferir antes da hora, apague o arquivo. O alerta de WhatsApp tem texto próprio para esse caso (chave `rede_bloqueada|…`). A solução é o suporte do GRM liberar o IP do servidor (e, de preferência, uma conta de integração sem captcha/2FA). Teste: `node test-grm-token-bloqueio-rede.js`.
+
 ## Colaboradores pela API (quase em tempo real)
 
 `grmserver-colaboradores-api-realtime.js` substitui, somente para o cadastro de
