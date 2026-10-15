@@ -14,7 +14,19 @@
     "sync-patrimonios",
     "sync-clientes",
     "sync-resultado-diario",
-    "sync-resultado-diario-reconciliacao"
+    "sync-resultado-diario-reconciliacao",
+    "sync-despesas",
+    "sync-notas-fiscais",
+    "sync-notas-fiscais-reconciliacao",
+    "sync-contas-pagar",
+    "sync-contas-receber",
+    "sync-nhe",
+    "sync-cargas-geofence",
+    "sync-adiantamentos",
+    "sync-cadastrar-veiculo",
+    "sync-despesas-retroativas",
+    "sync-despesas-duplicadas",
+    "sync-aprovar-pendencias"
   ],
   "fallbackDireto": true,
   "handshakeTimeoutMs": 8000
