@@ -5,7 +5,7 @@
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20261015-ferias-escala1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20261015-ferias-escala1';
 import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20261006-solicitar1';
-import { TODAS_SUPERVISOES } from './programacao-constantes.js?v=20261014-modular1';
+import { TODAS_SUPERVISOES } from './programacao-constantes.js?v=20261015-nucleo1';
 
 {
 
