@@ -1,8 +1,9 @@
 // Financeiro > Ajuda de Custo.
 //
 // Mostra a relação do mês informada pelo RH (Folha e Holerite > Ajuda de custo): colaborador,
-// conta (iFood/Flash), valor e descrição. A partir do dia 15 do mês de referência o botão XLS
-// gera as planilhas PGTO_IFOOD / PGTO_FLASH (mesmo formato do Financeiro > Adiantamentos),
+// conta (iFood/Flash/Flash BVGRAIN), valor e descrição. A partir do dia 15 do mês de referência o
+// botão XLS gera as planilhas PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN (mesmo formato do
+// Financeiro > Adiantamentos; a Flash da BVGRAIN é outra conta, por isso outro arquivo),
 // trava as linhas para o RH e dispara o agente que lança, no Caixa do GRM de cada colaborador,
 // um Adiantamento e um Comprovante com a descrição do RH e data 15/MM do mês de referência.
 // A trava do dia 15 e a geração do lote são aplicadas no banco (RPC ajuda_custo_gerar_lote).
@@ -14,7 +15,7 @@ import {
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, rotuloCompetencia, dataPagamentoIso, pagamentoLiberado, hojeBrasiliaIso,
   arquivosPlanilha, mostrarDownloads,
-} from './ajudaCustoShared.js';
+} from './ajudaCustoShared.js?v=20261015-bvgrain';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const semAcento = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -150,6 +151,7 @@ function render() {
     <span class="fa-pill"><b>${state.ajudas.length}</b> ajuda(s) · <b>${dinheiro(soma(state.ajudas))}</b></span>
     <span class="fa-pill">iFood <b>${doTipo('ifood').length}</b> · ${dinheiro(soma(doTipo('ifood')))}</span>
     <span class="fa-pill">Flash <b>${doTipo('flash').length}</b> · ${dinheiro(soma(doTipo('flash')))}</span>
+    <span class="fa-pill">Flash BVGRAIN <b>${doTipo('flash_bvgrain').length}</b> · ${dinheiro(soma(doTipo('flash_bvgrain')))}</span>
     <span class="fa-pill">Aguardando planilha <b>${pendentes.length}</b> · ${dinheiro(soma(pendentes))}</span>`;
 
   const botao = c.querySelector('#faXls');
@@ -157,7 +159,7 @@ function render() {
   botao.disabled = state.gerando || !liberado || semPendentes;
   botao.title = !liberado
     ? `As planilhas de ${rotuloCompetencia(comp)} só podem ser geradas a partir de ${brDataIso(pagamento)}.`
-    : (semPendentes ? 'Não há ajuda de custo nova para gerar neste mês.' : 'Gera PGTO_IFOOD / PGTO_FLASH e lança no Caixa do GRM');
+    : (semPendentes ? 'Não há ajuda de custo nova para gerar neste mês.' : 'Gera PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN e lança no Caixa do GRM');
   botao.textContent = state.gerando ? 'Gerando...' : `XLS${pendentes.length ? ` (${pendentes.length})` : ''}`;
 
   renderTabela();
@@ -198,7 +200,7 @@ function renderLotes() {
     const comErro = [...state.fila.values()].some((m) => Object.values(m).some((x) => x.lote_id === l.id && x.status === 'ERRO'));
     return `<div class="fa-lote">
       <div><b>Lote ${l.numero}</b> · ${l.total_linhas} linha(s) · ${dinheiro(l.total_valor)}
-        <span class="fa-sub">iFood ${l.linhas_ifood} · Flash ${l.linhas_flash} · gerado em ${dataHora(l.gerado_em)}${l.gerado_por_nome ? ` por ${esc(l.gerado_por_nome)}` : ''}</span></div>
+        <span class="fa-sub">iFood ${l.linhas_ifood} · Flash ${l.linhas_flash}${l.linhas_flash_bvgrain ? ` · Flash BVGRAIN ${l.linhas_flash_bvgrain}` : ''} · gerado em ${dataHora(l.gerado_em)}${l.gerado_por_nome ? ` por ${esc(l.gerado_por_nome)}` : ''}</span></div>
       <div class="fa-bar">
         <button class="btn btn-secondary fa-small" data-fa-baixar="${esc(l.id)}" type="button">Baixar XLS de novo</button>
         ${comErro ? `<button class="btn btn-secondary fa-small" data-fa-reenviar="${esc(l.id)}" type="button">Reenviar ao Caixa (com erro)</button>` : ''}
@@ -239,7 +241,7 @@ const compacta = (iso) => String(iso).slice(0, 10).replaceAll('-', '');
 
 function avisoIgnoradas(ignoradas) {
   if (!ignoradas?.length) return '';
-  return ` ATENÇÃO: ${ignoradas.length} linha(s) ficaram FORA da planilha por CPF inválido (${ignoradas.map((r) => r.colaborador_nome).join(', ')}) — pague por fora.`;
+  return ` ATENÇÃO: ${ignoradas.length} linha(s) ficaram FORA da planilha por CPF inválido ou conta desconhecida (${ignoradas.map((r) => r.colaborador_nome).join(', ')}) — pague por fora.`;
 }
 
 async function gerarXls() {
@@ -259,7 +261,7 @@ async function gerarXls() {
     if (error) throw error;
     const { arquivos, totais, ignoradas } = await planilhasDoLote({ id: lote.lote_id, numero: lote.numero }, compacta(hojeBrasiliaIso()));
     mostrarDownloads(arquivos, `Planilhas — ${rotuloCompetencia(comp)} (lote ${lote.numero})`);
-    aviso(`Lote ${lote.numero} gerado: ${lote.total_linhas} ajuda(s), ${dinheiro(lote.total_valor)} (iFood ${totais.ifood}, Flash ${totais.flash} CPF(s)). O lançamento no Caixa do GRM foi iniciado.${avisoIgnoradas(ignoradas)}`, ignoradas.length ? 'err' : 'ok');
+    aviso(`Lote ${lote.numero} gerado: ${lote.total_linhas} ajuda(s), ${dinheiro(lote.total_valor)} (iFood ${totais.ifood}, Flash ${totais.flash}${totais.flashBvgrain ? `, Flash BVGRAIN ${totais.flashBvgrain}` : ''} CPF(s)). O lançamento no Caixa do GRM foi iniciado.${avisoIgnoradas(ignoradas)}`, ignoradas.length ? 'err' : 'ok');
   } catch (e) {
     console.error('[Ajuda de Custo] gerar', e);
     aviso(e.message || 'Erro ao gerar as planilhas.', 'err');
@@ -275,7 +277,7 @@ async function baixarLote(loteId) {
   try {
     aviso('Montando as planilhas...');
     const { arquivos, ignoradas } = await planilhasDoLote(lote, compacta(new Date(lote.gerado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })));
-    if (!arquivos.length) return aviso('Este lote não tem linhas com CPF válido.', 'err');
+    if (!arquivos.length) return aviso('Este lote não tem linhas com CPF válido e conta conhecida.', 'err');
     mostrarDownloads(arquivos, `Planilhas — lote ${lote.numero}`);
     aviso(avisoIgnoradas(ignoradas).trim(), ignoradas.length ? 'err' : '');
   } catch (e) {
@@ -295,7 +297,7 @@ export async function renderContent(content) {
   state.content = content;
   clearTimeout(state.timer);
   content.innerHTML = `${styles()}
-    <section class="hero-card"><div><div class="eyebrow">Financeiro</div><h2>Ajuda de Custo</h2><p>Ajudas de custo informadas pelo RH, planilhas de pagamento (iFood e Flash) e lançamento no Caixa do GRM.</p></div><div class="hero-badge-wrap"><span class="hero-badge">$</span></div></section>
+    <section class="hero-card"><div><div class="eyebrow">Financeiro</div><h2>Ajuda de Custo</h2><p>Ajudas de custo informadas pelo RH, planilhas de pagamento (iFood, Flash e Flash BVGRAIN) e lançamento no Caixa do GRM.</p></div><div class="hero-badge-wrap"><span class="hero-badge">$</span></div></section>
     <div id="faPeriodoBox">${periodoHtml('faPeriodo', state.periodo.ano, state.periodo.mes)}</div>
     <div class="fa-pag" id="faPag"></div>
     <div class="fa-summary" id="faResumo"></div>

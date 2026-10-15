@@ -5,7 +5,19 @@
 // e é com essa data (15/MM) que o agente lança Adiantamento + Comprovante no Caixa
 // do GRM — mesma convenção do Bônus em Conferência.
 
-export const CONTAS = { ifood: 'iFood', flash: 'Flash' };
+// A BVGRAIN tem conta Flash própria: planilha de pagamento separada da Flash (GRAOMIL).
+export const CONTAS = { ifood: 'iFood', flash: 'Flash', flash_bvgrain: 'Flash BVGRAIN' };
+
+const semAcento = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// Conta de pagamento a partir do texto da coluna "C. Banc. Despesas" do cadastro do colaborador
+// no GRM (ex.: GRAOMIL IFOOD, GRAOMIL FLASH, BVGRAIN FLASH). Vazio = não é iFood nem Flash.
+export function contaDoTexto(texto) {
+  const t = semAcento(texto);
+  if (t.includes('ifood')) return 'ifood';
+  if (t.includes('flash')) return t.includes('bvgrain') ? 'flash_bvgrain' : 'flash';
+  return '';
+}
 
 export const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 export const MESES_COMPLETOS = [
@@ -131,6 +143,7 @@ const porNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''
 // centroCusto: Map(cpf -> coordenação), opcional.
 export function montarPlanilhas(rows, centroCusto = new Map()) {
   const flash = new Map();
+  const flashBvgrain = new Map();
   const ifood = new Map();
   const ignoradas = [];
   for (const row of rows || []) {
@@ -139,9 +152,10 @@ export function montarPlanilhas(rows, centroCusto = new Map()) {
     const cpf = soDigitos(row.colaborador_cpf);
     const valor = arredonda(row.valor);
     if (cpf.length !== 11 || !valor) { ignoradas.push(row); continue; }
-    if (row.conta === 'flash') {
-      if (!flash.has(cpf)) flash.set(cpf, { cpf, nome: row.colaborador_nome, valor: 0 });
-      flash.get(cpf).valor = arredonda(flash.get(cpf).valor + valor);
+    if (row.conta === 'flash' || row.conta === 'flash_bvgrain') {
+      const destino = row.conta === 'flash' ? flash : flashBvgrain;
+      if (!destino.has(cpf)) destino.set(cpf, { cpf, nome: row.colaborador_nome, valor: 0 });
+      destino.get(cpf).valor = arredonda(destino.get(cpf).valor + valor);
     } else if (row.conta === 'ifood') {
       if (!ifood.has(cpf)) {
         ifood.set(cpf, {
@@ -151,10 +165,14 @@ export function montarPlanilhas(rows, centroCusto = new Map()) {
         });
       }
       ifood.get(cpf).livre = arredonda(ifood.get(cpf).livre + valor);
+    } else {
+      // Conta que esta tela não conhece: não pode sumir da planilha sem aviso.
+      ignoradas.push(row);
     }
   }
   return {
     flash: [...flash.values()].sort(porNome),
+    flashBvgrain: [...flashBvgrain.values()].sort(porNome),
     ifood: [...ifood.values()].sort(porNome),
     ignoradas,
   };
@@ -174,11 +192,12 @@ async function arquivoXlsx(nomeArquivo, nomePlanilha, linhas, colunas) {
 
 // sufixo: data AAAAMMDD do arquivo (+ "_L2" etc. quando o lote não é o primeiro do mês).
 export async function arquivosPlanilha(rows, centroCusto, sufixo) {
-  const { flash, ifood, ignoradas } = montarPlanilhas(rows, centroCusto);
+  const { flash, flashBvgrain, ifood, ignoradas } = montarPlanilhas(rows, centroCusto);
   const arquivos = [];
   if (flash.length) arquivos.push(await arquivoXlsx(`PGTO_FLASH_${sufixo}.xlsx`, 'PGTO_FLASH', flash, FLASH_COLS));
+  if (flashBvgrain.length) arquivos.push(await arquivoXlsx(`PGTO_FLASH_BVGRAIN_${sufixo}.xlsx`, 'PGTO_FLASH_BVGRAIN', flashBvgrain, FLASH_COLS));
   if (ifood.length) arquivos.push(await arquivoXlsx(`PGTO_IFOOD_${sufixo}.xlsx`, 'PGTO_IFOOD', ifood, IFOOD_COLS));
-  return { arquivos, totais: { flash: flash.length, ifood: ifood.length }, ignoradas };
+  return { arquivos, totais: { flash: flash.length, flashBvgrain: flashBvgrain.length, ifood: ifood.length }, ignoradas };
 }
 
 // Painel com os links de download (mesmo comportamento do Financeiro > Adiantamentos):

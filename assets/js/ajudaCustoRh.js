@@ -10,10 +10,10 @@ import { supabase } from './supabaseClient.js';
 import { esc, colabAutocomplete, exportCsv, acoesHtml, bindAcoes } from './rhShared.js';
 import { getColaboradores } from './colaboradoresCache.js';
 import {
-  CONTAS, dinheiro, soDigitos, arredonda, brDataIso,
+  CONTAS, dinheiro, soDigitos, arredonda, brDataIso, contaDoTexto,
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, competenciaAnterior, rotuloCompetencia, dataPagamentoIso,
-} from './ajudaCustoShared.js';
+} from './ajudaCustoShared.js?v=20261015-bvgrain';
 
 const state = {
   host: null, ctx: null, periodo: periodoAtual(),
@@ -84,6 +84,7 @@ function renderResumo() {
     <span class="ac-pill"><b>${state.rows.length}</b> ajuda(s) · <b>${dinheiro(soma(state.rows))}</b></span>
     <span class="ac-pill">iFood <b>${porConta('ifood').length}</b> · ${dinheiro(soma(porConta('ifood')))}</span>
     <span class="ac-pill">Flash <b>${porConta('flash').length}</b> · ${dinheiro(soma(porConta('flash')))}</span>
+    <span class="ac-pill">Flash BVGRAIN <b>${porConta('flash_bvgrain').length}</b> · ${dinheiro(soma(porConta('flash_bvgrain')))}</span>
     <span class="ac-pill">Enviadas ao Financeiro <b>${enviadas}</b> de ${state.rows.length}</span>`;
   const ref = `${rotuloCompetencia(competencia())} · pagamento em ${brDataIso(dataPagamentoIso(competencia()))}`;
   $('#acrRef').textContent = `Referência: ${ref}`;
@@ -141,13 +142,6 @@ function exportar() {
 
 // Conta de pagamento do colaborador no cadastro do GRM: coluna "C. Banc. Despesas" do relatório
 // de colaboradores (ex.: GRAOMIL IFOOD, GRAOMIL FLASH, BVGRAIN FLASH).
-function contaDoTexto(texto) {
-  const t = semAcento(texto);
-  if (t.includes('ifood')) return 'ifood';
-  if (t.includes('flash')) return 'flash';
-  return '';
-}
-
 async function contaDoCadastro(colab) {
   const { data, error } = await supabase.from('colaboradores').select('conta_bancaria_despesas').eq('id', colab.id).maybeSingle();
   if (error) console.warn('[Ajuda de custo] conta do cadastro', error);

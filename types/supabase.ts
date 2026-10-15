@@ -20561,6 +20561,7 @@ export type Database = {
           gerado_por_nome: string | null
           id: string
           linhas_flash: number
+          linhas_flash_bvgrain: number
           linhas_ifood: number
           numero: number
           total_linhas: number
@@ -20573,6 +20574,7 @@ export type Database = {
           gerado_por_nome?: string | null
           id?: string
           linhas_flash?: number
+          linhas_flash_bvgrain?: number
           linhas_ifood?: number
           numero: number
           total_linhas?: number
@@ -20585,6 +20587,7 @@ export type Database = {
           gerado_por_nome?: string | null
           id?: string
           linhas_flash?: number
+          linhas_flash_bvgrain?: number
           linhas_ifood?: number
           numero?: number
           total_linhas?: number
