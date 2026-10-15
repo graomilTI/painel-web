@@ -257,6 +257,15 @@ function instalar(cfg) {
           upstream.on('error', () => cliente.destroy());
           upstream.on('close', () => cliente.destroy());
           cliente.on('close', () => upstream.destroy());
+          // Relay não pode segurar o processo do agente: sem isto, hosts que nunca fecham a sua ponta depois do
+          // FIN do Chrome (ex.: GCM do Google em :5228) deixavam sockets em FIN-WAIT-2/CLOSE-WAIT e o agente que
+          // sai por encerramento natural (sem process.exit) ficava "rodando" para sempre, travando a lane inteira.
+          cliente.unref();
+          upstream.unref();
+          // Túnel HTTPS não usa meia-conexão: depois do 1º FIN (de qualquer lado) dá 5 s para o resto escoar e derruba.
+          const encerrarEmBreve = () => { const t = setTimeout(() => { cliente.destroy(); upstream.destroy(); }, 5000); t.unref(); };
+          cliente.once('end', encerrarEmBreve);
+          upstream.once('end', encerrarEmBreve);
           cliente.write('HTTP/1.1 200 Connection Established\r\n\r\n');
           if (head && head.length) upstream.write(head);
           upstream.pipe(cliente);
