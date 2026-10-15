@@ -26,8 +26,21 @@
     "sync-cadastrar-veiculo",
     "sync-despesas-retroativas",
     "sync-despesas-duplicadas",
-    "sync-aprovar-pendencias"
+    "sync-aprovar-pendencias",
+    "sync-auditorias",
+    "sync-login-alimentacao",
+    "sync-lancar-nhe",
+    "sync-reabrir-os",
+    "sync-bonus-caixa",
+    "sync-bonus-desconto-caixa",
+    "sync-frotas-fora-horario-caixa",
+    "sync-ajuda-custo-caixa",
+    "sync-uber-gorjeta-caixa",
+    "sync-colaboradores-realtime",
+    "sync-lista-os-realtime",
+    "sync-producao-diaria-realtime"
   ],
+  "gzip": true,
   "fallbackDireto": true,
   "handshakeTimeoutMs": 8000
 }

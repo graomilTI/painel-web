@@ -18,6 +18,11 @@
  * esse cruzamento deixou de ser necessário para operacional_os.
  */
 
+// Saída do GRM pelo túnel do escritório (grm-egress-proxy.js): só age se este serviço estiver em
+// grm-egress-proxy.json. Serviço contínuo (systemd), então carrega o preload aqui em vez de pelo worker.
+process.env.GRM_AGENTE_ID = process.env.GRM_AGENTE_ID || 'sync-lista-os-realtime';
+require('./grm-egress-proxy');
+
 const dotenvResult = require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
@@ -59,7 +64,9 @@ const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmser
 // grm_sync_agent_settings passa livre pelo trigger (v_enabled fica NULL, não
 // "is false"). ti-agentes.js referencia esse id via `aliases`.
 const AGENT_ID = 'sync-lista-os-realtime';
-const POLL_INTERVAL_MS = Math.max(3000, Number(process.env.GRM_LISTA_OS_POLL_MS || 8000));
+// Cada consulta baixa todas as O.S. abertas (~3,2 MB; ~0,25 MB com gzip) e o GRM não tem filtro "alterado
+// desde". Pelo túnel do escritório (internet do escritório) o intervalo mínimo é 30 s; direto pela VPS, o de sempre.
+const POLL_INTERVAL_MS = Math.max(process.env.GRM_EGRESS_ROTA === 'tunel' ? 30000 : 3000, Number(process.env.GRM_LISTA_OS_POLL_MS || 8000));
 const PAGE_SIZE = 1000;
 const MAX_ROWS = 20000;
 const LOTE_MINIMO = 50;

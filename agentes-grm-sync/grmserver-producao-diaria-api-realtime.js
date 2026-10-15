@@ -35,6 +35,11 @@
  * promover; ver fetchProducaoDiariaEmJanelas().
  */
 
+// Saída do GRM pelo túnel do escritório (grm-egress-proxy.js): só age se este serviço estiver em
+// grm-egress-proxy.json. Serviço contínuo (systemd), então carrega o preload aqui em vez de pelo worker.
+process.env.GRM_AGENTE_ID = process.env.GRM_AGENTE_ID || 'sync-producao-diaria-realtime';
+require('./grm-egress-proxy');
+
 const dotenvResult = require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
