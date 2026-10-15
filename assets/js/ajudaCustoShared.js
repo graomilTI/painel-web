@@ -159,8 +159,9 @@ export function assinaturaAjudas(rows) {
 
 // rows: ajudas ({colaborador_nome, colaborador_cpf, conta, valor}). Soma por CPF dentro da
 // plataforma, como o Financeiro já faz — uma pessoa com duas ajudas vira uma linha só.
-// cadastro: Map(cpf -> { centroCusto, nascimento }) vindo de colaboradores, opcional. Só a planilha do
-// iFood usa (centro de custo = coordenação; data de nascimento); a da Flash é só CPF + Valor.
+// cadastro: Map(cpf -> { nascimento }) vindo de colaboradores, opcional. Só a planilha do iFood usa
+// (data de nascimento); a da Flash é só CPF + Valor. "Centro de custo" do iFood vai sempre em branco
+// (pedido do Financeiro em 15/10/2026: antes levava a coordenação).
 export function montarPlanilhas(rows, cadastro = new Map()) {
   const flash = new Map();
   const flashBvgrain = new Map();
@@ -181,7 +182,7 @@ export function montarPlanilhas(rows, cadastro = new Map()) {
         const dados = cadastro.get(cpf) || {};
         ifood.set(cpf, {
           cnpj: IFOOD_CNPJ, nome: row.colaborador_nome, cpf, nascimento: nascimentoBr(dados.nascimento), email: '', celular: '',
-          centro_custo: dados.centroCusto || '', convencao: '', grupo_entrega: '', matricula: '',
+          centro_custo: '', convencao: '', grupo_entrega: '', matricula: '',
           filtro: '', refeicao: '', alimentacao: '', livre: 0,
         });
       }
