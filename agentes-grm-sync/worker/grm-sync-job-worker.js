@@ -279,7 +279,23 @@ function startHeartbeat(jobId) {
   return () => clearInterval(timer);
 }
 
-function runScript(scriptName, jobId) {
+// Saída do GRM pelo túnel do escritório (grm-egress-proxy.js + grm-egress-proxy.json, criado em 15/10/2026
+// porque a Cloudflare do GRM bloqueia o IP da VPS): o preload só é carregado nos agentes listados no JSON.
+// Sem o JSON, com enabled=false ou para outro agente, nada muda (rota direta). Ligar/desligar = editar o JSON.
+const EGRESS_PRELOAD = path.join(PROJECT_ROOT, 'grm-egress-proxy.js');
+const EGRESS_CONFIG = path.join(PROJECT_ROOT, 'grm-egress-proxy.json');
+function ambienteDeSaida(agenteId) {
+  try {
+    const cfg = JSON.parse(fs.readFileSync(EGRESS_CONFIG, 'utf8'));
+    const lista = Array.isArray(cfg.agentes) ? cfg.agentes : [];
+    if (cfg.enabled === true && fs.existsSync(EGRESS_PRELOAD) && (lista.includes('*') || lista.includes(agenteId))) {
+      return { NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${EGRESS_PRELOAD}`].filter(Boolean).join(' ') };
+    }
+  } catch { /* sem config válida: rota direta */ }
+  return {};
+}
+
+function runScript(scriptName, jobId, agenteId = '') {
   return new Promise((resolve) => {
     const scriptPath = path.join(PROJECT_ROOT, scriptName);
     const started = Date.now();
@@ -306,6 +322,8 @@ function runScript(scriptName, jobId) {
         XDG_RUNTIME_DIR: `${WORKER_RUNTIME}/tmp`,
         XDG_CACHE_HOME: `${WORKER_RUNTIME}/cache`,
         MALLOC_ARENA_MAX: '2',
+        GRM_AGENTE_ID: agenteId,
+        ...ambienteDeSaida(agenteId),
       },
       shell: false,
     });
@@ -439,7 +457,7 @@ async function processOne() {
   }
 
   const stopHeartbeat = startHeartbeat(job.id);
-  const result = await runScript(scriptName, job.id);
+  const result = await runScript(scriptName, job.id, job.agente_id);
   stopHeartbeat();
 
   await updateJob(job.id, {
