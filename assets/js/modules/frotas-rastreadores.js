@@ -897,7 +897,7 @@
     // Sem .single(): a RLS barra o UPDATE sem erro (0 linhas) e o PostgREST responderia só "Cannot coerce the result...".
     const { data, error } = await _opts.supabase.from(TABLE_MANUT).update(full).eq('id', rec.id).select();
     if (error) throw error;
-    if (!data?.length) throw new Error('Não foi possível gravar: seu usuário não tem permissão de edição no módulo Rastreadores (ou a manutenção já foi encerrada). Peça a um administrador para liberar a edição.');
+    if (!data?.length) throw new Error('Não foi possível gravar: a manutenção já foi encerrada ou seu usuário não tem acesso ao menu Rastreadores. Atualize a tela e tente de novo.');
     return data[0];
   }
 
