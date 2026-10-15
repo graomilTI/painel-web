@@ -80,8 +80,8 @@ test('nascimentoBr: ISO do cadastro vira dd/mm/aaaa; vazio ou fora do padrão fi
 
 test('planilha do iFood leva a data de nascimento do cadastro; a da Flash segue só CPF + Valor', () => {
   const cadastro = new Map([
-    ['06928832150', { centroCusto: 'MT', nascimento: '1998-10-10' }],
-    ['02246896908', { centroCusto: 'PR', nascimento: '' }],
+    ['06928832150', { centroCusto: 'MT', nascimento: '1998-10-10' }], // centroCusto antigo é ignorado
+    ['02246896908', { nascimento: '' }],
   ]);
   const { ifood, flash, semNascimento } = montarPlanilhas([
     ajuda('06928832150', 'ifood', 200, 'ADRIELLI'),
@@ -90,7 +90,8 @@ test('planilha do iFood leva a data de nascimento do cadastro; a da Flash segue 
   ], cadastro);
   const porCpf = Object.fromEntries(ifood.map((l) => [l.cpf, l]));
   assert.equal(porCpf['06928832150'].nascimento, '10/10/1998');
-  assert.equal(porCpf['06928832150'].centro_custo, 'MT');
+  assert.equal(porCpf['06928832150'].centro_custo, '', 'centro de custo do iFood sai sempre em branco');
+  assert.equal(porCpf['02246896908'].centro_custo, '');
   assert.equal(porCpf['02246896908'].nascimento, '');
   assert.deepEqual(semNascimento, ['ANDREZZA'], 'só quem está no iFood e ficou sem data é avisado');
   assert.deepEqual(Object.keys(flash[0]).sort(), ['cpf', 'nome', 'valor']);

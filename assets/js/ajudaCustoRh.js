@@ -13,7 +13,7 @@ import {
   CONTAS, dinheiro, soDigitos, arredonda, brDataIso, contaDoTexto,
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, competenciaAnterior, rotuloCompetencia, dataPagamentoIso,
-} from './ajudaCustoShared.js?v=20261015-nasc';
+} from './ajudaCustoShared.js?v=20261015-ccvazio';
 
 const state = {
   host: null, ctx: null, periodo: periodoAtual(),

@@ -16,7 +16,7 @@ import {
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, rotuloCompetencia, dataPagamentoIso, pagamentoLiberado, hojeBrasiliaIso,
   arquivosPlanilha, mostrarDownloads, montarPlanilhas, assinaturaAjudas,
-} from './ajudaCustoShared.js?v=20261015-nasc';
+} from './ajudaCustoShared.js?v=20261015-ccvazio';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const semAcento = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -228,19 +228,16 @@ function aviso(msg, tipo = '') {
   el.className = `fa-feedback${tipo ? ` ${tipo}` : ''}`;
 }
 
-// Dados do cadastro que entram na planilha do iFood: centro de custo = coordenação do colaborador
-// (como em Adiantamentos) e data de nascimento. Falha aqui não impede a planilha: as colunas só
-// ficam em branco (e o Financeiro é avisado de quem ficou sem data de nascimento).
+// Dado do cadastro que entra na planilha do iFood: a data de nascimento (o centro de custo vai em
+// branco). Falha aqui não impede a planilha: a coluna só fica em branco (e o Financeiro é avisado
+// de quem ficou sem data de nascimento).
 async function cadastroPorCpf(rows) {
   const ids = [...new Set(rows.map((r) => r.colaborador_id).filter(Boolean))];
   const mapa = new Map();
   if (!ids.length) return mapa;
-  const { data, error } = await supabase.from('colaboradores').select('id,cpf,coordenacao,supervisao,data_nascimento').in('id', ids);
-  if (error) { console.warn('[Ajuda de Custo] cadastro (centro de custo / nascimento)', error); return mapa; }
-  (data || []).forEach((c) => mapa.set(soDigitos(c.cpf).padStart(11, '0').slice(0, 11), {
-    centroCusto: c.coordenacao || c.supervisao || '',
-    nascimento: c.data_nascimento || '',
-  }));
+  const { data, error } = await supabase.from('colaboradores').select('id,cpf,data_nascimento').in('id', ids);
+  if (error) { console.warn('[Ajuda de Custo] cadastro (nascimento)', error); return mapa; }
+  (data || []).forEach((c) => mapa.set(soDigitos(c.cpf).padStart(11, '0').slice(0, 11), { nascimento: c.data_nascimento || '' }));
   return mapa;
 }
 
