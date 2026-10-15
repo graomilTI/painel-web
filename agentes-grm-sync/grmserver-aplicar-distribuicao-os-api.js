@@ -42,6 +42,13 @@ const RESET_DIA = process.argv.includes('--reset-dia') || process.env.GRM_RESET_
 const limitArg = process.argv.find((a) => a.startsWith('--limit='));
 const LIMIT = Number(process.env.GRM_DISTRIBUICAO_OS_LIMIT || (limitArg ? limitArg.split('=')[1] : 0)) || 0;
 const TIMEOUT_MIN = Number(process.env.GRM_DISTRIBUICAO_OS_TIMEOUT_MIN || 20) || 20;
+// Só chama o GRM para a supervisão/data cuja Programação mudou desde a última aplicação confirmada
+// (hash em grm_distribuicao_os_estado; ver grm-distribuicao-os-hash.js). GRM_DISTRIBUICAO_SEM_HASH=true
+// volta ao comportamento antigo (reconcilia tudo a cada rodada). REVERIFICAR_HORAS > 0 reprocessa um grupo
+// inalterado cuja última aplicação for mais velha que isso (0 = nunca).
+const SEM_HASH = String(process.env.GRM_DISTRIBUICAO_SEM_HASH || '').toLowerCase() === 'true';
+const REVERIFICAR_HORAS = Number(process.env.GRM_DISTRIBUICAO_REVERIFICAR_HORAS || 0) || 0;
+const ESTADO_TABELA = 'grm_distribuicao_os_estado';
 
 const GRM_WEB_HEADERS = {
   origin: 'https://www.grmserver.com.br',
@@ -162,6 +169,7 @@ function postJson(url, body, headers = {}) { return requestJson(url, 'POST', bod
 // Token em cache compartilhado (grm-token-cache.js): evita login a cada execução
 // e o captcha_invalid que o GRM passou a devolver em 30/09/2026.
 const { obterTokenGrm } = require('./grm-token-cache');
+const { chaveGrupo, separarGrupos } = require('./grm-distribuicao-os-hash');
 async function login() {
   return obterTokenGrm({ login: loginDireto });
 }
@@ -430,6 +438,38 @@ async function carregarGruposPendentes({ apenasNovoDia = false } = {}) {
   return resultado;
 }
 
+// Último estado aplicado por supervisão/data. Sem a tabela (migration ainda não aplicada) devolve
+// disponivel=false e o agente reconcilia tudo, como antes.
+async function carregarEstadoAplicado() {
+  const { inicio, fim } = janelaDatas();
+  const { data, error } = await supabase
+    .from(ESTADO_TABELA)
+    .select('supervisao_chave, data_referencia, hash_aplicado, aplicado_em')
+    .gte('data_referencia', inicio)
+    .lte('data_referencia', fim);
+  if (error) {
+    log('WARN', `Sem o estado da última aplicação (${ESTADO_TABELA}: ${error.message}); reconciliando todas as supervisões como antes.`);
+    return { disponivel: false, mapa: new Map() };
+  }
+  const mapa = new Map();
+  for (const linha of safe(data)) {
+    mapa.set(`${dateKey(linha.data_referencia)}|${linha.supervisao_chave}`, linha);
+  }
+  return { disponivel: true, mapa };
+}
+
+async function gravarEstadoAplicado(grupo, hash) {
+  if (!hash) return;
+  const { error } = await supabase.from(ESTADO_TABELA).upsert({
+    supervisao_chave: normalize(grupo.coordenacao),
+    data_referencia: grupo.data,
+    hash_aplicado: hash,
+    aplicado_em: new Date().toISOString(),
+  }, { onConflict: 'supervisao_chave,data_referencia' });
+  // Falha aqui só custa uma leitura a mais na próxima rodada (o grupo é reprocessado); não é erro da distribuição.
+  if (error) log('WARN', `Não consegui guardar o estado aplicado de ${grupo.data}/${grupo.coordenacao}: ${error.message}`);
+}
+
 function nomeAtualDoCodigo(code, nomePorStaCode) {
   return nomePorStaCode.get(codeKey(code)) || `STA#${code}`;
 }
@@ -617,6 +657,7 @@ async function processarSupervisao(token, olsCode, grupo, resetDia) {
       + `+${associacoesAdicionar}/-${associacoesRemover} associação(ões)`
       + (falhas.length ? `; ${falhas.length} pendência(s): ${falhas.join(' | ')}` : '') + '.'
   );
+  return { falhas: falhas.length };
 }
 
 // Marca em programacao_distribuicao_agendada como processada(s) só a(s) pendência(s)
@@ -737,6 +778,21 @@ async function main() {
         + `${totalEsperadas} associação(ões) esperada(s), ${totalSemProgramacao} OS a limpar se necessário.`
     );
 
+    // Só vai ao GRM quem mudou desde a última aplicação confirmada. A rodada de "novo dia" (RESET_DIA)
+    // precisa limpar e redistribuir, então processa todos e só registra o hash no fim.
+    let hashPorChave = new Map();
+    if (!SEM_HASH && grupos.length) {
+      const estado = await carregarEstadoAplicado();
+      if (estado.disponivel) {
+        const { aProcessar, inalterados } = separarGrupos(grupos, estado.mapa, { forcar: RESET_DIA, reverificarHoras: REVERIFICAR_HORAS });
+        hashPorChave = new Map(aProcessar.map(({ grupo, hash }) => [chaveGrupo(grupo), hash]));
+        if (inalterados.length) {
+          log('INFO', `${inalterados.length} supervisão(ões)/data sem mudança na Programação desde a última aplicação: nenhuma chamada ao GRM para elas.`);
+        }
+        grupos = aProcessar.map(({ grupo }) => grupo);
+      }
+    }
+
     if (LIMIT > 0 && grupos.length > LIMIT) {
       grupos = grupos.slice(0, LIMIT);
       log('INFO', `LIMIT de teste=${LIMIT} — processando somente ${grupos.length} supervisão(ões)/data.`);
@@ -756,7 +812,9 @@ async function main() {
         if (olsCode == null) {
           throw new Error(`Supervisão "${grupo.coordenacao}" não encontrada no Graint (supervision/getForSelect).`);
         }
-        await processarSupervisao(token, olsCode, grupo, RESET_DIA);
+        const resultado = await processarSupervisao(token, olsCode, grupo, RESET_DIA);
+        // Só registra o hash depois de uma aplicação sem nenhuma pendência: grupo com falha é refeito na rodada seguinte.
+        if (!DRY_RUN && resultado && resultado.falhas === 0) await gravarEstadoAplicado(grupo, hashPorChave.get(chaveGrupo(grupo)));
         // Só o run RESET_DIA pode consumir a pendência: ele é o único que
         // garante o "limpa+redistribui" forçado. O run normal (contínuo,
         // roda a cada evento) também passa por aqui pra TODA supervisão —

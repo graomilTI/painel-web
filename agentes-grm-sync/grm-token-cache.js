@@ -86,6 +86,8 @@ function paths() {
     // grm-egress-proxy.js) não pode ser travado pela sondagem direta — ainda bloqueada — de outro agente.
     bloqueio: path.join(CACHE_DIR, `.grm-rede-bloqueada-${chave}-${rotaDeSaida()}.json`),
     lock: path.join(CACHE_DIR, `.grm-login-${chave}.lock`),
+    // Marca "este token pode ter sido recusado": a próxima leitura do cache confere no GRM (uma vez).
+    suspeito: path.join(CACHE_DIR, `.grm-token-suspeito-${chave}.json`),
   };
 }
 
@@ -170,6 +172,8 @@ function tokenAindaValido(token, estrito = false) {
     const payload = JSON.stringify({ olsStatus: 'A' });
     const req = requisitarGrm('supervision/getForSelect', payload, { authorization: `Bearer ${token}` }, (res, corpo) => {
       if (respostaDeBloqueioDeRede(res.statusCode, res.headers, corpo)) return resolve(BLOQUEIO_REDE);
+      // Novas regras do GRM: rota fora da lista = 403 JSON "integration_*". É a ROTA recusada, não o token.
+      if (res.statusCode === 403 && /integration_/i.test(String(corpo || ''))) return resolve(incerto);
       if (res.statusCode === 401 || res.statusCode === 403) return resolve(false);
       if (Number(res.statusCode) >= 200 && Number(res.statusCode) < 300) {
         try { return resolve(JSON.parse(corpo).result !== false); } catch { return resolve(incerto); }
@@ -257,15 +261,32 @@ async function loginFalhouPorBloqueioDeRede(error, sondar) {
   return (await sondar()) === 'bloqueada';
 }
 
+// Token que ESTE processo já devolveu a um chamador. Se o mesmo token for pedido de novo no mesmo
+// processo, o chamador está refazendo o login depois de um 401: aí o token é conferido no GRM.
+let ultimoTokenDevolvido = null;
+
+// Conferir o token no GRM a cada execução custava uma chamada (supervision/getForSelect) por job e,
+// nas novas regras do GRM, essa rota será recusada (403) — o 403 em JSON era lido como "token
+// recusado" e gastaria as 4 emissões diárias de token. Por isso o token em cache só é conferido no
+// GRM quando há motivo: a marca de suspeita (o worker a grava quando um job falha com 401), o mesmo
+// processo pedindo o token de novo, ou GRM_TOKEN_VALIDAR=on (comportamento antigo, a cada execução).
+function precisaReconferirToken(p, token) {
+  if (String(process.env.GRM_TOKEN_VALIDAR || '').toLowerCase() === 'on') return true;
+  if (token === ultimoTokenDevolvido) return true;
+  return Boolean(p.suspeito && lerJson(p.suspeito));
+}
+
 async function tokenEmCache(p, validar) {
   const salvo = lerJson(p.token);
   if (!salvo || !salvo.token) return null;
   if (Date.now() >= expiraEm(salvo.token, salvo.savedAt, salvo.expiraEm)) { apagar(p.token); return null; }
+  if (!precisaReconferirToken(p, salvo.token)) { ultimoTokenDevolvido = salvo.token; return salvo.token; }
   const situacao = await validar(salvo.token);
   if (situacao === BLOQUEIO_REDE) throw registrarBloqueioRede(p, 'HTTP 403 da Cloudflare ao conferir o token em cache'); // token preservado
-  if (situacao) return salvo.token;
+  if (situacao) { if (p.suspeito) apagar(p.suspeito); ultimoTokenDevolvido = salvo.token; return salvo.token; }
   log('token em cache recusado pelo GRM; será feito novo login.');
   apagar(p.token);
+  if (p.suspeito) apagar(p.suspeito);
   return null;
 }
 
@@ -406,7 +427,7 @@ async function obterTokenGrm({ login, validar = tokenAindaValido, sondar = sonda
   const emCache = await tokenEmCache(p, validar);
   if (emCache) { limparBloqueioRede(p); return emCache; }
   const entregue = await receberTokenEntregue(p, validar);
-  if (entregue) { limparBloqueioRede(p); return entregue; }
+  if (entregue) { limparBloqueioRede(p); ultimoTokenDevolvido = entregue; return entregue; }
 
   const inicio = Date.now();
   let temLock = assumirLock(p);
@@ -433,6 +454,7 @@ async function obterTokenGrm({ login, validar = tokenAindaValido, sondar = sonda
       gravarJson(p.token, { token, savedAt: Date.now() });
       apagar(p.cooldown);
       limparBloqueioRede(p);
+      ultimoTokenDevolvido = token;
       log('login realizado e token salvo em cache.');
       return token;
     } catch (error) {
@@ -461,6 +483,8 @@ async function obterTokenGrm({ login, validar = tokenAindaValido, sondar = sonda
 async function tokenGrmEmCacheValido({ validar = tokenAindaValido, sondar = sondarRede } = {}) {
   if (String(process.env.GRM_TOKEN_CACHE || '').toLowerCase() === 'off') return true;
   const p = paths();
+  // Só pergunta se há token: não conta como "devolvido" (senão o obterTokenGrm logo depois reconferiria no GRM).
+  const devolvidoAntes = ultimoTokenDevolvido;
   try {
     await exigirRedeLiberada(p, sondar);
     const valido = Boolean(await tokenEmCache(p, validar)) || Boolean(await receberTokenEntregue(p, validar));
@@ -469,11 +493,24 @@ async function tokenGrmEmCacheValido({ validar = tokenAindaValido, sondar = sond
   } catch (error) {
     if (error && error.codigo === CODIGO_BLOQUEIO_REDE) return false;
     throw error;
+  } finally {
+    ultimoTokenDevolvido = devolvidoAntes;
   }
 }
 
 function limparTokenGrm() {
   apagar(paths().token);
+}
+
+// Texto de falha de um job que sugere token revogado (401) ou a borda da Cloudflare barrando o IP
+// (403/429 com corpo que não é JSON). Nos dois casos a próxima leitura do cache confere o token.
+function sinalDeTokenSuspeito(texto) {
+  return /HTTP 401|credentials_required|logoutUser|conte[úu]do inv[áa]lido \(HTTP (403|429)\)/i.test(String(texto || ''));
+}
+
+// Chamado pelo worker quando um job falha com 401: a próxima leitura do cache confere o token no GRM.
+function marcarTokenSuspeito() {
+  try { gravarJson(paths().suspeito, { em: Date.now() }); } catch { /* melhor esforço */ }
 }
 
 function lerTokenDoTerminal() {
@@ -521,7 +558,7 @@ async function salvarTokenManual() {
 }
 
 module.exports = {
-  obterTokenGrm, limparTokenGrm, tokenGrmEmCacheValido, receberTokenEntregue,
+  obterTokenGrm, limparTokenGrm, marcarTokenSuspeito, sinalDeTokenSuspeito, tokenGrmEmCacheValido, receberTokenEntregue,
   tokenAindaValido, sondarRede, respostaDeBloqueioDeRede, BLOQUEIO_REDE, CODIGO_BLOQUEIO_REDE,
 };
 

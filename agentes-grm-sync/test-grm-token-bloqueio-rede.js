@@ -17,6 +17,9 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'chave-de-teste';
 delete process.env.GRM_TOKEN_CACHE;
 delete process.env.GRM_TOKEN_ENTREGA;
 delete process.env.GRM_REDE_BLOQUEIO_MAX_MIN;
+// Este teste cobre a conferência do token a cada execução (modo antigo). O modo padrão, sem conferência,
+// é testado em test-grm-token-sem-validacao.js.
+process.env.GRM_TOKEN_VALIDAR = 'on';
 
 const PAGINA_CLOUDFLARE = '<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head><body><h1>Sorry, you have been blocked</h1></body></html>';
 

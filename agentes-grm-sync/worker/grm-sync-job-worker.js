@@ -419,6 +419,16 @@ function runScript(scriptName, jobId, agenteId = '') {
 
     child.on('close', (code) => {
       clearInterval(memoryTimer);
+      // 401 do GRM (token possivelmente revogado) ou 403/429 sem JSON (a Cloudflare barrando o IP): o cache
+      // não confere mais o token a cada execução (grm-token-cache.js), então marca a suspeita para a próxima
+      // leitura conferi-lo uma vez — é isso que abre o disjuntor e o alerta de bloqueio de rede.
+      if (code !== 0) {
+        try {
+          const cache = require('../grm-token-cache');
+          if (cache.sinalDeTokenSuspeito(`${stdout}
+${stderr}`)) cache.marcarTokenSuspeito();
+        } catch { /* melhor esforço */ }
+      }
       resolve({
         ok: code === 0,
         code,
