@@ -1878,11 +1878,15 @@ async function main() {
 if (require.main === module) {
   main().then(function () { process.exit(0); }).catch(function () { process.exit(1); });
 
+  // As 21 coordenações levavam 2–5 min direto pela VPS (e já chegaram a 481 s). Pela rota do túnel do escritório
+  // (EUA ↔ Brasil em cada chamada) levam ~8 min e o limite de 8 min matava o agente DEPOIS de ler tudo
+  // (15/10/2026: 466 s ok, 481 s exit 1). Na rota do túnel o limite sobe para 15 min; direto segue em 8.
+  var timeoutGlobalMs = Number(process.env.LOGIN_REPORT_GLOBAL_TIMEOUT_MS || (process.env.GRM_EGRESS_ROTA === 'tunel' ? 900000 : 480000));
   setTimeout(function () {
-    console.error('[ERROR] Timeout global de 8 minutos atingido');
+    console.error('[ERROR] Timeout global de ' + Math.round(timeoutGlobalMs / 60000) + ' minutos atingido');
     try { if (browserAtual) browserAtual.close(); } catch (e) {}
     process.exit(1);
-  }, Number(process.env.LOGIN_REPORT_GLOBAL_TIMEOUT_MS || 480000)).unref();
+  }, timeoutGlobalMs).unref();
 }
 
 module.exports = {
