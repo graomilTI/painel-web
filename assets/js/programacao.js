@@ -34,6 +34,7 @@ import { disponibilidadeNorm, disponibilidadeCategoria, disponibilidadeMotivo, d
 import { normalizeAccessText, isColaboradorAtivo, getDeepValue, parseSupervisoes, looksLikeGestor, filterAllowedSupervisoes } from './programacao-acesso.js?v=20261015-nucleo1';
 import { readCidadesCache, writeCidadesCache, cidadeUfFromOs, ufFromSupervisao, fetchTodosPontosAtivos, checkFobPendenciasBloqueantes } from './programacao-dados-base.js?v=20261015-nucleo1';
 import { injectProgramacaoStyles } from './programacao-estilos.js?v=20261015-nucleo1';
+import { criarTelemetria } from './programacao-telemetria.js?v=20261015-telemetria1';
 
 export function renderContent(content) {
   injectProgramacaoStyles();
@@ -1789,6 +1790,85 @@ export function renderContent(content) {
     el.feedback.textContent = message;
   }
 
+  /* ===== TELEMETRIA TEMPORÁRIA (15/10/2026) =====
+   * Conta quais funções desta tela executam em produção, para apagar as que nunca executam (a tela clássica
+   * de etapas A–E foi substituída pela UI nova). Não altera o comportamento: cada função é só envolvida por
+   * um contador. Remover em ~22/10/2026 junto com programacao-telemetria.js e a tabela
+   * programacao_telemetria_funcoes (supabase/migrations/20261015120000_programacao_telemetria_funcoes.sql). */
+  /* eslint-disable no-func-assign */
+  {
+    const tm = criarTelemetria({ versao: '20261015-telemetria1', inserir: (linha) => supabase.from('programacao_telemetria_funcoes').insert(linha) });
+    init = tm.envolver('init', init);
+    programacaoIdFor = tm.envolver('programacaoIdFor', programacaoIdFor);
+    bindEvents = tm.envolver('bindEvents', bindEvents);
+    renderDuplicateCalendar = tm.envolver('renderDuplicateCalendar', renderDuplicateCalendar);
+    openDuplicateModal = tm.envolver('openDuplicateModal', openDuplicateModal);
+    closeDuplicateModal = tm.envolver('closeDuplicateModal', closeDuplicateModal);
+    duplicateProgramacao = tm.envolver('duplicateProgramacao', duplicateProgramacao);
+    showFobBlockedMessage = tm.envolver('showFobBlockedMessage', showFobBlockedMessage);
+    loadCidadesBrasil = tm.envolver('loadCidadesBrasil', loadCidadesBrasil);
+    loadAlojamentos = tm.envolver('loadAlojamentos', loadAlojamentos);
+    loadVeiculosFrota = tm.envolver('loadVeiculosFrota', loadVeiculosFrota);
+    loadCruzamento = tm.envolver('loadCruzamento', loadCruzamento);
+    loadBaseOperacional = tm.envolver('loadBaseOperacional', loadBaseOperacional);
+    findOperacionalColab = tm.envolver('findOperacionalColab', findOperacionalColab);
+    getOsForColab = tm.envolver('getOsForColab', getOsForColab);
+    findPontoFromOs = tm.envolver('findPontoFromOs', findPontoFromOs);
+    kmEstimadoColaborador = tm.envolver('kmEstimadoColaborador', kmEstimadoColaborador);
+    ensureCidadeDatalist = tm.envolver('ensureCidadeDatalist', ensureCidadeDatalist);
+    ensureVeiculosDatalist = tm.envolver('ensureVeiculosDatalist', ensureVeiculosDatalist);
+    matchCidade = tm.envolver('matchCidade', matchCidade);
+    alojamentoOptions = tm.envolver('alojamentoOptions', alojamentoOptions);
+    indexVeiculos = tm.envolver('indexVeiculos', indexVeiculos);
+    findVeiculoByPlaca = tm.envolver('findVeiculoByPlaca', findVeiculoByPlaca);
+    patrimonioMessageForRow = tm.envolver('patrimonioMessageForRow', patrimonioMessageForRow);
+    updatePatrimonioAlert = tm.envolver('updatePatrimonioAlert', updatePatrimonioAlert);
+    resolveProgramacaoAccess = tm.envolver('resolveProgramacaoAccess', resolveProgramacaoAccess);
+    loadOsAtender = tm.envolver('loadOsAtender', loadOsAtender);
+    colabEmOsAtender = tm.envolver('colabEmOsAtender', colabEmOsAtender);
+    colaboradorPodeFicarOk = tm.envolver('colaboradorPodeFicarOk', colaboradorPodeFicarOk);
+    suggestVeiculoForColab = tm.envolver('suggestVeiculoForColab', suggestVeiculoForColab);
+    updatePlacaLogisticaAlert = tm.envolver('updatePlacaLogisticaAlert', updatePlacaLogisticaAlert);
+    fillSupervisoes = tm.envolver('fillSupervisoes', fillSupervisoes);
+    ensureProgramacaoDia = tm.envolver('ensureProgramacaoDia', ensureProgramacaoDia);
+    loadContext = tm.envolver('loadContext', loadContext);
+    ensureDefaultRows = tm.envolver('ensureDefaultRows', ensureDefaultRows);
+    loadStageData = tm.envolver('loadStageData', loadStageData);
+    setStep = tm.envolver('setStep', setStep);
+    disponibilidadeAtual = tm.envolver('disponibilidadeAtual', disponibilidadeAtual);
+    isBlocked = tm.envolver('isBlocked', isBlocked);
+    splitByDisponibilidade = tm.envolver('splitByDisponibilidade', splitByDisponibilidade);
+    updateStats = tm.envolver('updateStats', updateStats);
+    filteredColaboradores = tm.envolver('filteredColaboradores', filteredColaboradores);
+    renderRows = tm.envolver('renderRows', renderRows);
+    colabCell = tm.envolver('colabCell', colabCell);
+    renderDisponibilidade = tm.envolver('renderDisponibilidade', renderDisponibilidade);
+    renderDisponibilidadeTable = tm.envolver('renderDisponibilidadeTable', renderDisponibilidadeTable);
+    renderBloqueadosResumo = tm.envolver('renderBloqueadosResumo', renderBloqueadosResumo);
+    renderEstadia = tm.envolver('renderEstadia', renderEstadia);
+    renderAlimentacao = tm.envolver('renderAlimentacao', renderAlimentacao);
+    renderDeslocamento = tm.envolver('renderDeslocamento', renderDeslocamento);
+    renderExtras = tm.envolver('renderExtras', renderExtras);
+    preencherUfPorCidade = tm.envolver('preencherUfPorCidade', preencherUfPorCidade);
+    preencherAlojamentoSelecionado = tm.envolver('preencherAlojamentoSelecionado', preencherAlojamentoSelecionado);
+    preencherCidadeDaOs = tm.envolver('preencherCidadeDaOs', preencherCidadeDaOs);
+    atualizarSugestaoAlojamento = tm.envolver('atualizarSugestaoAlojamento', atualizarSugestaoAlojamento);
+    handleTableInput = tm.envolver('handleTableInput', handleTableInput);
+    handleTableChange = tm.envolver('handleTableChange', handleTableChange);
+    handleTableClick = tm.envolver('handleTableClick', handleTableClick);
+    scheduleSaveRow = tm.envolver('scheduleSaveRow', scheduleSaveRow);
+    scheduleSaveExtra = tm.envolver('scheduleSaveExtra', scheduleSaveExtra);
+    colabById = tm.envolver('colabById', colabById);
+    saveRow = tm.envolver('saveRow', saveRow);
+    addExtra = tm.envolver('addExtra', addExtra);
+    saveExtra = tm.envolver('saveExtra', saveExtra);
+    deleteExtra = tm.envolver('deleteExtra', deleteExtra);
+    draftValueFromDom = tm.envolver('draftValueFromDom', draftValueFromDom);
+    validarProgramacaoAntesSalvar = tm.envolver('validarProgramacaoAntesSalvar', validarProgramacaoAntesSalvar);
+    saveProgramacao = tm.envolver('saveProgramacao', saveProgramacao);
+    setFeedback = tm.envolver('setFeedback', setFeedback);
+  }
+  /* eslint-enable no-func-assign */
   init();
 }
 
