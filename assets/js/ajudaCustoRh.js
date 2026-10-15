@@ -13,7 +13,7 @@ import {
   CONTAS, dinheiro, soDigitos, arredonda, brDataIso, contaDoTexto,
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, competenciaAnterior, rotuloCompetencia, dataPagamentoIso,
-} from './ajudaCustoShared.js?v=20261015-bvgrain';
+} from './ajudaCustoShared.js?v=20261015-lancar';
 
 const state = {
   host: null, ctx: null, periodo: periodoAtual(),
@@ -317,7 +317,7 @@ export async function renderAjudaCustoRh(host, userContext) {
   state.editRow = null;
   state.salvando = false;
   host.innerHTML = `${estilos()}
-    <div class="section-head mt-16"><div><h3>Ajuda de custo</h3><p class="muted">Informe por mês: colaborador, conta de pagamento (iFood ou Flash), valor e descrição. A relação aparece para o Financeiro, que gera as planilhas a partir do dia 15.</p></div>
+    <div class="section-head mt-16"><div><h3>Ajuda de custo</h3><p class="muted">Informe por mês: colaborador, conta de pagamento (iFood ou Flash), valor e descrição. A relação aparece para o Financeiro, que baixa as planilhas e lança no Caixa a partir do dia 15.</p></div>
       <div class="hp-actions"><button class="btn btn-secondary" id="acrCopiar" type="button">Copiar do mês anterior</button></div></div>
     <div id="acrPeriodo">${periodoHtml('acrPeriodoBar', state.periodo.ano, state.periodo.mes)}</div>
     <p class="ac-ref" id="acrRef"></p>

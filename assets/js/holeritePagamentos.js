@@ -677,7 +677,7 @@ function selecionarAba(content, aba) {
   if (aba === 'ajuda' && !state.ajudaCarregada) {
     state.ajudaCarregada = true;
     // Aba de ajuda de custo vive em módulo próprio, carregado só quando é aberta.
-    import('./ajudaCustoRh.js?v=20261015-bvgrain')
+    import('./ajudaCustoRh.js?v=20261015-lancar')
       .then((m) => m.renderAjudaCustoRh(content.querySelector('#hpPainelAjuda'), state.ctx))
       .catch((e) => {
         state.ajudaCarregada = false;
