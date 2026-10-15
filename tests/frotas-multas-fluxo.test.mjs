@@ -37,6 +37,24 @@ test('mensagem do WhatsApp: dados da multa na ordem pedida, seguidos do texto fi
   assert.equal(linhas.slice(10).join('\n'), MENSAGEM_PADRAO);
 });
 
+test('mensagem de multa agrupada: um bloco de detalhes por auto, separados, e o texto fixo uma vez só', () => {
+  const outra = { ...multa, placa: 'XYZ9K88', data_infracao: '2026-10-04', hora_infracao: '08:05:00', local: 'BR-163 KM 12', numero_auto_infracao: 'G007654321', valor_original: 195.23 };
+  const msg = montarMensagem([outra, multa], h);
+  const [detalhes, fixo] = msg.split(`\n\n${MENSAGEM_PADRAO}`);
+  assert.equal(fixo, '');
+  assert.equal(msg.split('ATENÇÃO CONDUTOR').length - 1, 1);
+  const blocos = detalhes.split('\n\n');
+  assert.equal(blocos.length, 2);
+  assert.match(blocos[0], /^──── MULTA 1 de 2 ────\nMOTORISTA: JOAO DA SILVA\n/);
+  assert.match(blocos[0], /\nPLACA: XYZ9K88\nDATA: 04\/10\/2026\nHORA: 08:05\nLOCAL: BR-163 KM 12\n/);
+  assert.match(blocos[0], /\nAUT INFR: G007654321$/);
+  assert.match(blocos[1], /^──── MULTA 2 de 2 ────\nMOTORISTA: JOAO DA SILVA\n/);
+  assert.match(blocos[1], /\nPLACA: ABC1D23\nDATA: 07\/10\/2026\nHORA: 16:33\n/);
+  assert.match(blocos[1], /\nAUT INFR: G001234567$/);
+  // multa avulsa (lista de 1) continua igual à mensagem de sempre
+  assert.equal(montarMensagem([multa], h), montarMensagem(multa, h));
+});
+
 function expect130(linha) {
   // Intl insere espaço não separável entre "R$" e o valor
   assert.match(linha, /^VALOR: R\$\s130,16$/);

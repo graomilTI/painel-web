@@ -171,10 +171,11 @@ function normalizarFone(v) {
 }
 
 // ───────────────────────────── Notificar ─────────────────────────────
-function montarMensagem(m, h) {
+// Detalhes de UMA multa, na ordem pedida.
+function detalhesMulta(m, h) {
   const hora = h.infractionTimeReal(m);
   const valor = h.fmtMoney(h.first(m.valor_original, m.valor, m.valor_multa));
-  const dados = [
+  return [
     `MOTORISTA: ${limpar(m.motorista)}`,
     `ORGÃO AUTUADOR: ${limpar(m.orgao_autuador)}`,
     `PLACA: ${limpar(m.placa)}`,
@@ -184,24 +185,42 @@ function montarMensagem(m, h) {
     `MULTA: ${limpar(m.descricao)}`,
     `VALOR: ${valor}`,
     `AUT INFR: ${numeroAuto(m)}`,
-  ];
-  return `${dados.join('\n')}\n\n${MENSAGEM_PADRAO}`;
+  ].join('\n');
+}
+
+// Multa avulsa: os detalhes direto. Multa agrupada: um bloco de detalhes por auto, cada um com o
+// seu título, e o texto fixo uma única vez no final.
+function montarMensagem(multas, h) {
+  const lista = Array.isArray(multas) ? multas : [multas];
+  if (lista.length === 1) return `${detalhesMulta(lista[0], h)}\n\n${MENSAGEM_PADRAO}`;
+  const blocos = lista.map((m, i) => `──── MULTA ${i + 1} de ${lista.length} ────\n${detalhesMulta(m, h)}`);
+  return `${blocos.join('\n\n')}\n\n${MENSAGEM_PADRAO}`;
 }
 
 async function abrirNotificar(ctx, m) {
   const h = ctx.helpers;
   if (!limpar(m.motorista)) return h.toast('Defina o motorista antes de notificar.', true);
-  const status = String(m.status_notificacao || '').toUpperCase();
-  const jaNotificado = status === 'NOTIFICADO';
+  // Multa agrupada: a mensagem leva todos os autos do grupo (um bloco de detalhes por auto).
+  const membros = h.dossieMembers(m).slice().sort(porDataInfracao(h));
+  const agrupada = membros.length > 1;
+  if (agrupada && new Set(membros.map((x) => h.norm(x.motorista))).size > 1) {
+    return h.toast('As multas deste grupo estão com motoristas diferentes. Ajuste o motorista ou desfaça o grupo antes de notificar.', true);
+  }
+  const ids = membros.map((x) => x.id);
+  const ehNotificada = (x) => String(x.status_notificacao || '').toUpperCase() === 'NOTIFICADO';
+  const jaNotificado = membros.every(ehNotificada);
   const el = abrirModal(`
     <h3>Notificar motorista</h3>
-    <p><strong>${h.esc(m.placa || '')}</strong> · ${h.esc(m.motorista)} · Auto ${h.esc(numeroAuto(m) || '—')}</p>
+    <p>${agrupada
+      ? `<strong>${h.esc(m.motorista)}</strong> · ${membros.length} multas agrupadas`
+      : `<strong>${h.esc(m.placa || '')}</strong> · ${h.esc(m.motorista)} · Auto ${h.esc(numeroAuto(m) || '—')}`}</p>
+    ${agrupada ? `<div class="fm-meta-line" style="margin:0 0 6px">A mensagem leva os ${membros.length} autos do grupo, cada um com seus detalhes: ${membros.map((x) => h.esc(numeroAuto(x) || '—')).join(' · ')}.</div>` : ''}
     ${jaNotificado ? `<div class="fm-note" style="margin:0 0 6px">Já notificado${m.notificado_em ? ` em ${h.esc(agoraBr(m.notificado_em))}` : ''}${m.notificado_por_nome ? ` por ${h.esc(m.notificado_por_nome)}` : ''}. Você pode enviar de novo.</div>` : ''}
     <label class="fm-kicker" for="fm-flow-fone">WhatsApp do motorista</label>
     <input id="fm-flow-fone" class="fm-input" data-flow-fone inputmode="tel" placeholder="(45) 99999-9999" autocomplete="off">
     <div class="fm-meta-line" data-flow-fone-info>Buscando o telefone no cadastro…</div>
     <label class="fm-kicker" for="fm-flow-msg">Mensagem</label>
-    <textarea id="fm-flow-msg" class="fm-input" data-flow-msg rows="17" spellcheck="false"></textarea>
+    <textarea id="fm-flow-msg" class="fm-input" data-flow-msg rows="${Math.min(17 + (membros.length - 1) * 11, 34)}" spellcheck="false"></textarea>
     <div class="fm-modal-foot">
       <button type="button" class="fm-btn soft" data-flow-close>Fechar</button>
       <button type="button" class="fm-btn info" data-flow-copiar>Copiar mensagem</button>
@@ -210,7 +229,7 @@ async function abrirNotificar(ctx, m) {
   const ta = el.querySelector('[data-flow-msg]');
   const fone = el.querySelector('[data-flow-fone]');
   const info = el.querySelector('[data-flow-fone-info]');
-  ta.value = montarMensagem(m, h);
+  ta.value = montarMensagem(membros, h);
 
   buscarContato(ctx.opts.supabase, m.motorista).then((c) => {
     if (!el.isConnected) return;
@@ -220,10 +239,10 @@ async function abrirNotificar(ctx, m) {
       : 'Telefone não encontrado no cadastro. Digite o número ou escolha o contato direto no WhatsApp.';
   });
 
-  const salvar = async (payload, acao) => {
+  const salvar = async (payload, acao, alvos) => {
     try {
-      await atualizarMultas(ctx, [m.id], payload);
-      await registrarAcao(ctx, [m.id], acao, { fone: normalizarFone(fone.value) || null });
+      await atualizarMultas(ctx, alvos, payload);
+      await registrarAcao(ctx, alvos, acao, { fone: normalizarFone(fone.value) || null });
       await ctx.reload();
     } catch (err) {
       h.toast(`Mensagem pronta, mas não foi possível registrar o status: ${err?.message || err}`, true);
@@ -234,7 +253,9 @@ async function abrirNotificar(ctx, m) {
     try { await navigator.clipboard.writeText(ta.value); }
     catch { ta.select(); document.execCommand('copy'); }
     h.toast('Mensagem copiada.');
-    if (!jaNotificado) await salvar({ status_notificacao: 'GERADA', mensagem_gerada: ta.value }, 'Notificar (mensagem copiada)');
+    // Copiar nunca rebaixa quem já foi marcado como notificado.
+    const pendentes = membros.filter((x) => !ehNotificada(x)).map((x) => x.id);
+    if (pendentes.length) await salvar({ status_notificacao: 'GERADA', mensagem_gerada: ta.value }, 'Notificar (mensagem copiada)', pendentes);
   });
 
   el.querySelector('[data-flow-whats]').addEventListener('click', async () => {
@@ -251,8 +272,8 @@ async function abrirNotificar(ctx, m) {
     };
     if (u.id) payload.notificado_por = u.id;
     fecharModal();
-    await salvar(payload, 'Notificar (WhatsApp)');
-    h.toast('Multa marcada como notificada.');
+    await salvar(payload, 'Notificar (WhatsApp)', ids);
+    h.toast(agrupada ? `${ids.length} multas do grupo marcadas como notificadas.` : 'Multa marcada como notificada.');
   });
 }
 
