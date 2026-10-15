@@ -221,6 +221,30 @@ function rodar(env, codigo, cwd) {
   assert.match(r.stdout, /OUTRO HTTP\/1\.1 200 OK/, 'host fora do GRM segue direto mesmo sem túnel');
   escreverCfg();
 
+  // 12e) o relay NÃO pode segurar o processo do agente: host que nunca fecha a sua ponta depois do FIN do Chrome
+  // (como o GCM do Google em :5228) + agente que sai por encerramento natural (sem process.exit) = processo
+  // pendurado e lane travada (visto em produção em 15/10 com o agente de bônus). Tem que sair em poucos segundos.
+  const preso = require('net').createServer({ allowHalfOpen: true }, (s) => { s.on('error', () => {}); s.resume(); });
+  await new Promise((res) => preso.listen(0, '127.0.0.1', res));
+  const portaPreso = preso.address().port;
+  escreverCfg({ hosts: ['outro.test'] });
+  const t0 = Date.now();
+  r = await rodar(base, caso(`
+    const net = require('net');
+    const CRLF = ${CRLF_JS};
+    const p = require('puppeteer-extra');
+    const o = await p.launch({ args: [] });
+    const portaProxy = Number(o.args.find((a) => a.startsWith('--proxy-server=')).split(':').pop());
+    const s = net.connect(portaProxy, '127.0.0.1', () => s.write('CONNECT 127.0.0.1:${portaPreso} HTTP/1.1' + CRLF + CRLF));
+    let buf = '';
+    s.on('data', (d) => { buf += d.toString('latin1'); if (buf.includes(CRLF + CRLF)) { s.removeAllListeners('data'); s.end(); console.log('FILHO-CONECTOU-E-FECHOU'); } });
+  `), dir);
+  const gasto = Date.now() - t0;
+  assert.match(r.stdout, /FILHO-CONECTOU-E-FECHOU/, r.stdout + r.stderr);
+  assert.ok(gasto < 15000, `o processo ficou pendurado por ${gasto} ms (relay de meia-conexão segurando o event loop)`);
+  preso.close();
+  escreverCfg();
+
   // 12d) quem já passa --proxy-server / --proxy-pac-url não é alterado; agente fora da lista também não
   r = await rodar(base, lancar(['--proxy-server=http://x:1']), dir);
   assert.deepEqual(argsDe(r.stdout), ['--proxy-server=http://x:1']);
