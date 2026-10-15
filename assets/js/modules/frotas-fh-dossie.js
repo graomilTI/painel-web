@@ -1,11 +1,11 @@
 // Frotas — Fora do horário — dossiê do dia, lista e modais.
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261014-frotas-modular1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-ev1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, toast } from './frotas-base.js?v=20261014-frotas-modular1';
-import { fhLiberarAncestrais, fhEnquadrarJanela, readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo, fhDiasPendentes, atualizarFiltrosForaHorario, fhAtualizarStatusExcessos, formatCoordForaHorario } from './frotas-fh-util.js?v=20261014-frotas-modular1';
-import { finito, fhAgruparOs, fhCarregarMapa, fhFecharMapa } from './frotas-fh-mapa.js?v=20261014-frotas-modular1';
+import { state, currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, toast } from './frotas-base.js?v=20261015-frotas-ev1';
+import { fhLiberarAncestrais, fhEnquadrarJanela, readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo, fhDiasPendentes, atualizarFiltrosForaHorario, fhAtualizarStatusExcessos, formatCoordForaHorario } from './frotas-fh-util.js?v=20261015-frotas-ev1';
+import { finito, fhAgruparOs, fhCarregarMapa, fhFecharMapa } from './frotas-fh-mapa.js?v=20261015-frotas-ev1';
 
   // Texto do registro; quando foi feito por um colega de carona, diz de quem.
   function fhEvidenciaRotulo(e) {
