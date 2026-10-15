@@ -1,12 +1,12 @@
 // Frotas — Fora do horário — dossiê do dia: construtores de HTML (barra, cartões, percursos, registros, linha da lista).
 // Extraído de modules/frotas.js em 14/10/2026 e dividido em 15/10/2026 (frotas-fh-dossie.js tinha 1.030 linhas):
 // regras (frotas-fh-dossie-regras) -> HTML (frotas-fh-dossie-html) -> tela (frotas-fh-dossie). Código movido sem alteração.
-// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports
+// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports
 // internos (e os do carregador da página): tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { escapeHtml, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-dos1';
-import { formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, fhPrimeiroNome, fhHm, fhMinutosDoDia, fhKm, fhDuracao, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDataCurta, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-dos1';
-import { finito } from './frotas-fh-mapa.js?v=20261015-frotas-dos1';
-import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhPassosDoDia, fhContextoDoDia } from './frotas-fh-dossie-regras.js?v=20261015-frotas-dos1';
+import { escapeHtml, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-carga1';
+import { formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, fhPrimeiroNome, fhHm, fhMinutosDoDia, fhKm, fhDuracao, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDataCurta, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-carga1';
+import { finito } from './frotas-fh-mapa.js?v=20261015-frotas-carga1';
+import { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhPassosDoDia, fhContextoDoDia } from './frotas-fh-dossie-regras.js?v=20261015-frotas-carga1';
 
   // Três colunas fixas na lista: o que houve em cada frente (ou "—").
   function fhCelulasHtml(d) {
@@ -218,6 +218,35 @@ import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, f
     return `<div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-exc"><thead><tr><th>Hora</th><th>Velocidade</th><th>Local</th><th>Situação</th><th>Notificação</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
   }
 
+  // Cargas lançadas no app por quem estava no veículo (condutor em 1º lugar): data e horário do lançamento, O.S., local e
+  // a conferência com o veículo (onde ele estava no instante do lançamento). Clicar na linha leva ao ponto no mapa.
+  function fhCargasHtml(dos, det) {
+    const itens = fhCargasDoDia(det);
+    if (!itens.length) return '<div class="speed-import-empty">Nenhuma carga lançada no app por quem estava neste veículo.</div>';
+    const quemSet = new Set(itens.map((c) => String(c.quem || '')));
+    const comQuem = quemSet.size > 1 || itens.some((c) => c.papel && c.papel !== 'MOTORISTA' && c.papel !== 'CONDUTOR');
+    const total = itens.reduce((soma, c) => soma + Math.max(1, Number(c.qtd) || 1), 0);
+    const linhas = itens.map((c) => {
+      const mapa = fhLinkPonto(c.la, c.lo);
+      let situacao;
+      if (c.em_casa) situacao = '<span class="fh-fase neutra">lançada em casa: não conta</span>';
+      else if (finito(c.veic_km) && fhNum(c.veic_km) >= 2) situacao = `<span class="fh-fase info" title="Distância entre o local do lançamento e o veículo naquele horário">veículo a ${fhKm(c.veic_km)} km</span>`;
+      else if (finito(c.veic_km)) situacao = '<span class="fh-fase uso" title="O veículo estava no local do lançamento naquele horário">com o veículo</span>';
+      else situacao = '<span class="fh-muted">—</span>';
+      const clicavel = finito(c.la) && finito(c.lo) ? ` class="fh-clicavel" data-fh-foco-ponto="${Number(c.la)},${Number(c.lo)}" title="Ver esta carga no mapa"` : '';
+      const local = c.local ? `<span title="${escapeHtml(fhTitulo(c.cliente || ''))}">${escapeHtml(fhTitulo(c.local))}</span>` : '';
+      return `<tr${clicavel}>
+        <td><strong>${escapeHtml(fhCargaQuando(c))}</strong></td>
+        <td>${escapeHtml(fhCargaQtdTexto(c))}${c.os ? ` · O.S. ${escapeHtml(c.os)}` : ''}</td>
+        <td>${local || '<span class="fh-muted">—</span>'}${mapa ? ` · <a href="${escapeHtml(mapa)}" target="_blank" rel="noopener noreferrer">mapa</a>` : ''}</td>
+        ${comQuem ? `<td>${escapeHtml(fhPrimeiroNome(c.quem))}${c.papel === 'CARONA' ? ' <span class="fh-muted">(carona)</span>' : c.papel === 'EQUIPE' ? ' <span class="fh-muted">(equipe)</span>' : ''}</td>` : ''}
+        <td>${situacao}</td>
+      </tr>`;
+    }).join('');
+    return `<p class="speed-hint">${total} ${total === 1 ? 'carga lançada' : 'cargas lançadas'} no app${comQuem ? '' : ' pelo condutor'}; o local é o GPS do celular no momento do lançamento.</p>
+      <div class="hist-table-wrap fh-tl-wrap"><table class="hist-table fh-tl fh-tl-cargas"><thead><tr><th>Data e horário</th><th>Cargas</th><th>Local do lançamento</th>${comQuem ? '<th>Quem</th>' : ''}<th>Situação</th></tr></thead><tbody>${linhas}</tbody></table></div>`;
+  }
+
   function fhRegistrosHtml(dos, det) {
     const itens = (det.evidencias || []).slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
     if (!itens.length) return '<div class="speed-import-empty">Nenhum registro de trabalho neste dia.</div>';
@@ -226,10 +255,11 @@ import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, f
       if (e.os) partes.push(`O.S. ${escapeHtml(e.os)}`);
       if (e.local && e.tipo !== 'CARONA') partes.push(escapeHtml(e.local));
       if (e.cargas) partes.push(`${escapeHtml(e.cargas)} carga(s)`);
-      const ponto = ['CELULAR', 'OS_PROGRAMADA', 'CARONA'].includes(e.tipo) ? fhLinkPonto(e.la, e.lo) : '';
+      const ponto = ['CELULAR', 'CARGA', 'OS_PROGRAMADA', 'CARONA'].includes(e.tipo) ? fhLinkPonto(e.la, e.lo) : '';
       if (ponto) partes.push(`<a href="${escapeHtml(ponto)}" target="_blank" rel="noopener noreferrer">ver no mapa</a>`);
+      const hora = e.tipo === 'CARGA' && e.ts_fim && fhHm(e.ts_fim) !== fhHm(e.ts) ? `${fhHm(e.ts)}–${fhHm(e.ts_fim)}` : fhHm(e.ts);
       return `<tr class="${e.em_casa ? 'fh-linha-casa' : ''}">
-        <td><strong>${fhHm(e.ts)}</strong></td>
+        <td><strong>${hora}</strong></td>
         <td>${escapeHtml(fhEvidenciaRotulo(e))}</td>
         <td>${partes.join(' · ') || '<span class="fh-muted">—</span>'}</td>
         <td>${e.em_casa ? '<span class="fh-fase neutra">feito em casa: não conta</span>' : '<span class="fh-fase info">conta como trabalho</span>'}</td>
@@ -325,9 +355,12 @@ import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, f
       : '';
 
     const trajetosAlerta = fhTrajetosAlerta(det).comAlerta.length;
+    const cargasDia = fhCargasDoDia(det);
+    const totalCargas = cargasDia.reduce((soma, c) => soma + Math.max(1, Number(c.qtd) || 1), 0);
     const abas = [
       { chave: 'resumo', rotulo: 'Linha do tempo' },
       { chave: 'trajetos', rotulo: 'Trajetos', n: trajetosAlerta },
+      ...(cargasDia.length ? [{ chave: 'cargas', rotulo: 'Cargas', n: totalCargas }] : []),
       ...(excDia.length ? [{ chave: 'excessos', rotulo: 'Excessos', n: excDia.length }] : []),
       { chave: 'metodo', rotulo: 'Como foi calculado' }
     ];
@@ -343,6 +376,7 @@ import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, f
         ${aviso}
       </div>
       <div class="fh-painel" data-fh-pane="trajetos" hidden>${fhPercursosHtml(dos, det)}</div>
+      ${cargasDia.length ? `<div class="fh-painel" data-fh-pane="cargas" hidden>${fhCargasHtml(dos, det)}</div>` : ''}
       ${excDia.length ? `<div class="fh-painel" data-fh-pane="excessos" hidden>${fhExcessosHtml(dos, det)}</div>` : ''}
       <div class="fh-painel" data-fh-pane="metodo" hidden>
         <h4 class="fh-h4">O que chama atenção, em frases</h4>
@@ -353,10 +387,10 @@ import { fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, f
         <details class="fh-metodo fh-interno"><summary>Registros de trabalho usados (${(det.evidencias || []).length})</summary>${fhRegistrosHtml(dos, det)}</details>
         <details class="fh-metodo fh-interno"><summary>Regras do cálculo</summary>
           <ul>
-            <li><strong>Trabalho registrado:</strong> informativos do colaborador no Mapa de Embarque, check-in e check-out da produção diária e sinais de GPS do celular (app GRM). O que foi registrado em casa não conta.</li>
+            <li><strong>Trabalho registrado:</strong> informativos do colaborador no Mapa de Embarque, check-in e check-out da produção diária, cargas lançadas no app (data, horário e GPS do lançamento) e sinais de GPS do celular (app GRM). O que foi registrado em casa não conta.</li>
             <li><strong>Horário permitido:</strong> do primeiro registro (menos o tempo de ida) até o último registro (mais o tempo de volta), com ${Number(dos.tolerancia_min) || 20} min de folga. O tempo de ida e de volta é estimado pela distância em linha reta entre a casa e o local × ${escapeHtml(det.fator_rota ?? 1.4)} ÷ ${escapeHtml(det.vel_media_kmh ?? 60)} km/h.</li>
             <li><strong>Programação do dia:</strong> se o condutor ou um colega de carona estiver escalado em uma O.S., a chegada ou a saída do veículo a menos de 2 km do local dessa O.S. conta como trabalho; o mesmo vale para uma parada a menos de 1,5 km da casa cadastrada do colega de carona.</li>
-            <li><strong>Domingo e feriado:</strong> só é autorizado rodar com embarque (informativo ou check-in/out feitos longe de casa, ou O.S. escalada na Programação para alguém do veículo). Com embarque, o uso é liberado em qualquer horário; sem embarque, todo o uso conta como fora do horário. Os feriados vêm do calendário do sistema (nacionais); feriado regional ou municipal precisa ser cadastrado.</li>
+            <li><strong>Domingo e feriado:</strong> só é autorizado rodar com embarque (informativo, check-in/out ou carga lançada longe de casa, ou O.S. escalada na Programação para alguém do veículo). Com embarque, o uso é liberado em qualquer horário; sem embarque, todo o uso conta como fora do horário. Os feriados vêm do calendário do sistema (nacionais); feriado regional ou municipal precisa ser cadastrado.</li>
             <li><strong>Pouco registro no dia</strong> (menos de 3 registros, ou menos de 3 h entre o primeiro e o último): o horário é ampliado para 05:30 às 20:00 (seg a sáb). Sem nenhum registro vale esse horário padrão; domingo sem registro, todo uso conta como fora do horário.</li>
             <li><strong>Fora do horário</strong> (vermelho): 25 km ou mais fora do horário permitido, 2 h ou mais, 5 km ou mais à noite (22h às 5h) ou 5 km ou mais depois de chegar em casa. <strong>Para conferir</strong> (amarelo): 5 km ou mais, algum km à noite, percurso bem mais longo que o direto ou chegada em casa com mais de 1 h de atraso.</li>
             <li>Quando uma viagem passa do limite, só a parte depois do limite conta (proporcional ao tempo).</li>

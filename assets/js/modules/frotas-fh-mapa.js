@@ -1,10 +1,10 @@
 // Frotas — Fora do horário — mapa da rota (Leaflet) e seu estado.
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { FORA_HORARIO_ROTA_FUNCTION, state, escapeHtml, callEdgeFunction } from './frotas-base.js?v=20261015-frotas-dos1';
-import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-dos1';
+import { FORA_HORARIO_ROTA_FUNCTION, state, escapeHtml, callEdgeFunction } from './frotas-base.js?v=20261015-frotas-carga1';
+import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-carga1';
 
   // ── Rota do dia: trajeto GPS no mapa, ao lado do dossiê ──────────────────────────────
   // Pontos da RedGPS (edge function frotas-fora-horario-rota): [segundos desde 00:00, lat, lng, km/h].
@@ -61,6 +61,23 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
     return n !== null && n !== undefined && n !== '' && Number.isFinite(Number(n));
   }
 
+  // Deslocamento de z-index do veículo: acima de qualquer marcador do mapa (as referências usam 500; os demais, a posição na tela).
+  const FH_CARRO_Z = 100000;
+
+  // Ícone do veículo: um carrinho de lado, amarelo com contorno branco para aparecer sobre o satélite.
+  // Olha para a direita; a classe fh-carro-esq o espelha quando o trajeto segue para o oeste.
+  function fhIconeCarro(L) {
+    const svg = `<svg viewBox="0 0 44 27" aria-hidden="true" focusable="false">
+      <path d="M3 20v-5.5c0-1.5.8-2.3 2-2.6L11 10.4l5-6c.8-1 1.8-1.4 3-1.4h9.5c1.2 0 2.2.5 3 1.5L35 10l4.5 1.3c1 .3 1.5 1.1 1.5 2.4V20c0 1-.6 1.5-1.5 1.5h-35C3.6 21.5 3 21 3 20z" fill="#fbbf24" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M13.2 10 17 5.4c.4-.5.7-.5 1.2-.5H22V10zM24 4.9h4c.6 0 .8.1 1.2.6l3 4.5H24z" fill="#1e293b"/>
+      <rect x="3.8" y="13" width="2.4" height="2.6" rx=".8" fill="#ef4444"/>
+      <rect x="38.2" y="13" width="2.4" height="2.6" rx=".8" fill="#fff"/>
+      <g fill="#0f172a" stroke="#fff" stroke-width="1.6"><circle cx="12.5" cy="21" r="4.6"/><circle cx="31.5" cy="21" r="4.6"/></g>
+      <g fill="#94a3b8"><circle cx="12.5" cy="21" r="1.6"/><circle cx="31.5" cy="21" r="1.6"/></g>
+    </svg>`;
+    return L.divIcon({ className: 'fh-carro-icone', html: `<div class="fh-carro">${svg}</div>`, iconSize: [44, 27], iconAnchor: [22, 24] });
+  }
+
   // Papel da O.S. na Programação: atendimento do condutor, logística (carona frota) ou destino da carona.
   function fhPapelOs(o) {
     const quem = fhTitulo(o.quem);
@@ -111,6 +128,11 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
     return lista;
   }
 
+  // Cargas do dossiê com coordenada (o GPS do celular no lançamento), para marcar no mapa.
+  function fhCargasNoMapa(dos) {
+    return ((dos.detalhes || {}).evidencias || []).filter((e) => e.tipo === 'CARGA' && finito(e.la) && finito(e.lo));
+  }
+
   function fhMaisProximo(pontos, lat, lng) {
     let melhor = null;
     pontos.forEach((p) => {
@@ -131,6 +153,7 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
     const temFora = (det.viagens || []).some((v) => fhNum(v.fora_km) >= FH_FORA_MIN_KM);
     const temSem = (det.viagens || []).some((v) => v.uso === 'SEM_JUSTIFICATIVA');
     const temExc = (det.excessos || []).some((x) => finito(x.la) && finito(x.lo));
+    const temCarga = fhCargasNoMapa(dos).length > 0;
     const refs = referencias.map((r, i) => {
       if (r.sem) {
         return `<div class="fh-ref">
@@ -167,7 +190,7 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
         ${temFora ? '<span><i class="fh-lb fh-lb-fora"></i>Fora do horário</span>' : ''}
         ${temSem ? '<span><i class="fh-lb fh-lb-sem"></i>Sem justificativa</span>' : ''}
         ${temExc ? '<span><i class="fh-lb fh-lb-excm"></i>Excesso de velocidade</span>' : ''}
-      </div>
+        ${temCarga ? '<span><i class="fh-lb fh-lb-carga"></i>Cargas lançadas</span>' : ''}      </div>
       <details class="fh-metodo fh-interno"><summary>Pontos de referência (${referencias.length})</summary>
         ${refs ? `<div class="fh-refs">${refs}</div>` : '<p class="speed-hint">Sem O.S. programada nem endereço cadastrado com coordenada para este dia.</p>'}
       </details>`;
@@ -276,6 +299,19 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
       fhMapaDados.excessos.push({ la: Number(x.la), lo: Number(x.lo), marcador });
     });
 
+    // Cargas lançadas no app por quem estava no veículo: o número no marcador é a quantidade de cargas lançadas naquele lugar.
+    fhMapaDados.cargas = [];
+    fhCargasNoMapa(dos).forEach((c) => {
+      const qtd = Math.max(1, Number(c.qtd) || 1);
+      const horario = c.ts_fim && fhHm(c.ts_fim) !== fhHm(c.ts) ? `${fhHm(c.ts)} às ${fhHm(c.ts_fim)}` : fhHm(c.ts);
+      const veic = finito(c.veic_km) && fhNum(c.veic_km) >= 2 ? `<br>veículo a ${fhKm(c.veic_km)} km do local` : '';
+      const marcador = L.marker([Number(c.la), Number(c.lo)], {
+        icon: L.divIcon({ className: '', html: `<div class="fh-pin fh-pin-carga${c.em_casa ? ' em-casa' : ''}">${qtd}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] }),
+        zIndexOffset: 400
+      }).bindTooltip(`<b>${qtd} ${qtd === 1 ? 'carga lançada' : 'cargas lançadas'}</b> · ${horario}${c.os ? `<br>O.S. ${escapeHtml(c.os)}` : ''}${c.local ? ` · ${escapeHtml(fhTitulo(c.local))}` : ''}${c.quem ? `<br>por ${escapeHtml(fhTitulo(c.quem))}${c.em_casa ? ' (em casa: não conta)' : ''}` : ''}${veic}`).addTo(fhMapa);
+      fhMapaDados.cargas.push({ la: Number(c.la), lo: Number(c.lo), marcador });
+    });
+
     // Pontos de referência (O.S. programada, endereço cadastrado, pernoite).
     const marcadoresRef = referencias.map((r) => r.sem ? null : L.marker([r.lat, r.lng], {
       icon: L.divIcon({ className: '', html: `<div class="fh-pin fh-pin-${r.tipo}">${escapeHtml(r.sigla)}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }),
@@ -294,14 +330,22 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
       mapaAtual.fitBounds(limites, { padding: [30, 30], maxZoom: 16, animate: false });
     }, 150);
 
-    // Deslizador de horário.
-    fhMapaMarcador = L.circleMarker([pontos[0][1], pontos[0][2]], { radius: 9, color: '#fff', weight: 2, fillColor: '#fbbf24', fillOpacity: 1 }).addTo(fhMapa);
+    // Deslizador de horário: o veículo é um carrinho que fica sempre acima de todos os outros marcadores.
+    fhMapaMarcador = L.marker([pontos[0][1], pontos[0][2]], { icon: fhIconeCarro(L), zIndexOffset: FH_CARRO_Z, interactive: false, keyboard: false }).addTo(fhMapa);
     const slider = root.querySelector('[data-rota-mapa-slider]');
     const texto = root.querySelector('[data-rota-mapa-slider-txt]');
     const mover = () => {
-      const p = pontos[Number(slider.value)] || pontos[0];
+      const indice = Math.min(Math.max(Number(slider.value) || 0, 0), pontos.length - 1);
+      const p = pontos[indice] || pontos[0];
       const ll = [p[1], p[2]];
       fhMapaMarcador.setLatLng(ll);
+      // O carrinho olha para onde o trajeto segue (leste = direita, oeste = esquerda).
+      const vizinho = pontos[indice + 1] || pontos[indice - 1];
+      const carro = fhMapaMarcador.getElement()?.querySelector('.fh-carro');
+      if (vizinho && carro) {
+        const dlon = (vizinho[2] - p[2]) * (pontos[indice + 1] ? 1 : -1);
+        if (Math.abs(dlon) > 1e-6) carro.classList.toggle('fh-carro-esq', dlon < 0);
+      }
       if (!fhMapa.getBounds().contains(ll)) fhMapa.panTo(ll, { animate: false });
       texto.textContent = `${fhHoraSeg(p[0])}${p[0] >= 86400 ? ' (dia seguinte)' : ''} · ${Number(p[3]) || 0} km/h`;
     };
@@ -384,7 +428,7 @@ import { fhHm, fhMinutosDoDia, fhKm, FH_FORA_MIN_KM, fhNum, fhTitulo } from './f
   function fhMapaFocarPonto(lat, lng) {
     if (!fhMapa || !fhMapaDados) return;
     fhMapa.setView([lat, lng], 16, { animate: false });
-    const perto = fhMapaDados.excessos.find((x) => Math.abs(x.la - lat) < 1e-6 && Math.abs(x.lo - lng) < 1e-6);
+    const perto = [...fhMapaDados.excessos, ...(fhMapaDados.cargas || [])].find((x) => Math.abs(x.la - lat) < 1e-6 && Math.abs(x.lo - lng) < 1e-6);
     if (perto) perto.marcador.openTooltip();
   }
 

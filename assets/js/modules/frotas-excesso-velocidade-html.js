@@ -2,7 +2,7 @@
 // Separado de frotas-excesso-velocidade.js em 15/10/2026 (a função renderExcessoVelocidade tinha 494 linhas).
 // O código foi movido sem alteração. Ao editar, troque o token ?v= em todos os imports internos do conjunto
 // frotas-*.js (tests/frotas-modulos-versao.test.mjs confere).
-import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261015-frotas-dos1';
+import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261015-frotas-carga1';
 
   function htmlExcessoVelocidade() {
     return `${getStyles()}
@@ -201,6 +201,13 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                 .fh-ref small.fh-ref-prox{color:#bbf7d0}
                 .fh-pin{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:10px;color:#fff;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.5)}
                 .fh-pin-os{background:#f59e0b}.fh-pin-casa{background:#3b82f6}.fh-pin-pernoite{background:#64748b}
+                .fh-pin-carga{width:24px;height:24px;border-radius:7px;background:#0d9488;font-size:11px}
+                .fh-pin-carga.em-casa{opacity:.55}
+                .fh-lb-carga{width:10px;height:10px;border-radius:3px;background:#0d9488}
+                .fh-carro-icone{background:none;border:0}
+                .fh-carro{width:44px;height:27px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.75))}
+                .fh-carro svg{display:block;width:100%;height:100%}
+                .fh-carro.fh-carro-esq svg{transform:scaleX(-1)}
                 .fh-hora{background:rgba(2,6,23,.88);color:#e2e8f0;border:1px solid rgba(148,163,184,.45);border-radius:6px;padding:0 5px;font-size:10px;font-weight:800;line-height:15px;text-align:center;white-space:nowrap}
                 @media(max-width:760px){.fh-filtros{display:grid}.fh-busca{width:100%}.fh-passo{grid-template-columns:1fr;gap:4px}.fh-m-manchete{font-size:20px}}
                 @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}

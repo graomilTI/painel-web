@@ -296,10 +296,12 @@ begin
     e_ts := (e ->> 'ts')::timestamp;
     nome1 := initcap(lower(split_part(trim(coalesce(e ->> 'quem', '')), ' ', 1)));
     ref := case e ->> 'tipo'
-      when 'INFORMATIVO' then 'informativo' when 'CHECKIN' then 'check-in' when 'CHECKOUT' then 'check-out' else 'sinal do celular' end
+      when 'INFORMATIVO' then 'informativo' when 'CHECKIN' then 'check-in' when 'CHECKOUT' then 'check-out'
+      when 'CARGA' then 'carga lançada' else 'sinal do celular' end
       || ' de ' || nome1 || ' às ' || to_char(e_ts, 'HH24:MI') || coalesce(' (O.S. ' || nullif(e ->> 'os', '') || ')', '');
-    if (e ->> 'tipo') = 'CELULAR' and (e ->> 'la') is not null and (e ->> 'lo') is not null then
-      sites := sites || jsonb_build_object('tipo', 'TRABALHO', 'la', (e ->> 'la')::float8, 'lo', (e ->> 'lo')::float8, 'raio', 1.5, 'ts', e ->> 'ts', 'ref', ref);
+    if (e ->> 'tipo') in ('CELULAR', 'CARGA') and (e ->> 'la') is not null and (e ->> 'lo') is not null then
+      sites := sites || jsonb_build_object('tipo', 'TRABALHO', 'la', (e ->> 'la')::float8, 'lo', (e ->> 'lo')::float8, 'raio', 1.5, 'ts', e ->> 'ts',
+        'ts_fim', e ->> 'ts_fim', 'ref', ref);
     else
       pos := public.frotas_dossie_posicao_em(trips, e_ts, casa_la, casa_lo, 'fim');
       if (pos ->> 'mov') = 'true' then
@@ -342,7 +344,10 @@ begin
     d_site := null; ancora := null; ancora_ref := null;
     for s in select * from jsonb_array_elements(sites) loop
       prio := case s ->> 'tipo' when 'OS' then 3 when 'CARONA' then 2 else 1 end;
-      if (s ->> 'ts') is not null and abs(extract(epoch from (t_fim - (s ->> 'ts')::timestamp))) > 7200 then continue; end if;
+      -- (registro de carga cobre do 1º ao último lançamento no mesmo lugar: a tolerância de 2 h vale nas duas pontas)
+      if (s ->> 'ts') is not null
+         and (t_fim < (s ->> 'ts')::timestamp - interval '2 hours'
+              or t_fim > coalesce((s ->> 'ts_fim')::timestamp, (s ->> 'ts')::timestamp) + interval '2 hours') then continue; end if;
       if (t ->> 'la2') is not null
          and public.frotas_dossie_hav((t ->> 'la2')::float8, (t ->> 'lo2')::float8, (s ->> 'la')::float8, (s ->> 'lo')::float8) < (s ->> 'raio')::float8
          and prio > coalesce((d_site ->> 'prio')::int, 0) then
@@ -513,11 +518,11 @@ stable
 set search_path = public
 as $f$
 declare
-  inf_map jsonb; prod_map jsonb; ping_map jsonb; trips_map jsonb;
+  inf_map jsonb; prod_map jsonb; ping_map jsonb; carga_map jsonb; trips_map jsonb;
   pl text; trips jsonb; t jsonb; n int; i int;
   mot text; coord text; superv text; nome text; nome_chave text;
   inf_arr jsonb; prod_arr jsonb; ping_arr jsonb;
-  ev jsonb; evs jsonb; e jsonb; e_ts timestamp; e_la float8; e_lo float8; e_pos jsonb; e_casa boolean; e_tipo text;
+  ev jsonb; evs jsonb; e jsonb; e_ts timestamp; e_fim timestamp; v_veic float8; e_la float8; e_lo float8; e_pos jsonb; e_casa boolean; e_tipo text;
   a_ini timestamp; a_fim timestamp; fontes text[]; fonte text; n_ev int;
   prim_inf timestamp; ult_inf timestamp; qtd_inf int;
   dow int := extract(dow from p_data);
@@ -606,6 +611,35 @@ begin
       from public.grm_login_movimentos_importacoes l
       where l.data_movimento = p_data and l.hora_movimento is not null
         and l.latitude is not null and l.longitude is not null
+    ) s
+    group by s.nome
+  ) x;
+
+  -- Cargas lançadas pelo colaborador no app (grm_cargas_importacoes): hora do lançamento + GPS do celular no ato (loaLat/loaLon).
+  -- Cargas da mesma O.S. lançadas no mesmo lugar (célula de ~110 m) viram um só registro: 1ª e última hora e quantidade.
+  select coalesce(jsonb_object_agg(x.nome, x.itens), '{}'::jsonb) into carga_map
+  from (
+    select s.nome, jsonb_agg(jsonb_build_object(
+             'ts', s.ts_ini, 'ts_fim', s.ts_fim, 'qtd', s.qtd, 'la', s.la, 'lo', s.lo,
+             'os', s.os, 'local', s.local, 'cliente', s.cliente) order by s.ts_ini, s.os) as itens
+    from (
+      select c.nome, c.os, round(c.la::numeric, 3) as cla, round(c.lo::numeric, 3) as clo,
+             min(c.ts) as ts_ini, max(c.ts) as ts_fim, count(*)::int as qtd,
+             avg(c.la) as la, avg(c.lo) as lo, max(c.local) as local, max(c.cliente) as cliente
+      from (
+        select upper(unaccent(trim(g.colaborador))) as nome, nullif(trim(g.os), '') as os,
+               (g.dados_json ->> 'loaRegisterDate')::timestamp as ts,
+               g.lat_lancamento as la, g.lng_lancamento as lo,
+               g.dados_json ->> 'splName' as local, coalesce(g.dados_json ->> 'cliName', g.cliente) as cliente
+        from public.grm_cargas_importacoes g
+        where g.data_classificacao between p_data - 1 and p_data + 1
+          and coalesce(trim(g.colaborador), '') <> ''
+          and g.dados_json ->> 'loaRegisterDate' ~ '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}'
+          and g.lat_lancamento is not null and g.lng_lancamento is not null
+          and not (g.lat_lancamento = 0 and g.lng_lancamento = 0)
+      ) c
+      where c.ts >= p_data::timestamp and c.ts < (p_data + 1)::timestamp
+      group by c.nome, c.os, round(c.la::numeric, 3), round(c.lo::numeric, 3)
     ) s
     group by s.nome
   ) x;
@@ -926,12 +960,13 @@ begin
       if nome = '' or nome = any(vistos) then continue; end if;
       vistos := vistos || nome;
       nome_chave := null;
-      if inf_map ? nome or prod_map ? nome or ping_map ? nome then
+      if inf_map ? nome or prod_map ? nome or ping_map ? nome or carga_map ? nome then
         nome_chave := nome;
       else
         select w.k into nome_chave from (
           select q.key as k, similarity(q.key, nome) as s from (
             select jsonb_object_keys(inf_map) as key union select jsonb_object_keys(prod_map) union select jsonb_object_keys(ping_map)
+            union select jsonb_object_keys(carga_map)
           ) q
         ) w
         where w.s >= 0.85
@@ -952,6 +987,11 @@ begin
       end loop;
       for e in select * from jsonb_array_elements(coalesce(ping_map -> nome_chave, '[]'::jsonb)) loop
         evs := evs || jsonb_build_object('ts', e ->> 'ts', 'tipo', 'CELULAR', 'la', e -> 'la', 'lo', e -> 'lo', 'local', e ->> 'local',
+          'quem', v_quem, 'papel', v_papel, 'cl', pessoa -> 'casa_la', 'co', pessoa -> 'casa_lo');
+      end loop;
+      for e in select * from jsonb_array_elements(coalesce(carga_map -> nome_chave, '[]'::jsonb)) loop
+        evs := evs || jsonb_build_object('ts', e ->> 'ts', 'ts_fim', e ->> 'ts_fim', 'tipo', 'CARGA', 'qtd', e -> 'qtd',
+          'os', e ->> 'os', 'local', e ->> 'local', 'cliente', e ->> 'cliente', 'la', e -> 'la', 'lo', e -> 'lo',
           'quem', v_quem, 'papel', v_papel, 'cl', pessoa -> 'casa_la', 'co', pessoa -> 'casa_lo');
       end loop;
     end loop;
@@ -1002,7 +1042,7 @@ begin
         e_la := (e ->> 'la')::float8; e_lo := (e ->> 'lo')::float8;
         e_casa := public.frotas_dossie_hav(e_la, e_lo, casa_la, casa_lo) < p_raio_casa_km
                or public.frotas_dossie_hav(e_la, e_lo, noite_la, noite_lo) < p_raio_casa_km
-               or (e_tipo = 'CELULAR' and (e ->> 'cl') is not null and (e ->> 'co') is not null
+               or (e_tipo in ('CELULAR', 'CARGA') and (e ->> 'cl') is not null and (e ->> 'co') is not null
                    and public.frotas_dossie_hav(e_la, e_lo, (e ->> 'cl')::float8, (e ->> 'co')::float8) < p_raio_casa_km);
       else
         e_pos := public.frotas_dossie_posicao_em(trips, e_ts, casa_la, casa_lo, 'fim');
@@ -1011,10 +1051,20 @@ begin
           and (public.frotas_dossie_hav(e_la, e_lo, casa_la, casa_lo) < p_raio_casa_km
                or public.frotas_dossie_hav(e_la, e_lo, noite_la, noite_lo) < p_raio_casa_km);
       end if;
-      ev := ev || ((e - 'cl' - 'co') || jsonb_build_object('em_casa', coalesce(e_casa, false)));
+      e_fim := coalesce((e ->> 'ts_fim')::timestamp, e_ts);
+      v_veic := null;
+      if e_tipo = 'CARGA' then
+        -- distância entre o local da carga e o veículo no instante do lançamento (para conferir se o condutor estava com o veículo)
+        e_pos := public.frotas_dossie_posicao_em(trips, e_ts, casa_la, casa_lo, 'fim');
+        if (e_pos ->> 'la') is not null and (e_pos ->> 'lo') is not null and (e_pos ->> 'mov') <> 'true' then
+          v_veic := public.frotas_dossie_hav(e_la, e_lo, (e_pos ->> 'la')::float8, (e_pos ->> 'lo')::float8);
+        end if;
+      end if;
+      ev := ev || ((e - 'cl' - 'co') || jsonb_build_object('em_casa', coalesce(e_casa, false))
+                   || case when v_veic is null then '{}'::jsonb else jsonb_build_object('veic_km', round(v_veic::numeric, 1)) end);
       if not coalesce(e_casa, false) then
         a_ini := least(coalesce(a_ini, e_ts), e_ts);
-        a_fim := greatest(coalesce(a_fim, e_ts), e_ts);
+        a_fim := greatest(coalesce(a_fim, e_fim), e_fim);
         if not (e_tipo = any(fontes)) then fontes := fontes || e_tipo; end if;
       end if;
     end loop;
@@ -1058,7 +1108,7 @@ begin
 
     -- Embarque do dia: informativo ou check-in/out feitos longe de casa, ou O.S. escalada na Programação para alguém do veículo.
     select exists (select 1 from jsonb_array_elements(ev) x
-                   where (x ->> 'tipo') in ('INFORMATIVO', 'CHECKIN', 'CHECKOUT') and (x ->> 'em_casa') = 'false')
+                   where (x ->> 'tipo') in ('INFORMATIVO', 'CHECKIN', 'CHECKOUT', 'CARGA') and (x ->> 'em_casa') = 'false')
       into v_embarque;
     v_embarque := coalesce(v_embarque, false) or jsonb_array_length(prog_os) > 0;
     v_livre := false;

@@ -1,9 +1,9 @@
 // Frotas — Fora do horário — constantes e formatadores (sem dependência de outras partes do Fora do horário).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-dos1';
+import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-carga1';
 
   // As janelas (modais) são position: fixed. Se algum ancestral tiver transform/filter/backdrop-filter, o fixed passa a
   // valer em relação a ele e não à tela. O .card sobe com translateY no :hover (e o mouse está sobre ele ao clicar em
@@ -57,6 +57,7 @@ import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frot
     CHECKIN: 'Check-in na O.S.',
     CHECKOUT: 'Check-out da O.S.',
     CELULAR: 'Sinal do celular (GPS do app)',
+    CARGA: 'Carga lançada no app',
     OS_PROGRAMADA: 'Veículo no local da O.S. escalada',
     CARONA: 'Veículo na casa do colega de carona'
   };
@@ -104,6 +105,7 @@ import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frot
     if (partes.includes('INFORMATIVO')) add('informativos');
     if (partes.includes('CHECKIN') || partes.includes('CHECKOUT')) add('produção');
     if (partes.includes('CELULAR')) add('GPS do celular');
+    if (partes.includes('CARGA')) add('cargas lançadas');
     if (partes.includes('OS_PROGRAMADA')) add('rota no local da O.S. escalada');
     if (partes.includes('CARONA')) add('parada de carona');
     return rotulos.join(', ');

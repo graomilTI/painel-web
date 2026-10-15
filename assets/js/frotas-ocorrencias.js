@@ -6,14 +6,14 @@ import { temAcessoFrota } from './modules/frotas-permissoes.js';
 async function montarNotificacao(body, ctx) {
   const [{ installDailyDriverResolution }] = await Promise.all([
     import('./frotas-motorista-leitura-diaria.js'),
-    import('./modules/frotas.js?v=20261015-frotas-dos1'),
+    import('./modules/frotas.js?v=20261015-frotas-carga1'),
   ]);
   installDailyDriverResolution(supabase);
   window.FROTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
 async function montarHistorico(body, ctx) {
-  await import('./modules/frotas.js?v=20261015-frotas-dos1');
+  await import('./modules/frotas.js?v=20261015-frotas-carga1');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
