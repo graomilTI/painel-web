@@ -1,10 +1,10 @@
 // Financeiro — contas a pagar/receber: colunas das planilhas, mapeamento e sincronização com o agente.
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261015-fin1 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261015-fin2 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { toNumber, toDateISO, hashText, pick } from './util.js?v=20261015-fin1';
+import { toNumber, toDateISO, hashText, pick } from './util.js?v=20261015-fin2';
 
 const RECEBER_COLUMNS = {
   situacao: ['situação', 'situacao'],

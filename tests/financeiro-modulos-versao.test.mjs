@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 
-// Parte do Financeiro (assets/js/financeiro.js) foi dividida em módulos assets/js/modules/financeiro/*.js (15/10/2026).
+// O Financeiro (assets/js/financeiro.js) foi dividido em módulos assets/js/modules/financeiro/*.js (15/10/2026): funções de topo, HTML e uma fábrica criarX(ctx) por parte da tela.
 // O navegador identifica cada módulo pela URL COMPLETA, com o ?v=, e o service worker serve JS em
 // stale-while-revalidate: se um import interno ficar com ?v= diferente dos outros, o usuário pode
 // receber dois módulos de versões diferentes ou duas cópias do mesmo módulo. Este teste exige o mesmo
@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 const raiz = new URL('../', import.meta.url);
 const ler = (caminho) => readFileSync(new URL(caminho, raiz), 'utf8');
 
-const MODULOS = ['util', 'planilhas', 'pagamentos', 'contas', 'html'];
+const MODULOS = ['util', 'planilhas', 'pagamentos', 'contas', 'html', 'feedback', 'dashboard', 'notas-fiscais', 'setor-pagamentos', 'adiantamentos', 'navegacao', 'fluxo'];
 
 function tokensInternos() {
   const achados = [];
@@ -28,7 +28,7 @@ function tokensInternos() {
 
 test('todos os imports internos do Financeiro usam o mesmo ?v=', () => {
   const achados = tokensInternos();
-  assert.ok(achados.length >= 8, `esperava ao menos 8 imports internos, achei ${achados.length}`);
+  assert.ok(achados.length >= 18, `esperava ao menos 18 imports internos, achei ${achados.length}`);
   const tokens = new Set(achados.map((a) => a.token));
   assert.equal(tokens.size, 1, `tokens diferentes: ${[...tokens].join(', ')}`);
 });
