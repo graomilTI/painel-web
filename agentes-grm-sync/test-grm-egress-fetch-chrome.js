@@ -183,6 +183,29 @@ function rodar(env, codigo, cwd) {
   proxyInstavel.server.close();
   escreverCfg();
 
+  // 11d) socket criado pelo FALLBACK DIRETO não pode voltar para o pool keep-alive: durante uma queda do túnel os
+  // serviços contínuos (poll a cada 60 s) reaproveitavam o socket direto (bloqueado pela Cloudflare -> HTTP 403)
+  // para sempre, mesmo depois de o túnel voltar; só reiniciar o processo resolvia (visto em 15/10, 12:44-12:49).
+  const portaFutura = await new Promise((res) => { const s = require('net').createServer(); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
+  escreverCfg({ proxy: `127.0.0.1:${portaFutura}`, fallbackDireto: true });
+  const caminhoProxy = JSON.stringify(path.join(__dirname, 'worker', 'tunel-escritorio', 'proxy-saida.js'));
+  ({ r } = await passouPeloProxy(() => rodar(base, `
+    const { criarProxy } = require(${caminhoProxy});
+    const https = require('https');
+    const pedir = () => new Promise((res, rej) => https.get('https://localhost:${porta}/json', { ca: process.env.CA_TESTE }, (resp) => { resp.resume(); resp.on('end', () => res(resp.statusCode)); }).on('error', rej));
+    (async () => {
+      const a = await pedir();
+      const proxy = criarProxy({ permitidos: ['localhost'], portas: [${porta}], aceitarPrivados: true, resolver: async () => ['127.0.0.1'] });
+      await new Promise((res) => proxy.server.listen(${portaFutura}, '127.0.0.1', res));
+      await new Promise((res) => setTimeout(res, 200));
+      const b = await pedir();
+      console.log('SEQ', a, b, 'conectados=' + proxy.stats.conectados);
+      process.exit(0);
+    })().catch((e) => { console.log('FALHOU', e.message); process.exit(3); });
+  `)));
+  assert.match(r.stdout, /SEQ 200 200 conectados=1/, `depois que o túnel volta, a chamada tem que usar o túnel (não o socket direto do pool): ${r.stdout}${r.stderr}`);
+  escreverCfg();
+
   // 12) Chrome: módulo falso puppeteer-extra recebe --proxy-pac-url (PAC só para o GRM), sem duplicar e sem mexer em outros agentes
   const falso = path.join(dir, 'node_modules', 'puppeteer-extra');
   fs.mkdirSync(falso, { recursive: true });
