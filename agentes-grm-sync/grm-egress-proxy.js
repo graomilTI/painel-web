@@ -92,7 +92,11 @@ function instalar(cfg) {
     createConnection(options, callback) {
       const host = options.host || options.hostname;
       const porta = Number(options.port) || 443;
-      const direto = () => callback(null, tls.connect({ ...options, host, port: porta, servername: options.servername || host }));
+      const direto = () => {
+        const s = tls.connect({ ...options, host, port: porta, servername: options.servername || host });
+        s.__grmSaidaDireta = true; // keepSocketAlive abaixo: este socket nunca volta para o pool
+        callback(null, s);
+      };
       conectarViaProxyComRetry(host, porta, (err, bruto) => {
         if (err) {
           if (!fallbackDireto) { callback(err); return; }
@@ -103,6 +107,15 @@ function instalar(cfg) {
         const { host: _h, port: _p, path: _pa, ...resto } = options;
         callback(null, tls.connect({ ...resto, socket: bruto, servername: options.servername || host }));
       });
+    }
+
+    // Socket criado pelo FALLBACK DIRETO (túnel fora) não pode ficar no pool keep-alive: os serviços contínuos
+    // consultam a cada 60 s e reaproveitavam esse socket (bloqueado pela Cloudflare -> HTTP 403) para sempre, mesmo
+    // com o túnel de volta; só reiniciar o processo resolvia (15/10/2026, 12:44-12:49). Devolver false faz o Agent
+    // destruir o socket ao fim da requisição; a próxima chamada tenta o túnel de novo.
+    keepSocketAlive(socket) {
+      if (socket && socket.__grmSaidaDireta) return false;
+      return super.keepSocketAlive(socket);
     }
   }
   const agente = new AgentePorProxy({ keepAlive: true, maxSockets: 16, timeout: 60000 });
