@@ -931,7 +931,8 @@ async function saveExpense(page, rotulo = 'Bônus') {
   await page.click(prepared.selector);
   await sleep(1400);
 
-  const confirmation = await page.evaluate(() => {
+  // L\u00ea a tela em busca do aviso de sucesso/erro do GRM e se o formul\u00e1rio ainda est\u00e1 aberto.
+  const lerConfirmacao = () => page.evaluate(() => {
     const normalize = (value) => String(value || '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -981,6 +982,19 @@ async function saveExpense(page, rotulo = 'Bônus') {
       signalType: lastSignal?.type || null,
     };
   });
+
+  // Antes lia a tela UMA vez, 1,4 s depois do clique. Pelo túnel do escritório (EUA <-> Brasil em cada chamada)
+  // a resposta do GRM chega depois disso com frequência: o agente não via o aviso de sucesso, marcava ERRO
+  // ("não confirmou o salvamento") e o GRM gravava logo em seguida (15/10/2026, lançamento de bônus). Agora, se
+  // ainda não há sinal e o formulário segue aberto, espera até GRM_CAIXA_CONFIRMACAO_MS (padrão 15 s), relendo a
+  // cada 500 ms; sai na hora em que aparecer sucesso ou erro, ou quando o formulário fechar.
+  const esperaMaximaMs = Math.max(0, Number(process.env.GRM_CAIXA_CONFIRMACAO_MS || 15000));
+  const inicioDaEspera = Date.now();
+  let confirmation = await lerConfirmacao();
+  while (!confirmation.signalType && confirmation.formStillOpen && Date.now() - inicioDaEspera < esperaMaximaMs) {
+    await sleep(500);
+    confirmation = await lerConfirmacao();
+  }
 
   // O GRM mantém o formulário aberto em algumas versões mesmo após gravar.
   // A mensagem oficial "Registro cadastrado... com sucesso" é confirmação
