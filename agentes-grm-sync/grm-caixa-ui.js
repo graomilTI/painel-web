@@ -390,7 +390,13 @@ function brMoneyText(value) {
 async function selectExactStaffRow(page, cpf) {
   const target = digits(cpf);
 
-  let found = await waitStaffCpfRow(page, target, 5000);
+  // 1ª espera: a linha do CPF entre os ATIVOS. Só depois disso troca o filtro para "Não Ativos". Pelo túnel do
+  // escritório a tabela demora mais que 5 s com frequência; aí quem é Ativo era procurado no filtro errado e virava
+  // "não localizado nem em Ativos nem em Não Ativos" (bônus de set/2026, 15/10: 4 dos 12 primeiros, todos
+  // existentes no GRM). Na rota do túnel a espera sobe para 15 s; direto segue em 5 s.
+  // GRM_CAIXA_BUSCA_CPF_MS sobrescreve.
+  const esperaAtivosMs = Math.max(1000, Number(process.env.GRM_CAIXA_BUSCA_CPF_MS || (process.env.GRM_EGRESS_ROTA === 'tunel' ? 15000 : 5000)));
+  let found = await waitStaffCpfRow(page, target, esperaAtivosMs);
   if (!found) {
     log('INFO', `CPF ${target} não localizado entre Ativos; tentando Situação = Não Ativos.`);
     await setStaffSituation(page, 'Não Ativos');

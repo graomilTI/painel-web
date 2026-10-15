@@ -69,3 +69,31 @@ test('saveExpense: GRM_CAIXA_CONFIRMACAO_MS=0 mantém o comportamento antigo (um
   await assert.rejects(() => caixaUi.saveExpense(pagina, 'Bônus'), /GRM não confirmou o salvamento/);
   assert.equal(pagina.estado.leituras, 1);
 });
+
+test('selectExactStaffRow: 1ª espera pelo CPF entre os Ativos sobe para 15 s na rota do túnel (5 s direto) e respeita o override', async () => {
+  // Pelo túnel a tabela de Funcionários demora mais que 5 s; o agente trocava para "Não Ativos" cedo demais e
+  // quem é Ativo virava "não localizado nem em Ativos nem em Não Ativos".
+  const primeiraEspera = async () => {
+    const esperas = [];
+    const pagina = {
+      waitForFunction: async (_fn, opcoes) => { esperas.push(opcoes.timeout); return true; },
+      evaluate: async () => ({ ok: false, reason: 'ROW_NOT_UNIQUE', matches: 0 }),
+    };
+    await caixaUi.selectExactStaffRow(pagina, '123.456.789-09').catch(() => {});
+    return esperas[0];
+  };
+  const antesRota = process.env.GRM_EGRESS_ROTA;
+  const antesBusca = process.env.GRM_CAIXA_BUSCA_CPF_MS;
+  try {
+    delete process.env.GRM_EGRESS_ROTA;
+    delete process.env.GRM_CAIXA_BUSCA_CPF_MS;
+    assert.equal(await primeiraEspera(), 5000, 'direto pela VPS: como sempre');
+    process.env.GRM_EGRESS_ROTA = 'tunel';
+    assert.equal(await primeiraEspera(), 15000, 'rota do túnel: 15 s');
+    process.env.GRM_CAIXA_BUSCA_CPF_MS = '9000';
+    assert.equal(await primeiraEspera(), 9000, 'override por variável');
+  } finally {
+    if (antesRota === undefined) delete process.env.GRM_EGRESS_ROTA; else process.env.GRM_EGRESS_ROTA = antesRota;
+    if (antesBusca === undefined) delete process.env.GRM_CAIXA_BUSCA_CPF_MS; else process.env.GRM_CAIXA_BUSCA_CPF_MS = antesBusca;
+  }
+});
