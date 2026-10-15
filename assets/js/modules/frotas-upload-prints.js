@@ -1,13 +1,13 @@
 // Frotas — envio dos prints de excesso de velocidade (OCR + conciliação).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-ev1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
 import { buildOcrReconciliationPlan, normalizeOcrResponse } from './frotas-print-ocr-core.js?v=20260820a';
-import { PASTA_MAE_DRIVE_ID, DEFAULT_GAS_URL, state, currentRenderOpts, todayBRShort, isUnknownDriverName, escapeHtml, onlyPlate, formatDateBR, brDateToFilePrefix, parseSpeed, dedupeHighestSpeedByDate, getCurrentUserName, getCurrentUserId, toast, normalizeDateForMatch, toInputDate } from './frotas-base.js?v=20261015-frotas-ev1';
-import { fileToBase64, runBrowserOcrWithTesseract, fileToOcrBase64Variants, getOcrTextFromFileResult, isNotificationTitleLike, getPossibleFileDriverName, normalizeSavedPrintFileResult, extractOcrRecordsFromText, getFileNotificationNumber, rowNotificationNumber, getFileMatchedIds, getPossibleFilePlate } from './frotas-ocr.js?v=20261015-frotas-ev1';
-import { loadColaboradoresFromSupabase } from './frotas-colaboradores.js?v=20261015-frotas-ev1';
-import { buildPrintDriverMap, buildKnownDriversForOcr } from './frotas-excessos-dados.js?v=20261015-frotas-ev1';
+import { PASTA_MAE_DRIVE_ID, DEFAULT_GAS_URL, state, currentRenderOpts, todayBRShort, isUnknownDriverName, escapeHtml, onlyPlate, formatDateBR, brDateToFilePrefix, parseSpeed, dedupeHighestSpeedByDate, getCurrentUserName, getCurrentUserId, toast, normalizeDateForMatch, toInputDate } from './frotas-base.js?v=20261015-frotas-dos1';
+import { fileToBase64, runBrowserOcrWithTesseract, fileToOcrBase64Variants, getOcrTextFromFileResult, isNotificationTitleLike, getPossibleFileDriverName, normalizeSavedPrintFileResult, extractOcrRecordsFromText, getFileNotificationNumber, rowNotificationNumber, getFileMatchedIds, getPossibleFilePlate } from './frotas-ocr.js?v=20261015-frotas-dos1';
+import { loadColaboradoresFromSupabase } from './frotas-colaboradores.js?v=20261015-frotas-dos1';
+import { buildPrintDriverMap, buildKnownDriversForOcr } from './frotas-excessos-dados.js?v=20261015-frotas-dos1';
 
   function cloneFileWithName(file, name) {
     try {

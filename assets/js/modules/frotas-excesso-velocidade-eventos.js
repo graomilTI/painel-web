@@ -2,13 +2,14 @@
 // Separado de frotas-excesso-velocidade.js em 15/10/2026 (a função renderExcessoVelocidade tinha 494 linhas).
 // O código foi movido sem alteração. Ao editar, troque o token ?v= em todos os imports internos do conjunto
 // frotas-*.js (tests/frotas-modulos-versao.test.mjs confere).
-import { addUploadedFiles, clipboardImageFilesFromEvent, renderUploadLists, uploadPrints } from './frotas-upload-prints.js?v=20261015-frotas-ev1';
-import { agirForaHorario, fetchForaHorario, fhNotificarDia, recalcularDossieForaHorario, sincronizarForaHorario } from './frotas-fh-dados.js?v=20261015-frotas-ev1';
-import { atualizarRodapeDossie, fhResumoTexto, openDossieModal, openRotaModal, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261015-frotas-ev1';
-import { copyText, state, toast } from './frotas-base.js?v=20261015-frotas-ev1';
-import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261015-frotas-ev1';
-import { fhCarregarMapa, fhFecharMapa, fhMapaFocarIntervalo, fhMapaFocarPonto, fhMapaTrocarBase } from './frotas-fh-mapa.js?v=20261015-frotas-ev1';
-import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-util.js?v=20261015-frotas-ev1';
+import { addUploadedFiles, clipboardImageFilesFromEvent, renderUploadLists, uploadPrints } from './frotas-upload-prints.js?v=20261015-frotas-dos1';
+import { agirForaHorario, fetchForaHorario, fhNotificarDia, recalcularDossieForaHorario, sincronizarForaHorario } from './frotas-fh-dados.js?v=20261015-frotas-dos1';
+import { fhResumoTexto } from './frotas-fh-dossie-regras.js?v=20261015-frotas-dos1';
+import { atualizarRodapeDossie, openDossieModal, openRotaModal, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261015-frotas-dos1';
+import { copyText, state, toast } from './frotas-base.js?v=20261015-frotas-dos1';
+import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261015-frotas-dos1';
+import { fhCarregarMapa, fhFecharMapa, fhMapaFocarIntervalo, fhMapaFocarPonto, fhMapaTrocarBase } from './frotas-fh-mapa.js?v=20261015-frotas-dos1';
+import { fhLiberarAncestrais, readForaHorarioReportPeriod } from './frotas-fh-util.js?v=20261015-frotas-dos1';
 
   // Fora do horário: carga inicial, lista, filtros, agrupamento, busca e período.
   function ligarForaHorario(container, opts) {
