@@ -3,7 +3,7 @@
 // PGTO_FLASH da GRAOMIL (e uma conta desconhecida sumia da planilha sem aviso).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTAS, contaDoTexto, montarPlanilhas } from '../assets/js/ajudaCustoShared.js';
+import { CONTAS, assinaturaAjudas, contaDoTexto, montarPlanilhas } from '../assets/js/ajudaCustoShared.js';
 
 const ajuda = (cpf, conta, valor, nome = `Colab ${cpf}`) => ({ colaborador_cpf: cpf, colaborador_nome: nome, conta, valor });
 
@@ -54,4 +54,18 @@ test('conta desconhecida ou CPF inválido não somem da planilha sem aviso', () 
   ]);
   assert.equal(flash.length + flashBvgrain.length + ifood.length, 0);
   assert.equal(ignoradas.length, 3);
+});
+
+test('assinaturaAjudas: igual para a mesma lista (em qualquer ordem) e diferente se algo mudar', () => {
+  const a = { id: 'a', colaborador_cpf: '09014242930', conta: 'flash_bvgrain', valor: 349.9 };
+  const b = { id: 'b', colaborador_cpf: '06928832150', conta: 'ifood', valor: 200 };
+  const base = assinaturaAjudas([a, b]);
+  assert.equal(assinaturaAjudas([b, a]), base);
+  assert.notEqual(assinaturaAjudas([a]), base, 'ajuda excluída');
+  assert.notEqual(assinaturaAjudas([a, b, { ...b, id: 'c' }]), base, 'ajuda incluída');
+  assert.notEqual(assinaturaAjudas([a, { ...b, valor: 170 }]), base, 'valor alterado');
+  assert.notEqual(assinaturaAjudas([a, { ...b, conta: 'flash' }]), base, 'conta alterada');
+  assert.equal(assinaturaAjudas([a, { ...b, valor: '200.00' }]), base, 'valor como texto do banco');
+  assert.equal(assinaturaAjudas([]), '');
+  assert.equal(assinaturaAjudas(null), '');
 });

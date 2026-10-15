@@ -138,6 +138,16 @@ export const IFOOD_COLS = [
 
 const porNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
 
+// Impressão digital de uma lista de ajudas (id, conta, valor, CPF; ordem não importa). O Financeiro
+// baixa o XLS e só depois lança: se a lista mudar nesse intervalo (RH incluiu/alterou/excluiu),
+// a planilha já paga não bate mais com o que vai para o Caixa.
+export function assinaturaAjudas(rows) {
+  return (rows || [])
+    .map((r) => `${r.id}|${r.conta}|${arredonda(r.valor).toFixed(2)}|${soDigitos(r.colaborador_cpf)}`)
+    .sort()
+    .join(';');
+}
+
 // rows: ajudas ({colaborador_nome, colaborador_cpf, conta, valor}). Soma por CPF dentro da
 // plataforma, como o Financeiro já faz — uma pessoa com duas ajudas vira uma linha só.
 // centroCusto: Map(cpf -> coordenação), opcional.

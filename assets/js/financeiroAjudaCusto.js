@@ -1,11 +1,12 @@
 // Financeiro > Ajuda de Custo.
 //
 // Mostra a relação do mês informada pelo RH (Folha e Holerite > Ajuda de custo): colaborador,
-// conta (iFood/Flash/Flash BVGRAIN), valor e descrição. A partir do dia 15 do mês de referência o
-// botão XLS gera as planilhas PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN (mesmo formato do
-// Financeiro > Adiantamentos; a Flash da BVGRAIN é outra conta, por isso outro arquivo),
-// trava as linhas para o RH e dispara o agente que lança, no Caixa do GRM de cada colaborador,
-// um Adiantamento e um Comprovante com a descrição do RH e data 15/MM do mês de referência.
+// conta (iFood/Flash/Flash BVGRAIN), valor e descrição. A partir do dia 15 do mês de referência:
+//  - XLS baixa as planilhas PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN (mesmo formato do
+//    Financeiro > Adiantamentos; a Flash da BVGRAIN é outra conta, por isso outro arquivo) das
+//    ajudas ainda não lançadas. Só baixa: não trava nada, pode ser repetido quantas vezes precisar.
+//  - Lançar trava as linhas para o RH (lote) e dispara o agente que lança, no Caixa do GRM de cada
+//    colaborador, um Adiantamento e um Comprovante com a descrição do RH e data 15/MM do mês.
 // A trava do dia 15 e a geração do lote são aplicadas no banco (RPC ajuda_custo_gerar_lote).
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
@@ -14,8 +15,8 @@ import {
   CONTAS, dinheiro, soDigitos, arredonda, brDataIso,
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, rotuloCompetencia, dataPagamentoIso, pagamentoLiberado, hojeBrasiliaIso,
-  arquivosPlanilha, mostrarDownloads,
-} from './ajudaCustoShared.js?v=20261015-bvgrain';
+  arquivosPlanilha, mostrarDownloads, montarPlanilhas, assinaturaAjudas,
+} from './ajudaCustoShared.js?v=20261015-lancar';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const semAcento = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -25,7 +26,10 @@ const state = {
   ajudas: [], lotes: [], fila: new Map(),
   busca: '', conta: '', erro: null, gerando: false, timer: null,
   inativos: new Set(),
+  xls: null,        // último XLS baixado nesta tela (competência + impressão digital das ajudas ainda não lançadas)
 };
+
+const soma = (lista) => arredonda(lista.reduce((acc, a) => acc + Number(a.valor || 0), 0));
 
 const competencia = () => competenciaIso(state.periodo.ano, state.periodo.mes);
 
@@ -138,29 +142,36 @@ function render() {
   const comp = competencia();
   const liberado = pagamentoLiberado(comp);
   const pagamento = dataPagamentoIso(comp);
-  const soma = (l) => arredonda(l.reduce((acc, a) => acc + Number(a.valor || 0), 0));
   const pendentes = state.ajudas.filter((a) => !a.lote_id);
   const doTipo = (t) => state.ajudas.filter((a) => a.conta === t);
 
   c.querySelector('#faPag').innerHTML = `
     <span>Pagamento em <b>${brDataIso(pagamento)}</b></span>
     ${liberado ? pill('Liberado para pagamento', 'ok') : pill(`Disponível a partir de ${brDataIso(pagamento)}`, 'alerta')}
-    ${pendentes.length ? pill(`${pendentes.length} aguardando planilha`, 'alerta') : (state.ajudas.length ? pill('Todas as planilhas geradas', 'ok') : '')}`;
+    ${pendentes.length ? pill(`${pendentes.length} aguardando lançamento`, 'alerta') : (state.ajudas.length ? pill('Tudo lançado', 'ok') : '')}`;
 
   c.querySelector('#faResumo').innerHTML = `
     <span class="fa-pill"><b>${state.ajudas.length}</b> ajuda(s) · <b>${dinheiro(soma(state.ajudas))}</b></span>
     <span class="fa-pill">iFood <b>${doTipo('ifood').length}</b> · ${dinheiro(soma(doTipo('ifood')))}</span>
     <span class="fa-pill">Flash <b>${doTipo('flash').length}</b> · ${dinheiro(soma(doTipo('flash')))}</span>
     <span class="fa-pill">Flash BVGRAIN <b>${doTipo('flash_bvgrain').length}</b> · ${dinheiro(soma(doTipo('flash_bvgrain')))}</span>
-    <span class="fa-pill">Aguardando planilha <b>${pendentes.length}</b> · ${dinheiro(soma(pendentes))}</span>`;
+    <span class="fa-pill">Aguardando lançamento <b>${pendentes.length}</b> · ${dinheiro(soma(pendentes))}</span>`;
 
-  const botao = c.querySelector('#faXls');
+  // Dois botões de propósitos diferentes: XLS só baixa (repetível, não trava nem lança nada);
+  // Lançar trava as linhas para o RH e enfileira o Caixa do GRM.
   const semPendentes = pendentes.length === 0;
-  botao.disabled = state.gerando || !liberado || semPendentes;
-  botao.title = !liberado
-    ? `As planilhas de ${rotuloCompetencia(comp)} só podem ser geradas a partir de ${brDataIso(pagamento)}.`
-    : (semPendentes ? 'Não há ajuda de custo nova para gerar neste mês.' : 'Gera PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN e lança no Caixa do GRM');
-  botao.textContent = state.gerando ? 'Gerando...' : `XLS${pendentes.length ? ` (${pendentes.length})` : ''}`;
+  const indisponivel = !liberado
+    ? `Disponível a partir de ${brDataIso(pagamento)} (${rotuloCompetencia(comp)}).`
+    : (semPendentes ? 'Não há ajuda de custo nova neste mês.' : '');
+  const contagem = pendentes.length ? ` (${pendentes.length})` : '';
+  const botaoXls = c.querySelector('#faXls');
+  botaoXls.disabled = state.gerando || Boolean(indisponivel);
+  botaoXls.title = indisponivel || 'Baixa PGTO_IFOOD / PGTO_FLASH / PGTO_FLASH_BVGRAIN das ajudas ainda não lançadas. Pode baixar quantas vezes precisar: não trava nem lança nada.';
+  botaoXls.textContent = `XLS${contagem}`;
+  const botaoLancar = c.querySelector('#faLancar');
+  botaoLancar.disabled = state.gerando || Boolean(indisponivel);
+  botaoLancar.title = indisponivel || 'Trava as linhas para o RH e lança o Adiantamento e o Comprovante de cada uma no Caixa do GRM.';
+  botaoLancar.textContent = state.gerando ? 'Lançando...' : `Lançar${contagem}`;
 
   renderTabela();
   renderLotes();
@@ -180,7 +191,7 @@ function renderTabela() {
   const numeroLote = new Map(state.lotes.map((l) => [l.id, l.numero]));
   body.innerHTML = rows.map((a) => {
     const mov = state.fila.get(a.id) || {};
-    const planilha = a.lote_id ? pill(`Lote ${numeroLote.get(a.lote_id) ?? '?'}`, 'ok') : pill('Aguardando', 'alerta');
+    const planilha = a.lote_id ? pill(`Lote ${numeroLote.get(a.lote_id) ?? '?'}`, 'ok') : pill('Não lançada', 'alerta');
     return `<tr>
       <td><b>${esc(a.colaborador_nome)}</b>${state.inativos.has(a.id) ? '<span class="fa-sub" style="color:#fca5a5">⚠ não está mais ativo</span>' : ''}</td>
       <td>${esc(fmtCpf(a.colaborador_cpf))}</td>
@@ -196,7 +207,7 @@ function renderTabela() {
 function renderLotes() {
   const box = state.content.querySelector('#faLotes');
   if (!state.lotes.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `<h3 class="mt-16">Planilhas geradas</h3><div class="fa-lotes">${state.lotes.map((l) => {
+  box.innerHTML = `<h3 class="mt-16">Lotes lançados</h3><div class="fa-lotes">${state.lotes.map((l) => {
     const comErro = [...state.fila.values()].some((m) => Object.values(m).some((x) => x.lote_id === l.id && x.status === 'ERRO'));
     return `<div class="fa-lote">
       <div><b>Lote ${l.numero}</b> · ${l.total_linhas} linha(s) · ${dinheiro(l.total_valor)}
@@ -244,27 +255,75 @@ function avisoIgnoradas(ignoradas) {
   return ` ATENÇÃO: ${ignoradas.length} linha(s) ficaram FORA da planilha por CPF inválido ou conta desconhecida (${ignoradas.map((r) => r.colaborador_nome).join(', ')}) — pague por fora.`;
 }
 
-async function gerarXls() {
-  const pendentes = state.ajudas.filter((a) => !a.lote_id);
-  if (!pendentes.length || state.gerando) return;
-  const total = arredonda(pendentes.reduce((acc, a) => acc + Number(a.valor || 0), 0));
+// Ajudas ainda não lançadas, lidas do banco na hora (o RH pode ter mexido desde que a tela carregou).
+async function pendentesDoBanco(comp) {
+  const { data, error } = await supabase.from('rh_ajuda_custo').select('*')
+    .eq('competencia', comp).is('lote_id', null)
+    .order('colaborador_nome', { ascending: true }).limit(2000);
+  if (error) throw error;
+  return data || [];
+}
+
+// XLS: só baixa as planilhas das ajudas ainda não lançadas. Não cria lote, não trava nada e não
+// mexe no Caixa — pode ser repetido quantas vezes for preciso (o RH ainda pode ajustar a lista).
+async function baixarXls() {
+  if (state.gerando) return;
   const comp = competencia();
+  try {
+    aviso('Montando as planilhas...');
+    const pendentes = await pendentesDoBanco(comp);
+    if (!pendentes.length) return aviso('Não há ajuda de custo nova para baixar neste mês.', 'err');
+    const proximoLote = Math.max(0, ...state.lotes.map((l) => l.numero)) + 1;
+    const centro = await centroCustoPorCpf(pendentes);
+    const sufixo = `${compacta(hojeBrasiliaIso())}${proximoLote > 1 ? `_L${proximoLote}` : ''}`;
+    const { arquivos, ignoradas } = await arquivosPlanilha(pendentes, centro, sufixo);
+    if (!arquivos.length) return aviso('Nenhuma linha tem CPF válido e conta conhecida.', 'err');
+    state.xls = { comp, assinatura: assinaturaAjudas(pendentes), qtd: pendentes.length, total: soma(pendentes) };
+    mostrarDownloads(arquivos, `Planilhas — ${rotuloCompetencia(comp)} (ainda não lançadas)`);
+    aviso(`XLS baixado: ${pendentes.length} ajuda(s), ${dinheiro(state.xls.total)}. Nada foi lançado no Caixa: confira o pagamento e clique em Lançar.${avisoIgnoradas(ignoradas)}`, ignoradas.length ? 'err' : 'ok');
+  } catch (e) {
+    console.error('[Ajuda de Custo] xls', e);
+    aviso(e.message || 'Erro ao montar as planilhas.', 'err');
+  }
+}
+
+// Lançar: trava as ajudas para o RH (lote) e enfileira o Adiantamento + Comprovante de cada uma no
+// Caixa do GRM. A regra do dia 15 e a geração do lote são aplicadas no banco (ajuda_custo_gerar_lote).
+async function lancar() {
+  if (state.gerando) return;
+  const comp = competencia();
+  let pendentes;
+  try {
+    pendentes = await pendentesDoBanco(comp);
+  } catch (e) {
+    return aviso(e.message || 'Erro ao ler as ajudas de custo.', 'err');
+  }
+  if (!pendentes.length) {
+    aviso('Não há ajuda de custo nova para lançar neste mês.', 'err');
+    return carregar();
+  }
   const inativos = pendentes.filter((a) => state.inativos.has(a.id));
   const alertaInativos = inativos.length ? `\n\n⚠ ${inativos.length} colaborador(es) não estão mais ativos: ${inativos.map((a) => a.colaborador_nome).join(', ')}.` : '';
-  if (!confirm(`Gerar as planilhas de ${rotuloCompetencia(comp)}?\n\n${pendentes.length} ajuda(s), ${dinheiro(total)}.${alertaInativos}\n\nAs linhas ficam travadas para o RH e, em seguida, o Adiantamento e o Comprovante de cada uma são lançados no Caixa do GRM com data ${brDataIso(dataPagamentoIso(comp))}.`)) return;
+  const { ignoradas } = montarPlanilhas(pendentes);
+  const alertaIgnoradas = ignoradas.length ? `\n\n⚠ ${ignoradas.length} linha(s) ficam FORA das planilhas por CPF inválido ou conta desconhecida (${ignoradas.map((r) => r.colaborador_nome).join(', ')}).` : '';
+  const xls = state.xls?.comp === comp ? state.xls : null;
+  let alertaXls = '';
+  if (!xls) alertaXls = '\n\n⚠ Você ainda não baixou o XLS nesta tela.';
+  else if (xls.assinatura !== assinaturaAjudas(pendentes)) alertaXls = `\n\n⚠ A lista mudou desde o último XLS baixado (eram ${xls.qtd} ajuda(s), ${dinheiro(xls.total)}). Se for pagar pela planilha, baixe o XLS de novo antes de lançar.`;
+  if (!confirm(`Lançar as ajudas de custo de ${rotuloCompetencia(comp)} no Caixa do GRM?\n\n${pendentes.length} ajuda(s), ${dinheiro(soma(pendentes))}.${alertaXls}${alertaInativos}${alertaIgnoradas}\n\nAs linhas ficam travadas para o RH e o Adiantamento e o Comprovante de cada uma são lançados no Caixa do GRM com data ${brDataIso(dataPagamentoIso(comp))}. O XLS continua disponível depois, em "Baixar XLS de novo".`)) return;
 
   state.gerando = true;
   render();
-  aviso('Gerando o lote...');
+  aviso('Lançando...');
   try {
     const { data: lote, error } = await supabase.rpc('ajuda_custo_gerar_lote', { p_competencia: comp });
     if (error) throw error;
-    const { arquivos, totais, ignoradas } = await planilhasDoLote({ id: lote.lote_id, numero: lote.numero }, compacta(hojeBrasiliaIso()));
-    mostrarDownloads(arquivos, `Planilhas — ${rotuloCompetencia(comp)} (lote ${lote.numero})`);
-    aviso(`Lote ${lote.numero} gerado: ${lote.total_linhas} ajuda(s), ${dinheiro(lote.total_valor)} (iFood ${totais.ifood}, Flash ${totais.flash}${totais.flashBvgrain ? `, Flash BVGRAIN ${totais.flashBvgrain}` : ''} CPF(s)). O lançamento no Caixa do GRM foi iniciado.${avisoIgnoradas(ignoradas)}`, ignoradas.length ? 'err' : 'ok');
+    state.xls = null;
+    const porConta = `iFood ${lote.linhas_ifood}, Flash ${lote.linhas_flash}${lote.linhas_flash_bvgrain ? `, Flash BVGRAIN ${lote.linhas_flash_bvgrain}` : ''}`;
+    aviso(`Lote ${lote.numero} lançado: ${lote.total_linhas} ajuda(s), ${dinheiro(lote.total_valor)} (${porConta}). O lançamento no Caixa do GRM foi iniciado.`, 'ok');
   } catch (e) {
-    console.error('[Ajuda de Custo] gerar', e);
-    aviso(e.message || 'Erro ao gerar as planilhas.', 'err');
+    console.error('[Ajuda de Custo] lançar', e);
+    aviso(e.message || 'Erro ao lançar as ajudas de custo.', 'err');
   } finally {
     state.gerando = false;
     await carregar();
@@ -305,10 +364,11 @@ export async function renderContent(content) {
       <input id="faBusca" type="search" placeholder="Filtrar por colaborador, CPF ou descrição..." autocomplete="off">
       <select id="faConta"><option value="">Todas as contas</option>${Object.entries(CONTAS).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select>
       <button class="btn btn-secondary" id="faAtualizar" type="button">Atualizar</button>
-      <button class="btn btn-primary" id="faXls" type="button">XLS</button>
+      <button class="btn btn-secondary" id="faXls" type="button">XLS</button>
+      <button class="btn btn-primary" id="faLancar" type="button">Lançar</button>
     </div>
     <span class="fa-feedback" id="faAviso"></span>
-    <div class="fa-wrap mt-16"><table class="fa-table"><thead><tr><th>Colaborador</th><th>CPF</th><th>Conta</th><th>Valor</th><th>Descrição</th><th>Planilha</th><th>Caixa no GRM</th></tr></thead><tbody id="faBody"><tr><td colspan="7" class="fa-empty">Carregando...</td></tr></tbody></table></div>
+    <div class="fa-wrap mt-16"><table class="fa-table"><thead><tr><th>Colaborador</th><th>CPF</th><th>Conta</th><th>Valor</th><th>Descrição</th><th>Lote</th><th>Caixa no GRM</th></tr></thead><tbody id="faBody"><tr><td colspan="7" class="fa-empty">Carregando...</td></tr></tbody></table></div>
     <div id="faLotes"></div>`;
 
   const caixaPeriodo = content.querySelector('#faPeriodoBox');
@@ -320,7 +380,8 @@ export async function renderContent(content) {
   content.querySelector('#faBusca').addEventListener('input', (e) => { state.busca = e.target.value; renderTabela(); });
   content.querySelector('#faConta').addEventListener('change', (e) => { state.conta = e.target.value; renderTabela(); });
   content.querySelector('#faAtualizar').onclick = carregar;
-  content.querySelector('#faXls').onclick = gerarXls;
+  content.querySelector('#faXls').onclick = baixarXls;
+  content.querySelector('#faLancar').onclick = lancar;
   await carregar();
 }
 
