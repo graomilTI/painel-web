@@ -27,7 +27,7 @@ não em um big-bang.
 | emails | emails.js | emails-secure-account, emails-layout |
 | financeiro | financeiro.js | financeiro-access, financeiro-local-date |
 | dashboard | dashboard.js | dashboardProducaoHistoryLink, dashboard-regional-map |
-| compras-estoque | compras-estoque.js | pwa-register, compras-estoque-agrupamento, compras-estoque-layout |
+| compras-estoque | compras-estoque.js | pwa-register |
 | uber | uber.js | modules/uber-despesas-sync |
 | epi-rh | epiRh.js | epiRhPresetPatch |
 | admin-usuarios | admin-usuarios.js | admin-usuarios-create-password |
