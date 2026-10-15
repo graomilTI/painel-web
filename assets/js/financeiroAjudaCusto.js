@@ -16,7 +16,7 @@ import {
   periodoStyle, periodoHtml, bindPeriodo, periodoAtual,
   competenciaIso, rotuloCompetencia, dataPagamentoIso, pagamentoLiberado, hojeBrasiliaIso,
   arquivosPlanilha, mostrarDownloads, montarPlanilhas, assinaturaAjudas,
-} from './ajudaCustoShared.js?v=20261015-lancar';
+} from './ajudaCustoShared.js?v=20261015-nasc';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const semAcento = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -228,27 +228,37 @@ function aviso(msg, tipo = '') {
   el.className = `fa-feedback${tipo ? ` ${tipo}` : ''}`;
 }
 
-// Centro de custo do iFood = coordenação do colaborador (como em Adiantamentos). Falha aqui não
-// impede a planilha: a coluna só fica em branco.
-async function centroCustoPorCpf(rows) {
+// Dados do cadastro que entram na planilha do iFood: centro de custo = coordenação do colaborador
+// (como em Adiantamentos) e data de nascimento. Falha aqui não impede a planilha: as colunas só
+// ficam em branco (e o Financeiro é avisado de quem ficou sem data de nascimento).
+async function cadastroPorCpf(rows) {
   const ids = [...new Set(rows.map((r) => r.colaborador_id).filter(Boolean))];
   const mapa = new Map();
   if (!ids.length) return mapa;
-  const { data, error } = await supabase.from('colaboradores').select('id,cpf,coordenacao,supervisao').in('id', ids);
-  if (error) { console.warn('[Ajuda de Custo] centro de custo', error); return mapa; }
-  (data || []).forEach((c) => mapa.set(soDigitos(c.cpf).padStart(11, '0').slice(0, 11), c.coordenacao || c.supervisao || ''));
+  const { data, error } = await supabase.from('colaboradores').select('id,cpf,coordenacao,supervisao,data_nascimento').in('id', ids);
+  if (error) { console.warn('[Ajuda de Custo] cadastro (centro de custo / nascimento)', error); return mapa; }
+  (data || []).forEach((c) => mapa.set(soDigitos(c.cpf).padStart(11, '0').slice(0, 11), {
+    centroCusto: c.coordenacao || c.supervisao || '',
+    nascimento: c.data_nascimento || '',
+  }));
   return mapa;
 }
 
 async function planilhasDoLote(lote, sufixoData) {
   const { data, error } = await supabase.from('rh_ajuda_custo').select('*').eq('lote_id', lote.id);
   if (error) throw error;
-  const centro = await centroCustoPorCpf(data || []);
+  const cadastro = await cadastroPorCpf(data || []);
   const sufixo = `${sufixoData}${lote.numero > 1 ? `_L${lote.numero}` : ''}`;
-  return arquivosPlanilha(data || [], centro, sufixo);
+  return arquivosPlanilha(data || [], cadastro, sufixo);
 }
 
 const compacta = (iso) => String(iso).slice(0, 10).replaceAll('-', '');
+
+// A planilha do iFood leva a data de nascimento do cadastro; sem ela a coluna sai em branco.
+function avisoSemNascimento(nomes) {
+  if (!nomes?.length) return '';
+  return ` ATENÇÃO: ${nomes.length} colaborador(es) do iFood sem data de nascimento no cadastro (coluna em branco na planilha): ${nomes.join(', ')}.`;
+}
 
 function avisoIgnoradas(ignoradas) {
   if (!ignoradas?.length) return '';
@@ -274,13 +284,13 @@ async function baixarXls() {
     const pendentes = await pendentesDoBanco(comp);
     if (!pendentes.length) return aviso('Não há ajuda de custo nova para baixar neste mês.', 'err');
     const proximoLote = Math.max(0, ...state.lotes.map((l) => l.numero)) + 1;
-    const centro = await centroCustoPorCpf(pendentes);
+    const cadastro = await cadastroPorCpf(pendentes);
     const sufixo = `${compacta(hojeBrasiliaIso())}${proximoLote > 1 ? `_L${proximoLote}` : ''}`;
-    const { arquivos, ignoradas } = await arquivosPlanilha(pendentes, centro, sufixo);
+    const { arquivos, semNascimento, ignoradas } = await arquivosPlanilha(pendentes, cadastro, sufixo);
     if (!arquivos.length) return aviso('Nenhuma linha tem CPF válido e conta conhecida.', 'err');
     state.xls = { comp, assinatura: assinaturaAjudas(pendentes), qtd: pendentes.length, total: soma(pendentes) };
     mostrarDownloads(arquivos, `Planilhas — ${rotuloCompetencia(comp)} (ainda não lançadas)`);
-    aviso(`XLS baixado: ${pendentes.length} ajuda(s), ${dinheiro(state.xls.total)}. Nada foi lançado no Caixa: confira o pagamento e clique em Lançar.${avisoIgnoradas(ignoradas)}`, ignoradas.length ? 'err' : 'ok');
+    aviso(`XLS baixado: ${pendentes.length} ajuda(s), ${dinheiro(state.xls.total)}. Nada foi lançado no Caixa: confira o pagamento e clique em Lançar.${avisoSemNascimento(semNascimento)}${avisoIgnoradas(ignoradas)}`, ignoradas.length || semNascimento.length ? 'err' : 'ok');
   } catch (e) {
     console.error('[Ajuda de Custo] xls', e);
     aviso(e.message || 'Erro ao montar as planilhas.', 'err');
@@ -335,10 +345,10 @@ async function baixarLote(loteId) {
   if (!lote) return;
   try {
     aviso('Montando as planilhas...');
-    const { arquivos, ignoradas } = await planilhasDoLote(lote, compacta(new Date(lote.gerado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })));
+    const { arquivos, semNascimento, ignoradas } = await planilhasDoLote(lote, compacta(new Date(lote.gerado_em).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })));
     if (!arquivos.length) return aviso('Este lote não tem linhas com CPF válido e conta conhecida.', 'err');
     mostrarDownloads(arquivos, `Planilhas — lote ${lote.numero}`);
-    aviso(avisoIgnoradas(ignoradas).trim(), ignoradas.length ? 'err' : '');
+    aviso(`${avisoSemNascimento(semNascimento)}${avisoIgnoradas(ignoradas)}`.trim(), ignoradas.length || semNascimento.length ? 'err' : '');
   } catch (e) {
     aviso(e.message || 'Erro ao montar as planilhas.', 'err');
   }
