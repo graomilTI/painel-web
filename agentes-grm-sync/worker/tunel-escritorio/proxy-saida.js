@@ -42,9 +42,10 @@ function ipPrivado(ip) {
 }
 
 /**
+ * `timeoutMs` é o tempo de CADA tentativa de conexão ao destino (padrão 5 s; até 4 endereços, IPv4 primeiro).
  * @param {{ permitidos?: string[], portas?: number[], resolver?: (host: string) => Promise<string[]>, aceitarPrivados?: boolean, log?: (msg: string) => void, timeoutMs?: number }} [opcoes]
  */
-function criarProxy({ permitidos = ['grmserver.com.br'], portas = [443], resolver, aceitarPrivados = false, log = () => {}, timeoutMs = 20000 } = {}) {
+function criarProxy({ permitidos = ['grmserver.com.br'], portas = [443], resolver, aceitarPrivados = false, log = () => {}, timeoutMs = 5000 } = {}) {
   const dominios = permitidos.map((d) => String(d).trim().toLowerCase()).filter(Boolean);
   const hostPermitido = (h) => dominios.some((d) => h === d || h.endsWith(`.${d}`));
   const resolverPadrao = async (host) => (await dns.lookup(host, { all: true })).map((r) => r.address);
@@ -76,29 +77,57 @@ function criarProxy({ permitidos = ['grmserver.com.br'], portas = [443], resolve
     if (!portas.includes(porta)) return recusar('porta fora da lista');
 
     let enderecos;
-    try { enderecos = await resolve(host); } catch { stats.erros += 1; cliente.end('HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n'); return; }
+    try { enderecos = await resolve(host); } catch (e) {
+      stats.erros += 1;
+      log(`falha de DNS em ${host} (${(e && (e.code || e.message)) || 'erro'})`);
+      cliente.end('HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n');
+      return;
+    }
     const usaveis = aceitarPrivados ? enderecos : enderecos.filter((ip) => !ipPrivado(ip));
     if (!usaveis.length) return recusar('resolve para endereço privado');
 
-    const upstream = net.connect({ host: usaveis[0], port: porta });
-    upstream.setTimeout(timeoutMs, () => upstream.destroy(new Error('timeout ao conectar')));
-    upstream.on('error', () => {
+    // IPv4 primeiro (um IPv6 instável na rede do escritório derrubava conexões que o IPv4 teria feito) e, se um
+    // endereço falhar, tenta o próximo (até 4) antes de devolver 502 — antes só o primeiro endereço era tentado e
+    // qualquer falha passageira virava 502 -> o agente caía na saída direta (bloqueada) -> "HTTP 403" no card.
+    const tentativas = [...usaveis.filter((ip) => net.isIPv4(ip)), ...usaveis.filter((ip) => !net.isIPv4(ip))].slice(0, 4);
+    let upstream = null;
+    cliente.on('close', () => { if (upstream) upstream.destroy(); });
+    const falhar = (ultimo) => {
       stats.erros += 1;
+      log(`falha ao conectar em ${host}:${porta} (${tentativas.length} endereço(s); último erro: ${(ultimo && (ultimo.code || ultimo.message)) || 'desconhecido'})`);
       if (!cliente.writableEnded && !cliente.headersSent) {
         try { cliente.end('HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n'); } catch { /* socket já fechado */ }
       }
       cliente.destroy();
-    });
-    upstream.once('connect', () => {
-      upstream.setTimeout(0);
-      stats.conectados += 1;
-      cliente.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head && head.length) upstream.write(head);
-      upstream.pipe(cliente);
-      cliente.pipe(upstream);
-    });
-    cliente.on('close', () => upstream.destroy());
-    upstream.on('close', () => cliente.destroy());
+    };
+    const tentar = (n, ultimoErro) => {
+      if (cliente.destroyed) return;
+      if (n >= tentativas.length) { falhar(ultimoErro); return; }
+      const sock = net.connect({ host: tentativas[n], port: porta });
+      upstream = sock;
+      sock.setTimeout(timeoutMs, () => sock.destroy(Object.assign(new Error('timeout ao conectar'), { code: 'ETIMEDOUT' })));
+      let conectou = false;
+      sock.once('error', (e) => {
+        if (!conectou) {
+          log(`${host}:${porta} via ${tentativas[n]} falhou (${e.code || e.message})${n + 1 < tentativas.length ? '; tentando o próximo endereço' : ''}`);
+          sock.destroy();
+          tentar(n + 1, e);
+          return;
+        }
+        cliente.destroy();
+      });
+      sock.once('connect', () => {
+        conectou = true;
+        sock.setTimeout(0);
+        stats.conectados += 1;
+        cliente.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        if (head && head.length) sock.write(head);
+        sock.pipe(cliente);
+        cliente.pipe(sock);
+      });
+      sock.on('close', () => { if (conectou) cliente.destroy(); });
+    };
+    tentar(0, null);
   });
 
   return { server, stats };

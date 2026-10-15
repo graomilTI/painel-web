@@ -42,5 +42,5 @@
   ],
   "gzip": true,
   "fallbackDireto": true,
-  "handshakeTimeoutMs": 8000
+  "handshakeTimeoutMs": 20000
 }

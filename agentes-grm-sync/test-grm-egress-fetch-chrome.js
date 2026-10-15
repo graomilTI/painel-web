@@ -160,6 +160,29 @@ function rodar(env, codigo, cwd) {
   assert.match(r.stdout, /RES 200 "PLANO-SEM-GZIP"/, r.stdout + r.stderr);
   escreverCfg();
 
+  // 11c) proxy VIVO mas com falha passageira (responde 502): o preload tenta de novo pelo túnel e NÃO cai no direto
+  // (a saída direta é bloqueada pela Cloudflare: era o "HTTP 403" intermitente dos serviços contínuos).
+  let falhasRestantes = 2;
+  const proxyInstavel = criarProxy({ permitidos: ['localhost'], portas: [porta], aceitarPrivados: true, resolver: async () => { if (falhasRestantes > 0) { falhasRestantes -= 1; throw new Error('falha passageira'); } return ['127.0.0.1']; } });
+  await new Promise((res) => proxyInstavel.server.listen(0, '127.0.0.1', res));
+  escreverCfg({ proxy: `127.0.0.1:${proxyInstavel.server.address().port}`, fallbackDireto: false });
+  ({ r } = await passouPeloProxy(() => rodar(base, caso(`const res = await fetch('${U('/json')}'); console.log('RES', res.status);`))));
+  assert.match(r.stdout, /RES 200/, `2 falhas passageiras do proxy são absorvidas por retry: ${r.stdout}${r.stderr}`);
+  assert.equal(falhasRestantes, 0, 'o proxy foi chamado 3 vezes (2 falhas + 1 sucesso)');
+  // falha persistente (mais que 2): esgota o retry e o erro aparece (sem fallback) — não fica em loop
+  falhasRestantes = 99;
+  ({ r } = await passouPeloProxy(() => rodar(base, caso(`await fetch('${U('/json')}');`))));
+  assert.match(r.stdout, /FALHOU TypeError fetch failed/, r.stdout + r.stderr);
+  assert.equal(99 - falhasRestantes, 3, 'no máximo 1 tentativa + 2 retries');
+  // com fallback ligado, só depois de esgotar os retries sai direto
+  falhasRestantes = 99;
+  escreverCfg({ proxy: `127.0.0.1:${proxyInstavel.server.address().port}`, fallbackDireto: true });
+  ({ r } = await passouPeloProxy(() => rodar(base, caso(`const res = await fetch('${U('/json')}'); console.log('RES', res.status);`))));
+  assert.match(r.stdout, /RES 200/, 'esgotou o retry e usou o fallback direto');
+  assert.equal(99 - falhasRestantes, 3);
+  proxyInstavel.server.close();
+  escreverCfg();
+
   // 12) Chrome: módulo falso puppeteer-extra recebe --proxy-pac-url (PAC só para o GRM), sem duplicar e sem mexer em outros agentes
   const falso = path.join(dir, 'node_modules', 'puppeteer-extra');
   fs.mkdirSync(falso, { recursive: true });

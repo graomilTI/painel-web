@@ -44,7 +44,7 @@ function instalar(cfg) {
   const [proxyHost, proxyPortaTxt] = String(cfg.proxy || '127.0.0.1:47213').split(':');
   const proxyPorta = Number(proxyPortaTxt);
   const dominios = (Array.isArray(cfg.hosts) && cfg.hosts.length ? cfg.hosts : ['grmserver.com.br']).map((d) => String(d).toLowerCase());
-  const handshakeMs = Number(cfg.handshakeTimeoutMs) || 8000;
+  const handshakeMs = Number(cfg.handshakeTimeoutMs) || 20000;
   const fallbackDireto = cfg.fallbackDireto !== false;
   const ehHostDoGrm = (h) => { const x = String(h || '').toLowerCase().replace(/:\d+$/, ''); return dominios.some((d) => x === d || x.endsWith(`.${d}`)); };
   const aviso = (m) => process.stderr.write(`[WARN] ${new Date().toISOString()} - [egress] ${m}\n`);
@@ -74,12 +74,26 @@ function instalar(cfg) {
     s.once('close', () => fim(new Error('proxy fechou a conexão')));
   }
 
+  // O proxy do escritório responde 5xx quando ELE não consegue alcançar o GRM (falha passageira na rede do
+  // escritório): o túnel está vivo. Tenta de novo pelo túnel (até 2 vezes) em vez de cair na saída direta, que a
+  // Cloudflare bloqueia — era o "HTTP 403" intermitente dos serviços contínuos. Só cai no direto se o PROXY
+  // estiver inacessível (túnel caído / PC desligado) ou recusar (4xx).
+  function conectarViaProxyComRetry(host, porta, cb, tentativa = 0) {
+    conectarViaProxy(host, porta, (err, sock) => {
+      if (err && tentativa < 2 && /proxy recusou: HTTP\/1\.[01] 5\d\d/.test(err.message)) {
+        setTimeout(() => conectarViaProxyComRetry(host, porta, cb, tentativa + 1), 300 * (tentativa + 1));
+        return;
+      }
+      cb(err, sock);
+    });
+  }
+
   class AgentePorProxy extends https.Agent {
     createConnection(options, callback) {
       const host = options.host || options.hostname;
       const porta = Number(options.port) || 443;
       const direto = () => callback(null, tls.connect({ ...options, host, port: porta, servername: options.servername || host }));
-      conectarViaProxy(host, porta, (err, bruto) => {
+      conectarViaProxyComRetry(host, porta, (err, bruto) => {
         if (err) {
           if (!fallbackDireto) { callback(err); return; }
           if (Date.now() - avisouFallback > 60000) { avisouFallback = Date.now(); aviso(`túnel indisponível (${err.message}); saindo direto`); }
@@ -277,7 +291,7 @@ function instalar(cfg) {
           u.once('error', () => { try { cliente.end('HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n'); } catch { /* já fechado */ } });
         };
         if (!ehHostDoGrm(host)) { direto(); return; }
-        conectarViaProxy(host, porta, (err, s) => {
+        conectarViaProxyComRetry(host, porta, (err, s) => {
           if (!err) { ligar(s); return; }
           if (fallbackDireto) { if (Date.now() - avisouFallback > 60000) { avisouFallback = Date.now(); aviso(`túnel indisponível no Chrome (${err.message}); saindo direto`); } direto(); return; }
           try { cliente.end('HTTP/1.1 502 Bad Gateway\r\ncontent-length: 0\r\n\r\n'); } catch { /* já fechado */ }
