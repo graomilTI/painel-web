@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "proxy": "127.0.0.1:47213",
+  "hosts": ["grmserver.com.br"],
+  "agentes": ["aplicar-distribuicao-os", "aplicar-distribuicao-os-reset-dia"],
+  "fallbackDireto": true,
+  "handshakeTimeoutMs": 8000
+}

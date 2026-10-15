@@ -75,12 +75,16 @@ const GRM_WEB_HEADERS = {
 function log(msg) { console.log(`[INFO] ${new Date().toISOString()} - [grm-token] ${msg}`); }
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
+function rotaDeSaida() { return process.env.GRM_EGRESS_ROTA === 'tunel' ? 'tunel' : 'direto'; }
+
 function paths() {
   const chave = crypto.createHash('sha1').update(String(process.env.GRMSERVER_USER || '')).digest('hex').slice(0, 12);
   return {
     token: path.join(CACHE_DIR, `.grm-token-${chave}.json`),
     cooldown: path.join(CACHE_DIR, `.grm-login-cooldown-${chave}.json`),
-    bloqueio: path.join(CACHE_DIR, `.grm-rede-bloqueada-${chave}.json`),
+    // Uma marca por ROTA: o agente que sai pelo túnel do escritório (GRM_EGRESS_ROTA=tunel, definido por
+    // grm-egress-proxy.js) não pode ser travado pela sondagem direta — ainda bloqueada — de outro agente.
+    bloqueio: path.join(CACHE_DIR, `.grm-rede-bloqueada-${chave}-${rotaDeSaida()}.json`),
     lock: path.join(CACHE_DIR, `.grm-login-${chave}.lock`),
   };
 }
@@ -199,10 +203,13 @@ function formatarBrasilia(ms) {
 
 function erroBloqueioRede(ate, motivo, arquivo) {
   const quando = formatarBrasilia(ate);
+  const quemBloqueia = rotaDeSaida() === 'tunel'
+    ? `o GRM não está acessível pelo túnel do escritório (${motivo}). Confira se o PC do escritório está ligado, com internet e com a tarefa "GRM Tunel Escritorio" rodando`
+    : `a Cloudflare do GRM está bloqueando o IP deste servidor (${motivo}). O suporte do GRM precisa liberar o IP`;
   const erro = new Error(
-    `${CODIGO_BLOQUEIO_REDE}: a Cloudflare do GRM está bloqueando o IP deste servidor (${motivo}). `
+    `${CODIGO_BLOQUEIO_REDE}: ${quemBloqueia}. `
     + `Não é o token nem a senha — o token em cache e a entrega do painel foram preservados. `
-    + `Tentativas pausadas até ${quando} (Brasília); o suporte do GRM precisa liberar o IP. `
+    + `Tentativas pausadas até ${quando} (Brasília). `
     + `Para conferir antes, apague ${arquivo ? path.basename(arquivo) : '.grm-rede-bloqueada-*.json'}.`,
   );
   /** @type {any} */ (erro).codigo = CODIGO_BLOQUEIO_REDE;

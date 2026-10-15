@@ -71,7 +71,8 @@ function jwt(expSeg) {
 const daquiUmaHora = () => Math.floor(Date.now() / 1000) + 3600;
 const chave = crypto.createHash('sha1').update(process.env.GRMSERVER_USER).digest('hex').slice(0, 12);
 const arqToken = path.join(dir, `.grm-token-${chave}.json`);
-const arqBloqueio = path.join(dir, `.grm-rede-bloqueada-${chave}.json`);
+const arqBloqueio = path.join(dir, `.grm-rede-bloqueada-${chave}-direto.json`);
+const arqBloqueioTunel = path.join(dir, `.grm-rede-bloqueada-${chave}-tunel.json`);
 const arqCooldown = path.join(dir, `.grm-login-cooldown-${chave}.json`);
 const nova = (over = {}) => ({ id: `id-${Math.random().toString(16).slice(2)}`, token: jwt(daquiUmaHora()), status: 'pendente', tentativas: 0, enviado_em: new Date().toISOString(), mensagem: null, ...over });
 function limpar() {
@@ -244,6 +245,29 @@ const lerBloqueio = () => JSON.parse(fs.readFileSync(arqBloqueio, 'utf8'));
   assert.equal(erro && erro.codigo, CODIGO_BLOQUEIO_REDE);
   assert.equal(rows[0].status, 'pendente');
   assert.equal(rows[0].tentativas, 0);
+
+  // 14) rota do túnel tem marca própria: bloqueio direto ativo NÃO trava o agente que sai pelo túnel (e vice-versa)
+  limpar();
+  tokenBom = jwt(daquiUmaHora());
+  fs.writeFileSync(arqToken, JSON.stringify({ token: tokenBom, savedAt: Date.now() }));
+  modoGrm = 'cloudflare';
+  erro = await obterTokenGrm({ login }).then(() => null, (e) => e);
+  assert.equal(erro && erro.codigo, CODIGO_BLOQUEIO_REDE);
+  assert.ok(fs.existsSync(arqBloqueio), 'marca da rota direta criada');
+  assert.match(erro.message, /Cloudflare do GRM/);
+  process.env.GRM_EGRESS_ROTA = 'tunel';
+  modoGrm = 'liberado';
+  const viaTunel = await obterTokenGrm({ login });
+  assert.equal(viaTunel, tokenBom, 'rota túnel ignora a marca da rota direta e usa o token em cache');
+  assert.equal(fs.existsSync(arqBloqueioTunel), false);
+  assert.ok(fs.existsSync(arqBloqueio), 'a marca da rota direta continua intacta');
+  modoGrm = 'cloudflare';
+  erro = await obterTokenGrm({ login }).then(() => null, (e) => e);
+  assert.equal(erro && erro.codigo, CODIGO_BLOQUEIO_REDE);
+  assert.ok(fs.existsSync(arqBloqueioTunel), 'marca própria da rota túnel');
+  assert.match(erro.message, /túnel do escritório/);
+  assert.match(erro.message, /GRM Tunel Escritorio/);
+  delete process.env.GRM_EGRESS_ROTA;
 
   console.log('ok test-grm-token-bloqueio-rede');
   grm.close(); supa.close();
