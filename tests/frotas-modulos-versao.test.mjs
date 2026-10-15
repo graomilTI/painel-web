@@ -14,6 +14,7 @@ const ler = (caminho) => readFileSync(new URL(caminho, raiz), 'utf8');
 const MODULOS_DIVIDIDOS = [
   'frotas-base', 'frotas-ocr', 'frotas-colaboradores', 'frotas-excessos-dados', 'frotas-fh-util', 'frotas-fh-mapa',
   'frotas-fh-dossie', 'frotas-fh-dados', 'frotas-upload-prints', 'frotas-historico-tela', 'frotas-excesso-velocidade',
+  'frotas-excesso-velocidade-html', 'frotas-excesso-velocidade-eventos',
 ];
 
 function tokensInternos() {
