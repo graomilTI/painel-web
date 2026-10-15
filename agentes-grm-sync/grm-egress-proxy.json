@@ -2,7 +2,20 @@
   "enabled": true,
   "proxy": "127.0.0.1:47213",
   "hosts": ["grmserver.com.br"],
-  "agentes": ["aplicar-distribuicao-os", "aplicar-distribuicao-os-reset-dia"],
+  "agentes": [
+    "aplicar-distribuicao-os",
+    "aplicar-distribuicao-os-reset-dia",
+    "sync-liberacao-despesas",
+    "sync-lancar-notas-fiscais",
+    "sync-abrir-os",
+    "sync-transferir-colaborador",
+    "sync-locais-embarque",
+    "sync-mapa-embarque",
+    "sync-patrimonios",
+    "sync-clientes",
+    "sync-resultado-diario",
+    "sync-resultado-diario-reconciliacao"
+  ],
   "fallbackDireto": true,
   "handshakeTimeoutMs": 8000
 }
