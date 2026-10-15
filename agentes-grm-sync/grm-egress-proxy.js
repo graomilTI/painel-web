@@ -102,22 +102,57 @@ function instalar(cfg) {
     return '';
   }
 
-  function comAgente(args) {
-    const [a, b] = args;
-    const semAgenteProprio = (o) => !o || !o.agent;
-    if (typeof a === 'string' || a instanceof URL) {
-      if (b && typeof b === 'object' && typeof b !== 'function') return semAgenteProprio(b) ? [a, { ...b, agent: agente }, ...args.slice(2)] : args;
-      return [a, { agent: agente }, ...args.slice(1)];
+  // Compressão: o tráfego passa pela internet do escritório, e uma consulta de colaboradores sem gzip tem 4,5 MB
+  // (0,6 MB com gzip). Só pede gzip quando o chamador NÃO definiu accept-encoding e usa callback (é nele que
+  // entregamos a resposta já descompactada); "gzip": false no JSON desliga.
+  const gzipAtivo = cfg.gzip !== false;
+  const temCabecalho = (h, nome) => h && !Array.isArray(h) && typeof h === 'object' && Object.keys(h).some((k) => k.toLowerCase() === nome);
+
+  function respostaDescompactada(res) {
+    const enc = String(res.headers['content-encoding'] || '').toLowerCase().trim();
+    if ((enc !== 'gzip' && enc !== 'x-gzip') || [204, 304].includes(res.statusCode || 0)) return res;
+    const gunzip = zlib.createGunzip();
+    res.on('error', (e) => gunzip.destroy(e));
+    gunzip.on('close', () => { if (!res.destroyed) res.destroy(); });
+    res.pipe(gunzip);
+    const headers = { ...res.headers };
+    delete headers['content-encoding'];
+    delete headers['content-length'];
+    for (const [k, v] of Object.entries({
+      statusCode: res.statusCode, statusMessage: res.statusMessage, headers, rawHeaders: res.rawHeaders,
+      httpVersion: res.httpVersion, socket: res.socket, req: res.req, url: res.url || '',
+    })) Object.defineProperty(gunzip, k, { value: v, enumerable: true, configurable: true });
+    return gunzip;
+  }
+
+  // Normaliza (url?, options?, cb?) → agent do túnel (se o chamador não passou o dele) + gzip transparente.
+  function prepararChamada(args) {
+    const [a, b, c] = args;
+    const comUrl = typeof a === 'string' || a instanceof URL;
+    let opts;
+    let cb;
+    if (comUrl) {
+      if (typeof b === 'function') { opts = {}; cb = b; } else { opts = b && typeof b === 'object' ? { ...b } : {}; cb = typeof c === 'function' ? c : undefined; }
+    } else if (a && typeof a === 'object') {
+      opts = { ...a }; cb = typeof b === 'function' ? b : undefined;
+    } else return args;
+    if (!opts.agent) opts.agent = agente;
+    let cbFinal = cb;
+    const metodo = String(opts.method || 'GET').toUpperCase();
+    if (gzipAtivo && cb && metodo !== 'HEAD' && opts.agent === agente && !temCabecalho(opts.headers, 'accept-encoding') && !Array.isArray(opts.headers)) {
+      opts.headers = { ...(opts.headers || {}), 'accept-encoding': 'gzip' };
+      cbFinal = (res) => cb(respostaDescompactada(res));
     }
-    if (a && typeof a === 'object') return semAgenteProprio(a) ? [{ ...a, agent: agente }, ...args.slice(1)] : args;
-    return args;
+    const novo = comUrl ? [a, opts] : [opts];
+    if (cbFinal) novo.push(cbFinal);
+    return novo;
   }
 
   const requestOriginal = https.request;
   for (const nome of ['request', 'get']) {
     const original = https[nome];
     https[nome] = function chamadaPorProxy(...args) {
-      try { if (ehHostDoGrm(hostDaChamada(args))) return original.apply(this, comAgente(args)); } catch { /* cai na chamada original */ }
+      try { if (ehHostDoGrm(hostDaChamada(args))) return original.apply(this, prepararChamada(args)); } catch { /* cai na chamada original */ }
       return original.apply(this, args);
     };
   }

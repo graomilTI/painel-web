@@ -38,6 +38,13 @@ function rodar(env, codigo, cwd) {
       if (req.url === '/json') { res.writeHead(200, { 'content-type': 'application/json', 'x-teste': 'sim' }); return res.end(JSON.stringify({ ok: true, eco: corpo.toString() })); }
       if (req.url === '/eco') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end(`${req.method}|${req.headers['content-type'] || ''}|${corpo.toString('latin1')}`); }
       if (req.url === '/gzip') { const g = zlib.gzipSync('texto-comprimido'); res.writeHead(200, { 'content-encoding': 'gzip', 'content-type': 'text/plain' }); return res.end(g); }
+      if (req.url === '/negocia') {
+        const pediuGzip = /gzip/.test(String(req.headers['accept-encoding'] || ''));
+        const texto = pediuGzip ? 'ZIP-NEGOCIADO' : 'PLANO-SEM-GZIP';
+        if (pediuGzip) { res.writeHead(200, { 'content-encoding': 'gzip', 'content-type': 'text/plain', 'x-extra': 'preservado' }); return res.end(zlib.gzipSync(texto)); }
+        res.writeHead(200, { 'content-type': 'text/plain' }); return res.end(texto);
+      }
+      if (req.url === '/negocia-204') { res.writeHead(204); return res.end(); }
       if (req.url === '/lento') { setTimeout(() => { try { res.end('tarde'); } catch { /* cliente saiu */ } }, 3000); return; }
       if (req.url === '/redir') { res.writeHead(302, { location: '/destino' }); return res.end(); }
       if (req.url === '/destino') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end(`chegou ${req.method}`); }
@@ -124,6 +131,33 @@ function rodar(env, codigo, cwd) {
   escreverCfg({ proxy: '127.0.0.1:1', fallbackDireto: false });
   ({ r } = await passouPeloProxy(() => rodar(base, caso(`await fetch('${U('/json')}');`))));
   assert.match(r.stdout, /FALHOU TypeError fetch failed ECONNREFUSED/, r.stdout + r.stderr);
+  escreverCfg();
+
+  // 11b) https.request/get: gzip transparente (o chamador não vê diferença) e respeito a quem já define accept-encoding
+  const reqCodigo = (opcoesJs, uso) => caso(`
+    const https = require('https');
+    const ouve = (res) => { const ch = []; res.on('data', (c) => ch.push(c)); res.on('end', () => console.log('RES', res.statusCode, JSON.stringify(Buffer.concat(ch).toString()), 'enc=' + (res.headers['content-encoding'] || '-'), 'extra=' + (res.headers['x-extra'] || '-'), 'len=' + (res.headers['content-length'] || '-'))); };
+    ${uso}`.split('OPCOES').join(opcoesJs));
+  const baseOpts = `hostname: 'localhost', port: ${porta}, path: '/negocia'`;
+  // sem accept-encoding + callback → pede gzip, entrega decodificado, esconde content-encoding e content-length
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(baseOpts, "https.request({ OPCOES }, ouve).on('error', (e) => { console.log('ERRO', e.message); process.exit(3); }).end();"))));
+  assert.match(r.stdout, /RES 200 "ZIP-NEGOCIADO" enc=- extra=preservado len=-/, r.stdout + r.stderr);
+  // https.get(url, options, cb)
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(baseOpts, `https.get('https://localhost:${porta}/negocia', {}, ouve).on('error', (e) => { console.log('ERRO', e.message); process.exit(3); });`))));
+  assert.match(r.stdout, /RES 200 "ZIP-NEGOCIADO" enc=-/, r.stdout + r.stderr);
+  // chamador que já define accept-encoding: não é alterado (recebe o que pediu)
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(`${baseOpts}, headers: { 'Accept-Encoding': 'identity' }`, "https.request({ OPCOES }, ouve).on('error', (e) => { console.log('ERRO', e.message); process.exit(3); }).end();"))));
+  assert.match(r.stdout, /RES 200 "PLANO-SEM-GZIP" enc=-/, r.stdout + r.stderr);
+  // sem callback (usa o evento 'response'): não injeta gzip, para não entregar bytes comprimidos
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(baseOpts, "const q = https.request({ OPCOES }); q.on('response', ouve); q.on('error', (e) => { console.log('ERRO', e.message); process.exit(3); }); q.end();"))));
+  assert.match(r.stdout, /RES 200 "PLANO-SEM-GZIP" enc=-/, r.stdout + r.stderr);
+  // 204 e resposta pequena sem corpo seguem normais
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(`hostname: 'localhost', port: ${porta}, path: '/negocia-204'`, "https.request({ OPCOES }, ouve).on('error', (e) => { console.log('ERRO', e.message); process.exit(3); }).end();"))));
+  assert.match(r.stdout, /RES 204 ""/, r.stdout + r.stderr);
+  // "gzip": false no JSON desliga a negociação
+  escreverCfg({ gzip: false });
+  ({ r } = await passouPeloProxy(() => rodar(base, reqCodigo(baseOpts, "https.request({ OPCOES }, ouve).on('error', (e) => { console.log('ERRO', e.message); process.exit(3); }).end();"))));
+  assert.match(r.stdout, /RES 200 "PLANO-SEM-GZIP"/, r.stdout + r.stderr);
   escreverCfg();
 
   // 12) Chrome: módulo falso puppeteer-extra recebe --proxy-pac-url (PAC só para o GRM), sem duplicar e sem mexer em outros agentes
