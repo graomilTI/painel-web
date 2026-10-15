@@ -158,9 +158,15 @@ function buildMultaKey(renavam: string, m: any) {
   const codOrgao = cleanText(pick(m, ["api_codOrgaoAutuador", "codOrgaoAutuador", "autoOriginal_codOrgaoAutuador"]));
   const codAuto = cleanText(pick(m, ["api_codAuto", "codAuto", "autoOriginal_codAuto", "autoCalculo"]));
   const numAuto = cleanText(pick(m, ["api_numAutoInfracao", "numAutoInfracao", "numAutoInfracaoOriginal", "numAutoInfracaoSE"]));
+  const base = `${renavam}|OA:${codOrgao || "0"}|CA:${codAuto}|NA:${numAuto}`;
+  // O órgão + código + número do auto já identificam a multa. Data e hora ficaram de fora porque o
+  // DETRAN devolve a hora da infração diferente a cada consulta do mesmo auto: com ela na chave,
+  // cada variação virava uma linha nova (multas duplicadas na tela). Só entram como último
+  // recurso, quando a resposta não traz nem código nem número do auto.
+  if (codAuto || numAuto) return base;
   const dataInf = cleanText(pick(m, ["api_dataInfracao", "dataInfracao"]));
   const horaInf = cleanText(pick(m, ["api_horaInfracao", "horaInfracao"]));
-  return `${renavam}|OA:${codOrgao || "0"}|CA:${codAuto}|NA:${numAuto}|DI:${dataInf}|HI:${horaInf}`;
+  return `${base}|DI:${dataInf}|HI:${horaInf}`;
 }
 type HistoricoRow = { motorista: string | null; data_inicio: string; data_fim: string | null };
 
@@ -232,15 +238,30 @@ function suffixForVehicle(v: any): string {
   if (cnpj.startsWith("35134829") || empresa.includes("CAR1000")) return "35";
   return "";
 }
+async function findExistingMulta(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
+  const key = String(payload.multa_key || "");
+  const byKey = await supabase.from("frotas_multas").select("id,motorista_definido_em").eq("multa_key", key).maybeSingle();
+  if (byKey.error) throw byKey.error;
+  if (byKey.data?.id) return byKey.data;
+  // Linhas gravadas antes da chave perder data/hora (e linhas cuja chave veio por idAuto) casam pelo
+  // veículo + número do auto. Como o update regrava multa_key, a linha migra para a chave nova.
+  const renavam = cleanText(payload.renavam);
+  const numAuto = cleanText(payload.numero_auto_infracao);
+  if (!renavam || !numAuto) return null;
+  const byAuto = await supabase.from("frotas_multas").select("id,motorista_definido_em")
+    .eq("renavam", renavam).eq("numero_auto_infracao", numAuto)
+    .order("criado_em", { ascending: true }).order("id", { ascending: true }).limit(1);
+  if (byAuto.error) throw byAuto.error;
+  return byAuto.data?.[0] ?? null;
+}
 async function upsertMulta(supabase: ReturnType<typeof createClient>, payload: Record<string, unknown>) {
   const key = String(payload.multa_key || "");
   if (!key) return "skipped";
-  const existing = await supabase.from("frotas_multas").select("id,motorista_definido_em").eq("multa_key", key).maybeSingle();
-  if (existing.error) throw existing.error;
-  if (existing.data?.id) {
+  const existing = await findExistingMulta(supabase, payload);
+  if (existing?.id) {
     const updatePayload = { ...payload };
-    if (existing.data.motorista_definido_em) delete updatePayload.motorista;
-    const { error } = await supabase.from("frotas_multas").update(updatePayload).eq("id", existing.data.id);
+    if (existing.motorista_definido_em) delete updatePayload.motorista;
+    const { error } = await supabase.from("frotas_multas").update(updatePayload).eq("id", existing.id);
     if (error) throw error;
     return "updated";
   }
