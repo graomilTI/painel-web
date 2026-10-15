@@ -1,15 +1,16 @@
 // Frotas — Fora do horário — dossiê do dia: regras e textos (cálculo puro, sem HTML nem DOM).
 // Extraído de modules/frotas.js em 14/10/2026 e dividido em 15/10/2026 (frotas-fh-dossie.js tinha 1.030 linhas):
 // regras (frotas-fh-dossie-regras) -> HTML (frotas-fh-dossie-html) -> tela (frotas-fh-dossie). Código movido sem alteração.
-// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports
+// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports
 // internos (e os do carregador da página): tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-dos1';
-import { FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-dos1';
-import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261015-frotas-dos1';
+import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-carga1';
+import { FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-carga1';
+import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261015-frotas-carga1';
 
   // Texto do registro; quando foi feito por um colega de carona, diz de quem.
   function fhEvidenciaRotulo(e) {
     let base = FH_EVIDENCIAS[e.tipo] || e.tipo;
+    if (e.tipo === 'CARGA' && Number(e.qtd) > 1) base = `${Number(e.qtd)} cargas lançadas no app`;
     if (e.tipo === 'OS_PROGRAMADA') base = e.sentido === 'saida' ? 'Veículo saiu do local da O.S. escalada' : 'Veículo chegou ao local da O.S. escalada';
     if (e.tipo === 'CARONA') base = `${e.sentido === 'saida' ? 'Veículo saiu da casa' : 'Veículo chegou à casa'} de ${fhPrimeiroNome(e.quem)} (carona)`;
     else if (e.papel === 'CARONA' && e.quem) base += ` — ${fhPrimeiroNome(e.quem)} (carona)`;
@@ -298,7 +299,28 @@ import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261015-frotas-dos1'
       linhas.push('', 'Excessos de velocidade:');
       det.excessos.forEach((x) => linhas.push(`- ${String(x.ts || '').slice(11, 19)} · ${Math.round(fhNum(x.vel))} km/h · ${x.endereco || '—'}${x.fora ? ' · fora do horário' : ''}${x.indevido ? ' · trajeto sem justificativa' : ''}`));
     }
+    const cargas = fhCargasDoDia(det);
+    if (cargas.length) {
+      linhas.push('', 'Cargas lançadas no app (data, horário, O.S. e local do lançamento):');
+      cargas.forEach((c) => linhas.push(`- ${fhCargaQuando(c)} · ${fhCargaQtdTexto(c)} · O.S. ${c.os || '—'} · ${c.local || '—'}${c.em_casa ? ' · lançada em casa' : ''}${fhNum(c.veic_km) >= 2 ? ` · veículo a ${fhKm(c.veic_km)} km` : ''}`));
+    }
     return linhas.join('\n');
+  }
+
+  // Cargas lançadas no app por quem estava no veículo (condutor, carona, equipe): um registro por O.S. e lugar, em ordem de horário.
+  function fhCargasDoDia(det) {
+    return (det.evidencias || []).filter((e) => e.tipo === 'CARGA').slice().sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  }
+
+  function fhCargaQtdTexto(c) {
+    const qtd = Math.max(1, Number(c.qtd) || 1);
+    return `${qtd} ${qtd === 1 ? 'carga' : 'cargas'}`;
+  }
+
+  // "14/10 09:29" ou, quando o mesmo lugar recebeu cargas ao longo do dia, "14/10 09:29 às 15:39".
+  function fhCargaQuando(c) {
+    const ini = `${fhDataCurta(String(c.ts || '').slice(0, 10))} ${fhHm(c.ts)}`;
+    return c.ts_fim && fhHm(c.ts_fim) !== fhHm(c.ts) ? `${ini} às ${fhHm(c.ts_fim)}` : ini;
   }
 
   // Junta os dossiês dos dias de uma mesma rota num só (viagens, registros e excessos em ordem; cada viagem leva a janela do seu dia).
@@ -444,4 +466,4 @@ import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261015-frotas-dos1'
     return contexto;
   }
 
-export { fhEvidenciaRotulo, fhDiaSemana, fhAgruparPorRota, fhLinhaPorChave, fhRotuloDias, fhJanelaTexto, fhFlags, fhGravidade, fhCategorias, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhResumoTexto, fhMesclarDossies, fhPassosDoDia, fhContextoDoDia };
+export { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDiaSemana, fhAgruparPorRota, fhLinhaPorChave, fhRotuloDias, fhJanelaTexto, fhFlags, fhGravidade, fhCategorias, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhResumoTexto, fhMesclarDossies, fhPassosDoDia, fhContextoDoDia };

@@ -1,9 +1,9 @@
 // Frotas — cadastro de colaboradores usado no seletor de motorista.
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-dos1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, resolveSupabase, normalizeName, escapeHtml } from './frotas-base.js?v=20261015-frotas-dos1';
+import { state, resolveSupabase, normalizeName, escapeHtml } from './frotas-base.js?v=20261015-frotas-carga1';
 
   function mapColaborador(item) {
     if (typeof item === 'string') return { nome: item };
