@@ -3,7 +3,7 @@
 // PGTO_FLASH da GRAOMIL (e uma conta desconhecida sumia da planilha sem aviso).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTAS, assinaturaAjudas, contaDoTexto, montarPlanilhas } from '../assets/js/ajudaCustoShared.js';
+import { CONTAS, assinaturaAjudas, contaDoTexto, montarPlanilhas, nascimentoBr } from '../assets/js/ajudaCustoShared.js';
 
 const ajuda = (cpf, conta, valor, nome = `Colab ${cpf}`) => ({ colaborador_cpf: cpf, colaborador_nome: nome, conta, valor });
 
@@ -68,4 +68,36 @@ test('assinaturaAjudas: igual para a mesma lista (em qualquer ordem) e diferente
   assert.equal(assinaturaAjudas([a, { ...b, valor: '200.00' }]), base, 'valor como texto do banco');
   assert.equal(assinaturaAjudas([]), '');
   assert.equal(assinaturaAjudas(null), '');
+});
+
+test('nascimentoBr: ISO do cadastro vira dd/mm/aaaa; vazio ou fora do padrão fica em branco', () => {
+  assert.equal(nascimentoBr('1998-10-10'), '10/10/1998');
+  assert.equal(nascimentoBr(' 2010-10-17 '), '17/10/2010');
+  assert.equal(nascimentoBr('1977-09-11T00:00:00+00:00'), '11/09/1977');
+  assert.equal(nascimentoBr('05/08/2001'), '05/08/2001');
+  for (const vazio of ['', '   ', null, undefined, 'xx', '2001-8-5', '-']) assert.equal(nascimentoBr(vazio), '');
+});
+
+test('planilha do iFood leva a data de nascimento do cadastro; a da Flash segue só CPF + Valor', () => {
+  const cadastro = new Map([
+    ['06928832150', { centroCusto: 'MT', nascimento: '1998-10-10' }],
+    ['02246896908', { centroCusto: 'PR', nascimento: '' }],
+  ]);
+  const { ifood, flash, semNascimento } = montarPlanilhas([
+    ajuda('06928832150', 'ifood', 200, 'ADRIELLI'),
+    ajuda('02246896908', 'ifood', 170, 'ANDREZZA'),
+    ajuda('09460904912', 'flash', 700, 'CLAITON'),
+  ], cadastro);
+  const porCpf = Object.fromEntries(ifood.map((l) => [l.cpf, l]));
+  assert.equal(porCpf['06928832150'].nascimento, '10/10/1998');
+  assert.equal(porCpf['06928832150'].centro_custo, 'MT');
+  assert.equal(porCpf['02246896908'].nascimento, '');
+  assert.deepEqual(semNascimento, ['ANDREZZA'], 'só quem está no iFood e ficou sem data é avisado');
+  assert.deepEqual(Object.keys(flash[0]).sort(), ['cpf', 'nome', 'valor']);
+});
+
+test('iFood sem cadastro nenhum: nascimento em branco e todos avisados', () => {
+  const { ifood, semNascimento } = montarPlanilhas([ajuda('06928832150', 'ifood', 200, 'ADRIELLI')]);
+  assert.equal(ifood[0].nascimento, '');
+  assert.deepEqual(semNascimento, ['ADRIELLI']);
 });

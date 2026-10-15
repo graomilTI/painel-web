@@ -136,6 +136,15 @@ export const IFOOD_COLS = [
   { key: 'livre', label: 'Livre' },
 ];
 
+// Data de nascimento do cadastro (colaboradores.data_nascimento é texto ISO aaaa-mm-dd) no formato
+// da planilha do iFood, dd/mm/aaaa. Vazio ou fora do padrão = em branco (nunca "-" nem "Invalid Date").
+export function nascimentoBr(valor) {
+  const t = String(valor ?? '').trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  return /^\d{2}\/\d{2}\/\d{4}$/.test(t) ? t : '';
+}
+
 const porNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
 
 // Impressão digital de uma lista de ajudas (id, conta, valor, CPF; ordem não importa). O Financeiro
@@ -150,8 +159,9 @@ export function assinaturaAjudas(rows) {
 
 // rows: ajudas ({colaborador_nome, colaborador_cpf, conta, valor}). Soma por CPF dentro da
 // plataforma, como o Financeiro já faz — uma pessoa com duas ajudas vira uma linha só.
-// centroCusto: Map(cpf -> coordenação), opcional.
-export function montarPlanilhas(rows, centroCusto = new Map()) {
+// cadastro: Map(cpf -> { centroCusto, nascimento }) vindo de colaboradores, opcional. Só a planilha do
+// iFood usa (centro de custo = coordenação; data de nascimento); a da Flash é só CPF + Valor.
+export function montarPlanilhas(rows, cadastro = new Map()) {
   const flash = new Map();
   const flashBvgrain = new Map();
   const ifood = new Map();
@@ -168,9 +178,10 @@ export function montarPlanilhas(rows, centroCusto = new Map()) {
       destino.get(cpf).valor = arredonda(destino.get(cpf).valor + valor);
     } else if (row.conta === 'ifood') {
       if (!ifood.has(cpf)) {
+        const dados = cadastro.get(cpf) || {};
         ifood.set(cpf, {
-          cnpj: IFOOD_CNPJ, nome: row.colaborador_nome, cpf, nascimento: '', email: '', celular: '',
-          centro_custo: centroCusto.get(cpf) || '', convencao: '', grupo_entrega: '', matricula: '',
+          cnpj: IFOOD_CNPJ, nome: row.colaborador_nome, cpf, nascimento: nascimentoBr(dados.nascimento), email: '', celular: '',
+          centro_custo: dados.centroCusto || '', convencao: '', grupo_entrega: '', matricula: '',
           filtro: '', refeicao: '', alimentacao: '', livre: 0,
         });
       }
@@ -184,6 +195,8 @@ export function montarPlanilhas(rows, centroCusto = new Map()) {
     flash: [...flash.values()].sort(porNome),
     flashBvgrain: [...flashBvgrain.values()].sort(porNome),
     ifood: [...ifood.values()].sort(porNome),
+    // Quem vai na planilha do iFood sem data de nascimento no cadastro (a coluna sairia em branco).
+    semNascimento: [...ifood.values()].filter((l) => !l.nascimento).map((l) => l.nome),
     ignoradas,
   };
 }
@@ -201,13 +214,13 @@ async function arquivoXlsx(nomeArquivo, nomePlanilha, linhas, colunas) {
 }
 
 // sufixo: data AAAAMMDD do arquivo (+ "_L2" etc. quando o lote não é o primeiro do mês).
-export async function arquivosPlanilha(rows, centroCusto, sufixo) {
-  const { flash, flashBvgrain, ifood, ignoradas } = montarPlanilhas(rows, centroCusto);
+export async function arquivosPlanilha(rows, cadastro, sufixo) {
+  const { flash, flashBvgrain, ifood, semNascimento, ignoradas } = montarPlanilhas(rows, cadastro);
   const arquivos = [];
   if (flash.length) arquivos.push(await arquivoXlsx(`PGTO_FLASH_${sufixo}.xlsx`, 'PGTO_FLASH', flash, FLASH_COLS));
   if (flashBvgrain.length) arquivos.push(await arquivoXlsx(`PGTO_FLASH_BVGRAIN_${sufixo}.xlsx`, 'PGTO_FLASH_BVGRAIN', flashBvgrain, FLASH_COLS));
   if (ifood.length) arquivos.push(await arquivoXlsx(`PGTO_IFOOD_${sufixo}.xlsx`, 'PGTO_IFOOD', ifood, IFOOD_COLS));
-  return { arquivos, totais: { flash: flash.length, flashBvgrain: flashBvgrain.length, ifood: ifood.length }, ignoradas };
+  return { arquivos, totais: { flash: flash.length, flashBvgrain: flashBvgrain.length, ifood: ifood.length }, semNascimento, ignoradas };
 }
 
 // Painel com os links de download (mesmo comportamento do Financeiro > Adiantamentos):
