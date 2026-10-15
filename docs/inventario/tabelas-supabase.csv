@@ -21,7 +21,7 @@
 "colaboradores_historico";"1";"assets/js/modules/relatorios-colaboradores-historico.js"
 "compras_catalogo";"2";"assets/js/adm-compras.js | assets/js/compras.js"
 "compras_estoque_inventarios";"1";"assets/js/compras-estoque.js"
-"compras_estoque_materiais";"3";"assets/js/adm-compras.js | assets/js/compras-estoque-agrupamento.js | assets/js/compras-estoque.js"
+"compras_estoque_materiais";"2";"assets/js/adm-compras.js | assets/js/compras-estoque.js"
 "compras_estoque_movimentacoes";"2";"assets/js/adm-compras.js | assets/js/compras-estoque.js"
 "compras_itens";"8";"assets/js/adm-compras.js | assets/js/adm-hotel-alojamentos-compras.js | assets/js/compras-estoque.js | assets/js/compras.js | assets/js/comprovante-mobile.js | assets/js/epiRh.js | assets/js/financeiro.js | assets/js/termos.js"
 "compras_notificacoes_config";"4";"assets/js/adm-compras.js | assets/js/admin-configuracoes.js | assets/js/compras.js | assets/js/termos.js"

@@ -18,7 +18,7 @@
 "cartao-ponto";"cartao-ponto.html";"assets/js/cartaoPonto.js";"";"";"rh_cartao_ponto";"";"";""
 "chamados-ti";"chamados-ti.html";"assets/js/chamados-ti.js";"";"";"chamados_ti | chamados_ti_comentarios";"";"";""
 "clinicas-sst";"clinicas-sst.html";"assets/js/clinicas-sst.js";"";"";"rh_clinicas_sst";"";"";""
-"compras-estoque";"compras-estoque.html";"assets/js/compras-estoque.js";"assets/js/pwa-register.js | assets/js/compras-estoque-agrupamento.js | assets/js/compras-estoque-layout.js";"";"compras_estoque_inventarios | compras_estoque_materiais | compras_estoque_movimentacoes | compras_itens | compras_solicitacoes";"";"";""
+"compras-estoque";"compras-estoque.html";"assets/js/compras-estoque.js";"assets/js/pwa-register.js";"";"compras_estoque_inventarios | compras_estoque_materiais | compras_estoque_movimentacoes | compras_itens | compras_solicitacoes";"";"";""
 "compras";"compras.html";"assets/js/compras.js";"";"assets/js/gestor-mobile-modules-v2.js";"app_usuarios | compras_catalogo | compras_itens | compras_notificacoes_config | compras_solicitacoes | termos_celular";"";"";"Botconversa"
 "comprovante-mobile";"comprovante-mobile.html";"assets/js/comprovante-mobile.js";"";"";"compras_itens | financeiro_pagamentos";"";"notas-fiscais";"OCR"
 "conferencia-bonus";"conferencia-bonus.html";"assets/js/conferencia-bonus.js";"assets/js/conferencia-bonus-caixa.js | assets/js/conferencia-bonus-fechamento.js";"";"bonus_auditoria_inaptos | bonus_caixa_lancamentos";"bonus_competencia_fechada | bonus_producao_competencia | bonus_solicitar_lancamento_caixa | bonus_substituir_auditoria";"";""
