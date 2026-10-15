@@ -31,6 +31,16 @@ function injectStyles() {
     .bonus-sort-icon{display:inline-block;width:12px;margin-left:5px;color:#76998a;font-size:10px;text-align:center}
     .bonus-table th[aria-sort="ascending"] .bonus-sort-icon,.bonus-table th[aria-sort="descending"] .bonus-sort-icon{color:#72efb1}
     .bonus-check:disabled{opacity:.25;cursor:not-allowed}
+    .bonus-rejeitados{margin:10px 0 0;padding:11px 14px;border:1px solid rgba(248,113,113,.24);border-radius:12px;background:rgba(239,68,68,.07);color:#ffc2c2;font-size:11.5px}
+    .bonus-rejeitados-topo{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .bonus-rejeitados-topo strong{font-size:12px;color:#ffb4b4}
+    .bonus-rejeitados-fechar{height:26px;padding:0 10px;border:1px solid rgba(248,113,113,.28);border-radius:8px;background:transparent;color:#ffb4b4;font:inherit;font-size:10.5px;font-weight:800;cursor:pointer}
+    .bonus-rejeitados-fechar:hover{background:rgba(239,68,68,.14)}
+    .bonus-rejeitados-dica{margin:6px 0 8px;color:#d9a3a3;line-height:1.35}
+    .bonus-rejeitados ul{margin:0;padding:0;list-style:none;display:grid;gap:4px;max-height:220px;overflow:auto}
+    .bonus-rejeitados li{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:5px 8px;border-radius:8px;background:rgba(0,0,0,.18)}
+    .bonus-rejeitados li .nome{font-weight:850;color:#ffe1e1}
+    .bonus-rejeitados li .motivo{color:#e7b4b4}
     .bonus-launch-filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
     .bonus-launch-filter{height:32px;padding:0 10px;border:1px solid rgba(110,231,183,.14);border-radius:9px;background:#071b15;color:#91aa9f;font:inherit;font-size:10.5px;font-weight:850;cursor:pointer;white-space:nowrap}
     .bonus-launch-filter:hover{border-color:rgba(110,231,183,.3);color:#d8eee3}
@@ -111,11 +121,17 @@ function getProductionRows() {
     .filter((tr) => tr.querySelector('.bonus-name'));
 }
 
+// Valor do bônus da linha (coluna "Valor"). O servidor recusa quem tem bônus de R$ 0,00
+// ("sem lançamento financeiro"), então a tela não deixa nem selecionar essas linhas.
+function valorDaLinha(tr) {
+  return parseBrNumber((tr.querySelector('.bonus-value') || tr.cells?.[3])?.textContent);
+}
+
 function isRowLaunchable(tr) {
   const checkbox = tr.querySelector('[data-row-check]');
   const apto = tr.querySelector('.bonus-status')?.textContent?.trim() === 'Apto';
   const launchStatus = launchStatusForRow(tr);
-  return !!checkbox && apto && ['NAO_LANCADO', 'ERRO'].includes(launchStatus);
+  return !!checkbox && apto && valorDaLinha(tr) > 0 && ['NAO_LANCADO', 'ERRO'].includes(launchStatus);
 }
 
 function getLaunchableRows() {
@@ -123,6 +139,47 @@ function getLaunchableRows() {
     const checkbox = tr.querySelector('[data-row-check]');
     return !tr.hidden && isRowLaunchable(tr) && checkbox?.checked && !checkbox.disabled;
   });
+}
+
+const REJEITADOS_ID = 'bonusRejeitados';
+let rejeitadosComp = null;
+
+function escapeHtml(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+}
+
+function removerRejeitados() {
+  document.getElementById(REJEITADOS_ID)?.remove();
+  rejeitadosComp = null;
+}
+
+// A RPC bonus_solicitar_lancamento_caixa devolve `rejeicoes: [{ colaborador, motivo }]`; antes a tela só
+// mostrava a contagem. Aqui mostramos quem não foi enviado e por quê, logo abaixo do cabeçalho.
+function mostrarRejeitados(rejeicoes, competencia) {
+  removerRejeitados();
+  const lista = (Array.isArray(rejeicoes) ? rejeicoes : [])
+    .map((item) => ({ colaborador: String(item?.colaborador ?? '').trim(), motivo: String(item?.motivo ?? '').trim() }))
+    .filter((item) => item.colaborador || item.motivo);
+  const head = document.querySelector('.bonus-head');
+  if (!head) return;
+
+  const panel = document.createElement('div');
+  panel.id = REJEITADOS_ID;
+  panel.className = 'bonus-rejeitados';
+  panel.setAttribute('role', 'status');
+  const itens = lista.length
+    ? lista.map((item) => `<li><span class="nome">${escapeHtml(item.colaborador || '(sem nome)')}</span><span class="motivo">${escapeHtml(item.motivo || 'Não elegível para lançamento')}</span></li>`).join('')
+    : '<li><span class="motivo">O servidor não informou os nomes. Confira a produção da competência.</span></li>';
+  panel.innerHTML = `
+    <div class="bonus-rejeitados-topo">
+      <strong>${lista.length || 'Alguns'} colaborador(es) NÃO enviado(s) ao Caixa</strong>
+      <button type="button" class="bonus-rejeitados-fechar" data-fechar-rejeitados>Fechar</button>
+    </div>
+    <p class="bonus-rejeitados-dica">O servidor confere cada nome antes de enfileirar e recusa quem não tem produção na competência, não está Apto ou tem bônus de R$ 0,00 (nada a lançar).</p>
+    <ul>${itens}</ul>`;
+  panel.querySelector('[data-fechar-rejeitados]')?.addEventListener('click', removerRejeitados);
+  head.insertAdjacentElement('afterend', panel);
+  rejeitadosComp = competencia;
 }
 
 function setMessage(text, type = '') {
@@ -162,8 +219,9 @@ function syncLaunchability() {
     if (!checkbox) return;
 
     const apto = tr.querySelector('.bonus-status')?.textContent?.trim() === 'Apto';
+    const semValor = apto && valorDaLinha(tr) <= 0;
     const launchStatus = launchStatusForRow(tr);
-    const disabled = !apto || ['LANCADO', 'PENDENTE', 'CARREGANDO'].includes(launchStatus);
+    const disabled = !apto || semValor || ['LANCADO', 'PENDENTE', 'CARREGANDO'].includes(launchStatus);
 
     if (checkbox.disabled !== disabled) checkbox.disabled = disabled;
     if (disabled && checkbox.checked) {
@@ -173,6 +231,7 @@ function syncLaunchability() {
 
     let title = 'Selecionar para lançamento no Caixa';
     if (!apto) title = 'Colaborador inapto não pode ser lançado';
+    else if (semValor) title = 'Bônus R$ 0,00 - sem lançamento financeiro. Não é enviado ao Caixa.';
     else if (launchStatus === 'LANCADO') title = 'Bônus já lançado. Novo lançamento bloqueado para evitar duplicidade.';
     else if (launchStatus === 'PENDENTE') title = 'Lançamento já está pendente/processando.';
     else if (launchStatus === 'CARREGANDO') title = 'Conferindo histórico de lançamentos...';
@@ -407,8 +466,9 @@ async function launchSelected() {
     const parts = [`${queued} enviado(s)`];
     if (pending) parts.push(`${pending} já pendente(s)`);
     if (launched) parts.push(`${launched} já lançado(s)`);
-    if (rejected) parts.push(`${rejected} rejeitado(s)`);
+    if (rejected) parts.push(`${rejected} rejeitado(s) (detalhes abaixo)`);
     setMessage(parts.join(' · '), rejected ? 'err' : 'ok');
+    if (rejected) mostrarRejeitados(data?.rejeicoes, getCompetencia()); else removerRejeitados();
 
     rows.forEach((tr) => {
       const checkbox = tr.querySelector('[data-row-check]');
@@ -466,6 +526,8 @@ function cleanupSidebarDuplicates() {
 function enhance() {
   ensureTopAction();
   cleanupSidebarDuplicates();
+  // o painel de rejeitados vale para a competência em que o envio foi feito
+  if (rejeitadosComp && rejeitadosComp !== getCompetencia()) removerRejeitados();
 
   if (!isProduction()) {
     syncSelectionUi();
