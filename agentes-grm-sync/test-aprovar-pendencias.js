@@ -121,7 +121,8 @@ assert.equal(decC(diaria({}), [lanc({ ofmStatus: 'A' }), terc({ ofmDate: '2026-1
 // observações: "Diária" é comum e não atrapalha; "almoço"/janta/km/outra data/pessoa seguram
 assert.equal(decC(diaria({ ofmDescription: 'Diária' }), [], evMov, interm).acao, 'APROVAR');
 assert.equal(decC(diaria({ ofmDescription: 'Cotrijal encruzilhada' }), [], evMov, interm).acao, 'APROVAR');
-assert.equal(decC(diaria({ ofmDescription: 'almoço do dia 15' }), [], evMov, interm).motivo, 'observacao_cita_outra_despesa');
+assert.equal(decC(diaria({ ofmDescription: 'almoço do dia 15' }), [], evMov, interm).motivo, 'observacao_cita_outra_data'); // refeição citada não segura Diária de R$ 105; a data sim
+assert.equal(decC(diaria({ ofmDescription: 'Almoco' }), [], evMov, interm).acao, 'APROVAR'); // 16/10: valor de Diária no campo de Diária
 assert.equal(decC(diaria({ ofmDescription: 'km rodado dia 22/09/2026' }), [], evMov, interm).motivo, 'observacao_cita_outra_despesa');
 assert.equal(decC(diaria({ ofmDescription: 'Diária atrasada do dia 09/09' }), [], evMov, interm).motivo, 'observacao_cita_outra_data');
 assert.equal(decC(diaria({ ofmDescription: 'SALARIO FAMILIA 08/2026', ofmValue: 105 }), [], evMov, interm).motivo, 'observacao_de_extra');
@@ -160,8 +161,10 @@ assert.equal(avaliarRegra('OUTRA', NOME, evMov).motivo, 'despesa_nao_tratada');
   const diaria = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Almoco' });
   const almoco = lanc({ oexName: 'Almoço', ofmValue: 30, ofmDescription: 'Almoco' });
   assert.equal(decidir(diaria, [diaria, almoco], evMov, cad).acao, 'APROVAR');
-  // sem o Almoço próprio no dia, a obs "Almoco" segura a Diária
-  const sem = decidir(diaria, [diaria], evMov, cad);
+  // Diária com valor de Diária aprova mesmo sem o Almoço próprio; com valor de refeição a obs "Almoco" segura
+  assert.equal(decidir(diaria, [diaria], evMov, cad).acao, 'APROVAR');
+  const barata = lanc({ oexName: 'Salário de Intermitente', ofmValue: 30, ofmDescription: 'Almoco' });
+  const sem = decidir(barata, [barata], evMov, { ...cad, salario: 30 });
   assert.equal(sem.acao, 'MANTER');
   assert.equal(sem.motivo, 'observacao_cita_outra_despesa');
 }

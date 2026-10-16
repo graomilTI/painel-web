@@ -75,21 +75,33 @@ const PALAVRAS_CATEGORIA = [
   ['PERNOITE', /\bPERNOITE\b/], ['DIARIA', /\bDIARIA\b/],
   ['KM', /\bKM\b|\bQUILOMETR/], ['COMBUSTIVEL', /\bCOMBUSTIVEL\b|\bABASTEC/], ['PEDAGIO', /\bPEDAGIO\b/],
 ];
-// `outros` = lançamentos ativos (P/A) do MESMO colaborador na MESMA data efetiva. Observação que repete o nome
-// de uma despesa que ele já lançou no campo próprio nesse dia ("Almoco" copiado na Diária e no Almoço) é só
-// descrição, não lançamento no campo errado (16/10/2026: Luis Paulo, Salário de Intermitente R$ 105 + Almoço
-// R$ 30, ambos com obs "Almoco", tinha a Diária recusada). O outro lançamento só vale se for coerente por si
-// (sem citar despesa alheia), senão dois lançamentos trocados se absolveriam.
-function citadasSemLancamentoProprio(citadas, outros) {
-  if (!citadas.length || !outros?.length) return citadas;
-  const proprios = new Set(outros.filter((o) => !categoriaDivergente(o)).map(grupoDespesa));
-  return citadas.filter((nome) => !proprios.has(nome));
+// Duas absolvições da citação de outra despesa (16/10/2026, Luis Paulo: Salário de Intermitente R$ 105 com obs
+// "Almoco", ao lado de um Almoço R$ 30 com a mesma obs, foi recusado como "tipo incorreto"):
+//  1) valor: Diária (Salário de Intermitente / Serviços Terceirizados) acima de R$ 45 está no campo certo e com
+//     valor de Diária — nenhuma refeição passa disso (Café 10, Almoço/Janta 30), então "almoço/janta/café" na
+//     obs é só descrição. Pernoite, km etc. citados continuam valendo (um hotel pode custar isso).
+//  2) `outros` = lançamentos ativos (P/A) do MESMO colaborador na MESMA data efetiva: obs que repete uma despesa
+//     que ele já lançou no campo próprio nesse dia não é campo errado. O outro lançamento só vale se for
+//     coerente por si (sem citar despesa alheia), senão dois lançamentos trocados se absolveriam.
+// Duplicidade real segue sendo recusada pelo agente de duplicadas (mesmo grupo e data efetiva).
+const VALOR_MAXIMO_REFEICAO = 45;
+const REFEICOES_CITADAS = new Set(['CAFE', 'ALMOCO', 'JANTA']);
+function citadasAbsolvidas(row, citadas, outros) {
+  let sobra = citadas;
+  if (grupoDespesa(row) === 'DIARIA' && Number(row.ofmValue) > VALOR_MAXIMO_REFEICAO) {
+    sobra = sobra.filter((nome) => !REFEICOES_CITADAS.has(nome));
+  }
+  if (sobra.length && outros?.length) {
+    const proprios = new Set(outros.filter((o) => !categoriaDivergente(o)).map(grupoDespesa));
+    sobra = sobra.filter((nome) => !proprios.has(nome));
+  }
+  return sobra;
 }
 function categoriaDivergente(row, outros = []) {
   const texto = norm(row.ofmDescription);
   const citadas = PALAVRAS_CATEGORIA.filter(([, re]) => re.test(texto)).map(([nome]) => nome);
   if (!citadas.length || citadas.includes(grupoDespesa(row))) return null;
-  const sobra = citadasSemLancamentoProprio(citadas, outros);
+  const sobra = citadasAbsolvidas(row, citadas, outros);
   return sobra.length ? sobra : null;
 }
 
@@ -112,7 +124,7 @@ function tipoIncorretoNaObs(row, outros = []) {
     .map(([nome]) => nome)
     .filter((nome) => !(grupo === 'PERNOITE' && nome === 'DIARIA'));
   if (!citadas.length || citadas.includes(grupo)) return null;
-  const sobra = citadasSemLancamentoProprio(citadas, outros);
+  const sobra = citadasAbsolvidas(row, citadas, outros);
   return sobra.length ? sobra : null;
 }
 
