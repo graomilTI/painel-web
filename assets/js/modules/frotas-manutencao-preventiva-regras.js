@@ -1,6 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
-// A matriz tem um veículo por linha e um serviço do guia por coluna; cada célula vem de frotas_manutencao_vencimentos_v.
-import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut16';
+// A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
+// aparecem no painel lateral, agrupados por sistema.
+import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut17';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -13,46 +14,81 @@ export const FILTROS_PREVENTIVA = [
 const ORDEM_STATUS = { vencida: 0, proxima: 1, sem_hodometro: 2, em_dia: 3, sem_historico: 4 };
 
 const compara = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const numOuFim = (v) => (v == null ? Number.POSITIVE_INFINITY : Number(v));
 
-// Veículo bate com o filtro se alguma célula dele (dos serviços exibidos) está na situação.
+// Ordem de urgência de um serviço: vencida antes de próxima; dentro da situação, o mais atrasado (menos dias/km restantes) primeiro.
+export function comparaUrgencia(a, b) {
+  return compara(ORDEM_STATUS[a.status] ?? 9, ORDEM_STATUS[b.status] ?? 9)
+    || compara(numOuFim(a.dias_restantes), numOuFim(b.dias_restantes))
+    || compara(numOuFim(a.km_restante), numOuFim(b.km_restante))
+    || compara(a.categoria_codigo, b.categoria_codigo)
+    || compara(String(a.plano_nome), String(b.plano_nome));
+}
+
+// Veículo bate com o filtro se algum serviço dele (dos exibidos) está na situação.
 export function veiculoBateFiltro(resumo, filtro) {
   if (filtro === 'todos') return true;
   if (filtro === 'atencao') return resumo.vencida > 0 || resumo.proxima > 0;
   return (resumo[filtro] || 0) > 0;
 }
 
-export function montarMatriz(linhas, { tipo = 'servico', busca = '', filtro = 'todos' } = {}) {
-  const doTipo = (linhas || []).filter((l) => tipo === 'todos' || l.tipo === tipo);
-  const colunasPorCodigo = new Map();
+// Sistemas (categorias do guia) que existem nos dados, para o filtro "Sistema".
+export function categoriasDisponiveis(linhas, tipo = 'servico') {
+  const mapa = new Map();
+  for (const l of linhas || []) if (tipo === 'todos' || l.tipo === tipo) mapa.set(l.categoria_codigo, l.categoria_nome);
+  return [...mapa.entries()].map(([codigo, nome]) => ({ codigo, nome })).sort((a, b) => a.codigo - b.codigo);
+}
+
+// Um item por veículo, do mais urgente para o menos; cada veículo leva seus serviços ordenados por urgência.
+export function montarLista(linhas, { tipo = 'servico', busca = '', filtro = 'todos', categoria = '' } = {}) {
   const porVeiculo = new Map();
-  for (const l of doTipo) {
-    if (!colunasPorCodigo.has(l.plano_codigo)) {
-      colunasPorCodigo.set(l.plano_codigo, { codigo: l.plano_codigo, nome: l.plano_nome, categoria_codigo: l.categoria_codigo, categoria_nome: l.categoria_nome, tipo: l.tipo });
-    }
+  for (const l of linhas || []) {
+    if (tipo !== 'todos' && l.tipo !== tipo) continue;
+    if (categoria && String(l.categoria_codigo) !== String(categoria)) continue;
     if (!porVeiculo.has(l.veiculo_id)) {
       porVeiculo.set(l.veiculo_id, {
         veiculo_id: l.veiculo_id, placa: l.placa, marca_modelo: l.marca_modelo, coordenacao: l.coordenacao, supervisao: l.supervisao,
-        hodometro: l.hodometro, celulas: new Map(), resumo: { vencida: 0, proxima: 0, em_dia: 0, sem_historico: 0, sem_hodometro: 0 },
+        hodometro: l.hodometro, servicos: [], resumo: { vencida: 0, proxima: 0, em_dia: 0, sem_historico: 0, sem_hodometro: 0 }, maisUrgente: null,
       });
     }
     const v = porVeiculo.get(l.veiculo_id);
-    v.celulas.set(l.plano_codigo, l);
+    v.servicos.push(l);
     v.resumo[l.status] = (v.resumo[l.status] || 0) + 1;
   }
-  const colunas = [...colunasPorCodigo.values()].sort((a, b) => compara(a.categoria_codigo, b.categoria_codigo) || compara(a.nome, b.nome));
+  for (const v of porVeiculo.values()) {
+    v.servicos.sort(comparaUrgencia);
+    const primeiro = v.servicos[0];
+    v.maisUrgente = primeiro && ['vencida', 'proxima'].includes(primeiro.status) ? primeiro : null;
+  }
   const termo = norm(busca);
-  const todos = [...porVeiculo.values()].sort((a, b) => compara(a.placa, b.placa));
+  const todos = [...porVeiculo.values()]
+    .sort((a, b) => compara(b.resumo.vencida, a.resumo.vencida) || compara(b.resumo.proxima, a.resumo.proxima) || compara(a.placa, b.placa));
   const buscados = todos.filter((v) => !termo || norm([v.placa, v.marca_modelo, v.coordenacao, v.supervisao].join(' ')).includes(termo));
   const veiculos = buscados.filter((v) => veiculoBateFiltro(v.resumo, filtro));
   const contagem = Object.fromEntries(FILTROS_PREVENTIVA.map((f) => [f.id, buscados.filter((v) => veiculoBateFiltro(v.resumo, f.id)).length]));
-  return { colunas, veiculos, contagem };
+  return { veiculos, contagem };
+}
+
+// Serviços de um veículo agrupados por sistema do guia; o grupo pede atenção se tem vencida ou próxima.
+export function agruparPorSistema(servicos) {
+  const grupos = new Map();
+  for (const s of servicos || []) {
+    if (!grupos.has(s.categoria_codigo)) grupos.set(s.categoria_codigo, { categoria_codigo: s.categoria_codigo, categoria_nome: s.categoria_nome, itens: [], vencida: 0, proxima: 0 });
+    const g = grupos.get(s.categoria_codigo);
+    g.itens.push(s);
+    if (s.status === 'vencida') g.vencida += 1;
+    if (s.status === 'proxima') g.proxima += 1;
+  }
+  return [...grupos.values()]
+    .map((g) => ({ ...g, itens: [...g.itens].sort(comparaUrgencia), atencao: g.vencida + g.proxima > 0 }))
+    .sort((a, b) => compara(Number(b.atencao), Number(a.atencao)) || compara(a.categoria_codigo, b.categoria_codigo));
 }
 
 // Serviços de um veículo que pedem uma solicitação: vencidos ou próximos, sem outra em andamento.
 export function pendentesDoVeiculo(veiculo, tipo = 'servico') {
-  return [...veiculo.celulas.values()]
+  return [...veiculo.servicos]
     .filter((c) => ['vencida', 'proxima'].includes(c.status) && !c.em_andamento && (tipo === 'todos' || c.tipo === tipo))
-    .sort((a, b) => compara(ORDEM_STATUS[a.status], ORDEM_STATUS[b.status]) || compara(a.categoria_codigo, b.categoria_codigo));
+    .sort(comparaUrgencia);
 }
 
 // ---------- datas e prazos ----------
@@ -83,19 +119,37 @@ export function proximoPrazo(plano, dataISO, km) {
   return { proximo_km: proximoKm, proxima_data: proximaData };
 }
 
-export function validarRegistroPreventiva({ data, km, itens = [], notas = [], custo = 0, responsavel = '' }, hojeISO) {
+// ---------- validação do registro, por passo ----------
+const kmOuNulo = (km) => (km === '' || km == null ? null : Number(km));
+
+// Passo 1: o que foi feito (data, km e ao menos um serviço).
+export function validarPasso1({ data, km, itens = [] }, hojeISO) {
   const erros = [];
   if (!data) erros.push('Informe a data em que o serviço foi feito.');
   else if (hojeISO && data > hojeISO) erros.push('A data do serviço não pode ser futura.');
-  const kmNum = km === '' || km == null ? null : Number(km);
+  const kmNum = kmOuNulo(km);
   if (kmNum == null || !(kmNum > 0)) erros.push('Informe o km do veículo no dia do serviço.');
   if (!itens.length) erros.push('Marque ao menos um serviço que foi feito.');
+  return erros;
+}
+
+// Passo 2: próximos prazos (opcionais, mas precisam ser depois do serviço).
+export function validarPasso2({ data, km, itens = [] }) {
+  const erros = [];
+  const kmNum = kmOuNulo(km);
   for (const it of itens) {
     const nome = it.nome || 'Serviço';
-    if (it.proximo_km != null && it.proximo_km !== '' && !(Number(it.proximo_km) > 0)) erros.push(`Próximo km de "${nome}" deve ser maior que zero.`);
-    else if (it.proximo_km != null && it.proximo_km !== '' && kmNum != null && Number(it.proximo_km) <= kmNum) erros.push(`Próximo km de "${nome}" deve ser maior que o km do serviço.`);
+    const pk = it.proximo_km;
+    if (pk != null && pk !== '' && !(Number(pk) > 0)) erros.push(`Próximo km de "${nome}" deve ser maior que zero.`);
+    else if (pk != null && pk !== '' && kmNum != null && Number(pk) <= kmNum) erros.push(`Próximo km de "${nome}" deve ser maior que o km do serviço.`);
     if (it.proxima_data && data && it.proxima_data <= data) erros.push(`Próxima data de "${nome}" deve ser depois da data do serviço.`);
   }
+  return erros;
+}
+
+// Passo 3: pagamento e notas (opcional; com notas exige quem paga e custo que cubra a soma).
+export function validarPasso3({ notas = [], custo = 0, responsavel = '' }) {
+  const erros = [];
   if (Number(custo) < 0) erros.push('O custo não pode ser negativo.');
   if (notas.length) {
     if (!responsavel) erros.push('Informe quem paga a manutenção para lançar as notas.');
@@ -104,7 +158,11 @@ export function validarRegistroPreventiva({ data, km, itens = [], notas = [], cu
   return erros;
 }
 
-// Texto curto da célula da matriz: vence em (data e km) e quanto falta.
+export function validarRegistroPreventiva(registro, hojeISO) {
+  return [...validarPasso1(registro, hojeISO), ...validarPasso2(registro), ...validarPasso3(registro)];
+}
+
+// Texto curto do vencimento: quanto falta (ou passou) em km e em dias.
 const fmtNum = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 export function restanteCelula(l) {
   const partes = [];
