@@ -1,13 +1,13 @@
 // Frotas — Fora do horário — dossiê do dia, lista e modais (a parte que mexe no DOM).
 // Extraído de modules/frotas.js em 14/10/2026 e dividido em 15/10/2026 (frotas-fh-dossie.js tinha 1.030 linhas):
 // regras (frotas-fh-dossie-regras) -> HTML (frotas-fh-dossie-html) -> tela (frotas-fh-dossie). Código movido sem alteração.
-// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-manut-parado1 em TODOS os imports
+// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-hist1 em TODOS os imports
 // internos (e os do carregador da página): tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, toast } from './frotas-base.js?v=20261016-frotas-manut-parado1';
-import { fhLiberarAncestrais, fhEnquadrarJanela, readForaHorarioReportPeriod, formatKmForaHorario, fhChave, fhDataCurta, fhTitulo, fhDiasPendentes, atualizarFiltrosForaHorario, fhAtualizarStatusExcessos, formatCoordForaHorario } from './frotas-fh-util.js?v=20261016-frotas-manut-parado1';
-import { fhCarregarMapa, fhFecharMapa } from './frotas-fh-mapa.js?v=20261016-frotas-manut-parado1';
-import { fhDiaSemana, fhAgruparPorRota, fhLinhaPorChave, fhGravidade, fhCategorias, fhMesclarDossies } from './frotas-fh-dossie-regras.js?v=20261016-frotas-manut-parado1';
-import { fhRodapeDia, fhLinhaHtml, renderDossieHtml } from './frotas-fh-dossie-html.js?v=20261016-frotas-manut-parado1';
+import { state, currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, toast } from './frotas-base.js?v=20261016-frotas-hist1';
+import { fhLiberarAncestrais, fhEnquadrarJanela, readForaHorarioReportPeriod, formatKmForaHorario, fhChave, fhDataCurta, fhTitulo, fhDiasPendentes, atualizarFiltrosForaHorario, fhAtualizarStatusExcessos, formatCoordForaHorario } from './frotas-fh-util.js?v=20261016-frotas-hist1';
+import { fhCarregarMapa, fhFecharMapa } from './frotas-fh-mapa.js?v=20261016-frotas-hist1';
+import { fhDiaSemana, fhAgruparPorRota, fhLinhaPorChave, fhGravidade, fhCategorias, fhMesclarDossies } from './frotas-fh-dossie-regras.js?v=20261016-frotas-hist1';
+import { fhRodapeDia, fhLinhaHtml, renderDossieHtml } from './frotas-fh-dossie-html.js?v=20261016-frotas-hist1';
 
   function atualizarRodapeDossie(root) {
     const rodape = root.querySelector('[data-dossie-rodape]');

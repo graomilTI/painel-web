@@ -1,9 +1,9 @@
 // Frotas — aba Histórico (excessos, multas e manutenções por colaborador).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-manut-parado1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-hist1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, parseSpeed, getStyles, normalizeDateForMatch, setCurrentRenderOpts } from './frotas-base.js?v=20261016-frotas-manut-parado1';
+import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, parseSpeed, getStyles, normalizeDateForMatch, setCurrentRenderOpts } from './frotas-base.js?v=20261016-frotas-hist1';
 
   const HISTORICO_TABLES = {
     excessos: 'frotas_excesso_velocidade',
@@ -89,9 +89,16 @@ import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlat
     };
   }
 
+  // Status do fluxo de manutenção (frotas_manutencoes.status) em português; outros valores seguem como vieram.
+  const HISTORICO_STATUS_MANUTENCAO = {
+    solicitada: 'Solicitada', em_orcamento: 'Em orçamento', em_aprovacao: 'Em aprovação', aprovada: 'Aprovada',
+    em_execucao: 'Em execução', concluida: 'Concluída', reprovada: 'Reprovada', cancelada: 'Cancelada'
+  };
+
   function normalizeHistoricoManutencao(row) {
-    const motorista = getHistoricoColaborador(row);
-    const data = getHistoricoDate(row, ['data_manutencao', 'data_servico', 'data_abertura', 'data_conclusao']);
+    // Manutenção do fluxo novo: o condutor é motorista_nome (ou quem solicitou) e a data é a do serviço (ou da solicitação).
+    const motorista = getHistoricoColaborador(row, row.motorista_nome || row.solicitante_nome || '');
+    const data = getHistoricoDate(row, ['data_manutencao', 'data_servico', 'data_execucao', 'data_abertura', 'data_conclusao', 'solicitado_em']);
     const valor = formatMoneyBR(firstValue(row, ['valor', 'valor_total', 'custo', 'custo_total']));
     return {
       id: `manutencao-${row.id || `${row.placa}-${data}-${row.created_at || ''}`}`,
@@ -101,9 +108,9 @@ import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlat
       placa: onlyPlate(row.placa || row.veiculo_placa),
       data,
       hora: firstValue(row, ['hora', 'hora_servico']),
-      titulo: firstValue(row, ['tipo', 'servico', 'serviço', 'descricao', 'descrição']) || 'Manutenção registrada',
-      detalhes: [row.oficina, row.fornecedor, row.observacoes, row.observação, row.status].filter(Boolean).join(' · '),
-      status: row.status || row.situacao || row.etapa || 'REGISTRADO',
+      titulo: [row.numero != null ? `MAN-${String(row.numero).padStart(6, '0')}` : '', firstValue(row, ['tipo', 'servico', 'serviço', 'descricao', 'descrição']) || 'Manutenção registrada'].filter(Boolean).join(' · '),
+      detalhes: [row.natureza, row.os_numero, row.oficina, row.fornecedor, row.observacoes, row.observação].filter(Boolean).join(' · '),
+      status: HISTORICO_STATUS_MANUTENCAO[row.status] || row.status || row.situacao || row.etapa || 'REGISTRADO',
       valor,
       raw: row
     };
@@ -231,6 +238,12 @@ import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlat
       for (const table of HISTORICO_TABLES.manutencoes) {
         manutencoes = await tryLoadTableRows(supabase, table, '*');
         if (manutencoes.length) break;
+      }
+
+      // A tabela de manutenções guarda veiculo_id, não a placa: junta com os veículos para a placa aparecer no histórico.
+      if (manutencoes.some((m) => m.veiculo_id && !m.placa)) {
+        const veiculosPorId = new Map((await tryLoadTableRows(supabase, 'frotas_veiculos', 'id,placa')).map((v) => [v.id, v.placa]));
+        manutencoes = manutencoes.map((m) => (m.veiculo_id && !m.placa ? { ...m, placa: veiculosPorId.get(m.veiculo_id) || '' } : m));
       }
 
       historicoState.rows = [
