@@ -79,7 +79,7 @@ Sem este passo o fluxo funciona, mas a NF é rateada em `GERAL`. Dois arquivos d
 - [ ] Rodar manualmente uma vez e conferir o log antes de deixar a fila trabalhar (seção "Deploy de uma correção" do `agentes-grm-sync/README.md`).
 
 ### 3.2 Primeiro teste ponta a ponta (nunca houve NF de Frotas no agente)
-- [ ] Manutenção de teste, **paga pela empresa**, com oficina cadastrada e existente no GRM, concluída **com NF real e pequena** (PDF ou XML) e custo final igual ao da NF.
+- [ ] Manutenção de teste, **paga pela empresa**, com oficina cadastrada e existente no GRM, concluída **com NF real e pequena** (PDF ou XML) cadastrada em "Notas fiscais" (se testar várias, uma de peça e uma de serviço); o custo final é a soma das notas.
 - [ ] Antes de liberar, simular no servidor com a NF na fila: `/opt/node22/bin/node grmserver-lancar-notas-fiscais-api.js --dry-run --upload-id <id da linha em grm_nf_lancamentos>`. Conferir categoria (`MANUT. VEICULOS SERVICOS`, `... PECAS` ou `PNEUS AQUISICAO`), **rateio na coordenação do veículo**, descrição "Manutenção PLACA - OS - oficina" e o valor.
 - [ ] Deixar o agente lançar de verdade e conferir no GRM. A ficha mostra "Lançada no GRM" com o código; em erro, a equipe é avisada e a correção é feita em Financeiro › Notas fiscais (✎).
 - [ ] No Financeiro, aba Pagamentos, filtro **Frotas**: o pagamento deve estar pendente, com oficina, CNPJ e PIX. Pagar com comprovante e conferir que "Pago em" e o comprovante voltaram para a ficha.
@@ -92,7 +92,7 @@ Sem este passo o fluxo funciona, mas a NF é rateada em `GERAL`. Dois arquivos d
 - [ ] Pedir aos usuários que **ativem as notificações** do painel (push) para receber os avisos de aprovação, OS, NF e pagamento no celular.
 - [ ] Prazos dos lembretes (escolha minha): orçamento parado 3 dias, aprovação 2, aprovada sem OS 3, OS sem previsão 15 dias. Se quiser outros, é só pedir.
 - [ ] Troca de Óleo e Checklists continuam como abas separadas. Troca de óleo passou a ser o plano `oleo_motor` dentro do fluxo; a aba antiga está vazia e pode ser aposentada quando quiser.
-- [ ] Ao longo de algumas semanas, revisar com a equipe: categoria da NF mista (peça + serviço sai como serviço), custo por categoria (rateio igual entre itens) e a regra de bloqueio da Programação.
+- [ ] Ao longo de algumas semanas, revisar com a equipe: categoria da NF mista (nota do tipo "peça e serviço" sai como serviço; prefira uma nota por tipo), custo por categoria (rateio igual entre itens) e a regra de bloqueio da Programação.
 
 ## 5. O que ficou de fora de propósito
 Alerta de avaria do BFleet (a API não entrega no painel); canal próprio do motorista; WhatsApp para motorista e oficina; escrever situação "Manutenção" ou hodômetro no GRM (exige autorização do GRM); estoque de peças; agenda ICS de manutenção de veículo; marcar o excesso de velocidade (só o dossiê fora do horário foi marcado); trava automática do Caixa; custo de frota no Panorama do sócio.

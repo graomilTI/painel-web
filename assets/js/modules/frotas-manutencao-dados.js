@@ -23,24 +23,40 @@ export async function carregarBase(supabase) {
   return { categorias, planos, oficinas, veiculos };
 }
 
+// Nomes dos colaboradores ativos, para sugerir em "Quem pediu" (texto livre com sugestão). Sem acesso: lista vazia.
+export async function carregarColaboradores(supabase) {
+  const nomes = new Set();
+  try {
+    for (let de = 0; de < 10000; de += 1000) {
+      const { data, error } = await supabase.from('colaboradores_atuais').select('nome').eq('ativo', true).order('nome', { ascending: true }).range(de, de + 999);
+      if (error) throw error;
+      (data || []).forEach((c) => { const n = String(c.nome || '').trim(); if (n) nomes.add(n); });
+      if (!data || data.length < 1000) break;
+    }
+  } catch { /* a escolha continua em texto livre */ }
+  return [...nomes];
+}
+
 export async function carregarManutencoes(supabase) {
-  const [manutencoes, itens, orcamentos] = await Promise.all([
+  const [manutencoes, itens, orcamentos, notas] = await Promise.all([
     tudo(supabase.from('frotas_manutencoes').select('*').order('solicitado_em', { ascending: false }).limit(2000), 'Erro ao carregar as manutenções.'),
     tudo(supabase.from('frotas_manutencao_itens').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar os itens.'),
     tudo(supabase.from('frotas_manutencao_orcamentos').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar os orçamentos.'),
+    tudo(supabase.from('frotas_manutencao_notas').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar as notas fiscais.'),
   ]);
-  return { manutencoes, itens, orcamentos };
+  return { manutencoes, itens, orcamentos, notas };
 }
 
 // Recarrega uma manutenção com itens e orçamentos (depois de uma ação, para refletir carimbos e linha do tempo).
 export async function carregarUma(supabase, id) {
-  const [manutencao, itens, orcamentos] = await Promise.all([
+  const [manutencao, itens, orcamentos, notas] = await Promise.all([
     supabase.from('frotas_manutencoes').select('*').eq('id', id).maybeSingle(),
     tudo(supabase.from('frotas_manutencao_itens').select('*').eq('manutencao_id', id).order('created_at', { ascending: true }), 'Erro ao carregar os itens.'),
     tudo(supabase.from('frotas_manutencao_orcamentos').select('*').eq('manutencao_id', id).order('created_at', { ascending: true }), 'Erro ao carregar os orçamentos.'),
+    tudo(supabase.from('frotas_manutencao_notas').select('*').eq('manutencao_id', id).order('created_at', { ascending: true }), 'Erro ao carregar as notas fiscais.'),
   ]);
   if (manutencao.error) falhar(manutencao.error, 'Erro ao carregar a manutenção.');
-  return { manutencao: manutencao.data, itens, orcamentos };
+  return { manutencao: manutencao.data, itens, orcamentos, notas };
 }
 
 export async function carregarVencimentos(supabase) {
@@ -51,6 +67,17 @@ export async function kmAtualDoVeiculo(supabase, veiculoId) {
   const { data, error } = await supabase.rpc('frotas_veiculo_km_atual', { p_veiculo: veiculoId });
   if (error) return null;
   return data == null ? null : Number(data);
+}
+
+export async function salvarNota(supabase, nota) {
+  const { data, error } = await supabase.from('frotas_manutencao_notas').insert(nota).select('*').single();
+  if (error) falhar(error, 'Erro ao salvar a nota fiscal.');
+  return data;
+}
+
+export async function removerNota(supabase, id) {
+  const { error } = await supabase.from('frotas_manutencao_notas').delete().eq('id', id);
+  if (error) falhar(error, 'Erro ao remover a nota fiscal.');
 }
 
 // NF para o agente do GRM e pagamento para o Financeiro (só manutenção concluída, paga pela empresa, com NF e custo).

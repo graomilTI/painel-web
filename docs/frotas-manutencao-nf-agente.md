@@ -4,12 +4,13 @@ Fase 5 do fluxo de manutenção (16/10/2026).
 
 ## Como funciona
 
-1. A manutenção é **concluída** com custo final, km e (opcionalmente) a NF da oficina. Só manutenção **paga pela empresa** segue adiante; locadora, colaborador e proprietário ficam só como registro.
-2. A RPC `frotas_manutencao_enviar_nf_financeiro` (chamada pela ficha, ao concluir ou depois):
-   - coloca o arquivo na fila do agente (`grm_nf_lancamentos`, setor `FROTAS`). O gatilho existente enfileira o job `sync-lancar-notas-fiscais`;
-   - grava em `ajustes_manuais` a categoria do GRM pelos itens: só pneus (peças) → `PNEUS AQUISICAO`; só peças → `MANUT. VEICULOS PECAS`; o resto → `MANUT. VEICULOS SERVICOS` (grupo `DESPESAS COM VEICULOS`);
-   - cria a solicitação de pagamento em `financeiro_pagamentos` (origem `FROTAS`) com oficina, CNPJ e PIX do cadastro.
-3. O que volta sozinho para a manutenção: NF lançada ou com erro (aviso à equipe), pagamento feito e comprovante. Depois que o pagamento é criado, o **custo final fica travado**.
+1. Uma manutenção tem **várias notas fiscais** (peças, serviço, mais de uma de cada), cadastradas na ficha em "Notas fiscais" (tipo, quem emitiu, nº, valor e arquivo). Podem ser lançadas já em execução. O custo final da conclusão vem da **soma das notas**. Só manutenção **paga pela empresa** segue adiante; locadora, colaborador e proprietário ficam só como registro.
+2. A RPC `frotas_manutencao_enviar_nf_financeiro` (chamada pela ficha, ao concluir ou depois) exige manutenção concluída, custo > 0, ao menos uma nota, todas com arquivo e soma das notas ≤ custo final. Para **cada nota pendente**:
+   - coloca o arquivo na fila do agente (`grm_nf_lancamentos`, setor `FROTAS`; o gatilho enfileira o job `sync-lancar-notas-fiscais`);
+   - grava em `ajustes_manuais` a categoria do GRM pelo tipo da nota: peça com todos os itens pneus → `PNEUS AQUISICAO`; peça → `MANUT. VEICULOS PECAS`; serviço ou misto → `MANUT. VEICULOS SERVICOS` (grupo `DESPESAS COM VEICULOS`);
+   - cria a solicitação de pagamento em `financeiro_pagamentos` (origem `FROTAS`, origem_tabela `frotas_manutencao_notas`) com o favorecido da nota (oficina cadastrada, com CNPJ e PIX, ou o nome digitado).
+   Notas já enviadas não são reenviadas (idempotente) nem editadas ou removidas.
+3. O que volta sozinho para cada nota: NF lançada ou com erro (aviso à equipe), pagamento feito e comprovante. A manutenção só fica **paga** quando todas as notas estiverem pagas. Depois que o primeiro pagamento é criado, o **custo final fica travado**.
 4. Erro da NF: complete os dados em Financeiro › Notas fiscais (✎) para o agente tentar de novo.
 
 ## Agente: o que mudou (deploy manual)
@@ -17,7 +18,7 @@ Fase 5 do fluxo de manutenção (16/10/2026).
 Arquivos em `agentes-grm-sync/`:
 
 - `grm-nf-frotas-regras.js` (novo): rateio pela **coordenação do veículo** (reserva `GERAL`, a mesma do Compras, quando a coordenação não existe no GRM) e descrição "Manutenção PLACA - OS - oficina - problema";
-- `grmserver-lancar-notas-fiscais-api.js`: `loadFrotasContext` (acha a manutenção por `frotas_manutencoes.nf_lancamento_id`) e chamada de `applyFrotasRules` antes dos ajustes manuais.
+- `grmserver-lancar-notas-fiscais-api.js`: `loadFrotasContext` (acha a manutenção pela nota: `frotas_manutencao_notas.nf_lancamento_id`) e chamada de `applyFrotasRules` antes dos ajustes manuais.
 
 **Sem o deploy do agente o fluxo já funciona**, mas a NF é rateada em `GERAL` (padrão do agente) e a descrição vem da NF. Para ativar o rateio por coordenação:
 

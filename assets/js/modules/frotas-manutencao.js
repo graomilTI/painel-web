@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut13';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut13';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut13';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut14';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut14';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut14';
 import {
-  acoesDisponiveis, contarPorFiltro, rotuloVeiculo, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut13';
+  acoesDisponiveis, contarPorFiltro, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut14';
 import {
   htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut13';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut14';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -20,7 +20,7 @@ import {
   const state = {
     supabase: null, root: null, opts: null,
     base: { categorias: [], planos: [], oficinas: [], veiculos: [] },
-    manut: [], itens: [], orcs: [],
+    manut: [], itens: [], orcs: [], notas: [],
     filtro: 'abertas', busca: '', natureza: '', prioridade: '',
     loading: false, ocupado: false,
     fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
@@ -47,10 +47,11 @@ import {
     return { ...m, __placa: v?.placa || '', __modelo: v ? rotuloVeiculo(v) : '', __coordenacao: v?.coordenacao || '' };
   }
 
-  function aplicarCarga({ manutencoes, itens, orcamentos }) {
+  function aplicarCarga({ manutencoes, itens, orcamentos, notas }) {
     state.manut = manutencoes.map(enriquecer);
     state.itens = itens;
     state.orcs = orcamentos;
+    state.notas = notas || [];
   }
 
   // ---------- lista ----------
@@ -72,7 +73,7 @@ import {
       aplicarCarga(await dados.carregarManutencoes(state.supabase));
     } catch (err) {
       toast(err.message || 'Erro ao carregar as manutenções.', 'err');
-      state.manut = []; state.itens = []; state.orcs = [];
+      state.manut = []; state.itens = []; state.orcs = []; state.notas = [];
     }
     state.loading = false; renderLista();
     if (state.fichaId) renderFicha();
@@ -88,6 +89,7 @@ import {
     }
     state.itens = [...state.itens.filter((x) => x.manutencao_id !== id), ...r.itens];
     state.orcs = [...state.orcs.filter((x) => x.manutencao_id !== id), ...r.orcamentos];
+    state.notas = [...state.notas.filter((x) => x.manutencao_id !== id), ...(r.notas || [])];
     renderLista();
   }
 
@@ -121,6 +123,7 @@ import {
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id),
     });
     let ov = document.getElementById(FICHA);
     if (!ov) {
@@ -150,7 +153,7 @@ import {
   async function atualizarFinanceiro() {
     const m = fichaAtual();
     const id = m?.id;
-    if (!m || m.status !== 'concluida' || !m.nf_enviada_em) { state.financeiro = null; return; }
+    if (!m || !state.notas.some((n) => n.manutencao_id === id && n.enviada_em)) { state.financeiro = null; return; }
     const fin = await dados.statusNfFinanceiro(state.supabase, id);
     if (state.fichaId !== id) return;
     state.financeiro = fin;
@@ -171,6 +174,7 @@ import {
   }
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
+  const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
   async function mudarEtapa(m, a) {
     const { orcsPorManut } = indices();
@@ -269,20 +273,30 @@ import {
       }, { sucesso: 'Orçamento salvo.' });
     }
 
-    if (acao === 'nf-enviar') {
-      if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: 'A NF entra na fila do GRM e o pagamento vai para o Financeiro. Depois disso o custo final fica travado.', confirmarLabel: 'Enviar' }))) return;
-      return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { sucesso: 'NF enviada ao GRM e pagamento ao Financeiro.' });
-    }
-    if (acao === 'nf-anexar-enviar') {
-      const f = ov.querySelector('[data-nf-form]');
-      const arquivo = f.querySelector('[data-nf-arquivo]')?.files?.[0] || null;
-      if (!arquivo) return erros(['Escolha o arquivo da nota fiscal.']);
-      const numero = val(f, '[data-nf="numero"]').trim() || null;
+    if (acao === 'nota-add') {
+      const f = ov.querySelector('[data-nota-entrada]');
+      const nt = (k) => val(f, `[data-nt="${k}"]`).trim();
+      const arquivo = f.querySelector('[data-nt-arquivo]')?.files?.[0] || null;
+      const valor = numeroOuNulo(nt('valor'));
+      const lista = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo });
+      if (lista.length) return erros(lista);
+      const oficina = state.base.oficinas.find((o) => norm(o.nome) === norm(nt('fornecedor')));
       return executar(async () => {
         const anexo = await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo);
-        await dados.atualizarManutencao(state.supabase, m.id, { anexo_url: anexo, nf_numero: numero });
-        await dados.enviarNfFinanceiro(state.supabase, m.id);
-      }, { sucesso: 'NF enviada ao GRM e pagamento ao Financeiro.' });
+        await dados.salvarNota(state.supabase, {
+          manutencao_id: m.id, tipo: nt('tipo') || 'servico', fornecedor: nt('fornecedor'), oficina_id: oficina?.id || null,
+          numero: nt('numero') || null, valor, anexo_url: anexo,
+        });
+      }, { sucesso: 'Nota adicionada.' });
+    }
+    if (acao === 'nota-remover') {
+      if (!(await confirmar({ titulo: 'Remover nota', mensagem: 'Remover esta nota fiscal da manutenção?', confirmarLabel: 'Remover' }))) return;
+      return executar(() => dados.removerNota(state.supabase, alvo.dataset.id), { sucesso: 'Nota removida.' });
+    }
+    if (acao === 'notas-enviar') {
+      const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em).length;
+      if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: `${pendentes} nota(s) entram na fila do GRM e viram pagamentos no Financeiro. Depois disso o custo final e as notas enviadas ficam travados.`, confirmarLabel: 'Enviar' }))) return;
+      return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { sucesso: 'Notas enviadas ao GRM e ao Financeiro.' });
     }
 
     if (acao === 'confirmar-sem-orcamento') {
@@ -298,15 +312,12 @@ import {
       const campos = { data_execucao: val(f, '[data-a="data_execucao"]'), km_execucao: numeroOuNulo(val(f, '[data-a="km_execucao"]')), custo: numeroOuNulo(val(f, '[data-a="custo"]')) };
       const lista = validarConclusao(campos);
       if (lista.length) return erros(lista);
-      const arquivo = f.querySelector('[data-a-arquivo]')?.files?.[0] || null;
       const enviar = !!f.querySelector('[data-a-enviar]')?.checked;
-      if (enviar && !arquivo) return erros(['Anexe a nota fiscal ou desmarque o envio ao GRM e ao Financeiro.']);
       return executar(async () => {
-        const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
-        await dados.mudarStatus(state.supabase, m.id, 'concluida', { ...campos, nf_numero: val(f, '[data-a="nf_numero"]').trim() || null, ...(anexo ? { anexo_url: anexo } : {}) });
+        await dados.mudarStatus(state.supabase, m.id, 'concluida', { ...campos });
         state.formAcao = null;
         if (enviar) {
-          try { await dados.enviarNfFinanceiro(state.supabase, m.id); toast('NF enviada ao GRM e pagamento ao Financeiro.'); }
+          try { await dados.enviarNfFinanceiro(state.supabase, m.id); toast('Notas enviadas ao GRM e ao Financeiro.'); }
           catch (err) { toast(`Concluída, mas o envio ao GRM/Financeiro falhou: ${err.message}`, 'err', 8000); }
         }
       }, { sucesso: 'Manutenção concluída.' });
@@ -358,6 +369,18 @@ import {
     ov.dataset.origem = preset.origem || 'manual';
     ov.dataset.checklist = preset.checklist_id || '';
     ov.addEventListener('click', aoClicarNova);
+    // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
+    const campoPediu = ov.querySelector('[data-n-solicitante]');
+    ov.addEventListener('input', (e) => {
+      if (e.target === campoPediu) campoPediu.dataset.auto = campoPediu.value.trim() ? '0' : '1';
+    });
+    const preencherCondutor = () => {
+      if (campoPediu.dataset.auto === '0') return;
+      campoPediu.value = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'))?.motorista_atual || '';
+      campoPediu.dataset.auto = '1';
+    };
+    ov.querySelector('[data-n-veiculo]').addEventListener('input', preencherCondutor);
+    ov.querySelector('[data-n-veiculo]').addEventListener('change', preencherCondutor);
     ov.addEventListener('change', (e) => {
       if (e.target.dataset.n === 'categoria_codigo') {
         const linha = e.target.closest('[data-novo-entrada]');
@@ -451,6 +474,7 @@ import {
   async function garantirBase() {
     if (state.base.categorias.length) return;
     state.base = await dados.carregarBase(state.supabase);
+    state.base.colaboradores = await dados.carregarColaboradores(state.supabase);
   }
 
   async function openHome(container, opts = {}) {
