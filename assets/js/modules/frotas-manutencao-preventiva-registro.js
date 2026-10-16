@@ -3,18 +3,18 @@
 //   2. Próximos prazos (km e data sugeridos pelo intervalo do guia, editáveis)
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
-import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut19';
-import { RESPONSAVEIS, STATUS_VENCIMENTO, TIPOS_NOTA, descreverIntervalo, norm, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut19';
+import { closeModal, esc, openModal, toast } from '../core/ui.js';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut20';
+import { RESPONSAVEIS, STATUS_VENCIMENTO, descreverIntervalo, norm, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
+import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut20';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261016-frotas-manut20';
 import {
   agruparPorSistema, hojeBrasilISO, kmMais, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut19';
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut20';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
 const fmtKm = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km`);
-const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 // veiculo: item de montarLista (com todos os serviços); planos: Map(id → plano do guia); planoInicial: plano_id já marcado.
 export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = null, aoConcluir = async () => {} }) {
@@ -28,7 +28,6 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
   const porId = new Map(servicos.map((s) => [s.plano_id, s]));
   const marcados = new Set(planoInicial && porId.has(planoInicial) ? [planoInicial] : []);
   const prazos = new Map(); // plano_id → { km, data, editouKm, editouData }
-  const notas = [];
   let passo = 1;
   let mostrarVerificacoes = !!(planoInicial && porId.get(planoInicial)?.tipo === 'verificacao');
 
@@ -63,6 +62,8 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
   const mostrarErros = (lista) => {
     ov.querySelector('[data-erros]').innerHTML = lista.length ? `<ul class="fm-erros">${lista.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
   };
+  const editor = criarEditorNotas(ov, { oficinas, aoMudar: () => aoMudarNotas(), mostrarErros });
+  const notas = editor.notas;
   const dadosPasso1 = () => ({ data: campo('data').value, km: campo('km').value === '' ? null : Number(campo('km').value) });
   const itensMarcados = () => [...marcados].map((id) => {
     const p = prazos.get(id) || {};
@@ -141,13 +142,8 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
   }
 
   // ---------- passo 3: notas ----------
-  function renderNotas() {
-    ov.querySelector('[data-notas-lista]').innerHTML = notas.map((n, i) => `<div class="fm-nota-linha fm-nota-item">
-        <div class="fm-ro">${esc((TIPOS_NOTA.find((t) => t.id === n.tipo) || {}).label || n.tipo)}</div>
-        <div class="fm-ro">${esc(n.fornecedor || '—')}</div><div class="fm-ro">${esc(n.numero || '—')}</div><div class="fm-ro">${esc(dinheiro(n.valor))}</div>
-        <div class="fm-ro">${esc(n.arquivo.name)}${n.comprovante ? `<small>Comprovante: ${esc(n.comprovante.name)}${n.pago_em ? ` (${esc(dataBR(n.pago_em))})` : ''}</small>` : '<small>Sem comprovante: o Financeiro vai pagar</small>'}</div>
-        <button class="fm-ic danger" type="button" data-acao="nota-remover" data-idx="${i}" title="Remover nota" aria-label="Remover nota">✕</button></div>`).join('')
-      + (notas.length ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(somaNotas(notas)))}</strong></div>` : '');
+  // A lista de notas novas e o "+" ficam no editor compartilhado; aqui só o custo sugerido e o envio.
+  function aoMudarNotas() {
     const custo = campo('custo');
     if (custo.dataset.auto === '1') custo.value = notas.length ? somaNotas(notas) : '';
     ov.querySelector('[data-custo-dica]').textContent = notas.length ? 'Soma das notas (altere se houver valor sem nota).' : 'Sem notas: informe só se quiser contar o custo.';
@@ -216,7 +212,9 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
       return;
     }
     closeModal(MODAL);
-    toast(`Preventiva registrada em ${veiculo.placa}${salvas ? ` com ${salvas} nota(s)${enviar ? ' enviada(s) ao GRM e ao Financeiro' : ''}` : ''}.`);
+    toast(salvas
+      ? `Preventiva registrada em ${veiculo.placa} com ${salvas} nota(s)${enviar ? ' enviada(s) ao GRM e ao Financeiro' : ''}.`
+      : `Preventiva registrada em ${veiculo.placa}. O pagamento pode ser lançado depois: abra o veículo e use "Pagamento e NF" em Registros feitos.`, 'ok', 6500);
   }
 
   // ---------- eventos ----------
@@ -246,22 +244,8 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
     }
     if (acao === 'salvar-simples') return salvar({ semPagamento: true });
     if (acao === 'salvar') return salvar();
-    if (acao === 'nota-remover') { notas.splice(Number(a.dataset.idx), 1); renderNotas(); return; }
-    if (acao === 'nota-add') {
-      const f = ov.querySelector('[data-nota-entrada]');
-      const nt = (k) => (f.querySelector(`[data-nt="${k}"]`)?.value || '').trim();
-      const arquivo = f.querySelector('[data-nt-arquivo]')?.files?.[0] || null;
-      const valor = numeroOuNulo(nt('valor'));
-      const erros = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo });
-      mostrarErros(erros); if (erros.length) return;
-      const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
-      const oficina = oficinas.find((o) => String(o.nome || '').trim().toLowerCase() === nt('fornecedor').toLowerCase());
-      notas.push({ tipo: nt('tipo') || 'servico', fornecedor: nt('fornecedor'), oficina_id: oficina?.id || null, numero: nt('numero') || null, valor, arquivo, comprovante, pago_em: comprovante ? nt('pago_em') : '' });
-      ['fornecedor', 'numero', 'valor', 'pago_em'].forEach((k) => { const el = f.querySelector(`[data-nt="${k}"]`); if (el) el.value = ''; });
-      f.querySelector('[data-nt-arquivo]').value = ''; f.querySelector('[data-nt-comprovante]').value = '';
-      renderNotas();
-    }
+    editor.tratarClique(a);
   });
 
-  renderGrupos(); renderNotas(); irPara(1);
+  renderGrupos(); editor.renderizar(); irPara(1);
 }

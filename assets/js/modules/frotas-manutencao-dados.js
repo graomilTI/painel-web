@@ -102,6 +102,18 @@ export async function registrarPreventiva(supabase, { veiculo_id, data, km, iten
   return id;
 }
 
+// Últimas preventivas já registradas de um veículo (com as notas, para mostrar a situação do pagamento).
+export async function carregarRegistrosPreventivos(supabase, veiculoId) {
+  const manut = await tudo(supabase.from('frotas_manutencoes').select('id,numero,descricao,data_execucao,km_execucao,custo,responsavel_pagamento,pago_em,oficina')
+    .eq('veiculo_id', veiculoId).eq('status', 'concluida').eq('natureza', 'preventiva')
+    .order('data_execucao', { ascending: false }).order('id', { ascending: true }).limit(10), 'Erro ao carregar os registros do veículo.');
+  const ids = manut.map((m) => m.id);
+  const notas = ids.length
+    ? await tudo(supabase.from('frotas_manutencao_notas').select('id,manutencao_id,enviada_em,pago_em,valor').in('manutencao_id', ids).limit(1000), 'Erro ao carregar as notas dos registros.')
+    : [];
+  return manut.map((m) => ({ ...m, notas: notas.filter((n) => n.manutencao_id === m.id) }));
+}
+
 export async function kmAtualDoVeiculo(supabase, veiculoId) {
   const { data, error } = await supabase.rpc('frotas_veiculo_km_atual', { p_veiculo: veiculoId });
   if (error) return null;
