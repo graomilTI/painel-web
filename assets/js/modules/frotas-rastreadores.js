@@ -1,3 +1,5 @@
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout';
+
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
 
@@ -17,6 +19,7 @@
       .fr-ag-side{border:1px solid rgba(148,163,184,.14);border-radius:18px;padding:14px;background:rgba(2,6,23,.32)}.fr-ag-side h4{margin:0 0 2px;color:#f8fafc;font-size:15px}.fr-ag-side .sub{color:#94a3b8;font-size:12px;margin-bottom:12px}.fr-ag-ev{border:1px solid rgba(148,163,184,.16);border-left:4px solid;border-radius:12px;padding:10px 12px;margin-bottom:10px;background:rgba(15,23,42,.6)}.fr-ag-ev.inst{border-left-color:#818cf8}.fr-ag-ev.manut{border-left-color:#f59e0b}.fr-ag-ev.done{opacity:.7}.fr-ag-ev-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}.fr-ag-ev-placa{font-size:15px;font-weight:950;color:#f8fafc}.fr-ag-ev-linha{font-size:12.5px;color:#cbd5e1;line-height:1.55;word-break:break-word}.fr-ag-ev-linha b{color:#bbf7d0;font-weight:900;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;margin-right:4px}.fr-ag-ev-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
       .fr-ag-aviso{border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.10);color:#fde68a;border-radius:14px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7}.fr-ag-aviso .fr-link{color:#fde68a;font-weight:900}
       @media(max-width:1100px){.fr-ag-layout{grid-template-columns:1fr}}@media(max-width:680px){.fr-ag-cell{min-height:64px;padding:4px}.fr-ag-chip{font-size:10px;padding:1px 4px}.fr-ag-bar .fr-input,.fr-ag-bar .fr-select{width:100%}.fr-ag-mes{min-width:0;flex:1}}
+    ${ESTILOS_LISTA}${tabelaCss('fr')}
     </style>`;
 
   let _opts = {};
@@ -299,18 +302,15 @@
     const el = root.querySelector('[data-kpis]');
     if (!el) return;
     const k = calcKpis();
-    const item = (filtro, label, value, color) => `
-      <button type="button" class="fr-kpi${state.filtro === filtro ? ' active' : ''}" data-kpi-filter="${filtro}">
-        <span>${label}</span><strong style="color:${color}">${value}</strong>
-      </button>`;
+    const item = (filtro, label, value, tone, icone) => cardFiltro({ atributo: 'data-kpi-filter', filtro, label, valor: value, tone, icone, ativo: state.filtro === filtro });
     el.innerHTML = [
-      item('todos', 'Total veículos', k.total, '#fff'),
-      item('bfleet', 'Com BFleet', k.bfleetTotal, '#a5b4fc'),
-      item('sem_rastreador', 'Sem rastreador', k.sem, '#94a3b8'),
-      item('em_andamento', 'Em andamento', k.andamento, '#fde68a'),
-      item('concluido', 'Instalados', k.concluido, '#86efac'),
-      item('manutencao', 'Manutenção', k.manutencao, '#fdba74'),
-      item('removidos', 'Removidos', k.removidos, '#fca5a5'),
+      item('todos', 'Total veículos', k.total, 'blue', 'carro'),
+      item('bfleet', 'Com BFleet', k.bfleetTotal, 'blue', 'sinal'),
+      item('sem_rastreador', 'Sem rastreador', k.sem, 'gray', 'erro'),
+      item('em_andamento', 'Em andamento', k.andamento, 'amber', 'relogio'),
+      item('concluido', 'Instalados', k.concluido, 'green', 'ok'),
+      item('manutencao', 'Manutenção', k.manutencao, 'amber', 'ferramenta'),
+      item('removidos', 'Removidos', k.removidos, 'red', 'excluir'),
     ].join('');
   }
 
@@ -1930,7 +1930,7 @@
               <button class="fr-btn ghost" data-clear-filters>Limpar filtros</button>
             </div>
 
-            <div class="fr-kpis" data-kpis></div>
+            <div class="fm-kpis" data-kpis></div>
 
             <div class="fr-table-wrap">
               <table class="fr-table">
