@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut11';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut12';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao, veiculosUnicos,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut11';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut12';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -75,20 +75,36 @@ export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias }) {
 }
 
 // ---------- nova solicitação ----------
-export function htmlLinhaItemNovo(base, item = {}, idx = 0) {
-  return `<div class="fm-item" data-novo-item="${idx}">
-    <select class="fm-select" data-n="categoria_codigo">${opcoesCategorias(base.categorias, item.categoria_codigo)}</select>
-    <select class="fm-select" data-n="natureza">${opcoes(NATUREZAS, item.natureza, { vazio: '— definir depois —' })}</select>
-    <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)" value="${esc(item.descricao || '')}">
-    <select class="fm-select" data-n="plano_id">${opcoesPlanos(base.planos, item.categoria_codigo, item.plano_id)}</select>
-    <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, item.tipo_item || 'servico')}</select>
+// Linha de entrada: sempre presente; o "+" confirma o item e ele vai para a lista logo abaixo.
+export function htmlEntradaItem(base) {
+  return `<div class="fm-item" data-novo-entrada>
+    <select class="fm-select" data-n="categoria_codigo">${opcoesCategorias(base.categorias, null)}</select>
+    <select class="fm-select" data-n="natureza">${opcoes(NATUREZAS, '', { vazio: '— definir depois —' })}</select>
+    <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)">
+    <select class="fm-select" data-n="plano_id">${opcoesPlanos(base.planos, null)}</select>
+    <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, 'servico')}</select>
+    <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button></div>`;
+}
+
+// Item já adicionado (lista abaixo da entrada): texto fixo e "x" para remover. Os dados ficam em data-item-json.
+export function htmlItemAdicionado(base, item) {
+  const cat = base.categorias.find((c) => Number(c.codigo) === Number(item.categoria_codigo));
+  const plano = base.planos.find((p) => p.id === item.plano_id);
+  const natureza = (NATUREZAS.find((n) => n.id === item.natureza) || {}).label || 'a definir';
+  const tipo = (TIPOS_ITEM.find((t) => t.id === (item.tipo_item || 'servico')) || {}).label;
+  return `<div class="fm-item fm-item-lista" data-novo-item data-item-json="${esc(JSON.stringify(item))}">
+    <div class="fm-ro">${String(item.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div>
+    <div class="fm-ro">${esc(natureza)}</div>
+    <div class="fm-ro">${esc(item.descricao || '—')}</div>
+    <div class="fm-ro">${esc(plano?.nome || '—')}</div>
+    <div class="fm-ro">${esc(tipo)}</div>
     <button class="fm-ic danger" type="button" data-acao="novo-item-remover" title="Remover item" aria-label="Remover item">✕</button></div>`;
 }
 
 export function htmlFormNova(base, preset = {}) {
   const veiculo = base.veiculos.find((v) => v.id === preset.veiculo_id);
   const lista = veiculosUnicos(base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id));
-  const itens = preset.itens?.length ? preset.itens : [{}];
+  const itens = preset.itens || [];
   return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu e o problema, classificado pelas categorias do guia. O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
     <div class="fm-form" style="margin-top:14px">
       <div class="fm-field" style="grid-column:span 2"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${veiculo.marca_modelo || ''}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(v.marca_modelo || '')}"></option>`).join('')}</datalist></div>
@@ -97,10 +113,11 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field" style="grid-column:span 2"><label>Quem pediu</label><input class="fm-input" data-n-solicitante maxlength="120" placeholder="Ex.: nome do motorista ou do gestor que pediu pelo WhatsApp" value="${esc(preset.solicitante_nome || '')}"><small>Opcional. Se ficar vazio, vale o seu nome.</small></div>
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
-    <div class="fm-sec"><h4>Itens (categoria do guia) <button class="fm-btn ghost fm-mini" type="button" data-acao="novo-item-add">+ Item</button></h4>
+    <div class="fm-sec"><h4>Itens (categoria do guia)</h4>
       <div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Tipo</span><span></span></div>
-      <div class="fm-itens" data-novo-itens>${itens.map((it, i) => htmlLinhaItemNovo(base, it, i)).join('')}</div>
-      <div class="fm-nota">Preventiva = serviço programado por km/tempo. Corretiva = reparo após falha ou desgaste. A natureza pode ficar para depois, mas é obrigatória para aprovar.</div></div>
+      ${htmlEntradaItem(base)}
+      <div class="fm-itens" data-novo-itens style="margin-top:10px">${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div>
+      <div class="fm-nota">Escolha a categoria e clique em <strong>+</strong> para adicionar. É preciso ao menos um item; vários itens ficam na lista acima e o <strong>✕</strong> remove. Preventiva = serviço programado por km/tempo; corretiva = reparo após falha ou desgaste (a natureza pode ficar para depois, mas é obrigatória para aprovar).</div></div>
     <div data-erros></div>
     <div class="fm-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button></div>`;
 }
