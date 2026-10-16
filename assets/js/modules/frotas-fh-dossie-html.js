@@ -1,12 +1,12 @@
 // Frotas — Fora do horário — dossiê do dia: construtores de HTML (barra, cartões, percursos, registros, linha da lista).
 // Extraído de modules/frotas.js em 14/10/2026 e dividido em 15/10/2026 (frotas-fh-dossie.js tinha 1.030 linhas):
 // regras (frotas-fh-dossie-regras) -> HTML (frotas-fh-dossie-html) -> tela (frotas-fh-dossie). Código movido sem alteração.
-// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports
+// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-manut-parado1 em TODOS os imports
 // internos (e os do carregador da página): tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { escapeHtml, onlyPlate, formatDateBR } from './frotas-base.js?v=20261015-frotas-carga1';
-import { formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, fhPrimeiroNome, fhHm, fhMinutosDoDia, fhKm, fhDuracao, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDataCurta, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261015-frotas-carga1';
-import { finito } from './frotas-fh-mapa.js?v=20261015-frotas-carga1';
-import { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhPassosDoDia, fhContextoDoDia } from './frotas-fh-dossie-regras.js?v=20261015-frotas-carga1';
+import { escapeHtml, onlyPlate, formatDateBR } from './frotas-base.js?v=20261016-frotas-manut-parado1';
+import { formatKmForaHorario, formatMoneyForaHorario, FH_VEREDITOS, fhPrimeiroNome, fhHm, fhMinutosDoDia, fhKm, fhDuracao, fhChave, fhLinkTrajeto, fhLinkPonto, FH_USOS, FH_STATUS_EXCESSO, fhEnderecoCurto, FH_FORA_MIN_KM, fhDataCurta, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhTitulo } from './frotas-fh-util.js?v=20261016-frotas-manut-parado1';
+import { finito } from './frotas-fh-mapa.js?v=20261016-frotas-manut-parado1';
+import { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDiaSemana, fhRotuloDias, fhJanelaTexto, fhFlags, fhStatusRota, fhAplicaNotificacao, fhStatusCurto, fhMaiorTrecho, fhSituacaoViagem, fhTrajetosAlerta, fhPassosDoDia, fhContextoDoDia } from './frotas-fh-dossie-regras.js?v=20261016-frotas-manut-parado1';
 
   // Três colunas fixas na lista: o que houve em cada frente (ou "—").
   function fhCelulasHtml(d) {
@@ -43,7 +43,7 @@ import { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDia
     const inclui = [aplica.fora ? 'uso fora do horário' : '', excessoAberto ? 'excesso de velocidade' : ''].filter(Boolean).join(' + ');
     const caixaInfo = temOcorrencia && km > 0 ? `Caixa: ${formatKmForaHorario(km)} km entre 00h e 04h × R$ 4,00 = ${formatMoneyForaHorario(valor)}` : '';
     return `<div class="fh-rodape-dia">
-      <div class="fh-m-rodape-info">${rotulo ? `<span class="fh-sub"><b>${escapeHtml(rotulo)}</b></span>` : ''}${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}<span class="fh-sub">Notificação única: ${escapeHtml(inclui)}</span>${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}</div>
+      <div class="fh-m-rodape-info">${rotulo ? `<span class="fh-sub"><b>${escapeHtml(rotulo)}</b></span>` : ''}${status ? `<span class="fh-status">${escapeHtml(status)}</span>` : ''}<span class="fh-sub">Notificação única: ${escapeHtml(inclui)}</span>${caixaInfo ? `<span class="fh-sub">${escapeHtml(caixaInfo)}</span>` : ''}${row.manutencao ? `<span class="fh-sub" style="color:#fcd34d"><b>Veículo em manutenção neste dia</b> (${escapeHtml(row.manutencao.os_numero || `MAN-${String(row.manutencao.numero).padStart(6, '0')}`)}). Confira se o uso foi real antes de enviar ao Caixa.</span>` : ''}</div>
       <div class="fora-horario-actions">
         <button class="speed-btn speed-btn-primary speed-btn-compact" type="button" data-fh-notificar data-fh-data="${escapeHtml(row.data_evento)}">Gerar notificação</button>
         ${temOcorrencia ? `<button class="speed-btn speed-btn-soft speed-btn-compact" type="button" data-fora-action="JUSTIFICAR" data-id="${escapeHtml(row.id)}" ${disabledJustificar ? 'disabled' : ''}>Justificar</button>` : ''}
@@ -65,7 +65,7 @@ import { fhCargasDoDia, fhCargaQtdTexto, fhCargaQuando, fhEvidenciaRotulo, fhDia
     const detalhe = [onlyPlate(row.placa), rotaRotulo, d?.supervisao, caronas.length ? `carona: ${caronas.map(fhPrimeiroNome).join(', ')}` : '']
       .filter(Boolean).map(escapeHtml).join(' · ');
     return `<article class="fh-linha ${classe}">
-      <div class="fh-l-quem"><strong>${quem}</strong><small>${detalhe}${status ? ` · <span class="fh-status">${escapeHtml(status)}</span>` : ''}</small></div>
+      <div class="fh-l-quem"><strong>${quem}</strong><small>${detalhe}${status ? ` · <span class="fh-status">${escapeHtml(status)}</span>` : ''}${row.manutencao ? ` · <span class="fh-status" style="color:#fcd34d" title="Veículo na oficina neste dia">Em manutenção</span>` : ''}</small></div>
       <div class="fh-cels">${fhCelulasHtml(d)}</div>
       <button class="speed-btn fh-btn-dossie speed-btn-compact" type="button" data-fh-dossie data-key="${escapeHtml(fhChave(row))}" ${d ? '' : 'disabled'}>Ver detalhes</button>
     </article>`;

@@ -4,7 +4,7 @@
 // estes módulos na mesma ordem em que os blocos rodavam. Ao editar, aumente o ?v= do import em programacao.js.
 import { loadColaboradoresRegional, loadCruzamentoTipoContrato, loadCustos, tipoContratoLetra } from './programacao-equipe.js?v=20261015-ferias-escala1';
 import { supabase } from './supabaseClient.js';
-import { loadExtras, loadOsResumo, loadRosterDoDia } from './programacao-despesas.js?v=20261015-ferias-escala1';
+import { loadExtras, loadOsResumo, loadRosterDoDia } from './programacao-despesas.js?v=20261016-veiculo-parado1';
 
 {
 

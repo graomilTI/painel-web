@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut3';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut3';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut3';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut4';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut4';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut4';
 import {
   acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut3';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut4';
 import {
   htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut3';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut4';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -23,7 +23,7 @@ import {
     manut: [], itens: [], orcs: [],
     filtro: 'abertas', busca: '', natureza: '', prioridade: '',
     loading: false, ocupado: false,
-    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null,
+    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [],
   };
 
   // ---------- permissões ----------
@@ -99,6 +99,7 @@ import {
       await fn();
       if (recarregar && state.fichaId) await recarregarUma(state.fichaId);
       if (sucesso) toast(sucesso);
+      if (state.fichaId) atualizarAfetadas();
       return true;
     } catch (err) {
       toast(err.message || 'Não foi possível concluir a ação.', 'err', 5500);
@@ -119,7 +120,7 @@ import {
     const { itensPorManut, orcsPorManut } = indices();
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
-      podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido,
+      podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas,
     });
     let ov = document.getElementById(FICHA);
     if (!ov) {
@@ -134,9 +135,21 @@ import {
     card.scrollTop = topo;
   }
 
-  function abrirFicha(id) {
-    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null;
+  // Programação que usa o veículo parado (só quando a OS está em execução); atualiza a ficha ao chegar.
+  async function atualizarAfetadas() {
+    const m = fichaAtual();
+    const id = m?.id;
+    if (!m || m.status !== 'em_execucao' || !m.veiculo_parado) { state.afetadas = []; return; }
+    const lista = await dados.programacoesAfetadas(state.supabase, id);
+    if (state.fichaId !== id) return;
+    state.afetadas = lista;
     renderFicha();
+  }
+
+  function abrirFicha(id) {
+    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = [];
+    renderFicha();
+    atualizarAfetadas();
   }
 
   function fecharFicha() {

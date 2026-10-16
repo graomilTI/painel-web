@@ -247,3 +247,38 @@ test('todo tipo de aviso gravado pela migration está registrado no sino, e o li
   assert.match(grupo, /get\('abrir'\)/);
   assert.match(grupo, /FROTAS_MANUTENCAO_ABRIR/);
 });
+
+test('Programação: veículo parado vale da entrada na oficina até a previsão (ou hoje), nunca antes nem muito depois', async () => {
+  const { indisponivelEm, montarMapa, placaNorm } = await import('../assets/js/programacao-veiculos-parados.js');
+  const mapa = montarMapa([{ placa: 'ABC-1D23', numero: 21, desde: '2026-10-16T15:00:00Z', previsao_entrega: '2026-10-19' }]);
+  const hoje = '2026-10-17';
+  assert.equal(placaNorm('abc-1d23'), 'ABC1D23');
+  assert.equal(indisponivelEm(mapa, 'ABC1D23', '2026-10-15', hoje), null, 'antes da entrada');
+  assert.equal(indisponivelEm(mapa, 'abc1d23', '2026-10-16', hoje)?.numero, 21);
+  assert.equal(indisponivelEm(mapa, 'ABC1D23', '2026-10-19', hoje)?.numero, 21, 'no dia da previsão');
+  assert.equal(indisponivelEm(mapa, 'ABC1D23', '2026-10-20', hoje), null, 'depois da previsão o veículo pode ter voltado');
+  assert.equal(indisponivelEm(mapa, 'XYZ9K88', '2026-10-17', hoje), null, 'outra placa');
+  const semPrevisao = montarMapa([{ placa: 'ABC1D23', numero: 5, desde: '2026-10-10T12:00:00Z', previsao_entrega: null }]);
+  assert.equal(indisponivelEm(semPrevisao, 'ABC1D23', '2026-10-17', hoje)?.numero, 5, 'sem previsão vale hoje');
+  assert.equal(indisponivelEm(semPrevisao, 'ABC1D23', '2026-10-18', hoje), null, 'sem previsão não bloqueia o futuro');
+  const atrasada = montarMapa([{ placa: 'ABC1D23', numero: 5, desde: '2026-10-01T12:00:00Z', previsao_entrega: '2026-10-12' }]);
+  assert.equal(indisponivelEm(atrasada, 'ABC1D23', '2026-10-17', hoje)?.numero, 5, 'previsão vencida: ainda na oficina hoje');
+});
+
+test('Programação, despesas e carona ligam o filtro de veículo parado; ficha mostra as programações afetadas', () => {
+  const ler = (c) => readFileSync(new URL(`../${c}`, import.meta.url), 'utf8');
+  for (const f of ['assets/js/programacao.js', 'assets/js/programacao-despesas.js', 'assets/js/programacao-carona-motorista.js']) {
+    assert.match(ler(f), /programacao-veiculos-parados\.js\?v=20261016-veiculo-parado1/, `${f} deveria importar o filtro de veículos parados`);
+  }
+  const html = htmlFicha(m({ status: 'em_execucao', veiculo_parado: true }), {
+    itens: [item], orcamentos: [], base, podeAprovar: true,
+    afetadas: [{ data: '2026-10-17', supervisao: 'SORRISO', colaborador: 'João', uso: 'Carona Frota', placa: 'ABC1D23' }],
+  });
+  assert.match(html, /Programação \(veículo parado\)/);
+  assert.match(html, /João/);
+  assert.match(htmlFicha(m({ status: 'em_execucao', veiculo_parado: true }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /Nenhum lançamento da Programação/);
+  assert.doesNotMatch(htmlFicha(m({ status: 'aprovada', veiculo_parado: true }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /Programação \(veículo parado\)/);
+  const dossie = ler('assets/js/modules/frotas-fh-dossie-html.js');
+  assert.match(dossie, /Veículo em manutenção neste dia/);
+  assert.match(ler('assets/js/modules/frotas-fh-dados.js'), /frotas_veiculos_parados_periodo/);
+});
