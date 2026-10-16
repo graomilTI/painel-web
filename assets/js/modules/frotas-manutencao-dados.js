@@ -53,6 +53,12 @@ export async function kmAtualDoVeiculo(supabase, veiculoId) {
   return data == null ? null : Number(data);
 }
 
+// Programação que já usa o veículo desta manutenção (de hoje até a previsão de entrega). Sem acesso: lista vazia.
+export async function programacoesAfetadas(supabase, manutencaoId) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_programacoes_afetadas', { p_manutencao: manutencaoId });
+  return error ? [] : (data || []);
+}
+
 // Abre a solicitação pela RPC (vale para quem tem o módulo e para o gestor da supervisão do veículo).
 export async function solicitar(supabase, { veiculo_id, descricao, prioridade, origem, checklist_id, veiculo_parado, itens }) {
   const { data, error } = await supabase.rpc('frotas_manutencao_solicitar', {

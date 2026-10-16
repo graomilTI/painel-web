@@ -5,6 +5,7 @@
 // programacao.js passou a reescrever #progSteps só com os botões das 3 etapas novas.
 // Grava exatamente nas mesmas tabelas/onConflict do stepper clássico.
 import { supabase } from './supabaseClient.js';
+import { carregarVeiculosParados, hojeBrasilia, indisponivelEm } from './programacao-veiculos-parados.js?v=20261016-veiculo-parado1';
 import { getUserContext } from './auth.js';
 import { loadEquipeExistente, loadCustos, loadCruzamentoPlacas, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20261015-ferias-escala1';
 import { sincronizarJantaHotelFinanceiro } from './programacao-janta-hotel.js?v=20260716-jantahotel1';
@@ -168,7 +169,10 @@ export async function loadVeiculosAtivos(supervisao) {
     query = lista.length > 1 ? query.in('supervisao', lista) : query.eq('supervisao', lista[0]);
     const { data, error } = await query.order('placa', { ascending: true }).limit(2000);
     if (error) throw error;
-    veiculosAtivosCache = (data || []).filter((v) => v.placa);
+    const parados = await carregarVeiculosParados();
+    const hoje = hojeBrasilia();
+    // Veículo na oficina (OS em execução) não é oferecido como placa do dia.
+    veiculosAtivosCache = (data || []).filter((v) => v.placa && !indisponivelEm(parados, v.placa, hoje, hoje));
   } catch (error) {
     console.warn('[despesas] veículos ativos indisponíveis', error);
     veiculosAtivosCache = [];

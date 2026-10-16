@@ -1,7 +1,7 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { installDailyDriverResolution } from './frotas-motorista-leitura-diaria.js?v=20260615d';
-import './modules/frotas.js?v=20261015-frotas-carga1';
+import './modules/frotas.js?v=20261016-frotas-manut-parado1';
 
 function installFleetHeaderCleanup(root = document) {
   if (root.getElementById('frotasHeaderCleanupStyles')) return;

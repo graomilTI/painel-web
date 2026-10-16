@@ -3,7 +3,7 @@ import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from './supabaseClient.js';
 import { getCurrentUser, getUserContext } from './auth.js';
 import { logActivity } from './activityLogger.js';
 import { loadCustos, loadColaboradoresRegional, loadCruzamentoTipoContrato, tipoContratoLetra } from './programacao-equipe.js?v=20261015-ferias-escala1';
-import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20261015-ferias-escala1';
+import { loadRosterDoDia, loadOsResumo, loadExtras } from './programacao-despesas.js?v=20261016-veiculo-parado1';
 import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20261015-ferias-escala1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20261015-ferias-escala1';
 import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20261006-solicitar1';
@@ -11,7 +11,8 @@ import './programacao-persistencia-contexto.js?v=20260920-integrado1';
 import './programacao-duplicacao-calendario.js?v=20260920-integrado1';
 import './programacao-despesas-os-visual.js?v=20260920-integrado1';
 import './programacao-compartilhar-os.js?v=20261001-sem-despesas';
-import './programacao-carona-motorista.js?v=20260917-v6-carona-por-placa';
+import './programacao-carona-motorista.js?v=20261016-veiculo-parado1';
+import { carregarVeiculosParados, indisponivelEm } from './programacao-veiculos-parados.js?v=20261016-veiculo-parado1';
 import './programacao-lista-prioridade-nao-atender.js?v=20260907-null-primeiro2';
 import './gestor-mobile-modules-v2.js?v=20260813-modelos-v3';
 import { TODAS_SUPERVISOES, STEPS, DISPONIBILIDADES_ETAPA_C, INDISPONIBILIDADE_MOTIVOS, TIPOS_ESTADIA_BOTOES, TIPOS_DESLOCAMENTO, DISPONIBILIDADES_LIBERADAS } from './programacao-constantes.js?v=20261015-nucleo1';
@@ -121,6 +122,7 @@ export function renderContent(content) {
     access: { restricted: false, allowedSupervisoes: [] },
     step: 'A',
     dataReferencia: todayIso(),
+    parados: new Map(),
     supervisao: '',
     programacaoId: null,
     // Sob "Todas": programacaoId fica null e programacaoIdMap guarda
@@ -165,7 +167,7 @@ export function renderContent(content) {
     }
     state.access = await resolveProgramacaoAccess();
     bindEvents();
-    await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota(), loadBaseOperacional()]);
+    await Promise.all([loadCidadesBrasil(), loadAlojamentos(), loadVeiculosFrota(), loadBaseOperacional(), loadVeiculosParadosProg()]);
     await fillSupervisoes();
   }
 
@@ -506,6 +508,12 @@ export function renderContent(content) {
     list.innerHTML = (state.cidades || []).map((c) => `<option value="${escapeHtml(c.label)}"></option>`).join('');
   }
 
+  // Veículos na oficina (OS em execução) não aparecem na lista de placas do dia; o banco também recusa a placa.
+  const loadVeiculosParadosProg = async () => {
+    state.parados = await carregarVeiculosParados();
+    ensureVeiculosDatalist();
+  };
+
   function ensureVeiculosDatalist() {
     let list = document.getElementById('progVeiculosFrotaList');
     if (!list) {
@@ -513,7 +521,8 @@ export function renderContent(content) {
       list.id = 'progVeiculosFrotaList';
       document.body.appendChild(list);
     }
-    list.innerHTML = (state.veiculos || []).map((v) => `<option value="${escapeHtml(v.placa)}">${escapeHtml(v.label)}</option>`).join('');
+    list.innerHTML = (state.veiculos || []).filter((v) => !indisponivelEm(state.parados, v.placa, state.dataReferencia))
+      .map((v) => `<option value="${escapeHtml(v.placa)}">${escapeHtml(v.label)}</option>`).join('');
   }
 
   function matchCidade(value, ufValue = '') {
@@ -798,6 +807,7 @@ export function renderContent(content) {
 
     state.dataReferencia = dataReferencia;
     state.supervisao = supervisao;
+    loadVeiculosParadosProg();
     setFeedback('Carregando contexto...', 'warn');
     el.saveBtn.disabled = true;
     el.list.innerHTML = '<div class="table-empty">Carregando colaboradores...</div>';

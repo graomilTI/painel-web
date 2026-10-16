@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { carregarVeiculosParados, indisponivelEm } from './programacao-veiculos-parados.js?v=20261016-veiculo-parado1';
 
 const TIPO_MOTORISTA = 'MOTORISTA FROTA';
 const TIPO_CARONA = 'CARONA FROTA';
@@ -329,7 +330,11 @@ async function refreshModelAndUi() {
       ...programRows.map((row) => String(row.supervisao || '').trim()),
       ...programDayRows.flatMap((row) => String(row.supervisao || '').split('|').map((item) => item.trim())),
     ].filter(Boolean);
-    const patrimonioRows = await fetchPatrimonioVehicles(supervisoes);
+    const paradosHoje = await carregarVeiculosParados();
+    const dataRef = (typeof window.__progGetDataReferencia === 'function' && window.__progGetDataReferencia()) || undefined;
+    // Veículo na oficina (OS em execução) não entra nas opções de motorista/carona.
+    const patrimonioRows = (await fetchPatrimonioVehicles(supervisoes))
+      .filter((row) => !indisponivelEm(paradosHoje, row.identificacao, dataRef));
 
     model.programIds = ids;
     model.programByColab = programMaps.byColab;

@@ -1,12 +1,12 @@
 // Frotas — Fora do horário — busca, sincronização com o BFleet e ações (notificar, recalcular).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261015-frotas-carga1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-manut-parado1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { BFLEET_EXCESSO_FUNCTION, BFLEET_FORA_HORARIO_FUNCTION, BFLEET_FORA_HORARIO_REPORT_ID, FORA_HORARIO_DOSSIE_FUNCTION, FORA_HORARIO_LISTA_COLUNAS, state, resolveSupabase, formatDateBR, callEdgeFunction, copyText, toast } from './frotas-base.js?v=20261015-frotas-carga1';
-import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261015-frotas-carga1';
-import { readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, fhAtualizarStatusExcessos } from './frotas-fh-util.js?v=20261015-frotas-carga1';
-import { atualizarRodapeDossie, fhRenderDossieAberto, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261015-frotas-carga1';
+import { BFLEET_EXCESSO_FUNCTION, BFLEET_FORA_HORARIO_FUNCTION, BFLEET_FORA_HORARIO_REPORT_ID, FORA_HORARIO_DOSSIE_FUNCTION, FORA_HORARIO_LISTA_COLUNAS, state, resolveSupabase, formatDateBR, callEdgeFunction, copyText, toast } from './frotas-base.js?v=20261016-frotas-manut-parado1';
+import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261016-frotas-manut-parado1';
+import { readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, fhAtualizarStatusExcessos } from './frotas-fh-util.js?v=20261016-frotas-manut-parado1';
+import { atualizarRodapeDossie, fhRenderDossieAberto, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261016-frotas-manut-parado1';
 
   async function sincronizarForaHorario(root, opts = {}, mode = 'yesterday') {
     const isPeriod = mode === 'period';
@@ -156,12 +156,29 @@ import { atualizarRodapeDossie, fhRenderDossieAberto, renderForaHorarioList } fr
         }
       };
 
-      const [linhas, controle, feriados] = await Promise.all([lerLista(), lerControle(), lerFeriados()]);
+      // Veículo que estava na oficina (OS em manutenção com "veículo parado"): só se MARCA a linha. Nada é excluído
+      // nem recalculado (o Caixa paga adiantamento a partir daqui: quem confere decide).
+      const lerManutencao = async () => {
+        try {
+          const { data, error } = await supabase.rpc('frotas_veiculos_parados_periodo', { p_inicio: period.start || '2000-01-01', p_fim: period.end || '2999-12-31' });
+          if (error) throw error;
+          return Array.isArray(data) ? data : [];
+        } catch (manutErr) {
+          console.warn('[FROTAS] Veículos em manutenção indisponíveis:', manutErr);
+          return [];
+        }
+      };
+
+      const [linhas, controle, feriados, paradosPeriodo] = await Promise.all([lerLista(), lerControle(), lerFeriados(), lerManutencao()]);
       if (pedido !== state.foraHorarioPedido) return;
       state.foraHorarioSync = controle;
       state.foraHorarioFeriados = Object.fromEntries(feriados.map((f) => [f.data, f.nome]));
+      const placaChave = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7);
+      const manutencaoDoDia = (placa, dia) => paradosPeriodo.find((m) => placaChave(m.placa) === placaChave(placa)
+        && String(dia || '') >= String(m.dia_inicio || '') && (!m.dia_fim || String(dia || '') <= String(m.dia_fim))) || null;
       state.foraHorario = linhas.map((linha) => ({
         ...linha,
+        manutencao: manutencaoDoDia(linha.placa, linha.data_evento),
         semOcorrencia: !!linha.sem_ocorrencia,
         dossie: linha.dossie_id ? linha : null
       }));
