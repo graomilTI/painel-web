@@ -2,7 +2,7 @@
 // Separado de frotas-excesso-velocidade.js em 15/10/2026 (a função renderExcessoVelocidade tinha 494 linhas).
 // O código foi movido sem alteração. Ao editar, troque o token ?v= em todos os imports internos do conjunto
 // frotas-*.js (tests/frotas-modulos-versao.test.mjs confere).
-import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261016-frotas-manut-parado1';
+import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261016-frotas-hist1';
 
   function htmlExcessoVelocidade() {
     return `${getStyles()}

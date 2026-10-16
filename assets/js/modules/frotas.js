@@ -3,9 +3,9 @@
 // Em 14/10/2026 o conteúdo antigo (um bloco autoexecutável de ~4.100 linhas) foi dividido em módulos
 // frotas-*.js por camada: base → ocr → colaboradores → excessos → fora do horário (util, mapa, dossiê,
 // dados) → upload de prints → histórico → tela de excesso. Este arquivo só publica a API em window.
-import { MODULE_NAME } from './frotas-base.js?v=20261016-frotas-manut-parado1';
-import { renderHistoricoFrotas } from './frotas-historico-tela.js?v=20261016-frotas-manut-parado1';
-import { renderExcessoVelocidade } from './frotas-excesso-velocidade.js?v=20261016-frotas-manut-parado1';
+import { MODULE_NAME } from './frotas-base.js?v=20261016-frotas-hist1';
+import { renderHistoricoFrotas } from './frotas-historico-tela.js?v=20261016-frotas-hist1';
+import { renderExcessoVelocidade } from './frotas-excesso-velocidade.js?v=20261016-frotas-hist1';
 
 function renderHome(container, opts = {}) { renderExcessoVelocidade(container, opts); }
 window[MODULE_NAME] = window[MODULE_NAME] || {};

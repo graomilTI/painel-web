@@ -315,3 +315,54 @@ test('conclusão oferece o envio só quando a empresa paga; item tem tipo peça/
   const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
   assert.match(financeiro, /data-setor-pay="FROTAS"/);
 });
+
+test('custos: só concluída com custo e paga pela empresa; categoria divide o custo entre os itens', async () => {
+  const { agrupar, csvDasLinhas, csvDosGrupos, filtrarPeriodo, linhasDeCusto, resumo } = await import('../assets/js/modules/frotas-manutencao-custos-regras.js');
+  const veiculos = [{ id: 'v1', placa: 'ABC1D23', marca_modelo: 'Fiat Strada', coordenacao: 'MT', supervisao: 'SORRISO' }, { id: 'v2', placa: 'XYZ9K88', coordenacao: 'GO', supervisao: 'RIO VERDE' }];
+  const categorias = [{ codigo: 9, nome: 'Freios' }, { codigo: 13, nome: 'Rodas, pneus e alinhamento' }];
+  const man = (id, extra) => ({ id, numero: Number(id.slice(1)), veiculo_id: 'v1', status: 'concluida', natureza: 'corretiva', custo: 1000, data_execucao: '2026-09-10', oficina: 'Oficina A', responsavel_pagamento: 'empresa', ...extra });
+  const manutencoes = [
+    man('m1'), man('m2', { natureza: 'preventiva', custo: 500, veiculo_id: 'v2', data_execucao: '2026-10-05' }),
+    man('m3', { status: 'em_execucao' }), man('m4', { custo: 0 }), man('m5', { responsavel_pagamento: 'locadora' }), man('m6', { custo: 300, data_execucao: '2026-01-15' }),
+  ];
+  const itens = [{ manutencao_id: 'm1', categoria_codigo: 9 }, { manutencao_id: 'm1', categoria_codigo: 13 }, { manutencao_id: 'm2', categoria_codigo: 9 }];
+  const base = { itens, veiculos, categorias };
+  const linhas = linhasDeCusto(manutencoes, base);
+  assert.deepEqual(linhas.map((l) => l.id), ['m1', 'm2', 'm6'], 'em execução, custo 0 e locadora ficam de fora');
+  assert.equal(linhasDeCusto(manutencoes, base, { somenteEmpresa: false }).length, 4, 'sem o filtro entra a da locadora');
+  assert.equal(filtrarPeriodo(linhas, { inicio: '2026-09-01', fim: '2026-10-31' }).length, 2);
+
+  const r = resumo(linhas);
+  assert.equal(r.total, 1800);
+  assert.equal(r.qtd, 3);
+  assert.equal(r.medio, 600);
+  assert.equal(r.pctPreventiva, 27.8);
+
+  const porPlaca = agrupar(linhas, 'placa');
+  assert.deepEqual(porPlaca.map((g) => [g.rotulo, g.total, g.qtd]), [['ABC1D23', 1300, 2], ['XYZ9K88', 500, 1]]);
+  assert.equal(agrupar(linhas, 'coordenacao').find((g) => g.chave === 'MT').total, 1300);
+  assert.deepEqual(agrupar(linhas, 'mes').map((g) => g.chave), ['2026-01', '2026-09', '2026-10'], 'meses em ordem cronológica');
+  const porCat = agrupar(linhas, 'categoria');
+  const freios = porCat.find((g) => g.chave === '9');
+  assert.equal(freios.total, 1000, 'freios: metade da m1 (500) + a m2 inteira (500)');
+  assert.equal(porCat.find((g) => g.chave === '13').total, 500, 'pneus: metade da m1');
+  assert.equal(porCat.find((g) => g.chave === '0').total, 300, 'sem itens: (sem categoria)');
+  assert.equal(Math.round(porCat.reduce((s, g) => s + g.total, 0)), 1800, 'o rateio não perde nem cria dinheiro');
+
+  const csv = csvDosGrupos(porPlaca, 'Veículo (placa)');
+  assert.ok(csv.startsWith('﻿Veículo (placa);Manutenções;Custo total (R$)'));
+  assert.match(csv, /ABC1D23;2;1300,00;650,00;0,00;1300,00/);
+  assert.match(csvDasLinhas(linhas), /MAN-000001;2026-09-10;ABC1D23;Fiat Strada;MT;SORRISO;corretiva;09 Freios \| 13 Rodas, pneus e alinhamento;Oficina A;1000,00/);
+});
+
+test('o histórico mostra a manutenção do fluxo novo (placa, condutor, data do serviço e status em português) e o dashboard de Frotas mostra o custo do mês só das concluídas', () => {
+  const ler = (c) => readFileSync(new URL(`../${c}`, import.meta.url), 'utf8');
+  const hist = ler('assets/js/modules/frotas-historico-tela.js');
+  assert.match(hist, /veiculosPorId/);
+  assert.match(hist, /row\.motorista_nome \|\| row\.solicitante_nome/);
+  assert.match(hist, /'data_execucao'/);
+  assert.match(hist, /concluida: 'Concluída'/);
+  const painel = ler('assets/js/frotas-dashboard.js');
+  assert.match(painel, /from\('frotas_manutencoes'\)\.select\('custo'\)\.eq\('status', 'concluida'\)\.eq\('responsavel_pagamento', 'empresa'\)/);
+  assert.match(ler('assets/js/frotas-manutencao-grupo.js'), /id: 'custos'/);
+});

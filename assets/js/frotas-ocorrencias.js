@@ -6,23 +6,23 @@ import { temAcessoFrota } from './modules/frotas-permissoes.js';
 async function montarNotificacao(body, ctx) {
   const [{ installDailyDriverResolution }] = await Promise.all([
     import('./frotas-motorista-leitura-diaria.js'),
-    import('./modules/frotas.js?v=20261016-frotas-manut-parado1'),
+    import('./modules/frotas.js?v=20261016-frotas-hist1'),
   ]);
   installDailyDriverResolution(supabase);
   window.FROTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
 async function montarHistorico(body, ctx) {
-  await import('./modules/frotas.js?v=20261016-frotas-manut-parado1');
+  await import('./modules/frotas.js?v=20261016-frotas-hist1');
   window.FROTAS.openHistorico(body, { supabase, auth: ctx, user: ctx?.user || null });
 }
 
 async function montarMultas(body, ctx) {
   const [{ installStableMultasActions }, { installTemporaryMultasUpload }, { installMultasFluxo }] = await Promise.all([
-    import('./modules/frotas-multas-stable-actions.js?v=20261016-frotas-manut5'),
+    import('./modules/frotas-multas-stable-actions.js?v=20261016-frotas-manut6'),
     import('./modules/frotas-multas-temporary-upload.js'),
-    import('./modules/frotas-multas-fluxo.js?v=20261016-frotas-manut5'),
-    import('./modules/frotas-multas.js?v=20261016-frotas-manut5'),
+    import('./modules/frotas-multas-fluxo.js?v=20261016-frotas-manut6'),
+    import('./modules/frotas-multas.js?v=20261016-frotas-manut6'),
   ]);
   window.FROTAS_MULTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
   installStableMultasActions(body);

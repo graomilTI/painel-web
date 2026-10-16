@@ -269,6 +269,12 @@ function renderFrotasDashboard(container, opts = {}) {
         <span class="fd-scard-val loading" id="fd-m-vencidos">—</span>
         <span class="fd-scard-sub">serviços do guia fora do prazo</span>
       </div>
+      <div class="fd-scard" style="--fd-scard-accent:#4ade80;cursor:pointer" data-go="frotas-manutencao-grupo" title="Ver os custos">
+        <span class="fd-scard-icon">💰</span>
+        <span class="fd-scard-label">Custo de manutenção no mês</span>
+        <span class="fd-scard-val loading" id="fd-m-custo">—</span>
+        <span class="fd-scard-sub" id="fd-m-custo-sub">concluídas e pagas pela empresa</span>
+      </div>
     </div>
 
     <!-- ROW 1: coordenação + mapa regional -->
@@ -327,11 +333,23 @@ async function loadManutencaoData(container, sb) {
     if (abertas.error || vencidos.error) throw abertas.error || vencidos.error;
     setCard(container, '#fd-m-abertas', abertas.count ?? 0);
     setCard(container, '#fd-m-vencidos', vencidos.count ?? 0);
+    // Custo final das manutenções concluídas neste mês (pagas pela empresa): mesma regra da aba Custos.
+    const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const inicioMes = `${hoje.slice(0, 7)}-01`;
+    const custos = await sb.from('frotas_manutencoes').select('custo').eq('status', 'concluida').eq('responsavel_pagamento', 'empresa').gte('data_execucao', inicioMes).lte('data_execucao', hoje);
+    if (!custos.error) {
+      const total = (custos.data || []).reduce((soma, r) => soma + Number(r.custo || 0), 0);
+      setCard(container, '#fd-m-custo', total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
+      const subCusto = container.querySelector('#fd-m-custo-sub');
+      if (subCusto) subCusto.textContent = `${(custos.data || []).length} manutenção(ões) concluída(s) e paga(s) pela empresa`;
+    } else {
+      setCard(container, '#fd-m-custo', '—');
+    }
     const sub = container.querySelector('#fd-m-abertas-sub');
     if (sub && urgentes.count) sub.textContent = `${urgentes.count} com prioridade alta ou urgente`;
   } catch (err) {
     console.warn('[frotas-dashboard] Manutenção indisponível:', err?.message || err);
-    ['#fd-m-abertas', '#fd-m-vencidos'].forEach(id => setCard(container, id, '—'));
+    ['#fd-m-abertas', '#fd-m-vencidos', '#fd-m-custo'].forEach(id => setCard(container, id, '—'));
   }
 }
 
