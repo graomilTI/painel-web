@@ -75,10 +75,22 @@ const PALAVRAS_CATEGORIA = [
   ['PERNOITE', /\bPERNOITE\b/], ['DIARIA', /\bDIARIA\b/],
   ['KM', /\bKM\b|\bQUILOMETR/], ['COMBUSTIVEL', /\bCOMBUSTIVEL\b|\bABASTEC/], ['PEDAGIO', /\bPEDAGIO\b/],
 ];
-function categoriaDivergente(row) {
+// `outros` = lançamentos ativos (P/A) do MESMO colaborador na MESMA data efetiva. Observação que repete o nome
+// de uma despesa que ele já lançou no campo próprio nesse dia ("Almoco" copiado na Diária e no Almoço) é só
+// descrição, não lançamento no campo errado (16/10/2026: Luis Paulo, Salário de Intermitente R$ 105 + Almoço
+// R$ 30, ambos com obs "Almoco", tinha a Diária recusada). O outro lançamento só vale se for coerente por si
+// (sem citar despesa alheia), senão dois lançamentos trocados se absolveriam.
+function citadasSemLancamentoProprio(citadas, outros) {
+  if (!citadas.length || !outros?.length) return citadas;
+  const proprios = new Set(outros.filter((o) => !categoriaDivergente(o)).map(grupoDespesa));
+  return citadas.filter((nome) => !proprios.has(nome));
+}
+function categoriaDivergente(row, outros = []) {
   const texto = norm(row.ofmDescription);
   const citadas = PALAVRAS_CATEGORIA.filter(([, re]) => re.test(texto)).map(([nome]) => nome);
-  return citadas.length > 0 && !citadas.includes(grupoDespesa(row)) ? citadas : null;
+  if (!citadas.length || citadas.includes(grupoDespesa(row))) return null;
+  const sobra = citadasSemLancamentoProprio(citadas, outros);
+  return sobra.length ? sobra : null;
 }
 
 // Regra de 05/10/2026: toda despesa deve ser lançada no campo correspondente. Se a observação diz que o
@@ -89,7 +101,7 @@ function categoriaDivergente(row) {
 // (incluso no hotel); Serviços Terceirizados <= R$ 45 não conta (o grupo Almoço dele é só pelo valor).
 const MOTIVO_TIPO_INCORRETO = 'Tipo de despesa incorreto. lançar despesa no campo correspondente';
 const TIPOS_DE_RECUSA = new Set(['CAFE', 'ALMOCO', 'JANTA', 'PERNOITE', 'DIARIA']);
-function tipoIncorretoNaObs(row) {
+function tipoIncorretoNaObs(row, outros = []) {
   const grupo = grupoDespesa(row);
   if (!grupo || !TIPOS_DE_RECUSA.has(grupo)) return null;
   if (norm(row.oexName) === 'SERVICOS TERCEIRIZADOS' && grupo === 'ALMOCO') return null;
@@ -99,7 +111,9 @@ function tipoIncorretoNaObs(row) {
     .filter(([nome, re]) => TIPOS_DE_RECUSA.has(nome) && re.test(texto))
     .map(([nome]) => nome)
     .filter((nome) => !(grupo === 'PERNOITE' && nome === 'DIARIA'));
-  return citadas.length > 0 && !citadas.includes(grupo) ? citadas : null;
+  if (!citadas.length || citadas.includes(grupo)) return null;
+  const sobra = citadasSemLancamentoProprio(citadas, outros);
+  return sobra.length ? sobra : null;
 }
 
 // Observação que mostra que o lançamento NÃO repete o outro do dia: é de outra pessoa

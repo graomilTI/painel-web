@@ -154,4 +154,16 @@ assert.equal(avaliarRegra('DIARIA', NOME, evMov).ok, true);
 assert.equal(avaliarRegra('DIARIA', NOME, evSem).motivo, 'sem_embarque_na_data');
 assert.equal(avaliarRegra('OUTRA', NOME, evMov).motivo, 'despesa_nao_tratada');
 
+// obs "Almoco" copiada na Diária e no Almoço do mesmo dia (Luis Paulo, 15/10/2026): não é campo errado
+{
+  const cad = { salario: 105, contrato: 'INTERMITENTE', admissao: '2026-10-01' };
+  const diaria = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Almoco' });
+  const almoco = lanc({ oexName: 'Almoço', ofmValue: 30, ofmDescription: 'Almoco' });
+  assert.equal(decidir(diaria, [diaria, almoco], evMov, cad).acao, 'APROVAR');
+  // sem o Almoço próprio no dia, a obs "Almoco" segura a Diária
+  const sem = decidir(diaria, [diaria], evMov, cad);
+  assert.equal(sem.acao, 'MANTER');
+  assert.equal(sem.motivo, 'observacao_cita_outra_despesa');
+}
+
 console.log('test-aprovar-pendencias: ok');

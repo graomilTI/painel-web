@@ -62,7 +62,7 @@ const {
 } = require('./grm-despesas-guardas');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.2-AUXILIAR-DUPLICADAS-TIPO-INCORRETO';
+const VERSION = 'V1.3-AUXILIAR-DUPLICADAS-OBS-COM-LANCAMENTO-PROPRIO';
 const AGENTE_ID = 'sync-despesas-duplicadas';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -120,6 +120,16 @@ function infoLancamento(row) {
 
 const chaveGrupo = (row, info) => `${Number(row.staCode)}|${grupoDespesa(row)}|${info.dataEf}`;
 
+// Lançamentos ativos do mesmo colaborador na mesma data efetiva (qualquer grupo tratado), sem a própria `row`.
+// Servem à exceção "observação repete uma despesa que ele já lançou no campo próprio" (grm-despesas-guardas.js).
+const GRUPOS_TRATADOS = ['CAFE', 'ALMOCO', 'JANTA', 'PERNOITE', 'DIARIA'];
+function outrosDoDia(row, info, indice) {
+  return GRUPOS_TRATADOS
+    .flatMap((grupo) => indice.get(`${Number(row.staCode)}|${grupo}|${info.dataEf}`) || [])
+    .map((item) => item.row)
+    .filter((outro) => Number(outro.ofmCode) !== Number(row.ofmCode));
+}
+
 // Índice dos lançamentos ativos (P/A) das despesas tratadas, por grupo+data efetiva.
 function montarIndice(rows) {
   const indice = new Map();
@@ -156,9 +166,10 @@ function compararRank(a, b) {
 function classificar(row, indice) {
   const info = infoLancamento(row);
   // Regra de 05/10: toda despesa deve ser lançada no campo correspondente — observação de outra despesa = recusa
-  const tipoCitado = tipoIncorretoNaObs(row);
+  const outros = outrosDoDia(row, info, indice);
+  const tipoCitado = tipoIncorretoNaObs(row, outros);
   if (tipoCitado) return { acao: 'RECUSAR', motivo: MOTIVO_TIPO_INCORRETO, tipoCitado, info };
-  if (categoriaDivergente(row)) return { acao: 'NADA', info };
+  if (categoriaDivergente(row, outros)) return { acao: 'NADA', info };
   const naoRepete = observacaoNaoRepete(row);
   if (naoRepete) return { acao: 'REVISAR', motivo: naoRepete, info };
   const grupo = indice.get(chaveGrupo(row, info)) || [];
@@ -410,9 +421,11 @@ async function main() {
   const tratadas = [...todos.values()].filter((row) => row.ofmType === 'D' && row.ofmStatus === 'P' && grupoDespesa(row));
   // categoria divergente "forte" (Café/Almoço/Janta/Pernoite/Diária) é recusada; a "fraca" (km, combustível,
   // pedágio) só fica pendente para revisão
-  const pendentes = tratadas.filter((row) => !categoriaDivergente(row) || tipoIncorretoNaObs(row));
-  for (const row of tratadas.filter((r) => categoriaDivergente(r) && !tipoIncorretoNaObs(r))) {
-    log('INFO', `Mantida pendente: ${row.staName} / ${row.oexName.trim()} / ofm ${row.ofmCode}: observação cita outra despesa (${categoriaDivergente(row).join(', ')}) — "${String(row.ofmDescription || '').replace(/\s+/g, ' ').slice(0, 80)}".`);
+  const indiceInicial = montarIndice([...todos.values()]);
+  const outrosInicial = (row) => outrosDoDia(row, infoLancamento(row), indiceInicial);
+  const pendentes = tratadas.filter((row) => !categoriaDivergente(row, outrosInicial(row)) || tipoIncorretoNaObs(row, outrosInicial(row)));
+  for (const row of tratadas.filter((r) => categoriaDivergente(r, outrosInicial(r)) && !tipoIncorretoNaObs(r, outrosInicial(r)))) {
+    log('INFO', `Mantida pendente: ${row.staName} / ${row.oexName.trim()} / ofm ${row.ofmCode}: observação cita outra despesa (${categoriaDivergente(row, outrosInicial(row)).join(', ')}) — "${String(row.ofmDescription || '').replace(/\s+/g, ' ').slice(0, 80)}".`);
   }
   for (const row of pendentes) {
     const info = infoLancamento(row);

@@ -60,6 +60,37 @@ assert.equal(categoriaDivergente(lanc({ oexName: 'Serviços Terceirizados', ofmV
   assert.equal(tipoIncorretoNaObs(lanc({ oexName: 'Combustível', ofmDescription: 'almoço' })), null);
 }
 
+// ---- exceção (16/10/2026): a observação repete uma despesa que o colaborador JÁ lançou no campo próprio no dia ----
+{
+  const { tipoIncorretoNaObs } = require('./grm-despesas-guardas');
+  const diaria = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Almoco' });
+  const almoco = lanc({ oexName: 'Almoço', ofmValue: 30, ofmDescription: 'Almoco' });
+  // caso real do Luis Paulo: "Almoco" copiado na Diária e no Almoço -> a Diária NÃO está no campo errado
+  assert.equal(tipoIncorretoNaObs(diaria, [almoco]), null);
+  assert.equal(categoriaDivergente(diaria, [almoco]), null);
+  // sem o Almoço próprio no dia, continua sendo campo errado (decisão de 05/10)
+  assert.deepEqual(tipoIncorretoNaObs(diaria, []), ['ALMOCO']);
+  assert.deepEqual(tipoIncorretoNaObs(diaria), ['ALMOCO']);
+  assert.deepEqual(tipoIncorretoNaObs(diaria, [lanc({ oexName: 'Janta', ofmValue: 30 })]), ['ALMOCO']);
+  // o Almoço de apoio precisa ser coerente por si: um Almoço que cita "janta" não absolve a Diária
+  assert.deepEqual(tipoIncorretoNaObs(diaria, [lanc({ oexName: 'Almoço', ofmDescription: 'janta' })]), ['ALMOCO']);
+  // duas despesas citadas: só as que têm lançamento próprio são absolvidas
+  const dupla = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'almoço e janta' });
+  assert.equal(tipoIncorretoNaObs(dupla, [almoco, lanc({ oexName: 'Janta', ofmValue: 30, ofmDescription: 'Janta' })]), null);
+  assert.equal(tipoIncorretoNaObs(dupla, [almoco, lanc({ oexName: 'Janta', ofmValue: 30, ofmDescription: 'Janta' })]), null);
+  assert.deepEqual(tipoIncorretoNaObs(dupla, [almoco]), ['JANTA']);
+  // km/combustível nunca são absolvidos por lançamento de refeição
+  assert.deepEqual(categoriaDivergente(lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'km rodado' }), [almoco]), ['KM']);
+  // pelo agente de duplicadas: com o Almoço próprio fica pendente (NADA); sem ele é recusada
+  const dia = '2026-10-15';
+  const d1 = lanc({ oexName: 'Salário de Intermitente', ofmValue: 105, ofmDescription: 'Almoco', ofmDate: dia, staCode: 3903 });
+  const a1 = lanc({ oexName: 'Almoço', ofmValue: 30, ofmDescription: 'Almoco', ofmDate: dia, staCode: 3903 });
+  assert.equal(decidir(d1, [d1, a1]).acao, 'NADA');
+  const recusa = decidir(d1, [d1]);
+  assert.equal(recusa.acao, 'RECUSAR');
+  assert.deepEqual(recusa.tipoCitado, ['ALMOCO']);
+}
+
 // despesa de outra pessoa / extra: não é repetição
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço do Bruno, funcionário em treinamento' })), 'observacao_cita_outra_pessoa');
 assert.equal(observacaoNaoRepete(lanc({ ofmDescription: 'Almoço da equipe' })), 'observacao_cita_outra_pessoa');
