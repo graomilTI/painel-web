@@ -73,7 +73,7 @@ export async function programacoesAfetadas(supabase, manutencaoId) {
 }
 
 // Abre a solicitação pela RPC (vale para quem tem o módulo e para o gestor da supervisão do veículo).
-export async function solicitar(supabase, { veiculo_id, descricao, prioridade, origem, checklist_id, veiculo_parado, itens }) {
+export async function solicitar(supabase, { veiculo_id, descricao, prioridade, origem, checklist_id, veiculo_parado, itens, solicitante_nome }) {
   const { data, error } = await supabase.rpc('frotas_manutencao_solicitar', {
     p_veiculo_id: veiculo_id,
     p_descricao: descricao,
@@ -82,6 +82,7 @@ export async function solicitar(supabase, { veiculo_id, descricao, prioridade, o
     p_checklist_id: checklist_id || null,
     p_veiculo_parado: !!veiculo_parado,
     p_itens: itens || [],
+    p_solicitante_nome: solicitante_nome || null,
   });
   if (error) falhar(error, 'Erro ao abrir a solicitação.');
   return data;

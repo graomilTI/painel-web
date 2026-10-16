@@ -161,7 +161,7 @@ test('formulários: conclusão sugere km e custo; orçamento só aparece quando 
   assert.doesNotMatch(aprovada, /data-acao="orc-novo"/);
 });
 
-test('lista e nova solicitação renderizam', () => {
+test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "Quem pediu" para pedidos do WhatsApp)', () => {
   const lista = [m({ valor_aprovado: 750, prioridade: 'urgente', veiculo_parado: true })];
   const html = htmlLinhas(lista, { itensPorManut: new Map([['m1', [item]]]), orcsPorManut: new Map(), categorias: base.categorias });
   assert.match(html, /MAN-000007/);
@@ -169,7 +169,11 @@ test('lista e nova solicitação renderizam', () => {
   assert.match(html, /Parado/);
   assert.match(htmlLinhas([], { itensPorManut: new Map(), orcsPorManut: new Map(), categorias: [] }), /Nenhuma manutenção/);
   assert.match(htmlKpis({ abertas: 3 }, 'abertas'), /data-filtro="abertas"/);
+  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-html.js', import.meta.url), 'utf8'), /data-acao="nova">\+ Nova manutenção<\/button>/);
   const nova = htmlFormNova(base, { veiculo_id: 'v1', itens: [{ categoria_codigo: 2, plano_id: 'p1', natureza: 'preventiva' }] });
+  assert.match(nova, /<h3>Nova manutenção<\/h3>/);
+  assert.match(nova, /data-n-solicitante/);
+  assert.match(nova, /Registrar manutenção/);
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
   assert.match(nova, /<option value="p1" selected>Troca de óleo \(5\.000–10\.000 km\)<\/option>/);
 });

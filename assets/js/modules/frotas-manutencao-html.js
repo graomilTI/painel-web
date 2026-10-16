@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut7';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut7';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut8';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -36,9 +36,7 @@ export function badgeStatus(status) {
 // ---------- tela principal ----------
 export function htmlCasca() {
   return `<section class="fm-shell">
-    <div class="fm-head"><div><div class="fm-kicker">Frotas · Manutenção</div><h1 class="fm-title">Manutenção</h1>
-    <p class="fm-sub">Solicitação, orçamento, aprovação, ordem de serviço e conclusão, classificados pelas 29 categorias do guia de manutenção (preventiva ou corretiva).</p></div>
-    <div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova solicitação</button></div></div>
+    <div class="fm-head" style="justify-content:flex-end"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
     <div class="fm-kpis" data-kpis></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, oficina, motorista, categoria..." data-busca></div>
@@ -55,7 +53,7 @@ export function htmlKpis(contagens, filtro) {
 }
 
 export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias }) {
-  if (!rows.length) return '<tr><td colspan="8" class="fm-empty">Nenhuma manutenção neste filtro.</td></tr>';
+  if (!rows.length) return '<tr><td colspan="8" class="fm-empty">Nenhuma manutenção neste filtro. Use "+ Nova manutenção" para registrar um pedido.</td></tr>';
   const nomeCat = new Map(categorias.map((c) => [Number(c.codigo), c.nome]));
   return rows.map((m) => {
     const itens = itensPorManut.get(m.id) || [];
@@ -91,11 +89,12 @@ export function htmlFormNova(base, preset = {}) {
   const veiculo = base.veiculos.find((v) => v.id === preset.veiculo_id);
   const lista = base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id);
   const itens = preset.itens?.length ? preset.itens : [{}];
-  return `<div class="fm-mod-head"><div><h3>Nova solicitação de manutenção</h3><p>Descreva o problema e classifique pelas categorias do guia. O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
+  return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu e o problema, classificado pelas categorias do guia. O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
     <div class="fm-form" style="margin-top:14px">
       <div class="fm-field" style="grid-column:span 2"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${veiculo.marca_modelo || ''}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(v.marca_modelo || '')}"></option>`).join('')}</datalist></div>
       <div class="fm-field"><label>Prioridade</label><select class="fm-select" data-n-prioridade>${opcoes(PRIORIDADES, preset.prioridade || 'normal')}</select></div>
       <div class="fm-field"><label>&nbsp;</label><label class="fm-check"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
+      <div class="fm-field" style="grid-column:span 2"><label>Quem pediu</label><input class="fm-input" data-n-solicitante maxlength="120" placeholder="Ex.: nome do motorista ou do gestor que pediu pelo WhatsApp" value="${esc(preset.solicitante_nome || '')}"><small>Opcional. Se ficar vazio, vale o seu nome.</small></div>
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
     <div class="fm-sec"><h4>Itens (categoria do guia) <button class="fm-btn ghost fm-mini" type="button" data-acao="novo-item-add">+ Item</button></h4>
@@ -103,7 +102,7 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-itens" data-novo-itens>${itens.map((it, i) => htmlLinhaItemNovo(base, it, i)).join('')}</div>
       <div class="fm-nota">Preventiva = serviço programado por km/tempo. Corretiva = reparo após falha ou desgaste. A natureza pode ficar para depois, mas é obrigatória para aprovar.</div></div>
     <div data-erros></div>
-    <div class="fm-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Abrir solicitação</button></div>`;
+    <div class="fm-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button></div>`;
 }
 
 // ---------- ficha ----------

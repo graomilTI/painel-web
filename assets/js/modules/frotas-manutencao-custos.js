@@ -1,11 +1,11 @@
 // Frotas · Manutenção › Custos: custo final das manutenções concluídas por veículo, coordenação, supervisão, categoria do
 // guia, natureza, oficina e mês, com exportação em CSV. Fonte: frotas_manutencoes (concluída, custo > 0, paga pela empresa).
 import { dinheiro, esc, toast } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut7';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut7';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut8';
 import {
   AGRUPAMENTOS, agrupar, csvDasLinhas, csvDosGrupos, filtrarPeriodo, linhasDeCusto, resumo,
-} from './frotas-manutencao-custos-regras.js?v=20261016-frotas-manut7';
+} from './frotas-manutencao-custos-regras.js?v=20261016-frotas-manut8';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_CUSTOS';
@@ -91,9 +91,7 @@ import {
     state.supabase = opts.supabase; state.root = container;
     state.inicio = state.inicio || mesesAtras(12); state.fim = state.fim || hojeIso();
     container.innerHTML = `${ESTILOS_MANUTENCAO}<section class="fm-shell">
-      <div class="fm-head"><div><div class="fm-kicker">Frotas · Manutenção</div><h1 class="fm-title">Custos</h1>
-      <p class="fm-sub">Custo final das manutenções concluídas. Por padrão só entra o que a empresa paga (o que vai para a nota fiscal e o Financeiro). O card "Custo de manutenção no mês" do dashboard de Frotas usa a mesma regra.</p></div>
-      <div class="fm-head-actions"><button class="fm-btn ghost" type="button" data-csv-grupos>Exportar resumo (CSV)</button><button class="fm-btn soft" type="button" data-csv-linhas>Exportar manutenções (CSV)</button></div></div>
+      <div class="fm-head" style="justify-content:flex-end"><div class="fm-head-actions"><button class="fm-btn ghost" type="button" data-csv-grupos>Exportar resumo (CSV)</button><button class="fm-btn soft" type="button" data-csv-linhas>Exportar manutenções (CSV)</button></div></div>
       <div class="fm-kpis" data-kpis></div>
       <div class="fm-card"><div class="fm-body"><div class="fm-bar">
         <select class="fm-select" data-por style="width:auto">${AGRUPAMENTOS.map((a) => `<option value="${a.id}"${a.id === state.por ? ' selected' : ''}>Agrupar por: ${esc(a.rotulo)}</option>`).join('')}</select>
@@ -103,7 +101,7 @@ import {
         <label class="fm-check"><input type="checkbox" data-empresa checked> Só pagas pela empresa</label>
         <span class="fm-count" data-contagem></span></div>
       <div class="fm-table-wrap"><table class="fm-table" style="min-width:760px"><thead><tr><th data-rotulo-grupo></th><th>Manutenções</th><th>Custo total</th><th>Custo médio</th><th>Preventiva</th><th>Corretiva</th></tr></thead><tbody data-linhas></tbody></table></div>
-      <div class="fm-nota">Na visão por categoria, o custo de cada manutenção é dividido igualmente entre as categorias dos seus itens (o custo final é um valor só por manutenção). Manutenções importadas do histórico (sem custo) e as que ainda não foram concluídas não entram.</div></div></div></section>`;
+      <div class="fm-nota">Custo final das manutenções concluídas. Por padrão só entra o que a empresa paga (o que vai para a nota fiscal e o Financeiro); o cartão "Custo de manutenção no mês" do dashboard de Frotas usa a mesma regra. Na visão por categoria, o custo de cada manutenção é dividido igualmente entre as categorias dos seus itens (o custo final é um valor só por manutenção). Manutenções importadas do histórico (sem custo) e as que ainda não foram concluídas não entram.</div></div></div></section>`;
     container.querySelector('[data-por]').addEventListener('change', (e) => { state.por = e.target.value; render(); });
     container.querySelector('[data-inicio]').addEventListener('change', (e) => { state.inicio = e.target.value; render(); });
     container.querySelector('[data-fim]').addEventListener('change', (e) => { state.fim = e.target.value; render(); });
