@@ -1,13 +1,14 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut4';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut5';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut4';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut5';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
+const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
 const fmtKm = (v) => (v == null || v === '' ? '—' : `${Number(v).toLocaleString('pt-BR')} km`);
 const hojeISO = () => new Date().toISOString().slice(0, 10);
 
@@ -82,7 +83,7 @@ export function htmlLinhaItemNovo(base, item = {}, idx = 0) {
     <select class="fm-select" data-n="natureza">${opcoes(NATUREZAS, item.natureza, { vazio: '— definir depois —' })}</select>
     <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)" value="${esc(item.descricao || '')}">
     <select class="fm-select" data-n="plano_id">${opcoesPlanos(base.planos, item.categoria_codigo, item.plano_id)}</select>
-    <span></span>
+    <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, item.tipo_item || 'servico')}</select>
     <button class="fm-ic danger" type="button" data-acao="novo-item-remover" title="Remover item" aria-label="Remover item">✕</button></div>`;
 }
 
@@ -98,7 +99,7 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
     <div class="fm-sec"><h4>Itens (categoria do guia) <button class="fm-btn ghost fm-mini" type="button" data-acao="novo-item-add">+ Item</button></h4>
-      <div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span></span><span></span></div>
+      <div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Tipo</span><span></span></div>
       <div class="fm-itens" data-novo-itens>${itens.map((it, i) => htmlLinhaItemNovo(base, it, i)).join('')}</div>
       <div class="fm-nota">Preventiva = serviço programado por km/tempo. Corretiva = reparo após falha ou desgaste. A natureza pode ficar para depois, mas é obrigatória para aprovar.</div></div>
     <div data-erros></div>
@@ -148,19 +149,19 @@ function blocoItens(m, itens, base, ed) {
     if (!ed.itens) {
       const cat = base.categorias.find((c) => Number(c.codigo) === Number(it.categoria_codigo));
       const plano = base.planos.find((p) => p.id === it.plano_id);
-      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.natureza || m.natureza || '—')}</div><div class="fm-ro">${esc(it.descricao || '')}</div><div class="fm-ro">${esc(plano?.nome || '—')}</div><div class="fm-ro">${it.valor != null ? dinheiro(it.valor) : '—'}</div><span></span></div>`;
+      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.natureza || m.natureza || '—')}</div><div class="fm-ro">${esc(it.descricao || '')}</div><div class="fm-ro">${esc(plano?.nome || '—')}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
       <select class="fm-select" data-item="categoria_codigo">${opcoesCategorias(base.categorias, it.categoria_codigo)}</select>
       <select class="fm-select" data-item="natureza">${opcoes(NATUREZAS, it.natureza, { vazio: m.natureza ? `Igual à ordem (${m.natureza})` : '— herda da ordem —' })}</select>
       <input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">
       <select class="fm-select" data-item="plano_id">${opcoesPlanos(base.planos, it.categoria_codigo, it.plano_id)}</select>
-      <input class="fm-input" type="number" step="0.01" min="0" data-item="valor" placeholder="Valor" value="${it.valor ?? ''}">
+      <select class="fm-select" data-item="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, it.tipo_item || 'servico')}</select>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form" data-item-novo style="grid-template-columns:2fr 1fr 2fr 1.3fr auto"><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><select class="fm-select" data-nv="natureza">${opcoes(NATUREZAS, '', { vazio: 'Natureza...' })}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="plano_id">${opcoesPlanos(base.planos, null)}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button></div>` : '';
+  const novo = ed.itens ? `<div class="fm-form" data-item-novo style="grid-template-columns:2fr 1fr 2fr 1.3fr 0.8fr auto"><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><select class="fm-select" data-nv="natureza">${opcoes(NATUREZAS, '', { vazio: 'Natureza...' })}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="plano_id">${opcoesPlanos(base.planos, null)}</select><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button></div>` : '';
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
-    ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Valor</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
+    ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
 }
 
@@ -224,7 +225,44 @@ export function htmlFormConclusao(m, kmSugerido) {
     <div class="fm-field"><label>Custo final (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-a="custo" value="${m.valor_aprovado ?? ''}"></div>
     <div class="fm-field"><label>Nº da nota fiscal</label><input class="fm-input" data-a="nf_numero"></div>
     <div class="fm-field" style="grid-column:span 2"><label>Nota fiscal (arquivo)</label><input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-a-arquivo></div>
+    ${m.responsavel_pagamento === 'empresa'
+    ? '<div class="fm-field full"><label class="fm-check"><input type="checkbox" data-a-enviar checked> Enviar a NF ao GRM e o pagamento ao Financeiro ao concluir</label><small>Precisa do arquivo da NF e do custo final. Se faltar algo, a manutenção é concluída e o envio fica para depois.</small></div>'
+    : `<div class="fm-field full"><div class="fm-aviso">Esta manutenção é paga por ${esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label || 'outro responsável')}: não vai para NF nem Financeiro.</div></div>`}
     <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="confirmar-conclusao">Concluir manutenção</button><button class="fm-btn ghost" type="button" data-acao="cancelar-form">Cancelar</button></div></div>`;
+}
+
+const NF_ROTULO = {
+  NOVO: ['Na fila do GRM', 'amber'], PROCESSANDO: ['Sendo lançada no GRM', 'amber'], VALIDADO: ['Validada, aguardando lançar', 'amber'], DRY_RUN_OK: ['Validada', 'amber'],
+  LANCADO: ['Lançada no GRM', 'green'], ERRO: ['Erro no GRM', 'red'], AGUARDANDO_DADOS: ['Faltam dados', 'red'], AGUARDANDO_CLASSIFICACAO: ['Falta classificar', 'red'],
+  DUPLICADO: ['Duplicada', 'red'], CANCELADO: ['Cancelada', 'red'],
+};
+const PG_ROTULO = { PENDENTE: ['Aguardando o Financeiro', 'amber'], EM_ANALISE: ['Em análise', 'amber'], APROVADO: ['Aprovado', 'blue'], AGENDADO: ['Agendado', 'blue'], PAGO: ['Pago', 'green'], RECUSADO: ['Recusado', 'red'], CANCELADO: ['Cancelado', 'red'] };
+
+// Nota fiscal e pagamento (manutenção concluída): envio ao GRM e ao Financeiro e o que voltou deles.
+function blocoFinanceiro(m, fin) {
+  if (m.status !== 'concluida') return '';
+  const resp = (RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label;
+  if (m.responsavel_pagamento !== 'empresa') {
+    return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-mm">Esta manutenção é paga por ${esc(resp || 'outro responsável')}: não vai para a nota fiscal do GRM nem para o Financeiro.</div></div>`;
+  }
+  const selo = (mapa, chave) => { const [rotulo, tom] = mapa[chave] || [chave || '—', 'blue']; return `<span class="fm-badge ${tom}">${esc(rotulo)}</span>`; };
+  if (!m.nf_enviada_em) {
+    const anexo = m.anexo_url
+      ? `<div class="fm-ro">NF anexada: <a href="${esc(m.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">ver arquivo</a>${m.nf_numero ? ` · nº ${esc(m.nf_numero)}` : ''}</div><div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="nf-enviar">Enviar NF ao GRM e pagamento ao Financeiro</button></div>`
+      : `<div class="fm-mm">Ainda sem nota fiscal. Anexe o arquivo (PDF, XML ou imagem) para enviar ao GRM e ao Financeiro.</div>
+        <div class="fm-form" data-nf-form style="margin-top:10px"><div class="fm-field"><label>Nº da nota fiscal</label><input class="fm-input" data-nf="numero"></div><div class="fm-field" style="grid-column:span 2"><label>Arquivo da NF</label><input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nf-arquivo></div><div class="fm-field"><label>&nbsp;</label><button class="fm-btn primary" type="button" data-acao="nf-anexar-enviar">Anexar e enviar</button></div></div>`;
+    return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4>${anexo}</div>`;
+  }
+  if (!fin) return '<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-mm">Carregando situação...</div></div>';
+  const nf = fin.nf || {};
+  const pg = fin.pagamento || {};
+  const alerta = ['ERRO', 'AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'DUPLICADO'].includes(nf.status)
+    ? `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">${esc(nf.erro || 'A NF precisa de atenção.')} Complete os dados em Financeiro › Notas fiscais para o GRM tentar de novo.</div>` : '';
+  return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-grid2 tres">
+    <div class="fm-field"><label>Nota fiscal no GRM</label><div class="fm-ro">${selo(NF_ROTULO, nf.status)}${nf.grm_codigo ? `<small>Código GRM ${esc(nf.grm_codigo)}${nf.categoria ? ` · ${esc(nf.categoria)}` : ''}</small>` : ''}</div></div>
+    <div class="fm-field"><label>Pagamento (Financeiro)</label><div class="fm-ro">${selo(PG_ROTULO, pg.status)}${pg.valor != null ? `<small>${esc(dinheiro(pg.valor))} · ${esc(pg.forma || '')}</small>` : ''}</div></div>
+    <div class="fm-field"><label>Pago em</label><div class="fm-ro">${m.pago_em || pg.pago_em ? esc(dataBR(m.pago_em || pg.pago_em)) : '—'}${m.comprovante_url || pg.comprovante_url ? `<small><a href="${esc(m.comprovante_url || pg.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver comprovante</a></small>` : ''}</div></div>
+  </div>${alerta}</div>`;
 }
 
 // Veículo parado em execução: mostra quem ainda o tem na Programação (o gestor e a Programação já foram avisados).
@@ -242,7 +280,7 @@ function blocoLinhaTempo(m) {
   return `<div class="fm-sec"><h4>Histórico</h4><ul class="fm-tl">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></div>`;
 }
 
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [] }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
@@ -250,7 +288,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido) : '';
   return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
     ${passoAPasso(m)}
-    ${blocoDados(m, base, ed)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoDados(m, base, ed)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoFinanceiro(m, financeiro)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

@@ -238,7 +238,8 @@ test('app do gestor: só veículos ativos da regional liberada (sem acento, caix
 });
 
 test('todo tipo de aviso gravado pela migration está registrado no sino, e o link ?abrir= abre a ficha', () => {
-  const sql = readFileSync(new URL('../supabase/migrations/20261016200000_frotas_manutencao_avisos.sql', import.meta.url), 'utf8');
+  const sql = ['20261016200000_frotas_manutencao_avisos', '20261016210000_frotas_manutencao_veiculo_parado', '20261016220000_frotas_manutencao_nf_financeiro']
+    .map((n) => readFileSync(new URL(`../supabase/migrations/${n}.sql`, import.meta.url), 'utf8')).join('\n');
   const engine = readFileSync(new URL('../assets/js/notificacoes-engine.js', import.meta.url), 'utf8');
   const tipos = [...new Set([...sql.matchAll(/'(frotas_manut_[a-z]+)'/g)].map((m) => m[1]))];
   assert.ok(tipos.length >= 8, `esperava os tipos de aviso, achei ${tipos.length}`);
@@ -281,4 +282,36 @@ test('Programação, despesas e carona ligam o filtro de veículo parado; ficha 
   const dossie = ler('assets/js/modules/frotas-fh-dossie-html.js');
   assert.match(dossie, /Veículo em manutenção neste dia/);
   assert.match(ler('assets/js/modules/frotas-fh-dados.js'), /frotas_veiculos_parados_periodo/);
+});
+
+test('ficha concluída: anexar NF, enviar ao GRM/Financeiro, acompanhar e respeitar quem paga', () => {
+  const concluida = (extra = {}) => m({ status: 'concluida', custo: 2400, data_execucao: '2026-10-16', km_execucao: 48000, responsavel_pagamento: 'empresa', ...extra });
+  const ficha = (mm, financeiro = null) => htmlFicha(mm, { itens: [item], orcamentos: [], base, podeAprovar: true, financeiro });
+  assert.match(ficha(concluida()), /data-nf-form/, 'sem NF: formulário para anexar');
+  assert.match(ficha(concluida()), /data-acao="nf-anexar-enviar"/);
+  assert.match(ficha(concluida({ anexo_url: 'https://x/nf.pdf', nf_numero: '12' })), /data-acao="nf-enviar"/, 'com NF e ainda não enviada: botão de enviar');
+  const enviada = concluida({ anexo_url: 'https://x/nf.pdf', nf_enviada_em: '2026-10-16T12:00:00Z' });
+  assert.match(ficha(enviada), /Carregando situação/);
+  const html = ficha(enviada, { enviada: true, nf: { status: 'ERRO', erro: 'Fornecedor não encontrado' }, pagamento: { status: 'PENDENTE', valor: 2400, forma: 'PIX' } });
+  assert.match(html, /Erro no GRM/);
+  assert.match(html, /Fornecedor não encontrado/);
+  assert.match(html, /Aguardando o Financeiro/);
+  assert.doesNotMatch(html, /data-acao="nf-enviar"/);
+  const pago = ficha(enviada, { enviada: true, nf: { status: 'LANCADO', grm_codigo: '99887' }, pagamento: { status: 'PAGO', pago_em: '2026-10-17', comprovante_url: 'https://x/c.pdf' } });
+  assert.match(pago, /Lançada no GRM/);
+  assert.match(pago, /Código GRM 99887/);
+  assert.match(pago, /Ver comprovante/);
+  assert.match(ficha(concluida({ responsavel_pagamento: 'locadora' })), /não vai para a nota fiscal do GRM nem para o Financeiro/);
+  assert.doesNotMatch(ficha(m({ status: 'em_execucao' })), /Nota fiscal e pagamento/);
+});
+
+test('conclusão oferece o envio só quando a empresa paga; item tem tipo peça/serviço; Financeiro ganhou o filtro Frotas', () => {
+  const conc = (resp) => htmlFicha(m({ status: 'em_execucao', responsavel_pagamento: resp }), { itens: [item], orcamentos: [], base, podeAprovar: true, formAcao: 'conclusao', kmSugerido: null });
+  assert.match(conc('empresa'), /data-a-enviar checked/);
+  assert.doesNotMatch(conc('proprietario'), /data-a-enviar/);
+  assert.match(conc('proprietario'), /não vai para NF nem Financeiro/);
+  assert.match(htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /data-item="tipo_item"/);
+  assert.match(htmlFormNova(base, {}), /data-n="tipo_item"/);
+  const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
+  assert.match(financeiro, /data-setor-pay="FROTAS"/);
 });

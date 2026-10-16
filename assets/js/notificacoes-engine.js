@@ -43,6 +43,9 @@ export const NOTIF_META = {
   frotas_manut_cancelada:       { prioridade: 'normal',  icone: 'clipboard-alert', label: 'Manutenção cancelada',          modulo_url: 'frotas-manutencao-grupo' },
   frotas_manut_plano:           { prioridade: 'atencao', icone: 'wrench',          label: 'Manutenção programada',         modulo_url: 'frotas-manutencao-grupo' },
   frotas_manut_lembrete:        { prioridade: 'atencao', icone: 'calendar-clock',  label: 'Lembrete de manutenção',        modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_programacao:     { prioridade: 'urgente', icone: 'package-alert',  label: 'Veículo parado na Programação', modulo_url: 'programacao' },
+  frotas_manut_nf:              { prioridade: 'atencao', icone: 'receipt',         label: 'NF da manutenção',              modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_pago:            { prioridade: 'normal',  icone: 'check-circle',    label: 'Pagamento da manutenção',       modulo_url: 'frotas-manutencao-grupo' },
 };
 
 const PRIORIDADE_ORDER = { urgente: 0, atencao: 1, normal: 2, informativo: 3 };

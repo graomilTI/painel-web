@@ -1,9 +1,9 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261015-fin2 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261016-fin3 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261015-fin2';
+import { state, esc } from './util.js?v=20261016-fin3';
 
   function htmlFinanceiro() {
     return `
@@ -362,6 +362,7 @@ import { state, esc } from './util.js?v=20261015-fin2';
             <button class="fin-setor-btn active" data-setor-pay="todos" type="button">Todos</button>
             <button class="fin-setor-btn" data-setor-pay="COMPRAS" type="button">Compras</button>
             <button class="fin-setor-btn" data-setor-pay="HOSPEDAGEM" type="button">Hospedagem</button>
+            <button class="fin-setor-btn" data-setor-pay="FROTAS" type="button">Frotas</button>
             <button class="fin-setor-btn" data-setor-pay="RH" type="button">RH</button>
             <button class="fin-setor-btn" data-setor-pay="AUDITORIA" type="button">Auditoria</button>
             <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
