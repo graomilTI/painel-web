@@ -26,7 +26,7 @@ test('lista: um veículo por linha, do mais urgente para o menos, com os serviç
   const v1 = m.veiculos[0];
   assert.deepEqual(v1.servicos.map((s) => s.plano_codigo), ['oleo_motor', 'pastilhas_freio'], 'só serviços; vencida antes de em dia');
   assert.equal(v1.maisUrgente.plano_codigo, 'oleo_motor');
-  assert.deepEqual(v1.resumo, { vencida: 1, proxima: 0, em_dia: 1, sem_historico: 0, sem_hodometro: 0 });
+  assert.deepEqual(v1.resumo, { vencida: 1, proxima: 0, em_dia: 1, sem_historico: 0, sem_hodometro: 0, documentos: 0 });
   assert.equal(m.veiculos[1].maisUrgente, null, 'sem vencida nem próxima não há "mais urgente"');
   assert.deepEqual(montarLista(linhas, { tipo: 'verificacao' }).veiculos[0].servicos.map((s) => s.plano_codigo), ['pneus_calibragem']);
   assert.equal(montarLista(linhas, { tipo: 'todos' }).veiculos[0].servicos.length, 3);
@@ -45,7 +45,7 @@ test('lista: mais urgente é o mais atrasado; próximas vêm depois das vencidas
 
 test('lista: filtros contam veículos; busca e sistema restringem', () => {
   const m = montarLista(linhas, { tipo: 'servico' });
-  assert.deepEqual(FILTROS_PREVENTIVA.map((f) => f.id), ['atencao', 'vencida', 'proxima', 'sem_historico', 'todos']);
+  assert.deepEqual(FILTROS_PREVENTIVA.map((f) => f.id), ['atencao', 'vencida', 'proxima', 'sem_historico', 'documentos', 'todos']);
   assert.equal(m.contagem.todos, 2);
   assert.equal(m.contagem.vencida, 1);
   assert.equal(m.contagem.proxima, 0, 'a calibragem (verificação) não conta quando só serviços são exibidos');
@@ -228,23 +228,63 @@ test('opções de prazo: faixas do guia viram escolha rápida (5.000 ou 10.000 k
   assert.match(reg, /data-pz-meses/);
 });
 
-test('registro salvo: situação do pagamento e acesso a "Pagamento e NF" pelo painel do veículo', async () => {
-  const { situacaoPagamento } = await import('../assets/js/modules/frotas-manutencao-preventiva-regras.js');
-  assert.deepEqual(situacaoPagamento({ responsavel_pagamento: 'empresa', notas: [] }), { id: 'sem', tom: 'amber', texto: 'Sem pagamento' });
-  assert.deepEqual(situacaoPagamento({ responsavel_pagamento: null, notas: [] }).id, 'sem');
-  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', notas: [{ enviada_em: null }, { enviada_em: 'x' }] }).texto, '1 nota(s) a enviar');
-  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', pago_em: null, notas: [{ enviada_em: 'x' }] }).id, 'aguardando');
-  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', pago_em: '2026-10-16', notas: [{ enviada_em: 'x' }] }).id, 'paga');
-  assert.equal(situacaoPagamento({ responsavel_pagamento: 'locadora', notas: [] }).texto, 'Pago por Locadora');
+test('o que falta em uma preventiva registrada: NF, envio, comprovante e quem paga', async () => {
+  const { pendenciasDoRegistro, registroComPendencias } = await import('../assets/js/modules/frotas-manutencao-preventiva-regras.js');
+  const m = { responsavel_pagamento: 'empresa', pendencia_dispensada_em: null };
+  const nota = (extra) => ({ anexo_url: 'nf', enviada_em: null, comprovante_url: null, pago_em: null, ...extra });
+  const ids = (reg) => pendenciasDoRegistro(reg).itens.map((i) => i.id);
+  assert.deepEqual(ids(registroComPendencias(m, [])), ['nf', 'comprovante'], 'sem nenhuma nota: falta NF e comprovante');
+  assert.deepEqual(ids(registroComPendencias(m, [nota({ anexo_url: null, comprovante_url: 'c', pago_em: 'x' })])), ['nf'], 'só o comprovante chegou');
+  assert.deepEqual(ids(registroComPendencias(m, [nota({})])), ['enviar', 'comprovante'], 'NF chegou, falta enviar e pagar');
+  assert.deepEqual(ids(registroComPendencias(m, [nota({ enviada_em: 'x' })])), ['comprovante'], 'enviada, aguardando o comprovante/pagamento');
+  assert.deepEqual(ids(registroComPendencias(m, [nota({ enviada_em: 'x', pago_em: 'x', comprovante_url: 'c' })])), []);
+  assert.equal(pendenciasDoRegistro(registroComPendencias(m, [nota({ enviada_em: 'x', pago_em: 'x', comprovante_url: 'c' })])).id, 'completo');
+  assert.deepEqual(ids(registroComPendencias({ ...m, responsavel_pagamento: null }, [])), ['responsavel', 'nf', 'comprovante']);
+  const locadora = pendenciasDoRegistro(registroComPendencias({ ...m, responsavel_pagamento: 'locadora' }, []));
+  assert.equal(locadora.texto, 'Pago por Locadora');
+  assert.equal(locadora.itens.length, 0, 'outro pagador não tem pendência de documento');
+  assert.equal(pendenciasDoRegistro(registroComPendencias({ ...m, pendencia_dispensada_em: '2026-10-16' }, [])).id, 'dispensada');
+  // a linha da view traz os mesmos indicadores prontos
+  assert.deepEqual(ids({ ...m, falta_nf: true, falta_comprovante: true }), ['nf', 'comprovante']);
+});
+
+test('nota: a NF é obrigatória na ficha; na preventiva basta a NF ou o comprovante', async () => {
+  const { validarNota } = await import('../assets/js/modules/frotas-manutencao-regras.js');
+  assert.match(validarNota({ valor: 10, fornecedor: 'A', arquivo: null })[0], /arquivo da nota fiscal/, 'ficha da Corretiva');
+  assert.deepEqual(validarNota({ valor: 10, fornecedor: 'A', arquivo: null, comprovante: { name: 'pix.pdf' } }), []);
+  assert.deepEqual(validarNota({ valor: 10, fornecedor: 'A', arquivo: { name: 'nf.pdf' }, comprovante: null }), []);
+  assert.match(validarNota({ valor: 10, fornecedor: 'A', arquivo: null, comprovante: null })[0], /NF\/NFS-e ou o comprovante/);
+});
+
+test('lista: veículos com preventiva pendente de documento entram no filtro "Documentos pendentes"', () => {
+  const pend = [{ veiculo_id: 'v2', manutencao_id: 'm1' }, { veiculo_id: 'v2', manutencao_id: 'm2' }];
+  const m = montarLista(linhas, { tipo: 'servico', pendencias: pend });
+  assert.equal(m.contagem.documentos, 1);
+  assert.equal(m.veiculos.find((v) => v.placa === 'RMS1E45').resumo.documentos, 2);
+  assert.deepEqual(montarLista(linhas, { tipo: 'servico', pendencias: pend, filtro: 'documentos' }).veiculos.map((v) => v.placa), ['RMS1E45']);
+  assert.equal(montarLista(linhas, { tipo: 'servico' }).contagem.documentos, 0);
+});
+
+test('painel do veículo: registros feitos com o que falta; modal Pagamento e NF anexa depois e dispensa', () => {
   const lerArq = (c) => readFileSync(new URL(c, import.meta.url), 'utf8');
   const painel = lerArq('../assets/js/modules/frotas-manutencao-preventiva.js');
   assert.match(painel, /Registros feitos/);
   assert.match(painel, /data-pagamento=/);
   assert.match(painel, /frotas-manutencao-preventiva-pagamento\.js/);
+  assert.match(painel, /carregarPendenciasPreventivas/);
+  assert.match(painel, /documento pendente/);
   const pag = lerArq('../assets/js/modules/frotas-manutencao-preventiva-pagamento.js');
   assert.match(pag, /atualizarManutencao/);
   assert.match(pag, /enviarNfFinanceiro/);
   assert.match(pag, /criarEditorNotas/);
+  assert.match(pag, /data-anexar-nf/);
+  assert.match(pag, /comprovanteTardio/);
+  assert.match(pag, /dispensarPendencias/);
   assert.match(lerArq('../assets/js/modules/frotas-manutencao-preventiva-registro.js'), /criarEditorNotas/);
-  assert.match(lerArq('../assets/js/modules/frotas-manutencao-dados.js'), /carregarRegistrosPreventivos/);
+  const dados = lerArq('../assets/js/modules/frotas-manutencao-dados.js');
+  assert.match(dados, /frotas_preventiva_pendencias_v/);
+  assert.match(dados, /frotas_manutencao_nota_comprovante/);
+  const sql = lerArq('../supabase/migrations/20261016270000_frotas_preventiva_pendencias.sql');
+  assert.match(sql, /frotas_preventiva_pendencias_v/);
+  assert.match(sql, /sem_nf/);
 });

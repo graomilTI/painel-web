@@ -3,7 +3,7 @@
 // de velocidade e das multas) pelo Web App do Apps Script, usando a ação upload_multa_dossie, que grava
 // qualquer PDF na pasta do condutor. O painel só guarda a referência em frotas_motoristas.termo_*.
 // Migration: 20261016120000_frotas_motoristas_termo_utilizacao.sql
-import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261016-frotas-manut20';
+import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261016-frotas-manut21';
 
 const PASTA_MAE_DRIVE_ID = '1q5Ba5qqNJEBUZYA8GNRZmXZZsJ8U0YIr';
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzDlhiUGilfA1afrunX3Jtc8LAG4DqMO9v0AJKveUxjUaccfJM_ynnKGRghp_K5AfjK/exec';

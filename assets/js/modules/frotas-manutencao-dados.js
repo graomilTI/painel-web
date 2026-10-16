@@ -102,16 +102,37 @@ export async function registrarPreventiva(supabase, { veiculo_id, data, km, iten
   return id;
 }
 
-// Últimas preventivas já registradas de um veículo (com as notas, para mostrar a situação do pagamento).
+// Preventivas registradas pela aba Preventiva e o que falta em cada uma (view frotas_preventiva_pendencias_v).
+// `id` = id da manutenção. Do veículo: as 10 últimas; de todos: só as que têm pendência (para o filtro da lista).
+const doRegistro = (r) => ({ ...r, id: r.manutencao_id });
 export async function carregarRegistrosPreventivos(supabase, veiculoId) {
-  const manut = await tudo(supabase.from('frotas_manutencoes').select('id,numero,descricao,data_execucao,km_execucao,custo,responsavel_pagamento,pago_em,oficina')
-    .eq('veiculo_id', veiculoId).eq('status', 'concluida').eq('natureza', 'preventiva')
-    .order('data_execucao', { ascending: false }).order('id', { ascending: true }).limit(10), 'Erro ao carregar os registros do veículo.');
-  const ids = manut.map((m) => m.id);
-  const notas = ids.length
-    ? await tudo(supabase.from('frotas_manutencao_notas').select('id,manutencao_id,enviada_em,pago_em,valor').in('manutencao_id', ids).limit(1000), 'Erro ao carregar as notas dos registros.')
-    : [];
-  return manut.map((m) => ({ ...m, notas: notas.filter((n) => n.manutencao_id === m.id) }));
+  const linhas = await tudo(supabase.from('frotas_preventiva_pendencias_v').select('*').eq('veiculo_id', veiculoId)
+    .order('data_execucao', { ascending: false }).order('manutencao_id', { ascending: true }).limit(10), 'Erro ao carregar os registros do veículo.');
+  return linhas.map(doRegistro);
+}
+
+export async function carregarPendenciasPreventivas(supabase) {
+  const linhas = await tudoPaginado(() => supabase.from('frotas_preventiva_pendencias_v').select('*').eq('pendente', true)
+    .order('placa', { ascending: true }).order('data_execucao', { ascending: false }).order('manutencao_id', { ascending: true }), 'Erro ao carregar as pendências de documentos.');
+  return linhas.map(doRegistro);
+}
+
+// Anexa o que chegou depois: NF/comprovante em nota ainda não enviada (update direto) ou comprovante em nota já enviada
+// (RPC que baixa o pagamento no Financeiro).
+export async function atualizarNota(supabase, id, campos) {
+  const { error } = await supabase.from('frotas_manutencao_notas').update(campos).eq('id', id);
+  if (error) falhar(error, 'Erro ao atualizar a nota.');
+}
+
+export async function comprovanteTardio(supabase, notaId, url, pagoEm) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_nota_comprovante', { p_nota: notaId, p_url: url, p_pago_em: pagoEm || null });
+  if (error) falhar(error, 'Erro ao anexar o comprovante.');
+  return data;
+}
+
+// Dispensa as pendências de documento (o que nunca terá NF ou comprovante).
+export async function dispensarPendencias(supabase, manutencaoId) {
+  await atualizarManutencao(supabase, manutencaoId, { pendencia_dispensada_em: new Date().toISOString() });
 }
 
 export async function kmAtualDoVeiculo(supabase, veiculoId) {

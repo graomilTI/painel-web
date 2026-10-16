@@ -4,13 +4,13 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut20';
-import { RESPONSAVEIS, STATUS_VENCIMENTO, descreverIntervalo, norm, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut20';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261016-frotas-manut20';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut21';
+import { RESPONSAVEIS, STATUS_VENCIMENTO, descreverIntervalo, norm, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut21';
+import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut21';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261016-frotas-manut21';
 import {
   agruparPorSistema, hojeBrasilISO, kmMais, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut20';
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut21';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
@@ -45,7 +45,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
         <div class="fm-prev-grupos" data-grupos></div></section>
       <section data-passo="2" hidden><div class="fm-mm" style="margin-bottom:8px">Próximo km e próxima data já vêm do intervalo do guia; ajuste se o combinado for outro. Deixe em branco o que não tem prazo.</div><div class="fm-prev-lista" data-prazos></div></section>
       <section data-passo="3" hidden>
-        <div class="fm-mm" style="margin-bottom:8px">Opcional: dá para completar depois na aba Corretiva. Anexe a NF ou NFS-e de cada nota (peças, serviço) e, se já foi pago, o comprovante: com comprovante o pagamento entra no Financeiro já como pago; a NF vai para o lançamento no GRM.</div>
+        <div class="fm-mm" style="margin-bottom:8px">Opcional: anexe o que já tiver (NF/NFS-e e/ou comprovante de pagamento). O que faltar fica como <strong>pendência</strong> no painel do veículo, e dá para completar depois em Pagamento e NF. Com comprovante o pagamento entra no Financeiro já como pago; a NF vai para o lançamento no GRM.</div>
         <div class="fm-form" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0">
           <div class="fm-field"><label>Quem paga</label><select class="fm-select" data-r="responsavel"><option value="">Selecione...</option>${RESPONSAVEIS.map((r) => `<option value="${r.id}"${r.id === responsavelPadrao ? ' selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
           <div class="fm-field"><label>Custo total (R$)</label><input class="fm-input" type="number" min="0" step="0.01" data-r="custo" data-auto="1" placeholder="0,00"><small data-custo-dica></small></div></div>
@@ -176,7 +176,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
     const botoes = [...ov.querySelectorAll('.fm-prev-rodape button')]; botoes.forEach((b) => { b.disabled = true; });
     const rotulo = (t) => { ov.querySelector('.fm-btn.primary').textContent = t; };
     const enviar = listaNotas.length && registro.responsavel === 'empresa' && campo('enviar').checked;
-    let id = null; const avisos = [];
+    let id = null; const avisos = []; let semNf = 0;
     try {
       id = await dados.registrarPreventiva(supabase, {
         veiculo_id: veiculo.veiculo_id, data: registro.data, km: registro.km, oficina: campo('oficina').value.trim(), observacoes: campo('obs').value.trim(),
@@ -192,7 +192,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
     for (const n of listaNotas) {
       try {
         rotulo(`Anexando nota ${salvas + 1} de ${listaNotas.length}...`);
-        const anexo = await dados.enviarAnexo(supabase, id, 'nf', n.arquivo);
+        const anexo = n.arquivo ? await dados.enviarAnexo(supabase, id, 'nf', n.arquivo) : null;
         const urlComprovante = n.comprovante ? await dados.enviarAnexo(supabase, id, 'comprovante', n.comprovante) : null;
         await dados.salvarNota(supabase, {
           manutencao_id: id, tipo: n.tipo, fornecedor: n.fornecedor, oficina_id: n.oficina_id, numero: n.numero, valor: n.valor, anexo_url: anexo,
@@ -202,7 +202,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
       } catch (err) { avisos.push(`Nota ${n.numero || n.fornecedor}: ${err.message || 'não foi anexada'}.`); }
     }
     if (enviar && salvas > 0) {
-      try { rotulo('Enviando ao GRM e ao Financeiro...'); await dados.enviarNfFinanceiro(supabase, id); }
+      try { rotulo('Enviando ao GRM e ao Financeiro...'); const envio = await dados.enviarNfFinanceiro(supabase, id); semNf = Number(envio?.sem_nf || 0); }
       catch (err) { avisos.push(`Envio ao GRM e ao Financeiro: ${err.message || 'não foi enviado'}.`); }
     }
     await aoConcluir();
@@ -213,8 +213,8 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
     }
     closeModal(MODAL);
     toast(salvas
-      ? `Preventiva registrada em ${veiculo.placa} com ${salvas} nota(s)${enviar ? ' enviada(s) ao GRM e ao Financeiro' : ''}.`
-      : `Preventiva registrada em ${veiculo.placa}. O pagamento pode ser lançado depois: abra o veículo e use "Pagamento e NF" em Registros feitos.`, 'ok', 6500);
+      ? `Preventiva registrada em ${veiculo.placa} com ${salvas} nota(s)${enviar ? ' enviada(s) ao GRM e ao Financeiro' : ''}.${semNf ? ` ${semNf} sem NF ainda: fica como pendência.` : ''}`
+      : `Preventiva registrada em ${veiculo.placa}. O que falta (NF, comprovante) fica como pendência: abra o veículo > Registros feitos > Pagamento e NF.`, 'ok', 7000);
   }
 
   // ---------- eventos ----------
