@@ -69,6 +69,7 @@ const childProcess = require('child_process');
 const util = require('util');
 const { createClient } = require('@supabase/supabase-js');
 
+const { isFrotasRow, applyFrotasRules } = require('./grm-nf-frotas-regras');
 const execFile = util.promisify(childProcess.execFile);
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
@@ -1139,6 +1140,19 @@ function storagePathFromPublicUrl(url) {
   return { bucket: m[1], path: p };
 }
 
+// NFs de manutenção de frota (setor FROTAS): o contexto vem da manutenção que aponta para esta linha da fila
+// (frotas_manutencoes.nf_lancamento_id), criada pela RPC frotas_manutencao_enviar_nf_financeiro.
+async function loadFrotasContext(row) {
+  const { data: m, error } = await supabase.from('frotas_manutencoes')
+    .select('id,numero,os_numero,descricao,oficina,veiculo_id').eq('nf_lancamento_id', row.id).limit(1).maybeSingle();
+  if (error) throw error;
+  if (!m) return null;
+  const { data: v, error: errVeic } = await supabase.from('frotas_veiculos')
+    .select('placa,coordenacao').eq('id', m.veiculo_id).maybeSingle();
+  if (errVeic) throw errVeic;
+  return { ...m, placa: v && v.placa, coordenacao: v && v.coordenacao };
+}
+
 async function loadComprasContext(row) {
   const bucket = row.storage_bucket || 'notas-fiscais';
   const urls = Array.from(new Set([
@@ -1888,6 +1902,10 @@ async function processUpload(row, runId) {
         data = applyComprasRules(data, ctx, comprovanteCompras);
       }
     }
+    if (documentKind !== 'HOLERITE' && isFrotasRow(row)) {
+      const ctxFrotas = await loadFrotasContext(row);
+      if (ctxFrotas) data = applyFrotasRules(data, ctxFrotas, { fallback: (config.compras && config.compras.coordenacao_fallback) || 'GERAL' });
+    }
     data.tipo_documento_fluxo = documentKind;
     applyManualOverrides(data, row.ajustes_manuais);
     data.fingerprint = fingerprintOf(data);
@@ -2139,6 +2157,6 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
   };
 }

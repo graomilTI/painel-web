@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut4';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut4';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut4';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut5';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut5';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut5';
 import {
   acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut4';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut5';
 import {
   htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut4';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut5';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -23,7 +23,7 @@ import {
     manut: [], itens: [], orcs: [],
     filtro: 'abertas', busca: '', natureza: '', prioridade: '',
     loading: false, ocupado: false,
-    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [],
+    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -99,7 +99,7 @@ import {
       await fn();
       if (recarregar && state.fichaId) await recarregarUma(state.fichaId);
       if (sucesso) toast(sucesso);
-      if (state.fichaId) atualizarAfetadas();
+      if (state.fichaId) { atualizarAfetadas(); atualizarFinanceiro(); }
       return true;
     } catch (err) {
       toast(err.message || 'Não foi possível concluir a ação.', 'err', 5500);
@@ -120,7 +120,7 @@ import {
     const { itensPorManut, orcsPorManut } = indices();
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
-      podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas,
+      podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
     });
     let ov = document.getElementById(FICHA);
     if (!ov) {
@@ -146,10 +146,22 @@ import {
     renderFicha();
   }
 
+  // NF no GRM e pagamento no Financeiro (manutenção concluída e já enviada); atualiza a ficha ao chegar.
+  async function atualizarFinanceiro() {
+    const m = fichaAtual();
+    const id = m?.id;
+    if (!m || m.status !== 'concluida' || !m.nf_enviada_em) { state.financeiro = null; return; }
+    const fin = await dados.statusNfFinanceiro(state.supabase, id);
+    if (state.fichaId !== id) return;
+    state.financeiro = fin;
+    renderFicha();
+  }
+
   function abrirFicha(id) {
-    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = [];
+    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     renderFicha();
     atualizarAfetadas();
+    atualizarFinanceiro();
   }
 
   function fecharFicha() {
@@ -219,6 +231,7 @@ import {
       return executar(() => dados.salvarItem(state.supabase, {
         manutencao_id: m.id, categoria_codigo: Number(cat), natureza: val(box, '[data-nv="natureza"]') || null,
         descricao: val(box, '[data-nv="descricao"]').trim() || nomeCat, plano_id: val(box, '[data-nv="plano_id"]') || null,
+        tipo_item: val(box, '[data-nv="tipo_item"]') || 'servico',
       }), { sucesso: 'Item adicionado.' });
     }
     if (acao === 'item-remover') {
@@ -256,6 +269,22 @@ import {
       }, { sucesso: 'Orçamento salvo.' });
     }
 
+    if (acao === 'nf-enviar') {
+      if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: 'A NF entra na fila do GRM e o pagamento vai para o Financeiro. Depois disso o custo final fica travado.', confirmarLabel: 'Enviar' }))) return;
+      return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { sucesso: 'NF enviada ao GRM e pagamento ao Financeiro.' });
+    }
+    if (acao === 'nf-anexar-enviar') {
+      const f = ov.querySelector('[data-nf-form]');
+      const arquivo = f.querySelector('[data-nf-arquivo]')?.files?.[0] || null;
+      if (!arquivo) return erros(['Escolha o arquivo da nota fiscal.']);
+      const numero = val(f, '[data-nf="numero"]').trim() || null;
+      return executar(async () => {
+        const anexo = await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo);
+        await dados.atualizarManutencao(state.supabase, m.id, { anexo_url: anexo, nf_numero: numero });
+        await dados.enviarNfFinanceiro(state.supabase, m.id);
+      }, { sucesso: 'NF enviada ao GRM e pagamento ao Financeiro.' });
+    }
+
     if (acao === 'confirmar-sem-orcamento') {
       const valor = numeroOuNulo(val(ov, '[data-form-acao="sem_orcamento"] [data-a="valor_aprovado"]'));
       if (valor == null || valor < 0) return erros(['Informe o valor estimado aprovado.']);
@@ -270,10 +299,16 @@ import {
       const lista = validarConclusao(campos);
       if (lista.length) return erros(lista);
       const arquivo = f.querySelector('[data-a-arquivo]')?.files?.[0] || null;
+      const enviar = !!f.querySelector('[data-a-enviar]')?.checked;
+      if (enviar && !arquivo) return erros(['Anexe a nota fiscal ou desmarque o envio ao GRM e ao Financeiro.']);
       return executar(async () => {
         const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
         await dados.mudarStatus(state.supabase, m.id, 'concluida', { ...campos, nf_numero: val(f, '[data-a="nf_numero"]').trim() || null, ...(anexo ? { anexo_url: anexo } : {}) });
         state.formAcao = null;
+        if (enviar) {
+          try { await dados.enviarNfFinanceiro(state.supabase, m.id); toast('NF enviada ao GRM e pagamento ao Financeiro.'); }
+          catch (err) { toast(`Concluída, mas o envio ao GRM/Financeiro falhou: ${err.message}`, 'err', 8000); }
+        }
       }, { sucesso: 'Manutenção concluída.' });
     }
   }

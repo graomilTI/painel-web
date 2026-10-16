@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261015-fin2 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261016-fin3 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261015-fin2';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261015-fin2';
+import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261016-fin3';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261016-fin3';
 
 function criarSetorPagamentos(ctx) {
   function filteredSetorPagamentos() {
@@ -15,7 +15,7 @@ function criarSetorPagamentos(ctx) {
     if (filter === 'OUTROS') {
       return (state.financeiroPagamentos || []).filter((row) => {
         const origem = normalize(row.origem || row.setor || row.modulo_origem);
-        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && !origem.includes('auditoria') && origem !== 'rh' && !origem.includes('recursos humanos');
+        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && !origem.includes('auditoria') && !origem.includes('frota') && origem !== 'rh' && !origem.includes('recursos humanos');
       });
     }
     return (state.financeiroPagamentos || []).filter((row) => {

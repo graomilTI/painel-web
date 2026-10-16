@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261016-frotas-manut4';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261016-frotas-manut5';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -27,8 +27,8 @@ ${ESTILOS_LISTA}
 .fm-sec{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:14px;margin-top:14px;background:rgba(2,6,23,.3)}.fm-sec h4{margin:0 0 10px;color:#bbf7d0;font-size:12px;letter-spacing:.1em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .fm-grid2{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.fm-grid2.tres{grid-template-columns:repeat(3,minmax(0,1fr))}
 .fm-ro{color:#f8fafc;font-size:14px;font-weight:700;line-height:1.4;word-break:break-word}.fm-ro small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:2px}
-.fm-itens{display:grid;gap:8px}.fm-item{display:grid;grid-template-columns:minmax(150px,2fr) 120px minmax(140px,2fr) minmax(130px,1.2fr) 110px 40px;gap:8px;align-items:start}.fm-item .fm-input,.fm-item .fm-select{height:38px;font-size:13px}
-.fm-item-cab{display:grid;grid-template-columns:minmax(150px,2fr) 120px minmax(140px,2fr) minmax(130px,1.2fr) 110px 40px;gap:8px;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.fm-itens{display:grid;gap:8px}.fm-item{display:grid;grid-template-columns:minmax(150px,2fr) 120px minmax(140px,2fr) minmax(130px,1.2fr) 100px 40px;gap:8px;align-items:start}.fm-item .fm-input,.fm-item .fm-select{height:38px;font-size:13px}
+.fm-item-cab{display:grid;grid-template-columns:minmax(150px,2fr) 120px minmax(140px,2fr) minmax(130px,1.2fr) 100px 40px;gap:8px;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
 .fm-orcs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}.fm-orc{border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:12px;background:rgba(15,23,42,.6);display:grid;gap:6px}.fm-orc.sel{border-color:#4ade80;box-shadow:0 0 0 1px #4ade80;background:rgba(22,101,52,.2)}.fm-orc strong{color:#f8fafc;font-size:15px}.fm-orc .v{font-size:20px;font-weight:950;color:#fff}.fm-orc-acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .fm-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:10px;padding:12px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px}
 .fm-tl{list-style:none;margin:0;padding:0;display:grid;gap:8px}.fm-tl li{display:grid;grid-template-columns:150px 1fr;gap:10px;font-size:12px;color:#cbd5e1;border-left:2px solid rgba(34,197,94,.4);padding-left:10px}.fm-tl time{color:#94a3b8}

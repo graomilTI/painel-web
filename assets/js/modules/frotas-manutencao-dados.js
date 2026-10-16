@@ -53,6 +53,19 @@ export async function kmAtualDoVeiculo(supabase, veiculoId) {
   return data == null ? null : Number(data);
 }
 
+// NF para o agente do GRM e pagamento para o Financeiro (só manutenção concluída, paga pela empresa, com NF e custo).
+export async function enviarNfFinanceiro(supabase, manutencaoId) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_enviar_nf_financeiro', { p_manutencao: manutencaoId });
+  if (error) falhar(error, 'Erro ao enviar a nota fiscal e o pagamento.');
+  return data;
+}
+
+// Situação da NF no GRM e do pagamento. Sem acesso ou sem envio: null.
+export async function statusNfFinanceiro(supabase, manutencaoId) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_nf_status', { p_manutencao: manutencaoId });
+  return error ? null : data;
+}
+
 // Programação que já usa o veículo desta manutenção (de hoje até a previsão de entrega). Sem acesso: lista vazia.
 export async function programacoesAfetadas(supabase, manutencaoId) {
   const { data, error } = await supabase.rpc('frotas_manutencao_programacoes_afetadas', { p_manutencao: manutencaoId });
