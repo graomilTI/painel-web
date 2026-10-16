@@ -4,12 +4,12 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut17';
-import { RESPONSAVEIS, STATUS_VENCIMENTO, TIPOS_NOTA, descreverIntervalo, norm, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261016-frotas-manut17';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut17';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut18';
+import { RESPONSAVEIS, STATUS_VENCIMENTO, TIPOS_NOTA, descreverIntervalo, norm, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261016-frotas-manut18';
+import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut18';
 import {
   agruparPorSistema, hojeBrasilISO, proximoPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut17';
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut18';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];

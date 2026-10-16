@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-manut17';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-manut18';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -1500,7 +1500,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-google]').addEventListener('click', async () => {
         try {
-          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261016-frotas-manut17');
+          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261016-frotas-manut18');
           await abrirSincronizacaoGoogle({ supabase: _opts.supabase, toast });
         } catch (err) { console.error('[agenda-google]', err); toast('Não foi possível abrir a sincronização.', true); }
       });

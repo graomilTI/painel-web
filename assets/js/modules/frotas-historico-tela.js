@@ -118,9 +118,17 @@ import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlat
 
   async function tryLoadTableRows(supabase, tableName, select = '*') {
     try {
-      const { data, error } = await supabase.from(tableName).select(select).limit(5000);
-      if (error) throw error;
-      return Array.isArray(data) ? data : [];
+      // A API devolve no máximo 1.000 linhas por consulta: lê em páginas (ordem por id) até 5.000 linhas.
+      const linhas = [];
+      for (let de = 0; de < 5000; de += 1000) {
+        let { data, error } = await supabase.from(tableName).select(select).order('id', { ascending: true }).range(de, de + 999);
+        if (error && de === 0) ({ data, error } = await supabase.from(tableName).select(select).limit(1000)); // tabela sem coluna id
+        if (error) throw error;
+        const lote = Array.isArray(data) ? data : [];
+        linhas.push(...lote);
+        if (lote.length < 1000) break;
+      }
+      return linhas;
     } catch (err) {
       console.warn(`[FROTAS] Histórico: tabela ${tableName} indisponível ou sem acesso.`, err?.message || err);
       return [];
