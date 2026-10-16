@@ -1,4 +1,4 @@
-import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261016-motoristas-cards';
+import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261016-frotas-layout';
 
 (function () {
   const MODULE_NAME = 'FROTAS_TERMO_VEICULOS';
