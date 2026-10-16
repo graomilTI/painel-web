@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut12';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut12';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut12';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut13';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut13';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut13';
 import {
-  acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut12';
+  acoesDisponiveis, contarPorFiltro, rotuloVeiculo, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut13';
 import {
   htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut12';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut13';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -44,7 +44,7 @@ import {
 
   function enriquecer(m) {
     const v = state.base.veiculos.find((x) => x.id === m.veiculo_id);
-    return { ...m, __placa: v?.placa || '', __modelo: v?.marca_modelo || '', __coordenacao: v?.coordenacao || '' };
+    return { ...m, __placa: v?.placa || '', __modelo: v ? rotuloVeiculo(v) : '', __coordenacao: v?.coordenacao || '' };
   }
 
   function aplicarCarga({ manutencoes, itens, orcamentos }) {

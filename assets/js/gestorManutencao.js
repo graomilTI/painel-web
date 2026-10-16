@@ -4,6 +4,13 @@
 
 const semAcento = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
 
+// Marca/modelo para exibir quando o campo do cadastro vem vazio (mesma ideia de rotuloVeiculo em frotas-manutencao-regras.js).
+export function modeloDoVeiculo(v) {
+  const t = (x) => String(x ?? '').trim();
+  if (t(v.marca_modelo)) return t(v.marca_modelo);
+  return [t(v.marca) || t(v.bfleet_marca), t(v.modelo) || t(v.bfleet_modelo)].filter(Boolean).join('/').toUpperCase();
+}
+
 const PRIORIDADES = [['normal', 'Normal'], ['alta', 'Alta'], ['urgente', 'Urgente'], ['baixa', 'Baixa']];
 
 export function veiculosDaRegional(veiculos, { isMaster, supervisoes }) {
@@ -16,7 +23,7 @@ export function veiculosDaRegional(veiculos, { isMaster, supervisoes }) {
 export async function renderSolicitarManutencao(main, { supabase, state, escapeHtml, onBack }) {
   main.innerHTML = '<div class="section-card"><p class="help">Carregando veículos...</p></div>';
   const [veic, cats] = await Promise.all([
-    supabase.from('frotas_veiculos').select('id,placa,marca_modelo,supervisao,status,motorista_atual').order('placa', { ascending: true }),
+    supabase.from('frotas_veiculos').select('id,placa,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,supervisao,status,motorista_atual').order('placa', { ascending: true }),
     supabase.from('frotas_manutencao_categorias').select('codigo,nome').eq('ativo', true).order('codigo', { ascending: true }),
   ]);
   const veiculos = veiculosDaRegional(veic.data || [], { isMaster: state.isMaster, supervisoes: state.allowedSupervisoes });
@@ -31,7 +38,7 @@ export async function renderSolicitarManutencao(main, { supabase, state, escapeH
     <section class="section-card">
       ${veic.error ? `<p class="help error-text">Erro ao carregar os veículos: ${escapeHtml(veic.error.message)}</p>` : !veiculos.length ? '<p class="help">Nenhum veículo ativo encontrado para a sua regional.</p>' : `
       <form id="manSolicitarForm">
-        <div class="field"><label>Veículo</label><select id="manVeiculo" required><option value="">Selecione...</option>${veiculos.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} · ${escapeHtml(v.marca_modelo || '')}${v.motorista_atual ? ` · ${escapeHtml(v.motorista_atual)}` : ''}</option>`).join('')}</select></div>
+        <div class="field"><label>Veículo</label><select id="manVeiculo" required><option value="">Selecione...</option>${veiculos.map((v) => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.placa)} · ${escapeHtml(modeloDoVeiculo(v))}${v.motorista_atual ? ` · ${escapeHtml(v.motorista_atual)}` : ''}</option>`).join('')}</select></div>
         <div class="field"><label>O que está acontecendo?</label><textarea id="manDescricao" rows="4" required placeholder="Ex.: barulho ao frear, luz do painel acesa, revisão..."></textarea></div>
         <div class="field"><label>Sistema do veículo (opcional)</label><select id="manCategoria"><option value="">Não sei / vários</option>${categorias.map((c) => `<option value="${c.codigo}">${String(c.codigo).padStart(2, '0')} · ${escapeHtml(c.nome)}</option>`).join('')}</select></div>
         <div class="field"><label>Prioridade</label><select id="manPrioridade">${PRIORIDADES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
