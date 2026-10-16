@@ -2,11 +2,11 @@
 // (NF/NFS-e + comprovante opcional) e envia ao GRM e ao Financeiro. Serve para quem salvou a preventiva sem pagamento.
 // Regras do banco: custo e notas enviadas ficam travados depois do primeiro envio; a soma das notas não passa do custo.
 import { closeModal, confirmar, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut22';
-import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut22';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut22';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261016-frotas-manut22';
-import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut22';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut23';
+import { RESPONSAVEIS, TIPOS_NOTA, codigoManutencao, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut23';
+import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut23';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261016-frotas-manut23';
+import { hojeBrasilISO, pendenciasDoRegistro, registroComPendencias, validarPasso3 } from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut23';
 
 const MODAL = 'fmPreventivaPagamento';
 const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

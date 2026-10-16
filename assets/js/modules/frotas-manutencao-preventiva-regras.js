@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut22';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut23';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -70,6 +70,26 @@ export function montarLista(linhas, { tipo = 'servico', busca = '', filtro = 'to
   const veiculos = buscados.filter((v) => veiculoBateFiltro(v.resumo, filtro));
   const contagem = Object.fromEntries(FILTROS_PREVENTIVA.map((f) => [f.id, buscados.filter((v) => veiculoBateFiltro(v.resumo, f.id)).length]));
   return { veiculos, contagem };
+}
+
+// A RPC frotas_preventiva_painel devolve um item por veículo com os serviços dentro (chaves curtas, sem nulos). Aqui volta ao formato
+// de linha da view frotas_manutencao_vencimentos_v (uma por veículo e serviço), juntando o nome/sistema do serviço (planos e
+// categorias do guia, que o cliente já tem). planos: Map(id → plano); categorias: Map(codigo → nome).
+export function expandirPainel(painel, planos, categorias) {
+  const linhas = [];
+  for (const v of painel || []) {
+    for (const s of v.s || []) {
+      const p = planos.get(s.p);
+      if (!p) continue;
+      linhas.push({
+        veiculo_id: v.v, placa: v.placa, marca_modelo: v.mm ?? null, coordenacao: v.co ?? null, supervisao: v.su ?? null, hodometro: v.km ?? null,
+        plano_id: s.p, plano_codigo: p.codigo, plano_nome: p.nome, tipo: p.tipo, categoria_codigo: p.categoria_codigo, categoria_nome: categorias.get(p.categoria_codigo) || '',
+        status: s.st, data_ultima: s.du ?? null, km_ultima: s.ku ?? null, vencimento_km: s.vk ?? null, vencimento_data: s.vd ?? null,
+        km_restante: s.kr ?? null, dias_restantes: s.dr ?? null, em_andamento: !!s.ea,
+      });
+    }
+  }
+  return linhas;
 }
 
 // Nome do serviço para os cards: sem o "Troca de/do/da/dos/das" do início (a ação é óbvia) e com a primeira letra maiúscula.

@@ -78,6 +78,18 @@ export async function carregarVencimentos(supabase) {
   return tudoPaginado(() => supabase.from('frotas_manutencao_vencimentos_v').select('*').order('placa', { ascending: true }).order('plano_codigo', { ascending: true }).order('plano_id', { ascending: true }), 'Erro ao carregar os vencimentos.');
 }
 
+// Lista da Preventiva em UMA consulta (jsonb compacto por veículo); expandirPainel monta as linhas. Se a função não existir
+// ou falhar, quem chama cai em carregarVencimentos (view paginada, bem mais lenta).
+export async function carregarPainelPreventiva(supabase) {
+  const { data, error } = await supabase.rpc('frotas_preventiva_painel');
+  if (error) falhar(error, 'Erro ao carregar a lista da Preventiva.');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function carregarCategorias(supabase) {
+  return tudo(supabase.from('frotas_manutencao_categorias').select('codigo,nome').order('codigo', { ascending: true }).limit(200), 'Erro ao carregar os sistemas do guia.');
+}
+
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
 export async function carregarOficinas(supabase) {
   return tudo(supabase.from('frotas_oficinas').select('id,nome,razao_social,ativo').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.');
