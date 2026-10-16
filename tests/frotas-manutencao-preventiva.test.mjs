@@ -107,3 +107,29 @@ test('módulo Preventiva: "+" por célula e por veículo, registra pela RPC e a 
   assert.match(sql, /proximo_km/);
   assert.match(sql, /coalesce\(u\.proximo_km/);
 });
+
+test('registro com notas: exige quem paga e custo que cubra a soma das notas', () => {
+  const base = { data: '2026-10-16', km: 46000, itens: [{ nome: 'Óleo' }] };
+  const notas = [{ valor: 100 }, { valor: 200 }];
+  assert.deepEqual(validarRegistroPreventiva({ ...base, notas, custo: 300, responsavel: 'empresa' }, '2026-10-16'), []);
+  assert.match(validarRegistroPreventiva({ ...base, notas, custo: 300, responsavel: '' }, '2026-10-16')[0], /quem paga/);
+  assert.match(validarRegistroPreventiva({ ...base, notas, custo: 250, responsavel: 'empresa' }, '2026-10-16')[0], /menor que a soma/);
+  assert.match(validarRegistroPreventiva({ ...base, custo: -1 }, '2026-10-16')[0], /negativo/);
+  assert.deepEqual(validarRegistroPreventiva({ ...base, custo: 0 }, '2026-10-16'), [], 'sem notas o custo é opcional');
+});
+
+test('Preventiva e ficha da Corretiva aceitam NF e comprovante de pagamento; o banco manda o pagamento já pago', () => {
+  const lerArq = (c) => readFileSync(new URL(c, import.meta.url), 'utf8');
+  const mod = lerArq('../assets/js/modules/frotas-manutencao-preventiva.js');
+  assert.match(mod, /Pagamento e nota fiscal/);
+  assert.match(mod, /htmlEntradaNota/);
+  assert.match(mod, /enviarNfFinanceiro/);
+  assert.match(mod, /'comprovante'/);
+  const html = lerArq('../assets/js/modules/frotas-manutencao-html.js');
+  assert.match(html, /data-nt-comprovante/);
+  assert.match(html, /Comprovante anexado/);
+  assert.match(lerArq('../assets/js/modules/frotas-manutencao.js'), /comprovante_url: urlComprovante/);
+  const sql = lerArq('../supabase/migrations/20261016260000_frotas_manutencao_nota_comprovante.sql');
+  assert.match(sql, /case when n\.comprovante_url is not null then 'PAGO' else 'PENDENTE' end/);
+  assert.match(sql, /p_custo numeric default 0, p_responsavel text default null/);
+});

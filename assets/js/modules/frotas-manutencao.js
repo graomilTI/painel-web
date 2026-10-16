@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-termo-cnpj';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-termo-cnpj';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-termo-cnpj';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut16';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut16';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut16';
 import {
   acoesDisponiveis, contarPorFiltro, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-termo-cnpj';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut16';
 import {
   htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-termo-cnpj';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut16';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -281,11 +281,14 @@ import {
       const lista = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo });
       if (lista.length) return erros(lista);
       const oficina = state.base.oficinas.find((o) => norm(o.nome) === norm(nt('fornecedor')));
+      const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
       return executar(async () => {
         const anexo = await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo);
+        const urlComprovante = comprovante ? await dados.enviarAnexo(state.supabase, m.id, 'comprovante', comprovante) : null;
         await dados.salvarNota(state.supabase, {
           manutencao_id: m.id, tipo: nt('tipo') || 'servico', fornecedor: nt('fornecedor'), oficina_id: oficina?.id || null,
           numero: nt('numero') || null, valor, anexo_url: anexo,
+          comprovante_url: urlComprovante, pago_em: urlComprovante ? dados.dataPagamentoISO(nt('pago_em')) : null,
         });
       }, { sucesso: 'Nota adicionada.' });
     }
