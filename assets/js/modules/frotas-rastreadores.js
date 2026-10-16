@@ -772,7 +772,16 @@
       aberta_por_nome: userName(),
       linha_tempo: [{ evento: 'Enviada para manutenção', em: new Date().toISOString(), por: userName() }]
     }).select().single();
-    if (error) throw error;
+    if (error) {
+      // Já existe manutenção aberta para a placa (aberta por outro usuário ou pela rotina automática depois que a
+      // tela carregou): índice único uq_frotas_rastr_manut_aberta. Reaproveita a aberta em vez de falhar.
+      if (error.code === '23505') {
+        const { data: aberta } = await _opts.supabase.from(TABLE_MANUT).select('*')
+          .eq('placa', rawPlaca(row.placa)).eq('situacao', 'aberta').limit(1);
+        if (aberta?.length) return { ...aberta[0], __existente: true };
+      }
+      throw error;
+    }
     return data;
   }
 
@@ -815,10 +824,10 @@
         const rec = await criarManutencao(row, backdrop.querySelector('[name="motivo"]').value.trim());
         const { error } = await setStatusRastreador(row, 'manutencao');
         if (error) {
-          await _opts.supabase.from(TABLE_MANUT).delete().eq('id', rec.id);
+          if (!rec.__existente) await _opts.supabase.from(TABLE_MANUT).delete().eq('id', rec.id);
           throw error;
         }
-        toast(`${placa} enviada para Manutenção.`);
+        toast(rec.__existente ? `${placa} já estava em Manutenção; a tela foi atualizada.` : `${placa} enviada para Manutenção.`);
         notificarEquipe({ assunto: 'manutencao', titulo: `Rastreador enviado para manutenção · ${placa}`, descricao: backdrop.querySelector('[name="motivo"]').value.trim() || 'Sem motivo informado', placa, filtro: 'manutencao' });
         backdrop.remove();
         await loadData(root);
