@@ -339,3 +339,16 @@ export function veiculosUnicos(veiculos) {
   const mantidos = new Set([...melhor.values(), ...semRenavam]);
   return veiculos.filter((v) => mantidos.has(v));
 }
+
+// Marca/modelo para exibir: o campo do cadastro e, quando vier vazio, marca + modelo (cadastro, depois BFleet) ou o
+// nome interno sem a placa. Evita "ABC1D23 · " em branco na escolha do veículo.
+export function rotuloVeiculo(v) {
+  const t = (x) => String(x ?? '').trim();
+  if (t(v?.marca_modelo)) return t(v.marca_modelo);
+  const cadastro = [t(v?.marca), t(v?.modelo)].filter(Boolean).join('/');
+  if (cadastro) return cadastro.toUpperCase();
+  const bfleet = [t(v?.bfleet_marca), t(v?.bfleet_modelo)].filter(Boolean).join('/');
+  if (bfleet) return bfleet.toUpperCase();
+  const placa = t(v?.placa).replace(/[^A-Za-z0-9]/g, '');
+  return t(v?.nome).replace(new RegExp(placa, 'ig'), '').replace(/^[\s\-–·]+|[\s\-–·]+$/g, '');
+}

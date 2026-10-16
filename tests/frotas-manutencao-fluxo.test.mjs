@@ -408,3 +408,17 @@ test('placa unificada: dois cadastros com o mesmo RENAVAM aparecem como um só n
   assert.match(html, /<option value="AAR5A19 · FIAT\/PUNTO">/);
   assert.doesNotMatch(html, /<option value="AAR5019 · ">/);
 });
+
+test('veículo sem marca_modelo no cadastro mostra marca/modelo (cadastro, BFleet) ou o nome sem a placa', async () => {
+  const { rotuloVeiculo } = await import('../assets/js/modules/frotas-manutencao-regras.js');
+  const { modeloDoVeiculo } = await import('../assets/js/gestorManutencao.js');
+  assert.equal(rotuloVeiculo({ placa: 'A', marca_modelo: 'FIAT/PUNTO ESSENCE 1.6' }), 'FIAT/PUNTO ESSENCE 1.6');
+  assert.equal(rotuloVeiculo({ placa: 'A', marca_modelo: '  ', marca: 'FIAT', modelo: 'MOBI LIKE' }), 'FIAT/MOBI LIKE');
+  assert.equal(rotuloVeiculo({ placa: 'A', bfleet_marca: 'Fiat', bfleet_modelo: 'Uno Way 1.4' }), 'FIAT/UNO WAY 1.4');
+  assert.equal(rotuloVeiculo({ placa: 'ONT2B22', nome: 'UNO WAY 1.4 - ONT2B22' }), 'UNO WAY 1.4');
+  assert.equal(rotuloVeiculo({ placa: 'FWW0B82', nome: 'FWW0B82 CHEVROLET PRISMA BRANCA' }), 'CHEVROLET PRISMA BRANCA');
+  assert.equal(rotuloVeiculo({ placa: 'X' }), '');
+  assert.equal(modeloDoVeiculo({ bfleet_marca: 'Volkswagen', bfleet_modelo: 'SAVEIRO' }), 'VOLKSWAGEN/SAVEIRO');
+  const html = htmlFormNova({ ...base, veiculos: [{ id: 'v9', placa: 'ONT2B22', status: 'MANUTENCAO', marca: 'FIAT', modelo: 'UNO WAY 1.4' }] }, {});
+  assert.match(html, /<option value="ONT2B22 · FIAT\/UNO WAY 1\.4">/);
+});
