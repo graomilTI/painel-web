@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout3';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout4';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -290,7 +290,8 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     const andamento = state.merged.filter(r => EM_ANDAMENTO.includes(r._rastr?.status)).length;
     const concluido = state.merged.filter(r => r._rastr?.status === 'concluido').length;
     const manutencao = state.merged.filter(r => r._rastr?.status === STATUS_MANUTENCAO).length;
-    return { total, bfleetTotal, sem, andamento, concluido, manutencao, removidos };
+    const agenda = agendaEventos().filter(e => !e.concluido).length;
+    return { total, bfleetTotal, sem, andamento, concluido, manutencao, removidos, agenda };
   }
 
   function renderKpis(root) {
@@ -306,6 +307,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       item('concluido', 'Instalados', k.concluido, 'green', 'ok'),
       item('manutencao', 'Manutenção', k.manutencao, 'amber', 'ferramenta'),
       item('removidos', 'Removidos', k.removidos, 'red', 'excluir'),
+      item('agenda', 'Agenda', k.agenda, 'purple', 'calendario'),
     ].join('');
   }
 
@@ -314,7 +316,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   function setFiltro(container, value) {
     state.filtro = value || 'todos';
     const agenda = state.filtro === 'agenda';
-    container.querySelectorAll('[data-filter]').forEach(t => t.classList.toggle('active', t.dataset.filter === state.filtro));
     container.querySelector('[data-list-view]').hidden = agenda;
     container.querySelector('[data-agenda-view]').hidden = !agenda;
     renderKpis(container);
@@ -1850,17 +1851,9 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
           <p class="fr-sub">Controle de instalação de rastreadores. Veículos com BFleet ativo são sincronizados automaticamente — IMEI em <span style="color:#a5b4fc">roxo</span> indica origem BFleet.</p>
         </div>
 
-        <div class="fr-card">
-          <div class="fr-tabs">
-            <button class="fr-tab active" data-filter="todos">Todos</button>
-            <button class="fr-tab" data-filter="sem_rastreador">Sem Rastreador</button>
-            <button class="fr-tab" data-filter="em_andamento">Em Andamento</button>
-            <button class="fr-tab" data-filter="concluido">Concluído</button>
-            <button class="fr-tab" data-filter="manutencao">Manutenção</button>
-            <button class="fr-tab" data-filter="removidos">REMOVIDOS</button>
-            <button class="fr-tab fr-tab-agenda" data-filter="agenda" title="Agenda de instalações e manutenções" aria-label="Agenda"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Agenda</button>
-          </div>
+        <div class="fm-kpis" data-kpis></div>
 
+        <div class="fr-card">
           <div class="fr-body">
             <div data-agenda-view hidden></div>
             <div data-list-view>
@@ -1870,8 +1863,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
               <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
               <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
             </div>
-
-            <div class="fm-kpis" data-kpis></div>
 
             <div class="fr-table-wrap">
               <table class="fr-table">
@@ -1887,9 +1878,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
         </div>
       </div>`;
 
-    container.querySelectorAll('[data-filter]').forEach(tab => {
-      tab.addEventListener('click', () => setFiltro(container, tab.dataset.filter));
-    });
 
     container.querySelector('[data-search]').addEventListener('input', e => {
       state.busca = e.target.value;

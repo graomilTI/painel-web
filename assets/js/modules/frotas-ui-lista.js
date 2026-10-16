@@ -13,6 +13,7 @@ export const ICON = {
   carro: '<svg viewBox="0 0 24 24"><path d="M5 17h14M4 17v-4l2-5h12l2 5v4"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>',
   sinal: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/></svg>',
   ferramenta: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4Z"/></svg>',
+  calendario: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   busca: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   editar: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
   excluir: '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>',
@@ -26,7 +27,7 @@ export const ESTILOS_LISTA = `
       .fm-kcard{--kc:#94a3b8;--kc-bg:rgba(148,163,184,.12);appearance:none;font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;border:1px solid rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(15,23,42,.9),rgba(2,6,23,.9));color:#e2e2f0;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;min-width:0}
       .fm-kcard:hover{transform:translateY(-2px);border-color:var(--kc)}.fm-kcard:focus-visible{outline:2px solid var(--kc);outline-offset:2px}
       .fm-kcard[aria-pressed="true"],.fm-kcard.active{border-color:var(--kc);box-shadow:0 0 0 1px var(--kc),0 10px 28px rgba(0,0,0,.28);background:linear-gradient(180deg,var(--kc-bg),rgba(2,6,23,.92))}
-      .fm-kcard.tone-green{--kc:#4ade80;--kc-bg:rgba(34,197,94,.14)}.fm-kcard.tone-amber{--kc:#fbbf24;--kc-bg:rgba(245,158,11,.14)}.fm-kcard.tone-red{--kc:#f87171;--kc-bg:rgba(239,68,68,.14)}.fm-kcard.tone-blue{--kc:#60a5fa;--kc-bg:rgba(59,130,246,.14)}
+      .fm-kcard.tone-green{--kc:#4ade80;--kc-bg:rgba(34,197,94,.14)}.fm-kcard.tone-amber{--kc:#fbbf24;--kc-bg:rgba(245,158,11,.14)}.fm-kcard.tone-red{--kc:#f87171;--kc-bg:rgba(239,68,68,.14)}.fm-kcard.tone-purple{--kc:#a78bfa;--kc-bg:rgba(139,92,246,.14)}.fm-kcard.tone-blue{--kc:#60a5fa;--kc-bg:rgba(59,130,246,.14)}
       .fm-kcard-ic{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--kc-bg);color:var(--kc)}.fm-kcard-ic svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
       .fm-kcard-tx{min-width:0}.fm-kcard-tx strong{display:block;font-size:26px;line-height:1;color:#fff;letter-spacing:-.02em}.fm-kcard-tx span{display:block;margin-top:5px;color:#94a3b8;font-size:11px;font-weight:850;letter-spacing:.04em;text-transform:uppercase;line-height:1.2}
       .fm-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}.fm-search{position:relative;flex:1 1 280px;min-width:220px}.fm-search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;stroke:#64748b;fill:none;stroke-width:2;stroke-linecap:round;pointer-events:none}.fm-search .fm-input{padding-left:38px}
