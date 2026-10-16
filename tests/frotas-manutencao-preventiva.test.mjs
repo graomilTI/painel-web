@@ -296,3 +296,23 @@ test('painel do veículo: registros feitos com o que falta; modal Pagamento e NF
   assert.match(sql, /frotas_preventiva_pendencias_v/);
   assert.match(sql, /sem_nf/);
 });
+
+test('lista rápida: o jsonb compacto da RPC volta ao formato da view e a tela lê tudo em uma consulta', async () => {
+  const { expandirPainel } = await import('../assets/js/modules/frotas-manutencao-preventiva-regras.js');
+  const planos = new Map([['p1', { id: 'p1', codigo: 'oleo_motor', nome: 'Troca de óleo', tipo: 'servico', categoria_codigo: 2 }], ['p2', { id: 'p2', codigo: 'x', nome: 'Outro', tipo: 'verificacao', categoria_codigo: 9 }]]);
+  const painel = [{ v: 'v1', placa: 'ABC1D23', mm: 'Fiat Strada', km: 46000, s: [{ p: 'p1', st: 'vencida', du: '2026-04-01', ku: 40000, vk: 45000, kr: -1000, dr: -15, ea: true }, { p: 'p2', st: 'sem_historico', ea: false }, { p: 'inexistente', st: 'em_dia' }] }];
+  const linhas = expandirPainel(painel, planos, new Map([[2, 'Lubrificação'], [9, 'Freios']]));
+  assert.equal(linhas.length, 2, 'serviço sem plano ativo é ignorado');
+  assert.deepEqual(linhas[0], {
+    veiculo_id: 'v1', placa: 'ABC1D23', marca_modelo: 'Fiat Strada', coordenacao: null, supervisao: null, hodometro: 46000,
+    plano_id: 'p1', plano_codigo: 'oleo_motor', plano_nome: 'Troca de óleo', tipo: 'servico', categoria_codigo: 2, categoria_nome: 'Lubrificação',
+    status: 'vencida', data_ultima: '2026-04-01', km_ultima: 40000, vencimento_km: 45000, vencimento_data: null, km_restante: -1000, dias_restantes: -15, em_andamento: true,
+  });
+  assert.equal(linhas[1].data_ultima, null, 'campo omitido vira null');
+  assert.equal(linhas[1].em_andamento, false);
+  assert.equal(montarLista(linhas, { tipo: 'todos' }).veiculos[0].resumo.vencida, 1);
+  const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
+  assert.match(mod, /carregarPainelPreventiva/);
+  assert.match(mod, /let cache = null/, 'lista aparece na hora ao voltar para a aba');
+  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /frotas_preventiva_painel/);
+});
