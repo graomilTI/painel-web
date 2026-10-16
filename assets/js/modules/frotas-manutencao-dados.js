@@ -13,12 +13,26 @@ async function tudo(consulta, padrao) {
   return data || [];
 }
 
+// A API devolve no máximo 1.000 linhas por consulta (.limit maior é ignorado): lê em páginas de 1.000 até acabar.
+// A consulta precisa de ordem estável (inclua um desempate) para as páginas não repetirem nem pularem linhas.
+const PAGINA = 1000;
+async function tudoPaginado(montar, padrao) {
+  const linhas = [];
+  for (let de = 0; de < 200000; de += PAGINA) {
+    const { data, error } = await montar().range(de, de + PAGINA - 1);
+    if (error) falhar(error, padrao);
+    linhas.push(...(data || []));
+    if (!data || data.length < PAGINA) break;
+  }
+  return linhas;
+}
+
 export async function carregarBase(supabase) {
   const [categorias, planos, oficinas, veiculos] = await Promise.all([
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),
     tudo(supabase.from('frotas_manutencao_planos').select('*').order('categoria_codigo', { ascending: true }), 'Erro ao carregar os planos.'),
     tudo(supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.'),
-    tudo(supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }), 'Erro ao carregar os veículos.'),
+    tudoPaginado(() => supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os veículos.'),
   ]);
   return { categorias, planos, oficinas, veiculos };
 }
@@ -39,10 +53,10 @@ export async function carregarColaboradores(supabase) {
 
 export async function carregarManutencoes(supabase) {
   const [manutencoes, itens, orcamentos, notas] = await Promise.all([
-    tudo(supabase.from('frotas_manutencoes').select('*').order('solicitado_em', { ascending: false }).limit(2000), 'Erro ao carregar as manutenções.'),
-    tudo(supabase.from('frotas_manutencao_itens').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar os itens.'),
-    tudo(supabase.from('frotas_manutencao_orcamentos').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar os orçamentos.'),
-    tudo(supabase.from('frotas_manutencao_notas').select('*').order('created_at', { ascending: true }).limit(10000), 'Erro ao carregar as notas fiscais.'),
+    tudoPaginado(() => supabase.from('frotas_manutencoes').select('*').order('solicitado_em', { ascending: false }).order('id', { ascending: true }), 'Erro ao carregar as manutenções.'),
+    tudoPaginado(() => supabase.from('frotas_manutencao_itens').select('*').order('created_at', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os itens.'),
+    tudoPaginado(() => supabase.from('frotas_manutencao_orcamentos').select('*').order('created_at', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os orçamentos.'),
+    tudoPaginado(() => supabase.from('frotas_manutencao_notas').select('*').order('created_at', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as notas fiscais.'),
   ]);
   return { manutencoes, itens, orcamentos, notas };
 }
@@ -60,7 +74,8 @@ export async function carregarUma(supabase, id) {
 }
 
 export async function carregarVencimentos(supabase) {
-  return tudo(supabase.from('frotas_manutencao_vencimentos_v').select('*').limit(20000), 'Erro ao carregar os vencimentos.');
+  // 1 linha por veículo e serviço do guia (200+ veículos x ~24 serviços): passa de 5.000 linhas, então vem em páginas.
+  return tudoPaginado(() => supabase.from('frotas_manutencao_vencimentos_v').select('*').order('placa', { ascending: true }).order('plano_codigo', { ascending: true }).order('plano_id', { ascending: true }), 'Erro ao carregar os vencimentos.');
 }
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
@@ -74,7 +89,7 @@ export function dataPagamentoISO(dataISO) {
 }
 
 export async function carregarPlanos(supabase) {
-  return tudo(supabase.from('frotas_manutencao_planos').select('id,codigo,nome,categoria_codigo,tipo,veiculo_id,intervalo_km,intervalo_km_max,intervalo_meses,intervalo_meses_max,intervalo_dias,ativo').eq('ativo', true).order('categoria_codigo', { ascending: true }).limit(2000), 'Erro ao carregar os serviços do guia.');
+  return tudo(supabase.from('frotas_manutencao_planos').select('id,codigo,nome,categoria_codigo,tipo,veiculo_id,intervalo_km,intervalo_km_max,intervalo_meses,intervalo_meses_max,intervalo_dias,ativo').eq('ativo', true).order('categoria_codigo', { ascending: true }).order('id', { ascending: true }).limit(1000), 'Erro ao carregar os serviços do guia.');
 }
 
 // Registra uma preventiva já feita (manutenção concluída, sem custo e sem NF) com os próximos prazos combinados.

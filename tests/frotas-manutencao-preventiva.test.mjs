@@ -183,3 +183,33 @@ test('Preventiva e ficha da Corretiva aceitam NF e comprovante de pagamento; o b
   assert.match(sql, /case when n\.comprovante_url is not null then 'PAGO' else 'PENDENTE' end/);
   assert.match(sql, /p_custo numeric default 0, p_responsavel text default null/);
 });
+
+test('vencimentos: lê todas as páginas (a API corta em 1.000 linhas; 200 veículos x 24 serviços passam de 5.000)', async () => {
+  const { carregarVencimentos, carregarManutencoes } = await import('../assets/js/modules/frotas-manutencao-dados.js');
+  const total = 5040;
+  const chamadas = [];
+  const supabase = {
+    from: (tabela) => {
+      const q = { tabela, ordens: [] };
+      const api = {
+        select: () => api, order: (c) => { q.ordens.push(c); return api; }, limit: () => api, eq: () => api,
+        range: (a, b) => {
+          chamadas.push([tabela, a, b, q.ordens.join(',')]);
+          const n = Math.max(0, Math.min(b + 1, total) - a);
+          return Promise.resolve({ data: Array.from({ length: Math.min(n, 1000) }, (_, i) => ({ i: a + i })), error: null });
+        },
+        then: (res) => res({ data: [], error: null }),
+      };
+      return api;
+    },
+  };
+  const linhas = await carregarVencimentos(supabase);
+  assert.equal(linhas.length, total);
+  assert.equal(linhas[4999].i, 4999);
+  assert.deepEqual(chamadas.map((c) => c[1]), [0, 1000, 2000, 3000, 4000, 5000], 'uma consulta por página, até a última incompleta');
+  assert.match(chamadas[0][3], /placa,plano_codigo,plano_id/, 'ordem estável com desempate');
+  chamadas.length = 0;
+  const base = await carregarManutencoes(supabase);
+  assert.equal(base.manutencoes.length, total, 'manutenções, itens, orçamentos e notas também vêm completos');
+  assert.equal(base.itens.length, total);
+});
