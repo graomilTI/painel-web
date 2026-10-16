@@ -2,20 +2,20 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut19';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut19';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut19';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut20';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut20';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut20';
+import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
 import {
-  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut19';
+  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendentesDoVeiculo, restanteCelula, situacaoPagamento,
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut20';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
   const PAINEL = 'fmPreventivaPainel';
   const state = {
     supabase: null, root: null, linhas: [], planos: new Map(), filtro: 'todos', busca: '', tipo: 'servico', categoria: '',
-    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false,
+    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null,
   };
 
   const fmtKm = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km`);
@@ -77,6 +77,17 @@ import {
       <div class="fm-svc-fim">${selo(s.status)}${s.em_andamento ? '<span class="fm-badge amber">Em andamento</span>' : ''}<button class="fm-pc-mais" type="button" data-reg-plano="${esc(s.plano_id)}" title="Registrar que foi feito" aria-label="Registrar ${esc(s.plano_nome)}">+</button></div></div>`;
   }
 
+  // Preventivas já registradas do veículo, com a situação do pagamento e o botão para lançar/completar (Pagamento e NF).
+  function htmlRegistros() {
+    const regs = state.painelRegistros || [];
+    if (!regs.length) return '';
+    const sit = regs.map(situacaoPagamento);
+    const pedeAtencao = sit.filter((x) => ['sem', 'a_enviar'].includes(x.id)).length;
+    return `<details class="fm-prev-grupo"${pedeAtencao ? ' open' : ''}><summary><span>Registros feitos</span><span class="fm-badge">${regs.length}</span>${pedeAtencao ? `<span class="fm-badge amber">${pedeAtencao} sem pagamento completo</span>` : ''}</summary>
+      ${regs.map((r, i) => `<div class="fm-reg"><div class="fm-reg-main"><strong>${esc(r.data_execucao ? dataBR(r.data_execucao) : '—')} · ${esc(fmtKm(r.km_execucao))}</strong><span class="fm-mm">${esc(String(r.descricao || '').replace(/^Preventiva registrada: /, '') || 'Preventiva')}</span></div>
+        <div class="fm-reg-fim"><span class="fm-badge ${sit[i].tom}">${esc(sit[i].texto)}</span><button class="fm-btn soft fm-mini" type="button" data-pagamento="${esc(r.id)}">Pagamento e NF</button></div></div>`).join('')}</details>`;
+  }
+
   function renderPainel() {
     const ov = document.getElementById(PAINEL); if (!ov || !state.painelVeiculo) return;
     const v = veiculoCompleto(state.painelVeiculo);
@@ -89,7 +100,7 @@ import {
     corpo.innerHTML = `<div class="fm-mod-head"><div><h3>${esc(v.placa)}</h3><p>${esc(v.marca_modelo || '')}${v.coordenacao ? ` · ${esc(v.coordenacao)}` : ''} · Km atual ${esc(fmtKm(v.hodometro))}</p></div><button class="fm-x" type="button" data-fechar-painel aria-label="Fechar">✕</button></div>
       <div class="fm-pvl-chips" style="margin:10px 0">${cont('vencida') ? `<span class="fm-badge red">${cont('vencida')} vencida(s)</span>` : ''}${cont('proxima') ? `<span class="fm-badge amber">${cont('proxima')} próxima(s)</span>` : ''}${cont('em_dia') ? `<span class="fm-badge green">${cont('em_dia')} em dia</span>` : ''}${cont('sem_historico') ? `<span class="fm-badge blue">${cont('sem_historico')} sem histórico</span>` : ''}</div>
       <label class="fm-check" style="margin-bottom:8px"><input type="checkbox" data-painel-ver${state.painelVerificacoes ? ' checked' : ''}> Mostrar verificações (nível, calibragem, inspeções)</label>
-      <div class="fm-drawer-corpo">${grupos.map((g) => `<details class="fm-prev-grupo"${g.atencao ? ' open' : ''}><summary><span>${String(g.categoria_codigo).padStart(2, '0')} · ${esc(g.categoria_nome)}</span><span class="fm-badge">${g.itens.length}</span>${g.vencida ? `<span class="fm-badge red">${g.vencida} vencida(s)</span>` : ''}${g.proxima ? `<span class="fm-badge amber">${g.proxima} próxima(s)</span>` : ''}</summary>${g.itens.map(htmlServico).join('')}</details>`).join('') || '<div class="fm-empty">Nenhum serviço.</div>'}</div>
+      <div class="fm-drawer-corpo">${htmlRegistros()}${grupos.map((g) => `<details class="fm-prev-grupo"${g.atencao ? ' open' : ''}><summary><span>${String(g.categoria_codigo).padStart(2, '0')} · ${esc(g.categoria_nome)}</span><span class="fm-badge">${g.itens.length}</span>${g.vencida ? `<span class="fm-badge red">${g.vencida} vencida(s)</span>` : ''}${g.proxima ? `<span class="fm-badge amber">${g.proxima} próxima(s)</span>` : ''}</summary>${g.itens.map(htmlServico).join('')}</details>`).join('') || '<div class="fm-empty">Nenhum serviço.</div>'}</div>
       <div class="fm-acoes fm-drawer-rodape"><button class="fm-btn primary" type="button" data-reg-painel>+ Registrar</button>${pend.length ? `<button class="fm-btn ghost" type="button" data-sol-painel${state.ocupado ? ' disabled' : ''}>Solicitar (${pend.length})</button>` : ''}</div>`;
   }
 
@@ -102,14 +113,26 @@ import {
     state.loading = false; opcoesCategoria(); render(); renderPainel();
   }
 
+  async function carregarRegistros(veiculoId) {
+    try { state.painelRegistros = await dados.carregarRegistrosPreventivos(state.supabase, veiculoId); } catch { state.painelRegistros = []; }
+    if (state.painelVeiculo === veiculoId) renderPainel();
+  }
+
+  async function abrirPagamentoDe(veiculoId, registroId) {
+    const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261016-frotas-manut20');
+    await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: () => carregarRegistros(veiculoId) });
+  }
+
   function abrirPainel(veiculoId) {
-    state.painelVeiculo = veiculoId;
+    state.painelVeiculo = veiculoId; state.painelRegistros = null;
     const ov = openModal({ id: PAINEL, conteudoHtml: '<div data-painel></div>', aoFechar: () => { state.painelVeiculo = null; } });
     ov.classList.add('fm-drawer', 'fm-mod');
-    renderPainel();
+    renderPainel(); carregarRegistros(veiculoId);
     ov.addEventListener('click', (e) => {
       if (e.target === ov || e.target.closest('[data-fechar-painel]')) return closeModal(PAINEL);
       const plano = e.target.closest('[data-reg-plano]'); if (plano) return registrar(veiculoId, plano.dataset.regPlano);
+      const pag = e.target.closest('[data-pagamento]'); if (pag) return abrirPagamentoDe(veiculoId, pag.dataset.pagamento);
       if (e.target.closest('[data-reg-painel]')) return registrar(veiculoId, null);
       if (e.target.closest('[data-sol-painel]')) abrirSolicitacao(veiculoId);
     });
@@ -118,8 +141,8 @@ import {
 
   async function registrar(veiculoId, planoInicial) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut19');
-    await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planoInicial, aoConcluir: carregar });
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut20');
+    await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planoInicial, aoConcluir: async () => { await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
   // ---------- Solicitar ----------
@@ -159,7 +182,7 @@ import {
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut19');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut20');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });

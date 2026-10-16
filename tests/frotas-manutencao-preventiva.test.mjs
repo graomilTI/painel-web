@@ -227,3 +227,24 @@ test('opções de prazo: faixas do guia viram escolha rápida (5.000 ou 10.000 k
   assert.match(reg, /data-pz-km-add/);
   assert.match(reg, /data-pz-meses/);
 });
+
+test('registro salvo: situação do pagamento e acesso a "Pagamento e NF" pelo painel do veículo', async () => {
+  const { situacaoPagamento } = await import('../assets/js/modules/frotas-manutencao-preventiva-regras.js');
+  assert.deepEqual(situacaoPagamento({ responsavel_pagamento: 'empresa', notas: [] }), { id: 'sem', tom: 'amber', texto: 'Sem pagamento' });
+  assert.deepEqual(situacaoPagamento({ responsavel_pagamento: null, notas: [] }).id, 'sem');
+  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', notas: [{ enviada_em: null }, { enviada_em: 'x' }] }).texto, '1 nota(s) a enviar');
+  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', pago_em: null, notas: [{ enviada_em: 'x' }] }).id, 'aguardando');
+  assert.equal(situacaoPagamento({ responsavel_pagamento: 'empresa', pago_em: '2026-10-16', notas: [{ enviada_em: 'x' }] }).id, 'paga');
+  assert.equal(situacaoPagamento({ responsavel_pagamento: 'locadora', notas: [] }).texto, 'Pago por Locadora');
+  const lerArq = (c) => readFileSync(new URL(c, import.meta.url), 'utf8');
+  const painel = lerArq('../assets/js/modules/frotas-manutencao-preventiva.js');
+  assert.match(painel, /Registros feitos/);
+  assert.match(painel, /data-pagamento=/);
+  assert.match(painel, /frotas-manutencao-preventiva-pagamento\.js/);
+  const pag = lerArq('../assets/js/modules/frotas-manutencao-preventiva-pagamento.js');
+  assert.match(pag, /atualizarManutencao/);
+  assert.match(pag, /enviarNfFinanceiro/);
+  assert.match(pag, /criarEditorNotas/);
+  assert.match(lerArq('../assets/js/modules/frotas-manutencao-preventiva-registro.js'), /criarEditorNotas/);
+  assert.match(lerArq('../assets/js/modules/frotas-manutencao-dados.js'), /carregarRegistrosPreventivos/);
+});

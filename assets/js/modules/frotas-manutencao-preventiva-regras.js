@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -170,6 +170,17 @@ export function validarPasso3({ notas = [], custo = 0, responsavel = '' }) {
 
 export function validarRegistroPreventiva(registro, hojeISO) {
   return [...validarPasso1(registro, hojeISO), ...validarPasso2(registro), ...validarPasso3(registro)];
+}
+
+// Situação do pagamento de uma preventiva registrada (reg.notas = notas da manutenção).
+export function situacaoPagamento(reg) {
+  const notas = reg.notas || [];
+  const resp = reg.responsavel_pagamento;
+  if (resp && resp !== 'empresa') return { id: 'outro', tom: 'blue', texto: `Pago por ${(RESPONSAVEIS.find((r) => r.id === resp) || {}).label || resp}` };
+  if (!notas.length) return { id: 'sem', tom: 'amber', texto: 'Sem pagamento' };
+  const aEnviar = notas.filter((n) => !n.enviada_em).length;
+  if (aEnviar) return { id: 'a_enviar', tom: 'amber', texto: `${aEnviar} nota(s) a enviar` };
+  return reg.pago_em ? { id: 'paga', tom: 'green', texto: 'Paga' } : { id: 'aguardando', tom: 'blue', texto: 'Aguardando pagamento' };
 }
 
 // Texto curto do vencimento: quanto falta (ou passou) em km e em dias.
