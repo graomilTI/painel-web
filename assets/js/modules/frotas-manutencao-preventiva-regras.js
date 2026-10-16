@@ -1,6 +1,6 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A matriz tem um veículo por linha e um serviço do guia por coluna; cada célula vem de frotas_manutencao_vencimentos_v.
-import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut15';
+import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-termo-cnpj';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },

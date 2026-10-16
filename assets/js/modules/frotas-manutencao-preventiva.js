@@ -2,13 +2,13 @@
 // de cada um (frotas_manutencao_vencimentos_v). O "+" registra o que foi feito no veículo e os próximos prazos
 // (RPC frotas_manutencao_registrar_preventiva); "Solicitar" abre a solicitação dos serviços vencidos ou próximos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut15';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut15';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut15';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut15';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-termo-cnpj';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-termo-cnpj';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-termo-cnpj';
+import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-termo-cnpj';
 import {
   FILTROS_PREVENTIVA, hojeBrasilISO, montarMatriz, pendentesDoVeiculo, proximoPrazo, restanteCelula, validarRegistroPreventiva,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut15';
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-termo-cnpj';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
@@ -180,7 +180,7 @@ import {
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut15');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-termo-cnpj');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });

@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-rastreadores.js?v=20261016-frotas-manut15';
+import './modules/frotas-rastreadores.js?v=20261016-frotas-termo-cnpj';
 import './modules/frotas-rastreadores-bfleet-status.js';
 
 export function renderContent(content, ctx) {
