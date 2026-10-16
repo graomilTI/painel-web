@@ -298,32 +298,76 @@ test('Programação, despesas e carona ligam o filtro de veículo parado; ficha 
   assert.match(ler('assets/js/modules/frotas-fh-dados.js'), /frotas_veiculos_parados_periodo/);
 });
 
-test('ficha concluída: anexar NF, enviar ao GRM/Financeiro, acompanhar e respeitar quem paga', () => {
+test('notas fiscais: várias por manutenção, cada uma com seu envio e situação; só a empresa paga', () => {
   const concluida = (extra = {}) => m({ status: 'concluida', custo: 2400, data_execucao: '2026-10-16', km_execucao: 48000, responsavel_pagamento: 'empresa', ...extra });
-  const ficha = (mm, financeiro = null) => htmlFicha(mm, { itens: [item], orcamentos: [], base, podeAprovar: true, financeiro });
-  assert.match(ficha(concluida()), /data-nf-form/, 'sem NF: formulário para anexar');
-  assert.match(ficha(concluida()), /data-acao="nf-anexar-enviar"/);
-  assert.match(ficha(concluida({ anexo_url: 'https://x/nf.pdf', nf_numero: '12' })), /data-acao="nf-enviar"/, 'com NF e ainda não enviada: botão de enviar');
-  const enviada = concluida({ anexo_url: 'https://x/nf.pdf', nf_enviada_em: '2026-10-16T12:00:00Z' });
-  assert.match(ficha(enviada), /Carregando situação/);
-  const html = ficha(enviada, { enviada: true, nf: { status: 'ERRO', erro: 'Fornecedor não encontrado' }, pagamento: { status: 'PENDENTE', valor: 2400, forma: 'PIX' } });
-  assert.match(html, /Erro no GRM/);
-  assert.match(html, /Fornecedor não encontrado/);
-  assert.match(html, /Aguardando o Financeiro/);
-  assert.doesNotMatch(html, /data-acao="nf-enviar"/);
-  const pago = ficha(enviada, { enviada: true, nf: { status: 'LANCADO', grm_codigo: '99887' }, pagamento: { status: 'PAGO', pago_em: '2026-10-17', comprovante_url: 'https://x/c.pdf' } });
-  assert.match(pago, /Lançada no GRM/);
-  assert.match(pago, /Código GRM 99887/);
-  assert.match(pago, /Ver comprovante/);
+  const n1 = { id: 'n1', manutencao_id: 'm1', tipo: 'peca', fornecedor: 'Auto Peças X', numero: '111', valor: 900, anexo_url: 'https://x/p.pdf' };
+  const n2 = { id: 'n2', manutencao_id: 'm1', tipo: 'servico', fornecedor: 'Oficina A', numero: '222', valor: 1500, anexo_url: 'https://x/s.xml' };
+  const ficha = (mm, notas = [], financeiro = null) => htmlFicha(mm, { itens: [item], orcamentos: [], base, podeAprovar: true, notas, financeiro });
+  const vazia = ficha(concluida());
+  assert.match(vazia, /Notas fiscais \(0\)/);
+  assert.match(vazia, /data-nota-entrada/, 'linha de entrada sempre à vista');
+  assert.match(vazia, /data-acao="nota-add"[^>]*>\+<\/button>/);
+  assert.match(vazia, /Nenhuma nota ainda/);
+  assert.doesNotMatch(vazia, /data-acao="notas-enviar"/);
+
+  const duas = ficha(concluida(), [n1, n2]);
+  assert.match(duas, /Notas fiscais \(2\)/);
+  assert.equal((duas.match(/data-acao="nota-remover"/g) || []).length, 2, 'notas não enviadas têm ✕');
+  assert.match(duas, /Auto Peças X/);
+  assert.match(duas, /Oficina A/);
+  assert.match(duas, /Soma das 2 nota\(s\):/);
+  assert.match(duas, /Enviar 2 nota\(s\) ao GRM e ao Financeiro/);
+
+  assert.match(ficha(concluida({ custo: 2000 }), [n1, n2]), /passa do custo final/);
+
+  const enviadas = ficha(concluida(), [{ ...n1, enviada_em: '2026-10-16T12:00:00Z' }, { ...n2, enviada_em: '2026-10-16T12:00:00Z' }], {
+    notas: [
+      { nota_id: 'n1', enviada: true, nf: { status: 'LANCADO', grm_codigo: '99887', categoria: 'MANUT. VEICULOS PECAS' }, pagamento: { status: 'PAGO', comprovante_url: 'https://x/c.pdf' } },
+      { nota_id: 'n2', enviada: true, nf: { status: 'ERRO', erro: 'Fornecedor não encontrado' }, pagamento: { status: 'PENDENTE' } },
+    ],
+  });
+  assert.doesNotMatch(enviadas, /data-acao="nota-remover"/, 'nota enviada não se remove');
+  assert.doesNotMatch(enviadas, /data-acao="notas-enviar"/);
+  assert.match(enviadas, /Lançada no GRM/);
+  assert.match(enviadas, /GRM 99887/);
+  assert.match(enviadas, /Erro no GRM/);
+  assert.match(enviadas, /Fornecedor não encontrado/);
+  assert.match(enviadas, /Ver comprovante/);
+
+  const mista = ficha(concluida(), [{ ...n1, enviada_em: '2026-10-16T12:00:00Z' }, n2]);
+  assert.equal((mista.match(/data-acao="nota-remover"/g) || []).length, 1, 'só a pendente tem ✕');
+  assert.match(mista, /Enviar 1 nota\(s\)/);
+
+  assert.match(ficha(m({ status: 'em_execucao', responsavel_pagamento: 'empresa' }), [n1]), /enviadas ao GRM e ao Financeiro quando a manutenção for concluída/);
   assert.match(ficha(concluida({ responsavel_pagamento: 'locadora' })), /não vai para a nota fiscal do GRM nem para o Financeiro/);
-  assert.doesNotMatch(ficha(m({ status: 'em_execucao' })), /Nota fiscal e pagamento/);
+  assert.doesNotMatch(ficha(m({ status: 'em_orcamento' })), /Notas fiscais/);
+  assert.doesNotMatch(ficha(concluida(), [{ ...n1, fornecedor: '<img src=x onerror=alert(1)>' }]), /<img src=x/);
 });
 
-test('conclusão oferece o envio só quando a empresa paga; item tem tipo peça/serviço; Financeiro ganhou o filtro Frotas', () => {
-  const conc = (resp) => htmlFicha(m({ status: 'em_execucao', responsavel_pagamento: resp }), { itens: [item], orcamentos: [], base, podeAprovar: true, formAcao: 'conclusao', kmSugerido: null });
+test('notas: regras de validação e conferência da soma com o custo', async () => {
+  const { conferenciaNotas, somaNotas, validarNota } = await import('../assets/js/modules/frotas-manutencao-regras.js');
+  assert.equal(somaNotas([{ valor: '100.10' }, { valor: 200.2 }, {}]), 300.3);
+  assert.equal(validarNota({ valor: 10, fornecedor: 'A', arquivo: {} }).length, 0);
+  assert.equal(validarNota({ valor: 0, fornecedor: ' ', arquivo: null }).length, 3);
+  assert.deepEqual(conferenciaNotas([{ valor: 500 }, { valor: 1000 }], 1500), { soma: 1500, diferenca: 0, situacao: 'igual' });
+  assert.equal(conferenciaNotas([{ valor: 1000 }], 1500).situacao, 'abaixo');
+  assert.equal(conferenciaNotas([{ valor: 1600 }], 1500).situacao, 'acima');
+  assert.equal(conferenciaNotas([{ valor: 1 }], null).situacao, 'sem_custo');
+});
+
+test('conclusão: custo vem da soma das notas e o envio só é oferecido à empresa e com notas; item tem tipo; Financeiro ganhou o filtro Frotas', () => {
+  const notas = [{ id: 'n1', valor: 500, fornecedor: 'A' }, { id: 'n2', valor: 1000, fornecedor: 'B', enviada_em: '2026-10-16T12:00:00Z' }];
+  const conc = (resp, ns = notas) => htmlFicha(m({ status: 'em_execucao', responsavel_pagamento: resp, valor_aprovado: 700 }), { itens: [item], orcamentos: [], base, podeAprovar: true, formAcao: 'conclusao', kmSugerido: null, notas: ns });
   assert.match(conc('empresa'), /data-a-enviar checked/);
+  assert.match(conc('empresa'), /Enviar 1 nota\(s\) ao GRM/, 'só as pendentes');
+  assert.match(conc('empresa'), /data-a="custo" value="1500"/, 'custo = soma das notas');
+  assert.match(conc('empresa'), /Soma das 2 nota\(s\)/);
+  assert.match(conc('empresa', []), /data-a="custo" value="700"/, 'sem notas usa o valor aprovado');
+  assert.match(conc('empresa', []), /Nenhuma nota fiscal cadastrada/);
+  assert.doesNotMatch(conc('empresa', []), /data-a-enviar/);
   assert.doesNotMatch(conc('proprietario'), /data-a-enviar/);
   assert.match(conc('proprietario'), /não vai para NF nem Financeiro/);
+  assert.doesNotMatch(conc('empresa'), /data-a-arquivo|data-a="nf_numero"/, 'o arquivo e o número da NF agora são por nota');
   assert.match(htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /data-item="tipo_item"/);
   assert.match(htmlFormNova(base, {}), /data-n="tipo_item"/);
   const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
@@ -421,4 +465,16 @@ test('veículo sem marca_modelo no cadastro mostra marca/modelo (cadastro, BFlee
   assert.equal(modeloDoVeiculo({ bfleet_marca: 'Volkswagen', bfleet_modelo: 'SAVEIRO' }), 'VOLKSWAGEN/SAVEIRO');
   const html = htmlFormNova({ ...base, veiculos: [{ id: 'v9', placa: 'ONT2B22', status: 'MANUTENCAO', marca: 'FIAT', modelo: 'UNO WAY 1.4' }] }, {});
   assert.match(html, /<option value="ONT2B22 · FIAT\/UNO WAY 1\.4">/);
+});
+
+test('Quem pediu: vem com o condutor do veículo e aceita outro nome (texto livre com sugestão de colaborador)', () => {
+  const comCondutor = { id: 'v1', placa: 'ABC1D23', marca_modelo: 'Fiat Strada', status: 'ATIVO', motorista_atual: 'BRUNO DOS SANTOS MOREIRA' };
+  const baseColab = { ...base, veiculos: [comCondutor], colaboradores: ['ANA PAULA', 'BRUNO DOS SANTOS MOREIRA'] };
+  const html = htmlFormNova(baseColab, { veiculo_id: 'v1' });
+  assert.match(html, /data-n-solicitante data-auto="1" list="fmListaColaboradores"[^>]*value="BRUNO DOS SANTOS MOREIRA"/, 'condutor como padrão');
+  assert.match(html, /<datalist id="fmListaColaboradores"><option value="ANA PAULA"><\/option><option value="BRUNO DOS SANTOS MOREIRA"><\/option><\/datalist>/);
+  assert.match(htmlFormNova(baseColab, {}), /data-n-solicitante data-auto="1"[^>]*value=""/, 'sem veículo escolhido começa vazio');
+  assert.match(htmlFormNova(baseColab, { veiculo_id: 'v1', solicitante_nome: 'Carlos (gestor)' }), /data-auto="0"[^>]*value="Carlos \(gestor\)"/, 'nome informado não é trocado sozinho');
+  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao.js', import.meta.url), 'utf8'), /preencherCondutor/);
+  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-dados.js', import.meta.url), 'utf8'), /from\('colaboradores_atuais'\)/);
 });

@@ -1140,11 +1140,15 @@ function storagePathFromPublicUrl(url) {
   return { bucket: m[1], path: p };
 }
 
-// NFs de manutenção de frota (setor FROTAS): o contexto vem da manutenção que aponta para esta linha da fila
-// (frotas_manutencoes.nf_lancamento_id), criada pela RPC frotas_manutencao_enviar_nf_financeiro.
+// NFs de manutenção de frota (setor FROTAS): uma manutenção tem várias notas; o contexto vem da nota que aponta
+// para esta linha da fila (frotas_manutencao_notas.nf_lancamento_id), criada pela RPC frotas_manutencao_enviar_nf_financeiro.
 async function loadFrotasContext(row) {
+  const { data: nota, error: errNota } = await supabase.from('frotas_manutencao_notas')
+    .select('manutencao_id').eq('nf_lancamento_id', row.id).limit(1).maybeSingle();
+  if (errNota) throw errNota;
+  if (!nota) return null;
   const { data: m, error } = await supabase.from('frotas_manutencoes')
-    .select('id,numero,os_numero,descricao,oficina,veiculo_id').eq('nf_lancamento_id', row.id).limit(1).maybeSingle();
+    .select('id,numero,os_numero,descricao,oficina,veiculo_id').eq('id', nota.manutencao_id).maybeSingle();
   if (error) throw error;
   if (!m) return null;
   const { data: v, error: errVeic } = await supabase.from('frotas_veiculos')

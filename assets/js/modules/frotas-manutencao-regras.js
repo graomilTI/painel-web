@@ -352,3 +352,31 @@ export function rotuloVeiculo(v) {
   const placa = t(v?.placa).replace(/[^A-Za-z0-9]/g, '');
   return t(v?.nome).replace(new RegExp(placa, 'ig'), '').replace(/^[\s\-–·]+|[\s\-–·]+$/g, '');
 }
+
+// ---------- notas fiscais da manutenção (várias por manutenção) ----------
+export const TIPOS_NOTA = [
+  { id: 'peca', label: 'Peças' },
+  { id: 'servico', label: 'Serviço' },
+  { id: 'misto', label: 'Peças e serviço' },
+];
+
+export function somaNotas(notas = []) {
+  return Math.round(notas.reduce((s, n) => s + (Number(n.valor) || 0), 0) * 100) / 100;
+}
+
+export function validarNota({ valor, fornecedor, arquivo }) {
+  const erros = [];
+  const v = Number(valor);
+  if (valor === '' || valor == null || !Number.isFinite(v) || v <= 0) erros.push('Informe o valor da nota.');
+  if (!String(fornecedor || '').trim()) erros.push('Informe quem emitiu a nota (oficina ou loja de peças).');
+  if (!arquivo) erros.push('Anexe o arquivo da nota fiscal (PDF, XML ou imagem).');
+  return erros;
+}
+
+// Soma das notas contra o custo final: o banco recusa o envio quando as notas passam do custo.
+export function conferenciaNotas(notas = [], custo = null) {
+  const soma = somaNotas(notas);
+  if (custo == null || !Number.isFinite(Number(custo))) return { soma, diferenca: null, situacao: 'sem_custo' };
+  const diferenca = Math.round((Number(custo) - soma) * 100) / 100;
+  return { soma, diferenca, situacao: diferenca < -0.01 ? 'acima' : Math.abs(diferenca) <= 0.01 ? 'igual' : 'abaixo' };
+}

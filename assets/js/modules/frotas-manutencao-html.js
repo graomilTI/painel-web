@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut13';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut14';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
-  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut13';
+  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut14';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -110,7 +110,7 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field" style="grid-column:span 2"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${rotuloVeiculo(veiculo)}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(rotuloVeiculo(v))}"></option>`).join('')}</datalist></div>
       <div class="fm-field"><label>Prioridade</label><select class="fm-select" data-n-prioridade>${opcoes(PRIORIDADES, preset.prioridade || 'normal')}</select></div>
       <div class="fm-field"><label>&nbsp;</label><label class="fm-check"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
-      <div class="fm-field" style="grid-column:span 2"><label>Quem pediu</label><input class="fm-input" data-n-solicitante maxlength="120" placeholder="Ex.: nome do motorista ou do gestor que pediu pelo WhatsApp" value="${esc(preset.solicitante_nome || '')}"><small>Opcional. Se ficar vazio, vale o seu nome.</small></div>
+      <div class="fm-field" style="grid-column:span 2"><label>Quem pediu</label><input class="fm-input" data-n-solicitante data-auto="${preset.solicitante_nome ? '0' : '1'}" list="fmListaColaboradores" autocomplete="off" maxlength="120" placeholder="Condutor do veículo ou outra pessoa (digite para buscar)" value="${esc(preset.solicitante_nome || veiculo?.motorista_atual || '')}"><datalist id="fmListaColaboradores">${(base.colaboradores || []).map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist><small>Vem preenchido com o condutor do veículo; troque se foi outra pessoa. Se ficar vazio, vale o seu nome.</small></div>
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
     <div class="fm-sec"><h4>Itens (categoria do guia)</h4>
@@ -234,16 +234,19 @@ export function htmlFormSemOrcamento() {
     <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="confirmar-sem-orcamento">Aprovar sem orçamento</button><button class="fm-btn ghost" type="button" data-acao="cancelar-form">Cancelar</button></div></div>`;
 }
 
-export function htmlFormConclusao(m, kmSugerido) {
+export function htmlFormConclusao(m, kmSugerido, notas = []) {
+  const soma = somaNotas(notas);
+  const pendentes = notas.filter((n) => !n.enviada_em).length;
+  const envio = m.responsavel_pagamento !== 'empresa'
+    ? `<div class="fm-field full"><div class="fm-aviso">Esta manutenção é paga por ${esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label || 'outro responsável')}: não vai para NF nem Financeiro.</div></div>`
+    : pendentes
+      ? `<div class="fm-field full"><label class="fm-check"><input type="checkbox" data-a-enviar checked> Enviar ${pendentes} nota(s) ao GRM e ao Financeiro ao concluir</label><small>Cada nota vira um lançamento no GRM e um pagamento no Financeiro.</small></div>`
+      : '<div class="fm-field full"><div class="fm-aviso">Nenhuma nota fiscal cadastrada. Adicione as notas na seção "Notas fiscais" desta ficha para enviar ao GRM e ao Financeiro; dá para fazer depois de concluir.</div></div>';
   return `<div class="fm-form" data-form-acao="conclusao">
     <div class="fm-field"><label>Data do serviço</label><input class="fm-input" type="date" data-a="data_execucao" value="${hojeISO()}"></div>
     <div class="fm-field"><label>Km do veículo</label><input class="fm-input" type="number" min="0" data-a="km_execucao" value="${kmSugerido != null ? Math.round(kmSugerido) : ''}"><small>${kmSugerido != null ? 'Sugerido pela última leitura do rastreador; confira no painel.' : 'Informe o km do painel do veículo.'}</small></div>
-    <div class="fm-field"><label>Custo final (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-a="custo" value="${m.valor_aprovado ?? ''}"></div>
-    <div class="fm-field"><label>Nº da nota fiscal</label><input class="fm-input" data-a="nf_numero"></div>
-    <div class="fm-field" style="grid-column:span 2"><label>Nota fiscal (arquivo)</label><input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-a-arquivo></div>
-    ${m.responsavel_pagamento === 'empresa'
-    ? '<div class="fm-field full"><label class="fm-check"><input type="checkbox" data-a-enviar checked> Enviar a NF ao GRM e o pagamento ao Financeiro ao concluir</label><small>Precisa do arquivo da NF e do custo final. Se faltar algo, a manutenção é concluída e o envio fica para depois.</small></div>'
-    : `<div class="fm-field full"><div class="fm-aviso">Esta manutenção é paga por ${esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label || 'outro responsável')}: não vai para NF nem Financeiro.</div></div>`}
+    <div class="fm-field"><label>Custo final (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-a="custo" value="${soma > 0 ? soma : (m.valor_aprovado ?? '')}"><small>${soma > 0 ? `Soma das ${notas.length} nota(s): ${esc(dinheiro(soma))}.` : 'Sem notas cadastradas: usa o valor aprovado.'}</small></div>
+    ${envio}
     <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="confirmar-conclusao">Concluir manutenção</button><button class="fm-btn ghost" type="button" data-acao="cancelar-form">Cancelar</button></div></div>`;
 }
 
@@ -254,31 +257,53 @@ const NF_ROTULO = {
 };
 const PG_ROTULO = { PENDENTE: ['Aguardando o Financeiro', 'amber'], EM_ANALISE: ['Em análise', 'amber'], APROVADO: ['Aprovado', 'blue'], AGENDADO: ['Agendado', 'blue'], PAGO: ['Pago', 'green'], RECUSADO: ['Recusado', 'red'], CANCELADO: ['Cancelado', 'red'] };
 
-// Nota fiscal e pagamento (manutenção concluída): envio ao GRM e ao Financeiro e o que voltou deles.
-function blocoFinanceiro(m, fin) {
-  if (m.status !== 'concluida') return '';
+// Notas fiscais (várias por manutenção: peças, serviço, mais de uma de cada). Cada nota vira um lançamento no GRM
+// e um pagamento no Financeiro; o status de cada uma volta para cá.
+export function htmlEntradaNota(base) {
+  return `<div class="fm-nota-linha" data-nota-entrada>
+    <select class="fm-select" data-nt="tipo" title="Peças, serviço ou os dois: define a categoria da nota no GRM">${opcoes(TIPOS_NOTA, 'servico')}</select>
+    <input class="fm-input" data-nt="fornecedor" list="fmListaFornecedores" placeholder="Quem emitiu (oficina ou loja de peças)" maxlength="120">
+    <datalist id="fmListaFornecedores">${base.oficinas.filter((o) => o.ativo !== false).map((o) => `<option value="${esc(o.nome)}"></option>`).join('')}</datalist>
+    <input class="fm-input" data-nt="numero" placeholder="Nº da NF" maxlength="60">
+    <input class="fm-input" type="number" step="0.01" min="0" data-nt="valor" placeholder="Valor (R$)">
+    <input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nt-arquivo title="Arquivo da nota fiscal">
+    <button class="fm-ic" type="button" data-acao="nota-add" title="Adicionar nota" aria-label="Adicionar nota" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button></div>`;
+}
+
+function blocoNotas(m, notas, fin, base) {
+  if (!['em_execucao', 'concluida'].includes(m.status)) return '';
   const resp = (RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label;
   if (m.responsavel_pagamento !== 'empresa') {
-    return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-mm">Esta manutenção é paga por ${esc(resp || 'outro responsável')}: não vai para a nota fiscal do GRM nem para o Financeiro.</div></div>`;
+    return `<div class="fm-sec"><h4>Notas fiscais</h4><div class="fm-mm">Esta manutenção é paga por ${esc(resp || 'outro responsável')}: não vai para a nota fiscal do GRM nem para o Financeiro.</div></div>`;
   }
   const selo = (mapa, chave) => { const [rotulo, tom] = mapa[chave] || [chave || '—', 'blue']; return `<span class="fm-badge ${tom}">${esc(rotulo)}</span>`; };
-  if (!m.nf_enviada_em) {
-    const anexo = m.anexo_url
-      ? `<div class="fm-ro">NF anexada: <a href="${esc(m.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">ver arquivo</a>${m.nf_numero ? ` · nº ${esc(m.nf_numero)}` : ''}</div><div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="nf-enviar">Enviar NF ao GRM e pagamento ao Financeiro</button></div>`
-      : `<div class="fm-mm">Ainda sem nota fiscal. Anexe o arquivo (PDF, XML ou imagem) para enviar ao GRM e ao Financeiro.</div>
-        <div class="fm-form" data-nf-form style="margin-top:10px"><div class="fm-field"><label>Nº da nota fiscal</label><input class="fm-input" data-nf="numero"></div><div class="fm-field" style="grid-column:span 2"><label>Arquivo da NF</label><input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-nf-arquivo></div><div class="fm-field"><label>&nbsp;</label><button class="fm-btn primary" type="button" data-acao="nf-anexar-enviar">Anexar e enviar</button></div></div>`;
-    return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4>${anexo}</div>`;
-  }
-  if (!fin) return '<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-mm">Carregando situação...</div></div>';
-  const nf = fin.nf || {};
-  const pg = fin.pagamento || {};
-  const alerta = ['ERRO', 'AGUARDANDO_DADOS', 'AGUARDANDO_CLASSIFICACAO', 'DUPLICADO'].includes(nf.status)
-    ? `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">${esc(nf.erro || 'A NF precisa de atenção.')} Complete os dados em Financeiro › Notas fiscais para o GRM tentar de novo.</div>` : '';
-  return `<div class="fm-sec"><h4>Nota fiscal e pagamento</h4><div class="fm-grid2 tres">
-    <div class="fm-field"><label>Nota fiscal no GRM</label><div class="fm-ro">${selo(NF_ROTULO, nf.status)}${nf.grm_codigo ? `<small>Código GRM ${esc(nf.grm_codigo)}${nf.categoria ? ` · ${esc(nf.categoria)}` : ''}</small>` : ''}</div></div>
-    <div class="fm-field"><label>Pagamento (Financeiro)</label><div class="fm-ro">${selo(PG_ROTULO, pg.status)}${pg.valor != null ? `<small>${esc(dinheiro(pg.valor))} · ${esc(pg.forma || '')}</small>` : ''}</div></div>
-    <div class="fm-field"><label>Pago em</label><div class="fm-ro">${m.pago_em || pg.pago_em ? esc(dataBR(m.pago_em || pg.pago_em)) : '—'}${m.comprovante_url || pg.comprovante_url ? `<small><a href="${esc(m.comprovante_url || pg.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver comprovante</a></small>` : ''}</div></div>
-  </div>${alerta}</div>`;
+  const statusPorNota = new Map(((fin && fin.notas) || []).map((x) => [x.nota_id, x]));
+  const linhas = notas.map((n) => {
+    const st = statusPorNota.get(n.id);
+    const situacao = !n.enviada_em
+      ? '<span class="fm-badge">Não enviada</span>'
+      : !st ? '<span class="fm-badge amber">Enviada</span>'
+        : `${selo(NF_ROTULO, st.nf && st.nf.status)} ${selo(PG_ROTULO, st.pagamento && st.pagamento.status)}${st.nf && st.nf.grm_codigo ? `<span class="fm-mm">GRM ${esc(st.nf.grm_codigo)}${st.nf.categoria ? ` · ${esc(st.nf.categoria)}` : ''}</span>` : ''}${st.nf && st.nf.erro ? `<span class="fm-mm" style="color:#fecaca">${esc(st.nf.erro)}</span>` : ''}${st.pagamento && st.pagamento.comprovante_url ? `<span class="fm-mm"><a href="${esc(st.pagamento.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver comprovante</a></span>` : ''}`;
+    return `<div class="fm-nota-linha fm-nota-item">
+      <div class="fm-ro">${esc((TIPOS_NOTA.find((t) => t.id === n.tipo) || {}).label || n.tipo)}</div>
+      <div class="fm-ro">${esc(n.fornecedor || '—')}</div>
+      <div class="fm-ro">${esc(n.numero || '—')}</div>
+      <div class="fm-ro">${esc(dinheiro(n.valor))}</div>
+      <div class="fm-ro">${n.anexo_url ? `<a href="${esc(n.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver arquivo</a>` : '—'}${situacao ? `<small>${situacao}</small>` : ''}</div>
+      ${n.enviada_em ? '<span></span>' : `<button class="fm-ic danger" type="button" data-acao="nota-remover" data-id="${esc(n.id)}" title="Remover nota" aria-label="Remover nota">✕</button>`}</div>`;
+  }).join('');
+  const conf = conferenciaNotas(notas, m.status === 'concluida' ? m.custo : null);
+  const resumo = notas.length
+    ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(conf.soma))}</strong>${m.status === 'concluida' && m.custo != null ? ` · Custo final: <strong>${esc(dinheiro(m.custo))}</strong>` : ''}</div>${conf.situacao === 'acima' ? '<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">A soma das notas passa do custo final: o envio é recusado até acertar.</div>' : conf.situacao === 'abaixo' ? `<div class="fm-mm">O custo final é ${esc(dinheiro(conf.diferenca))} maior que as notas (valor sem nota, por exemplo).</div>` : ''}`
+    : '<div class="fm-mm">Nenhuma nota ainda. Adicione cada nota fiscal (peças, serviço, ou várias de cada) com o arquivo e o valor.</div>';
+  const pendentes = notas.filter((n) => !n.enviada_em).length;
+  const enviar = m.status === 'concluida' && pendentes
+    ? `<div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="notas-enviar">Enviar ${pendentes} nota(s) ao GRM e ao Financeiro</button></div>`
+    : (m.status === 'em_execucao' && notas.length ? '<div class="fm-mm" style="margin-top:6px">As notas são enviadas ao GRM e ao Financeiro quando a manutenção for concluída.</div>' : '');
+  return `<div class="fm-sec"><h4>Notas fiscais (${notas.length})</h4>
+    <div class="fm-nota-cab"><span>Tipo</span><span>Emitida por</span><span>Nº</span><span>Valor</span><span>Arquivo e situação</span><span></span></div>
+    ${htmlEntradaNota(base)}
+    <div class="fm-itens" style="margin-top:10px">${linhas}</div>${resumo}${enviar}</div>`;
 }
 
 // Veículo parado em execução: mostra quem ainda o tem na Programação (o gestor e a Programação já foram avisados).
@@ -296,15 +321,15 @@ function blocoLinhaTempo(m) {
   return `<div class="fm-sec"><h4>Histórico</h4><ul class="fm-tl">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></div>`;
 }
 
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [] }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
-  const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido) : '';
+  const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
     ${passoAPasso(m)}
-    ${blocoDados(m, base, ed)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoFinanceiro(m, financeiro)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoDados(m, base, ed)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

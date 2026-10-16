@@ -1,7 +1,7 @@
 'use strict';
 // Regras da NF de manutenção de frota (setor FROTAS) no agente sync-lancar-notas-fiscais.
 // Sem GRM, sem Supabase: só transforma os dados já extraídos da NF com o contexto da manutenção
-// (frotas_manutencoes + frotas_veiculos, achado por frotas_manutencoes.nf_lancamento_id = linha da fila).
+// (frotas_manutencoes + frotas_veiculos, achado por frotas_manutencao_notas.nf_lancamento_id = linha da fila, que leva à manutenção).
 //
 // A categoria do GRM (MANUT. VEICULOS SERVICOS / PECAS / PNEUS AQUISICAO) vem em ajustes_manuais,
 // gravada pela RPC frotas_manutencao_enviar_nf_financeiro, e o agente aplica por cima (applyManualOverrides).
