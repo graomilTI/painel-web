@@ -64,14 +64,24 @@ export async function carregarVencimentos(supabase) {
 }
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
+export async function carregarOficinas(supabase) {
+  return tudo(supabase.from('frotas_oficinas').select('id,nome,razao_social,ativo').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.');
+}
+
+// Data do pagamento (yyyy-mm-dd) para o timestamp da nota; vazio = o banco usa o momento do envio.
+export function dataPagamentoISO(dataISO) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(dataISO || '')) ? `${dataISO}T12:00:00-03:00` : null;
+}
+
 export async function carregarPlanos(supabase) {
   return tudo(supabase.from('frotas_manutencao_planos').select('id,codigo,nome,categoria_codigo,tipo,veiculo_id,intervalo_km,intervalo_km_max,intervalo_meses,intervalo_meses_max,intervalo_dias,ativo').eq('ativo', true).order('categoria_codigo', { ascending: true }).limit(2000), 'Erro ao carregar os serviços do guia.');
 }
 
 // Registra uma preventiva já feita (manutenção concluída, sem custo e sem NF) com os próximos prazos combinados.
-export async function registrarPreventiva(supabase, { veiculo_id, data, km, itens, oficina, observacoes }) {
+export async function registrarPreventiva(supabase, { veiculo_id, data, km, itens, oficina, observacoes, custo, responsavel }) {
   const { data: id, error } = await supabase.rpc('frotas_manutencao_registrar_preventiva', {
     p_veiculo: veiculo_id, p_data: data, p_km: km, p_itens: itens, p_oficina: oficina || null, p_observacoes: observacoes || null,
+    p_custo: custo || 0, p_responsavel: responsavel || null,
   });
   if (error) falhar(error, 'Erro ao registrar a preventiva.');
   return id;

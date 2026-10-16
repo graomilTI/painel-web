@@ -1,6 +1,6 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A matriz tem um veículo por linha e um serviço do guia por coluna; cada célula vem de frotas_manutencao_vencimentos_v.
-import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-termo-cnpj';
+import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut16';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -83,7 +83,7 @@ export function proximoPrazo(plano, dataISO, km) {
   return { proximo_km: proximoKm, proxima_data: proximaData };
 }
 
-export function validarRegistroPreventiva({ data, km, itens = [] }, hojeISO) {
+export function validarRegistroPreventiva({ data, km, itens = [], notas = [], custo = 0, responsavel = '' }, hojeISO) {
   const erros = [];
   if (!data) erros.push('Informe a data em que o serviço foi feito.');
   else if (hojeISO && data > hojeISO) erros.push('A data do serviço não pode ser futura.');
@@ -95,6 +95,11 @@ export function validarRegistroPreventiva({ data, km, itens = [] }, hojeISO) {
     if (it.proximo_km != null && it.proximo_km !== '' && !(Number(it.proximo_km) > 0)) erros.push(`Próximo km de "${nome}" deve ser maior que zero.`);
     else if (it.proximo_km != null && it.proximo_km !== '' && kmNum != null && Number(it.proximo_km) <= kmNum) erros.push(`Próximo km de "${nome}" deve ser maior que o km do serviço.`);
     if (it.proxima_data && data && it.proxima_data <= data) erros.push(`Próxima data de "${nome}" deve ser depois da data do serviço.`);
+  }
+  if (Number(custo) < 0) erros.push('O custo não pode ser negativo.');
+  if (notas.length) {
+    if (!responsavel) erros.push('Informe quem paga a manutenção para lançar as notas.');
+    if (somaNotas(notas) > Number(custo || 0) + 0.01) erros.push('O custo total não pode ser menor que a soma das notas.');
   }
   return erros;
 }
