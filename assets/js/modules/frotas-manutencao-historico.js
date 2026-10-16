@@ -1,8 +1,8 @@
-// Frotas · Manutenção › Vencimentos › Importar histórico: planilha com a última vez que cada plano do guia foi feito
+// Frotas · Manutenção › Preventiva › Importar histórico: planilha com a última vez que cada plano do guia foi feito
 // em cada veículo (placa, plano, data, km). Sem esse histórico todo plano fica "sem histórico" e nada vence.
 // A importação roda pela RPC frotas_manutencao_importar_historico (cria manutenções concluídas, sem custo e sem NF).
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import { COLUNAS_HISTORICO, descreverIntervalo, normalizarLinhaHistorico } from './frotas-manutencao-regras.js?v=20261016-frotas-manut14';
+import { COLUNAS_HISTORICO, descreverIntervalo, normalizarLinhaHistorico } from './frotas-manutencao-regras.js?v=20261016-frotas-manut15';
 
 const XLSX_URL = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/xlsx.mjs';
 const MODAL = 'fmHistorico';

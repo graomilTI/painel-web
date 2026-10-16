@@ -46,13 +46,13 @@ Use um veículo de teste e cancele no fim.
 
 ---
 
-## 2. Vencimentos e solicitações automáticas
+## 2. Preventiva: vencimentos e solicitações automáticas
 
 ### 2.1 Importar o histórico de trocas (sem isso nada vence)
 Todo plano está "sem histórico" e o job diário só abre solicitação para plano vencido ou próximo.
-- [ ] Manutenção › **Vencimentos › Importar histórico › Baixar modelo**. Colunas: Placa, Plano (código da aba PLANOS do modelo), Data (dd/mm/aaaa), Km do veículo na data.
+- [ ] Manutenção › **Preventiva › Importar histórico › Baixar modelo** (ou, veículo a veículo, o **+** da célula/linha: marca o que foi feito, data, km e os próximos prazos). Colunas: Placa, Plano (código da aba PLANOS do modelo), Data (dd/mm/aaaa), Km do veículo na data.
 - [ ] Preencher com a **última vez** de cada serviço por veículo. Prioridade: troca de óleo (`oleo_motor`), pastilhas, fluido de freio, correia dentada, pneus. Pode importar aos poucos; reimportar a mesma linha não duplica.
-- [ ] Conferir o resultado (linhas com placa ou plano desconhecido voltam como erro sem impedir as demais) e abrir a aba **Vencimentos** para ver vencidas e próximas.
+- [ ] Conferir o resultado (linhas com placa ou plano desconhecido voltam como erro sem impedir as demais) e abrir a aba **Preventiva** (um veículo por linha, um serviço por coluna) para ver vencidas e próximas.
 
 ### 2.2 Antes do primeiro job diário (07h de Brasília)
 Na primeira rodada o job pode abrir muitas solicitações de uma vez (limite de 100 veículos por dia, começando pelos vencidos).
