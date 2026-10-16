@@ -9,6 +9,8 @@ Estado em 16/10/2026: 0 manutenções, 0 oficinas, 0 alçadas, 139 leituras de k
 ## 1. Antes de qualquer uso
 
 ### 1.1 Aprovadores e tetos de valor
+> **Decisão de 16/10/2026:** por enquanto ficam **sem aprovador cadastrado**; quem aprova é um Master (Douglas, Juliana e mais um). O usuário do administrativo registra os pedidos que chegam pelo WhatsApp em **Manutenção › + Nova manutenção** (campo "Quem pediu") e um Master aprova na ficha. Os passos abaixo ficam para quando houver aprovadores.
+
 - [ ] Definir quem aprova manutenção. Hoje ninguém tem "pode aprovar" no módulo Manutenção; os avisos de aprovação vão para os Master (Douglas, Juliana e mais um). Assim que alguém receber a permissão, só essas pessoas passam a receber e os Master saem do aviso.
 - [ ] Conceder a permissão (não há tela para isso ainda; é SQL). Troque os e-mails:
 

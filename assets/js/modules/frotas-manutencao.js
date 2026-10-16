@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut7';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut7';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut7';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut8';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut8';
 import {
   acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut7';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut8';
 import {
   htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut7';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut8';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -405,6 +405,7 @@ import {
       const id = await dados.solicitar(state.supabase, {
         veiculo_id: veiculo.id, descricao, prioridade: val(ov, '[data-n-prioridade]'), origem: ov.dataset.origem || 'manual',
         checklist_id: ov.dataset.checklist || null, veiculo_parado: ov.querySelector('[data-n-parado]').checked,
+        solicitante_nome: val(ov, '[data-n-solicitante]').trim(),
         itens: itens.map((i) => ({
           ...i,
           descricao: i.descricao || state.base.planos.find((p) => p.id === i.plano_id)?.nome
@@ -414,8 +415,8 @@ import {
       closeModal(NOVA);
       await recarregarUma(id).catch(() => {});
       // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
-      if (state.manut.some((m) => m.id === id)) { toast('Solicitação aberta.'); abrirFicha(id); }
-      else toast('Solicitação enviada para a equipe de Frotas.');
+      if (state.manut.some((m) => m.id === id)) { toast('Manutenção registrada.'); abrirFicha(id); }
+      else toast('Manutenção registrada e enviada para a equipe de Frotas.');
     } catch (err) {
       ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
     } finally {

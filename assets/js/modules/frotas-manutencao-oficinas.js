@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Oficinas: cadastro de oficinas/fornecedores (CNPJ, PIX, contato). O orçamento aponta para
 // a oficina; o CNPJ alimenta a nota fiscal e o pagamento sem redigitar.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut7';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut7';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut7';
-import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut7';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut8';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut8';
+import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut8';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_OFICINAS';
@@ -95,9 +95,7 @@ import { norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut7';
   async function openHome(container, opts = {}) {
     state.supabase = opts.supabase; state.root = container;
     container.innerHTML = `${ESTILOS_MANUTENCAO}<section class="fm-shell">
-      <div class="fm-head"><div><div class="fm-kicker">Frotas · Manutenção</div><h1 class="fm-title">Oficinas</h1>
-      <p class="fm-sub">Cadastro de oficinas e fornecedores usados nos orçamentos. O CNPJ preenche a nota fiscal e o pagamento.</p></div>
-      <div class="fm-head-actions"><button class="fm-btn primary" type="button" data-nova>+ Nova oficina</button></div></div>
+      <div class="fm-head" style="justify-content:flex-end"><div class="fm-head-actions"><button class="fm-btn primary" type="button" data-nova>+ Nova oficina</button></div></div>
       <div class="fm-kpis" data-kpis></div>
       <div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por nome, CNPJ, contato, cidade..." data-busca></div><span data-chip></span><span class="fm-count" data-contagem></span></div>
       <div class="fm-table-wrap"><table class="fm-table" style="min-width:860px"><thead><tr><th>Oficina</th><th>CNPJ / CPF</th><th>Contato</th><th>Cidade</th><th>PIX / banco</th><th>Situação</th><th></th></tr></thead><tbody data-linhas></tbody></table></div></div></div></section>`;
