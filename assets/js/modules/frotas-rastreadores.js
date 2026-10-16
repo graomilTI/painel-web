@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout2';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout3';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -20,6 +20,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       .fr-ag-aviso{border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.10);color:#fde68a;border-radius:14px;padding:10px 14px;margin-bottom:14px;font-size:13px;line-height:1.7}.fr-ag-aviso .fr-link{color:#fde68a;font-weight:900}
       @media(max-width:1100px){.fr-ag-layout{grid-template-columns:1fr}}@media(max-width:680px){.fr-ag-cell{min-height:64px;padding:4px}.fr-ag-chip{font-size:10px;padding:1px 4px}.fr-ag-bar .fr-input,.fr-ag-bar .fr-select{width:100%}.fr-ag-mes{min-width:0;flex:1}}
     ${ESTILOS_LISTA}${tabelaCss('fr')}
+      @media(min-width:1101px){.fr-toolbar{grid-template-columns:minmax(220px,1fr) auto auto auto}}
     </style>`;
 
   let _opts = {};
@@ -36,7 +37,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     loading: false,
     syncing: false,
     filtro: 'todos',
-    filtros: { placa: '', estado: '', cidade: '' },
     busca: '',
     sortCol: 'placa',
     sortDir: 'asc',
@@ -262,11 +262,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       if (state.filtro === STATUS_MANUTENCAO && status !== STATUS_MANUTENCAO) return false;
       if (state.filtro === 'bfleet' && !row._hasBfleet) return false;
 
-      const estadoRow = ufDaLinha(row);
-      if (state.filtros.placa && row.placa !== state.filtros.placa) return false;
-      if (state.filtros.estado && estadoRow !== state.filtros.estado) return false;
-      if (state.filtros.cidade && (r?.cidade || '') !== state.filtros.cidade) return false;
-
       if (!busca) return true;
       const efImei = r?.imei || row.bfleet_idgps || '';
       const placas = placaCandidates(row.placa).concat(r?.placa ? placaCandidates(r.placa) : []);
@@ -320,8 +315,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     state.filtro = value || 'todos';
     const agenda = state.filtro === 'agenda';
     container.querySelectorAll('[data-filter]').forEach(t => t.classList.toggle('active', t.dataset.filter === state.filtro));
-    const sel = container.querySelector('[data-search-status]');
-    if (sel) sel.value = state.filtro === 'todos' || agenda ? '' : state.filtro;
     container.querySelector('[data-list-view]').hidden = agenda;
     container.querySelector('[data-agenda-view]').hidden = !agenda;
     renderKpis(container);
@@ -1266,10 +1259,8 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
 
     if (!hist) return;
     const busca = norm(state.busca);
-    const chave = state.filtros.placa ? placaKey(state.filtros.placa) : '';
     const historico = state.manutencoes.filter(m => {
       if (m.situacao === 'aberta') return false;
-      if (chave && placaKey(m.placa) !== chave) return false;
       if (!busca) return true;
       return norm([...placaCandidates(m.placa), m.motivo, m.tecnico_nome, m.resolucao, m.aberta_por_nome].join(' ')).includes(busca);
     });
@@ -1775,39 +1766,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     await loadData(root);
   }
 
-  function getEstadosDisponiveis() {
-    const set = new Set();
-    state.merged.forEach(row => {
-      const estado = ufDaLinha(row);
-      if (estado) set.add(estado);
-    });
-    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }
-
-  function getCidadesDisponiveis() {
-    const set = new Set();
-    state.merged.forEach(row => { if (row._rastr?.cidade) set.add(row._rastr.cidade); });
-    return [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }
-
-  function getPlacasDisponiveis() {
-    return [...state.merged].map(row => row.placa).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  }
-
-  // Reconstrói as opções da linha de filtro a partir dos dados carregados,
-  // preservando o valor selecionado se ele ainda existir nos novos dados.
-  function renderFilterRow(root) {
-    const fill = (selector, values, currentValue, placeholder) => {
-      const sel = root.querySelector(selector);
-      if (!sel) return;
-      const valid = values.includes(currentValue) ? currentValue : '';
-      sel.innerHTML = `<option value="">${placeholder}</option>` + values.map(v => `<option value="${esc(v)}" ${v === valid ? 'selected' : ''}>${esc(v)}</option>`).join('');
-    };
-    fill('[data-filter-placa]', getPlacasDisponiveis(), state.filtros.placa, 'Todas as placas');
-    fill('[data-filter-estado]', getEstadosDisponiveis(), state.filtros.estado, 'Todas as UFs');
-    fill('[data-filter-cidade]', getCidadesDisponiveis(), state.filtros.cidade, 'Todas as cidades');
-  }
-
   // O PostgREST corta cada resposta em 1000 linhas e colaboradores_atuais tem mais que isso (2,4 mil): sem paginar,
   // quem estava depois da linha 1000 ficava sem telefone/cidade na tela. Ordena por nome + id: sem chave única
   // a paginação repete/pula linhas.
@@ -1869,7 +1827,6 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     mergeData();
     state.loading = false;
     renderKpis(root);
-    renderFilterRow(root);
     renderTable(root);
   }
 
@@ -1882,8 +1839,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
     // pode abrir já num filtro e numa placa (frotas-cadastros?aba=rastreadores&filtro=manutencao&placa=ABC1D23).
     const inicial = opts.inicial || {};
     state.filtro = 'todos';
-    state.busca = '';
-    state.filtros = { placa: inicial.placa || '', estado: '', cidade: '' };
+    state.busca = inicial.placa || '';
     state.agenda.ano = null;
 
     container.innerHTML = styles + `
@@ -1909,25 +1865,10 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
             <div data-agenda-view hidden></div>
             <div data-list-view>
             <div class="fr-toolbar">
-              <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, IMEI, motorista..." data-search />
+              <input class="fr-input" type="search" placeholder="Buscar por placa, cidade, UF, IMEI, motorista..." data-search value="${esc(state.busca)}" />
+              <button class="fr-btn ghost" data-clear-filters>Limpar filtros</button>
               <button class="fr-btn soft" data-refresh>↺ Atualizar</button>
               <button class="fr-btn ghost" data-sync-bfleet>⟳ Sync BFleet</button>
-            </div>
-
-            <div class="fr-filter-row">
-              <select class="fr-select" data-filter-placa><option value="">Todas as placas</option></select>
-              <select class="fr-select" data-filter-estado><option value="">Todas as UFs</option></select>
-              <select class="fr-select" data-filter-cidade><option value="">Todas as cidades</option></select>
-              <select class="fr-select" data-search-status>
-                <option value="">Todos os status</option>
-                <option value="bfleet">Com BFleet</option>
-                <option value="sem_rastreador">Sem rastreador</option>
-                <option value="em_andamento">Em andamento</option>
-                <option value="concluido">Concluído</option>
-                <option value="manutencao">Manutenção</option>
-                <option value="removidos">REMOVIDOS</option>
-              </select>
-              <button class="fr-btn ghost" data-clear-filters>Limpar filtros</button>
             </div>
 
             <div class="fm-kpis" data-kpis></div>
@@ -1955,20 +1896,9 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       renderTable(container);
     });
 
-    container.querySelector('[data-search-status]').addEventListener('change', e => setFiltro(container, e.target.value));
-
-    container.querySelector('[data-filter-placa]').addEventListener('change', e => { state.filtros.placa = e.target.value; renderTable(container); });
-    container.querySelector('[data-filter-estado]').addEventListener('change', e => { state.filtros.estado = e.target.value; renderTable(container); });
-    container.querySelector('[data-filter-cidade]').addEventListener('change', e => { state.filtros.cidade = e.target.value; renderTable(container); });
-
     container.querySelector('[data-clear-filters]').addEventListener('click', () => {
       state.busca = '';
-      state.filtros = { placa: '', estado: '', cidade: '' };
       container.querySelector('[data-search]').value = '';
-      ['[data-filter-placa]', '[data-filter-estado]', '[data-filter-cidade]'].forEach(sel => {
-        const el = container.querySelector(sel);
-        if (el) el.value = '';
-      });
       setFiltro(container, 'todos');
     });
 
