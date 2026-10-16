@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261016-frotas-manut10';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -17,6 +17,8 @@ export const ESTILOS_MANUTENCAO = `
 .fm-check{display:flex;align-items:center;gap:8px;color:#e2e2f0;font-size:13px;font-weight:800;min-height:42px}.fm-check input{width:18px;height:18px;accent-color:#22c55e}
 .fm-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.fm-toolbar .fm-select{width:auto;min-width:150px}
 ${ESTILOS_LISTA}
+/* Barra de ações das abas. NÃO usar .fm-head: o hub (frotas-hub.css) esconde esse bloco nas telas antigas. */
+.fm-topo{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px}.fm-topo .fm-head-actions{display:flex;gap:10px;flex-wrap:wrap}
 .fm-nota{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}
 .fm-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}.fm-chips .fm-badge{font-weight:800}
 .fm-mm{color:#94a3b8;font-size:11px;display:block;margin-top:2px}

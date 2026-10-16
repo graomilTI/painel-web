@@ -1,11 +1,11 @@
 // Frotas · Manutenção › Custos: custo final das manutenções concluídas por veículo, coordenação, supervisão, categoria do
 // guia, natureza, oficina e mês, com exportação em CSV. Fonte: frotas_manutencoes (concluída, custo > 0, paga pela empresa).
 import { dinheiro, esc, toast } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut8';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut10';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut10';
 import {
   AGRUPAMENTOS, agrupar, csvDasLinhas, csvDosGrupos, filtrarPeriodo, linhasDeCusto, resumo,
-} from './frotas-manutencao-custos-regras.js?v=20261016-frotas-manut8';
+} from './frotas-manutencao-custos-regras.js?v=20261016-frotas-manut10';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_CUSTOS';
@@ -91,7 +91,7 @@ import {
     state.supabase = opts.supabase; state.root = container;
     state.inicio = state.inicio || mesesAtras(12); state.fim = state.fim || hojeIso();
     container.innerHTML = `${ESTILOS_MANUTENCAO}<section class="fm-shell">
-      <div class="fm-head" style="justify-content:flex-end"><div class="fm-head-actions"><button class="fm-btn ghost" type="button" data-csv-grupos>Exportar resumo (CSV)</button><button class="fm-btn soft" type="button" data-csv-linhas>Exportar manutenções (CSV)</button></div></div>
+      <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn ghost" type="button" data-csv-grupos>Exportar resumo (CSV)</button><button class="fm-btn soft" type="button" data-csv-linhas>Exportar manutenções (CSV)</button></div></div>
       <div class="fm-kpis" data-kpis></div>
       <div class="fm-card"><div class="fm-body"><div class="fm-bar">
         <select class="fm-select" data-por style="width:auto">${AGRUPAMENTOS.map((a) => `<option value="${a.id}"${a.id === state.por ? ' selected' : ''}>Agrupar por: ${esc(a.rotulo)}</option>`).join('')}</select>

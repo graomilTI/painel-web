@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut8';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut10';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut8';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut10';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -36,7 +36,7 @@ export function badgeStatus(status) {
 // ---------- tela principal ----------
 export function htmlCasca() {
   return `<section class="fm-shell">
-    <div class="fm-head" style="justify-content:flex-end"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
+    <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
     <div class="fm-kpis" data-kpis></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, oficina, motorista, categoria..." data-busca></div>
