@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut18';
+import { norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -118,6 +118,16 @@ export function proximoPrazo(plano, dataISO, km) {
     : null;
   return { proximo_km: proximoKm, proxima_data: proximaData };
 }
+
+// Opções de prazo para escolher com um toque: o guia dá faixas (ex.: 5.000 a 10.000 km, 6 a 12 meses); o intervalo
+// do plano é o menor, o máximo é a outra opção.
+export function opcoesDePrazo(plano) {
+  const unicos = (...v) => [...new Set(v.filter((x) => x != null && Number(x) > 0).map(Number))];
+  return { kms: unicos(plano.intervalo_km, plano.intervalo_km_max), meses: unicos(plano.intervalo_meses, plano.intervalo_meses_max), dias: unicos(plano.intervalo_dias) };
+}
+
+// Km do serviço + um acréscimo (nulo se o km do serviço não foi informado).
+export const kmMais = (km, add) => (km !== '' && km != null && Number(km) > 0 ? Number(km) + Number(add) : null);
 
 // ---------- validação do registro, por passo ----------
 const kmOuNulo = (km) => (km === '' || km == null ? null : Number(km));

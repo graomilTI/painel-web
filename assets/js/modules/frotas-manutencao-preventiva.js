@@ -2,13 +2,13 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut18';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut18';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut18';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut18';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut19';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut19';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut19';
+import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
 import {
   FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut18';
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut19';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
@@ -118,7 +118,7 @@ import {
 
   async function registrar(veiculoId, planoInicial) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut18');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut19');
     await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planoInicial, aoConcluir: carregar });
   }
 
@@ -159,7 +159,7 @@ import {
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut18');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut19');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
