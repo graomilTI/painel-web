@@ -10,7 +10,7 @@ const CARDS = [
     descricao: 'Ordens de manutenção, custos e status por veículo.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-manutencao.js?v=20261016-frotas-manut12');
       window.FROTAS_MANUTENCAO.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -20,7 +20,7 @@ const CARDS = [
     descricao: 'O que vence por veículo, pelos planos do guia de manutenção.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-vencimentos.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-manutencao-vencimentos.js?v=20261016-frotas-manut12');
       window.FROTAS_MANUT_VENCIMENTOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -30,7 +30,7 @@ const CARDS = [
     descricao: 'Custo final das manutenções por veículo, coordenação, categoria e mais.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-custos.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-manutencao-custos.js?v=20261016-frotas-manut12');
       window.FROTAS_MANUT_CUSTOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -40,7 +40,7 @@ const CARDS = [
     descricao: 'Cadastro de oficinas e fornecedores de manutenção.',
     aliases: ['FROTAS_MANUTENCAO', 'MANUTENCAO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-manutencao-oficinas.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-manutencao-oficinas.js?v=20261016-frotas-manut12');
       window.FROTAS_MANUT_OFICINAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -50,7 +50,7 @@ const CARDS = [
     descricao: 'Controle de troca de óleo e revisões periódicas.',
     aliases: ['FROTAS_TROCA_OLEO', 'TROCA_OLEO'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-troca-oleo.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-troca-oleo.js?v=20261016-frotas-manut12');
       window.FROTAS_TROCA_OLEO.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -60,7 +60,7 @@ const CARDS = [
     descricao: 'Checklists de vistoria e conferência dos veículos.',
     aliases: ['FROTAS_CHECKLISTS', 'CHECKLISTS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-checklists.js?v=20261016-frotas-manut11');
+      await import('./modules/frotas-checklists.js?v=20261016-frotas-manut12');
       window.FROTAS_CHECKLISTS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },

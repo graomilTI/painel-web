@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Vencimentos: o que vence por veículo e plano do guia (frotas_manutencao_vencimentos_v),
 // com abertura de solicitação em um clique. A solicitação é aberta pela RPC e a ficha abre na aba Manutenção.
 import { esc, dataBR, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut11';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut11';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut11';
-import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut11';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut12';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut12';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut12';
+import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut12';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_VENCIMENTOS';
@@ -104,7 +104,7 @@ import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=2026101
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut11');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut12');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });

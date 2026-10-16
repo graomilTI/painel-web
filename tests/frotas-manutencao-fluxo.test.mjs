@@ -175,7 +175,17 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(nova, /data-n-solicitante/);
   assert.match(nova, /Registrar manutenção/);
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
-  assert.match(nova, /<option value="p1" selected>Troca de óleo \(5\.000–10\.000 km\)<\/option>/);
+  // Itens: linha de entrada com "+" e, abaixo, a lista do que já foi adicionado, cada uma com ✕ (o item do preset já vem na lista).
+  assert.match(nova, /data-novo-entrada/);
+  assert.match(nova, /data-acao="novo-item-add"[^>]*>\+<\/button>/);
+  assert.doesNotMatch(nova, /\+ Item/);
+  assert.equal((nova.match(/data-novo-item data-item-json=/g) || []).length, 1, 'o item do preset entra na lista');
+  assert.match(nova, /02 · Sistema de lubrificação|02 · /);
+  assert.match(nova, /Troca de óleo/, 'o plano do guia aparece na linha da lista');
+  assert.equal((nova.match(/data-acao="novo-item-remover"/g) || []).length, 1);
+  const semItens = htmlFormNova(base, {});
+  assert.equal((semItens.match(/data-novo-item data-item-json=/g) || []).length, 0, 'sem preset a lista começa vazia e a entrada fica pronta');
+  assert.match(semItens, /data-novo-entrada/);
 });
 
 test('todos os módulos da manutenção usam o mesmo ?v= dos demais módulos de lista do Frotas', () => {

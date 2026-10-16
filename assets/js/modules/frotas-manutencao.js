@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut11';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut11';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut11';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut12';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut12';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut12';
 import {
   acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut11';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut12';
 import {
-  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut11';
+  htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas, opcoesPlanos,
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut12';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -360,12 +360,12 @@ import {
     ov.addEventListener('click', aoClicarNova);
     ov.addEventListener('change', (e) => {
       if (e.target.dataset.n === 'categoria_codigo') {
-        const linha = e.target.closest('[data-novo-item]');
+        const linha = e.target.closest('[data-novo-entrada]');
         const plano = linha.querySelector('[data-n="plano_id"]');
         plano.innerHTML = opcoesPlanos(state.base.planos, e.target.value);
       }
       if (e.target.dataset.n === 'plano_id' && e.target.value) {
-        const linha = e.target.closest('[data-novo-item]');
+        const linha = e.target.closest('[data-novo-entrada]');
         const nat = linha.querySelector('[data-n="natureza"]');
         if (!nat.value) nat.value = 'preventiva';
       }
@@ -381,21 +381,44 @@ import {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
     if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
+    // Lê a linha de entrada (categoria, natureza, descrição, plano, tipo); devolve null se a categoria não foi escolhida.
+    const lerEntrada = () => {
+      const linha = ov.querySelector('[data-novo-entrada]');
+      const cat = linha.querySelector('[data-n="categoria_codigo"]').value;
+      if (!cat) return null;
+      return {
+        categoria_codigo: Number(cat),
+        natureza: linha.querySelector('[data-n="natureza"]').value || null,
+        descricao: linha.querySelector('[data-n="descricao"]').value.trim(),
+        plano_id: linha.querySelector('[data-n="plano_id"]').value || null,
+        tipo_item: linha.querySelector('[data-n="tipo_item"]').value || 'servico',
+      };
+    };
+    const limparEntrada = () => {
+      const linha = ov.querySelector('[data-novo-entrada]');
+      linha.querySelector('[data-n="categoria_codigo"]').value = '';
+      linha.querySelector('[data-n="natureza"]').value = '';
+      linha.querySelector('[data-n="descricao"]').value = '';
+      linha.querySelector('[data-n="plano_id"]').innerHTML = opcoesPlanos(state.base.planos, null);
+      linha.querySelector('[data-n="tipo_item"]').value = 'servico';
+    };
     if (alvo.dataset.acao === 'novo-item-add') {
-      const caixa = ov.querySelector('[data-novo-itens]');
-      caixa.insertAdjacentHTML('beforeend', htmlLinhaItemNovo(state.base, {}, caixa.children.length));
+      const item = lerEntrada();
+      if (!item) { ov.querySelector('[data-erros]').innerHTML = htmlErros(['Escolha a categoria do item antes de clicar em +.']); return; }
+      ov.querySelector('[data-erros]').innerHTML = '';
+      ov.querySelector('[data-novo-itens]').insertAdjacentHTML('beforeend', htmlItemAdicionado(state.base, item));
+      limparEntrada();
+      ov.querySelector('[data-novo-entrada] [data-n="categoria_codigo"]').focus();
       return;
     }
     if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
     if (alvo.dataset.acao !== 'novo-salvar') return;
 
     const veiculo = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'));
-    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => ({
-      categoria_codigo: linha.querySelector('[data-n="categoria_codigo"]').value ? Number(linha.querySelector('[data-n="categoria_codigo"]').value) : null,
-      natureza: linha.querySelector('[data-n="natureza"]').value || null,
-      descricao: linha.querySelector('[data-n="descricao"]').value.trim(),
-      plano_id: linha.querySelector('[data-n="plano_id"]').value || null,
-    }));
+    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => JSON.parse(linha.dataset.itemJson));
+    // Item preenchido na linha de entrada mas sem clicar em +: entra junto (não se perde).
+    const pendente = lerEntrada();
+    if (pendente) itens.push(pendente);
     const descricao = val(ov, '[data-n-descricao]').trim();
     const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens });
     if (lista.length) { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); return; }
