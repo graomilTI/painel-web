@@ -18,7 +18,7 @@ export async function carregarBase(supabase) {
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),
     tudo(supabase.from('frotas_manutencao_planos').select('*').order('categoria_codigo', { ascending: true }), 'Erro ao carregar os planos.'),
     tudo(supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.'),
-    tudo(supabase.from('frotas_veiculos').select('id,placa,marca_modelo,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }), 'Erro ao carregar os veículos.'),
+    tudo(supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }), 'Erro ao carregar os veículos.'),
   ]);
   return { categorias, planos, oficinas, veiculos };
 }
