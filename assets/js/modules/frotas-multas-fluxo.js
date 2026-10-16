@@ -57,6 +57,7 @@ const STYLES = `
 // ───────────────────────────── utilitários ─────────────────────────────
 const limpar = (v) => String(v ?? '').replace(/[ ​-‍﻿]/g, ' ').replace(/\s+/g, ' ').trim();
 const soDigitos = (v) => String(v ?? '').replace(/\D/g, '');
+const normEmpresa = (v) => limpar(v).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function slug(v) {
@@ -66,6 +67,10 @@ function slug(v) {
 const hojeBr = () => new Date().toLocaleDateString('pt-BR', { timeZone: TZ });
 const hojeIso = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
 const agoraBr = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }) : '');
+function fmtCnpj(v) {
+  const d = soDigitos(v);
+  return d.length === 14 ? d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5') : String(v || '').trim();
+}
 function fmtCpf(v) {
   const d = soDigitos(v);
   return d.length === 11 ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : String(v || '').trim();
@@ -144,7 +149,7 @@ async function registrarAcao(ctx, multaIds, acao, detalhe = null) {
 
 // Contato (WhatsApp, CPF, empresa) do motorista: base de RH e, se faltar, o cadastro de motoristas da frota.
 async function buscarContato(supabase, nome) {
-  const out = { whatsapp: '', cpf: '', empresa: '' };
+  const out = { whatsapp: '', cpf: '', empresa: '', cnpj: '' };
   const termo = limpar(nome).replace(/[%_]/g, ' ');
   if (!termo) return out;
   try {
@@ -153,6 +158,15 @@ async function buscarContato(supabase, nome) {
     const c = (data || []).find((x) => x.ativo) || (data || [])[0];
     if (c) { out.whatsapp = soDigitos(c.whatsapp); out.cpf = c.cpf || ''; out.empresa = limpar(c.empresa); }
   } catch (err) { console.warn('[multas] contato (colaboradores_atuais):', err); }
+  if (out.empresa) {
+    // O nome da empresa no RH é abreviado (ex.: "BV GRAIN"); razão social e CNPJ vêm de rh_empresas pelos aliases.
+    try {
+      const { data } = await supabase.from('rh_empresas').select('razao_social,cnpj,aliases').eq('ativo', true);
+      const chave = normEmpresa(out.empresa);
+      const e = (data || []).find((x) => [x.razao_social, ...(Array.isArray(x.aliases) ? x.aliases : [])].some((n) => normEmpresa(n) === chave));
+      if (e) { out.empresa = limpar(e.razao_social) || out.empresa; out.cnpj = e.cnpj || ''; }
+    } catch (err) { console.warn('[multas] contato (rh_empresas):', err); }
+  }
   if (!out.whatsapp || !out.cpf) {
     try {
       const { data } = await supabase.from('frotas_motoristas').select('nome,cpf,telefone').ilike('nome', termo).limit(1);
@@ -278,7 +292,7 @@ async function abrirNotificar(ctx, m) {
 }
 
 // ───────────────────────────── Termo de desconto em folha ─────────────────────────────
-function montarPdfTermo(JsPDF, { nome, cpf, empresa, multas, h }) {
+function montarPdfTermo(JsPDF, { nome, cpf, empresa, cnpj, multas, h }) {
   const doc = new JsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const M = 20, W = 210, H = 297, CW = W - M * 2, LH = 4.6;
   let y = 20;
@@ -306,7 +320,7 @@ function montarPdfTermo(JsPDF, { nome, cpf, empresa, multas, h }) {
   y += 11;
 
   paragrafo(
-    `Eu, ${nome.toUpperCase()}, portador(a) do CPF nº ${cpf ? fmtCpf(cpf) : '______________________'}, colaborador(a) da empresa ${empresa.toUpperCase()}, `
+    `Eu, ${nome.toUpperCase()}, portador(a) do CPF nº ${cpf ? fmtCpf(cpf) : '______________________'}, colaborador(a) da empresa ${empresa.toUpperCase()}, CNPJ nº ${cnpj ? fmtCnpj(cnpj) : '______________________'}, `
     + `condutor(a) do${plural ? 's' : ''} veículo${plural ? 's' : ''} identificado${plural ? 's' : ''} no quadro abaixo à época d${plural ? 'as infrações' : 'a infração'} de trânsito nele discriminad${plural ? 'as' : 'a'}, `
     + `reconheço que fui responsável ${plural ? 'pelas infrações' : 'pela infração'} e AUTORIZO, de forma livre e expressa, a EMPRESA a descontar de minha remuneração (folha de pagamento) `
     + `o valor total de ${moeda(total)}, correspondente a ${multas.length} multa${plural ? 's' : ''} de trânsito de minha responsabilidade.`,
@@ -385,7 +399,8 @@ async function gerarTermo(ctx, m) {
   h.toast('Gerando termo…');
   const [JsPDF, contato] = await Promise.all([carregarJsPdf(), buscarContato(ctx.opts.supabase, nome)]);
   const doc = montarPdfTermo(JsPDF, {
-    nome, cpf: contato.cpf, empresa: contato.empresa || limpar(m.empresa) || 'EMPRESA', multas: membros, h,
+    nome, cpf: contato.cpf, empresa: contato.empresa || limpar(m.empresa) || 'EMPRESA',
+    cnpj: contato.cnpj || (contato.empresa ? '' : m.cnpj), multas: membros, h,
   });
   doc.save(`termo-desconto-multa-${slug(nome)}-${hojeIso()}.pdf`);
   h.toast(`Termo gerado com ${membros.length} multa${membros.length > 1 ? 's' : ''}.`);
