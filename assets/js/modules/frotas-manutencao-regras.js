@@ -322,3 +322,19 @@ export function normalizarLinhaHistorico(row) {
   if (!placa && !plano && (mapa.data == null || mapa.data === '')) return null;
   return { placa, plano, data: dataParaISO(mapa.data), km: kmParaNumero(mapa.km ?? mapa.quilometragem ?? mapa.hodometro) };
 }
+
+// Placa unificada (ex.: AAR5019 → AAR5A19) deixa dois cadastros com o mesmo RENAVAM: na lista de escolha aparece um só,
+// o mais completo (com modelo) e, se empatar, o atualizado mais recentemente. Sem RENAVAM, nada é agrupado.
+export function veiculosUnicos(veiculos) {
+  const melhor = new Map();
+  const semRenavam = [];
+  const pontos = (v) => (v.marca_modelo ? 2 : 0) + (v.status === 'ATIVO' ? 1 : 0);
+  for (const v of veiculos) {
+    const renavam = String(v.renavam || '').replace(/\D/g, '');
+    if (!renavam) { semRenavam.push(v); continue; }
+    const atual = melhor.get(renavam);
+    if (!atual || pontos(v) > pontos(atual) || (pontos(v) === pontos(atual) && String(v.updated_at || '') > String(atual.updated_at || ''))) melhor.set(renavam, v);
+  }
+  const mantidos = new Set([...melhor.values(), ...semRenavam]);
+  return veiculos.filter((v) => mantidos.has(v));
+}

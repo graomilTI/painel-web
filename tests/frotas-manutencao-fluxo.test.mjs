@@ -382,3 +382,19 @@ test('os botões das abas ficam fora de .fm-head, que o hub esconde (frotas-hub.
   }
   assert.match(ler('assets/js/modules/frotas-ui-lista.js'), /\.fm-topo\{/);
 });
+
+test('placa unificada: dois cadastros com o mesmo RENAVAM aparecem como um só na escolha do veículo', async () => {
+  const { veiculosUnicos } = await import('../assets/js/modules/frotas-manutencao-regras.js');
+  const antigo = { id: 'a', placa: 'AAR5019', renavam: '284075809', status: 'ATIVO', marca_modelo: null, updated_at: '2026-05-26' };
+  const novo = { id: 'b', placa: 'AAR5A19', renavam: '284.075.809', status: 'ATIVO', marca_modelo: 'FIAT/PUNTO ESSENCE 1.6', updated_at: '2026-10-16' };
+  const outro = { id: 'c', placa: 'XYZ9K88', renavam: '111', status: 'ATIVO', marca_modelo: 'Toyota Hilux' };
+  const semRenavam1 = { id: 'd', placa: 'AAA1A11', renavam: '', status: 'ATIVO' };
+  const semRenavam2 = { id: 'e', placa: 'BBB2B22', renavam: null, status: 'ATIVO' };
+  assert.deepEqual(veiculosUnicos([antigo, novo, outro, semRenavam1, semRenavam2]).map((v) => v.placa), ['AAR5A19', 'XYZ9K88', 'AAA1A11', 'BBB2B22'], 'fica o cadastro com modelo; sem RENAVAM nada é agrupado');
+  assert.deepEqual(veiculosUnicos([novo, antigo]).map((v) => v.placa), ['AAR5A19'], 'a ordem de entrada não importa');
+  const empatados = [{ id: 'x', placa: 'AAA0000', renavam: '9', status: 'ATIVO', updated_at: '2026-01-01' }, { id: 'y', placa: 'AAA0A00', renavam: '9', status: 'ATIVO', updated_at: '2026-09-01' }];
+  assert.deepEqual(veiculosUnicos(empatados).map((v) => v.placa), ['AAA0A00'], 'empate: o atualizado por último');
+  const html = htmlFormNova({ ...base, veiculos: [{ id: 'a', placa: 'AAR5019', renavam: '1', status: 'ATIVO' }, { id: 'b', placa: 'AAR5A19', renavam: '1', status: 'ATIVO', marca_modelo: 'FIAT/PUNTO' }] }, {});
+  assert.match(html, /<option value="AAR5A19 · FIAT\/PUNTO">/);
+  assert.doesNotMatch(html, /<option value="AAR5019 · ">/);
+});

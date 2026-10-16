@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut10';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261016-frotas-manut11';
 import {
   ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
-  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut10';
+  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, statusInfo, valorDaManutencao, veiculosUnicos,
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut11';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -87,7 +87,7 @@ export function htmlLinhaItemNovo(base, item = {}, idx = 0) {
 
 export function htmlFormNova(base, preset = {}) {
   const veiculo = base.veiculos.find((v) => v.id === preset.veiculo_id);
-  const lista = base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id);
+  const lista = veiculosUnicos(base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id));
   const itens = preset.itens?.length ? preset.itens : [{}];
   return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu e o problema, classificado pelas categorias do guia. O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
     <div class="fm-form" style="margin-top:14px">
