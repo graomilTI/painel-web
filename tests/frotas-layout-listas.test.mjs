@@ -90,16 +90,19 @@ test('botão de ícone tem título e rótulo acessível', () => {
 
 test('todas as listas usam o módulo de layout e têm cards no lugar do grid antigo', () => {
   for (const nome of MODULOS) {
-    const src = ler(`assets/js/modules/frotas-${nome}.js`);
+    // Manutenção foi dividida em módulos (16/10/2026): o layout de lista é injetado pelo módulo de estilos.
+    const src = ler(`assets/js/modules/frotas-${nome === 'manutencao' ? 'manutencao-estilos' : nome}.js`);
     assert.match(src, /from '\.\/frotas-ui-lista\.js\?v=/, `${nome} deveria importar frotas-ui-lista`);
     assert.match(src, /ESTILOS_LISTA/, `${nome} deveria injetar ESTILOS_LISTA`);
     assert.doesNotMatch(src, /class="(?:fm|fv)-grid"/, `${nome} ainda tem o grid de KPIs antigo`);
   }
-  for (const nome of ['manutencao', 'troca-oleo', 'checklists']) {
+  for (const nome of ['troca-oleo', 'checklists']) {
     const src = ler(`assets/js/modules/frotas-${nome}.js`);
     assert.match(src, /ligarCards\(container/);
     assert.match(src, /state\.filtro && state\.filtro !== 'todos'/);
   }
+  assert.match(ler('assets/js/modules/frotas-manutencao.js'), /ligarCards\(container/);
+  assert.match(ler('assets/js/modules/frotas-manutencao-regras.js'), /filtro === 'todos'/);
 });
 
 test('o ?v= dos módulos de lista é o mesmo em todos os imports e carregadores', () => {

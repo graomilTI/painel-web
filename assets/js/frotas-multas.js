@@ -1,9 +1,9 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { installStableMultasActions } from './modules/frotas-multas-stable-actions.js?v=20261016-frotas-layout5';
+import { installStableMultasActions } from './modules/frotas-multas-stable-actions.js?v=20261016-frotas-manut1';
 import { installTemporaryMultasUpload } from './modules/frotas-multas-temporary-upload.js';
-import { installMultasFluxo } from './modules/frotas-multas-fluxo.js?v=20261016-frotas-layout5';
-import './modules/frotas-multas.js?v=20261016-frotas-layout5';
+import { installMultasFluxo } from './modules/frotas-multas-fluxo.js?v=20261016-frotas-manut1';
+import './modules/frotas-multas.js?v=20261016-frotas-manut1';
 
 export function renderContent(content, ctx) {
   window.FROTAS_MULTAS.openHome(content, {

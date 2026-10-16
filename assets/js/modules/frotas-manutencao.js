@@ -1,209 +1,419 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-layout5';
+// Frotas · Manutenção: fluxo completo (solicitação → orçamento → aprovação → OS → conclusão).
+// Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
+// frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
+import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut1';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut1';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut1';
+import {
+  acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut1';
+import {
+  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut1';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
-  const TABLE = 'frotas_manutencoes';
-  const BUCKET = 'notas-fiscais';
-  const AVISO_DIAS = 15;
-  const AVISO_KM = 1000;
+  const FICHA = 'fmFicha';
+  const NOVA = 'fmNova';
 
-  const styles = `
-    <style>
-      .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#6b7280;line-height:1.55;margin:0}.fm-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fm-body{padding:18px}.fm-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:10px;margin-bottom:14px}.fm-input,.fm-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark}.fm-select option{background:#0d0d18;color:#e2e2f0}.fm-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}.fm-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fm-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fm-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fm-btn.done{background:rgba(34,197,94,.16);color:#86efac;border:1px solid rgba(34,197,94,.3)}.fm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.fm-kpi{border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:14px;padding:12px 14px;min-width:0}.fm-kpi span{display:block;color:#93c5fd;font-size:10px;font-weight:950;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fm-kpi strong{display:block;margin-top:7px;color:#fff;font-size:22px;line-height:1}.fm-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fm-table{width:100%;border-collapse:collapse;min-width:1100px}.fm-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fm-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fm-table tr:hover td{background:rgba(22,101,52,.08)}.fm-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fm-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fm-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fm-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fm-mini{min-height:32px;border-radius:10px;padding:0 10px;font-size:11px}.fm-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:0 0 16px;padding:14px;border:1px solid rgba(34,197,94,.18);background:rgba(2,6,23,.32);border-radius:18px}.fm-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fm-field.full{grid-column:1/-1}.fm-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none}.fm-note{margin-top:12px;padding:12px 14px;border:1px dashed rgba(34,197,94,.28);border-radius:16px;background:rgba(2,6,23,.26);color:#bfdbfe;font-size:12px;line-height:1.5}.fm-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}.fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 14px;font-weight:950;box-shadow:0 16px 45px rgba(0,0,0,.35);opacity:0;transform:translateY(10px);pointer-events:none;transition:.2s ease}.fm-toast.show{opacity:1;transform:translateY(0)}@media(max-width:1200px){.fm-toolbar{grid-template-columns:1fr 1fr}.fm-grid{grid-template-columns:repeat(2,1fr)}.fm-form{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.fm-toolbar,.fm-grid,.fm-form{grid-template-columns:1fr}}
-      ${ESTILOS_LISTA}
-    </style>`;
-
-  const state = { filtro: 'todos', registros: [], veiculos: [], loading: false, busca: '', editId: null, formOpen: false };
-
-  function esc(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
-  function norm(v){ return String(v||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase(); }
-  function toast(msg, error=false){ let el=document.querySelector('.fm-toast'); if(!el){el=document.createElement('div');el.className='fm-toast';document.body.appendChild(el);} el.textContent=msg; el.style.background=error?'rgba(127,29,29,.96)':'rgba(22,101,52,.96)'; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),3200); }
-  function fmtDateBr(iso){ if(!iso) return '—'; const m=String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : iso; }
-  function fmtKm(v){ return v==null||v==='' ? '—' : `${Number(v).toLocaleString('pt-BR')} km`; }
-  function fmtRs(v){ return v==null||v==='' ? '—' : Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
-
-  function setFormOpen(root, open){
-    state.formOpen = open;
-    const wrap = root.querySelector('[data-form-wrap]');
-    if(wrap) wrap.style.display = open ? '' : 'none';
-    const toggleBtn = root.querySelector('[data-toggle-form]');
-    if(toggleBtn) toggleBtn.textContent = open ? '✕ Fechar cadastro' : '+ Nova manutenção';
-  }
-
-  function veiculoLabel(v){ return `${v.placa || '—'}${v.marca_modelo ? ' · ' + v.marca_modelo : ''}`; }
-
-  function vencimentoStatus(row, hodometroAtual){
-    const hoje = new Date(); hoje.setHours(0,0,0,0);
-    let vencido = false, aviso = false, temPrevisao = false;
-    if(row.proxima_data){
-      temPrevisao = true;
-      const d = new Date(`${row.proxima_data}T00:00:00`);
-      const diffDias = Math.round((d - hoje) / 86400000);
-      if(diffDias < 0) vencido = true; else if(diffDias <= AVISO_DIAS) aviso = true;
-    }
-    if(row.proxima_km != null && hodometroAtual != null){
-      temPrevisao = true;
-      const diffKm = Number(row.proxima_km) - Number(hodometroAtual);
-      if(diffKm < 0) vencido = true; else if(diffKm <= AVISO_KM) aviso = true;
-    }
-    if(!temPrevisao) return 'sem-previsao';
-    if(vencido) return 'vencida';
-    if(aviso) return 'proxima';
-    return 'em-dia';
-  }
-
-  const STATUS_BADGE = {
-    'sem-previsao': '<span class="fm-badge">Sem previsão</span>',
-    vencida: '<span class="fm-badge err">Vencida</span>',
-    proxima: '<span class="fm-badge warn">Próxima</span>',
-    'em-dia': '<span class="fm-badge ok">Em dia</span>',
+  const state = {
+    supabase: null, root: null, opts: null,
+    base: { categorias: [], planos: [], oficinas: [], veiculos: [] },
+    manut: [], itens: [], orcs: [],
+    filtro: 'abertas', busca: '', natureza: '', prioridade: '',
+    loading: false, ocupado: false,
+    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null,
   };
-  function vencimentoBadge(row, hodometroAtual){ return STATUS_BADGE[vencimentoStatus(row, hodometroAtual)]; }
 
-  function getFiltered(){
-    const busca = norm(state.busca);
-    const aplica = (r) => vencimentoStatus(r, r.__hodometro) === state.filtro;
-    let rows = state.filtro && state.filtro !== 'todos' ? state.registros.filter(aplica) : state.registros;
-    if(busca) rows = rows.filter(r => norm([r.__placa, r.tipo_servico, r.oficina, r.descricao].join(' ')).includes(busca));
-    return rows;
+  // ---------- permissões ----------
+  function podeAprovar() {
+    const ctx = state.opts?.auth;
+    if (ctx?.user?.is_master) return true;
+    return (ctx?.modules || []).some((m) => String(m?.code || m?.codigo || '').toLowerCase() === 'frotas_manutencao' && m?.can_approve === true);
   }
 
-  async function loadVeiculos(opts){
-    const { data, error } = await opts.supabase.from('frotas_veiculos').select('id,placa,marca_modelo,hodometro').order('placa', { ascending: true });
-    state.veiculos = error ? [] : (data || []);
+  // ---------- índices ----------
+  function indices() {
+    const itensPorManut = new Map();
+    for (const i of state.itens) { if (!itensPorManut.has(i.manutencao_id)) itensPorManut.set(i.manutencao_id, []); itensPorManut.get(i.manutencao_id).push(i); }
+    const orcsPorManut = new Map();
+    for (const o of state.orcs) { if (!orcsPorManut.has(o.manutencao_id)) orcsPorManut.set(o.manutencao_id, []); orcsPorManut.get(o.manutencao_id).push(o); }
+    return { itensPorManut, orcsPorManut };
   }
 
-  async function loadRegistros(root, opts){
-    state.loading = true; renderTable(root, opts);
-    const { data, error } = await opts.supabase.from(TABLE).select('*').order('data_execucao', { ascending: false });
-    if(error){ toast(error.message || 'Erro ao carregar manutenções.', true); state.registros = []; }
-    else {
-      const veicPorId = new Map(state.veiculos.map(v => [v.id, v]));
-      state.registros = (data || []).map(r => ({ ...r, __placa: veicPorId.get(r.veiculo_id)?.placa || '', __hodometro: veicPorId.get(r.veiculo_id)?.hodometro ?? null }));
-    }
-    state.loading = false; renderStats(root); renderTable(root, opts);
+  function enriquecer(m) {
+    const v = state.base.veiculos.find((x) => x.id === m.veiculo_id);
+    return { ...m, __placa: v?.placa || '', __modelo: v?.marca_modelo || '', __coordenacao: v?.coordenacao || '' };
   }
 
-  function readForm(root){
-    const form = root.querySelector('[data-registro-form]');
-    const get = (k) => form?.querySelector(`[name="${k}"]`)?.value ?? '';
-    return {
-      veiculo_id: get('veiculo_id') || null,
-      tipo_servico: get('tipo_servico').trim() || null,
-      oficina: get('oficina').trim() || null,
-      data_execucao: get('data_execucao') || new Date().toISOString().slice(0,10),
-      km_execucao: get('km_execucao') ? Number(get('km_execucao')) : null,
-      custo: get('custo') ? Number(get('custo').replace(',', '.')) : null,
-      proxima_data: get('proxima_data') || null,
-      proxima_km: get('proxima_km') ? Number(get('proxima_km')) : null,
-      descricao: get('descricao').trim() || null,
-      observacoes: get('observacoes').trim() || null,
-    };
+  function aplicarCarga({ manutencoes, itens, orcamentos }) {
+    state.manut = manutencoes.map(enriquecer);
+    state.itens = itens;
+    state.orcs = orcamentos;
   }
 
-  function fillForm(root, r){
-    const form = root.querySelector('[data-registro-form]'); if(!form) return;
-    const set = (k, val) => { const input = form.querySelector(`[name="${k}"]`); if(input) input.value = val ?? ''; };
-    state.editId = r?.id || null;
-    set('veiculo_id', r?.veiculo_id); set('tipo_servico', r?.tipo_servico); set('oficina', r?.oficina);
-    set('data_execucao', r?.data_execucao ? String(r.data_execucao).slice(0,10) : new Date().toISOString().slice(0,10));
-    set('km_execucao', r?.km_execucao); set('custo', r?.custo);
-    set('proxima_data', r?.proxima_data ? String(r.proxima_data).slice(0,10) : '');
-    set('proxima_km', r?.proxima_km); set('descricao', r?.descricao); set('observacoes', r?.observacoes);
-    setFormOpen(root, true);
-    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // ---------- lista ----------
+  function renderLista() {
+    const root = state.root; if (!root) return;
+    const { itensPorManut, orcsPorManut } = indices();
+    const linhas = filtrarManutencoes(state.manut, state, itensPorManut, state.base.categorias);
+    root.querySelector('[data-kpis]').innerHTML = htmlKpis(contarPorFiltro(state.manut), state.filtro);
+    sincronizarCards(root, state.filtro);
+    root.querySelector('[data-linhas]').innerHTML = state.loading
+      ? '<tr><td colspan="8" class="fm-empty">Carregando manutenções...</td></tr>'
+      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias });
+    root.querySelector('[data-contagem]').textContent = `${linhas.length} de ${state.manut.length} manutenção(ões)`;
   }
 
-  function resetForm(root){
-    state.editId = null;
-    root.querySelector('[data-registro-form]')?.reset();
-    const anexo = root.querySelector('[name="anexo"]'); if(anexo) anexo.value = '';
-    setFormOpen(root, false);
-  }
-
-  async function uploadAnexo(opts, file, veiculoId){
-    if(!file) return null;
-    const path = `frotas-manutencao/${veiculoId}/${Date.now()}-${file.name}`;
-    const { error } = await opts.supabase.storage.from(BUCKET).upload(path, file, { upsert: true });
-    if(error) throw error;
-    const { data } = opts.supabase.storage.from(BUCKET).getPublicUrl(path);
-    return data?.publicUrl || null;
-  }
-
-  async function saveRegistro(root, opts){
-    const payload = readForm(root);
-    if(!payload.veiculo_id) return toast('Selecione o veículo.', true);
-    const fileInput = root.querySelector('[name="anexo"]');
-    const file = fileInput?.files?.[0] || null;
+  async function carregar() {
+    state.loading = true; renderLista();
     try {
-      if(file) payload.anexo_url = await uploadAnexo(opts, file, payload.veiculo_id);
-      let error;
-      if(state.editId) ({ error } = await opts.supabase.from(TABLE).update(payload).eq('id', state.editId));
-      else ({ error } = await opts.supabase.from(TABLE).insert(payload));
-      if(error) throw error;
-      toast(state.editId ? 'Manutenção atualizada.' : 'Manutenção registrada.');
-      resetForm(root);
-      await loadRegistros(root, opts);
-    } catch(err){
-      toast(err.message || 'Erro ao salvar manutenção.', true);
+      aplicarCarga(await dados.carregarManutencoes(state.supabase));
+    } catch (err) {
+      toast(err.message || 'Erro ao carregar as manutenções.', 'err');
+      state.manut = []; state.itens = []; state.orcs = [];
+    }
+    state.loading = false; renderLista();
+    if (state.fichaId) renderFicha();
+  }
+
+  async function recarregarUma(id) {
+    const r = await dados.carregarUma(state.supabase, id);
+    if (!r.manutencao) { state.manut = state.manut.filter((m) => m.id !== id); }
+    else {
+      const novo = enriquecer(r.manutencao);
+      const i = state.manut.findIndex((m) => m.id === id);
+      if (i >= 0) state.manut[i] = novo; else state.manut.unshift(novo);
+    }
+    state.itens = [...state.itens.filter((x) => x.manutencao_id !== id), ...r.itens];
+    state.orcs = [...state.orcs.filter((x) => x.manutencao_id !== id), ...r.orcamentos];
+    renderLista();
+  }
+
+  // Executa uma ação de gravação com trava contra clique duplo; erros do banco viram aviso.
+  async function executar(fn, { sucesso = '', recarregar = true } = {}) {
+    if (state.ocupado) return false;
+    state.ocupado = true;
+    try {
+      await fn();
+      if (recarregar && state.fichaId) await recarregarUma(state.fichaId);
+      if (sucesso) toast(sucesso);
+      return true;
+    } catch (err) {
+      toast(err.message || 'Não foi possível concluir a ação.', 'err', 5500);
+      if (state.fichaId) { try { await recarregarUma(state.fichaId); } catch { /* mantém o que está na tela */ } }
+      return false;
+    } finally {
+      state.ocupado = false;
+      if (state.fichaId) renderFicha();
     }
   }
 
-  function renderStats(root){
-    const total = state.registros.length;
-    let vencidas = 0, proximas = 0, emDia = 0;
-    state.registros.forEach(r => {
-      const status = vencimentoStatus(r, r.__hodometro);
-      if(status === 'vencida') vencidas++; else if(status === 'proxima') proximas++; else if(status === 'em-dia') emDia++;
+  // ---------- ficha ----------
+  function fichaAtual() { return state.manut.find((m) => m.id === state.fichaId) || null; }
+
+  function renderFicha() {
+    const m = fichaAtual();
+    if (!m) { closeModal(FICHA); return; }
+    const { itensPorManut, orcsPorManut } = indices();
+    const html = htmlFicha(m, {
+      itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
+      podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido,
     });
-    root.querySelector('[data-kpi-total]').textContent = total;
-    root.querySelector('[data-kpi-vencidas]').textContent = vencidas;
-    root.querySelector('[data-kpi-proximas]').textContent = proximas;
-    root.querySelector('[data-kpi-emdia]').textContent = emDia;
+    let ov = document.getElementById(FICHA);
+    if (!ov) {
+      ov = openModal({ id: FICHA, conteudoHtml: '', aoFechar: () => { state.fichaId = null; renderLista(); } });
+      ov.classList.add('fm-mod');
+      ov.addEventListener('click', aoClicarFicha);
+      ov.addEventListener('change', aoMudarFicha);
+    }
+    const card = ov.querySelector('.ds-modal-card');
+    const topo = card.scrollTop;
+    card.innerHTML = html;
+    card.scrollTop = topo;
   }
 
-  function renderTable(root, opts){
-    const tbody = root.querySelector('[data-registros-table]'); if(!tbody) return;
-    if(state.loading){ tbody.innerHTML = '<tr><td colspan="8" class="fm-empty">Carregando manutenções...</td></tr>'; return; }
-    const rows = getFiltered();
-    root.querySelector('[data-count]').textContent = `${rows.length} de ${state.registros.length} registro(s)`;
-    if(!rows.length){ tbody.innerHTML = '<tr><td colspan="8" class="fm-empty">Nenhuma manutenção registrada.</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td><strong>${esc(r.__placa || '—')}</strong></td>
-        <td>${esc(r.tipo_servico || '—')}<br><small>${esc(r.oficina || '')}</small></td>
-        <td>${fmtDateBr(r.data_execucao)}<br><small>${fmtKm(r.km_execucao)}</small></td>
-        <td>${fmtRs(r.custo)}</td>
-        <td>${r.proxima_data ? fmtDateBr(r.proxima_data) : '—'}<br><small>${r.proxima_km!=null ? fmtKm(r.proxima_km) : ''}</small></td>
-        <td>${vencimentoBadge(r, r.__hodometro)}</td>
-        <td>${r.anexo_url ? `<a href="${esc(r.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver anexo</a>` : '—'}</td>
-        <td><div class="fm-actions">${iconBtn('data-edit', r.id, '', 'Editar', 'editar')}</div></td>
-      </tr>`).join('');
-    tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => fillForm(root, state.registros.find(r => r.id === btn.dataset.edit))));
+  function abrirFicha(id) {
+    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null;
+    renderFicha();
   }
 
-  function openHome(container, opts = {}){
-    container.innerHTML = `${styles}<section class="fm-shell"><div class="fm-head"><div><div class="fm-kicker">Frotas · Manutenção</div><h1 class="fm-title">Manutenção</h1><p class="fm-sub">Registro de manutenções por veículo (serviço, oficina, custo e anexo da nota fiscal), com aviso de próxima manutenção por data ou km.</p></div><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-refresh>↻ Atualizar</button><button class="fm-btn primary" type="button" data-toggle-form>+ Nova manutenção</button></div></div><div class="fm-kpis">${cardFiltro({ filtro: 'todos', tone: 'blue', icone: 'total', label: 'Total', kpi: 'data-kpi-total', valor: '0', dica: 'Todas as manutenções' })}${cardFiltro({ filtro: 'vencida', tone: 'red', icone: 'alerta', label: 'Vencidas', kpi: 'data-kpi-vencidas', valor: '0', dica: 'Data ou km da próxima já passou' })}${cardFiltro({ filtro: 'proxima', tone: 'amber', icone: 'relogio', label: 'Próximas', kpi: 'data-kpi-proximas', valor: '0', dica: 'Vencem em breve' })}${cardFiltro({ filtro: 'em-dia', tone: 'green', icone: 'ok', label: 'Em dia', kpi: 'data-kpi-emdia', valor: '0', dica: 'Dentro do prazo' })}</div><div class="fm-card"><div class="fm-body"><div data-form-wrap style="display:none"><form class="fm-form" data-registro-form><div class="fm-field"><label>Veículo</label><select class="fm-select" name="veiculo_id" data-veiculo-select><option value="">Selecione...</option></select></div><div class="fm-field"><label>Tipo de serviço</label><input class="fm-input" name="tipo_servico" placeholder="Ex: Revisão, Freios, Suspensão"></div><div class="fm-field"><label>Oficina</label><input class="fm-input" name="oficina"></div><div class="fm-field"><label>Data da execução</label><input class="fm-input" name="data_execucao" type="date"></div><div class="fm-field"><label>Km na execução</label><input class="fm-input" name="km_execucao" type="number" min="0"></div><div class="fm-field"><label>Custo (R$)</label><input class="fm-input" name="custo" type="number" min="0" step="0.01"></div><div class="fm-field"><label>Próxima manutenção (data)</label><input class="fm-input" name="proxima_data" type="date"></div><div class="fm-field"><label>Próxima manutenção (km)</label><input class="fm-input" name="proxima_km" type="number" min="0"></div><div class="fm-field full"><label>Descrição</label><input class="fm-input" name="descricao" placeholder="Detalhes do serviço realizado"></div><div class="fm-field"><label>Anexo (nota fiscal)</label><input class="fm-input" name="anexo" type="file" accept=".pdf,.jpg,.jpeg,.png"></div><div class="fm-field full"><label>Observações</label><textarea name="observacoes"></textarea></div><div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-save-registro>Salvar manutenção</button><button class="fm-btn ghost" type="button" data-cancel-edit>Cancelar edição</button></div></form></div><div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por placa, serviço, oficina..." data-search></div><span data-chip></span><span class="fm-count" data-count>0 registro(s)</span></div><div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Veículo</th><th>Serviço / Oficina</th><th>Data / Km</th><th>Custo</th><th>Próxima</th><th>Situação</th><th>Anexo</th><th>Ações</th></tr></thead><tbody data-registros-table></tbody></table></div><div class="fm-note">"Vencida" aparece quando a data ou km da próxima manutenção já passou; "Próxima" avisa com ${AVISO_DIAS} dias ou ${AVISO_KM.toLocaleString('pt-BR')}km de antecedência. O km atual do veículo vem do hodômetro cadastrado em Frotas &gt; Veículos.</div></div></div></section>`;
+  function fecharFicha() {
+    state.fichaId = null; state.orcForm = null; state.formAcao = null;
+    closeModal(FICHA);
+    renderLista();
+  }
 
+  const val = (el, sel) => el.querySelector(sel)?.value ?? '';
 
-    ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: () => renderTable(container, opts) });
-    sincronizarCards(container, state.filtro);
-    container.querySelector('[data-save-registro]')?.addEventListener('click', () => saveRegistro(container, opts));
-    container.querySelector('[data-cancel-edit]')?.addEventListener('click', () => resetForm(container));
-    container.querySelector('[data-refresh]')?.addEventListener('click', () => loadRegistros(container, opts));
-    container.querySelector('[data-search]')?.addEventListener('input', (e) => { state.busca = e.target.value; renderTable(container, opts); });
-    container.querySelector('[data-toggle-form]')?.addEventListener('click', () => {
-      if(state.formOpen) resetForm(container); else setFormOpen(container, true);
+  async function mudarEtapa(m, a) {
+    const { orcsPorManut } = indices();
+    const orcs = orcsPorManut.get(m.id) || [];
+    switch (a.id) {
+      case 'aprovar_sem_orcamento': state.formAcao = 'sem_orcamento'; renderFicha(); return;
+      case 'concluir':
+        state.formAcao = 'conclusao';
+        state.kmSugerido = await dados.kmAtualDoVeiculo(state.supabase, m.veiculo_id);
+        renderFicha(); return;
+      case 'reprovar':
+      case 'cancelar': {
+        const motivo = await confirmar({ titulo: a.rotulo, mensagem: `${m.__placa} · ${m.descricao || ''}`.slice(0, 160), confirmarLabel: a.rotulo, justificativa: true, justificativaMin: 3, justificativaPlaceholder: 'Informe o motivo...' });
+        if (!motivo) return;
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, { motivo_status: motivo }), { sucesso: a.id === 'reprovar' ? 'Manutenção reprovada.' : 'Manutenção cancelada.' });
+        return;
+      }
+      case 'aprovar': {
+        const sel = orcs.find((o) => o.selecionado);
+        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar o orçamento de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?`, confirmarLabel: 'Aprovar' });
+        if (!ok) return;
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'Manutenção aprovada.' });
+        return;
+      }
+      case 'emitir_os': {
+        const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
+        const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
+        if (!ok) return;
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'OS emitida.' });
+        return;
+      }
+      default:
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'Etapa atualizada.' });
+    }
+  }
+
+  async function aoClicarFicha(e) {
+    const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
+    const ov = document.getElementById(FICHA); const m = fichaAtual(); if (!ov || !m) return;
+    const acao = alvo.dataset.acao;
+    const erros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
+
+    if (acao === 'fechar') return fecharFicha();
+    if (acao === 'cancelar-form') { state.formAcao = null; return renderFicha(); }
+
+    if (acao === 'etapa') {
+      const { itensPorManut, orcsPorManut } = indices();
+      const a = acoesDisponiveis(m, { podeAprovar: podeAprovar(), itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [] }).find((x) => x.id === alvo.dataset.etapa);
+      if (!a || a.bloqueio) return;
+      return mudarEtapa(m, a);
+    }
+
+    if (acao === 'item-adicionar') {
+      const box = ov.querySelector('[data-item-novo]');
+      const cat = val(box, '[data-nv="categoria_codigo"]');
+      if (!cat) return erros(['Escolha a categoria do item.']);
+      const nomeCat = state.base.categorias.find((c) => String(c.codigo) === cat)?.nome || 'Serviço';
+      return executar(() => dados.salvarItem(state.supabase, {
+        manutencao_id: m.id, categoria_codigo: Number(cat), natureza: val(box, '[data-nv="natureza"]') || null,
+        descricao: val(box, '[data-nv="descricao"]').trim() || nomeCat, plano_id: val(box, '[data-nv="plano_id"]') || null,
+      }), { sucesso: 'Item adicionado.' });
+    }
+    if (acao === 'item-remover') {
+      if (!(await confirmar({ titulo: 'Remover item', mensagem: 'Remover este item do serviço?', confirmarLabel: 'Remover' }))) return;
+      return executar(() => dados.removerItem(state.supabase, alvo.dataset.id), { sucesso: 'Item removido.' });
+    }
+
+    if (acao === 'orc-novo') { state.orcForm = true; return renderFicha(); }
+    if (acao === 'orc-cancelar') { state.orcForm = null; return renderFicha(); }
+    if (acao === 'orc-editar') { state.orcForm = state.orcs.find((o) => o.id === alvo.dataset.id) || true; return renderFicha(); }
+    if (acao === 'orc-escolher') return executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento escolhido.' });
+    if (acao === 'orc-remover') {
+      if (!(await confirmar({ titulo: 'Remover orçamento', mensagem: 'Remover este orçamento?', confirmarLabel: 'Remover' }))) return;
+      return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento removido.' });
+    }
+    if (acao === 'orc-salvar') {
+      const f = ov.querySelector('[data-orc-form]');
+      const o = (k) => val(f, `[data-o="${k}"]`);
+      const pecas = numeroOuNulo(o('valor_pecas')); const mao = numeroOuNulo(o('valor_mao_obra'));
+      const total = numeroOuNulo(o('valor_total')) ?? (pecas != null || mao != null ? (pecas || 0) + (mao || 0) : null);
+      const lista = validarOrcamento({ fornecedor: o('fornecedor'), valor_total: total });
+      if (lista.length) return erros(lista);
+      const arquivo = f.querySelector('[data-o-arquivo]')?.files?.[0] || null;
+      return executar(async () => {
+        const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'orcamentos', arquivo) : null;
+        await dados.salvarOrcamento(state.supabase, {
+          id: f.dataset.orcId || undefined, manutencao_id: m.id, oficina_id: o('oficina_id') || null, fornecedor: o('fornecedor').trim(),
+          fornecedor_contato: o('fornecedor_contato').trim() || null, valor_pecas: pecas, valor_mao_obra: mao, valor_total: total,
+          prazo_dias: numeroOuNulo(o('prazo_dias')), validade: o('validade') || null, condicoes_pagamento: o('condicoes_pagamento').trim() || null,
+          garantia: o('garantia').trim() || null, observacoes: o('observacoes').trim() || null, ...(anexo ? { anexo_url: anexo } : {}),
+          // O primeiro orçamento já fica escolhido (não há o que comparar); com vários, quem decide escolhe.
+          ...(!f.dataset.orcId && !state.orcs.some((x) => x.manutencao_id === m.id) ? { selecionado: true } : {}),
+        });
+        state.orcForm = null;
+      }, { sucesso: 'Orçamento salvo.' });
+    }
+
+    if (acao === 'confirmar-sem-orcamento') {
+      const valor = numeroOuNulo(val(ov, '[data-form-acao="sem_orcamento"] [data-a="valor_aprovado"]'));
+      if (valor == null || valor < 0) return erros(['Informe o valor estimado aprovado.']);
+      return executar(async () => {
+        await dados.mudarStatus(state.supabase, m.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor });
+        state.formAcao = null;
+      }, { sucesso: 'Manutenção aprovada sem orçamento.' });
+    }
+    if (acao === 'confirmar-conclusao') {
+      const f = ov.querySelector('[data-form-acao="conclusao"]');
+      const campos = { data_execucao: val(f, '[data-a="data_execucao"]'), km_execucao: numeroOuNulo(val(f, '[data-a="km_execucao"]')), custo: numeroOuNulo(val(f, '[data-a="custo"]')) };
+      const lista = validarConclusao(campos);
+      if (lista.length) return erros(lista);
+      const arquivo = f.querySelector('[data-a-arquivo]')?.files?.[0] || null;
+      return executar(async () => {
+        const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
+        await dados.mudarStatus(state.supabase, m.id, 'concluida', { ...campos, nf_numero: val(f, '[data-a="nf_numero"]').trim() || null, ...(anexo ? { anexo_url: anexo } : {}) });
+        state.formAcao = null;
+      }, { sucesso: 'Manutenção concluída.' });
+    }
+  }
+
+  async function aoMudarFicha(e) {
+    const m = fichaAtual(); if (!m) return;
+    const alvo = e.target;
+    // Campos da ordem: salvam ao sair do campo.
+    if (alvo.dataset.campo) {
+      const campo = alvo.dataset.campo;
+      let valor = alvo.type === 'checkbox' ? alvo.checked : alvo.value;
+      if (valor === '') valor = null;
+      if (typeof valor === 'string' && (campo === 'descricao' || campo === 'diagnostico')) valor = valor.trim() || null;
+      return executar(() => dados.atualizarManutencao(state.supabase, m.id, { [campo]: valor }));
+    }
+    // Itens: salvam ao mudar; trocar a categoria zera o plano (cada categoria tem os seus planos).
+    if (alvo.dataset.item) {
+      const linha = alvo.closest('[data-item-id]');
+      const campo = alvo.dataset.item;
+      const mudanca = { [campo]: campo === 'valor' ? numeroOuNulo(alvo.value) : (alvo.value === '' ? null : alvo.value) };
+      if (campo === 'categoria_codigo') { mudanca.categoria_codigo = Number(alvo.value); mudanca.plano_id = null; }
+      if (campo === 'descricao' && !alvo.value.trim()) return renderFicha();
+      return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, ...mudanca }));
+    }
+    // Novo item: ao escolher a categoria, mostra só os planos dela.
+    if (alvo.dataset.nv === 'categoria_codigo') {
+      const planoSel = alvo.closest('[data-item-novo]').querySelector('[data-nv="plano_id"]');
+      planoSel.innerHTML = opcoesPlanos(state.base.planos, alvo.value);
+      return;
+    }
+    // Orçamento: escolher a oficina cadastrada preenche nome e contato.
+    if (alvo.dataset.o === 'oficina_id') {
+      const f = alvo.closest('[data-orc-form]');
+      const of = state.base.oficinas.find((x) => x.id === alvo.value);
+      if (of) {
+        f.querySelector('[data-o="fornecedor"]').value = of.nome;
+        const contato = f.querySelector('[data-o="fornecedor_contato"]');
+        if (!contato.value) contato.value = of.telefone || of.contato_nome || '';
+      }
+    }
+  }
+
+  // ---------- nova solicitação ----------
+  function abrirNova(preset = {}) {
+    const ov = openModal({ id: NOVA, conteudoHtml: htmlFormNova(state.base, preset), aoFechar: () => {} });
+    ov.classList.add('fm-mod');
+    ov.dataset.origem = preset.origem || 'manual';
+    ov.dataset.checklist = preset.checklist_id || '';
+    ov.addEventListener('click', aoClicarNova);
+    ov.addEventListener('change', (e) => {
+      if (e.target.dataset.n === 'categoria_codigo') {
+        const linha = e.target.closest('[data-novo-item]');
+        const plano = linha.querySelector('[data-n="plano_id"]');
+        plano.innerHTML = opcoesPlanos(state.base.planos, e.target.value);
+      }
+      if (e.target.dataset.n === 'plano_id' && e.target.value) {
+        const linha = e.target.closest('[data-novo-item]');
+        const nat = linha.querySelector('[data-n="natureza"]');
+        if (!nat.value) nat.value = 'preventiva';
+      }
     });
+  }
 
-    (async () => {
-      await loadVeiculos(opts);
-      const select = container.querySelector('[data-veiculo-select]');
-      if(select) select.insertAdjacentHTML('beforeend', state.veiculos.map(v => `<option value="${esc(v.id)}">${esc(veiculoLabel(v))}</option>`).join(''));
-      await loadRegistros(container, opts);
-    })();
+  function veiculoDaDigitacao(texto) {
+    const placa = normalizarPlaca(String(texto).split('·')[0]);
+    return placa ? state.base.veiculos.find((v) => normalizarPlaca(v.placa) === placa) : null;
+  }
+
+  async function aoClicarNova(e) {
+    const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
+    const ov = document.getElementById(NOVA); if (!ov) return;
+    if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
+    if (alvo.dataset.acao === 'novo-item-add') {
+      const caixa = ov.querySelector('[data-novo-itens]');
+      caixa.insertAdjacentHTML('beforeend', htmlLinhaItemNovo(state.base, {}, caixa.children.length));
+      return;
+    }
+    if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
+    if (alvo.dataset.acao !== 'novo-salvar') return;
+
+    const veiculo = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'));
+    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => ({
+      categoria_codigo: linha.querySelector('[data-n="categoria_codigo"]').value ? Number(linha.querySelector('[data-n="categoria_codigo"]').value) : null,
+      natureza: linha.querySelector('[data-n="natureza"]').value || null,
+      descricao: linha.querySelector('[data-n="descricao"]').value.trim(),
+      plano_id: linha.querySelector('[data-n="plano_id"]').value || null,
+    }));
+    const descricao = val(ov, '[data-n-descricao]').trim();
+    const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens });
+    if (lista.length) { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); return; }
+    if (state.ocupado) return;
+    state.ocupado = true;
+    try {
+      const id = await dados.solicitar(state.supabase, {
+        veiculo_id: veiculo.id, descricao, prioridade: val(ov, '[data-n-prioridade]'), origem: ov.dataset.origem || 'manual',
+        checklist_id: ov.dataset.checklist || null, veiculo_parado: ov.querySelector('[data-n-parado]').checked,
+        itens: itens.map((i) => ({
+          ...i,
+          descricao: i.descricao || state.base.planos.find((p) => p.id === i.plano_id)?.nome
+            || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
+        })),
+      });
+      closeModal(NOVA);
+      toast('Solicitação aberta.');
+      await recarregarUma(id);
+      abrirFicha(id);
+    } catch (err) {
+      ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
+    } finally {
+      state.ocupado = false;
+    }
+  }
+
+  // ---------- montagem ----------
+  async function garantirBase() {
+    if (state.base.categorias.length) return;
+    state.base = await dados.carregarBase(state.supabase);
+  }
+
+  async function openHome(container, opts = {}) {
+    state.supabase = opts.supabase; state.opts = opts; state.root = container;
+    state.fichaId = null; state.orcForm = null; state.formAcao = null;
+    container.innerHTML = ESTILOS_MANUTENCAO + htmlCasca();
+
+    container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
+    container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [] }; await garantirBase(); await carregar(); });
+    container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
+    container.querySelector('[data-f-natureza]').addEventListener('change', (e) => { state.natureza = e.target.value; renderLista(); });
+    container.querySelector('[data-f-prioridade]').addEventListener('change', (e) => { state.prioridade = e.target.value; renderLista(); });
+    container.querySelector('[data-linhas]').addEventListener('click', (e) => {
+      const linha = e.target.closest('[data-abrir]'); if (linha) abrirFicha(linha.dataset.abrir);
+    });
+    ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: renderLista });
+
+    state.loading = true; renderLista();
+    try {
+      await garantirBase();
+    } catch (err) {
+      toast(err.message || 'Erro ao carregar os cadastros.', 'err');
+    }
+    await carregar();
+
+    // Quem abriu a solicitação em outra aba (Vencimentos) pede para abrir a ficha aqui.
+    const pedido = window.FROTAS_MANUTENCAO_ABRIR;
+    if (pedido) { window.FROTAS_MANUTENCAO_ABRIR = null; if (state.manut.some((m) => m.id === pedido)) abrirFicha(pedido); }
   }
 
   window[MODULE_NAME] = window[MODULE_NAME] || {};
   window[MODULE_NAME].openHome = openHome;
+  // Para outras telas (Veículos, Checklists, Vencimentos): abre a janela de nova solicitação já preenchida.
+  window[MODULE_NAME].abrirNova = async (opts, preset) => {
+    state.supabase = opts.supabase; state.opts = opts;
+    await garantirBase();
+    abrirNova(preset);
+  };
 })();
