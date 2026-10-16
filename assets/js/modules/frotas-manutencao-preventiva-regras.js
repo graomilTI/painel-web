@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut21';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut22';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
@@ -72,19 +72,18 @@ export function montarLista(linhas, { tipo = 'servico', busca = '', filtro = 'to
   return { veiculos, contagem };
 }
 
-// Serviços de um veículo agrupados por sistema do guia; o grupo pede atenção se tem vencida ou próxima.
-export function agruparPorSistema(servicos) {
-  const grupos = new Map();
-  for (const s of servicos || []) {
-    if (!grupos.has(s.categoria_codigo)) grupos.set(s.categoria_codigo, { categoria_codigo: s.categoria_codigo, categoria_nome: s.categoria_nome, itens: [], vencida: 0, proxima: 0 });
-    const g = grupos.get(s.categoria_codigo);
-    g.itens.push(s);
-    if (s.status === 'vencida') g.vencida += 1;
-    if (s.status === 'proxima') g.proxima += 1;
-  }
-  return [...grupos.values()]
-    .map((g) => ({ ...g, itens: [...g.itens].sort(comparaUrgencia), atencao: g.vencida + g.proxima > 0 }))
-    .sort((a, b) => compara(Number(b.atencao), Number(a.atencao)) || compara(a.categoria_codigo, b.categoria_codigo));
+// Nome do serviço para os cards: sem o "Troca de/do/da/dos/das" do início (a ação é óbvia) e com a primeira letra maiúscula.
+export function nomeCurto(nome) {
+  const t = String(nome || '').trim().replace(/^troca\s+(?:de|do|da|dos|das)\s+/i, '');
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : String(nome || '');
+}
+
+// Serviços que aparecem nos cards: serviços (verificações só quando ligadas ou já selecionadas) que combinam com a pesquisa
+// (nome do serviço ou do sistema do guia, sem acento nem caixa). Mantém a ordem recebida (urgência).
+export function filtrarServicos(servicos, { busca = '', verificacoes = false, selecionados = new Set() } = {}) {
+  const termo = norm(busca);
+  return (servicos || []).filter((s) => (verificacoes || s.tipo === 'servico' || selecionados.has(s.plano_id))
+    && (!termo || norm(`${s.plano_nome} ${nomeCurto(s.plano_nome)} ${s.categoria_nome || ''}`).includes(termo)));
 }
 
 // Serviços de um veículo que pedem uma solicitação: vencidos ou próximos, sem outra em andamento.
