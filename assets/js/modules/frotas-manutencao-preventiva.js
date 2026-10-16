@@ -2,25 +2,21 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut21';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut21';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut21';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut21';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut22';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut22';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut22';
 import {
-  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendenciasDoRegistro, pendentesDoVeiculo, restanteCelula,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut21';
+  FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, montarLista, nomeCurto, pendenciasDoRegistro, pendentesDoVeiculo, restanteCelula,
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut22';
+import { fmtKm, htmlCardServico, venceTexto } from './frotas-manutencao-preventiva-cards.js?v=20261016-frotas-manut22';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
   const PAINEL = 'fmPreventivaPainel';
   const state = {
     supabase: null, root: null, linhas: [], planos: new Map(), filtro: 'todos', busca: '', tipo: 'servico', categoria: '',
-    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null, pendencias: [],
+    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null, pendencias: [], painelSelecionados: new Set(), painelBusca: '',
   };
-
-  const fmtKm = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km`);
-  const venceTexto = (l) => [l.vencimento_data ? dataBR(l.vencimento_data) : '', l.vencimento_km != null ? fmtKm(l.vencimento_km) : ''].filter(Boolean).join(' · ') || '—';
-  const selo = (status) => { const st = STATUS_VENCIMENTO[status] || { label: status, tone: 'blue' }; return `<span class="fm-badge ${st.tone}">${esc(st.label)}</span>`; };
 
   // ---------- lista ----------
   function htmlLinha(v) {
@@ -34,7 +30,7 @@ import {
     ].join('');
     const u = v.maisUrgente;
     const urgente = u
-      ? `<strong>${esc(u.plano_nome)}</strong><span class="fm-mm">${esc(venceTexto(u))}${restanteCelula(u) ? ` · ${esc(restanteCelula(u))}` : ''}</span>`
+      ? `<strong>${esc(nomeCurto(u.plano_nome))}</strong><span class="fm-mm">${esc(venceTexto(u))}${restanteCelula(u) ? ` · ${esc(restanteCelula(u))}` : ''}</span>`
       : '<span class="fm-mm">Nada vencido ou perto de vencer</span>';
     const pend = pendentesDoVeiculo(v, state.tipo);
     return `<div class="fm-pvl" role="button" tabindex="0" data-abrir-veic="${esc(v.veiculo_id)}">
@@ -69,15 +65,6 @@ import {
   const veiculoCompleto = (id) => montarLista(state.linhas, { tipo: 'todos', pendencias: state.pendencias }).veiculos.find((x) => x.veiculo_id === id) || null;
 
   // ---------- painel lateral do veículo ----------
-  function htmlServico(s) {
-    const p = state.planos.get(s.plano_id) || {};
-    const ultima = s.data_ultima ? `Última vez ${dataBR(s.data_ultima)}${s.km_ultima != null ? ` a ${fmtKm(s.km_ultima)}` : ''}` : 'Nunca registrado';
-    return `<div class="fm-svc fm-svc-${esc(s.status)}">
-      <div class="fm-svc-main"><strong>${esc(s.plano_nome)}</strong><span class="fm-mm">${esc(descreverIntervalo(p) || '')}${s.tipo === 'verificacao' ? ' · verificação' : ''}</span><span class="fm-mm">${esc(ultima)}</span></div>
-      <div class="fm-svc-vence">${s.status === 'sem_historico' ? '<span class="fm-mm">Sem prazo calculado</span>' : `<strong>${esc(venceTexto(s))}</strong><span class="fm-mm">${esc(restanteCelula(s))}</span>`}</div>
-      <div class="fm-svc-fim">${selo(s.status)}${s.em_andamento ? '<span class="fm-badge amber">Em andamento</span>' : ''}<button class="fm-pc-mais" type="button" data-reg-plano="${esc(s.plano_id)}" title="Registrar que foi feito" aria-label="Registrar ${esc(s.plano_nome)}">+</button></div></div>`;
-  }
-
   // Preventivas já registradas do veículo, com a situação do pagamento e o botão para lançar/completar (Pagamento e NF).
   function htmlRegistros() {
     const regs = state.painelRegistros || [];
@@ -96,14 +83,36 @@ import {
     const corpo = ov.querySelector('[data-painel]');
     if (!v) { corpo.innerHTML = '<div class="fm-empty">Veículo não encontrado.</div>'; return; }
     const exibidos = v.servicos.filter((s) => state.painelVerificacoes || s.tipo === 'servico');
-    const grupos = agruparPorSistema(exibidos);
     const cont = (st) => exibidos.filter((s) => s.status === st).length;
     const pend = pendentesDoVeiculo({ servicos: exibidos }, 'todos');
     corpo.innerHTML = `<div class="fm-mod-head"><div><h3>${esc(v.placa)}</h3><p>${esc(v.marca_modelo || '')}${v.coordenacao ? ` · ${esc(v.coordenacao)}` : ''} · Km atual ${esc(fmtKm(v.hodometro))}</p></div><button class="fm-x" type="button" data-fechar-painel aria-label="Fechar">✕</button></div>
       <div class="fm-pvl-chips" style="margin:10px 0">${cont('vencida') ? `<span class="fm-badge red">${cont('vencida')} vencida(s)</span>` : ''}${cont('proxima') ? `<span class="fm-badge amber">${cont('proxima')} próxima(s)</span>` : ''}${cont('em_dia') ? `<span class="fm-badge green">${cont('em_dia')} em dia</span>` : ''}${cont('sem_historico') ? `<span class="fm-badge blue">${cont('sem_historico')} sem histórico</span>` : ''}</div>
-      <label class="fm-check" style="margin-bottom:8px"><input type="checkbox" data-painel-ver${state.painelVerificacoes ? ' checked' : ''}> Mostrar verificações (nível, calibragem, inspeções)</label>
-      <div class="fm-drawer-corpo">${htmlRegistros()}${grupos.map((g) => `<details class="fm-prev-grupo"${g.atencao ? ' open' : ''}><summary><span>${String(g.categoria_codigo).padStart(2, '0')} · ${esc(g.categoria_nome)}</span><span class="fm-badge">${g.itens.length}</span>${g.vencida ? `<span class="fm-badge red">${g.vencida} vencida(s)</span>` : ''}${g.proxima ? `<span class="fm-badge amber">${g.proxima} próxima(s)</span>` : ''}</summary>${g.itens.map(htmlServico).join('')}</details>`).join('') || '<div class="fm-empty">Nenhum serviço.</div>'}</div>
+      <div class="fm-prev-busca"><input class="fm-input" data-painel-busca placeholder="Pesquisar serviço (óleo, freio, filtro...)" value="${esc(state.painelBusca)}"><label class="fm-check"><input type="checkbox" data-painel-ver${state.painelVerificacoes ? ' checked' : ''}> Mostrar verificações</label></div>
+      <div class="fm-sel-acoes"><span class="fm-mm">Toque nos serviços feitos e use Registrar.</span><button type="button" class="fm-link" data-sel-pendentes>Selecionar vencidas e próximas</button><button type="button" class="fm-link" data-sel-limpar>Limpar seleção</button></div>
+      <div class="fm-drawer-corpo">${htmlRegistros()}<div class="fm-svc-grid" data-cards></div></div>
       <div class="fm-acoes fm-drawer-rodape"><button class="fm-btn primary" type="button" data-reg-painel>+ Registrar</button>${pend.length ? `<button class="fm-btn ghost" type="button" data-sol-painel${state.ocupado ? ' disabled' : ''}>Solicitar (${pend.length})</button>` : ''}</div>`;
+    renderCards();
+  }
+
+  // Cards de serviço do painel: pesquisa e seleção sem refazer a janela inteira.
+  function servicosVisiveis() {
+    const v = veiculoCompleto(state.painelVeiculo);
+    return v ? filtrarServicos(v.servicos, { busca: state.painelBusca, verificacoes: state.painelVerificacoes, selecionados: state.painelSelecionados }) : [];
+  }
+
+  function atualizarBotaoRegistrar() {
+    const botao = document.querySelector(`#${PAINEL} [data-reg-painel]`); if (!botao) return;
+    const n = state.painelSelecionados.size;
+    botao.textContent = n ? `+ Registrar (${n})` : '+ Registrar';
+  }
+
+  function renderCards() {
+    const grade = document.querySelector(`#${PAINEL} [data-cards]`); if (!grade) return;
+    const lista = servicosVisiveis();
+    grade.innerHTML = lista.length
+      ? lista.map((s) => htmlCardServico(s, state.planos.get(s.plano_id) || {}, state.painelSelecionados.has(s.plano_id))).join('')
+      : '<div class="fm-empty">Nenhum serviço encontrado.</div>';
+    atualizarBotaoRegistrar();
   }
 
   async function carregar() {
@@ -125,29 +134,49 @@ import {
 
   async function abrirPagamentoDe(veiculoId, registroId) {
     const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
-    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261016-frotas-manut21');
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261016-frotas-manut22');
     await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: async () => { await carregar(); await carregarRegistros(veiculoId); } });
   }
 
   function abrirPainel(veiculoId) {
-    state.painelVeiculo = veiculoId; state.painelRegistros = null;
+    state.painelVeiculo = veiculoId; state.painelRegistros = null; state.painelSelecionados = new Set(); state.painelBusca = '';
     const ov = openModal({ id: PAINEL, conteudoHtml: '<div data-painel></div>', aoFechar: () => { state.painelVeiculo = null; } });
     ov.classList.add('fm-drawer', 'fm-mod');
     renderPainel(); carregarRegistros(veiculoId);
     ov.addEventListener('click', (e) => {
       if (e.target === ov || e.target.closest('[data-fechar-painel]')) return closeModal(PAINEL);
-      const plano = e.target.closest('[data-reg-plano]'); if (plano) return registrar(veiculoId, plano.dataset.regPlano);
+      const card = e.target.closest('[data-card]');
+      if (card) {
+        const id = card.dataset.card; const marcado = !state.painelSelecionados.has(id);
+        if (marcado) state.painelSelecionados.add(id); else state.painelSelecionados.delete(id);
+        card.classList.toggle('sel', marcado); card.setAttribute('aria-pressed', marcado ? 'true' : 'false'); atualizarBotaoRegistrar();
+        return;
+      }
+      if (e.target.closest('[data-sel-pendentes]')) {
+        servicosVisiveis().filter((s) => ['vencida', 'proxima'].includes(s.status) && !s.em_andamento).forEach((s) => state.painelSelecionados.add(s.plano_id));
+        return renderCards();
+      }
+      if (e.target.closest('[data-sel-limpar]')) { state.painelSelecionados.clear(); return renderCards(); }
       const pag = e.target.closest('[data-pagamento]'); if (pag) return abrirPagamentoDe(veiculoId, pag.dataset.pagamento);
-      if (e.target.closest('[data-reg-painel]')) return registrar(veiculoId, null);
+      if (e.target.closest('[data-reg-painel]')) return registrar(veiculoId, [...state.painelSelecionados]);
       if (e.target.closest('[data-sol-painel]')) abrirSolicitacao(veiculoId);
     });
-    ov.addEventListener('change', (e) => { if (e.target.matches('[data-painel-ver]')) { state.painelVerificacoes = e.target.checked; renderPainel(); } });
+    ov.addEventListener('input', (e) => { if (e.target.matches('[data-painel-busca]')) { state.painelBusca = e.target.value; renderCards(); } });
+    ov.addEventListener('change', (e) => {
+      if (!e.target.matches('[data-painel-ver]')) return;
+      state.painelVerificacoes = e.target.checked;
+      if (!state.painelVerificacoes) { // verificação escondida sai da seleção
+        const v = veiculoCompleto(veiculoId);
+        (v?.servicos || []).filter((s) => s.tipo === 'verificacao').forEach((s) => state.painelSelecionados.delete(s.plano_id));
+      }
+      renderCards();
+    });
   }
 
-  async function registrar(veiculoId, planoInicial) {
+  async function registrar(veiculoId, planosIniciais = []) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut21');
-    await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planoInicial, aoConcluir: async () => { await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut22');
+    await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planosIniciais, aoConcluir: async () => { state.painelSelecionados = new Set(); await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
   // ---------- Solicitar ----------
@@ -187,7 +216,7 @@ import {
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut21');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut22');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
+  FILTROS_PREVENTIVA, categoriasDisponiveis, filtrarServicos, nomeCurto, montarLista, pendentesDoVeiculo, proximoPrazo, restanteCelula, somarPrazo,
   validarPasso1, validarPasso2, validarPasso3, validarRegistroPreventiva,
 } from '../assets/js/modules/frotas-manutencao-preventiva-regras.js';
 
@@ -14,10 +14,10 @@ const lin = (extra) => ({
 
 const linhas = [
   lin({ status: 'vencida', vencimento_km: 45000, km_restante: -1000, data_ultima: '2026-04-01', km_ultima: 40000 }),
-  lin({ plano_id: 'p-pastilha', plano_codigo: 'pastilhas_freio', plano_nome: 'Troca de pastilhas', categoria_codigo: 9, status: 'em_dia', vencimento_km: 60000, km_restante: 14000 }),
-  lin({ plano_id: 'p-cal', plano_codigo: 'pneus_calibragem', plano_nome: 'Calibragem dos pneus', tipo: 'verificacao', categoria_codigo: 13, status: 'proxima', dias_restantes: 2, vencimento_data: '2026-10-18' }),
+  lin({ plano_id: 'p-pastilha', plano_codigo: 'pastilhas_freio', plano_nome: 'Troca de pastilhas', categoria_codigo: 9, categoria_nome: 'Freios', status: 'em_dia', vencimento_km: 60000, km_restante: 14000 }),
+  lin({ plano_id: 'p-cal', plano_codigo: 'pneus_calibragem', plano_nome: 'Calibragem dos pneus', tipo: 'verificacao', categoria_codigo: 13, categoria_nome: 'Pneus', status: 'proxima', dias_restantes: 2, vencimento_data: '2026-10-18' }),
   lin({ veiculo_id: 'v2', placa: 'RMS1E45', marca_modelo: 'VW Saveiro', coordenacao: 'GO', hodometro: 30000, status: 'sem_historico' }),
-  lin({ veiculo_id: 'v2', placa: 'RMS1E45', marca_modelo: 'VW Saveiro', coordenacao: 'GO', plano_id: 'p-pastilha', plano_codigo: 'pastilhas_freio', plano_nome: 'Troca de pastilhas', categoria_codigo: 9, status: 'em_dia', vencimento_km: 55000 }),
+  lin({ veiculo_id: 'v2', placa: 'RMS1E45', marca_modelo: 'VW Saveiro', coordenacao: 'GO', plano_id: 'p-pastilha', plano_codigo: 'pastilhas_freio', plano_nome: 'Troca de pastilhas', categoria_codigo: 9, categoria_nome: 'Freios', status: 'em_dia', vencimento_km: 55000 }),
 ];
 
 test('lista: um veículo por linha, do mais urgente para o menos, com os serviços ordenados por urgência', () => {
@@ -61,14 +61,20 @@ test('lista: filtros contam veículos; busca e sistema restringem', () => {
   assert.deepEqual(categoriasDisponiveis(linhas, 'todos').map((c) => c.codigo), [2, 9, 13]);
 });
 
-test('painel: serviços agrupados por sistema, com os que pedem atenção primeiro', () => {
+test('cards: nome sem o "Troca de" e pesquisa por serviço ou sistema', () => {
+  assert.equal(nomeCurto('Troca de óleo e filtro de óleo do motor'), 'Óleo e filtro de óleo do motor');
+  assert.equal(nomeCurto('Troca de pastilhas de freio'), 'Pastilhas de freio');
+  assert.equal(nomeCurto('Troca do filtro de ar do motor'), 'Filtro de ar do motor');
+  assert.equal(nomeCurto('Troca dos pneus'), 'Pneus');
+  assert.equal(nomeCurto('Troca da correia'), 'Correia');
+  assert.equal(nomeCurto('Alinhamento, balanceamento e rodízio'), 'Alinhamento, balanceamento e rodízio', 'sem "Troca" fica como está');
+  assert.equal(nomeCurto('Limpeza do sistema e troca do aditivo'), 'Limpeza do sistema e troca do aditivo', 'só o início conta');
   const v = montarLista(linhas, { tipo: 'todos' }).veiculos[0];
-  const g = agruparPorSistema(v.servicos);
-  assert.deepEqual(g.map((x) => x.categoria_codigo), [2, 13, 9], 'óleo (vencida) e pneus (próxima) antes de freios (em dia)');
-  assert.equal(g[0].atencao, true);
-  assert.equal(g[0].vencida, 1);
-  assert.equal(g[1].proxima, 1);
-  assert.equal(g[2].atencao, false);
+  assert.deepEqual(filtrarServicos(v.servicos, {}).map((s) => s.plano_codigo), ['oleo_motor', 'pastilhas_freio'], 'sem verificações por padrão');
+  assert.deepEqual(filtrarServicos(v.servicos, { verificacoes: true }).map((s) => s.plano_codigo).sort(), ['oleo_motor', 'pastilhas_freio', 'pneus_calibragem']);
+  assert.deepEqual(filtrarServicos(v.servicos, { busca: 'FREIOS' }).map((s) => s.plano_codigo), ['pastilhas_freio'], 'pelo sistema, sem caixa');
+  assert.deepEqual(filtrarServicos(v.servicos, { busca: 'lubrificacao' }).map((s) => s.plano_codigo), ['oleo_motor'], 'pelo sistema do guia');
+  assert.deepEqual(filtrarServicos(v.servicos, { busca: 'calibragem', selecionados: new Set(['p-cal']) }).map((s) => s.plano_codigo), ['pneus_calibragem'], 'verificação selecionada continua visível');
 });
 
 test('solicitar: só serviços vencidos ou próximos e sem outra solicitação em andamento', () => {
@@ -141,7 +147,9 @@ test('módulo Preventiva: lista + painel lateral + assistente em passos; barra d
   const mod = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva.js', import.meta.url), 'utf8');
   assert.match(mod, /data-abrir-veic=/);
   assert.match(mod, /fm-drawer/);
-  assert.match(mod, /data-reg-plano=/, '+ por serviço no painel');
+  assert.match(mod, /htmlCardServico/, 'cards selecionáveis');
+  assert.match(mod, /data-painel-busca/, 'pesquisa de serviço');
+  assert.match(mod, /planosIniciais/, 'Registrar leva os selecionados');
   assert.match(mod, /\+ Registrar/);
   assert.match(mod, /frotas-manutencao-preventiva-registro\.js/);
   assert.match(mod, /class="fm-topo"/);
