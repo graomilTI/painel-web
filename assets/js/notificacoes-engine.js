@@ -34,6 +34,15 @@ export const NOTIF_META = {
   frotas_rastreador_observacao: { prioridade: 'normal', icone: 'message-square', label: 'Observação de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores' },
   frotas_rastreador:            { prioridade: 'normal', icone: 'wrench',         label: 'Rastreador',               modulo_url: 'frotas-cadastros?aba=rastreadores' },
   frotas_rastreador_manutencao_auto: { prioridade: 'atencao', icone: 'wrench',    label: 'Manutenção automática de rastreador', modulo_url: 'frotas-cadastros?aba=rastreadores&filtro=manutencao' },
+  frotas_manut_solicitada:      { prioridade: 'normal',  icone: 'wrench',          label: 'Solicitação de manutenção',     modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_aprovacao:       { prioridade: 'atencao', icone: 'clipboard-check', label: 'Manutenção para aprovar',       modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_aprovada:        { prioridade: 'atencao', icone: 'check-circle',    label: 'Manutenção aprovada',           modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_reprovada:       { prioridade: 'atencao', icone: 'clipboard-alert', label: 'Manutenção reprovada',          modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_os:              { prioridade: 'normal',  icone: 'wrench',          label: 'Veículo na oficina',            modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_concluida:       { prioridade: 'normal',  icone: 'check-circle',    label: 'Manutenção concluída',          modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_cancelada:       { prioridade: 'normal',  icone: 'clipboard-alert', label: 'Manutenção cancelada',          modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_plano:           { prioridade: 'atencao', icone: 'wrench',          label: 'Manutenção programada',         modulo_url: 'frotas-manutencao-grupo' },
+  frotas_manut_lembrete:        { prioridade: 'atencao', icone: 'calendar-clock',  label: 'Lembrete de manutenção',        modulo_url: 'frotas-manutencao-grupo' },
 };
 
 const PRIORIDADE_ORDER = { urgente: 0, atencao: 1, normal: 2, informativo: 3 };

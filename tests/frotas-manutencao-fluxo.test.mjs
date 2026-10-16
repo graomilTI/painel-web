@@ -236,3 +236,14 @@ test('app do gestor: só veículos ativos da regional liberada (sem acento, caix
   assert.deepEqual(veiculosDaRegional(veiculos, { isMaster: false, supervisoes: [] }), []);
   assert.deepEqual(veiculosDaRegional(veiculos, { isMaster: true, supervisoes: [] }).map((v) => v.id), [1, 2, 4, 5]);
 });
+
+test('todo tipo de aviso gravado pela migration está registrado no sino, e o link ?abrir= abre a ficha', () => {
+  const sql = readFileSync(new URL('../supabase/migrations/20261016200000_frotas_manutencao_avisos.sql', import.meta.url), 'utf8');
+  const engine = readFileSync(new URL('../assets/js/notificacoes-engine.js', import.meta.url), 'utf8');
+  const tipos = [...new Set([...sql.matchAll(/'(frotas_manut_[a-z]+)'/g)].map((m) => m[1]))];
+  assert.ok(tipos.length >= 8, `esperava os tipos de aviso, achei ${tipos.length}`);
+  for (const t of tipos) assert.match(engine, new RegExp(String.raw`\b${t}:\s*\{`), `${t} não está em NOTIF_META`);
+  const grupo = readFileSync(new URL('../assets/js/frotas-manutencao-grupo.js', import.meta.url), 'utf8');
+  assert.match(grupo, /get\('abrir'\)/);
+  assert.match(grupo, /FROTAS_MANUTENCAO_ABRIR/);
+});
