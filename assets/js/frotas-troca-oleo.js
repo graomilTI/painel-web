@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-troca-oleo.js?v=20261016-frotas-manut2';
+import './modules/frotas-troca-oleo.js?v=20261016-frotas-manut3';
 
 initProtectedPage('Frotas · Troca de Óleo', (content, ctx) => {
   window.FROTAS_TROCA_OLEO.openHome(content, {
