@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut1';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut1';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut1';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut2';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut2';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut2';
 import {
   acoesDisponiveis, contarPorFiltro, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261016-frotas-manut1';
+} from './frotas-manutencao-regras.js?v=20261016-frotas-manut2';
 import {
   htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaItemNovo, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261016-frotas-manut1';
+} from './frotas-manutencao-html.js?v=20261016-frotas-manut2';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -364,9 +364,10 @@ import {
         })),
       });
       closeModal(NOVA);
-      toast('Solicitação aberta.');
-      await recarregarUma(id);
-      abrirFicha(id);
+      await recarregarUma(id).catch(() => {});
+      // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
+      if (state.manut.some((m) => m.id === id)) { toast('Solicitação aberta.'); abrirFicha(id); }
+      else toast('Solicitação enviada para a equipe de Frotas.');
     } catch (err) {
       ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
     } finally {

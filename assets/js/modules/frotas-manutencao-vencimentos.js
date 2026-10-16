@@ -1,10 +1,10 @@
 // Frotas · Manutenção › Vencimentos: o que vence por veículo e plano do guia (frotas_manutencao_vencimentos_v),
 // com abertura de solicitação em um clique. A solicitação é aberta pela RPC e a ficha abre na aba Manutenção.
 import { esc, dataBR, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut1';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut1';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut1';
-import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut1';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut2';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut2';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut2';
+import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=20261016-frotas-manut2';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_VENCIMENTOS';
@@ -95,16 +95,20 @@ import { STATUS_VENCIMENTO, norm } from './frotas-manutencao-regras.js?v=2026101
     container.innerHTML = `${ESTILOS_MANUTENCAO}<section class="fm-shell">
       <div class="fm-head"><div><div class="fm-kicker">Frotas · Manutenção</div><h1 class="fm-title">Vencimentos</h1>
       <p class="fm-sub">Quando cada serviço do guia vence por veículo (km ou tempo, o que ocorrer primeiro), a partir da última manutenção concluída.</p></div>
-      <div class="fm-head-actions"><button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button></div></div>
+      <div class="fm-head-actions"><button class="fm-btn ghost" type="button" data-historico>Importar histórico</button><button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button></div></div>
       <div class="fm-kpis" data-kpis></div>
       <div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por placa, plano, categoria, coordenação..." data-busca></div>
       <select class="fm-select" data-tipo style="width:auto"><option value="servico">Serviços (trocas e revisões)</option><option value="verificacao">Verificações (nível, calibragem...)</option><option value="todos">Serviços e verificações</option></select>
       <select class="fm-select" data-categoria style="width:auto"><option value="">Todas as categorias</option></select>
       <span data-chip></span><span class="fm-count" data-contagem></span></div>
       <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Veículo</th><th>Plano</th><th>Última vez</th><th>Vence em</th><th>Restante</th><th>Situação</th><th></th></tr></thead><tbody data-linhas></tbody></table></div>
-      <div class="fm-nota">"Sem histórico" é todo plano que ainda não teve serviço concluído registrado: o vencimento só passa a ser calculado depois da primeira manutenção concluída com o plano informado no item. O km atual vem do rastreador (BFleet) e do km informado ao concluir cada serviço.</div></div></div></section>`;
+      <div class="fm-nota">"Sem histórico" é todo plano que ainda não teve serviço concluído registrado. Use "Importar histórico" para informar a última vez de cada serviço por veículo; depois disso o painel calcula os vencimentos e abre as solicitações sozinho (todo dia às 07h, Brasília). O km atual vem do rastreador (BFleet) e do km informado ao concluir cada serviço.</div></div></div></section>`;
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
+    container.querySelector('[data-historico]').addEventListener('click', async () => {
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut2');
+      abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
+    });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
     container.querySelector('[data-tipo]').addEventListener('change', (e) => { state.tipo = e.target.value; render(); });
     container.querySelector('[data-categoria]').addEventListener('change', (e) => { state.categoria = e.target.value; render(); });

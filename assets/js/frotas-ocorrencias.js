@@ -19,10 +19,10 @@ async function montarHistorico(body, ctx) {
 
 async function montarMultas(body, ctx) {
   const [{ installStableMultasActions }, { installTemporaryMultasUpload }, { installMultasFluxo }] = await Promise.all([
-    import('./modules/frotas-multas-stable-actions.js?v=20261016-frotas-manut1'),
+    import('./modules/frotas-multas-stable-actions.js?v=20261016-frotas-manut2'),
     import('./modules/frotas-multas-temporary-upload.js'),
-    import('./modules/frotas-multas-fluxo.js?v=20261016-frotas-manut1'),
-    import('./modules/frotas-multas.js?v=20261016-frotas-manut1'),
+    import('./modules/frotas-multas-fluxo.js?v=20261016-frotas-manut2'),
+    import('./modules/frotas-multas.js?v=20261016-frotas-manut2'),
   ]);
   window.FROTAS_MULTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
   installStableMultasActions(body);

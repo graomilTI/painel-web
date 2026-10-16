@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
   FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, camposEditaveis, codigoManutencao, contarPorFiltro, descreverIntervalo,
-  filtrarManutencoes, numeroOuNulo, pendenciasPara, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
+  filtrarManutencoes, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
+import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
 import { htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
@@ -181,7 +182,57 @@ test('todos os módulos da manutenção usam o mesmo ?v= dos demais módulos de 
   for (const f of arquivos) {
     for (const mt of readFileSync(new URL(f, dir), 'utf8').matchAll(/from '\.\/frotas-[\w-]+\.js\?v=([\w-]+)'/g)) tokens.add(mt[1]);
   }
-  const grupo = readFileSync(new URL('../frotas-manutencao-grupo.js', dir), 'utf8');
-  for (const mt of grupo.matchAll(/frotas-manutencao[\w-]*\.js\?v=([\w-]+)/g)) tokens.add(mt[1]);
+  // O carregador da aba e as telas que abrem a solicitação (Checklists, Veículos) importam os módulos com o mesmo token.
+  for (const f of ['../frotas-manutencao-grupo.js', 'frotas-checklists.js', 'frotas-veiculos.js']) {
+    for (const mt of readFileSync(new URL(f, dir), 'utf8').matchAll(/frotas-manutencao[\w-]*\.js\?v=([\w-]+)/g)) tokens.add(mt[1]);
+  }
   assert.equal(tokens.size, 1, `tokens diferentes: ${[...tokens].join(', ')}`);
+});
+
+test('checklist com falha ou atenção vira pré-preenchimento da solicitação, agrupando por categoria', () => {
+  const check = {
+    id: 'c1', veiculo_id: 'v1', responsavel: 'Carlos',
+    itens: [
+      { item: 'Pneus', status: 'OK' },
+      { item: 'Freios', status: 'FALHA', observacao: 'ruído' },
+      { item: 'Para-brisa/Limpador', status: 'ATENCAO' },
+      { item: 'Retrovisores', status: 'ATENCAO', observacao: 'trincado' },
+      { item: 'Extintor', status: 'FALHA' },
+    ],
+  };
+  const p = presetDoChecklist(check, { dataBr: '16/10/2026' });
+  assert.equal(p.origem, 'checklist');
+  assert.equal(p.checklist_id, 'c1');
+  assert.equal(p.veiculo_id, 'v1');
+  assert.equal(p.prioridade, 'alta');
+  assert.match(p.descricao, /^Checklist de 16\/10\/2026 \(Carlos\): Freios \(falha: ruído\)/);
+  assert.match(p.descricao, /Extintor \(falha\)/);
+  assert.deepEqual(p.itens.map((i) => i.categoria_codigo).sort((a, b) => a - b), [9, 18]);
+  assert.equal(p.itens.find((i) => i.categoria_codigo === 18).descricao.includes('Retrovisores'), true);
+  assert.ok(p.itens.every((i) => i.natureza === 'corretiva'));
+  assert.equal(presetDoChecklist({ itens: [{ item: 'Pneus', status: 'OK' }] }), null);
+  assert.equal(presetDoChecklist({ itens: [{ item: 'Extintor', status: 'ATENCAO' }], id: 'c2', veiculo_id: 'v' }).prioridade, 'normal');
+});
+
+test('linha da planilha de histórico: cabeçalhos livres, data e km em vários formatos', () => {
+  assert.deepEqual(normalizarLinhaHistorico({ PLACA: 'abc-1d23', 'Plano ': 'oleo_motor', Data: '10/05/2026', 'Km': '41.200' }),
+    { placa: 'abc-1d23', plano: 'oleo_motor', data: '2026-05-10', km: 41200 });
+  assert.equal(normalizarLinhaHistorico({ placa: 'X', plano: 'p', data: new Date(2026, 4, 10, 12), km: 1500.5 }).data, '2026-05-10');
+  assert.equal(normalizarLinhaHistorico({ placa: 'X', plano: 'p', data: 46152, km: '' }).data, '2026-05-10');
+  assert.equal(normalizarLinhaHistorico({ placa: 'X', plano: 'p', data: '2026-05-10T00:00:00', km: '41200,5' }).km, 41200.5);
+  assert.equal(normalizarLinhaHistorico({ Placa: '', Plano: '', Data: '' }), null);
+  assert.equal(normalizarLinhaHistorico({ placa: 'X', plano: 'p', data: 'ontem' }).data, 'ontem');
+});
+
+test('app do gestor: só veículos ativos da regional liberada (sem acento, caixa ignorada); master vê todos', () => {
+  const veiculos = [
+    { id: 1, placa: 'A', supervisao: 'Rio Verde', status: 'ATIVO' },
+    { id: 2, placa: 'B', supervisao: 'SORRISO', status: 'ATIVO' },
+    { id: 3, placa: 'C', supervisao: 'rio verde', status: 'INATIVO' },
+    { id: 4, placa: 'D', supervisao: 'RIO VERDE', status: 'MANUTENCAO' },
+    { id: 5, placa: 'E', supervisao: null, status: 'ATIVO' },
+  ];
+  assert.deepEqual(veiculosDaRegional(veiculos, { isMaster: false, supervisoes: ['RIO VERDE'] }).map((v) => v.id), [1, 4]);
+  assert.deepEqual(veiculosDaRegional(veiculos, { isMaster: false, supervisoes: [] }), []);
+  assert.deepEqual(veiculosDaRegional(veiculos, { isMaster: true, supervisoes: [] }).map((v) => v.id), [1, 2, 4, 5]);
 });

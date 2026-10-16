@@ -255,6 +255,22 @@ function renderFrotasDashboard(container, opts = {}) {
       </div>
     </div>
 
+    <!-- MANUTENÇÃO (fluxo solicitação → conclusão) -->
+    <div class="fd-status-grid" style="margin-top:10px">
+      <div class="fd-scard" style="--fd-scard-accent:#60a5fa;cursor:pointer" data-go="frotas-manutencao-grupo" title="Abrir Manutenção">
+        <span class="fd-scard-icon">🛠️</span>
+        <span class="fd-scard-label">Manutenções abertas</span>
+        <span class="fd-scard-val loading" id="fd-m-abertas">—</span>
+        <span class="fd-scard-sub" id="fd-m-abertas-sub">solicitadas até a OS em execução</span>
+      </div>
+      <div class="fd-scard" style="--fd-scard-accent:#f87171;cursor:pointer" data-go="frotas-manutencao-grupo" title="Abrir Manutenção">
+        <span class="fd-scard-icon">⏰</span>
+        <span class="fd-scard-label">Planos vencidos</span>
+        <span class="fd-scard-val loading" id="fd-m-vencidos">—</span>
+        <span class="fd-scard-sub">serviços do guia fora do prazo</span>
+      </div>
+    </div>
+
     <!-- ROW 1: coordenação + mapa regional -->
     <div class="fd-row fd-row-2">
       <div class="fd-card" style="min-height:220px">
@@ -291,8 +307,32 @@ function renderFrotasDashboard(container, opts = {}) {
     btn.addEventListener('click', () => window.location.assign(panelUrl(btn.dataset.nav)));
   });
 
+  container.querySelectorAll('[data-go]').forEach(el => {
+    el.addEventListener('click', () => window.location.assign(panelUrl(el.dataset.go)));
+  });
+
   /* ── Load live data ── */
   loadVehicleData(container, sb);
+  loadManutencaoData(container, sb);
+}
+
+// Fluxo de manutenção: o que está aberto e quantos serviços do guia estão vencidos. Sem acesso à tabela vira "—".
+async function loadManutencaoData(container, sb) {
+  try {
+    const [abertas, urgentes, vencidos] = await Promise.all([
+      sb.from('frotas_manutencoes').select('id', { count: 'exact', head: true }).not('status', 'in', '(concluida,cancelada,reprovada)'),
+      sb.from('frotas_manutencoes').select('id', { count: 'exact', head: true }).not('status', 'in', '(concluida,cancelada,reprovada)').in('prioridade', ['alta', 'urgente']),
+      sb.from('frotas_manutencao_vencimentos_v').select('veiculo_id', { count: 'exact', head: true }).eq('status', 'vencida').eq('tipo', 'servico'),
+    ]);
+    if (abertas.error || vencidos.error) throw abertas.error || vencidos.error;
+    setCard(container, '#fd-m-abertas', abertas.count ?? 0);
+    setCard(container, '#fd-m-vencidos', vencidos.count ?? 0);
+    const sub = container.querySelector('#fd-m-abertas-sub');
+    if (sub && urgentes.count) sub.textContent = `${urgentes.count} com prioridade alta ou urgente`;
+  } catch (err) {
+    console.warn('[frotas-dashboard] Manutenção indisponível:', err?.message || err);
+    ['#fd-m-abertas', '#fd-m-vencidos'].forEach(id => setCard(container, id, '—'));
+  }
 }
 
 async function loadVehicleData(container, sb) {
