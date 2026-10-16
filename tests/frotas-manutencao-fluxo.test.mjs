@@ -370,3 +370,15 @@ test('o histórico mostra a manutenção do fluxo novo (placa, condutor, data do
   assert.match(painel, /from\('frotas_manutencoes'\)\.select\('custo'\)\.eq\('status', 'concluida'\)\.eq\('responsavel_pagamento', 'empresa'\)/);
   assert.match(ler('assets/js/frotas-manutencao-grupo.js'), /id: 'custos'/);
 });
+
+test('os botões das abas ficam fora de .fm-head, que o hub esconde (frotas-hub.css)', () => {
+  const ler = (c) => readFileSync(new URL(`../${c}`, import.meta.url), 'utf8');
+  const escondidas = ler('assets/css/frotas-hub.css');
+  assert.match(escondidas, /\.frotas-hub-tab-body \.fm-head/, 'o hub esconde .fm-head (por isso as ações não podem estar lá)');
+  for (const f of ['frotas-manutencao-html', 'frotas-manutencao-vencimentos', 'frotas-manutencao-custos', 'frotas-manutencao-oficinas', 'frotas-troca-oleo', 'frotas-checklists']) {
+    const src = ler(`assets/js/modules/${f}.js`);
+    assert.doesNotMatch(src, /<div class="fm-head">|<div class="fm-head" /, `${f} tem botões dentro de .fm-head (escondido no hub)`);
+    assert.match(src, /class="fm-topo"/, `${f} deveria usar .fm-topo para as ações`);
+  }
+  assert.match(ler('assets/js/modules/frotas-ui-lista.js'), /\.fm-topo\{/);
+});

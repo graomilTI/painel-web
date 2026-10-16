@@ -39,6 +39,8 @@ export const ESTILOS_LISTA = `
       .fm-badge.off{opacity:.8}
       @media(max-width:680px){.fm-kpis{grid-template-columns:repeat(2,1fr)}.fm-count{margin-left:0;width:100%}.fm-head-actions{width:100%}.fm-head-actions .fm-btn{flex:1}}
       .fm-actions{flex-wrap:nowrap}.fm-ic{width:34px;height:34px;min-height:34px;padding:0;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;transition:.15s ease}.fm-ic svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.fm-ic:hover{color:#fff;border-color:rgba(148,163,184,.4)}.fm-ic.termo{border-color:rgba(34,197,94,.30);background:rgba(34,197,94,.12);color:#86efac}.fm-ic.anexo{border-color:rgba(96,165,250,.32);background:rgba(59,130,246,.12);color:#93c5fd}.fm-ic.anexo.feito{border-color:rgba(34,197,94,.30);background:rgba(22,101,52,.24);color:#bbf7d0}.fm-ic.danger{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.2);color:#fca5a5}.fm-ic:disabled{opacity:.5;cursor:wait}.fm-ic.busy svg{animation:fm-pulse .8s ease-in-out infinite}@keyframes fm-pulse{50%{opacity:.25}}a.fm-badge{text-decoration:none}
+/* Barra de ações das abas de Manutenção (Atualizar, + Nova...). Não usar .fm-head: o hub (frotas-hub.css) esconde esse bloco. */
+.fm-topo{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:14px}.fm-topo .fm-head-actions{display:flex;gap:10px;flex-wrap:wrap}
 .fm-kcard.info{cursor:default}.fm-kcard.info:hover{transform:none;border-color:rgba(148,163,184,.16)}
 `;
 
