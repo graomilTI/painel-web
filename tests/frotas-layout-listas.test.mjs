@@ -108,7 +108,7 @@ test('o ?v= dos módulos de lista é o mesmo em todos os imports e carregadores'
     'assets/js/router.js', ...MODULOS.map((m) => `assets/js/modules/frotas-${m}.js`),
     'frotas-cadastros.html', 'frotas-manutencao-grupo.html', 'frotas-ocorrencias.html', 'frotas-multas.html',
   ];
-  const nomes = ['frotas-ui-lista', 'frotas-cadastros', 'frotas-manutencao-grupo', 'frotas-ocorrencias', 'frotas-multas', 'frotas-multas-fluxo', ...MODULOS.map((m) => `frotas-${m}`), 'frotas-motoristas-termo', 'frotas-termo-pdf', 'frotas-termo-veiculos'];
+  const nomes = ['frotas-ui-lista', 'frotas-cadastros', 'frotas-manutencao-grupo', 'frotas-ocorrencias', 'frotas-multas', 'frotas-multas-fluxo', ...MODULOS.map((m) => `frotas-${m}`), 'frotas-motoristas-termo', 'frotas-agenda-google', 'frotas-termo-pdf', 'frotas-termo-veiculos'];
   const re = new RegExp(`(?:${nomes.join('|')})\\.js\\?v=([\\w-]+)`, 'g');
   const tokens = new Set();
   for (const f of arquivos) for (const m of ler(f).matchAll(re)) tokens.add(m[1]);

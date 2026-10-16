@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout4';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-layout5';
 
 (function () {
   const MODULE_NAME = 'FROTAS_RASTREADORES';
@@ -1444,6 +1444,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
             <option value="manut">Só manutenção</option>
           </select>
           <label class="fr-ag-chk"><input type="checkbox" data-ag-concl checked /> Mostrar concluídos</label>
+          <button type="button" class="fr-btn soft fr-mini" data-ag-google title="Receber esta agenda no seu Google Agenda">📅 Sincronizar com Google Agenda</button>
         </div>
         <div class="fr-ag-legend">
           <span><i class="fr-ag-dot inst"></i>Instalação</span>
@@ -1497,6 +1498,12 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
       el.querySelector('[data-ag-busca]').addEventListener('input', e => { ag.busca = e.target.value; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-tipo]').addEventListener('change', e => { ag.tipo = e.target.value; renderAgendaConteudo(el); });
       el.querySelector('[data-ag-concl]').addEventListener('change', e => { ag.concluidos = e.target.checked; renderAgendaConteudo(el); });
+      el.querySelector('[data-ag-google]').addEventListener('click', async () => {
+        try {
+          const { abrirSincronizacaoGoogle } = await import('./frotas-agenda-google.js?v=20261016-frotas-layout5');
+          await abrirSincronizacaoGoogle({ supabase: _opts.supabase, toast });
+        } catch (err) { console.error('[agenda-google]', err); toast('Não foi possível abrir a sincronização.', true); }
+      });
     }
 
     renderAgendaConteudo(el);

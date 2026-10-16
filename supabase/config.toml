@@ -96,3 +96,6 @@ verify_jwt = true
 # pelo usuario logado no modo teste; a autorizacao e feita dentro da funcao.
 [functions.push-notify]
 verify_jwt = false
+
+[functions.frotas-agenda-ics]
+verify_jwt = false
