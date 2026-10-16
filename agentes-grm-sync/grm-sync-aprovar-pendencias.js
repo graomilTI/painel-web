@@ -45,7 +45,7 @@ const {
 const { evidenciaDia, avaliarRegra } = require('./grm-despesas-evidencia');
 const { obterTokenGrm } = require('./grm-token-cache');
 
-const VERSION = 'V1.3-APROVAR-PENDENCIAS-SEM-ALMOCO-COM-PERNOITE';
+const VERSION = 'V1.4-APROVAR-PENDENCIAS-OBS-COM-LANCAMENTO-PROPRIO';
 const AGENTE_ID = 'sync-aprovar-pendencias';
 const GRM_BASE_URL = String(
   process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/',
@@ -129,10 +129,14 @@ function motivoDiariaInvalida(row, cadastro = {}) {
 function decidir(row, ativos, ev, cadastro = {}) {
   const grupo = grupoAprovavel(row);
   if (!grupo) return { acao: 'MANTER', motivo: 'despesa_nao_tratada' };
-  if (categoriaDivergente(row)) return { acao: 'MANTER', motivo: 'observacao_cita_outra_despesa' };
+  const dia = diaDe(row);
+  // Lançamentos do mesmo colaborador cuja data EFETIVA é o dia da pendência.
+  const doColaboradorNoDia = ativos.filter((r) => r.ofmType === 'D' && Number(r.staCode) === Number(row.staCode)
+    && Number(r.ofmCode) !== Number(row.ofmCode) && efetivaDe(r) === dia);
+  // Obs que repete uma despesa já lançada no campo próprio no dia ("Almoco" na Diária e no Almoço) não é campo errado.
+  if (categoriaDivergente(row, doColaboradorNoDia)) return { acao: 'MANTER', motivo: 'observacao_cita_outra_despesa' };
   const naoRepete = observacaoNaoRepete(row);
   if (naoRepete) return { acao: 'MANTER', motivo: naoRepete };
-  const dia = diaDe(row);
   const citada = dateFromObs(row.ofmDescription, dia);
   if (citada && citada !== dia) return { acao: 'MANTER', motivo: 'observacao_cita_outra_data' };
   if (grupo === 'DIARIA') {
@@ -142,9 +146,6 @@ function decidir(row, ativos, ev, cadastro = {}) {
     return { acao: 'MANTER', motivo: 'valor_fora_do_padrao' };
   }
 
-  // Lançamentos do mesmo colaborador cuja data EFETIVA é o dia da pendência.
-  const doColaboradorNoDia = ativos.filter((r) => r.ofmType === 'D' && Number(r.staCode) === Number(row.staCode)
-    && Number(r.ofmCode) !== Number(row.ofmCode) && efetivaDe(r) === dia);
   // Duplicata: observação que cita outra despesa/pessoa/extra não é repetição (o duplicadas também as ignora).
   if (doColaboradorNoDia.some((r) => grupoDespesa(r) === grupo && !categoriaDivergente(r) && !observacaoNaoRepete(r))) {
     return { acao: 'MANTER', motivo: 'ha_outro_lancamento_ativo_no_dia' };
