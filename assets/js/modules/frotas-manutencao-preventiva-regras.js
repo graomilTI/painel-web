@@ -1,13 +1,14 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261016-frotas-manut21';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },
   { id: 'vencida', rotulo: 'Com vencida', tone: 'red', icone: 'erro', dica: 'Passaram do km ou da data' },
   { id: 'proxima', rotulo: 'Com próxima', tone: 'amber', icone: 'relogio', dica: 'Vencem em breve' },
   { id: 'sem_historico', rotulo: 'Sem histórico', tone: 'blue', icone: 'doc', dica: 'Há serviço sem nenhuma execução registrada' },
+  { id: 'documentos', rotulo: 'Documentos pendentes', tone: 'amber', icone: 'doc', dica: 'Preventivas registradas a que ainda faltam NF, comprovante ou envio' },
   { id: 'todos', rotulo: 'Todos os veículos', tone: 'green', icone: 'total', dica: 'Todos os veículos ativos' },
 ];
 
@@ -40,15 +41,17 @@ export function categoriasDisponiveis(linhas, tipo = 'servico') {
 }
 
 // Um item por veículo, do mais urgente para o menos; cada veículo leva seus serviços ordenados por urgência.
-export function montarLista(linhas, { tipo = 'servico', busca = '', filtro = 'todos', categoria = '' } = {}) {
+export function montarLista(linhas, { tipo = 'servico', busca = '', filtro = 'todos', categoria = '', pendencias = [] } = {}) {
   const porVeiculo = new Map();
+  const docsPorVeiculo = new Map();
+  for (const p of pendencias) docsPorVeiculo.set(p.veiculo_id, (docsPorVeiculo.get(p.veiculo_id) || 0) + 1);
   for (const l of linhas || []) {
     if (tipo !== 'todos' && l.tipo !== tipo) continue;
     if (categoria && String(l.categoria_codigo) !== String(categoria)) continue;
     if (!porVeiculo.has(l.veiculo_id)) {
       porVeiculo.set(l.veiculo_id, {
         veiculo_id: l.veiculo_id, placa: l.placa, marca_modelo: l.marca_modelo, coordenacao: l.coordenacao, supervisao: l.supervisao,
-        hodometro: l.hodometro, servicos: [], resumo: { vencida: 0, proxima: 0, em_dia: 0, sem_historico: 0, sem_hodometro: 0 }, maisUrgente: null,
+        hodometro: l.hodometro, servicos: [], resumo: { vencida: 0, proxima: 0, em_dia: 0, sem_historico: 0, sem_hodometro: 0, documentos: docsPorVeiculo.get(l.veiculo_id) || 0 }, maisUrgente: null,
       });
     }
     const v = porVeiculo.get(l.veiculo_id);
@@ -172,15 +175,33 @@ export function validarRegistroPreventiva(registro, hojeISO) {
   return [...validarPasso1(registro, hojeISO), ...validarPasso2(registro), ...validarPasso3(registro)];
 }
 
-// Situação do pagamento de uma preventiva registrada (reg.notas = notas da manutenção).
-export function situacaoPagamento(reg) {
-  const notas = reg.notas || [];
-  const resp = reg.responsavel_pagamento;
-  if (resp && resp !== 'empresa') return { id: 'outro', tom: 'blue', texto: `Pago por ${(RESPONSAVEIS.find((r) => r.id === resp) || {}).label || resp}` };
-  if (!notas.length) return { id: 'sem', tom: 'amber', texto: 'Sem pagamento' };
-  const aEnviar = notas.filter((n) => !n.enviada_em).length;
-  if (aEnviar) return { id: 'a_enviar', tom: 'amber', texto: `${aEnviar} nota(s) a enviar` };
-  return reg.pago_em ? { id: 'paga', tom: 'green', texto: 'Paga' } : { id: 'aguardando', tom: 'blue', texto: 'Aguardando pagamento' };
+// Mesmos indicadores da view frotas_preventiva_pendencias_v, calculados no cliente a partir da manutenção e das notas
+// (para atualizar o "o que falta" na hora, sem recarregar a view).
+export function registroComPendencias(m, notas = []) {
+  const semNf = notas.filter((n) => !n.anexo_url).length;
+  const aEnviar = notas.filter((n) => n.anexo_url && !n.enviada_em).length;
+  const semComprovante = notas.filter((n) => !n.comprovante_url && !n.pago_em).length;
+  const exige = !m.pendencia_dispensada_em && (m.responsavel_pagamento || 'empresa') === 'empresa';
+  return {
+    ...m,
+    falta_responsavel: !m.pendencia_dispensada_em && !m.responsavel_pagamento,
+    falta_nf: exige && (!notas.length || semNf > 0),
+    falta_enviar: exige && aEnviar > 0,
+    falta_comprovante: exige && (!notas.length || semComprovante > 0),
+  };
+}
+
+// O que falta em uma preventiva registrada (linha de frotas_preventiva_pendencias_v). itens = o que falta, em ordem de ação.
+export function pendenciasDoRegistro(r) {
+  if (r.pendencia_dispensada_em) return { id: 'dispensada', tom: 'gray', texto: 'Pendências dispensadas', itens: [] };
+  const resp = r.responsavel_pagamento;
+  if (resp && resp !== 'empresa') return { id: 'outro', tom: 'blue', texto: `Pago por ${(RESPONSAVEIS.find((x) => x.id === resp) || {}).label || resp}`, itens: [] };
+  const itens = [];
+  if (r.falta_responsavel) itens.push({ id: 'responsavel', texto: 'Falta definir quem paga' });
+  if (r.falta_nf) itens.push({ id: 'nf', texto: 'Falta NF/NFS-e' });
+  if (r.falta_enviar) itens.push({ id: 'enviar', texto: 'Falta enviar ao GRM e Financeiro' });
+  if (r.falta_comprovante) itens.push({ id: 'comprovante', texto: 'Falta comprovante' });
+  return itens.length ? { id: 'pendente', tom: 'amber', texto: itens.map((i) => i.texto).join(' · '), itens } : { id: 'completo', tom: 'green', texto: 'Completo', itens: [] };
 }
 
 // Texto curto do vencimento: quanto falta (ou passou) em km e em dias.

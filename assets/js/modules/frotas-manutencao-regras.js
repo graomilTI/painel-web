@@ -364,12 +364,18 @@ export function somaNotas(notas = []) {
   return Math.round(notas.reduce((s, n) => s + (Number(n.valor) || 0), 0) * 100) / 100;
 }
 
-export function validarNota({ valor, fornecedor, arquivo }) {
+// comprovante: quando informado (File ou null) a nota pode ter só a NF ou só o comprovante (o que faltar vira pendência);
+// sem ele (undefined) a NF é obrigatória, como na ficha da Corretiva.
+export function validarNota({ valor, fornecedor, arquivo, comprovante }) {
   const erros = [];
   const v = Number(valor);
   if (valor === '' || valor == null || !Number.isFinite(v) || v <= 0) erros.push('Informe o valor da nota.');
   if (!String(fornecedor || '').trim()) erros.push('Informe quem emitiu a nota (oficina ou loja de peças).');
-  if (!arquivo) erros.push('Anexe o arquivo da nota fiscal (PDF, XML ou imagem).');
+  if (comprovante === undefined) {
+    if (!arquivo) erros.push('Anexe o arquivo da nota fiscal (PDF, XML ou imagem).');
+  } else if (!arquivo && !comprovante) {
+    erros.push('Anexe a NF/NFS-e ou o comprovante de pagamento (o que faltar fica como pendência).');
+  }
   return erros;
 }
 

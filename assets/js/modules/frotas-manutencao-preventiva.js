@@ -2,20 +2,20 @@
 // (frotas_manutencao_vencimentos_v). Ao clicar no veículo abre o painel lateral com os serviços agrupados por sistema,
 // o "+" para registrar o que foi feito (assistente em passos) e "Solicitar" para abrir a solicitação dos vencidos.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut20';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut20';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut20';
-import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut20';
+import { cardFiltro, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut21';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261016-frotas-manut21';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut21';
+import { STATUS_VENCIMENTO, descreverIntervalo } from './frotas-manutencao-regras.js?v=20261016-frotas-manut21';
 import {
-  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendentesDoVeiculo, restanteCelula, situacaoPagamento,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut20';
+  FILTROS_PREVENTIVA, agruparPorSistema, categoriasDisponiveis, montarLista, pendenciasDoRegistro, pendentesDoVeiculo, restanteCelula,
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut21';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PREVENTIVA';
   const PAINEL = 'fmPreventivaPainel';
   const state = {
     supabase: null, root: null, linhas: [], planos: new Map(), filtro: 'todos', busca: '', tipo: 'servico', categoria: '',
-    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null,
+    loading: false, ocupado: false, lista: null, painelVeiculo: null, painelVerificacoes: false, painelRegistros: null, pendencias: [],
   };
 
   const fmtKm = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} km`);
@@ -29,7 +29,8 @@ import {
       r.vencida ? `<span class="fm-badge red">${r.vencida} vencida${r.vencida > 1 ? 's' : ''}</span>` : '',
       r.proxima ? `<span class="fm-badge amber">${r.proxima} próxima${r.proxima > 1 ? 's' : ''}</span>` : '',
       r.sem_historico ? `<span class="fm-badge blue">${r.sem_historico} sem histórico</span>` : '',
-      !r.vencida && !r.proxima && !r.sem_historico ? '<span class="fm-badge green">Tudo em dia</span>' : '',
+      r.documentos ? `<span class="fm-badge amber" title="Preventivas registradas a que faltam NF, comprovante ou envio">${r.documentos} com documento pendente</span>` : '',
+      !r.vencida && !r.proxima && !r.sem_historico && !r.documentos ? '<span class="fm-badge green">Tudo em dia</span>' : '',
     ].join('');
     const u = v.maisUrgente;
     const urgente = u
@@ -53,7 +54,7 @@ import {
 
   function render() {
     const root = state.root; if (!root) return;
-    const m = montarLista(state.linhas, { tipo: state.tipo, busca: state.busca, filtro: state.filtro, categoria: state.categoria });
+    const m = montarLista(state.linhas, { tipo: state.tipo, busca: state.busca, filtro: state.filtro, categoria: state.categoria, pendencias: state.pendencias });
     state.lista = m;
     root.querySelector('[data-kpis]').innerHTML = FILTROS_PREVENTIVA.map((f) => cardFiltro({
       filtro: f.id, tone: f.tone, icone: f.icone, label: f.rotulo, dica: f.dica, ativo: f.id === state.filtro, valor: String(m.contagem[f.id] ?? 0),
@@ -65,7 +66,7 @@ import {
     root.querySelector('[data-contagem]').textContent = `${m.veiculos.length} veículo(s)`;
   }
 
-  const veiculoCompleto = (id) => montarLista(state.linhas, { tipo: 'todos' }).veiculos.find((x) => x.veiculo_id === id) || null;
+  const veiculoCompleto = (id) => montarLista(state.linhas, { tipo: 'todos', pendencias: state.pendencias }).veiculos.find((x) => x.veiculo_id === id) || null;
 
   // ---------- painel lateral do veículo ----------
   function htmlServico(s) {
@@ -81,11 +82,12 @@ import {
   function htmlRegistros() {
     const regs = state.painelRegistros || [];
     if (!regs.length) return '';
-    const sit = regs.map(situacaoPagamento);
-    const pedeAtencao = sit.filter((x) => ['sem', 'a_enviar'].includes(x.id)).length;
-    return `<details class="fm-prev-grupo"${pedeAtencao ? ' open' : ''}><summary><span>Registros feitos</span><span class="fm-badge">${regs.length}</span>${pedeAtencao ? `<span class="fm-badge amber">${pedeAtencao} sem pagamento completo</span>` : ''}</summary>
-      ${regs.map((r, i) => `<div class="fm-reg"><div class="fm-reg-main"><strong>${esc(r.data_execucao ? dataBR(r.data_execucao) : '—')} · ${esc(fmtKm(r.km_execucao))}</strong><span class="fm-mm">${esc(String(r.descricao || '').replace(/^Preventiva registrada: /, '') || 'Preventiva')}</span></div>
-        <div class="fm-reg-fim"><span class="fm-badge ${sit[i].tom}">${esc(sit[i].texto)}</span><button class="fm-btn soft fm-mini" type="button" data-pagamento="${esc(r.id)}">Pagamento e NF</button></div></div>`).join('')}</details>`;
+    const sit = regs.map(pendenciasDoRegistro);
+    const pedeAtencao = sit.filter((x) => x.id === 'pendente').length;
+    return `<details class="fm-prev-grupo"${pedeAtencao ? ' open' : ''}><summary><span>Registros feitos</span><span class="fm-badge">${regs.length}</span>${pedeAtencao ? `<span class="fm-badge amber">${pedeAtencao} com pendência</span>` : ''}</summary>
+      ${regs.map((r, i) => `<div class="fm-reg"><div class="fm-reg-main"><strong>${esc(r.data_execucao ? dataBR(r.data_execucao) : '—')} · ${esc(fmtKm(r.km_execucao))}</strong><span class="fm-mm">${esc(String(r.descricao || '').replace(/^Preventiva registrada: /, '') || 'Preventiva')}</span>
+        <span class="fm-faltas">${sit[i].itens.length ? sit[i].itens.map((x) => `<span class="fm-badge amber">${esc(x.texto)}</span>`).join('') : `<span class="fm-badge ${sit[i].tom}">${esc(sit[i].texto)}</span>`}</span></div>
+        <div class="fm-reg-fim"><button class="fm-btn ${sit[i].id === 'pendente' ? 'primary' : 'soft'} fm-mini" type="button" data-pagamento="${esc(r.id)}">${sit[i].id === 'pendente' ? 'Completar' : 'Pagamento e NF'}</button></div></div>`).join('')}</details>`;
   }
 
   function renderPainel() {
@@ -107,8 +109,11 @@ import {
   async function carregar() {
     state.loading = true; render();
     try {
-      const [linhas, planos] = await Promise.all([dados.carregarVencimentos(state.supabase), dados.carregarPlanos(state.supabase)]);
-      state.linhas = linhas; state.planos = new Map(planos.map((p) => [p.id, p]));
+      const [linhas, planos, pendencias] = await Promise.all([
+        dados.carregarVencimentos(state.supabase), dados.carregarPlanos(state.supabase),
+        dados.carregarPendenciasPreventivas(state.supabase).catch(() => []),
+      ]);
+      state.linhas = linhas; state.planos = new Map(planos.map((p) => [p.id, p])); state.pendencias = pendencias;
     } catch (err) { toast(err.message || 'Erro ao carregar as preventivas.', 'err'); state.linhas = []; }
     state.loading = false; opcoesCategoria(); render(); renderPainel();
   }
@@ -120,8 +125,8 @@ import {
 
   async function abrirPagamentoDe(veiculoId, registroId) {
     const registro = (state.painelRegistros || []).find((r) => r.id === registroId); if (!registro) return;
-    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261016-frotas-manut20');
-    await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: () => carregarRegistros(veiculoId) });
+    const { abrirPagamento } = await import('./frotas-manutencao-preventiva-pagamento.js?v=20261016-frotas-manut21');
+    await abrirPagamento({ supabase: state.supabase, registro, placa: veiculoCompleto(veiculoId)?.placa || '', aoConcluir: async () => { await carregar(); await carregarRegistros(veiculoId); } });
   }
 
   function abrirPainel(veiculoId) {
@@ -141,7 +146,7 @@ import {
 
   async function registrar(veiculoId, planoInicial) {
     const v = veiculoCompleto(veiculoId); if (!v) return;
-    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut20');
+    const { abrirRegistro } = await import('./frotas-manutencao-preventiva-registro.js?v=20261016-frotas-manut21');
     await abrirRegistro({ supabase: state.supabase, veiculo: v, planos: state.planos, planoInicial, aoConcluir: async () => { await carregar(); if (state.painelVeiculo === veiculoId) await carregarRegistros(veiculoId); } });
   }
 
@@ -182,7 +187,7 @@ import {
 
     container.querySelector('[data-atualizar]').addEventListener('click', carregar);
     container.querySelector('[data-historico]').addEventListener('click', async () => {
-      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut20');
+      const { abrirImportacaoHistorico } = await import('./frotas-manutencao-historico.js?v=20261016-frotas-manut21');
       abrirImportacaoHistorico({ supabase: state.supabase, aoConcluir: carregar });
     });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; render(); });
