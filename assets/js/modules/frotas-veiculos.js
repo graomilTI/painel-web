@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-manut1';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261016-frotas-manut2';
 
 ﻿(function () {
   const MODULE_NAME = 'FROTAS_VEICULOS';
@@ -665,6 +665,18 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   const ICON_EDITAR=svgIcon('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>');
   const ICON_MULTAS=svgIcon('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6"/><path d="M9 14h6"/><path d="M9 17h4"/>');
   const ICON_DETRAN=svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>');
+  const ICON_MANUTENCAO=svgIcon('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4Z"/>');
+
+  // Abre a janela de nova solicitação de manutenção já com o veículo (fluxo completo na aba Frotas > Manutenção).
+  async function abrirManutencao(opts, veiculo){
+    if(!veiculo) return;
+    try {
+      await import('./frotas-manutencao.js?v=20261016-frotas-manut2');
+      await window.FROTAS_MANUTENCAO.abrirNova(opts, { veiculo_id: veiculo.id });
+    } catch(err){
+      alert(err.message || 'Não foi possível abrir a manutenção.');
+    }
+  }
 
   function renderTable(root, opts){
     const tbody=root.querySelector('[data-veiculos-table]'); if(!tbody) return;
@@ -680,10 +692,11 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
         <td>${motoristaCell(v)}</td>
         <td>${esc(v.coordenacao || v.patrimonio_coordenacao || '—')}</td>
         <td><div class="fv-valid" title="${esc(v.bfleet_mensagem || v.detran_mensagem || '')}">${statusBadge(v)}${trackerBadge(v)}${grmBadge(v)}</div>${grmLinhaErro(v)}</td>
-        <td><div class="fv-actions"><button class="fv-btn ghost fv-mini fv-icon" data-edit="${v.id}" title="Editar" aria-label="Editar">${ICON_EDITAR}</button><button class="fv-btn primary fv-mini fv-icon" data-multas="${v.id}" title="Multas" aria-label="Multas">${ICON_MULTAS}</button><button class="fv-btn soft fv-mini fv-icon" data-detran="${v.id}" title="DETRAN" aria-label="DETRAN">${ICON_DETRAN}</button>${['ERRO','PENDENTE'].includes(grmStatusDe(v))?`<button class="fv-btn soft fv-mini" data-grm-reenviar="${v.id}" title="Reenviar o cadastro ao GRM (Patrimônios e Veículos)">Reenviar GRM</button>`:''}</div></td>
+        <td><div class="fv-actions"><button class="fv-btn ghost fv-mini fv-icon" data-edit="${v.id}" title="Editar" aria-label="Editar">${ICON_EDITAR}</button><button class="fv-btn primary fv-mini fv-icon" data-multas="${v.id}" title="Multas" aria-label="Multas">${ICON_MULTAS}</button><button class="fv-btn soft fv-mini fv-icon" data-detran="${v.id}" title="DETRAN" aria-label="DETRAN">${ICON_DETRAN}</button><button class="fv-btn ghost fv-mini fv-icon" data-manutencao="${v.id}" title="Abrir manutenção deste veículo" aria-label="Abrir manutenção">${ICON_MANUTENCAO}</button>${['ERRO','PENDENTE'].includes(grmStatusDe(v))?`<button class="fv-btn soft fv-mini" data-grm-reenviar="${v.id}" title="Reenviar o cadastro ao GRM (Patrimônios e Veículos)">Reenviar GRM</button>`:''}</div></td>
       </tr>`).join('');
     tbody.querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click',()=>fillForm(root, state.veiculos.find(v=>v.id===btn.dataset.edit))));
     tbody.querySelectorAll('[data-detran]').forEach(btn=>btn.addEventListener('click',()=>confirmarDetran(root, opts, state.veiculos.find(v=>v.id===btn.dataset.detran))));
+    tbody.querySelectorAll('[data-manutencao]').forEach(btn=>btn.addEventListener('click',()=>abrirManutencao(opts, state.veiculos.find(v=>v.id===btn.dataset.manutencao))));
     tbody.querySelectorAll('[data-multas]').forEach(btn=>btn.addEventListener('click',()=>consultarMultas(root, opts, state.veiculos.find(v=>v.id===btn.dataset.multas))));
     tbody.querySelectorAll('[data-grm-reenviar]').forEach(btn=>btn.addEventListener('click',()=>reenviarGrm(root, opts, state.veiculos.find(v=>v.id===btn.dataset.grmReenviar))));
   }

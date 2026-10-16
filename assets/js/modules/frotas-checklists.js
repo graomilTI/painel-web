@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut1';
+import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261016-frotas-manut2';
 
 (function () {
   const MODULE_NAME = 'FROTAS_CHECKLISTS';
@@ -171,6 +171,22 @@ import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from
     }
   }
 
+  function temProblema(r){ return (Array.isArray(r.itens) ? r.itens : []).some(i => i && (i.status === 'FALHA' || i.status === 'ATENCAO')); }
+
+  // Itens em FALHA/ATENÇÃO viram uma solicitação de manutenção (a RPC não abre duas para o mesmo checklist).
+  async function abrirManutencao(opts, registro){
+    if(!registro) return;
+    try {
+      const { presetDoChecklist } = await import('./frotas-manutencao-regras.js?v=20261016-frotas-manut2');
+      const preset = presetDoChecklist(registro, { dataBr: fmtDateBr(registro.data_execucao) });
+      if(!preset) return toast('Este checklist não tem itens com falha ou atenção.', true);
+      await import('./frotas-manutencao.js?v=20261016-frotas-manut2');
+      await window.FROTAS_MANUTENCAO.abrirNova(opts, preset);
+    } catch(err){
+      toast(err.message || 'Não foi possível abrir a manutenção.', true);
+    }
+  }
+
   function renderStats(root){
     const total = state.registros.length;
     let aprovados = 0, comFalha = 0, vencidos = 0;
@@ -199,9 +215,10 @@ import { ESTILOS_LISTA, cardFiltro, iconBtn, ligarCards, sincronizarCards } from
         <td>${aprovadoBadge(r)}</td>
         <td>${r.proxima_data ? fmtDateBr(r.proxima_data) : '—'}</td>
         <td>${vencimentoBadge(r)}</td>
-        <td><div class="fm-actions">${iconBtn('data-edit', r.id, '', 'Editar', 'editar')}</div></td>
+        <td><div class="fm-actions">${temProblema(r) ? iconBtn('data-manutencao', r.id, 'termo', 'Abrir manutenção a partir dos itens com falha ou atenção', 'ferramenta') : ''}${iconBtn('data-edit', r.id, '', 'Editar', 'editar')}</div></td>
       </tr>`).join('');
     tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => fillForm(root, state.registros.find(r => r.id === btn.dataset.edit))));
+    tbody.querySelectorAll('[data-manutencao]').forEach(btn => btn.addEventListener('click', () => abrirManutencao(opts, state.registros.find(r => r.id === btn.dataset.manutencao))));
   }
 
   function openHome(container, opts = {}){

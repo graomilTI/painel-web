@@ -243,3 +243,82 @@ export const STATUS_VENCIMENTO = {
   sem_historico: { label: 'Sem histórico', tone: 'blue' },
   sem_hodometro: { label: 'Sem km', tone: 'blue' },
 };
+
+// ---------- entrada automática (Fase 2) ----------
+
+// Itens do checklist (ITENS_PADRAO em frotas-checklists.js) → categoria do guia. Extintor e documentação
+// (CRLV) não são manutenção mecânica e ficam fora.
+export const CHECKLIST_CATEGORIAS = {
+  Pneus: 13,
+  Freios: 9,
+  'Luzes/Faróis': 19,
+  'Óleo/Fluidos': 2,
+  'Para-brisa/Limpador': 18,
+  'Cintos de segurança': 20,
+  Buzina: 6,
+  Retrovisores: 18,
+};
+
+const ROTULO_STATUS_CHECK = { FALHA: 'falha', ATENCAO: 'atenção' };
+
+// Pré-preenche a nova solicitação a partir de um checklist com itens em FALHA ou ATENÇÃO.
+// Devolve null quando não há nada para abrir (tudo OK).
+export function presetDoChecklist(check, { dataBr = '' } = {}) {
+  const problemas = (Array.isArray(check?.itens) ? check.itens : []).filter((i) => i && (i.status === 'FALHA' || i.status === 'ATENCAO'));
+  if (!problemas.length) return null;
+  const porCategoria = new Map();
+  for (const p of problemas) {
+    const cat = CHECKLIST_CATEGORIAS[p.item];
+    if (!cat) continue;
+    const texto = `${p.item} (${ROTULO_STATUS_CHECK[p.status]}${p.observacao ? `: ${p.observacao}` : ''})`;
+    porCategoria.set(cat, [...(porCategoria.get(cat) || []), texto]);
+  }
+  const resumo = problemas.map((p) => `${p.item} (${ROTULO_STATUS_CHECK[p.status]}${p.observacao ? `: ${p.observacao}` : ''})`).join('; ');
+  return {
+    veiculo_id: check.veiculo_id,
+    origem: 'checklist',
+    checklist_id: check.id,
+    prioridade: problemas.some((p) => p.status === 'FALHA') ? 'alta' : 'normal',
+    descricao: `Checklist${dataBr ? ` de ${dataBr}` : ''}${check.responsavel ? ` (${check.responsavel})` : ''}: ${resumo}`,
+    itens: [...porCategoria.entries()].map(([categoria_codigo, textos]) => ({ categoria_codigo, natureza: 'corretiva', descricao: textos.join('; ') })),
+  };
+}
+
+// ---------- importação de histórico ----------
+export const COLUNAS_HISTORICO = ['Placa', 'Plano', 'Data', 'Km'];
+
+export function excelSerialParaISO(n) {
+  return new Date(Math.round((Number(n) - 25569) * 86400000)).toISOString().slice(0, 10);
+}
+
+function dataParaISO(v) {
+  if (v == null || v === '') return '';
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? '' : new Date(v.getTime() - v.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (typeof v === 'number') return v > 20000 ? excelSerialParaISO(v) : '';
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return s; // o banco recusa e a linha volta nos erros
+}
+
+function kmParaNumero(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let s = String(v).trim().replace(/\s|km/gi, '');
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(',', '.');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Linha da planilha (cabeçalhos em qualquer caixa/acentuação) → { placa, plano, data, km }, ou null se vazia.
+export function normalizarLinhaHistorico(row) {
+  const mapa = {};
+  for (const [k, v] of Object.entries(row || {})) mapa[norm(k).replace(/[^a-z]/g, '')] = v;
+  const placa = String(mapa.placa ?? '').trim();
+  const plano = String(mapa.plano ?? mapa.codigo ?? '').trim();
+  if (!placa && !plano && (mapa.data == null || mapa.data === '')) return null;
+  return { placa, plano, data: dataParaISO(mapa.data), km: kmParaNumero(mapa.km ?? mapa.quilometragem ?? mapa.hodometro) };
+}

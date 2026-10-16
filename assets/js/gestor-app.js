@@ -6,6 +6,7 @@ import { anexarLaudoComGeolocalizacao } from './laudoUpload.js';
 import { mensagemFalhaSalvar } from './rls-sessao-expirada.js';
 import { calcularEscopoGestor, chaveEscopo, somarMetasDasCoordenacoes } from './dashboardEscopoGestor.js';
 import { resolverEscopoGestor } from './dashboardEscopoCarregar.js';
+import { renderSolicitarManutencao } from './gestorManutencao.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const KM = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -1844,6 +1845,7 @@ async function contarCadastrosPatrimonioPendentes() {
 async function renderPatrimonio(main) {
   if (state.patrimonioSubview === 'leitura') return renderPatrimonioLeitura(main);
   if (state.patrimonioSubview === 'cadastrar') return renderPatrimonioCadastrar(main);
+  if (state.patrimonioSubview === 'manutencao') return renderManutencaoVeiculo(main);
   main.innerHTML = `<div class="section-card"><p class="help">Carregando...</p></div>`;
   const pendentes = await contarCadastrosPatrimonioPendentes();
   main.innerHTML = `
@@ -1856,6 +1858,7 @@ async function renderPatrimonio(main) {
           <span>Solicitações do setor de Compras</span>
         </button>
         <button class="quick-card" data-pat="leitura" type="button"><b>Leitura</b><span>Patrimônios cadastrados da regional</span></button>
+        <button class="quick-card" data-pat="manutencao" type="button"><b>Manutenção de veículo</b><span>Pedir manutenção de um veículo da regional</span></button>
       </div>
     </section>
   `;
@@ -1867,6 +1870,14 @@ async function renderPatrimonio(main) {
     state.patrimonioSubview = 'leitura';
     renderPatrimonioLeitura(main);
   });
+  main.querySelector('[data-pat="manutencao"]')?.addEventListener('click', () => {
+    state.patrimonioSubview = 'manutencao';
+    renderManutencaoVeiculo(main);
+  });
+}
+
+function renderManutencaoVeiculo(main) {
+  return renderSolicitarManutencao(main, { supabase, state, escapeHtml, onBack: () => patBack(main) });
 }
 
 function patBack(main) {
