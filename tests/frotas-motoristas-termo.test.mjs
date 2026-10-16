@@ -79,7 +79,7 @@ test('a tela de Motoristas: sem coluna de endereço, ações em ícones e situa�
   assert.doesNotMatch(src, /contatoBadge/);
   assert.match(src, /data-gerar-termo/);
   assert.match(src, /data-anexar-termo/);
-  assert.match(src, /cnhBadge\(m\)\}<br>\$\{termoBadge\(m\)/);
+  assert.match(src, /cnhBadge\(m\)\}\$\{termoBadge\(m\)/);
   // o botão de texto "Editar"/"Excluir" virou ícone
   assert.doesNotMatch(src, />Editar<\/button>/);
   assert.doesNotMatch(src, />Excluir<\/button>/);

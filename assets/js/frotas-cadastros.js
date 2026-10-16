@@ -10,7 +10,7 @@ const CARDS = [
     descricao: 'Cadastro de motoristas, documentos e vínculo com veículos.',
     aliases: ['FROTAS_MOTORISTAS', 'MOTORISTAS'],
     montar: async (body, ctx) => {
-      await import('./modules/frotas-motoristas.js?v=20261016-termo-motorista');
+      await import('./modules/frotas-motoristas.js?v=20261016-motoristas-cards');
       window.FROTAS_MOTORISTAS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
@@ -51,7 +51,7 @@ const CARDS = [
     descricao: 'Geração do termo de utilização de veículos pelo motorista.',
     aliases: null, // visível pra quem acessa o hub — feature nova, ainda sem permissão própria
     montar: async (body, ctx) => {
-      await import('./modules/frotas-termo-veiculos.js?v=20261016-termo-motorista');
+      await import('./modules/frotas-termo-veiculos.js?v=20261016-motoristas-cards');
       window.FROTAS_TERMO_VEICULOS.openHome(body, { supabase, auth: ctx, user: ctx?.user || null });
     },
   },
