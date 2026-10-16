@@ -4,12 +4,12 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, dataBR, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut18';
-import { RESPONSAVEIS, STATUS_VENCIMENTO, TIPOS_NOTA, descreverIntervalo, norm, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261016-frotas-manut18';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut18';
+import * as dados from './frotas-manutencao-dados.js?v=20261016-frotas-manut19';
+import { RESPONSAVEIS, STATUS_VENCIMENTO, TIPOS_NOTA, descreverIntervalo, norm, numeroOuNulo, somaNotas, validarNota } from './frotas-manutencao-regras.js?v=20261016-frotas-manut19';
+import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261016-frotas-manut19';
 import {
-  agruparPorSistema, hojeBrasilISO, proximoPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut18';
+  agruparPorSistema, hojeBrasilISO, kmMais, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
+} from './frotas-manutencao-preventiva-regras.js?v=20261016-frotas-manut19';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
@@ -98,8 +98,46 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
       prazos.set(s.plano_id, { ...e, km: vKm, data: vData });
       return `<div class="fm-prev-linha" data-plano="${esc(s.plano_id)}"><div class="fm-check"><span>${esc(s.plano_nome)}</span><small>${esc(descreverIntervalo(planos.get(s.plano_id) || {}) || '')}</small></div>
         <div class="fm-prev-prazos"><label>Próximo km<input class="fm-input" type="number" min="1" step="1" data-pz-km value="${esc(vKm)}" placeholder="—"></label>
-        <label>Próxima data<input class="fm-input" type="date" data-pz-data value="${esc(vData)}"></label></div></div>`;
+        <label>Próxima data<input class="fm-input" type="date" data-pz-data value="${esc(vData)}"></label></div>${htmlOpcoesPrazo(planos.get(s.plano_id) || {})}</div>`;
     }).join('') || '<div class="fm-empty">Nenhum serviço marcado.</div>';
+    ov.querySelectorAll('[data-passo="2"] .fm-prev-linha').forEach(marcarOpcoesAtivas);
+  }
+
+  // Escolha rápida do intervalo (ex.: +5.000 ou +10.000 km; +6 ou +12 meses), contado a partir do km e da data do passo 1.
+  function htmlOpcoesPrazo(plano) {
+    const o = opcoesDePrazo(plano);
+    const fmt = (n) => Number(n).toLocaleString('pt-BR');
+    const grupo = (rotulo, botoes) => (botoes.length ? `<span class="fm-prev-opcoes-grupo"><span>${rotulo}</span>${botoes.join('')}</span>` : '');
+    const botoes = [
+      grupo('Km:', o.kms.map((k) => `<button type="button" class="fm-opcao" data-pz-km-add="${k}">+${fmt(k)} km</button>`)),
+      grupo('Prazo:', [...o.meses.map((m) => `<button type="button" class="fm-opcao" data-pz-meses="${m}">+${m} ${m === 1 ? 'mês' : 'meses'}</button>`), ...o.dias.map((d) => `<button type="button" class="fm-opcao" data-pz-dias="${d}">+${d} dias</button>`)]),
+    ].join('');
+    return botoes ? `<div class="fm-prev-opcoes">${botoes}</div>` : '';
+  }
+
+  // Destaca a opção que bate com o valor atual dos campos.
+  function marcarOpcoesAtivas(linha) {
+    const { data, km } = dadosPasso1();
+    const inKm = linha.querySelector('[data-pz-km]'); const inData = linha.querySelector('[data-pz-data]');
+    linha.querySelectorAll('[data-pz-km-add]').forEach((b) => b.classList.toggle('ativo', kmMais(km, b.dataset.pzKmAdd) === Number(inKm.value)));
+    linha.querySelectorAll('[data-pz-meses]').forEach((b) => b.classList.toggle('ativo', !!inData.value && somarPrazo(data, { meses: Number(b.dataset.pzMeses) }) === inData.value));
+    linha.querySelectorAll('[data-pz-dias]').forEach((b) => b.classList.toggle('ativo', !!inData.value && somarPrazo(data, { dias: Number(b.dataset.pzDias) }) === inData.value));
+  }
+
+  function aplicarOpcaoPrazo(botao) {
+    const linha = botao.closest('[data-plano]'); const id = linha.dataset.plano;
+    const { data, km } = dadosPasso1();
+    const inKm = linha.querySelector('[data-pz-km]'); const inData = linha.querySelector('[data-pz-data]');
+    if (botao.dataset.pzKmAdd) {
+      const novo = kmMais(km, botao.dataset.pzKmAdd);
+      if (novo == null) return mostrarErros(['Informe o km do veículo no passo 1 para usar esta opção.']);
+      inKm.value = novo; prazos.set(id, { ...prazos.get(id), km: novo, editouKm: true });
+    } else {
+      const nova = somarPrazo(data, botao.dataset.pzMeses ? { meses: Number(botao.dataset.pzMeses) } : { dias: Number(botao.dataset.pzDias) });
+      if (!nova) return mostrarErros(['Informe a data do serviço no passo 1 para usar esta opção.']);
+      inData.value = nova; prazos.set(id, { ...prazos.get(id), data: nova, editouData: true });
+    }
+    mostrarErros([]); marcarOpcoesAtivas(linha);
   }
 
   // ---------- passo 3: notas ----------
@@ -185,8 +223,8 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
   ov.addEventListener('input', (e) => {
     const t = e.target;
     if (t.matches('[data-busca-servico]')) renderGrupos();
-    if (t.matches('[data-pz-km]')) { const id = t.closest('[data-plano]').dataset.plano; prazos.set(id, { ...prazos.get(id), km: t.value, editouKm: t.value !== '' }); }
-    if (t.matches('[data-pz-data]')) { const id = t.closest('[data-plano]').dataset.plano; prazos.set(id, { ...prazos.get(id), data: t.value, editouData: t.value !== '' }); }
+    if (t.matches('[data-pz-km]')) { const id = t.closest('[data-plano]').dataset.plano; prazos.set(id, { ...prazos.get(id), km: t.value, editouKm: t.value !== '' }); marcarOpcoesAtivas(t.closest('[data-plano]')); }
+    if (t.matches('[data-pz-data]')) { const id = t.closest('[data-plano]').dataset.plano; prazos.set(id, { ...prazos.get(id), data: t.value, editouData: t.value !== '' }); marcarOpcoesAtivas(t.closest('[data-plano]')); }
     if (t.matches('[data-r="custo"]')) t.dataset.auto = t.value ? '0' : '1';
   });
   ov.addEventListener('change', (e) => {
@@ -195,6 +233,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planoInicial = 
     if (t.matches('[data-ver]')) { mostrarVerificacoes = t.checked; renderGrupos(); }
   });
   ov.addEventListener('click', async (e) => {
+    const opcao = e.target.closest('[data-pz-km-add],[data-pz-meses],[data-pz-dias]'); if (opcao) return aplicarOpcaoPrazo(opcao);
     const a = e.target.closest('[data-acao],[data-desmarcar]'); if (!a) return;
     if (a.dataset.desmarcar) { marcados.delete(a.dataset.desmarcar); renderGrupos(); return; }
     const acao = a.dataset.acao;

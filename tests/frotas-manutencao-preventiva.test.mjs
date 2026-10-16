@@ -213,3 +213,17 @@ test('vencimentos: lê todas as páginas (a API corta em 1.000 linhas; 200 veíc
   assert.equal(base.manutencoes.length, total, 'manutenções, itens, orçamentos e notas também vêm completos');
   assert.equal(base.itens.length, total);
 });
+
+test('opções de prazo: faixas do guia viram escolha rápida (5.000 ou 10.000 km, 6 ou 12 meses)', async () => {
+  const { opcoesDePrazo, kmMais } = await import('../assets/js/modules/frotas-manutencao-preventiva-regras.js');
+  assert.deepEqual(opcoesDePrazo({ intervalo_km: 5000, intervalo_km_max: 10000, intervalo_meses: 6, intervalo_meses_max: 12 }), { kms: [5000, 10000], meses: [6, 12], dias: [] });
+  assert.deepEqual(opcoesDePrazo({ intervalo_km: 10000, intervalo_meses: 12 }), { kms: [10000], meses: [12], dias: [] }, 'sem faixa = uma só opção');
+  assert.deepEqual(opcoesDePrazo({ intervalo_dias: 15 }), { kms: [], meses: [], dias: [15] });
+  assert.deepEqual(opcoesDePrazo({ intervalo_km: 5000, intervalo_km_max: 5000 }).kms, [5000], 'sem repetir');
+  assert.equal(kmMais(313590, 10000), 323590);
+  assert.equal(kmMais('', 5000), null);
+  assert.equal(kmMais(null, 5000), null);
+  const reg = readFileSync(new URL('../assets/js/modules/frotas-manutencao-preventiva-registro.js', import.meta.url), 'utf8');
+  assert.match(reg, /data-pz-km-add/);
+  assert.match(reg, /data-pz-meses/);
+});
