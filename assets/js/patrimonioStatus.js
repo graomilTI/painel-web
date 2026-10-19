@@ -1,6 +1,11 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
+import { injectEstilosFrotas, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-layout-geral';
+
+const SVG_SETA = (pontos) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="${pontos}"></polyline></svg>`;
+const ICON_ANTERIOR = SVG_SETA('15 18 9 12 15 6');
+const ICON_PROXIMA = SVG_SETA('9 18 15 12 9 6');
 
 const FETCH_BATCH_SIZE = 1000;
 const ROWS_PER_PAGE = 30;
@@ -55,64 +60,11 @@ function injectStatusStyles() {
     /* Abas no padrão dos hubs do Frotas (assets/css/frotas-hub.css): texto + risco no ativo. */
     .pat-status-page .frotas-hub-tabs { margin-bottom: 14px; }
     .pat-status-page a.ds-tab { text-decoration: none; }
-    .pat-status-page .grid-cards {
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      margin-bottom: 18px;
-    }
-    .pat-status-page .hero-metric {
-      font-size: clamp(1.8rem, 2.5vw, 2.3rem);
-      line-height: 1;
-      margin-top: 12px;
-    }
-    .status-table-shell {
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 18px;
-      overflow: hidden;
-      background: rgba(2, 12, 10, 0.55);
-    }
-    .status-table-scroll {
-      overflow: auto;
-      max-height: calc(100vh - 320px);
-    }
-    .status-table {
-      width: 100%;
-      min-width: 940px;
-      border-collapse: separate;
-      border-spacing: 0;
-    }
-    .status-table thead th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: rgba(5, 18, 16, 0.98);
-      padding: 13px 12px;
-      font-size: .8rem;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: #dbeafe;
-      white-space: nowrap;
-      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.14);
-    }
-    .status-table td {
-      padding: 12px;
-      border-top: 1px solid rgba(148, 163, 184, 0.1);
-      vertical-align: middle;
-    }
-    .status-table tbody tr:nth-child(odd) td {
-      background: rgba(255,255,255,0.018);
-    }
-    .status-table tbody tr:hover td {
-      background: rgba(52, 211, 153, 0.08);
-    }
-    .status-primary {
-      font-weight: 600;
-      color: #f8fafc;
-    }
-    .status-secondary {
-      font-size: .82rem;
-      color: #6b7280;
-    }
+    .status-table { min-width: 940px; }
+    .status-primary { font-weight: 600; color: #f8fafc; }
+    .status-secondary { font-size: .82rem; color: #94a3b8; }
+    .pat-status-page .pat-pagination { display:flex; gap:8px; align-items:center; white-space:nowrap; margin-left:auto; }
+    .pat-status-page .pat-pagination .fm-ic:disabled { opacity:.35; cursor:not-allowed; }
     .progress-wrap {
       min-width: 220px;
       display: flex;
@@ -148,20 +100,8 @@ function injectStatusStyles() {
       font-weight: 700;
       color: #e2e8f0;
     }
-    .status-chip {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 999px;
-      padding: 5px 10px;
-      background: rgba(45, 212, 191, 0.12);
-      border: 1px solid rgba(45, 212, 191, 0.25);
-      color: #ccfbf1;
-      font-weight: 600;
-      font-size: .82rem;
-    }
+    .status-chip { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:4px 10px; background:rgba(15,23,42,.72); border:1px solid rgba(148,163,184,.18); color:#e2e8f0; font-weight:900; font-size:12px; }
     @media (max-width: 900px) {
-      .status-table-scroll { max-height: none; }
       .progress-wrap { min-width: 180px; }
     }
   `;
@@ -258,7 +198,7 @@ function renderRows(rows, page) {
   if (!tbody) return;
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="5">Nenhum grupo encontrado com os filtros informados.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="fm-empty">Nenhum grupo encontrado com os filtros informados.</td></tr>';
     return;
   }
 
@@ -307,6 +247,7 @@ function updatePagination(totalRows, page) {
 }
 
 export function renderContent(content) {
+  injectEstilosFrotas();
   injectStatusStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
   const statusUrl = toPanelUrl('patrimonio-status');
@@ -321,44 +262,39 @@ export function renderContent(content) {
         </div>
       </div>
 
-      <div class="grid-cards">
-        <article class="card"><h3>Grupos</h3><div class="hero-metric" id="sumGrupos">0</div></article>
-        <article class="card"><h3>Total de itens</h3><div class="hero-metric" id="sumItens">0</div></article>
-        <article class="card"><h3>Em dia</h3><div class="hero-metric" id="sumEmDia">0</div></article>
-        <article class="card"><h3>Progresso médio</h3><div class="hero-metric" id="sumPercentual">0%</div></article>
+      <div class="fm-kpis">
+        ${cardFiltro({ label: 'Grupos', tone: 'blue', icone: 'total', kpi: 'id="sumGrupos"', dica: 'Combinações de regional e supervisão' })}
+        ${cardFiltro({ label: 'Total de itens', tone: 'amber', icone: 'ferramenta', kpi: 'id="sumItens"' })}
+        ${cardFiltro({ label: 'Em dia', tone: 'green', icone: 'ok', kpi: 'id="sumEmDia"', dica: 'Patrimônios com leitura em dia' })}
+        ${cardFiltro({ label: 'Progresso médio', tone: 'purple', icone: 'relogio', kpi: 'id="sumPercentual"' })}
       </div>
 
-      <article class="base-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-          <div>
-            <strong>Status por coordenação e supervisão</strong>
-            <div class="status-secondary">Tabela consolidada com barra de progresso por grupo.</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button class="base-button secondary" id="btnPrevPage" type="button">Anterior</button>
+      <div class="fm-card"><div class="fm-body">
+        <div class="fm-bar">
+          <span class="status-secondary">Status por coordenação e supervisão — tabela consolidada com barra de progresso por grupo.</span>
+          <div class="pat-pagination">
+            <button class="fm-ic" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICON_ANTERIOR}</button>
             <span id="paginationInfo" class="status-chip">Página 1/1</span>
-            <button class="base-button secondary" id="btnNextPage" type="button">Próxima</button>
+            <button class="fm-ic" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICON_PROXIMA}</button>
           </div>
         </div>
-        <div class="status-table-shell">
-          <div class="status-table-scroll">
-            <table class="status-table">
-              <thead>
-                <tr>
-                  <th>Coordenação</th>
-                  <th>Supervisão</th>
-                  <th>Total</th>
-                  <th>Em dia</th>
-                  <th>Progresso</th>
-                </tr>
-              </thead>
-              <tbody id="statusRows">
-                <tr><td colspan="5">Carregando...</td></tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="fm-table-wrap">
+          <table class="fm-table status-table">
+            <thead>
+              <tr>
+                <th>Coordenação</th>
+                <th>Supervisão</th>
+                <th>Total</th>
+                <th>Em dia</th>
+                <th>Progresso</th>
+              </tr>
+            </thead>
+            <tbody id="statusRows">
+              <tr><td colspan="5" class="fm-empty">Carregando...</td></tr>
+            </tbody>
+          </table>
         </div>
-      </article>
+      </div></div>
     </section>
   `;
 
@@ -405,7 +341,7 @@ export function renderContent(content) {
       console.error(error);
       updateCards([]);
       const tbody = document.getElementById('statusRows');
-      if (tbody) tbody.innerHTML = `<tr><td colspan="5">${escapeHtml(error?.message || 'Erro ao carregar o status de patrimônios.')}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="fm-empty">${escapeHtml(error?.message || 'Erro ao carregar o status de patrimônios.')}</td></tr>`;
     }
   })();
 }
