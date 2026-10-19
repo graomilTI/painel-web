@@ -1,7 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
-import { injectEstilosFrotas, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
+import { injectEstilosFrotas, cardFiltro, cabecalhoOrdenavel, proximaOrdenacao, ordenarPor } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const SVG_SETA = (pontos) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="${pontos}"></polyline></svg>`;
 const ICON_ANTERIOR = SVG_SETA('15 18 9 12 15 6');
@@ -280,15 +280,7 @@ export function renderContent(content) {
         </div>
         <div class="fm-table-wrap">
           <table class="fm-table status-table">
-            <thead>
-              <tr>
-                <th>Coordenação</th>
-                <th>Supervisão</th>
-                <th>Total</th>
-                <th>Em dia</th>
-                <th>Progresso</th>
-              </tr>
-            </thead>
+            <thead id="statusThead"></thead>
             <tbody id="statusRows">
               <tr><td colspan="5" class="fm-empty">Carregando...</td></tr>
             </tbody>
@@ -300,25 +292,57 @@ export function renderContent(content) {
 
   const state = {
     allRows: [],
-    page: 1
+    page: 1,
+    // Sem chave = ordem padrão (coordenação e supervisão).
+    ordem: { chave: '', dir: 'asc' }
   };
+
+  const COLUNAS = [
+    ['coordenacao', 'Coordenação'],
+    ['supervisao', 'Supervisão'],
+    ['total', 'Total'],
+    ['emDia', 'Em dia'],
+    ['progresso', 'Progresso'],
+  ];
+  const GETTERS = {
+    coordenacao: (row) => normalizeKey(row.coordenacao),
+    supervisao: (row) => normalizeKey(row.supervisao),
+    total: (row) => row.total,
+    emDia: (row) => row.emDia,
+    progresso: (row) => row.progresso,
+  };
+  const linhasOrdenadas = () => ordenarPor(state.allRows, state.ordem, GETTERS);
+  const renderThead = () => {
+    const thead = document.getElementById('statusThead');
+    if (thead) thead.innerHTML = `<tr>${COLUNAS.map(([chave, rotulo]) => cabecalhoOrdenavel(chave, rotulo, state.ordem)).join('')}</tr>`;
+  };
+  renderThead();
+  document.getElementById('statusThead')?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-sort]');
+    if (!btn) return;
+    state.ordem = proximaOrdenacao(state.ordem, btn.dataset.sort);
+    state.page = 1;
+    renderThead();
+    renderRows(linhasOrdenadas(), state.page);
+    state.page = updatePagination(state.allRows.length, state.page);
+  });
 
   const render = () => {
     state.page = updatePagination(state.allRows.length, state.page);
-    renderRows(state.allRows, state.page);
+    renderRows(linhasOrdenadas(), state.page);
     updateCards(state.allRows);
   };
 
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
     state.page = updatePagination(state.allRows.length, state.page);
-    renderRows(state.allRows, state.page);
+    renderRows(linhasOrdenadas(), state.page);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
     const maxPage = Math.max(1, Math.ceil(state.allRows.length / ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
     state.page = updatePagination(state.allRows.length, state.page);
-    renderRows(state.allRows, state.page);
+    renderRows(linhasOrdenadas(), state.page);
   });
 
   (async () => {
