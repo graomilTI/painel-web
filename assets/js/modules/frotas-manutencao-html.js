@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut31';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut31';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut32';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut32';
 import {
   componentesDoGrupo, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
-  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut31';
+  descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut32';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -169,30 +169,52 @@ function blocoItens(m, itens, base, ed) {
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
 }
 
-export function htmlFormOrcamento(base, orc = {}) {
-  const temDetalhe = [orc.fornecedor_contato, orc.valor_pecas, orc.valor_mao_obra, orc.validade, orc.condicoes_pagamento, orc.garantia, orc.observacoes].some((v) => v != null && v !== '');
+// Uma linha do orçamento: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
+export function htmlLinhaOrcamento(l = {}, { fixa = true } = {}) {
+  return `<div class="fm-ol" data-orc-linha>
+    ${fixa
+    ? `<div class="fm-ro">${esc(l.nome)}</div><input type="hidden" data-ol="nome" value="${esc(l.nome)}">`
+    : `<input class="fm-input" data-ol="nome" maxlength="120" placeholder="Outro item" value="${esc(l.nome || '')}">`}
+    <input class="fm-input" data-ol="detalhe" maxlength="160" placeholder="Marca / observação" value="${esc(l.detalhe || '')}">
+    <input class="fm-input" type="number" step="0.01" min="0" data-ol="valor" placeholder="0,00" value="${l.valor ?? ''}">
+    <button class="fm-ic danger" type="button" data-acao="orc-linha-rem" title="Remover linha" aria-label="Remover linha">✕</button></div>`;
+}
+
+export function htmlFormOrcamento(base, orc = {}, itens = []) {
+  const temDetalhe = [orc.fornecedor_contato, orc.validade, orc.condicoes_pagamento, orc.garantia, orc.observacoes].some((v) => v != null && v !== '');
+  const linhas = linhasIniciais(itens, orc.linhas);
+  const nomesDosItens = new Set(itens.flatMap((it) => ((it.componentes || []).length ? it.componentes : [it.descricao])).map((n) => norm(n)));
+  const soma = somarLinhas(linhas);
+  // "Peças" e "Valor total" acompanham a soma enquanto a pessoa não digitar um valor próprio neles.
+  const pecasAuto = orc.valor_pecas == null || (soma != null && Number(orc.valor_pecas) === soma);
+  const totalAuto = orc.valor_total == null || Number(orc.valor_total) === totalDoOrcamento({ pecas: orc.valor_pecas, maoObra: orc.valor_mao_obra });
   return `<div class="fm-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
     <div class="fm-field"><label>Oficina cadastrada</label><select class="fm-select" data-o="oficina_id">${opcoes(base.oficinas.filter((o) => o.ativo !== false), orc.oficina_id, { vazio: '— outra (digitar) —', rotulo: 'nome' })}</select></div>
     <div class="fm-field" style="grid-column:span 2"><label>Oficina / fornecedor</label><input class="fm-input" data-o="fornecedor" value="${esc(orc.fornecedor || '')}"></div>
-    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" value="${orc.valor_total ?? ''}"><small>Se ficar vazio, soma peças + mão de obra (em Mais detalhes).</small></div>
     <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
-    <div class="fm-field" style="grid-column:span 3"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+    <div class="fm-field full"><label>Itens do orçamento</label>
+      ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span></div>' : ''}
+      <div class="fm-ols" data-orc-linhas>${linhas.map((l) => htmlLinhaOrcamento(l, { fixa: nomesDosItens.has(norm(l.nome)) })).join('')}</div>
+      <button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" style="margin-top:8px">+ Outro item</button></div>
+    <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das linhas acima.</small></div>
+    <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" value="${orc.valor_mao_obra ?? ''}"></div>
+    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}"><small>Peças + mão de obra.</small></div>
+    <div class="fm-field"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
     <details class="fm-mais fm-field full"${temDetalhe ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
       <div class="fm-field"><label>Contato</label><input class="fm-input" data-o="fornecedor_contato" value="${esc(orc.fornecedor_contato || '')}"></div>
-      <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" value="${orc.valor_pecas ?? ''}"></div>
-      <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" value="${orc.valor_mao_obra ?? ''}"></div>
       <div class="fm-field"><label>Validade</label><input class="fm-input" type="date" data-o="validade" value="${esc(orc.validade || '')}"></div>
-      <div class="fm-field" style="grid-column:span 2"><label>Pagamento</label><input class="fm-input" data-o="condicoes_pagamento" value="${esc(orc.condicoes_pagamento || '')}"></div>
-      <div class="fm-field" style="grid-column:span 2"><label>Garantia</label><input class="fm-input" data-o="garantia" value="${esc(orc.garantia || '')}"></div>
+      <div class="fm-field"><label>Pagamento</label><input class="fm-input" data-o="condicoes_pagamento" value="${esc(orc.condicoes_pagamento || '')}"></div>
+      <div class="fm-field"><label>Garantia</label><input class="fm-input" data-o="garantia" value="${esc(orc.garantia || '')}"></div>
       <div class="fm-field full"><label>Observações</label><textarea data-o="observacoes">${esc(orc.observacoes || '')}</textarea></div></div></details>
     <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="orc-salvar">${orc.id ? 'Salvar orçamento' : 'Adicionar orçamento'}</button><button class="fm-btn ghost" type="button" data-acao="orc-cancelar">Cancelar</button></div></div>`;
 }
 
-function blocoOrcamentos(m, orcs, base, ed, formAberto) {
+function blocoOrcamentos(m, orcs, base, ed, formAberto, itens = []) {
   const sel = orcamentoSelecionado(orcs);
   const cards = orcs.map((o) => `<div class="fm-orc${o.selecionado ? ' sel' : ''}">
       <div><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? ' <span class="fm-badge green">Escolhido</span>' : ''}</div>
       <div class="v">${dinheiro(o.valor_total)}</div>
+      ${(o.linhas || []).length ? `<ul class="fm-ol-lista">${o.linhas.map((l) => `<li><span>${esc(l.nome)}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}</span><b>${l.valor != null ? dinheiro(l.valor) : '—'}</b></li>`).join('')}</ul>` : ''}
       <div class="fm-mm">${o.valor_pecas != null ? `Peças ${dinheiro(o.valor_pecas)}` : ''}${o.valor_mao_obra != null ? ` · Mão de obra ${dinheiro(o.valor_mao_obra)}` : ''}</div>
       <div class="fm-mm">${o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : ''}${o.validade ? ` · Validade ${dataBR(o.validade)}` : ''}${o.garantia ? ` · Garantia ${esc(o.garantia)}` : ''}</div>
       ${o.condicoes_pagamento ? `<div class="fm-mm">Pagamento: ${esc(o.condicoes_pagamento)}</div>` : ''}
@@ -202,7 +224,7 @@ function blocoOrcamentos(m, orcs, base, ed, formAberto) {
   return `<div class="fm-sec"><h4>Orçamentos (${orcs.length}) ${ed.orcamentos ? '<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-novo">+ Orçamento</button>' : ''}</h4>
     ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : '<div class="fm-mm">Nenhum orçamento cadastrado.</div>'}
     ${orcs.length > 1 && !sel && ed.orcamentos ? '<div class="fm-aviso">Escolha o orçamento que será levado para aprovação.</div>' : ''}${aviso}
-    ${formAberto ? htmlFormOrcamento(base, formAberto === true ? {} : formAberto) : ''}</div>`;
+    ${formAberto ? htmlFormOrcamento(base, formAberto === true ? {} : formAberto, itens) : ''}</div>`;
 }
 
 function blocoExecucao(m) {
@@ -327,7 +349,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
     ${faixaEtapa(m, notas)}
-    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

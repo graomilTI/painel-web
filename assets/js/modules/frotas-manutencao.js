@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut31';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut31';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut31';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut32';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut32';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut32';
 import {
-  acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut31';
+  acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut32';
 import {
-  htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut31';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut31';
+  htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut32';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut32';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -134,6 +134,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       ov.classList.add('fm-mod');
       ov.addEventListener('click', aoClicarFicha);
       ov.addEventListener('change', aoMudarFicha);
+      ov.addEventListener('input', aoDigitarFicha);
       // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
       ov.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
     }
@@ -268,11 +269,18 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       if (!(await confirmar({ titulo: 'Remover orçamento', mensagem: 'Remover este orçamento?', confirmarLabel: 'Remover' }))) return;
       return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento removido.' });
     }
+    if (acao === 'orc-linha-add') {
+      ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({}, { fixa: false }));
+      ov.querySelector('[data-orc-linhas] [data-orc-linha]:last-child [data-ol="nome"]')?.focus();
+      return;
+    }
+    if (acao === 'orc-linha-rem') { alvo.closest('[data-orc-linha]').remove(); return recalcularOrcamento(ov.querySelector('[data-orc-form]')); }
     if (acao === 'orc-salvar') {
       const f = ov.querySelector('[data-orc-form]');
       const o = (k) => val(f, `[data-o="${k}"]`);
       const pecas = numeroOuNulo(o('valor_pecas')); const mao = numeroOuNulo(o('valor_mao_obra'));
-      const total = numeroOuNulo(o('valor_total')) ?? (pecas != null || mao != null ? (pecas || 0) + (mao || 0) : null);
+      const total = numeroOuNulo(o('valor_total')) ?? totalDoOrcamento({ pecas, maoObra: mao });
+      const linhas = normalizarLinhas(linhasDoFormulario(f));
       const lista = validarOrcamento({ fornecedor: o('fornecedor'), valor_total: total });
       if (lista.length) return erros(lista);
       const arquivo = f.querySelector('[data-o-arquivo]')?.files?.[0] || null;
@@ -282,7 +290,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
           id: f.dataset.orcId || undefined, manutencao_id: m.id, oficina_id: o('oficina_id') || null, fornecedor: o('fornecedor').trim(),
           fornecedor_contato: o('fornecedor_contato').trim() || null, valor_pecas: pecas, valor_mao_obra: mao, valor_total: total,
           prazo_dias: numeroOuNulo(o('prazo_dias')), validade: o('validade') || null, condicoes_pagamento: o('condicoes_pagamento').trim() || null,
-          garantia: o('garantia').trim() || null, observacoes: o('observacoes').trim() || null, ...(anexo ? { anexo_url: anexo } : {}),
+          garantia: o('garantia').trim() || null, observacoes: o('observacoes').trim() || null, linhas, ...(anexo ? { anexo_url: anexo } : {}),
           // O primeiro orçamento já fica escolhido (não há o que comparar); com vários, quem decide escolhe.
           ...(!f.dataset.orcId && !state.orcs.some((x) => x.manutencao_id === m.id) ? { selecionado: true } : {}),
         });
@@ -343,6 +351,29 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
         }
       }, { sucesso: 'Manutenção concluída.' });
     }
+  }
+
+  // Linhas do orçamento (peça/serviço, marca/observação, valor) como estão na tela.
+  const linhasDoFormulario = (f) => [...f.querySelectorAll('[data-orc-linha]')].map((r) => ({
+    nome: r.querySelector('[data-ol="nome"]').value, detalhe: r.querySelector('[data-ol="detalhe"]').value, valor: numeroOuNulo(r.querySelector('[data-ol="valor"]').value),
+  }));
+
+  // Peças = soma das linhas e total = peças + mão de obra, enquanto a pessoa não digitar um valor próprio nesses campos.
+  function recalcularOrcamento(f) {
+    if (!f) return;
+    const campo = (k) => f.querySelector('[data-o="' + k + '"]');
+    const soma = somarLinhas(linhasDoFormulario(f));
+    const pecas = campo('valor_pecas'); const total = campo('valor_total');
+    if (pecas.dataset.auto !== '0') pecas.value = soma ?? '';
+    if (total.dataset.auto !== '0') total.value = totalDoOrcamento({ pecas: numeroOuNulo(pecas.value), maoObra: numeroOuNulo(campo('valor_mao_obra').value) }) ?? '';
+  }
+
+  function aoDigitarFicha(e) {
+    const f = e.target.closest?.('[data-orc-form]'); if (!f) return;
+    const t = e.target;
+    // Digitar direto em Peças ou no total desliga a soma automática daquele campo (apagar religa).
+    if (t.matches('[data-o="valor_pecas"],[data-o="valor_total"]')) t.dataset.auto = t.value === '' ? '1' : '0';
+    recalcularOrcamento(f);
   }
 
   async function aoMudarFicha(e) {

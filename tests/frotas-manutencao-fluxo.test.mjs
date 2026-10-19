@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
+  FILTROS, TRANSICOES, acoesDisponiveis, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
-import { htmlComponentes, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
 // frotas_manutencoes_fluxo; quem decide é o banco, aqui se evita oferecer o que ele recusaria.
@@ -159,6 +159,33 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   assert.doesNotMatch(encerrada, /data-comp /, 'encerrada não edita');
   assert.doesNotMatch(htmlFormNova(b, {}), /data-n-comps/);
   assert.match(htmlFormNova(b, { itens: [{ categoria_codigo: 9, descricao: 'Freio', componentes: ['Discos de freio'] }] }), /Itens: Discos de freio/);
+});
+
+test('orçamento por item: soma das linhas, total e linhas iniciais vindas dos itens (exemplo BDK4J22)', () => {
+  const linhas = [{ nome: 'Kit de embreagem', detalhe: 'LUK', valor: 754.8 }, { nome: 'Cabo da embreagem', detalhe: 'Cabovel', valor: 175.4 }, { nome: 'Óleo 75W80', detalhe: 'Petronas', valor: 83.8 }];
+  assert.equal(somarLinhas(linhas), 1014, '754,80 + 175,40 + 83,80 = 1.014,00 sem erro de ponto flutuante');
+  assert.equal(somarLinhas([{ nome: 'x', valor: null }, { nome: 'y', valor: '' }]), null, 'sem valor nenhum: vale o que a pessoa digitar');
+  assert.equal(somarLinhas([{ valor: '10.10' }, { valor: 0.2 }]), 10.3);
+  assert.equal(totalDoOrcamento({ pecas: 1014, maoObra: 200 }), 1214);
+  assert.equal(totalDoOrcamento({ pecas: 1014 }), 1014);
+  assert.equal(totalDoOrcamento({}), null);
+  assert.deepEqual(normalizarLinhas([{ nome: ' Kit ', detalhe: ' LUK ', valor: '754.8' }, { nome: 'Sem nada' }, { nome: '', detalhe: 'x' }]), [{ nome: 'Kit', detalhe: 'LUK', valor: 754.8 }]);
+  const itens = [{ componentes: ['Kit de embreagem', 'Cabo da embreagem'] }, { componentes: [], descricao: 'Pneu furado' }];
+  assert.deepEqual(linhasIniciais(itens).map((l) => l.nome), ['Kit de embreagem', 'Cabo da embreagem', 'Pneu furado']);
+  const salvas = [{ nome: 'Kit de embreagem', detalhe: 'LUK', valor: 754.8 }];
+  assert.deepEqual(linhasIniciais(itens, salvas).map((l) => [l.nome, l.detalhe, l.valor]), [['Kit de embreagem', 'LUK', 754.8], ['Cabo da embreagem', '', null], ['Pneu furado', '', null]]);
+  const html = htmlFormOrcamento({ oficinas: [] }, {}, itens);
+  assert.equal((html.match(/data-orc-linha(?!s)/g) || []).length, 3, 'uma linha por peça/serviço dos itens');
+  assert.match(html, /data-acao="orc-linha-add"/);
+  assert.match(html, /placeholder="Marca \/ observação"/);
+  const salvo = htmlFormOrcamento({ oficinas: [] }, { id: 'o1', valor_pecas: 1014, valor_mao_obra: null, valor_total: 1014, linhas }, []);
+  assert.match(salvo, /value="LUK"/);
+  assert.match(salvo, /data-o="valor_pecas" data-auto="1"/, 'peças acompanha a soma quando bate com ela');
+  const manual = htmlFormOrcamento({ oficinas: [] }, { id: 'o1', valor_pecas: 900, valor_total: 900, linhas }, []);
+  assert.match(manual, /data-o="valor_pecas" data-auto="0"/, 'valor digitado à mão não é sobrescrito');
+  const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [{ id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 1014, valor_pecas: 1014, selecionado: true, linhas }], base, podeAprovar: false });
+  assert.match(ficha, /Kit de embreagem<small>LUK<\/small>/);
+  assert.match(ficha, /Cabovel/);
 });
 
 test('urgentes e altas vêm primeiro na lista em andamento', () => {

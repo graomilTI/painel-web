@@ -245,6 +245,39 @@ export function componentesDoServico(componentes = [], categoria, planoCodigo) {
     .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
 }
 
+// ---------- linhas do orçamento (marca/observação e valor de cada peça ou serviço) ----------
+const emCentavos = (n) => Math.round(Number(n) * 100) / 100;
+const valorLinha = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
+
+// Soma dos valores das linhas; null quando nenhuma linha tem valor (aí vale o que a pessoa digitar em "Peças").
+export function somarLinhas(linhas = []) {
+  const valores = linhas.map((l) => valorLinha(l?.valor)).filter((v) => v != null);
+  return valores.length ? emCentavos(valores.reduce((s, v) => s + v, 0)) : null;
+}
+
+// Total do orçamento = peças + mão de obra; null quando os dois estão vazios.
+export function totalDoOrcamento({ pecas = null, maoObra = null } = {}) {
+  const p = valorLinha(pecas); const m = valorLinha(maoObra);
+  return p == null && m == null ? null : emCentavos((p || 0) + (m || 0));
+}
+
+// Linhas que valem a pena guardar: com nome e com marca/observação ou valor.
+export function normalizarLinhas(linhas = []) {
+  return linhas.map((l) => ({ nome: String(l?.nome || '').trim().slice(0, 120), detalhe: String(l?.detalhe || '').trim().slice(0, 160), valor: valorLinha(l?.valor) }))
+    .filter((l) => l.nome && (l.detalhe || l.valor != null));
+}
+
+// Linhas do formulário: as já salvas e, para cada peça/serviço marcado nos itens que ainda não tem linha, uma linha em branco.
+export function linhasIniciais(itens = [], salvas = []) {
+  const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor) }));
+  const tem = new Set(linhas.map((l) => norm(l.nome)));
+  for (const it of itens) {
+    const nomes = (it.componentes || []).length ? it.componentes : [it.descricao].filter(Boolean);
+    for (const nome of nomes) if (!tem.has(norm(nome))) { tem.add(norm(nome)); linhas.push({ nome, detalhe: '', valor: null }); }
+  }
+  return linhas;
+}
+
 // Texto do item quando a pessoa só marcou componentes.
 export const descricaoDosComponentes = (nomes = []) => nomes.join(', ');
 
