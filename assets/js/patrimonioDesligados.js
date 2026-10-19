@@ -16,11 +16,11 @@
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 import { ESTILOS_LISTA, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './modules/frotas-ui-lista.js?v=20261019-frotas-manut28';
-import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-layout-frotas';
+import { gerarImagemDesligado, gerarImagemSupervisao, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-agrupar';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
   valorEstimadoDoItem, formatarReais,
-} from './patrimonioDesligadosRegras.js?v=20261019-layout-frotas';
+} from './patrimonioDesligadosRegras.js?v=20261019-agrupar';
 
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;')
@@ -51,6 +51,8 @@ const ESTILOS_BASE = `
   .fm-previa{border:1px dashed rgba(34,197,94,.35);border-radius:14px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#cbd5e1}.fm-previa.erro{border-color:rgba(239,68,68,.5);color:#fecaca}.fm-erro{color:#fecaca;font-size:12.5px;min-height:16px}.fm-hint{font-size:12px;color:#94a3b8;margin-top:6px}
   .fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;max-width:360px;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:800;font-size:13px;box-shadow:0 16px 45px rgba(0,0,0,.35)}.fm-toast.erro{border-color:rgba(252,165,165,.4);background:rgba(127,29,29,.96);color:#fee2e2}
   .fm-venc{color:#fca5a5}
+  .fm-btn.ghost[aria-pressed="true"]{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.16);color:#bbf7d0}
+  .fm-table tr.fm-grupo td{background:rgba(34,197,94,.09);border-bottom:1px solid rgba(34,197,94,.22);padding:10px 12px}.fm-grupo-in{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.fm-grupo-in strong{color:#bbf7d0;font-size:14px;letter-spacing:.02em}.fm-grupo-in span{color:#94a3b8;font-size:12px;font-weight:800}.fm-grupo-in .fm-actions{margin-left:auto}
 `;
 
 function injectStyles() {
@@ -109,6 +111,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   let busca = '';
   let supervisaoSel = '';
   let carregando = false;
+  let agrupar = false;
   // Materiais abertos por colaborador (chave = nome normalizado). Começa tudo recolhido.
   const abertos = new Set();
   let entradas = [];
@@ -121,6 +124,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         <div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por colaborador, supervisão, patrimônio ou material..." data-busca></div>
         <select class="fm-select" data-supervisao aria-label="Supervisão"><option value="">Todas as supervisões</option></select>
         <span data-chip></span>
+        <button class="fm-btn ghost" type="button" data-agrupar aria-pressed="false" title="Agrupa os desligados por supervisão, com um botão de imagem por supervisão para cobrar o gestor em lote">Agrupar por supervisão</button>
         <button class="fm-btn ghost" type="button" data-expandir></button>
         <span class="fm-count" data-count>0 desligado(s)</span>
         <button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button>
@@ -302,7 +306,18 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       return;
     }
 
-    q('[data-linhas]').innerHTML = visiveis.map((e) => `<tr>
+    q('[data-agrupar]').setAttribute('aria-pressed', String(agrupar));
+    q('[data-linhas]').innerHTML = agrupar
+      ? agruparPorSupervisao(visiveis).map((g) => `${cabecalhoGrupo(g)}${g.lista.map(linhaHtml).join('')}`).join('')
+      : visiveis.map(linhaHtml).join('');
+
+  }
+
+
+  const NOME_SEM_SUPERVISAO = 'Sem supervisão';
+
+  function linhaHtml(e) {
+    return `<tr>
       <td><div class="fm-person"><span class="fm-avatar">${esc(iniciais(e.nome))}</span><div><strong>${esc(e.nome)}</strong><small>${esc(e.cargo || 'Colaborador')} · ${esc(e.origem)}</small></div></div></td>
       <td>${celulaMateriais(e)}</td>
       <td>${esc(e.supervisao || '-')}</td>
@@ -310,7 +325,29 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       <td><span class="fm-badge ${{ ok: 'ok', urgente: 'warn', hoje: 'warn', vencido: 'err', caixa: 'info' }[e.estado.classe] || ''}">${esc(e.estado.texto)}</span><span class="fm-prazo-dia">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></td>
       <td>${esc(e.motivo || '-')}</td>
       <td><div class="fm-actions">${iconBtn('data-img', e.id, 'anexo', 'Gerar imagem dos patrimônios (para enviar ao gestor)', ICONE_IMAGEM)}${e.manual && !e.lancado ? `${e.estado.vencido ? iconBtn('data-caixa', e.id, 'termo', 'Marcar como lançado em Caixa (material não recolhido)', 'dinheiro') : ''}${iconBtn('data-rem', e.id, 'danger', 'Tirar este desligado da lista', 'excluir')}` : ''}</div></td>
-    </tr>`).join('');
+    </tr>`;
+  }
+
+  function agruparPorSupervisao(lista) {
+    const mapa = new Map();
+    lista.forEach((e) => {
+      const nome = e.supervisao || NOME_SEM_SUPERVISAO;
+      if (!mapa.has(nome)) mapa.set(nome, []);
+      mapa.get(nome).push(e);
+    });
+    return [...mapa.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'))
+      .map(([nome, grupo]) => ({ nome, lista: grupo }));
+  }
+
+  function cabecalhoGrupo(g) {
+    const pendentes = g.lista.filter((e) => !e.lancado);
+    const itens = pendentes.reduce((t, e) => t + e.itens.length, 0);
+    const caixa = pendentes.reduce((t, e) => t + somaValor(e.itens), 0);
+    const vencidos = pendentes.filter((e) => e.estado.vencido).length;
+    const resumo = `${g.lista.length} ${g.lista.length === 1 ? 'colaborador' : 'colaboradores'} · ${itens} ${itens === 1 ? 'item' : 'itens'}${vencidos ? ` · ${vencidos} vencido(s)` : ''}${caixa ? ` · Caixa estimado ${formatarReais(caixa)}` : ''}`;
+    const botao = pendentes.length ? iconBtn('data-img-grupo', g.nome, 'anexo', `Gerar imagem da supervisão ${g.nome} (cobrança em lote)`, ICONE_IMAGEM) : '';
+    return `<tr class="fm-grupo"><td colspan="${COLUNAS}"><div class="fm-grupo-in"><strong>${esc(g.nome)}</strong><span>${esc(resumo)}</span><div class="fm-actions">${botao}</div></div></td></tr>`;
   }
 
   function avisar(texto, erro = false) {
@@ -324,13 +361,26 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   async function gerarImagem(id, botao) {
     const e = entradas.find((x) => x.id === id);
     if (!e) return;
+    await entregarImagem(botao, () => gerarImagemDesligado(e), nomeArquivoImagem(e.nome, hojeBrasilia()));
+  }
+
+  // Cobrança em lote: uma imagem com todos os desligados (ainda não lançados) da supervisão que estão na lista filtrada.
+  async function gerarImagemDoGrupo(nome, botao) {
+    const filtroAtual = FILTROS.find((f) => f.key === filtro) || FILTROS[0];
+    const lista = entradas.filter(aplicaBusca).filter(filtroAtual.tem)
+      .filter((e) => (e.supervisao || NOME_SEM_SUPERVISAO) === nome && !e.lancado);
+    if (!lista.length) { avisar('Nenhum desligado pendente nesta supervisão.', true); return; }
+    await entregarImagem(botao, () => gerarImagemSupervisao(nome, lista), nomeArquivoImagem(nome, hojeBrasilia()));
+  }
+
+  async function entregarImagem(botao, gerar, nomeArquivo) {
     botao.disabled = true;
     try {
-      const blob = await gerarImagemDesligado(e);
+      const blob = await gerar();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = nomeArquivoImagem(e.nome, hojeBrasilia());
+      a.download = nomeArquivo;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -526,6 +576,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     if (!alvo || !target.contains(alvo)) return;
     if (alvo.hasAttribute('data-novo')) { abrirModalNovo(); return; }
     if (alvo.hasAttribute('data-atualizar')) { carregar(); return; }
+    if (alvo.hasAttribute('data-agrupar')) { agrupar = !agrupar; desenhar(); return; }
     if (alvo.dataset.toggleItens) {
       const k = alvo.dataset.toggleItens;
       if (abertos.has(k)) abertos.delete(k); else abertos.add(k);
@@ -541,6 +592,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       return;
     }
     if (alvo.dataset.img) gerarImagem(alvo.dataset.img, alvo);
+    if (alvo.dataset.imgGrupo) gerarImagemDoGrupo(alvo.dataset.imgGrupo, alvo);
     if (alvo.dataset.caixa) marcarLancadoCaixa(alvo.dataset.caixa);
     if (alvo.dataset.rem) remover(alvo.dataset.rem);
   });
