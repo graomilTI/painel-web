@@ -2,7 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
-import { criarDesligados } from './patrimonioDesligados.js?v=20261019-agrupar';
+import { injectEstilosFrotas, ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-layout-geral';
+import { criarDesligados } from './patrimonioDesligados.js?v=20261019-layout-geral';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -63,263 +64,44 @@ function injectVisualStyles() {
   const style = document.createElement('style');
   style.id = 'patrimonio-relatorios-visual-styles';
   style.textContent = `
-    /* ===== Revisão 28/07/2026 — apontamento da cliente: "botões e filtros
-       ocupando a tela inteira". Filtros agora ficam em uma única faixa em
-       grade e os botões têm largura proporcional ao texto. ===== */
-    .patrimonio-relatorios-page .base-card { padding: 14px 16px; }
-    .patrimonio-relatorios-page .pat-filtros-row {
-      display: flex;
-      align-items: flex-end;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-    .patrimonio-relatorios-page .pat-filtros-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 150px));
-      gap: 10px;
-      align-items: end;
-      flex: 1 1 auto;
-      min-width: 0;
-    }
-    .patrimonio-relatorios-page .pat-filtros-grid .base-field { grid-column: auto; min-width: 0; }
-    .patrimonio-relatorios-page .pat-filtros-grid .base-label { margin-bottom: 5px; font-size: 12px; }
-    .patrimonio-relatorios-page .pat-filtros-grid .base-select,
-    .patrimonio-relatorios-page .pat-filtros-grid .base-input {
-      width: 100%;
-      min-height: 40px;
-      padding: 8px 11px;
-      border-radius: 11px;
-      font-size: 13.5px;
-    }
-    .patrimonio-relatorios-page .base-actions {
-      margin-top: 0;
-      gap: 8px;
-      flex: 0 0 auto;
-    }
-    .patrimonio-relatorios-page .base-actions .base-button {
-      width: auto;
-      flex: 0 0 auto;
-      min-height: 38px;
-      padding: 8px 14px;
-      border-radius: 11px;
-      font-size: 13.5px;
-    }
-    .patrimonio-relatorios-page .base-actions .icon-button {
-      width: 38px;
-      height: 38px;
-      min-height: 38px;
-      padding: 0;
-      border-radius: 11px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .patrimonio-relatorios-page .base-actions .icon-button svg { display: block; }
-    .patrimonio-relatorios-page #patrimonioFeedback { margin: 10px 0 0; font-size: .85rem; }
-    @media (max-width: 1080px) {
-      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); flex: 1 1 100%; }
-    }
-    @media (max-width: 640px) {
-      .patrimonio-relatorios-page .pat-filtros-row { flex-direction: column; align-items: stretch; }
-      .patrimonio-relatorios-page .pat-filtros-grid { grid-template-columns: 1fr; }
-      .patrimonio-relatorios-page .base-actions .base-button { flex: 1 1 auto; }
-    }
-    .patrimonio-table-card { padding: 18px; }
-    .patrimonio-table-toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 14px;
-      flex-wrap: wrap;
-    }
-    .patrimonio-table-title {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .patrimonio-table-title strong { font-size: 1.05rem; }
-    .patrimonio-table-subtitle { opacity: .72; font-size: .92rem; }
-    .pat-view-modes {
-      display: inline-flex;
-      gap: 4px;
-      padding: 4px;
-      border-radius: 12px;
-      background: rgba(15, 23, 42, 0.34);
-      border: 1px solid rgba(148, 163, 184, 0.16);
-    }
-    .pat-view-mode-btn {
-      appearance: none;
-      border: 0;
-      background: transparent;
-      color: rgba(226, 232, 240, 0.68);
-      font: inherit;
-      font-weight: 600;
-      font-size: 12.5px;
-      cursor: pointer;
-      padding: 7px 12px;
-      border-radius: 9px;
-      transition: color .15s ease, background .15s ease;
-    }
-    .pat-view-mode-btn:hover { color: #e2e8f0; }
-    .pat-view-mode-btn.active { background: rgba(45, 212, 191, 0.18); color: #ecfdf5; }
-    .pat-pagination .icon-button {
-      width: 34px;
-      height: 34px;
-      min-width: 34px;
-      padding: 0;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 10px;
-      margin: 0;
-    }
-    .pat-toolbar-right {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      flex-wrap: wrap;
-    }
-    .pat-pagination-sep { opacity: .3; font-size: .85rem; }
-    .patrimonio-legend {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .legend-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.28);
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      font-size: .84rem;
-      color: #dbeafe;
-    }
-    .legend-dot { width: 9px; height: 9px; border-radius: 999px; display: inline-block; }
-    .legend-dot.ok { background: #22c55e; }
-    .legend-dot.atraso { background: #ef4444; }
-    .legend-chip.pat-filter-chip {
-      font: inherit;
-      font-size: .84rem;
-      cursor: pointer;
-      transition: background .15s ease, border-color .15s ease, color .15s ease;
-    }
-    .legend-chip.pat-filter-chip:hover { border-color: rgba(148, 163, 184, 0.4); }
-    .legend-chip.pat-filter-chip:focus-visible { outline: 2px solid #2dd4a0; outline-offset: 2px; }
-    .legend-chip.pat-filter-chip[aria-pressed="true"][data-filter-tipo="emdia"] { background: rgba(34, 197, 94, 0.18); border-color: rgba(34, 197, 94, 0.55); color: #dcfce7; }
-    .legend-chip.pat-filter-chip[aria-pressed="true"][data-filter-tipo="atrasados"] { background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.55); color: #fee2e2; }
-    .table-shell {
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 18px;
-      overflow: hidden;
-      background: rgba(2, 12, 10, 0.55);
-    }
-    .table-scroll-x { overflow: auto; max-height: calc(100vh - 300px); }
-    .patrimonio-table {
-      width: 100%;
-      min-width: 1180px;
-      border-collapse: separate;
-      border-spacing: 0;
-    }
-    .patrimonio-table thead th {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: rgba(5, 18, 16, 0.98);
-      backdrop-filter: blur(6px);
-      box-shadow: inset 0 -1px 0 rgba(148, 163, 184, 0.14);
-      padding: 13px 12px;
-      font-size: .8rem;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      color: #dbeafe;
-      white-space: nowrap;
-    }
+    /* Layout no padrão das listas do Frotas (patrimonioLayoutFrotas.js): cards, barra, tabela fixa, ícones. */
+    .patrimonio-relatorios-page .frotas-hub-tabs { margin-bottom: 14px; }
+    .patrimonio-relatorios-page a.ds-tab { text-decoration: none; }
+    .pat-view[hidden] { display:none !important; }
+    .patrimonio-relatorios-page .fm-bar + .fm-bar { margin-top: -2px; }
+    .pat-view-modes { display:inline-flex; gap:4px; padding:4px; border-radius:14px; background:rgba(15,23,42,.72); border:1px solid rgba(148,163,184,.18); }
+    .pat-view-mode-btn { appearance:none; border:0; background:transparent; color:#94a3b8; font:inherit; font-weight:900; font-size:12.5px; cursor:pointer; padding:7px 13px; border-radius:10px; transition:color .15s ease, background .15s ease; }
+    .pat-view-mode-btn:hover { color:#e2e8f0; }
+    .pat-view-mode-btn.active { background:rgba(34,197,94,.18); color:#bbf7d0; }
+    .pat-pagination { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; white-space:nowrap; margin-left:auto; }
+    .pat-pagination .fm-ic:disabled { opacity:.35; cursor:not-allowed; }
+    .pagination-chip { padding:6px 12px; border-radius:999px; background:rgba(15,23,42,.72); border:1px solid rgba(148,163,184,.18); color:#e2e8f0; font-size:12px; font-weight:900; }
+    #patrimonioFeedback { margin-left:0; }
+    .patrimonio-table { min-width:1100px; }
+    .patrimonio-table th { white-space:nowrap; }
     .pat-sort-btn { width: 100%; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; padding: 0; }
     .pat-sort-icon { font-size: .85em; opacity: .55; }
     .pat-sort-icon.active { opacity: 1; color: #6fd0a5; }
-    .patrimonio-table tbody tr:nth-child(odd) td { background: rgba(255,255,255,0.018); }
-    .patrimonio-table tbody tr:hover td { background: rgba(52, 211, 153, 0.08); }
-    .patrimonio-table td {
-      padding: 12px;
-      border-top: 1px solid rgba(148, 163, 184, 0.1);
-      vertical-align: top;
-    }
     .pat-cell-patrimonio { min-width: 110px; font-weight: 700; color: #f8fafc; }
-    .pat-cell-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-    .pat-primary {
-      font-weight: 600;
-      color: #f8fafc;
-      overflow-wrap: anywhere;
-    }
-    .pat-secondary {
-      font-size: .82rem;
-      color: #6b7280;
-      overflow-wrap: anywhere;
-    }
-    .pat-tag {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5px 10px;
-      min-width: 42px;
-      border-radius: 999px;
-      font-size: .84rem;
-      font-weight: 700;
-      border: 1px solid transparent;
-    }
-    .pat-tag.ok { color: #dcfce7; background: rgba(34, 197, 94, 0.16); border-color: rgba(34, 197, 94, 0.34); }
-    .pat-tag.danger { color: #fee2e2; background: rgba(239, 68, 68, 0.16); border-color: rgba(239, 68, 68, 0.34); }
-    .pat-regional-badge {
-      display: inline-flex;
-      max-width: 100%;
-      padding: 5px 10px;
-      border-radius: 999px;
-      background: rgba(20, 184, 166, 0.12);
-      border: 1px solid rgba(45, 212, 191, 0.25);
-      color: #ccfbf1;
-      font-weight: 600;
-      font-size: .82rem;
-    }
-    .pagination-chip {
-      padding: 7px 12px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.34);
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      color: #e2e8f0;
-      font-size: .9rem;
-    }
-    .pat-pagination { display:flex; gap:8px; align-items:center; flex-wrap:nowrap; white-space:nowrap; }
-    .pat-pagination .base-button { width:auto; min-width:92px; margin:0; }
+    .pat-cell-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .pat-primary { font-weight: 600; color: #f8fafc; overflow-wrap: anywhere; }
+    .pat-secondary { font-size: .82rem; color: #94a3b8; overflow-wrap: anywhere; }
+    .pat-tag { display:inline-flex; align-items:center; justify-content:center; padding:4px 10px; min-width:42px; border-radius:999px; font-size:11px; font-weight:950; border:1px solid transparent; }
+    .pat-tag.ok { color:#bbf7d0; background:rgba(22,101,52,.24); border-color:rgba(34,197,94,.35); }
+    .pat-tag.danger { color:#fecaca; background:rgba(239,68,68,.12); border-color:rgba(239,68,68,.34); }
+    .pat-regional-badge { display:inline-flex; max-width:100%; padding:4px 10px; border-radius:999px; background:rgba(20,184,166,.12); border:1px solid rgba(45,212,191,.25); color:#ccfbf1; font-weight:900; font-size:11px; }
     .pat-group-row { cursor:pointer; }
-    .pat-group-row td { background:rgba(52,211,153,.045); }
+    .pat-group-row td { background:rgba(34,197,94,.06) !important; }
     .pat-group-name { display:flex; align-items:center; gap:9px; }
     .pat-group-arrow { width:12px; color:#6fd0a5; font-size:.8rem; }
-    .pat-group-detail td { padding:0 12px 14px 34px; background:rgba(2,12,10,.72); }
+    .pat-group-detail td { padding:0 12px 14px 34px; background:rgba(2,12,10,.72) !important; }
     .pat-group-detail table { width:100%; border-collapse:collapse; }
-    .pat-group-detail th,.pat-group-detail td { padding:9px 10px; background:transparent; }
-    .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; }
-    .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(52,211,153,.12); color:#bbf7d0; font-weight:800; }
-    .pat-view[hidden] { display:none !important; }
-    /* Abas no padrão dos hubs do Frotas (assets/css/frotas-hub.css): texto + risco no ativo. */
-    .patrimonio-relatorios-page .frotas-hub-tabs { margin-bottom: 14px; }
-    .patrimonio-relatorios-page a.ds-tab { text-decoration: none; }
-    .pat-desligados-empty { padding:34px; text-align:center; color:rgba(226,232,240,.68); }
-    .pat-alert { border-color:rgba(251,146,60,.28); background:rgba(124,45,18,.12); }
-    @media (max-width: 900px) {
-      .patrimonio-table-card { padding: 14px; }
-      .patrimonio-table-toolbar { align-items: flex-start; }
-      .table-scroll-x { max-height: none; }
-    }
+    .patrimonio-relatorios-page .pat-group-detail th, .patrimonio-relatorios-page .pat-group-detail td { padding:9px 10px; background:transparent; position:static; }
+    .patrimonio-relatorios-page .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; letter-spacing:.06em; }
+    .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(34,197,94,.12); color:#bbf7d0; font-weight:900; font-size:12px; }
+    @media (max-width: 680px) { .pat-pagination { margin-left:0; width:100%; justify-content:flex-end; } }
   `;
+
   document.head.appendChild(style);
 }
 
@@ -781,6 +563,7 @@ function groupRowsByRegional(rows) {
 }
 
 export function renderContent(content) {
+  injectEstilosFrotas();
   injectVisualStyles();
   const relatoriosUrl = toPanelUrl('adm-patrimonio');
   const statusUrl = toPanelUrl('patrimonio-status');
@@ -796,76 +579,54 @@ export function renderContent(content) {
       </div>
 
       <div class="pat-view" id="patRelatoriosView">
-      <article class="base-card">
-        <div class="pat-filtros-row">
-          <div class="pat-filtros-grid">
-            <div class="base-field">
-              <label class="base-label" for="fCoordenacao">Regional</label>
-              <select class="base-select" id="fCoordenacao"><option value="">Todas</option></select>
-            </div>
-            <div class="base-field">
-              <label class="base-label" for="fSupervisao">Supervisão</label>
-              <select class="base-select" id="fSupervisao"><option value="">Todas</option></select>
-            </div>
-            <div class="base-field">
-              <label class="base-label" for="fIgnorados">Baixado / Manutenção</label>
-              <select class="base-select" id="fIgnorados">
-                <option value="mostrar">Mostrar</option>
-                <option value="excluir">Excluir</option>
-              </select>
-            </div>
-            <div class="base-field">
-              <label class="base-label" for="fBusca">Busca</label>
-              <input class="base-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" />
-            </div>
-          </div>
-
-          <div class="base-actions">
-            <button class="base-button primary icon-button" id="btnAplicar" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
-            <button class="base-button secondary icon-button" id="btnLimpar" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
-            <button class="base-button secondary icon-button" id="btnCsv" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
-            <button class="base-button secondary icon-button" id="btnPdf" title="Exportar PDF" aria-label="Exportar PDF">${ICONS.photo}</button>
-            <button class="base-button secondary icon-button" id="btnPdfRegional" title="Exportar PDF por regional" aria-label="Exportar PDF por regional">${ICONS.doc}</button>
-          </div>
+        <div class="fm-kpis">
+          ${cardFiltro({ label: 'Itens', tone: 'blue', icone: 'total', kpi: 'id="sumRegistros"', dica: 'Patrimônios dentro dos filtros' })}
+          ${cardFiltro({ filtro: 'emdia', atributo: 'data-filter-tipo', label: 'Em dia', tone: 'green', icone: 'ok', kpi: 'id="sumEmDia"', dica: 'Mostrar somente os em dia (clique de novo para limpar)' })}
+          ${cardFiltro({ filtro: 'atrasados', atributo: 'data-filter-tipo', label: 'Em atraso', tone: 'red', icone: 'alerta', kpi: 'id="sumAtrasados"', dica: 'Mostrar somente os em atraso, incluindo os sem leitura (clique de novo para limpar)' })}
+          ${cardFiltro({ label: '% em dia', tone: 'purple', icone: 'relogio', kpi: 'id="sumPercentual"', dica: 'Percentual de patrimônios com leitura em dia' })}
         </div>
 
-        <pre id="patrimonioFeedback" style="white-space:pre-wrap;margin:14px 0 0;color:#cbd5e1;">Carregando base atual...</pre>
-      </article>
-
-      <article class="base-card patrimonio-table-card">
-        <div class="patrimonio-table-toolbar">
-          <div class="pat-view-modes" role="group" aria-label="Modo de visualização">
-            <button class="pat-view-mode-btn active" type="button" data-view-mode="colaborador">Por colaborador</button>
-            <button class="pat-view-mode-btn" type="button" data-view-mode="regional">Por regional</button>
-            <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
-          </div>
-          <div class="pat-toolbar-right">
-            <div class="patrimonio-legend" role="group" aria-label="Filtrar pela situação da leitura">
-              <button class="legend-chip pat-filter-chip" type="button" data-filter-tipo="emdia" aria-pressed="false" title="Mostrar somente os em dia (clique de novo para limpar)"><span class="legend-dot ok"></span> Em dia</button>
-              <button class="legend-chip pat-filter-chip" type="button" data-filter-tipo="atrasados" aria-pressed="false" title="Mostrar somente os em atraso, incluindo os sem leitura (clique de novo para limpar)"><span class="legend-dot atraso"></span> Em atraso</button>
+        <div class="fm-card"><div class="fm-body">
+          <div class="fm-bar">
+            <div class="fm-search">${ICON.busca}<input class="fm-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" /></div>
+            <select class="fm-select" id="fCoordenacao" aria-label="Regional"><option value="">Todas as regionais</option></select>
+            <select class="fm-select" id="fSupervisao" aria-label="Supervisão"><option value="">Todas as supervisões</option></select>
+            <select class="fm-select" id="fIgnorados" aria-label="Baixado / Manutenção">
+              <option value="mostrar">Baixado/Manutenção: mostrar</option>
+              <option value="excluir">Baixado/Manutenção: excluir</option>
+            </select>
+            <div class="fm-actions">
+              <button class="fm-ic termo" id="btnAplicar" type="button" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
+              <button class="fm-ic" id="btnLimpar" type="button" title="Limpar filtros" aria-label="Limpar filtros">${ICONS.x}</button>
+              <button class="fm-ic" id="btnCsv" type="button" title="Exportar CSV" aria-label="Exportar CSV">${ICONS.sheet}</button>
+              <button class="fm-ic" id="btnPdf" type="button" title="Exportar PDF" aria-label="Exportar PDF">${ICONS.photo}</button>
+              <button class="fm-ic" id="btnPdfRegional" type="button" title="Exportar PDF por regional" aria-label="Exportar PDF por regional">${ICONS.doc}</button>
             </div>
+          </div>
+
+          <div class="fm-bar">
+            <div class="pat-view-modes" role="group" aria-label="Modo de visualização">
+              <button class="pat-view-mode-btn active" type="button" data-view-mode="colaborador">Por colaborador</button>
+              <button class="pat-view-mode-btn" type="button" data-view-mode="regional">Por regional</button>
+              <button class="pat-view-mode-btn" type="button" data-view-mode="lista">Lista</button>
+            </div>
+            <span class="fm-count" id="patrimonioFeedback">Carregando base atual...</span>
             <div class="pat-pagination">
-              <button class="base-button secondary icon-button" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
-              <span class="pat-pagination-sep">|</span>
-              <button class="base-button secondary icon-button" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
-              <span class="pat-pagination-sep">|</span>
+              <button class="fm-ic" id="btnPrevPage" type="button" title="Página anterior" aria-label="Página anterior">${ICONS.chevronLeft}</button>
               <span id="paginationInfo" class="pagination-chip">1/1</span>
+              <button class="fm-ic" id="btnNextPage" type="button" title="Próxima página" aria-label="Próxima página">${ICONS.chevronRight}</button>
             </div>
           </div>
-        </div>
 
-        <div class="table-shell">
-          <div class="table-scroll-x">
-            <table class="patrimonio-table">
-              <thead id="patrimonioThead">
-              </thead>
+          <div class="fm-table-wrap">
+            <table class="fm-table patrimonio-table">
+              <thead id="patrimonioThead"></thead>
               <tbody id="patrimonioRows">
-                <tr><td colspan="7">Carregando...</td></tr>
+                <tr><td colspan="7" class="fm-empty">Carregando...</td></tr>
               </tbody>
             </table>
           </div>
-        </div>
-      </article>
+        </div></div>
       </div>
 
       <div class="pat-view" id="patDesligadosView" hidden></div>
@@ -924,7 +685,8 @@ export function renderContent(content) {
     state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
     state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
     renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
-    updateSummary(state.filteredRows);
+    // Os cards contam o que os filtros deixam passar, ignorando o chip Em dia / Em atraso (senão o outro card zeraria).
+    updateSummary(applyFilters(state.allRows, { ...readFilters(), tipo: 'geral' }));
   };
 
   const syncTipoChips = () => {
@@ -977,7 +739,7 @@ export function renderContent(content) {
       ? state.allRows.filter((row) => normalizeKey(getRegional(row)) === normalizeKey(coord))
       : state.allRows;
     const supervisoes = [...new Set(source.map((row) => normalizeText(row.supervisao)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    fillSelectOptions('fSupervisao', supervisoes, 'Todas');
+    fillSelectOptions('fSupervisao', supervisoes, 'Todas as supervisões');
   };
 
   document.getElementById('btnAplicar')?.addEventListener('click', () => {
@@ -1121,8 +883,10 @@ export function renderContent(content) {
 
   const applyRowsToUi = (rows) => {
     state.allRows = rows;
+    const aviso = document.getElementById('patrimonioFeedback');
+    if (aviso && aviso.textContent === 'Carregando base atual...') aviso.textContent = '';
     const coordenacoes = [...new Set(rows.map((row) => getRegional(row)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    fillSelectOptions('fCoordenacao', coordenacoes, 'Todas');
+    fillSelectOptions('fCoordenacao', coordenacoes, 'Todas as regionais');
     refreshSupervisoes();
     applyAndRender();
   };
