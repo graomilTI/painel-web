@@ -479,37 +479,6 @@ Deno.serve(async (req) => {
     }
 
     const activeWindowStart = todayInSaoPaulo();
-    const activePrograms = await paginateAll<Record<string, unknown>>(
-      (from, to) => service
-        .from('programacao_dia')
-        .select('id,data_referencia')
-        .gte('data_referencia', activeWindowStart)
-        .range(from, to),
-    );
-    const globalOsIds = activePrograms.map((row) => clean(row.id)).filter(Boolean);
-    const globalLinks: Record<string, unknown>[] = [];
-    // Sem paginar, o PostgREST corta em 1000 linhas sem erro: em 21/09/2026 eram
-    // 1196 vínculos confirmados, e os CPFs cortados deixavam de contar como
-    // "atuando em outra regional". Aí a regional de cadastro emitia LIMPAR pra
-    // quem estava trabalhando em outra, e a cada reconciliação (10 min) o estado
-    // alternava APLICAR/LIMPAR.
-    for (const ids of chunk(globalOsIds)) {
-      const rows = await paginateAll<Record<string, unknown>>(
-        (from, to) => service
-          .from('programacao_equipe')
-          .select('programacao_id,os_id,colaborador_id,nome_colaborador,confirmado,created_at')
-          .in('programacao_id', ids)
-          .eq('confirmado', true)
-          .order('id')
-          .range(from, to),
-      );
-      globalLinks.push(...rows.map((row) => ({
-        ...row,
-        colaborador_key: row.colaborador_id,
-        colaborador_cpf: row.colaborador_id,
-      })));
-    }
-
     const resolveLinkCpf = (link: Record<string, unknown>) => {
       const direct = digits(link.colaborador_cpf ?? link.colaborador_key);
       if (direct.length === 11) return { cpf: direct, error: null };
@@ -522,31 +491,24 @@ Deno.serve(async (req) => {
       return { cpf: '', error: 'COLABORADOR_NAO_LOCALIZADO' };
     };
 
+    // Uma chamada devolve só os pares distintos (colaborador_id, nome) dos vínculos confirmados e dos
+    // DISPONIVEL dos dias >= hoje (RPC grm_despesas_colaboradores_janela_ativa). Antes eram ~9 chamadas
+    // paginadas baixando programacao_equipe/programacao_colaboradores inteiras a cada publicação. O
+    // PostgREST ainda corta em 1000 linhas, então pagina como as outras leituras.
+    // Regra preservada: nos vínculos confirmados só vale o id como CPF/chave (sem resolver por nome);
+    // nos DISPONIVEL o nome também entra na resolução.
+    const janelaRows = await paginateAll<Record<string, unknown>>(
+      (from, to) => service
+        .rpc('grm_despesas_colaboradores_janela_ativa', { p_desde: activeWindowStart })
+        .range(from, to),
+    );
     const cpfsAuthorizedInActiveWindow = new Set<string>();
-    for (const link of globalLinks) {
-      const resolved = resolveLinkCpf(link);
+    for (const row of janelaRows) {
+      const resolved = resolveLinkCpf(row.origem === 'DISPONIVEL'
+        ? { colaborador_key: row.colaborador_id, colaborador_cpf: row.colaborador_id, colaborador_nome: row.nome_colaborador }
+        : { colaborador_key: row.colaborador_id, colaborador_cpf: row.colaborador_id });
       if (!resolved.cpf) continue;
       cpfsAuthorizedInActiveWindow.add(resolved.cpf);
-    }
-    for (const ids of chunk(globalOsIds)) {
-      const availableGlobalRows = await paginateAll<Record<string, unknown>>(
-        (from, to) => service
-          .from('programacao_colaboradores')
-          .select('programacao_id,colaborador_id,nome_colaborador')
-          .in('programacao_id', ids)
-          .eq('disponibilidade', 'DISPONIVEL')
-          .order('id')
-          .range(from, to),
-      );
-      for (const row of availableGlobalRows) {
-        const resolved = resolveLinkCpf({
-          colaborador_key: row.colaborador_id,
-          colaborador_cpf: row.colaborador_id,
-          colaborador_nome: row.nome_colaborador,
-        });
-        if (!resolved.cpf) continue;
-        cpfsAuthorizedInActiveWindow.add(resolved.cpf);
-      }
     }
 
     const overall = {
