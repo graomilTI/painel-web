@@ -368,10 +368,36 @@ async function fetchAllCurrent(supabase) {
   return rows;
 }
 
+// Cada ciclo (5 s) relia a tabela `colaboradores` inteira só para comparar com o GRM, o que somava
+// ~35 GB/dia de egress do Supabase (fatura de 10/2026). A cópia fica em memória e só é relida quando
+// vence o TTL ou depois de qualquer gravação deste serviço; um erro também descarta a cópia.
+const CURRENT_CACHE_TTL_MS = Math.max(0, Number(process.env.GRM_COLABORADORES_CACHE_MS || 300000));
+const currentCache = new WeakMap();
+
+async function loadCurrent(supabase) {
+  const hit = currentCache.get(supabase);
+  if (hit && Date.now() - hit.at < CURRENT_CACHE_TTL_MS) return hit.rows;
+  const rows = await fetchAllCurrent(supabase);
+  currentCache.set(supabase, { rows, at: Date.now() });
+  return rows;
+}
+
 async function applyCycle(supabase, rawRows) {
+  try {
+    const result = await applyCycleComCache(supabase, rawRows);
+    if (result.wrote) currentCache.delete(supabase);
+    return { remote: result.remote, changed: result.changed };
+  } catch (error) {
+    currentCache.delete(supabase);
+    throw error;
+  }
+}
+
+async function applyCycleComCache(supabase, rawRows) {
   const synchronizedAt = new Date().toISOString();
   const remoteRows = rawRows.map((row) => mapStaff(row, synchronizedAt)).filter((row) => row.grm_staff_code && row.cpf && row.nome);
-  const currentRows = await fetchAllCurrent(supabase);
+  const currentRows = await loadCurrent(supabase);
+  let wrote = false;
   const byCode = new Map(currentRows.filter((row) => row.grm_staff_code).map((row) => [Number(row.grm_staff_code), row]));
   const byCpf = new Map(currentRows.filter((row) => row.cpf).map((row) => [normalizeCpf(row.cpf), row]));
   const changes = [];
@@ -384,6 +410,7 @@ async function applyCycle(supabase, rawRows) {
       // Faz a associação inicial com o código imutável do GRM sem criar um
       // evento falso para um cadastro que já existia antes deste agente.
       if (!previous.grm_staff_code) {
+        wrote = true;
         await supabase.updateById('colaboradores', previous.id, {
           grm_staff_code: remote.grm_staff_code,
           sincronizado_em: synchronizedAt,
@@ -394,6 +421,7 @@ async function applyCycle(supabase, rawRows) {
 
     // Depois que staCode foi associado, ele é a identidade canônica. Assim uma
     // correção de CPF atualiza a mesma pessoa em vez de criar outro cadastro.
+    wrote = true;
     const saved = previous
       ? await supabase.updateById('colaboradores', previous.id, remote)
       : await supabase.upsertByCpf(remote);
@@ -445,7 +473,7 @@ async function applyCycle(supabase, rawRows) {
     await supabase.insertStatusHistory(statusHistory);
   }
 
-  return { remote: remoteRows.length, changed: changes.length };
+  return { remote: remoteRows.length, changed: changes.length, wrote };
 }
 
 // Este serviço roda fora da fila grm_sync_jobs (nada o invoca via job-worker),
