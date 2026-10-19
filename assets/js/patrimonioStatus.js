@@ -1,7 +1,7 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
-import { injectEstilosFrotas, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-layout-geral';
+import { injectEstilosFrotas, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
 
 const SVG_SETA = (pontos) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="${pontos}"></polyline></svg>`;
 const ICON_ANTERIOR = SVG_SETA('15 18 9 12 15 6');

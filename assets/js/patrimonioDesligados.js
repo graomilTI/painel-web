@@ -15,7 +15,7 @@
 
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
-import { injectEstilosFrotas, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-layout-geral';
+import { injectEstilosFrotas, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
 import { gerarImagemDesligado, gerarImagemSupervisao, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-agrupar';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
