@@ -115,17 +115,6 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   let catalogoAtual = [];
 
   target.innerHTML = `<section class="fm-shell">
-    <div class="fm-head">
-      <div>
-        <div class="fm-kicker">Patrimônios · Recolhimento</div>
-        <h2 class="fm-title">Desligados com materiais a recolher</h2>
-        <p class="fm-sub">Prazo de ${PRAZO_RECOLHIMENTO_DIAS} dias a partir do desligamento; o que não for recolhido é lançado em Caixa. Clique nos cards para filtrar. Inclui as solicitações de inativação de Gestor › Programação › Sem O.S.</p>
-      </div>
-      <div class="fm-head-actions">
-        <button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button>
-        <button class="fm-btn primary" type="button" data-novo>${ICONE_MAIS} Novo desligado</button>
-      </div>
-    </div>
     <div class="fm-kpis" data-kpis></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar">
@@ -134,6 +123,8 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         <span data-chip></span>
         <button class="fm-btn ghost" type="button" data-expandir></button>
         <span class="fm-count" data-count>0 desligado(s)</span>
+        <button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button>
+        <button class="fm-btn primary" type="button" data-novo>${ICONE_MAIS} Novo desligado</button>
       </div>
       <div class="fm-table-wrap"><table class="fm-table">
         <thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th style="width:1%">Ações</th></tr></thead>

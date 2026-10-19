@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
-import { criarDesligados } from './patrimonioDesligados.js?v=20261019-layout-frotas';
+import { criarDesligados } from './patrimonioDesligados.js?v=20261019-sem-cabecalho';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
