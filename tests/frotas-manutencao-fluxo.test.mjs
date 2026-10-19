@@ -81,12 +81,14 @@ test('campos editáveis por etapa: orçamento só antes da aprovação, nada dep
 test('filtros da lista e contagem por cartão', () => {
   const lista = ['solicitada', 'em_orcamento', 'aprovada', 'em_execucao', 'concluida', 'reprovada', 'cancelada'].map((status, i) => m({ id: `m${i}`, status }));
   const c = contarPorFiltro(lista);
+  assert.deepEqual(FILTROS.map((f) => f.id), ['abertas', 'em_aprovacao', 'em_execucao', 'encerradas']);
   assert.equal(c.abertas, 4);
-  assert.equal(c.sem_servico, 2);
-  assert.equal(c.concluida, 1);
-  assert.equal(c.todos, 7);
+  assert.equal(c.em_aprovacao, 0);
+  assert.equal(c.em_execucao, 1);
+  assert.equal(c.encerradas, 3);
+  assert.equal(c.abertas + c.encerradas, lista.length);
   assert.equal(bateFiltro(m({ status: 'reprovada' }), 'abertas'), false);
-  assert.equal(FILTROS.find((f) => f.id === 'todos') !== undefined, true);
+  assert.equal(bateFiltro(m({ status: 'concluida' }), 'todos'), true);
 });
 
 test('busca encontra por placa, código, categoria e descrição do item', () => {

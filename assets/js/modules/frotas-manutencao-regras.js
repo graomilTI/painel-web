@@ -150,22 +150,19 @@ export function valorDaManutencao(m, orcamentos = []) {
   return null;
 }
 
-// Cartões-filtro da lista.
+// Cartões-filtro da lista: quatro grupos que cobrem tudo (o status exato de cada linha aparece na coluna Etapa).
+// Os ids antigos (solicitada, aprovada, concluida...) continuam valendo em bateFiltro, só não têm cartão.
 export const FILTROS = [
-  { id: 'abertas', rotulo: 'Abertas', tone: 'blue', icone: 'ferramenta', dica: 'Tudo que ainda não foi concluído, reprovado ou cancelado' },
-  { id: 'solicitada', rotulo: 'Solicitadas', tone: 'blue', icone: 'doc', dica: 'Aguardando iniciar o orçamento' },
-  { id: 'em_orcamento', rotulo: 'Em orçamento', tone: 'amber', icone: 'dinheiro', dica: 'Cotando com as oficinas' },
-  { id: 'em_aprovacao', rotulo: 'Em aprovação', tone: 'purple', icone: 'relogio', dica: 'Aguardando decisão do aprovador' },
-  { id: 'aprovada', rotulo: 'Aprovadas', tone: 'green', icone: 'ok', dica: 'Aprovadas, aguardando a OS' },
-  { id: 'em_execucao', rotulo: 'Em execução', tone: 'amber', icone: 'carro', dica: 'Veículo na oficina' },
-  { id: 'concluida', rotulo: 'Concluídas', tone: 'green', icone: 'ok', dica: 'Serviço feito e custo final lançado' },
-  { id: 'sem_servico', rotulo: 'Reprovadas / canceladas', tone: 'red', icone: 'erro', dica: 'Encerradas sem serviço' },
-  { id: 'todos', rotulo: 'Todas', tone: 'blue', icone: 'total', dica: 'Todas as manutenções' },
+  { id: 'abertas', rotulo: 'Em andamento', tone: 'blue', icone: 'ferramenta', dica: 'Ainda não terminou: solicitada, em orçamento, em aprovação, aprovada ou na oficina' },
+  { id: 'em_aprovacao', rotulo: 'Aguardando aprovação', tone: 'purple', icone: 'relogio', dica: 'Orçamento pronto, esperando a decisão do aprovador' },
+  { id: 'em_execucao', rotulo: 'Na oficina', tone: 'amber', icone: 'carro', dica: 'OS emitida, veículo na oficina' },
+  { id: 'encerradas', rotulo: 'Encerradas', tone: 'green', icone: 'ok', dica: 'Concluídas, reprovadas ou canceladas' },
 ];
 
 export function bateFiltro(m, filtro) {
   if (!filtro || filtro === 'todos') return true;
   if (filtro === 'abertas') return !['concluida', 'cancelada', 'reprovada'].includes(m.status);
+  if (filtro === 'encerradas') return ['concluida', 'cancelada', 'reprovada'].includes(m.status);
   if (filtro === 'sem_servico') return ['reprovada', 'cancelada'].includes(m.status);
   return m.status === filtro;
 }
