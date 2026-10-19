@@ -153,7 +153,16 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   const editavel = htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.match(editavel, /data-comp value="Pastilhas de freio"/);
   assert.match(editavel, /data-comp value="Discos de freio" checked/);
-  assert.match(editavel, /data-nv-comps/, 'a linha de item novo também recebe os componentes');
+  assert.doesNotMatch(editavel, /data-nv-comps|data-item-novo|data-nv="grupo_codigo"|data-item="grupo_codigo"/, 'sem dropdown de grupo na ficha: o grupo é só texto e a adição é pelo seletor');
+  assert.match(editavel, /data-acao="itens-abrir">\+ Adicionar itens/, 'com itens, o seletor abre pelo botão');
+  assert.doesNotMatch(editavel, /data-add-itens/);
+  const semItens = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
+  assert.match(semItens, /data-add-itens/);
+  assert.match(semItens, /data-pick-busca/, 'sem itens, o mesmo seletor da nova manutenção já vem aberto');
+  assert.match(semItens, /data-acao="itens-confirmar">Adicionar itens/);
+  assert.doesNotMatch(semItens, /data-acao="itens-cancelar"/, 'sem itens não há o que cancelar');
+  const encerrada0 = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
+  assert.doesNotMatch(encerrada0, /data-add-itens|itens-abrir/, 'manutenção encerrada não aceita itens');
   const encerrada = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.match(encerrada, /Itens: Discos de freio/);
   assert.doesNotMatch(encerrada, /data-comp /, 'encerrada não edita');

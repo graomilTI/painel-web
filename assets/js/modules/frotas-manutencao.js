@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut40';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut40';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut40';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut41';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut41';
 import {
-  acoesDisponiveis, categoriaDoGrupo, contarPorFiltro, grupoDaCategoria, itensPorTipo, tipoDoComponente, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut40';
+  acoesDisponiveis, contarPorFiltro, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut41';
 import {
-  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlItensDoGrupo, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut40';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut40';
+  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut41';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut41';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -22,6 +22,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     supabase: null, root: null, opts: null,
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
+    addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
     vista: 'lista', // 'lista' | 'nova' | 'ficha': nova e ficha ocupam a área da aba (sem janela)
     filtro: 'todos', visao: 'andamento', busca: '',
     loading: false, ocupado: false,
@@ -159,10 +160,13 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens,
     });
     // Ao regravar um campo a ficha é redesenhada no mesmo lugar (mantém a rolagem); ao abrir, começa no topo.
-    mostrarPagina('ficha', FICHA, html, { manterRolagem: state.vista === 'ficha' });
+    const pg = mostrarPagina('ficha', FICHA, html, { manterRolagem: state.vista === 'ficha' });
+    // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
+    const corpo = pg?.querySelector('[data-add-itens] [data-seletor-corpo]');
+    pg.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: pg.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
   }
 
   // Programação que usa o veículo parado (só quando a OS está em execução); atualiza a ficha ao chegar.
@@ -188,7 +192,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   }
 
   function abrirFicha(id) {
-    state.fichaId = id; state.maisAberto = false; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.maisAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     renderFicha();
     atualizarAfetadas();
     atualizarFinanceiro();
@@ -200,12 +204,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   }
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
-  // Componentes do guia marcados dentro de um trecho da tela (item da ficha, linha de entrada ou item novo).
-  // O seletor de grupo guarda o código do grupo; o item grava a categoria representativa dele. Sem grupos cadastrados,
-  // o seletor volta a listar as categorias e o valor já é a categoria.
-  const temGrupos = () => (state.base.grupos || []).length > 0;
-  const categoriaDaEscolha = (valor) => (temGrupos() ? categoriaDoGrupo(state.base.grupos, valor) : Number(valor));
-  const grupoDaEscolha = (valor) => (temGrupos() ? Number(valor) : grupoDaCategoria(state.base.categorias, valor));
+  // Componentes do guia marcados dentro de um item da ficha.
   const marcadosEm = (el) => [...el.querySelectorAll('[data-comp]:checked')].map((c) => c.value);
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
@@ -262,19 +261,16 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       return mudarEtapa(m, a);
     }
 
-    if (acao === 'item-adicionar') {
-      const box = ov.querySelector('[data-item-novo]');
-      const grupo = val(box, '[data-nv="grupo_codigo"]');
-      if (!grupo) return erros(['Escolha o grupo do item.']);
-      const cat = categoriaDaEscolha(grupo);
-      const nomeCat = state.base.grupos.find((g) => String(g.codigo) === grupo)?.nome || state.base.categorias.find((c) => c.codigo === cat)?.nome || 'Serviço';
-      const componentes = marcadosEm(box);
-      const texto = val(box, '[data-nv="descricao"]').trim();
-      // O tipo (peça ou serviço) vem de cada componente; "Mão de obra" e os serviços do guia viram um item de serviço.
-      let novos = itensPorTipo(cat, componentes, (nome) => tipoDoComponente(state.base.componentes, grupoDaEscolha(grupo), nome));
-      if (texto) novos = novos.length ? novos.map((n, i) => (i === 0 ? { ...n, descricao: `${n.descricao}; ${texto}` } : n)) : [{ categoria_codigo: cat, descricao: texto, tipo_item: 'peca', componentes: [] }];
-      if (!novos.length) novos = [{ categoria_codigo: cat, descricao: nomeCat, tipo_item: 'peca', componentes: [] }];
-      return executar(async () => { for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n }); }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
+    // Seletor de itens da ficha (o mesmo da nova manutenção): peças e Mão de obra viram itens separados, com o tipo vindo de cada componente.
+    if (acao === 'itens-abrir') { state.addItens = true; return renderFicha(); }
+    if (acao === 'itens-cancelar') { state.addItens = false; state.estadoItens = {}; return renderFicha(); }
+    if (acao === 'itens-confirmar') {
+      const novos = ov.__seletorItens?.ler() || [];
+      if (!novos.length) return erros(['Marque ao menos um item (escolha o grupo e marque o que será feito).']);
+      return executar(async () => {
+        for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n });
+        state.addItens = false; state.estadoItens = {};
+      }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
     if (acao === 'item-remover') {
       if (!(await confirmar({ titulo: 'Remover item', mensagem: 'Remover este item do serviço?', confirmarLabel: 'Remover' }))) return;
@@ -416,17 +412,11 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       if (!linha) return; // item novo (ainda não adicionado): vale só ao clicar em "+ Adicionar"
       return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, componentes: marcadosEm(linha) }));
     }
-    // Item novo: ao escolher a categoria, aparecem os componentes dela.
-    if (alvo.dataset.nv === 'grupo_codigo') {
-      alvo.closest('[data-item-novo]').querySelector('[data-nv-comps]').innerHTML = htmlItensDoGrupo(state.base, grupoDaEscolha(alvo.value), []);
-      return;
-    }
-    // Itens: salvam ao mudar; trocar a categoria zera o plano e os componentes (cada categoria tem os seus).
+    // Itens: a descrição salva ao mudar (o grupo não se troca: remova o item e adicione de novo no grupo certo).
     if (alvo.dataset.item) {
       const linha = alvo.closest('[data-item-id]');
       const campo = alvo.dataset.item;
       const mudanca = { [campo]: campo === 'valor' ? numeroOuNulo(alvo.value) : (alvo.value === '' ? null : alvo.value) };
-      if (campo === 'grupo_codigo') { delete mudanca.grupo_codigo; mudanca.categoria_codigo = categoriaDaEscolha(alvo.value); mudanca.plano_id = null; mudanca.componentes = []; }
       if (campo === 'descricao' && !alvo.value.trim()) return renderFicha();
       return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, ...mudanca }));
     }
