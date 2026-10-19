@@ -1,7 +1,7 @@
 // Frotas · Manutenção › Preventiva: regras puras (sem DOM nem Supabase).
 // A tela é uma lista com um veículo por linha; os serviços do guia de cada veículo (frotas_manutencao_vencimentos_v)
 // aparecem no painel lateral, agrupados por sistema.
-import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261019-frotas-manut24';
+import { RESPONSAVEIS, norm, somaNotas } from './frotas-manutencao-regras.js?v=20261019-frotas-manut25';
 
 export const FILTROS_PREVENTIVA = [
   { id: 'atencao', rotulo: 'Com vencida ou próxima', tone: 'red', icone: 'alerta', dica: 'Veículos com algum serviço vencido ou perto de vencer' },

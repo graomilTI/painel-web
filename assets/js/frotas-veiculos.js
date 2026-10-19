@@ -2,7 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { enhanceFrotasVeiculos } from './modules/frotas-veiculos-ui.js';
 import { enhanceFrotasVeiculosXlsx } from './modules/frotas-veiculos-xlsx.js';
-import './modules/frotas-veiculos.js?v=20261019-frotas-manut24';
+import './modules/frotas-veiculos.js?v=20261019-frotas-manut25';
 
 export function renderContent(content, ctx) {
   window.FROTAS_VEICULOS.openHome(content, {

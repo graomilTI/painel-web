@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut24';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut25';
 import {
-  ETAPAS, FILTROS, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
-  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut24';
+  FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut25';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -40,11 +40,10 @@ export function htmlCasca() {
     <div class="fm-kpis" data-kpis></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, oficina, motorista, categoria..." data-busca></div>
-      <select class="fm-select" data-f-natureza style="width:auto"><option value="">Natureza: todas</option>${NATUREZAS.map((n) => `<option value="${n.id}">${n.label}</option>`).join('')}</select>
-      <select class="fm-select" data-f-prioridade style="width:auto"><option value="">Prioridade: todas</option>${PRIORIDADES.map((n) => `<option value="${n.id}">${n.label}</option>`).join('')}</select>
+      <select class="fm-select" data-f-visao style="width:auto" title="Quais manutenções aparecem na lista">${VISOES.map((v) => `<option value="${v.id}">Ver: ${v.label}</option>`).join('')}</select>
       <span data-chip></span><span class="fm-count" data-contagem>0 manutenção(ões)</span></div>
-      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Código</th><th>Veículo</th><th>Serviço</th><th>Natureza</th><th>Etapa</th><th>Valor</th><th>Solicitada</th><th></th></tr></thead><tbody data-linhas></tbody></table></div>
-      <div class="fm-nota">Clique numa linha para abrir a ficha. A aprovação exige a permissão "pode aprovar" no módulo Manutenção e respeita a alçada de valor de cada aprovador. Veículo marcado como parado deixa de ser sugerido na Programação enquanto a OS estiver em execução.</div>
+      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Código</th><th>Veículo</th><th>Serviço</th><th>Próximo passo</th><th>Valor</th><th>Solicitada</th></tr></thead><tbody data-linhas></tbody></table></div>
+      <div class="fm-nota">Clique numa linha para abrir a ficha. Aprovar exige a permissão "pode aprovar" e respeita a alçada de valor de cada aprovador. Veículo marcado como parado deixa de ser sugerido na Programação enquanto estiver na oficina.</div>
     </div></div></section>`;
 }
 
@@ -52,25 +51,25 @@ export function htmlKpis(contagens, filtro) {
   return FILTROS.map((f) => cardFiltro({ filtro: f.id, tone: f.tone, icone: f.icone, label: f.rotulo, valor: String(contagens[f.id] ?? 0), dica: f.dica, ativo: f.id === filtro })).join('');
 }
 
-export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias }) {
-  if (!rows.length) return '<tr><td colspan="8" class="fm-empty">Nenhuma manutenção neste filtro. Use "+ Nova manutenção" para registrar um pedido.</td></tr>';
+export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, notasPorManut = new Map() }) {
+  if (!rows.length) return '<tr><td colspan="6" class="fm-empty">Nenhuma manutenção neste filtro. Use "+ Nova manutenção" para registrar um pedido.</td></tr>';
   const nomeCat = new Map(categorias.map((c) => [Number(c.codigo), c.nome]));
   return rows.map((m) => {
     const itens = itensPorManut.get(m.id) || [];
-    const cats = [...new Set(itens.map((i) => Number(i.categoria_codigo)))].slice(0, 4)
+    const cats = [...new Set(itens.map((i) => Number(i.categoria_codigo)))].slice(0, 3)
       .map((c) => `<span class="fm-badge blue" title="${esc(nomeCat.get(c) || '')}">${String(c).padStart(2, '0')} · ${esc((nomeCat.get(c) || '').slice(0, 22))}</span>`).join('');
     const valor = valorDaManutencao(m, orcsPorManut.get(m.id) || []);
     const alta = m.prioridade === 'alta' || m.prioridade === 'urgente' ? `<span class="fm-badge ${m.prioridade === 'urgente' ? 'red' : 'amber'}">${m.prioridade === 'urgente' ? 'Urgente' : 'Alta'}</span>` : '';
     const parado = m.veiculo_parado ? '<span class="fm-badge red" title="Veículo parado enquanto a OS estiver em execução">Parado</span>' : '';
+    const passo = proximoPasso(m, { notas: notasPorManut.get(m.id) || [] });
+    const preventiva = m.natureza === 'preventiva' ? ' <span class="fm-badge green">Preventiva</span>' : '';
     return `<tr class="fm-linha" data-abrir="${esc(m.id)}">
       <td><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}</td>
       <td><strong>${esc(m.__placa || '—')}</strong><span class="fm-mm">${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</span></td>
-      <td>${esc((m.descricao || '').slice(0, 90))}${(m.descricao || '').length > 90 ? '…' : ''}<div class="fm-chips">${cats}</div></td>
-      <td>${m.natureza ? `<span class="fm-badge ${m.natureza === 'preventiva' ? 'green' : 'amber'}">${m.natureza === 'preventiva' ? 'Preventiva' : 'Corretiva'}</span>` : '<span class="fm-mm">a definir</span>'}</td>
-      <td>${badgeStatus(m.status)} ${alta} ${parado}</td>
+      <td>${esc((m.descricao || '').slice(0, 90))}${(m.descricao || '').length > 90 ? '…' : ''}${preventiva}<div class="fm-chips">${cats}</div></td>
+      <td><span class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</span> ${alta} ${parado}</td>
       <td>${valor ? `${dinheiro(valor.valor)}<span class="fm-mm">${esc(valor.rotulo)}</span>` : '—'}</td>
-      <td>${dataLocal(m.solicitado_em)}<span class="fm-mm">${esc(m.solicitante_nome || '')}</span></td>
-      <td><button class="fm-btn ghost fm-mini" type="button" data-abrir="${esc(m.id)}">Abrir</button></td></tr>`;
+      <td>${dataLocal(m.solicitado_em)}<span class="fm-mm">${esc(m.solicitante_nome || '')}</span></td></tr>`;
   }).join('');
 }
 
@@ -79,9 +78,7 @@ export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias }) {
 export function htmlEntradaItem(base) {
   return `<div class="fm-item" data-novo-entrada>
     <select class="fm-select" data-n="categoria_codigo">${opcoesCategorias(base.categorias, null)}</select>
-    <select class="fm-select" data-n="natureza">${opcoes(NATUREZAS, '', { vazio: '— definir depois —' })}</select>
     <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)">
-    <select class="fm-select" data-n="plano_id">${opcoesPlanos(base.planos, null)}</select>
     <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, 'servico')}</select>
     <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button></div>`;
 }
@@ -90,13 +87,10 @@ export function htmlEntradaItem(base) {
 export function htmlItemAdicionado(base, item) {
   const cat = base.categorias.find((c) => Number(c.codigo) === Number(item.categoria_codigo));
   const plano = base.planos.find((p) => p.id === item.plano_id);
-  const natureza = (NATUREZAS.find((n) => n.id === item.natureza) || {}).label || 'a definir';
   const tipo = (TIPOS_ITEM.find((t) => t.id === (item.tipo_item || 'servico')) || {}).label;
   return `<div class="fm-item fm-item-lista" data-novo-item data-item-json="${esc(JSON.stringify(item))}">
     <div class="fm-ro">${String(item.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div>
-    <div class="fm-ro">${esc(natureza)}</div>
-    <div class="fm-ro">${esc(item.descricao || '—')}</div>
-    <div class="fm-ro">${esc(plano?.nome || '—')}</div>
+    <div class="fm-ro">${esc(item.descricao || '—')}${plano ? `<small>Plano do guia: ${esc(plano.nome)}</small>` : ''}</div>
     <div class="fm-ro">${esc(tipo)}</div>
     <button class="fm-ic danger" type="button" data-acao="novo-item-remover" title="Remover item" aria-label="Remover item">✕</button></div>`;
 }
@@ -114,87 +108,82 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
     <div class="fm-sec"><h4>Itens (categoria do guia)</h4>
-      <div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Tipo</span><span></span></div>
+      <div class="fm-item-cab"><span>Categoria</span><span>Descrição</span><span>Tipo</span><span></span></div>
       ${htmlEntradaItem(base)}
       <div class="fm-itens" data-novo-itens style="margin-top:10px">${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div>
-      <div class="fm-nota">Escolha a categoria e clique em <strong>+</strong> para adicionar. É preciso ao menos um item; vários itens ficam na lista acima e o <strong>✕</strong> remove. Preventiva = serviço programado por km/tempo; corretiva = reparo após falha ou desgaste (a natureza pode ficar para depois, mas é obrigatória para aprovar).</div></div>
+      <div class="fm-nota">Escolha a categoria e clique em <strong>+</strong> para adicionar. É preciso ao menos um item; vários itens ficam na lista acima e o <strong>✕</strong> remove. A categoria define o tipo de nota fiscal no GRM e o relatório de custos.</div></div>
     <div data-erros></div>
     <div class="fm-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button></div>`;
 }
 
 // ---------- ficha ----------
-function passoAPasso(m) {
-  const idxAtual = ETAPAS.indexOf(m.status);
-  const reprovada = m.status === 'reprovada';
-  const cancelada = m.status === 'cancelada';
-  return `<div class="fm-steps">${ETAPAS.map((e, i) => {
-    const info = statusInfo(e);
-    let classe = '';
-    if (cancelada) classe = i === 0 ? 'feito' : '';
-    else if (reprovada) classe = i < 2 ? 'feito' : i === 2 ? 'erro' : '';
-    else if (i < idxAtual) classe = 'feito';
-    else if (i === idxAtual) classe = e === 'concluida' ? 'feito atual' : 'atual';
-    return `<div class="fm-step ${classe}">${i + 1}. ${esc(info.curto)}</div>`;
-  }).join('')}</div>${reprovada ? `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">Reprovada: ${esc(m.motivo_status || '')}</div>` : ''}${cancelada ? `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">Cancelada: ${esc(m.motivo_status || '')}</div>` : ''}`;
+function faixaEtapa(m, notas = []) {
+  const passo = proximoPasso(m, { notas });
+  const encerrada = ['concluida', 'cancelada'].includes(m.status);
+  const aviso = (txt) => `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">${txt}</div>`;
+  return `<div class="fm-etapa"><span>${encerrada ? 'Situação' : 'Próximo passo'}</span><strong class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</strong></div>${m.status === 'reprovada' ? aviso(`Reprovada: ${esc(m.motivo_status || '')}`) : ''}${m.status === 'cancelada' ? aviso(`Cancelada: ${esc(m.motivo_status || '')}`) : ''}`;
 }
 
-function blocoDados(m, base, ed) {
-  const campo = (rotulo, conteudo, extra = '') => `<div class="fm-field ${extra}"><label>${rotulo}</label>${conteudo}</div>`;
+function blocoDados(m, base, ed, maisAberto = false) {
+  const campo = (rotulo, conteudo, extra = '', estilo = '') => `<div class="fm-field ${extra}"${estilo ? ` style="${estilo}"` : ''}><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor, sub = '') => `<div class="fm-ro">${valor || '—'}${sub ? `<small>${sub}</small>` : ''}</div>`;
   const edit = ed.cabecalho;
   return `<div class="fm-sec"><h4>Dados da manutenção</h4><div class="fm-grid2">
     ${campo('Veículo', ro(`<strong>${esc(m.__placa || '—')}</strong>`, esc(`${m.__modelo || ''}${m.__coordenacao ? ' · ' + m.__coordenacao : ''}`)))}
-    ${campo('Motorista', ro(esc(m.motorista_nome)))}
     ${campo('Solicitante', ro(esc(m.solicitante_nome), esc(dataHoraBR(m.solicitado_em))))}
-    ${campo('Origem', ro(esc(ORIGENS[m.origem] || m.origem)))}
-    ${campo('Natureza', edit ? `<select class="fm-select" data-campo="natureza">${opcoes(NATUREZAS, m.natureza, { vazio: 'Definir...' })}</select>` : ro(esc(m.natureza === 'preventiva' ? 'Preventiva' : m.natureza === 'corretiva' ? 'Corretiva' : '')))}
-    ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
-    ${campo('Km na solicitação', ro(esc(fmtKm(m.km_solicitacao))))}
+    ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
+    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), '', 'grid-column:span 3')}
+  </div>
+  <details class="fm-mais" data-mais${maisAberto ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
+    ${campo('Motorista', ro(esc(m.motorista_nome)))}
+    ${campo('Origem', ro(esc(ORIGENS[m.origem] || m.origem)))}
+    ${campo('Natureza', edit ? `<select class="fm-select" data-campo="natureza">${opcoes(NATUREZAS, m.natureza, { vazio: 'Definida ao aprovar' })}</select>` : ro(esc(m.natureza === 'preventiva' ? 'Preventiva' : m.natureza === 'corretiva' ? 'Corretiva' : '')))}
+    ${campo('Km na solicitação', ro(esc(fmtKm(m.km_solicitacao))))}
     ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Entrada na oficina', ro(esc(m.entrada_oficina_em ? dataHoraBR(m.entrada_oficina_em) : '')))}
     ${campo('Ordem de serviço', ro(esc(numeroOS(m) && m.os_emitida_em ? numeroOS(m) : '')))}
-    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), 'full')}
     ${campo('Diagnóstico da oficina', edit ? `<textarea data-campo="diagnostico" placeholder="O que a oficina encontrou">${esc(m.diagnostico || '')}</textarea>` : ro(esc(m.diagnostico)), 'full')}
-  </div></div>`;
+  </div></details></div>`;
 }
 
 function blocoItens(m, itens, base, ed) {
+  const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
+  const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
   const linhas = itens.map((it) => {
     if (!ed.itens) {
       const cat = base.categorias.find((c) => Number(c.codigo) === Number(it.categoria_codigo));
-      const plano = base.planos.find((p) => p.id === it.plano_id);
-      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.natureza || m.natureza || '—')}</div><div class="fm-ro">${esc(it.descricao || '')}</div><div class="fm-ro">${esc(plano?.nome || '—')}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
+      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
       <select class="fm-select" data-item="categoria_codigo">${opcoesCategorias(base.categorias, it.categoria_codigo)}</select>
-      <select class="fm-select" data-item="natureza">${opcoes(NATUREZAS, it.natureza, { vazio: m.natureza ? `Igual à ordem (${m.natureza})` : '— herda da ordem —' })}</select>
-      <input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">
-      <select class="fm-select" data-item="plano_id">${opcoesPlanos(base.planos, it.categoria_codigo, it.plano_id)}</select>
+      <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
       <select class="fm-select" data-item="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, it.tipo_item || 'servico')}</select>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form" data-item-novo style="grid-template-columns:2fr 1fr 2fr 1.3fr 0.8fr auto"><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><select class="fm-select" data-nv="natureza">${opcoes(NATUREZAS, '', { vazio: 'Natureza...' })}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="plano_id">${opcoesPlanos(base.planos, null)}</select><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button></div>` : '';
+  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button></div>` : '';
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
-    ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Natureza</span><span>Descrição</span><span>Plano do guia</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
+    ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
 }
 
 export function htmlFormOrcamento(base, orc = {}) {
+  const temDetalhe = [orc.fornecedor_contato, orc.valor_pecas, orc.valor_mao_obra, orc.validade, orc.condicoes_pagamento, orc.garantia, orc.observacoes].some((v) => v != null && v !== '');
   return `<div class="fm-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
     <div class="fm-field"><label>Oficina cadastrada</label><select class="fm-select" data-o="oficina_id">${opcoes(base.oficinas.filter((o) => o.ativo !== false), orc.oficina_id, { vazio: '— outra (digitar) —', rotulo: 'nome' })}</select></div>
     <div class="fm-field" style="grid-column:span 2"><label>Oficina / fornecedor</label><input class="fm-input" data-o="fornecedor" value="${esc(orc.fornecedor || '')}"></div>
-    <div class="fm-field"><label>Contato</label><input class="fm-input" data-o="fornecedor_contato" value="${esc(orc.fornecedor_contato || '')}"></div>
-    <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" value="${orc.valor_pecas ?? ''}"></div>
-    <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" value="${orc.valor_mao_obra ?? ''}"></div>
-    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" value="${orc.valor_total ?? ''}"><small>Se ficar vazio, soma peças + mão de obra.</small></div>
+    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" value="${orc.valor_total ?? ''}"><small>Se ficar vazio, soma peças + mão de obra (em Mais detalhes).</small></div>
     <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
-    <div class="fm-field"><label>Validade</label><input class="fm-input" type="date" data-o="validade" value="${esc(orc.validade || '')}"></div>
-    <div class="fm-field"><label>Pagamento</label><input class="fm-input" data-o="condicoes_pagamento" value="${esc(orc.condicoes_pagamento || '')}"></div>
-    <div class="fm-field"><label>Garantia</label><input class="fm-input" data-o="garantia" value="${esc(orc.garantia || '')}"></div>
-    <div class="fm-field"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
-    <div class="fm-field full"><label>Observações</label><textarea data-o="observacoes">${esc(orc.observacoes || '')}</textarea></div>
+    <div class="fm-field" style="grid-column:span 3"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+    <details class="fm-mais fm-field full"${temDetalhe ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
+      <div class="fm-field"><label>Contato</label><input class="fm-input" data-o="fornecedor_contato" value="${esc(orc.fornecedor_contato || '')}"></div>
+      <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" value="${orc.valor_pecas ?? ''}"></div>
+      <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" value="${orc.valor_mao_obra ?? ''}"></div>
+      <div class="fm-field"><label>Validade</label><input class="fm-input" type="date" data-o="validade" value="${esc(orc.validade || '')}"></div>
+      <div class="fm-field" style="grid-column:span 2"><label>Pagamento</label><input class="fm-input" data-o="condicoes_pagamento" value="${esc(orc.condicoes_pagamento || '')}"></div>
+      <div class="fm-field" style="grid-column:span 2"><label>Garantia</label><input class="fm-input" data-o="garantia" value="${esc(orc.garantia || '')}"></div>
+      <div class="fm-field full"><label>Observações</label><textarea data-o="observacoes">${esc(orc.observacoes || '')}</textarea></div></div></details>
     <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="orc-salvar">${orc.id ? 'Salvar orçamento' : 'Adicionar orçamento'}</button><button class="fm-btn ghost" type="button" data-acao="orc-cancelar">Cancelar</button></div></div>`;
 }
 
@@ -326,18 +315,18 @@ function blocoProgramacao(m, afetadas) {
 function blocoLinhaTempo(m) {
   const eventos = Array.isArray(m.linha_tempo) ? [...m.linha_tempo].reverse() : [];
   if (!eventos.length) return '';
-  return `<div class="fm-sec"><h4>Histórico</h4><ul class="fm-tl">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></div>`;
+  return `<details class="fm-sec fm-mais" data-hist><summary>Histórico (${eventos.length})</summary><ul class="fm-tl" style="margin-top:10px">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></details>`;
 }
 
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [] }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
-    ${passoAPasso(m)}
-    ${blocoDados(m, base, ed)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${faixaEtapa(m, notas)}
+    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, camposEditaveis, codigoManutencao, contarPorFiltro, descreverIntervalo,
-  filtrarManutencoes, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
+  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, contarPorFiltro, descreverIntervalo,
+  filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
 import { htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
@@ -33,13 +33,13 @@ test('cada etapa oferece só ações que levam a uma transição válida', () =>
   assert.deepEqual(acoesDisponiveis(m({ status: 'cancelada' })), []);
 });
 
-test('aprovar exige aprovador, orçamento escolhido, natureza, responsável e itens', () => {
+test('aprovar exige aprovador, orçamento escolhido, responsável e itens (a natureza é sugerida na aprovação)', () => {
   const emAprovacao = m({ status: 'em_aprovacao' });
   const aprovar = (ctx, mm = emAprovacao) => acoesDisponiveis(mm, ctx).find((a) => a.id === 'aprovar');
   assert.match(aprovar({ podeAprovar: false, itens: [item], orcamentos: [orc({ selecionado: true })] }).bloqueio, /aprovadores/);
   assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc()] }).bloqueio, /Escolha o orçamento/);
   assert.match(aprovar({ podeAprovar: true, itens: [], orcamentos: [orc({ selecionado: true })] }).bloqueio, /ao menos um item/);
-  assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }, m({ status: 'em_aprovacao', natureza: null })).bloqueio, /natureza/);
+  assert.equal(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }, m({ status: 'em_aprovacao', natureza: null })).bloqueio, null, 'sem natureza não bloqueia: a tela grava a sugerida');
   assert.match(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }, m({ status: 'em_aprovacao', responsavel_pagamento: null })).bloqueio, /quem paga/);
   assert.equal(aprovar({ podeAprovar: true, itens: [item], orcamentos: [orc({ selecionado: true })] }).bloqueio, null);
 });
@@ -65,8 +65,8 @@ test('reprovar e cancelar pedem motivo; concluir abre o formulário de conclusã
 
 test('pendências para aprovar listam o que falta, na ordem do trigger', () => {
   const p = pendenciasPara(m({ natureza: null, responsavel_pagamento: null }), 'aprovada', { itens: [], orcamentos: [] });
-  assert.equal(p.length, 3);
-  assert.match(p[0], /natureza/); assert.match(p[1], /quem paga/); assert.match(p[2], /item/);
+  assert.equal(p.length, 2);
+  assert.match(p[0], /quem paga/); assert.match(p[1], /item/);
   assert.deepEqual(pendenciasPara(m(), 'em_orcamento', {}), []);
 });
 
@@ -81,14 +81,50 @@ test('campos editáveis por etapa: orçamento só antes da aprovação, nada dep
 test('filtros da lista e contagem por cartão', () => {
   const lista = ['solicitada', 'em_orcamento', 'aprovada', 'em_execucao', 'concluida', 'reprovada', 'cancelada'].map((status, i) => m({ id: `m${i}`, status }));
   const c = contarPorFiltro(lista);
-  assert.deepEqual(FILTROS.map((f) => f.id), ['abertas', 'em_aprovacao', 'em_execucao', 'encerradas']);
-  assert.equal(c.abertas, 4);
-  assert.equal(c.em_aprovacao, 0);
-  assert.equal(c.em_execucao, 1);
-  assert.equal(c.encerradas, 3);
-  assert.equal(c.abertas + c.encerradas, lista.length);
-  assert.equal(bateFiltro(m({ status: 'reprovada' }), 'abertas'), false);
+  assert.deepEqual(FILTROS.map((f) => f.id), ['orcar', 'aprovar', 'emitir_os', 'na_oficina']);
+  assert.equal(c.orcar, 3, 'solicitada, em orçamento e reprovada precisam de orçamento');
+  assert.equal(c.aprovar, 0);
+  assert.equal(c.emitir_os, 1);
+  assert.equal(c.na_oficina, 1);
   assert.equal(bateFiltro(m({ status: 'concluida' }), 'todos'), true);
+  // ids antigos continuam valendo
+  assert.equal(lista.filter((x) => bateFiltro(x, 'abertas')).length, 4);
+  assert.equal(lista.filter((x) => bateFiltro(x, 'sem_servico')).length, 2);
+  assert.equal(bateFiltro(m({ status: 'concluida' }), 'concluida'), true);
+  // "Ver": em andamento (padrão), encerradas ou todas — cada manutenção cai em exatamente um dos dois grupos
+  assert.equal(lista.filter((x) => bateVisao(x, 'andamento')).length, 4);
+  assert.equal(lista.filter((x) => bateVisao(x, 'encerradas')).length, 3);
+  assert.equal(lista.filter((x) => bateVisao(x, 'todas')).length, lista.length);
+  assert.equal(filtrarManutencoes(lista, {}).length, 4, 'padrão = em andamento');
+  assert.equal(filtrarManutencoes(lista, { visao: 'encerradas' }).length, 3);
+});
+
+test('próximo passo em palavras simples e natureza sugerida na aprovação', () => {
+  const passo = (status, extra = {}, ctx = {}) => proximoPasso(m({ status, ...extra }), ctx).rotulo;
+  assert.equal(passo('solicitada'), 'Orçar ou aprovar');
+  assert.equal(passo('em_aprovacao'), 'Aprovar');
+  assert.equal(passo('reprovada'), 'Refazer orçamento');
+  assert.equal(passo('aprovada'), 'Emitir OS');
+  assert.equal(passo('em_execucao'), 'Concluir');
+  assert.equal(passo('concluida'), 'Concluída');
+  assert.equal(passo('concluida', {}, { notas: [{ enviada_em: null }] }), 'Enviar notas');
+  assert.equal(passo('concluida', { responsavel_pagamento: 'locadora' }, { notas: [{ enviada_em: null }] }), 'Concluída', 'só a empresa envia nota');
+  assert.equal(naturezaSugerida(m({ natureza: 'preventiva' }), []), 'preventiva', 'o que já foi definido vale');
+  assert.equal(naturezaSugerida(m({ natureza: null }), [{ natureza: 'preventiva' }]), 'preventiva');
+  assert.equal(naturezaSugerida(m({ natureza: null }), [{ natureza: 'preventiva' }, { natureza: null }]), 'corretiva');
+  assert.equal(naturezaSugerida(m({ natureza: null }), []), 'corretiva');
+});
+
+test('urgentes e altas vêm primeiro na lista em andamento', () => {
+  const lista = [m({ id: 'a', prioridade: 'normal' }), m({ id: 'b', prioridade: 'urgente' }), m({ id: 'c', prioridade: 'alta' }), m({ id: 'd', prioridade: 'normal' })];
+  assert.deepEqual(filtrarManutencoes(lista, {}).map((x) => x.id), ['b', 'c', 'a', 'd']);
+});
+
+test('quem aprova decide direto na solicitação; os demais pedem orçamento', () => {
+  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: true, itens: [item] })), ['aprovar_sem_orcamento', 'iniciar_orcamento', 'cancelar']);
+  assert.equal(acoesDisponiveis(m(), { podeAprovar: true, itens: [item] })[0].tom, 'primary');
+  assert.deepEqual(ids(acoesDisponiveis(m(), { podeAprovar: false, itens: [item] })), ['iniciar_orcamento', 'aprovar_sem_orcamento', 'cancelar']);
+  assert.equal(acoesDisponiveis(m(), { podeAprovar: false, itens: [item] })[0].tom, 'primary');
 });
 
 test('busca encontra por placa, código, categoria e descrição do item', () => {
@@ -100,7 +136,7 @@ test('busca encontra por placa, código, categoria e descrição do item', () =>
   assert.deepEqual(buscar('freios'), ['a']);
   assert.deepEqual(buscar('lubrificacao'), ['b']);
   assert.deepEqual(buscar('MAN-000008'), ['b']);
-  assert.deepEqual(buscar('', { natureza: 'preventiva' }), []);
+  assert.deepEqual(buscar('', { visao: 'encerradas' }), [], 'nenhuma encerrada nesta lista');
 });
 
 test('valor mostrado: final > aprovado > menor orçamento', () => {
@@ -170,7 +206,9 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(html, /Urgente/);
   assert.match(html, /Parado/);
   assert.match(htmlLinhas([], { itensPorManut: new Map(), orcsPorManut: new Map(), categorias: [] }), /Nenhuma manutenção/);
-  assert.match(htmlKpis({ abertas: 3 }, 'abertas'), /data-filtro="abertas"/);
+  assert.match(htmlKpis({ aprovar: 3 }, 'aprovar'), /data-filtro="aprovar"/);
+  assert.match(html, /Orçar ou aprovar/);
+  assert.doesNotMatch(html, />Abrir<\/button>/, 'a linha inteira abre a ficha');
   assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-html.js', import.meta.url), 'utf8'), /data-acao="nova">\+ Nova manutenção<\/button>/);
   const nova = htmlFormNova(base, { veiculo_id: 'v1', itens: [{ categoria_codigo: 2, plano_id: 'p1', natureza: 'preventiva' }] });
   assert.match(nova, /<h3>Nova manutenção<\/h3>/);
