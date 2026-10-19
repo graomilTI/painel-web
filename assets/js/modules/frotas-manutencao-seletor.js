@@ -2,7 +2,7 @@
 // Marcar itens é obrigatório; a seleção vale entre grupos (um item por grupo, com os componentes marcados), sem botão "+".
 // Funções puras (grupos, busca, itens) ficam exportadas para teste; o resto monta e liga o seletor dentro de um contêiner.
 import { esc } from '../core/ui.js';
-import { componentesDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261019-frotas-manut33';
+import { componentesDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261019-frotas-manut36';
 
 const TIPOS = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
 
@@ -43,12 +43,12 @@ export function htmlSeletor() {
     <div class="fm-pick-corpo">
       <nav class="fm-pick-grupos" data-pick-grupos aria-label="Grupos do guia"></nav>
       <section class="fm-pick-painel" data-pick-painel></section>
-    </div>
-    <div class="fm-pick-resumo" data-pick-resumo></div></div>`;
+    </div></div>`;
 }
 
-// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). Devolve { ler, qtd }.
-export function criarSeletor(box, base, { aoMudar = () => {} } = {}) {
+// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). O resumo dos itens marcados fica onde a tela quiser (`resumo`,
+// um elemento com data-pick-resumo; sem ele, procura dentro de `box`). Devolve { ler, qtd }.
+export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = {}) {
   const grupos = gruposDoSeletor(base);
   const selecao = new Map(); // grupo → nomes marcados (do guia ou digitados)
   const tipos = new Map(); // grupo → 'servico' | 'peca'
@@ -58,6 +58,7 @@ export function criarSeletor(box, base, { aoMudar = () => {} } = {}) {
   const marcados = (cod) => selecao.get(Number(cod)) || [];
   const total = () => [...selecao.values()].reduce((s, l) => s + l.length, 0);
   const q = (sel) => box.querySelector(sel);
+  const resumoEl = resumo || box.querySelector('[data-pick-resumo]');
 
   function alternar(cod, nome, ligado) {
     const lista = [...marcados(cod)];
@@ -102,7 +103,7 @@ export function criarSeletor(box, base, { aoMudar = () => {} } = {}) {
 
   function renderResumo() {
     const com = grupos.filter((g) => marcados(g.codigo).length);
-    q('[data-pick-resumo]').innerHTML = com.length
+    resumoEl.innerHTML = com.length
       ? `<span class="fm-comps-t">Itens deste pedido (${total()})</span>${com.map((g) => `<div class="fm-pick-rg"><strong>${esc(g.nome)}</strong>${marcados(g.codigo).map((n) => `<span class="fm-chip-x">${esc(n)}<button type="button" data-pick-remover data-grupo="${g.codigo}" data-nome="${esc(n)}" aria-label="Remover ${esc(n)}">✕</button></span>`).join('')}</div>`).join('')}`
       : '<div class="fm-pick-vazio fm-pick-obrig">Nenhum item marcado. Escolha um grupo à esquerda e marque o que será feito (obrigatório).</div>';
   }
@@ -112,9 +113,11 @@ export function criarSeletor(box, base, { aoMudar = () => {} } = {}) {
   box.addEventListener('click', (e) => {
     const g = e.target.closest('[data-pick-grupo]');
     if (g) { ativo = Number(g.dataset.pickGrupo); busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel(); return; }
-    const rem = e.target.closest('[data-pick-remover]');
-    if (rem) { alternar(rem.dataset.grupo, rem.dataset.nome, false); tudo(); return; }
     if (e.target.closest('[data-pick-add]')) adicionarDigitado();
+  });
+  resumoEl.addEventListener('click', (e) => {
+    const rem = e.target.closest('[data-pick-remover]');
+    if (rem) { alternar(rem.dataset.grupo, rem.dataset.nome, false); tudo(); }
   });
   box.addEventListener('change', (e) => {
     const c = e.target.closest('[data-pick-comp]');
