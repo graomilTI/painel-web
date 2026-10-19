@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut39';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut39';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut40';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut40';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut39';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut40';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -168,7 +168,8 @@ function htmlComponentesDoItem(base, it) {
   const marcados = it.componentes || [];
   const servico = it.tipo_item === 'servico';
   const nomes = itensDoGrupo(base.componentes, grupo, marcados).filter((n) => marcados.includes(n) || (tipoDoComponente(base.componentes, grupo, n) === 'servico') === servico);
-  const servicos = new Set(servico ? nomes : []);
+  // A etiqueta "serviço" vem de cada componente, não do item: uma peça marcada num item antigo de serviço continua peça.
+  const servicos = new Set(nomes.filter((n) => tipoDoComponente(base.componentes, grupo, n) === 'servico'));
   return htmlComponentes(nomes, marcados, { servicos });
 }
 

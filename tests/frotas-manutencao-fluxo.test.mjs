@@ -219,6 +219,15 @@ test('peça ou serviço vem do item: peça por padrão, Mão de obra e serviços
   assert.match(form, /data-o="valor_mao_obra" data-auto="1"/);
 });
 
+test('a etiqueta "serviço" na ficha vem de cada componente: peça marcada em item antigo de serviço continua peça', () => {
+  const comps = [{ grupo_codigo: 9, categoria_codigo: 7, nome: 'Kit de embreagem', tipo: 'peca', ordem: 1 }, { grupo_codigo: 9, categoria_codigo: 7, nome: 'Revisão do câmbio', tipo: 'servico', ordem: 2 }];
+  const b = { ...base, grupos: [{ codigo: 9, nome: 'Transmissão e embreagem', categoria_codigo: 7 }], categorias: [{ codigo: 7, nome: 'Transmissão', ativo: true, grupo_codigo: 9 }], componentes: comps };
+  const antigo = { id: 'i9', manutencao_id: 'm1', categoria_codigo: 7, tipo_item: 'servico', descricao: 'Kit', componentes: ['Kit de embreagem'] };
+  const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [antigo], orcamentos: [], base: b, podeAprovar: true });
+  assert.match(html, /data-comp value="Kit de embreagem" checked> Kit de embreagem<\/label>/, 'a peça marcada continua na lista e sem etiqueta');
+  assert.match(html, /Revisão do câmbio <em class="fm-pick-tag">serviço<\/em>/, 'o serviço do guia leva a etiqueta');
+});
+
 test('urgentes e altas vêm primeiro na lista em andamento', () => {
   const lista = [m({ id: 'a', prioridade: 'normal' }), m({ id: 'b', prioridade: 'urgente' }), m({ id: 'c', prioridade: 'alta' }), m({ id: 'd', prioridade: 'normal' })];
   assert.deepEqual(filtrarManutencoes(lista, {}).map((x) => x.id), ['b', 'c', 'a', 'd']);
