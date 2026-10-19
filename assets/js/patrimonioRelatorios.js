@@ -309,35 +309,9 @@ function injectVisualStyles() {
     .pat-group-detail th { color:rgba(226,232,240,.62); font-size:.72rem; text-transform:uppercase; text-align:left; }
     .pat-count-badge { display:inline-flex; padding:4px 9px; border-radius:999px; background:rgba(52,211,153,.12); color:#bbf7d0; font-weight:800; }
     .pat-view[hidden] { display:none !important; }
-    .patrimonio-relatorios-page .pat-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 14px;
-    }
-    .patrimonio-relatorios-page .pat-tab {
-      appearance: none;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      border-bottom-color: transparent;
-      background: rgba(15, 23, 42, 0.34);
-      color: rgba(226, 232, 240, 0.72);
-      font: inherit;
-      font-weight: 600;
-      font-size: 13.5px;
-      text-decoration: none;
-      cursor: pointer;
-      padding: 10px 20px;
-      border-radius: 12px 12px 0 0;
-      box-shadow: inset 0 -3px 0 transparent;
-      transition: color .15s ease, background .15s ease;
-    }
-    .patrimonio-relatorios-page .pat-tab:hover { color: #e2e8f0; }
-    .patrimonio-relatorios-page .pat-tab.active {
-      background: rgba(2, 12, 10, 0.55);
-      color: #ecfdf5;
-      border-color: rgba(45, 212, 191, 0.3);
-      border-bottom-color: transparent;
-      box-shadow: inset 0 -3px 0 #2dd4a0;
-    }
+    /* Abas no padrão dos hubs do Frotas (assets/css/frotas-hub.css): texto + risco no ativo. */
+    .patrimonio-relatorios-page .frotas-hub-tabs { margin-bottom: 14px; }
+    .patrimonio-relatorios-page a.ds-tab { text-decoration: none; }
     .pat-desligados-empty { padding:34px; text-align:center; color:rgba(226,232,240,.68); }
     .pat-alert { border-color:rgba(251,146,60,.28); background:rgba(124,45,18,.12); }
     @media (max-width: 900px) {
@@ -813,10 +787,12 @@ export function renderContent(content) {
 
   content.innerHTML = `
     <section class="base-page patrimonio-relatorios-page">
-      <div class="pat-tabs" role="tablist">
-        <a href="${relatoriosUrl}" class="pat-tab active" id="tabRelatorios">Relatórios</a>
-        <a href="${statusUrl}" class="pat-tab">Status</a>
-        <button class="pat-tab" id="btnDesligados" type="button">Desligados</button>
+      <div class="frotas-hub-tabs">
+        <div class="ds-tabs" role="tablist">
+          <a href="${relatoriosUrl}" class="ds-tab active" id="tabRelatorios" role="tab" aria-selected="true">Relatórios</a>
+          <a href="${statusUrl}" class="ds-tab" role="tab" aria-selected="false">Status</a>
+          <button class="ds-tab" id="btnDesligados" type="button" role="tab" aria-selected="false">Desligados</button>
+        </div>
       </div>
 
       <div class="pat-view" id="patRelatoriosView">
