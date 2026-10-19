@@ -213,6 +213,23 @@ export function proximoPasso(m, { notas = [] } = {}) {
   }
 }
 
+// Componentes e peças do guia de uma categoria, na ordem do guia. `marcados` (nomes já gravados no item) entram mesmo que o
+// catálogo tenha mudado depois, para não sumirem da ficha.
+export function componentesDaCategoria(componentes = [], categoria, marcados = []) {
+  const doGuia = componentes.filter((c) => Number(c.categoria_codigo) === Number(categoria)).sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
+  return [...doGuia, ...marcados.filter((n) => !doGuia.includes(n))];
+}
+
+// Componentes do guia ligados a um serviço (plano) da Preventiva; vazio quando o serviço não tem peças catalogadas.
+export function componentesDoServico(componentes = [], categoria, planoCodigo) {
+  if (!planoCodigo) return [];
+  return componentes.filter((c) => Number(c.categoria_codigo) === Number(categoria) && c.plano_codigo === planoCodigo)
+    .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
+}
+
+// Texto do item quando a pessoa só marcou componentes.
+export const descricaoDosComponentes = (nomes = []) => nomes.join(', ');
+
 // Natureza que vale na aprovação quando ninguém definiu: tudo preventivo → preventiva; senão corretiva.
 export function naturezaSugerida(m, itens = []) {
   if (m?.natureza) return m.natureza;

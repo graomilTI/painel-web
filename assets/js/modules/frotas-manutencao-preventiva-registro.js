@@ -4,14 +4,14 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut26';
-import { RESPONSAVEIS, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261019-frotas-manut26';
-import { htmlEntradaNota } from './frotas-manutencao-html.js?v=20261019-frotas-manut26';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261019-frotas-manut26';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut27';
+import { RESPONSAVEIS, componentesDoServico, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261019-frotas-manut27';
+import { htmlComponentes, htmlEntradaNota } from './frotas-manutencao-html.js?v=20261019-frotas-manut27';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261019-frotas-manut27';
 import {
   filtrarServicos, hojeBrasilISO, kmMais, nomeCurto, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261019-frotas-manut26';
-import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261019-frotas-manut26';
+} from './frotas-manutencao-preventiva-regras.js?v=20261019-frotas-manut27';
+import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261019-frotas-manut27';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
@@ -20,15 +20,18 @@ const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
 // (os cards selecionados na janela do veículo).
 export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais = [], aoConcluir = async () => {} }) {
   // Oficinas (sugestão de quem emitiu a nota) e quem paga a manutenção deste veículo; sem acesso, segue em branco.
-  const [oficinas, veic] = await Promise.all([
+  const [oficinas, veic, componentes] = await Promise.all([
     dados.carregarOficinas(supabase).catch(() => []),
     supabase.from('frotas_veiculos').select('responsavel_manutencao').eq('id', veiculo.veiculo_id).maybeSingle().then((r) => r.data).catch(() => null),
+    dados.carregarComponentes(supabase).catch(() => []),
   ]);
   const responsavelPadrao = veic?.responsavel_manutencao || '';
   const servicos = veiculo.servicos;
   const porId = new Map(servicos.map((s) => [s.plano_id, s]));
   const marcados = new Set(planosIniciais.filter((id) => porId.has(id)));
   const prazos = new Map(); // plano_id → { km, data, editouKm, editouData }
+  const compsSel = new Map(); // plano_id → Set(nomes dos componentes do guia feitos neste serviço)
+  const compsDoPlano = (id) => { const s = porId.get(id); return s ? componentesDoServico(componentes, s.categoria_codigo, s.plano_codigo) : []; };
   let passo = 1;
   let mostrarVerificacoes = [...marcados].some((id) => porId.get(id)?.tipo === 'verificacao');
 
@@ -43,6 +46,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
           <div class="fm-field"><label>Oficina (opcional)</label><input class="fm-input" data-r="oficina" maxlength="120"></div></div>
         <div class="fm-prev-busca"><input class="fm-input" data-busca-servico placeholder="Buscar serviço (óleo, freio, filtro...)"><label class="fm-check"><input type="checkbox" data-ver> Mostrar verificações</label></div>
         <div class="fm-prev-marcados" data-marcados></div>
+        <div class="fm-prev-comps" data-comps-servico></div>
         <div class="fm-svc-grid fm-svc-grid-rolagem" data-grupos></div></section>
       <section data-passo="2" hidden><div class="fm-mm" style="margin-bottom:8px">Próximo km e próxima data já vêm do intervalo do guia; ajuste se o combinado for outro. Deixe em branco o que não tem prazo.</div><div class="fm-prev-lista" data-prazos></div></section>
       <section data-passo="3" hidden>
@@ -68,7 +72,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
   const dadosPasso1 = () => ({ data: campo('data').value, km: campo('km').value === '' ? null : Number(campo('km').value) });
   const itensMarcados = () => [...marcados].map((id) => {
     const p = prazos.get(id) || {};
-    return { plano_id: id, nome: porId.get(id)?.plano_nome || '', proximo_km: p.km === '' || p.km == null ? null : Number(p.km), proxima_data: p.data || null };
+    return { plano_id: id, nome: porId.get(id)?.plano_nome || '', componentes: [...(compsSel.get(id) || [])], proximo_km: p.km === '' || p.km == null ? null : Number(p.km), proxima_data: p.data || null };
   });
 
   // ---------- passo 1: serviços (cards selecionáveis) ----------
@@ -80,6 +84,18 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
     ov.querySelector('[data-marcados]').innerHTML = marcados.size
       ? `<span class="fm-mm">Marcados:</span> ${[...marcados].map((id) => `<span class="fm-chip-x">${esc(nomeCurto(porId.get(id)?.plano_nome || ''))}<button type="button" data-desmarcar="${esc(id)}" aria-label="Desmarcar">✕</button></span>`).join('')}`
       : '<span class="fm-mm">Nenhum serviço marcado ainda. Toque nos serviços feitos.</span>';
+    renderComponentes();
+  }
+
+  // Itens do guia dentro de cada serviço marcado (vêm marcados; desmarque o que não foi feito).
+  function renderComponentes() {
+    for (const id of [...compsSel.keys()]) if (!marcados.has(id)) compsSel.delete(id);
+    ov.querySelector('[data-comps-servico]').innerHTML = [...marcados].map((id) => {
+      const nomes = compsDoPlano(id);
+      if (!nomes.length) return '';
+      if (!compsSel.has(id)) compsSel.set(id, new Set(nomes));
+      return `<div class="fm-prev-comp" data-comp-plano="${esc(id)}"><strong>${esc(nomeCurto(porId.get(id)?.plano_nome || ''))}</strong>${htmlComponentes(nomes, [...compsSel.get(id)], { titulo: 'Itens feitos (opcional)' })}</div>`;
+    }).join('');
   }
 
   // ---------- passo 2: próximos prazos ----------
@@ -176,7 +192,7 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
       id = await dados.registrarPreventiva(supabase, {
         veiculo_id: veiculo.veiculo_id, data: registro.data, km: registro.km, oficina: campo('oficina').value.trim(), observacoes: campo('obs').value.trim(),
         responsavel: registro.responsavel, custo: registro.custo,
-        itens: registro.itens.map(({ plano_id, proximo_km, proxima_data }) => ({ plano_id, proximo_km, proxima_data })),
+        itens: registro.itens.map(({ plano_id, proximo_km, proxima_data, componentes: comps }) => ({ plano_id, proximo_km, proxima_data, componentes: comps })),
       });
     } catch (err) {
       mostrarErros([err.message || 'Erro ao registrar a preventiva.']); botoes.forEach((b) => { b.disabled = false; });
@@ -223,6 +239,10 @@ export async function abrirRegistro({ supabase, veiculo, planos, planosIniciais 
   ov.addEventListener('change', (e) => {
     const t = e.target;
     if (t.matches('[data-ver]')) { mostrarVerificacoes = t.checked; renderGrupos(); }
+    if (t.matches('[data-comp]')) {
+      const bloco = t.closest('[data-comp-plano]');
+      if (bloco) compsSel.set(bloco.dataset.compPlano, new Set([...bloco.querySelectorAll('[data-comp]:checked')].map((c) => c.value)));
+    }
   });
   ov.addEventListener('click', async (e) => {
     const opcao = e.target.closest('[data-pz-km-add],[data-pz-meses],[data-pz-dias]'); if (opcao) return aplicarOpcaoPrazo(opcao);

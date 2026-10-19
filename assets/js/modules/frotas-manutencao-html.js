@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut26';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut27';
 import {
-  FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  componentesDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut26';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut27';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -26,6 +26,12 @@ export function opcoesPlanos(planos, categoria, selecionado) {
   const lista = categoria ? planosDaCategoria(planos, categoria) : [];
   return '<option value="">— nenhum —</option>' + lista.map((p) =>
     `<option value="${esc(p.id)}"${p.id === selecionado ? ' selected' : ''}>${esc(p.nome)} (${esc(descreverIntervalo(p))})</option>`).join('');
+}
+
+// Itens do guia dentro do serviço: uma caixa por componente/peça da categoria (marcados = nomes já escolhidos).
+export function htmlComponentes(nomes, marcados = [], { titulo = 'Itens do guia (opcional)' } = {}) {
+  if (!nomes.length) return '';
+  return `<div class="fm-comps"><span class="fm-comps-t">${esc(titulo)}</span>${nomes.map((n) => `<label class="fm-comp"><input type="checkbox" data-comp value="${esc(n)}"${marcados.includes(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>`;
 }
 
 export function badgeStatus(status) {
@@ -80,7 +86,8 @@ export function htmlEntradaItem(base) {
     <select class="fm-select" data-n="categoria_codigo">${opcoesCategorias(base.categorias, null)}</select>
     <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)">
     <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, 'servico')}</select>
-    <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button></div>`;
+    <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
+    <div class="fm-item-comps" data-n-comps></div></div>`;
 }
 
 // Item já adicionado (lista abaixo da entrada): texto fixo e "x" para remover. Os dados ficam em data-item-json.
@@ -90,7 +97,7 @@ export function htmlItemAdicionado(base, item) {
   const tipo = (TIPOS_ITEM.find((t) => t.id === (item.tipo_item || 'servico')) || {}).label;
   return `<div class="fm-item fm-item-lista" data-novo-item data-item-json="${esc(JSON.stringify(item))}">
     <div class="fm-ro">${String(item.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div>
-    <div class="fm-ro">${esc(item.descricao || '—')}${plano ? `<small>Plano do guia: ${esc(plano.nome)}</small>` : ''}</div>
+    <div class="fm-ro">${esc(item.descricao || '—')}${plano ? `<small>Plano do guia: ${esc(plano.nome)}</small>` : ''}${(item.componentes || []).length && item.descricao !== item.componentes.join(', ') ? `<small>Itens: ${esc(item.componentes.join(', '))}</small>` : ''}</div>
     <div class="fm-ro">${esc(tipo)}</div>
     <button class="fm-ic danger" type="button" data-acao="novo-item-remover" title="Remover item" aria-label="Remover item">✕</button></div>`;
 }
@@ -151,18 +158,20 @@ function blocoDados(m, base, ed, maisAberto = false) {
 function blocoItens(m, itens, base, ed) {
   const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
   const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
+  const notaComponentes = (it) => ((it.componentes || []).length && it.descricao !== it.componentes.join(', ') ?`<small>Itens: ${esc(it.componentes.join(', '))}</small>` : '');
   const linhas = itens.map((it) => {
     if (!ed.itens) {
       const cat = base.categorias.find((c) => Number(c.codigo) === Number(it.categoria_codigo));
-      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
+      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
       <select class="fm-select" data-item="categoria_codigo">${opcoesCategorias(base.categorias, it.categoria_codigo)}</select>
       <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
       <select class="fm-select" data-item="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, it.tipo_item || 'servico')}</select>
-      <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button></div>`;
+      <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
+      <div class="fm-item-comps">${htmlComponentes(componentesDaCategoria(base.componentes, it.categoria_codigo, it.componentes || []), it.componentes || [])}</div></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button></div>` : '';
+  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
     ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
