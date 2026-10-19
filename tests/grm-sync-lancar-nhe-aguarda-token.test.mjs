@@ -63,9 +63,22 @@ test('token expirado nao vale e e apagado do cache', async () => {
   } finally { restaurar(); }
 });
 
-test('token recusado pelo GRM nao vale', async () => {
+// Desde 3a3cd447 o token em cache dentro da validade NAO e conferido no GRM a cada execucao
+// (a rota de conferencia sera recusada pelas novas regras); so com suspeita ou GRM_TOKEN_VALIDAR=on.
+test('token dentro da validade vale sem consultar o GRM', async () => {
   const dir = dirTemp();
   const { modulo, restaurar } = carregarCache(dir);
+  try {
+    fs.writeFileSync(path.join(dir, NOME_TOKEN), JSON.stringify({ token: jwt(Math.floor(Date.now() / 1000) + 3600), savedAt: Date.now() }));
+    let consultas = 0;
+    assert.equal(await modulo.tokenGrmEmCacheValido({ validar: async () => { consultas += 1; return false; } }), true);
+    assert.equal(consultas, 0);
+  } finally { restaurar(); }
+});
+
+test('token recusado pelo GRM nao vale quando a conferencia esta ligada', async () => {
+  const dir = dirTemp();
+  const { modulo, restaurar } = carregarCache(dir, { GRM_TOKEN_VALIDAR: 'on' });
   try {
     fs.writeFileSync(path.join(dir, NOME_TOKEN), JSON.stringify({ token: jwt(Math.floor(Date.now() / 1000) + 3600), savedAt: Date.now() }));
     assert.equal(await modulo.tokenGrmEmCacheValido({ validar: async () => false }), false);
