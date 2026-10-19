@@ -91,7 +91,7 @@ export function pendenciasPara(m, para, { itens = [], orcamentos = [] } = {}) {
   const lista = [];
   if (para === 'em_aprovacao' && !orcamentos.length) lista.push('Cadastre ao menos um orçamento.');
   if (para === 'aprovada') {
-    if (!m.natureza) lista.push('Defina a natureza (preventiva ou corretiva).');
+    // A natureza não bloqueia: se ninguém definiu, a tela grava a sugerida (naturezaSugerida) junto da aprovação.
     if (!m.responsavel_pagamento) lista.push('Informe quem paga a manutenção.');
     if (!itens.length) lista.push('Informe ao menos um item (categoria do guia).');
   }
@@ -111,12 +111,12 @@ export function acoesDisponiveis(m, { podeAprovar = false, itens = [], orcamento
   };
   const cancelar = acao({ id: 'cancelar', rotulo: 'Cancelar manutenção', para: 'cancelada', exigeMotivo: true, tom: 'danger' });
   switch (m.status) {
-    case 'solicitada':
-      return [
-        acao({ id: 'iniciar_orcamento', rotulo: 'Iniciar orçamento', para: 'em_orcamento', tom: 'primary' }),
-        acao({ id: 'aprovar_sem_orcamento', rotulo: 'Aprovar sem orçamento', para: 'aprovada', exigeAprovador: true, formulario: 'sem_orcamento', tom: 'soft' }),
-        cancelar,
-      ];
+    case 'solicitada': {
+      // Serviço pequeno: quem aprova decide direto pelo valor estimado; os demais pedem orçamento.
+      const direto = (tom) => acao({ id: 'aprovar_sem_orcamento', rotulo: 'Aprovar sem orçamento', para: 'aprovada', exigeAprovador: true, formulario: 'sem_orcamento', tom });
+      const orcar = (tom) => acao({ id: 'iniciar_orcamento', rotulo: podeAprovar ? 'Pedir orçamento' : 'Iniciar orçamento', para: 'em_orcamento', tom });
+      return podeAprovar ? [direto('primary'), orcar('soft'), cancelar] : [orcar('primary'), direto('soft'), cancelar];
+    }
     case 'em_orcamento':
       return [
         acao({ id: 'enviar_aprovacao', rotulo: 'Enviar para aprovação', para: 'em_aprovacao', tom: 'primary' }),
@@ -150,41 +150,90 @@ export function valorDaManutencao(m, orcamentos = []) {
   return null;
 }
 
-// Cartões-filtro da lista: quatro grupos que cobrem tudo (o status exato de cada linha aparece na coluna Etapa).
-// Os ids antigos (solicitada, aprovada, concluida...) continuam valendo em bateFiltro, só não têm cartão.
+// Cartões da lista: um por "quem age e o que fazer" (cobrem todas as manutenções em andamento).
+// Os ids antigos (abertas, solicitada, aprovada, sem_servico...) continuam valendo em bateFiltro, só não têm cartão.
 export const FILTROS = [
-  { id: 'abertas', rotulo: 'Em andamento', tone: 'blue', icone: 'ferramenta', dica: 'Ainda não terminou: solicitada, em orçamento, em aprovação, aprovada ou na oficina' },
-  { id: 'em_aprovacao', rotulo: 'Aguardando aprovação', tone: 'purple', icone: 'relogio', dica: 'Orçamento pronto, esperando a decisão do aprovador' },
-  { id: 'em_execucao', rotulo: 'Na oficina', tone: 'amber', icone: 'carro', dica: 'OS emitida, veículo na oficina' },
-  { id: 'encerradas', rotulo: 'Encerradas', tone: 'green', icone: 'ok', dica: 'Concluídas, reprovadas ou canceladas' },
+  { id: 'orcar', rotulo: 'Para orçar', tone: 'blue', icone: 'dinheiro', dica: 'Pedido novo ou em cotação: falta chegar a um valor (inclui as reprovadas, que voltam para novo orçamento)' },
+  { id: 'aprovar', rotulo: 'Para aprovar', tone: 'purple', icone: 'relogio', dica: 'Orçamento pronto, esperando a decisão do aprovador' },
+  { id: 'emitir_os', rotulo: 'Para emitir OS', tone: 'green', icone: 'ok', dica: 'Aprovada: falta emitir a OS e mandar o veículo à oficina' },
+  { id: 'na_oficina', rotulo: 'Na oficina', tone: 'amber', icone: 'carro', dica: 'OS emitida, veículo na oficina' },
 ];
+
+const ABERTAS = ['solicitada', 'em_orcamento', 'em_aprovacao', 'aprovada', 'em_execucao'];
+const GRUPOS_FILTRO = {
+  orcar: ['solicitada', 'em_orcamento', 'reprovada'],
+  aprovar: ['em_aprovacao'],
+  emitir_os: ['aprovada'],
+  na_oficina: ['em_execucao'],
+  abertas: ABERTAS,
+  encerradas: ['concluida', 'cancelada', 'reprovada'],
+  sem_servico: ['reprovada', 'cancelada'],
+};
 
 export function bateFiltro(m, filtro) {
   if (!filtro || filtro === 'todos') return true;
-  if (filtro === 'abertas') return !['concluida', 'cancelada', 'reprovada'].includes(m.status);
-  if (filtro === 'encerradas') return ['concluida', 'cancelada', 'reprovada'].includes(m.status);
-  if (filtro === 'sem_servico') return ['reprovada', 'cancelada'].includes(m.status);
-  return m.status === filtro;
+  return GRUPOS_FILTRO[filtro] ? GRUPOS_FILTRO[filtro].includes(m.status) : m.status === filtro;
 }
 
+// "Ver": o que a lista mostra por padrão (em andamento), as encerradas ou tudo.
+export const VISOES = [
+  { id: 'andamento', label: 'Em andamento' },
+  { id: 'encerradas', label: 'Encerradas' },
+  { id: 'todas', label: 'Todas' },
+];
+
+export function bateVisao(m, visao) {
+  if (visao === 'todas') return true;
+  const aberta = ABERTAS.includes(m.status);
+  return visao === 'encerradas' ? !aberta : aberta;
+}
+
+// Contagem dos cartões: só as manutenções em andamento (reprovada conta em "Para orçar").
 export function contarPorFiltro(lista) {
   const out = {};
   for (const f of FILTROS) out[f.id] = lista.filter((m) => bateFiltro(m, f.id)).length;
   return out;
 }
 
-// Busca por código, placa, descrição, oficina, motorista e categorias dos itens.
-export function filtrarManutencoes(lista, { filtro = 'abertas', busca = '', natureza = '', prioridade = '' } = {}, itensPorManut = new Map(), categorias = []) {
+// O que falta fazer, em palavras simples (coluna "Próximo passo" da lista e linha de cima da ficha).
+export function proximoPasso(m, { notas = [] } = {}) {
+  switch (m?.status) {
+    case 'solicitada': return { rotulo: 'Orçar ou aprovar', tone: 'blue' };
+    case 'em_orcamento': return { rotulo: 'Fechar orçamento', tone: 'blue' };
+    case 'em_aprovacao': return { rotulo: 'Aprovar', tone: 'purple' };
+    case 'reprovada': return { rotulo: 'Refazer orçamento', tone: 'red' };
+    case 'aprovada': return { rotulo: 'Emitir OS', tone: 'green' };
+    case 'em_execucao': return { rotulo: 'Concluir', tone: 'amber' };
+    case 'concluida': {
+      const enviar = m.responsavel_pagamento === 'empresa' && notas.some((n) => !n.enviada_em);
+      return enviar ? { rotulo: 'Enviar notas', tone: 'amber' } : { rotulo: 'Concluída', tone: 'green' };
+    }
+    case 'cancelada': return { rotulo: 'Cancelada', tone: 'red' };
+    default: return { rotulo: statusInfo(m?.status).label, tone: 'blue' };
+  }
+}
+
+// Natureza que vale na aprovação quando ninguém definiu: tudo preventivo → preventiva; senão corretiva.
+export function naturezaSugerida(m, itens = []) {
+  if (m?.natureza) return m.natureza;
+  return itens.length && itens.every((i) => i.natureza === 'preventiva') ? 'preventiva' : 'corretiva';
+}
+
+const RANK_PRIORIDADE = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
+
+// Busca por código, placa, descrição, oficina, motorista e categorias dos itens. Urgentes e altas primeiro (a ordem
+// do banco, mais recentes antes, vale dentro de cada prioridade).
+export function filtrarManutencoes(lista, { filtro = 'todos', visao = 'andamento', busca = '' } = {}, itensPorManut = new Map(), categorias = []) {
   const termo = norm(busca);
   const nomeCategoria = new Map(categorias.map((c) => [c.codigo, c.nome]));
-  return lista.filter((m) => {
-    if (!bateFiltro(m, filtro)) return false;
-    if (natureza && m.natureza !== natureza) return false;
-    if (prioridade && m.prioridade !== prioridade) return false;
+  const achadas = lista.filter((m) => {
+    if (!bateVisao(m, visao) || !bateFiltro(m, filtro)) return false;
     if (!termo) return true;
     const cats = (itensPorManut.get(m.id) || []).map((i) => `${i.categoria_codigo} ${nomeCategoria.get(i.categoria_codigo) || ''} ${i.descricao || ''}`).join(' ');
     return norm([codigoManutencao(m), m.__placa, m.__modelo, m.descricao, m.oficina, m.motorista_nome, m.os_numero, cats].join(' ')).includes(termo);
   });
+  if (visao === 'encerradas') return achadas;
+  return achadas.map((m, i) => ({ m, i })).sort((a, b) => ((RANK_PRIORIDADE[a.m.prioridade] ?? 2) - (RANK_PRIORIDADE[b.m.prioridade] ?? 2)) || a.i - b.i).map((x) => x.m);
 }
 
 // ---------- validações dos formulários ----------

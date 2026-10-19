@@ -1,4 +1,4 @@
-import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261019-frotas-manut24';
+import { dateInputToBr, montarDocTermo } from './frotas-termo-pdf.js?v=20261019-frotas-manut25';
 
 (function () {
   const MODULE_NAME = 'FROTAS_TERMO_VEICULOS';

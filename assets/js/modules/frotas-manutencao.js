@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut24';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut24';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut24';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut25';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut25';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut25';
 import {
-  acoesDisponiveis, contarPorFiltro, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut24';
+  acoesDisponiveis, contarPorFiltro, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut25';
 import {
-  htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas, opcoesPlanos,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut24';
+  htmlCasca, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas,
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut25';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -21,9 +21,9 @@ import {
     supabase: null, root: null, opts: null,
     base: { categorias: [], planos: [], oficinas: [], veiculos: [] },
     manut: [], itens: [], orcs: [], notas: [],
-    filtro: 'abertas', busca: '', natureza: '', prioridade: '',
+    filtro: 'todos', visao: 'andamento', busca: '',
     loading: false, ocupado: false,
-    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, maisAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -39,7 +39,9 @@ import {
     for (const i of state.itens) { if (!itensPorManut.has(i.manutencao_id)) itensPorManut.set(i.manutencao_id, []); itensPorManut.get(i.manutencao_id).push(i); }
     const orcsPorManut = new Map();
     for (const o of state.orcs) { if (!orcsPorManut.has(o.manutencao_id)) orcsPorManut.set(o.manutencao_id, []); orcsPorManut.get(o.manutencao_id).push(o); }
-    return { itensPorManut, orcsPorManut };
+    const notasPorManut = new Map();
+    for (const n of state.notas) { if (!notasPorManut.has(n.manutencao_id)) notasPorManut.set(n.manutencao_id, []); notasPorManut.get(n.manutencao_id).push(n); }
+    return { itensPorManut, orcsPorManut, notasPorManut };
   }
 
   function enriquecer(m) {
@@ -57,13 +59,13 @@ import {
   // ---------- lista ----------
   function renderLista() {
     const root = state.root; if (!root) return;
-    const { itensPorManut, orcsPorManut } = indices();
+    const { itensPorManut, orcsPorManut, notasPorManut } = indices();
     const linhas = filtrarManutencoes(state.manut, state, itensPorManut, state.base.categorias);
     root.querySelector('[data-kpis]').innerHTML = htmlKpis(contarPorFiltro(state.manut), state.filtro);
     sincronizarCards(root, state.filtro);
     root.querySelector('[data-linhas]').innerHTML = state.loading
-      ? '<tr><td colspan="8" class="fm-empty">Carregando manutenções...</td></tr>'
-      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias });
+      ? '<tr><td colspan="6" class="fm-empty">Carregando manutenções...</td></tr>'
+      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias, notasPorManut });
     root.querySelector('[data-contagem]').textContent = `${linhas.length} de ${state.manut.length} manutenção(ões)`;
   }
 
@@ -123,7 +125,7 @@ import {
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id),
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto,
     });
     let ov = document.getElementById(FICHA);
     if (!ov) {
@@ -131,6 +133,8 @@ import {
       ov.classList.add('fm-mod');
       ov.addEventListener('click', aoClicarFicha);
       ov.addEventListener('change', aoMudarFicha);
+      // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
+      ov.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
     }
     const card = ov.querySelector('.ds-modal-card');
     const topo = card.scrollTop;
@@ -161,7 +165,7 @@ import {
   }
 
   function abrirFicha(id) {
-    state.fichaId = id; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.maisAberto = false; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     renderFicha();
     atualizarAfetadas();
     atualizarFinanceiro();
@@ -177,8 +181,10 @@ import {
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
   async function mudarEtapa(m, a) {
-    const { orcsPorManut } = indices();
+    const { orcsPorManut, itensPorManut } = indices();
     const orcs = orcsPorManut.get(m.id) || [];
+    // A natureza é obrigatória para aprovar: se ninguém definiu, vai a sugerida junto da aprovação.
+    const natureza = m.natureza ? {} : { natureza: naturezaSugerida(m, itensPorManut.get(m.id) || []) };
     switch (a.id) {
       case 'aprovar_sem_orcamento': state.formAcao = 'sem_orcamento'; renderFicha(); return;
       case 'concluir':
@@ -196,7 +202,7 @@ import {
         const sel = orcs.find((o) => o.selecionado);
         const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar o orçamento de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?`, confirmarLabel: 'Aprovar' });
         if (!ok) return;
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'Manutenção aprovada.' });
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { sucesso: 'Manutenção aprovada.' });
         return;
       }
       case 'emitir_os': {
@@ -233,8 +239,8 @@ import {
       if (!cat) return erros(['Escolha a categoria do item.']);
       const nomeCat = state.base.categorias.find((c) => String(c.codigo) === cat)?.nome || 'Serviço';
       return executar(() => dados.salvarItem(state.supabase, {
-        manutencao_id: m.id, categoria_codigo: Number(cat), natureza: val(box, '[data-nv="natureza"]') || null,
-        descricao: val(box, '[data-nv="descricao"]').trim() || nomeCat, plano_id: val(box, '[data-nv="plano_id"]') || null,
+        manutencao_id: m.id, categoria_codigo: Number(cat),
+        descricao: val(box, '[data-nv="descricao"]').trim() || nomeCat,
         tipo_item: val(box, '[data-nv="tipo_item"]') || 'servico',
       }), { sucesso: 'Item adicionado.' });
     }
@@ -305,8 +311,9 @@ import {
     if (acao === 'confirmar-sem-orcamento') {
       const valor = numeroOuNulo(val(ov, '[data-form-acao="sem_orcamento"] [data-a="valor_aprovado"]'));
       if (valor == null || valor < 0) return erros(['Informe o valor estimado aprovado.']);
+      const naturezaDireta = m.natureza ? {} : { natureza: naturezaSugerida(m, state.itens.filter((i) => i.manutencao_id === m.id)) };
       return executar(async () => {
-        await dados.mudarStatus(state.supabase, m.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor });
+        await dados.mudarStatus(state.supabase, m.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor, ...naturezaDireta });
         state.formAcao = null;
       }, { sucesso: 'Manutenção aprovada sem orçamento.' });
     }
@@ -347,12 +354,6 @@ import {
       if (campo === 'descricao' && !alvo.value.trim()) return renderFicha();
       return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, ...mudanca }));
     }
-    // Novo item: ao escolher a categoria, mostra só os planos dela.
-    if (alvo.dataset.nv === 'categoria_codigo') {
-      const planoSel = alvo.closest('[data-item-novo]').querySelector('[data-nv="plano_id"]');
-      planoSel.innerHTML = opcoesPlanos(state.base.planos, alvo.value);
-      return;
-    }
     // Orçamento: escolher a oficina cadastrada preenche nome e contato.
     if (alvo.dataset.o === 'oficina_id') {
       const f = alvo.closest('[data-orc-form]');
@@ -384,18 +385,6 @@ import {
     };
     ov.querySelector('[data-n-veiculo]').addEventListener('input', preencherCondutor);
     ov.querySelector('[data-n-veiculo]').addEventListener('change', preencherCondutor);
-    ov.addEventListener('change', (e) => {
-      if (e.target.dataset.n === 'categoria_codigo') {
-        const linha = e.target.closest('[data-novo-entrada]');
-        const plano = linha.querySelector('[data-n="plano_id"]');
-        plano.innerHTML = opcoesPlanos(state.base.planos, e.target.value);
-      }
-      if (e.target.dataset.n === 'plano_id' && e.target.value) {
-        const linha = e.target.closest('[data-novo-entrada]');
-        const nat = linha.querySelector('[data-n="natureza"]');
-        if (!nat.value) nat.value = 'preventiva';
-      }
-    });
   }
 
   function veiculoDaDigitacao(texto) {
@@ -407,25 +396,22 @@ import {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
     if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
-    // Lê a linha de entrada (categoria, natureza, descrição, plano, tipo); devolve null se a categoria não foi escolhida.
+    // Lê a linha de entrada (categoria, descrição, tipo); devolve null se a categoria não foi escolhida.
+    // A natureza e o plano do guia só vêm de itens que outras telas (Preventiva, Checklist) já mandam preenchidos.
     const lerEntrada = () => {
       const linha = ov.querySelector('[data-novo-entrada]');
       const cat = linha.querySelector('[data-n="categoria_codigo"]').value;
       if (!cat) return null;
       return {
         categoria_codigo: Number(cat),
-        natureza: linha.querySelector('[data-n="natureza"]').value || null,
         descricao: linha.querySelector('[data-n="descricao"]').value.trim(),
-        plano_id: linha.querySelector('[data-n="plano_id"]').value || null,
         tipo_item: linha.querySelector('[data-n="tipo_item"]').value || 'servico',
       };
     };
     const limparEntrada = () => {
       const linha = ov.querySelector('[data-novo-entrada]');
       linha.querySelector('[data-n="categoria_codigo"]').value = '';
-      linha.querySelector('[data-n="natureza"]').value = '';
       linha.querySelector('[data-n="descricao"]').value = '';
-      linha.querySelector('[data-n="plano_id"]').innerHTML = opcoesPlanos(state.base.planos, null);
       linha.querySelector('[data-n="tipo_item"]').value = 'servico';
     };
     if (alvo.dataset.acao === 'novo-item-add') {
@@ -488,12 +474,19 @@ import {
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
-    container.querySelector('[data-f-natureza]').addEventListener('change', (e) => { state.natureza = e.target.value; renderLista(); });
-    container.querySelector('[data-f-prioridade]').addEventListener('change', (e) => { state.prioridade = e.target.value; renderLista(); });
+    container.querySelector('[data-f-visao]').addEventListener('change', (e) => { state.visao = e.target.value; renderLista(); });
     container.querySelector('[data-linhas]').addEventListener('click', (e) => {
       const linha = e.target.closest('[data-abrir]'); if (linha) abrirFicha(linha.dataset.abrir);
     });
-    ligarCards(container, { obter: () => state.filtro, definir: (f) => { state.filtro = f; }, aoMudar: renderLista });
+    // Os cartões são só da lista em andamento: escolher um volta para "Em andamento".
+    ligarCards(container, {
+      obter: () => state.filtro,
+      definir: (f) => {
+        state.filtro = f;
+        if (f !== 'todos' && state.visao !== 'andamento') { state.visao = 'andamento'; container.querySelector('[data-f-visao]').value = 'andamento'; }
+      },
+      aoMudar: renderLista,
+    });
 
     state.loading = true; renderLista();
     try {
