@@ -616,6 +616,10 @@ export async function renderProgramacaoSemOs(content, options = {}) {
     if (!colab) return;
     const programacaoId = programacaoIdParaColab(colab);
     if (!programacaoId) return;
+    // programacao_colaboradores.disponibilidade é NOT NULL (default 'OK'): "limpar"
+    // a situação (desmarcar Disponível/Folga/Falta/...) volta ao estado neutro
+    // 'OK', nunca null — null estourava a constraint (reportado 2026-10-19).
+    if ('disponibilidade' in patch && !patch.disponibilidade) patch = { ...patch, disponibilidade: 'OK' };
     const { error } = await supabase.from('programacao_colaboradores').upsert({
       programacao_id: programacaoId,
       // O trigger auto_transferir_rascunho roda no INSERT do upsert (mesmo
