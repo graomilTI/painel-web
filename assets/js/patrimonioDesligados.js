@@ -15,7 +15,7 @@
 
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
-import { injectEstilosFrotas, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
+import { injectEstilosFrotas, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn, cabecalhoOrdenavel, proximaOrdenacao, ordenarPor } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { gerarImagemDesligado, gerarImagemSupervisao, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-agrupar';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
@@ -67,6 +67,17 @@ const FILTROS = [
   { key: 'caixa', label: 'Lançados em caixa', tone: 'purple', icone: 'dinheiro', tem: (e) => e.lancado },
 ];
 
+// Colunas ordenáveis (chave do cabeçalho -> valor comparado).
+const COLUNAS_ORDENAVEIS = [
+  ['nome', 'Colaborador', (e) => chaveNome(e.nome)],
+  ['materiais', 'Materiais', (e) => e.itens.length],
+  ['supervisao', 'Supervisão', (e) => chaveNome(e.supervisao || '')],
+  ['desligamento', 'Desligamento', (e) => e.dataDesligamento || ''],
+  ['prazo', 'Prazo', (e) => (e.lancado ? `9999-${e.prazo}` : e.prazo || '')],
+  ['motivo', 'Motivo', (e) => chaveNome(e.motivo || '')],
+];
+const GETTERS_ORDEM = Object.fromEntries(COLUNAS_ORDENAVEIS.map(([chave, , get]) => [chave, get]));
+
 const somaValor = (itens) => itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
 
 /**
@@ -80,6 +91,8 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   let supervisaoSel = '';
   let carregando = false;
   let agrupar = false;
+  // Sem chave = ordem padrão (pendentes por prazo, lançados no fim).
+  let ordem = { chave: '', dir: 'asc' };
   // Materiais abertos por colaborador (chave = nome normalizado). Começa tudo recolhido.
   const abertos = new Set();
   let entradas = [];
@@ -99,13 +112,17 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         <button class="fm-btn primary" type="button" data-novo>${ICONE_MAIS} Novo desligado</button>
       </div>
       <div class="fm-table-wrap"><table class="fm-table">
-        <thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th style="width:1%">Ações</th></tr></thead>
+        <thead data-thead></thead>
         <tbody data-linhas><tr><td colspan="${COLUNAS}" class="fm-empty">Carregando...</td></tr></tbody>
       </table></div>
     </div></div>
   </section>`;
 
   const q = (sel) => target.querySelector(sel);
+  const desenharCabecalho = () => {
+    q('[data-thead]').innerHTML = `<tr>${COLUNAS_ORDENAVEIS.map(([chave, rotulo]) => cabecalhoOrdenavel(chave, rotulo, ordem)).join('')}<th style="width:1%">Ações</th></tr>`;
+  };
+  desenharCabecalho();
   const comValor = (rows, catalogo) => rows.map((r) => ({ ...r, valor: valorEstimadoDoItem(r.identificacao, catalogo) }));
   const mensagem = (texto) => { q('[data-linhas]').innerHTML = `<tr><td colspan="${COLUNAS}" class="fm-empty">${esc(texto)}</td></tr>`; };
 
@@ -260,7 +277,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     sincronizarCards(target, filtro);
 
     const filtroAtual = FILTROS.find((f) => f.key === filtro) || FILTROS[0];
-    const visiveis = base.filter(filtroAtual.tem);
+    const visiveis = ordenarPor(base.filter(filtroAtual.tem), ordem, GETTERS_ORDEM);
     q('[data-count]').textContent = `${visiveis.length} de ${entradas.length} desligado(s)`;
 
     const botaoExpandir = q('[data-expandir]');
@@ -542,6 +559,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   target.addEventListener('click', (ev) => {
     const alvo = ev.target.closest('button');
     if (!alvo || !target.contains(alvo)) return;
+    if (alvo.dataset.sort) { ordem = proximaOrdenacao(ordem, alvo.dataset.sort); desenharCabecalho(); desenhar(); return; }
     if (alvo.hasAttribute('data-novo')) { abrirModalNovo(); return; }
     if (alvo.hasAttribute('data-atualizar')) { carregar(); return; }
     if (alvo.hasAttribute('data-agrupar')) { agrupar = !agrupar; desenhar(); return; }

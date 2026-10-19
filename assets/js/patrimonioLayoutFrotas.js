@@ -22,6 +22,7 @@ export const ESTILOS_BASE = `
   .fm-previa{border:1px dashed rgba(34,197,94,.35);border-radius:14px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#cbd5e1}.fm-previa.erro{border-color:rgba(239,68,68,.5);color:#fecaca}.fm-erro{color:#fecaca;font-size:12.5px;min-height:16px}.fm-hint{font-size:12px;color:#94a3b8;margin-top:6px}
   .fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;max-width:360px;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:800;font-size:13px;box-shadow:0 16px 45px rgba(0,0,0,.35)}.fm-toast.erro{border-color:rgba(252,165,165,.4);background:rgba(127,29,29,.96);color:#fee2e2}
   .fm-venc{color:#fca5a5}
+  .fm-sort{appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:950;text-transform:uppercase;letter-spacing:.1em;cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:6px}.fm-sort:hover{color:#fff}.fm-sort-mark{font-size:10px;color:#86efac}.fm-sort-mark.idle{color:#64748b;opacity:.7}
   .fm-btn.ghost[aria-pressed="true"]{border-color:rgba(34,197,94,.55);background:rgba(34,197,94,.16);color:#bbf7d0}
   .fm-table tr.fm-grupo td{background:rgba(34,197,94,.09);border-bottom:1px solid rgba(34,197,94,.22);padding:10px 12px}.fm-grupo-in{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.fm-grupo-in strong{color:#bbf7d0;font-size:14px;letter-spacing:.02em}.fm-grupo-in span{color:#94a3b8;font-size:12px;font-weight:800}.fm-grupo-in .fm-actions{margin-left:auto}
 `;
@@ -32,6 +33,34 @@ export function injectEstilosFrotas() {
   style.id = 'patLayoutFrotasStyles';
   style.textContent = `${ESTILOS_BASE}${ESTILOS_LISTA}`;
   document.head.appendChild(style);
+}
+
+// ---- Ordenação por cabeçalho (mesmo padrão do Frotas: clique ordena, clique de novo inverte) ----
+
+/** <th> clicável. estado = { chave, dir }; o clique é tratado por quem usa (atributo data-sort). */
+export function cabecalhoOrdenavel(chave, rotulo, estado, { colspan = 0, attr = 'data-sort' } = {}) {
+  const ativo = estado?.chave === chave;
+  const marca = ativo ? `<span class="fm-sort-mark">${estado.dir === 'asc' ? '▲' : '▼'}</span>` : '<span class="fm-sort-mark idle">↕</span>';
+  return `<th${colspan ? ` colspan="${colspan}"` : ''}${ativo ? ` aria-sort="${estado.dir === 'asc' ? 'ascending' : 'descending'}"` : ''}><button class="fm-sort" type="button" ${attr}="${chave}" title="Ordenar por ${rotulo}">${rotulo} ${marca}</button></th>`;
+}
+
+/** Clique na mesma coluna inverte; coluna nova começa crescente. */
+export function proximaOrdenacao(estado, chave) {
+  return { chave, dir: estado?.chave === chave && estado.dir === 'asc' ? 'desc' : 'asc' };
+}
+
+/** Compara números como números e o resto como texto pt-BR (com números naturais). */
+export function compararValores(a, b) {
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR', { numeric: true, sensitivity: 'base' });
+}
+
+/** Ordena uma cópia de lista por estado.chave usando getters[chave]; sem chave conhecida devolve a lista como está. */
+export function ordenarPor(lista, estado, getters) {
+  const get = getters[estado?.chave];
+  if (!get) return lista;
+  const fator = estado.dir === 'desc' ? -1 : 1;
+  return [...lista].sort((x, y) => compararValores(get(x), get(y)) * fator);
 }
 
 export { ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './modules/frotas-ui-lista.js?v=20261019-frotas-manut28';

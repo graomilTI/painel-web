@@ -2,8 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
-import { injectEstilosFrotas, ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
-import { criarDesligados } from './patrimonioDesligados.js?v=20261019-filtros-linha';
+import { injectEstilosFrotas, ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { criarDesligados } from './patrimonioDesligados.js?v=20261019-ordenar';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -110,11 +110,11 @@ function renderThead(sortState, viewMode = 'colaborador') {
   if (!thead) return;
   if (viewMode === 'regional') {
     thead.innerHTML = `<tr>
-      <th colspan="3">Regional</th>
-      <th>Materiais</th>
-      <th>Colaboradores</th>
+      ${sortableTh(sortState, 'g_nome', 'Regional', 3)}
+      ${sortableTh(sortState, 'g_materiais', 'Materiais')}
+      ${sortableTh(sortState, 'g_colabs', 'Colaboradores')}
       <th></th>
-      <th>Maior atraso</th>
+      ${sortableTh(sortState, 'g_atraso', 'Maior atraso')}
     </tr>`;
     return;
   }
@@ -131,11 +131,11 @@ function renderThead(sortState, viewMode = 'colaborador') {
     return;
   }
   thead.innerHTML = `<tr>
-    <th colspan="3">Colaborador</th>
-    <th>Materiais</th>
-    <th>Supervisão</th>
-    <th>Regional</th>
-    <th>Maior atraso</th>
+    ${sortableTh(sortState, 'g_nome', 'Colaborador', 3)}
+    ${sortableTh(sortState, 'g_materiais', 'Materiais')}
+    ${sortableTh(sortState, 'g_supervisao', 'Supervisão')}
+    ${sortableTh(sortState, 'g_regional', 'Regional')}
+    ${sortableTh(sortState, 'g_atraso', 'Maior atraso')}
   </tr>`;
 }
 
@@ -177,8 +177,8 @@ function sortIcon(sortState, column) {
   return `<span class="pat-sort-icon active">${sortState.direction === 'asc' ? '↑' : '↓'}</span>`;
 }
 
-function sortableTh(sortState, column, label) {
-  return `<th><button class="pat-sort-btn" type="button" data-sort-column="${escapeHtml(column)}">${escapeHtml(label)} ${sortIcon(sortState, column)}</button></th>`;
+function sortableTh(sortState, column, label, colspan = 0) {
+  return `<th${colspan ? ` colspan="${colspan}"` : ''}><button class="pat-sort-btn" type="button" data-sort-column="${escapeHtml(column)}">${escapeHtml(label)} ${sortIcon(sortState, column)}</button></th>`;
 }
 
 function sortRows(rows, sortState) {
@@ -407,14 +407,32 @@ function groupRowsByRegionalGrouped(rows) {
   return [...groups.values()].sort((a, b) => a.funcionario.localeCompare(b.funcionario, 'pt-BR'));
 }
 
-function getGroups(rows, viewMode) {
-  if (viewMode === 'regional') return groupRowsByRegionalGrouped(rows);
-  return groupRowsByColaborador(rows);
+// Colunas ordenáveis dos modos agrupados (chaves g_*; as do modo Lista ficam em SORT_COLUMNS).
+const GROUP_SORT = {
+  g_nome: (g) => normalizeKey(g.funcionario),
+  g_materiais: (g) => g.rows.length,
+  g_colabs: (g) => new Set(g.rows.map((row) => normalizeKey(row.funcionario))).size,
+  g_supervisao: (g) => normalizeKey(g.rows[0]?.supervisao || ''),
+  g_regional: (g) => normalizeKey(getRegional(g.rows[0] || {})),
+  g_atraso: (g) => Math.max(...g.rows.map((row) => getDiasInfo(row).value ?? -1)),
+};
+
+function getGroups(rows, viewMode, sortState) {
+  const groups = viewMode === 'regional' ? groupRowsByRegionalGrouped(rows) : groupRowsByColaborador(rows);
+  const getValue = GROUP_SORT[sortState?.column];
+  if (!getValue) return groups;
+  const factor = sortState.direction === 'desc' ? -1 : 1;
+  return [...groups].sort((a, b) => {
+    const av = getValue(a);
+    const bv = getValue(b);
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * factor;
+    return String(av).localeCompare(String(bv), 'pt-BR', { numeric: true, sensitivity: 'base' }) * factor;
+  });
 }
 
-function renderGroupedRows(rows, page, expanded, viewMode) {
+function renderGroupedRows(rows, page, expanded, viewMode, sortState) {
   const tbody = document.getElementById('patrimonioRows');
-  const groups = getGroups(rows, viewMode);
+  const groups = getGroups(rows, viewMode, sortState);
   const start = (page - 1) * TABLE_ROWS_PER_PAGE;
   const pageGroups = groups.slice(start, start + TABLE_ROWS_PER_PAGE);
   const isRegional = viewMode === 'regional';
@@ -469,7 +487,7 @@ function renderFlatRows(rows, page) {
   }).join('');
 }
 
-function renderTableRows(rows, page = 1, expanded = new Set(), viewMode = 'colaborador') {
+function renderTableRows(rows, page = 1, expanded = new Set(), viewMode = 'colaborador', sortState = null) {
   const tbody = document.getElementById('patrimonioRows');
   if (!tbody) return;
 
@@ -482,7 +500,7 @@ function renderTableRows(rows, page = 1, expanded = new Set(), viewMode = 'colab
     renderFlatRows(rows, page);
     return;
   }
-  renderGroupedRows(rows, page, expanded, viewMode);
+  renderGroupedRows(rows, page, expanded, viewMode, sortState);
 }
 
 function fillSelectOptions(selectId, values, placeholder) {
@@ -665,6 +683,7 @@ export function renderContent(content) {
       const mode = btn.dataset.viewMode;
       if (mode === state.viewMode) return;
       state.viewMode = mode;
+      state.sort = { column: '', direction: 'asc' };
       state.page = 1;
       state.expanded.clear();
       document.querySelectorAll('.pat-view-mode-btn').forEach((b) => b.classList.toggle('active', b === btn));
@@ -684,7 +703,7 @@ export function renderContent(content) {
   const applyAndRender = () => {
     state.filteredRows = sortRows(applyFilters(state.allRows, readFilters()), state.sort);
     state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
-    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode, state.sort);
     // Os cards contam o que os filtros deixam passar, ignorando o chip Em dia / Em atraso (senão o outro card zeraria).
     updateSummary(applyFilters(state.allRows, { ...readFilters(), tipo: 'geral' }));
   };
@@ -730,7 +749,7 @@ export function renderContent(content) {
     if (!row) return;
     const key = row.dataset.colaborador;
     if (state.expanded.has(key)) state.expanded.delete(key); else state.expanded.add(key);
-    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode, state.sort);
   });
 
   const refreshSupervisoes = () => {
@@ -769,14 +788,14 @@ export function renderContent(content) {
   document.getElementById('btnPrevPage')?.addEventListener('click', () => {
     state.page = Math.max(1, state.page - 1);
     state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
-    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode, state.sort);
   });
   document.getElementById('btnNextPage')?.addEventListener('click', () => {
     const totalItems = state.viewMode === 'lista' ? state.filteredRows.length : getGroups(state.filteredRows, state.viewMode).length;
     const maxPage = Math.max(1, Math.ceil(totalItems / TABLE_ROWS_PER_PAGE));
     state.page = Math.min(maxPage, state.page + 1);
     state.page = updatePagination(state.filteredRows, state.page, state.viewMode);
-    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode);
+    renderTableRows(state.filteredRows, state.page, state.expanded, state.viewMode, state.sort);
   });
 
   document.getElementById('btnCsv')?.addEventListener('click', () => {
