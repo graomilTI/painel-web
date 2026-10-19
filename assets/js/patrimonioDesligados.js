@@ -31,6 +31,15 @@ function injectStyles() {
   style.textContent = `
     .pat-deslig-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
     .pat-deslig-head .base-button { width:auto; flex:none; margin:0; }
+    .pat-deslig-toggle { display:flex; align-items:center; gap:8px; width:100%; appearance:none; border:0; background:rgba(52,211,153,.12); color:#bbf7d0; font:inherit; font-weight:800; padding:6px 10px; border-radius:999px; cursor:pointer; text-align:left; }
+    .pat-deslig-toggle:hover { background:rgba(52,211,153,.2); }
+    .pat-deslig-toggle .seta { display:inline-block; width:10px; transition:transform .15s ease; }
+    .pat-deslig-toggle[aria-expanded="true"] .seta { transform:rotate(90deg); }
+    .pat-deslig-toggle .soma { margin-left:auto; color:#fde68a; font-weight:800; font-size:12px; }
+    .pat-deslig-filtros-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:12px 0 4px; }
+    .pat-deslig-filtros-bar .pat-deslig-filtros { margin:0; }
+    .pat-deslig-expandir { appearance:none; border:1px solid rgba(148,163,184,.22); background:transparent; color:rgba(226,232,240,.85); font:inherit; font-size:12.5px; font-weight:700; padding:6px 13px; border-radius:999px; cursor:pointer; }
+    .pat-deslig-expandir:hover { border-color:rgba(45,212,191,.5); color:#ecfdf5; }
     .pat-deslig-filtros { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 4px; }
     .pat-deslig-filtro { appearance:none; border:1px solid rgba(148,163,184,.22); background:rgba(15,23,42,.42); color:rgba(226,232,240,.8); font:inherit; font-size:12.5px; font-weight:700; padding:6px 13px; border-radius:999px; cursor:pointer; }
     .pat-deslig-filtro.active { border-color:rgba(45,212,191,.5); background:rgba(45,212,191,.14); color:#ecfdf5; }
@@ -103,6 +112,8 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   injectStyles();
   let snapshot = [];
   let filtro = 'todos';
+  // Materiais abertos por colaborador (chave = nome normalizado). Começa tudo recolhido.
+  const abertos = new Set();
   let entradas = [];
   let catalogoAtual = [];
 
@@ -212,6 +223,14 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     desenhar();
   }
 
+  function celulaMateriais(e) {
+    const aberto = abertos.has(chaveNome(e.nome));
+    const n = e.itens.length;
+    const total = e.itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
+    const lista = e.itens.map((row) => `${esc(`${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`)}${row.valor == null ? '' : ` · ${esc(formatarReais(row.valor))}`}`).join('<br>');
+    return `<div class="pat-cell-stack"><button type="button" class="pat-deslig-toggle" data-toggle-itens="${esc(chaveNome(e.nome))}" aria-expanded="${aberto}" title="${aberto ? 'Recolher' : 'Mostrar'} os materiais"><span class="seta">▸</span>${n} ${n === 1 ? 'item' : 'itens'}${total ? `<span class="soma">${esc(formatarReais(total))}</span>` : ''}</button>${aberto ? `<span class="pat-secondary">${lista}</span>${resumoValor(e.itens)}` : ''}</div>`;
+  }
+
   function resumoValor(itens) {
     const total = itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
     const sem = itens.filter((r) => r.valor == null).length;
@@ -235,8 +254,9 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       return true;
     });
 
-    target.querySelector('#patDesligadosFiltros').innerHTML = FILTROS.map(([k, rotulo]) =>
-      `<button type="button" class="pat-deslig-filtro${k === filtro ? ' active' : ''}" data-filtro="${k}">${rotulo} (${contagem[k]})</button>`).join('');
+    const todosAbertos = visiveis.length > 0 && visiveis.every((e) => abertos.has(chaveNome(e.nome)));
+    target.querySelector('#patDesligadosFiltros').innerHTML = `<div class="pat-deslig-filtros-bar"><div class="pat-deslig-filtros">${FILTROS.map(([k, rotulo]) =>
+      `<button type="button" class="pat-deslig-filtro${k === filtro ? ' active' : ''}" data-filtro="${k}">${rotulo} (${contagem[k]})</button>`).join('')}</div>${visiveis.length ? `<button type="button" class="pat-deslig-expandir" data-expandir="${todosAbertos ? 'recolher' : 'abrir'}">${todosAbertos ? 'Recolher todos os materiais' : 'Expandir todos os materiais'}</button>` : ''}</div>`;
 
     if (!visiveis.length) {
       lista.className = 'pat-desligados-empty';
@@ -249,7 +269,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     lista.className = 'table-shell';
     lista.innerHTML = `<div class="table-scroll-x"><table class="patrimonio-table"><thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th></th></tr></thead><tbody>${visiveis.map((e) => `<tr>
       <td><div class="pat-cell-stack"><span class="pat-primary">${esc(e.nome)}</span><span class="pat-secondary">${esc(e.cargo || 'Colaborador')}</span><span class="pat-deslig-origem">${esc(e.origem)}</span></div></td>
-      <td><div class="pat-cell-stack"><span class="pat-count-badge">${e.itens.length} ${e.itens.length === 1 ? 'item' : 'itens'}</span><span class="pat-secondary">${e.itens.map((row) => `${esc(`${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`)}${row.valor == null ? '' : ` · ${esc(formatarReais(row.valor))}`}`).join('<br>')}</span>${resumoValor(e.itens)}</div></td>
+      <td>${celulaMateriais(e)}</td>
       <td>${esc(e.supervisao || '-')}</td>
       <td>${esc(formatarDia(e.dataDesligamento))}</td>
       <td><div class="pat-cell-stack"><span class="pat-deslig-prazo ${e.estado.classe}">${esc(e.estado.texto)}</span><span class="pat-secondary">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></div></td>
@@ -427,6 +447,17 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     if (!btn || !target.contains(btn)) return;
     if (btn.id === 'btnDesligadoNovo') { abrirModalNovo(); return; }
     if (btn.dataset.filtro) { filtro = btn.dataset.filtro; desenhar(); return; }
+    if (btn.dataset.toggleItens) {
+      const k = btn.dataset.toggleItens;
+      if (abertos.has(k)) abertos.delete(k); else abertos.add(k);
+      desenhar();
+      return;
+    }
+    if (btn.dataset.expandir) {
+      entradas.forEach((e) => { if (btn.dataset.expandir === 'abrir') abertos.add(chaveNome(e.nome)); else abertos.delete(chaveNome(e.nome)); });
+      desenhar();
+      return;
+    }
     if (btn.dataset.acao === 'caixa') marcarLancadoCaixa(btn.dataset.id);
     if (btn.dataset.acao === 'remover') remover(btn.dataset.id);
   });
