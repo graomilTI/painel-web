@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut38';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut38';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut38';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut39';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut39';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut39';
 import {
-  acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut38';
+  acoesDisponiveis, categoriaDoGrupo, contarPorFiltro, grupoDaCategoria, itensPorTipo, tipoDoComponente, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut39';
 import {
-  htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut38';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut38';
+  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlItensDoGrupo, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut39';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut39';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -269,12 +269,12 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       const cat = categoriaDaEscolha(grupo);
       const nomeCat = state.base.grupos.find((g) => String(g.codigo) === grupo)?.nome || state.base.categorias.find((c) => c.codigo === cat)?.nome || 'Serviço';
       const componentes = marcadosEm(box);
-      return executar(() => dados.salvarItem(state.supabase, {
-        manutencao_id: m.id, categoria_codigo: cat,
-        descricao: val(box, '[data-nv="descricao"]').trim() || descricaoDosComponentes(componentes) || nomeCat,
-        tipo_item: val(box, '[data-nv="tipo_item"]') || 'servico',
-        componentes,
-      }), { sucesso: 'Item adicionado.' });
+      const texto = val(box, '[data-nv="descricao"]').trim();
+      // O tipo (peça ou serviço) vem de cada componente; "Mão de obra" e os serviços do guia viram um item de serviço.
+      let novos = itensPorTipo(cat, componentes, (nome) => tipoDoComponente(state.base.componentes, grupoDaEscolha(grupo), nome));
+      if (texto) novos = novos.length ? novos.map((n, i) => (i === 0 ? { ...n, descricao: `${n.descricao}; ${texto}` } : n)) : [{ categoria_codigo: cat, descricao: texto, tipo_item: 'peca', componentes: [] }];
+      if (!novos.length) novos = [{ categoria_codigo: cat, descricao: nomeCat, tipo_item: 'peca', componentes: [] }];
+      return executar(async () => { for (const n of novos) await dados.salvarItem(state.supabase, { manutencao_id: m.id, ...n }); }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
     if (acao === 'item-remover') {
       if (!(await confirmar({ titulo: 'Remover item', mensagem: 'Remover este item do serviço?', confirmarLabel: 'Remover' }))) return;
@@ -290,7 +290,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
       return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento removido.' });
     }
     if (acao === 'orc-linha-add') {
-      ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({}, { fixa: false }));
+      ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({ tipo: alvo.dataset.tipo === 'servico' ? 'servico' : 'peca' }, { fixa: false }));
       ov.querySelector('[data-orc-linhas] [data-orc-linha]:last-child [data-ol="nome"]')?.focus();
       return;
     }
@@ -376,23 +376,26 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   // Linhas do orçamento (peça/serviço, marca/observação, valor) como estão na tela.
   const linhasDoFormulario = (f) => [...f.querySelectorAll('[data-orc-linha]')].map((r) => ({
     nome: r.querySelector('[data-ol="nome"]').value, detalhe: r.querySelector('[data-ol="detalhe"]').value, valor: numeroOuNulo(r.querySelector('[data-ol="valor"]').value),
+    tipo: r.querySelector('[data-ol="tipo"]')?.value === 'servico' ? 'servico' : 'peca',
   }));
 
-  // Peças = soma das linhas e total = peças + mão de obra, enquanto a pessoa não digitar um valor próprio nesses campos.
+  // Peças = soma das linhas de peça, Mão de obra = soma das de serviço e total = peças + mão de obra, enquanto a pessoa não digitar
+  // um valor próprio nesses campos.
   function recalcularOrcamento(f) {
     if (!f) return;
     const campo = (k) => f.querySelector('[data-o="' + k + '"]');
-    const soma = somarLinhas(linhasDoFormulario(f));
-    const pecas = campo('valor_pecas'); const total = campo('valor_total');
-    if (pecas.dataset.auto !== '0') pecas.value = soma ?? '';
-    if (total.dataset.auto !== '0') total.value = totalDoOrcamento({ pecas: numeroOuNulo(pecas.value), maoObra: numeroOuNulo(campo('valor_mao_obra').value) }) ?? '';
+    const linhas = linhasDoFormulario(f);
+    const pecas = campo('valor_pecas'); const mao = campo('valor_mao_obra'); const total = campo('valor_total');
+    if (pecas.dataset.auto !== '0') pecas.value = somarLinhas(linhas, 'peca') ?? '';
+    if (mao.dataset.auto !== '0') mao.value = somarLinhas(linhas, 'servico') ?? '';
+    if (total.dataset.auto !== '0') total.value = totalDoOrcamento({ pecas: numeroOuNulo(pecas.value), maoObra: numeroOuNulo(mao.value) }) ?? '';
   }
 
   function aoDigitarFicha(e) {
     const f = e.target.closest?.('[data-orc-form]'); if (!f) return;
     const t = e.target;
-    // Digitar direto em Peças ou no total desliga a soma automática daquele campo (apagar religa).
-    if (t.matches('[data-o="valor_pecas"],[data-o="valor_total"]')) t.dataset.auto = t.value === '' ? '1' : '0';
+    // Digitar direto em Peças, Mão de obra ou no total desliga a soma automática daquele campo (apagar religa).
+    if (t.matches('[data-o="valor_pecas"],[data-o="valor_mao_obra"],[data-o="valor_total"]')) t.dataset.auto = t.value === '' ? '1' : '0';
     recalcularOrcamento(f);
   }
 
@@ -415,7 +418,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     }
     // Item novo: ao escolher a categoria, aparecem os componentes dela.
     if (alvo.dataset.nv === 'grupo_codigo') {
-      alvo.closest('[data-item-novo]').querySelector('[data-nv-comps]').innerHTML = htmlComponentes(componentesDoGrupo(state.base.componentes, grupoDaEscolha(alvo.value)), []);
+      alvo.closest('[data-item-novo]').querySelector('[data-nv-comps]').innerHTML = htmlItensDoGrupo(state.base, grupoDaEscolha(alvo.value), []);
       return;
     }
     // Itens: salvam ao mudar; trocar a categoria zera o plano e os componentes (cada categoria tem os seus).

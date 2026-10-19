@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, acoesDisponiveis, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
+  FILTROS, TRANSICOES, MAO_DE_OBRA, acoesDisponiveis, itensDoGrupo, itensPorTipo, tipoDoComponente, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
@@ -169,7 +169,7 @@ test('orçamento por item: soma das linhas, total e linhas iniciais vindas dos i
   assert.equal(totalDoOrcamento({ pecas: 1014, maoObra: 200 }), 1214);
   assert.equal(totalDoOrcamento({ pecas: 1014 }), 1014);
   assert.equal(totalDoOrcamento({}), null);
-  assert.deepEqual(normalizarLinhas([{ nome: ' Kit ', detalhe: ' LUK ', valor: '754.8' }, { nome: 'Sem nada' }, { nome: '', detalhe: 'x' }]), [{ nome: 'Kit', detalhe: 'LUK', valor: 754.8 }]);
+  assert.deepEqual(normalizarLinhas([{ nome: ' Kit ', detalhe: ' LUK ', valor: '754.8' }, { nome: 'Sem nada' }, { nome: '', detalhe: 'x' }]), [{ nome: 'Kit', detalhe: 'LUK', valor: 754.8, tipo: 'peca' }]);
   const itens = [{ componentes: ['Kit de embreagem', 'Cabo da embreagem'] }, { componentes: [], descricao: 'Pneu furado' }];
   assert.deepEqual(linhasIniciais(itens).map((l) => l.nome), ['Kit de embreagem', 'Cabo da embreagem', 'Pneu furado']);
   const salvas = [{ nome: 'Kit de embreagem', detalhe: 'LUK', valor: 754.8 }];
@@ -186,6 +186,37 @@ test('orçamento por item: soma das linhas, total e linhas iniciais vindas dos i
   const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [{ id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 1014, valor_pecas: 1014, selecionado: true, linhas }], base, podeAprovar: false });
   assert.match(ficha, /Kit de embreagem<small>LUK<\/small>/);
   assert.match(ficha, /Cabovel/);
+});
+
+test('peça ou serviço vem do item: peça por padrão, Mão de obra e serviços do guia viram item de serviço', () => {
+  const catalogo = [
+    { grupo_codigo: 7, nome: 'Pneus (novos ou recapados)', tipo: 'peca' },
+    { grupo_codigo: 7, nome: 'Calibragem (verificação da pressão de ar)', tipo: 'servico' },
+  ];
+  assert.equal(tipoDoComponente(catalogo, 7, 'Pneus (novos ou recapados)'), 'peca');
+  assert.equal(tipoDoComponente(catalogo, 7, 'Calibragem (verificação da pressão de ar)'), 'servico');
+  assert.equal(tipoDoComponente(catalogo, 7, MAO_DE_OBRA), 'servico', 'mão de obra é sempre serviço');
+  assert.equal(tipoDoComponente(catalogo, 7, 'Item digitado'), 'peca', 'sem tipo definido, é peça');
+  assert.equal(tipoDoComponente(catalogo, 7, 'Item digitado', new Map([['Item digitado', 'servico']])), 'servico', 'digitado como serviço');
+  assert.deepEqual(itensDoGrupo(catalogo, 7).slice(-1), [MAO_DE_OBRA], 'Mão de obra fecha a lista de todo grupo');
+  assert.deepEqual(itensDoGrupo([], 2), [MAO_DE_OBRA], 'mesmo grupo sem itens do guia oferece mão de obra');
+  const tipoDe = (n) => tipoDoComponente(catalogo, 7, n);
+  assert.deepEqual(itensPorTipo(13, ['Pneus (novos ou recapados)', MAO_DE_OBRA, 'Calibragem (verificação da pressão de ar)'], tipoDe), [
+    { categoria_codigo: 13, descricao: 'Pneus (novos ou recapados)', tipo_item: 'peca', componentes: ['Pneus (novos ou recapados)'] },
+    { categoria_codigo: 13, descricao: 'Mão de obra, Calibragem (verificação da pressão de ar)', tipo_item: 'servico', componentes: ['Mão de obra', 'Calibragem (verificação da pressão de ar)'] },
+  ]);
+  assert.deepEqual(itensPorTipo(13, ['Pneus (novos ou recapados)'], tipoDe).map((i) => i.tipo_item), ['peca'], 'só peças = um item de peça');
+  assert.deepEqual(itensPorTipo(13, [], tipoDe), []);
+  // orçamento: peças e mão de obra somam por tipo
+  const linhas = [{ nome: 'Kit', valor: 754.8, tipo: 'peca' }, { nome: 'Cabo', valor: 175.4 }, { nome: MAO_DE_OBRA, valor: 200, tipo: 'servico' }];
+  assert.equal(somarLinhas(linhas, 'peca'), 930.2, 'linha sem tipo conta como peça');
+  assert.equal(somarLinhas(linhas, 'servico'), 200);
+  assert.equal(somarLinhas(linhas), 1130.2);
+  assert.deepEqual(linhasIniciais([{ tipo_item: 'peca', componentes: ['Kit'] }, { tipo_item: 'servico', componentes: [MAO_DE_OBRA] }]).map((l) => [l.nome, l.tipo]), [['Kit', 'peca'], [MAO_DE_OBRA, 'servico']]);
+  const form = htmlFormOrcamento({ oficinas: [] }, {}, [{ tipo_item: 'peca', componentes: ['Kit'] }, { tipo_item: 'servico', componentes: [MAO_DE_OBRA] }]);
+  assert.match(form, /data-tipo="servico"/);
+  assert.match(form, /data-acao="orc-linha-add" data-tipo="servico">\+ Mão de obra \/ serviço/);
+  assert.match(form, /data-o="valor_mao_obra" data-auto="1"/);
 });
 
 test('urgentes e altas vêm primeiro na lista em andamento', () => {
@@ -489,9 +520,10 @@ test('conclusão: custo vem da soma das notas e o envio só é oferecido à empr
   assert.doesNotMatch(conc('proprietario'), /data-a-enviar/);
   assert.match(conc('proprietario'), /não vai para NF nem Financeiro/);
   assert.doesNotMatch(conc('empresa'), /data-a-arquivo|data-a="nf_numero"/, 'o arquivo e o número da NF agora são por nota');
-  assert.match(htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /data-item="tipo_item"/);
-  // o tipo (peça/serviço) vem no seletor da nova manutenção, por grupo
-  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-seletor.js', import.meta.url), 'utf8'), /data-pick-tipo value="\$\{t\.id\}"/);
+  // o tipo (peça/serviço) vem do item, não de uma escolha: a ficha mostra etiqueta, não lista de tipo
+  const fichaTipo = htmlFicha(m({ status: 'em_orcamento' }), { itens: [{ ...item, tipo_item: 'peca' }], orcamentos: [], base, podeAprovar: true });
+  assert.doesNotMatch(fichaTipo, /data-item="tipo_item"/);
+  assert.match(fichaTipo, /fm-badge blue" title="Define a categoria da nota fiscal no GRM">Peças/);
   const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
   assert.match(financeiro, /data-setor-pay="FROTAS"/);
 });

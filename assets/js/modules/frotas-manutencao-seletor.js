@@ -1,10 +1,9 @@
 // Frotas · Manutenção › Nova manutenção: seletor de itens em dois painéis (grupos do guia | itens do grupo) com busca.
-// Marcar itens é obrigatório; a seleção vale entre grupos (um item por grupo, com os componentes marcados), sem botão "+".
-// Funções puras (grupos, busca, itens) ficam exportadas para teste; o resto monta e liga o seletor dentro de um contêiner.
+// Marcar itens é obrigatório; a seleção vale entre grupos, sem botão "+". Os itens do guia são PEÇAS (produtos) e alguns são
+// SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
+// item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { esc } from '../core/ui.js';
-import { componentesDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261019-frotas-manut38';
-
-const TIPOS = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261019-frotas-manut39';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -14,27 +13,25 @@ export function gruposDoSeletor(base) {
   return (base.categorias || []).filter((c) => c.ativo !== false).map((c) => ({ codigo: Number(c.codigo), nome: c.nome, categoria_codigo: Number(c.codigo) }));
 }
 
-const componentesDe = (base, grupo) => ((base.grupos || []).length ? componentesDoGrupo(base.componentes, grupo.codigo) : []);
+const temGrupos = (base) => (base.grupos || []).length > 0;
+const itensDe = (base, grupo, marcados = []) => (temGrupos(base) ? itensDoGrupo(base.componentes, grupo.codigo, marcados) : [MAO_DE_OBRA, ...marcados.filter((n) => n !== MAO_DE_OBRA)]);
 
-// Busca em todos os grupos (sem acento, qualquer parte do nome do item ou do grupo).
+// Busca em todos os grupos (sem acento, qualquer parte do nome do item ou do grupo). "Mão de obra" só aparece se for pesquisada.
 export function buscarItens(base, termo) {
   const t = norm(termo).trim();
   if (!t) return [];
   const achados = [];
   for (const g of gruposDoSeletor(base)) {
-    for (const nome of componentesDe(base, g)) {
-      if (norm(nome).includes(t) || norm(g.nome).includes(t)) achados.push({ grupo: g.codigo, grupoNome: g.nome, nome });
+    for (const nome of itensDe(base, g)) {
+      if (norm(nome).includes(t) || (nome !== MAO_DE_OBRA && norm(g.nome).includes(t))) achados.push({ grupo: g.codigo, grupoNome: g.nome, nome });
     }
   }
   return achados;
 }
 
-// Itens da solicitação: um por grupo com algo marcado, na ordem dos grupos.
-export function itensDaSelecao(selecao, tipos, grupos) {
-  return grupos.filter((g) => (selecao.get(g.codigo) || []).length).map((g) => {
-    const nomes = selecao.get(g.codigo);
-    return { categoria_codigo: g.categoria_codigo, descricao: nomes.join(', '), tipo_item: tipos.get(g.codigo) || 'servico', componentes: [...nomes] };
-  });
+// Itens da solicitação: por grupo, um de peças e um de serviço (Mão de obra), na ordem dos grupos. `tipoDe(grupo, nome)` diz o tipo.
+export function itensDaSelecao(selecao, grupos, tipoDe = () => 'peca') {
+  return grupos.flatMap((g) => itensPorTipo(g.categoria_codigo, selecao.get(g.codigo) || [], (nome) => tipoDe(g.codigo, nome)));
 }
 
 export function htmlSeletor() {
@@ -50,15 +47,17 @@ export function htmlSeletor() {
 // um elemento com data-pick-resumo; sem ele, procura dentro de `box`). Devolve { ler, qtd }.
 export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = {}) {
   const grupos = gruposDoSeletor(base);
-  const selecao = new Map(); // grupo → nomes marcados (do guia ou digitados)
-  const tipos = new Map(); // grupo → 'servico' | 'peca'
+  const selecao = new Map(); // grupo → nomes marcados (do guia, Mão de obra ou digitados)
+  const digitados = new Map(); // nome digitado à mão → 'peca' | 'servico'
   let ativo = grupos[0]?.codigo ?? null;
   let busca = '';
-  const nomeGrupo = (cod) => grupos.find((g) => g.codigo === Number(cod))?.nome || '';
   const marcados = (cod) => selecao.get(Number(cod)) || [];
   const total = () => [...selecao.values()].reduce((s, l) => s + l.length, 0);
   const q = (sel) => box.querySelector(sel);
   const resumoEl = resumo || box.querySelector('[data-pick-resumo]');
+  const tipoDe = (cod, nome) => (temGrupos(base)
+    ? tipoDoComponente(base.componentes, cod, nome, digitados)
+    : (nome === MAO_DE_OBRA ? 'servico' : digitados.get(nome) || 'peca'));
 
   function alternar(cod, nome, ligado) {
     const lista = [...marcados(cod)];
@@ -70,7 +69,8 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = 
 
   const linhaItem = (cod, nome, { grupoNome = '' } = {}) => {
     const on = marcados(cod).includes(nome);
-    return `<label class="fm-pick-item${on ? ' sel' : ''}"><input type="checkbox" data-pick-comp data-grupo="${cod}" value="${esc(nome)}"${on ? ' checked' : ''}><span>${esc(nome)}${grupoNome ? `<small>${esc(grupoNome)}</small>` : ''}</span></label>`;
+    const servico = tipoDe(cod, nome) === 'servico';
+    return `<label class="fm-pick-item${on ? ' sel' : ''}${servico ? ' servico' : ''}"><input type="checkbox" data-pick-comp data-grupo="${cod}" value="${esc(nome)}"${on ? ' checked' : ''}><span>${esc(nome)}${grupoNome ? `<small>${esc(grupoNome)}</small>` : ''}</span>${servico ? '<em class="fm-pick-tag">serviço</em>' : ''}</label>`;
   };
 
   function renderGrupos() {
@@ -92,20 +92,18 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = 
     }
     const g = grupos.find((x) => x.codigo === ativo);
     if (!g) { painel.innerHTML = '<div class="fm-pick-vazio">Nenhum grupo cadastrado.</div>'; return; }
-    const doGuia = componentesDe(base, g);
-    const digitados = marcados(g.codigo).filter((n) => !doGuia.includes(n));
-    const tipo = tipos.get(g.codigo) || 'servico';
-    painel.innerHTML = `<div class="fm-pick-cab"><strong>${esc(g.nome)}</strong>
-        <span class="fm-pick-tipo" title="Peça ou serviço: define a categoria da nota fiscal no GRM">Tipo:${TIPOS.map((t) => `<label><input type="radio" name="fmPickTipo" data-pick-tipo value="${t.id}"${t.id === tipo ? ' checked' : ''}> ${t.label}</label>`).join('')}</span></div>
-      ${doGuia.length || digitados.length ? `<div class="fm-pick-lista">${[...doGuia, ...digitados].map((n) => linhaItem(g.codigo, n)).join('')}</div>` : '<div class="fm-pick-vazio">Este grupo não tem itens do guia: digite abaixo o que será feito.</div>'}
-      <div class="fm-pick-outro"><input class="fm-input" data-pick-outro maxlength="80" placeholder="Outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off"><button type="button" class="fm-btn soft fm-mini" data-pick-add>Adicionar</button></div>`;
+    painel.innerHTML = `<div class="fm-pick-cab"><strong>${esc(g.nome)}</strong><span class="fm-mm">Peças do guia e mão de obra</span></div>
+      <div class="fm-pick-lista">${itensDe(base, g, marcados(g.codigo)).map((n) => linhaItem(g.codigo, n)).join('')}</div>
+      <div class="fm-pick-outro"><input class="fm-input" data-pick-outro maxlength="80" placeholder="Outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
+        <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do outro item"><option value="peca">Peça</option><option value="servico">Serviço</option></select>
+        <button type="button" class="fm-btn soft fm-mini" data-pick-add>Adicionar</button></div>`;
   }
 
   function renderResumo() {
     const com = grupos.filter((g) => marcados(g.codigo).length);
     resumoEl.innerHTML = com.length
-      ? `<span class="fm-comps-t">Itens deste pedido (${total()})</span>${com.map((g) => `<div class="fm-pick-rg"><strong>${esc(g.nome)}</strong>${marcados(g.codigo).map((n) => `<span class="fm-chip-x">${esc(n)}<button type="button" data-pick-remover data-grupo="${g.codigo}" data-nome="${esc(n)}" aria-label="Remover ${esc(n)}">✕</button></span>`).join('')}</div>`).join('')}`
-      : '<div class="fm-pick-vazio fm-pick-obrig">Nenhum item marcado. Escolha um grupo à esquerda e marque o que será feito (obrigatório).</div>';
+      ? `<span class="fm-comps-t">Itens deste pedido (${total()})</span>${com.map((g) => `<div class="fm-pick-rg"><strong>${esc(g.nome)}</strong>${marcados(g.codigo).map((n) => `<span class="fm-chip-x${tipoDe(g.codigo, n) === 'servico' ? ' servico' : ''}">${esc(n)}<button type="button" data-pick-remover data-grupo="${g.codigo}" data-nome="${esc(n)}" aria-label="Remover ${esc(n)}">✕</button></span>`).join('')}</div>`).join('')}`
+      : '<div class="fm-pick-vazio fm-pick-obrig">Nenhum item marcado. Escolha um grupo e marque o que será feito (obrigatório).</div>';
   }
 
   const tudo = () => { renderGrupos(); renderPainel(); renderResumo(); aoMudar(); };
@@ -125,9 +123,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = 
       alternar(c.dataset.grupo, c.value, c.checked);
       c.closest('.fm-pick-item')?.classList.toggle('sel', c.checked);
       renderGrupos(); renderResumo(); aoMudar();
-      return;
     }
-    if (e.target.matches('[data-pick-tipo]') && ativo != null) tipos.set(ativo, e.target.value);
   });
   box.addEventListener('input', (e) => {
     if (e.target.matches('[data-pick-busca]')) { busca = e.target.value; renderGrupos(); renderPainel(); }
@@ -140,11 +136,12 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = 
     const campo = q('[data-pick-outro]'); if (!campo || ativo == null) return;
     const nome = campo.value.trim();
     if (!nome) return;
+    if (nome !== MAO_DE_OBRA) digitados.set(nome, q('[data-pick-outro-tipo]')?.value === 'servico' ? 'servico' : 'peca');
     alternar(ativo, nome, true);
     tudo();
     q('[data-pick-outro]')?.focus();
   }
 
   tudo();
-  return { ler: () => itensDaSelecao(selecao, tipos, grupos), qtd: total };
+  return { ler: () => itensDaSelecao(selecao, grupos, tipoDe), qtd: total };
 }

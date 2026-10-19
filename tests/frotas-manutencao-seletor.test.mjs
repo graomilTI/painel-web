@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buscarItens, gruposDoSeletor, htmlSeletor, itensDaSelecao } from '../assets/js/modules/frotas-manutencao-seletor.js';
+import { MAO_DE_OBRA } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Seletor de itens da "Nova manutenção": grupos do guia + itens de cada grupo, com busca em todos os grupos.
 
@@ -33,15 +34,21 @@ test('busca acha o item em qualquer grupo, sem acento, e pelo nome do grupo', ()
   assert.deepEqual(buscarItens(base, 'xyz'), []);
 });
 
-test('itens da seleção: um por grupo, com a categoria do grupo, os componentes marcados e o tipo', () => {
+test('itens da seleção: peças e serviço (Mão de obra) saem separados, na ordem dos grupos, com a categoria do grupo', () => {
   const grupos = gruposDoSeletor(base);
-  const selecao = new Map([[9, ['Kit de embreagem (disco, platô e rolamento)']], [2, ['Pastilhas de freio', 'Discos de freio']]]);
-  const tipos = new Map([[2, 'peca']]);
-  assert.deepEqual(itensDaSelecao(selecao, tipos, grupos), [
+  const selecao = new Map([[9, ['Kit de embreagem (disco, platô e rolamento)', MAO_DE_OBRA]], [2, ['Pastilhas de freio', 'Discos de freio']]]);
+  const tipoDe = (cod, nome) => (nome === MAO_DE_OBRA ? 'servico' : 'peca');
+  assert.deepEqual(itensDaSelecao(selecao, grupos, tipoDe), [
     { categoria_codigo: 9, descricao: 'Pastilhas de freio, Discos de freio', tipo_item: 'peca', componentes: ['Pastilhas de freio', 'Discos de freio'] },
-    { categoria_codigo: 7, descricao: 'Kit de embreagem (disco, platô e rolamento)', tipo_item: 'servico', componentes: ['Kit de embreagem (disco, platô e rolamento)'] },
+    { categoria_codigo: 7, descricao: 'Kit de embreagem (disco, platô e rolamento)', tipo_item: 'peca', componentes: ['Kit de embreagem (disco, platô e rolamento)'] },
+    { categoria_codigo: 7, descricao: 'Mão de obra', tipo_item: 'servico', componentes: ['Mão de obra'] },
   ]);
-  assert.deepEqual(itensDaSelecao(new Map(), new Map(), grupos), [], 'nada marcado = nenhum item (a tela não deixa registrar)');
+  assert.deepEqual(itensDaSelecao(new Map(), grupos, tipoDe), [], 'nada marcado = nenhum item (a tela não deixa registrar)');
+});
+
+test('a busca acha Mão de obra pelo nome, mas ela não aparece nas buscas por peça ou grupo', () => {
+  assert.deepEqual(buscarItens(base, 'mão de obra').map((a) => a.nome), [MAO_DE_OBRA, MAO_DE_OBRA, MAO_DE_OBRA]);
+  assert.ok(!buscarItens(base, 'freio').some((a) => a.nome === MAO_DE_OBRA));
 });
 
 test('o esqueleto do seletor tem busca, lista de grupos e painel (o resumo fica na coluna da tela)', () => {
