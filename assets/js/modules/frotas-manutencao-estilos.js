@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut30';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut31';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -31,7 +31,7 @@ ${ESTILOS_LISTA}
 .fm-ro{color:#f8fafc;font-size:14px;font-weight:700;line-height:1.4;word-break:break-word}.fm-ro small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:2px}
 .fm-itens{display:grid;gap:8px}.fm-item{display:grid;grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px 40px;gap:8px;align-items:start}.fm-item .fm-input,.fm-item .fm-select{height:38px;font-size:13px}
 .fm-form.fm-item-novo{grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px auto;margin-top:10px}
-.fm-form.fm-form-nova{grid-template-columns:minmax(0,2fr) minmax(130px,1fr) minmax(0,2fr)}.fm-form-nova .fm-field.full .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
+.fm-form.fm-form-nova{grid-template-columns:minmax(0,2fr) minmax(130px,1fr) minmax(0,2fr)}.fm-form-nova .fm-field .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
 .fm-prev-comps{display:grid;gap:8px;margin-bottom:8px}.fm-prev-comps:empty{display:none}.fm-prev-comp strong{display:block;margin:0 0 4px;color:#e2e8f0;font-size:12px}
 .fm-obrig{margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;letter-spacing:.06em}
 .fm-pick-busca{margin-bottom:10px}

@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut30';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut30';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut30';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut31';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut31';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut31';
 import {
   acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut30';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut31';
 import {
   htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut30';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut30';
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut31';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut31';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
