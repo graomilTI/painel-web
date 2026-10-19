@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, componentesDaCategoria, componentesDoServico, contarPorFiltro, descreverIntervalo,
+  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
@@ -115,17 +115,17 @@ test('próximo passo em palavras simples e natureza sugerida na aprovação', ()
   assert.equal(naturezaSugerida(m({ natureza: null }), []), 'corretiva');
 });
 
-test('componentes do guia: por categoria, por serviço e sem perder o que já foi marcado', () => {
+test('componentes do guia: por grupo, por serviço e sem perder o que já foi marcado', () => {
   const catalogo = [
-    { categoria_codigo: 9, plano_codigo: 'discos_freio', nome: 'Discos de freio', ordem: 2 },
-    { categoria_codigo: 9, plano_codigo: 'pastilhas_freio', nome: 'Pastilhas de freio', ordem: 1 },
-    { categoria_codigo: 9, plano_codigo: null, nome: 'Cilindro-mestre', ordem: 4 },
-    { categoria_codigo: 11, plano_codigo: null, nome: 'Molas helicoidais', ordem: 1 },
+    { grupo_codigo: 2, categoria_codigo: 9, plano_codigo: 'discos_freio', nome: 'Discos de freio', ordem: 2 },
+    { grupo_codigo: 2, categoria_codigo: 9, plano_codigo: 'pastilhas_freio', nome: 'Pastilhas de freio', ordem: 1 },
+    { grupo_codigo: 2, categoria_codigo: 9, plano_codigo: null, nome: 'Cilindro-mestre', ordem: 4 },
+    { grupo_codigo: 1, categoria_codigo: 11, plano_codigo: null, nome: 'Molas helicoidais', ordem: 1 },
   ];
-  assert.deepEqual(componentesDaCategoria(catalogo, 9), ['Pastilhas de freio', 'Discos de freio', 'Cilindro-mestre'], 'na ordem do guia');
-  assert.deepEqual(componentesDaCategoria(catalogo, '11'), ['Molas helicoidais'], 'aceita o código como texto');
-  assert.deepEqual(componentesDaCategoria(catalogo, 9, ['Item antigo']).slice(-1), ['Item antigo'], 'o já marcado não some se o catálogo mudou');
-  assert.deepEqual(componentesDaCategoria(undefined, 9), []);
+  assert.deepEqual(componentesDoGrupo(catalogo, 2), ['Pastilhas de freio', 'Discos de freio', 'Cilindro-mestre'], 'na ordem do guia');
+  assert.deepEqual(componentesDoGrupo(catalogo, '1'), ['Molas helicoidais'], 'aceita o código como texto');
+  assert.deepEqual(componentesDoGrupo(catalogo, 2, ['Item antigo']).slice(-1), ['Item antigo'], 'o já marcado não some se o catálogo mudou');
+  assert.deepEqual(componentesDoGrupo(undefined, 2), []);
   assert.deepEqual(componentesDoServico(catalogo, 9, 'pastilhas_freio'), ['Pastilhas de freio']);
   assert.deepEqual(componentesDoServico(catalogo, 9, 'fluido_freio'), [], 'serviço sem peças catalogadas');
   assert.deepEqual(componentesDoServico(catalogo, 9, null), []);
@@ -136,9 +136,19 @@ test('componentes do guia: por categoria, por serviço e sem perder o que já fo
   assert.equal(htmlComponentes([], []), '');
 });
 
-test('ficha e nova manutenção mostram os componentes do guia da categoria', () => {
-  const comps = [{ categoria_codigo: 9, plano_codigo: null, nome: 'Pastilhas de freio', ordem: 1 }, { categoria_codigo: 9, plano_codigo: null, nome: 'Discos de freio', ordem: 2 }];
-  const b = { ...base, componentes: comps };
+test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram seus componentes', () => {
+  const comps = [{ grupo_codigo: 2, categoria_codigo: 9, plano_codigo: null, nome: 'Pastilhas de freio', ordem: 1 }, { grupo_codigo: 2, categoria_codigo: 9, plano_codigo: null, nome: 'Discos de freio', ordem: 2 }];
+  const grupos = [{ codigo: 2, nome: 'Freios', categoria_codigo: 9 }, { codigo: 6, nome: 'Óleo e filtros', categoria_codigo: 2 }, { codigo: 8, nome: 'Outros', categoria_codigo: 28 }];
+  const b = { ...base, componentes: comps, grupos, categorias: [{ codigo: 9, nome: 'Freios', ativo: true, grupo_codigo: 2 }, { codigo: 2, nome: 'Sistema de lubrificação', ativo: true, grupo_codigo: 6 }, { codigo: 28, nome: 'Revisão geral', ativo: true, grupo_codigo: 8 }] };
+  assert.equal(grupoDaCategoria(b.categorias, 9), 2);
+  assert.equal(categoriaDoGrupo(grupos, 8), 28, 'Outros grava a categoria representativa');
+  assert.equal(nomeDoGrupoDaCategoria(b, 2), 'Óleo e filtros');
+  assert.equal(nomeDoGrupoDaCategoria(base, 2), 'Sistema de lubrificação', 'sem grupos cadastrados cai no sistema');
+  const nova0 = htmlFormNova(b, {});
+  assert.match(nova0, /data-n="grupo_codigo"/);
+  assert.doesNotMatch(nova0, /Sistema de lubrificação|Revisão geral/, 'os 29 sistemas não aparecem mais para escolher');
+  assert.match(nova0, /<option value="2">Freios<\/option>/);
+  assert.match(nova0, /<option value="8">Outros<\/option>/);
   const it = { ...item, componentes: ['Discos de freio'] };
   const editavel = htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.match(editavel, /data-comp value="Pastilhas de freio"/);
@@ -256,7 +266,7 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(nova, /data-acao="novo-item-add"[^>]*>\+<\/button>/);
   assert.doesNotMatch(nova, /\+ Item/);
   assert.equal((nova.match(/data-novo-item data-item-json=/g) || []).length, 1, 'o item do preset entra na lista');
-  assert.match(nova, /02 · Sistema de lubrificação|02 · /);
+  assert.match(nova, /Sistema de lubrificação/);
   assert.match(nova, /Troca de óleo/, 'o plano do guia aparece na linha da lista');
   assert.equal((nova.match(/data-acao="novo-item-remover"/g) || []).length, 1);
   const semItens = htmlFormNova(base, {});

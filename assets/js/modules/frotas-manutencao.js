@@ -2,15 +2,15 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut27';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut27';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut27';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut28';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut28';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut28';
 import {
-  acoesDisponiveis, componentesDaCategoria, contarPorFiltro, descricaoDosComponentes, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut27';
+  acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut28';
 import {
   htmlCasca, htmlComponentes, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut27';
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut28';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -19,7 +19,7 @@ import {
 
   const state = {
     supabase: null, root: null, opts: null,
-    base: { categorias: [], planos: [], oficinas: [], veiculos: [] },
+    base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
     filtro: 'todos', visao: 'andamento', busca: '',
     loading: false, ocupado: false,
@@ -65,7 +65,7 @@ import {
     sincronizarCards(root, state.filtro);
     root.querySelector('[data-linhas]').innerHTML = state.loading
       ? '<tr><td colspan="6" class="fm-empty">Carregando manutenções...</td></tr>'
-      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias, notasPorManut });
+      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias, grupos: state.base.grupos, notasPorManut });
     root.querySelector('[data-contagem]').textContent = `${linhas.length} de ${state.manut.length} manutenção(ões)`;
   }
 
@@ -179,6 +179,11 @@ import {
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
   // Componentes do guia marcados dentro de um trecho da tela (item da ficha, linha de entrada ou item novo).
+  // O seletor de grupo guarda o código do grupo; o item grava a categoria representativa dele. Sem grupos cadastrados,
+  // o seletor volta a listar as categorias e o valor já é a categoria.
+  const temGrupos = () => (state.base.grupos || []).length > 0;
+  const categoriaDaEscolha = (valor) => (temGrupos() ? categoriaDoGrupo(state.base.grupos, valor) : Number(valor));
+  const grupoDaEscolha = (valor) => (temGrupos() ? Number(valor) : grupoDaCategoria(state.base.categorias, valor));
   const marcadosEm = (el) => [...el.querySelectorAll('[data-comp]:checked')].map((c) => c.value);
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
@@ -237,12 +242,13 @@ import {
 
     if (acao === 'item-adicionar') {
       const box = ov.querySelector('[data-item-novo]');
-      const cat = val(box, '[data-nv="categoria_codigo"]');
-      if (!cat) return erros(['Escolha a categoria do item.']);
-      const nomeCat = state.base.categorias.find((c) => String(c.codigo) === cat)?.nome || 'Serviço';
+      const grupo = val(box, '[data-nv="grupo_codigo"]');
+      if (!grupo) return erros(['Escolha o grupo do item.']);
+      const cat = categoriaDaEscolha(grupo);
+      const nomeCat = state.base.grupos.find((g) => String(g.codigo) === grupo)?.nome || state.base.categorias.find((c) => c.codigo === cat)?.nome || 'Serviço';
       const componentes = marcadosEm(box);
       return executar(() => dados.salvarItem(state.supabase, {
-        manutencao_id: m.id, categoria_codigo: Number(cat),
+        manutencao_id: m.id, categoria_codigo: cat,
         descricao: val(box, '[data-nv="descricao"]').trim() || descricaoDosComponentes(componentes) || nomeCat,
         tipo_item: val(box, '[data-nv="tipo_item"]') || 'servico',
         componentes,
@@ -356,8 +362,8 @@ import {
       return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, componentes: marcadosEm(linha) }));
     }
     // Item novo: ao escolher a categoria, aparecem os componentes dela.
-    if (alvo.dataset.nv === 'categoria_codigo') {
-      alvo.closest('[data-item-novo]').querySelector('[data-nv-comps]').innerHTML = htmlComponentes(componentesDaCategoria(state.base.componentes, alvo.value), []);
+    if (alvo.dataset.nv === 'grupo_codigo') {
+      alvo.closest('[data-item-novo]').querySelector('[data-nv-comps]').innerHTML = htmlComponentes(componentesDoGrupo(state.base.componentes, grupoDaEscolha(alvo.value)), []);
       return;
     }
     // Itens: salvam ao mudar; trocar a categoria zera o plano e os componentes (cada categoria tem os seus).
@@ -365,7 +371,7 @@ import {
       const linha = alvo.closest('[data-item-id]');
       const campo = alvo.dataset.item;
       const mudanca = { [campo]: campo === 'valor' ? numeroOuNulo(alvo.value) : (alvo.value === '' ? null : alvo.value) };
-      if (campo === 'categoria_codigo') { mudanca.categoria_codigo = Number(alvo.value); mudanca.plano_id = null; mudanca.componentes = []; }
+      if (campo === 'grupo_codigo') { delete mudanca.grupo_codigo; mudanca.categoria_codigo = categoriaDaEscolha(alvo.value); mudanca.plano_id = null; mudanca.componentes = []; }
       if (campo === 'descricao' && !alvo.value.trim()) return renderFicha();
       return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, ...mudanca }));
     }
@@ -390,8 +396,8 @@ import {
     ov.addEventListener('click', aoClicarNova);
     // Ao escolher a categoria do item, aparecem os componentes e peças do guia para marcar.
     ov.addEventListener('change', (e) => {
-      if (e.target.dataset.n !== 'categoria_codigo') return;
-      e.target.closest('[data-novo-entrada]').querySelector('[data-n-comps]').innerHTML = htmlComponentes(componentesDaCategoria(state.base.componentes, e.target.value), []);
+      if (e.target.dataset.n !== 'grupo_codigo') return;
+      e.target.closest('[data-novo-entrada]').querySelector('[data-n-comps]').innerHTML = htmlComponentes(componentesDoGrupo(state.base.componentes, grupoDaEscolha(e.target.value)), []);
     });
     // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
     const campoPediu = ov.querySelector('[data-n-solicitante]');
@@ -420,11 +426,11 @@ import {
     // A natureza e o plano do guia só vêm de itens que outras telas (Preventiva, Checklist) já mandam preenchidos.
     const lerEntrada = () => {
       const linha = ov.querySelector('[data-novo-entrada]');
-      const cat = linha.querySelector('[data-n="categoria_codigo"]').value;
-      if (!cat) return null;
+      const escolha = linha.querySelector('[data-n="grupo_codigo"]').value;
+      if (!escolha) return null;
       const componentes = marcadosEm(linha);
       return {
-        categoria_codigo: Number(cat),
+        categoria_codigo: categoriaDaEscolha(escolha),
         descricao: linha.querySelector('[data-n="descricao"]').value.trim() || descricaoDosComponentes(componentes),
         tipo_item: linha.querySelector('[data-n="tipo_item"]').value || 'servico',
         ...(componentes.length ? { componentes } : {}),
@@ -432,7 +438,7 @@ import {
     };
     const limparEntrada = () => {
       const linha = ov.querySelector('[data-novo-entrada]');
-      linha.querySelector('[data-n="categoria_codigo"]').value = '';
+      linha.querySelector('[data-n="grupo_codigo"]').value = '';
       linha.querySelector('[data-n="descricao"]').value = '';
       linha.querySelector('[data-n-comps]').innerHTML = '';
       linha.querySelector('[data-n="tipo_item"]').value = 'servico';
@@ -443,7 +449,7 @@ import {
       ov.querySelector('[data-erros]').innerHTML = '';
       ov.querySelector('[data-novo-itens]').insertAdjacentHTML('beforeend', htmlItemAdicionado(state.base, item));
       limparEntrada();
-      ov.querySelector('[data-novo-entrada] [data-n="categoria_codigo"]').focus();
+      ov.querySelector('[data-novo-entrada] [data-n="grupo_codigo"]').focus();
       return;
     }
     if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
@@ -467,7 +473,7 @@ import {
         itens: itens.map((i) => ({
           ...i,
           descricao: i.descricao || state.base.planos.find((p) => p.id === i.plano_id)?.nome
-            || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
+            || state.base.grupos.find((g) => Number(g.categoria_codigo) === Number(i.categoria_codigo))?.nome || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
         })),
       });
       closeModal(NOVA);
@@ -495,7 +501,7 @@ import {
     container.innerHTML = ESTILOS_MANUTENCAO + htmlCasca();
 
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
-    container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [] }; await garantirBase(); await carregar(); });
+    container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
     container.querySelector('[data-f-visao]').addEventListener('change', (e) => { state.visao = e.target.value; renderLista(); });
     container.querySelector('[data-linhas]').addEventListener('click', (e) => {
