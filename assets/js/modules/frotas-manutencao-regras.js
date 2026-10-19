@@ -276,7 +276,7 @@ export function validarSolicitacao({ veiculo_id, descricao, itens = [] }) {
   const erros = [];
   if (!veiculo_id) erros.push('Selecione o veículo.');
   if (!String(descricao || '').trim()) erros.push('Descreva o problema ou o serviço.');
-  if (!itens.length) erros.push('Adicione ao menos um item: escolha a categoria e clique em +.');
+  if (!itens.length) erros.push('Marque ao menos um item do que será feito (escolha o grupo e marque os itens).');
   itens.forEach((it, i) => { if (!it.categoria_codigo) erros.push(`Item ${i + 1}: escolha o grupo.`); });
   return erros;
 }
