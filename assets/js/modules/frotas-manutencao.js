@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut33';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut33';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut33';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut36';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut36';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut36';
 import {
   acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut33';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut36';
 import {
   htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut33';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut33';
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut36';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut36';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -129,15 +129,15 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     return document.scrollingElement || document.documentElement;
   }
 
-  const htmlPagina = (conteudo) => `<div class="fm-pg-barra"><button class="fm-btn ghost" type="button" data-acao="fechar">← Voltar para a lista</button></div><div class="fm-card"><div class="fm-body fm-pg">${conteudo}</div></div>`;
+  const htmlPagina = (conteudo, larga = false) => `<div class="fm-pg-barra"><button class="fm-btn ghost" type="button" data-acao="fechar">← Voltar para a lista</button></div><div class="fm-card"><div class="fm-body fm-pg${larga ? ' fm-pg-larga' : ''}">${conteudo}</div></div>`;
 
   // Troca a lista pela página (nova ou ficha). O id da página é o que os tratadores de clique procuram.
-  function mostrarPagina(vista, id, html, { manterRolagem = false } = {}) {
+  function mostrarPagina(vista, id, html, { manterRolagem = false, larga = false } = {}) {
     const pg = paginaEl(); if (!pg) return null;
     const rolagem = rolagemPai(pg); const topo = rolagem.scrollTop;
     state.vista = vista; pg.id = id; pg.hidden = false;
     state.root.querySelector('[data-vista-lista]').hidden = true;
-    pg.innerHTML = htmlPagina(html);
+    pg.innerHTML = htmlPagina(html, larga);
     rolagem.scrollTop = manterRolagem ? topo : 0;
     return pg;
   }
@@ -442,12 +442,23 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   // ---------- nova solicitação ----------
   function abrirNova(preset = {}) {
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    const ov = mostrarPagina('nova', NOVA, htmlFormNova(state.base, preset));
+    const ov = mostrarPagina('nova', NOVA, htmlFormNova(state.base, preset), { larga: true });
     if (!ov) return;
     ov.dataset.origem = preset.origem || 'manual';
     ov.dataset.checklist = preset.checklist_id || '';
     // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria página.
-    ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base);
+    ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base, { resumo: ov.querySelector('[data-pick-resumo]'), aoMudar: () => ov.__pendencias?.() });
+    // Pendências ao vivo no resumo: o que ainda falta para registrar.
+    ov.__pendencias = () => {
+      const prontos = ov.querySelectorAll('[data-novo-item]').length;
+      const itens = prontos + (ov.__seletor?.qtd() || 0);
+      const pend = [
+        [!!veiculoDaDigitacao(val(ov, '[data-n-veiculo]')), 'Veículo escolhido'],
+        [!!val(ov, '[data-n-descricao]').trim(), 'Problema descrito'],
+        [itens > 0, 'Ao menos um item marcado'],
+      ];
+      ov.querySelector('[data-nova-pendencias]').innerHTML = pend.map(([ok, txt]) => `<li class="${ok ? 'ok' : 'falta'}"><span>${ok ? '✔' : '○'}</span> ${txt}</li>`).join('');
+    };
     // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
     const campoPediu = ov.querySelector('[data-n-solicitante]');
     campoPediu.addEventListener('input', () => { campoPediu.dataset.auto = campoPediu.value.trim() ? '0' : '1'; });
@@ -458,6 +469,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     };
     ov.querySelector('[data-n-veiculo]').addEventListener('input', preencherCondutor);
     ov.querySelector('[data-n-veiculo]').addEventListener('change', preencherCondutor);
+    ov.__pendencias();
   }
 
   function veiculoDaDigitacao(texto) {
@@ -469,7 +481,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
     if (alvo.dataset.acao === 'fechar') return mostrarLista();
-    if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
+    if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); ov.__pendencias?.(); return; }
     if (alvo.dataset.acao !== 'novo-salvar') return;
 
     const veiculo = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'));
@@ -518,8 +530,8 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     // Nova manutenção e ficha são páginas dentro da aba (no lugar da lista); os tratadores valem para a vista aberta.
     const pagina = container.querySelector('[data-pagina]');
     pagina.addEventListener('click', (e) => { if (state.vista === 'ficha') aoClicarFicha(e); else if (state.vista === 'nova') aoClicarNova(e); });
-    pagina.addEventListener('change', (e) => { if (state.vista === 'ficha') aoMudarFicha(e); });
-    pagina.addEventListener('input', (e) => { if (state.vista === 'ficha') aoDigitarFicha(e); });
+    pagina.addEventListener('change', (e) => { if (state.vista === 'ficha') aoMudarFicha(e); else if (state.vista === 'nova') pagina.__pendencias?.(); });
+    pagina.addEventListener('input', (e) => { if (state.vista === 'ficha') aoDigitarFicha(e); else if (state.vista === 'nova') pagina.__pendencias?.(); });
     // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
     pagina.addEventListener('toggle', (e) => { if (state.vista === 'ficha' && e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
 

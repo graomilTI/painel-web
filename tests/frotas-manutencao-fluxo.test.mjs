@@ -291,6 +291,13 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
   // Itens: o seletor em dois painéis (obrigatório) e, acima, a lista do que veio pronto do checklist/plano, cada um com ✕.
   assert.match(nova, /data-pick-busca/);
+  // tela inteira em três colunas: pedido | o que será feito | resumo com pendências e os botões
+  assert.match(nova, /data-nova-grade/);
+  assert.match(nova, /fm-nova-pedido/);
+  assert.match(nova, /fm-nova-resumo/);
+  assert.match(nova, /data-nova-pendencias/);
+  assert.match(nova, /data-pick-resumo/);
+  assert.match(nova, /data-acao="novo-salvar"/);
   assert.doesNotMatch(nova, /data-novo-entrada|novo-item-add/, "a linha de entrada com + saiu");
   assert.match(nova, /obrigatório/);
   assert.equal((nova.match(/data-novo-item data-item-json=/g) || []).length, 1, 'o item do preset entra na lista');

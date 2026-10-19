@@ -44,7 +44,8 @@ test('itens da seleção: um por grupo, com a categoria do grupo, os componentes
   assert.deepEqual(itensDaSelecao(new Map(), new Map(), grupos), [], 'nada marcado = nenhum item (a tela não deixa registrar)');
 });
 
-test('o esqueleto do seletor tem busca, lista de grupos, painel e resumo', () => {
+test('o esqueleto do seletor tem busca, lista de grupos e painel (o resumo fica na coluna da tela)', () => {
   const html = htmlSeletor();
-  for (const marca of ['data-pick-busca', 'data-pick-grupos', 'data-pick-painel', 'data-pick-resumo']) assert.match(html, new RegExp(marca));
+  for (const marca of ['data-pick-busca', 'data-pick-grupos', 'data-pick-painel']) assert.match(html, new RegExp(marca));
+  assert.doesNotMatch(html, /data-pick-resumo/);
 });
