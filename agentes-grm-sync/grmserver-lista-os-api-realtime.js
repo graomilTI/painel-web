@@ -476,10 +476,13 @@ async function main() {
   );
   let token = await login();
   logger.info(`Agente iniciado; intervalo ${POLL_INTERVAL_MS} ms.`);
-  const jobId = await reportarInicio(supabase);
+  let jobId = await reportarInicio(supabase);
 
   while (true) {
     const startedAt = Date.now();
+    // Se o Supabase estava fora do ar no boot, o job de heartbeat não foi criado e o alerta de "sem sinal"
+    // dispara mesmo com o serviço saudável (19/10/2026). Tenta de novo a cada ciclo até conseguir.
+    if (!jobId) jobId = await reportarInicio(supabase);
     try {
       let orders;
       try {
