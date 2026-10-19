@@ -90,6 +90,24 @@ async function paginateAll<T = Record<string, unknown>>(
   return all;
 }
 
+// Cada publicação relia o cadastro inteiro de colaboradores e de contratos (milhares de linhas) só para
+// montar mapas de CPF/nome. Com o timer de 4 s do painel e a reconciliação de 10 min isso virou uma das
+// maiores fontes de egress do projeto (out/2026). A isolate da Edge Function é reaproveitada entre chamadas
+// próximas, então uma cópia de 60 s em memória corta quase tudo sem mudar o resultado na prática.
+const CADASTRO_CACHE_MS = 60_000;
+const cadastroCache = new Map<string, { at: number; rows: Record<string, unknown>[] }>();
+
+async function cadastroEmCache(
+  key: string,
+  load: () => Promise<Record<string, unknown>[]>,
+): Promise<Record<string, unknown>[]> {
+  const hit = cadastroCache.get(key);
+  if (hit && Date.now() - hit.at < CADASTRO_CACHE_MS) return hit.rows;
+  const rows = await load();
+  cadastroCache.set(key, { at: Date.now(), rows });
+  return rows;
+}
+
 function jwtRole(token: string): string {
   try {
     const payload = token.split('.')[1];
@@ -428,9 +446,15 @@ Deno.serve(async (req) => {
     if (configError) throw configError;
     const configByKey = new Map((configRows || []).map((row) => [clean(row.chave), row]));
 
-    const allStaffRows = await paginateAll<Record<string, unknown>>(
-      (from, to) => service.from('colaboradores_atuais').select('*').range(from, to),
-    );
+    // Só as colunas que o fluxo usa (id, nome, cpf, regional e situação); o `select('*')` trazia endereço,
+    // e-mails, telefone etc. de todos os colaboradores a cada publicação.
+    const allStaffRows = await cadastroEmCache('colaboradores_atuais', () => paginateAll<Record<string, unknown>>(
+      (from, to) => service
+        .from('colaboradores_atuais')
+        .select('id,nome,cpf,supervisao,coordenacao,situacao,ativo,desligamento')
+        .order('id')
+        .range(from, to),
+    ));
     const allStaff = allStaffRows.filter(isActiveStaff);
     const staffByCpf = new Map<string, Record<string, unknown>>();
     const staffByName = new Map<string, Record<string, unknown>[]>();
@@ -441,13 +465,13 @@ Deno.serve(async (req) => {
       if (name) staffByName.set(name, [...(staffByName.get(name) || []), staff]);
     }
 
-    const contractRows = await paginateAll<Record<string, unknown>>(
+    const contractRows = await cadastroEmCache('colaborador_cruzamento', () => paginateAll<Record<string, unknown>>(
       (from, to) => service
         .from('colaborador_cruzamento')
         .select('cpf,tipo_contrato,salario,atualizado_em')
         .order('atualizado_em', { ascending: false })
         .range(from, to),
-    );
+    ));
     const contractByCpf = new Map<string, Record<string, unknown>>();
     for (const contract of contractRows) {
       const cpf = digits(contract.cpf);
