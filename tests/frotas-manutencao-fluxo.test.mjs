@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, MAO_DE_OBRA, acoesDisponiveis, itensDoGrupo, itensPorTipo, tipoDoComponente, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
+  FILTROS, TRANSICOES, MAO_DE_OBRA, modeloDoVeiculo, pecaEscolhida, pecasDoModelo, rotuloModelo, acoesDisponiveis, itensDoGrupo, itensPorTipo, tipoDoComponente, linhasIniciais, normalizarLinhas, somarLinhas, totalDoOrcamento, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, categoriaDoGrupo, componentesDoGrupo, componentesDoServico, grupoDaCategoria, nomeDoGrupoDaCategoria, contarPorFiltro, descreverIntervalo,
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
@@ -235,6 +235,37 @@ test('a etiqueta "serviço" na ficha vem de cada componente: peça marcada em it
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [antigo], orcamentos: [], base: b, podeAprovar: true });
   assert.match(html, /data-comp value="Kit de embreagem" checked> Kit de embreagem<\/label>/, 'a peça marcada continua na lista e sem etiqueta');
   assert.match(html, /Revisão do câmbio <em class="fm-pick-tag">serviço<\/em>/, 'o serviço do guia leva a etiqueta');
+});
+
+test('modelo do veículo agrupa as versões (Mobi, Uno, Kwid, Gol...) e importados', () => {
+  const casos = {
+    'FIAT/MOBI LIKE': 'FIAT/MOBI', 'FIAT/MOBI DRIVE': 'FIAT/MOBI', 'FIAT/UNO VIVACE 1.0': 'FIAT/UNO', 'FIAT/UNO MILLE ECONOMY': 'FIAT/UNO',
+    'RENAULT/KWID ZEN 10MT': 'RENAULT/KWID', 'VW/GOL MPI': 'VW/GOL', 'VW/NOVO GOL 1.0 CITY': 'VW/GOL', 'VW/NOVA SAVEIRO CS': 'VW/SAVEIRO',
+    'CHEVROLET/ONIX 1.4MT LTZ': 'CHEVROLET/ONIX', 'I/FIAT TORO FREEDOM': 'FIAT/TORO', 'VOLKSWAGEN/GOL': 'VW/GOL', '': '',
+  };
+  for (const [texto, esperado] of Object.entries(casos)) assert.equal(modeloDoVeiculo(texto), esperado, texto);
+  assert.equal(modeloDoVeiculo({ marca_modelo: 'FIAT/ARGO DRIVE 1.0' }), 'FIAT/ARGO', 'aceita o cadastro do veículo');
+  assert.equal(rotuloModelo('FIAT/MOBI'), 'Fiat Mobi');
+  assert.equal(rotuloModelo('VW/GOL'), 'VW Gol');
+});
+
+test('peças do modelo: só as do modelo, ativas, mais usadas primeiro; a peça escolhida vai no item e pré-preenche o orçamento', () => {
+  const catalogo = [
+    { id: 'p1', modelo: 'RENAULT/KWID', componente: 'Kit de embreagem', detalhe: 'Valeo', ultimo_valor: 800, usos: 1, ultima_data: '2026-09-01' },
+    { id: 'p2', modelo: 'RENAULT/KWID', componente: 'Kit de embreagem', detalhe: 'LUK', ultimo_valor: 754.8, usos: 3, ultima_data: '2026-10-01' },
+    { id: 'p3', modelo: 'FIAT/MOBI', componente: 'Kit de embreagem', detalhe: 'Sachs', ultimo_valor: 700, usos: 9 },
+    { id: 'p4', modelo: 'RENAULT/KWID', componente: 'Filtro de óleo do motor', detalhe: 'Tecfil', ativo: false },
+  ];
+  const kwid = pecasDoModelo(catalogo, 'RENAULT/KWID');
+  assert.deepEqual([...kwid.keys()], ['Kit de embreagem'], 'sem as de outro modelo e sem as inativas');
+  assert.deepEqual(kwid.get('Kit de embreagem').map((p) => p.detalhe), ['LUK', 'Valeo'], 'mais usada primeiro');
+  assert.equal(pecasDoModelo(catalogo, '').size, 0);
+  assert.deepEqual(pecaEscolhida(catalogo[1]), { detalhe: 'LUK', valor: 754.8 });
+  const itens = itensPorTipo(7, ['Kit de embreagem'], () => 'peca', (n) => (n === 'Kit de embreagem' ? pecaEscolhida(catalogo[1]) : null));
+  assert.deepEqual(itens[0].pecas, { 'Kit de embreagem': { detalhe: 'LUK', valor: 754.8 } });
+  assert.equal(itensPorTipo(7, ['Kit de embreagem'], () => 'peca')[0].pecas, undefined, 'sem peça escolhida o item não leva o campo');
+  const linhas = linhasIniciais([{ tipo_item: 'peca', componentes: ['Kit de embreagem', 'Filtro'], pecas: itens[0].pecas }]);
+  assert.deepEqual(linhas.map((l) => [l.nome, l.detalhe, l.valor]), [['Kit de embreagem', 'LUK', 754.8], ['Filtro', '', null]], 'a linha do orçamento já vem com marca e valor');
 });
 
 test('urgentes e altas vêm primeiro na lista em andamento', () => {

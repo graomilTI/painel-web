@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut43';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -55,6 +55,9 @@ ${ESTILOS_LISTA}
 .fm-nova-acoes{display:grid;gap:8px;margin-top:14px}.fm-nova-acoes .fm-btn{width:100%}
 .fm-pg.fm-pg-larga{max-width:none}
 .fm-pagina[hidden],[data-vista-lista][hidden]{display:none}.fm-pg-barra{margin:0 0 12px}.fm-pg{max-width:1180px;margin:0 auto}.fm-pagina .fm-x{display:none}
+.fm-pick-cel{display:grid;gap:4px;align-content:start}.fm-pick-pecas{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 2px}
+.fm-pick-peca{border:1px solid rgba(96,165,250,.4);background:rgba(59,130,246,.1);color:#bfdbfe;border-radius:999px;padding:3px 10px;font:inherit;font-size:11px;font-weight:800;cursor:pointer}.fm-pick-peca:hover{border-color:#60a5fa}.fm-pick-peca.on{background:#2563eb;border-color:#60a5fa;color:#fff}
+.fm-chip-peca{font-style:normal;margin-left:4px;padding:1px 7px;border-radius:999px;background:rgba(59,130,246,.2);color:#bfdbfe;font-size:10px;font-weight:900}
 .fm-pick-tag{margin-left:auto;align-self:center;font-style:normal;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
 .fm-pick-item.servico{border-style:dashed}.fm-chip-x.servico{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a}.fm-chip-x.servico button{color:#fde68a}
 .fm-comp.servico{border-style:dashed}.fm-comp .fm-pick-tag{margin-left:2px}
