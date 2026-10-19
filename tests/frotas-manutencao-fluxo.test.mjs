@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import {
-  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, contarPorFiltro, descreverIntervalo,
+  FILTROS, TRANSICOES, acoesDisponiveis, bateFiltro, bateVisao, camposEditaveis, codigoManutencao, componentesDaCategoria, componentesDoServico, contarPorFiltro, descreverIntervalo,
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
-import { htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlComponentes, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
 // frotas_manutencoes_fluxo; quem decide é o banco, aqui se evita oferecer o que ele recusaria.
@@ -113,6 +113,42 @@ test('próximo passo em palavras simples e natureza sugerida na aprovação', ()
   assert.equal(naturezaSugerida(m({ natureza: null }), [{ natureza: 'preventiva' }]), 'preventiva');
   assert.equal(naturezaSugerida(m({ natureza: null }), [{ natureza: 'preventiva' }, { natureza: null }]), 'corretiva');
   assert.equal(naturezaSugerida(m({ natureza: null }), []), 'corretiva');
+});
+
+test('componentes do guia: por categoria, por serviço e sem perder o que já foi marcado', () => {
+  const catalogo = [
+    { categoria_codigo: 9, plano_codigo: 'discos_freio', nome: 'Discos de freio', ordem: 2 },
+    { categoria_codigo: 9, plano_codigo: 'pastilhas_freio', nome: 'Pastilhas de freio', ordem: 1 },
+    { categoria_codigo: 9, plano_codigo: null, nome: 'Cilindro-mestre', ordem: 4 },
+    { categoria_codigo: 11, plano_codigo: null, nome: 'Molas helicoidais', ordem: 1 },
+  ];
+  assert.deepEqual(componentesDaCategoria(catalogo, 9), ['Pastilhas de freio', 'Discos de freio', 'Cilindro-mestre'], 'na ordem do guia');
+  assert.deepEqual(componentesDaCategoria(catalogo, '11'), ['Molas helicoidais'], 'aceita o código como texto');
+  assert.deepEqual(componentesDaCategoria(catalogo, 9, ['Item antigo']).slice(-1), ['Item antigo'], 'o já marcado não some se o catálogo mudou');
+  assert.deepEqual(componentesDaCategoria(undefined, 9), []);
+  assert.deepEqual(componentesDoServico(catalogo, 9, 'pastilhas_freio'), ['Pastilhas de freio']);
+  assert.deepEqual(componentesDoServico(catalogo, 9, 'fluido_freio'), [], 'serviço sem peças catalogadas');
+  assert.deepEqual(componentesDoServico(catalogo, 9, null), []);
+  const html = htmlComponentes(['Pastilhas "x"', 'Discos'], ['Discos']);
+  assert.match(html, /data-comp value="Discos" checked/);
+  assert.doesNotMatch(html, /value="Pastilhas &quot;x&quot;" checked/);
+  assert.match(html, /Pastilhas &quot;x&quot;/, 'texto escapado');
+  assert.equal(htmlComponentes([], []), '');
+});
+
+test('ficha e nova manutenção mostram os componentes do guia da categoria', () => {
+  const comps = [{ categoria_codigo: 9, plano_codigo: null, nome: 'Pastilhas de freio', ordem: 1 }, { categoria_codigo: 9, plano_codigo: null, nome: 'Discos de freio', ordem: 2 }];
+  const b = { ...base, componentes: comps };
+  const it = { ...item, componentes: ['Discos de freio'] };
+  const editavel = htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
+  assert.match(editavel, /data-comp value="Pastilhas de freio"/);
+  assert.match(editavel, /data-comp value="Discos de freio" checked/);
+  assert.match(editavel, /data-nv-comps/, 'a linha de item novo também recebe os componentes');
+  const encerrada = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
+  assert.match(encerrada, /Itens: Discos de freio/);
+  assert.doesNotMatch(encerrada, /data-comp /, 'encerrada não edita');
+  assert.match(htmlFormNova(b, {}), /data-n-comps/);
+  assert.match(htmlFormNova(b, { itens: [{ categoria_codigo: 9, descricao: 'Freio', componentes: ['Discos de freio'] }] }), /Itens: Discos de freio/);
 });
 
 test('urgentes e altas vêm primeiro na lista em andamento', () => {
