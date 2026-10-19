@@ -27,7 +27,7 @@ function isComprasPayment(payload){if(!payload||Array.isArray(payload))return fa
 function mergeDescriptionFinPay(current,incoming){const atual=String(current||'').trim(); const novo=String(incoming||'').trim(); if(!atual)return novo; if(!novo)return atual; if(normalizeFinPay(atual).includes(normalizeFinPay(novo)))return atual; return `${atual} | ${novo.replace(/^Compra:\s*/i,'')}`}
 async function findOpenComprasPayment(payload){
   const status=payload.status||'PENDENTE'; const forma=payload.forma_pagamento||null; const targetKey=paymentKeyFinPay(payload);
-  let query=supabase.from('financeiro_pagamentos').select('id,origem,origem_id,descricao,favorecido,fornecedor,forma_pagamento,dados_pagamento,valor,status,created_at,compras_item_ids').eq('origem','COMPRAS').eq('status',status).order('created_at',{ascending:false}).limit(200);
+  let query=supabase.from('financeiro_pagamentos').select('id,origem,origem_id,descricao,favorecido,fornecedor,forma_pagamento,dados_pagamento,valor,status,created_at,compras_item_ids,codigo').eq('origem','COMPRAS').eq('status',status).order('created_at',{ascending:false}).limit(200);
   if(forma) query=query.eq('forma_pagamento',forma);
   const {data,error}=await query;
   if(error){console.warn('[compras-financeiro-grouping] Falha ao buscar pagamentos existentes:',error); return null}
@@ -40,7 +40,12 @@ async function findOpenComprasPayment(payload){
 async function mergeOrInsertComprasPayment(payload,options){
   if(!isComprasPayment(payload)) return supabase.from('financeiro_pagamentos').insert(payload,options);
   const existing=await findOpenComprasPayment(payload);
-  if(!existing) return supabase.from('financeiro_pagamentos').insert(payload,options);
+  if(!existing){
+    // Pagamento novo: ganha o código PAG-AAMM-NNN que o Financeiro usa pra se achar.
+    // (Se agrupar num pagamento aberto, mantém o código dele — sem gastar número.)
+    const {data:codigo}=await supabase.rpc('gerar_codigo_pagamento_compra');
+    return supabase.from('financeiro_pagamentos').insert(codigo?{...payload,codigo}:payload,options).select('*');
+  }
   const valorAtual=Number(existing.valor||0); const valorNovo=Number(payload.valor||0);
   const idsExistentes=Array.isArray(existing.compras_item_ids)?existing.compras_item_ids:[];
   const idsNovos=Array.isArray(payload.compras_item_ids)?payload.compras_item_ids:[];
@@ -54,7 +59,9 @@ async function mergeOrInsertComprasPayment(payload,options){
     compras_item_ids:[...new Set([...idsExistentes,...idsNovos])],
   };
   console.info('[compras-financeiro-grouping] Pagamento agrupado ao lançamento existente:',{pagamento_id:existing.id,valor_anterior:valorAtual,valor_adicionado:valorNovo,valor_total:updatePayload.valor});
-  return supabase.from('financeiro_pagamentos').update(updatePayload).eq('id',existing.id).select('*');
+  const res=await supabase.from('financeiro_pagamentos').update(updatePayload).eq('id',existing.id).select('*');
+  if(!res.error&&res.data?.[0]&&!res.data[0].codigo) res.data[0].codigo=existing.codigo||null;
+  return res;
 }
 async function loadColaboradores(){
   // Usa cache compartilhado (foto mais recente, via view colaboradores_atuais).
@@ -253,7 +260,7 @@ function actionsCellForTab(r){
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
   return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
+    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}${r.codigo_pagamento?`<br><small style="color:#93c5fd">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
   </tr>`;
 }
 
@@ -269,7 +276,7 @@ function cardRowHtml(r){
     <input type="checkbox" data-check="${esc(r.id)}">
     <div class="adm-cmp-card-row-info">
       <strong>${esc(r.quantidade||r.unidade||1)}x ${esc(r.material)}</strong>
-      <small>${esc(r.tipo||'-')}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}${r.uniforme_cor?` · Cor: ${esc(r.uniforme_cor)}`:''}${r.colaborador_nome?` · ${esc(r.colaborador_nome)}`:''}${r.codigo?` · Cód: ${esc(r.codigo)}`:''}</small>
+      <small>${esc(r.tipo||'-')}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}${r.uniforme_cor?` · Cor: ${esc(r.uniforme_cor)}`:''}${r.colaborador_nome?` · ${esc(r.colaborador_nome)}`:''}${r.codigo?` · Cód: ${esc(r.codigo)}`:''}${r.codigo_pagamento?` · Pgto: <b>${esc(r.codigo_pagamento)}</b>`:''}</small>
     </div>
     <div class="adm-cmp-card-row-value">${money(r.valor_total||0)}</div>
     <div class="adm-cmp-card-row-actions">${rowActionsHtml(r)}</div>
@@ -1114,12 +1121,14 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
     // pagar o boleto no vencimento.
     const nfLinha=boletoDireto?`NF já anexada — lançada em Notas Fiscais. Pagar boleto no vencimento.`:'';
     const payload={origem:'COMPRAS',origem_setor:'COMPRAS',origem_id:normalItens[0]?.id||null,compras_item_ids:normalItens.map(r=>r.id),descricao,favorecido:fornecedor||'Fornecedor a definir',fornecedor:fornecedor||null,contato:contato||null,valor:normalTotal,forma_pagamento:formaFinPagamento,dados_pagamento:[dadosConsolidado,entregaLinha,nfLinha].filter(Boolean).join('\n')||null,status:'PENDENTE',vencimento:null,created_at:new Date().toISOString()};
-    await safe(()=>mergeOrInsertComprasPayment(payload),null);
+    const pagGravado=await safe(()=>mergeOrInsertComprasPayment(payload),null);
+    const codigoPagamento=pagGravado?.[0]?.codigo||null;
     for(const r of normalItens){
       const dadosItem=dadosPorItem?(dadosPorItem[r.id]||null):dados;
       const upd=boletoDireto
         ?{status:'comprado',nf_url:nfUrl,comprovante_url:dadosItem||null,comprado_em:new Date().toISOString(),valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null}
         :{status:'pendente_pagamento',valor_unitario:r._valor_unitario,valor_total:r._valor_total,forma_pagamento:forma,dados_pagamento:dadosItem||null};
+      if(codigoPagamento) upd.codigo_pagamento=codigoPagamento;
       if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;

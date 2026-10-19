@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261019-fin4 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261019-fin5 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261019-fin4';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261019-fin4';
+import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261019-fin5';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261019-fin5';
 
 function criarSetorPagamentos(ctx) {
   function filteredSetorPagamentos() {
@@ -83,6 +83,12 @@ function criarSetorPagamentos(ctx) {
     return parts.join('');
   }
 
+  // Código do pagamento (PAG-AAMM-NNN): no registro real vem de `codigo`; nas linhas
+  // derivadas de compras_itens, `codigo` é o do item — o do pagamento fica em _codigo_pagamento.
+  function codigoPagamento(row) {
+    return String(row.id || '').startsWith('compra_') ? (row._codigo_pagamento || '') : (row.codigo || '');
+  }
+
   function renderSetorPagamentos() {
     const tbody = document.getElementById('setorPagamentosTbody');
     if (!tbody) return;
@@ -99,7 +105,7 @@ function criarSetorPagamentos(ctx) {
       const dtTime = dt && !isNaN(dt) ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
       const { gestor, coordenacao } = getGestorCoordenacao(row);
       return `<tr>
-        <td><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></td>
+        <td><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong>${codigoPagamento(row) ? `<br><small style="color:#93c5fd;white-space:nowrap">${esc(codigoPagamento(row))}</small>` : ''}</td>
         <td style="white-space:nowrap">${dtDate}${dtTime ? `<br><small style="color:#6b7280">${dtTime}</small>` : ''}</td>
         <td>${esc(gestor) || '<span class="spay-empty">—</span>'}</td>
         <td>${esc(coordenacao) || '<span class="spay-empty">—</span>'}</td>
@@ -154,6 +160,7 @@ function criarSetorPagamentos(ctx) {
       dados_pagamento: row.dados_pagamento || '',
       forma_pagamento: row.forma_pagamento || '',
       comprovante_url: row.comprovante_url || '',
+      _codigo_pagamento: row.codigo_pagamento || '',
       _raw_compra_item_id: row.id,
       _compra_item_ids: [row.id],
       _gestor: s.solicitante || '',
@@ -183,6 +190,7 @@ function criarSetorPagamentos(ctx) {
           valor: 0,
           _source_table: 'compras_itens_group',
           _compra_item_ids: [],
+          _codigo_pagamento: '',
           _raw_compra_item_id: null
         });
       }
@@ -190,6 +198,9 @@ function criarSetorPagamentos(ctx) {
       const group = map.get(key);
       group.valor += Number(base.valor || 0);
       group._compra_item_ids.push(...(base._compra_item_ids || []));
+      if (base._codigo_pagamento && !String(group._codigo_pagamento || '').split(' / ').includes(base._codigo_pagamento)) {
+        group._codigo_pagamento = group._codigo_pagamento ? `${group._codigo_pagamento} / ${base._codigo_pagamento}` : base._codigo_pagamento;
+      }
       group.descricao += (group.descricao ? '\n' : '') + base.descricao;
       group.conteudo = group.descricao;
       if (new Date(base.created_at || 0).getTime() > new Date(group.created_at || 0).getTime()) {
@@ -377,7 +388,7 @@ function criarSetorPagamentos(ctx) {
         <button class="btn btn-secondary" id="finPayClose" type="button">Fechar</button>
       </div>
       <div class="pay-summary">
-        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
+        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
       <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
@@ -408,7 +419,7 @@ function criarSetorPagamentos(ctx) {
   function idsItensCompra(row) {
     const ids = Array.isArray(row._compra_item_ids) && row._compra_item_ids.length
       ? row._compra_item_ids
-      : (Array.isArray(row.compras_item_ids) && row.compras_item_ids.length ? row.compras_item_ids : (row.origem_id ? [row.origem_id] : []));
+      : (Array.isArray(row.compras_item_ids) && row.compras_item_ids.length ? row.compras_item_ids : (row.origem_id && !String(row.origem_id).startsWith('grupo_') ? [row.origem_id] : []));
     return [...new Set(ids.map((id) => String(id || '').replace(/^compra_/, '')).filter(Boolean))];
   }
 
@@ -454,8 +465,15 @@ function criarSetorPagamentos(ctx) {
       origem: row.origem, origem_setor: row.origem_setor || 'COMPRAS', favorecido: row.favorecido, fornecedor: row.fornecedor,
       contato: row.contato, forma_pagamento: row.forma_pagamento, vencimento: row.vencimento || null,
     };
+    // O pedaço pago mantém o código do pagamento com um sufixo (PAG-…-001-1), o resto fica com o original.
+    let codigoPago = null;
+    if (row.codigo) {
+      const { count } = await supabase.from('financeiro_pagamentos').select('id', { count: 'exact', head: true }).like('codigo', `${row.codigo}-%`);
+      codigoPago = `${row.codigo}-${(count || 0) + 1}`;
+    }
     const { error: insErr } = await supabase.from('financeiro_pagamentos').insert({
       ...base,
+      codigo: codigoPago,
       origem_id: itensSel[0].id,
       compras_item_ids: itensSel.map((i) => i.id),
       descricao: descricao(itensSel),
@@ -474,6 +492,7 @@ function criarSetorPagamentos(ctx) {
       dados_pagamento: dadosDe(itensRest, itensSel),
     }).eq('id', row.id);
     if (updErr) throw updErr;
+    if (codigoPago) await supabase.from('compras_itens').update({ codigo_pagamento: codigoPago }).in('id', itensSel.map((i) => i.id));
   }
 
   async function enviarComprovanteParcial(row, itensSel, itensRest, comprovanteUrl) {
@@ -506,7 +525,7 @@ function criarSetorPagamentos(ctx) {
         <button class="btn btn-secondary" id="finBoletoClose" type="button">Fechar</button>
       </div>
       <div class="pay-summary">
-        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
+        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
       <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
@@ -565,9 +584,7 @@ function criarSetorPagamentos(ctx) {
   }
 
   async function updateComprasComprovante(row, comprovanteUrl) {
-    const ids = (row._compra_item_ids || [])
-      .map((id) => String(id || '').replace(/^compra_/, ''))
-      .filter(Boolean);
+    const ids = idsItensCompra(row);
 
     const forma = row.forma_pagamento || '';
     const dados = row.dados_pagamento || '';
@@ -625,7 +642,7 @@ function criarSetorPagamentos(ctx) {
         <button class="btn btn-secondary" id="finRecusaClose" type="button">Fechar</button>
       </div>
       <div class="pay-summary">
-        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>
+        <div class="pay-mini"><span>Setor</span><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong></div>${codigoPagamento(row) ? `<div class="pay-mini"><span>Código</span><strong>${esc(codigoPagamento(row))}</strong></div>` : ''}
         <div class="pay-mini"><span>Valor</span><strong>${money(row.valor || row.valor_total || row.total)}</strong></div>
       </div>
       <div class="fin-field full mt-16">
