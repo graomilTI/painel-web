@@ -145,10 +145,10 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   assert.equal(nomeDoGrupoDaCategoria(b, 2), 'Óleo e filtros');
   assert.equal(nomeDoGrupoDaCategoria(base, 2), 'Sistema de lubrificação', 'sem grupos cadastrados cai no sistema');
   const nova0 = htmlFormNova(b, {});
-  assert.match(nova0, /data-n="grupo_codigo"/);
+  assert.match(nova0, /data-pick-grupos/);
   assert.doesNotMatch(nova0, /Sistema de lubrificação|Revisão geral/, 'os 29 sistemas não aparecem mais para escolher');
-  assert.match(nova0, /<option value="2">Freios<\/option>/);
-  assert.match(nova0, /<option value="8">Outros<\/option>/);
+  assert.doesNotMatch(nova0, /<option value="2">Freios<\/option>/, 'o seletor novo não usa dropdown de grupo');
+  assert.match(nova0, /obrigatório/);
   const it = { ...item, componentes: ['Discos de freio'] };
   const editavel = htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.match(editavel, /data-comp value="Pastilhas de freio"/);
@@ -157,7 +157,7 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   const encerrada = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
   assert.match(encerrada, /Itens: Discos de freio/);
   assert.doesNotMatch(encerrada, /data-comp /, 'encerrada não edita');
-  assert.match(htmlFormNova(b, {}), /data-n-comps/);
+  assert.doesNotMatch(htmlFormNova(b, {}), /data-n-comps/);
   assert.match(htmlFormNova(b, { itens: [{ categoria_codigo: 9, descricao: 'Freio', componentes: ['Discos de freio'] }] }), /Itens: Discos de freio/);
 });
 
@@ -195,6 +195,7 @@ test('valor mostrado: final > aprovado > menor orçamento', () => {
 test('validações dos formulários', () => {
   assert.equal(validarSolicitacao({ veiculo_id: 'v', descricao: 'x', itens: [{ categoria_codigo: 9 }] }).length, 0);
   assert.equal(validarSolicitacao({ veiculo_id: '', descricao: ' ', itens: [{}] }).length, 3);
+  assert.match(validarSolicitacao({ veiculo_id: 'v', descricao: 'x', itens: [] })[0], /ao menos um item/);
   assert.equal(validarOrcamento({ fornecedor: 'A', valor_total: 0 }).length, 0);
   assert.equal(validarOrcamento({ fornecedor: '', valor_total: null }).length, 2);
   assert.equal(validarConclusao({ data_execucao: '2026-10-16', km_execucao: 48000, custo: 760 }).length, 0);
@@ -261,17 +262,17 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(nova, /data-n-solicitante/);
   assert.match(nova, /Registrar manutenção/);
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
-  // Itens: linha de entrada com "+" e, abaixo, a lista do que já foi adicionado, cada uma com ✕ (o item do preset já vem na lista).
-  assert.match(nova, /data-novo-entrada/);
-  assert.match(nova, /data-acao="novo-item-add"[^>]*>\+<\/button>/);
-  assert.doesNotMatch(nova, /\+ Item/);
+  // Itens: o seletor em dois painéis (obrigatório) e, acima, a lista do que veio pronto do checklist/plano, cada um com ✕.
+  assert.match(nova, /data-pick-busca/);
+  assert.doesNotMatch(nova, /data-novo-entrada|novo-item-add/, "a linha de entrada com + saiu");
+  assert.match(nova, /obrigatório/);
   assert.equal((nova.match(/data-novo-item data-item-json=/g) || []).length, 1, 'o item do preset entra na lista');
   assert.match(nova, /Sistema de lubrificação/);
   assert.match(nova, /Troca de óleo/, 'o plano do guia aparece na linha da lista');
   assert.equal((nova.match(/data-acao="novo-item-remover"/g) || []).length, 1);
   const semItens = htmlFormNova(base, {});
-  assert.equal((semItens.match(/data-novo-item data-item-json=/g) || []).length, 0, 'sem preset a lista começa vazia e a entrada fica pronta');
-  assert.match(semItens, /data-novo-entrada/);
+  assert.equal((semItens.match(/data-novo-item data-item-json=/g) || []).length, 0, 'sem preset não há lista de itens prontos');
+  assert.match(semItens, /data-pick-painel/);
 });
 
 test('todos os módulos da manutenção usam o mesmo ?v= dos demais módulos de lista do Frotas', () => {
@@ -455,7 +456,8 @@ test('conclusão: custo vem da soma das notas e o envio só é oferecido à empr
   assert.match(conc('proprietario'), /não vai para NF nem Financeiro/);
   assert.doesNotMatch(conc('empresa'), /data-a-arquivo|data-a="nf_numero"/, 'o arquivo e o número da NF agora são por nota');
   assert.match(htmlFicha(m({ status: 'em_orcamento' }), { itens: [item], orcamentos: [], base, podeAprovar: true }), /data-item="tipo_item"/);
-  assert.match(htmlFormNova(base, {}), /data-n="tipo_item"/);
+  // o tipo (peça/serviço) vem no seletor da nova manutenção, por grupo
+  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-seletor.js', import.meta.url), 'utf8'), /data-pick-tipo value="\$\{t\.id\}"/);
   const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
   assert.match(financeiro, /data-setor-pay="FROTAS"/);
 });

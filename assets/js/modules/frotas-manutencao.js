@@ -2,15 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut28';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut28';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut28';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut30';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut30';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut30';
 import {
   acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, rotuloVeiculo, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut28';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut30';
 import {
-  htmlCasca, htmlComponentes, htmlEntradaItem, htmlErros, htmlFicha, htmlFormNova, htmlItemAdicionado, htmlKpis, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut28';
+  htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas,
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut30';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut30';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -394,11 +395,8 @@ import {
     ov.dataset.origem = preset.origem || 'manual';
     ov.dataset.checklist = preset.checklist_id || '';
     ov.addEventListener('click', aoClicarNova);
-    // Ao escolher a categoria do item, aparecem os componentes e peças do guia para marcar.
-    ov.addEventListener('change', (e) => {
-      if (e.target.dataset.n !== 'grupo_codigo') return;
-      e.target.closest('[data-novo-entrada]').querySelector('[data-n-comps]').innerHTML = htmlComponentes(componentesDoGrupo(state.base.componentes, grupoDaEscolha(e.target.value)), []);
-    });
+    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada no próprio modal.
+    ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base);
     // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
     const campoPediu = ov.querySelector('[data-n-solicitante]');
     ov.addEventListener('input', (e) => {
@@ -422,44 +420,12 @@ import {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
     if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
-    // Lê a linha de entrada (categoria, descrição, tipo); devolve null se a categoria não foi escolhida.
-    // A natureza e o plano do guia só vêm de itens que outras telas (Preventiva, Checklist) já mandam preenchidos.
-    const lerEntrada = () => {
-      const linha = ov.querySelector('[data-novo-entrada]');
-      const escolha = linha.querySelector('[data-n="grupo_codigo"]').value;
-      if (!escolha) return null;
-      const componentes = marcadosEm(linha);
-      return {
-        categoria_codigo: categoriaDaEscolha(escolha),
-        descricao: linha.querySelector('[data-n="descricao"]').value.trim() || descricaoDosComponentes(componentes),
-        tipo_item: linha.querySelector('[data-n="tipo_item"]').value || 'servico',
-        ...(componentes.length ? { componentes } : {}),
-      };
-    };
-    const limparEntrada = () => {
-      const linha = ov.querySelector('[data-novo-entrada]');
-      linha.querySelector('[data-n="grupo_codigo"]').value = '';
-      linha.querySelector('[data-n="descricao"]').value = '';
-      linha.querySelector('[data-n-comps]').innerHTML = '';
-      linha.querySelector('[data-n="tipo_item"]').value = 'servico';
-    };
-    if (alvo.dataset.acao === 'novo-item-add') {
-      const item = lerEntrada();
-      if (!item) { ov.querySelector('[data-erros]').innerHTML = htmlErros(['Escolha a categoria do item antes de clicar em +.']); return; }
-      ov.querySelector('[data-erros]').innerHTML = '';
-      ov.querySelector('[data-novo-itens]').insertAdjacentHTML('beforeend', htmlItemAdicionado(state.base, item));
-      limparEntrada();
-      ov.querySelector('[data-novo-entrada] [data-n="grupo_codigo"]').focus();
-      return;
-    }
     if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
     if (alvo.dataset.acao !== 'novo-salvar') return;
 
     const veiculo = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'));
-    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => JSON.parse(linha.dataset.itemJson));
-    // Item preenchido na linha de entrada mas sem clicar em +: entra junto (não se perde).
-    const pendente = lerEntrada();
-    if (pendente) itens.push(pendente);
+    // Itens já informados (checklist ou plano) mais o que foi marcado no seletor.
+    const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => JSON.parse(linha.dataset.itemJson)).concat(ov.__seletor?.ler() || []);
     const descricao = val(ov, '[data-n-descricao]').trim();
     const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens });
     if (lista.length) { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); return; }

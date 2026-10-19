@@ -1,10 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut28';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut30';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut30';
 import {
   componentesDoGrupo, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut28';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut30';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -35,7 +36,7 @@ export function opcoesPlanos(planos, categoria, selecionado) {
 }
 
 // Itens do guia dentro do serviço: uma caixa por componente/peça da categoria (marcados = nomes já escolhidos).
-export function htmlComponentes(nomes, marcados = [], { titulo = 'Itens do guia (opcional)' } = {}) {
+export function htmlComponentes(nomes, marcados = [], { titulo = 'Itens do guia' } = {}) {
   if (!nomes.length) return '';
   return `<div class="fm-comps"><span class="fm-comps-t">${esc(titulo)}</span>${nomes.map((n) => `<label class="fm-comp"><input type="checkbox" data-comp value="${esc(n)}"${marcados.includes(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>`;
 }
@@ -85,16 +86,6 @@ export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, grup
 }
 
 // ---------- nova solicitação ----------
-// Linha de entrada: sempre presente; o "+" confirma o item e ele vai para a lista logo abaixo.
-export function htmlEntradaItem(base) {
-  return `<div class="fm-item" data-novo-entrada>
-    <select class="fm-select" data-n="grupo_codigo">${opcoesGrupos(base, null)}</select>
-    <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)">
-    <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, 'servico')}</select>
-    <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
-    <div class="fm-item-comps" data-n-comps></div></div>`;
-}
-
 // Item já adicionado (lista abaixo da entrada): texto fixo e "x" para remover. Os dados ficam em data-item-json.
 export function htmlItemAdicionado(base, item) {
   const plano = base.planos.find((p) => p.id === item.plano_id);
@@ -110,7 +101,7 @@ export function htmlFormNova(base, preset = {}) {
   const veiculo = base.veiculos.find((v) => v.id === preset.veiculo_id);
   const lista = veiculosUnicos(base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id));
   const itens = preset.itens || [];
-  return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu e o problema, classificado pelas categorias do guia. O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
+  return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu, o problema e o que será feito (itens dos grupos do guia). O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
     <div class="fm-form fm-form-nova" style="margin-top:14px">
       <div class="fm-field"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${rotuloVeiculo(veiculo)}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(rotuloVeiculo(v))}"></option>`).join('')}</datalist></div>
       <div class="fm-field"><label>Prioridade</label><select class="fm-select" data-n-prioridade>${opcoes(PRIORIDADES, preset.prioridade || 'normal')}</select></div>
@@ -118,11 +109,10 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field full"><label class="fm-check" style="min-height:0"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
-    <div class="fm-sec"><h4>Itens (grupo do guia)</h4>
-      <div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>
-      ${htmlEntradaItem(base)}
-      <div class="fm-itens" data-novo-itens style="margin-top:10px">${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div>
-      <div class="fm-nota">Escolha a categoria e clique em <strong>+</strong> para adicionar. É preciso ao menos um item; vários itens ficam na lista acima e o <strong>✕</strong> remove. A categoria define o tipo de nota fiscal no GRM e o relatório de custos.</div></div>
+    ${itens.length ? `<div class="fm-sec"><h4>Itens já informados (checklist ou plano)</h4><div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div><div class="fm-itens" data-novo-itens>${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div></div>` : ''}
+    <div class="fm-sec" data-seletor-sec><h4>O que será feito <span class="fm-obrig">obrigatório</span></h4>
+      <div data-seletor-corpo>${htmlSeletor()}</div>
+      <div class="fm-nota">Escolha o grupo e marque os itens. Dá para marcar em vários grupos. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div></div>
     <div data-erros></div>
     <div class="fm-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button></div>`;
 }

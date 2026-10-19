@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut28';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut30';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -33,6 +33,20 @@ ${ESTILOS_LISTA}
 .fm-form.fm-item-novo{grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px auto;margin-top:10px}
 .fm-form.fm-form-nova{grid-template-columns:minmax(0,2fr) minmax(130px,1fr) minmax(0,2fr)}.fm-form-nova .fm-field.full .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
 .fm-prev-comps{display:grid;gap:8px;margin-bottom:8px}.fm-prev-comps:empty{display:none}.fm-prev-comp strong{display:block;margin:0 0 4px;color:#e2e8f0;font-size:12px}
+.fm-obrig{margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;letter-spacing:.06em}
+.fm-pick-busca{margin-bottom:10px}
+.fm-pick-corpo{display:grid;grid-template-columns:240px minmax(0,1fr);gap:12px;align-items:start}
+.fm-pick-grupos{display:grid;gap:4px;align-content:start;max-height:520px;overflow:auto;padding-right:2px}
+.fm-pick-g{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(15,23,42,.55);color:#cbd5e1;padding:9px 11px;font:inherit;font-size:13px;font-weight:800;cursor:pointer}
+.fm-pick-g:hover{border-color:rgba(34,197,94,.45)}.fm-pick-g.ativo{border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4;box-shadow:0 0 0 1px #4ade80 inset}.fm-pick-g b{min-width:20px;height:20px;border-radius:999px;display:inline-grid;place-items:center;background:#22c55e;color:#052e16;font-size:11px}
+.fm-pick-painel{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:12px;min-height:200px}
+.fm-pick-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.fm-pick-cab strong{color:#f8fafc;font-size:14px}
+.fm-pick-tipo{display:inline-flex;gap:12px;align-items:center;color:#94a3b8;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.fm-pick-tipo label{display:inline-flex;gap:5px;align-items:center;color:#e2e8f0;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer}.fm-pick-tipo input{accent-color:#22c55e}
+.fm-pick-lista{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.fm-pick-item{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(15,23,42,.6);color:#e2e8f0;font-size:13px;font-weight:700;line-height:1.3;cursor:pointer}.fm-pick-item:hover{border-color:rgba(34,197,94,.5)}.fm-pick-item.sel{border-color:rgba(34,197,94,.65);background:rgba(34,197,94,.16);color:#f0fdf4}.fm-pick-item input{margin-top:2px;accent-color:#22c55e;width:16px;height:16px;flex:none}.fm-pick-item small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:2px}
+.fm-pick-outro{display:flex;gap:8px;margin-top:10px}.fm-pick-outro .fm-input{height:38px;font-size:13px}
+.fm-pick-vazio{color:#94a3b8;font-size:12px;padding:10px 2px}.fm-pick-obrig{color:#fde68a;border:1px dashed rgba(245,158,11,.4);border-radius:12px;background:rgba(245,158,11,.08);padding:10px 12px}
+.fm-pick-resumo{margin-top:12px;display:grid;gap:6px}.fm-pick-rg{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.fm-pick-rg strong{color:#e2e8f0;font-size:12px;margin-right:4px}
 .fm-item-comps{grid-column:1/-1}.fm-item-comps:empty{display:none}
 .fm-comps{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:8px 10px;border:1px dashed rgba(148,163,184,.22);border-radius:12px;background:rgba(2,6,23,.28)}.fm-comps-t{flex:1 1 100%;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .fm-comp{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border:1px solid rgba(148,163,184,.22);border-radius:999px;background:rgba(15,23,42,.6);color:#cbd5e1;font-size:12px;font-weight:700;cursor:pointer}.fm-comp:hover{border-color:rgba(34,197,94,.5)}.fm-comp input{accent-color:#22c55e;width:14px;height:14px;margin:0}.fm-comp:has(input:checked){border-color:rgba(34,197,94,.6);background:rgba(34,197,94,.16);color:#dcfce7}
@@ -72,6 +86,6 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-mod .fm-input,.fm-mod .fm-select,.fm-mod .fm-field textarea{box-sizing:border-box;max-width:100%}.fm-nota-linha>*{min-width:0}.fm-nota-linha input[type=file]{max-width:100%}.fm-nota-pago{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11px;color:#94a3b8;font-weight:800}.fm-nota-pago .fm-input{height:34px;width:auto;max-width:240px;font-size:12px}.fm-nota-pago label{display:flex;gap:6px;align-items:center}
 .fm-prev-lista{display:grid;gap:6px;max-height:46vh;overflow:auto;padding-right:4px}.fm-prev-linha{border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 10px;background:rgba(2,6,23,.3)}.fm-prev-linha .fm-check{display:flex;gap:8px;align-items:center;font-weight:800;color:#e2e8f0;font-size:13px}.fm-prev-linha small{color:#94a3b8;font-weight:600;margin-left:6px}
 .fm-prev-prazos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}.fm-prev-prazos label{display:grid;gap:4px;font-size:11px;color:#94a3b8;font-weight:800}.fm-prev-prazos[hidden]{display:none}
-@media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-form.fm-form-nova{grid-template-columns:1fr 1fr}.fm-form-nova .fm-field:first-child{grid-column:1/-1}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
+@media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-pick-corpo{grid-template-columns:1fr}.fm-pick-grupos{grid-auto-flow:column;grid-auto-columns:max-content;overflow:auto hidden;max-height:none;padding-bottom:4px}.fm-pick-lista{grid-template-columns:1fr}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-form.fm-form-nova{grid-template-columns:1fr 1fr}.fm-form-nova .fm-field:first-child{grid-column:1/-1}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
 @media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-form.fm-form-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
 </style>`;
