@@ -2,6 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
+import { criarDesligados } from './patrimonioDesligados.js';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -15,6 +16,7 @@ const ICONS = {
   sheet: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>',
   photo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
   doc: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
+  plus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
   chevronLeft: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
   chevronRight: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>',
 };
@@ -893,10 +895,14 @@ export function renderContent(content) {
 
       <div class="pat-view" id="patDesligadosView" hidden>
         <article class="base-card patrimonio-table-card pat-alert">
-          <div class="patrimonio-table-title">
-            <strong>Desligados com materiais a recolher</strong>
-            <span class="patrimonio-table-subtitle">Solicitações de inativação pendentes feitas em Gestor &gt; Programação &gt; Sem O.S.</span>
+          <div class="pat-deslig-head">
+            <div class="patrimonio-table-title">
+              <strong>Desligados com materiais a recolher</strong>
+              <span class="patrimonio-table-subtitle">Prazo de 10 dias a partir do desligamento; o que não for recolhido é lançado em Caixa. Inclui as solicitações de inativação de Gestor &gt; Programação &gt; Sem O.S.</span>
+            </div>
+            <button class="base-button primary icon-button" id="btnDesligadoNovo" type="button" title="Cadastrar desligado" aria-label="Cadastrar desligado">${ICONS.plus}</button>
           </div>
+          <div class="pat-deslig-filtros" id="patDesligadosFiltros"></div>
           <div id="patDesligadosList" class="pat-desligados-empty">Carregando...</div>
         </article>
       </div>
@@ -974,60 +980,17 @@ export function renderContent(content) {
     });
   });
 
-  async function loadDesligados() {
-    const target = document.getElementById('patDesligadosList');
-    if (!target) return;
-    target.className = 'pat-desligados-empty';
-    target.textContent = 'Carregando colaboradores e materiais...';
-    const [requestsResult, freshPatrimoniosResult] = await Promise.allSettled([
-      supabase
-        .from('programacao_inativacao_solicitacoes')
-        .select('id,colaborador_id,nome_colaborador,cargo,coordenacao,supervisao,motivo,solicitado_em,solicitado_por_nome')
-        .eq('status', 'PENDENTE')
-        .order('solicitado_em', { ascending: false })
-        .limit(1000),
-      loadSnapshotRows(),
-    ]);
-    if (requestsResult.status === 'rejected' || requestsResult.value.error) {
-      const error = requestsResult.status === 'rejected' ? requestsResult.reason : requestsResult.value.error;
-      target.textContent = error?.message || 'Não foi possível carregar os desligados.';
-      return;
-    }
-    if (freshPatrimoniosResult.status === 'rejected') {
-      target.textContent = freshPatrimoniosResult.reason?.message || 'Não foi possível atualizar a base de patrimônios.';
-      return;
-    }
-    const data = requestsResult.value.data || [];
-    const freshPatrimonios = freshPatrimoniosResult.value;
-    const latestByName = new Map();
-    (data || []).forEach((request) => {
-      const key = normalizeKey(request.nome_colaborador);
-      if (key && !latestByName.has(key)) latestByName.set(key, request);
-    });
-    const entries = [...latestByName.entries()].map(([key, request]) => ({
-      request,
-      rows: freshPatrimonios.filter((row) => normalizeKey(row.funcionario) === key),
-    })).filter((entry) => entry.rows.length);
-    if (!entries.length) {
-      target.textContent = 'Nenhum colaborador com solicitação de inativação pendente possui patrimônio em seu nome.';
-      return;
-    }
-    target.className = 'table-shell';
-    target.innerHTML = `<div class="table-scroll-x"><table class="patrimonio-table"><thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Solicitado em</th><th>Motivo</th></tr></thead><tbody>${entries.map(({ request, rows }) => `<tr>
-      <td><div class="pat-cell-stack"><span class="pat-primary">${escapeHtml(request.nome_colaborador)}</span><span class="pat-secondary">${escapeHtml(request.cargo || 'Colaborador')}</span></div></td>
-      <td><div class="pat-cell-stack"><span class="pat-count-badge">${rows.length} ${rows.length === 1 ? 'item' : 'itens'}</span><span class="pat-secondary">${rows.map((row) => `${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`).map(escapeHtml).join('<br>')}</span></div></td>
-      <td>${escapeHtml(request.supervisao || request.coordenacao || '-')}</td>
-      <td>${escapeHtml(formatDateTime(request.solicitado_em))}</td>
-      <td>${escapeHtml(request.motivo || '-')}</td>
-    </tr>`).join('')}</tbody></table></div>`;
-  }
+  const desligados = criarDesligados({
+    target: document.getElementById('patDesligadosView'),
+    loadSnapshotRows,
+  });
 
   document.getElementById('btnDesligados')?.addEventListener('click', async () => {
     document.getElementById('patRelatoriosView').hidden = true;
     document.getElementById('patDesligadosView').hidden = false;
     document.getElementById('tabRelatorios')?.classList.remove('active');
     document.getElementById('btnDesligados').classList.add('active');
-    await loadDesligados();
+    await desligados.carregar();
   });
   document.getElementById('tabRelatorios')?.addEventListener('click', (event) => {
     event.preventDefault();
