@@ -161,7 +161,6 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     const hoje = hojeBrasilia();
     const vistos = new Set();
     const novas = [];
-    const recolhidosAgora = [];
 
     (manuaisR.value.data || []).forEach((reg) => {
       const chave = chaveNome(reg.nome_colaborador);
@@ -169,11 +168,9 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       vistos.add(chave);
       const lancado = reg.status === 'LANCADO_CAIXA';
       const itens = lancado ? (reg.itens_lancados || []) : comValor(porNome.get(chave) || [], catalogo);
-      if (!lancado && !itens.length) {
-        // Tudo recolhido (outro colaborador leu os itens): fecha o registro.
-        recolhidosAgora.push(reg.id);
-        return;
-      }
+      // Sem itens = tudo recolhido (outro colaborador leu): só some da tela. NÃO fecha o registro no banco:
+      // o snapshot é regravado do zero a cada sincronização e uma leitura no meio dela volta vazia.
+      if (!lancado && !itens.length) return;
       novas.push({
         manual: true,
         id: reg.id,
@@ -211,12 +208,6 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         origem: 'Programação › Sem O.S.',
       });
     });
-
-    if (recolhidosAgora.length) {
-      // Melhor esforço: se falhar, a próxima abertura da aba tenta de novo.
-      supabase.from('patrimonio_desligados').update({ status: 'RECOLHIDO' }).in('id', recolhidosAgora)
-        .then(({ error }) => { if (error) console.warn('[desligados] não fechou recolhidos', error); });
-    }
 
     novas.sort((a, b) => (a.lancado - b.lancado) || a.prazo.localeCompare(b.prazo));
     entradas = novas.map((e) => ({ ...e, estado: e.lancado ? { classe: 'caixa', texto: 'Lançado em caixa', vencido: false } : estadoPrazo(e.prazo, hoje) }));
