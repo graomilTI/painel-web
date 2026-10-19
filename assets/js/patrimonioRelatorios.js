@@ -2,8 +2,8 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
-import { injectEstilosFrotas, ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-layout-geral';
-import { criarDesligados } from './patrimonioDesligados.js?v=20261019-layout-geral';
+import { injectEstilosFrotas, ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-filtros-linha';
+import { criarDesligados } from './patrimonioDesligados.js?v=20261019-filtros-linha';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -591,9 +591,9 @@ export function renderContent(content) {
             <div class="fm-search">${ICON.busca}<input class="fm-input" id="fBusca" type="text" placeholder="Nome, identificação ou patrimônio" /></div>
             <select class="fm-select" id="fCoordenacao" aria-label="Regional"><option value="">Todas as regionais</option></select>
             <select class="fm-select" id="fSupervisao" aria-label="Supervisão"><option value="">Todas as supervisões</option></select>
-            <select class="fm-select" id="fIgnorados" aria-label="Baixado / Manutenção">
-              <option value="mostrar">Baixado/Manutenção: mostrar</option>
-              <option value="excluir">Baixado/Manutenção: excluir</option>
+            <select class="fm-select" id="fIgnorados" aria-label="Baixado / Manutenção" title="Itens baixados ou em manutenção">
+              <option value="mostrar">Mostrar baixados</option>
+              <option value="excluir">Ocultar baixados</option>
             </select>
             <div class="fm-actions">
               <button class="fm-ic termo" id="btnAplicar" type="button" title="Aplicar filtros" aria-label="Aplicar filtros">${ICONS.check}</button>
