@@ -41,3 +41,26 @@ test('formatarDia e chaveNome', () => {
   assert.equal(formatarDia(''), '-');
   assert.equal(chaveNome('  JOÃO  da  Silva '), 'joao da silva');
 });
+
+test('valor estimado: nome igual, prefixo mais longo e sem estimativa', async () => {
+  const { valorEstimadoDoItem, lerReais } = await import('../assets/js/patrimonioDesligadosRegras.js');
+  const cat = [
+    { material: 'CALADOR', valor_estimado: '150.00' },
+    { material: 'BALANÇA DE PRECISÃO', valor_estimado: 900 },
+    { material: 'JOGO DE PENEIRAS', valor_estimado: 400 },
+    { material: 'JOGO DE PENEIRAS 3MM', valor_estimado: 450 },
+    { material: 'QUARTEADOR', valor_estimado: null },
+  ];
+  assert.equal(valorEstimadoDoItem('Calador', cat), 150);
+  assert.equal(valorEstimadoDoItem('BALANÇA DE PRECISAO', cat), 900);
+  assert.equal(valorEstimadoDoItem('JOGO DE PENEIRAS 3MM - 5MM - FUNDO', cat), 450);
+  assert.equal(valorEstimadoDoItem('JOGO DE PENEIRAS', cat), 400);
+  assert.equal(valorEstimadoDoItem('IMPRESSORA DE LAUDO', cat), null);
+  assert.equal(valorEstimadoDoItem('QUARTEADOR', cat), null);
+  assert.equal(valorEstimadoDoItem('CALADORES', cat), null);
+  assert.equal(lerReais('R$ 1.234,56'), 1234.56);
+  assert.equal(lerReais('80.5'), 80.5);
+  assert.equal(lerReais(''), null);
+  assert.ok(Number.isNaN(lerReais('abc')));
+  assert.ok(Number.isNaN(lerReais('-5')));
+});

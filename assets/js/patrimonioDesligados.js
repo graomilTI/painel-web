@@ -14,6 +14,7 @@ import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
+  valorEstimadoDoItem, formatarReais,
 } from './patrimonioDesligadosRegras.js';
 
 const esc = (v) => String(v ?? '')
@@ -38,6 +39,8 @@ function injectStyles() {
     .pat-deslig-prazo.urgente, .pat-deslig-prazo.hoje { color:#fde68a; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.35); }
     .pat-deslig-prazo.vencido { color:#fecaca; background:rgba(239,68,68,.14); border-color:rgba(239,68,68,.4); }
     .pat-deslig-prazo.caixa { color:#c7d2fe; background:rgba(99,102,241,.14); border-color:rgba(99,102,241,.4); }
+    .pat-deslig-total { font-weight:800; font-size:12.5px; color:#fde68a; }
+    .pat-deslig-total small { font-weight:500; color:rgba(226,232,240,.6); }
     .pat-deslig-origem { font-size:11px; color:rgba(226,232,240,.55); }
     .pat-deslig-acoes { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
     .pat-deslig-acoes .base-button { width:auto; margin:0; padding:6px 11px; font-size:12px; }
@@ -101,6 +104,9 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   let snapshot = [];
   let filtro = 'todos';
   let entradas = [];
+  let catalogoAtual = [];
+
+  const comValor = (rows, catalogo) => rows.map((r) => ({ ...r, valor: valorEstimadoDoItem(r.identificacao, catalogo) }));
 
   async function carregar() {
     const lista = target.querySelector('#patDesligadosList');
@@ -108,7 +114,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     lista.className = 'pat-desligados-empty';
     lista.textContent = 'Carregando colaboradores e materiais...';
 
-    const [manuaisR, solicitacoesR, snapshotR] = await Promise.allSettled([
+    const [manuaisR, solicitacoesR, snapshotR, catalogoR] = await Promise.allSettled([
       supabase
         .from('patrimonio_desligados')
         .select('id,colaborador_id,nome_colaborador,cargo,coordenacao,supervisao,motivo,data_desligamento,prazo_recolhimento,status,itens_lancados,lancado_caixa_em,lancado_caixa_por_nome')
@@ -122,7 +128,11 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         .order('solicitado_em', { ascending: false })
         .limit(1000),
       loadSnapshotRows(),
+      supabase.from('compras_catalogo').select('material,valor_estimado').eq('ativo', true).not('valor_estimado', 'is', null).limit(2000),
     ]);
+    // Sem catálogo os itens só ficam sem estimativa; não bloqueia a aba.
+    const catalogo = catalogoR.status === 'fulfilled' && !catalogoR.value.error ? (catalogoR.value.data || []) : [];
+    catalogoAtual = catalogo;
 
     const falha = [manuaisR, solicitacoesR].find((r) => r.status === 'rejected' || r.value?.error);
     if (falha) {
@@ -147,7 +157,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       if (!chave || vistos.has(chave)) return;
       vistos.add(chave);
       const lancado = reg.status === 'LANCADO_CAIXA';
-      const itens = lancado ? (reg.itens_lancados || []) : (porNome.get(chave) || []);
+      const itens = lancado ? (reg.itens_lancados || []) : comValor(porNome.get(chave) || [], catalogo);
       if (!lancado && !itens.length) {
         // Tudo recolhido (outro colaborador leu os itens): fecha o registro.
         recolhidosAgora.push(reg.id);
@@ -173,7 +183,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       const chave = chaveNome(sol.nome_colaborador);
       if (!chave || vistos.has(chave)) return;
       vistos.add(chave);
-      const itens = porNome.get(chave) || [];
+      const itens = comValor(porNome.get(chave) || [], catalogo);
       if (!itens.length) return;
       const base = diaBrasilia(sol.solicitado_em);
       novas.push({
@@ -200,6 +210,13 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     novas.sort((a, b) => (a.lancado - b.lancado) || a.prazo.localeCompare(b.prazo));
     entradas = novas.map((e) => ({ ...e, estado: e.lancado ? { classe: 'caixa', texto: 'Lançado em caixa', vencido: false } : estadoPrazo(e.prazo, hoje) }));
     desenhar();
+  }
+
+  function resumoValor(itens) {
+    const total = itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
+    const sem = itens.filter((r) => r.valor == null).length;
+    if (!total && sem === itens.length) return `<span class="pat-deslig-origem">Sem estimativa no catálogo</span>`;
+    return `<span class="pat-deslig-total">Caixa estimado: ${esc(formatarReais(total))}${sem ? ` <small>(${sem} sem valor)</small>` : ''}</span>`;
   }
 
   function desenhar() {
@@ -232,7 +249,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     lista.className = 'table-shell';
     lista.innerHTML = `<div class="table-scroll-x"><table class="patrimonio-table"><thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th></th></tr></thead><tbody>${visiveis.map((e) => `<tr>
       <td><div class="pat-cell-stack"><span class="pat-primary">${esc(e.nome)}</span><span class="pat-secondary">${esc(e.cargo || 'Colaborador')}</span><span class="pat-deslig-origem">${esc(e.origem)}</span></div></td>
-      <td><div class="pat-cell-stack"><span class="pat-count-badge">${e.itens.length} ${e.itens.length === 1 ? 'item' : 'itens'}</span><span class="pat-secondary">${e.itens.map((row) => esc(`${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`)).join('<br>')}</span></div></td>
+      <td><div class="pat-cell-stack"><span class="pat-count-badge">${e.itens.length} ${e.itens.length === 1 ? 'item' : 'itens'}</span><span class="pat-secondary">${e.itens.map((row) => `${esc(`${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`)}${row.valor == null ? '' : ` · ${esc(formatarReais(row.valor))}`}`).join('<br>')}</span>${resumoValor(e.itens)}</div></td>
       <td>${esc(e.supervisao || '-')}</td>
       <td>${esc(formatarDia(e.dataDesligamento))}</td>
       <td><div class="pat-cell-stack"><span class="pat-deslig-prazo ${e.estado.classe}">${esc(e.estado.texto)}</span><span class="pat-secondary">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></div></td>
@@ -244,12 +261,12 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   async function marcarLancadoCaixa(id) {
     const e = entradas.find((x) => x.manual && x.id === id);
     if (!e) return;
-    const resumo = e.itens.map((r) => `${r.patrimonio_codigo} — ${r.identificacao}`).join('\n');
+    const resumo = e.itens.map((r) => `${r.patrimonio_codigo} — ${r.identificacao}${r.valor == null ? '' : ` (${formatarReais(r.valor)})`}`).join('\n');
     if (!window.confirm(`Confirma que o material de ${e.nome} que não foi recolhido já foi lançado em Caixa?\n\n${resumo}`)) return;
     const user = await usuarioAtual();
     const { error } = await supabase.from('patrimonio_desligados').update({
       status: 'LANCADO_CAIXA',
-      itens_lancados: e.itens.map((r) => ({ patrimonio_codigo: r.patrimonio_codigo, identificacao: r.identificacao })),
+      itens_lancados: e.itens.map((r) => ({ patrimonio_codigo: r.patrimonio_codigo, identificacao: r.identificacao, valor: r.valor ?? null })),
       lancado_caixa_em: new Date().toISOString(),
       lancado_caixa_por_nome: user.nome,
     }).eq('id', id).eq('status', 'ABERTO');
@@ -345,7 +362,8 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         previa.classList.add('erro');
         previa.textContent = `Nenhum patrimônio em nome de ${escolhido.nome}. Se o material está no nome de outra grafia, escolha-a na lista.`;
       } else {
-        previa.innerHTML = `<strong>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} a recolher</strong><br>${rows.map((r) => esc(`${r.patrimonio_codigo || '-'} — ${r.identificacao || '-'}`)).join('<br>')}`;
+        const itens = comValor(rows, catalogoAtual);
+        previa.innerHTML = `<strong>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} a recolher</strong><br>${itens.map((r) => `${esc(`${r.patrimonio_codigo || '-'} — ${r.identificacao || '-'}`)}${r.valor == null ? '' : ` · ${esc(formatarReais(r.valor))}`}`).join('<br>')}<br>${resumoValor(itens)}`;
       }
     };
 

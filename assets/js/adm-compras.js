@@ -2,6 +2,7 @@ import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
 import { toPanelUrl } from './paths.js';
+import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
 
 const TABS = [
   ['solicitacoes','SOLICITAÇÕES'], ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -72,9 +73,9 @@ async function loadCatalogoRows(){
 function renderCatalogoTable(){
   const body=document.getElementById('admCmpCatalogoBody');
   if(!body) return;
-  if(!state.catalogo.length){ body.innerHTML='<tr><td colspan="5" class="adm-cmp-empty">Nenhum material cadastrado.</td></tr>'; return; }
+  if(!state.catalogo.length){ body.innerHTML='<tr><td colspan="6" class="adm-cmp-empty">Nenhum material cadastrado.</td></tr>'; return; }
   body.innerHTML=state.catalogo.map(c=>`<tr>
-    <td>${esc(c.material)}</td><td>${esc(c.tipo)}</td><td>${esc(c.observacao||'-')}</td>
+    <td>${esc(c.material)}</td><td>${esc(c.tipo)}</td><td>${c.valor_estimado==null?'-':esc(formatarReais(c.valor_estimado))}</td><td>${esc(c.observacao||'-')}</td>
     <td>${c.ativo?'<span class="adm-cmp-status comprado">Ativo</span>':'<span class="adm-cmp-status recusado">Inativo</span>'}</td>
     <td><button class="btn btn-small btn-secondary" data-cat-editar="${esc(c.id)}" type="button">Editar</button> <button class="btn btn-small btn-secondary" data-cat-toggle="${esc(c.id)}" type="button">${c.ativo?'Inativar':'Reativar'}</button></td>
   </tr>`).join('');
@@ -85,7 +86,7 @@ function abrirEditarCatalogoModal(id){
   const item=state.catalogo.find(c=>String(c.id)===String(id));
   if(!item) return;
   const modal=document.getElementById('admCmpModal');
-  modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>Editar material</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid mt-16"><label>Material<input id="catEditMaterial" value="${esc(item.material)}"></label><label>Tipo<select id="catEditTipo"><option value="Uniforme"${item.tipo==='Uniforme'?' selected':''}>Uniforme</option><option value="Patrimonio"${item.tipo==='Patrimonio'?' selected':''}>Patrimônio</option><option value="EPI"${item.tipo==='EPI'?' selected':''}>EPI</option><option value="Outros"${item.tipo==='Outros'?' selected':''}>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catEditObs" value="${esc(item.observacao||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catSalvar" type="button">Salvar</button><span class="adm-cmp-feedback" id="catEditFeedback"></span></div></div>`;
+  modal.innerHTML=`<div class="adm-cmp-modal-card"><div class="section-head"><div><h3>Editar material</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div><div class="adm-cmp-grid mt-16"><label>Material<input id="catEditMaterial" value="${esc(item.material)}"></label><label>Tipo<select id="catEditTipo"><option value="Uniforme"${item.tipo==='Uniforme'?' selected':''}>Uniforme</option><option value="Patrimonio"${item.tipo==='Patrimonio'?' selected':''}>Patrimônio</option><option value="EPI"${item.tipo==='EPI'?' selected':''}>EPI</option><option value="Outros"${item.tipo==='Outros'?' selected':''}>Outros</option></select></label><label>Valor estimado (R$)<input id="catEditValor" inputmode="decimal" placeholder="Ex.: 150,00" value="${item.valor_estimado==null?'':esc(String(item.valor_estimado).replace('.',','))}"></label><label class="adm-cmp-full">Observação<input id="catEditObs" value="${esc(item.observacao||'')}"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catSalvar" type="button">Salvar</button><span class="adm-cmp-feedback" id="catEditFeedback"></span></div></div>`;
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   modal.querySelector('#catSalvar').onclick=async()=>{
@@ -93,7 +94,9 @@ function abrirEditarCatalogoModal(id){
     const tipo=modal.querySelector('#catEditTipo').value;
     const observacao=modal.querySelector('#catEditObs').value.trim()||null;
     if(!material){ modal.querySelector('#catEditFeedback').textContent='Informe o material.'; return; }
-    const {error}=await supabase.from('compras_catalogo').update({material:material.toUpperCase(),tipo,observacao}).eq('id',id);
+    const valor_estimado=lerReais(modal.querySelector('#catEditValor').value);
+    if(Number.isNaN(valor_estimado)){ modal.querySelector('#catEditFeedback').textContent='Valor estimado inválido.'; return; }
+    const {error}=await supabase.from('compras_catalogo').update({material:material.toUpperCase(),tipo,observacao,valor_estimado}).eq('id',id);
     if(error){ modal.querySelector('#catEditFeedback').textContent=error.message; return; }
     modal.classList.remove('open');
     await loadCatalogoRows();
@@ -104,10 +107,13 @@ async function adicionarCatalogoItem(){
   const tipo=document.getElementById('catNovoTipo')?.value;
   const observacao=document.getElementById('catNovaObs')?.value.trim()||null;
   if(!material){ setCatalogoMsg('Informe o nome do material.',true); return; }
-  const {error}=await supabase.from('compras_catalogo').insert({material:material.toUpperCase(),tipo,observacao});
+  const valor_estimado=lerReais(document.getElementById('catNovoValor')?.value);
+  if(Number.isNaN(valor_estimado)){ setCatalogoMsg('Valor estimado inválido.',true); return; }
+  const {error}=await supabase.from('compras_catalogo').insert({material:material.toUpperCase(),tipo,observacao,valor_estimado});
   if(error){ setCatalogoMsg(error.message,true); return; }
   document.getElementById('catNovoMaterial').value='';
   document.getElementById('catNovaObs').value='';
+  document.getElementById('catNovoValor').value='';
   setCatalogoMsg('Material adicionado ao catálogo.');
   await loadCatalogoRows();
 }
@@ -1185,7 +1191,7 @@ function updateActionButtons(){
 initProtectedPage('Compras ADM', async (content,ctx)=>{
   state.ctx=ctx;
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="card"><div class="adm-cmp-tabs-row"><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div id="admCmpItensSection"><div class="adm-cmp-table-wrap mt-16" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card"><div class="adm-cmp-tabs-row"><div class="adm-cmp-tabs" id="admCmpTabs">${TABS.map(([k,l])=>`<button class="btn btn-secondary ${k==='solicitacoes'?'active':''}" data-tab="${k}" type="button">${l}</button>`).join('')}</div><button class="btn btn-secondary" id="admCmpRefresh" type="button">↻ Atualizar</button></div><div id="admCmpItensSection"><div class="adm-cmp-table-wrap mt-16" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="adm-cmp-grid mt-16"><label>Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label>Valor estimado (R$)<input id="catNovoValor" inputmode="decimal" placeholder="Para lançar em Caixa se não devolvido (opcional)"></label><label class="adm-cmp-full">Observação<input id="catNovaObs" placeholder="Observação (opcional)"></label></div><div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="catAdicionar" type="button">Adicionar ao catálogo</button><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table"><thead><tr><th>Material</th><th>Tipo</th><th>Valor estimado (Caixa)</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal();
