@@ -607,14 +607,16 @@ Deno.serve(async (req) => {
           linkProblems.push({ colaborador: row.nome_colaborador ?? row.colaborador_id, problema: resolved.error, origem: 'DISPONIVEL' });
           continue;
         }
-        // Efetivos e Intermitentes marcados DISPONIVEL têm autorização
+        // Efetivos, Intermitentes e Diaristas marcados DISPONIVEL têm autorização
         // financeira válida sem vínculo a O.S. Achado 10/09: Intermitentes
         // (ex.: Salário de Intermitente configurado) ficavam de fora dessa
         // trava e nunca tinham café/almoço/janta liberado pelo fluxo
         // Disponível, mesmo com o modal já permitindo a solicitação.
         const tipoContratoDisponivel = norm(contractByCpf.get(resolved.cpf)?.tipo_contrato);
-        if (!tipoContratoDisponivel.includes('EFETIVO') && !tipoContratoDisponivel.includes('INTERMITENTE')) {
-          overall.avisos.push(`${row.nome_colaborador || resolved.cpf}: disponibilidade ignorada porque o contrato vigente não é EFETIVO nem INTERMITENTE.`);
+        // 19/10/2026: Diarista marcada como Disponível também libera (a tela já mostrava "Liberado" e o
+        // backend ignorava em silêncio; caso Alaide Pereira Lima).
+        if (!['EFETIVO', 'INTERMITENTE', 'DIARISTA'].some((tipo) => tipoContratoDisponivel.includes(tipo))) {
+          overall.avisos.push(`${row.nome_colaborador || resolved.cpf}: disponibilidade ignorada porque o contrato vigente não é EFETIVO, INTERMITENTE nem DIARISTA.`);
           continue;
         }
         availableCpfs.add(resolved.cpf);
