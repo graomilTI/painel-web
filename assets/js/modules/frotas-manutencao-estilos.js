@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut25';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut26';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -31,6 +31,7 @@ ${ESTILOS_LISTA}
 .fm-ro{color:#f8fafc;font-size:14px;font-weight:700;line-height:1.4;word-break:break-word}.fm-ro small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:2px}
 .fm-itens{display:grid;gap:8px}.fm-item{display:grid;grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px 40px;gap:8px;align-items:start}.fm-item .fm-input,.fm-item .fm-select{height:38px;font-size:13px}
 .fm-form.fm-item-novo{grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px auto;margin-top:10px}
+.fm-form.fm-form-nova{grid-template-columns:minmax(0,2fr) minmax(130px,1fr) minmax(0,2fr)}.fm-form-nova .fm-field.full .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
 .fm-etapa{display:flex;align-items:center;gap:10px;margin:14px 0 4px;color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.fm-etapa .fm-badge{font-size:12px;letter-spacing:0;text-transform:none;padding:5px 11px}
 .fm-mais>summary{cursor:pointer;list-style:none;color:#86efac;font-size:12px;font-weight:900;letter-spacing:.06em;text-transform:uppercase}.fm-mais>summary::-webkit-details-marker{display:none}.fm-mais>summary::before{content:'▸ ';display:inline-block;width:14px}.fm-mais[open]>summary::before{content:'▾ '}.fm-mais[open]>summary{margin-bottom:10px}
 details.fm-field.fm-mais{margin-top:2px}
@@ -67,6 +68,6 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-mod .fm-input,.fm-mod .fm-select,.fm-mod .fm-field textarea{box-sizing:border-box;max-width:100%}.fm-nota-linha>*{min-width:0}.fm-nota-linha input[type=file]{max-width:100%}.fm-nota-pago{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11px;color:#94a3b8;font-weight:800}.fm-nota-pago .fm-input{height:34px;width:auto;max-width:240px;font-size:12px}.fm-nota-pago label{display:flex;gap:6px;align-items:center}
 .fm-prev-lista{display:grid;gap:6px;max-height:46vh;overflow:auto;padding-right:4px}.fm-prev-linha{border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 10px;background:rgba(2,6,23,.3)}.fm-prev-linha .fm-check{display:flex;gap:8px;align-items:center;font-weight:800;color:#e2e8f0;font-size:13px}.fm-prev-linha small{color:#94a3b8;font-weight:600;margin-left:6px}
 .fm-prev-prazos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}.fm-prev-prazos label{display:grid;gap:4px;font-size:11px;color:#94a3b8;font-weight:800}.fm-prev-prazos[hidden]{display:none}
-@media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
-@media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
+@media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-form.fm-form-nova{grid-template-columns:1fr 1fr}.fm-form-nova .fm-field:first-child{grid-column:1/-1}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
+@media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-form.fm-form-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
 </style>`;
