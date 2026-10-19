@@ -12,6 +12,7 @@
 
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
+import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
   valorEstimadoDoItem, formatarReais,
@@ -51,8 +52,16 @@ function injectStyles() {
     .pat-deslig-total { font-weight:800; font-size:12.5px; color:#fde68a; }
     .pat-deslig-total small { font-weight:500; color:rgba(226,232,240,.6); }
     .pat-deslig-origem { font-size:11px; color:rgba(226,232,240,.55); }
-    .pat-deslig-acoes { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
-    .pat-deslig-acoes .base-button { width:auto; margin:0; padding:6px 11px; font-size:12px; }
+    .pat-deslig-acoes { display:flex; gap:6px; align-items:center; flex-wrap:nowrap; }
+    .pat-deslig-ico { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid rgba(148,163,184,.28); background:rgba(15,23,42,.5); color:rgba(226,232,240,.85); cursor:pointer; flex:none; transition:background .15s ease, border-color .15s ease, color .15s ease; }
+    .pat-deslig-ico:hover { border-color:rgba(226,232,240,.6); color:#fff; }
+    .pat-deslig-ico:disabled { opacity:.5; cursor:wait; }
+    .pat-deslig-ico.imagem:hover { border-color:rgba(45,212,191,.7); background:rgba(45,212,191,.16); color:#99f6e4; }
+    .pat-deslig-ico.caixa { border-color:rgba(52,211,153,.6); background:rgba(52,211,153,.2); color:#6ee7b7; }
+    .pat-deslig-ico.caixa:hover { background:rgba(52,211,153,.34); color:#d1fae5; }
+    .pat-deslig-ico.remover:hover { border-color:rgba(239,68,68,.7); background:rgba(239,68,68,.16); color:#fca5a5; }
+    .pat-deslig-aviso { position:fixed; right:22px; bottom:22px; z-index:9999; max-width:360px; border:1px solid rgba(134,239,172,.32); background:rgba(22,101,52,.96); color:#dcfce7; border-radius:14px; padding:12px 16px; font-weight:700; font-size:13px; box-shadow:0 16px 45px rgba(0,0,0,.35); }
+    .pat-deslig-aviso.erro { border-color:rgba(252,165,165,.4); background:rgba(127,29,29,.96); color:#fee2e2; }
     .pat-deslig-modal-bg { position:fixed; inset:0; z-index:9998; background:rgba(2,6,23,.8); display:flex; align-items:center; justify-content:center; padding:22px; }
     .pat-deslig-modal { width:min(640px,96vw); max-height:92vh; overflow:auto; border:1px solid rgba(148,163,184,.22); border-radius:20px; background:#031d14; color:#e2e8f0; box-shadow:0 24px 80px rgba(0,0,0,.55); }
     .pat-deslig-modal header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:18px 20px; border-bottom:1px solid rgba(148,163,184,.16); }
@@ -97,6 +106,13 @@ function itensPorNome(snapshot) {
   });
   return mapa;
 }
+
+const svg = (corpo) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
+const ICONE = {
+  imagem: svg('<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>'),
+  caixa: svg('<rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.5"></circle><path d="M6 12h.01M18 12h.01"></path>'),
+  remover: svg('<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>'),
+};
 
 const FILTROS = [
   ['todos', 'Todos'],
@@ -265,8 +281,43 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       <td>${esc(formatarDia(e.dataDesligamento))}</td>
       <td><div class="pat-cell-stack"><span class="pat-deslig-prazo ${e.estado.classe}">${esc(e.estado.texto)}</span><span class="pat-secondary">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></div></td>
       <td>${esc(e.motivo || '-')}</td>
-      <td>${e.manual && !e.lancado ? `<div class="pat-deslig-acoes">${e.estado.vencido ? `<button type="button" class="base-button primary" data-acao="caixa" data-id="${esc(e.id)}" title="Registra que o material não recolhido foi lançado em Caixa">Lançado em caixa</button>` : ''}<button type="button" class="base-button secondary" data-acao="remover" data-id="${esc(e.id)}" title="Tirar este desligado da lista">Remover</button></div>` : ''}</td>
+      <td><div class="pat-deslig-acoes"><button type="button" class="pat-deslig-ico imagem" data-acao="imagem" data-id="${esc(e.id)}" title="Gerar imagem dos patrimônios (para enviar ao gestor)" aria-label="Gerar imagem dos patrimônios">${ICONE.imagem}</button>${e.manual && !e.lancado ? `${e.estado.vencido ? `<button type="button" class="pat-deslig-ico caixa" data-acao="caixa" data-id="${esc(e.id)}" title="Marcar como lançado em Caixa (material não recolhido)" aria-label="Marcar como lançado em Caixa">${ICONE.caixa}</button>` : ''}<button type="button" class="pat-deslig-ico remover" data-acao="remover" data-id="${esc(e.id)}" title="Tirar este desligado da lista" aria-label="Remover da lista">${ICONE.remover}</button>` : ''}</div></td>
     </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function avisar(texto, erro = false) {
+    const el = document.createElement('div');
+    el.className = `pat-deslig-aviso${erro ? ' erro' : ''}`;
+    el.textContent = texto;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 4500);
+  }
+
+  async function gerarImagem(id, botao) {
+    const e = entradas.find((x) => x.id === id);
+    if (!e) return;
+    botao.disabled = true;
+    try {
+      const blob = await gerarImagemDesligado(e);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nomeArquivoImagem(e.nome, hojeBrasilia());
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      let copiada = false;
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        copiada = true;
+      } catch { /* sem permissão da área de transferência: o arquivo baixado basta */ }
+      avisar(copiada ? 'Imagem baixada e copiada — é só colar na conversa.' : 'Imagem baixada.');
+    } catch (err) {
+      avisar(err?.message || 'Não foi possível gerar a imagem.', true);
+    } finally {
+      botao.disabled = false;
+    }
   }
 
   async function marcarLancadoCaixa(id) {
@@ -449,6 +500,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       desenhar();
       return;
     }
+    if (btn.dataset.acao === 'imagem') gerarImagem(btn.dataset.id, btn);
     if (btn.dataset.acao === 'caixa') marcarLancadoCaixa(btn.dataset.id);
     if (btn.dataset.acao === 'remover') remover(btn.dataset.id);
   });
