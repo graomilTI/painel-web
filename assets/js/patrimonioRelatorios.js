@@ -2,7 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { toPanelUrl } from './paths.js';
 import { sincronizarPatrimoniosDoAgente } from './patrimoniosAgentSync.js';
-import { criarDesligados } from './patrimonioDesligados.js?v=20261019-peneira';
+import { criarDesligados } from './patrimonioDesligados.js?v=20261019-layout-frotas';
 
 const TABLE_ROWS_PER_PAGE = 20;
 const IGNORED_STATUS = new Set(['baixado', 'manutencao', 'manutenção']);
@@ -16,7 +16,6 @@ const ICONS = {
   sheet: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>',
   photo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>',
   doc: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>',
-  plus: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
   chevronLeft: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
   chevronRight: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>',
 };
@@ -893,19 +892,7 @@ export function renderContent(content) {
       </article>
       </div>
 
-      <div class="pat-view" id="patDesligadosView" hidden>
-        <article class="base-card patrimonio-table-card pat-alert">
-          <div class="pat-deslig-head">
-            <div class="patrimonio-table-title">
-              <strong>Desligados com materiais a recolher</strong>
-              <span class="patrimonio-table-subtitle">Prazo de 10 dias a partir do desligamento; o que não for recolhido é lançado em Caixa. Inclui as solicitações de inativação de Gestor &gt; Programação &gt; Sem O.S.</span>
-            </div>
-            <button class="base-button primary icon-button" id="btnDesligadoNovo" type="button" title="Cadastrar desligado" aria-label="Cadastrar desligado">${ICONS.plus}</button>
-          </div>
-          <div class="pat-deslig-filtros" id="patDesligadosFiltros"></div>
-          <div id="patDesligadosList" class="pat-desligados-empty">Carregando...</div>
-        </article>
-      </div>
+      <div class="pat-view" id="patDesligadosView" hidden></div>
     </section>
   `;
 

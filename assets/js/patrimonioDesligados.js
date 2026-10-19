@@ -1,7 +1,7 @@
 // Aba "Desligados" dos Relatórios de Patrimônios.
 //
 // Fontes da lista (um colaborador aparece uma vez; o cadastro manual vence):
-//   1. patrimonio_desligados — cadastrado aqui pelo botão "+", com data de
+//   1. patrimonio_desligados — cadastrado aqui pelo botão "+ Novo desligado", com data de
 //      desligamento. Prazo para recolher = 10 dias a partir dela.
 //   2. programacao_inativacao_solicitacoes PENDENTE — pedido do gestor em
 //      Programação > Sem O.S.; sem data de desligamento, então o prazo conta a
@@ -9,14 +9,18 @@
 // Os patrimônios são lidos ao vivo de patrimonios_snapshot pelo nome: quando
 // outro colaborador faz a leitura do item, o snapshot muda de `funcionario` e
 // ele sai da lista. Vencido o prazo, o que sobrou é marcado como lançado em Caixa.
+//
+// Layout no mesmo padrão das listas do Frotas (frotas-ui-lista.js): cabeçalho com ações,
+// cards clicáveis que filtram, busca com chip do filtro ativo, tabela com cabeçalho fixo e ícones.
 
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
-import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-peneira';
+import { ESTILOS_LISTA, ICON, cardFiltro, sincronizarCards, aoClicarCard, iconBtn } from './modules/frotas-ui-lista.js?v=20261019-frotas-manut28';
+import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-layout-frotas';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
   valorEstimadoDoItem, formatarReais,
-} from './patrimonioDesligadosRegras.js?v=20261019-peneira';
+} from './patrimonioDesligadosRegras.js?v=20261019-layout-frotas';
 
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;')
@@ -25,64 +29,35 @@ const esc = (v) => String(v ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+const COLUNAS = 7;
+
+// Base visual do Frotas (.fm-*), a mesma das telas de Motoristas/Manutenção, + o que é só desta aba.
+const ESTILOS_BASE = `
+  .fm-shell{color:#e2e2f0}.fm-head{margin-bottom:18px}.fm-kicker{color:#86efac;text-transform:uppercase;letter-spacing:.14em;font-weight:950;font-size:12px}.fm-title{margin:8px 0 6px;font-size:clamp(24px,2.4vw,34px);letter-spacing:-.04em;color:#f8fafc}.fm-sub{max-width:900px;color:#94a3b8;line-height:1.55;margin:0}
+  .fm-card{border:1px solid rgba(148,163,184,.16);border-radius:24px;background:radial-gradient(circle at top left,rgba(34,197,94,.13),transparent 34%),linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));box-shadow:0 20px 60px rgba(0,0,0,.28);overflow:hidden}.fm-body{padding:18px}
+  .fm-input,.fm-select{width:100%;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;outline:none;color-scheme:dark;font:inherit}.fm-select option{background:#0d0d18;color:#e2e2f0}
+  .fm-btn{border:0;border-radius:14px;min-height:42px;padding:0 14px;font-weight:950;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-weight:950;width:auto;margin:0}.fm-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);color:#052e16}.fm-btn.soft{border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.12);color:#86efac}.fm-btn.ghost{border:1px solid rgba(148,163,184,.18);background:rgba(15,23,42,.72);color:#cbd5e1}.fm-btn:disabled{opacity:.5;cursor:not-allowed}.fm-btn[hidden]{display:none}
+  .fm-actions{display:flex;gap:6px}
+  .fm-table-wrap{overflow:auto;border:1px solid rgba(148,163,184,.14);border-radius:18px}.fm-table{width:100%;border-collapse:collapse;min-width:980px}.fm-table th{padding:12px 11px;color:#bfdbfe;font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-align:left;border-bottom:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.38)}.fm-table td{padding:12px 11px;border-bottom:1px solid rgba(148,163,184,.10);color:#e2e2f0;font-size:13px;vertical-align:top}.fm-table tr:hover td{background:rgba(22,101,52,.08)}
+  .fm-badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:950;border:1px solid rgba(148,163,184,.18);color:#cbd5e1;background:rgba(15,23,42,.72);white-space:nowrap}.fm-badge.ok{border-color:rgba(34,197,94,.35);background:rgba(22,101,52,.24);color:#bbf7d0}.fm-badge.warn{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.12);color:#fde68a}.fm-badge.err{border-color:rgba(239,68,68,.34);background:rgba(239,68,68,.12);color:#fecaca}.fm-badge.info{border-color:rgba(99,102,241,.4);background:rgba(99,102,241,.16);color:#c7d2fe}
+  .fm-empty{text-align:center;color:#f8fafc;padding:26px!important;font-weight:850}
+  .fm-field label{display:block;margin:0 0 6px;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.fm-field textarea{width:100%;min-height:68px;resize:vertical;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:12px;outline:none;font:inherit;color-scheme:dark}
+  .fm-bar .fm-select{flex:0 1 230px;min-width:170px}
+  .fm-mat{display:flex;align-items:center;gap:8px;appearance:none;border:1px solid rgba(34,197,94,.24);background:rgba(34,197,94,.1);color:#bbf7d0;font:inherit;font-weight:900;font-size:12px;padding:5px 10px;border-radius:999px;cursor:pointer;min-width:150px}.fm-mat:hover{background:rgba(34,197,94,.2)}.fm-mat .seta{display:inline-block;width:10px;transition:transform .15s ease}.fm-mat[aria-expanded="true"] .seta{transform:rotate(90deg)}.fm-mat .soma{margin-left:auto;color:#fde68a}
+  .fm-itens{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;font-size:12px;color:#cbd5e1}.fm-itens li{display:flex;gap:8px;justify-content:space-between}.fm-itens b{color:#f8fafc}.fm-itens .v{color:#fde68a;white-space:nowrap}.fm-itens .sv{color:#64748b;white-space:nowrap}.fm-itens-total{margin-top:6px;font-size:12px;font-weight:900;color:#fde68a}.fm-itens-total small{color:#94a3b8;font-weight:600}
+  .fm-prazo-dia{display:block;margin-top:4px;color:#94a3b8;font-size:11.5px}
+  .fm-modal-backdrop{position:fixed;inset:0;z-index:9998;background:rgba(2,6,23,.8);display:flex;align-items:center;justify-content:center;padding:22px}.fm-modal{width:min(640px,96vw);max-height:90vh;overflow:auto;border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);color:#e2e2f0}.fm-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:20px;border-bottom:1px solid rgba(148,163,184,.16)}.fm-modal-head h3{margin:0;color:#fff;font-size:20px}.fm-modal-head p{margin:6px 0 0;color:#94a3b8;font-size:13px;line-height:1.45}.fm-modal-body{padding:20px;display:grid;gap:14px}.fm-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.12)}
+  .fm-field{position:relative}.fm-sugestoes{position:absolute;left:0;right:0;top:100%;z-index:5;margin-top:4px;border:1px solid rgba(148,163,184,.25);border-radius:14px;background:#0d0d18;max-height:260px;overflow:auto;box-shadow:0 14px 40px rgba(0,0,0,.5)}.fm-sugestoes[hidden]{display:none}.fm-sug{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;appearance:none;border:0;border-bottom:1px solid rgba(148,163,184,.1);background:transparent;color:#e2e8f0;font:inherit;font-size:13px;padding:10px 12px;cursor:pointer}.fm-sug:hover{background:rgba(34,197,94,.12)}.fm-sug small{color:#94a3b8}
+  .fm-previa{border:1px dashed rgba(34,197,94,.35);border-radius:14px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#cbd5e1}.fm-previa.erro{border-color:rgba(239,68,68,.5);color:#fecaca}.fm-erro{color:#fecaca;font-size:12.5px;min-height:16px}.fm-hint{font-size:12px;color:#94a3b8;margin-top:6px}
+  .fm-toast{position:fixed;right:22px;bottom:22px;z-index:9999;max-width:360px;border:1px solid rgba(134,239,172,.32);background:rgba(22,101,52,.96);color:#dcfce7;border-radius:16px;padding:12px 16px;font-weight:800;font-size:13px;box-shadow:0 16px 45px rgba(0,0,0,.35)}.fm-toast.erro{border-color:rgba(252,165,165,.4);background:rgba(127,29,29,.96);color:#fee2e2}
+  .fm-venc{color:#fca5a5}
+`;
+
 function injectStyles() {
   if (document.getElementById('patDesligadosStyles')) return;
   const style = document.createElement('style');
   style.id = 'patDesligadosStyles';
-  style.textContent = `
-    .pat-deslig-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
-    .pat-deslig-head .base-button { width:auto; flex:none; margin:0; }
-    .pat-deslig-toggle { display:flex; align-items:center; gap:8px; width:100%; appearance:none; border:0; background:rgba(52,211,153,.12); color:#bbf7d0; font:inherit; font-weight:800; padding:6px 10px; border-radius:999px; cursor:pointer; text-align:left; }
-    .pat-deslig-toggle:hover { background:rgba(52,211,153,.2); }
-    .pat-deslig-toggle .seta { display:inline-block; width:10px; transition:transform .15s ease; }
-    .pat-deslig-toggle[aria-expanded="true"] .seta { transform:rotate(90deg); }
-    .pat-deslig-toggle .soma { margin-left:auto; color:#fde68a; font-weight:800; font-size:12px; }
-    .pat-deslig-filtros-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:12px 0 4px; }
-    .pat-deslig-filtros-bar .pat-deslig-filtros { margin:0; }
-    .pat-deslig-expandir { appearance:none; border:1px solid rgba(148,163,184,.22); background:transparent; color:rgba(226,232,240,.85); font:inherit; font-size:12.5px; font-weight:700; padding:6px 13px; border-radius:999px; cursor:pointer; }
-    .pat-deslig-expandir:hover { border-color:rgba(45,212,191,.5); color:#ecfdf5; }
-    .pat-deslig-filtros { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 4px; }
-    .pat-deslig-filtro { appearance:none; border:1px solid rgba(148,163,184,.22); background:rgba(15,23,42,.42); color:rgba(226,232,240,.8); font:inherit; font-size:12.5px; font-weight:700; padding:6px 13px; border-radius:999px; cursor:pointer; }
-    .pat-deslig-filtro.active { border-color:rgba(45,212,191,.5); background:rgba(45,212,191,.14); color:#ecfdf5; }
-    .pat-deslig-prazo { display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; font-weight:800; font-size:12px; white-space:nowrap; border:1px solid rgba(148,163,184,.25); }
-    .pat-deslig-prazo.ok { color:#bbf7d0; background:rgba(52,211,153,.1); border-color:rgba(52,211,153,.28); }
-    .pat-deslig-prazo.urgente, .pat-deslig-prazo.hoje { color:#fde68a; background:rgba(245,158,11,.12); border-color:rgba(245,158,11,.35); }
-    .pat-deslig-prazo.vencido { color:#fecaca; background:rgba(239,68,68,.14); border-color:rgba(239,68,68,.4); }
-    .pat-deslig-prazo.caixa { color:#c7d2fe; background:rgba(99,102,241,.14); border-color:rgba(99,102,241,.4); }
-    .pat-deslig-total { font-weight:800; font-size:12.5px; color:#fde68a; }
-    .pat-deslig-total small { font-weight:500; color:rgba(226,232,240,.6); }
-    .pat-deslig-origem { font-size:11px; color:rgba(226,232,240,.55); }
-    .pat-deslig-acoes { display:flex; gap:6px; align-items:center; flex-wrap:nowrap; }
-    .pat-deslig-ico { width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; border:1px solid rgba(148,163,184,.28); background:rgba(15,23,42,.5); color:rgba(226,232,240,.85); cursor:pointer; flex:none; transition:background .15s ease, border-color .15s ease, color .15s ease; }
-    .pat-deslig-ico:hover { border-color:rgba(226,232,240,.6); color:#fff; }
-    .pat-deslig-ico:disabled { opacity:.5; cursor:wait; }
-    .pat-deslig-ico.imagem:hover { border-color:rgba(45,212,191,.7); background:rgba(45,212,191,.16); color:#99f6e4; }
-    .pat-deslig-ico.caixa { border-color:rgba(52,211,153,.6); background:rgba(52,211,153,.2); color:#6ee7b7; }
-    .pat-deslig-ico.caixa:hover { background:rgba(52,211,153,.34); color:#d1fae5; }
-    .pat-deslig-ico.remover:hover { border-color:rgba(239,68,68,.7); background:rgba(239,68,68,.16); color:#fca5a5; }
-    .pat-deslig-aviso { position:fixed; right:22px; bottom:22px; z-index:9999; max-width:360px; border:1px solid rgba(134,239,172,.32); background:rgba(22,101,52,.96); color:#dcfce7; border-radius:14px; padding:12px 16px; font-weight:700; font-size:13px; box-shadow:0 16px 45px rgba(0,0,0,.35); }
-    .pat-deslig-aviso.erro { border-color:rgba(252,165,165,.4); background:rgba(127,29,29,.96); color:#fee2e2; }
-    .pat-deslig-modal-bg { position:fixed; inset:0; z-index:9998; background:rgba(2,6,23,.8); display:flex; align-items:center; justify-content:center; padding:22px; }
-    .pat-deslig-modal { width:min(640px,96vw); max-height:92vh; overflow:auto; border:1px solid rgba(148,163,184,.22); border-radius:20px; background:#031d14; color:#e2e8f0; box-shadow:0 24px 80px rgba(0,0,0,.55); }
-    .pat-deslig-modal header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:18px 20px; border-bottom:1px solid rgba(148,163,184,.16); }
-    .pat-deslig-modal header h3 { margin:0; font-size:18px; color:#fff; }
-    .pat-deslig-modal header p { margin:5px 0 0; font-size:12.5px; color:rgba(226,232,240,.65); }
-    .pat-deslig-modal .corpo { padding:18px 20px; display:grid; gap:14px; }
-    .pat-deslig-modal footer { display:flex; justify-content:flex-end; gap:10px; padding:14px 20px; border-top:1px solid rgba(148,163,184,.14); }
-    .pat-deslig-modal footer .base-button, .pat-deslig-modal header .base-button { width:auto; margin:0; }
-    .pat-deslig-campo { display:flex; flex-direction:column; gap:6px; position:relative; }
-    .pat-deslig-campo label { font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.08em; color:#bbf7d0; }
-    .pat-deslig-campo input, .pat-deslig-campo textarea { border:1px solid rgba(148,163,184,.22); border-radius:12px; background:#0d1a15; color:#e2e8f0; padding:10px 12px; font:inherit; font-size:13.5px; outline:none; color-scheme:dark; }
-    .pat-deslig-campo textarea { min-height:64px; resize:vertical; }
-    .pat-deslig-sugestoes { position:absolute; left:0; right:0; top:100%; z-index:5; margin-top:4px; border:1px solid rgba(148,163,184,.25); border-radius:12px; background:#06251a; max-height:260px; overflow:auto; box-shadow:0 14px 40px rgba(0,0,0,.45); }
-    .pat-deslig-sugestoes[hidden] { display:none; }
-    .pat-deslig-sug { display:flex; justify-content:space-between; gap:10px; width:100%; text-align:left; appearance:none; border:0; border-bottom:1px solid rgba(148,163,184,.1); background:transparent; color:#e2e8f0; font:inherit; font-size:13px; padding:9px 12px; cursor:pointer; }
-    .pat-deslig-sug:hover { background:rgba(52,211,153,.12); }
-    .pat-deslig-sug small { color:rgba(226,232,240,.6); }
-    .pat-deslig-previa { border:1px dashed rgba(52,211,153,.35); border-radius:12px; padding:10px 12px; font-size:12.5px; line-height:1.6; color:#cbd5e1; }
-    .pat-deslig-previa.erro { border-color:rgba(239,68,68,.5); color:#fecaca; }
-    .pat-deslig-erro { color:#fecaca; font-size:12.5px; min-height:16px; }
-  `;
+  style.textContent = `${ESTILOS_BASE}${ESTILOS_LISTA}`;
   document.head.appendChild(style);
 }
 
@@ -107,19 +82,22 @@ function itensPorNome(snapshot) {
   return mapa;
 }
 
-const svg = (corpo) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
-const ICONE = {
-  imagem: svg('<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>'),
-  caixa: svg('<rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2.5"></circle><path d="M6 12h.01M18 12h.01"></path>'),
-  remover: svg('<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path>'),
-};
+function iniciais(nome) {
+  const p = String(nome || '?').trim().split(/\s+/).filter((w) => w.length > 2 || w === String(nome).trim());
+  return ((p[0]?.[0] || '?') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
+
+const ICONE_IMAGEM = '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+const ICONE_MAIS = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
 const FILTROS = [
-  ['todos', 'Todos'],
-  ['prazo', 'No prazo'],
-  ['vencidos', 'Vencidos'],
-  ['caixa', 'Lançados em caixa'],
+  { key: 'todos', label: 'Todos', tone: 'blue', icone: 'total', tem: () => true },
+  { key: 'prazo', label: 'No prazo', tone: 'green', icone: 'ok', tem: (e) => !e.lancado && !e.estado.vencido },
+  { key: 'vencidos', label: 'Vencidos', tone: 'red', icone: 'alerta', tem: (e) => !e.lancado && e.estado.vencido },
+  { key: 'caixa', label: 'Lançados em caixa', tone: 'purple', icone: 'dinheiro', tem: (e) => e.lancado },
 ];
+
+const somaValor = (itens) => itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
 
 /**
  * @param {{ target: HTMLElement, loadSnapshotRows: () => Promise<any[]> }} deps
@@ -128,19 +106,58 @@ export function criarDesligados({ target, loadSnapshotRows }) {
   injectStyles();
   let snapshot = [];
   let filtro = 'todos';
+  let busca = '';
+  let supervisaoSel = '';
+  let carregando = false;
   // Materiais abertos por colaborador (chave = nome normalizado). Começa tudo recolhido.
   const abertos = new Set();
   let entradas = [];
   let catalogoAtual = [];
 
+  target.innerHTML = `<section class="fm-shell">
+    <div class="fm-head">
+      <div>
+        <div class="fm-kicker">Patrimônios · Recolhimento</div>
+        <h2 class="fm-title">Desligados com materiais a recolher</h2>
+        <p class="fm-sub">Prazo de ${PRAZO_RECOLHIMENTO_DIAS} dias a partir do desligamento; o que não for recolhido é lançado em Caixa. Clique nos cards para filtrar. Inclui as solicitações de inativação de Gestor › Programação › Sem O.S.</p>
+      </div>
+      <div class="fm-head-actions">
+        <button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button>
+        <button class="fm-btn primary" type="button" data-novo>${ICONE_MAIS} Novo desligado</button>
+      </div>
+    </div>
+    <div class="fm-kpis" data-kpis></div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar">
+        <div class="fm-search">${ICON.busca}<input class="fm-input" placeholder="Buscar por colaborador, supervisão, patrimônio ou material..." data-busca></div>
+        <select class="fm-select" data-supervisao aria-label="Supervisão"><option value="">Todas as supervisões</option></select>
+        <span data-chip></span>
+        <button class="fm-btn ghost" type="button" data-expandir></button>
+        <span class="fm-count" data-count>0 desligado(s)</span>
+      </div>
+      <div class="fm-table-wrap"><table class="fm-table">
+        <thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th style="width:1%">Ações</th></tr></thead>
+        <tbody data-linhas><tr><td colspan="${COLUNAS}" class="fm-empty">Carregando...</td></tr></tbody>
+      </table></div>
+    </div></div>
+  </section>`;
+
+  const q = (sel) => target.querySelector(sel);
   const comValor = (rows, catalogo) => rows.map((r) => ({ ...r, valor: valorEstimadoDoItem(r.identificacao, catalogo) }));
+  const mensagem = (texto) => { q('[data-linhas]').innerHTML = `<tr><td colspan="${COLUNAS}" class="fm-empty">${esc(texto)}</td></tr>`; };
 
   async function carregar() {
-    const lista = target.querySelector('#patDesligadosList');
-    if (!lista) return;
-    lista.className = 'pat-desligados-empty';
-    lista.textContent = 'Carregando colaboradores e materiais...';
+    if (carregando) return;
+    carregando = true;
+    mensagem('Carregando colaboradores e materiais...');
+    try {
+      await carregarDados();
+    } finally {
+      carregando = false;
+    }
+  }
 
+  async function carregarDados() {
     const [manuaisR, solicitacoesR, snapshotR, catalogoR] = await Promise.allSettled([
       supabase
         .from('patrimonio_desligados')
@@ -164,11 +181,11 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     const falha = [manuaisR, solicitacoesR].find((r) => r.status === 'rejected' || r.value?.error);
     if (falha) {
       const err = falha.status === 'rejected' ? falha.reason : falha.value.error;
-      lista.textContent = err?.message || 'Não foi possível carregar os desligados.';
+      mensagem(err?.message || 'Não foi possível carregar os desligados.');
       return;
     }
     if (snapshotR.status === 'rejected') {
-      lista.textContent = snapshotR.reason?.message || 'Não foi possível atualizar a base de patrimônios.';
+      mensagem(snapshotR.reason?.message || 'Não foi possível atualizar a base de patrimônios.');
       return;
     }
 
@@ -227,67 +244,87 @@ export function criarDesligados({ target, loadSnapshotRows }) {
 
     novas.sort((a, b) => (a.lancado - b.lancado) || a.prazo.localeCompare(b.prazo));
     entradas = novas.map((e) => ({ ...e, estado: e.lancado ? { classe: 'caixa', texto: 'Lançado em caixa', vencido: false } : estadoPrazo(e.prazo, hoje) }));
+    preencherSupervisoes();
     desenhar();
   }
 
-  function celulaMateriais(e) {
-    const aberto = abertos.has(chaveNome(e.nome));
-    const n = e.itens.length;
-    const total = e.itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
-    const lista = e.itens.map((row) => `${esc(`${row.patrimonio_codigo || '-'} — ${row.identificacao || '-'}`)}${row.valor == null ? '' : ` · ${esc(formatarReais(row.valor))}`}`).join('<br>');
-    return `<div class="pat-cell-stack"><button type="button" class="pat-deslig-toggle" data-toggle-itens="${esc(chaveNome(e.nome))}" aria-expanded="${aberto}" title="${aberto ? 'Recolher' : 'Mostrar'} os materiais"><span class="seta">▸</span>${n} ${n === 1 ? 'item' : 'itens'}${total ? `<span class="soma">${esc(formatarReais(total))}</span>` : ''}</button>${aberto ? `<span class="pat-secondary">${lista}</span>${resumoValor(e.itens)}` : ''}</div>`;
+  function preencherSupervisoes() {
+    const sel = q('[data-supervisao]');
+    const nomes = [...new Set(entradas.map((e) => e.supervisao).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    if (supervisaoSel && !nomes.includes(supervisaoSel)) supervisaoSel = '';
+    sel.innerHTML = `<option value="">Todas as supervisões</option>${nomes.map((n) => `<option value="${esc(n)}"${n === supervisaoSel ? ' selected' : ''}>${esc(n)}</option>`).join('')}`;
   }
 
   function resumoValor(itens) {
-    const total = itens.reduce((t, r) => t + (r.valor == null ? 0 : Number(r.valor)), 0);
+    const total = somaValor(itens);
     const sem = itens.filter((r) => r.valor == null).length;
-    if (!total && sem === itens.length) return `<span class="pat-deslig-origem">Sem estimativa no catálogo</span>`;
-    return `<span class="pat-deslig-total">Caixa estimado: ${esc(formatarReais(total))}${sem ? ` <small>(${sem} sem valor)</small>` : ''}</span>`;
+    if (!total && sem === itens.length) return '<div class="fm-itens-total"><small>Sem estimativa no catálogo</small></div>';
+    return `<div class="fm-itens-total">Caixa estimado: ${esc(formatarReais(total))}${sem ? ` <small>(${sem} sem valor)</small>` : ''}</div>`;
+  }
+
+  function celulaMateriais(e) {
+    const chave = chaveNome(e.nome);
+    const aberto = abertos.has(chave);
+    const n = e.itens.length;
+    const total = somaValor(e.itens);
+    const lista = `<ul class="fm-itens">${e.itens.map((r) => `<li><span><b>${esc(r.patrimonio_codigo || '-')}</b> — ${esc(r.identificacao || '-')}</span>${r.valor == null ? '<span class="sv">sem valor</span>' : `<span class="v">${esc(formatarReais(r.valor))}</span>`}</li>`).join('')}</ul>${resumoValor(e.itens)}`;
+    return `<button type="button" class="fm-mat" data-toggle-itens="${esc(chave)}" aria-expanded="${aberto}" title="${aberto ? 'Recolher' : 'Mostrar'} os materiais"><span class="seta">▸</span>${n} ${n === 1 ? 'item' : 'itens'}${total ? `<span class="soma">${esc(formatarReais(total))}</span>` : ''}</button>${aberto ? lista : ''}`;
+  }
+
+  function aplicaBusca(e) {
+    if (supervisaoSel && e.supervisao !== supervisaoSel) return false;
+    const termo = chaveNome(busca);
+    if (!termo) return true;
+    const campos = [e.nome, e.cargo, e.supervisao, e.motivo, ...e.itens.flatMap((r) => [r.patrimonio_codigo, r.identificacao])];
+    return campos.some((c) => chaveNome(c).includes(termo));
+  }
+
+  function desenharKpis(base) {
+    const abertosAgora = base.filter((e) => !e.lancado);
+    const itensRecolher = abertosAgora.reduce((t, e) => t + e.itens.length, 0);
+    const caixaVencidos = base.filter((e) => !e.lancado && e.estado.vencido).reduce((t, e) => t + somaValor(e.itens), 0);
+    q('[data-kpis]').innerHTML = [
+      ...FILTROS.map((f) => cardFiltro({ filtro: f.key, label: f.label, tone: f.tone, icone: f.icone, valor: String(base.filter(f.tem).length), ativo: filtro === f.key })),
+      cardFiltro({ label: 'Itens a recolher', tone: 'amber', icone: 'ferramenta', valor: String(itensRecolher), dica: 'Patrimônios ainda no nome dos desligados que não foram lançados em Caixa' }),
+      cardFiltro({ label: 'Caixa estimado (vencidos)', tone: 'amber', icone: 'dinheiro', valor: formatarReais(caixaVencidos), dica: 'Soma do valor estimado dos itens dos desligados com prazo vencido' }),
+    ].join('');
   }
 
   function desenhar() {
-    const lista = target.querySelector('#patDesligadosList');
-    if (!lista) return;
-    const contagem = {
-      todos: entradas.length,
-      prazo: entradas.filter((e) => !e.lancado && !e.estado.vencido).length,
-      vencidos: entradas.filter((e) => !e.lancado && e.estado.vencido).length,
-      caixa: entradas.filter((e) => e.lancado).length,
-    };
-    const visiveis = entradas.filter((e) => {
-      if (filtro === 'prazo') return !e.lancado && !e.estado.vencido;
-      if (filtro === 'vencidos') return !e.lancado && e.estado.vencido;
-      if (filtro === 'caixa') return e.lancado;
-      return true;
-    });
+    // Os cards contam sobre o que a busca/supervisão deixam passar, para bater com a tabela.
+    const base = entradas.filter(aplicaBusca);
+    desenharKpis(base);
+    sincronizarCards(target, filtro);
 
+    const filtroAtual = FILTROS.find((f) => f.key === filtro) || FILTROS[0];
+    const visiveis = base.filter(filtroAtual.tem);
+    q('[data-count]').textContent = `${visiveis.length} de ${entradas.length} desligado(s)`;
+
+    const botaoExpandir = q('[data-expandir]');
     const todosAbertos = visiveis.length > 0 && visiveis.every((e) => abertos.has(chaveNome(e.nome)));
-    target.querySelector('#patDesligadosFiltros').innerHTML = `<div class="pat-deslig-filtros-bar"><div class="pat-deslig-filtros">${FILTROS.map(([k, rotulo]) =>
-      `<button type="button" class="pat-deslig-filtro${k === filtro ? ' active' : ''}" data-filtro="${k}">${rotulo} (${contagem[k]})</button>`).join('')}</div>${visiveis.length ? `<button type="button" class="pat-deslig-expandir" data-expandir="${todosAbertos ? 'recolher' : 'abrir'}">${todosAbertos ? 'Recolher todos os materiais' : 'Expandir todos os materiais'}</button>` : ''}</div>`;
+    botaoExpandir.hidden = !visiveis.length;
+    botaoExpandir.dataset.expandir = todosAbertos ? 'recolher' : 'abrir';
+    botaoExpandir.textContent = todosAbertos ? 'Recolher todos os materiais' : 'Expandir todos os materiais';
 
     if (!visiveis.length) {
-      lista.className = 'pat-desligados-empty';
-      lista.textContent = entradas.length
-        ? 'Nenhum desligado neste filtro.'
-        : 'Nenhum desligado com material a recolher. Use o + para cadastrar.';
+      mensagem(entradas.length ? 'Nenhum desligado encontrado com esse filtro.' : 'Nenhum desligado com material a recolher. Use "Novo desligado" para cadastrar.');
       return;
     }
 
-    lista.className = 'table-shell';
-    lista.innerHTML = `<div class="table-scroll-x"><table class="patrimonio-table"><thead><tr><th>Colaborador</th><th>Materiais</th><th>Supervisão</th><th>Desligamento</th><th>Prazo</th><th>Motivo</th><th></th></tr></thead><tbody>${visiveis.map((e) => `<tr>
-      <td><div class="pat-cell-stack"><span class="pat-primary">${esc(e.nome)}</span><span class="pat-secondary">${esc(e.cargo || 'Colaborador')}</span><span class="pat-deslig-origem">${esc(e.origem)}</span></div></td>
+    q('[data-linhas]').innerHTML = visiveis.map((e) => `<tr>
+      <td><div class="fm-person"><span class="fm-avatar">${esc(iniciais(e.nome))}</span><div><strong>${esc(e.nome)}</strong><small>${esc(e.cargo || 'Colaborador')} · ${esc(e.origem)}</small></div></div></td>
       <td>${celulaMateriais(e)}</td>
       <td>${esc(e.supervisao || '-')}</td>
       <td>${esc(formatarDia(e.dataDesligamento))}</td>
-      <td><div class="pat-cell-stack"><span class="pat-deslig-prazo ${e.estado.classe}">${esc(e.estado.texto)}</span><span class="pat-secondary">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></div></td>
+      <td><span class="fm-badge ${{ ok: 'ok', urgente: 'warn', hoje: 'warn', vencido: 'err', caixa: 'info' }[e.estado.classe] || ''}">${esc(e.estado.texto)}</span><span class="fm-prazo-dia">${e.lancado ? esc(`em ${formatarDia(diaBrasilia(e.lancadoEm))}`) : esc(`até ${formatarDia(e.prazo)}`)}</span></td>
       <td>${esc(e.motivo || '-')}</td>
-      <td><div class="pat-deslig-acoes"><button type="button" class="pat-deslig-ico imagem" data-acao="imagem" data-id="${esc(e.id)}" title="Gerar imagem dos patrimônios (para enviar ao gestor)" aria-label="Gerar imagem dos patrimônios">${ICONE.imagem}</button>${e.manual && !e.lancado ? `${e.estado.vencido ? `<button type="button" class="pat-deslig-ico caixa" data-acao="caixa" data-id="${esc(e.id)}" title="Marcar como lançado em Caixa (material não recolhido)" aria-label="Marcar como lançado em Caixa">${ICONE.caixa}</button>` : ''}<button type="button" class="pat-deslig-ico remover" data-acao="remover" data-id="${esc(e.id)}" title="Tirar este desligado da lista" aria-label="Remover da lista">${ICONE.remover}</button>` : ''}</div></td>
-    </tr>`).join('')}</tbody></table></div>`;
+      <td><div class="fm-actions">${iconBtn('data-img', e.id, 'anexo', 'Gerar imagem dos patrimônios (para enviar ao gestor)', ICONE_IMAGEM)}${e.manual && !e.lancado ? `${e.estado.vencido ? iconBtn('data-caixa', e.id, 'termo', 'Marcar como lançado em Caixa (material não recolhido)', 'dinheiro') : ''}${iconBtn('data-rem', e.id, 'danger', 'Tirar este desligado da lista', 'excluir')}` : ''}</div></td>
+    </tr>`).join('');
   }
 
   function avisar(texto, erro = false) {
     const el = document.createElement('div');
-    el.className = `pat-deslig-aviso${erro ? ' erro' : ''}`;
+    el.className = `fm-toast${erro ? ' erro' : ''}`;
     el.textContent = texto;
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 4500);
@@ -332,7 +369,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
       lancado_caixa_em: new Date().toISOString(),
       lancado_caixa_por_nome: user.nome,
     }).eq('id', id).eq('status', 'ABERTO');
-    if (error) { window.alert(error.message || 'Não foi possível registrar.'); return; }
+    if (error) { avisar(error.message || 'Não foi possível registrar.', true); return; }
     await carregar();
   }
 
@@ -341,45 +378,45 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     if (!e) return;
     if (!window.confirm(`Tirar ${e.nome} da lista de desligados?`)) return;
     const { error } = await supabase.from('patrimonio_desligados').update({ status: 'CANCELADO' }).eq('id', id).eq('status', 'ABERTO');
-    if (error) { window.alert(error.message || 'Não foi possível remover.'); return; }
+    if (error) { avisar(error.message || 'Não foi possível remover.', true); return; }
     await carregar();
   }
 
   async function abrirModalNovo() {
     const hoje = hojeBrasilia();
     const bg = document.createElement('div');
-    bg.className = 'pat-deslig-modal-bg';
+    bg.className = 'fm-modal-backdrop';
     bg.innerHTML = `
-      <div class="pat-deslig-modal" role="dialog" aria-modal="true" aria-label="Cadastrar desligado">
-        <header>
-          <div><h3>Cadastrar desligado</h3><p>Os patrimônios em nome do colaborador entram na lista e saem sozinhos quando outro colaborador fizer a leitura. Prazo de ${PRAZO_RECOLHIMENTO_DIAS} dias para recolher; o que sobrar vai para Caixa.</p></div>
-          <button type="button" class="base-button secondary" data-fechar aria-label="Fechar">✕</button>
-        </header>
-        <div class="corpo">
-          <div class="pat-deslig-campo">
+      <div class="fm-modal" role="dialog" aria-modal="true" aria-label="Novo desligado">
+        <div class="fm-modal-head">
+          <div><h3>Novo desligado</h3><p>Os patrimônios em nome do colaborador entram na lista e saem sozinhos quando outro colaborador fizer a leitura. Prazo de ${PRAZO_RECOLHIMENTO_DIAS} dias para recolher; o que sobrar vai para Caixa.</p></div>
+          <button type="button" class="fm-btn ghost" data-fechar aria-label="Fechar">✕</button>
+        </div>
+        <div class="fm-modal-body">
+          <div class="fm-field">
             <label for="dsNome">Colaborador</label>
-            <input id="dsNome" type="text" autocomplete="off" placeholder="Digite o nome" />
-            <div class="pat-deslig-sugestoes" id="dsSugestoes" hidden></div>
+            <input class="fm-input" id="dsNome" type="text" autocomplete="off" placeholder="Digite o nome" />
+            <div class="fm-sugestoes" id="dsSugestoes" hidden></div>
           </div>
-          <div class="pat-deslig-previa" id="dsPrevia">Escolha o colaborador para ver os patrimônios em nome dele.</div>
-          <div class="pat-deslig-campo">
+          <div class="fm-previa" id="dsPrevia">Escolha o colaborador para ver os patrimônios em nome dele.</div>
+          <div class="fm-field">
             <label for="dsData">Data de desligamento</label>
-            <input id="dsData" type="date" value="${hoje}" />
-            <span class="pat-secondary" id="dsPrazo"></span>
+            <input class="fm-input" id="dsData" type="date" value="${hoje}" />
+            <div class="fm-hint" id="dsPrazo"></div>
           </div>
-          <div class="pat-deslig-campo">
+          <div class="fm-field">
             <label for="dsMotivo">Motivo (opcional)</label>
             <textarea id="dsMotivo" placeholder="Ex.: pediu demissão, fim do contrato..."></textarea>
           </div>
-          <div class="pat-deslig-erro" id="dsErro"></div>
+          <div class="fm-erro" id="dsErro"></div>
         </div>
-        <footer>
-          <button type="button" class="base-button secondary" data-fechar>Cancelar</button>
-          <button type="button" class="base-button primary" id="dsSalvar">Cadastrar</button>
-        </footer>
+        <div class="fm-modal-foot">
+          <button type="button" class="fm-btn ghost" data-fechar>Cancelar</button>
+          <button type="button" class="fm-btn primary" id="dsSalvar">Cadastrar</button>
+        </div>
       </div>`;
     document.body.appendChild(bg);
-    const q = (sel) => bg.querySelector(sel);
+    const m = (sel) => bg.querySelector(sel);
     const fechar = () => bg.remove();
     bg.querySelectorAll('[data-fechar]').forEach((b) => b.addEventListener('click', fechar));
     bg.addEventListener('mousedown', (ev) => { if (ev.target === bg) fechar(); });
@@ -402,16 +439,16 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     const lista = [...candidatos.entries()].map(([k, c]) => ({ ...c, chave: k, qtd: (porNome.get(k) || []).length }));
 
     let escolhido = null;
-    const inputNome = q('#dsNome');
-    const caixaSug = q('#dsSugestoes');
-    const previa = q('#dsPrevia');
+    const inputNome = m('#dsNome');
+    const caixaSug = m('#dsSugestoes');
+    const previa = m('#dsPrevia');
 
     const atualizarPrazo = () => {
-      const d = q('#dsData').value;
-      q('#dsPrazo').textContent = d ? `Prazo para recolher: ${formatarDia(somarDias(d, PRAZO_RECOLHIMENTO_DIAS))}` : '';
+      const d = m('#dsData').value;
+      m('#dsPrazo').textContent = d ? `Prazo para recolher: ${formatarDia(somarDias(d, PRAZO_RECOLHIMENTO_DIAS))}` : '';
     };
     atualizarPrazo();
-    q('#dsData').addEventListener('input', atualizarPrazo);
+    m('#dsData').addEventListener('input', atualizarPrazo);
 
     const mostrarPrevia = () => {
       previa.classList.remove('erro');
@@ -425,7 +462,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         previa.textContent = `Nenhum patrimônio em nome de ${escolhido.nome}. Se o material está no nome de outra grafia, escolha-a na lista.`;
       } else {
         const itens = comValor(rows, catalogoAtual);
-        previa.innerHTML = `<strong>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} a recolher</strong><br>${itens.map((r) => `${esc(`${r.patrimonio_codigo || '-'} — ${r.identificacao || '-'}`)}${r.valor == null ? '' : ` · ${esc(formatarReais(r.valor))}`}`).join('<br>')}<br>${resumoValor(itens)}`;
+        previa.innerHTML = `<strong>${rows.length} ${rows.length === 1 ? 'item' : 'itens'} a recolher</strong><ul class="fm-itens">${itens.map((r) => `<li><span><b>${esc(r.patrimonio_codigo || '-')}</b> — ${esc(r.identificacao || '-')}</span>${r.valor == null ? '' : `<span class="v">${esc(formatarReais(r.valor))}</span>`}</li>`).join('')}</ul>${resumoValor(itens)}`;
       }
     };
 
@@ -438,9 +475,9 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         .sort((a, b) => (b.qtd > 0) - (a.qtd > 0) || a.nome.localeCompare(b.nome, 'pt-BR'))
         .slice(0, 8);
       if (!achados.length) { caixaSug.hidden = true; return; }
-      caixaSug.innerHTML = achados.map((c, i) => `<button type="button" class="pat-deslig-sug" data-i="${i}"><span>${esc(c.nome)}${c.cargo ? ` <small>· ${esc(c.cargo)}</small>` : ''}</span><small>${c.qtd ? `${c.qtd} ${c.qtd === 1 ? 'item' : 'itens'}` : 'sem patrimônio'}</small></button>`).join('');
+      caixaSug.innerHTML = achados.map((c, i) => `<button type="button" class="fm-sug" data-i="${i}"><span>${esc(c.nome)}${c.cargo ? ` <small>· ${esc(c.cargo)}</small>` : ''}</span><small>${c.qtd ? `${c.qtd} ${c.qtd === 1 ? 'item' : 'itens'}` : 'sem patrimônio'}</small></button>`).join('');
       caixaSug.hidden = false;
-      caixaSug.querySelectorAll('.pat-deslig-sug').forEach((btn) => btn.addEventListener('mousedown', (ev) => {
+      caixaSug.querySelectorAll('.fm-sug').forEach((btn) => btn.addEventListener('mousedown', (ev) => {
         ev.preventDefault();
         escolhido = achados[Number(btn.dataset.i)];
         inputNome.value = escolhido.nome;
@@ -452,16 +489,16 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     inputNome.addEventListener('blur', () => { caixaSug.hidden = true; });
     inputNome.focus();
 
-    q('#dsSalvar').addEventListener('click', async () => {
-      const erro = q('#dsErro');
+    m('#dsSalvar').addEventListener('click', async () => {
+      const erro = m('#dsErro');
       erro.textContent = '';
       if (!escolhido) { erro.textContent = 'Escolha o colaborador na lista.'; return; }
       const rows = porNome.get(escolhido.chave) || [];
       if (jaAbertos.has(escolhido.chave)) { erro.textContent = 'Este colaborador já está na lista de desligados.'; return; }
       if (!rows.length) { erro.textContent = 'Não há patrimônio em nome deste colaborador.'; return; }
-      const data = q('#dsData').value;
+      const data = m('#dsData').value;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { erro.textContent = 'Informe a data de desligamento.'; return; }
-      const botao = q('#dsSalvar');
+      const botao = m('#dsSalvar');
       botao.disabled = true;
       const user = await usuarioAtual();
       const { error } = await supabase.from('patrimonio_desligados').insert({
@@ -470,7 +507,7 @@ export function criarDesligados({ target, loadSnapshotRows }) {
         cargo: escolhido.cargo || null,
         coordenacao: escolhido.coordenacao || rows[0].coordenacao || null,
         supervisao: escolhido.supervisao || rows[0].supervisao || null,
-        motivo: q('#dsMotivo').value.trim() || null,
+        motivo: m('#dsMotivo').value.trim() || null,
         data_desligamento: data,
         criado_por_nome: user.nome,
       });
@@ -484,25 +521,37 @@ export function criarDesligados({ target, loadSnapshotRows }) {
     });
   }
 
+  // Cards: clicar aplica o filtro; clicar de novo (ou no ✕ do chip) limpa.
+  aoClicarCard(target, (card, limpar) => {
+    filtro = limpar ? 'todos' : (filtro === card.dataset.filtro ? 'todos' : card.dataset.filtro);
+    desenhar();
+  });
+
+  q('[data-busca]').addEventListener('input', (ev) => { busca = ev.target.value; desenhar(); });
+  q('[data-supervisao]').addEventListener('change', (ev) => { supervisaoSel = ev.target.value; desenhar(); });
+
   target.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button');
-    if (!btn || !target.contains(btn)) return;
-    if (btn.id === 'btnDesligadoNovo') { abrirModalNovo(); return; }
-    if (btn.dataset.filtro) { filtro = btn.dataset.filtro; desenhar(); return; }
-    if (btn.dataset.toggleItens) {
-      const k = btn.dataset.toggleItens;
+    const alvo = ev.target.closest('button');
+    if (!alvo || !target.contains(alvo)) return;
+    if (alvo.hasAttribute('data-novo')) { abrirModalNovo(); return; }
+    if (alvo.hasAttribute('data-atualizar')) { carregar(); return; }
+    if (alvo.dataset.toggleItens) {
+      const k = alvo.dataset.toggleItens;
       if (abertos.has(k)) abertos.delete(k); else abertos.add(k);
       desenhar();
       return;
     }
-    if (btn.dataset.expandir) {
-      entradas.forEach((e) => { if (btn.dataset.expandir === 'abrir') abertos.add(chaveNome(e.nome)); else abertos.delete(chaveNome(e.nome)); });
+    if (alvo.dataset.expandir) {
+      const filtroAtual = FILTROS.find((f) => f.key === filtro) || FILTROS[0];
+      entradas.filter(aplicaBusca).filter(filtroAtual.tem).forEach((e) => {
+        if (alvo.dataset.expandir === 'abrir') abertos.add(chaveNome(e.nome)); else abertos.delete(chaveNome(e.nome));
+      });
       desenhar();
       return;
     }
-    if (btn.dataset.acao === 'imagem') gerarImagem(btn.dataset.id, btn);
-    if (btn.dataset.acao === 'caixa') marcarLancadoCaixa(btn.dataset.id);
-    if (btn.dataset.acao === 'remover') remover(btn.dataset.id);
+    if (alvo.dataset.img) gerarImagem(alvo.dataset.img, alvo);
+    if (alvo.dataset.caixa) marcarLancadoCaixa(alvo.dataset.caixa);
+    if (alvo.dataset.rem) remover(alvo.dataset.rem);
   });
 
   return { carregar };
