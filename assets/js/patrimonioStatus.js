@@ -52,35 +52,9 @@ function injectStatusStyles() {
   const style = document.createElement('style');
   style.id = 'patrimonio-status-styles';
   style.textContent = `
-    .pat-status-page .pat-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 14px;
-    }
-    .pat-status-page .pat-tab {
-      appearance: none;
-      border: 1px solid rgba(148, 163, 184, 0.18);
-      border-bottom-color: transparent;
-      background: rgba(15, 23, 42, 0.34);
-      color: rgba(226, 232, 240, 0.72);
-      font: inherit;
-      font-weight: 600;
-      font-size: 13.5px;
-      text-decoration: none;
-      cursor: pointer;
-      padding: 10px 20px;
-      border-radius: 12px 12px 0 0;
-      box-shadow: inset 0 -3px 0 transparent;
-      transition: color .15s ease, background .15s ease;
-    }
-    .pat-status-page .pat-tab:hover { color: #e2e8f0; }
-    .pat-status-page .pat-tab.active {
-      background: rgba(2, 12, 10, 0.55);
-      color: #ecfdf5;
-      border-color: rgba(45, 212, 191, 0.3);
-      border-bottom-color: transparent;
-      box-shadow: inset 0 -3px 0 #2dd4a0;
-    }
+    /* Abas no padrão dos hubs do Frotas (assets/css/frotas-hub.css): texto + risco no ativo. */
+    .pat-status-page .frotas-hub-tabs { margin-bottom: 14px; }
+    .pat-status-page a.ds-tab { text-decoration: none; }
     .pat-status-page .grid-cards {
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
@@ -339,10 +313,12 @@ export function renderContent(content) {
 
   content.innerHTML = `
     <section class="base-page pat-status-page">
-      <div class="pat-tabs" role="tablist">
-        <a href="${relatoriosUrl}" class="pat-tab">Relatórios</a>
-        <a href="${statusUrl}" class="pat-tab active">Status</a>
-        <a href="${relatoriosUrl}" class="pat-tab">Desligados</a>
+      <div class="frotas-hub-tabs">
+        <div class="ds-tabs" role="tablist">
+          <a href="${relatoriosUrl}" class="ds-tab" role="tab" aria-selected="false">Relatórios</a>
+          <a href="${statusUrl}" class="ds-tab active" role="tab" aria-selected="true">Status</a>
+          <a href="${relatoriosUrl}" class="ds-tab" role="tab" aria-selected="false">Desligados</a>
+        </div>
       </div>
 
       <div class="grid-cards">
