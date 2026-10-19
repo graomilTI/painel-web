@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut36';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut38';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -36,9 +36,9 @@ ${ESTILOS_LISTA}
 .fm-obrig{margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;letter-spacing:.06em}
 .fm-pick-busca{margin-bottom:10px}
 .fm-pick-corpo{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
-.fm-pick-grupos{display:flex;flex-wrap:wrap;gap:6px}
-.fm-pick-g{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,.2);border-radius:999px;background:rgba(15,23,42,.55);color:#cbd5e1;padding:7px 13px;font:inherit;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap}
-.fm-pick-g:hover{border-color:rgba(34,197,94,.45)}.fm-pick-g.ativo{border-color:#4ade80;background:rgba(34,197,94,.16);color:#f0fdf4;box-shadow:0 0 0 1px #4ade80 inset}.fm-pick-g b{min-width:20px;height:20px;border-radius:999px;display:inline-grid;place-items:center;background:#22c55e;color:#052e16;font-size:11px}
+.fm-pick-grupos{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.fm-pick-g{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:54px;text-align:left;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(15,23,42,.6);color:#cbd5e1;padding:8px 12px;font:inherit;font-size:13px;font-weight:800;line-height:1.25;cursor:pointer}
+.fm-pick-g:hover{border-color:rgba(34,197,94,.5)}.fm-pick-g.tem{border-color:rgba(34,197,94,.4)}.fm-pick-g.ativo{border-color:#4ade80;background:rgba(34,197,94,.2);color:#f0fdf4;box-shadow:0 0 0 1px #4ade80 inset}.fm-pick-g b{flex:none;min-width:22px;height:22px;border-radius:999px;display:inline-grid;place-items:center;background:#22c55e;color:#052e16;font-size:11px}
 .fm-pick-painel{border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,6,23,.3);padding:14px;min-height:240px}
 .fm-pick-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}.fm-pick-cab strong{color:#f8fafc;font-size:14px}
 .fm-pick-tipo{display:inline-flex;gap:12px;align-items:center;color:#94a3b8;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.fm-pick-tipo label{display:inline-flex;gap:5px;align-items:center;color:#e2e8f0;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer}.fm-pick-tipo input{accent-color:#22c55e}

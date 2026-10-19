@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut36';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut36';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut38';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut38';
 import {
   componentesDoGrupo, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut36';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut38';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
