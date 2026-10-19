@@ -44,6 +44,23 @@ function json(body: unknown, status = 200) {
 
 function cleanStr(v: unknown): string { return String(v ?? '').trim(); }
 
+// O PostgREST recusa URL grande (~16 KB) com 400 "Bad Request". Em 19/10/2026 havia 653 O.S. confirmadas no dia
+// (653 UUIDs em .in('id', ...) = ~25 KB) e a function inteira devolvia 500. Consulta em lotes e junta o resultado.
+async function inChunks<T = any>(
+  values: string[],
+  run: (part: string[]) => PromiseLike<{ data: T[] | null; error: any }>,
+  size = 150,
+): Promise<{ data: T[]; error: any }> {
+  const out: T[] = [];
+  const unique = [...new Set(values.filter((v) => v !== '' && v != null))];
+  for (let i = 0; i < unique.length; i += size) {
+    const { data, error } = await run(unique.slice(i, i + size));
+    if (error) return { data: out, error };
+    out.push(...(data || []));
+  }
+  return { data: out, error: null };
+}
+
 function normalize(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
@@ -191,11 +208,11 @@ Deno.serve(async (req) => {
 
     let osIdsConfirmados: string[] = [];
     if (programacaoIdsRef.length) {
-      const { data: equipeRef, error: equipeRefErr } = await supabase
+      const { data: equipeRef, error: equipeRefErr } = await inChunks(programacaoIdsRef, (part) => supabase
         .from('programacao_equipe')
         .select('os_id')
-        .in('programacao_id', programacaoIdsRef)
-        .eq('confirmado', true);
+        .in('programacao_id', part)
+        .eq('confirmado', true));
       if (equipeRefErr) throw equipeRefErr;
       osIdsConfirmados = [...new Set((equipeRef || []).map((e) => e.os_id).filter(Boolean))];
     }
@@ -205,12 +222,12 @@ Deno.serve(async (req) => {
       return json({ supervisao, data_referencia: dataReferencia, rotas: 0, motivo: 'Nenhuma O.S. confirmada para esta supervisão/data.' });
     }
 
-    const { data: osRows, error: osErr } = await supabase
+    const { data: osRows, error: osErr } = await inChunks(osIdsConfirmados, (part) => supabase
       .from('operacional_os')
       .select('id, embarque, cliente, supervisao, data_os')
       .eq('status_gestor', 'ATENDER')
-      .in('id', osIdsConfirmados)
-      .ilike('supervisao', supervisao);
+      .in('id', part)
+      .ilike('supervisao', supervisao));
     if (osErr) throw osErr;
     const osById = new Map<string, any>();
     for (const row of (osRows || [])) osById.set(row.id, row);
@@ -229,10 +246,10 @@ Deno.serve(async (req) => {
     if (pontosErr) throw pontosErr;
     const pontos = precomputePontos((pontosRaw || []) as PontoEmbarque[]);
 
-    const { data: vinculosRaw, error: vincErr } = await supabase
+    const { data: vinculosRaw, error: vincErr } = await inChunks(osIds, (part) => supabase
       .from('operacional_os_colaboradores')
       .select('os_id,colaborador_key,colaborador_nome,colaborador_cpf,created_at')
-      .in('os_id', osIds);
+      .in('os_id', part));
     if (vincErr) throw vincErr;
 
     const vinculosOrdenados = (vinculosRaw || []).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
@@ -252,11 +269,11 @@ Deno.serve(async (req) => {
     const nomesNecessarios = [...vinculoPorColaborador.values()].map((v) => normalize(v.colaborador_nome)).filter(Boolean);
 
     // 3) tipo_deslocamento (frota / carona / reembolso km) — programacao_deslocamento
-    const { data: deslocRaw, error: deslocErr } = await supabase
+    const { data: deslocRaw, error: deslocErr } = await inChunks(cpfsNecessarios, (part) => supabase
       .from('programacao_deslocamento')
       .select('colaborador_id,tipo_deslocamento,placa_veiculo')
       .eq('data_referencia', dataReferencia)
-      .in('colaborador_id', cpfsNecessarios.length ? cpfsNecessarios : ['__none__']);
+      .in('colaborador_id', part));
     if (deslocErr) throw deslocErr;
     const deslocPorCpf = new Map<string, { tipo: string; placa: string }>();
     for (const d of (deslocRaw || [])) {
@@ -308,13 +325,15 @@ Deno.serve(async (req) => {
       const cep = normalizeDigits(resolveColab(v)?.cep);
       if (cep.length === 8) cepsNecessarios.add(cep);
     }
-    const { data: geoRaw } = await supabase.from('geocode_cache').select('chave,latitude,longitude,status').in('chave', cepsNecessarios.size ? [...cepsNecessarios] : ['__none__']);
+    const { data: geoRaw } = await inChunks([...cepsNecessarios], (part) => supabase.from('geocode_cache').select('chave,latitude,longitude,status').in('chave', part));
     const geoPorCep = new Map<string, Point>();
     for (const g of (geoRaw || [])) if (g.status === 'ok' && hasGeo(g.latitude, g.longitude)) geoPorCep.set(g.chave, { lat: Number(g.latitude), lng: Number(g.longitude) });
 
-    const { data: cruzamentoRaw } = await supabase
-      .from('colaborador_cruzamento').select('cpf,nome_chave,latitude,longitude')
-      .or(`cpf.in.(${(cpfsNecessarios.length ? cpfsNecessarios : ['__none__']).join(',')}),nome_chave.in.(${(nomesNecessarios.length ? nomesNecessarios : ['__none__']).join(',')})`);
+    const cruzamentoPorCpf = await inChunks(cpfsNecessarios, (part) => supabase
+      .from('colaborador_cruzamento').select('cpf,nome_chave,latitude,longitude').in('cpf', part));
+    const cruzamentoPorNome = await inChunks(nomesNecessarios, (part) => supabase
+      .from('colaborador_cruzamento').select('cpf,nome_chave,latitude,longitude').in('nome_chave', part));
+    const cruzamentoRaw = [...cruzamentoPorCpf.data, ...cruzamentoPorNome.data];
     const geoPorCpfCruz = new Map<string, Point>();
     const geoPorNomeChave = new Map<string, Point>();
     for (const c of (cruzamentoRaw || [])) {
@@ -332,11 +351,11 @@ Deno.serve(async (req) => {
     // 5) Hospedagem ativa na data: Alojamento (programacao_estadia.alojamento_id)
     // e Hotel (hospedagem_solicitacao_colaboradores -> hospedagem_reservas -> hotel_id)
     // sobrepõem o endereço de casa enquanto a estadia estiver ativa.
-    const { data: estadiaRaw } = await supabase
+    const { data: estadiaRaw } = await inChunks(cpfsNecessarios, (part) => supabase
       .from('programacao_estadia')
       .select('colaborador_id,tipo_estadia,alojamento_id,checkin,checkout')
       .eq('data_referencia', dataReferencia)
-      .in('colaborador_id', cpfsNecessarios.length ? cpfsNecessarios : ['__none__']);
+      .in('colaborador_id', part));
     const alojamentoIdPorCpf = new Map<string, string>();
     for (const e of (estadiaRaw || [])) {
       if (normalize(e.tipo_estadia) !== 'ALOJAMENTO' || !e.alojamento_id) continue;
@@ -347,13 +366,13 @@ Deno.serve(async (req) => {
     const alojamentoIds = [...new Set(alojamentoIdPorCpf.values())];
     const geoPorAlojamento = new Map<string, Point>();
     if (alojamentoIds.length) {
-      const { data: alojRaw } = await supabase.from('hospedagem_alojamentos').select('id,latitude,longitude').in('id', alojamentoIds);
+      const { data: alojRaw } = await inChunks(alojamentoIds, (part) => supabase.from('hospedagem_alojamentos').select('id,latitude,longitude').in('id', part));
       for (const a of (alojRaw || [])) if (hasGeo(a.latitude, a.longitude)) geoPorAlojamento.set(a.id, { lat: Number(a.latitude), lng: Number(a.longitude) });
     }
 
-    const { data: solColabRaw } = await supabase
+    const { data: solColabRaw } = await inChunks(cpfsNecessarios, (part) => supabase
       .from('hospedagem_solicitacao_colaboradores').select('solicitacao_id,cpf,nome_colaborador')
-      .in('cpf', cpfsNecessarios.length ? cpfsNecessarios : ['__none__']);
+      .in('cpf', part));
     const solicitacaoIdsPorCpf = new Map<string, string[]>();
     for (const s of (solColabRaw || [])) {
       const cpf = normalizeDigits(s.cpf);
@@ -365,9 +384,9 @@ Deno.serve(async (req) => {
     const todasSolicitacoes = [...new Set([...solicitacaoIdsPorCpf.values()].flat())];
     const hotelIdPorSolicitacao = new Map<string, string>();
     if (todasSolicitacoes.length) {
-      const { data: reservasRaw } = await supabase
+      const { data: reservasRaw } = await inChunks(todasSolicitacoes, (part) => supabase
         .from('hospedagem_reservas').select('solicitacao_id,hotel_id,data_checkin,data_checkout,status_hospedagem')
-        .in('solicitacao_id', todasSolicitacoes);
+        .in('solicitacao_id', part));
       for (const r of (reservasRaw || [])) {
         if (!r.hotel_id) continue;
         if (r.data_checkin && r.data_checkin > dataReferencia) continue;
@@ -383,7 +402,7 @@ Deno.serve(async (req) => {
     const hotelIds = [...new Set(hotelIdPorCpf.values())];
     const geoPorHotel = new Map<string, Point>();
     if (hotelIds.length) {
-      const { data: hoteisRaw } = await supabase.from('hospedagem_hoteis').select('id,latitude,longitude').in('id', hotelIds);
+      const { data: hoteisRaw } = await inChunks(hotelIds, (part) => supabase.from('hospedagem_hoteis').select('id,latitude,longitude').in('id', part));
       for (const h of (hoteisRaw || [])) if (hasGeo(h.latitude, h.longitude)) geoPorHotel.set(h.id, { lat: Number(h.latitude), lng: Number(h.longitude) });
     }
 
