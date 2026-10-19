@@ -2,7 +2,7 @@
 // Marcar itens é obrigatório; a seleção vale entre grupos (um item por grupo, com os componentes marcados), sem botão "+".
 // Funções puras (grupos, busca, itens) ficam exportadas para teste; o resto monta e liga o seletor dentro de um contêiner.
 import { esc } from '../core/ui.js';
-import { componentesDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261019-frotas-manut36';
+import { componentesDoGrupo, norm } from './frotas-manutencao-regras.js?v=20261019-frotas-manut38';
 
 const TIPOS = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
 
