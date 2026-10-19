@@ -29,7 +29,7 @@ async function tudoPaginado(montar, padrao) {
 
 // Componentes e peças do guia por categoria. Sem acesso ou sem a tabela: lista vazia (o item segue só com a descrição livre).
 export async function carregarComponentes(supabase) {
-  const { data, error } = await supabase.from('frotas_manutencao_componentes').select('id,grupo_codigo,categoria_codigo,plano_codigo,nome,ordem').eq('ativo', true)
+  const { data, error } = await supabase.from('frotas_manutencao_componentes').select('id,grupo_codigo,categoria_codigo,plano_codigo,nome,ordem,tipo').eq('ativo', true)
     .order('categoria_codigo', { ascending: true }).order('ordem', { ascending: true }).limit(2000);
   return error ? [] : (data || []);
 }

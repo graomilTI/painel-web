@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut38';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut38';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut39';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut39';
 import {
-  componentesDoGrupo, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut38';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut39';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -36,9 +36,16 @@ export function opcoesPlanos(planos, categoria, selecionado) {
 }
 
 // Itens do guia dentro do serviço: uma caixa por componente/peça da categoria (marcados = nomes já escolhidos).
-export function htmlComponentes(nomes, marcados = [], { titulo = 'Itens do guia' } = {}) {
+export function htmlComponentes(nomes, marcados = [], { titulo = 'Itens do guia', servicos = new Set() } = {}) {
   if (!nomes.length) return '';
-  return `<div class="fm-comps"><span class="fm-comps-t">${esc(titulo)}</span>${nomes.map((n) => `<label class="fm-comp"><input type="checkbox" data-comp value="${esc(n)}"${marcados.includes(n) ? ' checked' : ''}> ${esc(n)}</label>`).join('')}</div>`;
+  return `<div class="fm-comps"><span class="fm-comps-t">${esc(titulo)}</span>${nomes.map((n) => `<label class="fm-comp${servicos.has(n) ? ' servico' : ''}"><input type="checkbox" data-comp value="${esc(n)}"${marcados.includes(n) ? ' checked' : ''}> ${esc(n)}${servicos.has(n) ? ' <em class="fm-pick-tag">serviço</em>' : ''}</label>`).join('')}</div>`;
+}
+
+// Itens do grupo para marcar na ficha: peças do guia, serviços do guia e Mão de obra (com a etiqueta "serviço" onde for o caso).
+export function htmlItensDoGrupo(base, grupo, marcados = []) {
+  const nomes = itensDoGrupo(base.componentes, grupo, marcados);
+  const servicos = new Set(nomes.filter((n) => tipoDoComponente(base.componentes, grupo, n) === 'servico'));
+  return htmlComponentes(nomes, marcados, { servicos });
 }
 
 export function badgeStatus(status) {
@@ -155,6 +162,16 @@ function blocoDados(m, base, ed, maisAberto = false) {
   </div></details></div>`;
 }
 
+// Itens marcáveis de um item da ficha: o item de peças lista as peças do grupo; o de serviço, os serviços e a Mão de obra.
+function htmlComponentesDoItem(base, it) {
+  const grupo = grupoDaCategoria(base.categorias, it.categoria_codigo);
+  const marcados = it.componentes || [];
+  const servico = it.tipo_item === 'servico';
+  const nomes = itensDoGrupo(base.componentes, grupo, marcados).filter((n) => marcados.includes(n) || (tipoDoComponente(base.componentes, grupo, n) === 'servico') === servico);
+  const servicos = new Set(servico ? nomes : []);
+  return htmlComponentes(nomes, marcados, { servicos });
+}
+
 function blocoItens(m, itens, base, ed) {
   const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
   const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
@@ -166,11 +183,11 @@ function blocoItens(m, itens, base, ed) {
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
       <select class="fm-select" data-item="grupo_codigo">${opcoesGrupos(base, grupoDoItem(base, it.categoria_codigo))}</select>
       <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
-      <select class="fm-select" data-item="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, it.tipo_item || 'servico')}</select>
+      <div class="fm-ro"><span class="fm-badge ${it.tipo_item === 'peca' ? 'blue' : 'amber'}" title="Define a categoria da nota fiscal no GRM">${it.tipo_item === 'peca' ? 'Peças' : 'Serviço'}</span></div>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
-      <div class="fm-item-comps">${htmlComponentes(componentesDoGrupo(base.componentes, grupoDaCategoria(base.categorias, it.categoria_codigo), it.componentes || []), it.componentes || [])}</div></div>`;
+      <div class="fm-item-comps">${htmlComponentesDoItem(base, it)}</div></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="grupo_codigo">${opcoesGrupos(base, null, 'Grupo do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
+  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="grupo_codigo">${opcoesGrupos(base, null, 'Grupo do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Outro item (opcional)"><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
     ${itens.length ? '<div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
@@ -178,10 +195,11 @@ function blocoItens(m, itens, base, ed) {
 
 // Uma linha do orçamento: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
 export function htmlLinhaOrcamento(l = {}, { fixa = true } = {}) {
-  return `<div class="fm-ol" data-orc-linha>
+  const servico = l.tipo === 'servico';
+  return `<div class="fm-ol" data-orc-linha data-tipo="${servico ? 'servico' : 'peca'}"><input type="hidden" data-ol="tipo" value="${servico ? 'servico' : 'peca'}">
     ${fixa
-    ? `<div class="fm-ro">${esc(l.nome)}</div><input type="hidden" data-ol="nome" value="${esc(l.nome)}">`
-    : `<input class="fm-input" data-ol="nome" maxlength="120" placeholder="Outro item" value="${esc(l.nome || '')}">`}
+    ? `<div class="fm-ro">${esc(l.nome)}${servico ? ' <em class="fm-pick-tag">serviço</em>' : ''}</div><input type="hidden" data-ol="nome" value="${esc(l.nome)}">`
+    : `<input class="fm-input" data-ol="nome" maxlength="120" placeholder="${servico ? 'Outro serviço' : 'Outro item'}" value="${esc(l.nome || '')}">`}
     <input class="fm-input" data-ol="detalhe" maxlength="160" placeholder="Marca / observação" value="${esc(l.detalhe || '')}">
     <input class="fm-input" type="number" step="0.01" min="0" data-ol="valor" placeholder="0,00" value="${l.valor ?? ''}">
     <button class="fm-ic danger" type="button" data-acao="orc-linha-rem" title="Remover linha" aria-label="Remover linha">✕</button></div>`;
@@ -191,9 +209,10 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
   const temDetalhe = [orc.fornecedor_contato, orc.validade, orc.condicoes_pagamento, orc.garantia, orc.observacoes].some((v) => v != null && v !== '');
   const linhas = linhasIniciais(itens, orc.linhas);
   const nomesDosItens = new Set(itens.flatMap((it) => ((it.componentes || []).length ? it.componentes : [it.descricao])).map((n) => norm(n)));
-  const soma = somarLinhas(linhas);
-  // "Peças" e "Valor total" acompanham a soma enquanto a pessoa não digitar um valor próprio neles.
-  const pecasAuto = orc.valor_pecas == null || (soma != null && Number(orc.valor_pecas) === soma);
+  const somaPecas = somarLinhas(linhas, 'peca'); const somaServico = somarLinhas(linhas, 'servico');
+  // "Peças", "Mão de obra" e "Valor total" acompanham as linhas enquanto a pessoa não digitar um valor próprio neles.
+  const pecasAuto = orc.valor_pecas == null || (somaPecas != null && Number(orc.valor_pecas) === somaPecas);
+  const maoAuto = orc.valor_mao_obra == null || (somaServico != null && Number(orc.valor_mao_obra) === somaServico);
   const totalAuto = orc.valor_total == null || Number(orc.valor_total) === totalDoOrcamento({ pecas: orc.valor_pecas, maoObra: orc.valor_mao_obra });
   return `<div class="fm-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
     <div class="fm-field"><label>Oficina cadastrada</label><select class="fm-select" data-o="oficina_id">${opcoes(base.oficinas.filter((o) => o.ativo !== false), orc.oficina_id, { vazio: '— outra (digitar) —', rotulo: 'nome' })}</select></div>
@@ -202,9 +221,9 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
     <div class="fm-field full"><label>Itens do orçamento</label>
       ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span></div>' : ''}
       <div class="fm-ols" data-orc-linhas>${linhas.map((l) => htmlLinhaOrcamento(l, { fixa: nomesDosItens.has(norm(l.nome)) })).join('')}</div>
-      <button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" style="margin-top:8px">+ Outro item</button></div>
-    <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das linhas acima.</small></div>
-    <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" value="${orc.valor_mao_obra ?? ''}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="peca">+ Outra peça</button><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="servico">+ Mão de obra / serviço</button></div></div>
+    <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das peças acima.</small></div>
+    <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" data-auto="${maoAuto ? '1' : '0'}" value="${orc.valor_mao_obra ?? ''}"><small>Soma dos serviços acima.</small></div>
     <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}"><small>Peças + mão de obra.</small></div>
     <div class="fm-field"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
     <details class="fm-mais fm-field full"${temDetalhe ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">

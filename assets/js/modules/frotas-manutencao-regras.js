@@ -238,6 +238,33 @@ export function componentesDoGrupo(componentes = [], grupo, marcados = []) {
   return [...doGuia, ...marcados.filter((n) => !doGuia.includes(n))];
 }
 
+// ---------- peça ou serviço ----------
+// O tipo vem do componente (padrão: peça, produto comprado). "Mão de obra" é serviço e a tela a oferece em todos os grupos.
+export const MAO_DE_OBRA = 'Mão de obra';
+
+// Tipo de um componente pelo nome; "digitados" guarda o tipo dos itens digitados à mão (Outro item).
+export function tipoDoComponente(componentes = [], grupo, nome, digitados = new Map()) {
+  if (nome === MAO_DE_OBRA) return 'servico';
+  const c = componentes.find((x) => Number(x.grupo_codigo) === Number(grupo) && x.nome === nome);
+  return c?.tipo || digitados.get(nome) || 'peca';
+}
+
+// Lista do grupo na tela: peças e serviços do guia, depois "Mão de obra"; o que já estava marcado e não está no catálogo vai ao fim.
+export function itensDoGrupo(componentes = [], grupo, marcados = []) {
+  const lista = componentesDoGrupo(componentes, grupo, []);
+  if (!lista.includes(MAO_DE_OBRA)) lista.push(MAO_DE_OBRA);
+  return [...lista, ...marcados.filter((n) => !lista.includes(n))];
+}
+
+// Itens gravados a partir dos nomes marcados em um grupo: um de peças e um de serviço (Mão de obra primeiro), cada um com os seus
+// componentes. O tipo do item decide a categoria da nota fiscal no GRM.
+export function itensPorTipo(categoria_codigo, nomes = [], tipoDe = () => 'peca') {
+  const pecas = nomes.filter((n) => tipoDe(n) !== 'servico');
+  const servicos = nomes.filter((n) => tipoDe(n) === 'servico').sort((a, b) => (b === MAO_DE_OBRA) - (a === MAO_DE_OBRA));
+  const item = (lista, tipo_item) => ({ categoria_codigo, descricao: lista.join(', '), tipo_item, componentes: [...lista] });
+  return [pecas.length ? item(pecas, 'peca') : null, servicos.length ? item(servicos, 'servico') : null].filter(Boolean);
+}
+
 // Componentes do guia ligados a um serviço (plano) da Preventiva; vazio quando o serviço não tem peças catalogadas.
 export function componentesDoServico(componentes = [], categoria, planoCodigo) {
   if (!planoCodigo) return [];
@@ -250,8 +277,10 @@ const emCentavos = (n) => Math.round(Number(n) * 100) / 100;
 const valorLinha = (v) => (v === '' || v == null || !Number.isFinite(Number(v)) ? null : Number(v));
 
 // Soma dos valores das linhas; null quando nenhuma linha tem valor (aí vale o que a pessoa digitar em "Peças").
-export function somarLinhas(linhas = []) {
-  const valores = linhas.map((l) => valorLinha(l?.valor)).filter((v) => v != null);
+// Com `tipo`: só as linhas de peça (as sem tipo contam como peça) ou só as de serviço (mão de obra).
+export function somarLinhas(linhas = [], tipo = null) {
+  const doTipo = (l) => !tipo || (tipo === 'servico' ? l?.tipo === 'servico' : l?.tipo !== 'servico');
+  const valores = linhas.filter(doTipo).map((l) => valorLinha(l?.valor)).filter((v) => v != null);
   return valores.length ? emCentavos(valores.reduce((s, v) => s + v, 0)) : null;
 }
 
@@ -263,17 +292,24 @@ export function totalDoOrcamento({ pecas = null, maoObra = null } = {}) {
 
 // Linhas que valem a pena guardar: com nome e com marca/observação ou valor.
 export function normalizarLinhas(linhas = []) {
-  return linhas.map((l) => ({ nome: String(l?.nome || '').trim().slice(0, 120), detalhe: String(l?.detalhe || '').trim().slice(0, 160), valor: valorLinha(l?.valor) }))
+  return linhas.map((l) => ({ nome: String(l?.nome || '').trim().slice(0, 120), detalhe: String(l?.detalhe || '').trim().slice(0, 160), valor: valorLinha(l?.valor), tipo: l?.tipo === 'servico' ? 'servico' : 'peca' }))
     .filter((l) => l.nome && (l.detalhe || l.valor != null));
 }
 
 // Linhas do formulário: as já salvas e, para cada peça/serviço marcado nos itens que ainda não tem linha, uma linha em branco.
 export function linhasIniciais(itens = [], salvas = []) {
-  const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor) }));
-  const tem = new Set(linhas.map((l) => norm(l.nome)));
+  const tipoDoNome = new Map();
   for (const it of itens) {
     const nomes = (it.componentes || []).length ? it.componentes : [it.descricao].filter(Boolean);
-    for (const nome of nomes) if (!tem.has(norm(nome))) { tem.add(norm(nome)); linhas.push({ nome, detalhe: '', valor: null }); }
+    for (const nome of nomes) tipoDoNome.set(norm(nome), it.tipo_item === 'servico' ? 'servico' : 'peca');
+  }
+  const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor), tipo: l.tipo || tipoDoNome.get(norm(l.nome)) || 'peca' }));
+  const tem = new Set(linhas.map((l) => norm(l.nome)));
+  for (const [chave, tipo] of tipoDoNome) {
+    if (tem.has(chave)) continue;
+    tem.add(chave);
+    const nome = itens.flatMap((it) => ((it.componentes || []).length ? it.componentes : [it.descricao])).find((n) => norm(n) === chave);
+    linhas.push({ nome, detalhe: '', valor: null, tipo });
   }
   return linhas;
 }

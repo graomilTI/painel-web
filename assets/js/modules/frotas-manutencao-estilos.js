@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut38';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261019-frotas-manut39';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -30,7 +30,7 @@ ${ESTILOS_LISTA}
 .fm-grid2{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.fm-grid2.tres{grid-template-columns:repeat(3,minmax(0,1fr))}
 .fm-ro{color:#f8fafc;font-size:14px;font-weight:700;line-height:1.4;word-break:break-word}.fm-ro small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:2px}
 .fm-itens{display:grid;gap:8px}.fm-item{display:grid;grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px 40px;gap:8px;align-items:start}.fm-item .fm-input,.fm-item .fm-select{height:38px;font-size:13px}
-.fm-form.fm-item-novo{grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) 120px auto;margin-top:10px}
+.fm-form.fm-item-novo{grid-template-columns:minmax(170px,2fr) minmax(170px,2.5fr) auto;margin-top:10px}
 .fm-nova .fm-field .fm-check{text-transform:none;letter-spacing:0;font-size:13px;margin:0}
 .fm-prev-comps{display:grid;gap:8px;margin-bottom:8px}.fm-prev-comps:empty{display:none}.fm-prev-comp strong{display:block;margin:0 0 4px;color:#e2e8f0;font-size:12px}
 .fm-obrig{margin-left:8px;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;letter-spacing:.06em}
@@ -55,6 +55,11 @@ ${ESTILOS_LISTA}
 .fm-nova-acoes{display:grid;gap:8px;margin-top:14px}.fm-nova-acoes .fm-btn{width:100%}
 .fm-pg.fm-pg-larga{max-width:none}
 .fm-pagina[hidden],[data-vista-lista][hidden]{display:none}.fm-pg-barra{margin:0 0 12px}.fm-pg{max-width:1180px;margin:0 auto}.fm-pagina .fm-x{display:none}
+.fm-pick-tag{margin-left:auto;align-self:center;font-style:normal;padding:2px 8px;border-radius:999px;border:1px solid rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a;font-size:10px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.fm-pick-item.servico{border-style:dashed}.fm-chip-x.servico{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a}.fm-chip-x.servico button{color:#fde68a}
+.fm-comp.servico{border-style:dashed}.fm-comp .fm-pick-tag{margin-left:2px}
+.fm-pick-outro .fm-select{width:auto;min-width:96px;height:38px;font-size:13px}
+.fm-ol[data-tipo="servico"] .fm-ro{color:#fde68a}
 .fm-item-comps{grid-column:1/-1}.fm-item-comps:empty{display:none}
 .fm-comps{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;padding:8px 10px;border:1px dashed rgba(148,163,184,.22);border-radius:12px;background:rgba(2,6,23,.28)}.fm-comps-t{flex:1 1 100%;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .fm-comp{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border:1px solid rgba(148,163,184,.22);border-radius:999px;background:rgba(15,23,42,.6);color:#cbd5e1;font-size:12px;font-weight:700;cursor:pointer}.fm-comp:hover{border-color:rgba(34,197,94,.5)}.fm-comp input{accent-color:#22c55e;width:14px;height:14px;margin:0}.fm-comp:has(input:checked){border-color:rgba(34,197,94,.6);background:rgba(34,197,94,.16);color:#dcfce7}
