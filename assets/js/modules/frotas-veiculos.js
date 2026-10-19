@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261019-frotas-manut43';
 
 ﻿(function () {
   const MODULE_NAME = 'FROTAS_VEICULOS';
@@ -671,7 +671,7 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   async function abrirManutencao(opts, veiculo){
     if(!veiculo) return;
     try {
-      await import('./frotas-manutencao.js?v=20261019-frotas-manut41');
+      await import('./frotas-manutencao.js?v=20261019-frotas-manut43');
       await window.FROTAS_MANUTENCAO.abrirNova(opts, { veiculo_id: veiculo.id });
     } catch(err){
       alert(err.message || 'Não foi possível abrir a manutenção.');

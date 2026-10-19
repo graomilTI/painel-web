@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut41';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut43';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut43';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut41';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut43';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -176,14 +176,15 @@ function htmlComponentesDoItem(base, it) {
 function blocoItens(m, itens, base, ed, seletorAberto = false) {
   const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
   const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
+  const notaPecas = (it) => { const e = Object.entries(it.pecas || {}); return e.length ? `<small>Peças escolhidas: ${esc(e.map(([n, p]) => `${n.replace(/\s*\(.*\)$/, '')} (${p.detalhe}${p.valor != null ? ` · ${dinheiro(p.valor)}` : ''})`).join('; '))}</small>` : ''; };
   const notaComponentes = (it) => ((it.componentes || []).length && it.descricao !== it.componentes.join(', ') ?`<small>Itens: ${esc(it.componentes.join(', '))}</small>` : '');
   const linhas = itens.map((it) => {
     if (!ed.itens) {
-      return `<div class="fm-item"><div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
+      return `<div class="fm-item"><div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}${notaPecas(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
       <div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div>
-      <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
+      <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}${notaPecas(it)}</div>
       <div class="fm-ro"><span class="fm-badge ${it.tipo_item === 'peca' ? 'blue' : 'amber'}" title="Define a categoria da nota fiscal no GRM">${it.tipo_item === 'peca' ? 'Peças' : 'Serviço'}</span></div>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
       <div class="fm-item-comps">${htmlComponentesDoItem(base, it)}</div></div>`;

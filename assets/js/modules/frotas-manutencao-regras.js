@@ -258,10 +258,13 @@ export function itensDoGrupo(componentes = [], grupo, marcados = []) {
 
 // Itens gravados a partir dos nomes marcados em um grupo: um de peças e um de serviço (Mão de obra primeiro), cada um com os seus
 // componentes. O tipo do item decide a categoria da nota fiscal no GRM.
-export function itensPorTipo(categoria_codigo, nomes = [], tipoDe = () => 'peca') {
+export function itensPorTipo(categoria_codigo, nomes = [], tipoDe = () => 'peca', pecaDe = () => null) {
   const pecas = nomes.filter((n) => tipoDe(n) !== 'servico');
   const servicos = nomes.filter((n) => tipoDe(n) === 'servico').sort((a, b) => (b === MAO_DE_OBRA) - (a === MAO_DE_OBRA));
-  const item = (lista, tipo_item) => ({ categoria_codigo, descricao: lista.join(', '), tipo_item, componentes: [...lista] });
+  const item = (lista, tipo_item) => {
+    const pecas = Object.fromEntries(lista.map((n) => [n, pecaDe(n)]).filter(([, p]) => p));
+    return { categoria_codigo, descricao: lista.join(', '), tipo_item, componentes: [...lista], ...(Object.keys(pecas).length ? { pecas } : {}) };
+  };
   return [pecas.length ? item(pecas, 'peca') : null, servicos.length ? item(servicos, 'servico') : null].filter(Boolean);
 }
 
@@ -271,6 +274,46 @@ export function componentesDoServico(componentes = [], categoria, planoCodigo) {
   return componentes.filter((c) => Number(c.categoria_codigo) === Number(categoria) && c.plano_codigo === planoCodigo)
     .sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
 }
+
+// ---------- peças por modelo de veículo (catálogo que aprende com o uso) ----------
+const MARCAS_IGUAIS = { VOLKSWAGEN: 'VW', GM: 'CHEVROLET', CHEV: 'CHEVROLET' };
+
+// Família do veículo: "FIAT/MOBI LIKE" → "FIAT/MOBI"; "VW/NOVO GOL 1.0 CITY" → "VW/GOL"; "RENAULT/KWID ZEN 10MT" → "RENAULT/KWID".
+// Aceita o veículo (cadastro) ou o texto marca/modelo; vazio quando não dá para saber.
+export function modeloDoVeiculo(veiculo) {
+  const texto = (typeof veiculo === 'string' ? veiculo : rotuloVeiculo(veiculo)).toUpperCase().replace(/\s+/g, ' ').trim();
+  if (!texto) return '';
+  let [marcaBruta, ...resto] = texto.includes('/') ? texto.split('/') : ['', texto];
+  let palavras = resto.join('/').replace(/^(NOVO|NOVA)\s+/, '').split(' ').filter(Boolean);
+  // Importado ("I/FIAT TORO", "I/JEEP COMPASS"): a marca vem na primeira palavra.
+  if (marcaBruta.trim() === 'I' && palavras.length > 1) { marcaBruta = palavras[0]; palavras = palavras.slice(1); }
+  const modelo = palavras[0] || '';
+  if (!modelo) return '';
+  const marca = MARCAS_IGUAIS[marcaBruta.trim()] || marcaBruta.trim();
+  return marca ? marca + '/' + modelo : modelo;
+}
+
+// "FIAT/MOBI" → "Fiat Mobi"; "VW/GOL" → "VW Gol".
+export function rotuloModelo(chave) {
+  const titulo = (t) => (t.length <= 2 ? t : t.charAt(0) + t.slice(1).toLowerCase());
+  return String(chave || '').split('/').filter(Boolean).map(titulo).join(' ');
+}
+
+// Peças já usadas no modelo, por item do guia (mais usadas e mais recentes primeiro): Map(item do guia → peças).
+export function pecasDoModelo(pecas = [], modelo = '') {
+  const por = new Map();
+  if (!modelo) return por;
+  for (const p of pecas) {
+    if (p.ativo === false || p.modelo !== modelo) continue;
+    if (!por.has(p.componente)) por.set(p.componente, []);
+    por.get(p.componente).push(p);
+  }
+  for (const lista of por.values()) lista.sort((a, b) => (b.usos || 0) - (a.usos || 0) || String(b.ultima_data || '').localeCompare(String(a.ultima_data || '')));
+  return por;
+}
+
+// Peça escolhida como o item guarda: { detalhe, valor }.
+export const pecaEscolhida = (p) => ({ detalhe: p.detalhe, valor: p.ultimo_valor == null ? null : Number(p.ultimo_valor) });
 
 // ---------- linhas do orçamento (marca/observação e valor de cada peça ou serviço) ----------
 const emCentavos = (n) => Math.round(Number(n) * 100) / 100;
@@ -303,13 +346,16 @@ export function linhasIniciais(itens = [], salvas = []) {
     const nomes = (it.componentes || []).length ? it.componentes : [it.descricao].filter(Boolean);
     for (const nome of nomes) tipoDoNome.set(norm(nome), it.tipo_item === 'servico' ? 'servico' : 'peca');
   }
+  const escolhida = new Map(); // nome (sem acento) → peça escolhida no item ({ detalhe, valor })
+  for (const it of itens) for (const [nome, p] of Object.entries(it.pecas || {})) escolhida.set(norm(nome), p);
   const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor), tipo: l.tipo || tipoDoNome.get(norm(l.nome)) || 'peca' }));
   const tem = new Set(linhas.map((l) => norm(l.nome)));
   for (const [chave, tipo] of tipoDoNome) {
     if (tem.has(chave)) continue;
     tem.add(chave);
     const nome = itens.flatMap((it) => ((it.componentes || []).length ? it.componentes : [it.descricao])).find((n) => norm(n) === chave);
-    linhas.push({ nome, detalhe: '', valor: null, tipo });
+    const p = escolhida.get(chave);
+    linhas.push({ nome, detalhe: p?.detalhe || '', valor: valorLinha(p?.valor), tipo });
   }
   return linhas;
 }

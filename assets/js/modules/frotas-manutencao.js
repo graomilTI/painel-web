@@ -2,16 +2,16 @@
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
 import { confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut41';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut41';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut43';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut43';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut43';
 import {
-  acoesDisponiveis, contarPorFiltro, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut41';
+  acoesDisponiveis, contarPorFiltro, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut43';
 import {
   htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut41';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut41';
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut43';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut43';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -167,6 +167,12 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
     const corpo = pg?.querySelector('[data-add-itens] [data-seletor-corpo]');
     pg.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: pg.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
+    // Orçamento aberto: peças, mão de obra e total já vêm somados das linhas (que podem vir com a peça escolhida nos itens).
+    recalcularOrcamento(pg.querySelector('[data-orc-form]'));
+    if (pg.__seletorItens) {
+      const modelo = modeloDoVeiculo(state.base.veiculos.find((v) => v.id === m.veiculo_id) || m.__modelo || '');
+      pg.__seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
+    }
   }
 
   // Programação que usa o veículo parado (só quando a OS está em execução); atualiza a ficha ao chegar.
@@ -208,6 +214,20 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   const marcadosEm = (el) => [...el.querySelectorAll('[data-comp]:checked')].map((c) => c.value);
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
+  // Ao aprovar, as peças (com marca/referência) do orçamento escolhido entram no catálogo do modelo do veículo.
+  async function aprenderPecasDaManutencao(m) {
+    try {
+      const veiculo = state.base.veiculos.find((v) => v.id === m.veiculo_id);
+      const modelo = modeloDoVeiculo(veiculo || m.__modelo || '');
+      if (!modelo) return;
+      const n = await dados.aprenderPecas(state.supabase, m.id, modelo);
+      if (n > 0) {
+        state.base.pecas = await dados.carregarPecas(state.supabase);
+        toast(`${n} peça(s) salva(s) no catálogo do ${rotuloModelo(modelo)}.`);
+      }
+    } catch { /* o catálogo é um extra: a aprovação já foi feita */ }
+  }
+
   async function mudarEtapa(m, a) {
     const { orcsPorManut, itensPorManut } = indices();
     const orcs = orcsPorManut.get(m.id) || [];
@@ -230,7 +250,8 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
         const sel = orcs.find((o) => o.selecionado);
         const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar o orçamento de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?`, confirmarLabel: 'Aprovar' });
         if (!ok) return;
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { sucesso: 'Manutenção aprovada.' });
+        const aprovou = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { sucesso: 'Manutenção aprovada.' });
+        if (aprovou) aprenderPecasDaManutencao(m);
         return;
       }
       case 'emitir_os': {
@@ -441,6 +462,11 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     ov.dataset.checklist = preset.checklist_id || '';
     // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria página.
     ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base, { resumo: ov.querySelector('[data-pick-resumo]'), aoMudar: () => ov.__pendencias?.() });
+    // Peças já usadas no modelo do veículo escolhido (Mobi, Argo, Kwid...): aparecem sob cada item para escolher a peça específica.
+    const atualizarPecas = () => {
+      const modelo = modeloDoVeiculo(veiculoDaDigitacao(val(ov, '[data-n-veiculo]')) || '');
+      ov.__seletor.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
+    };
     // Pendências ao vivo no resumo: o que ainda falta para registrar.
     ov.__pendencias = () => {
       const prontos = ov.querySelectorAll('[data-novo-item]').length;
@@ -462,6 +488,9 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     };
     ov.querySelector('[data-n-veiculo]').addEventListener('input', preencherCondutor);
     ov.querySelector('[data-n-veiculo]').addEventListener('change', preencherCondutor);
+    ov.querySelector('[data-n-veiculo]').addEventListener('input', atualizarPecas);
+    ov.querySelector('[data-n-veiculo]').addEventListener('change', atualizarPecas);
+    atualizarPecas();
     ov.__pendencias();
   }
 

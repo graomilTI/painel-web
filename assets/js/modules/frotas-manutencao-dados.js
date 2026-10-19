@@ -34,6 +34,35 @@ export async function carregarComponentes(supabase) {
   return error ? [] : (data || []);
 }
 
+// Peças já usadas por modelo (catálogo que aprende ao aprovar). Sem acesso ou sem a tabela: lista vazia.
+export async function carregarPecas(supabase) {
+  const { data, error } = await supabase.from('frotas_manutencao_pecas').select('id,modelo,componente,detalhe,ultimo_valor,ultima_data,usos,observacoes,ativo').order('modelo', { ascending: true }).order('componente', { ascending: true }).limit(5000);
+  return error ? [] : (data || []);
+}
+
+// Ao aprovar: as peças com marca/referência do orçamento escolhido entram no catálogo do modelo. Devolve quantas foram gravadas.
+export async function aprenderPecas(supabase, manutencaoId, modelo) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_aprender_pecas', { p_manutencao: manutencaoId, p_modelo: modelo });
+  if (error) throw new Error(error.message || 'Erro ao atualizar o catálogo de peças.');
+  return Number(data || 0);
+}
+
+export async function salvarPeca(supabase, peca) {
+  const { id, ...campos } = peca;
+  const consulta = id ? supabase.from('frotas_manutencao_pecas').update(campos).eq('id', id) : supabase.from('frotas_manutencao_pecas').insert(campos);
+  const { data, error } = await consulta.select('*').single();
+  if (error) {
+    if (error.code === '23505' || /uq_frotas_manut_pecas/.test(error.message || '')) throw new Error('Essa peça já está cadastrada neste modelo.');
+    throw new Error(error.message || 'Erro ao salvar a peça.');
+  }
+  return data;
+}
+
+export async function removerPeca(supabase, id) {
+  const { error } = await supabase.from('frotas_manutencao_pecas').delete().eq('id', id);
+  if (error) throw new Error(error.message || 'Erro ao remover a peça.');
+}
+
 // Grupos do guia (Suspensão, Freios, Motor...). Sem acesso ou sem a tabela: lista vazia (a tela cai nas categorias).
 export async function carregarGrupos(supabase) {
   const { data, error } = await supabase.from('frotas_manutencao_grupos').select('codigo,nome,ordem,categoria_codigo').eq('ativo', true).order('ordem', { ascending: true });
@@ -41,15 +70,16 @@ export async function carregarGrupos(supabase) {
 }
 
 export async function carregarBase(supabase) {
-  const [categorias, planos, oficinas, veiculos, componentes, grupos] = await Promise.all([
+  const [categorias, planos, oficinas, veiculos, componentes, grupos, pecas] = await Promise.all([
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),
     tudo(supabase.from('frotas_manutencao_planos').select('*').order('categoria_codigo', { ascending: true }), 'Erro ao carregar os planos.'),
     tudo(supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.'),
     tudoPaginado(() => supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os veículos.'),
     carregarComponentes(supabase).catch(() => []),
     carregarGrupos(supabase).catch(() => []),
+    carregarPecas(supabase).catch(() => []),
   ]);
-  return { categorias, planos, oficinas, veiculos, componentes, grupos };
+  return { categorias, planos, oficinas, veiculos, componentes, grupos, pecas };
 }
 
 // Nomes dos colaboradores ativos, para sugerir em "Quem pediu" (texto livre com sugestão). Sem acesso: lista vazia.

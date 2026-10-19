@@ -136,7 +136,7 @@ test('célula: mostra km e dias restantes', () => {
 test('hub: abas Corretiva e Preventiva; Vencimentos e Troca de Óleo saíram; Preventiva usa o módulo novo', () => {
   const hub = readFileSync(new URL('../assets/js/frotas-manutencao-grupo.js', import.meta.url), 'utf8');
   const ids = [...hub.matchAll(/^\s{4}id: '([\w-]+)'/gm)].map((m) => m[1]);
-  assert.deepEqual(ids, ['manutencao', 'preventiva', 'custos', 'oficinas', 'checklists']);
+  assert.deepEqual(ids, ['manutencao', 'preventiva', 'custos', 'pecas', 'oficinas', 'checklists']);
   assert.match(hub, /id: 'manutencao',\s+titulo: 'Corretiva'/);
   assert.match(hub, /id: 'preventiva',\s+titulo: 'Preventiva'/);
   assert.doesNotMatch(hub, /Troca de Óleo|vencimentos/);
