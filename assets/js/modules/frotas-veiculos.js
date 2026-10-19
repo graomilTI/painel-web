@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261019-frotas-manut32';
+import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=20261019-frotas-manut33';
 
 ﻿(function () {
   const MODULE_NAME = 'FROTAS_VEICULOS';
@@ -667,11 +667,11 @@ import { ESTILOS_LISTA, cardFiltro, tabelaCss } from './frotas-ui-lista.js?v=202
   const ICON_DETRAN=svgIcon('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/>');
   const ICON_MANUTENCAO=svgIcon('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4Z"/>');
 
-  // Abre a janela de nova solicitação de manutenção já com o veículo (fluxo completo na aba Frotas > Manutenção).
+  // Leva à nova manutenção (aba Frotas > Manutenção > Corretiva) já com o veículo.
   async function abrirManutencao(opts, veiculo){
     if(!veiculo) return;
     try {
-      await import('./frotas-manutencao.js?v=20261019-frotas-manut32');
+      await import('./frotas-manutencao.js?v=20261019-frotas-manut33');
       await window.FROTAS_MANUTENCAO.abrirNova(opts, { veiculo_id: veiculo.id });
     } catch(err){
       alert(err.message || 'Não foi possível abrir a manutenção.');

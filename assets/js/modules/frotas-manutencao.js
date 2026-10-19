@@ -1,17 +1,17 @@
 // Frotas · Manutenção: fluxo completo (solicitação → orçamento → aprovação → OS → conclusão).
 // Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
 // frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
-import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut32';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut32';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut32';
+import { confirmar, toast } from '../core/ui.js';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261019-frotas-manut33';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261019-frotas-manut33';
+import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut33';
 import {
   acoesDisponiveis, categoriaDoGrupo, componentesDoGrupo, contarPorFiltro, grupoDaCategoria, descricaoDosComponentes, naturezaSugerida, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut32';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut33';
 import {
   htmlCasca, htmlComponentes, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261019-frotas-manut32';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut32';
+} from './frotas-manutencao-html.js?v=20261019-frotas-manut33';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut33';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -22,6 +22,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     supabase: null, root: null, opts: null,
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
+    vista: 'lista', // 'lista' | 'nova' | 'ficha': nova e ficha ocupam a área da aba (sem janela)
     filtro: 'todos', visao: 'andamento', busca: '',
     loading: false, ocupado: false,
     fichaId: null, maisAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
@@ -116,32 +117,52 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     }
   }
 
+  // ---------- vistas: a lista e, no lugar dela, a nova manutenção ou a ficha (tela inteira da aba, não janela) ----------
+  const paginaEl = () => state.root?.querySelector('[data-pagina]');
+
+  // Elemento que rola a aba (o painel pode rolar por um contêiner ou pela página).
+  function rolagemPai(el) {
+    for (let n = el?.parentElement; n; n = n.parentElement) {
+      const o = getComputedStyle(n).overflowY;
+      if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  const htmlPagina = (conteudo) => `<div class="fm-pg-barra"><button class="fm-btn ghost" type="button" data-acao="fechar">← Voltar para a lista</button></div><div class="fm-card"><div class="fm-body fm-pg">${conteudo}</div></div>`;
+
+  // Troca a lista pela página (nova ou ficha). O id da página é o que os tratadores de clique procuram.
+  function mostrarPagina(vista, id, html, { manterRolagem = false } = {}) {
+    const pg = paginaEl(); if (!pg) return null;
+    const rolagem = rolagemPai(pg); const topo = rolagem.scrollTop;
+    state.vista = vista; pg.id = id; pg.hidden = false;
+    state.root.querySelector('[data-vista-lista]').hidden = true;
+    pg.innerHTML = htmlPagina(html);
+    rolagem.scrollTop = manterRolagem ? topo : 0;
+    return pg;
+  }
+
+  function mostrarLista() {
+    const pg = paginaEl(); if (!pg) return;
+    state.vista = 'lista'; pg.hidden = true; pg.id = ''; pg.innerHTML = '';
+    state.root.querySelector('[data-vista-lista]').hidden = false;
+    renderLista();
+  }
+
   // ---------- ficha ----------
   function fichaAtual() { return state.manut.find((m) => m.id === state.fichaId) || null; }
 
   function renderFicha() {
     const m = fichaAtual();
-    if (!m) { closeModal(FICHA); return; }
+    if (!m) { state.fichaId = null; mostrarLista(); return; }
     const { itensPorManut, orcsPorManut } = indices();
     const html = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
       notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto,
     });
-    let ov = document.getElementById(FICHA);
-    if (!ov) {
-      ov = openModal({ id: FICHA, conteudoHtml: '', aoFechar: () => { state.fichaId = null; renderLista(); } });
-      ov.classList.add('fm-mod');
-      ov.addEventListener('click', aoClicarFicha);
-      ov.addEventListener('change', aoMudarFicha);
-      ov.addEventListener('input', aoDigitarFicha);
-      // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
-      ov.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
-    }
-    const card = ov.querySelector('.ds-modal-card');
-    const topo = card.scrollTop;
-    card.innerHTML = html;
-    card.scrollTop = topo;
+    // Ao regravar um campo a ficha é redesenhada no mesmo lugar (mantém a rolagem); ao abrir, começa no topo.
+    mostrarPagina('ficha', FICHA, html, { manterRolagem: state.vista === 'ficha' });
   }
 
   // Programação que usa o veículo parado (só quando a OS está em execução); atualiza a ficha ao chegar.
@@ -175,8 +196,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
 
   function fecharFicha() {
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    closeModal(FICHA);
-    renderLista();
+    mostrarLista();
   }
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
@@ -421,18 +441,16 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
 
   // ---------- nova solicitação ----------
   function abrirNova(preset = {}) {
-    const ov = openModal({ id: NOVA, conteudoHtml: htmlFormNova(state.base, preset), aoFechar: () => {} });
-    ov.classList.add('fm-mod');
+    state.fichaId = null; state.orcForm = null; state.formAcao = null;
+    const ov = mostrarPagina('nova', NOVA, htmlFormNova(state.base, preset));
+    if (!ov) return;
     ov.dataset.origem = preset.origem || 'manual';
     ov.dataset.checklist = preset.checklist_id || '';
-    ov.addEventListener('click', aoClicarNova);
-    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada no próprio modal.
+    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria página.
     ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base);
     // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
     const campoPediu = ov.querySelector('[data-n-solicitante]');
-    ov.addEventListener('input', (e) => {
-      if (e.target === campoPediu) campoPediu.dataset.auto = campoPediu.value.trim() ? '0' : '1';
-    });
+    campoPediu.addEventListener('input', () => { campoPediu.dataset.auto = campoPediu.value.trim() ? '0' : '1'; });
     const preencherCondutor = () => {
       if (campoPediu.dataset.auto === '0') return;
       campoPediu.value = veiculoDaDigitacao(val(ov, '[data-n-veiculo]'))?.motorista_atual || '';
@@ -450,7 +468,7 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   async function aoClicarNova(e) {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
-    if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
+    if (alvo.dataset.acao === 'fechar') return mostrarLista();
     if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); return; }
     if (alvo.dataset.acao !== 'novo-salvar') return;
 
@@ -473,11 +491,10 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
             || state.base.grupos.find((g) => Number(g.categoria_codigo) === Number(i.categoria_codigo))?.nome || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
         })),
       });
-      closeModal(NOVA);
       await recarregarUma(id).catch(() => {});
       // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
       if (state.manut.some((m) => m.id === id)) { toast('Manutenção registrada.'); abrirFicha(id); }
-      else toast('Manutenção registrada e enviada para a equipe de Frotas.');
+      else { toast('Manutenção registrada e enviada para a equipe de Frotas.'); mostrarLista(); }
     } catch (err) {
       ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
     } finally {
@@ -495,7 +512,16 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
   async function openHome(container, opts = {}) {
     state.supabase = opts.supabase; state.opts = opts; state.root = container;
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    container.innerHTML = ESTILOS_MANUTENCAO + htmlCasca();
+    state.vista = 'lista';
+    container.innerHTML = `${ESTILOS_MANUTENCAO}<div data-vista-lista>${htmlCasca()}</div><div class="fm-pagina fm-mod" data-pagina hidden></div>`;
+
+    // Nova manutenção e ficha são páginas dentro da aba (no lugar da lista); os tratadores valem para a vista aberta.
+    const pagina = container.querySelector('[data-pagina]');
+    pagina.addEventListener('click', (e) => { if (state.vista === 'ficha') aoClicarFicha(e); else if (state.vista === 'nova') aoClicarNova(e); });
+    pagina.addEventListener('change', (e) => { if (state.vista === 'ficha') aoMudarFicha(e); });
+    pagina.addEventListener('input', (e) => { if (state.vista === 'ficha') aoDigitarFicha(e); });
+    // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
+    pagina.addEventListener('toggle', (e) => { if (state.vista === 'ficha' && e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
 
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
@@ -525,14 +551,27 @@ import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-m
     // Quem abriu a solicitação em outra aba (Preventiva) pede para abrir a ficha aqui.
     const pedido = window.FROTAS_MANUTENCAO_ABRIR;
     if (pedido) { window.FROTAS_MANUTENCAO_ABRIR = null; if (state.manut.some((m) => m.id === pedido)) abrirFicha(pedido); }
+    // Quem pediu uma nova manutenção em outra tela (Veículos, Checklists) vem para cá com o pedido já preenchido.
+    const nova = window.FROTAS_MANUTENCAO_NOVA;
+    if (nova) { window.FROTAS_MANUTENCAO_NOVA = null; abrirNova(nova); }
   }
 
   window[MODULE_NAME] = window[MODULE_NAME] || {};
   window[MODULE_NAME].openHome = openHome;
-  // Para outras telas (Veículos, Checklists, Preventiva): abre a janela de nova solicitação já preenchida.
-  window[MODULE_NAME].abrirNova = async (opts, preset) => {
-    state.supabase = opts.supabase; state.opts = opts;
-    await garantirBase();
-    abrirNova(preset);
+  // Para outras telas (Veículos, Checklists, Preventiva): leva o usuário à nova manutenção da aba Corretiva, já preenchida.
+  window[MODULE_NAME].abrirNova = async (opts, preset = {}) => {
+    // Já na aba Corretiva: abre a página aqui mesmo.
+    if (state.root && document.body.contains(state.root) && paginaEl()) {
+      await garantirBase();
+      abrirNova(preset);
+      return;
+    }
+    // Outra aba do mesmo painel: troca para a Corretiva, que abre a nova manutenção ao montar.
+    window.FROTAS_MANUTENCAO_NOVA = preset;
+    const aba = document.querySelector('[data-ds-tab="manutencao"]');
+    if (aba) { aba.click(); return; }
+    // Outra página (Veículos): guarda o pedido e abre o painel de Manutenção.
+    try { sessionStorage.setItem('fm_nova_preset', JSON.stringify(preset)); } catch { /* sem armazenamento: abre só a aba */ }
+    window.location.href = 'frotas-manutencao-grupo.html';
   };
 })();
