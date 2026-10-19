@@ -2,11 +2,11 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261016-fin3 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261019-fin4 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261016-fin3';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261016-fin3';
+import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261019-fin4';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261019-fin4';
 
 function criarSetorPagamentos(ctx) {
   function filteredSetorPagamentos() {
@@ -382,6 +382,7 @@ function criarSetorPagamentos(ctx) {
       </div>
       <div class="fin-pay-preview" style="line-height:1.7;padding:14px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.5);color:#e2e8f0;font-size:14px">${renderConteudoModal(row)}</div>
       ${pixSection}
+      <div id="finPayItensWrap"></div>
       <div class="fin-field full mt-16">
         <label>Comprovante de pagamento</label>
         <input id="finPayComprovante" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx">
@@ -401,6 +402,88 @@ function criarSetorPagamentos(ctx) {
     modal.classList.add('open');
     modal.querySelector('#finPayClose').onclick = () => modal.classList.remove('open');
     modal.querySelector('#finPaySend').onclick = () => enviarComprovantePagamento(row);
+    carregarSeletorItensCompra(row, modal);
+  }
+
+  function idsItensCompra(row) {
+    const ids = Array.isArray(row._compra_item_ids) && row._compra_item_ids.length
+      ? row._compra_item_ids
+      : (Array.isArray(row.compras_item_ids) && row.compras_item_ids.length ? row.compras_item_ids : (row.origem_id ? [row.origem_id] : []));
+    return [...new Set(ids.map((id) => String(id || '').replace(/^compra_/, '')).filter(Boolean))];
+  }
+
+  // Compra por link: cada item tem o próprio link/site e o Financeiro paga (e
+  // recebe comprovante) separado — então o comprovante precisa dizer a quais
+  // itens se refere. Só aparece para compras LINK com 2+ itens.
+  async function carregarSeletorItensCompra(row, modal) {
+    const wrap = modal.querySelector('#finPayItensWrap');
+    if (!wrap) return;
+    const isCompras = normalize(row.origem || row.setor || row.modulo_origem).includes('compra') || String(row.id).startsWith('compra_');
+    const ids = idsItensCompra(row);
+    if (!isCompras || ids.length < 2) return;
+    const { data, error } = await supabase
+      .from('compras_itens')
+      .select('id, material, tamanho, quantidade, unidade, valor_total, forma_pagamento, dados_pagamento, status')
+      .in('id', ids);
+    if (error || !data?.length) return;
+    const pendentes = data.filter((i) => i.status === 'pendente_pagamento');
+    if (pendentes.length < 2 || !pendentes.some((i) => normalize(i.forma_pagamento) === 'link')) return;
+    modal._itensCompra = pendentes;
+    wrap.innerHTML = `<div class="fin-field full mt-16" style="padding:12px 14px;background:rgba(59,130,246,.06);border:1px solid rgba(96,165,250,.22);border-radius:12px">
+      <label style="margin-bottom:8px">Este comprovante se refere a quais itens?</label>
+      ${pendentes.map((i) => `<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;margin:6px 0">
+        <input type="checkbox" class="finPayItemChk" value="${esc(i.id)}" checked style="margin-top:3px">
+        <span style="flex:1"><b>${esc(i.quantidade || i.unidade || 1)} un ${esc(i.material)}</b>${i.tamanho ? ` <small>(${esc(i.tamanho)})</small>` : ''}<br><small style="color:#94a3b8;word-break:break-all">${esc(i.dados_pagamento || '')}</small></span>
+        <strong style="white-space:nowrap">${money(i.valor_total || 0)}</strong>
+      </label>`).join('')}
+      <small style="color:#94a3b8">Os itens não marcados continuam em "a pagar" para receber outro comprovante.</small>
+    </div>`;
+  }
+
+  // Divide um pagamento real de Compras: os itens selecionados viram um
+  // registro PAGO (com o comprovante) e o restante continua pendente.
+  async function dividirPagamentoCompras(row, itensSel, itensRest, comprovanteUrl) {
+    const soma = (lista) => lista.reduce((s, i) => s + Number(i.valor_total || 0), 0);
+    const descricao = (lista) => `Compra: ${lista.map((i) => `${i.quantidade || i.unidade || 1} un ${i.material}`).join(' | ')}`;
+    const linhas = String(row.dados_pagamento || '').split('\n');
+    const prefixo = (i) => `${i.material}: `;
+    const dadosDe = (lista, outros) => linhas
+      .filter((l) => lista.some((i) => l.startsWith(prefixo(i))) || !outros.some((i) => l.startsWith(prefixo(i))))
+      .join('\n') || null;
+    const base = {
+      origem: row.origem, origem_setor: row.origem_setor || 'COMPRAS', favorecido: row.favorecido, fornecedor: row.fornecedor,
+      contato: row.contato, forma_pagamento: row.forma_pagamento, vencimento: row.vencimento || null,
+    };
+    const { error: insErr } = await supabase.from('financeiro_pagamentos').insert({
+      ...base,
+      origem_id: itensSel[0].id,
+      compras_item_ids: itensSel.map((i) => i.id),
+      descricao: descricao(itensSel),
+      valor: soma(itensSel),
+      dados_pagamento: dadosDe(itensSel, itensRest),
+      status: 'PAGO',
+      pago_em: new Date().toISOString(),
+      comprovante_url: comprovanteUrl,
+    });
+    if (insErr) throw insErr;
+    const { error: updErr } = await supabase.from('financeiro_pagamentos').update({
+      origem_id: itensRest[0].id,
+      compras_item_ids: itensRest.map((i) => i.id),
+      descricao: descricao(itensRest),
+      valor: soma(itensRest),
+      dados_pagamento: dadosDe(itensRest, itensSel),
+    }).eq('id', row.id);
+    if (updErr) throw updErr;
+  }
+
+  async function enviarComprovanteParcial(row, itensSel, itensRest, comprovanteUrl) {
+    const idsSel = itensSel.map((i) => i.id);
+    const { error } = await supabase.from('compras_itens')
+      .update({ status: 'aguardando_nf', comprovante_url: comprovanteUrl })
+      .in('id', idsSel).eq('status', 'pendente_pagamento');
+    if (error) throw error;
+    if (!String(row.id).startsWith('compra_')) await dividirPagamentoCompras(row, itensSel, itensRest, comprovanteUrl);
+    await safe(() => supabase.from('rh_epi_registros').update({ status: 'pendente' }).in('compra_item_id', idsSel).eq('status', 'aguardando_pagamento'), null);
   }
 
   function abrirModalCienteBoleto(id) {
@@ -629,6 +712,18 @@ function criarSetorPagamentos(ctx) {
     const fb = document.getElementById('finPayFeedback');
     const file = document.getElementById('finPayComprovante')?.files?.[0];
     try {
+      const itensCompra = document.getElementById('finPagamentoModal')?._itensCompra || null;
+      let parcial = null;
+      if (itensCompra && document.querySelector('.finPayItemChk')) {
+        const marcados = new Set([...document.querySelectorAll('.finPayItemChk:checked')].map((el) => el.value));
+        if (!marcados.size) throw new Error('Marque pelo menos um item a que o comprovante se refere.');
+        if (marcados.size < itensCompra.length) {
+          parcial = {
+            sel: itensCompra.filter((i) => marcados.has(String(i.id))),
+            rest: itensCompra.filter((i) => !marcados.has(String(i.id))),
+          };
+        }
+      }
       if (fb) {
         fb.textContent = 'Enviando comprovante...';
         fb.className = 'fin-feedback';
@@ -636,7 +731,9 @@ function criarSetorPagamentos(ctx) {
       const comprovanteUrl = await uploadComprovantePagamento(file, row);
       const isCompras = normalize(row.origem || row.setor || row.modulo_origem).includes('compra') || String(row.id).startsWith('compra_');
 
-      if (String(row.id).startsWith('compra_grp_') || String(row.id).startsWith('compra_')) {
+      if (parcial) {
+        await enviarComprovanteParcial(row, parcial.sel, parcial.rest, comprovanteUrl);
+      } else if (String(row.id).startsWith('compra_grp_') || String(row.id).startsWith('compra_')) {
         await updateComprasComprovante(row, comprovanteUrl);
         await ativarEpiRegistros(row);
       } else {
