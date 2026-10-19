@@ -213,10 +213,28 @@ export function proximoPasso(m, { notas = [] } = {}) {
   }
 }
 
-// Componentes e peças do guia de uma categoria, na ordem do guia. `marcados` (nomes já gravados no item) entram mesmo que o
-// catálogo tenha mudado depois, para não sumirem da ficha.
-export function componentesDaCategoria(componentes = [], categoria, marcados = []) {
-  const doGuia = componentes.filter((c) => Number(c.categoria_codigo) === Number(categoria)).sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
+// Quem abre a manutenção escolhe um dos grupos do guia (Suspensão, Freios, Motor...), não um dos 29 sistemas. O item grava a
+// categoria representativa do grupo (grupo.categoria_codigo) ou, se veio da Preventiva, a categoria do próprio serviço.
+export function grupoDaCategoria(categorias = [], categoria) {
+  const c = categorias.find((x) => Number(x.codigo) === Number(categoria));
+  return c?.grupo_codigo != null ? Number(c.grupo_codigo) : null;
+}
+
+export function categoriaDoGrupo(grupos = [], grupo) {
+  const g = grupos.find((x) => Number(x.codigo) === Number(grupo));
+  return g ? Number(g.categoria_codigo) : null;
+}
+
+// Nome do grupo de uma categoria; sem grupo cadastrado, o nome do próprio sistema.
+export function nomeDoGrupoDaCategoria({ categorias = [], grupos = [] }, categoria) {
+  const g = grupos.find((x) => Number(x.codigo) === grupoDaCategoria(categorias, categoria));
+  return g?.nome || categorias.find((x) => Number(x.codigo) === Number(categoria))?.nome || '';
+}
+
+// Componentes e peças de um grupo, na ordem do guia. `marcados` (nomes já gravados no item) entram mesmo que o catálogo
+// tenha mudado depois, para não sumirem da ficha.
+export function componentesDoGrupo(componentes = [], grupo, marcados = []) {
+  const doGuia = componentes.filter((c) => Number(c.grupo_codigo) === Number(grupo)).sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((c) => c.nome);
   return [...doGuia, ...marcados.filter((n) => !doGuia.includes(n))];
 }
 
@@ -259,7 +277,7 @@ export function validarSolicitacao({ veiculo_id, descricao, itens = [] }) {
   if (!veiculo_id) erros.push('Selecione o veículo.');
   if (!String(descricao || '').trim()) erros.push('Descreva o problema ou o serviço.');
   if (!itens.length) erros.push('Adicione ao menos um item: escolha a categoria e clique em +.');
-  itens.forEach((it, i) => { if (!it.categoria_codigo) erros.push(`Item ${i + 1}: escolha a categoria.`); });
+  itens.forEach((it, i) => { if (!it.categoria_codigo) erros.push(`Item ${i + 1}: escolha o grupo.`); });
   return erros;
 }
 

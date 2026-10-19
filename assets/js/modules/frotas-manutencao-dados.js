@@ -29,20 +29,27 @@ async function tudoPaginado(montar, padrao) {
 
 // Componentes e peças do guia por categoria. Sem acesso ou sem a tabela: lista vazia (o item segue só com a descrição livre).
 export async function carregarComponentes(supabase) {
-  const { data, error } = await supabase.from('frotas_manutencao_componentes').select('id,categoria_codigo,plano_codigo,nome,ordem').eq('ativo', true)
+  const { data, error } = await supabase.from('frotas_manutencao_componentes').select('id,grupo_codigo,categoria_codigo,plano_codigo,nome,ordem').eq('ativo', true)
     .order('categoria_codigo', { ascending: true }).order('ordem', { ascending: true }).limit(2000);
   return error ? [] : (data || []);
 }
 
+// Grupos do guia (Suspensão, Freios, Motor...). Sem acesso ou sem a tabela: lista vazia (a tela cai nas categorias).
+export async function carregarGrupos(supabase) {
+  const { data, error } = await supabase.from('frotas_manutencao_grupos').select('codigo,nome,ordem,categoria_codigo').eq('ativo', true).order('ordem', { ascending: true });
+  return error ? [] : (data || []);
+}
+
 export async function carregarBase(supabase) {
-  const [categorias, planos, oficinas, veiculos, componentes] = await Promise.all([
+  const [categorias, planos, oficinas, veiculos, componentes, grupos] = await Promise.all([
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),
     tudo(supabase.from('frotas_manutencao_planos').select('*').order('categoria_codigo', { ascending: true }), 'Erro ao carregar os planos.'),
     tudo(supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.'),
     tudoPaginado(() => supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os veículos.'),
     carregarComponentes(supabase).catch(() => []),
+    carregarGrupos(supabase).catch(() => []),
   ]);
-  return { categorias, planos, oficinas, veiculos, componentes };
+  return { categorias, planos, oficinas, veiculos, componentes, grupos };
 }
 
 // Nomes dos colaboradores ativos, para sugerir em "Quem pediu" (texto livre com sugestão). Sem acesso: lista vazia.

@@ -1,10 +1,10 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut27';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut28';
 import {
-  componentesDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  componentesDoGrupo, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, numeroOS, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut27';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut28';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -17,10 +17,16 @@ export function opcoes(lista, selecionado, { vazio = null, valor = 'id', rotulo 
   return base + lista.map((o) => `<option value="${esc(o[valor])}"${String(o[valor]) === String(selecionado ?? '') ? ' selected' : ''}>${esc(o[rotulo])}</option>`).join('');
 }
 
-export function opcoesCategorias(categorias, selecionado, vazio = 'Selecione...') {
-  return `<option value="">${esc(vazio)}</option>` + categorias.filter((c) => c.ativo !== false).map((c) =>
-    `<option value="${c.codigo}"${Number(selecionado) === Number(c.codigo) ? ' selected' : ''}>${String(c.codigo).padStart(2, '0')} · ${esc(c.nome)}</option>`).join('');
+// Grupos do guia (Suspensão, Freios, Motor...). Sem grupos cadastrados, cai nas categorias (sistemas) como antes.
+export function opcoesGrupos(base, selecionado, vazio = 'Selecione...') {
+  const lista = (base.grupos || []).length
+    ? base.grupos.map((g) => ({ valor: g.codigo, rotulo: g.nome }))
+    : base.categorias.filter((c) => c.ativo !== false).map((c) => ({ valor: c.codigo, rotulo: `${String(c.codigo).padStart(2, '0')} · ${c.nome}` }));
+  return `<option value="">${esc(vazio)}</option>` + lista.map((o) => `<option value="${o.valor}"${Number(selecionado) === Number(o.valor) ? ' selected' : ''}>${esc(o.rotulo)}</option>`).join('');
 }
+
+// Valor do seletor de um item: o grupo da categoria gravada (ou ela mesma, se não há grupos).
+export const grupoDoItem = (base, categoria) => ((base.grupos || []).length ? grupoDaCategoria(base.categorias, categoria) : categoria);
 
 export function opcoesPlanos(planos, categoria, selecionado) {
   const lista = categoria ? planosDaCategoria(planos, categoria) : [];
@@ -57,13 +63,12 @@ export function htmlKpis(contagens, filtro) {
   return FILTROS.map((f) => cardFiltro({ filtro: f.id, tone: f.tone, icone: f.icone, label: f.rotulo, valor: String(contagens[f.id] ?? 0), dica: f.dica, ativo: f.id === filtro })).join('');
 }
 
-export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, notasPorManut = new Map() }) {
+export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, grupos = [], notasPorManut = new Map() }) {
   if (!rows.length) return '<tr><td colspan="6" class="fm-empty">Nenhuma manutenção neste filtro. Use "+ Nova manutenção" para registrar um pedido.</td></tr>';
-  const nomeCat = new Map(categorias.map((c) => [Number(c.codigo), c.nome]));
   return rows.map((m) => {
     const itens = itensPorManut.get(m.id) || [];
-    const cats = [...new Set(itens.map((i) => Number(i.categoria_codigo)))].slice(0, 3)
-      .map((c) => `<span class="fm-badge blue" title="${esc(nomeCat.get(c) || '')}">${String(c).padStart(2, '0')} · ${esc((nomeCat.get(c) || '').slice(0, 22))}</span>`).join('');
+    const cats = [...new Set(itens.map((i) => nomeDoGrupoDaCategoria({ categorias, grupos }, i.categoria_codigo)).filter(Boolean))].slice(0, 3)
+      .map((nome) => `<span class="fm-badge blue" title="${esc(nome)}">${esc(nome.slice(0, 26))}</span>`).join('');
     const valor = valorDaManutencao(m, orcsPorManut.get(m.id) || []);
     const alta = m.prioridade === 'alta' || m.prioridade === 'urgente' ? `<span class="fm-badge ${m.prioridade === 'urgente' ? 'red' : 'amber'}">${m.prioridade === 'urgente' ? 'Urgente' : 'Alta'}</span>` : '';
     const parado = m.veiculo_parado ? '<span class="fm-badge red" title="Veículo parado enquanto a OS estiver em execução">Parado</span>' : '';
@@ -83,7 +88,7 @@ export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, nota
 // Linha de entrada: sempre presente; o "+" confirma o item e ele vai para a lista logo abaixo.
 export function htmlEntradaItem(base) {
   return `<div class="fm-item" data-novo-entrada>
-    <select class="fm-select" data-n="categoria_codigo">${opcoesCategorias(base.categorias, null)}</select>
+    <select class="fm-select" data-n="grupo_codigo">${opcoesGrupos(base, null)}</select>
     <input class="fm-input" data-n="descricao" placeholder="Serviço / peça (opcional)">
     <select class="fm-select" data-n="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, 'servico')}</select>
     <button class="fm-ic" type="button" data-acao="novo-item-add" title="Adicionar item" aria-label="Adicionar item" style="font-size:20px;font-weight:900;color:#86efac;border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.14)">+</button>
@@ -92,11 +97,10 @@ export function htmlEntradaItem(base) {
 
 // Item já adicionado (lista abaixo da entrada): texto fixo e "x" para remover. Os dados ficam em data-item-json.
 export function htmlItemAdicionado(base, item) {
-  const cat = base.categorias.find((c) => Number(c.codigo) === Number(item.categoria_codigo));
   const plano = base.planos.find((p) => p.id === item.plano_id);
   const tipo = (TIPOS_ITEM.find((t) => t.id === (item.tipo_item || 'servico')) || {}).label;
   return `<div class="fm-item fm-item-lista" data-novo-item data-item-json="${esc(JSON.stringify(item))}">
-    <div class="fm-ro">${String(item.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div>
+    <div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, item.categoria_codigo))}</div>
     <div class="fm-ro">${esc(item.descricao || '—')}${plano ? `<small>Plano do guia: ${esc(plano.nome)}</small>` : ''}${(item.componentes || []).length && item.descricao !== item.componentes.join(', ') ? `<small>Itens: ${esc(item.componentes.join(', '))}</small>` : ''}</div>
     <div class="fm-ro">${esc(tipo)}</div>
     <button class="fm-ic danger" type="button" data-acao="novo-item-remover" title="Remover item" aria-label="Remover item">✕</button></div>`;
@@ -114,8 +118,8 @@ export function htmlFormNova(base, preset = {}) {
       <div class="fm-field full"><label class="fm-check" style="min-height:0"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
       <div class="fm-field full"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
     </div>
-    <div class="fm-sec"><h4>Itens (categoria do guia)</h4>
-      <div class="fm-item-cab"><span>Categoria</span><span>Descrição</span><span>Tipo</span><span></span></div>
+    <div class="fm-sec"><h4>Itens (grupo do guia)</h4>
+      <div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>
       ${htmlEntradaItem(base)}
       <div class="fm-itens" data-novo-itens style="margin-top:10px">${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div>
       <div class="fm-nota">Escolha a categoria e clique em <strong>+</strong> para adicionar. É preciso ao menos um item; vários itens ficam na lista acima e o <strong>✕</strong> remove. A categoria define o tipo de nota fiscal no GRM e o relatório de custos.</div></div>
@@ -161,19 +165,18 @@ function blocoItens(m, itens, base, ed) {
   const notaComponentes = (it) => ((it.componentes || []).length && it.descricao !== it.componentes.join(', ') ?`<small>Itens: ${esc(it.componentes.join(', '))}</small>` : '');
   const linhas = itens.map((it) => {
     if (!ed.itens) {
-      const cat = base.categorias.find((c) => Number(c.codigo) === Number(it.categoria_codigo));
-      return `<div class="fm-item"><div class="fm-ro">${String(it.categoria_codigo).padStart(2, '0')} · ${esc(cat?.nome || '')}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
+      return `<div class="fm-item"><div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
-      <select class="fm-select" data-item="categoria_codigo">${opcoesCategorias(base.categorias, it.categoria_codigo)}</select>
+      <select class="fm-select" data-item="grupo_codigo">${opcoesGrupos(base, grupoDoItem(base, it.categoria_codigo))}</select>
       <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
       <select class="fm-select" data-item="tipo_item" title="Peça ou serviço: define a categoria da nota fiscal no GRM">${opcoes(TIPOS_ITEM, it.tipo_item || 'servico')}</select>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
-      <div class="fm-item-comps">${htmlComponentes(componentesDaCategoria(base.componentes, it.categoria_codigo, it.componentes || []), it.componentes || [])}</div></div>`;
+      <div class="fm-item-comps">${htmlComponentes(componentesDoGrupo(base.componentes, grupoDaCategoria(base.categorias, it.categoria_codigo), it.componentes || []), it.componentes || [])}</div></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="categoria_codigo">${opcoesCategorias(base.categorias, null, 'Categoria do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
+  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="grupo_codigo">${opcoesGrupos(base, null, 'Grupo do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Serviço / peça"><select class="fm-select" data-nv="tipo_item" title="Peça ou serviço">${opcoes(TIPOS_ITEM, 'servico')}</select><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
-    ${itens.length ? '<div class="fm-item-cab"><span>Categoria</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
+    ${itens.length ? '<div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
 }
 
