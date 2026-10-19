@@ -396,6 +396,11 @@ async function safeSyncBfleetPlaces(supabase: any, body: any) {
   }
 }
 
+function mesmaCoordenada(atual: unknown, nova: number | null) {
+  const a = toNumOrNull(atual);
+  return a != null && nova != null && Math.abs(a - nova) < 1e-7;
+}
+
 async function refreshCoordsFromBfleet(supabase: any, apiBase: string, apiKey: string, token: string) {
   const placesResp = await fetchPlaces(apiBase, apiKey, token);
   if (!isBfleetOk(placesResp.resp)) return 0;
@@ -406,7 +411,7 @@ async function refreshCoordsFromBfleet(supabase: any, apiBase: string, apiKey: s
   }
   const { data, error } = await supabase
     .from('operacional_colaborador_base')
-    .select('colaborador_id,bfleet_lugar_id')
+    .select('colaborador_id,bfleet_lugar_id,latitude,longitude')
     .not('bfleet_lugar_id', 'is', null)
     .limit(1000);
   if (error) throw error;
@@ -416,6 +421,9 @@ async function refreshCoordsFromBfleet(supabase: any, apiBase: string, apiKey: s
     const lat = toNumOrNull(p?.latitud ?? p?.latitude ?? p?.lat);
     const lng = toNumOrNull(p?.longitud ?? p?.longitude ?? p?.lng ?? p?.lon);
     if (!validLatLng(lat, lng)) continue;
+    // Esta função roda a cada 2 min: sem esta checagem regravava as ~460 linhas toda vez (~330 mil UPDATEs/dia)
+    // mesmo com a coordenada igual. Só grava quando a BFleet devolve algo diferente do que já está salvo.
+    if (mesmaCoordenada(row.latitude, lat) && mesmaCoordenada(row.longitude, lng)) continue;
     const upd = await supabase.from('operacional_colaborador_base').update({ latitude: lat, longitude: lng }).eq('colaborador_id', row.colaborador_id);
     if (!upd.error) atualizados++;
   }
