@@ -53,6 +53,8 @@ export function estadoPrazo(prazoYmd, hojeYmd) {
   return { classe: 'ok', texto: `Faltam ${dias} dias`, vencido: false };
 }
 
+const MATERIAL_PENEIRA_INDIVIDUAL = 'peneira individual';
+
 /**
  * Estimativa (R$) de um patrimônio pelo catálogo de compras. Primeiro o nome
  * igual; depois o MAIOR material do catálogo que aparece como palavras inteiras
@@ -65,14 +67,20 @@ export function valorEstimadoDoItem(identificacao, catalogo) {
   const alvo = chaveNome(identificacao);
   if (!alvo) return null;
   let melhor = null;
+  let individual = null;
   for (const c of catalogo || []) {
     const valor = c.valor_estimado == null || c.valor_estimado === '' ? NaN : Number(c.valor_estimado);
     const mat = chaveNome(c.material);
     if (!mat || !Number.isFinite(valor)) continue;
     if (mat === alvo) return valor;
     if (alvo.startsWith(`${mat} `) && (!melhor || mat.length > melhor.len)) melhor = { len: mat.length, valor };
+    if (mat === MATERIAL_PENEIRA_INDIVIDUAL) individual = valor;
   }
-  return melhor ? melhor.valor : null;
+  if (melhor) return melhor.valor;
+  // Peneira cadastrada sozinha vale o mesmo em qualquer malha ("PENEIRA", "PENEIRA 3", "PENEIRA 5MM",
+  // "PENEIRA FUNDO"...). Com "+" são várias peneiras num cadastro só: sem estimativa automática.
+  if (individual != null && /^peneira(\s|$)/.test(alvo) && !alvo.includes('+')) return individual;
+  return null;
 }
 
 export function formatarReais(valor) {

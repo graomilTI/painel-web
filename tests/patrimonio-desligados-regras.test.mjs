@@ -64,3 +64,18 @@ test('valor estimado: nome igual, prefixo mais longo e sem estimativa', async ()
   assert.ok(Number.isNaN(lerReais('abc')));
   assert.ok(Number.isNaN(lerReais('-5')));
 });
+
+test('peneira individual vale o mesmo em qualquer malha; kit e "+" ficam sem estimativa', async () => {
+  const { valorEstimadoDoItem } = await import('../assets/js/patrimonioDesligadosRegras.js');
+  const cat = [
+    { material: 'PENEIRA INDIVIDUAL', valor_estimado: '150.00' },
+    { material: 'JOGO DE PENEIRAS', valor_estimado: '450.00' },
+  ];
+  for (const nome of ['PENEIRA', 'PENEIRA 3', 'PENEIRA 5mm', 'PENEIRA FUNDO', 'PENEIRA DE SORGO 2,2', 'PENEIRA INDIVIDUAL 3mm', 'Peneira 4x22mm', 'PENEIRA INDIVIDUAL']) {
+    assert.equal(valorEstimadoDoItem(nome, cat), 150, nome);
+  }
+  assert.equal(valorEstimadoDoItem('JOGO DE PENEIRAS 3MM - 5MM - FUNDO', cat), 450);
+  assert.equal(valorEstimadoDoItem('KIT PENEIRA 3MM E FUNDO', cat), null);
+  assert.equal(valorEstimadoDoItem('PENEIRA FUNDO + 3', cat), null);
+  assert.equal(valorEstimadoDoItem('PENEIRA 3', [{ material: 'CALADOR', valor_estimado: 100 }]), null);
+});

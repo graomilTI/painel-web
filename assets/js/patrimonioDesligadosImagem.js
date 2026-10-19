@@ -1,7 +1,7 @@
 // Imagem (PNG) dos patrimônios de um desligado, para o usuário enviar ao gestor
 // conferir o recolhimento. Desenhada direto no canvas (sem dependência).
 
-import { formatarDia, formatarReais } from './patrimonioDesligadosRegras.js';
+import { formatarDia, formatarReais } from './patrimonioDesligadosRegras.js?v=20261019-peneira';
 
 const LARGURA = 1080;
 const ESCALA = 2;
