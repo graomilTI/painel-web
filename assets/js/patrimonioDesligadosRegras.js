@@ -52,3 +52,37 @@ export function estadoPrazo(prazoYmd, hojeYmd) {
   if (dias <= 3) return { classe: 'urgente', texto: `Faltam ${dias} ${dias === 1 ? 'dia' : 'dias'}`, vencido: false };
   return { classe: 'ok', texto: `Faltam ${dias} dias`, vencido: false };
 }
+
+/**
+ * Estimativa (R$) de um patrimônio pelo catálogo de compras. Primeiro o nome
+ * igual; depois o MAIOR material do catálogo que aparece como palavras inteiras
+ * no início da identificação ("JOGO DE PENEIRAS" para "JOGO DE PENEIRAS 3MM - 5MM - FUNDO").
+ * @param {string} identificacao
+ * @param {{material: string, valor_estimado: number|string|null}[]} catalogo
+ * @returns {number|null} null = sem estimativa
+ */
+export function valorEstimadoDoItem(identificacao, catalogo) {
+  const alvo = chaveNome(identificacao);
+  if (!alvo) return null;
+  let melhor = null;
+  for (const c of catalogo || []) {
+    const valor = c.valor_estimado == null || c.valor_estimado === '' ? NaN : Number(c.valor_estimado);
+    const mat = chaveNome(c.material);
+    if (!mat || !Number.isFinite(valor)) continue;
+    if (mat === alvo) return valor;
+    if (alvo.startsWith(`${mat} `) && (!melhor || mat.length > melhor.len)) melhor = { len: mat.length, valor };
+  }
+  return melhor ? melhor.valor : null;
+}
+
+export function formatarReais(valor) {
+  return Number(valor || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/** Aceita "1.234,56", "R$ 80", "80.5". Vazio = null; inválido/negativo = NaN. */
+export function lerReais(texto) {
+  const s = String(texto ?? '').replace(/R\$/gi, '').replace(/\s/g, '');
+  if (!s) return null;
+  const n = Number(s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : NaN;
+}
