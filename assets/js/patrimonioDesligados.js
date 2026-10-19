@@ -12,11 +12,11 @@
 
 import { supabase } from './supabaseClient.js';
 import { getColaboradores } from './colaboradoresCache.js';
-import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js';
+import { gerarImagemDesligado, nomeArquivoImagem } from './patrimonioDesligadosImagem.js?v=20261019-peneira';
 import {
   PRAZO_RECOLHIMENTO_DIAS, chaveNome, hojeBrasilia, diaBrasilia, somarDias, formatarDia, estadoPrazo,
   valorEstimadoDoItem, formatarReais,
-} from './patrimonioDesligadosRegras.js';
+} from './patrimonioDesligadosRegras.js?v=20261019-peneira';
 
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;')
