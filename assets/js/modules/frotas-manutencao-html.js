@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut40';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut40';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut41';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut41';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut40';
+} from './frotas-manutencao-regras.js?v=20261019-frotas-manut41';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -173,7 +173,7 @@ function htmlComponentesDoItem(base, it) {
   return htmlComponentes(nomes, marcados, { servicos });
 }
 
-function blocoItens(m, itens, base, ed) {
+function blocoItens(m, itens, base, ed, seletorAberto = false) {
   const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
   const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
   const notaComponentes = (it) => ((it.componentes || []).length && it.descricao !== it.componentes.join(', ') ?`<small>Itens: ${esc(it.componentes.join(', '))}</small>` : '');
@@ -182,13 +182,16 @@ function blocoItens(m, itens, base, ed) {
       return `<div class="fm-item"><div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
     }
     return `<div class="fm-item" data-item-id="${esc(it.id)}">
-      <select class="fm-select" data-item="grupo_codigo">${opcoesGrupos(base, grupoDoItem(base, it.categoria_codigo))}</select>
+      <div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div>
       <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}</div>
       <div class="fm-ro"><span class="fm-badge ${it.tipo_item === 'peca' ? 'blue' : 'amber'}" title="Define a categoria da nota fiscal no GRM">${it.tipo_item === 'peca' ? 'Peças' : 'Serviço'}</span></div>
       <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
       <div class="fm-item-comps">${htmlComponentesDoItem(base, it)}</div></div>`;
   }).join('');
-  const novo = ed.itens ? `<div class="fm-form fm-item-novo" data-item-novo><select class="fm-select" data-nv="grupo_codigo">${opcoesGrupos(base, null, 'Grupo do guia...')}</select><input class="fm-input" data-nv="descricao" placeholder="Outro item (opcional)"><button class="fm-btn soft" type="button" data-acao="item-adicionar">+ Adicionar</button><div class="fm-item-comps" data-nv-comps></div></div>` : '';
+  const novo = !ed.itens ? '' : (seletorAberto
+    ? `<div class="fm-add-itens" data-add-itens><div data-seletor-corpo>${htmlSeletor()}</div><div class="fm-pick-resumo" data-pick-resumo></div>
+        <div class="fm-acoes" style="justify-content:flex-start;margin-top:12px"><button class="fm-btn primary" type="button" data-acao="itens-confirmar">Adicionar itens</button>${itens.length ? '<button class="fm-btn ghost" type="button" data-acao="itens-cancelar">Cancelar</button>' : ''}</div></div>`
+    : '<div style="margin-top:10px"><button class="fm-btn soft" type="button" data-acao="itens-abrir">+ Adicionar itens</button></div>');
   return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
     ${itens.length ? '<div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
     <div class="fm-itens">${linhas}</div>${novo}</div>`;
@@ -368,7 +371,7 @@ function blocoLinhaTempo(m) {
   return `<details class="fm-sec fm-mais" data-hist><summary>Histórico (${eventos.length})</summary><ul class="fm-tl" style="margin-top:10px">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></details>`;
 }
 
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
@@ -376,7 +379,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
     ${faixaEtapa(m, notas)}
-    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

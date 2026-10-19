@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261019-frotas-manut40';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261019-frotas-manut41';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -45,11 +45,12 @@ export function htmlSeletor() {
 
 // Liga o seletor dentro de `box` (que recebeu htmlSeletor()). O resumo dos itens marcados fica onde a tela quiser (`resumo`,
 // um elemento com data-pick-resumo; sem ele, procura dentro de `box`). Devolve { ler, qtd }.
-export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = {}) {
+// `estado` (opcional) guarda a seleção fora da tela: quem redesenha a página (a ficha) passa o mesmo objeto e não perde o que foi marcado.
+export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, estado = {} } = {}) {
   const grupos = gruposDoSeletor(base);
-  const selecao = new Map(); // grupo → nomes marcados (do guia, Mão de obra ou digitados)
-  const digitados = new Map(); // nome digitado à mão → 'peca' | 'servico'
-  let ativo = grupos[0]?.codigo ?? null;
+  const selecao = (estado.selecao ||= new Map()); // grupo → nomes marcados (do guia, Mão de obra ou digitados)
+  const digitados = (estado.digitados ||= new Map()); // nome digitado à mão → 'peca' | 'servico'
+  let ativo = estado.ativo ?? grupos[0]?.codigo ?? null;
   let busca = '';
   const marcados = (cod) => selecao.get(Number(cod)) || [];
   const total = () => [...selecao.values()].reduce((s, l) => s + l.length, 0);
@@ -110,7 +111,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null } = 
 
   box.addEventListener('click', (e) => {
     const g = e.target.closest('[data-pick-grupo]');
-    if (g) { ativo = Number(g.dataset.pickGrupo); busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel(); return; }
+    if (g) { ativo = Number(g.dataset.pickGrupo); estado.ativo = ativo; busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel(); return; }
     if (e.target.closest('[data-pick-add]')) adicionarDigitado();
   });
   resumoEl.addEventListener('click', (e) => {
