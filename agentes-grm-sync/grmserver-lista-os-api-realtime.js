@@ -169,6 +169,15 @@ function createSupabaseRest(baseUrl, serviceKey) {
         authHeaders,
       );
     },
+    async selectByNumeroOs(numero, columns) {
+      const rows = await requestJson(
+        `${restUrl}/operacional_os?select=${columns}&numero_os=eq.${encodeURIComponent(numero)}&limit=1`,
+        'GET',
+        null,
+        authHeaders,
+      );
+      return rows?.[0] || null;
+    },
     async upsertByNumeroOs(body) {
       await requestJson(
         `${restUrl}/operacional_os?on_conflict=numero_os`,
@@ -305,11 +314,13 @@ async function fetchServiceOrders(token) {
   return response.searchData;
 }
 
+// status_gestor não é um TRACKED_FIELD (não vem do GRM, não entra no diff),
+// mas precisa vir junto pra decidir se preserva data_os de uma O.S. ATENDER/
+// FINALIZAR (ver applyCycle).
+const CURRENT_COLUMNS = ['numero_os', 'status_gestor', ...TRACKED_FIELDS].join(',');
+
 async function fetchAllCurrent(supabase) {
-  // status_gestor não é um TRACKED_FIELD (não vem do GRM, não entra no diff),
-  // mas precisa vir junto pra decidir se preserva data_os de uma O.S. ATENDER/
-  // FINALIZAR (ver applyCycle).
-  const columns = ['numero_os', 'status_gestor', ...TRACKED_FIELDS].join(',');
+  const columns = CURRENT_COLUMNS;
   const rows = [];
   for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
     const data = await supabase.selectAll('operacional_os', columns, offset, PAGE_SIZE);
@@ -325,7 +336,48 @@ async function fetchAllCurrent(supabase) {
 // (ou reiniciar) ainda não há referência, então nenhuma remoção é feita.
 let ultimoCicloNumeros = null;
 
+// Cada ciclo (8 s) relia `operacional_os` inteira só para comparar com o GRM, o que somava egress alto
+// no Supabase (fatura de 10/2026). A cópia fica em memória e é mantida a cada gravação deste serviço;
+// só é relida quando vence o TTL ou depois de um erro. Como a Programação altera status_gestor/data_os
+// por fora, toda decisão de GRAVAR é refeita com a linha fresca (uma consulta pontual por O.S.).
+const CURRENT_CACHE_TTL_MS = Math.max(0, Number(process.env.GRM_LISTA_OS_CACHE_MS || 120000));
+const currentCache = new WeakMap();
+
+async function loadCurrent(supabase) {
+  const hit = currentCache.get(supabase);
+  if (hit && Date.now() - hit.at < CURRENT_CACHE_TTL_MS) return { byNumero: hit.byNumero, fresh: false };
+  const rows = await fetchAllCurrent(supabase);
+  const byNumero = new Map(rows.map((row) => [row.numero_os, row]));
+  currentCache.set(supabase, { byNumero, at: Date.now() });
+  return { byNumero, fresh: true };
+}
+
+// data_os do GRM (sorDate) é a data de ABERTURA da O.S., não a data em que
+// ela está sendo atendida — o painel move data_os de propósito quando o
+// gestor confirma equipe na Programação (trigger programacao_equipe_marca_
+// os_atender), podendo divergir do sorDate por dias. Sem essa preservação,
+// toda O.S. ATENDER/FINALIZAR reusada em dias seguintes (remanescente) tinha
+// data_os revertido pro valor velho do GRM a cada ciclo (~8s), sumindo do
+// Mapa Operacional (filtra data_os=hoje) e caindo fora da janela de datas
+// aceita pelo agente aplicar-distribuicao-os (mesma lógica de proteção que
+// o antigo listaOsAgentSync.js já tinha). Achado em produção 01/09 (O.S. 90497).
+function montarPayload(previous, remote) {
+  const preservarAtendimento = Boolean(previous && ['ATENDER', 'FINALIZAR'].includes(previous.status_gestor));
+  const payload = { ...remote };
+  if (preservarAtendimento) payload.data_os = previous.data_os;
+  return { payload, preservarAtendimento };
+}
+
 async function applyCycle(supabase, rawRows) {
+  try {
+    return await applyCycleComCache(supabase, rawRows);
+  } catch (error) {
+    currentCache.delete(supabase);
+    throw error;
+  }
+}
+
+async function applyCycleComCache(supabase, rawRows) {
   const synchronizedAt = new Date().toISOString();
   const remoteRows = rawRows.map((row) => mapServiceOrder(row, synchronizedAt)).filter((row) => row.numero_os);
 
@@ -334,28 +386,23 @@ async function applyCycle(supabase, rawRows) {
     return { skipped: true, remote: remoteRows.length };
   }
 
-  const currentRows = await fetchAllCurrent(supabase);
-  const byNumero = new Map(currentRows.map((row) => [row.numero_os, row]));
+  const { byNumero, fresh } = await loadCurrent(supabase);
   const novosNumeros = new Set(remoteRows.map((row) => row.numero_os));
 
   let upserts = 0;
   for (const remote of remoteRows) {
-    const previous = byNumero.get(remote.numero_os) || null;
-
-    // data_os do GRM (sorDate) é a data de ABERTURA da O.S., não a data em que
-    // ela está sendo atendida — o painel move data_os de propósito quando o
-    // gestor confirma equipe na Programação (trigger programacao_equipe_marca_
-    // os_atender), podendo divergir do sorDate por dias. Sem essa preservação,
-    // toda O.S. ATENDER/FINALIZAR reusada em dias seguintes (remanescente) tinha
-    // data_os revertido pro valor velho do GRM a cada ciclo (~8s), sumindo do
-    // Mapa Operacional (filtra data_os=hoje) e caindo fora da janela de datas
-    // aceita pelo agente aplicar-distribuicao-os (mesma lógica de proteção que
-    // o antigo listaOsAgentSync.js já tinha). Achado em produção 01/09 (O.S. 90497).
-    const preservarAtendimento = Boolean(previous && ['ATENDER', 'FINALIZAR'].includes(previous.status_gestor));
-    const payload = { ...remote };
-    if (preservarAtendimento) payload.data_os = previous.data_os;
+    let previous = byNumero.get(remote.numero_os) || null;
+    let { payload, preservarAtendimento } = montarPayload(previous, remote);
 
     if (previous && diffFields(previous, payload).length === 0) continue;
+
+    if (!fresh) {
+      previous = await supabase.selectByNumeroOs(remote.numero_os, CURRENT_COLUMNS);
+      if (previous) byNumero.set(remote.numero_os, previous);
+      else byNumero.delete(remote.numero_os);
+      ({ payload, preservarAtendimento } = montarPayload(previous, remote));
+      if (previous && diffFields(previous, payload).length === 0) continue;
+    }
 
     const mesmaOcorrencia = Boolean(previous && previous.data_os === remote.data_os);
     if (!preservarAtendimento && !mesmaOcorrencia) {
@@ -366,6 +413,7 @@ async function applyCycle(supabase, rawRows) {
       payload.status_conferencia = 'PENDENTE';
     }
     await supabase.upsertByNumeroOs(payload);
+    byNumero.set(remote.numero_os, { ...(previous || {}), ...payload });
     upserts++;
   }
 
@@ -374,9 +422,10 @@ async function applyCycle(supabase, rawRows) {
     const referencia = ultimoCicloNumeros.size;
     const cobertura = referencia > 0 ? novosNumeros.size / referencia : 1;
     if (cobertura >= LIMITE_PROPORCAO_REMOCAO) {
-      const ausentes = currentRows.map((row) => row.numero_os).filter((numero) => !novosNumeros.has(numero));
+      const ausentes = [...byNumero.keys()].filter((numero) => !novosNumeros.has(numero));
       if (ausentes.length) {
         await supabase.deleteByNumeroOs(ausentes);
+        for (const numero of ausentes) byNumero.delete(numero);
         removidos = ausentes.length;
       }
     } else {
