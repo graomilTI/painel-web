@@ -964,26 +964,89 @@ function openSelecionarFornecedor(rows){
   });
 }
 
-function openCompraLote(rows){
+// ─── ESTOQUE NO FORNECEDOR ─────────────────────────────────────────────────────
+// Material comprado com antecedência que está guardado no fornecedor (Compras > Estoque > Fornecedor).
+// Na compra, o que existe lá sai do saldo do fornecedor e só o restante é pago.
+async function carregarEstoqueFornecedor(){
+  return await safe(()=>supabase.from('compras_estoque_fornecedor').select('id,fornecedor,material,tamanho,unidade,quantidade').eq('ativo',true).gt('quantidade',0),[]);
+}
+const candidatosForn=(r,lista)=>lista.filter(f=>norm(f.material)===norm(r.material)&&norm(f.tamanho||'')===norm(r.tamanho||'')).sort((a,b)=>Number(b.quantidade)-Number(a.quantidade));
+const qtdItem=(r)=>Number(r.quantidade||r.unidade||1);
+const r2c=(v)=>Math.round(Number(v||0)*100)/100;
+
+// Dá baixa no saldo do fornecedor e ajusta os itens da compra. Devolve só o que ainda precisa ser pago
+// (com a quantidade já reduzida). Roda ANTES do envio ao Financeiro: se algo falhar aqui, nada foi pago.
+async function aplicarEstoqueFornecedor(itens){
+  const user=state.ctx?.user||{};
+  const hoje=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const restantes=[];
+  for(const r of itens){
+    const doEst=r2c(r._do_estoque);
+    if(!(doEst>0)||!r._estoque_forn_id){ restantes.push(r); continue; }
+    const resto=r2c(qtdItem(r)-doEst);
+    const {data:fresco,error:ef}=await supabase.from('compras_estoque_fornecedor').select('quantidade,fornecedor').eq('id',r._estoque_forn_id).single();
+    if(ef) throw new Error(`Não foi possível conferir o saldo de "${r.material}" no fornecedor: ${ef.message}`);
+    if(Number(fresco.quantidade)<doEst) throw new Error(`O saldo de "${r.material}" no fornecedor mudou (agora ${fresco.quantidade}). Reabra a compra.`);
+    const tam=r.tamanho?` (${r.tamanho})`:'';
+    const ident={p_usuario_id:user.id||null,p_usuario_nome:user.name||user.email||null};
+    const {data:res,error:eb}=await supabase.rpc('compras_estoque_fornecedor_baixar',{p_estoque_id:r._estoque_forn_id,p_quantidade:doEst,p_destino:r.regional||r.compras_solicitacoes?.coordenacao||'Compras',p_data:hoje,p_obs:`Compras: ${r.material}${tam}`,...ident});
+    if(eb) throw new Error(`Erro ao dar baixa de "${r.material}" no fornecedor: ${eb.message}`);
+    try{
+      let itemAtendido=r.id;
+      if(resto>0){
+        // Parte atendida pelo fornecedor vira um item próprio; o item original fica só com o que será comprado.
+        const copia={solicitacao_id:r.solicitacao_id,material:r.material,tipo:r.tipo,tamanho:r.tamanho,marca:r.marca,ca:r.ca,regional:r.regional,colaborador_id:r.colaborador_id,colaborador_nome:r.colaborador_nome,fornecedor:fresco.fornecedor,quantidade:doEst,unidade:doEst,status:'enviado_estoque'};
+        const {data:novo,error:ei}=await supabase.from('compras_itens').insert(copia).select('id').single();
+        if(ei) throw ei;
+        itemAtendido=novo.id;
+        const {error:eu}=await supabase.from('compras_itens').update({quantidade:resto,unidade:resto}).eq('id',r.id);
+        if(eu){ await supabase.from('compras_itens').delete().eq('id',novo.id); throw eu; }
+      }else{
+        const {error:eu}=await supabase.from('compras_itens').update({status:'enviado_estoque',fornecedor:fresco.fornecedor}).eq('id',r.id);
+        if(eu) throw eu;
+      }
+      await supabase.from('compras_estoque_fornecedor_mov').update({compras_item_id:itemAtendido,compras_solicitacao_id:r.solicitacao_id||null}).eq('id',res.mov_id);
+    }catch(e){
+      await supabase.rpc('compras_estoque_fornecedor_entrada',{p_estoque_id:r._estoque_forn_id,p_quantidade:doEst,p_data:hoje,p_nf:null,p_valor:null,p_obs:'Estorno: falha ao atualizar a compra',...ident});
+      throw new Error(`Erro ao atualizar "${r.material}": ${e.message}`);
+    }
+    if(resto>0) restantes.push({...r,quantidade:resto,unidade:resto,_valor_total:r2c((r._valor_unitario||0)*resto)});
+  }
+  return restantes;
+}
+
+async function openCompraLote(rows){
   const modal=document.getElementById('admCmpModal');
+  const estoqueForn=await carregarEstoqueFornecedor();
+  const cand=new Map(rows.map(r=>[r.id,candidatosForn(r,estoqueForn)]));
+  const temForn=[...cand.values()].some(c=>c.length);
+  const doEstoqueInicial=(r)=>{
+    const c=cand.get(r.id)||[];
+    if(!c.length) return 0;
+    return r._do_estoque!=null?Number(r._do_estoque):Math.min(qtdItem(r),Number(c[0].quantidade));
+  };
   const totalInicial=rows.reduce((s,r)=>s+(Number(r.valor_total||0)),0);
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
-      <div><h3>Comprar itens selecionados</h3><p class="muted">Informe o valor unitário de cada material.</p></div>
+      <div><h3>Comprar itens selecionados</h3><p class="muted">Informe o valor unitário de cada material.${temForn?' Itens com saldo no estoque do fornecedor saem de lá; só o restante é pago.':''}</p></div>
       <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
     </div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${rows.some(isEPI)?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th></tr></thead>
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${rows.some(isEPI)?'<th>CA</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
         <tbody>
-          ${rows.map(r=>`<tr data-buy-row="${esc(r.id)}">
+          ${rows.map(r=>{
+            const c=cand.get(r.id)||[];
+            return `<tr data-buy-row="${esc(r.id)}">
             <td>${esc(r.quantidade||r.unidade||1)}</td>
             <td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td>
             <td>${esc(r.tipo||'-')}</td>
             ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||state.cotacaoCache[r.id]?.ca||'')}">`:'-'}</td>`:''}
-            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r.valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||'')}" placeholder="0,00"></td>
+            ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
+            <td>${c.length?`<input class="buy-estoque" type="number" step="0.01" min="0" value="${esc(doEstoqueInicial(r))}" style="width:90px">`:'-'}</td>`:''}
+            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r.valor_unitario||r._valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||'')}" placeholder="0,00"></td>
             <td><input class="buy-total" type="number" step="0.01" readonly value="${esc(r.valor_total||'0')}"></td>
-          </tr>`).join('')}
+          </tr>`;}).join('')}
         </tbody>
       </table>
     </div>
@@ -993,28 +1056,51 @@ function openCompraLote(rows){
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   modal.querySelector('#buyCancel').onclick=()=>modal.classList.remove('open');
+  // Quantidade que sai do fornecedor: nunca passa da quantidade do item nem do saldo do fornecedor escolhido.
+  const lerEstoque=(r,tr)=>{
+    const id=tr.querySelector('.buy-forn')?.value||'';
+    const forn=estoqueForn.find(f=>f.id===id);
+    if(!forn) return {id:null,nome:null,qtd:0};
+    const campo=tr.querySelector('.buy-estoque');
+    const qtd=Math.max(0,Math.min(r2c(campo?.value),qtdItem(r),Number(forn.quantidade)));
+    return {id:forn.id,nome:forn.fornecedor,qtd};
+  };
   const recalc=()=>{
     let grand=0;
     rows.forEach(r=>{
       const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`); if(!tr) return;
-      const qtd=Number(r.quantidade||r.unidade||1);
       const unit=Number(tr.querySelector('.buy-unit').value||0);
-      const total=unit*qtd;
+      const est=lerEstoque(r,tr);
+      const campo=tr.querySelector('.buy-estoque');
+      if(campo&&campo.value!==''&&r2c(campo.value)!==est.qtd) campo.value=est.qtd;
+      const total=unit*(qtdItem(r)-est.qtd);
       tr.querySelector('.buy-total').value=total.toFixed(2);
       grand+=total;
     });
     modal.querySelector('#buyGrandTotal').textContent=money(grand);
   };
-  modal.querySelectorAll('.buy-unit').forEach(inp=>inp.oninput=recalc);
+  modal.querySelectorAll('.buy-unit,.buy-estoque,select.buy-forn').forEach(inp=>{inp.oninput=recalc;inp.onchange=recalc;});
   recalc();
-  modal.querySelector('#buyContinue').onclick=()=>{
+  modal.querySelector('#buyContinue').onclick=async()=>{
     const rowsComValor=rows.map(r=>{
       const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`);
-      const qtd=Number(r.quantidade||r.unidade||1);
       const unit=Number(tr?.querySelector('.buy-unit')?.value||0);
       const ca=tr?.querySelector('.buy-ca')?.value?.trim()||r.ca||state.cotacaoCache[r.id]?.ca||null;
-      return {...r, _valor_unitario:unit, _valor_total:unit*qtd, _ca:ca};
+      const est=tr?lerEstoque(r,tr):{id:null,nome:null,qtd:0};
+      const pagar=r2c(qtdItem(r)-est.qtd);
+      return {...r, _valor_unitario:unit, _valor_total:r2c(unit*pagar), _ca:ca, _do_estoque:est.qtd, _estoque_forn_id:est.id, _qtd_pagar:pagar};
     });
+    // Tudo atendido pelo estoque do fornecedor: não há o que pagar, só a baixa.
+    if(temForn&&rowsComValor.every(r=>r._qtd_pagar<=0)){
+      if(!confirm(`Todos os itens estão no estoque do fornecedor. Dar baixa em ${rowsComValor.length} ${rowsComValor.length===1?'item':'itens'}? Nada será enviado ao Financeiro.`)) return;
+      try{
+        await aplicarEstoqueFornecedor(rowsComValor);
+        modal.classList.remove('open');
+        setMsg('Baixa feita no estoque do fornecedor. Nada a pagar.');
+        await loadRows();
+      }catch(e){setMsg(e.message,true);alert(e.message);}
+      return;
+    }
     openPagamentoLote(rowsComValor, false);
   };
 }
@@ -1071,7 +1157,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
         <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||isEPI(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th><th class="pay-link-th" style="display:none">Link do produto</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r._qtd_pagar??(r.quantidade||r.unidade||1))}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}${r._do_estoque>0?`<br><small>${esc(r._do_estoque)} un saem do estoque do fornecedor${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
       </table>
     </div>
     <div class="adm-cmp-grid mt-16">
@@ -1115,6 +1201,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
         // cada um ao carrinho do site e paga), não um link único do grupo.
         const dadosPorItem={};
         for(const r of rows){
+          if(r._qtd_pagar<=0) continue;
           const link=area.querySelector(`.pay-link-input[data-id="${CSS.escape(String(r.id))}"]`)?.value?.trim()||'';
           if(!link){ alert(`Informe o link do produto de "${r.material}".`); return; }
           dadosPorItem[r.id]=link;
@@ -1136,6 +1223,14 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
 }
 
 async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null,nfUrl=null){
+  // Primeiro a baixa no estoque do fornecedor: itens ficam só com o que será pago.
+  itens=await aplicarEstoqueFornecedor(itens);
+  if(!itens.length){
+    document.getElementById('admCmpModal').classList.remove('open');
+    setMsg('Baixa feita no estoque do fornecedor. Nada a pagar.');
+    await loadRows();
+    return;
+  }
   const boletoDireto=forma==='BOLETO'&&!!nfUrl;
   if(celularAsPatrimonio){
     const celRows=itens.filter(r=>norm(r.material)==='celular');
