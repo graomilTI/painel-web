@@ -580,6 +580,7 @@ export async function renderContent(content) {
   loadOsLog();
   loadAberturaOs();
   await loadAll();
+  startOsRealtime();
 
   async function loadAll() {
     el.feedback.textContent = 'Carregando dados da logística...';
@@ -620,6 +621,107 @@ export async function renderContent(content) {
     fillCoords();
     render();
     el.feedback.textContent = `Carregado: ${state.os.length} O.S. · ${state.alertas.length} alertas.`;
+  }
+
+  // Mantém as listas de O.S. (Finalização, Ajuste, Conferência, Classificadores) em
+  // sincronia: aplica cada mudança de operacional_os / operacional_os_colaboradores direto
+  // em state.os, state.osLog e state.atribuicoes, sem reler as tabelas, e redesenha só a
+  // aba ativa com debounce. A aba Abertura tem o próprio canal (logistica-abertura-os-workflow.js).
+  let osRealtimeChannel = null;
+  function startOsRealtime() {
+    if (osRealtimeChannel) { supabase.removeChannel(osRealtimeChannel); osRealtimeChannel = null; }
+    let timer = null;
+    let jaConectou = false;
+    let anexosMudaram = false;
+    const ABAS_COM_OS = ['os', 'ajuste', 'finalizacao', 'classificadores', 'conferencias', 'exportacoes'];
+    const ordenarOs = (a, b) => String(dateKey(b.data_os || b.data)).localeCompare(String(dateKey(a.data_os || a.data))) || String(osNumber(a)).localeCompare(String(osNumber(b)), 'pt-BR');
+    const ordenarLog = (a, b) => String(b.data_os || '').localeCompare(String(a.data_os || ''));
+    const ehKg = (r) => /^KG solicitado/i.test(String(r?.observacao_logistica || ''));
+    const naFilaLog = (r) => String(r.status_gestor || '') === 'FINALIZAR' || ehKg(r);
+    const mesmoId = (a, b) => String(a) === String(b);
+
+    const encerrar = () => {
+      clearTimeout(timer);
+      if (osRealtimeChannel === canal) { supabase.removeChannel(canal); osRealtimeChannel = null; }
+    };
+    const redesenhar = async () => {
+      if (!el.tabs.isConnected) return encerrar();
+      if (anexosMudaram) { anexosMudaram = false; await carregarAnexosSaldo(); }
+      const y = window.scrollY;
+      const coordsAntes = [...el.coord.options].map((o) => o.value).slice(1).join('|');
+      const coordsDepois = [...new Set(state.os.map(coordOf).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR')).join('|');
+      if (coordsAntes !== coordsDepois) fillCoords();
+      if (ABAS_COM_OS.includes(state.tab)) render(); else renderStats();
+      if (state.tab === 'os') renderOsLog();
+      const meta = document.getElementById('osLogMeta');
+      if (meta) {
+        const finalizarCount = state.osLog.filter((r) => String(r.status_gestor || '') === 'FINALIZAR').length;
+        meta.textContent = `${finalizarCount} para finalizar · ${state.osLog.filter(ehKg).length} aumento de saldo`;
+      }
+      window.scrollTo(0, y);
+    };
+    const agendar = () => { clearTimeout(timer); timer = setTimeout(redesenhar, 400); };
+
+    const onOs = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        state.os = state.os.filter((r) => !mesmoId(r.id, id));
+        if (state.osLog.some((r) => mesmoId(r.id, id))) { anexosMudaram = true; state.osLog = state.osLog.filter((r) => !mesmoId(r.id, id)); }
+        return agendar();
+      }
+      const novo = payload.new;
+      if (!novo?.id) return;
+      const idx = state.os.findIndex((r) => mesmoId(r.id, novo.id));
+      // Colunas grandes e inalteradas (TOAST) não vêm no evento: mescla sobre a linha atual.
+      const merged = idx >= 0 ? { ...state.os[idx], ...novo } : novo;
+      if (idx >= 0) state.os[idx] = merged;
+      else { state.os.push(merged); state.os.sort(ordenarOs); }
+
+      const i2 = state.osLog.findIndex((r) => mesmoId(r.id, novo.id));
+      const anterior = i2 >= 0 ? state.osLog[i2] : null;
+      if (naFilaLog(merged)) {
+        if (ehKg(anterior) !== ehKg(merged)) anexosMudaram = true;
+        if (i2 >= 0) state.osLog[i2] = { ...anterior, ...merged };
+        else { state.osLog.push(merged); state.osLog.sort(ordenarLog); }
+      } else if (i2 >= 0) {
+        if (ehKg(anterior)) anexosMudaram = true;
+        state.osLog.splice(i2, 1);
+      }
+      agendar();
+    };
+
+    const onAtribuicao = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        const antes = state.atribuicoes.length;
+        state.atribuicoes = state.atribuicoes.filter((a) => !mesmoId(a.id, id));
+        if (state.atribuicoes.length !== antes) agendar();
+        return;
+      }
+      const novo = payload.new;
+      if (!novo?.id || !state.os.some((r) => mesmoId(r.id, novo.os_id))) return;
+      state.atribuicoes = [
+        ...state.atribuicoes.filter((a) => !mesmoId(a.id, novo.id) && !(mesmoId(a.os_id, novo.os_id) && String(a.colaborador_key) === String(novo.colaborador_key))),
+        novo,
+      ];
+      agendar();
+    };
+
+    const canal = supabase
+      .channel(`logistica-os-rt-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os' }, onOs)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os_colaboradores' }, onAtribuicao)
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        // Reconexão: eventos perdidos enquanto estava fora do ar → relê tudo uma vez.
+        if (jaConectou && el.tabs.isConnected) {
+          loadAll().catch((error) => console.warn('Falha ao ressincronizar O.S.', error));
+          state.osLogLoaded = false;
+          loadOsLog();
+        }
+        jaConectou = true;
+      });
+    osRealtimeChannel = canal;
   }
 
   // Carrega produção sob demanda (tabela grande, só usada em abas administrativas).
