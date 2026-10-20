@@ -44,6 +44,11 @@ const state = {
   filtroHist: { busca: '', tipo: '' },
   filtroForn: { busca: '', fornecedor: '' },
   editandoForn: null,
+  movsForn: [],
+  subForn: 'saldo',
+  baixaForn: { estoqueId: '', qtd: '', destino: '', data: hoje(), obs: '' },
+  filtroPend: 'abertas',
+  editandoPend: null,
   lote: null
 };
 let ctxAtual = null;
@@ -113,15 +118,17 @@ function definirColaboradores(lista) {
 }
 
 async function loadBase() {
-  const [materiais, movs, colabs, fornecedor] = await Promise.all([
+  const [materiais, movs, colabs, fornecedor, movsForn] = await Promise.all([
     safe(() => supabase.from('compras_estoque_materiais').select('*').order('nome', { ascending: true }).limit(5000)),
     safe(() => supabase.from('compras_estoque_movimentacoes').select('*, compras_estoque_materiais(nome,categoria,tamanho,unidade)').order('created_at', { ascending: false }).limit(300)),
     getColaboradores({ somenteAtivos: true }).catch(() => []),
-    safe(() => supabase.from('compras_estoque_fornecedor').select('*').eq('ativo', true).order('fornecedor', { ascending: true }).order('material', { ascending: true }).limit(5000))
+    safe(() => supabase.from('compras_estoque_fornecedor').select('*').eq('ativo', true).order('fornecedor', { ascending: true }).order('material', { ascending: true }).limit(5000)),
+    safe(() => supabase.from('compras_estoque_fornecedor_mov').select('*, compras_estoque_fornecedor(fornecedor,material,tamanho,unidade)').order('created_at', { ascending: false }).limit(500))
   ]);
   definirMateriais(materiais);
   state.movs = movs || [];
   state.estoqueFornecedor = fornecedor || [];
+  state.movsForn = movsForn || [];
   definirColaboradores(colabs);
 }
 
@@ -266,6 +273,7 @@ function estilos() {
 .stk-field label{color:#d8f8e7;font-weight:800;font-size:13px}
 .stk-field-full{grid-column:1/-1}
 .stk-field-2{grid-column:span 2}
+.stk-field-3{grid-column:span 3}
 .stk-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .stk-feedback{font-weight:800}
 .stk-feedback.err{color:#fecaca}
@@ -306,7 +314,7 @@ function estilos() {
 .stk-lote-rodape .stk-resumo{color:var(--muted);font-size:13px;font-weight:700;margin-right:auto}
 @media(max-width:1100px){.stk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){
-  .stk-grid{grid-template-columns:1fr}.stk-grid.stk-grid-cab{grid-template-columns:1fr 1fr}.stk-field-2{grid-column:auto}
+  .stk-grid{grid-template-columns:1fr}.stk-grid.stk-grid-cab{grid-template-columns:1fr 1fr}.stk-field-2,.stk-field-3{grid-column:auto}
   .stk-bar-fim{margin-left:0;width:100%}.stk-bar input,.stk-bar select{width:100%}
   .stk-lote-cab{display:none}
   .stk-linha{grid-template-columns:1fr 40px}
@@ -763,6 +771,35 @@ async function salvarLote() {
 // ---------- Fornecedor ----------
 // Material que está guardado no fornecedor. É um controle à parte: não entra no saldo do Inventário.
 
+const novaBaixaForn = (base = {}) => ({ estoqueId: '', qtd: '', destino: '', data: hoje(), obs: '', ...base });
+const FORN_SUBS = [
+  { id: 'saldo', label: 'Saldo no fornecedor' },
+  { id: 'baixa', label: 'Solicitar baixa e envio' },
+  { id: 'pendencias', label: 'Pendências de NF' },
+  { id: 'movimentos', label: 'Movimentações' }
+];
+const PEND_STATUS = { aguardando_nf: 'Aguardando NF', nf_emitida: 'NF emitida (a pagar)', paga: 'Paga' };
+const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const fornLabel = (r) => materialLabel({ nome: r?.material, tamanho: r?.tamanho });
+const fornPorId = (id) => state.estoqueFornecedor.find((r) => r.id === id);
+const pendenciasForn = () => state.movsForn.filter((m) => Number(m.quantidade_pendente) > 0);
+const pendenciasAbertas = () => pendenciasForn().filter((m) => m.pendencia_status !== 'paga');
+const chaveForn = (r) => [norm(r.fornecedor), norm(r.material), norm(r.tamanho), norm(r.unidade || 'UN')].join('|');
+
+function renderFornecedor(box) {
+  const abertas = pendenciasAbertas().length;
+  box.innerHTML = `${avisoHtml()}
+  <div class="stk-seg" role="group" aria-label="Estoque no fornecedor">${FORN_SUBS.map((s) => `<button type="button" data-forn-sub="${s.id}" class="${state.subForn === s.id ? 'active' : ''}">${s.label}${s.id === 'pendencias' && abertas ? `<span class="stk-badge">${abertas}</span>` : ''}</button>`).join('')}</div>
+  <div id="fornCorpo"></div>`;
+  box.querySelectorAll('[data-forn-sub]').forEach((b) => {
+    b.onclick = () => { state.subForn = b.dataset.fornSub; state.aviso = null; renderTab(); };
+  });
+  const corpo = document.getElementById('fornCorpo');
+  ({ saldo: renderFornSaldo, baixa: renderFornBaixa, pendencias: renderFornPendencias, movimentos: renderFornMovimentos }[state.subForn] || renderFornSaldo)(corpo);
+}
+
+// ----- saldo -----
+
 function fornecedorFiltrado() {
   const { busca, fornecedor } = state.filtroForn;
   const q = norm(busca);
@@ -771,25 +808,26 @@ function fornecedorFiltrado() {
 }
 
 function tabelaFornecedor(rows) {
-  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Fornecedor</th><th>Material</th><th class="num">Quantidade</th><th class="num">Valor unit.</th><th>Observação</th><th>Atualizado</th><th></th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr><td><b>${esc(r.fornecedor)}</b></td><td>${esc(materialLabel({ nome: r.material, tamanho: r.tamanho }))}</td><td class="num">${qtd(r.quantidade)} ${esc(r.unidade || 'UN')}</td><td class="num">${r.valor_unitario ? Number(r.valor_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td><td>${esc(r.observacao || '')}</td><td style="white-space:nowrap">${brDate(r.updated_at)}<br><small class="muted">${esc(r.usuario_nome || '')}</small></td><td style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-small" data-forn-edit="${esc(r.id)}">Editar</button> <button type="button" class="btn btn-secondary btn-small" data-forn-del="${esc(r.id)}">Remover</button></td></tr>`).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material no fornecedor.</td></tr>'}</tbody></table></div>`;
+  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Fornecedor</th><th>Material</th><th class="num">Saldo no fornecedor</th><th class="num">Valor unit.</th><th>Observação</th><th>Atualizado</th><th></th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr><td><b>${esc(r.fornecedor)}</b></td><td>${esc(fornLabel(r))}</td><td class="num"><b>${qtd(r.quantidade)}</b> ${esc(r.unidade || 'UN')}</td><td class="num">${r.valor_unitario ? dinheiro(r.valor_unitario) : '-'}</td><td>${esc(r.observacao || '')}</td><td style="white-space:nowrap">${brDate(r.updated_at)}<br><small class="muted">${esc(r.usuario_nome || '')}</small></td><td style="white-space:nowrap"><button type="button" class="btn btn-primary btn-small" data-forn-baixa="${esc(r.id)}">Solicitar baixa</button> <button type="button" class="btn btn-secondary btn-small" data-forn-edit="${esc(r.id)}">Editar</button> <button type="button" class="btn btn-secondary btn-small" data-forn-del="${esc(r.id)}">Remover</button></td></tr>`).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material no fornecedor.</td></tr>'}</tbody></table></div>`;
 }
 
-function renderFornecedor(box) {
+function renderFornSaldo(box) {
   const f = state.filtroForn;
-  const ed = state.editandoForn ? state.estoqueFornecedor.find((r) => r.id === state.editandoForn) : null;
+  const ed = state.editandoForn ? fornPorId(state.editandoForn) : null;
   if (state.editandoForn && !ed) state.editandoForn = null;
   const fornecedores = [...new Set(state.estoqueFornecedor.map((r) => r.fornecedor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   const nomesCatalogo = [...new Set(state.grupos.map((g) => g.nome).filter(Boolean))];
-  box.innerHTML = `${avisoHtml()}<p class="stk-dica">Material que está em estoque no fornecedor. Este controle é separado do Inventário: não altera o saldo do estoque próprio.</p>
+  box.innerHTML = `<p class="stk-dica">Material comprado com antecedência que está guardado no fornecedor. Controle separado do Inventário: não altera o saldo do estoque próprio. Para enviar às regionais, use <b>Solicitar baixa e envio</b>.</p>
   <form id="stkFornForm" class="stk-grid" style="margin-bottom:18px">
     <div class="stk-field stk-field-2"><label for="fFornecedor">Fornecedor</label><input id="fFornecedor" list="stkFornecedores" placeholder="Nome do fornecedor" required autocomplete="off" value="${esc(ed?.fornecedor || f.fornecedor)}"></div>
     <div class="stk-field stk-field-2"><label for="fMaterial">Material</label><input id="fMaterial" list="stkMateriaisCat" placeholder="Ex: Uniforme Polo" required autocomplete="off" value="${esc(ed?.material || '')}"></div>
     <div class="stk-field"><label for="fTamanho">Tamanho/Detalhe</label><input id="fTamanho" placeholder="Ex: G, GG, 2m" value="${esc(ed?.tamanho || '')}"></div>
     ${selectField('Unidade', 'fUnidade', UNIDADES, ed?.unidade || 'UN')}
-    <div class="stk-field"><label for="fQtd">Quantidade em estoque</label><input id="fQtd" type="number" min="0" step="0.01" required value="${ed ? esc(ed.quantidade) : ''}"></div>
+    <div class="stk-field"><label for="fQtd">${ed ? 'Saldo no fornecedor (ajuste)' : 'Quantidade comprada'}</label><input id="fQtd" type="number" min="${ed ? '0' : '0.01'}" step="0.01" required value="${ed ? esc(ed.quantidade) : ''}"></div>
     <div class="stk-field"><label for="fValor">Valor unitário</label><input id="fValor" type="number" min="0" step="0.01" placeholder="Opcional" value="${ed?.valor_unitario ? esc(ed.valor_unitario) : ''}"></div>
-    <div class="stk-field stk-field-full"><label for="fObs">Observação</label><input id="fObs" placeholder="Opcional" value="${esc(ed?.observacao || '')}"></div>
-    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">${ed ? 'Salvar alterações' : 'Adicionar ao estoque do fornecedor'}</button>${ed ? '<button type="button" class="btn btn-secondary" id="fCancelar">Cancelar edição</button>' : ''}<span id="fFb" class="stk-feedback"></span></div>
+    ${ed ? '' : '<div class="stk-field"><label for="fNf">Nº NF da compra</label><input id="fNf" placeholder="Opcional"></div>'}
+    <div class="stk-field ${ed ? 'stk-field-full' : 'stk-field-3'}"><label for="fObs">Observação</label><input id="fObs" placeholder="Opcional" value="${esc(ed?.observacao || '')}"></div>
+    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">${ed ? 'Salvar alterações' : 'Registrar compra no fornecedor'}</button>${ed ? '<button type="button" class="btn btn-secondary" id="fCancelar">Cancelar edição</button>' : ''}<span id="fFb" class="stk-feedback"></span></div>
   </form>
   <datalist id="stkFornecedores">${fornecedores.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
   <datalist id="stkMateriaisCat">${nomesCatalogo.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
@@ -811,50 +849,67 @@ function renderFornecedor(box) {
   document.getElementById('fTabela').onclick = (e) => {
     const editar = e.target.closest('[data-forn-edit]');
     const remover = e.target.closest('[data-forn-del]');
+    const baixar = e.target.closest('[data-forn-baixa]');
     if (editar) { state.editandoForn = editar.dataset.fornEdit; state.aviso = null; renderTab(); document.getElementById('stkFornForm')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
     if (remover) removerEstoqueFornecedor(remover.dataset.fornDel, remover);
+    if (baixar) { state.baixaForn = { ...state.baixaForn, estoqueId: baixar.dataset.fornBaixa }; state.subForn = 'baixa'; state.aviso = null; renderTab(); }
   };
   const cancelar = document.getElementById('fCancelar');
   if (cancelar) cancelar.onclick = () => { state.editandoForn = null; renderTab(); };
   document.getElementById('stkFornForm').onsubmit = async (ev) => { ev.preventDefault(); await salvarEstoqueFornecedor(ed); };
 }
 
+const rpcForn = async (nome, args) => {
+  const { data, error } = await supabase.rpc(nome, args);
+  if (error) throw error;
+  return data;
+};
+
 async function salvarEstoqueFornecedor(ed) {
-  const val = (id) => document.getElementById(id).value;
+  const val = (id) => document.getElementById(id)?.value ?? '';
   const fb = document.getElementById('fFb');
-  const payload = {
+  const base = {
     fornecedor: val('fFornecedor').trim(),
     material: val('fMaterial').trim(),
     tamanho: val('fTamanho').trim() || null,
     unidade: val('fUnidade'),
-    quantidade: r2(val('fQtd')),
     valor_unitario: Number(val('fValor') || 0) || null,
     observacao: val('fObs').trim() || null,
     usuario_id: usuario().id || null,
     usuario_nome: userName()
   };
-  if (!payload.fornecedor || !payload.material || val('fQtd') === '' || payload.quantidade < 0) { setFb(fb, 'Informe fornecedor, material e uma quantidade válida.', 'err'); return; }
+  const quantidade = r2(val('fQtd'));
+  if (!base.fornecedor || !base.material || val('fQtd') === '' || quantidade < 0 || (!ed && !(quantidade > 0))) { setFb(fb, 'Informe fornecedor, material e uma quantidade válida.', 'err'); return; }
   setFb(fb, 'Salvando...');
+  const ident = { usuario_id: base.usuario_id, p_usuario_nome: base.usuario_nome };
   try {
+    let texto;
     if (ed) {
-      const { error } = await supabase.from('compras_estoque_fornecedor').update(payload).eq('id', ed.id);
+      const { error } = await supabase.from('compras_estoque_fornecedor').update(base).eq('id', ed.id);
       if (error) throw error;
+      if (quantidade !== r2(ed.quantidade)) await rpcForn('compras_estoque_fornecedor_ajustar', { p_estoque_id: ed.id, p_nova_quantidade: quantidade, p_motivo: 'Ajuste manual do saldo', p_usuario_id: ident.usuario_id, p_usuario_nome: ident.p_usuario_nome });
+      texto = `${fornLabel(base)} no fornecedor ${base.fornecedor} atualizado.`;
     } else {
-      // Mesmo fornecedor + material + tamanho + unidade: atualiza a quantidade em vez de duplicar a linha.
-      const chave = (r) => [norm(r.fornecedor), norm(r.material), norm(r.tamanho), norm(r.unidade || 'UN')].join('|');
-      const existente = state.estoqueFornecedor.find((r) => chave(r) === chave(payload));
-      if (existente) {
-        const { error } = await supabase.from('compras_estoque_fornecedor').update(payload).eq('id', existente.id);
+      // Mesmo fornecedor + material + tamanho + unidade: soma no saldo existente em vez de duplicar a linha.
+      let alvo = state.estoqueFornecedor.find((r) => chaveForn(r) === chaveForn(base));
+      let novo = false;
+      if (!alvo) {
+        const { data, error } = await supabase.from('compras_estoque_fornecedor').insert({ ...base, quantidade: 0 }).select('id').single();
         if (error) throw error;
-        payload.atualizou = true;
-      } else {
-        const { error } = await supabase.from('compras_estoque_fornecedor').insert(payload);
-        if (error) throw error;
+        alvo = data;
+        novo = true;
       }
+      try {
+        await rpcForn('compras_estoque_fornecedor_entrada', { p_estoque_id: alvo.id, p_quantidade: quantidade, p_data: hoje(), p_nf: val('fNf'), p_valor: base.valor_unitario, p_obs: base.observacao, p_usuario_id: ident.usuario_id, p_usuario_nome: ident.p_usuario_nome });
+      } catch (e) {
+        if (novo) await supabase.from('compras_estoque_fornecedor').delete().eq('id', alvo.id);
+        throw e;
+      }
+      texto = `Compra registrada: ${qtd(quantidade)} ${base.unidade} de ${fornLabel(base)} no fornecedor ${base.fornecedor}.`;
     }
-    state.aviso = { tipo: 'ok', texto: ed || payload.atualizou ? `Estoque de ${materialLabel({ nome: payload.material, tamanho: payload.tamanho })} no fornecedor ${payload.fornecedor} atualizado.` : `${materialLabel({ nome: payload.material, tamanho: payload.tamanho })} adicionado ao estoque do fornecedor ${payload.fornecedor}.` };
+    state.aviso = { tipo: 'ok', texto };
     state.editandoForn = null;
-    state.filtroForn.fornecedor = payload.fornecedor;
+    state.filtroForn.fornecedor = base.fornecedor;
     await recarregar();
   } catch (e) {
     setFb(fb, await mensagemFalhaSalvar(e, e?.message || 'Não foi possível salvar o estoque do fornecedor.'), 'err');
@@ -862,8 +917,8 @@ async function salvarEstoqueFornecedor(ed) {
 }
 
 async function removerEstoqueFornecedor(id, btn) {
-  const r = state.estoqueFornecedor.find((x) => x.id === id);
-  if (!r || !window.confirm(`Remover ${materialLabel({ nome: r.material, tamanho: r.tamanho })} do estoque do fornecedor ${r.fornecedor}?`)) return;
+  const r = fornPorId(id);
+  if (!r || !window.confirm(`Remover ${fornLabel(r)} do estoque do fornecedor ${r.fornecedor}? O histórico de movimentações é mantido.`)) return;
   btn.disabled = true;
   try {
     const { error } = await supabase.from('compras_estoque_fornecedor').update({ ativo: false }).eq('id', id);
@@ -876,6 +931,136 @@ async function removerEstoqueFornecedor(id, btn) {
     state.aviso = { tipo: 'err', texto: await mensagemFalhaSalvar(e, e?.message || 'Não foi possível remover o item.') };
     renderTab();
   }
+}
+
+// ----- solicitar baixa e envio -----
+
+function renderFornBaixa(box) {
+  const b = state.baixaForn;
+  if (b.estoqueId && !fornPorId(b.estoqueId)) b.estoqueId = '';
+  const itens = state.estoqueFornecedor;
+  const regionais = [...new Set(state.colaboradores.flatMap((c) => [c.coordenacao, c.supervisao]).filter(Boolean))].sort((a, c) => a.localeCompare(c, 'pt-BR'));
+  box.innerHTML = `<p class="stk-dica">Pede ao fornecedor a baixa do saldo comprado e o envio às regionais. O que passar do saldo fica como <b>pendente de NF e pagamento</b> (aba Pendências de NF).</p>
+  <form id="stkFornBaixaForm" class="stk-grid">
+    <div class="stk-field stk-field-full"><label for="bItem">Material no fornecedor</label><select id="bItem" required><option value="">Selecione...</option>${itens.map((r) => `<option value="${esc(r.id)}" ${r.id === b.estoqueId ? 'selected' : ''}>${esc(r.fornecedor)} — ${esc(fornLabel(r))} — saldo ${qtd(r.quantidade)} ${esc(r.unidade || 'UN')}</option>`).join('')}</select></div>
+    <div class="stk-field"><label for="bQtd">Quantidade a enviar</label><input id="bQtd" type="number" min="0.01" step="0.01" required value="${esc(b.qtd)}"></div>
+    <div class="stk-field stk-field-2"><label for="bDestino">Regional / destino</label><input id="bDestino" list="stkRegionais" placeholder="Para onde vai o material" required autocomplete="off" value="${esc(b.destino)}"></div>
+    <div class="stk-field"><label for="bData">Data</label><input id="bData" type="date" value="${esc(b.data)}" required></div>
+    <div class="stk-field stk-field-full"><label for="bObs">Observação</label><input id="bObs" placeholder="Opcional" value="${esc(b.obs)}"></div>
+    <div class="stk-field stk-field-full"><div id="bResumo" class="stk-aviso ok" style="margin:0;display:none" role="status"></div></div>
+    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit" id="bSalvar">Registrar baixa e envio</button><span id="bFb" class="stk-feedback"></span></div>
+  </form>
+  <datalist id="stkRegionais">${regionais.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+
+  const ler = () => {
+    b.estoqueId = document.getElementById('bItem').value;
+    b.qtd = document.getElementById('bQtd').value;
+    b.destino = document.getElementById('bDestino').value;
+    b.data = document.getElementById('bData').value;
+    b.obs = document.getElementById('bObs').value;
+    const r = fornPorId(b.estoqueId);
+    const resumo = document.getElementById('bResumo');
+    const q = r2(b.qtd);
+    if (!r || !(q > 0)) { resumo.style.display = 'none'; return; }
+    const sai = Math.min(Math.max(0, r2(r.quantidade)), q);
+    const pend = r2(q - sai);
+    resumo.style.display = '';
+    resumo.className = `stk-aviso ${pend > 0 ? 'err' : 'ok'}`;
+    resumo.textContent = pend > 0
+      ? `Sai do saldo comprado: ${qtd(sai)} ${r.unidade || 'UN'}. Sem saldo: ${qtd(pend)} ${r.unidade || 'UN'} — ficará pendente de NF e pagamento.`
+      : `Sai do saldo comprado: ${qtd(sai)} ${r.unidade || 'UN'}. Saldo restante no fornecedor: ${qtd(r2(r.quantidade) - sai)} ${r.unidade || 'UN'}.`;
+  };
+  ['bItem', 'bQtd', 'bDestino', 'bData', 'bObs'].forEach((id) => { document.getElementById(id).oninput = ler; document.getElementById(id).onchange = ler; });
+  ler();
+  document.getElementById('stkFornBaixaForm').onsubmit = async (ev) => { ev.preventDefault(); await salvarBaixaFornecedor(); };
+}
+
+async function salvarBaixaFornecedor() {
+  const b = state.baixaForn;
+  const fb = document.getElementById('bFb');
+  const btn = document.getElementById('bSalvar');
+  const r = fornPorId(b.estoqueId);
+  const q = r2(b.qtd);
+  if (!r || !(q > 0) || !String(b.destino).trim()) { setFb(fb, 'Selecione o material, a quantidade e o destino.', 'err'); return; }
+  if (!window.confirm(`Registrar a baixa de ${qtd(q)} ${r.unidade || 'UN'} de ${fornLabel(r)} (${r.fornecedor}) para ${b.destino.trim()}?`)) return;
+  setFb(fb, 'Salvando...');
+  btn.disabled = true;
+  try {
+    const res = await rpcForn('compras_estoque_fornecedor_baixar', { p_estoque_id: r.id, p_quantidade: q, p_destino: b.destino.trim(), p_data: b.data || hoje(), p_obs: b.obs.trim() || null, p_usuario_id: usuario().id || null, p_usuario_nome: userName() });
+    const pend = Number(res?.quantidade_pendente || 0);
+    state.aviso = { tipo: 'ok', texto: `Baixa registrada: ${qtd(res?.quantidade_estoque)} ${r.unidade || 'UN'} saíram do saldo do fornecedor${pend > 0 ? `; ${qtd(pend)} ${r.unidade || 'UN'} sem saldo ficaram pendentes de NF e pagamento` : ''}.` };
+    state.baixaForn = novaBaixaForn({ destino: b.destino, data: b.data });
+    state.subForn = pend > 0 ? 'pendencias' : 'saldo';
+    await recarregar();
+  } catch (e) {
+    setFb(fb, await mensagemFalhaSalvar(e, e?.message || 'Não foi possível registrar a baixa.'), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ----- pendências de NF -----
+
+function renderFornPendencias(box) {
+  const todas = state.filtroPend === 'todas';
+  const rows = (todas ? pendenciasForn() : pendenciasAbertas());
+  const ed = state.editandoPend ? state.movsForn.find((m) => m.id === state.editandoPend) : null;
+  if (state.editandoPend && !ed) state.editandoPend = null;
+  const nome = (m) => m.compras_estoque_fornecedor || {};
+  const valorSug = ed ? (ed.pendencia_valor ?? (ed.valor_unitario ? r2(ed.valor_unitario * ed.quantidade_pendente) : '')) : '';
+  box.innerHTML = `<p class="stk-dica">Baixas que passaram do saldo comprado: o material pendente precisa de NF e pagamento ao fornecedor.</p>
+  ${ed ? `<form id="stkPendForm" class="stk-grid" style="margin-bottom:18px">
+    <div class="stk-field stk-field-full"><label>Pendência</label><div>${esc(nome(ed).fornecedor || '')} — ${esc(fornLabel(nome(ed)))} — <b>${qtd(ed.quantidade_pendente)}</b> ${esc(nome(ed).unidade || 'UN')} para ${esc(ed.destino || '-')} (${brDate(ed.data_movimentacao)})</div></div>
+    <div class="stk-field"><label for="pStatus">Situação</label><select id="pStatus">${Object.entries(PEND_STATUS).map(([v, l]) => `<option value="${v}" ${v === (ed.pendencia_status || 'aguardando_nf') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="stk-field"><label for="pNf">Nº NF</label><input id="pNf" value="${esc(ed.pendencia_nf || '')}" placeholder="Número da NF"></div>
+    <div class="stk-field"><label for="pValor">Valor da NF</label><input id="pValor" type="number" min="0" step="0.01" value="${esc(valorSug)}"></div>
+    <div class="stk-field"><label for="pPgto">Data do pagamento</label><input id="pPgto" type="date" value="${esc(ed.pendencia_data_pgto || '')}"></div>
+    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">Salvar pendência</button><button type="button" class="btn btn-secondary" id="pCancelar">Cancelar</button><span id="pFb" class="stk-feedback"></span></div>
+  </form>` : ''}
+  <div class="stk-bar">
+    <select id="pFiltro" aria-label="Filtro"><option value="abertas" ${todas ? '' : 'selected'}>Em aberto</option><option value="todas" ${todas ? 'selected' : ''}>Todas (inclui pagas)</option></select>
+    <div class="stk-bar-fim"><span class="stk-total">${rows.length} ${rows.length === 1 ? 'pendência' : 'pendências'}</span></div>
+  </div>
+  <div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Data</th><th>Fornecedor / material</th><th>Destino</th><th class="num">Sem saldo</th><th>Situação</th><th>NF</th><th class="num">Valor</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map((m) => `<tr><td style="white-space:nowrap">${brDate(m.data_movimentacao)}</td><td><b>${esc(nome(m).fornecedor || '-')}</b><br><small class="muted">${esc(fornLabel(nome(m)))}</small></td><td>${esc(m.destino || '-')}</td><td class="num">${qtd(m.quantidade_pendente)} ${esc(nome(m).unidade || 'UN')}</td><td><span class="stk-pill ${m.pendencia_status === 'paga' ? 'normal' : (m.pendencia_status === 'nf_emitida' ? 'baixo' : 'critico')}">${esc(PEND_STATUS[m.pendencia_status] || PEND_STATUS.aguardando_nf)}</span></td><td>${esc(m.pendencia_nf || '-')}</td><td class="num">${m.pendencia_valor ? dinheiro(m.pendencia_valor) : '-'}</td><td>${m.pendencia_data_pgto ? brDate(m.pendencia_data_pgto) : '-'}</td><td><button type="button" class="btn btn-secondary btn-small" data-pend-edit="${esc(m.id)}">Atualizar</button></td></tr>`).join('') : '<tr><td colspan="9" class="stk-empty">Nenhuma pendência.</td></tr>'}</tbody></table></div>`;
+
+  document.getElementById('pFiltro').onchange = (e) => { state.filtroPend = e.target.value; renderTab(); };
+  box.querySelectorAll('[data-pend-edit]').forEach((bt) => { bt.onclick = () => { state.editandoPend = bt.dataset.pendEdit; state.aviso = null; renderTab(); document.getElementById('stkPendForm')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }; });
+  if (ed) {
+    document.getElementById('pCancelar').onclick = () => { state.editandoPend = null; renderTab(); };
+    document.getElementById('stkPendForm').onsubmit = async (ev) => { ev.preventDefault(); await salvarPendencia(ed); };
+  }
+}
+
+async function salvarPendencia(ed) {
+  const fb = document.getElementById('pFb');
+  const status = document.getElementById('pStatus').value;
+  const nf = document.getElementById('pNf').value.trim();
+  const valor = Number(document.getElementById('pValor').value || 0) || null;
+  const pgto = document.getElementById('pPgto').value || null;
+  if (status !== 'aguardando_nf' && !nf) { setFb(fb, 'Informe o número da NF.', 'err'); return; }
+  if (status === 'paga' && !pgto) { setFb(fb, 'Informe a data do pagamento.', 'err'); return; }
+  setFb(fb, 'Salvando...');
+  try {
+    const { error } = await supabase.from('compras_estoque_fornecedor_mov').update({ pendencia_status: status, pendencia_nf: nf || null, pendencia_valor: valor, pendencia_data_pgto: status === 'paga' ? pgto : null }).eq('id', ed.id);
+    if (error) throw error;
+    state.aviso = { tipo: 'ok', texto: `Pendência atualizada: ${PEND_STATUS[status]}.` };
+    state.editandoPend = null;
+    await recarregar();
+  } catch (e) {
+    setFb(fb, await mensagemFalhaSalvar(e, e?.message || 'Não foi possível salvar a pendência.'), 'err');
+  }
+}
+
+// ----- movimentações -----
+
+function renderFornMovimentos(box) {
+  const rows = state.movsForn;
+  box.innerHTML = `<p class="stk-dica">Compras antecipadas, baixas/envios e ajustes do estoque no fornecedor (últimas ${rows.length}).</p>
+  <div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Data</th><th>Tipo</th><th>Fornecedor / material</th><th class="num">Qtd.</th><th class="num">Do saldo</th><th class="num">Sem saldo</th><th>Destino / NF</th><th>Observação</th></tr></thead><tbody>${rows.length ? rows.map((m) => {
+    const n = m.compras_estoque_fornecedor || {};
+    const tipo = { entrada: 'Compra', baixa: 'Baixa/envio', ajuste: 'Ajuste' }[m.tipo] || m.tipo;
+    return `<tr><td style="white-space:nowrap">${brDate(m.data_movimentacao)}</td><td><span class="stk-pill ${m.tipo === 'baixa' ? 'saida' : (m.tipo === 'entrada' ? 'entrada' : 'ajuste')}">${esc(tipo)}</span></td><td><b>${esc(n.fornecedor || '-')}</b><br><small class="muted">${esc(fornLabel(n))}</small></td><td class="num">${qtd(m.quantidade)}</td><td class="num">${m.tipo === 'ajuste' ? '-' : qtd(m.quantidade_estoque)}</td><td class="num">${Number(m.quantidade_pendente) > 0 ? qtd(m.quantidade_pendente) : '-'}</td><td>${esc(m.destino || m.numero_nf || '-')}<br><small class="muted">${esc(m.usuario_nome || '')}</small></td><td>${esc(m.observacao || '')}</td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="stk-empty">Nenhuma movimentação.</td></tr>'}</tbody></table></div>`;
 }
 
 // ---------- Alertas ----------
