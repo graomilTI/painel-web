@@ -295,6 +295,7 @@ async function boot() {
   await Promise.all([loadData({ useCache: true }), loadDashboard({ force: true })]);
   renderCurrentTab();
   startOsPrefetch();
+  startOsRealtime();
 }
 
 // operacional_pontos_embarque espelha o cadastro do GRM (~10 mil locais ativos) e o PostgREST
@@ -345,6 +346,182 @@ function startOsPrefetch() {
     // piscar, perder foco de campos ou alterar a posição de rolagem do gestor.
     refreshOsSilently().catch((error) => console.warn('[gestor-app] pré-carga silenciosa de O.S.:', error?.message || error));
   }, OS_PREFETCH_INTERVAL);
+}
+
+// ---------- Tempo real da lista de O.S. ----------
+// Cada mudança em operacional_os / operacional_os_colaboradores (outro gestor, conferência,
+// agente do GRM) é aplicada direto no estado, sem reler as ~1000 linhas, e a tela é
+// redesenhada com debounce. O rascunho local (colaborador escolhido e ainda não enviado,
+// "permitir 2 ou mais") só é descartado nas O.S. que mudaram de verdade em outro lugar.
+const OS_CAMPOS_RASCUNHO = ['status_gestor', 'configurada_em', 'permitir_mais_classificadores', 'observacao_logistica'];
+const osRealtimeTocadas = new Set();
+let osRealtimeChannel = null;
+let osRealtimeTimer = null;
+let osRealtimePersistTimer = null;
+
+function osVisivelParaGestor(row) {
+  return state.isMaster || !state.allowedSupervisoes.length || state.allowedSupervisoes.includes(row.supervisao);
+}
+
+function onOsRealtime(payload) {
+  if (payload.eventType === 'DELETE') {
+    const id = String(payload.old?.id ?? '');
+    if (!id || state.busy.has(id)) return;
+    const antes = state.os.length;
+    state.os = state.os.filter((row) => osId(row) !== id);
+    if (state.os.length === antes) return;
+    osRealtimeTocadas.add(id);
+    return agendarRealtimeOs();
+  }
+  const novo = payload.new;
+  const id = String(novo?.id ?? '');
+  if (!id || state.busy.has(id)) return;
+  const idx = state.os.findIndex((row) => osId(row) === id);
+  const atual = idx >= 0 ? state.os[idx] : null;
+  // Colunas grandes e inalteradas (TOAST) não vêm no evento: mescla sobre a linha atual.
+  const merged = atual ? { ...atual, ...novo } : novo;
+  if (!osVisivelParaGestor(merged)) {
+    if (!atual) return;
+    state.os.splice(idx, 1);
+    osRealtimeTocadas.add(id);
+  } else if (atual) {
+    if (OS_CAMPOS_RASCUNHO.some((campo) => String(atual[campo] ?? '') !== String(merged[campo] ?? ''))) osRealtimeTocadas.add(id);
+    state.os[idx] = merged;
+  } else {
+    state.os.push(merged);
+    osRealtimeTocadas.add(id);
+  }
+  agendarRealtimeOs();
+}
+
+function onAtribuicaoRealtime(payload) {
+  if (payload.eventType === 'DELETE') {
+    // Sem REPLICA IDENTITY FULL o evento só traz o id: o os_id vem da linha que já temos.
+    const id = String(payload.old?.id ?? '');
+    const alvo = state.atribuicoes.find((a) => String(a.id) === id);
+    if (!alvo || state.busy.has(String(alvo.os_id))) return;
+    state.atribuicoes = state.atribuicoes.filter((a) => String(a.id) !== id);
+    osRealtimeTocadas.add(String(alvo.os_id));
+    return agendarRealtimeOs();
+  }
+  const novo = payload.new;
+  const osKey = String(novo?.os_id ?? '');
+  if (!novo?.id || !osKey || state.busy.has(osKey)) return;
+  if (!state.os.some((row) => osId(row) === osKey)) return;
+  state.atribuicoes = [
+    ...state.atribuicoes.filter((a) => String(a.id) !== String(novo.id)
+      && !(String(a.os_id) === osKey && String(a.colaborador_key) === String(novo.colaborador_key))),
+    novo,
+  ];
+  osRealtimeTocadas.add(osKey);
+  agendarRealtimeOs();
+}
+
+function agendarRealtimeOs() {
+  clearTimeout(osRealtimeTimer);
+  osRealtimeTimer = setTimeout(aplicarRealtimeOs, 500);
+}
+
+function reidratarPreservandoRascunho(tocadas) {
+  const rascunho = new Map();
+  for (const row of state.os) {
+    const id = osId(row);
+    if (tocadas.has(id)) continue;
+    rascunho.set(id, { sel: state.selections.get(id), extras: state.extras.get(id), multi: state.allowMulti.has(id) });
+  }
+  hydrateSelections();
+  for (const [id, r] of rascunho) {
+    if (r.sel !== undefined) state.selections.set(id, r.sel);
+    if (r.extras !== undefined) state.extras.set(id, r.extras); else state.extras.delete(id);
+    if (r.multi) state.allowMulti.add(id); else state.allowMulti.delete(id);
+  }
+}
+
+function aplicarRealtimeOs() {
+  osRealtimeTimer = null;
+  const main = document.getElementById('appMain');
+  const emTela = Boolean(main) && (state.currentTab === 'programacao' || state.currentTab === 'os');
+  const ativo = document.activeElement;
+  // Redesenhar agora fecharia a lista de colaboradores e perderia o que o gestor está digitando.
+  if (emTela && ativo && main.contains(ativo) && ativo.matches('.gac-input')) {
+    osRealtimeTimer = setTimeout(aplicarRealtimeOs, 1500);
+    return;
+  }
+  const tocadas = new Set(osRealtimeTocadas);
+  osRealtimeTocadas.clear();
+  reidratarPreservandoRascunho(tocadas);
+
+  clearTimeout(osRealtimePersistTimer);
+  osRealtimePersistTimer = setTimeout(persistCurrentData, 3000);
+
+  if (!emTela) return;
+  const buscaFocada = ativo?.id === 'filterBusca' ? { start: ativo.selectionStart, end: ativo.selectionEnd } : null;
+  const y = window.scrollY;
+  renderOs(main);
+  window.scrollTo(0, y);
+  if (buscaFocada) {
+    const busca = main.querySelector('#filterBusca');
+    busca?.focus();
+    try { busca?.setSelectionRange(buscaFocada.start, buscaFocada.end); } catch (_) { /* tipo sem seleção */ }
+  }
+}
+
+function assinaturasOs() {
+  const porOs = new Map();
+  for (const a of state.atribuicoes) {
+    const key = String(a.os_id);
+    porOs.set(key, `${porOs.get(key) || ''},${a.colaborador_key}`);
+  }
+  const mapa = new Map();
+  for (const row of state.os) {
+    const id = osId(row);
+    mapa.set(id, `${OS_CAMPOS_RASCUNHO.map((campo) => String(row[campo] ?? '')).join('|')}#${porOs.get(id) || ''}`);
+  }
+  return mapa;
+}
+
+// Eventos podem se perder com a conexão fora do ar (celular em segundo plano): relê e
+// descarta o rascunho só das O.S. que realmente diferem do servidor.
+async function ressincronizarOs() {
+  if (state.loading) return;
+  try {
+    const antes = assinaturasOs();
+    const [os, atr] = await Promise.all([
+      fetchFreshOs(),
+      supabase.from('operacional_os_colaboradores').select('*').limit(5000),
+    ]);
+    if (atr.error) throw atr.error;
+    state.os = os;
+    state.atribuicoes = Array.isArray(atr.data) ? atr.data : [];
+    for (const [id, assinatura] of assinaturasOs()) {
+      if (antes.get(id) !== assinatura) osRealtimeTocadas.add(id);
+    }
+    for (const id of antes.keys()) if (!state.os.some((row) => osId(row) === id)) osRealtimeTocadas.add(id);
+    agendarRealtimeOs();
+  } catch (error) {
+    console.warn('[gestor-app] ressincronização de O.S.:', error?.message || error);
+  }
+}
+
+function startOsRealtime() {
+  if (osRealtimeChannel) supabase.removeChannel(osRealtimeChannel);
+  let jaConectou = false;
+  osRealtimeChannel = supabase
+    .channel('gestor-app-os-rt')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os' }, onOsRealtime)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os_colaboradores' }, onAtribuicaoRealtime)
+    .subscribe((status) => {
+      if (status !== 'SUBSCRIBED') return;
+      if (jaConectou) ressincronizarOs();
+      jaConectou = true;
+    });
+
+  let ocultoDesde = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { ocultoDesde = Date.now(); return; }
+    if (ocultoDesde && Date.now() - ocultoDesde > 20000) ressincronizarOs();
+    ocultoDesde = 0;
+  });
 }
 
 function renderShell() {
