@@ -123,7 +123,7 @@ async function loadBase() {
     safe(() => supabase.from('compras_estoque_movimentacoes').select('*, compras_estoque_materiais(nome,categoria,tamanho,unidade)').order('created_at', { ascending: false }).limit(300)),
     getColaboradores({ somenteAtivos: true }).catch(() => []),
     safe(() => supabase.from('compras_estoque_fornecedor').select('*').eq('ativo', true).order('fornecedor', { ascending: true }).order('material', { ascending: true }).limit(5000)),
-    safe(() => supabase.from('compras_estoque_fornecedor_mov').select('*, compras_estoque_fornecedor(fornecedor,material,tamanho,unidade)').order('created_at', { ascending: false }).limit(500))
+    safe(() => supabase.from('compras_estoque_fornecedor_mov').select('*, compras_estoque_fornecedor(fornecedor,material,tamanho,unidade), compras_itens(status,codigo,codigo_pagamento,valor_total)').order('created_at', { ascending: false }).limit(500))
   ]);
   definirMateriais(materiais);
   state.movs = movs || [];
@@ -783,7 +783,30 @@ const dinheiro = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currenc
 const fornLabel = (r) => materialLabel({ nome: r?.material, tamanho: r?.tamanho });
 const fornPorId = (id) => state.estoqueFornecedor.find((r) => r.id === id);
 const pendenciasForn = () => state.movsForn.filter((m) => Number(m.quantidade_pendente) > 0);
-const pendenciasAbertas = () => pendenciasForn().filter((m) => m.pendencia_status !== 'paga');
+// Com solicitação em Compras, a situação vem do item de Compras (cotação, pagamento, NF); sem ela, do controle manual.
+const COMPRAS_SITUACAO = {
+  pendente: ['Solicitado em Compras', 'critico'],
+  em_cotacao: ['Em cotação', 'critico'],
+  em_analise: ['Em aprovação', 'critico'],
+  pendente_pagamento: ['A pagar (Financeiro)', 'baixo'],
+  aguardando_nf: ['Pago, aguardando NF', 'baixo'],
+  aguardando_termo: ['Aguardando termo', 'baixo'],
+  comprado: ['Comprado, NF recebida', 'normal'],
+  concluido: ['Concluído', 'normal'],
+  recusado: ['Recusada em Compras', 'critico'],
+  recusado_financeiro: ['Recusada pelo Financeiro', 'critico'],
+  cancelado: ['Cancelada', 'normal']
+};
+function situacaoPendencia(m) {
+  const it = m.compras_item_id ? m.compras_itens : null;
+  if (it) {
+    const [label, cls] = COMPRAS_SITUACAO[it.status] || [it.status, 'baixo'];
+    return { label, cls, aberta: !['comprado', 'concluido', 'cancelado'].includes(it.status), compras: true };
+  }
+  const s = m.pendencia_status || 'aguardando_nf';
+  return { label: PEND_STATUS[s], cls: s === 'paga' ? 'normal' : (s === 'nf_emitida' ? 'baixo' : 'critico'), aberta: s !== 'paga', compras: false };
+}
+const pendenciasAbertas = () => pendenciasForn().filter((m) => situacaoPendencia(m).aberta);
 const chaveForn = (r) => [norm(r.fornecedor), norm(r.material), norm(r.tamanho), norm(r.unidade || 'UN')].join('|');
 
 function renderFornecedor(box) {
@@ -940,7 +963,7 @@ function renderFornBaixa(box) {
   if (b.estoqueId && !fornPorId(b.estoqueId)) b.estoqueId = '';
   const itens = state.estoqueFornecedor;
   const regionais = [...new Set(state.colaboradores.flatMap((c) => [c.coordenacao, c.supervisao]).filter(Boolean))].sort((a, c) => a.localeCompare(c, 'pt-BR'));
-  box.innerHTML = `<p class="stk-dica">Pede ao fornecedor a baixa do saldo comprado e o envio às regionais. O que passar do saldo fica como <b>pendente de NF e pagamento</b> (aba Pendências de NF).</p>
+  box.innerHTML = `<p class="stk-dica">Pede ao fornecedor a baixa do saldo comprado e o envio às regionais. O que passar do saldo gera uma solicitação no módulo <b>Compras</b> (NF e pagamento), acompanhada na aba Pendências de NF.</p>
   <form id="stkFornBaixaForm" class="stk-grid">
     <div class="stk-field stk-field-full"><label for="bItem">Material no fornecedor</label><select id="bItem" required><option value="">Selecione...</option>${itens.map((r) => `<option value="${esc(r.id)}" ${r.id === b.estoqueId ? 'selected' : ''}>${esc(r.fornecedor)} — ${esc(fornLabel(r))} — saldo ${qtd(r.quantidade)} ${esc(r.unidade || 'UN')}</option>`).join('')}</select></div>
     <div class="stk-field"><label for="bQtd">Quantidade a enviar</label><input id="bQtd" type="number" min="0.01" step="0.01" required value="${esc(b.qtd)}"></div>
@@ -967,7 +990,7 @@ function renderFornBaixa(box) {
     resumo.style.display = '';
     resumo.className = `stk-aviso ${pend > 0 ? 'err' : 'ok'}`;
     resumo.textContent = pend > 0
-      ? `Sai do saldo comprado: ${qtd(sai)} ${r.unidade || 'UN'}. Sem saldo: ${qtd(pend)} ${r.unidade || 'UN'} — ficará pendente de NF e pagamento.`
+      ? `Sai do saldo comprado: ${qtd(sai)} ${r.unidade || 'UN'}. Sem saldo: ${qtd(pend)} ${r.unidade || 'UN'} — vai para o módulo Compras (NF e pagamento).`
       : `Sai do saldo comprado: ${qtd(sai)} ${r.unidade || 'UN'}. Saldo restante no fornecedor: ${qtd(r2(r.quantidade) - sai)} ${r.unidade || 'UN'}.`;
   };
   ['bItem', 'bQtd', 'bDestino', 'bData', 'bObs'].forEach((id) => { document.getElementById(id).oninput = ler; document.getElementById(id).onchange = ler; });
@@ -988,7 +1011,17 @@ async function salvarBaixaFornecedor() {
   try {
     const res = await rpcForn('compras_estoque_fornecedor_baixar', { p_estoque_id: r.id, p_quantidade: q, p_destino: b.destino.trim(), p_data: b.data || hoje(), p_obs: b.obs.trim() || null, p_usuario_id: usuario().id || null, p_usuario_nome: userName() });
     const pend = Number(res?.quantidade_pendente || 0);
-    state.aviso = { tipo: 'ok', texto: `Baixa registrada: ${qtd(res?.quantidade_estoque)} ${r.unidade || 'UN'} saíram do saldo do fornecedor${pend > 0 ? `; ${qtd(pend)} ${r.unidade || 'UN'} sem saldo ficaram pendentes de NF e pagamento` : ''}.` };
+    let complemento = '';
+    if (pend > 0) {
+      try {
+        await criarSolicitacaoCompras({ movId: res.mov_id, fornecedor: r.fornecedor, material: r.material, tamanho: r.tamanho, quantidade: pend, valorUnitario: r.valor_unitario, destino: b.destino.trim(), data: b.data || hoje() });
+        complemento = `; ${qtd(pend)} ${r.unidade || 'UN'} sem saldo foram para o módulo Compras (NF e pagamento)`;
+      } catch (e) {
+        console.warn('[compras-estoque] solicitação em Compras', e);
+        complemento = `; ${qtd(pend)} ${r.unidade || 'UN'} sem saldo ficaram pendentes, mas a solicitação em Compras não foi criada — use "Gerar solicitação em Compras" na aba Pendências de NF`;
+      }
+    }
+    state.aviso = { tipo: 'ok', texto: `Baixa registrada: ${qtd(res?.quantidade_estoque)} ${r.unidade || 'UN'} saíram do saldo do fornecedor${complemento}.` };
     state.baixaForn = novaBaixaForn({ destino: b.destino, data: b.data });
     state.subForn = pend > 0 ? 'pendencias' : 'saldo';
     await recarregar();
@@ -1001,6 +1034,60 @@ async function salvarBaixaFornecedor() {
 
 // ----- pendências de NF -----
 
+// Cria a solicitação de compra do material que foi enviado sem saldo no fornecedor. Entra na aba
+// SOLICITAÇÕES de Compras e segue o fluxo normal (cotação → Financeiro → NF).
+async function criarSolicitacaoCompras({ movId, fornecedor, material, tamanho, quantidade, valorUnitario, destino, data }) {
+  const u = usuario();
+  const { data: cat } = await supabase.from('compras_catalogo').select('tipo').ilike('material', String(material).replace(/[\\%_]/g, '\\$&')).limit(1).maybeSingle();
+  const valor = Number(valorUnitario || 0) || null;
+  const { data: sol, error: e1 } = await supabase.from('compras_solicitacoes').insert({
+    data_solicitacao: hoje(),
+    solicitante_id: u.id || null,
+    solicitante: userName(),
+    coordenacao: u.coordenacao || u.supervisao || null,
+    tipo_solicitacao: 'estoque_fornecedor',
+    status: 'pendente',
+    fornecedor,
+    observacoes: `Material enviado sem saldo no estoque do fornecedor (baixa de ${brDate(data)} para ${destino}). Precisa de NF e pagamento.`,
+    created_by: u.id || null
+  }).select('id').single();
+  if (e1) throw e1;
+  const desfazer = () => supabase.from('compras_solicitacoes').delete().eq('id', sol.id);
+  const { data: item, error: e2 } = await supabase.from('compras_itens').insert({
+    solicitacao_id: sol.id,
+    material,
+    tipo: cat?.tipo || 'Outros',
+    tamanho: tamanho || null,
+    quantidade,
+    unidade: quantidade,
+    fornecedor,
+    valor_unitario: valor,
+    valor_total: valor ? r2(valor * quantidade) : null,
+    regional: destino,
+    status: 'pendente'
+  }).select('id').single();
+  if (e2) { await desfazer(); throw e2; }
+  const { data: vinculado, error: e3 } = await supabase.from('compras_estoque_fornecedor_mov').update({ compras_solicitacao_id: sol.id, compras_item_id: item.id }).eq('id', movId).is('compras_item_id', null).select('id');
+  if (e3 || !vinculado?.length) {
+    await desfazer();
+    throw e3 || new Error('Esta pendência já tem solicitação em Compras.');
+  }
+}
+
+async function gerarSolicitacaoDaPendencia(m, btn) {
+  const n = m.compras_estoque_fornecedor || {};
+  btn.disabled = true;
+  try {
+    await criarSolicitacaoCompras({ movId: m.id, fornecedor: n.fornecedor, material: n.material, tamanho: n.tamanho, quantidade: m.quantidade_pendente, valorUnitario: m.valor_unitario, destino: m.destino || '-', data: m.data_movimentacao });
+    state.aviso = { tipo: 'ok', texto: 'Solicitação criada no módulo Compras. NF e pagamento seguem o fluxo de lá.' };
+    await recarregar();
+  } catch (e) {
+    btn.disabled = false;
+    state.aviso = { tipo: 'err', texto: await mensagemFalhaSalvar(e, e?.message || 'Não foi possível criar a solicitação em Compras.') };
+    renderTab();
+  }
+}
+
 function renderFornPendencias(box) {
   const todas = state.filtroPend === 'todas';
   const rows = (todas ? pendenciasForn() : pendenciasAbertas());
@@ -1008,7 +1095,7 @@ function renderFornPendencias(box) {
   if (state.editandoPend && !ed) state.editandoPend = null;
   const nome = (m) => m.compras_estoque_fornecedor || {};
   const valorSug = ed ? (ed.pendencia_valor ?? (ed.valor_unitario ? r2(ed.valor_unitario * ed.quantidade_pendente) : '')) : '';
-  box.innerHTML = `<p class="stk-dica">Baixas que passaram do saldo comprado: o material pendente precisa de NF e pagamento ao fornecedor.</p>
+  box.innerHTML = `<p class="stk-dica">Baixas que passaram do saldo comprado: o material pendente vira uma solicitação no módulo <b>Compras</b>, onde seguem cotação, pagamento (Financeiro) e NF. A situação abaixo acompanha o andamento de lá.</p>
   ${ed ? `<form id="stkPendForm" class="stk-grid" style="margin-bottom:18px">
     <div class="stk-field stk-field-full"><label>Pendência</label><div>${esc(nome(ed).fornecedor || '')} — ${esc(fornLabel(nome(ed)))} — <b>${qtd(ed.quantidade_pendente)}</b> ${esc(nome(ed).unidade || 'UN')} para ${esc(ed.destino || '-')} (${brDate(ed.data_movimentacao)})</div></div>
     <div class="stk-field"><label for="pStatus">Situação</label><select id="pStatus">${Object.entries(PEND_STATUS).map(([v, l]) => `<option value="${v}" ${v === (ed.pendencia_status || 'aguardando_nf') ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
@@ -1021,9 +1108,19 @@ function renderFornPendencias(box) {
     <select id="pFiltro" aria-label="Filtro"><option value="abertas" ${todas ? '' : 'selected'}>Em aberto</option><option value="todas" ${todas ? 'selected' : ''}>Todas (inclui pagas)</option></select>
     <div class="stk-bar-fim"><span class="stk-total">${rows.length} ${rows.length === 1 ? 'pendência' : 'pendências'}</span></div>
   </div>
-  <div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Data</th><th>Fornecedor / material</th><th>Destino</th><th class="num">Sem saldo</th><th>Situação</th><th>NF</th><th class="num">Valor</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map((m) => `<tr><td style="white-space:nowrap">${brDate(m.data_movimentacao)}</td><td><b>${esc(nome(m).fornecedor || '-')}</b><br><small class="muted">${esc(fornLabel(nome(m)))}</small></td><td>${esc(m.destino || '-')}</td><td class="num">${qtd(m.quantidade_pendente)} ${esc(nome(m).unidade || 'UN')}</td><td><span class="stk-pill ${m.pendencia_status === 'paga' ? 'normal' : (m.pendencia_status === 'nf_emitida' ? 'baixo' : 'critico')}">${esc(PEND_STATUS[m.pendencia_status] || PEND_STATUS.aguardando_nf)}</span></td><td>${esc(m.pendencia_nf || '-')}</td><td class="num">${m.pendencia_valor ? dinheiro(m.pendencia_valor) : '-'}</td><td>${m.pendencia_data_pgto ? brDate(m.pendencia_data_pgto) : '-'}</td><td><button type="button" class="btn btn-secondary btn-small" data-pend-edit="${esc(m.id)}">Atualizar</button></td></tr>`).join('') : '<tr><td colspan="9" class="stk-empty">Nenhuma pendência.</td></tr>'}</tbody></table></div>`;
+  <div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Data</th><th>Fornecedor / material</th><th>Destino</th><th class="num">Sem saldo</th><th>Situação</th><th>Compra / NF</th><th class="num">Valor</th><th>Pagamento</th><th></th></tr></thead><tbody>${rows.length ? rows.map((m) => {
+    const sit = situacaoPendencia(m);
+    const it = sit.compras ? m.compras_itens : null;
+    const ref = it ? [it.codigo, it.codigo_pagamento].filter(Boolean).join(' · ') || 'Em Compras' : (m.pendencia_nf || '-');
+    const valor = it ? it.valor_total : m.pendencia_valor;
+    const acao = sit.compras
+      ? '<a class="btn btn-secondary btn-small" href="./adm-compras.html">Abrir em Compras</a>'
+      : `<button type="button" class="btn btn-primary btn-small" data-pend-compras="${esc(m.id)}">Gerar solicitação em Compras</button> <button type="button" class="btn btn-secondary btn-small" data-pend-edit="${esc(m.id)}">Atualizar</button>`;
+    return `<tr><td style="white-space:nowrap">${brDate(m.data_movimentacao)}</td><td><b>${esc(nome(m).fornecedor || '-')}</b><br><small class="muted">${esc(fornLabel(nome(m)))}</small></td><td>${esc(m.destino || '-')}</td><td class="num">${qtd(m.quantidade_pendente)} ${esc(nome(m).unidade || 'UN')}</td><td><span class="stk-pill ${sit.cls}">${esc(sit.label)}</span></td><td>${esc(ref)}</td><td class="num">${valor ? dinheiro(valor) : '-'}</td><td>${!sit.compras && m.pendencia_data_pgto ? brDate(m.pendencia_data_pgto) : '-'}</td><td style="white-space:nowrap">${acao}</td></tr>`;
+  }).join('') : '<tr><td colspan="9" class="stk-empty">Nenhuma pendência.</td></tr>'}</tbody></table></div>`;
 
   document.getElementById('pFiltro').onchange = (e) => { state.filtroPend = e.target.value; renderTab(); };
+  box.querySelectorAll('[data-pend-compras]').forEach((bt) => { bt.onclick = () => { const m = state.movsForn.find((x) => x.id === bt.dataset.pendCompras); if (m) gerarSolicitacaoDaPendencia(m, bt); }; });
   box.querySelectorAll('[data-pend-edit]').forEach((bt) => { bt.onclick = () => { state.editandoPend = bt.dataset.pendEdit; state.aviso = null; renderTab(); document.getElementById('stkPendForm')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }; });
   if (ed) {
     document.getElementById('pCancelar').onclick = () => { state.editandoPend = null; renderTab(); };
