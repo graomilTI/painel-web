@@ -8,6 +8,7 @@ const ABAS = [
   { id: 'inventario', label: 'Inventário' },
   { id: 'entradas', label: 'Entradas' },
   { id: 'saidas', label: 'Saídas' },
+  { id: 'fornecedor', label: 'Fornecedor' },
   { id: 'alertas', label: 'Alertas' },
   { id: 'historico', label: 'Histórico' },
   { id: 'materiais', label: 'Cadastro' }
@@ -34,12 +35,15 @@ const state = {
   materiais: [],      // cadastros ativos, como estão no banco
   grupos: [],         // cadastros iguais somados (é o que a tela mostra)
   movs: [],
+  estoqueFornecedor: [],
   colaboradores: [],
   tab: 'inventario',
   modoSaida: 'simples',
   aviso: null,
   filtroInv: { busca: '', categoria: '', status: '' },
   filtroHist: { busca: '', tipo: '' },
+  filtroForn: { busca: '', fornecedor: '' },
+  editandoForn: null,
   lote: null
 };
 let ctxAtual = null;
@@ -109,13 +113,15 @@ function definirColaboradores(lista) {
 }
 
 async function loadBase() {
-  const [materiais, movs, colabs] = await Promise.all([
+  const [materiais, movs, colabs, fornecedor] = await Promise.all([
     safe(() => supabase.from('compras_estoque_materiais').select('*').order('nome', { ascending: true }).limit(5000)),
     safe(() => supabase.from('compras_estoque_movimentacoes').select('*, compras_estoque_materiais(nome,categoria,tamanho,unidade)').order('created_at', { ascending: false }).limit(300)),
-    getColaboradores({ somenteAtivos: true }).catch(() => [])
+    getColaboradores({ somenteAtivos: true }).catch(() => []),
+    safe(() => supabase.from('compras_estoque_fornecedor').select('*').eq('ativo', true).order('fornecedor', { ascending: true }).order('material', { ascending: true }).limit(5000))
   ]);
   definirMateriais(materiais);
   state.movs = movs || [];
+  state.estoqueFornecedor = fornecedor || [];
   definirColaboradores(colabs);
 }
 
@@ -329,7 +335,7 @@ function render() {
 function renderTab() {
   const box = document.getElementById('stkContent');
   if (!box) return;
-  ({ inventario: renderInventario, entradas: renderEntradas, saidas: renderSaidas, alertas: renderAlertas, historico: renderHistorico, materiais: renderCadastro }[state.tab] || renderInventario)(box);
+  ({ inventario: renderInventario, entradas: renderEntradas, saidas: renderSaidas, fornecedor: renderFornecedor, alertas: renderAlertas, historico: renderHistorico, materiais: renderCadastro }[state.tab] || renderInventario)(box);
 }
 
 async function recarregar() {
@@ -751,6 +757,124 @@ async function salvarLote() {
   } finally {
     lote.tag = '';
     btn.disabled = false;
+  }
+}
+
+// ---------- Fornecedor ----------
+// Material que está guardado no fornecedor. É um controle à parte: não entra no saldo do Inventário.
+
+function fornecedorFiltrado() {
+  const { busca, fornecedor } = state.filtroForn;
+  const q = norm(busca);
+  return state.estoqueFornecedor.filter((r) => (!fornecedor || r.fornecedor === fornecedor)
+    && (!q || norm(`${r.fornecedor} ${r.material} ${r.tamanho} ${r.observacao}`).includes(q)));
+}
+
+function tabelaFornecedor(rows) {
+  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Fornecedor</th><th>Material</th><th class="num">Quantidade</th><th class="num">Valor unit.</th><th>Observação</th><th>Atualizado</th><th></th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr><td><b>${esc(r.fornecedor)}</b></td><td>${esc(materialLabel({ nome: r.material, tamanho: r.tamanho }))}</td><td class="num">${qtd(r.quantidade)} ${esc(r.unidade || 'UN')}</td><td class="num">${r.valor_unitario ? Number(r.valor_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '-'}</td><td>${esc(r.observacao || '')}</td><td style="white-space:nowrap">${brDate(r.updated_at)}<br><small class="muted">${esc(r.usuario_nome || '')}</small></td><td style="white-space:nowrap"><button type="button" class="btn btn-secondary btn-small" data-forn-edit="${esc(r.id)}">Editar</button> <button type="button" class="btn btn-secondary btn-small" data-forn-del="${esc(r.id)}">Remover</button></td></tr>`).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material no fornecedor.</td></tr>'}</tbody></table></div>`;
+}
+
+function renderFornecedor(box) {
+  const f = state.filtroForn;
+  const ed = state.editandoForn ? state.estoqueFornecedor.find((r) => r.id === state.editandoForn) : null;
+  if (state.editandoForn && !ed) state.editandoForn = null;
+  const fornecedores = [...new Set(state.estoqueFornecedor.map((r) => r.fornecedor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const nomesCatalogo = [...new Set(state.grupos.map((g) => g.nome).filter(Boolean))];
+  box.innerHTML = `${avisoHtml()}<p class="stk-dica">Material que está em estoque no fornecedor. Este controle é separado do Inventário: não altera o saldo do estoque próprio.</p>
+  <form id="stkFornForm" class="stk-grid" style="margin-bottom:18px">
+    <div class="stk-field stk-field-2"><label for="fFornecedor">Fornecedor</label><input id="fFornecedor" list="stkFornecedores" placeholder="Nome do fornecedor" required autocomplete="off" value="${esc(ed?.fornecedor || f.fornecedor)}"></div>
+    <div class="stk-field stk-field-2"><label for="fMaterial">Material</label><input id="fMaterial" list="stkMateriaisCat" placeholder="Ex: Uniforme Polo" required autocomplete="off" value="${esc(ed?.material || '')}"></div>
+    <div class="stk-field"><label for="fTamanho">Tamanho/Detalhe</label><input id="fTamanho" placeholder="Ex: G, GG, 2m" value="${esc(ed?.tamanho || '')}"></div>
+    ${selectField('Unidade', 'fUnidade', UNIDADES, ed?.unidade || 'UN')}
+    <div class="stk-field"><label for="fQtd">Quantidade em estoque</label><input id="fQtd" type="number" min="0" step="0.01" required value="${ed ? esc(ed.quantidade) : ''}"></div>
+    <div class="stk-field"><label for="fValor">Valor unitário</label><input id="fValor" type="number" min="0" step="0.01" placeholder="Opcional" value="${ed?.valor_unitario ? esc(ed.valor_unitario) : ''}"></div>
+    <div class="stk-field stk-field-full"><label for="fObs">Observação</label><input id="fObs" placeholder="Opcional" value="${esc(ed?.observacao || '')}"></div>
+    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">${ed ? 'Salvar alterações' : 'Adicionar ao estoque do fornecedor'}</button>${ed ? '<button type="button" class="btn btn-secondary" id="fCancelar">Cancelar edição</button>' : ''}<span id="fFb" class="stk-feedback"></span></div>
+  </form>
+  <datalist id="stkFornecedores">${fornecedores.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+  <datalist id="stkMateriaisCat">${nomesCatalogo.map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+  <div class="stk-bar">
+    <input class="stk-grow" id="fBusca" type="search" placeholder="Buscar fornecedor ou material..." value="${esc(f.busca)}" aria-label="Buscar no estoque do fornecedor">
+    <select id="fFiltroForn" aria-label="Fornecedor"><option value="">Todos os fornecedores</option>${fornecedores.map((n) => `<option value="${esc(n)}" ${n === f.fornecedor ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    <div class="stk-bar-fim"><span class="stk-total" id="fTotal"></span></div>
+  </div>
+  <div id="fTabela"></div>`;
+
+  const pintar = () => {
+    const rows = fornecedorFiltrado();
+    document.getElementById('fTabela').innerHTML = tabelaFornecedor(rows);
+    document.getElementById('fTotal').textContent = rows.length === state.estoqueFornecedor.length ? `${rows.length} itens` : `${rows.length} de ${state.estoqueFornecedor.length} itens`;
+  };
+  pintar();
+  document.getElementById('fBusca').oninput = (e) => { f.busca = e.target.value; pintar(); };
+  document.getElementById('fFiltroForn').onchange = (e) => { f.fornecedor = e.target.value; pintar(); };
+  document.getElementById('fTabela').onclick = (e) => {
+    const editar = e.target.closest('[data-forn-edit]');
+    const remover = e.target.closest('[data-forn-del]');
+    if (editar) { state.editandoForn = editar.dataset.fornEdit; state.aviso = null; renderTab(); document.getElementById('stkFornForm')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    if (remover) removerEstoqueFornecedor(remover.dataset.fornDel, remover);
+  };
+  const cancelar = document.getElementById('fCancelar');
+  if (cancelar) cancelar.onclick = () => { state.editandoForn = null; renderTab(); };
+  document.getElementById('stkFornForm').onsubmit = async (ev) => { ev.preventDefault(); await salvarEstoqueFornecedor(ed); };
+}
+
+async function salvarEstoqueFornecedor(ed) {
+  const val = (id) => document.getElementById(id).value;
+  const fb = document.getElementById('fFb');
+  const payload = {
+    fornecedor: val('fFornecedor').trim(),
+    material: val('fMaterial').trim(),
+    tamanho: val('fTamanho').trim() || null,
+    unidade: val('fUnidade'),
+    quantidade: r2(val('fQtd')),
+    valor_unitario: Number(val('fValor') || 0) || null,
+    observacao: val('fObs').trim() || null,
+    usuario_id: usuario().id || null,
+    usuario_nome: userName()
+  };
+  if (!payload.fornecedor || !payload.material || val('fQtd') === '' || payload.quantidade < 0) { setFb(fb, 'Informe fornecedor, material e uma quantidade válida.', 'err'); return; }
+  setFb(fb, 'Salvando...');
+  try {
+    if (ed) {
+      const { error } = await supabase.from('compras_estoque_fornecedor').update(payload).eq('id', ed.id);
+      if (error) throw error;
+    } else {
+      // Mesmo fornecedor + material + tamanho + unidade: atualiza a quantidade em vez de duplicar a linha.
+      const chave = (r) => [norm(r.fornecedor), norm(r.material), norm(r.tamanho), norm(r.unidade || 'UN')].join('|');
+      const existente = state.estoqueFornecedor.find((r) => chave(r) === chave(payload));
+      if (existente) {
+        const { error } = await supabase.from('compras_estoque_fornecedor').update(payload).eq('id', existente.id);
+        if (error) throw error;
+        payload.atualizou = true;
+      } else {
+        const { error } = await supabase.from('compras_estoque_fornecedor').insert(payload);
+        if (error) throw error;
+      }
+    }
+    state.aviso = { tipo: 'ok', texto: ed || payload.atualizou ? `Estoque de ${materialLabel({ nome: payload.material, tamanho: payload.tamanho })} no fornecedor ${payload.fornecedor} atualizado.` : `${materialLabel({ nome: payload.material, tamanho: payload.tamanho })} adicionado ao estoque do fornecedor ${payload.fornecedor}.` };
+    state.editandoForn = null;
+    state.filtroForn.fornecedor = payload.fornecedor;
+    await recarregar();
+  } catch (e) {
+    setFb(fb, await mensagemFalhaSalvar(e, e?.message || 'Não foi possível salvar o estoque do fornecedor.'), 'err');
+  }
+}
+
+async function removerEstoqueFornecedor(id, btn) {
+  const r = state.estoqueFornecedor.find((x) => x.id === id);
+  if (!r || !window.confirm(`Remover ${materialLabel({ nome: r.material, tamanho: r.tamanho })} do estoque do fornecedor ${r.fornecedor}?`)) return;
+  btn.disabled = true;
+  try {
+    const { error } = await supabase.from('compras_estoque_fornecedor').update({ ativo: false }).eq('id', id);
+    if (error) throw error;
+    state.aviso = { tipo: 'ok', texto: 'Item removido do estoque do fornecedor.' };
+    if (state.editandoForn === id) state.editandoForn = null;
+    await recarregar();
+  } catch (e) {
+    btn.disabled = false;
+    state.aviso = { tipo: 'err', texto: await mensagemFalhaSalvar(e, e?.message || 'Não foi possível remover o item.') };
+    renderTab();
   }
 }
 
