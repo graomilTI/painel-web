@@ -71,7 +71,7 @@ const observer = new MutationObserver(applyPageIdentity);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyPageIdentity();
 
-import('./adm-logistica.js?v=20261020-os-realtime1')
+import('./adm-logistica.js?v=20261020-os-realtime2')
   .then(async () => {
     applyPageIdentity();
     if (tab === 'abertura_os') {
