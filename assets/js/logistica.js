@@ -145,6 +145,7 @@ const state = {
   cidadesIbge: [],
   osRegional: [],
   osRegionalLoading: false,
+  osRegionalLoaded: false,
   loading: false,
   atualizarAberto: {}, // { [osId]: 'conferencia'|'saldo'|'finalizar' } — ação em edição no momento
   atualizarFiltros: { os: '', cliente: '', cidade: '', local: '' }
@@ -166,6 +167,8 @@ function getMinhasRegionais(ctx) {
 }
 
 const REGIONAL_TABS = ['atualizar'];
+const OS_REGIONAL_COLUNAS = ['id', 'numero_os', 'data_os', 'cliente', 'embarque', 'destino', 'supervisao', 'remanescente', 'lote', 'status_gestor', 'status_logistica', 'observacao_logistica', 'atualizar_resolvido_tipo', 'atualizar_resolvido_em'];
+let osRegionalChannel = null;
 
 export async function renderContent(content, userContext) {
   injectStyles();
@@ -326,6 +329,7 @@ export async function renderContent(content, userContext) {
   if (state.tab === 'abrir_os') await loadAberturaOs();
   if (REGIONAL_TABS.includes(state.tab)) await Promise.all([loadOsRegional(state.ctx), ensureRegrasAnexoSaldo()]);
   render(content);
+  iniciarRealtimeOsRegional(content);
 }
 
 initProtectedPage('Logística', renderContent);
@@ -529,13 +533,86 @@ async function loadOsRegional(ctx) {
 
   const rows = safe(data);
   const minhasRegionais = getMinhasRegionais(ctx);
-  state.osRegional = minhasRegionais.length
-    ? rows.filter((r) => {
-        const reg = normalizeText(r.supervisao);
-        return minhasRegionais.some((m) => reg.includes(m) || m.includes(reg));
-      })
-    : rows;
+  state.osRegional = rows.filter((r) => osNaMinhaRegional(r, minhasRegionais));
+  state.osRegionalLoaded = true;
   state.osRegionalLoading = false;
+}
+
+function osNaMinhaRegional(row, minhasRegionais) {
+  if (!minhasRegionais.length) return true;
+  const reg = normalizeText(row.supervisao);
+  return minhasRegionais.some((m) => reg.includes(m) || m.includes(reg));
+}
+
+// Aba "Atualizar" em tempo real: aplica cada mudança de operacional_os direto em
+// state.osRegional (mesmo recorte de loadOsRegional: 90 dias + regional do usuário) e
+// redesenha com debounce. Não redesenha com uma ação aberta (KG digitado, arquivo escolhido),
+// senão o formulário seria apagado.
+
+function iniciarRealtimeOsRegional(content) {
+  if (osRegionalChannel) { supabase.removeChannel(osRegionalChannel); osRegionalChannel = null; }
+  let timer = null;
+  let jaConectou = false;
+  const ordenar = (a, b) => String(b.data_os || '').localeCompare(String(a.data_os || ''));
+  const mesmoId = (a, b) => String(a) === String(b);
+
+  const encerrar = () => {
+    clearTimeout(timer);
+    if (osRegionalChannel === canal) { supabase.removeChannel(canal); osRegionalChannel = null; }
+  };
+  const redesenhar = () => {
+    if (!content.isConnected) return encerrar();
+    if (state.tab !== 'atualizar') return;
+    if (Object.values(state.atualizarAberto).some(Boolean)) { timer = setTimeout(redesenhar, 1500); return; }
+    const ativo = document.activeElement;
+    const filtro = ativo?.id?.startsWith('atz-f-') ? { id: ativo.id, pos: ativo.selectionStart } : null;
+    const y = window.scrollY;
+    render(content);
+    window.scrollTo(0, y);
+    if (filtro) {
+      const campo = content.querySelector(`#${filtro.id}`);
+      if (campo) { campo.focus(); try { campo.setSelectionRange(filtro.pos, filtro.pos); } catch (_) { /* sem seleção */ } }
+    }
+  };
+  const agendar = () => { clearTimeout(timer); timer = setTimeout(redesenhar, 400); };
+
+  const onOs = (payload) => {
+    if (!state.osRegionalLoaded) return; // a primeira abertura da aba já lê o estado atual
+    if (payload.eventType === 'DELETE') {
+      const antes = state.osRegional.length;
+      state.osRegional = state.osRegional.filter((r) => !mesmoId(r.id, payload.old?.id));
+      if (state.osRegional.length !== antes) agendar();
+      return;
+    }
+    const novo = payload.new;
+    if (!novo?.id) return;
+    const idx = state.osRegional.findIndex((r) => mesmoId(r.id, novo.id));
+    const merged = Object.fromEntries(OS_REGIONAL_COLUNAS.map((c) => [c, novo[c] !== undefined ? novo[c] : state.osRegional[idx]?.[c]]));
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
+    const dentro = merged.data_os && String(merged.data_os).slice(0, 10) >= cutoff.toISOString().slice(0, 10)
+      && osNaMinhaRegional(merged, getMinhasRegionais(state.ctx));
+    if (dentro) {
+      if (idx >= 0) state.osRegional[idx] = merged;
+      else { state.osRegional.push(merged); state.osRegional.sort(ordenar); }
+      agendar();
+    } else if (idx >= 0) {
+      state.osRegional.splice(idx, 1);
+      agendar();
+    }
+  };
+
+  const canal = supabase
+    .channel(`logistica-atualizar-rt-${Date.now()}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os' }, onOs)
+    .subscribe(async (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      // Reconexão: eventos perdidos enquanto estava fora do ar → relê a lista uma vez.
+      if (jaConectou && content.isConnected && state.osRegionalLoaded) {
+        try { await loadOsRegional(state.ctx); agendar(); } catch (error) { console.warn('Falha ao ressincronizar O.S.', error); }
+      }
+      jaConectou = true;
+    });
+  osRegionalChannel = canal;
 }
 
 function render(content) {
