@@ -193,6 +193,68 @@ export function custoDoMes(manutencoes = [], mes = hojeBrasil().slice(0, 7)) {
   return { total: Math.round(total * 100) / 100, qtd };
 }
 
+// ---------- números do dashboard ----------
+// Manutenções dos veículos da coordenação/supervisão escolhidas (vazio = todas).
+export function filtrarPorVeiculos(manutencoes = [], veiculos = new Map(), { coordenacao = '', supervisao = '' } = {}) {
+  if (!coordenacao && !supervisao) return manutencoes;
+  return manutencoes.filter((m) => {
+    const v = veiculos.get(m.veiculo_id);
+    return !!v && (!coordenacao || v.coordenacao === coordenacao) && (!supervisao || v.supervisao === supervisao);
+  });
+}
+
+const concluidaComCusto = (m) => m.status === 'concluida' && m.responsavel_pagamento === 'empresa' && Number(m.custo) > 0;
+const arred = (n) => Math.round(n * 100) / 100;
+
+// Custo final por mês nos últimos `meses` meses (o atual incluído, do mais antigo ao mais novo), separado em preventiva e corretiva
+// (o que não é preventiva conta como corretiva). Só o que a empresa paga.
+export function custoPorMes(manutencoes = [], { meses = 6, hoje = hojeBrasil() } = {}) {
+  const [ano, mes] = hoje.split('-').map(Number);
+  const lista = [];
+  for (let i = meses - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(ano, mes - 1 - i, 1));
+    lista.push({ mes: d.toISOString().slice(0, 7), preventiva: 0, corretiva: 0, total: 0, qtd: 0 });
+  }
+  const por = new Map(lista.map((l) => [l.mes, l]));
+  for (const m of manutencoes) {
+    if (!concluidaComCusto(m)) continue;
+    const l = por.get(mesDe(dataBrasil(m.data_execucao || m.concluida_em)));
+    if (!l) continue;
+    l[m.natureza === 'preventiva' ? 'preventiva' : 'corretiva'] += Number(m.custo);
+    l.qtd += 1;
+  }
+  for (const l of lista) { l.preventiva = arred(l.preventiva); l.corretiva = arred(l.corretiva); l.total = arred(l.preventiva + l.corretiva); }
+  return lista;
+}
+
+// Maiores custos dos últimos `dias` dias por oficina ou por veículo (placa). `top` itens, mais caro primeiro.
+export function maioresCustos(manutencoes = [], veiculos = new Map(), por = 'oficina', { top = 5, dias = 365, hoje = hojeBrasil() } = {}) {
+  const limite = somarDias(hoje, -dias);
+  const soma = new Map();
+  for (const m of manutencoes) {
+    if (!concluidaComCusto(m)) continue;
+    if ((dataBrasil(m.data_execucao || m.concluida_em) || '') < limite) continue;
+    const chave = por === 'veiculo' ? (veiculos.get(m.veiculo_id)?.placa || '(sem placa)') : (String(m.oficina || '').trim() || '(sem oficina)');
+    const g = soma.get(chave) || { rotulo: chave, total: 0, qtd: 0 };
+    g.total += Number(m.custo); g.qtd += 1; soma.set(chave, g);
+  }
+  return [...soma.values()].map((g) => ({ ...g, total: arred(g.total) })).sort((a, b) => b.total - a.total || compara(a.rotulo, b.rotulo)).slice(0, top);
+}
+
+// Duração média na oficina (dias entre a entrada e a conclusão) das concluídas nos últimos `dias` dias; null sem dados.
+export function tempoMedioOficina(manutencoes = [], { dias = 90, hoje = hojeBrasil() } = {}) {
+  const limite = somarDias(hoje, -dias);
+  const duracoes = [];
+  for (const m of manutencoes) {
+    if (m.status !== 'concluida' || !m.entrada_oficina_em) continue;
+    const fim = dataBrasil(m.data_execucao || m.concluida_em); const ini = dataBrasil(m.entrada_oficina_em);
+    if (!fim || !ini || fim < limite) continue;
+    const d = diasEntre(ini, fim);
+    if (d != null && d >= 0) duracoes.push(d);
+  }
+  return duracoes.length ? Math.round((duracoes.reduce((s, d) => s + d, 0) / duracoes.length) * 10) / 10 : null;
+}
+
 // ---------- filtros de coordenação/supervisão ----------
 export function opcoesDe(veiculos = [], campo) {
   return [...new Set(veiculos.map((v) => String(v[campo] || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));

@@ -1,132 +1,145 @@
-// Frotas · Manutenção › Painel: visão de conjunto da frota. Indicadores do dia, alertas, veículos parados, quadro por etapa
-// (solicitada → orçamento → aprovação → OS → oficina) e a saúde da preventiva. Clicar num cartão abre a ficha na aba Corretiva.
+// Frotas · Manutenção › Painel: dashboard da frota. Poucos números no topo, dois gráficos (custo por mês e manutenções por etapa),
+// a saúde da preventiva, os maiores custos e o que pede atenção. A lista completa das manutenções fica na aba Corretiva.
 import { dataBR, dinheiro, esc, toast } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
 import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261020-frotas-manut44';
 import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261020-frotas-manut44';
-import { PRIORIDADES, statusInfo } from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
 import {
-  FILTROS_VAZIOS, SAUDE, contarSaude, custoDoMes, hojeBrasil, listaPorAtencao, listarParados, montarAlertas, montarQuadro, opcoesDe, estaAberta,
+  SAUDE, contarSaude, custoDoMes, custoPorMes, filtrarPorVeiculos, hojeBrasil, listarParados, maioresCustos, montarAlertas, montarQuadro, opcoesDe, estaAberta, tempoMedioOficina,
 } from './frotas-manutencao-visao-regras.js?v=20261020-frotas-manut44';
-import { abrirFicha, abrirNovaManutencao, abrirPreventiva, irCorretiva, abrirProntuario, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261020-frotas-manut44';
+import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carregarVisao, invalidarVisao, irCorretiva } from './frotas-manutencao-visao-dados.js?v=20261020-frotas-manut44';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PAINEL';
-  const LIMITE_LISTA = 10; const LIMITE_PARADOS = 6; const LIMITE_ALERTAS = 5;
-  const state = { supabase: null, root: null, visao: null, todosParados: false, todosAlertas: false, filtros: { ...FILTROS_VAZIOS }, etapa: '', limite: LIMITE_LISTA, loading: false };
+  const LIMITE_PARADOS = 5; const LIMITE_ALERTAS = 5;
+  const state = { supabase: null, root: null, visao: null, loading: false, coordenacao: '', supervisao: '', todosParados: false, todosAlertas: false };
 
-  const rotuloPrioridade = (id) => PRIORIDADES.find((p) => p.id === id)?.label || id;
   const dataCurta = (iso) => (iso ? dataBR(iso) : '—');
-
-  // ---------- partes ----------
-  // Faixa de etapas: só contagens (clicáveis), em vez de uma coluna de cartões por etapa.
-  function htmlEtapas(q) {
-    return `<div class="fm-etapas">${q.colunas.map((col) => `<button type="button" class="fm-etapa-b tone-${col.tone}${state.etapa === col.id ? ' ativo' : ''}" data-etapa="${col.id}" aria-pressed="${state.etapa === col.id}" title="${esc(col.dica)}"><strong>${col.itens.length}</strong><span>${esc(col.titulo)}</span>${col.atrasadas ? `<em>${col.atrasadas} atrasada(s)</em>` : ''}</button>`).join('')}</div>`;
+  // R$ 1.234 → "R$ 1,2 mil"; abaixo de mil, o valor inteiro. Eixos e rótulos curtos; o valor exato vai na dica.
+  function moedaCurta(v) {
+    const n = Number(v) || 0;
+    if (n >= 1000000) return `R$ ${(n / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+    if (n >= 1000) return `R$ ${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+    return `R$ ${Math.round(n).toLocaleString('pt-BR')}`;
+  }
+  const nomeMes = (aaaamm) => new Date(`${aaaamm}-15T12:00:00`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  // Teto do eixo: o próximo número "redondo" acima do maior valor (1, 2, 2,5, 5 × 10^n).
+  function tetoEixo(max) {
+    if (!(max > 0)) return 1;
+    const base = 10 ** Math.floor(Math.log10(max));
+    return ([1, 2, 2.5, 5, 10].map((f) => f * base).find((t) => t >= max)) || max;
   }
 
-  // Lista compacta: uma linha por manutenção, as que pedem atenção primeiro, poucas por vez.
-  function htmlLista(q) {
-    const todas = listaPorAtencao(q, state.etapa);
-    if (!todas.length) return '<div class="fm-empty">Nenhuma manutenção em andamento neste filtro.</div>';
-    const linhas = todas.slice(0, state.limite).map((c) => {
-      const prazo = c.entregaAtrasada ? '<span class="fm-badge red">Entrega atrasada</span>'
-        : c.atrasada ? `<span class="fm-badge amber" title="Mais tempo na etapa do que o esperado">${c.dias} dia(s) aqui</span>`
-        : `<span class="fm-mm">${c.dias ? `${c.dias} dia(s) na etapa` : 'entrou hoje'}</span>`;
-      const marcas = [c.parado ? '<span class="fm-badge red">Parado</span>' : '', ['alta', 'urgente'].includes(c.prioridade) ? `<span class="fm-badge ${c.prioridade === 'urgente' ? 'red' : 'amber'}">${esc(rotuloPrioridade(c.prioridade))}</span>` : ''].join('');
-      const extra = [c.status === 'em_execucao' ? (c.previsao ? `entrega ${esc(dataCurta(c.previsao))}` : '<span class="fm-vazio-aviso">sem previsão</span>') : '', c.valor != null ? esc(dinheiro(c.valor)) : ''].filter(Boolean).join(' · ');
-      return `<div class="fm-pl${c.atrasada || c.entregaAtrasada ? ' atraso' : ''}" role="button" tabindex="0" data-ficha="${esc(c.id)}">
-        <div class="fm-pl-id">${linkPlaca(c.placa, c.veiculo_id)}<span class="fm-mm">${esc(c.modelo)}${c.coordenacao ? ` · ${esc(c.coordenacao)}` : ''}</span></div>
-        <div class="fm-pl-desc">${esc(c.descricao || 'Sem descrição')}${extra ? `<span class="fm-mm">${extra}</span>` : ''}</div>
-        <div class="fm-pl-etapa"><span class="fm-badge ${statusInfo(c.status).tone}">${esc(statusInfo(c.status).label)}</span>${marcas}</div>
-        <div class="fm-pl-prazo">${prazo}</div></div>`;
+  // ---------- peças do dashboard ----------
+  function htmlFaixa({ parados, andamento, atencao, custo, anterior, tempo }) {
+    const delta = anterior > 0 ? Math.round(((custo.total - anterior) / anterior) * 100) : null;
+    const dica = delta == null ? `${custo.qtd} serviço(s) concluído(s)` : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)}% sobre o mês anterior`;
+    const cel = (valor, rotulo, nota, tom = '') => `<div class="fm-fx"><span>${esc(rotulo)}</span><strong class="${tom}">${valor}</strong><small>${nota}</small></div>`;
+    return `<div class="fm-faixa">${cel(parados, 'Parados agora', parados ? 'veículos na oficina' : 'nenhum na oficina', parados ? 'red' : '')}
+      ${cel(andamento, 'Em andamento', 'manutenções abertas')}
+      ${cel(atencao, 'Pedem atenção', atencao ? 'veja a lista abaixo' : 'tudo no prazo', atencao ? 'amber' : '')}
+      ${cel(esc(moedaCurta(custo.total)), 'Custo no mês', esc(dica))}
+      ${cel(tempo == null ? '—' : `${tempo.toLocaleString('pt-BR')} d`, 'Tempo médio na oficina', 'concluídas nos últimos 90 dias')}</div>`;
+  }
+
+  // Colunas empilhadas por mês (preventiva embaixo, corretiva em cima), grade leve e dica ao passar o mouse.
+  function htmlCustoMensal(meses) {
+    const max = Math.max(...meses.map((m) => m.total));
+    if (!(max > 0)) return '<div class="fm-graf-vazio">Ainda não há manutenção concluída com custo nos últimos 6 meses.</div>';
+    const teto = tetoEixo(max);
+    const grade = [1, 0.5].map((f) => `<div class="fm-grade" style="bottom:${f * 100}%"><span>${esc(moedaCurta(teto * f))}</span></div>`).join('');
+    const colunas = meses.map((m) => {
+      const h = (v) => `${(v / teto) * 100}%`;
+      const dica = `${nomeMes(m.mes)}: ${dinheiro(m.total)} em ${m.qtd} serviço(s) — corretiva ${dinheiro(m.corretiva)}, preventiva ${dinheiro(m.preventiva)}`;
+      return `<div class="fm-mes" data-tip="${esc(dica)}" tabindex="0" aria-label="${esc(dica)}">
+        <div class="fm-mes-pilha">${m.corretiva ? `<i class="corretiva" style="height:${h(m.corretiva)}"></i>` : ''}${m.preventiva ? `<i class="preventiva" style="height:${h(m.preventiva)}"></i>` : ''}</div>
+        <span class="fm-mes-nome">${esc(nomeMes(m.mes))}</span></div>`;
     }).join('');
-    const resto = todas.length - state.limite;
-    return `<div class="fm-pl-lista">${linhas}</div>${resto > 0 ? `<div class="fm-pl-mais"><button class="fm-btn ghost fm-mini" type="button" data-mais-lista>Mostrar mais ${Math.min(resto, LIMITE_LISTA)} (faltam ${resto})</button><button class="fm-link" type="button" data-ir-corretiva>Ver todas na Corretiva →</button></div>` : '<div class="fm-pl-mais"><button class="fm-link" type="button" data-ir-corretiva>Abrir a lista completa na Corretiva →</button></div>'}`;
+    return `<div class="fm-graf-cols"><div class="fm-graf-area">${grade}<div class="fm-mes-lista">${colunas}</div></div></div>
+      <div class="fm-legenda"><span><i class="corretiva"></i>Corretiva</span><span><i class="preventiva"></i>Preventiva</span></div>`;
+  }
+
+  // Barras horizontais com rótulo à esquerda e valor à direita. itens: [{ rotulo, valor, texto, extra?, tip, alvo? }]
+  function htmlBarras(itens, { vazio, cor = 'azul' }) {
+    if (!itens.length) return `<div class="fm-graf-vazio">${esc(vazio)}</div>`;
+    const max = Math.max(...itens.map((i) => i.valor), 1);
+    return `<div class="fm-barras">${itens.map((i) => {
+      const rotulo = i.alvo ? `<button type="button" class="fm-placa" ${i.alvo}>${esc(i.rotulo)}</button>` : `<span>${esc(i.rotulo)}</span>`;
+      const extra = i.extra ? `<i class="atraso" style="width:${(i.extra / max) * 100}%"></i>` : '';
+      return `<div class="fm-barra" data-tip="${esc(i.tip)}"><div class="fm-barra-rot">${rotulo}</div><div class="fm-barra-trilho">${i.valor - (i.extra || 0) > 0 ? `<i class="${cor}" style="width:${((i.valor - (i.extra || 0)) / max) * 100}%"></i>` : ''}${extra}</div><div class="fm-barra-val">${esc(i.texto)}</div></div>`;
+    }).join('')}</div>`;
+  }
+
+  function htmlSaude(cont, total) {
+    if (!total) return '<div class="fm-graf-vazio">Nenhum veículo com plano de preventiva.</div>';
+    const barra = SAUDE.map((s) => (cont[s.id] ? `<i class="tone-${s.tone}" style="flex:${cont[s.id]}" data-tip="${esc(`${s.rotulo}: ${cont[s.id]} veículo(s)`)}"></i>` : '')).join('');
+    const pct = (n) => `${Math.round((n / total) * 100)}%`;
+    return `<div class="fm-saude-barra">${barra}</div><ul class="fm-saude-leg">${SAUDE.map((s) => `<li><span class="fm-dot tone-${s.tone}"></span>${esc(s.rotulo)}<b>${cont[s.id]}</b><em>${pct(cont[s.id])}</em></li>`).join('')}</ul>`;
   }
 
   function htmlAlertas(alertas) {
-    if (!alertas.length) return '<div class="fm-ok-vazio">Nada pedindo atenção agora. 👌</div>';
+    if (!alertas.length) return '<div class="fm-ok-vazio">Nada pedindo atenção agora.</div>';
     const lista = state.todosAlertas ? alertas : alertas.slice(0, LIMITE_ALERTAS);
-    const mais = alertas.length > LIMITE_ALERTAS ? `<button class="fm-link" type="button" data-todos-alertas style="margin-top:8px">${state.todosAlertas ? 'Mostrar só os mais graves' : `Ver os ${alertas.length} alertas`}</button>` : '';
+    const mais = alertas.length > LIMITE_ALERTAS ? `<button class="fm-link" type="button" data-todos-alertas>${state.todosAlertas ? 'Mostrar só os mais graves' : `Ver os ${alertas.length} alertas`}</button>` : '';
     return `<ul class="fm-alertas">${lista.map((a) => `<li class="${a.tom}" role="button" tabindex="0" data-ficha="${esc(a.manutencao_id)}"><strong>${esc(a.titulo)}</strong><span>${esc(a.detalhe)}</span></li>`).join('')}</ul>${mais}`;
   }
 
   function htmlParados(todos) {
     if (!todos.length) return '<div class="fm-ok-vazio">Nenhum veículo parado na oficina.</div>';
     const lista = state.todosParados ? todos : todos.slice(0, LIMITE_PARADOS);
-    const mais = todos.length > LIMITE_PARADOS ? `<button class="fm-link" type="button" data-todos-parados style="margin-top:8px">${state.todosParados ? 'Mostrar só os mais antigos' : `Ver os ${todos.length} parados`}</button>` : '';
-    return `<table class="fm-table fm-tab-curta"><thead><tr><th>Veículo</th><th>Parado há</th><th>Entrega</th><th>Oficina</th></tr></thead><tbody>${lista.map((p) => {
+    const mais = todos.length > LIMITE_PARADOS ? `<button class="fm-link" type="button" data-todos-parados>${state.todosParados ? 'Mostrar só os mais antigos' : `Ver os ${todos.length} parados`}</button>` : '';
+    return `<table class="fm-table fm-tab-curta"><thead><tr><th>Veículo</th><th>Parado há</th><th>Entrega</th></tr></thead><tbody>${lista.map((p) => {
       const entrega = p.previsao
         ? `<span class="${p.entregaAtrasada ? 'fm-venc' : ''}">${esc(dataCurta(p.previsao))}</span><span class="fm-mm">${p.diasParaEntrega < 0 ? `${-p.diasParaEntrega} dia(s) de atraso` : p.diasParaEntrega === 0 ? 'hoje' : `em ${p.diasParaEntrega} dia(s)`}</span>`
         : '<span class="fm-vazio-aviso">Sem previsão</span>';
-      return `<tr class="fm-linha" data-ficha="${esc(p.id)}"><td>${linkPlaca(p.placa, p.veiculo_id)}<span class="fm-mm">${esc(p.modelo)}</span></td><td>${p.diasParado != null ? `${p.diasParado} dia(s)` : '—'}<span class="fm-mm">desde ${esc(dataCurta(p.desde))}</span></td><td>${entrega}</td><td>${esc(p.oficina || '—')}</td></tr>`;
+      return `<tr class="fm-linha" data-ficha="${esc(p.id)}"><td>${linkPlaca(p.placa, p.veiculo_id)}<span class="fm-mm">${esc(p.oficina || p.modelo)}</span></td><td>${p.diasParado != null ? `${p.diasParado} dia(s)` : '—'}<span class="fm-mm">desde ${esc(dataCurta(p.desde))}</span></td><td>${entrega}</td></tr>`;
     }).join('')}</tbody></table>${mais}`;
   }
 
-  function htmlSaude(cont, total) {
-    if (!total) return '<div class="fm-ok-vazio">Nenhum veículo com plano de preventiva.</div>';
-    const barra = SAUDE.map((s) => (cont[s.id] ? `<i class="tone-${s.tone}" style="flex:${cont[s.id]}" title="${esc(s.rotulo)}: ${cont[s.id]}"></i>` : '')).join('');
-    return `<div class="fm-saude-barra">${barra}</div><ul class="fm-saude-leg">${SAUDE.map((s) => `<li><span class="fm-dot tone-${s.tone}"></span>${esc(s.rotulo)}<b>${cont[s.id]}</b></li>`).join('')}</ul>`;
-  }
-
   // ---------- desenho ----------
-  function opcoesSelect(lista, atual, vazio) {
-    return `<option value="">${esc(vazio)}</option>${lista.map((o) => `<option value="${esc(o)}"${o === atual ? ' selected' : ''}>${esc(o)}</option>`).join('')}`;
-  }
+  const opcoesSelect = (lista, atual, vazio) => `<option value="">${esc(vazio)}</option>${lista.map((o) => `<option value="${esc(o)}"${o === atual ? ' selected' : ''}>${esc(o)}</option>`).join('')}`;
+  const card = (titulo, corpo, { acao = '', cls = '' } = {}) => `<section class="fm-dash-card ${cls}"><header><h4>${esc(titulo)}</h4>${acao}</header>${corpo}</section>`;
 
   function render() {
     const root = state.root; if (!root) return;
     const v = state.visao;
-    if (!v) {
-      root.querySelector('[data-corpo]').innerHTML = `<div class="fm-empty">${state.loading ? 'Carregando o painel da frota...' : 'Não foi possível carregar o painel.'}</div>`;
-      return;
-    }
+    if (!v) { root.querySelector('[data-corpo]').innerHTML = `<div class="fm-empty">${state.loading ? 'Carregando o painel da frota...' : 'Não foi possível carregar o painel.'}</div>`; return; }
     const hoje = hojeBrasil();
-    const abertas = v.manutencoes.filter(estaAberta);
-    const parados = listarParados(v.manutencoes, v.mapaVeiculos, hoje);
-    const alertas = montarAlertas(v.manutencoes, v.mapaVeiculos, hoje);
-    const paraAprovar = abertas.filter((m) => m.status === 'em_aprovacao').length;
-    const idsAtivos = new Set(v.veiculos.filter((x) => String(x.status).toUpperCase() === 'ATIVO').map((x) => x.id));
+    const filtro = { coordenacao: state.coordenacao, supervisao: state.supervisao };
+    const man = filtrarPorVeiculos(v.manutencoes, v.mapaVeiculos, filtro);
+    const veiculos = v.veiculos.filter((x) => (!filtro.coordenacao || x.coordenacao === filtro.coordenacao) && (!filtro.supervisao || x.supervisao === filtro.supervisao));
+    const parados = listarParados(man, v.mapaVeiculos, hoje);
+    const alertas = montarAlertas(man, v.mapaVeiculos, hoje);
+    const quadro = montarQuadro(man, v.mapaVeiculos, {}, hoje);
+    const idsAtivos = new Set(veiculos.filter((x) => String(x.status).toUpperCase() === 'ATIVO').map((x) => x.id));
     const saude = contarSaude(v.preventivaPorVeiculo, idsAtivos);
     const totalSaude = Object.values(saude).reduce((s, n) => s + n, 0);
-    const custo = custoDoMes(v.manutencoes);
-    const quadro = montarQuadro(v.manutencoes, v.mapaVeiculos, state.filtros, hoje);
-
-    const kpis = [
-      cardFiltro({ tone: parados.length ? 'red' : 'green', icone: 'carro', label: 'Veículos parados', valor: String(parados.length), dica: 'OS na oficina com o veículo marcado como parado' }),
-      cardFiltro({ tone: 'amber', icone: 'ferramenta', label: 'Manutenções em andamento', valor: String(abertas.length), dica: 'Da solicitação até o serviço na oficina' }),
-      cardFiltro({ tone: paraAprovar ? 'purple' : 'green', icone: 'relogio', label: 'Esperando aprovação', valor: String(paraAprovar), dica: 'Orçamento pronto, aguardando o aprovador' }),
-      cardFiltro({ tone: alertas.length ? 'red' : 'green', icone: 'alerta', label: 'Pedem atenção', valor: String(alertas.length), dica: 'Entrega atrasada, parado sem previsão, etapa travada ou urgente' }),
-      cardFiltro({ tone: saude.vencida ? 'red' : 'green', icone: 'erro', label: 'Veículos com preventiva vencida', valor: String(saude.vencida), dica: 'Algum serviço do guia já passou do km ou da data' }),
-      cardFiltro({ tone: 'blue', icone: 'dinheiro', label: `Custo em ${new Date(`${hoje}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long' })}`, valor: dinheiro(custo.total), dica: `${custo.qtd} serviço(s) concluído(s) pagos pela empresa neste mês` }),
-    ].join('');
+    const mesAtual = hoje.slice(0, 7);
+    const mesAnterior = new Date(Date.UTC(Number(mesAtual.slice(0, 4)), Number(mesAtual.slice(5)) - 2, 1)).toISOString().slice(0, 7);
+    const etapas = quadro.colunas.map((c) => ({
+      rotulo: c.titulo, valor: c.itens.length, extra: c.atrasadas, texto: c.atrasadas ? `${c.itens.length} · ${c.atrasadas} atrasada(s)` : String(c.itens.length),
+      tip: `${c.titulo}: ${c.itens.length} manutenção(ões)${c.atrasadas ? `, ${c.atrasadas} passou do prazo esperado` : ''}. ${c.dica}`,
+    }));
+    const oficinas = maioresCustos(man, v.mapaVeiculos, 'oficina').map((g) => ({ rotulo: g.rotulo, valor: g.total, texto: moedaCurta(g.total), tip: `${g.rotulo}: ${dinheiro(g.total)} em ${g.qtd} serviço(s) nos últimos 12 meses` }));
+    const placas = maioresCustos(man, v.mapaVeiculos, 'veiculo').map((g) => {
+      const veic = veiculos.find((x) => x.placa === g.rotulo);
+      return { rotulo: g.rotulo, valor: g.total, texto: moedaCurta(g.total), alvo: veic ? `data-prontuario="${esc(veic.id)}"` : '', tip: `${g.rotulo}: ${dinheiro(g.total)} em ${g.qtd} serviço(s) nos últimos 12 meses` };
+    });
+    const emAndamento = man.filter(estaAberta).length;
 
     root.querySelector('[data-corpo]').innerHTML = `
-      <div class="fm-kpis">${kpis}</div>
-      <div class="fm-painel-duplo">
-        <section class="fm-sec"><h4><span>Pedem atenção</span><span class="fm-badge ${alertas.length ? 'red' : 'green'}">${alertas.length}</span></h4>${htmlAlertas(alertas)}</section>
-        <section class="fm-sec"><h4><span>Parados agora</span><span class="fm-badge ${parados.length ? 'red' : 'green'}">${parados.length}</span></h4>${htmlParados(parados)}</section>
-        <section class="fm-sec"><h4><span>Preventiva da frota</span><button class="fm-link" type="button" data-ir-preventiva>Ver preventiva →</button></h4>${htmlSaude(saude, totalSaude)}</section>
-      </div>
-      <section class="fm-sec fm-sec-quadro"><h4><span>Manutenções em andamento</span><span class="fm-mm" data-total>${quadro.total} manutenção(ões)</span></h4>
-        <div data-etapas>${htmlEtapas(quadro)}</div>
-        <div class="fm-filtros">
-          <div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" data-f="busca" placeholder="Buscar placa, descrição, oficina, quem pediu..." value="${esc(state.filtros.busca)}"></div>
-          <select class="fm-select" data-f="coordenacao" >${opcoesSelect(opcoesDe(v.veiculos, 'coordenacao'), state.filtros.coordenacao, 'Todas as coordenações')}</select>
-          <select class="fm-select" data-f="supervisao" >${opcoesSelect(opcoesDe(v.veiculos, 'supervisao'), state.filtros.supervisao, 'Todas as supervisões')}</select>
-          <select class="fm-select" data-f="natureza"><option value="">Corretiva e preventiva</option><option value="corretiva"${state.filtros.natureza === 'corretiva' ? ' selected' : ''}>Só corretiva</option><option value="preventiva"${state.filtros.natureza === 'preventiva' ? ' selected' : ''}>Só preventiva</option></select>
-        </div>
-        <div data-lista>${htmlLista(quadro)}</div></section>
-      <div class="fm-nota">As etapas mostram quantas manutenções há em cada uma (clique para filtrar). A lista começa pelo que passou do prazo esperado (solicitada 2 dias, orçamento 3, aprovação 2, emitir OS 3, oficina 15) e mostra poucas por vez. Clique numa linha para abrir a ficha; a placa leva ao prontuário do veículo.</div>`;
-  }
-
-  // Ao filtrar, só a faixa de etapas e a lista são refeitas (a busca mantém o foco no campo).
-  function renderLista() {
-    const v = state.visao; if (!v) return;
-    const quadro = montarQuadro(v.manutencoes, v.mapaVeiculos, state.filtros, hojeBrasil());
-    state.root.querySelector('[data-etapas]').innerHTML = htmlEtapas(quadro);
-    state.root.querySelector('[data-lista]').innerHTML = htmlLista(quadro);
-    const n = state.root.querySelector('[data-total]'); if (n) n.textContent = `${quadro.total} manutenção(ões)`;
+      ${htmlFaixa({ parados: parados.length, andamento: emAndamento, atencao: alertas.length, custo: custoDoMes(man, mesAtual), anterior: custoDoMes(man, mesAnterior).total, tempo: tempoMedioOficina(man) })}
+      <div class="fm-dash-grade">
+        ${card('Custo por mês', htmlCustoMensal(custoPorMes(man)), { cls: 'c7', acao: '<span class="fm-mm">últimos 6 meses · pago pela empresa</span>' })}
+        ${card('Manutenções por etapa', htmlBarras(etapas, { vazio: 'Nenhuma manutenção em andamento.' }), { cls: 'c5', acao: '<button class="fm-link" type="button" data-ir-corretiva>Abrir a lista →</button>' })}
+        ${card('Preventiva da frota', htmlSaude(saude, totalSaude), { cls: 'c4', acao: '<button class="fm-link" type="button" data-ir-preventiva>Ver preventiva →</button>' })}
+        ${card('Maiores custos por oficina', htmlBarras(oficinas, { vazio: 'Sem custo concluído nos últimos 12 meses.', cor: 'violeta' }), { cls: 'c4', acao: '<span class="fm-mm">12 meses</span>' })}
+        ${card('Maiores custos por veículo', htmlBarras(placas, { vazio: 'Sem custo concluído nos últimos 12 meses.', cor: 'violeta' }), { cls: 'c4', acao: '<span class="fm-mm">12 meses</span>' })}
+        ${card('Pedem atenção', htmlAlertas(alertas), { cls: 'c6', acao: `<span class="fm-badge ${alertas.length ? 'amber' : 'green'}">${alertas.length}</span>` })}
+        ${card('Parados agora', htmlParados(parados), { cls: 'c6', acao: `<span class="fm-badge ${parados.length ? 'red' : 'green'}">${parados.length}</span>` })}
+      </div>`;
+    // as opções dos filtros acompanham os veículos
+    root.querySelector('[data-coordenacao]').innerHTML = opcoesSelect(opcoesDe(v.veiculos, 'coordenacao'), state.coordenacao, 'Todas as coordenações');
+    root.querySelector('[data-supervisao]').innerHTML = opcoesSelect(opcoesDe(v.veiculos, 'supervisao'), state.supervisao, 'Todas as supervisões');
   }
 
   async function carregar({ forcar = false } = {}) {
@@ -139,7 +152,8 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, irCorretiva, abrirPro
   async function openHome(container, opts = {}) {
     state.supabase = opts.supabase; state.root = container; state.visao = null;
     container.innerHTML = `${ESTILOS_MANUTENCAO}${ESTILOS_VISAO}<section class="fm-shell">
-      <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button><button class="fm-btn primary" type="button" data-nova>+ Nova manutenção</button></div></div>
+      <div class="fm-topo fm-topo-dash"><div class="fm-filtros-dash"><select class="fm-select" data-coordenacao aria-label="Coordenação"><option value="">Todas as coordenações</option></select><select class="fm-select" data-supervisao aria-label="Supervisão"><option value="">Todas as supervisões</option></select></div>
+        <div class="fm-head-actions"><button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button><button class="fm-btn primary" type="button" data-nova>+ Nova manutenção</button></div></div>
       <div data-corpo></div></section>`;
     container.querySelector('[data-atualizar]').addEventListener('click', () => { invalidarVisao(); carregar({ forcar: true }); });
     container.querySelector('[data-nova]').addEventListener('click', () => abrirNovaManutencao({}));
@@ -148,23 +162,18 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, irCorretiva, abrirPro
     raiz.addEventListener('click', (e) => {
       if (e.target.closest('[data-ir-preventiva]')) return abrirPreventiva();
       if (e.target.closest('[data-ir-corretiva]')) return irCorretiva();
-      if (e.target.closest('[data-mais-lista]')) { state.limite += LIMITE_LISTA; return renderLista(); }
       if (e.target.closest('[data-todos-parados]')) { state.todosParados = !state.todosParados; return render(); }
       if (e.target.closest('[data-todos-alertas]')) { state.todosAlertas = !state.todosAlertas; return render(); }
-      const etapa = e.target.closest('[data-etapa]'); if (etapa) { state.etapa = state.etapa === etapa.dataset.etapa ? '' : etapa.dataset.etapa; state.limite = LIMITE_LISTA; return renderLista(); }
       const placa = e.target.closest('[data-prontuario]'); if (placa) return abrirProntuario(placa.dataset.prontuario);
       const ficha = e.target.closest('[data-ficha]'); if (ficha) abrirFicha(ficha.dataset.ficha);
     });
     raiz.addEventListener('keydown', (e) => {
       if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-ficha]')) { e.preventDefault(); abrirFicha(e.target.dataset.ficha); }
     });
-    const mudou = (e) => {
-      const f = e.target.closest?.('[data-f]'); if (!f) return;
-      state.filtros[f.dataset.f] = f.type === 'checkbox' ? f.checked : f.value;
-      state.limite = LIMITE_LISTA; renderLista();
-    };
-    raiz.addEventListener('input', (e) => { if (e.target.matches?.('input[data-f][type="text"],input[data-f]:not([type])')) mudou(e); });
-    raiz.addEventListener('change', (e) => { if (!e.target.matches?.('input[data-f][type="text"],input[data-f]:not([type])')) mudou(e); });
+    raiz.addEventListener('change', (e) => {
+      if (e.target.matches?.('[data-coordenacao]')) { state.coordenacao = e.target.value; render(); }
+      if (e.target.matches?.('[data-supervisao]')) { state.supervisao = e.target.value; render(); }
+    });
     await carregar();
   }
 

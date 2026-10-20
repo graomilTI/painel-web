@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  COLUNAS, listaPorAtencao, contarSaude, custoDoMes, desdeDaEtapa, diasEntre, diasNaEtapa, entregaAtrasada, eventosDaAgenda, gradeDoMes, listarParados, listarVeiculos,
+  COLUNAS, custoPorMes, filtrarPorVeiculos, listaPorAtencao, maioresCustos, tempoMedioOficina, contarSaude, custoDoMes, desdeDaEtapa, diasEntre, diasNaEtapa, entregaAtrasada, eventosDaAgenda, gradeDoMes, listarParados, listarVeiculos,
   montarAlertas, montarProntuario, montarQuadro, naOficina, resumoPreventiva, saudeDoResumo, semPrevisao, somarDias, veiculosDaManutencao, veiculosPorId,
 } from '../assets/js/modules/frotas-manutencao-visao-regras.js';
 
@@ -210,4 +210,29 @@ test('lista do painel: atrasados primeiro, depois prioridade e tempo; etapa rest
   const q = montarQuadro(lista, mapa, {}, HOJE);
   assert.deepEqual(listaPorAtencao(q).map((c) => c.id), ['d', 'b', 'c', 'a'], 'entrega atrasada, etapa atrasada, urgente, resto');
   assert.deepEqual(listaPorAtencao(q, 'em_orcamento').map((c) => c.id), ['b', 'c']);
+});
+
+test('dashboard: custo por mês (6 meses, preventiva x corretiva), maiores custos e tempo médio na oficina', () => {
+  const c = (extra) => linha({ status: 'concluida', responsavel_pagamento: 'empresa', natureza: 'corretiva', custo: 100, data_execucao: '2026-10-05', oficina: 'Auto Center', ...extra });
+  const lista = [
+    c({}), c({ id: 'b', natureza: 'preventiva', custo: 50 }), c({ id: 'c', data_execucao: '2026-07-10', custo: 200, oficina: 'Oficina Central', veiculo_id: 'v2' }),
+    c({ id: 'd', data_execucao: '2026-04-30', custo: 999 }), c({ id: 'e', responsavel_pagamento: 'locadora' }), c({ id: 'f', natureza: null, custo: 10, data_execucao: '2026-10-20' }),
+  ];
+  const meses = custoPorMes(lista, { hoje: HOJE });
+  assert.deepEqual(meses.map((m) => m.mes), ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
+  assert.deepEqual(meses.at(-1), { mes: '2026-10', preventiva: 50, corretiva: 110, total: 160, qtd: 3 }, 'sem natureza conta como corretiva');
+  assert.equal(meses[2].total, 200);
+  assert.equal(meses.reduce((s, m) => s + m.total, 0), 360, 'abril e a locadora ficam de fora');
+  assert.deepEqual(maioresCustos(lista, mapa, 'oficina', { hoje: HOJE }).map((g) => [g.rotulo, g.total]), [['Oficina Central', 200], ['Auto Center', 1159]].sort((a, b) => b[1] - a[1]));
+  assert.deepEqual(maioresCustos(lista, mapa, 'veiculo', { top: 1, hoje: HOJE }).map((g) => g.rotulo), ['ABC1D23']);
+  const t = [c({ entrada_oficina_em: '2026-10-01T10:00:00Z', data_execucao: '2026-10-05' }), c({ id: 'x', entrada_oficina_em: '2026-10-10T10:00:00Z', data_execucao: '2026-10-11' }), c({ id: 'y' })];
+  assert.equal(tempoMedioOficina(t, { hoje: HOJE }), 2.5);
+  assert.equal(tempoMedioOficina([c({})], { hoje: HOJE }), null);
+});
+
+test('dashboard: filtro por coordenação e supervisão', () => {
+  const lista = [linha({ id: 'a', veiculo_id: 'v1' }), linha({ id: 'b', veiculo_id: 'v2' }), linha({ id: 'c', veiculo_id: 'zzz' })];
+  assert.equal(filtrarPorVeiculos(lista, mapa, {}).length, 3);
+  assert.deepEqual(filtrarPorVeiculos(lista, mapa, { coordenacao: 'GO' }).map((m) => m.id), ['b']);
+  assert.deepEqual(filtrarPorVeiculos(lista, mapa, { coordenacao: 'MT', supervisao: 'SORRISO' }).map((m) => m.id), ['a']);
 });
