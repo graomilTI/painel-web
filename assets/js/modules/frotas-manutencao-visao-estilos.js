@@ -13,6 +13,7 @@ export const ESTILOS_VISAO = `
 <style>
 .fm-placa{appearance:none;border:0;background:transparent;padding:0;font:inherit;font-weight:950;color:#f8fafc;cursor:pointer;text-decoration:underline;text-decoration-color:rgba(134,239,172,.45);text-underline-offset:3px}.fm-placa:hover{color:#86efac}
 .fm-shell .fm-input,.fm-shell .fm-select{box-sizing:border-box;max-width:100%}
+.fm-filtros{display:grid;grid-template-columns:minmax(220px,2fr) repeat(3,minmax(150px,1fr));gap:10px;margin-bottom:12px;align-items:center}.fm-filtros .fm-search{min-width:0}.fm-filtros .fm-select{width:100%;min-width:0;appearance:auto}.fm-contagem{display:flex;justify-content:flex-end;margin:-4px 0 8px}
 .fm-vazio-aviso{color:#fbbf24;font-weight:800}.fm-ok-vazio{color:#86efac;font-size:13px;font-weight:800;padding:8px 2px}
 .fm-painel-duplo{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start;margin-bottom:14px}.fm-painel-duplo>.fm-sec{margin-top:0;min-width:0}
 .fm-sec h4 .fm-link{text-transform:none;letter-spacing:0}
@@ -56,6 +57,6 @@ export const ESTILOS_VISAO = `
 .fm-dia-lista{list-style:none;margin:0;padding:0;display:grid;gap:6px}.fm-dia-lista li{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.6);font-size:13px;color:#e2e8f0;cursor:pointer}.fm-dia-lista li:hover{border-color:rgba(34,197,94,.45)}.fm-dia-lista small{color:#94a3b8;margin-left:auto}
 @media(max-width:1250px){.fm-painel-duplo{grid-template-columns:1fr 1fr}.fm-painel-duplo>.fm-sec:last-child{grid-column:1/-1}.fm-ag-corpo{grid-template-columns:1fr}.fm-pront-cols{grid-template-columns:1fr}}
 @media(max-width:1100px){.fm-vl-cab{display:none}.fm-vl{grid-template-columns:1fr 1fr}.fm-vl-chips,.fm-vl-urg{grid-column:1/-1}.fm-vl-valor{text-align:left}}
-@media(max-width:900px){.fm-etapas{grid-template-columns:repeat(3,minmax(0,1fr))}.fm-pl{grid-template-columns:1fr 1fr}.fm-pl-desc,.fm-pl-etapa{grid-column:1/-1}.fm-pl-prazo{text-align:left}}
+@media(max-width:900px){.fm-filtros{grid-template-columns:1fr 1fr}.fm-filtros .fm-search{grid-column:1/-1}.fm-etapas{grid-template-columns:repeat(3,minmax(0,1fr))}.fm-pl{grid-template-columns:1fr 1fr}.fm-pl-desc,.fm-pl-etapa{grid-column:1/-1}.fm-pl-prazo{text-align:left}}
 @media(max-width:760px){.fm-painel-duplo{grid-template-columns:1fr}.fm-cal-dia{min-height:74px;padding:3px}.fm-cal-ev{font-size:9px;padding:1px 3px}.fm-hist li{grid-template-columns:1fr}.fm-hist-fim{justify-items:start;text-align:left}.fm-ag-topo h3{min-width:0}.fm-ag-leg{margin-left:0}}
 </style>`;
