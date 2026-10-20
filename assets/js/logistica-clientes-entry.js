@@ -154,6 +154,6 @@ function renderBootError(error) {
     </section>`;
 }
 
-import('./adm-logistica.js?v=logistica-admin-isolado-20260723-hashfix1')
+import('./adm-logistica.js?v=20261020-os-realtime1')
   .then(setup)
   .catch(renderBootError);

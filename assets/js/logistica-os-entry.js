@@ -240,7 +240,7 @@ function renderBootError(error) {
     </section>`;
 }
 
-import('./adm-logistica.js?v=20260817-finalizacao-check-x')
+import('./adm-logistica.js?v=20261020-os-realtime1')
   .then(async () => {
     await setup();
     await import('./logistica-abertura-os-workflow.js?v=20260924-novo1');
