@@ -16,7 +16,12 @@ const DASH_CACHE_KEY = 'grao1000:gestor-dash:v4-segmentado';
 // Os agentes de produção/patrimônio resincronizam a cada ~20min; 1h evita que os
 // KPIs (meta mensal, patrimônios) fiquem presos em cache por dias.
 const DASH_CACHE_TTL = 1000 * 60 * 60;
-const OS_PREFETCH_INTERVAL = 1000 * 60;
+// Rede de segurança: a lista é mantida em tempo real (startOsRealtime); esta releitura só
+// cobre eventos perdidos. Mantida longa porque cada leitura baixa a lista inteira.
+const OS_PREFETCH_INTERVAL = 1000 * 60 * 10;
+// Todas as colunas de operacional_os menos `raw` (jsonb de ~2,3 KB por linha, ~85% do peso da
+// linha e não usado pelo app).
+const OS_COLUNAS = 'id,numero_os,situacao,financeiro,data_os,servico,cliente,embarque,destino,supervisao,contrato,produto,lote,embarcado,remanescente,ponto1_latitude,ponto1_longitude,destino_latitude,destino_longitude,status_gestor,status_conferencia,permitir_mais_classificadores,configurada_em,observacao_gestor,observacao_conferencia,conferido_por,conferido_em,created_at,updated_at,arquivo_origem,status_logistica,enviado_logistica_em,logistica_solicitado_por,logistica_responsavel_id,logistica_assumido_em,observacao_logistica,finalizado_por,finalizado_em,logistica_devolvido_em,ultima_atualizacao,ponto1_nome,ponto_embarque_id,ultima_sync_os_em,ultima_sync_batch_id,atualizar_resolvido_tipo,atualizar_resolvido_em,atualizar_resolvido_por';
 const LIMITE_MULTIPLOS = 500000;
 const LIMITE_OS_POR_COLABORADOR = 2;
 const STATUS = ['PENDENTE', 'AGUARDAR', 'ATENDER', 'FINALIZAR'];
@@ -317,7 +322,7 @@ async function fetchTodosPontosAtivos(colunas) {
 }
 
 async function fetchFreshOs() {
-  let query = supabase.from('operacional_os').select('*').limit(1000);
+  let query = supabase.from('operacional_os').select(OS_COLUNAS).limit(1000);
   if (!state.isMaster && state.allowedSupervisoes.length) query = query.in('supervisao', state.allowedSupervisoes);
   const { data, error } = await query;
   if (error) throw error;
@@ -379,7 +384,8 @@ function onOsRealtime(payload) {
   const idx = state.os.findIndex((row) => osId(row) === id);
   const atual = idx >= 0 ? state.os[idx] : null;
   // Colunas grandes e inalteradas (TOAST) não vêm no evento: mescla sobre a linha atual.
-  const merged = atual ? { ...atual, ...novo } : novo;
+  const merged = atual ? { ...atual, ...novo } : { ...novo };
+  delete merged.raw; // o evento traz a linha inteira; o app não usa e engorda o cache local
   if (!osVisivelParaGestor(merged)) {
     if (!atual) return;
     state.os.splice(idx, 1);
