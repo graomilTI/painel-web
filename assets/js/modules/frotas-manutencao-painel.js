@@ -110,11 +110,11 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, irCorretiva, abrirPro
       </div>
       <section class="fm-sec fm-sec-quadro"><h4><span>Manutenções em andamento</span><span class="fm-mm" data-total>${quadro.total} manutenção(ões)</span></h4>
         <div data-etapas>${htmlEtapas(quadro)}</div>
-        <div class="fm-bar fm-bar-quadro">
+        <div class="fm-filtros">
           <div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" data-f="busca" placeholder="Buscar placa, descrição, oficina, quem pediu..." value="${esc(state.filtros.busca)}"></div>
-          <select class="fm-select" data-f="coordenacao" style="width:auto">${opcoesSelect(opcoesDe(v.veiculos, 'coordenacao'), state.filtros.coordenacao, 'Todas as coordenações')}</select>
-          <select class="fm-select" data-f="supervisao" style="width:auto">${opcoesSelect(opcoesDe(v.veiculos, 'supervisao'), state.filtros.supervisao, 'Todas as supervisões')}</select>
-          <select class="fm-select" data-f="natureza" style="width:auto"><option value="">Corretiva e preventiva</option><option value="corretiva"${state.filtros.natureza === 'corretiva' ? ' selected' : ''}>Só corretiva</option><option value="preventiva"${state.filtros.natureza === 'preventiva' ? ' selected' : ''}>Só preventiva</option></select>
+          <select class="fm-select" data-f="coordenacao" >${opcoesSelect(opcoesDe(v.veiculos, 'coordenacao'), state.filtros.coordenacao, 'Todas as coordenações')}</select>
+          <select class="fm-select" data-f="supervisao" >${opcoesSelect(opcoesDe(v.veiculos, 'supervisao'), state.filtros.supervisao, 'Todas as supervisões')}</select>
+          <select class="fm-select" data-f="natureza"><option value="">Corretiva e preventiva</option><option value="corretiva"${state.filtros.natureza === 'corretiva' ? ' selected' : ''}>Só corretiva</option><option value="preventiva"${state.filtros.natureza === 'preventiva' ? ' selected' : ''}>Só preventiva</option></select>
         </div>
         <div data-lista>${htmlLista(quadro)}</div></section>
       <div class="fm-nota">As etapas mostram quantas manutenções há em cada uma (clique para filtrar). A lista começa pelo que passou do prazo esperado (solicitada 2 dias, orçamento 3, aprovação 2, emitir OS 3, oficina 15) e mostra poucas por vez. Clique numa linha para abrir a ficha; a placa leva ao prontuário do veículo.</div>`;

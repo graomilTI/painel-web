@@ -181,9 +181,10 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, carregarVisao, invali
     container.innerHTML = `${ESTILOS_MANUTENCAO}${ESTILOS_VISAO}<div data-vista-lista><section class="fm-shell">
       <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-atualizar>↻ Atualizar</button><button class="fm-btn primary" type="button" data-nova-geral>+ Nova manutenção</button></div></div>
       <div class="fm-kpis" data-kpis></div>
-      <div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por placa, modelo, condutor, coordenação..." data-busca></div>
-        <select class="fm-select" data-coordenacao style="width:auto"><option value="">Todas as coordenações</option></select>
-        <select class="fm-select" data-supervisao style="width:auto"><option value="">Todas as supervisões</option></select><span class="fm-count" data-contagem></span></div>
+      <div class="fm-card"><div class="fm-body"><div class="fm-filtros"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por placa, modelo, condutor, coordenação..." data-busca></div>
+        <select class="fm-select" data-coordenacao><option value="">Todas as coordenações</option></select>
+        <select class="fm-select" data-supervisao><option value="">Todas as supervisões</option></select></div>
+        <div class="fm-contagem"><span class="fm-count" data-contagem></span></div>
         <div class="fm-vl-cab"><span>Veículo</span><span>Coordenação · condutor</span><span>Km</span><span>Situação</span><span>Mais urgente</span><span style="text-align:right">Custo 12 meses</span></div>
         <div class="fm-vl-lista" data-linhas></div>
         <div class="fm-nota">Clique numa placa para abrir o prontuário: manutenções em andamento, histórico de serviços, custo e o que vence na preventiva. A lista começa pelos veículos que mais precisam de atenção (parados, com manutenção aberta, preventiva vencida).</div></div></div></section></div>
