@@ -565,6 +565,7 @@ export async function renderContent(content) {
   // ponto da execução e lançava "Cannot access before initialization".
   let osLogInflight = null;
   let aberturaOsInflight = null;
+  let osRealtimeChannel = null; // idem: startOsRealtime() é chamada no boot, antes da definição da função
 
   const hash = normalize(location.hash.replace('#', ''));
   if (hash.includes('ABERTURA')) state.tab = 'abertura_os';
@@ -627,7 +628,6 @@ export async function renderContent(content) {
   // sincronia: aplica cada mudança de operacional_os / operacional_os_colaboradores direto
   // em state.os, state.osLog e state.atribuicoes, sem reler as tabelas, e redesenha só a
   // aba ativa com debounce. A aba Abertura tem o próprio canal (logistica-abertura-os-workflow.js).
-  let osRealtimeChannel = null;
   function startOsRealtime() {
     if (osRealtimeChannel) { supabase.removeChannel(osRealtimeChannel); osRealtimeChannel = null; }
     let timer = null;
