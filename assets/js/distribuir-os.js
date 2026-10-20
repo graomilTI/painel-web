@@ -5,6 +5,7 @@ import { sincronizarListaOsDoAgente } from './listaOsAgentSync.js';
 
 const BR = new Intl.NumberFormat('pt-BR');
 const state = { user: null, rows: [], ajustadas: [], atrib: [], filters: { data: '', coordenacao: '', busca: '' } };
+let realtimeChannel = null;
 
 function escapeHtml(value) { return String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;'); }
 function normalize(value) { return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,' ').trim(); }
@@ -47,6 +48,7 @@ export async function renderContent(content) {
   bind();
   await sincronizarListaOsDoAgente();
   await loadAll();
+  subscribeRealtime();
 
   function bind() {
     el.data.addEventListener('change', () => { state.filters.data = el.data.value; render(); });
@@ -78,6 +80,93 @@ export async function renderContent(content) {
     } finally {
       el.list.classList.remove('is-loading');
     }
+  }
+
+  function ordenarOs(a, b) {
+    return String(b.data_os || b.configurada_em || '').localeCompare(String(a.data_os || a.configurada_em || '')) || num(b.numero_os) - num(a.numero_os);
+  }
+
+  // Mantém a fila em sincronia: aplica cada mudança de operacional_os (só ATENDER interessa)
+  // e operacional_os_colaboradores direto no estado, sem reler as tabelas a cada evento.
+  function subscribeRealtime() {
+    if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
+    let timer = null;
+    let jaConectou = false;
+
+    const encerrar = () => {
+      clearTimeout(timer);
+      if (realtimeChannel === canal) { supabase.removeChannel(canal); realtimeChannel = null; }
+    };
+    const redesenhar = () => {
+      if (!el.list.isConnected) return encerrar();
+      fillCoords();
+      render();
+      el.feedback.textContent = `Carregado: ${state.rows.length} pendente(s) · ${state.ajustadas.length} ajustada(s) · ${state.atrib.length} indicação(ões) da Programação. Sincronizado em tempo real.`;
+    };
+    const agendar = () => { clearTimeout(timer); timer = setTimeout(redesenhar, 400); };
+    const conhecida = (id) => state.rows.some(r => String(r.id) === String(id)) || state.ajustadas.some(r => String(r.id) === String(id));
+
+    const carregarAtrib = async (osId) => {
+      const { data, error } = await supabase.from('operacional_os_colaboradores').select('*').eq('os_id', osId);
+      if (error) return console.warn('Falha ao carregar colaboradores indicados.', error);
+      state.atrib = [...state.atrib.filter(a => String(a.os_id) !== String(osId)), ...safe(data)];
+      agendar();
+    };
+
+    const onOs = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        if (!conhecida(id)) return;
+        state.rows = state.rows.filter(r => String(r.id) !== String(id));
+        state.ajustadas = state.ajustadas.filter(r => String(r.id) !== String(id));
+        return agendar();
+      }
+      const novo = payload.new;
+      if (!novo?.id) return;
+      const existente = state.rows.find(r => String(r.id) === String(novo.id)) || state.ajustadas.find(r => String(r.id) === String(novo.id));
+      // Colunas grandes e inalteradas (TOAST) não vêm no evento: mescla sobre a linha atual.
+      const merged = existente ? { ...existente, ...novo } : novo;
+      state.rows = state.rows.filter(r => String(r.id) !== String(novo.id));
+      state.ajustadas = state.ajustadas.filter(r => String(r.id) !== String(novo.id));
+      if (merged.status_gestor !== 'ATENDER') {
+        if (existente) agendar();
+        return;
+      }
+      const destino = merged.status_conferencia === 'AJUSTADA' ? state.ajustadas : state.rows;
+      destino.push(merged);
+      destino.sort(ordenarOs);
+      if (!existente) carregarAtrib(merged.id);
+      agendar();
+    };
+
+    const onAtribuicao = (payload) => {
+      if (payload.eventType === 'DELETE') {
+        const id = payload.old?.id;
+        const antes = state.atrib.length;
+        state.atrib = state.atrib.filter(a => String(a.id) !== String(id));
+        if (state.atrib.length !== antes) agendar();
+        return;
+      }
+      const novo = payload.new;
+      if (!novo?.id || !conhecida(novo.os_id)) return;
+      state.atrib = [
+        ...state.atrib.filter(a => String(a.id) !== String(novo.id) && !(String(a.os_id) === String(novo.os_id) && String(a.colaborador_key) === String(novo.colaborador_key))),
+        novo,
+      ];
+      agendar();
+    };
+
+    const canal = supabase
+      .channel(`distribuir-os-rt-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os' }, onOs)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operacional_os_colaboradores' }, onAtribuicao)
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return;
+        // Reconexão: eventos perdidos enquanto estava fora do ar → relê tudo uma vez.
+        if (jaConectou && el.list.isConnected) loadAll().catch((error) => console.warn('Falha ao ressincronizar distribuição.', error));
+        jaConectou = true;
+      });
+    realtimeChannel = canal;
   }
 
   function fillCoords() {
