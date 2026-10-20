@@ -121,6 +121,14 @@ export function montarQuadro(manutencoes = [], veiculos = new Map(), filtros = F
   };
 }
 
+// Lista única dos cartões do quadro, na ordem em que a equipe deve olhar: atrasados primeiro, depois prioridade e tempo na etapa.
+// `etapa` (id de COLUNAS) restringe a uma etapa; vazio = todas.
+export function listaPorAtencao(quadro, etapa = '') {
+  const itens = quadro.colunas.filter((c) => !etapa || c.id === etapa).flatMap((c) => c.itens);
+  const peso = (c) => (c.entregaAtrasada ? 0 : c.atrasada ? 1 : 2);
+  return itens.sort((a, b) => peso(a) - peso(b) || compararCartao(a, b));
+}
+
 // ---------- parados e alertas ----------
 // Veículos parados agora (OS na oficina com o veículo marcado como parado), os mais antigos primeiro.
 export function listarParados(manutencoes = [], veiculos = new Map(), hoje = hojeBrasil()) {

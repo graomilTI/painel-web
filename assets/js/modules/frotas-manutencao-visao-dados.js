@@ -80,5 +80,6 @@ export function abrirProntuario(veiculoId) {
   else irParaAba('veiculos');
 }
 
+export function irCorretiva() { irParaAba('manutencao'); }
 export function abrirAgenda() { irParaAba('agenda'); }
 export function abrirPreventiva() { irParaAba('preventiva'); }

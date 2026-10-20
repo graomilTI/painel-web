@@ -22,14 +22,14 @@ export const ESTILOS_VISAO = `
 .fm-saude-barra i.tone-red,.fm-dot.tone-red{background:#ef4444}.fm-saude-barra i.tone-amber,.fm-dot.tone-amber{background:#f59e0b}.fm-saude-barra i.tone-green,.fm-dot.tone-green{background:#22c55e}.fm-saude-barra i.tone-blue,.fm-dot.tone-blue{background:#60a5fa}
 .fm-saude-leg{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:6px}.fm-saude-leg li{display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px}.fm-saude-leg b{margin-left:auto;color:#f8fafc}.fm-dot{width:10px;height:10px;border-radius:50%;flex:none}
 .fm-bar-quadro{margin-bottom:14px}.fm-bar-quadro .fm-check{min-height:0}
-.fm-quadro{display:grid;grid-template-columns:repeat(5,minmax(230px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px;align-items:start}
-.fm-col{min-width:0;border:1px solid rgba(148,163,184,.14);border-top:3px solid var(--kc,#60a5fa);border-radius:16px;background:rgba(2,6,23,.34);padding:10px}.fm-col.tone-blue{--kc:#60a5fa}.fm-col.tone-amber{--kc:#fbbf24}.fm-col.tone-purple{--kc:#a78bfa}.fm-col.tone-green{--kc:#4ade80}
-.fm-col h4{margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:#e2e8f0;font-size:12px;letter-spacing:.08em;text-transform:uppercase}.fm-col-n{margin-left:auto;min-width:24px;height:24px;border-radius:999px;display:inline-grid;place-items:center;background:rgba(148,163,184,.18);color:#f8fafc;font-size:12px}
-.fm-col-corpo{display:grid;gap:8px;max-height:62vh;overflow:auto;padding-right:2px}.fm-col-vazio{color:#64748b;font-size:12px;text-align:center;padding:14px 0}
-.fm-qd{display:grid;gap:6px;padding:10px 12px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:rgba(15,23,42,.78);cursor:pointer;transition:border-color .15s,transform .15s}.fm-qd:hover,.fm-qd:focus{outline:none;border-color:rgba(34,197,94,.55);transform:translateY(-1px)}
-.fm-qd.atraso{border-left:4px solid #f87171}.fm-qd.parado{box-shadow:0 0 0 1px rgba(239,68,68,.35) inset}
-.fm-qd header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:14px}.fm-qd p{margin:0;color:#e2e8f0;font-size:12.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.fm-qd-chips{display:flex;gap:4px;flex-wrap:wrap}.fm-qd-chips:empty{display:none}.fm-qd footer{display:grid;gap:2px;color:#94a3b8;font-size:11px;line-height:1.35}
+.fm-etapas{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.fm-etapa-b{--kc:#60a5fa;appearance:none;font:inherit;text-align:left;display:grid;gap:2px;padding:10px 12px;border:1px solid rgba(148,163,184,.16);border-top:3px solid var(--kc);border-radius:14px;background:rgba(15,23,42,.6);color:#e2e8f0;cursor:pointer}.fm-etapa-b:hover{border-color:var(--kc)}.fm-etapa-b.ativo{background:rgba(2,6,23,.7);box-shadow:0 0 0 1px var(--kc)}
+.fm-etapa-b.tone-amber{--kc:#fbbf24}.fm-etapa-b.tone-purple{--kc:#a78bfa}.fm-etapa-b.tone-green{--kc:#4ade80}
+.fm-etapa-b strong{font-size:24px;line-height:1;color:#fff}.fm-etapa-b span{font-size:11px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8}.fm-etapa-b em{font-style:normal;font-size:11px;font-weight:900;color:#fca5a5}
+.fm-pl-lista{display:grid;gap:6px}
+.fm-pl{display:grid;grid-template-columns:minmax(140px,1fr) minmax(200px,2.4fr) minmax(170px,1.3fr) minmax(110px,.8fr);gap:12px;align-items:center;padding:8px 12px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.55);cursor:pointer}.fm-pl:hover,.fm-pl:focus{outline:none;border-color:rgba(34,197,94,.5)}.fm-pl.atraso{border-left:4px solid #f87171}
+.fm-pl-id .fm-mm,.fm-pl-desc .fm-mm{display:block}.fm-pl-desc{color:#e2e8f0;font-size:13px;line-height:1.35;min-width:0;overflow-wrap:anywhere}.fm-pl-etapa{display:flex;gap:4px;flex-wrap:wrap}.fm-pl-prazo{text-align:right}
+.fm-pl-mais{display:flex;gap:14px;align-items:center;margin-top:10px;flex-wrap:wrap}
 /* Veículos */
 .fm-vl-cab,.fm-vl{display:grid;grid-template-columns:minmax(140px,1.2fr) minmax(130px,1.1fr) 100px minmax(190px,1.8fr) minmax(170px,1.6fr) 120px;gap:12px;align-items:center}
 .fm-vl-cab{padding:0 14px 8px;color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.fm-vl-lista{display:grid;gap:8px}
@@ -56,5 +56,6 @@ export const ESTILOS_VISAO = `
 .fm-dia-lista{list-style:none;margin:0;padding:0;display:grid;gap:6px}.fm-dia-lista li{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid rgba(148,163,184,.14);border-radius:12px;background:rgba(15,23,42,.6);font-size:13px;color:#e2e8f0;cursor:pointer}.fm-dia-lista li:hover{border-color:rgba(34,197,94,.45)}.fm-dia-lista small{color:#94a3b8;margin-left:auto}
 @media(max-width:1250px){.fm-painel-duplo{grid-template-columns:1fr 1fr}.fm-painel-duplo>.fm-sec:last-child{grid-column:1/-1}.fm-ag-corpo{grid-template-columns:1fr}.fm-pront-cols{grid-template-columns:1fr}}
 @media(max-width:1100px){.fm-vl-cab{display:none}.fm-vl{grid-template-columns:1fr 1fr}.fm-vl-chips,.fm-vl-urg{grid-column:1/-1}.fm-vl-valor{text-align:left}}
-@media(max-width:760px){.fm-painel-duplo{grid-template-columns:1fr}.fm-quadro{grid-template-columns:repeat(5,82vw)}.fm-cal-dia{min-height:74px;padding:3px}.fm-cal-ev{font-size:9px;padding:1px 3px}.fm-hist li{grid-template-columns:1fr}.fm-hist-fim{justify-items:start;text-align:left}.fm-ag-topo h3{min-width:0}.fm-ag-leg{margin-left:0}}
+@media(max-width:900px){.fm-etapas{grid-template-columns:repeat(3,minmax(0,1fr))}.fm-pl{grid-template-columns:1fr 1fr}.fm-pl-desc,.fm-pl-etapa{grid-column:1/-1}.fm-pl-prazo{text-align:left}}
+@media(max-width:760px){.fm-painel-duplo{grid-template-columns:1fr}.fm-cal-dia{min-height:74px;padding:3px}.fm-cal-ev{font-size:9px;padding:1px 3px}.fm-hist li{grid-template-columns:1fr}.fm-hist-fim{justify-items:start;text-align:left}.fm-ag-topo h3{min-width:0}.fm-ag-leg{margin-left:0}}
 </style>`;

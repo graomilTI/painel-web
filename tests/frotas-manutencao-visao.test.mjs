@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
-  COLUNAS, contarSaude, custoDoMes, desdeDaEtapa, diasEntre, diasNaEtapa, entregaAtrasada, eventosDaAgenda, gradeDoMes, listarParados, listarVeiculos,
+  COLUNAS, listaPorAtencao, contarSaude, custoDoMes, desdeDaEtapa, diasEntre, diasNaEtapa, entregaAtrasada, eventosDaAgenda, gradeDoMes, listarParados, listarVeiculos,
   montarAlertas, montarProntuario, montarQuadro, naOficina, resumoPreventiva, saudeDoResumo, semPrevisao, somarDias, veiculosDaManutencao, veiculosPorId,
 } from '../assets/js/modules/frotas-manutencao-visao-regras.js';
 
@@ -198,4 +198,16 @@ test('as abas novas existem no hub, usam o mesmo ?v= e não prendem ouvintes no 
     const src = readFileSync(new URL(`../assets/js/modules/frotas-manutencao-${f}.js`, import.meta.url), 'utf8');
     assert.doesNotMatch(src, /container\.addEventListener/, `${f}: ouvintes no container se acumulariam a cada troca de aba`);
   }
+});
+
+test('lista do painel: atrasados primeiro, depois prioridade e tempo; etapa restringe', () => {
+  const lista = [
+    linha({ id: 'a', numero: 1, status: 'solicitada', linha_tempo: tempo(['solicitada', '2026-10-20T08:00:00Z']) }),
+    linha({ id: 'b', numero: 2, status: 'em_orcamento', linha_tempo: tempo(['em_orcamento', '2026-10-05T10:00:00Z']) }),
+    linha({ id: 'c', numero: 3, status: 'em_orcamento', prioridade: 'urgente', linha_tempo: tempo(['em_orcamento', '2026-10-19T10:00:00Z']) }),
+    linha({ id: 'd', numero: 4, status: 'em_execucao', previsao_entrega: '2026-10-10', entrada_oficina_em: '2026-10-09T10:00:00Z', linha_tempo: tempo(['em_execucao', '2026-10-09T10:00:00Z']) }),
+  ];
+  const q = montarQuadro(lista, mapa, {}, HOJE);
+  assert.deepEqual(listaPorAtencao(q).map((c) => c.id), ['d', 'b', 'c', 'a'], 'entrega atrasada, etapa atrasada, urgente, resto');
+  assert.deepEqual(listaPorAtencao(q, 'em_orcamento').map((c) => c.id), ['b', 'c']);
 });
