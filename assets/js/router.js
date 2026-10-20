@@ -113,7 +113,7 @@ const SOFT_NAV_PAGES = new Map([
   // concorrentes. Isso travava a tela ao clicar no menu. Mantém navegação normal por reload.
   ['uber', { title: 'Uber · Conferência', module: () => import('./uber.js'), extraModules: [() => import('./modules/uber-despesas-sync.js')] }],
   ['adm-operacional', { title: 'Operacional ADM', module: () => import('./adm-operacional.js') }],
-  ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js?v=20261020-fornecedor1'), extraModules: [() => import('./pwa-register.js')] }],
+  ['compras-estoque', { title: 'Estoque', module: () => import('./compras-estoque.js?v=20261020-fornecedor2'), extraModules: [() => import('./pwa-register.js')] }],
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js?v=20260930-triagem2'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js?v=20260930-triagem1')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js?v=20260911-owner-filter1') }],
   ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20261019-limpar-situacao1'), extraStyles: [
