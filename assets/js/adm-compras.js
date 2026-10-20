@@ -971,9 +971,11 @@ function openSelecionarFornecedor(rows){
 // Material comprado com antecedência que está guardado no fornecedor (Compras > Estoque > Fornecedor).
 // Na compra, o que existe lá sai do saldo do fornecedor e só o restante é pago.
 async function carregarEstoqueFornecedor(){
-  return await safe(()=>supabase.from('compras_estoque_fornecedor').select('id,fornecedor,material,tamanho,unidade,quantidade').eq('ativo',true).gt('quantidade',0),[]);
+  return await safe(()=>supabase.from('compras_estoque_fornecedor').select('id,fornecedor,material,tamanho,unidade,quantidade,valor_unitario').eq('ativo',true).gt('quantidade',0),[]);
 }
-const candidatosForn=(r,lista)=>lista.filter(f=>norm(f.material)===norm(r.material)&&norm(f.tamanho||'')===norm(r.tamanho||'')).sort((a,b)=>Number(b.quantidade)-Number(a.quantidade));
+// Casa por nome + tamanho juntos, sem pontuação: "JOGO DE PENEIRAS" + "3mm - 5mm - fundo" = "JOGO DE PENEIRAS 3MM 5MM FUNDO".
+const chaveMaterialForn=(m)=>norm(`${m.material||''} ${m.tamanho||''}`).replace(/[^a-z0-9]+/g,' ').trim();
+const candidatosForn=(r,lista)=>lista.filter(f=>chaveMaterialForn(f)===chaveMaterialForn(r)).sort((a,b)=>Number(b.quantidade)-Number(a.quantidade));
 const qtdItem=(r)=>Number(r.quantidade||r.unidade||1);
 const r2c=(v)=>Math.round(Number(v||0)*100)/100;
 
@@ -1024,6 +1026,8 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   const estoqueForn=await carregarEstoqueFornecedor();
   const cand=new Map(rows.map(r=>[r.id,candidatosForn(r,estoqueForn)]));
   const temForn=[...cand.values()].some(c=>c.length);
+  // Sem valor informado, sugere o valor unitário cadastrado no estoque do fornecedor.
+  const c0valor=(r)=>cand.get(r.id)?.[0]?.valor_unitario||'';
   const doEstoqueInicial=(r)=>{
     const c=cand.get(r.id)||[];
     if(!c.length) return 0;
@@ -1048,7 +1052,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
             ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||state.cotacaoCache[r.id]?.ca||'')}">`:'-'}</td>`:''}
             ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
             <td>${c.length?`<input class="buy-estoque" type="number" step="0.01" min="0" value="${esc(doEstoqueInicial(r))}" style="width:90px">`:'-'}</td>`:''}
-            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r._valor_unitario||r.valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||'')}" placeholder="0,00"></td>
+            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r._valor_unitario||r.valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||c0valor(r)||'')}" placeholder="0,00"></td>
             <td><input class="buy-total" type="number" step="0.01" readonly value="${esc(r.valor_total||'0')}"></td>
           </tr>`;}).join('')}
         </tbody>
