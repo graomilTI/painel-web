@@ -4,63 +4,63 @@ import { dataBR, dinheiro, esc, toast } from '../core/ui.js';
 import { cardFiltro } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
 import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261020-frotas-manut44';
 import { ESTILOS_VISAO, linkPlaca } from './frotas-manutencao-visao-estilos.js?v=20261020-frotas-manut44';
-import { PRIORIDADES } from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
+import { PRIORIDADES, statusInfo } from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
 import {
-  FILTROS_VAZIOS, SAUDE, contarSaude, custoDoMes, hojeBrasil, listarParados, montarAlertas, montarQuadro, opcoesDe, estaAberta,
+  FILTROS_VAZIOS, SAUDE, contarSaude, custoDoMes, hojeBrasil, listaPorAtencao, listarParados, montarAlertas, montarQuadro, opcoesDe, estaAberta,
 } from './frotas-manutencao-visao-regras.js?v=20261020-frotas-manut44';
-import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261020-frotas-manut44';
+import { abrirFicha, abrirNovaManutencao, abrirPreventiva, irCorretiva, abrirProntuario, carregarVisao, invalidarVisao } from './frotas-manutencao-visao-dados.js?v=20261020-frotas-manut44';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_PAINEL';
-  const state = { supabase: null, root: null, visao: null, filtros: { ...FILTROS_VAZIOS }, loading: false };
+  const LIMITE_LISTA = 10; const LIMITE_PARADOS = 6; const LIMITE_ALERTAS = 5;
+  const state = { supabase: null, root: null, visao: null, todosParados: false, todosAlertas: false, filtros: { ...FILTROS_VAZIOS }, etapa: '', limite: LIMITE_LISTA, loading: false };
 
   const rotuloPrioridade = (id) => PRIORIDADES.find((p) => p.id === id)?.label || id;
   const dataCurta = (iso) => (iso ? dataBR(iso) : '—');
 
   // ---------- partes ----------
-  function htmlCartao(c) {
-    const aviso = c.entregaAtrasada ? '<span class="fm-badge red" title="A previsão de entrega já passou">Entrega atrasada</span>'
-      : c.atrasada ? `<span class="fm-badge amber" title="Mais tempo nesta etapa do que o esperado">${c.dias} dia(s) aqui</span>`
-      : c.dias != null && c.dias > 0 ? `<span class="fm-mm">${c.dias} dia(s) nesta etapa</span>` : '<span class="fm-mm">Entrou hoje</span>';
-    const chips = [
-      c.parado ? '<span class="fm-badge red">Parado</span>' : '',
-      ['alta', 'urgente'].includes(c.prioridade) ? `<span class="fm-badge ${c.prioridade === 'urgente' ? 'red' : 'amber'}">${esc(rotuloPrioridade(c.prioridade))}</span>` : '',
-      c.reprovada ? '<span class="fm-badge red">Reprovada</span>' : '',
-      c.natureza ? `<span class="fm-badge ${c.natureza === 'preventiva' ? 'green' : 'blue'}">${c.natureza === 'preventiva' ? 'Preventiva' : 'Corretiva'}</span>` : '',
-    ].join('');
-    const rodape = [
-      c.status === 'em_execucao' ? (c.previsao ? `Entrega ${esc(dataCurta(c.previsao))}` : '<span class="fm-vazio-aviso">Sem previsão de entrega</span>') : '',
-      c.valor != null ? esc(dinheiro(c.valor)) : '',
-      c.oficina ? esc(c.oficina) : '',
-    ].filter(Boolean).join(' · ');
-    return `<article class="fm-qd${c.atrasada || c.entregaAtrasada ? ' atraso' : ''}${c.parado ? ' parado' : ''}" role="button" tabindex="0" data-ficha="${esc(c.id)}">
-      <header>${linkPlaca(c.placa, c.veiculo_id)}${aviso}</header>
-      <p>${esc(c.descricao || 'Sem descrição')}</p>
-      <div class="fm-qd-chips">${chips}</div>
-      <footer><span>${esc(c.modelo)}${c.coordenacao ? ` · ${esc(c.coordenacao)}` : ''}</span>${rodape ? `<span>${rodape}</span>` : ''}</footer>
-    </article>`;
+  // Faixa de etapas: só contagens (clicáveis), em vez de uma coluna de cartões por etapa.
+  function htmlEtapas(q) {
+    return `<div class="fm-etapas">${q.colunas.map((col) => `<button type="button" class="fm-etapa-b tone-${col.tone}${state.etapa === col.id ? ' ativo' : ''}" data-etapa="${col.id}" aria-pressed="${state.etapa === col.id}" title="${esc(col.dica)}"><strong>${col.itens.length}</strong><span>${esc(col.titulo)}</span>${col.atrasadas ? `<em>${col.atrasadas} atrasada(s)</em>` : ''}</button>`).join('')}</div>`;
   }
 
-  function htmlQuadro(q) {
-    if (!q.total) return '<div class="fm-empty">Nenhuma manutenção em andamento neste filtro.</div>';
-    return `<div class="fm-quadro">${q.colunas.map((col) => `<section class="fm-col tone-${col.tone}" title="${esc(col.dica)}">
-      <h4><span>${esc(col.titulo)}</span><span class="fm-col-n">${col.itens.length}</span>${col.atrasadas ? `<span class="fm-badge red" title="Cartões que passaram do prazo">${col.atrasadas} atrasada(s)</span>` : ''}</h4>
-      <div class="fm-col-corpo">${col.itens.length ? col.itens.map(htmlCartao).join('') : '<div class="fm-col-vazio">Nada aqui</div>'}</div></section>`).join('')}</div>`;
+  // Lista compacta: uma linha por manutenção, as que pedem atenção primeiro, poucas por vez.
+  function htmlLista(q) {
+    const todas = listaPorAtencao(q, state.etapa);
+    if (!todas.length) return '<div class="fm-empty">Nenhuma manutenção em andamento neste filtro.</div>';
+    const linhas = todas.slice(0, state.limite).map((c) => {
+      const prazo = c.entregaAtrasada ? '<span class="fm-badge red">Entrega atrasada</span>'
+        : c.atrasada ? `<span class="fm-badge amber" title="Mais tempo na etapa do que o esperado">${c.dias} dia(s) aqui</span>`
+        : `<span class="fm-mm">${c.dias ? `${c.dias} dia(s) na etapa` : 'entrou hoje'}</span>`;
+      const marcas = [c.parado ? '<span class="fm-badge red">Parado</span>' : '', ['alta', 'urgente'].includes(c.prioridade) ? `<span class="fm-badge ${c.prioridade === 'urgente' ? 'red' : 'amber'}">${esc(rotuloPrioridade(c.prioridade))}</span>` : ''].join('');
+      const extra = [c.status === 'em_execucao' ? (c.previsao ? `entrega ${esc(dataCurta(c.previsao))}` : '<span class="fm-vazio-aviso">sem previsão</span>') : '', c.valor != null ? esc(dinheiro(c.valor)) : ''].filter(Boolean).join(' · ');
+      return `<div class="fm-pl${c.atrasada || c.entregaAtrasada ? ' atraso' : ''}" role="button" tabindex="0" data-ficha="${esc(c.id)}">
+        <div class="fm-pl-id">${linkPlaca(c.placa, c.veiculo_id)}<span class="fm-mm">${esc(c.modelo)}${c.coordenacao ? ` · ${esc(c.coordenacao)}` : ''}</span></div>
+        <div class="fm-pl-desc">${esc(c.descricao || 'Sem descrição')}${extra ? `<span class="fm-mm">${extra}</span>` : ''}</div>
+        <div class="fm-pl-etapa"><span class="fm-badge ${statusInfo(c.status).tone}">${esc(statusInfo(c.status).label)}</span>${marcas}</div>
+        <div class="fm-pl-prazo">${prazo}</div></div>`;
+    }).join('');
+    const resto = todas.length - state.limite;
+    return `<div class="fm-pl-lista">${linhas}</div>${resto > 0 ? `<div class="fm-pl-mais"><button class="fm-btn ghost fm-mini" type="button" data-mais-lista>Mostrar mais ${Math.min(resto, LIMITE_LISTA)} (faltam ${resto})</button><button class="fm-link" type="button" data-ir-corretiva>Ver todas na Corretiva →</button></div>` : '<div class="fm-pl-mais"><button class="fm-link" type="button" data-ir-corretiva>Abrir a lista completa na Corretiva →</button></div>'}`;
   }
 
   function htmlAlertas(alertas) {
     if (!alertas.length) return '<div class="fm-ok-vazio">Nada pedindo atenção agora. 👌</div>';
-    return `<ul class="fm-alertas">${alertas.slice(0, 12).map((a) => `<li class="${a.tom}" role="button" tabindex="0" data-ficha="${esc(a.manutencao_id)}"><strong>${esc(a.titulo)}</strong><span>${esc(a.detalhe)}</span></li>`).join('')}</ul>${alertas.length > 12 ? `<p class="fm-mm">+ ${alertas.length - 12} alerta(s) — filtre por "Só atrasadas" no quadro.</p>` : ''}`;
+    const lista = state.todosAlertas ? alertas : alertas.slice(0, LIMITE_ALERTAS);
+    const mais = alertas.length > LIMITE_ALERTAS ? `<button class="fm-link" type="button" data-todos-alertas style="margin-top:8px">${state.todosAlertas ? 'Mostrar só os mais graves' : `Ver os ${alertas.length} alertas`}</button>` : '';
+    return `<ul class="fm-alertas">${lista.map((a) => `<li class="${a.tom}" role="button" tabindex="0" data-ficha="${esc(a.manutencao_id)}"><strong>${esc(a.titulo)}</strong><span>${esc(a.detalhe)}</span></li>`).join('')}</ul>${mais}`;
   }
 
-  function htmlParados(lista) {
-    if (!lista.length) return '<div class="fm-ok-vazio">Nenhum veículo parado na oficina.</div>';
+  function htmlParados(todos) {
+    if (!todos.length) return '<div class="fm-ok-vazio">Nenhum veículo parado na oficina.</div>';
+    const lista = state.todosParados ? todos : todos.slice(0, LIMITE_PARADOS);
+    const mais = todos.length > LIMITE_PARADOS ? `<button class="fm-link" type="button" data-todos-parados style="margin-top:8px">${state.todosParados ? 'Mostrar só os mais antigos' : `Ver os ${todos.length} parados`}</button>` : '';
     return `<table class="fm-table fm-tab-curta"><thead><tr><th>Veículo</th><th>Parado há</th><th>Entrega</th><th>Oficina</th></tr></thead><tbody>${lista.map((p) => {
       const entrega = p.previsao
         ? `<span class="${p.entregaAtrasada ? 'fm-venc' : ''}">${esc(dataCurta(p.previsao))}</span><span class="fm-mm">${p.diasParaEntrega < 0 ? `${-p.diasParaEntrega} dia(s) de atraso` : p.diasParaEntrega === 0 ? 'hoje' : `em ${p.diasParaEntrega} dia(s)`}</span>`
         : '<span class="fm-vazio-aviso">Sem previsão</span>';
       return `<tr class="fm-linha" data-ficha="${esc(p.id)}"><td>${linkPlaca(p.placa, p.veiculo_id)}<span class="fm-mm">${esc(p.modelo)}</span></td><td>${p.diasParado != null ? `${p.diasParado} dia(s)` : '—'}<span class="fm-mm">desde ${esc(dataCurta(p.desde))}</span></td><td>${entrega}</td><td>${esc(p.oficina || '—')}</td></tr>`;
-    }).join('')}</tbody></table>`;
+    }).join('')}</tbody></table>${mais}`;
   }
 
   function htmlSaude(cont, total) {
@@ -108,25 +108,25 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carr
         <section class="fm-sec"><h4><span>Parados agora</span><span class="fm-badge ${parados.length ? 'red' : 'green'}">${parados.length}</span></h4>${htmlParados(parados)}</section>
         <section class="fm-sec"><h4><span>Preventiva da frota</span><button class="fm-link" type="button" data-ir-preventiva>Ver preventiva →</button></h4>${htmlSaude(saude, totalSaude)}</section>
       </div>
-      <section class="fm-sec fm-sec-quadro"><h4><span>Quadro das manutenções em andamento</span><span class="fm-mm">${quadro.total} manutenção(ões)</span></h4>
+      <section class="fm-sec fm-sec-quadro"><h4><span>Manutenções em andamento</span><span class="fm-mm" data-total>${quadro.total} manutenção(ões)</span></h4>
+        <div data-etapas>${htmlEtapas(quadro)}</div>
         <div class="fm-bar fm-bar-quadro">
           <div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" data-f="busca" placeholder="Buscar placa, descrição, oficina, quem pediu..." value="${esc(state.filtros.busca)}"></div>
           <select class="fm-select" data-f="coordenacao" style="width:auto">${opcoesSelect(opcoesDe(v.veiculos, 'coordenacao'), state.filtros.coordenacao, 'Todas as coordenações')}</select>
           <select class="fm-select" data-f="supervisao" style="width:auto">${opcoesSelect(opcoesDe(v.veiculos, 'supervisao'), state.filtros.supervisao, 'Todas as supervisões')}</select>
           <select class="fm-select" data-f="natureza" style="width:auto"><option value="">Corretiva e preventiva</option><option value="corretiva"${state.filtros.natureza === 'corretiva' ? ' selected' : ''}>Só corretiva</option><option value="preventiva"${state.filtros.natureza === 'preventiva' ? ' selected' : ''}>Só preventiva</option></select>
-          <label class="fm-check"><input type="checkbox" data-f="so_parados"${state.filtros.so_parados ? ' checked' : ''}> Só parados</label>
-          <label class="fm-check"><input type="checkbox" data-f="so_atrasadas"${state.filtros.so_atrasadas ? ' checked' : ''}> Só atrasadas</label>
         </div>
-        <div data-quadro>${htmlQuadro(quadro)}</div></section>
-      <div class="fm-nota">Cada cartão mostra há quantos dias a manutenção está na etapa. Fica em destaque quando passa do prazo esperado (solicitada 2 dias, orçamento 3, aprovação 2, emitir OS 3, oficina 15). Clique num cartão para abrir a ficha; a placa leva ao prontuário do veículo na aba Veículos.</div>`;
+        <div data-lista>${htmlLista(quadro)}</div></section>
+      <div class="fm-nota">As etapas mostram quantas manutenções há em cada uma (clique para filtrar). A lista começa pelo que passou do prazo esperado (solicitada 2 dias, orçamento 3, aprovação 2, emitir OS 3, oficina 15) e mostra poucas por vez. Clique numa linha para abrir a ficha; a placa leva ao prontuário do veículo.</div>`;
   }
 
-  // Só o quadro é refeito ao filtrar (a busca mantém o foco no campo).
-  function renderQuadro() {
+  // Ao filtrar, só a faixa de etapas e a lista são refeitas (a busca mantém o foco no campo).
+  function renderLista() {
     const v = state.visao; if (!v) return;
     const quadro = montarQuadro(v.manutencoes, v.mapaVeiculos, state.filtros, hojeBrasil());
-    state.root.querySelector('[data-quadro]').innerHTML = htmlQuadro(quadro);
-    const n = state.root.querySelector('.fm-sec-quadro h4 .fm-mm'); if (n) n.textContent = `${quadro.total} manutenção(ões)`;
+    state.root.querySelector('[data-etapas]').innerHTML = htmlEtapas(quadro);
+    state.root.querySelector('[data-lista]').innerHTML = htmlLista(quadro);
+    const n = state.root.querySelector('[data-total]'); if (n) n.textContent = `${quadro.total} manutenção(ões)`;
   }
 
   async function carregar({ forcar = false } = {}) {
@@ -147,6 +147,11 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carr
     const raiz = container.querySelector('.fm-shell');
     raiz.addEventListener('click', (e) => {
       if (e.target.closest('[data-ir-preventiva]')) return abrirPreventiva();
+      if (e.target.closest('[data-ir-corretiva]')) return irCorretiva();
+      if (e.target.closest('[data-mais-lista]')) { state.limite += LIMITE_LISTA; return renderLista(); }
+      if (e.target.closest('[data-todos-parados]')) { state.todosParados = !state.todosParados; return render(); }
+      if (e.target.closest('[data-todos-alertas]')) { state.todosAlertas = !state.todosAlertas; return render(); }
+      const etapa = e.target.closest('[data-etapa]'); if (etapa) { state.etapa = state.etapa === etapa.dataset.etapa ? '' : etapa.dataset.etapa; state.limite = LIMITE_LISTA; return renderLista(); }
       const placa = e.target.closest('[data-prontuario]'); if (placa) return abrirProntuario(placa.dataset.prontuario);
       const ficha = e.target.closest('[data-ficha]'); if (ficha) abrirFicha(ficha.dataset.ficha);
     });
@@ -156,7 +161,7 @@ import { abrirFicha, abrirNovaManutencao, abrirPreventiva, abrirProntuario, carr
     const mudou = (e) => {
       const f = e.target.closest?.('[data-f]'); if (!f) return;
       state.filtros[f.dataset.f] = f.type === 'checkbox' ? f.checked : f.value;
-      renderQuadro();
+      state.limite = LIMITE_LISTA; renderLista();
     };
     raiz.addEventListener('input', (e) => { if (e.target.matches?.('input[data-f][type="text"],input[data-f]:not([type])')) mudou(e); });
     raiz.addEventListener('change', (e) => { if (!e.target.matches?.('input[data-f][type="text"],input[data-f]:not([type])')) mudou(e); });
