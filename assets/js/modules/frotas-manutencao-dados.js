@@ -69,6 +69,23 @@ export async function carregarGrupos(supabase) {
   return error ? [] : (data || []);
 }
 
+// Veículos para as visões de conjunto (Painel, Veículos, Agenda): só o que elas mostram, sem os cadastros do fluxo.
+export async function carregarVeiculosVisao(supabase) {
+  return tudoPaginado(() => supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os veículos.');
+}
+
+// Manutenções (sem itens, orçamentos e notas) para o quadro, a agenda e o prontuário.
+export async function carregarManutencoesVisao(supabase) {
+  return tudoPaginado(() => supabase.from('frotas_manutencoes').select('*').order('solicitado_em', { ascending: false }).order('id', { ascending: true }), 'Erro ao carregar as manutenções.');
+}
+
+// Itens (sistemas do guia) das manutenções de um veículo, para o histórico do prontuário. Sem acesso: lista vazia.
+export async function carregarItensDeManutencoes(supabase, ids = []) {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('frotas_manutencao_itens').select('id,manutencao_id,categoria_codigo,descricao,tipo_item').in('manutencao_id', ids.slice(0, 200)).order('created_at', { ascending: true });
+  return error ? [] : (data || []);
+}
+
 export async function carregarBase(supabase) {
   const [categorias, planos, oficinas, veiculos, componentes, grupos, pecas] = await Promise.all([
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),

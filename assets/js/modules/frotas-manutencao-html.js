@@ -1,11 +1,11 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261019-frotas-manut43';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261019-frotas-manut43';
+import { cardFiltro } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261020-frotas-manut44';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261019-frotas-manut43';
+} from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
 const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
@@ -378,7 +378,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
-  return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
+  return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
     ${faixaEtapa(m, notas)}
     ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
