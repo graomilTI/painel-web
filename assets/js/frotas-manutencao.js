@@ -1,6 +1,6 @@
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import './modules/frotas-manutencao.js?v=20261019-frotas-manut43';
+import './modules/frotas-manutencao.js?v=20261020-frotas-manut44';
 
 initProtectedPage('Frotas · Manutenção', (content, ctx) => {
   window.FROTAS_MANUTENCAO.openHome(content, {

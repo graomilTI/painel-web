@@ -4,14 +4,14 @@
 //   3. Pagamento e NF (opcional: quem paga, custo, notas com comprovante, envio ao GRM e Financeiro)
 // Grava pela RPC frotas_manutencao_registrar_preventiva; as notas são anexadas em seguida, uma a uma.
 import { closeModal, esc, openModal, toast } from '../core/ui.js';
-import * as dados from './frotas-manutencao-dados.js?v=20261019-frotas-manut43';
-import { RESPONSAVEIS, componentesDoServico, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261019-frotas-manut43';
-import { htmlComponentes, htmlEntradaNota } from './frotas-manutencao-html.js?v=20261019-frotas-manut43';
-import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261019-frotas-manut43';
+import * as dados from './frotas-manutencao-dados.js?v=20261020-frotas-manut44';
+import { RESPONSAVEIS, componentesDoServico, descreverIntervalo, numeroOuNulo, somaNotas } from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
+import { htmlComponentes, htmlEntradaNota } from './frotas-manutencao-html.js?v=20261020-frotas-manut44';
+import { criarEditorNotas } from './frotas-manutencao-preventiva-notas.js?v=20261020-frotas-manut44';
 import {
   filtrarServicos, hojeBrasilISO, kmMais, nomeCurto, opcoesDePrazo, proximoPrazo, somarPrazo, validarPasso1, validarPasso2, validarPasso3,
-} from './frotas-manutencao-preventiva-regras.js?v=20261019-frotas-manut43';
-import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261019-frotas-manut43';
+} from './frotas-manutencao-preventiva-regras.js?v=20261020-frotas-manut44';
+import { fmtKm, htmlCardServico } from './frotas-manutencao-preventiva-cards.js?v=20261020-frotas-manut44';
 
 const MODAL = 'fmPreventiva';
 const PASSOS = ['O que foi feito', 'Próximos prazos', 'Pagamento e NF'];
