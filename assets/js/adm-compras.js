@@ -953,14 +953,17 @@ function openSelecionarFornecedor(rows){
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   modal.querySelector('#mClose2').onclick=()=>modal.classList.remove('open');
-  modal.querySelectorAll('[data-sel-fi]').forEach(btn=>btn.onclick=()=>{
+  modal.querySelectorAll('[data-sel-fi]').forEach(btn=>btn.onclick=async()=>{
     const fi=Number(btn.dataset.selFi);
     // Aplica os valores do fornecedor selecionado em cada row
     const rowsComValor=rows.map(r=>{
       const c=state.cotacaoCache[r.id]?.fornecedores?.[fi];
       return {...r, _valor_unitario:c?Number(c.valor_unitario||0):0, _valor_total:c?Number(c.valor_total||0):0, _fornecedor:fns[fi]?.nome||''};
     });
-    openPagamentoLote(rowsComValor, true);
+    // Com saldo no estoque do fornecedor, passa pela revisão (quanto sai de lá) antes do pagamento.
+    const estoqueForn=await carregarEstoqueFornecedor();
+    if(rowsComValor.some(r=>candidatosForn(r,estoqueForn).length)) openCompraLote(rowsComValor,true);
+    else openPagamentoLote(rowsComValor, true);
   });
 }
 
@@ -1015,7 +1018,8 @@ async function aplicarEstoqueFornecedor(itens){
   return restantes;
 }
 
-async function openCompraLote(rows){
+// fornecedorPreSelecionado: veio da escolha do fornecedor da cotação (valores e fornecedor já definidos em _valor_unitario/_fornecedor).
+async function openCompraLote(rows,fornecedorPreSelecionado=false){
   const modal=document.getElementById('admCmpModal');
   const estoqueForn=await carregarEstoqueFornecedor();
   const cand=new Map(rows.map(r=>[r.id,candidatosForn(r,estoqueForn)]));
@@ -1044,7 +1048,7 @@ async function openCompraLote(rows){
             ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||state.cotacaoCache[r.id]?.ca||'')}">`:'-'}</td>`:''}
             ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
             <td>${c.length?`<input class="buy-estoque" type="number" step="0.01" min="0" value="${esc(doEstoqueInicial(r))}" style="width:90px">`:'-'}</td>`:''}
-            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r.valor_unitario||r._valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||'')}" placeholder="0,00"></td>
+            <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r._valor_unitario||r.valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||'')}" placeholder="0,00"></td>
             <td><input class="buy-total" type="number" step="0.01" readonly value="${esc(r.valor_total||'0')}"></td>
           </tr>`;}).join('')}
         </tbody>
@@ -1101,7 +1105,7 @@ async function openCompraLote(rows){
       }catch(e){setMsg(e.message,true);alert(e.message);}
       return;
     }
-    openPagamentoLote(rowsComValor, false);
+    openPagamentoLote(rowsComValor, fornecedorPreSelecionado);
   };
 }
 
@@ -1181,7 +1185,11 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="paySend" type="button">Enviar ao Financeiro</button><button class="btn btn-secondary" id="payBack" type="button">Voltar</button></div>`;
   let forma='BOLETO';
   area.querySelector('#mClose').onclick=()=>document.getElementById('admCmpModal').classList.remove('open');
-  area.querySelector('#payBack').onclick=()=>fornecedorPreSelecionado?abrirCompraSelecionados():openCompraLote(rows.map(r=>({...r})));
+  area.querySelector('#payBack').onclick=()=>{
+    // Volta para a revisão (valores e estoque do fornecedor) quando ela foi exibida; senão, para a escolha de fornecedor.
+    if(rows.some(r=>r._estoque_forn_id)||!fornecedorPreSelecionado) openCompraLote(rows.map(r=>({...r})),fornecedorPreSelecionado);
+    else abrirCompraSelecionados();
+  };
   area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);});
   updatePagamentoFields(area,forma);
   area.querySelector('#payEntregaTipo').onchange=(ev)=>{
