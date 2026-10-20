@@ -88,7 +88,7 @@ const SOFT_NAV_PAGES = new Map([
   // pageInit.js, inclusive na troca entre #hoteis e #alojamentos pelo menu lateral.
   ['contatos', { title: 'Contatos', module: () => import('./contatos.js') }],
   ['ti-integracoes', { title: 'TI · Integrações', module: () => import('./ti-integracoes.js') }],
-  ['distribuir-os', { title: 'Distribuir O.S', module: () => import('./distribuir-os.js') }],
+  ['distribuir-os', { title: 'Distribuir O.S', module: () => import('./distribuir-os.js?v=20261020-realtime1') }],
   ['adm-patrimonio', { title: 'Relatórios de Patrimônios', module: () => import('./patrimonioRelatorios.js') }],
   ['frotas', { title: 'Frotas', module: () => import('./frotas.js') }],
   ['frotas-cadastros', { title: 'Frotas · Cadastros', module: () => import('./frotas-cadastros.js?v=20261019-frotas-manut43') }],
