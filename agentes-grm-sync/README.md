@@ -424,6 +424,23 @@ alterado depois de `CONCLUIDO` não regrava (vira `ERRO` avisando).
 node test-cadastrar-patrimonio.js                                                      # testes das funções puras
 ```
 
+## Compras: um comprovante pagando mais de uma NF (`sync-lancar-notas-fiscais`)
+
+Itens do mesmo pagamento (mesmo `comprovante_url`) podem ter NFs diferentes: na finalização do grupo (ou em "Anexar NF")
+cada item escolhe a sua NF. Cada arquivo de NF continua virando **uma linha da fila e um lançamento no GRM**; o que muda
+é a baixa, que passa a ser **uma só** para o comprovante inteiro:
+
+- `carregarNfsDoComprovante` acha as NFs que dividem o comprovante. Com uma NF só devolve `null` e nada muda (fluxo de sempre).
+- A baixa só é criada quando **todas** as NFs do comprovante estiverem `LANCADO`. Enquanto falta alguma, a NF que acabou
+  de ser lançada fica com `compras.baixa.status = AGUARDANDO_NFS`; a última a ser lançada cria a baixa e atualiza as irmãs.
+- A baixa vai em `grm_nf_baixas` com `pin_codes_json` de um item por NF (o agente de baixa já paga várias parcelas num
+  único `payInvoice/payment`), `valor` = soma das NFs, e só sai se o valor do comprovante bater com essa soma (mesmas
+  travas de sempre: data lida no comprovante, conta pagadora conhecida da mesma empresa, sem boleto).
+- Vai para baixa manual (financeiro) quando: NFs de favorecidos/empresas diferentes, alguma NF parcelada, alguma NF
+  `DUPLICADO` (já lançada à mão), alguma NF que é link/número e não arquivo, ou soma diferente do comprovante.
+- `loadComprasContext` agora acha o pagamento também por `compras_item_ids` (antes só por `origem_id`, que guarda só o 1º item).
+- Testes: `node test-compras-nfs-comprovante.js` e `node test-compras-nfs-comprovante-banco.js`.
+
 ## Rodar manualmente (debug)
 
 ```bash
