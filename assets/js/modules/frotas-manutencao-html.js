@@ -1,14 +1,12 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
-import { cardFiltro } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
-import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261020-frotas-manut44';
+import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import {
-  itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, FILTROS, VISOES, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
-  descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, valorDaManutencao, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
-} from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
+  itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
+  descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
+} from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
 // Data no horário local (o banco guarda timestamptz em UTC; perto da meia-noite o dia mudaria).
-const dataLocal = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
 const TIPOS_ITEM = [{ id: 'servico', label: 'Serviço' }, { id: 'peca', label: 'Peça' }];
 const fmtKm = (v) => (v == null || v === '' ? '—' : `${Number(v).toLocaleString('pt-BR')} km`);
 const hojeISO = () => new Date().toISOString().slice(0, 10);
@@ -51,45 +49,6 @@ export function htmlItensDoGrupo(base, grupo, marcados = []) {
 export function badgeStatus(status) {
   const s = statusInfo(status);
   return `<span class="fm-badge ${s.tone}">${esc(s.label)}</span>`;
-}
-
-// ---------- tela principal ----------
-export function htmlCasca() {
-  return `<section class="fm-shell">
-    <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
-    <div class="fm-kpis" data-kpis></div>
-    <div class="fm-card"><div class="fm-body">
-      <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, oficina, motorista, categoria..." data-busca></div>
-      <select class="fm-select" data-f-visao style="width:auto" title="Quais manutenções aparecem na lista">${VISOES.map((v) => `<option value="${v.id}">Ver: ${v.label}</option>`).join('')}</select>
-      <span data-chip></span><span class="fm-count" data-contagem>0 manutenção(ões)</span></div>
-      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Código</th><th>Veículo</th><th>Serviço</th><th>Próximo passo</th><th>Valor</th><th>Solicitada</th></tr></thead><tbody data-linhas></tbody></table></div>
-      <div class="fm-nota">Clique numa linha para abrir a ficha. Aprovar exige a permissão "pode aprovar" e respeita a alçada de valor de cada aprovador. Veículo marcado como parado deixa de ser sugerido na Programação enquanto estiver na oficina.</div>
-    </div></div></section>`;
-}
-
-export function htmlKpis(contagens, filtro) {
-  return FILTROS.map((f) => cardFiltro({ filtro: f.id, tone: f.tone, icone: f.icone, label: f.rotulo, valor: String(contagens[f.id] ?? 0), dica: f.dica, ativo: f.id === filtro })).join('');
-}
-
-export function htmlLinhas(rows, { itensPorManut, orcsPorManut, categorias, grupos = [], notasPorManut = new Map() }) {
-  if (!rows.length) return '<tr><td colspan="6" class="fm-empty">Nenhuma manutenção neste filtro. Use "+ Nova manutenção" para registrar um pedido.</td></tr>';
-  return rows.map((m) => {
-    const itens = itensPorManut.get(m.id) || [];
-    const cats = [...new Set(itens.map((i) => nomeDoGrupoDaCategoria({ categorias, grupos }, i.categoria_codigo)).filter(Boolean))].slice(0, 3)
-      .map((nome) => `<span class="fm-badge blue" title="${esc(nome)}">${esc(nome.slice(0, 26))}</span>`).join('');
-    const valor = valorDaManutencao(m, orcsPorManut.get(m.id) || []);
-    const alta = m.prioridade === 'alta' || m.prioridade === 'urgente' ? `<span class="fm-badge ${m.prioridade === 'urgente' ? 'red' : 'amber'}">${m.prioridade === 'urgente' ? 'Urgente' : 'Alta'}</span>` : '';
-    const parado = m.veiculo_parado ? '<span class="fm-badge red" title="Veículo parado enquanto a OS estiver em execução">Parado</span>' : '';
-    const passo = proximoPasso(m, { notas: notasPorManut.get(m.id) || [] });
-    const preventiva = m.natureza === 'preventiva' ? ' <span class="fm-badge green">Preventiva</span>' : '';
-    return `<tr class="fm-linha" data-abrir="${esc(m.id)}">
-      <td><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}</td>
-      <td><strong>${esc(m.__placa || '—')}</strong><span class="fm-mm">${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</span></td>
-      <td>${esc((m.descricao || '').slice(0, 90))}${(m.descricao || '').length > 90 ? '…' : ''}${preventiva}<div class="fm-chips">${cats}</div></td>
-      <td><span class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</span> ${alta} ${parado}</td>
-      <td>${valor ? `${dinheiro(valor.valor)}<span class="fm-mm">${esc(valor.rotulo)}</span>` : '—'}</td>
-      <td>${dataLocal(m.solicitado_em)}<span class="fm-mm">${esc(m.solicitante_nome || '')}</span></td></tr>`;
-  }).join('');
 }
 
 // ---------- nova solicitação ----------
@@ -321,6 +280,16 @@ export function htmlEntradaNota(base) {
     ${htmlCampoPagamento()}</div>`;
 }
 
+// Pagou antes de a nota chegar (ou o contrário): o que falta pode ser anexado depois, na própria nota.
+const hojeBrasil = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+function htmlCompletarNota(n) {
+  const nf = !n.anexo_url
+    ? `<span class="fm-badge amber">Falta a NF/NFS-e</span><label class="fm-anexar">Anexar NF<input class="fm-input" type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" data-anexar-nf="${esc(n.id)}"></label>` : '';
+  const comp = (!n.comprovante_url && !n.pago_em)
+    ? `<span class="fm-badge amber">Falta o comprovante</span><label class="fm-anexar">Pago em <input class="fm-input" type="date" data-anexar-data="${esc(n.id)}" value="${hojeBrasil()}" max="${hojeBrasil()}"></label><label class="fm-anexar">Anexar comprovante<input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-anexar-comp="${esc(n.id)}"></label>` : '';
+  return `<div class="fm-nota-pago">${nf}${comp}</div>`;
+}
+
 function blocoNotas(m, notas, fin, base) {
   if (!['em_execucao', 'concluida'].includes(m.status)) return '';
   const resp = (RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label;
@@ -341,12 +310,13 @@ function blocoNotas(m, notas, fin, base) {
       <div class="fm-ro">${esc(n.numero || '—')}</div>
       <div class="fm-ro">${esc(dinheiro(n.valor))}</div>
       <div class="fm-ro">${n.anexo_url ? `<a href="${esc(n.anexo_url)}" target="_blank" rel="noopener" style="color:#86efac">Ver arquivo</a>` : '—'}${n.comprovante_url ? ` · <a href="${esc(n.comprovante_url)}" target="_blank" rel="noopener" style="color:#86efac" title="Comprovante de pagamento anexado à nota">Comprovante anexado</a>${n.pago_em ? ` (${esc(dataBR(n.pago_em))})` : ''}` : ''}${situacao ? `<small>${situacao}</small>` : ''}</div>
-      ${n.enviada_em ? '<span></span>' : `<button class="fm-ic danger" type="button" data-acao="nota-remover" data-id="${esc(n.id)}" title="Remover nota" aria-label="Remover nota">✕</button>`}</div>`;
+      ${n.enviada_em ? '<span></span>' : `<button class="fm-ic danger" type="button" data-acao="nota-remover" data-id="${esc(n.id)}" title="Remover nota" aria-label="Remover nota">✕</button>`}
+      ${(!n.anexo_url || (!n.comprovante_url && !n.pago_em)) ? htmlCompletarNota(n) : ''}</div>`;
   }).join('');
   const conf = conferenciaNotas(notas, m.status === 'concluida' ? m.custo : null);
   const resumo = notas.length
     ? `<div class="fm-mm" style="margin-top:8px">Soma das ${notas.length} nota(s): <strong>${esc(dinheiro(conf.soma))}</strong>${m.status === 'concluida' && m.custo != null ? ` · Custo final: <strong>${esc(dinheiro(m.custo))}</strong>` : ''}</div>${conf.situacao === 'acima' ? '<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">A soma das notas passa do custo final: o envio é recusado até acertar.</div>' : conf.situacao === 'abaixo' ? `<div class="fm-mm">O custo final é ${esc(dinheiro(conf.diferenca))} maior que as notas (valor sem nota, por exemplo).</div>` : ''}`
-    : '<div class="fm-mm">Nenhuma nota ainda. Adicione cada nota fiscal (peças, serviço, ou várias de cada) com o arquivo e o valor.</div>';
+    : '<div class="fm-mm">Nenhuma nota ainda. Adicione cada nota (peças, serviço, ou várias de cada) com o valor e a NF e/ou o comprovante de pagamento: o que faltar pode ser anexado depois, na própria nota.</div>';
   const pendentes = notas.filter((n) => !n.enviada_em).length;
   const enviar = m.status === 'concluida' && pendentes
     ? `<div class="fm-acoes" style="justify-content:flex-start"><button class="fm-btn primary" type="button" data-acao="notas-enviar">Enviar ${pendentes} nota(s) ao GRM e ao Financeiro</button></div>`
@@ -372,13 +342,17 @@ function blocoLinhaTempo(m) {
   return `<details class="fm-sec fm-mais" data-hist><summary>Histórico (${eventos.length})</summary><ul class="fm-tl" style="margin-top:10px">${eventos.map((e) => `<li><time>${esc(dataHoraBR(e.em))}</time><span><strong>${esc(statusInfo(e.para).label)}</strong>${e.de ? ` (de ${esc(statusInfo(e.de).label)})` : ''} · ${esc(e.por || '')}${e.nota ? ` — ${esc(e.nota)}` : ''}</span></li>`).join('')}</ul></details>`;
 }
 
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false }) {
+// `semCabecalho`: ficha dentro do cartão da etapa (sem janela e sem botão de voltar): no lugar do cabeçalho, só a situação e o prontuário.
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false, semCabecalho = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
-  return `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>
+  const cabecalho = semCabecalho
+    ? `<div class="fm-det-topo">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button></div>`
+    : `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>`;
+  return `${cabecalho}
     ${faixaEtapa(m, notas)}
     ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;

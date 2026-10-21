@@ -261,6 +261,14 @@ export async function solicitar(supabase, { veiculo_id, descricao, prioridade, o
   return data;
 }
 
+// Separa da solicitação só o que foi marcado: o marcado vira uma solicitação nova (dividida_de aponta para esta) e o resto
+// continua aqui. Devolve o id da nova. `selecao`: [{ item_id, componentes? }] (ver resolverSelecao).
+export async function dividir(supabase, manutencaoId, selecao) {
+  const { data, error } = await supabase.rpc('frotas_manutencao_dividir', { p_manutencao: manutencaoId, p_selecao: selecao });
+  if (error) falhar(error, 'Erro ao separar os itens marcados.');
+  return data;
+}
+
 export async function atualizarManutencao(supabase, id, campos) {
   const { data, error } = await supabase.from('frotas_manutencoes').update(campos).eq('id', id).select('*').single();
   if (error) falhar(error, 'Erro ao salvar a manutenção.');

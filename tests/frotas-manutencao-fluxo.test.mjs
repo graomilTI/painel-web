@@ -6,7 +6,8 @@ import {
   filtrarManutencoes, naturezaSugerida, normalizarLinhaHistorico, numeroOuNulo, presetDoChecklist, pendenciasPara, proximoPasso, validarConclusao, validarOrcamento, validarSolicitacao, valorDaManutencao,
 } from '../assets/js/modules/frotas-manutencao-regras.js';
 import { veiculosDaRegional } from '../assets/js/gestorManutencao.js';
-import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova, htmlKpis, htmlLinhas } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlComponentes, htmlFormOrcamento, htmlFicha, htmlFormNova } from '../assets/js/modules/frotas-manutencao-html.js';
+import { htmlCards, htmlCasca } from '../assets/js/modules/frotas-manutencao-cards.js';
 
 // Fluxo de manutenção (solicitação → orçamento → aprovação → OS → conclusão). As regras da tela espelham o trigger
 // frotas_manutencoes_fluxo; quem decide é o banco, aqui se evita oferecer o que ele recusaria.
@@ -355,15 +356,16 @@ test('formulários: conclusão sugere km e custo; orçamento só aparece quando 
 
 test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "Quem pediu" para pedidos do WhatsApp)', () => {
   const lista = [m({ valor_aprovado: 750, prioridade: 'urgente', veiculo_parado: true })];
-  const html = htmlLinhas(lista, { itensPorManut: new Map([['m1', [item]]]), orcsPorManut: new Map(), categorias: base.categorias });
+  const contexto = (extra = {}) => ({ itensPorManut: new Map(), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'solicitacoes', aberto: null, podeAprovar: false, marcadasDe: () => new Set(), codigoDe: () => '', ...extra });
+  const html = htmlCards(lista, contexto({ itensPorManut: new Map([['m1', [item]]]) }));
   assert.match(html, /MAN-000007/);
   assert.match(html, /Urgente/);
   assert.match(html, /Parado/);
-  assert.match(htmlLinhas([], { itensPorManut: new Map(), orcsPorManut: new Map(), categorias: [] }), /Nenhuma manutenção/);
-  assert.match(htmlKpis({ aprovar: 3 }, 'aprovar'), /data-filtro="aprovar"/);
+  assert.match(htmlCards([], contexto()), /Nenhuma solicitação/);
   assert.match(html, /Orçar ou aprovar/);
-  assert.doesNotMatch(html, />Abrir<\/button>/, 'a linha inteira abre a ficha');
-  assert.match(readFileSync(new URL('../assets/js/modules/frotas-manutencao-html.js', import.meta.url), 'utf8'), /data-acao="nova">\+ Nova manutenção<\/button>/);
+  assert.match(html, /data-abrir="m1"/, 'o cabeçalho do cartão abre a ficha (dentro do cartão, sem janela)');
+  assert.doesNotMatch(html, /Voltar para a lista/, 'não há página com botão de voltar');
+  assert.match(htmlCasca(), /data-acao="nova">\+ Nova manutenção<\/button>/);
   const nova = htmlFormNova(base, { veiculo_id: 'v1', itens: [{ categoria_codigo: 2, plano_id: 'p1', natureza: 'preventiva' }] });
   assert.match(nova, /<h3>Nova manutenção<\/h3>/);
   assert.match(nova, /data-n-solicitante/);
@@ -632,7 +634,7 @@ test('os botões das abas ficam fora de .fm-head, que o hub esconde (frotas-hub.
   const ler = (c) => readFileSync(new URL(`../${c}`, import.meta.url), 'utf8');
   const escondidas = ler('assets/css/frotas-hub.css');
   assert.match(escondidas, /\.frotas-hub-tab-body \.fm-head/, 'o hub esconde .fm-head (por isso as ações não podem estar lá)');
-  for (const f of ['frotas-manutencao-html', 'frotas-manutencao-preventiva', 'frotas-manutencao-custos', 'frotas-manutencao-oficinas', 'frotas-troca-oleo', 'frotas-checklists']) {
+  for (const f of ['frotas-manutencao-cards', 'frotas-manutencao-preventiva', 'frotas-manutencao-custos', 'frotas-manutencao-oficinas', 'frotas-troca-oleo', 'frotas-checklists']) {
     const src = ler(`assets/js/modules/${f}.js`);
     assert.doesNotMatch(src, /<div class="fm-head">|<div class="fm-head" /, `${f} tem botões dentro de .fm-head (escondido no hub)`);
     assert.match(src, /class="fm-topo"/, `${f} deveria usar .fm-topo para as ações`);

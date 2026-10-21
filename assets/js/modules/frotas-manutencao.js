@@ -1,18 +1,22 @@
-// Frotas · Manutenção: fluxo completo (solicitação → orçamento → aprovação → OS → conclusão).
-// Lista com cartões-filtro por etapa e ficha em modal. Regras em frotas-manutencao-regras.js, dados em
-// frotas-manutencao-dados.js e HTML em frotas-manutencao-html.js. O banco valida cada etapa (trigger).
-import { confirmar, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
-import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261020-frotas-manut44';
-import * as dados from './frotas-manutencao-dados.js?v=20261020-frotas-manut44';
+// Frotas · Manutenção › Corretiva: fluxo completo (solicitação → orçamento → aprovação → OS → conclusão → pagamento e nota),
+// no modelo de Compras: uma aba por etapa (Solicitações, Cotações, Em andamento, À pagar, Aguardando NF, Concluído) e um
+// cartão por manutenção, com os itens marcáveis e a coluna de ações à direita. A ficha abre dentro do cartão (sem janela).
+// Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
+// etapa (trigger frotas_manutencoes_fluxo).
+import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
+import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
+import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261021-frotas-manut45';
+import * as dados from './frotas-manutencao-dados.js?v=20261021-frotas-manut45';
 import {
-  acoesDisponiveis, contarPorFiltro, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, somarLinhas, totalDoOrcamento, validarNota, filtrarManutencoes, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao,
-} from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
+  acoesDisponiveis, modeloDoVeiculo, naturezaSugerida, pecasDoModelo, rotuloModelo, normalizarLinhas, rotuloVeiculo, totalDoOrcamento, validarNota, normalizarPlaca, numeroOuNulo, validarConclusao, validarOrcamento, validarSolicitacao, somarLinhas, codigoManutencao,
+} from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 import {
-  htmlCasca, htmlErros, htmlFicha, htmlFormNova, htmlKpis, htmlLinhaOrcamento, htmlLinhas,
-} from './frotas-manutencao-html.js?v=20261020-frotas-manut44';
-import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261020-frotas-manut44';
-import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-frotas-manut44';
+  ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, linhasDosItens, manutencoesDaEtapa, resolverSelecao,
+} from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
+import { htmlCards, htmlCasca, htmlEtapas, htmlResumo } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
+import { htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
+import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
+import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-frotas-manut45';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -24,8 +28,8 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
-    vista: 'lista', // 'lista' | 'nova' | 'ficha': nova e ficha ocupam a área da aba (sem janela)
-    filtro: 'todos', visao: 'andamento', busca: '',
+    etapa: ETAPA_PADRAO, etapaEscolhida: false, resumo: 'todos', busca: '',
+    marcadas: new Map(), // manutenção → linhas marcadas para a cotação (key de linhasDosItens)
     loading: false, ocupado: false,
     fichaId: null, maisAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
@@ -39,13 +43,12 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
 
   // ---------- índices ----------
   function indices() {
-    const itensPorManut = new Map();
-    for (const i of state.itens) { if (!itensPorManut.has(i.manutencao_id)) itensPorManut.set(i.manutencao_id, []); itensPorManut.get(i.manutencao_id).push(i); }
-    const orcsPorManut = new Map();
-    for (const o of state.orcs) { if (!orcsPorManut.has(o.manutencao_id)) orcsPorManut.set(o.manutencao_id, []); orcsPorManut.get(o.manutencao_id).push(o); }
-    const notasPorManut = new Map();
-    for (const n of state.notas) { if (!notasPorManut.has(n.manutencao_id)) notasPorManut.set(n.manutencao_id, []); notasPorManut.get(n.manutencao_id).push(n); }
-    return { itensPorManut, orcsPorManut, notasPorManut };
+    const agrupar = (lista) => {
+      const mapa = new Map();
+      for (const x of lista) { if (!mapa.has(x.manutencao_id)) mapa.set(x.manutencao_id, []); mapa.get(x.manutencao_id).push(x); }
+      return mapa;
+    };
+    return { itensPorManut: agrupar(state.itens), orcsPorManut: agrupar(state.orcs), notasPorManut: agrupar(state.notas) };
   }
 
   function enriquecer(m) {
@@ -60,17 +63,53 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     state.notas = notas || [];
   }
 
+  const marcadasDe = (id) => state.marcadas.get(id) || new Set();
+  const etapaDe = (m) => etapaDaManutencao(m, state.notas.filter((n) => n.manutencao_id === m.id));
+  const rotuloEtapa = (id) => ETAPAS.find((e) => e.id === id)?.rotulo || id;
+
   // ---------- lista ----------
+  function contextoCards(ind = indices()) {
+    return {
+      ...ind, base: state.base, etapa: state.etapa, aberto: state.fichaId, podeAprovar: podeAprovar(), marcadasDe,
+      codigoDe: (id) => { const o = state.manut.find((x) => x.id === id); return o ? codigoManutencao(o) : ''; },
+    };
+  }
+
+  // Marcações dos itens (indeterminado do grupo e do "marcar tudo", contador e destaque) acompanham o estado.
+  function sincronizarSelecao(card) {
+    const id = card?.dataset?.mc; if (!card || !id) return;
+    const marc = marcadasDe(id);
+    const linhas = [...card.querySelectorAll('[data-check-linha]')];
+    linhas.forEach((c) => { c.checked = marc.has(c.value); c.closest('.fm-mc-linha')?.classList.toggle('sel', c.checked); });
+    card.querySelectorAll('[data-mc-grupo]').forEach((g) => {
+      const cs = [...g.querySelectorAll('[data-check-linha]')]; const n = cs.filter((c) => c.checked).length;
+      const gc = g.querySelector('[data-check-grupo]');
+      if (gc) { gc.checked = cs.length > 0 && n === cs.length; gc.indeterminate = n > 0 && n < cs.length; }
+    });
+    const n = linhas.filter((c) => c.checked).length;
+    const todas = card.querySelector('[data-check-todas]');
+    if (todas) { todas.checked = linhas.length > 0 && n === linhas.length; todas.indeterminate = n > 0 && n < linhas.length; }
+    const resumo = card.querySelector('[data-sel-resumo]');
+    if (resumo) resumo.textContent = n ? `${n} de ${linhas.length} marcado(s) para a cotação` : 'Marque o que vai para a cotação; sem marcação segue tudo.';
+  }
+
   function renderLista() {
     const root = state.root; if (!root) return;
-    const { itensPorManut, orcsPorManut, notasPorManut } = indices();
-    const linhas = filtrarManutencoes(state.manut, state, itensPorManut, state.base.categorias);
-    root.querySelector('[data-kpis]').innerHTML = htmlKpis(contarPorFiltro(state.manut), state.filtro);
-    sincronizarCards(root, state.filtro);
-    root.querySelector('[data-linhas]').innerHTML = state.loading
-      ? '<tr><td colspan="6" class="fm-empty">Carregando manutenções...</td></tr>'
-      : htmlLinhas(linhas, { itensPorManut, orcsPorManut, categorias: state.base.categorias, grupos: state.base.grupos, notasPorManut });
-    root.querySelector('[data-contagem]').textContent = `${linhas.length} de ${state.manut.length} manutenção(ões)`;
+    const ind = indices();
+    root.querySelector('[data-etapas]').innerHTML = htmlEtapas(contarPorEtapa(state.manut, ind.notasPorManut), state.etapa);
+    const daEtapa = state.manut.filter((m) => etapaDe(m) === state.etapa);
+    root.querySelector('[data-kpis]').innerHTML = htmlResumo(daEtapa, state.resumo, ind.orcsPorManut);
+    sincronizarCards(root, state.resumo);
+    const linhas = manutencoesDaEtapa(state.manut, { etapa: state.etapa, resumo: state.resumo, busca: state.busca }, { ...ind, categorias: state.base.categorias });
+    // A ficha aberta é redesenhada só por renderFicha: o nó dela passa para o cartão novo (não se perde o que foi digitado).
+    const lista = root.querySelector('[data-lista]');
+    const detalhe = lista.querySelector('[data-detalhe]');
+    lista.innerHTML = state.loading ? '<div class="fm-empty">Carregando manutenções...</div>' : htmlCards(linhas, contextoCards(ind));
+    const slot = lista.querySelector('[data-detalhe]');
+    if (detalhe && slot) slot.replaceWith(detalhe);
+    lista.querySelectorAll('[data-mc]').forEach(sincronizarSelecao);
+    root.querySelector('[data-contagem]').textContent = linhas.length === daEtapa.length ? `${linhas.length} manutenção(ões)` : `${linhas.length} de ${daEtapa.length} manutenção(ões)`;
+    root.querySelector('[data-nota-etapa]').textContent = ETAPAS.find((e) => e.id === state.etapa)?.dica || '';
   }
 
   async function carregar() {
@@ -81,7 +120,14 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
       toast(err.message || 'Erro ao carregar as manutenções.', 'err');
       state.manut = []; state.itens = []; state.orcs = []; state.notas = [];
     }
-    state.loading = false; renderLista();
+    state.loading = false;
+    // Na primeira carga abre a primeira etapa que tem manutenção (quem entra não cai numa aba vazia).
+    if (!state.etapaEscolhida) {
+      state.etapaEscolhida = true;
+      const contagens = contarPorEtapa(state.manut, indices().notasPorManut);
+      state.etapa = ETAPAS.find((e) => e.id !== 'canceladas' && contagens[e.id] > 0)?.id || ETAPA_PADRAO;
+    }
+    renderLista();
     if (state.fichaId) renderFicha();
   }
 
@@ -99,19 +145,26 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     renderLista();
   }
 
-  // Executa uma ação de gravação com trava contra clique duplo; erros do banco viram aviso.
-  async function executar(fn, { sucesso = '', recarregar = true } = {}) {
+  // Executa uma ação de gravação com trava contra clique duplo; erros do banco viram aviso. `id` é a manutenção que a ação
+  // mexe (padrão: a ficha aberta). A função pode devolver { ids, aviso }: outras manutenções a recarregar (a separada) e o
+  // texto do aviso. Quando a manutenção muda de etapa, o aviso diz para onde ela foi.
+  async function executar(fn, { sucesso = '', id = state.fichaId } = {}) {
     if (state.ocupado) return false;
     state.ocupado = true;
+    const antes = state.manut.find((m) => m.id === id);
+    const etapaAntes = antes ? etapaDe(antes) : null;
     try {
-      await fn();
-      if (recarregar && state.fichaId) await recarregarUma(state.fichaId);
-      if (sucesso) toast(sucesso);
+      const r = await fn();
+      for (const x of [id, ...((r && r.ids) || [])].filter(Boolean)) await recarregarUma(x);
+      const depois = state.manut.find((m) => m.id === id);
+      const mudou = depois && etapaAntes && etapaDe(depois) !== etapaAntes;
+      const texto = (r && r.aviso) || sucesso;
+      if (texto) toast(mudou && !(r && r.aviso) ? `${texto} Agora em "${rotuloEtapa(etapaDe(depois))}".` : texto);
       if (state.fichaId) { atualizarAfetadas(); atualizarFinanceiro(); }
       return true;
     } catch (err) {
       toast(err.message || 'Não foi possível concluir a ação.', 'err', 5500);
-      if (state.fichaId) { try { await recarregarUma(state.fichaId); } catch { /* mantém o que está na tela */ } }
+      if (id) { try { await recarregarUma(id); } catch { /* mantém o que está na tela */ } }
       return false;
     } finally {
       state.ocupado = false;
@@ -119,60 +172,28 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     }
   }
 
-  // ---------- vistas: a lista e, no lugar dela, a nova manutenção ou a ficha (tela inteira da aba, não janela) ----------
-  const paginaEl = () => state.root?.querySelector('[data-pagina]');
-
-  // Elemento que rola a aba (o painel pode rolar por um contêiner ou pela página).
-  function rolagemPai(el) {
-    for (let n = el?.parentElement; n; n = n.parentElement) {
-      const o = getComputedStyle(n).overflowY;
-      if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight) return n;
-    }
-    return document.scrollingElement || document.documentElement;
-  }
-
-  const htmlPagina = (conteudo, larga = false) => `<div class="fm-pg-barra"><button class="fm-btn ghost" type="button" data-acao="fechar">← Voltar para a lista</button></div><div class="fm-card"><div class="fm-body fm-pg${larga ? ' fm-pg-larga' : ''}">${conteudo}</div></div>`;
-
-  // Troca a lista pela página (nova ou ficha). O id da página é o que os tratadores de clique procuram.
-  function mostrarPagina(vista, id, html, { manterRolagem = false, larga = false } = {}) {
-    const pg = paginaEl(); if (!pg) return null;
-    const rolagem = rolagemPai(pg); const topo = rolagem.scrollTop;
-    state.vista = vista; pg.id = id; pg.hidden = false;
-    state.root.querySelector('[data-vista-lista]').hidden = true;
-    pg.innerHTML = htmlPagina(html, larga);
-    rolagem.scrollTop = manterRolagem ? topo : 0;
-    return pg;
-  }
-
-  function mostrarLista() {
-    const pg = paginaEl(); if (!pg) return;
-    state.vista = 'lista'; pg.hidden = true; pg.id = ''; pg.innerHTML = '';
-    state.root.querySelector('[data-vista-lista]').hidden = false;
-    renderLista();
-  }
-
-  // ---------- ficha ----------
+  // ---------- ficha dentro do cartão ----------
   function fichaAtual() { return state.manut.find((m) => m.id === state.fichaId) || null; }
 
   function renderFicha() {
     const m = fichaAtual();
-    if (!m) { state.fichaId = null; mostrarLista(); return; }
+    const el = state.root?.querySelector('[data-detalhe]');
+    // Sem cartão na etapa aberta (mudou de etapa ou saiu da busca): a ficha se recolhe.
+    if (!m || !el) { if (state.fichaId) { state.fichaId = null; renderLista(); } return; }
     const { itensPorManut, orcsPorManut } = indices();
-    const html = htmlFicha(m, {
+    el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens, semCabecalho: true,
     });
-    // Ao regravar um campo a ficha é redesenhada no mesmo lugar (mantém a rolagem); ao abrir, começa no topo.
-    const pg = mostrarPagina('ficha', FICHA, html, { manterRolagem: state.vista === 'ficha' });
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
-    const corpo = pg?.querySelector('[data-add-itens] [data-seletor-corpo]');
-    pg.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: pg.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
+    const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
+    el.__seletorItens = corpo ? criarSeletor(corpo, state.base, { resumo: el.querySelector('[data-add-itens] [data-pick-resumo]'), estado: state.estadoItens }) : null;
     // Orçamento aberto: peças, mão de obra e total já vêm somados das linhas (que podem vir com a peça escolhida nos itens).
-    recalcularOrcamento(pg.querySelector('[data-orc-form]'));
-    if (pg.__seletorItens) {
+    recalcularOrcamento(el.querySelector('[data-orc-form]'));
+    if (el.__seletorItens) {
       const modelo = modeloDoVeiculo(state.base.veiculos.find((v) => v.id === m.veiculo_id) || m.__modelo || '');
-      pg.__seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
+      el.__seletorItens.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
     }
   }
 
@@ -198,8 +219,13 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     renderFicha();
   }
 
+  // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
     state.fichaId = id; state.maisAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    const m = fichaAtual();
+    if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); state.resumo = 'todos'; }
+    if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
+    renderLista();
     renderFicha();
     atualizarAfetadas();
     atualizarFinanceiro();
@@ -207,8 +233,12 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
 
   function fecharFicha() {
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    mostrarLista();
+    renderLista();
   }
+
+  function alternarFicha(id) { if (state.fichaId === id) fecharFicha(); else abrirFicha(id); }
+
+  const rolarPara = (sel) => state.root?.querySelector(sel)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
   // Componentes do guia marcados dentro de um item da ficha.
@@ -229,29 +259,57 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     } catch { /* o catálogo é um extra: a aprovação já foi feita */ }
   }
 
+  // ---------- o que foi marcado na solicitação ----------
+  // A manutenção que segue: ela mesma (nada marcado ou tudo marcado) ou uma solicitação nova só com os itens marcados, que o
+  // banco separa (o resto continua em Solicitações). Só vale para solicitação ainda não cotada.
+  async function separarMarcadas(m) {
+    if (m.status !== 'solicitada') return { id: m.id, separados: 0 };
+    const linhas = linhasDosItens(state.itens.filter((i) => i.manutencao_id === m.id), state.base);
+    const r = resolverSelecao(linhas, marcadasDe(m.id));
+    if (r.nenhuma || r.todas) return { id: m.id, separados: 0 };
+    const novo = await dados.dividir(state.supabase, m.id, r.selecao);
+    state.marcadas.delete(m.id);
+    await recarregarUma(novo); // itens e dados da nova antes de agir sobre ela
+    return { id: novo, separados: r.quantas };
+  }
+
+  const avisoSeparou = (n, destino) => `${n} item(ns) marcado(s) separado(s) e enviado(s) para ${destino}; o restante continua em Solicitações.`;
+
+  async function cotarMarcadas(m) {
+    await executar(async () => {
+      const alvo = await separarMarcadas(m);
+      await dados.mudarStatus(state.supabase, alvo.id, 'em_orcamento');
+      return { ids: alvo.id === m.id ? [] : [alvo.id], aviso: alvo.separados ? avisoSeparou(alvo.separados, 'Cotações') : '' };
+    }, { id: m.id, sucesso: 'Enviada para cotação.' });
+  }
+
   async function mudarEtapa(m, a) {
     const { orcsPorManut, itensPorManut } = indices();
     const orcs = orcsPorManut.get(m.id) || [];
     // A natureza é obrigatória para aprovar: se ninguém definiu, vai a sugerida junto da aprovação.
     const natureza = m.natureza ? {} : { natureza: naturezaSugerida(m, itensPorManut.get(m.id) || []) };
     switch (a.id) {
-      case 'aprovar_sem_orcamento': state.formAcao = 'sem_orcamento'; renderFicha(); return;
+      case 'iniciar_orcamento': return cotarMarcadas(m);
+      case 'aprovar_sem_orcamento':
+        if (state.fichaId !== m.id) abrirFicha(m.id);
+        state.formAcao = 'sem_orcamento'; renderFicha(); rolarPara('[data-form-acao="sem_orcamento"]'); return;
       case 'concluir':
+        if (state.fichaId !== m.id) abrirFicha(m.id);
         state.formAcao = 'conclusao';
         state.kmSugerido = await dados.kmAtualDoVeiculo(state.supabase, m.veiculo_id);
-        renderFicha(); return;
+        renderFicha(); rolarPara('[data-form-acao="conclusao"]'); return;
       case 'reprovar':
       case 'cancelar': {
         const motivo = await confirmar({ titulo: a.rotulo, mensagem: `${m.__placa} · ${m.descricao || ''}`.slice(0, 160), confirmarLabel: a.rotulo, justificativa: true, justificativaMin: 3, justificativaPlaceholder: 'Informe o motivo...' });
         if (!motivo) return;
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, { motivo_status: motivo }), { sucesso: a.id === 'reprovar' ? 'Manutenção reprovada.' : 'Manutenção cancelada.' });
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, { motivo_status: motivo }), { id: m.id, sucesso: a.id === 'reprovar' ? 'Manutenção reprovada.' : 'Manutenção cancelada.' });
         return;
       }
       case 'aprovar': {
         const sel = orcs.find((o) => o.selecionado);
         const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar o orçamento de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?`, confirmarLabel: 'Aprovar' });
         if (!ok) return;
-        const aprovou = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { sucesso: 'Manutenção aprovada.' });
+        const aprovou = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { id: m.id, sucesso: 'Manutenção aprovada.' });
         if (aprovou) aprenderPecasDaManutencao(m);
         return;
       }
@@ -259,12 +317,42 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
         const aviso = m.veiculo_parado ? '' : ' O veículo não está marcado como parado: a Programação e os alertas continuarão considerando-o disponível.';
         const ok = await confirmar({ titulo: 'Emitir OS', mensagem: `A manutenção segue para a oficina e a OS é emitida.${aviso}`, confirmarLabel: 'Emitir OS' });
         if (!ok) return;
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'OS emitida.' });
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { id: m.id, sucesso: 'OS emitida.' });
         return;
       }
       default:
-        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { sucesso: 'Etapa atualizada.' });
+        await executar(() => dados.mudarStatus(state.supabase, m.id, a.para), { id: m.id, sucesso: 'Etapa atualizada.' });
     }
+  }
+
+  // Ação de um ícone da coluna da direita (vale com a ficha aberta ou fechada).
+  async function aoAcaoCard(botao) {
+    const id = botao.dataset.id; const m = state.manut.find((x) => x.id === id); if (!m) return;
+    const acao = botao.dataset.mcAcao;
+    if (acao === 'detalhes') return alternarFicha(id);
+    if (acao === 'itens-add') {
+      if (state.fichaId !== id) abrirFicha(id);
+      state.addItens = true; renderFicha(); rolarPara('[data-add-itens]'); return;
+    }
+    if (acao === 'orcamento') {
+      if (state.fichaId !== id) abrirFicha(id);
+      state.orcForm = true; renderFicha(); rolarPara('[data-orc-form]'); return;
+    }
+    if (acao === 'notas') {
+      if (state.fichaId !== id) abrirFicha(id);
+      rolarPara('[data-nota-entrada]'); return;
+    }
+    if (acao === 'enviar_notas') return enviarNotas(m);
+    const { itensPorManut, orcsPorManut } = indices();
+    const a = acoesDisponiveis(m, { podeAprovar: podeAprovar(), itens: itensPorManut.get(id) || [], orcamentos: orcsPorManut.get(id) || [] }).find((x) => x.id === acao);
+    if (!a || a.bloqueio) return;
+    return mudarEtapa(m, a);
+  }
+
+  async function enviarNotas(m) {
+    const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em).length;
+    if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: `${pendentes} nota(s) entram na fila do GRM e viram pagamentos no Financeiro. Depois disso o custo final e as notas enviadas ficam travados.`, confirmarLabel: 'Enviar' }))) return;
+    return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { id: m.id, sucesso: 'Notas enviadas ao GRM e ao Financeiro.' });
   }
 
   async function aoClicarFicha(e) {
@@ -341,18 +429,19 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
       const f = ov.querySelector('[data-nota-entrada]');
       const nt = (k) => val(f, `[data-nt="${k}"]`).trim();
       const arquivo = f.querySelector('[data-nt-arquivo]')?.files?.[0] || null;
+      const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
       const valor = numeroOuNulo(nt('valor'));
-      const lista = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo });
+      // Paga primeiro e a nota chega depois (ou o contrário): basta a NF ou o comprovante; o que faltar mantém a etapa (À pagar / Aguardando NF).
+      const lista = validarNota({ valor, fornecedor: nt('fornecedor'), arquivo, comprovante });
       if (lista.length) return erros(lista);
       const oficina = state.base.oficinas.find((o) => norm(o.nome) === norm(nt('fornecedor')));
-      const comprovante = f.querySelector('[data-nt-comprovante]')?.files?.[0] || null;
       return executar(async () => {
-        const anexo = await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo);
+        const anexo = arquivo ? await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) : null;
         const urlComprovante = comprovante ? await dados.enviarAnexo(state.supabase, m.id, 'comprovante', comprovante) : null;
         await dados.salvarNota(state.supabase, {
           manutencao_id: m.id, tipo: nt('tipo') || 'servico', fornecedor: nt('fornecedor'), oficina_id: oficina?.id || null,
           numero: nt('numero') || null, valor, anexo_url: anexo,
-          comprovante_url: urlComprovante, pago_em: urlComprovante ? dados.dataPagamentoISO(nt('pago_em')) : null,
+          comprovante_url: urlComprovante, pago_em: urlComprovante ? (dados.dataPagamentoISO(nt('pago_em')) || new Date().toISOString()) : null,
         });
       }, { sucesso: 'Nota adicionada.' });
     }
@@ -360,20 +449,19 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
       if (!(await confirmar({ titulo: 'Remover nota', mensagem: 'Remover esta nota fiscal da manutenção?', confirmarLabel: 'Remover' }))) return;
       return executar(() => dados.removerNota(state.supabase, alvo.dataset.id), { sucesso: 'Nota removida.' });
     }
-    if (acao === 'notas-enviar') {
-      const pendentes = state.notas.filter((n) => n.manutencao_id === m.id && !n.enviada_em).length;
-      if (!(await confirmar({ titulo: 'Enviar ao GRM e ao Financeiro', mensagem: `${pendentes} nota(s) entram na fila do GRM e viram pagamentos no Financeiro. Depois disso o custo final e as notas enviadas ficam travados.`, confirmarLabel: 'Enviar' }))) return;
-      return executar(() => dados.enviarNfFinanceiro(state.supabase, m.id), { sucesso: 'Notas enviadas ao GRM e ao Financeiro.' });
-    }
+    if (acao === 'notas-enviar') return enviarNotas(m);
 
     if (acao === 'confirmar-sem-orcamento') {
       const valor = numeroOuNulo(val(ov, '[data-form-acao="sem_orcamento"] [data-a="valor_aprovado"]'));
       if (valor == null || valor < 0) return erros(['Informe o valor estimado aprovado.']);
-      const naturezaDireta = m.natureza ? {} : { natureza: naturezaSugerida(m, state.itens.filter((i) => i.manutencao_id === m.id)) };
       return executar(async () => {
-        await dados.mudarStatus(state.supabase, m.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor, ...naturezaDireta });
+        const alvoSep = await separarMarcadas(m); // aprova só o que foi marcado; o resto continua em Solicitações
+        const mm = state.manut.find((x) => x.id === alvoSep.id) || m;
+        const naturezaDireta = mm.natureza ? {} : { natureza: naturezaSugerida(mm, state.itens.filter((i) => i.manutencao_id === mm.id)) };
+        await dados.mudarStatus(state.supabase, alvoSep.id, 'aprovada', { sem_orcamento: true, valor_aprovado: valor, ...naturezaDireta });
         state.formAcao = null;
-      }, { sucesso: 'Manutenção aprovada sem orçamento.' });
+        return { ids: alvoSep.id === m.id ? [] : [alvoSep.id], aviso: alvoSep.separados ? avisoSeparou(alvoSep.separados, 'Em andamento') : '' };
+      }, { id: m.id, sucesso: 'Manutenção aprovada sem orçamento.' });
     }
     if (acao === 'confirmar-conclusao') {
       const f = ov.querySelector('[data-form-acao="conclusao"]');
@@ -421,6 +509,21 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
   async function aoMudarFicha(e) {
     const m = fichaAtual(); if (!m) return;
     const alvo = e.target;
+    // NF ou comprovante que chegou depois, na própria nota (sem NF a nota fica em Aguardando NF; sem comprovante, em À pagar).
+    if (alvo.matches('[data-anexar-nf],[data-anexar-comp]') && alvo.files?.[0]) {
+      const ehNf = alvo.matches('[data-anexar-nf]');
+      const nota = state.notas.find((n) => n.id === (ehNf ? alvo.dataset.anexarNf : alvo.dataset.anexarComp)); if (!nota) return;
+      const arquivo = alvo.files[0];
+      const pagoEm = dados.dataPagamentoISO(alvo.closest('.fm-nota-pago')?.querySelector('[data-anexar-data]')?.value) || new Date().toISOString();
+      return executar(async () => {
+        if (ehNf) await dados.atualizarNota(state.supabase, nota.id, { anexo_url: await dados.enviarAnexo(state.supabase, m.id, 'nf', arquivo) });
+        else {
+          const url = await dados.enviarAnexo(state.supabase, m.id, 'comprovante', arquivo);
+          if (nota.enviada_em) await dados.comprovanteTardio(state.supabase, nota.id, url, pagoEm);
+          else await dados.atualizarNota(state.supabase, nota.id, { comprovante_url: url, pago_em: pagoEm });
+        }
+      }, { sucesso: ehNf ? 'NF anexada.' : 'Comprovante anexado.' });
+    }
     // Campos da ordem: salvam ao sair do campo.
     if (alvo.dataset.campo) {
       const campo = alvo.dataset.campo;
@@ -455,14 +558,39 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
     }
   }
 
-  // ---------- nova solicitação ----------
+  // ---------- marcar itens nos cartões (por grupo ou um a um) ----------
+  function aoMudarLista(e) {
+    const alvo = e.target;
+    const card = alvo.closest?.('[data-mc]'); if (!card) return;
+    const id = card.dataset.mc;
+    const conjunto = new Set(marcadasDe(id));
+    const mudar = (checkboxes, ligar) => checkboxes.forEach((c) => { if (ligar) conjunto.add(c.value); else conjunto.delete(c.value); });
+    if (alvo.matches('[data-check-linha]')) mudar([alvo], alvo.checked);
+    else if (alvo.matches('[data-check-grupo]')) mudar([...alvo.closest('[data-mc-grupo]').querySelectorAll('[data-check-linha]')], alvo.checked);
+    else if (alvo.matches('[data-check-todas]')) mudar([...card.querySelectorAll('[data-check-linha]')], alvo.checked);
+    else return;
+    if (conjunto.size) state.marcadas.set(id, conjunto); else state.marcadas.delete(id);
+    sincronizarSelecao(card);
+  }
+
+  function aoClicarLista(e) {
+    const acao = e.target.closest('[data-mc-acao]');
+    if (acao) { aoAcaoCard(acao); return; }
+    const topo = e.target.closest('[data-abrir]');
+    if (topo && !e.target.closest('input,button,a,label,select,textarea') && !String(window.getSelection?.() || '')) alternarFicha(topo.dataset.abrir);
+  }
+
+  // ---------- nova solicitação (janela larga, como a nova solicitação de Compras) ----------
   function abrirNova(preset = {}) {
-    state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    const ov = mostrarPagina('nova', NOVA, htmlFormNova(state.base, preset), { larga: true });
-    if (!ov) return;
+    state.orcForm = null; state.formAcao = null;
+    const ov = openModal({ id: NOVA, conteudoHtml: htmlFormNova(state.base, preset) });
+    ov.classList.add('fm-mod', 'fm-modal-largo');
     ov.dataset.origem = preset.origem || 'manual';
     ov.dataset.checklist = preset.checklist_id || '';
-    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria página.
+    ov.addEventListener('click', aoClicarNova);
+    ov.addEventListener('change', () => ov.__pendencias?.());
+    ov.addEventListener('input', () => ov.__pendencias?.());
+    // Seletor de itens em dois painéis (grupos | itens do grupo); a leitura fica guardada na própria janela.
     ov.__seletor = criarSeletor(ov.querySelector('[data-seletor-corpo]'), state.base, { resumo: ov.querySelector('[data-pick-resumo]'), aoMudar: () => ov.__pendencias?.() });
     // Peças já usadas no modelo do veículo escolhido (Mobi, Argo, Kwid...): aparecem sob cada item para escolher a peça específica.
     const atualizarPecas = () => {
@@ -504,7 +632,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
   async function aoClicarNova(e) {
     const alvo = e.target.closest('[data-acao]'); if (!alvo) return;
     const ov = document.getElementById(NOVA); if (!ov) return;
-    if (alvo.dataset.acao === 'fechar') return mostrarLista();
+    if (alvo.dataset.acao === 'fechar') return closeModal(NOVA);
     if (alvo.dataset.acao === 'novo-item-remover') { alvo.closest('[data-novo-item]').remove(); ov.__pendencias?.(); return; }
     if (alvo.dataset.acao !== 'novo-salvar') return;
 
@@ -527,10 +655,17 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
             || state.base.grupos.find((g) => Number(g.categoria_codigo) === Number(i.categoria_codigo))?.nome || state.base.categorias.find((c) => c.codigo === i.categoria_codigo)?.nome || descricao,
         })),
       });
+      closeModal(NOVA);
       await recarregarUma(id).catch(() => {});
       // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
-      if (state.manut.some((m) => m.id === id)) { toast('Manutenção registrada.'); abrirFicha(id); }
-      else { toast('Manutenção registrada e enviada para a equipe de Frotas.'); mostrarLista(); }
+      if (state.manut.some((m) => m.id === id)) {
+        toast('Manutenção registrada em Solicitações.');
+        state.etapa = 'solicitacoes'; state.resumo = 'todos'; state.etapaEscolhida = true;
+        renderLista();
+        state.root?.querySelector(`[data-mc="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        toast('Manutenção registrada e enviada para a equipe de Frotas.');
+      }
     } catch (err) {
       ov.querySelector('[data-erros]').innerHTML = htmlErros([err.message || 'Erro ao abrir a solicitação.']);
     } finally {
@@ -548,33 +683,31 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
   async function openHome(container, opts = {}) {
     state.supabase = opts.supabase; state.opts = opts; state.root = container;
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    state.vista = 'lista';
-    container.innerHTML = `${ESTILOS_MANUTENCAO}<div data-vista-lista>${htmlCasca()}</div><div class="fm-pagina fm-mod" data-pagina hidden></div>`;
+    state.etapaEscolhida = false; state.resumo = 'todos'; state.busca = ''; state.marcadas = new Map();
+    container.innerHTML = `${ESTILOS_MANUTENCAO}${htmlCasca()}`;
 
-    // Nova manutenção e ficha são páginas dentro da aba (no lugar da lista); os tratadores valem para a vista aberta.
-    const pagina = container.querySelector('[data-pagina]');
-    pagina.addEventListener('click', (e) => { if (state.vista === 'ficha') aoClicarFicha(e); else if (state.vista === 'nova') aoClicarNova(e); });
-    pagina.addEventListener('change', (e) => { if (state.vista === 'ficha') aoMudarFicha(e); else if (state.vista === 'nova') pagina.__pendencias?.(); });
-    pagina.addEventListener('input', (e) => { if (state.vista === 'ficha') aoDigitarFicha(e); else if (state.vista === 'nova') pagina.__pendencias?.(); });
+    // A lista é um só contêiner: cartões, marcação de itens e a ficha aberta dentro do cartão (cada um com o seu tratador).
+    const lista = container.querySelector('[data-lista]');
+    lista.addEventListener('click', (e) => { if (e.target.closest('#' + FICHA)) aoClicarFicha(e); else aoClicarLista(e); });
+    lista.addEventListener('change', (e) => { if (e.target.closest('#' + FICHA)) aoMudarFicha(e); else aoMudarLista(e); });
+    lista.addEventListener('input', (e) => { if (e.target.closest('#' + FICHA)) aoDigitarFicha(e); });
+    lista.addEventListener('keydown', (e) => {
+      const topo = e.target.closest?.('[data-abrir]');
+      if (topo && e.target === topo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternarFicha(topo.dataset.abrir); }
+    });
     // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
-    pagina.addEventListener('toggle', (e) => { if (state.vista === 'ficha' && e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
+    lista.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
 
+    container.querySelector('[data-etapas]').addEventListener('click', (e) => {
+      const aba = e.target.closest('[data-etapa]'); if (!aba || aba.dataset.etapa === state.etapa) return;
+      state.etapa = aba.dataset.etapa; state.etapaEscolhida = true; state.resumo = 'todos'; state.fichaId = null; state.orcForm = null; state.formAcao = null;
+      renderLista();
+    });
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
-    container.querySelector('[data-f-visao]').addEventListener('change', (e) => { state.visao = e.target.value; renderLista(); });
-    container.querySelector('[data-linhas]').addEventListener('click', (e) => {
-      const linha = e.target.closest('[data-abrir]'); if (linha) abrirFicha(linha.dataset.abrir);
-    });
-    // Os cartões são só da lista em andamento: escolher um volta para "Em andamento".
-    ligarCards(container, {
-      obter: () => state.filtro,
-      definir: (f) => {
-        state.filtro = f;
-        if (f !== 'todos' && state.visao !== 'andamento') { state.visao = 'andamento'; container.querySelector('[data-f-visao]').value = 'andamento'; }
-      },
-      aoMudar: renderLista,
-    });
+    // Cartões de resumo da etapa (urgentes, parados): escolher de novo volta para "todas".
+    ligarCards(container, { obter: () => state.resumo, definir: (f) => { state.resumo = f; }, aoMudar: renderLista });
 
     state.loading = true; renderLista();
     try {
@@ -596,8 +729,8 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261020-f
   window[MODULE_NAME].openHome = openHome;
   // Para outras telas (Veículos, Checklists, Preventiva): leva o usuário à nova manutenção da aba Corretiva, já preenchida.
   window[MODULE_NAME].abrirNova = async (opts, preset = {}) => {
-    // Já na aba Corretiva: abre a página aqui mesmo.
-    if (state.root && document.body.contains(state.root) && paginaEl()) {
+    // Já na aba Corretiva: abre a janela aqui mesmo.
+    if (state.root?.isConnected && state.root.querySelector('[data-lista]')) {
       await garantirBase();
       abrirNova(preset);
       return;

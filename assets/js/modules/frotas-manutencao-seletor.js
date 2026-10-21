@@ -3,7 +3,7 @@
 // SERVIÇOS; "Mão de obra" aparece em todos os grupos como serviço. Quem abre o pedido não escolhe peça ou serviço: o tipo vem do
 // item (só o "Outro item" digitado pergunta). Funções puras (grupos, busca, itens) ficam exportadas para teste.
 import { dinheiro, esc } from '../core/ui.js';
-import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261020-frotas-manut44';
+import { MAO_DE_OBRA, itensDoGrupo, itensPorTipo, norm, pecaEscolhida, tipoDoComponente } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
 // Grupos do guia; sem grupos cadastrados, cai nas categorias (sem lista de componentes, só os itens digitados).
 export function gruposDoSeletor(base) {
@@ -104,10 +104,12 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     }
     const g = grupos.find((x) => x.codigo === ativo);
     if (!g) { painel.innerHTML = '<div class="fm-pick-vazio">Nenhum grupo cadastrado.</div>'; return; }
-    painel.innerHTML = `<div class="fm-pick-cab"><strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)}` : 'Peças do guia e mão de obra'}</span></div>
-      <div class="fm-pick-lista">${itensDe(base, g, marcados(g.codigo)).map((n) => linhaItem(g.codigo, n)).join('')}</div>
-      <div class="fm-pick-outro"><input class="fm-input" data-pick-outro maxlength="80" placeholder="Outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
-        <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do outro item"><option value="peca">Peça</option><option value="servico">Serviço</option></select>
+    const nomes = itensDe(base, g, marcados(g.codigo));
+    const todos = nomes.length > 0 && nomes.every((n) => marcados(g.codigo).includes(n));
+    painel.innerHTML = `<div class="fm-pick-cab"><strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)}` : 'Peças do guia e mão de obra'}</span><button type="button" class="fm-link" data-pick-todos>${todos ? 'Desmarcar o grupo' : 'Marcar o grupo todo'}</button></div>
+      <div class="fm-pick-lista">${nomes.map((n) => linhaItem(g.codigo, n)).join('')}</div>
+      <div class="fm-pick-outro"><input class="fm-input" data-pick-outro maxlength="80" placeholder="Serviço realizado ou outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
+        <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do item digitado"><option value="servico">Serviço</option><option value="peca">Peça</option></select>
         <button type="button" class="fm-btn soft fm-mini" data-pick-add>Adicionar</button></div>`;
   }
 
@@ -124,6 +126,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     const g = e.target.closest('[data-pick-grupo]');
     if (g) { ativo = Number(g.dataset.pickGrupo); estado.ativo = ativo; busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel(); return; }
     if (e.target.closest('[data-pick-add]')) { adicionarDigitado(); return; }
+    if (e.target.closest('[data-pick-todos]')) { marcarGrupo(); return; }
     const pc = e.target.closest('[data-pick-peca]');
     if (pc) {
       const lista = pecasDoModelo.get(pc.dataset.nome) || []; const peca = lista[Number(pc.dataset.i)]; if (!peca) return;
@@ -151,6 +154,15 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   box.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.matches('[data-pick-outro]')) { e.preventDefault(); adicionarDigitado(); }
   });
+
+  // Marca todos os itens do grupo aberto (ou desmarca, se já estiverem todos marcados).
+  function marcarGrupo() {
+    const g = grupos.find((x) => x.codigo === ativo); if (!g) return;
+    const nomes = itensDe(base, g, marcados(g.codigo));
+    const todos = nomes.every((n) => marcados(g.codigo).includes(n));
+    for (const n of nomes) alternar(g.codigo, n, !todos);
+    tudo();
+  }
 
   function adicionarDigitado() {
     const campo = q('[data-pick-outro]'); if (!campo || ativo == null) return;
