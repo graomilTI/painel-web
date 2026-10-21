@@ -178,6 +178,10 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   return {
     ler: () => itensDaSelecao(selecao, grupos, tipoDe, (cod, nome) => (escolhas.get(chave(cod, nome)) ? pecaEscolhida(escolhas.get(chave(cod, nome))) : null)),
     qtd: total,
+    // Para quem sugere itens (a descrição do problema): marcar um item, abrir um grupo e saber o que já está marcado.
+    marcar(cod, nome) { alternar(cod, nome, true); tudo(); },
+    irPara(cod) { ativo = Number(cod); estado.ativo = ativo; busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel(); },
+    estaMarcado: (cod, nome) => marcados(cod).includes(nome),
     // Troca as peças sugeridas (o veículo mudou): descarta escolhas de peças que não são do novo modelo.
     setPecas(mapa, rotulo = '') {
       pecasDoModelo = mapa || new Map(); rotuloDoModelo = rotulo;

@@ -80,6 +80,7 @@ export function htmlFormNova(base, preset = {}) {
         </div></section>
       <section class="fm-sec fm-nova-itens" data-seletor-sec><h4>O que será feito <span class="fm-obrig">obrigatório</span></h4>
         ${itens.length ? `<div class="fm-nova-prontos"><span class="fm-comps-t">Já informado (checklist ou plano)</span><div class="fm-itens" data-novo-itens>${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div></div>` : ''}
+        <div class="fm-sug" data-sugestoes hidden></div>
         <div data-seletor-corpo>${htmlSeletor()}</div>
         <div class="fm-nota">Escolha o grupo e marque os itens; dá para marcar em vários grupos. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div></section>
       <aside class="fm-sec fm-nova-resumo"><h4>Resumo do pedido</h4>
