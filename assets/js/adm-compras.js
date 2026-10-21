@@ -934,7 +934,8 @@ function openAnexarNfModal(gids){
     ${atual?`<p class="muted mt-16">NF atual: ${/^https?:\/\//i.test(atual)?`<a href="${esc(atual)}" target="_blank" rel="noopener" style="color:#86efac">Abrir</a>`:esc(atual)}</p>`:''}
     <div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNfAnexo" placeholder="Cole o link ou número da NF" value="${/^https?:\/\//i.test(atual)?'':esc(atual)}"></label>
-      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfAnexoFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfAnexoFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez${itens.length>1?'. Com mais de uma NF, você escolhe qual vale para cada item':'; o primeiro é a NF principal'}. Escolher arquivos substitui os atuais.</small></label>
+      <div class="adm-cmp-full" id="mNfAnexoAtrib" style="display:none"></div>
     </div>
     ${anexosNfHtml(anexosNf(itens.find(r=>r.nf_url)||{}))}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mNfAnexoSalvar" type="button">Salvar NF</button></div>
@@ -942,18 +943,24 @@ function openAnexarNfModal(gids){
   </div>`;
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  ligarAtribuicaoNf(modal,itens,'#mNfAnexoFile','#mNfAnexoAtrib');
   modal.querySelector('#mNfAnexoSalvar').addEventListener('click',async()=>{
     const btn=modal.querySelector('#mNfAnexoSalvar'); const fb=modal.querySelector('#nfAnexoFeedback');
     btn.disabled=true; if(fb){fb.textContent=''; fb.classList.remove('err');}
     try{
       const files=modal.querySelector('#mNfAnexoFile')?.files||[];
       let nf=modal.querySelector('#mNfAnexo')?.value?.trim()||'';
-      let anexos;
-      if(files.length){ const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos; }
+      let anexos,nfPorItem=null;
+      if(files.length){ const up=await resolverArquivosNf(files,itens,modal.querySelector('#mNfAnexoAtrib'),fb); nf=up.nf; anexos=up.anexos; nfPorItem=up.nfPorItem; }
       if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btn.disabled=false; if(fb) fb.textContent=''; return; }
-      const upd={nf_url:nf}; if(anexos!==undefined) upd.nf_anexos=anexos;
-      const {error}=await supabase.from('compras_itens').update(upd).in('id',itens.map(r=>r.id));
-      if(error) throw new Error(error.message);
+      // Uma atualização por NF (os itens da mesma NF juntos); sem 2+ NFs, todos os itens levam a mesma.
+      const porNf=new Map();
+      for(const r of itens){ const url=(nfPorItem&&nfPorItem.get(r.id))||nf; if(!porNf.has(url)) porNf.set(url,[]); porNf.get(url).push(r.id); }
+      for(const [url,ids] of porNf){
+        const upd={nf_url:url}; if(anexos!==undefined) upd.nf_anexos=anexos;
+        const {error}=await supabase.from('compras_itens').update(upd).in('id',ids);
+        if(error) throw new Error(error.message);
+      }
       modal.classList.remove('open');
       setMsg(`NF anexada em ${itens.length} item(ns).`);
       await loadRows();
@@ -1243,7 +1250,31 @@ async function enviarArquivosNf(files,prefixo,fb){
     if(fb) fb.textContent=lista.length>1?`Enviando arquivo ${i+1} de ${lista.length}...`:'Enviando arquivo...';
     urls.push(await uploadArquivoNotasFiscais(lista[i],prefixo));
   }
-  return {principal:urls[0]||'',anexos:urls.slice(1).map((url,i)=>({url,nome:lista[i+1].name}))};
+  return {principal:urls[0]||'',anexos:urls.slice(1).map((url,i)=>({url,nome:lista[i+1].name})),urls};
+}
+// Duas (ou mais) NFs para itens diferentes da mesma compra: cada item escolhe a sua. Cada NF é lançada
+// separadamente no GRM e o pagamento continua agrupado no mesmo comprovante. Arquivo sem item = só anexo.
+function ligarAtribuicaoNf(modal,itens,inputSel,boxSel){
+  const input=modal.querySelector(inputSel); const box=modal.querySelector(boxSel);
+  if(!input||!box||itens.length<2) return;
+  input.addEventListener('change',()=>{
+    const files=[...(input.files||[])];
+    if(files.length<2){ box.style.display='none'; box.innerHTML=''; return; }
+    const opts=files.map((f,i)=>`<option value="${i}">NF ${i+1} — ${esc(f.name)}</option>`).join('');
+    box.style.display='';
+    box.innerHTML=`<p class="muted">Cada NF é lançada separadamente no GRM e o pagamento segue agrupado no mesmo comprovante. Escolha a NF de cada item; arquivo sem item fica só como anexo.</p>
+      <table class="adm-cmp-table" style="min-width:0"><thead><tr><th>Item</th><th>NF</th></tr></thead><tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)} × ${esc(r.material)}${r.tamanho?` (${esc(r.tamanho)})`:''}</td><td><select data-nf-item="${esc(r.id)}">${opts}</select></td></tr>`).join('')}</tbody></table>`;
+  });
+}
+// Envia os arquivos e resolve a NF de cada item. Devolve { nf, anexos, nfPorItem } (nfPorItem só com 2+ arquivos e 2+ itens).
+async function resolverArquivosNf(files,itens,box,fb){
+  const up=await enviarArquivosNf(files,'compras/nf',fb);
+  if(files.length<2||itens.length<2||!box) return {nf:up.principal,anexos:up.anexos,nfPorItem:null};
+  const escolha=new Map(itens.map(r=>[r.id,Number(box.querySelector(`[data-nf-item="${CSS.escape(String(r.id))}"]`)?.value||0)]));
+  const nfPorItem=new Map([...escolha].map(([id,i])=>[id,up.urls[i]]));
+  const usados=new Set(escolha.values());
+  const anexos=up.urls.map((url,i)=>({url,nome:files[i].name})).filter((a,i)=>!usados.has(i));
+  return {nf:nfPorItem.get(itens[0].id),anexos,nfPorItem};
 }
 const anexosNfHtml=(anexos)=>anexos.length?`<p class="muted mt-8">Anexos: ${anexos.map((a,i)=>`<a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:#86efac">${esc(a.nome||`Anexo ${i+2}`)}</a>`).join(' · ')}</p>`:'';
 async function coletarDadosPagamento(forma,area){
@@ -1490,9 +1521,11 @@ function openGrupoModal(gids){
       </table>
     </div>
     ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
+    ${allAguardando&&new Set(itens.map(r=>r.nf_url).filter(Boolean)).size>1?`<p class="muted mt-16">Este grupo tem ${new Set(itens.map(r=>r.nf_url).filter(Boolean)).size} NFs diferentes: cada item mantém a sua e cada NF é lançada separadamente no GRM (pagamento agrupado no mesmo comprovante).</p>`:''}
     ${allAguardando?`<div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número" value="${esc(itens.find(r=>r.nf_url)?.nf_url||'')}"></label>
-      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfGrpFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfGrpFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez. Com mais de uma NF, você escolhe qual vale para cada item. Escolher arquivos substitui os atuais.</small></label>
+      <div class="adm-cmp-full" id="mNfGrpAtrib" style="display:none"></div>
     </div>
     ${anexosNfHtml(anexosNf(itens.find(r=>r.nf_url)||{}))}
     <div class="adm-cmp-actions mt-16">
@@ -1502,6 +1535,7 @@ function openGrupoModal(gids){
   </div>`;
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  ligarAtribuicaoNf(modal,itens,'#mNfGrpFile','#mNfGrpAtrib');
   const btn=modal.querySelector('#mFinalizarGrp');
   if(btn) btn.onclick=async()=>{
     const fb=modal.querySelector('#grpFeedback');
@@ -1509,19 +1543,25 @@ function openGrupoModal(gids){
     try{
       const files=modal.querySelector('#mNfGrpFile')?.files||[];
       let nf=modal.querySelector('#mNfGrp')?.value?.trim()||'';
-      let anexos;
-      if(files.length){const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos;}
+      let anexos,nfPorItem=null;
+      if(files.length){const up=await resolverArquivosNf(files,itens,modal.querySelector('#mNfGrpAtrib'),fb); nf=up.nf; anexos=up.anexos; nfPorItem=up.nfPorItem;}
       if(!nf){alert('Informe a NF ou anexe um arquivo.');btn.disabled=false;btn.textContent=`Finalizar grupo (${itens.length} itens)`;return;}
-      await finalizarCompraGrupo(itens,nf,anexos);
+      // Itens que já têm NFs diferentes (atribuídas ao anexar): sem arquivo novo e com o campo intacto, cada item mantém a sua.
+      if(!files.length&&!nfPorItem){
+        const proprios=new Map(itens.filter(r=>r.nf_url).map(r=>[r.id,r.nf_url]));
+        if(proprios.size===itens.length&&new Set(proprios.values()).size>1&&nf===(itens.find(r=>r.nf_url)?.nf_url||'')) nfPorItem=proprios;
+      }
+      await finalizarCompraGrupo(itens,nf,anexos,nfPorItem);
     }catch(e){if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
   };
 }
 
-async function finalizarCompraGrupo(itens,nf,anexos){
+async function finalizarCompraGrupo(itens,nf,anexos,nfPorItem=null){
   for(const r of itens){
     const ca=r.ca||null;
     const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
-    const updPayload={status:'comprado',nf_url:nf,comprado_em:new Date().toISOString()};
+    // Com mais de uma NF, cada item leva a sua; o comprovante de pagamento segue o mesmo para todos.
+    const updPayload={status:'comprado',nf_url:(nfPorItem&&nfPorItem.get(r.id))||nf,comprado_em:new Date().toISOString()};
     if(anexos!==undefined) updPayload.nf_anexos=anexos;
     if(codigo) updPayload.codigo=codigo;
     if(isEPI(r)&&ca) updPayload.ca=ca;

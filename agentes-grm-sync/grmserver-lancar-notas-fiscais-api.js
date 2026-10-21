@@ -1169,10 +1169,13 @@ async function loadComprasContext(row) {
   if (error) throw new Error(`Falha lendo compras_itens da NF: ${error.message}`);
   const lista = safe(itens);
   if (!lista.length) return null;
+  // O pagamento é do grupo inteiro: origem_id guarda só o 1º item e compras_item_ids todos. Com duas NFs no mesmo
+  // pagamento, os itens da 2ª NF só são achados por compras_item_ids.
+  const ids = lista.map((i) => i.id);
   const { data: pagamentos } = await supabase.from('financeiro_pagamentos')
     .select('origem_id,forma_pagamento,fornecedor,favorecido_documento')
     .eq('origem', 'COMPRAS')
-    .in('origem_id', lista.map((i) => i.id));
+    .or(`origem_id.in.(${ids.join(',')}),compras_item_ids.ov.{${ids.join(',')}}`);
   return { itens: lista, pagamentos: safe(pagamentos) };
 }
 
@@ -1378,7 +1381,123 @@ function avaliarBaixaCompras(data, comprovante, resolved) {
   return { ok: true, conta };
 }
 
+// ---------------------------------------------------------------------------
+// Comprovante que paga MAIS DE UMA NF (21/10/2026). Itens do mesmo pagamento (mesmo comprovante_url) podem ter
+// NFs diferentes. Cada NF continua sendo lançada sozinha (uma linha da fila por arquivo); a baixa é UMA só,
+// com o comprovante inteiro pagando todas as NFs (pin_codes_json com um item por NF, que o agente de baixa já
+// sabe enviar num único payInvoice/payment), e só sai depois que TODAS as NFs do comprovante foram lançadas.
+// Com uma NF só nada disso entra em ação (carregarNfsDoComprovante devolve null).
+// ---------------------------------------------------------------------------
+
+// Pura. nfs = [{ atual?, chave, status, pinCode, valor, doc, cnpj, empresa, parcelas, arquivo }].
+function decidirGrupoNfs(nfs) {
+  const lista = Array.isArray(nfs) ? nfs : [];
+  const nome = (n) => n.arquivo || n.chave;
+  const duplicadas = lista.filter((n) => !n.atual && n.status === 'DUPLICADO');
+  if (duplicadas.length) return { estado: 'MANUAL', motivo: `a NF ${duplicadas.map(nome).join(', ')} já existia no GRM (lançada fora do agente); baixa do comprovante pelo financeiro` };
+  const pendentes = lista.filter((n) => !n.atual && n.status !== 'LANCADO');
+  if (pendentes.length) return { estado: 'AGUARDANDO', motivo: `aguardando lançar a(s) outra(s) NF(s) pagas pelo mesmo comprovante: ${pendentes.map(nome).join(', ')}` };
+  const semPin = lista.filter((n) => !n.pinCode);
+  if (semPin.length) return { estado: 'MANUAL', motivo: `sem código do GRM em ${semPin.map(nome).join(', ')}` };
+  const cnpjs = new Set(lista.map((n) => onlyDigits(n.cnpj)));
+  if (cnpjs.has('') || cnpjs.size !== 1) return { estado: 'MANUAL', motivo: 'as NFs do comprovante são de favorecidos diferentes (ou o CNPJ de alguma não foi lido)' };
+  if (new Set(lista.map((n) => normalizeText(n.empresa))).size !== 1) return { estado: 'MANUAL', motivo: 'as NFs do comprovante são de empresas diferentes' };
+  if (lista.some((n) => Number(n.parcelas || 1) > 1)) return { estado: 'MANUAL', motivo: 'alguma NF do comprovante tem mais de uma parcela' };
+  if (lista.some((n) => !(Number(n.valor) > 0))) return { estado: 'MANUAL', motivo: 'valor de alguma NF do comprovante não lido' };
+  const valorTotal = Math.round(lista.reduce((s, n) => s + Number(n.valor), 0) * 100) / 100;
+  return {
+    estado: 'PRONTO',
+    valorTotal,
+    itens: lista.map((n) => ({ pinCode: String(n.pinCode), valor: Number(n.valor), pinDocNumber: n.doc || null })),
+  };
+}
+
+// null = comprovante de uma NF só (fluxo normal). Senão, a decisão sobre as NFs que dividem o comprovante.
+async function carregarNfsDoComprovante(row, data, comprovanteUrl, pinCode) {
+  if (!comprovanteUrl) return null;
+  const { data: itens, error } = await supabase.from('compras_itens').select('id,nf_url').eq('comprovante_url', comprovanteUrl);
+  if (error) throw new Error(`Falha lendo os itens do comprovante: ${error.message}`);
+  const urls = Array.from(new Set(safe(itens).map((i) => i.nf_url).filter(Boolean)));
+  if (urls.length <= 1) return null;
+
+  const nfs = [];
+  for (const url of urls) {
+    const ref = storagePathFromPublicUrl(url);
+    if (!ref) return { estado: 'MANUAL', motivo: 'uma das NFs do comprovante é link/número, não arquivo', nfs: [] };
+    if (ref.path === row.storage_path) {
+      nfs.push({
+        atual: true, id: row.id, chave: ref.path, status: 'LANCADO', pinCode, valor: data.valor_total, doc: data.numero_documento,
+        cnpj: data.fornecedor_cnpj, empresa: data.empresa, parcelas: Array.isArray(data.parcelas) ? data.parcelas.length || 1 : 1, arquivo: row.arquivo_nome,
+      });
+      continue;
+    }
+    const { data: l, error: errL } = await supabase.from(TABLE_ITEMS)
+      .select('id,status,grm_codigo,valor_total,numero_documento,fornecedor_cnpj,arquivo_nome,extraido_json').eq('storage_path', ref.path).maybeSingle();
+    if (errL) throw new Error(`Falha lendo a NF irmã: ${errL.message}`);
+    const ej = (l && l.extraido_json) || {};
+    nfs.push({
+      id: l && l.id, chave: ref.path, status: (l && l.status) || 'SEM_FILA', pinCode: l && l.grm_codigo, valor: l && l.valor_total,
+      doc: l && l.numero_documento, cnpj: l && l.fornecedor_cnpj, empresa: ej.empresa, parcelas: Array.isArray(ej.parcelas) ? ej.parcelas.length || 1 : 1, arquivo: l && l.arquivo_nome,
+    });
+  }
+  return { ...decidirGrupoNfs(nfs), nfs };
+}
+
+async function enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo, { dry = false } = {}) {
+  if (grupo.estado === 'AGUARDANDO') return { status: 'AGUARDANDO_NFS', motivo: grupo.motivo };
+  if (grupo.estado === 'MANUAL') return { status: 'BAIXA_MANUAL', motivo: grupo.motivo };
+  // O comprovante inteiro tem que bater com a SOMA das NFs; o resto (boleto, data, conta, empresa) é a mesma avaliação de sempre.
+  const avaliacao = avaliarBaixaCompras({ ...data, valor_total: grupo.valorTotal, parcelas: undefined }, comprovante, resolved);
+  if (!avaliacao.ok) return { status: avaliacao.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: avaliacao.motivo };
+  if (dry) return { status: 'BAIXA_AUTOMATICA (dry-run)', conta: avaliacao.conta.baccName, nfs: grupo.itens.length, valor: grupo.valorTotal };
+  const { conta } = avaliacao;
+  const itensBaixa = grupo.itens.map((i) => ({ ...i, patCode: resolved.patCode }));
+  const payload = {
+    storage_bucket: comprovante.ref.bucket,
+    storage_path: comprovante.ref.path,
+    arquivo_nome: comprovante.arquivo,
+    status: 'VALIDADO',
+    favorecido_nome: data.fornecedor || null,
+    favorecido_documento: data.fornecedor_cnpj || null,
+    valor: grupo.valorTotal,
+    data_pagamento: toIsoDate(comprovante.pagamento.data_pagamento),
+    empresa_detectada: conta.empresa,
+    bacc_code: conta.baccCode,
+    pat_code: resolved.patCode,
+    pin_code: itensBaixa[0].pinCode,
+    pin_codes_json: itensBaixa,
+    parcela_valor_total: grupo.valorTotal,
+    saldo_pendente: 0,
+    grm_nf_lancamento_id: row.id,
+    extraido_json: {
+      origem: 'COMPRAS', grupo_de_nfs: true, forma: comprovante.pagamento.forma_pagamento,
+      nfs: itensBaixa.map((i) => ({ pinCode: i.pinCode, doc: i.pinDocNumber, valor: i.valor })),
+      compras_item_ids: data.compras?.item_ids || [],
+    },
+  };
+  const { data: inserted, error } = await supabase.from('grm_nf_baixas').insert(payload).select('id').single();
+  if (error) return { status: 'BAIXA_MANUAL', motivo: error.code === '23505' ? 'a baixa deste comprovante já está na fila' : `falha ao enfileirar baixa: ${error.message}` };
+  const { data: ativos } = await supabase.from('grm_sync_jobs').select('id')
+    .eq('agente_id', 'sync-baixa-notas-fiscais').in('status', ['pendente', 'rodando']).limit(1);
+  if (!ativos?.length) {
+    await supabase.from('grm_sync_jobs').insert({ agente_id: 'sync-baixa-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'compras-auto' });
+  }
+  const baixa = { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName, grupo_de_nfs: itensBaixa.length };
+  // As NFs irmãs ficaram com "aguardando": agora apontam para a baixa única (só informativo).
+  for (const n of grupo.nfs || []) {
+    if (n.atual || !n.id) continue;
+    try {
+      const { data: l } = await supabase.from(TABLE_ITEMS).select('extraido_json').eq('id', n.id).maybeSingle();
+      const ej = (l && l.extraido_json) || {};
+      await supabase.from(TABLE_ITEMS).update({ extraido_json: { ...ej, compras: { ...(ej.compras || {}), baixa } } }).eq('id', n.id);
+    } catch (e) { log('WARN', `Não atualizei o status da baixa na NF ${n.arquivo || n.id}: ${e.message}`); }
+  }
+  return baixa;
+}
+
 async function enfileirarBaixaCompras(row, data, comprovante, resolved, pinCode) {
+  const grupo = comprovante && comprovante.url ? await carregarNfsDoComprovante(row, data, comprovante.url, pinCode) : null;
+  if (grupo) return enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo);
   const avaliacao = avaliarBaixaCompras(data, comprovante, resolved);
   if (!avaliacao.ok) return { status: avaliacao.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: avaliacao.motivo };
   const { conta } = avaliacao;
@@ -1972,10 +2091,15 @@ async function processUpload(row, runId) {
 
     if (data.compras) {
       if (DRY_RUN) {
-        const a = avaliarBaixaCompras(data, comprovanteCompras, resolved);
-        data.compras.baixa = a.ok
-          ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName }
-          : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
+        const grupo = comprovanteCompras && comprovanteCompras.url ? await carregarNfsDoComprovante(row, data, comprovanteCompras.url, 'DRY-RUN') : null;
+        if (grupo) {
+          data.compras.baixa = await enfileirarBaixaGrupo(row, data, comprovanteCompras, resolved, grupo, { dry: true });
+        } else {
+          const a = avaliarBaixaCompras(data, comprovanteCompras, resolved);
+          data.compras.baixa = a.ok
+            ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName }
+            : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
+        }
       } else {
         // O título já existe no GRM: falha aqui não pode virar ERRO do lançamento.
         try {
@@ -2161,6 +2285,9 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, decidirGrupoNfs,
+    // Só para teste: troca o cliente do Supabase e expõe as funções que o usam.
+    _teste: { setSupabase: (sb) => { supabase = sb; }, carregarNfsDoComprovante, enfileirarBaixaGrupo },
+    applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
   };
 }
