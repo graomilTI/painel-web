@@ -805,4 +805,6 @@ module.exports = {
   norm, digits, placaLimpa, formatPlacaGrm, chavePlaca, placasNoTexto, tipoParaGrm, situacaoParaGrm,
   validarDados, usoPorChave, resolverMarca, resolverModelo, resolverLocal, montarPatName,
   montarPayloadPatrimonio, montarPayloadVeiculo,
+  // Reaproveitados por grmserver-cadastrar-patrimonio-api.js (conexão com o GRM, login e busca de funcionário).
+  grm, grmEscrever, login, buscarFuncionario, log, erro, safe,
 };

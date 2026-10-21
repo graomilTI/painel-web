@@ -9,20 +9,32 @@ let state = { tab: 'cadastrar', isMaster: false, allowedSupervisoes: new Set(), 
 
 function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 
-const cadDados=(r)=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return {item,material:item.material||r.material||'',marca:item.marca||r.marca||'',coord:sol.coordenacao||r.coordenacao||''};};
+// Marca e responsável da própria linha valem mais que os do item/solicitação (é onde se corrige um erro do GRM).
+const cadDados=(r)=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return {item,material:item.material||r.material||'',marca:r.marca||item.marca||'',coord:sol.coordenacao||r.coordenacao||'',solicitante:sol.solicitante||'',resp:r.grm_responsavel||sol.solicitante||'',grm:r.grm_cadastro_status||''};};
+const GRM_STATUS={PENDENTE:['Aguardando GRM','pat-grm-pend'],PROCESSANDO:['Enviando ao GRM...','pat-grm-pend'],CONCLUIDO:['No GRM ✓','pat-grm-ok'],ERRO:['Erro no GRM','pat-grm-erro']};
 const CAD_COLUNAS={
   data:(r)=>String(r.created_at||''),
   material:(r)=>normalize(cadDados(r).material),
   marca:(r)=>normalize(cadDados(r).marca),
+  resp:(r)=>normalize(cadDados(r).resp),
   coord:(r)=>normalize(cadDados(r).coord),
   num:(r)=>String(r.numero_patrimonio||''),
+  grm:(r)=>cadDados(r).grm,
 };
 
-// Números digitados e ainda não salvos: sobrevivem a reordenar, atualizar e salvar outra linha.
+// Campos digitados e ainda não salvos (nº, marca, responsável): sobrevivem a reordenar, atualizar e salvar outra linha.
 function guardarRascunho(){
   document.querySelectorAll('#patComprasBody tr[data-id]').forEach(tr=>{
-    const v=tr.querySelector('.pat-num')?.value||'';
-    if(v) state.cadRascunho.set(tr.dataset.id,v); else state.cadRascunho.delete(tr.dataset.id);
+    const rasc={};
+    for(const [campo,sel] of [['num','.pat-num'],['marca','.pat-marca'],['resp','.pat-resp']]){
+      const el=tr.querySelector(sel);
+      if(el) rasc[campo]=el.value;
+    }
+    const row=state.cadRows.find(r=>r.id===tr.dataset.id);
+    const d=row?cadDados(row):{};
+    // Só guarda o que difere do que veio do banco.
+    const difere=(rasc.num||'')!==(row?.numero_patrimonio||'')&&rasc.num!==undefined||(rasc.marca!==undefined&&rasc.marca!==(d.marca||''))||(rasc.resp!==undefined&&rasc.resp!==(d.resp||''));
+    if(difere) state.cadRascunho.set(tr.dataset.id,rasc); else state.cadRascunho.delete(tr.dataset.id);
   });
 }
 
@@ -36,7 +48,7 @@ function atualizarCabecalhoCadastro(){
 
 function renderCadastrar(){
   const body=document.getElementById('patComprasBody');
-  if(!state.cadRows.length){body.innerHTML='<tr><td colspan="6" class="pat-empty">Nenhum patrimônio comprado aguardando cadastro.</td></tr>';atualizarCabecalhoCadastro();return;}
+  if(!state.cadRows.length){body.innerHTML='<tr><td colspan="8" class="pat-empty">Nenhum patrimônio comprado aguardando cadastro.</td></tr>';atualizarCabecalhoCadastro();return;}
   const {key,dir}=state.cadSort;
   const valor=CAD_COLUNAS[key]||CAD_COLUNAS.data;
   const sinal=dir==='asc'?1:-1;
@@ -46,7 +58,18 @@ function renderCadastrar(){
     if(key==='num'&&(!va||!vb)&&va!==vb) return va?-1:1;
     return sinal*va.localeCompare(vb,'pt-BR',{numeric:true}) || normalize(cadDados(a).material).localeCompare(normalize(cadDados(b).material),'pt-BR') || String(a.id).localeCompare(String(b.id));
   });
-  body.innerHTML=linhas.map(r=>{const {item,material,marca,coord}=cadDados(r); const num=state.cadRascunho.get(r.id)??r.numero_patrimonio??''; return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(material||'-')}${item.status==='enviado_estoque'&&item.compras_estoque_fornecedor_mov?.length?`<br><span class="pat-origem" title="${esc(item.fornecedor||'')}">do estoque do fornecedor</span>`:''}</td><td>${esc(marca)}</td><td>${esc(coord)}</td><td><input class="pat-num" value="${esc(num)}" placeholder="Nº patrimônio"></td><td><button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button></td></tr>`}).join('');
+  body.innerHTML=linhas.map(r=>{
+    const {item,material,marca,coord,resp,grm}=cadDados(r);
+    const rasc=state.cadRascunho.get(r.id)||{};
+    const num=rasc.num??r.numero_patrimonio??'';
+    const noGrm=grm==='CONCLUIDO';
+    const [rotulo,classe]=GRM_STATUS[grm]||['—','pat-grm-nada'];
+    // Já cadastrado no GRM: marca e responsável viram só leitura (o GRM não é regravado).
+    const campoMarca=noGrm?esc(marca):`<input class="pat-marca" list="patMarcas" autocomplete="off" value="${esc(rasc.marca??marca)}" placeholder="Marca (obrigatória)">`;
+    const campoResp=noGrm?esc(resp):`<input class="pat-resp" value="${esc(rasc.resp??resp)}" placeholder="Responsável">`;
+    const campoNum=noGrm?`<input class="pat-num" value="${esc(num)}" placeholder="Nº patrimônio" readonly>`:`<input class="pat-num" value="${esc(num)}" placeholder="Nº patrimônio">`;
+    return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(material||'-')}${item.status==='enviado_estoque'&&item.compras_estoque_fornecedor_mov?.length?`<br><span class="pat-origem" title="${esc(item.fornecedor||'')}">do estoque do fornecedor</span>`:''}</td><td>${campoMarca}</td><td>${campoResp}</td><td>${esc(coord)}</td><td>${campoNum}</td><td><span class="pat-grm ${classe}">${rotulo}</span>${grm==='ERRO'&&r.grm_cadastro_mensagem?`<br><small class="pat-grm-msg">${esc(r.grm_cadastro_mensagem)}</small>`:''}</td><td>${noGrm?'':'<button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button>'}</td></tr>`;
+  }).join('');
   body.querySelectorAll('[data-save-one]').forEach(btn=>btn.onclick=()=>saveOne(btn.closest('tr')));
   atualizarCabecalhoCadastro();
 }
@@ -62,19 +85,33 @@ async function loadCadastrar(){
   const body=document.getElementById('patComprasBody');
   guardarRascunho();
   const {data,error}=await supabase.from('compras_patrimonios_cadastro').select('*, compras_itens(*, compras_solicitacoes(*), compras_estoque_fornecedor_mov(id))').in('status',['aguardando_numero','numero_informado']).order('created_at',{ascending:false}).limit(300);
-  if(error){body.innerHTML=`<tr><td colspan="6" class="pat-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</td></tr>`;return;}
+  if(error){body.innerHTML=`<tr><td colspan="8" class="pat-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</td></tr>`;return;}
   state.cadRows=data||[];
   renderCadastrar();
 }
 async function saveOne(tr){
   const id=tr.dataset.id; const numero=tr.querySelector('.pat-num').value.trim();
   if(!numero){setMsg('Informe o número de patrimônio antes de salvar.',true);return;}
-  const {error}=await supabase.from('compras_patrimonios_cadastro').update({numero_patrimonio:numero, status:'numero_informado', informado_em:new Date().toISOString()}).eq('id',id);
-  if(error){setMsg(error.message,true);return;} state.cadRascunho.delete(id); setMsg('Número salvo e direcionado ao módulo Patrimônios.'); await loadCadastrar();
+  const row=state.cadRows.find(r=>r.id===id)||{};
+  const d=cadDados(row);
+  const patch={numero_patrimonio:numero, status:'numero_informado', informado_em:new Date().toISOString()};
+  // Marca e responsável só entram no pedido quando o campo existe e foi alterado.
+  const marcaEl=tr.querySelector('.pat-marca'); const respEl=tr.querySelector('.pat-resp');
+  if(marcaEl&&marcaEl.value.trim()!==d.marca) patch.marca=marcaEl.value.trim()||null;
+  if(respEl){const v=respEl.value.trim(); if(v!==d.resp) patch.grm_responsavel=v&&normalize(v)!==normalize(d.solicitante)?v:null;}
+  const {error}=await supabase.from('compras_patrimonios_cadastro').update(patch).eq('id',id);
+  if(error){setMsg(error.message,true);return;}
+  // Linha em ERRO no GRM: depois de corrigir marca/responsável/número, volta para a fila.
+  const mudou=numero!==(row.numero_patrimonio||'')||'marca' in patch||'grm_responsavel' in patch;
+  if(row.grm_cadastro_status==='ERRO'&&mudou){
+    const {error:e2}=await supabase.rpc('compras_patrimonio_grm_reenviar',{p_id:id});
+    if(e2){setMsg(`Salvo, mas não consegui reenviar ao GRM: ${e2.message}`,true);state.cadRascunho.delete(id);await loadCadastrar();return;}
+  }
+  state.cadRascunho.delete(id); setMsg(row.grm_cadastro_status==='ERRO'&&mudou?'Corrigido e reenviado ao GRM.':'Salvo. O cadastro no GRM é feito automaticamente.'); await loadCadastrar();
 }
 async function saveAll(){
   guardarRascunho();
-  const rows=[...document.querySelectorAll('#patComprasBody tr[data-id]')].filter(tr=>tr.querySelector('.pat-num').value.trim());
+  const rows=[...document.querySelectorAll('#patComprasBody tr[data-id]')].filter(tr=>tr.querySelector('[data-save-one]')&&tr.querySelector('.pat-num').value.trim());
   if(!rows.length){setMsg('Nenhuma linha com número preenchido.',true);return;}
   for(const tr of rows) await saveOne(tr);
   setMsg('Lote salvo com sucesso.');
@@ -237,6 +274,13 @@ function styles(){return `<style>
 .pat-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
 .pat-table input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}
 .pat-empty{text-align:center;color:var(--muted)}
+.pat-grm{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;border:1px solid rgba(148,163,184,.25)}
+.pat-grm-ok{color:#bbf7d0;background:rgba(22,101,52,.2)}
+.pat-grm-pend{color:#fde68a;background:rgba(245,158,11,.12)}
+.pat-grm-erro{color:#fecaca;background:rgba(220,38,38,.14)}
+.pat-grm-nada{color:var(--muted)}
+.pat-grm-msg{display:block;margin-top:4px;color:#fecaca;font-size:11.5px;line-height:1.35;max-width:260px;white-space:normal}
+.pat-table input[readonly]{opacity:.65}
 .pat-origem{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:rgba(111,208,165,.14);color:#bbf7d0;font-size:11px;font-weight:800;white-space:nowrap}
 .pat-feedback{font-weight:800}
 .pat-feedback.err{color:#fecaca}
@@ -294,7 +338,7 @@ export async function renderContent(content, userContext){
       <div class="pat-content">
         <section class="card" id="patCadastrarSection">
           <div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div>
-          <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th class="pat-th-sort" data-cad-sort="data">Data</th><th class="pat-th-sort" data-cad-sort="material">Material</th><th class="pat-th-sort" data-cad-sort="marca">Marca</th><th class="pat-th-sort" data-cad-sort="coord">Coordenação</th><th class="pat-th-sort" data-cad-sort="num">Nº</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
+          <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th class="pat-th-sort" data-cad-sort="data">Data</th><th class="pat-th-sort" data-cad-sort="material">Material</th><th class="pat-th-sort" data-cad-sort="marca">Marca</th><th class="pat-th-sort" data-cad-sort="resp">Responsável</th><th class="pat-th-sort" data-cad-sort="coord">Coordenação</th><th class="pat-th-sort" data-cad-sort="num">Nº</th><th class="pat-th-sort" data-cad-sort="grm">GRM</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table><datalist id="patMarcas"></datalist></div>
           <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
         </section>
         <section class="card" id="patHistoricoSection" style="display:none">
@@ -319,6 +363,11 @@ export async function renderContent(content, userContext){
   document.getElementById('patHistFilterMaterial').addEventListener('input', (e)=>{state.histFilters.material=e.target.value; renderHistorico();});
   document.querySelectorAll('[data-pat-tab]').forEach((btn)=>btn.addEventListener('click', () => setActiveTab(btn.dataset.patTab)));
   setActiveTab('cadastrar');
+  // Sugestões de marca: catálogo do GRM (mantido pelo agente de veículos/patrimônios).
+  supabase.from('grm_veiculo_catalogo').select('marca').eq('pmo_code',0).order('marca').then(({data})=>{
+    const lista=document.getElementById('patMarcas');
+    if(lista) lista.innerHTML=[...new Set((data||[]).map(m=>m.marca).filter(Boolean))].map(m=>`<option value="${esc(m)}"></option>`).join('');
+  }).catch(()=>{});
   await loadCadastrar();
 }
 

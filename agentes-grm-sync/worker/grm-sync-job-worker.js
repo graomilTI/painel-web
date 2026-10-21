@@ -168,6 +168,10 @@ const SCRIPT_MAP = {
   // (patrimonies/setRecord + vehicle/setRecord). Job criado por gatilho em frotas_veiculos
   // (grm_cadastro_status = PENDENTE) e pelo cron de 5 min; sem itens na fila o script sai na hora.
   'sync-cadastrar-veiculo': 'grmserver-cadastrar-veiculo-api.js',
+  // Compras > Patrimônios (21/10): patrimônio comprado vira registro no GRM (patrimonies/setRecord) assim que o
+  // número da etiqueta é salvo. Job criado por gatilho em compras_patrimonios_cadastro (grm_cadastro_status =
+  // PENDENTE) e pelo cron de 5 min; nasce DESLIGADO em grm_sync_agent_settings até a conferência (--dry-run).
+  'sync-cadastrar-patrimonio': 'grmserver-cadastrar-patrimonio-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
   // Bônus. A fila (bonus_desconto_caixa_lancamentos) é alimentada na importação da

@@ -963,7 +963,7 @@ function openFinalizarModal(r){
     <div class="section-head"><div><h3>Finalizar compra</h3><p class="muted">${esc(r.material)}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF" value="${esc(r.nf_url||'')}"></label>
-      <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label>
+      <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio" value="${esc(r.marca||'')}"></label>
       ${isEPI(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
       <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
     </div>
@@ -1093,7 +1093,7 @@ async function aplicarEstoqueFornecedor(itens){
         const {error:eu}=await supabase.from('compras_itens').update({quantidade:resto,unidade:resto}).eq('id',r.id);
         if(eu){ await supabase.from('compras_itens').delete().eq('id',novo.id); throw eu; }
       }else{
-        const {error:eu}=await supabase.from('compras_itens').update({status:'enviado_estoque',fornecedor:fresco.fornecedor}).eq('id',r.id);
+        const {error:eu}=await supabase.from('compras_itens').update({status:'enviado_estoque',fornecedor:fresco.fornecedor,...(r.marca?{marca:r.marca}:{})}).eq('id',r.id);
         if(eu) throw eu;
       }
       await supabase.from('compras_estoque_fornecedor_mov').update({compras_item_id:itemAtendidoId,compras_solicitacao_id:r.solicitacao_id||null}).eq('id',res.mov_id);
@@ -1114,6 +1114,10 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   const estoqueForn=await carregarEstoqueFornecedor();
   const cand=new Map(rows.map(r=>[r.id,candidatosForn(r,estoqueForn)]));
   const temForn=[...cand.values()].some(c=>c.length);
+  // Patrimônio: a marca é exigida pelo GRM e precisa ser informada na compra (catálogo do GRM como sugestão).
+  const ehPat=(r)=>norm(r.tipo).includes('patrimonio');
+  const temPat=rows.some(ehPat);
+  const marcasGrm=temPat?[...new Set((await safe(()=>supabase.from('grm_veiculo_catalogo').select('marca').eq('pmo_code',0).order('marca'),[])).map(m=>m.marca).filter(Boolean))]:[];
   // Sem valor informado, sugere o valor unitário cadastrado no estoque do fornecedor.
   const c0valor=(r)=>cand.get(r.id)?.[0]?.valor_unitario||'';
   const doEstoqueInicial=(r)=>{
@@ -1129,7 +1133,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
     </div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${rows.some(isEPI)?'<th>CA</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${temPat?'<th>Marca</th>':''}${rows.some(isEPI)?'<th>CA</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
         <tbody>
           ${rows.map(r=>{
             const c=cand.get(r.id)||[];
@@ -1137,6 +1141,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
             <td>${esc(r.quantidade||r.unidade||1)}</td>
             <td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td>
             <td>${esc(r.tipo||'-')}</td>
+            ${temPat?`<td>${ehPat(r)?`<input class="buy-marca" list="buyMarcas" placeholder="Marca (obrigatória)" autocomplete="off" value="${esc(r.marca||'')}" style="width:170px">`:'-'}</td>`:''}
             ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||state.cotacaoCache[r.id]?.ca||'')}">`:'-'}</td>`:''}
             ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
             <td>${c.length?`<input class="buy-estoque" type="number" step="0.01" min="0" value="${esc(doEstoqueInicial(r))}" style="width:90px">`:'-'}</td>`:''}
@@ -1146,6 +1151,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
         </tbody>
       </table>
     </div>
+    ${temPat?`<datalist id="buyMarcas">${marcasGrm.map(m=>`<option value="${esc(m)}"></option>`).join('')}</datalist>`:''}
     <div class="adm-cmp-total-box mt-16"><span>Total da compra</span><strong id="buyGrandTotal">${money(totalInicial)}</strong></div>
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="buyContinue" type="button">COMPRAR</button><button class="btn btn-danger" id="buyCancel" type="button">CANCELAR</button></div>
   </div>`;
@@ -1178,13 +1184,21 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   modal.querySelectorAll('.buy-unit,.buy-estoque,select.buy-forn').forEach(inp=>{inp.oninput=recalc;inp.onchange=recalc;});
   recalc();
   modal.querySelector('#buyContinue').onclick=async()=>{
+    // Patrimônio sem marca não entra no GRM: exige a marca de cada item antes de seguir.
+    const semMarca=rows.find(r=>ehPat(r)&&!modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"] .buy-marca`)?.value?.trim());
+    if(semMarca){
+      alert(`Informe a marca de "${semMarca.material}" (o GRM exige). Se o item não tem marca, use SEM MARCA.`);
+      modal.querySelector(`[data-buy-row="${CSS.escape(String(semMarca.id))}"] .buy-marca`)?.focus();
+      return;
+    }
     const rowsComValor=rows.map(r=>{
       const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`);
       const unit=Number(tr?.querySelector('.buy-unit')?.value||0);
       const ca=tr?.querySelector('.buy-ca')?.value?.trim()||r.ca||state.cotacaoCache[r.id]?.ca||null;
+      const marca=tr?.querySelector('.buy-marca')?.value?.trim()||r.marca||null;
       const est=tr?lerEstoque(r,tr):{id:null,nome:null,qtd:0};
       const pagar=r2c(qtdItem(r)-est.qtd);
-      return {...r, _valor_unitario:unit, _valor_total:r2c(unit*pagar), _ca:ca, _do_estoque:est.qtd, _estoque_forn_id:est.id, _qtd_pagar:pagar};
+      return {...r, marca, _valor_unitario:unit, _valor_total:r2c(unit*pagar), _ca:ca, _do_estoque:est.qtd, _estoque_forn_id:est.id, _qtd_pagar:pagar};
     });
     // Tudo atendido pelo estoque do fornecedor: não há o que pagar, só a baixa.
     if(temForn&&rowsComValor.every(r=>r._qtd_pagar<=0)){
@@ -1373,6 +1387,7 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
       if(entregaTipo){ upd.entrega_tipo=entregaTipo; upd.entrega_endereco=entregaTipo==='entrega'?entregaEndereco:null; }
       if(r._ca||r.ca) upd.ca=r._ca||r.ca;
       if(fornecedor) upd.fornecedor=fornecedor;
+      if(r.marca&&norm(r.tipo).includes('patrimonio')) upd.marca=r.marca;
       // Boleto pula finalizarCompra/finalizarCompraGrupo (que geram o código
       // da compra e a linha de cadastro de patrimônio) — replica aqui pra não
       // perder o número da compra nem o card de "aguardando número" no

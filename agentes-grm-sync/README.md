@@ -389,6 +389,41 @@ Regras que o agente aplica:
 node test-cadastrar-veiculo.js                                                            # testes das funções puras
 ```
 
+## Cadastro de patrimônio comprado no GRM (`sync-cadastrar-patrimonio`)
+
+`grmserver-cadastrar-patrimonio-api.js` (API direta, lane `saida_financeiro`, sob demanda) cria em **Patrimônios** do
+GRM (`patrimonies/setRecord`) cada patrimônio comprado pelo módulo Compras, assim que o número da etiqueta é salvo em
+Patrimônios > Cadastro (ou no app do gestor). A compra gera **uma linha por unidade**, então cada unidade vira um
+patrimônio com o seu número.
+
+Como cada campo do formulário do Graint é preenchido:
+
+| Graint | Origem |
+|---|---|
+| N° Patrimônio | número digitado (inteiro positivo, até 9 dígitos) |
+| Identificação | nome do material |
+| Categoria | categoria do GRM com o **mesmo nome do material** (CALADOR, QUARTEADOR, JOGO DE PENEIRAS...) |
+| Marca | informada **na compra**; só do catálogo do GRM (nunca cria marca; "SEM MARCA" existe) |
+| Modelo | vazio (como os patrimônios dessas categorias) |
+| Funcionário | **solicitante** da compra (ou o "responsável" editado na tela de Patrimônios) |
+| Coordenação / Supervisão | as do funcionário no Supabase (`colaboradores_atuais`), conferidas no GRM |
+| Situação | `A` (Em uso); Tipo = o mais usado na categoria (padrão `M`) |
+
+Fila = colunas `grm_cadastro_*` de `compras_patrimonios_cadastro` (`PENDENTE → PROCESSANDO → CONCLUIDO | ERRO`), job
+criado pelo gatilho `compras_patrimonios_grm_enfileirar_job` e por cron de 5 min. **Nasce desligado**
+(`grm_sync_agent_settings.enabled = false`): conferir com `--dry-run` e ligar em seguida.
+
+Regras: idempotente (número que já existe como o mesmo material só conclui; como outro material → `ERRO`, nunca
+sobrescreve); responsável inativo/ausente/ambíguo, marca ou categoria fora do catálogo e supervisão divergente do
+funcionário → `ERRO` com a mensagem na linha da tela, e o botão Reenviar volta para a fila depois da correção; número
+alterado depois de `CONCLUIDO` não regrava (vira `ERRO` avisando).
+
+```bash
+/opt/node22/bin/node grmserver-cadastrar-patrimonio-api.js --dry-run                  # lê o GRM e mostra o que enviaria (não grava)
+/opt/node22/bin/node grmserver-cadastrar-patrimonio-api.js --dry-run --numero=10039   # uma linha só
+node test-cadastrar-patrimonio.js                                                      # testes das funções puras
+```
+
 ## Rodar manualmente (debug)
 
 ```bash
