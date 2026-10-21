@@ -4,7 +4,7 @@
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
 import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
-import { ligarCards, sincronizarCards } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
+import { ligarCards } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
 import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261021-frotas-manut45';
 import * as dados from './frotas-manutencao-dados.js?v=20261021-frotas-manut45';
 import {
@@ -13,7 +13,7 @@ import {
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, linhasDosItens, manutencoesDaEtapa, resolverSelecao,
 } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
-import { htmlCards, htmlCasca, htmlEtapas, htmlResumo } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
+import { htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
 import { htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-frotas-manut45';
@@ -28,7 +28,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
-    etapa: ETAPA_PADRAO, etapaEscolhida: false, resumo: 'todos', busca: '',
+    etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '',
     marcadas: new Map(), // manutenção → linhas marcadas para a cotação (key de linhasDosItens)
     loading: false, ocupado: false,
     fichaId: null, maisAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
@@ -98,9 +98,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     const ind = indices();
     root.querySelector('[data-etapas]').innerHTML = htmlEtapas(contarPorEtapa(state.manut, ind.notasPorManut), state.etapa);
     const daEtapa = state.manut.filter((m) => etapaDe(m) === state.etapa);
-    root.querySelector('[data-kpis]').innerHTML = htmlResumo(daEtapa, state.resumo, ind.orcsPorManut);
-    sincronizarCards(root, state.resumo);
-    const linhas = manutencoesDaEtapa(state.manut, { etapa: state.etapa, resumo: state.resumo, busca: state.busca }, { ...ind, categorias: state.base.categorias });
+    const linhas = manutencoesDaEtapa(state.manut, { etapa: state.etapa, busca: state.busca }, { ...ind, categorias: state.base.categorias });
     // A ficha aberta é redesenhada só por renderFicha: o nó dela passa para o cartão novo (não se perde o que foi digitado).
     const lista = root.querySelector('[data-lista]');
     const detalhe = lista.querySelector('[data-detalhe]');
@@ -223,7 +221,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
   function abrirFicha(id) {
     state.fichaId = id; state.maisAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
-    if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); state.resumo = 'todos'; }
+    if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
     renderLista();
     renderFicha();
@@ -660,7 +658,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
       // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
       if (state.manut.some((m) => m.id === id)) {
         toast('Manutenção registrada em Solicitações.');
-        state.etapa = 'solicitacoes'; state.resumo = 'todos'; state.etapaEscolhida = true;
+        state.etapa = 'solicitacoes'; state.etapaEscolhida = true;
         renderLista();
         state.root?.querySelector(`[data-mc="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } else {
@@ -683,7 +681,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
   async function openHome(container, opts = {}) {
     state.supabase = opts.supabase; state.opts = opts; state.root = container;
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
-    state.etapaEscolhida = false; state.resumo = 'todos'; state.busca = ''; state.marcadas = new Map();
+    state.etapaEscolhida = false; state.busca = ''; state.marcadas = new Map();
     container.innerHTML = `${ESTILOS_MANUTENCAO}${htmlCasca()}`;
 
     // A lista é um só contêiner: cartões, marcação de itens e a ficha aberta dentro do cartão (cada um com o seu tratador).
@@ -698,16 +696,15 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
     lista.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
 
-    container.querySelector('[data-etapas]').addEventListener('click', (e) => {
-      const aba = e.target.closest('[data-etapa]'); if (!aba || aba.dataset.etapa === state.etapa) return;
-      state.etapa = aba.dataset.etapa; state.etapaEscolhida = true; state.resumo = 'todos'; state.fichaId = null; state.orcForm = null; state.formAcao = null;
-      renderLista();
-    });
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
-    // Cartões de resumo da etapa (urgentes, parados): escolher de novo volta para "todas".
-    ligarCards(container, { obter: () => state.resumo, definir: (f) => { state.resumo = f; }, aoMudar: renderLista });
+    // Cada etapa é um cartão: o clique troca a lista (clicar na etapa aberta não a desliga, sempre há uma etapa).
+    ligarCards(container, {
+      obter: () => state.etapa,
+      definir: (f) => { if (f === 'todos' || f === state.etapa) return; state.etapa = f; state.etapaEscolhida = true; state.fichaId = null; state.orcForm = null; state.formAcao = null; },
+      aoMudar: renderLista,
+    });
 
     state.loading = true; renderLista();
     try {

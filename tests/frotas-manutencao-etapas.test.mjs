@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ETAPAS, acoesDoCard, agruparLinhas, bateResumo, contarPorEtapa, etapaDaManutencao, linhasDosItens, manutencoesDaEtapa, resolverSelecao, situacaoPagamento,
+  ETAPAS, acoesDoCard, agruparLinhas, contarPorEtapa, etapaDaManutencao, linhasDosItens, manutencoesDaEtapa, resolverSelecao, situacaoPagamento,
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
-import { htmlCard, htmlCards, htmlEtapas, htmlResumo } from '../assets/js/modules/frotas-manutencao-cards.js';
+import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { buscarItens } from '../assets/js/modules/frotas-manutencao-seletor.js';
 import { htmlFicha } from '../assets/js/modules/frotas-manutencao-html.js';
 
@@ -61,7 +61,7 @@ test('paga por outro responsável ou sem custo, a concluída não passa por À p
   assert.deepEqual(situacaoPagamento(m({ custo: 500, responsavel_pagamento: 'colaborador' }), []), { exige: false, pago: true, temNF: true });
 });
 
-test('contagem por etapa e filtro da lista (etapa, urgentes, parados, busca)', () => {
+test('contagem por etapa e filtro da lista (etapa e busca)', () => {
   const lista = [
     m({ id: 'a', status: 'solicitada', prioridade: 'urgente', solicitado_em: '2026-10-19T10:00:00Z' }),
     m({ id: 'b', status: 'solicitada', veiculo_parado: true, solicitado_em: '2026-10-20T10:00:00Z', __placa: 'AAR5A19', descricao: 'Troca de óleo' }),
@@ -74,11 +74,8 @@ test('contagem por etapa e filtro da lista (etapa, urgentes, parados, busca)', (
   assert.deepEqual(contarPorEtapa(lista, notasPorManut), { solicitacoes: 2, cotacoes: 1, andamento: 0, apagar: 1, nf: 0, concluido: 1, canceladas: 1 });
   const ids = (extra, etapa = 'solicitacoes') => manutencoesDaEtapa(lista, { etapa, ...extra }, { notasPorManut }).map((x) => x.id);
   assert.deepEqual(ids({}), ['a', 'b'], 'urgentes primeiro');
-  assert.deepEqual(ids({ resumo: 'urgentes' }), ['a']);
-  assert.deepEqual(ids({ resumo: 'parados' }), ['b']);
   assert.deepEqual(ids({ busca: 'aar5a19' }), ['b']);
   assert.deepEqual(ids({}, 'concluido'), ['e']);
-  assert.equal(bateResumo(m({ prioridade: 'alta' }), 'urgentes'), true);
 });
 
 test('os itens viram uma linha por peça, mão de obra ou serviço, agrupadas pelo grupo do guia', () => {
@@ -161,17 +158,15 @@ test('cartão separado de outra solicitação diz de qual veio e escapa HTML', (
   assert.doesNotMatch(html, /<img src=x/);
 });
 
-test('abas com contador (zero some) e cartões de resumo da etapa', () => {
-  const abas = htmlEtapas({ solicitacoes: 2, cotacoes: 0, andamento: 1, apagar: 0, nf: 0, concluido: 5, canceladas: 0 }, 'solicitacoes');
-  assert.match(abas, /data-etapa="solicitacoes"/);
-  assert.match(abas, /Em andamento/);
-  assert.match(abas, /À pagar/);
-  assert.match(abas, /Aguardando NF/);
-  assert.match(abas, /ds-tab active/);
-  const resumo = htmlResumo([m({ prioridade: 'urgente', valor_aprovado: 700 }), m({ id: 'x', veiculo_parado: true })], 'todos', new Map());
-  assert.match(resumo, /data-filtro="urgentes"/);
-  assert.match(resumo, /data-filtro="parados"/);
-  assert.match(resumo, /R\$\s?700,00/);
+test('cada etapa é um cartão com contador (inclusive zero) que troca a lista', () => {
+  const html = htmlEtapas({ solicitacoes: 2, cotacoes: 0, andamento: 1, apagar: 0, nf: 0, concluido: 5, canceladas: 0 }, 'cotacoes');
+  assert.equal((html.match(/class="fm-kcard tone-/g) || []).length, ETAPAS.length);
+  assert.match(html, /data-filtro="solicitacoes"/);
+  for (const rotulo of ['Solicitações', 'Cotações', 'Em andamento', 'À pagar', 'Aguardando NF', 'Concluído']) assert.match(html, new RegExp(rotulo));
+  assert.match(html, /<button[^>]*data-filtro="cotacoes"[^>]*aria-pressed="true"/, 'a etapa aberta fica destacada');
+  assert.match(html, /<strong >5<\/strong>/);
+  assert.doesNotMatch(htmlCasca(), /ds-tabs|frotas-hub-tabs/, 'a linha de abas saiu');
+  assert.match(htmlCasca(), /fm-kpis fm-etapas" data-etapas/);
   assert.match(htmlCards([], { etapa: 'cotacoes' }), /Nenhuma manutenção nesta etapa/);
 });
 
