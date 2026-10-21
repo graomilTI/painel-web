@@ -52,18 +52,9 @@ export function contarPorEtapa(lista = [], notasPorManut = new Map()) {
   return out;
 }
 
-// Filtros dos cartões de resumo, valem dentro da etapa aberta.
-export const RESUMOS = ['todos', 'urgentes', 'parados'];
-
-export function bateResumo(m, resumo) {
-  if (resumo === 'urgentes') return m.prioridade === 'urgente' || m.prioridade === 'alta';
-  if (resumo === 'parados') return !!m.veiculo_parado;
-  return true;
-}
-
 // Manutenções da etapa (com busca e urgentes primeiro). Encerradas saem do mais recente para o mais antigo.
-export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, resumo = 'todos', busca = '' } = {}, { itensPorManut = new Map(), notasPorManut = new Map(), categorias = [] } = {}) {
-  const daEtapa = lista.filter((m) => etapaDaManutencao(m, notasPorManut.get(m.id) || []) === etapa && bateResumo(m, resumo));
+export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, busca = '' } = {}, { itensPorManut = new Map(), notasPorManut = new Map(), categorias = [] } = {}) {
+  const daEtapa = lista.filter((m) => etapaDaManutencao(m, notasPorManut.get(m.id) || []) === etapa);
   const achadas = filtrarManutencoes(daEtapa, { filtro: 'todos', visao: 'todas', busca }, itensPorManut, categorias);
   if (['concluido', 'nf', 'apagar', 'canceladas'].includes(etapa)) {
     const quando = (m) => String(m.concluida_em || m.solicitado_em || '');

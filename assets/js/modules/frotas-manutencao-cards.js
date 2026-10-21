@@ -1,6 +1,6 @@
-// Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (abas com contador, cartões de resumo e um cartão por
+// Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
-import { dinheiro, esc, tabs } from '../core/ui.js';
+import { dinheiro, esc } from '../core/ui.js';
 import { cardFiltro } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
 import { camposEditaveis, codigoManutencao, proximoPasso, valorDaManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 import { ETAPAS, acoesDoCard, agruparLinhas, linhasDosItens } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
@@ -19,36 +19,30 @@ export const ICONES = {
   mais: svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
 };
 
-// ---------- casca, abas e resumo ----------
+// ---------- casca e etapas ----------
 export function htmlCasca() {
-  return `<div class="frotas-hub-tabs fm-etapas" data-etapas></div>
-  <section class="fm-shell">
+  return `<section class="fm-shell">
     <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
-    <div class="fm-kpis" data-kpis></div>
+    <div class="fm-kpis fm-etapas" data-etapas></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, peça, oficina, motorista, categoria..." data-busca></div>
-      <span data-chip></span><span class="fm-count" data-contagem>0 manutenção(ões)</span></div>
+      <span class="fm-count" data-contagem>0 manutenção(ões)</span></div>
       <div class="fm-mcs" data-lista></div>
       <div class="fm-nota" data-nota-etapa></div>
     </div></div></section>`;
 }
 
-export function htmlEtapas(contagens, ativa) {
-  return tabs({
-    itens: ETAPAS.map((e) => ({ id: e.id, label: e.rotulo, badge: contagens[e.id] > 0 ? contagens[e.id] : null })),
-    ativo: ativa, attr: 'data-etapa',
-  });
-}
+// Uma etapa por cartão (como os cartões-filtro de Compras): o número é a quantidade e o clique troca a lista abaixo.
+const VISUAL_ETAPA = {
+  solicitacoes: ['blue', 'total'], cotacoes: ['purple', 'dinheiro'], andamento: ['amber', 'ferramenta'],
+  apagar: ['red', 'relogio'], nf: ['blue', 'anexo'], concluido: ['green', 'ok'], canceladas: ['red', 'erro'],
+};
 
-// Cartões de resumo da etapa aberta: filtram (urgentes, parados) e somam o valor.
-export function htmlResumo(lista, resumo, orcsPorManut) {
-  const urgentes = lista.filter((m) => m.prioridade === 'urgente' || m.prioridade === 'alta').length;
-  const parados = lista.filter((m) => m.veiculo_parado).length;
-  const valor = lista.reduce((s, m) => s + (valorDaManutencao(m, orcsPorManut.get(m.id) || [])?.valor || 0), 0);
-  return cardFiltro({ filtro: 'todos', label: 'Todas da etapa', tone: 'blue', icone: 'total', valor: String(lista.length), ativo: resumo === 'todos' })
-    + (urgentes || resumo === 'urgentes' ? cardFiltro({ filtro: 'urgentes', label: 'Urgentes e altas', tone: 'red', icone: 'alerta', valor: String(urgentes), ativo: resumo === 'urgentes' }) : '')
-    + (parados || resumo === 'parados' ? cardFiltro({ filtro: 'parados', label: 'Veículo parado', tone: 'amber', icone: 'carro', valor: String(parados), ativo: resumo === 'parados' }) : '')
-    + (valor > 0 ? cardFiltro({ label: 'Valor da etapa', tone: 'green', icone: 'dinheiro', valor: dinheiro(valor), dica: 'Soma do valor mais recente de cada manutenção da etapa (final, aprovado ou o menor orçamento)' }) : '');
+export function htmlEtapas(contagens, ativa) {
+  return ETAPAS.map((e) => cardFiltro({
+    filtro: e.id, label: e.rotulo, tone: VISUAL_ETAPA[e.id][0], icone: VISUAL_ETAPA[e.id][1],
+    valor: String(contagens[e.id] || 0), dica: e.dica, ativo: e.id === ativa,
+  })).join('');
 }
 
 // ---------- itens marcáveis ----------
