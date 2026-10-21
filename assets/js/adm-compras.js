@@ -979,6 +979,20 @@ const candidatosForn=(r,lista)=>lista.filter(f=>chaveMaterialForn(f)===chaveMate
 const qtdItem=(r)=>Number(r.quantidade||r.unidade||1);
 const r2c=(v)=>Math.round(Number(v||0)*100)/100;
 
+// Patrimônio comprado: uma linha de cadastro por unidade, para informar a etiqueta (nº) de cada uma.
+// Só cria as que faltam, então repetir a finalização não duplica.
+async function criarLinhasPatrimonio(r,marca=null){
+  try{
+    const total=Math.max(1,Math.floor(qtdItem(r)));
+    const {count}=await supabase.from('compras_patrimonios_cadastro').select('id',{count:'exact',head:true}).eq('compra_item_id',r.id);
+    const faltam=total-(count||0);
+    if(faltam<=0) return;
+    const linha={compra_item_id:r.id,material:r.material,marca:marca??r.marca??null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'};
+    const {error}=await supabase.from('compras_patrimonios_cadastro').insert(Array.from({length:faltam},()=>({...linha})));
+    if(error) throw error;
+  }catch(e){ console.warn('[compras] linhas de patrimônio',e); }
+}
+
 // Dá baixa no saldo do fornecedor e ajusta os itens da compra. Devolve só o que ainda precisa ser pago
 // (com a quantidade já reduzida). Roda ANTES do envio ao Financeiro: se algo falhar aqui, nada foi pago.
 async function aplicarEstoqueFornecedor(itens){
@@ -996,25 +1010,27 @@ async function aplicarEstoqueFornecedor(itens){
     const ident={p_usuario_id:user.id||null,p_usuario_nome:user.name||user.email||null};
     const {data:res,error:eb}=await supabase.rpc('compras_estoque_fornecedor_baixar',{p_estoque_id:r._estoque_forn_id,p_quantidade:doEst,p_destino:r.regional||r.compras_solicitacoes?.coordenacao||'Compras',p_data:hoje,p_obs:`Compras: ${r.material}${tam}`,...ident});
     if(eb) throw new Error(`Erro ao dar baixa de "${r.material}" no fornecedor: ${eb.message}`);
+    let itemAtendidoId=r.id;
     try{
-      let itemAtendido=r.id;
       if(resto>0){
         // Parte atendida pelo fornecedor vira um item próprio; o item original fica só com o que será comprado.
         const copia={solicitacao_id:r.solicitacao_id,material:r.material,tipo:r.tipo,tamanho:r.tamanho,marca:r.marca,ca:r.ca,regional:r.regional,colaborador_id:r.colaborador_id,colaborador_nome:r.colaborador_nome,fornecedor:fresco.fornecedor,quantidade:doEst,unidade:doEst,status:'enviado_estoque'};
         const {data:novo,error:ei}=await supabase.from('compras_itens').insert(copia).select('id').single();
         if(ei) throw ei;
-        itemAtendido=novo.id;
+        itemAtendidoId=novo.id;
         const {error:eu}=await supabase.from('compras_itens').update({quantidade:resto,unidade:resto}).eq('id',r.id);
         if(eu){ await supabase.from('compras_itens').delete().eq('id',novo.id); throw eu; }
       }else{
         const {error:eu}=await supabase.from('compras_itens').update({status:'enviado_estoque',fornecedor:fresco.fornecedor}).eq('id',r.id);
         if(eu) throw eu;
       }
-      await supabase.from('compras_estoque_fornecedor_mov').update({compras_item_id:itemAtendido,compras_solicitacao_id:r.solicitacao_id||null}).eq('id',res.mov_id);
+      await supabase.from('compras_estoque_fornecedor_mov').update({compras_item_id:itemAtendidoId,compras_solicitacao_id:r.solicitacao_id||null}).eq('id',res.mov_id);
     }catch(e){
       await supabase.rpc('compras_estoque_fornecedor_entrada',{p_estoque_id:r._estoque_forn_id,p_quantidade:doEst,p_data:hoje,p_nf:null,p_valor:null,p_obs:'Estorno: falha ao atualizar a compra',...ident});
       throw new Error(`Erro ao atualizar "${r.material}": ${e.message}`);
     }
+    // O que veio do estoque do fornecedor também precisa de etiqueta de patrimônio.
+    if(norm(r.tipo).includes('patrimonio')) await criarLinhasPatrimonio({...r,id:itemAtendidoId,quantidade:doEst,unidade:doEst});
     if(resto>0) restantes.push({...r,quantidade:resto,unidade:resto,_valor_total:r2c((r._valor_unitario||0)*resto)});
   }
   return restantes;
@@ -1299,7 +1315,7 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
         else throw new Error(`Erro ao atualizar item ${r.material}: ${updErr.message}`);
       }
       if(boletoDireto&&norm(r.tipo).includes('patrimonio')){
-        await safe(()=>supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca:r.marca||null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}),null);
+        await criarLinhasPatrimonio(r);
       }
     }
     const episComColab=normalItens.filter(r=>isEPI(r)&&(r.colaborador_id||r.colaborador_nome));
@@ -1337,7 +1353,7 @@ async function finalizarCompra(r,{nf,marca,ca}){
   if(isEPI(r)&&ca) updPayload.ca=ca;
   await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
   if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
-  if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'}); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
+  if(norm(r.tipo).includes('patrimonio')) await criarLinhasPatrimonio(r,marca); await notifyByConfig('GESTOR',`Compra concluída\nMaterial: ${r.material}\nNF: ${nf}`);
   try { const engine=window.__painelNotifEngine; const s=r.compras_solicitacoes||{}; const destinatarioId=s.solicitante_id||s.created_by||null; if(engine&&destinatarioId){ await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} foi concluída. NF disponível.`,destinatario_usuario_id:destinatarioId,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`}); } } catch(_){}
   document.getElementById('admCmpModal').classList.remove('open'); await loadRows(); }
 
@@ -1399,7 +1415,7 @@ async function finalizarCompraGrupo(itens,nf){
     if(isEPI(r)&&ca) updPayload.ca=ca;
     await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
     if(isEPI(r)){const {data:epiReg}=await supabase.from('rh_epi_registros').select('id').eq('compra_item_id',r.id).maybeSingle(); if(epiReg) await safe(()=>supabase.from('rh_epi_registros').update({ca:ca||null}).eq('compra_item_id',r.id)); else if(r.colaborador_id||r.colaborador_nome) await safe(()=>supabase.from('rh_epi_registros').insert([{data_entrega:new Date().toISOString().slice(0,10),colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,epi:r.material,ca:ca||null,quantidade:Number(r.quantidade||r.unidade||1),compra_item_id:r.id,status:'aguardando_pagamento',created_at:new Date().toISOString()}]),null);}
-    if(norm(r.tipo).includes('patrimonio')) await supabase.from('compras_patrimonios_cadastro').insert({compra_item_id:r.id,material:r.material,marca:r.marca||null,coordenacao:r.compras_solicitacoes?.coordenacao||null,status:'aguardando_numero'});
+    if(norm(r.tipo).includes('patrimonio')) await criarLinhasPatrimonio(r);
   }
   try{const engine=window.__painelNotifEngine; for(const r of itens){const s=r.compras_solicitacoes||{}; const did=s.solicitante_id||s.created_by||null; if(engine&&did) await engine.criarNotificacao({tipo:'compra_realizada',titulo:`Compra realizada: ${r.material}`,descricao:`Solicitação de ${s.solicitante||'Gestor'} concluída. NF disponível.`,destinatario_usuario_id:did,referencia_tabela:'compras_itens',referencia_id:String(r.id),chave_dedup:`compra_realizada:${r.id}`});}}catch(_){}
   await notifyByConfig('GESTOR',`Compras concluídas\n${itens.length} itens finalizados\nNF: ${nf}\nTotal: ${money(itens.reduce((s,r)=>s+Number(r.valor_total||0),0))}`);
