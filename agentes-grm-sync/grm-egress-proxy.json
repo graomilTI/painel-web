@@ -24,6 +24,7 @@
     "sync-cargas-geofence",
     "sync-adiantamentos",
     "sync-cadastrar-veiculo",
+    "sync-cadastrar-patrimonio",
     "sync-despesas-retroativas",
     "sync-despesas-duplicadas",
     "sync-aprovar-pendencias",
