@@ -250,7 +250,9 @@ function iconBtn(action,id,title){
 function nfLinkHtml(r){
   const nfUrl=r?.nf_url||'';
   if(!nfUrl) return '<span class="muted">-</span>';
-  return /^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`;
+  const principal=/^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`;
+  const extras=anexosNf(r).map((a,i)=>`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome||'')}" style="color:#86efac;font-size:12px">Anexo ${i+2}</a>`).join(' · ');
+  return extras?`${principal} · ${extras}`:principal;
 }
 function actionsCellForTab(r){
   if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}</div>`;
@@ -932,8 +934,9 @@ function openAnexarNfModal(gids){
     ${atual?`<p class="muted mt-16">NF atual: ${/^https?:\/\//i.test(atual)?`<a href="${esc(atual)}" target="_blank" rel="noopener" style="color:#86efac">Abrir</a>`:esc(atual)}</p>`:''}
     <div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNfAnexo" placeholder="Cole o link ou número da NF" value="${/^https?:\/\//i.test(atual)?'':esc(atual)}"></label>
-      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfAnexoFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfAnexoFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
     </div>
+    ${anexosNfHtml(anexosNf(itens.find(r=>r.nf_url)||{}))}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mNfAnexoSalvar" type="button">Salvar NF</button></div>
     <span class="adm-cmp-feedback mt-8" id="nfAnexoFeedback"></span>
   </div>`;
@@ -943,11 +946,13 @@ function openAnexarNfModal(gids){
     const btn=modal.querySelector('#mNfAnexoSalvar'); const fb=modal.querySelector('#nfAnexoFeedback');
     btn.disabled=true; if(fb){fb.textContent=''; fb.classList.remove('err');}
     try{
-      const file=modal.querySelector('#mNfAnexoFile')?.files?.[0]||null;
+      const files=modal.querySelector('#mNfAnexoFile')?.files||[];
       let nf=modal.querySelector('#mNfAnexo')?.value?.trim()||'';
-      if(file){ if(fb) fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf'); }
+      let anexos;
+      if(files.length){ const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos; }
       if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btn.disabled=false; if(fb) fb.textContent=''; return; }
-      const {error}=await supabase.from('compras_itens').update({nf_url:nf}).in('id',itens.map(r=>r.id));
+      const upd={nf_url:nf}; if(anexos!==undefined) upd.nf_anexos=anexos;
+      const {error}=await supabase.from('compras_itens').update(upd).in('id',itens.map(r=>r.id));
       if(error) throw new Error(error.message);
       modal.classList.remove('open');
       setMsg(`NF anexada em ${itens.length} item(ns).`);
@@ -965,8 +970,9 @@ function openFinalizarModal(r){
       <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF" value="${esc(r.nf_url||'')}"></label>
       <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio" value="${esc(r.marca||'')}"></label>
       ${isEPI(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
-      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
     </div>
+    ${anexosNfHtml(anexosNf(r))}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mFinalizar" type="button">Finalizar compra</button>${r.comprovante_url?`<a class="btn btn-secondary" href="${esc(r.comprovante_url)}" target="_blank">Abrir comprovante</a>`:''}</div>
     <span class="adm-cmp-feedback mt-8" id="nfFeedback"></span>
   </div>`;
@@ -976,13 +982,14 @@ function openFinalizarModal(r){
     const btn=modal.querySelector('#mFinalizar'); const fb=modal.querySelector('#nfFeedback');
     btn.disabled=true; if(fb) fb.textContent='';
     try{
-      const file=modal.querySelector('#mNfFile')?.files?.[0]||null;
+      const files=modal.querySelector('#mNfFile')?.files||[];
       let nf=modal.querySelector('#mNf')?.value?.trim()||'';
-      if(file){ if(fb) fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf'); }
+      let anexos;
+      if(files.length){ const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos; }
       if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btn.disabled=false; return; }
       const marca=modal.querySelector('#mMarca')?.value?.trim()||'';
       const ca=isEPI(r)?(modal.querySelector('#mCa')?.value?.trim()||r.ca||null):(r.ca||null);
-      await finalizarCompra(r,{nf,marca,ca});
+      await finalizarCompra(r,{nf,marca,ca,anexos});
     }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
   });
 }
@@ -1225,6 +1232,20 @@ async function uploadArquivoNotasFiscais(file,prefixo='compras/boletos'){
   const {data}=supabase.storage.from('notas-fiscais').getPublicUrl(path);
   return data?.publicUrl||path;
 }
+// NF com vários arquivos: o 1º vira a NF principal (nf_url, que a fila do GRM e a aba Notas Fiscais usam) e os
+// demais ficam em compras_itens.nf_anexos como { url, nome }.
+const ACEITA_NF='.pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx';
+const anexosNf=(r)=>Array.isArray(r?.nf_anexos)?r.nf_anexos.filter(a=>a&&a.url):[];
+async function enviarArquivosNf(files,prefixo,fb){
+  const lista=[...(files||[])];
+  const urls=[];
+  for(let i=0;i<lista.length;i++){
+    if(fb) fb.textContent=lista.length>1?`Enviando arquivo ${i+1} de ${lista.length}...`:'Enviando arquivo...';
+    urls.push(await uploadArquivoNotasFiscais(lista[i],prefixo));
+  }
+  return {principal:urls[0]||'',anexos:urls.slice(1).map((url,i)=>({url,nome:lista[i+1].name}))};
+}
+const anexosNfHtml=(anexos)=>anexos.length?`<p class="muted mt-8">Anexos: ${anexos.map((a,i)=>`<a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:#86efac">${esc(a.nome||`Anexo ${i+2}`)}</a>`).join(' · ')}</p>`:'';
 async function coletarDadosPagamento(forma,area){
   const texto=area.querySelector('#payData')?.value?.trim()||'';
   const arquivo=area.querySelector('#payFile')?.files?.[0]||null;
@@ -1433,9 +1454,10 @@ async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contat
   await loadRows();
 }
 
-async function finalizarCompra(r,{nf,marca,ca}){
+async function finalizarCompra(r,{nf,marca,ca,anexos}){
   const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
   const updPayload={status:'comprado',nf_url:nf,marca,comprado_em:new Date().toISOString()};
+  if(anexos!==undefined) updPayload.nf_anexos=anexos;
   if(codigo) updPayload.codigo=codigo;
   if(isEPI(r)&&ca) updPayload.ca=ca;
   await supabase.from('compras_itens').update(updPayload).eq('id',r.id);
@@ -1470,8 +1492,9 @@ function openGrupoModal(gids){
     ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
     ${allAguardando?`<div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número" value="${esc(itens.find(r=>r.nf_url)?.nf_url||'')}"></label>
-      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfGrpFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfGrpFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
     </div>
+    ${anexosNfHtml(anexosNf(itens.find(r=>r.nf_url)||{}))}
     <div class="adm-cmp-actions mt-16">
       <button class="btn btn-primary" id="mFinalizarGrp" type="button">Finalizar grupo (${itens.length} itens)</button>
     </div>`:`<p class="muted mt-16">Aguardando pagamento — o financeiro precisa anexar o comprovante antes da NF.</p>`}
@@ -1484,20 +1507,22 @@ function openGrupoModal(gids){
     const fb=modal.querySelector('#grpFeedback');
     btn.disabled=true; btn.textContent='Finalizando...'; if(fb)fb.textContent='';
     try{
-      const file=modal.querySelector('#mNfGrpFile')?.files?.[0]||null;
+      const files=modal.querySelector('#mNfGrpFile')?.files||[];
       let nf=modal.querySelector('#mNfGrp')?.value?.trim()||'';
-      if(file){if(fb)fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf');}
+      let anexos;
+      if(files.length){const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos;}
       if(!nf){alert('Informe a NF ou anexe um arquivo.');btn.disabled=false;btn.textContent=`Finalizar grupo (${itens.length} itens)`;return;}
-      await finalizarCompraGrupo(itens,nf);
+      await finalizarCompraGrupo(itens,nf,anexos);
     }catch(e){if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
   };
 }
 
-async function finalizarCompraGrupo(itens,nf){
+async function finalizarCompraGrupo(itens,nf,anexos){
   for(const r of itens){
     const ca=r.ca||null;
     const codigo=r.codigo||await safe(()=>supabase.rpc('gerar_codigo_compra',{p_tipo:r.tipo||'Outros'}),null);
     const updPayload={status:'comprado',nf_url:nf,comprado_em:new Date().toISOString()};
+    if(anexos!==undefined) updPayload.nf_anexos=anexos;
     if(codigo) updPayload.codigo=codigo;
     if(isEPI(r)&&ca) updPayload.ca=ca;
     await supabase.from('compras_itens').update(updPayload).eq('id',r.id);

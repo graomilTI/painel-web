@@ -5,7 +5,7 @@ import { listar, atualizar } from '../../core/supabaseService.js';
 
 const SELECT_ITENS = [
   'id', 'material', 'tipo', 'quantidade', 'unidade', 'valor_total',
-  'comprado_em', 'nf_url', 'comprovante_url', 'nf_lancado', 'nf_lancado_em',
+  'comprado_em', 'nf_url', 'nf_anexos', 'comprovante_url', 'nf_lancado', 'nf_lancado_em',
   'marca', 'tamanho',
   'compras_solicitacoes(solicitante, coordenacao, data_solicitacao, observacoes)',
 ].join(', ');
