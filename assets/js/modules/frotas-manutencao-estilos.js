@@ -1,4 +1,4 @@
-import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261020-frotas-manut44';
+import { ESTILOS_LISTA } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
 
 // Estilos da tela de Manutenção (lista, ficha em modal, vencimentos e oficinas). Reaproveita o prefixo .fm-
 // das demais listas do Frotas e acrescenta passo a passo, linha do tempo, orçamentos e formulários.
@@ -105,4 +105,39 @@ details.fm-field.fm-mais{margin-top:2px}
 @media(max-width:1350px){.fm-nova{grid-template-columns:minmax(280px,340px) minmax(0,1fr)}.fm-nova-resumo{grid-column:2;position:static}}
 @media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-pick-lista{grid-template-columns:1fr}.fm-nova{grid-template-columns:1fr}.fm-nova-resumo{grid-column:auto}.fm-ol-cab{display:none}.fm-ol{grid-template-columns:1fr 1fr}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
 @media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
+
+/* Corretiva por etapas (modelo de Compras): abas com contador, um cartão por manutenção e a coluna de ações à direita. */
+.fm-etapas{margin-bottom:14px}
+.fm-mcs{display:grid;gap:14px}
+.fm-mc{display:grid;grid-template-columns:minmax(0,1fr) auto;border:1px solid rgba(148,163,184,.16);border-radius:18px;background:linear-gradient(180deg,rgba(15,23,42,.7),rgba(2,6,23,.7));overflow:hidden}
+.fm-mc.aberto{border-color:rgba(34,197,94,.4)}.fm-mc-corpo{min-width:0}
+.fm-mc-topo{display:grid;grid-template-columns:16px 112px minmax(140px,1fr) minmax(200px,2.2fr) 120px 150px;gap:12px;align-items:center;padding:14px 16px;cursor:pointer;background:rgba(15,23,42,.65);border-bottom:1px solid rgba(148,163,184,.12)}
+.fm-mc-topo:hover{background:rgba(22,101,52,.12)}.fm-mc-topo:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
+.fm-mc-seta{color:#86efac;font-size:12px;transition:transform .15s}.fm-mc.aberto .fm-mc-seta{transform:rotate(90deg)}
+.fm-mc-topo strong{display:block;color:#f8fafc;font-size:13.5px}.fm-mc-desc{min-width:0;color:#e2e8f0;font-size:13px;font-weight:700;line-height:1.35}
+.fm-mc-val{text-align:right}.fm-mc-val strong{font-size:14px}.fm-mc-quando strong{font-size:13px}
+.fm-mc-itens{padding:12px 16px 14px;display:grid;gap:8px}
+.fm-mc-itens-cab{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:2px}.fm-mc-itens-cab .fm-mm{margin:0}.fm-mc-itens-cab .fm-link{margin-left:auto}
+.fm-mc-todas{display:inline-flex;align-items:center;gap:8px;color:#e2e8f0;font-size:12px;font-weight:900;cursor:pointer}
+.fm-mc input[type=checkbox]{width:17px;height:17px;accent-color:#22c55e;cursor:pointer;flex:none;margin:0}
+.fm-mc-grupo{display:grid;grid-template-columns:190px minmax(0,1fr);gap:10px;align-items:start;padding-top:8px;border-top:1px solid rgba(148,163,184,.09)}
+.fm-mc-gtit{display:flex;align-items:center;gap:8px;min-height:30px;color:#bbf7d0;font-size:12px;cursor:default}.fm-mc-gtit strong{font-size:12px;color:#bbf7d0;letter-spacing:.02em}
+label.fm-mc-gtit{cursor:pointer}
+.fm-mc-linhas{display:flex;flex-wrap:wrap;gap:6px}
+.fm-mc-linha{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:5px 10px;border:1px solid rgba(148,163,184,.22);border-radius:999px;background:rgba(15,23,42,.6);color:#e2e8f0;font-size:12px;font-weight:700;line-height:1.3}
+label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,197,94,.5)}.fm-mc-linha.sel{border-color:rgba(34,197,94,.65);background:rgba(34,197,94,.16);color:#f0fdf4}
+.fm-mc-linha.servico{border-style:dashed}.fm-mc-nome{min-width:0;overflow-wrap:anywhere}
+.fm-mc-tipo{font-style:normal;padding:1px 7px;border-radius:999px;font-size:9.5px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;border:1px solid rgba(96,165,250,.34);background:rgba(59,130,246,.12);color:#bfdbfe}.fm-mc-tipo.servico{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a}
+.fm-mc-detalhe{padding:4px 16px 16px;border-top:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.28)}.fm-mc-detalhe>.fm-sec:first-of-type{margin-top:10px}
+.fm-det-topo{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:12px}
+.fm-mc-acoes{display:flex;flex-direction:column;gap:7px;align-items:center;justify-content:flex-start;padding:12px;border-left:1px solid rgba(148,163,184,.14);background:rgba(2,6,23,.36)}
+.fm-ic-act{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex:none;padding:0;transition:.15s}
+.fm-ic-act svg{width:16px;height:16px}.fm-ic-act:hover:not(:disabled){background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.45)}.fm-ic-act:focus-visible{outline:2px solid #4ade80;outline-offset:2px}.fm-ic-act:disabled{opacity:.35;cursor:not-allowed}
+.fm-ic-act.tom-iniciar_orcamento,.fm-ic-act.tom-reabrir_orcamento,.fm-ic-act.tom-aprovar,.fm-ic-act.tom-aprovar_sem_orcamento,.fm-ic-act.tom-concluir,.fm-ic-act.tom-emitir_os{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.28);color:#68f0ac}
+.fm-ic-act.tom-orcamento,.fm-ic-act.tom-enviar_aprovacao,.fm-ic-act.tom-enviar_notas,.fm-ic-act.tom-notas{background:rgba(59,130,246,.12);border-color:rgba(96,165,250,.26);color:#93c5fd}
+.fm-ic-act.tom-reprovar,.fm-ic-act.tom-cancelar{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.24);color:#ff7272}
+.fm-ic-act.tom-detalhes.on{background:rgba(34,197,94,.2);border-color:#4ade80;color:#dcfce7}
+.fm-modal-largo .ds-modal-card{width:min(1320px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px);overflow:auto}
+@media(max-width:1100px){.fm-mc-topo{grid-template-columns:16px 100px minmax(0,1fr) 110px}.fm-mc-desc{grid-column:2/-1;grid-row:2}.fm-mc-quando{display:none}.fm-mc-grupo{grid-template-columns:1fr}}
+@media(max-width:700px){.fm-mc{grid-template-columns:1fr}.fm-mc-acoes{flex-direction:row;flex-wrap:wrap;border-left:0;border-top:1px solid rgba(148,163,184,.14);justify-content:flex-start}.fm-mc-topo{grid-template-columns:16px minmax(0,1fr) auto}.fm-mc-veic,.fm-mc-val{grid-column:auto}}
 </style>`;
