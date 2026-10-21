@@ -70,13 +70,14 @@ export function htmlFormNova(base, preset = {}) {
   // Três colunas na tela inteira: o pedido | o que será feito (seletor) | resumo fixo com pendências e os botões.
   return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu, o problema e o que será feito (itens dos grupos do guia). O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
     <div class="fm-nova" data-nova-grade>
-      <aside class="fm-sec fm-nova-pedido"><h4>Pedido</h4>
+      <section class="fm-sec fm-nova-pedido"><h4>Pedido</h4>
         <div class="fm-nova-campos">
-          <div class="fm-field"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${rotuloVeiculo(veiculo)}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(rotuloVeiculo(v))}"></option>`).join('')}</datalist><label class="fm-check" style="min-height:0;margin-top:8px"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
+          <div class="fm-field"><label>Veículo</label><input class="fm-input" list="fmListaVeiculos" data-n-veiculo placeholder="Digite a placa..." value="${esc(veiculo ? `${veiculo.placa} · ${rotuloVeiculo(veiculo)}` : '')}"><datalist id="fmListaVeiculos">${lista.map((v) => `<option value="${esc(v.placa)} · ${esc(rotuloVeiculo(v))}"></option>`).join('')}</datalist></div>
           <div class="fm-field"><label>Quem pediu</label><input class="fm-input" data-n-solicitante data-auto="${preset.solicitante_nome ? '0' : '1'}" list="fmListaColaboradores" autocomplete="off" maxlength="120" placeholder="Condutor ou outra pessoa" value="${esc(preset.solicitante_nome || veiculo?.motorista_atual || '')}"><datalist id="fmListaColaboradores">${(base.colaboradores || []).map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist></div>
           <div class="fm-field"><label>Prioridade</label><select class="fm-select" data-n-prioridade>${opcoes(PRIORIDADES, preset.prioridade || 'normal')}</select></div>
-          <div class="fm-field"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
-        </div></aside>
+          <div class="fm-field fm-nova-parado"><label>Situação</label><label class="fm-check fm-check-caixa"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
+          <div class="fm-field fm-nova-problema"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
+        </div></section>
       <section class="fm-sec fm-nova-itens" data-seletor-sec><h4>O que será feito <span class="fm-obrig">obrigatório</span></h4>
         ${itens.length ? `<div class="fm-nova-prontos"><span class="fm-comps-t">Já informado (checklist ou plano)</span><div class="fm-itens" data-novo-itens>${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div></div>` : ''}
         <div data-seletor-corpo>${htmlSeletor()}</div>
