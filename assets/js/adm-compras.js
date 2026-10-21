@@ -222,12 +222,20 @@ document.addEventListener('mouseup',()=>{
   dragSel=null;
 });
 
+// O grupo é o PAGAMENTO (uma compra enviada ao Financeiro de uma vez, com um comprovante). Antes agrupava só pelo
+// nome do fornecedor e misturava compras de datas e pagamentos diferentes do mesmo fornecedor (ex.: 3 compras da
+// Mercado Livre viravam uma linha de 10 itens). Sem código de pagamento (itens antigos), usa o comprovante e, por
+// último, a mesma solicitação + fornecedor + forma de pagamento.
 function groupKey(r, useNf=false){
   if(useNf){ const nf=norm(r.nf_url||''); if(nf) return `nf:${nf}`; }
+  const pag=norm(r.codigo_pagamento||'');
+  if(pag) return `pag:${pag}`;
+  const comp=String(r.comprovante_url||'').trim();
+  if(comp) return `comp:${comp}`;
   const fn=norm(r.fornecedor||'');
   const dp=norm(r.dados_pagamento||'');
   const fp=norm(r.forma_pagamento||'');
-  if(fn) return `fn:${fn}`;
+  if(fn) return `fn:${fn}:${fp}:${r.solicitacao_id||''}`;
   if(dp) return `dp:${fp}:${dp}`;
   return `solo:${r.id}`;
 }
