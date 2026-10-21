@@ -359,10 +359,7 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   const contexto = (extra = {}) => ({ itensPorManut: new Map(), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'solicitacoes', aberto: null, podeAprovar: false, marcadasDe: () => new Set(), codigoDe: () => '', ...extra });
   const html = htmlCards(lista, contexto({ itensPorManut: new Map([['m1', [item]]]) }));
   assert.match(html, /MAN-000007/);
-  assert.match(html, /Urgente/);
-  assert.match(html, /Parado/);
   assert.match(htmlCards([], contexto()), /Nenhuma solicitação/);
-  assert.match(html, /Orçar ou aprovar/);
   assert.match(html, /data-abrir="m1"/, 'o cabeçalho do cartão abre a ficha (dentro do cartão, sem janela)');
   assert.doesNotMatch(html, /Voltar para a lista/, 'não há página com botão de voltar');
   assert.match(htmlCasca(), /data-acao="nova">\+ Nova manutenção<\/button>/);

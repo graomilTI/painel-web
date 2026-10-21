@@ -141,8 +141,11 @@ test('cartão: coluna de ações à direita, itens marcáveis só em Solicitaç�
   assert.match(sol, /\+ Peças, mão de obra ou serviço/);
   assert.doesNotMatch(sol, /id="fmFicha"/, 'fechado: sem ficha');
   const cot = htmlCard(m({ status: 'em_orcamento' }), ctx({ etapa: 'cotacoes' }));
-  assert.doesNotMatch(cot, /data-check-linha/, 'depois da solicitação só se mostra o que foi marcado, sem marcar de novo');
-  assert.match(cot, /Pastilha de freio/);
+  assert.doesNotMatch(cot, /data-check-linha/, 'depois da solicitação não se marca de novo');
+  assert.doesNotMatch(cot, /Pastilha de freio/, 'fora de Solicitações os itens ficam minimizados (aparecem ao abrir a ficha)');
+  assert.doesNotMatch(cot, /fm-badge|fm-mc-val/, 'o cabeçalho só tem código, veículo, motivo, data, solicitante e ações');
+  for (const txt of ['MAN-000072', 'BDK4J22', 'Renault Kwid', 'Barulho ao frear', 'Ana']) assert.match(htmlCard(m({ status: 'em_orcamento', solicitante_nome: 'Ana' }), ctx({ etapa: 'cotacoes' })), new RegExp(txt));
+  assert.match(htmlCard(m({ status: 'em_orcamento' }), ctx({ etapa: 'cotacoes', aberto: 'm1' })), /id="fmFicha"/);
   const aberto = htmlCard(m(), ctx({ aberto: 'm1' }));
   assert.match(aberto, /id="fmFicha" data-detalhe/);
   assert.match(aberto, /aria-expanded="true"/);

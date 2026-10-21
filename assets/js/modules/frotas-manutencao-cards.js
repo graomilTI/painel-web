@@ -2,9 +2,8 @@
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
 import { dinheiro, esc } from '../core/ui.js';
 import { cardFiltro } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
-import { camposEditaveis, codigoManutencao, proximoPasso, valorDaManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
+import { camposEditaveis, codigoManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 import { ETAPAS, acoesDoCard, agruparLinhas, linhasDosItens } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
-import { badgeStatus } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -91,11 +90,6 @@ export function htmlCard(m, c) {
   const linhas = linhasDosItens(itens, c.base);
   const aberto = c.aberto === m.id;
   const selecionavel = c.etapa === 'solicitacoes';
-  const passo = proximoPasso(m, { notas });
-  const valor = valorDaManutencao(m, orcs);
-  const alta = m.prioridade === 'alta' || m.prioridade === 'urgente' ? `<span class="fm-badge ${m.prioridade === 'urgente' ? 'red' : 'amber'}">${m.prioridade === 'urgente' ? 'Urgente' : 'Alta'}</span>` : '';
-  const parado = m.veiculo_parado ? '<span class="fm-badge red" title="Veículo parado enquanto a OS estiver em execução">Parado</span>' : '';
-  const preventiva = m.natureza === 'preventiva' ? '<span class="fm-badge green">Preventiva</span>' : '';
   const origem = m.dividida_de && c.codigoDe(m.dividida_de) ? `<span class="fm-mm">separada de ${esc(c.codigoDe(m.dividida_de))}</span>` : '';
   const acoes = acoesDoCard(m, { podeAprovar: c.podeAprovar, itens, orcamentos: orcs, notas });
   return `<article class="fm-mc${aberto ? ' aberto' : ''}" data-mc="${esc(m.id)}">
@@ -104,12 +98,11 @@ export function htmlCard(m, c) {
         <span class="fm-mc-seta" aria-hidden="true">▸</span>
         <div class="fm-mc-cod"><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}${origem}</div>
         <div class="fm-mc-veic"><strong>${esc(m.__placa || '—')}</strong><span class="fm-mm">${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</span></div>
-        <div class="fm-mc-desc"><span>${esc((m.descricao || '').slice(0, 110))}${(m.descricao || '').length > 110 ? '…' : ''}</span><div class="fm-chips"><span class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</span>${alta}${parado}${preventiva}${m.status === 'em_aprovacao' || m.status === 'reprovada' ? badgeStatus(m.status) : ''}</div></div>
-        <div class="fm-mc-val">${valor ? `<strong>${esc(dinheiro(valor.valor))}</strong><span class="fm-mm">${esc(valor.rotulo)}</span>` : '<span class="fm-mm">—</span>'}</div>
+        <div class="fm-mc-desc"><span>${esc((m.descricao || '').slice(0, 110))}${(m.descricao || '').length > 110 ? '…' : ''}</span></div>
         <div class="fm-mc-quando"><strong>${m.solicitado_em ? esc(new Date(m.solicitado_em).toLocaleDateString('pt-BR')) : '—'}</strong><span class="fm-mm">${esc(m.solicitante_nome || '')}</span></div>
         ${htmlAcoes(m, acoes, aberto)}
       </div>
-      ${htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens })}
+      ${selecionavel ? htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens }) : ''}
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
   </article>`;
