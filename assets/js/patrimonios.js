@@ -5,25 +5,75 @@ const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').repl
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const normalize=(v)=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
 
-let state = { tab: 'cadastrar', isMaster: false, allowedSupervisoes: new Set(), histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' }, histExpanded: new Set() };
+let state = { tab: 'cadastrar', isMaster: false, allowedSupervisoes: new Set(), histRows: [], histSort: { key: 'maxDias', dir: 'desc' }, histFilters: { num: '', material: '' }, histExpanded: new Set(), cadRows: [], cadSort: { key: 'data', dir: 'desc' }, cadRascunho: new Map() };
 
 function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 
+const cadDados=(r)=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return {item,material:item.material||r.material||'',marca:item.marca||r.marca||'',coord:sol.coordenacao||r.coordenacao||''};};
+const CAD_COLUNAS={
+  data:(r)=>String(r.created_at||''),
+  material:(r)=>normalize(cadDados(r).material),
+  marca:(r)=>normalize(cadDados(r).marca),
+  coord:(r)=>normalize(cadDados(r).coord),
+  num:(r)=>String(r.numero_patrimonio||''),
+};
+
+// Números digitados e ainda não salvos: sobrevivem a reordenar, atualizar e salvar outra linha.
+function guardarRascunho(){
+  document.querySelectorAll('#patComprasBody tr[data-id]').forEach(tr=>{
+    const v=tr.querySelector('.pat-num')?.value||'';
+    if(v) state.cadRascunho.set(tr.dataset.id,v); else state.cadRascunho.delete(tr.dataset.id);
+  });
+}
+
+function atualizarCabecalhoCadastro(){
+  document.querySelectorAll('[data-cad-sort]').forEach(th=>{
+    const ativo=th.dataset.cadSort===state.cadSort.key;
+    th.classList.toggle('sort-active',ativo);
+    th.dataset.sortDir=ativo?state.cadSort.dir:'';
+  });
+}
+
+function renderCadastrar(){
+  const body=document.getElementById('patComprasBody');
+  if(!state.cadRows.length){body.innerHTML='<tr><td colspan="6" class="pat-empty">Nenhum patrimônio comprado aguardando cadastro.</td></tr>';atualizarCabecalhoCadastro();return;}
+  const {key,dir}=state.cadSort;
+  const valor=CAD_COLUNAS[key]||CAD_COLUNAS.data;
+  const sinal=dir==='asc'?1:-1;
+  // Desempate por material e id mantém a ordem estável entre atualizações.
+  const linhas=[...state.cadRows].sort((a,b)=>{
+    const va=valor(a),vb=valor(b);
+    if(key==='num'&&(!va||!vb)&&va!==vb) return va?-1:1;
+    return sinal*va.localeCompare(vb,'pt-BR',{numeric:true}) || normalize(cadDados(a).material).localeCompare(normalize(cadDados(b).material),'pt-BR') || String(a.id).localeCompare(String(b.id));
+  });
+  body.innerHTML=linhas.map(r=>{const {item,material,marca,coord}=cadDados(r); const num=state.cadRascunho.get(r.id)??r.numero_patrimonio??''; return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(material||'-')}${item.status==='enviado_estoque'&&item.compras_estoque_fornecedor_mov?.length?`<br><span class="pat-origem" title="${esc(item.fornecedor||'')}">do estoque do fornecedor</span>`:''}</td><td>${esc(marca)}</td><td>${esc(coord)}</td><td><input class="pat-num" value="${esc(num)}" placeholder="Nº patrimônio"></td><td><button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button></td></tr>`}).join('');
+  body.querySelectorAll('[data-save-one]').forEach(btn=>btn.onclick=()=>saveOne(btn.closest('tr')));
+  atualizarCabecalhoCadastro();
+}
+
+function setCadSort(key){
+  guardarRascunho();
+  const cur=state.cadSort;
+  state.cadSort=cur.key===key?{key,dir:cur.dir==='asc'?'desc':'asc'}:{key,dir:key==='data'?'desc':'asc'};
+  renderCadastrar();
+}
+
 async function loadCadastrar(){
   const body=document.getElementById('patComprasBody');
+  guardarRascunho();
   const {data,error}=await supabase.from('compras_patrimonios_cadastro').select('*, compras_itens(*, compras_solicitacoes(*), compras_estoque_fornecedor_mov(id))').in('status',['aguardando_numero','numero_informado']).order('created_at',{ascending:false}).limit(300);
   if(error){body.innerHTML=`<tr><td colspan="6" class="pat-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</td></tr>`;return;}
-  if(!data?.length){body.innerHTML='<tr><td colspan="6" class="pat-empty">Nenhum patrimônio comprado aguardando cadastro.</td></tr>';return;}
-  body.innerHTML=data.map(r=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(item.material||r.material||'-')}${item.status==='enviado_estoque'&&item.compras_estoque_fornecedor_mov?.length?`<br><span class="pat-origem" title="${esc(item.fornecedor||'')}">do estoque do fornecedor</span>`:''}</td><td>${esc(item.marca||r.marca||'')}</td><td>${esc(sol.coordenacao||r.coordenacao||'')}</td><td><input class="pat-num" value="${esc(r.numero_patrimonio||'')}" placeholder="Nº patrimônio"></td><td><button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button></td></tr>`}).join('');
-  body.querySelectorAll('[data-save-one]').forEach(btn=>btn.onclick=()=>saveOne(btn.closest('tr')));
+  state.cadRows=data||[];
+  renderCadastrar();
 }
 async function saveOne(tr){
   const id=tr.dataset.id; const numero=tr.querySelector('.pat-num').value.trim();
   if(!numero){setMsg('Informe o número de patrimônio antes de salvar.',true);return;}
   const {error}=await supabase.from('compras_patrimonios_cadastro').update({numero_patrimonio:numero, status:'numero_informado', informado_em:new Date().toISOString()}).eq('id',id);
-  if(error){setMsg(error.message,true);return;} setMsg('Número salvo e direcionado ao módulo Patrimônios.'); await loadCadastrar();
+  if(error){setMsg(error.message,true);return;} state.cadRascunho.delete(id); setMsg('Número salvo e direcionado ao módulo Patrimônios.'); await loadCadastrar();
 }
 async function saveAll(){
+  guardarRascunho();
   const rows=[...document.querySelectorAll('#patComprasBody tr[data-id]')].filter(tr=>tr.querySelector('.pat-num').value.trim());
   if(!rows.length){setMsg('Nenhuma linha com número preenchido.',true);return;}
   for(const tr of rows) await saveOne(tr);
@@ -244,7 +294,7 @@ export async function renderContent(content, userContext){
       <div class="pat-content">
         <section class="card" id="patCadastrarSection">
           <div class="pat-actions"><button class="btn btn-primary" id="patSaveAll" type="button">Salvar lote preenchido</button><button class="btn btn-secondary" id="patRefresh" type="button">↻ Atualizar</button></div>
-          <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th>Data</th><th>Material</th><th>Marca</th><th>Coordenação</th><th>Nº</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
+          <div class="pat-table-wrap"><table class="pat-table"><thead><tr><th class="pat-th-sort" data-cad-sort="data">Data</th><th class="pat-th-sort" data-cad-sort="material">Material</th><th class="pat-th-sort" data-cad-sort="marca">Marca</th><th class="pat-th-sort" data-cad-sort="coord">Coordenação</th><th class="pat-th-sort" data-cad-sort="num">Nº</th><th>Ação</th></tr></thead><tbody id="patComprasBody"></tbody></table></div>
           <div class="form-actions"><span class="pat-feedback" id="patFeedback"></span></div>
         </section>
         <section class="card" id="patHistoricoSection" style="display:none">
@@ -261,6 +311,7 @@ export async function renderContent(content, userContext){
     </div>`;
 
   document.getElementById('patRefresh').onclick=loadCadastrar;
+  document.querySelectorAll('[data-cad-sort]').forEach(th=>th.addEventListener('click',()=>setCadSort(th.dataset.cadSort)));
   document.getElementById('patSaveAll').onclick=saveAll;
   document.getElementById('patHistRefresh').onclick=loadHistorico;
   document.getElementById('patDownloadBtn').onclick=()=>downloadHistorico(document.getElementById('patDownloadTipo').value);
