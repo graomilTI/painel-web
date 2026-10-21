@@ -20,6 +20,15 @@ const MOTIVOS = ['Entrega ao colaborador', 'Reposição', 'Uso operacional', 'Pe
 const DESTINOS = ['Colaborador', 'Coordenação', 'Supervisão', 'Regional', 'Veículo', 'Escritório', 'Operação'];
 const TIPOS_MOV = { entrada: 'Entrada', saida: 'Saída', ajuste: 'Ajuste', transferencia: 'Transferência' };
 
+const SVG = (d) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICONES = {
+  contar: SVG('<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><polyline points="9 14 11 16 15 12"/>'),
+  editar: SVG('<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+  excluir: SVG('<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>'),
+  baixa: SVG('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>')
+};
+// Botão de ação em linha só com ícone; `attr` é o data-* que o handler da tabela procura.
+const iconBtn = (attr, id, icone, titulo, tom = '') => `<button type="button" class="stk-icon-btn ${tom}" data-${attr}="${esc(id)}" title="${esc(titulo)}" aria-label="${esc(titulo)}">${ICONES[icone]}</button>`;
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 const pad = (n) => String(n).padStart(2, '0');
@@ -292,7 +301,14 @@ function estilos() {
 .stk-table .num{text-align:right;white-space:nowrap}
 .stk-inv th,.stk-inv td{vertical-align:middle}.stk-inv td{padding-top:18px;padding-bottom:18px}
 .stk-acoes{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
-.stk-table .btn.perigo:hover:not(:disabled){color:#fecaca;border-color:rgba(220,38,38,.5)}
+.stk-icon-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:1px solid rgba(148,163,184,.2);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex-shrink:0;padding:0}
+.stk-icon-btn:hover:not(:disabled){background:rgba(34,197,94,.14)}
+.stk-icon-btn:disabled{opacity:.45;cursor:wait}
+.stk-icon-btn svg{width:16px;height:16px}
+.stk-icon-btn.ok{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.25);color:#68f0ac}
+.stk-icon-btn.info{background:rgba(59,130,246,.1);border-color:rgba(96,165,250,.22);color:#93c5fd}
+.stk-icon-btn.perigo{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.2);color:#ff7272}
+.stk-icon-btn.perigo:hover:not(:disabled){background:rgba(239,68,68,.28);color:#fff}
 .stk-table .btn{padding:6px 12px;border-radius:10px;font-size:13px;white-space:nowrap}
 .stk-pill{display:inline-flex;padding:5px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}
 .stk-pill.normal{color:#bbf7d0;background:rgba(22,101,52,.18)}
@@ -381,7 +397,7 @@ function inventarioFiltrado() {
 function tabelaInventario(rows) {
   return `<div class="stk-table-wrap"><table class="stk-table stk-inv"><thead><tr><th>Material</th><th>Categoria</th><th>Local</th><th class="num">Atual</th><th class="num">Mínimo</th><th>Status</th><th></th></tr></thead><tbody>${rows.length ? rows.map((g) => {
     const s = statusMaterial(g);
-    return `<tr><td><b>${esc(materialLabel(g))}</b>${g.codigo_interno ? `<br><small class="muted">${esc(g.codigo_interno)}</small>` : ''}${g.registros.length > 1 ? `<br><span class="stk-merged">${g.registros.length} cadastros somados</span>` : ''}</td><td>${esc(g.categoria || '-')}</td><td>${esc(g.local_armazenamento || '-')}</td><td class="num">${qtd(g.estoque_atual)} ${esc(g.unidade || 'UN')}</td><td class="num">${qtd(g.estoque_minimo)} ${esc(g.unidade || 'UN')}</td><td><span class="stk-pill ${s}">${statusLabel(s)}</span></td><td><div class="stk-acoes"><button type="button" class="btn btn-secondary btn-small" data-contar="${esc(g.id)}">Contar</button><button type="button" class="btn btn-secondary btn-small" data-mat-edit="${esc(g.id)}">Editar</button><button type="button" class="btn btn-secondary btn-small perigo" data-mat-del="${esc(g.id)}">Excluir</button></div></td></tr>`;
+    return `<tr><td><b>${esc(materialLabel(g))}</b>${g.codigo_interno ? `<br><small class="muted">${esc(g.codigo_interno)}</small>` : ''}${g.registros.length > 1 ? `<br><span class="stk-merged">${g.registros.length} cadastros somados</span>` : ''}</td><td>${esc(g.categoria || '-')}</td><td>${esc(g.local_armazenamento || '-')}</td><td class="num">${qtd(g.estoque_atual)} ${esc(g.unidade || 'UN')}</td><td class="num">${qtd(g.estoque_minimo)} ${esc(g.unidade || 'UN')}</td><td><span class="stk-pill ${s}">${statusLabel(s)}</span></td><td><div class="stk-acoes">${iconBtn('contar', g.id, 'contar', 'Registrar contagem física', 'ok')}${iconBtn('mat-edit', g.id, 'editar', 'Editar cadastro')}${iconBtn('mat-del', g.id, 'excluir', 'Excluir material', 'perigo')}</div></td></tr>`;
   }).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material encontrado.</td></tr>'}</tbody></table></div>`;
 }
 
@@ -839,7 +855,7 @@ function fornecedorFiltrado() {
 }
 
 function tabelaFornecedor(rows) {
-  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Fornecedor</th><th>Material</th><th class="num">Saldo no fornecedor</th><th class="num">Valor unit.</th><th>Observação</th><th>Atualizado</th><th></th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr><td><b>${esc(r.fornecedor)}</b></td><td>${esc(fornLabel(r))}</td><td class="num"><b>${qtd(r.quantidade)}</b> ${esc(r.unidade || 'UN')}</td><td class="num">${r.valor_unitario ? dinheiro(r.valor_unitario) : '-'}</td><td>${esc(r.observacao || '')}</td><td style="white-space:nowrap">${brDate(r.updated_at)}<br><small class="muted">${esc(r.usuario_nome || '')}</small></td><td style="white-space:nowrap"><button type="button" class="btn btn-primary btn-small" data-forn-baixa="${esc(r.id)}">Solicitar baixa</button> <button type="button" class="btn btn-secondary btn-small" data-forn-edit="${esc(r.id)}">Editar</button> <button type="button" class="btn btn-secondary btn-small" data-forn-del="${esc(r.id)}">Remover</button></td></tr>`).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material no fornecedor.</td></tr>'}</tbody></table></div>`;
+  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Fornecedor</th><th>Material</th><th class="num">Saldo no fornecedor</th><th class="num">Valor unit.</th><th>Observação</th><th>Atualizado</th><th></th></tr></thead><tbody>${rows.length ? rows.map((r) => `<tr><td><b>${esc(r.fornecedor)}</b></td><td>${esc(fornLabel(r))}</td><td class="num"><b>${qtd(r.quantidade)}</b> ${esc(r.unidade || 'UN')}</td><td class="num">${r.valor_unitario ? dinheiro(r.valor_unitario) : '-'}</td><td>${esc(r.observacao || '')}</td><td style="white-space:nowrap">${brDate(r.updated_at)}<br><small class="muted">${esc(r.usuario_nome || '')}</small></td><td><div class="stk-acoes">${iconBtn('forn-baixa', r.id, 'baixa', 'Solicitar baixa e envio', 'ok')}${iconBtn('forn-edit', r.id, 'editar', 'Editar')}${iconBtn('forn-del', r.id, 'excluir', 'Remover do fornecedor', 'perigo')}</div></td></tr>`).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material no fornecedor.</td></tr>'}</tbody></table></div>`;
 }
 
 function renderFornSaldo(box) {
