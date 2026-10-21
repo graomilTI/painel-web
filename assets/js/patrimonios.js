@@ -11,10 +11,10 @@ function setMsg(msg,err=false){const el=document.getElementById('patFeedback'); 
 
 async function loadCadastrar(){
   const body=document.getElementById('patComprasBody');
-  const {data,error}=await supabase.from('compras_patrimonios_cadastro').select('*, compras_itens(*, compras_solicitacoes(*))').in('status',['aguardando_numero','numero_informado']).order('created_at',{ascending:false}).limit(300);
+  const {data,error}=await supabase.from('compras_patrimonios_cadastro').select('*, compras_itens(*, compras_solicitacoes(*), compras_estoque_fornecedor_mov(id))').in('status',['aguardando_numero','numero_informado']).order('created_at',{ascending:false}).limit(300);
   if(error){body.innerHTML=`<tr><td colspan="7" class="pat-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</td></tr>`;return;}
   if(!data?.length){body.innerHTML='<tr><td colspan="7" class="pat-empty">Nenhum patrimônio comprado aguardando cadastro.</td></tr>';return;}
-  body.innerHTML=data.map(r=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(item.material||r.material||'-')}</td><td>${esc(item.marca||r.marca||'')}</td><td>${esc(sol.coordenacao||r.coordenacao||'')}</td><td><input class="pat-num" value="${esc(r.numero_patrimonio||'')}" placeholder="Nº patrimônio"></td><td><input class="pat-obs" value="${esc(r.observacao||'')}" placeholder="Observação"></td><td><button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button></td></tr>`}).join('');
+  body.innerHTML=data.map(r=>{const item=r.compras_itens||{}; const sol=item.compras_solicitacoes||{}; return `<tr data-id="${esc(r.id)}"><td>${brDate(r.created_at)}</td><td>${esc(item.material||r.material||'-')}${item.status==='enviado_estoque'&&item.compras_estoque_fornecedor_mov?.length?`<br><span class="pat-origem" title="${esc(item.fornecedor||'')}">do estoque do fornecedor</span>`:''}</td><td>${esc(item.marca||r.marca||'')}</td><td>${esc(sol.coordenacao||r.coordenacao||'')}</td><td><input class="pat-num" value="${esc(r.numero_patrimonio||'')}" placeholder="Nº patrimônio"></td><td><input class="pat-obs" value="${esc(r.observacao||'')}" placeholder="Observação"></td><td><button class="btn btn-small btn-primary" data-save-one type="button">Salvar</button></td></tr>`}).join('');
   body.querySelectorAll('[data-save-one]').forEach(btn=>btn.onclick=()=>saveOne(btn.closest('tr')));
 }
 async function saveOne(tr){
@@ -187,6 +187,7 @@ function styles(){return `<style>
 .pat-table th{font-size:12px;color:var(--muted);text-transform:uppercase}
 .pat-table input{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}
 .pat-empty{text-align:center;color:var(--muted)}
+.pat-origem{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:rgba(111,208,165,.14);color:#bbf7d0;font-size:11px;font-weight:800;white-space:nowrap}
 .pat-feedback{font-weight:800}
 .pat-feedback.err{color:#fecaca}
 .pat-row-inativo td{color:#f87171}
