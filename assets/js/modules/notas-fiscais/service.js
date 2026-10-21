@@ -51,6 +51,8 @@ export function agruparPorNf(itens, pagamentos, fila = {}) {
       key: first.nf_url,
       ids: grupo.map((r) => r.id),
       nf_url: first.nf_url,
+      // Arquivos extras da mesma NF (o 1º fica em nf_url); só consulta, o GRM lança o principal.
+      nf_anexos: grupo.map((r) => r.nf_anexos).find((a) => Array.isArray(a) && a.length) || [],
       comprovante_url: grupo.find((r) => r.comprovante_url)?.comprovante_url || null,
       valor_total: grupo.reduce((s, r) => s + Number(r.valor_total || 0), 0),
       comprado_em: grupo.map((r) => r.comprado_em || '').sort().pop() || sol0.data_solicitacao || '',

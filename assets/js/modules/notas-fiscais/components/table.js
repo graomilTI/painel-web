@@ -55,6 +55,7 @@ export function renderTabela({ status, erro, grupos, janela, ordenacao, pagina, 
     const acoes = [
       `<button class="ds-btn" data-consultar="${esc(g.key)}" type="button">Consultar</button>`,
       isUrl(g.nf_url) ? `<a class="ds-btn" href="${esc(g.nf_url)}" target="_blank" rel="noopener">Baixar NF</a>` : '',
+      ...(g.nf_anexos || []).filter((a) => isUrl(a.url)).map((a, i) => `<a class="ds-btn" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome || '')}">Anexo ${i + 2}</a>`),
       isUrl(g.comprovante_url) ? `<a class="ds-btn" href="${esc(g.comprovante_url)}" target="_blank" rel="noopener">Comprovante</a>` : '',
       acaoLancamento(g),
       g.nf_lancado ? `<button class="ds-btn ds-btn-danger" data-estornar="${esc(g.key)}" type="button">Estornar</button>` : '',
