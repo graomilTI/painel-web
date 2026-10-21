@@ -107,11 +107,11 @@ export function htmlCard(m, c) {
         <div class="fm-mc-desc"><span>${esc((m.descricao || '').slice(0, 110))}${(m.descricao || '').length > 110 ? '…' : ''}</span><div class="fm-chips"><span class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</span>${alta}${parado}${preventiva}${m.status === 'em_aprovacao' || m.status === 'reprovada' ? badgeStatus(m.status) : ''}</div></div>
         <div class="fm-mc-val">${valor ? `<strong>${esc(dinheiro(valor.valor))}</strong><span class="fm-mm">${esc(valor.rotulo)}</span>` : '<span class="fm-mm">—</span>'}</div>
         <div class="fm-mc-quando"><strong>${m.solicitado_em ? esc(new Date(m.solicitado_em).toLocaleDateString('pt-BR')) : '—'}</strong><span class="fm-mm">${esc(m.solicitante_nome || '')}</span></div>
+        ${htmlAcoes(m, acoes, aberto)}
       </div>
       ${htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens })}
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
-    ${htmlAcoes(m, acoes, aberto)}
   </article>`;
 }
 
