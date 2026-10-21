@@ -44,6 +44,7 @@ const state = {
   filtroHist: { busca: '', tipo: '' },
   filtroForn: { busca: '', fornecedor: '' },
   editandoForn: null,
+  editandoMat: null,
   movsForn: [],
   subForn: 'saldo',
   baixaForn: { estoqueId: '', qtd: '', destino: '', data: hoje(), obs: '' },
@@ -289,6 +290,9 @@ function estilos() {
 .stk-table th{position:sticky;top:0;z-index:1;background:#0b1a14;font-size:12px;text-transform:uppercase;color:var(--muted)}
 .stk-table tbody tr:hover{background:rgba(111,208,165,.06)}
 .stk-table .num{text-align:right;white-space:nowrap}
+.stk-inv th,.stk-inv td{vertical-align:middle}.stk-inv td{padding-top:18px;padding-bottom:18px}
+.stk-acoes{display:flex;gap:6px;justify-content:flex-end;white-space:nowrap}
+.stk-table .btn.perigo:hover:not(:disabled){color:#fecaca;border-color:rgba(220,38,38,.5)}
 .stk-table .btn{padding:6px 12px;border-radius:10px;font-size:13px;white-space:nowrap}
 .stk-pill{display:inline-flex;padding:5px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-weight:800;font-size:12px}
 .stk-pill.normal{color:#bbf7d0;background:rgba(22,101,52,.18)}
@@ -335,7 +339,7 @@ function render() {
     <div id="stkContent"></div>
   </section>`;
   raiz.querySelectorAll('[data-tab]').forEach((b) => {
-    b.onclick = () => { state.tab = b.dataset.tab; state.aviso = null; render(); };
+    b.onclick = () => { state.tab = b.dataset.tab; state.aviso = null; state.editandoMat = null; render(); };
   });
   renderTab();
 }
@@ -375,9 +379,9 @@ function inventarioFiltrado() {
 }
 
 function tabelaInventario(rows) {
-  return `<div class="stk-table-wrap"><table class="stk-table"><thead><tr><th>Material</th><th>Categoria</th><th>Local</th><th class="num">Atual</th><th class="num">Mínimo</th><th>Status</th><th></th></tr></thead><tbody>${rows.length ? rows.map((g) => {
+  return `<div class="stk-table-wrap"><table class="stk-table stk-inv"><thead><tr><th>Material</th><th>Categoria</th><th>Local</th><th class="num">Atual</th><th class="num">Mínimo</th><th>Status</th><th></th></tr></thead><tbody>${rows.length ? rows.map((g) => {
     const s = statusMaterial(g);
-    return `<tr><td><b>${esc(materialLabel(g))}</b><br><small class="muted">${esc(g.codigo_interno || 'Sem código')}</small>${g.registros.length > 1 ? `<br><span class="stk-merged">${g.registros.length} cadastros somados</span>` : ''}</td><td>${esc(g.categoria || '-')}</td><td>${esc(g.local_armazenamento || '-')}</td><td class="num">${qtd(g.estoque_atual)} ${esc(g.unidade || 'UN')}</td><td class="num">${qtd(g.estoque_minimo)} ${esc(g.unidade || 'UN')}</td><td><span class="stk-pill ${s}">${statusLabel(s)}</span></td><td><button type="button" class="btn btn-secondary btn-small" data-contar="${esc(g.id)}">Contar</button></td></tr>`;
+    return `<tr><td><b>${esc(materialLabel(g))}</b>${g.codigo_interno ? `<br><small class="muted">${esc(g.codigo_interno)}</small>` : ''}${g.registros.length > 1 ? `<br><span class="stk-merged">${g.registros.length} cadastros somados</span>` : ''}</td><td>${esc(g.categoria || '-')}</td><td>${esc(g.local_armazenamento || '-')}</td><td class="num">${qtd(g.estoque_atual)} ${esc(g.unidade || 'UN')}</td><td class="num">${qtd(g.estoque_minimo)} ${esc(g.unidade || 'UN')}</td><td><span class="stk-pill ${s}">${statusLabel(s)}</span></td><td><div class="stk-acoes"><button type="button" class="btn btn-secondary btn-small" data-contar="${esc(g.id)}">Contar</button><button type="button" class="btn btn-secondary btn-small" data-mat-edit="${esc(g.id)}">Editar</button><button type="button" class="btn btn-secondary btn-small perigo" data-mat-del="${esc(g.id)}">Excluir</button></div></td></tr>`;
   }).join('') : '<tr><td colspan="7" class="stk-empty">Nenhum material encontrado.</td></tr>'}</tbody></table></div>`;
 }
 
@@ -434,6 +438,10 @@ function renderInventario(box) {
   selMaterial.onchange = atualizarDif;
   inContado.oninput = atualizarDif;
   document.getElementById('invTabela').onclick = (e) => {
+    const editar = e.target.closest('[data-mat-edit]');
+    const excluir = e.target.closest('[data-mat-del]');
+    if (editar) { state.editandoMat = editar.dataset.matEdit; state.tab = 'materiais'; state.aviso = null; render(); return; }
+    if (excluir) { excluirMaterial(excluir.dataset.matDel, excluir); return; }
     const btn = e.target.closest('[data-contar]');
     if (!btn) return;
     contagem.open = true;
@@ -1228,21 +1236,75 @@ function renderHistorico(box) {
 // ---------- Cadastro ----------
 
 function renderCadastro(box) {
-  box.innerHTML = `${avisoHtml()}<p class="stk-dica">Cadastre o item uma vez; depois use Entradas, Saídas e Inventário. Item igual a um já cadastrado (nome, categoria, tamanho, unidade e local) é somado ao existente.</p>
+  const ed = state.editandoMat ? grupoPorId(state.editandoMat) : null;
+  if (state.editandoMat && !ed) state.editandoMat = null;
+  const v = (campo) => esc(ed?.[campo] ?? '');
+  box.innerHTML = `${avisoHtml()}<p class="stk-dica">${ed ? `Editando <b>${esc(materialLabel(ed))}</b>. O saldo não muda aqui: para corrigi-lo use <b>Contar</b> no Inventário.${ed.registros.length > 1 ? ` As alterações valem para os ${ed.registros.length} cadastros somados.` : ''}` : 'Cadastre o item uma vez; depois use Entradas, Saídas e Inventário. Item igual a um já cadastrado (nome, categoria, tamanho, unidade e local) é somado ao existente.'}</p>
   <form id="stkMatForm" class="stk-grid">
-    ${field('Nome', 'mNome', 'text', 'Ex: Uniforme Polo', true)}
-    ${selectField('Categoria', 'mCategoria', CATEGORIAS)}
-    ${field('Tamanho/Detalhe', 'mTamanho', 'text', 'Ex: G, GG, 14/64, 2m')}
-    ${field('Código interno', 'mCodigo', 'text', 'Opcional')}
-    ${selectField('Unidade', 'mUnidade', UNIDADES)}
-    ${field('Estoque atual', 'mAtual', 'number', '0', false, 'min="0" step="0.01"')}
-    ${field('Estoque mínimo', 'mMin', 'number', '0', false, 'min="0" step="0.01"')}
-    ${field('Estoque máximo', 'mMax', 'number', '0', false, 'min="0" step="0.01"')}
-    ${selectField('Local', 'mLocal', LOCAIS)}
-    <div class="stk-field stk-field-full"><label for="mObs">Observação</label><textarea id="mObs" rows="2"></textarea></div>
-    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">Salvar material</button><span id="mFb" class="stk-feedback"></span></div>
+    ${field('Nome', 'mNome', 'text', 'Ex: Uniforme Polo', true, `value="${v('nome')}"`)}
+    ${selectField('Categoria', 'mCategoria', CATEGORIAS, ed?.categoria || '')}
+    ${field('Tamanho/Detalhe', 'mTamanho', 'text', 'Ex: G, GG, 14/64, 2m', false, `value="${v('tamanho')}"`)}
+    ${field('Código interno', 'mCodigo', 'text', 'Opcional', false, `value="${v('codigo_interno')}"`)}
+    ${selectField('Unidade', 'mUnidade', UNIDADES, ed?.unidade || '')}
+    ${field('Estoque atual', 'mAtual', 'number', '0', false, `min="0" step="0.01" ${ed ? `disabled value="${esc(ed.estoque_atual)}"` : ''}`)}
+    ${field('Estoque mínimo', 'mMin', 'number', '0', false, `min="0" step="0.01" value="${ed ? esc(ed.estoque_minimo ?? 0) : ''}"`)}
+    ${field('Estoque máximo', 'mMax', 'number', '0', false, `min="0" step="0.01" value="${ed ? esc(ed.estoque_maximo ?? 0) : ''}"`)}
+    ${selectField('Local', 'mLocal', LOCAIS, ed?.local_armazenamento || '')}
+    <div class="stk-field stk-field-full"><label for="mObs">Observação</label><textarea id="mObs" rows="2">${v('observacao')}</textarea></div>
+    <div class="stk-actions stk-field-full"><button class="btn btn-primary" type="submit">${ed ? 'Salvar alterações' : 'Salvar material'}</button>${ed ? '<button type="button" class="btn btn-secondary" id="mCancelar">Cancelar edição</button>' : ''}<span id="mFb" class="stk-feedback"></span></div>
   </form>`;
-  document.getElementById('stkMatForm').onsubmit = async (ev) => { ev.preventDefault(); await salvarMaterial(); };
+  const cancelar = document.getElementById('mCancelar');
+  if (cancelar) cancelar.onclick = () => { state.editandoMat = null; state.tab = 'inventario'; render(); };
+  document.getElementById('stkMatForm').onsubmit = async (ev) => { ev.preventDefault(); await (ed ? atualizarMaterial(ed) : salvarMaterial()); };
+}
+
+// Edita o cadastro (todos os cadastros somados do grupo); o saldo só muda por Contar/Entradas/Saídas.
+async function atualizarMaterial(ed) {
+  const val = (id) => document.getElementById(id).value;
+  const campos = {
+    nome: val('mNome').trim().toUpperCase(),
+    categoria: val('mCategoria'),
+    tamanho: val('mTamanho').trim() || null,
+    codigo_interno: val('mCodigo').trim() || null,
+    unidade: val('mUnidade'),
+    estoque_minimo: Number(val('mMin') || 0),
+    estoque_maximo: Number(val('mMax') || 0),
+    local_armazenamento: val('mLocal'),
+    observacao: val('mObs').trim() || null,
+    updated_at: new Date().toISOString()
+  };
+  const fb = document.getElementById('mFb');
+  if (!campos.nome) { setFb(fb, 'Informe o nome do material.', 'err'); return; }
+  setFb(fb, 'Salvando...');
+  try {
+    const { error } = await supabase.from('compras_estoque_materiais').update(campos).in('id', ed.registros.map((r) => r.id));
+    if (error) throw error;
+    state.aviso = { tipo: 'ok', texto: `${materialLabel(campos)} atualizado.` };
+    state.editandoMat = null;
+    state.tab = 'inventario';
+    await recarregar();
+  } catch (e) {
+    setFb(fb, await mensagemFalhaSalvar(e, e?.message || 'Não foi possível salvar o material.'), 'err');
+  }
+}
+
+// Só desativa: movimentações e contagens antigas continuam apontando para o cadastro (Histórico preservado).
+async function excluirMaterial(id, btn) {
+  const g = grupoPorId(id);
+  if (!g) return;
+  const saldo = Number(g.estoque_atual || 0) > 0 ? `\n\nAtenção: ainda há ${qtd(g.estoque_atual)} ${g.unidade || 'UN'} em estoque.` : '';
+  if (!window.confirm(`Excluir ${materialLabel(g)} do estoque?${saldo}\n\nO histórico de movimentações é mantido.`)) return;
+  btn.disabled = true;
+  try {
+    const { error } = await supabase.from('compras_estoque_materiais').update({ ativo: false, updated_at: new Date().toISOString() }).in('id', g.registros.map((r) => r.id));
+    if (error) throw error;
+    state.aviso = { tipo: 'ok', texto: `${materialLabel(g)} excluído do estoque.` };
+    await recarregar();
+  } catch (e) {
+    btn.disabled = false;
+    state.aviso = { tipo: 'err', texto: await mensagemFalhaSalvar(e, e?.message || 'Não foi possível excluir o material.') };
+    renderTab();
+  }
 }
 
 async function salvarMaterial() {
