@@ -2115,6 +2115,12 @@ async function renderPatrimonioLeitura(main) {
   main.querySelector('[data-pat-back]')?.addEventListener('click', () => patBack(main));
 }
 
+function patrimonioOrigemFornecedor(r) {
+  const item = r.compras_itens;
+  if (!item || item.status !== 'enviado_estoque' || !item.compras_estoque_fornecedor_mov?.length) return '';
+  return `<span class="help" title="${escapeHtml(item.fornecedor || '')}" style="color:#bbf7d0;font-weight:800">do estoque do fornecedor</span>`;
+}
+
 function renderPatrimonioCadastroCard(r) {
   if (r.numero_patrimonio) {
     return `
@@ -2124,6 +2130,7 @@ function renderPatrimonioCadastroCard(r) {
           <span class="pat-status-pill">CADASTRADO</span>
         </div>
         <b>${escapeHtml(r.material || '-')}</b>
+        ${patrimonioOrigemFornecedor(r)}
         ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
         ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
         ${r.informado_em ? `<span class="help">Cadastrado: ${brDate(r.informado_em)}</span>` : ''}
@@ -2137,6 +2144,7 @@ function renderPatrimonioCadastroCard(r) {
         <span class="pat-status-pill">PENDENTE</span>
       </div>
       <b>${escapeHtml(r.material || '-')}</b>
+      ${patrimonioOrigemFornecedor(r)}
       ${r.marca ? `<span class="help">${escapeHtml(r.marca)}</span>` : ''}
       ${r.coordenacao ? `<span class="help">${escapeHtml(r.coordenacao)}</span>` : ''}
       <div class="pat-cadastro-row">
@@ -2150,7 +2158,7 @@ function renderPatrimonioCadastroCard(r) {
 async function renderPatrimonioCadastrar(main) {
   main.innerHTML = `<div class="section-card"><p class="help">Carregando solicitações...</p></div>`;
   let query = supabase.from('compras_patrimonios_cadastro')
-    .select('id,numero_patrimonio,material,marca,coordenacao,status,informado_em')
+    .select('id,numero_patrimonio,material,marca,coordenacao,status,informado_em,compras_itens(status,fornecedor,compras_estoque_fornecedor_mov(id))')
     .order('informado_em', { ascending: false, nullsFirst: true });
   if (!state.isMaster && state.appUser?.coordenacao) query = query.eq('coordenacao', state.appUser.coordenacao);
   const { data, error } = await query;
