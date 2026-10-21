@@ -49,8 +49,8 @@ ${ESTILOS_LISTA}
 .fm-pick-resumo{display:grid;gap:8px}.fm-pick-rg{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.fm-pick-rg strong{color:#e2e8f0;font-size:12px;margin-right:4px}
 .fm-ols{display:grid;gap:6px}.fm-ol,.fm-ol-cab{display:grid;grid-template-columns:minmax(170px,2fr) minmax(150px,2fr) 130px 36px;gap:8px;align-items:center}.fm-ol-cab{color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}.fm-ol .fm-input{height:38px;font-size:13px}
 .fm-ol-lista{list-style:none;margin:6px 0 2px;padding:8px 0 0;border-top:1px solid rgba(148,163,184,.14);display:grid;gap:5px}.fm-ol-lista li{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#e2e8f0}.fm-ol-lista small{display:block;color:#94a3b8;font-size:11px}.fm-ol-lista b{white-space:nowrap;color:#f8fafc}
-.fm-nova{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr) minmax(290px,350px);gap:14px;align-items:start;margin-top:14px}.fm-nova>.fm-sec{margin-top:0}
-.fm-nova-resumo{position:sticky;top:12px}.fm-nova-campos{display:grid;gap:14px}.fm-nova-pedido textarea{min-height:170px}.fm-nova-prontos{margin-bottom:12px}
+.fm-nova{display:grid;grid-template-columns:minmax(0,1fr) 310px;grid-template-areas:'pedido pedido' 'itens resumo';gap:14px;align-items:start;margin-top:14px}.fm-nova>.fm-sec{margin-top:0}.fm-nova-pedido{grid-area:pedido}.fm-nova-itens{grid-area:itens;min-width:0}.fm-nova-resumo{grid-area:resumo}
+.fm-nova-resumo{position:sticky;top:12px}.fm-nova-campos{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.8fr) auto;gap:12px 14px;align-items:end}.fm-nova-problema{grid-column:1/-1}.fm-nova-pedido textarea{min-height:64px}.fm-check-caixa{min-height:42px;padding:0 14px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;margin:0!important;white-space:nowrap}.fm-check-caixa:has(input:checked){border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#fecaca}.fm-nova-prontos{margin-bottom:12px}
 .fm-pend{list-style:none;margin:14px 0 0;padding:12px 0 0;border-top:1px solid rgba(148,163,184,.14);display:grid;gap:6px;font-size:13px;font-weight:700}.fm-pend li{display:flex;gap:8px;color:#94a3b8}.fm-pend li.ok{color:#86efac}
 .fm-nova-acoes{display:grid;gap:8px;margin-top:14px}.fm-nova-acoes .fm-btn{width:100%}
 .fm-pg.fm-pg-larga{max-width:none}
@@ -65,14 +65,15 @@ ${ESTILOS_LISTA}
 /* Nova manutenção: grupos numa lista à esquerda e itens do grupo à direita, cada um rolando sozinho (cabe sem rolar o modal). */
 @media(min-width:901px){
 .fm-nova .fm-pick-corpo{grid-template-columns:200px minmax(0,1fr)}
-.fm-nova .fm-pick-grupos,.fm-nova .fm-pick-painel{max-height:max(300px,calc(100vh - 360px));overflow:auto}
+.fm-nova .fm-pick-grupos,.fm-nova .fm-pick-painel{height:max(280px,calc(100vh - 565px));overflow:auto}
 .fm-nova .fm-pick-grupos{grid-template-columns:1fr;align-content:start;gap:6px;padding-right:4px}
 .fm-nova .fm-pick-g{min-height:40px;padding:6px 10px;font-size:12.5px}
-.fm-nova .fm-pick-lista{grid-template-columns:1fr}
+.fm-nova .fm-pick-lista{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
 .fm-nova .fm-pick-item{padding:7px 10px}
 .fm-nova .fm-pick-painel{min-height:0;padding:12px}
 .fm-nova .fm-pick-cab{position:sticky;top:-12px;z-index:1;margin:-12px -12px 10px;padding:10px 12px;background:#0a1410;border-bottom:1px solid rgba(148,163,184,.14);border-radius:14px 14px 0 0}
-.fm-nova .fm-nova-pedido textarea{min-height:120px}
+.fm-nova .fm-nova-pedido textarea{min-height:64px}
+.fm-nova .fm-pick-outro{position:sticky;bottom:-12px;z-index:1;margin:10px -12px -12px;padding:10px 12px;background:#0a1410;border-top:1px solid rgba(148,163,184,.14);border-radius:0 0 14px 14px}
 }
 .fm-ol[data-tipo="servico"] .fm-ro{color:#fde68a}
 .fm-item-comps{grid-column:1/-1}.fm-item-comps:empty{display:none}
@@ -114,7 +115,7 @@ details.fm-field.fm-mais{margin-top:2px}
 .fm-mod .fm-input,.fm-mod .fm-select,.fm-mod .fm-field textarea{box-sizing:border-box;max-width:100%}.fm-nota-linha>*{min-width:0}.fm-nota-linha input[type=file]{max-width:100%}.fm-nota-pago{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11px;color:#94a3b8;font-weight:800}.fm-nota-pago .fm-input{height:34px;width:auto;max-width:240px;font-size:12px}.fm-nota-pago label{display:flex;gap:6px;align-items:center}
 .fm-prev-lista{display:grid;gap:6px;max-height:46vh;overflow:auto;padding-right:4px}.fm-prev-linha{border:1px solid rgba(148,163,184,.14);border-radius:12px;padding:8px 10px;background:rgba(2,6,23,.3)}.fm-prev-linha .fm-check{display:flex;gap:8px;align-items:center;font-weight:800;color:#e2e8f0;font-size:13px}.fm-prev-linha small{color:#94a3b8;font-weight:600;margin-left:6px}
 .fm-prev-prazos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px}.fm-prev-prazos label{display:grid;gap:4px;font-size:11px;color:#94a3b8;font-weight:800}.fm-prev-prazos[hidden]{display:none}
-@media(max-width:1350px){.fm-nova{grid-template-columns:minmax(280px,340px) minmax(0,1fr)}.fm-nova-resumo{grid-column:2;position:static}}
+@media(max-width:1100px){.fm-nova{grid-template-columns:minmax(0,1fr);grid-template-areas:'pedido' 'itens' 'resumo'}.fm-nova-resumo{position:static}.fm-nova-campos{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.fm-nota-linha{grid-template-columns:1fr 1fr}.fm-nota-cab{display:none}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:repeat(2,minmax(0,1fr))}.fm-pick-lista{grid-template-columns:1fr}.fm-nova{grid-template-columns:1fr}.fm-nova-resumo{grid-column:auto}.fm-ol-cab{display:none}.fm-ol{grid-template-columns:1fr 1fr}.fm-item,.fm-item-cab,.fm-form.fm-item-novo{grid-template-columns:1fr 1fr}.fm-item-cab{display:none}.fm-tl li{grid-template-columns:1fr}}
 @media(max-width:560px){.fm-nota-linha{grid-template-columns:1fr}.fm-grid2,.fm-grid2.tres,.fm-form{grid-template-columns:1fr}.fm-item,.fm-form.fm-item-novo,.fm-nova{grid-template-columns:1fr}.fm-field[style*="span"]{grid-column:1/-1!important}}
 
