@@ -3,7 +3,7 @@
 // cartão por manutenção, com os itens marcáveis e a coluna de ações à direita. A ficha abre dentro do cartão (sem janela).
 // Regras em frotas-manutencao-regras.js e -etapas.js, dados em -dados.js, HTML em -cards.js e -html.js. O banco valida cada
 // etapa (trigger frotas_manutencoes_fluxo).
-import { closeModal, confirmar, openModal, toast } from '../core/ui.js';
+import { closeModal, confirmar, esc, openModal, toast } from '../core/ui.js';
 import { ligarCards } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
 import { ESTILOS_MANUTENCAO } from './frotas-manutencao-estilos.js?v=20261021-frotas-manut45';
 import * as dados from './frotas-manutencao-dados.js?v=20261021-frotas-manut45';
@@ -16,6 +16,7 @@ import {
 import { htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
 import { htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
+import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas-manut45';
 import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-frotas-manut45';
 
 (function () {
@@ -595,6 +596,23 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
       const modelo = modeloDoVeiculo(veiculoDaDigitacao(val(ov, '[data-n-veiculo]')) || '');
       ov.__seletor.setPecas(pecasDoModelo(state.base.pecas, modelo), rotuloModelo(modelo));
     };
+    // Sugestões a partir do que foi escrito no problema: chips de um clique (o que já está marcado some da lista).
+    const caixaSug = ov.querySelector('[data-sugestoes]');
+    const atualizarSugestoes = () => {
+      const sug = sugerirItens(state.base, val(ov, '[data-n-descricao]'));
+      const itens = sug.itens.filter((i) => !ov.__seletor.estaMarcado(i.grupo, i.nome));
+      caixaSug.hidden = !itens.length && !sug.grupos.length;
+      caixaSug.innerHTML = caixaSug.hidden ? '' : `<span class="fm-sug-t">Sugestões pela descrição</span>${itens.map((i) => `<button type="button" data-sug-item data-grupo="${i.grupo}" data-nome="${esc(i.nome)}" title="Marcar ${esc(i.nome)}">+ ${esc(i.nome)}<small>${esc(i.grupoNome)}</small></button>`).join('')}${sug.grupos.map((g) => `<button type="button" class="fm-sug-grupo" data-sug-grupo="${g.codigo}" title="Abrir o grupo para escolher os itens">Ver ${esc(g.nome)}</button>`).join('')}${itens.length > 1 ? '<button type="button" class="fm-sug-todas" data-sug-todas>Marcar sugeridas</button>' : ''}`;
+      caixaSug.__itens = itens;
+    };
+    caixaSug.addEventListener('click', (e) => {
+      const um = e.target.closest('[data-sug-item]'); const grupo = e.target.closest('[data-sug-grupo]');
+      if (um) ov.__seletor.marcar(um.dataset.grupo, um.dataset.nome);
+      else if (grupo) { ov.__seletor.irPara(grupo.dataset.sugGrupo); return; }
+      else if (e.target.closest('[data-sug-todas]')) (caixaSug.__itens || []).forEach((i) => ov.__seletor.marcar(i.grupo, i.nome));
+      else return;
+      atualizarSugestoes();
+    });
     // Pendências ao vivo no resumo: o que ainda falta para registrar.
     ov.__pendencias = () => {
       const prontos = ov.querySelectorAll('[data-novo-item]').length;
@@ -604,6 +622,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
         [!!val(ov, '[data-n-descricao]').trim(), 'Problema descrito'],
         [itens > 0, 'Ao menos um item marcado'],
       ];
+      atualizarSugestoes();
       ov.querySelector('[data-nova-pendencias]').innerHTML = pend.map(([ok, txt]) => `<li class="${ok ? 'ok' : 'falta'}"><span>${ok ? '✔' : '○'}</span> ${txt}</li>`).join('');
     };
     // "Quem pediu": vem com o condutor do veículo escolhido; se a pessoa digitar outro nome, o campo deixa de ser trocado sozinho.
