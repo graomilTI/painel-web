@@ -579,45 +579,74 @@ function approvalMessage(rows){
 
 // ─── NOVA SOLICITAÇÃO (feita pelo próprio usuário de Compras) ─────────────────
 const UF_LIST=['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
+// Municípios do IBGE (mesma chave/TTL de logistica.js e programacao.js: o cache é compartilhado).
+const CIDADES_CACHE_KEY='grm:cidades_ibge:v1';
+const CIDADES_CACHE_TTL_MS=30*24*60*60*1000;
+let cidadesIbge=[];
+async function carregarCidadesBrasil(){
+  if(cidadesIbge.length) return;
+  try{
+    const {ts,data}=JSON.parse(localStorage.getItem(CIDADES_CACHE_KEY)||'{}');
+    if(ts&&Date.now()-ts<=CIDADES_CACHE_TTL_MS&&Array.isArray(data)&&data.length){ cidadesIbge=data; return; }
+  }catch(_){}
+  try{
+    const resp=await fetch('https://servicodados.ibge.gov.br/api/v1/localidades/municipios?orderBy=nome');
+    const data=await resp.json();
+    cidadesIbge=(Array.isArray(data)?data:[]).map(m=>({nome:m.nome,uf:m.microrregiao?.mesorregiao?.UF?.sigla||''})).filter(m=>m.nome&&m.uf);
+    try{ localStorage.setItem(CIDADES_CACHE_KEY,JSON.stringify({ts:Date.now(),data:cidadesIbge})); }catch(_){}
+  }catch(e){ console.warn('Não foi possível carregar cidades do IBGE.',e); cidadesIbge=[]; }
+}
+const cidadesDaUf=(uf)=>uf?cidadesIbge.filter(c=>c.uf===uf).map(c=>c.nome).sort((a,b)=>a.localeCompare(b,'pt-BR')):[];
 const hojeLocal=()=>{const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 async function abrirNovaSolicitacaoModal(){
   if(!state.catalogo.length) state.catalogo=await safe(()=>supabase.from('compras_catalogo').select('*').order('material'));
   const catalogo=state.catalogo.filter(c=>c.ativo!==false);
+  await carregarCidadesBrasil();
   const u=state.ctx?.user||{};
   const itens=[];
+  const achaColab=(nome)=>state.colaboradores.find(c=>norm(c.nome)===norm(nome));
   const modal=document.getElementById('admCmpModal');
   const achaCatalogo=(v)=>catalogo.find(c=>norm(c.material)===norm(v));
   function render(){
     const prev={
-      solicitante:modal.querySelector('#nsSolicitante')?.value??(u.name||u.email||''),
-      coordenacao:modal.querySelector('#nsCoordenacao')?.value??(u.coordenacao||u.supervisao||''),
+      solicitante:modal.querySelector('#nsSolicitante')?.value??'',
+      coordenacao:modal.querySelector('#nsCoordenacao')?.value??'',
       cidade:modal.querySelector('#nsCidade')?.value??'',
-      uf:modal.querySelector('#nsUf')?.value??'',
-      obs:modal.querySelector('#nsObs')?.value??''
+      uf:modal.querySelector('#nsUf')?.value??''
     };
+    const cidades=cidadesDaUf(prev.uf);
     modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
       <div class="section-head"><div><h3>Nova solicitação de compra</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
-      <div class="adm-cmp-grid mt-16">
-        <label>Solicitante<input id="nsSolicitante" value="${esc(prev.solicitante)}" placeholder="Quem está pedindo"></label>
-        <label>Coordenação / supervisão<input id="nsCoordenacao" value="${esc(prev.coordenacao)}" placeholder="Ex.: MATO GROSSO MT1"></label>
-        <label>Cidade<input id="nsCidade" value="${esc(prev.cidade)}" placeholder="Opcional"></label>
+      <div class="adm-cmp-grid adm-cmp-grid-ns1 mt-16">
+        <label>Solicitante<div class="cot-colab-wrap"><input id="nsSolicitante" value="${esc(prev.solicitante)}" placeholder="Digite o nome na equipe" autocomplete="off"><div class="cot-colab-sug" id="nsSolicitanteSug"></div></div></label>
+        <label>Supervisão<input id="nsCoordenacao" value="${esc(prev.coordenacao)}" placeholder="Automático"></label>
         <label>UF<select id="nsUf"><option value="">—</option>${UF_LIST.map(x=>`<option value="${x}"${prev.uf===x?' selected':''}>${x}</option>`).join('')}</select></label>
-        <label class="adm-cmp-full">Observação<input id="nsObs" value="${esc(prev.obs)}" placeholder="Opcional"></label>
+        <label>Cidade<select id="nsCidade"${prev.uf?'':' disabled'}><option value="">${prev.uf?'Selecione':'Escolha a UF'}</option>${cidades.map(n=>`<option value="${esc(n)}"${prev.cidade===n?' selected':''}>${esc(n)}</option>`).join('')}</select></label>
       </div>
       <p class="mt-16" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700">Itens</p>
-      <div class="adm-cmp-grid mt-8">
+      <div class="adm-cmp-grid adm-cmp-grid-ns2 mt-8">
+        <label>Qtd.<input id="nsQtd" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
         <label>Material<input id="nsMaterial" list="nsMaterialList" placeholder="Digite ou escolha do catálogo" autocomplete="off"></label>
-        <label>Quantidade<input id="nsQtd" type="number" min="1" value="1" inputmode="numeric"></label>
-        <label class="adm-cmp-full">Tamanho / detalhe<input id="nsDetalhe" placeholder="Opcional (ex.: tamanho da botina)"></label>
+        <label>Tamanho / detalhe<input id="nsDetalhe" placeholder="Opcional (ex.: tamanho da botina)"></label>
+        <button class="btn btn-secondary" id="nsAdd" type="button">+ Adicionar</button>
       </div>
       <datalist id="nsMaterialList">${catalogo.map(c=>`<option value="${esc(c.material)}"></option>`).join('')}</datalist>
-      <div class="adm-cmp-actions mt-16"><button class="btn btn-secondary" id="nsAdd" type="button">+ Adicionar item</button></div>
       <div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table" style="min-width:0"><thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Detalhe</th><th></th></tr></thead><tbody>${itens.length?itens.map((i,idx)=>`<tr><td>${esc(i.quantidade)}</td><td>${esc(i.material)}</td><td>${esc(i.tipo||'-')}</td><td>${esc(i.tamanho||'-')}</td><td><button class="adm-cmp-icon-btn" data-ns-del="${idx}" type="button" title="Remover" aria-label="Remover item" data-row-action="recusar">${ICONS.x}</button></td></tr>`).join(''):'<tr><td colspan="5" class="adm-cmp-empty">Nenhum item adicionado.</td></tr>'}</tbody></table></div>
       <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="nsSalvar" type="button">Criar solicitação</button><span class="adm-cmp-feedback" id="nsFeedback"></span></div>
     </div>`;
     modal.classList.add('open');
     const fb=(m,err=true)=>{const el=modal.querySelector('#nsFeedback'); el.textContent=m||''; el.classList.toggle('err',err)};
     modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+    const inpSol=modal.querySelector('#nsSolicitante'), sugSol=modal.querySelector('#nsSolicitanteSug'), inpCoord=modal.querySelector('#nsCoordenacao');
+    inpSol.addEventListener('input',()=>{
+      const q=norm(inpSol.value); if(q.length<2){sugSol.innerHTML='';return;}
+      const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,8);
+      sugSol.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.coordenacao||c.supervisao||c.cargo||'')}</small></button>`).join('')||'<button type="button" disabled>Nome não encontrado na equipe</button>';
+      sugSol.querySelectorAll('button[data-cid]').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); const c=state.colaboradores.find(x=>String(x.id)===b.dataset.cid); inpSol.value=b.dataset.cnome; inpCoord.value=c?.coordenacao||c?.supervisao||''; sugSol.innerHTML='';});
+    });
+    inpSol.addEventListener('change',()=>{ const c=achaColab(inpSol.value); if(c) inpCoord.value=c.coordenacao||c.supervisao||''; });
+    inpSol.addEventListener('blur',()=>setTimeout(()=>{sugSol.innerHTML='';},160));
+    modal.querySelector('#nsUf').onchange=()=>{ modal.querySelector('#nsCidade').value=''; render(); };
     modal.querySelectorAll('[data-ns-del]').forEach(b=>b.onclick=()=>{itens.splice(Number(b.dataset.nsDel),1); render();});
     const addItem=()=>{
       const raw=modal.querySelector('#nsMaterial').value.trim();
@@ -634,8 +663,9 @@ async function abrirNovaSolicitacaoModal(){
       const btn=ev.currentTarget;
       if(modal.querySelector('#nsMaterial').value.trim()){ fb('Há um material digitado que ainda não foi adicionado. Clique em "+ Adicionar item".'); return; }
       if(!itens.length){ fb('Adicione pelo menos um item.'); return; }
-      const solicitante=modal.querySelector('#nsSolicitante').value.trim();
-      if(!solicitante){ fb('Informe o solicitante.'); return; }
+      const colab=achaColab(modal.querySelector('#nsSolicitante').value);
+      if(!colab){ fb('Escolha o solicitante na lista da equipe (digite o nome e selecione).'); return; }
+      const solicitante=colab.nome;
       btn.disabled=true; fb('Salvando...',false);
       try{
         const header={
@@ -647,7 +677,6 @@ async function abrirNovaSolicitacaoModal(){
           status:'pendente',
           cidade:modal.querySelector('#nsCidade').value.trim()||null,
           uf:modal.querySelector('#nsUf').value||null,
-          observacoes:modal.querySelector('#nsObs').value.trim()||null,
           created_by:u.id||null
         };
         const {data:sol,error}=await supabase.from('compras_solicitacoes').insert(header).select('id').single();
@@ -1469,7 +1498,7 @@ async function finalizarCompraGrupo(itens,nf){
 
 function styles(){return `<style>
 .adm-cmp-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:12px}.adm-cmp-kpi{min-height:0;padding:14px 16px;display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 16px}.adm-cmp-kpi h3{margin:0;font-size:13px;font-weight:700;color:var(--muted)}.adm-cmp-kpi .metric{grid-column:2;grid-row:1/3;margin:0;font-size:26px;line-height:1;font-weight:800;white-space:nowrap}.adm-cmp-kpi .muted{margin:0;font-size:12px;line-height:1.3}
-.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-actions-footer{align-items:center}.adm-cmp-page .fm-topo{margin:14px 0 12px}.adm-cmp-page .fm-btn svg{width:16px;height:16px;flex:none}.adm-cmp-cat-form{display:flex;align-items:flex-end;gap:10px;flex-wrap:nowrap}.adm-cmp-cat-form label{display:flex;flex-direction:column;gap:6px;flex:1 1 140px;min-width:0;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.adm-cmp-cat-form label.grow2{flex:2 1 220px}.adm-cmp-cat-form input,.adm-cmp-cat-form select{width:100%;box-sizing:border-box;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;font:inherit;font-weight:400;text-transform:none;letter-spacing:0;color-scheme:dark}.adm-cmp-cat-form .fm-btn{flex:none}@media(max-width:1100px){.adm-cmp-cat-form{flex-wrap:wrap}}.adm-cmp-modal-card .section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.adm-cmp-modal-card .section-head h3{margin:0;font-size:20px;color:#fff}.adm-cmp-list{transition:opacity .15s ease}.adm-cmp-list.is-loading{opacity:.35;pointer-events:none}.adm-cmp-page .fm-table td{vertical-align:top}.fm-table tbody tr.is-selected td{background:rgba(34,197,94,.16)!important}.fm-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}.fm-table tbody tr.adm-cmp-group-row td{background:rgba(34,197,94,.05)}.adm-cmp-card{border-radius:18px;border-color:rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(15,23,42,.7),rgba(2,6,23,.7))}.adm-cmp-modal{background:rgba(2,6,23,.8)}.adm-cmp-modal-card{border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);padding:22px}.adm-cmp-grid input,.adm-cmp-grid select{border-radius:14px;border-color:rgba(148,163,184,.18)}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;transition:opacity .15s ease}.adm-cmp-table-wrap.is-loading{opacity:.35;pointer-events:none}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.aguardando_termo{color:#c4b5fd;background:rgba(139,92,246,.12)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado,.adm-cmp-status.recusado_financeiro{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-status.enviado_estoque{color:#c4b5fd;background:rgba(168,85,247,.12)}.adm-cmp-empty{text-align:center;color:var(--muted);padding:20px!important}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,0.06);border-radius:22px;padding:20px;color:#e2e2f0}.adm-cmp-modal-wide{width:min(1260px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}
+.adm-cmp-actions{display:flex;gap:10px;flex-wrap:wrap}.adm-cmp-actions-footer{align-items:center}.adm-cmp-page .fm-topo{margin:14px 0 12px}.adm-cmp-page .fm-btn svg{width:16px;height:16px;flex:none}.adm-cmp-cat-form{display:flex;align-items:flex-end;gap:10px;flex-wrap:nowrap}.adm-cmp-cat-form label{display:flex;flex-direction:column;gap:6px;flex:1 1 140px;min-width:0;color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}.adm-cmp-cat-form label.grow2{flex:2 1 220px}.adm-cmp-cat-form input,.adm-cmp-cat-form select{width:100%;box-sizing:border-box;height:42px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;color:#e2e2f0;padding:0 12px;font:inherit;font-weight:400;text-transform:none;letter-spacing:0;color-scheme:dark}.adm-cmp-cat-form .fm-btn{flex:none}@media(max-width:1100px){.adm-cmp-cat-form{flex-wrap:wrap}}.adm-cmp-modal-card .section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}.adm-cmp-modal-card .section-head h3{margin:0;font-size:20px;color:#fff}.adm-cmp-list{transition:opacity .15s ease}.adm-cmp-list.is-loading{opacity:.35;pointer-events:none}.adm-cmp-page .fm-table td{vertical-align:top}.fm-table tbody tr.is-selected td{background:rgba(34,197,94,.16)!important}.fm-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}.fm-table tbody tr.adm-cmp-group-row td{background:rgba(34,197,94,.05)}.adm-cmp-card{border-radius:18px;border-color:rgba(148,163,184,.16);background:linear-gradient(180deg,rgba(15,23,42,.7),rgba(2,6,23,.7))}.adm-cmp-modal{background:rgba(2,6,23,.8)}.adm-cmp-modal-card{border:1px solid rgba(148,163,184,.20);border-radius:24px;background:linear-gradient(180deg,#0d0d18,#020617);box-shadow:0 24px 80px rgba(0,0,0,.55);padding:22px}.adm-cmp-grid input,.adm-cmp-grid select{border-radius:14px;border-color:rgba(148,163,184,.18)}.adm-cmp-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:18px;transition:opacity .15s ease}.adm-cmp-table-wrap.is-loading{opacity:.35;pointer-events:none}.adm-cmp-table{width:100%;border-collapse:collapse;min-width:1060px}.adm-cmp-table th,.adm-cmp-table td{padding:12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}.adm-cmp-table th{font-size:12px;color:var(--muted);text-transform:uppercase}.adm-cmp-status{display:inline-flex;padding:6px 9px;border-radius:999px;border:1px solid rgba(148,163,184,.25);font-size:12px;font-weight:800}.adm-cmp-status.pendente,.adm-cmp-status.em_cotacao,.adm-cmp-status.em_analise,.adm-cmp-status.pendente_pagamento,.adm-cmp-status.aguardando_nf{color:#fde68a;background:rgba(245,158,11,.1)}.adm-cmp-status.aguardando_termo{color:#c4b5fd;background:rgba(139,92,246,.12)}.adm-cmp-status.comprado{color:#bbf7d0;background:rgba(22,101,52,.2)}.adm-cmp-status.recusado,.adm-cmp-status.recusado_financeiro{color:#fecaca;background:rgba(220,38,38,.12)}.adm-cmp-status.enviado_estoque{color:#c4b5fd;background:rgba(168,85,247,.12)}.adm-cmp-empty{text-align:center;color:var(--muted);padding:20px!important}.adm-cmp-feedback{font-weight:800}.adm-cmp-feedback.err{color:#fecaca}.adm-cmp-modal{position:fixed;inset:0;background:rgba(2,6,23,.75);z-index:9999;display:none;align-items:center;justify-content:center;padding:20px}.adm-cmp-modal.open{display:flex}.adm-cmp-modal-card{width:min(900px,100%);max-height:90vh;overflow:auto;background:#15152a;border:1px solid rgba(255,255,255,0.06);border-radius:22px;padding:20px;color:#e2e2f0}.adm-cmp-modal-wide{width:min(1260px,100%)}.adm-cmp-buy-table input{width:160px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-total-box{display:flex;justify-content:space-between;align-items:center;gap:14px;border:1px solid var(--line);border-radius:16px;padding:14px 16px;background:rgba(15,23,42,.55)}.adm-cmp-total-box strong{font-size:22px}.adm-cmp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.adm-cmp-grid input,.adm-cmp-grid select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:10px 12px;color-scheme:dark}.adm-cmp-grid input[type=file]{padding:9px 12px;cursor:pointer}.adm-cmp-full{grid-column:1/-1}.adm-cmp-grid.adm-cmp-grid-ns1{grid-template-columns:minmax(0,2.2fr) minmax(0,1.6fr) 84px minmax(0,1.8fr);align-items:end}.adm-cmp-grid.adm-cmp-grid-ns2{grid-template-columns:78px minmax(0,2fr) minmax(0,2fr) auto;align-items:end}.adm-cmp-grid-ns1 label,.adm-cmp-grid-ns2 label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted)}.adm-cmp-grid-ns1 input,.adm-cmp-grid-ns1 select,.adm-cmp-grid-ns2 input{padding:8px 10px;height:38px}.adm-cmp-grid-ns2 .btn{height:38px;white-space:nowrap}@media(max-width:760px){.adm-cmp-grid.adm-cmp-grid-ns1,.adm-cmp-grid.adm-cmp-grid-ns2{grid-template-columns:1fr 1fr}}
 .adm-cmp-cards{display:flex;flex-direction:column;gap:14px}.adm-cmp-card{border:1px solid var(--line);border-radius:16px;background:rgba(15,23,42,.4);overflow:hidden}.adm-cmp-card-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;background:rgba(15,23,42,.65);border-bottom:1px solid var(--line);flex-wrap:wrap}.adm-cmp-card-select{display:flex;align-items:center;gap:12px;cursor:pointer}.adm-cmp-card-select input{width:18px;height:18px;cursor:pointer;flex-shrink:0}.adm-cmp-card-select strong{display:block;font-size:14px}.adm-cmp-card-select small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.adm-cmp-card-meta{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted);white-space:nowrap;flex-wrap:wrap}.adm-cmp-card-meta strong{color:#bbf7d0;font-size:16px}.adm-cmp-card-body{display:flex;flex-direction:column}.adm-cmp-card-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-top:1px solid rgba(148,163,184,.08);flex-wrap:wrap}.adm-cmp-card-body .adm-cmp-card-row:first-child{border-top:0}.adm-cmp-card-row input[type=checkbox]{width:17px;height:17px;cursor:pointer;flex-shrink:0}.adm-cmp-card-row-info{flex:1 1 220px;min-width:0}.adm-cmp-card-row-info strong{display:block;font-size:13.5px}.adm-cmp-card-row-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px}.adm-cmp-card-row-value{font-weight:700;font-size:13px;white-space:nowrap;margin-left:auto}.adm-cmp-card-row-actions,.adm-cmp-row-actions{display:flex;gap:6px;flex-shrink:0}.adm-cmp-icon-btn{width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:1px solid rgba(148,163,184,.2);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex-shrink:0}.adm-cmp-icon-btn:hover{background:rgba(34,197,94,.14)}.adm-cmp-icon-btn svg{width:16px;height:16px}.adm-cmp-icon-btn[data-row-action="comprar"],.adm-cmp-icon-btn[data-row-action="aprovar"],.adm-cmp-icon-btn[data-row-action="cotar"]{background:rgba(16,185,129,.14);border-color:rgba(52,211,153,.25);color:#68f0ac}.adm-cmp-icon-btn[data-row-action="recusar"],.adm-cmp-icon-btn[data-row-action="reprovar"],.adm-cmp-icon-btn[data-row-action="cancelar"]{background:rgba(239,68,68,.09);border-color:rgba(248,113,113,.2);color:#ff7272}.adm-cmp-icon-btn[data-row-action="aprovar_solicitar"],.adm-cmp-icon-btn[data-row-action="finalizar"],.adm-cmp-icon-btn[data-row-action="finalizar_grupo"]{background:rgba(59,130,246,.1);border-color:rgba(96,165,250,.22);color:#93c5fd}.adm-cmp-icon-btn[data-row-action="enviar_estoque"]{background:rgba(168,85,247,.1);border-color:rgba(196,141,250,.24);color:#c4b5fd}#admCmpListWrap{user-select:none}
 @media(max-width:760px){.adm-cmp-card-row-value{margin-left:44px}}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
