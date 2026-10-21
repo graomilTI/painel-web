@@ -241,8 +241,9 @@ const ICONS={
   send:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
   doc:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>`,
   box:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`,
+  clip:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
 };
-const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',enviar_estoque:'box'};
+const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',enviar_estoque:'box',anexar_nf:'clip'};
 function iconBtn(action,id,title){
   return `<button class="adm-cmp-icon-btn" data-row-action="${esc(action)}" data-id="${esc(id)}" type="button" title="${esc(title)}" aria-label="${esc(title)}">${ICONS[ROW_ACTION_ICONS[action]]}</button>`;
 }
@@ -253,7 +254,8 @@ function nfLinkHtml(r){
 }
 function actionsCellForTab(r){
   if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}</div>`;
-  if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}</div>`;
+  if(state.tab==='aguardando') return `<div class="adm-cmp-row-actions">${iconBtn('anexar_nf',r.id,r.nf_url?'Trocar NF':'Anexar NF')}${r.nf_url?nfLinkHtml(r):''}</div>`;
+  if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}${r.nf_url?nfLinkHtml(r):''}</div>`;
   if(state.tab==='recusados') return `<small class="muted">${esc(r.motivo_recusa||'-')}</small>`;
   if(state.tab==='comprados') return nfLinkHtml(r);
   return '<span class="muted">-</span>';
@@ -421,6 +423,7 @@ function wireRowActions(container){
     btn.onclick=async()=>{
       const action=btn.dataset.rowAction;
       if(action==='finalizar_grupo'){ openGrupoModal(btn.dataset.id); return; }
+      if(action==='anexar_nf'){ openAnexarNfModal(btn.dataset.id); return; }
       const r=state.rows.find(x=>String(x.id)===String(btn.dataset.id));
       if(!r) return;
       try{
@@ -516,7 +519,8 @@ function renderTable(){
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const stGrp=state.tab==='nf'?'aguardando_nf':'pendente_pagamento';
       const gids=itens.map(r=>r.id).join(',');
-      const acao=`<div class="adm-cmp-row-actions">${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}</div>`;
+      const nfGrp=itens.find(r=>r.nf_url);
+      const acao=`<div class="adm-cmp-row-actions">${state.tab==='aguardando'?iconBtn('anexar_nf',gids,nfGrp?'Trocar NF do grupo':'Anexar NF ao grupo'):''}${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}${nfGrp?nfLinkHtml(nfGrp):''}</div>`;
       return `<tr class="adm-cmp-group-row">
         <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
         <td>${brDate(s0.data_solicitacao)}</td>
@@ -884,13 +888,52 @@ async function enviarEstoqueSelecionados(){
   }
 }
 
+// ─── ANEXAR NF NA ETAPA À PAGAR (só grava nf_url; o status não muda) ──────────
+// O Financeiro continua pagando normalmente; quando o item chega em NF, a nota
+// já está lá e basta finalizar.
+function openAnexarNfModal(gids){
+  const ids=String(gids).split(',').map(id=>id.trim());
+  const itens=state.rows.filter(r=>ids.includes(String(r.id)));
+  if(!itens.length) return;
+  const modal=document.getElementById('admCmpModal');
+  const atual=itens.find(r=>r.nf_url)?.nf_url||'';
+  const titulo=itens.length>1?`${itens.length} itens`:esc(itens[0].material);
+  modal.innerHTML=`<div class="adm-cmp-modal-card">
+    <div class="section-head"><div><h3>${atual?'Trocar NF':'Anexar NF'}</h3><p class="muted">${titulo}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
+    ${atual?`<p class="muted mt-16">NF atual: ${/^https?:\/\//i.test(atual)?`<a href="${esc(atual)}" target="_blank" rel="noopener" style="color:#86efac">Abrir</a>`:esc(atual)}</p>`:''}
+    <div class="adm-cmp-grid mt-16">
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNfAnexo" placeholder="Cole o link ou número da NF" value="${/^https?:\/\//i.test(atual)?'':esc(atual)}"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfAnexoFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
+    </div>
+    <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="mNfAnexoSalvar" type="button">Salvar NF</button></div>
+    <span class="adm-cmp-feedback mt-8" id="nfAnexoFeedback"></span>
+  </div>`;
+  modal.classList.add('open');
+  modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
+  modal.querySelector('#mNfAnexoSalvar').addEventListener('click',async()=>{
+    const btn=modal.querySelector('#mNfAnexoSalvar'); const fb=modal.querySelector('#nfAnexoFeedback');
+    btn.disabled=true; if(fb){fb.textContent=''; fb.classList.remove('err');}
+    try{
+      const file=modal.querySelector('#mNfAnexoFile')?.files?.[0]||null;
+      let nf=modal.querySelector('#mNfAnexo')?.value?.trim()||'';
+      if(file){ if(fb) fb.textContent='Enviando arquivo...'; nf=await uploadArquivoNotasFiscais(file,'compras/nf'); }
+      if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btn.disabled=false; if(fb) fb.textContent=''; return; }
+      const {error}=await supabase.from('compras_itens').update({nf_url:nf}).in('id',itens.map(r=>r.id));
+      if(error) throw new Error(error.message);
+      modal.classList.remove('open');
+      setMsg(`NF anexada em ${itens.length} item(ns).`);
+      await loadRows();
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; }
+  });
+}
+
 // ─── FINALIZAR NF (modal dedicado, chamado pelo ícone "Finalizar") ────────────
 function openFinalizarModal(r){
   const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card">
     <div class="section-head"><div><h3>Finalizar compra</h3><p class="muted">${esc(r.material)}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="adm-cmp-grid mt-16">
-      <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF"></label>
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF" value="${esc(r.nf_url||'')}"></label>
       <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio"></label>
       ${isEPI(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
       <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
@@ -1382,7 +1425,7 @@ function openGrupoModal(gids){
     </div>
     ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
     ${allAguardando?`<div class="adm-cmp-grid mt-16">
-      <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número"></label>
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número" value="${esc(itens.find(r=>r.nf_url)?.nf_url||'')}"></label>
       <label class="adm-cmp-full">Ou anexar arquivo da NF<input id="mNfGrpFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.xml,.doc,.docx,.xls,.xlsx"></label>
     </div>
     <div class="adm-cmp-actions mt-16">
