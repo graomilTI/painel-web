@@ -130,7 +130,10 @@ test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas 
 
 test('cartão: coluna de ações à direita, itens marcáveis só em Solicitações e ficha sem botão de voltar', () => {
   const ctx = (extra = {}) => ({ itensPorManut: new Map([['m1', [itemFreio, itemMao]]]), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'solicitacoes', aberto: null, podeAprovar: true, marcadasDe: () => new Set(), codigoDe: () => '', ...extra });
-  const sol = htmlCard(m(), ctx());
+  const fechado = htmlCard(m(), ctx());
+  assert.doesNotMatch(fechado, /data-check-|fm-mc-itens/, 'fechado: só a primeira linha do cartão; os itens aparecem ao clicar no olho');
+  assert.match(fechado, /data-mc-acao="detalhes"/);
+  const sol = htmlCard(m(), ctx({ aberto: 'm1' }));
   assert.match(sol, /class="fm-mc-acoes"/);
   assert.match(sol, /data-mc-acao="iniciar_orcamento"/);
   assert.match(sol, /data-mc-acao="detalhes"/);
@@ -139,7 +142,7 @@ test('cartão: coluna de ações à direita, itens marcáveis só em Solicitaç�
   assert.equal((sol.match(/data-check-linha/g) || []).length, 4, 'e um a um');
   assert.match(sol, /Mão de obra/);
   assert.match(sol, /\+ Peças, mão de obra ou serviço/);
-  assert.doesNotMatch(sol, /id="fmFicha"/, 'fechado: sem ficha');
+  assert.doesNotMatch(fechado, /id="fmFicha"/, 'fechado: sem ficha');
   const cot = htmlCard(m({ status: 'em_orcamento' }), ctx({ etapa: 'cotacoes' }));
   assert.doesNotMatch(cot, /data-check-linha/, 'depois da solicitação não se marca de novo');
   assert.doesNotMatch(cot, /Pastilha de freio/, 'fora de Solicitações os itens ficam minimizados (aparecem ao abrir a ficha)');
@@ -150,7 +153,7 @@ test('cartão: coluna de ações à direita, itens marcáveis só em Solicitaç�
   assert.match(aberto, /id="fmFicha" data-detalhe/);
   assert.match(aberto, /aria-expanded="true"/);
   assert.doesNotMatch(aberto, /Voltar/);
-  const marcado = htmlCard(m(), ctx({ marcadasDe: () => new Set([linhasDosItens([itemFreio], base)[0].key]) }));
+  const marcado = htmlCard(m(), ctx({ aberto: 'm1', marcadasDe: () => new Set([linhasDosItens([itemFreio], base)[0].key]) }));
   assert.match(marcado, /1 de 4 marcado\(s\) para a cotação/);
 });
 
