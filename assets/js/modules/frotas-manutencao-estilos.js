@@ -47,7 +47,7 @@ ${ESTILOS_LISTA}
 .fm-pick-outro{display:flex;gap:8px;margin-top:10px}.fm-pick-outro .fm-input{height:38px;font-size:13px}
 .fm-pick-vazio{color:#94a3b8;font-size:12px;padding:10px 2px}.fm-pick-obrig{color:#fde68a;border:1px dashed rgba(245,158,11,.4);border-radius:12px;background:rgba(245,158,11,.08);padding:10px 12px}
 .fm-pick-resumo{display:grid;gap:8px}.fm-pick-rg{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.fm-pick-rg strong{color:#e2e8f0;font-size:12px;margin-right:4px}
-.fm-ols{display:grid;gap:6px}.fm-ol,.fm-ol-cab{display:grid;grid-template-columns:minmax(170px,2fr) minmax(150px,2fr) 130px 36px;gap:8px;align-items:center}.fm-ol-cab{color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}.fm-ol .fm-input{height:38px;font-size:13px}
+.fm-ols{display:grid;gap:6px}.fm-ol,.fm-ol-cab{display:grid;grid-template-columns:minmax(170px,2fr) minmax(150px,2fr) 130px 130px 36px;gap:8px;align-items:center}.fm-ol-cab{color:#94a3b8;font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}.fm-ol .fm-input{height:38px;font-size:13px}
 .fm-ol-lista{list-style:none;margin:6px 0 2px;padding:8px 0 0;border-top:1px solid rgba(148,163,184,.14);display:grid;gap:5px}.fm-ol-lista li{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#e2e8f0}.fm-ol-lista small{display:block;color:#94a3b8;font-size:11px}.fm-ol-lista b{white-space:nowrap;color:#f8fafc}
 .fm-nova{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:'pedido' 'itens';gap:14px;align-items:start;margin-top:14px}.fm-nova>.fm-sec{margin-top:0}.fm-nova-pedido{grid-area:pedido}.fm-nova-itens{grid-area:itens;min-width:0}
 .fm-nova-campos{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,.8fr) auto;gap:12px 14px;align-items:end}.fm-nova-problema{grid-column:1/-1}.fm-nova-pedido textarea{min-height:64px}.fm-check-caixa{min-height:42px;padding:0 14px;border:1px solid rgba(148,163,184,.18);border-radius:14px;background:#0d0d18;margin:0!important;white-space:nowrap}.fm-check-caixa:has(input:checked){border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#fecaca}.fm-nova-prontos{margin-bottom:12px}
@@ -160,4 +160,11 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-modal-largo .ds-modal-card{width:min(1320px,calc(100vw - 32px));max-width:none;max-height:calc(100vh - 32px)}
 @media(max-width:1100px){.fm-mc-topo{grid-template-columns:16px 100px minmax(0,1fr) 130px}.fm-mc-acoes{grid-column:2/-1;justify-content:flex-start}.fm-mc-desc{grid-column:2/-1;grid-row:2}.fm-mc-grupo{grid-template-columns:1fr}}
 @media(max-width:700px){.fm-mc-acoes{flex-wrap:wrap}.fm-mc-topo{grid-template-columns:16px minmax(0,1fr) auto}}
+/* Itens da manutenção em lista única que minimiza; peça faltante na cotação. */
+.fm-il-lista{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.fm-il{display:grid;grid-template-columns:minmax(120px,190px) minmax(0,1fr) auto 36px;gap:10px;align-items:center;padding:7px 10px;border:1px solid rgba(148,163,184,.16);border-radius:12px;background:rgba(15,23,42,.5);font-size:13px}.fm-il.servico{border-style:dashed}
+.fm-il-grupo{color:#bbf7d0;font-size:11px;font-weight:900;letter-spacing:.04em}.fm-il-nome{color:#f8fafc;font-weight:700;min-width:0;overflow-wrap:anywhere}
+.fm-ol-falta{display:inline-flex;align-items:center;gap:6px;color:#fca5a5;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap}.fm-ol-falta input{accent-color:#ef4444;width:16px;height:16px;margin:0}
+.fm-ol.faltante .fm-input[data-ol="valor"]{opacity:.4}.fm-ol.faltante>.fm-ro,.fm-ol.faltante>.fm-input[data-ol="nome"]{text-decoration:line-through;color:#fca5a5}
+@media(max-width:900px){.fm-il{grid-template-columns:1fr auto 36px}.fm-il-grupo{grid-column:1/-1}}
 </style>`;

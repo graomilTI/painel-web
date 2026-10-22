@@ -1,6 +1,7 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
 import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
+import { linhasDosItens } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
   descreverIntervalo, linhasIniciais, norm, numeroOS, somarLinhas, totalDoOrcamento, orcamentoSelecionado, planosDaCategoria, proximoPasso, rotuloVeiculo, statusInfo, veiculosUnicos, TIPOS_NOTA, conferenciaNotas, somaNotas,
@@ -92,12 +93,13 @@ export function htmlFormNova(base, preset = {}) {
 }
 
 // ---------- ficha ----------
-function faixaEtapa(m, notas = []) {
-  const passo = proximoPasso(m, { notas });
-  const encerrada = ['concluida', 'cancelada'].includes(m.status);
+function faixaEtapa(m) {
   const aviso = (txt) => `<div class="fm-aviso" style="border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.1);color:#fecaca">${txt}</div>`;
-  return `<div class="fm-etapa"><span>${encerrada ? 'Situação' : 'Próximo passo'}</span><strong class="fm-badge ${passo.tone}">${esc(passo.rotulo)}</strong></div>${m.status === 'reprovada' ? aviso(`Reprovada: ${esc(m.motivo_status || '')}`) : ''}${m.status === 'cancelada' ? aviso(`Cancelada: ${esc(m.motivo_status || '')}`) : ''}`;
+  return `${m.status === 'reprovada' ? aviso(`Reprovada: ${esc(m.motivo_status || '')}`) : ''}${m.status === 'cancelada' ? aviso(`Cancelada: ${esc(m.motivo_status || '')}`) : ''}`;
 }
+
+// Só os status que dividem a etapa com outro (em aprovação e reprovada em Cotações; na oficina em Em andamento) ganham selo.
+const STATUS_COM_SELO = new Set(['em_aprovacao', 'reprovada', 'em_execucao']);
 
 function blocoDados(m, base, ed, maisAberto = false) {
   const campo = (rotulo, conteudo, extra = '', estilo = '') => `<div class="fm-field ${extra}"${estilo ? ` style="${estilo}"` : ''}><label>${rotulo}</label>${conteudo}</div>`;
@@ -109,68 +111,49 @@ function blocoDados(m, base, ed, maisAberto = false) {
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
-    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), '', 'grid-column:span 3')}
+    ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
+    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), '', 'grid-column:span 2')}
   </div>
   <details class="fm-mais" data-mais${maisAberto ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
     ${campo('Motorista', ro(esc(m.motorista_nome)))}
     ${campo('Origem', ro(esc(ORIGENS[m.origem] || m.origem)))}
     ${campo('Natureza', edit ? `<select class="fm-select" data-campo="natureza">${opcoes(NATUREZAS, m.natureza, { vazio: 'Definida ao aprovar' })}</select>` : ro(esc(m.natureza === 'preventiva' ? 'Preventiva' : m.natureza === 'corretiva' ? 'Corretiva' : '')))}
     ${campo('Km na solicitação', ro(esc(fmtKm(m.km_solicitacao))))}
-    ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Entrada na oficina', ro(esc(m.entrada_oficina_em ? dataHoraBR(m.entrada_oficina_em) : '')))}
     ${campo('Ordem de serviço', ro(esc(numeroOS(m) && m.os_emitida_em ? numeroOS(m) : '')))}
     ${campo('Diagnóstico da oficina', edit ? `<textarea data-campo="diagnostico" placeholder="O que a oficina encontrou">${esc(m.diagnostico || '')}</textarea>` : ro(esc(m.diagnostico)), 'full')}
   </div></details></div>`;
 }
 
-// Itens marcáveis de um item da ficha: o item de peças lista as peças do grupo; o de serviço, os serviços e a Mão de obra.
-function htmlComponentesDoItem(base, it) {
-  const grupo = grupoDaCategoria(base.categorias, it.categoria_codigo);
-  const marcados = it.componentes || [];
-  const servico = it.tipo_item === 'servico';
-  const nomes = itensDoGrupo(base.componentes, grupo, marcados).filter((n) => marcados.includes(n) || (tipoDoComponente(base.componentes, grupo, n) === 'servico') === servico);
-  // A etiqueta "serviço" vem de cada componente, não do item: uma peça marcada num item antigo de serviço continua peça.
-  const servicos = new Set(nomes.filter((n) => tipoDoComponente(base.componentes, grupo, n) === 'servico'));
-  return htmlComponentes(nomes, marcados, { servicos });
-}
-
-function blocoItens(m, itens, base, ed, seletorAberto = false) {
-  const planoDe = (it) => base.planos.find((p) => p.id === it.plano_id);
-  const notaPlano = (it) => (planoDe(it) ? `<small>Plano do guia: ${esc(planoDe(it).nome)}</small>` : '');
-  const notaPecas = (it) => { const e = Object.entries(it.pecas || {}); return e.length ? `<small>Peças escolhidas: ${esc(e.map(([n, p]) => `${n.replace(/\s*\(.*\)$/, '')} (${p.detalhe}${p.valor != null ? ` · ${dinheiro(p.valor)}` : ''})`).join('; '))}</small>` : ''; };
-  const notaComponentes = (it) => ((it.componentes || []).length && it.descricao !== it.componentes.join(', ') ?`<small>Itens: ${esc(it.componentes.join(', '))}</small>` : '');
-  const linhas = itens.map((it) => {
-    if (!ed.itens) {
-      return `<div class="fm-item"><div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div><div class="fm-ro">${esc(it.descricao || '')}${notaPlano(it)}${notaComponentes(it)}${notaPecas(it)}</div><div class="fm-ro">${it.tipo_item === 'peca' ? 'Peça' : 'Serviço'}${it.valor != null ? ` · ${dinheiro(it.valor)}` : ''}</div><span></span></div>`;
-    }
-    return `<div class="fm-item" data-item-id="${esc(it.id)}">
-      <div class="fm-ro">${esc(nomeDoGrupoDaCategoria(base, it.categoria_codigo))}</div>
-      <div><input class="fm-input" data-item="descricao" value="${esc(it.descricao || '')}">${notaPlano(it)}${notaPecas(it)}</div>
-      <div class="fm-ro"><span class="fm-badge ${it.tipo_item === 'peca' ? 'blue' : 'amber'}" title="Define a categoria da nota fiscal no GRM">${it.tipo_item === 'peca' ? 'Peças' : 'Serviço'}</span></div>
-      <button class="fm-ic danger" type="button" data-acao="item-remover" data-id="${esc(it.id)}" title="Remover item" aria-label="Remover item">✕</button>
-      <div class="fm-item-comps">${htmlComponentesDoItem(base, it)}</div></div>`;
-  }).join('');
+// Itens da manutenção numa lista única (uma linha por peça, serviço ou mão de obra) que minimiza; remover uma linha tira só
+// aquele componente. Adicionar abre o mesmo seletor de grupos da nova manutenção.
+function blocoItens(m, itens, base, ed, { seletorAberto = false, itensAberto = false } = {}) {
+  const linhas = linhasDosItens(itens, base);
+  const lista = linhas.map((l) => `<li class="fm-il${l.tipo === 'servico' ? ' servico' : ''}"><span class="fm-il-grupo">${esc(l.grupo)}</span><span class="fm-il-nome">${esc(l.nome)}${l.detalhe ? ` <em class="fm-chip-peca">${esc(l.detalhe)}${l.valor != null ? ` · ${esc(dinheiro(l.valor))}` : ''}</em>` : ''}</span><em class="fm-mc-tipo ${l.tipo}">${l.maoDeObra ? 'Mão de obra' : l.tipo === 'servico' ? 'Serviço' : 'Peça'}</em>${ed.itens ? `<button class="fm-ic danger" type="button" data-acao="linha-remover" data-item="${esc(l.item_id)}" data-nome="${esc(l.atomico ? '' : l.nome)}" title="Remover ${esc(l.nome)}" aria-label="Remover ${esc(l.nome)}">✕</button>` : '<span></span>'}</li>`).join('');
   const novo = !ed.itens ? '' : (seletorAberto
     ? `<div class="fm-add-itens" data-add-itens><div data-seletor-corpo>${htmlSeletor()}</div><div class="fm-pick-resumo" data-pick-resumo></div>
         <div class="fm-acoes" style="justify-content:flex-start;margin-top:12px"><button class="fm-btn primary" type="button" data-acao="itens-confirmar">Adicionar itens</button>${itens.length ? '<button class="fm-btn ghost" type="button" data-acao="itens-cancelar">Cancelar</button>' : ''}</div></div>`
     : '<div style="margin-top:10px"><button class="fm-btn soft" type="button" data-acao="itens-abrir">+ Adicionar itens</button></div>');
-  return `<div class="fm-sec"><h4>Itens do serviço (${itens.length})</h4>
-    ${itens.length ? '<div class="fm-item-cab"><span>Grupo</span><span>Descrição</span><span>Tipo</span><span></span></div>' : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}
-    <div class="fm-itens">${linhas}</div>${novo}</div>`;
+  return `<details class="fm-sec fm-mais" data-itens-det${itensAberto || seletorAberto ? ' open' : ''}><summary>Itens da manutenção (${linhas.length})</summary>
+    ${linhas.length ? `<ul class="fm-il-lista">${lista}</ul>` : '<div class="fm-mm">Nenhum item ainda. Informe ao menos um para aprovar.</div>'}${novo}</details>`;
 }
 
-// Uma linha do orçamento: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
+// Uma linha da cotação: peça/serviço, marca ou observação e valor. A linha vinda dos itens tem o nome fixo; a "outro item" é digitada.
+// "Peça faltante": o fornecedor não tem a peça ou o serviço (a linha fica sem valor e a aprovação enxerga o que falta).
 export function htmlLinhaOrcamento(l = {}, { fixa = true } = {}) {
   const servico = l.tipo === 'servico';
-  return `<div class="fm-ol" data-orc-linha data-tipo="${servico ? 'servico' : 'peca'}"><input type="hidden" data-ol="tipo" value="${servico ? 'servico' : 'peca'}">
+  const falta = !!l.faltante;
+  return `<div class="fm-ol${falta ? ' faltante' : ''}" data-orc-linha data-tipo="${servico ? 'servico' : 'peca'}"><input type="hidden" data-ol="tipo" value="${servico ? 'servico' : 'peca'}">
     ${fixa
     ? `<div class="fm-ro">${esc(l.nome)}${servico ? ' <em class="fm-pick-tag">serviço</em>' : ''}</div><input type="hidden" data-ol="nome" value="${esc(l.nome)}">`
     : `<input class="fm-input" data-ol="nome" maxlength="120" placeholder="${servico ? 'Outro serviço' : 'Outro item'}" value="${esc(l.nome || '')}">`}
     <input class="fm-input" data-ol="detalhe" maxlength="160" placeholder="Marca / observação" value="${esc(l.detalhe || '')}">
-    <input class="fm-input" type="number" step="0.01" min="0" data-ol="valor" placeholder="0,00" value="${l.valor ?? ''}">
+    <input class="fm-input" type="number" step="0.01" min="0" data-ol="valor" placeholder="0,00" value="${falta ? '' : (l.valor ?? '')}"${falta ? ' disabled' : ''}>
+    <label class="fm-ol-falta" title="O fornecedor não tem esta peça ou serviço"><input type="checkbox" data-ol="faltante"${falta ? ' checked' : ''}> Peça faltante</label>
     <button class="fm-ic danger" type="button" data-acao="orc-linha-rem" title="Remover linha" aria-label="Remover linha">✕</button></div>`;
 }
 
+// Cotação: o essencial é o fornecedor e o valor total; o detalhe por item (valor de cada peça, mão de obra, peça faltante) é opcional.
 export function htmlFormOrcamento(base, orc = {}, itens = []) {
   const temDetalhe = [orc.fornecedor_contato, orc.validade, orc.condicoes_pagamento, orc.garantia, orc.observacoes].some((v) => v != null && v !== '');
   const linhas = linhasIniciais(itens, orc.linhas);
@@ -180,42 +163,53 @@ export function htmlFormOrcamento(base, orc = {}, itens = []) {
   const pecasAuto = orc.valor_pecas == null || (somaPecas != null && Number(orc.valor_pecas) === somaPecas);
   const maoAuto = orc.valor_mao_obra == null || (somaServico != null && Number(orc.valor_mao_obra) === somaServico);
   const totalAuto = orc.valor_total == null || Number(orc.valor_total) === totalDoOrcamento({ pecas: orc.valor_pecas, maoObra: orc.valor_mao_obra });
+  const detalhado = linhas.some((l) => l.faltante || l.valor != null || l.detalhe) || orc.valor_pecas != null || orc.valor_mao_obra != null;
   return `<div class="fm-form" data-orc-form data-orc-id="${esc(orc.id || '')}">
     <div class="fm-field"><label>Oficina cadastrada</label><select class="fm-select" data-o="oficina_id">${opcoes(base.oficinas.filter((o) => o.ativo !== false), orc.oficina_id, { vazio: '— outra (digitar) —', rotulo: 'nome' })}</select></div>
     <div class="fm-field" style="grid-column:span 2"><label>Oficina / fornecedor</label><input class="fm-input" data-o="fornecedor" value="${esc(orc.fornecedor || '')}"></div>
+    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}"><small>Digite o valor, ou detalhe por item abaixo.</small></div>
     <div class="fm-field"><label>Prazo (dias)</label><input class="fm-input" type="number" min="0" data-o="prazo_dias" value="${orc.prazo_dias ?? ''}"></div>
-    <div class="fm-field full"><label>Itens do orçamento</label>
-      ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span></div>' : ''}
-      <div class="fm-ols" data-orc-linhas>${linhas.map((l) => htmlLinhaOrcamento(l, { fixa: nomesDosItens.has(norm(l.nome)) })).join('')}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="peca">+ Outra peça</button><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="servico">+ Mão de obra / serviço</button></div></div>
-    <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das peças acima.</small></div>
-    <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" data-auto="${maoAuto ? '1' : '0'}" value="${orc.valor_mao_obra ?? ''}"><small>Soma dos serviços acima.</small></div>
-    <div class="fm-field"><label>Valor total (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_total" data-auto="${totalAuto ? '1' : '0'}" value="${orc.valor_total ?? ''}"><small>Peças + mão de obra.</small></div>
-    <div class="fm-field"><label>Arquivo do orçamento</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+    <div class="fm-field" style="grid-column:span 2"><label>Arquivo da cotação</label><input class="fm-input" type="file" accept=".pdf,.jpg,.jpeg,.png" data-o-arquivo></div>
+    <details class="fm-mais fm-field full" data-orc-itens${detalhado ? ' open' : ''}><summary>Detalhar por item (valor de cada peça, mão de obra e peça faltante)</summary>
+      <div class="fm-field full">
+        ${linhas.length ? '<div class="fm-ol-cab"><span>Peça / serviço</span><span>Marca / observação</span><span>Valor (R$)</span><span></span><span></span></div>' : ''}
+        <div class="fm-ols" data-orc-linhas>${linhas.map((l) => htmlLinhaOrcamento(l, { fixa: nomesDosItens.has(norm(l.nome)) })).join('')}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="peca">+ Outra peça</button><button class="fm-btn ghost fm-mini" type="button" data-acao="orc-linha-add" data-tipo="servico">+ Mão de obra / serviço</button></div></div>
+      <div class="fm-grid2 tres" style="margin-top:10px">
+        <div class="fm-field"><label>Peças (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_pecas" data-auto="${pecasAuto ? '1' : '0'}" value="${orc.valor_pecas ?? ''}"><small>Soma das peças acima.</small></div>
+        <div class="fm-field"><label>Mão de obra (R$)</label><input class="fm-input" type="number" step="0.01" min="0" data-o="valor_mao_obra" data-auto="${maoAuto ? '1' : '0'}" value="${orc.valor_mao_obra ?? ''}"><small>Soma dos serviços acima.</small></div>
+      </div></details>
     <details class="fm-mais fm-field full"${temDetalhe ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
       <div class="fm-field"><label>Contato</label><input class="fm-input" data-o="fornecedor_contato" value="${esc(orc.fornecedor_contato || '')}"></div>
       <div class="fm-field"><label>Validade</label><input class="fm-input" type="date" data-o="validade" value="${esc(orc.validade || '')}"></div>
       <div class="fm-field"><label>Pagamento</label><input class="fm-input" data-o="condicoes_pagamento" value="${esc(orc.condicoes_pagamento || '')}"></div>
       <div class="fm-field"><label>Garantia</label><input class="fm-input" data-o="garantia" value="${esc(orc.garantia || '')}"></div>
       <div class="fm-field full"><label>Observações</label><textarea data-o="observacoes">${esc(orc.observacoes || '')}</textarea></div></div></details>
-    <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="orc-salvar">${orc.id ? 'Salvar orçamento' : 'Adicionar orçamento'}</button><button class="fm-btn ghost" type="button" data-acao="orc-cancelar">Cancelar</button></div></div>`;
+    <div class="fm-field full" style="display:flex;gap:8px"><button class="fm-btn primary" type="button" data-acao="orc-salvar">${orc.id ? 'Salvar cotação' : 'Adicionar cotação'}</button><button class="fm-btn ghost" type="button" data-acao="orc-cancelar">Cancelar</button></div></div>`;
 }
+
+// Peças e serviços que o fornecedor não tem, como as linhas da cotação guardam.
+export const faltantesDoOrcamento = (o) => (Array.isArray(o?.linhas) ? o.linhas : []).filter((l) => l.faltante).map((l) => l.nome);
 
 function blocoOrcamentos(m, orcs, base, ed, formAberto, itens = []) {
   const sel = orcamentoSelecionado(orcs);
-  const cards = orcs.map((o) => `<div class="fm-orc${o.selecionado ? ' sel' : ''}">
-      <div><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? ' <span class="fm-badge green">Escolhido</span>' : ''}</div>
+  const cards = orcs.map((o) => {
+    const faltam = faltantesDoOrcamento(o);
+    return `<div class="fm-orc${o.selecionado ? ' sel' : ''}">
+      <div><strong>${esc(o.fornecedor)}</strong>${o.selecionado ? ' <span class="fm-badge green">Escolhida</span>' : ''}</div>
       <div class="v">${dinheiro(o.valor_total)}</div>
-      ${(o.linhas || []).length ? `<ul class="fm-ol-lista">${o.linhas.map((l) => `<li><span>${esc(l.nome)}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}</span><b>${l.valor != null ? dinheiro(l.valor) : '—'}</b></li>`).join('')}</ul>` : ''}
+      ${faltam.length ? `<div class="fm-badge red" title="O fornecedor não tem estas peças ou serviços" style="white-space:normal">Peça faltante: ${esc(faltam.join(', '))}</div>` : ''}
+      ${(o.linhas || []).length ? `<ul class="fm-ol-lista">${o.linhas.map((l) => `<li><span>${esc(l.nome)}${l.faltante ? ' <span class="fm-badge red">Faltante</span>' : ''}${l.detalhe ? `<small>${esc(l.detalhe)}</small>` : ''}</span><b>${l.valor != null ? dinheiro(l.valor) : '—'}</b></li>`).join('')}</ul>` : ''}
       <div class="fm-mm">${o.valor_pecas != null ? `Peças ${dinheiro(o.valor_pecas)}` : ''}${o.valor_mao_obra != null ? ` · Mão de obra ${dinheiro(o.valor_mao_obra)}` : ''}</div>
       <div class="fm-mm">${o.prazo_dias != null ? `Prazo ${o.prazo_dias} dia(s)` : ''}${o.validade ? ` · Validade ${dataBR(o.validade)}` : ''}${o.garantia ? ` · Garantia ${esc(o.garantia)}` : ''}</div>
       ${o.condicoes_pagamento ? `<div class="fm-mm">Pagamento: ${esc(o.condicoes_pagamento)}</div>` : ''}
       ${o.anexo_url ? `<a class="fm-badge blue" href="${esc(o.anexo_url)}" target="_blank" rel="noopener">Ver arquivo</a>` : ''}
-      ${ed.orcamentos ? `<div class="fm-orc-acoes">${o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="orc-escolher" data-id="${esc(o.id)}">Escolher</button>`}<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`).join('');
-  const aviso = m.sem_orcamento ? '<div class="fm-aviso">Aprovada sem orçamento (valor estimado informado pelo aprovador).</div>' : '';
-  return `<div class="fm-sec"><h4>Orçamentos (${orcs.length}) ${ed.orcamentos ? '<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-novo">+ Orçamento</button>' : ''}</h4>
-    ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : '<div class="fm-mm">Nenhum orçamento cadastrado.</div>'}
-    ${orcs.length > 1 && !sel && ed.orcamentos ? '<div class="fm-aviso">Escolha o orçamento que será levado para aprovação.</div>' : ''}${aviso}
+      ${ed.orcamentos ? `<div class="fm-orc-acoes">${o.selecionado ? '' : `<button class="fm-btn soft fm-mini" type="button" data-acao="orc-escolher" data-id="${esc(o.id)}">Escolher</button>`}<button class="fm-btn ghost fm-mini" type="button" data-acao="orc-editar" data-id="${esc(o.id)}">Editar</button><button class="fm-btn danger fm-mini" type="button" data-acao="orc-remover" data-id="${esc(o.id)}">Remover</button></div>` : ''}</div>`;
+  }).join('');
+  const aviso = m.sem_orcamento ? '<div class="fm-aviso">Aprovada sem cotação (valor estimado informado pelo aprovador).</div>' : '';
+  return `<div class="fm-sec"><h4>Cotações (${orcs.length}) ${ed.orcamentos && !formAberto ? '<button class="fm-btn soft" type="button" data-acao="orc-novo">+ Adicionar cotação</button>' : ''}</h4>
+    ${orcs.length ? `<div class="fm-orcs">${cards}</div>` : '<div class="fm-mm">Nenhuma cotação cadastrada. Adicione a de cada fornecedor com o valor.</div>'}
+    ${orcs.length > 1 && !sel && ed.orcamentos ? '<div class="fm-aviso">Escolha a cotação que será levada para aprovação.</div>' : ''}${aviso}
     ${formAberto ? htmlFormOrcamento(base, formAberto === true ? {} : formAberto, itens) : ''}</div>`;
 }
 
@@ -345,18 +339,18 @@ function blocoLinhaTempo(m) {
 }
 
 // `semCabecalho`: ficha dentro do cartão da etapa (sem janela e sem botão de voltar): no lugar do cabeçalho, só a situação e o prontuário.
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false, semCabecalho = false }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false, itensAberto = false, semCabecalho = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
   const dica = m.status === 'em_aprovacao' && !podeAprovar ? 'Aguardando decisão de um aprovador.' : (acoes.find((a) => a.bloqueio && a.tom === 'primary')?.bloqueio || '');
   const form = formAcao === 'sem_orcamento' ? htmlFormSemOrcamento() : formAcao === 'conclusao' ? htmlFormConclusao(m, kmSugerido, notas) : '';
   const cabecalho = semCabecalho
-    ? `<div class="fm-det-topo">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button></div>`
+    ? `<div class="fm-det-topo">${STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '<span></span>'}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button></div>`
     : `<div class="fm-mod-head"><div><h3>${esc(codigoManutencao(m))} · ${esc(m.__placa || '')}</h3><p>${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</p></div><div style="display:flex;gap:8px;align-items:center">${badgeStatus(m.status)}<button class="fm-btn ghost fm-mini" type="button" data-acao="ver-veiculo" title="Abrir o prontuário do veículo (histórico, custo e preventiva)">Ver veículo</button><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div></div>`;
   return `${cabecalho}
-    ${faixaEtapa(m, notas)}
-    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed, seletorAberto || !itens.length)}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${faixaEtapa(m)}
+    ${blocoDados(m, base, ed, maisAberto)}${blocoItens(m, itens, base, ed, { seletorAberto: seletorAberto || !itens.length, itensAberto })}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

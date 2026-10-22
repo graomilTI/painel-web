@@ -14,7 +14,7 @@ import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
 } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
 import { htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
-import { htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
+import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas-manut45';
 import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-frotas-manut45';
@@ -31,7 +31,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
     etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '',
     loading: false, ocupado: false,
-    fichaId: null, maisAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, maisAberto: false, itensAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -159,7 +159,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens, semCabecalho: true,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens, itensAberto: state.itensAberto, semCabecalho: true,
     });
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
@@ -196,7 +196,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
 
   // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
-    state.fichaId = id; state.maisAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.maisAberto = false; state.itensAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
     if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
@@ -216,8 +216,6 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
   const rolarPara = (sel) => state.root?.querySelector(sel)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   const val = (el, sel) => el.querySelector(sel)?.value ?? '';
-  // Componentes do guia marcados dentro de um item da ficha.
-  const marcadosEm = (el) => [...el.querySelectorAll('[data-comp]:checked')].map((c) => c.value);
   const norm = (v) => String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
   // Ao aprovar, as peças (com marca/referência) do orçamento escolhido entram no catálogo do modelo do veículo.
@@ -257,7 +255,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
       }
       case 'aprovar': {
         const sel = orcs.find((o) => o.selecionado);
-        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar o orçamento de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?`, confirmarLabel: 'Aprovar' });
+        const ok = await confirmar({ titulo: 'Aprovar manutenção', mensagem: `Aprovar a cotação de ${sel?.fornecedor || ''} (${Number(sel?.valor_total || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })})?${faltantesDoOrcamento(sel).length ? ` Atenção: este fornecedor não tem ${faltantesDoOrcamento(sel).join(', ')}.` : ''}`, confirmarLabel: 'Aprovar' });
         if (!ok) return;
         const aprovou = await executar(() => dados.mudarStatus(state.supabase, m.id, a.para, natureza), { id: m.id, sucesso: 'Manutenção aprovada.' });
         if (aprovou) aprenderPecasDaManutencao(m);
@@ -329,18 +327,24 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
         state.addItens = false; state.estadoItens = {};
       }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
-    if (acao === 'item-remover') {
-      if (!(await confirmar({ titulo: 'Remover item', mensagem: 'Remover este item do serviço?', confirmarLabel: 'Remover' }))) return;
-      return executar(() => dados.removerItem(state.supabase, alvo.dataset.id), { sucesso: 'Item removido.' });
+    if (acao === 'linha-remover') {
+      const item = state.itens.find((i) => i.id === alvo.dataset.item); const nome = alvo.dataset.nome;
+      if (!item || !(await confirmar({ titulo: 'Remover item', mensagem: `Remover ${nome || item.descricao || 'este item'} da manutenção?`, confirmarLabel: 'Remover' }))) return;
+      const comps = Array.isArray(item.componentes) ? item.componentes : [];
+      // Último componente (ou item sem componentes): sai o item; senão sai só aquele componente, com a descrição e a peça escolhida.
+      if (!nome || comps.length <= 1) return executar(() => dados.removerItem(state.supabase, item.id), { sucesso: 'Item removido.' });
+      const ficam = comps.filter((c) => c !== nome);
+      const pecas = Object.fromEntries(Object.entries(item.pecas || {}).filter(([k]) => k !== nome));
+      return executar(() => dados.salvarItem(state.supabase, { id: item.id, componentes: ficam, descricao: ficam.join(', '), pecas }), { sucesso: 'Item removido.' });
     }
 
     if (acao === 'orc-novo') { state.orcForm = true; return renderFicha(); }
     if (acao === 'orc-cancelar') { state.orcForm = null; return renderFicha(); }
     if (acao === 'orc-editar') { state.orcForm = state.orcs.find((o) => o.id === alvo.dataset.id) || true; return renderFicha(); }
-    if (acao === 'orc-escolher') return executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento escolhido.' });
+    if (acao === 'orc-escolher') return executar(() => dados.escolherOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação escolhida.' });
     if (acao === 'orc-remover') {
-      if (!(await confirmar({ titulo: 'Remover orçamento', mensagem: 'Remover este orçamento?', confirmarLabel: 'Remover' }))) return;
-      return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Orçamento removido.' });
+      if (!(await confirmar({ titulo: 'Remover cotação', mensagem: 'Remover esta cotação?', confirmarLabel: 'Remover' }))) return;
+      return executar(() => dados.removerOrcamento(state.supabase, alvo.dataset.id), { sucesso: 'Cotação removida.' });
     }
     if (acao === 'orc-linha-add') {
       ov.querySelector('[data-orc-linhas]').insertAdjacentHTML('beforeend', htmlLinhaOrcamento({ tipo: alvo.dataset.tipo === 'servico' ? 'servico' : 'peca' }, { fixa: false }));
@@ -368,7 +372,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
           ...(!f.dataset.orcId && !state.orcs.some((x) => x.manutencao_id === m.id) ? { selecionado: true } : {}),
         });
         state.orcForm = null;
-      }, { sucesso: 'Orçamento salvo.' });
+      }, { sucesso: 'Cotação salva.' });
     }
 
     if (acao === 'nota-add') {
@@ -426,7 +430,7 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
   // Linhas do orçamento (peça/serviço, marca/observação, valor) como estão na tela.
   const linhasDoFormulario = (f) => [...f.querySelectorAll('[data-orc-linha]')].map((r) => ({
     nome: r.querySelector('[data-ol="nome"]').value, detalhe: r.querySelector('[data-ol="detalhe"]').value, valor: numeroOuNulo(r.querySelector('[data-ol="valor"]').value),
-    tipo: r.querySelector('[data-ol="tipo"]')?.value === 'servico' ? 'servico' : 'peca',
+    tipo: r.querySelector('[data-ol="tipo"]')?.value === 'servico' ? 'servico' : 'peca', faltante: !!r.querySelector('[data-ol="faltante"]')?.checked,
   }));
 
   // Peças = soma das linhas de peça, Mão de obra = soma das de serviço e total = peças + mão de obra, enquanto a pessoa não digitar
@@ -452,6 +456,12 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
   async function aoMudarFicha(e) {
     const m = fichaAtual(); if (!m) return;
     const alvo = e.target;
+    // Peça faltante na cotação: o fornecedor não tem; a linha perde o valor e sai da soma.
+    if (alvo.matches('[data-ol="faltante"]')) {
+      const linha = alvo.closest('[data-orc-linha]'); const valor = linha.querySelector('[data-ol="valor"]');
+      linha.classList.toggle('faltante', alvo.checked); valor.disabled = alvo.checked; if (alvo.checked) valor.value = '';
+      return recalcularOrcamento(alvo.closest('[data-orc-form]'));
+    }
     // NF ou comprovante que chegou depois, na própria nota (sem NF a nota fica em Aguardando NF; sem comprovante, em À pagar).
     if (alvo.matches('[data-anexar-nf],[data-anexar-comp]') && alvo.files?.[0]) {
       const ehNf = alvo.matches('[data-anexar-nf]');
@@ -474,20 +484,6 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
       if (valor === '') valor = null;
       if (typeof valor === 'string' && (campo === 'descricao' || campo === 'diagnostico')) valor = valor.trim() || null;
       return executar(() => dados.atualizarManutencao(state.supabase, m.id, { [campo]: valor }));
-    }
-    // Componentes do guia de um item já salvo: marcar ou desmarcar grava na hora.
-    if (alvo.matches('[data-comp]')) {
-      const linha = alvo.closest('[data-item-id]');
-      if (!linha) return; // item novo (ainda não adicionado): vale só ao clicar em "+ Adicionar"
-      return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, componentes: marcadosEm(linha) }));
-    }
-    // Itens: a descrição salva ao mudar (o grupo não se troca: remova o item e adicione de novo no grupo certo).
-    if (alvo.dataset.item) {
-      const linha = alvo.closest('[data-item-id]');
-      const campo = alvo.dataset.item;
-      const mudanca = { [campo]: campo === 'valor' ? numeroOuNulo(alvo.value) : (alvo.value === '' ? null : alvo.value) };
-      if (campo === 'descricao' && !alvo.value.trim()) return renderFicha();
-      return executar(() => dados.salvarItem(state.supabase, { id: linha.dataset.itemId, ...mudanca }));
     }
     // Orçamento: escolher a oficina cadastrada preenche nome e contato.
     if (alvo.dataset.o === 'oficina_id') {
@@ -645,7 +641,10 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
       if (topo && e.target === topo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternarFicha(topo.dataset.abrir); }
     });
     // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
-    lista.addEventListener('toggle', (e) => { if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open; }, true);
+    lista.addEventListener('toggle', (e) => {
+      if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open;
+      if (e.target?.dataset?.itensDet !== undefined) state.itensAberto = e.target.open;
+    }, true);
 
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });

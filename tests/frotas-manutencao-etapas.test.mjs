@@ -6,7 +6,8 @@ import {
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { buscarItens } from '../assets/js/modules/frotas-manutencao-seletor.js';
-import { htmlFicha } from '../assets/js/modules/frotas-manutencao-html.js';
+import { faltantesDoOrcamento, htmlFicha, htmlLinhaOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { linhasIniciais, normalizarLinhas, somarLinhas } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
 // solicitação: quem registra é da equipe de Frotas e a manutenção nasce em Cotações.
@@ -155,4 +156,55 @@ test('pagou antes ou a nota chegou antes: o que falta é anexado depois, na pró
   const completa = ficha([nota({ anexo_url: 'nf.pdf', comprovante_url: 'pix.png', pago_em: '2026-10-16T12:00:00Z' })]);
   assert.doesNotMatch(completa, /data-anexar-/);
   assert.doesNotMatch(ficha([]), /fm-mod-head/, 'ficha dentro do cartão não tem cabeçalho de janela');
+});
+
+test('ficha dentro do cartão: sem selo "Em orçamento" nem "Próximo passo"; selo só onde a etapa tem mais de um status', () => {
+  const ficha = (extra) => htmlFicha(m({ status: 'em_orcamento', ...extra }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  const emOrcamento = ficha({});
+  assert.doesNotMatch(emOrcamento, /Próximo passo|fm-etapa|>Em orçamento</);
+  assert.match(emOrcamento, /data-acao="ver-veiculo"/);
+  for (const status of ['em_aprovacao', 'reprovada', 'em_execucao']) assert.match(ficha({ status }), new RegExp(status === 'em_aprovacao' ? 'Em aprovação' : status === 'reprovada' ? 'Reprovada' : 'Em execução'), status);
+});
+
+test('a previsão de entrega fica à vista nos dados, fora de "Mais detalhes"', () => {
+  const html = htmlFicha(m({ status: 'em_orcamento', previsao_entrega: '2026-10-30' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  const antesDoMais = html.slice(0, html.indexOf('data-mais'));
+  assert.match(antesDoMais, /Previsão de entrega/);
+  assert.match(antesDoMais, /data-campo="previsao_entrega" value="2026-10-30"/);
+});
+
+test('cotação: botão "Adicionar cotação", valor total à vista e o detalhe por item opcional', () => {
+  const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  assert.match(ficha, /data-acao="orc-novo">\+ Adicionar cotação/);
+  assert.match(ficha, /Cotações \(0\)/);
+  const aberta = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, orcForm: true });
+  const antesDoDetalhe = aberta.slice(aberta.indexOf('data-orc-form'), aberta.indexOf('data-orc-itens'));
+  assert.match(antesDoDetalhe, /data-o="fornecedor"/);
+  assert.match(antesDoDetalhe, /data-o="valor_total"/, 'valor total antes do detalhe por item');
+  assert.match(aberta, /Detalhar por item/);
+  assert.match(aberta, /data-acao="orc-salvar">Adicionar cotação/);
+});
+
+test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica sem valor e a cotação mostra o que falta', () => {
+  const linha = htmlLinhaOrcamento({ nome: 'Disco de freio', tipo: 'peca', faltante: true, valor: 99 });
+  assert.match(linha, /data-ol="faltante" checked/);
+  assert.match(linha, /data-ol="valor"[^>]*disabled/);
+  assert.doesNotMatch(linha, /value="99"/, 'peça faltante não leva valor');
+  assert.match(htmlLinhaOrcamento({ nome: 'Disco', tipo: 'peca' }), />\s*Peça faltante<\/label>/);
+  const normal = normalizarLinhas([{ nome: 'Pastilha', valor: 120, tipo: 'peca' }, { nome: 'Disco', valor: 50, tipo: 'peca', faltante: true }, { nome: 'Fluido', tipo: 'peca' }]);
+  assert.deepEqual(normal, [{ nome: 'Pastilha', detalhe: '', valor: 120, tipo: 'peca' }, { nome: 'Disco', detalhe: '', valor: null, tipo: 'peca', faltante: true }]);
+  assert.equal(somarLinhas(normal, 'peca'), 120, 'a faltante não entra na soma');
+  assert.equal(linhasIniciais([itemFreio], normal).find((l) => l.nome === 'Disco').faltante, true);
+  const orc = { id: 'o1', manutencao_id: 'm1', fornecedor: 'Oficina A', valor_total: 120, selecionado: false, linhas: normal };
+  assert.deepEqual(faltantesDoOrcamento(orc), ['Disco']);
+  const ficha = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [orc], base, podeAprovar: true, semCabecalho: true });
+  assert.match(ficha, /Peça faltante: Disco/);
+  assert.match(ficha, /Cotações \(1\)/);
+});
+
+test('itens da manutenção: lista única que remove só o componente; o controlador trata o clique', () => {
+  const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
+  assert.match(ctrl, /acao === 'linha-remover'/);
+  assert.match(ctrl, /itensDet/, 'lembra se a lista está aberta ao redesenhar a ficha');
+  assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');
 });
