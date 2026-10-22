@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  ETAPAS, acoesDoCard, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa, situacaoPagamento,
+  COLUNAS, ETAPAS, acoesDoCard, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa, ordenarManutencoes, situacaoPagamento,
 } from '../assets/js/modules/frotas-manutencao-etapas.js';
+import { UFS_BRASIL, cidadesDaUf, htmlOpcoesCidade, rotuloCidadeUf } from '../assets/js/modules/frotas-manutencao-cidades.js';
 import { htmlCard, htmlCards, htmlCasca, htmlEtapas } from '../assets/js/modules/frotas-manutencao-cards.js';
 import { buscarItens } from '../assets/js/modules/frotas-manutencao-seletor.js';
-import { faltantesDoOrcamento, htmlFicha, htmlLinhaOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
-import { linhasIniciais, normalizarLinhas, somarLinhas } from '../assets/js/modules/frotas-manutencao-regras.js';
+import { faltantesDoOrcamento, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from '../assets/js/modules/frotas-manutencao-html.js';
+import { linhasIniciais, normalizarLinhas, somarLinhas, validarSolicitacao } from '../assets/js/modules/frotas-manutencao-regras.js';
 
 // Corretiva por etapas (modelo de Compras): a etapa é derivada do status do banco e dos pagamentos/notas. Não há etapa de
 // solicitação: quem registra é da equipe de Frotas e a manutenção nasce em Cotações.
@@ -95,22 +96,27 @@ test('ações da coluna da direita seguem o fluxo e, concluída, oferecem notas 
   assert.match(semPermissao.bloqueio, /aprovadores/);
 });
 
-test('cartão: só a primeira linha, ações à direita em linha e a ficha dentro do cartão (sem botão de voltar)', () => {
+test('cartão: uma linha com código, placa, responsável, cidade/UF, entrada e previsão; ações à direita; ficha no cartão', () => {
   const ctx = (extra = {}) => ({ itensPorManut: new Map([['m1', [itemFreio, itemMao]]]), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'cotacoes', aberto: null, podeAprovar: true, ...extra });
-  const cot = htmlCard(m({ status: 'em_orcamento', solicitante_nome: 'Ana' }), ctx());
+  const cot = htmlCard(m({ status: 'em_orcamento', solicitante_nome: 'Ana', cidade: 'Cascavel', uf: 'PR', solicitado_em: '2026-10-19T15:00:00Z', previsao_entrega: '2026-10-30' }), ctx());
   assert.match(cot, /class="fm-mc-acoes"/);
   assert.match(cot, /data-mc-acao="orcamento"/);
   assert.match(cot, /data-mc-acao="detalhes"/);
-  for (const txt of ['MAN-000072', 'BDK4J22', 'Renault Kwid', 'Barulho ao frear', 'Ana']) assert.match(cot, new RegExp(txt));
-  assert.doesNotMatch(cot, /data-check-|fm-mc-itens|Pastilha de freio/, 'sem caixas de marcar: os itens só aparecem na ficha');
-  assert.doesNotMatch(cot, /fm-badge|fm-mc-val/, 'o cabeçalho só tem código, veículo, motivo, data, solicitante e ações');
+  for (const [rot, valor] of [['Código', 'MAN-000072'], ['Placa', 'BDK4J22'], ['Responsável', 'Ana'], ['Cidade/UF', 'Cascavel/PR'], ['Entrada', '19/10/2026'], ['Previsão', '30/10/2026']]) {
+    assert.ok(cot.includes(`data-rot="${rot}"`) && cot.slice(cot.indexOf(`data-rot="${rot}"`)).includes(valor), `${rot}: ${valor}`);
+  }
+  assert.doesNotMatch(cot, /Pastilha de freio|data-check-|fm-badge/, 'itens e selos ficam fora da linha');
+  assert.match(cot, /title="[^"]*Barulho ao frear/, 'o motivo e o modelo ficam na dica da linha');
+  assert.match(htmlCard(m({ status: 'em_orcamento' }), ctx()), /data-rot="Cidade\/UF">—/, 'sem cidade: traço');
+  assert.match(htmlCard(m({ status: 'em_orcamento', previsao_entrega: '2020-01-01' }), ctx()), /fm-atraso/, 'previsão vencida em vermelho');
+  assert.doesNotMatch(htmlCard(m({ status: 'concluida', custo: 0, previsao_entrega: '2020-01-01' }), ctx()), /fm-atraso/, 'encerrada não atrasa');
   assert.doesNotMatch(cot, /id="fmFicha"/, 'fechado: sem ficha');
   const aberto = htmlCard(m({ status: 'em_orcamento' }), ctx({ aberto: 'm1' }));
   assert.match(aberto, /id="fmFicha" data-detalhe/);
   assert.match(aberto, /aria-expanded="true"/);
   assert.doesNotMatch(aberto, /Voltar/);
   const xss = '<img src=x onerror=alert(1)>';
-  assert.doesNotMatch(htmlCard(m({ descricao: xss, solicitante_nome: xss }), ctx()), /<img src=x/);
+  assert.doesNotMatch(htmlCard(m({ descricao: xss, solicitante_nome: xss, cidade: xss }), ctx()), /<img src=x/);
 });
 
 test('cada etapa é um cartão com contador (inclusive zero) que troca a lista', () => {
@@ -131,7 +137,7 @@ test('o controlador não tem página de ficha com botão de voltar: a ficha abre
   assert.doesNotMatch(ctrl, /Voltar para a lista/);
   assert.doesNotMatch(ctrl, /mostrarPagina|htmlPagina/);
   assert.match(ctrl, /openModal\(\{ id: NOVA/);
-  assert.match(ctrl, /mudarStatus\(state\.supabase, id, 'em_orcamento'\)/, 'a nova manutenção já nasce em cotação');
+  assert.match(ctrl, /mudarStatus\(state\.supabase, id, 'em_orcamento', \{ uf:/, 'a nova manutenção já nasce em cotação, com UF e cidade');
   assert.doesNotMatch(ctrl, /dividir|marcadas|solicitacoes/, 'sem etapa de solicitação nem marcação de itens no cartão');
   assert.doesNotMatch(lerArquivo('assets/js/modules/frotas-manutencao-html.js'), /Voltar para a lista/);
 });
@@ -257,4 +263,62 @@ test('Atualizar e Nova manutenção são ícones na linha das abas do painel de 
   assert.match(ctrl, /document\.querySelector\('\[data-hub-acoes\]'\)/);
   assert.match(ctrl, /htmlCasca\(\{ comTopo: !hub \}\)/);
   assert.match(lerArquivo('assets/css/frotas-hub.css'), /\.frotas-hub-acoes\s*\{/);
+});
+
+test('cabeçalho ordenável: código, placa, responsável, cidade/UF, entrada e previsão', () => {
+  const cab = htmlCards([m({ status: 'em_orcamento' })], { itensPorManut: new Map(), orcsPorManut: new Map(), notasPorManut: new Map(), base, etapa: 'cotacoes', aberto: null, podeAprovar: true, ordem: { coluna: 'placa', sentido: 'desc' } });
+  assert.deepEqual([...cab.matchAll(/data-ordenar="(\w+)"/g)].map((x) => x[1]), COLUNAS.map((c) => c.id));
+  assert.deepEqual(COLUNAS.map((c) => c.rotulo), ['Código', 'Placa', 'Responsável', 'Cidade/UF', 'Entrada', 'Previsão']);
+  assert.match(cab, /data-ordenar="placa" aria-sort="descending"[^>]*>Placa<span aria-hidden="true">▼/);
+  assert.match(cab, /data-ordenar="codigo" aria-sort="none"/);
+  assert.doesNotMatch(htmlCards([], { etapa: 'cotacoes' }), /data-ordenar/, 'sem manutenções não há cabeçalho');
+});
+
+test('ordenar por coluna: texto sem acento, datas, código numérico; vazio sempre no fim; sem coluna mantém a ordem', () => {
+  const l = [
+    m({ id: 'a', numero: 10, __placa: 'BBB1B11', solicitante_nome: 'Zé', uf: 'PR', cidade: 'Cascavel', solicitado_em: '2026-10-20T10:00:00Z', previsao_entrega: '2026-11-02' }),
+    m({ id: 'b', numero: 9, __placa: 'AAA1A11', solicitante_nome: 'Ana', uf: 'MT', cidade: 'Sorriso', solicitado_em: '2026-10-21T10:00:00Z', previsao_entrega: null }),
+    m({ id: 'c', numero: 100, __placa: 'CCC1C11', solicitante_nome: 'álvaro', uf: null, cidade: null, solicitado_em: '2026-10-19T10:00:00Z', previsao_entrega: '2026-10-25' }),
+  ];
+  const ids = (coluna, sentido = 'asc') => ordenarManutencoes(l, { coluna, sentido }).map((x) => x.id);
+  assert.deepEqual(ids('codigo'), ['b', 'a', 'c'], 'código é número: 9 < 10 < 100');
+  assert.deepEqual(ids('codigo', 'desc'), ['c', 'a', 'b']);
+  assert.deepEqual(ids('placa'), ['b', 'a', 'c']);
+  assert.deepEqual(ids('responsavel'), ['c', 'b', 'a'], 'álvaro antes de Ana, sem acento');
+  assert.deepEqual(ids('cidade'), ['b', 'a', 'c'], 'MT antes de PR; sem cidade no fim');
+  assert.deepEqual(ids('cidade', 'desc'), ['a', 'b', 'c'], 'sem cidade no fim também no sentido inverso');
+  assert.deepEqual(ids('entrada', 'desc'), ['b', 'a', 'c']);
+  assert.deepEqual(ids('previsao'), ['c', 'a', 'b'], 'sem previsão no fim');
+  assert.deepEqual(ids('previsao', 'desc'), ['a', 'c', 'b']);
+  assert.deepEqual(ordenarManutencoes(l, null).map((x) => x.id), ['a', 'b', 'c']);
+  const emOrcamento = l.map((x) => ({ ...x, status: 'em_orcamento' }));
+  assert.deepEqual(manutencoesDaEtapa(emOrcamento, { etapa: 'cotacoes', ordem: { coluna: 'placa', sentido: 'asc' } }).map((x) => x.id), ['b', 'a', 'c']);
+  assert.deepEqual(manutencoesDaEtapa(emOrcamento, { etapa: 'cotacoes', busca: 'sorriso' }).map((x) => x.id), ['b'], 'a busca acha pela cidade');
+});
+
+test('nova manutenção: UF e cidade (relação do IBGE), obrigatórias, gravadas junto com o início da cotação', () => {
+  const baseNova = { ...base, veiculos: [], colaboradores: [] };
+  const nova = htmlFormNova(baseNova, { uf: 'PR', cidade: 'Cascavel' });
+  assert.match(nova, /data-n-uf>[^]*?<option value="PR" selected>PR<\/option>/);
+  assert.match(nova, /data-n-cidade>[^]*?<option value="Cascavel" selected>Cascavel<\/option>/, 'cidade já escolhida (preset) aparece mesmo antes de baixar a lista');
+  assert.match(htmlFormNova(baseNova, {}), /data-n-cidade disabled>[^]*?Escolha a UF/);
+  const base1 = { veiculo_id: 'v', descricao: 'x', itens: [{ categoria_codigo: 1 }] };
+  assert.deepEqual(validarSolicitacao({ ...base1, uf: '', cidade: '' }), ['Escolha a UF.']);
+  assert.deepEqual(validarSolicitacao({ ...base1, uf: 'PR', cidade: '' }), ['Escolha a cidade.']);
+  assert.deepEqual(validarSolicitacao({ ...base1, uf: 'PR', cidade: 'Cascavel' }), []);
+  assert.deepEqual(validarSolicitacao(base1), [], 'quem não informa local (outros caminhos) não é cobrado');
+});
+
+test('cidades do IBGE: por UF em ordem alfabética, mesmo cache da abertura de OS', () => {
+  const lista = [{ nome: 'Sorriso', uf: 'MT' }, { nome: 'Água Boa', uf: 'MT' }, { nome: 'Cascavel', uf: 'PR' }, { nome: 'Alta Floresta', uf: 'MT' }];
+  assert.deepEqual(cidadesDaUf('MT', lista), ['Água Boa', 'Alta Floresta', 'Sorriso']);
+  assert.deepEqual(cidadesDaUf('', lista), []);
+  assert.equal(UFS_BRASIL.length, 27);
+  assert.match(htmlOpcoesCidade('MT', 'Sorriso', lista), /<option value="Sorriso" selected>/);
+  assert.match(htmlOpcoesCidade('MT', 'Cidade Antiga', lista), /<option value="Cidade Antiga" selected>/, 'cidade gravada que a lista não tem não some');
+  assert.equal(htmlOpcoesCidade('', '', lista), '<option value="">Escolha a UF</option>');
+  assert.equal(rotuloCidadeUf({ cidade: 'Cascavel', uf: 'PR' }), 'Cascavel/PR');
+  assert.equal(rotuloCidadeUf({}), '');
+  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-cidades.js'), /grm:cidades_ibge:v1/, 'o cache é o mesmo de logistica.js e programacao.js');
+  assert.match(lerArquivo('supabase/migrations/20261022140000_frotas_manutencao_cidade_uf.sql'), /add column if not exists uf text[^]*add column if not exists cidade text/);
 });

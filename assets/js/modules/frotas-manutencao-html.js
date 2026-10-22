@@ -1,5 +1,6 @@
 // Frotas · Manutenção: montagem de HTML (lista, ficha em modal e formulários). Sem acesso ao banco.
 import { esc, dataBR, dataHoraBR, dinheiro } from '../core/ui.js';
+import { htmlOpcoesUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
 import { htmlSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import {
   itensDoGrupo, tipoDoComponente, grupoDaCategoria, nomeDoGrupoDaCategoria, NATUREZAS, PRIORIDADES, RESPONSAVEIS, ORIGENS, acoesDisponiveis, camposEditaveis, codigoManutencao,
@@ -76,6 +77,8 @@ export function htmlFormNova(base, preset = {}) {
           <div class="fm-field"><label>Quem pediu</label><input class="fm-input" data-n-solicitante data-auto="${preset.solicitante_nome ? '0' : '1'}" list="fmListaColaboradores" autocomplete="off" maxlength="120" placeholder="Condutor ou outra pessoa" value="${esc(preset.solicitante_nome || veiculo?.motorista_atual || '')}"><datalist id="fmListaColaboradores">${(base.colaboradores || []).map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist></div>
           <div class="fm-field"><label>Prioridade</label><select class="fm-select" data-n-prioridade>${opcoes(PRIORIDADES, preset.prioridade || 'normal')}</select></div>
           <div class="fm-field fm-nova-parado"><label>Situação</label><label class="fm-check fm-check-caixa"><input type="checkbox" data-n-parado${preset.veiculo_parado ? ' checked' : ''}> Veículo parado</label></div>
+          <div class="fm-field"><label>UF *</label><select class="fm-select" data-n-uf>${htmlOpcoesUf(preset.uf || '')}</select></div>
+          <div class="fm-field"><label>Cidade *</label><select class="fm-select" data-n-cidade${preset.uf ? '' : ' disabled'}>${htmlOpcoesCidade(preset.uf || '', preset.cidade || '')}</select></div>
           <div class="fm-field fm-nova-problema"><label>Problema / serviço solicitado</label><textarea data-n-descricao placeholder="Ex.: barulho ao frear, revisão dos 20.000 km...">${esc(preset.descricao || '')}</textarea></div>
         </div></section>
       <section class="fm-sec fm-nova-itens" data-seletor-sec><h4>O que será feito <span class="fm-obrig">obrigatório</span></h4>

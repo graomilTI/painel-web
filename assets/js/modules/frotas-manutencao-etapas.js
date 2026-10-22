@@ -2,7 +2,7 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { acoesDisponiveis, filtrarManutencoes } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
+import { acoesDisponiveis, filtrarManutencoes, norm } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
 export const ETAPAS = [
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
@@ -50,10 +50,44 @@ export function contarPorEtapa(lista = [], notasPorManut = new Map()) {
   return out;
 }
 
+// Colunas da lista (cabeçalho ordenável). Entrada = data em que a manutenção entrou (registro); Previsão = previsão de saída.
+export const COLUNAS = [
+  { id: 'codigo', rotulo: 'Código' },
+  { id: 'placa', rotulo: 'Placa' },
+  { id: 'responsavel', rotulo: 'Responsável' },
+  { id: 'cidade', rotulo: 'Cidade/UF' },
+  { id: 'entrada', rotulo: 'Entrada' },
+  { id: 'previsao', rotulo: 'Previsão' },
+];
+
+const VALOR_ORDEM = {
+  codigo: (m) => Number(m.numero) || 0,
+  placa: (m) => norm(m.__placa),
+  responsavel: (m) => norm(m.solicitante_nome),
+  cidade: (m) => norm(`${m.uf || ''} ${m.cidade || ''}`.trim()),
+  entrada: (m) => String(m.solicitado_em || ''),
+  previsao: (m) => String(m.previsao_entrega || ''),
+};
+
+// Ordena por uma coluna (asc | desc). Sem valor (cidade ou previsão em branco) vai sempre para o fim, em qualquer sentido.
+export function ordenarManutencoes(lista, ordem) {
+  const valor = VALOR_ORDEM[ordem?.coluna];
+  if (!valor) return lista;
+  const sentido = ordem.sentido === 'desc' ? -1 : 1;
+  const vazio = (v) => v === '' || v === 0;
+  return lista.map((m, i) => ({ m, i, v: valor(m) })).sort((a, b) => {
+    if (vazio(a.v) !== vazio(b.v)) return vazio(a.v) ? 1 : -1;
+    const c = typeof a.v === 'number' ? a.v - b.v : String(a.v).localeCompare(String(b.v), 'pt-BR');
+    return c * sentido || a.i - b.i;
+  }).map((x) => x.m);
+}
+
 // Manutenções da etapa (com busca e urgentes primeiro). Encerradas saem do mais recente para o mais antigo.
-export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, busca = '' } = {}, { itensPorManut = new Map(), notasPorManut = new Map(), categorias = [] } = {}) {
+export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, busca = '', ordem = null } = {}, { itensPorManut = new Map(), notasPorManut = new Map(), categorias = [] } = {}) {
   const daEtapa = lista.filter((m) => etapaDaManutencao(m, notasPorManut.get(m.id) || []) === etapa);
   const achadas = filtrarManutencoes(daEtapa, { filtro: 'todos', visao: 'todas', busca }, itensPorManut, categorias);
+  // Coluna escolhida no cabeçalho manda; sem escolha, o padrão: encerradas do mais recente ao mais antigo, as outras urgentes primeiro.
+  if (ordem?.coluna) return ordenarManutencoes(achadas, ordem);
   if (['concluido', 'nf', 'apagar', 'canceladas'].includes(etapa)) {
     const quando = (m) => String(m.concluida_em || m.solicitado_em || '');
     return [...achadas].sort((a, b) => quando(b).localeCompare(quando(a)));

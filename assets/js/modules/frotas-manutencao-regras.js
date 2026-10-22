@@ -381,15 +381,18 @@ export function filtrarManutencoes(lista, { filtro = 'todos', visao = 'andamento
     if (!bateVisao(m, visao) || !bateFiltro(m, filtro)) return false;
     if (!termo) return true;
     const cats = (itensPorManut.get(m.id) || []).map((i) => `${i.categoria_codigo} ${nomeCategoria.get(i.categoria_codigo) || ''} ${i.descricao || ''}`).join(' ');
-    return norm([codigoManutencao(m), m.__placa, m.__modelo, m.descricao, m.oficina, m.motorista_nome, m.os_numero, cats].join(' ')).includes(termo);
+    return norm([codigoManutencao(m), m.__placa, m.__modelo, m.descricao, m.oficina, m.motorista_nome, m.solicitante_nome, m.cidade, m.uf, m.os_numero, cats].join(' ')).includes(termo);
   });
   if (visao === 'encerradas') return achadas;
   return achadas.map((m, i) => ({ m, i })).sort((a, b) => ((RANK_PRIORIDADE[a.m.prioridade] ?? 2) - (RANK_PRIORIDADE[b.m.prioridade] ?? 2)) || a.i - b.i).map((x) => x.m);
 }
 
 // ---------- validações dos formulários ----------
-export function validarSolicitacao({ veiculo_id, descricao, itens = [] }) {
+export function validarSolicitacao({ veiculo_id, descricao, itens = [], uf, cidade }) {
   const erros = [];
+  // UF e cidade só são cobradas de quem informa (a nova manutenção da Corretiva sempre informa).
+  if (uf !== undefined && !String(uf || '').trim()) erros.push('Escolha a UF.');
+  else if (cidade !== undefined && !String(cidade || '').trim()) erros.push('Escolha a cidade.');
   if (!veiculo_id) erros.push('Selecione o veículo.');
   if (!String(descricao || '').trim()) erros.push('Descreva o problema ou o serviço.');
   if (!itens.length) erros.push('Marque ao menos um item do que será feito (escolha o grupo e marque os itens).');
