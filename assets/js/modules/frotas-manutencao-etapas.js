@@ -1,13 +1,11 @@
-// Frotas · Manutenção › Corretiva: etapas da tela (mesmo modelo de Compras: Solicitações, Cotações, Em andamento, À pagar,
-// Aguardando NF, Concluído) e as linhas marcáveis de cada manutenção (peças, mão de obra e serviços). Regras puras, sem DOM
-// nem Supabase. O banco continua com UM status por manutenção (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import {
-  MAO_DE_OBRA, acoesDisponiveis, filtrarManutencoes, grupoDaCategoria, nomeDoGrupoDaCategoria,
-} from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
+// Frotas · Manutenção › Corretiva: etapas da tela (mesmo modelo de Compras: Cotações, Em andamento, À pagar, Aguardando NF,
+// Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
+// solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
+// (frotas_manutencoes_fluxo); a etapa é derivada dele.
+import { acoesDisponiveis, filtrarManutencoes } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
 export const ETAPAS = [
-  { id: 'solicitacoes', rotulo: 'Solicitações', dica: 'Pedidos novos. Marque o que vai para a cotação (peças, mão de obra ou serviço); sem marcação segue a solicitação inteira e o que não for marcado continua aqui.' },
-  { id: 'cotacoes', rotulo: 'Cotações', dica: 'Só o que foi marcado na solicitação. Cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
+  { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
   { id: 'andamento', rotulo: 'Em andamento', dica: 'Aprovadas: emita a OS, acompanhe o veículo na oficina e conclua informando o serviço realizado, o km e o custo.' },
   { id: 'apagar', rotulo: 'À pagar', dica: 'Serviço concluído e ainda sem pagamento. Cadastre as notas e o comprovante; ao enviar, o pagamento vai para o Financeiro e a nota para o GRM.' },
   { id: 'nf', rotulo: 'Aguardando NF', dica: 'Pagas, mas ainda sem a nota fiscal anexada.' },
@@ -15,7 +13,7 @@ export const ETAPAS = [
   { id: 'canceladas', rotulo: 'Canceladas', dica: 'Manutenções canceladas.' },
 ];
 
-export const ETAPA_PADRAO = 'solicitacoes';
+export const ETAPA_PADRAO = 'cotacoes';
 
 // Pagamento e nota da manutenção concluída. Só a que a empresa paga e tem custo passa por À pagar e Aguardando NF:
 // À pagar = falta pagar; Aguardando NF = pago, mas falta a NF de alguma nota ou lançá-la (enviar ao GRM/Financeiro).
@@ -30,7 +28,7 @@ export function situacaoPagamento(m, notas = []) {
 
 export function etapaDaManutencao(m, notas = []) {
   switch (m?.status) {
-    case 'solicitada': return 'solicitacoes';
+    case 'solicitada': // registrada por outro caminho (plano, checklist, gestor): também começa em Cotações
     case 'em_orcamento':
     case 'em_aprovacao':
     case 'reprovada': return 'cotacoes';
@@ -63,60 +61,9 @@ export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, busca = '' } =
   return achadas;
 }
 
-// ---------- linhas marcáveis ----------
-// Cada manutenção tem itens (um de peças e um de serviço por grupo do guia) e cada item lista seus componentes. A tela mostra
-// UMA linha por componente (peça, serviço do guia ou Mão de obra); item sem componentes (checklist, texto livre) é uma linha só.
-export function linhasDosItens(itens = [], base = {}) {
-  const linhas = [];
-  for (const it of itens) {
-    const grupo = nomeDoGrupoDaCategoria(base, it.categoria_codigo) || 'Outros';
-    const grupoCod = grupoDaCategoria(base.categorias || [], it.categoria_codigo);
-    const componentes = Array.isArray(it.componentes) ? it.componentes : [];
-    const atomico = !componentes.length;
-    for (const nome of (atomico ? [it.descricao || '—'] : componentes)) {
-      const doGuia = (base.componentes || []).find((c) => Number(c.grupo_codigo) === Number(grupoCod) && c.nome === nome);
-      const tipo = nome === MAO_DE_OBRA ? 'servico' : (doGuia?.tipo || (it.tipo_item === 'peca' ? 'peca' : 'servico'));
-      const escolhida = it.pecas && typeof it.pecas === 'object' ? it.pecas[nome] : null;
-      linhas.push({
-        key: `${it.id}|${atomico ? '' : nome}`, item_id: it.id, grupo, nome, tipo, atomico,
-        maoDeObra: nome === MAO_DE_OBRA, detalhe: escolhida?.detalhe || '', valor: escolhida?.valor ?? null,
-      });
-    }
-  }
-  return linhas;
-}
-
-// Linhas por grupo, na ordem em que aparecem; o mesmo grupo em itens diferentes (peças e serviço) fica junto.
-export function agruparLinhas(linhas = []) {
-  const grupos = new Map();
-  for (const l of linhas) {
-    if (!grupos.has(l.grupo)) grupos.set(l.grupo, []);
-    grupos.get(l.grupo).push(l);
-  }
-  return [...grupos].map(([grupo, lista]) => ({ grupo, linhas: lista }));
-}
-
-// O que marcar vira o pedido da RPC frotas_manutencao_dividir: { item_id, componentes? } por item. `todas`: não há o que separar
-// (a solicitação inteira segue); `nenhuma`: nada marcado (quem chama decide: aqui também segue a solicitação inteira).
-export function resolverSelecao(linhas = [], marcadas = new Set()) {
-  const vao = linhas.filter((l) => marcadas.has(l.key));
-  if (!vao.length) return { nenhuma: true, todas: false, selecao: [], quantas: 0 };
-  if (vao.length === linhas.length) return { nenhuma: false, todas: true, selecao: [], quantas: vao.length };
-  const porItem = new Map();
-  for (const l of vao) {
-    const e = porItem.get(l.item_id) || { item_id: l.item_id, componentes: [], atomico: l.atomico };
-    if (!l.atomico) e.componentes.push(l.nome);
-    porItem.set(l.item_id, e);
-  }
-  return {
-    nenhuma: false, todas: false, quantas: vao.length,
-    selecao: [...porItem.values()].map((e) => (e.atomico ? { item_id: e.item_id } : { item_id: e.item_id, componentes: e.componentes })),
-  };
-}
-
 // ---------- ações da coluna da direita ----------
 const ACOES = {
-  iniciar_orcamento: { icone: 'tag', titulo: 'Cotar (itens marcados)' },
+  iniciar_orcamento: { icone: 'tag', titulo: 'Iniciar a cotação' },
   reabrir_orcamento: { icone: 'tag', titulo: 'Refazer o orçamento' },
   enviar_aprovacao: { icone: 'send', titulo: 'Enviar para aprovação' },
   aprovar_sem_orcamento: { icone: 'check', titulo: 'Aprovar sem orçamento' },
@@ -133,8 +80,6 @@ export function acoesDoCard(m, { podeAprovar = false, itens = [], orcamentos = [
   const doFluxo = acoesDisponiveis(m, { podeAprovar, itens, orcamentos }).map((a) => ({
     id: a.id, tom: a.tom, bloqueio: a.bloqueio, ...(ACOES[a.id] || { icone: 'check', titulo: a.rotulo }),
   }));
-  // Cotar é a ação da etapa: fica no topo da coluna mesmo para quem também pode aprovar direto.
-  doFluxo.sort((a, b) => (b.id === 'iniciar_orcamento') - (a.id === 'iniciar_orcamento'));
   // Em cotação, a ação da etapa é cadastrar o orçamento: abre a ficha já com o formulário.
   if (m?.status === 'em_orcamento' || m?.status === 'reprovada') {
     doFluxo.unshift({ id: 'orcamento', icone: 'mais', titulo: 'Adicionar orçamento', tom: 'soft', bloqueio: null });
