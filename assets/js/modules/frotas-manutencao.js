@@ -15,6 +15,7 @@ import {
 } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
 import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
 import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
+import { carregarCidades, cidadesDaUf, htmlOpcoesCidade } from './frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas-manut45';
 
@@ -28,7 +29,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     base: { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] },
     manut: [], itens: [], orcs: [], notas: [],
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
-    etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '',
+    etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '', ordem: null, // ordem: { coluna, sentido } escolhida no cabeçalho
     loading: false, ocupado: false,
     fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
@@ -68,7 +69,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
   // ---------- lista ----------
   function contextoCards(ind = indices()) {
     return {
-      ...ind, base: state.base, etapa: state.etapa, aberto: state.fichaId, podeAprovar: podeAprovar(),
+      ...ind, base: state.base, etapa: state.etapa, ordem: state.ordem, aberto: state.fichaId, podeAprovar: podeAprovar(),
     };
   }
 
@@ -77,7 +78,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     const ind = indices();
     root.querySelector('[data-etapas]').innerHTML = htmlEtapas(contarPorEtapa(state.manut, ind.notasPorManut), state.etapa);
     const daEtapa = state.manut.filter((m) => etapaDe(m) === state.etapa);
-    const linhas = manutencoesDaEtapa(state.manut, { etapa: state.etapa, busca: state.busca }, { ...ind, categorias: state.base.categorias });
+    const linhas = manutencoesDaEtapa(state.manut, { etapa: state.etapa, busca: state.busca, ordem: state.ordem }, { ...ind, categorias: state.base.categorias });
     // A ficha aberta é redesenhada só por renderFicha: o nó dela passa para o cartão novo (não se perde o que foi digitado).
     const lista = root.querySelector('[data-lista]');
     const detalhe = lista.querySelector('[data-detalhe]');
@@ -483,6 +484,12 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
   }
 
   function aoClicarLista(e) {
+    const col = e.target.closest('[data-ordenar]');
+    if (col) {
+      const c = col.dataset.ordenar;
+      state.ordem = state.ordem?.coluna === c ? { coluna: c, sentido: state.ordem.sentido === 'asc' ? 'desc' : 'asc' } : { coluna: c, sentido: c === 'entrada' ? 'desc' : 'asc' };
+      renderLista(); return;
+    }
     const acao = e.target.closest('[data-mc-acao]');
     if (acao) { aoAcaoCard(acao); return; }
     const topo = e.target.closest('[data-abrir]');
@@ -523,12 +530,26 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
       else return;
       atualizarSugestoes();
     });
+    // UF libera a lista de cidades daquela UF (relação do IBGE, como na abertura de OS).
+    const campoUf = ov.querySelector('[data-n-uf]'); const campoCidade = ov.querySelector('[data-n-cidade]');
+    const preencherCidades = async (selecionada = '') => {
+      campoCidade.disabled = !campoUf.value;
+      if (!campoUf.value) { campoCidade.innerHTML = htmlOpcoesCidade(''); return; }
+      campoCidade.innerHTML = '<option value="">Carregando cidades...</option>';
+      await carregarCidades();
+      campoCidade.innerHTML = htmlOpcoesCidade(campoUf.value, selecionada, undefined);
+      if (!cidadesDaUf(campoUf.value).length && !selecionada) campoCidade.innerHTML = '<option value="">Sem lista do IBGE: tente de novo</option>';
+      ov.__pendencias?.();
+    };
+    campoUf.addEventListener('change', () => preencherCidades(''));
+    if (preset.uf) preencherCidades(preset.cidade || '');
     // Pendências ao vivo no resumo: o que ainda falta para registrar.
     ov.__pendencias = () => {
       const prontos = ov.querySelectorAll('[data-novo-item]').length;
       const itens = prontos + (ov.__seletor?.qtd() || 0);
       const pend = [
         [!!veiculoDaDigitacao(val(ov, '[data-n-veiculo]')), 'Veículo escolhido'],
+        [!!campoUf.value && !!campoCidade.value, 'UF e cidade escolhidas'],
         [!!val(ov, '[data-n-descricao]').trim(), 'Problema descrito'],
         [itens > 0, 'Ao menos um item marcado'],
       ];
@@ -567,7 +588,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     // Itens já informados (checklist ou plano) mais o que foi marcado no seletor.
     const itens = [...ov.querySelectorAll('[data-novo-item]')].map((linha) => JSON.parse(linha.dataset.itemJson)).concat(ov.__seletor?.ler() || []);
     const descricao = val(ov, '[data-n-descricao]').trim();
-    const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens });
+    const lista = validarSolicitacao({ veiculo_id: veiculo?.id, descricao, itens, uf: val(ov, '[data-n-uf]'), cidade: val(ov, '[data-n-cidade]') });
     if (lista.length) { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); return; }
     if (state.ocupado) return;
     state.ocupado = true;
@@ -585,7 +606,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
       closeModal(NOVA);
       // Quem registra é da equipe de Frotas: a manutenção já nasce em cotação (sem etapa de solicitação). Quem pede pela
       // supervisão do veículo (sem o módulo) não pode mexer no status: a manutenção fica solicitada para a equipe.
-      await dados.mudarStatus(state.supabase, id, 'em_orcamento').catch(() => {});
+      await dados.mudarStatus(state.supabase, id, 'em_orcamento', { uf: val(ov, '[data-n-uf]'), cidade: val(ov, '[data-n-cidade]') }).catch(() => {});
       await recarregarUma(id).catch(() => {});
       // Quem pede pela supervisão do veículo (sem o módulo Manutenção) não lê a tabela: só avisa que foi enviada.
       if (state.manut.some((m) => m.id === id)) {

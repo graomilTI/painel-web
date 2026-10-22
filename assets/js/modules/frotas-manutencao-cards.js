@@ -3,7 +3,8 @@
 import { esc } from '../core/ui.js';
 import { cardFiltro } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
 import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
-import { ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
+import { rotuloCidadeUf } from './frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
+import { COLUNAS, ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -61,6 +62,21 @@ function htmlAcoes(m, acoes, aberto) {
   return `<div class="fm-mc-acoes" role="group" aria-label="Ações">${botoes}${ver}</div>`;
 }
 
+// ---------- cabeçalho ordenável ----------
+// Clicar numa coluna ordena por ela; clicar de novo inverte (▲ crescente, ▼ decrescente).
+export function htmlCabecalho(ordem) {
+  const colunas = COLUNAS.map((c) => {
+    const ativa = ordem?.coluna === c.id;
+    const seta = ativa ? (ordem.sentido === 'desc' ? '▼' : '▲') : '';
+    return `<button type="button" class="fm-mc-cab-col${ativa ? ' ativa' : ''}" data-ordenar="${c.id}" aria-sort="${ativa ? (ordem.sentido === 'desc' ? 'descending' : 'ascending') : 'none'}" title="Ordenar por ${esc(c.rotulo)}">${esc(c.rotulo)}<span aria-hidden="true">${seta}</span></button>`;
+  }).join('');
+  return `<div class="fm-mc-cab" role="row"><span></span>${colunas}<span></span></div>`;
+}
+
+const dataCurta = (ts) => (ts ? new Date(ts).toLocaleDateString('pt-BR') : '—');
+const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+const dataDia = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
+
 // ---------- cartão de manutenção ----------
 export function htmlCard(m, c) {
   const itens = c.itensPorManut.get(m.id) || [];
@@ -70,12 +86,14 @@ export function htmlCard(m, c) {
   const acoes = acoesDoCard(m, { podeAprovar: c.podeAprovar, itens, orcamentos: orcs, notas });
   return `<article class="fm-mc${aberto ? ' aberto' : ''}" data-mc="${esc(m.id)}">
     <div class="fm-mc-corpo">
-      <div class="fm-mc-topo" data-abrir="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${aberto}">
+      <div class="fm-mc-topo" data-abrir="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${aberto}" title="${esc([m.__modelo, m.descricao].filter(Boolean).join(' · '))}">
         <span class="fm-mc-seta" aria-hidden="true">▸</span>
-        <div class="fm-mc-cod"><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}</div>
-        <div class="fm-mc-veic"><strong>${esc(m.__placa || '—')}</strong><span class="fm-mm">${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</span></div>
-        <div class="fm-mc-desc"><span>${esc((m.descricao || '').slice(0, 110))}${(m.descricao || '').length > 110 ? '…' : ''}</span></div>
-        <div class="fm-mc-quando"><strong>${m.solicitado_em ? esc(new Date(m.solicitado_em).toLocaleDateString('pt-BR')) : '—'}</strong><span class="fm-mm">${esc(m.solicitante_nome || '')}</span></div>
+        <div class="fm-mc-cel" data-rot="Código"><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}</div>
+        <div class="fm-mc-cel" data-rot="Placa"><strong>${esc(m.__placa || '—')}</strong></div>
+        <div class="fm-mc-cel" data-rot="Responsável">${esc(m.solicitante_nome || '—')}</div>
+        <div class="fm-mc-cel" data-rot="Cidade/UF">${esc(rotuloCidadeUf(m) || '—')}</div>
+        <div class="fm-mc-cel" data-rot="Entrada">${esc(dataCurta(m.solicitado_em))}</div>
+        <div class="fm-mc-cel${m.previsao_entrega && m.previsao_entrega < hojeISO() && !['concluida', 'cancelada'].includes(m.status) ? ' fm-atraso' : ''}" data-rot="Previsão">${esc(dataDia(m.previsao_entrega))}</div>
         ${htmlAcoes(m, acoes, aberto)}
       </div>
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
@@ -88,5 +106,5 @@ export function htmlCards(rows, c) {
     const msg = c.etapa === 'cotacoes' ? 'Nenhuma manutenção em cotação. Use "+ Nova manutenção" para registrar uma.' : 'Nenhuma manutenção nesta etapa.';
     return `<div class="fm-empty">${esc(msg)}</div>`;
   }
-  return rows.map((m) => htmlCard(m, c)).join('');
+  return `${htmlCabecalho(c.ordem)}${rows.map((m) => htmlCard(m, c)).join('')}`;
 }
