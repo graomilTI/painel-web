@@ -2,7 +2,7 @@
 // Concluído). Quem registra a manutenção já é da equipe de Frotas (está aprovada para registrar), então não há etapa de
 // solicitação: ela nasce em Cotações. Regras puras, sem DOM nem Supabase. O banco continua com UM status por manutenção
 // (frotas_manutencoes_fluxo); a etapa é derivada dele.
-import { MAO_DE_OBRA, acoesDisponiveis, filtrarManutencoes, grupoDaCategoria, nomeDoGrupoDaCategoria } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
+import { acoesDisponiveis, filtrarManutencoes } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
 export const ETAPAS = [
   { id: 'cotacoes', rotulo: 'Cotações', dica: 'Manutenções recém-registradas: cadastre os orçamentos, envie para aprovação e, aprovada, ela segue para Em andamento. As reprovadas voltam para cá.' },
@@ -59,26 +59,6 @@ export function manutencoesDaEtapa(lista, { etapa = ETAPA_PADRAO, busca = '' } =
     return [...achadas].sort((a, b) => quando(b).localeCompare(quando(a)));
   }
   return achadas;
-}
-
-// ---------- itens da manutenção em lista única ----------
-// Cada item tem os componentes marcados (um de peças e um de serviço por grupo do guia); a ficha mostra UMA linha por componente
-// (peça, serviço do guia ou Mão de obra). Item sem componentes (checklist, texto livre) é uma linha só.
-export function linhasDosItens(itens = [], base = {}) {
-  const linhas = [];
-  for (const it of itens) {
-    const grupo = nomeDoGrupoDaCategoria(base, it.categoria_codigo) || 'Outros';
-    const grupoCod = grupoDaCategoria(base.categorias || [], it.categoria_codigo);
-    const componentes = Array.isArray(it.componentes) ? it.componentes : [];
-    const atomico = !componentes.length;
-    for (const nome of (atomico ? [it.descricao || '—'] : componentes)) {
-      const doGuia = (base.componentes || []).find((c) => Number(c.grupo_codigo) === Number(grupoCod) && c.nome === nome);
-      const tipo = nome === MAO_DE_OBRA ? 'servico' : (doGuia?.tipo || (it.tipo_item === 'peca' ? 'peca' : 'servico'));
-      const escolhida = it.pecas && typeof it.pecas === 'object' ? it.pecas[nome] : null;
-      linhas.push({ item_id: it.id, grupo, nome, tipo, atomico, maoDeObra: nome === MAO_DE_OBRA, detalhe: escolhida?.detalhe || '', valor: escolhida?.valor ?? null });
-    }
-  }
-  return linhas;
 }
 
 // ---------- ações da coluna da direita ----------

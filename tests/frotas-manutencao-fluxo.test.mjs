@@ -152,12 +152,8 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   assert.match(nova0, /obrigatório/);
   const it = { ...item, componentes: ['Discos de freio'] };
   const editavel = htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
-  // itens da manutenção: lista única (uma linha por componente) que minimiza; remove só aquele componente
-  assert.match(editavel, /<details class="fm-sec fm-mais" data-itens-det><summary>Itens da manutenção \(1\)/, 'minimizada por padrão');
-  assert.match(editavel, /fm-il-nome">Discos de freio/);
-  assert.doesNotMatch(editavel, /Pastilhas de freio/, 'só os componentes da manutenção, não o catálogo do grupo');
-  assert.match(editavel, /data-acao="linha-remover" data-item="i1" data-nome="Discos de freio"/);
-  assert.match(htmlFicha(m({ status: 'em_orcamento' }), { itens: [it], orcamentos: [], base: b, podeAprovar: false, itensAberto: true }), /data-itens-det open/);
+  // não há lista de itens à parte na ficha (as linhas de cada cotação já trazem os itens); só o botão para adicionar
+  assert.doesNotMatch(editavel, /Itens da manutenção|fm-il|linha-remover|data-itens-det/);
   assert.doesNotMatch(editavel, /data-nv-comps|data-item-novo|data-nv="grupo_codigo"|data-item="grupo_codigo"/, 'sem dropdown de grupo na ficha: o grupo é só texto e a adição é pelo seletor');
   assert.match(editavel, /data-acao="itens-abrir">\+ Adicionar itens/, 'com itens, o seletor abre pelo botão');
   assert.doesNotMatch(editavel, /data-add-itens/);
@@ -169,8 +165,6 @@ test('ficha e nova manutenção escolhem o grupo do guia (7 + Outros) e mostram 
   const encerrada0 = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [], orcamentos: [], base: b, podeAprovar: false, seletorAberto: true });
   assert.doesNotMatch(encerrada0, /data-add-itens|itens-abrir/, 'manutenção encerrada não aceita itens');
   const encerrada = htmlFicha(m({ status: 'concluida', custo: 10, data_execucao: '2026-10-10', km_execucao: 1 }), { itens: [it], orcamentos: [], base: b, podeAprovar: false });
-  assert.match(encerrada, /fm-il-nome">Discos de freio/);
-  assert.doesNotMatch(encerrada, /linha-remover/, 'encerrada não edita');
   assert.doesNotMatch(htmlFormNova(b, {}), /data-n-comps/);
   assert.match(htmlFormNova(b, { itens: [{ categoria_codigo: 9, descricao: 'Freio', componentes: ['Discos de freio'] }] }), /Itens: Discos de freio/);
 });
@@ -231,16 +225,6 @@ test('peça ou serviço vem do item: peça por padrão, Mão de obra e serviços
   assert.match(form, /data-tipo="servico"/);
   assert.match(form, /data-acao="orc-linha-add" data-tipo="servico">\+ Mão de obra \/ serviço/);
   assert.match(form, /data-o="valor_mao_obra" data-auto="1"/);
-});
-
-test('a etiqueta "serviço" na ficha vem de cada componente: peça marcada em item antigo de serviço continua peça', () => {
-  const comps = [{ grupo_codigo: 9, categoria_codigo: 7, nome: 'Kit de embreagem', tipo: 'peca', ordem: 1 }, { grupo_codigo: 9, categoria_codigo: 7, nome: 'Revisão do câmbio', tipo: 'servico', ordem: 2 }];
-  const b = { ...base, grupos: [{ codigo: 9, nome: 'Transmissão e embreagem', categoria_codigo: 7 }], categorias: [{ codigo: 7, nome: 'Transmissão', ativo: true, grupo_codigo: 9 }], componentes: comps };
-  const antigo = { id: 'i9', manutencao_id: 'm1', categoria_codigo: 7, tipo_item: 'servico', descricao: 'Kit', componentes: ['Kit de embreagem'] };
-  const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [antigo], orcamentos: [], base: b, podeAprovar: true });
-  assert.match(html, /fm-il-nome">Kit de embreagem[^]*?fm-mc-tipo peca">Peça/, 'a peça marcada em item antigo de serviço continua peça');
-  const doisComps = htmlFicha(m({ status: 'em_orcamento' }), { itens: [{ ...antigo, componentes: ['Kit de embreagem', 'Revisão do câmbio'] }], orcamentos: [], base: b, podeAprovar: true });
-  assert.match(doisComps, /fm-il-nome">Revisão do câmbio<\/span><em class="fm-mc-tipo servico">Serviço/, 'o serviço do guia leva a etiqueta de serviço');
 });
 
 test('modelo do veículo agrupa as versões (Mobi, Uno, Kwid, Gol...) e importados', () => {
@@ -578,7 +562,7 @@ test('conclusão: custo vem da soma das notas e o envio só é oferecido à empr
   // o tipo (peça/serviço) vem do item, não de uma escolha: a ficha mostra etiqueta, não lista de tipo
   const fichaTipo = htmlFicha(m({ status: 'em_orcamento' }), { itens: [{ ...item, tipo_item: 'peca' }], orcamentos: [], base, podeAprovar: true });
   assert.doesNotMatch(fichaTipo, /data-item="tipo_item"/);
-  assert.match(fichaTipo, /fm-mc-tipo peca">Peça/);
+  assert.doesNotMatch(fichaTipo, /fm-mc-tipo/, 'o tipo agora aparece nas linhas da cotação, não numa lista de itens');
   const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
   assert.match(financeiro, /data-setor-pay="FROTAS"/);
 });

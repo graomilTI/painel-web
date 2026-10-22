@@ -30,7 +30,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
     etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '',
     loading: false, ocupado: false,
-    fichaId: null, itensAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -158,7 +158,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, itensAberto: state.itensAberto, semCabecalho: true,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, semCabecalho: true,
     });
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
@@ -195,7 +195,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
 
   // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
-    state.fichaId = id; state.itensAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
     if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
@@ -325,17 +325,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
         state.addItens = false; state.estadoItens = {};
       }, { sucesso: novos.length > 1 ? 'Itens adicionados.' : 'Item adicionado.' });
     }
-    if (acao === 'linha-remover') {
-      const item = state.itens.find((i) => i.id === alvo.dataset.item); const nome = alvo.dataset.nome;
-      if (!item || !(await confirmar({ titulo: 'Remover item', mensagem: `Remover ${nome || item.descricao || 'este item'} da manutenção?`, confirmarLabel: 'Remover' }))) return;
-      const comps = Array.isArray(item.componentes) ? item.componentes : [];
-      // Último componente (ou item sem componentes): sai o item; senão sai só aquele componente, com a descrição e a peça escolhida.
-      if (!nome || comps.length <= 1) return executar(() => dados.removerItem(state.supabase, item.id), { sucesso: 'Item removido.' });
-      const ficam = comps.filter((c) => c !== nome);
-      const pecas = Object.fromEntries(Object.entries(item.pecas || {}).filter(([k]) => k !== nome));
-      return executar(() => dados.salvarItem(state.supabase, { id: item.id, componentes: ficam, descricao: ficam.join(', '), pecas }), { sucesso: 'Item removido.' });
-    }
-
     if (acao === 'orc-novo') { state.orcForm = true; return renderFicha(); }
     if (acao === 'orc-cancelar') { state.orcForm = null; return renderFicha(); }
     if (acao === 'orc-editar') { state.orcForm = state.orcs.find((o) => o.id === alvo.dataset.id) || true; return renderFicha(); }
@@ -638,10 +627,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
       const topo = e.target.closest?.('[data-abrir]');
       if (topo && e.target === topo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternarFicha(topo.dataset.abrir); }
     });
-    // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
-    lista.addEventListener('toggle', (e) => {
-      if (e.target?.dataset?.itensDet !== undefined) state.itensAberto = e.target.open;
-    }, true);
 
     container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
     container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });

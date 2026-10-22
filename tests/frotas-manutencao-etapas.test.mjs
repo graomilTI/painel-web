@@ -201,17 +201,29 @@ test('peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica 
   assert.match(ficha, /Cotações \(1\)/);
 });
 
-test('itens da manutenção: lista única que remove só o componente; o controlador trata o clique', () => {
+test('itens: sem lista à parte; "+ Adicionar itens" fica no cabeçalho das cotações e abre o seletor', () => {
+  const ficha = (extra = {}) => htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true, ...extra });
+  assert.doesNotMatch(ficha(), /Itens da manutenção|fm-il-lista/);
+  assert.match(ficha(), /Cotações \(0\) <span class="fm-h4-acoes"><button[^>]*data-acao="itens-abrir">\+ Adicionar itens[^]*?\+ Adicionar cotação/);
+  const aberto = ficha({ seletorAberto: true });
+  assert.match(aberto, /data-add-itens/);
+  assert.doesNotMatch(aberto, /data-acao="itens-abrir"/, 'com o seletor aberto o botão some');
+  assert.doesNotMatch(htmlFicha(m({ status: 'concluida', custo: 10 }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true }), /itens-abrir/, 'encerrada não aceita itens');
   const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
-  assert.match(ctrl, /acao === 'linha-remover'/);
-  assert.match(ctrl, /itensDet/, 'lembra se a lista está aberta ao redesenhar a ficha');
+  assert.match(ctrl, /acao === 'itens-confirmar'/);
   assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');
 });
 
-test('dados da manutenção: só previsão de entrega, prioridade, quem paga e veículo parado (sem "Mais detalhes")', () => {
+test('campos da manutenção (sem título, abaixo das cotações): só previsão de entrega, prioridade, quem paga e veículo parado', () => {
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  const dados = html.slice(html.indexOf('Dados da manutenção'), html.indexOf('Itens da manutenção'));
+  assert.doesNotMatch(html, /Dados da manutenção/, 'sem o título do bloco');
+  const dados = html.slice(html.indexOf('Previsão de entrega') - 40);
   for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Veículo parado']) assert.match(dados, new RegExp(`<label>${rotulo}</label>`));
   for (const fora of ['Solicitante', 'Problema / serviço', '<label>Veículo</label>', 'Motorista', 'Natureza', 'Diagnóstico', 'Mais detalhes']) assert.doesNotMatch(html, new RegExp(fora), `${fora} não aparece na ficha`);
   assert.doesNotMatch(html, /data-mais/);
+});
+
+test('ordem da ficha: cotações primeiro e os campos da manutenção logo abaixo', () => {
+  const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  assert.ok(html.indexOf('Cotações (0)') < html.indexOf('Previsão de entrega'));
 });
