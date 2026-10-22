@@ -1,9 +1,9 @@
 // Frotas · Manutenção › Corretiva: montagem de HTML da tela por etapas (cartões de etapa com contador e um cartão por
 // manutenção, com os itens marcáveis e a coluna de ações à direita), no modelo de Compras. Sem acesso ao banco.
-import { dinheiro, esc } from '../core/ui.js';
+import { esc } from '../core/ui.js';
 import { cardFiltro } from './frotas-ui-lista.js?v=20261021-frotas-manut45';
-import { camposEditaveis, codigoManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
-import { ETAPAS, acoesDoCard, agruparLinhas, linhasDosItens } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
+import { codigoManutencao } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
+import { ETAPAS, acoesDoCard } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
 
 const svg = (corpo) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${corpo}</svg>`;
 export const ICONES = {
@@ -33,7 +33,7 @@ export function htmlCasca() {
 
 // Uma etapa por cartão (como os cartões-filtro de Compras): o número é a quantidade e o clique troca a lista abaixo.
 const VISUAL_ETAPA = {
-  solicitacoes: ['blue', 'total'], cotacoes: ['purple', 'dinheiro'], andamento: ['amber', 'ferramenta'],
+  cotacoes: ['purple', 'dinheiro'], andamento: ['amber', 'ferramenta'],
   apagar: ['red', 'relogio'], nf: ['blue', 'anexo'], concluido: ['green', 'ok'], canceladas: ['red', 'erro'],
 };
 
@@ -42,34 +42,6 @@ export function htmlEtapas(contagens, ativa) {
     filtro: e.id, label: e.rotulo, tone: VISUAL_ETAPA[e.id][0], icone: VISUAL_ETAPA[e.id][1],
     valor: String(contagens[e.id] || 0), dica: e.dica, ativo: e.id === ativa,
   })).join('');
-}
-
-// ---------- itens marcáveis ----------
-function htmlLinha(l, { selecionavel, marcada }) {
-  const tipo = l.maoDeObra ? 'Mão de obra' : l.tipo === 'servico' ? 'Serviço' : 'Peça';
-  const miolo = `<span class="fm-mc-nome">${esc(l.nome)}</span>${l.detalhe ? `<em class="fm-chip-peca">${esc(l.detalhe)}${l.valor != null ? ` · ${esc(dinheiro(l.valor))}` : ''}</em>` : ''}<em class="fm-mc-tipo ${l.tipo}">${esc(tipo)}</em>`;
-  return selecionavel
-    ? `<label class="fm-mc-linha${marcada ? ' sel' : ''}${l.tipo === 'servico' ? ' servico' : ''}"><input type="checkbox" data-check-linha value="${esc(l.key)}"${marcada ? ' checked' : ''}>${miolo}</label>`
-    : `<span class="fm-mc-linha${l.tipo === 'servico' ? ' servico' : ''}">${miolo}</span>`;
-}
-
-function htmlItens(m, linhas, { selecionavel, marcadas, editavel }) {
-  const adicionar = editavel ? `<button type="button" class="fm-link" data-mc-acao="itens-add" data-id="${esc(m.id)}" title="Abrir a ficha e escolher peças, mão de obra ou digitar o serviço realizado">+ Peças, mão de obra ou serviço</button>` : '';
-  if (!linhas.length) {
-    return `<div class="fm-mc-itens"><div class="fm-mc-itens-cab"><span class="fm-mm">Nenhum item informado. Informe ao menos um para cotar e aprovar.</span>${adicionar}</div></div>`;
-  }
-  const noSel = linhas.filter((l) => marcadas.has(l.key)).length;
-  const cab = `<div class="fm-mc-itens-cab">${selecionavel
-    ? `<label class="fm-mc-todas"><input type="checkbox" data-check-todas data-id="${esc(m.id)}"${noSel === linhas.length ? ' checked' : ''}> <span>Marcar tudo</span></label><span class="fm-mm" data-sel-resumo>${noSel ? `${noSel} de ${linhas.length} marcado(s) para a cotação` : 'Marque o que vai para a cotação; sem marcação segue tudo.'}</span>`
-    : `<span class="fm-mm">${linhas.length} item(ns) desta manutenção</span>`}${adicionar}</div>`;
-  const grupos = agruparLinhas(linhas).map((g, i) => {
-    const marcadasDoGrupo = g.linhas.filter((l) => marcadas.has(l.key)).length;
-    const titulo = selecionavel
-      ? `<label class="fm-mc-gtit"><input type="checkbox" data-check-grupo${marcadasDoGrupo === g.linhas.length ? ' checked' : ''}><strong>${esc(g.grupo)}</strong></label>`
-      : `<div class="fm-mc-gtit"><strong>${esc(g.grupo)}</strong></div>`;
-    return `<div class="fm-mc-grupo" data-mc-grupo="${i}">${titulo}<div class="fm-mc-linhas">${g.linhas.map((l) => htmlLinha(l, { selecionavel, marcada: marcadas.has(l.key) })).join('')}</div></div>`;
-  }).join('');
-  return `<div class="fm-mc-itens">${cab}${grupos}</div>`;
 }
 
 // ---------- coluna de ações ----------
@@ -87,22 +59,18 @@ export function htmlCard(m, c) {
   const itens = c.itensPorManut.get(m.id) || [];
   const orcs = c.orcsPorManut.get(m.id) || [];
   const notas = c.notasPorManut.get(m.id) || [];
-  const linhas = linhasDosItens(itens, c.base);
   const aberto = c.aberto === m.id;
-  const selecionavel = c.etapa === 'solicitacoes';
-  const origem = m.dividida_de && c.codigoDe(m.dividida_de) ? `<span class="fm-mm">separada de ${esc(c.codigoDe(m.dividida_de))}</span>` : '';
   const acoes = acoesDoCard(m, { podeAprovar: c.podeAprovar, itens, orcamentos: orcs, notas });
   return `<article class="fm-mc${aberto ? ' aberto' : ''}" data-mc="${esc(m.id)}">
     <div class="fm-mc-corpo">
       <div class="fm-mc-topo" data-abrir="${esc(m.id)}" role="button" tabindex="0" aria-expanded="${aberto}">
         <span class="fm-mc-seta" aria-hidden="true">▸</span>
-        <div class="fm-mc-cod"><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}${origem}</div>
+        <div class="fm-mc-cod"><strong>${esc(codigoManutencao(m))}</strong>${m.os_numero ? `<span class="fm-mm">${esc(m.os_numero)}</span>` : ''}</div>
         <div class="fm-mc-veic"><strong>${esc(m.__placa || '—')}</strong><span class="fm-mm">${esc(m.__modelo || '')}${m.__coordenacao ? ` · ${esc(m.__coordenacao)}` : ''}</span></div>
         <div class="fm-mc-desc"><span>${esc((m.descricao || '').slice(0, 110))}${(m.descricao || '').length > 110 ? '…' : ''}</span></div>
         <div class="fm-mc-quando"><strong>${m.solicitado_em ? esc(new Date(m.solicitado_em).toLocaleDateString('pt-BR')) : '—'}</strong><span class="fm-mm">${esc(m.solicitante_nome || '')}</span></div>
         ${htmlAcoes(m, acoes, aberto)}
       </div>
-      ${selecionavel && aberto ? htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens }) : ''}
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
   </article>`;
@@ -110,7 +78,7 @@ export function htmlCard(m, c) {
 
 export function htmlCards(rows, c) {
   if (!rows.length) {
-    const msg = c.etapa === 'solicitacoes' ? 'Nenhuma solicitação aguardando. Use "+ Nova manutenção" para registrar um pedido.' : 'Nenhuma manutenção nesta etapa.';
+    const msg = c.etapa === 'cotacoes' ? 'Nenhuma manutenção em cotação. Use "+ Nova manutenção" para registrar uma.' : 'Nenhuma manutenção nesta etapa.';
     return `<div class="fm-empty">${esc(msg)}</div>`;
   }
   return rows.map((m) => htmlCard(m, c)).join('');
