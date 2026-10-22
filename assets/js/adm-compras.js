@@ -1056,7 +1056,8 @@ function openSelecionarFornecedor(rows){
     });
     // Com saldo no estoque do fornecedor, passa pela revisão (quanto sai de lá) antes do pagamento.
     const estoqueForn=await carregarEstoqueFornecedor();
-    if(rowsComValor.some(r=>candidatosForn(r,estoqueForn).length)) openCompraLote(rowsComValor,true);
+    const estoqueProprio=await carregarEstoqueProprio();
+    if(rowsComValor.some(r=>candidatosForn(r,estoqueForn).length||candidatosProprio(r,estoqueProprio).length)) openCompraLote(rowsComValor,true);
     else openPagamentoLote(rowsComValor, true);
   });
 }
@@ -1073,6 +1074,15 @@ const candidatosForn=(r,lista)=>lista.filter(f=>chaveMaterialForn(f)===chaveMate
 const qtdItem=(r)=>Number(r.quantidade||r.unidade||1);
 const r2c=(v)=>Math.round(Number(v||0)*100)/100;
 
+// ─── ESTOQUE PRÓPRIO (Compras > Estoque) ───────────────────────────────────────
+// Material que já está no nosso estoque (mesmo nome + tamanho) sai de lá em vez de ser comprado. EPI retirado
+// para um colaborador cai na aba "Comprados pelo Gestor" do RH (status enviado_estoque) para gerar a ficha.
+async function carregarEstoqueProprio(){
+  return await safe(()=>supabase.from('compras_estoque_materiais').select('id,nome,tamanho,unidade,estoque_atual').eq('ativo',true).gt('estoque_atual',0),[]);
+}
+const candidatosProprio=(r,lista)=>lista.filter(m=>norm(m.nome)===norm(r.material)&&norm(m.tamanho||'')===norm(r.tamanho||''));
+const saldoProprio=(c)=>r2c(c.reduce((s,m)=>s+Number(m.estoque_atual||0),0));
+
 // Patrimônio comprado: uma linha de cadastro por unidade, para informar a etiqueta (nº) de cada uma.
 // Só cria as que faltam, então repetir a finalização não duplica.
 async function criarLinhasPatrimonio(r,marca=null){
@@ -1086,6 +1096,75 @@ async function criarLinhasPatrimonio(r,marca=null){
     if(error) throw error;
   }catch(e){ console.warn('[compras] linhas de patrimônio',e); }
 }
+
+// Retira do nosso estoque (compras_estoque_materiais) a quantidade escolhida na compra: registra a saída para o
+// colaborador, baixa o saldo e marca o item como enviado_estoque (o que sobra segue no fluxo de compra). Devolve só o
+// que ainda precisa ser comprado. Roda ANTES do envio ao Financeiro: se algo falhar aqui, nada foi pago.
+async function aplicarEstoqueProprio(itens){
+  const user=state.ctx?.user||{};
+  const hoje=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+  const restantes=[];
+  for(const r of itens){
+    const qtd=r2c(r._do_proprio);
+    if(!(qtd>0)||!(r._proprio_regs||[]).length){ restantes.push(r); continue; }
+    const {data:regs,error:er}=await supabase.from('compras_estoque_materiais').select('id,estoque_atual').in('id',r._proprio_regs);
+    if(er) throw new Error(`Não foi possível conferir o saldo de "${r.material}" no estoque: ${er.message}`);
+    let falta=qtd; const partes=[];
+    for(const m of [...(regs||[])].sort((a,b)=>Number(b.estoque_atual)-Number(a.estoque_atual))){
+      if(falta<=0) break;
+      const usa=Math.min(Math.max(0,Number(m.estoque_atual||0)),falta);
+      if(usa>0){ partes.push({m,q:r2c(usa)}); falta=r2c(falta-usa); }
+    }
+    if(falta>0) throw new Error(`O saldo de "${r.material}" no estoque mudou (agora ${saldoProprio(regs||[])}). Reabra a compra.`);
+    const tam=r.tamanho?` (${r.tamanho})`:'';
+    const sol=r.compras_solicitacoes||{};
+    const feitas=[];
+    const resto=r2c(qtdItem(r)-qtd);
+    const desfazer=async()=>{
+      for(const f of feitas.reverse()){
+        await supabase.from('compras_estoque_movimentacoes').delete().eq('id',f.movId);
+        await supabase.from('compras_estoque_materiais').update({estoque_atual:f.antes,updated_at:new Date().toISOString()}).eq('id',f.id).eq('estoque_atual',f.depois);
+      }
+    };
+    try{
+      for(const {m,q} of partes){
+        const antes=Number(m.estoque_atual||0), depois=r2c(antes-q);
+        const {data:atu,error:ea}=await supabase.from('compras_estoque_materiais').update({estoque_atual:depois,updated_at:new Date().toISOString()}).eq('id',m.id).eq('estoque_atual',m.estoque_atual).select('id');
+        if(ea) throw ea;
+        if(!atu?.length) throw new Error(`o saldo de "${r.material}" mudou durante a baixa. Reabra a compra`);
+        const mov={material_id:m.id,tipo_movimentacao:'saida',quantidade:q,data_movimentacao:hoje,
+          destino:r.colaborador_nome?'Colaborador':(r.regional||sol.coordenacao||'Compras'),
+          colaborador_id:r.colaborador_id||null,colaborador_nome:r.colaborador_nome||null,
+          coordenacao:sol.coordenacao||null,supervisao:sol.supervisao||null,
+          motivo:'Entrega ao colaborador',
+          observacao:`Compras: ${r.material}${tam} — retirado do estoque ao comprar (solicitação de ${sol.solicitante||'gestor'})`,
+          usuario_id:user.id||null,usuario_nome:user.name||user.email||null};
+        const {data:movRow,error:eb}=await supabase.from('compras_estoque_movimentacoes').insert(mov).select('id').single();
+        if(eb){ await supabase.from('compras_estoque_materiais').update({estoque_atual:antes,updated_at:new Date().toISOString()}).eq('id',m.id).eq('estoque_atual',depois); throw eb; }
+        feitas.push({id:m.id,antes,depois,movId:movRow.id});
+      }
+      const agora=new Date().toISOString();
+      const movId=feitas[0].movId;
+      if(resto>0){
+        // Parte retirada do estoque vira um item próprio; o item original fica só com o que será comprado.
+        const copia={solicitacao_id:r.solicitacao_id,material:r.material,tipo:r.tipo,tamanho:r.tamanho,marca:r.marca,ca:r._ca||r.ca,regional:r.regional,colaborador_id:r.colaborador_id,colaborador_nome:r.colaborador_nome,quantidade:qtd,unidade:qtd,status:'enviado_estoque',envio_tipo:'retirada',estoque_movimentacao_id:movId,comprado_em:agora};
+        const {data:novo,error:ei}=await supabase.from('compras_itens').insert(copia).select('id').single();
+        if(ei) throw ei;
+        const {error:eu}=await supabase.from('compras_itens').update({quantidade:resto,unidade:resto}).eq('id',r.id);
+        if(eu){ await supabase.from('compras_itens').delete().eq('id',novo.id); throw eu; }
+      }else{
+        const {error:eu}=await supabase.from('compras_itens').update({status:'enviado_estoque',envio_tipo:'retirada',estoque_movimentacao_id:movId,comprado_em:agora,...((r._ca||r.ca)?{ca:r._ca||r.ca}:{})}).eq('id',r.id);
+        if(eu) throw eu;
+      }
+    }catch(e){
+      await desfazer();
+      throw new Error(`Erro ao retirar "${r.material}" do estoque: ${e.message}`);
+    }
+    if(resto>0) restantes.push({...r,quantidade:resto,unidade:resto,_do_proprio:0,_proprio_regs:null});
+  }
+  return restantes;
+}
+const aplicarEstoques=async(itens)=>await aplicarEstoqueFornecedor(await aplicarEstoqueProprio(itens));
 
 // Dá baixa no saldo do fornecedor e ajusta os itens da compra. Devolve só o que ainda precisa ser pago
 // (com a quantidade já reduzida). Roda ANTES do envio ao Financeiro: se algo falhar aqui, nada foi pago.
@@ -1136,6 +1215,15 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   const estoqueForn=await carregarEstoqueFornecedor();
   const cand=new Map(rows.map(r=>[r.id,candidatosForn(r,estoqueForn)]));
   const temForn=[...cand.values()].some(c=>c.length);
+  // Nosso estoque: o que existe lá (mesmo nome + tamanho) sai de lá por padrão; só o restante é comprado.
+  const estoqueProprio=await carregarEstoqueProprio();
+  const candProp=new Map(rows.map(r=>[r.id,candidatosProprio(r,estoqueProprio)]));
+  const temProp=[...candProp.values()].some(c=>c.length);
+  const doPropInicial=(r)=>{
+    const c=candProp.get(r.id)||[];
+    if(!c.length) return 0;
+    return r._do_proprio!=null?Number(r._do_proprio):Math.min(qtdItem(r),saldoProprio(c));
+  };
   // Patrimônio: a marca é exigida pelo GRM e precisa ser informada na compra (catálogo do GRM como sugestão).
   const ehPat=(r)=>norm(r.tipo).includes('patrimonio');
   const temPat=rows.some(ehPat);
@@ -1150,21 +1238,24 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   const totalInicial=rows.reduce((s,r)=>s+(Number(r.valor_total||0)),0);
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
-      <div><h3>Comprar itens selecionados</h3><p class="muted">Informe o valor unitário de cada material.${temForn?' Itens com saldo no estoque do fornecedor saem de lá; só o restante é pago.':''}</p></div>
+      <div><h3>Comprar itens selecionados</h3><p class="muted">Informe o valor unitário de cada material.${temProp?' Itens que já estão no nosso estoque são retirados de lá (e EPI vai para a ficha do RH); só o restante é comprado.':''}${temForn?' Itens com saldo no estoque do fornecedor saem de lá; só o restante é pago.':''}</p></div>
       <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
     </div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${temPat?'<th>Marca</th>':''}${rows.some(isEPI)?'<th>CA</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${temPat?'<th>Marca</th>':''}${rows.some(isEPI)?'<th>CA</th>':''}${temProp?'<th>Em estoque</th><th>Retirar do estoque</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
         <tbody>
           ${rows.map(r=>{
             const c=cand.get(r.id)||[];
+            const cp=candProp.get(r.id)||[];
             return `<tr data-buy-row="${esc(r.id)}">
             <td>${esc(r.quantidade||r.unidade||1)}</td>
             <td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td>
             <td>${esc(r.tipo||'-')}</td>
             ${temPat?`<td>${ehPat(r)?`<input class="buy-marca" list="buyMarcas" placeholder="Marca (obrigatória)" autocomplete="off" value="${esc(r.marca||'')}" style="width:170px">`:'-'}</td>`:''}
             ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||state.cotacaoCache[r.id]?.ca||'')}">`:'-'}</td>`:''}
+            ${temProp?`<td>${cp.length?`${esc(saldoProprio(cp))} ${esc(cp[0].unidade||'UN')}`:'-'}</td>
+            <td>${cp.length?`<input class="buy-prop" type="number" step="0.01" min="0" value="${esc(doPropInicial(r))}" style="width:90px">`:'-'}</td>`:''}
             ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
             <td>${c.length?`<input class="buy-estoque" type="number" step="0.01" min="0" value="${esc(doEstoqueInicial(r))}" style="width:90px">`:'-'}</td>`:''}
             <td><input class="buy-unit" type="number" step="0.01" min="0" value="${esc(r._valor_unitario||r.valor_unitario||state.cotacaoCache[r.id]?.fornecedores?.[0]?.valor_unitario||c0valor(r)||'')}" placeholder="0,00"></td>
@@ -1181,12 +1272,18 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
   modal.querySelector('#buyCancel').onclick=()=>modal.classList.remove('open');
   // Quantidade que sai do fornecedor: nunca passa da quantidade do item nem do saldo do fornecedor escolhido.
-  const lerEstoque=(r,tr)=>{
+  // Do nosso estoque: nunca passa da quantidade do item nem do saldo.
+  const lerProprio=(r,tr)=>{
+    const c=candProp.get(r.id)||[];
+    if(!c.length) return 0;
+    return Math.max(0,Math.min(r2c(tr.querySelector('.buy-prop')?.value),qtdItem(r),saldoProprio(c)));
+  };
+  const lerEstoque=(r,tr,prop=0)=>{
     const id=tr.querySelector('.buy-forn')?.value||'';
     const forn=estoqueForn.find(f=>f.id===id);
     if(!forn) return {id:null,nome:null,qtd:0};
     const campo=tr.querySelector('.buy-estoque');
-    const qtd=Math.max(0,Math.min(r2c(campo?.value),qtdItem(r),Number(forn.quantidade)));
+    const qtd=Math.max(0,Math.min(r2c(campo?.value),qtdItem(r)-prop,Number(forn.quantidade)));
     return {id:forn.id,nome:forn.fornecedor,qtd};
   };
   const recalc=()=>{
@@ -1194,16 +1291,19 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
     rows.forEach(r=>{
       const tr=modal.querySelector(`[data-buy-row="${CSS.escape(String(r.id))}"]`); if(!tr) return;
       const unit=Number(tr.querySelector('.buy-unit').value||0);
-      const est=lerEstoque(r,tr);
+      const prop=lerProprio(r,tr);
+      const campoProp=tr.querySelector('.buy-prop');
+      if(campoProp&&campoProp.value!==''&&r2c(campoProp.value)!==prop) campoProp.value=prop;
+      const est=lerEstoque(r,tr,prop);
       const campo=tr.querySelector('.buy-estoque');
       if(campo&&campo.value!==''&&r2c(campo.value)!==est.qtd) campo.value=est.qtd;
-      const total=unit*(qtdItem(r)-est.qtd);
+      const total=unit*(qtdItem(r)-prop-est.qtd);
       tr.querySelector('.buy-total').value=total.toFixed(2);
       grand+=total;
     });
     modal.querySelector('#buyGrandTotal').textContent=money(grand);
   };
-  modal.querySelectorAll('.buy-unit,.buy-estoque,select.buy-forn').forEach(inp=>{inp.oninput=recalc;inp.onchange=recalc;});
+  modal.querySelectorAll('.buy-unit,.buy-prop,.buy-estoque,select.buy-forn').forEach(inp=>{inp.oninput=recalc;inp.onchange=recalc;});
   recalc();
   modal.querySelector('#buyContinue').onclick=async()=>{
     // Patrimônio sem marca não entra no GRM: exige a marca de cada item antes de seguir.
@@ -1218,17 +1318,19 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
       const unit=Number(tr?.querySelector('.buy-unit')?.value||0);
       const ca=tr?.querySelector('.buy-ca')?.value?.trim()||r.ca||state.cotacaoCache[r.id]?.ca||null;
       const marca=tr?.querySelector('.buy-marca')?.value?.trim()||r.marca||null;
-      const est=tr?lerEstoque(r,tr):{id:null,nome:null,qtd:0};
-      const pagar=r2c(qtdItem(r)-est.qtd);
-      return {...r, marca, _valor_unitario:unit, _valor_total:r2c(unit*pagar), _ca:ca, _do_estoque:est.qtd, _estoque_forn_id:est.id, _qtd_pagar:pagar};
+      const prop=tr?lerProprio(r,tr):0;
+      const est=tr?lerEstoque(r,tr,prop):{id:null,nome:null,qtd:0};
+      const pagar=r2c(qtdItem(r)-prop-est.qtd);
+      return {...r, marca, _valor_unitario:unit, _valor_total:r2c(unit*pagar), _ca:ca, _do_proprio:prop, _proprio_regs:prop>0?(candProp.get(r.id)||[]).map(m=>m.id):null, _do_estoque:est.qtd, _estoque_forn_id:est.id, _qtd_pagar:pagar};
     });
-    // Tudo atendido pelo estoque do fornecedor: não há o que pagar, só a baixa.
-    if(temForn&&rowsComValor.every(r=>r._qtd_pagar<=0)){
-      if(!confirm(`Todos os itens estão no estoque do fornecedor. Dar baixa em ${rowsComValor.length} ${rowsComValor.length===1?'item':'itens'}? Nada será enviado ao Financeiro.`)) return;
+    // Tudo atendido pelo estoque (nosso e/ou do fornecedor): não há o que pagar, só a baixa.
+    if((temForn||temProp)&&rowsComValor.every(r=>r._qtd_pagar<=0)){
+      const origem=rowsComValor.some(r=>r._do_proprio>0)?'do estoque':'no estoque do fornecedor';
+      if(!confirm(`Todos os itens saem ${origem}. Dar baixa em ${rowsComValor.length} ${rowsComValor.length===1?'item':'itens'}? Nada será enviado ao Financeiro.${rowsComValor.some(r=>r._do_proprio>0&&isEPI(r))?'\n\nOs EPIs seguem para a ficha de EPI no RH.':''}`)) return;
       try{
-        await aplicarEstoqueFornecedor(rowsComValor);
+        await aplicarEstoques(rowsComValor);
         modal.classList.remove('open');
-        setMsg('Baixa feita no estoque do fornecedor. Nada a pagar.');
+        setMsg(rowsComValor.some(r=>r._do_proprio>0)?'Baixa feita no estoque. Nada a pagar.':'Baixa feita no estoque do fornecedor. Nada a pagar.');
         await loadRows();
       }catch(e){setMsg(e.message,true);alert(e.message);}
       return;
@@ -1327,7 +1429,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
         <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||isEPI(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th><th class="pay-link-th" style="display:none">Link do produto</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${esc(r._qtd_pagar??(r.quantidade||r.unidade||1))}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}${r._do_estoque>0?`<br><small>${esc(r._do_estoque)} un saem do estoque do fornecedor${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r._qtd_pagar??(r.quantidade||r.unidade||1))}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}${r._do_proprio>0?`<br><small>${esc(r._do_proprio)} un saem do nosso estoque${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}${r._do_estoque>0?`<br><small>${esc(r._do_estoque)} un saem do estoque do fornecedor${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
       </table>
     </div>
     <div class="adm-cmp-grid mt-16">
@@ -1353,7 +1455,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   area.querySelector('#mClose').onclick=()=>document.getElementById('admCmpModal').classList.remove('open');
   area.querySelector('#payBack').onclick=()=>{
     // Volta para a revisão (valores e estoque do fornecedor) quando ela foi exibida; senão, para a escolha de fornecedor.
-    if(rows.some(r=>r._estoque_forn_id)||!fornecedorPreSelecionado) openCompraLote(rows.map(r=>({...r})),fornecedorPreSelecionado);
+    if(rows.some(r=>r._estoque_forn_id||r._do_proprio>0)||!fornecedorPreSelecionado) openCompraLote(rows.map(r=>({...r})),fornecedorPreSelecionado);
     else abrirCompraSelecionados();
   };
   area.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>{forma=b.dataset.pay; area.querySelectorAll('[data-pay]').forEach(x=>x.classList.toggle('active',x===b)); updatePagamentoFields(area,forma);});
@@ -1398,10 +1500,10 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
 
 async function enviarFinanceiroLote(itens,total,forma,dados,fornecedor='',contato='',celularAsPatrimonio=false,dadosPorItem=null,entregaTipo=null,entregaEndereco=null,nfUrl=null){
   // Primeiro a baixa no estoque do fornecedor: itens ficam só com o que será pago.
-  itens=await aplicarEstoqueFornecedor(itens);
+  itens=await aplicarEstoques(itens);
   if(!itens.length){
     document.getElementById('admCmpModal').classList.remove('open');
-    setMsg('Baixa feita no estoque do fornecedor. Nada a pagar.');
+    setMsg('Baixa feita no estoque. Nada a pagar.');
     await loadRows();
     return;
   }
