@@ -9,6 +9,7 @@ import { norm } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 (function () {
   const MODULE_NAME = 'FROTAS_MANUT_OFICINAS';
   const MODAL = 'fmOficina';
+  const LIMITE_LINHAS = 200; // o cadastro tem milhares de fornecedores do GRM: a tabela mostra as primeiras e a busca acha o resto
   const state = { supabase: null, root: null, lista: [], filtro: 'ativas', busca: '', ocupado: false };
 
   const fmtDoc = (d) => {
@@ -34,7 +35,8 @@ import { norm } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
     ].join('');
     sincronizarCards(root, state.filtro);
     const lista = visiveis();
-    root.querySelector('[data-linhas]').innerHTML = lista.length ? lista.map((o) => `<tr class="fm-linha" data-editar="${esc(o.id)}">
+    const mostradas = lista.slice(0, LIMITE_LINHAS);
+    root.querySelector('[data-linhas]').innerHTML = lista.length ? mostradas.map((o) => `<tr class="fm-linha" data-editar="${esc(o.id)}">
       <td><strong>${esc(o.nome)}</strong><span class="fm-mm">${esc(o.razao_social || '')}</span></td>
       <td>${esc(fmtDoc(o.cnpj)) || '—'}</td>
       <td>${esc(o.contato_nome || '—')}<span class="fm-mm">${esc(o.telefone || '')}${o.email ? ` · ${esc(o.email)}` : ''}</span></td>
@@ -43,7 +45,7 @@ import { norm } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
       <td><span class="fm-badge ${o.ativo !== false ? 'green' : 'red'}">${o.ativo !== false ? 'Ativa' : 'Inativa'}</span></td>
       <td><button class="fm-btn ghost fm-mini" type="button" data-editar="${esc(o.id)}">Editar</button></td></tr>`).join('')
       : '<tr><td colspan="7" class="fm-empty">Nenhuma oficina neste filtro.</td></tr>';
-    root.querySelector('[data-contagem]').textContent = `${lista.length} de ${state.lista.length} oficina(s)`;
+    root.querySelector('[data-contagem]').textContent = lista.length > LIMITE_LINHAS ? `${LIMITE_LINHAS} de ${lista.length} oficina(s): refine a busca` : `${lista.length} de ${state.lista.length} oficina(s)`;
   }
 
   function formHtml(o = {}) {
@@ -85,9 +87,7 @@ import { norm } from './frotas-manutencao-regras.js?v=20261021-frotas-manut45';
 
   async function carregar() {
     try {
-      const { data, error } = await state.supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true });
-      if (error) throw error;
-      state.lista = data || [];
+      state.lista = await dados.carregarOficinasTodas(state.supabase);
     } catch (err) { toast(err.message || 'Erro ao carregar as oficinas.', 'err'); state.lista = []; }
     render();
   }

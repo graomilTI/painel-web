@@ -57,16 +57,17 @@ ${ESTILOS_LISTA}
 .fm-nova-rodape{flex:none;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 22px;border-top:1px solid rgba(148,163,184,.16);background:rgba(2,6,23,.55)}
 .fm-nova-info{flex:1;min-width:220px}.fm-nova-info .fm-erros{margin:0 0 6px}.fm-pend-linha{display:flex;flex-wrap:wrap;gap:4px 18px;margin:0;padding:0;border:0}
 .fm-modal-largo .ds-modal-card{display:flex;flex-direction:column;padding:0;overflow:hidden}
-/* Grupos do guia como cabeçalhos que abrem e fecham, com a caixa de "grupo todo" na ponta. */
-.fm-pick-resumo[hidden]{display:none}.fm-pick-acc{display:grid;gap:8px}.fm-pick-acc[hidden],.fm-pick-painel[hidden]{display:none}
-.fm-pick-gr{border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.5);overflow:hidden}.fm-pick-gr.tem{border-color:rgba(34,197,94,.45)}.fm-pick-gr.aberto{background:rgba(2,6,23,.38)}
-.fm-pick-gh{display:flex;align-items:stretch}
-.fm-pick-gt{flex:1;display:flex;align-items:center;gap:10px;min-width:0;border:0;background:transparent;color:#e2e8f0;padding:11px 14px;font:inherit;font-size:13.5px;font-weight:800;text-align:left;cursor:pointer}.fm-pick-gt:hover{background:rgba(34,197,94,.08)}.fm-pick-gt:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
-.fm-pick-seta{color:#86efac;font-size:12px;transition:transform .15s}.fm-pick-gr.aberto .fm-pick-seta{transform:rotate(90deg)}
-.fm-pick-gt b{margin-left:auto;font-size:11px;color:#bbf7d0;font-weight:900}.fm-pick-gt:empty{display:none}
-.fm-pick-gck{display:inline-flex;align-items:center;gap:8px;padding:0 14px;border-left:1px solid rgba(148,163,184,.14);color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;cursor:pointer}.fm-pick-gck input{width:18px;height:18px;accent-color:#22c55e;cursor:pointer;margin:0}.fm-pick-gck:hover{color:#bbf7d0}
-.fm-pick-gc{padding:4px 14px 14px;display:grid;gap:10px;border-top:1px solid rgba(148,163,184,.12)}.fm-pick-gc>.fm-mm{margin:8px 0 0}
-.fm-pick-gc .fm-pick-outro{margin-top:2px}
+/* Grupos do guia numa grade de 4 colunas (12 grupos = 4x3); cada quadrado tem a caixa de "grupo todo" na ponta e abre os itens abaixo. */
+.fm-pick-resumo[hidden]{display:none}
+.fm-pick-grade{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.fm-pick-grade[hidden],.fm-pick-abertos[hidden],.fm-pick-painel[hidden]{display:none}
+.fm-pick-gr{display:flex;align-items:stretch;min-height:56px;border:1px solid rgba(148,163,184,.2);border-radius:14px;background:rgba(15,23,42,.55);overflow:hidden}.fm-pick-gr.tem{border-color:rgba(34,197,94,.45)}.fm-pick-gr.aberto{border-color:#4ade80;background:rgba(34,197,94,.14);box-shadow:0 0 0 1px #4ade80 inset}
+.fm-pick-gt{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;min-width:0;border:0;background:transparent;color:#e2e8f0;padding:8px 10px;font:inherit;text-align:left;cursor:pointer}.fm-pick-gt:hover{background:rgba(34,197,94,.08)}.fm-pick-gt:focus-visible{outline:2px solid #4ade80;outline-offset:-2px}
+.fm-pick-gt strong{font-size:12.5px;line-height:1.25;font-weight:800}.fm-pick-gt b{font-size:10.5px;color:#bbf7d0;font-weight:900}.fm-pick-gt b:empty{display:none}
+.fm-pick-gck{display:inline-flex;align-items:flex-start;padding:8px 10px 0 0;cursor:pointer}.fm-pick-gck input{width:18px;height:18px;accent-color:#22c55e;cursor:pointer;margin:0}
+.fm-pick-abertos{display:grid;gap:10px;margin-top:10px}.fm-pick-abertos:empty{display:none}
+.fm-pick-gc{padding:12px 14px 14px;display:grid;gap:10px;border:1px solid rgba(34,197,94,.3);border-radius:14px;background:rgba(2,6,23,.38)}
+.fm-pick-gc-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.fm-pick-gc-cab strong{color:#f8fafc;font-size:14px}.fm-pick-gc-cab .fm-mm{margin:0}.fm-pick-gc-cab .fm-link{margin-left:auto}
+@media(max-width:900px){.fm-pick-grade{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .fm-pg.fm-pg-larga{max-width:none}
 .fm-pagina[hidden],[data-vista-lista][hidden]{display:none}.fm-pg-barra{margin:0 0 12px}.fm-pg{max-width:1180px;margin:0 auto}.fm-pagina .fm-x{display:none}
