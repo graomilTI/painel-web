@@ -364,16 +364,18 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.doesNotMatch(html, /Voltar para a lista/, 'não há página com botão de voltar');
   assert.match(htmlCasca(), /data-acao="nova">\+ Nova manutenção<\/button>/);
   const nova = htmlFormNova(base, { veiculo_id: 'v1', itens: [{ categoria_codigo: 2, plano_id: 'p1', natureza: 'preventiva' }] });
-  assert.match(nova, /<h3>Nova manutenção<\/h3>/);
+  assert.doesNotMatch(nova, /<h3>|fm-mod-head/, 'sem cabeçalho "Nova manutenção" na janela');
   assert.match(nova, /data-n-solicitante/);
   assert.match(nova, /Registrar manutenção/);
   assert.match(nova, /value="ABC1D23 · Fiat Strada"/);
   // Itens: o seletor em dois painéis (obrigatório) e, acima, a lista do que veio pronto do checklist/plano, cada um com ✕.
   assert.match(nova, /data-pick-busca/);
-  // tela inteira em três colunas: pedido | o que será feito | resumo com pendências e os botões
+  // janela sem resumo ao lado: o pedido em faixa, os grupos que abrem e fecham e, no fim, só Cancelar e Registrar
   assert.match(nova, /data-nova-grade/);
   assert.match(nova, /fm-nova-pedido/);
-  assert.match(nova, /fm-nova-resumo/);
+  assert.doesNotMatch(nova, /fm-nova-resumo|Resumo do pedido/);
+  assert.match(nova, /fm-nova-rodape/);
+  assert.match(nova, /data-acao="fechar"[^>]*>Cancelar/);
   assert.match(nova, /data-nova-pendencias/);
   assert.match(nova, /data-pick-resumo/);
   assert.match(nova, /data-acao="novo-salvar"/);

@@ -67,8 +67,8 @@ export function htmlFormNova(base, preset = {}) {
   const veiculo = base.veiculos.find((v) => v.id === preset.veiculo_id);
   const lista = veiculosUnicos(base.veiculos.filter((v) => ['ATIVO', 'MANUTENCAO'].includes(String(v.status || '').toUpperCase()) || v.id === preset.veiculo_id));
   const itens = preset.itens || [];
-  // Três colunas na tela inteira: o pedido | o que será feito (seletor) | resumo fixo com pendências e os botões.
-  return `<div class="fm-mod-head"><div><h3>Nova manutenção</h3><p>Registre o pedido recebido (por exemplo, pelo WhatsApp): veículo, quem pediu, o problema e o que será feito (itens dos grupos do guia). O orçamento e a aprovação vêm depois.</p></div><button class="fm-x" type="button" data-acao="fechar" aria-label="Fechar">✕</button></div>
+  // Sem cabeçalho nem resumo: o pedido em faixa, os grupos do guia abrindo e fechando e, no fim, só Cancelar e Registrar.
+  return `<div class="fm-nova-corpo">
     <div class="fm-nova" data-nova-grade>
       <section class="fm-sec fm-nova-pedido"><h4>Pedido</h4>
         <div class="fm-nova-campos">
@@ -82,12 +82,12 @@ export function htmlFormNova(base, preset = {}) {
         ${itens.length ? `<div class="fm-nova-prontos"><span class="fm-comps-t">Já informado (checklist ou plano)</span><div class="fm-itens" data-novo-itens>${itens.map((it) => htmlItemAdicionado(base, it)).join('')}</div></div>` : ''}
         <div class="fm-sug" data-sugestoes hidden></div>
         <div data-seletor-corpo>${htmlSeletor()}</div>
-        <div class="fm-nota">Escolha o grupo e marque os itens; dá para marcar em vários grupos. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div></section>
-      <aside class="fm-sec fm-nova-resumo"><h4>Resumo do pedido</h4>
-        <div class="fm-pick-resumo" data-pick-resumo></div>
-        <ul class="fm-pend" data-nova-pendencias></ul>
-        <div data-erros></div>
-        <div class="fm-nova-acoes"><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button></div></aside>
+        <div class="fm-nota">Abra o grupo e marque os itens, ou use a caixa "Grupo todo" na ponta do cabeçalho; dá para marcar em vários grupos. O tipo (peça ou serviço) define a categoria da nota fiscal no GRM e o grupo entra no relatório de custos.</div>
+        <div class="fm-pick-resumo" data-pick-resumo hidden></div></section>
+    </div></div>
+    <div class="fm-nova-rodape">
+      <div class="fm-nova-info"><div data-erros></div><ul class="fm-pend fm-pend-linha" data-nova-pendencias></ul></div>
+      <div class="fm-nova-acoes"><button class="fm-btn ghost" type="button" data-acao="fechar">Cancelar</button><button class="fm-btn primary" type="button" data-acao="novo-salvar">Registrar manutenção</button></div>
     </div>`;
 }
 
