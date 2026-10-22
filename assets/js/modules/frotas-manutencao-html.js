@@ -105,16 +105,17 @@ function blocoDados(m, base, ed, maisAberto = false) {
   const campo = (rotulo, conteudo, extra = '', estilo = '') => `<div class="fm-field ${extra}"${estilo ? ` style="${estilo}"` : ''}><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor, sub = '') => `<div class="fm-ro">${valor || '—'}${sub ? `<small>${sub}</small>` : ''}</div>`;
   const edit = ed.cabecalho;
+  // Só o que se decide na manutenção à vista (o veículo, o solicitante e o motivo já estão na linha do cartão): previsão de
+  // entrega, prioridade, quem paga e veículo parado.
   return `<div class="fm-sec"><h4>Dados da manutenção</h4><div class="fm-grid2">
-    ${campo('Veículo', ro(`<strong>${esc(m.__placa || '—')}</strong>`, esc(`${m.__modelo || ''}${m.__coordenacao ? ' · ' + m.__coordenacao : ''}`)))}
-    ${campo('Solicitante', ro(esc(m.solicitante_nome), esc(dataHoraBR(m.solicitado_em))))}
+    ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
     ${campo('Prioridade', edit ? `<select class="fm-select" data-campo="prioridade">${opcoes(PRIORIDADES, m.prioridade)}</select>` : ro(esc((PRIORIDADES.find((r) => r.id === m.prioridade) || {}).label)))}
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
-    ${campo('Previsão de entrega', edit ? `<input class="fm-input" type="date" data-campo="previsao_entrega" value="${esc(m.previsao_entrega || '')}">` : ro(esc(m.previsao_entrega ? dataBR(m.previsao_entrega) : '')))}
-    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), '', 'grid-column:span 2')}
   </div>
   <details class="fm-mais" data-mais${maisAberto ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
+    ${campo('Solicitante', ro(esc(m.solicitante_nome), esc(dataHoraBR(m.solicitado_em))))}
+    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), 'full')}
     ${campo('Motorista', ro(esc(m.motorista_nome)))}
     ${campo('Origem', ro(esc(ORIGENS[m.origem] || m.origem)))}
     ${campo('Natureza', edit ? `<select class="fm-select" data-campo="natureza">${opcoes(NATUREZAS, m.natureza, { vazio: 'Definida ao aprovar' })}</select>` : ro(esc(m.natureza === 'preventiva' ? 'Preventiva' : m.natureza === 'corretiva' ? 'Corretiva' : '')))}
