@@ -107,6 +107,7 @@ function montarTabAtiva(content, ctx, visiveis) {
   if (!body) return;
   if (!card) { body.innerHTML = '<div class="frotas-window-placeholder">Nenhum item disponível.</div>'; return; }
   body.innerHTML = '';
+  const acoesHub = content.querySelector('[data-hub-acoes]'); if (acoesHub) acoesHub.innerHTML = ''; // cada aba coloca aqui os seus botões
   Promise.resolve(card.montar(body, ctx)).catch((error) => {
     console.error('[frotas-manutencao] Falha ao montar aba:', error);
     body.innerHTML = `<div class="frotas-window-placeholder">Erro ao carregar esta aba: ${esc(String(error?.message || error))}.</div>`;
@@ -132,7 +133,7 @@ export function renderContent(content, ctx) {
 
   content.innerHTML = `
     <section class="card mt-16">
-      <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}</div>
+      <div class="frotas-hub-tabs">${tabs({ itens: visiveis.map((c) => ({ id: c.id, label: c.titulo })), ativo: state.tab })}<div class="frotas-hub-acoes" data-hub-acoes></div></div>
       <div class="frotas-hub-tab-body" id="frotasManutencaoTabBody"></div>
     </section>`;
 

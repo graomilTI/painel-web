@@ -173,4 +173,5 @@ label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,19
 .fm-ol-falta{display:inline-flex;align-items:center;gap:6px;color:#fca5a5;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap}.fm-ol-falta input{accent-color:#ef4444;width:16px;height:16px;margin:0}
 .fm-ol.faltante .fm-input[data-ol="valor"]{opacity:.4}.fm-ol.faltante>.fm-ro,.fm-ol.faltante>.fm-input[data-ol="nome"]{text-decoration:line-through;color:#fca5a5}
 @media(max-width:900px){.fm-il{grid-template-columns:1fr auto 36px}.fm-il-grupo{grid-column:1/-1}}
+.fm-hub-btn{width:38px;height:38px;display:inline-flex;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.12);color:#86efac;cursor:pointer;padding:0;transition:.15s}.fm-hub-btn svg{width:18px;height:18px}.fm-hub-btn:hover{border-color:#4ade80;color:#dcfce7}.fm-hub-btn.primary{background:linear-gradient(135deg,#16a34a,#22c55e);border-color:transparent;color:#052e16}.fm-hub-btn.primary:hover{color:#052e16;filter:brightness(1.08)}.fm-hub-btn:focus-visible{outline:2px solid #4ade80;outline-offset:2px}
 </style>`;

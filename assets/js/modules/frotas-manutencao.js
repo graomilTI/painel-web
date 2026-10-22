@@ -13,7 +13,7 @@ import {
 import {
   ETAPAS, ETAPA_PADRAO, contarPorEtapa, etapaDaManutencao, manutencoesDaEtapa,
 } from './frotas-manutencao-etapas.js?v=20261021-frotas-manut45';
-import { htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
+import { htmlBotoesTopo, htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v=20261021-frotas-manut45';
 import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas-manut45';
@@ -614,7 +614,11 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     state.supabase = opts.supabase; state.opts = opts; state.root = container;
     state.fichaId = null; state.orcForm = null; state.formAcao = null;
     state.etapaEscolhida = false; state.busca = ''; 
-    container.innerHTML = `${ESTILOS_MANUTENCAO}${htmlCasca()}`;
+    // Atualizar e Nova manutenção vão para a linha das abas do painel de Frotas (se ela existir); senão, para o alto da tela.
+    const hub = document.querySelector('[data-hub-acoes]');
+    container.innerHTML = `${ESTILOS_MANUTENCAO}${htmlCasca({ comTopo: !hub })}`;
+    if (hub) hub.innerHTML = htmlBotoesTopo();
+    const barra = hub || container;
 
     // A lista é um só contêiner: cartões, marcação de itens e a ficha aberta dentro do cartão (cada um com o seu tratador).
     const lista = container.querySelector('[data-lista]');
@@ -626,8 +630,8 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
       if (topo && e.target === topo && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); alternarFicha(topo.dataset.abrir); }
     });
 
-    container.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
-    container.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
+    barra.querySelector('[data-acao="nova"]').addEventListener('click', () => abrirNova());
+    barra.querySelector('[data-acao="atualizar"]').addEventListener('click', async () => { state.base = { categorias: [], planos: [], oficinas: [], veiculos: [], componentes: [], grupos: [] }; await garantirBase(); await carregar(); });
     container.querySelector('[data-busca]').addEventListener('input', (e) => { state.busca = e.target.value; renderLista(); });
     // Cada etapa é um cartão: o clique troca a lista (clicar na etapa aberta não a desliga, sempre há uma etapa).
     ligarCards(container, {
