@@ -162,7 +162,7 @@ test('ficha dentro do cartão: sem selo "Em orçamento" nem "Próximo passo"; se
   const ficha = (extra) => htmlFicha(m({ status: 'em_orcamento', ...extra }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   const emOrcamento = ficha({});
   assert.doesNotMatch(emOrcamento, /Próximo passo|fm-etapa|>Em orçamento</);
-  assert.match(emOrcamento, /data-acao="ver-veiculo"/);
+  assert.doesNotMatch(emOrcamento, /ver-veiculo|Ver veículo/, 'sem o botão Ver veículo');
   for (const status of ['em_aprovacao', 'reprovada', 'em_execucao']) assert.match(ficha({ status }), new RegExp(status === 'em_aprovacao' ? 'Em aprovação' : status === 'reprovada' ? 'Reprovada' : 'Em execução'), status);
 });
 

@@ -17,7 +17,6 @@ import { htmlCards, htmlCasca, htmlEtapas } from './frotas-manutencao-cards.js?v
 import { faltantesDoOrcamento, htmlErros, htmlFicha, htmlFormNova, htmlLinhaOrcamento } from './frotas-manutencao-html.js?v=20261021-frotas-manut45';
 import { criarSeletor } from './frotas-manutencao-seletor.js?v=20261021-frotas-manut45';
 import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas-manut45';
-import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-frotas-manut45';
 
 (function () {
   const MODULE_NAME = 'FROTAS_MANUTENCAO';
@@ -306,7 +305,6 @@ import { abrirProntuario } from './frotas-manutencao-visao-dados.js?v=20261021-f
     const erros = (lista) => { ov.querySelector('[data-erros]').innerHTML = htmlErros(lista); };
 
     if (acao === 'fechar') return fecharFicha();
-    if (acao === 'ver-veiculo') return abrirProntuario(m.veiculo_id);
     if (acao === 'cancelar-form') { state.formAcao = null; return renderFicha(); }
 
     if (acao === 'etapa') {

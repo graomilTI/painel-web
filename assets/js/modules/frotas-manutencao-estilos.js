@@ -148,7 +148,12 @@ label.fm-mc-gtit{cursor:pointer}
 label.fm-mc-linha{cursor:pointer}label.fm-mc-linha:hover{border-color:rgba(34,197,94,.5)}.fm-mc-linha.sel{border-color:rgba(34,197,94,.65);background:rgba(34,197,94,.16);color:#f0fdf4}
 .fm-mc-linha.servico{border-style:dashed}.fm-mc-nome{min-width:0;overflow-wrap:anywhere}
 .fm-mc-tipo{font-style:normal;padding:1px 7px;border-radius:999px;font-size:9.5px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;border:1px solid rgba(96,165,250,.34);background:rgba(59,130,246,.12);color:#bfdbfe}.fm-mc-tipo.servico{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.12);color:#fde68a}
-.fm-mc-detalhe{padding:4px 16px 16px;border-top:1px solid rgba(148,163,184,.12);background:rgba(2,6,23,.28)}.fm-mc-detalhe>.fm-sec:first-of-type{margin-top:10px}
+.fm-mc-detalhe{padding:2px 16px 10px;border-top:1px solid rgba(148,163,184,.12)}
+/* Dentro do cartão a ficha é chapada: seções separadas por uma linha fina, sem caixa dentro da caixa. */
+.fm-mc-detalhe .fm-sec{border:0;border-radius:0;background:transparent;padding:12px 0;margin:0}.fm-mc-detalhe .fm-sec+.fm-sec{border-top:1px solid rgba(148,163,184,.12)}
+.fm-mc-detalhe .fm-sec h4{margin-bottom:8px}.fm-h4-acoes{display:inline-flex;gap:8px;align-items:center;margin-left:auto}
+.fm-mc-detalhe .fm-mais>summary{padding:0}.fm-mc-detalhe details.fm-sec{padding:11px 0}.fm-mc-detalhe .fm-acoes{margin-top:8px;padding-top:10px;border-top:1px solid rgba(148,163,184,.12)}
+.fm-mc-detalhe .fm-form{background:rgba(2,6,23,.3)}.fm-mc-detalhe .fm-input,.fm-mc-detalhe .fm-select,.fm-mc-detalhe .fm-field textarea{box-sizing:border-box;max-width:100%}
 .fm-det-topo{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:12px}
 .fm-mc-acoes{display:flex;flex-direction:row;gap:7px;align-items:center;justify-content:flex-end}
 .fm-ic-act{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.7);color:#eef7f2;cursor:pointer;flex:none;padding:0;transition:.15s}
