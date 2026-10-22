@@ -335,8 +335,9 @@ export function totalDoOrcamento({ pecas = null, maoObra = null } = {}) {
 
 // Linhas que valem a pena guardar: com nome e com marca/observação ou valor.
 export function normalizarLinhas(linhas = []) {
-  return linhas.map((l) => ({ nome: String(l?.nome || '').trim().slice(0, 120), detalhe: String(l?.detalhe || '').trim().slice(0, 160), valor: valorLinha(l?.valor), tipo: l?.tipo === 'servico' ? 'servico' : 'peca' }))
-    .filter((l) => l.nome && (l.detalhe || l.valor != null));
+  // Peça faltante: o fornecedor não tem a peça ou o serviço; a linha fica registrada (sem valor) para a aprovação saber.
+  return linhas.map((l) => ({ nome: String(l?.nome || '').trim().slice(0, 120), detalhe: String(l?.detalhe || '').trim().slice(0, 160), valor: l?.faltante ? null : valorLinha(l?.valor), tipo: l?.tipo === 'servico' ? 'servico' : 'peca', ...(l?.faltante ? { faltante: true } : {}) }))
+    .filter((l) => l.nome && (l.detalhe || l.valor != null || l.faltante));
 }
 
 // Linhas do formulário: as já salvas e, para cada peça/serviço marcado nos itens que ainda não tem linha, uma linha em branco.
@@ -348,7 +349,7 @@ export function linhasIniciais(itens = [], salvas = []) {
   }
   const escolhida = new Map(); // nome (sem acento) → peça escolhida no item ({ detalhe, valor })
   for (const it of itens) for (const [nome, p] of Object.entries(it.pecas || {})) escolhida.set(norm(nome), p);
-  const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor), tipo: l.tipo || tipoDoNome.get(norm(l.nome)) || 'peca' }));
+  const linhas = (Array.isArray(salvas) ? salvas : []).map((l) => ({ nome: l.nome, detalhe: l.detalhe || '', valor: valorLinha(l.valor), tipo: l.tipo || tipoDoNome.get(norm(l.nome)) || 'peca', ...(l.faltante ? { faltante: true } : {}) }));
   const tem = new Set(linhas.map((l) => norm(l.nome)));
   for (const [chave, tipo] of tipoDoNome) {
     if (tem.has(chave)) continue;
