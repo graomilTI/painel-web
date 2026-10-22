@@ -30,7 +30,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     addItens: false, estadoItens: {}, // seletor de itens da ficha: aberto? e a seleção (sobrevive ao redesenho da ficha)
     etapa: ETAPA_PADRAO, etapaEscolhida: false, busca: '',
     loading: false, ocupado: false,
-    fichaId: null, maisAberto: false, itensAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
+    fichaId: null, itensAberto: false, orcForm: null, formAcao: null, kmSugerido: null, afetadas: [], financeiro: null,
   };
 
   // ---------- permissões ----------
@@ -158,7 +158,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     el.innerHTML = htmlFicha(m, {
       itens: itensPorManut.get(m.id) || [], orcamentos: orcsPorManut.get(m.id) || [], base: state.base,
       podeAprovar: podeAprovar(), orcForm: state.orcForm, formAcao: state.formAcao, kmSugerido: state.kmSugerido, afetadas: state.afetadas, financeiro: state.financeiro,
-      notas: state.notas.filter((x) => x.manutencao_id === m.id), maisAberto: state.maisAberto, seletorAberto: state.addItens, itensAberto: state.itensAberto, semCabecalho: true,
+      notas: state.notas.filter((x) => x.manutencao_id === m.id), seletorAberto: state.addItens, itensAberto: state.itensAberto, semCabecalho: true,
     });
     // Seletor de itens (o mesmo da nova manutenção): aberto quando não há itens ou pelo botão "+ Adicionar itens".
     const corpo = el.querySelector('[data-add-itens] [data-seletor-corpo]');
@@ -195,7 +195,7 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
 
   // Abre a ficha no cartão (uma por vez). Na etapa certa: quem veio de um aviso ou de outra aba cai onde a manutenção está.
   function abrirFicha(id) {
-    state.fichaId = id; state.maisAberto = false; state.itensAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
+    state.fichaId = id; state.itensAberto = false; state.addItens = false; state.estadoItens = {}; state.orcForm = null; state.formAcao = null; state.kmSugerido = null; state.afetadas = []; state.financeiro = null;
     const m = fichaAtual();
     if (m && etapaDe(m) !== state.etapa) { state.etapa = etapaDe(m); }
     if (m && state.busca) { state.busca = ''; const campo = state.root?.querySelector('[data-busca]'); if (campo) campo.value = ''; } // a busca não pode esconder o cartão
@@ -640,7 +640,6 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
     });
     // "Mais detalhes" continua aberto/fechado ao salvar um campo (a ficha é redesenhada a cada gravação). O evento toggle não borbulha.
     lista.addEventListener('toggle', (e) => {
-      if (e.target?.dataset?.mais !== undefined) state.maisAberto = e.target.open;
       if (e.target?.dataset?.itensDet !== undefined) state.itensAberto = e.target.open;
     }, true);
 

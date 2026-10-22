@@ -101,7 +101,7 @@ function faixaEtapa(m) {
 // Só os status que dividem a etapa com outro (em aprovação e reprovada em Cotações; na oficina em Em andamento) ganham selo.
 const STATUS_COM_SELO = new Set(['em_aprovacao', 'reprovada', 'em_execucao']);
 
-function blocoDados(m, base, ed, maisAberto = false, acoesTitulo = '') {
+function blocoDados(m, ed, acoesTitulo = '') {
   const campo = (rotulo, conteudo, extra = '', estilo = '') => `<div class="fm-field ${extra}"${estilo ? ` style="${estilo}"` : ''}><label>${rotulo}</label>${conteudo}</div>`;
   const ro = (valor, sub = '') => `<div class="fm-ro">${valor || '—'}${sub ? `<small>${sub}</small>` : ''}</div>`;
   const edit = ed.cabecalho;
@@ -113,17 +113,7 @@ function blocoDados(m, base, ed, maisAberto = false, acoesTitulo = '') {
     ${campo('Quem paga', edit ? `<select class="fm-select" data-campo="responsavel_pagamento">${opcoes(RESPONSAVEIS, m.responsavel_pagamento, { vazio: 'Definir...' })}</select>` : ro(esc((RESPONSAVEIS.find((r) => r.id === m.responsavel_pagamento) || {}).label)))}
     ${campo('Veículo parado', edit ? `<label class="fm-check"><input type="checkbox" data-campo="veiculo_parado"${m.veiculo_parado ? ' checked' : ''}> Parado na oficina</label>` : ro(m.veiculo_parado ? 'Sim' : 'Não'))}
   </div>
-  <details class="fm-mais" data-mais${maisAberto ? ' open' : ''}><summary>Mais detalhes</summary><div class="fm-grid2">
-    ${campo('Solicitante', ro(esc(m.solicitante_nome), esc(dataHoraBR(m.solicitado_em))))}
-    ${campo('Problema / serviço', edit ? `<textarea data-campo="descricao">${esc(m.descricao || '')}</textarea>` : ro(esc(m.descricao)), 'full')}
-    ${campo('Motorista', ro(esc(m.motorista_nome)))}
-    ${campo('Origem', ro(esc(ORIGENS[m.origem] || m.origem)))}
-    ${campo('Natureza', edit ? `<select class="fm-select" data-campo="natureza">${opcoes(NATUREZAS, m.natureza, { vazio: 'Definida ao aprovar' })}</select>` : ro(esc(m.natureza === 'preventiva' ? 'Preventiva' : m.natureza === 'corretiva' ? 'Corretiva' : '')))}
-    ${campo('Km na solicitação', ro(esc(fmtKm(m.km_solicitacao))))}
-    ${campo('Entrada na oficina', ro(esc(m.entrada_oficina_em ? dataHoraBR(m.entrada_oficina_em) : '')))}
-    ${campo('Ordem de serviço', ro(esc(numeroOS(m) && m.os_emitida_em ? numeroOS(m) : '')))}
-    ${campo('Diagnóstico da oficina', edit ? `<textarea data-campo="diagnostico" placeholder="O que a oficina encontrou">${esc(m.diagnostico || '')}</textarea>` : ro(esc(m.diagnostico)), 'full')}
-  </div></details></div>`;
+</div>`;
 }
 
 // Itens da manutenção numa lista única (uma linha por peça, serviço ou mão de obra) que minimiza; remover uma linha tira só
@@ -340,7 +330,7 @@ function blocoLinhaTempo(m) {
 }
 
 // `semCabecalho`: ficha dentro do cartão da etapa (sem janela e sem botão de voltar): no lugar do cabeçalho, só a situação e o prontuário.
-export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], maisAberto = false, seletorAberto = false, itensAberto = false, semCabecalho = false }) {
+export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, formAcao, kmSugerido, afetadas = [], financeiro = null, notas = [], seletorAberto = false, itensAberto = false, semCabecalho = false }) {
   const ed = camposEditaveis(m.status);
   const acoes = acoesDisponiveis(m, { podeAprovar, itens, orcamentos });
   const botoes = acoes.map((a) => `<button class="fm-btn ${a.tom}" type="button" data-acao="etapa" data-etapa="${a.id}"${a.bloqueio ? ` disabled title="${esc(a.bloqueio)}"` : ''}>${esc(a.rotulo)}</button>`).join('');
@@ -352,7 +342,7 @@ export function htmlFicha(m, { itens, orcamentos, base, podeAprovar, orcForm, fo
   const tituloDados = semCabecalho && STATUS_COM_SELO.has(m.status) ? badgeStatus(m.status) : '';
   return `${cabecalho}
     ${faixaEtapa(m)}
-    ${blocoDados(m, base, ed, maisAberto, tituloDados)}${blocoItens(m, itens, base, ed, { seletorAberto: seletorAberto || !itens.length, itensAberto })}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
+    ${blocoDados(m, ed, tituloDados)}${blocoItens(m, itens, base, ed, { seletorAberto: seletorAberto || !itens.length, itensAberto })}${blocoOrcamentos(m, orcamentos, base, ed, orcForm, itens)}${blocoExecucao(m)}${blocoNotas(m, notas, financeiro, base)}${blocoProgramacao(m, afetadas)}${blocoLinhaTempo(m)}
     <div class="fm-acoes">${dica ? `<span class="fm-dica">${esc(dica)}</span>` : ''}${botoes}</div>${form}<div data-erros></div>`;
 }
 

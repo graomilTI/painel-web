@@ -168,9 +168,8 @@ test('ficha dentro do cartão: sem selo "Em orçamento" nem "Próximo passo"; se
 
 test('a previsão de entrega fica à vista nos dados, fora de "Mais detalhes"', () => {
   const html = htmlFicha(m({ status: 'em_orcamento', previsao_entrega: '2026-10-30' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  const antesDoMais = html.slice(0, html.indexOf('data-mais'));
-  assert.match(antesDoMais, /Previsão de entrega/);
-  assert.match(antesDoMais, /data-campo="previsao_entrega" value="2026-10-30"/);
+  assert.match(html, /Previsão de entrega/);
+  assert.match(html, /data-campo="previsao_entrega" value="2026-10-30"/);
 });
 
 test('cotação: botão "Adicionar cotação", valor total à vista e o detalhe por item opcional', () => {
@@ -209,10 +208,10 @@ test('itens da manutenção: lista única que remove só o componente; o control
   assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');
 });
 
-test('dados da manutenção à vista: só previsão de entrega, prioridade, quem paga e veículo parado', () => {
+test('dados da manutenção: só previsão de entrega, prioridade, quem paga e veículo parado (sem "Mais detalhes")', () => {
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
-  const aVista = html.slice(html.indexOf('Dados da manutenção'), html.indexOf('data-mais'));
-  for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Veículo parado']) assert.match(aVista, new RegExp(`<label>${rotulo}</label>`));
-  for (const fora of ['Solicitante', 'Problema / serviço', '<label>Veículo</label>']) assert.doesNotMatch(aVista, new RegExp(fora), `${fora} já está na linha do cartão ou em Mais detalhes`);
-  assert.match(html.slice(html.indexOf('data-mais')), /<label>Problema \/ serviço<\/label>/, 'o motivo continua editável em Mais detalhes');
+  const dados = html.slice(html.indexOf('Dados da manutenção'), html.indexOf('Itens da manutenção'));
+  for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Veículo parado']) assert.match(dados, new RegExp(`<label>${rotulo}</label>`));
+  for (const fora of ['Solicitante', 'Problema / serviço', '<label>Veículo</label>', 'Motorista', 'Natureza', 'Diagnóstico', 'Mais detalhes']) assert.doesNotMatch(html, new RegExp(fora), `${fora} não aparece na ficha`);
+  assert.doesNotMatch(html, /data-mais/);
 });
