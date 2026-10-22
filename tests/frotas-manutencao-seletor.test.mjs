@@ -56,3 +56,14 @@ test('o esqueleto do seletor tem busca, lista de grupos e painel (o resumo fica 
   for (const marca of ['data-pick-busca', 'data-pick-grupos', 'data-pick-painel']) assert.match(html, new RegExp(marca));
   assert.doesNotMatch(html, /data-pick-resumo/);
 });
+
+test('grupos viram cabeçalhos que abrem e fecham, com a caixa de grupo todo na ponta', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../assets/js/modules/frotas-manutencao-seletor.js', import.meta.url), 'utf8');
+  assert.match(src, /data-pick-gr=/);
+  assert.match(src, /aria-expanded=/);
+  assert.match(src, /<input type="checkbox" data-pick-todos data-grupo=/, 'a caixa do grupo fica no cabeçalho');
+  assert.match(src, /marcarGrupo\(todos\.dataset\.grupo, todos\.checked\)/);
+  assert.match(src, /ck\.indeterminate/, 'grupo com parte marcada fica no meio');
+  assert.doesNotMatch(src, /fm-pick-g"|data-pick-grupos"\s*aria-label="Grupos do guia"><\/nav>/, 'a lista de grupos em dois painéis saiu');
+});
