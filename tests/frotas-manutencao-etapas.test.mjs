@@ -227,3 +227,24 @@ test('ordem da ficha: cotações primeiro e os campos da manutenção logo abaix
   const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
   assert.ok(html.indexOf('Cotações (0)') < html.indexOf('Previsão de entrega'));
 });
+
+test('cotação: fornecedor com busca nas oficinas cadastradas (milhares, importadas do GRM) e oficinas lidas em páginas', () => {
+  const oficinas = [{ id: 'of1', nome: 'Auto Center Sorriso', ativo: true }, { id: 'of2', nome: 'Oficina Antiga', ativo: false }];
+  const form = htmlFicha(m({ status: 'em_orcamento' }), { itens: [itemFreio], orcamentos: [], base: { ...base, oficinas }, podeAprovar: true, semCabecalho: true, orcForm: true });
+  assert.match(form, /list="fmListaOficinas" data-o="fornecedor"/);
+  assert.match(form, /<option value="Auto Center Sorriso">/);
+  assert.doesNotMatch(form, /Oficina Antiga/, 'inativas não entram na busca');
+  assert.match(form, /type="hidden" data-o="oficina_id"/);
+  assert.doesNotMatch(form, /<select[^>]*data-o="oficina_id"/, 'sem lista suspensa com milhares de opções');
+  const dados = lerArquivo('assets/js/modules/frotas-manutencao-dados.js');
+  assert.match(dados, /export async function carregarOficinasTodas[^]*?tudoPaginado/, 'a API corta em 1.000 linhas');
+  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-oficinas.js'), /carregarOficinasTodas/);
+});
+
+test('seletor: os grupos formam uma grade de 4 colunas e os itens abrem abaixo dela', () => {
+  const src = lerArquivo('assets/js/modules/frotas-manutencao-seletor.js');
+  assert.match(src, /class="fm-pick-grade" data-pick-grupos/);
+  assert.match(src, /data-pick-abertos/);
+  assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'painel dos itens do grupo, fora da grade');
+  assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+});

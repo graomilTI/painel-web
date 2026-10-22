@@ -90,7 +90,7 @@ export async function carregarBase(supabase) {
   const [categorias, planos, oficinas, veiculos, componentes, grupos, pecas] = await Promise.all([
     tudo(supabase.from('frotas_manutencao_categorias').select('*').order('codigo', { ascending: true }), 'Erro ao carregar as categorias.'),
     tudo(supabase.from('frotas_manutencao_planos').select('*').order('categoria_codigo', { ascending: true }), 'Erro ao carregar os planos.'),
-    tudo(supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.'),
+    carregarOficinasTodas(supabase),
     tudoPaginado(() => supabase.from('frotas_veiculos').select('id,placa,renavam,updated_at,marca_modelo,marca,modelo,bfleet_marca,bfleet_modelo,nome,coordenacao,supervisao,status,motorista_atual,responsavel_manutencao').order('placa', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar os veículos.'),
     carregarComponentes(supabase).catch(() => []),
     carregarGrupos(supabase).catch(() => []),
@@ -154,7 +154,12 @@ export async function carregarCategorias(supabase) {
 
 // Serviços do guia (padrão da frota e exceções por veículo) com os intervalos, para sugerir os próximos prazos.
 export async function carregarOficinas(supabase) {
-  return tudo(supabase.from('frotas_oficinas').select('id,nome,razao_social,ativo').order('nome', { ascending: true }), 'Erro ao carregar as oficinas.');
+  return tudoPaginado(() => supabase.from('frotas_oficinas').select('id,nome,razao_social,ativo').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
+}
+
+// Todas as oficinas com os dados completos (são milhares, importadas do GRM: a API entrega 1.000 por vez).
+export async function carregarOficinasTodas(supabase) {
+  return tudoPaginado(() => supabase.from('frotas_oficinas').select('*').order('nome', { ascending: true }).order('id', { ascending: true }), 'Erro ao carregar as oficinas.');
 }
 
 // Data do pagamento (yyyy-mm-dd) para o timestamp da nota; vazio = o banco usa o momento do envio.

@@ -40,13 +40,14 @@ export const rotuloPeca = (p) => `${p.detalhe}${p.ultimo_valor != null ? ` · ${
 export function htmlSeletor() {
   return `<div class="fm-pick">
     <input class="fm-input fm-pick-busca" data-pick-busca type="search" placeholder="Buscar item em todos os grupos (ex.: pastilha, bateria, lâmpada)..." autocomplete="off">
-    <div class="fm-pick-acc" data-pick-grupos aria-label="Grupos do guia"></div>
+    <div class="fm-pick-grade" data-pick-grupos aria-label="Grupos do guia"></div>
+    <div class="fm-pick-abertos" data-pick-abertos></div>
     <section class="fm-pick-painel" data-pick-painel hidden></section>
   </div>`;
 }
 
-// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). Cada grupo do guia é um cabeçalho que abre e fecha, com uma caixa
-// na ponta para marcar o grupo todo; os itens marcados aparecem contados no cabeçalho. O resumo dos itens marcados fica onde a
+// Liga o seletor dentro de `box` (que recebeu htmlSeletor()). Os grupos do guia formam uma grade de 4 colunas (12 grupos = 4x3);
+// cada quadrado abre os itens abaixo da grade e tem uma caixa na ponta para marcar o grupo todo; os itens marcados aparecem contados no cabeçalho. O resumo dos itens marcados fica onde a
 // tela quiser (`resumo`, um elemento com data-pick-resumo; sem ele, procura dentro de `box`). Devolve { ler, qtd, ... }.
 // `estado` (opcional) guarda a seleção e os grupos abertos fora da tela: quem redesenha a página (a ficha) passa o mesmo objeto
 // e não perde o que foi marcado.
@@ -89,21 +90,22 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   // Itens de um grupo na tela: o que o guia lista, Mão de obra e o que foi digitado.
   const nomesDoGrupo = (g) => itensDe(base, g, marcados(g.codigo));
 
+  // Grupo = um quadrado da grade (nome, quantos marcados e a caixa de "grupo todo"); abrir mostra os itens abaixo da grade.
   function htmlGrupo(g) {
     const aberto = abertos.has(g.codigo);
     const n = marcados(g.codigo).length;
-    const corpo = aberto
-      ? `<div class="fm-pick-gc"><div class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</div>
-        <div class="fm-pick-lista">${nomesDoGrupo(g).map((nome) => linhaItem(g.codigo, nome)).join('')}</div>
-        <div class="fm-pick-outro"><input class="fm-input" data-pick-outro data-grupo="${g.codigo}" maxlength="80" placeholder="Serviço realizado ou outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
-          <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do item digitado"><option value="servico">Serviço</option><option value="peca">Peça</option></select>
-          <button type="button" class="fm-btn soft fm-mini" data-pick-add data-grupo="${g.codigo}">Adicionar</button></div></div>`
-      : '';
-    return `<section class="fm-pick-gr${aberto ? ' aberto' : ''}${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
-      <div class="fm-pick-gh">
-        <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}"><span class="fm-pick-seta" aria-hidden="true">▸</span><strong>${esc(g.nome)}</strong><b data-pick-cont>${n ? `${n} marcado(s)` : ''}</b></button>
-        <label class="fm-pick-gck" title="Marcar ou desmarcar o grupo todo"><span>Grupo todo</span><input type="checkbox" data-pick-todos data-grupo="${g.codigo}"></label>
-      </div>${corpo}</section>`;
+    return `<div class="fm-pick-gr${aberto ? ' aberto' : ''}${n ? ' tem' : ''}" data-pick-gr="${g.codigo}">
+      <button type="button" class="fm-pick-gt" data-pick-grupo="${g.codigo}" aria-expanded="${aberto}" title="${aberto ? 'Fechar' : 'Abrir'} ${esc(g.nome)}"><strong>${esc(g.nome)}</strong><b data-pick-cont>${n ? `${n} marcado(s)` : ''}</b></button>
+      <label class="fm-pick-gck" title="Marcar ou desmarcar o grupo todo"><input type="checkbox" data-pick-todos data-grupo="${g.codigo}" aria-label="Grupo todo: ${esc(g.nome)}"></label>
+    </div>`;
+  }
+
+  function htmlPainelGrupo(g) {
+    return `<section class="fm-pick-gc" data-pick-gc="${g.codigo}"><div class="fm-pick-gc-cab"><strong>${esc(g.nome)}</strong><span class="fm-mm">${rotuloDoModelo && pecasDoModelo.size ? `Peças já usadas no ${esc(rotuloDoModelo)} aparecem sob o item` : 'Peças do guia e mão de obra'}</span><button type="button" class="fm-link" data-pick-grupo="${g.codigo}">Fechar</button></div>
+      <div class="fm-pick-lista">${nomesDoGrupo(g).map((nome) => linhaItem(g.codigo, nome)).join('')}</div>
+      <div class="fm-pick-outro"><input class="fm-input" data-pick-outro data-grupo="${g.codigo}" maxlength="80" placeholder="Serviço realizado ou outro item de ${esc(g.nome)} (digite e tecle Enter)" autocomplete="off">
+        <select class="fm-select" data-pick-outro-tipo aria-label="Tipo do item digitado"><option value="servico">Serviço</option><option value="peca">Peça</option></select>
+        <button type="button" class="fm-btn soft fm-mini" data-pick-add data-grupo="${g.codigo}">Adicionar</button></div></section>`;
   }
 
   // Contador, destaque e caixa do grupo (marcada, vazia ou no meio) sem redesenhar a lista.
@@ -121,8 +123,12 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
 
   function renderGrupos() {
     const acc = q('[data-pick-grupos]');
-    acc.hidden = !!busca.trim();
+    const buscando = !!busca.trim();
+    acc.hidden = buscando;
     acc.innerHTML = grupos.length ? grupos.map(htmlGrupo).join('') : '<div class="fm-pick-vazio">Nenhum grupo cadastrado.</div>';
+    const abertosEl = q('[data-pick-abertos]');
+    abertosEl.hidden = buscando;
+    abertosEl.innerHTML = grupos.filter((g) => abertos.has(g.codigo)).map(htmlPainelGrupo).join('');
     grupos.forEach((g) => sincronizarGrupo(g.codigo));
   }
 
@@ -155,6 +161,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
       if (abertos.has(cod)) abertos.delete(cod); else abertos.add(cod);
       renderGrupos();
       q(`[data-pick-gr="${cod}"] [data-pick-grupo]`)?.focus();
+      if (abertos.has(cod)) q(`[data-pick-gc="${cod}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
     const add = e.target.closest('[data-pick-add]');
@@ -197,13 +204,13 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
   }
 
   function adicionarDigitado(cod) {
-    const sec = q(`[data-pick-gr="${Number(cod)}"]`); const campo = sec?.querySelector('[data-pick-outro]'); if (!campo) return;
+    const sec = q(`[data-pick-gc="${Number(cod)}"]`); const campo = sec?.querySelector('[data-pick-outro]'); if (!campo) return;
     const nome = campo.value.trim();
     if (!nome) return;
     if (nome !== MAO_DE_OBRA) digitados.set(nome, sec.querySelector('[data-pick-outro-tipo]')?.value === 'servico' ? 'servico' : 'peca');
     alternar(cod, nome, true);
     tudo();
-    q(`[data-pick-gr="${Number(cod)}"] [data-pick-outro]`)?.focus();
+    q(`[data-pick-gc="${Number(cod)}"] [data-pick-outro]`)?.focus();
   }
 
   tudo();
@@ -214,7 +221,7 @@ export function criarSeletor(box, base, { aoMudar = () => {}, resumo = null, est
     marcar(cod, nome) { alternar(cod, nome, true); tudo(); },
     irPara(cod) {
       abertos.add(Number(cod)); busca = ''; q('[data-pick-busca]').value = ''; renderGrupos(); renderPainel();
-      q(`[data-pick-gr="${Number(cod)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      q(`[data-pick-gc="${Number(cod)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     },
     estaMarcado: (cod, nome) => marcados(cod).includes(nome),
     // Troca as peças sugeridas (o veículo mudou): descarta escolhas de peças que não são do novo modelo.

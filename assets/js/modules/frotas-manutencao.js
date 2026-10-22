@@ -472,15 +472,13 @@ import { sugerirItens } from './frotas-manutencao-sugestoes.js?v=20261021-frotas
       if (typeof valor === 'string' && (campo === 'descricao' || campo === 'diagnostico')) valor = valor.trim() || null;
       return executar(() => dados.atualizarManutencao(state.supabase, m.id, { [campo]: valor }));
     }
-    // Orçamento: escolher a oficina cadastrada preenche nome e contato.
-    if (alvo.dataset.o === 'oficina_id') {
+    // Cotação: o nome digitado que bate com uma oficina cadastrada liga a cotação a ela e preenche o contato.
+    if (alvo.dataset.o === 'fornecedor') {
       const f = alvo.closest('[data-orc-form]');
-      const of = state.base.oficinas.find((x) => x.id === alvo.value);
-      if (of) {
-        f.querySelector('[data-o="fornecedor"]').value = of.nome;
-        const contato = f.querySelector('[data-o="fornecedor_contato"]');
-        if (!contato.value) contato.value = of.telefone || of.contato_nome || '';
-      }
+      const of = state.base.oficinas.find((x) => norm(x.nome) === norm(alvo.value));
+      f.querySelector('[data-o="oficina_id"]').value = of?.id || '';
+      const contato = f.querySelector('[data-o="fornecedor_contato"]');
+      if (of && contato && !contato.value) contato.value = of.telefone || of.contato_nome || '';
     }
   }
 
