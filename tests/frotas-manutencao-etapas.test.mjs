@@ -208,3 +208,11 @@ test('itens da manutenção: lista única que remove só o componente; o control
   assert.match(ctrl, /itensDet/, 'lembra se a lista está aberta ao redesenhar a ficha');
   assert.match(ctrl, /faltantesDoOrcamento\(sel\)/, 'aprovar avisa o que o fornecedor não tem');
 });
+
+test('dados da manutenção à vista: só previsão de entrega, prioridade, quem paga e veículo parado', () => {
+  const html = htmlFicha(m({ status: 'em_orcamento' }), { itens: [], orcamentos: [], base, podeAprovar: true, semCabecalho: true });
+  const aVista = html.slice(html.indexOf('Dados da manutenção'), html.indexOf('data-mais'));
+  for (const rotulo of ['Previsão de entrega', 'Prioridade', 'Quem paga', 'Veículo parado']) assert.match(aVista, new RegExp(`<label>${rotulo}</label>`));
+  for (const fora of ['Solicitante', 'Problema / serviço', '<label>Veículo</label>']) assert.doesNotMatch(aVista, new RegExp(fora), `${fora} já está na linha do cartão ou em Mais detalhes`);
+  assert.match(html.slice(html.indexOf('data-mais')), /<label>Problema \/ serviço<\/label>/, 'o motivo continua editável em Mais detalhes');
+});
