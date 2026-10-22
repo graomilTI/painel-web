@@ -40,11 +40,32 @@
    precisa de !important E especificidade igual/maior aqui (por isso o
    seletor repete .frotas-hub-tabs; mesma pegadinha documentada em
    painel-web-painel-ui-v2-css-especificidade, lá pra tabela do DRE). */
+/* A linha das abas tem, à direita, uma área para os botões de ação da aba aberta (ícones). */
+.frotas-hub-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, .14);
+}
+
 .frotas-hub-tabs .ds-tabs {
   gap: 2px;
-  border-bottom: 1px solid rgba(148, 163, 184, .14);
+  border-bottom: 0;
+  flex: 1;
+  min-width: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
+}
+
+.frotas-hub-acoes {
+  display: flex;
+  gap: 8px;
+  flex: none;
+  align-items: center;
+}
+
+.frotas-hub-acoes:empty {
+  display: none;
 }
 
 .frotas-hub-tabs.frotas-hub-tabs .ds-tab {

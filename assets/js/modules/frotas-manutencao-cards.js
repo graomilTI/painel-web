@@ -16,12 +16,19 @@ export const ICONES = {
   volta: svg('<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>'),
   ver: svg('<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'),
   mais: svg('<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>'),
+  atualizar: svg('<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'),
 };
 
 // ---------- casca e etapas ----------
-export function htmlCasca() {
+// Atualizar e Nova manutenção, só com ícone. No painel de Frotas ficam na linha das abas (à direita); sem essa linha (tela avulsa),
+// vão numa barra no alto da própria tela.
+export function htmlBotoesTopo() {
+  return `<button class="fm-hub-btn" type="button" data-acao="atualizar" title="Atualizar" aria-label="Atualizar">${ICONES.atualizar}</button><button class="fm-hub-btn primary" type="button" data-acao="nova" title="Nova manutenção" aria-label="Nova manutenção">${ICONES.mais}</button>`;
+}
+
+export function htmlCasca({ comTopo = true } = {}) {
   return `<section class="fm-shell">
-    <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" type="button" data-acao="atualizar">↻ Atualizar</button><button class="fm-btn primary" type="button" data-acao="nova">+ Nova manutenção</button></div></div>
+    ${comTopo ? `<div class="fm-topo"><div class="fm-head-actions">${htmlBotoesTopo()}</div></div>` : ''}
     <div class="fm-kpis fm-etapas" data-etapas></div>
     <div class="fm-card"><div class="fm-body">
       <div class="fm-bar"><div class="fm-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input class="fm-input" placeholder="Buscar por código, placa, serviço, peça, oficina, motorista, categoria..." data-busca></div>

@@ -351,7 +351,8 @@ test('lista e nova manutenção renderizam (botão "Nova manutenção" e campo "
   assert.match(htmlCards([], contexto({ etapa: 'cotacoes' })), /Nenhuma manutenção em cotação/);
   assert.match(html, /data-abrir="m1"/, 'o cabeçalho do cartão abre a ficha (dentro do cartão, sem janela)');
   assert.doesNotMatch(html, /Voltar para a lista/, 'não há página com botão de voltar');
-  assert.match(htmlCasca(), /data-acao="nova">\+ Nova manutenção<\/button>/);
+  assert.match(htmlCasca(), /data-acao="nova" title="Nova manutenção"/);
+  assert.doesNotMatch(htmlCasca({ comTopo: false }), /data-acao="nova"/, 'no painel de Frotas os botões ficam na linha das abas');
   const nova = htmlFormNova(base, { veiculo_id: 'v1', itens: [{ categoria_codigo: 2, plano_id: 'p1', natureza: 'preventiva' }] });
   assert.doesNotMatch(nova, /<h3>|fm-mod-head/, 'sem cabeçalho "Nova manutenção" na janela');
   assert.match(nova, /data-n-solicitante/);

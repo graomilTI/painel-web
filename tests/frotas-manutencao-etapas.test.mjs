@@ -248,3 +248,13 @@ test('seletor: os grupos formam uma grade de 4 colunas e os itens abrem abaixo d
   assert.match(src, /data-pick-gc="\$\{g\.codigo\}"/, 'painel dos itens do grupo, fora da grade');
   assert.match(lerArquivo('assets/js/modules/frotas-manutencao-estilos.js'), /\.fm-pick-grade\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
 });
+
+test('Atualizar e Nova manutenção são ícones na linha das abas do painel de Frotas (à direita)', () => {
+  const grupo = lerArquivo('assets/js/frotas-manutencao-grupo.js');
+  assert.match(grupo, /<div class="frotas-hub-acoes" data-hub-acoes><\/div>/);
+  assert.match(grupo, /acoesHub\.innerHTML = ''/, 'cada aba limpa e põe os seus botões');
+  const ctrl = lerArquivo('assets/js/modules/frotas-manutencao.js');
+  assert.match(ctrl, /document\.querySelector\('\[data-hub-acoes\]'\)/);
+  assert.match(ctrl, /htmlCasca\(\{ comTopo: !hub \}\)/);
+  assert.match(lerArquivo('assets/css/frotas-hub.css'), /\.frotas-hub-acoes\s*\{/);
+});
