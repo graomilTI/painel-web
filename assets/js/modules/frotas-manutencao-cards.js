@@ -102,7 +102,7 @@ export function htmlCard(m, c) {
         <div class="fm-mc-quando"><strong>${m.solicitado_em ? esc(new Date(m.solicitado_em).toLocaleDateString('pt-BR')) : '—'}</strong><span class="fm-mm">${esc(m.solicitante_nome || '')}</span></div>
         ${htmlAcoes(m, acoes, aberto)}
       </div>
-      ${selecionavel ? htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens }) : ''}
+      ${selecionavel && aberto ? htmlItens(m, linhas, { selecionavel, marcadas: c.marcadasDe(m.id), editavel: camposEditaveis(m.status).itens }) : ''}
       ${aberto ? '<div class="fm-mc-detalhe" id="fmFicha" data-detalhe></div>' : ''}
     </div>
   </article>`;
