@@ -39,3 +39,20 @@ test('o código do pedido segue letra do setor + mês + sequência do mês (ex.:
   assert.match(sql, /values \('APR-' \|\| v_letra, v_ano, v_mes, 1\)/); // contador por setor e mês
   assert.match(sql, /revoke all on function public\.compras_solicitar_aprovacao/);
 });
+
+test('o Financeiro escolhe o fornecedor ao aprovar (um que respondeu ou outro informado à mão)', () => {
+  const js = ler('assets/js/financeiroCotacoes.js');
+  assert.match(js, /name="fcForn"/);
+  assert.match(js, /Outro fornecedor \(informar\)/);
+  assert.match(js, /Escolha o fornecedor antes de aprovar/);
+  assert.match(js, /p_fornecedor_nome: escolha\?\.nome/);
+  const sql = ler('supabase/migrations/20261023190000_compras_aprovacao_fornecedor_escolhido.sql');
+  assert.match(sql, /raise exception 'Informe o fornecedor escolhido\.'/);
+  assert.match(sql, /add column if not exists fornecedor_nome text/);
+});
+
+test('Compras destaca o fornecedor aprovado pelo Financeiro', () => {
+  const js = ler('assets/js/adm-compras.js');
+  assert.match(js, /Comprar do fornecedor aprovado/);
+  assert.match(js, /Aprovado pelo Financeiro \(\$\{esc\(aprovado\.codigo\)\}\)/);
+});

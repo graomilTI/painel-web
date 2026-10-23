@@ -5,13 +5,13 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link10';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link11';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
 ];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando Termo', comprado:'Comprado', recusado:'Recusado', recusado_financeiro:'Recusa Financeiro', enviado_estoque:'Enviado (Estoque)' };
-const state = { tab:'cotacoes', filtro:'todos', busca:'', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoInfo:null, aprovInfo:new Map(), gruposSeparados:new Set(), catalogo:[], ctx:null };
+const state = { tab:'cotacoes', filtro:'todos', busca:'', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoInfo:null, aprovInfo:new Map(), aprovadoInfo:new Map(), gruposSeparados:new Set(), catalogo:[], ctx:null };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -151,6 +151,7 @@ async function loadRows(){
     state.rows=data||[]; state.selected.clear();
     if(state.tab==='cotacoes') await carregarInfoCotacao();
     if(state.tab==='analise') await carregarAprovInfo();
+    if(state.tab==='cotacoes') await carregarAprovadoInfo();
     renderTable();
   } finally {
     wrap?.classList.remove('is-loading');
@@ -303,6 +304,21 @@ async function carregarAprovInfo(){
     }
   }catch(e){ console.warn('[compras] aprovações',e); }
 }
+// Itens já aprovados pelo Financeiro: guarda o fornecedor escolhido (o pedido mais recente de cada item).
+async function carregarAprovadoInfo(){
+  state.aprovadoInfo=new Map();
+  try{
+    const ids=state.rows.filter(r=>r.aprovado_em).map(r=>r.id);
+    for(let i=0;i<ids.length;i+=80){
+      const {data,error}=await supabase.from('compras_aprovacao_itens').select('compra_item_id, compras_aprovacoes!inner(codigo,status,fornecedor_nome,fornecedor_cnpj,valor_aprovado,decidido_em)').in('compra_item_id',ids.slice(i,i+80)).eq('compras_aprovacoes.status','aprovada');
+      if(error) throw error;
+      (data||[]).forEach(x=>{
+        const atual=state.aprovadoInfo.get(String(x.compra_item_id));
+        if(!atual||String(x.compras_aprovacoes.decidido_em)>String(atual.decidido_em)) state.aprovadoInfo.set(String(x.compra_item_id),x.compras_aprovacoes);
+      });
+    }
+  }catch(e){ console.warn('[compras] aprovados',e); }
+}
 function analiseAcoesHtml(r){
   const a=state.aprovInfo.get(String(r.id));
   return a?`<span class="adm-cot-badge enviado" title="Aprovar ou recusar em Financeiro > Cotações">Aguardando o Financeiro · ${esc(a.codigo)}</span>`:`${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}`;
@@ -310,7 +326,7 @@ function analiseAcoesHtml(r){
 function cotacaoBadgeHtml(r){
   if(state.tab!=='cotacoes'||!state.cotacaoInfo) return '';
   const sit=situacaoDoItem(r.id,state.cotacaoInfo);
-  return `${r.aprovado_em?'<span class="adm-cot-badge respostas" title="Aprovado pelo Financeiro">Aprovado</span>':''}<span class="adm-cot-badge ${esc(sit.codigo)}">${esc(sit.texto)}</span>`;
+  return `${r.aprovado_em?`<span class="adm-cot-badge respostas" title="${esc(state.aprovadoInfo.get(String(r.id))?.fornecedor_nome?`Aprovado pelo Financeiro: ${state.aprovadoInfo.get(String(r.id)).fornecedor_nome}`:'Aprovado pelo Financeiro')}">Aprovado${state.aprovadoInfo.get(String(r.id))?.fornecedor_nome?` · ${esc(state.aprovadoInfo.get(String(r.id)).fornecedor_nome)}`:''}</span>`:''}<span class="adm-cot-badge ${esc(sit.codigo)}">${esc(sit.texto)}</span>`;
 }
 function cardRowHtml(r,mostrarSolicitante=false){
   return `<div class="adm-cmp-card-row" data-row-id="${esc(r.id)}">
@@ -848,6 +864,10 @@ function abrirRespostasModal(rows){
       ${atual?`<button class="btn btn-small btn-secondary" data-link-copiar="${esc(c.token)}" data-exp="${esc(c.expira_em)}" type="button">Copiar link</button>
       ${linkAberto(c)?`<button class="btn btn-small btn-secondary" data-link-encerrar="${esc(c.id)}" type="button">Encerrar</button>`:`<button class="btn btn-small btn-secondary" data-link-reabrir="${esc(c.id)}" type="button">Reabrir por ${VALIDADE_LINK_DIAS} dias</button>`}`:''}
     </div>`;
+  // Fornecedor que o Financeiro aprovou para estes itens (pode ser um que respondeu ou outro, informado por eles).
+  const aprovado=rows.map(r=>state.aprovadoInfo.get(String(r.id))).filter(Boolean)[0]||null;
+  const cnpjAprovado=aprovado?.fornecedor_cnpj||'';
+  const propostaAprovada=aprovado?propostas.find(p=>(cnpjAprovado&&p.cnpj===cnpjAprovado)||norm(p.razao_social)===norm(aprovado.fornecedor_nome)):null;
   const melhor=Math.min(...propostas.filter(p=>p.completo).map(p=>p.totalComFrete),Infinity);
   const qtd=(r)=>Number(r.quantidade||r.unidade||1);
   const celula=(p,r)=>{
@@ -864,9 +884,10 @@ function abrirRespostasModal(rows){
     <h4 class="mt-16">Links enviados</h4>
     <div class="adm-cot-links">${linkAtual?linhaLinkHtml(linkAtual,true):'<p class="muted">Nenhum link gerado para estes itens.</p>'}
       ${anteriores.length?`<details class="adm-cot-antigos"><summary>Links anteriores (${anteriores.length})</summary>${anteriores.map(c=>linhaLinkHtml(c,false)).join('')}</details>`:''}</div>
+    ${aprovado?`<div class="adm-cot-aprovado">Aprovado pelo Financeiro (${esc(aprovado.codigo)}): <b>${esc(aprovado.fornecedor_nome||'-')}</b>${aprovado.valor_aprovado!=null?` · ${money(aprovado.valor_aprovado)}`:''}${propostaAprovada?'':'<br><small>Esse fornecedor não está entre as respostas: use "Comprar sem usar as respostas" e informe os valores.</small>'}</div>`:''}
     <h4 class="mt-16">Comparação</h4>
     ${propostas.length?`<div class="adm-cmp-table-wrap"><table class="adm-cmp-table adm-cot-comp">
-      <thead><tr><th>Item</th>${propostas.map(p=>`<th>${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small></th>`).join('')}</tr></thead>
+      <thead><tr><th>Item</th>${propostas.map(p=>`<th class="${p===propostaAprovada?'aprovada':''}">${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small>${p===propostaAprovada?'<br><small class="adm-cot-ok">Aprovado pelo Financeiro</small>':''}</th>`).join('')}</tr></thead>
       <tbody>
         ${rows.map(r=>`<tr><td>${esc(qtd(r))} × ${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${propostas.map(p=>`<td>${celula(p,r)}</td>`).join('')}</tr>`).join('')}
         <tr class="adm-cot-total"><td>Total dos itens${propostas.some(p=>!p.completo)?' (só os cotados)':''}</td>${propostas.map(p=>`<td><b>${money(p.total)}</b>${p.completo?'':`<br><small class="muted">cobre ${p.cobertos} de ${rows.length}</small>`}</td>`).join('')}</tr>
@@ -878,14 +899,14 @@ function abrirRespostasModal(rows){
         <tr><td>Prazo de entrega</td>${propostas.map(p=>`<td>${esc(p.prazo_entrega||'-')}</td>`).join('')}</tr>
         <tr><td>Formas de pagamento</td>${propostas.map(p=>`<td>${esc(p.formas_pagamento.join(', ')||'-')}</td>`).join('')}</tr>
         <tr><td>Desconto por forma</td>${propostas.map(p=>`<td>${esc(descreverDescontos(p))}</td>`).join('')}</tr>
-        <tr><td></td>${propostas.map(p=>`<td><button class="btn btn-primary btn-small" data-comprar-forn="${esc(p.cnpj)}" type="button">Comprar deste fornecedor</button></td>`).join('')}</tr>
+        <tr><td></td>${propostas.map(p=>`<td><button class="btn ${!aprovado||p===propostaAprovada?'btn-primary':'btn-secondary'} btn-small" data-comprar-forn="${esc(p.cnpj)}" type="button">${p===propostaAprovada?'Comprar do fornecedor aprovado':'Comprar deste fornecedor'}</button></td>`).join('')}</tr>
       </tbody></table></div>`:'<p class="muted">Nenhum fornecedor respondeu ainda.</p>'}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-secondary" id="cotSemCotacao" type="button">Comprar sem usar as respostas (digitar valores)</button></div>
   </div>`;
   modal.classList.add('open');
   const fechar=()=>{modal.classList.remove('open'); loadRows();};
   modal.querySelector('#mClose').onclick=fechar;
-  modal.querySelector('#cotSemCotacao').onclick=()=>openCompraLote(rows);
+  modal.querySelector('#cotSemCotacao').onclick=()=>openCompraLote(aprovado?.fornecedor_nome?rows.map(r=>({...r,_fornecedor:aprovado.fornecedor_nome})):rows);
   const atualizar=async(fn)=>{ try{ await fn(); await carregarInfoCotacao(); abrirRespostasModal(rows); }catch(e){ setMsg(e.message,true); alert(e.message); } };
   modal.querySelectorAll('[data-link-copiar]').forEach(b=>b.onclick=async()=>{
     const url=urlDoLink(b.dataset.linkCopiar);
@@ -1785,6 +1806,7 @@ function styles(){return `<style>
 .adm-cot-antigos{margin-top:4px}.adm-cot-antigos summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:700;padding:4px 2px}.adm-cot-antigos .adm-cot-link{margin-top:6px;opacity:.8}
 .adm-cot-links{display:flex;flex-direction:column;gap:8px;margin-top:8px}.adm-cot-link{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:12px}
 .adm-cot-link-card{border-color:rgba(34,197,94,.32)}.adm-cot-link-card .adm-cmp-card-head{background:rgba(34,197,94,.07)}
+.adm-cot-aprovado{margin-top:14px;padding:10px 14px;border:1px solid rgba(34,197,94,.4);border-radius:12px;background:rgba(34,197,94,.08);color:#bbf7d0}.adm-cot-comp th.aprovada{background:rgba(34,197,94,.14)}.adm-cot-ok{color:#86efac;font-weight:800}
 .adm-cot-comp th,.adm-cot-comp td{vertical-align:top}.adm-cot-comp td.melhor{background:rgba(34,197,94,.14)}.adm-cot-total td{border-top:2px solid var(--line)}
 </style>`}
 
