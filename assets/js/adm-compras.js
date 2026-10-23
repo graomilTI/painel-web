@@ -1370,14 +1370,34 @@ function ligarAtribuicaoNf(modal,itens,inputSel,boxSel){
   input.addEventListener('change',()=>{
     const files=[...(input.files||[])];
     if(files.length<2){ box.style.display='none'; box.innerHTML=''; return; }
-    const opts=files.map((f,i)=>`<option value="${i}">NF ${i+1} — ${esc(f.name)}</option>`).join('');
+    const optsDe=(padrao)=>files.map((f,i)=>`<option value="${i}"${i===padrao?' selected':''}>NF ${i+1} — ${esc(f.name)}</option>`).join('');
     box.style.display='';
+    // Padrão distribuído (item 1 → NF 1, item 2 → NF 2…): com todos na NF 1, a 2ª NF virava só anexo sem ninguém notar.
     box.innerHTML=`<p class="muted">Cada NF é lançada separadamente no GRM e o pagamento segue agrupado no mesmo comprovante. Escolha a NF de cada item; arquivo sem item fica só como anexo.</p>
-      <table class="adm-cmp-table" style="min-width:0"><thead><tr><th>Item</th><th>NF</th></tr></thead><tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)} × ${esc(r.material)}${r.tamanho?` (${esc(r.tamanho)})`:''}</td><td><select data-nf-item="${esc(r.id)}">${opts}</select></td></tr>`).join('')}</tbody></table>`;
+      <table class="adm-cmp-table" style="min-width:0"><thead><tr><th>Item</th><th>NF</th></tr></thead><tbody>${itens.map((r,idx)=>`<tr><td>${esc(r.quantidade||r.unidade||1)} × ${esc(r.material)}${r.tamanho?` (${esc(r.tamanho)})`:''}</td><td><select data-nf-item="${esc(r.id)}">${optsDe(Math.min(idx,files.length-1))}</select></td></tr>`).join('')}</tbody></table>
+      <p class="adm-cmp-feedback err mt-8" data-nf-aviso style="display:none"></p>`;
+    const aviso=box.querySelector('[data-nf-aviso]');
+    const atualizarAviso=()=>{
+      const sem=nfsSemItem(box,itens,files);
+      aviso.style.display=sem.length?'':'none';
+      aviso.textContent=sem.length?`Nenhum item usa ${sem.map(i=>`a NF ${i+1} (${files[i].name})`).join(' nem ')}: ${sem.length>1?'esses arquivos ficam':'esse arquivo fica'} só como anexo e não ${sem.length>1?'são lançados':'é lançado'} no GRM.`:'';
+    };
+    box.querySelectorAll('select[data-nf-item]').forEach(s=>s.addEventListener('change',atualizarAviso));
+    atualizarAviso();
   });
+}
+// Índices dos arquivos que nenhum item escolheu (viram só anexo).
+function nfsSemItem(box,itens,files){
+  const usados=new Set(itens.map(r=>Number(box.querySelector(`[data-nf-item="${CSS.escape(String(r.id))}"]`)?.value||0)));
+  return files.map((_,i)=>i).filter(i=>!usados.has(i));
 }
 // Envia os arquivos e resolve a NF de cada item. Devolve { nf, anexos, nfPorItem } (nfPorItem só com 2+ arquivos e 2+ itens).
 async function resolverArquivosNf(files,itens,box,fb){
+  // Antes de enviar: arquivo que nenhum item escolheu só vira anexo (não é lançado no GRM) — exige confirmação.
+  if(files.length>=2&&itens.length>=2&&box){
+    const sem=nfsSemItem(box,itens,[...files]);
+    if(sem.length&&!confirm(`Nenhum item usa ${sem.map(i=>`a NF ${i+1} (${files[i].name})`).join(' nem ')}.\n\nEla ficará só como anexo e NÃO será lançada no GRM. Continuar assim?`)) throw new Error('Escolha a NF de cada item para lançar todas as NFs no GRM.');
+  }
   const up=await enviarArquivosNf(files,'compras/nf',fb);
   if(files.length<2||itens.length<2||!box) return {nf:up.principal,anexos:up.anexos,nfPorItem:null};
   const escolha=new Map(itens.map(r=>[r.id,Number(box.querySelector(`[data-nf-item="${CSS.escape(String(r.id))}"]`)?.value||0)]));
