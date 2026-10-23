@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link5';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link6';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -252,6 +252,7 @@ const ICONS={
   send:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
   doc:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>`,
   box:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`,
+  link:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
   eye:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
   split:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>`,
   clip:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
@@ -294,12 +295,12 @@ function cotacaoBadgeHtml(r){
   const sit=situacaoDoItem(r.id,state.cotacaoInfo);
   return `<span class="adm-cot-badge ${esc(sit.codigo)}">${esc(sit.texto)}</span>`;
 }
-function cardRowHtml(r){
+function cardRowHtml(r,mostrarSolicitante=false){
   return `<div class="adm-cmp-card-row" data-row-id="${esc(r.id)}">
     <input type="checkbox" data-check="${esc(r.id)}">
     <div class="adm-cmp-card-row-info">
       <strong>${esc(r.quantidade||r.unidade||1)}x ${esc(r.material)}</strong>
-      <small>${esc(r.tipo||'-')}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}${r.uniforme_cor?` · Cor: ${esc(r.uniforme_cor)}`:''}${r.colaborador_nome?` · ${esc(r.colaborador_nome)}`:''}${r.codigo?` · Cód: ${esc(r.codigo)}`:''}${r.codigo_pagamento?` · Pgto: <b>${esc(r.codigo_pagamento)}</b>`:''}</small>
+      <small>${mostrarSolicitante&&r.compras_solicitacoes?.solicitante?`<b>${esc(r.compras_solicitacoes.solicitante)}</b> · `:''}${esc(r.tipo||'-')}${r.tamanho?` · Tam: ${esc(r.tamanho)}`:''}${r.uniforme_cor?` · Cor: ${esc(r.uniforme_cor)}`:''}${r.colaborador_nome?` · ${esc(r.colaborador_nome)}`:''}${r.codigo?` · Cód: ${esc(r.codigo)}`:''}${r.codigo_pagamento?` · Pgto: <b>${esc(r.codigo_pagamento)}</b>`:''}</small>
     </div>
     <div class="adm-cmp-card-row-value">${cotacaoBadgeHtml(r)}${money(r.valor_total||0)}</div>
     <div class="adm-cmp-card-row-actions">${rowActionsHtml(r)}</div>
@@ -377,19 +378,56 @@ function cotacaoCardHtml(itens,gkey){
     <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
   </article>`;
 }
+// O link junta os materiais escolhidos numa cotação só: todos os itens do mesmo link aparecem juntos num card, com o
+// link, as respostas e a situação, mesmo vindo de gestores/cidades diferentes. Item com mais de um link fica no mais recente.
+function linkDoItem(r){
+  const info=state.cotacaoInfo; if(!info) return null;
+  return (info.porItem.get(String(r.id))||[]).map(id=>info.cotacoes.get(id)).filter(Boolean)
+    .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))[0]||null;
+}
+function cotacaoLinkCardHtml(itens,link){
+  const info=state.cotacaoInfo;
+  const ids=itens.map(r=>r.id).join(',');
+  const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
+  const respostas=info.respostas.filter(x=>x.cotacao_id===link.id);
+  const solicitantes=[...new Set(itens.map(r=>r.compras_solicitacoes?.solicitante).filter(Boolean))];
+  return `<article class="adm-cmp-card adm-cot-link-card" data-cot-link="${esc(link.id)}">
+    <div class="adm-cmp-card-head">
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>Cotação · ${dataHora(link.created_at)}</strong><small>${solicitantes.length>2?`${solicitantes.length} solicitantes`:esc(solicitantes.join(' · '))||'-'} · ${respostas.length} ${respostas.length===1?'resposta':'respostas'}</small></div></label>
+      <div class="adm-cmp-card-meta">${situacaoLinkHtml(link)}<span>${itens.length} ${itens.length===1?'material':'materiais'}</span><strong>${money(total)}</strong>
+        ${groupIconBtn('link-grupo',link.id,'Copiar link da cotação','link')}
+        ${respostas.length?groupIconBtn('respostas-grupo',ids,'Ver respostas','eye'):''}
+      </div>
+    </div>
+    <div class="adm-cmp-card-body">${itens.map(r=>cardRowHtml(r,true)).join('')}</div>
+  </article>`;
+}
 function renderCotacoesCards(container,rows){
   if(!rows.length){container.innerHTML='<div class="adm-cmp-empty">Nenhum item nesta etapa.</div>'; return;}
   const groups=new Map();
   rows.forEach(r=>{
-    const k=state.gruposSeparados.has(groupKeyCotacao(r))?`solo:${r.id}`:groupKeyCotacao(r);
+    const link=linkDoItem(r);
+    const k=link?`link:${link.id}`:(state.gruposSeparados.has(groupKeyCotacao(r))?`solo:${r.id}`:groupKeyCotacao(r));
     if(!groups.has(k)) groups.set(k,[]);
     groups.get(k).push(r);
   });
-  container.innerHTML=[...groups.entries()].map(([k,itens])=>cotacaoCardHtml(itens,k)).join('');
+  // Cotações com link primeiro (a mais recente no topo); depois os pedidos ainda sem cotação.
+  const ordem=[...groups.entries()].sort(([a],[b])=>{
+    const la=a.startsWith('link:'), lb=b.startsWith('link:');
+    if(la!==lb) return la?-1:1;
+    if(!la) return 0;
+    return String(state.cotacaoInfo.cotacoes.get(b.slice(5))?.created_at).localeCompare(String(state.cotacaoInfo.cotacoes.get(a.slice(5))?.created_at));
+  });
+  container.innerHTML=ordem.map(([k,itens])=>k.startsWith('link:')?cotacaoLinkCardHtml(itens,state.cotacaoInfo.cotacoes.get(k.slice(5))):cotacaoCardHtml(itens,k)).join('');
   bindCheckHandlers(container);
   wireRowActions(container);
   const doGrupo=(b,attr)=>state.rows.filter(r=>b.dataset[attr].split(',').includes(String(r.id)));
   container.querySelectorAll('[data-respostas-grupo]').forEach(b=>b.onclick=()=>abrirRespostasModal(doGrupo(b,'respostasGrupo')));
+  container.querySelectorAll('[data-link-grupo]').forEach(b=>b.onclick=async()=>{
+    const link=state.cotacaoInfo.cotacoes.get(b.dataset.linkGrupo); if(!link) return;
+    const url=urlDoLink(link.token);
+    try{ await navigator.clipboard.writeText(mensagemDoLink(url,link.expira_em)); setMsg('Link da cotação copiado.'); }catch{ prompt('Copie o link:',url); }
+  });
   container.querySelectorAll('[data-separar-grupo]').forEach(b=>b.onclick=()=>{
     state.gruposSeparados.add(b.dataset.separarGrupo);
     renderTable();
@@ -1686,6 +1724,7 @@ function styles(){return `<style>
 
 .adm-cot-badge{display:inline-flex;align-items:center;margin-right:10px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;background:rgba(148,163,184,.16);color:#cbd5e1;white-space:nowrap}.adm-cot-badge.enviado{background:rgba(59,130,246,.18);color:#93c5fd}.adm-cot-badge.respostas{background:rgba(34,197,94,.2);color:#86efac}.adm-cot-badge.encerrado{background:rgba(248,113,113,.16);color:#fca5a5}
 .adm-cot-links{display:flex;flex-direction:column;gap:8px;margin-top:8px}.adm-cot-link{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:12px}
+.adm-cot-link-card{border-color:rgba(34,197,94,.32)}.adm-cot-link-card .adm-cmp-card-head{background:rgba(34,197,94,.07)}
 .adm-cot-comp th,.adm-cot-comp td{vertical-align:top}.adm-cot-comp td.melhor{background:rgba(34,197,94,.14)}.adm-cot-total td{border-top:2px solid var(--line)}
 </style>`}
 
