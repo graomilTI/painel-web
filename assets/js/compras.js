@@ -2,6 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20261005-situacao-ativo';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { itensComDistribuicao } from './comprasDistribuicaoEpi.js?v=20261023-layout-frotas1';
 import { carregarCidades, cidadesDaUf, UFS_BRASIL } from './modules/frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
 
 let CATALOGO = [];
@@ -320,16 +321,7 @@ function openDistribModal(onConfirm){
     modal.querySelector('#dcSemColab').onclick=()=>{ closeComprasModal(modal); onConfirm(null); };
     modal.querySelector('#dcConfirmar').onclick=()=>{
       closeComprasModal(modal);
-      const finalItens=[];
-      state.itens.filter(i=>i.tipo!=='EPI').forEach(i=>finalItens.push({...i}));
-      epiItens.forEach(item=>{
-        const itemDistribs=distribucoes.filter(d=>d.epi_id===item._id);
-        const totalDistrib=itemDistribs.reduce((s,d)=>s+d.quantidade,0);
-        const rem=totalItem(item)-totalDistrib;
-        itemDistribs.forEach(d=>finalItens.push({...item,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:d.quantidade,quantidade:d.quantidade,colaborador_id:d.colaborador_id||null,colaborador_nome:d.colaborador_nome}));
-        if(rem>0) finalItens.push({...item,_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:rem,quantidade:rem,colaborador_id:null,colaborador_nome:null});
-        if(itemDistribs.length===0) finalItens.push({...item});
-      });
+      const finalItens=itensComDistribuicao(state.itens,distribucoes);
       onConfirm(finalItens);
     };
     modal.querySelectorAll('[data-rem]').forEach(btn=>btn.onclick=()=>{ distribucoes.splice(Number(btn.dataset.rem),1); renderModal(); });
