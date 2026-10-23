@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1220">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Cotação | Grão 1000</title>
+  <link rel="icon" href="./assets/icons/pwa-192.png">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0b1220; --card: rgba(8,15,26,.9); --border: rgba(148,163,184,.18); --field: #0f1b2d;
+      --green: #16a34a; --green-light: #34d399; --text: #e2e8f0; --muted: #94a3b8; --danger: #f87171; --radius: 16px;
+    }
+    html, body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+    .app { min-height: 100dvh; max-width: 720px; margin: 0 auto; padding-bottom: env(safe-area-inset-bottom); }
+    .topbar { display: flex; align-items: center; gap: 10px; padding: 16px 20px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; background: rgba(8,15,26,.96); }
+    .logo { width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg,#166534,#16a34a); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #fff; flex-shrink: 0; }
+    .topbar h1 { font-size: 16px; font-weight: 700; }
+    .topbar p { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    label.campo { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+    input[type=text], select { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 16px; font-family: inherit; }
+    input:focus, select:focus { outline: 2px solid var(--green); border-color: transparent; }
+    .campo.erro input, .grupo.erro { border-color: var(--danger); }
+    .grupo { display: flex; flex-direction: column; gap: 8px; border: 1px solid transparent; border-radius: 10px; }
+    .grupo > .rotulo { font-size: 14px; font-weight: 600; }
+    .opcoes { display: flex; flex-wrap: wrap; gap: 8px; }
+    .opcao { display: inline-flex; align-items: center; gap: 8px; background: var(--field); border: 1px solid var(--border); border-radius: 999px; padding: 10px 14px; font-size: 14px; cursor: pointer; user-select: none; }
+    .opcao input { accent-color: var(--green); width: 16px; height: 16px; }
+    .opcao:has(input:checked) { border-color: var(--green-light); background: rgba(22,163,74,.16); }
+    .item { display: grid; grid-template-columns: 54px 1fr; gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+    .item:first-of-type { border-top: 0; }
+    .item .un { font-weight: 800; color: var(--green-light); font-size: 15px; padding-top: 2px; }
+    .item .mat strong { display: block; font-size: 15px; }
+    .item .mat small { color: var(--muted); }
+    .item .preco { grid-column: 2; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .item .preco input[type=text] { width: 150px; }
+    .item .preco .total { font-size: 12px; color: var(--muted); }
+    .item.sem-valor input[type=text] { opacity: .35; }
+    .item.erro .mat strong { color: var(--danger); }
+    .desc-linha { display: grid; grid-template-columns: 1fr 100px 100px 36px; gap: 8px; align-items: center; }
+    .btn { border: 0; border-radius: 12px; padding: 14px 18px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn-primary { background: var(--green); color: #fff; }
+    .btn-primary:disabled { opacity: .5; cursor: wait; }
+    .btn-sec { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .btn-mini { padding: 8px 12px; font-size: 13px; border-radius: 10px; }
+    .acoes { display: flex; gap: 10px; flex-wrap: wrap; }
+    .acoes .btn-primary { flex: 1; }
+    .msg { padding: 12px 14px; border-radius: 12px; font-size: 14px; }
+    .msg.erro { background: rgba(248,113,113,.12); border: 1px solid var(--danger); color: #fecaca; }
+    .msg.ok { background: rgba(22,163,74,.14); border: 1px solid var(--green); color: #bbf7d0; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .centro { text-align: center; padding: 40px 20px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+    .centro .grande { font-size: 42px; }
+    .resumo dt { color: var(--muted); font-size: 12px; margin-top: 10px; }
+    .resumo dd { font-size: 15px; }
+    .resumo table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .resumo td { padding: 6px 0; border-top: 1px solid var(--border); }
+    .resumo td:last-child { text-align: right; white-space: nowrap; }
+    .isca { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+    [hidden] { display: none !important; }
+    @media (max-width: 480px) { .desc-linha { grid-template-columns: 1fr 1fr; } .desc-linha .btn { grid-column: 2; justify-self: end; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="logo">G</div>
+      <div><h1>Cotação de materiais</h1><p id="validade">Grão 1000</p></div>
+    </header>
+    <main class="body" id="raiz"><div class="centro"><p class="muted">Carregando cotação…</p></div></main>
+  </div>
+  <script type="module" src="./assets/js/cotacao-fornecedor.js?v=20261023-cotacao-link1"></script>
+</body>
+</html>
