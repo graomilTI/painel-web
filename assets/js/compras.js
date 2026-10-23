@@ -1,16 +1,48 @@
 ﻿import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
 import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20261005-situacao-ativo';
+import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { carregarCidades, cidadesDaUf, UFS_BRASIL } from './modules/frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
 
 let CATALOGO = [];
+// UF e cidade: mesmo esquema da Manutenção de Frotas (relação de municípios do IBGE, cache compartilhado).
+let municipios = [];
+const cidadeOficial = (uf, texto)=>cidadesDaUf(uf, municipios).find(n=>norm(n)===norm(texto))||null;
+// Lê UF + cidade da tela; a cidade tem que ser uma da UF (nome oficial do IBGE). Se o IBGE estiver fora do ar, aceita o texto.
+function lerLocal(){
+  const uf=document.getElementById('cmpUf')?.value||'';
+  const texto=document.getElementById('cmpCidade')?.value.trim()||'';
+  if(!uf&&!texto) return {cidade:null,uf:null};
+  if(!uf) throw new Error('Escolha a UF antes da cidade.');
+  if(!texto) return {cidade:null,uf};
+  if(!municipios.length) return {cidade:texto,uf};
+  const oficial=cidadeOficial(uf,texto);
+  if(!oficial) throw new Error(`Escolha uma cidade de ${uf} da lista.`);
+  return {cidade:oficial,uf};
+}
+function bindLocal(){
+  const uf=document.getElementById('cmpUf'), cid=document.getElementById('cmpCidade'), lista=document.getElementById('cmpCidadeList');
+  if(!uf||!cid||!lista) return;
+  const atualizar=()=>{
+    cid.disabled=!uf.value;
+    cid.placeholder=uf.value?'Digite para buscar a cidade':'Escolha a UF';
+    lista.innerHTML=cidadesDaUf(uf.value,municipios).map(n=>`<option value="${esc(n)}"></option>`).join('');
+  };
+  uf.onchange=()=>{ cid.value=''; atualizar(); if(uf.value) cid.focus(); };
+  cid.onchange=()=>{ const o=cidadeOficial(uf.value,cid.value); if(o) cid.value=o; };
+  atualizar();
+  carregarCidades().then(l=>{ municipios=l; atualizar(); });
+}
 async function loadCatalogo(){
   CATALOGO = await safe(()=>supabase.from('compras_catalogo').select('material,tipo,observacao').eq('ativo',true).order('material'));
 }
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const ALOJAMENTO_MATERIAIS = ['BELICHE','CAMA','COLCHÃO','LENÇOL','FRONHA','TRAVESSEIRO','COBERTOR','ARMÁRIO','PRATELEIRA','MESA','CADEIRA','VENTILADOR','CORTINA','VARAL','UTENSÍLIOS DE COZINHA'];
-const UF_LIST = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
-const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado' };
-const state = { mode:'itens', historyFilter:'pendentes', rows:[], itens:[], colaboradores:[], uniformes:[], alojamentoItens:[] };
+const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado', recusado_financeiro:'Recusado (Financeiro)', enviado_estoque:'Enviado (Estoque)', concluido:'Concluído', cancelado:'Cancelado' };
+const STATUS_TOM = { pendente:'warn', em_cotacao:'info', em_analise:'info', pendente_pagamento:'warn', aguardando_nf:'warn', aguardando_termo:'warn', comprado:'ok', concluido:'ok', enviado_estoque:'ok', recusado:'err', recusado_financeiro:'err', cancelado:'err' };
+const TIPO_ROTULO = { itens:'Material', uniformes:'Uniforme', alojamento:'Alojamento' };
+const HIST_CARDS = [['pendentes','Pendentes','amber','relogio'],['concluidos','Concluídos','green','ok'],['cancelados','Cancelados','red','erro']];
+const state = { mode:'itens', historyFilter:'pendentes', historyBusca:'', rows:[], itens:[], colaboradores:[], uniformes:[], alojamentoItens:[] };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return y&&m&&d?`${d}/${m}/${y}`:'-'; };
@@ -22,7 +54,7 @@ const colabAtivo = (c)=>['ativo','true','1','sim'].includes(norm(c.ativo??'ativo
 function usuario(ctx){ return ctx?.user || {}; }
 function solicitanteNome(ctx){ return usuario(ctx).name || usuario(ctx).email || 'Usuário logado'; }
 function setMsg(id,msg,err=false){ const el=document.getElementById(id); if(el){ el.textContent=msg||''; el.classList.toggle('err',!!err); }}
-function pill(v){ return `<span class="cmp-status ${esc(v)}">${esc(STATUS[v]||v||'-')}</span>`; }
+function pill(v){ return `<span class="fm-badge ${STATUS_TOM[v]||''}">${esc(STATUS[v]||v||'-')}</span>`; }
 async function safe(fn,fallback=[]){ try{ const {data,error}=await fn(); if(error) throw error; return data||fallback; }catch(e){ console.warn(e); return fallback; } }
 const COLAB_CACHE_KEY = 'grao1000:compras-colab:v1';
 const COLAB_CACHE_TTL = 4 * 60 * 60 * 1000;
@@ -511,8 +543,7 @@ async function salvarSolicitacao(ctx, tipo, itens){
     coordenacao:u.coordenacao||u.supervisao||null,
     tipo_solicitacao:tipo,
     status:'pendente',
-    cidade:document.getElementById('cmpCidade')?.value.trim()||null,
-    uf:document.getElementById('cmpUf')?.value||null,
+    ...lerLocal(),
     observacoes:observacoes||null,
     fornecedor:document.getElementById('cmpFornecedor')?.value.trim()||null,
     telefone_fornecedor:document.getElementById('cmpTelFornecedor')?.value.replace(/\D/g,'')||null,
@@ -558,8 +589,7 @@ async function submitUniformes(ctx){
 }
 async function submitAlojamento(ctx){
   const destino=document.getElementById('cmpAlojDestino')?.value.trim();
-  const cidade=document.getElementById('cmpCidade')?.value.trim();
-  const uf=document.getElementById('cmpUf')?.value;
+  const {cidade,uf}=lerLocal();
   if(!destino) throw new Error('Informe o alojamento ou local de destino.');
   if(!cidade||!uf) throw new Error('Informe a cidade e a UF do alojamento.');
   const itens=state.alojamentoItens.filter(i=>i.material).map(({_id,...item})=>item);
@@ -575,8 +605,8 @@ async function loadMinhas(userId){
   renderMinhas();
 }
 function historyGroup(status){
-  if(status==='comprado') return 'concluidos';
-  if(status==='recusado') return 'cancelados';
+  if(['comprado','concluido','enviado_estoque'].includes(status)) return 'concluidos';
+  if(['recusado','recusado_financeiro','cancelado'].includes(status)) return 'cancelados';
   return 'pendentes';
 }
 function solicitacaoUniformeEditavel(s){
@@ -609,10 +639,15 @@ async function salvarUniformeAberto(button){
 function renderMinhas(){
   const body=document.getElementById('cmpMinhasBody');
   if(!body) return;
-  const data=state.rows.filter(r=>historyGroup(r.status)===state.historyFilter);
-  document.querySelectorAll('[data-history-filter]').forEach(btn=>btn.classList.toggle('active',btn.dataset.historyFilter===state.historyFilter));
-  if(!data.length){ body.innerHTML='<tr><td colspan="5" class="cmp-empty">Nenhuma solicitação neste status.</td></tr>'; return; }
-  body.innerHTML=data.map(r=>`<tr><td data-label="Data">${brDate(r.data_solicitacao)}</td><td data-label="Tipo">${esc(r.tipo_solicitacao)}</td><td data-label="Itens"><div class="cmp-items-cell">${(r.compras_itens||[]).map(i=>norm(r.tipo_solicitacao)==='uniformes'?historyUniformeItem(i,solicitacaoUniformeEditavel(r)):`<span>${esc(i.quantidade||i.unidade||1)} un · ${esc(i.material)}${i.tamanho?` <small>${esc(i.tamanho)}</small>`:''}</span>`).join('')}</div></td><td data-label="Status">${pill(r.status)}</td><td data-label="Motivo">${esc(r.motivo_recusa||'—')}</td></tr>`).join('');
+  const cont={pendentes:0,concluidos:0,cancelados:0};
+  state.rows.forEach(r=>{ cont[historyGroup(r.status)]++; });
+  const kpis=document.getElementById('cmpKpis');
+  if(kpis) kpis.innerHTML=HIST_CARDS.map(([k,label,tone,icone])=>cardFiltro({filtro:k,label,tone,icone,valor:String(cont[k]),atributo:'data-history-filter',ativo:state.historyFilter===k})).join('');
+  const q=norm(state.historyBusca);
+  const data=state.rows.filter(r=>historyGroup(r.status)===state.historyFilter).filter(r=>!q||norm([TIPO_ROTULO[norm(r.tipo_solicitacao)]||r.tipo_solicitacao,STATUS[r.status]||r.status,r.motivo_recusa,...(r.compras_itens||[]).map(i=>`${i.material} ${i.tamanho||''} ${i.colaborador_nome||''}`)].join(' ')).includes(q));
+  const cnt=document.getElementById('cmpCount'); if(cnt) cnt.textContent=`${data.length} solicitação(ões)`;
+  if(!data.length){ body.innerHTML=`<tr><td colspan="5" class="fm-empty">${q?'Nenhuma solicitação encontrada para a busca.':'Nenhuma solicitação neste status.'}</td></tr>`; return; }
+  body.innerHTML=data.map(r=>`<tr><td data-label="Data">${brDate(r.data_solicitacao)}</td><td data-label="Tipo">${esc(TIPO_ROTULO[norm(r.tipo_solicitacao)]||r.tipo_solicitacao)}</td><td data-label="Itens"><div class="cmp-items-cell">${(r.compras_itens||[]).map(i=>norm(r.tipo_solicitacao)==='uniformes'?historyUniformeItem(i,solicitacaoUniformeEditavel(r)):`<span>${esc(i.quantidade||i.unidade||1)} un · ${esc(i.material)}${i.tamanho?` <small>${esc(i.tamanho)}</small>`:''}</span>`).join('')}</div></td><td data-label="Status">${pill(r.status)}</td><td data-label="Motivo">${esc(r.motivo_recusa||'—')}</td></tr>`).join('');
   body.querySelectorAll('[data-save-uniforme]').forEach(btn=>btn.onclick=async()=>{
     try{ await salvarUniformeAberto(btn); }
     catch(e){ btn.disabled=false; btn.textContent='Salvar'; setMsg('cmpHistoryFeedback',e.message||'Não foi possível salvar a alteração.',true); }
@@ -624,14 +659,25 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 .cmp-workspace{display:grid;grid-template-columns:minmax(360px,430px) minmax(0,1fr);gap:16px;align-items:start}.cmp-request-card,.cmp-history-card{min-width:0}.cmp-request-card{position:sticky;top:16px}.cmp-request-card .section-head{align-items:flex-start;flex-direction:column}.cmp-request-card .cmp-tabs{order:-1}.cmp-request-card .cmp-grid{grid-template-columns:1fr}.cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) 110px}.cmp-request-card .cmp-add-box .cmp-field:nth-child(1){grid-column:1}.cmp-request-card .cmp-add-box .cmp-field:nth-child(2){grid-column:2/4}.cmp-request-card .cmp-add-box .cmp-field:nth-child(3){grid-column:1/3}.cmp-request-card .cmp-add-box .cmp-field:nth-child(4){grid-column:3}.cmp-request-card .cmp-add-action{grid-column:1/-1}.cmp-request-card .cmp-add-action label{display:none}.cmp-request-card .cmp-add-action .btn,.cmp-request-card #cmpSolicitar{width:100%}.cmp-request-card .cmp-table{min-width:560px}.cmp-request-card .cmp-table-wrap{max-height:260px}.cmp-request-card #panel-uniformes .cmp-actions{display:grid}.cmp-request-card #panel-uniformes .cmp-field{min-width:0!important}.cmp-history-head{align-items:flex-end}.cmp-history-filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}.cmp-history-filter{width:auto!important;margin:0!important;border-radius:999px!important;padding:8px 16px!important}.cmp-history-filter.active{background:linear-gradient(135deg,var(--green-3),var(--green))!important;border-color:var(--green-2)!important;color:#f0fff7!important}.cmp-history-card .cmp-table-wrap{border-radius:16px}.cmp-history-card .cmp-table td{padding-top:16px;padding-bottom:16px}.cmp-items-cell{display:grid;gap:5px}.cmp-items-cell span{display:block}.cmp-items-cell small{color:var(--muted);margin-left:4px}.cmp-request-card .form-actions{display:grid;gap:10px}.cmp-feedback{line-height:1.45}
 .cmp-uniforme-add{display:grid;grid-template-columns:minmax(0,1fr) 82px 90px;gap:10px;align-items:end}.cmp-uniforme-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.cmp-uniforme-actions .btn{width:100%;margin:0!important;padding-inline:10px!important}
 .cmp-aloj-intro{display:flex;gap:11px;align-items:flex-start;margin-bottom:14px;padding:12px 13px;border:1px solid rgba(74,222,128,.17);border-radius:13px;background:rgba(22,101,52,.08);color:#a8c8b8;font-size:12px;line-height:1.45}.cmp-aloj-intro strong{display:block;color:#d9fbe8;margin-bottom:2px}.cmp-aloj-icon{display:grid;place-items:center;flex:0 0 34px;height:34px;border-radius:10px;background:rgba(74,222,128,.12);color:#75e2a7;font-size:17px}.cmp-aloj-destino{margin-bottom:12px}.cmp-aloj-add{display:grid;grid-template-columns:76px minmax(130px,1fr) minmax(130px,1fr) auto;gap:10px;align-items:end}.cmp-aloj-add .btn{white-space:nowrap}.cmp-aloj-outro[hidden]{display:none}.cmp-aloj-table{margin-top:14px}
-.cmp-header-box{grid-template-columns:150px minmax(0,1fr) 64px}#cmpUf{width:64px!important;min-width:64px!important;padding:9px 22px 9px 9px!important;background-position:right 6px center!important}
+/* Frotas: cartões + campos no mesmo desenho do restante do painel */
+.cmp-request-card.fm-card,.cmp-history-card.fm-card{padding:0}.cmp-request-card .fm-body,.cmp-history-card .fm-body{padding:20px}
+.cmp-request-card .section-head{margin-bottom:14px}.cmp-request-card .cmp-field label{color:#bbf7d0;font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em}
+.cmp-request-card .cmp-field input,.cmp-request-card .cmp-field select,.cmp-request-card .cmp-table input,.cmp-request-card .cmp-table select{background-color:#0d0d18;border-color:rgba(148,163,184,.18);border-radius:14px;min-height:42px}
+.cmp-workspace .cmp-request-card .cmp-header-box{grid-template-columns:150px 96px minmax(0,1fr)}.cmp-workspace .cmp-request-card .cmp-header-box .cmp-field{grid-column:auto}.cmp-header-box #cmpUf{padding-right:30px;background-position:right 9px center}
+.cmp-request-card .cmp-table{min-width:0}.cmp-request-card .cmp-table-wrap{border-radius:16px}.cmp-request-card .cmp-add-action .btn{white-space:nowrap;min-height:42px}
+.cmp-request-card #cmpSolicitar.fm-btn{width:100%;min-height:46px;font-size:14px;letter-spacing:.05em}
+.cmp-hist-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}.cmp-hist-top h3{margin:4px 0 4px;font-size:22px;letter-spacing:-.02em;color:#f8fafc}.cmp-hist-top .fm-sub{font-size:13px;max-width:560px}
+#cmpKpis.cmp-history-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+.cmp-history-card .fm-table{min-width:0}.cmp-history-card .cmp-table td[data-label="Data"]{white-space:nowrap}.cmp-history-card .fm-bar{margin-bottom:12px}
+@media(max-width:760px){#cmpKpis.cmp-history-filters{gap:8px}#cmpKpis .fm-kcard{flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;min-width:0}#cmpKpis .fm-kcard-ic{display:none}#cmpKpis .fm-kcard-tx{min-width:0}#cmpKpis .fm-kcard-tx>span{font-size:10px;letter-spacing:.04em;white-space:normal}.cmp-history-card .fm-count{width:100%;margin:0}}
+@media(min-width:961px){.cmp-workspace .cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) auto}}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}.cmp-aloj-add{grid-template-columns:76px 1fr}.cmp-aloj-add .cmp-field:nth-child(3){grid-column:1/-1}.cmp-aloj-add .cmp-add-action{grid-column:1/-1}}
 @media(max-width:960px){.cmp-workspace{grid-template-columns:1fr}.cmp-request-card{position:static}.cmp-request-card .cmp-add-box{grid-template-columns:90px minmax(0,1fr) 130px}.cmp-history-head{align-items:flex-start}}
 @media(max-width:760px){
   .cmp-workspace,.cmp-request-card,#panel-uniformes{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box}
   .cmp-grid,.cmp-add-box,.cmp-request-card .cmp-add-box{grid-template-columns:1fr}
-  .cmp-request-card .cmp-header-box{grid-template-columns:minmax(0,1fr) 64px!important}
+  .cmp-request-card .cmp-header-box{grid-template-columns:96px minmax(0,1fr)!important}
   .cmp-request-card .cmp-header-box .cmp-field:nth-child(1){grid-column:1/-1!important}
   .cmp-request-card .cmp-header-box .cmp-field:nth-child(2){grid-column:1!important}
   .cmp-request-card .cmp-header-box .cmp-field:nth-child(3){grid-column:2!important}
@@ -671,15 +717,16 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 </style>`}
 
 async function renderSolicitacaoTab(content, userContext){
+  injectEstilosFrotas();
   await loadColaboradores();
   await loadCatalogo();
   content.innerHTML=`${styles()}
-  <div class="cmp-workspace"><section class="card cmp-request-card"><div class="section-head" style="margin-bottom:14px"><div><h3 style="margin:0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
+  <div class="cmp-workspace"><section class="fm-card cmp-request-card"><div class="fm-body"><div class="section-head"><div><div class="fm-kicker">Compras</div><h3 style="margin:4px 0 0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
     <input id="cmpObs" type="hidden" value="">
     <div class="cmp-add-box cmp-header-box">
       <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
-      <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" placeholder="Cidade de compra" autocomplete="off"></div>
-      <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">--</option>${UF_LIST.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
+      <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">UF</option>${UFS_BRASIL.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
+      <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" list="cmpCidadeList" placeholder="Escolha a UF" autocomplete="off" disabled><datalist id="cmpCidadeList"></datalist></div>
     </div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
@@ -703,13 +750,20 @@ async function renderSolicitacaoTab(content, userContext){
       </div>
       <div class="cmp-table-wrap cmp-aloj-table"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Especificação</th><th></th></tr></thead><tbody id="cmpAlojBody"></tbody></table></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary btn-inline" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
-  </section>
+    <div class="form-actions"><button class="fm-btn primary" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
+  </div></section>
   <div class="cmp-cel-modal" id="cmpCelularModal"></div>
-  <section class="card cmp-history-card"><div class="section-head cmp-history-head" style="margin-bottom:12px"><div><h3 style="margin:0">Pendentes e histórico</h3><p class="muted" style="margin:2px 0 0">Acompanhe o andamento. Uniformes podem ser ajustados até o fechamento da solicitação.</p></div><button class="btn btn-secondary" id="cmpRefresh" type="button">↻ Atualizar</button></div><span class="cmp-feedback cmp-history-feedback" id="cmpHistoryFeedback"></span><div class="cmp-history-filters"><button class="btn btn-secondary cmp-history-filter active" data-history-filter="pendentes" type="button">Pendentes</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="concluidos" type="button">Concluídos</button><button class="btn btn-secondary cmp-history-filter" data-history-filter="cancelados" type="button">Cancelados</button></div><div class="cmp-table-wrap"><table class="cmp-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div></section></div>`;
-  state.itens=[]; state.alojamentoItens=[]; bindItemForm(); bindAlojamentoForm(); renderItensList(); renderUniformes(); renderAlojamentoItens(); setupColabSearch();
+  <section class="fm-card cmp-history-card"><div class="fm-body">
+    <div class="cmp-hist-top"><div><div class="fm-kicker">Acompanhamento</div><h3>Pendentes e histórico</h3><p class="fm-sub">Acompanhe o andamento. Uniformes podem ser ajustados até o fechamento da solicitação.</p></div><button class="fm-btn soft" id="cmpRefresh" type="button">↻ Atualizar</button></div>
+    <span class="cmp-feedback cmp-history-feedback" id="cmpHistoryFeedback"></span>
+    <div class="fm-kpis cmp-history-filters" id="cmpKpis"></div>
+    <div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="cmpBusca" placeholder="Buscar por item, tipo ou status..." autocomplete="off"></div><span class="fm-count" id="cmpCount"></span></div>
+    <div class="cmp-table-wrap fm-table-wrap"><table class="cmp-table fm-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div>
+  </div></section></div>`;
+  state.itens=[]; state.alojamentoItens=[]; bindItemForm(); bindAlojamentoForm(); renderItensList(); renderUniformes(); renderAlojamentoItens(); setupColabSearch(); bindLocal();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
-  document.querySelectorAll('[data-history-filter]').forEach(btn=>btn.onclick=()=>{ state.historyFilter=btn.dataset.historyFilter; renderMinhas(); });
+  document.getElementById('cmpKpis').onclick=(e)=>{ const b=e.target.closest('[data-history-filter]'); if(!b) return; state.historyFilter=b.dataset.historyFilter; renderMinhas(); };
+  document.getElementById('cmpBusca').oninput=(e)=>{ state.historyBusca=e.target.value; renderMinhas(); };
   const userId=usuario(userContext).id||null;
   document.getElementById('cmpAddTodos').onclick=()=>addAllColaboradores(userContext); document.getElementById('cmpRefresh').onclick=()=>loadMinhas(userId);
   async function doSolicitar(overrideItems=null){
