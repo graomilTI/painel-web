@@ -622,15 +622,21 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
   var base = brutos.filter(function (item) { return servicoValido(item.os); });
 
   // Na lista de O.S., a coluna Embarque segue "UF - CIDADE (Embarque)".
-  // O mesmo local é definido pelo valor COMPLETO dessa coluna, sem separar
-  // por Cliente: se duas ou mais O.S. apontam para o mesmo local físico, uma
-  // carga em qualquer delas bloqueia o FOB de todas; sem carga, o agente deve
-  // lançar FOB em somente uma O.S. do local. Assim, armazéns homônimos em
-  // cidades/UFs diferentes continuam sem ser agrupados.
+  // O mesmo local é definido pelo valor COMPLETO dessa coluna: armazéns
+  // homônimos em cidades/UFs diferentes não são agrupados. Carga, NHE ou laudo
+  // só bloqueiam O.S. do MESMO Cliente no mesmo local (regra da tela FOB):
+  // a O.S. 96499 (Cargill) foi barrada em 21/10/2026 por cargas da 95849
+  // (COFCO) na Fazenda Casa Real, e ficou sem FOB. Sem carga, o agente lança
+  // FOB em somente uma O.S. por local (localEmbarque, abaixo).
+  function localEmbarque(item) {
+    var info = coordPorOs[item.os] || {};
+    return normText(info.embarque || info.local || item.local);
+  }
   function clusterKeys(item) {
     var info = coordPorOs[item.os] || {};
-    var embarque = normText(info.embarque || info.local || item.local);
-    return embarque ? ['embarque:' + embarque] : [];
+    var cliente = normText(item.cliente || info.cliente);
+    var embarque = localEmbarque(item);
+    return embarque ? [cliente + '|embarque:' + embarque] : [];
   }
 
   var grupos = {};
@@ -691,7 +697,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
       local: item.local,
       supervisao: item.supervisao,
       funcionario: item.funcionario,
-      grupoLocal: clusterKeys(item)[0] || '',
+      grupoLocal: localEmbarque(item) ? 'embarque:' + localEmbarque(item) : '',
       // já resolvido acima (coordenada + serviço) — evita nova consulta.
       osCoord: coordPorOs[item.os] || null
     });
@@ -705,7 +711,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
   var pendentes = selecionarUmPendentePorLocal(candidatosPendentes);
   var duplicadasMesmoPonto = candidatosPendentes.length - pendentes.length;
   if (bloqueadasCargaMesmoPonto) {
-    log('INFO', bloqueadasCargaMesmoPonto + ' O.S. bloqueada(s): existe carga real no mesmo local de embarque (UF - CIDADE (EMBARQUE)).');
+    log('INFO', bloqueadasCargaMesmoPonto + ' O.S. bloqueada(s): existe carga real do mesmo cliente no mesmo local de embarque (UF - CIDADE (EMBARQUE)).');
   }
   if (duplicadasMesmoPonto) {
     log('INFO', duplicadasMesmoPonto + ' O.S. agrupada(s): sem embarque no local, o FOB será lançado em somente uma O.S. (UF - CIDADE (EMBARQUE)).');
