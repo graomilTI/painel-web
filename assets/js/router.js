@@ -139,7 +139,7 @@ const SOFT_NAV_PAGES = new Map([
   ['holerite-pagamentos', { title: 'Folha e Holerite', module: () => import('./holeritePagamentos.js') }],
   // Financeiro > Ajuda de Custo (06/10): relação mensal do RH, planilhas iFood/Flash e lançamento no Caixa do GRM.
   // Financeiro > Cotações (23/10): pedidos de aprovação de cotação vindos de Compras.
-  ['financeiro-cotacoes', { title: 'Cotações', module: () => import('./financeiroCotacoes.js?v=20261023-aprov3') }],
+  ['financeiro-cotacoes', { title: 'Cotações', module: () => import('./financeiroCotacoes.js?v=20261023-aprov5') }],
   ['financeiro-ajuda-custo', { title: 'Ajuda de Custo', module: () => import('./financeiroAjudaCusto.js?v=20261015-moeda-livre') }],
 ]);
 

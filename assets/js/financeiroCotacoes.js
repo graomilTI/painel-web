@@ -228,6 +228,7 @@ function recusar(id) {
 function styles() {
   return `<style>
 .fc-codigo{letter-spacing:.04em;color:#bbf7d0}.fc-sub{color:#94a3b8;font-size:12px}
+.fc-table{min-width:0}.fc-aviso:empty{display:none}
 .fc-aviso{display:block;min-height:18px;margin:0 0 10px;font-weight:700;color:#bbf7d0}.fc-aviso.erro{color:#fecaca}
 .fc-comp td.escolhido,.fc-comp th.escolhido{background:rgba(34,197,94,.16)}.fc-ok{color:#86efac;font-weight:800}.fc-escolhido-txt{margin:0 0 12px;color:#bbf7d0}
 .fc-radio{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:800;color:#e2e8f0}.fc-radio input{width:17px;height:17px;accent-color:#22c55e}.fc-radio-th{margin-top:8px;text-transform:none;letter-spacing:0;font-size:13px}.fc-escolha td{border-top:2px solid rgba(148,163,184,.25)}
@@ -235,9 +236,12 @@ function styles() {
 @media(max-width:760px){.fc-outro-campos{grid-template-columns:1fr}}
 .fc-modal{width:min(1100px,96vw)}.fc-comp th,.fc-comp td{vertical-align:top}.fc-comp{min-width:640px}.fc-comp td.melhor{background:rgba(34,197,94,.14)}.fc-total td{border-top:2px solid rgba(148,163,184,.25)}
 .fc-modal .fm-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.16)}
-#fcKpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+/* Cartões quadrados, em fila, com o Atualizar na mesma linha (sem cabeçalho: o título já está no topo da página) */
+.fc-kpi-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
+.fc-kpis{display:flex;gap:12px;flex-wrap:wrap}
+.fc-kpis .fm-kcard{width:148px;min-height:112px;flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;padding:14px 16px}
 .fc-table td[data-label="Ações"]{width:1%;white-space:nowrap}
-@media(max-width:760px){#fcKpis{gap:8px}#fcKpis .fm-kcard{flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px}#fcKpis .fm-kcard-ic{display:none}.fc-table{min-width:0}}
+@media(max-width:760px){.fc-kpis{gap:8px;flex:1 1 100%}.fc-kpis .fm-kcard{width:calc(33.33% - 6px);min-height:96px;padding:10px 12px}.fc-kpis .fm-kcard-ic{display:none}.fc-table{min-width:0}}
 </style>`;
 }
 
@@ -245,9 +249,7 @@ export async function renderContent(content, ctx) {
   state.ctx = ctx;
   injectEstilosFrotas();
   content.innerHTML = `${styles()}<div class="fm-shell">
-    <div class="fm-head"><div class="fm-kicker">Financeiro</div><h2 class="fm-title">Cotações</h2><p class="fm-sub">Cotações que Compras pediu para aprovar. Visualize os valores cotados por fornecedor e aprove ou recuse.</p></div>
-    <div class="fm-topo"><button class="fm-btn soft" id="fcAtualizar" type="button">↻ Atualizar</button></div>
-    <div class="fm-kpis" id="fcKpis"></div>
+    <div class="fc-kpi-row"><div class="fc-kpis" id="fcKpis"></div><button class="fm-btn soft" id="fcAtualizar" type="button">↻ Atualizar</button></div>
     <div class="fm-card"><div class="fm-body">
       <span class="fc-aviso" id="fcAviso"></span>
       <div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="fcBusca" placeholder="Buscar por código ou solicitante..." autocomplete="off"></div><span class="fm-count" id="fcCount"></span></div>
