@@ -7,6 +7,32 @@ const LOTE = 80; // evita URL gigante do PostgREST em .in()
 const qtdDe = (r) => Number(r?.quantidade || r?.unidade || 1);
 const r2 = (v) => Math.round(Number(v || 0) * 100) / 100;
 
+const normTxt = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Cidade do pedido (solicitação). Pedido sem cidade conta como "sem cidade" e não se mistura com cidade informada.
+export function chaveCidade(item) {
+  const s = item?.compras_solicitacoes || {};
+  return `${normTxt(s.cidade)}|${normTxt(s.uf)}`;
+}
+export function rotuloCidade(item) {
+  const s = item?.compras_solicitacoes || {};
+  return s.cidade ? `${s.cidade}${s.uf ? `/${s.uf}` : ''}` : 'sem cidade';
+}
+
+// Cotar ou comprar juntos só vale para pedidos da mesma cidade. Devolve a mensagem de erro, ou null se pode.
+export function validarMesmaCidade(itens) {
+  const cidades = new Map();
+  for (const i of itens) if (!cidades.has(chaveCidade(i))) cidades.set(chaveCidade(i), rotuloCidade(i));
+  if (cidades.size <= 1) return null;
+  return `Não é possível unir pedidos de cidades diferentes (${[...cidades.values()].join(', ')}). Selecione só pedidos da mesma cidade.`;
+}
+
+// Card da cotação antes de existir link: mesmo gestor + mesma cidade (sem cidade também agrupa, entre si).
+export function chaveGrupoPedido(item) {
+  const gestor = normTxt(item?.compras_solicitacoes?.solicitante);
+  return gestor ? `cot:${gestor}|${chaveCidade(item)}` : `solo:${item?.id}`;
+}
+
 export function urlDoLink(token, origem = globalThis.location?.origin || 'https://grao1000.com.br') {
   const host = /grao1000\.com\.br$/i.test(new URL(origem).hostname) ? 'https://grao1000.com.br' : origem;
   // Sem ".html": o roteador do painel manda /painel/*.html para a home do site (igual toPanelUrl).

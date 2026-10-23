@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link6';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link8';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -342,15 +342,9 @@ function renderCards(container,rows){
 }
 
 // ─── Cards (COTAÇÕES agrupa por gestor+cidade — auto, com "Separar") ──────────
-// Itens sem cidade informada caem sozinhos (não agrupa às cegas quando não há
-// como confirmar que é a mesma compra).
-function groupKeyCotacao(r){
-  const s=r.compras_solicitacoes||{};
-  const cidade=norm(s.cidade||'');
-  const gestor=norm(s.solicitante||'');
-  if(!cidade||!gestor) return `solo:${r.id}`;
-  return `cot:${gestor}|${cidade}`;
-}
+// Os pedidos do mesmo gestor na mesma cidade ficam num card só (sem cidade também agrupa entre si);
+// pedidos de cidades diferentes nunca se juntam (validarMesmaCidade barra a cotação/compra em conjunto).
+const groupKeyCotacao=chaveGrupoPedido;
 // Estado de cotação (links e respostas) dos itens da aba. Falha aqui não pode derrubar a lista.
 async function carregarInfoCotacao(){
   try{ state.cotacaoInfo=await carregarCotacoesDosItens(supabase,state.rows.map(r=>r.id)); }
@@ -366,12 +360,12 @@ function cotacaoCardHtml(itens,gkey){
   const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
   const ids=itens.map(r=>r.id).join(',');
   const podeSeparar=itens.length>1&&gkey&&!gkey.startsWith('solo:');
-  const nResp=itens.filter(r=>situacaoDoItem(r.id,state.cotacaoInfo).codigo==='respostas').length;
+  const comLink=itens.some(r=>(state.cotacaoInfo?.porItem.get(String(r.id))||[]).length);
   return `<article class="adm-cmp-card">
     <div class="adm-cmp-card-head">
-      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.cidade||'')}${s.uf?`/${esc(s.uf)}`:''}</small></div></label>
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${s.cidade?`${esc(s.cidade)}${s.uf?`/${esc(s.uf)}`:''}`:'Sem cidade informada'}</small></div></label>
       <div class="adm-cmp-card-meta"><span>${itens.length} ${itens.length===1?'item':'itens'}</span><strong>${money(total)}</strong>
-        ${nResp?groupIconBtn('respostas-grupo',ids,'Ver respostas','eye'):''}
+        ${comLink?groupIconBtn('respostas-grupo',ids,'Ver respostas','eye'):''}
         ${podeSeparar?groupIconBtn('separar-grupo',gkey,'Separar do grupo','split'):''}
       </div>
     </div>
@@ -389,14 +383,14 @@ function cotacaoLinkCardHtml(itens,link){
   const info=state.cotacaoInfo;
   const ids=itens.map(r=>r.id).join(',');
   const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
-  const respostas=info.respostas.filter(x=>x.cotacao_id===link.id);
+  const nResp=montarPropostas(itens,info).length; // fornecedores que cotaram estes materiais (em qualquer link deles)
   const solicitantes=[...new Set(itens.map(r=>r.compras_solicitacoes?.solicitante).filter(Boolean))];
   return `<article class="adm-cmp-card adm-cot-link-card" data-cot-link="${esc(link.id)}">
     <div class="adm-cmp-card-head">
-      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>Cotação · ${dataHora(link.created_at)}</strong><small>${solicitantes.length>2?`${solicitantes.length} solicitantes`:esc(solicitantes.join(' · '))||'-'} · ${respostas.length} ${respostas.length===1?'resposta':'respostas'}</small></div></label>
+      <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>Cotação · ${dataHora(link.created_at)}</strong><small>${solicitantes.length>2?`${solicitantes.length} solicitantes`:esc(solicitantes.join(' · '))||'-'} · ${nResp} ${nResp===1?'resposta':'respostas'}</small></div></label>
       <div class="adm-cmp-card-meta">${situacaoLinkHtml(link)}<span>${itens.length} ${itens.length===1?'material':'materiais'}</span><strong>${money(total)}</strong>
         ${groupIconBtn('link-grupo',link.id,'Copiar link da cotação','link')}
-        ${respostas.length?groupIconBtn('respostas-grupo',ids,'Ver respostas','eye'):''}
+        ${groupIconBtn('respostas-grupo',ids,'Ver respostas','eye')}
       </div>
     </div>
     <div class="adm-cmp-card-body">${itens.map(r=>cardRowHtml(r,true)).join('')}</div>
@@ -748,6 +742,8 @@ async function abrirNovaSolicitacaoModal(){
 function abrirCotarModal(rows){
   rows=(rows||[]).filter(r=>r.status==='pendente'||r.status==='em_cotacao');
   if(!rows.length){setMsg('Selecione pelo menos um item para cotar.',true);return;}
+  const erroCidade=validarMesmaCidade(rows);
+  if(erroCidade){setMsg(erroCidade,true);alert(erroCidade);return;}
   const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
@@ -1056,6 +1052,8 @@ function abrirCompraSelecionados(){
   if(!rows.length){setMsg('Selecione pelo menos um item em COTAÇÕES para comprar.',true);return;}
   const invalidos=rows.filter(r=>r.status!=='em_cotacao'&&r.status!=='pendente');
   if(invalidos.length){setMsg('Comprar em lote só está disponível para itens em COTAÇÕES.',true);return;}
+  const erroCidade=validarMesmaCidade(rows);
+  if(erroCidade){setMsg(erroCidade,true);alert(erroCidade);return;}
   // Com resposta de fornecedor, escolhe a proposta; sem resposta, digita os valores como antes.
   if(state.cotacaoInfo&&temRespostas(rows)) abrirRespostasModal(rows);
   else openCompraLote(rows);
@@ -1733,12 +1731,14 @@ function updateActionButtons(){
   const isCotacoes=tab==='cotacoes';
   const btnCotar=document.getElementById('btnCotar');
   const btnComprar=document.getElementById('btnComprar');
+  const btnRespostas=document.getElementById('btnRespostas');
   const btnAprovar=document.getElementById('btnAprovar');
   const btnAprovarLote=document.getElementById('btnAprovarLote');
   const btnEnviarEstoque=document.getElementById('btnEnviarEstoque');
   const btnRecusar=document.getElementById('btnRecusar');
   if(btnCotar) btnCotar.style.display=isCotacoes?'inline-flex':'none';
   if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
+  if(btnRespostas) btnRespostas.style.display=isCotacoes?'inline-flex':'none';
   if(btnAprovar) btnAprovar.style.display=isCotacoes?'inline-flex':'none';
   if(btnAprovarLote) btnAprovarLote.style.display=tab==='analise'?'inline-flex':'none';
   if(btnEnviarEstoque) btnEnviarEstoque.style.display=isCotacoes?'inline-flex':'none';
@@ -1749,7 +1749,7 @@ function updateActionButtons(){
 initProtectedPage('Compras ADM', async (content,ctx)=>{
   state.ctx=ctx;
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="card mt-16 adm-cmp-page" id="admCmpPage"><div class="frotas-hub-tabs">${tabs({itens:TABS.map(([id,label])=>({id,label})),ativo:'cotacoes',attr:'data-tab'})}</div><div class="frotas-hub-tab-body fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="admCmpRefresh" type="button">↻ Atualizar</button><button class="fm-btn primary" id="admCmpNova" type="button" title="Nova solicitação de compra">${ICONS.plus} Nova solicitação</button></div></div><div id="admCmpItensSection"><div class="fm-kpis" id="admCmpKpis"></div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="admCmpBusca" placeholder="Buscar por material, solicitante, coordenação, fornecedor ou código..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="admCmpCount">0 item(ns)</span></div><div class="adm-cmp-list" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="fm-card"><div class="fm-body"><div class="adm-cmp-cat-form"><label class="grow2">Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label title="Para lançar em Caixa se não devolvido">Valor estimado (R$)<input id="catNovoValor" inputmode="decimal" placeholder="Opcional"></label><label class="grow2">Observação<input id="catNovaObs" placeholder="Opcional"></label><button class="fm-btn primary" id="catAdicionar" type="button">+ Adicionar</button></div><div class="adm-cmp-actions mt-8"><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="fm-table-wrap mt-16"><table class="fm-table"><thead><tr><th>Material</th><th>Tipo</th><th>Valor estimado (Caixa)</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></div></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card mt-16 adm-cmp-page" id="admCmpPage"><div class="frotas-hub-tabs">${tabs({itens:TABS.map(([id,label])=>({id,label})),ativo:'cotacoes',attr:'data-tab'})}</div><div class="frotas-hub-tab-body fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="admCmpRefresh" type="button">↻ Atualizar</button><button class="fm-btn primary" id="admCmpNova" type="button" title="Nova solicitação de compra">${ICONS.plus} Nova solicitação</button></div></div><div id="admCmpItensSection"><div class="fm-kpis" id="admCmpKpis"></div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="admCmpBusca" placeholder="Buscar por material, solicitante, coordenação, fornecedor ou código..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="admCmpCount">0 item(ns)</span></div><div class="adm-cmp-list" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnRespostas" type="button" title="Ver respostas dos selecionados" aria-label="Ver respostas dos selecionados">${ICONS.eye}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="fm-card"><div class="fm-body"><div class="adm-cmp-cat-form"><label class="grow2">Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label title="Para lançar em Caixa se não devolvido">Valor estimado (R$)<input id="catNovoValor" inputmode="decimal" placeholder="Opcional"></label><label class="grow2">Observação<input id="catNovaObs" placeholder="Opcional"></label><button class="fm-btn primary" id="catAdicionar" type="button">+ Adicionar</button></div><div class="adm-cmp-actions mt-8"><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="fm-table-wrap mt-16"><table class="fm-table"><thead><tr><th>Material</th><th>Tipo</th><th>Valor estimado (Caixa)</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></div></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   injectEstilosFrotas();
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; state.filtro='todos'; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
@@ -1760,6 +1760,7 @@ initProtectedPage('Compras ADM', async (content,ctx)=>{
   });
   document.getElementById('admCmpNova').onclick=()=>abrirNovaSolicitacaoModal().catch(e=>setMsg(e.message,true));
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal(selectedRows());
+  document.getElementById('btnRespostas').onclick=()=>{ const rows=selectedRows(); if(!rows.length){ setMsg('Selecione pelo menos um item para ver as respostas.',true); return; } abrirRespostasModal(rows); };
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
   document.getElementById('btnAprovarLote').onclick=()=>aprovarSelecionados();

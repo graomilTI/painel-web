@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cnpjValido, lerValor, validarResposta, situacaoDoLink } from '../supabase/functions/compras-cotacao-publica/regras.js';
-import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto, descreverContato, formatarTelefone } from '../assets/js/admComprasCotacao.js';
+import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto, descreverContato, formatarTelefone, validarMesmaCidade, chaveGrupoPedido } from '../assets/js/admComprasCotacao.js';
 
 // Cotação por link: o fornecedor responde sem login e Compras compara as propostas no painel.
 
@@ -178,4 +178,25 @@ test('contato do atendente formatado para o painel', () => {
   assert.equal(formatarTelefone('6533334444'), '(65) 3333-4444');
   assert.equal(descreverContato({ atendente_nome: 'Maria', atendente_telefone: '65999998888' }), 'Maria · (65) 99999-8888');
   assert.equal(descreverContato({}), '-');
+});
+
+// ── Unir pedidos: mesmo gestor + mesma cidade ──
+const pedido = (id, solicitante, cidade, uf) => ({ id, compras_solicitacoes: { solicitante, cidade, uf } });
+
+test('pedidos do mesmo gestor e da mesma cidade formam um card só (sem cidade também)', () => {
+  assert.equal(chaveGrupoPedido(pedido('1', 'MARCOS ROSA', 'Maringá', 'PR')), chaveGrupoPedido(pedido('2', 'marcos  rosa', 'MARINGA', 'pr')));
+  assert.equal(chaveGrupoPedido(pedido('1', 'MARCOS ROSA', null, null)), chaveGrupoPedido(pedido('2', 'MARCOS ROSA', '', '')));
+  assert.notEqual(chaveGrupoPedido(pedido('1', 'MARCOS ROSA', 'Maringá', 'PR')), chaveGrupoPedido(pedido('2', 'MARCOS ROSA', 'Sorriso', 'MT')));
+  assert.notEqual(chaveGrupoPedido(pedido('1', 'MARCOS ROSA', null, null)), chaveGrupoPedido(pedido('2', 'MARCOS ROSA', 'Maringá', 'PR')));
+  assert.notEqual(chaveGrupoPedido(pedido('1', 'ANA', 'Maringá', 'PR')), chaveGrupoPedido(pedido('2', 'MARCOS ROSA', 'Maringá', 'PR')));
+  assert.equal(chaveGrupoPedido(pedido('7', '', 'Maringá', 'PR')), 'solo:7');
+});
+
+test('cotar ou comprar juntos não une cidades diferentes', () => {
+  assert.equal(validarMesmaCidade([pedido('1', 'A', 'Maringá', 'PR'), pedido('2', 'B', 'maringa', 'PR')]), null);
+  assert.equal(validarMesmaCidade([pedido('1', 'A', null, null), pedido('2', 'A', '', '')]), null);
+  assert.equal(validarMesmaCidade([]), null);
+  assert.match(validarMesmaCidade([pedido('1', 'A', 'Maringá', 'PR'), pedido('2', 'A', 'Sorriso', 'MT')]), /cidades diferentes \(Maringá\/PR, Sorriso\/MT\)/);
+  assert.match(validarMesmaCidade([pedido('1', 'A', 'Maringá', 'PR'), pedido('2', 'A', null, null)]), /sem cidade/);
+  assert.match(validarMesmaCidade([pedido('1', 'A', 'Santa Helena', 'PR'), pedido('2', 'A', 'Santa Helena', 'GO')]), /cidades diferentes/);
 });
