@@ -56,3 +56,10 @@ test('Compras destaca o fornecedor aprovado pelo Financeiro', () => {
   assert.match(js, /Comprar do fornecedor aprovado/);
   assert.match(js, /Aprovado pelo Financeiro \(\$\{esc\(aprovado\.codigo\)\}\)/);
 });
+
+test('o código do pedido usa sempre C de Compras, qualquer que seja o setor de quem pede', () => {
+  const sql = ler('supabase/migrations/20261023200000_compras_aprovacao_codigo_sempre_c.sql');
+  assert.match(sql, /v_letra text := 'C';/);
+  assert.doesNotMatch(sql, /left\(coalesce\(nullif\(trim\(p_setor\)/);
+  assert.match(sql, /set codigo = 'C' \|\| substr\(a\.codigo, 2\)/);
+});
