@@ -2,7 +2,7 @@
 // Tabela de NFs (Pendentes | Lançados) usando o design system.
 
 import { table, pagination, badge, esc, dinheiro, dataBR, emptyState, errorState, loadingState } from '../../../core/ui.js';
-import { isUrl } from '../service.js';
+import { isUrl, fornecedorNaoCadastradoNoGrm } from '../service.js';
 
 // Andamento da NF no agente de lançamento do GRM (grm_nf_lancamentos).
 const STATUS_GRM = {
@@ -21,7 +21,11 @@ const STATUS_GRM = {
 function statusGrm(g) {
   if (!g.grm) return badge(g.storage_path ? 'Não enviado ao GRM' : 'Pendente', 'warn');
   const [label, tipo] = STATUS_GRM[g.grm.status] || [g.grm.status, 'warn'];
-  return badge(label, tipo);
+  // Fornecedor fora do Graint: mostra o motivo (o agente de cadastro pode estar cuidando disso).
+  const motivo = fornecedorNaoCadastradoNoGrm(g)
+    ? `<br><small style="color:#6b7280">${esc(String(g.grm.erro).slice(0, 220))}</small>`
+    : '';
+  return `${badge(label, tipo)}${motivo}`;
 }
 
 function acaoLancamento(g) {
@@ -30,7 +34,12 @@ function acaoLancamento(g) {
     return `<button class="ds-btn ds-btn-primary" data-lancar="${esc(g.key)}" type="button" title="NF sem arquivo anexado: marca como lançada sem passar pelo agente">Marcar lançado</button>`;
   }
   if (!g.grm) return `<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Enviar ao GRM</button>`;
-  if (g.grm.status === 'ERRO') return `<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Relançar</button>`;
+  if (g.grm.status === 'ERRO') {
+    const cadastrar = fornecedorNaoCadastradoNoGrm(g)
+      ? `<button class="ds-btn" data-cadastrar-fornecedor="${esc(g.key)}" type="button" title="Pede ao agente para cadastrar o fornecedor no Graint (dados da Receita); a NF volta sozinha para a fila">Cadastrar fornecedor no GRM</button> `
+      : '';
+    return `${cadastrar}<button class="ds-btn ds-btn-primary" data-enviar-grm="${esc(g.key)}" type="button">Relançar</button>`;
+  }
   return '';
 }
 

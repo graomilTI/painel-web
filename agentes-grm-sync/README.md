@@ -424,6 +424,37 @@ alterado depois de `CONCLUIDO` não regrava (vira `ERRO` avisando).
 node test-cadastrar-patrimonio.js                                                      # testes das funções puras
 ```
 
+## Cadastro de fornecedor no GRM (`sync-cadastrar-fornecedor`)
+
+Quando o lançamento de NF (`sync-lancar-notas-fiscais`) não acha o fornecedor, a NF fica em `ERRO` com
+`Fornecedor "X" não encontrado no GRM (suppliers).`. O gatilho `grm_nf_lancamentos_fornecedor_nao_encontrado` coloca o
+CNPJ em `grm_fornecedor_cadastros` (um registro por CNPJ) e `grmserver-cadastrar-fornecedor-api.js` (API direta, lane
+`saida_financeiro`, sob demanda) cria o fornecedor em **Financeiro > Fornecedores** (`suppliers/setRecord`, JSON). Concluído,
+as NFs desse CNPJ que estavam em `ERRO` por esse motivo voltam para `NOVO` e o gatilho de NF cria o job do agente de lançamento.
+
+| Graint | Origem |
+|---|---|
+| Tipo | `PJ` (só CNPJ; CPF vai para `ERRO` — não há consulta de endereço por CPF) |
+| Nome, endereço, CEP, cidade, bairro, e-mail, telefone | Receita via BrasilAPI (fallback ReceitaWS); ViaCEP completa bairro/logradouro/IBGE |
+| Categoria do fornecedor | derivada da **categoria da NF**: mesmo nome → tabela `MAPA_CATEGORIA_NF` → grupo (`MAPA_GRUPO_NF`) → `DIVERSOS` |
+| Categoria de pagamento (`picCode`) | a categoria da NF (folha de `payInvoiceCategory`) |
+| Coordenação / Supervisão | `GERAL` / `GERAL - Administrativo` (o Graint exige; `GRM_FORNECEDOR_COORDENACAO` / `GRM_FORNECEDOR_SUPERVISAO` mudam) |
+| Cidade (`citCode`) | código IBGE, conferido em `address/getCities` da UF |
+| Tipo de logradouro | tipo da Receita ou abreviatura da rua (`AV`, `ROD`...); sem correspondência usa Rua e avisa |
+| Valor máx. de NF / banco | `0` / vazio (como os cadastros existentes) |
+
+Regras: só CNPJ com situação **ATIVA** na Receita; CNPJ que já existe ativo no GRM só conclui (idempotente); existente mas
+**inativo** no GRM → `ERRO` (reativar é decisão da equipe). `ERRO` nunca é reprocessado sozinho; o botão "Cadastrar fornecedor
+no GRM" na NF (RPC `grm_fornecedor_cadastro_solicitar`) volta a linha para `PENDENTE`. CNPJ `CONCLUIDO` cuja NF continua sem
+achar o fornecedor vira `ERRO` com aviso (sem laço). Falha de rede/Receita volta para a fila (até 3 tentativas; cron de 5 min).
+**Nasce desligado** (`grm_sync_agent_settings.enabled = false`): conferir com `--dry-run` e ligar em seguida.
+
+```bash
+/opt/node22/bin/node grmserver-cadastrar-fornecedor-api.js --dry-run                    # lê GRM + Receita e mostra o que enviaria (não grava)
+/opt/node22/bin/node grmserver-cadastrar-fornecedor-api.js --dry-run --cnpj=37085274000130 --categoria="MATERIAL EXPEDIENTE"
+node test-cadastrar-fornecedor.js                                                       # testes das funções puras
+```
+
 ## Compras: um comprovante pagando mais de uma NF (`sync-lancar-notas-fiscais`)
 
 Itens do mesmo pagamento (mesmo `comprovante_url`) podem ter NFs diferentes: na finalização do grupo (ou em "Anexar NF")

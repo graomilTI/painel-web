@@ -25,6 +25,7 @@
     "sync-adiantamentos",
     "sync-cadastrar-veiculo",
     "sync-cadastrar-patrimonio",
+    "sync-cadastrar-fornecedor",
     "sync-despesas-retroativas",
     "sync-despesas-duplicadas",
     "sync-aprovar-pendencias",
