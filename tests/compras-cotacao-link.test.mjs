@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cnpjValido, lerValor, validarResposta, situacaoDoLink } from '../supabase/functions/compras-cotacao-publica/regras.js';
-import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto } from '../assets/js/admComprasCotacao.js';
+import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto, descreverContato, formatarTelefone } from '../assets/js/admComprasCotacao.js';
 
 // Cotação por link: o fornecedor responde sem login e Compras compara as propostas no painel.
 
@@ -30,7 +30,8 @@ test('valor aceita vírgula, ponto e milhar', () => {
 
 const IDS = ['i1', 'i2'];
 const base = () => ({
-  cnpj: '11.222.333/0001-81', razao_social: 'Fornecedor X Ltda', emite_nf: true, prazo_entrega: '5 dias úteis',
+  cnpj: '11.222.333/0001-81', razao_social: 'Fornecedor X Ltda', regime_tributario: 'simples_nacional',
+  atendente_nome: '  Maria   Souza ', atendente_telefone: '(65) 99999-8888', emite_nf: true, prazo_entrega: '5 dias úteis',
   itens: [{ id: 'i1', valor: '10,50' }, { id: 'i2', valor: null, nao_possuo: true }],
   frete_pagador: 'cliente', frete_valor: '80,50',
   formas_pagamento: ['PIX', 'Boleto'], tem_desconto: true, descontos: [{ forma: 'PIX', tipo: 'percentual', valor: '5' }],
@@ -42,8 +43,23 @@ test('resposta válida é normalizada', () => {
   assert.equal(dados.cnpj, '11222333000181');
   assert.deepEqual(dados.itens, [{ id: 'i1', valor_unitario: 10.5 }, { id: 'i2', valor_unitario: null }]);
   assert.deepEqual(dados.descontos, [{ forma: 'PIX', tipo: 'percentual', valor: 5 }]);
+  assert.equal(dados.regime_tributario, 'simples_nacional');
+  assert.equal(dados.atendente_nome, 'Maria Souza');
+  assert.equal(dados.atendente_telefone, '65999998888');
   assert.equal(dados.frete_pagador, 'cliente');
   assert.equal(dados.frete_valor, 80.5);
+});
+
+test('regime tributário e contato do atendente são obrigatórios', () => {
+  const com = (mudar) => validarResposta({ ...base(), ...mudar }, IDS);
+  for (const regime of ['simples_nacional', 'lucro_presumido', 'lucro_real']) assert.equal(com({ regime_tributario: regime }).erro, undefined);
+  assert.match(com({ regime_tributario: '' }).erro, /regime/);
+  assert.match(com({ regime_tributario: 'mei' }).erro, /regime/);
+  assert.match(com({ regime_tributario: 'toString' }).erro, /regime/);
+  assert.match(com({ atendente_nome: ' ' }).erro, /atendente/);
+  assert.match(com({ atendente_telefone: '123' }).erro, /telefone/);
+  assert.equal(com({ atendente_telefone: '+55 (65) 3333-4444' }).dados.atendente_telefone, '6533334444');
+  assert.equal(com({ atendente_telefone: '55991234567' }).dados.atendente_telefone, '55991234567'); // DDD 55 (RS), não é prefixo do país
 });
 
 test('frete: pago pela empresa não leva valor; pago pelo cliente exige estimativa', () => {
@@ -155,4 +171,11 @@ test('situação do item no card de Cotações', () => {
   const encerrado = info([]);
   encerrado.cotacoes.set('c1', { id: 'c1', status: 'encerrada', expira_em: '2999-01-01T00:00:00Z' });
   assert.equal(situacaoDoItem('i1', encerrado).codigo, 'encerrado');
+});
+
+test('contato do atendente formatado para o painel', () => {
+  assert.equal(formatarTelefone('65999998888'), '(65) 99999-8888');
+  assert.equal(formatarTelefone('6533334444'), '(65) 3333-4444');
+  assert.equal(descreverContato({ atendente_nome: 'Maria', atendente_telefone: '65999998888' }), 'Maria · (65) 99999-8888');
+  assert.equal(descreverContato({}), '-');
 });

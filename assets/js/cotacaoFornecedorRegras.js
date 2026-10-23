@@ -6,6 +6,7 @@
 export const FORMAS_PAGAMENTO = ['PIX', 'Boleto', 'Cartão de crédito', 'Cartão de débito', 'Transferência', 'Dinheiro', 'Outra'];
 // Quem paga o frete: a empresa (fornecedor, frete incluso) ou o cliente (Grão 1000, com estimativa de valor).
 export const FRETE_PAGADORES = ['empresa', 'cliente'];
+export const REGIMES = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real' };
 export const TOKEN_RE = /^[a-f0-9]{64}$/;
 export const MAX_RESPOSTAS_POR_LINK = 30;
 
@@ -49,6 +50,11 @@ export function validarResposta(body, idsDoLink) {
   if (!cnpjValido(cnpj)) return { erro: 'CNPJ inválido.' };
   const razao = limpa(b.razao_social, 200);
   if (razao.length < 3) return { erro: 'Informe a razão social.' };
+  if (!Object.hasOwn(REGIMES, b.regime_tributario)) return { erro: 'Selecione o regime tributário.' };
+  const atendente = limpa(b.atendente_nome, 120);
+  if (atendente.length < 2) return { erro: 'Informe o nome do atendente.' };
+  const telefone = soDigitos(b.atendente_telefone).replace(/^55(?=\d{10,11}$)/, '');
+  if (telefone.length < 10 || telefone.length > 11) return { erro: 'Informe o telefone/WhatsApp com DDD.' };
   if (typeof b.emite_nf !== 'boolean') return { erro: 'Informe se emite nota fiscal.' };
   const prazo = limpa(b.prazo_entrega, 300);
   if (!prazo) return { erro: 'Informe o prazo de entrega.' };
@@ -102,7 +108,7 @@ export function validarResposta(body, idsDoLink) {
 
   return {
     dados: {
-      cnpj, razao_social: razao, emite_nf: b.emite_nf, prazo_entrega: prazo,
+      cnpj, razao_social: razao, regime_tributario: b.regime_tributario, atendente_nome: atendente, atendente_telefone: telefone, emite_nf: b.emite_nf, prazo_entrega: prazo,
       frete_pagador: b.frete_pagador, frete_valor: freteValor,
       formas_pagamento: formas, tem_desconto: b.tem_desconto, descontos, itens,
     },

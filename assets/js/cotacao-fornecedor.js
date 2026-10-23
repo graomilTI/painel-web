@@ -1,6 +1,6 @@
 // Página pública de cotação (sem login): o fornecedor recebe o link de Compras, preenche e confirma.
 // Fala só com a Edge Function compras-cotacao-publica; o token do link (?t=) é a credencial.
-import { FORMAS_PAGAMENTO, cnpjValido, lerValor, soDigitos } from './cotacaoFornecedorRegras.js';
+import { FORMAS_PAGAMENTO, REGIMES, cnpjValido, lerValor, soDigitos } from './cotacaoFornecedorRegras.js';
 
 const FUNCAO_URL = 'https://jbzmcyycanrlnfhedcup.supabase.co/functions/v1/compras-cotacao-publica';
 const token = new URLSearchParams(location.search).get('t') || '';
@@ -11,7 +11,7 @@ const money = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency',
 const brData = (iso) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 const form = {
-  cnpj: '', razao_social: '', emite_nf: null, prazo_entrega: '', frete_pagador: null, frete_valor: '', formas: new Set(), tem_desconto: null,
+  cnpj: '', razao_social: '', regime: '', atendente_nome: '', atendente_telefone: '', emite_nf: null, prazo_entrega: '', frete_pagador: null, frete_valor: '', formas: new Set(), tem_desconto: null,
   descontos: [], itens: [], // itens: { id, un, material, detalhe, valor, nao_possuo }
 };
 
@@ -20,12 +20,17 @@ function mascaraCnpj(v) {
   return d.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2');
 }
 
+function mascaraTelefone(v) {
+  const d = soDigitos(v).slice(0, 11);
+  return d.length > 10 ? d.replace(/^(\d{2})(\d{5})(\d{0,4}).*/, '($1) $2-$3') : d.replace(/^(\d{2})(\d{0,4})(\d{0,4}).*/, (_, a, b, c) => (b ? `(${a}) ${b}${c ? `-${c}` : ''}` : a));
+}
+
 function telaMensagem(icone, titulo, texto) {
   raiz.innerHTML = `<div class="centro"><div class="grande">${icone}</div><h2>${esc(titulo)}</h2><p class="muted">${esc(texto)}</p></div>`;
 }
 
-async function chamar(metodo, corpo) {
-  const url = metodo === 'GET' ? `${FUNCAO_URL}?t=${encodeURIComponent(token)}` : FUNCAO_URL;
+async function chamar(metodo, corpo, cnpj = '') {
+  const url = metodo === 'GET' ? `${FUNCAO_URL}?t=${encodeURIComponent(token)}${cnpj ? `&cnpj=${cnpj}` : ''}` : FUNCAO_URL;
   const res = await fetch(url, {
     method: metodo,
     headers: metodo === 'GET' ? {} : { 'Content-Type': 'application/json' },
@@ -54,13 +59,19 @@ function renderForm(erro = '') {
     <section class="card">
       <div class="card-title">Dados da empresa</div>
       <label class="campo" id="cCnpj">CNPJ<input type="text" id="cnpj" inputmode="numeric" autocomplete="off" placeholder="00.000.000/0000-00" value="${esc(mascaraCnpj(form.cnpj))}"></label>
+      <small class="muted" id="dicaCnpj" hidden></small>
       <label class="campo" id="cRazao">Razão Social<input type="text" id="razao" autocomplete="organization" value="${esc(form.razao_social)}"></label>
+      <label class="campo" id="cRegime">Regime tributário
+        <select id="regime"><option value="">Selecione…</option>${Object.entries(REGIMES).map(([v, n]) => `<option value="${v}" ${form.regime === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      </label>
       <div class="grupo" id="gNf"><span class="rotulo">Emite nota fiscal?</span>
         <div class="opcoes">
           <label class="opcao"><input type="radio" name="nf" value="sim" ${form.emite_nf === true ? 'checked' : ''}> Sim</label>
           <label class="opcao"><input type="radio" name="nf" value="nao" ${form.emite_nf === false ? 'checked' : ''}> Não</label>
         </div>
       </div>
+      <label class="campo" id="cAtendente">Nome do atendente<input type="text" id="atendente" autocomplete="name" maxlength="120" value="${esc(form.atendente_nome)}"></label>
+      <label class="campo" id="cTelefone">Telefone/WhatsApp<input type="text" id="telefone" inputmode="tel" autocomplete="tel" placeholder="(00) 00000-0000" value="${esc(mascaraTelefone(form.atendente_telefone))}"></label>
     </section>
     <section class="card" id="gItens">
       <div class="card-title">Itens</div>
@@ -123,9 +134,11 @@ function renderDescontos() {
 
 function ligarEventos() {
   const q = (s) => raiz.querySelector(s);
-  q('#cnpj').addEventListener('input', (e) => { form.cnpj = soDigitos(e.target.value).slice(0, 14); e.target.value = mascaraCnpj(form.cnpj); });
-  q('#cnpj').addEventListener('blur', preencherRazaoPeloCnpj);
+  q('#cnpj').addEventListener('input', (e) => { form.cnpj = soDigitos(e.target.value).slice(0, 14); e.target.value = mascaraCnpj(form.cnpj); preencherPeloCnpj(); });
   q('#razao').addEventListener('input', (e) => { form.razao_social = e.target.value; });
+  q('#regime').addEventListener('change', (e) => { form.regime = e.target.value; });
+  q('#atendente').addEventListener('input', (e) => { form.atendente_nome = e.target.value; });
+  q('#telefone').addEventListener('input', (e) => { form.atendente_telefone = soDigitos(e.target.value).slice(0, 11); e.target.value = mascaraTelefone(form.atendente_telefone); });
   q('#prazo').addEventListener('input', (e) => { form.prazo_entrega = e.target.value; });
   raiz.querySelectorAll('input[name=nf]').forEach((r) => r.addEventListener('change', () => { form.emite_nf = r.value === 'sim'; }));
   raiz.querySelectorAll('input[name=frete]').forEach((r) => r.addEventListener('change', () => {
@@ -174,17 +187,44 @@ function ligarEventos() {
   q('#btnRevisar').addEventListener('click', revisar);
 }
 
-// Consulta pública (BrasilAPI) só para poupar digitação; se falhar, o fornecedor digita a razão social.
-async function preencherRazaoPeloCnpj() {
-  if (!cnpjValido(form.cnpj) || form.razao_social.trim()) return;
+// Assim que o CNPJ está completo e válido, puxa o cadastro de uma cotação anterior (razão social e regime tributário).
+// Sem cadastro, tenta só a razão social na BrasilAPI (consulta pública). Nunca sobrescreve o que o fornecedor já digitou.
+let ultimoCnpjBuscado = '';
+const preenchidoAuto = { razao_social: '', regime: '' };
+
+function aplicarAuto(campo, valor, seletor) {
+  if (!valor) return;
+  if (form[campo] && form[campo] !== preenchidoAuto[campo]) return;
+  form[campo] = valor;
+  preenchidoAuto[campo] = valor;
+  const el = raiz.querySelector(seletor); if (el) el.value = valor;
+}
+
+async function preencherPeloCnpj() {
+  if (!cnpjValido(form.cnpj)) { ultimoCnpjBuscado = ''; return; }
+  if (form.cnpj === ultimoCnpjBuscado) return;
+  const cnpj = form.cnpj;
+  ultimoCnpjBuscado = cnpj;
+  const dica = raiz.querySelector('#dicaCnpj');
+  let anterior = null;
   try {
-    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${form.cnpj}`);
+    const { ok, dados } = await chamar('GET', null, cnpj);
+    if (ok && dados.encontrado) anterior = dados;
+  } catch { /* sem cadastro anterior: segue manual */ }
+  if (cnpj !== form.cnpj) return; // o CNPJ mudou durante a consulta
+  if (anterior) {
+    aplicarAuto('razao_social', anterior.razao_social, '#razao');
+    aplicarAuto('regime', anterior.regime_tributario, '#regime');
+    if (dica) { dica.textContent = 'Razão social e regime tributário preenchidos da sua cotação anterior. Confira se estão corretos.'; dica.hidden = false; }
+    return;
+  }
+  if (dica) dica.hidden = true;
+  if (form.razao_social.trim()) return;
+  try {
+    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
     if (!res.ok) return;
     const d = await res.json();
-    if (d?.razao_social && !form.razao_social.trim()) {
-      form.razao_social = d.razao_social;
-      const campo = raiz.querySelector('#razao'); if (campo) campo.value = d.razao_social;
-    }
+    if (cnpj === form.cnpj && d?.razao_social) aplicarAuto('razao_social', d.razao_social, '#razao');
   } catch { /* sem consulta: segue manual */ }
 }
 
@@ -202,7 +242,10 @@ function marcarErro(sel, msg) {
 function validar() {
   if (!cnpjValido(form.cnpj)) return marcarErro('#cCnpj', 'Informe um CNPJ válido.');
   if (form.razao_social.trim().length < 3) return marcarErro('#cRazao', 'Informe a razão social.');
+  if (!form.regime) return marcarErro('#cRegime', 'Selecione o regime tributário.');
   if (form.emite_nf === null) return marcarErro('#gNf', 'Informe se a empresa emite nota fiscal.');
+  if (form.atendente_nome.trim().length < 2) return marcarErro('#cAtendente', 'Informe o nome do atendente.');
+  if (form.atendente_telefone.length < 10) return marcarErro('#cTelefone', 'Informe o telefone/WhatsApp com DDD.');
   for (let i = 0; i < form.itens.length; i++) {
     const it = form.itens[i];
     const v = lerValor(it.valor);
@@ -229,6 +272,9 @@ function corpoEnvio() {
     t: token,
     cnpj: form.cnpj,
     razao_social: form.razao_social,
+    regime_tributario: form.regime,
+    atendente_nome: form.atendente_nome,
+    atendente_telefone: form.atendente_telefone,
     emite_nf: form.emite_nf,
     prazo_entrega: form.prazo_entrega,
     frete_pagador: form.frete_pagador,
@@ -256,6 +302,8 @@ function revisar() {
       <dl>
         <dt>CNPJ</dt><dd>${esc(mascaraCnpj(form.cnpj))}</dd>
         <dt>Razão social</dt><dd>${esc(form.razao_social)}</dd>
+        <dt>Regime tributário</dt><dd>${esc(REGIMES[form.regime])}</dd>
+        <dt>Atendente</dt><dd>${esc(form.atendente_nome)} · ${esc(mascaraTelefone(form.atendente_telefone))}</dd>
         <dt>Emite nota fiscal</dt><dd>${form.emite_nf ? 'Sim' : 'Não'}</dd>
         <dt>Prazo de entrega</dt><dd>${esc(form.prazo_entrega)}</dd>
         <dt>Frete</dt><dd>${form.frete_pagador === 'empresa' ? 'Pago pela empresa (fornecedor)' : `Pago pelo cliente · estimativa ${money(lerValor(form.frete_valor))}`}</dd>

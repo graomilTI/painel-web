@@ -5,7 +5,7 @@
 //
 // verify_jwt = false: o fornecedor não tem login; o token (64 hex) é o segredo, e o link expira/encerra no painel.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
-import { MAX_RESPOSTAS_POR_LINK, TOKEN_RE, situacaoDoLink, validarResposta } from './regras.js';
+import { MAX_RESPOSTAS_POR_LINK, TOKEN_RE, cnpjValido, soDigitos, situacaoDoLink, validarResposta } from './regras.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -50,9 +50,17 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method === 'GET') {
-      const token = new URL(req.url).searchParams.get('t') ?? '';
-      const r = await carregarLink(db, token);
+      const params = new URL(req.url).searchParams;
+      const r = await carregarLink(db, params.get('t') ?? '');
       if (r.situacao !== 'aberta') return json({ erro: MENSAGEM_SITUACAO[r.situacao] }, r.situacao === 'invalido' ? 404 : 410);
+      // Cadastro anterior do fornecedor (só razão social e regime tributário, da resposta mais recente desse CNPJ).
+      if (params.has('cnpj')) {
+        const cnpj = soDigitos(params.get('cnpj'));
+        if (!cnpjValido(cnpj)) return json({ encontrado: false });
+        const { data: ant } = await db.from('compras_cotacao_respostas').select('razao_social,regime_tributario')
+          .eq('cnpj', cnpj).order('atualizado_em', { ascending: false }).limit(1).maybeSingle();
+        return json(ant ? { encontrado: true, razao_social: ant.razao_social, regime_tributario: ant.regime_tributario } : { encontrado: false });
+      }
       return json({
         expira_em: r.cotacao.expira_em,
         itens: r.itens.map((i: Record<string, unknown>) => ({
@@ -84,7 +92,8 @@ Deno.serve(async (req) => {
     }
 
     const campos = {
-      cotacao_id: r.cotacao.id, cnpj: d.cnpj, razao_social: d.razao_social, emite_nf: d.emite_nf, prazo_entrega: d.prazo_entrega,
+      cotacao_id: r.cotacao.id, cnpj: d.cnpj, razao_social: d.razao_social, regime_tributario: d.regime_tributario,
+      atendente_nome: d.atendente_nome, atendente_telefone: d.atendente_telefone, emite_nf: d.emite_nf, prazo_entrega: d.prazo_entrega,
       frete_pagador: d.frete_pagador, frete_valor: d.frete_valor,
       formas_pagamento: d.formas_pagamento, tem_desconto: d.tem_desconto, descontos: d.descontos, atualizado_em: new Date().toISOString(),
     };
