@@ -85,6 +85,7 @@ Deno.serve(async (req) => {
 
     const campos = {
       cotacao_id: r.cotacao.id, cnpj: d.cnpj, razao_social: d.razao_social, emite_nf: d.emite_nf, prazo_entrega: d.prazo_entrega,
+      frete_pagador: d.frete_pagador, frete_valor: d.frete_valor,
       formas_pagamento: d.formas_pagamento, tem_desconto: d.tem_desconto, descontos: d.descontos, atualizado_em: new Date().toISOString(),
     };
     const { data: resp, error } = await db.from('compras_cotacao_respostas').upsert(campos, { onConflict: 'cotacao_id,cnpj' }).select('id').single();

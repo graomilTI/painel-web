@@ -4,6 +4,8 @@
 // site são publicados separados). Alterou aqui? Copie para lá: o teste falha se os dois arquivos divergirem.
 
 export const FORMAS_PAGAMENTO = ['PIX', 'Boleto', 'Cartão de crédito', 'Cartão de débito', 'Transferência', 'Dinheiro', 'Outra'];
+// Quem paga o frete: a empresa (fornecedor, frete incluso) ou o cliente (Grão 1000, com estimativa de valor).
+export const FRETE_PAGADORES = ['empresa', 'cliente'];
 export const TOKEN_RE = /^[a-f0-9]{64}$/;
 export const MAX_RESPOSTAS_POR_LINK = 30;
 
@@ -71,6 +73,14 @@ export function validarResposta(body, idsDoLink) {
   if (itens.length !== ids.size) return { erro: 'Responda todos os itens da cotação.' };
   if (!itens.some((i) => i.valor_unitario !== null)) return { erro: 'Você marcou "Não possuo" em todos os itens; não há o que enviar.' };
 
+  if (!FRETE_PAGADORES.includes(b.frete_pagador)) return { erro: 'Informe quem paga o frete.' };
+  let freteValor = null;
+  if (b.frete_pagador === 'cliente') {
+    freteValor = lerValor(b.frete_valor);
+    if (!Number.isFinite(freteValor) || freteValor <= 0 || freteValor > 10_000_000) return { erro: 'Informe a estimativa do valor do frete.' };
+    freteValor = Math.round(freteValor * 100) / 100;
+  }
+
   const formas = [...new Set(Array.isArray(b.formas_pagamento) ? b.formas_pagamento.map(String) : [])];
   if (!formas.length) return { erro: 'Selecione ao menos uma forma de pagamento.' };
   if (formas.some((f) => !FORMAS_PAGAMENTO.includes(f))) return { erro: 'Forma de pagamento inválida.' };
@@ -93,6 +103,7 @@ export function validarResposta(body, idsDoLink) {
   return {
     dados: {
       cnpj, razao_social: razao, emite_nf: b.emite_nf, prazo_entrega: prazo,
+      frete_pagador: b.frete_pagador, frete_valor: freteValor,
       formas_pagamento: formas, tem_desconto: b.tem_desconto, descontos, itens,
     },
   };

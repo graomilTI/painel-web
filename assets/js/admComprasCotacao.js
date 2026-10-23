@@ -70,12 +70,15 @@ export function montarPropostas(itens, info) {
     const base = resps[0];
     propostas.push({
       cnpj, razao_social: base.razao_social, emite_nf: base.emite_nf, prazo_entrega: base.prazo_entrega,
+      frete_pagador: base.frete_pagador || null, frete_valor: base.frete_valor == null ? null : Number(base.frete_valor),
       formas_pagamento: base.formas_pagamento || [], tem_desconto: !!base.tem_desconto, descontos: base.descontos || [],
       atualizado_em: base.atualizado_em, valores, cobertos: cobertos.length, total, completo: cobertos.length === itens.length,
     });
+    const p = propostas[propostas.length - 1];
+    p.totalComFrete = r2(p.total + (p.frete_pagador === 'cliente' ? p.frete_valor || 0 : 0));
   }
-  // Quem cobre tudo vem antes (menor total primeiro); depois os parciais, também do menor para o maior total.
-  return propostas.sort((a, b) => Number(b.completo) - Number(a.completo) || a.total - b.total);
+  // Quem cobre tudo vem antes (menor custo, já com o frete estimado quando é do cliente); depois os parciais.
+  return propostas.sort((a, b) => Number(b.completo) - Number(a.completo) || a.totalComFrete - b.totalComFrete);
 }
 
 // Texto curto do estado de cotação de um item (cards da aba COTAÇÕES).
@@ -96,6 +99,12 @@ export function situacaoDoItem(itemId, info, agora = new Date()) {
 export function descreverDescontos(p) {
   if (!p.tem_desconto || !p.descontos?.length) return 'Não';
   return p.descontos.map((d) => `${d.forma}: ${d.tipo === 'percentual' ? `${d.valor}%` : `R$ ${Number(d.valor).toFixed(2).replace('.', ',')}`}`).join(' · ');
+}
+
+export function descreverFrete(p) {
+  if (p.frete_pagador === 'empresa') return 'Pago pela empresa (fornecedor)';
+  if (p.frete_pagador === 'cliente') return `Pago pelo cliente${p.frete_valor ? ` · estimativa R$ ${Number(p.frete_valor).toFixed(2).replace('.', ',')}` : ''}`;
+  return '-';
 }
 
 export function mensagemDoLink(url, expiraEm) {

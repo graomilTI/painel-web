@@ -32,6 +32,7 @@ const IDS = ['i1', 'i2'];
 const base = () => ({
   cnpj: '11.222.333/0001-81', razao_social: 'Fornecedor X Ltda', emite_nf: true, prazo_entrega: '5 dias úteis',
   itens: [{ id: 'i1', valor: '10,50' }, { id: 'i2', valor: null, nao_possuo: true }],
+  frete_pagador: 'cliente', frete_valor: '80,50',
   formas_pagamento: ['PIX', 'Boleto'], tem_desconto: true, descontos: [{ forma: 'PIX', tipo: 'percentual', valor: '5' }],
 });
 
@@ -41,6 +42,18 @@ test('resposta válida é normalizada', () => {
   assert.equal(dados.cnpj, '11222333000181');
   assert.deepEqual(dados.itens, [{ id: 'i1', valor_unitario: 10.5 }, { id: 'i2', valor_unitario: null }]);
   assert.deepEqual(dados.descontos, [{ forma: 'PIX', tipo: 'percentual', valor: 5 }]);
+  assert.equal(dados.frete_pagador, 'cliente');
+  assert.equal(dados.frete_valor, 80.5);
+});
+
+test('frete: pago pela empresa não leva valor; pago pelo cliente exige estimativa', () => {
+  const empresa = validarResposta({ ...base(), frete_pagador: 'empresa', frete_valor: '99' }, IDS);
+  assert.equal(empresa.dados.frete_valor, null);
+  const com = (mudar) => validarResposta({ ...base(), ...mudar }, IDS).erro;
+  assert.match(com({ frete_pagador: undefined }), /frete/);
+  assert.match(com({ frete_pagador: 'outro' }), /frete/);
+  assert.match(com({ frete_pagador: 'cliente', frete_valor: '' }), /estimativa/);
+  assert.match(com({ frete_pagador: 'cliente', frete_valor: '0' }), /estimativa/);
 });
 
 test('resposta inválida é recusada com mensagem', () => {
@@ -92,6 +105,16 @@ const info = (respostas) => ({
   porItem: new Map([['i1', ['c1']], ['i2', ['c1']]]),
   cotacoes: new Map([['c1', { id: 'c1', status: 'aberta', expira_em: '2999-01-01T00:00:00Z' }]]),
   respostas,
+});
+
+test('propostas: o frete do cliente entra no custo e muda a ordem', () => {
+  const p = montarPropostas(itens, info([
+    resp('1', 'Barato com frete caro', '2026-10-20', { i1: 10, i2: 4 }, { frete_pagador: 'cliente', frete_valor: '50' }),
+    resp('2', 'Mais caro, frete incluso', '2026-10-20', { i1: 11, i2: 4 }, { frete_pagador: 'empresa', frete_valor: null }),
+  ]));
+  assert.deepEqual(p.map((x) => x.razao_social), ['Mais caro, frete incluso', 'Barato com frete caro']);
+  assert.equal(p[0].totalComFrete, 118);
+  assert.equal(p[1].totalComFrete, 158);
 });
 
 test('propostas: quem cobre tudo vem primeiro, do menor total para o maior', () => {
