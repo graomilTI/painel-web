@@ -76,9 +76,9 @@ test('link só aceita resposta aberto e dentro da validade', () => {
 });
 
 test('URL do link usa o domínio oficial do painel', () => {
-  assert.equal(urlDoLink('abc', 'https://grao1000.com.br'), 'https://grao1000.com.br/painel/cotacao-fornecedor.html?t=abc');
-  assert.equal(urlDoLink('abc', 'https://www.grao1000.com.br'), 'https://grao1000.com.br/painel/cotacao-fornecedor.html?t=abc');
-  assert.equal(urlDoLink('abc', 'http://localhost:3000'), 'http://localhost:3000/painel/cotacao-fornecedor.html?t=abc');
+  assert.equal(urlDoLink('abc', 'https://grao1000.com.br'), 'https://grao1000.com.br/painel/cotacao-fornecedor?t=abc');
+  assert.equal(urlDoLink('abc', 'https://www.grao1000.com.br'), 'https://grao1000.com.br/painel/cotacao-fornecedor?t=abc');
+  assert.equal(urlDoLink('abc', 'http://localhost:3000'), 'http://localhost:3000/painel/cotacao-fornecedor?t=abc');
 });
 
 // ── Comparação no painel ──

@@ -9,7 +9,8 @@ const r2 = (v) => Math.round(Number(v || 0) * 100) / 100;
 
 export function urlDoLink(token, origem = globalThis.location?.origin || 'https://grao1000.com.br') {
   const host = /grao1000\.com\.br$/i.test(new URL(origem).hostname) ? 'https://grao1000.com.br' : origem;
-  return `${host}/painel/cotacao-fornecedor.html?t=${token}`;
+  // Sem ".html": o roteador do painel manda /painel/*.html para a home do site (igual toPanelUrl).
+  return `${host}/painel/cotacao-fornecedor?t=${token}`;
 }
 
 export function linkAberto(cotacao, agora = new Date()) {
