@@ -52,6 +52,20 @@ test('carga de OUTRO cliente no mesmo local nao bloqueia o FOB (OS 96499 x 95849
   assert.deepEqual(pendentes.map((item) => item.os), ['96499']);
 });
 
+test('sem carga: 1 FOB por Cliente + local (clientes diferentes no mesmo local lancam cada um o seu)', async () => {
+  const cargillIrma = osCadastro('96500', cargill.cliente);
+  const pendentes = await calcular(
+    [cargill, cargillIrma, cofco],
+    [
+      movimento('96499', cargill.cliente, 'CAUA CANDIDO CABRAL'),
+      movimento('96500', cargill.cliente, 'CAUA CANDIDO CABRAL'),
+      movimento('95849', cofco.cliente, 'LUIZA MANUELLEM DOS SANTOS PEREIRA')
+    ],
+    []
+  );
+  assert.deepEqual(pendentes.map((item) => item.os).sort(), ['95849', '96499']);
+});
+
 test('carga do MESMO cliente no mesmo local continua bloqueando o FOB', async () => {
   const irma = osCadastro('96500', cargill.cliente);
   const pendentes = await calcular(

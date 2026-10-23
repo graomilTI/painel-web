@@ -627,15 +627,11 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
   // só bloqueiam O.S. do MESMO Cliente no mesmo local (regra da tela FOB):
   // a O.S. 96499 (Cargill) foi barrada em 21/10/2026 por cargas da 95849
   // (COFCO) na Fazenda Casa Real, e ficou sem FOB. Sem carga, o agente lança
-  // FOB em somente uma O.S. por local (localEmbarque, abaixo).
-  function localEmbarque(item) {
-    var info = coordPorOs[item.os] || {};
-    return normText(info.embarque || info.local || item.local);
-  }
+  // FOB em somente uma O.S. por Cliente + local (grupoLocal usa a mesma chave).
   function clusterKeys(item) {
     var info = coordPorOs[item.os] || {};
     var cliente = normText(item.cliente || info.cliente);
-    var embarque = localEmbarque(item);
+    var embarque = normText(info.embarque || info.local || item.local);
     return embarque ? [cliente + '|embarque:' + embarque] : [];
   }
 
@@ -697,7 +693,7 @@ async function calcularPendentes(movementRows, productionRows, nheRows) {
       local: item.local,
       supervisao: item.supervisao,
       funcionario: item.funcionario,
-      grupoLocal: localEmbarque(item) ? 'embarque:' + localEmbarque(item) : '',
+      grupoLocal: clusterKeys(item)[0] || '',
       // já resolvido acima (coordenada + serviço) — evita nova consulta.
       osCoord: coordPorOs[item.os] || null
     });
