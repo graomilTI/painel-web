@@ -3,7 +3,8 @@
 // Pedidos de aprovação de cotação que Compras envia (botão "Solicitar aprovação" em Compras > Cotações). Um pedido por
 // gestor (solicitante), com código (ex.: COUT23 = Compras + OUTubro + 23º do mês), data, solicitante e as ações:
 //  - visualizar: abre o material solicitado e o valor cotado por fornecedor (as respostas dos links de cotação);
-//  - aprovar: os itens voltam para Compras > Cotações, prontos para comprar;
+//  - aprovar: o Financeiro escolhe o fornecedor (um dos que responderam ou outro, informado à mão) e os itens voltam
+//    para Compras > Cotações, prontos para comprar dele;
 //  - recusar: pede o motivo e os itens vão para Recusados.
 // Aprovar/recusar rodam no banco (RPC compras_decidir_aprovacao), junto com o status dos itens.
 import { initProtectedPage } from './pageInit.js';
@@ -11,7 +12,7 @@ import { supabase } from './supabaseClient.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
   carregarCotacoesDosItens, montarPropostas, descreverDescontos, descreverFrete, descreverContato, formatarCnpj, REGIMES,
-} from './admComprasCotacao.js?v=20261023-cotacao-link10';
+} from './admComprasCotacao.js?v=20261023-cotacao-link11';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -69,7 +70,7 @@ function renderTabela() {
     <td data-label="Data">${dataBr(r.created_at)}</td>
     <td data-label="Solicitante">${esc(r.solicitante)}<br><small class="fc-sub">${(r.compras_aprovacao_itens || []).length} ${(r.compras_aprovacao_itens || []).length === 1 ? 'material' : 'materiais'}</small></td>
     <td data-label="Ações"><div class="fm-actions">${iconBtn('data-fc-ver', r.id, '', 'Visualizar', SVG.ver)}${r.status === 'pendente'
-      ? `${iconBtn('data-fc-aprovar', r.id, 'termo', 'Aprovar', SVG.aprovar)}${iconBtn('data-fc-recusar', r.id, 'danger', 'Recusar', SVG.recusar)}` : ''}</div></td>
+      ? `${iconBtn('data-fc-aprovar', r.id, 'termo', 'Aprovar (escolher o fornecedor)', SVG.aprovar)}${iconBtn('data-fc-recusar', r.id, 'danger', 'Recusar', SVG.recusar)}` : ''}</div></td>
   </tr>`).join('');
 }
 
@@ -94,6 +95,15 @@ async function carregarDetalhe(aprov) {
   return { itens: ordenados, propostas: montarPropostas(ordenados, info) };
 }
 
+const OUTRO = '__outro';
+const blocoOutro = () => `<div class="fc-outro"><label class="fc-radio"><input type="radio" name="fcForn" value="${OUTRO}"> Outro fornecedor (informar)</label>
+  <div class="fc-outro-campos" id="fcOutroCampos" hidden>
+    <div class="fm-field"><label for="fcOutroNome">Fornecedor</label><input class="fm-input" id="fcOutroNome" maxlength="160" placeholder="Nome / razão social"></div>
+    <div class="fm-field"><label for="fcOutroCnpj">CNPJ (opcional)</label><input class="fm-input" id="fcOutroCnpj" maxlength="18" placeholder="00.000.000/0000-00"></div>
+    <div class="fm-field"><label for="fcOutroValor">Valor aprovado (opcional)</label><input class="fm-input" id="fcOutroValor" inputmode="decimal" placeholder="R$ 0,00"></div>
+  </div></div>`;
+const lerValor = (v) => { const n = Number(String(v || '').replace(/^R\$\s*/, '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; };
+
 function celulaValor(p, r) {
   const v = p.valores[String(r.id)];
   const q = Number(r.quantidade || r.unidade || 1);
@@ -102,17 +112,17 @@ function celulaValor(p, r) {
   return `${money(v)}<br><small class="fc-sub">${q} × = ${money(v * q)}</small>`;
 }
 
-function tabelaComparacao(itens, propostas) {
+function tabelaComparacao(itens, propostas, { escolher = false, escolhidoCnpj = '' } = {}) {
   if (!propostas.length) return '<p class="fc-sub">Nenhum fornecedor respondeu a esta cotação.</p>';
   const melhor = Math.min(...propostas.filter((p) => p.completo).map((p) => p.totalComFrete), Infinity);
-  const linha = (rotulo, fn, cls = '') => `<tr class="${cls}"><td>${rotulo}</td>${propostas.map((p) => `<td>${fn(p)}</td>`).join('')}</tr>`;
+  const linha = (rotulo, fn, cls = '') => `<tr class="${cls}"><td>${rotulo}</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''}">${fn(p)}</td>`).join('')}</tr>`;
   return `<div class="fm-table-wrap"><table class="fm-table fc-comp">
-    <thead><tr><th>Material solicitado</th>${propostas.map((p) => `<th>${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small></th>`).join('')}</tr></thead>
+    <thead><tr><th>Material solicitado</th>${propostas.map((p) => `<th data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''}">${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small>${p.cnpj === escolhidoCnpj ? '<br><small class="fc-ok">Fornecedor escolhido</small>' : ''}${escolher ? `<br><label class="fc-radio fc-radio-th"><input type="radio" name="fcForn" value="${esc(p.cnpj)}"> Escolher</label>` : ''}</th>`).join('')}</tr></thead>
     <tbody>
-      ${itens.map((r) => `<tr><td><b>${esc(r.quantidade || r.unidade || 1)}x ${esc(r.material)}</b>${r.tamanho ? `<br><small class="fc-sub">Tam: ${esc(r.tamanho)}</small>` : ''}${r.colaborador_nome ? `<br><small class="fc-sub">${esc(r.colaborador_nome)}</small>` : ''}</td>${propostas.map((p) => `<td>${celulaValor(p, r)}</td>`).join('')}</tr>`).join('')}
+      ${itens.map((r) => `<tr><td><b>${esc(r.quantidade || r.unidade || 1)}x ${esc(r.material)}</b>${r.tamanho ? `<br><small class="fc-sub">Tam: ${esc(r.tamanho)}</small>` : ''}${r.colaborador_nome ? `<br><small class="fc-sub">${esc(r.colaborador_nome)}</small>` : ''}</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''}">${celulaValor(p, r)}</td>`).join('')}</tr>`).join('')}
       ${linha(`Total dos itens${propostas.some((p) => !p.completo) ? ' (só os cotados)' : ''}`, (p) => `<b>${money(p.total)}</b>${p.completo ? '' : `<br><small class="fc-sub">cobre ${p.cobertos} de ${itens.length}</small>`}`, 'fc-total')}
       ${linha('Frete', (p) => esc(descreverFrete(p)))}
-      <tr class="fc-total"><td>Total + frete estimado</td>${propostas.map((p) => `<td class="${p.completo && p.totalComFrete === melhor ? 'melhor' : ''}"><b>${money(p.totalComFrete)}</b>${p.completo && p.totalComFrete === melhor ? '<br><small>menor custo</small>' : ''}</td>`).join('')}</tr>
+      <tr class="fc-total"><td>Total + frete estimado</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''} ${p.completo && p.totalComFrete === melhor ? 'melhor' : ''}"><b>${money(p.totalComFrete)}</b>${p.completo && p.totalComFrete === melhor ? '<br><small>menor custo</small>' : ''}</td>`).join('')}</tr>
       ${linha('Emite nota fiscal', (p) => (p.emite_nf ? 'Sim' : 'Não'))}
       ${linha('Regime tributário', (p) => esc(REGIMES[p.regime_tributario] || '-'))}
       ${linha('Prazo de entrega', (p) => esc(p.prazo_entrega || '-'))}
@@ -120,6 +130,29 @@ function tabelaComparacao(itens, propostas) {
       ${linha('Desconto por forma', (p) => esc(descreverDescontos(p)))}
       ${linha('Atendente / WhatsApp', (p) => esc(descreverContato(p)))}
     </tbody></table></div>`;
+}
+
+// Marca a coluna do fornecedor escolhido e mostra os campos de "outro fornecedor".
+function ligarEscolha(modal, propostas) {
+  modal.querySelectorAll('input[name="fcForn"]').forEach((r) => r.addEventListener('change', () => {
+    modal.querySelectorAll('[data-fc-col]').forEach((c) => c.classList.toggle('escolhido', c.dataset.fcCol === r.value && r.checked));
+    const campos = modal.querySelector('#fcOutroCampos'); if (campos) campos.hidden = r.value !== OUTRO;
+    modal.querySelector('#fcEscolhaErro').textContent = '';
+    if (r.value === OUTRO) modal.querySelector('#fcOutroNome')?.focus();
+  }));
+}
+
+// Lê a escolha: um fornecedor que respondeu (valor = total + frete estimado) ou outro informado à mão.
+function lerEscolha(modal, propostas) {
+  const marcado = modal.querySelector('input[name="fcForn"]:checked');
+  if (!marcado) return { erro: 'Escolha o fornecedor antes de aprovar.' };
+  if (marcado.value === OUTRO) {
+    const nome = modal.querySelector('#fcOutroNome').value.trim();
+    if (nome.length < 2) return { erro: 'Informe o nome do fornecedor escolhido.' };
+    return { nome, cnpj: modal.querySelector('#fcOutroCnpj').value.trim() || null, valor: lerValor(modal.querySelector('#fcOutroValor').value) };
+  }
+  const p = propostas.find((x) => x.cnpj === marcado.value);
+  return p ? { nome: p.razao_social, cnpj: p.cnpj, valor: p.totalComFrete } : { erro: 'Fornecedor não encontrado.' };
 }
 
 async function visualizar(id) {
@@ -134,10 +167,17 @@ async function visualizar(id) {
         <p>Solicitante: <b>${esc(aprov.solicitante)}</b> · Pedida em ${dataHora(aprov.created_at)}${aprov.solicitado_por_nome ? ` por ${esc(aprov.solicitado_por_nome)}${aprov.setor_solicitante ? ` (${esc(aprov.setor_solicitante)})` : ''}` : ''}
         ${aprov.decidido_em ? `<br>${aprov.status === 'aprovada' ? 'Aprovada' : 'Recusada'} em ${dataHora(aprov.decidido_em)}${aprov.decidido_por ? ` por ${esc(aprov.decidido_por)}` : ''}${aprov.motivo_recusa ? ` — ${esc(aprov.motivo_recusa)}` : ''}` : ''}</p></div>
         <button class="fm-btn ghost" data-fc-fechar type="button">Fechar</button></div>
-      <div class="fm-modal-body">${tabelaComparacao(itens, propostas)}</div>
+      <div class="fm-modal-body">
+        ${aprov.status === 'aprovada' ? `<p class="fc-escolhido-txt">Fornecedor escolhido: <b>${esc(aprov.fornecedor_nome || '-')}</b>${aprov.fornecedor_cnpj ? ` · ${esc(formatarCnpj(aprov.fornecedor_cnpj))}` : ''}${aprov.valor_aprovado != null ? ` · valor aprovado <b>${money(aprov.valor_aprovado)}</b>` : ''}</p>` : ''}
+        ${aprov.status === 'pendente' ? '<p class="fc-sub">Compare os valores e marque o fornecedor escolhido para aprovar. Se for outro, use "Outro fornecedor".</p>' : ''}
+        ${tabelaComparacao(itens, propostas, { escolher: aprov.status === 'pendente', escolhidoCnpj: aprov.status === 'aprovada' ? (aprov.fornecedor_cnpj || '') : '' })}
+        ${aprov.status === 'pendente' ? blocoOutro() : ''}
+        <div class="fm-erro" id="fcEscolhaErro"></div>
+      </div>
       ${aprov.status === 'pendente' ? `<div class="fm-modal-foot"><button class="fm-btn soft" data-fc-recusar-modal type="button">Recusar</button><button class="fm-btn primary" data-fc-aprovar-modal type="button">Aprovar</button></div>` : ''}`;
     modal.querySelector('[data-fc-fechar]').onclick = fecharModal;
-    modal.querySelector('[data-fc-aprovar-modal]')?.addEventListener('click', () => aprovar(aprov.id));
+    ligarEscolha(modal, propostas);
+    modal.querySelector('[data-fc-aprovar-modal]')?.addEventListener('click', () => aprovar(aprov.id, modal, propostas));
     modal.querySelector('[data-fc-recusar-modal]')?.addEventListener('click', () => recusar(aprov.id));
   } catch (e) {
     modal.querySelector('.fm-modal-head p').textContent = `Não foi possível carregar: ${e.message}`;
@@ -147,18 +187,25 @@ async function visualizar(id) {
 // ─── Decisão ────────────────────────────────────────────────────────────────────────────────────
 function nomeLogado() { const u = state.ctx?.user || {}; return u.name || u.email || null; }
 
-async function decidir(id, aprovar, motivo = null) {
-  const { error } = await supabase.rpc('compras_decidir_aprovacao', { p_id: id, p_aprovar: aprovar, p_motivo: motivo, p_nome: nomeLogado() });
+async function decidir(id, aprovar, motivo = null, escolha = null) {
+  const { error } = await supabase.rpc('compras_decidir_aprovacao', {
+    p_id: id, p_aprovar: aprovar, p_motivo: motivo, p_nome: nomeLogado(),
+    p_fornecedor_nome: escolha?.nome ?? null, p_fornecedor_cnpj: escolha?.cnpj ?? null, p_valor: escolha?.valor ?? null,
+  });
   if (error) throw error;
   fecharModal();
-  aviso(aprovar ? 'Cotação aprovada. Os itens voltaram para Compras, prontos para comprar.' : 'Cotação recusada. Os itens foram para Recusados em Compras.');
+  aviso(aprovar ? `Cotação aprovada com ${escolha.nome}. Os itens voltaram para Compras, prontos para comprar.` : 'Cotação recusada. Os itens foram para Recusados em Compras.');
   await carregar();
 }
 
-async function aprovar(id) {
+// Aprovar exige escolher o fornecedor: da lista, abre a cotação para escolher; dentro da cotação, confirma.
+async function aprovar(id, modal = null, propostas = []) {
   const aprov = state.rows.find((r) => String(r.id) === String(id)); if (!aprov) return;
-  if (!confirm(`Aprovar a cotação ${aprov.codigo} (${aprov.solicitante})?`)) return;
-  try { await decidir(id, true); } catch (e) { aviso(e.message, true); alert(e.message); }
+  if (!modal) { await visualizar(id); return; }
+  const escolha = lerEscolha(modal, propostas);
+  if (escolha.erro) { modal.querySelector('#fcEscolhaErro').textContent = escolha.erro; return; }
+  if (!confirm(`Aprovar a cotação ${aprov.codigo} (${aprov.solicitante}) com ${escolha.nome}${escolha.valor ? ` por ${money(escolha.valor)}` : ''}?`)) return;
+  try { await decidir(id, true, null, escolha); } catch (e) { modal.querySelector('#fcEscolhaErro').textContent = e.message; }
 }
 
 function recusar(id) {
@@ -182,6 +229,10 @@ function styles() {
   return `<style>
 .fc-codigo{letter-spacing:.04em;color:#bbf7d0}.fc-sub{color:#94a3b8;font-size:12px}
 .fc-aviso{display:block;min-height:18px;margin:0 0 10px;font-weight:700;color:#bbf7d0}.fc-aviso.erro{color:#fecaca}
+.fc-comp td.escolhido,.fc-comp th.escolhido{background:rgba(34,197,94,.16)}.fc-ok{color:#86efac;font-weight:800}.fc-escolhido-txt{margin:0 0 12px;color:#bbf7d0}
+.fc-radio{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:800;color:#e2e8f0}.fc-radio input{width:17px;height:17px;accent-color:#22c55e}.fc-radio-th{margin-top:8px;text-transform:none;letter-spacing:0;font-size:13px}.fc-escolha td{border-top:2px solid rgba(148,163,184,.25)}
+.fc-outro{margin-top:14px;padding:12px 14px;border:1px dashed rgba(148,163,184,.3);border-radius:14px}.fc-outro-campos{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-top:12px}.fc-outro-campos[hidden]{display:none}
+@media(max-width:760px){.fc-outro-campos{grid-template-columns:1fr}}
 .fc-modal{width:min(1100px,96vw)}.fc-comp th,.fc-comp td{vertical-align:top}.fc-comp{min-width:640px}.fc-comp td.melhor{background:rgba(34,197,94,.14)}.fc-total td{border-top:2px solid rgba(148,163,184,.25)}
 .fc-modal .fm-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.16)}
 #fcKpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
