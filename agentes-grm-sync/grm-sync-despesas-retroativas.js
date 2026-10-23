@@ -1038,4 +1038,15 @@ module.exports = {
   assertDirectExpenseAllowed,
   validateCafeAuthorization,
   validateJantaAuthorization,
+  // Usados só pelos scripts pontuais (_pontuais/grm-almoco-pontual.js).
+  digits,
+  isoToBr,
+  getSupabase,
+  login,
+  api,
+  loadGrmData,
+  findStaff,
+  create,
+  approve,
+  recordAudit,
 };
