@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link12';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link13';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -894,7 +894,7 @@ function abrirRespostasModal(rows){
     <h4 class="mt-16">Links enviados</h4>
     <div class="adm-cot-links">${linkAtual?linhaLinkHtml(linkAtual,true):'<p class="muted">Nenhum link gerado para estes itens.</p>'}
       ${anteriores.length?`<details class="adm-cot-antigos"><summary>Links anteriores (${anteriores.length})</summary>${anteriores.map(c=>linhaLinkHtml(c,false)).join('')}</details>`:''}</div>
-    ${aprovado?`<div class="adm-cot-aprovado">Aprovado pelo Financeiro (${esc(aprovado.codigo)}): <b>${esc(aprovado.fornecedor_nome||'-')}</b>${aprovado.valor_aprovado!=null?` · ${money(aprovado.valor_aprovado)}`:''}${propostaAprovada?'':'<br><small>Esse fornecedor não está entre as respostas: use "Comprar sem usar as respostas" e informe os valores.</small>'}</div>`:''}
+    ${aprovado?`<div class="adm-cot-aprovado">Aprovado pelo Financeiro (${esc(aprovado.codigo)}): <b>${esc(aprovado.fornecedor_nome||'-')}</b>${aprovado.valor_aprovado!=null?` · ${money(aprovado.valor_aprovado)}`:''}</div>`:''}
     <h4 class="mt-16">Comparação</h4>
     ${propostas.length?`<div class="adm-cmp-table-wrap"><table class="adm-cmp-table adm-cot-comp">
       <thead><tr><th>Item</th>${propostas.map(p=>`<th class="${p===propostaAprovada?'aprovada':''}">${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small>${p===propostaAprovada?'<br><small class="adm-cot-ok">Aprovado pelo Financeiro</small>':''}</th>`).join('')}</tr></thead>
