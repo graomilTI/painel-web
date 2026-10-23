@@ -22,6 +22,8 @@ jobs:
         run: |
           node --check email-worker/worker.js
           node --check assets/js/adm-compras.js
+          node --check assets/js/admComprasCotacao.js
+          node --check assets/js/cotacao-fornecedor.js
           node --check assets/js/compras.js
           node --check assets/js/patrimonios.js
           node --check assets/js/programacao.js

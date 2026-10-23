@@ -99,3 +99,6 @@ verify_jwt = false
 
 [functions.frotas-agenda-ics]
 verify_jwt = false
+
+[functions.compras-cotacao-publica]
+verify_jwt = false
