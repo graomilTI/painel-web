@@ -22,6 +22,21 @@ function lerLocal(){
   if(!oficial) throw new Error(`Escolha uma cidade de ${uf} da lista.`);
   return {cidade:oficial,uf};
 }
+// Retirada ou entrega: o gestor informa na solicitação (entrega pede o endereço). Alojamento não usa: o destino é o alojamento.
+function lerEntrega(tipo){
+  if(tipo==='Alojamento') return {};
+  const entrega=document.getElementById('cmpEntrega')?.value||'';
+  if(!entrega) throw new Error('Informe se a compra é para retirada ou entrega.');
+  if(entrega==='retirada') return {entrega_tipo:'retirada',entrega_endereco:null};
+  const endereco=document.getElementById('cmpEntregaEnd')?.value.trim()||'';
+  if(!endereco) throw new Error('Informe o endereço de entrega.');
+  return {entrega_tipo:'entrega',entrega_endereco:endereco};
+}
+function bindEntrega(){
+  const sel=document.getElementById('cmpEntrega'), wrap=document.getElementById('cmpEntregaEndWrap');
+  if(!sel||!wrap) return;
+  sel.onchange=()=>{ wrap.hidden=sel.value!=='entrega'; if(sel.value==='entrega') document.getElementById('cmpEntregaEnd')?.focus(); };
+}
 function bindLocal(){
   const uf=document.getElementById('cmpUf'), cid=document.getElementById('cmpCidade'), lista=document.getElementById('cmpCidadeList');
   if(!uf||!cid||!lista) return;
@@ -554,7 +569,7 @@ async function insertSolicitacaoComCompatibilidade(header){
   // Remove somente as colunas apontadas pelo erro e tenta novamente, sem travar a solicitação do gestor.
   let limpo = {...header};
   const msg = String(res.error?.message || '');
-  const possiveis = ['coordenacao','solicitante_id','created_by','observacoes','tipo_solicitacao'];
+  const possiveis = ['coordenacao','solicitante_id','created_by','observacoes','tipo_solicitacao','entrega_tipo','entrega_endereco'];
   let removeu = false;
 
   for(const col of possiveis){
@@ -588,6 +603,7 @@ async function salvarSolicitacao(ctx, tipo, itens){
     tipo_solicitacao:tipo,
     status:'pendente',
     ...lerLocal(),
+    ...lerEntrega(tipo),
     observacoes:observacoes||null,
     fornecedor:document.getElementById('cmpFornecedor')?.value.trim()||null,
     telefone_fornecedor:document.getElementById('cmpTelFornecedor')?.value.replace(/\D/g,'')||null,
@@ -717,6 +733,8 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 #panel-epi .cmp-epi-add{grid-template-columns:82px minmax(0,1fr)}#panel-epi .cmp-epi-add .cmp-field:nth-child(1){grid-column:1}#panel-epi .cmp-epi-add .cmp-field:nth-child(2){grid-column:2}#panel-epi .cmp-epi-add .cmp-field:nth-child(3){grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action{grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action .btn{width:100%}
 .cmp-epi-grupo td{background:rgba(34,197,94,.08);border-bottom:1px solid rgba(34,197,94,.2)!important;padding:9px 12px!important}.cmp-epi-grupo td b{color:#bbf7d0}.cmp-epi-grupo td small{color:var(--muted);margin-left:6px}.cmp-epi-grupo td span{float:right;font-size:11px;font-weight:800;color:#94a3b8}
 .cmp-request-card #panel-epi .cmp-table-wrap{max-height:320px}
+@media(min-width:761px){.cmp-workspace .cmp-request-card .cmp-entrega-box{grid-template-columns:170px minmax(0,1fr)}.cmp-workspace .cmp-request-card .cmp-entrega-box .cmp-field{grid-column:auto}}
+.cmp-entrega-box[hidden],#cmpEntregaEndWrap[hidden]{display:none}
 @media(min-width:961px){.cmp-workspace .cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) auto}}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}.cmp-aloj-add{grid-template-columns:76px 1fr}.cmp-aloj-add .cmp-field:nth-child(3){grid-column:1/-1}.cmp-aloj-add .cmp-add-action{grid-column:1/-1}}
@@ -775,6 +793,10 @@ async function renderSolicitacaoTab(content, userContext){
       <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">UF</option>${UFS_BRASIL.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
       <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" list="cmpCidadeList" placeholder="Escolha a UF" autocomplete="off" disabled><datalist id="cmpCidadeList"></datalist></div>
     </div>
+    <div class="cmp-add-box cmp-entrega-box mt-12" id="cmpEntregaBox">
+      <div class="cmp-field"><label>Retirada ou entrega?</label><select id="cmpEntrega"><option value="">Selecione</option><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></div>
+      <div class="cmp-field" id="cmpEntregaEndWrap" hidden><label>Endereço de entrega</label><input id="cmpEntregaEnd" type="text" maxlength="200" placeholder="Rua, número, bairro e cidade" autocomplete="off"></div>
+    </div>
     <div id="panel-itens" class="cmp-panel active mt-16">
       <div class="cmp-add-box">
         <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
@@ -818,8 +840,8 @@ async function renderSolicitacaoTab(content, userContext){
     <div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="cmpBusca" placeholder="Buscar por item, tipo ou status..." autocomplete="off"></div><span class="fm-count" id="cmpCount"></span></div>
     <div class="cmp-table-wrap fm-table-wrap"><table class="cmp-table fm-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div>
   </div></section></div>`;
-  state.itens=[]; state.alojamentoItens=[]; state.epiItens=[]; state.epiColab=null; bindItemForm(); bindAlojamentoForm(); bindEpiForm(); renderItensList(); renderUniformes(); renderEpiList(); renderAlojamentoItens(); setupColabSearch(); bindLocal();
-  document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
+  state.itens=[]; state.alojamentoItens=[]; state.epiItens=[]; state.epiColab=null; bindItemForm(); bindAlojamentoForm(); bindEpiForm(); bindEntrega(); renderItensList(); renderUniformes(); renderEpiList(); renderAlojamentoItens(); setupColabSearch(); bindLocal();
+  document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.getElementById('cmpEntregaBox').hidden=state.mode==='alojamento'; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.getElementById('cmpKpis').onclick=(e)=>{ const b=e.target.closest('[data-history-filter]'); if(!b) return; state.historyFilter=b.dataset.historyFilter; renderMinhas(); };
   document.getElementById('cmpBusca').oninput=(e)=>{ state.historyBusca=e.target.value; renderMinhas(); };
   const userId=usuario(userContext).id||null;

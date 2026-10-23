@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link11';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link12';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -801,6 +801,11 @@ function abrirCotarModal(rows){
     const aviso='Alguns destes itens já estão numa cotação com link aberto. Selecione a cotação inteira, ou encerre o link atual (Ver respostas) para gerar um novo.';
     setMsg(aviso,true); alert(aviso); return;
   }
+  // O gestor informa retirada/entrega na solicitação; se algum pedido é entrega, o link pergunta o frete.
+  const tiposPedido=rows.map(r=>r.compras_solicitacoes?.entrega_tipo);
+  const entregaInicial=tiposPedido.includes('entrega')||!tiposPedido.every(t=>t==='retirada')?'entrega':'retirada';
+  const pedidoEntrega=rows.map(r=>r.compras_solicitacoes).find(x=>x?.entrega_tipo==='entrega');
+  const entregaTexto=tiposPedido.some(Boolean)?(pedidoEntrega?`O gestor pediu entrega${pedidoEntrega.entrega_endereco?` em: ${esc(pedidoEntrega.entrega_endereco)}`:''}.`:'O gestor pediu retirada.'):'O gestor não informou retirada/entrega neste pedido: confirme aqui.';
   const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
@@ -812,6 +817,10 @@ function abrirCotarModal(rows){
         <tbody>${rows.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td></tr>`).join('')}</tbody>
       </table>
     </div>
+    <div class="adm-cmp-grid mt-16">
+      <label>Retirada ou entrega?<select id="cotEntrega"><option value="entrega"${entregaInicial==='entrega'?' selected':''}>Entrega (o fornecedor informa o frete)</option><option value="retirada"${entregaInicial==='retirada'?' selected':''}>Retirada (link sem o campo de frete)</option></select></label>
+      <p class="muted" style="align-self:end;margin:0">${entregaTexto}</p>
+    </div>
     <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="cotGerarLink" type="button">Gerar link</button><span class="adm-cmp-feedback" id="cotLinkFeedback"></span></div>
     <div id="cotLinkResultado"></div>
   </div>`;
@@ -822,7 +831,8 @@ function abrirCotarModal(rows){
   modal.querySelector('#cotGerarLink').onclick=async(ev)=>{
     const btn=ev.currentTarget; btn.disabled=true; fb.textContent='Gerando…';
     try{
-      const {data:cot,error}=await supabase.from('compras_cotacao_links').insert({status:'aberta'}).select('id,token,expira_em').single();
+      const entrega=modal.querySelector('#cotEntrega')?.value==='retirada'?'retirada':'entrega';
+      const {data:cot,error}=await supabase.from('compras_cotacao_links').insert({status:'aberta',entrega_tipo:entrega}).select('id,token,expira_em').single();
       if(error) throw error;
       const {error:eIt}=await supabase.from('compras_cotacao_itens').insert(rows.map(r=>({cotacao_id:cot.id,compra_item_id:r.id})));
       if(eIt){ await supabase.from('compras_cotacao_links').delete().eq('id',cot.id); throw eIt; }
@@ -831,7 +841,7 @@ function abrirCotarModal(rows){
       const url=urlDoLink(cot.token); const msg=mensagemDoLink(url,cot.expira_em);
       btn.style.display='none'; fb.textContent='';
       modal.querySelector('#cotLinkResultado').innerHTML=`<div class="adm-cmp-grid mt-16">
-        <label class="adm-cmp-full">Link da cotação (válido até ${brDate(cot.expira_em)})<input id="cotLinkUrl" readonly value="${esc(url)}"></label>
+        <label class="adm-cmp-full">Link da cotação (válido até ${brDate(cot.expira_em)}${entrega==='retirada'?' · retirada: sem campo de frete':''})<input id="cotLinkUrl" readonly value="${esc(url)}"></label>
         <label class="adm-cmp-full">Mensagem sugerida<textarea id="cotLinkMsg" rows="4" style="width:100%">${esc(msg)}</textarea></label>
       </div>
       <div class="adm-cmp-actions mt-8"><button class="btn btn-primary" id="cotCopiarLink" type="button">Copiar link</button><button class="btn btn-secondary" id="cotCopiarMsg" type="button">Copiar mensagem</button><span class="adm-cmp-feedback" id="cotCopiaFb"></span></div>`;
@@ -889,17 +899,19 @@ function abrirRespostasModal(rows){
     ${propostas.length?`<div class="adm-cmp-table-wrap"><table class="adm-cmp-table adm-cot-comp">
       <thead><tr><th>Item</th>${propostas.map(p=>`<th class="${p===propostaAprovada?'aprovada':''}">${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small>${p===propostaAprovada?'<br><small class="adm-cot-ok">Aprovado pelo Financeiro</small>':''}</th>`).join('')}</tr></thead>
       <tbody>
+        <tr class="adm-cot-total"><td>Valor dos itens${propostas.some(p=>!p.completo)?' (só os cotados)':''}</td>${propostas.map(p=>`<td><b>${money(p.total)}</b>${p.completo?'':`<br><small class="muted">cobre ${p.cobertos} de ${rows.length}</small>`}</td>`).join('')}</tr>
+        <tr><td>Valor do frete</td>${propostas.map(p=>`<td>${esc(descreverFrete(p))}</td>`).join('')}</tr>
+        <tr class="adm-cot-total"><td>Valor final (itens + frete)</td>${propostas.map(p=>`<td class="${p.completo&&p.totalComFrete===melhor?'melhor':''}"><b>${money(p.totalComFrete)}</b>${p.completo&&p.totalComFrete===melhor?'<br><small>menor custo</small>':''}</td>`).join('')}</tr>
+        <tr><td></td>${propostas.map(p=>`<td><button class="btn ${!aprovado||p===propostaAprovada?'btn-primary':'btn-secondary'} btn-small" data-comprar-forn="${esc(p.cnpj)}" type="button">${p===propostaAprovada?'Comprar do fornecedor aprovado':'Comprar deste fornecedor'}</button></td>`).join('')}</tr>
+        <tr class="adm-cot-sec"><td colspan="${propostas.length+1}">Itens</td></tr>
         ${rows.map(r=>`<tr><td>${esc(qtd(r))} × ${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${propostas.map(p=>`<td>${celula(p,r)}</td>`).join('')}</tr>`).join('')}
-        <tr class="adm-cot-total"><td>Total dos itens${propostas.some(p=>!p.completo)?' (só os cotados)':''}</td>${propostas.map(p=>`<td><b>${money(p.total)}</b>${p.completo?'':`<br><small class="muted">cobre ${p.cobertos} de ${rows.length}</small>`}</td>`).join('')}</tr>
+        <tr class="adm-cot-sec"><td colspan="${propostas.length+1}">Detalhes dos fornecedores</td></tr>
         <tr><td>Atendente / WhatsApp</td>${propostas.map(p=>`<td>${esc(descreverContato(p))}</td>`).join('')}</tr>
         <tr><td>Regime tributário</td>${propostas.map(p=>`<td>${esc(REGIMES_COTACAO[p.regime_tributario]||'-')}</td>`).join('')}</tr>
-        <tr><td>Frete</td>${propostas.map(p=>`<td>${esc(descreverFrete(p))}</td>`).join('')}</tr>
-        <tr class="adm-cot-total"><td>Total + frete estimado</td>${propostas.map(p=>`<td class="${p.completo&&p.totalComFrete===melhor?'melhor':''}"><b>${money(p.totalComFrete)}</b>${p.completo&&p.totalComFrete===melhor?'<br><small>menor custo</small>':''}</td>`).join('')}</tr>
         <tr><td>Emite nota fiscal</td>${propostas.map(p=>`<td>${p.emite_nf?'Sim':'Não'}</td>`).join('')}</tr>
         <tr><td>Prazo de entrega</td>${propostas.map(p=>`<td>${esc(p.prazo_entrega||'-')}</td>`).join('')}</tr>
         <tr><td>Formas de pagamento</td>${propostas.map(p=>`<td>${esc(p.formas_pagamento.join(', ')||'-')}</td>`).join('')}</tr>
         <tr><td>Desconto por forma</td>${propostas.map(p=>`<td>${esc(descreverDescontos(p))}</td>`).join('')}</tr>
-        <tr><td></td>${propostas.map(p=>`<td><button class="btn ${!aprovado||p===propostaAprovada?'btn-primary':'btn-secondary'} btn-small" data-comprar-forn="${esc(p.cnpj)}" type="button">${p===propostaAprovada?'Comprar do fornecedor aprovado':'Comprar deste fornecedor'}</button></td>`).join('')}</tr>
       </tbody></table></div>`:'<p class="muted">Nenhum fornecedor respondeu ainda.</p>'}
     <div class="adm-cmp-actions mt-16"><button class="btn btn-secondary" id="cotSemCotacao" type="button">Comprar sem usar as respostas (digitar valores)</button></div>
   </div>`;
@@ -1527,6 +1539,7 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   const total=rows.reduce((s,r)=>s+Number(r._valor_total||0),0);
   if(total<=0){alert('Informe o valor unitário de pelo menos um item.');return;}
   const fornecedorInicial=rows[0]?._fornecedor||'';
+  const solPedido=rows[0]?.compras_solicitacoes||{};
   const hasCelular=rows.some(r=>norm(r.material)==='celular');
   const area=document.querySelector('#admCmpModal .adm-cmp-modal-card');
   area.innerHTML=`<div class="section-head"><div><h3>Pagamento da compra</h3><p class="muted">Total da compra: <b>${money(total)}</b></p>${propostaResumoHtml(rows[0]?._proposta)}</div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
@@ -1540,8 +1553,8 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
       <label>Fornecedor<input id="payFornecedor" placeholder="Nome do fornecedor" value="${esc(fornecedorInicial)}"></label>
       <label>Valor total<input id="payValorTotal" readonly value="${money(total)}"></label>
       <label class="adm-cmp-full">Contato<input id="payContato" placeholder="Telefone, WhatsApp, e-mail ou observação de contato" value="${esc(rows[0]?._proposta&&descreverContato(rows[0]._proposta)!=='-'?descreverContato(rows[0]._proposta):'')}"></label>
-      <label>Retirada ou entrega?<select id="payEntregaTipo"><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></label>
-      <label class="adm-cmp-full" id="payEnderecoWrap" style="display:none">Endereço de entrega<input id="payEndereco" placeholder="Endereço completo pra entrega"></label>
+      <label>Retirada ou entrega?<select id="payEntregaTipo"><option value="retirada"${solPedido.entrega_tipo==='entrega'?'':' selected'}>Retirada</option><option value="entrega"${solPedido.entrega_tipo==='entrega'?' selected':''}>Entrega</option></select></label>
+      <label class="adm-cmp-full" id="payEnderecoWrap" style="display:${solPedido.entrega_tipo==='entrega'?'':'none'}">Endereço de entrega<input id="payEndereco" placeholder="Endereço completo pra entrega" value="${esc(solPedido.entrega_endereco||'')}"></label>
     </div>
     <div class="adm-cmp-tabs mt-16">
       <button class="btn btn-secondary active" data-pay="BOLETO" type="button">BOLETO</button>
@@ -1807,6 +1820,8 @@ function styles(){return `<style>
 .adm-cot-links{display:flex;flex-direction:column;gap:8px;margin-top:8px}.adm-cot-link{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:12px}
 .adm-cot-link-card{border-color:rgba(34,197,94,.32)}.adm-cot-link-card .adm-cmp-card-head{background:rgba(34,197,94,.07)}
 .adm-cot-aprovado{margin-top:14px;padding:10px 14px;border:1px solid rgba(34,197,94,.4);border-radius:12px;background:rgba(34,197,94,.08);color:#bbf7d0}.adm-cot-comp th.aprovada{background:rgba(34,197,94,.14)}.adm-cot-ok{color:#86efac;font-weight:800}
+.adm-cot-sec td{background:rgba(148,163,184,.08);color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+.adm-cot-comp thead th{position:sticky;top:0;z-index:2;background:#0b1220}.adm-cot-comp th.aprovada{background:#0f2a1c}
 .adm-cot-comp th,.adm-cot-comp td{vertical-align:top}.adm-cot-comp td.melhor{background:rgba(34,197,94,.14)}.adm-cot-total td{border-top:2px solid var(--line)}
 </style>`}
 

@@ -144,7 +144,7 @@ export function descreverContato(p) {
 export function descreverFrete(p) {
   if (p.frete_pagador === 'empresa') return 'Pago pela empresa (fornecedor)';
   if (p.frete_pagador === 'cliente') return `Pago pelo cliente${p.frete_valor ? ` · estimativa R$ ${Number(p.frete_valor).toFixed(2).replace('.', ',')}` : ''}`;
-  return '-';
+  return 'Sem frete (retirada)';
 }
 
 export function mensagemDoLink(url, expiraEm) {

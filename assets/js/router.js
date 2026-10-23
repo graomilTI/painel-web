@@ -72,7 +72,7 @@ const SOFT_NAV_PAGES = new Map([
   ['frotas-multas', { title: 'Frotas · Multas', module: () => import('./frotas-multas.js?v=20261021-frotas-manut45') }],
   ['propostas', { title: 'Propostas', module: () => import('./propostas.js') }],
   ['ti-comunicacao', { title: 'TI · Comunicação', module: () => import('./ti-comunicacao.js') }],
-  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20261023-epi1'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20261023-epi1')] }],
+  ['compras', { title: 'Compras', module: () => import('./compras.js?v=20261023-entrega1'), extraModules: [() => import('./gestor-mobile-modules-v2.js?v=20261023-epi1')] }],
   ['logistica', { title: 'Logística', module: () => import('./logistica.js?v=20261020-atualizar-rt1'), extraModules: [() => import('./logistica-abertura-os-correcao.js?v=20261006-sup1'), () => import('./logistica-clientes-filiais-pagadoras.js?v=20260903-clientes-filiais-master1')] }],
   ['conferencia-deslocamento', { title: 'Conferência · Deslocamento', module: () => import('./conferencia-deslocamento.js?v=20261005-1') }],
   ['frotas-roteirizacao', { title: 'Mapa de Direcionamento', module: () => import('./frotas-roteirizacao.js') }],
@@ -139,7 +139,7 @@ const SOFT_NAV_PAGES = new Map([
   ['holerite-pagamentos', { title: 'Folha e Holerite', module: () => import('./holeritePagamentos.js') }],
   // Financeiro > Ajuda de Custo (06/10): relação mensal do RH, planilhas iFood/Flash e lançamento no Caixa do GRM.
   // Financeiro > Cotações (23/10): pedidos de aprovação de cotação vindos de Compras.
-  ['financeiro-cotacoes', { title: 'Cotações', module: () => import('./financeiroCotacoes.js?v=20261023-aprov5') }],
+  ['financeiro-cotacoes', { title: 'Cotações', module: () => import('./financeiroCotacoes.js?v=20261023-aprov6') }],
   ['financeiro-ajuda-custo', { title: 'Ajuda de Custo', module: () => import('./financeiroAjudaCusto.js?v=20261015-moeda-livre') }],
 ]);
 

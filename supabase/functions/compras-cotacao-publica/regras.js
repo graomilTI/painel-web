@@ -44,7 +44,8 @@ export function lerValor(v) {
 const limpa = (v, max) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // Valida o corpo do POST contra os itens do link. Devolve { erro } ou { dados } já normalizado.
-export function validarResposta(body, idsDoLink) {
+// entrega = 'retirada': o link não pergunta o frete (não é validado nem gravado).
+export function validarResposta(body, idsDoLink, { entrega = 'entrega' } = {}) {
   const b = body && typeof body === 'object' ? body : {};
   const cnpj = soDigitos(b.cnpj);
   if (!cnpjValido(cnpj)) return { erro: 'CNPJ inválido.' };
@@ -79,9 +80,10 @@ export function validarResposta(body, idsDoLink) {
   if (itens.length !== ids.size) return { erro: 'Responda todos os itens da cotação.' };
   if (!itens.some((i) => i.valor_unitario !== null)) return { erro: 'Você marcou "Não possuo" em todos os itens; não há o que enviar.' };
 
-  if (!FRETE_PAGADORES.includes(b.frete_pagador)) return { erro: 'Informe quem paga o frete.' };
+  const comFrete = entrega !== 'retirada';
+  if (comFrete && !FRETE_PAGADORES.includes(b.frete_pagador)) return { erro: 'Informe quem paga o frete.' };
   let freteValor = null;
-  if (b.frete_pagador === 'cliente') {
+  if (comFrete && b.frete_pagador === 'cliente') {
     freteValor = lerValor(b.frete_valor);
     if (!Number.isFinite(freteValor) || freteValor <= 0 || freteValor > 10_000_000) return { erro: 'Informe a estimativa do valor do frete.' };
     freteValor = Math.round(freteValor * 100) / 100;
@@ -109,7 +111,7 @@ export function validarResposta(body, idsDoLink) {
   return {
     dados: {
       cnpj, razao_social: razao, regime_tributario: b.regime_tributario, atendente_nome: atendente, atendente_telefone: telefone, emite_nf: b.emite_nf, prazo_entrega: prazo,
-      frete_pagador: b.frete_pagador, frete_valor: freteValor,
+      frete_pagador: comFrete ? b.frete_pagador : null, frete_valor: freteValor,
       formas_pagamento: formas, tem_desconto: b.tem_desconto, descontos, itens,
     },
   };

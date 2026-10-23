@@ -12,7 +12,7 @@ import { supabase } from './supabaseClient.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
   carregarCotacoesDosItens, montarPropostas, descreverDescontos, descreverFrete, descreverContato, formatarCnpj, REGIMES,
-} from './admComprasCotacao.js?v=20261023-cotacao-link11';
+} from './admComprasCotacao.js?v=20261023-cotacao-link12';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -119,10 +119,12 @@ function tabelaComparacao(itens, propostas, { escolher = false, escolhidoCnpj = 
   return `<div class="fm-table-wrap"><table class="fm-table fc-comp">
     <thead><tr><th>Material solicitado</th>${propostas.map((p) => `<th data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''}">${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small>${p.cnpj === escolhidoCnpj ? '<br><small class="fc-ok">Fornecedor escolhido</small>' : ''}${escolher ? `<br><label class="fc-radio fc-radio-th"><input type="radio" name="fcForn" value="${esc(p.cnpj)}"> Escolher</label>` : ''}</th>`).join('')}</tr></thead>
     <tbody>
+      ${linha(`Valor dos itens${propostas.some((p) => !p.completo) ? ' (só os cotados)' : ''}`, (p) => `<b>${money(p.total)}</b>${p.completo ? '' : `<br><small class="fc-sub">cobre ${p.cobertos} de ${itens.length}</small>`}`, 'fc-total')}
+      ${linha('Valor do frete', (p) => esc(descreverFrete(p)))}
+      <tr class="fc-total"><td>Valor final (itens + frete)</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''} ${p.completo && p.totalComFrete === melhor ? 'melhor' : ''}"><b>${money(p.totalComFrete)}</b>${p.completo && p.totalComFrete === melhor ? '<br><small>menor custo</small>' : ''}</td>`).join('')}</tr>
+      <tr class="fc-sec"><td colspan="${propostas.length + 1}">Itens solicitados</td></tr>
       ${itens.map((r) => `<tr><td><b>${esc(r.quantidade || r.unidade || 1)}x ${esc(r.material)}</b>${r.tamanho ? `<br><small class="fc-sub">Tam: ${esc(r.tamanho)}</small>` : ''}${r.colaborador_nome ? `<br><small class="fc-sub">${esc(r.colaborador_nome)}</small>` : ''}</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''}">${celulaValor(p, r)}</td>`).join('')}</tr>`).join('')}
-      ${linha(`Total dos itens${propostas.some((p) => !p.completo) ? ' (só os cotados)' : ''}`, (p) => `<b>${money(p.total)}</b>${p.completo ? '' : `<br><small class="fc-sub">cobre ${p.cobertos} de ${itens.length}</small>`}`, 'fc-total')}
-      ${linha('Frete', (p) => esc(descreverFrete(p)))}
-      <tr class="fc-total"><td>Total + frete estimado</td>${propostas.map((p) => `<td data-fc-col="${esc(p.cnpj)}" class="${p.cnpj === escolhidoCnpj ? 'escolhido' : ''} ${p.completo && p.totalComFrete === melhor ? 'melhor' : ''}"><b>${money(p.totalComFrete)}</b>${p.completo && p.totalComFrete === melhor ? '<br><small>menor custo</small>' : ''}</td>`).join('')}</tr>
+      <tr class="fc-sec"><td colspan="${propostas.length + 1}">Detalhes dos fornecedores</td></tr>
       ${linha('Emite nota fiscal', (p) => (p.emite_nf ? 'Sim' : 'Não'))}
       ${linha('Regime tributário', (p) => esc(REGIMES[p.regime_tributario] || '-'))}
       ${linha('Prazo de entrega', (p) => esc(p.prazo_entrega || '-'))}
@@ -234,7 +236,9 @@ function styles() {
 .fc-radio{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:800;color:#e2e8f0}.fc-radio input{width:17px;height:17px;accent-color:#22c55e}.fc-radio-th{margin-top:8px;text-transform:none;letter-spacing:0;font-size:13px}.fc-escolha td{border-top:2px solid rgba(148,163,184,.25)}
 .fc-outro{margin-top:14px;padding:12px 14px;border:1px dashed rgba(148,163,184,.3);border-radius:14px}.fc-outro-campos{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-top:12px}.fc-outro-campos[hidden]{display:none}
 @media(max-width:760px){.fc-outro-campos{grid-template-columns:1fr}}
-.fc-modal{width:min(1100px,96vw)}.fc-comp th,.fc-comp td{vertical-align:top}.fc-comp{min-width:640px}.fc-comp td.melhor{background:rgba(34,197,94,.14)}.fc-total td{border-top:2px solid rgba(148,163,184,.25)}
+.fc-modal{width:min(1100px,96vw)}.fc-sec td{background:rgba(148,163,184,.08);color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:8px 11px!important}
+.fc-comp thead th{position:sticky;top:0;z-index:2;background:#0b1220}.fc-comp thead th.escolhido{background:#0f2a1c}
+.fc-comp th,.fc-comp td{vertical-align:top}.fc-comp{min-width:640px}.fc-comp td.melhor{background:rgba(34,197,94,.14)}.fc-total td{border-top:2px solid rgba(148,163,184,.25)}
 .fc-modal .fm-modal-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid rgba(148,163,184,.16)}
 /* Cartões quadrados, em fila, com o Atualizar na mesma linha (sem cabeçalho: o título já está no topo da página) */
 .fc-kpi-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}

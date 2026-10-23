@@ -32,7 +32,7 @@ const MENSAGEM_SITUACAO: Record<string, string> = {
 // deno-lint-ignore no-explicit-any
 async function carregarLink(db: any, token: string) {
   if (!TOKEN_RE.test(token)) return { situacao: 'invalido' };
-  const { data: cot } = await db.from('compras_cotacao_links').select('id,status,expira_em').eq('token', token).maybeSingle();
+  const { data: cot } = await db.from('compras_cotacao_links').select('id,status,expira_em,entrega_tipo').eq('token', token).maybeSingle();
   const situacao = situacaoDoLink(cot);
   if (situacao !== 'aberta') return { situacao };
   const { data: vinculos } = await db.from('compras_cotacao_itens').select('compra_item_id').eq('cotacao_id', cot.id);
@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
       }
       return json({
         expira_em: r.cotacao.expira_em,
+        entrega_tipo: r.cotacao.entrega_tipo ?? 'entrega',
         itens: r.itens.map((i: Record<string, unknown>) => ({
           id: i.id,
           un: Number(i.quantidade ?? i.unidade ?? 1),
@@ -81,7 +82,7 @@ Deno.serve(async (req) => {
     const r = await carregarLink(db, String(body.t ?? ''));
     if (r.situacao !== 'aberta') return json({ erro: MENSAGEM_SITUACAO[r.situacao] }, r.situacao === 'invalido' ? 404 : 410);
 
-    const v = validarResposta(body, r.itens.map((i: { id: string }) => i.id));
+    const v = validarResposta(body, r.itens.map((i: { id: string }) => i.id), { entrega: r.cotacao.entrega_tipo });
     if (v.erro || !v.dados) return json({ erro: v.erro }, 422);
     const d = v.dados;
 

@@ -26,3 +26,11 @@ test('Hospedagem carrega menu e fila filtrada de compras de alojamento', () => {
   assert.match(alojamentos, /data-aloj-buy-filter="pendente"/);
   assert.match(alojamentos, /data-aloj-buy-purchase/);
 });
+
+test('Gestor informa retirada ou entrega na solicitação (entrega pede o endereço; alojamento não usa)', () => {
+  assert.match(compras, /id="cmpEntrega"/);
+  assert.match(compras, /Informe se a compra é para retirada ou entrega/);
+  assert.match(compras, /Informe o endereço de entrega/);
+  assert.match(compras, /if\(tipo==='Alojamento'\) return \{\}/);
+  assert.match(compras, /'entrega_tipo','entrega_endereco'\]/);
+});
