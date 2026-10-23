@@ -5,13 +5,13 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link8';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link9';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
 ];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando Termo', comprado:'Comprado', recusado:'Recusado', recusado_financeiro:'Recusa Financeiro', enviado_estoque:'Enviado (Estoque)' };
-const state = { tab:'cotacoes', filtro:'todos', busca:'', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoInfo:null, gruposSeparados:new Set(), catalogo:[], ctx:null };
+const state = { tab:'cotacoes', filtro:'todos', busca:'', rows:[], selected:new Set(), cotacao:null, colaboradores:[], cotacaoInfo:null, aprovInfo:new Map(), gruposSeparados:new Set(), catalogo:[], ctx:null };
 const esc=(v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&m&&d?`${d}/${m}/${y}`:'-'};
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -150,6 +150,7 @@ async function loadRows(){
     const {data,error}=await q; if(error){if(wrap) wrap.innerHTML=`<div class="adm-cmp-empty">${esc(error.message)}<br>Execute a migration de compras no Supabase.</div>`;return;}
     state.rows=data||[]; state.selected.clear();
     if(state.tab==='cotacoes') await carregarInfoCotacao();
+    if(state.tab==='analise') await carregarAprovInfo();
     renderTable();
   } finally {
     wrap?.classList.remove('is-loading');
@@ -269,7 +270,7 @@ function nfLinkHtml(r){
   return extras?`${principal} · ${extras}`:principal;
 }
 function actionsCellForTab(r){
-  if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}</div>`;
+  if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${analiseAcoesHtml(r)}</div>`;
   if(state.tab==='aguardando') return `<div class="adm-cmp-row-actions">${iconBtn('anexar_nf',r.id,r.nf_url?'Trocar NF':'Anexar NF')}${r.nf_url?nfLinkHtml(r):''}</div>`;
   if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}${r.nf_url?nfLinkHtml(r):''}</div>`;
   if(state.tab==='recusados') return `<small class="muted">${esc(r.motivo_recusa||'-')}</small>`;
@@ -286,14 +287,30 @@ function singleRowHtml(r){
 
 // ─── Cards (APROVAÇÃO agrupa por solicitação) ──────────────────────────────
 function rowActionsHtml(r){
-  if(state.tab==='cotacoes') return `${iconBtn('cotar',r.id,'Cotar (gerar link)')}${iconBtn('comprar',r.id,'Comprar')}${iconBtn('aprovar_solicitar',r.id,'Solicitar aprovação')}${iconBtn('enviar_estoque',r.id,'Enviar via Estoque')}${iconBtn('recusar',r.id,'Recusar')}`;
-  if(state.tab==='analise') return `${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}`;
+  if(state.tab==='cotacoes') return `${iconBtn('cotar',r.id,'Cotar (gerar link)')}${iconBtn('comprar',r.id,'Comprar')}${state.cotacaoInfo&&situacaoDoItem(r.id,state.cotacaoInfo).codigo==='respostas'?iconBtn('aprovar_solicitar',r.id,'Solicitar aprovação ao Financeiro'):''}${iconBtn('enviar_estoque',r.id,'Enviar via Estoque')}${iconBtn('recusar',r.id,'Recusar')}`;
+  if(state.tab==='analise') return analiseAcoesHtml(r);
   return '';
+}
+// Aprovação: quem tem pedido no Financeiro (Financeiro > Cotações) aguarda lá; só pedido antigo, feito antes dessa tela, aprova aqui.
+async function carregarAprovInfo(){
+  state.aprovInfo=new Map();
+  try{
+    const ids=state.rows.map(r=>r.id);
+    for(let i=0;i<ids.length;i+=80){
+      const {data,error}=await supabase.from('compras_aprovacao_itens').select('compra_item_id, compras_aprovacoes!inner(codigo,status)').in('compra_item_id',ids.slice(i,i+80)).eq('compras_aprovacoes.status','pendente');
+      if(error) throw error;
+      (data||[]).forEach(x=>state.aprovInfo.set(String(x.compra_item_id),x.compras_aprovacoes));
+    }
+  }catch(e){ console.warn('[compras] aprovações',e); }
+}
+function analiseAcoesHtml(r){
+  const a=state.aprovInfo.get(String(r.id));
+  return a?`<span class="adm-cot-badge enviado" title="Aprovar ou recusar em Financeiro > Cotações">Aguardando o Financeiro · ${esc(a.codigo)}</span>`:`${iconBtn('aprovar',r.id,'Aprovar')}${iconBtn('reprovar',r.id,'Reprovar')}`;
 }
 function cotacaoBadgeHtml(r){
   if(state.tab!=='cotacoes'||!state.cotacaoInfo) return '';
   const sit=situacaoDoItem(r.id,state.cotacaoInfo);
-  return `<span class="adm-cot-badge ${esc(sit.codigo)}">${esc(sit.texto)}</span>`;
+  return `${r.aprovado_em?'<span class="adm-cot-badge respostas" title="Aprovado pelo Financeiro">Aprovado</span>':''}<span class="adm-cot-badge ${esc(sit.codigo)}">${esc(sit.texto)}</span>`;
 }
 function cardRowHtml(r,mostrarSolicitante=false){
   return `<div class="adm-cmp-card-row" data-row-id="${esc(r.id)}">
@@ -613,10 +630,6 @@ function selectedRows(){return state.rows.filter(r=>state.selected.has(String(r.
 // compras_solicitacoes.status é recalculado pela trigger sync_compras_solicitacao_status()
 // sempre que compras_itens.status muda — não precisa (nem deve) ser feito aqui também.
 async function updateItems(rows,payload){ if(!rows.length) throw new Error('Selecione pelo menos um item.'); const {error}=await supabase.from('compras_itens').update(payload).in('id',rows.map(r=>r.id)); if(error) throw error; }
-function approvalMessage(rows){
-  const byGestor=new Map(); rows.forEach(r=>{const s=r.compras_solicitacoes||{}; const k=s.solicitante||'Gestor'; if(!byGestor.has(k)) byGestor.set(k,[]); byGestor.get(k).push(r);});
-  return [...byGestor.entries()].map(([gestor,itens])=>`Gestor que solicitou: ${gestor}\n${itens.map(i=>`${i.quantidade||i.unidade||1} un | ${i.material}${i.tamanho?` | ${i.tamanho}`:''}`).join('\n')}`).join('\n\n');
-}
 
 // ─── NOVA SOLICITAÇÃO (feita pelo próprio usuário de Compras) ─────────────────
 const UF_LIST=['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
@@ -873,11 +886,26 @@ async function comprarDeProposta(rows,p){
   else openPagamentoLote(rowsComValor,true);
 }
 
-async function solicitarAprovacao(){ const rows=selectedRows(); const msg=approvalMessage(rows); await updateItems(rows,{status:'em_analise', mensagem_aprovacao:msg}); await navigator.clipboard?.writeText(msg).catch(()=>{}); setMsg('Mensagem de aprovação gerada e copiada. Itens movidos para EM ANÁLISE.'); await loadRows(); }
+// Depois de cotar, pede a aprovação ao Financeiro (Financeiro > Cotações): um pedido, com código, por gestor.
+async function solicitarAprovacao(){
+  const rows=selectedRows();
+  if(!rows.length) throw new Error('Selecione pelo menos um item.');
+  const erroCidade=validarMesmaCidade(rows);
+  if(erroCidade) throw new Error(erroCidade);
+  const semCotacao=rows.filter(r=>!state.cotacaoInfo||situacaoDoItem(r.id,state.cotacaoInfo).codigo!=='respostas');
+  if(semCotacao.length) throw new Error(`Só dá para pedir aprovação de itens já cotados (com resposta de fornecedor). Sem resposta: ${semCotacao.map(r=>r.material).join(', ')}.`);
+  const u=state.ctx?.user||{};
+  const setor=state.ctx?.department?.name||state.ctx?.department?.code||'Compras';
+  const {data,error}=await supabase.rpc('compras_solicitar_aprovacao',{p_item_ids:rows.map(r=>r.id),p_setor:setor,p_nome:u.name||u.email||null});
+  if(error) throw error;
+  setMsg(`Aprovação solicitada ao Financeiro: ${(data||[]).map(d=>`${d.out_codigo} (${d.out_solicitante})`).join(', ')}. Acompanhe em Financeiro > Cotações.`);
+  await loadRows();
+}
 async function recusarSelecionados(){ const rows=selectedRows(); const motivo=prompt('Motivo da recusa:'); if(!motivo) return; await updateItems(rows,{status:'recusado', motivo_recusa:motivo}); setMsg('Itens recusados.'); await loadRows(); }
 function aprovarSelecionados(){
   const rows=selectedRows();
   if(!rows.length){ setMsg('Selecione pelo menos um item.',true); return; }
+  if(rows.some(r=>state.aprovInfo.has(String(r.id)))){ setMsg('Há itens aguardando o Financeiro: a aprovação é feita em Financeiro > Cotações.',true); return; }
   const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card">
     <div class="section-head"><div><h3>Aprovar ${rows.length} ${rows.length===1?'item':'itens'}</h3><p class="muted">${rows.map(r=>esc(r.material)).join(', ')}</p></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
