@@ -11,7 +11,7 @@ const money = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency',
 const brData = (iso) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 const form = {
-  cnpj: '', razao_social: '', regime: '', atendente_nome: '', atendente_telefone: '', emite_nf: null, prazo_entrega: '', frete_pagador: null, frete_valor: '', formas: new Set(), tem_desconto: null,
+  entrega: 'entrega', cnpj: '', razao_social: '', regime: '', atendente_nome: '', atendente_telefone: '', emite_nf: null, prazo_entrega: '', frete_pagador: null, frete_valor: '', formas: new Set(), tem_desconto: null,
   descontos: [], itens: [], // itens: { id, un, material, detalhe, valor, nao_possuo }
 };
 
@@ -81,13 +81,13 @@ function renderForm(erro = '') {
     <section class="card">
       <div class="card-title">Entrega e pagamento</div>
       <label class="campo" id="cPrazo">Prazo de entrega<input type="text" id="prazo" maxlength="300" placeholder="Ex.: 5 dias úteis após o pagamento" value="${esc(form.prazo_entrega)}"></label>
-      <div class="grupo" id="gFrete"><span class="rotulo">Quem paga o frete?</span>
+      ${form.entrega === 'retirada' ? '<p class="muted">Retirada no fornecedor: não é preciso informar frete.</p>' : `<div class="grupo" id="gFrete"><span class="rotulo">Quem paga o frete?</span>
         <div class="opcoes">
           <label class="opcao"><input type="radio" name="frete" value="empresa" ${form.frete_pagador === 'empresa' ? 'checked' : ''}> Pago pela empresa (fornecedor)</label>
           <label class="opcao"><input type="radio" name="frete" value="cliente" ${form.frete_pagador === 'cliente' ? 'checked' : ''}> Pago pelo cliente</label>
         </div>
       </div>
-      <label class="campo" id="cFrete" ${form.frete_pagador === 'cliente' ? '' : 'hidden'}>Estimativa do valor do frete<input type="text" id="freteValor" inputmode="decimal" placeholder="R$ 0,00" value="${esc(form.frete_valor)}"></label>
+      <label class="campo" id="cFrete" ${form.frete_pagador === 'cliente' ? '' : 'hidden'}>Estimativa do valor do frete<input type="text" id="freteValor" inputmode="decimal" placeholder="R$ 0,00" value="${esc(form.frete_valor)}"></label>`}
       <div class="grupo" id="gFormas"><span class="rotulo">Formas de pagamento</span>
         <div class="opcoes">${FORMAS_PAGAMENTO.map((f) => `<label class="opcao"><input type="checkbox" data-forma="${esc(f)}" ${form.formas.has(f) ? 'checked' : ''}> ${esc(f)}</label>`).join('')}</div>
       </div>
@@ -145,7 +145,7 @@ function ligarEventos() {
     form.frete_pagador = r.value;
     q('#cFrete').hidden = r.value !== 'cliente';
   }));
-  q('#freteValor').addEventListener('input', (e) => { form.frete_valor = e.target.value; });
+  q('#freteValor')?.addEventListener('input', (e) => { form.frete_valor = e.target.value; });
   raiz.querySelectorAll('input[name=desc]').forEach((r) => r.addEventListener('change', () => { form.tem_desconto = r.value === 'sim'; renderDescontos(); }));
   raiz.querySelectorAll('[data-forma]').forEach((c) => c.addEventListener('change', () => {
     c.checked ? form.formas.add(c.dataset.forma) : form.formas.delete(c.dataset.forma);
@@ -253,8 +253,10 @@ function validar() {
   }
   if (form.itens.every((i) => i.nao_possuo)) return marcarErro('#gItens', 'Todos os itens estão como "Não possuo"; não há o que enviar.');
   if (!form.prazo_entrega.trim()) return marcarErro('#cPrazo', 'Informe o prazo de entrega.');
-  if (form.frete_pagador === null) return marcarErro('#gFrete', 'Informe quem paga o frete.');
-  if (form.frete_pagador === 'cliente' && !(lerValor(form.frete_valor) > 0)) return marcarErro('#cFrete', 'Informe a estimativa do valor do frete.');
+  if (form.entrega !== 'retirada') {
+    if (form.frete_pagador === null) return marcarErro('#gFrete', 'Informe quem paga o frete.');
+    if (form.frete_pagador === 'cliente' && !(lerValor(form.frete_valor) > 0)) return marcarErro('#cFrete', 'Informe a estimativa do valor do frete.');
+  }
   if (!form.formas.size) return marcarErro('#gFormas', 'Selecione ao menos uma forma de pagamento.');
   if (form.tem_desconto === null) return marcarErro('#gDesc', 'Informe se possui desconto por forma de pagamento.');
   if (form.tem_desconto) {
@@ -277,8 +279,8 @@ function corpoEnvio() {
     atendente_telefone: form.atendente_telefone,
     emite_nf: form.emite_nf,
     prazo_entrega: form.prazo_entrega,
-    frete_pagador: form.frete_pagador,
-    frete_valor: form.frete_pagador === 'cliente' ? form.frete_valor : null,
+    frete_pagador: form.entrega === 'retirada' ? null : form.frete_pagador,
+    frete_valor: form.entrega !== 'retirada' && form.frete_pagador === 'cliente' ? form.frete_valor : null,
     formas_pagamento: [...form.formas],
     tem_desconto: form.tem_desconto,
     descontos: form.tem_desconto ? form.descontos.map((d) => ({ forma: d.forma, tipo: d.tipo, valor: d.valor })) : [],
@@ -306,7 +308,7 @@ function revisar() {
         <dt>Atendente</dt><dd>${esc(form.atendente_nome)} · ${esc(mascaraTelefone(form.atendente_telefone))}</dd>
         <dt>Emite nota fiscal</dt><dd>${form.emite_nf ? 'Sim' : 'Não'}</dd>
         <dt>Prazo de entrega</dt><dd>${esc(form.prazo_entrega)}</dd>
-        <dt>Frete</dt><dd>${form.frete_pagador === 'empresa' ? 'Pago pela empresa (fornecedor)' : `Pago pelo cliente · estimativa ${money(lerValor(form.frete_valor))}`}</dd>
+        ${form.entrega === 'retirada' ? '<dt>Entrega</dt><dd>Retirada (sem frete)</dd>' : `<dt>Frete</dt><dd>${form.frete_pagador === 'empresa' ? 'Pago pela empresa (fornecedor)' : `Pago pelo cliente · estimativa ${money(lerValor(form.frete_valor))}`}</dd>`}
         <dt>Formas de pagamento</dt><dd>${esc([...form.formas].join(', '))}</dd>
         <dt>Desconto por forma de pagamento</dt><dd>${descontos}</dd>
       </dl>
@@ -342,6 +344,7 @@ async function enviar() {
   try {
     const { ok, dados } = await chamar('GET');
     if (!ok) { telaMensagem('⛔', 'Cotação indisponível', dados.erro || 'Peça um novo link ao setor de Compras.'); return; }
+    form.entrega = dados.entrega_tipo === 'retirada' ? 'retirada' : 'entrega';
     form.itens = dados.itens.map((i) => ({ ...i, valor: '', nao_possuo: false }));
     document.getElementById('validade').textContent = `Responder até ${brData(dados.expira_em)}`;
     renderForm();

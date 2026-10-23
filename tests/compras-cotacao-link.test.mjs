@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cnpjValido, lerValor, validarResposta, situacaoDoLink } from '../supabase/functions/compras-cotacao-publica/regras.js';
-import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto, descreverContato, formatarTelefone, validarMesmaCidade, chaveGrupoPedido } from '../assets/js/admComprasCotacao.js';
+import { montarPropostas, situacaoDoItem, urlDoLink, linkAberto, descreverContato, descreverFrete, formatarTelefone, validarMesmaCidade, chaveGrupoPedido } from '../assets/js/admComprasCotacao.js';
 
 // Cotação por link: o fornecedor responde sem login e Compras compara as propostas no painel.
 
@@ -199,4 +199,22 @@ test('cotar ou comprar juntos não une cidades diferentes', () => {
   assert.match(validarMesmaCidade([pedido('1', 'A', 'Maringá', 'PR'), pedido('2', 'A', 'Sorriso', 'MT')]), /cidades diferentes \(Maringá\/PR, Sorriso\/MT\)/);
   assert.match(validarMesmaCidade([pedido('1', 'A', 'Maringá', 'PR'), pedido('2', 'A', null, null)]), /sem cidade/);
   assert.match(validarMesmaCidade([pedido('1', 'A', 'Santa Helena', 'PR'), pedido('2', 'A', 'Santa Helena', 'GO')]), /cidades diferentes/);
+});
+
+test('retirada: o link não pergunta nem grava frete; entrega continua exigindo', () => {
+  const { frete_pagador, frete_valor, ...semFrete } = base();
+  const retirada = validarResposta(semFrete, IDS, { entrega: 'retirada' });
+  assert.equal(retirada.erro, undefined);
+  assert.equal(retirada.dados.frete_pagador, null);
+  assert.equal(retirada.dados.frete_valor, null);
+  // mesmo que venha frete no corpo, em retirada ele é ignorado
+  const ignorado = validarResposta({ ...semFrete, frete_pagador: 'cliente', frete_valor: '80' }, IDS, { entrega: 'retirada' });
+  assert.equal(ignorado.dados.frete_pagador, null);
+  assert.equal(ignorado.dados.frete_valor, null);
+  assert.match(validarResposta(semFrete, IDS, { entrega: 'entrega' }).erro, /frete/);
+  assert.match(validarResposta(semFrete, IDS).erro, /frete/); // sem informar, o padrão é entrega
+});
+
+test('descrição do frete sem frete (retirada)', () => {
+  assert.equal(descreverFrete({ frete_pagador: null }), 'Sem frete (retirada)');
 });
