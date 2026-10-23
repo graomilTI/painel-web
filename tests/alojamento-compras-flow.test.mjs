@@ -12,7 +12,11 @@ test('Gestor envia compras de alojamento pelo fluxo compartilhado de Compras', (
   assert.match(compras, /salvarSolicitacao\(ctx,'Alojamento',itens\)/);
   assert.match(compras, /tipo:'Alojamento'/);
   assert.match(compras, /Hospedagem > Alojamentos > Compras/);
-  assert.match(compras, /\.cmp-header-box\{grid-template-columns:minmax\(0,1fr\) 64px!important\}/);
+  assert.match(compras, /\.cmp-header-box\{grid-template-columns:96px minmax\(0,1fr\)!important\}/);
+  // UF vem antes da cidade e a cidade é escolhida na relação do IBGE (mesmo módulo da Manutenção de Frotas).
+  assert.ok(compras.indexOf('id="cmpUf"') < compras.indexOf('id="cmpCidade"'));
+  assert.match(compras, /frotas-manutencao-cidades\.js/);
+  assert.match(compras, /Escolha uma cidade de \$\{uf\} da lista/);
 });
 
 test('Hospedagem carrega menu e fila filtrada de compras de alojamento', () => {
