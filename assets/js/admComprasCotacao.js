@@ -69,7 +69,8 @@ export function montarPropostas(itens, info) {
     const total = r2(cobertos.reduce((s, i) => s + valores[String(i.id)] * qtdDe(i), 0));
     const base = resps[0];
     propostas.push({
-      cnpj, razao_social: base.razao_social, emite_nf: base.emite_nf, prazo_entrega: base.prazo_entrega,
+      cnpj, razao_social: base.razao_social, regime_tributario: base.regime_tributario || null,
+      atendente_nome: base.atendente_nome || null, atendente_telefone: base.atendente_telefone || null, emite_nf: base.emite_nf, prazo_entrega: base.prazo_entrega,
       frete_pagador: base.frete_pagador || null, frete_valor: base.frete_valor == null ? null : Number(base.frete_valor),
       formas_pagamento: base.formas_pagamento || [], tem_desconto: !!base.tem_desconto, descontos: base.descontos || [],
       atualizado_em: base.atualizado_em, valores, cobertos: cobertos.length, total, completo: cobertos.length === itens.length,
@@ -99,6 +100,19 @@ export function situacaoDoItem(itemId, info, agora = new Date()) {
 export function descreverDescontos(p) {
   if (!p.tem_desconto || !p.descontos?.length) return 'Não';
   return p.descontos.map((d) => `${d.forma}: ${d.tipo === 'percentual' ? `${d.valor}%` : `R$ ${Number(d.valor).toFixed(2).replace('.', ',')}`}`).join(' · ');
+}
+
+export const REGIMES = { simples_nacional: 'Simples Nacional', lucro_presumido: 'Lucro Presumido', lucro_real: 'Lucro Real' };
+
+export function formatarTelefone(t) {
+  const d = String(t || '').replace(/\D/g, '');
+  if (d.length === 11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+  return d;
+}
+
+export function descreverContato(p) {
+  return [p.atendente_nome, formatarTelefone(p.atendente_telefone)].filter(Boolean).join(' · ') || '-';
 }
 
 export function descreverFrete(p) {
