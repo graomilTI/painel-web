@@ -3,7 +3,7 @@
 // Pedidos de aprovação de cotação que Compras envia (botão "Solicitar aprovação" em Compras > Cotações). Um pedido por
 // gestor (solicitante), com código (ex.: COUT23 = Compras + OUTubro + 23º do mês), data, solicitante e as ações:
 //  - visualizar: abre o material solicitado e o valor cotado por fornecedor (as respostas dos links de cotação);
-//  - aprovar: o Financeiro escolhe o fornecedor (um dos que responderam ou outro, informado à mão) e os itens voltam
+//  - aprovar: o Financeiro escolhe o fornecedor (um dos que responderam à cotação de Compras) e os itens voltam
 //    para Compras > Cotações, prontos para comprar dele;
 //  - recusar: pede o motivo e os itens vão para Recusados.
 // Aprovar/recusar rodam no banco (RPC compras_decidir_aprovacao), junto com o status dos itens.
@@ -12,7 +12,7 @@ import { supabase } from './supabaseClient.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
   carregarCotacoesDosItens, montarPropostas, descreverDescontos, descreverFrete, descreverContato, formatarCnpj, REGIMES,
-} from './admComprasCotacao.js?v=20261023-cotacao-link12';
+} from './admComprasCotacao.js?v=20261023-cotacao-link13';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
@@ -95,15 +95,6 @@ async function carregarDetalhe(aprov) {
   return { itens: ordenados, propostas: montarPropostas(ordenados, info) };
 }
 
-const OUTRO = '__outro';
-const blocoOutro = () => `<div class="fc-outro"><label class="fc-radio"><input type="radio" name="fcForn" value="${OUTRO}"> Outro fornecedor (informar)</label>
-  <div class="fc-outro-campos" id="fcOutroCampos" hidden>
-    <div class="fm-field"><label for="fcOutroNome">Fornecedor</label><input class="fm-input" id="fcOutroNome" maxlength="160" placeholder="Nome / razão social"></div>
-    <div class="fm-field"><label for="fcOutroCnpj">CNPJ (opcional)</label><input class="fm-input" id="fcOutroCnpj" maxlength="18" placeholder="00.000.000/0000-00"></div>
-    <div class="fm-field"><label for="fcOutroValor">Valor aprovado (opcional)</label><input class="fm-input" id="fcOutroValor" inputmode="decimal" placeholder="R$ 0,00"></div>
-  </div></div>`;
-const lerValor = (v) => { const n = Number(String(v || '').replace(/^R\$\s*/, '').replace(/\./g, '').replace(',', '.')); return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null; };
-
 function celulaValor(p, r) {
   const v = p.valores[String(r.id)];
   const q = Number(r.quantidade || r.unidade || 1);
@@ -134,25 +125,18 @@ function tabelaComparacao(itens, propostas, { escolher = false, escolhidoCnpj = 
     </tbody></table></div>`;
 }
 
-// Marca a coluna do fornecedor escolhido e mostra os campos de "outro fornecedor".
-function ligarEscolha(modal, propostas) {
+// Marca a coluna do fornecedor escolhido.
+function ligarEscolha(modal) {
   modal.querySelectorAll('input[name="fcForn"]').forEach((r) => r.addEventListener('change', () => {
     modal.querySelectorAll('[data-fc-col]').forEach((c) => c.classList.toggle('escolhido', c.dataset.fcCol === r.value && r.checked));
-    const campos = modal.querySelector('#fcOutroCampos'); if (campos) campos.hidden = r.value !== OUTRO;
     modal.querySelector('#fcEscolhaErro').textContent = '';
-    if (r.value === OUTRO) modal.querySelector('#fcOutroNome')?.focus();
   }));
 }
 
-// Lê a escolha: um fornecedor que respondeu (valor = total + frete estimado) ou outro informado à mão.
+// Lê a escolha: o fornecedor marcado entre os que responderam (valor = total + frete estimado).
 function lerEscolha(modal, propostas) {
   const marcado = modal.querySelector('input[name="fcForn"]:checked');
   if (!marcado) return { erro: 'Escolha o fornecedor antes de aprovar.' };
-  if (marcado.value === OUTRO) {
-    const nome = modal.querySelector('#fcOutroNome').value.trim();
-    if (nome.length < 2) return { erro: 'Informe o nome do fornecedor escolhido.' };
-    return { nome, cnpj: modal.querySelector('#fcOutroCnpj').value.trim() || null, valor: lerValor(modal.querySelector('#fcOutroValor').value) };
-  }
   const p = propostas.find((x) => x.cnpj === marcado.value);
   return p ? { nome: p.razao_social, cnpj: p.cnpj, valor: p.totalComFrete } : { erro: 'Fornecedor não encontrado.' };
 }
@@ -172,12 +156,11 @@ async function visualizar(id) {
       <div class="fm-modal-body">
         ${aprov.status === 'aprovada' ? `<p class="fc-escolhido-txt">Fornecedor escolhido: <b>${esc(aprov.fornecedor_nome || '-')}</b>${aprov.fornecedor_cnpj ? ` · ${esc(formatarCnpj(aprov.fornecedor_cnpj))}` : ''}${aprov.valor_aprovado != null ? ` · valor aprovado <b>${money(aprov.valor_aprovado)}</b>` : ''}</p>` : ''}
         ${tabelaComparacao(itens, propostas, { escolher: aprov.status === 'pendente', escolhidoCnpj: aprov.status === 'aprovada' ? (aprov.fornecedor_cnpj || '') : '' })}
-        ${aprov.status === 'pendente' ? blocoOutro() : ''}
         <div class="fm-erro" id="fcEscolhaErro"></div>
       </div>
       ${aprov.status === 'pendente' ? `<div class="fm-modal-foot"><button class="fm-btn soft" data-fc-recusar-modal type="button">Recusar</button><button class="fm-btn primary" data-fc-aprovar-modal type="button">Aprovar</button></div>` : ''}`;
     modal.querySelector('[data-fc-fechar]').onclick = fecharModal;
-    ligarEscolha(modal, propostas);
+    ligarEscolha(modal);
     modal.querySelector('[data-fc-aprovar-modal]')?.addEventListener('click', () => aprovar(aprov.id, modal, propostas));
     modal.querySelector('[data-fc-recusar-modal]')?.addEventListener('click', () => recusar(aprov.id));
   } catch (e) {
@@ -233,8 +216,6 @@ function styles() {
 .fc-aviso{display:block;min-height:18px;margin:0 0 10px;font-weight:700;color:#bbf7d0}.fc-aviso.erro{color:#fecaca}
 .fc-comp td.escolhido,.fc-comp th.escolhido{background:rgba(34,197,94,.16)}.fc-ok{color:#86efac;font-weight:800}.fc-escolhido-txt{margin:0 0 12px;color:#bbf7d0}
 .fc-radio{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-weight:800;color:#e2e8f0}.fc-radio input{width:17px;height:17px;accent-color:#22c55e}.fc-radio-th{margin-top:8px;text-transform:none;letter-spacing:0;font-size:13px}.fc-escolha td{border-top:2px solid rgba(148,163,184,.25)}
-.fc-outro{margin-top:14px;padding:12px 14px;border:1px dashed rgba(148,163,184,.3);border-radius:14px}.fc-outro-campos{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px;margin-top:12px}.fc-outro-campos[hidden]{display:none}
-@media(max-width:760px){.fc-outro-campos{grid-template-columns:1fr}}
 .fc-modal{width:min(1100px,96vw)}.fc-sec td{background:rgba(148,163,184,.08);color:#94a3b8;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;padding:8px 11px!important}
 .fc-comp thead th{position:sticky;top:0;z-index:2;background:#0b1220}.fc-comp thead th.escolhido{background:#0f2a1c}
 .fc-comp th,.fc-comp td{vertical-align:top}.fc-comp{min-width:640px}.fc-comp td.melhor{background:rgba(34,197,94,.14)}.fc-total td{border-top:2px solid rgba(148,163,184,.25)}
