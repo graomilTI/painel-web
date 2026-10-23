@@ -171,7 +171,6 @@ async function visualizar(id) {
         <button class="fm-btn ghost" data-fc-fechar type="button">Fechar</button></div>
       <div class="fm-modal-body">
         ${aprov.status === 'aprovada' ? `<p class="fc-escolhido-txt">Fornecedor escolhido: <b>${esc(aprov.fornecedor_nome || '-')}</b>${aprov.fornecedor_cnpj ? ` · ${esc(formatarCnpj(aprov.fornecedor_cnpj))}` : ''}${aprov.valor_aprovado != null ? ` · valor aprovado <b>${money(aprov.valor_aprovado)}</b>` : ''}</p>` : ''}
-        ${aprov.status === 'pendente' ? '<p class="fc-sub">Compare os valores e marque o fornecedor escolhido para aprovar. Se for outro, use "Outro fornecedor".</p>' : ''}
         ${tabelaComparacao(itens, propostas, { escolher: aprov.status === 'pendente', escolhidoCnpj: aprov.status === 'aprovada' ? (aprov.fornecedor_cnpj || '') : '' })}
         ${aprov.status === 'pendente' ? blocoOutro() : ''}
         <div class="fm-erro" id="fcEscolhaErro"></div>
