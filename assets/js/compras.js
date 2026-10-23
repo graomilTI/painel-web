@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 import { getColaboradores, searchColaboradores } from './colaboradoresCache.js?v=20261005-situacao-ativo';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { itensComDistribuicao } from './comprasDistribuicaoEpi.js?v=20261023-layout-frotas1';
+import { adicionarEpi, agruparPorColaborador, itemEpiParaBanco } from './comprasEpiColaborador.js?v=20261023-epi1';
 import { carregarCidades, cidadesDaUf, UFS_BRASIL } from './modules/frotas-manutencao-cidades.js?v=20261021-frotas-manut45';
 
 let CATALOGO = [];
@@ -41,9 +42,9 @@ const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
 const ALOJAMENTO_MATERIAIS = ['BELICHE','CAMA','COLCHÃO','LENÇOL','FRONHA','TRAVESSEIRO','COBERTOR','ARMÁRIO','PRATELEIRA','MESA','CADEIRA','VENTILADOR','CORTINA','VARAL','UTENSÍLIOS DE COZINHA'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado', recusado_financeiro:'Recusado (Financeiro)', enviado_estoque:'Enviado (Estoque)', concluido:'Concluído', cancelado:'Cancelado' };
 const STATUS_TOM = { pendente:'warn', em_cotacao:'info', em_analise:'info', pendente_pagamento:'warn', aguardando_nf:'warn', aguardando_termo:'warn', comprado:'ok', concluido:'ok', enviado_estoque:'ok', recusado:'err', recusado_financeiro:'err', cancelado:'err' };
-const TIPO_ROTULO = { itens:'Material', uniformes:'Uniforme', alojamento:'Alojamento' };
+const TIPO_ROTULO = { itens:'Material', uniformes:'Uniforme', epi:'EPI', alojamento:'Alojamento' };
 const HIST_CARDS = [['pendentes','Pendentes','amber','relogio'],['concluidos','Concluídos','green','ok'],['cancelados','Cancelados','red','erro']];
-const state = { mode:'itens', historyFilter:'pendentes', historyBusca:'', rows:[], itens:[], colaboradores:[], uniformes:[], alojamentoItens:[] };
+const state = { mode:'itens', historyFilter:'pendentes', historyBusca:'', rows:[], itens:[], colaboradores:[], uniformes:[], epiItens:[], epiColab:null, alojamentoItens:[] };
 
 const esc = (v)=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 const brDate = (v)=>{ const [y,m,d]=String(v||'').slice(0,10).split('-'); return y&&m&&d?`${d}/${m}/${y}`:'-'; };
@@ -490,6 +491,57 @@ function setupColabSearch(){
     renderUniformes(); setMsg('cmpFeedback','Uniforme adicionado à lista.');
   };
 }
+// ─── Aba EPI: colaborador + o que será comprado para ele ──────────────────────
+function bindEpiForm(){
+  const colabInput=document.getElementById('cmpEpiColab'), box=document.getElementById('cmpEpiColabSug');
+  const itemInput=document.getElementById('cmpEpiItem'), tam=document.getElementById('cmpEpiTam');
+  if(!colabInput) return;
+  colabInput.addEventListener('input',()=>{
+    state.epiColab=null;
+    const q=norm(colabInput.value); if(q.length<2){ box.innerHTML=''; return; }
+    const list=dedupeColaboradores(state.colaboradores.filter(c=>norm(c.nome).includes(q))).slice(0,10);
+    box.innerHTML=list.map(c=>`<button type="button" data-epi-colab="${esc(colaboradorKey(c))}">${esc(c.nome)} <small>${esc(c.tipo||c.cargo||'')}</small></button>`).join('');
+    box.querySelectorAll('[data-epi-colab]').forEach(btn=>btn.onmousedown=(ev)=>{
+      ev.preventDefault();
+      state.epiColab=state.colaboradores.find(x=>colaboradorKey(x)===btn.dataset.epiColab)||null;
+      if(state.epiColab) colabInput.value=state.epiColab.nome;
+      box.innerHTML=''; itemInput.focus();
+    });
+  });
+  colabInput.addEventListener('blur',()=>setTimeout(()=>{ box.innerHTML=''; },160));
+  const atualizaDetalhe=()=>{ const f=findCatalogoItem(itemInput.value); tam.placeholder=f&&itemNeedsDetail(f.material)?'Tamanho (obrigatório)':'Tamanho/detalhe (opcional)'; };
+  itemInput.addEventListener('input',atualizaDetalhe);
+  document.getElementById('cmpAddEpi').onclick=()=>{
+    const nome=colabInput.value.trim();
+    const colab=state.epiColab||(nome?{id:null,nome}:null);
+    if(!colab){ setMsg('cmpFeedback','Informe o colaborador antes de adicionar o EPI.',true); colabInput.focus(); return; }
+    const raw=itemInput.value.trim();
+    if(!raw){ setMsg('cmpFeedback','Informe o EPI que será comprado para o colaborador.',true); itemInput.focus(); return; }
+    const found=findCatalogoItem(raw);
+    const tamanho=tam.value.trim()||null;
+    if(found&&itemNeedsDetail(found.material)&&!tamanho){ setMsg('cmpFeedback','Informe o tamanho antes de adicionar.',true); tam.focus(); return; }
+    const qtd=Math.max(1,Math.floor(Number(document.getElementById('cmpEpiUn').value||1)));
+    state.epiItens=adicionarEpi(state.epiItens,{_id:`${Date.now()}_${Math.random().toString(16).slice(2)}`,unidade:qtd,quantidade:qtd,material:found?.material||raw.toUpperCase(),tipo:'EPI',tamanho,colaborador_id:colab.id||null,colaborador_nome:colab.nome,colaborador_tipo:colab.tipo||colab.cargo||''});
+    itemInput.value=''; tam.value=''; document.getElementById('cmpEpiUn').value=1; atualizaDetalhe();
+    renderEpiList();
+    setMsg('cmpFeedback',`EPI adicionado para ${colab.nome}. Continue com outro EPI dele ou troque o colaborador.`);
+    itemInput.focus();
+  };
+}
+function renderEpiList(){
+  const body=document.getElementById('cmpEpiBody');
+  if(!body) return;
+  if(!state.epiItens.length){ body.innerHTML='<tr><td colspan="4" class="cmp-empty">Nenhum EPI adicionado. Informe o colaborador, escolha o EPI e clique em <b>Adicionar EPI</b>.</td></tr>'; return; }
+  body.innerHTML=agruparPorColaborador(state.epiItens).map(g=>`<tr class="cmp-epi-grupo"><td colspan="4"><b>${esc(g.nome)}</b>${g.tipo?` <small>${esc(g.tipo)}</small>`:''}<span>${g.itens.length} ${g.itens.length===1?'EPI':'EPIs'}</span></td></tr>`
+    +g.itens.map(i=>`<tr data-epi-id="${esc(i._id)}"><td data-label="Un.">${esc(i.quantidade)}</td><td data-label="EPI">${esc(i.material)}</td><td data-label="Tamanho/Detalhe">${esc(i.tamanho||'-')}</td><td class="cmp-row-action"><button class="btn btn-small btn-danger" data-del-epi="${esc(i._id)}" type="button" title="Remover" aria-label="Remover EPI">×</button></td></tr>`).join('')).join('');
+  body.querySelectorAll('[data-del-epi]').forEach(btn=>btn.onclick=()=>{ state.epiItens=state.epiItens.filter(i=>String(i._id)!==btn.dataset.delEpi); renderEpiList(); });
+}
+async function submitEpi(ctx){
+  const itens=state.epiItens.map(itemEpiParaBanco);
+  if(!itens.length) throw new Error('Adicione pelo menos um EPI para um colaborador.');
+  await salvarSolicitacao(ctx,'EPI',itens);
+  return itens;
+}
 function isSchemaColumnError(error){
   const msg=String(error?.message||error?.details||error?.hint||'').toLowerCase();
   return msg.includes('schema cache') || msg.includes('could not find') || msg.includes('column') || error?.code==='PGRST204';
@@ -662,6 +714,9 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 #cmpKpis.cmp-history-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
 .cmp-history-card .fm-table{min-width:0}.cmp-history-card .cmp-table td[data-label="Data"]{white-space:nowrap}.cmp-history-card .fm-bar{margin-bottom:12px}
 @media(max-width:760px){#cmpKpis.cmp-history-filters{gap:8px}#cmpKpis .fm-kcard{flex-direction:column;align-items:flex-start;gap:4px;padding:10px 12px;min-width:0}#cmpKpis .fm-kcard-ic{display:none}#cmpKpis .fm-kcard-tx{min-width:0}#cmpKpis .fm-kcard-tx>span{font-size:10px;letter-spacing:.04em;white-space:normal}.cmp-history-card .fm-count{width:100%;margin:0}}
+#panel-epi .cmp-epi-add{grid-template-columns:82px minmax(0,1fr)}#panel-epi .cmp-epi-add .cmp-field:nth-child(1){grid-column:1}#panel-epi .cmp-epi-add .cmp-field:nth-child(2){grid-column:2}#panel-epi .cmp-epi-add .cmp-field:nth-child(3){grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action{grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action .btn{width:100%}
+.cmp-epi-grupo td{background:rgba(34,197,94,.08);border-bottom:1px solid rgba(34,197,94,.2)!important;padding:9px 12px!important}.cmp-epi-grupo td b{color:#bbf7d0}.cmp-epi-grupo td small{color:var(--muted);margin-left:6px}.cmp-epi-grupo td span{float:right;font-size:11px;font-weight:800;color:#94a3b8}
+.cmp-request-card #panel-epi .cmp-table-wrap{max-height:320px}
 @media(min-width:961px){.cmp-workspace .cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) auto}}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}.cmp-aloj-add{grid-template-columns:76px 1fr}.cmp-aloj-add .cmp-field:nth-child(3){grid-column:1/-1}.cmp-aloj-add .cmp-add-action{grid-column:1/-1}}
@@ -713,7 +768,7 @@ async function renderSolicitacaoTab(content, userContext){
   await loadColaboradores();
   await loadCatalogo();
   content.innerHTML=`${styles()}
-  <div class="cmp-workspace"><section class="fm-card cmp-request-card"><div class="fm-body"><div class="section-head"><div><div class="fm-kicker">Compras</div><h3 style="margin:4px 0 0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
+  <div class="cmp-workspace"><section class="fm-card cmp-request-card"><div class="fm-body"><div class="section-head"><div><div class="fm-kicker">Compras</div><h3 style="margin:4px 0 0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="epi" type="button">EPI</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
     <input id="cmpObs" type="hidden" value="">
     <div class="cmp-add-box cmp-header-box">
       <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
@@ -731,6 +786,17 @@ async function renderSolicitacaoTab(content, userContext){
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
     </div>
     <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-epi" class="cmp-panel mt-16">
+      <div class="cmp-aloj-intro"><span class="cmp-aloj-icon" aria-hidden="true">⛑</span><div><strong>EPI por colaborador</strong>Informe o colaborador e o que será comprado para ele. Para outro colaborador, é só trocar o nome e continuar adicionando.</div></div>
+      <div class="cmp-field cmp-autocomplete-wrap"><label>Colaborador</label><input id="cmpEpiColab" type="text" placeholder="Digite o nome do colaborador" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpEpiColabSug"></div></div>
+      <div class="cmp-add-box cmp-epi-add mt-12">
+        <div class="cmp-field"><label>Un.</label><input id="cmpEpiUn" type="number" min="1" value="1"></div>
+        <div class="cmp-field"><label>EPI</label><input id="cmpEpiItem" type="text" list="cmpEpiLista" placeholder="Ex.: capacete, colete, botina..." autocomplete="off"><datalist id="cmpEpiLista">${CATALOGO.filter(c=>norm(c.tipo)==='epi').map(c=>`<option value="${esc(c.material)}"></option>`).join('')}</datalist></div>
+        <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpEpiTam" type="text" placeholder="Tamanho/detalhe (opcional)" maxlength="60"></div>
+        <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddEpi" type="button">Adicionar EPI</button></div>
+      </div>
+      <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>EPI</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpEpiBody"></tbody></table></div>
+    </div>
     <div id="panel-alojamento" class="cmp-panel mt-16">
       <div class="cmp-aloj-intro"><span class="cmp-aloj-icon" aria-hidden="true">⌂</span><div><strong>Compras para alojamento</strong>Beliches, camas, enxoval, prateleiras e demais itens serão enviados diretamente para Hospedagem &gt; Alojamentos.</div></div>
       <div class="cmp-field cmp-aloj-destino"><label>Alojamento ou local de destino *</label><input id="cmpAlojDestino" type="text" maxlength="140" placeholder="Ex.: Alojamento Rondonópolis Centro"></div>
@@ -752,7 +818,7 @@ async function renderSolicitacaoTab(content, userContext){
     <div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="cmpBusca" placeholder="Buscar por item, tipo ou status..." autocomplete="off"></div><span class="fm-count" id="cmpCount"></span></div>
     <div class="cmp-table-wrap fm-table-wrap"><table class="cmp-table fm-table"><thead><tr><th>Data</th><th>Tipo</th><th>Itens</th><th>Status</th><th>Motivo</th></tr></thead><tbody id="cmpMinhasBody"></tbody></table></div>
   </div></section></div>`;
-  state.itens=[]; state.alojamentoItens=[]; bindItemForm(); bindAlojamentoForm(); renderItensList(); renderUniformes(); renderAlojamentoItens(); setupColabSearch(); bindLocal();
+  state.itens=[]; state.alojamentoItens=[]; state.epiItens=[]; state.epiColab=null; bindItemForm(); bindAlojamentoForm(); bindEpiForm(); renderItensList(); renderUniformes(); renderEpiList(); renderAlojamentoItens(); setupColabSearch(); bindLocal();
   document.querySelectorAll('.cmp-tab').forEach(btn=>btn.onclick=()=>{ state.mode=btn.dataset.mode; document.querySelectorAll('.cmp-tab').forEach(b=>b.classList.toggle('active',b===btn)); document.querySelectorAll('.cmp-panel').forEach(p=>p.classList.toggle('active',p.id===`panel-${state.mode}`)); });
   document.getElementById('cmpKpis').onclick=(e)=>{ const b=e.target.closest('[data-history-filter]'); if(!b) return; state.historyFilter=b.dataset.historyFilter; renderMinhas(); };
   document.getElementById('cmpBusca').oninput=(e)=>{ state.historyBusca=e.target.value; renderMinhas(); };
@@ -763,7 +829,7 @@ async function renderSolicitacaoTab(content, userContext){
     btn.disabled=true;
     try{
       setMsg('cmpFeedback','Salvando solicitação...');
-      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):state.mode==='uniformes'?await submitUniformes(userContext):await submitAlojamento(userContext);
+      const itens=state.mode==='itens'?await submitItens(userContext,overrideItems):state.mode==='uniformes'?await submitUniformes(userContext):state.mode==='epi'?await submitEpi(userContext):await submitAlojamento(userContext);
       const n=state.mode==='alojamento'
         ? {ok:true,msg:'Pedido disponível em Hospedagem > Alojamentos > Compras.'}
         : await notifyCompras(buildMessage(userContext,state.mode,itens));
@@ -771,6 +837,8 @@ async function renderSolicitacaoTab(content, userContext){
       document.getElementById('cmpObs').value='';
       state.itens=[]; renderItensList();
       state.uniformes=[]; renderUniformes();
+      state.epiItens=[]; state.epiColab=null; renderEpiList();
+      const epiColab=document.getElementById('cmpEpiColab'); if(epiColab) epiColab.value='';
       state.alojamentoItens=[]; renderAlojamentoItens();
       const alojDestino=document.getElementById('cmpAlojDestino');if(alojDestino)alojDestino.value='';
       await loadMinhas(userId);
