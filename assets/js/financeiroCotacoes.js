@@ -11,7 +11,7 @@ import { supabase } from './supabaseClient.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
   carregarCotacoesDosItens, montarPropostas, descreverDescontos, descreverFrete, descreverContato, formatarCnpj, REGIMES,
-} from './admComprasCotacao.js?v=20261023-cotacao-link9';
+} from './admComprasCotacao.js?v=20261023-cotacao-link10';
 
 const esc = (v) => String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 const norm = (v) => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();

@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link9';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link10';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -752,11 +752,39 @@ async function abrirNovaSolicitacaoModal(){
 // ─── MODAL COTAR (gera o link que Compras envia ao fornecedor) ─────────────────
 // O link tem os itens escolhidos e vale VALIDADE_LINK_DIAS dias. O fornecedor responde sem login (cotacao-fornecedor.html);
 // vários fornecedores podem usar o mesmo link, cada um identificado pelo CNPJ. As respostas aparecem em "Ver respostas".
+function linksAbertosDosItens(rows){
+  const info=state.cotacaoInfo; if(!info) return [];
+  const ids=new Set(rows.flatMap(r=>info.porItem.get(String(r.id))||[]));
+  return [...ids].map(id=>info.cotacoes.get(id)).filter(c=>c&&linkAberto(c));
+}
+// Copia a mensagem com o link da cotação dos itens selecionados (o link aberto; senão o mais recente).
+async function copiarLinkDosSelecionados(rows){
+  const info=state.cotacaoInfo;
+  const links=[...new Set(rows.flatMap(r=>info?.porItem.get(String(r.id))||[]))].map(id=>info.cotacoes.get(id)).filter(Boolean)
+    .sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  const link=links.find(c=>linkAberto(c))||links[0];
+  if(!link){ setMsg('Os itens selecionados ainda não têm link. Use Cotar para gerar.',true); return; }
+  const url=urlDoLink(link.token);
+  try{ await navigator.clipboard.writeText(mensagemDoLink(url,link.expira_em)); setMsg(linkAberto(link)?'Link da cotação copiado.':'Link copiado, mas ele está encerrado/expirado: reabra em Ver respostas.'); }
+  catch{ prompt('Copie o link:',url); }
+}
 function abrirCotarModal(rows){
   rows=(rows||[]).filter(r=>r.status==='pendente'||r.status==='em_cotacao');
   if(!rows.length){setMsg('Selecione pelo menos um item para cotar.',true);return;}
   const erroCidade=validarMesmaCidade(rows);
   if(erroCidade){setMsg(erroCidade,true);alert(erroCidade);return;}
+  // Um link só por cotação: se os itens já estão num link aberto, reaproveita esse (copia) em vez de gerar outro.
+  const abertos=linksAbertosDosItens(rows);
+  if(abertos.length){
+    const unico=abertos.length===1?abertos[0]:null;
+    if(unico&&rows.every(r=>(state.cotacaoInfo.porItem.get(String(r.id))||[]).includes(unico.id))){
+      navigator.clipboard?.writeText(mensagemDoLink(urlDoLink(unico.token),unico.expira_em)).catch(()=>{});
+      setMsg('Esta cotação já tem um link aberto (copiado). Para gerar outro, encerre o atual em Ver respostas.');
+      abrirRespostasModal(rows); return;
+    }
+    const aviso='Alguns destes itens já estão numa cotação com link aberto. Selecione a cotação inteira, ou encerre o link atual (Ver respostas) para gerar um novo.';
+    setMsg(aviso,true); alert(aviso); return;
+  }
   const modal=document.getElementById('admCmpModal');
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
@@ -811,6 +839,15 @@ function abrirRespostasModal(rows){
   const propostas=montarPropostas(rows,info);
   const cotIds=[...new Set(rows.flatMap(r=>info.porItem.get(String(r.id))||[]))];
   const cotacoes=cotIds.map(id=>info.cotacoes.get(id)).filter(Boolean).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  // Cada cotação tem UM link: o atual (aberto, ou o mais recente se todos estiverem encerrados). Os outros só ficam de histórico.
+  const linkAtual=cotacoes.find(c=>linkAberto(c))||cotacoes[0]||null;
+  const anteriores=cotacoes.filter(c=>c!==linkAtual);
+  const linhaLinkHtml=(c,atual)=>`<div class="adm-cot-link" data-cot="${esc(c.id)}">
+      <span>${dataHora(c.created_at)}</span>${situacaoLinkHtml(c)}
+      <span class="muted">${info.respostas.filter(x=>x.cotacao_id===c.id).length} resposta(s)</span>
+      ${atual?`<button class="btn btn-small btn-secondary" data-link-copiar="${esc(c.token)}" data-exp="${esc(c.expira_em)}" type="button">Copiar link</button>
+      ${linkAberto(c)?`<button class="btn btn-small btn-secondary" data-link-encerrar="${esc(c.id)}" type="button">Encerrar</button>`:`<button class="btn btn-small btn-secondary" data-link-reabrir="${esc(c.id)}" type="button">Reabrir por ${VALIDADE_LINK_DIAS} dias</button>`}`:''}
+    </div>`;
   const melhor=Math.min(...propostas.filter(p=>p.completo).map(p=>p.totalComFrete),Infinity);
   const qtd=(r)=>Number(r.quantidade||r.unidade||1);
   const celula=(p,r)=>{
@@ -825,12 +862,8 @@ function abrirRespostasModal(rows){
       <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
     </div>
     <h4 class="mt-16">Links enviados</h4>
-    <div class="adm-cot-links">${cotacoes.length?cotacoes.map(c=>`<div class="adm-cot-link" data-cot="${esc(c.id)}">
-      <span>${dataHora(c.created_at)}</span>${situacaoLinkHtml(c)}
-      <span class="muted">${info.respostas.filter(x=>x.cotacao_id===c.id).length} resposta(s)</span>
-      <button class="btn btn-small btn-secondary" data-link-copiar="${esc(c.token)}" data-exp="${esc(c.expira_em)}" type="button">Copiar link</button>
-      ${linkAberto(c)?`<button class="btn btn-small btn-secondary" data-link-encerrar="${esc(c.id)}" type="button">Encerrar</button>`:`<button class="btn btn-small btn-secondary" data-link-reabrir="${esc(c.id)}" type="button">Reabrir por ${VALIDADE_LINK_DIAS} dias</button>`}
-    </div>`).join(''):'<p class="muted">Nenhum link gerado para estes itens.</p>'}</div>
+    <div class="adm-cot-links">${linkAtual?linhaLinkHtml(linkAtual,true):'<p class="muted">Nenhum link gerado para estes itens.</p>'}
+      ${anteriores.length?`<details class="adm-cot-antigos"><summary>Links anteriores (${anteriores.length})</summary>${anteriores.map(c=>linhaLinkHtml(c,false)).join('')}</details>`:''}</div>
     <h4 class="mt-16">Comparação</h4>
     ${propostas.length?`<div class="adm-cmp-table-wrap"><table class="adm-cmp-table adm-cot-comp">
       <thead><tr><th>Item</th>${propostas.map(p=>`<th>${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small></th>`).join('')}</tr></thead>
@@ -1749,6 +1782,7 @@ function styles(){return `<style>
 @media(max-width:760px){.adm-cmp-kpis{grid-template-columns:1fr}.adm-cmp-kpi{padding:12px 14px}.adm-cmp-grid{grid-template-columns:1fr}.adm-cmp-table{min-width:920px}}
 
 .adm-cot-badge{display:inline-flex;align-items:center;margin-right:10px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;background:rgba(148,163,184,.16);color:#cbd5e1;white-space:nowrap}.adm-cot-badge.enviado{background:rgba(59,130,246,.18);color:#93c5fd}.adm-cot-badge.respostas{background:rgba(34,197,94,.2);color:#86efac}.adm-cot-badge.encerrado{background:rgba(248,113,113,.16);color:#fca5a5}
+.adm-cot-antigos{margin-top:4px}.adm-cot-antigos summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:700;padding:4px 2px}.adm-cot-antigos .adm-cot-link{margin-top:6px;opacity:.8}
 .adm-cot-links{display:flex;flex-direction:column;gap:8px;margin-top:8px}.adm-cot-link{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:8px 12px;border:1px solid var(--line);border-radius:12px}
 .adm-cot-link-card{border-color:rgba(34,197,94,.32)}.adm-cot-link-card .adm-cmp-card-head{background:rgba(34,197,94,.07)}
 .adm-cot-comp th,.adm-cot-comp td{vertical-align:top}.adm-cot-comp td.melhor{background:rgba(34,197,94,.14)}.adm-cot-total td{border-top:2px solid var(--line)}
@@ -1760,6 +1794,7 @@ function updateActionButtons(){
   const btnCotar=document.getElementById('btnCotar');
   const btnComprar=document.getElementById('btnComprar');
   const btnRespostas=document.getElementById('btnRespostas');
+  const btnLinkCotacao=document.getElementById('btnLinkCotacao');
   const btnAprovar=document.getElementById('btnAprovar');
   const btnAprovarLote=document.getElementById('btnAprovarLote');
   const btnEnviarEstoque=document.getElementById('btnEnviarEstoque');
@@ -1767,6 +1802,7 @@ function updateActionButtons(){
   if(btnCotar) btnCotar.style.display=isCotacoes?'inline-flex':'none';
   if(btnComprar) btnComprar.style.display=isCotacoes?'inline-flex':'none';
   if(btnRespostas) btnRespostas.style.display=isCotacoes?'inline-flex':'none';
+  if(btnLinkCotacao) btnLinkCotacao.style.display=isCotacoes?'inline-flex':'none';
   if(btnAprovar) btnAprovar.style.display=isCotacoes?'inline-flex':'none';
   if(btnAprovarLote) btnAprovarLote.style.display=tab==='analise'?'inline-flex':'none';
   if(btnEnviarEstoque) btnEnviarEstoque.style.display=isCotacoes?'inline-flex':'none';
@@ -1777,7 +1813,7 @@ function updateActionButtons(){
 initProtectedPage('Compras ADM', async (content,ctx)=>{
   state.ctx=ctx;
   await loadColaboradores();
-  content.innerHTML=`${styles()}<section class="card mt-16 adm-cmp-page" id="admCmpPage"><div class="frotas-hub-tabs">${tabs({itens:TABS.map(([id,label])=>({id,label})),ativo:'cotacoes',attr:'data-tab'})}</div><div class="frotas-hub-tab-body fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="admCmpRefresh" type="button">↻ Atualizar</button><button class="fm-btn primary" id="admCmpNova" type="button" title="Nova solicitação de compra">${ICONS.plus} Nova solicitação</button></div></div><div id="admCmpItensSection"><div class="fm-kpis" id="admCmpKpis"></div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="admCmpBusca" placeholder="Buscar por material, solicitante, coordenação, fornecedor ou código..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="admCmpCount">0 item(ns)</span></div><div class="adm-cmp-list" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnRespostas" type="button" title="Ver respostas dos selecionados" aria-label="Ver respostas dos selecionados">${ICONS.eye}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="fm-card"><div class="fm-body"><div class="adm-cmp-cat-form"><label class="grow2">Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label title="Para lançar em Caixa se não devolvido">Valor estimado (R$)<input id="catNovoValor" inputmode="decimal" placeholder="Opcional"></label><label class="grow2">Observação<input id="catNovaObs" placeholder="Opcional"></label><button class="fm-btn primary" id="catAdicionar" type="button">+ Adicionar</button></div><div class="adm-cmp-actions mt-8"><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="fm-table-wrap mt-16"><table class="fm-table"><thead><tr><th>Material</th><th>Tipo</th><th>Valor estimado (Caixa)</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></div></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
+  content.innerHTML=`${styles()}<section class="card mt-16 adm-cmp-page" id="admCmpPage"><div class="frotas-hub-tabs">${tabs({itens:TABS.map(([id,label])=>({id,label})),ativo:'cotacoes',attr:'data-tab'})}</div><div class="frotas-hub-tab-body fm-shell"><div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="admCmpRefresh" type="button">↻ Atualizar</button><button class="fm-btn primary" id="admCmpNova" type="button" title="Nova solicitação de compra">${ICONS.plus} Nova solicitação</button></div></div><div id="admCmpItensSection"><div class="fm-kpis" id="admCmpKpis"></div><div class="fm-card"><div class="fm-body"><div class="fm-bar"><div class="fm-search">${FM_ICON.busca}<input class="fm-input" id="admCmpBusca" placeholder="Buscar por material, solicitante, coordenação, fornecedor ou código..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="admCmpCount">0 item(ns)</span></div><div class="adm-cmp-list" id="admCmpListWrap"></div><div class="adm-cmp-actions adm-cmp-actions-footer mt-16"><span class="adm-cmp-sel-count" id="admCmpSelCount"></span><button class="adm-cmp-icon-btn" id="btnCotar" type="button" data-row-action="cotar" title="Cotar selecionados" aria-label="Cotar selecionados">${ICONS.tag}</button><button class="adm-cmp-icon-btn" id="btnRespostas" type="button" title="Ver respostas dos selecionados" aria-label="Ver respostas dos selecionados">${ICONS.eye}</button><button class="adm-cmp-icon-btn" id="btnLinkCotacao" type="button" title="Copiar o link da cotação dos selecionados" aria-label="Copiar o link da cotação dos selecionados">${ICONS.link}</button><button class="adm-cmp-icon-btn" id="btnComprar" type="button" data-row-action="comprar" title="Comprar selecionados" aria-label="Comprar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnAprovar" type="button" data-row-action="aprovar_solicitar" title="Solicitar aprovação dos selecionados" aria-label="Solicitar aprovação dos selecionados">${ICONS.send}</button><button class="adm-cmp-icon-btn" id="btnAprovarLote" type="button" data-row-action="aprovar" title="Aprovar selecionados" aria-label="Aprovar selecionados" style="display:none">${ICONS.check}</button><button class="adm-cmp-icon-btn" id="btnEnviarEstoque" type="button" data-row-action="enviar_estoque" title="Enviar via Estoque os selecionados" aria-label="Enviar via Estoque os selecionados">${ICONS.box}</button><button class="adm-cmp-icon-btn" id="btnRecusar" type="button" data-row-action="recusar" title="Recusar selecionados" aria-label="Recusar selecionados">${ICONS.x}</button><span class="adm-cmp-feedback" id="admCmpFeedback"></span></div></div></div></div><div id="admCmpCatalogoSection" style="display:none"><div class="fm-card"><div class="fm-body"><div class="adm-cmp-cat-form"><label class="grow2">Material<input id="catNovoMaterial" placeholder="Nome do material"></label><label>Tipo<select id="catNovoTipo"><option value="Uniforme">Uniforme</option><option value="Patrimonio">Patrimônio</option><option value="EPI">EPI</option><option value="Outros" selected>Outros</option></select></label><label title="Para lançar em Caixa se não devolvido">Valor estimado (R$)<input id="catNovoValor" inputmode="decimal" placeholder="Opcional"></label><label class="grow2">Observação<input id="catNovaObs" placeholder="Opcional"></label><button class="fm-btn primary" id="catAdicionar" type="button">+ Adicionar</button></div><div class="adm-cmp-actions mt-8"><span class="adm-cmp-feedback" id="admCmpCatalogoFeedback"></span></div><div class="fm-table-wrap mt-16"><table class="fm-table"><thead><tr><th>Material</th><th>Tipo</th><th>Valor estimado (Caixa)</th><th>Observação</th><th>Status</th><th>Ações</th></tr></thead><tbody id="admCmpCatalogoBody"></tbody></table></div></div></div></div></div></section><div class="adm-cmp-modal" id="admCmpModal"></div>`;
   injectEstilosFrotas();
   document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab; state.filtro='todos'; document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x===b)); updateActionButtons(); loadRows();});
   document.getElementById('admCmpRefresh').onclick=loadRows;
@@ -1789,6 +1825,7 @@ initProtectedPage('Compras ADM', async (content,ctx)=>{
   document.getElementById('admCmpNova').onclick=()=>abrirNovaSolicitacaoModal().catch(e=>setMsg(e.message,true));
   document.getElementById('btnCotar').onclick=()=>abrirCotarModal(selectedRows());
   document.getElementById('btnRespostas').onclick=()=>{ const rows=selectedRows(); if(!rows.length){ setMsg('Selecione pelo menos um item para ver as respostas.',true); return; } abrirRespostasModal(rows); };
+  document.getElementById('btnLinkCotacao').onclick=()=>{ const rows=selectedRows(); if(!rows.length){ setMsg('Selecione pelo menos um item para copiar o link.',true); return; } copiarLinkDosSelecionados(rows); };
   document.getElementById('btnComprar').onclick=()=>abrirCompraSelecionados();
   document.getElementById('btnAprovar').onclick=()=>solicitarAprovacao().catch(e=>setMsg(e.message,true));
   document.getElementById('btnAprovarLote').onclick=()=>aprovarSelecionados();
