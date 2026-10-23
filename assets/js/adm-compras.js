@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link2';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link3';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -760,7 +760,7 @@ function abrirRespostasModal(rows){
   const propostas=montarPropostas(rows,info);
   const cotIds=[...new Set(rows.flatMap(r=>info.porItem.get(String(r.id))||[]))];
   const cotacoes=cotIds.map(id=>info.cotacoes.get(id)).filter(Boolean).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
-  const melhor=Math.min(...propostas.filter(p=>p.completo).map(p=>p.total),Infinity);
+  const melhor=Math.min(...propostas.filter(p=>p.completo).map(p=>p.totalComFrete),Infinity);
   const qtd=(r)=>Number(r.quantidade||r.unidade||1);
   const celula=(p,r)=>{
     const v=p.valores[String(r.id)];
@@ -785,7 +785,9 @@ function abrirRespostasModal(rows){
       <thead><tr><th>Item</th>${propostas.map(p=>`<th>${esc(p.razao_social)}<br><small>${esc(formatarCnpj(p.cnpj))}</small><br><small class="muted">${dataHora(p.atualizado_em)}</small></th>`).join('')}</tr></thead>
       <tbody>
         ${rows.map(r=>`<tr><td>${esc(qtd(r))} × ${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}</td>${propostas.map(p=>`<td>${celula(p,r)}</td>`).join('')}</tr>`).join('')}
-        <tr class="adm-cot-total"><td>Total${propostas.some(p=>!p.completo)?' (só itens cotados)':''}</td>${propostas.map(p=>`<td class="${p.completo&&p.total===melhor?'melhor':''}"><b>${money(p.total)}</b>${p.completo?(p.total===melhor?'<br><small>menor preço</small>':''):`<br><small class="muted">cobre ${p.cobertos} de ${rows.length}</small>`}</td>`).join('')}</tr>
+        <tr class="adm-cot-total"><td>Total dos itens${propostas.some(p=>!p.completo)?' (só os cotados)':''}</td>${propostas.map(p=>`<td><b>${money(p.total)}</b>${p.completo?'':`<br><small class="muted">cobre ${p.cobertos} de ${rows.length}</small>`}</td>`).join('')}</tr>
+        <tr><td>Frete</td>${propostas.map(p=>`<td>${esc(descreverFrete(p))}</td>`).join('')}</tr>
+        <tr class="adm-cot-total"><td>Total + frete estimado</td>${propostas.map(p=>`<td class="${p.completo&&p.totalComFrete===melhor?'melhor':''}"><b>${money(p.totalComFrete)}</b>${p.completo&&p.totalComFrete===melhor?'<br><small>menor custo</small>':''}</td>`).join('')}</tr>
         <tr><td>Emite nota fiscal</td>${propostas.map(p=>`<td>${p.emite_nf?'Sim':'Não'}</td>`).join('')}</tr>
         <tr><td>Prazo de entrega</td>${propostas.map(p=>`<td>${esc(p.prazo_entrega||'-')}</td>`).join('')}</tr>
         <tr><td>Formas de pagamento</td>${propostas.map(p=>`<td>${esc(p.formas_pagamento.join(', ')||'-')}</td>`).join('')}</tr>
@@ -1395,7 +1397,7 @@ function updatePagamentoFields(area,forma){
 // Lembrete do que o fornecedor informou na cotação (NF, prazo, pagamento, desconto) na hora de pagar.
 function propostaResumoHtml(p){
   if(!p) return '';
-  return `<p class="muted">Cotação de <b>${esc(p.razao_social)}</b> (${esc(formatarCnpj(p.cnpj))}) · NF: ${p.emite_nf?'sim':'<b>não emite</b>'} · Prazo: ${esc(p.prazo_entrega||'-')} · Pagamento: ${esc(p.formas_pagamento.join(', ')||'-')} · Desconto: ${esc(descreverDescontos(p))}</p>`;
+  return `<p class="muted">Cotação de <b>${esc(p.razao_social)}</b> (${esc(formatarCnpj(p.cnpj))}) · NF: ${p.emite_nf?'sim':'<b>não emite</b>'} · Prazo: ${esc(p.prazo_entrega||'-')} · Frete: ${esc(descreverFrete(p))} · Pagamento: ${esc(p.formas_pagamento.join(', ')||'-')} · Desconto: ${esc(descreverDescontos(p))}</p>`;
 }
 function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   const total=rows.reduce((s,r)=>s+Number(r._valor_total||0),0);
