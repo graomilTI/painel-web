@@ -61,6 +61,16 @@ function brDate(value) {
   return `${d}/${m}/${y}`;
 }
 
+// A hora vem do XLS da Uber em 12h ("12:59 PM", "10:55PM"); o painel mostra em 24h.
+function hora24(value) {
+  const raw = String(value ?? '').trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp])\.?\s*[Mm]\.?$/);
+  if (!match) return raw;
+  let hh = Number(match[1]) % 12;
+  if (/p/i.test(match[4])) hh += 12;
+  return `${String(hh).padStart(2, '0')}:${match[2]}${match[3] ? `:${match[3]}` : ''}`;
+}
+
 function money(value) {
   const number = Number(value || 0);
   return MONEY.format(Number.isFinite(number) ? number : 0);
@@ -404,7 +414,7 @@ function renderRow(row) {
   const caixaTexto = gorjetaCaixaTexto(row);
   const motivo = caixaTexto ? `${baseMotivo === '-' ? '' : `${baseMotivo} `}${caixaTexto}` : baseMotivo;
   return `<tr>
-    <td>${brDate(row.data_solicitacao_local || row.data_corrida || row.data)}<small>${escapeHtml(row.hora_solicitacao_local || row.hora || '')}</small></td>
+    <td>${brDate(row.data_solicitacao_local || row.data_corrida || row.data)}<small>${escapeHtml(hora24(row.hora_solicitacao_local || row.hora))}</small></td>
     <td><strong>${escapeHtml(row.nome_colaborador || row.nome || '-')}</strong><small>${escapeHtml(row.email || row.matricula || '')}</small></td>
     <td>${escapeHtml(row.supervisao || row.regional || '-')}<small>${escapeHtml(row.coordenacao || row.centro_custo || '')}</small></td>
     <td>${escapeHtml(row.endereco_partida || '-')}</td>
@@ -935,7 +945,7 @@ function exportCsv() {
   const headers = ['Data', 'Hora', 'Colaborador', 'Regional', 'Partida', 'Destino', 'Valor', 'Status', 'Observação'];
   const csvRows = rows.map((row) => [
     row.data_solicitacao_local || row.data_corrida || '',
-    row.hora_solicitacao_local || '',
+    hora24(row.hora_solicitacao_local),
     row.nome_colaborador || row.nome || '',
     row.supervisao || row.regional || '',
     row.endereco_partida || '',
