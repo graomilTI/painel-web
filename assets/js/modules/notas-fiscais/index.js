@@ -8,7 +8,7 @@
 import { pageHeader, tabs, kpis, dataStatus, esc, dinheiro, debounce, toast, confirmar } from '../../core/ui.js';
 import { normalizarTexto } from '../../core/supabaseService.js';
 import { nfState } from './state.js';
-import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf, enviarNfAoGrm } from './service.js';
+import { carregarNotas, agruparPorNf, resumo, lancarNf, estornarNf, enviarNfAoGrm, solicitarCadastroFornecedorGrm } from './service.js';
 import { renderTabela } from './components/table.js';
 import { abrirModalNf } from './components/modal.js';
 import { renderBaixas, vincularEventosBaixas, carregarBaixas, contarRevisaoPendente } from './baixas.js';
@@ -217,6 +217,16 @@ function vincularEventos(grupos) {
     });
   });
 
+  raiz.querySelectorAll('[data-cadastrar-fornecedor]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const grupo = grupos.find((g) => g.key === b.dataset.cadastrarFornecedor);
+      if (!grupo) return;
+      b.disabled = true;
+      const ok = await cadastrarFornecedorGrm(grupo);
+      if (!ok) b.disabled = false;
+    });
+  });
+
   raiz.querySelectorAll('[data-estornar]').forEach((b) => {
     b.addEventListener('click', async () => {
       const grupo = grupos.find((g) => g.key === b.dataset.estornar);
@@ -250,6 +260,24 @@ async function estornar(grupo) {
     return true;
   } catch (error) {
     toast(`Erro ao estornar: ${String(error?.message || error)}`, 'err', 6000);
+    return false;
+  }
+}
+
+async function cadastrarFornecedorGrm(grupo) {
+  const confirmado = await confirmar({
+    titulo: 'Cadastrar fornecedor no GRM',
+    mensagem: 'O agente vai consultar o CNPJ na Receita Federal e cadastrar o fornecedor no Graint (Financeiro > Fornecedores). Quando terminar, esta NF volta sozinha para a fila de lançamento.',
+    confirmarLabel: 'Cadastrar',
+  });
+  if (!confirmado) return false;
+  try {
+    await solicitarCadastroFornecedorGrm(grupo);
+    toast('Cadastro do fornecedor pedido ao agente. A NF volta para a fila quando ele concluir.', 'ok', 6000);
+    await carregar();
+    return true;
+  } catch (error) {
+    toast(`Erro ao pedir o cadastro do fornecedor: ${String(error?.message || error)}`, 'err', 6000);
     return false;
   }
 }

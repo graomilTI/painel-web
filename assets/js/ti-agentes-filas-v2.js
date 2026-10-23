@@ -39,6 +39,7 @@ const AGENT_NAMES = {
   'sync-reabrir-os': 'Reabrir OS (GRM)',
   'sync-cadastrar-veiculo': 'Cadastro de Veículo (GRM)',
   'sync-cadastrar-patrimonio': 'Cadastro de Patrimônio (GRM)',
+  'sync-cadastrar-fornecedor': 'Cadastro de Fornecedor (GRM)',
 };
 
 const state = {

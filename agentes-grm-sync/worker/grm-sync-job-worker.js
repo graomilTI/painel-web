@@ -172,6 +172,10 @@ const SCRIPT_MAP = {
   // número da etiqueta é salvo. Job criado por gatilho em compras_patrimonios_cadastro (grm_cadastro_status =
   // PENDENTE) e pelo cron de 5 min; nasce DESLIGADO em grm_sync_agent_settings até a conferência (--dry-run).
   'sync-cadastrar-patrimonio': 'grmserver-cadastrar-patrimonio-api.js',
+  // Fornecedor não encontrado no GRM pelo agente de NF: o gatilho de grm_nf_lancamentos coloca o CNPJ em
+  // grm_fornecedor_cadastros; o agente cria o fornecedor (dados da Receita) e devolve as NFs para a fila.
+  // Nasce DESLIGADO em grm_sync_agent_settings até a conferência (--dry-run).
+  'sync-cadastrar-fornecedor': 'grmserver-cadastrar-fornecedor-api.js',
   'sync-bonus-caixa': 'grm-sync-bonus-caixa.js',
   // Adiantamento no Caixa a partir do desconto de auditoria importado em Conferência >
   // Bônus. A fila (bonus_desconto_caixa_lancamentos) é alimentada na importação da

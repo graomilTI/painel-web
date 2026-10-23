@@ -203,6 +203,25 @@ export async function enviarNfAoGrm(grupo) {
   return true;
 }
 
+// NF parada porque o fornecedor não existe no Graint. O gatilho do banco já pede o cadastro automático
+// (agente sync-cadastrar-fornecedor); o botão pede de novo quando a tentativa anterior deu ERRO.
+export function fornecedorNaoCadastradoNoGrm(grupo) {
+  return grupo.grm?.status === 'ERRO' && /^Fornecedor ".*" não encontrado no GRM \(suppliers\)/.test(String(grupo.grm.erro || ''));
+}
+
+export async function solicitarCadastroFornecedorGrm(grupo) {
+  const { data, error } = await supabase.rpc('grm_fornecedor_cadastro_solicitar', { p_nf_id: grupo.grm.id });
+  if (error) throw error;
+  await registrarAuditoria({
+    modulo: 'notas-fiscais',
+    tabela: 'grm_nf_lancamentos',
+    registroId: grupo.grm.id,
+    acao: 'fornecedor_cadastro_grm_solicitado',
+    valorNovo: { status_fila: data, valor_total: grupo.valor_total },
+  });
+  return data;
+}
+
 // ── lançar NF (com auditoria) ────────────────────────────────────────────────
 export async function lancarNf(grupo) {
   const quando = new Date().toISOString();
