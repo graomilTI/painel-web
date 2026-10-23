@@ -5,7 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
-import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link4';
+import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link5';
 
 const TABS = [
   ['cotacoes','COTAÇÕES'], ['analise','APROVAÇÃO'], ['aguardando','À PAGAR'], ['nf','NF'], ['termos','TERMOS'], ['comprados','COMPRADOS'], ['recusados','RECUSADOS'], ['catalogo','CATÁLOGO']
@@ -252,6 +252,8 @@ const ICONS={
   send:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
   doc:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 13"/></svg>`,
   box:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`,
+  eye:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  split:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>`,
   clip:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
 };
 const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',enviar_estoque:'box',anexar_nf:'clip'};
@@ -354,6 +356,10 @@ async function carregarInfoCotacao(){
   catch(e){ console.warn('[compras] cotações',e); state.cotacaoInfo={porItem:new Map(),cotacoes:new Map(),respostas:[]}; }
 }
 const temRespostas=(rows)=>rows.some(r=>situacaoDoItem(r.id,state.cotacaoInfo).codigo==='respostas');
+// Ícone de ação do cabeçalho do card (vale para o grupo todo), no mesmo visual dos ícones das linhas.
+function groupIconBtn(attr,valor,title,icone){
+  return `<button class="adm-cmp-icon-btn" data-${attr}="${esc(valor)}" type="button" title="${esc(title)}" aria-label="${esc(title)}">${ICONS[icone]}</button>`;
+}
 function cotacaoCardHtml(itens,gkey){
   const s=itens[0].compras_solicitacoes||{};
   const total=itens.reduce((sum,r)=>sum+Number(r.valor_total||0),0);
@@ -364,9 +370,8 @@ function cotacaoCardHtml(itens,gkey){
     <div class="adm-cmp-card-head">
       <label class="adm-cmp-card-select"><input type="checkbox" data-check-group="${esc(ids)}"><div><strong>${esc(s.solicitante||'Gestor')}</strong><small>${esc(s.cidade||'')}${s.uf?`/${esc(s.uf)}`:''}</small></div></label>
       <div class="adm-cmp-card-meta"><span>${itens.length} ${itens.length===1?'item':'itens'}</span><strong>${money(total)}</strong>
-        <button class="btn btn-small btn-secondary" data-cotar-grupo="${esc(ids)}" type="button">Cotar</button>
-        ${nResp?`<button class="btn btn-small btn-secondary" data-respostas-grupo="${esc(ids)}" type="button">Ver respostas</button>`:''}
-        ${podeSeparar?`<button class="btn btn-small btn-secondary" data-separar-grupo="${esc(gkey)}" type="button">Separar</button>`:''}
+        ${nResp?groupIconBtn('respostas-grupo',ids,'Ver respostas','eye'):''}
+        ${podeSeparar?groupIconBtn('separar-grupo',gkey,'Separar do grupo','split'):''}
       </div>
     </div>
     <div class="adm-cmp-card-body">${itens.map(cardRowHtml).join('')}</div>
@@ -384,7 +389,6 @@ function renderCotacoesCards(container,rows){
   bindCheckHandlers(container);
   wireRowActions(container);
   const doGrupo=(b,attr)=>state.rows.filter(r=>b.dataset[attr].split(',').includes(String(r.id)));
-  container.querySelectorAll('[data-cotar-grupo]').forEach(b=>b.onclick=()=>abrirCotarModal(doGrupo(b,'cotarGrupo')));
   container.querySelectorAll('[data-respostas-grupo]').forEach(b=>b.onclick=()=>abrirRespostasModal(doGrupo(b,'respostasGrupo')));
   container.querySelectorAll('[data-separar-grupo]').forEach(b=>b.onclick=()=>{
     state.gruposSeparados.add(b.dataset.separarGrupo);
