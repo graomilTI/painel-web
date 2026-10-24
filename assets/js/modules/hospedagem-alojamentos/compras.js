@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js';
+import { supabase } from '../../supabaseClient.js';
 
 const state = { rows: [], filter: 'pendente', search: '', loading: false, mounted: false };
 const $ = (selector, root = document) => root.querySelector(selector);

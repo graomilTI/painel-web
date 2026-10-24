@@ -1,5 +1,5 @@
-import { supabase } from './supabaseClient.js';
-import { loadUserContext } from './sessionStore.js';
+import { supabase } from '../../supabaseClient.js';
+import { loadUserContext } from '../../sessionStore.js';
 
 const META_START = '[ALOJAMENTO_FATURA_V1]';
 const META_END = '[/ALOJAMENTO_FATURA_V1]';

@@ -1,5 +1,5 @@
-import { supabase } from './supabaseClient.js';
-import { contractAlert, money, esc, hydrateRow } from './adm-hotel-alojamentos-v2-helpers.js?v=20260720-kpis1';
+import { supabase } from '../../supabaseClient.js';
+import { contractAlert, money, esc, hydrateRow } from './util.js?v=20261024-aloj1';
 
 const STYLE_ID = 'admHotelSeparacaoModulosCss';
 const KPI_REFRESH_MS = 60_000;
