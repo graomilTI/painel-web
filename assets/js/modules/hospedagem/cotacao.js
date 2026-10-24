@@ -1,6 +1,6 @@
 // Cotação de hospedagem por link (ADM): composição de quartos, link/mensagem para o hotel e comparação das respostas.
 // Funções puras, sem DOM nem rede: a tela fica em cotacao-ui.js e o teste em tests/hospedagem-cotacao-link.test.mjs.
-import { CAPACIDADE_QUARTO, TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-layout6';
+import { CAPACIDADE_QUARTO, TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-acoes1';
 
 export const VALIDADE_LINK_DIAS = 7;
 const GENEROS = [['MASCULINO', 'MASC'], ['FEMININO', 'FEM']];

@@ -11,11 +11,11 @@ import {
   renderFinanceiroShell, renderFinanceiroQueue, renderFinanceiroCards, renderFinanceiroCorpo, filtrarFinanceiro,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
-import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-layout6';
-import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-layout6';
-import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-layout6';
-import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-layout6';
-import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-layout6';
+import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-acoes1';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-acoes1';
+import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-acoes1';
+import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-acoes1';
+import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-acoes1';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();

@@ -2,13 +2,14 @@
 // Fábrica criarCotacaoHotel(ctx): recebe o estado e os utilitários do controller (adm-hotel.js); a lógica pura fica em cotacao.js.
 import {
   VALIDADE_LINK_DIAS, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
-} from './cotacao.js?v=20261024-hosp-layout6';
-import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-layout6';
+} from './cotacao.js?v=20261024-hosp-acoes1';
+import { EXTRAS_OUTROS, REGIMES, TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-acoes1';
 import { iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const ELEGIVEIS = ['AGUARDANDO', 'EM_COTACAO'];
 const ROTULO_GENERO = { MASC: 'masc.', FEM: 'fem.' };
 
+const fmtCnpj = (v) => String(v || '').replace(/\D/g, '').replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
 const brDia = (d) => String(d || '').split('-').reverse().join('/');
 const dtHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '');
 const diasEntre = (ini, fim) => Math.round((Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${ini}T00:00:00Z`)) / 86400000);
@@ -150,6 +151,23 @@ export function criarCotacaoHotel(ctx) {
   // ─── Comparar respostas ──────────────────────────────────────────────────────
   const sim = (v) => (v === true ? 'Sim' : v === false ? 'Não' : '—');
 
+  // Empresa, endereço, extras além dos quatro de sempre e diárias dos tipos de quarto que o pedido não usa.
+  function detalhesEmpresa(cot, quartos) {
+    const e = cot.empresa_dados;
+    const linhas = [];
+    if (e) {
+      linhas.push(`Empresa: ${esc(e.razao_social || '—')} · CNPJ ${esc(fmtCnpj(e.cnpj))} · ${esc(REGIMES[e.regime_tributario] || '—')}`);
+      const a = e.endereco;
+      if (a) linhas.push(`Endereço: ${esc(`${a.logradouro}, ${a.numero}${a.complemento ? ` - ${a.complemento}` : ''} · ${a.bairro} · ${a.cidade}/${a.uf} · CEP ${a.cep}`)}`);
+    }
+    const extras = [...(cot.extras_outros || []).map((k) => EXTRAS_OUTROS[k]).filter(Boolean), cot.extras_outros_texto].filter(Boolean);
+    if (extras.length) linhas.push(`Também incluso: ${esc(extras.join(', '))}`);
+    const usados = new Set(quartos.map((q) => q.tipo_quarto));
+    const outros = Object.entries(cot.precos_quartos || {}).filter(([t, p]) => !usados.has(t) && typeof p === 'number' && TIPOS_QUARTO[t]);
+    if (outros.length) linhas.push(`Outros quartos do hotel: ${outros.map(([t, p]) => `${esc(TIPOS_QUARTO[t])} ${money(p)}`).join(' · ')}`);
+    return linhas.map((l) => `<p class="ah-note">${l}</p>`).join('');
+  }
+
   function cartaoResposta({ cot, situacao, estimativa }, melhor) {
     const respondida = situacao.chave === 'respondida';
     const quartos = cot.quartos_necessarios || [];
@@ -161,6 +179,7 @@ export function criarCotacaoHotel(ctx) {
       <p class="ah-cot-total">${estimativa.completo ? `Total estimado <b>${money(estimativa.total)}</b> <span class="ah-note">(${money(estimativa.porNoite)}/noite · ${Number(cot.diarias_previstas)} diária(s))</span>`
         : `<b>Incompleta</b>: sem preço para ${estimativa.faltam.map((t) => esc(TIPOS_QUARTO[t].toLowerCase())).join(', ')}`}</p>
       <p class="ah-note">Café ${sim(cot.cafe_incluso)} · Almoço ${sim(cot.almoco_incluso)} · Janta ${sim(cot.janta_inclusa)} · Estacionamento ${sim(cot.estacionamento_incluso)} · Paga no checkout ${sim(cot.aceita_pagamento_checkout)} · NF ${sim(cot.emite_nota_fiscal)}</p>
+      ${detalhesEmpresa(cot, quartos)}
       <p class="ah-note">Pagamento: ${esc((cot.formas_pagamento || []).join(', ') || '—')} · Contato: ${esc(cot.atendente_nome || '—')} ${esc(cot.atendente_telefone || '')} · Respondida em ${esc(dtHora(cot.respondido_em))}</p>` : '';
     const zap = cot.atendente_telefone ? linkWhatsapp(cot.atendente_telefone) : '';
     return `<div class="ah-cot-card ${melhor ? 'ah-cot-melhor' : ''}" data-cot-card="${esc(cot.id)}">
@@ -286,5 +305,5 @@ export function criarCotacaoHotel(ctx) {
     board.querySelectorAll('[data-v3-pedido-recusar]').forEach((b) => { b.onclick = () => abrirDecisaoPedido(b.dataset.v3PedidoRecusar, 'recusar'); });
   }
 
-  return { acoesDoItem, ligar };
+  return { acoesDoItem, ligar, abrirCotar };
 }
