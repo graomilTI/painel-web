@@ -44,7 +44,7 @@ Os serviços de domínio previstos são `programacaoService`, `logisticaService`
 `assets/js/adm-hotel.js` virou só o controller da página (abas, painel legado v2 em leitura, fluxo por hotel e a fila financeira dos lotes antigos). O resto vive em `assets/js/modules/`:
 
 - `hospedagem/`: `service.js` (regras puras), `repository.js` (**única** camada que fala com o Supabase, imposta por teste), `fila-ui.js`, `reserva-ui.js`, `pagamento-ui.js`, `cotacao.js` e `cotacao-ui.js` (cotação por link), `ui-comum.js`. Fábricas `criarX(ctx)` como no Financeiro.
-- `hospedagem-alojamentos/`: `controle`, `controle-view`, `util`, `pagamentos`, `compras`, `hospedados`, `separacao-modulos`, carregados sob demanda por `adm-hotel-deferred.js`.
+- `hospedagem-alojamentos/`: `controle`, `controle-view`, `util`, `pagamentos`, `compras`, `hospedados`, carregados sob demanda por `adm-hotel-deferred.js`.
 - Um único `?v=` em todos os imports, na página e no CSS, travado pelos testes `hospedagem-modulos-versao` e `hospedagem-alojamentos-versao`.
 - Fluxo v2 (solicitação sem item por colaborador) **congelado**: nada novo nasce nele e a tela só lê. O fluxo vivo é o v3 (`hospedagem_v3_*`), cuja cotação, pagamento, NFS-e e retorno do GRM estão descritos nas migrations `20261024100000`, `20261024200000` e `20261024210000`.
 - `supabase/schema_atual.sql` é um snapshot de 28/08 e **não tem as tabelas v3**: para o estado real do banco use as migrations em `supabase/migrations/` (ou a introspecção direta).

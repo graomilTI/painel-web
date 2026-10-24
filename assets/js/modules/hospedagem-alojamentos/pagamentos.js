@@ -1,5 +1,6 @@
 import { supabase } from '../../supabaseClient.js';
 import { loadUserContext } from '../../sessionStore.js';
+import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const META_START = '[ALOJAMENTO_FATURA_V1]';
 const META_END = '[/ALOJAMENTO_FATURA_V1]';
@@ -10,7 +11,7 @@ const state = {
   mode: 'cadastro',
   alojamentos: [],
   pagamentos: [],
-  filtro: 'TODOS',
+  filtro: 'todos',
   search: '',
   editingId: null,
   loading: false,
@@ -140,33 +141,38 @@ function ensureStyles() {
   const style = document.createElement('style');
   style.id = 'alojPayStyles';
   style.textContent = `
-    .aloj-pay-tabs{display:inline-flex;gap:5px;padding:5px;border:1px solid rgba(74,222,128,.2);border-radius:14px;background:rgba(2,13,10,.78);margin-bottom:14px}.aloj-pay-tab{display:flex;align-items:center;gap:8px;border:0;border-radius:10px;background:transparent;color:#8fa69b;padding:10px 15px;font-weight:900;cursor:pointer}.aloj-pay-tab svg{width:17px;height:17px}.aloj-pay-tab.active{background:linear-gradient(180deg,rgba(22,101,52,.52),rgba(8,54,34,.52));color:#caffd9;box-shadow:inset 0 0 0 1px rgba(74,222,128,.2)}
-    .aloj-v2-shell.aloj-pay-mode>.aloj-v2-head,.aloj-v2-shell.aloj-pay-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-pay-mode>#alojV2List,.aloj-v2-shell.aloj-buy-mode>.aloj-v2-head,.aloj-v2-shell.aloj-buy-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-buy-mode>#alojV2List{display:none!important}.aloj-pay-panel{display:none}.aloj-v2-shell.aloj-pay-mode>.aloj-pay-panel{display:grid;gap:14px}
-    .aloj-pay-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px;border:1px solid rgba(74,222,128,.18);border-radius:18px;background:linear-gradient(145deg,rgba(12,31,24,.96),rgba(4,16,12,.98))}.aloj-pay-head h3{margin:4px 0;color:#f2fff7;font-size:22px}.aloj-pay-head p{margin:0;color:#8fa69b;font-size:12px}.aloj-pay-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.aloj-pay-search{min-width:280px;border:1px solid rgba(148,163,184,.14);background:#06130f;color:#ecfff4;border-radius:12px;padding:11px 13px;outline:none}.aloj-pay-primary{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(74,222,128,.34);background:linear-gradient(135deg,#15803d,#166534);color:#effff4;border-radius:12px;padding:11px 15px;font-weight:900;cursor:pointer}.aloj-pay-primary svg{width:16px;height:16px}
-    .aloj-pay-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.aloj-pay-kpi{padding:14px 15px;border:1px solid rgba(74,222,128,.15);border-radius:15px;background:rgba(5,23,17,.72)}.aloj-pay-kpi span{display:block;color:#83998f;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}.aloj-pay-kpi strong{display:block;color:#f2fff7;font-size:21px;margin-top:6px}.aloj-pay-kpi small{display:block;color:#63e993;font-size:10px;margin-top:5px}
-    .aloj-pay-filter{display:flex;gap:7px;flex-wrap:wrap}.aloj-pay-filter button{border:1px solid rgba(148,163,184,.14);background:#071611;color:#9eb2a9;border-radius:999px;padding:8px 12px;font-size:11px;font-weight:900;cursor:pointer}.aloj-pay-filter button.active{border-color:rgba(74,222,128,.4);background:rgba(22,101,52,.3);color:#baffcf}
-    .aloj-pay-table-wrap{overflow:auto;border:1px solid rgba(74,222,128,.17);border-radius:17px;background:#05130f}.aloj-pay-table{width:100%;border-collapse:collapse;min-width:930px}.aloj-pay-table th,.aloj-pay-table td{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.1);text-align:left;vertical-align:middle}.aloj-pay-table th{color:#82988e;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.aloj-pay-table td{color:#dceae3;font-size:12px}.aloj-pay-service{display:inline-flex;align-items:center;gap:7px;font-weight:900}.aloj-pay-service svg{width:17px;height:17px}.aloj-pay-service.agua{color:#60a5fa}.aloj-pay-service.energia{color:#facc15}.aloj-pay-service.internet{color:#a78bfa}.aloj-pay-status{display:inline-flex;border-radius:999px;padding:5px 9px;font-size:9px;font-weight:1000;text-transform:uppercase}.aloj-pay-status.pending{background:rgba(161,98,7,.18);color:#fde68a}.aloj-pay-status.overdue,.aloj-pay-status.rejected{background:rgba(127,29,29,.24);color:#fecaca}.aloj-pay-status.paid{background:rgba(22,101,52,.25);color:#86efac}.aloj-pay-link,.aloj-pay-edit{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(74,222,128,.2);border-radius:9px;padding:7px 9px;color:#86efac;background:rgba(22,101,52,.12);text-decoration:none;font-weight:850;font-size:10px}.aloj-pay-link svg{width:13px;height:13px}.aloj-pay-edit{cursor:pointer;color:#dbe7e1;background:rgba(255,255,255,.03);border-color:rgba(148,163,184,.14)}.aloj-pay-empty{padding:36px;text-align:center;color:#83998f}
+    .aloj-v2-shell.aloj-pay-mode>#alojCadPanel,.aloj-v2-shell.aloj-buy-mode>#alojCadPanel{display:none!important}.aloj-pay-panel{display:none}.aloj-v2-shell.aloj-pay-mode>.aloj-pay-panel{display:grid;gap:14px}
+    .aloj-pay-primary{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(74,222,128,.34);background:linear-gradient(135deg,#15803d,#166534);color:#effff4;border-radius:12px;padding:11px 15px;font-weight:900;cursor:pointer}.aloj-pay-primary svg{width:16px;height:16px}
     .aloj-pay-modal{position:fixed;inset:0;z-index:10030;display:none;place-items:center;padding:16px;background:rgba(0,7,5,.84);backdrop-filter:blur(7px)}.aloj-pay-modal.open{display:grid}.aloj-pay-modal-card{width:min(840px,100%);max-height:94vh;overflow:auto;border:1px solid rgba(74,222,128,.28);border-radius:20px;background:linear-gradient(145deg,#081b14,#03100c);box-shadow:0 30px 90px rgba(0,0,0,.56)}.aloj-pay-modal-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:18px 20px;border-bottom:1px solid rgba(148,163,184,.12)}.aloj-pay-modal-head h3{margin:3px 0;color:#f1fff6}.aloj-pay-modal-head p{margin:0;color:#83998f;font-size:11px}.aloj-pay-close{width:38px;height:38px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.15);border-radius:11px;background:rgba(255,255,255,.03);color:#dceae3;cursor:pointer}.aloj-pay-close svg{width:17px;height:17px}.aloj-pay-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:18px 20px}.aloj-pay-field{display:grid;gap:6px;min-width:0}.aloj-pay-field.full{grid-column:1/-1}.aloj-pay-field label{color:#9bafa5;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:900}.aloj-pay-field input,.aloj-pay-field select,.aloj-pay-field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.14);border-radius:11px;background:#071611;color:#f0fff6;padding:10px 11px;outline:none;color-scheme:dark}.aloj-pay-field textarea{min-height:74px;resize:vertical}.aloj-pay-file-hint{color:#73887e;font-size:10px}.aloj-pay-modal-actions{display:flex;justify-content:flex-end;align-items:center;gap:9px;padding:15px 20px;border-top:1px solid rgba(148,163,184,.12)}.aloj-pay-feedback{margin-right:auto;color:#91a69c;font-size:11px}.aloj-pay-feedback.err{color:#fca5a5}.aloj-pay-feedback.ok{color:#86efac}.aloj-pay-secondary{border:1px solid rgba(148,163,184,.16);border-radius:11px;background:rgba(255,255,255,.03);color:#dce8e2;padding:10px 14px;font-weight:850;cursor:pointer}
-    @media(max-width:900px){.aloj-pay-kpis{grid-template-columns:1fr 1fr}.aloj-pay-head{flex-direction:column}.aloj-pay-actions{width:100%}.aloj-pay-search{min-width:0;flex:1}}
-    @media(max-width:600px){.aloj-pay-kpis{grid-template-columns:1fr}.aloj-pay-actions{display:grid;grid-template-columns:1fr;width:100%}.aloj-pay-primary{justify-content:center}.aloj-pay-form{grid-template-columns:1fr}.aloj-pay-field.full{grid-column:auto}.aloj-pay-modal{padding:0}.aloj-pay-modal-card{height:100%;max-height:100vh;border-radius:0}}
+
+    @media(max-width:600px){.aloj-pay-primary{justify-content:center}.aloj-pay-form{grid-template-columns:1fr}.aloj-pay-field.full{grid-column:auto}.aloj-pay-modal{padding:0}.aloj-pay-modal-card{height:100%;max-height:100vh;border-radius:0}}
   `;
   document.head.appendChild(style);
 }
 
 function navHtml() {
-  return `<div class="aloj-pay-tabs" role="tablist">
-    <button type="button" class="aloj-pay-tab active" data-aloj-pay-mode="cadastro">${icon('list')} Alojamentos</button>
-    <button type="button" class="aloj-pay-tab" data-aloj-pay-mode="compras">${icon('plus')} Compras <span id="alojBuyPendingBadge"></span></button>
-    <button type="button" class="aloj-pay-tab" data-aloj-pay-mode="pagamentos">${icon('pay')} Pagamentos <span id="alojPayPendingBadge"></span></button>
+  return `<div class="ds-tabs" role="tablist">
+    <button type="button" class="ds-tab active" role="tab" data-aloj-pay-mode="cadastro">Alojamentos</button>
+    <button type="button" class="ds-tab" role="tab" data-aloj-pay-mode="compras">Compras <span class="ds-tab-badge" id="alojBuyPendingBadge" hidden></span></button>
+    <button type="button" class="ds-tab" role="tab" data-aloj-pay-mode="pagamentos">Pagamentos <span class="ds-tab-badge" id="alojPayPendingBadge" hidden></span></button>
   </div>`;
+}
+
+function setBadge(id, total) {
+  const badge = $(id);
+  if (!badge) return;
+  badge.textContent = total ? String(total) : '';
+  badge.hidden = !total;
 }
 
 function panelHtml() {
   return `<section class="aloj-pay-panel" id="alojPayPanel">
-    <div class="aloj-pay-head"><div><div class="aloj-v2-eyebrow">Alojamentos</div><h3>Faturas e pagamentos</h3><p>Anexe as contas de água, luz e internet e envie diretamente para a fila de pagamentos do Financeiro.</p></div><div class="aloj-pay-actions"><input id="alojPaySearch" class="aloj-pay-search" placeholder="Buscar alojamento, serviço ou favorecido..."><button type="button" class="aloj-pay-primary" id="alojPayNew">${icon('plus')} Nova fatura</button></div></div>
-    <div class="aloj-pay-kpis"><div class="aloj-pay-kpi"><span>Pendentes</span><strong id="alojPayKpiPending">0</strong><small id="alojPayKpiPendingValue">R$ 0,00</small></div><div class="aloj-pay-kpi"><span>Vencidas</span><strong id="alojPayKpiOverdue">0</strong><small id="alojPayKpiOverdueValue">R$ 0,00</small></div><div class="aloj-pay-kpi"><span>Pagas</span><strong id="alojPayKpiPaid">0</strong><small>Concluídas pelo Financeiro</small></div><div class="aloj-pay-kpi"><span>Competência atual</span><strong id="alojPayKpiMonth">R$ 0,00</strong><small id="alojPayKpiMonthCount">0 faturas</small></div></div>
-    <div class="aloj-pay-filter" id="alojPayFilters"><button type="button" class="active" data-aloj-pay-filter="TODOS">Todos</button><button type="button" data-aloj-pay-filter="PENDENTE">Pendentes</button><button type="button" data-aloj-pay-filter="VENCIDO">Vencidas</button><button type="button" data-aloj-pay-filter="PAGO">Pagas</button></div>
-    <div class="aloj-pay-table-wrap"><table class="aloj-pay-table"><thead><tr><th>Status</th><th>Alojamento</th><th>Serviço</th><th>Competência</th><th>Vencimento</th><th>Favorecido</th><th>Valor</th><th>Fatura</th><th>Ação</th></tr></thead><tbody id="alojPayBody"><tr><td colspan="9" class="aloj-pay-empty">Carregando...</td></tr></tbody></table></div>
+    <div class="fm-topo"><div class="fm-head-actions"><button type="button" class="fm-btn primary" id="alojPayNew">${icon('plus')} Nova fatura</button></div></div>
+    <div class="fm-kpis" id="alojPayKpis"></div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input id="alojPaySearch" class="fm-input" placeholder="Buscar alojamento, serviço ou favorecido..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="alojPayCount">0 fatura(s)</span></div>
+      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Status</th><th>Alojamento</th><th>Serviço</th><th>Competência</th><th>Vencimento</th><th>Favorecido</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="alojPayBody"><tr><td colspan="8" class="fm-empty">Carregando...</td></tr></tbody></table></div>
+    </div></div>
   </section>`;
 }
 
@@ -375,8 +381,7 @@ async function loadData() {
 function filteredPayments() {
   const query = norm(state.search);
   return state.pagamentos.filter((row) => {
-    const status = isPaid(row) ? 'PAGO' : isOverdue(row) ? 'VENCIDO' : isRejected(row) ? 'RECUSADO' : 'PENDENTE';
-    if (state.filtro !== 'TODOS' && status !== state.filtro) return false;
+    if (state.filtro !== 'todos' && paymentStatus(row) !== state.filtro) return false;
     if (!query) return true;
     const meta = paymentMeta(row);
     return norm([meta.alojamento_nome, meta.servico, row.favorecido_nome, row.descricao, row.origem_codigo].join(' ')).includes(query);
@@ -388,51 +393,68 @@ function serviceIcon(service) {
   return icon(key);
 }
 
+// Estado de uma fatura para filtro, selo e cards: PAGO, VENCIDO, RECUSADO ou PENDENTE.
+function paymentStatus(row) {
+  if (isPaid(row)) return 'PAGO';
+  if (isRejected(row)) return 'RECUSADO';
+  if (isOverdue(row)) return 'VENCIDO';
+  return 'PENDENTE';
+}
+
+const SELO_FATURA = { PAGO: 'ok', RECUSADO: 'err', VENCIDO: 'err', PENDENTE: 'warn' };
+
+function cardsHtml() {
+  const todas = state.pagamentos;
+  const por = (status) => todas.filter((row) => paymentStatus(row) === status);
+  const soma = (lista) => lista.reduce((sum, row) => sum + Number(row.valor || 0), 0);
+  const pendentes = por('PENDENTE');
+  const vencidas = por('VENCIDO');
+  const pagas = por('PAGO');
+  const mes = todayIso().slice(0, 7);
+  const doMes = todas.filter((row) => paymentMeta(row).competencia === mes);
+  return cardFiltro({ filtro: 'todos', label: 'Todas', tone: 'blue', icone: 'total', valor: String(todas.length), ativo: state.filtro === 'todos' })
+    + cardFiltro({ filtro: 'PENDENTE', label: 'Pendentes', tone: 'amber', icone: 'relogio', valor: String(pendentes.length), dica: `Pendentes: ${money(soma(pendentes))}`, ativo: state.filtro === 'PENDENTE' })
+    + cardFiltro({ filtro: 'VENCIDO', label: 'Vencidas', tone: 'red', icone: 'alerta', valor: String(vencidas.length), dica: `Vencidas: ${money(soma(vencidas))}`, ativo: state.filtro === 'VENCIDO' })
+    + cardFiltro({ filtro: 'PAGO', label: 'Pagas', tone: 'green', icone: 'ok', valor: String(pagas.length), dica: 'Concluídas pelo Financeiro', ativo: state.filtro === 'PAGO' })
+    + cardFiltro({ label: 'Competência atual', tone: 'purple', icone: 'dinheiro', valor: money(soma(doMes)), dica: `${doMes.length} fatura${doMes.length === 1 ? '' : 's'} em ${competenceLabel(mes)}` });
+}
+
+function paymentRow(row) {
+  const meta = paymentMeta(row);
+  const status = paymentStatus(row);
+  const abrir = meta.arquivo_url
+    ? `<a class="fm-ic anexo" href="${esc(meta.arquivo_url)}" target="_blank" rel="noopener" title="Abrir a fatura anexada" aria-label="Abrir a fatura anexada">${ICON.anexo}</a>` : '';
+  const atualizar = isPaid(row) ? '' : iconBtn('data-aloj-pay-edit', row.id, 'termo', 'Atualizar a fatura', 'editar');
+  return `<tr><td><span class="fm-badge ${SELO_FATURA[status]}">${esc(statusLabel(row))}</span></td><td><b>${esc(meta.alojamento_nome)}</b></td><td><span class="fm-badge info">${serviceIcon(meta.servico)}${esc(serviceLabel(meta.servico))}</span></td><td>${esc(competenceLabel(meta.competencia))}</td><td>${esc(brDate(meta.vencimento || row.vencimento))}</td><td>${esc(row.favorecido_nome || row.favorecido || row.fornecedor || '-')}</td><td><b>${esc(money(row.valor))}</b></td><td><div class="fm-actions">${abrir}${atualizar || (abrir ? '' : '-')}</div></td></tr>`;
+}
+
 function renderPayments() {
   const rows = filteredPayments();
   const body = $('#alojPayBody');
   if (!body) return;
-  body.innerHTML = rows.length ? rows.map((row) => {
-    const meta = paymentMeta(row);
-    const canEdit = !isPaid(row);
-    return `<tr><td><span class="aloj-pay-status ${statusClass(row)}">${esc(statusLabel(row))}</span></td><td><strong>${esc(meta.alojamento_nome)}</strong></td><td><span class="aloj-pay-service ${esc(norm(meta.servico).toLowerCase())}">${serviceIcon(meta.servico)}${esc(serviceLabel(meta.servico))}</span></td><td>${esc(competenceLabel(meta.competencia))}</td><td>${esc(brDate(meta.vencimento || row.vencimento))}</td><td>${esc(row.favorecido_nome || row.favorecido || row.fornecedor || '-')}</td><td><strong>${esc(money(row.valor))}</strong></td><td>${meta.arquivo_url ? `<a class="aloj-pay-link" href="${esc(meta.arquivo_url)}" target="_blank" rel="noopener">${icon('external')} Abrir</a>` : '-'}</td><td>${canEdit ? `<button type="button" class="aloj-pay-edit" data-aloj-pay-edit="${esc(row.id)}">Atualizar</button>` : '-'}</td></tr>`;
-  }).join('') : '<tr><td colspan="9" class="aloj-pay-empty">Nenhuma fatura encontrada.</td></tr>';
-
-  const pending = state.pagamentos.filter((row) => !isPaid(row) && !isRejected(row));
-  const overdue = pending.filter(isOverdue);
-  const paid = state.pagamentos.filter(isPaid);
-  const month = todayIso().slice(0, 7);
-  const current = state.pagamentos.filter((row) => paymentMeta(row).competencia === month);
-  const values = {
-    alojPayKpiPending: pending.length,
-    alojPayKpiPendingValue: money(pending.reduce((sum, row) => sum + Number(row.valor || 0), 0)),
-    alojPayKpiOverdue: overdue.length,
-    alojPayKpiOverdueValue: money(overdue.reduce((sum, row) => sum + Number(row.valor || 0), 0)),
-    alojPayKpiPaid: paid.length,
-    alojPayKpiMonth: money(current.reduce((sum, row) => sum + Number(row.valor || 0), 0)),
-    alojPayKpiMonthCount: `${current.length} fatura${current.length === 1 ? '' : 's'}`,
-  };
-  Object.entries(values).forEach(([id, value]) => { const element = document.getElementById(id); if (element) element.textContent = value; });
-  const badge = $('#alojPayPendingBadge');
-  if (badge) badge.textContent = pending.length ? `(${pending.length})` : '';
+  body.innerHTML = rows.length ? rows.map(paymentRow).join('') : '<tr><td colspan="8" class="fm-empty">Nenhuma fatura encontrada.</td></tr>';
+  const kpis = $('#alojPayKpis');
+  if (kpis) kpis.innerHTML = cardsHtml();
+  const count = $('#alojPayCount');
+  if (count) count.textContent = `${rows.length} fatura(s)`;
+  const painel = $('#alojPayPanel');
+  if (painel) sincronizarCards(painel, state.filtro);
+  setBadge('#alojPayPendingBadge', state.pagamentos.filter((row) => !isPaid(row) && !isRejected(row)).length);
 }
 
 function bindEvents() {
   document.addEventListener('click', (event) => {
     const mode = event.target.closest('[data-aloj-pay-mode]');
     if (mode) { setMode(mode.dataset.alojPayMode); return; }
-    const filter = event.target.closest('[data-aloj-pay-filter]');
-    if (filter) {
-      state.filtro = filter.dataset.alojPayFilter;
-      document.querySelectorAll('[data-aloj-pay-filter]').forEach((button) => button.classList.toggle('active', button === filter));
-      renderPayments();
-      return;
-    }
     const edit = event.target.closest('[data-aloj-pay-edit]');
     if (edit) { const row = state.pagamentos.find((item) => String(item.id) === String(edit.dataset.alojPayEdit)); if (row) openModal(row); return; }
     if (event.target === $('#alojPayModal')) closeModal();
   });
   $('#alojPayNew')?.addEventListener('click', () => openModal());
+  aoClicarCard($('#alojPayPanel'), (card, limpar) => {
+    state.filtro = limpar || !card || state.filtro === card.dataset.filtro ? 'todos' : card.dataset.filtro;
+    renderPayments();
+  });
   $('#alojPayClose')?.addEventListener('click', closeModal);
   $('#alojPayCancel')?.addEventListener('click', closeModal);
   $('#alojPayForm')?.addEventListener('submit', saveInvoice);
@@ -447,7 +469,7 @@ function mount() {
   const shell = $('.aloj-v2-shell');
   if (!shell || !$('#alojV2List')) return false;
   ensureStyles();
-  shell.insertAdjacentHTML('afterbegin', navHtml());
+  (document.getElementById('alojTabs') || shell).insertAdjacentHTML('afterbegin', navHtml());
   shell.insertAdjacentHTML('beforeend', panelHtml() + modalHtml());
   state.mounted = true;
   bindEvents();

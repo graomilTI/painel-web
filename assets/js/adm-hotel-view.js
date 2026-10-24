@@ -4,20 +4,16 @@ import {
 } from './adm-hotel-helpers.js';
 import { ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
+// Casca de Alojamentos no padrão das listas do Frotas. As abas (Alojamentos, Compras, Pagamentos, Hospedados) são injetadas em #alojTabs
+// pelos módulos de modules/hospedagem-alojamentos/; o conteúdo do cadastro monta em #tab-alojamentos.
 export function renderShellAlojamentos() {
   return `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Hospedagem</div>
-        <h2>Alojamentos</h2>
-        <p>Controle dos alojamentos próprios e locados utilizados na Programação.</p>
+    <section class="card mt-16 ah-page" id="alojPage">
+      <div class="frotas-hub-tabs" id="alojTabs"></div>
+      <div class="frotas-hub-tab-body fm-shell">
+        <section id="tab-alojamentos" class="adm-hosp-panel active"></section>
       </div>
-      <div class="hero-badge-wrap"><span class="hero-badge">ALOJAMENTOS</span></div>
     </section>
-    <div class="adm-hosp-tabs">
-      <button class="adm-hosp-tab active" data-tab="alojamentos" type="button">Alojamentos</button>
-    </div>
-    <section id="tab-alojamentos" class="adm-hosp-panel active"></section>
   `;
 }
 

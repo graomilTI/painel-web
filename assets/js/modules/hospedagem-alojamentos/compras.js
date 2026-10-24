@@ -1,4 +1,5 @@
 import { supabase } from '../../supabaseClient.js';
+import { ICON, aoClicarCard, cardFiltro, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const state = { rows: [], filter: 'pendente', search: '', loading: false, mounted: false };
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -28,22 +29,28 @@ function targetName(request) {
 
 function panelHtml() {
   return `<section class="aloj-buy-panel" id="alojBuyPanel">
-    <div class="aloj-buy-head">
-      <div><div class="aloj-v2-eyebrow">Alojamentos</div><h3>Compras de estrutura e enxoval</h3><p>Solicitações enviadas pelos gestores para beliches, camas, lençóis, prateleiras e demais itens dos alojamentos.</p></div>
-      <button type="button" class="aloj-buy-refresh" id="alojBuyRefresh">↻ Atualizar</button>
-    </div>
-    <div class="aloj-buy-toolbar">
-      <div class="aloj-buy-filters" role="tablist">
-        <button class="active" data-aloj-buy-filter="pendente" type="button">Solicitações <span id="alojBuyCountPendente">0</span></button>
-        <button data-aloj-buy-filter="andamento" type="button">Em andamento <span id="alojBuyCountAndamento">0</span></button>
-        <button data-aloj-buy-filter="comprado" type="button">Comprados <span id="alojBuyCountComprado">0</span></button>
-        <button data-aloj-buy-filter="recusado" type="button">Recusados <span id="alojBuyCountRecusado">0</span></button>
-      </div>
-      <input class="aloj-buy-search" id="alojBuySearch" type="search" placeholder="Buscar alojamento, gestor ou item...">
-    </div>
-    <div class="aloj-buy-list" id="alojBuyList"><div class="aloj-buy-empty">Carregando solicitações...</div></div>
+    <div class="fm-topo"><div class="fm-head-actions"><button type="button" class="fm-btn soft" id="alojBuyRefresh">↻ Atualizar</button></div></div>
+    <p class="fm-prazo-dia" style="margin:0">Solicitações enviadas pelos gestores para beliches, camas, lençóis, prateleiras e demais itens dos alojamentos.</p>
+    <div class="fm-kpis" id="alojBuyKpis"></div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" id="alojBuySearch" type="search" placeholder="Buscar alojamento, gestor ou item..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="alojBuyCount">0 item(ns)</span></div>
+      <div class="aloj-buy-list" id="alojBuyList"><div class="fm-empty">Carregando solicitações...</div></div>
+    </div></div>
     <div class="aloj-buy-modal" id="alojBuyModal" aria-hidden="true"></div>
   </section>`;
+}
+
+const ETAPAS = [
+  ['pendente', 'Solicitações', 'amber', 'relogio'],
+  ['andamento', 'Em andamento', 'blue', 'doc'],
+  ['comprado', 'Comprados', 'green', 'ok'],
+  ['recusado', 'Recusados', 'red', 'erro'],
+];
+
+function cardsHtml() {
+  const contagem = (key) => state.rows.filter((row) => group(row.status) === key).length;
+  return cardFiltro({ filtro: 'todos', label: 'Todas', tone: 'blue', icone: 'total', valor: String(state.rows.length), ativo: state.filter === 'todos' })
+    + ETAPAS.map(([key, label, tone, icone]) => cardFiltro({ filtro: key, label, tone, icone, valor: String(contagem(key)), ativo: state.filter === key })).join('');
 }
 
 function ensureStyles() {
@@ -52,11 +59,9 @@ function ensureStyles() {
   style.id = 'alojBuyStyles';
   style.textContent = `
     .aloj-buy-panel{display:none}.aloj-v2-shell.aloj-buy-mode>.aloj-buy-panel{display:grid;gap:14px}
-    .aloj-buy-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:19px;border:1px solid rgba(74,222,128,.18);border-radius:18px;background:linear-gradient(145deg,rgba(12,31,24,.97),rgba(4,16,12,.99))}.aloj-buy-head h3{margin:4px 0;color:#f2fff7;font-size:22px}.aloj-buy-head p{max-width:720px;margin:0;color:#839b8f;font-size:12px;line-height:1.5}.aloj-buy-refresh{border:1px solid rgba(74,222,128,.22);border-radius:11px;background:rgba(22,101,52,.14);color:#bdf7d3;padding:9px 13px;font-weight:900;cursor:pointer}
-    .aloj-buy-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px}.aloj-buy-filters{display:flex;gap:6px;flex-wrap:wrap}.aloj-buy-filters button{display:flex;align-items:center;gap:7px;border:1px solid rgba(148,163,184,.14);border-radius:999px;background:rgba(2,13,10,.5);color:#81998d;padding:8px 12px;font-size:11px;font-weight:900;cursor:pointer}.aloj-buy-filters button span{display:grid;place-items:center;min-width:20px;height:20px;border-radius:999px;background:rgba(255,255,255,.06);font-size:9px}.aloj-buy-filters button.active{border-color:rgba(74,222,128,.38);background:rgba(22,101,52,.25);color:#c9f9da}.aloj-buy-search{min-width:260px;border:1px solid rgba(148,163,184,.16);border-radius:11px;background:#061610;color:#e6f3ec;padding:10px 12px;outline:none}
     .aloj-buy-list{display:grid;gap:12px}.aloj-buy-card{overflow:hidden;border:1px solid rgba(74,222,128,.16);border-radius:17px;background:linear-gradient(145deg,rgba(7,25,18,.96),rgba(3,15,11,.98))}.aloj-buy-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:14px 16px;border-bottom:1px solid rgba(148,163,184,.1)}.aloj-buy-card-head h4{margin:0;color:#f0fff6;font-size:15px}.aloj-buy-card-head p{margin:4px 0 0;color:#82978c;font-size:11px}.aloj-buy-location{color:#87eab2;font-size:11px;font-weight:900;text-align:right}.aloj-buy-items{display:grid}.aloj-buy-item{display:grid;grid-template-columns:minmax(0,1fr) 120px auto;gap:14px;align-items:center;padding:13px 16px}.aloj-buy-item+.aloj-buy-item{border-top:1px solid rgba(148,163,184,.09)}.aloj-buy-item-main{display:grid;gap:3px}.aloj-buy-item-main strong{color:#e9f7ef;font-size:13px}.aloj-buy-item-main small{color:#82978c}.aloj-buy-value{color:#c9f9da;font-weight:900;text-align:right}.aloj-buy-side{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.aloj-buy-status{display:inline-flex;border-radius:999px;padding:5px 8px;background:rgba(202,138,4,.12);color:#fde68a;font-size:9px;font-weight:1000;text-transform:uppercase}.aloj-buy-status.comprado{background:rgba(22,101,52,.25);color:#86efac}.aloj-buy-status.recusado,.aloj-buy-status.recusado_financeiro{background:rgba(127,29,29,.22);color:#fecaca}.aloj-buy-action{border:1px solid rgba(74,222,128,.2);border-radius:9px;background:rgba(22,101,52,.12);color:#bdf7d3;padding:7px 9px;font-size:10px;font-weight:900;cursor:pointer}.aloj-buy-action.danger{border-color:rgba(248,113,113,.22);background:rgba(127,29,29,.14);color:#fecaca}.aloj-buy-empty{padding:42px;border:1px dashed rgba(148,163,184,.16);border-radius:17px;color:#82978c;text-align:center}
     .aloj-buy-modal{position:fixed;inset:0;z-index:10020;display:none;place-items:center;padding:18px;background:rgba(0,8,5,.82);backdrop-filter:blur(8px)}.aloj-buy-modal.open{display:grid}.aloj-buy-modal-card{width:min(560px,100%);border:1px solid rgba(74,222,128,.25);border-radius:22px;background:linear-gradient(150deg,#0c281c,#05140e);box-shadow:0 30px 90px rgba(0,0,0,.55);overflow:hidden}.aloj-buy-modal-head{display:flex;justify-content:space-between;gap:15px;padding:20px;border-bottom:1px solid rgba(148,163,184,.12)}.aloj-buy-modal-head h3{margin:0;color:#f0fff6}.aloj-buy-modal-head p{margin:5px 0 0;color:#88a094;font-size:12px}.aloj-buy-close{border:0;background:transparent;color:#9eb3a8;font-size:25px;cursor:pointer}.aloj-buy-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:20px}.aloj-buy-field{display:grid;gap:5px}.aloj-buy-field.full{grid-column:1/-1}.aloj-buy-field label{color:#90a69b;font-size:10px;font-weight:900;text-transform:uppercase}.aloj-buy-field input,.aloj-buy-field select{width:100%;box-sizing:border-box;border:1px solid rgba(148,163,184,.17);border-radius:11px;background:#061610;color:#e6f3ec;padding:10px}.aloj-buy-modal-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;padding:15px 20px;border-top:1px solid rgba(148,163,184,.1)}.aloj-buy-feedback{margin-right:auto;color:#fecaca;font-size:11px;font-weight:800}
-    @media(max-width:760px){.aloj-pay-tabs{display:flex;overflow:auto}.aloj-pay-tab{white-space:nowrap}.aloj-buy-head,.aloj-buy-toolbar{align-items:stretch;flex-direction:column}.aloj-buy-search{min-width:0;width:100%;box-sizing:border-box}.aloj-buy-item{grid-template-columns:1fr}.aloj-buy-value{text-align:left}.aloj-buy-side{justify-content:flex-start}.aloj-buy-form{grid-template-columns:1fr}.aloj-buy-field.full{grid-column:auto}}
+    @media(max-width:760px){.aloj-buy-item{grid-template-columns:1fr}.aloj-buy-value{text-align:left}.aloj-buy-side{justify-content:flex-start}.aloj-buy-form{grid-template-columns:1fr}.aloj-buy-field.full{grid-column:auto}}
   `;
   document.head.appendChild(style);
 }
@@ -69,7 +74,7 @@ async function loadRows() {
   if (state.loading) return;
   state.loading = true;
   const list = $('#alojBuyList');
-  if (list) list.innerHTML = '<div class="aloj-buy-empty">Carregando solicitações...</div>';
+  if (list) list.innerHTML = '<div class="fm-empty">Carregando solicitações...</div>';
   const { data, error } = await supabase.from('compras_solicitacoes').select('*, compras_itens(*)').eq('tipo_solicitacao','Alojamento').order('created_at',{ ascending: false }).limit(300);
   state.loading = false;
   if (error) {
@@ -83,7 +88,7 @@ async function loadRows() {
 function filteredRows() {
   const query = norm(state.search);
   return state.rows.filter((row) => {
-    if (group(row.status) !== state.filter) return false;
+    if (state.filter !== 'todos' && group(row.status) !== state.filter) return false;
     if (!query) return true;
     const request = row.request || {};
     return norm([row.material,row.tamanho,request.solicitante,request.cidade,request.uf,targetName(request)].join(' ')).includes(query);
@@ -111,10 +116,16 @@ function render() {
   const rows = filteredRows();
   const groups = new Map();
   rows.forEach((row) => { const key = row.solicitacao_id || row.id; if (!groups.has(key)) groups.set(key,[]); groups.get(key).push(row); });
-  list.innerHTML = groups.size ? [...groups.values()].map(cardHtml).join('') : '<div class="aloj-buy-empty">Nenhuma solicitação nesta etapa.</div>';
-  ['pendente','andamento','comprado','recusado'].forEach((key) => { const el = $(`#alojBuyCount${key[0].toUpperCase()}${key.slice(1)}`); if (el) el.textContent = String(state.rows.filter((row) => group(row.status) === key).length); });
+  list.innerHTML = groups.size ? [...groups.values()].map(cardHtml).join('') : '<div class="fm-empty">Nenhuma solicitação neste filtro.</div>';
+  const kpis = $('#alojBuyKpis');
+  if (kpis) kpis.innerHTML = cardsHtml();
+  const count = $('#alojBuyCount');
+  if (count) count.textContent = `${rows.length} item(ns)`;
+  const painel = $('#alojBuyPanel');
+  if (painel) sincronizarCards(painel, state.filter);
   const pending = state.rows.filter((row) => group(row.status) === 'pendente').length;
-  const badge = $('#alojBuyPendingBadge'); if (badge) badge.textContent = pending ? `(${pending})` : '';
+  const badge = $('#alojBuyPendingBadge');
+  if (badge) { badge.textContent = pending ? String(pending) : ''; badge.hidden = !pending; }
 }
 
 async function updateItem(id, values) {
@@ -141,9 +152,8 @@ function openPurchase(row) {
 function bindEvents() {
   $('#alojBuyRefresh')?.addEventListener('click',loadRows);
   $('#alojBuySearch')?.addEventListener('input',(event)=>{state.search=event.target.value;render();});
+  aoClicarCard($('#alojBuyPanel'),(card,limpar)=>{state.filter=limpar||!card||state.filter===card.dataset.filtro?'todos':card.dataset.filtro;render();});
   $('#alojBuyPanel')?.addEventListener('click',async(event)=>{
-    const filter=event.target.closest('[data-aloj-buy-filter]');
-    if(filter){state.filter=filter.dataset.alojBuyFilter;document.querySelectorAll('[data-aloj-buy-filter]').forEach((button)=>button.classList.toggle('active',button===filter));render();return;}
     const quote=event.target.closest('[data-aloj-buy-quote]');
     if(quote){quote.disabled=true;try{await updateItem(quote.dataset.alojBuyQuote,{status:'em_cotacao'});}catch(error){window.alert(error.message||'Não foi possível iniciar a cotação.');quote.disabled=false;}return;}
     const purchase=event.target.closest('[data-aloj-buy-purchase]');
@@ -157,7 +167,7 @@ function bindEvents() {
 function mount() {
   if (state.mounted) return true;
   const shell = $('.aloj-v2-shell');
-  if (!shell || !$('.aloj-pay-tabs',shell)) return false;
+  if (!shell || !$('#alojTabs .ds-tabs')) return false;
   ensureStyles();
   shell.insertAdjacentHTML('beforeend',panelHtml());
   state.mounted = true;

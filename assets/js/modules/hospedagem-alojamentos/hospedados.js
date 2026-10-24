@@ -13,7 +13,8 @@
 // programacao_estadia.colaborador_id (mesmo padrão usado em financeiro.js
 // pra excluir efetivos do pagamento de diária).
 import { supabase } from '../../supabaseClient.js';
-import { esc, brDate } from './util.js?v=20261024-aloj1';
+import { ICON } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { esc, brDate } from './util.js?v=20261024-aloj4';
 
 const state = {
   start: '', end: '', busca: '', carregando: false,
@@ -58,13 +59,10 @@ function ensureStyles() {
   const style = document.createElement('style');
   style.id = 'admHotelHospedadosCss';
   style.textContent = `
-    .aloj-v2-shell.aloj-hosp-mode>.aloj-v2-head,.aloj-v2-shell.aloj-hosp-mode>.aloj-v2-kpis,.aloj-v2-shell.aloj-hosp-mode>#alojV2List{display:none!important}
+    .aloj-v2-shell.aloj-hosp-mode>#alojCadPanel{display:none!important}
     .aloj-v2-shell.aloj-hosp-mode>.aloj-pay-panel{display:none!important}
     .aloj-hosp-panel{display:none}
     .aloj-v2-shell.aloj-hosp-mode>.aloj-hosp-panel{display:grid;gap:14px}
-    .hosp-v-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:2px}
-    .hosp-v-toolbar input{height:38px;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:11px;padding:0 12px;color-scheme:dark}
-    .hosp-v-toolbar input[type="search"]{flex:1 1 240px}
     .hosp-v-range-label{font-size:11.5px;color:#8b93a7;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.2);border-radius:999px;padding:6px 12px;white-space:nowrap}
 
     .hosp-v-layout{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
@@ -120,26 +118,25 @@ function ensureStyles() {
 }
 
 function tabButtonHtml() {
-  return `<button type="button" class="aloj-pay-tab" data-aloj-hosp-tab="1">Hospedados</button>`;
+  return `<button type="button" class="ds-tab" role="tab" data-aloj-hosp-tab="1">Hospedados</button>`;
 }
 
 function panelHtml() {
   return `<section class="aloj-hosp-panel" id="tab-hospedados">
-    <div class="aloj-pay-head"><div><div class="aloj-v2-eyebrow">Alojamentos</div><h3>Hospedados</h3><p>Quem da equipe está hospedado em cada alojamento, agrupado por alojamento.</p></div></div>
-    <div class="hosp-v-toolbar">
-      <input type="search" id="hospVBusca" placeholder="Buscar colaborador ou alojamento..." />
-      <span class="hosp-v-range-label" id="hospVRangeLabel"></span>
-    </div>
-    <div class="hosp-v-layout">
-      <div class="hosp-v-groups" id="hospVGroups"><div class="hosp-v-empty">Carregando...</div></div>
-      <div class="hosp-v-cal" id="hospVCal"></div>
-    </div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input type="search" id="hospVBusca" class="fm-input" placeholder="Buscar colaborador ou alojamento..." autocomplete="off"></div><span class="hosp-v-range-label" id="hospVRangeLabel"></span></div>
+      <p class="fm-prazo-dia" style="margin:0 0 12px">Quem da equipe está hospedado em cada alojamento. Escolha o período no calendário.</p>
+      <div class="hosp-v-layout">
+        <div class="hosp-v-groups" id="hospVGroups"><div class="hosp-v-empty">Carregando...</div></div>
+        <div class="hosp-v-cal" id="hospVCal"></div>
+      </div>
+    </div></div>
   </section>`;
 }
 
 function garantirDom() {
   const shell = document.querySelector('.aloj-v2-shell');
-  const tabs = shell?.querySelector('.aloj-pay-tabs');
+  const tabs = document.querySelector('#alojTabs .ds-tabs');
   if (!shell || !tabs) return false;
   if (!tabs.querySelector('[data-aloj-hosp-tab]')) {
     tabs.insertAdjacentHTML('beforeend', tabButtonHtml());
@@ -154,7 +151,7 @@ function garantirDom() {
 function activarAba() {
   const shell = document.querySelector('.aloj-v2-shell');
   if (!shell) return;
-  shell.classList.remove('aloj-pay-mode');
+  shell.classList.remove('aloj-pay-mode', 'aloj-buy-mode'); // sem isto o painel de Compras ficava aberto por baixo de Hospedados
   shell.classList.add('aloj-hosp-mode');
   document.querySelectorAll('[data-aloj-pay-mode]').forEach((b) => b.classList.remove('active'));
   document.querySelectorAll('[data-aloj-hosp-tab]').forEach((b) => b.classList.add('active'));

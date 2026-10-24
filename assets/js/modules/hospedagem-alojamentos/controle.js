@@ -1,10 +1,11 @@
 import { supabase } from '../../supabaseClient.js';
 import { loadUserContext } from '../../sessionStore.js';
-import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './util.js?v=20261024-aloj1';
-import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './controle-view.js?v=20261024-aloj1';
+import { normalizeText, nullableBoolean, ensureStyles, composeObservations, hydrateRow, esc } from './util.js?v=20261024-aloj4';
+import { panelHtml, renderRows, renderDetailsContent, renderObsCalendar, renderObsList, isoDate } from './controle-view.js?v=20261024-aloj4';
 import { mensagemFalhaSalvar } from '../../rls-sessao-expirada.js';
+import { aoClicarCard, injectEstilosFrotas } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
-const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', mountTimer: null, supervisoes: [] };
+const state = { rows: [], editingId: null, selectedDetailsId: null, query: '', filtro: 'todos', mountTimer: null, supervisoes: [] };
 const obsState = { alojamentoId: null, year: 0, month: 0, selectedDate: '' };
 let toastTimer = null;
 
@@ -360,10 +361,10 @@ async function deleteRecord(id) {
 
 async function loadRows() {
   const list = document.getElementById('alojV2List');
-  if (list) list.innerHTML = '<div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div>';
+  if (list) list.innerHTML = '<div class="fm-empty">Carregando alojamentos...</div>';
   const { data, error } = await supabase.from('hospedagem_alojamentos').select('*').order('cidade', { ascending: true }).order('nome', { ascending: true });
   if (error) {
-    if (list) list.innerHTML = `<div class="aloj-v2-empty"><strong>Erro ao carregar</strong>${esc(error.message)}</div>`;
+    if (list) list.innerHTML = `<div class="fm-empty">Erro ao carregar os alojamentos: ${esc(error.message)}</div>`;
     return;
   }
   state.rows = (data || []).map(hydrateRow);
@@ -390,6 +391,11 @@ function bindPanel(panel) {
   document.getElementById('alojV2DetailsClose')?.addEventListener('click', closeDetails);
   document.getElementById('alojV2Form')?.addEventListener('submit', saveRecord);
   document.getElementById('alojV2Search')?.addEventListener('input', (event) => { state.query = event.target.value; renderRows(state); });
+  // Cards que filtram (clicar de novo ou no ✕ do chip limpa). Ligado no painel do cadastro: Pagamentos e Compras têm os seus.
+  aoClicarCard(document.getElementById('alojCadPanel'), (card, limpar) => {
+    state.filtro = limpar || !card || state.filtro === card.dataset.filtro ? 'todos' : card.dataset.filtro;
+    renderRows(state);
+  });
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     if (document.getElementById('alojV2Modal')?.classList.contains('open')) closeModal();
@@ -403,6 +409,7 @@ async function mount() {
   const panel = document.getElementById('tab-alojamentos');
   if (!panel || panel.dataset.alojV2Mounted === '1') return;
   ensureStyles();
+  injectEstilosFrotas();
   document.getElementById('modalAlojamentoCadastro')?.remove();
   panel.dataset.alojV2Mounted = '1';
   panel.innerHTML = panelHtml();
