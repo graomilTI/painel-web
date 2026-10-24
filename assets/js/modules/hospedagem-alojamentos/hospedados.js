@@ -12,8 +12,8 @@
 // vem de colaborador_cruzamento.tipo_contrato, casado por CPF com
 // programacao_estadia.colaborador_id (mesmo padrão usado em financeiro.js
 // pra excluir efetivos do pagamento de diária).
-import { supabase } from './supabaseClient.js';
-import { esc, brDate } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+import { supabase } from '../../supabaseClient.js';
+import { esc, brDate } from './util.js?v=20261024-aloj1';
 
 const state = {
   start: '', end: '', busca: '', carregando: false,

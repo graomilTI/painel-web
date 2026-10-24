@@ -1,4 +1,4 @@
-import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './adm-hotel-alojamentos-v2-helpers.js?v=20260721-obs1';
+import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './util.js?v=20261024-aloj1';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
