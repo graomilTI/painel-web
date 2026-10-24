@@ -14,11 +14,11 @@ import {
   renderFinanceiroShell, renderFinanceiroQueue,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
-import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-mod1';
-import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-mod1';
-import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-mod1';
-import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-mod1';
-import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-mod1';
+import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-fin1';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-fin1';
+import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-fin1';
+import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-fin1';
+import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-fin1';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();
@@ -964,6 +964,7 @@ async function loadFinanceiroQueue() {
     .from('financeiro_pagamentos')
     .select('id, descricao, favorecido_nome, valor, status, competencia, comprovante_url, hospedagem_checkout_lote_id, created_at')
     .eq('origem_setor', 'HOSPEDAGEM')
+    .neq('origem_tabela', 'hospedagem_pagamentos_v3') // v3 é pago e confirmado pela fila de Hotéis ou pelo Financeiro (sem lote de check-out)
     .in('status', ['PENDENTE', 'EM_ANALISE'])
     .order('created_at', { ascending: false });
   financeiro.loading = false;

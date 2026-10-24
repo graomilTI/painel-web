@@ -29,7 +29,7 @@ const MENSAGEM_SITUACAO: Record<string, string> = {
   expirada: 'O prazo para responder esta cotação terminou.',
 };
 
-const COLUNAS = 'id,solicitacao_id,hotel_nome,token,link_status,expira_em,quartos_necessarios,checkin_previsto,checkout_previsto,diarias_previstas,'
+const COLUNAS = 'id,solicitacao_id,hotel_id,hotel_nome,token,link_status,expira_em,quartos_necessarios,checkin_previsto,checkout_previsto,diarias_previstas,'
   + 'status,disponibilidade,precos_quartos,cafe_incluso,almoco_incluso,janta_inclusa,estacionamento_incluso,aceita_pagamento_checkout,'
   + 'emite_nota_fiscal,formas_pagamento,atendente_nome,atendente_telefone,observacoes,respondido_em,resposta_dados';
 
@@ -110,6 +110,11 @@ Deno.serve(async (req) => {
     if (error) throw error;
 
     await db.from('hospedagem_cotacao_colaboradores').update({ atendido: d.disponivel }).eq('cotacao_id', c.id);
+
+    // O hotel diz se emite nota fiscal: o cadastro acompanha (é o que liga o alerta "hotel não emite NF" no Financeiro).
+    if (d.disponivel && typeof d.emite_nf === 'boolean') {
+      await db.from('hospedagem_hoteis').update({ emite_nota_fiscal: d.emite_nf }).eq('id', c.hotel_id);
+    }
 
     // Avisa o ADM no painel (uma notificação por envio, para o reenvio com preço novo não passar batido).
     await db.from('painel_notificacoes').upsert({

@@ -1,7 +1,7 @@
 // Reserva manual da fila v3 (ADM): o ADM escolhe colaboradores, hotel, diária e descreve os quartos, sem passar pela cotação por link.
 // Fábrica criarReserva(ctx): usa o estado, o repositório e os utilitários do controller (adm-hotel.js).
-import { elegiveisJuntos, quartosDaReservaManual, sugerirComposicao } from './service.js?v=20261024-hosp-mod1';
-import { idsMarcadosNaFila, pedirCampos } from './ui-comum.js?v=20261024-hosp-mod1';
+import { elegiveisJuntos, quartosDaReservaManual, sugerirComposicao } from './service.js?v=20261024-hosp-fin1';
+import { idsMarcadosNaFila, pedirCampos } from './ui-comum.js?v=20261024-hosp-fin1';
 
 export function criarReserva(ctx) {
   const { state, repo, modalRoot, loadPainel, toast, esc, brDate } = ctx;
