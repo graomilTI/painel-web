@@ -2,8 +2,8 @@
 // Fábrica criarCotacaoHotel(ctx): recebe o estado e os utilitários do controller (adm-hotel.js); a lógica pura fica em cotacao.js.
 import {
   VALIDADE_LINK_DIAS, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
-} from './cotacao.js?v=20261024-hosp-cot1';
-import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-cot1';
+} from './cotacao.js?v=20261024-hosp-mod1';
+import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-mod1';
 
 const ELEGIVEIS = ['AGUARDANDO', 'EM_COTACAO'];
 const ROTULO_GENERO = { MASC: 'masc.', FEM: 'fem.' };
@@ -13,7 +13,7 @@ const dtHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone:
 const diasEntre = (ini, fim) => Math.round((Date.parse(`${fim}T00:00:00Z`) - Date.parse(`${ini}T00:00:00Z`)) / 86400000);
 
 export function criarCotacaoHotel(ctx) {
-  const { supabase, state, modalRoot, loadPainel, toast, esc, money, normalizeText } = ctx;
+  const { repo, state, modalRoot, loadPainel, toast, esc, money, normalizeText } = ctx;
 
   const fechar = () => { modalRoot().innerHTML = ''; };
   const cotacoesDoItem = (itemId) => (state.v3Cotacoes || []).filter((c) => (c.hospedagem_cotacao_colaboradores || []).some((l) => l.solicitacao_colaborador_id === itemId));
@@ -29,7 +29,7 @@ export function criarCotacaoHotel(ctx) {
       await navigator.clipboard.writeText(texto);
       toast(aviso, 'ok');
     } catch {
-      window.prompt('Copie o texto abaixo (Ctrl+C):', texto);
+      toast('Não consegui copiar sozinho. Selecione o texto na tela e use Ctrl+C.', 'err');
     }
   }
 
@@ -100,9 +100,9 @@ export function criarCotacaoHotel(ctx) {
       const nome = root.querySelector('#cotNovoNome').value.trim();
       const whatsapp = root.querySelector('#cotNovoZap').value.trim();
       if (nome.length < 3) return erro('Informe o nome do hotel.');
-      const { data, error } = await supabase.from('hospedagem_hoteis')
-        .insert({ nome, cidade: base.cidade, uf: base.uf, whatsapp: whatsapp || null, status: 'ATIVO', recebe_cotacao: true })
-        .select('id,nome,cidade,uf,whatsapp,status').single();
+      const { data, error } = await repo.cadastrarHotel(
+        { nome, cidade: base.cidade, uf: base.uf, whatsapp: whatsapp || null, status: 'ATIVO', recebe_cotacao: true }, 'id,nome,cidade,uf,whatsapp,status',
+      );
       if (error) return erro(error.message);
       state.hotels.push(data);
       sel.hoteis.add(data.id);
@@ -116,8 +116,8 @@ export function criarCotacaoHotel(ctx) {
       if (escolhidos.some((i) => i.sexo !== 'MASCULINO' && i.sexo !== 'FEMININO')) return erro('Há colaborador sem sexo informado; os quartos são separados por sexo.');
       const btn = root.querySelector('#cotGerar');
       btn.disabled = true;
-      const { data, error } = await supabase.rpc('hospedagem_v3_iniciar_cotacao', {
-        p_solicitacao_id: base.solicitacao_id, p_item_ids: escolhidos.map((i) => i.item_id), p_hotel_ids: [...sel.hoteis], p_quartos: montarQuartos(escolhidos),
+      const { data, error } = await repo.iniciarCotacao({
+        solicitacaoId: base.solicitacao_id, itemIds: escolhidos.map((i) => i.item_id), hotelIds: [...sel.hoteis], quartos: montarQuartos(escolhidos),
       });
       if (error) { btn.disabled = false; return erro(error.message); }
       fechar();
@@ -188,7 +188,7 @@ export function criarCotacaoHotel(ctx) {
     root.querySelectorAll('[data-cot-reservar]').forEach((b) => { b.onclick = () => abrirReserva(b.dataset.cotReservar, itemId); });
     const alterar = (atributo, campos, aviso) => root.querySelectorAll(`[${atributo}]`).forEach((b) => {
       b.onclick = async () => {
-        const { error } = await supabase.from('hospedagem_cotacoes').update(campos()).eq('id', b.getAttribute(atributo));
+        const { error } = await repo.atualizarCotacao(b.getAttribute(atributo), campos());
         if (error) return erro(error.message);
         toast(aviso, 'ok');
         await loadPainel();
@@ -242,9 +242,8 @@ export function criarCotacaoHotel(ctx) {
       if (pedido.erro) return erro(pedido.erro);
       const btn = root.querySelector('#cotPedir');
       btn.disabled = true;
-      const { error } = await supabase.rpc('hospedagem_v3_solicitar_reserva', {
-        p_solicitacao_id: cot.solicitacao_id, p_hotel_id: cot.hotel_id, p_item_ids: itens.map((i) => i.item_id),
-        p_valor_diaria: pedido.valorDiaria, p_quartos: pedido.quartos, p_cotacao_id: cot.id,
+      const { error } = await repo.solicitarReserva({
+        solicitacaoId: cot.solicitacao_id, hotelId: cot.hotel_id, itemIds: itens.map((i) => i.item_id), valorDiaria: pedido.valorDiaria, quartos: pedido.quartos, cotacaoId: cot.id,
       });
       if (error) { btn.disabled = false; return erro(error.message); }
       fechar();
@@ -262,8 +261,8 @@ export function criarCotacaoHotel(ctx) {
     modalRoot().querySelector('#cotDecidir').onclick = async () => {
       const resposta = modalRoot().querySelector('#cotResposta').value.trim() || null;
       const { error } = confirmar
-        ? await supabase.rpc('hospedagem_v3_confirmar_reserva_pedido', { p_pedido_id: pedidoId, p_resposta: resposta })
-        : await supabase.rpc('hospedagem_v3_recusar_reserva_pedido', { p_pedido_id: pedidoId, p_resposta: resposta });
+        ? await repo.confirmarPedido(pedidoId, resposta)
+        : await repo.recusarPedido(pedidoId, resposta);
       if (error) return erro(error.message);
       fechar();
       toast(confirmar ? 'Reserva confirmada.' : 'Recusa registrada.', 'ok');
