@@ -12,13 +12,35 @@ export const STATUS_ABERTOS = ['AGUARDANDO', 'EM_COTACAO'];
 const GENEROS = [['MASCULINO', 'MASC'], ['FEMININO', 'FEM']];
 const TIPO_POR_CAPACIDADE = { 1: 'INDIVIDUAL', 2: 'DUPLO', 3: 'TRIPLO', 4: 'QUADRUPLO' };
 
-// filtros: { status, date, city, person, supervision }. Cancelados nunca aparecem na fila.
-export function filtrarFila(itens, f, normalizeText) {
+// Cor, ícone e tom do selo de cada status na tela (cards que filtram e coluna Status), no padrão das listas do Frotas.
+export const V3_VISUAL = {
+  AGUARDANDO: { tone: 'amber', icone: 'relogio', selo: 'warn' },
+  EM_COTACAO: { tone: 'blue', icone: 'doc', selo: 'info' },
+  AGUARDANDO_HOTEL: { tone: 'purple', icone: 'sinal', selo: 'info' },
+  RESERVADO: { tone: 'green', icone: 'ok', selo: 'ok' },
+  ALTERACAO_PENDENTE: { tone: 'amber', icone: 'alerta', selo: 'warn' },
+  CHECKOUT_PENDENTE: { tone: 'amber', icone: 'calendario', selo: 'warn' },
+  CHECKOUT: { tone: 'blue', icone: 'total', selo: 'info' },
+  RECUSADO: { tone: 'red', icone: 'erro', selo: 'err' },
+};
+
+// Cancelados nunca aparecem na fila. filtro: { status ('todos' ou um status), busca }. A busca olha nome, cidade/UF, supervisão, hotel,
+// códigos, solicitante e a data de entrada já formatada (dd/mm/aaaa), ignorando acento e caixa.
+export function filtrarFila(itens, { status = 'todos', busca = '' } = {}, normalizeText, formatarData = (d) => d) {
+  const q = normalizeText(busca);
   return itens.filter((i) => i.status_item !== 'CANCELADO'
-    && (!f.status || i.status_item === f.status) && (!f.date || i.data_checkin_prevista === f.date)
-    && (!f.city || normalizeText(`${i.cidade} ${i.uf}`).includes(normalizeText(f.city)))
-    && (!f.person || normalizeText(i.nome_colaborador).includes(normalizeText(f.person)))
-    && (!f.supervision || normalizeText(i.supervisao).includes(normalizeText(f.supervision))));
+    && (status === 'todos' || !status || i.status_item === status)
+    && (!q || normalizeText([i.nome_colaborador, i.cidade, i.uf, i.supervisao, i.hotel, i.codigo_operacional, i.codigo_solicitacao, i.solicitante_nome, formatarData(i.data_checkin_prevista), i.sexo].join(' ')).includes(q)));
+}
+
+// Quantos colaboradores há em cada status (sem cancelados), para os cards.
+export function contarPorStatus(itens) {
+  const contagem = {};
+  for (const i of itens) {
+    if (i.status_item === 'CANCELADO') continue;
+    contagem[i.status_item] = (contagem[i.status_item] || 0) + 1;
+  }
+  return contagem;
 }
 
 // Dois colaboradores podem ficar no mesmo pedido de reserva: mesma cidade/UF, períodos que se sobrepõem e ainda em aberto.

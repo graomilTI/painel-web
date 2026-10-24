@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { V3_LABELS, caminhoComprovante, elegiveisJuntos, filtrarFila, quartosDaReservaManual, rateioExcedeTotal, sugerirComposicao } from '../assets/js/modules/hospedagem/service.js';
+import { V3_LABELS, V3_VISUAL, caminhoComprovante, contarPorStatus, elegiveisJuntos, filtrarFila, quartosDaReservaManual, rateioExcedeTotal, sugerirComposicao } from '../assets/js/modules/hospedagem/service.js';
 
 // Regras da fila v3 da Hospedagem (ADM) extraídas de adm-hotel.js em 24/10/2026: o comportamento não pode mudar.
 
@@ -10,16 +10,31 @@ const item = (nome, sexo, extra = {}) => ({
   data_checkin_prevista: '2026-11-03', data_checkout_prevista: '2026-11-06', ...extra,
 });
 
-test('fila: cancelados nunca aparecem e cada filtro estreita a lista', () => {
-  const itens = [item('Ana', 'FEMININO'), item('Bruno', 'MASCULINO', { status_item: 'EM_COTACAO', cidade: 'Cuiabá', supervisao: 'SUP SUL' }), item('Caio', 'MASCULINO', { status_item: 'CANCELADO' })];
-  const nomes = (f) => filtrarFila(itens, { status: '', date: '', city: '', person: '', supervision: '', ...f }, norm).map((i) => i.nome_colaborador);
+test('fila: cancelados nunca aparecem; o card filtra por status e a busca olha vários campos', () => {
+  const itens = [
+    item('Ana', 'FEMININO', { codigo_operacional: 'HOUT01', hotel: 'Hotel Girassol', status_item: 'RESERVADO' }),
+    item('Bruno', 'MASCULINO', { status_item: 'EM_COTACAO', cidade: 'Cuiabá', supervisao: 'SUP SUL', data_checkin_prevista: '2026-11-10' }),
+    item('Caio', 'MASCULINO', { status_item: 'CANCELADO' }),
+  ];
+  const data = (d) => String(d).split('-').reverse().join('/');
+  const nomes = (f) => filtrarFila(itens, f, norm, data).map((i) => i.nome_colaborador);
   assert.deepEqual(nomes({}), ['Ana', 'Bruno']);
+  assert.deepEqual(nomes({ status: 'todos' }), ['Ana', 'Bruno']);
   assert.deepEqual(nomes({ status: 'EM_COTACAO' }), ['Bruno']);
-  assert.deepEqual(nomes({ city: 'cuiaba' }), ['Bruno']);
-  assert.deepEqual(nomes({ person: 'AN' }), ['Ana']);
-  assert.deepEqual(nomes({ supervision: 'sul' }), ['Bruno']);
-  assert.deepEqual(nomes({ date: '2026-11-03' }), ['Ana', 'Bruno']);
-  assert.deepEqual(nomes({ date: '2026-12-01' }), []);
+  assert.deepEqual(nomes({ busca: 'cuiaba' }), ['Bruno']);
+  assert.deepEqual(nomes({ busca: ' AN ' }), ['Ana']);
+  assert.deepEqual(nomes({ busca: 'sup sul' }), ['Bruno']);
+  assert.deepEqual(nomes({ busca: 'hout01' }), ['Ana']);
+  assert.deepEqual(nomes({ busca: 'girassol' }), ['Ana']);
+  assert.deepEqual(nomes({ busca: '10/11/2026' }), ['Bruno']);
+  assert.deepEqual(nomes({ status: 'RESERVADO', busca: 'bruno' }), []);
+  assert.deepEqual(nomes({ busca: 'nada disso' }), []);
+});
+
+test('contagem por status para os cards ignora cancelados', () => {
+  const itens = [item('A', 'FEMININO'), item('B', 'MASCULINO'), item('C', 'MASCULINO', { status_item: 'RESERVADO' }), item('D', 'MASCULINO', { status_item: 'CANCELADO' })];
+  assert.deepEqual(contarPorStatus(itens), { AGUARDANDO: 2, RESERVADO: 1 });
+  for (const s of Object.keys(V3_LABELS)) assert.ok(V3_VISUAL[s] && V3_VISUAL[s].tone && V3_VISUAL[s].icone && V3_VISUAL[s].selo, `sem visual para ${s}`);
 });
 
 test('o rótulo de cada status da fila existe', () => {

@@ -1,5 +1,5 @@
 // Despesa extra e pagamento da reserva (fila v3, ADM). Fábrica criarPagamento(ctx).
-import { caminhoComprovante, rateioExcedeTotal } from './service.js?v=20261024-hosp-v2off1';
+import { caminhoComprovante, rateioExcedeTotal } from './service.js?v=20261024-hosp-layout3';
 
 export function criarPagamento(ctx) {
   const { state, repo, modalRoot, loadPainel, toast, esc, money } = ctx;
