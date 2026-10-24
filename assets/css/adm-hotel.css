@@ -456,3 +456,8 @@
 #tab-alojamentos .aloj-v2-shell > .aloj-hosp-panel { grid-template-columns: minmax(0, 1fr); }
 #tab-alojamentos .fm-table { min-width: 820px; }
 #tab-alojamentos .fm-btn svg, #ahPage .fm-btn svg { width: 16px; height: 16px; flex: none; }
+
+/* Confirmação de pagamento (lotes antigos): os campos de valor pago e comprovante moram dentro da tabela. */
+#ahFinPage .fm-table { min-width: 1000px; }
+#ahFinPage .fm-table td .fm-input { min-width: 120px; height: 36px; }
+#ahFinPage .fm-btn svg { width: 16px; height: 16px; flex: none; }
