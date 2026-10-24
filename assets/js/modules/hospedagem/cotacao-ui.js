@@ -2,8 +2,8 @@
 // Fábrica criarCotacaoHotel(ctx): recebe o estado e os utilitários do controller (adm-hotel.js); a lógica pura fica em cotacao.js.
 import {
   VALIDADE_LINK_DIAS, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
-} from './cotacao.js?v=20261024-hosp-fin1';
-import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-fin1';
+} from './cotacao.js?v=20261024-hosp-v2off1';
+import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-v2off1';
 
 const ELEGIVEIS = ['AGUARDANDO', 'EM_COTACAO'];
 const ROTULO_GENERO = { MASC: 'masc.', FEM: 'fem.' };

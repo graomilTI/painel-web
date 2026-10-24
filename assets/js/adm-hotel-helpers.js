@@ -96,7 +96,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20261024-hosp-fin1';
+  link.href = './assets/css/adm-hotel.css?v=20261024-hosp-v2off1';
   document.head.appendChild(link);
 }
 
@@ -110,53 +110,9 @@ export const STATUS_COTACAO = {
   INDISPONIVEL: 'Indisponível',
 };
 
-// Mesmo texto usado pelo módulo antigo (confirmado em cotações reais já
-// enviadas no banco) — o webhook de resposta só casa por telefone, então o
-// texto em si não precisa carregar um código, mas mantém o formato que os
-// hotéis já reconhecem.
-export function buildCotacaoMessage(row) {
-  const checkin = brDate(row.data_checkin_prevista);
-  const checkout = brDate(row.data_checkout_prevista);
-  const cidade = [row.cidade, row.uf].filter(Boolean).join('/');
-  return [
-    'Olá! A Grão 1000 solicita uma cotação de hospedagem.',
-    '',
-    `Solicitação: ${row.solicitacao_id}`,
-    `Cidade: ${cidade || '—'}`,
-    `Check-in: ${checkin}`,
-    `Check-out: ${checkout}`,
-    `Pessoas: ${row.total_colaboradores ?? 1}`,
-    'Quartos: A definir',
-    `Diárias previstas: ${row.quantidade_diarias_prevista ?? 1}`,
-    '',
-    'Por favor, informe disponibilidade, valor das diárias, valor total, café da manhã, estacionamento e se aceita pagamento no checkout.',
-  ].join('\n');
-}
-
-// tipo_quarto (hospedagem_reserva_quartos) — vocabulário real do CHECK
-// constraint criado na Fase 0 (20260825120000_hospedagem_reserva_quartos_diferencas.sql).
-export const ROOM_TYPES = ['INDIVIDUAL', 'DUPLO', 'TRIPLO', 'QUADRUPLO'];
-export const ROOM_TYPE_LABEL = {
-  INDIVIDUAL: 'Individual',
-  DUPLO: 'Duplo',
-  TRIPLO: 'Triplo',
-  QUADRUPLO: 'Quádruplo',
-};
-export const ROOM_CAPACITY = { INDIVIDUAL: 1, DUPLO: 2, TRIPLO: 3, QUADRUPLO: 4 };
-
 export function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
-
-export function nightsBetween(checkin, checkout) {
-  if (!checkin || !checkout) return 1;
-  const a = new Date(`${checkin}T00:00:00`);
-  const b = new Date(`${checkout}T00:00:00`);
-  const diff = Math.round((b - a) / 86400000);
-  return diff > 0 ? diff : 1;
-}
-
-export const EXTRA_TYPE_LABEL = { adicional: 'Adicional', desconto: 'Desconto' };
 
 // status de public.hospedagem_checkout_lotes — vocabulário real (visto na
 // função hospedagem_realizar_checkout / hospedagem_confirmar_pagamento_lote).

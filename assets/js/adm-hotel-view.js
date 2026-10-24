@@ -1,8 +1,6 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
 import {
-  esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_SOLICITACAO, STATUS_COTACAO,
-  ROOM_TYPES, ROOM_TYPE_LABEL, ROOM_CAPACITY, nightsBetween, EXTRA_TYPE_LABEL, LOTE_STATUS_LABEL,
-  preferenciaLabel,
+  esc, brDate, money, statusLabel, tabGroup, STATUS_COTACAO, LOTE_STATUS_LABEL, preferenciaLabel,
 } from './adm-hotel-helpers.js';
 
 const TABS = [
@@ -228,10 +226,6 @@ export function renderDetalhes(row, quotes) {
   const colaboradores = String(row.colaboradores || '').split(',').map((s) => s.trim()).filter(Boolean);
   const quotesForRow = (quotes || []).filter((q) => q.solicitacao_id === row.solicitacao_id);
   const temReserva = Boolean(row.reserva_id);
-  const podeCotar = tabGroup(row) === 'solicitada';
-  const podeEstender = temReserva && (row.status_hospedagem === 'CHECKIN_PREVISTO' || row.status_hospedagem === 'HOSPEDADO');
-  const podeCheckout = podeEstender;
-  const podeDiferenca = temReserva;
   return `
     <div class="ah-modal">
       <div class="ah-modal-head">
@@ -277,14 +271,7 @@ export function renderDetalhes(row, quotes) {
         </div>
       </div>
       <div class="ah-modal-foot">
-        <div class="ah-modal-foot-left">
-          ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-cotar="${esc(row.solicitacao_id)}" type="button">Cotar hotéis</button>` : ''}
-          ${podeCotar ? `<button class="btn btn-secondary ah-btn-sm" data-agrupar="${esc(row.solicitacao_id)}" type="button">Agrupar</button>` : ''}
-          ${podeCotar ? `<button class="btn btn-primary ah-btn-sm" data-reservar="${esc(row.solicitacao_id)}" type="button">Reservar</button>` : ''}
-          ${podeEstender ? `<button class="btn btn-secondary ah-btn-sm" data-estender="${esc(row.solicitacao_id)}" type="button">Estender</button>` : ''}
-          ${podeCheckout ? `<button class="btn btn-primary ah-btn-sm" data-checkout="${esc(row.solicitacao_id)}" type="button">Check-out</button>` : ''}
-          ${podeDiferenca ? `<button class="btn btn-secondary ah-btn-sm" data-diferenca="${esc(row.solicitacao_id)}" type="button">Diferença</button>` : ''}
-        </div>
+        <div class="ah-modal-foot-left"></div>
         <button class="btn btn-secondary ah-btn-sm" data-close type="button">Fechar</button>
       </div>
     </div>
@@ -316,213 +303,10 @@ export function renderCotacoesSection(row, quotesForRow) {
               ${q.disponibilidade === false ? ' · sem disponibilidade' : ''}
               ${q.resposta_texto ? ` · "${esc(q.resposta_texto).slice(0, 140)}"` : ''}
             </div>
-            ${q.status === 'RESPONDIDA' && q.disponibilidade !== false && !q.selecionada ? `
-              <button class="btn btn-secondary ah-btn-sm ah-quote-use" data-use-quote="${esc(q.id)}" type="button">Usar esta cotação</button>
-            ` : ''}
           </div>
         `).join('')}
       </div>
     ` : '<p class="ah-note">Nenhuma cotação enviada ainda.</p>'}
-  `;
-}
-
-export function renderHoteisPicker(row, query) {
-  return `
-    <div class="ah-modal ah-picker">
-      <div class="ah-modal-head">
-        <div><h3>Cotar hotéis</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''} · ${brDate(row.data_checkin_prevista)} → ${brDate(row.data_checkout_prevista)}</p></div>
-        <button class="ah-modal-x" data-close-picker type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        <input type="text" class="ah-picker-search" id="ahPickerSearch" placeholder="Buscar por nome ou cidade..." value="${esc(query)}" autocomplete="off" />
-        <div id="ahPickerList" class="ah-picker-list"></div>
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes type="button">Voltar</button>
-        <button class="btn btn-primary ah-btn-sm" id="ahPickerConfirm" data-confirm-cotar type="button" disabled>Cotar em lote (0)</button>
-      </div>
-    </div>
-  `;
-}
-
-const PICKER_LIMIT = 60;
-
-export function renderPickerList(hotels, query, selectedIds) {
-  const q = normalizeText(query);
-  const filtered = q
-    ? hotels.filter((h) => normalizeText(h.nome).includes(q) || normalizeText(h.cidade).includes(q) || normalizeText(h.uf).includes(q))
-    : hotels;
-  if (filtered.length === 0) {
-    return '<div class="ah-empty">Nenhum hotel encontrado.</div>';
-  }
-  const shown = filtered.slice(0, PICKER_LIMIT);
-  const hint = filtered.length > PICKER_LIMIT
-    ? `<div class="ah-picker-hint muted">Mostrando ${PICKER_LIMIT} de ${filtered.length} — refine a busca para ver mais.</div>`
-    : '';
-  return `
-    ${shown.map((h) => `
-      <label class="ah-picker-item">
-        <input type="checkbox" data-hotel-id="${esc(h.id)}" ${selectedIds.has(h.id) ? 'checked' : ''} />
-        <span class="ah-picker-item-name">${esc(h.nome || '—')}</span>
-        <span class="ah-picker-item-meta muted">${esc(h.cidade || '—')}${h.uf ? `/${esc(h.uf)}` : ''}</span>
-      </label>
-    `).join('')}
-    ${hint}
-  `;
-}
-
-export function renderAgruparPicker(row, reservas) {
-  return `
-    <div class="ah-modal">
-      <div class="ah-modal-head">
-        <div><h3>Agrupar</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''} · junta esta solicitação numa reserva já existente na mesma cidade</p></div>
-        <button class="ah-modal-x" data-close-agrupar type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        ${reservas.length ? `
-          <div class="ah-detail-list">
-            ${reservas.map((r) => `
-              <div class="ah-quote-row">
-                <div class="ah-quote-main">
-                  <span class="ah-quote-hotel">${esc(r.hotel || '—')}</span>
-                  <span class="ah-quote-badge ${r.status_hospedagem === 'HOSPEDADO' ? 'ah-quote-ok' : 'ah-quote-pendente'}">${esc(statusLabel(r))}</span>
-                </div>
-                <div class="ah-quote-meta muted">
-                  ${brDate(r.data_checkin)} → ${brDate(r.data_checkout)} · ${r.total_colaboradores ?? 0} colaborador(es)
-                </div>
-                <button class="btn btn-secondary ah-btn-sm" data-agrupar-reserva="${esc(r.reserva_id)}" type="button">Agrupar nesta reserva</button>
-              </div>
-            `).join('')}
-          </div>
-        ` : `<p class="ah-note">Nenhuma reserva ativa em ${esc(row.cidade || 'sem cidade definida')}${row.uf ? `/${esc(row.uf)}` : ''} pra agrupar. Use "Reservar" pra criar uma nova.</p>`}
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-agrupar type="button">Voltar</button>
-        <span></span>
-      </div>
-    </div>
-  `;
-}
-
-export function renderEstenderForm(row) {
-  return `
-    <div class="ah-modal">
-      <div class="ah-modal-head">
-        <div><h3>Estender hospedagem</h3><p class="muted">${esc(row.hotel || '—')} · check-out atual ${brDate(row.data_checkout)}</p></div>
-        <button class="ah-modal-x" data-close-estender type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        <div class="ah-field">
-          <label>Nova data de check-out</label>
-          <input type="date" id="ahExtCheckout" value="${esc(row.data_checkout || '')}" min="${esc(row.data_checkout || '')}" />
-        </div>
-        <div id="ahExtErrorBox"></div>
-        <p class="ah-note">Atualiza a reserva e todas as solicitações agrupadas nela.</p>
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-estender type="button">Voltar</button>
-        <button class="btn btn-primary ah-btn-sm" id="ahExtConfirm" data-confirm-estender type="button">Confirmar extensão</button>
-      </div>
-    </div>
-  `;
-}
-
-export function renderCheckoutForm(row, colaboradores, selectedIds, valorDiarias) {
-  return `
-    <div class="ah-modal">
-      <div class="ah-modal-head">
-        <div><h3>Check-out</h3><p class="muted">${esc(row.hotel || '—')} · ${brDate(row.data_checkin)} → ${brDate(row.data_checkout)}</p></div>
-        <button class="ah-modal-x" data-close-checkout type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        <div class="ah-field">
-          <label>Colaboradores fazendo check-out (<span id="ahCkoColabCount">${selectedIds.size}/${colaboradores.length}</span>)</label>
-          <div class="ah-guest-wrap">
-            ${colaboradores.length ? colaboradores.map((c) => `
-              <label class="ah-picker-item">
-                <input type="checkbox" data-colaborador-id="${esc(c.id)}" ${selectedIds.has(c.id) ? 'checked' : ''} />
-                <span class="ah-picker-item-name">${esc(c.nome)}</span>
-              </label>
-            `).join('') : '<span class="muted">Nenhum colaborador hospedado nesta reserva.</span>'}
-          </div>
-          <p class="ah-note">Desmarque quem continua hospedado — o check-out desses colaboradores fica pendente pra outro lote.</p>
-        </div>
-
-        <div class="ah-field">
-          <label>Valor das diárias deste check-out</label>
-          <input type="number" min="0" step="0.01" id="ahCkoValorDiarias" value="${valorDiarias}" />
-        </div>
-
-        <div class="ah-field" id="ahCkoExtrasBox"></div>
-
-        <div class="ah-field">
-          <label>Observações</label>
-          <input type="text" id="ahCkoObservacoes" placeholder="Opcional" />
-        </div>
-        <div id="ahCkoErrorBox"></div>
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-checkout type="button">Voltar</button>
-        <button class="btn btn-primary ah-btn-sm" id="ahCkoConfirm" data-confirm-checkout type="button">Confirmar check-out</button>
-      </div>
-    </div>
-  `;
-}
-
-export function renderExtrasTotalText(extras) {
-  const total = extras.reduce((s, e) => s + (e.tipo === 'desconto' ? -Math.abs(Number(e.valor || 0)) : Math.abs(Number(e.valor || 0))), 0);
-  return `Itens extras (${extras.length}) · ${money(total)}`;
-}
-
-export function renderExtrasBox(extras) {
-  return `
-    <label id="ahCkoExtrasLabel">${renderExtrasTotalText(extras)}</label>
-    <div class="ah-quartos-list">
-      ${extras.map((e) => `
-        <div class="ah-quarto-card">
-          <div class="ah-quarto-head">
-            <select data-extra-field="tipo" data-extra-id="${esc(e.localId)}" class="ah-select-sm">
-              <option value="adicional" ${e.tipo === 'adicional' ? 'selected' : ''}>${EXTRA_TYPE_LABEL.adicional}</option>
-              <option value="desconto" ${e.tipo === 'desconto' ? 'selected' : ''}>${EXTRA_TYPE_LABEL.desconto}</option>
-            </select>
-            <input type="text" class="ah-input-sm ah-extra-desc" data-extra-field="descricao" data-extra-id="${esc(e.localId)}" value="${esc(e.descricao)}" placeholder="Descrição" />
-            <input type="number" min="0" step="0.01" class="ah-input-sm" data-extra-field="valor" data-extra-id="${esc(e.localId)}" value="${e.valor || 0}" placeholder="Valor" />
-            <button type="button" class="ah-quarto-remove" data-remove-extra="${esc(e.localId)}" title="Remover item">✕</button>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-    <button type="button" class="btn btn-secondary ah-btn-sm" data-add-extra>+ Adicionar item</button>
-  `;
-}
-
-export function renderDiferencaForm(row, colaboradores) {
-  return `
-    <div class="ah-modal">
-      <div class="ah-modal-head">
-        <div><h3>Registrar diferença</h3><p class="muted">${esc(row.hotel || '—')}</p></div>
-        <button class="ah-modal-x" data-close-diferenca type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        <div class="ah-field">
-          <label>Colaborador</label>
-          <select id="ahDifColaborador" class="ah-select">
-            <option value="">Selecione...</option>
-            ${colaboradores.map((c) => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="ah-field-row">
-          <div class="ah-field"><label>Valor</label><input type="number" min="0.01" step="0.01" id="ahDifValor" placeholder="0,00" /></div>
-          <div class="ah-field"><label>Observações</label><input type="text" id="ahDifObs" placeholder="Ex.: ficou em hotel próprio" /></div>
-        </div>
-        <div id="ahDifErrorBox"></div>
-        <p class="ah-note">Credita a diferença no caixa do colaborador — não altera o financeiro da reserva.</p>
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-diferenca type="button">Voltar</button>
-        <button class="btn btn-primary ah-btn-sm" id="ahDifConfirm" data-confirm-diferenca type="button">Registrar diferença</button>
-      </div>
-    </div>
   `;
 }
 
@@ -565,105 +349,6 @@ export function renderFinanceiroQueue(items) {
           `}
         </div>
       `).join('')}
-    </div>
-  `;
-}
-
-export function renderReservarForm(row, hotelsSorted, selectedHotelId) {
-  return `
-    <div class="ah-modal ah-reservar">
-      <div class="ah-modal-head">
-        <div><h3>Reservar</h3><p class="muted">${esc(row.cidade || '')}${row.uf ? ` · ${esc(row.uf)}` : ''}</p></div>
-        <button class="ah-modal-x" data-close-reservar type="button">✕</button>
-      </div>
-      <div class="ah-modal-body">
-        <div class="ah-field">
-          <label>Hotel</label>
-          <select id="ahResvHotel" class="ah-select">
-            <option value="">Selecione um hotel...</option>
-            ${hotelsSorted.map((h) => `<option value="${esc(h.id)}" ${h.id === selectedHotelId ? 'selected' : ''}>${esc(h.nome)}${h.cidade ? ` — ${esc(h.cidade)}${h.uf ? `/${esc(h.uf)}` : ''}` : ''}</option>`).join('')}
-          </select>
-        </div>
-
-        <div class="ah-field-row">
-          <div class="ah-field"><label>Check-in</label><input type="date" id="ahResvCheckin" value="${esc(row.data_checkin_prevista || '')}" /></div>
-          <div class="ah-field"><label>Check-out</label><input type="date" id="ahResvCheckout" value="${esc(row.data_checkout_prevista || '')}" /></div>
-          <div class="ah-field"><label>Horário de chegada</label><input type="time" id="ahResvHorario" value="${esc(row.horario_chegada_previsto || '')}" /></div>
-        </div>
-
-        <div class="ah-field">
-          <label>Inclusos</label>
-          <div class="ah-checks">
-            <label class="ah-check"><input type="checkbox" id="ahResvCafe" /> Café da manhã</label>
-            <label class="ah-check"><input type="checkbox" id="ahResvAlmoco" /> Almoço</label>
-            <label class="ah-check"><input type="checkbox" id="ahResvJanta" /> Janta</label>
-            <label class="ah-check"><input type="checkbox" id="ahResvEstacionamento" /> Estacionamento</label>
-          </div>
-        </div>
-
-        <div class="ah-field-row">
-          <div class="ah-field"><label>Confirmado com</label><input type="text" id="ahResvConfirmadoCom" placeholder="Quem confirmou no hotel" /></div>
-          <div class="ah-field"><label>Contato</label><input type="text" id="ahResvContato" placeholder="Telefone/WhatsApp" /></div>
-          <div class="ah-field"><label>Código da reserva no hotel</label><input type="text" id="ahResvCodigo" placeholder="Opcional" /></div>
-        </div>
-
-        <div class="ah-field" id="ahResvQuartosBox"></div>
-        <div id="ahResvErrorBox"></div>
-      </div>
-      <div class="ah-modal-foot">
-        <button class="btn btn-secondary ah-btn-sm" data-back-detalhes-resv type="button">Voltar</button>
-        <button class="btn btn-primary ah-btn-sm" id="ahResvConfirm" data-confirm-reservar type="button">Confirmar reserva</button>
-      </div>
-    </div>
-  `;
-}
-
-export function renderQuartosSummaryText(quartos, checkin, checkout) {
-  const nights = nightsBetween(checkin, checkout);
-  const total = quartos.reduce((s, q) => s + Number(q.valorDiaria || 0), 0) * nights;
-  return `${nights} diária(s) · Total previsto ${money(total)}`;
-}
-
-export function renderQuartosBox(quartos, people, assignments, checkin, checkout) {
-  const unassigned = people.filter((p) => !assignments.get(p.id));
-
-  return `
-    <label>Quartos (${quartos.length})</label>
-    <div id="ahResvSummary" class="muted">${renderQuartosSummaryText(quartos, checkin, checkout)}</div>
-    <div class="ah-quartos-list">
-      ${quartos.map((q, i) => {
-        const cap = ROOM_CAPACITY[q.tipoQuarto] || 1;
-        const guests = people.filter((p) => assignments.get(p.id) === q.localId);
-        return `
-          <div class="ah-quarto-card">
-            <div class="ah-quarto-head">
-              <span class="ah-quarto-index">Quarto ${i + 1}</span>
-              <select data-quarto-field="tipoQuarto" data-quarto-id="${esc(q.localId)}" class="ah-select-sm">
-                ${ROOM_TYPES.map((t) => `<option value="${t}" ${t === q.tipoQuarto ? 'selected' : ''}>${ROOM_TYPE_LABEL[t]}</option>`).join('')}
-              </select>
-              <select data-quarto-field="genero" data-quarto-id="${esc(q.localId)}" class="ah-select-sm">
-                <option value="" ${!q.genero ? 'selected' : ''}>Misto</option>
-                <option value="MASC" ${q.genero === 'MASC' ? 'selected' : ''}>Masc.</option>
-                <option value="FEM" ${q.genero === 'FEM' ? 'selected' : ''}>Fem.</option>
-              </select>
-              <input type="number" min="0" step="0.01" class="ah-input-sm" data-quarto-field="valorDiaria" data-quarto-id="${esc(q.localId)}" value="${q.valorDiaria || 0}" placeholder="Diária" />
-              <span class="ah-quarto-cap ${guests.length > cap ? 'ah-quarto-cap-over' : ''}">${guests.length}/${cap}</span>
-              <button type="button" class="ah-quarto-remove" data-remove-quarto="${esc(q.localId)}" title="Remover quarto">✕</button>
-            </div>
-            <div class="ah-quarto-guests">
-              ${guests.length ? guests.map((p) => `<span class="ah-guest-tag ah-guest-clickable" data-assign-person="${esc(p.id)}">${esc(p.nome_colaborador)}</span>`).join('') : '<span class="muted">Nenhum hóspede alocado — clique num nome abaixo.</span>'}
-            </div>
-          </div>
-        `;
-      }).join('')}
-    </div>
-    <button type="button" class="btn btn-secondary ah-btn-sm" data-add-quarto>+ Adicionar quarto</button>
-
-    <div class="ah-field">
-      <label>Não alocados (${unassigned.length})</label>
-      <div class="ah-guest-wrap">
-        ${unassigned.length ? unassigned.map((p) => `<span class="ah-guest-tag ah-guest-clickable" data-assign-person="${esc(p.id)}">${esc(p.nome_colaborador)}</span>`).join('') : '<span class="muted">Todos alocados.</span>'}
-      </div>
     </div>
   `;
 }
