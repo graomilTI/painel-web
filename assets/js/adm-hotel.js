@@ -8,14 +8,14 @@ import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, aoClicarCard, sincronizarCards } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
   renderShellAlojamentos, renderDetalhes, renderHistorico, renderHistoricoCards, renderHistoricoCorpo, filtrarHistorico,
-  renderFinanceiroShell, renderFinanceiroQueue,
+  renderFinanceiroShell, renderFinanceiroQueue, renderFinanceiroCards, renderFinanceiroCorpo, filtrarFinanceiro,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
-import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-layout5';
-import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-layout5';
-import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-layout5';
-import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-layout5';
-import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-layout5';
+import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-layout6';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-layout6';
+import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-layout6';
+import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-layout6';
+import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-layout6';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();
@@ -35,6 +35,8 @@ const state = {
 };
 
 const financeiro = {
+  filtro: 'todos',
+  busca: '',
   loaded: false,
   loading: false,
   items: [],
@@ -219,15 +221,38 @@ function renderFinanceiroBoard() {
   const board = document.getElementById('ahFinBoard');
   if (!board) return;
   if (financeiro.loading) {
-    board.innerHTML = '<div class="card ah-empty">Carregando...</div>';
+    board.innerHTML = '<div class="fm-card"><div class="fm-body"><div class="fm-empty">Carregando...</div></div></div>';
     return;
   }
   if (financeiro.error) {
-    board.innerHTML = `<div class="card ah-empty ah-error">Erro ao carregar: ${financeiro.error}</div>`;
+    board.innerHTML = `<div class="fm-card"><div class="fm-body"><div class="fm-empty ah-error">Erro ao carregar: ${esc(financeiro.error)}</div></div></div>`;
     return;
   }
-  board.innerHTML = renderFinanceiroQueue(financeiro.items);
-  board.querySelectorAll('[data-confirmar-pagamento]').forEach((b) => {
+  board.innerHTML = renderFinanceiroQueue(financeiro.items, { filtro: financeiro.filtro, busca: financeiro.busca });
+  ligarFinanceiro(board);
+}
+
+// Busca e cards só trocam o miolo (a caixa de busca mantém o foco); o botão confirma o lote pelo mesmo caminho de sempre.
+function ligarFinanceiro(board) {
+  const atualizar = () => {
+    const lista = filtrarFinanceiro(financeiro.items, { filtro: financeiro.filtro, busca: financeiro.busca });
+    board.querySelector('#ahFinKpis').innerHTML = renderFinanceiroCards(financeiro.items, financeiro.filtro);
+    board.querySelector('#ahFinCorpo').innerHTML = renderFinanceiroCorpo(lista);
+    board.querySelector('#ahFinCount').textContent = `${lista.length} pagamento(s)`;
+    sincronizarCards(board, financeiro.filtro);
+    ligarConfirmar(board);
+  };
+  board.querySelector('#ahFinBusca').addEventListener('input', (e) => { financeiro.busca = e.target.value; atualizar(); });
+  aoClicarCard(board, (card, limpar) => {
+    financeiro.filtro = limpar || !card || financeiro.filtro === card.dataset.filtro ? 'todos' : card.dataset.filtro;
+    atualizar();
+  });
+  sincronizarCards(board, financeiro.filtro);
+  ligarConfirmar(board);
+}
+
+function ligarConfirmar(raiz) {
+  raiz.querySelectorAll('[data-confirmar-pagamento]').forEach((b) => {
     b.addEventListener('click', () => confirmarPagamento(b.dataset.confirmarPagamento));
   });
 }
@@ -388,7 +413,9 @@ function renderHoteisShell() {
 }
 
 function renderFinanceiroPage() {
+  injectEstilosFrotas();
   contentEl.innerHTML = renderFinanceiroShell();
+  document.getElementById('ahFinAtualizar').onclick = () => loadFinanceiroQueue();
   if (!financeiro.loaded && !financeiro.loading) {
     loadFinanceiroQueue();
   } else {

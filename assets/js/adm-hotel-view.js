@@ -252,45 +252,68 @@ export function renderCotacoesSection(row, quotesForRow) {
   `;
 }
 
+// Confirmação de pagamento dos lotes antigos de check-out, no layout das listas do Frotas (cards que filtram, busca com chip, tabela fixa).
 export function renderFinanceiroShell() {
   return `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Financeiro</div>
-        <h2>Confirmação de pagamento — Hospedagem</h2>
-        <p>Lotes de check-out já enviados ao Financeiro, aguardando confirmação de pagamento.</p>
+    <section class="card mt-16 ah-page" id="ahFinPage">
+      <div class="frotas-hub-tab-body fm-shell">
+        <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="ahFinAtualizar" type="button">↻ Atualizar</button></div></div>
+        <p class="fm-prazo-dia" style="margin:0 0 12px">Lotes de check-out já enviados ao Financeiro, aguardando a confirmação do pagamento.</p>
+        <div id="ahFinBoard"></div>
       </div>
-      <div class="hero-badge-wrap"><span class="hero-badge">FINANCEIRO</span></div>
     </section>
-    <div id="ahFinBoard"></div>
   `;
 }
 
-export function renderFinanceiroQueue(items) {
-  if (items.length === 0) {
-    return `<div class="card"><div class="ah-empty">Nenhum pagamento de hospedagem pendente.</div></div>`;
-  }
-  return `
-    <div class="ah-detail-list">
-      ${items.map((it) => `
-        <div class="ah-quote-row">
-          <div class="ah-quote-main">
-            <span class="ah-quote-hotel">${esc(it.favorecido_nome || '—')}</span>
-            <span class="ah-quote-badge ${it.status === 'EM_ANALISE' ? 'ah-quote-falha' : 'ah-quote-pendente'}">${it.status === 'EM_ANALISE' ? 'Em análise' : 'Pendente'}</span>
-          </div>
-          <div class="ah-quote-meta muted">${esc(it.descricao || '—')}</div>
-          <div class="ah-quote-meta muted">Valor devido ${money(it.valor)}${it.competencia ? ` · ${brDate(it.competencia)}` : ''}</div>
-          ${it.hospedagem_checkout_lote_id ? `
-            <div class="ah-field-row">
-              <div class="ah-field"><label>Valor pago</label><input type="number" min="0" step="0.01" class="ah-input-sm" data-fin-field="valorPago" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" value="${it.valor}" /></div>
-              <div class="ah-field"><label>Comprovante (URL)</label><input type="text" class="ah-input-sm" data-fin-field="comprovante" data-fin-id="${esc(it.hospedagem_checkout_lote_id)}" placeholder="https://..." /></div>
-            </div>
-            <button class="btn btn-primary ah-btn-sm" data-confirmar-pagamento="${esc(it.hospedagem_checkout_lote_id)}" type="button">Confirmar pagamento</button>
-          ` : `
-            <p class="ah-note">Pagamento sem lote de check-out vinculado (lançamento anterior à reconstrução do módulo) — confirme em Financeiro &gt; Pagamentos.</p>
-          `}
-        </div>
-      `).join('')}
-    </div>
-  `;
+const SITUACOES_FINANCEIRO = [
+  ['PENDENTE', 'Pendentes', 'amber', 'relogio', 'warn'],
+  ['EM_ANALISE', 'Em análise', 'blue', 'doc', 'info'],
+];
+
+export function filtrarFinanceiro(items, { filtro = 'todos', busca = '' } = {}) {
+  const q = normalizeText(busca);
+  return items.filter((it) => (filtro === 'todos' || !filtro || it.status === filtro)
+    && (!q || normalizeText([it.favorecido_nome, it.descricao, it.status, it.competencia ? brDate(it.competencia) : ''].join(' ')).includes(q)));
+}
+
+export function renderFinanceiroCards(items, filtro) {
+  const contagem = {};
+  items.forEach((it) => { contagem[it.status] = (contagem[it.status] || 0) + 1; });
+  const devido = items.reduce((sum, it) => sum + Number(it.valor || 0), 0);
+  return cardFiltro({ filtro: 'todos', label: 'Todos', tone: 'blue', icone: 'total', valor: String(items.length), ativo: filtro === 'todos' })
+    + SITUACOES_FINANCEIRO.filter(([st]) => contagem[st] || filtro === st)
+      .map(([st, label, tone, icone]) => cardFiltro({ filtro: st, label, tone, icone, valor: String(contagem[st] || 0), ativo: filtro === st })).join('')
+    + cardFiltro({ label: 'Valor devido', tone: 'purple', icone: 'dinheiro', valor: money(devido), dica: 'Soma dos pagamentos pendentes de confirmação' });
+}
+
+export function renderFinanceiroCorpo(lista) {
+  if (!lista.length) return '<tr><td colspan="7" class="fm-empty">Nenhum pagamento de hospedagem pendente neste filtro.</td></tr>';
+  return lista.map((it) => {
+    const selo = SITUACOES_FINANCEIRO.find(([st]) => st === it.status)?.[4] || '';
+    const rotulo = it.status === 'EM_ANALISE' ? 'Em análise' : 'Pendente';
+    const lote = it.hospedagem_checkout_lote_id;
+    const confirmacao = lote
+      ? `<td><input type="number" min="0" step="0.01" class="fm-input" data-fin-field="valorPago" data-fin-id="${esc(lote)}" value="${esc(it.valor)}" aria-label="Valor pago"></td>
+         <td><input type="text" class="fm-input" data-fin-field="comprovante" data-fin-id="${esc(lote)}" placeholder="https://..." aria-label="Comprovante (URL)"></td>
+         <td><button class="fm-btn primary" data-confirmar-pagamento="${esc(lote)}" type="button">Confirmar pagamento</button></td>`
+      : '<td colspan="3"><span class="fm-prazo-dia">Sem lote de check-out vinculado (lançamento anterior à reconstrução do módulo): confirme em Financeiro &gt; Pagamentos.</span></td>';
+    return `<tr>
+      <td><div class="fm-cell"><b>${esc(it.favorecido_nome || '—')}</b><span class="fm-prazo-dia">${esc(it.descricao || '—')}</span></div></td>
+      <td>${it.competencia ? brDate(it.competencia) : '—'}</td>
+      <td><b>${money(it.valor)}</b></td>
+      <td><span class="fm-badge ${selo}">${rotulo}</span></td>
+      ${confirmacao}
+    </tr>`;
+  }).join('');
+}
+
+export function renderFinanceiroQueue(items, { filtro = 'todos', busca = '' } = {}) {
+  const lista = filtrarFinanceiro(items, { filtro, busca });
+  return `<div id="ahFinPainel">
+    <div class="fm-kpis" id="ahFinKpis">${renderFinanceiroCards(items, filtro)}</div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" id="ahFinBusca" placeholder="Buscar por hotel, descrição ou competência..." autocomplete="off" value="${esc(busca)}"></div><span data-chip></span><span class="fm-count" id="ahFinCount">${lista.length} pagamento(s)</span></div>
+      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Favorecido</th><th>Competência</th><th>Valor devido</th><th>Situação</th><th>Valor pago</th><th>Comprovante (URL)</th><th>Confirmação</th></tr></thead><tbody id="ahFinCorpo">${renderFinanceiroCorpo(lista)}</tbody></table></div>
+    </div></div>
+  </div>`;
 }
