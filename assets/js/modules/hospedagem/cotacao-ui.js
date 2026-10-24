@@ -2,8 +2,9 @@
 // Fábrica criarCotacaoHotel(ctx): recebe o estado e os utilitários do controller (adm-hotel.js); a lógica pura fica em cotacao.js.
 import {
   VALIDADE_LINK_DIAS, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
-} from './cotacao.js?v=20261024-hosp-v2off1';
-import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-v2off1';
+} from './cotacao.js?v=20261024-hosp-layout3';
+import { TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-layout3';
+import { iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const ELEGIVEIS = ['AGUARDANDO', 'EM_COTACAO'];
 const ROTULO_GENERO = { MASC: 'masc.', FEM: 'fem.' };
@@ -270,12 +271,12 @@ export function criarCotacaoHotel(ctx) {
     };
   }
 
-  // Botões extras da linha do colaborador na fila v3 (respostas das cotações e resposta do hotel ao pedido de reserva).
+  // Botões de ícone extras da linha do colaborador na fila v3 (respostas das cotações e resposta do hotel ao pedido de reserva).
   function acoesDoItem(item) {
     const n = item.status_item === 'EM_COTACAO' ? cotacoesDoItem(item.item_id).length : 0;
     const pedido = item.status_item === 'AGUARDANDO_HOTEL' ? pedidoDoItem(item.item_id) : null;
-    return `${n ? `<button class="btn btn-secondary" data-v3-respostas="${esc(item.item_id)}">Respostas (${n})</button>` : ''}${pedido
-      ? `<button class="btn btn-primary" data-v3-pedido-confirmar="${esc(pedido.id)}">Confirmar reserva</button><button class="btn btn-ghost" data-v3-pedido-recusar="${esc(pedido.id)}">Hotel recusou</button>` : ''}`;
+    return `${n ? iconBtn('data-v3-respostas', item.item_id, 'anexo', `Ver as respostas dos hotéis (${n})`, 'ver') : ''}${pedido
+      ? `${iconBtn('data-v3-pedido-confirmar', pedido.id, 'termo', 'Confirmar a reserva (o hotel respondeu)', 'ok')}${iconBtn('data-v3-pedido-recusar', pedido.id, 'danger', 'Registrar que o hotel recusou', 'excluir')}` : ''}`;
   }
 
   function ligar(board) {

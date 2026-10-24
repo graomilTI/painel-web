@@ -1,16 +1,8 @@
 // Renderizadores HTML puros do módulo Hotel — não tocam em state, só formatam.
 import {
-  esc, brDate, money, statusLabel, tabGroup, STATUS_COTACAO, LOTE_STATUS_LABEL, preferenciaLabel,
+  esc, brDate, money, normalizeText, statusLabel, tabGroup, STATUS_COTACAO, LOTE_STATUS_LABEL, preferenciaLabel,
 } from './adm-hotel-helpers.js';
-
-const TABS = [
-  { key: 'todas', label: 'Todas' },
-  { key: 'solicitada', label: 'Solicitada' },
-  { key: 'reservada', label: 'Reservada' },
-  { key: 'concluida', label: 'Concluída' },
-  { key: 'cancelada', label: 'Cancelada' },
-  { key: 'fluxo', label: 'Fluxo' },
-];
+import { ICON, cardFiltro, iconBtn } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 export function renderShellAlojamentos() {
   return `
@@ -29,126 +21,80 @@ export function renderShellAlojamentos() {
   `;
 }
 
-function rowsForGroup(rows, group) {
-  if (group === 'todas' || group === 'fluxo') return rows;
-  return rows.filter((r) => tabGroup(r) === group);
+// ─── Histórico do fluxo antigo (v2), somente leitura, no layout das listas do Frotas ─────────────────────────
+const GRUPOS_HISTORICO = [
+  ['solicitada', 'Solicitada', 'amber', 'relogio', 'warn'],
+  ['reservada', 'Reservada', 'green', 'ok', 'ok'],
+  ['concluida', 'Concluída', 'blue', 'total', 'info'],
+  ['cancelada', 'Cancelada', 'red', 'erro', 'err'],
+];
+
+export function filtrarHistorico(rows, { filtro = 'todos', busca = '' } = {}) {
+  const q = normalizeText(busca);
+  return rows.filter((r) => (filtro === 'todos' || !filtro || tabGroup(r) === filtro)
+    && (!q || normalizeText([r.hotel, r.cidade, r.uf, r.solicitante_nome, r.supervisao, r.colaboradores, r.cliente, statusLabel(r),
+      brDate(r.data_checkin || r.data_checkin_prevista), brDate(r.data_checkout || r.data_checkout_prevista)].join(' ')).includes(q)));
 }
 
-export function renderTabsBar(rows, activeTab, openKpi) {
-  return TABS.map((t) => {
-    if (t.key === 'fluxo') {
-      return `<div class="ah-tab-wrap"><button class="ah-tab" data-tab="fluxo" type="button">${t.label}</button></div>`;
-    }
-    const list = rowsForGroup(rows, t.key);
-    return `
-      <div class="ah-tab-wrap">
-        <button class="ah-tab" data-active="${activeTab === t.key}" data-tab="${t.key}" type="button">
-          ${t.label}<span class="ah-count">${list.length}</span><span class="ah-kpi-arrow" data-kpi="${t.key}" title="Ver reservas">${openKpi === t.key ? '▴' : '▾'}</span>
-        </button>
-        ${openKpi === t.key ? renderKpiPopover(list, t.label) : ''}
-      </div>
-    `;
+export function renderHistoricoCards(rows, filtro) {
+  const contagem = {};
+  rows.forEach((r) => { const g = tabGroup(r); contagem[g] = (contagem[g] || 0) + 1; });
+  return cardFiltro({ filtro: 'todos', label: 'Todas', tone: 'blue', icone: 'total', valor: String(rows.length), ativo: filtro === 'todos' })
+    + GRUPOS_HISTORICO.filter(([g]) => contagem[g] || filtro === g)
+      .map(([g, label, tone, icone]) => cardFiltro({ filtro: g, label, tone, icone, valor: String(contagem[g] || 0), ativo: filtro === g })).join('');
+}
+
+export function renderHistoricoCorpo(lista) {
+  if (!lista.length) return '<tr><td colspan="7" class="fm-empty">Nenhuma solicitação neste filtro.</td></tr>';
+  return lista.map((r) => {
+    const selo = GRUPOS_HISTORICO.find(([g]) => g === tabGroup(r))?.[4] || '';
+    return `<tr>
+      <td><span class="fm-badge ${selo}">${esc(statusLabel(r))}</span></td>
+      <td>${brDate(r.data_checkin || r.data_checkin_prevista)}</td>
+      <td>${brDate(r.data_checkout || r.data_checkout_prevista)}</td>
+      <td>${esc(r.hotel || '—')}</td>
+      <td><b>${esc(r.cidade || '—')}</b><span class="fm-prazo-dia">${esc(r.uf || '—')}</span></td>
+      <td><div class="fm-cell">${esc(r.solicitante_nome || '—')}<span class="fm-prazo-dia">${esc(r.supervisao || '')}</span></div></td>
+      <td><div class="fm-actions">${iconBtn('data-open', r.solicitacao_id, 'anexo', 'Ver detalhes (somente leitura)', 'ver')}</div></td>
+    </tr>`;
   }).join('');
 }
 
-function bucketKey(row) {
-  return row.reserva_id || `sol:${row.solicitacao_id}`;
-}
-
-function groupByReserva(list) {
-  const buckets = new Map();
-  list.forEach((r) => {
-    const key = bucketKey(r);
-    if (!buckets.has(key)) {
-      buckets.set(key, { key, hotel: r.hotel, cidade: r.cidade, uf: r.uf, status: statusLabel(r), colaboradores: new Set(), rows: [] });
-    }
-    const b = buckets.get(key);
-    b.rows.push(r);
-    String(r.colaboradores || '').split(',').map((s) => s.trim()).filter(Boolean).forEach((c) => b.colaboradores.add(c));
-  });
-  return [...buckets.values()];
-}
-
-export function renderKpiPopover(list, label) {
-  const buckets = groupByReserva(list);
-  if (buckets.length === 0) {
-    return `<div class="ah-kpi-pop"><div class="ah-kpi-empty">Nenhuma reserva em ${esc(label)}.</div></div>`;
-  }
-  const totalColab = buckets.reduce((s, b) => s + b.colaboradores.size, 0);
-  return `
-    <div class="ah-kpi-pop">
-      <div class="ah-kpi-title">${esc(label)} · ${buckets.length} reserva${buckets.length === 1 ? '' : 's'} · ${totalColab} colaborador${totalColab === 1 ? '' : 'es'}</div>
-      <div class="ah-kpi-list">
-        ${buckets.map((b) => `
-          <div class="ah-kpi-item">
-            <span class="name">${esc(b.hotel || b.cidade || '—')}</span>
-            <span class="meta">${b.colaboradores.size} colab. · ${esc(b.status)}</span>
-          </div>
-          <div class="ah-kpi-guests">
-            ${[...b.colaboradores].map((c) => `<span class="ah-kpi-guest">${esc(c)}</span>`).join('')}
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-}
-
-export function renderTable(list) {
-  if (list.length === 0) {
-    return `<div class="card"><div class="ah-empty">Nenhuma solicitação neste filtro.</div></div>`;
-  }
-  return `
-    <div class="card ah-table-scroll">
-      <table class="ah-table">
-        <thead><tr>
-          <th>Status</th><th>Entrada</th><th>Saída</th><th>Hotel</th><th>Cidade</th><th>UF</th><th>Solicitante</th>
-        </tr></thead>
-        <tbody>
-          ${list.map((r) => {
-            const group = tabGroup(r);
-            const entrada = r.data_checkin || r.data_checkin_prevista;
-            const saida = r.data_checkout || r.data_checkout_prevista;
-            return `<tr data-row="${esc(r.solicitacao_id)}">
-              <td><button class="ah-chip ah-chip-${group}" data-open="${esc(r.solicitacao_id)}" type="button">${esc(statusLabel(r))}</button></td>
-              <td class="ah-mono">${brDate(entrada)}</td>
-              <td class="ah-mono">${brDate(saida)}</td>
-              <td class="ah-muted">${esc(r.hotel || '—')}</td>
-              <td class="ah-city">${esc(r.cidade || '—')}</td>
-              <td class="ah-mono ah-muted">${esc(r.uf || '—')}</td>
-              <td>
-                ${esc(r.solicitante_nome || '—')}
-                <span class="ah-sup">${esc(r.supervisao || '')}</span>
-              </td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+export function renderHistorico(rows, { filtro = 'todos', busca = '' } = {}) {
+  const lista = filtrarHistorico(rows, { filtro, busca });
+  return `<div id="ahHistPage">
+    <p class="fm-prazo-dia" style="margin:0 0 12px">Solicitações do fluxo antigo, mantidas só para consulta. Cotar, reservar e fazer check-out agora é pela aba Solicitações.</p>
+    <div class="fm-kpis" id="ahHistKpis">${renderHistoricoCards(rows, filtro)}</div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" id="ahHistBusca" placeholder="Buscar por hotel, cidade, solicitante, supervisão, colaborador ou data..." autocomplete="off" value="${esc(busca)}"></div><span data-chip></span><span class="fm-count" id="ahHistCount">${lista.length} solicitação(ões)</span></div>
+      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Status</th><th>Entrada</th><th>Saída</th><th>Hotel</th><th>Cidade/UF</th><th>Solicitante</th><th>Ações</th></tr></thead><tbody id="ahHistCorpo">${renderHistoricoCorpo(lista)}</tbody></table></div>
+    </div></div>
+  </div>`;
 }
 
 export function renderFluxoBoard(cards) {
-  if (cards.length === 0) {
-    return `
-      <div class="card ah-fluxo-placeholder">
-        <p class="eyebrow">Fluxo de caixa</p>
-        <p class="muted">Nenhum hotel com reserva enviada ao Financeiro ou crédito registrado ainda.</p>
-      </div>
-    `;
+  if (!cards.length) {
+    return `<div class="fm-card"><div class="fm-body"><div class="fm-empty">Nenhum hotel com reserva enviada ao Financeiro ou crédito registrado ainda.</div></div></div>`;
   }
+  const devido = cards.reduce((s, c) => s + c.saldoDevido, 0);
+  const credito = cards.reduce((s, c) => s + c.creditoDisponivel, 0);
   return `
-    <div class="ah-fluxo-grid">
-      ${cards.map((c) => `
-        <button class="ah-fluxo-card" data-open-extrato="${esc(c.hotelId)}" type="button">
-          <div class="ah-fluxo-card-head">
-            <span class="ah-fluxo-card-name">${esc(c.nome)}</span>
-            <span class="ah-fluxo-card-city muted">${esc(c.cidade || '—')}${c.uf ? `/${esc(c.uf)}` : ''}</span>
-          </div>
-          <div class="ah-fluxo-card-saldo ${c.saldoDevido > 0 ? 'ah-fluxo-saldo-devido' : ''}">${money(c.saldoDevido)}</div>
-          ${c.creditoDisponivel > 0 ? `<div class="ah-fluxo-card-credito">Crédito ${money(c.creditoDisponivel)}</div>` : ''}
-        </button>
-      `).join('')}
+    <div class="fm-kpis">
+      ${cardFiltro({ label: 'Hotéis com movimento', tone: 'blue', icone: 'total', valor: String(cards.length) })}
+      ${cardFiltro({ label: 'Saldo devido', tone: devido > 0 ? 'amber' : 'green', icone: 'dinheiro', valor: money(devido), dica: 'Soma do que ainda falta pagar aos hotéis' })}
+      ${cardFiltro({ label: 'Crédito disponível', tone: 'green', icone: 'ok', valor: money(credito), dica: 'Adiantamentos ainda não consumidos' })}
     </div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Hotel</th><th>Cidade/UF</th><th>Saldo devido</th><th>Crédito</th><th>Ações</th></tr></thead><tbody>
+        ${cards.map((c) => `<tr>
+          <td><b>${esc(c.nome)}</b></td>
+          <td>${esc(c.cidade || '—')}${c.uf ? `/${esc(c.uf)}` : ''}</td>
+          <td>${c.saldoDevido > 0 ? `<span class="fm-badge warn">${money(c.saldoDevido)}</span>` : money(0)}</td>
+          <td>${c.creditoDisponivel > 0 ? `<span class="fm-badge ok">${money(c.creditoDisponivel)}</span>` : '—'}</td>
+          <td><div class="fm-actions">${iconBtn('data-open-extrato', c.hotelId, 'anexo', 'Ver o extrato do hotel', 'ver')}</div></td>
+        </tr>`).join('')}
+      </tbody></table></div>
+    </div></div>
   `;
 }
 

@@ -435,20 +435,15 @@
 .ah-cot-tabela td:last-child { text-align: right; white-space: nowrap; }
 .ah-cot-total { margin: 0; font-size: 14px; }
 
-/* ---- Fila v3 por colaborador (modules/hospedagem/fila-ui.js) ---- */
-.ah-v3-head, .ah-v3-item { display: grid; align-items: center; gap: 12px; }
-.ah-v3-head { grid-template-columns: 1fr auto; margin-bottom: 14px; }
-.ah-v3-head h3 { margin: 3px 0; }
-.ah-v3-filters { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.ah-v3-list { display: grid; gap: 8px; }
-.ah-v3-item { grid-template-columns: 24px minmax(170px, 1.2fr) minmax(180px, 1fr) minmax(145px, .8fr) auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
-.ah-v3-item small, .ah-v3-status { display: block; margin-top: 4px; }
-.ah-v3-actions { display: flex; gap: 6px; }
-.ah-v3-actions .btn { width: auto; padding: 7px 10px; }
-.ah-v3-status { font-size: 11px; font-weight: 800; text-transform: uppercase; }
+/* ---- Reserva manual da fila v3 (modules/hospedagem/reserva-ui.js): lista de colaboradores do modal ---- */
 .ah-v3-modal-list { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
-@media (max-width: 900px) {
-  .ah-v3-filters { grid-template-columns: 1fr 1fr; }
-  .ah-v3-item { grid-template-columns: 24px 1fr; }
-  .ah-v3-actions { grid-column: 2; flex-wrap: wrap; }
-}
+
+/* ---- Avisos da fila v3 (checkout confirmado pelo hotel, alteração pedida pelo gestor) no layout das listas do Frotas ---- */
+#ahV3Avisos { display: grid; gap: 8px; margin-bottom: 12px; }
+#ahV3Avisos:empty { display: none; }
+#ahV3Avisos .hosp-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid rgba(245, 158, 11, .34); border-radius: 14px; background: rgba(245, 158, 11, .1); color: #fde68a; font-size: 13px; font-weight: 700; }
+#ahV3Avisos .hosp-note .btn { width: auto; min-height: 34px; padding: 0 14px; border-radius: 10px; margin-left: auto; }
+
+/* Tabelas da página de Hotéis: o padrão do Frotas pede 980px; estas têm menos colunas. */
+#ahV3Page .fm-table { min-width: 880px; }
+#ahHistPage .fm-table { min-width: 820px; }

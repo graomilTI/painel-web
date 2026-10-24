@@ -3,17 +3,19 @@
 // via adm-hotel-deferred.js).
 import { initProtectedPage } from './pageInit.js';
 import { supabase } from './supabaseClient.js';
-import { ensureStyles, tabGroup, normalizeText, toast, esc, brDate, money } from './adm-hotel-helpers.js';
+import { ensureStyles, normalizeText, toast, esc, brDate, money } from './adm-hotel-helpers.js';
+import { tabs } from './core/ui.js';
+import { injectEstilosFrotas, aoClicarCard, sincronizarCards } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import {
-  renderShellAlojamentos, renderTabsBar, renderTable, renderDetalhes,
+  renderShellAlojamentos, renderDetalhes, renderHistorico, renderHistoricoCards, renderHistoricoCorpo, filtrarHistorico,
   renderFinanceiroShell, renderFinanceiroQueue,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
-import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-v2off1';
-import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-v2off1';
-import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-v2off1';
-import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-v2off1';
-import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-v2off1';
+import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-layout3';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-layout3';
+import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-layout3';
+import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-layout3';
+import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-layout3';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();
@@ -27,8 +29,9 @@ const state = {
   advances: [], advanceMoves: [], checkoutLots: [],
   v3Items: [], v3Changes: [], v3Checkout: [], v3Payments: [], v3Installments: [], v3Cotacoes: [], v3Pedidos: [],
   loading: false, error: null, loaded: false,
-  activeTab: 'todas', openKpi: null,
-  v3Filters: { status:'',date:'',city:'',person:'',supervision:'' },
+  activeTab: 'solicitacoes', // solicitacoes (fila v3) | historico (fluxo antigo, leitura) | fluxo (saldo por hotel)
+  v3Filtro: 'todos', v3Busca: '',
+  histFiltro: 'todos', histBusca: '',
 };
 
 const financeiro = {
@@ -46,58 +49,75 @@ ctx.reserva = criarReserva(ctx);
 ctx.pagamento = criarPagamento(ctx);
 const filaV3 = criarFila(ctx);
 
-function visibleRows() {
-  if (state.activeTab === 'todas' || state.activeTab === 'fluxo') return state.rows;
-  return state.rows.filter((r) => tabGroup(r) === state.activeTab);
-}
+const ABAS = [
+  ['solicitacoes', 'Solicitações'],
+  ['historico', 'Histórico (fluxo antigo)'],
+  ['fluxo', 'Fluxo por hotel'],
+];
+
+// Solicitações do fluxo antigo (v2): as do v3 aparecem na fila, não aqui.
+const linhasHistorico = () => state.rows.filter((r) => Number(r.fluxo_versao || 2) !== 3);
 
 function renderTabsAndWire() {
   const el = document.getElementById('ahTabs');
   if (!el) return;
-  el.innerHTML = renderTabsBar(state.rows, state.activeTab, state.openKpi);
+  const badge = { solicitacoes: state.v3Items.filter((i) => i.status_item !== 'CANCELADO').length, historico: linhasHistorico().length };
+  el.innerHTML = tabs({ itens: ABAS.map(([id, label]) => ({ id, label, badge: badge[id] })), ativo: state.activeTab, attr: 'data-tab' });
   el.querySelectorAll('[data-tab]').forEach((b) => {
     b.addEventListener('click', () => {
       state.activeTab = b.dataset.tab;
-      state.openKpi = null;
       renderAll();
     });
   });
-  el.querySelectorAll('.ah-kpi-arrow').forEach((a) => {
-    a.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const key = a.dataset.kpi;
-      state.openKpi = state.openKpi === key ? null : key;
-      renderTabsAndWire();
-    });
+}
+
+// Histórico do fluxo antigo: busca e cards só trocam o miolo (a caixa de busca mantém o foco).
+function ligarHistorico(board) {
+  const atualizar = () => {
+    const lista = filtrarHistorico(linhasHistorico(), { filtro: state.histFiltro, busca: state.histBusca });
+    board.querySelector('#ahHistKpis').innerHTML = renderHistoricoCards(linhasHistorico(), state.histFiltro);
+    board.querySelector('#ahHistCorpo').innerHTML = renderHistoricoCorpo(lista);
+    board.querySelector('#ahHistCount').textContent = `${lista.length} solicitação(ões)`;
+    sincronizarCards(board, state.histFiltro);
+    ligarAbrirDetalhes(board);
+  };
+  board.querySelector('#ahHistBusca').addEventListener('input', (e) => { state.histBusca = e.target.value; atualizar(); });
+  aoClicarCard(board, (card, limpar) => {
+    state.histFiltro = limpar || !card || state.histFiltro === card.dataset.filtro ? 'todos' : card.dataset.filtro;
+    atualizar();
   });
+  sincronizarCards(board, state.histFiltro);
+  ligarAbrirDetalhes(board);
+}
+
+function ligarAbrirDetalhes(raiz) {
+  raiz.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openDetalhes(b.dataset.open)));
 }
 
 function renderBoard() {
   const board = document.getElementById('ahBoard');
   if (!board) return;
+  if (state.loading) {
+    board.innerHTML = '<div class="fm-card"><div class="fm-body"><div class="fm-empty">Carregando...</div></div></div>';
+    return;
+  }
+  if (state.error) {
+    board.innerHTML = `<div class="fm-card"><div class="fm-body"><div class="fm-empty ah-error">Erro ao carregar: ${esc(state.error)}</div></div></div>`;
+    return;
+  }
   if (state.activeTab === 'fluxo') {
-    if (state.loading) {
-      board.innerHTML = '<div class="card ah-empty">Carregando...</div>';
-      return;
-    }
     board.innerHTML = renderFluxoBoard(hotelLedger());
     board.querySelectorAll('[data-open-extrato]').forEach((b) => {
       b.addEventListener('click', () => openHotelExtrato(b.dataset.openExtrato));
     });
     return;
   }
-  if (state.loading) {
-    board.innerHTML = '<div class="card ah-empty">Carregando...</div>';
+  if (state.activeTab === 'historico') {
+    board.innerHTML = renderHistorico(linhasHistorico(), { filtro: state.histFiltro, busca: state.histBusca });
+    ligarHistorico(board);
     return;
   }
-  if (state.error) {
-    board.innerHTML = `<div class="card ah-empty ah-error">Erro ao carregar: ${state.error}</div>`;
-    return;
-  }
-  board.innerHTML = `${filaV3.render()}${renderTable(visibleRows().filter((r) => Number(r.fluxo_versao || 2) !== 3))}`;
-  board.querySelectorAll('[data-open]').forEach((b) => {
-    b.addEventListener('click', () => openDetalhes(b.dataset.open));
-  });
+  board.innerHTML = filaV3.render();
   filaV3.ligar(board);
 }
 
@@ -351,26 +371,18 @@ async function renderHotelExtratoAsync(hotelId) {
   });
 }
 
-document.addEventListener('click', (e) => {
-  if (state.openKpi && !e.target.closest('.ah-tab-wrap')) {
-    state.openKpi = null;
-    renderTabsAndWire();
-  }
-});
-
 function renderHoteisShell() {
+  injectEstilosFrotas();
   contentEl.innerHTML = `
-    <section class="hero-card">
-      <div>
-        <div class="eyebrow">Hospedagem</div>
-        <h2>Hotéis</h2>
-        <p>Cotação, reserva, pagamento e histórico de hospedagem em hotel.</p>
+    <section class="card mt-16 ah-page" id="ahPage">
+      <div class="frotas-hub-tabs" id="ahTabs"></div>
+      <div class="frotas-hub-tab-body fm-shell">
+        <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="ahAtualizar" type="button">↻ Atualizar</button></div></div>
+        <div id="ahBoard"></div>
       </div>
-      <div class="hero-badge-wrap"><span class="hero-badge">HOTELARIA</span></div>
     </section>
-    <div class="ah-tabs" id="ahTabs"></div>
-    <div id="ahBoard"></div>
   `;
+  document.getElementById('ahAtualizar').onclick = () => loadPainel();
   renderAll();
   if (!state.loaded && !state.loading) loadPainel();
 }

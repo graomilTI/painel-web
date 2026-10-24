@@ -96,7 +96,7 @@ export function ensureStyles() {
   const link = document.createElement('link');
   link.id = 'admHotelCss';
   link.rel = 'stylesheet';
-  link.href = './assets/css/adm-hotel.css?v=20261024-hosp-v2off1';
+  link.href = './assets/css/adm-hotel.css?v=20261024-hosp-layout3';
   document.head.appendChild(link);
 }
 
