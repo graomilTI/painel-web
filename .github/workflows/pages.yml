@@ -28,6 +28,12 @@ jobs:
           node --check assets/js/cotacaoHotelRegras.js
           node --check assets/js/modules/hospedagem/cotacao.js
           node --check assets/js/modules/hospedagem/cotacao-ui.js
+          node --check assets/js/modules/hospedagem/fila-ui.js
+          node --check assets/js/modules/hospedagem/reserva-ui.js
+          node --check assets/js/modules/hospedagem/pagamento-ui.js
+          node --check assets/js/modules/hospedagem/repository.js
+          node --check assets/js/modules/hospedagem/service.js
+          node --check assets/js/modules/hospedagem/ui-comum.js
           node --check assets/js/compras.js
           node --check assets/js/patrimonios.js
           node --check assets/js/programacao.js
