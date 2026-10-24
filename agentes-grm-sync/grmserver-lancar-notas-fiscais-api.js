@@ -70,6 +70,7 @@ const util = require('util');
 const { createClient } = require('@supabase/supabase-js');
 
 const { isFrotasRow, applyFrotasRules } = require('./grm-nf-frotas-regras');
+const { isHospedagemRow, applyHospedagemRules } = require('./grm-nf-hospedagem-regras');
 const execFile = util.promisify(childProcess.execFile);
 
 const GRM_BASE_URL = String(process.env.GRMSERVER_API_URL || 'https://www.grmserver.com.br/api/').replace(/\/?$/, '/');
@@ -1157,6 +1158,34 @@ async function loadFrotasContext(row) {
   return { ...m, placa: v && v.placa, coordenacao: v && v.coordenacao };
 }
 
+// NFS-e de hotel (setor HOSPEDAGEM): a NF pertence a uma parcela de pagamento, que pertence a uma reserva com seus hospedados.
+// O vínculo é hospedagem_pagamento_documentos.grm_nf_lancamento_id = linha da fila (criado por hospedagem_v3_enfileirar_nfse).
+async function loadHospedagemContext(row) {
+  const { data: doc, error: errDoc } = await supabase.from('hospedagem_pagamento_documentos')
+    .select('parcela_id').eq('grm_nf_lancamento_id', row.id).limit(1).maybeSingle();
+  if (errDoc) throw errDoc;
+  if (!doc) return null;
+  const { data: parcela, error: errParcela } = await supabase.from('hospedagem_pagamento_parcelas')
+    .select('pagamento_id').eq('id', doc.parcela_id).maybeSingle();
+  if (errParcela) throw errParcela;
+  const { data: pagamento, error: errPag } = parcela
+    ? await supabase.from('hospedagem_pagamentos_v3').select('reserva_id').eq('id', parcela.pagamento_id).maybeSingle()
+    : { data: null, error: null };
+  if (errPag) throw errPag;
+  if (!pagamento) return null;
+  const { data: reserva, error: errReserva } = await supabase.from('hospedagem_reservas')
+    .select('codigo_operacional,nome_hotel,data_checkin,data_checkout').eq('id', pagamento.reserva_id).maybeSingle();
+  if (errReserva) throw errReserva;
+  if (!reserva) return null;
+  const { data: itens, error: errItens } = await supabase.from('hospedagem_solicitacao_colaboradores')
+    .select('nome_colaborador,coordenacao,quantidade_diarias_prevista').eq('reserva_id', pagamento.reserva_id).neq('status_item', 'CANCELADO');
+  if (errItens) throw errItens;
+  return {
+    codigo: reserva.codigo_operacional, hotel: reserva.nome_hotel, checkin: reserva.data_checkin, checkout: reserva.data_checkout,
+    itens: safe(itens).map((i) => ({ nome: i.nome_colaborador, coordenacao: i.coordenacao, diarias: i.quantidade_diarias_prevista })),
+  };
+}
+
 async function loadComprasContext(row) {
   const bucket = row.storage_bucket || 'notas-fiscais';
   const urls = Array.from(new Set([
@@ -2028,6 +2057,10 @@ async function processUpload(row, runId) {
     if (documentKind !== 'HOLERITE' && isFrotasRow(row)) {
       const ctxFrotas = await loadFrotasContext(row);
       if (ctxFrotas) data = applyFrotasRules(data, ctxFrotas, { fallback: (config.compras && config.compras.coordenacao_fallback) || 'GERAL' });
+    }
+    if (documentKind !== 'HOLERITE' && isHospedagemRow(row)) {
+      const ctxHospedagem = await loadHospedagemContext(row);
+      if (ctxHospedagem) data = applyHospedagemRules(data, ctxHospedagem, { fallback: (config.compras && config.compras.coordenacao_fallback) || 'GERAL' });
     }
     data.tipo_documento_fluxo = documentKind;
     applyManualOverrides(data, row.ajustes_manuais);
