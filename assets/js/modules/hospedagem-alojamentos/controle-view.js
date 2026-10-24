@@ -1,4 +1,5 @@
-import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './util.js?v=20261024-aloj1';
+import { esc, money, brDate, safeUrl, icon, fullAddress, contractAlert, normalizeText } from './util.js?v=20261024-aloj4';
+import { ICON, cardFiltro, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -20,10 +21,11 @@ function serviceCard(kind, title, included, matricula, extra = '', titular = '')
   </div>`;
 }
 
-function compactService(label, value, kind) {
-  const state = value === true ? 'Incluso' : value === false ? 'Pago' : '—';
-  const className = value === true ? 'included' : value === false ? 'paid' : '';
-  return `<span class="aloj-v2-mini-service ${className}" title="${esc(label)}: ${esc(state)}"><i class="${esc(kind)}"></i>${esc(label)} ${esc(state)}</span>`;
+// Serviço da casa no padrão do Frotas: selo verde quando está incluso no aluguel, âmbar quando o gestor paga.
+function servicoBadge(label, value) {
+  const estado = value === true ? 'incluso' : value === false ? 'pago' : '—';
+  const tom = value === true ? 'ok' : value === false ? 'warn' : '';
+  return `<span class="fm-badge ${tom}" title="${esc(label)}: ${esc(estado)}">${esc(label)} ${esc(estado)}</span>`;
 }
 
 function supervisoesLabel(row = {}) {
@@ -34,23 +36,24 @@ function supervisoesLabel(row = {}) {
   return [...new Set(values)].join(' · ') || 'Não informado';
 }
 
+const iniciais = (nome) => String(nome || '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
+
+// Botão de ícone do padrão do Frotas; o clique é tratado por delegação em controle.js ([data-aloj-v2-action]).
+function acaoBtn(acao, row, classe, titulo, icone) {
+  const nome = row.nome || 'alojamento';
+  return `<button type="button" class="fm-ic ${classe}" data-aloj-v2-action="${acao}" data-id="${esc(row.id)}" title="${esc(titulo)}" aria-label="${esc(`${titulo}: ${nome}`)}">${icone}</button>`;
+}
+
 function renderListRow(row) {
-  const status = String(row.status || 'ATIVO').toLowerCase();
-  return `<div class="aloj-v2-list-row" data-id="${esc(row.id)}">
-    <div class="aloj-v2-list-open-cell"><button type="button" class="aloj-v2-expand-btn" data-aloj-v2-action="details" data-id="${esc(row.id)}" aria-label="Abrir detalhes de ${esc(row.nome || 'alojamento')}" title="Abrir detalhes">+</button><button type="button" class="aloj-v2-icon-btn aloj-v2-obs-btn" data-aloj-v2-action="obs" data-id="${esc(row.id)}" aria-label="Observações de ${esc(row.nome || 'alojamento')}" title="Observações">${icon('notes')}</button><button type="button" class="aloj-v2-icon-btn aloj-v2-delete-btn" data-aloj-v2-action="delete" data-id="${esc(row.id)}" aria-label="Excluir ${esc(row.nome || 'alojamento')}" title="Excluir">${icon('trash')}</button></div>
-    <div class="aloj-v2-list-identity">
-      <div class="aloj-v2-list-home">${icon('home')}</div>
-      <div class="aloj-v2-list-title"><strong>${esc(row.nome || 'Alojamento sem nome')}</strong><span>${esc(row.tipo || 'CASA')} · ${esc([row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado')}</span></div>
-    </div>
-    <div class="aloj-v2-list-cell" data-label="Responsável"><strong>${esc(row.responsavel || 'Não informado')}</strong><span>${esc(row.contato || '')}</span></div>
-    <div class="aloj-v2-list-cell rent" data-label="Aluguel"><strong>${row.valor_aluguel ? money(row.valor_aluguel) : 'Não informado'}</strong><span>${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</span></div>
-    <div class="aloj-v2-list-services" data-label="Serviços">
-      ${compactService('Água', row.agua_inclusa, 'water')}
-      ${compactService('Luz', row.energia_inclusa, 'energy')}
-      ${compactService('Internet', row.internet_inclusa, 'internet')}
-    </div>
-    <div class="aloj-v2-list-status"><span class="aloj-v2-status ${esc(status)}">${esc(row.status || 'ATIVO')}</span>${contractAlert(row) ? '<small>Contrato a vencer</small>' : ''}</div>
-  </div>`;
+  const ativo = String(row.status || 'ATIVO').toUpperCase() === 'ATIVO';
+  return `<tr data-id="${esc(row.id)}">
+    <td><div class="fm-person${ativo ? '' : ' inativo'}"><span class="fm-avatar">${esc(iniciais(row.nome))}</span><div class="fm-cell"><b>${esc(row.nome || 'Alojamento sem nome')}</b><span class="fm-prazo-dia">${esc(row.tipo || 'CASA')} · ${esc([row.cidade, row.uf].filter(Boolean).join('/') || 'Local não informado')}</span></div></div></td>
+    <td><div class="fm-cell"><b>${esc(row.responsavel || 'Não informado')}</b><span class="fm-prazo-dia">${esc(row.contato || '')}</span></div></td>
+    <td><div class="fm-cell"><b>${row.valor_aluguel ? money(row.valor_aluguel) : 'Não informado'}</b><span class="fm-prazo-dia">${esc(row.capacidade || 0)} vagas · ${esc(row.quartos || 0)} quartos</span></div></td>
+    <td><div class="fm-situacao">${servicoBadge('Água', row.agua_inclusa)}${servicoBadge('Luz', row.energia_inclusa)}${servicoBadge('Internet', row.internet_inclusa)}</div></td>
+    <td><div class="fm-cell"><span class="fm-badge ${ativo ? 'ok' : 'err'}">${esc(row.status || 'ATIVO')}</span>${contractAlert(row) ? '<span class="fm-prazo-dia fm-prox">Contrato a vencer</span>' : ''}</div></td>
+    <td><div class="fm-actions">${acaoBtn('details', row, 'anexo', 'Abrir detalhes', ICON.ver)}${acaoBtn('obs', row, '', 'Observações', ICON.doc)}${acaoBtn('delete', row, 'danger', 'Excluir', ICON.excluir)}</div></td>
+  </tr>`;
 }
 
 export function renderDetailsContent(row) {
@@ -181,23 +184,53 @@ export function renderObsList(notes, selectedDate) {
   </div>`).join('');
 }
 
+// Cadastro de alojamentos no layout das listas do Frotas: cards que filtram, busca com chip e tabela fixa.
+export function filtrarAlojamentos(rows, { filtro = 'todos', query = '' } = {}) {
+  const q = normalizeText(query);
+  return rows.filter((row) => {
+    const ativo = String(row.status || 'ATIVO').toUpperCase() === 'ATIVO';
+    if (filtro === 'ATIVO' && !ativo) return false;
+    if (filtro === 'INATIVO' && ativo) return false;
+    if (filtro === 'contrato' && !contractAlert(row)) return false;
+    return !q || normalizeText([row.nome, row.responsavel, row.contato, row.cidade, row.uf, row.bairro, row.endereco_logradouro, row.endereco, row.agua_matricula, row.agua_titular, row.energia_matricula, row.energia_titular, row.internet_matricula, row.internet_titular, row.gas_titular, row.gas_forma_pagamento].join(' ')).includes(q);
+  });
+}
+
+function cardsHtml(rows, filtro) {
+  const ativos = rows.filter((row) => String(row.status || 'ATIVO').toUpperCase() === 'ATIVO').length;
+  const inativos = rows.length - ativos;
+  const contratos = rows.filter(contractAlert).length;
+  const aluguel = rows.reduce((sum, row) => sum + Number(row.valor_aluguel || 0), 0);
+  return cardFiltro({ filtro: 'todos', label: 'Todos', tone: 'blue', icone: 'total', valor: String(rows.length), ativo: filtro === 'todos' })
+    + cardFiltro({ filtro: 'ATIVO', label: 'Ativos', tone: 'green', icone: 'ok', valor: String(ativos), ativo: filtro === 'ATIVO' })
+    + (inativos || filtro === 'INATIVO' ? cardFiltro({ filtro: 'INATIVO', label: 'Inativos', tone: 'red', icone: 'erro', valor: String(inativos), ativo: filtro === 'INATIVO' }) : '')
+    + cardFiltro({ filtro: 'contrato', label: 'Contratos a vencer', tone: 'amber', icone: 'alerta', valor: String(contratos), dica: 'Contratos que terminam nos próximos 60 dias', ativo: filtro === 'contrato' })
+    + cardFiltro({ label: 'Aluguel mensal', tone: 'purple', icone: 'dinheiro', valor: money(aluguel), dica: 'Soma do aluguel de todos os cadastros' });
+}
+
 export function panelHtml() {
-  return `<div class="aloj-v2-shell"><section class="aloj-v2-head"><div><div class="aloj-v2-eyebrow">Hospedagem</div><h3>Controle de Alojamentos</h3><p>Visualize a lista e use o botão + para abrir as informações completas de cada alojamento.</p></div><div class="aloj-v2-head-actions"><div class="aloj-v2-search-wrap">${icon('search')}<input id="alojV2Search" class="aloj-v2-search" placeholder="Buscar alojamento, cidade ou responsável..."></div><button type="button" class="aloj-v2-primary" id="alojV2New">+ Novo alojamento</button></div></section>
-    <section class="aloj-v2-kpis"><div class="aloj-v2-kpi"><span>Alojamentos</span><strong id="alojV2KpiTotal">0</strong></div><div class="aloj-v2-kpi accent"><span>Ativos</span><strong id="alojV2KpiAtivos">0</strong></div><div class="aloj-v2-kpi accent"><span>Aluguel mensal</span><strong id="alojV2KpiAluguel">R$ 0,00</strong></div><div class="aloj-v2-kpi"><span>Contratos a vencer</span><strong id="alojV2KpiContratos">0</strong></div></section>
-    <section id="alojV2List" class="aloj-v2-list"><div class="aloj-v2-loading"><strong>Carregando alojamentos</strong>Aguarde a consulta da base.</div></section>${detailsModalHtml()}${modalHtml()}${obsModalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
+  return `<div class="aloj-v2-shell"><div id="alojCadPanel">
+    <div class="fm-topo"><div class="fm-head-actions"><button type="button" class="fm-btn primary" id="alojV2New">+ Novo alojamento</button></div></div>
+    <div class="fm-kpis" id="alojV2Kpis"></div>
+    <div class="fm-card"><div class="fm-body">
+      <div class="fm-bar"><div class="fm-search">${ICON.busca}<input id="alojV2Search" class="fm-input" placeholder="Buscar alojamento, cidade, responsável ou matrícula..." autocomplete="off"></div><span data-chip></span><span class="fm-count" id="alojV2Count">0 alojamento(s)</span></div>
+      <div id="alojV2List"><div class="fm-empty">Carregando alojamentos...</div></div>
+    </div></div>
+  </div>${detailsModalHtml()}${modalHtml()}${obsModalHtml()}<div id="alojV2Toast" class="aloj-v2-toast"></div></div>`;
 }
 
 export function renderRows(state) {
   const list = document.getElementById('alojV2List');
   if (!list) return;
-  const query = normalizeText(state.query);
-  const rows = state.rows.filter((row) => !query || normalizeText([row.nome, row.responsavel, row.contato, row.cidade, row.uf, row.bairro, row.endereco_logradouro, row.endereco, row.agua_matricula, row.agua_titular, row.energia_matricula, row.energia_titular, row.internet_matricula, row.internet_titular, row.gas_titular, row.gas_forma_pagamento].join(' ')).includes(query));
-  list.innerHTML = rows.length ? `<div class="aloj-v2-list-table"><div class="aloj-v2-list-head"><span></span><span>Alojamento</span><span>Responsável</span><span>Aluguel / estrutura</span><span>Serviços</span><span>Status</span></div><div class="aloj-v2-list-body">${rows.map(renderListRow).join('')}</div></div>` : '<div class="aloj-v2-empty"><strong>Nenhum alojamento encontrado</strong>Revise a busca ou cadastre um novo alojamento.</div>';
-  const values = {
-    alojV2KpiTotal: state.rows.length,
-    alojV2KpiAtivos: state.rows.filter((row) => String(row.status || 'ATIVO') === 'ATIVO').length,
-    alojV2KpiAluguel: money(state.rows.reduce((sum, row) => sum + Number(row.valor_aluguel || 0), 0)),
-    alojV2KpiContratos: state.rows.filter(contractAlert).length
-  };
-  Object.entries(values).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.textContent = value; });
+  const filtro = state.filtro || 'todos';
+  const rows = filtrarAlojamentos(state.rows, { filtro, query: state.query });
+  list.innerHTML = rows.length
+    ? `<div class="fm-table-wrap"><table class="fm-table"><thead><tr><th>Alojamento</th><th>Responsável</th><th>Aluguel / estrutura</th><th>Serviços</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows.map(renderListRow).join('')}</tbody></table></div>`
+    : '<div class="fm-empty">Nenhum alojamento encontrado. Revise a busca ou cadastre um novo alojamento.</div>';
+  const kpis = document.getElementById('alojV2Kpis');
+  if (kpis) kpis.innerHTML = cardsHtml(state.rows, filtro);
+  const count = document.getElementById('alojV2Count');
+  if (count) count.textContent = `${rows.length} alojamento(s)`;
+  const painel = document.getElementById('alojCadPanel');
+  if (painel) sincronizarCards(painel, filtro);
 }

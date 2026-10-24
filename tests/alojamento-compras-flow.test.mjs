@@ -23,7 +23,7 @@ test('Hospedagem carrega menu e fila filtrada de compras de alojamento', () => {
   assert.match(pagamentos, /data-aloj-pay-mode="compras"/);
   assert.match(deferred, /hospedagem-alojamentos\/compras\.js/);
   assert.match(alojamentos, /\.eq\('tipo_solicitacao','Alojamento'\)/);
-  assert.match(alojamentos, /data-aloj-buy-filter="pendente"/);
+  assert.match(alojamentos, /\['pendente', 'Solicitações'/); // etapas da fila, agora cards que filtram (padrão do Frotas)
   assert.match(alojamentos, /data-aloj-buy-purchase/);
 });
 

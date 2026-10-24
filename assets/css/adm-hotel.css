@@ -447,3 +447,12 @@
 /* Tabelas da página de Hotéis: o padrão do Frotas pede 980px; estas têm menos colunas. */
 #ahV3Page .fm-table { min-width: 880px; }
 #ahHistPage .fm-table { min-width: 820px; }
+
+/* Alojamentos no layout do Frotas: a grade do painel e dos modos (Pagamentos, Compras, Hospedados) não pode crescer além da página
+   quando a tabela tem largura mínima; a rolagem fica dentro de .fm-table-wrap. */
+#tab-alojamentos .aloj-v2-shell,
+#tab-alojamentos .aloj-v2-shell > .aloj-pay-panel,
+#tab-alojamentos .aloj-v2-shell > .aloj-buy-panel,
+#tab-alojamentos .aloj-v2-shell > .aloj-hosp-panel { grid-template-columns: minmax(0, 1fr); }
+#tab-alojamentos .fm-table { min-width: 820px; }
+#tab-alojamentos .fm-btn svg, #ahPage .fm-btn svg { width: 16px; height: 16px; flex: none; }

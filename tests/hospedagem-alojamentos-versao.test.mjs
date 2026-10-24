@@ -12,7 +12,7 @@ const ler = (caminho) => readFileSync(new URL(caminho, raiz), 'utf8');
 const MODULOS = readdirSync(new URL('assets/js/modules/hospedagem-alojamentos/', raiz)).filter((n) => n.endsWith('.js')).map((n) => n.slice(0, -3));
 
 test('o módulo de Alojamentos tem todos os arquivos e nenhum ficou solto em assets/js', () => {
-  assert.deepEqual(MODULOS.sort(), ['compras', 'controle', 'controle-view', 'hospedados', 'pagamentos', 'separacao-modulos', 'util']);
+  assert.deepEqual(MODULOS.sort(), ['compras', 'controle', 'controle-view', 'hospedados', 'pagamentos', 'util']);
   const soltos = readdirSync(new URL('assets/js/', raiz)).filter((n) => /^adm-hotel-(alojamentos|hospedados|separacao)/.test(n));
   assert.deepEqual(soltos, []);
 });
@@ -31,7 +31,7 @@ test('todo import interno de Alojamentos leva o mesmo ?v= do carregador e da pá
     assert.ok(x[1], 'adm-hotel-deferred.js importa módulo sem ?v=');
     tokens.add(x[1]);
   }
-  assert.equal(deferred.match(/importSafe\('\.\/modules\/hospedagem-alojamentos\//g).length, 5, 'o carregador importa os 5 módulos que se montam sozinhos');
+  assert.equal(deferred.match(/importSafe\('\.\/modules\/hospedagem-alojamentos\//g).length, 4, 'o carregador importa os 4 módulos que se montam sozinhos');
   const versaoDeferred = deferred.match(/const VERSION = '([^']+)'/)[1];
   const html = ler('adm-hotel.html').match(/adm-hotel-deferred\.js\?v=([^"']+)/)[1];
   tokens.add(versaoDeferred);

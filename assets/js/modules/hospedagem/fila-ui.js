@@ -1,8 +1,8 @@
 // Fila v3 da Hospedagem (ADM): colaboradores por status no layout das listas do Frotas (cards que filtram, busca com chip, tabela
 // fixa e botões de ícone). Fábrica criarFila(ctx). O CSS vem de patrimonioLayoutFrotas.js (.fm-*); aqui só HTML e eventos.
 import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, filtrarFila } from './service.js?v=20261024-hosp-layout3';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-layout3';
+import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, filtrarFila } from './service.js?v=20261024-hosp-layout5';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-layout5';
 
 const iniciais = (nome) => String(nome || '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 
