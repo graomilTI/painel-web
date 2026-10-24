@@ -14,6 +14,7 @@ import {
   renderFinanceiroShell, renderFinanceiroQueue,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-cot1';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();
@@ -25,7 +26,7 @@ function currentMode() {
 const state = {
   rows: [], hotels: [], people: [], assignments: [], links: [], quotes: [], finance: [], documents: [],
   advances: [], advanceMoves: [], checkoutLots: [],
-  v3Items: [], v3Changes: [], v3Checkout: [], v3Payments: [], v3Installments: [],
+  v3Items: [], v3Changes: [], v3Checkout: [], v3Payments: [], v3Installments: [], v3Cotacoes: [], v3Pedidos: [],
   loading: false, error: null, loaded: false,
   activeTab: 'todas', openKpi: null,
   v3Filters: { status:'',date:'',city:'',person:'',supervision:'' },
@@ -66,6 +67,9 @@ const financeiro = {
 
 let contentEl = null;
 let quotesChannel = null;
+
+// Cotação por link, resposta dos hotéis e confirmação do pedido de reserva (módulo próprio, ver modules/hospedagem/).
+const cotacaoHotel = criarCotacaoHotel({ supabase, state, modalRoot, loadPainel, toast, esc, money, normalizeText });
 
 function visibleRows() {
   if (state.activeTab === 'todas' || state.activeTab === 'fluxo') return state.rows;
@@ -110,7 +114,7 @@ function renderV3Queue() {
       <div><b>${esc(i.nome_colaborador)}</b><small>${esc(i.supervisao || 'Sem supervisão')} · ${esc(i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente')}</small></div>
       <div><b>${esc(i.cidade)}/${esc(i.uf)}</b><small>${brDate(i.data_checkin_prevista)} ${esc(String(i.horario_chegada_previsto || '').slice(0,5))} · ${i.quantidade_diarias_prevista} diária(s)</small></div>
       <div><span class="ah-v3-status s-${esc(i.status_item)}">${esc(V3_LABELS[i.status_item] || i.status_item)}</span>${i.hotel ? `<small>${esc(i.hotel)} · ${esc(i.codigo_operacional || '')}</small>` : ''}</div>
-      <div class="ah-v3-actions">${['AGUARDANDO','EM_COTACAO'].includes(i.status_item) ? `<button class="btn btn-secondary" data-v3-cotar="${esc(i.item_id)}">Cotar</button><button class="btn btn-primary" data-v3-reservar="${esc(i.item_id)}">Reservar</button><button class="btn btn-ghost" data-v3-recusar="${esc(i.item_id)}">Recusar</button>` : ''}${i.status_item === 'RESERVADO' ? `<button class="btn btn-secondary" data-v3-extra="${esc(i.reserva_id)}">Despesa extra</button><button class="btn btn-secondary" data-v3-payment="${esc(i.reserva_id)}">Pagamento</button>` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? `<span class="muted">Aguardando confirmações</span>` : ''}</div>
+      <div class="ah-v3-actions">${['AGUARDANDO','EM_COTACAO'].includes(i.status_item) ? `<button class="btn btn-secondary" data-v3-cotar="${esc(i.item_id)}">Cotar</button><button class="btn btn-primary" data-v3-reservar="${esc(i.item_id)}">Reservar</button><button class="btn btn-ghost" data-v3-recusar="${esc(i.item_id)}">Recusar</button>` : ''}${cotacaoHotel.acoesDoItem(i)}${i.status_item === 'RESERVADO' ? `<button class="btn btn-secondary" data-v3-extra="${esc(i.reserva_id)}">Despesa extra</button><button class="btn btn-secondary" data-v3-payment="${esc(i.reserva_id)}">Pagamento</button>` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? `<span class="muted">Aguardando confirmações</span>` : ''}</div>
     </article>`).join('')}</div>
     ${state.v3Checkout.filter((d)=>d.status==='AGUARDANDO_ADM').map((d)=>`<div class="hosp-note">Hotel confirmou ${esc(d.decisao || 'checkout')} · <button class="btn btn-primary" data-v3-validate-checkout="${esc(d.id)}">Validar e concluir</button></div>`).join('')}
     ${state.v3Changes.map((a)=>`<div class="hosp-note">Alteração ${esc(a.tipo)} aguardando tratamento · ${brDate(a.solicitada_em)} ${['PRORROGACAO','CANCELAMENTO'].includes(a.tipo)&&a.status==='AGUARDANDO_ADM'?`<button class="btn btn-primary" data-v3-handle-change="${esc(a.id)}">Enviar ao hotel</button>`:''}${['MUDANCA_DATAS','MUDANCA_CIDADE'].includes(a.tipo)&&a.status==='AGUARDANDO_ADM'?`<button class="btn btn-primary" data-v3-new-change-reservation="${esc(a.id)}">Criar nova reserva</button>`:''}</div>`).join('')}
@@ -132,11 +136,11 @@ function openV3Action(kind, itemId) {
   const preselected = new Set(selectedV3Ids(itemId));
   const candidates = state.v3Items.filter((i) => v3EligibleTogether(base,i));
   const hotels = state.hotels.filter((h) => h.status !== 'INATIVO');
-  modalRoot().innerHTML = `<div class="ah-overlay"><div class="ah-modal"><header><div><span class="ah-eyebrow">${kind === 'quote' ? 'COTAÇÃO' : 'RESERVA'}</span><h2>${esc(base.cidade)}/${esc(base.uf)}</h2></div><button class="ah-x" data-v3-close>×</button></header>
+  modalRoot().innerHTML = `<div class="ah-overlay"><div class="ah-modal"><header><div><span class="ah-eyebrow">RESERVA</span><h2>${esc(base.cidade)}/${esc(base.uf)}</h2></div><button class="ah-x" data-v3-close>×</button></header>
     <div class="ah-body"><div class="ds-field"><label>Colaboradores</label><div class="ah-v3-modal-list">${candidates.map((i) => `<label><input type="checkbox" data-v3-modal-item value="${esc(i.item_id)}" ${preselected.has(i.item_id) ? 'checked' : ''}> ${esc(i.nome_colaborador)} · ${brDate(i.data_checkin_prevista)}–${brDate(i.data_checkout_prevista)} · ${esc(i.sexo)}</label>`).join('')}</div></div>
     <div class="ds-field"><label>Hotel *</label><select id="v3Hotel"><option value="">Selecione</option>${hotels.map((h) => `<option value="${esc(h.id)}">${esc(h.nome)} — ${esc(h.cidade || '')}/${esc(h.uf || '')}</option>`).join('')}</select><button type="button" class="btn btn-secondary" data-v3-new-hotel style="margin-top:8px">Cadastrar novo hotel</button></div>
     ${kind === 'reserve' ? `<div class="ds-field"><label>Valor da diária *</label><input id="v3Daily" type="number" min="0" step="0.01"></div><div class="ds-field"><label>Composição dos quartos *</label><textarea id="v3Rooms" rows="4" placeholder="Ex.: 2 quartos duplos masculino, R$ 180 por quarto"></textarea></div><button class="btn btn-secondary" data-v3-suggest>Sugerir menor custo</button>` : ''}
-    <p class="ah-error" id="v3Error"></p></div><footer><button class="btn btn-secondary" data-v3-close>Cancelar</button><button class="btn btn-primary" data-v3-confirm>${kind === 'quote' ? 'Enviar cotação' : 'Solicitar reserva ao hotel'}</button></footer></div></div>`;
+    <p class="ah-error" id="v3Error"></p></div><footer><button class="btn btn-secondary" data-v3-close>Cancelar</button><button class="btn btn-primary" data-v3-confirm>Solicitar reserva ao hotel</button></footer></div></div>`;
   modalRoot().querySelectorAll('[data-v3-close]').forEach((b) => b.onclick = () => { modalRoot().innerHTML=''; });
   modalRoot().querySelector('[data-v3-new-hotel]').onclick = () => createV3Hotel(base,kind,itemId);
   modalRoot().querySelector('[data-v3-suggest]')?.addEventListener('click', () => suggestRooms(candidates.filter((i) => modalRoot().querySelector(`[data-v3-modal-item][value="${i.item_id}"]`)?.checked)));
@@ -162,8 +166,7 @@ async function submitV3Action(kind,solicitacaoId) {
   const root=modalRoot(); const itemIds=[...root.querySelectorAll('[data-v3-modal-item]:checked')].map((e)=>e.value); const hotelId=root.querySelector('#v3Hotel')?.value;
   if(!itemIds.length||!hotelId){ root.querySelector('#v3Error').textContent='Selecione colaboradores e hotel.'; return; }
   let result;
-  if(kind==='quote') result=await supabase.rpc('hospedagem_v3_iniciar_cotacao',{p_solicitacao_id:solicitacaoId,p_item_ids:itemIds,p_hotel_ids:[hotelId]});
-  else {
+  {
     const daily=Number(root.querySelector('#v3Daily')?.value); const text=root.querySelector('#v3Rooms')?.value.trim();
     if(!Number.isFinite(daily)||daily<0||!text){ root.querySelector('#v3Error').textContent='Informe valor e composição dos quartos.'; return; }
     const selected=state.v3Items.filter((i)=>itemIds.includes(i.item_id));
@@ -171,12 +174,12 @@ async function submitV3Action(kind,solicitacaoId) {
     result=await supabase.rpc('hospedagem_v3_solicitar_reserva',{p_solicitacao_id:solicitacaoId,p_hotel_id:hotelId,p_item_ids:itemIds,p_valor_diaria:daily,p_quartos:quartos,p_cotacao_id:null});
   }
   if(result.error){ root.querySelector('#v3Error').textContent=result.error.message; return; }
-  root.innerHTML=''; toast(kind==='quote'?'Cotação enviada ao hotel.':'Pedido enviado; o status mudará após confirmação do hotel.','ok'); await loadPainel();
+  root.innerHTML=''; toast('Pedido enviado; confirme a reserva quando o hotel responder.','ok'); await loadPainel();
 }
 
 function wireV3Queue(board) {
   board.querySelectorAll('[data-v3-filter]').forEach((el)=>el.onchange=()=>{state.v3Filters[el.dataset.v3Filter]=el.value;renderBoard();});
-  board.querySelectorAll('[data-v3-cotar]').forEach((b)=>b.onclick=()=>openV3Action('quote',b.dataset.v3Cotar));
+  cotacaoHotel.ligar(board);
   board.querySelectorAll('[data-v3-reservar]').forEach((b)=>b.onclick=()=>openV3Action('reserve',b.dataset.v3Reservar));
   board.querySelectorAll('[data-v3-recusar]').forEach((b)=>b.onclick=async()=>{ const motivo=window.prompt('Informe o motivo obrigatório da recusa:'); if(!motivo?.trim()) return; const {error}=await supabase.rpc('hospedagem_v3_recusar_item',{p_item_id:b.dataset.v3Recusar,p_motivo:motivo.trim()}); if(error)return toast(error.message,'err'); toast('Solicitação recusada e gestor notificado.','ok'); await loadPainel(); });
   board.querySelectorAll('[data-v3-payment]').forEach((b)=>b.onclick=()=>openV3Payment(b.dataset.v3Payment));
@@ -244,13 +247,15 @@ async function loadPainel() {
   state.loading = true;
   state.error = null;
   renderAll();
-  const [painel, itens, alteracoes, decisoes, pagamentos, parcelas] = await Promise.all([
+  const [painel, itens, alteracoes, decisoes, pagamentos, parcelas, cotacoes, pedidos] = await Promise.all([
     supabase.rpc('hospedagem_carregar_painel_v2'),
     supabase.from('hospedagem_v3_itens').select('*').neq('status_item','CANCELADO').order('data_checkin_prevista').order('horario_chegada_previsto').order('solicitado_em'),
     supabase.from('hospedagem_alteracoes').select('*').in('status',['AGUARDANDO_ADM','ENVIADA_HOTEL']).order('created_at'),
     supabase.from('hospedagem_checkout_decisoes').select('*').in('status',['AGUARDANDO_GESTOR','SEM_RESPOSTA','AGUARDANDO_HOTEL','AGUARDANDO_ADM']).order('data_checkout_prevista'),
     supabase.from('hospedagem_pagamentos_v3').select('*').neq('status','CANCELADO').order('created_at',{ascending:false}),
     supabase.from('hospedagem_pagamento_parcelas').select('*').order('created_at',{ascending:false}),
+    supabase.from('hospedagem_cotacoes').select('*, hospedagem_cotacao_colaboradores(solicitacao_colaborador_id,atendido)').not('token','is',null).order('created_at',{ascending:false}).limit(500),
+    supabase.from('hospedagem_reserva_pedidos').select('id,solicitacao_id,hotel_id,cotacao_id,valor_diaria,solicitado_em,hospedagem_reserva_pedido_colaboradores(solicitacao_colaborador_id)').eq('status','AGUARDANDO_HOTEL'),
   ]);
   const { data, error } = painel;
   state.loading = false;
@@ -275,6 +280,8 @@ async function loadPainel() {
   state.v3Checkout = decisoes.data || [];
   state.v3Payments = pagamentos.data || [];
   state.v3Installments = parcelas.data || [];
+  state.v3Cotacoes = cotacoes.data || [];
+  state.v3Pedidos = pedidos.data || [];
   state.loaded = true;
   renderAll();
 }

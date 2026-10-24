@@ -265,6 +265,9 @@ serve(async (req) => {
         .select("*")
         .eq("solicitacao_id", solicitation.solicitacao_id)
         .eq("hotel_id", hotel.id)
+        // O v3 permite várias cotações do mesmo hotel na solicitação: sem o limit, maybeSingle() erra e o INSERT duplica.
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       quote = data;
     }
