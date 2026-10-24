@@ -27,7 +27,7 @@ test('o detalhe da solicitação antiga não oferece mais botões de ação', ()
 });
 
 test('a duplicação de programação não cria mais solicitação de hospedagem v2', () => {
-  const sql = le('supabase/migrations/20261024210000_duplicar_programacao_sem_hospedagem_v2.sql');
+  const sql = le('supabase/migrations/20261024210000_duplicar_programacao_sem_hospedagem_v2.sql').replace(/--.*$/gm, ''); // sem os comentários, que explicam o que saiu
   assert.doesNotMatch(sql, /hospedagem_solicitacoes|hospedagem_solicitacao_colaboradores/);
   assert.match(sql, /duplicar_programacao_dia_base_20260813/);
   assert.match(sql, /programacao_estadia/, 'as estadias HOTEL continuam sendo copiadas');
