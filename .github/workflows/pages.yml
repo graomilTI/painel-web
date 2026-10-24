@@ -24,6 +24,10 @@ jobs:
           node --check assets/js/adm-compras.js
           node --check assets/js/admComprasCotacao.js
           node --check assets/js/cotacao-fornecedor.js
+          node --check assets/js/cotacao-hotel.js
+          node --check assets/js/cotacaoHotelRegras.js
+          node --check assets/js/modules/hospedagem/cotacao.js
+          node --check assets/js/modules/hospedagem/cotacao-ui.js
           node --check assets/js/compras.js
           node --check assets/js/patrimonios.js
           node --check assets/js/programacao.js

@@ -102,3 +102,6 @@ verify_jwt = false
 
 [functions.compras-cotacao-publica]
 verify_jwt = false
+
+[functions.hospedagem-cotacao-publica]
+verify_jwt = false
