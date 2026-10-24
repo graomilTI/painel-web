@@ -1,7 +1,7 @@
 // Fila v3 da Hospedagem (ADM): lista de colaboradores com filtros e as ações de cada linha. Fábrica criarFila(ctx).
 // O CSS fica em assets/css/adm-hotel.css (bloco ".ah-v3-*"); aqui só HTML e eventos.
-import { STATUS_ABERTOS, V3_LABELS, filtrarFila } from './service.js?v=20261024-hosp-fin1';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-fin1';
+import { STATUS_ABERTOS, V3_LABELS, filtrarFila } from './service.js?v=20261024-hosp-v2off1';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-v2off1';
 
 export function criarFila(ctx) {
   const { state, repo, loadPainel, renderBoard, toast, esc, brDate, normalizeText } = ctx;
