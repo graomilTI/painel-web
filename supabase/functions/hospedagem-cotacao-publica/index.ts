@@ -5,7 +5,7 @@
 //
 // verify_jwt = false: o hotel não tem login; o token (64 hex) é o segredo, e o ADM encerra/reabre o link no painel.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.8';
-import { MAX_ENVIOS_POR_LINK, TOKEN_RE, estimarTotal, situacaoDoLink, validarResposta } from './regras.js';
+import { MAX_ENVIOS_POR_LINK, TOKEN_RE, estimarTotal, situacaoDoLink, soDigitos, tiposNecessarios, validarResposta } from './regras.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,7 +31,8 @@ const MENSAGEM_SITUACAO: Record<string, string> = {
 
 const COLUNAS = 'id,solicitacao_id,hotel_id,hotel_nome,token,link_status,expira_em,quartos_necessarios,checkin_previsto,checkout_previsto,diarias_previstas,'
   + 'status,disponibilidade,precos_quartos,cafe_incluso,almoco_incluso,janta_inclusa,estacionamento_incluso,aceita_pagamento_checkout,'
-  + 'emite_nota_fiscal,formas_pagamento,atendente_nome,atendente_telefone,observacoes,respondido_em,resposta_dados';
+  + 'emite_nota_fiscal,formas_pagamento,atendente_nome,atendente_telefone,observacoes,respondido_em,resposta_dados,'
+  + 'empresa_dados,extras_outros,extras_outros_texto';
 
 // deno-lint-ignore no-explicit-any
 async function carregarLink(db: any, token: string) {
@@ -40,6 +41,56 @@ async function carregarLink(db: any, token: string) {
   const situacao = situacaoDoLink(cot);
   if (situacao !== 'aberta') return { situacao };
   return { situacao, cotacao: cot };
+}
+
+// Dados que o hotel já informou antes (outra cotação) ou que estão no cadastro do hotel: o link abre com eles preenchidos.
+// deno-lint-ignore no-explicit-any
+async function cadastroDoHotel(db: any, hotelId: string) {
+  const [{ data: ant }, { data: hotel }] = await Promise.all([
+    db.from('hospedagem_cotacoes').select('empresa_dados,atendente_nome,atendente_telefone,emite_nota_fiscal')
+      .eq('hotel_id', hotelId).not('empresa_dados', 'is', null).order('respondido_em', { ascending: false }).limit(1).maybeSingle(),
+    db.from('hospedagem_hoteis').select('cnpj_cpf,razao_social,regime_tributario,cep,endereco,bairro,cidade,uf,emite_nota_fiscal').eq('id', hotelId).maybeSingle(),
+  ]);
+  const e = ant?.empresa_dados ?? {};
+  const eEnd = e.endereco ?? {};
+  const cnpj = soDigitos(e.cnpj ?? hotel?.cnpj_cpf ?? '');
+  return {
+    cnpj: cnpj.length === 14 ? cnpj : '',
+    razao_social: e.razao_social ?? hotel?.razao_social ?? '',
+    regime_tributario: e.regime_tributario ?? hotel?.regime_tributario ?? '',
+    emite_nf: ant?.emite_nota_fiscal ?? hotel?.emite_nota_fiscal ?? null,
+    atendente_nome: ant?.atendente_nome ?? '',
+    atendente_telefone: ant?.atendente_telefone ?? '',
+    endereco: {
+      cep: eEnd.cep ?? soDigitos(hotel?.cep ?? ''),
+      logradouro: eEnd.logradouro ?? hotel?.endereco ?? '',
+      numero: eEnd.numero ?? '',
+      complemento: eEnd.complemento ?? '',
+      bairro: eEnd.bairro ?? hotel?.bairro ?? '',
+      cidade: eEnd.cidade ?? hotel?.cidade ?? '',
+      uf: eEnd.uf ?? hotel?.uf ?? '',
+    },
+  };
+}
+
+// O cadastro do hotel só é completado onde estava vazio (a resposta do link não sobrescreve o que o ADM digitou).
+// deno-lint-ignore no-explicit-any
+async function completarCadastro(db: any, hotelId: string, d: any) {
+  const { data: h } = await db.from('hospedagem_hoteis').select('cnpj_cpf,razao_social,regime_tributario,cep,endereco,bairro,cidade,uf').eq('id', hotelId).maybeSingle();
+  if (!h || !d.empresa || !d.endereco) return;
+  const vazio = (v: unknown) => v === null || v === undefined || String(v).trim() === '';
+  const en = d.endereco;
+  const logradouro = `${en.logradouro}, ${en.numero}${en.complemento ? ` - ${en.complemento}` : ''}`;
+  const novo: Record<string, string> = {};
+  if (vazio(h.cnpj_cpf)) novo.cnpj_cpf = d.empresa.cnpj;
+  if (vazio(h.razao_social)) novo.razao_social = d.empresa.razao_social;
+  if (vazio(h.regime_tributario)) novo.regime_tributario = d.empresa.regime_tributario;
+  if (vazio(h.cep)) novo.cep = en.cep;
+  if (vazio(h.endereco)) novo.endereco = logradouro;
+  if (vazio(h.bairro)) novo.bairro = en.bairro;
+  if (vazio(h.cidade)) novo.cidade = en.cidade;
+  if (vazio(h.uf)) novo.uf = en.uf;
+  if (Object.keys(novo).length) await db.from('hospedagem_hoteis').update(novo).eq('id', hotelId);
 }
 
 Deno.serve(async (req) => {
@@ -53,7 +104,9 @@ Deno.serve(async (req) => {
       const c = r.cotacao;
       const { data: sol } = await db.from('hospedagem_solicitacoes').select('cidade,uf,empresa').eq('id', c.solicitacao_id).maybeSingle();
       const respondida = !!c.respondido_em;
+      const cadastro = await cadastroDoHotel(db, c.hotel_id);
       return json({
+        cadastro,
         hotel_nome: c.hotel_nome,
         expira_em: c.expira_em,
         cidade: sol?.cidade ?? null,
@@ -69,6 +122,9 @@ Deno.serve(async (req) => {
           cafe_incluso: c.cafe_incluso, almoco_incluso: c.almoco_incluso, janta_inclusa: c.janta_inclusa,
           estacionamento_incluso: c.estacionamento_incluso, aceita_pagamento_checkout: c.aceita_pagamento_checkout,
           emite_nf: c.emite_nota_fiscal, formas_pagamento: c.formas_pagamento ?? [],
+          extras_outros: c.extras_outros ?? [], extras_outros_texto: c.extras_outros_texto,
+          empresa: c.empresa_dados ? { cnpj: c.empresa_dados.cnpj, razao_social: c.empresa_dados.razao_social, regime_tributario: c.empresa_dados.regime_tributario } : null,
+          endereco: c.empresa_dados?.endereco ?? null,
           atendente_nome: c.atendente_nome, atendente_telefone: c.atendente_telefone, observacoes: c.observacoes,
         } : null,
       });
@@ -92,7 +148,9 @@ Deno.serve(async (req) => {
     const d = v.dados;
 
     const est = estimarTotal(c.quartos_necessarios, d.precos, c.diarias_previstas);
-    const informados = Object.values(d.precos as Record<string, number | null>).filter((p): p is number => typeof p === 'number');
+    // Referência: menor diária por quarto entre os tipos que o pedido usa (os demais tipos são só informativos).
+    const usados = tiposNecessarios(c.quartos_necessarios);
+    const informados = usados.map((t) => (d.precos as Record<string, number | null>)[t]).filter((p): p is number => typeof p === 'number');
     const agora = new Date().toISOString();
     const { error } = await db.from('hospedagem_cotacoes').update({
       status: d.disponivel ? 'RESPONDIDA' : 'INDISPONIVEL',
@@ -103,6 +161,8 @@ Deno.serve(async (req) => {
       cafe_incluso: d.cafe_incluso, almoco_incluso: d.almoco_incluso, janta_inclusa: d.janta_inclusa,
       estacionamento_incluso: d.estacionamento_incluso, aceita_pagamento_checkout: d.aceita_pagamento_checkout,
       emite_nota_fiscal: d.emite_nf, formas_pagamento: d.formas_pagamento,
+      extras_outros: d.extras_outros, extras_outros_texto: d.extras_outros_texto,
+      empresa_dados: d.empresa ? { ...d.empresa, endereco: d.endereco } : null,
       atendente_nome: d.atendente_nome, atendente_telefone: d.atendente_telefone, observacoes: d.observacoes || null,
       respondido_em: agora,
       resposta_dados: { origem: 'link', envios: envios + 1, enviado_em: agora },
@@ -115,6 +175,7 @@ Deno.serve(async (req) => {
     if (d.disponivel && typeof d.emite_nf === 'boolean') {
       await db.from('hospedagem_hoteis').update({ emite_nota_fiscal: d.emite_nf }).eq('id', c.hotel_id);
     }
+    if (d.disponivel) await completarCadastro(db, c.hotel_id, d);
 
     // Avisa o ADM no painel (uma notificação por envio, para o reenvio com preço novo não passar batido).
     await db.from('painel_notificacoes').upsert({

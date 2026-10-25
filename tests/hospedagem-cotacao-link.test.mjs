@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { estimarTotal, lerValor, situacaoDoLink, tiposNecessarios, validarResposta } from '../supabase/functions/hospedagem-cotacao-publica/regras.js';
+import { cnpjValido, estimarTotal, lerValor, situacaoDoLink, tiposNecessarios, validarResposta } from '../supabase/functions/hospedagem-cotacao-publica/regras.js';
 import {
   capacidadesDoGrupo, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
 } from '../assets/js/modules/hospedagem/cotacao.js';
@@ -18,6 +18,9 @@ const RESPOSTA_OK = {
   disponivel: true, precos: { INDIVIDUAL: '150,00', DUPLO: '1.200,50' }, cafe_incluso: true, almoco_incluso: false, janta_inclusa: false,
   estacionamento_incluso: true, aceita_pagamento_checkout: true, emite_nf: true, formas_pagamento: ['PIX', 'Boleto'],
   atendente_nome: 'Maria', atendente_telefone: '(65) 99999-1111', observacoes: '  chegada após 14h ',
+  cnpj: '11.222.333/0001-81', razao_social: ' Hotel   Girassol Ltda ', regime_tributario: 'simples_nacional',
+  endereco: { cep: '78890-000', logradouro: 'Av. Brasil', numero: '120', complemento: 'Sala 2', bairro: 'Centro', cidade: 'Sorriso', uf: 'mt' },
+  extras_outros: ['wifi', 'tv', 'wifi'], extras_outros_texto: ' transfer ',
 };
 
 test('a página pública usa uma cópia idêntica das regras da Edge Function', () => {
@@ -43,12 +46,47 @@ test('resposta completa é normalizada', () => {
   assert.deepEqual(r.dados.formas_pagamento, ['PIX', 'Boleto']);
 });
 
+test('empresa, endereço e extras vêm normalizados (as mesmas perguntas de Compras mais o endereço do hotel)', () => {
+  const { dados } = validarResposta(RESPOSTA_OK, QUARTOS);
+  assert.deepEqual(dados.empresa, { cnpj: '11222333000181', razao_social: 'Hotel Girassol Ltda', regime_tributario: 'simples_nacional' });
+  assert.deepEqual(dados.endereco, { cep: '78890000', logradouro: 'Av. Brasil', numero: '120', complemento: 'Sala 2', bairro: 'Centro', cidade: 'Sorriso', uf: 'MT' });
+  assert.deepEqual(dados.extras_outros, ['wifi', 'tv']);
+  assert.equal(dados.extras_outros_texto, 'transfer');
+  assert.equal(cnpjValido('11.222.333/0001-81'), true);
+  assert.equal(cnpjValido('11.222.333/0001-82'), false);
+});
+
+test('empresa e endereço são obrigatórios quando o hotel tem vaga', () => {
+  const erro = (mudanca) => validarResposta({ ...RESPOSTA_OK, ...mudanca }, QUARTOS).erro;
+  assert.match(erro({ cnpj: '11222333000182' }), /CNPJ/);
+  assert.match(erro({ razao_social: 'A' }), /razão social/);
+  assert.match(erro({ regime_tributario: 'mei' }), /regime/);
+  assert.match(erro({ endereco: { ...RESPOSTA_OK.endereco, cep: '123' } }), /CEP/);
+  assert.match(erro({ endereco: { ...RESPOSTA_OK.endereco, logradouro: '' } }), /rua/);
+  assert.match(erro({ endereco: { ...RESPOSTA_OK.endereco, numero: '' } }), /número/);
+  assert.match(erro({ endereco: { ...RESPOSTA_OK.endereco, bairro: '' } }), /bairro/);
+  assert.match(erro({ endereco: { ...RESPOSTA_OK.endereco, uf: 'XX' } }), /UF/);
+  assert.match(erro({ extras_outros: ['jacuzzi'] }), /inválido/);
+});
+
+test('os quatro tipos de quarto são cotados: o que o pedido não usa é opcional e fica registrado', () => {
+  const r = validarResposta({ ...RESPOSTA_OK, precos: { INDIVIDUAL: '150', DUPLO: '200', TRIPLO: '280', QUADRUPLO: '' } }, QUARTOS);
+  assert.equal(r.erro, undefined);
+  assert.deepEqual(r.dados.precos, { INDIVIDUAL: 150, DUPLO: 200, TRIPLO: 280 });
+  assert.match(validarResposta({ ...RESPOSTA_OK, precos: { INDIVIDUAL: '150', DUPLO: '200', TRIPLO: '-3' } }, QUARTOS).erro, /inválida/);
+  assert.match(validarResposta({ ...RESPOSTA_OK, precos: { INDIVIDUAL: '150', DUPLO: '200', SUITE: '99' } }, QUARTOS).erro, /inválido/);
+  // Só ter o tipo que o pedido não usa não basta.
+  assert.match(validarResposta({ ...RESPOSTA_OK, precos: { INDIVIDUAL: null, DUPLO: null, TRIPLO: '280' }, sem_tipo: ['INDIVIDUAL', 'DUPLO'] }, QUARTOS).erro, /Sem disponibilidade/);
+});
+
 test('sem vaga: só o motivo, nada de preço', () => {
   const r = validarResposta({ disponivel: false, observacoes: 'lotado' }, QUARTOS);
   assert.equal(r.dados.disponivel, false);
   assert.deepEqual(r.dados.precos, {});
   assert.equal(r.dados.observacoes, 'lotado');
   assert.equal(r.dados.atendente_telefone, null);
+  assert.equal(r.dados.empresa, null);
+  assert.deepEqual(r.dados.extras_outros, []);
 });
 
 test('resposta com problema volta com a mensagem certa', () => {
@@ -58,7 +96,6 @@ test('resposta com problema volta com a mensagem certa', () => {
   assert.match(erro({ atendente_telefone: '123' }), /telefone/);
   assert.match(erro({ precos: { INDIVIDUAL: '150' } }), /duplo/);
   assert.match(erro({ precos: { INDIVIDUAL: '-5', DUPLO: '100' } }), /inválida/);
-  assert.match(erro({ precos: { INDIVIDUAL: '150', DUPLO: '100', TRIPLO: '90' } }), /inválido/);
   assert.match(erro({ cafe_incluso: undefined }), /incluso/);
   assert.match(erro({ emite_nf: 'sim' }), /nota fiscal/);
   assert.match(erro({ aceita_pagamento_checkout: null }), /checkout/);

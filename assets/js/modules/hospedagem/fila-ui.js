@@ -1,13 +1,22 @@
 // Fila v3 da Hospedagem (ADM): colaboradores por status no layout das listas do Frotas (cards que filtram, busca com chip, tabela
 // fixa e botões de ícone). Fábrica criarFila(ctx). O CSS vem de patrimonioLayoutFrotas.js (.fm-*); aqui só HTML e eventos.
 import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, filtrarFila } from './service.js?v=20261024-hosp-layout6';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-layout6';
+import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes1';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes1';
+
+// Ícone de "agrupar" (duas pessoas): o kit de ícones do Frotas não tem um.
+const ICONE_GRUPO = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.5 0 4 2 4 5"/></svg>';
 
 const iniciais = (nome) => String(nome || '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 
 export function criarFila(ctx) {
   const { state, repo, loadPainel, toast, esc, brDate, normalizeText } = ctx;
+
+  // Colaboradores marcados nas caixinhas. Fica na fábrica (e não só no DOM) para a marcação sobreviver à busca, aos cards e ao recarregar.
+  const selecionados = new Set();
+  const itemPorId = (id) => state.v3Items.find((i) => i.item_id === id);
+  const emAberto = (i) => !!i && STATUS_ABERTOS.includes(i.status_item);
+  const selecionadosEmAberto = () => [...selecionados].map(itemPorId).filter(emAberto);
 
   const filtrados = () => filtrarFila(state.v3Items, { status: state.v3Filtro, busca: state.v3Busca }, normalizeText, brDate);
 
@@ -16,12 +25,12 @@ export function criarFila(ctx) {
     const aberto = STATUS_ABERTOS.includes(i.status_item);
     const sexo = i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente';
     return `<tr>
-      <td><input type="checkbox" data-v3-select="${esc(i.item_id)}" ${aberto ? '' : 'disabled'} aria-label="Selecionar ${esc(i.nome_colaborador)}"></td>
+      <td><input type="checkbox" data-v3-select="${esc(i.item_id)}" ${aberto ? '' : 'disabled'} ${selecionados.has(i.item_id) ? 'checked' : ''} aria-label="Selecionar ${esc(i.nome_colaborador)}"></td>
       <td><div class="fm-person"><span class="fm-avatar">${esc(iniciais(i.nome_colaborador))}</span><div class="fm-cell"><b>${esc(i.nome_colaborador)}</b><span class="fm-prazo-dia">${esc(i.supervisao || 'Sem supervisão')} · ${esc(sexo)}</span></div></div></td>
       <td><div class="fm-cell"><b>${esc(i.cidade)}/${esc(i.uf)}</b></div></td>
       <td><div class="fm-cell">${brDate(i.data_checkin_prevista)}<span class="fm-prazo-dia">${esc(String(i.horario_chegada_previsto || '').slice(0, 5))} · ${i.quantidade_diarias_prevista} diária(s)</span></div></td>
       <td><div class="fm-cell"><span class="fm-badge ${visual.selo || ''}">${esc(V3_LABELS[i.status_item] || i.status_item)}</span>${i.hotel ? `<span class="fm-prazo-dia">${esc(i.hotel)} · ${esc(i.codigo_operacional || '')}</span>` : ''}</div></td>
-      <td><div class="fm-actions">${aberto ? `${iconBtn('data-v3-cotar', i.item_id, 'anexo', 'Cotar com hotéis (gera o link)', 'doc')}${iconBtn('data-v3-reservar', i.item_id, 'termo', 'Reservar direto, sem cotação', 'calendario')}${iconBtn('data-v3-recusar', i.item_id, 'danger', 'Recusar a solicitação', 'erro')}` : ''}${ctx.cotacao.acoesDoItem(i)}${i.status_item === 'RESERVADO' ? `${iconBtn('data-v3-extra', i.reserva_id, '', 'Despesa extra do hotel', 'alerta')}${iconBtn('data-v3-payment', i.reserva_id, 'termo', 'Pagamento do hotel', 'dinheiro')}` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? '<span class="fm-prazo-dia">Aguardando confirmações</span>' : ''}</div></td>
+      <td><div class="fm-actions">${aberto ? `${iconBtn('data-v3-cotar', i.item_id, 'anexo', 'Cotar com hotéis (gera o link)', 'doc')}${iconBtn('data-v3-agrupar', i.item_id, '', 'Agrupar: marcar quem vai junto (mesmo destino e período)', ICONE_GRUPO)}${iconBtn('data-v3-reservar', i.item_id, 'termo', 'Reservar direto, sem cotação', 'calendario')}${iconBtn('data-v3-recusar', i.item_id, 'danger', 'Cancelar a solicitação', 'erro')}` : ''}${ctx.cotacao.acoesDoItem(i)}${i.status_item === 'RESERVADO' ? `${iconBtn('data-v3-extra', i.reserva_id, '', 'Despesa extra do hotel', 'alerta')}${iconBtn('data-v3-payment', i.reserva_id, 'termo', 'Pagamento do hotel', 'dinheiro')}` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? '<span class="fm-prazo-dia">Aguardando confirmações</span>' : ''}</div></td>
     </tr>`;
   };
 
@@ -43,14 +52,26 @@ export function criarFila(ctx) {
 
   const avisosHtml = () => `${state.v3Checkout.filter((d) => d.status === 'AGUARDANDO_ADM').map(avisoCheckoutHtml).join('')}${state.v3Changes.map(avisoAlteracaoHtml).join('')}`;
 
+  const barraHtml = () => `<div class="fm-selbar" id="ahV3Acoes">
+      <span class="fm-sel-info" id="ahV3SelInfo"></span>
+      <div class="fm-sel-botoes">
+        <button type="button" class="fm-btn soft" data-v3-bar="cotar" title="Gera o link de cotação para os hotéis">${ICON.doc} Cotar</button>
+        <button type="button" class="fm-btn soft" data-v3-bar="agrupar" title="Marca quem pode ficar junto (mesmo destino e período)">${ICONE_GRUPO} Agrupar</button>
+        <button type="button" class="fm-btn soft" data-v3-bar="reservar" title="Reserva direto, sem cotação">${ICON.calendario} Reservar</button>
+        <button type="button" class="fm-btn soft fm-cancelar" data-v3-bar="cancelar" title="Cancela as solicitações marcadas">${ICON.erro} Cancelar</button>
+      </div>
+    </div>`;
+
   function render() {
+    for (const id of [...selecionados]) if (!emAberto(itemPorId(id))) selecionados.delete(id);
     const itens = filtrados();
     return `<div id="ahV3Page">
       <div class="fm-kpis" id="ahV3Kpis">${cardsHtml()}</div>
       <div class="fm-card"><div class="fm-body">
         <div class="fm-bar"><div class="fm-search">${ICON.busca}<input class="fm-input" id="ahV3Busca" placeholder="Buscar por colaborador, cidade, supervisão, hotel, código ou data (dd/mm/aaaa)..." autocomplete="off" value="${esc(state.v3Busca)}"></div><span data-chip></span><span class="fm-count" id="ahV3Count">${itens.length} colaborador(es)</span></div>
+        ${barraHtml()}
         <div id="ahV3Avisos">${avisosHtml()}</div>
-        <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th></th><th>Colaborador</th><th>Destino</th><th>Entrada</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ahV3Corpo">${corpoHtml(itens)}</tbody></table></div>
+        <div class="fm-table-wrap"><table class="fm-table"><thead><tr><th><input type="checkbox" data-v3-select-todos aria-label="Marcar todos os colaboradores em aberto desta lista"></th><th>Colaborador</th><th>Destino</th><th>Entrada</th><th>Status</th><th>Ações</th></tr></thead><tbody id="ahV3Corpo">${corpoHtml(itens)}</tbody></table></div>
       </div></div>
     </div>`;
   }
@@ -63,17 +84,75 @@ export function criarFila(ctx) {
     await loadPainel();
   }
 
-  async function recusarItem(itemId) {
-    const dados = await pedirCampos(ctx, { eyebrow: 'RECUSA', titulo: 'Recusar solicitação', textoOk: 'Recusar', campos: [{ rotulo: 'Motivo da recusa', obrigatorio: true, linhas: 3, aviso: 'Informe o motivo da recusa.' }] });
+  // Cancela uma ou várias solicitações com o mesmo motivo (a RPC é a mesma "recusar item": avisa o gestor).
+  async function cancelarItens(itens) {
+    const lista = itens.filter(emAberto);
+    if (!lista.length) return toast('Marque ao menos um colaborador em aberto.', 'err');
+    const varios = lista.length > 1;
+    const dados = await pedirCampos(ctx, {
+      eyebrow: 'CANCELAMENTO', titulo: varios ? `Cancelar ${lista.length} solicitações` : 'Cancelar solicitação', textoOk: 'Cancelar solicitação',
+      campos: [{ rotulo: 'Motivo do cancelamento', obrigatorio: true, linhas: 3, aviso: 'Informe o motivo do cancelamento.' }],
+    });
     if (!dados) return;
-    await executar(repo.recusarItem(itemId, dados[0]), 'Solicitação recusada e gestor notificado.');
+    const falhas = [];
+    for (const i of lista) {
+      const { error } = await repo.recusarItem(i.item_id, dados[0]);
+      if (error) falhas.push(`${i.nome_colaborador}: ${error.message}`);
+      else selecionados.delete(i.item_id);
+    }
+    if (falhas.length) toast(`Não consegui cancelar ${falhas.length} de ${lista.length}. ${falhas[0]}`, 'err');
+    else toast(varios ? `${lista.length} solicitações canceladas e gestor notificado.` : 'Solicitação cancelada e gestor notificado.', 'ok');
+    await loadPainel();
+  }
+
+  // Quem vai junto numa cotação/reserva: mesma solicitação, cidade e período que se sobrepõe.
+  const mesmoGrupo = (lista) => lista.every((i) => i.solicitacao_id === lista[0].solicitacao_id && elegiveisJuntos(lista[0], i));
+
+  function agrupar(board, base) {
+    const bases = base.filter(emAberto);
+    if (!bases.length) return toast('Marque ao menos um colaborador em aberto para agrupar.', 'err');
+    const antes = new Set(selecionados);
+    for (const b of bases) state.v3Items.filter((i) => i.solicitacao_id === b.solicitacao_id && elegiveisJuntos(b, i)).forEach((i) => selecionados.add(i.item_id));
+    const novos = [...selecionados].filter((id) => !antes.has(id));
+    // O que foi marcado precisa aparecer: se algum ficou fora do filtro/busca atual, a lista volta a mostrar todos.
+    const visiveis = new Set(filtrados().map((i) => i.item_id));
+    if (novos.some((id) => !visiveis.has(id))) {
+      state.v3Filtro = 'todos';
+      state.v3Busca = '';
+      board.querySelector('#ahV3Busca').value = '';
+    }
+    atualizarLista(board);
+    toast(novos.length ? `${novos.length} colaborador(es) do mesmo destino e período marcado(s) junto(s).` : 'Não há mais ninguém no mesmo destino e período para agrupar.', 'ok');
+  }
+
+  // Cotar e reservar valem para quem foi marcado, desde que todos possam ficar juntos; o primeiro marcado é a referência.
+  function agirNoGrupo(sel, abrir) {
+    if (!sel.length) return toast('Marque ao menos um colaborador em aberto.', 'err');
+    if (!mesmoGrupo(sel)) return toast('Os marcados precisam ser da mesma solicitação, cidade e período. Use "Agrupar" para marcar quem vai junto.', 'err');
+    abrir(sel[0].item_id);
+  }
+
+  function atualizarBarra(board) {
+    const sel = selecionadosEmAberto();
+    const composicao = sel.length ? sugerirComposicao(sel).split('\n').filter(Boolean).join(' · ') : '';
+    board.querySelector('#ahV3SelInfo').innerHTML = sel.length
+      ? `<b>${sel.length}</b> colaborador(es) marcado(s)${composicao ? ` · sugestão de quartos: ${esc(composicao)}` : ''}`
+      : 'Marque os colaboradores na lista para cotar, agrupar, reservar ou cancelar de uma vez.';
+    board.querySelectorAll('[data-v3-bar]').forEach((b) => { b.disabled = !sel.length; });
+    const todos = board.querySelector('[data-v3-select-todos]');
+    if (todos) {
+      const caixas = [...board.querySelectorAll('[data-v3-select]:not(:disabled)')];
+      todos.checked = caixas.length > 0 && caixas.every((c) => c.checked);
+      todos.indeterminate = !todos.checked && caixas.some((c) => c.checked);
+    }
   }
 
   // Ações de cada linha e dos avisos: religadas sempre que a tabela é redesenhada (busca e cards só trocam o miolo).
   function ligarAcoes(raiz) {
     ctx.cotacao.ligar(raiz);
     raiz.querySelectorAll('[data-v3-reservar]').forEach((b) => { b.onclick = () => ctx.reserva.abrir(b.dataset.v3Reservar); });
-    raiz.querySelectorAll('[data-v3-recusar]').forEach((b) => { b.onclick = () => recusarItem(b.dataset.v3Recusar); });
+    raiz.querySelectorAll('[data-v3-recusar]').forEach((b) => { b.onclick = () => cancelarItens([itemPorId(b.dataset.v3Recusar)]); });
+    raiz.querySelectorAll('[data-v3-agrupar]').forEach((b) => { b.onclick = () => agrupar(document.getElementById('ahV3Page'), [itemPorId(b.dataset.v3Agrupar)]); });
     raiz.querySelectorAll('[data-v3-payment]').forEach((b) => { b.onclick = () => ctx.pagamento.abrirPagamento(b.dataset.v3Payment); });
     raiz.querySelectorAll('[data-v3-extra]').forEach((b) => { b.onclick = () => ctx.pagamento.abrirExtra(b.dataset.v3Extra); });
     raiz.querySelectorAll('[data-v3-validate-checkout]').forEach((b) => { b.onclick = () => executar(repo.validarCheckout(b.dataset.v3ValidateCheckout), 'Checkout validado.'); });
@@ -95,6 +174,7 @@ export function criarFila(ctx) {
     board.querySelector('#ahV3Count').textContent = `${itens.length} colaborador(es)`;
     sincronizarCards(board, state.v3Filtro);
     ligarAcoes(board.querySelector('#ahV3Corpo'));
+    atualizarBarra(board);
   }
 
   function ligar(board) {
@@ -103,8 +183,31 @@ export function criarFila(ctx) {
       state.v3Filtro = limpar || !card || state.v3Filtro === card.dataset.filtro ? 'todos' : card.dataset.filtro;
       atualizarLista(board);
     });
+    // Caixinhas (uma a uma e "marcar todos") e botões da barra: um só ouvinte no quadro, que vale para as linhas redesenhadas.
+    board.addEventListener('change', (e) => {
+      if (e.target.matches('[data-v3-select-todos]')) {
+        board.querySelectorAll('[data-v3-select]:not(:disabled)').forEach((c) => {
+          c.checked = e.target.checked;
+          e.target.checked ? selecionados.add(c.dataset.v3Select) : selecionados.delete(c.dataset.v3Select);
+        });
+      } else if (e.target.matches('[data-v3-select]')) {
+        e.target.checked ? selecionados.add(e.target.dataset.v3Select) : selecionados.delete(e.target.dataset.v3Select);
+      } else return;
+      atualizarBarra(board);
+    });
+    board.querySelectorAll('[data-v3-bar]').forEach((b) => {
+      b.onclick = () => {
+        const sel = selecionadosEmAberto();
+        const acao = b.dataset.v3Bar;
+        if (acao === 'cotar') agirNoGrupo(sel, ctx.cotacao.abrirCotar);
+        else if (acao === 'reservar') agirNoGrupo(sel, ctx.reserva.abrir);
+        else if (acao === 'agrupar') agrupar(board, sel);
+        else cancelarItens(sel);
+      };
+    });
     sincronizarCards(board, state.v3Filtro);
     ligarAcoes(board);
+    atualizarBarra(board);
   }
 
   return { render, ligar };
