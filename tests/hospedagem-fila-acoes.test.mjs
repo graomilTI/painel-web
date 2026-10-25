@@ -19,7 +19,8 @@ test('cada linha em aberto tem os quatro botões e a barra repete as ações par
 
 test('agrupar marca só quem pode ir junto e cotar/reservar exigem o mesmo grupo', () => {
   const fila = le('assets/js/modules/hospedagem/fila-ui.js');
-  assert.match(fila, /i\.solicitacao_id === b\.solicitacao_id && elegiveisJuntos\(b, i\)/);
+  assert.match(fila, /i\.solicitacao_id === ref\.solicitacao_id && elegiveisJuntos\(ref, i\)/);
+  assert.match(fila, /data-agr-item/, 'agrupar abre uma janela com os colaboradores para escolher');
   assert.match(fila, /mesmoGrupo\(sel\)/);
   assert.match(le('assets/js/modules/hospedagem/cotacao-ui.js'), /return \{ acoesDoItem, ligar, abrirCotar \}/);
 });

@@ -11,11 +11,11 @@ import {
   renderFinanceiroShell, renderFinanceiroQueue, renderFinanceiroCards, renderFinanceiroCorpo, filtrarFinanceiro,
   renderFluxoBoard, renderHotelExtrato,
 } from './adm-hotel-view.js';
-import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-acoes1';
-import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-acoes1';
-import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-acoes1';
-import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-acoes1';
-import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-acoes1';
+import { criarRepositorio } from './modules/hospedagem/repository.js?v=20261024-hosp-acoes3';
+import { criarCotacaoHotel } from './modules/hospedagem/cotacao-ui.js?v=20261024-hosp-acoes3';
+import { criarFila } from './modules/hospedagem/fila-ui.js?v=20261024-hosp-acoes3';
+import { criarReserva } from './modules/hospedagem/reserva-ui.js?v=20261024-hosp-acoes3';
+import { criarPagamento } from './modules/hospedagem/pagamento-ui.js?v=20261024-hosp-acoes3';
 
 function currentMode() {
   const hash = String(location.hash || '').toLowerCase();
@@ -64,7 +64,9 @@ function renderTabsAndWire() {
   const el = document.getElementById('ahTabs');
   if (!el) return;
   const badge = { solicitacoes: state.v3Items.filter((i) => i.status_item !== 'CANCELADO').length, historico: linhasHistorico().length };
-  el.innerHTML = tabs({ itens: ABAS.map(([id, label]) => ({ id, label, badge: badge[id] })), ativo: state.activeTab, attr: 'data-tab' });
+  // O botão Atualizar fica na linha das abas (área de ações à direita), sem gastar uma linha só para ele.
+  el.innerHTML = `${tabs({ itens: ABAS.map(([id, label]) => ({ id, label, badge: badge[id] })), ativo: state.activeTab, attr: 'data-tab' })}<div class="frotas-hub-acoes"><button class="fm-btn soft" id="ahAtualizar" type="button">↻ Atualizar</button></div>`;
+  el.querySelector('#ahAtualizar').onclick = () => loadPainel();
   el.querySelectorAll('[data-tab]').forEach((b) => {
     b.addEventListener('click', () => {
       state.activeTab = b.dataset.tab;
@@ -402,12 +404,10 @@ function renderHoteisShell() {
     <section class="card mt-16 ah-page" id="ahPage">
       <div class="frotas-hub-tabs" id="ahTabs"></div>
       <div class="frotas-hub-tab-body fm-shell">
-        <div class="fm-topo"><div class="fm-head-actions"><button class="fm-btn soft" id="ahAtualizar" type="button">↻ Atualizar</button></div></div>
         <div id="ahBoard"></div>
       </div>
     </section>
   `;
-  document.getElementById('ahAtualizar').onclick = () => loadPainel();
   renderAll();
   if (!state.loaded && !state.loading) loadPainel();
 }

@@ -1,8 +1,8 @@
 // Fila v3 da Hospedagem (ADM): colaboradores por status no layout das listas do Frotas (cards que filtram, busca com chip, tabela
 // fixa e botões de ícone). Fábrica criarFila(ctx). O CSS vem de patrimonioLayoutFrotas.js (.fm-*); aqui só HTML e eventos.
 import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes1';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes1';
+import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes3';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes3';
 
 // Ícone de "agrupar" (duas pessoas): o kit de ícones do Frotas não tem um.
 const ICONE_GRUPO = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.5 0 4 2 4 5"/></svg>';
@@ -10,7 +10,7 @@ const ICONE_GRUPO = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path
 const iniciais = (nome) => String(nome || '').trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '?';
 
 export function criarFila(ctx) {
-  const { state, repo, loadPainel, toast, esc, brDate, normalizeText } = ctx;
+  const { state, repo, loadPainel, toast, esc, brDate, normalizeText, modalRoot } = ctx;
 
   // Colaboradores marcados nas caixinhas. Fica na fábrica (e não só no DOM) para a marcação sobreviver à busca, aos cards e ao recarregar.
   const selecionados = new Set();
@@ -108,21 +108,55 @@ export function criarFila(ctx) {
   // Quem vai junto numa cotação/reserva: mesma solicitação, cidade e período que se sobrepõe.
   const mesmoGrupo = (lista) => lista.every((i) => i.solicitacao_id === lista[0].solicitacao_id && elegiveisJuntos(lista[0], i));
 
+  // Janela de agrupamento: lista todos os colaboradores em aberto que podem ir junto com o primeiro (mesma solicitação, cidade e período
+  // que se cruza; as RPCs de cotação e reserva só aceitam uma solicitação por vez) e o usuário escolhe quem entra no grupo.
   function agrupar(board, base) {
-    const bases = base.filter(emAberto);
-    if (!bases.length) return toast('Marque ao menos um colaborador em aberto para agrupar.', 'err');
-    const antes = new Set(selecionados);
-    for (const b of bases) state.v3Items.filter((i) => i.solicitacao_id === b.solicitacao_id && elegiveisJuntos(b, i)).forEach((i) => selecionados.add(i.item_id));
-    const novos = [...selecionados].filter((id) => !antes.has(id));
-    // O que foi marcado precisa aparecer: se algum ficou fora do filtro/busca atual, a lista volta a mostrar todos.
-    const visiveis = new Set(filtrados().map((i) => i.item_id));
-    if (novos.some((id) => !visiveis.has(id))) {
-      state.v3Filtro = 'todos';
-      state.v3Busca = '';
-      board.querySelector('#ahV3Busca').value = '';
-    }
-    atualizarLista(board);
-    toast(novos.length ? `${novos.length} colaborador(es) do mesmo destino e período marcado(s) junto(s).` : 'Não há mais ninguém no mesmo destino e período para agrupar.', 'ok');
+    const ref = base.find(emAberto);
+    if (!ref) return toast('Marque ao menos um colaborador em aberto para agrupar.', 'err');
+    const candidatos = state.v3Items.filter((i) => i.solicitacao_id === ref.solicitacao_id && elegiveisJuntos(ref, i));
+    if (candidatos.length < 2) return toast('Não há mais ninguém no mesmo destino e período para agrupar com este colaborador.', 'ok');
+    const escolhidos = new Set([ref.item_id, ...selecionados].filter((id) => candidatos.some((c) => c.item_id === id)));
+    const root = modalRoot();
+    const sexo = (i) => (i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente');
+    root.innerHTML = `<div class="ah-overlay"><div class="ah-modal ah-reservar">
+      <div class="ah-modal-head"><div><h3>Agrupar colaboradores</h3><p class="muted">${esc(ref.cidade)}/${esc(ref.uf)} · ${brDate(ref.data_checkin_prevista)} a ${brDate(ref.data_checkout_prevista)} · ${candidatos.length} podem ficar juntos</p></div><button class="ah-modal-x" data-agr-fechar type="button">✕</button></div>
+      <div class="ah-modal-body">
+        <label class="ah-cot-linha"><input type="checkbox" data-agr-todos> <span><b>Marcar todos</b></span></label>
+        <div class="ah-cot-lista">${candidatos.map((i) => `<label class="ah-cot-linha"><input type="checkbox" data-agr-item value="${esc(i.item_id)}" ${escolhidos.has(i.item_id) ? 'checked' : ''}>
+          <span><b>${esc(i.nome_colaborador)}</b><small>${brDate(i.data_checkin_prevista)}–${brDate(i.data_checkout_prevista)} · ${esc(sexo(i))} · ${esc(i.supervisao || 'Sem supervisão')} · ${esc(V3_LABELS[i.status_item] || i.status_item)}</small></span></label>`).join('')}</div>
+        <p class="ah-note" id="agrResumo"></p>
+        <p class="ah-error" id="agrErro"></p>
+      </div>
+      <div class="ah-modal-foot"><div class="ah-modal-foot-left"></div><div class="ah-modal-foot-left"><button class="btn btn-secondary" data-agr-fechar type="button">Cancelar</button><button class="btn btn-primary" id="agrConfirmar" type="button">Agrupar</button></div></div>
+    </div></div>`;
+    const caixas = () => [...root.querySelectorAll('[data-agr-item]')];
+    const resumir = () => {
+      const marcados = caixas().filter((c) => c.checked).map((c) => candidatos.find((i) => i.item_id === c.value));
+      const composicao = sugerirComposicao(marcados).split('\n').filter(Boolean).join(' · ');
+      root.querySelector('#agrResumo').textContent = marcados.length ? `${marcados.length} marcado(s)${composicao ? ` · sugestão de quartos: ${composicao}` : ''}` : 'Marque quem vai ficar junto.';
+      root.querySelector('[data-agr-todos]').checked = marcados.length === candidatos.length;
+      root.querySelector('#agrConfirmar').textContent = marcados.length ? `Agrupar ${marcados.length}` : 'Agrupar';
+    };
+    root.querySelectorAll('[data-agr-fechar]').forEach((b) => { b.onclick = () => { root.innerHTML = ''; }; });
+    root.querySelector('[data-agr-todos]').onchange = (e) => { caixas().forEach((c) => { c.checked = e.target.checked; }); resumir(); };
+    caixas().forEach((c) => { c.onchange = resumir; });
+    resumir();
+    root.querySelector('#agrConfirmar').onclick = () => {
+      const ids = caixas().filter((c) => c.checked).map((c) => c.value);
+      if (ids.length < 2) { root.querySelector('#agrErro').textContent = 'Marque ao menos 2 colaboradores para formar um grupo.'; return; }
+      selecionados.clear();
+      ids.forEach((id) => selecionados.add(id));
+      root.innerHTML = '';
+      // O grupo precisa aparecer na lista: se algum ficou fora do filtro/busca atual, a lista volta a mostrar todos.
+      const visiveis = new Set(filtrados().map((i) => i.item_id));
+      if (ids.some((id) => !visiveis.has(id))) {
+        state.v3Filtro = 'todos';
+        state.v3Busca = '';
+        board.querySelector('#ahV3Busca').value = '';
+      }
+      atualizarLista(board);
+      toast(`Grupo com ${ids.length} colaboradores marcado. Use Cotar ou Reservar para seguir.`, 'ok');
+    };
   }
 
   // Cotar e reservar valem para quem foi marcado, desde que todos possam ficar juntos; o primeiro marcado é a referência.
