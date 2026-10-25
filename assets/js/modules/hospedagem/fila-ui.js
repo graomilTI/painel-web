@@ -1,8 +1,8 @@
 // Fila v3 da Hospedagem (ADM): colaboradores por status no layout das listas do Frotas (cards que filtram, busca com chip, tabela
 // fixa e botões de ícone). Fábrica criarFila(ctx). O CSS vem de patrimonioLayoutFrotas.js (.fm-*); aqui só HTML e eventos.
 import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes4';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes4';
+import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes7';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes7';
 
 // Ícone de "agrupar" (duas pessoas): o kit de ícones do Frotas não tem um.
 const ICONE_GRUPO = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.5 0 4 2 4 5"/></svg>';

@@ -2,8 +2,8 @@
 // Fábrica criarCotacaoHotel(ctx): recebe o estado e os utilitários do controller (adm-hotel.js); a lógica pura fica em cotacao.js.
 import {
   VALIDADE_LINK_DIAS, compararCotacoes, descreverQuartos, linkAberto, linkWhatsapp, mensagemDoLink, montarPedidoReserva, montarQuartos, urlDoLink,
-} from './cotacao.js?v=20261024-hosp-acoes4';
-import { EXTRAS_OUTROS, REGIMES, TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-acoes4';
+} from './cotacao.js?v=20261024-hosp-acoes7';
+import { EXTRAS_OUTROS, REGIMES, TIPOS_QUARTO, estimarTotal } from '../../cotacaoHotelRegras.js?v=20261024-hosp-acoes7';
 import { iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 const ELEGIVEIS = ['AGUARDANDO', 'EM_COTACAO'];
@@ -35,8 +35,8 @@ export function criarCotacaoHotel(ctx) {
     }
   }
 
-  function moldura(titulo, subtitulo, corpo, rodape) {
-    modalRoot().innerHTML = `<div class="ah-overlay"><div class="ah-modal ah-reservar">
+  function moldura(titulo, subtitulo, corpo, rodape, classe = '') {
+    modalRoot().innerHTML = `<div class="ah-overlay"><div class="ah-modal ah-reservar ${classe}">
       <div class="ah-modal-head"><div><h3>${esc(titulo)}</h3><p class="muted">${esc(subtitulo)}</p></div><button class="ah-modal-x" data-cot-fechar type="button">✕</button></div>
       <div class="ah-modal-body">${corpo}<p class="ah-error" id="cotErro"></p></div>
       <div class="ah-modal-foot"><div class="ah-modal-foot-left"></div><div class="ah-modal-foot-left">${rodape}</div></div>
@@ -46,6 +46,8 @@ export function criarCotacaoHotel(ctx) {
   const erro = (msg) => { const el = modalRoot().querySelector('#cotErro'); if (el) el.textContent = msg; };
 
   // ─── Gerar links ─────────────────────────────────────────────────────────────
+  // Janela em duas etapas numeradas: 1 · quem vai (colaboradores) e 2 · para quais hotéis mandar o link. O resumo do pedido
+  // (pessoas, quartos sugeridos e diárias) acompanha as marcações; o botão de rodapé diz quantos links serão gerados.
   function abrirCotar(itemId) {
     const base = state.v3Items.find((i) => i.item_id === itemId);
     if (!base) return;
@@ -53,7 +55,9 @@ export function criarCotacaoHotel(ctx) {
       && i.cidade === base.cidade && i.uf === base.uf && i.data_checkin_prevista < base.data_checkout_prevista && i.data_checkout_prevista > base.data_checkin_prevista);
     const marcados = new Set([...document.querySelectorAll('[data-v3-select]:checked')].map((el) => el.dataset.v3Select).filter((id) => candidatos.some((c) => c.item_id === id)));
     marcados.add(itemId);
-    const sel = { itens: marcados, hoteis: new Set(), busca: '', todas: false, novo: false };
+    const sel = { itens: marcados, hoteis: new Set(), busca: '', todas: false };
+    const sexoRotulo = (i) => (i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente');
+    const iniciais = (nome) => String(nome || '').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase() || '?';
 
     const hoteisVisiveis = () => state.hotels
       .filter((h) => h.status !== 'INATIVO')
@@ -62,42 +66,95 @@ export function criarCotacaoHotel(ctx) {
       .sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
       .slice(0, 80);
 
+    const linhaColaborador = (i) => `<div class="ah-pick ${sel.itens.has(i.item_id) ? 'on' : ''}" data-pick>
+      <input type="checkbox" data-cot-item value="${esc(i.item_id)}" ${sel.itens.has(i.item_id) ? 'checked' : ''} aria-label="${esc(i.nome_colaborador)}">
+      <span class="ah-pick-av">${esc(iniciais(i.nome_colaborador))}</span>
+      <span class="ah-pick-txt"><b>${esc(i.nome_colaborador)}</b><small>${brDia(i.data_checkin_prevista)} a ${brDia(i.data_checkout_prevista)} · ${esc(sexoRotulo(i))}</small></span></div>`;
+
+    const linhaHotel = (h) => `<div class="ah-pick ${sel.hoteis.has(h.id) ? 'on' : ''}" data-pick>
+      <input type="checkbox" data-cot-hotel value="${esc(h.id)}" ${sel.hoteis.has(h.id) ? 'checked' : ''} aria-label="${esc(h.nome)}">
+      <span class="ah-pick-txt"><b>${esc(h.nome)}</b><small>${esc(h.cidade || '')}/${esc(h.uf || '')}${h.whatsapp ? ` · ${esc(h.whatsapp)}` : ''}</small></span>
+      <span class="ah-tag ${h.whatsapp ? 'ok' : ''}">${h.whatsapp ? 'WhatsApp' : 'Sem WhatsApp'}</span></div>`;
+
     const listaHoteis = () => {
       const lista = hoteisVisiveis();
-      if (!lista.length) return `<p class="ah-note">Nenhum hotel ${sel.todas ? '' : `cadastrado em ${esc(base.cidade)}/${esc(base.uf)} `}com esse filtro. ${sel.todas ? '' : 'Marque "outras cidades" ou cadastre o hotel abaixo.'}</p>`;
-      return lista.map((h) => `<label class="ah-cot-linha"><input type="checkbox" data-cot-hotel value="${esc(h.id)}" ${sel.hoteis.has(h.id) ? 'checked' : ''}>
-        <span><b>${esc(h.nome)}</b><small>${esc(h.cidade || '')}/${esc(h.uf || '')}${h.whatsapp ? ` · ${esc(h.whatsapp)}` : ' · sem WhatsApp'}</small></span></label>`).join('');
-    };
-
-    const desenharLista = () => {
-      const box = modalRoot().querySelector('#cotHoteis');
-      box.innerHTML = listaHoteis();
-      box.querySelectorAll('[data-cot-hotel]').forEach((c) => { c.onchange = () => { c.checked ? sel.hoteis.add(c.value) : sel.hoteis.delete(c.value); }; });
+      if (!lista.length) return `<p class="ah-note ah-vazio">Nenhum hotel ${sel.todas ? '' : `cadastrado em ${esc(base.cidade)}/${esc(base.uf)} `}com esse filtro. ${sel.todas ? '' : 'Ative "Outras cidades" ou cadastre o hotel abaixo.'}</p>`;
+      return lista.map(linhaHotel).join('');
     };
 
     moldura('Cotar hospedagem', `${base.cidade}/${base.uf} · ${brDia(base.data_checkin_prevista)} a ${brDia(base.data_checkout_prevista)}`, `
-      <div class="ah-field"><label>Colaboradores</label><div class="ah-cot-lista">${candidatos.map((i) => `<label class="ah-cot-linha"><input type="checkbox" data-cot-item value="${esc(i.item_id)}" ${sel.itens.has(i.item_id) ? 'checked' : ''}>
-        <span><b>${esc(i.nome_colaborador)}</b><small>${brDia(i.data_checkin_prevista)}–${brDia(i.data_checkout_prevista)} · ${esc(i.sexo === 'FEMININO' ? 'Feminino' : 'Masculino')}</small></span></label>`).join('')}</div></div>
-      <div class="ah-field"><label>Hotéis (um link por hotel)</label>
-        <input type="search" id="cotBusca" placeholder="Buscar hotel pelo nome" autocomplete="off">
-        <label class="ah-cot-linha"><input type="checkbox" id="cotTodas"> <span>Mostrar hotéis de outras cidades</span></label>
-        <div class="ah-cot-lista" id="cotHoteis"></div>
-        <button type="button" class="btn btn-ghost" id="cotNovoBtn">+ Cadastrar hotel novo</button>
-        <div id="cotNovo" class="ah-cot-novo" hidden>
-          <input type="text" id="cotNovoNome" placeholder="Nome do hotel">
-          <input type="text" id="cotNovoZap" inputmode="tel" placeholder="WhatsApp com DDD (opcional, para abrir a conversa)">
-          <button type="button" class="btn btn-secondary" id="cotNovoSalvar">Salvar hotel em ${esc(base.cidade)}/${esc(base.uf)}</button>
+      <div class="ah-cot-resumo" id="cotResumo"></div>
+      <section class="ah-sec">
+        <div class="ah-sec-head"><h4><span class="ah-num">1</span> Colaboradores</h4><span class="ah-sec-info"><span id="cotQtdItens"></span>${candidatos.length > 1 ? '<button type="button" class="ah-link" id="cotTodosItens">Marcar todos</button>' : ''}</span></div>
+        <div class="ah-pick-lista">${candidatos.map(linhaColaborador).join('')}</div>
+      </section>
+      <section class="ah-sec">
+        <div class="ah-sec-head"><h4><span class="ah-num">2</span> Hotéis <small>(um link por hotel)</small></h4><span class="ah-sec-info" id="cotQtdHoteis"></span></div>
+        <div class="ah-cot-barra">
+          <input type="search" class="ah-cot-input" id="cotBusca" placeholder="Buscar hotel pelo nome" autocomplete="off">
+          <button type="button" class="ah-chip-btn" id="cotTodas" aria-pressed="false">Outras cidades</button>
         </div>
-      </div>
-      <p class="ah-note">O hotel recebe um link, informa as diárias por tipo de quarto e você compara as respostas aqui. O link vale ${VALIDADE_LINK_DIAS} dias.</p>`,
-    `<button class="btn btn-secondary" data-cot-fechar type="button">Cancelar</button><button class="btn btn-primary" id="cotGerar" type="button">Gerar links</button>`);
+        <div class="ah-pick-lista ah-pick-hoteis" id="cotHoteis"></div>
+        <button type="button" class="ah-ghost-btn" id="cotNovoBtn">+ Cadastrar hotel novo em ${esc(base.cidade)}/${esc(base.uf)}</button>
+        <div id="cotNovo" class="ah-cot-novo" hidden>
+          <input type="text" class="ah-cot-input" id="cotNovoNome" placeholder="Nome do hotel">
+          <input type="text" class="ah-cot-input" id="cotNovoZap" inputmode="tel" placeholder="WhatsApp com DDD (opcional, para abrir a conversa)">
+          <div class="ah-cot-novo-acoes"><button type="button" class="ah-ghost-btn" id="cotNovoCancelar">Cancelar</button><button type="button" class="ah-solid-btn" id="cotNovoSalvar">Salvar hotel</button></div>
+        </div>
+      </section>
+      <p class="ah-cot-aviso">O hotel recebe um link, informa os dados da empresa, o endereço, as diárias por tipo de quarto e o que está incluso. Você compara as respostas aqui. O link vale ${VALIDADE_LINK_DIAS} dias.</p>`,
+    `<button class="btn btn-secondary" data-cot-fechar type="button">Cancelar</button><button class="btn btn-primary" id="cotGerar" type="button">Gerar links</button>`, 'ah-cotar');
 
     const root = modalRoot();
-    desenharLista();
-    root.querySelectorAll('[data-cot-item]').forEach((c) => { c.onchange = () => { c.checked ? sel.itens.add(c.value) : sel.itens.delete(c.value); }; });
-    root.querySelector('#cotBusca').oninput = (e) => { sel.busca = e.target.value; desenharLista(); };
-    root.querySelector('#cotTodas').onchange = (e) => { sel.todas = e.target.checked; desenharLista(); };
-    root.querySelector('#cotNovoBtn').onclick = () => { root.querySelector('#cotNovo').hidden = false; root.querySelector('#cotNovoNome').focus(); };
+    const escolhidos = () => state.v3Items.filter((i) => sel.itens.has(i.item_id));
+
+    const atualizarResumo = () => {
+      const lista = escolhidos();
+      const quartos = descreverQuartos(montarQuartos(lista.filter((i) => i.sexo === 'MASCULINO' || i.sexo === 'FEMININO')));
+      const semSexo = lista.filter((i) => i.sexo !== 'MASCULINO' && i.sexo !== 'FEMININO').length;
+      const dias = diasEntre(base.data_checkin_prevista, base.data_checkout_prevista);
+      root.querySelector('#cotResumo').innerHTML = `
+        <div><small>Pessoas</small><b>${lista.length}</b></div>
+        <div><small>Quartos sugeridos</small><b>${esc(quartos || '—')}</b></div>
+        <div><small>Período</small><b>${dias} diária(s)</b></div>
+        ${semSexo ? `<div class="alerta"><small>Atenção</small><b>${semSexo} sem sexo informado</b></div>` : ''}`;
+      root.querySelector('#cotQtdItens').textContent = `${lista.length} de ${candidatos.length} marcado(s)`;
+      root.querySelector('#cotQtdHoteis').textContent = sel.hoteis.size ? `${sel.hoteis.size} marcado(s)` : 'nenhum marcado';
+      const gerar = root.querySelector('#cotGerar');
+      gerar.textContent = sel.hoteis.size ? `Gerar ${sel.hoteis.size} link${sel.hoteis.size > 1 ? 's' : ''}` : 'Gerar links';
+      gerar.disabled = !lista.length || !sel.hoteis.size;
+    };
+
+    // A linha inteira marca/desmarca (a caixinha continua acessível pelo teclado).
+    const ligarLinhas = (container, conjunto) => {
+      container.querySelectorAll('[data-pick]').forEach((linha) => {
+        const caixa = linha.querySelector('input[type="checkbox"]');
+        const aplicar = () => { caixa.checked ? conjunto.add(caixa.value) : conjunto.delete(caixa.value); linha.classList.toggle('on', caixa.checked); atualizarResumo(); };
+        caixa.onchange = aplicar;
+        linha.onclick = (e) => { if (e.target === caixa) return; caixa.checked = !caixa.checked; aplicar(); };
+      });
+    };
+
+    const desenharHoteis = () => {
+      const box = root.querySelector('#cotHoteis');
+      box.innerHTML = listaHoteis();
+      ligarLinhas(box, sel.hoteis);
+    };
+
+    ligarLinhas(root.querySelector('.ah-pick-lista'), sel.itens);
+    root.querySelector('#cotTodosItens')?.addEventListener('click', () => {
+      const todos = candidatos.every((c) => sel.itens.has(c.item_id));
+      candidatos.forEach((c) => (todos ? sel.itens.delete(c.item_id) : sel.itens.add(c.item_id)));
+      root.querySelectorAll('[data-cot-item]').forEach((c) => { c.checked = sel.itens.has(c.value); c.closest('[data-pick]').classList.toggle('on', c.checked); });
+      atualizarResumo();
+    });
+    desenharHoteis();
+    atualizarResumo();
+    root.querySelector('#cotBusca').oninput = (e) => { sel.busca = e.target.value; desenharHoteis(); };
+    root.querySelector('#cotTodas').onclick = (e) => { sel.todas = !sel.todas; e.currentTarget.setAttribute('aria-pressed', String(sel.todas)); desenharHoteis(); };
+    const painelNovo = root.querySelector('#cotNovo');
+    root.querySelector('#cotNovoBtn').onclick = () => { painelNovo.hidden = false; root.querySelector('#cotNovoBtn').hidden = true; root.querySelector('#cotNovoNome').focus(); };
+    root.querySelector('#cotNovoCancelar').onclick = () => { painelNovo.hidden = true; root.querySelector('#cotNovoBtn').hidden = false; erro(''); };
     root.querySelector('#cotNovoSalvar').onclick = async () => {
       const nome = root.querySelector('#cotNovoNome').value.trim();
       const whatsapp = root.querySelector('#cotNovoZap').value.trim();
@@ -108,18 +165,22 @@ export function criarCotacaoHotel(ctx) {
       if (error) return erro(error.message);
       state.hotels.push(data);
       sel.hoteis.add(data.id);
-      root.querySelector('#cotNovo').hidden = true;
+      painelNovo.hidden = true;
+      root.querySelector('#cotNovoBtn').hidden = false;
+      root.querySelector('#cotNovoNome').value = '';
+      root.querySelector('#cotNovoZap').value = '';
       erro('');
-      desenharLista();
+      desenharHoteis();
+      atualizarResumo();
     };
     root.querySelector('#cotGerar').onclick = async () => {
-      const escolhidos = state.v3Items.filter((i) => sel.itens.has(i.item_id));
-      if (!escolhidos.length || !sel.hoteis.size) return erro('Selecione os colaboradores e ao menos um hotel.');
-      if (escolhidos.some((i) => i.sexo !== 'MASCULINO' && i.sexo !== 'FEMININO')) return erro('Há colaborador sem sexo informado; os quartos são separados por sexo.');
+      const lista = escolhidos();
+      if (!lista.length || !sel.hoteis.size) return erro('Selecione os colaboradores e ao menos um hotel.');
+      if (lista.some((i) => i.sexo !== 'MASCULINO' && i.sexo !== 'FEMININO')) return erro('Há colaborador sem sexo informado; os quartos são separados por sexo.');
       const btn = root.querySelector('#cotGerar');
       btn.disabled = true;
       const { data, error } = await repo.iniciarCotacao({
-        solicitacaoId: base.solicitacao_id, itemIds: escolhidos.map((i) => i.item_id), hotelIds: [...sel.hoteis], quartos: montarQuartos(escolhidos),
+        solicitacaoId: base.solicitacao_id, itemIds: lista.map((i) => i.item_id), hotelIds: [...sel.hoteis], quartos: montarQuartos(lista),
       });
       if (error) { btn.disabled = false; return erro(error.message); }
       fechar();

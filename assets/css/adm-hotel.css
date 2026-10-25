@@ -475,3 +475,53 @@
 /* Agrupar: verde quando há com quem agrupar, vermelho quando não há ninguém no mesmo destino e período. */
 .fm-selbar .fm-btn.fm-agr-ok:not(:disabled) { border-color: rgba(34, 197, 94, .5); background: rgba(34, 197, 94, .18); color: #86efac; }
 .fm-selbar .fm-btn.fm-agr-sem:not(:disabled) { border-color: rgba(239, 68, 68, .5); background: rgba(239, 68, 68, .16); color: #fca5a5; }
+
+/* Janela "Cotar hospedagem": resumo do pedido, etapa 1 (colaboradores) e etapa 2 (hotéis). Linhas clicáveis sem depender de <label>
+   (o estilo global de label do painel empilha a caixinha e põe tudo em maiúsculas). */
+.ah-cotar .ah-modal-body { gap: 16px; }
+.ah-cotar .ah-cot-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ah-cotar .ah-cot-resumo > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(111, 208, 165, .05); min-width: 0; }
+.ah-cotar .ah-cot-resumo small { display: block; color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+.ah-cotar .ah-cot-resumo b { display: block; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; }
+.ah-cotar .ah-cot-resumo .alerta { border-color: rgba(245, 158, 11, .5); background: rgba(245, 158, 11, .1); }
+.ah-cotar .ah-cot-resumo .alerta b { color: #fde68a; }
+.ah-cotar .ah-sec { display: flex; flex-direction: column; gap: 10px; }
+.ah-cotar .ah-sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ah-cotar .ah-sec-head h4 { margin: 0; display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; text-transform: none; letter-spacing: 0; }
+.ah-cotar .ah-sec-head h4 small { color: var(--muted); font-weight: 600; font-size: 12px; }
+.ah-cotar .ah-num { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(34, 197, 94, .18); color: #86efac; font-size: 12px; font-weight: 900; }
+.ah-cotar .ah-sec-info { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.ah-cotar button.ah-link { border: 0; background: transparent; color: #86efac; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; padding: 0; width: auto; min-height: 0; margin: 0; text-decoration: underline; }
+.ah-cotar .ah-pick-lista { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
+.ah-cotar .ah-pick-hoteis { max-height: 260px; }
+.ah-cotar .ah-pick { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, .015); cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.ah-cotar .ah-pick:hover { border-color: rgba(111, 208, 165, .4); }
+.ah-cotar .ah-pick.on { border-color: rgba(34, 197, 94, .6); background: rgba(34, 197, 94, .1); }
+.ah-cotar .ah-pick input[type="checkbox"] { width: 18px; height: 18px; flex: none; margin: 0; accent-color: #22c55e; cursor: pointer; }
+.ah-cotar .ah-pick-av { width: 32px; height: 32px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(34, 197, 94, .2); color: #bbf7d0; font-size: 12px; font-weight: 900; }
+.ah-cotar .ah-pick-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ah-cotar .ah-pick-txt b { color: var(--text); font-size: 13px; text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; }
+.ah-cotar .ah-pick-txt small { color: var(--muted); font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+.ah-cotar .ah-tag { flex: none; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 800; }
+.ah-cotar .ah-tag.ok { border-color: rgba(34, 197, 94, .45); color: #86efac; background: rgba(34, 197, 94, .1); }
+.ah-cotar .ah-vazio { padding: 14px; border: 1px dashed var(--line-2); border-radius: 12px; text-align: center; }
+.ah-cotar .ah-cot-barra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ah-modal .ah-cot-input { flex: 1; min-width: 0; width: 100%; height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bg-soft); color: var(--text); font: inherit; font-size: 13px; text-transform: none; box-sizing: border-box; }
+.ah-modal .ah-cot-input:focus { outline: none; border-color: var(--green-2); }
+.ah-cotar .ah-cot-barra .ah-cot-input { flex: 1 1 220px; width: auto; }
+.ah-cotar button.ah-chip-btn { flex: none; width: auto; min-height: 40px; margin: 0; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.ah-cotar button.ah-chip-btn[aria-pressed="true"] { border-color: rgba(34, 197, 94, .55); background: rgba(34, 197, 94, .16); color: #bbf7d0; }
+.ah-cotar button.ah-ghost-btn, .ah-cotar button.ah-solid-btn { width: auto; min-height: 38px; margin: 0; padding: 0 14px; border-radius: 10px; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.ah-cotar button.ah-ghost-btn { align-self: flex-start; border: 1px dashed rgba(111, 208, 165, .5); background: transparent; color: #86efac; }
+.ah-cotar button.ah-ghost-btn:hover { background: rgba(34, 197, 94, .1); }
+.ah-cotar button.ah-solid-btn { border: 0; background: linear-gradient(135deg, #16a34a, #22c55e); color: #052e16; }
+.ah-cotar .ah-cot-novo { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(111, 208, 165, .04); margin-top: 0; }
+.ah-cotar .ah-cot-novo-acoes { display: flex; justify-content: flex-end; gap: 8px; }
+.ah-cotar .ah-cot-aviso { margin: 0; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(96, 165, 250, .3); background: rgba(59, 130, 246, .08); color: #bfdbfe; font-size: 12px; line-height: 1.45; }
+.ah-cotar .ah-modal-foot .btn:disabled { opacity: .45; cursor: not-allowed; }
+/* Cabeçalho e rodapé da janela de cotação ficam sempre à vista; só o miolo rola. */
+.ah-modal.ah-cotar { display: flex; flex-direction: column; overflow: hidden; }
+.ah-cotar .ah-modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.ah-cotar .ah-modal-head, .ah-cotar .ah-modal-foot { flex: none; }
+.ah-cotar .ah-modal-foot { justify-content: flex-end; }
+.ah-cotar .ah-cot-novo .ah-cot-input { flex: none; }
