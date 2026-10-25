@@ -1,8 +1,8 @@
 // Fila v3 da Hospedagem (ADM): colaboradores por status no layout das listas do Frotas (cards que filtram, busca com chip, tabela
 // fixa e botões de ícone). Fábrica criarFila(ctx). O CSS vem de patrimonioLayoutFrotas.js (.fm-*); aqui só HTML e eventos.
 import { ICON, aoClicarCard, cardFiltro, iconBtn, sincronizarCards } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
-import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes3';
-import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes3';
+import { STATUS_ABERTOS, V3_LABELS, V3_VISUAL, contarPorStatus, elegiveisJuntos, filtrarFila, sugerirComposicao } from './service.js?v=20261024-hosp-acoes4';
+import { pedirCampos } from './ui-comum.js?v=20261024-hosp-acoes4';
 
 // Ícone de "agrupar" (duas pessoas): o kit de ícones do Frotas não tem um.
 const ICONE_GRUPO = '<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.5 0 4 2 4 5"/></svg>';
@@ -18,19 +18,23 @@ export function criarFila(ctx) {
   const emAberto = (i) => !!i && STATUS_ABERTOS.includes(i.status_item);
   const selecionadosEmAberto = () => [...selecionados].map(itemPorId).filter(emAberto);
 
+  // Quantos outros colaboradores em aberto podem ir junto com este (mesma solicitação, cidade e período): decide a cor do Agrupar.
+  const podemJuntos = (i) => (emAberto(i) ? state.v3Items.filter((o) => o.item_id !== i.item_id && o.solicitacao_id === i.solicitacao_id && elegiveisJuntos(i, o)).length : 0);
+
   const filtrados = () => filtrarFila(state.v3Items, { status: state.v3Filtro, busca: state.v3Busca }, normalizeText, brDate);
 
   const linhaHtml = (i) => {
     const visual = V3_VISUAL[i.status_item] || {};
     const aberto = STATUS_ABERTOS.includes(i.status_item);
     const sexo = i.sexo === 'FEMININO' ? 'Feminino' : i.sexo === 'MASCULINO' ? 'Masculino' : 'Sexo pendente';
+    const juntos = podemJuntos(i);
     return `<tr>
       <td><input type="checkbox" data-v3-select="${esc(i.item_id)}" ${aberto ? '' : 'disabled'} ${selecionados.has(i.item_id) ? 'checked' : ''} aria-label="Selecionar ${esc(i.nome_colaborador)}"></td>
       <td><div class="fm-person"><span class="fm-avatar">${esc(iniciais(i.nome_colaborador))}</span><div class="fm-cell"><b>${esc(i.nome_colaborador)}</b><span class="fm-prazo-dia">${esc(i.supervisao || 'Sem supervisão')} · ${esc(sexo)}</span></div></div></td>
       <td><div class="fm-cell"><b>${esc(i.cidade)}/${esc(i.uf)}</b></div></td>
       <td><div class="fm-cell">${brDate(i.data_checkin_prevista)}<span class="fm-prazo-dia">${esc(String(i.horario_chegada_previsto || '').slice(0, 5))} · ${i.quantidade_diarias_prevista} diária(s)</span></div></td>
       <td><div class="fm-cell"><span class="fm-badge ${visual.selo || ''}">${esc(V3_LABELS[i.status_item] || i.status_item)}</span>${i.hotel ? `<span class="fm-prazo-dia">${esc(i.hotel)} · ${esc(i.codigo_operacional || '')}</span>` : ''}</div></td>
-      <td><div class="fm-actions">${aberto ? `${iconBtn('data-v3-cotar', i.item_id, 'anexo', 'Cotar com hotéis (gera o link)', 'doc')}${iconBtn('data-v3-agrupar', i.item_id, '', 'Agrupar: marcar quem vai junto (mesmo destino e período)', ICONE_GRUPO)}${iconBtn('data-v3-reservar', i.item_id, 'termo', 'Reservar direto, sem cotação', 'calendario')}${iconBtn('data-v3-recusar', i.item_id, 'danger', 'Cancelar a solicitação', 'erro')}` : ''}${ctx.cotacao.acoesDoItem(i)}${i.status_item === 'RESERVADO' ? `${iconBtn('data-v3-extra', i.reserva_id, '', 'Despesa extra do hotel', 'alerta')}${iconBtn('data-v3-payment', i.reserva_id, 'termo', 'Pagamento do hotel', 'dinheiro')}` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? '<span class="fm-prazo-dia">Aguardando confirmações</span>' : ''}</div></td>
+      <td><div class="fm-actions">${aberto ? `${iconBtn('data-v3-cotar', i.item_id, 'anexo', 'Cotar com hotéis (gera o link)', 'doc')}${iconBtn('data-v3-agrupar', i.item_id, juntos ? 'termo' : 'danger', juntos ? `Agrupar: ${juntos} colaborador(es) podem ir junto (mesmo destino e período)` : 'Agrupar: ninguém mais no mesmo destino e período', ICONE_GRUPO)}${iconBtn('data-v3-reservar', i.item_id, 'termo', 'Reservar direto, sem cotação', 'calendario')}${iconBtn('data-v3-recusar', i.item_id, 'danger', 'Cancelar a solicitação', 'erro')}` : ''}${ctx.cotacao.acoesDoItem(i)}${i.status_item === 'RESERVADO' ? `${iconBtn('data-v3-extra', i.reserva_id, '', 'Despesa extra do hotel', 'alerta')}${iconBtn('data-v3-payment', i.reserva_id, 'termo', 'Pagamento do hotel', 'dinheiro')}` : ''}${i.status_item === 'CHECKOUT_PENDENTE' ? '<span class="fm-prazo-dia">Aguardando confirmações</span>' : ''}</div></td>
     </tr>`;
   };
 
@@ -173,6 +177,10 @@ export function criarFila(ctx) {
       ? `<b>${sel.length}</b> colaborador(es) marcado(s)${composicao ? ` · sugestão de quartos: ${esc(composicao)}` : ''}`
       : 'Marque os colaboradores na lista para cotar, agrupar, reservar ou cancelar de uma vez.';
     board.querySelectorAll('[data-v3-bar]').forEach((b) => { b.disabled = !sel.length; });
+    // Agrupar: verde quando há com quem agrupar o primeiro marcado, vermelho quando não há ninguém.
+    const agrupar = board.querySelector('[data-v3-bar="agrupar"]');
+    agrupar.classList.toggle('fm-agr-ok', sel.length > 0 && podemJuntos(sel[0]) > 0);
+    agrupar.classList.toggle('fm-agr-sem', sel.length > 0 && podemJuntos(sel[0]) === 0);
     const todos = board.querySelector('[data-v3-select-todos]');
     if (todos) {
       const caixas = [...board.querySelectorAll('[data-v3-select]:not(:disabled)')];

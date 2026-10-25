@@ -25,6 +25,16 @@ test('agrupar marca só quem pode ir junto e cotar/reservar exigem o mesmo grupo
   assert.match(le('assets/js/modules/hospedagem/cotacao-ui.js'), /return \{ acoesDoItem, ligar, abrirCotar \}/);
 });
 
+test('Agrupar fica verde quando há com quem agrupar e vermelho quando não há ninguém', () => {
+  const fila = le('assets/js/modules/hospedagem/fila-ui.js');
+  assert.match(fila, /juntos \? 'termo' : 'danger'/, 'o ícone da linha troca de cor');
+  assert.match(fila, /classList\.toggle\('fm-agr-ok'/);
+  assert.match(fila, /classList\.toggle\('fm-agr-sem'/);
+  const css = le('assets/css/adm-hotel.css');
+  assert.match(css, /\.fm-btn\.fm-agr-ok:not\(:disabled\)/);
+  assert.match(css, /\.fm-btn\.fm-agr-sem:not\(:disabled\)/);
+});
+
 test('o link do hotel pergunta empresa, endereço, os quatro quartos e os extras em caixas', () => {
   const pagina = le('assets/js/cotacao-hotel.js');
   for (const id of ['cnpj', 'razao', 'regime', 'atendente', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf']) assert.ok(pagina.includes(`id="${id}"`), `falta o campo ${id}`);
