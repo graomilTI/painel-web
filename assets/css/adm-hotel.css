@@ -471,3 +471,7 @@
 .fm-selbar .fm-btn:disabled { opacity: .4; cursor: not-allowed; }
 .fm-selbar .fm-btn.fm-cancelar:not(:disabled) { border-color: rgba(239, 68, 68, .5); background: rgba(239, 68, 68, .16); color: #fca5a5; }
 .fm-table th input[type="checkbox"], .fm-table td input[type="checkbox"] { width: 16px; height: 16px; accent-color: #22c55e; }
+
+/* Agrupar: verde quando há com quem agrupar, vermelho quando não há ninguém no mesmo destino e período. */
+.fm-selbar .fm-btn.fm-agr-ok:not(:disabled) { border-color: rgba(34, 197, 94, .5); background: rgba(34, 197, 94, .18); color: #86efac; }
+.fm-selbar .fm-btn.fm-agr-sem:not(:disabled) { border-color: rgba(239, 68, 68, .5); background: rgba(239, 68, 68, .16); color: #fca5a5; }
