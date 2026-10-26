@@ -92,6 +92,10 @@ function permissionRoute(item) {
   return item;
 }
 
+// Mesmo item que o menuBuilder injeta no grupo GESTOR (GESTOR_FAILSAFE_ITEMS). Não
+// existe no menuConfig, então sem estar aqui o guard barrava o clique do menu.
+const AUDITORIA_GESTOR_ITEM = { code: 'auditoria_gestor', label: 'Auditoria', path: 'auditoria', aliases: ['AUDITORIA_GESTOR', 'GESTOR_AUDITORIA', 'AUDITORIA'] };
+
 const CHAMADOS_TI_ITEM = { code: 'chamados_ti', label: 'Chamados de TI', path: 'chamados-ti', aliases: ['CHAMADOS_TI', 'TI_CHAMADOS', 'HELPDESK', 'SUPORTE_TI'] };
 
 export function allowedItemsForContext(context) {
@@ -108,7 +112,7 @@ export function allowedItemsForContext(context) {
       .filter((section) => allowedSections.has(normalize(section.section)))
       .flatMap((section) => section.items || [])
       .map(permissionRoute)
-      .concat(CHAMADOS_TI_ITEM);
+      .concat(AUDITORIA_GESTOR_ITEM, CHAMADOS_TI_ITEM);
   }
 
   const allowedCodes = buildModuleCodeSet(context);
@@ -118,6 +122,7 @@ export function allowedItemsForContext(context) {
   // enquanto códigos específicos liberam somente a página correspondente.
   return PANEL_MENU
     .flatMap((section) => section.items || [])
+    .concat(AUDITORIA_GESTOR_ITEM)
     .filter((item) => itemIsAllowedByModules(item, allowedCodes))
     .map(permissionRoute)
     .concat(CHAMADOS_TI_ITEM);
