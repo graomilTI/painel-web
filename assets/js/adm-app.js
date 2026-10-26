@@ -1,4 +1,4 @@
-import './pwa-register.js';
+import './pwa-register.js?v=20261026-sem-reload1';
 import { getSession, getUserContext, signOut } from './auth.js';
 import { saveUserContext, clearUserContext } from './sessionStore.js';
 import { toPanelUrl } from './paths.js';
