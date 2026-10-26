@@ -17,6 +17,9 @@ const brDate=(v)=>{const [y,m,d]=String(v||'').slice(0,10).split('-');return y&&
 const money=(v)=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const norm=(v)=>String(v??'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
 const isEPI=(r)=>norm(r?.tipo||'').includes('epi');
+// EPIs que não têm Certificado de Aprovação (não pedir Nº CA)
+const EPI_SEM_CA=['colete refletivo'];
+const pedeCA=(r)=>isEPI(r)&&!EPI_SEM_CA.some(n=>norm(r?.material||'').includes(n));
 function setMsg(msg,err=false){const el=document.getElementById('admCmpFeedback'); if(el){el.textContent=msg||''; el.classList.toggle('err',!!err)}}
 function pill(v){return `<span class="adm-cmp-status ${esc(v)}">${esc(STATUS[v]||v||'-')}</span>`}
 async function safe(fn,fallback=[]){try{const {data,error}=await fn(); if(error) throw error; return data||fallback;}catch(e){console.warn(e);return fallback;}}
@@ -1115,7 +1118,7 @@ function openFinalizarModal(r){
     <div class="adm-cmp-grid mt-16">
       <label class="adm-cmp-full">URL ou número da NF<input id="mNf" placeholder="Cole o link ou número da NF" value="${esc(r.nf_url||'')}"></label>
       <label>Marca<input id="mMarca" placeholder="Marca do item, se patrimônio" value="${esc(r.marca||'')}"></label>
-      ${isEPI(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
+      ${pedeCA(r)?`<label>Nº CA<input id="mCa" placeholder="Nº CA do EPI" value="${esc(r.ca||'')}"></label>`:''}
       <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez; o primeiro é a NF principal. Escolher arquivos substitui os atuais.</small></label>
     </div>
     ${anexosNfHtml(anexosNf(r))}
@@ -1334,7 +1337,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
     </div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${temPat?'<th>Marca</th>':''}${rows.some(isEPI)?'<th>CA</th>':''}${temProp?'<th>Em estoque</th><th>Retirar do estoque</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
+        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th>${temPat?'<th>Marca</th>':''}${rows.some(pedeCA)?'<th>CA</th>':''}${temProp?'<th>Em estoque</th><th>Retirar do estoque</th>':''}${temForn?'<th>No fornecedor</th><th>Do estoque</th>':''}<th>Valor unitário</th><th>Total a pagar</th></tr></thead>
         <tbody>
           ${rows.map(r=>{
             const c=cand.get(r.id)||[];
@@ -1344,7 +1347,7 @@ async function openCompraLote(rows,fornecedorPreSelecionado=false){
             <td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td>
             <td>${esc(r.tipo||'-')}</td>
             ${temPat?`<td>${ehPat(r)?`<input class="buy-marca" list="buyMarcas" placeholder="Marca (obrigatória)" autocomplete="off" value="${esc(r.marca||'')}" style="width:170px">`:'-'}</td>`:''}
-            ${rows.some(isEPI)?`<td>${isEPI(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||'')}">`:'-'}</td>`:''}
+            ${rows.some(pedeCA)?`<td>${pedeCA(r)?`<input class="buy-ca" placeholder="Nº CA" style="width:90px" value="${esc(r.ca||'')}">`:'-'}</td>`:''}
             ${temProp?`<td>${cp.length?`${esc(saldoProprio(cp))} ${esc(cp[0].unidade||'UN')}`:'-'}</td>
             <td>${cp.length?`<input class="buy-prop" type="number" step="0.01" min="0" value="${esc(doPropInicial(r))}" style="width:90px">`:'-'}</td>`:''}
             ${temForn?`<td>${c.length?(c.length>1?`<select class="buy-forn">${c.map(f=>`<option value="${esc(f.id)}" ${f.id===r._estoque_forn_id?'selected':''}>${esc(f.fornecedor)} — saldo ${esc(f.quantidade)}</option>`).join('')}</select>`:`${esc(c[0].fornecedor)}<br><small>saldo ${esc(c[0].quantidade)}</small><input type="hidden" class="buy-forn" value="${esc(c[0].id)}">`):'-'}</td>
@@ -1545,8 +1548,8 @@ function openPagamentoLote(rows, fornecedorPreSelecionado=false){
   area.innerHTML=`<div class="section-head"><div><h3>Pagamento da compra</h3><p class="muted">Total da compra: <b>${money(total)}</b></p>${propostaResumoHtml(rows[0]?._proposta)}</div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table adm-cmp-buy-table">
-        <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||isEPI(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th><th class="pay-link-th" style="display:none">Link do produto</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${esc(r._qtd_pagar??(r.quantidade||r.unidade||1))}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}${r._do_proprio>0?`<br><small>${esc(r._do_proprio)} un saem do nosso estoque${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}${r._do_estoque>0?`<br><small>${esc(r._do_estoque)} un saem do estoque do fornecedor${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}</td>${rows.some(x=>x._ca||isEPI(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
+        <thead><tr><th>Un.</th><th>Material</th>${rows.some(r=>r._ca||pedeCA(r))?'<th>CA</th>':''}<th>Valor unitário</th><th>Total</th><th class="pay-link-th" style="display:none">Link do produto</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r._qtd_pagar??(r.quantidade||r.unidade||1))}</td><td>${esc(r.material)}${r.tamanho?`<br><small>${esc(r.tamanho)}</small>`:''}${r._do_proprio>0?`<br><small>${esc(r._do_proprio)} un saem do nosso estoque${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}${r._do_estoque>0?`<br><small>${esc(r._do_estoque)} un saem do estoque do fornecedor${r._qtd_pagar<=0?' (nada a pagar)':''}</small>`:''}</td>${rows.some(x=>x._ca||pedeCA(x))?`<td>${esc(r._ca||r.ca||'-')}</td>`:''}<td>${money(r._valor_unitario)}</td><td>${money(r._valor_total)}</td><td class="pay-link-td" style="display:none"><input class="pay-link-input" data-id="${esc(r.id)}" placeholder="Link do produto"></td></tr>`).join('')}</tbody>
       </table>
     </div>
     <div class="adm-cmp-grid mt-16">
