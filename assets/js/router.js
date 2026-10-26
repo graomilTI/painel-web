@@ -117,7 +117,7 @@ const SOFT_NAV_PAGES = new Map([
   ['emails', { title: 'Central de E-mails', module: () => import('./emails.js?v=20260930-triagem2'), extraModules: [() => import('./emails-secure-account.js'), () => import('./emails-layout.js?v=20260930-triagem1')] }],
   ['gestor-email', { title: 'E-mail', module: () => import('./gestor-email.js?v=20260911-owner-filter1') }],
   ['programacao', { title: 'Programação', module: () => import('./programacao.js?v=20261019-limpar-situacao1'), extraStyles: [
-    './assets/css/programacao-redesign.css?v=20260920-base1',
+    './assets/css/programacao-redesign.css?v=20261026-sidebar1',
     './assets/css/programacao-toolbar.css?v=20260920-integrado1',
   ] }],
   ['financeiro', { title: 'Financeiro', module: () => import('./financeiro.js'), extraScripts: ['https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'], extraModules: [
@@ -216,8 +216,9 @@ const loadedStylesheets = new Set();
 // a criação da soft-nav; implementado ao consolidar programacao.js, cuja
 // página só ficava alinhada depois de um hard refresh por causa disso.
 function ensureStylesheet(href) {
-  if (loadedStylesheets.has(href)) return Promise.resolve();
   const existing = document.querySelector(`link[rel="stylesheet"][href="${href}"]`);
+  if (existing) existing.disabled = false;
+  if (loadedStylesheets.has(href)) return Promise.resolve();
   if (existing) {
     loadedStylesheets.add(href);
     return Promise.resolve();
@@ -235,8 +236,25 @@ function ensureStylesheet(href) {
   });
 }
 
+// O CSS extra de uma página (extraStyles) tem regras globais (ex.: zoom no .app-shell da Programação).
+// Como o <link> nunca sai do <head>, ele continuava valendo nas páginas seguintes da navegação suave.
+// Aqui só ficam ativos os estilos extras da página atual; os demais são desativados (e reativados
+// por ensureStylesheet se a página voltar).
+function syncExtraStyles(entry) {
+  const wanted = new Set(Array.isArray(entry.extraStyles) ? entry.extraStyles : []);
+  // Percorre todos os extraStyles declarados (não só os carregados pelo router): na carga direta da
+  // página o <link> vem do HTML e não passa por ensureStylesheet.
+  for (const page of SOFT_NAV_PAGES.values()) {
+    for (const href of page.extraStyles || []) {
+      const link = document.querySelector(`link[rel="stylesheet"][href="${href}"]`);
+      if (link) link.disabled = !wanted.has(href);
+    }
+  }
+}
+
 function renderRoute(routeName, entry, mod, userContext) {
   if (entry.title) document.title = `${entry.title} · Painel`;
+  syncExtraStyles(entry);
 
   renderAppLayout({ userContext, currentPageTitle: entry.title });
   bindLayoutActions();
