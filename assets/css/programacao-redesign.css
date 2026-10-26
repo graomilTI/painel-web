@@ -476,6 +476,14 @@ body.prog-step-a-os #progDistribuicaoOsMount .os-a-label {
    grande/pequeno demais. */
 .app-shell { zoom: 1.15; }
 
+/* A sidebar mantém o tamanho padrão do painel (252px, texto e espaçamento normais): o zoom acima vale
+   só para o conteúdo. A coluna é calculada em unidades já ampliadas e a sidebar desfaz o zoom. Abaixo de
+   901px o zoom já é desligado por programacao-mobile-ui.js e a sidebar vira gaveta, então não entra aqui. */
+@media (min-width: 901px) {
+  body:not(.sidebar-collapsed) .app-shell { grid-template-columns: calc(252px / 1.15) 1fr !important; }
+  .app-shell > .sidebar { zoom: calc(1 / 1.15); }
+}
+
 /* --------------------------------------------------------------------------
    9. Título "Programação" do topbar some (pedido do usuário, 2026-07-22) —
       redundante com o próprio menu/URL da página; mantém #welcomeUser ("Olá,
