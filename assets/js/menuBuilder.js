@@ -109,6 +109,13 @@ function buildAllowedCodeSet(userContext) {
 }
 
 function isItemAllowed(item, allowedCodes) {
+  // Mesma regra do authGuard (itemIsAllowedByModules): Bônus só com a permissão
+  // própria. Sem isso o menu exibia o item pelos aliases de Conferência e o
+  // clique era barrado pelo guard, redirecionando para a primeira página liberada.
+  if (normalizeCode(item?.code) === 'conferencia_bonus') {
+    return allowedCodes.has('conferencia_bonus');
+  }
+
   const candidates = [item.code, ...(Array.isArray(item.aliases) ? item.aliases : [])]
     .map(normalizeCode)
     .filter(Boolean);

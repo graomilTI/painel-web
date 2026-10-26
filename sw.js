@@ -1,7 +1,7 @@
-// v17 invalida qualquer JS/CSS anterior à consolidação da Programação.
+// v18 invalida o pwa-register.js anterior (reload que cancelava a navegação). v17 invalidou o JS/CSS anterior à consolidação da Programação.
 // O activate abaixo remove todos os caches antigos do painel, impedindo que
 // módulos *-fix excluídos continuem disponíveis para abas/PWAs instalados.
-const CACHE_NAME = 'g1000-painel-pwa-v17';
+const CACHE_NAME = 'g1000-painel-pwa-v18';
 const SHARE_CACHE = 'g1000-shared-file';
 
 const STATIC_URLS = [

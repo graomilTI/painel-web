@@ -1331,7 +1331,7 @@ function render() {
 }
 
 async function init() {
-  await initProtectedPage(['TI_AGENTES', 'TI']);
+  await initProtectedPage('Agentes');
   await Promise.all([loadAgentes(), loadCargasKpi(), loadOurosafraKpi(), loadExecutions(), loadQueue(), loadAgentSettings()]);
 }
 
