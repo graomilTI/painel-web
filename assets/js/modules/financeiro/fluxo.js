@@ -2,13 +2,13 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261019-fin5 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261027-fin6 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261019-fin5';
-import { readWorkbookRows } from './planilhas.js?v=20261019-fin5';
-import { statusClass } from './pagamentos.js?v=20261019-fin5';
-import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261019-fin5';
+import { state, esc, money, brDate, dateRangeLabel } from './util.js?v=20261027-fin6';
+import { readWorkbookRows } from './planilhas.js?v=20261027-fin6';
+import { statusClass } from './pagamentos.js?v=20261027-fin6';
+import { upsertChunk, mapReceber, mapPagar } from './contas.js?v=20261027-fin6';
 
 function criarFluxo(ctx) {
   const { userContext, setFeedback, mostrarFluxoDetalhes, setTab } = ctx;

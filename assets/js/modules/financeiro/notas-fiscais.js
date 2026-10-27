@@ -2,11 +2,12 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261019-fin5 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261027-fin6 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { state, esc, normalize, money, toNumber } from './util.js?v=20261019-fin5';
-import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261019-fin5';
+import { state, esc, normalize, money, toNumber } from './util.js?v=20261027-fin6';
+import { groupNotasFiscaisResumo } from './pagamentos.js?v=20261027-fin6';
+import { cardFiltro } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
 function criarNotasFiscais(ctx) {
   // ── Notas Fiscais (sincronizado pelo agente sync-notas-fiscais) ───────────
@@ -108,6 +109,16 @@ function criarNotasFiscais(ctx) {
     ERRO: 'Erro',
   };
 
+  // Tom e ícone do card de cada situação da fila de baixa.
+  const BAIXA_NF_CARD = {
+    NOVO: ['blue', 'relogio'],
+    PROCESSANDO: ['amber', 'relogio'],
+    AGUARDANDO_REVISAO: ['amber', 'alerta'],
+    VALIDADO: ['green', 'ok'],
+    BAIXADO: ['green', 'ok'],
+    ERRO: ['red', 'erro'],
+  };
+
   function safeStorageFileNameBaixaNf(name) {
     return String(name || 'arquivo').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
   }
@@ -136,11 +147,10 @@ function criarNotasFiscais(ctx) {
     const statuses = Object.keys(BAIXA_NF_STATUS_LABEL);
     const counts = await Promise.all(statuses.map((s) => supabase.from(BAIXA_NF_TABELA)
       .select('id', { count: 'exact', head: true }).eq('status', s)));
-    alvo.innerHTML = statuses.map((s, i) => `
-      <div class="pay-mini"><span>${esc(BAIXA_NF_STATUS_LABEL[s])}</span><strong>${counts[i]?.count || 0}</strong></div>
-    `).join('') + `
-      <div class="pay-mini"><a href="notas-fiscais.html#baixas" style="color:#86efac;text-decoration:none;font-weight:800">Ver e revisar →</a></div>
-    `;
+    alvo.innerHTML = statuses.map((s, i) => {
+      const [tone, icone] = BAIXA_NF_CARD[s];
+      return cardFiltro({ label: BAIXA_NF_STATUS_LABEL[s], tone, icone, valor: String(counts[i]?.count || 0) });
+    }).join('');
   }
 
   async function enviarComprovantesBaixaNf() {

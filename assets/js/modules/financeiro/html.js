@@ -1,14 +1,15 @@
 // Financeiro — HTML da tela do Financeiro (template único).
 // Extraído de assets/js/financeiro.js em 15/10/2026 (arquivo de ~2.800 linhas). O código das funções e constantes
 // foi movido sem alteração. Para publicar uma mudança em qualquer módulo de assets/js/modules/financeiro/, troque o
-// token ?v=20261019-fin5 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
+// token ?v=20261027-fin6 em TODOS os imports internos e nos carregadores (assets/js/financeiro.js, financeiro.html):
 // tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, esc } from './util.js?v=20261019-fin5';
+import { state, esc } from './util.js?v=20261027-fin6';
+import { ICON } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
 
   function htmlFinanceiro() {
     return `
     <style>
-      .fin-wrap{display:grid;gap:20px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
+      .fin-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:20px}.fin-hero{border:1px solid rgba(148,163,184,.18);border-radius:24px;padding:22px;background:linear-gradient(135deg,rgba(15,23,42,.96),rgba(22,101,52,.28));box-shadow:0 20px 50px rgba(2,6,23,.22)}
       .fin-hero h2{margin:0 0 6px;font-size:28px;color:#f8fafc}.fin-hero p{margin:0;color:#cbd5e1}.fin-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.fin-grid{display:grid;grid-template-columns:repeat(5,minmax(140px,1fr));gap:12px}.fin-kpi{border:1px solid rgba(148,163,184,.16);border-radius:20px;padding:16px;background:rgba(15,23,42,.86)}.fin-kpi span{display:block;color:#6b7280;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.fin-kpi strong{display:block;margin-top:8px;color:#f8fafc;font-size:22px}.fin-kpi small{color:#6b7280}.fin-card{border:1px solid rgba(148,163,184,.13);border-radius:24px;background:rgba(8,15,26,.75);padding:20px 22px;box-shadow:0 20px 50px rgba(2,6,23,.22);backdrop-filter:blur(10px)}
       .fin-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid rgba(148,163,184,.1)}.fin-head h3{margin:0;color:#f8fafc;font-size:17px;font-weight:700;letter-spacing:-.01em}.fin-head p{margin:3px 0 0;color:#64748b;font-size:13px}.pay-grid{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}.pay-card{border:1px solid rgba(148,163,184,.16);border-radius:22px;background:rgba(2,6,23,.34);padding:16px}.pay-card h4{margin:0 0 6px;color:#f8fafc;font-size:18px}.pay-card p{margin:0 0 14px;color:#6b7280}.pay-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin:14px 0}.pay-mini{border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:12px;background:rgba(15,23,42,.7)}.pay-mini span{display:block;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.06em}.pay-mini strong{display:block;margin-top:5px;color:#f8fafc;font-size:18px}.pay-subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.pay-subtab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:7px 13px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s}.pay-subtab:hover{color:#e2e8f0;background:rgba(15,23,42,.85)}.pay-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}.pay-table{display:none}.pay-table.active{display:block}@media(max-width:1100px){.pay-grid,.pay-summary{grid-template-columns:1fr 1fr}}@media(max-width:700px){.pay-grid,.pay-summary{grid-template-columns:1fr}}.fin-tabs{display:flex;gap:4px;flex-wrap:wrap}.fin-tab{border:1px solid rgba(148,163,184,.13);background:rgba(15,23,42,.5);color:#64748b;border-radius:10px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:600;transition:all .14s;letter-spacing:.01em}.fin-tab:hover{color:#e2e8f0;background:rgba(15,23,42,.85);border-color:rgba(148,163,184,.25)}.fin-tab.active{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;border-color:transparent;font-weight:700;box-shadow:0 2px 10px rgba(22,101,52,.4)}.fin-panel{display:none}.fin-panel.active{display:block}.fin-form{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:12px}.fin-field{display:grid;gap:6px}.fin-field.full{grid-column:1/-1}.fin-field label{font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}.fin-field input,.fin-field select,.fin-field textarea{width:100%;border:1px solid rgba(148,163,184,.18);border-radius:11px;background:rgba(15,23,42,.8);color:#e2e2f0;padding:10px 13px;color-scheme:dark;transition:border-color .14s}.fin-field input:focus,.fin-field select:focus,.fin-field textarea:focus{outline:0;border-color:rgba(52,211,153,.45);box-shadow:0 0 0 3px rgba(52,211,153,.08)}.fin-field textarea{min-height:78px;resize:vertical}.fin-table-wrap{overflow:auto;border-radius:18px;border:1px solid rgba(148,163,184,.14)}.fin-table{width:100%;border-collapse:collapse;min-width:860px}.fin-table th,.fin-table td{padding:12px 14px;border-bottom:1px solid rgba(148,163,184,.08);text-align:left;color:#e2e8f0;font-size:14px}.fin-table th{background:rgba(8,15,26,.96);color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;position:sticky;top:0;z-index:1}.fin-table tbody tr:hover td{background:rgba(34,197,94,.05)}.fin-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}.fin-muted{display:block;color:#6b7280;font-size:12px;margin-top:3px}.fin-status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800}.fin-status.ok{background:rgba(34,197,94,.14);color:#86efac}.fin-status.danger{background:rgba(239,68,68,.14);color:#fecaca}.fin-status.neutral{background:rgba(148,163,184,.14);color:#cbd5e1}.fin-import-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.fin-drop{border:1px dashed rgba(34,197,94,.35);border-radius:16px;padding:18px;background:rgba(22,101,52,.08);transition:border-color .14s,background .14s}.fin-drop:hover{border-color:rgba(34,197,94,.55);background:rgba(22,101,52,.14)}.pay-upload{border:1px dashed rgba(34,197,94,.45);border-radius:18px;background:rgba(22,101,52,.08);padding:14px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;transition:.16s ease}.pay-upload:hover,.pay-upload.dragging{border-color:#22c55e;background:rgba(22,101,52,.18);transform:translateY(-1px)}.pay-upload input{display:none}.pay-upload strong{display:block;color:#e2e2f0;font-size:13px}.pay-upload span{display:block;color:#6b7280;font-size:12px;margin-top:4px;word-break:break-word}.pay-upload.has-file{border-style:solid;background:rgba(34,197,94,.14)}.fin-feedback{color:#6b7280;font-size:13px}.fin-feedback.ok{color:#86efac}.fin-feedback.err{color:#fecaca}.fin-empty{text-align:center;color:#6b7280;padding:24px!important}.fin-small{padding:8px 12px!important;font-size:13px!important}@media(max-width:1100px){.fin-grid{grid-template-columns:repeat(2,1fr)}.fin-form,.fin-import-grid{grid-template-columns:1fr}}@media(max-width:700px){.fin-grid{grid-template-columns:1fr}.fin-head{display:grid}}
 
@@ -108,6 +109,21 @@ import { state, esc } from './util.js?v=20261019-fin5';
       .ajustes-subtab.active{background:linear-gradient(135deg,#14532d,#166534);color:#fff;border-color:transparent;box-shadow:0 2px 8px rgba(22,101,52,.35)}
       .ajustes-panel{display:none}
       .ajustes-panel.active{display:block}
+      /* Abas do topo no padrão do Frotas (texto + risco embaixo do ativo; Atualizar como ícone à direita). */
+      .fin-tabrow{display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(148,163,184,.14);margin-bottom:16px}
+      .fin-tabrow .fin-tabs{gap:2px;flex:1;min-width:0;flex-wrap:nowrap;overflow-x:auto}
+      .fin-tabrow .fin-tab{border:0;border-radius:0;background:transparent;box-shadow:none;padding:12px 14px 11px;color:#a9b8b1;font-size:13px;white-space:nowrap;border-bottom:2px solid transparent}
+      .fin-tabrow .fin-tab:hover{color:#d9fbe8;background:rgba(34,197,94,.035);border-color:transparent}
+      .fin-tabrow .fin-tab.active{color:#35e990;background:transparent;box-shadow:none;border-bottom-color:#22e58a}
+      .fin-tabrow .fin-tab-icon{margin-left:0;flex:none}
+      /* Aba Pagamentos (layout das listas do Frotas: cards que filtram, busca com chip, tabela fixa, ações em ícones). */
+      #tab-pagamentos .fm-shell{display:grid;gap:16px}#tab-pagamentos .fm-topo{margin:0;justify-content:space-between;align-items:center}#tab-pagamentos .fm-prazo-dia{margin:0;font-size:13px}
+      #tab-pagamentos .fm-kpis{margin:0}#tab-pagamentos .fm-table{min-width:1040px}#tab-pagamentos .fm-table td{vertical-align:top}#tab-pagamentos .fm-btn svg{width:16px;height:16px;flex:none}
+      #tab-pagamentos .fm-kcard.tone-slate{--kc:#94a3b8;--kc-bg:rgba(148,163,184,.14)}
+      .fin-cod{display:block;margin-top:3px;color:#93c5fd;white-space:nowrap;font-size:11.5px}
+      .fin-baixa-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}.fin-baixa-head b{display:block;color:#f8fafc;font-size:16px}.fin-baixa-head .fm-prazo-dia{max-width:820px;line-height:1.5}
+      .fin-baixa-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}.fin-file{flex:0 1 420px;min-width:240px;height:auto;min-height:42px;padding:5px 8px}.fin-file::file-selector-button{margin-right:10px;border:1px solid rgba(34,197,94,.24);border-radius:10px;background:rgba(34,197,94,.12);color:#86efac;padding:6px 12px;font:inherit;font-weight:900;cursor:pointer}
+      .fin-baixa-head a.fm-btn{text-decoration:none}#baixaNfResumo{margin:0}
     </style>
     <section class="fin-wrap">
       <div class="cf-header">
@@ -127,8 +143,7 @@ import { state, esc } from './util.js?v=20261019-fin5';
       </div>
 
       <article class="fin-card">
-        <div class="fin-head">
-          <div><h3>Fluxo de Caixa</h3><p>Selecione uma visão do módulo financeiro.</p></div>
+        <div class="fin-tabrow">
           <div class="fin-tabs">
             <button class="fin-tab active" data-tab="dashboard" type="button">Dashboard</button>
             <button class="fin-tab" data-tab="fluxo" type="button">Fluxo</button>
@@ -136,8 +151,8 @@ import { state, esc } from './util.js?v=20261019-fin5';
             <button class="fin-tab" data-tab="pagamentos" type="button">Pagamentos</button>
             <button class="fin-tab" data-tab="notas-fiscais" type="button">Notas Fiscais</button>
             <button class="fin-tab" data-tab="ajustes" type="button">Ajustes</button>
-            <button class="fin-tab-icon" id="btnReload" type="button" title="Atualizar fluxo">↻</button>
           </div>
+          <button class="fin-tab-icon" id="btnReload" type="button" title="Atualizar fluxo" aria-label="Atualizar fluxo">↻</button>
         </div>
 
         <div class="fin-panel active" id="tab-dashboard">
@@ -350,53 +365,56 @@ import { state, esc } from './util.js?v=20261019-fin5';
         </div>
 
         <div class="fin-panel" id="tab-pagamentos">
-          <div class="fin-head">
-            <div>
-              <h3>Pagamentos solicitados pelos setores</h3>
-              <p>Fila de despesas enviadas por Compras, Hospedagem, RH e outros módulos para o financeiro realizar o pagamento.</p>
+          <div class="fm-shell">
+            <div class="fm-topo">
+              <p class="fm-prazo-dia">Fila de despesas enviadas por Compras, Hospedagem, RH e outros módulos para o financeiro realizar o pagamento.</p>
+              <div class="fm-head-actions"><button class="fm-btn soft" id="btnReloadSetorPagamentos" type="button">↻ Atualizar</button></div>
             </div>
-            <button class="btn btn-secondary" id="btnReloadSetorPagamentos" type="button">↻ Atualizar pagamentos</button>
-          </div>
 
-          <div class="fin-setor-filter" id="setorPagamentoFilter">
-            <button class="fin-setor-btn active" data-setor-pay="todos" type="button">Todos</button>
-            <button class="fin-setor-btn" data-setor-pay="COMPRAS" type="button">Compras</button>
-            <button class="fin-setor-btn" data-setor-pay="HOSPEDAGEM" type="button">Hospedagem</button>
-            <button class="fin-setor-btn" data-setor-pay="FROTAS" type="button">Frotas</button>
-            <button class="fin-setor-btn" data-setor-pay="RH" type="button">RH</button>
-            <button class="fin-setor-btn" data-setor-pay="AUDITORIA" type="button">Auditoria</button>
-            <button class="fin-setor-btn" data-setor-pay="OUTROS" type="button">Outros</button>
-          </div>
+            <div class="fm-kpis" id="setorPagKpis"></div>
 
-          <div class="fin-drop" style="margin-bottom:16px">
-            <h3>Comprovantes de pagamento (Holerite/NF)</h3>
-            <p class="fin-muted">Envie os comprovantes de PIX/TED de um lote já pago (holerite ou NF já lançados no GRM). Cada arquivo vira 1 item na fila de baixa — o casamento com o lançamento certo e a confirmação de casos ambíguos ficam no Painel de Notas Fiscais.</p><br>
-            <input id="baixaNfArquivos" type="file" multiple accept=".pdf">
-            <div class="fin-actions-row">
-              <button class="btn btn-primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
-              <span id="fbBaixaNf" class="fin-feedback"></span>
-            </div>
-            <div id="baixaNfResumo" class="pay-summary" style="margin-top:12px"></div>
-          </div>
+            <div class="fm-card"><div class="fm-body">
+              <div class="fm-bar">
+                <div class="fm-search">${ICON.busca}<input class="fm-input" id="setorPagBusca" type="search" placeholder="Buscar por setor, código, gestor, coordenação, conteúdo ou valor..." autocomplete="off"></div>
+                <span data-chip></span>
+                <span class="fm-count" id="setorPagCount"></span>
+              </div>
+              <div class="fm-table-wrap">
+                <table class="fm-table">
+                  <thead>
+                    <tr>
+                      <th>Setor</th>
+                      <th>Data/Hora</th>
+                      <th>Gestor</th>
+                      <th>Coordenação</th>
+                      <th>Conteúdo</th>
+                      <th>Valor</th>
+                      <th>Status</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="setorPagamentosTbody">
+                    <tr><td colspan="8" class="fm-empty">Carregando pagamentos enviados pelos setores...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div></div>
 
-          <div class="fin-table-wrap">
-            <table class="fin-table">
-              <thead>
-                <tr>
-                  <th>Setor</th>
-                  <th>Data/Hora</th>
-                  <th>Gestor</th>
-                  <th>Coordenação</th>
-                  <th>Conteúdo</th>
-                  <th>Valor</th>
-                  <th>Status</th>
-                  <th>Ações</th>
-                </tr>
-              </thead>
-              <tbody id="setorPagamentosTbody">
-                <tr><td colspan="8" class="fin-empty">Clique em Atualizar pagamentos.</td></tr>
-              </tbody>
-            </table>
+            <div class="fm-card"><div class="fm-body">
+              <div class="fin-baixa-head">
+                <div>
+                  <b>Comprovantes de pagamento (Holerite/NF)</b>
+                  <span class="fm-prazo-dia">Envie os comprovantes de PIX/TED de um lote já pago (holerite ou NF já lançados no GRM). Cada arquivo vira 1 item na fila de baixa — o casamento com o lançamento certo e a confirmação de casos ambíguos ficam no Painel de Notas Fiscais.</span>
+                </div>
+                <a class="fm-btn ghost" href="notas-fiscais.html#baixas">Ver e revisar →</a>
+              </div>
+              <div class="fin-baixa-bar">
+                <input class="fm-input fin-file" id="baixaNfArquivos" type="file" multiple accept=".pdf" aria-label="Comprovantes em PDF">
+                <button class="fm-btn primary" id="btnEnviarBaixaNf" type="button">Enviar comprovantes</button>
+                <span id="fbBaixaNf" class="fin-feedback"></span>
+              </div>
+              <div id="baixaNfResumo" class="fm-kpis"></div>
+            </div></div>
           </div>
         </div>
 

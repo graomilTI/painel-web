@@ -1,16 +1,18 @@
 ﻿import { initProtectedPage } from './pageInit.js';
-import { state } from './modules/financeiro/util.js?v=20261019-fin5';
-import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261019-fin5';
-import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261019-fin5';
-import { criarFeedback } from './modules/financeiro/feedback.js?v=20261019-fin5';
-import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261019-fin5';
-import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261019-fin5';
-import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261019-fin5';
-import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261019-fin5';
-import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261019-fin5';
-import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261019-fin5';
+import { state } from './modules/financeiro/util.js?v=20261027-fin6';
+import { injectEstilosFrotas } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
+import { sincronizarContasAgente } from './modules/financeiro/contas.js?v=20261027-fin6';
+import { htmlFinanceiro } from './modules/financeiro/html.js?v=20261027-fin6';
+import { criarFeedback } from './modules/financeiro/feedback.js?v=20261027-fin6';
+import { criarDashboard } from './modules/financeiro/dashboard.js?v=20261027-fin6';
+import { criarNotasFiscais } from './modules/financeiro/notas-fiscais.js?v=20261027-fin6';
+import { criarSetorPagamentos } from './modules/financeiro/setor-pagamentos.js?v=20261027-fin6';
+import { criarAdiantamentos } from './modules/financeiro/adiantamentos.js?v=20261027-fin6';
+import { criarNavegacao } from './modules/financeiro/navegacao.js?v=20261027-fin6';
+import { criarFluxo } from './modules/financeiro/fluxo.js?v=20261027-fin6';
 
 export function renderContent(content, userContext) {
+  injectEstilosFrotas();
   content.innerHTML = htmlFinanceiro();
 
   // Cada parte da tela é uma fábrica criarX(ctx) em modules/financeiro/: recebe o contexto e devolve as funções que
@@ -23,7 +25,7 @@ export function renderContent(content, userContext) {
   Object.assign(ctx, criarAdiantamentos(ctx));
   Object.assign(ctx, criarNavegacao(ctx));
   Object.assign(ctx, criarFluxo(ctx));
-  const { tabFromHash, mostrarFluxoLista, setAjustesTab, setTab, loadNotasFiscais, renderNotasFiscais, renderSetorPagamentos, enviarComprovantesBaixaNf, loadSetorPagamentos, loadFluxo, loadDetalhes, renderDetalhes, importFile, saveConfig, carregarAdiantamentos, setAdiantTab, renderAdiantamentosTable, renderHistoricoAgrupado, pagarAdiantamentos, carregarDespesasTab } = ctx;
+  const { tabFromHash, mostrarFluxoLista, setAjustesTab, setTab, loadNotasFiscais, renderNotasFiscais, enviarComprovantesBaixaNf, loadSetorPagamentos, ligarSetorPagamentos, loadFluxo, loadDetalhes, renderDetalhes, importFile, saveConfig, carregarAdiantamentos, setAdiantTab, renderAdiantamentosTable, renderHistoricoAgrupado, pagarAdiantamentos, carregarDespesasTab } = ctx;
 
   state.adiantamentosRows = [];
   state.adiantamentosLoaded = false;
@@ -35,11 +37,7 @@ export function renderContent(content, userContext) {
   document.getElementById('nfReloadBtn')?.addEventListener('click', loadNotasFiscais);
   document.getElementById('nfFiltroCliente')?.addEventListener('input', (event) => { state.notasFiscaisFiltro.cliente = event.target.value; renderNotasFiscais(); });
   document.getElementById('nfFiltroSituacao')?.addEventListener('change', (event) => { state.notasFiscaisFiltro.situacao = event.target.value; renderNotasFiscais(); });
-  document.querySelectorAll('[data-setor-pay]').forEach((btn) => btn.addEventListener('click', () => {
-    state.pagamentosSetorFilter = btn.dataset.setorPay || 'todos';
-    document.querySelectorAll('[data-setor-pay]').forEach((item) => item.classList.toggle('active', item === btn));
-    renderSetorPagamentos();
-  }));
+  ligarSetorPagamentos();
   document.getElementById('btnImportReceber').addEventListener('click', () => importFile('receber'));
   document.getElementById('btnImportPagar').addEventListener('click', () => importFile('pagar'));
   document.getElementById('configForm').addEventListener('submit', saveConfig);
