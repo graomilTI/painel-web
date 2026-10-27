@@ -260,6 +260,8 @@ const ICONS={
   link:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
   eye:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
   split:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="16" rx="1.5"/><rect x="14" y="4" width="7" height="16" rx="1.5"/></svg>`,
+  chevron:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`,
+  nf:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
   clip:`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`,
 };
 const ROW_ACTION_ICONS={cotar:'tag',aprovar_solicitar:'send',recusar:'x',comprar:'check',cancelar:'x',aprovar:'check',reprovar:'x',finalizar:'doc',finalizar_grupo:'doc',enviar_estoque:'box',anexar_nf:'clip'};
@@ -269,36 +271,44 @@ function iconBtn(action,id,title){
 function nfLinkHtml(r){
   const nfUrl=r?.nf_url||'';
   if(!nfUrl) return '<span class="muted">-</span>';
-  const principal=/^https?:\/\//i.test(nfUrl)?`<a href="${esc(nfUrl)}" target="_blank" rel="noopener" style="color:#86efac;font-size:12px">Ver NF</a>`:`<small class="muted">${esc(nfUrl)}</small>`;
-  const extras=anexosNf(r).map((a,i)=>`<a href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome||'')}" style="color:#86efac;font-size:12px">Anexo ${i+2}</a>`).join(' · ');
-  return extras?`${principal} · ${extras}`:principal;
+  const principal=/^https?:\/\//i.test(nfUrl)?`<a class="adm-cmp-icon-btn adm-cmp-icon-link" href="${esc(nfUrl)}" target="_blank" rel="noopener" title="Ver NF" aria-label="Ver NF">${ICONS.nf}</a>`:`<span class="adm-cmp-icon-btn" title="${esc(nfUrl)}" aria-label="NF: ${esc(nfUrl)}">${ICONS.nf}</span>`;
+  const extras=anexosNf(r).map((a,i)=>`<a class="adm-cmp-icon-btn adm-cmp-icon-link" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.nome||`Anexo ${i+2}`)}" aria-label="Anexo ${i+2}">${ICONS.clip}</a>`).join('');
+  return `<div class="adm-cmp-row-actions">${principal}${extras}</div>`;
 }
 function actionsCellForTab(r){
   if(state.tab==='analise') return `<div class="adm-cmp-row-actions">${analiseAcoesHtml(r)}</div>`;
   if(state.tab==='aguardando') return `<div class="adm-cmp-row-actions">${iconBtn('anexar_nf',r.id,r.nf_url?'Trocar NF':'Anexar NF')}${r.nf_url?nfLinkHtml(r):''}</div>`;
   if(state.tab==='nf') return `<div class="adm-cmp-row-actions">${iconBtn('finalizar',r.id,'Finalizar')}${r.nf_url?nfLinkHtml(r):''}</div>`;
-  if(state.tab==='recusados') return `<small class="muted">${esc(r.motivo_recusa||'-')}</small>`;
   if(state.tab==='comprados') return nfLinkHtml(r);
-  return '<span class="muted">-</span>';
+  return '';
 }
 
-// Colunas das etapas em tabela: Cód/Item · Gestor · Coordenação · Data · Status · Valor · Ações.
-// A primeira coluna leva o código e, abaixo, o que foi pedido (quantidade, material, detalhes).
-function codItemHtml(r){
+// Colunas das etapas em tabela: Cód · Gestor · Coordenação · Data · Status · Valor · Ações.
+// Os itens ficam ocultos: o ícone "Ver itens" (sempre o primeiro das ações) abre a linha de detalhe.
+function codHtml(r){
+  return `<b class="adm-cmp-cod">${esc(r.codigo||'—')}</b>${r.codigo_pagamento?`<small class="adm-cmp-pgto">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}`;
+}
+function codGrupoHtml(itens,fornecedor){
+  return `<b class="adm-cmp-cod">${esc(fornecedor||'Mesmo fornecedor')}</b><small class="adm-cmp-pgto" style="color:var(--muted)">${itens.length} itens</small>`;
+}
+function itemDetalheHtml(r){
   const qtd=r.quantidade||r.unidade||1;
-  const detalhes=[r.tamanho?`Tam: ${esc(r.tamanho)}`:'',r.colaborador_nome?esc(r.colaborador_nome):''].filter(Boolean).join(' · ');
-  return `<b class="adm-cmp-cod">${esc(r.codigo||'—')}</b><span class="adm-cmp-item">${esc(qtd)}× ${esc(r.material)}${detalhes?` <small>${detalhes}</small>`:''}</span>${r.codigo_pagamento?`<small class="adm-cmp-pgto">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}`;
+  const det=[r.tamanho?`Tam: ${esc(r.tamanho)}`:'',r.colaborador_nome?esc(r.colaborador_nome):'',r.tipo?esc(r.tipo):''].filter(Boolean).join(' · ');
+  return `<li><span class="adm-cmp-det-cod">${esc(r.codigo||'—')}</span><span class="adm-cmp-det-nome"><b>${esc(qtd)}× ${esc(r.material)}</b>${det?`<small>${det}</small>`:''}</span><span class="adm-cmp-det-valor">${r.valor_total?money(r.valor_total):''}</span></li>`;
 }
-function codItemGrupoHtml(itens,fornecedor){
-  const lista=itens.map(r=>r.codigo?`${esc(r.material)} (${esc(r.codigo)})`:esc(r.material)).join(' · ');
-  return `<b class="adm-cmp-cod">${esc(fornecedor||'Mesmo fornecedor')}</b><span class="adm-cmp-item">${itens.length} itens <small>${lista}</small></span>`;
+function detalheHtml(itens){
+  const motivo=state.tab==='recusados'?itens.find(r=>r.motivo_recusa)?.motivo_recusa:'';
+  return `<ul class="adm-cmp-det-list">${itens.map(itemDetalheHtml).join('')}</ul>${motivo?`<p class="adm-cmp-det-motivo"><b>Motivo da recusa:</b> ${esc(motivo)}</p>`:''}`;
 }
-function linhaTabelaHtml({classe='',check,cod,gestor,coord,data,status,valor,acoes}){
-  return `<tr${classe?` class="${classe}"`:''}><td>${check}</td><td class="adm-cmp-cod-cell">${cod}</td><td>${esc(gestor||'-')}</td><td>${esc(coord||'-')}</td><td>${data}</td><td>${status}</td><td>${valor}</td><td>${acoes}</td></tr>`;
+function verItensBtn(){
+  return `<button class="adm-cmp-icon-btn" type="button" data-toggle-itens aria-expanded="false" title="Ver itens" aria-label="Ver itens">${ICONS.chevron}</button>`;
+}
+function linhaTabelaHtml({classe='',check,cod,gestor,coord,data,status,valor,acoes,itens}){
+  return `<tr${classe?` class="${classe}"`:''}><td>${check}</td><td class="adm-cmp-cod-cell">${cod}</td><td>${esc(gestor||'-')}</td><td>${esc(coord||'-')}</td><td>${data}</td><td>${status}</td><td>${valor}</td><td><div class="adm-cmp-row-actions">${verItensBtn()}${acoes}</div></td></tr><tr class="adm-cmp-detail-row" hidden><td></td><td colspan="7">${detalheHtml(itens)}</td></tr>`;
 }
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
-  return linhaTabelaHtml({check:`<input type="checkbox" data-check="${esc(r.id)}">`,cod:codItemHtml(r),gestor:s.solicitante,coord:s.coordenacao,data:brDate(s.data_solicitacao),status:pill(r.status),valor:money(r.valor_total||0),acoes:actionsCellForTab(r)});
+  return linhaTabelaHtml({check:`<input type="checkbox" data-check="${esc(r.id)}">`,cod:codHtml(r),gestor:s.solicitante,coord:s.coordenacao,data:brDate(s.data_solicitacao),status:pill(r.status),valor:money(r.valor_total||0),acoes:actionsCellForTab(r),itens:[r]});
 }
 
 // ─── Cards (APROVAÇÃO agrupa por solicitação) ──────────────────────────────
@@ -594,8 +604,13 @@ function renderTable(){
     return;
   }
 
-  wrap.innerHTML=`<div class="fm-table-wrap"><table class="fm-table"><thead><tr><th></th><th>Cód / Item</th><th>Gestor</th><th>Coordenação</th><th>Data</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div>`;
+  wrap.innerHTML=`<div class="fm-table-wrap"><table class="fm-table"><thead><tr><th></th><th>Cód</th><th>Gestor</th><th>Coordenação</th><th>Data</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div>`;
   const body=document.getElementById('admCmpBody');
+  body.addEventListener('click',e=>{
+    const btn=e.target.closest('[data-toggle-itens]'); if(!btn) return;
+    const det=btn.closest('tr')?.nextElementSibling; if(!det?.classList.contains('adm-cmp-detail-row')) return;
+    det.hidden=!det.hidden; btn.setAttribute('aria-expanded',String(!det.hidden)); btn.classList.toggle('is-open',!det.hidden);
+  });
   if(!rows.length){body.innerHTML='<tr><td colspan="8" class="fm-empty">Nenhum item nesta etapa.</td></tr>'; return;}
 
   if(state.tab==='aguardando'||state.tab==='nf'){
@@ -610,7 +625,7 @@ function renderTable(){
       const gids=itens.map(r=>r.id).join(',');
       const nfGrp=itens.find(r=>r.nf_url);
       const acao=`<div class="adm-cmp-row-actions">${state.tab==='aguardando'?iconBtn('anexar_nf',gids,nfGrp?'Trocar NF do grupo':'Anexar NF ao grupo'):''}${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}${nfGrp?nfLinkHtml(nfGrp):''}</div>`;
-      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codItemGrupoHtml(itens,fn),gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(s0.data_solicitacao),status:pill(stGrp),valor:money(totalGrp),acoes:acao});
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(s0.data_solicitacao),status:pill(stGrp),valor:money(totalGrp),acoes:acao});
     }).join('');
     bindCheckHandlers(body);
     wireRowActions(body);
@@ -627,7 +642,7 @@ function renderTable(){
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const comprado_em=itens[0].comprado_em||itens[0].created_at||'';
       const gids=itens.map(r=>r.id).join(',');
-      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codItemGrupoHtml(itens,fn),gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(comprado_em),status:pill('comprado'),valor:money(totalGrp),acoes:nfLinkHtml(itens[0])});
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(comprado_em),status:pill('comprado'),valor:money(totalGrp),acoes:nfLinkHtml(itens[0])});
     }).join('');
     bindCheckHandlers(body);
     return;
@@ -1805,7 +1820,11 @@ function styles(){return `<style>
 @media(max-width:760px){.adm-cmp-card-row-value{margin-left:44px}}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
-.adm-cmp-cod-cell{min-width:260px;max-width:420px}.adm-cmp-cod{display:block;color:#bbf7d0;font-size:13px;letter-spacing:.02em}.adm-cmp-item{display:block;margin-top:2px;overflow-wrap:anywhere}.adm-cmp-item small,.adm-cmp-pgto{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}.adm-cmp-pgto{color:#93c5fd}
+.adm-cmp-cod-cell{min-width:150px}.adm-cmp-cod{display:block;color:#bbf7d0;font-size:13px;letter-spacing:.02em}.adm-cmp-pgto{display:block;margin-top:2px;color:#93c5fd;font-size:11.5px}
+.adm-cmp-icon-link{text-decoration:none}.adm-cmp-icon-btn[data-toggle-itens] svg{transition:transform .15s}.adm-cmp-icon-btn[data-toggle-itens].is-open{background:rgba(34,197,94,.16);color:#86efac}.adm-cmp-icon-btn[data-toggle-itens].is-open svg{transform:rotate(180deg)}
+.adm-cmp-detail-row[hidden]{display:none}.adm-cmp-detail-row>td{padding:0 12px 12px!important;background:rgba(2,12,8,.35)}
+.adm-cmp-det-list{list-style:none;margin:0;padding:0;display:grid;border:1px solid rgba(148,163,184,.14);border-radius:12px;overflow:hidden}.adm-cmp-det-list li{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:start;padding:9px 12px;font-size:13px}.adm-cmp-det-list li+li{border-top:1px solid rgba(148,163,184,.1)}
+.adm-cmp-det-cod{color:#bbf7d0;font-weight:700;font-size:12px}.adm-cmp-det-nome small{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}.adm-cmp-det-valor{color:#e2e8f0;white-space:nowrap}.adm-cmp-det-motivo{margin:10px 2px 0;font-size:12.5px;color:#fca5a5}
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
 .adm-cmp-table tbody tr.is-selected{background:rgba(34,197,94,.16)!important}.adm-cmp-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}
 .adm-cmp-sel-count{display:inline-flex;align-items:center;font-weight:800;color:#86efac;font-size:13px}
