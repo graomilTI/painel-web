@@ -282,11 +282,23 @@ function actionsCellForTab(r){
   return '<span class="muted">-</span>';
 }
 
+// Colunas das etapas em tabela: Cód/Item · Gestor · Coordenação · Data · Status · Valor · Ações.
+// A primeira coluna leva o código e, abaixo, o que foi pedido (quantidade, material, detalhes).
+function codItemHtml(r){
+  const qtd=r.quantidade||r.unidade||1;
+  const detalhes=[r.tamanho?`Tam: ${esc(r.tamanho)}`:'',r.colaborador_nome?esc(r.colaborador_nome):''].filter(Boolean).join(' · ');
+  return `<b class="adm-cmp-cod">${esc(r.codigo||'—')}</b><span class="adm-cmp-item">${esc(qtd)}× ${esc(r.material)}${detalhes?` <small>${detalhes}</small>`:''}</span>${r.codigo_pagamento?`<small class="adm-cmp-pgto">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}`;
+}
+function codItemGrupoHtml(itens,fornecedor){
+  const lista=itens.map(r=>r.codigo?`${esc(r.material)} (${esc(r.codigo)})`:esc(r.material)).join(' · ');
+  return `<b class="adm-cmp-cod">${esc(fornecedor||'Mesmo fornecedor')}</b><span class="adm-cmp-item">${itens.length} itens <small>${lista}</small></span>`;
+}
+function linhaTabelaHtml({classe='',check,cod,gestor,coord,data,status,valor,acoes}){
+  return `<tr${classe?` class="${classe}"`:''}><td>${check}</td><td class="adm-cmp-cod-cell">${cod}</td><td>${esc(gestor||'-')}</td><td>${esc(coord||'-')}</td><td>${data}</td><td>${status}</td><td>${valor}</td><td>${acoes}</td></tr>`;
+}
 function singleRowHtml(r){
   const s=r.compras_solicitacoes||{};
-  return `<tr>
-    <td><input type="checkbox" data-check="${esc(r.id)}"></td><td>${brDate(s.data_solicitacao)}</td><td>${esc(s.solicitante||'-')}<br><small>${esc(s.coordenacao||'')}</small></td><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}${r.codigo?`<br><small style="color:#86efac">Cód: ${esc(r.codigo)}</small>`:''}${r.codigo_pagamento?`<br><small style="color:#93c5fd">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${pill(r.status)}</td><td>${money(r.valor_total||0)}</td><td>${actionsCellForTab(r)}</td>
-  </tr>`;
+  return linhaTabelaHtml({check:`<input type="checkbox" data-check="${esc(r.id)}">`,cod:codItemHtml(r),gestor:s.solicitante,coord:s.coordenacao,data:brDate(s.data_solicitacao),status:pill(r.status),valor:money(r.valor_total||0),acoes:actionsCellForTab(r)});
 }
 
 // ─── Cards (APROVAÇÃO agrupa por solicitação) ──────────────────────────────
@@ -582,9 +594,9 @@ function renderTable(){
     return;
   }
 
-  wrap.innerHTML=`<div class="fm-table-wrap"><table class="fm-table"><thead><tr><th></th><th>Data</th><th>Gestor</th><th>Un.</th><th>Material</th><th>Tipo</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div>`;
+  wrap.innerHTML=`<div class="fm-table-wrap"><table class="fm-table"><thead><tr><th></th><th>Cód / Item</th><th>Gestor</th><th>Coordenação</th><th>Data</th><th>Status</th><th>Valor</th><th>Ações</th></tr></thead><tbody id="admCmpBody"></tbody></table></div>`;
   const body=document.getElementById('admCmpBody');
-  if(!rows.length){body.innerHTML='<tr><td colspan="9" class="fm-empty">Nenhum item nesta etapa.</td></tr>'; return;}
+  if(!rows.length){body.innerHTML='<tr><td colspan="8" class="fm-empty">Nenhum item nesta etapa.</td></tr>'; return;}
 
   if(state.tab==='aguardando'||state.tab==='nf'){
     const groups=new Map();
@@ -598,17 +610,7 @@ function renderTable(){
       const gids=itens.map(r=>r.id).join(',');
       const nfGrp=itens.find(r=>r.nf_url);
       const acao=`<div class="adm-cmp-row-actions">${state.tab==='aguardando'?iconBtn('anexar_nf',gids,nfGrp?'Trocar NF do grupo':'Anexar NF ao grupo'):''}${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}${nfGrp?nfLinkHtml(nfGrp):''}</div>`;
-      return `<tr class="adm-cmp-group-row">
-        <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
-        <td>${brDate(s0.data_solicitacao)}</td>
-        <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
-        <td>${itens.length}&nbsp;itens</td>
-        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>esc(r.material)).join(' · ')}</small></td>
-        <td>-</td>
-        <td>${pill(stGrp)}</td>
-        <td>${money(totalGrp)}</td>
-        <td>${acao}</td>
-      </tr>`;
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codItemGrupoHtml(itens,fn),gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(s0.data_solicitacao),status:pill(stGrp),valor:money(totalGrp),acoes:acao});
     }).join('');
     bindCheckHandlers(body);
     wireRowActions(body);
@@ -625,17 +627,7 @@ function renderTable(){
       const fn=itens[0].fornecedor||itens[0].dados_pagamento||'';
       const comprado_em=itens[0].comprado_em||itens[0].created_at||'';
       const gids=itens.map(r=>r.id).join(',');
-      return `<tr class="adm-cmp-group-row">
-        <td><input type="checkbox" data-check-group="${esc(gids)}"></td>
-        <td>${brDate(comprado_em)}</td>
-        <td>${esc(s0.solicitante||'-')}<br><small>${esc(s0.coordenacao||'')}</small></td>
-        <td>${itens.length}&nbsp;itens</td>
-        <td><b style="color:#bbf7d0">${esc(fn||'Mesmo fornecedor')}</b><br><small class="muted">${itens.map(r=>r.codigo?`${esc(r.material)} (${esc(r.codigo)})`:esc(r.material)).join(' · ')}</small></td>
-        <td>-</td>
-        <td>${pill('comprado')}</td>
-        <td>${money(totalGrp)}</td>
-        <td>${nfLinkHtml(itens[0])}</td>
-      </tr>`;
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codItemGrupoHtml(itens,fn),gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(comprado_em),status:pill('comprado'),valor:money(totalGrp),acoes:nfLinkHtml(itens[0])});
     }).join('');
     bindCheckHandlers(body);
     return;
@@ -1813,6 +1805,7 @@ function styles(){return `<style>
 @media(max-width:760px){.adm-cmp-card-row-value{margin-left:44px}}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
+.adm-cmp-cod-cell{min-width:260px;max-width:420px}.adm-cmp-cod{display:block;color:#bbf7d0;font-size:13px;letter-spacing:.02em}.adm-cmp-item{display:block;margin-top:2px;overflow-wrap:anywhere}.adm-cmp-item small,.adm-cmp-pgto{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}.adm-cmp-pgto{color:#93c5fd}
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
 .adm-cmp-table tbody tr.is-selected{background:rgba(34,197,94,.16)!important}.adm-cmp-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}
 .adm-cmp-sel-count{display:inline-flex;align-items:center;font-weight:800;color:#86efac;font-size:13px}
