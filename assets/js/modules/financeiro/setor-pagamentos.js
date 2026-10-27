@@ -2,29 +2,52 @@
 // Extraído de assets/js/financeiro.js (renderContent) em 15/10/2026. Cada fábrica criarX(ctx) recebe o contexto da tela
 // ({ content, userContext } + funções das fábricas anteriores) e devolve as funções que as outras partes usam. O código
 // das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer módulo de
-// assets/js/modules/financeiro/, troque o token ?v=20261019-fin5 em TODOS os imports internos e nos carregadores
+// assets/js/modules/financeiro/, troque o token ?v=20261027-fin6 em TODOS os imports internos e nos carregadores
 // (assets/js/financeiro.js, financeiro.html): tests/financeiro-modulos-versao.test.mjs garante que fiquem iguais.
 import { supabase } from '../../supabaseClient.js';
-import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261019-fin5';
-import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261019-fin5';
+import { safe, state, esc, normalize, money, isMissingColumnError, hashText } from './util.js?v=20261027-fin6';
+import { origemPagamentoLabel, statusPagamentoClass, ensureHttps, isBoleto, isPix, uploadComprovantePagamento } from './pagamentos.js?v=20261027-fin6';
+import { cardFiltro, iconBtn } from '../../patrimonioLayoutFrotas.js?v=20261019-ordenar';
+
+// Setores da fila: [chave do filtro, rótulo, tom do card, ícone]. A chave é o que o card grava em state.pagamentosSetorFilter.
+const SETORES = [
+  ['COMPRAS', 'Compras', 'green', 'doc'],
+  ['HOSPEDAGEM', 'Hospedagem', 'blue', 'calendario'],
+  ['FROTAS', 'Frotas', 'amber', 'carro'],
+  ['RH', 'RH', 'green', 'total'],
+  ['AUDITORIA', 'Auditoria', 'red', 'busca'],
+  ['OUTROS', 'Outros', 'slate', 'doc'],
+];
+
+function setorDoPagamento(row) {
+  const origem = normalize(row.origem || row.setor || row.modulo_origem);
+  if (origem.includes('compra')) return 'COMPRAS';
+  if (origem.includes('hotel') || origem.includes('hosped')) return 'HOSPEDAGEM';
+  if (origem.includes('frota')) return 'FROTAS';
+  if (origem === 'rh' || origem.includes('recursos humanos')) return 'RH';
+  if (origem.includes('auditoria')) return 'AUDITORIA';
+  return 'OUTROS';
+}
+
 
 function criarSetorPagamentos(ctx) {
+  let busca = '';
+  let carregando = false;
+  let erroCarga = '';
+
   function filteredSetorPagamentos() {
     const filter = state.pagamentosSetorFilter || 'todos';
-    if (filter === 'todos') return state.financeiroPagamentos || [];
-    if (filter === 'OUTROS') {
-      return (state.financeiroPagamentos || []).filter((row) => {
-        const origem = normalize(row.origem || row.setor || row.modulo_origem);
-        return !origem.includes('compra') && !origem.includes('hotel') && !origem.includes('hosped') && !origem.includes('auditoria') && !origem.includes('frota') && origem !== 'rh' && !origem.includes('recursos humanos');
-      });
-    }
-    return (state.financeiroPagamentos || []).filter((row) => {
-      const origem = normalize(row.origem || row.setor || row.modulo_origem);
-      return normalize(filter).split(' ').every((part) => origem.includes(part)) ||
-        (filter === 'HOSPEDAGEM' && (origem.includes('hotel') || origem.includes('hosped'))) ||
-        (filter === 'RH' && (origem === 'rh' || origem.includes('recursos humanos'))) ||
-        (filter === 'AUDITORIA' && origem.includes('auditoria')); 
-    });
+    const todas = state.financeiroPagamentos || [];
+    return filter === 'todos' ? todas : todas.filter((row) => setorDoPagamento(row) === filter);
+  }
+
+  function textoBuscaPagamento(row) {
+    const { gestor, coordenacao } = getGestorCoordenacao(row);
+    return normalize([
+      origemPagamentoLabel(row.origem || row.setor || row.modulo_origem), codigoPagamento(row), gestor, coordenacao,
+      row.descricao || row.conteudo || row.observacao || row.detalhes, row.forma_pagamento, row.fornecedor || row.favorecido || row.beneficiario,
+      row.status || row.situacao, money(row.valor || row.valor_total || row.total),
+    ].join(' '));
   }
 
   function getGestorCoordenacao(row) {
@@ -92,9 +115,40 @@ function criarSetorPagamentos(ctx) {
   function renderSetorPagamentos() {
     const tbody = document.getElementById('setorPagamentosTbody');
     if (!tbody) return;
-    const rows = filteredSetorPagamentos();
+    const todas = state.financeiroPagamentos || [];
+    const filtro = state.pagamentosSetorFilter || 'todos';
+    const contagem = {};
+    todas.forEach((row) => { const setor = setorDoPagamento(row); contagem[setor] = (contagem[setor] || 0) + 1; });
+    const doSetor = filteredSetorPagamentos();
+    const q = normalize(busca);
+    const rows = q ? doSetor.filter((row) => textoBuscaPagamento(row).includes(q)) : doSetor;
+
+    const kpis = document.getElementById('setorPagKpis');
+    if (kpis) {
+      kpis.innerHTML = cardFiltro({ filtro: 'todos', atributo: 'data-setor-pay', label: 'Todos', tone: 'blue', icone: 'total', valor: String(todas.length), ativo: filtro === 'todos' })
+        + SETORES.filter(([chave]) => contagem[chave] || filtro === chave)
+          .map(([chave, label, tone, icone]) => cardFiltro({ filtro: chave, atributo: 'data-setor-pay', label, tone, icone, valor: String(contagem[chave] || 0), ativo: filtro === chave })).join('');
+    }
+    const chip = document.querySelector('#tab-pagamentos [data-chip]');
+    if (chip) {
+      const setor = SETORES.find(([chave]) => chave === filtro);
+      chip.innerHTML = setor ? `<span class="fm-chip">Filtro: ${esc(setor[1])} <button type="button" data-limpar-filtro aria-label="Limpar filtro" title="Limpar filtro">✕</button></span>` : '';
+    }
+    const contador = document.getElementById('setorPagCount');
+    if (contador) contador.textContent = `${rows.length} pagamento(s) · ${money(rows.reduce((soma, row) => soma + Number(row.valor || row.valor_total || row.total || 0), 0))}`;
+
+    if (carregando && !todas.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="fm-empty">Carregando pagamentos enviados pelos setores...</td></tr>';
+      return;
+    }
+    if (erroCarga && !todas.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="fm-empty">${erroCarga}</td></tr>`;
+      return;
+    }
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="fin-empty">Nenhum pagamento localizado para o filtro selecionado.</td></tr>';
+      const vazio = q ? 'Nenhum pagamento encontrado para a busca.'
+        : (filtro === 'todos' ? 'Nenhum pagamento pendente.' : 'Nenhum pagamento localizado para o filtro selecionado.');
+      tbody.innerHTML = `<tr><td colspan="8" class="fm-empty">${vazio}</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((row) => {
@@ -104,20 +158,22 @@ function criarSetorPagamentos(ctx) {
       const dtDate = dt && !isNaN(dt) ? dt.toLocaleDateString('pt-BR') : '-';
       const dtTime = dt && !isNaN(dt) ? dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
       const { gestor, coordenacao } = getGestorCoordenacao(row);
+      const selo = { pago: 'ok', danger: 'err', pendente: 'warn' }[statusPagamentoClass(status)] || '';
+      const id = row.id;
       return `<tr>
-        <td><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong>${codigoPagamento(row) ? `<br><small style="color:#93c5fd;white-space:nowrap">${esc(codigoPagamento(row))}</small>` : ''}</td>
-        <td style="white-space:nowrap">${dtDate}${dtTime ? `<br><small style="color:#6b7280">${dtTime}</small>` : ''}</td>
+        <td><strong>${esc(origemPagamentoLabel(row.origem || row.setor || row.modulo_origem))}</strong>${codigoPagamento(row) ? `<small class="fin-cod">${esc(codigoPagamento(row))}</small>` : ''}</td>
+        <td style="white-space:nowrap">${dtDate}${dtTime ? `<span class="fm-prazo-dia">${dtTime}</span>` : ''}</td>
         <td>${esc(gestor) || '<span class="spay-empty">—</span>'}</td>
         <td>${esc(coordenacao) || '<span class="spay-empty">—</span>'}</td>
         <td>${renderConteudoHtml(row)}</td>
-        <td style="white-space:nowrap">${money(row.valor || row.valor_total || row.total)}</td>
-        <td><span class="fin-status ${statusPagamentoClass(status)}">${esc(status)}</span></td>
+        <td style="white-space:nowrap"><b>${money(row.valor || row.valor_total || row.total)}</b></td>
+        <td><span class="fm-badge ${selo}">${esc(status)}</span></td>
         <td>
-          <div class="fin-pay-actions" style="flex-wrap:wrap;gap:4px">
+          <div class="fin-pay-actions fm-actions">
             ${isBoleto(row)
-              ? `<button class="btn btn-secondary fin-small" data-ok-setor="${esc(row.id)}" type="button">OK</button>`
-              : `<button class="btn btn-primary fin-small" data-pagar-setor="${esc(row.id)}" type="button">PAGAR</button>`}
-            <button class="btn fin-small fin-btn-recusar" data-recusar-setor="${esc(row.id)}" type="button">RECUSAR</button>
+              ? iconBtn('data-ok-setor', id, 'anexo', 'OK — ciente do boleto', 'ok')
+              : iconBtn('data-pagar-setor', id, 'termo', 'Pagar (anexar comprovante)', 'dinheiro')}
+            ${iconBtn('data-recusar-setor', id, 'danger', 'Recusar', 'erro')}
           </div>
         </td>
       </tr>`;
@@ -131,6 +187,21 @@ function criarSetorPagamentos(ctx) {
     tbody.querySelectorAll('[data-recusar-setor]').forEach((btn) => {
       btn.addEventListener('click', () => recusarPagamento(btn.dataset.recusarSetor));
     });
+  }
+
+  // Cards de setor (clicar filtra, clicar de novo limpa), ✕ do chip e a busca: ouvintes da aba, ligados uma vez.
+  function ligarSetorPagamentos() {
+    const aba = document.getElementById('tab-pagamentos');
+    if (!aba) return;
+    aba.addEventListener('click', (event) => {
+      const card = event.target.closest('[data-setor-pay]');
+      const limpar = event.target.closest('[data-limpar-filtro]');
+      if (!card && !limpar) return;
+      const atual = state.pagamentosSetorFilter || 'todos';
+      state.pagamentosSetorFilter = limpar || card.dataset.setorPay === atual ? 'todos' : card.dataset.setorPay;
+      renderSetorPagamentos();
+    });
+    aba.querySelector('#setorPagBusca')?.addEventListener('input', (event) => { busca = event.target.value; renderSetorPagamentos(); });
   }
 
   function compraItemToPagamento(row) {
@@ -212,8 +283,9 @@ function criarSetorPagamentos(ctx) {
   }
 
   async function loadSetorPagamentos() {
-    const tbody = document.getElementById('setorPagamentosTbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="fin-empty">Carregando pagamentos enviados pelos setores...</td></tr>';
+    carregando = true;
+    erroCarga = '';
+    renderSetorPagamentos();
 
     const [pagamentosRes, comprasRes] = await Promise.all([
       supabase
@@ -254,8 +326,10 @@ function criarSetorPagamentos(ctx) {
       return true;
     });
 
+    carregando = false;
     if (pagamentosRes.error && comprasRes.error) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="fin-empty">${esc(pagamentosRes.error.message)}<br>${esc(comprasRes.error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.</td></tr>`;
+      erroCarga = `${esc(pagamentosRes.error.message)}<br>${esc(comprasRes.error.message)}<br>Execute a migration de pagamentos do financeiro no Supabase.`;
+      renderSetorPagamentos();
       return;
     }
 
@@ -792,7 +866,7 @@ function criarSetorPagamentos(ctx) {
     }
   }
 
-  return { renderSetorPagamentos, loadSetorPagamentos };
+  return { renderSetorPagamentos, loadSetorPagamentos, ligarSetorPagamentos };
 }
 
 export { criarSetorPagamentos };

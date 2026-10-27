@@ -564,8 +564,8 @@ test('conclusão: custo vem da soma das notas e o envio só é oferecido à empr
   const fichaTipo = htmlFicha(m({ status: 'em_orcamento' }), { itens: [{ ...item, tipo_item: 'peca' }], orcamentos: [], base, podeAprovar: true });
   assert.doesNotMatch(fichaTipo, /data-item="tipo_item"/);
   assert.doesNotMatch(fichaTipo, /fm-mc-tipo/, 'o tipo agora aparece nas linhas da cotação, não numa lista de itens');
-  const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/html.js', import.meta.url), 'utf8');
-  assert.match(financeiro, /data-setor-pay="FROTAS"/);
+  const financeiro = readFileSync(new URL('../assets/js/modules/financeiro/setor-pagamentos.js', import.meta.url), 'utf8');
+  assert.match(financeiro, /\['FROTAS', 'Frotas'/);
 });
 
 test('custos: só concluída com custo e paga pela empresa; categoria divide o custo entre os itens', async () => {
