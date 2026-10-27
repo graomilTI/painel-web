@@ -285,16 +285,21 @@ function actionsCellForTab(r){
 
 // Colunas das etapas em tabela: Cód · Gestor · Coordenação · Data · Status · Valor · Ações.
 // Os itens ficam ocultos: o ícone "Ver itens" (sempre o primeiro das ações) abre a linha de detalhe.
+// Código da compra (padrão <tipo><MÊS><nº>, ex.: EOUT12). Antes de a compra ser efetivada ainda não há esse código:
+// a linha mostra o do pagamento (PAG-…), que já a identifica.
+const codigoDe=(r)=>r.codigo||r.codigo_pagamento||'';
 function codHtml(r){
-  return `<b class="adm-cmp-cod">${esc(r.codigo||'—')}</b>${r.codigo_pagamento?`<small class="adm-cmp-pgto">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}`;
+  return `<b class="adm-cmp-cod">${esc(codigoDe(r)||'—')}</b>${r.codigo&&r.codigo_pagamento?`<small class="adm-cmp-pgto">Pgto: ${esc(r.codigo_pagamento)}</small>`:''}`;
 }
 function codGrupoHtml(itens,fornecedor){
-  return `<b class="adm-cmp-cod">${esc(fornecedor||'Mesmo fornecedor')}</b><small class="adm-cmp-pgto" style="color:var(--muted)">${itens.length} itens</small>`;
+  const codigos=[...new Set(itens.map(codigoDe).filter(Boolean))];
+  const principal=codigos.length?`${esc(codigos[0])}${codigos.length>1?` <span class="adm-cmp-cod-mais">+${codigos.length-1}</span>`:''}`:'—';
+  return `<b class="adm-cmp-cod">${principal}</b><small class="adm-cmp-pgto" style="color:var(--muted)">${itens.length} itens${fornecedor?` · ${esc(fornecedor)}`:''}</small>`;
 }
 function itemDetalheHtml(r){
   const qtd=r.quantidade||r.unidade||1;
   const det=[r.tamanho?`Tam: ${esc(r.tamanho)}`:'',r.colaborador_nome?esc(r.colaborador_nome):'',r.tipo?esc(r.tipo):''].filter(Boolean).join(' · ');
-  return `<li><span class="adm-cmp-det-cod">${esc(r.codigo||'—')}</span><span class="adm-cmp-det-nome"><b>${esc(qtd)}× ${esc(r.material)}</b>${det?`<small>${det}</small>`:''}</span><span class="adm-cmp-det-valor">${r.valor_total?money(r.valor_total):''}</span></li>`;
+  return `<li><span class="adm-cmp-det-cod">${esc(codigoDe(r)||'—')}</span><span class="adm-cmp-det-nome"><b>${esc(qtd)}× ${esc(r.material)}</b>${det?`<small>${det}</small>`:''}</span><span class="adm-cmp-det-valor">${r.valor_total?money(r.valor_total):''}</span></li>`;
 }
 function detalheHtml(itens){
   const motivo=state.tab==='recusados'?itens.find(r=>r.motivo_recusa)?.motivo_recusa:'';
@@ -1820,7 +1825,7 @@ function styles(){return `<style>
 @media(max-width:760px){.adm-cmp-card-row-value{margin-left:44px}}
 .adm-cot-forn-row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}.adm-cot-forn-cell{display:flex;flex-direction:column;gap:4px}.adm-cot-forn-cell label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}.adm-cot-forn-cell input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:12px;padding:9px 12px;min-width:180px}.adm-cot-table input{width:120px;box-sizing:border-box;border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;color-scheme:dark}.adm-cot-melhor{font-weight:700;color:#bbf7d0}.adm-cot-forn-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}.adm-cot-forn-opt{border:1px solid var(--line);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:12px;text-align:center}.adm-cot-forn-total{font-size:22px;font-weight:800;color:#bbf7d0}
 .cot-colab-wrap{position:relative}.cot-colab-sug{position:absolute;top:100%;left:0;right:0;z-index:60;background:#071b13;border:1px solid var(--line);border-radius:12px;padding:4px;max-height:200px;overflow:auto;box-shadow:0 12px 30px rgba(0,0,0,.38)}.cot-colab-sug:empty{display:none}.cot-colab-sug button{display:block;width:100%;text-align:left;border:none;background:transparent;color:#e2e2f0;padding:8px 10px;border-radius:8px;cursor:pointer}.cot-colab-sug button:hover{background:rgba(255,255,255,.06)}.cot-colab-input{border:1px solid rgba(148,163,184,.24);background:#0d0d18;color:#e2e2f0;border-radius:10px;padding:8px 10px;width:160px;box-sizing:border-box;color-scheme:dark}
-.adm-cmp-cod-cell{min-width:150px}.adm-cmp-cod{display:block;color:#bbf7d0;font-size:13px;letter-spacing:.02em}.adm-cmp-pgto{display:block;margin-top:2px;color:#93c5fd;font-size:11.5px}
+.adm-cmp-cod-cell{min-width:150px}.adm-cmp-cod{display:block;color:#bbf7d0;font-size:13px;letter-spacing:.02em}.adm-cmp-cod-mais{color:var(--muted);font-size:11.5px;font-weight:700}.adm-cmp-pgto{display:block;margin-top:2px;color:#93c5fd;font-size:11.5px}
 .adm-cmp-icon-link{text-decoration:none}.adm-cmp-icon-btn[data-toggle-itens] svg{transition:transform .15s}.adm-cmp-icon-btn[data-toggle-itens].is-open{background:rgba(34,197,94,.16);color:#86efac}.adm-cmp-icon-btn[data-toggle-itens].is-open svg{transform:rotate(180deg)}
 .adm-cmp-detail-row[hidden]{display:none}.adm-cmp-detail-row>td{padding:0 12px 12px!important;background:rgba(2,12,8,.35)}
 .adm-cmp-det-list{list-style:none;margin:0;padding:0;display:grid;border:1px solid rgba(148,163,184,.14);border-radius:12px;overflow:hidden}.adm-cmp-det-list li{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:start;padding:9px 12px;font-size:13px}.adm-cmp-det-list li+li{border-top:1px solid rgba(148,163,184,.1)}
