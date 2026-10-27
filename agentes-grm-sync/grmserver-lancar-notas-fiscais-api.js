@@ -591,6 +591,27 @@ function extractFromText(text, mimeOrExt) {
   ]);
   const fornecedor = firstMatch(raw, [/(?:RAZ[ÃA]O\s+SOCIAL|PRESTADOR(?:A)?\s+DE\s+SERVI[ÇC]OS|EMITENTE|FORNECEDOR)\s*[:\-]?\s*([^\n]{3,100})/i]);
   const isNfse = /NFS[-\s]?E|NOTA\s+FISCAL\s+(?:ELETR[ÔO]NICA\s+)?DE\s+SERVI[ÇC]OS/i.test(raw);
+  const nfse = isNfse ? extractNfseFields(raw) : null;
+  if (nfse) {
+    return {
+      origem_extracao: mimeOrExt === '.pdf' ? 'PDF_TEXTO_OU_OCR' : 'IMAGEM_OCR',
+      texto_extraido: raw.slice(0, 250000),
+      chave_acesso: nfse.chave,
+      numero_documento: nfse.numero || numero,
+      numero_nf: nfse.numero || numero,
+      data_emissao: nfse.emissao,
+      data_conta: nfse.emissao,
+      data_vencimento: nfse.vencimento || null,
+      valor_total: nfse.valor_total != null ? nfse.valor_total : parseMoney(valorRaw),
+      fornecedor: nfse.fornecedor,
+      fornecedor_cnpj: nfse.fornecedor_cnpj || supplierDoc,
+      destinatario: nfse.destinatario,
+      destinatario_cnpj: nfse.destinatario_cnpj || destinatarioDoc,
+      forma_pagamento: inferPaymentMethod(raw),
+      tipo_documento: 'NFS-e',
+      parcelas: [],
+    };
+  }
   const danfe = isNfse ? null : extractDanfeFields(raw);
   if (danfe) {
     return {
@@ -626,6 +647,110 @@ function extractFromText(text, mimeOrExt) {
     forma_pagamento: inferPaymentMethod(raw),
     tipo_documento: isNfse ? 'NFS-e' : 'DANFe',
     parcelas: [],
+  };
+}
+
+// DANFSe (Documento Auxiliar da NFS-e, padrão nacional): o PDF é uma grade de
+// "linha de rótulos / linha de valores" alinhada em colunas, então o regex
+// genérico errava tudo — "CHAVE DE ACESSO DA NFS-E" virava rótulo do número
+// (pegava 12 dígitos da chave de 50), "EMITENTE DA NFS-E" virava o nome do
+// fornecedor ("DA NFS-E") e a data de emissão (rótulo "DATA E HORA DA
+// EMISSÃO") nunca casava, deixando a NF em AGUARDANDO_DADOS (data_conta).
+// Aqui cada valor é lido pela coluna do rótulo logo acima dele.
+function nfseCelulas(linha) {
+  const out = [];
+  const re = /\S+(?: \S+)*/g;
+  let m;
+  while ((m = re.exec(String(linha || '')))) out.push({ col: m.index, texto: m[0].trim() });
+  return out;
+}
+
+// Acha a linha de rótulos que contém `rotulo` (regex sobre a célula inteira)
+// e devolve o texto da célula, na linha seguinte, que está sob essa coluna.
+function nfseValorSob(bloco, rotulo) {
+  const linhas = String(bloco || '').split('\n');
+  for (let i = 0; i < linhas.length - 1; i += 1) {
+    const cab = nfseCelulas(linhas[i]);
+    const idx = cab.findIndex((c) => rotulo.test(normalizeText(c.texto)));
+    if (idx < 0) continue;
+    let prox = i + 1;
+    while (prox < linhas.length && !linhas[prox].trim()) prox += 1;
+    if (prox >= linhas.length) return null;
+    const alvo = cab[idx].col;
+    const limite = idx + 1 < cab.length ? cab[idx + 1].col : Infinity;
+    const valores = nfseCelulas(linhas[prox]).filter((c) => c.col >= alvo - 3 && c.col < limite - 3);
+    return valores.length ? valores[0].texto : null;
+  }
+  return null;
+}
+
+function extractNfseFields(raw) {
+  const text = String(raw || '');
+  if (!/DANFSE|DOCUMENTO\s+AUXILIAR\s+DA\s+NFS-?E/i.test(text)) return null;
+  const iPrest = text.search(/PRESTADOR\s*\/\s*FORNECEDOR/i);
+  const iToma = text.search(/TOMADOR\s*\/\s*ADQUIRENTE/i);
+  const iServ = text.search(/SERVI[ÇC]O\s+PRESTADO/i);
+  const fim = (a, b) => (b > a ? b : text.length);
+  const prestador = iPrest >= 0 ? text.slice(iPrest, iToma > iPrest ? iToma : fim(iPrest, iServ)) : '';
+  const tomador = iToma >= 0 ? text.slice(iToma, fim(iToma, iServ)) : '';
+
+  const chave = (text.match(/CHAVE\s+DE\s+ACESSO\s+DA\s+NFS-?E\s*\n\s*(\d{50})\b/i) || [])[1] || null;
+  const numero = onlyDigits(nfseValorSob(text, /^NUMERO DA NFS-?E$/)) || null;
+  const dataHora = nfseValorSob(text, /^DATA E HORA DA EMISSAO DA NFS-?E$/)
+    || nfseValorSob(text, /^COMPETENCIA DA NFS-?E$/);
+  const emissao = dataHora ? toBrDate((dataHora.match(/\d{2}\/\d{2}\/\d{4}/) || [])[0]) : null;
+
+  const moeda = (rotulo) => parseMoney((String(nfseValorSob(text, rotulo) || '').match(/[\d.]+,\d{2}/) || [])[0]);
+  const valor = moeda(/^VALOR LIQUIDO DA NFS-?E$/) ?? moeda(/^VALOR DA OPERACAO \/ SERVICO$/);
+
+  const nome = (bloco) => nfseValorSob(bloco, /^NOME \/ NOME EMPRESARIAL$/);
+  const doc = (bloco) => onlyDigits(nfseValorSob(bloco, /^CNPJ \/ CPF \/ NIF$/)) || null;
+  const vencimento = firstMatch(text, [
+    /VENC(?:IMENTO|\.)\s*(?:DO\s+)?(?:BOLETO|DA\s+NF|DA\s+NOTA)?\s*[:-]?\s*(\d{2}\/\d{2}\/\d{4})/i,
+  ]);
+
+  const out = {
+    chave,
+    numero,
+    emissao,
+    vencimento: vencimento ? toBrDate(vencimento) : null,
+    valor_total: valor,
+    fornecedor: nome(prestador) || null,
+    fornecedor_cnpj: doc(prestador),
+    destinatario: nome(tomador) || null,
+    destinatario_cnpj: doc(tomador),
+  };
+  // Layout reconhecido mas sem número/prestador = não confiável: devolve nulo e
+  // o leitor genérico continua valendo (e a NF cai em AGUARDANDO_DADOS).
+  return out.numero || out.fornecedor_cnpj || out.emissao ? out : null;
+}
+
+// NFS-e padrão nacional em XML (<NFSe><infNFSe>…): mesmos campos do DANFSe.
+function extractNfseXml(xml) {
+  const emit = xmlBlock(xml, 'emit');
+  const toma = xmlBlock(xml, 'toma');
+  const dataRaw = xmlTag(xml, 'dhEmi') || xmlTag(xml, 'dhProc') || xmlTag(xml, 'dCompet');
+  const numero = xmlTag(xml, 'nNFSe') || xmlTag(xml, 'nDFSe');
+  const idMatch = String(xml).match(/<infNFSe[^>]+Id=["']NFS(\d{50})["']/i);
+  const valor = parseMoney(xmlTag(xml, 'vLiq') || xmlTag(xml, 'vServ'));
+  const emissao = toBrDate(dataRaw ? String(dataRaw).slice(0, 10) : null);
+  return {
+    origem_extracao: 'XML_NFSE',
+    chave_acesso: idMatch ? idMatch[1] : null,
+    numero_documento: numero,
+    numero_nf: numero,
+    data_emissao: emissao,
+    data_conta: emissao,
+    fornecedor: xmlTag(emit, 'xNome') || xmlTag(emit, 'xFant'),
+    fornecedor_cnpj: xmlTag(emit, 'CNPJ') || xmlTag(emit, 'CPF'),
+    destinatario: xmlTag(toma, 'xNome'),
+    destinatario_cnpj: xmlTag(toma, 'CNPJ') || xmlTag(toma, 'CPF'),
+    valor_total: valor,
+    natureza_operacao: xmlTag(xml, 'xDescServ'),
+    parcelas: [],
+    data_vencimento: null,
+    tipo_documento: 'NFS-e',
+    texto_extraido: null,
   };
 }
 
@@ -762,7 +887,10 @@ function parseComprovantePagamento(text) {
 
 async function extractFileData(filePath, file) {
   const ext = extensionOf(file.name);
-  if (ext === '.xml') return extractNfeXml(fs.readFileSync(filePath, 'utf8'));
+  if (ext === '.xml') {
+    const xml = fs.readFileSync(filePath, 'utf8');
+    return /<infNFSe[\s>]/i.test(xml) ? extractNfseXml(xml) : extractNfeXml(xml);
+  }
   if (ext === '.pdf') {
     let text = await extractPdfText(filePath);
     let source = 'PDF_TEXTO';
@@ -2318,7 +2446,7 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, decidirGrupoNfs,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, extractNfseFields, extractNfseXml, decidirGrupoNfs,
     // Só para teste: troca o cliente do Supabase e expõe as funções que o usam.
     _teste: { setSupabase: (sb) => { supabase = sb; }, carregarNfsDoComprovante, enfileirarBaixaGrupo },
     applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,
