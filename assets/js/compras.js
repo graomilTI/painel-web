@@ -54,7 +54,6 @@ async function loadCatalogo(){
   CATALOGO = await safe(()=>supabase.from('compras_catalogo').select('material,tipo,observacao').eq('ativo',true).order('material'));
 }
 const UNIFORME_TAMANHOS = ['PP','P','M','G','GG','XG','EXG'];
-const ALOJAMENTO_MATERIAIS = ['BELICHE','CAMA','COLCHÃO','LENÇOL','FRONHA','TRAVESSEIRO','COBERTOR','ARMÁRIO','PRATELEIRA','MESA','CADEIRA','VENTILADOR','CORTINA','VARAL','UTENSÍLIOS DE COZINHA'];
 const STATUS = { pendente:'Pendente', em_cotacao:'Em cotação', em_analise:'Em análise', pendente_pagamento:'Pendente pagamento', aguardando_nf:'Aguardando NF', aguardando_termo:'Aguardando termo', comprado:'Comprado', recusado:'Recusado', recusado_financeiro:'Recusado (Financeiro)', enviado_estoque:'Enviado (Estoque)', concluido:'Concluído', cancelado:'Cancelado' };
 const STATUS_TOM = { pendente:'warn', em_cotacao:'info', em_analise:'info', pendente_pagamento:'warn', aguardando_nf:'warn', aguardando_termo:'warn', comprado:'ok', concluido:'ok', enviado_estoque:'ok', recusado:'err', recusado_financeiro:'err', cancelado:'err' };
 const TIPO_ROTULO = { itens:'Material', uniformes:'Uniforme', epi:'EPI', alojamento:'Alojamento' };
@@ -127,9 +126,19 @@ function buildMessage(ctx, tipo, itens){
   const nome=solicitanteNome(ctx); const data=brDate(document.getElementById('cmpData').value); const linhas=itens.map(i=>`• ${i.unidade||i.quantidade||1} un | ${i.material}${i.tamanho?` | Tam: ${i.tamanho}`:''}${i.colaborador_nome?` | ${i.colaborador_nome}`:''}`).join('\n');
   return `Nova solicitação de compras\nGestor: ${nome}\nData: ${data}\nTipo: ${tipo}\n\n${linhas}`;
 }
+// Cada aba usa só os itens do seu tipo: Material não enxerga EPI nem Alojamento (têm aba própria).
+const TIPOS_COM_ABA_PROPRIA = ['epi','alojamento'];
+function catalogoMaterial(){ return CATALOGO.filter(c=>!TIPOS_COM_ABA_PROPRIA.includes(norm(c.tipo))); }
+function catalogoDoTipo(tipo){ return CATALOGO.filter(c=>norm(c.tipo)===tipo); }
 function findCatalogoItem(value){
   const key=norm(value);
-  return CATALOGO.find(i=>norm(i.material)===key);
+  return catalogoMaterial().find(i=>norm(i.material)===key);
+}
+// Item digitado na aba Material que pertence a outra aba: devolve o nome da aba para avisar o usuário.
+function abaDoItem(value){
+  const key=norm(value);
+  const outro=CATALOGO.find(i=>TIPOS_COM_ABA_PROPRIA.includes(norm(i.tipo))&&norm(i.material)===key);
+  return outro?(norm(outro.tipo)==='epi'?'EPI':'Alojamento'):null;
 }
 function itemNeedsDetail(value){
   return ['botina','peneira individual'].includes(norm(value));
@@ -172,7 +181,7 @@ function renderItemSugestoes(){
   const exact=findCatalogoItem(input.value);
   updateDetalheState(exact?.material || '');
   if(q.length<1){ box.innerHTML=''; return; }
-  const list=CATALOGO.filter(i=>norm(i.material).includes(q)).slice(0,10);
+  const list=catalogoMaterial().filter(i=>norm(i.material).includes(q)).slice(0,10);
   box.innerHTML=list.length
     ? list.map(i=>`<button type="button" data-item-sug="${esc(i.material)}"><span>${esc(i.material)}</span><small>${esc(i.tipo)}</small></button>`).join('')
     : '<div class="cmp-no-sug">Não está no catálogo — selecione o tipo e adicione como novo material.</div>';
@@ -399,6 +408,8 @@ function bindItemForm(){
     const found=findCatalogoItem(document.getElementById('cmpNovoItem')?.value || '');
     const item=currentItemForm();
     if(!item.material){ setMsg('cmpFeedback','Digite o nome do material antes de adicionar.',true); return; }
+    const outraAba=abaDoItem(item.material);
+    if(outraAba){ setMsg('cmpFeedback',`${item.material} é item de ${outraAba}. Use a aba ${outraAba}.`,true); return; }
     if(found && itemNeedsDetail(found.material) && !item.tamanho){ setMsg('cmpFeedback','Informe o tamanho/detalhe antes de adicionar na lista.',true); return; }
     if(norm(item.material)==='celular'){ openCelularModal({...item, tipo:'Outros'}); return; }
     state.itens.push({...item, _id:`${Date.now()}_${Math.random().toString(16).slice(2)}`});
@@ -854,7 +865,7 @@ async function renderSolicitacaoTab(content, userContext){
       <div class="cmp-field cmp-autocomplete-wrap"><label>Colaborador</label><input id="cmpEpiColab" type="text" placeholder="Digite o nome do colaborador" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpEpiColabSug"></div></div>
       <div class="cmp-add-box cmp-epi-add mt-12">
         <div class="cmp-field"><label>Un.</label><input id="cmpEpiUn" type="number" min="1" value="1"></div>
-        <div class="cmp-field"><label>EPI</label><input id="cmpEpiItem" type="text" list="cmpEpiLista" placeholder="Ex.: capacete, colete, botina..." autocomplete="off"><datalist id="cmpEpiLista">${CATALOGO.filter(c=>norm(c.tipo)==='epi').map(c=>`<option value="${esc(c.material)}"></option>`).join('')}</datalist></div>
+        <div class="cmp-field"><label>EPI</label><input id="cmpEpiItem" type="text" list="cmpEpiLista" placeholder="Ex.: capacete, colete, botina..." autocomplete="off"><datalist id="cmpEpiLista">${catalogoDoTipo('epi').map(c=>`<option value="${esc(c.material)}"></option>`).join('')}</datalist></div>
         <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpEpiTam" type="text" placeholder="Tamanho/detalhe (opcional)" maxlength="60"></div>
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddEpi" type="button">Adicionar EPI</button></div>
       </div>
@@ -865,7 +876,7 @@ async function renderSolicitacaoTab(content, userContext){
       <div class="cmp-field cmp-aloj-destino"><label>Alojamento ou local de destino *</label><input id="cmpAlojDestino" type="text" maxlength="140" placeholder="Ex.: Alojamento Rondonópolis Centro"></div>
       <div class="cmp-aloj-add">
         <div class="cmp-field"><label>Un.</label><input id="cmpAlojQtd" type="number" min="1" value="1"></div>
-        <div class="cmp-field"><label>Item</label><select id="cmpAlojMaterial"><option value="">Selecione</option>${ALOJAMENTO_MATERIAIS.map(item=>`<option value="${item}">${item}</option>`).join('')}<option value="OUTRO">Outro item...</option></select><input class="cmp-aloj-outro" id="cmpAlojOutro" maxlength="120" placeholder="Nome do item" hidden></div>
+        <div class="cmp-field"><label>Item</label><select id="cmpAlojMaterial"><option value="">Selecione</option>${catalogoDoTipo('alojamento').map(c=>`<option value="${esc(c.material)}">${esc(c.material)}</option>`).join('')}<option value="OUTRO">Outro item...</option></select><input class="cmp-aloj-outro" id="cmpAlojOutro" maxlength="120" placeholder="Nome do item" hidden></div>
         <div class="cmp-field"><label>Medida / especificação</label><input id="cmpAlojDetalhe" maxlength="120" placeholder="Ex.: solteiro, 90 cm, cor branca"></div>
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddAlojamento" type="button">Adicionar item</button></div>
       </div>
