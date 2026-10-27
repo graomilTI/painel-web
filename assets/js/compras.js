@@ -140,7 +140,8 @@ function updateDetalheState(material){
   const canonical=findCatalogoItem(material)?.material || material || '';
   const needs=itemNeedsDetail(canonical);
   tam.disabled=!needs;
-  tam.placeholder=canonical==='BOTINA'?'Tamanho da botina':(canonical==='PENEIRA INDIVIDUAL'?'Abertura/tamanho da peneira':'Selecione Botina ou Peneira Individual');
+  tam.placeholder=canonical==='BOTINA'?'Tamanho da botina':(canonical==='PENEIRA INDIVIDUAL'?'Abertura/tamanho da peneira':'Informe o tamanho/detalhe');
+  const wrap=document.getElementById('cmpNovoTamWrap'); if(wrap) wrap.hidden=!needs;
   if(!needs) tam.value='';
 }
 function currentItemForm(){
@@ -186,7 +187,8 @@ function resetItemForm(){
   const box=document.getElementById('cmpItemSug');
   if(box) box.innerHTML='';
   const tam=document.getElementById('cmpNovoTam');
-  tam.value=''; tam.disabled=true; tam.placeholder='Selecione Botina ou Peneira Individual';
+  tam.value=''; tam.disabled=true; tam.placeholder='Informe o tamanho/detalhe';
+  const wrap=document.getElementById('cmpNovoTamWrap'); if(wrap) wrap.hidden=true;
 }
 function closeComprasModal(modal){
   modal?.classList.remove('open');
@@ -405,13 +407,19 @@ function bindItemForm(){
     setMsg('cmpFeedback','Material adicionado na lista.');
   };
 }
+function contarItens(n){
+  const el=document.getElementById('cmpItemCount');
+  if(el) el.textContent=`${n} ${n===1?'item':'itens'}`;
+}
 function renderItensList(){
   const body=document.getElementById('cmpItemBody');
   if(!body) return;
   if(!state.itens.length){
-    body.innerHTML='<tr><td colspan="4" class="cmp-empty">Nenhum material adicionado. Selecione o item acima e clique em <b>Adicionar material</b>.</td></tr>';
+    body.innerHTML='<tr><td colspan="4" class="cmp-empty">Nenhum item na lista ainda.</td></tr>';
+    contarItens(0);
     return;
   }
+  contarItens(state.itens.length);
   body.innerHTML=state.itens.map(i=>{
     const isCelular=norm(i.material)==='celular';
     const matLabel=isCelular&&i.colaborador_nome?`${esc(i.material)}<br><small class="muted">${esc(i.colaborador_nome)} · ${i._metodo==='parcelado'?`${i._parcelas||1}x`:'À vista'}</small>`:esc(i.material);
@@ -733,8 +741,22 @@ body.cmp-modal-open{overflow:hidden}.cmp-cel-modal{position:fixed;inset:0;backgr
 #panel-epi .cmp-epi-add{grid-template-columns:82px minmax(0,1fr)}#panel-epi .cmp-epi-add .cmp-field:nth-child(1){grid-column:1}#panel-epi .cmp-epi-add .cmp-field:nth-child(2){grid-column:2}#panel-epi .cmp-epi-add .cmp-field:nth-child(3){grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action{grid-column:1/-1}#panel-epi .cmp-epi-add .cmp-add-action .btn{width:100%}
 .cmp-epi-grupo td{background:rgba(34,197,94,.08);border-bottom:1px solid rgba(34,197,94,.2)!important;padding:9px 12px!important}.cmp-epi-grupo td b{color:#bbf7d0}.cmp-epi-grupo td small{color:var(--muted);margin-left:6px}.cmp-epi-grupo td span{float:right;font-size:11px;font-weight:800;color:#94a3b8}
 .cmp-request-card #panel-epi .cmp-table-wrap{max-height:320px}
-@media(min-width:761px){.cmp-workspace .cmp-request-card .cmp-entrega-box{grid-template-columns:170px minmax(0,1fr)}.cmp-workspace .cmp-request-card .cmp-entrega-box .cmp-field{grid-column:auto}}
-.cmp-entrega-box[hidden],#cmpEntregaEndWrap[hidden]{display:none}
+/* Estrutura do formulário: abas segmentadas, seções numeradas, lista só com o que importa */
+.cmp-request-card .section-head{gap:14px}.cmp-request-card .cmp-tabs{order:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;padding:4px;border:1px solid rgba(148,163,184,.16);border-radius:14px;background:rgba(2,12,8,.5)}
+.cmp-request-card .cmp-tab{border-radius:10px!important;padding:9px 4px 9px!important;text-align:center;border-bottom:0!important;font-size:12.5px}
+.cmp-request-card .cmp-tab.active{background:rgba(34,197,94,.16)!important;color:#4ade80!important;box-shadow:inset 0 0 0 1px rgba(74,222,128,.32)}
+.cmp-sec{display:grid;gap:12px;margin-top:20px}.cmp-sec-title{display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:1px solid rgba(148,163,184,.14);font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;color:#86efac}
+.cmp-sec-title span{display:grid;place-items:center;flex:0 0 20px;height:20px;border-radius:50%;background:rgba(34,197,94,.16);color:#4ade80;font-size:11px;letter-spacing:0}
+.cmp-workspace .cmp-request-card .cmp-sec .cmp-header-box{grid-template-columns:142px 78px minmax(0,1fr)}
+.cmp-entrega-box{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}.cmp-entrega-box[hidden],#cmpEntregaEndWrap[hidden],.cmp-item-tam[hidden]{display:none}
+@media(min-width:561px){.cmp-entrega-box:has(#cmpEntregaEndWrap:not([hidden])){grid-template-columns:170px minmax(0,1fr)}}
+.cmp-item-add{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:end}.cmp-item-add .cmp-item-tam,.cmp-item-add .cmp-item-btn{grid-column:1/-1}
+.cmp-request-card .cmp-item-btn{width:100%;min-height:42px;border-radius:14px;border:1px solid rgba(74,222,128,.35);background:rgba(34,197,94,.08);color:#86efac;font-weight:800}.cmp-request-card .cmp-item-btn:hover{background:rgba(34,197,94,.16)}
+.cmp-list-head{display:flex;justify-content:space-between;align-items:baseline;margin:20px 0 8px;font-size:13px;color:#e2e8f0}.cmp-list-head span{font-size:12px;color:var(--muted)}
+.cmp-request-card .cmp-list-wrap:has(.cmp-empty){border:1px dashed rgba(148,163,184,.25);background:transparent}.cmp-request-card .cmp-list-wrap:has(.cmp-empty) thead{display:none}
+.cmp-request-card .cmp-list-wrap .btn-small{min-height:30px;padding:4px 10px;font-size:12px}
+.cmp-request-card .cmp-empty{padding:18px 12px!important;border-bottom:0!important;text-align:center;color:var(--muted);font-size:13px}
+.cmp-request-card .form-actions{display:grid;gap:8px;margin-top:22px;padding-top:18px;border-top:1px solid rgba(148,163,184,.14)}
 @media(min-width:961px){.cmp-workspace .cmp-request-card .cmp-add-box{grid-template-columns:82px minmax(0,1fr) auto}}
 .cmp-uniforme-row strong{font-weight:750}.cmp-uniforme-row .uni-qtd{min-width:62px}.cmp-row-action{width:44px}.cmp-history-uniforme{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.cmp-history-uniforme:last-child{border-bottom:0}.cmp-history-uniforme>span{color:var(--muted);white-space:nowrap}.cmp-history-uniforme.is-editable{display:grid;grid-template-columns:minmax(150px,1fr) 92px 94px 62px auto;align-items:end;gap:8px}.cmp-history-person{display:grid;gap:2px;align-self:center}.cmp-history-person small{color:var(--muted)}.cmp-history-uniforme label{display:grid;gap:3px}.cmp-history-uniforme label>span{font-size:9px;font-weight:900;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.cmp-history-uniforme select,.cmp-history-uniforme input{min-height:34px!important;padding:6px 8px!important}.cmp-history-uniforme .btn{min-height:34px;white-space:nowrap}.cmp-history-feedback{display:block;margin:0 0 10px}
 @media(max-width:1180px){.cmp-workspace{grid-template-columns:minmax(330px,380px) minmax(0,1fr)}.cmp-aloj-add{grid-template-columns:76px 1fr}.cmp-aloj-add .cmp-field:nth-child(3){grid-column:1/-1}.cmp-aloj-add .cmp-add-action{grid-column:1/-1}}
@@ -788,27 +810,32 @@ async function renderSolicitacaoTab(content, userContext){
   content.innerHTML=`${styles()}
   <div class="cmp-workspace"><section class="fm-card cmp-request-card"><div class="fm-body"><div class="section-head"><div><div class="fm-kicker">Compras</div><h3 style="margin:4px 0 0">Nova solicitação</h3></div><div class="cmp-tabs"><button class="btn btn-secondary cmp-tab active" data-mode="itens" type="button">Material</button><button class="btn btn-secondary cmp-tab" data-mode="uniformes" type="button">Uniforme</button><button class="btn btn-secondary cmp-tab" data-mode="epi" type="button">EPI</button><button class="btn btn-secondary cmp-tab" data-mode="alojamento" type="button">Alojamento</button></div></div>
     <input id="cmpObs" type="hidden" value="">
-    <div class="cmp-add-box cmp-header-box">
-      <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
-      <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">UF</option>${UFS_BRASIL.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
-      <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" list="cmpCidadeList" placeholder="Escolha a UF" autocomplete="off" disabled><datalist id="cmpCidadeList"></datalist></div>
-    </div>
-    <div class="cmp-add-box cmp-entrega-box mt-12" id="cmpEntregaBox">
-      <div class="cmp-field"><label>Retirada ou entrega?</label><select id="cmpEntrega"><option value="">Selecione</option><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></div>
-      <div class="cmp-field" id="cmpEntregaEndWrap" hidden><label>Endereço de entrega</label><input id="cmpEntregaEnd" type="text" maxlength="200" placeholder="Rua, número, bairro e cidade" autocomplete="off"></div>
-    </div>
-    <div id="panel-itens" class="cmp-panel active mt-16">
-      <div class="cmp-add-box">
-        <div class="cmp-field"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
-        <div class="cmp-field cmp-autocomplete-wrap"><label>Item</label><input id="cmpNovoItem" type="text" placeholder="Comece a digitar o material..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpItemSug"></div></div>
-        <div class="cmp-field"><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Selecione Botina ou Peneira Individual" disabled></div>
-        <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddMaterial" type="button">Adicionar material</button></div>
+    <div class="cmp-sec cmp-sec-pedido">
+      <div class="cmp-sec-title"><span>1</span>Dados do pedido</div>
+      <div class="cmp-add-box cmp-header-box">
+        <div class="cmp-field"><label>Data</label><input id="cmpData" type="date" value="${today()}"></div>
+        <div class="cmp-field"><label>UF</label><select id="cmpUf"><option value="">UF</option>${UFS_BRASIL.map(uf=>`<option value="${uf}">${uf}</option>`).join('')}</select></div>
+        <div class="cmp-field"><label>Cidade</label><input id="cmpCidade" type="text" list="cmpCidadeList" placeholder="Escolha a UF" autocomplete="off" disabled><datalist id="cmpCidadeList"></datalist></div>
       </div>
-      <p class="muted mt-12">Monte a lista abaixo antes de clicar em <b>SOLICITAR</b>.</p>
-      <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
+      <div class="cmp-entrega-box" id="cmpEntregaBox">
+        <div class="cmp-field"><label>Retirada ou entrega?</label><select id="cmpEntrega"><option value="">Selecione</option><option value="retirada">Retirada</option><option value="entrega">Entrega</option></select></div>
+        <div class="cmp-field" id="cmpEntregaEndWrap" hidden><label>Endereço de entrega</label><input id="cmpEntregaEnd" type="text" maxlength="200" placeholder="Rua, número, bairro e cidade" autocomplete="off"></div>
+      </div>
     </div>
-    <div id="panel-uniformes" class="cmp-panel mt-16"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
-    <div id="panel-epi" class="cmp-panel mt-16">
+    <div class="cmp-sec cmp-sec-itens">
+    <div class="cmp-sec-title"><span>2</span>Itens do pedido</div>
+    <div id="panel-itens" class="cmp-panel active">
+      <div class="cmp-item-add">
+        <div class="cmp-field cmp-item-un"><label>Un.</label><input id="cmpNovaUn" type="number" min="1" value="1"></div>
+        <div class="cmp-field cmp-autocomplete-wrap cmp-item-nome"><label>Item</label><input id="cmpNovoItem" type="text" placeholder="Comece a digitar o material..." autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpItemSug"></div></div>
+        <div class="cmp-field cmp-item-tam" id="cmpNovoTamWrap" hidden><label>Tamanho/Detalhe</label><input id="cmpNovoTam" placeholder="Informe o tamanho/detalhe" disabled></div>
+        <button class="btn btn-secondary cmp-item-btn" id="cmpAddMaterial" type="button">+ Adicionar à lista</button>
+      </div>
+      <div class="cmp-list-head"><b>Lista do pedido</b><span id="cmpItemCount">0 itens</span></div>
+      <div class="cmp-table-wrap cmp-list-wrap"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpItemBody"></tbody></table></div>
+    </div>
+    <div id="panel-uniformes" class="cmp-panel"><div class="cmp-uniforme-add"><div class="cmp-field cmp-autocomplete-wrap"><label>Nome</label><input id="cmpColabBusca" placeholder="Digite o nome" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpColabSug"></div></div><div class="cmp-field"><label>Tamanho</label><select id="cmpUniTamanho">${UNIFORME_TAMANHOS.map(t=>`<option${t==='M'?' selected':''}>${t}</option>`).join('')}</select></div><div class="cmp-field"><label>Cor</label><select id="cmpUniCor"><option selected>Verde</option><option>Cinza</option></select></div></div><div class="cmp-uniforme-actions"><button class="btn btn-secondary" id="cmpAddUniforme" type="button">Adicionar à lista</button><button class="btn btn-secondary" id="cmpAddTodos" type="button">Adicionar todos</button></div><div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Colaborador</th><th>Função/tipo</th><th>Cor</th><th>Tamanho</th><th>Un. máx 2</th><th></th></tr></thead><tbody id="cmpUniformeBody"></tbody></table></div></div>
+    <div id="panel-epi" class="cmp-panel">
       <div class="cmp-aloj-intro"><span class="cmp-aloj-icon" aria-hidden="true">⛑</span><div><strong>EPI por colaborador</strong>Informe o colaborador e o que será comprado para ele. Para outro colaborador, é só trocar o nome e continuar adicionando.</div></div>
       <div class="cmp-field cmp-autocomplete-wrap"><label>Colaborador</label><input id="cmpEpiColab" type="text" placeholder="Digite o nome do colaborador" autocomplete="off"><div class="cmp-suggest cmp-item-suggest" id="cmpEpiColabSug"></div></div>
       <div class="cmp-add-box cmp-epi-add mt-12">
@@ -819,7 +846,7 @@ async function renderSolicitacaoTab(content, userContext){
       </div>
       <div class="cmp-table-wrap mt-16"><table class="cmp-table"><thead><tr><th>Un.</th><th>EPI</th><th>Tamanho/Detalhe</th><th></th></tr></thead><tbody id="cmpEpiBody"></tbody></table></div>
     </div>
-    <div id="panel-alojamento" class="cmp-panel mt-16">
+    <div id="panel-alojamento" class="cmp-panel">
       <div class="cmp-aloj-intro"><span class="cmp-aloj-icon" aria-hidden="true">⌂</span><div><strong>Compras para alojamento</strong>Beliches, camas, enxoval, prateleiras e demais itens serão enviados diretamente para Hospedagem &gt; Alojamentos.</div></div>
       <div class="cmp-field cmp-aloj-destino"><label>Alojamento ou local de destino *</label><input id="cmpAlojDestino" type="text" maxlength="140" placeholder="Ex.: Alojamento Rondonópolis Centro"></div>
       <div class="cmp-aloj-add">
@@ -829,6 +856,7 @@ async function renderSolicitacaoTab(content, userContext){
         <div class="cmp-field cmp-add-action"><label>&nbsp;</label><button class="btn btn-secondary" id="cmpAddAlojamento" type="button">Adicionar item</button></div>
       </div>
       <div class="cmp-table-wrap cmp-aloj-table"><table class="cmp-table"><thead><tr><th>Un.</th><th>Item</th><th>Especificação</th><th></th></tr></thead><tbody id="cmpAlojBody"></tbody></table></div>
+    </div>
     </div>
     <div class="form-actions"><button class="fm-btn primary" id="cmpSolicitar" type="button">SOLICITAR</button><span class="cmp-feedback" id="cmpFeedback"></span></div>
   </div></section>
