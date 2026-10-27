@@ -5,6 +5,7 @@ import { toPanelUrl } from './paths.js';
 import { tabs } from './core/ui.js';
 import { injectEstilosFrotas, ICON as FM_ICON, cardFiltro, sincronizarCards, aoClicarCard } from './patrimonioLayoutFrotas.js?v=20261019-ordenar';
 import { formatarReais, lerReais } from './patrimonioDesligadosRegras.js';
+import { abrirNovaSolicitacao } from './admComprasNovaSolicitacao.js?v=20261027-nova-abas1';
 import { VALIDADE_LINK_DIAS, urlDoLink, linkAberto, carregarCotacoesDosItens, montarPropostas, validarMesmaCidade, chaveGrupoPedido, situacaoDoItem, descreverDescontos, descreverFrete, descreverContato, REGIMES as REGIMES_COTACAO, mensagemDoLink, formatarCnpj } from './admComprasCotacao.js?v=20261023-cotacao-link13';
 
 const TABS = [
@@ -683,102 +684,20 @@ async function carregarCidadesBrasil(){
   }catch(e){ console.warn('Não foi possível carregar cidades do IBGE.',e); cidadesIbge=[]; }
 }
 const cidadesDaUf=(uf)=>uf?cidadesIbge.filter(c=>c.uf===uf).map(c=>c.nome).sort((a,b)=>a.localeCompare(b,'pt-BR')):[];
-const hojeLocal=()=>{const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 async function abrirNovaSolicitacaoModal(){
   if(!state.catalogo.length) state.catalogo=await safe(()=>supabase.from('compras_catalogo').select('*').order('material'));
-  const catalogo=state.catalogo.filter(c=>c.ativo!==false);
   await carregarCidadesBrasil();
-  const u=state.ctx?.user||{};
-  const itens=[];
-  const achaColab=(nome)=>state.colaboradores.find(c=>norm(c.nome)===norm(nome));
-  const modal=document.getElementById('admCmpModal');
-  const achaCatalogo=(v)=>catalogo.find(c=>norm(c.material)===norm(v));
-  function render(){
-    const prev={
-      solicitante:modal.querySelector('#nsSolicitante')?.value??'',
-      coordenacao:modal.querySelector('#nsCoordenacao')?.value??'',
-      cidade:modal.querySelector('#nsCidade')?.value??'',
-      uf:modal.querySelector('#nsUf')?.value??''
-    };
-    const cidades=cidadesDaUf(prev.uf);
-    modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
-      <div class="section-head"><div><h3>Nova solicitação de compra</h3></div><button class="btn btn-secondary" id="mClose" type="button">Fechar</button></div>
-      <div class="adm-cmp-grid adm-cmp-grid-ns1 mt-16">
-        <label>Solicitante<div class="cot-colab-wrap"><input id="nsSolicitante" value="${esc(prev.solicitante)}" placeholder="Digite o nome na equipe" autocomplete="off"><div class="cot-colab-sug" id="nsSolicitanteSug"></div></div></label>
-        <label>Supervisão<input id="nsCoordenacao" value="${esc(prev.coordenacao)}" placeholder="Automático"></label>
-        <label>UF<select id="nsUf"><option value="">—</option>${UF_LIST.map(x=>`<option value="${x}"${prev.uf===x?' selected':''}>${x}</option>`).join('')}</select></label>
-        <label>Cidade<select id="nsCidade"${prev.uf?'':' disabled'}><option value="">${prev.uf?'Selecione':'Escolha a UF'}</option>${cidades.map(n=>`<option value="${esc(n)}"${prev.cidade===n?' selected':''}>${esc(n)}</option>`).join('')}</select></label>
-      </div>
-      <p class="mt-16" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700">Itens</p>
-      <div class="adm-cmp-grid adm-cmp-grid-ns2 mt-8">
-        <label>Qtd.<input id="nsQtd" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
-        <label>Material<input id="nsMaterial" list="nsMaterialList" placeholder="Digite ou escolha do catálogo" autocomplete="off"></label>
-        <label>Tamanho / detalhe<input id="nsDetalhe" placeholder="Opcional (ex.: tamanho da botina)"></label>
-        <button class="btn btn-secondary" id="nsAdd" type="button">+ Adicionar</button>
-      </div>
-      <datalist id="nsMaterialList">${catalogo.map(c=>`<option value="${esc(c.material)}"></option>`).join('')}</datalist>
-      <div class="adm-cmp-table-wrap mt-16"><table class="adm-cmp-table" style="min-width:0"><thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Detalhe</th><th></th></tr></thead><tbody>${itens.length?itens.map((i,idx)=>`<tr><td>${esc(i.quantidade)}</td><td>${esc(i.material)}</td><td>${esc(i.tipo||'-')}</td><td>${esc(i.tamanho||'-')}</td><td><button class="adm-cmp-icon-btn" data-ns-del="${idx}" type="button" title="Remover" aria-label="Remover item" data-row-action="recusar">${ICONS.x}</button></td></tr>`).join(''):'<tr><td colspan="5" class="adm-cmp-empty">Nenhum item adicionado.</td></tr>'}</tbody></table></div>
-      <div class="adm-cmp-actions mt-16"><button class="btn btn-primary" id="nsSalvar" type="button">Criar solicitação</button><span class="adm-cmp-feedback" id="nsFeedback"></span></div>
-    </div>`;
-    modal.classList.add('open');
-    const fb=(m,err=true)=>{const el=modal.querySelector('#nsFeedback'); el.textContent=m||''; el.classList.toggle('err',err)};
-    modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-    const inpSol=modal.querySelector('#nsSolicitante'), sugSol=modal.querySelector('#nsSolicitanteSug'), inpCoord=modal.querySelector('#nsCoordenacao');
-    inpSol.addEventListener('input',()=>{
-      const q=norm(inpSol.value); if(q.length<2){sugSol.innerHTML='';return;}
-      const list=state.colaboradores.filter(c=>norm(c.nome).includes(q)).slice(0,8);
-      sugSol.innerHTML=list.map(c=>`<button type="button" data-cid="${esc(c.id)}" data-cnome="${esc(c.nome)}">${esc(c.nome)} <small>${esc(c.coordenacao||c.supervisao||c.cargo||'')}</small></button>`).join('')||'<button type="button" disabled>Nome não encontrado na equipe</button>';
-      sugSol.querySelectorAll('button[data-cid]').forEach(b=>b.onmousedown=(ev)=>{ev.preventDefault(); const c=state.colaboradores.find(x=>String(x.id)===b.dataset.cid); inpSol.value=b.dataset.cnome; inpCoord.value=c?.coordenacao||c?.supervisao||''; sugSol.innerHTML='';});
-    });
-    inpSol.addEventListener('change',()=>{ const c=achaColab(inpSol.value); if(c) inpCoord.value=c.coordenacao||c.supervisao||''; });
-    inpSol.addEventListener('blur',()=>setTimeout(()=>{sugSol.innerHTML='';},160));
-    modal.querySelector('#nsUf').onchange=()=>{ modal.querySelector('#nsCidade').value=''; render(); };
-    modal.querySelectorAll('[data-ns-del]').forEach(b=>b.onclick=()=>{itens.splice(Number(b.dataset.nsDel),1); render();});
-    const addItem=()=>{
-      const raw=modal.querySelector('#nsMaterial').value.trim();
-      if(!raw){ fb('Informe o material.'); return; }
-      const qtd=Math.max(1,Math.floor(Number(modal.querySelector('#nsQtd').value||1)));
-      const found=achaCatalogo(raw);
-      itens.push({material:found?.material||raw.toUpperCase(),tipo:found?.tipo||'Outros',quantidade:qtd,unidade:qtd,tamanho:modal.querySelector('#nsDetalhe').value.trim()||null});
-      render();
-      modal.querySelector('#nsMaterial').focus();
-    };
-    modal.querySelector('#nsAdd').onclick=addItem;
-    modal.querySelector('#nsMaterial').addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); addItem(); } });
-    modal.querySelector('#nsSalvar').onclick=async(ev)=>{
-      const btn=ev.currentTarget;
-      if(modal.querySelector('#nsMaterial').value.trim()){ fb('Há um material digitado que ainda não foi adicionado. Clique em "+ Adicionar item".'); return; }
-      if(!itens.length){ fb('Adicione pelo menos um item.'); return; }
-      const colab=achaColab(modal.querySelector('#nsSolicitante').value);
-      if(!colab){ fb('Escolha o solicitante na lista da equipe (digite o nome e selecione).'); return; }
-      const solicitante=colab.nome;
-      btn.disabled=true; fb('Salvando...',false);
-      try{
-        const header={
-          data_solicitacao:hojeLocal(),
-          solicitante_id:u.id||null,
-          solicitante,
-          coordenacao:modal.querySelector('#nsCoordenacao').value.trim()||null,
-          tipo_solicitacao:'itens',
-          status:'pendente',
-          cidade:modal.querySelector('#nsCidade').value.trim()||null,
-          uf:modal.querySelector('#nsUf').value||null,
-          created_by:u.id||null
-        };
-        const {data:sol,error}=await supabase.from('compras_solicitacoes').insert(header).select('id').single();
-        if(error) throw error;
-        const {error:itemErr}=await supabase.from('compras_itens').insert(itens.map(i=>({...i,solicitacao_id:sol.id,status:'pendente'})));
-        if(itemErr){ await supabase.from('compras_solicitacoes').delete().eq('id',sol.id); throw itemErr; }
-        modal.classList.remove('open');
-        state.tab='cotacoes'; state.filtro='todos';
-        document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab==='cotacoes'));
-        updateActionButtons();
-        await loadRows();
-        setMsg(`Solicitação criada com ${itens.length} item(ns).`);
-      }catch(e){ console.warn(e); fb(e.message||'Não foi possível criar a solicitação.'); btn.disabled=false; }
-    };
-  }
-  render();
+  abrirNovaSolicitacao({
+    supabase,modal:document.getElementById('admCmpModal'),catalogo:state.catalogo,colaboradores:state.colaboradores,
+    user:state.ctx?.user||{},ufs:UF_LIST,cidadesDaUf,icons:ICONS,
+    aoCriar:async({qtd,rotulo,aviso})=>{
+      state.tab='cotacoes'; state.filtro='todos';
+      document.querySelectorAll('[data-tab]').forEach(x=>x.classList.toggle('active',x.dataset.tab==='cotacoes'));
+      updateActionButtons();
+      await loadRows();
+      setMsg(`Solicitação de ${rotulo} criada com ${qtd} item(ns).${aviso||''}`,!!aviso);
+    }
+  });
 }
 
 // ─── MODAL COTAR (gera o link que Compras envia ao fornecedor) ─────────────────
