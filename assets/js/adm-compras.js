@@ -298,15 +298,30 @@ function codGrupoHtml(itens,fornecedor){
   const principal=codigos.length?esc(codigos[0]):'—';
   return `<b class="adm-cmp-cod">${principal}</b><small class="adm-cmp-pgto" style="color:var(--muted)">${itens.length} itens</small>`;
 }
-function itemDetalheHtml(r){
+// NFs parceladas: o fornecedor pode emitir uma NF por remessa. Cada item guarda a sua (compras_itens.nf_url) e o grupo
+// só é finalizado quando todos os itens têm NF. Itens que compartilham o mesmo arquivo/número são a mesma NF.
+function nfResumo(itens){
+  const comNf=itens.filter(r=>String(r.nf_url||'').trim());
+  const nfs=[...new Set(comNf.map(r=>norm(r.nf_url)))];
+  return {total:itens.length,com:comNf.length,falta:itens.length-comNf.length,nfs:nfs.length,completo:itens.length>0&&comNf.length===itens.length,indice:new Map(nfs.map((n,i)=>[n,i+1]))};
+}
+function nfChipHtml(r,resumo){
+  if(!String(r.nf_url||'').trim()) return '<span class="adm-cmp-nf-chip falta">Sem NF</span>';
+  const n=resumo?.nfs>1?` ${resumo.indice.get(norm(r.nf_url))}`:'';
+  const rotulo=`NF${n} anexada`;
+  return /^https?:\/\//i.test(r.nf_url)?`<a class="adm-cmp-nf-chip ok" href="${esc(r.nf_url)}" target="_blank" rel="noopener" title="Abrir NF">${rotulo}</a>`:`<span class="adm-cmp-nf-chip ok" title="${esc(r.nf_url)}">${rotulo}</span>`;
+}
+function itemDetalheHtml(r,resumo){
   const qtd=r.quantidade||r.unidade||1;
   const det=[r.tamanho?`Tam: ${esc(r.tamanho)}`:'',r.colaborador_nome?esc(r.colaborador_nome):'',r.tipo?esc(r.tipo):''].filter(Boolean).join(' · ');
-  return `<li><span class="adm-cmp-det-cod">${esc(codigoDe(r)||'—')}</span><span class="adm-cmp-det-nome"><b>${esc(qtd)}× ${esc(r.material)}</b>${det?`<small>${det}</small>`:''}</span><span class="adm-cmp-det-valor">${r.valor_total?money(r.valor_total):''}</span></li>`;
+  const nf=resumo?nfChipHtml(r,resumo):'';
+  return `<li><span class="adm-cmp-det-cod">${esc(codigoDe(r)||'—')}</span><span class="adm-cmp-det-nome"><b>${esc(qtd)}× ${esc(r.material)}</b>${det?`<small>${det}</small>`:''}</span><span class="adm-cmp-det-valor">${nf}${r.valor_total?money(r.valor_total):''}</span></li>`;
 }
 function detalheHtml(itens){
   const motivo=state.tab==='recusados'?itens.find(r=>r.motivo_recusa)?.motivo_recusa:'';
   const forn=itens.find(r=>r.fornecedor)?.fornecedor;
-  return `${forn?`<p class="adm-cmp-det-forn">Fornecedor: <b>${esc(forn)}</b></p>`:''}<ul class="adm-cmp-det-list">${itens.map(itemDetalheHtml).join('')}</ul>${motivo?`<p class="adm-cmp-det-motivo"><b>Motivo da recusa:</b> ${esc(motivo)}</p>`:''}`;
+  const resumo=state.tab==='nf'?nfResumo(itens):null;
+  return `${forn?`<p class="adm-cmp-det-forn">Fornecedor: <b>${esc(forn)}</b></p>`:''}<ul class="adm-cmp-det-list">${itens.map(r=>itemDetalheHtml(r,resumo)).join('')}</ul>${motivo?`<p class="adm-cmp-det-motivo"><b>Motivo da recusa:</b> ${esc(motivo)}</p>`:''}`;
 }
 function verItensBtn(){
   return `<button class="adm-cmp-icon-btn" type="button" data-toggle-itens aria-expanded="false" title="Ver itens" aria-label="Ver itens">${ICONS.chevron}</button>`;
@@ -632,8 +647,10 @@ function renderTable(){
       const stGrp=state.tab==='nf'?'aguardando_nf':'pendente_pagamento';
       const gids=itens.map(r=>r.id).join(',');
       const nfGrp=itens.find(r=>r.nf_url);
-      const acao=`<div class="adm-cmp-row-actions">${state.tab==='aguardando'?iconBtn('anexar_nf',gids,nfGrp?'Trocar NF do grupo':'Anexar NF ao grupo'):''}${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Finalizar grupo':'Ver grupo')}${nfGrp?nfLinkHtml(nfGrp):''}</div>`;
-      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(s0.data_solicitacao),status:pill(stGrp),valor:money(totalGrp),acoes:acao});
+      const acao=`<div class="adm-cmp-row-actions">${state.tab==='aguardando'?iconBtn('anexar_nf',gids,nfGrp?'Trocar NF do grupo':'Anexar NF ao grupo'):''}${iconBtn('finalizar_grupo',gids,state.tab==='nf'?'Anexar NFs / Finalizar grupo':'Ver grupo')}${nfGrp?nfLinkHtml(nfGrp):''}</div>`;
+      const nfRes=state.tab==='nf'?nfResumo(itens):null;
+      const statusGrp=pill(stGrp)+(nfRes?`<small class="adm-cmp-pgto adm-cmp-nf-prog-mini${nfRes.completo?' ok':''}">${nfRes.com} de ${nfRes.total} itens com NF</small>`:'');
+      return linhaTabelaHtml({classe:'adm-cmp-group-row',check:`<input type="checkbox" data-check-group="${esc(gids)}">`,cod:codGrupoHtml(itens,fn),itens,gestor:s0.solicitante,coord:s0.coordenacao,data:brDate(s0.data_solicitacao),status:statusGrp,valor:money(totalGrp),acoes:acao});
     }).join('');
     bindCheckHandlers(body);
     wireRowActions(body);
@@ -1671,51 +1688,73 @@ function openGrupoModal(gids){
   const comprovante=itens.find(r=>r.comprovante_url)?.comprovante_url||'';
   const stGrp=itens.some(r=>r.status==='aguardando_nf')?'aguardando_nf':'pendente_pagamento';
   const allAguardando=itens.every(r=>r.status==='aguardando_nf');
+  const res=nfResumo(itens);
+  const linhaItem=(r)=>`<tr>${allAguardando?`<td><input type="checkbox" data-nf-sel="${esc(r.id)}"${r.nf_url?'':' checked'} aria-label="Selecionar item"></td>`:''}<td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${money(r.valor_total||0)}</td><td>${allAguardando?nfChipHtml(r,res):pill(r.status)}</td></tr>`;
   modal.innerHTML=`<div class="adm-cmp-modal-card adm-cmp-modal-wide">
     <div class="section-head">
       <div><h3>Grupo de compras</h3><p class="muted">${esc(fn||'Mesmo fornecedor')} · ${money(total)} · ${pill(stGrp)}</p></div>
       <button class="btn btn-secondary" id="mClose" type="button">Fechar</button>
     </div>
+    ${allAguardando?`<div class="adm-cmp-nf-prog${res.completo?' ok':''} mt-16"><b>${res.com} de ${res.total} itens com NF</b>${res.nfs?` · ${res.nfs} NF${res.nfs>1?'s':''} anexada${res.nfs>1?'s':''}`:''}${res.completo?' — pronto para finalizar.':` — faltam ${res.falta} ${res.falta>1?'itens':'item'}.`}</div>`:''}
     <div class="adm-cmp-table-wrap mt-16">
       <table class="adm-cmp-table">
-        <thead><tr><th>Un.</th><th>Material</th><th>Tipo</th><th>Valor</th><th>Status</th></tr></thead>
-        <tbody>${itens.map(r=>`<tr><td>${esc(r.quantidade||r.unidade||1)}</td><td>${esc(r.material)}${r.tamanho?`<br><small>Tam: ${esc(r.tamanho)}</small>`:''}${r.colaborador_nome?`<br><small>${esc(r.colaborador_nome)}</small>`:''}</td><td>${esc(r.tipo||'-')}</td><td>${money(r.valor_total||0)}</td><td>${pill(r.status)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;padding:10px 12px">Total do grupo</td><td colspan="2" style="font-weight:800;color:#bbf7d0;padding:10px 12px">${money(total)}</td></tr></tfoot>
+        <thead><tr>${allAguardando?'<th style="width:34px"><input type="checkbox" id="mNfSelTodos" aria-label="Marcar todos"></th>':''}<th>Un.</th><th>Material</th><th>Tipo</th><th>Valor</th><th>${allAguardando?'NF':'Status'}</th></tr></thead>
+        <tbody>${itens.map(linhaItem).join('')}</tbody>
+        <tfoot><tr><td colspan="${allAguardando?4:3}" style="text-align:right;font-weight:700;padding:10px 12px">Total do grupo</td><td colspan="2" style="font-weight:800;color:#bbf7d0;padding:10px 12px">${money(total)}</td></tr></tfoot>
       </table>
     </div>
     ${comprovante?`<div class="mt-16"><a class="btn btn-secondary" href="${esc(comprovante)}" target="_blank" rel="noopener">Ver comprovante de pagamento</a></div>`:''}
-    ${allAguardando&&new Set(itens.map(r=>r.nf_url).filter(Boolean)).size>1?`<p class="muted mt-16">Este grupo tem ${new Set(itens.map(r=>r.nf_url).filter(Boolean)).size} NFs diferentes: cada item mantém a sua e cada NF é lançada separadamente no GRM (pagamento agrupado no mesmo comprovante).</p>`:''}
-    ${allAguardando?`<div class="adm-cmp-grid mt-16">
-      <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número" value="${esc(itens.find(r=>r.nf_url)?.nf_url||'')}"></label>
-      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfGrpFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">Pode escolher vários arquivos de uma vez. Com mais de uma NF, você escolhe qual vale para cada item. Escolher arquivos substitui os atuais.</small></label>
-      <div class="adm-cmp-full" id="mNfGrpAtrib" style="display:none"></div>
+    ${allAguardando?`<h4 class="mt-16" style="margin-bottom:0">Anexar NF aos itens marcados</h4>
+    <p class="muted" style="margin-top:4px">Quando o fornecedor emite uma NF por remessa, anexe cada NF aos itens que ela cobre. Cada NF é lançada separadamente no GRM (pagamento agrupado no mesmo comprovante). Escolher arquivos substitui a NF atual dos itens marcados.</p>
+    <div class="adm-cmp-grid mt-8">
+      <label class="adm-cmp-full">URL ou número da NF<input id="mNfGrp" placeholder="Cole o link da NF ou informe o número"></label>
+      <label class="adm-cmp-full">Ou anexar arquivo(s) da NF<input id="mNfGrpFile" type="file" multiple accept="${ACEITA_NF}"><small class="muted">O primeiro arquivo é a NF principal; os demais ficam como anexos dela.</small></label>
     </div>
-    ${anexosNfHtml(anexosNf(itens.find(r=>r.nf_url)||{}))}
     <div class="adm-cmp-actions mt-16">
-      <button class="btn btn-primary" id="mFinalizarGrp" type="button">Finalizar grupo (${itens.length} itens)</button>
+      <button class="btn btn-secondary" id="mNfGrpAnexar" type="button">Anexar NF aos marcados</button>
+      <button class="btn btn-primary" id="mFinalizarGrp" type="button"${res.completo?'':' disabled'} title="${res.completo?'':`Faltam ${res.falta} item(ns) sem NF`}">Finalizar grupo (${itens.length} itens)</button>
     </div>`:`<p class="muted mt-16">Aguardando pagamento — o financeiro precisa anexar o comprovante antes da NF.</p>`}
     <span class="adm-cmp-feedback mt-8" id="grpFeedback"></span>
   </div>`;
   modal.classList.add('open');
   modal.querySelector('#mClose').onclick=()=>modal.classList.remove('open');
-  ligarAtribuicaoNf(modal,itens,'#mNfGrpFile','#mNfGrpAtrib');
-  const btn=modal.querySelector('#mFinalizarGrp');
-  if(btn) btn.onclick=async()=>{
-    const fb=modal.querySelector('#grpFeedback');
-    btn.disabled=true; btn.textContent='Finalizando...'; if(fb)fb.textContent='';
+  const fb=modal.querySelector('#grpFeedback');
+  const selTodos=modal.querySelector('#mNfSelTodos');
+  if(selTodos) selTodos.onchange=()=>modal.querySelectorAll('[data-nf-sel]').forEach(c=>{c.checked=selTodos.checked;});
+
+  const btnAnexar=modal.querySelector('#mNfGrpAnexar');
+  if(btnAnexar) btnAnexar.onclick=async()=>{
+    const marcados=[...modal.querySelectorAll('[data-nf-sel]:checked')].map(c=>c.dataset.nfSel);
+    if(!marcados.length){ alert('Marque os itens que esta NF cobre.'); return; }
+    btnAnexar.disabled=true; if(fb){fb.textContent=''; fb.classList.remove('err');}
     try{
       const files=modal.querySelector('#mNfGrpFile')?.files||[];
       let nf=modal.querySelector('#mNfGrp')?.value?.trim()||'';
-      let anexos,nfPorItem=null;
-      if(files.length){const up=await resolverArquivosNf(files,itens,modal.querySelector('#mNfGrpAtrib'),fb); nf=up.nf; anexos=up.anexos; nfPorItem=up.nfPorItem;}
-      if(!nf){alert('Informe a NF ou anexe um arquivo.');btn.disabled=false;btn.textContent=`Finalizar grupo (${itens.length} itens)`;return;}
-      // Itens que já têm NFs diferentes (atribuídas ao anexar): sem arquivo novo e com o campo intacto, cada item mantém a sua.
-      if(!files.length&&!nfPorItem){
-        const proprios=new Map(itens.filter(r=>r.nf_url).map(r=>[r.id,r.nf_url]));
-        if(proprios.size===itens.length&&new Set(proprios.values()).size>1&&nf===(itens.find(r=>r.nf_url)?.nf_url||'')) nfPorItem=proprios;
-      }
-      await finalizarCompraGrupo(itens,nf,anexos,nfPorItem);
-    }catch(e){if(fb)fb.textContent=e.message; btn.disabled=false; btn.textContent=`Finalizar grupo (${itens.length} itens)`;}
+      let anexos=[];
+      if(files.length){ const up=await enviarArquivosNf(files,'compras/nf',fb); nf=up.principal; anexos=up.anexos; }
+      if(!nf){ alert('Informe a NF ou anexe um arquivo.'); btnAnexar.disabled=false; if(fb) fb.textContent=''; return; }
+      // nf_anexos pertence à NF: ao trocar a NF dos itens, os anexos antigos saem junto.
+      const {error}=await supabase.from('compras_itens').update({nf_url:nf,nf_anexos:anexos}).in('id',marcados);
+      if(error) throw new Error(error.message);
+      setMsg(`NF anexada em ${marcados.length} item(ns).`);
+      await loadRows();
+      openGrupoModal(gids);
+    }catch(e){ if(fb){fb.textContent=e.message; fb.classList.add('err');} btnAnexar.disabled=false; }
+  };
+
+  const btn=modal.querySelector('#mFinalizarGrp');
+  if(btn) btn.onclick=async()=>{
+    btn.disabled=true; btn.textContent='Finalizando...'; if(fb){fb.textContent=''; fb.classList.remove('err');}
+    const rotulo=`Finalizar grupo (${itens.length} itens)`;
+    try{
+      // Confere no banco (a lista da tela pode estar velha): só finaliza com NF em todos os itens.
+      const {data:atuais,error}=await supabase.from('compras_itens').select('id,nf_url').in('id',itens.map(r=>r.id));
+      if(error) throw new Error(error.message);
+      const nfPorItem=new Map((atuais||[]).filter(a=>String(a.nf_url||'').trim()).map(a=>[a.id,a.nf_url]));
+      const faltam=itens.filter(r=>!nfPorItem.has(r.id));
+      if(faltam.length||(atuais||[]).length!==itens.length) throw new Error(`Anexe a NF de todos os itens antes de finalizar (faltam ${faltam.length||itens.length-(atuais||[]).length}).`);
+      await finalizarCompraGrupo(itens,nfPorItem.get(itens[0].id),undefined,nfPorItem);
+    }catch(e){if(fb){fb.textContent=e.message; fb.classList.add('err');} btn.disabled=false; btn.textContent=rotulo;}
   };
 }
 
@@ -1750,6 +1789,7 @@ function styles(){return `<style>
 .adm-cmp-icon-link{text-decoration:none}.adm-cmp-page .fm-bar .fm-search{flex:0 1 380px;min-width:200px}.adm-cmp-bar-acoes{display:flex;align-items:center;gap:6px;flex:none}.adm-cmp-bar-acoes .adm-cmp-sel-count{margin-right:4px}.adm-cmp-page .fm-bar .fm-count{margin-left:auto}.adm-cmp-icon-primary{background:rgba(34,197,94,.9);border-color:rgba(74,222,128,.6);color:#04210f}.adm-cmp-icon-primary:hover{background:#4ade80}.adm-cmp-icon-btn[data-toggle-itens] svg{transition:transform .15s}.adm-cmp-icon-btn[data-toggle-itens].is-open{background:rgba(34,197,94,.16);color:#86efac}.adm-cmp-icon-btn[data-toggle-itens].is-open svg{transform:rotate(180deg)}
 .adm-cmp-detail-row[hidden]{display:none}.adm-cmp-detail-row>td{padding:0 12px 12px!important;background:rgba(2,12,8,.35)}
 .adm-cmp-det-list{list-style:none;margin:0;padding:0;display:grid;border:1px solid rgba(148,163,184,.14);border-radius:12px;overflow:hidden}.adm-cmp-det-list li{display:grid;grid-template-columns:110px minmax(0,1fr) auto;gap:12px;align-items:start;padding:9px 12px;font-size:13px}.adm-cmp-det-list li+li{border-top:1px solid rgba(148,163,184,.1)}
+.adm-cmp-nf-chip{display:inline-flex;align-items:center;margin-right:10px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;white-space:nowrap;text-decoration:none}.adm-cmp-nf-chip.ok{background:rgba(34,197,94,.18);color:#86efac}.adm-cmp-nf-chip.falta{background:rgba(245,158,11,.14);color:#fde68a}a.adm-cmp-nf-chip:hover{background:rgba(34,197,94,.3)}.adm-cmp-nf-prog{padding:10px 14px;border:1px solid rgba(245,158,11,.4);border-radius:12px;background:rgba(245,158,11,.08);color:#fde68a}.adm-cmp-nf-prog.ok{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.08);color:#bbf7d0}.adm-cmp-nf-prog-mini{color:#fde68a}.adm-cmp-nf-prog-mini.ok{color:#86efac}.adm-cmp-modal-card .btn:disabled{opacity:.5;cursor:not-allowed}
 .adm-cmp-det-cod{color:#bbf7d0;font-weight:700;font-size:12px}.adm-cmp-det-nome small{display:block;margin-top:2px;color:var(--muted);font-size:11.5px}.adm-cmp-det-valor{color:#e2e8f0;white-space:nowrap}.adm-cmp-det-forn{margin:2px 2px 8px;font-size:12.5px;color:var(--muted)}.adm-cmp-det-forn b{color:#e2e8f0}.adm-cmp-det-motivo{margin:10px 2px 0;font-size:12.5px;color:#fca5a5}
 .adm-cmp-group-row{background:rgba(34,197,94,.04)}.adm-cmp-group-row>td:first-child{border-left:3px solid rgba(34,197,94,.5)}
 .adm-cmp-table tbody tr.is-selected{background:rgba(34,197,94,.16)!important}.adm-cmp-table tbody tr.is-selected>td:first-child{border-left:3px solid #4ade80}
