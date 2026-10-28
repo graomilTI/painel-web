@@ -2,7 +2,7 @@
 // Separado de frotas-excesso-velocidade.js em 15/10/2026 (a função renderExcessoVelocidade tinha 494 linhas).
 // O código foi movido sem alteração. Ao editar, troque o token ?v= em todos os imports internos do conjunto
 // frotas-*.js (tests/frotas-modulos-versao.test.mjs confere).
-import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261016-frotas-hist1';
+import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_DRIVE_ID, getStyles, yesterdayInputDate } from './frotas-base.js?v=20261028-frotas-barra1';
 
   function htmlExcessoVelocidade() {
     return `${getStyles()}
@@ -14,9 +14,13 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
               <style>
                 .print-driver-pending{border-radius:12px}
                 .print-driver-item{padding:14px 0}
-                @media(max-width:720px){.speed-fab span{display:none}}
                 .fora-horario-layout{display:grid;gap:14px;width:100%}
-                .fora-horario-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;padding:0 0 14px;border-bottom:1px solid rgba(148,163,184,.14)}
+                /* Barra de período sempre visível: gruda logo abaixo do cabeçalho do painel (altura em --fh-topbar-h, ajustada por JS).
+                   O sticky só funciona se nenhum ancestral cortar o conteúdo com overflow hidden: aqui vira clip (corta igual, sem criar rolagem). */
+                .page-main:has(.fora-horario-layout){overflow-x:clip}
+                .frotas-card:has(.fora-horario-layout),.card:has(.fora-horario-layout){overflow:clip}
+                .fora-horario-toolbar{position:sticky;top:var(--fh-topbar-h,64px);z-index:9;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:-18px -18px 0;padding:14px 18px;background:rgba(8,14,28,.94);backdrop-filter:blur(10px);border-bottom:1px solid rgba(148,163,184,.14)}
+                .fora-horario-prints{margin-left:auto;flex:0 0 auto;width:auto;height:46px;border-radius:14px;padding:0 20px;display:inline-flex;align-items:center;gap:9px;white-space:nowrap}
                 .fora-horario-date{width:170px;margin:0}
                 .fora-horario-date label{min-height:0;color:#dbeafe;line-height:1.35}
                 .fora-horario-date .speed-input{height:46px;border-radius:14px;font-size:14px;font-weight:900;padding:0 14px}
@@ -34,7 +38,6 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                 .fora-horario-link-btn{border:0;background:transparent;padding:0;color:#86efac;font-weight:800;font-size:inherit;cursor:pointer;text-decoration:underline}
                 .fora-horario-link-btn:hover{color:#bbf7d0}
                 .rota-modal-table td small{display:block;color:#6b7280;margin-top:2px}
-                .speed-fab[hidden]{display:none}
                 .fh-filtros{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
                 .fh-chips{display:flex;gap:8px;flex-wrap:wrap}
                 .fh-chip{appearance:none;border:1px solid rgba(148,163,184,.22);background:rgba(15,23,42,.6);color:#cbd5e1;border-radius:999px;padding:8px 14px;font-weight:900;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:.16s ease}
@@ -52,10 +55,6 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                 .fh-rodape-dia{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
                 .fh-alerta{margin:0;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.08);border-radius:12px;padding:9px 12px;color:#fde68a;font-size:12px}
                 .fh-alerta[hidden]{display:none}
-                .fh-ajuda{color:#94a3b8;font-size:12px;line-height:1.55}
-                .fh-ajuda summary{cursor:pointer;color:#94a3b8;font-weight:800;width:max-content}
-                .fh-ajuda summary:hover{color:#bbf7d0}
-                .fh-ajuda p{margin:8px 0 0;max-width:900px}
                 .fh-legenda{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px}
                 .fh-legenda span{display:inline-flex;align-items:center;gap:6px}
                 .fh-sub{margin-top:3px;color:#94a3b8;font-size:12px;line-height:1.4}
@@ -210,8 +209,8 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                 .fh-carro.fh-carro-esq svg{transform:scaleX(-1)}
                 .fh-hora{background:rgba(2,6,23,.88);color:#e2e8f0;border:1px solid rgba(148,163,184,.45);border-radius:6px;padding:0 5px;font-size:10px;font-weight:800;line-height:15px;text-align:center;white-space:nowrap}
                 @media(max-width:760px){.fh-filtros{display:grid}.fh-busca{width:100%}.fh-passo{grid-template-columns:1fr;gap:4px}.fh-m-manchete{font-size:20px}}
-                @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh{height:58px;min-height:58px}}
-                @media(max-width:520px){.fora-horario-toolbar{grid-template-columns:1fr 54px}.fora-horario-date{grid-column:1}.fora-horario-sync{grid-column:1}.fora-horario-refresh{grid-column:2;grid-row:1/4;width:54px}.fora-horario-date .speed-input{font-size:14px}}
+                @media(max-width:760px){.fora-horario-toolbar{display:grid;grid-template-columns:1fr 1fr 58px;gap:10px}.fora-horario-date{width:auto}.fora-horario-sync{grid-column:1/3;min-width:0;width:100%}.fora-horario-refresh{grid-column:3;grid-row:1/3;align-self:end;width:58px}.fora-horario-date .speed-input,.fora-horario-sync,.fora-horario-refresh,.fora-horario-prints{height:58px;min-height:58px}.fora-horario-prints{grid-column:1/-1;margin-left:0;justify-content:center}.fora-horario-toolbar{position:static;margin:0;padding:0 0 14px;background:transparent;backdrop-filter:none}}
+                @media(max-width:520px){.fora-horario-toolbar{grid-template-columns:1fr 54px}.fora-horario-date{grid-column:1}.fora-horario-sync{grid-column:1}.fora-horario-refresh{grid-column:2;grid-row:1/4;width:54px}.fora-horario-prints{grid-column:1/-1}.fora-horario-date .speed-input{font-size:14px}}
               </style>
               <div class="fora-horario-layout">
                 <div class="fora-horario-toolbar">
@@ -219,6 +218,7 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                   <div class="speed-field fora-horario-date"><label>Até</label><input class="speed-input" type="date" data-fora-horario-report-end value="${yesterdayInputDate()}"></div>
                   <button class="speed-btn speed-btn-soft fora-horario-sync" type="button" data-sync-bfleet-fora-horario-periodo>Sincronizar período</button>
                   <button class="speed-btn speed-btn-soft fora-horario-refresh" type="button" data-refresh-fora-horario title="Atualizar lista" aria-label="Atualizar lista">${ICO_REFRESH}</button>
+                  <button class="speed-btn speed-btn-primary fora-horario-prints" type="button" data-open-prints-modal title="Anexar prints" aria-label="Anexar prints">${ICO_PAPERCLIP} Anexar prints</button>
                 </div>
                 <div class="fh-filtros">
                   <div class="fh-chips" role="group" aria-label="Filtrar por resultado">
@@ -240,17 +240,6 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
                 </div>
                 <p class="fh-alerta" data-fh-alerta hidden></p>
                 <p class="fh-fresco" data-fh-fresco hidden></p>
-                <details class="fh-ajuda">
-                  <summary>Como funciona</summary>
-                  <p>Um dossiê por veículo e por dia, com três frentes: (1) uso fora do horário de trabalho do colaborador, que vem dos informativos do Mapa de Embarque, da produção, do GPS do celular e da escala de carona da Programação, mais o tempo de ida e volta e 20 min de folga; (2) trajetos sem justificativa, que não chegam a O.S. programada, carona nem local de registro de trabalho; (3) excessos de velocidade registrados pelo rastreador. Aos domingos e feriados só é autorizado rodar com embarque (em qualquer horário). Clique em "Ver detalhes" para ver o dia completo, o mapa da rota e gerar a notificação: uma só mensagem por veículo e dia, com as seções que se aplicam (uso fora do horário e/ou excesso de velocidade).</p>
-                  <div class="fh-legenda">
-                    <span><i class="fh-lg fh-lg-dot-fora"></i>Fora do horário</span>
-                    <span><i class="fh-lg fh-lg-dot-sem"></i>Uso sem justificativa</span>
-                    <span><i class="fh-lg fh-lg-dot-exc"></i>Excesso de velocidade</span>
-                    <span><i class="fh-lg fh-lg-dot-dentro"></i>Sem alertas</span>
-                  </div>
-                  <p>Dados desatualizados? <button type="button" class="fora-horario-link-btn" data-recalcular-dossie>Recalcular dossiê</button></p>
-                </details>
                 <p class="fora-horario-count" data-fora-horario-count>Nenhum registro carregado</p>
                 <div class="fh-cab" aria-hidden="true"><span>Veículo</span><span>Fora do horário</span><span>Sem justificativa</span><span>Excessos</span><span></span></div>
                 <div class="fh-lista" data-fora-horario-table><div class="speed-import-empty">Carregando ocorrências...</div></div>
@@ -258,7 +247,6 @@ import { ICO_CLOSE, ICO_COPY, ICO_PAPERCLIP, ICO_REFRESH, ICO_SEARCH, PASTA_MAE_
             </div>
           </div>
         </div>
-        <button class="speed-fab" type="button" data-open-prints-modal title="Anexar prints" aria-label="Anexar prints">${ICO_PAPERCLIP} Anexar prints</button>
         <div class="speed-modal-overlay" data-prints-modal hidden>
           <div class="speed-modal" role="dialog" aria-modal="true" aria-label="Anexar prints" tabindex="-1" style="outline:none">
             <div class="speed-modal-head">

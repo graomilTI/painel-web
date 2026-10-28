@@ -641,6 +641,12 @@ function ensureScreenTourStyles() {
 }
 
 function getScreenTourSteps() {
+  // Telas com ajuda própria publicam window.__painelAjudaTela(): lista de { el, title, text, example?, acoes? } no lugar do guia genérico.
+  try {
+    const proprios = typeof window.__painelAjudaTela === 'function' ? window.__painelAjudaTela() : [];
+    const visiveis = (proprios || []).filter((step) => step && step.el && step.el.getClientRects().length);
+    if (visiveis.length) return visiveis;
+  } catch (err) { console.error('[ajuda da tela]', err); }
   const programacaoSteps = getProgramacaoTourSteps();
   if (programacaoSteps.length) return programacaoSteps;
 
@@ -790,6 +796,9 @@ function startScreenTour(button) {
       <div class="screen-tour-progress">${steps.map((_, i) => `<i class="${i <= index ? 'on' : ''}"></i>`).join('')}</div>
       <div class="screen-tour-actions"><button class="screen-tour-prev" type="button" ${index === 0 ? 'disabled' : ''}>Voltar</button><button class="screen-tour-next" type="button">${index === steps.length - 1 ? 'Concluir' : 'Avançar'}</button></div>`;
     card.querySelector('.screen-tour-close').onclick = cleanup;
+    card.querySelectorAll('[data-tour-acao]').forEach((btn) => {
+      btn.onclick = () => { const acao = step.acoes?.[btn.dataset.tourAcao]; cleanup(); if (acao) acao(); };
+    });
     card.querySelector('.screen-tour-prev').onclick = () => { if (index > 0) { index--; render(); } };
     card.querySelector('.screen-tour-next').onclick = () => { if (index === steps.length - 1) cleanup(); else { index++; render(); } };
     requestAnimationFrame(position);

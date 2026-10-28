@@ -1,12 +1,12 @@
 // Frotas — Fora do horário — busca, sincronização com o BFleet e ações (notificar, recalcular).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-hist1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261028-frotas-barra1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { BFLEET_EXCESSO_FUNCTION, BFLEET_FORA_HORARIO_FUNCTION, BFLEET_FORA_HORARIO_REPORT_ID, FORA_HORARIO_DOSSIE_FUNCTION, FORA_HORARIO_LISTA_COLUNAS, state, resolveSupabase, formatDateBR, callEdgeFunction, copyText, toast } from './frotas-base.js?v=20261016-frotas-hist1';
-import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261016-frotas-hist1';
-import { readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, fhAtualizarStatusExcessos } from './frotas-fh-util.js?v=20261016-frotas-hist1';
-import { atualizarRodapeDossie, fhRenderDossieAberto, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261016-frotas-hist1';
+import { BFLEET_EXCESSO_FUNCTION, BFLEET_FORA_HORARIO_FUNCTION, BFLEET_FORA_HORARIO_REPORT_ID, FORA_HORARIO_DOSSIE_FUNCTION, FORA_HORARIO_LISTA_COLUNAS, state, resolveSupabase, formatDateBR, callEdgeFunction, copyText, toast } from './frotas-base.js?v=20261028-frotas-barra1';
+import { fetchImportedExcessos } from './frotas-excessos-dados.js?v=20261028-frotas-barra1';
+import { readForaHorarioReportPeriod, formatKmForaHorario, formatMoneyForaHorario, fhAtualizarStatusExcessos } from './frotas-fh-util.js?v=20261028-frotas-barra1';
+import { atualizarRodapeDossie, fhRenderDossieAberto, renderForaHorarioList } from './frotas-fh-dossie.js?v=20261028-frotas-barra1';
 
   async function sincronizarForaHorario(root, opts = {}, mode = 'yesterday') {
     const isPeriod = mode === 'period';

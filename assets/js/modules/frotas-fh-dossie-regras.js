@@ -1,11 +1,11 @@
 // Frotas — Fora do horário — dossiê do dia: regras e textos (cálculo puro, sem HTML nem DOM).
 // Extraído de modules/frotas.js em 14/10/2026 e dividido em 15/10/2026 (frotas-fh-dossie.js tinha 1.030 linhas):
 // regras (frotas-fh-dossie-regras) -> HTML (frotas-fh-dossie-html) -> tela (frotas-fh-dossie). Código movido sem alteração.
-// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-hist1 em TODOS os imports
+// Para publicar uma mudança em qualquer módulo frotas-*.js deste conjunto, troque o token ?v=20261028-frotas-barra1 em TODOS os imports
 // internos (e os do carregador da página): tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261016-frotas-hist1';
-import { FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo } from './frotas-fh-util.js?v=20261016-frotas-hist1';
-import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261016-frotas-hist1';
+import { state, onlyPlate, formatDateBR } from './frotas-base.js?v=20261028-frotas-barra1';
+import { FH_VEREDITOS, FH_EVIDENCIAS, fhPrimeiroNome, FH_DIAS_SEMANA, fhHm, fhHoraMin, fhMinutosDoDia, fhKm, fhDuracao, fhFonteRotulo, fhChave, FH_FORA_MIN_KM, fhDiaSeguinte, fhDataCurta, FH_ORDEM_VEREDITO, FH_ORDEM_USO, fhPior, fhDiaEspecial, fhDiaEspecialRotulo, fhMaiusc, fhNum, fhPeriodo, fhTitulo } from './frotas-fh-util.js?v=20261028-frotas-barra1';
+import { finito, fhAgruparOs } from './frotas-fh-mapa.js?v=20261028-frotas-barra1';
 
   // Texto do registro; quando foi feito por um colega de carona, diz de quem.
   function fhEvidenciaRotulo(e) {

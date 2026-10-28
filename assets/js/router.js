@@ -43,7 +43,7 @@ const SOFT_NAV_PAGES = new Map([
   ['desempenho', { title: 'Desempenho', module: () => import('./desempenho.js') }],
   ['dre', { title: 'DRE', module: () => import('./dre.js') }],
   ['efetivos-sem-producao', { title: 'Efetivos sem Produção', module: () => import('./efetivosSemProducao.js') }],
-  ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js?v=20261016-frotas-hist1') }],
+  ['frotas-historico', { title: 'Frotas', module: () => import('./frotas-historico.js?v=20261028-frotas-barra1') }],
   ['frotas-veiculos', { title: 'Frotas · Veículos', module: () => import('./frotas-veiculos.js?v=20261021-frotas-manut45') }],
   ['historico-producao', { title: 'Histórico de Produção', module: () => import('./historicoProducao.js') }],
   ['hospedagem', { title: 'Hospedagem', module: () => import('./hospedagem.js?v=20260912-hosp-workspace1') }],

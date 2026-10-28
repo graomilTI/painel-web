@@ -1,9 +1,9 @@
 // Frotas — aba Histórico (excessos, multas e manutenções por colaborador).
 // Extraído de modules/frotas.js em 14/10/2026 (era um único bloco autoexecutável de ~4.100 linhas).
 // O código das funções e constantes foi movido sem alteração. Para publicar uma mudança em qualquer
-// módulo frotas-*.js deste conjunto, troque o token ?v=20261016-frotas-hist1 em TODOS os imports internos (e os do
+// módulo frotas-*.js deste conjunto, troque o token ?v=20261028-frotas-barra1 em TODOS os imports internos (e os do
 // carregador da página): o teste tests/frotas-modulos-versao.test.mjs garante que fiquem iguais.
-import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, parseSpeed, getStyles, normalizeDateForMatch, setCurrentRenderOpts } from './frotas-base.js?v=20261016-frotas-hist1';
+import { currentRenderOpts, resolveSupabase, normalizeName, escapeHtml, onlyPlate, formatDateBR, parseSpeed, getStyles, normalizeDateForMatch, setCurrentRenderOpts } from './frotas-base.js?v=20261028-frotas-barra1';
 
   const HISTORICO_TABLES = {
     excessos: 'frotas_excesso_velocidade',
