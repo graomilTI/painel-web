@@ -91,12 +91,38 @@ const RESOLVED = { scpCode: 5, patCode: 7 };
     assert.equal(log.baixas.length, 0);
   }
 
-  // 3) comprovante não bate com a soma das NFs: baixa manual (nada é enfileirado)
+  // 3) pago MENOR que a soma das NFs (900 x 1000): baixa enfileirada, diferença vira DESCONTO rateado por NF
   {
     const { sb, log } = criarBanco({ itens, lancamentos: [lancB()] });
     _teste.setSupabase(sb);
     const grupo = await _teste.carregarNfsDoComprovante(rowA, dataA, COMPROVANTE, '120500');
     const baixa = await _teste.enfileirarBaixaGrupo(rowA, dataA, comprovante(900), RESOLVED, grupo);
+    assert.equal(baixa.status, 'BAIXA_ENFILEIRADA', JSON.stringify(baixa));
+    assert.equal(baixa.desconto, 100);
+    assert.equal(baixa.juros, 0);
+    const p = log.baixas[0];
+    assert.equal(p.valor, 900, 'valor da baixa = o que o comprovante pagou');
+    assert.equal(p.parcela_valor_total, 1000);
+    assert.deepEqual(p.pin_codes_json.map((i) => [i.pinCode, i.valorNf, i.valor, i.desconto, i.juros]), [['120500', 600, 540, 60, 0], ['120501', 400, 360, 40, 0]]);
+  }
+
+  // 3b) pago MAIOR (1010 x 1000): diferença vira JUROS
+  {
+    const { sb, log } = criarBanco({ itens, lancamentos: [lancB()] });
+    _teste.setSupabase(sb);
+    const grupo = await _teste.carregarNfsDoComprovante(rowA, dataA, COMPROVANTE, '120500');
+    const baixa = await _teste.enfileirarBaixaGrupo(rowA, dataA, comprovante(1010), RESOLVED, grupo);
+    assert.equal(baixa.status, 'BAIXA_ENFILEIRADA');
+    assert.equal(baixa.juros, 10);
+    assert.deepEqual(log.baixas[0].pin_codes_json.map((i) => [i.valor, i.juros, i.desconto]), [[606, 6, 0], [404, 4, 0]]);
+  }
+
+  // 3c) diferença grande demais (500 x 1000): comprovante provavelmente errado -> manual
+  {
+    const { sb, log } = criarBanco({ itens, lancamentos: [lancB()] });
+    _teste.setSupabase(sb);
+    const grupo = await _teste.carregarNfsDoComprovante(rowA, dataA, COMPROVANTE, '120500');
+    const baixa = await _teste.enfileirarBaixaGrupo(rowA, dataA, comprovante(500), RESOLVED, grupo);
     assert.equal(baixa.status, 'BAIXA_MANUAL');
     assert.match(baixa.motivo, /difere/);
     assert.equal(log.baixas.length, 0);

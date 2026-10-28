@@ -79,6 +79,9 @@ const TABLE_RUNS = process.env.GRM_LANCAR_NF_RUNS_TABLE || 'grm_nf_lancamento_ex
 const BAIXA_CONFIG_PATH = process.env.GRM_BAIXA_NF_CONFIG || path.join(__dirname, 'config', 'grm-baixa-notas-fiscais.json');
 const CONFIG_PATH = process.env.GRM_LANCAR_NF_CONFIG || path.join(__dirname, 'config', 'grm-lancar-notas-fiscais.json');
 const MAX_PER_RUN = positiveInt(process.env.GRM_LANCAR_NF_MAX_POR_EXECUCAO, 5);
+// Diferença máxima (em % do valor das NFs) entre o comprovante e as NFs para a baixa automática lançar a diferença como
+// desconto/juros. Acima disso a baixa fica manual (comprovante errado ou NF faltando, não ajuste de centavos/taxa).
+const AJUSTE_MAX_PCT = Number(process.env.GRM_COMPRAS_AJUSTE_MAX_PCT) > 0 ? Number(process.env.GRM_COMPRAS_AJUSTE_MAX_PCT) : 10;
 const DEBUG = envBool('GRM_LANCAR_NF_DEBUG', false);
 const OCR_PDF_MAX_PAGES = positiveInt(process.env.GRM_LANCAR_NF_OCR_PDF_MAX_PAGINAS, 6);
 const GRM_USER = process.env.GRMSERVER_USER || '';
@@ -1523,26 +1526,65 @@ function resolveContaPagadoraComprovante(pagamento) {
   return null;
 }
 
+// Pura. Divide o valor pago no comprovante entre as NFs (itens = [{ valor, ... }], valor = valor da NF).
+// Pago igual às NFs: cada NF baixa pelo próprio valor. Pago MENOR: a diferença vira DESCONTO; pago MAIOR: vira JUROS
+// (regra do usuário, 28/10). Com várias NFs a diferença é rateada na proporção do valor de cada uma. No GRM
+// ppyPaidValue = valor da parcela + juros - desconto, então `valor` do item devolvido é o valor PAGO naquela NF.
+function ratearPagamento(itens, valorPago, maxPct = AJUSTE_MAX_PCT) {
+  const centavos = (n) => Math.round(Number(n) * 100);
+  const nfs = (Array.isArray(itens) ? itens : []).map((i) => centavos(i.valor));
+  const totalNf = nfs.reduce((s, v) => s + v, 0);
+  const pago = centavos(valorPago);
+  if (!nfs.length || !(totalNf > 0)) return { ok: false, motivo: 'valor das NFs não lido' };
+  if (!Number.isFinite(pago) || !(pago > 0)) return { ok: false, motivo: 'valor do comprovante não lido' };
+  const dif = pago - totalNf;
+  if (Math.abs(dif) > totalNf * (maxPct / 100)) {
+    return { ok: false, motivo: `valor do comprovante (R$ ${formatMoneyInput(pago / 100)}) difere das NFs (R$ ${formatMoneyInput(totalNf / 100)}) em mais de ${maxPct}% — confira o comprovante` };
+  }
+  let restante = dif;
+  const rateados = nfs.map((v, idx) => {
+    const parte = idx === nfs.length - 1 ? restante : Math.round((dif * v) / totalNf);
+    restante -= parte;
+    return parte;
+  });
+  const resultado = itens.map((item, idx) => {
+    const parte = rateados[idx];
+    return {
+      ...item,
+      valorNf: nfs[idx] / 100,
+      valor: (nfs[idx] + parte) / 100,
+      juros: parte > 0 ? parte / 100 : 0,
+      desconto: parte < 0 ? -parte / 100 : 0,
+    };
+  });
+  if (resultado.some((i) => !(i.valor > 0))) return { ok: false, motivo: 'o desconto zeraria o valor de uma das NFs' };
+  const soma = (campo) => Math.round(resultado.reduce((s, i) => s + i[campo], 0) * 100) / 100;
+  return { ok: true, itens: resultado, juros: soma('juros'), desconto: soma('desconto') };
+}
+
 // Decide se a NF de Compras pode ter baixa automática; devolve o motivo
-// quando não pode (vira aviso "baixa manual" na fila).
-function avaliarBaixaCompras(data, comprovante, resolved) {
+// quando não pode (vira aviso "baixa manual" na fila). `itens` = as NFs pagas pelo comprovante (padrão: só esta).
+// Valor do comprovante diferente do das NFs NÃO barra mais: a diferença vira desconto/juros (ver ratearPagamento).
+function avaliarBaixaCompras(data, comprovante, resolved, itens) {
   if (!comprovante || comprovante.erro) return { ok: false, motivo: 'sem comprovante legível' };
   if (comprovante.boletos?.length) return { ok: false, motivo: 'boleto: fica a pagar (baixa pelo financeiro)', aPagar: true };
   if (Array.isArray(data.parcelas) && data.parcelas.length > 1) return { ok: false, motivo: 'mais de uma parcela' };
   const pag = comprovante.pagamento || {};
   if (!pag.data_pagamento || !pag.data_confiavel) return { ok: false, motivo: 'data do pagamento não lida no comprovante' };
-  if (!sameMoney(pag.valor, data.valor_total)) return { ok: false, motivo: `valor do comprovante (${pag.valor == null ? '?' : `R$ ${formatMoneyInput(pag.valor)}`}) difere do lançado (R$ ${formatMoneyInput(data.valor_total)})` };
+  if (pag.valor == null) return { ok: false, motivo: 'valor do comprovante não lido' };
+  const rateio = ratearPagamento(itens || [{ valor: data.valor_total }], pag.valor);
+  if (!rateio.ok) return { ok: false, motivo: rateio.motivo };
   const conta = resolveContaPagadoraComprovante(pag);
   if (!conta) return { ok: false, motivo: 'conta pagadora do comprovante não mapeada em grm-baixa-notas-fiscais.json' };
   if (resolved && Number(conta.scpCode) !== Number(resolved.scpCode)) return { ok: false, motivo: `conta pagadora é da ${conta.empresa}, lançamento é de outra empresa` };
-  return { ok: true, conta };
+  return { ok: true, conta, rateio };
 }
 
 // ---------------------------------------------------------------------------
 // Comprovante que paga MAIS DE UMA NF (21/10/2026). Itens do mesmo pagamento (mesmo comprovante_url) podem ter
 // NFs diferentes. Cada NF continua sendo lançada sozinha (uma linha da fila por arquivo); a baixa é UMA só,
-// com o comprovante inteiro pagando todas as NFs (pin_codes_json com um item por NF, que o agente de baixa já
-// sabe enviar num único payInvoice/payment), e só sai depois que TODAS as NFs do comprovante foram lançadas.
+// com o mesmo comprovante anexado em cada NF (pin_codes_json com um item por NF; o agente de baixa manda um
+// payInvoice/payment POR NF, a baixa é individual por fornecedor), e só sai depois que TODAS as NFs foram lançadas.
 // Com uma NF só nada disso entra em ação (carregarNfsDoComprovante devolve null).
 // ---------------------------------------------------------------------------
 
@@ -1604,11 +1646,11 @@ async function enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo, { d
   if (grupo.estado === 'AGUARDANDO') return { status: 'AGUARDANDO_NFS', motivo: grupo.motivo };
   if (grupo.estado === 'MANUAL') return { status: 'BAIXA_MANUAL', motivo: grupo.motivo };
   // O comprovante inteiro tem que bater com a SOMA das NFs; o resto (boleto, data, conta, empresa) é a mesma avaliação de sempre.
-  const avaliacao = avaliarBaixaCompras({ ...data, valor_total: grupo.valorTotal, parcelas: undefined }, comprovante, resolved);
+  const avaliacao = avaliarBaixaCompras({ ...data, valor_total: grupo.valorTotal, parcelas: undefined }, comprovante, resolved, grupo.itens);
   if (!avaliacao.ok) return { status: avaliacao.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: avaliacao.motivo };
-  if (dry) return { status: 'BAIXA_AUTOMATICA (dry-run)', conta: avaliacao.conta.baccName, nfs: grupo.itens.length, valor: grupo.valorTotal };
-  const { conta } = avaliacao;
-  const itensBaixa = grupo.itens.map((i) => ({ ...i, patCode: resolved.patCode }));
+  if (dry) return { status: 'BAIXA_AUTOMATICA (dry-run)', conta: avaliacao.conta.baccName, nfs: grupo.itens.length, valor: grupo.valorTotal, juros: avaliacao.rateio.juros, desconto: avaliacao.rateio.desconto };
+  const { conta, rateio } = avaliacao;
+  const itensBaixa = rateio.itens.map((i) => ({ ...i, patCode: resolved.patCode }));
   const payload = {
     storage_bucket: comprovante.ref.bucket,
     storage_path: comprovante.ref.path,
@@ -1616,7 +1658,7 @@ async function enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo, { d
     status: 'VALIDADO',
     favorecido_nome: data.fornecedor || null,
     favorecido_documento: data.fornecedor_cnpj || null,
-    valor: grupo.valorTotal,
+    valor: Number(comprovante.pagamento.valor),
     data_pagamento: toIsoDate(comprovante.pagamento.data_pagamento),
     empresa_detectada: conta.empresa,
     bacc_code: conta.baccCode,
@@ -1628,7 +1670,8 @@ async function enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo, { d
     grm_nf_lancamento_id: row.id,
     extraido_json: {
       origem: 'COMPRAS', grupo_de_nfs: true, forma: comprovante.pagamento.forma_pagamento,
-      nfs: itensBaixa.map((i) => ({ pinCode: i.pinCode, doc: i.pinDocNumber, valor: i.valor })),
+      nfs: itensBaixa.map((i) => ({ pinCode: i.pinCode, doc: i.pinDocNumber, valor: i.valorNf, pago: i.valor, juros: i.juros, desconto: i.desconto })),
+      juros: rateio.juros, desconto: rateio.desconto,
       compras_item_ids: data.compras?.item_ids || [],
     },
   };
@@ -1639,7 +1682,7 @@ async function enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo, { d
   if (!ativos?.length) {
     await supabase.from('grm_sync_jobs').insert({ agente_id: 'sync-baixa-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'compras-auto' });
   }
-  const baixa = { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName, grupo_de_nfs: itensBaixa.length };
+  const baixa = { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName, grupo_de_nfs: itensBaixa.length, juros: rateio.juros, desconto: rateio.desconto };
   // As NFs irmãs ficaram com "aguardando": agora apontam para a baixa única (só informativo).
   for (const n of grupo.nfs || []) {
     if (n.atual || !n.id) continue;
@@ -1657,7 +1700,8 @@ async function enfileirarBaixaCompras(row, data, comprovante, resolved, pinCode)
   if (grupo) return enfileirarBaixaGrupo(row, data, comprovante, resolved, grupo);
   const avaliacao = avaliarBaixaCompras(data, comprovante, resolved);
   if (!avaliacao.ok) return { status: avaliacao.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: avaliacao.motivo };
-  const { conta } = avaliacao;
+  const { conta, rateio } = avaliacao;
+  const [itemBaixa] = rateio.itens;
   const payload = {
     storage_bucket: comprovante.ref.bucket,
     storage_path: comprovante.ref.path,
@@ -1665,17 +1709,17 @@ async function enfileirarBaixaCompras(row, data, comprovante, resolved, pinCode)
     status: 'VALIDADO',
     favorecido_nome: data.fornecedor || null,
     favorecido_documento: data.fornecedor_cnpj || null,
-    valor: data.valor_total,
+    valor: itemBaixa.valor,
     data_pagamento: toIsoDate(comprovante.pagamento.data_pagamento),
     empresa_detectada: conta.empresa,
     bacc_code: conta.baccCode,
     pat_code: resolved.patCode,
     pin_code: String(pinCode),
-    pin_codes_json: [{ pinCode: String(pinCode), patCode: resolved.patCode, valor: data.valor_total, pinDocNumber: data.numero_documento }],
+    pin_codes_json: [{ pinCode: String(pinCode), patCode: resolved.patCode, valor: itemBaixa.valor, valorNf: itemBaixa.valorNf, juros: itemBaixa.juros, desconto: itemBaixa.desconto, pinDocNumber: data.numero_documento }],
     parcela_valor_total: data.valor_total,
     saldo_pendente: 0,
     grm_nf_lancamento_id: row.id,
-    extraido_json: { origem: 'COMPRAS', pinDocNumber: data.numero_documento, forma: comprovante.pagamento.forma_pagamento, compras_item_ids: data.compras?.item_ids || [] },
+    extraido_json: { origem: 'COMPRAS', pinDocNumber: data.numero_documento, forma: comprovante.pagamento.forma_pagamento, compras_item_ids: data.compras?.item_ids || [], juros: itemBaixa.juros, desconto: itemBaixa.desconto },
   };
   const { data: inserted, error } = await supabase.from('grm_nf_baixas').insert(payload).select('id').single();
   if (error) {
@@ -1688,7 +1732,7 @@ async function enfileirarBaixaCompras(row, data, comprovante, resolved, pinCode)
   if (!ativos?.length) {
     await supabase.from('grm_sync_jobs').insert({ agente_id: 'sync-baixa-notas-fiscais', status: 'pendente', lane: 'alteracoes', solicitado_por: 'compras-auto' });
   }
-  return { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName };
+  return { status: 'BAIXA_ENFILEIRADA', baixa_id: inserted.id, conta: conta.baccName, juros: itemBaixa.juros, desconto: itemBaixa.desconto };
 }
 
 function validateData(data) {
@@ -2258,7 +2302,7 @@ async function processUpload(row, runId) {
         } else {
           const a = avaliarBaixaCompras(data, comprovanteCompras, resolved);
           data.compras.baixa = a.ok
-            ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName }
+            ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName, juros: a.rateio.juros, desconto: a.rateio.desconto }
             : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
         }
       } else {
@@ -2324,7 +2368,7 @@ async function runEnfileirarBaixa(id) {
     let baixa;
     if (DRY_RUN) {
       const a = avaliarBaixaCompras(data, comprovante, resolved);
-      baixa = a.ok ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName } : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
+      baixa = a.ok ? { status: 'BAIXA_AUTOMATICA (dry-run)', conta: a.conta.baccName, juros: a.rateio.juros, desconto: a.rateio.desconto } : { status: a.aPagar ? 'A_PAGAR' : 'BAIXA_MANUAL', motivo: a.motivo };
     } else {
       baixa = await enfileirarBaixaCompras(row, data, comprovante, resolved, row.grm_codigo);
       data.compras = { ...(data.compras || {}), baixa };
@@ -2446,7 +2490,7 @@ if (require.main === module) {
     resolveEmpresaScpCode, resolveCategoria, resolveTipoDocumento, resolveFormaPagamento,
     resolveCoordenacao, resolveFuncionario, resolveFornecedor, loadConfig,
     applyPayslipRules, applyInvoiceRules, extractFromText, detectDocumentKind, looksLikeBankPaymentReceipt,
-    parseBoletos, parseComprovantePagamento, extractDanfeFields, extractNfseFields, extractNfseXml, decidirGrupoNfs,
+    parseBoletos, parseComprovantePagamento, extractDanfeFields, extractNfseFields, extractNfseXml, decidirGrupoNfs, ratearPagamento,
     // Só para teste: troca o cliente do Supabase e expõe as funções que o usam.
     _teste: { setSupabase: (sb) => { supabase = sb; }, carregarNfsDoComprovante, enfileirarBaixaGrupo },
     applyComprasRules, applyFrotasRules, comprasCategoriaDaNf, buildInstallments, applyManualOverrides,

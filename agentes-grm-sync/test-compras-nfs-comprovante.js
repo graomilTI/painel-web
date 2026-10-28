@@ -1,7 +1,7 @@
 'use strict';
 // Testes da decisão de baixa quando UM comprovante paga MAIS DE UMA NF do Compras (sem rede, sem Supabase).
 const assert = require('assert');
-const { decidirGrupoNfs } = require('./grmserver-lancar-notas-fiscais-api');
+const { decidirGrupoNfs, ratearPagamento } = require('./grmserver-lancar-notas-fiscais-api');
 
 const nf = (extra = {}) => ({
   chave: 'compras/nf/2026/a.pdf', status: 'LANCADO', pinCode: '120500', valor: 1000, doc: '1001',
@@ -50,6 +50,32 @@ assert.equal(decidirGrupoNfs(par({ cnpj: '12345678000190' })).estado, 'PRONTO', 
   assert.equal(r.estado, 'PRONTO');
   assert.equal(r.valorTotal, 60);
   assert.equal(r.itens.length, 3);
+}
+
+// ---- desconto/juros quando o pago diverge das NFs (28/10) ----
+{
+  const um = ratearPagamento([{ valor: 1000, pinCode: 'a' }], 1000);
+  assert.equal(um.ok, true);
+  assert.deepEqual([um.itens[0].valor, um.itens[0].juros, um.itens[0].desconto], [1000, 0, 0], 'igual: sem ajuste');
+  assert.equal(um.itens[0].pinCode, 'a', 'mantém os campos do item');
+
+  const menor = ratearPagamento([{ valor: 1000 }], 985.5);
+  assert.deepEqual([menor.itens[0].valor, menor.itens[0].juros, menor.itens[0].desconto], [985.5, 0, 14.5], 'pago menor = desconto');
+
+  const maior = ratearPagamento([{ valor: 1000 }], 1012.34);
+  assert.deepEqual([maior.itens[0].valor, maior.itens[0].juros, maior.itens[0].desconto], [1012.34, 12.34, 0], 'pago maior = juros');
+
+  // rateio em centavos: a soma dos itens fecha exatamente com o comprovante
+  const tres = ratearPagamento([{ valor: 100 }, { valor: 100 }, { valor: 100 }], 299.99);
+  assert.equal(tres.ok, true);
+  assert.equal(Math.round(tres.itens.reduce((s, i) => s + i.valor, 0) * 100), 29999);
+  assert.equal(tres.desconto, 0.01);
+  tres.itens.forEach((i) => assert.ok(i.juros === 0 && i.desconto >= 0));
+
+  assert.equal(ratearPagamento([{ valor: 1000 }], 850).ok, false, '15% acima do limite de 10%');
+  assert.equal(ratearPagamento([{ valor: 1000 }], 850, 20).ok, true, 'limite configurável');
+  assert.equal(ratearPagamento([{ valor: 1000 }], null).ok, false, 'valor do comprovante não lido');
+  assert.equal(ratearPagamento([{ valor: 0 }], 10).ok, false, 'NF sem valor');
 }
 
 console.log('test-compras-nfs-comprovante: OK');

@@ -1033,6 +1033,9 @@ async function findGrmNfLancamentoId(pinCode) {
 // comprovante liquida a SOMA de várias parcelas em aberto da mesma pessoa
 // (ver findCandidateGroups) — o GRM já aceita múltiplas entradas em
 // paymentInfo num único payInvoice/payment, cada uma com seu próprio valor.
+//
+// Cada item pode trazer `juros` e `desconto` (baixa de Compras com valor pago diferente do da NF, 28/10). No GRM
+// ppyPaidValue = valor da parcela + juros - desconto (tela ClosePayment), então `valor` do item já é o valor PAGO.
 function buildPaymentPayload(resolved) {
   const docs = resolved.itens.map((i) => i.pinDocNumber || i.pinCode).join(', ');
   const pinCodes = resolved.itens.map((i) => i.pinCode).join(',');
@@ -1052,7 +1055,7 @@ function buildPaymentPayload(resolved) {
     ppyAccountPaied: null,
     ppyPaidDocLink: '',
     paymentInfo: JSON.stringify(resolved.itens.map((i) => ({
-      pinCode: Number(i.pinCode), ppyPaidTax: 0, ppyPaidDiscount: 0,
+      pinCode: Number(i.pinCode), ppyPaidTax: Number(i.juros || 0), ppyPaidDiscount: Number(i.desconto || 0),
       ppyPaidValue: i.valor, pinPaymentType: 'N',
     }))),
     pinPaymentType: 'N',
@@ -1461,32 +1464,56 @@ async function processBaixa(row, runId) {
 
     const pinCodesLog = resolved.itens.map((i) => i.pinCode).join(',');
     log('INFO', `${row.arquivo_nome}: ${DRY_RUN ? 'validando payload de baixa (dry-run)' : 'dando baixa no GRM'} - pinCode(s) ${pinCodesLog}, R$ ${formatMoney(resolved.valor)}, pago em ${resolved.dataPagamento}.`);
-    const payload = buildPaymentPayload(resolved);
+    // Compras com 2+ NFs no mesmo comprovante: a baixa é INDIVIDUAL por NF (um payInvoice/payment por pinCode, cada um
+    // com o mesmo comprovante anexado e o próprio juros/desconto). Demais casos (ex.: soma de parcelas de holerite)
+    // seguem numa chamada só com todas as entradas.
+    const individual = row.extraido_json?.origem === 'COMPRAS' && resolved.itens.length > 1;
+    const lotes = individual ? resolved.itens.map((i) => [i]) : [resolved.itens];
+    const payloads = lotes.map((itens) => buildPaymentPayload({ ...resolved, itens }));
 
     if (DRY_RUN) {
-      log('DEBUG', 'Payload que seria enviado pro payInvoice/payment (dry-run):', payload);
+      log('DEBUG', 'Payload que seria enviado pro payInvoice/payment (dry-run):', individual ? payloads : payloads[0]);
       await updateItem(row.id, {
-        status: 'DRY_RUN_OK', execucao_id: runId, grm_resposta: { dryRun: true, payload },
+        status: 'DRY_RUN_OK', execucao_id: runId, grm_resposta: individual ? { dryRun: true, payloads } : { dryRun: true, payload: payloads[0] },
         parcela_valor_total: resolved.parcelaValorTotal, saldo_pendente: resolved.saldoPendente || 0, erro: null,
       });
       return 'dry_run';
     }
 
-    const response = await submitPayInvoicePayment(payload, localPath, row.arquivo_nome);
-
-    // Anexa o comprovante em cada parcela liquidada — quando são 2+ (soma),
-    // todas precisam mostrar o mesmo comprovante pra conferência manual no GRM.
+    // itens_baixados guarda o que já foi enviado: se uma NF do meio falhar, a nova tentativa não repete as anteriores
+    // (o GRM recusaria com payInvoiceAlreadyPaid).
+    const extraido = { ...(row.extraido_json || {}) };
+    const jaBaixados = new Set((extraido.itens_baixados || []).map(String));
+    const respostas = [];
+    // Anexa o comprovante em cada parcela liquidada — todas precisam mostrar o mesmo comprovante pra conferência
+    // manual no GRM.
     let anexoErro = null;
-    for (const item of resolved.itens) {
+    for (let k = 0; k < lotes.length; k += 1) {
+      const lote = lotes[k];
+      if (individual && jaBaixados.has(String(lote[0].pinCode))) continue;
       try {
-        await uploadComprovanteAnexo(item.pinCode, localPath, row.arquivo_nome);
-      } catch (anexoError) {
-        // A baixa em si já foi feita (o que importa financeiramente) — falha
-        // só no upload do anexo não deve marcar o item inteiro como ERRO.
-        anexoErro = String(anexoError.message || anexoError).slice(0, 1000);
-        log('WARN', `${row.arquivo_nome}: baixa ok, mas falha ao subir anexo (pinCode ${item.pinCode}): ${anexoErro}`);
+        respostas.push(await submitPayInvoicePayment(payloads[k], localPath, row.arquivo_nome));
+      } catch (payError) {
+        const feitos = [...jaBaixados];
+        throw new Error(`${payError.message}${individual ? ` (NF pinCode ${lote[0].pinCode}; já baixadas nesta fila: ${feitos.length ? feitos.join(', ') : 'nenhuma'} — reenviar pula as já baixadas)` : ''}`);
+      }
+      for (const item of lote) {
+        try {
+          await uploadComprovanteAnexo(item.pinCode, localPath, row.arquivo_nome);
+        } catch (anexoError) {
+          // A baixa em si já foi feita (o que importa financeiramente) — falha
+          // só no upload do anexo não deve marcar o item inteiro como ERRO.
+          anexoErro = String(anexoError.message || anexoError).slice(0, 1000);
+          log('WARN', `${row.arquivo_nome}: baixa ok, mas falha ao subir anexo (pinCode ${item.pinCode}): ${anexoErro}`);
+        }
+      }
+      if (individual) {
+        jaBaixados.add(String(lote[0].pinCode));
+        extraido.itens_baixados = [...jaBaixados];
+        await updateItem(row.id, { extraido_json: extraido });
       }
     }
+    const response = individual ? respostas : respostas[0];
 
     const saldoPendenteFinal = Number(resolved.saldoPendente || 0);
     const statusFinal = saldoPendenteFinal > 0 ? 'BAIXADO_PARCIAL' : 'BAIXADO';
