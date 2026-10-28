@@ -2,7 +2,7 @@
 // Fala só com a Edge Function hospedagem-cotacao-publica; o token do link (?t=) é a credencial.
 import {
   CAPACIDADE_QUARTO, EXTRAS_OUTROS, FORMAS_PAGAMENTO, REGIMES, TIPOS_QUARTO, UFS, cnpjValido, estimarTotal, lerValor, soDigitos, tiposNecessarios,
-} from './cotacaoHotelRegras.js?v=20261024-cotacao-hotel2';
+} from './cotacaoHotelRegras.js?v=20261028-cotacao-hotel3';
 
 const FUNCAO_URL = 'https://jbzmcyycanrlnfhedcup.supabase.co/functions/v1/hospedagem-cotacao-publica';
 const token = new URLSearchParams(location.search).get('t') || '';
@@ -70,13 +70,19 @@ function pessoasPor(genero) {
   return pedido.quartos.filter((q) => q.genero === genero).reduce((s, q) => s + Number(q.quantidade || 0) * (CAPACIDADE_QUARTO[q.tipo_quarto] || Number(q.capacidade) || 0), 0);
 }
 
-// Os quatro tipos aparecem sempre. Os que o pedido usa são obrigatórios (diária ou "Não possuo"); os outros são opcionais.
+// Só os tipos de quarto da reserva aparecem: cada um é obrigatório (diária ou "Não possuo").
+// Pedido sem composição (não deveria ocorrer) cai nos quatro tipos, todos opcionais.
+function tiposDaTela() {
+  const usados = tiposNecessarios(pedido.quartos);
+  return usados.length ? usados : Object.keys(TIPOS_QUARTO);
+}
+
 function quartoHtml(tipo) {
   const qtd = pedido.quartos.filter((q) => q.tipo_quarto === tipo).reduce((s, q) => s + Number(q.quantidade || 0), 0);
   const usado = qtd > 0;
   const nao = usado && form.sem_tipo.has(tipo);
   return `<div class="quarto${nao ? ' sem-valor' : ''}" data-tipo="${tipo}" data-usado="${usado ? '1' : '0'}">
-    <div class="nome"><strong>Quarto ${esc(TIPOS_QUARTO[tipo].toLowerCase())}</strong><small>${usado ? `${qtd} quarto(s) neste pedido` : 'Não usado neste pedido · opcional'} · até ${CAPACIDADE_QUARTO[tipo]} pessoa(s) por quarto</small></div>
+    <div class="nome"><strong>Quarto ${esc(TIPOS_QUARTO[tipo].toLowerCase())}</strong><small>${usado ? `${qtd} quarto(s) neste pedido` : 'Opcional'} · até ${CAPACIDADE_QUARTO[tipo]} pessoa(s) por quarto</small></div>
     <div class="preco">
       <input type="text" inputmode="decimal" placeholder="R$ 0,00" aria-label="Diária do quarto ${esc(TIPOS_QUARTO[tipo].toLowerCase())}" data-preco value="${esc(form.precos[tipo] ?? '')}" ${nao ? 'disabled' : ''}>
       <span class="muted">por quarto, por diária</span>
@@ -137,13 +143,13 @@ function renderForm(erro = '') {
       </section>
       <section class="card" id="gQuartos" style="margin-top:16px">
         <div class="card-title">Cotação das diárias</div>
-        <p class="muted">Informe a diária de cada tipo de quarto. Nos tipos deste pedido, se o hotel não tem, marque "Não possuo"; os demais são opcionais.</p>
-        <div id="listaQuartos">${Object.keys(TIPOS_QUARTO).map(quartoHtml).join('')}</div>
+        <p class="muted">Informe a diária do quarto pedido (valor por quarto, por diária). Se o hotel não tem esse tipo, marque "Não possuo".</p>
+        <div id="listaQuartos">${tiposDaTela().map(quartoHtml).join('')}</div>
         <div class="total" id="totalEstimado" hidden></div>
       </section>
       <section class="card" style="margin-top:16px">
         <div class="card-title">Extras inclusos na diária</div>
-        <p class="muted">Marque tudo o que já está incluso no valor da diária.</p>
+        <p class="muted">Marque o que já está incluso no valor da diária (se não houver extras, deixe em branco).</p>
         <div class="opcoes" id="gExtras">${Object.entries(EXTRAS_BASE).map(([k, n]) => extraHtml(k, n)).join('')}${Object.entries(EXTRAS_OUTROS).map(([k, n]) => extraHtml(k, n)).join('')}</div>
         <label class="campo">Outros itens inclusos (opcional)<input type="text" id="extrasTexto" maxlength="120" placeholder="Ex.: transfer, tomada USB, cozinha compartilhada" value="${esc(form.extras_texto)}"></label>
       </section>
@@ -305,7 +311,7 @@ function validar() {
   if (form.cidade.trim().length < 2) return marcarErro('#cCidade', 'Informe a cidade do hotel.');
   if (!form.uf) return marcarErro('#cUf', 'Informe a UF do hotel.');
   const usados = tiposNecessarios(pedido.quartos);
-  for (const tipo of Object.keys(TIPOS_QUARTO)) {
+  for (const tipo of tiposDaTela()) {
     const texto = String(form.precos[tipo] ?? '').trim();
     const v = lerValor(texto);
     if (usados.includes(tipo)) {
@@ -324,14 +330,14 @@ function corpoEnvio() {
   const base = { t: token, disponivel: form.disponivel, observacoes: form.observacoes, website: raiz.querySelector('#website')?.value || '' };
   if (!form.disponivel) return base;
   const precos = {};
-  for (const tipo of Object.keys(TIPOS_QUARTO)) precos[tipo] = form.sem_tipo.has(tipo) ? null : form.precos[tipo];
+  for (const tipo of tiposDaTela()) precos[tipo] = form.sem_tipo.has(tipo) ? null : form.precos[tipo];
   return {
     ...base,
     cnpj: form.cnpj, razao_social: form.razao_social, regime_tributario: form.regime, emite_nf: form.emite_nf,
     atendente_nome: form.atendente_nome, atendente_telefone: form.atendente_telefone,
     endereco: { cep: form.cep, logradouro: form.logradouro, numero: form.numero, complemento: form.complemento, bairro: form.bairro, cidade: form.cidade, uf: form.uf },
     precos,
-    sem_tipo: [...form.sem_tipo],
+    sem_tipo: tiposDaTela().filter((t) => form.sem_tipo.has(t)),
     cafe_incluso: form.extras.has('cafe'), almoco_incluso: form.extras.has('almoco'), janta_inclusa: form.extras.has('janta'), estacionamento_incluso: form.extras.has('estacionamento'),
     extras_outros: [...form.extras].filter((k) => Object.hasOwn(EXTRAS_OUTROS, k)), extras_outros_texto: form.extras_texto,
     aceita_pagamento_checkout: form.checkout, formas_pagamento: [...form.formas],
