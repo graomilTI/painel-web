@@ -1,0 +1,337 @@
+// Frotas › Dashboard: regras de cálculo (puras, sem DOM nem Supabase) — testadas em tests/frotas-dashboard-regras.test.mjs.
+// As telas de destino (Multas, Manutenção, Notificação…) têm as suas próprias regras; aqui só se reproduz o necessário para contar
+// o que pede ação, mantendo o mesmo critério delas (ex.: multa arquivada ou paga não conta; o prazo muda depois do condutor indicado).
+
+export const LIMITE_GPS_DIAS = 7;
+export const AVISO_CNH_DIAS = 30;
+export const AVISO_MULTA_DIAS = 7;
+export const FECHADAS = ['concluida', 'cancelada', 'reprovada'];
+export const ETAPAS_MANUTENCAO = [
+  ['solicitada', 'Solicitada'],
+  ['em_orcamento', 'Em cotação'],
+  ['em_aprovacao', 'Em aprovação'],
+  ['aprovada', 'Aprovada'],
+  ['em_execucao', 'Em execução'],
+];
+
+export const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+export const placaNorm = (p) => String(p ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const primeiro = (...vals) => vals.find((v) => v !== undefined && v !== null && String(v).trim() !== '');
+
+/* ── Datas (yyyy-mm-dd, fuso de Brasília) ── */
+export function hojeISO(agora = new Date()) {
+  return agora.toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+export function addDias(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+export function diasEntre(a, b) {
+  return Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 864e5);
+}
+function inicioMes(ano, mes) {
+  const d = new Date(Date.UTC(ano, mes - 1, 1, 12));
+  return d.toISOString().slice(0, 10);
+}
+const fimMes = (iso) => addDias(inicioMes(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) + 1), -1);
+export function dataISO(v) {
+  const s = String(v ?? '').trim();
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (iso) return iso[1];
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  return br ? `${br[3]}-${br[2]}-${br[1]}` : '';
+}
+
+export const PERIODOS = [
+  { id: 'mes', rotulo: 'Este mês' },
+  { id: 'mes_anterior', rotulo: 'Mês anterior' },
+  { id: '30d', rotulo: 'Últimos 30 dias' },
+  { id: '90d', rotulo: 'Últimos 90 dias' },
+];
+
+// Período escolhido e o período de comparação (mês contra mês até o mesmo dia; janelas móveis contra a janela imediatamente anterior).
+export function periodo(id, hoje) {
+  const ano = Number(hoje.slice(0, 4));
+  const mes = Number(hoje.slice(5, 7));
+  const rotulo = (PERIODOS.find((p) => p.id === id) || PERIODOS[0]).rotulo;
+  if (id === 'mes_anterior') {
+    const ini = inicioMes(ano, mes - 1);
+    const antIni = inicioMes(ano, mes - 2);
+    return { id, rotulo, ini, fim: fimMes(ini), antIni, antFim: fimMes(antIni) };
+  }
+  if (id === '30d' || id === '90d') {
+    const dias = id === '30d' ? 30 : 90;
+    const ini = addDias(hoje, -(dias - 1));
+    const antFim = addDias(ini, -1);
+    return { id, rotulo, ini, fim: hoje, antIni: addDias(antFim, -(dias - 1)), antFim };
+  }
+  const ini = inicioMes(ano, mes);
+  const antIni = inicioMes(ano, mes - 1);
+  const decorridos = diasEntre(ini, hoje);
+  const antFim = addDias(antIni, decorridos);
+  const ultimo = fimMes(antIni);
+  return { id: 'mes', rotulo, ini, fim: hoje, antIni, antFim: antFim > ultimo ? ultimo : antFim };
+}
+
+const noIntervalo = (iso, ini, fim) => Boolean(iso) && iso >= ini && iso <= fim;
+
+// Variação em relação ao período anterior: { delta, pct } (pct nulo quando o anterior é zero).
+export function variacao(atual, anterior) {
+  const delta = (atual || 0) - (anterior || 0);
+  return { delta, pct: anterior ? Math.round((delta / anterior) * 100) : null };
+}
+
+/* ── Frota ── */
+export const temRastreador = (v) => Boolean(v?.possui_rastreador || v?.bfleet_rastreador || v?.rastreador_bfleet);
+export const coordenacaoDe = (v) => String(primeiro(v?.patrimonio_coordenacao, v?.coordenacao) ?? '').trim();
+export const supervisaoDe = (v) => String(primeiro(v?.patrimonio_supervisao, v?.supervisao) ?? '').trim();
+
+export function opcoesFiltro(veiculos, coordenacao = '') {
+  const coords = new Set();
+  const sups = new Set();
+  for (const v of veiculos || []) {
+    const c = coordenacaoDe(v);
+    const s = supervisaoDe(v);
+    if (c) coords.add(c);
+    if (s && (!coordenacao || c === coordenacao)) sups.add(s);
+  }
+  const ordenar = (set) => [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return { coordenacoes: ordenar(coords), supervisoes: ordenar(sups) };
+}
+
+// Veículos dentro do filtro e os identificadores que ligam as outras tabelas a eles (id, placa e nome de condutor).
+export function escopo(veiculos, filtro = {}) {
+  const coordenacao = filtro.coordenacao || '';
+  const supervisao = filtro.supervisao || '';
+  const ativo = Boolean(coordenacao || supervisao);
+  const lista = (veiculos || []).filter((v) => (!coordenacao || coordenacaoDe(v) === coordenacao) && (!supervisao || supervisaoDe(v) === supervisao));
+  const ids = new Set();
+  const placas = new Set();
+  const nomes = new Set();
+  for (const v of lista) {
+    if (v.id) ids.add(v.id);
+    if (v.placa) placas.add(placaNorm(v.placa));
+    for (const n of [v.motorista_atual, v.bfleet_condutor, v.patrimonio_funcionario, v.condutor_patrimonio]) {
+      if (norm(n)) nomes.add(norm(n));
+    }
+  }
+  return { ativo, veiculos: lista, ids, placas, nomes };
+}
+// Sem filtro tudo conta; com filtro só o que pertence a um veículo do escopo.
+export function dentro(esc, { id, placa } = {}) {
+  if (!esc?.ativo) return true;
+  return (id != null && esc.ids.has(id)) || (placa != null && esc.placas.has(placaNorm(placa)));
+}
+
+export function resumoFrota(veiculos) {
+  let comRastreador = 0;
+  let semRastreador = 0;
+  let manutencao = 0;
+  let semLeitura = 0;
+  const outros = {};
+  const porCoordenacao = {};
+  for (const v of veiculos || []) {
+    const st = norm(v.status);
+    const rastreado = temRastreador(v);
+    if (st === 'ATIVO') {
+      if (rastreado) comRastreador += 1; else semRastreador += 1;
+      const dias = v.patrimonio_dias_sem_leitura;
+      // Leitura nula = patrimônio nunca lido (pior caso), mesmo critério do dashboard geral; sem patrimônio vinculado não há o que ler.
+      if (rastreado && v.patrimonio_codigo && (dias == null || Number(dias) > LIMITE_GPS_DIAS)) semLeitura += 1;
+    } else if (st.includes('MANUT')) {
+      manutencao += 1;
+    } else {
+      const rotulo = String(v.status || '').trim() || 'Sem status';
+      outros[rotulo] = (outros[rotulo] || 0) + 1;
+    }
+    const coord = coordenacaoDe(v);
+    if (coord) porCoordenacao[coord] = (porCoordenacao[coord] || 0) + 1;
+  }
+  const outrosStatus = Object.entries(outros).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'));
+  return {
+    total: (veiculos || []).length,
+    comRastreador,
+    semRastreador,
+    manutencao,
+    foraOperacao: outrosStatus.reduce((s, [, n]) => s + n, 0),
+    outrosStatus,
+    semLeitura,
+    porCoordenacao: Object.entries(porCoordenacao).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR')),
+  };
+}
+
+/* ── Manutenção ── */
+// vencimentos: itens da RPC frotas_preventiva_painel (v, s:[{p,st,ea}]); planosTipo: Map(plano_id → 'servico'|'verificacao').
+export function resumoVencimentos(painel, planosTipo, esc) {
+  let vencidos = 0;
+  let proximos = 0;
+  let semSolicitacao = 0;
+  const veiculosVencidos = new Set();
+  for (const v of painel || []) {
+    if (!dentro(esc, { id: v.v, placa: v.placa })) continue;
+    for (const s of v.s || []) {
+      if (planosTipo.get(s.p) !== 'servico') continue;
+      if (s.st === 'vencida') {
+        vencidos += 1;
+        veiculosVencidos.add(v.v);
+        if (!s.ea) semSolicitacao += 1;
+      } else if (s.st === 'proxima') {
+        proximos += 1;
+      }
+    }
+  }
+  return { vencidos, proximos, semSolicitacao, veiculosVencidos: veiculosVencidos.size };
+}
+
+export function resumoManutencao({ abertas = [], concluidas = [] } = {}, per, esc) {
+  const etapas = Object.fromEntries(ETAPAS_MANUTENCAO.map(([id]) => [id, 0]));
+  let urgentes = 0;
+  let total = 0;
+  for (const m of abertas) {
+    if (FECHADAS.includes(m.status) || !dentro(esc, { id: m.veiculo_id })) continue;
+    total += 1;
+    if (m.status in etapas) etapas[m.status] += 1;
+    if (m.prioridade === 'alta' || m.prioridade === 'urgente') urgentes += 1;
+  }
+  const soma = (ini, fim) => {
+    let custo = 0;
+    let qtd = 0;
+    for (const m of concluidas) {
+      if (!noIntervalo(dataISO(m.data_execucao), ini, fim) || !dentro(esc, { id: m.veiculo_id })) continue;
+      custo += Number(m.custo || 0);
+      qtd += 1;
+    }
+    return { custo, qtd };
+  };
+  return { abertas: total, etapas, urgentes, atual: soma(per.ini, per.fim), anterior: soma(per.antIni, per.antFim) };
+}
+
+/* ── Multas (mesmo critério da tela de Multas) ── */
+const isIdentificar = (m) => Boolean(m.identificar_solicitado_em || m.condutor_identificado_em || norm(m.acao_status).includes('IDENTIFIC'));
+export function valorMulta(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Number.isInteger(n) && Math.abs(n) >= 1000 ? n / 100 : n; // a API do GRM às vezes entrega em centavos
+}
+// Enquanto o condutor não foi indicado vale o prazo de indicação/defesa; depois, o de pagamento.
+export function vencimentoMulta(m) {
+  const indicacao = dataISO(m.data_limite_defesa);
+  const pagamento = dataISO(primeiro(m.data_vencimento_auto, m.data_limite_pagto, m.data_vencimento));
+  const indicado = Boolean(String(m.motorista || '').trim()) && !isIdentificar(m);
+  return (indicado ? pagamento || indicacao : indicacao || pagamento) || '';
+}
+function tipoMulta(m, hoje) {
+  const st = norm(primeiro(m.status_multa, m.situacao, m.status, 'A PAGAR'));
+  if (/\bPAG[AO]\b/.test(st) || st.includes('BAIX') || st.includes('QUIT')) return 'paga';
+  if (st.includes('CANCEL')) return 'cancelada';
+  if (st.includes('VENC')) return 'vencida';
+  const v = vencimentoMulta(m);
+  return v && v < hoje ? 'vencida' : 'aberta';
+}
+export function resumoMultas(multas, hoje, esc) {
+  let abertas = 0;
+  let semCondutor = 0;
+  let prazoCurto = 0;
+  let aNotificar = 0;
+  let valor = 0;
+  const limite = addDias(hoje, AVISO_MULTA_DIAS);
+  for (const m of multas || []) {
+    if (m.arquivada_em || m.ok_em || !dentro(esc, { placa: m.placa })) continue;
+    const tipo = tipoMulta(m, hoje);
+    if (tipo === 'paga' || tipo === 'cancelada') continue;
+    const comCondutor = Boolean(String(m.motorista || '').trim());
+    // Vencida com condutor já está resolvida no fluxo da tela; sem condutor ainda falta identificar quem dirigia.
+    if (tipo === 'vencida' && comCondutor) continue;
+    abertas += 1;
+    valor += valorMulta(m.valor_original);
+    if (!comCondutor) semCondutor += 1;
+    else if (norm(m.status_notificacao || 'PENDENTE') === 'PENDENTE') aNotificar += 1;
+    const venc = vencimentoMulta(m);
+    if (venc && venc >= hoje && venc <= limite) prazoCurto += 1;
+  }
+  return { abertas, semCondutor, prazoCurto, aNotificar, valor };
+}
+
+/* ── Conduta: excesso de velocidade e fora do horário ── */
+const nomeEvento = (r) => String(primeiro(r.patrimonio_funcionario, r.motorista_planilha) ?? '').trim();
+export function resumoEventos(rows, per, esc) {
+  let atual = 0;
+  let anterior = 0;
+  for (const r of rows || []) {
+    const d = dataISO(r.data_evento);
+    if (!dentro(esc, { placa: r.placa })) continue;
+    if (noIntervalo(d, per.ini, per.fim)) atual += 1;
+    else if (noIntervalo(d, per.antIni, per.antFim)) anterior += 1;
+  }
+  return { atual, anterior };
+}
+export function excessosPendentes(rows, esc) {
+  return (rows || []).filter((r) => dentro(esc, { placa: r.placa })).length;
+}
+// Quem mais aparece no período (condutor; sem nome cai na placa). Só entra quem tem 2 ou mais registros.
+export function reincidentes(excessos, foraHorario, per, esc, topo = 5) {
+  const mapa = new Map();
+  const somar = (rows, campo) => {
+    for (const r of rows || []) {
+      if (!noIntervalo(dataISO(r.data_evento), per.ini, per.fim) || !dentro(esc, { placa: r.placa })) continue;
+      const nome = nomeEvento(r);
+      const chave = nome ? norm(nome) : `PLACA:${placaNorm(r.placa)}`;
+      const item = mapa.get(chave) || { nome: nome || placaNorm(r.placa), placas: new Set(), excessos: 0, foraHorario: 0, maxVel: 0 };
+      item.placas.add(placaNorm(r.placa));
+      item[campo] += 1;
+      if (campo === 'excessos') item.maxVel = Math.max(item.maxVel, Number(r.velocidade) || 0);
+      mapa.set(chave, item);
+    }
+  };
+  somar(excessos, 'excessos');
+  somar(foraHorario, 'foraHorario');
+  return [...mapa.values()]
+    .map((i) => ({ ...i, placas: [...i.placas], total: i.excessos + i.foraHorario }))
+    .filter((i) => i.total >= 2)
+    .sort((a, b) => b.total - a.total || b.excessos - a.excessos || a.nome.localeCompare(b.nome, 'pt-BR'))
+    .slice(0, topo);
+}
+
+/* ── Habilitação (CNH) ── */
+export function resumoCnh(motoristas, hoje, esc, aviso = AVISO_CNH_DIAS) {
+  const limite = addDias(hoje, aviso);
+  const lista = [];
+  let vencidas = 0;
+  let vencendo = 0;
+  let semValidade = 0;
+  for (const m of motoristas || []) {
+    if (norm(m.status) !== 'ATIVO') continue;
+    // O cadastro de motorista não tem veículo: com filtro, vale quem aparece como condutor de um veículo do escopo.
+    if (esc?.ativo && !esc.nomes.has(norm(m.nome))) continue;
+    const validade = dataISO(m.cnh_validade);
+    if (!validade) { semValidade += 1; continue; }
+    if (validade < hoje) vencidas += 1;
+    else if (validade <= limite) vencendo += 1;
+    else continue;
+    lista.push({ nome: m.nome, validade, dias: diasEntre(hoje, validade) });
+  }
+  lista.sort((a, b) => a.validade.localeCompare(b.validade) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  return { vencidas, vencendo, semValidade, proximos: lista.slice(0, 6) };
+}
+
+/* ── "Precisa de ação" ── */
+// Cada item: { id, tom: 'red'|'amber', n, titulo, detalhe, destino }. n = null quando o dado não pôde ser lido.
+export function acoes({ multas, excessos, manutencao, vencimentos, cnh, frota } = {}) {
+  const itens = [
+    { id: 'multas-sem-condutor', tom: 'red', n: multas?.semCondutor ?? null, titulo: 'Multas sem condutor', detalhe: 'Identificar quem dirigia', destino: 'frotas-multas' },
+    { id: 'multas-prazo', tom: 'red', n: multas?.prazoCurto ?? null, titulo: `Multas com prazo em ${AVISO_MULTA_DIAS} dias`, detalhe: 'Defesa, indicação ou pagamento', destino: 'frotas-multas' },
+    { id: 'planos-vencidos', tom: 'red', n: vencimentos?.semSolicitacao ?? null, titulo: 'Serviços vencidos sem solicitação', detalhe: vencimentos ? `Em ${vencimentos.veiculosVencidos} veículo(s)` : '', destino: 'frotas-manutencao-grupo' },
+    { id: 'cnh-vencida', tom: 'red', n: cnh?.vencidas ?? null, titulo: 'CNH vencida', detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
+    { id: 'manut-urgentes', tom: 'amber', n: manutencao?.urgentes ?? null, titulo: 'Manutenção urgente aberta', detalhe: 'Prioridade alta ou urgente', destino: 'frotas-manutencao-grupo' },
+    { id: 'multas-notificar', tom: 'amber', n: multas?.aNotificar ?? null, titulo: 'Condutor a notificar (multas)', detalhe: 'Multa com condutor, sem notificação', destino: 'frotas-multas' },
+    { id: 'excessos-notificar', tom: 'amber', n: excessos ?? null, titulo: 'Excessos de velocidade a notificar', detalhe: 'Pendentes na Notificação', destino: 'frotas' },
+    { id: 'cnh-vencendo', tom: 'amber', n: cnh?.vencendo ?? null, titulo: `CNH vence em ${AVISO_CNH_DIAS} dias`, detalhe: 'Motoristas ativos', destino: 'frotas-motoristas' },
+    { id: 'gps-sem-leitura', tom: 'amber', n: frota?.semLeitura ?? null, titulo: `Rastreador sem leitura há +${LIMITE_GPS_DIAS} dias`, detalhe: 'Veículos ativos com rastreador', destino: 'frotas-rastreadores' },
+  ];
+  const peso = (i) => (i.n == null ? 1 : i.n > 0 ? 0 : 2);
+  return itens
+    .map((i, ordem) => ({ ...i, ordem }))
+    .sort((a, b) => peso(a) - peso(b) || a.ordem - b.ordem)
+    .map(({ ordem, ...i }) => i);
+}

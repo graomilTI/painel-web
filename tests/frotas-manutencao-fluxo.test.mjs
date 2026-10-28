@@ -614,8 +614,8 @@ test('o histórico mostra a manutenção do fluxo novo (placa, condutor, data do
   assert.match(hist, /row\.motorista_nome \|\| row\.solicitante_nome/);
   assert.match(hist, /'data_execucao'/);
   assert.match(hist, /concluida: 'Concluída'/);
-  const painel = ler('assets/js/frotas-dashboard.js');
-  assert.match(painel, /from\('frotas_manutencoes'\)\.select\('custo'\)\.eq\('status', 'concluida'\)\.eq\('responsavel_pagamento', 'empresa'\)/);
+  const painel = ler('assets/js/modules/frotas-dashboard-dados.js');
+  assert.match(painel, /from\('frotas_manutencoes'\)\.select\('id,veiculo_id,custo,data_execucao'\)\s*\.eq\('status', 'concluida'\)\.eq\('responsavel_pagamento', 'empresa'\)/);
   assert.match(ler('assets/js/frotas-manutencao-grupo.js'), /id: 'custos'/);
 });
 
