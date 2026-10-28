@@ -612,23 +612,53 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
     }
   }
 
+  // Uma consulta pendurada (sinal ruim, conexão presa) deixava o spinner rodando
+  // pra sempre, sem erro e sem saída (relato do Jean Carlos, Londrina, 28/10/2026).
+  // Passado o limite, mostra o aviso com "Tentar novamente"; o tempo de cada etapa
+  // vai pro console pra apontar qual consulta travou.
+  const LISTA_TIMEOUT_MS = 25000;
+
+  function medirEtapa(nome, promessa, tempos) {
+    const t0 = performance.now();
+    return promessa.finally(() => { tempos[nome] = Math.round(performance.now() - t0); });
+  }
+
+  function comLimiteDeTempo(promessa, ms) {
+    let timer;
+    const limite = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error('A lista de O.S. demorou demais para carregar.'), { pldTimeout: true })), ms);
+    });
+    return Promise.race([promessa, limite]).finally(() => clearTimeout(timer));
+  }
+
+  let cargaListaSeq = 0;
+
   async function carregarLista({ manterDrawer = false } = {}) {
+    const seq = ++cargaListaSeq;
     listaBody.innerHTML = '<div class="pld-loading"><span class="pld-spinner" aria-hidden="true"></span><span>Carregando O.S. da supervisão...</span></div>';
+    const tempos = {};
     try {
-      const [osTodas] = await Promise.all([
-        loadOsRelevantes(supervisaoQuery, options.dataReferencia),
-        recarregarEquipeRows(),
-      ]);
+      const [osTodas] = await comLimiteDeTempo(Promise.all([
+        medirEtapa('os', loadOsRelevantes(supervisaoQuery, options.dataReferencia), tempos),
+        medirEtapa('equipe', recarregarEquipeRows(), tempos),
+      ]), LISTA_TIMEOUT_MS);
+      if (seq !== cargaListaSeq) return;
       osTodasAtual = osTodas;
-      await popularFiltros();
+      await medirEtapa('filtros', comLimiteDeTempo(popularFiltros(), LISTA_TIMEOUT_MS), tempos);
+      if (seq !== cargaListaSeq) return;
       renderLista();
+      console.info('[programacao-lista-drawer] carregarLista (ms):', tempos);
       if (manterDrawer && state.osAbertaId) {
         const os = osTodasAtual.find((o) => String(o.id) === String(state.osAbertaId));
         if (os) await abrirDrawer(os, { silent: true }); else fecharDrawer();
       }
     } catch (error) {
-      console.error('[programacao-lista-drawer] carregarLista:', error);
-      listaBody.innerHTML = `<div class="pld-empty">${esc(error.message || 'Erro ao carregar as O.S.')}</div>`;
+      if (seq !== cargaListaSeq) return;
+      console.error('[programacao-lista-drawer] carregarLista:', error, tempos);
+      const aviso = error?.pldTimeout
+        ? 'A lista de O.S. demorou demais para carregar. Verifique o sinal e tente novamente.'
+        : (error.message || 'Erro ao carregar as O.S.');
+      listaBody.innerHTML = `<div class="pld-empty">${esc(aviso)}<br><button type="button" class="btn" data-pld-recarregar-lista style="margin-top:10px">Tentar novamente</button></div>`;
     }
   }
 
@@ -1062,6 +1092,7 @@ export async function renderProgramacaoListaDrawer(content, options = {}) {
   content.querySelector('#pldSoRemanescente').addEventListener('change', (e) => { state.soRemanescente = e.target.checked; renderLista(); });
 
   listaBody.addEventListener('click', async (event) => {
+    if (event.target.closest('[data-pld-recarregar-lista]')) { await carregarLista({ manterDrawer: true }); return; }
     const th = event.target.closest('[data-sort-campo]');
     if (th) {
       const campo = th.dataset.sortCampo;

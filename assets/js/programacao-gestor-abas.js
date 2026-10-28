@@ -2,7 +2,7 @@
 // Extraído de programacao.js em 14/10/2026: era o bloco "Incorporado de programacao-gestor-fluxo-avancado.js" (consolidação de 20/09/2026).
 // O código do bloco foi movido sem alteração e continua rodando ao ser carregado; programacao.js importa
 // estes módulos na mesma ordem em que os blocos rodavam. Ao editar, aumente o ?v= do import em programacao.js.
-import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20261015-ferias-escala1';
+import { renderProgramacaoListaDrawer } from './programacao-lista-drawer.js?v=20261028-lista-timeout1';
 import { renderProgramacaoSemOs } from './programacao-sem-os.js?v=20261019-limpar-situacao1';
 import { renderProgramacaoTransferencias } from './programacao-transferencias.js?v=20261006-solicitar1';
 import { TODAS_SUPERVISOES } from './programacao-constantes.js?v=20261015-nucleo1';
