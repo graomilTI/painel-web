@@ -1,6 +1,6 @@
 // Frotas › Dashboard: montagem do HTML de cada bloco (funções puras: dados entram, string sai). O estado e os eventos ficam em
 // assets/js/frotas-dashboard.js. Todo texto vindo do banco passa por esc().
-import { PERIODOS, ETAPAS_MANUTENCAO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS } from './frotas-dashboard-regras.js?v=20261028-dash2';
+import { PERIODOS, ETAPAS_MANUTENCAO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS } from './frotas-dashboard-regras.js?v=20261028-dash3';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
@@ -83,18 +83,20 @@ const kpi = ({ rotulo, valor, sub, tom, href, icone }) => `
     <span class="fd-scard-sub">${sub}</span>
   </${href ? 'a' : 'div'}>`;
 
-export function blocoKpis(frota, estado) {
+export function blocoKpis(frota, estado, estadoRastreio = estado) {
   if (estado === 'erro') return '';
   const v = (n) => valorOu(estado, n);
+  // Com/sem rastreador e leitura dependem também do controle de instalação (frotas_rastreadores).
+  const vr = (n) => valorOu(estado === 'ok' ? estadoRastreio : estado, n);
   const fora = frota?.outrosStatus?.length
     ? frota.outrosStatus.slice(0, 3).map(([s, n]) => `${esc(s)} ${fmtN(n)}`).join(' · ') + (frota.outrosStatus.length > 3 ? ` · +${frota.outrosStatus.length - 3}` : '')
     : 'inativos, vendidos e baixados';
   return [
-    kpi({ rotulo: 'Ativo com rastreador', valor: v(frota?.comRastreador), sub: 'veículos monitorados', tom: '#3fa878', href: 'frotas-veiculos', icone: '📡' }),
-    kpi({ rotulo: 'Ativo sem rastreador', valor: v(frota?.semRastreador), sub: 'sem monitoramento', tom: '#f59e0b', href: 'frotas-rastreadores', icone: '🚗' }),
+    kpi({ rotulo: 'Ativo com rastreador', valor: vr(frota?.comRastreador), sub: 'conforme a tela Rastreadores', tom: '#3fa878', href: 'frotas-veiculos', icone: '📡' }),
+    kpi({ rotulo: 'Ativo sem rastreador', valor: vr(frota?.semRastreador), sub: 'a instalar, conforme a tela Rastreadores', tom: '#f59e0b', href: 'frotas-rastreadores', icone: '🚗' }),
     kpi({ rotulo: 'Em manutenção', valor: v(frota?.manutencao), sub: 'status do cadastro do veículo', tom: '#60a5fa', href: 'frotas-manutencao-grupo', icone: '🔧' }),
     kpi({ rotulo: 'Fora de operação', valor: v(frota?.foraOperacao), sub: estado === 'ok' ? fora : '&nbsp;', tom: '#94a3b8', href: 'frotas-veiculos', icone: '⛔' }),
-    kpi({ rotulo: 'Rastreador sem leitura', valor: v(frota?.semLeitura), sub: `ativos há mais de ${LIMITE_GPS_DIAS} dias sem ler`, tom: '#ef4444', href: 'frotas-rastreadores', icone: '📉' }),
+    kpi({ rotulo: 'Rastreador sem leitura', valor: vr(frota?.semLeitura), sub: `ativos há mais de ${LIMITE_GPS_DIAS} dias sem ler`, tom: '#ef4444', href: 'frotas-rastreadores', icone: '📉' }),
   ].join('');
 }
 

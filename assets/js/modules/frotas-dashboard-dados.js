@@ -1,6 +1,6 @@
 // Frotas › Dashboard: leitura dos dados. Cada função devolve só as colunas que o dashboard usa (a API entrega no máximo 1.000 linhas
 // por consulta, então tudo é paginado) e a tela trata cada bloco de forma independente: um que falhe ou demore não derruba os outros.
-import { FECHADAS } from './frotas-dashboard-regras.js?v=20261028-dash2';
+import { FECHADAS } from './frotas-dashboard-regras.js?v=20261028-dash3';
 
 const PAGINA = 1000;
 
@@ -57,6 +57,16 @@ export async function carregarEventos(sb, tabela, ini, fim) {
   const { linhas, truncado } = await paginar(() => sb.from(tabela).select(colunas)
     .gte('data_evento', ini).lte('data_evento', fim).order('id', { ascending: true }), { maxPaginas: 8 });
   return { linhas, truncado };
+}
+
+// Controle de instalação e removidos: os mesmos que a tela Rastreadores cruza com os veículos ativos.
+export async function carregarRastreadores(sb) {
+  const { linhas } = await paginar(() => sb.from('frotas_rastreadores').select('id,placa,status').order('id', { ascending: true }));
+  return linhas;
+}
+export async function carregarRemovidos(sb) {
+  const { linhas } = await paginar(() => sb.from('frotas_rastreadores_removidos').select('id,placa').order('id', { ascending: true }));
+  return linhas;
 }
 
 export async function carregarMotoristas(sb) {

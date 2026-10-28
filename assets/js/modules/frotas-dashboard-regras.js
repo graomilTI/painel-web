@@ -16,6 +16,13 @@ export const ETAPAS_MANUTENCAO = [
 
 export const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
 export const placaNorm = (p) => String(p ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+// Mesma chave da tela Rastreadores: placa antiga (AAA0000) e Mercosul (AAA0A00) são o mesmo veículo (4º caractere letra A–J = dígito 0–9).
+export function placaChave(p) {
+  const x = String(p ?? '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9]/g, '').slice(0, 7);
+  if (x.length !== 7) return x;
+  const d = 'ABCDEFGHIJ'.indexOf(x[4]);
+  return d >= 0 ? `${x.slice(0, 4)}${d}${x.slice(5)}` : x;
+}
 const primeiro = (...vals) => vals.find((v) => v !== undefined && v !== null && String(v).trim() !== '');
 
 /* ── Datas (yyyy-mm-dd, fuso de Brasília) ── */
@@ -124,21 +131,40 @@ export function dentro(esc, { id, placa } = {}) {
   return (id != null && esc.ids.has(id)) || (placa != null && esc.placas.has(placaNorm(placa)));
 }
 
-export function resumoFrota(veiculos) {
-  let comRastreador = 0;
-  let semRastreador = 0;
+// Controle de instalação (tabela frotas_rastreadores) e removidos da lista de Rastreadores, indexados pela chave canônica da placa.
+export function controleRastreio(rastreadores, removidos) {
+  return {
+    status: new Map((rastreadores || []).map((r) => [placaChave(r.placa), String(r.status || '')])),
+    removidos: new Set((removidos || []).map((r) => placaChave(r.placa))),
+  };
+}
+
+// Mesma regra da tela Rastreadores: veículo ATIVO que não foi removido da lista; "sem rastreador" = sem linha no controle de
+// instalação ou com status sem_rastreador. Sem o controle carregado (null), com/sem/leitura ficam nulos em vez de inventar um número.
+export function resumoFrota(veiculos, controle = null) {
+  let comRastreador = controle ? 0 : null;
+  let semRastreador = controle ? 0 : null;
   let manutencao = 0;
-  let semLeitura = 0;
+  let semLeitura = controle ? 0 : null;
   const outros = {};
   const porCoordenacao = {};
   for (const v of veiculos || []) {
     const st = norm(v.status);
-    const rastreado = temRastreador(v);
     if (st === 'ATIVO') {
-      if (rastreado) comRastreador += 1; else semRastreador += 1;
-      const dias = v.patrimonio_dias_sem_leitura;
-      // Leitura nula = patrimônio nunca lido (pior caso), mesmo critério do dashboard geral; sem patrimônio vinculado não há o que ler.
-      if (rastreado && v.patrimonio_codigo && (dias == null || Number(dias) > LIMITE_GPS_DIAS)) semLeitura += 1;
+      if (controle) {
+        const chave = placaChave(v.placa);
+        if (!controle.removidos.has(chave)) {
+          const sem = !controle.status.has(chave) || controle.status.get(chave) === 'sem_rastreador';
+          if (sem) {
+            semRastreador += 1;
+          } else {
+            comRastreador += 1;
+            const dias = v.patrimonio_dias_sem_leitura;
+            // Leitura nula = patrimônio nunca lido (pior caso), mesmo critério do dashboard geral; sem patrimônio vinculado não há o que ler.
+            if (v.patrimonio_codigo && (dias == null || Number(dias) > LIMITE_GPS_DIAS)) semLeitura += 1;
+          }
+        }
+      }
     } else if (st.includes('MANUT')) {
       manutencao += 1;
     } else {
