@@ -1,6 +1,6 @@
 // Frotas › Dashboard: montagem do HTML de cada bloco (funções puras: dados entram, string sai). O estado e os eventos ficam em
 // assets/js/frotas-dashboard.js. Todo texto vindo do banco passa por esc().
-import { PERIODOS, ETAPAS_MANUTENCAO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS } from './frotas-dashboard-regras.js?v=20261028-dash1';
+import { PERIODOS, ETAPAS_MANUTENCAO, LIMITE_GPS_DIAS, AVISO_MULTA_DIAS } from './frotas-dashboard-regras.js?v=20261028-dash2';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('pt-BR'));
@@ -33,7 +33,6 @@ export function seloVariacao(v, { rotuloAnterior = 'período anterior', fmt = fm
 export function cabecalho({ dataTexto, total, atualizadoEm, filtrado }) {
   return `
     <div class="fd-hdr-title">
-      <h1>Dashboard de Frotas</h1>
       <p>Módulo de Frotas · ${esc(dataTexto)}${atualizadoEm ? ` · atualizado às ${esc(atualizadoEm)}` : ''}</p>
     </div>
     <div class="fd-badge" id="fd-total-badge">${total == null ? '⋯ carregando' : `🚗 ${fmtN(total)} veículos${filtrado ? ' no filtro' : ' cadastrados'}`}</div>
