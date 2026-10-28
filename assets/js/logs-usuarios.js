@@ -168,6 +168,32 @@ async function fetchKpis() {
   };
 }
 
+// O PostgREST limita cada resposta (1000 linhas): sem paginar, o filtro de Ação (feito
+// no navegador) só enxergava as 1000 mais recentes e o resto "não existia" na busca.
+const LOTE_BUSCA = 1000;
+const MAX_LINHAS_BUSCA = 20000;
+
+async function buscarPaginado(query) {
+  const ordenada = query.order('created_at', { ascending: false });
+  const acumulado = [];
+  for (let from = 0; from < MAX_LINHAS_BUSCA; from += LOTE_BUSCA) {
+    const { data, error } = await ordenada.range(from, from + LOTE_BUSCA - 1);
+    if (error) throw error;
+    acumulado.push(...(data || []));
+    if (!data || data.length < LOTE_BUSCA) break;
+  }
+  return acumulado;
+}
+
+function normalizaBusca(valor) {
+  return String(valor ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLocaleLowerCase('pt-BR');
+}
+
+function jsonTexto(valor) {
+  if (valor == null) return '';
+  try { return typeof valor === 'string' ? valor : JSON.stringify(valor); } catch { return ''; }
+}
+
 async function fetchLogs() {
   const meuRequestId = ++state.requestSeq;
   const start = dayBounds(state.de).start;
@@ -180,10 +206,7 @@ async function fetchLogs() {
     let q = supabase.from('app_logs_usuarios').select('*').is('audit_id', null).gte('created_at', start).lte('created_at', end);
     q = aplicaFiltroModulo(q, state.modulo);
     if (state.tipo) q = q.eq('tipo', state.tipo);
-    tarefas.push(q.order('created_at', { ascending: false }).limit(2000).then(({ data, error }) => {
-      if (error) throw error;
-      return (data || []).map((r) => ({ ...r, __fonte: 'logs' }));
-    }));
+    tarefas.push(buscarPaginado(q).then((data) => data.map((r) => ({ ...r, __fonte: 'logs' }))));
   } else {
     tarefas.push(Promise.resolve([]));
   }
@@ -192,17 +215,14 @@ async function fetchLogs() {
     let q = supabase.from('app_auditoria').select('*').gte('created_at', start).lte('created_at', end);
     q = aplicaFiltroModulo(q, state.modulo);
     if (state.registro) q = q.ilike('registro_id', `%${state.registro}%`);
-    tarefas.push(q.order('created_at', { ascending: false }).limit(2000).then(({ data, error }) => {
-      if (error) throw error;
-      return (data || []).map((r) => ({
-        ...r,
-        usuario_nome: r.metadata?.usuario_nome || '',
-        usuario_role: r.metadata?.usuario_role || '',
-        acao_exata: r.metadata?.acao_exata || '',
-        __fonte: 'auditoria',
-        tipo: 'mudanca',
-      }));
-    }));
+    tarefas.push(buscarPaginado(q).then((data) => data.map((r) => ({
+      ...r,
+      usuario_nome: r.metadata?.usuario_nome || '',
+      usuario_role: r.metadata?.usuario_role || '',
+      acao_exata: r.metadata?.acao_exata || '',
+      __fonte: 'auditoria',
+      tipo: 'mudanca',
+    }))));
   } else {
     tarefas.push(Promise.resolve([]));
   }
@@ -216,10 +236,16 @@ async function fetchLogs() {
   }
 
   if (state.acao) {
-    const termo = state.acao.toLocaleLowerCase('pt-BR');
+    // Cada palavra digitada precisa aparecer em algum lugar da linha (sem diferenciar
+    // maiúsculas/acentos): ação, tabela, registro, campos, usuário e detalhes do log.
+    const palavras = normalizaBusca(state.acao).split(/\s+/).filter(Boolean);
     combinado = combinado.filter((r) => {
-      const texto = [r.acao, acaoExata(r), r.tabela, r.registro_id, camposTexto(r)].filter(Boolean).join(' ').toLocaleLowerCase('pt-BR');
-      return texto.includes(termo);
+      const texto = normalizaBusca([
+        r.acao, acaoExata(r), r.tabela, r.registro_id, camposTexto(r),
+        usuarioNome(r), r.usuario_email, r.modulo,
+        jsonTexto(r.detalhes), jsonTexto(r.metadata),
+      ].filter(Boolean).join(' '));
+      return palavras.every((p) => texto.includes(p));
     });
   }
 
